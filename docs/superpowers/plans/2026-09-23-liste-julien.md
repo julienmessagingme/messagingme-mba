@@ -71,8 +71,16 @@ ne suffit pas, parce que les tests d'écran sont écrits par celui qui a écrit 
 
 - Constat : n'apparaissent que les campagnes ayant un envoi de MODÈLE facturable dans la période ; une campagne à
   scénario envoyée à un numéro de test (`is_test`) en sort ; les archivées sont incluses sans le dire.
+- Mesuré en lecture seule avant d'écrire : 7 campagnes, 2 visibles. Les 4 campagnes à scénario n'ont aucun envoi
+  de modèle facturable, la campagne RCS non plus, et « nouveau test », archivée, était comptée sans le dire.
 - Toutes les campagnes ayant envoyé dans la période apparaissent, à coût nul si rien de facturable, et une bascule
   « inclure les archivées » (défaut : exclues), appliquée AVANT le plafond de 50 (`getVolumeParCampagne`).
+- La colonne « Envoyés » montre les personnes TOUCHÉES (`envois`), pas les seuls envois facturables : « 0 » se
+  lirait « rien n'est parti » sur une campagne à scénario.
+- 🔴 Une campagne RCS garde sa case COÛT VIDE : ce tableau ne connaît que les tarifs Meta, et « 0 » y serait faux.
+  Une campagne WhatsApp sans rien de facturable, elle, a un coût CONNU (ses messages de service, souvent nul).
+- L'accordéon s'ouvre désormais même sans ligne, sur une phrase et la bascule : fermé, la bascule serait
+  inatteignable sur une période dont toutes les campagnes sont archivées.
 - Essai réel : les six campagnes terminées de l'espace d'essai visibles, « nouveau test » seulement avec la bascule.
 
 ## Lot 5 : Performance lab, contacts cumulés ou actifs

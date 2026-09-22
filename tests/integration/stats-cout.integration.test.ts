@@ -437,3 +437,74 @@ describe.skipIf(!url)('Cout : les deux lectures comptent la MEME population (Pos
     });
   });
 });
+
+/**
+ * LA POPULATION DU TABLEAU « COUT PAR ENGAGEMENT » (lot 4 de la liste de Julien du 2026-09-23).
+ *
+ * 🔴 POURQUOI EN INTEGRATION : tout se joue dans le SQL de `getVolumeParCampagne`. Une campagne qui a touche
+ * quelqu un sans rien de facturable (scenario en fenetre de service, RCS, numero de test) n avait aucune ligne :
+ * mesure faite en production, 2 campagnes visibles sur 7. Et les archivees entraient sans le dire.
+ */
+describe.skipIf(!url)('Cout : la population du tableau par campagne (Postgres reel)', () => {
+  let pool: Pool;
+  let store: PgStatsStore;
+  let tenantId: string;
+  const ids: Record<string, string> = {};
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: url, ssl: pgSsl(), max: 2 });
+    store = new PgStatsStore(pool);
+    tenantId = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-cout-population') returning id`)).rows[0]!.id;
+    const contact = async (num: string) => (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164) values ($1, $2) returning id`, [tenantId, num],
+    )).rows[0]!.id;
+    /** Une campagne qui a TOUCHE une personne dans la periode, avec ou sans modele, archivee ou non. */
+    const campagne = async (nom: string, opts: { template?: string; canal?: string; archivee?: boolean }, num: string) => {
+      const id = (await pool.query<{ id: string }>(
+        `insert into campaigns (tenant_id, name, category, template_name, channel, archived_at)
+         values ($1, $2, 'marketing', $3, $4, case when $5::boolean then now() else null end) returning id`,
+        [tenantId, nom, opts.template ?? null, opts.canal ?? 'whatsapp', opts.archivee === true],
+      )).rows[0]!.id;
+      await pool.query(
+        `insert into campaign_recipients (campaign_id, contact_id, to_e164, resolved_params, status, sent_at, message_id)
+         values ($1, $2, $3, '{}'::jsonb, 'sent', $4::date, $5)`,
+        [id, await contact(num), num.replace('+', ''), AUJ, `wamid.pop-${nom}`],
+      );
+      ids[nom] = id;
+      return id;
+    };
+    await campagne('modele', { template: 'itest_pop_tpl' }, '+33600000801');
+    await campagne('scenario', {}, '+33600000802');
+    await campagne('rcs', { canal: 'rcs' }, '+33600000803');
+    await campagne('archivee', { template: 'itest_pop_tpl' }, '+33600000804');
+    await pool.query(`update campaigns set archived_at = now() where id = $1`, [ids['archivee']]);
+  });
+
+  afterAll(async () => {
+    if (tenantId) {
+      await pool.query(`delete from campaign_recipients where campaign_id in (select id from campaigns where tenant_id = $1)`, [tenantId]);
+      await pool.query(`delete from campaigns where tenant_id = $1`, [tenantId]);
+      await pool.query(`delete from contacts where tenant_id = $1`, [tenantId]);
+      await pool.query(`delete from tenants where id = $1`, [tenantId]);
+    }
+    await pool.end();
+  });
+
+  it('🔴 une campagne SANS rien de facturable a sa ligne, avec les personnes touchees', async () => {
+    const lignes = await store.getVolumeParCampagne(tenantId, RANGE);
+    const par = new Map(lignes.map((l) => [l.campaignId, l]));
+    expect(par.get(ids['scenario']!)).toMatchObject({ nom: 'scenario', template: null, canal: 'whatsapp', category: null, count: 0, envois: 1 });
+    expect(par.get(ids['rcs']!)).toMatchObject({ nom: 'rcs', canal: 'rcs', count: 0, envois: 1 });
+    // La campagne à modèle garde SON compte facturable, et porte les personnes touchées en plus.
+    expect(par.get(ids['modele']!)).toMatchObject({ category: 'marketing', count: 1, envois: 1 });
+  });
+
+  it('🔴 les archivees sont exclues par defaut, et la bascule les rend', async () => {
+    const sans = await store.getVolumeParCampagne(tenantId, RANGE);
+    expect(sans.some((l) => l.campaignId === ids['archivee'])).toBe(false);
+    const avec = await store.getVolumeParCampagne(tenantId, RANGE, { inclureArchivees: true });
+    expect(avec.some((l) => l.campaignId === ids['archivee'])).toBe(true);
+    // ⚠️ Et la bascule ne change rien aux autres : elle AJOUTE, elle ne remplace pas.
+    expect(avec.length).toBe(sans.length + 1);
+  });
+});

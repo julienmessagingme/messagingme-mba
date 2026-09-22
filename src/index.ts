@@ -1102,9 +1102,9 @@ async function main(): Promise<void> {
        * lire donneraient deux coûts sur deux écrans du même onglet, et le client comparerait. Le calcul,
        * lui, est pur (`estimateCoutParCampagne`) et vit à côté de celui de la série, avec ses règles.
        */
-      getCoutParCampagne: async (tenant, range) => {
+      getCoutParCampagne: async (tenant, range, opts) => {
         const [volumes, rates, serviceMois, ligne] = await Promise.all([
-          statsStore.getVolumeParCampagne(tenant, range),
+          statsStore.getVolumeParCampagne(tenant, range, opts),
           prixFactures(tenant, range),
           // 🔴 LE MEME CALCUL DE FRANCHISE QUE LA LIGNE « MESSAGES », par les mêmes deux lectures. Deux
           // façons de déduire la franchise donneraient deux coûts de service sur la MÊME carte, à deux

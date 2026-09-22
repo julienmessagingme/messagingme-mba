@@ -381,6 +381,11 @@ export interface LigneCoutCampagne {
   sansCategorie?: number;
   /** ...dont Meta ne rend pas le tarif : panne VIVANTE, reparable. Meme reserve d'absence. */
   sansTarif?: number;
+  /**
+   * Personnes TOUCHÉES sur la période, facturable ou non : ce que la colonne « Envoyés » affiche (lot 4).
+   * ⚠️ OPTIONNEL, même réserve de RÉSEAU que `sansCategorie` : absent, l'écran retombe sur `envoyes`.
+   */
+  envois?: number;
   clics: number | null;
   coutParClic: number | null;
   /**
@@ -464,8 +469,10 @@ export function getDetailCoutCampagne(tenantId: string, campaignId: string): Pro
   return request<DetailCoutCampagne>(`/tenants/${tenantId}/stats/cost/campaigns/${campaignId}`);
 }
 
-export function getCoutParCampagne(tenantId: string, range?: StatsRange): Promise<CoutParCampagne> {
-  return request<CoutParCampagne>(`/tenants/${tenantId}/stats/cost/campaigns${rangeQuery(range)}`);
+export function getCoutParCampagne(tenantId: string, range?: StatsRange, inclureArchivees = false): Promise<CoutParCampagne> {
+  const q = rangeQuery(range);
+  const archivees = inclureArchivees ? `${q === '' ? '?' : '&'}archivees=1` : '';
+  return request<CoutParCampagne>(`/tenants/${tenantId}/stats/cost/campaigns${q}${archivees}`);
 }
 
 /**

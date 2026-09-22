@@ -13,7 +13,7 @@ import { estimateCoutParCampagne } from '../src/stats/cost';
 
 const TARIFS = { marketing: 0.10, utility: 0.02, currency: 'EUR' };
 const vol = (campaignId: string, count: number, category = 'marketing') =>
-  ({ campaignId, nom: campaignId, template: 't', category, count });
+  ({ campaignId, nom: campaignId, template: 't', canal: 'whatsapp', category, count, envois: count });
 
 describe('le service s ajoute au template', () => {
   it('🔴 le cout d une campagne comprend ses messages de service', () => {

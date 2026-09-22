@@ -127,7 +127,25 @@ describe('estimateCostSeries', () => {
 describe('estimateCoutParCampagne', () => {
   const TARIFS: CategoryRates = { marketing: 0.1431, utility: 0.05, currency: 'EUR' };
   const ligne = (campaignId: string, nom: string, category: string | null, count: number, template: string | null = 'tpl'): VolumeCampagneRow =>
-    ({ campaignId, nom, template, category, count });
+    ({ campaignId, nom, template, canal: 'whatsapp', category, count, envois: count });
+
+  it('🔴 une campagne SANS RIEN DE FACTURABLE a sa ligne, à coût connu ; une campagne RCS, à coût vide (lot 4)', () => {
+    // Seules les campagnes à envoi de MODÈLE facturable apparaissaient : 2 sur 7 dans l'espace d'essai.
+    const scenario: VolumeCampagneRow = { campaignId: 'sc', nom: 'test4', template: null, canal: 'whatsapp', category: null, count: 0, envois: 3 };
+    const rcs: VolumeCampagneRow = { campaignId: 'rc', nom: 'gr sentis', template: null, canal: 'rcs', category: null, count: 0, envois: 1 };
+    const r = estimateCoutParCampagne([scenario, rcs, ligne('tp', 'Promo', 'marketing', 2)], TARIFS, new Map(), new Map([['sc', 1], ['rc', 1], ['tp', 1]]));
+    const par = new Map(r.lignes.map((l) => [l.campaignId, l]));
+    // La ligne vide de facturable ne compte pas comme un envoi « sans catégorie » : il n'y en a aucun.
+    expect(par.get('sc')).toMatchObject({ envoyes: 0, envois: 3, cout: 0, nonChiffrables: 0, sansCategorie: 0, coutParEngagement: 0 });
+    expect(par.get('rc')).toMatchObject({ envoyes: 0, envois: 1, cout: null, coutParEngagement: null });
+    expect(par.get('tp')).toMatchObject({ envoyes: 2, envois: 2, cout: 0.29 });
+  });
+
+  it('🔴 sans facturable mais avec des messages de SERVICE, le coût est celui du service', () => {
+    const scenario: VolumeCampagneRow = { campaignId: 'sc', nom: 'test4', template: null, canal: 'whatsapp', category: null, count: 0, envois: 1 };
+    const r = estimateCoutParCampagne([scenario], TARIFS, new Map(), new Map([['sc', 1]]), { parCampagne: new Map([['sc', 10]]), prixUnitaire: 0.01 });
+    expect(r.lignes[0]).toMatchObject({ cout: 0.1, coutParEngagement: 0.1 });
+  });
 
   it('coût = envois × tarif, additionné sur les catégories de la campagne', () => {
     const r = estimateCoutParCampagne(
@@ -252,7 +270,7 @@ describe('estimateCoutParCampagne', () => {
  * campagnes dont les gens reagissent plusieurs fois.
  */
 describe('le cout par ENGAGEMENT', () => {
-  const rows = [{ campaignId: 'c1', nom: 'Testjulien2', template: 'promo', category: 'marketing', count: 100 }];
+  const rows = [{ campaignId: 'c1', nom: 'Testjulien2', template: 'promo', canal: 'whatsapp', category: 'marketing', count: 100, envois: 100 }];
   const rates = { marketing: 0.05, utility: 0.01 };
 
   it('🔴 une campagne SANS clic mais AVEC des reponses a bien un cout par engagement', () => {
@@ -282,7 +300,7 @@ describe('le cout par ENGAGEMENT', () => {
   });
 
   it('sans cout chiffrable, pas de ratio non plus', () => {
-    const sansTarif = [{ campaignId: 'c1', nom: 'X', template: 'p', category: null, count: 10 }];
+    const sansTarif = [{ campaignId: 'c1', nom: 'X', template: 'p', canal: 'whatsapp', category: null, count: 10, envois: 10 }];
     const r = estimateCoutParCampagne(sansTarif as never, rates as never, new Map(), new Map([['c1', 5]]));
     expect(r.lignes[0]!.cout).toBeNull();
     expect(r.lignes[0]!.coutParEngagement).toBeNull();

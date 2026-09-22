@@ -43,6 +43,8 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
   const [ia, setIa] = useState<CoutIa | null | 'erreur'>(null);
   const [ouverte, setOuverte] = useState<string | null>(null);
   const [fiche, setFiche] = useState<{ id: string; nom: string } | null>(null);
+  // Les campagnes archivées, exclues par défaut : elles entraient dans le tableau sans le dire (lot 4).
+  const [archivees, setArchivees] = useState(false);
 
   useEffect(() => {
     let vivant = true;
@@ -53,9 +55,6 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
      * `.map` jette EN PLEIN RENDU. Ce n'est pas la carte qui tombe alors, c'est la PAGE, donc aussi la
      * colonne de droite qui n'a rien demandé. Chaque réponse est donc vérifiée avant d'entrer dans l'état.
      */
-    getCoutParCampagne(tenantId, range)
-      .then((d) => { if (vivant) setCampagnes(d && Array.isArray(d.lignes) ? d : 'erreur'); })
-      .catch(() => { if (vivant) setCampagnes('erreur'); });
     getCoutMessages(tenantId, range)
       .then((d) => { if (vivant) setMessages(d && typeof d.total === 'number' && d.service ? d : 'erreur'); })
       .catch(() => { if (vivant) setMessages('erreur'); });
@@ -64,6 +63,16 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
       .catch(() => { if (vivant) setIa('erreur'); });
     return () => { vivant = false; };
   }, [tenantId, range.from, range.to]);
+
+  // ⚠️ UN EFFET À PART : basculer les archivées ne relit que les campagnes, pas les deux autres lignes.
+  useEffect(() => {
+    let vivant = true;
+    setCampagnes(null);
+    getCoutParCampagne(tenantId, range, archivees)
+      .then((d) => { if (vivant) setCampagnes(d && Array.isArray(d.lignes) ? d : 'erreur'); })
+      .catch(() => { if (vivant) setCampagnes('erreur'); });
+    return () => { vivant = false; };
+  }, [tenantId, range.from, range.to, archivees]);
 
   /**
    * 🔴 CHAQUE LIGNE PORTE SA PROPRE DEVISE, ET LA PREMIERE VERSION NE LE FAISAIT PAS. Elle prenait celle de
@@ -104,7 +113,9 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
           onBascule={() => setOuverte((v) => (v === 'engagement' ? null : 'engagement'))}
           titre={t('Coût par engagement', 'Cost per engagement')}
           etat={campagnes === 'erreur' ? 'erreur' : campagnes === null ? 'charge' : 'pret'}
-          depliable={campagnes !== null && campagnes !== 'erreur' && campagnes.lignes.length > 0}
+          /* Dépliable dès que la liste est lue, même vide : sinon la bascule des archivées serait inatteignable
+             sur une période dont toutes les campagnes sont archivées. */
+          depliable={campagnes !== null && campagnes !== 'erreur'}
           valeur={moyen && moyen.valeur !== null ? fmtCost(moyen.valeur, locale, deviseCampagnes) : null}
           /* `null` et pas « 0 € » : un zéro se lirait « c'est gratuit », alors que la vérité est qu'aucune
              campagne de la période n'a à la fois un coût chiffrable et une personne engagée. */
@@ -112,6 +123,19 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
         >
           {moyen && campagnes !== null && campagnes !== 'erreur' && (
             <>
+              <label className="mb-2 flex w-fit cursor-pointer items-center gap-2 text-xs text-ink-600">
+                <input
+                  type="checkbox" data-testid="cout-archivees" checked={archivees}
+                  onChange={(e) => setArchivees(e.target.checked)}
+                />
+                {t('Inclure les campagnes archivées', 'Include archived campaigns')}
+              </label>
+              {campagnes.lignes.length === 0 && (
+                <p className="text-xs text-ink-400" data-testid="cout-aucune-campagne">
+                  {t('Aucune campagne n’a envoyé sur cette période.', 'No campaign sent over this period.')}
+                </p>
+              )}
+              {campagnes.lignes.length > 0 && (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[24rem] border-collapse">
                   <thead>
@@ -141,7 +165,7 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
                             {l.nom}
                           </button>
                         </td>
-                        <td className={`${TD} text-right tabular-nums`}>{fmtNum(l.envoyes, locale)}</td>
+                        <td className={`${TD} text-right tabular-nums`} data-testid={`cout-envoyes-${l.campaignId}`}>{fmtNum(l.envois ?? l.envoyes, locale)}</td>
                         <td className={`${TD} text-right tabular-nums`} data-testid={`cout-engages-${l.campaignId}`}>
                           {l.engagements === undefined || l.engagements === null
                             ? <Vide titre={t('Engagement non mesuré sur cette version.', 'Engagement not measured on this version.')} />
@@ -157,6 +181,7 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
                   </tbody>
                 </table>
               </div>
+              )}
               <p className="mt-2 text-xs text-ink-400" data-testid="cout-denominateur">
                 {/* 🔴 LE DENOMINATEUR REEL, DIT A L'ECRAN. Le chiffre du dessus n'est pas « la moyenne des
                     campagnes de la période » : les campagnes sans coût chiffrable ou sans personne engagée

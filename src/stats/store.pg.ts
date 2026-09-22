@@ -1136,9 +1136,20 @@ export class PgStatsStore {
    * campagne, et il n'y a pas de ligne « le reste » à laquelle les rattacher. Le graphe de coût, lui, les
    * porte, ce qui explique qu'il puisse totaliser davantage.
    */
-  async getVolumeParCampagne(tenantId: string, range: DateRange): Promise<VolumeCampagneRow[]> {
+  async getVolumeParCampagne(
+    tenantId: string,
+    range: DateRange,
+    /**
+     * Les campagnes ARCHIVÉES entrent-elles dans le tableau ? Non par défaut (lot 4 de la liste du 2026-09-23) :
+     * elles y entraient sans le dire. ⚠️ Le filtre s'applique AVANT le plafond : appliqué après, une archivée
+     * prendrait la place d'une campagne visible, puis disparaîtrait de l'écran.
+     */
+    opts: { inclureArchivees?: boolean } = {},
+  ): Promise<VolumeCampagneRow[]> {
     const { from, to } = range;
-    const res = await this.pool.query<{ campaign_id: string; nom: string; template: string | null; category: string | null; count: string }>(
+    const res = await this.pool.query<{
+      campaign_id: string; nom: string; template: string | null; canal: string; category: string | null; count: string; envois: string;
+    }>(
       `with ${BOUNDS_CTE},
        v as (
          select envois.campaign_id as campaign_id, envois.category as category, count(*)::int as n
@@ -1146,23 +1157,41 @@ export class PgStatsStore {
          where envois.campaign_id is not null
          group by 1, 2
        ),
+       -- 🔴 LES CAMPAGNES QUI ONT TOUCHÉ QUELQU'UN, FACTURABLE OU NON (lot 4). Seules celles qui avaient un envoi de
+       -- MODÈLE facturable apparaissaient : une campagne à scénario (texte dans la fenêtre de service), RCS, ou
+       -- envoyée à un numéro de test, disparaissait du tableau. Mesuré : 2 campagnes visibles sur 7.
+       e as (
+         select r.campaign_id as campaign_id, count(*)::int as n
+         from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
+         where c.tenant_id = $1 and r.status = 'sent'
+           and r.sent_at >= b.start_ts and r.sent_at < b.end_ts
+           and (r.delivery_status is null or r.delivery_status <> 'failed')
+         group by 1
+       ),
+       p as (
+         select campaign_id, sum(n)::int as facturables from v group by campaign_id
+         union all
+         select campaign_id, 0 from e where campaign_id not in (select campaign_id from v)
+       ),
        -- Les campagnes qui ont le PLUS envoye, plafonnees. Une de plus que le plafond : c'est ainsi que
        -- l'appelant sait qu'il tronque, et le dit. Le tri final se fait au COUT, que le SQL ne connait pas
        -- encore (il ne voit pas les tarifs Meta) : la ligne ecartee est donc la moins envoyee.
        garde as (
-         select campaign_id from v group by campaign_id
-         order by sum(n) desc, campaign_id asc limit $5
+         select p.campaign_id from p join campaigns c on c.id = p.campaign_id and c.tenant_id = $1
+         where ($6::boolean or c.archived_at is null)
+         order by p.facturables desc, p.campaign_id asc limit $5
        )
-       select v.campaign_id as campaign_id, c.name as nom, c.template_name as template,
-              v.category as category, v.n as count
-       from v
-       join garde g on g.campaign_id = v.campaign_id
-       join campaigns c on c.id = v.campaign_id and c.tenant_id = $1`,
-      [tenantId, from, to, TZ, PLAFOND_CAMPAGNES_SYNTHESE + 1],
+       select g.campaign_id as campaign_id, c.name as nom, c.template_name as template, c.channel as canal,
+              v.category as category, coalesce(v.n, 0) as count, coalesce(e.n, 0) as envois
+       from garde g
+       join campaigns c on c.id = g.campaign_id and c.tenant_id = $1
+       left join v on v.campaign_id = g.campaign_id
+       left join e on e.campaign_id = g.campaign_id`,
+      [tenantId, from, to, TZ, PLAFOND_CAMPAGNES_SYNTHESE + 1, opts.inclureArchivees === true],
     );
     return res.rows.map((r) => ({
-      campaignId: r.campaign_id, nom: r.nom, template: r.template,
-      category: r.category, count: Number(r.count),
+      campaignId: r.campaign_id, nom: r.nom, template: r.template, canal: r.canal,
+      category: r.category, count: Number(r.count), envois: Number(r.envois),
     }));
   }
 

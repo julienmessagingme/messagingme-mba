@@ -65,8 +65,8 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     }),
     getCoutParCampagne: async () => ({
       lignes: [
-        { campaignId: CAMP_A, nom: 'Promo ete', template: 'promo', envoyes: 10, cout: 1.43, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, clics: 4, coutParClic: 0.3575 },
-        { campaignId: CAMP_B, nom: 'Relance', template: null, envoyes: 5, cout: null, nonChiffrables: 5, sansCategorie: 5, sansTarif: 0, clics: null, coutParClic: null },
+        { campaignId: CAMP_A, nom: 'Promo ete', template: 'promo', envoyes: 10, envois: 10, cout: 1.43, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, clics: 4, coutParClic: 0.3575 },
+        { campaignId: CAMP_B, nom: 'Relance', template: null, envoyes: 5, envois: 5, cout: null, nonChiffrables: 5, sansCategorie: 5, sansTarif: 0, clics: null, coutParClic: null },
       ],
       currency: 'EUR',
       hasRates: true,
@@ -189,6 +189,18 @@ describe('stats route', () => {
     // absences par des zéros ferait mentir l'écran sans qu'aucune erreur ne se voie.
     expect(b.lignes[1]).toMatchObject({ cout: null, clics: null, coutParClic: null });
     expect(b.currency).toBe('EUR');
+    await a.close();
+  });
+
+  it('🔴 la bascule des archivées arrive au câblage, et son absence vaut « exclues » (lot 4)', async () => {
+    // Une flèche à deux paramètres est assignable à un contrat qui en déclare trois : c'est ce test, pas le
+    // compilateur, qui dit que la route TRANSMET la bascule.
+    const vus: Array<{ inclureArchivees: boolean }> = [];
+    const a = app({ stats: { getCoutParCampagne: async (_t, _r, opts) => { vus.push(opts); return { lignes: [], currency: null, hasRates: false, tronque: false }; } } });
+    await a.inject({ method: 'GET', url: '/tenants/t1/stats/cost/campaigns?days=30', ...h(adminTok) });
+    await a.inject({ method: 'GET', url: '/tenants/t1/stats/cost/campaigns?days=30&archivees=1', ...h(adminTok) });
+    await a.inject({ method: 'GET', url: '/tenants/t1/stats/cost/campaigns?days=30&archivees=oui', ...h(adminTok) });
+    expect(vus).toEqual([{ inclureArchivees: false }, { inclureArchivees: true }, { inclureArchivees: false }]);
     await a.close();
   });
 

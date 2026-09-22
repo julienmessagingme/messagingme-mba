@@ -129,8 +129,16 @@ export interface VolumeCampagneRow {
   nom: string;
   /** Le template de la campagne, `null` pour une campagne à scénario. C'est ce qui décide si un clic existe. */
   template: string | null;
+  /** Le canal de la campagne. Ce tableau ne chiffre que les tarifs Meta : une campagne RCS garde sa case vide. */
+  canal: string;
   category: string | null;
+  /**
+   * Envois FACTURABLES de cette catégorie. ⚠️ `0` (et `category` à `null`) sur la ligne unique d'une campagne qui
+   * a touché quelqu'un sans rien de facturable : elle a sa ligne quand même (lot 4 de la liste du 2026-09-23).
+   */
   count: number;
+  /** Personnes TOUCHÉES par la campagne sur la période, facturable ou non. Même valeur sur chaque ligne d'une campagne. */
+  envois: number;
 }
 
 /**
@@ -153,6 +161,11 @@ export interface LigneCoutCampagne {
   template: string | null;
   /** Envois facturables de la période, chiffrables ou non. */
   envoyes: number;
+  /**
+   * Personnes TOUCHÉES sur la période, facturable ou non : c'est ce que la colonne « Envoyés » affiche. Une
+   * campagne à scénario ou RCS n'a souvent aucun envoi facturable, et « 0 envoyé » se lirait « rien n'est parti ».
+   */
+  envois: number;
   /**
    * Coût ESTIMÉ (envois × tarif Meta de la catégorie). `null` quand AUCUN des envois de la campagne n'a pu
    * être chiffré : la case reste vide et le dit, plutôt que d'afficher un zéro qui se lirait « gratuit ».
@@ -267,23 +280,28 @@ export function estimateCoutParCampagne(
    * vu sa marge avalee en silence, sans erreur du compilateur (il etait optionnel) ni d aucun test.
    */
 ): CoutParCampagne {
-  const par = new Map<string, LigneCoutCampagne & { chiffres: number }>();
+  const par = new Map<string, LigneCoutCampagne & { chiffres: number; canal: string }>();
   for (const r of rows) {
     const ligne = par.get(r.campaignId) ?? {
-      campaignId: r.campaignId, nom: r.nom, template: r.template,
-      envoyes: 0, cout: 0, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, clics: null, coutParClic: null, chiffres: 0,
+      campaignId: r.campaignId, nom: r.nom, template: r.template, canal: r.canal,
+      envoyes: 0, envois: 0, cout: 0, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, clics: null, coutParClic: null, chiffres: 0,
     };
-    // ⚠️ MÊME PARTAGE DES DEUX CAUSES QUE `estimateCostSeries`, et pour la même raison qu'elles y sont
-    // partagées : les deux écrans du même onglet doivent nommer la même chose de la même façon.
-    const verdict = chiffrer(r.category, rates);
-    ligne.envoyes += r.count;
-    if ('refus' in verdict) {
-      if (verdict.refus === 'sansCategorie') ligne.sansCategorie += r.count; else ligne.sansTarif += r.count;
-      ligne.nonChiffrables += r.count;
-    } else {
-      ligne.chiffres += r.count;
-      // `rates` porte DEJA le prix de vente : la marge est posee une fois pour toutes par `prixFactures`.
-      ligne.cout = (ligne.cout ?? 0) + r.count * verdict.tarif;
+    ligne.envois = Math.max(ligne.envois, r.envois);
+    // 🔴 UNE CAMPAGNE SANS RIEN DE FACTURABLE A SA LIGNE (lot 4) : `count` à 0, aucune catégorie à juger. Sans
+    // cette garde, sa ligne compterait comme un envoi « sans catégorie » qui n'existe pas.
+    if (r.count > 0) {
+      // ⚠️ MÊME PARTAGE DES DEUX CAUSES QUE `estimateCostSeries`, et pour la même raison qu'elles y sont
+      // partagées : les deux écrans du même onglet doivent nommer la même chose de la même façon.
+      const verdict = chiffrer(r.category, rates);
+      ligne.envoyes += r.count;
+      if ('refus' in verdict) {
+        if (verdict.refus === 'sansCategorie') ligne.sansCategorie += r.count; else ligne.sansTarif += r.count;
+        ligne.nonChiffrables += r.count;
+      } else {
+        ligne.chiffres += r.count;
+        // `rates` porte DEJA le prix de vente : la marge est posee une fois pour toutes par `prixFactures`.
+        ligne.cout = (ligne.cout ?? 0) + r.count * verdict.tarif;
+      }
     }
     par.set(r.campaignId, ligne);
   }
@@ -301,7 +319,11 @@ export function estimateCoutParCampagne(
     const brut = (l.cout ?? 0) + (service ? services * service.prixUnitaire : 0);
     // Aucun envoi chiffré -> la case COÛT est vide, pas à zéro. Un zéro se lirait « cette campagne n'a rien
     // coûté », alors que la vérité est « on ne sait pas ce qu'elle a coûté ».
-    const cout = l.chiffres > 0 ? Math.round(brut * 100) / 100 : null;
+    // 🔴 SAUF QUAND IL N'Y AVAIT RIEN À CHIFFRER (lot 4) : une campagne WhatsApp sans aucun envoi facturable a
+    // un coût CONNU, celui de ses messages de service (souvent nul). Une campagne RCS, elle, garde sa case
+    // vide : ce tableau ne connaît que les tarifs Meta, et « 0 » y serait faux.
+    const rienAChiffrer = l.chiffres === 0 && l.nonChiffrables === 0 && l.canal === 'whatsapp';
+    const cout = l.chiffres > 0 || rienAChiffrer ? Math.round(brut * 100) / 100 : null;
     const n = clics.get(l.campaignId);
     const nbClics = n === undefined ? null : n;
     // Le ratio n'existe que si ses DEUX termes existent, et si le dénominateur n'est pas nul.
@@ -313,7 +335,7 @@ export function estimateCoutParCampagne(
       ? Math.round((cout / nbEngagements) * 10000) / 10000
       : null;
     return {
-      campaignId: l.campaignId, nom: l.nom, template: l.template, envoyes: l.envoyes, cout,
+      campaignId: l.campaignId, nom: l.nom, template: l.template, envoyes: l.envoyes, envois: l.envois, cout,
       nonChiffrables: l.nonChiffrables, sansCategorie: l.sansCategorie, sansTarif: l.sansTarif,
       clics: nbClics, coutParClic, engagements: nbEngagements, coutParEngagement,
     };
