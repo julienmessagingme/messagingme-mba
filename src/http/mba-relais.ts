@@ -6,7 +6,7 @@ import type { AppelConnecteur } from '../agent/resolvers/http';
 import type { SortieResolveur } from '../agent/executor';
 import { consommateurMba } from '../agent/consommateur';
 import { lireCibleMaison } from '../mba/outils-maison';
-import { executerOutilMaison, type DepsMaison, type IssueMaison } from '../mba/executer-maison';
+import { erreurDePanne, executerOutilMaison, type DepsMaison, type IssueMaison } from '../mba/executer-maison';
 import {
   ENTETE_CONTACT_META, CHEMIN_RELAIS, waIdDepuisEntete, formeEntete, lireValeursModele, texteErreur,
   corpsIllisible,
@@ -101,7 +101,7 @@ export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, gar
         // eslint-disable-next-line no-console
         console.error(`mba-relais: geste ${outil.name} en échec :`, err instanceof Error ? err.message : err);
         panne = true;
-        issue = { ok: false, erreur: 'l’action n’a pas pu être faite, réessayez plus tard' };
+        issue = { ok: false, erreur: erreurDePanne(cible) };
       }
       if (ligne !== null) {
         await deps.journal.clore({

@@ -48,7 +48,7 @@ import { adressesDestinataires, type SendEmailAction } from './engine';
 // que soit le chemin d'envoi. On importe la règle plutôt que d'en écrire une seconde qui divergera.
 import { suffixesPourDestinataire } from '../campaign/engine';
 import { creerRendreLeFil, creerPrendreLeFil, creerPrendreLeFilAvecUnRejeu } from '../inbox/controle-du-fil';
-import { destinataireAgentEvent, evenementHorsParcours } from '../mba/evenement';
+import { creerTransmettreHorsParcours } from '../mba/transmettre-hors-parcours';
 import { creerNumeroDeLEspace } from '../meta/numero-espace';
 
 /**
@@ -566,28 +566,15 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     await rendreLeFilMaintenant(tenant, waId);
   };
 
-  /**
-   * LA RÉPONSE « À CÔTÉ » PART CHEZ L'AGENT DE META (spec 2026-09-21-outils-maison-mba, § 5).
-   *
-   * 🔴 SEULEMENT SI LE FIL EST VRAIMENT À LUI (`mba` chez nous) : une conversation de TEST, un release refusé ou un
-   * marqueur en attente laissent un autre détenteur, et l'événement n'aurait personne pour y répondre. Le message
-   * transmis est la dernière saisie du contact, celle qui vient de faire sortir le parcours : elle est enregistrée
-   * AVANT l'avance du parcours (`processInbound` puis `processWorkflowAdvance`, `src/webhooks/handler.ts`).
-   * Best-effort : un échec est journalisé par l'exécuteur, et l'agent répondra au message suivant du client.
-   */
-  const transmettreHorsParcours = async (tenant: string, waId: string): Promise<void> => {
-    if ((await inboxStore.getControlOwner(tenant, waId)) !== 'mba') {
-      // eslint-disable-next-line no-console
-      console.log(`agent_event non envoyé pour ${waId} : le fil n’est pas à l’agent de Meta`);
-      return;
-    }
-    const pn = await numeroDeLEspace(tenant);
-    if (!pn) return;
-    const texte = await inboxStore.derniereSaisieDuContact(tenant, waId);
-    if (texte === null) return;
-    const client = await metaFactory.mbaClientForTenant(tenant);
-    await client.agentEvent(pn, destinataireAgentEvent(waId), evenementHorsParcours(texte), AbortSignal.timeout(10_000));
-  };
+  // La réponse « à côté » (spec 2026-09-21-outils-maison-mba, § 5) : les gardes vivent dans le module, testé.
+  const transmettreHorsParcours = creerTransmettreHorsParcours({
+    detenteur: (t, w) => inboxStore.getControlOwner(t, w),
+    numero: (t) => numeroDeLEspace(t),
+    corpsDuMessage: (t, id) => inboxStore.corpsDuMessage(t, id),
+    envoyer: async (t, pn, to, event) => (await metaFactory.mbaClientForTenant(t)).agentEvent(pn, to, event, AbortSignal.timeout(10_000)),
+    // eslint-disable-next-line no-console
+    journal: (ligne) => console.log(ligne),
+  });
 
   const workflowExecutor = new WorkflowExecutor({
     runs: runStore,

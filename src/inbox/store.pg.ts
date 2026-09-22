@@ -1504,6 +1504,21 @@ export class PgInboxStore implements InboxStore {
    * `direction = 'in'` et un corps non vide : un appui de bouton arrive sans texte, et l'envoyer comme
    * « dernière chose dite » serait faux.
    */
+  /**
+   * Le texte d'UN message entrant, par son identifiant Meta, dans cet espace. Lu par la réponse « à côté » : c'est
+   * CE message qu'elle transmet, pas la dernière saisie du contact (revue finale du 2026-09-22).
+   */
+  async corpsDuMessage(tenantId: string, messageId: string): Promise<string | null> {
+    const res = await this.pool.query<{ body: string | null }>(
+      `select m.body
+         from conversation_messages m
+         join conversations c on c.id = m.conversation_id
+        where c.tenant_id = $1 and m.meta_message_id = $2 and m.direction = 'in'`,
+      [tenantId, messageId],
+    );
+    return res.rows[0]?.body ?? null;
+  }
+
   async derniereSaisieDuContact(tenantId: string, waId: string): Promise<string | null> {
     const res = await this.pool.query<{ body: string }>(
       `select m.body

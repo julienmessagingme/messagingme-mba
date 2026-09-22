@@ -146,7 +146,8 @@ import { creerRendreLeFil, creerPrendreLeFil } from './inbox/controle-du-fil';
 import { consommateurAgent, consommateurMba } from './agent/consommateur';
 import { type OutilAPublier } from './mba/publication';
 import { outilsAPublier } from './mba/outils-a-publier';
-import { blocSeul, blocsProposables } from './mba/outils-maison';
+import { blocsProposables } from './mba/outils-maison';
+import { creerGestesEnvoi } from './mba/gestes-envoi';
 import { cleAJour, depsCleRelaisDepuis } from './mba/cle-relais';
 import { creerAppliquerGeste } from './mba/appliquer-publication';
 import { baseDuRelais } from './mba/relais';
@@ -2533,36 +2534,18 @@ async function main(): Promise<void> {
           // ne seraient pas d'accord sur ce qui existe.
           champExiste: async (t, champ) => (await fieldStore.list(t)).some((f) => f.key === champ),
           estBloque: (t, waId) => contactStore.isBlockedByWaId(t, waId),
-          /**
-           * 🔴 UN ÉCHEC APRÈS LA REPRISE DU FIL LE REND. `runFrom` reprend le fil (`ignoreHumanControl`) puis peut
-           * refuser (désabonné, envoi refusé) : il rend alors une raison SANS rendre la main, parce que ses autres
-           * appelants (l'Inbox) ont un opérateur. Ici personne : sans ce geste, le fil resterait à nous et l'agent
-           * de Meta muet. Si la reprise elle-même a échoué, le geste ne touche à rien (`only: ['app_workflow']`).
-           */
-          lancerScenario: async (t, waId, workflowId) => {
-            const ouverte = (await inboxStore.getWindowOpenByWaIds(t, [waId])).get(waId) === true;
-            const issue = await lancerScenarioPourContact(t, workflowId, waId, ouverte);
-            if (issue === true) return true;
-            await workflowRuntime.rendreLaMainApresParcours(t, waId);
-            return issue ?? 'ce scénario n’existe plus';
-          },
-          envoyerBloc: async (t, waId, { workflowId, code }) => {
-            const wf = await workflowStore.getById(workflowId, t);
-            if (!wf) return 'le scénario de ce bloc n’existe plus';
-            // Revérifié à CHAQUE appel : le scénario a pu changer depuis la création de l'outil.
-            const seul = blocSeul(wf.graph, code);
-            if (!seul.ok) return seul.raison;
-            const ouverte = (await inboxStore.getWindowOpenByWaIds(t, [waId])).get(waId) === true;
-            if (!seul.modele && !ouverte) return 'la fenêtre de 24 h est fermée : ce bloc ne peut pas partir';
-            const contactId = await contactStore.findIdByWaId(t, waId);
-            // Le graphe RÉDUIT au bloc : `runFrom` prend le fil, envoie, et rend la main à l'accusé (0149).
-            const issue = await workflowRuntime.executor.startFromNode(
-              t, workflowId, seul.graphe, { waId, contactId }, seul.noeudId, { ignoreHumanControl: true, emitEvents: false },
-            );
-            if (issue === true) return true;
-            await workflowRuntime.rendreLaMainApresParcours(t, waId);
-            return issue;
-          },
+          // Les deux gestes qui ENVOIENT : ils rendent le fil sur toute issue ratée, exception comprise
+          // (`src/mba/gestes-envoi.ts`, testé ; revue finale du 2026-09-22).
+          ...creerGestesEnvoi({
+            graphePublie: async (t, id) => (await workflowStore.getById(id, t))?.graph ?? null,
+            fenetreOuverte: async (t, waId) => (await inboxStore.getWindowOpenByWaIds(t, [waId])).get(waId) === true,
+            contactId: (t, waId) => contactStore.findIdByWaId(t, waId),
+            envoyerDepuisBloc: (t, workflowId, graphe, contact, noeudId) => workflowRuntime.executor.startFromNode(
+              t, workflowId, graphe, contact, noeudId, { ignoreHumanControl: true, emitEvents: false },
+            ),
+            lancerScenario: (t, workflowId, waId, ouverte) => lancerScenarioPourContact(t, workflowId, waId, ouverte),
+            rendreLaMain: (t, waId) => workflowRuntime.rendreLaMainApresParcours(t, waId),
+          }),
         },
       },
       contacts: {

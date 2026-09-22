@@ -403,12 +403,13 @@ export interface WorkflowExecutorDeps {
   /**
    * TRANSMET À L'AGENT DE META le message « à côté » du client, une fois le fil rendu (spec
    * 2026-09-21-outils-maison-mba, § 5) : sans lui, l'agent ne parlerait qu'au message SUIVANT du client, et la
-   * question qu'il vient de poser resterait sans réponse. Appelée SEULEMENT par la branche « il a écrit » d'`advance` :
-   * une fin normale n'a rien à transmettre, un bouton sans suite va à un humain.
+   * question qu'il vient de poser resterait sans réponse. Appelée SEULEMENT par la branche « il a écrit » d'`advance`,
+   * et seulement sur un vrai message WhatsApp : une fin normale n'a rien à transmettre, un bouton sans suite va à un
+   * humain, et une réaction ou un rapport RCS ne sont pas des messages. `messageId` désigne le message à transmettre.
    *
    * ABSENT -> rien n'est transmis. Best-effort, comme le release : un échec ne fait jamais échouer un parcours.
    */
-  transmettreHorsParcours?(tenantId: string, waId: string): Promise<void>;
+  transmettreHorsParcours?(tenantId: string, waId: string, messageId: string): Promise<void>;
   /**
    * Publie « ce tag vient d'être posé » pour les automations. Appelée UNIQUEMENT sur un démarrage unitaire
    * (réponse d'un contact, automation, test), jamais depuis une campagne : voir la note de `apply`.
@@ -1122,13 +1123,15 @@ export class WorkflowExecutor {
    * le fil à nous : l'agent reste muet sur ce fil, ce qui se voit dans l'Inbox, alors qu'une exception remontée
    * ferait échouer un envoi déjà parti.
    */
-  private async rendreLaMainAMba(tenantId: string, waId: string, opts: { transmettre?: boolean } = {}): Promise<void> {
+  private async rendreLaMainAMba(tenantId: string, waId: string, opts: { transmettre?: string } = {}): Promise<void> {
     if (!this.deps.releaseToMba) return;
     if (!(await this.mbaActif(tenantId))) return; // gate : aucun appel Meta si l'agent n'est pas allumé
     try {
       await this.deps.releaseToMba(tenantId, waId);
       // APRÈS le release, jamais avant : tant que nous tenons le fil, l'agent de Meta n'a pas la parole.
-      if (opts.transmettre === true && this.deps.transmettreHorsParcours) await this.deps.transmettreHorsParcours(tenantId, waId);
+      if (opts.transmettre !== undefined && this.deps.transmettreHorsParcours) {
+        await this.deps.transmettreHorsParcours(tenantId, waId, opts.transmettre);
+      }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(`release vers MBA ignoré pour ${waId}:`, err instanceof Error ? err.message : err);
@@ -1856,8 +1859,11 @@ export class WorkflowExecutor {
         console.error(`workflow ${run.workflowId}: le bouton « ${buttonPayload} » du bloc ${run.currentNode} ne mène nulle part, ${waId} a cliqué et n'a rien reçu`);
         if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null);
       } else {
-        // (a) : son message part aussi chez l'agent de Meta, qui y répond (réponse « à côté »).
-        await this.rendreLaMainAMba(tenantId, waId, { transmettre: true });
+        // (a) : son message part aussi chez l'agent de Meta, qui y répond (réponse « à côté »). 🔴 Seulement un
+        // VRAI message WhatsApp : cette branche reçoit aussi une réaction (sa charge porte le message visé) et un
+        // rapport RCS (`sent`/`unreachable`), qui ne sont pas des messages du client (revue finale du 2026-09-22).
+        const unMessage = buttonPayload === null && canalRetour === 'whatsapp';
+        await this.rendreLaMainAMba(tenantId, waId, unMessage ? { transmettre: messageId } : {});
       }
       return;
     }

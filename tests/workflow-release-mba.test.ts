@@ -44,7 +44,7 @@ function executeur(graph: WorkflowGraph, opts: { mbaActif?: boolean; run?: Recor
     escalateToHuman: async () => {},
     mbaActifPour: async (): Promise<boolean> => opts.mbaActif === true,
     releaseToMba: async (_t: string, waId: string): Promise<void> => { releases.push(waId); ordre.push(`release ${waId}`); },
-    transmettreHorsParcours: async (_t: string, waId: string): Promise<void> => { ordre.push(`transmis ${waId}`); },
+    transmettreHorsParcours: async (_t: string, waId: string, messageId: string): Promise<void> => { ordre.push(`transmis ${waId} ${messageId}`); },
   } as never);
   return { ex, releases, etats, run, ordre };
 }
@@ -167,10 +167,26 @@ describe('la réponse « à côté » est transmise à l’agent de Meta', () =>
     [['n1', 'n2', 'Oui']],
   );
 
-  it('🔴 réponse libre : le fil est rendu PUIS le message transmis', async () => {
+  it('🔴 réponse libre : le fil est rendu PUIS CE message transmis', async () => {
     const { ex, ordre } = executeur(question(), { mbaActif: true });
-    await ex.advance('t1', '33600000001', 'msg1', 'Vous êtes ouverts dimanche ?');
-    expect(ordre).toEqual(['release 33600000001', 'transmis 33600000001']);
+    // Un message tapé arrive SANS charge de bouton (`contentOf`, type `text`).
+    await ex.advance('t1', '33600000001', 'msg1', null);
+    expect(ordre).toEqual(['release 33600000001', 'transmis 33600000001 msg1']);
+  });
+
+  it('🔴 une RÉACTION n’est pas un message : le fil est rendu, rien n’est transmis', async () => {
+    // Sa charge porte l'identifiant du message visé, qui ne ressemble à aucun bouton (revue finale du 2026-09-22).
+    const { ex, ordre } = executeur(question(), { mbaActif: true });
+    await ex.advance('t1', '33600000001', 'msg1', 'wamid.VISE');
+    expect(ordre).toEqual(['release 33600000001']);
+  });
+
+  it('🔴 un rapport RCS n’est pas un message : le fil est rendu, rien n’est transmis', async () => {
+    // Un parcours sur le canal RCS, dont le dernier bloc n'a pas de suite : le rapport `sent` le termine.
+    const rcs = g([n('n1', 'rcs_message', { text: 'Bonjour' })]);
+    const { ex, ordre } = executeur(rcs, { mbaActif: true, run: { channel: 'rcs' } });
+    await ex.advance('t1', '33600000001', 'msg1', null, 'rcs');
+    expect(ordre).toEqual(['release 33600000001']);
   });
 
   it('🔴 un bouton sans suite va à un humain : RIEN n’est transmis', async () => {

@@ -1798,7 +1798,7 @@ côté » s'y ajoutent le 2026-09-22** (lots 3 et 4) ; leur essai réel en conve
   (« vous êtes ouverts dimanche ? »), le parcours s'arrête, la conversation revient à l'agent de Meta ET son
   message lui est transmis : il y répond aussitôt, au lieu d'attendre le message suivant du client. Rien n'est
   transmis sur une fin normale de parcours, ni quand le client tape un bouton qui ne mène nulle part (la
-  conversation part alors à un humain), ni sur une conversation de test.
+  conversation part alors à un humain), ni pour une simple réaction, ni sur une conversation de test.
 - ✅ **Enregistrer, c'est envoyer à Meta.** Créer, modifier ou supprimer un outil le porte chez Meta dans le même
   geste ; il n'y a plus de bouton « Envoyer » à retenir (c'est son oubli qui avait fait rater le premier essai
   du relais). Un envoi qui échoue ne défait pas l'enregistrement : la ligne reste « À envoyer ».

@@ -472,17 +472,22 @@ API, sans écran pour s'en défaire. Un outil MCP reste parce qu'il vient d'un i
   l'agent de Meta, envoie, et le lui rend à l'accusé (0149). Hors fenêtre de 24 h, seul un bloc fait de modèles part.
 - **Lancer un scénario** passe par `lancerScenarioPourContact` (`src/index.ts`), le MÊME chemin que le bouton de
   l'Inbox (fenêtre ouverte : `startInWindow`, fermée : `start`), et un scénario sans bloc publié est refusé.
-- 🔴 **UN ÉCHEC APRÈS LA REPRISE DU FIL LE REND** : `runFrom` reprend le fil puis peut refuser (désabonné, envoi
-  refusé) ; il rend alors une raison SANS rendre la main, parce que ses autres appelants ont un opérateur. Le
-  relais appelle donc `rendreLaMainApresParcours` (le geste de fin de parcours, nommé dans `wiring.ts` et rendu
-  par `buildWorkflowRuntime`). Si la reprise elle-même a échoué, ce geste ne touche à rien (`only: ['app_workflow']`).
+- 🔴 **TOUT ÉCHEC APRÈS LA REPRISE DU FIL LE REND, EXCEPTION COMPRISE** (`src/mba/gestes-envoi.ts`, testé) :
+  `runFrom` reprend le fil puis peut refuser (désabonné, envoi refusé), et rend alors une raison SANS rendre la
+  main, parce que ses autres appelants ont un opérateur ; il peut aussi LEVER (Meta refuse un modèle en pause,
+  coupure réseau), et l'exception traverse tout. Dans les deux cas le relais appelle `rendreLaMainApresParcours`
+  (le geste de fin de parcours, nommé dans `wiring.ts` et rendu par `buildWorkflowRuntime`). Si la reprise
+  elle-même a échoué, ce geste ne touche à rien (`only: ['app_workflow']`). Une PANNE d'envoi ne s'invite pas à
+  réessayer (`erreurDePanne`) : le message a pu partir avant l'exception.
   Un contact bloqué ne reçoit ni bloc ni scénario (`DepsMaison.estBloque`, lu AVANT tout envoi).
 - 🔴 **LA RÉPONSE « À CÔTÉ » PART CHEZ L'AGENT DE META** : dans la branche « il a écrit » d'`advance`, le fil est
-  rendu PUIS le message du client lui est transmis par `agent_event` (`transmettreHorsParcours`, `wiring.ts` ;
-  l'événement dans `src/mba/evenement.ts`, `payload` en chaîne JSON bornée à 4 096 caractères APRÈS
-  échappement, `to` en E.164 avec « + », mesuré). Seulement si le fil est vraiment à lui (`mba`) : une
-  conversation de test, un release refusé ou un marqueur en attente laissent un autre détenteur. Rien sur une
-  fin normale de parcours ni sur un bouton sans suite (qui part à un humain).
+  rendu PUIS CE message du client (lu par son identifiant, `corpsDuMessage`) lui est transmis par `agent_event`
+  (`src/mba/transmettre-hors-parcours.ts`, testé ; l'événement dans `src/mba/evenement.ts`, `payload` en chaîne
+  JSON bornée à 4 096 caractères APRÈS échappement, `to` en E.164 avec « + », mesuré). Seulement sur un VRAI
+  message WhatsApp : cette branche reçoit aussi une réaction (sa charge porte le message visé) et un rapport RCS,
+  qui ne se transmettent pas. Seulement si le fil est vraiment à lui (`mba`) : une conversation de test, un
+  release refusé ou un marqueur en attente laissent un autre détenteur. Rien sur une fin normale de parcours ni
+  sur un bouton sans suite (qui part à un humain), ni pour un message sans texte.
 - 🔴 **LE MARQUEUR DE 0149 NE SE POSE PLUS SUR UN ENVOI DÉJÀ TRAITÉ PAR META** (`demanderReleaseMba`) : il
   n'attend que si notre dernier envoi est le dernier message du fil (aucun ENTRANT plus récent), n'est pas acquitté
   (`conversation_messages.accuse_le`, posé au premier statut par `consommerReleaseMba`, 0162) et a moins de

@@ -64,3 +64,16 @@ export async function executerOutilMaison(
 
 /** Ce que l'agent de Meta lit quand le client est bloqué dans l'Inbox. */
 export const CONTACT_BLOQUE = 'Ce client est bloqué : aucun message ne lui est envoyé.';
+
+/**
+ * Ce que l'agent de Meta lit quand un geste a PLANTÉ (une exception, pas un refus).
+ *
+ * 🔴 PAS D'INVITATION À RÉESSAYER POUR UN ENVOI (revue finale du 2026-09-22) : l'exception a pu survenir APRÈS
+ * que le message soit parti (une panne de base au journal), et le relancer l'enverrait deux fois au client. Un
+ * tag ou un champ, eux, se reposent sans dégât.
+ */
+export function erreurDePanne(cible: CibleMaison): string {
+  return cible.handler === 'bloc_fixe' || cible.handler === 'scenario_fixe'
+    ? 'Le message n’a pas pu être confirmé : ne relance pas cet outil pour cette demande.'
+    : 'l’action n’a pas pu être faite, réessayez plus tard';
+}

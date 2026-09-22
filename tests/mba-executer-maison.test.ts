@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CHAMP_DISPARU, CONTACT_BLOQUE, executerOutilMaison, type DepsMaison } from '../src/mba/executer-maison';
+import { CHAMP_DISPARU, CONTACT_BLOQUE, erreurDePanne, executerOutilMaison, type DepsMaison } from '../src/mba/executer-maison';
 
 /**
  * Exécuter un geste de l'agent de Meta (spec 2026-09-21-outils-maison-mba, § 3).
@@ -92,5 +92,14 @@ describe('envoyer un bloc, lancer un scénario', () => {
     const f = faux(['ville'], { issue: 'la fenêtre de 24 h est fermée' });
     expect(await executerOutilMaison(f.deps, { tenantId: 't1', waId: 'w', cible: BLOC, corps: {} }))
       .toEqual({ ok: false, erreur: 'la fenêtre de 24 h est fermée' });
+  });
+});
+
+describe('une panne, dite à l’agent de Meta', () => {
+  it('🔴 un envoi en panne ne s’invite PAS à réessayer : le message est peut-être déjà parti', () => {
+    const WF = '11111111-1111-4111-8111-111111111111';
+    expect(erreurDePanne({ handler: 'bloc_fixe', workflowId: WF, code: `nod_abc_${'A'.repeat(26)}` })).toContain('ne relance pas');
+    expect(erreurDePanne({ handler: 'scenario_fixe', workflowId: WF })).toContain('ne relance pas');
+    expect(erreurDePanne({ handler: 'tag_fixe', tag: 'vip' })).toContain('réessayez');
   });
 });

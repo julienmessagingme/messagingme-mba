@@ -364,6 +364,22 @@ describe('un bloc et un scénario, par le relais', () => {
     expect(clos).toEqual([expect.objectContaining({ status: 'refuse', erreur: expect.stringContaining('24 h') })]);
   });
 
+  it('🔴 un envoi qui PLANTE ne s’invite pas à réessayer : le message est peut-être déjà parti', async () => {
+    const clos: Array<Record<string, unknown>> = [];
+    const { app } = avec([BLOC], {
+      maison: {
+        poserTag: async () => {}, ecrireChamp: async () => {}, champExiste: async () => true, estBloque: async () => false,
+        envoyerBloc: async () => { throw new Error('Meta API error (HTTP 400)'); }, lancerScenario: async () => true,
+      },
+      journal: { ouvrir: async () => 'l1', clore: async (e: Record<string, unknown>) => { clos.push(e); } } as unknown as JournalAppels,
+    });
+    const res = await poster(app, CLE_RELAIS, {}, '+33612345678', 'o5');
+    expect(res.statusCode).toBe(200);
+    expect(res.json().erreur).toContain('ne relance pas');
+    expect(res.json().erreur).not.toContain('réessayez');
+    expect(clos).toEqual([expect.objectContaining({ status: 'erreur_outil' })]);
+  });
+
   it('🔴 un contact bloqué ne reçoit rien', async () => {
     const envois: string[] = [];
     const { app } = avec([BLOC, SCENARIO], {
