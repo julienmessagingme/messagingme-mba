@@ -55,8 +55,10 @@ Créer dans Cloudflare `mba.messagingme.app` -> A `$VPS`, **Proxied** (orange).
 ## 2. Démarrer (une commande)
 
 > ⚠️ **Le dépôt est PUBLIC depuis le 2026-09-15** (repassé en public pour que GitHub Actions reste gratuit ; il
-> avait été privé du 2026-08-25 au 2026-09-15). Donc rien de sensible ne s'y écrit : les audits, les plans RSSI et
-> tout ce qui décrit une faiblesse ouverte vivent dans `docs/prive/`, non versionné (`.gitignore`). Le VPS pull
+> avait été privé du 2026-08-25 au 2026-09-15). Donc rien de sensible ne s'y écrit PLUS : les audits, les plans
+> RSSI et tout ce qui décrit une faiblesse ouverte vont désormais dans `docs/prive/`, non versionné (`.gitignore`).
+> ⚠️ Les audits committés AVANT cette règle restent suivis, donc publics (`AUDIT-*.md` à la racine, les rapports
+> de contradiction de `docs/`) : `.gitignore` le dit, c'était un choix. Le VPS pull
 > toujours via une **deploy key dédiée en lecture seule** (`~/.ssh/mba_deploy_key`) et l'alias `github.com-mba`
 > de `~/.ssh/config`, avec le remote `git@github.com-mba:julienmessagingme/messagingme-mba.git`.
 > Un `git pull` qui redemande un nom d'utilisateur GitHub signifie que le remote est repassé en HTTPS.

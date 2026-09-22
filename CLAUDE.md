@@ -1070,11 +1070,13 @@ première, interne à la seconde. Tout appel HTTP vers une adresse saisie par un
 par un `lookup` qui refuse l'intérieur : la socket s'ouvre sur ce qui a été vérifié. Le SMTP d'une boîte
 d'envoi, seul appel sortant qui n'est pas du HTTP, reçoit sa socket de nous (`getSocket`) : `ouvrirSocketPublique`
 applique la même garde et laisse à nodemailer le nom d'hôte pour TLS. Le même test d'inventaire exige ces
-branchements de chaque chemin, client MCP et SMTP compris. Chacun rend le MÊME message au refus à la
-connexion qu'à la vérification préalable (`estRefusAdresseInterne`) : c'est la même cause, vue plus tard. ⚠️ **`fetch` ET `Agent` viennent du MÊME paquet `undici`** : la
-production tourne en Node 22 (undici 6 embarqué), le poste en Node 24 ; donner un `Agent` d'une version au
-`fetch` intégré d'une autre est le piège. ⚠️ La vérification préalable RESTE : elle donne un refus lisible
-avant l'appel, là où un refus à la connexion ne remonte que comme une panne réseau.
+branchements de chaque chemin, client MCP et SMTP compris. Chaque chemin HTTP rend le MÊME message au refus à
+la connexion qu'à la vérification préalable (`estRefusAdresseInterne`) : c'est la même cause, vue plus tard.
+⚠️ **`fetch` ET `Agent` viennent du MÊME paquet `undici`** : la production tourne en Node 22 (undici 6 embarqué),
+le poste en Node 24 ; donner un `Agent` d'une version au `fetch` intégré d'une autre est le piège. ⚠️ Pour le
+HTTP, la vérification préalable RESTE : elle donne un refus lisible avant l'appel, là où un refus à la
+connexion ne remonte que comme une panne réseau. Le SMTP n'en a pas : son refus arrive à l'envoi, et le bouton
+« Tester » le traduit (`estRefusAdresseInterne`).
 
 🔴 **Un corps de réponse distante se lit EN FLUX** (`lireCorpsBorne`, `src/lib/corps-borne.ts`), jamais avec
 `res.text()` suivi d'un test de taille : le corps entier entrerait en mémoire avant d'être jeté, et `.length`

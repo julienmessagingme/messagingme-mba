@@ -917,7 +917,11 @@ vite qu'un déploiement de code. ⚠️ Ils sont LOCAUX AU PROCESS : le plafond 
   une clé sur `/v1`. APRÈS la lecture, le plafond par code EXISTANT (`WEBHOOK_IN_RATE_LIMIT_*`,
   `RCS_CALLBACK_PAR_MINUTE`). Le second se calcule sur le débit RCS d'un run de campagne, et ne tient que parce
   qu'un seul run tourne à la fois par espace ; des tests tiennent le débit, la concurrence par groupe et le
-  `groupId` de chaque enfilement. Les envois RCS d'un scénario n'y passent pas : la marge les absorbe.
+  `groupId` de chaque enfilement. Les envois RCS d'un scénario n'y passent pas : la marge les absorbe. Un code
+  déjà résolu prend aussi son plafond AVANT la base (un refus ne coûte plus de lecture), et un budget épuisé se
+  journalise au plus une fois par minute. ⚠️ `/r/:code` et `/m/:code` n'ont PAS ce frein, délibérément : leurs
+  codes réels sont très nombreux et cliqués en rafale par des contacts, un tel budget y refuserait des clics réels
+  après un redémarrage.
 - La règle qui les unit : un limiteur consulté AVANT la base sur une clé choisie par l'appelant, avec une table
   bornée, se remplit de clés inventées, et le vrai client, dont l'entrée expire à chaque fenêtre, revient comme
   une clé neuve et se fait refuser. La protection devient un moyen de couper un client.
@@ -947,12 +951,13 @@ deux résolutions distinctes : un DNS hostile pouvait répondre public à la pre
 qui refuse l'intérieur, et la socket s'ouvre sur ce qui a été vérifié. Le SMTP d'une boîte d'envoi, qui n'est
 pas du HTTP, reçoit sa socket de nous (option `getSocket` de nodemailer) : `ouvrirSocketPublique` applique la
 même garde, essaie les adresses vérifiées l'une après l'autre, et laisse à nodemailer le nom d'hôte pour TLS.
-Le même test d'inventaire exige ces branchements de chaque chemin, client MCP et SMTP compris, et chacun dit
-au refus à la connexion ce que dit la vérification préalable (redirection refusée comprise).
+Le même test d'inventaire exige ces branchements de chaque chemin, client MCP et SMTP compris, et chaque chemin
+HTTP dit au refus à la connexion ce que dit la vérification préalable (redirection refusée comprise).
 ⚠️ `fetch` et `Agent` viennent du MÊME paquet `undici` : la
 production tourne en Node 22 (undici 6 embarqué), le poste en Node 24, et mélanger les deux versions est le
-piège. ⚠️ La vérification préalable reste : elle rend un refus lisible, là où un refus à la connexion ne
-remonte que comme une panne réseau. ⚠️ Le pare-feu de l'hôte ne protège pas ce chemin : le trafic reste dans
+piège. ⚠️ Pour le HTTP, la vérification préalable reste : elle rend un refus lisible, là où un refus à la
+connexion ne remonte que comme une panne réseau. Le SMTP n'en a pas : son refus arrive à l'envoi, et le bouton
+« Tester » le traduit. ⚠️ Le pare-feu de l'hôte ne protège pas ce chemin : le trafic reste dans
 le réseau Docker, il ne traverse jamais l'interface publique.
 
 🔴 **Un corps de réponse distante se lit EN FLUX** (`lireCorpsBorne`), jamais avec `res.text()` suivi d'un test
