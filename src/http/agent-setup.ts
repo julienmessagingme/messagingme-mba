@@ -19,6 +19,7 @@ import { bornerPourModele, ENTRETIEN_VIERGE, type EntretienComplet, type Entreti
 import { scopeTenant, estUuid } from './scope';
 import { moisDe, resteDuBudget, MESSAGE_PLAFOND, type DepenseStore } from '../assistant/budget';
 import { microEurosDepuisDollars } from '../agent/devise';
+import { direPanneModele } from '../llm/errors';
 
 /**
  * La conversation de CONSTRUCTION d'un agent : elle propose, le client corrige.
@@ -363,18 +364,22 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
         return reply.code(422).send({ error: `${MESSAGE_PLAFOND} Les documents texte, PDF et Word passent quand même.` });
       }
       /**
-       * 🔴 422 ET PAS 502 : la raison est écrite pour l'administrateur, et Cloudflare remplace le corps de toute
-       * 5xx par sa propre page, donc l'écran n'affichait que « Erreur 502 » (documentation.md, « Aucun message
-       * destiné à l'utilisateur dans un 5xx »). Journalisée en plus : le corps peut se perdre, le log reste.
+       * 🔴 422 ET PAS 502 pour une panne du FOURNISSEUR : la raison est écrite pour l'administrateur, et
+       * Cloudflare remplace le corps de toute 5xx par sa propre page, donc l'écran n'affichait que « Erreur 502 »
+       * (documentation.md, « Aucun message destiné à l'utilisateur dans un 5xx »). Journalisée en plus : le
+       * corps peut se perdre, le log reste. Toute AUTRE erreur est la nôtre : relancée, elle sort en 500 opaque
+       * (`direPanneModele`), jamais avec son texte.
        *
        * ⚠️ LE `try` NE COUVRE QUE L'APPEL AU MODÈLE. Il couvrait aussi `noterDepense` : une écriture en base qui
        * lève aurait été annoncée « l'image n'a pas pu être lue », avec le texte de l'erreur SQL, alors que
-       * l'image avait été lue. Celle-là est NOTRE panne et n'a rien à dire au client : elle part en 500.
+       * l'image avait été lue.
        */
       let lu: Awaited<ReturnType<typeof lireImage>>;
       try {
         lu = await lireImage(deps, ctx.tenant, vision, parse.data.dataUrl, parse.data.nom);
       } catch (err) {
+        const raison = direPanneModele(err);
+        if (raison === null) throw err;
         // eslint-disable-next-line no-console
         console.error(JSON.stringify({
           lvl: 'error',
@@ -383,7 +388,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
           err: err instanceof Error ? err.message : String(err),
           stack: err instanceof Error ? err.stack : undefined,
         }));
-        return reply.code(422).send({ error: `l’image n’a pas pu être lue : ${err instanceof Error ? err.message : 'erreur inconnue'}` });
+        return reply.code(422).send({ error: `l’image n’a pas pu être lue : ${raison}` });
       }
       await noterDepense(deps, ctx.tenant, lu.coutDollars);
       texte = lu.texte;
@@ -466,12 +471,14 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
       });
     }
 
+    // Construits AVANT le `try` : une faute de programmation ici est NOTRE panne, pas une réponse du modèle.
+    const messages = construireMessages(ctx.etat, historique, avant);
     let reponse: ReponseChat;
     try {
       reponse = await deps.completer({
         tenantId: ctx.tenant,
         modele: deps.modele,
-        messages: construireMessages(ctx.etat, historique, avant),
+        messages,
         outils: [{
           name: OUTIL_PROPOSER,
           description: 'Rends ta réponse et, si tu en as une, ta proposition de réglage.',
@@ -484,6 +491,9 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
       // Panne du fournisseur, délai dépassé, clé refusée : rien de tout ça n'est un incident de la console,
       // et un 5xx verrait son corps remplacé par la page d'erreur de Cloudflare.
       // 🔴 D'OÙ 422. Ce commentaire le disait déjà, au-dessus d'un 502 : l'écran n'affichait que « Erreur 502 ».
+      // Et SEULEMENT pour ces trois-là : le reste est notre panne, relancée en 500 opaque (`direPanneModele`).
+      const raison = direPanneModele(err);
+      if (raison === null) throw err;
       // eslint-disable-next-line no-console
       console.error(JSON.stringify({
         lvl: 'error',
@@ -492,7 +502,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
         err: err instanceof Error ? err.message : String(err),
         stack: err instanceof Error ? err.stack : undefined,
       }));
-      return reply.code(422).send({ error: `l’assistant n’a pas répondu : ${err instanceof Error ? err.message : 'erreur inconnue'}` });
+      return reply.code(422).send({ error: `l’assistant n’a pas répondu : ${raison}` });
     }
 
     // ⚠️ AVANT toute sortie d'erreur : l'appel a eu lieu, donc il est payé, même si sa réponse est

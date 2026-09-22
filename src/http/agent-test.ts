@@ -4,6 +4,7 @@ import type { Guard } from '../auth/middleware';
 import type { ContexteTour, DecisionTracee, GatewayBrainDeps } from '../agent/brain.gateway';
 import { AgentIntrouvable, penserTrace } from '../agent/brain.gateway';
 import { TourInterrompu } from '../agent/brain';
+import { direPanneModele } from '../llm/errors';
 import { scopeTenant, estUuid } from './scope';
 import { ESSAIS_AFFICHES, type TestRunStore } from '../agent/test-runs';
 
@@ -149,10 +150,18 @@ export function registerAgentTest(app: FastifyInstance, deps: AgentTestRouteDeps
       // Un aller-retour déjà facturé se paie même si le suivant a échoué : le cerveau porte dans l'erreur ce
       // qu'il avait déjà dépensé, et un essai qui casse en cours de route n'a aucune raison d'être offert.
       if (err instanceof TourInterrompu) await debiterEssai(tenant, err.usage.coutMicroEur, deps);
-      // Panne du fournisseur, délai dépassé, clé refusée : rien de tout ça n'est un incident de la console,
-      // et Cloudflare remplacerait le corps d'une 5xx par sa page d'erreur.
-      // 🔴 D'OÙ 422. Ce commentaire le disait déjà, au-dessus d'un 502 : l'écran du bac à sable n'affichait
-      // que « Erreur 502 ». Journalisé ici : le corps peut se perdre en route, le log reste.
+      /**
+       * Panne du fournisseur, délai dépassé, clé refusée : rien de tout ça n'est un incident de la console, et
+       * Cloudflare remplacerait le corps d'une 5xx par sa page d'erreur. D'où 422, journalisé en plus.
+       *
+       * 🔴 MAIS CE `catch` ATTRAPE TOUT LE TOUR, PAS SEULEMENT LE MODÈLE : la lecture de l'agent en base, la clé
+       * de l'espace déchiffrée, les outils. Rendre `err.message` en 422 pour tout ça enverrait au navigateur le
+       * texte d'une panne de NOTRE base (relevé par la relecture du 2026-09-22). Seule une panne du fournisseur
+       * se dit, rédigée par `direPanneModele` ; le reste est relancé et sort en 500 opaque. La cause se lit
+       * SOUS `TourInterrompu`, qui enveloppe n'importe quelle erreur survenue après un premier appel payé.
+       */
+      const raison = direPanneModele(err instanceof TourInterrompu ? err.erreur : err);
+      if (raison === null) throw err;
       // eslint-disable-next-line no-console
       console.error(JSON.stringify({
         lvl: 'error',
@@ -162,7 +171,7 @@ export function registerAgentTest(app: FastifyInstance, deps: AgentTestRouteDeps
         err: err instanceof Error ? err.message : String(err),
         stack: err instanceof Error ? err.stack : undefined,
       }));
-      return reply.code(422).send({ error: `l’essai a échoué : ${err instanceof Error ? err.message : 'erreur inconnue'}` });
+      return reply.code(422).send({ error: `l’essai a échoué : ${raison}` });
     }
 
     await debiterEssai(tenant, decision.usage?.coutMicroEur ?? 0, deps);

@@ -12,6 +12,7 @@ import { ficheVide } from '../src/agent/fiche';
 import { ESSAIS_AFFICHES, RETENTION_ESSAIS_JOURS, type EssaiAEcrire, type EssaiAgent, type TestRunStore } from '../src/agent/test-runs';
 import { SANS_MCP } from './outils-mcp';
 import { AUCUN_GESTE, GESTE_MUET } from './gestes';
+import { LlmApiError } from '../src/llm/errors';
 
 /**
  * Le bac à sable : parler à son agent depuis la console.
@@ -174,30 +175,51 @@ describe('bac à sable de l’agent', () => {
     }
   });
 
-  it('🔴 une panne du fournisseur rend 422 avec SA raison, jamais un 5xx', async () => {
+  /** Un serveur dont le cerveau casse là où on le lui demande : au modèle, ou à la lecture de l'agent. */
+  const serveurQuiCasse = (cerveau: { completer?: () => Promise<never>; contexte?: () => Promise<never> }) => buildServer({
+    queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET },
+    agentTest: {
+      disponible: true,
+      cerveau: {
+        completer: cerveau.completer ?? (async () => { throw new Error('jamais appelé'); }),
+        contexte: cerveau.contexte ?? (async () => AGENT),
+        outils: { catalogue: { byName: async () => null, listActifs: async () => [] }, journal: { ouvrir: async () => '', clore: async () => {} }, resolveurs: {}, compterAppel: async () => {}, executerGeste: GESTE_MUET },
+      },
+    },
+  });
+
+  it('🔴 une panne du fournisseur rend 422 avec une raison RÉDIGÉE, jamais un 5xx', async () => {
     // Cloudflare remplace le corps d'une 5xx par sa page d'erreur : en 502, l'écran du bac à sable
-    // n'affichait que « Erreur 502 », pour une cause que le serveur connaissait.
+    // n'affichait que « Erreur 502 », pour une cause que le serveur connaissait. Le texte brut du fournisseur
+    // (anglais, écrit pour un développeur) reste dans le journal, pas à l'écran.
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { srv } = app();
-    const casse = buildServer({
-      queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET },
-      agentTest: {
-        disponible: true,
-        cerveau: {
-          completer: async () => { throw new Error('gateway indisponible'); },
-          contexte: async () => AGENT,
-          outils: { catalogue: { byName: async () => null, listActifs: async () => [] }, journal: { ouvrir: async () => '', clore: async () => {} }, resolveurs: {}, compterAppel: async () => {}, executerGeste: GESTE_MUET },
-        },
-      },
-    });
+    const casse = serveurQuiCasse({ completer: async () => { throw new LlmApiError(503, 'gateway indisponible', true); } });
     const res = await casse.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
     const lignes = spy.mock.calls.map((c) => String(c[0]));
     spy.mockRestore();
     expect(res.statusCode).toBe(422);
-    expect(res.json().error).toContain('gateway indisponible');
+    expect(res.json().error).toContain('indisponible pour le moment');
+    expect(res.json().error).not.toContain('gateway indisponible');
     // Journalisée en plus : le corps peut se perdre en route, le log reste.
     expect(lignes.find((l) => l.includes('agent_test_echec'))).toContain('gateway indisponible');
     expect((await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour })).statusCode).toBe(200);
+  });
+
+  /**
+   * 🔴 RELEVÉ PAR LA RELECTURE DU 2026-09-22. Le `catch` de cette route couvre TOUT le tour, lecture de l'agent
+   * en base comprise, et rendait `err.message` en 422 pour tout ce qu'il attrapait. Tant que c'était un 502,
+   * Cloudflare détruisait le corps ; en 422, le texte d'une panne de NOTRE base partait au navigateur.
+   */
+  it('🔴 une panne de NOTRE base sort en 500 opaque, sans son texte', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const casse = serveurQuiCasse({ contexte: async () => { throw new Error('password authentication failed for user "postgres.abcdef"'); } });
+    const res = await casse.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+    spy.mockRestore();
+    expect(res.statusCode).toBe(500);
+    expect(res.json().error).toBe('Internal Server Error');
+    expect(res.body).not.toContain('password');
+    expect(res.body).not.toContain('postgres');
   });
 
   it('un agent introuvable, ou un identifiant mal formé, rend 404', async () => {
@@ -251,39 +273,48 @@ describe('bac à sable de l’agent', () => {
       }
     });
 
-    it('un essai qui ÉCHOUE après avoir déjà payé débite quand même', async () => {
+    it('un essai qui ÉCHOUE après avoir déjà payé débite quand même, que la panne soit celle du fournisseur ou la nôtre', async () => {
       // Même règle qu'en production : le fournisseur facture chaque aller-retour, et un essai qui casse au
       // second n'a aucune raison d'être offert.
-      const cap = { debits: [] as number[] };
-      let appels = 0;
-      const casse = buildServer({
-        queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET },
-        agentTest: {
-          disponible: true,
-          solde: async () => 5_000_000,
-          debiter: async (_t: string, montant: number) => { cap.debits.push(montant); },
-          cerveau: {
-            completer: async () => {
-              appels += 1;
-              if (appels > 1) throw new Error('gateway indisponible');
-              return appelOutil('mba_poser_tag', '{"tag":"vip"}');
-            },
-            contexte: async () => AGENT,
-            outils: {
-              catalogue: { byName: async () => OUTIL, listActifs: async () => AGENT.outilsActifs },
-              journal: { ouvrir: async () => '', clore: async () => {} },
-              resolveurs: { mba: creerResolveurSimulation({ connaissance: { chercher: async () => [] } }) },
-              compterAppel: async () => {},
-              executerGeste: GESTE_MUET,
+      // 🔴 LES DEUX CAS, parce que la route les sépare : la panne du fournisseur sort en 422, la nôtre est
+      // relancée en 500 opaque. Le débit doit passer AVANT l'une comme l'autre ; la cause se lit SOUS
+      // `TourInterrompu`, qui enveloppe toute erreur survenue après un premier appel payé.
+      for (const { erreur, attendu } of [
+        { erreur: new LlmApiError(503, 'gateway indisponible', true), attendu: 422 },
+        { erreur: new Error('connexion au pool perdue'), attendu: 500 },
+      ]) {
+        const cap = { debits: [] as number[] };
+        let appels = 0;
+        const casse = buildServer({
+          queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET },
+          agentTest: {
+            disponible: true,
+            solde: async () => 5_000_000,
+            debiter: async (_t: string, montant: number) => { cap.debits.push(montant); },
+            cerveau: {
+              completer: async () => {
+                appels += 1;
+                if (appels > 1) throw erreur;
+                return appelOutil('mba_poser_tag', '{"tag":"vip"}');
+              },
+              contexte: async () => AGENT,
+              outils: {
+                catalogue: { byName: async () => OUTIL, listActifs: async () => AGENT.outilsActifs },
+                journal: { ouvrir: async () => '', clore: async () => {} },
+                resolveurs: { mba: creerResolveurSimulation({ connaissance: { chercher: async () => [] } }) },
+                compterAppel: async () => {},
+                executerGeste: GESTE_MUET,
+              },
             },
           },
-        },
-      });
-      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      const statut = (await casse.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour })).statusCode;
-      spy.mockRestore();
-      expect(statut).toBe(422);
-      expect(cap.debits).toEqual([10]);
+        });
+        const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const res = await casse.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+        spy.mockRestore();
+        expect(res.statusCode, erreur.message).toBe(attendu);
+        expect(res.body, erreur.message).not.toContain(erreur.message);
+        expect(cap.debits, erreur.message).toEqual([10]);
+      }
     });
 
     it('sans solde câblé, l’essai marche comme avant', async () => {

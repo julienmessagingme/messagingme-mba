@@ -16,6 +16,7 @@ import { octetsDepuisDataUrl } from '../rcs/image';
 import { moisDe, resteDuBudget, MESSAGE_PLAFOND, type DepenseStore } from '../assistant/budget';
 import { microEurosDepuisDollars } from '../agent/devise';
 import type { ChatMessage, GatewayChatClient, OutilExpose, ReponseChat } from '../agent/llm/chat-client';
+import { direPanneModele } from '../llm/errors';
 
 /**
  * L'ASSISTANT DU META BUSINESS AGENT : la conversation qui règle l'agent, et qui le MET À JOUR.
@@ -188,6 +189,9 @@ export function registerMbaAssistant(app: FastifyInstance, deps: MbaAssistantDep
       });
     } catch (err) {
       // 🔴 422 ET PAS 502, pour la raison écrite juste au-dessus : en 502, le client ne lisait que « Erreur 502 ».
+      // Et SEULEMENT pour une panne du fournisseur : le reste est notre panne, relancée en 500 opaque.
+      const raison = direPanneModele(err);
+      if (raison === null) throw err;
       // eslint-disable-next-line no-console
       console.error(JSON.stringify({
         lvl: 'error',
@@ -196,7 +200,7 @@ export function registerMbaAssistant(app: FastifyInstance, deps: MbaAssistantDep
         err: err instanceof Error ? err.message : String(err),
         stack: err instanceof Error ? err.stack : undefined,
       }));
-      return reply.code(422).send({ error: `l’assistant n’a pas répondu : ${err instanceof Error ? err.message : 'erreur inconnue'}` });
+      return reply.code(422).send({ error: `l’assistant n’a pas répondu : ${raison}` });
     }
 
     // ⚠️ LA DÉPENSE EST NOTÉE APRÈS L'APPEL, avec le coût RÉEL : une estimation avant serait fausse, et le

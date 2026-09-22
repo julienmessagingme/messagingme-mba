@@ -6,6 +6,7 @@ import Fastify from 'fastify';
 import { registerMbaAssistant, type MbaAssistantDeps } from '../src/http/mba-assistant';
 import { calculerCompletion, type EntreeCompletion } from '../src/mba/completion';
 import { ENTRETIEN_MBA_VIERGE, type EntretienMba } from '../src/mba/assistant/entretien-store';
+import { LlmApiError } from '../src/llm/errors';
 
 /**
  * LA ROUTE DE L'ASSISTANT DU MBA.
@@ -248,16 +249,27 @@ describe('le vrai câblage : la route EXISTE', () => {
  * corps de toute 5xx par sa page d'erreur : le client voyait un écran qui n'explique rien.
  */
 describe('quand le fournisseur de modèle lâche', () => {
-  it('🔴 422 avec un message, JAMAIS un 5xx dont Cloudflare détruirait le corps', async () => {
+  it('🔴 422 avec un message RÉDIGÉ, JAMAIS un 5xx dont Cloudflare détruirait le corps', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const m = monter({ completer: async () => { throw new Error('upstream 503'); } });
+    const m = monter({ completer: async () => { throw new LlmApiError(503, 'upstream 503', true); } });
     const r = await post(m.app, '/tenants/t1/mba/assistant', { message: 'bonjour' });
     const lignes = spy.mock.calls.map((c) => String(c[0]));
     spy.mockRestore();
     expect(r.statusCode).toBe(422);
-    expect(r.json().error).toMatch(/n’a pas répondu/);
+    expect(r.json().error).toMatch(/n’a pas répondu : le fournisseur du modèle est indisponible/);
+    expect(r.json().error).not.toContain('upstream 503');
     // Journalisé en plus : le corps peut se perdre en route, le log reste.
     expect(lignes.find((l) => l.includes('mba_assistant_tour_echec'))).toContain('upstream 503');
+  });
+
+  it('🔴 une erreur qui n’est PAS celle du fournisseur est RELANCÉE, pas dite en 422', async () => {
+    // ⚠️ Ce montage n'a pas le gestionnaire global de `buildServer`, qui rend le 500 opaque en production :
+    // on ne prouve ici que la relance. L'opacité est prouvée par les suites montées sur `buildServer`
+    // (`tests/http-agent-setup.test.ts`, `tests/http-agent-test.test.ts`).
+    const m = monter({ completer: async () => { throw new TypeError('Cannot read properties of undefined'); } });
+    const r = await post(m.app, '/tenants/t1/mba/assistant', { message: 'bonjour' });
+    expect(r.statusCode).toBe(500);
+    expect(m.journal.ecrits).toHaveLength(0);
   });
 
   it('🔴 et le fil n’est PAS écrit : un tour qui n’a pas eu lieu ne laisse rien', async () => {

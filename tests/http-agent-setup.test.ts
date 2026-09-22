@@ -9,6 +9,7 @@ import { OUTIL_PROPOSER } from '../src/agent/setup/proposition';
 import { AGENDA } from '../src/agent/setup/couverture';
 import type { EntretienComplet, EntretienStore } from '../src/agent/setup/entretien-store';
 import { ficheVide } from '../src/agent/fiche';
+import { LlmApiError } from '../src/llm/errors';
 
 /**
  * La route de la conversation de construction.
@@ -577,7 +578,7 @@ describe('conversation de construction', () => {
 
   it('🔴 un tour qui échoue n’écrit RIEN : l’entretien ne garde pas une question jamais posée', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const { entretiens, srv } = app({ reponse: new Error('gateway indisponible') });
+    const { entretiens, srv } = app({ reponse: new LlmApiError(503, 'gateway indisponible', true) });
     const res = await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
     spy.mockRestore();
     expect(res.statusCode).toBe(422);
@@ -589,15 +590,29 @@ describe('conversation de construction', () => {
    * n'affichait que « Erreur 502 » pour une cause que le serveur connaissait (documentation.md, « Aucun
    * message destiné à l'utilisateur dans un 5xx »). Et la raison est JOURNALISÉE : le corps peut se perdre.
    */
-  it('🔴 une panne du fournisseur rend 422 avec SA raison, et laisse une trace serveur', async () => {
+  it('🔴 une panne du fournisseur rend 422 avec une raison RÉDIGÉE, et laisse une trace serveur', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const res = await app({ reponse: new Error('gateway indisponible') }).srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+    const res = await app({ reponse: new LlmApiError(503, 'gateway indisponible', true) }).srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
     const lignes = spy.mock.calls.map((c) => String(c[0]));
     spy.mockRestore();
     expect(res.statusCode).toBe(422);
-    expect(res.json().error).toContain('gateway indisponible');
+    expect(res.json().error).toContain('indisponible pour le moment');
+    // Le texte brut du fournisseur (anglais, écrit pour un développeur) reste dans le journal.
+    expect(res.json().error).not.toContain('gateway indisponible');
     const trace = lignes.find((l) => l.includes('agent_setup_tour_echec'));
     expect(trace).toContain('gateway indisponible');
+  });
+
+  it('🔴 une erreur qui n’est PAS celle du fournisseur sort en 500 opaque, sans son texte', async () => {
+    // C'est notre panne : la dire en 422 enverrait son texte au navigateur (relecture du 2026-09-22).
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { entretiens, srv } = app({ reponse: new Error('password authentication failed for user "postgres.abcdef"') });
+    const res = await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+    spy.mockRestore();
+    expect(res.statusCode).toBe(500);
+    expect(res.json().error).toBe('Internal Server Error');
+    expect(res.body).not.toContain('password');
+    expect(entretiens.ecrits).toEqual([]);
   });
 
   it('🔴 sans clé, sans modèle ou sans mémoire d’entretien, la route rend 503 et n’appelle RIEN', async () => {
@@ -732,21 +747,35 @@ describe('conversation de construction', () => {
       expect(doc.statusCode).toBe(201);
     });
 
-    it('🔴 une image que le modèle ne lit pas rend 422 avec SA raison, et rien n’est écrit', async () => {
+    it('🔴 une image que le fournisseur refuse rend 422 avec une raison RÉDIGÉE, et rien n’est écrit', async () => {
       // En 502, Cloudflare remplaçait le corps par sa page : l'administrateur lisait « Erreur 502 ».
       const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
       const fiches: Array<{ titre: string; corps: string }> = [];
       const png = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]).toString('base64')}`;
-      const res = await app({ fiches, reponse: new Error('vision indisponible') }).srv.inject({
+      const res = await app({ fiches, reponse: new LlmApiError(400, 'image_url is not supported', false) }).srv.inject({
         method: 'POST', url: urlPiece('t1'), ...h(adminTok), payload: { nom: 'photo', dataUrl: png },
       });
       const lignes = spy.mock.calls.map((c) => String(c[0]));
       spy.mockRestore();
       expect(res.statusCode).toBe(422);
       expect(res.json().error).toContain('l’image n’a pas pu être lue');
-      expect(res.json().error).toContain('vision indisponible');
+      expect(res.json().error).toContain('HTTP 400');
+      expect(res.json().error).not.toContain('image_url is not supported');
       expect(fiches).toEqual([]);
-      expect(lignes.find((l) => l.includes('agent_setup_image_echec'))).toContain('vision indisponible');
+      expect(lignes.find((l) => l.includes('agent_setup_image_echec'))).toContain('image_url is not supported');
+    });
+
+    it('🔴 une lecture d’image qui casse de NOTRE fait sort en 500 opaque, sans son texte', async () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const fiches: Array<{ titre: string; corps: string }> = [];
+      const png = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]).toString('base64')}`;
+      const res = await app({ fiches, reponse: new TypeError('Cannot read properties of undefined (reading \'cle\')') }).srv.inject({
+        method: 'POST', url: urlPiece('t1'), ...h(adminTok), payload: { nom: 'photo', dataUrl: png },
+      });
+      spy.mockRestore();
+      expect(res.statusCode).toBe(500);
+      expect(res.body).not.toContain('Cannot read');
+      expect(fiches).toEqual([]);
     });
 
     it('⚠️ une dépense qui ne s’écrit pas n’est PAS annoncée comme une image illisible', async () => {

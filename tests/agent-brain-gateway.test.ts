@@ -363,7 +363,7 @@ describe('penserTrace', () => {
 
   it('un agent introuvable LÈVE : ce n’est pas un cas métier', async () => {
     const { d } = deps([texte('x')]);
-    // Une erreur TYPÉE : c'est elle que la route reconnaît pour rendre 404 plutôt qu'un 502.
+    // Une erreur TYPÉE : c'est elle que la route reconnaît pour rendre 404 plutôt qu'un 422.
     await expect(penserTrace(entree(), TOUR, { ...d, contexte: async () => null })).rejects.toBeInstanceOf(AgentIntrouvable);
   });
 

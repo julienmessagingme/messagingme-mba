@@ -38,7 +38,7 @@ import { microEurosDepuisDollars } from './devise';
  *
  * Une ERREUR TYPÉE et non un message à reconnaître : c'est l'idiome du dépôt (`FicheAgentPerimee`,
  * `LabelAgentDejaPris`, `NomOutilDejaPris`), et il évite deux choses d'un coup. Un appelant qui devrait
- * relire l'agent juste pour distinguer un 404 d'un 502 ferait une requête de plus par essai, et un appelant
+ * relire l'agent juste pour distinguer un 404 d'un 422 ferait une requête de plus par essai, et un appelant
  * qui reconnaîtrait le message verrait sa distinction cassée en silence au premier refactor de ce texte.
  */
 export class AgentIntrouvable extends Error {
