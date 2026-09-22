@@ -1,5 +1,6 @@
 /**
- * Le CORPS et les PARAMÈTRES D'URL d'un appel de connecteur, construits à partir de gabarits à variables.
+ * Le CORPS, les PARAMÈTRES D'URL et les EN-TÊTES d'un appel de connecteur, construits à partir de gabarits à
+ * variables (le CHEMIN, lui, se remplit dans `http-cible.ts`).
  *
  * 🔴 CE QUI MANQUAIT, ET POURQUOI C'ÉTAIT BLOQUANT. Jusqu'ici un connecteur ne savait remplir qu'un gabarit
  * de CHEMIN (`/commandes/{numero}`). Un `POST` partait donc avec un corps VIDE, ce qui ne sert à rien : un
@@ -291,6 +292,12 @@ export function assemblerAppel(input: {
       return x === null || x === undefined ? '' : String(x);
     });
     if (/[\r\n]/.test(valeur)) return { ok: false, raison: `l’en-tête « ${e.nom.trim()} » contiendrait un retour à la ligne : il n’est pas envoyé` };
+    // 🔴 ET TOUT CE QU'UN EN-TÊTE NE PEUT PAS PORTER (revue du 2026-09-23) : `fetch` lève sur un caractère au-delà
+    // de 0xFF (l'apostrophe ’, « œ », un emoji de nom de profil) ou de contrôle. Levée à l'appel, l'erreur passait
+    // pour une panne réseau : la SOURCE notée « injoignable », et le modèle disant que le système est indisponible.
+    if (/[^\t\x20-\x7e\x80-\xff]/.test(valeur)) {
+      return { ok: false, raison: `l’en-tête « ${e.nom.trim()} » contiendrait un caractère qu’un en-tête ne peut pas porter (apostrophe typographique, emoji…) : il n’est pas envoyé` };
+    }
     // Vide après substitution : omis, comme un paramètre d'URL. Un en-tête vide fait répondre 400 à certaines API.
     if (valeur !== '') entetes[nom] = valeur;
   }
@@ -370,6 +377,7 @@ export function variablesUtilisees(
   for (const e of entetes ?? []) balayer(e.valeur);
   // Le CHEMIN admet `{{nom}}` ET `{nom}` : la même expression que la substitution (`http-cible.ts`), pour que la
   // liste annoncée ne diverge jamais de ce qui est réellement remplacé.
+  VARIABLE_DE_CHEMIN.lastIndex = 0; // `matchAll` recopie le `lastIndex` de l'expression partagée
   for (const m of (chemin ?? '').matchAll(VARIABLE_DE_CHEMIN)) vues.add((m[1] ?? m[2])!);
   return [...vues].sort();
 }

@@ -51,20 +51,26 @@ function segments(chemin: string): string[] {
 }
 
 /**
+ * `{{ nom }}` (noms à points et tirets, comme dans le corps) ou `{nom}`. Voir l'étape 2 de `construireCible`.
+ * ⚠️ Expression `/g` PARTAGÉE (`requete-http.ts` l'inventorie) : `replace` et `matchAll` s'en accommodent, un
+ * `.test()` ou un `.exec()` laisserait un `lastIndex` qui fausserait l'appelant suivant.
+ */
+export const VARIABLE_DE_CHEMIN = /\{\{\s*([\w.-]+)\s*\}\}|\{([a-zA-Z0-9_]+)\}/g;
+
+/**
  * Construit l'URL finale, ou refuse en le disant.
  *
  * QUATRE GARDES, dans cet ordre, et aucune n'est facultative :
  *  1. l'adresse de base est HTTPS et passe `urlRecuperable` (pas d'hôte interne, pas de littéral privé) ;
- *  2. chaque `{param}` est remplacé par une valeur ENCODÉE : sans ça, une valeur contenant `/` change le
- *     chemin, et une valeur contenant `?` ajoute des paramètres de requête que personne n'a prévus ;
+ *  2. chaque `{{param}}` ou `{param}` est remplacé par une valeur ENCODÉE : sans ça, une valeur contenant `/`
+ *     change le chemin, et une valeur contenant `?` ajoute des paramètres de requête que personne n'a prévus.
+ *     Une valeur `.` ou `..` est REFUSÉE : l'encodage laisse passer les points, et `new URL` résout ces
+ *     segments, donc `/commandes/{{ref}}` avec `ref = '.'` appelait `/commandes/`, le trou de la garde 4 ;
  *  3. l'URL résultante reste SOUS l'adresse de base, même origine ET même préfixe de segments : c'est ce qui
  *     survit à un `..` du GABARIT, écrit par l'administrateur et donc jamais encodé ;
  *  4. un gabarit qui référence un paramètre absent est un REFUS, jamais un chemin à trou : `/commandes/`
  *     appellerait la liste ENTIÈRE des commandes du client, et l'agent la lirait.
  */
-/** `{{ nom }}` (noms à points et tirets, comme dans le corps) ou `{nom}`. Voir l'étape 2 de `construireCible`. */
-export const VARIABLE_DE_CHEMIN = /\{\{\s*([\w.-]+)\s*\}\}|\{([a-zA-Z0-9_]+)\}/g;
-
 export function construireCible(input: {
   baseUrl: string;
   binding: { methode: string; chemin: string };
@@ -94,13 +100,17 @@ export function construireCible(input: {
   // lue : dans `/users/{{id}}`, l'accolade intérieure était remplacée et l'extérieure partait telle quelle,
   // donc l'appel visait `/users/%7B123%7D`. La forme double se lit EN PREMIER, sinon la simple la mangerait.
   let manquant: string | null = null;
+  let pointe: string | null = null;
   const chemin = String(binding.chemin ?? '').trim().replace(VARIABLE_DE_CHEMIN, (_m, double: string | undefined, simple: string | undefined) => {
     const nom = (double ?? simple)!;
     const v = valeurDeChemin(args[nom]);
     if (v === null) { manquant = nom; return ''; }
+    // 🔴 `.` et `..` : un segment que `new URL` RÉSOUT (revue du 2026-09-23). La valeur vient du modèle.
+    if (v === '.' || v === '..') { pointe = nom; return ''; }
     return encodeURIComponent(v);
   });
   if (manquant !== null) return { ok: false, raison: `paramètre « ${manquant} » manquant` };
+  if (pointe !== null) return { ok: false, raison: `paramètre « ${pointe} » refusé : « . » et « .. » déplaceraient l’appel dans le chemin` };
   if (chemin === '') return { ok: false, raison: 'chemin vide' };
   // Un gabarit qui RESSEMBLE à une adresse (schéma explicite, ou `//hote` relatif au protocole) est refusé
   // plutôt que rattaché sous la base. Le rattacher en silence transformerait `//evil.test/x` en segment de
@@ -152,7 +162,10 @@ export function enTetesAuthSource(source: {
 }): Record<string, string> {
   const headers: Record<string, string> = { accept: 'application/json' };
   if (source.authKind === 'bearer' && source.authSecret) headers.authorization = `Bearer ${source.authSecret}`;
-  if (source.authKind === 'header' && source.authSecret && source.authHeaderName) headers[source.authHeaderName] = source.authSecret;
+  // 🔴 EN MINUSCULES, comme `assemblerAppel` range ceux de la requête (revue du 2026-09-23). Sinon un en-tête de
+  // requête `x-api-key` et celui de la source `X-Api-Key` sont deux clés : le secret ne l'ÉCRASE pas, `Headers`
+  // les FUSIONNE (« valeur, secret »), et la première moitié peut venir du modèle.
+  if (source.authKind === 'header' && source.authSecret && source.authHeaderName) headers[source.authHeaderName.toLowerCase()] = source.authSecret;
   return headers;
 }
 

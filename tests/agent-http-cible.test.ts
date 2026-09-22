@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { construireCible, type CibleConstruite } from '../src/agent/http-cible';
+import { construireCible, enTetesAuthSource, type CibleConstruite } from '../src/agent/http-cible';
 
 /**
  * LA GARDE D'URL D'UN CONNECTEUR. C'est ici que le lot L2 se joue.
@@ -51,6 +51,20 @@ describe('construireCible : le gabarit de chemin', () => {
     expect(url(pointe)).toBe('https://api.client.fr/v1/c/A');
     const manquant = construireCible({ baseUrl: BASE, binding: { methode: 'GET', chemin: '/users/{{id}}' }, args: {} });
     expect(manquant).toEqual({ ok: false, raison: 'paramètre « id » manquant' });
+  });
+
+  it('🔴 une valeur « . » ou « .. » est REFUSÉE, sous les deux formes (revue du 2026-09-23)', () => {
+    // L'encodage laisse passer les points et `new URL` résout ces segments : `/commandes/{{ref}}` avec `ref = '.'`
+    // appelait `/commandes/`, la liste ENTIÈRE que la garde 4 prétend empêcher. La valeur vient du modèle.
+    for (const chemin of ['/commandes/{{ref}}', '/commandes/{ref}', '/clients/{{ref}}/commandes']) {
+      for (const ref of ['.', '..']) {
+        const r = construireCible({ baseUrl: BASE, binding: { methode: 'GET', chemin }, args: { ref } });
+        expect(r, `${chemin} ${ref}`).toEqual({ ok: false, raison: 'paramètre « ref » refusé : « . » et « .. » déplaceraient l’appel dans le chemin' });
+      }
+    }
+    // Ce qui n'est pas un segment « point » passe, encodé.
+    const r = construireCible({ baseUrl: BASE, binding: { methode: 'GET', chemin: '/commandes/{{ref}}' }, args: { ref: '...' } });
+    expect(url(r)).toBe('https://api.client.fr/v1/commandes/...');
   });
 
   it('remplit les paramètres et rend l’URL finale', () => {
@@ -133,5 +147,16 @@ describe('risqueSelonMethode', () => {
     expect(risqueAuMoins('write', 'irreversible')).toBe(true);
     expect(risqueAuMoins('write', 'write')).toBe(true);
     expect(risqueAuMoins('write', 'read')).toBe(false);
+  });
+});
+
+describe('enTetesAuthSource', () => {
+  it('🔴 le nom de l’en-tête du secret est en MINUSCULES, comme ceux de la requête (revue du 2026-09-23)', () => {
+    // Sinon `x-api-key` (requête) et `X-Api-Key` (source) sont deux clés : le secret n'écrase pas la valeur de
+    // la requête, `Headers` les FUSIONNE, et la première moitié peut venir du modèle.
+    const h = enTetesAuthSource({ authKind: 'header', authSecret: 'S', authHeaderName: 'X-Api-Key' });
+    expect(h).toEqual({ accept: 'application/json', 'x-api-key': 'S' });
+    const fusion = new Headers({ ...{ 'x-api-key': 'modele' }, ...h });
+    expect(fusion.get('x-api-key')).toBe('S');
   });
 });

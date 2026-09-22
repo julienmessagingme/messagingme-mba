@@ -98,6 +98,8 @@ describe('requêtes : déclarer', () => {
       corps({ corps: { mode: 'json', gabarit: '{"v": "{{ville}}"}' } }),
       corps({ parametres: [{ cle: 'q', valeur: '{{ville}}' }] }),
       corps({ chemin: '/commandes/{ref}/{ville}' }),
+      // Les EN-TÊTES aussi (revue du 2026-09-23) : sans eux dans l'inventaire, seul le test unitaire le voyait.
+      corps({ entetes: [{ nom: 'X-Ville', valeur: '{{ville}}' }] }),
     ]) {
       const res = await srv.inject({ method: 'POST', url: base(), ...h(adminTok), payload: p });
       expect(res.statusCode, JSON.stringify(p)).toBe(400);
@@ -406,6 +408,18 @@ describe('requêtes : le bouton Test', () => {
     expect(appels).toBe(0);
     // Et le message ne décrit pas notre réseau.
     expect(JSON.stringify(res.json())).not.toMatch(/172\.|169\.254|docker|localhost/i);
+  });
+
+  it('🔴 les en-têtes PARTIS sont rendus, variables substituées, sans ceux de la source (revue du 2026-09-23)', async () => {
+    // C'est ce qui rend l'essai réel du lot faisable : sans eux, rien ne montrait ce qu'une variable avait produit
+    // dans un en-tête.
+    const { srv } = app({
+      entetes: [{ nom: 'X-Ref', valeur: 'ref-{{ref}}' }],
+    }, reponse('{"a":1}'));
+    const res = await srv.inject({ method: 'POST', url: `${base()}/${RQ}/test`, ...h(adminTok), payload: {} });
+    const envoye = res.json().envoye;
+    expect(envoye.entetes['x-ref']).toBe('ref-CMD-1');
+    expect(envoye.entetes).not.toHaveProperty('authorization');
   });
 
   it('🔴 le secret de la source n’apparaît nulle part dans la réponse du test', async () => {

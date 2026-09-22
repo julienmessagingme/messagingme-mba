@@ -236,6 +236,26 @@ describe('assemblage de l’appel complet', () => {
     expect((r as { raison: string }).raison).toContain('X-Note');
   });
 
+  it('🔴 un caractère qu’un en-tête ne peut pas porter est refusé LISIBLEMENT, pas levé par fetch (revue du 2026-09-23)', () => {
+    // `fetch` lève sur un caractère au-delà de 0xFF : l'erreur passait pour une panne réseau et notait la SOURCE
+    // « injoignable ». L'apostrophe typographique et l'emoji sont ce qu'un modèle ou un nom de profil produisent.
+    for (const note of ['l’adresse', 'Julien 🚀', 'a\u0000b', 'cœur']) {
+      const r = assemblerAppel({
+        ...base, methode: 'GET', chemin: '/x', entetes: [{ nom: 'X-Note', valeur: '{{note}}' }],
+        corps: { mode: 'aucun' }, valeurs: { note },
+      });
+      expect(r.ok, JSON.stringify(note)).toBe(false);
+      expect((r as { raison: string }).raison).toContain('X-Note');
+    }
+    // Le latin-1 passe : `fetch` l'accepte.
+    const ok = assemblerAppel({
+      ...base, methode: 'GET', chemin: '/x', entetes: [{ nom: 'X-Note', valeur: '{{note}}' }],
+      corps: { mode: 'aucun' }, valeurs: { note: 'Zoë' },
+    });
+    expect((ok as { entetes: Record<string, string> }).entetes['x-note']).toBe('Zoë');
+    expect(() => new Headers((ok as { entetes: Record<string, string> }).entetes)).not.toThrow();
+  });
+
   it('les paramètres s’ajoutent avec & quand le chemin en porte déjà', () => {
     const r = assemblerAppel({
       ...base, methode: 'GET', chemin: '/x?deja=1', parametres: [{ cle: 'p', valeur: '2' }],

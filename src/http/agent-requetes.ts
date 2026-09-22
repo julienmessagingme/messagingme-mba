@@ -451,7 +451,9 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
         httpStatus: res.status,
         dureeMs: Date.now() - debut,
         // Ce qui est PARTI, pour que le client voie ce que sa configuration produit vraiment.
-        envoye: { url: appel.url, methode: appel.methode, corps: appel.corps },
+        // Les en-têtes de la REQUÊTE, variables substituées, jamais ceux de la source (le secret) : ils sont déjà
+        // lisibles dans la configuration, et c'est ici seulement qu'on voit ce qu'une variable y a produit.
+        envoye: { url: appel.url, methode: appel.methode, corps: appel.corps, entetes: appel.entetes },
         apercu: brut,
         // Les chemins a cocher, derives de la REPONSE REELLE : c'est ce qui evite d'ecrire `livraison.date`
         // de tete, et donc de decouvrir sa faute de frappe en pleine conversation.

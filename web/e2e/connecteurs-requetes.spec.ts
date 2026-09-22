@@ -39,7 +39,7 @@ const REQUETE = {
 /** La réponse d'essai : deux champs imbriqués et un tableau, parce que les trois se cochent différemment. */
 const TEST_OK = {
   ok: true, httpStatus: 200, dureeMs: 42,
-  envoye: { url: 'https://api.client.fr/v1/commandes/CMD-1', methode: 'GET', corps: null },
+  envoye: { url: 'https://api.client.fr/v1/commandes/CMD-1', methode: 'GET', corps: null, entetes: { accept: 'application/json', 'x-ref': 'ref-CMD-1' } },
   apercu: '{"statut":"expédiée","livraison":{"date":"2026-09-02"},"lignes":[1,2]}',
   chemins: ['statut', 'livraison.date', 'lignes'],
   risqueMinimum: 'read',
@@ -94,6 +94,8 @@ test.describe('Connecteurs : mettre au point un appel', () => {
 
     await expect(page.getByTestId('reponse-statut')).toContainText('200');
     await expect(page.getByTestId('reponse-apercu')).toContainText('expédiée');
+    // Les en-têtes PARTIS se lisent aussi (revue du 2026-09-23) : c'est là qu'on voit ce qu'une variable y a produit.
+    await expect(page.getByTestId('reponse-envoye-entetes')).toContainText('x-ref: ref-CMD-1');
     // Un TABLEAU est proposé entier : l'extracteur ne descend pas dedans, donc `lignes.0` serait une case
     // qui ne rendrait jamais rien.
     await expect(page.getByTestId('chemin-lignes')).toBeVisible();
@@ -327,6 +329,21 @@ test.describe('Connecteurs : mettre au point un appel', () => {
     await page.getByTestId('onglet-entetes').click();
     await expect(page.getByTestId('entete-intitules')).toContainText(/Nom de l’en-tête|Header name/);
     await expect(page.getByTestId('entete-valeur-0')).toHaveValue('42');
+  });
+
+  test('🔴 sur un écran ÉTROIT, chaque intitulé reste au-dessus de sa colonne (revue du 2026-09-23)', async ({ page }) => {
+    // Les lignes passaient à la ligne quand la place manquait, et leurs champs glissaient sous des intitulés
+    // qui, eux, ne bougeaient pas. Elles défilent désormais dans leur bloc.
+    await page.setViewportSize({ width: 560, height: 900 });
+    const capture = { posts: [] as Array<{ url: string; body: unknown }> };
+    await mock(page, capture);
+    await page.getByTestId(`requete-editer-${RQ}`).click();
+    const gauche = async (loc: import('@playwright/test').Locator) => (await loc.boundingBox())!.x;
+    const intitules = page.getByTestId('var-intitules').locator('span');
+    await expect(intitules.first()).toBeVisible();
+    expect(await gauche(page.getByTestId('var-nom-0'))).toBeCloseTo(await gauche(intitules.nth(0)), 0);
+    expect(await gauche(page.getByTestId('var-type-0'))).toBeCloseTo(await gauche(intitules.nth(2)), 0);
+    expect(await gauche(page.getByTestId('var-test-0'))).toBeCloseTo(await gauche(intitules.nth(4)), 0);
   });
 
   test('l’écran DIT que les en-têtes d’authentification ne se règlent pas ici', async ({ page }) => {
