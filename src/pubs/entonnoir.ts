@@ -14,6 +14,8 @@
  * donc tout le module, et l'écran écrit « non disponible ».
  */
 
+import type { IssueRoutage } from './routage';
+
 /** Ce que la base a compté pour une campagne. Tous les nombres sont bruts, aucun n'est déjà dérivé. */
 export interface ComptesPub {
   /** La dépense chez Meta, dans la devise du compte. `null` = jamais lue. */
@@ -120,4 +122,8 @@ export function entonnoir(c: ComptesPub): Entonnoir {
  * notre routage ne lui a rien servi. C'est un défaut de CONFIGURATION, donc réparable, et le seul moyen
  * de le voir est qu'il apparaisse dans ce compte plutôt que de se fondre dans les prospects servis.
  */
-export const ISSUES_NON_PRISES_EN_CHARGE = ['reprise_refusee', 'desabonne', 'bloque', 'sans_scenario'] as const;
+// ⚠️ LE `satisfies` EST LA MOITIÉ QUE LE COMPILATEUR PEUT TENIR : une faute de frappe ici compilait, et
+// rendait silencieusement une colonne d'entonnoir à zéro. L'autre moitié, l'accord avec le CHECK de la
+// migration 0170, ne se voit d'aucun des deux fichiers : elle vit dans `tests/pubs-entonnoir.test.ts`.
+// (Il reste sur la MÊME ligne que `as const` : un retour à la ligne avant lui ferme l'expression.)
+export const ISSUES_NON_PRISES_EN_CHARGE = ['reprise_refusee', 'desabonne', 'bloque', 'sans_scenario'] as const satisfies readonly IssueRoutage[];

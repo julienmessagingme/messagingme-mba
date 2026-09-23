@@ -406,7 +406,7 @@ export class PgPublicitesStore {
    *
    * 🔴 LES ISSUES « NON PRISES EN CHARGE » VOYAGENT EN PARAMÈTRE, elles ne sont PAS recopiées dans le SQL.
    * La liste vit dans `src/pubs/entonnoir.ts` ; l'écrire ici en ferait une seconde vérité, et le jour où une
-   * septième issue apparaît, l'une des deux serait fausse sans que rien ne le dise.
+   * NEUVIÈME issue apparaît, l'une des deux serait fausse sans que rien ne le dise.
    *
    * ⚠️ Le `where` reste dans le contrat de l'index partiel `arrivees_pub_campagne_idx`
    * (`campagne_id is not null`) : comparer `campagne_id = $2` implique non nul, donc la requête ne sort

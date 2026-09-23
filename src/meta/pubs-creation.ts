@@ -106,12 +106,30 @@ const lotInsightsSchema = z.record(z.string(), z.object({
  * `coalesce($n, budget_total)` : une valeur non nulle ÉCRASE le budget saisi par le client. Un `"0"` rendu
  * par Meta afficherait donc « budget 0 » et « peut dépenser jusqu'à 0 » sur une publicité qui va dépenser
  * cent cinquante euros. Et `Number()` d'une valeur inattendue rend `NaN`, que Postgres ACCEPTE dans une
- * colonne `numeric` : l'écran afficherait « NaN ». Aucune réponse de Meta ne doit pouvoir faire ça.
+ * colonne `numeric` : l'écran afficherait « NaN ». Aucune réponse de Meta ne doit pouvoir faire ça, et
+ * c'est `nombreFini` qui le tient pour les TROIS champs, pas seulement pour celui-ci.
  */
 function montantMajeur(brut: string | undefined): number | null {
+  const n = nombreFini(brut);
+  return n !== null && n > 0 ? n / 100 : null;
+}
+
+/**
+ * UN NOMBRE RENDU PAR META, OU `null`. Jamais `NaN`.
+ *
+ * ⚠️ IL EXISTE PARCE QUE LA PHRASE CI-DESSUS ÉTAIT FAUSSE POUR LES DEUX CHAMPS QUI COMPTENT LE PLUS.
+ * « Aucune réponse de Meta ne doit pouvoir faire ça » ne valait que pour le budget : la dépense et les
+ * clics passaient par un `Number()` nu, `noterSuivi` écrit avec un `coalesce`, Postgres ACCEPTE `NaN`
+ * dans un `numeric`, et l'entonnoir le rend tel quel à l'écran. Une garde qui ne couvre qu'un de ses
+ * trois champs est une garde que son propre commentaire fait croire complète.
+ *
+ * ⚠️ ZÉRO EST UNE MESURE VALIDE ICI, contrairement au budget : une campagne qui a diffusé sans dépenser
+ * existe. Seul le NON FINI est refusé, et c'est pour ça que les deux fonctions restent distinctes.
+ */
+function nombreFini(brut: string | undefined): number | null {
   if (brut === undefined) return null;
-  const n = Number(brut) / 100;
-  return Number.isFinite(n) && n > 0 ? n : null;
+  const n = Number(brut);
+  return Number.isFinite(n) ? n : null;
 }
 
 /** Découpe une liste en paquets. Fonction PURE, et la seule raison pour laquelle elle est nommée est qu'un
@@ -299,8 +317,8 @@ export class MetaPubsCreationClient extends ClientGraph {
           // Meta rend la dépense en CHAÎNE, dans l'unité principale de la devise (des euros, pas des
           // centimes) : c'est l'inverse de ce qu'il attend en écriture pour un budget. Mesuré dans sa
           // documentation, et c'est exactement le genre d'asymétrie qui se paie si on la suppose.
-          depense: ligne.spend === undefined ? null : Number(ligne.spend),
-          clics: ligne.inline_link_clicks === undefined ? null : Number(ligne.inline_link_clicks),
+          depense: nombreFini(ligne.spend),
+          clics: nombreFini(ligne.inline_link_clicks),
         });
       }
     }

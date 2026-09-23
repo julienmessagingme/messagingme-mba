@@ -2,8 +2,8 @@
 -- Spec : docs/superpowers/specs/2026-09-22-pubs-ctwa-design.md (§ 2, § 3.3, § 3.4).
 -- Plan : docs/superpowers/plans/2026-09-23-pubs-ctwa-lot3-router-creer-suivre.md
 --
--- AVANT le déploiement : elle n'AJOUTE que (deux tables, quatre colonnes, un index, deux CHECK posés sur des
--- colonnes qui viennent de naître). Le code déployé ignore tout cela, il y survit ; le code neuf, lui, écrit
+-- AVANT le déploiement : elle n'AJOUTE que (deux tables, quatre colonnes sur `arrivees_pub`, deux index
+-- partiels, et des CHECK posés sur des colonnes qui viennent de naître). Le code déployé ignore tout cela, il y survit ; le code neuf, lui, écrit
 -- dans les deux tables et nomme les quatre colonnes dans ses select.
 
 -- ---------------------------------------------------------------------------------------------------------
@@ -113,7 +113,10 @@ alter table arrivees_pub add column if not exists campagne_id text;
 -- c'est exactement la fenêtre où une migration se corrige. Elle nomme le cas où une publicité confie ses
 -- leads à un scénario qui n'existe pas, ou qui n'est pas encore publié.
 -- L'issue du routage, telle que la règle pure l'a décidée. Nulle = arrivée d'avant ce lot, ou routage qui n'a
--- pas pu tourner. Les sept valeurs sont le tableau de la spec § 3.3, mot pour mot.
+-- pas pu tourner. HUIT valeurs : les sept du tableau de la spec § 3.3, plus `sans_scenario` ajoutée par une
+-- relecture à froid (voir juste au-dessus). La liste qui fait foi côté code est `ISSUES_ROUTAGE`
+-- (`src/pubs/routage.ts`), et `tests/pubs-entonnoir.test.ts` LIT ce fichier pour exiger que les deux
+-- listes soient égales : sans ce test, l'écart ne se verrait d'aucun des deux côtés.
 alter table arrivees_pub add column if not exists issue text;
 
 -- Quand le fil a été repris à l'agent de Meta pour ce lead. C'est la seule mesure du DÉLAI entre l'arrivée et

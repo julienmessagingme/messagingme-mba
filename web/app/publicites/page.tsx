@@ -54,6 +54,15 @@ function PublicitesInner({ session }: { session: Session }) {
   const [pubs, setPubs] = useState<Publicite[] | null>(null);
   const [scenarios, setScenarios] = useState<WorkflowSummary[]>([]);
   const [agentMetaOuvert, setAgentMetaOuvert] = useState(false);
+  /**
+   * 🔴 L'API DÉPLOYÉE N'A PAS ENCORE LA ROUTE DES PUBLICITÉS, ET L'ÉCRAN DOIT LE DIRE.
+   *
+   * Vercel publie cette console à CHAQUE `git push`, l'API attend son `up -d --build` : entre les deux,
+   * la route répond 404. Sans cet état, `pubs` restait à `null` et l'écran affichait « Chargement… »
+   * POUR TOUJOURS, ce qui fait chercher une panne de réseau là où il n'y a qu'une fenêtre qui se referme
+   * toute seule. Il ferme aussi le bouton « Créer », dont l'envoi tomberait en 404.
+   */
+  const [routeAbsente, setRouteAbsente] = useState(false);
   const [formOuvert, setFormOuvert] = useState(false);
 
   const charger = useCallback(async () => {
@@ -84,10 +93,11 @@ function PublicitesInner({ session }: { session: Session }) {
       // que rien ne proteste et casserait la liste à l'affichage, sur un écran qui doit surtout ne pas
       // disparaître.
       setPubs((await listerPubs(session.tenantId)).publicites ?? []);
+      setRouteAbsente(false);
     } catch (err) {
       if (estAnnulation(err)) return;
-      // Route absente : on laisse `null`, l'écran n'affiche simplement pas encore la liste.
-      if (err instanceof ApiError && err.status === 404) return;
+      // Route absente : l'écran le DIT, au lieu de tourner indéfiniment sur « Chargement… ».
+      if (err instanceof ApiError && err.status === 404) { setRouteAbsente(true); return; }
       setErreur(err instanceof Error ? err.message : t('Chargement impossible', 'Loading failed'));
     }
   }, [session.tenantId, t]);
@@ -251,7 +261,7 @@ function PublicitesInner({ session }: { session: Session }) {
             </div>
             {/* 🔴 LE BOUTON N'EXISTE QUE SI LA CONNEXION EST COMPLÈTE, et la RAISON est dite juste dessous
                 quand il manque. Un bouton désactivé sans explication fait chercher une panne. */}
-            {peutCreer(etat) ? (
+            {peutCreer(etat) && !routeAbsente ? (
               <button
                 type="button" onClick={() => setFormOuvert(true)}
                 className="shrink-0 rounded-xl bg-ink-900 px-4 py-2 text-sm font-medium text-white"
@@ -279,9 +289,19 @@ function PublicitesInner({ session }: { session: Session }) {
           )}
 
           <div className="mt-4">
-            {pubs === null
-              ? <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
-              : <PubsListe tenantId={session.tenantId} publicites={pubs} recharger={chargerPubs} />}
+            {routeAbsente ? (
+              <p className="text-sm text-ink-500" data-testid="pubs-bientot">
+                {t('Cette partie de la console attend la mise à jour du serveur. Elle sera disponible dans quelques minutes.',
+                   'This part of the console is waiting for the server update. It will be available in a few minutes.')}
+              </p>
+            ) : pubs === null ? (
+              <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
+            ) : (
+              <PubsListe
+                tenantId={session.tenantId} publicites={pubs} recharger={chargerPubs}
+                comptePubId={etat.connexion.comptePubId} agentMetaOuvert={agentMetaOuvert}
+              />
+            )}
           </div>
         </section>
       )}

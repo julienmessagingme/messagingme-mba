@@ -236,6 +236,25 @@ export const TAILLE_VISUEL_MAX = 5 * 1024 * 1024;
 export function enPauseChezMeta(statutMeta: string | null): boolean {
   return statutMeta !== null && statutMeta !== 'ACTIVE';
 }
+
+/**
+ * LE LIEN VERS LA CAMPAGNE DANS LE GESTIONNAIRE DE PUBLICITÉS DE META.
+ *
+ * 🔴 IL EST CE QUI REND LE MOTIF DE REFUS UTILISABLE. Nous n'affichons qu'UNE raison quand Meta en rend
+ * plusieurs (`src/meta/pubs-creation.ts`, `issues_info[0]`), et ce choix n'est défendable que si le client
+ * a un chemin vers la liste complète. Sans ce lien, une publicité refusée montre une phrase tronquée et
+ * aucune suite possible : c'est notre écran qui devient le mur.
+ *
+ * ⚠️ L'IDENTIFIANT VOYAGE SOUS SA FORME NUE, et le préfixe `act_` se remet ici comme les appels serveur le
+ * font (`sansPrefixeAct`, `src/meta/pubs.ts`). Le paramètre `act` du Gestionnaire attend le NOMBRE : un
+ * `act_act_123` ouvre un compte introuvable, ce qui est pire qu'aucun lien.
+ */
+export function lienGestionnaireMeta(comptePubId: string | null, campagneId: string): string | null {
+  if (comptePubId === null || comptePubId === '') return null;
+  const nu = comptePubId.startsWith('act_') ? comptePubId.slice(4) : comptePubId;
+  return 'https://business.facebook.com/adsmanager/manage/campaigns'
+    + `?act=${encodeURIComponent(nu)}&selected_campaign_ids=${encodeURIComponent(campagneId)}`;
+}
 export const TYPES_VISUEL = ['image/jpeg', 'image/png'] as const;
 
 const basePubs = (tenantId: string): string => `/tenants/${tenantId}/pubs`;

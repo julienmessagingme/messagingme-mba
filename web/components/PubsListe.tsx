@@ -1,8 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useT } from '@/lib/i18n';
-import { basculerPub, enPauseChezMeta, lirePub, publierPub, type Entonnoir, type EtapeEntonnoir, type Publicite } from '@/lib/api-pubs';
+import {
+  basculerPub, enPauseChezMeta, lienGestionnaireMeta, lirePub, publierPub,
+  type Entonnoir, type EtapeEntonnoir, type Publicite,
+} from '@/lib/api-pubs';
 
 /**
  * LA LISTE DES PUBLICITÉS, ET LA PAGE D'UNE PUBLICITÉ (lot 3, spec § 3.7).
@@ -52,8 +55,21 @@ function pourcent(v: number | null, t: T): string {
   return v === null ? t('non disponible', 'not available') : `${(v * 100).toFixed(1)} %`;
 }
 
-export function PubsListe({ tenantId, publicites, recharger }: {
+export function PubsListe({ tenantId, publicites, recharger, comptePubId, agentMetaOuvert }: {
   tenantId: string; publicites: Publicite[]; recharger: () => Promise<void>;
+  /** Le compte publicitaire connecté, pour ouvrir la campagne dans le Gestionnaire de Meta. */
+  comptePubId: string | null;
+  /**
+   * L'agent de Meta répond-il ENCORE sur ce numéro ?
+   *
+   * 🔴 IL PEUT S'ÉTEINDRE APRÈS LA CRÉATION, et c'est le seul état où cet écran ment sans le savoir. Le
+   * formulaire ne propose « l'agent de Meta répond » que si l'agent est ouvert, mais rien ensuite ne
+   * surveille ce réglage : éteint après coup, la publicité continue de lui confier ses prospects, aucune
+   * automation ne prend le relais, et l'entonnoir les compte comme SERVIS (`agent_meta` est délibérément
+   * hors des « non pris en charge », au motif que quelqu'un répond). Le client lit donc « tout va bien »
+   * sur le chiffre qui sert à décider de remettre du budget.
+   */
+  agentMetaOuvert: boolean;
 }) {
   const t = useT();
   const [ouverte, setOuverte] = useState<string | null>(null);
@@ -84,6 +100,27 @@ export function PubsListe({ tenantId, publicites, recharger }: {
               </p>
               {p.motifRefus !== null && (
                 <p className="mt-1 text-xs text-red-700" data-testid="pub-motif">{p.motifRefus}</p>
+              )}
+              {p.destination === 'agent_meta' && !agentMetaOuvert && (
+                /* 🔴 PLUS PERSONNE NE RÉPOND, ET RIEN D'AUTRE NE LE DIRAIT. Ces prospects ne sont pas
+                   comptés « non pris en charge » (l'entonnoir suppose qu'un agent répond), donc sans ce
+                   bandeau l'écran affiche une publicité qui marche pendant qu'elle brûle du budget. */
+                <p className="mt-1 text-xs text-amber-700" data-testid={`pub-agent-eteint-${p.id}`}>
+                  {t('Cette publicité confie ses prospects à l’agent de Meta, qui ne répond plus sur ce numéro. Rallumez-le, ou changez la destination de la publicité.',
+                     'This ad hands its leads to the Meta agent, which no longer answers on this number. Turn it back on, or change the ad’s destination.')}
+                </p>
+              )}
+              {lienGestionnaireMeta(comptePubId, p.campagneId) !== null && (
+                /* ⚠️ IL EST TOUJOURS LÀ, PAS SEULEMENT SUR UN REFUS : c'est aussi le seul chemin vers ce que
+                   nous ne montrons pas (audience, placements, historique de diffusion). */
+                <a
+                  href={lienGestionnaireMeta(comptePubId, p.campagneId) ?? undefined}
+                  target="_blank" rel="noreferrer"
+                  className="mt-1 inline-block text-xs text-brand-600 underline"
+                  data-testid={`pub-gestionnaire-${p.id}`}
+                >
+                  {t('Ouvrir dans le Gestionnaire de Meta', 'Open in Meta Ads Manager')}
+                </a>
               )}
               {p.etat === 'echec_creation' && (
                 /* ⚠️ ON LE DIT, PARCE QUE QUELQUE CHOSE PEUT SUBSISTER CHEZ META. En pause, donc sans
@@ -185,11 +222,24 @@ function Detail({ tenantId, id, t }: { tenantId: string; id: string; t: T }) {
   const [vue, setVue] = useState<{ publicite: Publicite; entonnoir: Entonnoir } | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
 
-  if (vue === null && erreur === null) {
+  /**
+   * 🔴 LA LECTURE VIT DANS UN EFFET, PAS DANS LE RENDU. Elle était lancée pendant le rendu : chaque
+   * re-rendu du parent pendant que la réponse était en vol relançait l'appel, et le mode strict de React
+   * le double d'office. Sur un écran qui s'ouvre pour lire des chiffres, ça multipliait les requêtes sans
+   * qu'aucune erreur ne le dise.
+   *
+   * ⚠️ LE DRAPEAU `vivant` EXISTE POUR LE DÉMONTAGE : refermer le panneau avant la réponse écrirait dans
+   * un composant qui n'est plus là. Même patron que les effets de l'écran des réglages MBA.
+   */
+  useEffect(() => {
+    let vivant = true;
     void lirePub(tenantId, id)
-      .then(setVue)
-      .catch((err: unknown) => setErreur(err instanceof Error ? err.message : t('Lecture impossible', 'Could not load')));
-  }
+      .then((r) => { if (vivant) setVue(r); })
+      .catch((err: unknown) => {
+        if (vivant) setErreur(err instanceof Error ? err.message : t('Lecture impossible', 'Could not load'));
+      });
+    return () => { vivant = false; };
+  }, [tenantId, id, t]);
 
   if (erreur !== null) return <p role="alert" className="mt-2 text-xs text-red-700">{erreur}</p>;
   if (vue === null) return <p className="mt-2 text-xs text-ink-500">{t('Chargement…', 'Loading…')}</p>;
@@ -198,7 +248,7 @@ function Detail({ tenantId, id, t }: { tenantId: string; id: string; t: T }) {
   return (
     <div className="mt-3 rounded-xl bg-ink-50 p-3" data-testid={`pub-entonnoir-${id}`}>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
-        <Chiffre t={t} libelle={t('Dépense', 'Spend')} valeur={ouRien(e.depense, t)} />
+        <Chiffre libelle={t('Dépense', 'Spend')} valeur={ouRien(e.depense, t)} />
         <Etape t={t} libelle={t('Clics', 'Clicks')} etape={e.clics} />
         <Etape t={t} libelle={t('Prospects', 'Leads')} etape={e.leads} />
         <Etape t={t} libelle={t('Qualifiés', 'Qualified')} etape={e.qualifies} />
@@ -222,7 +272,7 @@ function Detail({ tenantId, id, t }: { tenantId: string; id: string; t: T }) {
   );
 }
 
-function Chiffre({ libelle, valeur }: { t: T; libelle: string; valeur: string }) {
+function Chiffre({ libelle, valeur }: { libelle: string; valeur: string }) {
   return (
     <div>
       <dt className="text-ink-500">{libelle}</dt>

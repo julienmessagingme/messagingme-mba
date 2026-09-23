@@ -1,7 +1,7 @@
 ---
 ecran: publicites
 source_section: Publicités Click-to-WhatsApp (menu Publicités)
-source_empreinte: bab6df
+source_empreinte: 4f2f8b
 ---
 # Lancer une publicité qui ouvre une conversation WhatsApp
 
@@ -75,6 +75,15 @@ aucune conversation : les mélanger au reste les rendrait invisibles.
 👉 **Des quatre, la dernière est la seule que vous pouvez réparer**, et elle se voit tout de suite : la
 publicité est restée « prête, pas encore publiée », ou son scénario a été supprimé depuis. Les trois autres
 sont des refus qui ne dépendent pas de vous.
+
+Chaque publicité porte un lien **Ouvrir dans le Gestionnaire de Meta**, sur sa campagne. Nous n'affichons
+qu'une seule raison quand Meta en donne plusieurs : c'est par ce lien que vous voyez la liste complète, et
+tout ce que cet écran ne montre pas (audience, placements, historique de diffusion).
+
+⚠️ **Si vous aviez choisi « l'agent de Meta répond » et que vous l'éteignez ensuite**, la publicité vous le
+dit. Ces prospects-là ne sont pas comptés parmi les non pris en charge, parce que l'entonnoir suppose qu'un
+agent leur répond : sans ce message, l'écran vous montrerait une publicité qui marche pendant qu'elle dépense.
+Rallumez l'agent, ou changez la destination de la publicité.
 
 ## Marquer une personne comme qualifiée
 

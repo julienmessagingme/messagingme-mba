@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TAILLE_VISUEL_PUB_MAX, TYPES_VISUEL_PUB } from '../src/meta/pubs-creation';
-import { TAILLE_VISUEL_MAX, TYPES_VISUEL, enPauseChezMeta } from '../web/lib/api-pubs';
+import { TAILLE_VISUEL_MAX, TYPES_VISUEL, enPauseChezMeta, lienGestionnaireMeta } from '../web/lib/api-pubs';
 import { ISSUES_NON_PRISES_EN_CHARGE } from '../src/pubs/entonnoir';
 
 /**
@@ -114,4 +114,60 @@ describe('ce que l’écran annonce sur les prospects non pris en charge', () =>
       expect(texte).toContain(mots.en);
     });
   }
+});
+
+/**
+ * LE LIEN VERS LE GESTIONNAIRE DE META, ET CE QU'IL RATTRAPE.
+ *
+ * 🔴 IL EST LA CONTREPARTIE D'UN CHOIX FAIT AILLEURS. `lireCampagnes` ne garde qu'UN motif de refus quand
+ * Meta en rend plusieurs, et sa justification écrite invoquait « le lien vers le Gestionnaire, à côté ».
+ * Ce lien n'existait pas : la justification était donc fausse, et une publicité refusée montrait une
+ * phrase tronquée sans aucune suite possible. Relevé par une relecture à froid.
+ */
+describe('le lien vers le Gestionnaire de Meta', () => {
+  it('porte le compte et la campagne', () => {
+    const lien = lienGestionnaireMeta('123456', 'camp-9') ?? '';
+    expect(lien).toContain('act=123456');
+    expect(lien).toContain('selected_campaign_ids=camp-9');
+  });
+
+  it('🔴 le préfixe `act_` n’est jamais doublé : le Gestionnaire attend le NOMBRE', () => {
+    // La base garde la forme nue, mais le dépôt se défend des deux depuis `sansPrefixeAct`. Un
+    // `act=act_123` ouvre un compte introuvable, ce qui est pire que pas de lien du tout.
+    expect(lienGestionnaireMeta('act_123456', 'camp-9')).toBe(lienGestionnaireMeta('123456', 'camp-9'));
+  });
+
+  it('sans compte connecté, il n’y a pas de lien plutôt qu’un lien cassé', () => {
+    expect(lienGestionnaireMeta(null, 'camp-9')).toBeNull();
+    expect(lienGestionnaireMeta('', 'camp-9')).toBeNull();
+  });
+
+  it('🔴 L’ÉCRAN LE POSE VRAIMENT, et pas seulement cette fonction', () => {
+    // Le défaut d'origine était exactement celui-là : la fonction aurait pu exister sans que personne
+    // l'appelle, et la justification de `lireCampagnes` serait restée fausse.
+    const source = readFileSync(join(process.cwd(), 'web/components/PubsListe.tsx'), 'utf8');
+    expect(source).toContain('lienGestionnaireMeta(comptePubId, p.campagneId)');
+  });
+});
+
+/**
+ * L'AGENT DE META ÉTEINT APRÈS COUP, SUR UNE PUBLICITÉ QUI LUI CONFIE SES PROSPECTS.
+ *
+ * 🔴 C'EST LE SEUL ÉTAT OÙ L'ENTONNOIR MENT SANS POUVOIR LE SAVOIR. `agent_meta` est délibérément hors des
+ * « non pris en charge », au motif que quelqu'un répond. Si l'agent de Meta s'éteint après la création, ce
+ * motif devient faux : plus personne ne répond, aucune automation ne prend le relais, et ces prospects
+ * continuent d'être comptés comme servis. Seul un bandeau à l'écran peut le dire.
+ */
+describe('le bandeau de l’agent de Meta éteint', () => {
+  const source = (): string => readFileSync(join(process.cwd(), 'web/components/PubsListe.tsx'), 'utf8');
+
+  it('🔴 l’écran reçoit l’état de l’agent, et pose le bandeau sur les pubs qui en dépendent', () => {
+    expect(source()).toContain("p.destination === 'agent_meta' && !agentMetaOuvert");
+  });
+
+  it('la page le lui passe : sans ça, la prop serait toujours fausse et le bandeau permanent', () => {
+    const page = readFileSync(join(process.cwd(), 'web/app/publicites/page.tsx'), 'utf8');
+    expect(page).toContain('agentMetaOuvert={agentMetaOuvert}');
+    expect(page).toContain('comptePubId={etat.connexion.comptePubId}');
+  });
 });

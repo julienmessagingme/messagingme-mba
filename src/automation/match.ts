@@ -59,11 +59,15 @@ export const POSSESSEUR_LIEN_CHAINE = 'channelsme_link';
 /**
  * Le propriétaire d'une automation née d'une PUBLICITÉ Click-to-WhatsApp (lot 3, migration 0170).
  *
- * ⚠️ AU PREMIER COMMIT DU LOT 3, CETTE VALEUR EST LUE ET PAR PERSONNE ÉCRITE, et il faut le dire plutôt que
- * de laisser croire le contraire : le routage sait déjà qu'une automation de publicité reprend la main
- * (`reprendLaMain`), mais rien ne crée encore une telle automation. C'est la CRÉATION d'une publicité
- * (commit 2) qui l'écrit, avec ses gardes miroir en SQL, et c'est à ce moment-là que le test de source
- * viendra tenir les deux moitiés alignées, comme il le fait pour les liens de chaîne.
+ * ⚠️ ELLE EST ÉCRITE PAR LA CRÉATION D'UNE PUBLICITÉ (`PgPublicitesStore.creerAutomation`) et LUE par le
+ * routage, qui sait qu'une automation de publicité reprend la main (`reprendLaMain`). Les deux moitiés
+ * sont tenues alignées par un test de source, comme pour les liens de chaîne
+ * (`tests/automation-chaine-reprend-la-main.test.ts`).
+ *
+ * ⚠️ CE TEXTE A DÉCRIT UN ÉTAT INTERMÉDIAIRE PENDANT TROIS COMMITS (« lue et par personne écrite », « le
+ * test viendra »), alors que le commit suivant du même lot l'avait démenti. Un commentaire qui décrit une
+ * ÉTAPE se périme au commit d'après, et il se lit comme un constat : celui-ci faisait conclure que rien
+ * ne crée d'automation de publicité.
  *
  * 🔴 CE QUE CET ALIGNEMENT PROTÉGERA. Si la constante et le littéral SQL divergeaient, l'automation
  * deviendrait intouchable par son propriétaire ET invisible de l'écran Automations (`HORS_WEBHOOK` exclut

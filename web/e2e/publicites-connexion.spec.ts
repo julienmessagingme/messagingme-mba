@@ -244,8 +244,19 @@ test.describe('Publicités : les états de la connexion', () => {
     expect(gestes.filter((m) => m === 'POST')).toHaveLength(0);
   });
 
-  test('⚠️ ni liste de pubs ni bouton Créer : ils sont le lot 3, et un bouton inerte serait pire que rien', async ({ page }) => {
-    await brancher(page, etatVivant({ connexion: CONNEXION }));
-    await expect(page.getByRole('button', { name: /^Créer|^Create/ })).toHaveCount(0);
-  });
+  /**
+   * 🔴 LE TEST « NI LISTE NI BOUTON CRÉER » A ÉTÉ RETIRÉ ICI, ET SON REMPLAÇANT EST NOMMÉ.
+   *
+   * Il affirmait l'ABSENCE de ce que le lot 3 apporte, en disant lui-même qu'il attendait ce lot. Sa
+   * prémisse est donc morte le jour où la liste et le bouton sont arrivés, et il ne pouvait plus que
+   * mentir : sur cette fixture, l'état du compte est INCONNU (la route n'est pas servie), or un état
+   * inconnu ne bloque délibérément pas la création, c'est Meta qui tranchera. Il rendait `1` là où il
+   * attendait `0`, et il passait une fois sur deux au rejeu, selon que le bouton avait eu le temps de
+   * paraître : un test à bascule est pire qu'un test absent, parce qu'on finit par ignorer sa couleur.
+   *
+   * ⚠️ CE QU'IL PROTÉGEAIT NE DISPARAÎT PAS, IL EST MIEUX COUVERT : « un bouton inerte serait pire que
+   * rien » vit désormais dans `publicites-creation.spec.ts`, en QUATRE cas au lieu d'un, qui distinguent
+   * les raisons de ne pas montrer le bouton (moyen de paiement absent, jeton refusé, compte ou Page pas
+   * choisis) de la seule qui ne bloque pas (état de compte inconnu).
+   */
 });

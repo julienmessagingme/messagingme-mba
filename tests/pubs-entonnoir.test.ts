@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { diviserOuRien, entonnoir, ISSUES_NON_PRISES_EN_CHARGE, type ComptesPub } from '../src/pubs/entonnoir';
+import { ISSUES_ROUTAGE } from '../src/pubs/routage';
 
 /**
  * L'ENTONNOIR D'UNE PUBLICITÉ, ET SES DIVISIONS PAR ZÉRO (spec § 5).
@@ -116,5 +119,37 @@ describe('les prospects non pris en charge', () => {
     expect([...ISSUES_NON_PRISES_EN_CHARGE]).not.toContain('reprise_reussie');
     // `inchange` non plus : ce sont les leads d'une pub qu'on ne pilote pas.
     expect([...ISSUES_NON_PRISES_EN_CHARGE]).not.toContain('inchange');
+  });
+});
+
+/**
+ * LE CHECK DE LA MIGRATION 0170 PORTE EXACTEMENT LES ISSUES QUE LE CODE SAIT ÉCRIRE.
+ *
+ * 🔴 CE SONT DEUX MOITIÉS D'UN MÊME INVARIANT, ET IL N'EST VISIBLE DANS AUCUN DES DEUX FICHIERS. Une
+ * neuvième issue ajoutée au type TypeScript sans sa migration lève un `23514` en base, sur le chemin chaud
+ * des messages entrants, et `processRoutagePub` l'avale : le lead est routé mais l'arrivée n'est jamais
+ * marquée, donc l'entonnoir perd la ligne sans que rien ne le dise. Dans l'autre sens, une valeur retirée
+ * du CHECK sans l'être du code produit le même silence.
+ *
+ * ⚠️ LE TEST LIT LE FICHIER SQL, comme `tests/agent-consommateur.test.ts` le fait pour la forme d'une clé
+ * de consommateur (migration 0127). C'est le seul moyen d'éprouver un accord entre un fichier que le
+ * compilateur lit et un fichier qu'il ne lit pas.
+ */
+describe('les issues de routage, des deux côtés de la frontière SQL', () => {
+  const issuesDuCheck = (): string[] => {
+    const sql = readFileSync(join(process.cwd(), 'db/migrations/0170_pubs_router.sql'), 'utf8');
+    const bloc = /arrivees_pub_issue_chk\s+check\s*\(([\s\S]*?)\);/i.exec(sql);
+    expect(bloc, 'le CHECK des issues est introuvable dans la migration 0170').not.toBeNull();
+    return [...(bloc?.[1] ?? '').matchAll(/'([a-z_]+)'/g)].map((m) => m[1] as string).sort();
+  };
+
+  it('🔴 le CHECK accepte EXACTEMENT les huit issues du type `IssueRoutage`', () => {
+    expect(issuesDuCheck()).toEqual([...ISSUES_ROUTAGE].sort());
+  });
+
+  it('les issues « non prises en charge » sont toutes acceptées par le CHECK', () => {
+    // Elles s'écrivent en base comme les autres : une qui manquerait au CHECK ferait échouer le marquage
+    // précisément sur les leads qu'on veut compter.
+    for (const issue of ISSUES_NON_PRISES_EN_CHARGE) expect(issuesDuCheck()).toContain(issue);
   });
 });

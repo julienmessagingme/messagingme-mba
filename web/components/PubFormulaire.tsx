@@ -17,8 +17,6 @@ import { creerPub, TAILLE_VISUEL_MAX, TYPES_VISUEL, type DestinationPub, type Fo
  * ouvrant la console. Les deux existent, et seul le second protège.
  */
 
-type T = (fr: string, en?: string) => string;
-
 
 export function PubFormulaire({ tenantId, scenarios, agentMetaOuvert, fermer, creee }: {
   tenantId: string;
