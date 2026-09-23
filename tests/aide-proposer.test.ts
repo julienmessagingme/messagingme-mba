@@ -110,10 +110,14 @@ const listeDe = (v: string | null): string[] =>
  * après une date », créée sans que la fiche des automations la reprenne. Le test ci-dessous refuse toute
  * section qui ne serait ni citée par une fiche ni listée ici.
  *
- * ⚠️ LES TROIS MOTIFS NE SE VALENT PAS. `interne` et `integrateurs` sont des décisions : ces pages ne
+ * ⚠️ LES TROIS MOTIFS NE SE VALENT PAS. `interne` et `integrateurs` sont des DÉCISIONS : ces pages ne
  * s'adressent pas au client de la console, leur donner une fiche serait du bruit. `aucune fiche` est un
- * MANQUE assumé : ces seize sections décrivent des écrans qu'un client ouvre, et le bot n'a rien à lui
- * répondre dessus. C'est un état, pas une cible, et il est écrit pour qu'on le voie.
+ * MANQUE, et il n'en reste AUCUN : les quinze sections qui le portaient décrivaient des écrans qu'un client
+ * ouvre, et le bot n'avait rien à lui répondre dessus. Elles ont toutes leur fiche.
+ *
+ * 🔴 LE MOTIF RESTE DANS LE TYPE, ET C'EST EXPRÈS. Le retirer forcerait la prochaine section sans fiche à se
+ * déclarer `interne` ou `integrateurs`, c'est-à-dire à se faire passer pour une décision. Un manque doit
+ * pouvoir se dire ; ce qui compte est que le test plus bas le rende VISIBLE au lieu de le laisser s'installer.
  */
 const SECTIONS_SANS_FICHE: ReadonlyMap<string, 'interne' | 'integrateurs' | 'aucune fiche'> = new Map([
   ['Exploitation `/ops` (interne, hors console client)', 'interne'],
@@ -124,21 +128,6 @@ const SECTIONS_SANS_FICHE: ReadonlyMap<string, 'interne' | 'integrateurs' | 'auc
   ['Brancher vos systèmes : les connecteurs API (menu « Tools » > Connecteurs API)', 'integrateurs'],
   ['Brancher un serveur MCP (menu « Tools » > Connecteurs MCP)', 'integrateurs'],
   ['Serveur MCP : brancher un assistant sur la console (LIVE, 2026-09-01)', 'integrateurs'],
-  ['Navigation (trois onglets en haut, barre latérale par onglet)', 'aucune fiche'],
-  ['Comptes & authentification', 'aucune fiche'],
-  ['Formulaires WhatsApp (WhatsApp Flows, menu Contenu)', 'aucune fiche'],
-  ["E-mail (menu Compte > Boîtes email, menu Contenu > Modèles d'email)", 'aucune fiche'],
-  ['Analytics (menu Analytics)', 'aucune fiche'],
-  ["L'aide de la console (bouton flottant, sur tous les écrans)", 'aucune fiche'],
-  ['Support (menu Support)', 'aucune fiche'],
-  ['Accueil (1re entrée du menu)', 'aucune fiche'],
-  ["L'onglet « Outils » de l'agent de Meta (Meta Business Agent > Paramètres > Outils)", 'aucune fiche'],
-  ['Sécurité & compliance (menu Sécurité)', 'aucune fiche'],
-  ['Journaux et traces (menu Sécurité)', 'aucune fiche'],
-  ['Agent IA (menu « AI Agent » > Other AI agent)', 'aucune fiche'],
-  ['MBA, le répondeur de Meta (menu « AI Agent » > MBA, guide / MBA, paramètres)', 'aucune fiche'],
-  ['Canal RCS (menu Contenu > Messages RCS, et canal de campagne)', 'aucune fiche'],
-  ['Chaîne WhatsApp (menu Chaîne) : publier, et démarrer des conversations', 'aucune fiche'],
 ]);
 
 /**
@@ -224,11 +213,19 @@ describe('🔴 dérive : une fiche dérivée reste à jour de ses sections', () 
     expect(mortes, 'FICHES_SANS_SECTION dispense des fiches qui n’existent plus').toEqual([]);
   });
 
-  it('les trois motifs de SECTIONS_SANS_FICHE disent ce qu’ils veulent dire', () => {
-    // `aucune fiche` est un MANQUE, pas une décision : le compte est écrit pour qu'on le voie bouger.
-    const manques = [...SECTIONS_SANS_FICHE.values()].filter((m) => m === 'aucune fiche').length;
-    expect(manques, 'le nombre de sections sans fiche a changé : c’est peut-être une bonne nouvelle '
-      + '(une fiche de plus), auquel cas ajustez ce chiffre').toBe(15);
+  it('🔴 plus AUCUNE section n’est laissée sans fiche', () => {
+    /**
+     * `aucune fiche` est un MANQUE, pas une décision, et il vaut ZÉRO depuis que les quinze dernières ont
+     * été écrites. Ce test n'est donc plus un compteur qu'on ajuste à la baisse, c'est un CLIQUET : une
+     * section neuve déclarée `aucune fiche` rend la CI rouge, ce qui oblige à choisir entre écrire sa fiche
+     * et assumer par écrit que le bot n'aura rien à répondre sur cet écran.
+     *
+     * ⚠️ L'assertion NOMME les sections fautives au lieu de compter : un compte qui passe de 0 à 1 dit
+     * qu'il manque une fiche, il ne dit pas laquelle, et c'est la seule chose qu'on veut savoir ici.
+     */
+    const manques = [...SECTIONS_SANS_FICHE.entries()].filter(([, m]) => m === 'aucune fiche');
+    expect(manques.map(([nom]) => nom), 'section(s) déclarée(s) sans fiche : écrivez-la dans '
+      + '`docs/aide/fiches/`, ou assumez ici que cet écran reste sans réponse').toEqual([]);
   });
 
   it('⚠️ une fiche qui cite une section DOIT porter son empreinte', () => {
