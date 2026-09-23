@@ -1,5 +1,24 @@
 # todo.md : backlog
 
+## 🟠 `features.md` se contredit à TROIS endroits, trouvé en écrivant les fiches d'aide (2026-09-23)
+
+Écrire les quinze fiches a obligé à lire `features.md` section par section, et trois affirmations y sont
+démenties par une AUTRE section du même fichier, ou par le code. Les fiches, elles, ont été écrites sur
+l'état réel, vérifié ; c'est `features.md` qui reste à corriger.
+
+- **Les droits du manager.** « Comptes & authentification » dit « Manager et agent ont les mêmes accès
+  aujourd'hui ». « Sécurité & compliance » dit l'inverse, et le code tranche pour elle : la carte de la
+  console range Paramètres et les quatre écrans de Sécurité en `encadrement`, donc un manager les voit.
+- **Le journal des actions.** « Navigation » le place dans Paramètres. « Sécurité & compliance » dit qu'il
+  en est parti, et l'écran Paramètres ne le porte effectivement plus.
+- **Les outils de l'agent de Meta.** Sa section les décrit comme livrés (« Envoyer un bloc », « Lancer un
+  scénario », la réponse « à côté »), et se termine par un « ⛔ Pas encore » qui les annonce à faire.
+
+⚠️ **POURQUOI C'EST ICI ET PAS DANS LES FICHES.** Le bot d'aide ne lit pas `features.md`, il lit les fiches :
+le risque n'est donc pas qu'il réponde faux aujourd'hui, c'est que la PROCHAINE fiche écrite depuis une
+section périmée le fasse. 🔴 Et la garde de dérive ne peut rien y voir, par construction : elle compare une
+fiche à SA section, jamais une section à la réalité.
+
 ## 🟠 Pré-câbler la route Azure OpenAI France, sans bouton ni promesse prématurée (2026-09-21)
 
 **Décision de Julien :** Vercel AI Gateway reste le chemin ordinaire. Pour un contrat dont le RSSI exige une
