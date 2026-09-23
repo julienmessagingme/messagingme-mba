@@ -2,7 +2,7 @@ import type { Pool } from 'pg';
 import type { BusinessHours } from '../workflow/conditions';
 import { estFrequenceMention, type FrequenceMentionIa } from '../agent/agent-store';
 import { estModeTransfert, type ModeTransfert } from '../agent/disponibilite-equipe';
-import { grilleDepuisLigne, type GrillePrix } from '../stats/prix';
+import type { GrillePrix } from '../stats/prix';
 
 /** Fuseau par défaut si le tenant n'a rien réglé (marché principal FR). */
 export const DEFAULT_TIMEZONE = 'Europe/Paris';
@@ -80,7 +80,6 @@ export interface TenantSettings {
    * ⚠️ JAMAIS `null` : un espace qui n'a rien regle recoit `GRILLE_DEFAUT`, dont la marge a 100 reproduit
    * exactement le tarif Meta. Le defaut est donc invisible, ce qui est tout son interet.
    */
-  prix: GrillePrix;
   /**
    * QUAND les agents IA de cet espace annoncent qu'ils sont des IA (migration 0140). `null` = rien n'a
    * jamais été réglé ici, le code retombe alors sur `session`, exactement le défaut de 0126.
@@ -161,7 +160,6 @@ export class PgTenantSettingsStore {
       // 🔴 LA MEME CONVERSION QUE LA LECTURE DES STATISTIQUES, par la MEME fonction pure. En ecrire une
       // seconde ici ferait deux facons de lire la meme ligne, et le jour ou l'une gere un `numeric` rendu
       // en chaine et pas l'autre, l'ecran de reglages et la carte des couts afficheraient deux prix.
-      prix: grilleDepuisLigne(r ?? null),
       // ⚠️ `=== true` et pas `?? false` : une base en retard sur 0160 ne rend pas la colonne (`select *`),
       // et c'est alors le comportement d'avant, que personne ne peut prendre.
       agentsPeuventPrendre: r?.agents_peuvent_prendre === true,
@@ -299,7 +297,7 @@ export class PgTenantSettingsStore {
   }
 
   /**
-   * Enregistre la grille de prix de l'espace. Upsert cible : n'ecrase aucun autre reglage.
+   * (remplacee par `setGrillePrixGlobale` le 2026-09-23 : la grille n'appartient plus a un espace)
    *
    * 🔴 LES SIX D'UN COUP, JAMAIS UN SEUL. Il n'existe pas de grille partielle : un `patch` a un champ
    * obligerait a fusionner avec l'existant a l'ecriture, et c'est precisement la ou le depot s'est deja
@@ -309,21 +307,35 @@ export class PgTenantSettingsStore {
    * ⚠️ AUCUNE BORNE ICI : elles vivent dans `valideGrille` (pour le message) et dans les CHECK de la
    * migration 0154 (pour la garantie). Une troisieme copie ici serait la premiere a deriver.
    */
-  async setGrillePrix(tenantId: string, g: GrillePrix): Promise<void> {
+  /**
+   * ENREGISTRE LA GRILLE GLOBALE (migration 0168). Elle ne prend plus d'espace : il n'y en a qu'une.
+   *
+   * 🔴 `on conflict (id)` SUR LE SINGLETON, ET PAS UN `update` NU. Un `update` sans ligne ne fait rien et ne
+   * rend aucune erreur : sur une instance où la migration a créé la table sans reprise, le prix saisi dans
+   * `/ops` serait parti dans le vide, et l'écran aurait affiché « enregistré ». L'upsert écrit dans les deux
+   * cas, et la clé primaire garantit qu'il n'y aura jamais une seconde grille.
+   *
+   * ⚠️ `modifie_par` EST LA SEULE TRACE DE QUI A CHANGE UN PRIX : le jeton de `/ops` est PARTAGÉ, il n'y a
+   * donc aucune identité d'opérateur à enregistrer. C'est la même raison qui rend la note obligatoire sur le
+   * rechargement d'un solde.
+   */
+  async setGrillePrixGlobale(g: GrillePrix, par: string): Promise<void> {
     await this.pool.query(
-      `insert into tenant_settings (tenant_id, prix_marge_template, prix_service_centimes, prix_service_franchise,
-                                    prix_service_depuis, prix_rcs_centimes, prix_rcs_conv_centimes, updated_at)
-       values ($1, $2, $3, $4, $5::date, $6, $7, now())
-       on conflict (tenant_id) do update set
+      `insert into grille_prix (id, prix_marge_template, prix_service_centimes, prix_service_franchise,
+                                prix_service_depuis, prix_rcs_centimes, prix_rcs_conv_centimes,
+                                modifie_le, modifie_par)
+       values (true, $1, $2, $3, $4::date, $5, $6, now(), $7)
+       on conflict (id) do update set
          prix_marge_template = excluded.prix_marge_template,
          prix_service_centimes = excluded.prix_service_centimes,
          prix_service_franchise = excluded.prix_service_franchise,
          prix_service_depuis = excluded.prix_service_depuis,
          prix_rcs_centimes = excluded.prix_rcs_centimes,
          prix_rcs_conv_centimes = excluded.prix_rcs_conv_centimes,
-         updated_at = now()`,
-      [tenantId, g.margeTemplate, g.serviceCentimes, g.serviceFranchise, g.serviceDepuis,
-       g.rcsSimpleCentimes, g.rcsConversationnelCentimes],
+         modifie_le = now(),
+         modifie_par = excluded.modifie_par`,
+      [g.margeTemplate, g.serviceCentimes, g.serviceFranchise, g.serviceDepuis,
+       g.rcsSimpleCentimes, g.rcsConversationnelCentimes, par.slice(0, 500)],
     );
   }
 

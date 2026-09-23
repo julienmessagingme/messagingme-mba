@@ -70,11 +70,20 @@ describe('la marge est BRANCHEE sur les deux chemins qui rendent un prix', () =>
     expect(bloc('const prixFactures ='), 'les tarifs doivent passer par tarifsFactures').toContain('tarifsFactures(');
   });
 
-  it('🔴 les deux chemins LISENT la grille de l espace, sinon la marge serait celle de personne', () => {
-    // Sans `grillePrix`, on margerait avec le defaut a 100, donc on ne margerait pas du tout, et le test
-    // precedent passerait quand meme.
-    expect(bloc('getPricing:')).toContain('grillePrix(');
-    expect(bloc('const prixFactures =')).toContain('grillePrix(');
+  it('🔴 les deux chemins LISENT la grille, sinon la marge serait celle de personne', () => {
+    // Sans lecture de la grille, on margerait avec le defaut a 100, donc on ne margerait pas du tout, et le
+    // test precedent passerait quand meme.
+    //
+    // ⚠️ L ANCRE EST `grillePrixGlobale(` DEPUIS LE 2026-09-23 (migration 0168) : il n y a plus qu une
+    // grille, et la fonction a perdu son parametre d espace justement pour qu un appelant ne puisse plus
+    // CROIRE qu il lit le prix d un client precis. Ce test cherchait `grillePrix(`, ce qui aurait continue
+    // de matcher `grillePrixGlobale(` par prefixe : il serait reste vert meme si l un des deux chemins
+    // avait garde l ancienne lecture par espace. On cherche donc le nom COMPLET.
+    expect(bloc('getPricing:')).toContain('grillePrixGlobale(');
+    expect(bloc('const prixFactures =')).toContain('grillePrixGlobale(');
+    // Et la preuve inverse : plus AUCUNE lecture par espace ne subsiste dans le cablage.
+    expect(CABLAGE, 'une lecture par espace laissee derriere lirait une grille qui n existe plus')
+      .not.toMatch(/grillePrix\(tenant\)/);
   });
 
   /**
@@ -85,7 +94,7 @@ describe('la marge est BRANCHEE sur les deux chemins qui rendent un prix', () =>
    * puisque la dependance etait declaree optionnelle. Elle est desormais REQUISE, et ancree ici.
    */
   it('🔴 la marge qui explique l ecart est lue depuis la MEME grille que les prix', () => {
-    expect(ligne('margeTemplate:'), 'la marge doit venir de la grille de l espace').toContain('grillePrix(');
+    expect(ligne('margeTemplate:'), 'la marge doit venir de la grille globale').toContain('grillePrixGlobale(');
   });
 
   /**

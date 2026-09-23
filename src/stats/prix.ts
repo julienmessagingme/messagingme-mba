@@ -3,9 +3,17 @@
  *
  * 🔴 CE SONT DES PRIX DE VENTE (decide avec Julien le 2026-09-17). Le tarif des templates vient de Meta ;
  * le message de service, le RCS simple et le RCS conversationnel ne viennent d'aucune API et se saisissent.
- * Par ESPACE et pas en configuration globale : le tarif smsmode se negocie, et un grand compte ne se
- * facture pas comme un petit. Une constante d'environnement aurait impose le meme prix a tout le monde et
- * demande un deploiement pour en changer un.
+ *
+ * 🔴 UNE SEULE GRILLE POUR TOUS LES ESPACES, DANS `/ops` (arbitrage de Julien du 2026-09-23, migration
+ * 0168). Ce paragraphe disait l'inverse et il faut dire ce qui a change, pas l'effacer : « par ESPACE et
+ * pas en configuration globale, le tarif smsmode se negocie, et un grand compte ne se facture pas comme un
+ * petit ». Cette raison-la n'a pas disparu, elle a ete PESEE contre une autre et elle a perdu : un client
+ * n'a pas a fixer, ni meme a voir, ce qu'on lui facture, et l'ecran « Vos prix » de ses Parametres le lui
+ * laissait faire. Le jour ou un grand compte demandera son prix, ce sera une SURCHARGE par espace a
+ * rouvrir, pas un oubli a reparer.
+ *
+ * ⚠️ ET CE N'EST PAS UNE CONSTANTE D'ENVIRONNEMENT, ce qui etait le vrai grief du paragraphe d'origine :
+ * la grille vit en base, donc elle se change sans deploiement, depuis `/ops`.
  *
  * 🔴 UNE MARGE SUR LE TARIF META, PAS UNE GRILLE DE PRIX DE TEMPLATE. Meta change ses tarifs par pays et
  * par periode : une grille saisie a la main aurait derive en silence, en restant plausible. Or un prix
@@ -32,9 +40,13 @@ export interface GrillePrix {
 /**
  * Les defauts, qui sont des DECISIONS et pas des constantes techniques (Julien, 2026-09-17).
  *
- * 🔴 `margeTemplate: 100` NE CHANGE RIEN, ET C'EST TOUT SON INTERET. Un espace qui n'a jamais ouvert le
+ * 🔴 `margeTemplate: 100` NE CHANGE RIEN, ET C'EST TOUT SON INTERET. Une instance qui n'a jamais ouvert le
  * reglage facture exactement le tarif Meta, donc lit aujourd'hui le meme chiffre qu'hier. Un defaut qui
  * margerait tout seul ferait bouger un nombre que des clients ont deja lu.
+ *
+ * ⚠️ ILS SERVENT ENCORE, ET PAS SEULEMENT AU PREMIER JOUR : `grilleDepuisLigne` retombe dessus quand la
+ * ligne est absente, ce qui arrive entre le deploiement de la console et celui de l'API (la table
+ * `grille_prix` n'existe pas encore). Un zero y ferait lire « gratuit » sur tous les ecrans de cout.
  */
 /**
  * CE QUE COUTE UN LOT DE RCS, en euros. Deux tarifs, aucune franchise, aucun message de service.

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { makeRequireOps } from '../auth/middleware';
 import type { SurveillanceOps } from '../ops/tentatives';
 import { estUuid } from './scope';
+import { valideGrille, BORNES_GRILLE, type GrillePrix } from '../stats/prix';
 import { journaliser } from '../lib/journal';
 import type { TenantOverviewRow, QueueLoadRow, QueueGroupLoadRow, QueueLatenceRow, GlobalDailyPoint, JobMortRow } from '../ops/store.pg';
 import type { WorkerHeartbeatRow } from '../ops/heartbeat-store.pg';
@@ -18,6 +19,12 @@ import type { WorkerHeartbeatRow } from '../ops/heartbeat-store.pg';
  * lui-même. L'autorité séparée de `/ops` (jeton d'exploitation, jamais le JWT client) est exactement la
  * bonne, et le geste est journalisé comme l'observation. Aucune autre écriture ne doit rejoindre cette
  * surface sans la même justification.
+ *
+ * 🔴 LA GRILLE DE PRIX (`/ops/prix`) EST LA SECONDE, ET ELLE PORTE LA MÊME JUSTIFICATION (lot 8 du
+ * 2026-09-23, migration 0168). Elle vivait dans les Paramètres du client, donc derrière un JWT que le client
+ * possède : il fixait lui-même ce qu'on lui facture. Elle est désormais UNIQUE pour tous les espaces et ne
+ * se change que d'ici. ⚠️ Elle est cross-espace par NATURE, et c'est ce qui la distingue des deux autres
+ * écritures : `/ops/credits` et `/ops/verrou` visent un espace, celle-ci n'en vise aucun.
  */
 export interface OpsRouteDeps {
   /**
@@ -28,6 +35,13 @@ export interface OpsRouteDeps {
    * des tests qui n'ont aucun usage à montrer, et une liste vide y est une réponse honnête.
    */
   usage?: { compteurs(): unknown[] };
+  /**
+   * LA GRILLE DE PRIX GLOBALE (migration 0168). Absentes -> les deux routes rendent 503 plutôt que de
+   * laisser croire au geste, comme le verrou d'espace et la révocation de clé.
+   */
+  lireGrillePrix?(): Promise<GrillePrix>;
+  /** `par` = la NOTE : le jeton d'exploitation est partagé, c'est la seule trace de qui a changé un prix. */
+  ecrireGrillePrix?(grille: GrillePrix, par: string): Promise<void>;
   /**
    * POSE OU RETIRE LE VERROU D'UN ESPACE (`tenants.status`). Rend `false` si l'espace est inconnu.
    *
@@ -370,5 +384,45 @@ export function registerOps(
     // eslint-disable-next-line no-console
     console.log(JSON.stringify({ lvl: 'warn', msg: 'ops_recharge_agent', tenantId, montantMicroEur: montant, soldeMicroEur: solde, at: new Date().toISOString() }));
     return reply.code(200).send({ tenantId, soldeMicroEur: solde });
+  });
+
+  /**
+   * LA GRILLE DE PRIX, UNE POUR TOUS LES ESPACES (migration 0168).
+   *
+   * ⚠️ AUCUN `:tenantId`, ET CE N'EST PAS UN OUBLI : il n'y a qu'une grille. Une route par espace aurait
+   * laissé croire à un prix négociable client par client, c'est-à-dire exactement ce que l'arbitrage a
+   * retiré.
+   */
+  app.get('/ops/prix', opts, async (_req, reply) => {
+    if (!deps.lireGrillePrix) return reply.code(503).send({ error: 'grille de prix non disponible sur cette instance' });
+    return reply.code(200).send({ prix: await deps.lireGrillePrix(), bornes: BORNES_GRILLE });
+  });
+
+  /**
+   * CHANGER LA GRILLE. Seconde écriture métier de la surface (cf. le docblock du fichier).
+   *
+   * 🔴 LES SIX CHAMPS D'UN COUP, ET LA VALIDATION REFUSE AU LIEU DE CORRIGER. Ramener une valeur hors bornes
+   * DANS les bornes enregistrerait un prix que personne n'a choisi, et des clients bâtiraient un budget
+   * dessus sans jamais savoir que la saisie avait été réécrite. La réponse NOMME le champ fautif.
+   *
+   * ⚠️ LES BORNES SONT CELLES DES CHECK DE LA BASE, par `valideGrille`, et c'est le même `BORNES_GRILLE` que
+   * l'écran affiche. Accepter plus large rendrait un 500 (Postgres refuse la ligne) sur un geste ordinaire ;
+   * accepter plus étroit refuserait un réglage légitime sans raison lisible.
+   *
+   * 🔴 LA NOTE EST OBLIGATOIRE, COMME SUR LE RECHARGEMENT, ET POUR LA MÊME RAISON : le jeton d'exploitation
+   * est PARTAGÉ, donc il n'y a aucune identité d'opérateur à enregistrer. Cette phrase est la seule trace de
+   * qui a changé un prix et pourquoi. Un prix qui change sans trace est ce qu'un audit reproche en premier.
+   */
+  app.patch('/ops/prix', opts, async (req, reply) => {
+    if (!deps.ecrireGrillePrix) return reply.code(503).send({ error: 'grille de prix non disponible sur cette instance' });
+    const corps = (req.body ?? {}) as { note?: unknown };
+    const note = typeof corps.note === 'string' ? corps.note.trim().slice(0, 500) : '';
+    if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : qui change le prix, et pourquoi' });
+    const v = valideGrille(req.body);
+    if (!v.ok) return reply.code(400).send({ error: `champ invalide : ${v.champ}`, champ: v.champ, bornes: BORNES_GRILLE });
+    await deps.ecrireGrillePrix(v.grille, note);
+    // eslint-disable-next-line no-console
+    console.log(JSON.stringify({ lvl: 'warn', msg: 'ops_grille_prix', prix: v.grille, note, at: new Date().toISOString() }));
+    return reply.code(200).send({ prix: v.grille });
   });
 }

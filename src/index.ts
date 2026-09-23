@@ -557,7 +557,7 @@ async function main(): Promise<void> {
   };
 
   const prixFactures = async (tenant: string, range: { from: string; to: string }): Promise<CategoryRates> => {
-    const [wabaId, ligne] = await Promise.all([repo.getTenantWabaId(tenant), statsStore.grillePrix(tenant)]);
+    const [wabaId, ligne] = await Promise.all([repo.getTenantWabaId(tenant), statsStore.grillePrixGlobale()]);
     const { startTs, endTs } = rangeToUnix(range);
     const pricingClientT = wabaId ? await metaFactory.pricingClientForTenant(tenant) : null;
     /**
@@ -1115,7 +1115,9 @@ async function main(): Promise<void> {
       getDashboard: (tenant, range) => statsStore.getDashboard(tenant, range),
       getTemplateBreakdown: (tenant, range) => statsStore.getTemplateBreakdown(tenant, range),
       // La MEME grille que les prix affiches au-dessus : deux lectures donneraient deux marges.
-      margeTemplate: async (tenant) => grilleDepuisLigne(await statsStore.grillePrix(tenant)).margeTemplate,
+      // ⚠️ `tenant` N'EST PLUS LU, et la fleche le garde parce que le CONTRAT de la route le passe : une
+      // seule grille sert tous les espaces depuis la migration 0168.
+      margeTemplate: async () => grilleDepuisLigne(await statsStore.grillePrixGlobale()).margeTemplate,
       /**
        * 🔴 CE CHEMIN AUSSI PORTE LA MARGE, ET IL A ETE OUBLIE DEUX FOIS. Son resultat alimente la carte
        * « Detail par template » du Quantitatif ET le cout affiche sur l ecran Campagnes (total, ligne, et
@@ -1130,7 +1132,7 @@ async function main(): Promise<void> {
        * Les melanger ferait un total qui n est ni l un ni l autre.
        */
       getPricing: async (tenant, range) => {
-        const [wabaId, ligne] = await Promise.all([repo.getTenantWabaId(tenant), statsStore.grillePrix(tenant)]);
+        const [wabaId, ligne] = await Promise.all([repo.getTenantWabaId(tenant), statsStore.grillePrixGlobale()]);
         if (!wabaId) return null;
         const { startTs, endTs } = rangeToUnix(range);
         const pricing = await metaFactory.pricingClientForTenant(tenant); // token PAR TENANT (B1), repli global en sommeil
@@ -1179,7 +1181,7 @@ async function main(): Promise<void> {
           // façons de déduire la franchise donneraient deux coûts de service sur la MÊME carte, à deux
           // lignes d'écart, et le client comparerait. Voir `estimateCoutParCampagne` pour le prorata.
           statsStore.serviceParMois(tenant, range),
-          statsStore.grillePrix(tenant),
+          statsStore.grillePrixGlobale(),
           // 🔴 ET LE MEME LOT DE RCS QUE CETTE LIGNE-LA, par la même lecture et la même règle de bascule.
           // Une campagne RCS affichait « — » alors que son prix est saisi depuis la migration 0154.
           // ⚠️ `attribuer` : SEUL cet appelant lit `campaignId`, et l'attribution coute une sous-requete
@@ -1260,7 +1262,7 @@ async function main(): Promise<void> {
           prixFactures(tenant, range),
           statsStore.serviceParMois(tenant, range),
           statsStore.envoisEtReactionsRcs(tenant, range, FENETRE_BASCULE_MS),
-          statsStore.grillePrix(tenant),
+          statsStore.grillePrixGlobale(),
         ]);
         // Les instants d'envoi redéployés en un envoi par instant : c'est la forme que la fonction pure
         // attend, et la reconstruire ici coûte des objets éphémères plutôt que des lignes de base.
@@ -1422,9 +1424,6 @@ async function main(): Promise<void> {
       setMbaEnabled: (tenant, enabled) => settingsStore.setMbaEnabled(tenant, enabled),
       setHubspotListsEnabled: (tenant, enabled) => settingsStore.setHubspotListsEnabled(tenant, enabled),
       setControlHandbackSeconds: (tenant, seconds) => settingsStore.setControlHandbackSeconds(tenant, seconds),
-      // La grille de prix de l'espace. Elle etait posee en base depuis 0154 et AUCUN chemin ne l'ecrivait :
-      // la marge negociee n'etait atteignable que par un `UPDATE` a la main. Releve en revue finale.
-      setGrillePrix: (tenant, grille) => settingsStore.setGrillePrix(tenant, grille),
       setMbaHandoffMode: (tenant, mode) => settingsStore.setMbaHandoffMode(tenant, mode),
       // Applique le choix chez Meta immédiatement. Mêmes helpers que le balayage horaire, pour que « je viens
       // de choisir » et « l'heure a changé » écrivent exactement la même chose.
@@ -2529,6 +2528,16 @@ async function main(): Promise<void> {
        */
       verrouillerEspace: (tenantId, verrouille, _note) => opsStore.verrouillerEspace(tenantId, verrouille),
       getTenantOverview: () => opsStore.getTenantOverview(),
+      /**
+       * LA GRILLE DE PRIX, UNE POUR TOUS LES ESPACES (lot 8, migration 0168).
+       *
+       * 🔴 ELLE EST ICI ET PLUS DANS LES REGLAGES DU CLIENT, et c'est le sujet du lot : un client n'a pas a
+       * fixer, ni meme a voir, ce qu'on lui facture. C'est la SECONDE ecriture metier de cette surface,
+       * apres le rechargement d'un solde, et elle s'y trouve pour la meme raison exactement : le geste ne
+       * doit jamais etre atteignable depuis un compte de la console.
+       */
+      lireGrillePrix: async () => grilleDepuisLigne(await statsStore.grillePrixGlobale()),
+      ecrireGrillePrix: (grille, par) => settingsStore.setGrillePrixGlobale(grille, par),
       getGlobalDaily: (days) => opsStore.getGlobalDaily(days),
       getQueueLoad: () => opsStore.getQueueLoad(),
       // L'équité : quels GROUPES attendent le plus. Vide = tout le monde est servi.

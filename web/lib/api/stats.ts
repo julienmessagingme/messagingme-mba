@@ -638,14 +638,11 @@ export interface TenantSettings {
   timezone: string;
   /** Heures d'ouverture par jour ('0'..'6', 0 = dimanche). */
   businessHours: BusinessHours;
-  /**
-   * CE QUE CET ESPACE FACTURE : marge sur le tarif Meta, prix du message de service et sa franchise
-   * mensuelle, les deux prix RCS.
-   *
-   * ⚠️ OPTIONNEL A LA LECTURE : une instance anterieure au 2026-09-18 ne le rend pas, et l'ecran masque
-   * alors la section plutot que d'afficher un formulaire de zeros. Absent n'est pas « gratuit ».
+  /*
+   * `prix` A QUITTE LES REGLAGES LE 2026-09-23 (lot 8, migration 0168). Il n'y a plus qu'une grille, pour
+   * tous les espaces, et elle se lit dans /ops : la laisser ici aurait permis a n'importe quel ecran du
+   * client de la reafficher un jour sans que personne n'y pense. Le type est la garde.
    */
-  prix?: GrillePrix;
 }
 
 /** Miroir de `GrillePrix` (src/stats/prix.ts). Les bornes de saisie vivent cote SERVEUR, qui les refuse. */
@@ -660,15 +657,12 @@ export interface GrillePrix {
   rcsConversationnelCentimes: number;
 }
 
-/**
- * Enregistre la grille de prix. LES SIX CHAMPS D'UN COUP : il n'existe pas de grille partielle, et un
- * envoi partiel obligerait le serveur a fusionner avec l'existant, ce qui est exactement la ou ce depot
- * s'est deja fait avoir. Le serveur REFUSE une valeur hors bornes au lieu de la corriger, et nomme le
- * champ fautif dans `champ`.
+/*
+ * `setGrillePrix` A ETE RETIREE LE 2026-09-23 (lot 8, migration 0168) : la grille ne se regle plus depuis
+ * l espace d un client. Ses remplacantes vivent dans le module des appels d EXPLOITATION, parce qu elles
+ * portent une autre autorite (`x-ops-token`, jamais le jeton de session du client) : `lireGrillePrixOps` et
+ * `ecrireGrillePrixOps`.
  */
-export function setGrillePrix(tenantId: string, prix: GrillePrix): Promise<{ prix: GrillePrix }> {
-  return request<{ prix: GrillePrix }>(`/tenants/${tenantId}/settings/prix`, { method: 'PATCH', body: JSON.stringify(prix) });
-}
 export function getSettings(tenantId: string): Promise<TenantSettings> {
   return request<TenantSettings>(`/tenants/${tenantId}/settings`);
 }

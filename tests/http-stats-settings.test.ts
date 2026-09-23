@@ -816,83 +816,19 @@ describe('GET /tenants/:t/stats/workflow/:workflowId — mesures par bloc', () =
 });
 
 /**
- * LA ROUTE QUI MANQUAIT : regler la grille de prix de l espace.
+ * LA GRILLE DE PRIX A QUITTE LES REGLAGES DU CLIENT (lot 8 du 2026-09-23, migration 0168).
  *
- * 🔴 CE QU ELLE FERME. Les six colonnes de la migration 0154 existaient en base et AUCUN chemin ne les
- * ecrivait : la marge negociee n etait atteignable que par un UPDATE SQL a la main sur la production.
- * Releve en revue finale le 2026-09-17, sur une etape du plan restee ouverte.
+ * 🔴 CE QUI A CHANGE, ET POURQUOI CE BLOC N EST PLUS ICI. `PATCH /tenants/:t/settings/prix` existait pour
+ * fermer un vrai trou : les six colonnes de 0154 etaient en base et aucun chemin ne les ecrivait. Mais
+ * l ecran qui l appelait etait celui du CLIENT, donc le client fixait ce qu on lui facture. Julien a
+ * tranche : une seule grille, pour tous les espaces, reglee dans /ops.
+ *
+ * ⚠️ LES SEPT CAS DE CE BLOC N ONT PAS ETE PERDUS, ils sont dans `tests/ops-prix.test.ts`. Cinq s y
+ * transposent tels quels (les six champs d un coup, le 400 qui NOMME le champ, le refus d une grille
+ * incomplete, le 503 d un cablage absent, la lecture) ; les DEUX qui portaient sur le tenant (un agent
+ * refuse, un tenant etranger refuse) disparaissent avec leur sujet, parce que la route n a plus de tenant.
+ * Leur equivalent est l autorite separee de /ops, gardee par `tests/ops.test.ts`.
  */
-describe('PATCH /tenants/:t/settings/prix', () => {
-  const bonne = {
-    margeTemplate: 120, serviceCentimes: 2.48, serviceFranchise: 1000,
-    serviceDepuis: '2026-10-01', rcsSimpleCentimes: 6, rcsConversationnelCentimes: 8,
-  };
-  const h = (tok: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${tok}` } });
-
-  it('admin -> 200, et le store recoit les SIX champs', async () => {
-    let recu: unknown = null;
-    const a = app({ settings: { setGrillePrix: async (_t, g) => { recu = g; } } });
-    const res = await a.inject({ method: 'PATCH', url: '/tenants/t1/settings/prix', payload: bonne, ...h(adminTok) });
-    expect(res.statusCode).toBe(200);
-    expect(recu, 'la grille voyage entiere, jamais champ par champ').toEqual(bonne);
-    await a.close();
-  });
-
-  /**
-   * 🔴 LE 400 NOMME LE CHAMP, et c est ce qui distingue un refus utilisable d un refus opaque. Un « erreur »
-   * nu obligerait le client a chercher lequel des six ne va pas.
-   */
-  it('🔴 une valeur hors bornes -> 400 qui NOMME le champ, et rien n est ecrit', async () => {
-    let appele = false;
-    const a = app({ settings: { setGrillePrix: async () => { appele = true; } } });
-    const res = await a.inject({ method: 'PATCH', url: '/tenants/t1/settings/prix',
-      payload: { ...bonne, serviceCentimes: 248 }, ...h(adminTok) });
-    expect(res.statusCode).toBe(400);
-    expect(res.json<{ champ: string }>().champ).toBe('serviceCentimes');
-    expect(appele, 'rien ne doit partir en base quand la saisie est refusee').toBe(false);
-    await a.close();
-  });
-
-  it('🔴 une grille INCOMPLETE est refusee, elle n est pas completee par les defauts', async () => {
-    // Un envoi partiel obligerait le serveur a fusionner avec l existant : c est la ou ce depot s est deja
-    // fait avoir, une liste REMPLACEE au lieu d etre fusionnee.
-    const a = app({ settings: { setGrillePrix: async () => {} } });
-    const res = await a.inject({ method: 'PATCH', url: '/tenants/t1/settings/prix',
-      payload: { margeTemplate: 120 }, ...h(adminTok) });
-    expect(res.statusCode).toBe(400);
-    await a.close();
-  });
-
-  it('🔴 agent -> 403 : un prix de vente n est pas un reglage d operateur', async () => {
-    let appele = false;
-    const a = app({ settings: { setGrillePrix: async () => { appele = true; } } });
-    expect((await a.inject({ method: 'PATCH', url: '/tenants/t1/settings/prix', payload: bonne, ...h(agentTok) })).statusCode).toBe(403);
-    expect(appele).toBe(false);
-    await a.close();
-  });
-
-  it('🔴 tenant de l URL != jeton -> 403 sans toucher au store', async () => {
-    let appele = false;
-    const a = app({ settings: { setGrillePrix: async () => { appele = true; } } });
-    expect((await a.inject({ method: 'PATCH', url: '/tenants/AUTRE/settings/prix', payload: bonne, ...h(adminTok) })).statusCode).toBe(403);
-    expect(appele).toBe(false);
-    await a.close();
-  });
-
-  it('cablage absent -> 503, et l ecran masque la section plutot que d offrir un formulaire inerte', async () => {
-    const a = app();
-    expect((await a.inject({ method: 'PATCH', url: '/tenants/t1/settings/prix', payload: bonne, ...h(adminTok) })).statusCode).toBe(503);
-    await a.close();
-  });
-
-  it('la lecture des reglages rend la grille', async () => {
-    const a = app();
-    const res = await a.inject({ method: 'GET', url: '/tenants/t1/settings', ...h(adminTok) });
-    expect(res.statusCode).toBe(200);
-    expect(res.json<{ prix?: { margeTemplate: number } }>().prix?.margeTemplate, 'le defaut a 100 ne change rien').toBe(100);
-    await a.close();
-  });
-});
 
 /**
  * LA MARGE VOYAGE AVEC CE QU ELLE EXPLIQUE.

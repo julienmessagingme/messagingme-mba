@@ -207,15 +207,23 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   reste supprimable. Toujours sur la fiche : on **affecte ou retire un tag** (les tags existants sont suggérés à
   la saisie), on renseigne un champ déjà déclaré, et on peut **créer un champ entièrement nouveau (libellé + type)
   sans quitter la fiche** : il rejoint les champs de l'espace et sa valeur est posée sur ce contact dans la foulée.
-- ✅ **Vos prix, réglables par espace** (2026-09-18, écran Paramètres) : vous y posez **ce que vous
-  facturez**, et non ce que vous payez. Le tarif des templates vient de Meta, vous posez une **marge**
-  dessus (100 % = exactement le tarif Meta, et c'est le défaut, donc rien ne bouge tant que vous n'y touchez
-  pas). Les autres prix se négocient et se saisissent : le **message de service** et le nombre de messages
-  **offerts par mois**, la **date à partir de laquelle** ils sont facturés, et les deux prix **RCS** (simple,
-  et conversationnel dès qu'une personne répond). ⚠️ Ces prix servent à chiffrer ce que vous voyez dans
-  Performance Lab : ils n'émettent aucune facture et ne changent rien chez Meta. Une valeur hors bornes est
-  **refusée en nommant le champ**, jamais ramenée en silence dans les bornes : un prix corrigé à votre insu
-  serait pire qu'un refus, puisque vous en tireriez un budget.
+- 🔁 **« Vos prix » A QUITTÉ l'écran Paramètres** (2026-09-23) : il y a désormais **une seule grille, pour
+  tous les espaces**, réglée dans la console d'exploitation. Un client ne fixe plus, et ne voit plus, ce
+  qu'on lui facture. La grille porte les mêmes six réglages qu'avant : la **marge** sur le tarif Meta
+  (100 % = exactement le tarif Meta, et c'est le défaut), le prix du **message de service** et le nombre de
+  messages **offerts par mois**, la **date à partir de laquelle** ils sont facturés, et les deux prix **RCS**
+  (simple, et conversationnel dès qu'une personne répond).
+  ⚠️ **Ces prix servent à chiffrer ce que les clients voient dans Performance Lab** : ils n'émettent aucune
+  facture et ne changent rien chez Meta. Une valeur hors bornes est **refusée en nommant le champ**, jamais
+  ramenée en silence dans les bornes : un prix corrigé à l'insu de celui qui le saisit serait pire qu'un
+  refus, puisqu'on en tire un budget.
+  🔴 **Chaque changement exige une phrase** (« pourquoi ce changement ? ») : le jeton d'exploitation est
+  partagé, donc il n'y a aucune identité d'opérateur à enregistrer, et cette phrase est la seule trace de qui
+  a changé un prix. Elle est conservée avec la grille et journalisée.
+  ⚠️ **Ce que ce changement retire, et il faut le dire** : un prix négocié POUR UN CLIENT n'est plus
+  possible. La raison inverse existait et était écrite (« un grand compte ne se facture pas comme un
+  petit ») ; elle a été pesée contre celle-ci et elle a perdu. Le jour où un grand compte demandera son
+  prix, ce sera une surcharge par espace à rouvrir.
 - ✅ **Le résumé de la conversation, en champ de base de la fiche** (2026-09-17) : dès qu'un contact a tenu au
   moins une conversation, sa fiche porte le **résumé de la dernière conversation analysée**, avec la date de
   l'analyse et un lien vers le fil. C'est le geste de quelqu'un qui ouvre une fiche avant de rappeler la
@@ -2680,8 +2688,8 @@ a pas de numéro d'expéditeur, et **aucun modèle à faire approuver** : on éc
   sortent de la série « Service » du tableau de bord, puisque Meta ne les facture pas.
 - ✅ **Le RCS a un PRIX, et le coût par engagement le compte** (2026-09-23). Ces écrans ont longtemps dit
   qu'une campagne RCS n'avait pas de coût « parce que Meta ne facture rien sur ce canal ». C'était vrai du
-  tarif de Meta et faux du prix réel : ce sont **vos** deux prix RCS, saisis dans Vos prix (simple et
-  conversationnel), et le total « coût des messages envoyés » les comptait déjà. Une campagne RCS affiche
+  tarif de Meta et faux du prix réel : ce sont **nos** deux prix RCS (simple et conversationnel, réglés dans
+  la grille unique depuis le 2026-09-23), et le total « coût des messages envoyés » les comptait déjà. Une campagne RCS affiche
   donc son coût, au tarif **conversationnel** dès que le contact a réagi dans les sept jours, comme partout
   ailleurs dans le produit.
 - ⚠️ **Une campagne RCS dont aucun envoi n'est retrouvé garde sa case vide**, elle n'affiche pas « 0 € » : le

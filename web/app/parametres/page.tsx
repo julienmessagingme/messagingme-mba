@@ -3,10 +3,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { useT, useLocale } from '@/lib/i18n';
-import { getSettings, setTimezone as apiSetTimezone, setBusinessHours as apiSetBusinessHours, setGrillePrix as apiSetGrillePrix, agentsPeuventPrendre as apiAgentsPeuventPrendre, setAgentsPeuventPrendre as apiSetAgentsPeuventPrendre, type BusinessHours, type GrillePrix } from '@/lib/api';
+import { getSettings, setTimezone as apiSetTimezone, setBusinessHours as apiSetBusinessHours, agentsPeuventPrendre as apiAgentsPeuventPrendre, setAgentsPeuventPrendre as apiSetAgentsPeuventPrendre, type BusinessHours } from '@/lib/api';
 import { TIMEZONES, timezoneLabel, DEFAULT_TIMEZONE } from '@/lib/timezones';
 import { inputClsAuto } from '@/lib/ui';
-import { enChamps, depuisChamps } from '@/lib/grille-saisie';
 import { BlockedContacts } from '@/components/BlockedContacts';
 import { Toggle } from '@/components/Toggle';
 
@@ -137,19 +136,6 @@ function Parametres({ tenantId }: { tenantId: string }) {
   const [tzStatus, setTzStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [bhStatus, setBhStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
-  /**
-   * CE QUE CET ESPACE FACTURE. `null` = l'instance ne rend pas encore la grille (backend anterieur au
-   * 2026-09-18) : la section ne s'affiche alors PAS, plutot qu'un formulaire de zeros qui ferait croire
-   * que tout est gratuit.
-   *
-   * 🔴 PAS D'ENREGISTREMENT OPTIMISTE ICI, contrairement au fuseau et au toggle juste au-dessus. Ce sont
-   * des PRIX : afficher « enregistre » avant la reponse du serveur, sur un formulaire dont une valeur peut
-   * etre refusee par les bornes, laisserait le client repartir en croyant sa marge posee. Le bouton attend.
-   */
-  const [prix, setPrix] = useState<Record<string, string> | null>(null);
-  const [prixStatus, setPrixStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  const [prixChamp, setPrixChamp] = useState<string | null>(null);
-
   useEffect(() => {
     let alive = true;
     getSettings(tenantId)
@@ -157,44 +143,11 @@ function Parametres({ tenantId }: { tenantId: string }) {
         if (!alive) return;
         setTz(s.timezone ?? DEFAULT_TIMEZONE);
         setHours(normalize(s.businessHours));
-        setPrix(s.prix ? enChamps(s.prix) : null);
       })
       .catch(() => {})
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [tenantId]);
-
-  /**
-   * 🔴 LA SAISIE RESTE UNE CHAINE, ET LA PREMIERE VERSION FAISAIT L INVERSE DE CE QUE SON COMMENTAIRE
-   * ANNONCAIT. Elle appelait `Number(valeur)` a chaque frappe sur un champ CONTROLE : taper « 3 » puis
-   * « . » donnait `Number('3.') === 3`, le point etait reecrit hors du champ et disparaissait, donc on ne
-   * pouvait JAMAIS creer un separateur decimal ; vider le champ donnait `Number('') === 0` et le champ se
-   * remplissait tout seul de « 0 », c est-a-dire exactement le symptome que le commentaire disait avoir
-   * evite ; et « 3,15 » a la francaise donnait `NaN`, affiche tel quel. Sur un ecran dont un defaut vaut
-   * 2,48, passer de 2,48 a 3,10 rendait 310, refuse par les bornes. Releve en revue finale le 2026-09-18 :
-   * la seule piece non testee de ce lot etait aussi la seule qui etait cassee.
-   *
-   * La conversion se fait donc A L ENREGISTREMENT, une seule fois, et la virgule francaise y est acceptee.
-   */
-  const onPrix = useCallback((champ: string, valeur: string) => {
-    setPrix((p) => (p === null ? p : { ...p, [champ]: valeur }));
-    setPrixStatus('idle');
-    setPrixChamp(null);
-  }, []);
-
-  const enregistrerPrix = useCallback(() => {
-    if (prix === null) return;
-    setPrixStatus('saving');
-    apiSetGrillePrix(tenantId, depuisChamps(prix))
-      .then((r) => { setPrix(enChamps(r.prix)); setPrixStatus('saved'); setPrixChamp(null); })
-      .catch((err: unknown) => {
-        // Le serveur NOMME le champ fautif : le montrer vaut mieux qu'un « erreur » qui oblige a chercher
-        // lequel des six ne va pas.
-        const champ = err instanceof Error ? /champ invalide : (\w+)/.exec(err.message)?.[1] ?? null : null;
-        setPrixChamp(champ);
-        setPrixStatus('error');
-      });
-  }, [prix, tenantId]);
 
   const onTimezone = useCallback((iana: string) => {
     setTz(iana);
@@ -297,96 +250,10 @@ function Parametres({ tenantId }: { tenantId: string }) {
           {/* La prise d'une conversation par un agent : la même section que celle du manager. */}
           <SectionPriseAgents tenantId={tenantId} />
 
-          {/*
-            CE QUE CET ESPACE FACTURE (migration 0154).
-
-            🔴 CETTE SECTION EST LE CHEMIN QUI MANQUAIT. Les six colonnes existaient en base et AUCUN ecran
-            ne les ecrivait : la marge negociee n'etait atteignable que par un UPDATE SQL a la main sur la
-            production. C'est le motif « une capacite livree sans le chemin qui la produit », releve en revue
-            finale le 2026-09-17, et que ce depot a deja paye trois fois sur un seul chantier.
-
-            ⚠️ MASQUEE quand l'instance ne rend pas la grille : un formulaire de zeros ferait croire que
-            tout est gratuit, ce qui est pire que de ne rien montrer.
-          */}
-          {prix !== null && (
-            <section className="rounded-2xl border border-ink-200 bg-white p-5" data-testid="reglages-prix">
-              <h2 className="text-sm font-semibold text-ink-900">{t('Vos prix', 'Your pricing')}</h2>
-              <p className="mt-1 text-xs text-ink-500">
-                {t(
-                  'Ce que vous facturez, et non ce que vous payez. Le tarif des templates vient de Meta : vous posez une marge dessus. Les autres prix se negocient, ils se saisissent.',
-                  'What you charge, not what you pay. Template rates come from Meta: you set a margin on top. The other prices are negotiated, so you enter them.',
-                )}
-              </p>
-
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <Champ
-                  id="marge" label={t('Marge sur le tarif Meta', 'Margin on the Meta rate')}
-                  aide={t('En pourcent. 100 = vous facturez exactement le tarif Meta.', 'In percent. 100 = you charge exactly the Meta rate.')}
-                  valeur={prix.margeTemplate ?? ''} onChange={(v) => onPrix('margeTemplate', v)}
-                  suffixe="%" fautif={prixChamp === 'margeTemplate'}
-                />
-                <Champ
-                  id="service" label={t('Message de service', 'Service message')}
-                  aide={t('Prix d un message hors template, en centimes.', 'Price of one non-template message, in cents.')}
-                  valeur={prix.serviceCentimes ?? ''} onChange={(v) => onPrix('serviceCentimes', v)}
-                  suffixe={t('cts', 'cts')} fautif={prixChamp === 'serviceCentimes'}
-                />
-                <Champ
-                  id="franchise" label={t('Messages de service offerts', 'Free service messages')}
-                  aide={t('Par mois et par espace. Au-dela, chaque message est facture.', 'Per month and per workspace. Beyond that, every message is charged.')}
-                  valeur={prix.serviceFranchise ?? ''} onChange={(v) => onPrix('serviceFranchise', v)}
-                  suffixe={t('/ mois', '/ month')} fautif={prixChamp === 'serviceFranchise'}
-                />
-                <Champ
-                  id="depuis" label={t('Facture a partir du', 'Charged from')}
-                  aide={t('Avant cette date, les messages de service ne comptent pas.', 'Before this date, service messages are not counted.')}
-                  valeur={prix.serviceDepuis ?? ''} onChange={(v) => onPrix('serviceDepuis', v)}
-                  type="date" fautif={prixChamp === 'serviceDepuis'}
-                />
-                <Champ
-                  id="rcs" label={t('RCS simple', 'Plain RCS')}
-                  aide={t('Un envoi RCS sans echange, en centimes.', 'One RCS send with no exchange, in cents.')}
-                  valeur={prix.rcsSimpleCentimes ?? ''} onChange={(v) => onPrix('rcsSimpleCentimes', v)}
-                  suffixe={t('cts', 'cts')} fautif={prixChamp === 'rcsSimpleCentimes'}
-                />
-                <Champ
-                  id="rcsconv" label={t('RCS conversationnel', 'Conversational RCS')}
-                  aide={t('Des qu une personne repond, TOUT l echange passe a ce prix.', 'As soon as someone replies, the WHOLE exchange moves to this price.')}
-                  valeur={prix.rcsConversationnelCentimes ?? ''} onChange={(v) => onPrix('rcsConversationnelCentimes', v)}
-                  suffixe={t('cts', 'cts')} fautif={prixChamp === 'rcsConversationnelCentimes'}
-                />
-              </div>
-
-              <div className="mt-4 flex items-center gap-3">
-                <button
-                  type="button" onClick={enregistrerPrix} disabled={prixStatus === 'saving'}
-                  data-testid="prix-enregistrer"
-                  className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-700 disabled:opacity-50"
-                >
-                  {prixStatus === 'saving' ? t('Enregistrement...', 'Saving...') : t('Enregistrer', 'Save')}
-                </button>
-                {prixStatus === 'saved' && <span className="text-xs text-emerald-700" data-testid="prix-ok">{t('Enregistre', 'Saved')}</span>}
-                {/* Le serveur REFUSE une valeur hors bornes au lieu de la corriger, et il nomme le champ :
-                    un « erreur » nu obligerait a chercher lequel des six ne va pas. */}
-                {prixStatus === 'error' && (
-                  <span className="text-xs text-red-700" data-testid="prix-erreur">
-                    {prixChamp
-                      ? t('Valeur refusee, corrigez le champ en rouge.', 'Value rejected, fix the field in red.')
-                      : t('Enregistrement impossible.', 'Could not save.')}
-                  </span>
-                )}
-              </div>
-
-              {/* ⚠️ CE QUE CES PRIX NE FONT PAS, dit plutot que laisse deviner : ils changent ce que la
-                  Synthese AFFICHE, ils n emettent aucune facture et ne touchent a rien chez Meta. */}
-              <p className="mt-3 text-xs text-ink-400">
-                {t(
-                  'Ces prix servent a chiffrer ce que vous voyez dans Performance Lab. Ils n emettent aucune facture et ne changent rien chez Meta.',
-                  'These prices are used to cost what you see in Performance Lab. They issue no invoice and change nothing at Meta.',
-                )}
-              </p>
-            </section>
-          )}
+          {/* « VOS PRIX » A QUITTE CET ECRAN LE 2026-09-23 (lot 8, migration 0168). Il y a desormais UNE
+              grille pour tous les espaces, reglee dans /ops : le client ne fixe plus, et ne voit plus, ce
+              qu on lui facture, alors que cette section vivait derriere un JWT qu il possede. Les six
+              champs n ont pas ete reecrits, ils vivent dans `web/components/GrillePrixChamps.tsx`. */}
 
           {/* Contacts bloqués : SEULE porte de sortie d'un blocage. Un contact bloqué n'apparaît nulle part
               ailleurs, donc sans cet écran il serait introuvable. La section se masque quand la liste est vide. */}
@@ -404,26 +271,3 @@ function Parametres({ tenantId }: { tenantId: string }) {
   );
 }
 
-/**
- * Un champ de la grille de prix : libelle, aide, valeur, et un lisere rouge quand le serveur a nomme
- * CE champ comme fautif. Le suffixe (%, cts, / mois) porte l unite, qui autrement se devine.
- */
-function Champ({ id, label, aide, valeur, onChange, suffixe, type = 'text', fautif }: {
-  id: string; label: string; aide: string; valeur: string;
-  onChange: (v: string) => void; suffixe?: string; type?: string; fautif?: boolean;
-}) {
-  return (
-    <div>
-      <label htmlFor={`prix-${id}`} className="block text-xs font-medium text-ink-700">{label}</label>
-      <div className="mt-1 flex items-center gap-2">
-        <input
-          id={`prix-${id}`} type={type} value={valeur} onChange={(e) => onChange(e.target.value)}
-          data-testid={`prix-${id}`}
-          className={`w-36 rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-100 ${fautif ? 'border-red-400 focus:border-red-500' : 'border-ink-300 focus:border-brand-500'}`}
-        />
-        {suffixe && <span className="text-xs text-ink-500">{suffixe}</span>}
-      </div>
-      <p className="mt-1 text-xs text-ink-400">{aide}</p>
-    </div>
-  );
-}

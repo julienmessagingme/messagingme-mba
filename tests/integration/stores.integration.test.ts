@@ -1,5 +1,5 @@
 import { jamaisDesabonne } from '../consentement';
-import { GRILLE_DEFAUT } from '../../src/stats/prix';
+import { grilleDepuisLigne } from '../../src/stats/prix';
 import 'dotenv/config';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
@@ -1872,46 +1872,59 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     // par defaut, donc personne ne prend rien tant qu un admin ou un manager ne l a pas active.
     agentsPeuventPrendre: false,
     businessHours: DEFAULT_BUSINESS_HOURS, optoutRequestId: null, mentionIaFrequence: null,
-    // La grille de prix (migration 0154). Le defaut a marge 100 reproduit exactement le tarif Meta, donc
-    // un espace qui n a jamais ouvert le reglage lit le meme chiffre qu avant.
-    prix: GRILLE_DEFAUT, ...over,
+    // ⚠️ `prix` A QUITTE CETTE FIXTURE avec la migration 0168 : la grille n appartient plus a un espace,
+    // elle est unique et se regle dans /ops. La laisser ici aurait fait croire l inverse au prochain lecteur.
+    ...over,
   });
 
   /**
-   * LA GRILLE DE PRIX, ALLER-RETOUR CONTRE UNE VRAIE BASE (migration 0154).
+   * LA GRILLE DE PRIX GLOBALE, ALLER-RETOUR CONTRE UNE VRAIE BASE (migration 0168).
    *
-   * 🔴 CE CAS EXISTE PARCE QU UN DEFAUT DE DATE EST PASSE SOUS TOUS LES TESTS UNITAIRES. node-postgres rend
-   * une colonne `date` en `Date` a MINUIT LOCAL ; `toISOString()` repasse en UTC et rend LA VEILLE des
-   * qu on est a l est de Greenwich. Ecrit 2026-11-01, relu 2026-10-31 : la facturation du service aurait
-   * demarre un jour trop tot, pour tout le monde, et l ecran aurait affiche la date fausse sans rien
-   * trahir. Aucune fonction pure ne pouvait le voir, puisque le defaut nait de la CONVERSION du pilote.
+   * 🔴 CE CAS EXISTE PARCE QU UN DEFAUT DE DATE EST PASSE SOUS TOUS LES TESTS UNITAIRES, et il est CONSERVE
+   * tel quel du temps ou la grille vivait par espace (0154). node-postgres rend une colonne `date` en `Date`
+   * a MINUIT LOCAL ; `toISOString()` repasse en UTC et rend LA VEILLE des qu on est a l est de Greenwich.
+   * Ecrit 2026-11-01, relu 2026-10-31 : la facturation du service aurait demarre un jour trop tot, pour tout
+   * le monde, et l ecran aurait affiche la date fausse sans rien trahir. Aucune fonction pure ne pouvait le
+   * voir, puisque le defaut nait de la CONVERSION du pilote.
    *
    * ⚠️ CE TEST NE DISCRIMINE QUE SUR UNE MACHINE A DECALAGE NON NUL, et la CI tourne en UTC. Ce qu il tient
-   * partout, c est l aller-retour complet des six champs et le fait qu une ecriture de prix n ecrase aucun
-   * autre reglage. La preuve discriminante a ete faite en session isolee, en Europe/Paris.
+   * partout, c est l aller-retour complet des six champs et le SINGLETON. La preuve discriminante a ete
+   * faite en session isolee, en Europe/Paris.
+   *
+   * 🔴 CE QUI A REMPLACE LE CAS « UNE ECRITURE DE PRIX N ECRASE AUCUN AUTRE REGLAGE » : il n a plus de sujet,
+   * les prix ont quitte `tenant_settings` pour leur propre table, donc ils ne PEUVENT plus ecraser un fuseau.
+   * A sa place, ce que la forme neuve doit garantir : deux ecritures ne produisent JAMAIS deux grilles.
+   *
+   * ⚠️ IL RESTAURE LA GRILLE QU IL A TROUVEE, et ce n est pas de la politesse : elle est desormais PARTAGEE
+   * par toute la suite, donc une marge de 135 laissee derriere ferait mentir n importe quel test de cout qui
+   * s executerait apres lui. C est le prix a payer d un reglage global, et il se paie ici.
    */
-  it('PgTenantSettingsStore : la grille de prix fait un aller-retour EXACT et n ecrase rien', async () => {
-    const store = new PgTenantSettingsStore(pool);
-    const t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-prix') returning id`)).rows[0]!.id;
+  it('PgStatsStore + PgTenantSettingsStore : la grille GLOBALE fait un aller-retour EXACT, et reste unique', async () => {
+    const reglages = new PgTenantSettingsStore(pool);
+    const stats = new PgStatsStore(pool);
+    const avant = grilleDepuisLigne(await stats.grillePrixGlobale());
     try {
-      expect((await store.get(t)).prix, 'un espace jamais regle lit les defauts').toEqual(GRILLE_DEFAUT);
-
       const voulue = {
         margeTemplate: 135, serviceCentimes: 3.1, serviceFranchise: 500,
         serviceDepuis: '2026-11-01', rcsSimpleCentimes: 5.5, rcsConversationnelCentimes: 7.25,
       };
-      await store.setGrillePrix(t, voulue);
-      expect((await store.get(t)).prix, 'les six champs reviennent a l identique').toEqual(voulue);
+      await reglages.setGrillePrixGlobale(voulue, 'itest');
+      expect(grilleDepuisLigne(await stats.grillePrixGlobale()), 'les six champs reviennent a l identique').toEqual(voulue);
 
-      // Un autre reglage pose AVANT ne doit pas partir avec l ecriture des prix : l upsert est cible.
-      await store.setTimezone(t, 'Europe/Madrid');
-      await store.setGrillePrix(t, { ...voulue, margeTemplate: 90 });
-      const apres = await store.get(t);
-      expect(apres.timezone, 'le fuseau survit a une ecriture de prix').toBe('Europe/Madrid');
-      expect(apres.prix.margeTemplate).toBe(90);
-      expect(apres.prix.serviceDepuis, 'la date ne bouge pas d un jour au passage').toBe('2026-11-01');
+      await reglages.setGrillePrixGlobale({ ...voulue, margeTemplate: 90 }, 'itest bis');
+      const apres = grilleDepuisLigne(await stats.grillePrixGlobale());
+      expect(apres.margeTemplate).toBe(90);
+      expect(apres.serviceDepuis, 'la date ne bouge pas d un jour au passage').toBe('2026-11-01');
+
+      // 🔴 LE SINGLETON, GARANTI PAR LA CLE PRIMAIRE ET PAS PAR LE CODE : deux ecritures, une seule ligne.
+      const n = await pool.query<{ n: string }>('select count(*) as n from grille_prix');
+      expect(Number(n.rows[0]!.n), 'il ne PEUT y avoir qu une grille').toBe(1);
+
+      // La NOTE est la seule trace de qui a change un prix : le jeton d exploitation est partage.
+      const trace = await pool.query<{ modifie_par: string | null }>('select modifie_par from grille_prix');
+      expect(trace.rows[0]!.modifie_par).toBe('itest bis');
     } finally {
-      await pool.query('delete from tenants where id = $1', [t]);
+      await reglages.setGrillePrixGlobale(avant, 'itest restauration');
     }
   });
 

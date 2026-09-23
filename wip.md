@@ -51,6 +51,33 @@ Lot 7 du plan `docs/superpowers/plans/2026-09-23-liste-julien.md`.
   grille RCS, donc le terme vaut zéro ailleurs. La question est produit et le lot 8 (« Vos prix » dans
   `/ops`) va déplacer cette grille : à trancher là, pas par un demi-correctif d'ici là.
 
+## GRILLE DE PRIX UNIQUE DANS /ops (LOT 8, ÉCRIT LE 2026-09-23, PAS DÉPLOYÉ)
+
+Lot 8 du plan `docs/superpowers/plans/2026-09-23-liste-julien.md`.
+
+- ✅ **Écrit et vert** : une seule grille de prix pour tous les espaces, réglée dans `/ops`. L'écran « Vos
+  prix » des Paramètres du client disparaît. Les six champs n'ont PAS été réécrits, ils vivent désormais
+  dans `web/components/GrillePrixChamps.tsx`, partagés par les deux surfaces.
+- 🔴 **MIGRATION 0168 À APPLIQUER AVANT LE DÉPLOIEMENT.** Elle CRÉE `grille_prix`, un singleton structurel
+  (`id boolean primary key check (id)` : il ne PEUT pas y avoir deux grilles), et reprend la valeur actuelle.
+  Elle REFUSE plutôt que d'inventer si les espaces divergent ; mesuré avant de l'écrire, un seul espace
+  porte des prix, donc ce refus ne peut pas se déclencher. Elle ne touche à AUCUNE colonne existante, donc
+  le retour arrière reste possible jusqu'au dernier moment.
+- 🔴 **CE LOT RETOURNE UNE DÉCISION ÉCRITE SIX JOURS PLUS TÔT, et c'est dit dans le code.** `src/stats/prix.ts`
+  portait depuis le 2026-09-17 : « par ESPACE et pas en configuration globale, un grand compte ne se facture
+  pas comme un petit ». Cette raison n'a pas disparu, elle a été pesée contre « le client n'a pas à fixer ce
+  qu'on lui facture » et elle a perdu (arbitrage de Julien, question posée explicitement). Le jour où un
+  grand compte demandera son prix, ce sera une SURCHARGE par espace à rouvrir, pas un oubli à réparer.
+- ⚠️ **LES SIX COLONNES DE `tenant_settings` RESTENT EN PLACE, mortes**, et leur `drop` est une migration
+  SUIVANTE, à passer APRÈS le déploiement (la marche à suivre est dans [todo.md](todo.md)).
+- ⚠️ **FENÊTRE VERCEL / API, et elle est réelle ici** : la carte `/ops` appelle une route que la production
+  n'a pas encore. Elle se MASQUE dans ce cas, avec une phrase qui dit pourquoi, et un e2e tient ce
+  comportement : un formulaire de zéros ferait croire que tout est gratuit, pour tous les espaces.
+- 🔴 **L'ESSAI RÉEL QUI CLÔT LE LOT** : changer un prix dans `/ops`, avec sa phrase, et le voir dans le coût
+  par engagement de DEUX espaces différents. C'est le seul essai qui prouve « une grille pour tous ».
+- ✅ **La devise est tranchée** (Julien, 2026-09-23) : tous les WABA sont en euros, aucune garde, aucune
+  conversion. Ce qui rendrait la question vivante est consigné dans [todo.md](todo.md).
+
 ## PUBLICITÉS CLICK-TO-WHATSAPP (LOT 1 « CAPTER » DÉPLOYÉ LE 2026-09-23, PAS ENCORE ÉPROUVÉ)
 
 Spec `docs/superpowers/specs/2026-09-22-pubs-ctwa-design.md`, plan

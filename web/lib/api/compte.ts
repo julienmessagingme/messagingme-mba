@@ -11,7 +11,8 @@
 import { request, ApiError, BASE } from '../http';
 import type { LoginResult } from './auth';
 import type { ImportReport } from './contacts';
-import type { DailyPoint } from './stats';
+// La grille de prix : le TYPE vit avec les autres types de stats, les deux appels d'exploitation ici.
+import type { DailyPoint, GrillePrix } from './stats';
 
 // --- Accueil : profil courant + statut compte WhatsApp ---
 
@@ -274,6 +275,41 @@ export async function observerTenant(opsToken: string, tenantId: string): Promis
   }
   return res.json() as Promise<{ token: string; tenantId: string; tenantName: string }>;
 }
+/**
+ * LA GRILLE DE PRIX, UNE POUR TOUS LES ESPACES (lot 8, migration 0168).
+ *
+ * ⚠️ `fetch` DIRECT ET NON `request`, comme ses voisines : la surface d'exploitation a sa PROPRE autorité
+ * (`x-ops-token`), et `request` y attacherait le jeton de session du client.
+ *
+ * ⚠️ LES BORNES VIENNENT DU SERVEUR, l'écran ne les redéclare pas : deux jeux de bornes pour une même
+ * valeur, c'est un 500 au lieu d'un message.
+ */
+export async function lireGrillePrixOps(opsToken: string): Promise<{ prix: GrillePrix; bornes: Record<string, { min: number; max: number }> }> {
+  const res = await fetch(`${BASE}/ops/prix`, { headers: { 'x-ops-token': opsToken } });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new ApiError(res.status, body?.error ?? `Erreur ${res.status}`);
+  }
+  return res.json() as Promise<{ prix: GrillePrix; bornes: Record<string, { min: number; max: number }> }>;
+}
+
+/**
+ * CHANGER LA GRILLE. `note` est OBLIGATOIRE côté serveur : le jeton d'exploitation est PARTAGÉ, donc il n'y
+ * a aucune identité d'opérateur à enregistrer, et cette phrase est la seule trace de qui a changé un prix.
+ */
+export async function ecrireGrillePrixOps(opsToken: string, prix: GrillePrix, note: string): Promise<{ prix: GrillePrix }> {
+  const res = await fetch(`${BASE}/ops/prix`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-ops-token': opsToken },
+    body: JSON.stringify({ ...prix, note }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new ApiError(res.status, body?.error ?? `Erreur ${res.status}`);
+  }
+  return res.json() as Promise<{ prix: GrillePrix }>;
+}
+
 export async function getOpsOverview(opsToken: string): Promise<OpsOverview> {
   const res = await fetch(`${BASE}/ops/overview`, { headers: { 'x-ops-token': opsToken } });
   if (!res.ok) {

@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { DailyChart } from '@/components/DailyChart';
-import { getOpsOverview, observerTenant, type OpsOverview, type TenantOverviewRow, type QueueLoadRow,
-  type QueueGroupLoadRow, type QueueLatenceRow, type WorkerHeartbeat, type PoolInstantane, type PoolAttentePoint } from '@/lib/api';
+import { getOpsOverview, observerTenant, lireGrillePrixOps, ecrireGrillePrixOps, type OpsOverview, type TenantOverviewRow, type QueueLoadRow,
+  type QueueGroupLoadRow, type QueueLatenceRow, type WorkerHeartbeat, type PoolInstantane, type PoolAttentePoint, type GrillePrix } from '@/lib/api';
+import { GrillePrixChamps } from '@/components/GrillePrixChamps';
+import { enChamps, depuisChamps } from '@/lib/grille-saisie';
 import { formatDate } from '@/lib/day';
 import { fmtNum } from '@/lib/format';
 import { useLocale, useT } from '@/lib/i18n';
@@ -151,11 +153,137 @@ export default function OpsPage() {
               </div>
             )}
 
+            <GrillePrixCard token={token} />
+
             <TenantTable onObserver={(id, nom) => { void observer(id, nom); }} tenants={data.tenants} />
           </>
         ) : null}
       </div>
     </main>
+  );
+}
+
+
+/**
+ * LA GRILLE DE PRIX, UNE POUR TOUS LES ESPACES (lot 8 du 2026-09-23, migration 0168).
+ *
+ * 🔴 ELLE EST ICI ET PLUS DANS LES PARAMETRES DU CLIENT, et c'est tout le sujet du lot : un client n'a pas
+ * a fixer, ni meme a voir, ce qu'on lui facture. Seconde ecriture metier de cette surface, apres le
+ * rechargement d'un solde, et elle s'y trouve pour la meme raison exactement.
+ *
+ * ⚠️ ELLE SE MASQUE QUAND LA ROUTE N'EXISTE PAS ENCORE, ET C'EST INDISPENSABLE ICI. La console part chez
+ * Vercel a chaque `git push`, l'API attend son `up` : entre les deux, `GET /ops/prix` rend 404 ou 503. Un
+ * formulaire de zeros ferait croire que tout est gratuit, et une erreur rouge ferait croire a une panne
+ * alors qu'il ne manque qu'un deploiement. On ne montre rien, et on le DIT en une ligne.
+ *
+ * 🔴 PAS D'ENREGISTREMENT OPTIMISTE : ce sont des PRIX, et une valeur peut etre refusee par les bornes du
+ * serveur. Afficher « enregistre » avant sa reponse laisserait repartir en croyant la marge posee.
+ */
+function GrillePrixCard({ token }: { token: string }) {
+  const t = useT();
+  const [champs, setChamps] = useState<Record<string, string> | null>(null);
+  const [absente, setAbsente] = useState(false);
+  const [note, setNote] = useState('');
+  const [statut, setStatut] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [champFautif, setChampFautif] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    let vivant = true;
+    lireGrillePrixOps(token)
+      .then((r) => { if (vivant) setChamps(enChamps(r.prix)); })
+      // Silencieux et masque : une API plus ancienne que cette console n'a pas la route.
+      .catch(() => { if (vivant) setAbsente(true); });
+    return () => { vivant = false; };
+  }, [token]);
+
+  const onChamp = (champ: string, valeur: string) => {
+    setChamps((p) => (p === null ? p : { ...p, [champ]: valeur }));
+    setStatut('idle');
+    setChampFautif(null);
+  };
+
+  function enregistrer() {
+    if (champs === null) return;
+    setStatut('saving');
+    setMsg(null);
+    ecrireGrillePrixOps(token, depuisChamps(champs) as GrillePrix, note)
+      .then((r) => { setChamps(enChamps(r.prix)); setStatut('saved'); setChampFautif(null); setNote(''); })
+      .catch((err: unknown) => {
+        // Le serveur NOMME le champ fautif : le montrer vaut mieux qu'un « erreur » qui oblige a chercher
+        // lequel des six ne va pas.
+        const texte = err instanceof Error ? err.message : '';
+        setChampFautif(/champ invalide : (\w+)/.exec(texte)?.[1] ?? null);
+        setMsg(texte || null);
+        setStatut('error');
+      });
+  }
+
+  if (absente) {
+    return (
+      <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+        <h2 className="text-sm font-semibold text-ink-900">{t('Grille de prix', 'Pricing grid')}</h2>
+        <p className="mt-1 text-xs text-ink-400">
+          {t('Indisponible sur cette instance : l’API n’a pas encore la route.', 'Unavailable on this instance: the API does not have the route yet.')}
+        </p>
+      </div>
+    );
+  }
+  if (champs === null) return null;
+
+  return (
+    <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm" data-testid="ops-prix">
+      <h2 className="text-sm font-semibold text-ink-900">{t('Grille de prix', 'Pricing grid')}</h2>
+      <p className="mt-1 text-xs text-ink-500">
+        {t(
+          'UNE grille pour tous les espaces. Le tarif des templates vient de Meta : on pose une marge dessus. Les autres prix se saisissent.',
+          'ONE grid for every workspace. Template rates come from Meta: you set a margin on top. The other prices are entered.',
+        )}
+      </p>
+
+      <GrillePrixChamps valeurs={champs} onChange={onChamp} champFautif={champFautif} />
+
+      {/* La NOTE est obligatoire cote serveur : le jeton d'exploitation est PARTAGE, donc c'est la seule
+          trace de qui a change un prix et pourquoi. Le dire ici evite un 400 incomprehensible. */}
+      <div className="mt-4">
+        <label htmlFor="prix-note" className="block text-xs font-medium text-ink-700">
+          {t('Pourquoi ce changement ?', 'Why this change?')}
+        </label>
+        <input
+          id="prix-note" value={note} onChange={(e) => setNote(e.target.value)} data-testid="ops-prix-note"
+          placeholder={t('qui décide, et pourquoi', 'who decides, and why')}
+          className="mt-1 w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+        />
+        <p className="mt-1 text-xs text-ink-400">
+          {t('Obligatoire : le jeton d’exploitation est partagé, c’est la seule trace.', 'Required: the ops token is shared, this is the only trace.')}
+        </p>
+      </div>
+
+      <div className="mt-4 flex items-center gap-3">
+        <button
+          type="button" onClick={enregistrer} disabled={statut === 'saving'} data-testid="ops-prix-enregistrer"
+          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-700 disabled:opacity-50"
+        >
+          {statut === 'saving' ? t('Enregistrement...', 'Saving...') : t('Enregistrer', 'Save')}
+        </button>
+        {statut === 'saved' && <span className="text-xs text-emerald-700" data-testid="ops-prix-ok">{t('Enregistré', 'Saved')}</span>}
+        {statut === 'error' && (
+          <span className="text-xs text-red-700" data-testid="ops-prix-erreur">
+            {champFautif
+              ? t('Valeur refusée, corrigez le champ en rouge.', 'Value rejected, fix the field in red.')
+              : msg ?? t('Enregistrement impossible.', 'Could not save.')}
+          </span>
+        )}
+      </div>
+
+      {/* ⚠️ CE QUE CES PRIX NE FONT PAS, dit plutot que laisse deviner. */}
+      <p className="mt-3 text-xs text-ink-400">
+        {t(
+          'Ces prix chiffrent ce que les clients voient dans Performance Lab. Ils n’émettent aucune facture et ne changent rien chez Meta.',
+          'These prices cost what clients see in Performance Lab. They issue no invoice and change nothing at Meta.',
+        )}
+      </p>
+    </div>
   );
 }
 

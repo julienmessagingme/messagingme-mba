@@ -1357,21 +1357,30 @@ export class PgStatsStore {
   }
 
   /**
-   * LA GRILLE DE PRIX DE L'ESPACE (migration 0154), telle quelle : c'est `grilleDepuisLigne` qui la lit.
+   * LA GRILLE DE PRIX, UNE SEULE POUR TOUS LES ESPACES (migration 0168), telle quelle : c'est
+   * `grilleDepuisLigne` qui la lit.
    *
-   * ⚠️ `select *` PLUTOT QUE LES SIX COLONNES NOMMEES, et c'est le seul endroit du dépôt où c'est le bon
+   * 🔴 ELLE NE PREND PLUS D'ESPACE, ET LA SIGNATURE EST LA GARDE. Elle lisait `tenant_settings` par
+   * `tenant_id` jusqu'au 2026-09-23 (migration 0154) ; depuis l'arbitrage de Julien, il n'y a qu'une grille
+   * et elle vit dans `/ops`. Retirer le paramètre plutôt que l'ignorer est ce qui empêche un appelant de
+   * CROIRE qu'il lit le prix d'un client précis : un paramètre accepté et jeté est exactement le genre de
+   * mensonge que ce dépôt paie ailleurs.
+   *
+   * ⚠️ `select *` PLUTOT QUE LES COLONNES NOMMEES, et c'est le seul endroit du dépôt où c'est le bon
    * choix : entre le déploiement de Vercel et celui du VPS, la migration n'est pas encore passée, et nommer
-   * une colonne absente ferait échouer la requête en `42703` au lieu de retomber sur les défauts. Le tri
-   * des champs est fait par `grilleDepuisLigne`, qui ignore tout le reste de la ligne de réglages.
+   * une colonne absente ferait échouer la requête en `42703` au lieu de retomber sur les défauts.
+   *
+   * ⚠️ AUCUN CACHE, DELIBEREMENT. La ligne se lit par sa clé primaire et il n'y en a qu'une : le gain
+   * serait nul, et un cache par process rendrait un prix changé dans `/ops` invisible de l'API OU du worker
+   * pendant sa durée de vie, sans qu'aucune invalidation ne puisse traverser les deux.
    */
-  async grillePrix(tenantId: string): Promise<Record<string, unknown> | null> {
+  async grillePrixGlobale(): Promise<Record<string, unknown> | null> {
     try {
-      const res = await this.pool.query<Record<string, unknown>>(
-        'select * from tenant_settings where tenant_id = $1', [tenantId],
-      );
+      const res = await this.pool.query<Record<string, unknown>>('select * from grille_prix limit 1');
       return res.rows[0] ?? null;
     } catch {
-      // Table ou ligne absente : la grille par défaut fera l'affaire, et elle ne change rien au chiffre.
+      // Table absente (API déployée avant la migration) : la grille par défaut fait l'affaire, et elle rend
+      // exactement les chiffres d'avant.
       return null;
     }
   }

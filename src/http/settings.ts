@@ -32,7 +32,7 @@ export interface SettingsRouteDeps {
    * ce lot l'a precisement paye une fois : la migration a vecu trois semaines sans aucun ecran pour
    * l'ecrire.
    */
-  setGrillePrix?(tenantId: string, grille: import('../stats/prix').GrillePrix): Promise<void>;
+
   /** Quand l'agent de Meta passe la main à un humain (écran « Activation »). */
   setMbaHandoffMode(tenantId: string, mode: MbaHandoffMode): Promise<void>;
   /**
@@ -383,28 +383,19 @@ export function registerSettings(
    * ⚠️ `enabled` ne décide PAS si l'agent transfère (il décide seul), mais s'il LÂCHE le fil ensuite. C'est
    * pourquoi « jamais » ne coupe pas les transferts : il laisse l'agent garder la conversation.
    */
-  /**
-   * CE QUE CET ESPACE FACTURE : la marge sur le tarif Meta, le prix d'un message de service et sa
-   * franchise mensuelle, les deux prix RCS. Admin-only comme ses voisines.
+  /*
+   * `PATCH /tenants/:tenantId/settings/prix` A ETE RETIREE LE 2026-09-23 (lot 8, migration 0168).
    *
-   * 🔴 LES SIX CHAMPS D'UN COUP, ET LA VALIDATION REFUSE AU LIEU DE CORRIGER. Ramener une valeur hors
-   * bornes dans les bornes enregistrerait un prix que personne n'a choisi, et le client batirait un budget
-   * dessus sans jamais savoir que sa saisie avait ete reecrite. La reponse NOMME le champ fautif.
+   * 🔴 LE CLIENT NE FIXE PLUS, ET NE VOIT PLUS, CE QU'ON LUI FACTURE. Il y a desormais UNE grille pour tous
+   * les espaces, reglee dans `/ops` (`PATCH /ops/prix`). Cette route-ci ecrivait les six colonnes de
+   * `tenant_settings` depuis les Parametres, c'est-a-dire depuis un ecran que le client ouvre.
    *
-   * ⚠️ LES BORNES SONT CELLES DES CHECK DE LA MIGRATION 0154, par `valideGrille`. Accepter plus large
-   * rendrait un 500 (Postgres refuse la ligne) sur un geste ordinaire ; accepter plus etroit refuserait un
-   * reglage legitime sans raison lisible.
+   * ⚠️ ET `TenantSettings.prix` EST PARTI AVEC ELLE, deliberement : laisser le GET rendre la grille aurait
+   * permis a n'importe quel ecran de la reafficher un jour sans que personne n'y pense. Le type est la garde.
+   *
+   * ⚠️ Un client qui appellerait encore cette adresse recoit un 404 de Fastify, pas un 500 : aucune console
+   * deployee ne l'appelle, et l'ecran qui le faisait est retire dans le meme lot.
    */
-  app.patch('/tenants/:tenantId/settings/prix', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
-    if (!deps.setGrillePrix) return reply.code(503).send({ error: 'grille de prix indisponible sur cette instance' });
-    const v = valideGrille(req.body);
-    if (!v.ok) return reply.code(400).send({ error: `champ invalide : ${v.champ}`, champ: v.champ, bornes: BORNES_GRILLE });
-    await deps.setGrillePrix(tenant, v.grille);
-    return reply.code(200).send({ prix: v.grille });
-  });
 
   app.patch('/tenants/:tenantId/settings/mba-handoff', opts, async (req, reply) => {
     const tenant = scopeTenant(req);

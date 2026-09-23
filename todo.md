@@ -276,22 +276,26 @@ elle recommande de les prendre.
   pour la marge. Le cout est nul (cle primaire, une ligne par espace), mais les deux lectures peuvent
   encadrer un `PATCH` de la grille et afficher une marge qui n est pas celle qui a servi au prix. Deriver
   la marge de la meme lecture que `getPricing` ferme les deux.
-- 🟡 **LA GRILLE RCS EST EN EUROS, LES TARIFS META SONT DANS LA DEVISE DU WABA, ET ON LES ADDITIONNE**
-  (releve le 2026-09-23, a trancher avec le lot « Vos prix » qui remonte la grille dans `/ops`).
-  `coutRcsEuros` rend des euros, tires de `tenant_settings.prix_rcs_centimes` que le client saisit ;
-  `estimateCoutParCampagne` et `coutMessages` l ajoutent au cout des modeles, qui vient de
-  `pricing_analytics` et porte `rates.currency`, la devise de facturation du WABA. Si les deux different, la
-  somme n est dans AUCUNE devise et l ecran l etiquette avec celle de Meta.
-  ⚠️ **Ce n est pas un trou vivant aujourd hui, et c est mesure** : un seul espace porte une grille RCS
-  (6,00 / 8,00 centimes), les autres n en ont aucune, donc le terme RCS y vaut zero. La devise du WABA de
-  cet espace n a PAS pu etre lue depuis le poste (l `ENCRYPTION_KEY` locale n est pas la vraie, donc le
-  jeton par espace ne se dechiffre pas) : la mesure se fera sur le VPS, ou depuis `/ops`.
-  🔴 **La question est produit, pas technique** : dans quelle devise le client saisit-il ses prix, et que
-  fait-on quand Meta le facture dans une autre ? Trois reponses possibles, et une seule doit etre choisie
-  UNE fois, parce que le lot « Vos prix » va deplacer cette grille : (a) la grille porte sa devise et on
-  refuse de sommer deux devises, (b) la grille est toujours celle du WABA et l ecran de saisie affiche ce
-  symbole-la, (c) on convertit, ce qui demande un taux, donc une source et une date. Ne pas corriger a la
-  main d ici la : un demi-correctif ici rendrait le lot plus difficile.
+- ✅ **LA DEVISE EST TRANCHEE : TOUT EST EN EUROS** (Julien, 2026-09-23). La question se posait parce que la
+  grille RCS est saisie en centimes d euro pendant que les tarifs de Meta arrivent dans la devise de
+  facturation du WABA, et que les deux s additionnent. Reponse : tous les WABA sont en euros, on n ajoute
+  aucune garde, aucune conversion, aucune colonne de devise. ⚠️ Ce qui rendrait la question VIVANTE, et donc
+  ce qu il faut surveiller : un premier client dont le WABA facture dans une autre devise. Ce jour-la,
+  l addition ne serait dans AUCUNE devise, et l ecran l etiquetterait avec celle de Meta.
+- 🟡 **« VOS PRIX » VIT DANS LA SECTION « CONTACTS & CRM » DE `features.md`, ET IL N Y A AUCUNE RAISON**
+  (constate le 2026-09-23). Decouvert par la garde de derive des fiches d aide : modifier l entree des prix
+  a peri la fiche « importer-mes-contacts », qui ne parle pas de prix du tout. Elle a ete RELUE, elle reste
+  exacte, seule son empreinte a bouge. Le cout est reel et se repaiera a chaque touche : une fiche client a
+  relire pour un changement qui ne la concerne pas. A deplacer dans une section de facturation quand on
+  reorganisera `features.md`, pas au milieu d un lot (ca deplacerait d autres empreintes).
+- 🟡 **LES SIX COLONNES DE PRIX DE `tenant_settings` SONT MORTES ET ATTENDENT LEUR `drop`** (lot 8,
+  2026-09-23). La grille est passee dans `grille_prix` (migration 0168) et plus aucun code NEUF ne lit
+  `tenant_settings.prix_*`. On ne les supprime PAS dans le meme lot, et c est deliberé : un `drop column`
+  casse l ancien code, donc il se passe APRES le deploiement, quand le code deploye ne les lit plus (regle
+  corrigee au lot 0128). Marche a suivre, dans cet ordre : deployer le lot 8, VERIFIER dans le conteneur
+  qu aucune ecriture ni lecture ne subsiste (`grep` dans `mba-api` et `mba-worker`, comme pour 0128), puis
+  ecrire la migration du `drop`. ⚠️ Tant qu elles sont la, elles portent les anciennes valeurs par espace :
+  un lecteur qui les trouverait pourrait croire a une grille par client.
 
 
 ## 🟡 Quatre ecarts mineurs releves par les revues finales (2026-09-17 et 18)
