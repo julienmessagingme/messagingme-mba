@@ -2857,15 +2857,17 @@ l'écran qui sert à décider d'arrêter ou de remettre du budget.
 n'est pas branché) sont comptés À PART : ce sont
 des clics payés qui n'ont produit aucune conversation, et les noyer dans le total les rendrait invisibles.
 
-**Chaque publicité porte un lien vers le Gestionnaire de Meta**, sur sa campagne. Il compte : nous n'affichons
+**Chaque publicité porte un lien vers le Gestionnaire de Meta**, sur sa campagne, dès que le compte
+publicitaire est choisi. Il compte : nous n'affichons
 qu'UNE raison quand Meta en rend plusieurs, et c'est le seul chemin vers la liste complète, comme vers ce que
 cet écran ne montre pas (audience, placements, historique de diffusion).
 
 🔴 **Une publicité confiée à l'agent de Meta le dit si l'agent a été éteint depuis.** Le choix n'est proposé à la
 création que si l'agent répond, mais il peut s'éteindre ensuite : plus personne ne répond aux prospects, aucun
 scénario ne prend le relais, et ces prospects-là ne comptent PAS parmi les non pris en charge (l'entonnoir
-suppose qu'un agent répond). Sans ce bandeau, l'écran montrerait une publicité qui marche pendant qu'elle
-brûle du budget.
+suppose qu'un agent répond). Sans ce bandeau, l'écran montrerait une publicité qui marche alors que ses
+prospects n'ont personne en face. ⚠️ Il ne paraît que si le réglage a été LU : tant qu'on ne le sait pas,
+ou si sa lecture échoue, l'écran se tait plutôt que d'annoncer une panne qu'il n'a pas constatée.
 
 **Un prospect qualifié** est celui à qui l'on pose le tag choisi pour la publicité, dans les 28 jours suivant
 son arrivée, la plus récente comptant seule. ⚠️ Seuls les chemins un par un comptent (un scénario, l'Inbox,

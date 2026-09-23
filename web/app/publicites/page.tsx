@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
 import { useT } from '@/lib/i18n';
@@ -53,7 +53,15 @@ function PublicitesInner({ session }: { session: Session }) {
   const [busy, setBusy] = useState(false);
   const [pubs, setPubs] = useState<Publicite[] | null>(null);
   const [scenarios, setScenarios] = useState<WorkflowSummary[]>([]);
-  const [agentMetaOuvert, setAgentMetaOuvert] = useState(false);
+  /**
+   * 🔴 TROIS ÉTATS, PAS DEUX : `null` VEUT DIRE « PAS ENCORE LU ». À `false` par défaut, l'écran
+   * affichait « l'agent de Meta ne répond plus, rallumez-le » sur le chemin NOMINAL, pendant les deux
+   * allers-retours que met `chargerContexte` à lire le réglage, puis le retirait. Et un échec de lecture
+   * en faisait un verdict PERMANENT, sur des publicités qui vont bien, avec un geste à faire qui est faux.
+   * C'est exactement ce que `enPauseChezMeta` interdit deux fichiers plus loin : on n'invente pas un
+   * état qu'on n'a pas lu.
+   */
+  const [agentMetaOuvert, setAgentMetaOuvert] = useState<boolean | null>(null);
   /**
    * 🔴 L'API DÉPLOYÉE N'A PAS ENCORE LA ROUTE DES PUBLICITÉS, ET L'ÉCRAN DOIT LE DIRE.
    *
@@ -63,6 +71,8 @@ function PublicitesInner({ session }: { session: Session }) {
    * toute seule. Il ferme aussi le bouton « Créer », dont l'envoi tomberait en 404.
    */
   const [routeAbsente, setRouteAbsente] = useState(false);
+  /** L'API a déjà servi la liste au moins une fois. Référence, pour ne pas entrer en dépendance. */
+  const listeDejaServie = useRef(false);
   const [formOuvert, setFormOuvert] = useState(false);
 
   const charger = useCallback(async () => {
@@ -93,11 +103,21 @@ function PublicitesInner({ session }: { session: Session }) {
       // que rien ne proteste et casserait la liste à l'affichage, sur un écran qui doit surtout ne pas
       // disparaître.
       setPubs((await listerPubs(session.tenantId)).publicites ?? []);
+      listeDejaServie.current = true;
       setRouteAbsente(false);
     } catch (err) {
       if (estAnnulation(err)) return;
       // Route absente : l'écran le DIT, au lieu de tourner indéfiniment sur « Chargement… ».
-      if (err instanceof ApiError && err.status === 404) { setRouteAbsente(true); return; }
+      /**
+       * ⚠️ SEULEMENT SI LA LISTE N'A JAMAIS ÉTÉ SERVIE. Un 404 sur un rafraîchissement postérieur à un
+       * chargement réussi remplacerait une liste VIVANTE par « attend la mise à jour du serveur », donc
+       * ferait perdre ses chiffres au client pour une panne passagère.
+       *
+       * 🔴 C'EST UNE RÉFÉRENCE ET PAS L'ÉTAT `pubs`, ET CE N'EST PAS UN DÉTAIL. Lire `pubs` ici obligerait
+       * à le mettre dans les dépendances de ce `useCallback` ; son identité changerait alors à chaque
+       * chargement, l'effet qui l'appelle se rejouerait, et l'écran bombarderait l'API en boucle.
+       */
+      if (err instanceof ApiError && err.status === 404) { if (!listeDejaServie.current) setRouteAbsente(true); return; }
       setErreur(err instanceof Error ? err.message : t('Chargement impossible', 'Loading failed'));
     }
   }, [session.tenantId, t]);
@@ -110,7 +130,9 @@ function PublicitesInner({ session }: { session: Session }) {
       .catch(() => setScenarios([]));
     await getSettings(session.tenantId)
       .then((r) => setAgentMetaOuvert(r.mbaEnabled === true))
-      .catch(() => setAgentMetaOuvert(false));
+      // ⚠️ `null`, PAS `false` : un échec de lecture ne dit pas que l'agent est éteint, il dit qu'on ne
+      // sait pas. Écrire `false` ici posait un avertissement définitif sur une panne passagère.
+      .catch(() => setAgentMetaOuvert(null));
   }, [session.tenantId]);
 
   useEffect(() => { void charger(); }, [charger]);
@@ -260,7 +282,9 @@ function PublicitesInner({ session }: { session: Session }) {
               </p>
             </div>
             {/* 🔴 LE BOUTON N'EXISTE QUE SI LA CONNEXION EST COMPLÈTE, et la RAISON est dite juste dessous
-                quand il manque. Un bouton désactivé sans explication fait chercher une panne. */}
+                quand il manque. Un bouton désactivé sans explication fait chercher une panne.
+                ⚠️ DEUXIÈME RAISON DE LE CACHER : `routeAbsente`, quand l'API déployée n'a pas encore la
+                route. Sa raison à lui n'est pas dite ici mais à l'emplacement de la liste, plus bas. */}
             {peutCreer(etat) && !routeAbsente ? (
               <button
                 type="button" onClick={() => setFormOuvert(true)}
@@ -282,7 +306,9 @@ function PublicitesInner({ session }: { session: Session }) {
             <PubFormulaire
               tenantId={session.tenantId}
               scenarios={scenarios.map((w) => ({ id: w.id, name: w.name }))}
-              agentMetaOuvert={agentMetaOuvert}
+              /* Le formulaire se ferme sur l'inconnu, et c'est le bon sens d'erreur : proposer
+                 « l'agent de Meta répond » sans l'avoir lu ferait créer une publicité sans répondeur. */
+              agentMetaOuvert={agentMetaOuvert === true}
               fermer={() => setFormOuvert(false)}
               creee={chargerPubs}
             />

@@ -341,10 +341,14 @@ function CampaignsInner({ session }: { session: Session }) {
             </p>
           ) : (
             /* ⚠️ IL PORTE UN `data-testid`, ET CE N'EST PAS DE LA DÉCORATION. Son test le cherchait par son
-               TEXTE : un `getByText` non ancré matche aussi chaque ANCÊTRE dont le contenu contient la
-               phrase, donc le nombre d'éléments trouvés dépend de l'avancement du rendu. Le test passait ou
-               tombait en « strict mode violation » selon la charge du runner, ce qui se lit comme un défaut
-               du code alors que c'est le localisateur qui est imprécis. */
+               TEXTE, or CETTE PHRASE EST RENDUE PLUSIEURS FOIS : ici pour le total, et une fois PAR
+               CAMPAGNE plus bas, où la ligne dit « coût estimé » suivi d'un span « indisponible », donc un
+               texte complet identique. Le compte passait de 1 à 1 + le nombre de campagnes selon que la
+               liste avait eu le temps de paraître, d'où un échec intermittent qui se lit comme un défaut du
+               code alors que c'est le localisateur qui est imprécis.
+               🔴 LA PREMIÈRE VERSION DE CE COMMENTAIRE DISAIT « un getByText matche aussi les ancêtres ».
+               C'ÉTAIT FAUX, et vérifié dans la source de Playwright : son moteur de texte écarte un élément
+               dès qu'un de ses enfants matche aussi. Une explication commode qui serait recopiée. */
             <p className="mt-0.5 text-xs text-ink-400" data-testid="campagnes-cout-indisponible">{t('coût estimé indisponible', 'estimated cost unavailable')}</p>
           )}
         </div>

@@ -68,8 +68,12 @@ export function PubsListe({ tenantId, publicites, recharger, comptePubId, agentM
    * automation ne prend le relais, et l'entonnoir les compte comme SERVIS (`agent_meta` est délibérément
    * hors des « non pris en charge », au motif que quelqu'un répond). Le client lit donc « tout va bien »
    * sur le chiffre qui sert à décider de remettre du budget.
+   *
+   * 🔴 `null` = PAS ENCORE LU, ET LE BANDEAU NE SORT PAS. À `false` par défaut, il paraissait à chaque
+   * ouverture de l'écran, avant que le réglage soit lu, puis disparaissait ; et il restait à demeure si
+   * la lecture échouait. Même règle que `enPauseChezMeta` : on n'invente pas un état qu'on n'a pas lu.
    */
-  agentMetaOuvert: boolean;
+  agentMetaOuvert: boolean | null;
 }) {
   const t = useT();
   const [ouverte, setOuverte] = useState<string | null>(null);
@@ -101,7 +105,7 @@ export function PubsListe({ tenantId, publicites, recharger, comptePubId, agentM
               {p.motifRefus !== null && (
                 <p className="mt-1 text-xs text-red-700" data-testid="pub-motif">{p.motifRefus}</p>
               )}
-              {p.destination === 'agent_meta' && !agentMetaOuvert && (
+              {p.destination === 'agent_meta' && agentMetaOuvert === false && (
                 /* 🔴 PLUS PERSONNE NE RÉPOND, ET RIEN D'AUTRE NE LE DIRAIT. Ces prospects ne sont pas
                    comptés « non pris en charge » (l'entonnoir suppose qu'un agent répond), donc sans ce
                    bandeau l'écran affiche une publicité qui marche pendant qu'elle brûle du budget. */

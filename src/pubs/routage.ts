@@ -32,28 +32,29 @@ export type DestinationPub = 'scenario' | 'agent_meta';
  * `tests/pubs-entonnoir.test.ts` LIT le fichier SQL et exige l'égalité des deux listes.
  */
 export const ISSUES_ROUTAGE = [
-  /** Aucune campagne connue : les declencheurs ordinaires tournent, exactement comme avant ce lot. */
+  /** Aucune campagne connue : les déclencheurs ordinaires tournent, exactement comme avant ce lot. */
   'inchange',
-  /** La pub envoie ses leads a l'agent de Meta : on ne declenche rien, il repond, c'est lui le primaire. */
+  /** La pub envoie ses leads à l'agent de Meta : on ne déclenche rien, il répond, c'est lui le primaire. */
   'agent_meta',
-  /** Le fil a ete repris a l'agent de Meta, le scenario a la main. */
+  /** Le fil a été repris à l'agent de Meta, le scénario a la main. */
   'reprise_reussie',
-  /** Meta a refuse de rendre le fil : son agent garde le lead, et le scenario ne part pas. */
+  /** Meta a refusé de rendre le fil : son agent garde le lead, et le scénario ne part pas. */
   'reprise_refusee',
-  /** Le contact a dit STOP. Rien ne part, et l'arrivee le dit plutot que de disparaitre. */
+  /** Le contact a dit STOP. Rien ne part, et l'arrivée le dit plutôt que de disparaître. */
   'desabonne',
-  /** Le contact est bloque. Rien ne part. */
+  /** Le contact est bloqué. Rien ne part. */
   'bloque',
-  /** Cas nominal : le scenario de la pub, et lui seul, est evalue. */
+  /** Cas nominal : le scénario de la pub, et lui seul, est évalué. */
   'scenario',
   /**
-   * La publicite confie ses leads a un scenario, et il n'y a RIEN a demarrer : scenario supprime, ou
-   * publicite pas encore publiee (son automation nait eteinte).
+   * La publicité confie ses leads à un scénario, et il n'y a RIEN à démarrer : scénario supprimé, ou
+   * publicité pas encore publiée (son automation naît éteinte).
    *
-   * ELLE EXISTE PARCE QU'ON NE PREND PAS LE FIL DANS CE CAS, et c'est tout ce qu'elle dit. Relevee par
-   * une relecture a froid : sans elle, un lead `standby` faisait prendre le fil a l'agent de Meta pour
-   * que PERSONNE ne parle ensuite, donc un clic PAYE repondu par un silence de vingt-quatre heures, la
-   * ou l'agent de Meta repondait avant ce lot.
+   * 🔴 ELLE EXISTE PARCE QU'ON NE PREND PAS LE FIL DANS CE CAS, et c'est tout ce qu'elle dit. Relevée
+   * par une relecture à froid : sans elle, un lead `standby` faisait prendre le fil à l'agent de Meta
+   * pour que PERSONNE ne parle ensuite, donc un clic PAYÉ répondu par un silence de vingt-quatre heures,
+   * là où l'agent de Meta répondait avant ce lot. Une capacité manquante est un désagrément ; une
+   * RÉGRESSION sur le chemin d'un client qui paie est autre chose.
    */
   'sans_scenario',
 ] as const;

@@ -162,12 +162,26 @@ describe('le bandeau de l’agent de Meta éteint', () => {
   const source = (): string => readFileSync(join(process.cwd(), 'web/components/PubsListe.tsx'), 'utf8');
 
   it('🔴 l’écran reçoit l’état de l’agent, et pose le bandeau sur les pubs qui en dépendent', () => {
-    expect(source()).toContain("p.destination === 'agent_meta' && !agentMetaOuvert");
+    expect(source()).toContain("p.destination === 'agent_meta' && agentMetaOuvert === false");
   });
 
-  it('la page le lui passe : sans ça, la prop serait toujours fausse et le bandeau permanent', () => {
+  it('🔴 la page passe l’ÉTAT LU à la LISTE, pas un littéral', () => {
+    /**
+     * ⚠️ L'ASSERTION EST ANCRÉE SUR LE BLOC DE PROPS DE `PubsListe`, et c'est tout l'intérêt. Sa version
+     * précédente cherchait `agentMetaOuvert={agentMetaOuvert}` N'IMPORTE OÙ dans le fichier : le
+     * `<PubFormulaire>` en portait une occurrence, donc remplacer celle de la LISTE par un littéral
+     * laissait les 18 tests verts. Une relecture à froid l'a montré en posant la mutation.
+     */
     const page = readFileSync(join(process.cwd(), 'web/app/publicites/page.tsx'), 'utf8');
-    expect(page).toContain('agentMetaOuvert={agentMetaOuvert}');
-    expect(page).toContain('comptePubId={etat.connexion.comptePubId}');
+    expect(page).toContain('comptePubId={etat.connexion.comptePubId} agentMetaOuvert={agentMetaOuvert}');
+  });
+
+  it('🔴 `null` NE VAUT PAS « éteint » : le bandeau exige un FAUX lu', () => {
+    // Le défaut corrigé : `!agentMetaOuvert` sortait aussi sur `null`, donc l'avertissement paraissait
+    // sur le chemin nominal avant que le réglage soit lu, et restait à demeure si la lecture échouait.
+    expect(source()).not.toContain('!agentMetaOuvert');
+    const page = readFileSync(join(process.cwd(), 'web/app/publicites/page.tsx'), 'utf8');
+    expect(page).toContain('useState<boolean | null>(null)');
+    expect(page).toContain('.catch(() => setAgentMetaOuvert(null))');
   });
 });

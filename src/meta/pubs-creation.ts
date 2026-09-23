@@ -119,9 +119,17 @@ function montantMajeur(brut: string | undefined): number | null {
  *
  * ⚠️ IL EXISTE PARCE QUE LA PHRASE CI-DESSUS ÉTAIT FAUSSE POUR LES DEUX CHAMPS QUI COMPTENT LE PLUS.
  * « Aucune réponse de Meta ne doit pouvoir faire ça » ne valait que pour le budget : la dépense et les
- * clics passaient par un `Number()` nu, `noterSuivi` écrit avec un `coalesce`, Postgres ACCEPTE `NaN`
- * dans un `numeric`, et l'entonnoir le rend tel quel à l'écran. Une garde qui ne couvre qu'un de ses
- * trois champs est une garde que son propre commentaire fait croire complète.
+ * clics passaient par un `Number()` nu. Une garde qui ne couvre qu'un de ses trois champs est une garde
+ * que son propre commentaire fait croire complète.
+ *
+ * ⚠️ ET LES DEUX CHAMPS NE CASSENT PAS DE LA MÊME FAÇON, ce qu'une première version de ce texte disait
+ * de travers. `depense` est un `numeric`, qui ACCEPTE `NaN` : l'écriture passe et l'écran affiche
+ * « NaN ». `clics` est un `integer`, qui le REFUSE : l'écriture lève `22P02`, donc c'est tout le
+ * balayage de suivi qui tombe pour cet espace. Le second est plus bruyant, pas moins grave.
+ *
+ * 🔴 CE QUI RESTE OUVERT : cette fonction garantit le FINI, pas l'ENTIER. Un `inline_link_clicks`
+ * fractionnaire casserait encore l'écriture de `clics`, et aucune mesure ne dit aujourd'hui si Meta
+ * peut en rendre un.
  *
  * ⚠️ ZÉRO EST UNE MESURE VALIDE ICI, contrairement au budget : une campagne qui a diffusé sans dépenser
  * existe. Seul le NON FINI est refusé, et c'est pour ça que les deux fonctions restent distinctes.
