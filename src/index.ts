@@ -2325,6 +2325,7 @@ async function main(): Promise<void> {
           // celle que la route vient d'utiliser pour valider le choix.
           const actifs = await noterSiRefus(t, clientPubs.actifsAccordes(jeton));
           const compte = actifs.comptesPub.find((c) => c.id === choix.comptePubId);
+          const page = actifs.pages.find((p) => p.id === choix.pageId);
           // Le WABA de l'espace : sans lui, il n'y a rien à comparer, donc le verdict est « inconnu » et non
           // « non liée ». Un espace sans numéro WhatsApp n'a pas une Page mal liée, il n'a pas de numéro.
           const waba = await wabaDeLEspace(t);
@@ -2332,7 +2333,16 @@ async function main(): Promise<void> {
           // propres échecs en 'inconnu' et ne lève jamais. L'entourer d'une garde donnerait à lire qu'un
           // refus de Meta sur la Page peut marquer le jeton, ce qui est faux.
           const pageLiee = waba === null ? 'inconnu' as const : await clientPubs.pageLieeAuCompte(choix.pageId, waba, jeton);
-          await connexions.choisirActifs(t, { ...choix, devise: compte?.devise ?? null, fuseau: compte?.fuseau ?? null, pageLiee });
+          await connexions.choisirActifs(t, {
+            ...choix,
+            // Les NOMS sont gardés ici et nulle part ailleurs (0169) : l'écran les relirait sinon chez Meta
+            // à chaque ouverture, pour afficher ce qu'on sait déjà.
+            compteNom: compte?.nom ?? null,
+            pageNom: page?.nom ?? null,
+            devise: compte?.devise ?? null,
+            fuseau: compte?.fuseau ?? null,
+            pageLiee,
+          });
           const etat = await connexions.lire(t);
           if (etat === null) throw new Error('connexion publicitaire introuvable après enregistrement');
           return etat;

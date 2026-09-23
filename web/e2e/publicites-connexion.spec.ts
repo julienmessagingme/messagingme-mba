@@ -18,7 +18,7 @@ const ACTIFS = {
 };
 
 const CONNEXION = {
-  comptePubId: '111', pageId: 'p1', devise: 'EUR', fuseau: 'Europe/Paris',
+  comptePubId: '111', compteNom: 'GMC', pageId: 'p1', pageNom: 'Gerermonchantier', devise: 'EUR', fuseau: 'Europe/Paris',
   pageLiee: 'oui' as string | null, connectePar: 'u-1',
   connecteLe: '2026-09-23T08:00:00.000Z', jetonRejeteLe: null as string | null,
 };
@@ -75,11 +75,20 @@ test.describe('Publicités : les états de la connexion', () => {
 
   test('connecté : le compte, la Page, la devise et le fuseau viennent du serveur', async ({ page }) => {
     await brancher(page, etatVivant({ connexion: CONNEXION }));
-    await expect(page.getByTestId('pubs-compte')).toHaveText('111');
-    await expect(page.getByTestId('pubs-page')).toHaveText('p1');
+    // Le NOM, pas l identifiant : c est ce que Julien demande le 2026-09-23 (« je veux voir des noms »).
+    await expect(page.getByTestId('pubs-compte')).toHaveText('GMC');
+    await expect(page.getByTestId('pubs-page')).toHaveText('Gerermonchantier');
+    // et l identifiant reste a vue, en petit : c est lui qu on donne au support.
+    await expect(page.getByText('111', { exact: true })).toBeVisible();
     await expect(page.getByTestId('pubs-devise')).toHaveText('EUR');
     await expect(page.getByTestId('pubs-fuseau')).toHaveText('Europe/Paris');
     await expect(page.getByText(/La Page est bien liée|The Page is linked/)).toBeVisible();
+  });
+
+  test('⚠️ sans nom (connexion d avant la migration 0169), l ecran retombe sur l identifiant', async ({ page }) => {
+    await brancher(page, etatVivant({ connexion: { ...CONNEXION, compteNom: null, pageNom: null } }));
+    await expect(page.getByTestId('pubs-compte')).toHaveText('111');
+    await expect(page.getByTestId('pubs-page')).toHaveText('p1');
   });
 
   test('🔴 une liaison INCONNUE ne se dit pas « non liée » : on annonce l’ignorance, pas un refus', async ({ page }) => {

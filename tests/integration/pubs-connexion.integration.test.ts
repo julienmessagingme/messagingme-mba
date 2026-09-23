@@ -37,8 +37,12 @@ describe.skipIf(!url)('lot 2 des pubs : la connexion d un espace (Postgres réel
   });
 
   it('🔴 un second jeton n ECRASE JAMAIS le premier : la base refuse, et le dit', async () => {
-    await store.choisirActifs(tenantId, { comptePubId: '111', pageId: 'p1', devise: 'EUR', fuseau: 'Europe/Paris', pageLiee: 'oui' });
-    expect((await store.lire(tenantId))?.comptePubId).toBe('111');
+    await store.choisirActifs(tenantId, { comptePubId: '111', compteNom: 'GMC', pageId: 'p1', pageNom: 'Gerermonchantier', devise: 'EUR', fuseau: 'Europe/Paris', pageLiee: 'oui' });
+    const etat = await store.lire(tenantId);
+    expect(etat?.comptePubId).toBe('111');
+    // Les NOMS sont gardes (0169) : l ecran montre « GMC », pas quinze chiffres.
+    expect(etat?.compteNom).toBe('GMC');
+    expect(etat?.pageNom).toBe('Gerermonchantier');
 
     // Le jeton en place n expire jamais : l ecraser laisserait un acces vivant dont nous perdrions le seul
     // exemplaire (le piege de la cle Vercel, 0124). Pour reconnecter, il faut passer par la deconnexion.
@@ -58,7 +62,7 @@ describe.skipIf(!url)('lot 2 des pubs : la connexion d un espace (Postgres réel
 
   it('🔴 un espace ne voit JAMAIS la connexion d un autre', async () => {
     await store.poserJeton(voisinId, 'CHIFFRE_VOISIN', null);
-    await store.choisirActifs(voisinId, { comptePubId: '999', pageId: 'p9', devise: 'USD', fuseau: 'America/New_York', pageLiee: 'non' });
+    await store.choisirActifs(voisinId, { comptePubId: '999', compteNom: 'Voisin', pageId: 'p9', pageNom: 'Page voisine', devise: 'USD', fuseau: 'America/New_York', pageLiee: 'non' });
     expect((await store.lire(tenantId))?.comptePubId).toBeNull();
     // CHIFFRE_3 : c'est le jeton pose par le cas precedent, apres deconnexion. Ces cas partagent leur
     // espace et s'enchainent, donc le jeton attendu ici SUIT ce que le cas d'avant a laisse.
@@ -77,7 +81,7 @@ describe.skipIf(!url)('lot 2 des pubs : la connexion d un espace (Postgres réel
 
   it('⚠️ les trois valeurs de liaison passent la contrainte, une quatrième est REFUSÉE par la base', async () => {
     for (const v of ['oui', 'non', 'inconnu'] as const) {
-      await store.choisirActifs(tenantId, { comptePubId: '111', pageId: 'p1', devise: 'EUR', fuseau: 'Europe/Paris', pageLiee: v });
+      await store.choisirActifs(tenantId, { comptePubId: '111', compteNom: 'GMC', pageId: 'p1', pageNom: 'Gerermonchantier', devise: 'EUR', fuseau: 'Europe/Paris', pageLiee: v });
       expect((await store.lire(tenantId))?.pageLiee).toBe(v);
     }
     await expect(

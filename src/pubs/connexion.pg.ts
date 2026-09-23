@@ -13,7 +13,10 @@ import type { LiaisonPage } from '../meta/pubs';
  */
 export interface ConnexionPub {
   comptePubId: string | null;
+  /** Le nom vu chez Meta AU MOMENT DU CHOIX (0169). Libellé d'affichage, jamais une clé. */
+  compteNom: string | null;
   pageId: string | null;
+  pageNom: string | null;
   devise: string | null;
   fuseau: string | null;
   pageLiee: LiaisonPage | null;
@@ -28,18 +31,22 @@ export class PgPubConnexionStore {
   /** L'état de la connexion, sans le jeton. C'est ce que l'écran affiche. */
   async lire(tenantId: string): Promise<ConnexionPub | null> {
     const { rows } = await this.pool.query<{
-      compte_pub_id: string | null; page_id: string | null; devise: string | null; fuseau: string | null;
+      compte_pub_id: string | null; compte_nom: string | null; page_id: string | null; page_nom: string | null;
+      devise: string | null; fuseau: string | null;
       page_liee: string | null; connecte_par: string | null; connecte_le: Date; jeton_rejete_le: Date | null;
     }>(
-      `select compte_pub_id, page_id, devise, fuseau, page_liee, connecte_par, connecte_le, jeton_rejete_le
-       from pub_connexion where tenant_id = $1`,
+      `select compte_pub_id, compte_nom, page_id, page_nom, devise, fuseau, page_liee, connecte_par,
+              connecte_le, jeton_rejete_le
+         from pub_connexion where tenant_id = $1`,
       [tenantId],
     );
     const r = rows[0];
     if (r === undefined) return null;
     return {
       comptePubId: r.compte_pub_id,
+      compteNom: r.compte_nom,
       pageId: r.page_id,
+      pageNom: r.page_nom,
       devise: r.devise,
       fuseau: r.fuseau,
       pageLiee: estLiaison(r.page_liee) ? r.page_liee : null,
@@ -86,12 +93,16 @@ export class PgPubConnexionStore {
   /** Enregistre le compte et la Page choisis, avec ce que Meta a dit d'eux. */
   async choisirActifs(
     tenantId: string,
-    choix: { comptePubId: string; pageId: string; devise: string | null; fuseau: string | null; pageLiee: LiaisonPage },
+    choix: {
+      comptePubId: string; compteNom: string | null; pageId: string; pageNom: string | null;
+      devise: string | null; fuseau: string | null; pageLiee: LiaisonPage;
+    },
   ): Promise<void> {
     await this.pool.query(
-      `update pub_connexion set compte_pub_id = $2, page_id = $3, devise = $4, fuseau = $5, page_liee = $6
-       where tenant_id = $1`,
-      [tenantId, choix.comptePubId, choix.pageId, choix.devise, choix.fuseau, choix.pageLiee],
+      `update pub_connexion set compte_pub_id = $2, compte_nom = $3, page_id = $4, page_nom = $5,
+              devise = $6, fuseau = $7, page_liee = $8
+         where tenant_id = $1`,
+      [tenantId, choix.comptePubId, choix.compteNom, choix.pageId, choix.pageNom, choix.devise, choix.fuseau, choix.pageLiee],
     );
   }
 

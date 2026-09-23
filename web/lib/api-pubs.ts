@@ -20,7 +20,10 @@ export type LiaisonPage = 'oui' | 'non' | 'inconnu';
 
 export interface ConnexionPubVue {
   comptePubId: string | null;
+  /** Nom vu chez Meta au moment du choix (migration 0169). Peut manquer : on retombe sur l'identifiant. */
+  compteNom: string | null;
   pageId: string | null;
+  pageNom: string | null;
   devise: string | null;
   fuseau: string | null;
   pageLiee: LiaisonPage | null;

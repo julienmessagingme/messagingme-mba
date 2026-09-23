@@ -267,8 +267,14 @@ function Connecte({ t, etat, busy, deconnecter, reconnecter }: {
     <div>
       <h2 className="text-sm font-semibold text-ink-900">{t('Compte publicitaire connecté', 'Ad account connected')}</h2>
       <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
-        <Ligne id="compte" cle={t('Compte', 'Account')} valeur={c.comptePubId ?? t('à choisir', 'to be chosen')} />
-        <Ligne id="page" cle={t('Page', 'Page')} valeur={c.pageId ?? t('à choisir', 'to be chosen')} />
+        {/* Le NOM d'abord, l'identifiant en repli : « GMC » se reconnaît, pas quinze chiffres. Les
+            connexions faites avant la migration 0169 n'ont pas de nom, d'où le repli. */}
+        <Ligne id="compte" cle={t('Compte', 'Account')}
+          valeur={c.compteNom ?? c.comptePubId ?? t('à choisir', 'to be chosen')}
+          sous={c.compteNom !== null ? c.comptePubId : null} />
+        <Ligne id="page" cle={t('Page', 'Page')}
+          valeur={c.pageNom ?? c.pageId ?? t('à choisir', 'to be chosen')}
+          sous={c.pageNom !== null ? c.pageId : null} />
         <Ligne id="devise" cle={t('Devise', 'Currency')} valeur={c.devise ?? '—'} />
         <Ligne id="fuseau" cle={t('Fuseau', 'Time zone')} valeur={c.fuseau ?? '—'} />
       </dl>
@@ -311,11 +317,13 @@ function Connecte({ t, etat, busy, deconnecter, reconnecter }: {
   );
 }
 
-function Ligne({ id, cle, valeur }: { id: string; cle: string; valeur: string }) {
+/** `sous` : l'identifiant, en petit sous le nom. On le garde à vue, c'est lui qu'on donne au support. */
+function Ligne({ id, cle, valeur, sous }: { id: string; cle: string; valeur: string; sous?: string | null }) {
   return (
     <div>
       <dt className="text-xs font-medium text-ink-400">{cle}</dt>
       <dd data-testid={`pubs-${id}`} className="text-ink-900">{valeur}</dd>
+      {sous !== null && sous !== undefined && <div className="text-xs text-ink-400">{sous}</div>}
     </div>
   );
 }

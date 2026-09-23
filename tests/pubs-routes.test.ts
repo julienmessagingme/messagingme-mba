@@ -15,10 +15,10 @@ import type { ActifsAccordes } from '../src/meta/pubs';
 const TENANT = 't-1';
 
 const etatVide: ConnexionPub = {
-  comptePubId: null, pageId: null, devise: null, fuseau: null, pageLiee: null,
+  comptePubId: null, compteNom: null, pageId: null, pageNom: null, devise: null, fuseau: null, pageLiee: null,
   connectePar: null, connecteLe: new Date('2026-09-23T08:00:00Z'), jetonRejeteLe: null,
 };
-const etatChoisi: ConnexionPub = { ...etatVide, comptePubId: '111', pageId: 'p1', devise: 'EUR', fuseau: 'Europe/Paris', pageLiee: 'oui' };
+const etatChoisi: ConnexionPub = { ...etatVide, comptePubId: '111', compteNom: 'GMC', pageId: 'p1', pageNom: 'Gerermonchantier', devise: 'EUR', fuseau: 'Europe/Paris', pageLiee: 'oui' };
 const accordes: ActifsAccordes = {
   comptesPub: [
     { id: '111', nom: 'GMC', devise: 'EUR', fuseau: 'Europe/Paris', statut: 1 },
