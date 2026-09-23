@@ -63,7 +63,8 @@ export function PubsListe({ tenantId, publicites, recharger, comptePubId, agentM
    * L'agent de Meta répond-il ENCORE sur ce numéro ?
    *
    * 🔴 IL PEUT S'ÉTEINDRE APRÈS LA CRÉATION, et c'est le seul état où cet écran ment sans le savoir. Le
-   * formulaire ne propose « l'agent de Meta répond » que si l'agent est ouvert, mais rien ensuite ne
+   * formulaire ne propose « l'agent de Meta répond » que si l'agent est ouvert POUR DE BON (lu à `true`),
+   * mais rien ensuite ne
    * surveille ce réglage : éteint après coup, la publicité continue de lui confier ses prospects, aucune
    * automation ne prend le relais, et l'entonnoir les compte comme SERVIS (`agent_meta` est délibérément
    * hors des « non pris en charge », au motif que quelqu'un répond). Le client lit donc « tout va bien »
@@ -108,7 +109,9 @@ export function PubsListe({ tenantId, publicites, recharger, comptePubId, agentM
               {p.destination === 'agent_meta' && agentMetaOuvert === false && (
                 /* 🔴 PLUS PERSONNE NE RÉPOND, ET RIEN D'AUTRE NE LE DIRAIT. Ces prospects ne sont pas
                    comptés « non pris en charge » (l'entonnoir suppose qu'un agent répond), donc sans ce
-                   bandeau l'écran affiche une publicité qui marche pendant qu'elle brûle du budget. */
+                   bandeau l'écran affiche une publicité qui marche alors que ses prospects n'ont personne
+                   en face. ⚠️ Il ne regarde PAS si elle diffuse : la phrase a dit « pendant qu'elle brûle
+                   du budget » jusqu'à ce qu'une relecture note qu'elle sort aussi sur une pub en pause. */
                 <p className="mt-1 text-xs text-amber-700" data-testid={`pub-agent-eteint-${p.id}`}>
                   {t('Cette publicité confie ses prospects à l’agent de Meta, qui ne répond plus sur ce numéro. Rallumez-le, ou changez la destination de la publicité.',
                      'This ad hands its leads to the Meta agent, which no longer answers on this number. Turn it back on, or change the ad’s destination.')}

@@ -117,7 +117,9 @@ function PublicitesInner({ session }: { session: Session }) {
        * à le mettre dans les dépendances de ce `useCallback` ; son identité changerait alors à chaque
        * chargement, l'effet qui l'appelle se rejouerait, et l'écran bombarderait l'API en boucle.
        */
-      if (err instanceof ApiError && err.status === 404) { if (!listeDejaServie.current) setRouteAbsente(true); return; }
+      // ⚠️ ET S'IL ARRIVE APRÈS UN SUCCÈS, IL TOMBE DANS L'ERREUR ORDINAIRE plutôt que d'être MUET : une
+      // liste qui a cessé de se rafraîchir sans le dire est « un chiffre périmé qui a l'air frais ».
+      if (err instanceof ApiError && err.status === 404 && !listeDejaServie.current) { setRouteAbsente(true); return; }
       setErreur(err instanceof Error ? err.message : t('Chargement impossible', 'Loading failed'));
     }
   }, [session.tenantId, t]);
@@ -129,7 +131,9 @@ function PublicitesInner({ session }: { session: Session }) {
       .then((r) => setScenarios((r.workflows ?? []).filter(estEnLigne)))
       .catch(() => setScenarios([]));
     await getSettings(session.tenantId)
-      .then((r) => setAgentMetaOuvert(r.mbaEnabled === true))
+      // ⚠️ UNE CLÉ ABSENTE VAUT INCONNU, PAS « éteint » : la réponse n'est pas validée, et c'est le même
+      // cas que le 200 sans la clé décrit trente lignes plus haut.
+      .then((r) => setAgentMetaOuvert(typeof r.mbaEnabled === 'boolean' ? r.mbaEnabled : null))
       // ⚠️ `null`, PAS `false` : un échec de lecture ne dit pas que l'agent est éteint, il dit qu'on ne
       // sait pas. Écrire `false` ici posait un avertissement définitif sur une panne passagère.
       .catch(() => setAgentMetaOuvert(null));
@@ -306,9 +310,10 @@ function PublicitesInner({ session }: { session: Session }) {
             <PubFormulaire
               tenantId={session.tenantId}
               scenarios={scenarios.map((w) => ({ id: w.id, name: w.name }))}
-              /* Le formulaire se ferme sur l'inconnu, et c'est le bon sens d'erreur : proposer
-                 « l'agent de Meta répond » sans l'avoir lu ferait créer une publicité sans répondeur. */
-              agentMetaOuvert={agentMetaOuvert === true}
+              /* Il reçoit les TROIS états : il se ferme sur l'inconnu, ce qui est le bon sens d'erreur,
+                 mais il ne doit pas ANNONCER que l'agent de Meta est éteint quand nous avons seulement
+                 échoué à lire notre réglage. Un `=== true` ici lui ôtait le moyen de faire la différence. */
+              agentMetaOuvert={agentMetaOuvert}
               fermer={() => setFormOuvert(false)}
               creee={chargerPubs}
             />

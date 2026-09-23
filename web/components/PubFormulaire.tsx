@@ -29,7 +29,13 @@ export function PubFormulaire({ tenantId, scenarios, agentMetaOuvert, fermer, cr
    * créerait une publicité dont les prospects n'arriveraient nulle part : c'est le « proposé mais inerte »
    * que le produit s'interdit.
    */
-  agentMetaOuvert: boolean;
+  /**
+   * 🔴 `null` = PAS ENCORE LU, ET CE N'EST PAS « éteint ». Le formulaire se FERME sur l'inconnu (bon
+   * sens d'erreur : proposer l'agent de Meta sans l'avoir lu ferait créer une publicité sans répondeur),
+   * mais il ne l'AFFIRME pas : dire « l'agent de Meta n'est pas ouvert sur ce numéro » est un énoncé sur
+   * la configuration Meta du client, et nous n'avons fait qu'échouer à lire NOTRE réglage.
+   */
+  agentMetaOuvert: boolean | null;
   fermer: () => void;
   creee: () => Promise<void>;
 }) {
@@ -195,12 +201,20 @@ export function PubFormulaire({ tenantId, scenarios, agentMetaOuvert, fermer, cr
         <option value="scenario">{t('Un scénario', 'A scenario')}</option>
         {/* 🔴 PROPOSÉ SEULEMENT SI L'AGENT DE META RÉPOND VRAIMENT. Sinon, les prospects de cette publicité
             n'arriveraient nulle part, et rien ne le dirait. */}
-        {agentMetaOuvert && <option value="agent_meta">{t('L’agent de Meta', 'The Meta agent')}</option>}
+        {agentMetaOuvert === true && <option value="agent_meta">{t('L’agent de Meta', 'The Meta agent')}</option>}
       </select>
-      {!agentMetaOuvert && (
+      {agentMetaOuvert === false && (
         <p className="mt-1 text-xs text-ink-400" data-testid="pub-agent-indispo">
           {t('L’agent de Meta n’est pas ouvert à tout le monde sur ce numéro : il ne peut pas répondre à ces prospects.',
              'The Meta agent is not open to everyone on this number: it cannot answer these leads.')}
+        </p>
+      )}
+      {agentMetaOuvert === null && (
+        /* ⚠️ ON DIT NOTRE IGNORANCE, PAS UN VERDICT SUR LEUR NUMÉRO. L'option reste cachée, ce qui est le
+           bon sens d'erreur, mais la phrase décrit CE QUI S'EST PASSÉ CHEZ NOUS. */
+        <p className="mt-1 text-xs text-ink-400" data-testid="pub-agent-inconnu">
+          {t('Nous n’avons pas pu lire l’état de l’agent de Meta pour cet espace : rechargez la page pour le proposer.',
+             'We could not read the Meta agent state for this space: reload the page to offer it.')}
         </p>
       )}
       {destination === 'agent_meta' && (

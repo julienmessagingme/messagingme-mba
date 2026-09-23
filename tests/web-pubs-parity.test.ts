@@ -114,6 +114,7 @@ describe('ce que l’écran annonce sur les prospects non pris en charge', () =>
       expect(texte).toContain(mots.en);
     });
   }
+
 });
 
 /**
@@ -181,7 +182,35 @@ describe('le bandeau de l’agent de Meta éteint', () => {
     // sur le chemin nominal avant que le réglage soit lu, et restait à demeure si la lecture échouait.
     expect(source()).not.toContain('!agentMetaOuvert');
     const page = readFileSync(join(process.cwd(), 'web/app/publicites/page.tsx'), 'utf8');
-    expect(page).toContain('useState<boolean | null>(null)');
+    // ⚠️ ANCRÉES SUR LE SYMBOLE, pas sur un fragment qui traîne. `useState<boolean | null>(null)` seul
+    // serait satisfait par le premier AUTRE tri-état ajouté à cet écran, et la garde redeviendrait
+    // décorative sans que personne ne la touche : c'est exactement ce qui venait d'arriver à sa voisine.
+    expect(page).toContain('const [agentMetaOuvert, setAgentMetaOuvert] = useState<boolean | null>(null)');
     expect(page).toContain('.catch(() => setAgentMetaOuvert(null))');
+  });
+
+  it('🔴 LE FORMULAIRE SE FERME SUR L’INCONNU, ET NE L’ANNONCE PAS COMME UNE PANNE', () => {
+    /**
+     * Deux décisions distinctes, et une seule était tenue. Se FERMER sur `null` est le bon sens d'erreur :
+     * proposer « l'agent de Meta répond » sans l'avoir lu ferait créer une publicité sans répondeur. Mais
+     * DIRE « l'agent de Meta n'est pas ouvert sur ce numéro » est un énoncé sur la configuration Meta du
+     * client, alors que nous avons seulement échoué à lire NOTRE réglage.
+     */
+    const form = readFileSync(join(process.cwd(), 'web/components/PubFormulaire.tsx'), 'utf8');
+    expect(form).toContain("agentMetaOuvert === true && <option value=\"agent_meta\"");
+    expect(form).toContain('agentMetaOuvert === false && (');
+    expect(form).toContain('agentMetaOuvert === null && (');
+    /**
+     * Et la page passe l'ÉTAT À SES DEUX CONSOMMATEURS, jamais une expression qui l'écrase.
+     *
+     * ⚠️ LA RÈGLE EST ÉNONCÉE SUR LA FORME, PAS SUR UNE VALEUR FAUTIVE PRÉCISE. Interdire le seul
+     * `=== true` laisserait passer `!== false`, `?? false`, `Boolean(...)` : autant de façons d'ôter au
+     * consommateur le moyen de distinguer « éteint » de « pas encore lu ». On exige donc que CHAQUE
+     * occurrence transmette la variable nue.
+     */
+    const page = readFileSync(join(process.cwd(), 'web/app/publicites/page.tsx'), 'utf8');
+    const passages = [...page.matchAll(/agentMetaOuvert=\{([^}]*)\}/g)].map((m) => m[1]);
+    expect(passages.length).toBeGreaterThanOrEqual(2);
+    for (const p of passages) expect(p).toBe('agentMetaOuvert');
   });
 });
