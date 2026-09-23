@@ -2853,7 +2853,8 @@ et le taux de passage vers la suivante.
 🔴 **Un chiffre inconnu s'écrit « non disponible », jamais « 0 »** : zéro prospect ne donne pas un coût par
 prospect de zéro, il n'en donne aucun, et afficher 0 € ressemblerait au meilleur résultat imaginable sur
 l'écran qui sert à décider d'arrêter ou de remettre du budget.
-**Les prospects non pris en charge** (reprise refusée, désabonnés, bloqués) sont comptés À PART : ce sont
+**Les prospects non pris en charge** (reprise refusée, désabonnés, bloqués, et publicité dont le scénario
+n'est pas branché) sont comptés À PART : ce sont
 des clics payés qui n'ont produit aucune conversation, et les noyer dans le total les rendrait invisibles.
 
 **Un prospect qualifié** est celui à qui l'on pose le tag choisi pour la publicité, dans les 28 jours suivant

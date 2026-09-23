@@ -78,8 +78,11 @@ const campagneSuivieSchema = z.object({
   effective_status: z.string().optional(),
   start_time: z.string().optional(),
   stop_time: z.string().optional(),
-  // Meta rend les montants en CHAÎNE, et en unités mineures : `"15000"` pour 150 €.
-  lifetime_budget: z.string().optional(),
+  // Le budget vit sur l'ENSEMBLE : on l'expanse depuis la campagne. Meta rend les montants en CHAÎNE, et en
+  // unités mineures (`"15000"` pour 150 €).
+  adsets: z.object({
+    data: z.array(z.object({ lifetime_budget: z.string().optional() })).optional(),
+  }).optional(),
   issues_info: z.array(z.object({
     error_summary: z.string().optional(),
     error_message: z.string().optional(),
@@ -95,6 +98,21 @@ const lotInsightsSchema = z.record(z.string(), z.object({
     })).optional(),
   }).optional(),
 }));
+
+/**
+ * UN MONTANT DE META, DES UNITÉS MINEURES VERS L'UNITÉ PRINCIPALE, ou `null`.
+ *
+ * 🔴 `0` ET LE NON FINI VALENT `null`, ET C'EST LA MOITIÉ QUI COMPTE. Le suivi écrit avec un
+ * `coalesce($n, budget_total)` : une valeur non nulle ÉCRASE le budget saisi par le client. Un `"0"` rendu
+ * par Meta afficherait donc « budget 0 » et « peut dépenser jusqu'à 0 » sur une publicité qui va dépenser
+ * cent cinquante euros. Et `Number()` d'une valeur inattendue rend `NaN`, que Postgres ACCEPTE dans une
+ * colonne `numeric` : l'écran afficherait « NaN ». Aucune réponse de Meta ne doit pouvoir faire ça.
+ */
+function montantMajeur(brut: string | undefined): number | null {
+  if (brut === undefined) return null;
+  const n = Number(brut) / 100;
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 
 /** Découpe une liste en paquets. Fonction PURE, et la seule raison pour laquelle elle est nommée est qu'un
  *  découpage muet dans une boucle est l'endroit où l'on oublie le dernier paquet. */
@@ -219,7 +237,12 @@ export class MetaPubsCreationClient extends ClientGraph {
     for (const paquet of parPaquets(campagneIds, IDS_PAR_APPEL)) {
       const qs = new URLSearchParams({
         ids: paquet.join(','),
-        fields: 'id,name,effective_status,issues_info,lifetime_budget,start_time,stop_time',
+        // 🔴 LE BUDGET VIT SUR L'ENSEMBLE, PAS SUR LA CAMPAGNE, et le demander à la campagne était un
+        // défaut que la relecture à froid a trouvé : `payloadEnsemble` pose `lifetime_budget` sur l'ad set,
+        // `payloadCampagne` n'en pose aucun. Selon ce que Meta répondait, on n'aurait jamais rien rattrapé,
+        // ou pire on aurait écrasé un budget réel par zéro. On l'expanse depuis la campagne, ce qui ne coûte
+        // aucun appel de plus : une campagne créée ici n'a qu'un seul ensemble.
+        fields: 'id,name,effective_status,issues_info,start_time,stop_time,adsets.limit(1){lifetime_budget}',
       });
       const brut = await this.call(`${this.baseUrl}/${this.version}/?${qs.toString()}`, {
         headers: { Authorization: `Bearer ${jeton}` },
@@ -235,7 +258,7 @@ export class MetaPubsCreationClient extends ClientGraph {
           motifRefus: c.issues_info?.[0]?.error_summary ?? c.issues_info?.[0]?.error_message ?? null,
           debut: c.start_time ?? null,
           fin: c.stop_time ?? null,
-          budgetTotal: c.lifetime_budget === undefined ? null : Number(c.lifetime_budget) / 100,
+          budgetTotal: montantMajeur(c.adsets?.data?.[0]?.lifetime_budget),
         });
       }
     }

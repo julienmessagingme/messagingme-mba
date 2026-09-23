@@ -103,9 +103,12 @@ export async function processRoutagePub(
    *
    * 🔴 ON NE REPREND PAS LE FIL UNE SECONDE FOIS. `noterIssue` protège l'HISTOIRE (« le premier routage
    * gagne »), pas le GESTE : un second `take` reposerait `app_workflow` sur un fil qu'un opérateur aurait
-   * pu reprendre entre-temps, donc lui arracherait une conversation qu'il est en train de mener. La
-   * RESTRICTION, elle, se recalcule : elle doit rester la même, sinon une automation ordinaire ramasserait
-   * au rejeu un lead qu'elle n'avait pas le droit de toucher à la première livraison.
+   * pu reprendre entre-temps, donc lui arracherait une conversation qu'il est en train de mener.
+   *
+   * ⚠️ ET ON NE DEVINE PAS CE QUE LA PREMIÈRE LIVRAISON A OBTENU. La restriction d'un rejeu vaut donc
+   * `aucun` : aucune automation ordinaire ne ramasse le lead (elles ne devaient pas y toucher), et le
+   * scénario ne repart pas (il est parti la première fois, ou il avait été refusé). Voir la note sur
+   * `repriseReussie` dans la boucle : c'est là que la fiction inverse a coûté deux fautes certaines.
    */
   dejaVus?: ReadonlySet<string>,
 ): Promise<ReadonlyMap<string, RoutageDuMessage>> {
@@ -136,15 +139,27 @@ export async function processRoutagePub(
 
       let repriseReussie = false;
       let repriseLe: Date | null = null;
-      if (decision.sorte === 'reprendre_puis_pub') {
-        if (dejaVus?.has(m.messageId) === true) {
-          // Rejeu : le fil a déjà été pris (ou refusé) à la première livraison. On ne refait pas le geste,
-          // et on considère la reprise acquise pour que la restriction reste celle d'alors.
-          repriseReussie = true;
-        } else {
-          repriseReussie = await deps.reprendreLeFil(tenantId, m.waId);
-          if (repriseReussie) repriseLe = new Date();
-        }
+      /**
+       * 🔴 UN REJEU NE REFAIT RIEN, ET NE PRÉTEND RIEN. `repriseReussie` reste FAUX, ce qui vaut « on n'a
+       * rien pris maintenant », et c'est la seule lecture sûre des deux côtés.
+       *
+       * ⚠️ CE QU'UNE FICTION « reprise acquise » COÛTAIT, et une relecture à froid l'a trouvé : elle
+       * faisait poser `repris`, donc le handler RENDAIT à l'agent de Meta un fil sur lequel notre scénario
+       * pouvait être en train de parler (au rejeu, l'automation est en anti-rebond, donc rien ne démarre,
+       * donc le filet se déclenchait) ; et elle rendait la restriction `seule`, donc au rejeu d'un lead
+       * dont la reprise avait été REFUSÉE, le scénario partait sur un fil que l'agent de Meta détenait,
+       * c'est-à-dire les deux messages que tout ce lot s'emploie à éviter.
+       *
+       * ⚠️ CE QUE `false` COÛTE, ET C'EST ASSUMÉ : la restriction vaut `aucun`, donc un rejeu ne démarre
+       * jamais le scénario. Ce n'est un manque que si la PREMIÈRE livraison a échoué APRÈS l'écriture de
+       * l'événement, cas où le lead est perdu. C'est exactement la limite déjà assumée et documentée pour
+       * « premier message d'un nouveau contact » (`handleWebhookJob`), pour la même raison : le signal ne
+       * survit pas à un rejeu de job. Ce qu'on refuse, c'est d'échanger ce manque rare contre deux fautes
+       * certaines.
+       */
+      if (decision.sorte === 'reprendre_puis_pub' && dejaVus?.has(m.messageId) !== true) {
+        repriseReussie = await deps.reprendreLeFil(tenantId, m.waId);
+        if (repriseReussie) repriseLe = new Date();
       }
 
       const issue: IssueRoutage = decision.sorte === 'reprendre_puis_pub'

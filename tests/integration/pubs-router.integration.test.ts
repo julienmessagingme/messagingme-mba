@@ -26,11 +26,11 @@ describe.skipIf(!url)('lot 3 des pubs : router et qualifier (Postgres réel)', (
   const poserPub = async (
     t: string, campagneId: string,
     o: { destination?: string; automationId?: string | null; tag?: string | null } = {},
-  ) => pool.query(
+  ): Promise<string> => (await pool.query<{ id: string }>(
     `insert into publicites (tenant_id, campagne_id, nom, destination, automation_id, tag_qualification)
-     values ($1, $2, 'itest', $3, $4, $5)`,
+     values ($1, $2, 'itest', $3, $4, $5) returning id`,
     [t, campagneId, o.destination ?? 'scenario', o.automationId ?? null, o.tag ?? null],
-  );
+  )).rows[0]!.id;
 
   /** Vieillit une arrivée de N jours, pour éprouver la fenêtre d'attribution sans attendre un mois. */
   const vieillir = async (messageId: string, jours: number) => pool.query(
@@ -80,6 +80,79 @@ describe.skipIf(!url)('lot 3 des pubs : router et qualifier (Postgres réel)', (
       await poserPub(tenantId, 'camp-partagee');
       await poserPub(voisinId, 'camp-partagee');
       await expect(poserPub(tenantId, 'camp-partagee')).rejects.toThrow();
+    });
+
+    /**
+     * 🔴 LA SOUS-REQUÊTE QUI NE REND L'AUTOMATION QUE SI ELLE EST ALLUMÉE, ÉPROUVÉE DANS LES DEUX SENS.
+     *
+     * C'est la moitié SQL du correctif de régression du 2026-09-23 : sans elle, une publicité créée et pas
+     * encore publiée faisait PRENDRE le fil à l'agent de Meta pour que personne ne parle ensuite. Les cas
+     * ci-dessus ne pouvaient pas la voir, leur `automation_id` valant `null` parce qu'il n'y a AUCUNE
+     * automation, pas parce qu'elle est éteinte : la branche positive n'était exercée nulle part.
+     *
+     * ⚠️ Ils passent par les VRAIES méthodes du dépôt (`creerAutomation`, `allumerAutomation`), pas par du
+     * SQL recopié : un test qui réécrit la requête qu'il prétend garder ne garde que sa propre copie.
+     */
+    describe('l’automation n’est rendue que si elle est ALLUMÉE', () => {
+      let workflowId = '';
+
+      beforeAll(async () => {
+        workflowId = (await pool.query<{ id: string }>(
+          `insert into workflows (tenant_id, name) values ($1, 'itest-pubs-router-wf') returning id`, [tenantId],
+        )).rows[0]!.id;
+      });
+
+      it('🔴 ÉTEINTE (son état de NAISSANCE), la publicité route « rien à démarrer »', async () => {
+        const pubId = await poserPub(tenantId, 'camp-eteinte');
+        const autoId = await publicites.creerAutomation(tenantId, pubId, {
+          nom: 'itest', campagneId: 'camp-eteinte', workflowId,
+        });
+
+        // La colonne DÉSIGNE bien l'automation : le `null` ci-dessous vient donc de `enabled`, pas d'une
+        // absence. Sans cette lecture, le cas passerait aussi avec une publicité sans automation du tout.
+        const brut = (await pool.query<{ automation_id: string | null; enabled: boolean }>(
+          `select p.automation_id, a.enabled from publicites p
+             join automations a on a.id = p.automation_id
+            where p.tenant_id = $1 and p.campagne_id = 'camp-eteinte'`, [tenantId],
+        )).rows[0];
+        expect(brut?.automation_id).toBe(autoId);
+        expect(brut?.enabled).toBe(false);
+
+        expect(await publicites.pubDeLaCampagne(tenantId, 'camp-eteinte'))
+          .toEqual({ campagneId: 'camp-eteinte', destination: 'scenario', automationId: null });
+      });
+
+      it('ALLUMÉE, la même publicité rend son automation : c’est la branche que la publication ouvre', async () => {
+        const pubId = await poserPub(tenantId, 'camp-allumee');
+        const autoId = await publicites.creerAutomation(tenantId, pubId, {
+          nom: 'itest', campagneId: 'camp-allumee', workflowId,
+        });
+        expect(await publicites.pubDeLaCampagne(tenantId, 'camp-allumee'))
+          .toEqual({ campagneId: 'camp-allumee', destination: 'scenario', automationId: null });
+
+        expect(await publicites.allumerAutomation(tenantId, pubId)).toBe(true);
+        expect(await publicites.pubDeLaCampagne(tenantId, 'camp-allumee'))
+          .toEqual({ campagneId: 'camp-allumee', destination: 'scenario', automationId: autoId });
+
+        // Et l'aller-retour : éteindre la referme, sans quoi « Mettre en pause » ne couperait rien.
+        expect(await publicites.eteindreAutomation(tenantId, pubId)).toBe(true);
+        expect((await publicites.pubDeLaCampagne(tenantId, 'camp-allumee'))?.automationId).toBeNull();
+      });
+
+      it('🔴 GARDE MIROIR : une automation qui n’appartient pas à la publicité n’est JAMAIS rendue', async () => {
+        // Le chemin chaud ne doit pouvoir lire que l'automation de la publicité. Une automation allumée
+        // d'un autre propriétaire, désignée par la colonne, ne doit rien rendre : sinon un identifiant
+        // recopié ferait démarrer le scénario de quelqu'un d'autre sur un lead payé.
+        const autreId = (await pool.query<{ id: string }>(
+          `insert into automations (tenant_id, name, enabled, trigger_kind, trigger_config, workflow_id, possede_par)
+           values ($1, 'itest-voisine', true, 'ctwa_ad', '{}'::jsonb, $2, 'channelsme_link') returning id`,
+          [tenantId, workflowId],
+        )).rows[0]!.id;
+        await poserPub(tenantId, 'camp-miroir', { automationId: autreId });
+
+        expect(await publicites.pubDeLaCampagne(tenantId, 'camp-miroir'))
+          .toEqual({ campagneId: 'camp-miroir', destination: 'scenario', automationId: null });
+      });
     });
 
     it('🔴 le CHECK du scénario ne ferme QU’UN SENS (leçon de 0144)', async () => {

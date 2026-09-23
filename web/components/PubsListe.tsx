@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useT } from '@/lib/i18n';
-import { basculerPub, lirePub, publierPub, type Entonnoir, type EtapeEntonnoir, type Publicite } from '@/lib/api-pubs';
+import { basculerPub, enPauseChezMeta, lirePub, publierPub, type Entonnoir, type EtapeEntonnoir, type Publicite } from '@/lib/api-pubs';
 
 /**
  * LA LISTE DES PUBLICITÉS, ET LA PAGE D'UNE PUBLICITÉ (lot 3, spec § 3.7).
@@ -140,7 +140,7 @@ function Actions({ tenantId, pub, recharger, t }: {
     }
   }
 
-  const enPause = pub.statutMeta !== 'ACTIVE';
+  const enPause = enPauseChezMeta(pub.statutMeta);
 
   return (
     <div className="text-right">
@@ -209,7 +209,8 @@ function Detail({ tenantId, id, t }: { tenantId: string; id: string; t: T }) {
         {t('Prospects non pris en charge', 'Leads not handled')} : {e.nonPrisEnCharge}
         {' '}
         <span className="text-ink-400">
-          ({t('reprise refusée, désabonnés, bloqués', 'handover refused, unsubscribed, blocked')})
+          ({t('reprise refusée, désabonnés, bloqués, ou publicité sans scénario branché',
+               'handover refused, unsubscribed, blocked, or ad with no scenario connected')})
         </span>
       </p>
       <p className="mt-1 text-xs text-ink-400">

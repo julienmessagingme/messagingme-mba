@@ -412,3 +412,51 @@ describe('ce que `processRoutagePub` retient de la reprise', () => {
     expect(routes.get('wamid.r3')?.repris).toBeNull();
   });
 });
+
+/**
+ * LE REJEU D'UN WEBHOOK, ET LES DEUX FAUTES QU'IL FAISAIT.
+ *
+ * 🔴 CES TROIS CAS SONT NÉS D'UNE RELECTURE À FROID. Le code considérait la reprise « acquise » au rejeu,
+ * pour que la restriction reste celle de la première livraison. C'était une FICTION, et elle coûtait deux
+ * fautes certaines : le handler rendait à l'agent de Meta un fil sur lequel notre scénario pouvait parler,
+ * et le scénario partait au rejeu d'un lead dont la reprise avait été REFUSÉE, donc sur un fil que l'agent
+ * de Meta détenait. Les deux messages que tout ce lot s'emploie à éviter.
+ */
+describe('un webhook REDÉLIVRÉ', () => {
+  it('🔴 ne reprend PAS le fil une seconde fois', async () => {
+    const { deps, reprises } = monter();
+    await processRoutagePub(
+      payload([message('wamid.dv1', referral())], 'standby'), deps, new Set(['wamid.dv1']),
+    );
+    // Un second `take` reposerait `app_workflow` sur un fil qu'un opérateur aurait pu reprendre entre-temps.
+    expect(reprises).toEqual([]);
+  });
+
+  it('🔴 ne retient AUCUN fil à rendre : on n’a rien pris maintenant', async () => {
+    // C'était la première faute : `repris` posé sans prise, donc le filet rendait à l'agent de Meta un fil
+    // sur lequel notre scénario pouvait être en train de parler.
+    const { deps } = monter();
+    const routes = await processRoutagePub(
+      payload([message('wamid.dv2', referral())], 'standby'), deps, new Set(['wamid.dv2']),
+    );
+    expect(routes.get('wamid.dv2')?.repris).toBeNull();
+  });
+
+  it('🔴 ne laisse partir AUCUNE automation : ni le scénario, ni les ordinaires', async () => {
+    // C'était la seconde faute : au rejeu d'un lead dont la reprise avait été refusée, la restriction
+    // valait `seule`, donc le scénario partait sur un fil que l'agent de Meta détenait.
+    const { deps } = monter();
+    const routes = await processRoutagePub(
+      payload([message('wamid.dv3', referral())], 'standby'), deps, new Set(['wamid.dv3']),
+    );
+    expect(routes.get('wamid.dv3')?.restriction).toEqual({ sorte: 'aucun' });
+  });
+
+  it('⚠️ un message NON redélivré, lui, reprend bien le fil : la garde ne mange pas le cas nominal', async () => {
+    const { deps, reprises } = monter();
+    await processRoutagePub(
+      payload([message('wamid.dv4', referral())], 'standby'), deps, new Set(['un-autre-message']),
+    );
+    expect(reprises).toEqual(['33611223344']);
+  });
+});

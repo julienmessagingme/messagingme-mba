@@ -172,6 +172,9 @@ test.describe('Publicités : l’entonnoir', () => {
     const hors = page.getByTestId('pub-non-pris-pub-1');
     await expect(hors).toContainText('3');
     await expect(hors).toContainText(/désabonnés|unsubscribed/);
+    // 🔴 LA QUATRIÈME CAUSE, et c'est la seule RÉPARABLE : une publicité créée et pas encore publiée.
+    // Sans elle nommée, le client irait chercher des contacts bloqués qui n'existent pas.
+    await expect(hors).toContainText(/sans scénario|no scenario/);
   });
 
   test('⚠️ l’écran DIT quand les chiffres ont été relus chez Meta', async ({ page }) => {

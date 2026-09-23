@@ -25,7 +25,8 @@ export interface ComptesPub {
   /** Contacts distincts dont une arrivée porte `qualifie_le`. */
   qualifies: number;
   /**
-   * LES LEADS NON PRIS EN CHARGE, comptés à part : reprise refusée, désabonnés, bloqués.
+   * LES LEADS NON PRIS EN CHARGE, comptés à part : reprise refusée, désabonnés, bloqués, et publicité
+   * dont le scénario n'est pas branché.
    *
    * 🔴 ILS NE SONT PAS RETIRÉS DES `leads`, et ils ne sont pas non plus noyés dedans. Ce sont des clics
    * PAYÉS qui n'ont produit aucune conversation : les soustraire flatterait le taux de passage, les taire

@@ -1,7 +1,7 @@
 ---
 ecran: publicites
 source_section: Publicités Click-to-WhatsApp (menu Publicités)
-source_empreinte: 575f36
+source_empreinte: bab6df
 ---
 # Lancer une publicité qui ouvre une conversation WhatsApp
 
@@ -68,8 +68,13 @@ pas un coût de zéro par personne : il ne donne aucun coût. Un « 0 € » res
 possible, sur l'écran qui sert justement à décider d'arrêter ou de remettre du budget.
 
 Les **personnes non prises en charge** sont comptées à part : celles que nous n'avons pas pu reprendre à
-l'agent de Meta, celles qui s'étaient désabonnées, et celles que vous avez bloquées. Ce sont des clics que
-vous avez payés et qui n'ont produit aucune conversation : les mélanger au reste les rendrait invisibles.
+l'agent de Meta, celles qui s'étaient désabonnées, celles que vous avez bloquées, et celles arrivées sur une
+publicité dont le scénario n'est pas branché. Ce sont des clics que vous avez payés et qui n'ont produit
+aucune conversation : les mélanger au reste les rendrait invisibles.
+
+👉 **Des quatre, la dernière est la seule que vous pouvez réparer**, et elle se voit tout de suite : la
+publicité est restée « prête, pas encore publiée », ou son scénario a été supprimé depuis. Les trois autres
+sont des refus qui ne dépendent pas de vous.
 
 ## Marquer une personne comme qualifiée
 

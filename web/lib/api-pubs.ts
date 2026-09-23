@@ -177,7 +177,14 @@ export interface Entonnoir {
   clics: EtapeEntonnoir;
   leads: EtapeEntonnoir;
   qualifies: EtapeEntonnoir;
-  /** Prospects reçus mais non pris en charge : reprise refusée, désabonnés, bloqués. Des clics payés. */
+  /**
+   * Prospects reçus mais non pris en charge : reprise refusée, désabonnés, bloqués, et publicité dont le
+   * scénario n'est pas branché. Des clics PAYÉS qui n'ont produit aucune conversation.
+   *
+   * ⚠️ LA QUATRIÈME CAUSE EST LA SEULE RÉPARABLE, et c'est pour ça qu'elle doit être NOMMÉE à l'écran :
+   * une publicité créée et pas encore publiée, ou dont le scénario a été supprimé. Sans elle, le client
+   * irait chercher des contacts bloqués qui n'existent pas.
+   */
   nonPrisEnCharge: number;
 }
 
@@ -212,6 +219,23 @@ export interface FormulaireCreationPub {
  * promesse. L'écran refuse AVANT de téléverser, le serveur refuse en dernier ressort, et lui seul protège.
  */
 export const TAILLE_VISUEL_MAX = 5 * 1024 * 1024;
+
+/**
+ * UNE PUBLICITÉ EST À L'ARRÊT CHEZ META QUAND ON A **LU** UN STATUT QUI N'EST PAS `ACTIVE`.
+ *
+ * 🔴 `null` N'EST PAS « EN PAUSE », c'est « pas encore relu », et la nuance décide du LIBELLÉ DU BOUTON sur
+ * une publicité qui dépense. Le statut n'arrive qu'au balayage suivant, jusqu'à quinze minutes après la
+ * publication : traiter `null` comme une pause faisait afficher « Relancer » sur une publicité qu'on venait
+ * de mettre en diffusion et qui payait déjà des impressions. Le client y lit qu'elle est à l'arrêt.
+ *
+ * ⚠️ Entre les deux erreurs possibles, celle-ci est la bonne : on vient de demander l'activation à Meta et
+ * il a répondu oui, donc « Mettre en pause » est l'action qui reste vraie même si Meta l'a finalement mise
+ * en revue, où le geste est de toute façon sans effet. C'est la même règle que le reste de l'écran, où
+ * « non disponible » n'est jamais « 0 » : on n'invente pas un état qu'on n'a pas lu.
+ */
+export function enPauseChezMeta(statutMeta: string | null): boolean {
+  return statutMeta !== null && statutMeta !== 'ACTIVE';
+}
 export const TYPES_VISUEL = ['image/jpeg', 'image/png'] as const;
 
 const basePubs = (tenantId: string): string => `/tenants/${tenantId}/pubs`;
