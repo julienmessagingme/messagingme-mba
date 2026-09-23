@@ -51,26 +51,21 @@ export interface ActifsAccordes {
 /**
  * La Page est-elle liée au compte WhatsApp de l'espace ?
  *
- * 🔴 TROIS VALEURS, ET LA TROISIÈME EST LA PLUS IMPORTANTE. « Meta ne sait pas répondre » n'est pas « la
- * Page n'est pas liée ». Afficher « non liée » sur une ignorance enverrait un client refaire une liaison
- * qui existe déjà, et lui ferait douter d'un écran qui a tort. `inconnu` se dit, il ne se devine pas.
+ * 🔴 PLUS AUCUN CODE NE CALCULE CE VERDICT, ET IL VAUT `inconnu` PARTOUT. Mesuré le 2026-09-23 sur le
+ * compte réel, après avoir vérifié dans le WhatsApp Manager que la Page ÉTAIT bien liée au numéro : DIX
+ * champs essayés sur les trois objets concernés. Sur le numéro, `connected_pages`, `linked_pages`,
+ * `facebook_page`, `page`, `connected_page` n'existent pas. Sur la Page,
+ * `connected_whatsapp_business_account` n'existe pas et `whatsapp_number` revient VIDE (il ne parle que
+ * de l'ancienne connexion « WhatsApp Business app »). Meta affiche la liaison dans son interface et ne
+ * l'expose par aucune API que nous puissions appeler. L'appel était donc condamné à un 400 à chaque
+ * choix : il a été retiré, et l'écran emmène le client là où Meta l'affiche.
+ *
+ * ⚠️ LE TYPE ET LA COLONNE RESTENT, à TROIS VALEURS, pour le jour où Meta exposera cette liaison :
+ * c'est ici qu'elle reviendra. Et la troisième valeur restera la plus importante, parce que « Meta ne
+ * sait pas répondre » n'est pas « la Page n'est pas liée » : afficher « non liée » sur une ignorance
+ * enverrait un client refaire une liaison qui existe déjà. `inconnu` se dit, il ne se devine pas.
  */
 export type LiaisonPage = 'oui' | 'non' | 'inconnu';
-
-/**
- * 🔴 POURQUOI PLUS AUCUN CODE NE CALCULE CE VERDICT, ET POURQUOI LE TYPE RESTE.
- *
- * Mesuré le 2026-09-23 sur le compte réel, après avoir vérifié dans le WhatsApp Manager que la Page ÉTAIT
- * bien liée au numéro : DIX champs essayés sur les trois objets concernés. Sur le numéro,
- * `connected_pages`, `linked_pages`, `facebook_page`, `page`, `connected_page` n'existent pas. Sur la Page,
- * `connected_whatsapp_business_account` n'existe pas et `whatsapp_number` revient VIDE (il ne parle que de
- * l'ancienne connexion « WhatsApp Business app »). Meta affiche la liaison dans son interface et ne
- * l'expose par aucune API que nous puissions appeler.
- *
- * L'appel a donc été RETIRÉ : il était condamné à un 400 à chaque choix, pour toujours rendre « inconnu ».
- * Le type et la colonne restent, parce que le jour où Meta exposera cette liaison, c'est ici qu'elle
- * reviendra ; l'écran, lui, emmène le client là où Meta l'affiche.
- */
 
 /** Les listes de Graph. Tout est optionnel sauf l'identifiant : on ne suppose rien du reste. */
 const listeComptesSchema = z.object({
@@ -157,7 +152,6 @@ export class MetaPubsClient extends ClientGraph {
       moyenPaiement: (lu.data.funding_source_details?.id ?? '') !== '',
     };
   }
-
 
   /**
    * RETIRE NOS ACCÈS PUBLICITAIRES CHEZ META, permission par permission.

@@ -259,6 +259,43 @@ function Choix({ t, actifs, busy, compte, page, setCompte, setPage, valider }: {
   );
 }
 
+/**
+ * CE QUI EMPÊCHE, OU NON, DE DIFFUSER, en une phrase.
+ *
+ * 🔴 QUATRE CAS ET PAS TROIS : `statut` à `null` est une IGNORANCE, pas un refus. Meta peut répondre
+ * 200 sans `account_status` (champ absent, réponse d'une forme inattendue). Le ranger avec
+ * `statut !== 1` faisait écrire « ce compte n'est pas actif » sur une chose qu'on ne sait pas, donc
+ * envoyait le client réparer un compte qui va bien. C'est exactement le raisonnement que ce lot a
+ * RETIRÉ de la liaison Page : une ignorance ne s'affiche jamais comme un constat.
+ *
+ * ⚠️ `raisonDesactivation` EST LUE ICI, et nulle part ailleurs. Elle traversait le client, la route et
+ * le type du front sans que rien ne l'affiche : c'est pourtant le seul chiffre qui dise au client CE
+ * QU'IL doit corriger. Le code brut suffit, il est ce qu'il donnera au support de Meta.
+ */
+function messageDiffusion(compte: EtatComptePub | null, t: T): string {
+  if (compte === null) {
+    return t('Nous n’avons pas pu demander à Meta si ce compte peut diffuser.',
+            'We could not ask Meta whether this account can deliver.');
+  }
+  if (compte.statut === null) {
+    return t('Meta ne nous a pas dit l’état de ce compte : nous ne savons pas s’il peut diffuser.',
+            'Meta did not tell us this account’s status: we do not know whether it can deliver.');
+  }
+  if (compte.statut !== 1) {
+    const raison = compte.raisonDesactivation !== null && compte.raisonDesactivation !== 0
+      ? t(` (motif Meta n°${compte.raisonDesactivation})`, ` (Meta reason #${compte.raisonDesactivation})`)
+      : '';
+    return t(`Ce compte publicitaire n’est pas actif chez Meta${raison} : une publicité ne partirait pas.`,
+            `This ad account is not active at Meta${raison}: an ad would not deliver.`);
+  }
+  if (!compte.moyenPaiement) {
+    return t('Aucun moyen de paiement sur ce compte : une publicité se créerait mais ne partirait jamais.',
+            'No payment method on this account: an ad would be created but would never deliver.');
+  }
+  return t('✓ Prêt à diffuser : compte actif, moyen de paiement en place.',
+          '✓ Ready to deliver: account active, payment method in place.');
+}
+
 function Connecte({ t, etat, compte, busy, deconnecter, reconnecter }: {
   t: T; etat: EtatPubs; compte: EtatComptePub | null | undefined; busy: boolean;
   deconnecter: () => Promise<boolean>; reconnecter: () => Promise<void>;
@@ -288,23 +325,17 @@ function Connecte({ t, etat, compte, busy, deconnecter, reconnecter }: {
         décident si une pub PARTIRA : sans eux, elle se crée et ne diffuse jamais, et l'erreur arrive
         tard. `null` = nous n'avons pas pu demander à Meta, ce qui n'est PAS un feu vert.
       */}
-      <p data-testid="pubs-diffusion" className="mt-4 text-sm text-ink-600">
-        {/*
-          🔴 `?? null` ET PAS `=== null` : L'API DÉPLOYÉE PEUT NE PAS ENCORE PORTER CE CHAMP. Vercel publie
-          cette console à CHAQUE push, l'API attend son `up -d --build` : entre les deux, la réponse n'a pas
-          de clé `compte`, donc `undefined`, que `=== null` laisse passer vers `compte.statut` et qui fait
-          TOMBER l'écran entier. C'est la fenêtre que le CLAUDE.md du dépôt décrit (onglet « Outils » en 404
-          pendant plus d'une heure le 2026-09-21) : ici, l'absence est traitée comme « je n'ai pas pu
-          demander », ce qui est exactement ce qu'elle veut dire.
-        */}
-        {diffusion === null
-          ? t('Nous n’avons pas pu demander à Meta si ce compte peut diffuser.', 'We could not ask Meta whether this account can deliver.')
-          : diffusion.statut === 1 && diffusion.moyenPaiement
-            ? t('✓ Prêt à diffuser : compte actif, moyen de paiement en place.', '✓ Ready to deliver: account active, payment method in place.')
-            : diffusion.statut !== 1
-              ? t('Ce compte publicitaire n’est pas actif chez Meta : une publicité ne partirait pas.', 'This ad account is not active at Meta: an ad would not deliver.')
-              : t('Aucun moyen de paiement sur ce compte : une publicité se créerait mais ne partirait jamais.', 'No payment method on this account: an ad would be created but would never deliver.')}
-      </p>
+      {/*
+        ⚠️ RIEN TANT QU'AUCUN COMPTE N'EST CHOISI, et ce n'est pas un détail. Cet écran s'affiche AUSSI
+        dans l'état « jeton posé, choix pas encore fait », que la migration 0167 décrit comme normal au
+        retour. Y annoncer « nous n'avons pas pu demander à Meta » serait faux : il n'y a rien à
+        demander tant qu'on ne sait pas DE QUEL compte on parle.
+      */}
+      {c.comptePubId !== null && (
+        <p data-testid="pubs-diffusion" className="mt-4 text-sm text-ink-600">
+          {messageDiffusion(diffusion, t)}
+        </p>
+      )}
 
       {/*
         🔴 META N'EXPOSE PAS CETTE LIAISON, ET ON LE DIT AU LIEU DE FAIRE SEMBLANT. Mesuré le 2026-09-23 :

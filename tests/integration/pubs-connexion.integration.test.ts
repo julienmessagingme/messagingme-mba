@@ -89,6 +89,42 @@ describe.skipIf(!url)('lot 2 des pubs : la connexion d un espace (Postgres réel
     ).rejects.toThrow();
   });
 
+  it('🔴 `remplacer` échange TOUT d un coup : le jeton, les actifs, et rien ne survit de l ancien', async () => {
+    // C est le geste de `/ops`, le seul chemin qui REMPLACE au lieu de refuser. En trois appels
+    // successifs, un echec apres le `delete` laisserait l espace sans connexion ET l ancien jeton perdu.
+    await store.poserJeton(tenantId, 'CHIFFRE_AVANT', null);
+    await store.choisirActifs(tenantId, { comptePubId: 'vieux', compteNom: 'Vieux', pageId: 'pv', pageNom: 'Page vieille', devise: 'USD', fuseau: 'America/New_York', pageLiee: 'oui' });
+    await store.remplacer(tenantId, 'CHIFFRE_APRES', {
+      comptePubId: 'neuf', compteNom: 'Neuf', pageId: 'pn', pageNom: 'Page neuve',
+      devise: 'EUR', fuseau: 'Europe/Paris', pageLiee: 'inconnu',
+    });
+    await expect(store.lireJetonChiffre(tenantId)).resolves.toBe('CHIFFRE_APRES');
+    const etat = await store.lire(tenantId);
+    expect(etat?.comptePubId).toBe('neuf');
+    expect(etat?.compteNom).toBe('Neuf');
+    expect(etat?.devise).toBe('EUR');
+    expect(etat?.pageLiee).toBe('inconnu');
+    // UNE seule ligne : la cle primaire l impose, mais c est elle qui garantit qu on n a pas cree un
+    // second jeton vivant chez Meta dont un seul serait connu de nous.
+    const { rows } = await pool.query<{ n: string }>('select count(*) as n from pub_connexion where tenant_id = $1', [tenantId]);
+    expect(rows[0]!.n).toBe('1');
+    // Le marqueur de refus de l ANCIEN jeton ne se traine pas sur le neuf : la ligne est neuve.
+    expect(etat?.jetonRejeteLe).toBeNull();
+  });
+
+  it('🔴 un `remplacer` qui ÉCHOUE ne laisse RIEN derrière lui : l ancien reste intact', async () => {
+    // La transaction est toute la raison d etre de cette methode. Sans elle, l echec ci-dessous
+    // laisserait l espace SANS connexion, avec l ancien jeton deja perdu et le neuf jamais range.
+    const avant = await store.lire(tenantId);
+    await expect(store.remplacer(tenantId, 'CHIFFRE_JAMAIS', {
+      // `page_liee` hors du CHECK de 0167 : la base refuse, donc l insert leve APRES le delete.
+      comptePubId: 'x', compteNom: null, pageId: 'y', pageNom: null,
+      devise: null, fuseau: null, pageLiee: 'peut-etre' as never,
+    })).rejects.toThrow();
+    await expect(store.lireJetonChiffre(tenantId)).resolves.toBe('CHIFFRE_APRES');
+    expect((await store.lire(tenantId))?.comptePubId).toBe(avant?.comptePubId);
+  });
+
   it('la déconnexion efface la ligne, jeton compris', async () => {
     await store.supprimer(tenantId);
     await expect(store.lire(tenantId)).resolves.toBeNull();

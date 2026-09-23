@@ -1111,9 +1111,24 @@ dès un changement d'IP. Le jeton reste la garde ; au 5e refus dans une fenêtre
 Telegram part, throttlée. 🔴 **Le jeton présenté n'est JAMAIS journalisé** : une tentative est presque toujours
 un secret voisin du vrai.
 
-⚠️ **`/ops` n'est plus en lecture seule** : `POST /ops/observe` ouvre un espace en observation, et
-`POST /ops/credits/:tenantId` recharge le solde prépayé d'un workspace. C'est la seule écriture d'argent du
-produit, et elle est là précisément pour qu'un client ne puisse pas créditer son propre compte.
+⚠️ **`/ops` n'est plus en lecture seule.** Ses écritures : `POST /ops/observe` (ouvrir une observation),
+`POST /ops/credits/:tenantId` (recharger le solde prépayé, **la seule écriture d'argent du produit**, là
+précisément pour qu'un client ne puisse pas créditer son propre compte), `POST /ops/verrou/:tenantId`,
+`PATCH /ops/prix`, `DELETE /ops/cle-modele/:tenantId` et `POST /ops/pubs/connexion/:tenantId`.
+⚠️ **Cette liste n'en citait que DEUX sur six**, relevé par une relecture à froid le 2026-09-23 : un
+manuel qui énumère a le devoir d'être complet, sinon il fait croire à une surface plus petite qu'elle
+n'est. Les quatre invariants qui valent pour TOUTES : elles exigent une **note** (une écriture
+d'exploitation sans trace de qui l'a faite et pourquoi ne se relit pas six mois plus tard), elles sont
+délibérément **cross-espace**, elles sont refusées en session d'observation par la garde de méthode, et
+une dépendance absente rend **503** (jamais 404, qui ferait croire à une faute de frappe).
+
+🔴 **`POST /ops/pubs/connexion/:tenantId` est la SEULE route du dépôt qui reçoit un secret Meta dans
+un corps de requête**, et la seule qui REMPLACE une connexion existante là où l'écran la refuse. Elle
+existe parce que Meta interdit au portefeuille qui possède l'application d'être son propre client : sans
+elle, MessagingMe ne pourrait pas faire ses propres publicités avec son propre produit. Le jeton est
+vérifié chez Meta avant d'être gardé, chiffré au repos, jamais renvoyé ni journalisé, et **l'ancien
+accès est révoqué avant d'être écrasé** : un jeton d'utilisateur système n'expire jamais, et notre ligne
+en est le seul exemplaire.
 
 🔴 **La session d'observation est en LECTURE SEULE par une garde GLOBALE fondée sur la MÉTHODE HTTP** :
 `GET` et `HEAD` passent, tout le reste est refusé. Une garde route par route aurait laissé passer celle qu'on

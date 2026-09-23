@@ -37,6 +37,10 @@ export function estJetonRefuse(err: unknown): boolean {
   return err instanceof ErreurGraph && (err.status === 401 || err.code === 190 || err.code === 102);
 }
 
+/** Plafond de durée d'un appel Graph. Très au-dessus du temps de réponse normal, donc sans effet
+ *  sur un appel sain : il ne borne qu'un appel qui ne reviendra jamais. */
+const DELAI_GRAPH_MS = 30_000;
+
 export abstract class ClientGraph {
   constructor(
     protected readonly appId: string,
@@ -45,8 +49,24 @@ export abstract class ClientGraph {
     protected readonly baseUrl = 'https://graph.facebook.com',
   ) {}
 
+  /**
+   * 🔴 UN APPEL GRAPH A UN PLAFOND DE DURÉE, parce que `fetch` n'en a AUCUN par défaut.
+   *
+   * Sans lui, un Meta qui accepte la connexion et ne répond jamais retient le gestionnaire Fastify
+   * pour toujours : ni le client ni nous ne reprenons la main, et un `.catch()` placé autour de
+   * l'appel ne sert à rien puisqu'il n'y a pas d'erreur à attraper. Trente secondes sont très au-dessus
+   * de ce que Graph met normalement (moins d'une seconde) : ce plafond ne peut pas couper un appel
+   * sain, il ne coupe qu'un appel perdu.
+   *
+   * ⚠️ RAYON DE SOUFFLE ASSUMÉ : cette classe sert AUSSI l'inscription WhatsApp
+   * (`MetaEmbeddedSignupClient`), donc un chemin de production. Le plafond y est un gain du même
+   * ordre, pour la même raison, et il n'a pas de raison d'être différent selon l'appelant.
+   *
+   * ⚠️ `init.signal` FOURNI PAR L'APPELANT GAGNE : s'il en pose un, c'est le sien qui s'applique, et
+   * le plafond ne s'ajoute pas par-dessus.
+   */
   protected async call(url: string, init?: RequestInit): Promise<Record<string, unknown>> {
-    const res = await fetch(url, init);
+    const res = await fetch(url, { signal: AbortSignal.timeout(DELAI_GRAPH_MS), ...init });
     const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     if (!res.ok) {
       const err = (body as { error?: { message?: string; code?: number } }).error;

@@ -109,7 +109,15 @@ const corpsChoix = z.object({
 export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: Guard, limiteCouteuse: PreHandler): void {
   const opts = { preHandler: garde };
   // LES TROIS ÉCRITURES appellent Meta (l'échange, le choix, et la déconnexion depuis qu'elle révoque) :
-  // elles portent toutes le plafond des routes coûteuses, par espace. Seule la LECTURE en est dispensée.
+  // elles portent toutes le plafond des routes coûteuses, par espace.
+  //
+  // ⚠️ LA LECTURE APPELLE META ELLE AUSSI DEPUIS LE 2026-09-23, et cette phrase disait le contraire.
+  // Elle reste hors du plafond coûteux DÉLIBÉRÉMENT : c'est l'ouverture d'un écran, et dix par minute
+  // et par ESPACE couperaient la page dès que deux personnes la consultent. Ce qui la borne est
+  // ailleurs, et c'est ce qui rend l'arbitrage tenable : un micro-cache côté câblage
+  // (`src/index.ts`, `etatComptePubCache`) fait qu'un rafraîchissement n'appelle pas Meta, le plafond
+  // par UTILISATEUR (300/min) s'applique comme sur toute route gardée, et l'appel lui-même porte un
+  // plafond de durée (`ClientGraph`), sans quoi un Meta muet retiendrait le gestionnaire pour toujours.
   const couteux = gardeEtendue(garde, limiteCouteuse);
   const journal = makeJournal(deps.audit);
 

@@ -377,8 +377,12 @@ describe('/ops : déposer un jeton publicitaire créé à la main', () => {
   const DEPOSEE = {
     comptePubId: '475266278124562', compteNom: 'Messaging Me', pageId: '2084133708982860',
     pageNom: 'Messaging Me', devise: 'EUR', fuseau: 'Europe/Paris', pageLiee: 'inconnu',
+    ancienRevoque: null,
   };
-  const corps = { jeton: JETON, comptePubId: '475266278124562', pageId: '2084133708982860' };
+  const corps = {
+    jeton: JETON, comptePubId: '475266278124562', pageId: '2084133708982860',
+    note: 'depot du jeton systeme de notre propre portefeuille',
+  };
 
   it('dépose, et rend les actifs que Meta a confirmés', async () => {
     const vus: Array<[string, string, string, string]> = [];
@@ -422,6 +426,32 @@ describe('/ops : déposer un jeton publicitaire créé à la main', () => {
     const sansPage = await srv.inject({ method: 'POST', url: `/ops/pubs/connexion/${T}`, payload: { jeton: JETON, comptePubId: '1' }, ...withTok(OPS) });
     expect(sansPage.statusCode).toBe(400);
     expect(appele).toBe(false);
+    await srv.close();
+  });
+
+  it('🔴 sans NOTE -> 400, et rien n est déposé : une écriture d exploitation se relit', async () => {
+    // Les trois autres écritures de `/ops` l exigent. Celle-ci REMPLACE la connexion publicitaire d un
+    // client : sans la note, on ne sait plus six mois plus tard qui a fait le geste ni pourquoi.
+    let appele = false;
+    const srv = app(OPS, { deposerJetonPub: async () => { appele = true; return DEPOSEE; } });
+    const { note: _sans, ...sansNote } = corps;
+    void _sans;
+    const res = await srv.inject({ method: 'POST', url: `/ops/pubs/connexion/${T}`, payload: sansNote, ...withTok(OPS) });
+    expect(res.statusCode).toBe(400);
+    expect(appele).toBe(false);
+    await srv.close();
+  });
+
+  it('🔴 le sort de l ANCIEN accès remonte, et `false` ne se confond pas avec `null`', async () => {
+    // `null` = il n y avait rien à révoquer ; `false` = Meta a refusé, donc un accès reste VIVANT chez
+    // lui et il faudra le retirer à la main. Les afficher pareil ferait passer le second pour le premier.
+    const srv = app(OPS, { deposerJetonPub: async () => ({ ...DEPOSEE, ancienRevoque: false }) });
+    const { resultat: res, lignes } = await capturerJournal(() =>
+      srv.inject({ method: 'POST', url: `/ops/pubs/connexion/${T}`, payload: corps, ...withTok(OPS) }));
+    expect(res.json<{ connexion: { ancienRevoque: unknown } }>().connexion.ancienRevoque).toBe(false);
+    const trace = lignes.find((l) => l.msg === 'ops_jeton_pub_depose');
+    expect(trace?.ancienRevoque).toBe(false);
+    expect(trace?.note).toBe(corps.note);
     await srv.close();
   });
 

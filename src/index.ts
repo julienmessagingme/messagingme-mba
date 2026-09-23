@@ -126,7 +126,7 @@ import { transcrireMessage } from './inbox/transcrire';
 import { lireMediaRecu } from './inbox/media-entrant';
 import { assurerCleGateway, remonterPlafondApresRecharge, revoquerCleGateway, type DepsProvisionCle } from './agent/provisionner-cle';
 import { encryptSecret, decryptSecret } from './crypto/secretbox';
-import { MetaPubsClient, sansPrefixeAct } from './meta/pubs';
+import { MetaPubsClient, sansPrefixeAct, type EtatComptePub } from './meta/pubs';
 import { DejaConnectePub, JetonNonEnregistre, PasDeConnexionPub } from './http/pubs';
 import { estJetonRefuse } from './meta/graph';
 import { PgPubConnexionStore } from './pubs/connexion.pg';
@@ -610,6 +610,20 @@ async function main(): Promise<void> {
    * Vercel pour une réponse identique.
    */
   const catalogueModelesCache = cacheCourt<ModeleGateway[]>(60 * 60_000);
+
+  /**
+   * Micro-cache de l'ÉTAT DU COMPTE PUBLICITAIRE : deux minutes.
+   *
+   * 🔴 C'EST CE QUI REND TENABLE UNE LECTURE META SUR UN CHEMIN D'AFFICHAGE. La route qui sert
+   * l'écran Publicités est volontairement hors du plafond « coûteux » (dix par minute et par espace
+   * couperaient la page dès que deux personnes la consultent) : sans cache, chaque ouverture et chaque
+   * rafraîchissement ferait un aller-retour Graph, et l'écran dépendrait du temps de réponse de Meta.
+   *
+   * ⚠️ DEUX MINUTES ET PAS DIX : un statut de compte et un moyen de paiement bougent rarement, mais
+   * quand ils bougent, c'est parce que le client vient JUSTEMENT de les corriger chez Meta et revient
+   * voir. Dix minutes lui feraient croire que son geste n'a rien fait.
+   */
+  const etatComptePubCache = cacheCourt<EtatComptePub | null>(2 * 60_000);
 
   const app = buildServer({
     /**
@@ -2288,10 +2302,13 @@ async function main(): Promise<void> {
         lire: (t: string) => connexions.lire(t),
         etatCompte: async (t: string) => {
           const etat = await connexions.lire(t);
-          if (etat === null || etat.comptePubId === null) return null;
-          // Pas de `noterSiRefus` : un refus ici ne doit pas marquer la connexion morte pour un
-          // indicateur d'affichage. La route traite déjà l'échec comme « je ne sais pas ».
-          return clientPubs.etatCompte(etat.comptePubId, await jetonClair(t));
+          const comptePubId = etat?.comptePubId ?? null;
+          if (comptePubId === null) return null;
+          return etatComptePubCache.lire(`${t}:${comptePubId}`, async () => {
+            // Pas de `noterSiRefus` : un refus ici ne doit pas marquer la connexion morte pour un
+            // indicateur d'affichage. La route traite déjà l'échec comme « je ne sais pas ».
+            return clientPubs.etatCompte(comptePubId, await jetonClair(t));
+          });
         },
         connecter: async (t: string, code: string, userId: string | null) => {
           // 🔴 BRETELLES : on refuse AVANT L'ÉCHANGE quand une connexion existe déjà. Meta n'émet alors
@@ -2703,15 +2720,32 @@ async function main(): Promise<void> {
         if (compte === undefined) throw new Error(`ce jeton n'accorde pas le compte publicitaire ${comptePubId}`);
         if (page === undefined) throw new Error(`ce jeton n'accorde pas la Page ${pageId}`);
         const pageLiee = 'inconnu' as const; // Meta n'expose pas la liaison (cf. `src/meta/pubs.ts`).
-        await connexionsPub.supprimer(tenantId);
-        await connexionsPub.poserJeton(tenantId, encryptSecret(jeton, config.ENCRYPTION_KEY), null);
-        await connexionsPub.choisirActifs(tenantId, {
+        // 🔴 CHIFFRER AVANT DE TOUCHER À QUOI QUE CE SOIT. `encryptSecret` lève sur une
+        // `ENCRYPTION_KEY` absente ou mal formée, et cette route n'a PAS le garde-fou `configId === ''`
+        // de l'échange : une levée plus bas détruirait la connexion existante sans rien ranger.
+        const chiffreNeuf = encryptSecret(jeton, config.ENCRYPTION_KEY);
+        // 🔴 RÉVOQUER L'ANCIEN AVANT DE LE PERDRE, exactement comme la déconnexion par l'écran.
+        // Notre ligne est le seul endroit où ce jeton existe chez nous et il n'expire JAMAIS : écraser
+        // sans révoquer laisse un accès VIVANT chez Meta dont nous venons de perdre le seul
+        // exemplaire, donc irrévocable pour toujours (le piège de la clé Vercel, 0124). C'est la raison
+        // pour laquelle l'écran REFUSE ; ici on remplace, donc on doit faire le geste à sa place.
+        const ancien = await connexionsPub.lireJetonChiffre(tenantId);
+        let ancienRevoque: boolean | null = null;
+        if (ancien !== null) {
+          // ⚠️ UN ÉCHEC N'ARRÊTE PAS LE DÉPÔT, et le booléen remonte : un ancien jeton déjà mort chez
+          // Meta ne doit pas retenir l'exploitation, mais on ne fait pas passer un refus pour un
+          // succès. `null` = il n'y avait rien à révoquer, ce qui n'est pas la même chose que `false`.
+          ancienRevoque = await clientPubs.revoquerAcces(decryptSecret(ancien, config.ENCRYPTION_KEY))
+            .then(() => true)
+            .catch(() => false);
+        }
+        await connexionsPub.remplacer(tenantId, chiffreNeuf, {
           comptePubId: compte.id, compteNom: compte.nom, pageId: page.id, pageNom: page.nom,
           devise: compte.devise, fuseau: compte.fuseau, pageLiee,
         });
         return {
           comptePubId: compte.id, compteNom: compte.nom, pageId: page.id, pageNom: page.nom,
-          devise: compte.devise, fuseau: compte.fuseau, pageLiee,
+          devise: compte.devise, fuseau: compte.fuseau, pageLiee, ancienRevoque,
         };
       },
       verrouillerEspace: (tenantId, verrouille, _note) => opsStore.verrouillerEspace(tenantId, verrouille),

@@ -17,15 +17,69 @@ import { readFileSync } from 'node:fs';
 const source = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
 const sansCommentaires = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
+/** Le corps d'une entrée de câblage, depuis son nom jusqu'à la fermeture de sa clé. */
+function blocDe(entree: string): string {
+  const deb = sansCommentaires.indexOf(entree);
+  if (deb === -1) throw new Error(`entrée de câblage introuvable : ${entree}`);
+  const reste = sansCommentaires.slice(deb);
+  const fin = reste.search(/\n      },/);
+  return fin === -1 ? reste : reste.slice(0, fin);
+}
+
 describe('câblage des publicités : le jeton ne touche jamais la base en clair', () => {
-  it('🔴 le jeton échangé est CHIFFRÉ avant d’être rangé', () => {
-    expect(sansCommentaires, 'poserJeton doit recevoir encryptSecret(jeton, ENCRYPTION_KEY)')
-      .toMatch(/connexions\.poserJeton\(\s*t,\s*encryptSecret\(jeton, config\.ENCRYPTION_KEY\),\s*userId\s*\)/);
+  /**
+   * 🔴 LA GARDE SE DÉRIVE DES APPELS RÉELS, ELLE NE CITE PLUS UN NOM DE VARIABLE.
+   *
+   * Elle s'ancrait sur `connexions.poserJeton(t, encryptSecret(...), userId)`. Un SECOND point
+   * d'écriture est arrivé le 2026-09-23 (le dépôt par `/ops`), écrit `connexionsPub.remplacer(tenantId,
+   * ...)` : aucun des motifs ne l'atteignait. Muté par la relecture à froid, en remplaçant le
+   * chiffrement par le jeton nu à cet endroit, les deux gardes restaient VERTES. Un jeton Meta pouvait
+   * donc dormir en clair en base sans qu'aucun test ne tombe, sur le seul chemin que ce fichier existe
+   * pour protéger.
+   *
+   * D'où la forme ci-dessous : on ÉNUMÈRE les appels par leur NOM DE MÉTHODE, quel que soit le
+   * receveur, et chacun doit rendre des comptes. Un troisième point d'écriture ajouté demain sera
+   * couvert sans que personne ait à y penser.
+   */
+  const ECRITURES = [...sansCommentaires.matchAll(/(?:poserJeton|remplacer)\(([^;]*?)\)/g)]
+    .map((m) => m[1] ?? '');
+
+  it('🔴 CHAQUE écriture du jeton reçoit un CHIFFRÉ, jamais le jeton nu', () => {
+    // Deux points d'écriture aujourd'hui : l'échange par l'écran et le dépôt par `/ops`. Le compte
+    // n'est pas écrit ici (il dériverait), mais il ne doit pas tomber à zéro : une garde qui ne trouve
+    // plus rien à garder passe en silence.
+    expect(ECRITURES.length).toBeGreaterThanOrEqual(2);
+    for (const args of ECRITURES) {
+      // Le deuxième argument porte le jeton. Il est soit `encryptSecret(...)` écrit sur place, soit une
+      // variable, et cette variable doit avoir été affectée depuis `encryptSecret`.
+      const deuxieme = (args.split(',')[1] ?? '').trim();
+      const chiffreSurPlace = deuxieme.startsWith('encryptSecret(');
+      const viaVariable = /^[A-Za-z_$][\w$]*$/.test(deuxieme)
+        && sansCommentaires.includes(`const ${deuxieme} = encryptSecret(`);
+      expect(chiffreSurPlace || viaVariable, `argument non chiffré : "${deuxieme}" dans (${args})`).toBe(true);
+    }
   });
 
-  it('🔴 la forme fautive n’existe pas : aucun `poserJeton` ne reçoit un jeton nu', () => {
-    // Le cas qu'on interdit, et qui compilerait parfaitement : `poserJeton(t, jeton, userId)`.
-    expect(sansCommentaires).not.toMatch(/poserJeton\(\s*t,\s*jeton\s*,/);
+  it('🔴 la forme fautive n’existe nulle part : aucune écriture ne reçoit `jeton`', () => {
+    // Le cas qu'on interdit, et qui compilerait parfaitement, quel que soit le nom du receveur et
+    // celui de la variable d'espace.
+    expect(sansCommentaires).not.toMatch(/(?:poserJeton|remplacer)\(\s*[A-Za-z_$][\w$]*\s*,\s*jeton\s*[,)]/);
+  });
+
+  it('🔴 le dépôt par `/ops` CHIFFRE avant de toucher à la base, pas après', () => {
+    // `encryptSecret` lève sur une clé absente ou mal formée. Chiffrer APRÈS avoir effacé laisserait
+    // l'espace sans connexion et l'ancien jeton perdu, sur une route qui répond « jeton refusé ».
+    const bloc = blocDe('deposerJetonPub: async');
+    expect(bloc.indexOf('encryptSecret(')).toBeGreaterThan(-1);
+    expect(bloc.indexOf('encryptSecret(')).toBeLessThan(bloc.indexOf('connexionsPub.remplacer'));
+  });
+
+  it('🔴 le dépôt par `/ops` RÉVOQUE l’ancien jeton AVANT de l’écraser', () => {
+    // L'écran REFUSE quand une connexion existe ; `/ops` REMPLACE. Écraser sans révoquer laisse un
+    // accès vivant chez Meta dont on vient de perdre le seul exemplaire : irrévocable pour toujours.
+    const bloc = blocDe('deposerJetonPub: async');
+    expect(bloc).toMatch(/revoquerAcces/);
+    expect(bloc.indexOf('revoquerAcces')).toBeLessThan(bloc.indexOf('connexionsPub.remplacer'));
   });
 
   it('🔴 le jeton relu est DÉCHIFFRÉ, il ne part pas chiffré chez Meta', () => {

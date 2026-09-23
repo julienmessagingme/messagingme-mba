@@ -114,6 +114,21 @@ test.describe('Publicités : les états de la connexion', () => {
     await expect(page.getByTestId('pubs-diffusion')).not.toContainText(/Prêt à diffuser|Ready to deliver/);
   });
 
+  test('🔴 `statut: null` est une IGNORANCE, pas un compte inactif', async ({ page }) => {
+    // Meta peut répondre 200 sans `account_status`. Le ranger avec « pas actif » envoyait le client
+    // réparer un compte qui va peut-être très bien, ce qui est le raisonnement que ce lot a retiré
+    // de la liaison Page.
+    await brancher(page, etatVivant({ connexion: CONNEXION, compte: { statut: null, raisonDesactivation: null, moyenPaiement: true } }));
+    await expect(page.getByTestId('pubs-diffusion')).toContainText(/ne nous a pas dit|did not tell us/);
+    await expect(page.getByTestId('pubs-diffusion')).not.toContainText(/n’est pas actif|not active/);
+  });
+
+  test('⚠️ le motif de désactivation de Meta est AFFICHÉ : c est ce que le client doit corriger', async ({ page }) => {
+    await brancher(page, etatVivant({ connexion: CONNEXION, compte: { statut: 2, raisonDesactivation: 3, moyenPaiement: true } }));
+    await expect(page.getByTestId('pubs-diffusion')).toContainText(/n’est pas actif|not active/);
+    await expect(page.getByTestId('pubs-diffusion')).toContainText('3');
+  });
+
   test('🔴 le champ ABSENT ne fait pas tomber l ecran : l API d hier ne le porte pas', async ({ page }) => {
     // La console est publiée par Vercel à chaque push, l'API attend son déploiement : pendant cette
     // fenêtre, la réponse n'a AUCUNE clé `compte`. `undefined` n'est pas `null`, et le confondre avec

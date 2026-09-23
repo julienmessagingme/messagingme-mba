@@ -107,6 +107,48 @@ export class PgPubConnexionStore {
   }
 
   /**
+   * REMPLACE la connexion d'un espace EN UNE SEULE TRANSACTION : efface, repose, rechoisit.
+   *
+   * 🔴 POURQUOI UNE TRANSACTION, ET PAS TROIS APPELS À LA SUITE. C'est le geste de `/ops`, le seul
+   * chemin qui remplace au lieu de refuser. En trois appels, un échec APRÈS le `delete` laisse l'espace
+   * SANS connexion, avec l'ancien jeton déjà perdu et le neuf jamais rangé : l'appelant reçoit une
+   * erreur qui ressemble à « rien ne s'est passé » alors que tout a été détruit. Ici, un échec ne
+   * laisse rien derrière lui.
+   *
+   * ⚠️ L'INSERT N'A PAS DE `on conflict` : la ligne vient d'être effacée dans la MÊME transaction, donc
+   * un conflit signifierait qu'une autre connexion s'est faufilée entre les deux, ce que la clé
+   * primaire empêche. Le `do nothing` de `poserJeton` protège un cas différent (deux connexions par
+   * l'écran), et le recopier ici masquerait l'anomalie au lieu de la rendre.
+   */
+  async remplacer(
+    tenantId: string,
+    jetonChiffre: string,
+    choix: {
+      comptePubId: string; compteNom: string | null; pageId: string; pageNom: string | null;
+      devise: string | null; fuseau: string | null; pageLiee: LiaisonPage;
+    },
+  ): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      await client.query('delete from pub_connexion where tenant_id = $1', [tenantId]);
+      await client.query(
+        `insert into pub_connexion (tenant_id, jeton_chiffre, compte_pub_id, compte_nom, page_id, page_nom,
+                                    devise, fuseau, page_liee, connecte_par, connecte_le)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, null, now())`,
+        [tenantId, jetonChiffre, choix.comptePubId, choix.compteNom, choix.pageId, choix.pageNom,
+         choix.devise, choix.fuseau, choix.pageLiee],
+      );
+      await client.query('commit');
+    } catch (err) {
+      await client.query('rollback').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
    * Meta a refusé ce jeton. On garde la ligne, avec sa date : l'écran doit pouvoir dire « reconnectez-vous »
    * plutôt que d'afficher un espace non connecté, qui laisserait croire que personne n'a jamais rien fait.
    */

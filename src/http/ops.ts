@@ -35,6 +35,12 @@ export interface ConnexionPubDeposee {
   devise: string | null;
   fuseau: string | null;
   pageLiee: string | null;
+  /**
+   * L'ancien accès a-t-il été retiré chez Meta ? `null` = il n'y en avait pas, `false` = Meta a refusé.
+   * Les deux ne disent PAS la même chose, et le `false` demande un geste à la main dans le
+   * portefeuille : un jeton d'utilisateur système n'expire jamais tout seul.
+   */
+  ancienRevoque: boolean | null;
 }
 
 export interface OpsRouteDeps {
@@ -428,20 +434,29 @@ export function registerOps(
     if (!deps.deposerJetonPub) return reply.code(503).send({ error: 'dépôt de jeton publicitaire non disponible sur cette instance' });
     const { tenantId } = req.params as { tenantId: string };
     if (!estUuid(tenantId)) return reply.code(404).send({ error: 'espace inconnu' });
-    const corps = (req.body ?? {}) as { jeton?: unknown; comptePubId?: unknown; pageId?: unknown };
+    const corps = (req.body ?? {}) as { jeton?: unknown; comptePubId?: unknown; pageId?: unknown; note?: unknown };
     const jeton = typeof corps.jeton === 'string' ? corps.jeton.trim() : '';
     const comptePubId = typeof corps.comptePubId === 'string' ? corps.comptePubId.trim() : '';
     const pageId = typeof corps.pageId === 'string' ? corps.pageId.trim() : '';
     if (jeton.length < 20) return reply.code(400).send({ error: 'jeton requis' });
     if (comptePubId === '' || pageId === '') return reply.code(400).send({ error: 'comptePubId et pageId requis' });
+    // ⚠️ NOTE OBLIGATOIRE, comme les trois autres écritures de `/ops`. Ce dépôt REMPLACE la connexion
+    // publicitaire d'un client : une écriture d'exploitation sans trace de qui l'a faite et pourquoi ne
+    // se relit pas six mois plus tard.
+    const note = typeof corps.note === 'string' ? corps.note.trim().slice(0, 500) : '';
+    if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : qui dépose ce jeton, et pourquoi' });
     let depose: ConnexionPubDeposee;
     try {
       depose = await deps.deposerJetonPub(tenantId, jeton, comptePubId, pageId);
     } catch (err) {
       return reply.code(422).send({ error: err instanceof Error ? err.message : 'jeton refusé' });
     }
-    // eslint-disable-next-line no-console
-    console.log(JSON.stringify({ lvl: 'warn', msg: 'ops_jeton_pub_depose', tenantId, comptePubId: depose.comptePubId, pageId: depose.pageId, at: new Date().toISOString() }));
+    // ⚠️ `journaliser` ET PAS UN `console.log` RECOPIÉ : le helper du dépôt envoie un `warn` sur
+    // stderr, quand la copie partait sur stdout en se déclarant `warn`. Deux vérités pour une ligne.
+    journaliser('warn', 'ops_jeton_pub_depose', {
+      tenantId, comptePubId: depose.comptePubId, pageId: depose.pageId,
+      ancienRevoque: depose.ancienRevoque, note, at: new Date().toISOString(),
+    });
     return reply.code(200).send({ tenantId, connexion: depose });
   });
 
