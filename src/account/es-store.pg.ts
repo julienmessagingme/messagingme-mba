@@ -122,6 +122,24 @@ export class PgEmbeddedSignupStore {
   }
 
   /**
+   * Conserve le PIN 2FA d'un numéro activé DEPUIS LA CONSOLE, sans toucher au token business.
+   *
+   * 🔴 POURQUOI PAS `saveCredentials`. Celui-ci exige le token business, que la route d'activation n'a pas (et
+   * ne doit pas avoir : le câblage le résout et ne le laisse jamais entrer dans une route). Lui passer autre
+   * chose que le vrai token l'ÉCRASERAIT, et l'espace perdrait sa voix.
+   *
+   * ⚠️ `tenantId` est dans le `where`, pas seulement dans le `set` : même garde inter-espace que partout
+   * ailleurs, la RLS étant contournée par le pooler.
+   */
+  async enregistrerPin(wabaId: string, tenantId: string, pinEnc: string): Promise<void> {
+    const res = await this.pool.query(
+      `update waba_credentials set pin_enc = $3, updated_at = now() where waba_id = $1 and tenant_id = $2`,
+      [wabaId, tenantId, pinEnc],
+    );
+    if ((res.rowCount ?? 0) === 0) throw new TenantConflictError('waba_credentials', wabaId);
+  }
+
+  /**
    * Lit le token business chiffré d'un WABA + son état. null si aucun credential (numéro branché à la main, hors
    * Embedded Signup) -> l'appelant retombe sur le token global. C'est le chemin de LECTURE qui manquait (le
    * chiffrement au repos ne servait à rien tant que personne ne relisait le token).

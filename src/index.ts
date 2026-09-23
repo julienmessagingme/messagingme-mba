@@ -2080,6 +2080,46 @@ async function main(): Promise<void> {
         // (PIN 2FA du numéro = secret Meta) chiffrés.
         saveCredentials: (waba: string, tenant: string, token: string, pin: string | null) =>
           esCredentialsStore.saveCredentials(waba, tenant, encryptSecret(token, config.ENCRYPTION_KEY), pin === null ? null : encryptSecret(pin, config.ENCRYPTION_KEY)),
+
+        // ----- « Activer le numéro » (2026-09-22) -----
+        // Le JETON NE SORT PAS D'ICI : ces fonctions ne prennent qu'un `tenantId`, la route ne voit jamais un
+        // secret. Même règle que le chiffrement de `saveCredentials`, posé ici et pas dans la route.
+        numeroDuTenant: async (tenant: string) => (await phoneStatusStore.getPhoneNumber(tenant))?.id ?? null,
+        // Relu CHEZ META à chaque geste, jamais dans notre base : notre copie date du dernier pull, et c'est
+        // Meta qui décide si un code est encore nécessaire.
+        etatNumero: async (tenant: string, phoneNumberId: string) => {
+          const client = await metaFactory.phoneClientForTenant(tenant);
+          const info = await client.get(phoneNumberId);
+          return { status: info.status ?? null, codeVerificationStatus: info.codeVerificationStatus ?? null };
+        },
+        demanderCode: async (tenant: string, phoneNumberId: string, methode: 'VOICE' | 'SMS') => {
+          const client = await metaFactory.phoneRegisterClientForTenant(tenant);
+          await client.requestCode(phoneNumberId, { methode });
+        },
+        verifierCode: async (tenant: string, phoneNumberId: string, code: string) => {
+          const client = await metaFactory.phoneRegisterClientForTenant(tenant);
+          await client.verifyCode(phoneNumberId, code);
+        },
+        // ⚠️ LE REGISTER RESTE CELUI DE L'INSCRIPTION, délibérément : `MetaPhoneRegisterClient` dit dans son
+        // en-tête pourquoi il ne le porte pas (deux copies du même appel Graph divergeraient au premier
+        // changement). D'où le jeton résolu à la main ici, le client d'inscription ne le portant pas.
+        // Pas d'interception d'erreur d'auth autour : ce client-là lève des `Error` ordinaires, que
+        // `isMetaAuthError` ne reconnaît pas. Poser un `onError` ici ne ferait que rassurer à tort.
+        enregistrerNumero: async (tenant: string, phoneNumberId: string, pin: string) => {
+          const { token } = await metaCredentials.resolveForTenant(tenant);
+          await esClient.register(phoneNumberId, token, pin);
+        },
+        sauverPin: async (tenant: string, pin: string) => {
+          const waba = await wabaDeLEspace(tenant);
+          if (waba === null) {
+            // Numéro branché à la main, hors Embedded Signup : aucune ligne où conserver le PIN. L'activation
+            // a réussi, on le dit plutôt que de laisser croire que le PIN est gardé quelque part.
+            // eslint-disable-next-line no-console
+            console.warn(`numero/activer: PIN non conservé (espace ${tenant} sans compte WhatsApp rattaché)`);
+            return;
+          }
+          await esCredentialsStore.enregistrerPin(waba, tenant, encryptSecret(pin, config.ENCRYPTION_KEY));
+        },
       };
     })(),
     account: {

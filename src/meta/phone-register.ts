@@ -52,12 +52,21 @@ export class MetaPhoneRegisterClient {
   }
 
   /**
-   * `POST /{phone_number_id}/request_code`. VOICE imposé : Meta classe le SMS « non recommandé » sur un numéro
-   * VoIP, et nos numéros français sont en voix seule. `language` est forcé (« fr » par défaut) sans quoi Meta
-   * dicte le code dans une autre langue, que la reconnaissance vocale française transcrirait mal.
+   * `POST /{phone_number_id}/request_code`. VOICE par défaut : Meta classe le SMS « non recommandé » sur un
+   * numéro VoIP, et les numéros du pool sont en voix seule. `language` est forcé (« fr » par défaut) sans quoi
+   * Meta dicte le code dans une autre langue, que la reconnaissance vocale française transcrirait mal.
+   *
+   * ⚠️ LE SMS EST OFFERT DEPUIS QUE LE CLIENT CHOISIT (2026-09-22, bouton « Activer le numéro ») : un numéro
+   * client ordinaire le reçoit très bien, et seul son propriétaire sait si c'est un numéro VoIP.
+   *
+   * ⚠️ UN OBJET, ET NON UN SECOND PARAMÈTRE POSITIONNEL : la signature d'avant prenait `language` en seconde
+   * position. Un appelant qui passait une langue devient une erreur du compilateur, pas un canal mal choisi.
    */
-  async requestCode(phoneNumberId: string, language = 'fr'): Promise<void> {
-    await this.post(`${encodeURIComponent(phoneNumberId)}/request_code`, { code_method: 'VOICE', language });
+  async requestCode(phoneNumberId: string, opts: { methode?: 'VOICE' | 'SMS'; language?: string } = {}): Promise<void> {
+    await this.post(`${encodeURIComponent(phoneNumberId)}/request_code`, {
+      code_method: opts.methode ?? 'VOICE',
+      language: opts.language ?? 'fr',
+    });
   }
 
   /**

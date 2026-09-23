@@ -485,7 +485,7 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
     // `auth` et non `admin` : les ecrans de la chaine se LISENT avec un compte agent, et les six
     // ecritures sont fermees dans la route par `forbidNonAdmin`.
     entree('channelsMe', 'tenant', deps.channelsMe, (app, d, g) => registerChannelsMeRoutes(app, d, g.auth)),
-    entree('embeddedSignup', 'tenant', deps.embeddedSignup, (app, d, g) => registerEmbeddedSignup(app, d, g.admin)),
+    entree('embeddedSignup', 'tenant', deps.embeddedSignup, (app, d, g) => registerEmbeddedSignup(app, d, g.admin, g.limiteCouteuse)),
     entree('hubspotImport', 'tenant', deps.hubspotImport, (app, d, g) => registerHubspotImport(app, d, g.admin)),
     entree('hubspotInstall', 'tenant', deps.hubspotInstall, (app, d, g) => registerHubspotInstall(app, d, g.admin)),
     entree('hubspotPipelines', 'tenant', deps.hubspotPipelines, (app, d, g) => registerHubspotPipelines(app, d, g.admin)),

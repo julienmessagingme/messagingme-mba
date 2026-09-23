@@ -83,6 +83,8 @@ export type AuditAction =
   | 'connecteur.modifie'
   | 'connecteur.supprime'
   | 'numero.connecte'
+  /** Le numéro a été ACTIVÉ depuis la console (vérification par code si besoin, puis register Cloud API). */
+  | 'numero.active'
   | 'contact.exporte';
 
 export interface AuditEntry {

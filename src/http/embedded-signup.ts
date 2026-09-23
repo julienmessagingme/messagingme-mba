@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import type { Guard } from '../auth/middleware';
+import { gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
 import { TenantConflictError, SecondNumeroRefuseError } from '../account/es-store.pg';
 import { scopeTenant, nonEmpty } from './scope';
 import { makeJournal, type AuditSink } from '../audit/journal';
@@ -39,20 +39,75 @@ export interface EmbeddedSignupRouteDeps {
   link(input: { tenantId: string; wabaId: string; phoneNumberId: string; displayPhoneNumber: string | null; verifiedName: string | null }): Promise<void>;
   /** Persiste le token business (le câblage chiffre AVANT, la route ne voit jamais le stockage en clair). */
   saveCredentials(wabaId: string, tenantId: string, businessToken: string, pin: string | null): Promise<void>;
+
+  // ----- « Activer le numéro » : finir chez nous ce que la fenêtre Meta a laissé en plan -----
+  //
+  // 🔴 AUCUNE DE CES DÉPENDANCES N'EST OPTIONNELLE, et c'est délibéré. Le dépôt a payé deux fois le motif
+  // « dépendance optionnelle absente = garde qui ne tourne pas » (la garde d'authentification, puis
+  // `estDesabonne`). Un câblage qui les oublie ne compile pas.
+  //
+  // ⚠️ AUCUNE NE REÇOIT DE JETON : le câblage le résout et ne laisse passer que le `tenantId`. Un jeton qui
+  // n'entre pas dans la route ne peut ni fuiter dans un journal ni partir dans un corps de réponse.
+
+  /**
+   * Numéro principal de l'espace (identifiant Meta), `null` si aucun.
+   *
+   * 🔴 LU EN BASE, JAMAIS PRIS DANS LE CORPS DE LA REQUÊTE. C'est ce qui empêche un admin d'activer le numéro
+   * d'un autre espace en forgeant un identifiant : il n'y a rien à forger.
+   */
+  numeroDuTenant(tenantId: string): Promise<string | null>;
+  /**
+   * État du numéro chez Meta. RELU AVANT CHAQUE GESTE, jamais lu dans notre base : c'est Meta qui tranche, et
+   * notre copie date du dernier pull.
+   */
+  etatNumero(tenantId: string, phoneNumberId: string): Promise<{ status: string | null; codeVerificationStatus: string | null }>;
+  /** Demande à Meta d'envoyer le code, par appel (VOICE) ou par SMS. */
+  demanderCode(tenantId: string, phoneNumberId: string, methode: 'VOICE' | 'SMS'): Promise<void>;
+  /** Poste le code reçu par le client. */
+  verifierCode(tenantId: string, phoneNumberId: string, code: string): Promise<void>;
+  /** Enregistre le numéro sur la Cloud API avec ce PIN (c'est son PIN 2FA). */
+  enregistrerNumero(tenantId: string, phoneNumberId: string, pin: string): Promise<void>;
+  /** Conserve le PIN, chiffré par le câblage, SEULEMENT après que Meta l'a accepté. */
+  sauverPin(tenantId: string, pin: string): Promise<void>;
 }
 
 /**
- * Embedded Signup (Tech Provider), admin-only. Deux routes :
+ * Délai minimal entre deux demandes de code pour un même numéro.
+ *
+ * 🔴 CE N'EST PAS UN PLAFOND DE DÉBIT, C'EST LE QUOTA DE META QU'ON PROTÈGE. Il permet DIX requêtes par numéro
+ * sur 72 heures, toutes étapes confondues ; au-delà, erreur 133016 et numéro bloqué 72 heures. Un client qui
+ * clique trois fois parce que « rien ne se passe » brûlerait un tiers de son quota en dix secondes, et rien ne
+ * le lui rendrait avant trois jours.
+ *
+ * ⚠️ EN MÉMOIRE DU PROCESS, comme les autres plafonds du dépôt : un redémarrage le remet à zéro, et c'est sans
+ * conséquence pour une minute. Le persister demanderait une table pour une protection contre le double-clic.
+ */
+const DELAI_ENTRE_CODES_MS = 60_000;
+
+/**
+ * Embedded Signup (Tech Provider), admin-only. Quatre routes :
  *  - GET  /embedded-signup/config   : de quoi le front lance la popup (appId + configId publics, pas de secret).
  *  - POST /embedded-signup/complete : reçoit { code, wabaId, phoneNumberId } de la popup (code TTL 30 s !),
  *    échange le code -> business token, rattache WABA + numéro au workspace, abonne les webhooks, register si
  *    numéro neuf (jamais pour un numéro déjà CONNECTED, jamais pour un numéro NON vérifié : la v4 laisse finir
  *    le parcours sans vérification, et Meta refuserait), stocke le token chiffré. Les étapes NON bloquantes qui
  *    échouent remontent en `warnings` (jamais de demi-échec silencieux).
+ *  - POST /numero/code              : Meta envoie le code de vérification du numéro (appel par défaut, ou SMS).
+ *  - POST /numero/activer           : vérifie le code s'il le faut, puis enregistre le numéro sur la Cloud API.
+ *
+ * 🔴 LES DEUX DERNIÈRES EXISTENT PARCE QUE LA v4 LAISSE FINIR SANS VÉRIFICATION. Avant elle, un parcours abouti
+ * donnait toujours un numéro vérifié ; depuis, il peut rendre la main sur un numéro que Meta refuse d'enregistrer,
+ * et le client n'avait alors aucun recours dans la console (vécu le 2026-09-22 : passage par WhatsApp Manager).
  */
-export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignupRouteDeps, garde: Guard): void {
+export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignupRouteDeps, garde: Guard, limiteCouteuse?: PreHandler): void {
   const journal = makeJournal(deps.audit);
   const opts = { preHandler: garde };
+  // Les deux routes d'activation appellent Meta sur un quota étroit : elles portent la limite coûteuse, comme
+  // l'import ou l'aperçu de site.
+  const couteux = gardeEtendue(garde, limiteCouteuse);
+  /** Dernier envoi de code PAR NUMÉRO. Porté par l'instance de serveur (et non par le module) : deux serveurs
+   *  montés dans le même process, ce qui n'arrive qu'en test, ne se gênent pas l'un l'autre. */
+  const dernierCode = new Map<string, number>();
 
   app.get('/tenants/:tenantId/embedded-signup/config', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
@@ -222,5 +277,137 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
       ...(aActiver ? { aActiver: true } : {}),
       ...(warnings.length > 0 ? { warnings } : {}),
     });
+  });
+
+  /**
+   * Demande à Meta d'envoyer le code de vérification du numéro de l'espace.
+   *
+   * 🔴 ELLE LIT L'ÉTAT AVANT D'AGIR, et ce n'est pas une précaution : c'est la seule séquence valide. Meta
+   * refuse une demande de code sur un numéro déjà vérifié (136024), et chaque refus consomme une des dix
+   * requêtes permises sur 72 heures. Apprendre l'état en le demandant à Meta coûterait donc un essai au client.
+   */
+  app.post('/tenants/:tenantId/numero/code', couteux, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const body = (req.body ?? {}) as { methode?: unknown };
+    const methode = body.methode === undefined ? 'VOICE' : body.methode;
+    // VOICE par défaut : Meta déconseille le SMS sur un numéro VoIP, et un numéro qui ne reçoit pas de SMS
+    // laisserait le client sans recours. Le SMS reste offert, c'est lui qui sait ce qu'est son numéro.
+    if (methode !== 'VOICE' && methode !== 'SMS') return reply.code(400).send({ error: "methode invalide ('VOICE' ou 'SMS')" });
+
+    const phoneNumberId = await deps.numeroDuTenant(tenant);
+    if (phoneNumberId === null) return reply.code(404).send({ error: 'aucun numéro rattaché à cet espace' });
+
+    let etat: { status: string | null; codeVerificationStatus: string | null };
+    try {
+      etat = await deps.etatNumero(tenant, phoneNumberId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // eslint-disable-next-line no-console
+      console.error(`numero/code: état illisible chez Meta (tenant ${tenant}, numéro ${phoneNumberId}) : ${msg}`);
+      return reply.code(422).send({ error: `état du numéro illisible chez Meta : ${msg}` });
+    }
+    if (etat.status === 'CONNECTED') return reply.code(409).send({ error: 'ce numéro est déjà activé : il peut envoyer.' });
+    if (etat.codeVerificationStatus === 'VERIFIED') {
+      return reply.code(409).send({ error: 'ce numéro est déjà vérifié : il ne reste qu’à l’activer, sans nouveau code.' });
+    }
+
+    const precedent = dernierCode.get(phoneNumberId);
+    const maintenant = Date.now();
+    if (precedent !== undefined && maintenant - precedent < DELAI_ENTRE_CODES_MS) {
+      const reste = Math.ceil((DELAI_ENTRE_CODES_MS - (maintenant - precedent)) / 1000);
+      return reply.code(429).send({ error: `un code vient d’être envoyé. Attends ${reste} s avant d’en redemander un : Meta n’en permet que dix par numéro sur 72 heures.` });
+    }
+
+    // 🔴 LA MARQUE EST POSÉE AVANT L'APPEL, ET C'EST LE SENS DE LA GARDE. Meta compte des REQUÊTES, pas des
+    //    succès : un envoi qu'il REFUSE a quand même consommé un des dix essais du numéro. Ne marquer qu'en
+    //    cas de succès laisserait donc le chemin d'échec sans protection, c'est-à-dire précisément celui où
+    //    le client reclique parce que « rien ne s'est passé ». Le prix est une minute d'attente quand l'appel
+    //    n'a même pas atteint Meta, contre 72 heures de numéro bloqué dans l'autre sens.
+    dernierCode.set(phoneNumberId, maintenant);
+    try {
+      await deps.demanderCode(tenant, phoneNumberId, methode);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Journalisé AVEC le code de Meta, jamais avec le code reçu par le client : c'est ce qui manquait le
+      // 2026-09-22 au soir, et la cause d'un échec a failli être perdue.
+      // eslint-disable-next-line no-console
+      console.error(`numero/code: refus de Meta (tenant ${tenant}, numéro ${phoneNumberId}, ${methode}) : ${msg}`);
+      return reply.code(422).send({ error: `Meta a refusé l’envoi du code : ${msg}` });
+    }
+    return reply.code(200).send({ envoye: true, methode });
+  });
+
+  /**
+   * Active le numéro : vérifie le code s'il le faut, puis l'enregistre sur la Cloud API.
+   *
+   * 🔴 AUCUNE RELANCE AUTOMATIQUE (décision de Julien, 2026-09-22). Un échec laisse le numéro « à activer »,
+   * visible à l'écran, et c'est le client qui décide quand réessayer. Une répétition invisible consommerait le
+   * quota des dix requêtes sans que personne ne le voie.
+   */
+  app.post('/tenants/:tenantId/numero/activer', couteux, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const body = (req.body ?? {}) as { code?: unknown };
+
+    const phoneNumberId = await deps.numeroDuTenant(tenant);
+    if (phoneNumberId === null) return reply.code(404).send({ error: 'aucun numéro rattaché à cet espace' });
+
+    let etat: { status: string | null; codeVerificationStatus: string | null };
+    try {
+      etat = await deps.etatNumero(tenant, phoneNumberId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // eslint-disable-next-line no-console
+      console.error(`numero/activer: état illisible chez Meta (tenant ${tenant}, numéro ${phoneNumberId}) : ${msg}`);
+      return reply.code(422).send({ error: `état du numéro illisible chez Meta : ${msg}` });
+    }
+    // Déjà activé : on ne fait RIEN et on le dit. Un register de plus serait un essai brûlé pour confirmer ce
+    // que Meta vient de nous dire.
+    if (etat.status === 'CONNECTED') return reply.code(200).send({ actif: true, deja: true });
+
+    // Vérification, seulement si Meta dit que le numéro ne l'est pas. Sur un numéro déjà vérifié, elle
+    // échouerait, et l'échec coûterait un essai.
+    if (etat.codeVerificationStatus !== 'VERIFIED') {
+      if (!nonEmpty(body.code)) {
+        return reply.code(400).send({ error: 'code requis : ce numéro n’est pas encore vérifié chez Meta. Demande un code, puis saisis-le.' });
+      }
+      try {
+        await deps.verifierCode(tenant, phoneNumberId, body.code.trim());
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        // ⚠️ LE CODE REÇU N'EST JAMAIS JOURNALISÉ, ni le PIN : seuls l'identifiant du numéro et le refus de Meta.
+        // eslint-disable-next-line no-console
+        console.error(`numero/activer: code refusé par Meta (tenant ${tenant}, numéro ${phoneNumberId}) : ${msg}`);
+        return reply.code(422).send({ error: `Meta a refusé ce code : ${msg}` });
+      }
+    }
+
+    // Enregistrement sur la Cloud API. Le PIN est le PIN 2FA du numéro : tiré au CSPRNG, et conservé SEULEMENT
+    // si Meta l'accepte. En conserver un que Meta n'a pas posé donnerait un secret faux en base, qui ferait
+    // échouer la prochaine re-régistration sans cause visible.
+    const pin = String(randomInt(100000, 1000000));
+    try {
+      await deps.enregistrerNumero(tenant, phoneNumberId, pin);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // eslint-disable-next-line no-console
+      console.error(`numero/activer: register refusé par Meta (tenant ${tenant}, numéro ${phoneNumberId}) : ${msg}`);
+      return reply.code(422).send({ error: `Meta a refusé l’activation : ${msg}` });
+    }
+    // 🔴 BEST-EFFORT, ET APRÈS L'EFFET : à cet instant, Meta a ACTIVÉ le numéro. Faire échouer la route parce
+    //    qu'on n'a pas su ranger le PIN annoncerait une panne au client alors que son numéro marche, et
+    //    l'inviterait à recommencer, donc à brûler un essai. Le cas réel n'est pas théorique : un numéro
+    //    branché à la main n'a aucune ligne de credentials où écrire. L'échec est journalisé, jamais tu.
+    try {
+      await deps.sauverPin(tenant, pin);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`numero/activer: numéro activé mais PIN non conservé (tenant ${tenant}, numéro ${phoneNumberId}) : ${err instanceof Error ? err.message : String(err)}`);
+    }
+    await journal(tenant, req, 'numero.active', { kind: 'phone_number', id: phoneNumberId }, {
+      verificationFaite: etat.codeVerificationStatus !== 'VERIFIED',
+    });
+    return reply.code(200).send({ actif: true });
   });
 }

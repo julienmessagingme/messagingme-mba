@@ -3,6 +3,7 @@ import { MetaTemplateClient } from './templates';
 import { MetaFlowClient } from './flows';
 import { MetaPricingClient } from './pricing';
 import { MetaPhoneNumberClient } from './phone-number';
+import { MetaPhoneRegisterClient } from './phone-register';
 import { MbaClient } from '../mba/client';
 import type { HttpTransport } from './http';
 import type { MessageSender } from '../campaign/engine';
@@ -79,6 +80,18 @@ export class MetaClientFactory {
   async phoneClientForTenant(tenantId: string): Promise<MetaPhoneNumberClient> {
     const { token, wabaId } = await this.o.resolver.resolveForTenant(tenantId);
     return this.guard(new MetaPhoneNumberClient(token, this.o.version), wabaId);
+  }
+
+  /**
+   * Client d'ajout et de vérification d'un numéro, avec le jeton de l'espace.
+   *
+   * ⚠️ AVEC LE JETON DE L'ESPACE, ET PAS LE JETON MAISON : le numéro d'un client embarqué vit dans SON compte
+   * WhatsApp, que notre jeton global ne voit pas. C'est la même raison qui fait passer `getPhone` par le
+   * business token pendant l'inscription.
+   */
+  async phoneRegisterClientForTenant(tenantId: string): Promise<MetaPhoneRegisterClient> {
+    const { token, wabaId } = await this.o.resolver.resolveForTenant(tenantId);
+    return this.guard(new MetaPhoneRegisterClient(token, this.o.version), wabaId);
   }
 
   /** Client de configuration de l'agent MBA. Pas de `version` : cette surface la passe par en-tête, pas par chemin. */

@@ -38,6 +38,15 @@ function app(over: Partial<EmbeddedSignupRouteDeps> = {}) {
     register: async (phoneNumberId, _tok, pin) => { cap.registered.push({ phoneNumberId, pin }); },
     link: async (input) => { cap.linked.push({ tenantId: input.tenantId, wabaId: input.wabaId, phoneNumberId: input.phoneNumberId, displayPhoneNumber: input.displayPhoneNumber }); },
     saveCredentials: async (wabaId, tenantId, token, pin) => { cap.saved.push({ wabaId, tenantId, token, pin }); },
+    // L'activation du numéro a son propre fichier (`tests/numero-activation.test.ts`). Ici, ces dépendances
+    // LÈVENT au lieu de ne rien faire : si un chemin d'inscription se mettait à les appeler, il faut le voir,
+    // pas le laisser passer sous un faux silence.
+    numeroDuTenant: async () => { throw new Error('non attendu dans ce test'); },
+    etatNumero: async () => { throw new Error('non attendu dans ce test'); },
+    demanderCode: async () => { throw new Error('non attendu dans ce test'); },
+    verifierCode: async () => { throw new Error('non attendu dans ce test'); },
+    enregistrerNumero: async () => { throw new Error('non attendu dans ce test'); },
+    sauverPin: async () => { throw new Error('non attendu dans ce test'); },
     ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, embeddedSignup: deps }), cap };
