@@ -8,7 +8,7 @@ import { join, resolve } from 'node:path';
  * Le passage des onglets en colonne invite à rendre deux blocs (`hidden lg:flex` et `lg:hidden`). Ce serait
  * la pire façon de le faire : les deux vivent dans le DOM, donc CHAQUE `data-testid="mba-tab-<cle>"` existe
  * en double. `web/e2e/mba-parametres-gate.spec.ts:14` exige `toHaveCount(0)` sur un écran bloqué et en
- * lirait 2 ; les onze `.click()` des cinq suites tomberaient en violation de mode strict Playwright.
+ * lirait 2 ; les clics des suites e2e qui l'utilisent tomberaient en violation de mode strict Playwright.
  *
  * Ce test compte les occurrences du gabarit de testid dans la source. Il doit y en avoir EXACTEMENT UNE.
  */

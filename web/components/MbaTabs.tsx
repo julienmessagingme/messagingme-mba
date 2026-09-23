@@ -17,7 +17,7 @@ export interface MbaTab {
 /**
  * L'orientation du menu. 🔴 ELLE NE CHANGE QUE DES CLASSES, jamais le marquage : une seule liste est
  * rendue dans les deux cas. Rendre une colonne ET une barre ferait exister chaque `data-testid` en double,
- * ce que `tests/web-mbatabs-parite.test.ts` refuse et que cinq suites e2e paieraient.
+ * ce que `tests/web-mbatabs-parite.test.ts` refuse, et que les suites e2e qui cliquent ces onglets paieraient.
  *
  * ⚠️ Le repli sous `lg` est porté par les classes elles-memes, pas par un second bloc : en colonne, le
  * composant est `flex-row` par defaut et `lg:flex-col`, donc un telephone retrouve exactement la barre
