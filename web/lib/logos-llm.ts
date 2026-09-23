@@ -34,8 +34,12 @@ export function logoDuModele(modele: string): { src: string; alt: string } | nul
    * l'image, et `web/e2e/agents-modele.spec.ts:51` ouvre justement la fiche par
    * `getByRole('button', { name: /Conseiller séjours/ })`. Un `alt="Anthropic"` ferait échouer ce test, et
    * avec lui tout le fichier, son clic vivant dans un helper commun.
+   *
+   * ⚠️ EN PNG, PAS EN SVG MONOCHROME. Ces marques sont MULTICOLORES (un dégradé pour Gemini, une grille de
+   * couleurs pour Mistral, un orange propre à Anthropic) : un SVG en `currentColor` les rendrait toutes
+   * grises, ce qui serait faux pour chacune.
    */
-  return { src: `/llm/${f}.svg`, alt: '' };
+  return { src: `/llm/${f}.png`, alt: '' };
 }
 
 /** Le repli quand aucun logo ne convient : deux ou trois lettres, jamais un nom tronqué au hasard. */
