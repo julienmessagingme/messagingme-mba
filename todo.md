@@ -1,5 +1,49 @@
 # todo.md : backlog
 
+## 🟠 Les QUINZE fiches d'aide manquantes (2026-09-23)
+
+**Mesuré, pas estimé** : `features.md` porte 31 sections, **8** sont couvertes par une fiche du bot d'aide,
+23 sont déclarées sans. Sur ces 23, huit le sont par DÉCISION (trois internes, cinq destinées aux
+intégrateurs), et **quinze sont un manque** : elles décrivent des écrans qu'un client ouvre, et le bot n'a
+rien à lui répondre dessus. La liste fait foi dans `tests/aide-proposer.test.ts`, entrées marquées
+`'aucune fiche'` de `SECTIONS_SANS_FICHE` : Accueil, Navigation, Comptes & authentification, Analytics,
+Support, L'aide de la console, Sécurité & compliance, Journaux et traces, Agent IA, MBA le répondeur de
+Meta, l'onglet « Outils » de l'agent de Meta, Canal RCS, Chaîne WhatsApp, Formulaires WhatsApp (Flows),
+E-mail.
+
+🔴 **LA RÈGLE DE TON, TRANCHÉE PAR JULIEN LE 2026-09-23, ET ELLE A DÉJÀ COÛTÉ UN BROUILLON JETÉ.** Une fiche
+décrit **ce qui EXISTE**, jamais ce qui a changé. Une fiche écrite comme une note de migration (« cet écran
+n'existe plus, voici pourquoi ») n'a aucun sens : il n'y a pas encore de client, personne n'a connu l'état
+d'avant. Corollaire : pas de date de livraison, pas de numéro de migration, pas de « désormais », pas de
+mention de `/ops` (le client n'a pas à savoir par quelle porte on règle son espace, il a besoin de savoir à
+qui s'adresser).
+
+**Ce qu'il faut savoir du mécanisme avant d'écrire, pour ne pas le redécouvrir :**
+
+- Une fiche = un fichier de `docs/aide/fiches/`, avec un en-tête `ecran:`, `source_section:` et
+  `source_empreinte:`. L'empreinte est celle que rend `decouperFeatures` (`scripts/aide-proposer.ts`) sur la
+  section nommée, six caractères. Elle se calcule, elle ne s'invente pas.
+- ⚠️ **Une fiche peut citer PLUSIEURS sections**, séparées par ` | `, avec autant d'empreintes dans le même
+  ordre. C'est le cas quand l'écran documenté est alimenté par plusieurs sections de `features.md` : c'est
+  exactement ce qui avait laissé la fiche des automations en retard de trois déclencheurs.
+- `npm run aide:proposer` écrit des BROUILLONS et refuse d'écraser une fiche existante. Il propose, un
+  humain corrige, rien ne part sans accord.
+- 🔴 `npm run aide:charger` charge les fiches dans la base de **PRODUCTION** depuis ce poste, hors de la
+  garde de déploiement. Il ne se lance qu'avec le feu vert de Julien. Il RETIRE les lignes dont le fichier a
+  disparu : vérifier avant qu'aucune fiche ne manque de l'arbre partagé.
+- ⚠️ Une fiche chargée est trouvable **par les mots tout de suite, par le sens plus tard** : le chargeur ne
+  vectorise rien, le balayage s'en charge au passage suivant.
+
+⚠️ **CHAQUE FICHE ÉCRITE FAIT TOMBER UN TEST, ET C'EST VOULU.** `tests/aide-proposer.test.ts` assert que le
+nombre de sections `'aucune fiche'` vaut 15. Écrire une fiche demande donc de retirer sa section de
+`SECTIONS_SANS_FICHE` ET de décrémenter ce chiffre. C'est le compteur qui rend le manque visible ; le voir
+baisser est le seul indicateur d'avancement de ce lot.
+
+**Comment s'y prendre** : une fiche à la fois, en lisant l'écran réel et pas seulement `features.md`
+(`features.md` est écrit pour l'équipe, la fiche pour un client). Les neuf fiches existantes donnent le ton :
+elles répondent à une question qu'on se pose devant l'écran, elles nomment ce qui surprend, et elles disent
+ce que le produit ne fait PAS quand c'est ce qu'on cherche.
+
 ## 🟠 Pré-câbler la route Azure OpenAI France, sans bouton ni promesse prématurée (2026-09-21)
 
 **Décision de Julien :** Vercel AI Gateway reste le chemin ordinaire. Pour un contrat dont le RSSI exige une
