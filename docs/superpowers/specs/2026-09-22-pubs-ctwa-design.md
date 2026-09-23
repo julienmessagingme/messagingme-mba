@@ -396,9 +396,13 @@ annoncées « disponibles jusqu'en octobre 2026 »).
 
 1. Vérifier la vérification d'entreprise de MessagingMe (Centre de sécurité des paramètres de
    l'entreprise). Exigée pour ouvrir aux clients.
-2. Ajouter le produit « API Marketing » à l'app `988129420727963`.
-3. Créer la configuration Facebook Login for Business « publicités » (permissions de la section 3.1,
-   jeton d'utilisateur système), et donner son identifiant pour `META_ADS_CONFIG_ID`.
+2. ✅ **FAIT le 2026-09-23** : le cas d'usage « Create & manage ads with Marketing API » est sur l'app
+   `988129420727963`, ses six permissions en « Ready for testing », `pages_manage_ads` comprise. Le
+   « Marketing API Access Tier » y est en **Limited**, ce que le pilote attendait.
+3. ✅ **FAIT le 2026-09-23** : configuration Facebook Login for Business « pub Meta » créée, en variation
+   General, jeton d'utilisateur système sans expiration, actifs Pages et comptes publicitaires tous deux
+   requis, tâche ADVERTISE sans MANAGE. Son identifiant et le détail des réglages vivent dans
+   `brain/INFRA.md` (hors dépôt, qui est public) ; il ira dans `META_ADS_CONFIG_ID` au lot 2.
 4. Lier la Page Facebook MessagingMe au numéro WhatsApp du pilote. Le code arrivera dans l'Inbox.
 5. Un moyen de paiement sur le compte pub MessagingMe.
 
