@@ -693,6 +693,44 @@ export class PgStatsStore {
   }
 
   /**
+   * Les messages échangés dans les conversations que l'agent de Meta a tenues sur la fenêtre.
+   *
+   * 🔴 LE FRAGMENT D'ORIGINE S'IMPORTE, IL NE SE RECOPIE PAS (règle « Modules partagés » du CLAUDE.md).
+   * `ORIGINE_EFFECTIVE_SQL` attend l'alias `m` pour `conversation_messages` : c'est pour ça que le
+   * sous-select nomme sa table `m` et que la requête extérieure nomme la sienne `msg`. Inverser les deux
+   * produit un SQL invalide, et recopier le fragment ferait diverger ce chiffre de la ventilation du
+   * Performance Lab au premier changement de règle d'origine.
+   *
+   * 🔴 DEUX FAÇONS DE POSER L'ORIGINE `mba`, et le fragment couvre les deux : la colonne `origin = 'mba'`
+   * écrite depuis la migration 0099, et la dérivation `when m.type = 'mba'` pour l'historique d'avant.
+   * C'est exactement pourquoi on ne teste pas `m.origin = 'mba'` à la main.
+   *
+   * 🔴 `not c.is_test` DES DEUX CÔTÉS de la requête. Le sous-select repère les conversations, l'extérieur
+   * compte : oublier le filtre dans l'un des deux laisserait rentrer les fils de test par l'autre porte.
+   */
+  async messagesTenusParMba(tenantId: string, jours: number): Promise<number> {
+    const { rows } = await this.pool.query<{ n: string }>(
+      `select count(*)::text as n
+         from conversation_messages msg
+         join conversations c on c.id = msg.conversation_id
+        where c.tenant_id = $1
+          and not c.is_test
+          and msg.created_at > now() - make_interval(days => $2)
+          and msg.conversation_id in (
+            select m.conversation_id
+              from conversation_messages m
+              join conversations cv on cv.id = m.conversation_id
+             where cv.tenant_id = $1
+               and not cv.is_test
+               and m.created_at > now() - make_interval(days => $2)
+               and ${ORIGINE_EFFECTIVE_SQL} = 'mba'
+          )`,
+      [tenantId, jours],
+    );
+    return Number(rows[0]?.n ?? 0);
+  }
+
+  /**
    * Volume par template envoyé sur la période (campagnes + envois inbox), pour le dropdown du
    * dashboard et le prix estimé. Exclut les livraisons en échec (delivery_status='failed').
    *

@@ -58,7 +58,23 @@ export interface MbaRouteDeps {
   phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
   /** Récupère une page pour l'import de FAQ depuis une URL. Injecté pour rester testable sans réseau. */
   fetchUrl?(url: string): Promise<PageDistante>;
+  /**
+   * Les messages échangés dans les conversations que l'agent de Meta a tenues, sur une fenêtre de N jours.
+   *
+   * ⚠️ PAR ESPACE, PAS PAR NUMÉRO, et ce n'est pas un raccourci : `conversations` ne porte aucun
+   * `phone_number_id` (migration 0009), sa clé métier est `(tenant_id, wa_id)`. Le produit refusant par
+   * ailleurs un second numéro par espace, les deux coïncident aujourd'hui. Le jour où un espace en
+   * piloterait deux, ce chiffre deviendrait la somme des deux et il faudrait le dire.
+   *
+   * ⚠️ OPTIONNELLE : `MbaRouteDeps` ne donne aujourd'hui AUCUN accès à la base, et les fixtures de test
+   * bouchonnent l'objet entier. L'écran sait ne rien afficher quand le chiffre manque.
+   */
+  messagesTenus?(tenantId: string, jours: number): Promise<number>;
 }
+
+/** La fenêtre du chiffre de l'en-tête. La même que celle de la consommation d'un agent IA, pour que les
+ *  deux écrans ne racontent pas deux durées différentes sous le même mot. */
+const JOURS_MESSAGES = 30;
 
 /** Au-delà, ce n'est plus un import de FAQ : Meta prévient qu'« a few hundred » dégrade déjà les réponses. */
 const MAX_IMPORT = 500;
@@ -225,7 +241,21 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     }));
   });
 
-
+  /**
+   * Combien de messages ont été échangés dans les conversations que l'agent de Meta a tenues.
+   *
+   * ⚠️ `messages: null` QUAND ON NE SAIT PAS, jamais 0. Un zéro affirmerait que l'agent n'a parlé à
+   * personne, ce qui est une information FAUSSE présentée comme une mesure.
+   */
+  app.get(`${base}/messages`, g, async (req, reply) => {
+    const ctx = await contexte(req, reply, deps);
+    if (!ctx) return;
+    if (!deps.messagesTenus) return reply.code(200).send({ messages: null, jours: JOURS_MESSAGES });
+    return reply.code(200).send({
+      messages: await deps.messagesTenus(ctx.tenant, JOURS_MESSAGES),
+      jours: JOURS_MESSAGES,
+    });
+  });
 
   /**
    * Ce que l'écran affiche à l'ouverture : l'agent est-il ouvert par Meta sur ce numéro, et dans quel état.
