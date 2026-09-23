@@ -1626,6 +1626,7 @@ async function main(): Promise<void> {
       // Absente quand le provisionnement est eteint : la creation d'agent se comporte alors comme avant.
       ...(provisionCle ? { assurerCleModele: (tenant: string) => assurerCleGateway(provisionCle, tenant) } : {}),
       consommationAgent: (tenant, agentId, jours) => agentSessions.consommation!(tenant, agentId, jours),
+      messagesAgent: (tenant, agentId, jours) => agentSessions.messagesTenus!(tenant, agentId, jours),
       // Le blocage dur avant activation : il lit la fiche, la connaissance, et les outils actifs AVEC leurs
       // handlers (le COMPTE seul ne peut pas dire QUEL outil manque, et c'est l'absence d'un outil PRECIS,
       // celui qui lit la base, qui a rendu un agent muet en production le 2026-09-08),
