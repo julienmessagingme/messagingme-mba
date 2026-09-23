@@ -131,6 +131,7 @@ import { DejaConnectePub, JetonNonEnregistre, PasDeConnexionPub, ConnexionPubInc
 import { MetaPubsCreationClient } from './meta/pubs-creation';
 import { PgPublicitesStore } from './pubs/publicites.pg';
 import { creerLaPublicite, publierLaPublicite, type DemandeCreation } from './pubs/creation';
+import { entonnoir, ISSUES_NON_PRISES_EN_CHARGE } from './pubs/entonnoir';
 import { estJetonRefuse } from './meta/graph';
 import { PgPubConnexionStore } from './pubs/connexion.pg';
 import { PgAgentSessionStore } from './agent/session-store.pg';
@@ -2478,6 +2479,36 @@ async function main(): Promise<void> {
               marquerPubliee: (id) => publicites.marquerEtat(t, id, 'publiee'),
             },
           );
+        },
+
+        /**
+         * LA PAGE D'UNE PUBLICITÉ : ce qu'on sait d'elle, et son entonnoir.
+         *
+         * ⚠️ AUCUN APPEL À META ICI. Les chiffres viennent du balayage, qui relit toutes les quinze
+         * minutes. Les relire à l'ouverture de l'écran ferait dépendre l'affichage du temps de réponse de
+         * Meta, et multiplierait les appels par le nombre de personnes qui consultent.
+         */
+        lirePub: async (t: string, publiciteId: string) => {
+          const publicite = await publicites.lire(t, publiciteId);
+          if (publicite === null) return null;
+          const comptes = await publicites.comptesDeLaCampagne(t, publicite.campagneId, ISSUES_NON_PRISES_EN_CHARGE);
+          return { publicite, entonnoir: entonnoir({ depense: publicite.depense, clics: publicite.clics, ...comptes }) };
+        },
+
+        /**
+         * PAUSE ET REPRISE, SUR LA CAMPAGNE, chez Meta.
+         *
+         * 🔴 SUR LA CAMPAGNE ET RIEN D'AUTRE, parce qu'elle est l'interrupteur : Meta met en pause tout ce
+         * qu'elle contient. Toucher aussi l'ensemble et la publicité ferait trois appels dont deux sans
+         * effet, et surtout trois façons d'échouer à mi-chemin sur le bouton d'ARRÊT d'une dépense.
+         *
+         * ⚠️ L'AUTOMATION N'EST PAS TOUCHÉE (spec § 3.5) : un prospect qui a cliqué juste avant la pause
+         * peut écrire plusieurs minutes plus tard, et son lead a été payé.
+         */
+        basculerPub: async (t: string, publiciteId: string, actif: boolean) => {
+          const pub = await publicites.lire(t, publiciteId);
+          if (pub === null) throw new Error('cette publicité n’existe pas');
+          await clientCreationPubs.changerStatut(pub.campagneId, await jetonClair(t), actif ? 'ACTIVE' : 'PAUSED');
         },
       };
     })(),

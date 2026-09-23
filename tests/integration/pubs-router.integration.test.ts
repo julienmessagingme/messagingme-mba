@@ -221,4 +221,134 @@ describe.skipIf(!url)('lot 3 des pubs : router et qualifier (Postgres réel)', (
       expect(await arrivees.qualifier(voisinId, '33600000701', 'devis-envoye')).toBeNull();
     });
   });
+
+  /**
+   * LE SUIVI ET L'ENTONNOIR (commit 3).
+   *
+   * 🔴 CES REQUÊTES NE SE VÉRIFIENT QUE SUR UNE VRAIE BASE. Un `count(distinct)` avec des `filter`, un
+   * `coalesce` qui doit préserver la dépense d'hier, un `any($3::text[])` : ce sont des comportements de
+   * Postgres, pas de TypeScript. Un faux dépôt les ferait tous passer sans rien prouver.
+   */
+  describe('le suivi', () => {
+    beforeAll(async () => {
+      await poserPub(tenantId, 'camp-suivi');
+      await pool.query(`update publicites set etat = 'publiee' where tenant_id = $1 and campagne_id = 'camp-suivi'`, [tenantId]);
+    });
+
+    it('les espaces à suivre exigent une CONNEXION : sans elle, rien à demander à Meta', async () => {
+      // Une publicité publiée sur un espace déconnecté est un cas NORMAL (la spec autorise la déconnexion
+      // avec des pubs actives) : le faire revenir à chaque passage ferait constater l'absence de jeton
+      // toutes les quinze minutes.
+      expect(await publicites.espacesASuivre()).not.toContain(tenantId);
+      await pool.query(
+        `insert into pub_connexion (tenant_id, jeton_chiffre) values ($1, 'chiffre-itest')
+         on conflict (tenant_id) do nothing`, [tenantId],
+      );
+      expect(await publicites.espacesASuivre()).toContain(tenantId);
+    });
+
+    it('ne rend que les campagnes PUBLIÉES, les moins fraîches d’abord', async () => {
+      const aSuivre = await publicites.campagnesASuivre(tenantId);
+      expect(aSuivre).toEqual(['camp-suivi']);
+      // Les autres publicités de cet espace sont en état `creation` : les suivre consommerait deux appels
+      // chez Meta pour des campagnes qui ne diffusent pas.
+      expect(aSuivre).not.toContain('camp-tag');
+    });
+
+    it('écrit ce que Meta a rendu', async () => {
+      await publicites.noterSuivi(tenantId, 'camp-suivi', {
+        statutMeta: 'ACTIVE', motifRefus: null, debut: null, fin: null, depense: 12.5, clics: 40,
+      });
+      const r = (await pool.query(
+        `select statut_meta, depense, clics, lu_le from publicites where tenant_id = $1 and campagne_id = 'camp-suivi'`,
+        [tenantId],
+      )).rows[0];
+      expect(r?.statut_meta).toBe('ACTIVE');
+      expect(Number(r?.depense)).toBe(12.5);
+      expect(r?.clics).toBe(40);
+      expect(r?.lu_le).not.toBeNull();
+    });
+
+    it('🔴 une lecture SANS chiffres n’EFFACE PAS la dépense d’hier, mais fait avancer `lu_le`', async () => {
+      // C'est le cas normal d'une campagne dont les statistiques ne sont pas prêtes. Sans les `coalesce`,
+      // l'écran passerait de « 12,50 € » à « pas encore lu » toutes les quinze minutes.
+      const avant = (await pool.query(
+        `select lu_le from publicites where tenant_id = $1 and campagne_id = 'camp-suivi'`, [tenantId],
+      )).rows[0]?.lu_le as Date;
+      await publicites.noterSuivi(tenantId, 'camp-suivi', {
+        statutMeta: null, motifRefus: null, debut: null, fin: null, depense: null, clics: null,
+      });
+      const r = (await pool.query(
+        `select statut_meta, depense, clics, lu_le from publicites where tenant_id = $1 and campagne_id = 'camp-suivi'`,
+        [tenantId],
+      )).rows[0];
+      expect(r?.statut_meta).toBe('ACTIVE');
+      expect(Number(r?.depense)).toBe(12.5);
+      expect((r?.lu_le as Date).getTime()).toBeGreaterThanOrEqual(avant.getTime());
+    });
+
+    it('🔴 le suivi est PAR ESPACE : on n’écrit pas dans la campagne d’un voisin qui porterait le même nom', async () => {
+      await poserPub(voisinId, 'camp-suivi');
+      await publicites.noterSuivi(voisinId, 'camp-suivi', {
+        statutMeta: 'DISAPPROVED', motifRefus: 'x', debut: null, fin: null, depense: 99, clics: 9,
+      });
+      const chezNous = (await pool.query(
+        `select statut_meta from publicites where tenant_id = $1 and campagne_id = 'camp-suivi'`, [tenantId],
+      )).rows[0];
+      expect(chezNous?.statut_meta).toBe('ACTIVE');
+    });
+  });
+
+  describe('les comptes de l’entonnoir', () => {
+    const ISSUES = ['reprise_refusee', 'desabonne', 'bloque'];
+
+    it('🔴 compte des CONTACTS DISTINCTS, pas des arrivées', async () => {
+      // Un prospect qui reclique produit deux arrivées et reste UNE personne. Compter les lignes gonflerait
+      // l'entonnoir et ferait baisser le coût par prospect, c'est-à-dire le chiffre sur lequel le client
+      // décide de remettre du budget.
+      for (const id of ['wamid.e1', 'wamid.e2']) {
+        await arrivees.enregistrer(tenantId, '33600000701', arrivee(id));
+        await arrivees.noterIssue(tenantId, id, { campagneId: 'camp-entonnoir', issue: 'scenario', repriseLe: null });
+      }
+      const c = await publicites.comptesDeLaCampagne(tenantId, 'camp-entonnoir', ISSUES);
+      expect(c.leads).toBe(1);
+    });
+
+    it('compte les qualifiés et les non pris en charge à part', async () => {
+      const autre = (await pool.query<{ id: string }>(
+        `insert into contacts (tenant_id, phone_e164) values ($1, '+33600000702') returning id`, [tenantId],
+      )).rows[0]!.id;
+      expect(autre).toBeTruthy();
+      await arrivees.enregistrer(tenantId, '33600000702', arrivee('wamid.e3'));
+      await arrivees.noterIssue(tenantId, 'wamid.e3', { campagneId: 'camp-entonnoir', issue: 'desabonne', repriseLe: null });
+
+      const c = await publicites.comptesDeLaCampagne(tenantId, 'camp-entonnoir', ISSUES);
+      expect(c.leads).toBe(2);
+      // 🔴 LE DÉSABONNÉ EST COMPTÉ DANS LES DEUX : c'est un clic payé, il fait partie des prospects, ET il
+      // n'a rien reçu. Le retirer des prospects flatterait le taux de passage.
+      expect(c.nonPrisEnCharge).toBe(1);
+    });
+
+    it('🔴 `agent_meta` N’EST PAS un lead non pris en charge', async () => {
+      const troisieme = (await pool.query<{ id: string }>(
+        `insert into contacts (tenant_id, phone_e164) values ($1, '+33600000703') returning id`, [tenantId],
+      )).rows[0]!.id;
+      expect(troisieme).toBeTruthy();
+      await arrivees.enregistrer(tenantId, '33600000703', arrivee('wamid.e4'));
+      await arrivees.noterIssue(tenantId, 'wamid.e4', { campagneId: 'camp-entonnoir', issue: 'agent_meta', repriseLe: null });
+      const c = await publicites.comptesDeLaCampagne(tenantId, 'camp-entonnoir', ISSUES);
+      expect(c.leads).toBe(3);
+      expect(c.nonPrisEnCharge).toBe(1);
+    });
+
+    it('🔴 les comptes sont PAR ESPACE : les arrivées du voisin n’entrent pas dans notre entonnoir', async () => {
+      const c = await publicites.comptesDeLaCampagne(voisinId, 'camp-entonnoir', ISSUES);
+      expect(c).toEqual({ leads: 0, qualifies: 0, nonPrisEnCharge: 0 });
+    });
+
+    it('une campagne sans aucune arrivée rend des zéros, jamais `undefined`', async () => {
+      expect(await publicites.comptesDeLaCampagne(tenantId, 'camp-vide', ISSUES))
+        .toEqual({ leads: 0, qualifies: 0, nonPrisEnCharge: 0 });
+    });
+  });
 });

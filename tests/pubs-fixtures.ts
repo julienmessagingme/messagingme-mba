@@ -17,8 +17,10 @@ export const aucunePubliciteUtilise = async (): Promise<string[]> => [];
  * connexion (lot 2). Elles LÈVENT plutôt que de rendre une valeur inerte : un test qui les atteindrait a
  * changé de sujet sans le savoir, et mieux vaut qu'il le dise bruyamment.
  */
-export const aucunePubDeRoute: Pick<PubsRouteDeps, 'listerPubs' | 'creerPub' | 'publierPub'> = {
+export const aucunePubDeRoute: Pick<PubsRouteDeps, 'listerPubs' | 'creerPub' | 'publierPub' | 'lirePub' | 'basculerPub'> = {
   listerPubs: async () => [],
+  lirePub: async () => null,
   creerPub: () => { throw new Error('aucunePubDeRoute : creerPub ne devrait pas être appelée'); },
   publierPub: () => { throw new Error('aucunePubDeRoute : publierPub ne devrait pas être appelée'); },
+  basculerPub: () => { throw new Error('aucunePubDeRoute : basculerPub ne devrait pas être appelée'); },
 };

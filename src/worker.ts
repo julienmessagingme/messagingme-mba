@@ -42,6 +42,9 @@ import { PgTarifsMetaStore } from './pubs/tarifs-meta.pg';
 import { PgPublicitesStore } from './pubs/publicites.pg';
 import { PgPubConnexionStore } from './pubs/connexion.pg';
 import { MetaPubsClient } from './meta/pubs';
+import { MetaPubsCreationClient } from './meta/pubs-creation';
+import { balayerLesPubs } from './pubs/suivi';
+import { estJetonRefuse } from './meta/graph';
 import { PgTenantSettingsStore } from './settings/store.pg';
 import { runControlSweep } from './inbox/control-sweep';
 import { runHandoffSweep } from './mba/handoff-sweep';
@@ -227,6 +230,19 @@ async function main(): Promise<void> {
   const publicitesStore = new PgPublicitesStore(pool);
   const connexionsPubStore = new PgPubConnexionStore(pool);
   const clientPubs = new MetaPubsClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
+  // Le client qui PILOTE les publicites : il lit leurs statuts et leur depense pour le balayage du suivi.
+  const clientPubsCreation = new MetaPubsCreationClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
+  /**
+   * LA CADENCE DU SUIVI, en millisecondes.
+   *
+   * 🔴 QUINZE MINUTES, ET CE N'EST PAS UN NOMBRE CHOISI PAR NOUS : c'est la cadence a laquelle Meta
+   * rafraichit lui-meme la depense d'une campagne (spec, « Ce que dit Meta »). Interroger plus souvent
+   * relirait le MEME chiffre en consommant du quota sur un compte en niveau « Limited ».
+   *
+   * ⚠️ PAS DE VARIABLE D'ENVIRONNEMENT, delibere : un reglage se derege, et celui-ci n'a aucune raison
+   * de varier d'une instance a l'autre puisqu'il decrit le comportement d'un TIERS.
+   */
+  const SUIVI_PUBS_INTERVALLE_MS = 15 * 60 * 1000;
   // Le journal des erreurs. Le worker n'en LIT jamais : il y écrit les échecs d'avance de scénario, qui
   // n'avaient aucun domicile et disparaissaient dans un `console.error` (lot 4 du plan post-audit).
   const erreursLivraison = new PgErreursLivraisonStore(pool);
@@ -1718,6 +1734,54 @@ async function main(): Promise<void> {
     };
     void statusSweep();
     taches.programmer('statut-numeros', config.PHONE_STATUS_SWEEP_INTERVAL_MS, statusSweep);
+  }
+
+  /**
+   * LE SUIVI DES PUBLICITÉS (lot 3, commit 3, spec § 3.5) : deux appels par compte connecté, toutes les
+   * quinze minutes, pour relire statuts, motifs de refus, dépense et clics.
+   *
+   * 🔴 QUINZE MINUTES, ET LE CHIFFRE VIENT DE META, PAS DE NOUS : c'est la cadence à laquelle il rafraîchit
+   * lui-même la dépense d'une campagne. Interroger plus souvent relirait le MÊME chiffre en consommant du
+   * quota sur un compte en niveau « Limited », c'est-à-dire en rapprochant le client du jour où Meta bride
+   * aussi ses créations.
+   *
+   * ⚠️ IL NE TOURNE QUE SI LES PUBLICITÉS SONT CONFIGURÉES. Sans `META_ADS_CONFIG_ID`, aucun espace ne peut
+   * s'être connecté, donc ce balayage ne trouverait rien et n'appellerait rien : le monter quand même serait
+   * une requête toutes les quinze minutes pour confirmer qu'il n'y a rien à faire.
+   */
+  if (config.META_ADS_CONFIG_ID) {
+    const suivrePubs = async (): Promise<void> => {
+      const bilan = await balayerLesPubs({
+        espacesASuivre: () => publicitesStore.espacesASuivre(),
+        campagnesASuivre: (t) => publicitesStore.campagnesASuivre(t),
+        jeton: async (t) => {
+          const chiffre = await connexionsPubStore.lireJetonChiffre(t);
+          return chiffre === null ? null : decryptSecret(chiffre, config.ENCRYPTION_KEY);
+        },
+        lireCampagnes: (ids, jeton) => clientPubsCreation.lireCampagnes(ids, jeton),
+        lireDepenses: (ids, jeton) => clientPubsCreation.lireDepenses(ids, jeton),
+        noterSuivi: (t, campagneId, v) => publicitesStore.noterSuivi(t, campagneId, {
+          statutMeta: v.etat?.statut ?? null,
+          motifRefus: v.etat?.motifRefus ?? null,
+          debut: v.etat?.debut ?? null,
+          fin: v.etat?.fin ?? null,
+          depense: v.depense?.depense ?? null,
+          clics: v.depense?.clics ?? null,
+        }),
+        marquerJetonRejete: (t) => connexionsPubStore.marquerJetonRejete(t),
+        // 🔴 SUR LE CODE DE META, JAMAIS SUR LA PHRASE : un message se reformule, et une garde qui lit une
+        // phrase casse en silence le jour où Meta la réécrit.
+        estJetonRefuse,
+        alerter: (sujet, message) => { alert(sujet, message); },
+      });
+      // eslint-disable-next-line no-console
+      if (bilan.campagnes > 0 || bilan.jetonsRejetes > 0) {
+        // eslint-disable-next-line no-console
+        console.log(`suivi-pubs: ${bilan.campagnes} campagne(s) relue(s) sur ${bilan.espaces} espace(s), ${bilan.jetonsRejetes} jeton(s) rejeté(s)`);
+      }
+    };
+    void suivrePubs();
+    taches.programmer('suivi-pubs', SUIVI_PUBS_INTERVALLE_MS, suivrePubs);
   }
 
 

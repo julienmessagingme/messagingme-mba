@@ -4,14 +4,18 @@ import { sansPrefixeAct } from './pubs';
 import { STATUT_ACTIF, STATUT_PAUSE } from './pubs-payloads';
 
 /**
- * CE QUI PARLE À L'API MARKETING DE META POUR CRÉER, PUBLIER ET METTRE EN PAUSE UNE PUBLICITÉ (lot 3,
- * commit 2, spec § 3.2). Les charges utiles, elles, sont PURES et vivent dans `./pubs-payloads.ts` : ici, il
- * n'y a que des appels.
+ * CE QUI PARLE À L'API MARKETING DE META POUR PILOTER UNE PUBLICITÉ : la créer, la publier, la mettre en
+ * pause, et relire ce qu'elle devient (lot 3, spec § 3.2 et § 3.5). Les charges utiles, elles, sont PURES et
+ * vivent dans `./pubs-payloads.ts` : ici, il n'y a que des appels.
  *
  * 🔴 UNE CLASSE À PART DE `MetaPubsClient`, et ce n'est pas de la cosmétique. Celui-là sert l'écran de
- * connexion : il LIT (des comptes, des Pages, un état). Celui-ci ÉCRIT sur le compte publicitaire d'un
+ * CONNEXION : quels comptes, quelles Pages, ce compte peut-il diffuser. Celui-ci PILOTE les publicités d'un
  * client, donc il dépense son argent. Les tenir séparés fait qu'on ne se trompe pas de client en câblant, et
- * qu'une route de lecture ne peut pas, par accident, avoir sous la main de quoi créer une campagne.
+ * qu'une route de connexion ne peut pas, par accident, avoir sous la main de quoi créer une campagne.
+ *
+ * ⚠️ LE SUIVI (deux lectures) EST ICI ET PAS AVEC LA CONNEXION, parce qu'il parle des MÊMES objets que la
+ * création, avec le même jeton et les mêmes identifiants. Le séparer ferait une troisième classe dont la
+ * seule différence serait le verbe HTTP.
  *
  * 🔴 TOUTE RÉPONSE PASSE PAR UN `safeParse`, jamais un `as`. Ici plus qu'ailleurs : ce qu'on lit est un
  * IDENTIFIANT qu'on garde pour toujours. Perdre celui de la campagne, c'est perdre le seul moyen de la
@@ -32,6 +36,63 @@ const imagesSchema = z.object({
 
 /** `GET /{page-id}?fields=access_token` : le jeton de PAGE dérivé du jeton du client. Jamais stocké. */
 const jetonPageSchema = z.object({ access_token: z.string().min(1) });
+
+/**
+ * Combien d'identifiants dans un seul `GET /?ids=`.
+ *
+ * ⚠️ Meta ne documente pas précisément sa limite. Cinquante est très en deçà de ce qu'on lui voit accepter,
+ * et le dépassement ne rendrait pas une réponse partielle : il rendrait une ERREUR, donc zéro suivi pour
+ * TOUTES les campagnes du paquet. Un plafond prudent coûte un appel de plus, un plafond optimiste coûte le
+ * suivi entier d'un client.
+ */
+const IDS_PAR_APPEL = 50;
+
+/** Ce que le suivi lit d'une campagne chez Meta. */
+export interface EtatCampagneMeta {
+  /** `effective_status` tel quel : PENDING_REVIEW, ACTIVE, DISAPPROVED, WITH_ISSUES, CAMPAIGN_PAUSED... */
+  statut: string | null;
+  motifRefus: string | null;
+  debut: string | null;
+  fin: string | null;
+}
+
+/** La dépense et les clics d'une campagne, depuis le début. */
+export interface DepensePub {
+  depense: number | null;
+  clics: number | null;
+}
+
+/**
+ * Tout est optionnel sauf rien : on ne suppose AUCUN champ. Un `effective_status` absent doit rendre
+ * « je ne sais pas », jamais faire échouer le suivi de toutes les autres campagnes du même appel.
+ */
+const campagneSuivieSchema = z.object({
+  effective_status: z.string().optional(),
+  start_time: z.string().optional(),
+  stop_time: z.string().optional(),
+  issues_info: z.array(z.object({
+    error_summary: z.string().optional(),
+    error_message: z.string().optional(),
+  })).optional(),
+});
+const lotCampagnesSchema = z.record(z.string(), campagneSuivieSchema);
+
+const lotInsightsSchema = z.record(z.string(), z.object({
+  insights: z.object({
+    data: z.array(z.object({
+      spend: z.string().optional(),
+      inline_link_clicks: z.string().optional(),
+    })).optional(),
+  }).optional(),
+}));
+
+/** Découpe une liste en paquets. Fonction PURE, et la seule raison pour laquelle elle est nommée est qu'un
+ *  découpage muet dans une boucle est l'endroit où l'on oublie le dernier paquet. */
+function parPaquets<T>(liste: readonly T[], taille: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < liste.length; i += taille) out.push(liste.slice(i, i + taille));
+  return out;
+}
 
 /**
  * Les types de fichier qu'on accepte pour le visuel, et c'est une garde de SÉCURITÉ, pas de confort :
@@ -127,6 +188,89 @@ export class MetaPubsCreationClient extends ClientGraph {
   /** Allume ou éteint un objet (campagne, ensemble, publicité) : `POST /{id}` avec son statut. */
   async changerStatut(objetId: string, jeton: string, statut: typeof STATUT_ACTIF | typeof STATUT_PAUSE): Promise<void> {
     await this.poster(`${this.baseUrl}/${this.version}/${encodeURIComponent(objetId)}`, jeton, { status: statut });
+  }
+
+  /**
+   * LE SUIVI : ce que les campagnes sont devenues chez Meta. DEUX appels pour TOUTES les campagnes d'un
+   * compte, pas deux par campagne.
+   *
+   * 🔴 C'EST LA LECTURE PAR LOT (`GET /?ids=`) QUI REND LE BALAYAGE TENABLE. Un appel par campagne ferait,
+   * pour un client à vingt publicités, quarante appels toutes les quinze minutes, soit cent soixante par
+   * heure : le niveau d'accès « Limited » de l'API Marketing ne le supporterait pas, et le compte serait
+   * bridé pour TOUT le reste, création comprise. Ici, c'est deux appels par compte et par passage, quel que
+   * soit le nombre de publicités.
+   *
+   * ⚠️ PAR PAQUETS DE {@link IDS_PAR_APPEL}, parce que `?ids=` a une limite que Meta ne documente pas
+   * précisément. Un paquet trop gros ne rendrait pas une réponse partielle : il rendrait une ERREUR, donc
+   * zéro suivi pour tout le monde.
+   */
+  async lireCampagnes(campagneIds: readonly string[], jeton: string): Promise<Map<string, EtatCampagneMeta>> {
+    const out = new Map<string, EtatCampagneMeta>();
+    for (const paquet of parPaquets(campagneIds, IDS_PAR_APPEL)) {
+      const qs = new URLSearchParams({
+        ids: paquet.join(','),
+        fields: 'id,name,effective_status,issues_info,lifetime_budget,start_time,stop_time',
+      });
+      const brut = await this.call(`${this.baseUrl}/${this.version}/?${qs.toString()}`, {
+        headers: { Authorization: `Bearer ${jeton}` },
+      });
+      const lu = lotCampagnesSchema.safeParse(brut);
+      if (!lu.success) continue;
+      for (const [id, c] of Object.entries(lu.data)) {
+        out.set(id, {
+          statut: c.effective_status ?? null,
+          // ⚠️ ON PREND LE PREMIER MOTIF, pas tous : Meta en rend parfois plusieurs, et l'écran doit dire
+          // UNE raison actionnable plutôt qu'une liste que personne ne lit. Le lien vers le Gestionnaire,
+          // à côté, mène à la liste complète.
+          motifRefus: c.issues_info?.[0]?.error_summary ?? c.issues_info?.[0]?.error_message ?? null,
+          debut: c.start_time ?? null,
+          fin: c.stop_time ?? null,
+        });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * LA DÉPENSE ET LES CLICS, par campagne, depuis le début.
+   *
+   * ⚠️ **LE CHAMP DES CLICS N'EST PAS MESURÉ, ET LA SPEC LE DIT** (§ 3.5) : « Les clics sont les clics sur le
+   * lien vers WhatsApp. Le champ Insights est vérifié le premier jour du pilote contre le chiffre du
+   * Gestionnaire. » On prend `inline_link_clicks`, qui est le compte des clics SUR LE LIEN, et non `clicks`,
+   * qui compte tout clic sur la publicité (une réaction, un nom de Page, un déroulé de texte). Si le premier
+   * jour montre un écart avec le Gestionnaire, c'est CE champ qu'on change, une fois.
+   *
+   * ⚠️ `date_preset=maximum` : depuis le début de la campagne. Meta fige la dépense après 28 jours, ce qui
+   * est exactement ce qu'on veut d'un cumul.
+   */
+  async lireDepenses(campagneIds: readonly string[], jeton: string): Promise<Map<string, DepensePub>> {
+    const out = new Map<string, DepensePub>();
+    for (const paquet of parPaquets(campagneIds, IDS_PAR_APPEL)) {
+      const qs = new URLSearchParams({
+        ids: paquet.join(','),
+        fields: 'insights.date_preset(maximum){spend,inline_link_clicks}',
+      });
+      const brut = await this.call(`${this.baseUrl}/${this.version}/?${qs.toString()}`, {
+        headers: { Authorization: `Bearer ${jeton}` },
+      });
+      const lu = lotInsightsSchema.safeParse(brut);
+      if (!lu.success) continue;
+      for (const [id, c] of Object.entries(lu.data)) {
+        const ligne = c.insights?.data?.[0];
+        // ⚠️ AUCUNE LIGNE N'EST UN CAS NORMAL, pas une panne : une campagne qui n'a encore rien diffusé n'a
+        // aucune statistique. On laisse alors `null`, et l'écran dit « pas encore de diffusion » plutôt que
+        // d'afficher une dépense de zéro qui ressemble à une mesure.
+        if (ligne === undefined) continue;
+        out.set(id, {
+          // Meta rend la dépense en CHAÎNE, dans l'unité principale de la devise (des euros, pas des
+          // centimes) : c'est l'inverse de ce qu'il attend en écriture pour un budget. Mesuré dans sa
+          // documentation, et c'est exactement le genre d'asymétrie qui se paie si on la suppose.
+          depense: ligne.spend === undefined ? null : Number(ligne.spend),
+          clics: ligne.inline_link_clicks === undefined ? null : Number(ligne.inline_link_clicks),
+        });
+      }
+    }
+    return out;
   }
 
   /**

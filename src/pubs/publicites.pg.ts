@@ -298,6 +298,104 @@ export class PgPublicitesStore {
    * recevra jamais de lead, donc elle ne doit pas retenir un scénario que le client veut supprimer. Une pub
    * `prete` (créée, en pause chez Meta), elle, le retient : elle sera publiée, et son scénario doit exister.
    */
+  /**
+   * LES ESPACES QUE LE BALAYAGE DOIT RELIRE : connectés, et portant au moins une publicité publiée.
+   *
+   * ⚠️ LA JOINTURE SUR `pub_connexion` N'EST PAS DÉCORATIVE : sans elle, un espace déconnecté avec des
+   * publicités publiées reviendrait à chaque passage pour qu'on constate, quinze minutes plus tard, qu'il
+   * n'y a pas de jeton. La spec l'autorise explicitement (« Déconnexion : autorisée. Si une pub est active,
+   * l'avertissement dit qu'elle continue de dépenser chez Meta »), donc ce cas est NORMAL, pas une anomalie.
+   */
+  async espacesASuivre(): Promise<string[]> {
+    const { rows } = await this.pool.query<{ tenant_id: string }>(
+      `select distinct p.tenant_id from publicites p
+         join pub_connexion c on c.tenant_id = p.tenant_id
+        where p.etat = 'publiee'`,
+    );
+    return rows.map((r) => r.tenant_id);
+  }
+
+  /**
+   * LES CAMPAGNES À RELIRE pour cet espace, les moins fraîches d'abord.
+   *
+   * 🔴 LE `where` DOIT RESTER DANS LE CONTRAT DE `publicites_a_suivre_idx`, qui est un index PARTIEL sur
+   * `etat = 'publiee'`. L'élargir (pour suivre aussi les `prete`, par exemple) ne produirait AUCUNE erreur :
+   * juste un balayage complet de la table à chaque passage, toutes les quinze minutes, pour toujours. Un
+   * index partiel est un contrat avec une requête précise (leçon de 0122 et 0143).
+   *
+   * ⚠️ `nulls first` : une publicité jamais lue passe avant celles qu'on vient de relire. Sans cet ordre,
+   * une campagne neuve pourrait attendre derrière toutes les anciennes.
+   */
+  async campagnesASuivre(tenantId: string): Promise<string[]> {
+    const { rows } = await this.pool.query<{ campagne_id: string }>(
+      `select campagne_id from publicites
+        where tenant_id = $1 and etat = 'publiee'
+        order by lu_le asc nulls first`,
+      [tenantId],
+    );
+    return rows.map((r) => r.campagne_id);
+  }
+
+  /**
+   * Écrit ce que Meta a rendu.
+   *
+   * ⚠️ `coalesce($n, colonne)` PARTOUT SAUF `lu_le` : une lecture qui n'a rien rendu (statistiques pas
+   * encore prêtes) ne doit pas EFFACER la dépense d'hier. `lu_le`, lui, avance toujours, parce qu'il dit
+   * « on a demandé », pas « on a obtenu ».
+   */
+  async noterSuivi(tenantId: string, campagneId: string, v: {
+    statutMeta: string | null; motifRefus: string | null; debut: string | null; fin: string | null;
+    depense: number | null; clics: number | null;
+  }): Promise<void> {
+    await this.pool.query(
+      `update publicites
+          set statut_meta = coalesce($3, statut_meta),
+              motif_refus = coalesce($4, motif_refus),
+              debut       = coalesce($5::timestamptz, debut),
+              fin         = coalesce($6::timestamptz, fin),
+              depense     = coalesce($7, depense),
+              clics       = coalesce($8, clics),
+              lu_le       = now()
+        where tenant_id = $1 and campagne_id = $2`,
+      [tenantId, campagneId, v.statutMeta, v.motifRefus, v.debut, v.fin, v.depense, v.clics],
+    );
+  }
+
+  /**
+   * CE QUE NOS TABLES COMPTENT POUR UNE CAMPAGNE : prospects, qualifiés, non pris en charge.
+   *
+   * 🔴 DES CONTACTS DISTINCTS, PAS DES ARRIVÉES. Un prospect qui reclique sur la même publicité produit
+   * deux arrivées et reste UNE personne : compter les lignes gonflerait l'entonnoir et ferait baisser le
+   * coût par prospect affiché, c'est-à-dire exactement le chiffre sur lequel le client décide de remettre
+   * du budget.
+   *
+   * 🔴 LES ISSUES « NON PRISES EN CHARGE » VOYAGENT EN PARAMÈTRE, elles ne sont PAS recopiées dans le SQL.
+   * La liste vit dans `src/pubs/entonnoir.ts` ; l'écrire ici en ferait une seconde vérité, et le jour où une
+   * septième issue apparaît, l'une des deux serait fausse sans que rien ne le dise.
+   *
+   * ⚠️ Le `where` reste dans le contrat de l'index partiel `arrivees_pub_campagne_idx`
+   * (`campagne_id is not null`) : comparer `campagne_id = $2` implique non nul, donc la requête ne sort
+   * jamais du domaine de son index.
+   */
+  async comptesDeLaCampagne(tenantId: string, campagneId: string, issuesNonPrises: readonly string[]): Promise<{
+    leads: number; qualifies: number; nonPrisEnCharge: number;
+  }> {
+    const { rows } = await this.pool.query<{ leads: number; qualifies: number; non_pris: number }>(
+      `select count(distinct contact_id)::int as leads,
+              count(distinct contact_id) filter (where qualifie_le is not null)::int as qualifies,
+              count(distinct contact_id) filter (where issue = any($3::text[]))::int as non_pris
+         from arrivees_pub
+        where tenant_id = $1 and campagne_id = $2`,
+      [tenantId, campagneId, [...issuesNonPrises]],
+    );
+    const r = rows[0];
+    return {
+      leads: r?.leads ?? 0,
+      qualifies: r?.qualifies ?? 0,
+      nonPrisEnCharge: r?.non_pris ?? 0,
+    };
+  }
+
   async publicitesQuiUtilisent(tenantId: string, workflowId: string): Promise<string[]> {
     const { rows } = await this.pool.query<{ nom: string }>(
       `select nom from publicites

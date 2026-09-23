@@ -223,6 +223,75 @@ describe('POST /pubs/:id/publier', () => {
   });
 });
 
+describe('GET /pubs/:id : la page d’une publicité', () => {
+  const vue = {
+    publicite: { id: 'pub-1', nom: 'Rentrée' } as never,
+    entonnoir: {
+      depense: 100,
+      clics: { nombre: 200, cout: 0.5, passage: null },
+      leads: { nombre: 50, cout: 2, passage: 0.25 },
+      qualifies: { nombre: 10, cout: 10, passage: 0.2 },
+      nonPrisEnCharge: 3,
+    },
+  };
+
+  it('rend la publicité et son entonnoir', async () => {
+    const { srv } = app({ lirePub: async () => vue });
+    const res = await srv.inject({ method: 'GET', url: urlPubs('/pub-1') });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().entonnoir.leads.cout).toBe(2);
+  });
+
+  it('une publicité inconnue rend 404', async () => {
+    const { srv } = app({ lirePub: async () => null });
+    expect((await srv.inject({ method: 'GET', url: urlPubs('/inconnue') })).statusCode).toBe(404);
+  });
+
+  it('🔴 un espace ne lit pas la publicité d’un autre', async () => {
+    const { srv } = app({ lirePub: async () => vue });
+    expect((await srv.inject({ method: 'GET', url: '/tenants/t-voisin/pubs/pub-1' })).statusCode).toBe(403);
+  });
+});
+
+describe('la pause et la reprise', () => {
+  it('mettent en pause, puis relancent, et chaque geste est journalisé à part', async () => {
+    const gestes: boolean[] = [];
+    const { srv, traces } = app({ basculerPub: async (_t, _id, actif) => { gestes.push(actif); } });
+    expect((await srv.inject({ method: 'POST', url: urlPubs('/pub-1/pause') })).statusCode).toBe(200);
+    expect((await srv.inject({ method: 'POST', url: urlPubs('/pub-1/reprendre') })).statusCode).toBe(200);
+    expect(gestes).toEqual([false, true]);
+    // 🔴 DEUX ACTIONS DISTINCTES au journal : « pourquoi ma campagne s'est arrêtée » se date sur la pause,
+    // et une action unique « bascule » obligerait à lire un détail pour savoir dans quel sens.
+    expect(traces.audit).toEqual(['pubs.pausee', 'pubs.reprise']);
+  });
+
+  it('🔴 réservées aux ADMINS', async () => {
+    const { srv } = app({ basculerPub: async () => {} }, 'member');
+    expect((await srv.inject({ method: 'POST', url: urlPubs('/pub-1/pause') })).statusCode).toBe(403);
+    expect((await srv.inject({ method: 'POST', url: urlPubs('/pub-1/reprendre') })).statusCode).toBe(403);
+  });
+
+  it('🔴 un espace ne met pas en pause la publicité d’un autre', async () => {
+    const { srv } = app({ basculerPub: async () => {} });
+    expect((await srv.inject({ method: 'POST', url: '/tenants/t-voisin/pubs/pub-1/pause' })).statusCode).toBe(403);
+  });
+
+  it('Meta refuse : 502 avec son message, et rien au journal', async () => {
+    const { srv, traces } = app({ basculerPub: async () => { throw new Error('campagne supprimée'); } });
+    const res = await srv.inject({ method: 'POST', url: urlPubs('/pub-1/pause') });
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error).toBe('campagne supprimée');
+    expect(traces.audit).toEqual([]);
+  });
+
+  it('un espace déconnecté rend 409 : on ne peut plus piloter cette campagne depuis ici', async () => {
+    const { srv } = app({ basculerPub: async () => { throw new PasDeConnexionPub(); } });
+    const res = await srv.inject({ method: 'POST', url: urlPubs('/pub-1/pause') });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().code).toBe('pas_connecte');
+  });
+});
+
 describe('GET /pubs : la liste', () => {
   it('rend les publicités de l’espace', async () => {
     const { srv } = app({ listerPubs: async () => [] });

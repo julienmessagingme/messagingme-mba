@@ -7,13 +7,18 @@ import { TAILLE_VISUEL_PUB_MAX, TYPES_VISUEL_PUB } from '../meta/pubs-creation';
 import type { ConnexionPub } from '../pubs/connexion.pg';
 import type { Publicite } from '../pubs/publicites.pg';
 import type { DemandeCreation, IssueCreation } from '../pubs/creation';
+import type { Entonnoir } from '../pubs/entonnoir';
 import { makeJournal, type AuditSink } from '../audit/journal';
 
 /**
- * LA CONNEXION PUBLICITAIRE D'UN ESPACE (lot 2 « Connecter », spec § 3.1).
+ * LES PUBLICITÉS D'UN ESPACE : sa connexion (lot 2, spec § 3.1), puis ses campagnes (lot 3, § 3.2 et § 3.5).
  *
- * Quatre routes : lire l'état, échanger le code rendu par la fenêtre Meta, choisir le compte et la Page,
- * se déconnecter. La création d'une pub et son suivi sont le lot 3 et n'ont rien à faire ici.
+ * La connexion : lire l'état, échanger le code rendu par la fenêtre Meta, choisir le compte et la Page, se
+ * déconnecter. Les campagnes : lister, créer, publier, lire une page, mettre en pause, reprendre.
+ *
+ * ⚠️ LE COMPTE DES ROUTES N'EST PAS ÉCRIT ICI, et ce n'est pas un oubli : cette phrase a dit « quatre
+ * routes » jusqu'au lot 3, où il y en avait déjà neuf. Un nombre en prose devient faux au premier ajout,
+ * sans que rien ne le signale ; la liste des `app.get` / `app.post` ci-dessous fait foi.
  *
  * 🔴 LE JETON N'ENTRE JAMAIS DANS CE FICHIER, exactement comme dans `EmbeddedSignupRouteDeps` : le câblage
  * l'échange, le chiffre et le range, et ne laisse passer que le `tenantId`. Un jeton qui n'entre pas dans une
@@ -68,6 +73,16 @@ export interface PubsRouteDeps {
   creerPub(tenantId: string, d: Omit<DemandeCreation, 'comptePubId' | 'pageId' | 'numeroWhatsApp'>): Promise<IssueCreation>;
   /** Allume l'automation PUIS Meta. Lève si Meta refuse : l'ordre est la règle, pas le succès. */
   publierPub(tenantId: string, publiciteId: string): Promise<void>;
+  /** Une publicité et son entonnoir. `null` = elle n'existe pas dans cet espace. */
+  lirePub(tenantId: string, publiciteId: string): Promise<{ publicite: Publicite; entonnoir: Entonnoir } | null>;
+  /**
+   * Met la CAMPAGNE en pause chez Meta, ou la relance.
+   *
+   * 🔴 L'AUTOMATION RESTE ALLUMÉE dans les deux sens, et c'est une décision de la spec (§ 3.5). Un prospect
+   * qui a cliqué juste avant la pause peut écrire plusieurs minutes plus tard : éteindre l'automation en
+   * même temps ferait tomber ce lead dans le vide, alors qu'il a été payé.
+   */
+  basculerPub(tenantId: string, publiciteId: string, actif: boolean): Promise<void>;
   audit: AuditSink;
 }
 
@@ -404,8 +419,53 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     return reply.send({ ok: true });
   });
 
+  /**
+   * LA PAGE D'UNE PUBLICITÉ : son statut chez Meta, son entonnoir, ses prospects non pris en charge.
+   *
+   * ⚠️ HORS du plafond coûteux, comme la lecture de la connexion : c'est l'ouverture d'un écran, et elle ne
+   * lit que NOS tables (le suivi, lui, relit Meta toutes les quinze minutes, en fond).
+   */
+  app.get('/tenants/:tenantId/pubs/:id', opts, async (req, reply) => {
+    const tenantId = scopeTenant(req);
+    if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+    const { id } = req.params as { id: string };
+    const vue = await deps.lirePub(tenantId, id);
+    if (vue === null) return reply.code(404).send({ error: 'cette publicité n’existe pas' });
+    return reply.send(vue);
+  });
+
+  /**
+   * METTRE EN PAUSE, OU RELANCER. Le seul geste de ce module qui change ce que Meta diffuse sans rien créer.
+   *
+   * 🔴 LA PAUSE DOIT RESTER POSSIBLE MÊME QUAND TOUT VA MAL, et c'est pour ça qu'elle ne vérifie rien de
+   * plus que l'identité de l'appelant. C'est le bouton d'arrêt d'une dépense : lui ajouter une condition
+   * (l'état local, la fraîcheur du suivi, la validité de la connexion) créerait un cas où un client voit sa
+   * campagne dépenser et ne peut pas l'arrêter depuis notre écran.
+   */
+  for (const [chemin, actif, action] of [
+    ['pause', false, 'pubs.pausee'],
+    ['reprendre', true, 'pubs.reprise'],
+  ] as const) {
+    app.post(`/tenants/:tenantId/pubs/:id/${chemin}`, couteux, async (req, reply) => {
+      const tenantId = scopeTenant(req);
+      if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+      if (forbidNonAdmin(req, reply)) return;
+      const { id } = req.params as { id: string };
+      try {
+        await deps.basculerPub(tenantId, id, actif);
+      } catch (err) {
+        if (err instanceof PasDeConnexionPub) return reply.code(409).send({ error: err.message, code: 'pas_connecte' });
+        return reply.code(502).send({ error: err instanceof Error ? err.message : 'Meta ne répond pas' });
+      }
+      await journal(tenantId, req, action, { kind: 'publicite', id }, {});
+      return reply.send({ ok: true });
+    });
+  }
+
   // `couteux` et non `opts` : depuis qu'elle révoque chez Meta, cette route appelle l'extérieur comme les
-  // deux autres. C'est aussi le seul geste irréversible du module.
+  // autres écritures du module. ⚠️ Elle n'est PLUS « le seul geste irréversible » depuis le lot 3 : créer
+  // une publicité crée des objets sur le compte du client, et la publier engage son budget. Ce qui lui
+  // reste en propre, c'est d'être la seule à DÉTRUIRE quelque chose chez nous.
   app.delete('/tenants/:tenantId/pubs/connexion', couteux, async (req, reply) => {
     const tenantId = scopeTenant(req);
     if (tenantId === null) return reply.code(403).send({ error: 'interdit' });

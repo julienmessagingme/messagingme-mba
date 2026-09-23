@@ -108,7 +108,13 @@ export type AuditAction =
    * où un montant surprendra quelqu'un.
    */
   | 'pubs.creee'
-  | 'pubs.publiee';
+  | 'pubs.publiee'
+  /**
+   * ⚠️ LA PAUSE EST UN GESTE D'EXPLOITATION, et elle se trace au même titre que la publication : c'est
+   * souvent le geste qu'on cherche à dater quand un client demande « pourquoi ma campagne s'est arrêtée ».
+   */
+  | 'pubs.pausee'
+  | 'pubs.reprise';
 
 export interface AuditEntry {
   id: string;
