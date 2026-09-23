@@ -21,7 +21,14 @@ import type { BusinessInfo, Faq, Skill, Website, KnowledgeFile, AgentSettings } 
  * 🔴 CE QU'ON NE SAIT PAS, ON LE DIT `inconnue`, ON NE LE COMPTE PAS. Le moyen de paiement ne se lit par
  * aucune route de l'API (Meta ne l'expose pas), et les connecteurs et outils ne sont pas encore pilotés
  * depuis Engage Me. Les compter comme faits serait une invention ; les compter comme à faire serait un
- * reproche injuste. Ils sortent du dénominateur et gardent leur ligne, avec la raison.
+ * reproche injuste. Ils sortent du dénominateur, ET du compte d'étapes de l'en-tête, et gardent leur ligne
+ * avec la raison, dans la liste GRISE des signalements (`EnteteAgent`, prop `signalements`, qui ne retient
+ * que les OBLIGATOIRES : les facultatifs `connecteurs` et `outils` n'y sont pas).
+ *
+ * ⚠️ « GARDENT LEUR LIGNE » A ÉTÉ FAUX DU 2026-09-23 AU MÊME JOUR, et personne ne l'a vu. L'en-tête qui a
+ * remplacé `MbaCompletion` ne gardait que les tâches `a_faire` : ces lignes-là avaient purement disparu de
+ * l'écran, pendant que cette phrase et quatre autres continuaient de les promettre. Relevé par la revue
+ * finale, pas par un test, parce qu'aucun test ne les couvrait.
  *
  * PUR : aucune IO. C'est ici que se décide ce que « fait » veut dire, et ça se teste sans réseau.
  */
@@ -50,7 +57,14 @@ export interface CompletionMba {
   /** Tâches OBLIGATOIRES faites, sur celles dont l'état est connaissable. C'est le « 3 sur 4 » de l'écran. */
   faites: number;
   total: number;
-  /** Tâches obligatoires dont l'état est hors de notre portée. Affichées à part, jamais dans le ratio. */
+  /**
+   * Tâches obligatoires dont l'état est hors de notre portée. L'en-tête les rend à part, en gris, sous ses
+   * étapes : jamais dans le ratio, et jamais dans « n étapes à finir ».
+   *
+   * ⚠️ CE COMPTEUR N'EST LU PAR PERSONNE À L'ÉCRAN, et c'est volontaire : la liste grise se construit en
+   * filtrant `taches` (`etat === 'inconnue' && requise`), parce qu'une ligne doit porter SA raison. Le
+   * nombre reste rendu pour qui lirait la route directement, il ne gouverne aucun affichage.
+   */
   indeterminees: number;
 }
 

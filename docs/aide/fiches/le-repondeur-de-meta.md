@@ -1,7 +1,7 @@
 ---
 ecran: mba-guide
 source_section: MBA, le répondeur de Meta (menu « AI Agent » > MBA, guide / MBA, paramètres)
-source_empreinte: 90f630
+source_empreinte: 5ebc5f
 ---
 # Le répondeur de Meta : à quoi il sert, et comment le régler
 
@@ -18,14 +18,22 @@ Deux écrans, sous le menu AI Agent : le **guide**, qui explique ce qu'il fait e
 **paramètres**, qui le règlent pour de vrai.
 
 **Un en-tête identifie l'agent en haut des paramètres** : le logo de Meta, le nom d'affichage du numéro, le
-numéro lui-même, une pastille qui dit son état, les étapes obligatoires qu'il reste à régler (chacune est un
-lien direct vers l'onglet où elle se corrige, avec le nombre de réglages obligatoires déjà faits sur le
-total), et le nombre de messages échangés sur les 30 derniers jours dans les conversations que l'agent a
-tenues, une fois que ce nombre est connu. Il compte tout le fil, entrants et sortants, y compris ce que
-votre équipe a écrit après avoir repris la main : ce n'est donc pas une mesure de ce que l'agent a lui-même
-produit. Les conversations d'essai n'y entrent pas, et tant que ce nombre n'est pas connu, rien ne
-s'affiche. Sur un numéro que Meta n'a pas encore ouvert, ni les étapes ni ce nombre ne s'affichent : ils
-mèneraient vers un écran bloqué.
+numéro lui-même, une pastille qui dit l'état du numéro WhatsApp, les étapes obligatoires qu'il reste à régler
+(chacune est un lien direct vers l'onglet où elle se corrige, avec le nombre de réglages obligatoires déjà
+faits sur le total), et le nombre de messages échangés sur les 30 derniers jours dans les conversations que
+l'agent a tenues, une fois que ce nombre est connu.
+
+**Une catégorie est montrée à part, en gris, sous les étapes** : ce que nous ne pouvons pas vérifier pour
+vous. Le moyen de paiement en est toujours, parce qu'il se lit chez Meta derrière un statut que nous n'avons
+pas : il se vérifie dans le Business Manager. Ces lignes ne comptent ni dans les étapes qu'il vous reste, ni
+dans le total des réglages obligatoires, puisque personne ne sait où elles en sont.
+
+Le nombre de messages, lui, compte tout le fil, entrants et sortants, y compris les envois de campagne et ce
+que votre équipe a écrit après avoir repris la main : ce n'est donc pas une mesure de ce que l'agent a
+lui-même produit, et ce n'est pas non plus le même périmètre que le « messages échangés » de l'Accueil et du
+Performance Lab, qui eux écartent les modèles envoyés. Les conversations d'essai n'y entrent pas, et tant que
+ce nombre n'est pas connu, rien ne s'affiche. Sur un numéro que Meta n'a pas encore ouvert, ni les étapes, ni
+les lignes grises, ni ce nombre ne s'affichent : ils mèneraient vers un écran bloqué.
 
 **Les paramètres, en onze onglets** : Aperçu (l'état de l'agent), Assistant (le régler en lui parlant),
 Activation (qui parle au client), Business (les informations de votre entreprise), FAQ (question par

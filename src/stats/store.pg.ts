@@ -714,6 +714,15 @@ export class PgStatsStore {
    * prouver qu'un côté est indépendamment nécessaire ici, ni ne le pourra jamais (les deux filtrent la même
    * ligne) : c'est précisément pour ça que cette propriété est écrite en commentaire plutôt que confiée à un
    * test.
+   *
+   * 🔴 `m.direction = 'out'` DANS LE SOUS-SELECT, ET IL NE CHANGE AUCUN RÉSULTAT : le fragment ne rend `mba`
+   * que sur un sortant (la colonne `origin` n'est écrite que par les chemins d'ENVOI, et la dérivation
+   * `m.type = 'mba'` désigne un message de l'agent). Ce qu'il achète est le CONTRAT DE L'INDEX PARTIEL :
+   * `conversation_messages_origin_idx` (migration 0099) est posé `where direction = 'out'`, et une requête
+   * qui ne le dit pas sort de son prédicat, donc du plan qu'il sert, sans qu'aucune erreur ne le signale.
+   * C'est la règle « un index partiel est un contrat avec une requête précise » du CLAUDE.md, appliquée à
+   * l'endroit où l'agrégat voisin (`serviceParOrigine`) l'appliquait déjà. La requête EXTÉRIEURE, elle, ne
+   * le porte pas et ne doit pas le porter : elle compte les DEUX sens, c'est tout l'objet de la mesure.
    */
   async messagesTenusParMba(tenantId: string, jours: number): Promise<number> {
     const { rows } = await this.pool.query<{ n: string }>(
@@ -729,6 +738,7 @@ export class PgStatsStore {
               join conversations cv on cv.id = m.conversation_id
              where cv.tenant_id = $1
                and not cv.is_test
+               and m.direction = 'out'
                and m.created_at > now() - make_interval(days => $2)
                and ${ORIGINE_EFFECTIVE_SQL} = 'mba'
           )`,

@@ -21,10 +21,15 @@ test.describe('MBA Paramètres : en-tête et menu en colonne', () => {
     await expect(page.getByTestId('entete-agent-etapes')).toContainText('1 étape à finir');
     await expect(page.getByTestId('entete-agent-ratio')).toContainText('1 sur 2');
 
-    // 🔴 CE QUE LE CHIFFRE MESURE DOIT ÊTRE ÉCRIT À CÔTÉ DE LUI. Sans le « y compris », un client lit 412
-    // comme le travail de l'agent, alors que le compte embrasse aussi ce que l'équipe a écrit après reprise.
+    // 🔴 CE QUE LE CHIFFRE MESURE DOIT ÊTRE ÉCRIT À CÔTÉ DE LUI. Sans l'aveu, un client lit 412 comme le
+    // travail de l'agent, alors que le compte embrasse tout le fil.
+    // 🔴 LES DEUX MOITIÉS DE L'AVEU SONT ASSERTÉES SÉPARÉMENT, et la première est celle que la revue finale
+    // a réclamée : « messages échangés » EXCLUT les modèles sortants à deux écrans d'ici (Accueil,
+    // Performance Lab), et ici il les inclut. Une légende qui ne dirait que la reprise laisserait le même
+    // mot désigner deux périmètres dans la même console.
+    await expect(page.getByTestId('entete-agent-messages')).toContainText('les envois de campagne');
     await expect(page.getByTestId('entete-agent-messages'))
-      .toContainText('y compris ceux écrits par votre équipe après une reprise');
+      .toContainText('ce que votre équipe a écrit après une reprise');
 
     // L'étape mène à l'onglet où elle se règle : une liste de manques sans le geste se lit comme un reproche.
     await page.getByTestId('entete-etape-faq').click();
@@ -42,6 +47,33 @@ test.describe('MBA Paramètres : en-tête et menu en colonne', () => {
     const debordement = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(debordement, 'la page déborde horizontalement').toBe(0);
+  });
+
+  test('🔴 ce qu on ne sait pas garde sa ligne, en gris et HORS du compte d etapes', async ({ page }) => {
+    /**
+     * LA CAPACITÉ QUI AVAIT DISPARU SANS QUE PERSONNE NE LE REMARQUE (revue finale du 2026-09-23).
+     * `calculerCompletion` pose TOUJOURS une tâche `paiement`, `inconnue` et `requise` : le moyen de paiement
+     * se lit derrière le statut BSP, que nous n'avons pas. L'ancien `MbaCompletion` l'affichait dans une
+     * seconde liste grisée ; l'en-tête qui l'a remplacé ne gardait que les `a_faire`, et cette ligne n'était
+     * plus nulle part. Aucun test ne la couvrait, et cinq textes continuaient de la promettre.
+     *
+     * 🔴 LES TROIS ASSERTIONS DISENT TROIS CHOSES DIFFÉRENTES, et la deuxième est celle qui compte : elle est
+     * RENDUE, elle n'est PAS comptée comme une étape, et elle n'est PAS cliquable (elle ne se règle pas ici).
+     */
+    await mockMba(page);
+    await page.goto('/mba/parametres');
+
+    await expect(page.getByTestId('entete-agent-signalements'))
+      .toContainText('Le moyen de paiement se lit derrière le statut BSP');
+    // Le compte d'étapes n'a pas bougé : une seule tâche est `a_faire`, la FAQ.
+    await expect(page.getByTestId('entete-agent-etapes')).toContainText('1 étape à finir');
+    // Et pas de bouton : personne ne peut « ouvrir l'onglet » du moyen de paiement, il n'y en a pas.
+    await expect(page.getByTestId('entete-etape-paiement')).toHaveCount(0);
+
+    // ⚠️ ET LES FACULTATIFS RESTENT DEHORS. `connecteurs` est `inconnue` lui aussi, mais non requis : le
+    // montrer poserait une ligne grise permanente qui ne dit rien de l'état de l'agent, et le serveur
+    // l'exclut déjà de son propre compte d'indéterminées.
+    await expect(page.getByTestId('entete-agent-signalements')).not.toContainText('Pas encore piloté');
   });
 
   test('🔴 sans la route de comptage, AUCUN chiffre, et l ecran marche', async ({ page }) => {
@@ -75,6 +107,10 @@ test.describe('MBA Paramètres : en-tête et menu en colonne', () => {
     await expect(page.getByTestId('entete-agent-etapes')).toHaveCount(0);
     await expect(page.getByTestId('entete-agent-messages')).toHaveCount(0);
     await expect(page.getByTestId('entete-etape-faq'), 'un bouton qui ne mène nulle part').toHaveCount(0);
+    // ⚠️ LES SIGNALEMENTS SUIVENT LE MÊME SORT, pour la même raison : la complétion n'est pas lue sur un
+    // numéro que Meta n'a pas ouvert, et annoncer « vérifiez votre moyen de paiement » sur un agent qui
+    // n'existe pas encore chez Meta enverrait le client régler une condition qui ne le bloque pas.
+    await expect(page.getByTestId('entete-agent-signalements')).toHaveCount(0);
   });
 
   test('🔴 l en-tete est la MEME sur un ecran bloque, sans numero', async ({ page }) => {

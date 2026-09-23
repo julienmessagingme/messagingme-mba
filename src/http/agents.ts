@@ -11,9 +11,18 @@ import { scopeTenant, nonEmpty, estUuid } from './scope';
 import { journaliser } from '../lib/journal';
 import type { ConsommationAgent } from '../agent/session-store';
 
-/** La fenetre du suivi de consommation. Trente jours : assez pour voir une tendance, assez court pour que
- *  l'index `(tenant_id, created_at desc)` serve la requete. */
-const JOURS_CONSOMMATION = 30;
+/**
+ * La fenetre du suivi de consommation. Trente jours : assez pour voir une tendance, assez court pour que
+ * l'index `(tenant_id, created_at desc)` serve la requete.
+ *
+ * ⚠️ EXPORTÉE POUR ÊTRE COMPARÉE, pas pour être importée par un appelant. Elle doit rester ÉGALE à
+ * `JOURS_MESSAGES` (`src/http/mba.ts`) : les deux chiffres se lisent dans le même en-tête, sous le même mot
+ * « 30 jours », et deux fenêtres différentes y raconteraient deux durées. Les fondre en une constante
+ * partagée ferait dépendre le module des agents IA de celui de l'agent de Meta, qui n'ont rien à voir ;
+ * `tests/web-entete-agent-parite.test.ts` exige donc leur égalité, et que le texte de l'en-tête porte ce
+ * nombre-là.
+ */
+export const JOURS_CONSOMMATION = 30;
 
 export interface AgentsRouteDeps {
   listActifs(tenantId: string): Promise<AgentResume[]>;
@@ -39,10 +48,13 @@ export interface AgentsRouteDeps {
   /**
    * Les messages échangés dans les conversations que cet agent a tenues, sur une fenêtre de N jours.
    *
-   * ⚠️ OPTIONNELLE, comme `consommationAgent` juste au-dessus, et pour la même raison : deux fixtures de
-   * test construisent un littéral complet de cette interface (`tests/http-agents.test.ts:61`,
-   * `tests/agent-setup-lint.test.ts:118`). La rendre requise les casserait sans rien acheter, et l'écran
-   * sait déjà ne rien afficher quand le chiffre manque.
+   * ⚠️ OPTIONNELLE, comme `consommationAgent` juste au-dessus, et pour LA MÊME RAISON QUE LUI : une console
+   * sans store de sessions rend simplement `null`, et l'écran n'affiche alors aucun chiffre. Une mesure
+   * indisponible ne doit pas casser un écran de réglage.
+   *
+   * ⚠️ Cette justification a invoqué des fixtures de test jusqu'au 2026-09-23 : une commodité de test n'est
+   * pas une raison de rendre une dépendance optionnelle, et ce dépôt a payé ce motif plusieurs fois
+   * (`estDesabonne`, les gardes de routes). C'est le motif d'à côté qui se recopie, pas celui-là.
    */
   messagesAgent?(tenantId: string, agentId: string, jours: number): Promise<number>;
   /**

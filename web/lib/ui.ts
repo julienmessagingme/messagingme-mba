@@ -32,9 +32,13 @@ export const kickerCls = 'text-xs font-semibold uppercase tracking-wide text-bra
  * `bg-<couleur>-500` d'une valeur calculée n'est pas vue par le balayage de Tailwind, donc absente du CSS
  * produit, donc la pastille sort sans couleur. Le style en ligne n'a pas ce défaut.
  *
- * ⚠️ Elle était déclarée dans `web/app/accueil/page.tsx`, où six endroits la lisent. L'extraction de la
- * pastille du numéro (`components/PastilleNumero.tsx`, 2026-09-23) en aurait fait une SECONDE copie : deux
- * tables de couleurs pour la même pastille, qui divergent à la première retouche de teinte.
+ * ⚠️ Elle était déclarée dans `web/app/accueil/page.tsx`, qui la lit à plusieurs endroits. L'extraction de
+ * la pastille du numéro (`components/PastilleNumero.tsx`, 2026-09-23) en aurait fait une SECONDE copie :
+ * deux tables de couleurs pour la même pastille, qui divergent à la première retouche de teinte.
+ *
+ * ⚠️ AUCUN COMPTE DE LECTEURS ÉCRIT ICI, délibérément : cette phrase a dit « six endroits » quand son
+ * pendant dans `PastilleNumero.tsx` disait « cinq », et ni l'un ni l'autre n'était juste. Un `grep DOT_HEX`
+ * rend la réponse, et il ne périme pas.
  */
 export const DOT_HEX: Record<AccountDot, string> =
   { green: '#17C74E', amber: '#E8A400', red: '#FF4D4F', grey: '#B8BEC9' };

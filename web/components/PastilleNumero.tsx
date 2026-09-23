@@ -9,7 +9,9 @@ import type { AccountDot } from '@/lib/api';
  * 🔴 EXTRAIT DE L ACCUEIL, PAS RECOPIE (2026-09-23). Le meme marquage etait ecrit en ligne dans
  * `web/app/accueil/page.tsx` ; l en-tete de l ecran de l agent de Meta en a besoin, et une seconde copie
  * aurait fait deux pastilles a realigner a la main. La table de couleurs, elle, reste dans `lib/ui.ts` parce
- * que l Accueil la lit encore a cinq autres endroits (qualite du numero, HubSpot, badges de statut).
+ * que l Accueil s en sert encore AILLEURS que sur cette pastille (qualite du numero, HubSpot, badges de
+ * statut). ⚠️ Cette phrase annoncait « cinq autres endroits » quand `lib/ui.ts` en annoncait « six », et
+ * aucun des deux comptes n etait juste : le compte ne s ecrit plus, un `grep DOT_HEX` le rend.
  *
  * ⚠️ LE REPLI SUR `grey` EST DELIBERE et il n est pas mort : le type dit `AccountDot`, mais la valeur vient
  * d une reponse HTTP, donc un `dot` inconnu (un serveur plus recent que ce front) rendrait une pastille SANS

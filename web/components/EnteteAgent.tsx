@@ -1,7 +1,8 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { useT } from '@/lib/i18n';
+import { useLocale, useT } from '@/lib/i18n';
+import { fmtNum } from '@/lib/format';
 
 /**
  * L'EN-TÊTE D'UN ÉCRAN D'AGENT : qui est cet agent, ce qui lui manque, ce qu'il a produit.
@@ -15,7 +16,16 @@ import { useT } from '@/lib/i18n';
 export interface EtapeEntete {
   /** Ce qui manque, dans les mots du client. Rendu tel quel. */
   message: string;
-  /** L'onglet où ça se corrige. Absent = ça ne se règle pas sur cet écran (le moyen de paiement). */
+  /**
+   * L'onglet où ça se corrige. Absent = ça ne se règle pas sur cet écran, et l'étape reste alors affichée
+   * en texte simple.
+   *
+   * ⚠️ CE N'EST PAS LE MOYEN DE PAIEMENT, contrairement à ce que cette ligne a dit jusqu'au 2026-09-23.
+   * Les trois tâches de complétion sans onglet (paiement, connecteurs, outils) sont TOUTES `inconnue`, donc
+   * aucune n'entre jamais dans `etapes` : elles passent par `signalements`. Ce qui reste ici est un
+   * contrat : un appelant PEUT donner une étape sans geste, et la masquer ferait disparaître une condition
+   * réelle d'un en-tête qui prétend les lister toutes.
+   */
   onglet?: string;
 }
 
@@ -38,6 +48,19 @@ export interface EnteteAgentProps {
    * mesurée. Même règle que `messages30j`, et pour la même raison.
    */
   etapes: EtapeEntete[] | null;
+  /**
+   * CE QU'ON NE SAIT PAS, dit en gris sous les étapes : une phrase par ligne, telle quelle.
+   *
+   * 🔴 SURTOUT PAS DANS `etapes`, ET DEUX COMMENTAIRES DU SERVEUR L'INTERDISENT (`src/mba/completion.ts`
+   * et le champ `indeterminees`). Le moyen de paiement de l'agent de Meta est `inconnue` et `requise` : le
+   * verser dans les étapes le ferait entrer dans « n étapes à finir », c'est-à-dire reprocher au client une
+   * chose que NOUS ne savons pas lire, et qui ne se règle même pas dans la console.
+   *
+   * ⚠️ `undefined` = rien à signaler, ou on n'a rien lu. Cette liste n'a aucun état « tout va bien » à
+   * affirmer (elle ne se rend que si elle porte quelque chose), donc elle n'a pas besoin du `null` que
+   * `etapes` et `messages30j` portent.
+   */
+  signalements?: string[];
   /** Rendu en plus du compte, et SEULEMENT quand il existe un ratio vrai (l'agent de Meta en a un). */
   ratio?: { faites: number; total: number };
   /** `null` = on ne sait pas. On n'affiche alors AUCUN chiffre. Voir le commentaire plus bas. */
@@ -64,21 +87,29 @@ export function libelleEtapes(n: number, t: (fr: string, en: string) => string):
 }
 
 export function EnteteAgent({
-  logo, pastille, nom, precision, etat, etapes, ratio, messages30j, onOnglet,
+  logo, pastille, nom, precision, etat, etapes, signalements, ratio, messages30j, onOnglet,
 }: EnteteAgentProps) {
   const t = useT();
+  const { locale } = useLocale();
   return (
     <header
       data-testid="entete-agent"
       className="flex flex-col gap-4 rounded-2xl border border-ink-200 bg-white p-4 shadow-sm sm:flex-row sm:items-start sm:gap-5"
     >
-      {/* eslint-disable-next-line @next/next/no-img-element -- next/image mettrait en cache une URL signée
-          qui expire (même contrainte que la photo de profil de l'Accueil), et nos SVG sont servis par nous. */}
       {logo !== null ? (
-        <img src={logo.src} alt={logo.alt} data-testid="entete-agent-logo"
-          className="h-10 w-10 shrink-0 text-ink-800" />
+        // ⚠️ LA DÉSACTIVATION VA ICI, COLLÉE À LA BALISE. Posée au-dessus du ternaire, elle couvrait la
+        // ligne du `{logo !== null ?` et pas celle de l'image, donc elle ne servait à rien : même motif
+        // qu'en liste (`web/app/agents/page.tsx`), qui le disait déjà.
+        // ⚠️ ET LA RAISON EST CELLE-CI. Ce sont des PNG que NOUS servons depuis `web/public/`, déjà à leur
+        // taille finale de 40 px : `next/image` n'y apporte rien. (Cette justification a parlé d'une URL
+        // signée qui expire et de SVG jusqu'au 2026-09-23 : ni l'une ni l'autre n'existe ici.)
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={logo.src} alt={logo.alt} data-testid="entete-agent-logo" className="h-10 w-10 shrink-0" />
       ) : (
-        <span data-testid="entete-agent-pastille"
+        // ⚠️ `aria-hidden` COMME SA JUMELLE DE LA LISTE DES AGENTS : ces deux ou trois lettres sont un
+        // DESSIN, pas un mot. Sans lui, elles se lisent à voix haute juste avant le nom de l'agent, qui est
+        // écrit en toutes lettres à côté.
+        <span data-testid="entete-agent-pastille" aria-hidden="true"
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-semibold text-ink-600">
           {pastille}
         </span>
@@ -109,9 +140,9 @@ export function EnteteAgent({
           <ul className="space-y-1 pt-1">
             {etapes.map((e) => (
               <li key={e.message} className="text-sm text-ink-600">
-                {/* ⚠️ UNE ÉTAPE SANS ONGLET RESTE AFFICHÉE, en texte simple. C'est le cas du moyen de
-                    paiement, qui ne se règle pas dans la console : la masquer ferait disparaître une
-                    condition réelle de l'écran qui prétend les lister toutes. */}
+                {/* ⚠️ UNE ÉTAPE SANS ONGLET RESTE AFFICHÉE, en texte simple : la masquer ferait disparaître
+                    une condition réelle d'un en-tête qui prétend les lister toutes. Aucun appelant n'en
+                    produit aujourd'hui (voir `EtapeEntete.onglet`), c'est le contrat du type qui l'autorise. */}
                 {e.onglet === undefined ? (
                   <span>{e.message}</span>
                 ) : (
@@ -128,6 +159,20 @@ export function EnteteAgent({
             ))}
           </ul>
         )}
+
+        {/* 🔴 CE QU'ON NE SAIT PAS, EN GRIS ET HORS DU COMPTE. Cette liste avait DISPARU avec l'ancien
+            composant `MbaCompletion` le 2026-09-23, et rien ne l'a signalé : le moyen de paiement de
+            l'agent de Meta est `inconnue` et `requise`, il ne passait donc plus ni par les étapes (qui ne
+            gardent que `a_faire`) ni par le ratio (qui l'exclut au serveur). Cinq textes continuaient
+            d'affirmer qu'il « gardait sa ligne ». Il la garde à nouveau, ICI, et surtout pas dans
+            « n étapes à finir » : ce compteur dit ce que le CLIENT doit faire. */}
+        {signalements !== undefined && signalements.length > 0 && (
+          <ul data-testid="entete-agent-signalements" className="space-y-1 pt-1">
+            {signalements.map((s) => (
+              <li key={s} className="text-xs text-ink-400">{s}</li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {/* 🔴 AUCUN CHIFFRE QUAND ON NE SAIT PAS. `null` couvre trois cas réels : la lecture n'a pas encore
@@ -138,17 +183,22 @@ export function EnteteAgent({
           l'écran le DIT (décision du 2026-09-23, à la relecture du lot serveur). La légende courte d'avant,
           « messages échangés sur 30 jours », laissait lire ce nombre comme une mesure du travail de l'agent :
           un client aurait comparé deux agents sur un chiffre qui mesure le VOLUME de la conversation. Le
-          « y compris » est le mot qui porte l'aveu, il ne s'abrège pas. */}
+          « y compris » est le mot qui porte l'aveu, il ne s'abrège pas.
+          🔴 ET LES ENVOIS DE CAMPAGNE EN FONT PARTIE, ce qu'il a fallu ajouter à la revue finale du même
+          jour. « Messages échangés » veut dire autre chose à DEUX écrans d'ici : l'Accueil et le Performance
+          Lab EXCLUENT les modèles sortants du leur. Le périmètre plus large est celui que Julien a arbitré
+          (tous les messages des conversations que l'agent a tenues), donc c'est la LÉGENDE qui doit lever
+          l'ambiguïté, pas la requête. */}
       {messages30j !== null && (
         <div data-testid="entete-agent-messages" className="shrink-0 sm:max-w-[15rem] sm:text-right">
-          <p className="text-2xl font-semibold tabular-nums text-ink-900">{messages30j.toLocaleString('fr-FR')}</p>
+          <p className="text-2xl font-semibold tabular-nums text-ink-900">{fmtNum(messages30j, locale)}</p>
           <p className="text-xs font-medium text-ink-700">
             {t('Messages échangés dans les conversations que cet agent a tenues',
                'Messages exchanged in the conversations this agent handled')}
           </p>
           <p className="pt-0.5 text-xs text-ink-500">
-            {t('Tous les messages de ces conversations sur 30 jours, y compris ceux écrits par votre équipe après une reprise.',
-               'All messages in those conversations over 30 days, including those written by your team after a takeover.')}
+            {t('Tous les messages de ces conversations sur 30 jours, y compris les envois de campagne et ce que votre équipe a écrit après une reprise.',
+               'All messages in those conversations over 30 days, including campaign sends and what your team wrote after a takeover.')}
           </p>
         </div>
       )}

@@ -155,7 +155,12 @@ function Ecran({ tenantId }: { tenantId: string }) {
    * d'avoir essayé son agent. Julien a cherché un réglage pendant que la réponse était calculée et tue.
    */
   useEffect(() => {
-    if (ouvert === null) { setManques(null); return; }
+    // 🔴 REMIS À « on ne sait pas » À CHAQUE CHANGEMENT D'AGENT, exactement comme le chiffre juste en
+    // dessous, et pour la même raison : garder les manques du précédent afficherait, le temps d'un
+    // aller-retour réseau, les étapes d'un agent sous le nom d'un autre. La remise n'était faite que sur la
+    // FERMETURE de la fiche, donc pas sur le passage d'un agent à l'autre, qui est le cas courant.
+    setManques(null);
+    if (ouvert === null) return;
     rafraichirManques(ouvert.id);
   }, [ouvert?.id, rafraichirManques]);
 

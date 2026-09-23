@@ -16,7 +16,9 @@ const url = process.env.DATABASE_URL ?? '';
  * formes (colonne `origin` et dérivation `type = 'mba'`), et le filtre d'ORIGINE du sous-select est bien
  * ACTIF : la conversation (b), qui n'a aucun message `mba`, ne doit PAS entrer dans le compte. Si ce filtre
  * disparaissait du sous-select, elle y entrerait et le total du premier cas passerait de 2 à 3 : ce test
- * tomberait.
+ * tomberait. Et, depuis la revue finale du 2026-09-23, les DEUX clauses de FENÊTRE (celle qui borne les
+ * messages comptés, celle qui borne « l'agent a répondu ici ») : les fixtures n'inséraient que des messages
+ * à `now()`, donc les retirer laissait tout vert.
  *
  * ⚠️ Il ne prouve PAS que `not is_test` ou `tenant_id = $1` seraient nécessaires des DEUX côtés (sous-select
  * ET requête extérieure) : les deux filtrent la MÊME ligne de `conversations`, la double garde est
@@ -29,6 +31,7 @@ describe.skipIf(!url)('PgStatsStore.messagesTenusParMba (Postgres)', () => {
   let tenantId: string;
   let tenantAncien: string;
   let autreTenantId: string;
+  let tenantFenetre: string;
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: url, ssl: pgSsl(), max: 4 });
@@ -39,6 +42,10 @@ describe.skipIf(!url)('PgStatsStore.messagesTenusParMba (Postgres)', () => {
     tenantAncien = t2.rows[0]!.id;
     const t3 = await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-mba-messages-autre') returning id`);
     autreTenantId = t3.rows[0]!.id;
+    // Un espace À PART pour la fenêtre : les autres cas ne nettoient rien entre eux (cascade au `afterAll`
+    // seulement), et un compte absolu dépendrait alors de l'ordre d'exécution plutôt que du SQL testé.
+    const t4 = await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-mba-messages-fenetre') returning id`);
+    tenantFenetre = t4.rows[0]!.id;
   });
 
   afterAll(async () => {
@@ -46,6 +53,7 @@ describe.skipIf(!url)('PgStatsStore.messagesTenusParMba (Postgres)', () => {
     if (tenantId) await pool.query('delete from tenants where id = $1', [tenantId]);
     if (tenantAncien) await pool.query('delete from tenants where id = $1', [tenantAncien]);
     if (autreTenantId) await pool.query('delete from tenants where id = $1', [autreTenantId]);
+    if (tenantFenetre) await pool.query('delete from tenants where id = $1', [tenantFenetre]);
     await pool.end();
   });
 
@@ -112,5 +120,47 @@ describe.skipIf(!url)('PgStatsStore.messagesTenusParMba (Postgres)', () => {
     );
 
     expect(await store.messagesTenusParMba(tenantAncien, 30)).toBe(1);
+  });
+
+  /**
+   * 🔴 LA FENÊTRE N'ÉTAIT GARDÉE PAR RIEN (revue finale du 2026-09-23). Toutes les fixtures ci-dessus
+   * insèrent des messages SANS `created_at`, donc à `now()` : retirer les deux `created_at > now() -
+   * make_interval(days => $2)` de cette requête laissait tous les cas VERTS, et le chiffre annoncé « sur
+   * 30 jours » serait devenu « depuis toujours » sans qu'aucun test ne bouge.
+   *
+   * Les deux clauses sont gardées SÉPARÉMENT, parce qu'elles répondent à deux questions différentes :
+   *  - (a) la fenêtre de la requête EXTÉRIEURE borne les messages COMPTÉS ;
+   *  - (b) celle du SOUS-SELECT borne le « l'agent a répondu dans cette conversation » : une conversation
+   *    que l'agent de Meta n'a plus touchée depuis deux mois n'est pas une conversation qu'il tient.
+   */
+  it('🔴 la FENÊTRE borne ce qui est compté, et ce qui compte comme « tenu »', async () => {
+    // (a) conversation TENUE maintenant, avec un message hors fenêtre : seul le récent est compté.
+    const recente = await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, is_test) values ($1, '33650000301', false) returning id`,
+      [tenantFenetre],
+    );
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, type, origin, body, created_at)
+       values ($1, 'out', 'text', 'mba', 'réponse de l agent, cette semaine', now()),
+              ($1, 'in', 'text', null, 'un message d il y a quarante jours', now() - interval '40 days')`,
+      [recente.rows[0]!.id],
+    );
+
+    // (b) conversation dont le SEUL message de l'agent est hors fenêtre, plus un message récent : elle n'est
+    // pas « tenue » sur la fenêtre, donc RIEN n'en est compté, pas même son message récent.
+    const ancienne = await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, is_test) values ($1, '33650000302', false) returning id`,
+      [tenantFenetre],
+    );
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, type, origin, body, created_at)
+       values ($1, 'out', 'text', 'mba', 'réponse de l agent, il y a quarante jours', now() - interval '40 days'),
+              ($1, 'in', 'text', null, 'le client revient cette semaine', now())`,
+      [ancienne.rows[0]!.id],
+    );
+
+    // 1, et pas 2 (la clause extérieure sauterait), pas 2 non plus par (b) (la clause du sous-select
+    // sauterait), pas 4 si les deux sautaient.
+    expect(await store.messagesTenusParMba(tenantFenetre, 30)).toBe(1);
   });
 });

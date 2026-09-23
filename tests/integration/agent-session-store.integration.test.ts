@@ -23,6 +23,8 @@ describe.skipIf(!url)('PgAgentSessionStore (Postgres)', () => {
   let autreTenantId: string;
   let workflowId: string;
   let agentId: string;
+  /** Un SECOND agent du MÊME espace : c'est lui qui rend `s.agent_id = $2` vérifiable (cf. son test). */
+  let autreAgentId: string;
 
   const nouveauRun = async (): Promise<string> => {
     const r = await pool.query<{ id: string }>(
@@ -49,6 +51,11 @@ describe.skipIf(!url)('PgAgentSessionStore (Postgres)', () => {
       [tenantId],
     );
     agentId = a.rows[0]!.id;
+    const a2 = await pool.query<{ id: string }>(
+      `insert into agents (tenant_id, label, mention_ia, modele) values ($1, 'itest-second', 'Je suis une IA.', 'modele-test') returning id`,
+      [tenantId],
+    );
+    autreAgentId = a2.rows[0]!.id;
   });
 
   afterAll(async () => {
@@ -353,5 +360,83 @@ describe.skipIf(!url)('PgAgentSessionStore (Postgres)', () => {
     // Et l'autre sens rend bien 0 : le sous-select est déjà borné par tenant. Ce cas-là reste, mais seul il
     // ne dirait rien si `c.tenant_id = $1` disparaissait (cf. commentaire au-dessus du test).
     expect(await store.messagesTenus(autreTenantId, agentId, 30)).toBe(0);
+  });
+
+  /**
+   * 🔴 RIEN NE GARDAIT `s.agent_id = $2`, ET C'EST LA MÊME FAMILLE DE DÉFAUT QUE CI-DESSUS (revue finale du
+   * 2026-09-23). Ce fichier ne créait qu'UN agent : retirer le filtre par agent du sous-select faisait
+   * passer la mesure « par ESPACE » au lieu de « par AGENT », et tous les cas restaient VERTS. Un client
+   * aurait lu, sur la fiche de son agent de test, le volume de son agent de production.
+   *
+   * Il faut donc un SECOND agent du MÊME espace, avec sa session et sa conversation à lui : le sous-select
+   * ne le désigne que par `s.agent_id`, et rien d'autre dans la requête ne les sépare.
+   */
+  it('🔴 la mesure est par AGENT, pas par espace : un second agent ne fuit pas dans le compte du premier', async () => {
+    // ⚠️ EN DELTA, comme le cas précédent : ce fichier ne nettoie qu'à `afterAll`, donc le compte absolu du
+    // premier agent dépend de ce que les cas d'avant ont laissé.
+    const avant = await store.messagesTenus(tenantId, agentId, 30);
+
+    const wa = '33650000005';
+    await store.open({ tenantId, runId: await nouveauRun(), agentId: autreAgentId, nodeId: 'n1', waId: wa });
+    const conv = await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, is_test) values ($1, $2, false) returning id`,
+      [tenantId, wa],
+    );
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, body) values ($1, 'in', 'bonjour'), ($1, 'out', 'reponse du second agent')`,
+      [conv.rows[0]!.id],
+    );
+
+    // Sans `s.agent_id = $2`, le sous-select rendrait AUSSI ce `wa_id` et ce total monterait de 2.
+    expect(await store.messagesTenus(tenantId, agentId, 30)).toBe(avant);
+    // Et le second agent voit SES deux messages, pas ceux de tout l'espace : sans le filtre, il en verrait
+    // davantage (toutes les conversations que les cas précédents ont posées sous ce tenant).
+    expect(await store.messagesTenus(tenantId, autreAgentId, 30)).toBe(2);
+  });
+
+  /**
+   * 🔴 RIEN NE GARDAIT LA FENÊTRE NON PLUS. Toutes les fixtures ci-dessus insèrent leurs messages sans
+   * `created_at`, donc à `now()` : retirer les `created_at > now() - make_interval(days => $3)` laissait
+   * tout vert, et le chiffre annoncé « sur 30 jours » serait devenu « depuis toujours » en silence.
+   *
+   * Les deux clauses sont gardées séparément :
+   *  - (a) celle de la requête EXTÉRIEURE borne les messages COMPTÉS ;
+   *  - (b) celle du SOUS-SELECT borne « cet agent a tenu cette conversation » : une session vieille de deux
+   *    mois ne fait pas de la conversation une conversation que l'agent tient aujourd'hui. La session est
+   *    ANTIDATÉE en SQL, `open` posant forcément `now()`.
+   */
+  it('🔴 la FENÊTRE borne ce qui est compté, et ce qui compte comme « tenu »', async () => {
+    const avant = await store.messagesTenus(tenantId, autreAgentId, 30);
+
+    // (a) conversation tenue MAINTENANT par le second agent, avec un message hors fenêtre.
+    const waRecent = '33650000006';
+    await store.open({ tenantId, runId: await nouveauRun(), agentId: autreAgentId, nodeId: 'n1', waId: waRecent });
+    const recente = await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, is_test) values ($1, $2, false) returning id`,
+      [tenantId, waRecent],
+    );
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, body, created_at)
+       values ($1, 'in', 'cette semaine', now()), ($1, 'in', 'il y a quarante jours', now() - interval '40 days')`,
+      [recente.rows[0]!.id],
+    );
+
+    // (b) conversation dont la SEULE session est hors fenêtre, plus un message récent : elle n'est pas tenue
+    // sur la fenêtre, donc rien n'en est compté.
+    const waAncien = '33650000007';
+    const vieille = await store.open({ tenantId, runId: await nouveauRun(), agentId: autreAgentId, nodeId: 'n1', waId: waAncien });
+    await pool.query(`update agent_sessions set created_at = now() - interval '40 days' where id = $1`, [vieille.id]);
+    const ancienne = await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, is_test) values ($1, $2, false) returning id`,
+      [tenantId, waAncien],
+    );
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, body, created_at)
+       values ($1, 'in', 'le client revient cette semaine', now())`,
+      [ancienne.rows[0]!.id],
+    );
+
+    // +1 seulement : le message de quarante jours de (a) est hors du compte, et (b) n'y entre pas du tout.
+    expect(await store.messagesTenus(tenantId, autreAgentId, 30)).toBe(avant + 1);
   });
 });

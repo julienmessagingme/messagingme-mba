@@ -72,9 +72,16 @@ export interface MbaRouteDeps {
   messagesTenus?(tenantId: string, jours: number): Promise<number>;
 }
 
-/** La fenêtre du chiffre de l'en-tête. La même que celle de la consommation d'un agent IA, pour que les
- *  deux écrans ne racontent pas deux durées différentes sous le même mot. */
-const JOURS_MESSAGES = 30;
+/**
+ * La fenêtre du chiffre de l'en-tête. La même que celle de la consommation d'un agent IA, pour que les deux
+ * écrans ne racontent pas deux durées différentes sous le même mot.
+ *
+ * ⚠️ EXPORTÉE POUR ÊTRE COMPARÉE, pas pour être importée : elle doit rester ÉGALE à `JOURS_CONSOMMATION`
+ * (`src/http/agents.ts`), et c'est `tests/web-entete-agent-parite.test.ts` qui l'exige, avec le nombre écrit
+ * dans le texte de `EnteteAgent.tsx`. Rien ne le vérifiait : « la même que » était une phrase, et ce dépôt a
+ * une longue liste de nombres recopiés qui ont dérivé.
+ */
+export const JOURS_MESSAGES = 30;
 
 /** Au-delà, ce n'est plus un import de FAQ : Meta prévient qu'« a few hundred » dégrade déjà les réponses. */
 const MAX_IMPORT = 500;

@@ -2145,9 +2145,12 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   corrige.
 - ✅ **Le nombre de messages échangés sur 30 jours s'affiche à côté, quand il est connu.** Il compte tous les
   messages, entrants et sortants, des conversations que cet agent a tenues au moins une fois pendant cette
-  période, **y compris ceux écrits par votre équipe après avoir repris la main sur l'agent** : ce n'est donc
-  pas une mesure de ce que l'agent a lui-même produit, mais du volume de ces conversations. Les conversations
-  de test n'y comptent pas.
+  période, **y compris les envois de campagne et ce que votre équipe a écrit après avoir repris la main sur
+  l'agent** : ce n'est donc pas une mesure de ce que l'agent a lui-même produit, mais du volume de ces
+  conversations. Les conversations de test n'y comptent pas.
+  ⚠️ **Ce n'est pas le même périmètre que le « messages échangés » de l'Accueil et du Performance Lab**, qui
+  eux écartent les modèles envoyés. La légende de l'en-tête le dit, pour que le même mot ne se lise pas de
+  deux façons.
   ⚠️ **Quand ce nombre n'est pas connu, rien ne s'affiche : jamais un zéro**, qui laisserait croire que
   l'agent n'a parlé à personne.
 - ✅ **Le menu de la fiche est une colonne à gauche du contenu**, sur un écran assez large. Sous une largeur
@@ -2566,18 +2569,25 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
 ### L'en-tête des paramètres : l'agent en un coup d'œil
 
 - ✅ **L'écran de réglage s'ouvre sur un en-tête qui identifie l'agent** : le logo de Meta, le nom
-  d'affichage du numéro, le numéro lui-même, et une pastille qui dit son état.
+  d'affichage du numéro, le numéro lui-même, et une pastille qui dit **l'état du numéro WhatsApp**.
 - ✅ **Les étapes obligatoires qu'il reste à régler s'affichent juste en dessous**, chacune avec un lien
   direct vers l'onglet où elle se corrige, avec en plus un ratio du type « n sur m réglages obligatoires ».
+- ✅ **Et ce que nous ne pouvons pas vérifier est écrit en dessous, en gris et à part.** Le moyen de paiement
+  en est toujours : il se lit chez Meta derrière un statut que nous n'avons pas, donc il se vérifie dans le
+  Business Manager. Ces lignes n'entrent ni dans le compte d'étapes ni dans le ratio : les compter comme
+  faites serait une invention, les compter comme à faire serait un reproche injuste.
 - ✅ **Le nombre de messages échangés sur 30 jours s'affiche à côté, quand il est connu.** Il compte tous les
   messages, entrants et sortants, des conversations que cet agent a tenues au moins une fois pendant cette
-  période, **y compris ceux écrits par votre équipe après avoir repris la main sur l'agent** : ce n'est donc
-  pas une mesure de ce que l'agent a lui-même produit, mais du volume de ces conversations. Les conversations
-  de test n'y comptent pas.
+  période, **y compris les envois de campagne et ce que votre équipe a écrit après avoir repris la main sur
+  l'agent** : ce n'est donc pas une mesure de ce que l'agent a lui-même produit, mais du volume de ces
+  conversations. Les conversations de test n'y comptent pas.
+  ⚠️ **Ce n'est pas le même périmètre que le « messages échangés » de l'Accueil et du Performance Lab**, qui
+  eux écartent les modèles envoyés. La légende de l'en-tête le dit, pour que le même mot ne se lise pas de
+  deux façons.
   ⚠️ **Quand ce nombre n'est pas connu, rien ne s'affiche : jamais un zéro**, qui laisserait croire que
   l'agent n'a parlé à personne.
-- ⚠️ **Sur un numéro que Meta n'a pas encore ouvert, ni les étapes ni ce chiffre ne s'affichent** : ils
-  mèneraient vers un écran bloqué.
+- ⚠️ **Sur un numéro que Meta n'a pas encore ouvert, ni les étapes, ni les lignes grises, ni ce chiffre ne
+  s'affichent** : ils mèneraient vers un écran bloqué.
 - ✅ **Le menu des onglets est une colonne à gauche du contenu**, sur un écran assez large. Sous une largeur
   de téléphone, il redevient la barre horizontale du haut.
 
@@ -2807,6 +2817,54 @@ Trois limites, ÉCRITES sous la liste et pas rangées dans une infobulle : le ch
 toutes ses publications confondues (deux posts sur le même bouton envoient le même message, rien ne dit
 lequel a été vu) ; un message reçu bouton éteint est compté sans avoir rien démarré ; et quand la mesure est
 indisponible, l'écran n'affiche RIEN plutôt qu'un zéro, qui se lirait « ce bouton n'a rien produit ».
+
+## Publicités Click-to-WhatsApp (menu Publicités)
+
+Créer une publicité Meta dont le bouton ouvre une conversation WhatsApp, et relier chaque prospect à un
+scénario. L'argent est TOUJOURS celui du client, sur SON compte publicitaire : Engage Me ne porte jamais un
+euro de dépense publicitaire.
+
+**Connecter** (LIVE, 2026-09-23) : un bouton « Connecter mes publicités », puis le choix du compte
+publicitaire et de la Page Facebook parmi ceux que la connexion accorde. L'écran affiche leurs NOMS, pas
+leurs identifiants, et dit si le compte peut diffuser (actif, moyen de paiement en place). Déconnexion
+possible à tout moment ; si une publicité est active, elle continue de dépenser chez Meta et Engage Me ne
+pourra plus la mettre en pause, ce que l'écran annonce.
+⚠️ **La liaison entre la Page et le numéro WhatsApp se fait chez Meta, à la main**, et aucune API ne permet
+de la vérifier : l'écran emmène le client là où Meta l'affiche plutôt que d'annoncer un verdict qu'il ne
+peut pas établir.
+
+**Créer** : un formulaire court (visuel, texte, titre, message pré-rempli, budget total, dates, pays, âge)
+et une case obligatoire « cette publicité ne relève d'aucune catégorie spéciale ». **Tout est créé EN PAUSE
+chez Meta : rien ne dépense tant que vous n'avez pas publié.** Le budget total et la date de fin sont
+obligatoires, ce sont eux qui bornent la dépense. Publier demande confirmation en annonçant la dépense
+maximale et les dates.
+🔴 **Le bouton Créer n'apparaît que quand créer a un sens**, et sinon l'écran dit ce qui manque : compte ou
+Page pas choisis, accès refusé par Meta, ou compte sans moyen de paiement. Ce dernier cas est le plus
+trompeur : la publicité se créerait, se publierait, et ne partirait jamais.
+
+**Qui répond aux prospects** : chaque publicité choisit, **un scénario** ou **l'agent de Meta**. Le choix
+« agent de Meta » n'est proposé que s'il répond vraiment à tout le monde sur ce numéro, et l'écran rappelle
+que ses messages restent facturés au jeton même pendant les 72 heures gratuites. Sur un scénario, Engage Me
+**reprend la conversation à l'agent de Meta** à l'arrivée du prospect, pour que le scénario parle seul.
+
+**Suivre** : statut chez Meta et motif de refus, relus toutes les quinze minutes, avec l'heure de la
+dernière lecture. Et un **entonnoir** : dépense, clics, prospects, qualifiés, avec le coût de chaque étape
+et le taux de passage vers la suivante.
+🔴 **Un chiffre inconnu s'écrit « non disponible », jamais « 0 »** : zéro prospect ne donne pas un coût par
+prospect de zéro, il n'en donne aucun, et afficher 0 € ressemblerait au meilleur résultat imaginable sur
+l'écran qui sert à décider d'arrêter ou de remettre du budget.
+**Les prospects non pris en charge** (reprise refusée, désabonnés, bloqués) sont comptés À PART : ce sont
+des clics payés qui n'ont produit aucune conversation, et les noyer dans le total les rendrait invisibles.
+
+**Un prospect qualifié** est celui à qui l'on pose le tag choisi pour la publicité, dans les 28 jours suivant
+son arrivée, la plus récente comptant seule. ⚠️ Seuls les chemins un par un comptent (un scénario, l'Inbox,
+un agent IA) : une pose de tag en masse ou un import ne qualifient personne.
+
+**Pause et reprise** depuis l'écran. L'automation reste allumée dans les deux cas : un prospect qui a cliqué
+juste avant la pause peut écrire plusieurs minutes plus tard, et son clic a été payé.
+
+**Ce qui reste dans le Gestionnaire de Meta** : la vidéo, les questions rapides, le ciblage avancé, les
+emplacements, les catégories spéciales, et toute modification d'une publicité déjà créée.
 
 ## Serveur MCP : brancher un assistant sur la console (LIVE, 2026-09-01)
 

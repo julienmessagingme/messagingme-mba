@@ -61,7 +61,16 @@ export interface CompletionMba {
   taches: TacheMba[];
   faites: number;
   total: number;
-  /** Taches obligatoires hors de notre portee (le paiement). Affichees a part, jamais dans le ratio. */
+  /**
+   * Taches obligatoires hors de notre portee (le paiement, plus toute lecture qui a echoue chez Meta).
+   *
+   * ⚠️ L ECRAN NE LIT PAS CE NOMBRE, il filtre `taches` sur `etat === 'inconnue' && requise` pour en faire
+   * les `signalements` de l en-tete : la liste GRISE sous les etapes, hors du ratio et hors de « n etapes a
+   * finir ». Une ligne doit porter SA raison, qu un compteur ne transporte pas.
+   *
+   * ⚠️ « Affichees a part » A ETE FAUX pendant la journee du 2026-09-23 : l en-tete qui a remplace
+   * `MbaCompletion` ne gardait que les `a_faire`, donc ces lignes n etaient plus affichees du tout.
+   */
   indeterminees: number;
 }
 export function getMbaCompletion(tenantId: string, phoneNumberId: string): Promise<CompletionMba> {
@@ -76,9 +85,11 @@ export function getMbaCompletion(tenantId: string, phoneNumberId: string): Promi
  * (le module est monte en `g.admin`, donc un manager recoit 403), et le serveur lui-meme rend `null` quand sa
  * dependance de comptage n est pas cablee. Un zero affirmerait que l agent n a parle a personne.
  *
- * ⚠️ LE COMPTE EMBRASSE TOUT LE FIL, y compris ce que l equipe a ecrit apres avoir reprise la main : c est le
- * volume de la conversation, pas le travail de l agent. `EnteteAgent` le DIT a l ecran, et ce n est pas
- * facultatif (sans quoi le chiffre se lit comme une mesure de performance de l agent).
+ * ⚠️ LE COMPTE EMBRASSE TOUT LE FIL, y compris les envois de campagne et ce que l equipe a ecrit apres avoir
+ * repris la main : c est le volume de la conversation, pas le travail de l agent. `EnteteAgent` le DIT a
+ * l ecran, et ce n est pas facultatif (sans quoi le chiffre se lit comme une mesure de performance).
+ * ⚠️ Et ce n est PAS le perimetre du « messages echanges » de l Accueil et du Performance Lab, qui eux
+ * ecartent les modeles sortants. Le meme mot, deux mesures : seule la legende peut lever l ambiguite.
  */
 export interface MessagesMba { messages: number | null; jours: number }
 

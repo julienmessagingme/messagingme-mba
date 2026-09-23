@@ -9,9 +9,16 @@ import type { TacheMba } from './api-mba';
  * premier ajout de tache. Elle vivait dans `MbaCompletion.tsx`, retiree le 2026-09-23 quand l en-tete
  * identitaire a remplace ce composant.
  *
- * ⚠️ `onglet` ABSENT = ca ne se regle pas sur cet ecran. Deux cas reels : le moyen de paiement, qui se pose
- * chez Meta, et les connecteurs, qui vivent sur la fiche d un agent IA. L etape reste AFFICHEE, sans lien :
- * la masquer ferait disparaitre une condition reelle d un ecran qui pretend les lister toutes.
+ * ⚠️ `onglet` ABSENT = ca ne se regle pas sur cet ecran. Trois cas reels : le moyen de paiement, qui se pose
+ * chez Meta, et les connecteurs et outils du WhatsApp Manager. Ces trois-la sont TOUJOURS `inconnue` cote
+ * serveur, donc aucun n arrive jamais dans les ETAPES de l en-tete : le paiement (obligatoire) part dans sa
+ * liste GRISE de signalements, les deux autres (facultatifs) ne s affichent pas. Rien ne DISPARAIT pour
+ * autant, c est ce qui compte : un ecran qui pretend lister les conditions ne peut pas en taire une.
+ *
+ * ⚠️ Cette ligne annoncait « l etape reste AFFICHEE, sans lien » : elle decrivait un chemin qu aucune tache
+ * n emprunte, et elle a servi de justification a une capacite qui avait, elle, vraiment disparu de l ecran
+ * (les signalements, retrouves par la revue finale du 2026-09-23). Le `fr`/`en` sert de REPLI de libelle
+ * quand le serveur ne joint aucune raison, dans les deux listes.
  */
 export const LIBELLES: Record<TacheMba['cle'], { fr: string; en: string; onglet?: string }> = {
   business_info: { fr: 'Informations', en: 'Business info', onglet: 'business' },

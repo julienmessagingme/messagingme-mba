@@ -173,15 +173,26 @@ function MbaSettings({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean
       etapes={completion === null ? null : completion.taches
         .filter((x) => x.etat === 'a_faire')
         .map((x) => ({ message: x.raison ?? t(LIBELLES[x.cle].fr, LIBELLES[x.cle].en), onglet: LIBELLES[x.cle].onglet }))}
+      // 🔴 LES OBLIGATOIRES DONT L'ÉTAT EST HORS DE NOTRE PORTÉE, rendues à part et en gris. Il y en a
+      // toujours au moins une, le moyen de paiement, que `calculerCompletion` pose en `inconnue` et
+      // `requise` : il se lit derrière le statut BSP que nous n'avons pas. Les autres n'apparaissent que
+      // quand une lecture chez Meta échoue.
+      // 🔴 `requise` DANS LE FILTRE, ET CE N'EST PAS DÉCORATIF. `connecteurs` et `outils` sont aussi
+      // `inconnue`, mais FACULTATIFS : les afficher poserait sous les yeux du client deux lignes grises
+      // permanentes qui ne disent rien de l'état de son agent. Le serveur les compte d'ailleurs à part
+      // (`indeterminees` ne retient que les obligatoires).
+      signalements={completion === null ? undefined : completion.taches
+        .filter((x) => x.etat === 'inconnue' && x.requise)
+        .map((x) => x.raison ?? t(LIBELLES[x.cle].fr, LIBELLES[x.cle].en))}
       ratio={completion ? { faites: completion.faites, total: completion.total } : undefined}
       messages30j={messages}
       onOnglet={choisirOnglet}
     />
   );
   /**
-   * ⚠️ `max-w-6xl` et non `4xl` (demandé par Julien le 2026-09-10) : huit onglets et des panneaux qui
-   * listent des FAQ, des fichiers et des compétences n'ont rien à faire dans une colonne de 896 px sur un
-   * écran de 1600. C'est l'écran le plus dense de la console, il est désormais le plus large.
+   * ⚠️ `max-w-6xl` et non `4xl` (demandé par Julien le 2026-09-10) : la liste `ONGLETS` ci-dessus et des
+   * panneaux qui listent des FAQ, des fichiers et des compétences n'ont rien à faire dans une colonne de
+   * 896 px sur un écran de 1600. C'est l'écran le plus dense de la console, il est désormais le plus large.
    */
   const coquille = (contenu: React.ReactNode) => <div className="mx-auto max-w-6xl space-y-6">{entete}{contenu}</div>;
 

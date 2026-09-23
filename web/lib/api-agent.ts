@@ -144,13 +144,18 @@ export async function consommationAgent(tenantId: string, agentId: string): Prom
  * (le module est monté en `g.admin`, donc un manager reçoit 403), et le serveur lui-même rend `null` quand
  * sa dépendance de comptage n'est pas câblée. Un zéro affirmerait que l'agent n'a parlé à personne.
  *
- * ⚠️ LE COMPTE EMBRASSE TOUT LE FIL, y compris ce que l'équipe a écrit après avoir reprise la main : c'est
- * le volume de la conversation, pas le travail de l'agent. `EnteteAgent` le DIT à l'écran, et ce n'est pas
- * facultatif (sans quoi le chiffre se lit comme une note de performance).
+ * ⚠️ LE COMPTE EMBRASSE TOUT LE FIL, y compris les envois de campagne et ce que l'équipe a écrit après
+ * avoir repris la main : c'est le volume de la conversation, pas le travail de l'agent. `EnteteAgent` le
+ * DIT à l'écran, et ce n'est pas facultatif (sans quoi le chiffre se lit comme une note de performance).
+ * ⚠️ Et ce n'est PAS le périmètre du « messages échangés » de l'Accueil et du Performance Lab, qui eux
+ * écartent les modèles sortants. Le même mot, deux mesures : seule la légende peut lever l'ambiguïté.
  *
  * ⚠️ `jours` est RENDU par la route et volontairement pas remonté : la légende de l'en-tête écrit « 30
- * jours » en toutes lettres, et deux porteurs du même nombre finiraient par diverger. Si la fenêtre serveur
- * change, c'est la légende du composant qu'il faut suivre (`JOURS_CONSOMMATION`, `src/http/agents.ts`).
+ * jours » en toutes lettres, et deux porteurs du même nombre finiraient par diverger. Ce n'est plus une
+ * consigne à se rappeler depuis la revue finale du 2026-09-23 :
+ * `tests/web-entete-agent-parite.test.ts` DÉRIVE le nombre attendu de `JOURS_CONSOMMATION`
+ * (`src/http/agents.ts`) et exige que la légende le porte, dans les deux langues. Changer la fenêtre
+ * serveur rend donc le test rouge tant que la légende n'a pas suivi.
  */
 export async function messagesAgent(tenantId: string, agentId: string): Promise<number | null> {
   const r = await request<{ messages?: number | null }>(`/tenants/${tenantId}/agents/${agentId}/messages`);

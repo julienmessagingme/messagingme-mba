@@ -1493,6 +1493,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/crm/date-iso.ts` | normaliser une date venue d'un tiers, et REFUSER l'ambigu en le disant |
 | `src/crm/contact-filters.ts` | les règles de filtrage des contacts (bornes, opérateurs, plafonds) |
 | `src/stats/range.ts` -> `BOUNDS_CTE` | les bornes de date, robustes au changement d'heure |
+| `src/inbox/origine.ts` -> `ORIGINE_EFFECTIVE_SQL` | 🔴 le fragment SQL qui dit d'OÙ vient un message sortant, avec sa dérivation bornée pour l'historique d'avant la migration 0099. Il attend l'alias `m` pour `conversation_messages`. Le recopier ferait diverger un total de sa ventilation : la ventilation du Performance Lab et le compte de messages de l'en-tête de l'agent de Meta doivent classer un message de la même façon. ⚠️ Une requête qui le lit se restreint aux SORTANTS (`m.direction = 'out'`), sans quoi elle sort du prédicat de l'index partiel `conversation_messages_origin_idx`, sans qu'aucune erreur ne le dise. `THEME_DE_ORIGINE` et `DETAIL_IA` vivent dans le même fichier, pour la même raison |
 | `src/stats/prix.ts` -> `coutRcsEuros()` | le prix d'un lot de RCS depuis la grille UNIQUE (simple / conversationnel ; « de l'espace » jusqu'au 2026-09-23, où la grille est devenue globale, migration 0168). 🔴 Deux écrans l'appliquent, « coût des messages envoyés » et « coût par engagement » : la formule tient en une ligne, ce qui est exactement pourquoi elle allait être recopiée, et deux copies donneraient deux prix pour le même envoi |
 | `src/stats/store.pg.ts` -> `envoisTemplateFacturables()` | les envois facturables d'une période, et 🔴 l'UNIQUE heuristique d'attribution d'un fait à une campagne à scénario, désormais lue par TROIS mesures (les envois, les événements de bloc, les clics de lien) : la dernière campagne scénario réclamée pour ce numéro avant le fait. Une seconde heuristique, même voisine, donnerait deux vérités sur le même écran |
 | `src/campaign/echecs-sql.ts` | 🔴 la POPULATION d'un échec d'envoi et sa DATE, lues par quatre écrans |
@@ -1527,7 +1528,13 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 
 | Module | Ce qu'il porte |
 |---|---|
-| `web/lib/format.ts`, `web/lib/day.ts` | les seuls porteurs des tags BCP47 |
+| `web/lib/format.ts`, `web/lib/day.ts` | les seuls porteurs des tags BCP47. ⚠️ Un nombre affiché passe par `fmtNum`, jamais par un `toLocaleString('fr-FR')` écrit sur place : celui-là ignore la langue choisie |
+| `web/components/EnteteAgent.tsx` | l'en-tête des DEUX écrans de réglage d'agent (l'agent de Meta, la fiche d'un agent IA) : logo, identité, état, ce qui reste à régler, ce qu'on ne sait pas, et le nombre de messages. 🔴 Purement présentationnel, il ne lit rien : les deux écrans le remplissent depuis des sources différentes. Trois de ses props distinguent `null` (« on ne sait pas ») d'une liste vide (« tout est réglé ») ; les confondre fait AFFIRMER à l'écran ce que personne n'a mesuré |
+| `web/components/MbaTabs.tsx` | le menu d'onglets de ces deux mêmes écrans, en barre ou en colonne (`orientation`). 🔴 Une SEULE liste est rendue dans les deux cas : un second bloc ferait exister chaque `data-testid` en double et casserait les clics de six suites e2e |
+| `web/components/PastilleNumero.tsx` | l'état d'un numéro WhatsApp (puce colorée + libellé), tel que `getAccountStatus` le rend. Extrait de l'Accueil pour l'en-tête de l'agent de Meta |
+| `web/lib/ui.ts` -> `DOT_HEX` | la couleur d'une pastille de statut, en hexadécimal DIRECT : une classe `bg-<couleur>-500` calculée n'est pas vue par le balayage de Tailwind, donc absente du CSS, donc la pastille sort sans couleur |
+| `web/lib/libelles-mba.ts` -> `LIBELLES` | le seul lien entre une clé de tâche de complétion (serveur) et un onglet de l'écran, plus le libellé de repli quand le serveur ne joint pas de raison |
+| `web/lib/logos-llm.ts` | le logo d'un modèle, dérivé du PRÉFIXE de son identifiant, et la pastille de repli. 🔴 L'`alt` est VIDE délibérément : il entrerait dans le nom accessible du bouton qui porte l'image, que deux suites ciblent par ce nom |
 | `web/lib/campaign-eligibility.ts` | 🔴 le MIROIR de l'analyse d'ouverture serveur, tenu par un test de parité |
 | `web/lib/chemin-json.ts` | le miroir de `src/webhook-entrant/chemin.ts` : mêmes chemins d'or dans les deux jeux de tests |
 | `web/lib/contact-filters.ts` | les filtres du mini-CRM, miroir du parse serveur |

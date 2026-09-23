@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: 8c5540
+source_empreinte: 5422d4
 ---
 # Construire un agent IA
 
@@ -19,10 +19,12 @@ sans attendre que vous cliquiez sur « activer ».
 **L'en-tête de la fiche l'identifie d'un coup d'œil** : le logo du fournisseur de son modèle, son nom et son
 modèle, sa pastille Brouillon / Actif / Désactivé, et le nombre de messages échangés sur les 30 derniers
 jours dans les conversations qu'il a tenues, une fois que ce nombre est connu. Il compte tout le fil,
-entrants et sortants, y compris ce que votre équipe a écrit après avoir repris la main sur l'agent : ce
-n'est donc pas une mesure de ce que l'agent a lui-même produit. Vos essais depuis l'onglet Tester n'y
-entrent pas, et tant que ce nombre n'est pas connu, rien ne s'affiche. Le menu de la fiche se range en
-colonne à gauche du contenu ; sur un téléphone, il redevient la barre du haut.
+entrants et sortants, y compris les envois de campagne et ce que votre équipe a écrit après avoir repris la
+main sur l'agent : ce n'est donc pas une mesure de ce que l'agent a lui-même produit, et ce n'est pas non
+plus le même périmètre que le « messages échangés » de l'Accueil et du Performance Lab, qui eux écartent les
+modèles envoyés. Vos essais depuis l'onglet Tester n'y entrent pas, et tant que ce nombre n'est pas connu,
+rien ne s'affiche. Le menu de la fiche se range en colonne à gauche du contenu ; sur un téléphone, il
+redevient la barre du haut.
 
 **Commencez par lui parler.** Le premier onglet n'est pas un formulaire vide mais une conversation :
 décrivez votre métier, et l'assistant fait le tour du sujet en neuf points, une question à la fois (ce que

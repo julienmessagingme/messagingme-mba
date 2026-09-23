@@ -160,12 +160,19 @@ export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]>
       // courte posée plus haut attraperait un chemin plus long qui la contient.
       if (url.includes('/messages')) return json({ messages: 412, jours: 30 });
       if (url.includes('/completion')) {
+        // 🔴 `paiement` EST DANS LA FIXTURE PARCE QUE `calculerCompletion` LE POSE TOUJOURS : `inconnue` et
+        // `requise`, hors du ratio (`total` ne compte que les états connaissables) mais pas hors de l'écran.
+        // Sans lui ici, aucun test ne voyait la liste grise des signalements, et c'est exactement comment
+        // elle a pu disparaître sans que rien ne crie. `connecteurs` y est aussi : `inconnue` mais
+        // FACULTATIF, donc l'en-tête ne doit PAS l'afficher.
         return json({
           taches: [
-            { cle: 'business_info', requise: true, etat: 'fait' },
+            { cle: 'business_info', requise: true, etat: 'faite' },
             { cle: 'faq', requise: true, etat: 'a_faire', raison: 'Aucune question enregistrée.' },
+            { cle: 'paiement', requise: true, etat: 'inconnue', raison: 'Le moyen de paiement se lit derrière le statut BSP, que nous n’avons pas.' },
+            { cle: 'connecteurs', requise: false, etat: 'inconnue', raison: 'Pas encore piloté depuis Engage Me.' },
           ],
-          faites: 1, total: 2, indeterminees: 0,
+          faites: 1, total: 2, indeterminees: 1,
         });
       }
       if (url.includes('/status')) return json({ ...statutParDefaut, ...f.status, settings });

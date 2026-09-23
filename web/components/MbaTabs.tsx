@@ -3,8 +3,11 @@
 /**
  * Barre d'onglets de la configuration MBA. Purement présentationnelle : elle ne sait pas ce qu'il y a derrière.
  *
- * Le dépôt n'avait qu'un jeu d'onglets, recopié inline dans la fiche contact pour DEUX onglets. Ici il en faut
- * huit : recopier ce marquage huit fois, c'est huit endroits à réaligner au premier ajustement de style.
+ * Le dépôt n'avait qu'un jeu d'onglets, recopié inline dans la fiche contact pour DEUX onglets. Ici, ses deux
+ * consommateurs (l'écran de réglage de l'agent de Meta et la fiche d'un agent IA) en déclarent chacun une
+ * longue liste : recopier ce marquage pour chaque entrée, c'est autant d'endroits à réaligner au premier
+ * ajustement de style. ⚠️ Le compte exact n'est pas écrit ici, il vit dans les deux `ONGLETS` des pages : il
+ * a déjà dérivé une fois (« huit », alors qu'il y en avait onze et neuf).
  */
 export interface MbaTab {
   key: string;

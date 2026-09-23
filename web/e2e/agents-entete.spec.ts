@@ -87,8 +87,12 @@ test.describe('Agents IA : l en-tête et le menu en colonne', () => {
 
     // Le chiffre, et surtout ce qu'il mesure, écrit à côté de lui.
     await expect(page.getByTestId('entete-agent-messages')).toContainText('1 412');
+    // 🔴 LES DEUX MOITIÉS DE L'AVEU, assertées séparément. La première a été ajoutée par la revue finale du
+    // 2026-09-23 : « messages échangés » EXCLUT les modèles sortants sur l'Accueil et au Performance Lab, et
+    // les INCLUT ici. Sans ce mot, le même terme désigne deux périmètres dans la même console.
+    await expect(page.getByTestId('entete-agent-messages')).toContainText('les envois de campagne');
     await expect(page.getByTestId('entete-agent-messages'))
-      .toContainText('y compris ceux écrits par votre équipe après une reprise');
+      .toContainText('ce que votre équipe a écrit après une reprise');
     // 🔴 AUCUN RATIO ICI, contrairement à l'agent de Meta : le dénominateur n'existe pas côté agent IA (le
     // nombre de contrôles qui s'appliquent varie d'un agent à l'autre), et en inventer un afficherait un
     // « n sur m » faux la moitié du temps.
