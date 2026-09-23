@@ -2297,7 +2297,7 @@ async function main(): Promise<void> {
             pose = await connexions.poserJeton(t, encryptSecret(jeton, config.ENCRYPTION_KEY), userId);
           } catch (err) {
             // eslint-disable-next-line no-console
-            console.error('jeton publicitaire NON enregistré, il reste vivant chez Meta:', err instanceof Error ? err.message : err);
+            console.error(`jeton publicitaire NON enregistré pour l'espace ${t}, il reste vivant chez Meta:`, err instanceof Error ? err.message : err);
             throw new JetonNonEnregistre(err);
           }
           // 🔴 LA BASE A REFUSÉ D'ÉCRASER UNE CONNEXION EXISTANTE : c'est la course, et elle est rare

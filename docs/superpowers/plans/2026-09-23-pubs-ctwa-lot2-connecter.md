@@ -135,7 +135,7 @@ et l'isolation (un espace ne lit jamais la ligne d'un autre), contre un vrai Pos
 Le plan d'origine se contentait d'effacer la ligne. Or elle est le seul endroit où ce jeton existe chez
 nous, et il est SANS EXPIRATION : l'effacer laissait un accès vivant chez Meta, irrévocable par nous pour
 toujours. C'est le piège de la clé Vercel (0124) à l'identique. La route appelle donc
-`DELETE /me/permissions` AVANT d'effacer, un test de câblage lit cet ORDRE dans la source, et l'échec du
+`DELETE /me/permissions/{permission}` AVANT d'effacer, permission par permission (jamais la forme NUE, qui désautoriserait l'application entière, or elle porte aussi le numéro WhatsApp), un test de câblage lit cet ORDRE dans la source, et l'échec du
 retrait n'empêche pas de se déconnecter : il remonte à l'écran, qui dit alors au client de retirer
 l'application depuis les paramètres de son entreprise.
 

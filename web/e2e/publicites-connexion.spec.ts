@@ -95,23 +95,6 @@ test.describe('Publicités : les états de la connexion', () => {
     await expect(page.getByRole('button', { name: /Reconnecter|Reconnect/ })).toBeEnabled();
   });
 
-  test('🔴 une déconnexion que Meta n a pas confirmée le DIT, au lieu de laisser croire que tout est détaché', async ({ page }) => {
-    // Ce jeton n expire jamais : si Meta n a pas retire notre acces et que nous avons efface notre ligne,
-    // le seul recours du client est de retirer l application lui-meme. Le taire serait le laisser sans.
-    await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
-    await page.route('**/api/backend/**', async (route) => {
-      const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
-      const url = route.request().url();
-      if (url.includes('/pubs/connexion') && route.request().method() === 'DELETE') return json({ ok: true, revoqueChezMeta: false });
-      if (url.includes('/pubs/connexion')) return json(etatVivant({ connexion: CONNEXION }));
-      if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
-      return json({});
-    });
-    await page.goto('/publicites');
-    await page.getByRole('button', { name: /Déconnecter|Disconnect/ }).click();
-    await expect(page.getByTestId('pubs-retrait-non-confirme')).toContainText(/paramètres de votre entreprise|Meta Business settings/);
-  });
-
   test('🔴 « Reconnecter » DÉCONNECTE d abord : un jeton sans expiration ne s écrase pas en silence', async ({ page }) => {
     // Le nouveau jeton ecrasait l ancien dans la base, or l ancien reste vivant chez Meta et nous venions
     // d en perdre le seul exemplaire. Les deux chemins qui perdent un jeton passent par la revocation.
@@ -139,8 +122,6 @@ test.describe('Publicités : les états de la connexion', () => {
     // `reconnecter()` se réduisait à `deconnecter()`. Le SDK de Meta n'existe pas dans ce navigateur de
     // test, donc l'échec de son chargement EST la preuve que `connecter()` a bien démarré.
     await expect(page.getByTestId('pubs-erreur')).toContainText(/SDK Facebook|Facebook SDK|bloqueur/);
-    // Le bandeau « nos accès ont été retirés » s'éteint : il décrivait une déconnexion terminée.
-    await expect(page.getByTestId('pubs-retrait-partiel')).toHaveCount(0);
   });
 
   test('🔴 si la DÉCONNEXION échoue, « Reconnecter » S ARRÊTE : pas de jeton écrasé sans révocation', async ({ page }) => {

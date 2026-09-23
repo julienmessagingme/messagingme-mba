@@ -201,6 +201,10 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     try {
       connexion = await deps.choisir(tenantId, { comptePubId, pageId: corps.data.pageId });
     } catch (err) {
+      // ⚠️ LE MÊME CAS QUE PLUS HAUT, ET IL ÉTAIT TRAITÉ D'UN SEUL CÔTÉ : `choisir` lit le jeton lui aussi,
+      // donc un autre onglet qui déconnecte pendant qu'on valide son choix faisait rendre 502 avec NOTRE
+      // phrase sous un statut qui accuse Meta.
+      if (err instanceof PasDeConnexionPub) return reply.code(409).send({ error: err.message, code: 'pas_connecte' });
       return reply.code(502).send({ error: err instanceof Error ? err.message : 'Meta ne répond pas' });
     }
     await journal(tenantId, req, 'pubs.actifs_choisis', { kind: 'pub_connexion', id: tenantId },

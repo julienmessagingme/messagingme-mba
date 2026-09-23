@@ -119,8 +119,11 @@ export class MetaPubsClient extends ClientGraph {
    * publicités dans la même application, et le seul moyen de le savoir serait de les retirer pour voir. On
    * retire ce qui est publicitaire SANS AMBIGUÏTÉ, et on laisse le reste vivre.
    *
-   * ⚠️ Ce qui reste après ce retrait ne peut plus rien faire en publicité : c'est la porte qu'on avait
-   * ouverte, et c'est celle-là qu'on referme. L'appelant traite un échec comme une information à DIRE.
+   * ⚠️ CE CHEMIN N'EST PAS MESURÉ SUR UN JETON D'UTILISATEUR SYSTÈME, et le retrait par permission NOMMÉE
+   * l'est encore moins que le retrait nu : la documentation de Meta décrit les deux pour un jeton
+   * d'UTILISATEUR. On ne sait donc pas si ce qui reste peut encore servir en publicité, et on ne l'écrit
+   * pas comme si on le savait (règle de 0129 : une justification fausse est pire qu'aucune). La première
+   * déconnexion réelle tranchera, et son résultat vit dans le journal d'audit.
    */
   async revoquerAcces(jeton: string): Promise<void> {
     // ⚠️ TOUTES SONT TENTÉES, MÊME APRÈS UN REFUS. S'arrêter au premier échec laisserait les suivantes en
