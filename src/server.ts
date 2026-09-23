@@ -29,6 +29,7 @@ import type { HistoriqueRouteDeps } from './http/historique';
 import type { MbaAssistantDeps } from './http/mba-assistant';
 import type { MbaPublicationDeps } from './http/mba-publication';
 import type { MbaOutilsDeps } from './http/mba-outils';
+import { registerPubs, type PubsRouteDeps } from './http/pubs';
 import type { AgentCatalogueRouteDeps } from './http/agent-catalogue';
 import { registerAgentSources, type AgentSourcesRouteDeps } from './http/agent-sources';
 import { registerAgentMcp, type AgentMcpRouteDeps } from './http/agent-mcp';
@@ -186,6 +187,11 @@ export interface ServerDeps {
   mbaPublication?: MbaPublicationDeps;
   /** L'onglet « Outils » de l'agent de Meta (spec 2026-09-21-outils-maison-mba, § 9). */
   mbaOutils?: MbaOutilsDeps;
+  /**
+   * La connexion publicitaire d'un espace (lot 2 des pubs Click-to-WhatsApp). Absente -> les routes ne
+   * sont PAS montées, et l'écran lit alors le 404 comme « pas encore configuré », ce qu'il est.
+   */
+  pubs?: PubsRouteDeps;
   /** L'assistant conversationnel du Meta Business Agent. Absent -> la route n'existe pas. */
   mbaAssistant?: MbaAssistantDeps;
   /** L'historique des réglages, partagé par le MBA et les agents IA. */
@@ -339,6 +345,17 @@ export interface Gardes {
   readonly limiteCouteuse?: PreHandler;
 }
 
+/**
+ * « AUCUN PLAFOND », NOMMÉ (2026-09-23).
+ *
+ * 🔴 `limiteCouteuse` vaut `undefined` quand `RATE_LIMIT_COUTEUX_PAR_MINUTE` est à 0, c'est-à-dire quand
+ * on a DÉLIBÉRÉMENT coupé le plafond (le levier d'urgence du CLAUDE.md). Un module qui exige son plafond
+ * par le type reçoit donc ceci : une garde qui laisse passer et qui le DIT, là où un paramètre optionnel
+ * laisserait le lecteur se demander si le plafond a été oublié ou retiré. C'est la même raison qui fait que
+ * `deps.auth` absent produit un REFUS et jamais `undefined`, quelques lignes plus bas.
+ */
+const SANS_PLAFOND: PreHandler = async () => {};
+
 /** Une entrée du registre, une fois son type de dépendances effacé (voir `entree`). */
 export interface ModuleMonte {
   readonly nom: string;
@@ -461,6 +478,10 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
     entree('agentCatalogue', 'tenant', deps.agentCatalogue, (app, d, g) => registerAgentCatalogue(app, d, g.admin)),
     entree('mbaPublication', 'tenant', deps.mbaPublication, (app, d, g) => registerMbaPublication(app, d, g.admin)),
     entree('mbaOutils', 'tenant', deps.mbaOutils, (app, d, g) => registerMbaOutils(app, d, g.admin)),
+    // Publicités : monté sous `g.auth` et non `g.admin`, car la LECTURE de l'état est ouverte à tout membre
+    // (elle ne montre aucun secret) ; les trois écritures sont gardées dans les handlers par
+    // `forbidNonAdmin`, comme pour la bibliothèque RCS et les modèles.
+    entree('pubs', 'tenant', deps.pubs, (app, d, g) => registerPubs(app, d, g.auth, g.limiteCouteuse ?? SANS_PLAFOND)),
     // ⚠️ `g.admin` COMME LES ÉCRITURES MBA : la conversation ne doit pas être un chemin plus permissif que
     // le formulaire, sinon elle devient un contournement du contrôle d'accès. La route repose la garde
     // elle-même (`forbidNonAdmin`), les deux étant voulues : celle-ci monte, celle-là explique.
