@@ -844,18 +844,20 @@ Ce qui ne doit plus JAMAIS entrer dans le manuel : un compteur calculable (files
 `DÉPLOYÉ` / `LIVRÉ` / `PROCHAINE ÉTAPE` / `RESTE À FAIRE`, le récit d'un bug (seul l'invariant qu'il révèle
 reste), ou un détail de `DEPLOY.md`. La § « Gouvernance documentaire » du manuel porte la règle complète.
 
-**Les audits et les plans sont tous CLOS**, et ils ne se lisent plus que pour comprendre une décision :
-[PLAN.md](PLAN.md) (les deux programmes, terminés le 2026-09-01),
-[docs/PLAN-POST-AUDIT-2026-09-02.md](docs/PLAN-POST-AUDIT-2026-09-02.md) (sept lots, livrés ET déployés le
-2026-09-02 au soir), [AUDIT-SYNTHESE-STRUCTURE-SCALABILITE-2026-08-31.md](AUDIT-SYNTHESE-STRUCTURE-SCALABILITE-2026-08-31.md)
-(la synthèse qui a produit le programme, constats revérifiés un par un dans le code),
-[AUDIT-SCALE-2026-08-25.md](AUDIT-SCALE-2026-08-25.md) (plus aucun rouge ni orange ; sa §7 était la dette de
-perf, une dizaine de jaunes fermés, le reste dans `todo.md`) et
-[AUDIT-SCALE-2026-07-18.md](AUDIT-SCALE-2026-07-18.md) (supplanté par celui d'août).
+🔴 **LES AUDITS ONT QUITTÉ LE DÉPÔT LE 2026-09-23, ET ON LIT LE BILAN À LEUR PLACE.** Ils décrivent des
+faiblesses, dont certaines encore ouvertes, avec le scénario pour les exploiter ; le dépôt est PUBLIC depuis le
+2026-09-15. Les quatorze groupes d'audits (2026-07-18 au 2026-09-21) vivent donc dans `docs/prive/`, non
+versionné, et **`docs/prive/BILAN-AUDITS-2026-09-22.md` les remplace à la lecture** : 389 constats, 130 faits,
+46 écartés par une décision écrite, le reste ouvert, avec l'ordre des lots validé par Julien et, en annexe,
+chaque point restant et son statut. Un audit ne se lit plus que pour comprendre une décision précise.
+⚠️ Ils restent dans l'HISTORIQUE git : ce déplacement ne porte que sur l'état courant, comme pour l'adresse
+d'origine du VPS. La parade durable est côté serveur, jamais documentaire.
+
+**Le seul plan encore dans le dépôt** : [PLAN.md](PLAN.md), les deux programmes terminés le 2026-09-01. Le
+backlog vit dans `todo.md`, le récit daté dans `docs/JOURNAL-TECHNIQUE.md`.
 
 ⚠️ **Cette section annonçait « sept lots, aucun commencé » jusqu'au 2026-09-04**, alors qu'ils étaient déployés
 depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui dit seulement OÙ EST QUOI, non.
-Les rapports de contradiction externe et leur tri vivent dans `docs/` et dans `todo.md`.
 
 ## Règles spécifiques au projet
 
