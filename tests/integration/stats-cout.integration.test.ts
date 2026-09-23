@@ -619,7 +619,7 @@ describe.skipIf(!url)('Cout : un envoi RCS retrouve sa campagne (Postgres reel)'
   });
 
   it('🔴 l envoi RCS porte SA campagne, et celui qu on ne rattache pas reste dans le lot', async () => {
-    const r = await store.envoisEtReactionsRcs(tenantId, RANGE, 7 * 24 * 60 * 60 * 1000);
+    const r = await store.envoisEtReactionsRcs(tenantId, RANGE, 7 * 24 * 60 * 60 * 1000, { attribuer: true });
     const dela = r.conversations.find((c) => c.campaignId === campagneRcs);
     expect(dela, 'l envoi rattache a sa campagne').toBeDefined();
     expect(dela).toMatchObject({ waId: '33600000901', envois: 1 });
@@ -627,6 +627,17 @@ describe.skipIf(!url)('Cout : un envoi RCS retrouve sa campagne (Postgres reel)'
     // donc un RCS hors campagne peut faire basculer les RCS de campagne du meme echange. Le filtrer ici
     // aurait sous-facture ce cas, sans que rien ne le signale.
     expect(r.conversations.some((c) => c.campaignId === null), 'l envoi sans campagne reste rendu').toBe(true);
+  });
+
+  it('🔴 SANS attribution, aucun envoi ne porte de campagne, et c est le defaut', async () => {
+    // Le rattachement coute une sous-requete correlee par message RCS, sans index : seul l'appelant qui LIT
+    // la colonne doit la payer. Le defaut est donc le moins cher, et il se VOIT quand on l'oublie (les couts
+    // par campagne tombent a vide) plutot que de couter en silence.
+    const r = await store.envoisEtReactionsRcs(tenantId, RANGE, 7 * 24 * 60 * 60 * 1000);
+    expect(r.conversations.length, 'les envois sont toujours rendus').toBeGreaterThan(0);
+    expect(r.conversations.every((c) => c.campaignId === null), 'aucun rattachement calcule').toBe(true);
+    // ...et les reactions, elles, ne dependent pas de ce choix.
+    expect(r.reactions.some((x) => x.waId === '33600000901')).toBe(true);
   });
 
   it('la reaction du contact est rendue, c est elle qui fait basculer au tarif haut', async () => {

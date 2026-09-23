@@ -23,9 +23,24 @@ const source = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8')
 const sansCommentaires = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 describe('cablage du RCS dans le cout par campagne', () => {
-  it('🔴 la route du cout par engagement LIT les envois RCS de la periode', () => {
-    expect(sansCommentaires, 'getCoutParCampagne doit demander les envois RCS et leurs reactions')
-      .toMatch(/getCoutParCampagne[\s\S]{0,900}statsStore\.envoisEtReactionsRcs\(tenant, range, FENETRE_BASCULE_MS\)/);
+  it('🔴 la route du cout par engagement LIT les envois RCS, ET demande leur rattachement', () => {
+    // ⚠️ `attribuer: true` N'EST PAS DECORATIF : sans lui, le magasin rend `campaignId: null` partout (defaut
+    // le moins cher, relecture du 2026-09-23) et TOUTES les campagnes RCS retombent a une case vide. C'est
+    // l'appelant qui LIT la colonne qui doit la payer, et lui seul.
+    expect(sansCommentaires, 'getCoutParCampagne doit demander les envois RCS, avec attribution')
+      .toMatch(/getCoutParCampagne[\s\S]{0,900}statsStore\.envoisEtReactionsRcs\(tenant, range, FENETRE_BASCULE_MS, \{ attribuer: true \}\)/);
+  });
+
+  it('🔴 la route du cout des MESSAGES ne paie PAS l attribution, elle jette la colonne', () => {
+    // `getCoutMessages` ne lit que les instants et les volumes. L'attribution est une sous-requete correlee
+    // par message RCS, sans index : la payer pour une colonne jetee est le defaut que ce depot a deja nomme
+    // (« il paierait ce balayage pour une colonne qu il JETTE »), et la page de synthese appelle les DEUX
+    // routes, donc elle tournait deux fois par affichage.
+    const i = sansCommentaires.indexOf('getCoutMessages');
+    expect(i, 'la route existe').toBeGreaterThan(-1);
+    const bloc = sansCommentaires.slice(i, i + 1200);
+    expect(bloc).toMatch(/statsStore\.envoisEtReactionsRcs\(tenant, range, FENETRE_BASCULE_MS\)/);
+    expect(bloc, 'aucune attribution demandee ici').not.toMatch(/attribuer/);
   });
 
   it('🔴 elle PASSE le lot de RCS au calcul, avec la grille de l espace', () => {

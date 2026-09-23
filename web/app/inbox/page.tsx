@@ -850,6 +850,14 @@ function RangerDans({ session, conversation, dossier, controlOwner, onFait }: {
   const archivee = dossier === 'archivees';
   const signaleeMain = conversation.signaleeMain === true;
   const traitee = conversation.traitee === true;
+  /**
+   * CE FIL A-T-IL DEJA PORTE UN MESSAGE ?
+   *
+   * ⚠️ L'APERCU EST CE QUE L'ECRAN SAIT, et il suffit : toute ecriture de message en pose un
+   * (`upsertConversationByWaId`), et un fil qu'un operateur vient d'OUVRIR depuis la fiche d'un contact n'en
+   * a aucun. C'est le seul etat qui produit un aperçu nul.
+   */
+  const aParle = conversation.lastPreview !== null;
 
   async function ranger(action: ActionRangement): Promise<void> {
     setBusy(true);
@@ -883,7 +891,12 @@ function RangerDans({ session, conversation, dossier, controlOwner, onFait }: {
           le bouton « Rendre la main » qui offre le geste inverse. */}
       {/* ⚠️ Et jamais sur une conversation TRAITÉE : prendre le fil ne la ferait pas entrer dans « À
           traiter », que le statut exclut. C'est « Ne plus marquer traité » qui l'y rend. */}
-      {controlOwner === 'app_workflow' && !traitee && <option value="a-traiter">{libelleRangement('a-traiter', t)}</option>}
+      {/* ⚠️ ET JAMAIS SUR UN FIL SANS AUCUN MESSAGE (relecture du 2026-09-23). Un fil qu'on vient d'ouvrir
+          depuis une fiche contact est `app_workflow` par defaut : l'option s'affichait, la prise du fil
+          REUSSISSAIT, et le fil n'entrait pourtant pas dans « A traiter », que ce dossier exclut faute de
+          message. L'ecran annoncait donc un succes sans effet visible, ce qui est le motif « offert-et-inerte »
+          que ce produit s'interdit ailleurs. */}
+      {controlOwner === 'app_workflow' && !traitee && aParle && <option value="a-traiter">{libelleRangement('a-traiter', t)}</option>}
       {/* « Traité » ou son contraire, selon l'état de CETTE conversation. Rien depuis Archivé : une
           conversation archivée n'apparaît dans aucun dossier ordinaire, le statut n'y serait pas visible. */}
       {!archivee && (traitee

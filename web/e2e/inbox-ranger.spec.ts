@@ -24,6 +24,11 @@ const COMPTEURS = { tout: 1, aTraiter: 0, signalees: 0, archivees: 0, nonAffecte
 
 async function monter(page: import('@playwright/test').Page, opts: {
   controlOwner?: string; signaleeMain?: boolean; traitee?: boolean; dossier?: string; appels?: string[];
+  /**
+   * Le fil n'a-t-il AUCUN message ? C'est l'etat d'un fil qu'un operateur vient d'ouvrir depuis la fiche
+   * d'un contact (lot 6) : l'apercu est nul, parce que personne n'a encore parle.
+   */
+  sansMessage?: boolean;
 } = {}) {
   const appels = opts.appels ?? [];
   const owner = opts.controlOwner ?? 'app_workflow';
@@ -40,7 +45,10 @@ async function monter(page: import('@playwright/test').Page, opts: {
     if (/\/(archive|unarchive)$/.test(url)) return json({ archived: true });
     if (url.endsWith('/c1/messages')) return json({ ...THREAD, controlOwner: owner });
     if (/\/conversations\?|\/conversations$/.test(url)) {
-      return json({ conversations: [{ ...CONV, controlOwner: owner, signaleeMain: opts.signaleeMain === true, traitee: opts.traitee === true }] });
+      return json({ conversations: [{
+        ...CONV, controlOwner: owner, signaleeMain: opts.signaleeMain === true, traitee: opts.traitee === true,
+        ...(opts.sansMessage === true ? { lastPreview: null } : {}),
+      }] });
     }
     if (url.includes('/users')) return json({ users: [] });
     if (url.includes('/unread-count')) return json({ count: 0 });
@@ -69,6 +77,15 @@ test.describe('Inbox : ranger la conversation ouverte', () => {
 
     await page.getByTestId('ranger-dans').selectOption('a-traiter');
     await expect.poll(() => appels.filter((a) => /POST .*\/prendre$/.test(a)).length, { timeout: 10_000 }).toBe(1);
+  });
+
+  test('🔴 un fil SANS AUCUN MESSAGE ne propose pas « À traiter », qui n y ferait rien', async ({ page }) => {
+    // Un fil qu'un opérateur vient d'ouvrir depuis une fiche contact est `app_workflow` par défaut, donc
+    // l'option s'affichait ; la prise du fil RÉUSSISSAIT, et le fil n'entrait pourtant pas dans « À
+    // traiter », que ce dossier exclut faute de message (arbitrage du 2026-09-23). L'écran annonçait donc
+    // un succès sans effet visible : c'est le motif « offert-et-inerte » que ce produit s'interdit ailleurs.
+    await monter(page, { sansMessage: true });
+    expect(await destinations(page)).toEqual(['Traité', 'Signalé', 'Archivé']);
   });
 
   test('🔴 un opérateur tient le fil : « À traiter » DISPARAÎT du menu, le bouton prend le relais', async ({ page }) => {

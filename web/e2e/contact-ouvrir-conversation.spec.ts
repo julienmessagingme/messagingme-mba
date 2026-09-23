@@ -20,7 +20,12 @@ const CONTACT = {
   whatsappJoignable: null, whatsappJoignableLe: null,
 };
 
-async function mock(page: import('@playwright/test').Page, ouverture: 'ok' | 404 | 503 = 'ok'): Promise<void> {
+async function mock(
+  page: import('@playwright/test').Page,
+  ouverture: 'ok' | 404 | 503 = 'ok',
+  /** De quoi éprouver l'état du fil RENDU : un fil neuf n'a ni aperçu ni détenteur humain. */
+  surcharge: Record<string, unknown> = {},
+): Promise<void> {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const url = route.request().url();
@@ -36,7 +41,7 @@ async function mock(page: import('@playwright/test').Page, ouverture: 'ok' | 404
     if (chemin.endsWith('/conversations')) {
       // ⚠️ La liste ne rend le fil QUE s'il est demandé par son identifiant : c'est le cas réel d'un vieux
       // fil, hors de la première page. Sans le filtre, l'Inbox ne doit pas le trouver.
-      const conv = { id: CONV, waId: '33600000001', profileName: 'Anna Nouvelle', lastPreview: null, lastMessageAt: '2026-09-23T10:00:00.000Z', controlOwner: 'app_human', unread: false, assignedTo: null, assignedToName: null };
+      const conv = { id: CONV, waId: '33600000001', profileName: 'Anna Nouvelle', lastPreview: null, lastMessageAt: '2026-09-23T10:00:00.000Z', controlOwner: 'app_human', unread: false, assignedTo: null, assignedToName: null, ...surcharge };
       return json({ conversations: url.includes(`id=${CONV}`) ? [conv] : [] });
     }
     if (chemin.includes('/messages')) return json({ messages: [] });

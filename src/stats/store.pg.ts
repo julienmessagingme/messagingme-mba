@@ -1446,8 +1446,32 @@ export class PgStatsStore {
    * la même heuristique que les templates de scénario. Les deux premiers sont des égalités exactes ; le
    * troisième porte les limites écrites sur `ATTRIBUTION`, et les partager est précisément ce qui évite
    * deux définitions de « cet envoi vient de cette campagne ».
+   *
+   * 🔴 ET LE TROISIEME COUP SE DEBRANCHE, parce qu'il COUTE et que l'un des deux appelants JETTE ce qu'il
+   * calcule (relevé en relecture le 2026-09-23). `ATTRIBUTION_CAMPAGNE_SCENARIO` est une sous-requête
+   * corrélée, exécutée une fois PAR MESSAGE RCS, et son prédicat n'est servi par AUCUN index : la migration
+   * 0096 a explicitement refusé celui de `campaign_recipients(to_e164, sent_at)`. Or `getCoutMessages` ne
+   * lit que les instants et les volumes, jamais la campagne. Aggravant : la page de synthèse appelle les
+   * DEUX routes, donc l'attribution tournait deux fois par affichage.
+   *
+   * ⚠️ C'EST LE MOTIF QUE CE FICHIER PORTE DEJA, et pas une invention : `envoisTemplateFacturables` prend son
+   * attribution en paramètre pour exactement cette raison, avec `SANS_ATTRIBUTION` en face. Un seul fragment,
+   * deux branchements.
    */
-  async envoisEtReactionsRcs(tenantId: string, range: DateRange, fenetreMs: number): Promise<{
+  async envoisEtReactionsRcs(
+    tenantId: string,
+    range: DateRange,
+    fenetreMs: number,
+    /**
+     * Faut-il RATTACHER chaque envoi à sa campagne ? Le rattachement coûte une sous-requête corrélée par
+     * message RCS, non servie par un index : seul l'appelant qui LIT `campaignId` doit la payer.
+     *
+     * ⚠️ DEFAUT `false`, donc le moins cher : un appelant qui ne demande rien ne paie rien et reçoit
+     * `campaignId: null` partout. C'est l'inverse du défaut qui flatte, et c'est voulu : oublier de
+     * demander se voit (les coûts par campagne tombent à vide), oublier de NE PAS demander ne se voit pas.
+     */
+    opts: { attribuer?: boolean } = {},
+  ): Promise<{
     conversations: { conversationId: string; campaignId: string | null; waId: string; envois: number; instants: string[] }[];
     reactions: { waId: string; at: string }[];
   }> {
@@ -1458,13 +1482,13 @@ export class PgStatsStore {
         `with ${BOUNDS_CTE},
          envois as (
            select cv.id::text as conversation_id, cv.wa_id as wa_id, m.created_at as at,
-                  coalesce(
+                  case when $5::boolean then coalesce(
                     (select r.campaign_id from campaign_recipients r join campaigns c on c.id = r.campaign_id
                       where c.tenant_id = cv.tenant_id and r.message_id = m.meta_message_id limit 1),
                     (select e.campaign_id from campaign_envois e join campaigns c on c.id = e.campaign_id
                       where c.tenant_id = cv.tenant_id and e.message_id = m.meta_message_id limit 1),
                     ${ATTRIBUTION_CAMPAGNE_SCENARIO}
-                  )::text as campaign_id
+                  ) end::text as campaign_id
              from conversation_messages m
              join conversations cv on cv.id = m.conversation_id, bounds b
             where cv.tenant_id = $1 and not cv.is_test and m.channel = 'rcs' and m.direction = 'out'
@@ -1473,7 +1497,7 @@ export class PgStatsStore {
          select conversation_id, campaign_id, wa_id, count(*)::int as envois,
                 array_agg(to_char(at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') order by at) as instants
            from envois group by 1, 2, 3`,
-        [tenantId, from, to, TZ],
+        [tenantId, from, to, TZ, opts.attribuer === true],
       ),
       this.pool.query<{ wa_id: string; at: string }>(
         `with ${BOUNDS_CTE}

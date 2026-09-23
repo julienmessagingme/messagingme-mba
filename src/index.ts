@@ -1182,7 +1182,9 @@ async function main(): Promise<void> {
           statsStore.grillePrix(tenant),
           // 🔴 ET LE MEME LOT DE RCS QUE CETTE LIGNE-LA, par la même lecture et la même règle de bascule.
           // Une campagne RCS affichait « — » alors que son prix est saisi depuis la migration 0154.
-          statsStore.envoisEtReactionsRcs(tenant, range, FENETRE_BASCULE_MS),
+          // ⚠️ `attribuer` : SEUL cet appelant lit `campaignId`, et l'attribution coute une sous-requete
+          // correlee par message RCS, non servie par un index. L'autre route s'en passe desormais.
+          statsStore.envoisEtReactionsRcs(tenant, range, FENETRE_BASCULE_MS, { attribuer: true }),
         ]);
         const ids = [...new Set(volumes.map((v) => v.campaignId))];
         // ⚠️ LES TROIS ENSEMBLE, pas l'une après l'autre : ce sont des lectures indépendantes sur la même
