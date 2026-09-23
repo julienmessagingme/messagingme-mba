@@ -46,8 +46,6 @@ function PublicitesInner({ session }: { session: Session }) {
   const [compteChoisi, setCompteChoisi] = useState('');
   const [pageChoisie, setPageChoisie] = useState('');
   const [erreur, setErreur] = useState<string | null>(null);
-  /** Ce que Meta a fait de notre retrait, après une déconnexion. Ce n'est pas une erreur, donc pas `erreur`. */
-  const [avis, setAvis] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const charger = useCallback(async () => {
@@ -137,27 +135,15 @@ function PublicitesInner({ session }: { session: Session }) {
 
   async function deconnecter(): Promise<boolean> {
     setErreur(null);
-    setAvis(null);
     setBusy(true);
     try {
-      const { revoqueChezMeta } = await deconnecterPubs(session.tenantId);
-      setActifs(null);
-      await charger();
-      // 🔴 LE RÉSULTAT DU RETRAIT S'AFFICHE, IL NE SE JETTE PAS. À `false`, notre accès VIT ENCORE
-      // chez Meta et nous venons d'effacer le seul exemplaire du jeton : personne ne peut plus le
-      // fermer depuis la console. Le taire ferait lire « déconnecté » sur un accès toujours ouvert,
-      // c'est-à-dire exactement le piège que tout ce dispositif existe pour fermer (clé Vercel, 0124).
-      // Trois justifications l'annonçaient déjà à l'indicatif alors que le booléen était jeté ici.
-      // ⚠️ LE TEXTE NE PARLE QUE DES PERMISSIONS PUBLICITAIRES, jamais de retirer l'application : elle
-      // porte aussi le numéro WhatsApp du client, et un client qui suivrait la consigne perdrait tous
-      // ses messages.
-      setAvis(revoqueChezMeta
-        ? t('Déconnecté. Les accès publicitaires ont été retirés chez Meta.',
-            'Disconnected. Ad permissions were removed at Meta.')
-        : t('Déconnecté de notre côté, mais Meta a refusé de retirer nos accès publicitaires. Retirez-les '
-          + 'vous-même dans les paramètres de votre entreprise, côté permissions publicitaires.',
-            'Disconnected on our side, but Meta refused to remove our ad permissions. Remove them '
-          + 'yourself in your business settings, under ad permissions.'));
+      // 🔴 LE RÉSULTAT DU RETRAIT N'EST DÉLIBÉRÉMENT PAS AFFICHÉ, et ce n'est pas un oubli : c'est la
+      // décision de Julien du 2026-09-23, dont la raison est en tête de ce fichier. Un bandeau a été
+      // réécrit ici le même jour, sur la foi du plan et de commentaires périmés ; une relecture à froid
+      // l'a rattrapé et a montré qu'il était DANGEREUX : il survivait à une reconnexion et disait alors
+      // à un client fraîchement reconnecté de retirer lui-même les permissions publicitaires, donc de
+      // désarmer le jeton qu'il venait d'accorder. Le retrait reste TENTÉ, et son résultat va au journal.
+      await deconnecterPubs(session.tenantId);
       return true;
     } catch (err) {
       setErreur(err instanceof Error ? err.message : t('Déconnexion impossible', 'Could not disconnect'));
@@ -177,10 +163,6 @@ function PublicitesInner({ session }: { session: Session }) {
 
       {erreur !== null && (
         <p role="alert" data-testid="pubs-erreur" className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{erreur}</p>
-      )}
-
-      {avis !== null && (
-        <p role="status" data-testid="pubs-avis" className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">{avis}</p>
       )}
 
       <section className="mt-5 rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">

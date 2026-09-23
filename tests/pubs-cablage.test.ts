@@ -84,7 +84,12 @@ describe('câblage des publicités : le jeton ne touche jamais la base en clair'
     expect(bloc).toMatch(/clientPubs\.identite\(/);
     expect(bloc.indexOf('clientPubs.identite(')).toBeLessThan(bloc.indexOf('revoquerAcces'));
     // Et le retrait est SOUS une condition, jamais inconditionnel : c'est la condition qui protège.
-    expect(bloc).toMatch(/idAncien === idNeuf/);
+    // 🔴 L'ASSERTION PORTE SUR LA STRUCTURE, PAS SUR LA PRÉSENCE DES MOTS. Une première version
+    // vérifiait que `idAncien === idNeuf` APPARAISSAIT : en inversant les corps des deux branches,
+    // c'est-à-dire en révoquant quand les identités sont ÉGALES (le bug d'origine, exactement), elle
+    // restait VERTE. Une garde qui passe sur le défaut qu'elle interdit n'est pas une garde.
+    // Ici : le test d'égalité, puis un `else`, et le retrait DANS ce `else`.
+    expect(bloc).toMatch(/idAncien === idNeuf[\s\S]*?\} else {[\s\S]*?revoquerAcces/);
   });
 
   it('🔴 le dépôt par `/ops` RÉVOQUE l’ancien jeton AVANT de l’écraser', () => {

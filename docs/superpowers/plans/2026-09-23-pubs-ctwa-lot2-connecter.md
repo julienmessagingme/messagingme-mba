@@ -122,7 +122,8 @@ comportement, et on s'arrête.
 `MetaPubsClient` ajoute :
 
 ⚠️ **CE QUI SUIT ÉTAIT LE PLAN ; CE QUI A ÉTÉ ÉCRIT EN DIFFÈRE, ET C'EST LA MESURE QUI L'A DÉCIDÉ.**
-Trois des noms annoncés ici n'existent nulle part dans le dépôt : les laisser tels quels ferait chercher
+DEUX des noms annoncés ici n'existent nulle part dans le dépôt (`actifsAccordes`, lui, existe : c'est
+sa DESCRIPTION qui était fausse, pas son nom) : les laisser tels quels ferait chercher
 du code absent, ou pire, réécrire un appel qu'on a retiré pour une raison.
 
 - `actifsAccordes(jeton)` : les comptes publicitaires et les Pages. 🔴 **PAS depuis `debug_token`**,
@@ -170,8 +171,14 @@ Le plan d'origine se contentait d'effacer la ligne. Or elle est le seul endroit 
 nous, et il est SANS EXPIRATION : l'effacer laissait un accès vivant chez Meta, irrévocable par nous pour
 toujours. C'est le piège de la clé Vercel (0124) à l'identique. La route appelle donc
 `DELETE /me/permissions/{permission}` AVANT d'effacer, permission par permission (jamais la forme NUE, qui désautoriserait l'application entière, or elle porte aussi le numéro WhatsApp), un test de câblage lit cet ORDRE dans la source, et l'échec du
-retrait n'empêche pas de se déconnecter : il remonte à l'écran, qui dit alors au client de retirer
-l'application depuis les paramètres de son entreprise.
+retrait n'empêche pas de se déconnecter. ⚠️ **CE QUI SUIVAIT ICI A ÉTÉ RETIRÉ, et il ne faut pas le
+réécrire** : le plan disait que l'échec « remonte à l'écran, qui dit alors au client de retirer
+l'application ». C'est exactement le geste qui couperait son numéro WhatsApp, puisque c'est la MÊME
+application. Décision de Julien du 2026-09-23 : **le client n'est pas averti**, le résultat va au
+journal, et c'est là qu'on mesure si le retrait fonctionne sur un jeton d'utilisateur système. Un
+bandeau a été réécrit sur la foi de cette ligne le jour même, puis retiré : il survivait à une
+reconnexion et disait alors à un client fraîchement reconnecté de désarmer le jeton qu'il venait
+d'accorder.
 
 🔴 **Le jeton n'entre JAMAIS dans la route**, exactement comme dans `EmbeddedSignupRouteDeps` : le câblage
 le résout, le chiffre et ne laisse passer que le `tenantId`. Un jeton qui n'entre pas dans une route ne peut

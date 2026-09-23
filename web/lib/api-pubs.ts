@@ -100,13 +100,20 @@ export function choisirActifsPub(tenantId: string, choix: { comptePubId: string;
 }
 
 /**
- * Déconnecte. `revoqueChezMeta` à false = notre accès VIT ENCORE chez Meta et nous n'en avons plus la
- * trace : l'écran doit alors dire au client de retirer les PERMISSIONS PUBLICITAIRES de notre
- * application, et surtout pas l'application elle-même, qui porte aussi son numéro WhatsApp.
+ * Déconnecte, après avoir TENTÉ de retirer nos accès chez Meta.
  *
- * ⚠️ À `true`, le retrait a réussi pour les trois permissions publicitaires, et TROIS AUTRES restent en
- * place, délibérément (elles sont partagées avec WhatsApp). L'écran le dit aussi : un succès muet
- * laisserait croire que tout est fermé.
+ * 🔴 `revoqueChezMeta` N'EST PAS AFFICHÉ, et c'est une décision de Julien (2026-09-23), pas un oubli.
+ * Le jeton résiduel n'est détenu par PERSONNE : nous venons de supprimer notre seule copie, aucun tiers
+ * ne l'a jamais eue. Avertir reviendrait à inquiéter un client pour un accès que nul ne peut exercer,
+ * et les gestes qu'on pourrait lui prescrire cassent chacun quelque chose : retirer l'application
+ * couperait son numéro WhatsApp (c'est la MÊME application), et retirer les permissions publicitaires
+ * désarmerait sa connexion s'il s'est reconnecté entre-temps.
+ *
+ * ⚠️ CE COMMENTAIRE DISAIT L'INVERSE jusqu'au 2026-09-23 (« l'écran doit alors dire au client de retirer
+ * les PERMISSIONS PUBLICITAIRES »), et une relecture s'est appuyée dessus pour faire réécrire le bandeau
+ * qui venait d'être retiré. Une justification fausse est pire qu'aucune : elle est recopiée, puis elle
+ * sert de preuve. Ce que le booléen sert, c'est à MESURER dans le journal si le retrait fonctionne sur
+ * un jeton d'utilisateur système.
  */
 export function deconnecterPubs(tenantId: string): Promise<{ ok: true; revoqueChezMeta: boolean }> {
   return request<{ ok: true; revoqueChezMeta: boolean }>(base(tenantId), { method: 'DELETE' });

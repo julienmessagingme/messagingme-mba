@@ -1128,7 +1128,10 @@ gênant est `cle-modele`, qui révoque une clé facturée chez Vercel sans dire 
 
 ⚠️ **Ce qui vaut, lui, pour les sept** : elles sont délibérément **cross-espace** (`/ops`
 s'authentifie par un JETON d'exploitation, pas par une session) et refusées en session d'observation par
-la garde de MÉTHODE, qui ne laisse passer que `GET` et `HEAD`. ⚠️ Le comportement quand une dépendance
+la garde d'observation. ⚠️ Cette page a nommé ici « la garde de MÉTHODE » : ce mécanisme-là vit dans
+`makeRequireAuth`, alors que `/ops` est gardé par `makeRequireOps`, qui compare un en-tête et ne lit
+JAMAIS `req.auth`. La protection réelle est plus forte que celle qui était écrite ; c'est la
+justification qui était fausse, dans le paragraphe même qui prêche la mesure. ⚠️ Le comportement quand une dépendance
 manque n'est PAS uniforme : la plupart rendent **503**, mais `dlq/replay` n'est pas montée du tout et
 rend donc **404**.
 
@@ -1136,9 +1139,17 @@ rend donc **404**.
 un corps de requête**, et la seule qui REMPLACE une connexion existante là où l'écran la refuse. Elle
 existe parce que Meta interdit au portefeuille qui possède l'application d'être son propre client : sans
 elle, MessagingMe ne pourrait pas faire ses propres publicités avec son propre produit. Le jeton est
-vérifié chez Meta avant d'être gardé, chiffré au repos, jamais renvoyé ni journalisé, et **l'ancien
-accès est révoqué avant d'être écrasé** : un jeton d'utilisateur système n'expire jamais, et notre ligne
-en est le seul exemplaire.
+vérifié chez Meta avant d'être gardé, chiffré au repos, jamais renvoyé ni journalisé.
+
+🔴 **ET L'ANCIEN ACCÈS N'EST PAS TOUJOURS RÉVOQUÉ, DÉLIBÉRÉMENT.** Cette page a affirmé qu'il l'était
+« avant d'être écrasé », sans condition. C'est faux dans le cas le plus COURANT, et le croire ferait
+conclure qu'aucun accès vivant ne reste derrière. `DELETE /me/permissions/<perm>` porte sur le couple
+(application, **entité**), pas sur LE jeton : remplacer le jeton d'un utilisateur système par un autre
+du même portefeuille, c'est-à-dire l'usage normal de cette route, donne deux jetons de la MÊME entité,
+et retirer les permissions de l'ancien DÉSARMERAIT le neuf. Le dépôt compare donc les identités
+(`GET /me`) et ne retire que si elles DIFFÈRENT ; sinon il le dit (`meme_entite`), et l'ancienne chaîne
+reste VALIDE jusqu'à ce qu'on régénère le jeton de l'utilisateur système chez Meta. ⚠️ Ce geste-là
+invalide AUSSI le jeton qu'on vient de déposer : il faut le redéposer derrière.
 
 🔴 **La session d'observation est en LECTURE SEULE par une garde GLOBALE fondée sur la MÉTHODE HTTP** :
 `GET` et `HEAD` passent, tout le reste est refusé. Une garde route par route aurait laissé passer celle qu'on

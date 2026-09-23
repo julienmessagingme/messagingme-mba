@@ -2386,8 +2386,15 @@ async function main(): Promise<void> {
               revoqueChezMeta = true;
             } catch (err) {
               // ⚠️ UN ÉCHEC N'EMPÊCHE PAS DE SE DÉCONNECTER, et c'est un arbitrage : bloquer la déconnexion
-              // sur une panne de Meta retiendrait un client qui veut partir. Le booléen remonte jusqu'à
-              // l'écran, qui lui dit alors de retirer l'application dans les paramètres de son entreprise.
+              // sur une panne de Meta retiendrait un client qui veut partir.
+              //
+              // 🔴 ET LE BOOLÉEN NE VA PAS À L'ÉCRAN. Cette phrase disait le contraire, et pire : elle
+              // prescrivait « retirer l'application », c'est-à-dire le geste qui couperait le numéro
+              // WhatsApp du client, puisque c'est la MÊME application. Décision de Julien du 2026-09-23 :
+              // le client n'est pas averti, parce que le jeton résiduel n'est détenu par PERSONNE (nous
+              // venons de supprimer notre seule copie) et qu'aucun des gestes qu'on pourrait lui
+              // prescrire n'est sans danger. Le booléen sert à MESURER si le retrait fonctionne sur un
+              // jeton d'utilisateur système, et il va au journal.
               // eslint-disable-next-line no-console
               console.warn('retrait d’accès publicitaire non confirmé par Meta:', err instanceof Error ? err.message : err);
             }
