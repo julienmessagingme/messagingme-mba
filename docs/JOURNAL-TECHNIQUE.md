@@ -5,6 +5,49 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-23 : trois lots partis d'un bloc, et le compteur qui a failli coûter cher
+
+**Déployé le 2026-09-23 vers 9 h 15** : les 21 commits que la production n'avait pas, écrits par TROIS sessions
+(les publicités Click-to-WhatsApp « Capter » ; l'activation d'un numéro que l'Embedded Signup v4 laisse non
+vérifié ; les jaunes de coûts et d'Inbox), relus et déployés par une QUATRIÈME qui n'en avait écrit aucun.
+Revue finale attestée sur `9c29257a`, 0 rouge, 4 jaunes.
+
+🔴 **LE MOMENT OÙ CE DÉPLOIEMENT A RESSEMBLÉ À UN INCIDENT.** Un message inter-session annonçait « trois
+migrations en attente, la production est à 0162 », en recopiant `CLAUDE.md`. Or le diff entre le commit déployé
+et `HEAD` ne contenait que 0163 : 0164 et 0165 vivaient DÉJÀ dans l'arbre du commit en production. Et le code
+déployé les NOMMAIT, `escaladee_le` dans `A_TRAITER_SQL` (le prédicat du dossier « À traiter », lu par la liste
+ET les compteurs de l'Inbox, plus le balayage du worker) et `reessai_par_campagne` dans `insertCampaignRow`.
+Lu ainsi, la production était cassée depuis dix heures, exactement comme le 2026-08-17.
+
+**Elle ne l'était pas, et c'est la base qui l'a dit** : les deux colonnes existaient, appliquées la veille à
+20 h 49, trois heures AVANT que leur code ne sorte. La session qui les avait écrites avait respecté l'ordre ;
+ce qui avait dérivé, c'est seulement la ligne du compteur. **Neuvième dérive, et la première propagée par un
+pair.** Ce que cette fois ajoute aux huit précédentes : plusieurs sessions écrivent des migrations dans le même
+dépôt, donc cette ligne peut être périmée sans que celui qui la lit ait rien fait, et **un pair qui la recopie
+propage l'erreur au lieu de la corriger**. Les HORODATAGES de `schema_migrations` sont ce qui a tranché : ils
+disent qui a appliqué quoi, et quand, là où le compteur ne dit qu'un chiffre.
+
+⚠️ **LA LEÇON GÉNÉRALE, ET ELLE NE PORTE PAS SUR LE COMPTEUR.** Du code déployé qui nomme une colonne absente
+est une panne MUETTE : aucun conteneur ne le signale, `healthy` reste vert, et le symptôme n'apparaît que sur
+l'écran d'un client. La seule façon de savoir si un déploiement a laissé ce trou est de comparer **le code
+déployé** aux **objets réellement présents en base**, jamais un fichier de doc à un autre.
+
+**L'ordre de 0163 ne se discutait pas.** Le code neuf nomme `arrivees_pub` ou `tarifs_meta` en quatre endroits,
+dont la transaction de purge RGPD (`PgContactStore.purgeMany`, qui aurait échoué en entier, donc plus aucune
+suppression de contact) et toute lecture de coût (`horsEntreeGratuite`, posé dans cinq requêtes). Séquence tenue :
+`git pull`, `compose build mba-api`, `ls` DANS L'IMAGE pour voir que 0163 y était, `migrate` (une seule appliquée),
+relecture en base point par point, PUIS `up -d --build`.
+
+**Éprouvé après coup par le VRAI CODE, sur les vraies données** : `PgStatsStore.getVolumeParCampagne` puis
+`servicesParCampagne` sur les deux espaces réels rendent leurs lignes, avec `horsRetention` à `false` et non
+`undefined`. Sonde effacée ensuite. Et les deux routes neuves répondent **401, pas 404** : c'est ce qui prouve
+qu'elles sont montées et gardées, donc que la fenêtre où la console de Vercel appelle une route absente est
+fermée.
+
+**Aucun 502 public cette fois**, pour la première fois depuis plusieurs déploiements : `nginx -s reload` a été
+posé APRÈS l'attente de `healthy`, dans une commande SÉPARÉE du `up` (leçon du 2026-09-08). Les cinq portes
+publiques répondent 200, le chemin du webhook Meta compris.
+
 ## 2026-09-22 : les suites du lot 2 des outils maison, et un seul ordre de verrous
 
 **Déployé en deux temps le 2026-09-22** : au matin avec les suites du lot 1 de sécurité (par la session

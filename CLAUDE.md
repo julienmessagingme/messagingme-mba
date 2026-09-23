@@ -94,8 +94,44 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0162**, le 2026-09-21 au soir (`outils_maison_mba`, les outils maison de l'agent de
-Meta, lot 2). **Prochaine libre = 0163.** 0162 AJOUTE `agent_tools.pour_agent_meta` (écrit par la création
+**Dernière appliquée : 0165**, et **prochaine libre = 0166** (relu dans `schema_migrations` juste après
+`migrate`, avec les horodatages, pas en écrivant cette ligne). Les trois dernières sont parties en DEUX fois :
+**0164** (`escalade_mba`, `conversations.escaladee_le`) et **0165** (`reessai_par_campagne`,
+`campaigns.reessai_par_campagne`) le 2026-09-22 à 20 h 49, par la session qui les a écrites, trois heures avant
+que son code ne sorte ; **0163** (`pubs_capter`, `arrivees_pub` et `tarifs_meta`, lot 1 des publicités
+Click-to-WhatsApp) le 2026-09-23 à 9 h 09, avec le déploiement des trois lots. Les trois AJOUTENT et l'ancien
+code les ignore : toutes AVANT le `up`.
+
+🔴 **CETTE LIGNE A DÉRIVÉ UNE NEUVIÈME FOIS, ET CETTE FOIS UN PAIR L'A RECOPIÉE.** Elle annonçait 0162 et
+« prochaine libre = 0163 » quand la base en portait DEUX de plus. Un message inter-session a repris le chiffre
+pour en déduire « trois migrations en attente, trois décisions d'ordre à prendre » ; il n'y en avait qu'une, et
+les deux autres étaient en place depuis la veille. Même cause que les huit fois précédentes, même parade, et
+elle a encore fonctionné : **la base tranche**. ⚠️ Ce que la neuvième ajoute : **plusieurs sessions écrivent des
+migrations dans le même dépôt**, donc cette ligne peut être périmée sans que celui qui la lit ait rien fait, et
+un pair qui la recopie propage l'erreur au lieu de la corriger. Le seul énoncé fiable reste `schema_migrations`,
+horodatages compris : ce sont eux qui ont dit QUI avait appliqué QUOI, et qu'il n'y avait pas eu d'accident.
+
+🔴 **0163 RELUE EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT** : elle est dans `schema_migrations` ;
+`arrivees_pub` porte ses onze colonnes (dont `en_standby` en `boolean NOT NULL` SANS défaut, `ctwa_clid`
+nullable, `arrivee_le` par défaut à `now()`), son unique `(tenant_id, meta_message_id)` et son index
+`(contact_id, arrivee_le desc)` ; `tarifs_meta` porte sa clé primaire `(tenant_id, wamid)` et AUCUN autre index ;
+les quatre clés étrangères sont en `on delete cascade` (`confdeltype = 'c'`) ; et les deux tables sont VIDES,
+donc rien n'a bougé pour personne.
+
+🔴 **ELLE ÉTAIT BLOQUANTE, ET C'EST CE QUI A DÉCIDÉ DE L'ORDRE.** Le code neuf nomme ces tables en QUATRE
+endroits, dont deux qui ne pardonnent pas : la **transaction de purge RGPD** (`PgContactStore.purgeMany`, qui
+aurait échoué en entier, donc plus aucune suppression de contact) et **toute lecture de coût**
+(`horsEntreeGratuite`, posé dans cinq requêtes). Déployer avant de migrer rendait `42P01` sur la purge et sur
+chaque écran de coût, comme le 2026-08-17. ⚠️ Et le chemin chaud a été exécuté PAR LE VRAI CODE juste après le
+déploiement (`PgStatsStore.getVolumeParCampagne` puis `servicesParCampagne` sur les deux espaces réels) : il
+rend ses lignes et `horsRetention` à `false`, pas à `undefined`. La sonde a été effacée ensuite.
+
+⚠️ **0164 et 0165 ont été relues en base le 2026-09-23, après coup** : `escaladee_le` en `timestamptz` nullable
+SANS défaut, `reessai_par_campagne` en `boolean NOT NULL DEFAULT false`, les types exacts de leurs specs. Leur
+code était déjà en production depuis la veille au soir, donc l'ordre a été respecté.
+
+Avant elles, **0162**, le 2026-09-21 au soir (`outils_maison_mba`, les outils maison de l'agent de
+Meta, lot 2). 0162 AJOUTE `agent_tools.pour_agent_meta` (écrit par la création
 d'un outil maison) et `conversation_messages.accuse_le` (que PERSONNE n'écrit encore : c'est le lot 4 ; les
 messages acquittés d'ici là garderont `null`), RELÂCHE `agent_tools_action_par_agent_chk` et AJOUTE
 `agent_tools_pour_agent_meta_chk` (le drapeau n'existe que sur un outil `mba` sans agent) : l'ancien code y
