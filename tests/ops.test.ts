@@ -377,7 +377,7 @@ describe('/ops : déposer un jeton publicitaire créé à la main', () => {
   const DEPOSEE = {
     comptePubId: '475266278124562', compteNom: 'Messaging Me', pageId: '2084133708982860',
     pageNom: 'Messaging Me', devise: 'EUR', fuseau: 'Europe/Paris', pageLiee: 'inconnu',
-    ancienRevoque: null,
+    ancienRevoque: 'aucun' as const,
   };
   const corps = {
     jeton: JETON, comptePubId: '475266278124562', pageId: '2084133708982860',
@@ -442,15 +442,16 @@ describe('/ops : déposer un jeton publicitaire créé à la main', () => {
     await srv.close();
   });
 
-  it('🔴 le sort de l ANCIEN accès remonte, et `false` ne se confond pas avec `null`', async () => {
-    // `null` = il n y avait rien à révoquer ; `false` = Meta a refusé, donc un accès reste VIVANT chez
-    // lui et il faudra le retirer à la main. Les afficher pareil ferait passer le second pour le premier.
-    const srv = app(OPS, { deposerJetonPub: async () => ({ ...DEPOSEE, ancienRevoque: false }) });
+  it('🔴 le sort de l ANCIEN accès remonte, et ses cinq valeurs ne se confondent pas', async () => {
+    // `aucun` = rien à révoquer ; `echec` = Meta a refusé, donc un accès reste VIVANT et il faudra le
+    // retirer à la main ; `meme_entite` = on n'a délibérément PAS révoqué, parce que le retrait aurait
+    // aussi désarmé le jeton neuf. Trois gestes différents : les afficher pareil les confondrait.
+    const srv = app(OPS, { deposerJetonPub: async () => ({ ...DEPOSEE, ancienRevoque: 'echec' as const }) });
     const { resultat: res, lignes } = await capturerJournal(() =>
       srv.inject({ method: 'POST', url: `/ops/pubs/connexion/${T}`, payload: corps, ...withTok(OPS) }));
-    expect(res.json<{ connexion: { ancienRevoque: unknown } }>().connexion.ancienRevoque).toBe(false);
+    expect(res.json<{ connexion: { ancienRevoque: unknown } }>().connexion.ancienRevoque).toBe('echec');
     const trace = lignes.find((l) => l.msg === 'ops_jeton_pub_depose');
-    expect(trace?.ancienRevoque).toBe(false);
+    expect(trace?.ancienRevoque).toBe('echec');
     expect(trace?.note).toBe(corps.note);
     await srv.close();
   });

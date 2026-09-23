@@ -1,3 +1,5 @@
+import { HTTP_TIMEOUT_DEFAUT_MS, HttpTimeoutError, estAbandon } from './http';
+
 /**
  * LE SOCLE COMMUN DES CLIENTS GRAPH (2026-09-23, lot 2 des publicités Click-to-WhatsApp).
  *
@@ -39,7 +41,9 @@ export function estJetonRefuse(err: unknown): boolean {
 
 /** Plafond de durée d'un appel Graph. Très au-dessus du temps de réponse normal, donc sans effet
  *  sur un appel sain : il ne borne qu'un appel qui ne reviendra jamais. */
-const DELAI_GRAPH_MS = 30_000;
+/** ⚠️ LA MÊME constante que le transport HTTP du dépôt, importée et pas recopiée : deux nombres
+ *  égaux écrits à deux endroits sont deux nombres qui divergeront. */
+const DELAI_GRAPH_MS = HTTP_TIMEOUT_DEFAUT_MS;
 
 export abstract class ClientGraph {
   constructor(
@@ -66,8 +70,27 @@ export abstract class ClientGraph {
    * le plafond ne s'ajoute pas par-dessus.
    */
   protected async call(url: string, init?: RequestInit): Promise<Record<string, unknown>> {
-    const res = await fetch(url, { signal: AbortSignal.timeout(DELAI_GRAPH_MS), ...init });
-    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    let res: Response;
+    try {
+      res = await fetch(url, { signal: AbortSignal.timeout(DELAI_GRAPH_MS), ...init });
+    } catch (err) {
+      if (estAbandon(err)) throw new HttpTimeoutError(url, DELAI_GRAPH_MS);
+      throw err;
+    }
+    // 🔴 DISTINGUER « CORPS ILLISIBLE » DE « CORPS COUPÉ », et c'est le piège que le plafond OUVRE.
+    // L'échéance couvre aussi la lecture du corps : un Meta qui envoie ses en-têtes puis se tait fait
+    // échouer ICI. Un `catch(() => ({}))` avalerait notre propre abandon et rendrait un SUCCÈS au corps
+    // vide, c'est-à-dire, sur `actifsAccordes`, deux listes vides et un écran qui annonce « aucun
+    // compte » sur une connexion saine. Le client se déconnecterait, donc révoquerait un jeton valide.
+    // Le transport HTTP du dépôt garde déjà exactement ce cas (`src/meta/http.ts`), d'où les mêmes
+    // briques ici plutôt qu'une seconde façon de faire.
+    let body: Record<string, unknown>;
+    try {
+      body = (await res.json()) as Record<string, unknown>;
+    } catch (err) {
+      if (estAbandon(err)) throw new HttpTimeoutError(url, DELAI_GRAPH_MS);
+      body = {};
+    }
     if (!res.ok) {
       const err = (body as { error?: { message?: string; code?: number } }).error;
       throw new ErreurGraph(

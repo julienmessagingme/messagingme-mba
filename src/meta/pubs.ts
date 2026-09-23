@@ -94,6 +94,9 @@ const listePagesSchema = z.object({
  */
 const PERMISSIONS_PUB = ['ads_management', 'ads_read', 'pages_manage_ads'] as const;
 
+/** `GET /me?fields=id` : l'entité qui porte le jeton. */
+const identiteSchema = z.object({ id: z.string() });
+
 export class MetaPubsClient extends ClientGraph {
   /**
    * Les comptes publicitaires et les Pages que le jeton accorde, lus à `GET /me/adaccounts` et
@@ -151,6 +154,28 @@ export class MetaPubsClient extends ClientGraph {
       raisonDesactivation: lu.data.disable_reason ?? null,
       moyenPaiement: (lu.data.funding_source_details?.id ?? '') !== '',
     };
+  }
+
+  /**
+   * QUI PORTE CE JETON, chez Meta (`GET /me`). Rend `null` si Meta ne répond pas.
+   *
+   * 🔴 CE N'EST PAS UNE COMMODITÉ, C'EST CE QUI REND `revoquerAcces` SÛR SUR UN REMPLACEMENT.
+   * `DELETE /me/permissions/<perm>` porte sur le couple (application, ENTITÉ), pas sur LE jeton :
+   * deux jetons du même utilisateur système sous la même application désignent la MÊME entité, donc
+   * révoquer avec l'un retire les permissions de l'autre. Comparer les identités AVANT de révoquer
+   * transforme cette hypothèse en mesure, au moment où elle compte.
+   */
+  async identite(jeton: string): Promise<string | null> {
+    try {
+      const brut = await this.call(`${this.baseUrl}/${this.version}/me?fields=id`, {
+        headers: { Authorization: `Bearer ${jeton}` },
+      });
+      const lu = identiteSchema.safeParse(brut);
+      return lu.success ? lu.data.id : null;
+    } catch {
+      // Un jeton déjà mort ne répond pas : `null`, et l'appelant en tire qu'il ne sait pas comparer.
+      return null;
+    }
   }
 
   /**

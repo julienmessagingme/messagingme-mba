@@ -1111,16 +1111,26 @@ dès un changement d'IP. Le jeton reste la garde ; au 5e refus dans une fenêtre
 Telegram part, throttlée. 🔴 **Le jeton présenté n'est JAMAIS journalisé** : une tentative est presque toujours
 un secret voisin du vrai.
 
-⚠️ **`/ops` n'est plus en lecture seule.** Ses écritures : `POST /ops/observe` (ouvrir une observation),
-`POST /ops/credits/:tenantId` (recharger le solde prépayé, **la seule écriture d'argent du produit**, là
-précisément pour qu'un client ne puisse pas créditer son propre compte), `POST /ops/verrou/:tenantId`,
-`PATCH /ops/prix`, `DELETE /ops/cle-modele/:tenantId` et `POST /ops/pubs/connexion/:tenantId`.
-⚠️ **Cette liste n'en citait que DEUX sur six**, relevé par une relecture à froid le 2026-09-23 : un
-manuel qui énumère a le devoir d'être complet, sinon il fait croire à une surface plus petite qu'elle
-n'est. Les quatre invariants qui valent pour TOUTES : elles exigent une **note** (une écriture
-d'exploitation sans trace de qui l'a faite et pourquoi ne se relit pas six mois plus tard), elles sont
-délibérément **cross-espace**, elles sont refusées en session d'observation par la garde de méthode, et
-une dépendance absente rend **503** (jamais 404, qui ferait croire à une faute de frappe).
+⚠️ **`/ops` n'est plus en lecture seule, et il porte SEPT écritures.** `POST /ops/observe` (ouvrir une
+observation), `POST /ops/credits/:tenantId` (recharger le solde prépayé, **la seule écriture d'argent du
+produit**, là précisément pour qu'un client ne puisse pas créditer son propre compte),
+`POST /ops/verrou/:tenantId`, `PATCH /ops/prix`, `DELETE /ops/cle-modele/:tenantId`,
+`POST /ops/pubs/connexion/:tenantId` et `POST /ops/dlq/replay`.
+
+🔴 **LA NOTE OBLIGATOIRE N'EST PAS UN INVARIANT DE `/ops` : QUATRE SUR SEPT L'EXIGENT.** Mesuré route
+par route le 2026-09-23 : `credits`, `verrou`, `prix` et `pubs/connexion` refusent sans note ; `observe`,
+`cle-modele` et `dlq/replay` acceptent sans. ⚠️ **Cette page a affirmé le contraire le jour même**, en
+corrigeant une liste qui ne citait que deux écritures sur six : la correction a énoncé un invariant
+général à partir des quatre routes qu'elle venait de lire, et elle a en plus oublié la septième
+(`dlq/replay`, qui renfile des campagnes et des webhooks). **Un compte en prose se mesure ou ne s'écrit
+pas** : un lecteur qui croit « toutes traçables » ne cherchera pas la trace qui manque. Le trou le plus
+gênant est `cle-modele`, qui révoque une clé facturée chez Vercel sans dire qui ni pourquoi.
+
+⚠️ **Ce qui vaut, lui, pour les sept** : elles sont délibérément **cross-espace** (`/ops`
+s'authentifie par un JETON d'exploitation, pas par une session) et refusées en session d'observation par
+la garde de MÉTHODE, qui ne laisse passer que `GET` et `HEAD`. ⚠️ Le comportement quand une dépendance
+manque n'est PAS uniforme : la plupart rendent **503**, mais `dlq/replay` n'est pas montée du tout et
+rend donc **404**.
 
 🔴 **`POST /ops/pubs/connexion/:tenantId` est la SEULE route du dépôt qui reçoit un secret Meta dans
 un corps de requête**, et la seule qui REMPLACE une connexion existante là où l'écran la refuse. Elle

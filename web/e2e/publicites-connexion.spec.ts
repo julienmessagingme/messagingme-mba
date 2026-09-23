@@ -147,6 +147,46 @@ test.describe('Publicités : les états de la connexion', () => {
     await expect(page.getByRole('button', { name: /Reconnecter|Reconnect/ })).toBeEnabled();
   });
 
+  test('🔴 le REFUS de Meta au retrait s affiche : sinon « déconnecté » ment', async ({ page }) => {
+    // On vient d effacer le seul exemplaire du jeton, et il n expire jamais : si Meta a refuse de
+    // retirer nos acces, personne ne peut plus les fermer depuis la console. Le taire ferait lire
+    // « deconnecte » sur un acces toujours ouvert.
+    await page.addInitScript((sess) => window.localStorage.setItem('mba.session', JSON.stringify(sess)), SESSION);
+    await page.route('**/api/backend/**', async (route) => {
+      const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+      const url = route.request().url();
+      if (url.includes('/pubs/connexion')) {
+        if (route.request().method() === 'DELETE') return json({ ok: true, revoqueChezMeta: false });
+        return json(etatVivant({ connexion: CONNEXION }));
+      }
+      if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
+      return json({});
+    });
+    await page.goto('/publicites');
+    await page.getByRole('button', { name: /^Déconnecter$|^Disconnect$/ }).click();
+    await expect(page.getByTestId('pubs-avis')).toContainText(/Meta a refusé|Meta refused/);
+    // 🔴 ET IL NE DIT JAMAIS DE RETIRER L APPLICATION : elle porte aussi le numero WhatsApp du
+    // client, et suivre cette consigne lui ferait perdre tous ses messages.
+    await expect(page.getByTestId('pubs-avis')).not.toContainText(/l’application|l'application|the app/);
+  });
+
+  test('⚠️ un retrait RÉUSSI le dit aussi : un succès muet laisse croire que rien ne s est passe', async ({ page }) => {
+    await page.addInitScript((sess) => window.localStorage.setItem('mba.session', JSON.stringify(sess)), SESSION);
+    await page.route('**/api/backend/**', async (route) => {
+      const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+      const url = route.request().url();
+      if (url.includes('/pubs/connexion')) {
+        if (route.request().method() === 'DELETE') return json({ ok: true, revoqueChezMeta: true });
+        return json(etatVivant({ connexion: CONNEXION }));
+      }
+      if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
+      return json({});
+    });
+    await page.goto('/publicites');
+    await page.getByRole('button', { name: /^Déconnecter$|^Disconnect$/ }).click();
+    await expect(page.getByTestId('pubs-avis')).toContainText(/ont été retirés|were removed/);
+  });
+
   test('🔴 « Reconnecter » DÉCONNECTE d abord : un jeton sans expiration ne s écrase pas en silence', async ({ page }) => {
     // Le nouveau jeton ecrasait l ancien dans la base, or l ancien reste vivant chez Meta et nous venions
     // d en perdre le seul exemplaire. Les deux chemins qui perdent un jeton passent par la revocation.

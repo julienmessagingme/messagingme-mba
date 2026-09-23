@@ -74,9 +74,22 @@ describe('câblage des publicités : le jeton ne touche jamais la base en clair'
     expect(bloc.indexOf('encryptSecret(')).toBeLessThan(bloc.indexOf('connexionsPub.remplacer'));
   });
 
+  it('🔴 le dépôt COMPARE LES IDENTITÉS avant de révoquer, sinon il désarme le jeton NEUF', () => {
+    // `DELETE /me/permissions/<perm>` porte sur le couple (application, ENTITÉ), pas sur LE jeton.
+    // Remplacer le jeton d'un utilisateur système par un autre du MÊME portefeuille, c'est-à-dire
+    // l'usage normal de cette route, donne deux jetons de la MÊME entité : révoquer l'ancien retire
+    // alors les permissions du neuf, et la route répond 200 sur une connexion morte. La première
+    // version de ce dépôt le faisait, alors que la bretelle de `connecter` énonce déjà le piege.
+    const bloc = blocDe('deposerJetonPub: async');
+    expect(bloc).toMatch(/clientPubs\.identite\(/);
+    expect(bloc.indexOf('clientPubs.identite(')).toBeLessThan(bloc.indexOf('revoquerAcces'));
+    // Et le retrait est SOUS une condition, jamais inconditionnel : c'est la condition qui protège.
+    expect(bloc).toMatch(/idAncien === idNeuf/);
+  });
+
   it('🔴 le dépôt par `/ops` RÉVOQUE l’ancien jeton AVANT de l’écraser', () => {
-    // L'écran REFUSE quand une connexion existe ; `/ops` REMPLACE. Écraser sans révoquer laisse un
-    // accès vivant chez Meta dont on vient de perdre le seul exemplaire : irrévocable pour toujours.
+    // L'écran REFUSE quand une connexion existe ; `/ops` REMPLACE. Écraser sans jamais tenter le
+    // retrait laisse un accès vivant chez Meta dont on vient de perdre le seul exemplaire.
     const bloc = blocDe('deposerJetonPub: async');
     expect(bloc).toMatch(/revoquerAcces/);
     expect(bloc.indexOf('revoquerAcces')).toBeLessThan(bloc.indexOf('connexionsPub.remplacer'));

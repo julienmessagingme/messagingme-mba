@@ -26,6 +26,24 @@ import type { WorkerHeartbeatRow } from '../ops/heartbeat-store.pg';
  * se change que d'ici. ⚠️ Elle est cross-espace par NATURE, et c'est ce qui la distingue des deux autres
  * écritures : `/ops/credits` et `/ops/verrou` visent un espace, celle-ci n'en vise aucun.
  */
+/**
+ * CE QUI EST ARRIVÉ À L'ANCIEN JETON quand un dépôt en remplace un. Un jeton d'utilisateur système
+ * n'expire JAMAIS, donc chacune de ces valeurs appelle un geste différent :
+ *
+ * - `aucun` : il n'y avait pas de connexion. Rien à faire.
+ * - `retire` : l'ancien portait une AUTRE entité Meta, ses permissions ont été retirées. Rien à faire.
+ * - `meme_entite` : l'ancien et le neuf sont le MÊME utilisateur système sous la même application.
+ *   On n'a DÉLIBÉRÉMENT rien retiré : `DELETE /me/permissions` aurait aussi désarmé le jeton neuf.
+ *   🔴 L'ancienne chaîne reste donc VALIDE : pour la tuer, régénérer le jeton de l'utilisateur
+ *   système chez Meta, ce qui invalide toutes ses émissions précédentes.
+ * - `indetermine` : Meta n'a pas dit qui portait l'un des deux jetons, donc on n'a pas comparé et
+ *   on n'a rien retiré. Même geste que `meme_entite` si l'ancienne chaîne doit disparaître.
+ * - `echec` : on a essayé de retirer et Meta a refusé. Un accès reste vivant, à retirer à la main
+ *   dans les paramètres du portefeuille (les PERMISSIONS publicitaires, jamais l'application,
+ *   qui porte le numéro WhatsApp).
+ */
+export type SortAncienJetonPub = 'aucun' | 'retire' | 'meme_entite' | 'indetermine' | 'echec';
+
 /** Ce que la route d'exploitation rend après avoir déposé un jeton publicitaire. */
 export interface ConnexionPubDeposee {
   comptePubId: string;
@@ -35,12 +53,8 @@ export interface ConnexionPubDeposee {
   devise: string | null;
   fuseau: string | null;
   pageLiee: string | null;
-  /**
-   * L'ancien accès a-t-il été retiré chez Meta ? `null` = il n'y en avait pas, `false` = Meta a refusé.
-   * Les deux ne disent PAS la même chose, et le `false` demande un geste à la main dans le
-   * portefeuille : un jeton d'utilisateur système n'expire jamais tout seul.
-   */
-  ancienRevoque: boolean | null;
+  /** Ce qui est arrivé à l'ancien jeton. Cf. `SortAncienJetonPub`. */
+  ancienRevoque: SortAncienJetonPub;
 }
 
 export interface OpsRouteDeps {

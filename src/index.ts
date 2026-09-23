@@ -127,6 +127,7 @@ import { lireMediaRecu } from './inbox/media-entrant';
 import { assurerCleGateway, remonterPlafondApresRecharge, revoquerCleGateway, type DepsProvisionCle } from './agent/provisionner-cle';
 import { encryptSecret, decryptSecret } from './crypto/secretbox';
 import { MetaPubsClient, sansPrefixeAct, type EtatComptePub } from './meta/pubs';
+import type { SortAncienJetonPub } from './http/ops';
 import { DejaConnectePub, JetonNonEnregistre, PasDeConnexionPub } from './http/pubs';
 import { estJetonRefuse } from './meta/graph';
 import { PgPubConnexionStore } from './pubs/connexion.pg';
@@ -2724,20 +2725,43 @@ async function main(): Promise<void> {
         // `ENCRYPTION_KEY` absente ou mal formée, et cette route n'a PAS le garde-fou `configId === ''`
         // de l'échange : une levée plus bas détruirait la connexion existante sans rien ranger.
         const chiffreNeuf = encryptSecret(jeton, config.ENCRYPTION_KEY);
-        // 🔴 RÉVOQUER L'ANCIEN AVANT DE LE PERDRE, exactement comme la déconnexion par l'écran.
-        // Notre ligne est le seul endroit où ce jeton existe chez nous et il n'expire JAMAIS : écraser
-        // sans révoquer laisse un accès VIVANT chez Meta dont nous venons de perdre le seul
-        // exemplaire, donc irrévocable pour toujours (le piège de la clé Vercel, 0124). C'est la raison
-        // pour laquelle l'écran REFUSE ; ici on remplace, donc on doit faire le geste à sa place.
+        // 🔴 RÉVOQUER L'ANCIEN, MAIS SEULEMENT SI C'EST UNE AUTRE ENTITÉ : SINON ON TUE LE NEUF.
+        //
+        // Le problème d'abord : notre ligne est le seul endroit où ce jeton existe chez nous et il
+        // n'expire JAMAIS. L'écraser sans rien faire laisse un accès vivant chez Meta dont on vient de
+        // perdre le seul exemplaire (le piège de la clé Vercel, 0124). C'est la raison pour laquelle
+        // l'écran REFUSE de remplacer ; ici on remplace, donc il faut traiter le cas.
+        //
+        // 🔴 MAIS RÉVOQUER À L'AVEUGLE EST PIRE QUE LE MAL, et le dépôt le fait dans le cas le plus
+        // courant. `DELETE /me/permissions/<perm>` porte sur le couple (application, ENTITÉ), pas sur
+        // LE jeton : remplacer le jeton d'un utilisateur système par un autre du MÊME portefeuille,
+        // c'est-à-dire l'usage normal de cette route, donne deux jetons de la MÊME entité. Révoquer
+        // l'ancien retirerait alors les permissions du NEUF, qu'on vient de vérifier, et la route
+        // répondrait 200 sur une connexion morte. Le raisonnement était déjà écrit plus haut dans ce
+        // fichier (la bretelle de `connecter`, qui en tire de NE PAS révoquer) ; il y était annoncé
+        // comme une hypothèse non mesurée, et la première version de ce dépôt l'a ignoré.
+        //
+        // ⚠️ ON MESURE DONC, AU LIEU DE PARIER : `GET /me` sur chacun des deux jetons. Identités
+        // DIFFÉRENTES = deux entités = retirer l'ancien ne touche pas le neuf, on le fait. Identités
+        // ÉGALES, ou l'une des deux illisible = on ne touche à rien et on le DIT, parce qu'un doute ne
+        // justifie pas de casser ce qui marche.
         const ancien = await connexionsPub.lireJetonChiffre(tenantId);
-        let ancienRevoque: boolean | null = null;
+        let ancienRevoque: SortAncienJetonPub = 'aucun';
         if (ancien !== null) {
-          // ⚠️ UN ÉCHEC N'ARRÊTE PAS LE DÉPÔT, et le booléen remonte : un ancien jeton déjà mort chez
-          // Meta ne doit pas retenir l'exploitation, mais on ne fait pas passer un refus pour un
-          // succès. `null` = il n'y avait rien à révoquer, ce qui n'est pas la même chose que `false`.
-          ancienRevoque = await clientPubs.revoquerAcces(decryptSecret(ancien, config.ENCRYPTION_KEY))
-            .then(() => true)
-            .catch(() => false);
+          const clair = decryptSecret(ancien, config.ENCRYPTION_KEY);
+          const [idAncien, idNeuf] = await Promise.all([
+            clientPubs.identite(clair),
+            clientPubs.identite(jeton),
+          ]);
+          if (idAncien === null || idNeuf === null || idAncien === idNeuf) {
+            // Même entité : l'ancien jeton reste VALIDE et on ne peut pas le tuer seul. Le seul geste
+            // qui le fait est de régénérer le jeton de l'utilisateur système chez Meta, à la main.
+            ancienRevoque = idAncien !== null && idNeuf !== null ? 'meme_entite' : 'indetermine';
+          } else {
+            // ⚠️ UN ÉCHEC N'ARRÊTE PAS LE DÉPÔT : un ancien jeton déjà mort ne doit pas retenir
+            // l'exploitation. Mais on ne fait pas passer un refus pour un succès.
+            ancienRevoque = await clientPubs.revoquerAcces(clair).then(() => 'retire' as const).catch(() => 'echec' as const);
+          }
         }
         await connexionsPub.remplacer(tenantId, chiffreNeuf, {
           comptePubId: compte.id, compteNom: compte.nom, pageId: page.id, pageNom: page.nom,

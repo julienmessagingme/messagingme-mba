@@ -121,12 +121,23 @@ comportement, et on s'arrête.
 
 `MetaPubsClient` ajoute :
 
-- `actifsAccordes(jeton)` : les comptes publicitaires et les Pages, lus dans `debug_token`, par scope
-  (`ads_management` pour les comptes, `pages_show_list` pour les Pages). Rend deux listes, jamais une
-  exception, une liste vide étant un cas normal que l'appelant traduit.
-- `infosCompte(actId, jeton)` : nom, devise, fuseau, statut.
-- `pageLieeAuNumero(pageId, jeton)` : rend `true`, `false` ou `inconnu`. Trois valeurs et pas deux, parce
-  que « Meta ne sait pas répondre » n'est pas « la Page n'est pas liée » (mesure n°1 ci-dessus).
+⚠️ **CE QUI SUIT ÉTAIT LE PLAN ; CE QUI A ÉTÉ ÉCRIT EN DIFFÈRE, ET C'EST LA MESURE QUI L'A DÉCIDÉ.**
+Trois des noms annoncés ici n'existent nulle part dans le dépôt : les laisser tels quels ferait chercher
+du code absent, ou pire, réécrire un appel qu'on a retiré pour une raison.
+
+- `actifsAccordes(jeton)` : les comptes publicitaires et les Pages. 🔴 **PAS depuis `debug_token`**,
+  comme annoncé ici : un jeton d'utilisateur système d'intégration ne DÉCLARE pas ses actifs, ses
+  `granular_scopes` n'ont aucun `target_ids`. Les actifs se DEMANDENT, à `GET /me/adaccounts` et
+  `GET /me/accounts`. Mesuré le 2026-09-23 sur une connexion réelle qui rendait deux listes vides.
+  Rend deux listes, jamais une exception.
+- ~~`infosCompte(actId, jeton)`~~ : n'existe pas. Le nom, la devise et le fuseau arrivent DÉJÀ dans
+  `GET /me/adaccounts`, donc un second appel aurait créé une seconde vérité. Ce qui existe est
+  `etatCompte(comptePubId, jeton)`, qui répond à une AUTRE question, posée après coup par Julien : ce
+  compte peut-il DIFFUSER (statut, motif de désactivation, moyen de paiement) ?
+- ~~`pageLieeAuNumero(pageId, jeton)`~~ : écrit, puis RETIRÉ. Aucune API de Meta n'expose la liaison
+  Page / numéro (dix champs essayés, § « Ce qui est MESURÉ »), donc l'appel était condamné à un 400 à
+  chaque choix pour toujours rendre `inconnu`. Le type à trois valeurs reste, pour le jour où Meta
+  l'exposera.
 
 🔴 **Toute réponse de Meta passe par un `safeParse` Zod**, jamais un `as`. La leçon est écrite dans le
 `CLAUDE.md` du dépôt : la documentation de Vercel annonçait `id` à la racine quand le serveur le rendait
@@ -220,7 +231,8 @@ déconnexion qui la fait disparaître. Tant que ce clic n'a pas eu lieu, le lot 
 ## Tests
 
 - **Unitaires** : l'extraction du socle (les tests existants de l'Embedded Signup, inchangés) ; les trois
-  valeurs de `pageLieeAuNumero` ; le refus d'une réponse de Meta malformée par le `safeParse` ; les gardes
+  valeurs de la liaison de Page (⚠️ cet appel a été RETIRÉ, cf. ci-dessus ; ce qui est gardé à sa place
+  est qu'on ne le réécrive pas sans remesurer) ; le refus d'une réponse de Meta malformée ; les gardes
   de rôle sur les trois routes d'écriture.
 - **Intégration (CI)** : idempotence de la connexion, isolation entre espaces, suppression.
 - **Dans les deux sens** : chaque test de non-régression se vérifie en remettant le code fautif et en

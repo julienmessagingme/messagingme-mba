@@ -134,9 +134,14 @@ Spec `docs/superpowers/specs/2026-09-22-pubs-ctwa-design.md`, plan
   `horsEntreeGratuite` RESTE, ses deux arguments étant des expressions de la requête appelante et jamais une
   valeur d'utilisateur ; `bilanContact` garde l'écart de gardes de livraison ANTÉRIEUR à ce lot et déclaré dans
   le code, parce que le fermer CHANGE un chiffre que le client voit et demande donc sa propre mesure.
-- ✅ **Lot 2 « Connecter » : DÉPLOYÉ ET ÉPROUVÉ le 2026-09-23.** Un vrai compte publicitaire d'un vrai
+- ✅ **Lot 2 « Connecter » : ÉPROUVÉ EN PRODUCTION le 2026-09-23.** Un vrai compte publicitaire d'un vrai
   portefeuille est connecté depuis l'écran : nom, devise, fuseau et Page lus chez Meta. Migrations 0167
   et 0169 appliquées avant leur `up`, relues en base point par point.
+- ⏳ **MAIS DEUX RELECTURES À FROID ONT SUIVI, ET LEURS CORRECTIFS NE SONT PAS TOUS DÉPLOYÉS.** Dix
+  constats bloquants au total, dont le plus grave allait dans le SENS INVERSE de ce qu'on croyait
+  corriger : le dépôt par `/ops` révoquait l'ancien jeton sans voir que `DELETE /me/permissions` porte
+  sur l'ENTITÉ, donc il désarmait le jeton NEUF dans le cas le plus courant. On compare désormais les
+  identités avant de retirer quoi que ce soit.
 - 🔴 **LES DEUX MESURES DU PLAN SONT TRANCHÉES, ET LA TROISIÈME N'AVAIT PAS ÉTÉ POSÉE.** La liaison
   Page / numéro ne se lit PAS chez Meta (le verdict `inconnu` est le cas normal, pas un repli) ; la
   devise et le fuseau se lisent SANS la permission `MANAGE`, ce qui valide l'arbitrage de la
