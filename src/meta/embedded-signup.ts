@@ -8,6 +8,8 @@
  *     re-sélectionne dans la popup sans OTP ni register.
  */
 
+import { ClientGraph } from './graph';
+
 export interface EsPhoneInfo {
   id: string;
   displayPhoneNumber: string | null;
@@ -25,32 +27,12 @@ export interface EsPhoneInfo {
   codeVerificationStatus?: string | null;
 }
 
-export class MetaEmbeddedSignupClient {
-  constructor(
-    private readonly appId: string,
-    private readonly appSecret: string,
-    private readonly version: string,
-    private readonly baseUrl = 'https://graph.facebook.com',
-  ) {}
-
-  private async call(url: string, init?: RequestInit): Promise<Record<string, unknown>> {
-    const res = await fetch(url, init);
-    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    if (!res.ok) {
-      const err = (body as { error?: { message?: string; code?: number } }).error;
-      throw new Error(`Graph ${res.status}${err?.code !== undefined ? ` (#${err.code})` : ''} : ${err?.message ?? 'erreur inconnue'}`);
-    }
-    return body;
-  }
-
-  /** Échange le code ES (TTL 30 s) contre le business token du client. */
-  async exchangeCode(code: string): Promise<string> {
-    const qs = new URLSearchParams({ client_id: this.appId, client_secret: this.appSecret, code });
-    const body = await this.call(`${this.baseUrl}/${this.version}/oauth/access_token?${qs.toString()}`);
-    const token = body['access_token'];
-    if (typeof token !== 'string' || token === '') throw new Error("échange du code : pas d'access_token dans la réponse");
-    return token;
-  }
+/**
+ * L'appel Graph, l'échange de code et la lecture des cibles d'un jeton viennent de `ClientGraph`
+ * (`./graph.ts`), extrait le 2026-09-23 pour que les publicités ne les recopient pas. Ce qui suit est ce
+ * qui appartient EN PROPRE à l'inscription WhatsApp.
+ */
+export class MetaEmbeddedSignupClient extends ClientGraph {
 
   /**
    * Comptes WhatsApp auxquels ce business token donne accès, lus DANS LE TOKEN (`GET /debug_token` ->
@@ -67,23 +49,8 @@ export class MetaEmbeddedSignupClient {
    * notre propre business, mesuré le 2026-08-17) rend `target_ids: null`. L'appelant décide quoi en dire.
    */
   async wabasForToken(businessToken: string): Promise<string[]> {
-    // ⚠️ DEUX tokens, et ils ne jouent pas le même rôle. `input_token` est le token INSPECTÉ (celui du client) ;
-    // l'autorisation, elle, doit être un TOKEN D'APPLICATION (`{app_id}|{app_secret}`). S'authentifier avec le
-    // token du client rend « (#100) You must provide an app access token, or a user access token that is an
-    // owner or developer of the app » (mesuré le 2026-08-17). Le token d'app ne quitte jamais le serveur.
-    const qs = new URLSearchParams({ input_token: businessToken, access_token: `${this.appId}|${this.appSecret}` });
-    const body = await this.call(`${this.baseUrl}/${this.version}/debug_token?${qs.toString()}`);
-    const data = (body['data'] ?? {}) as { granular_scopes?: unknown };
-    const scopes = Array.isArray(data.granular_scopes) ? data.granular_scopes : [];
-    const out: string[] = [];
-    for (const s of scopes as Array<{ scope?: unknown; target_ids?: unknown }>) {
-      // Les DEUX scopes WhatsApp sont acceptés : selon la configuration, la cible n'est portée que par l'un.
-      if (s?.scope !== 'whatsapp_business_management' && s?.scope !== 'whatsapp_business_messaging') continue;
-      for (const id of Array.isArray(s.target_ids) ? s.target_ids : []) {
-        if (typeof id === 'string' && id !== '' && !out.includes(id)) out.push(id);
-      }
-    }
-    return out;
+    // Les DEUX scopes WhatsApp sont acceptés : selon la configuration, la cible n'est portée que par l'un.
+    return this.ciblesDuJeton(businessToken, ['whatsapp_business_management', 'whatsapp_business_messaging']);
   }
 
   /** Numéros d'un WABA, lus avec le business token. Sert à retrouver le numéro quand la popup ne l'a pas dit. */
