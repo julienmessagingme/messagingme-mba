@@ -705,8 +705,15 @@ export class PgStatsStore {
    * écrite depuis la migration 0099, et la dérivation `when m.type = 'mba'` pour l'historique d'avant.
    * C'est exactement pourquoi on ne teste pas `m.origin = 'mba'` à la main.
    *
-   * 🔴 `not c.is_test` DES DEUX CÔTÉS de la requête. Le sous-select repère les conversations, l'extérieur
-   * compte : oublier le filtre dans l'un des deux laisserait rentrer les fils de test par l'autre porte.
+   * ⚠️ `not c.is_test` (et `tenant_id = $1`) DES DEUX CÔTÉS, ET C'EST UNE REDONDANCE, PAS UNE NÉCESSITÉ
+   * DOUBLE. Le sous-select et la requête extérieure filtrent la MÊME ligne de `conversations` (le sous-select
+   * désigne un `conversation_id`, l'extérieur le rejoint sur `c.id = msg.conversation_id`) : retirer l'un des
+   * deux filtres ne changerait RIEN au résultat, l'autre exclut déjà la conversation. Gardée quand même en
+   * ceinture et bretelles : si le sous-select est réécrit demain (jointure ajoutée, condition déplacée), la
+   * garde extérieure continue de protéger le compte sans qu'on ait à s'en souvenir. Aucun test ne peut
+   * prouver qu'un côté est indépendamment nécessaire ici, ni ne le pourra jamais (les deux filtrent la même
+   * ligne) : c'est précisément pour ça que cette propriété est écrite en commentaire plutôt que confiée à un
+   * test.
    */
   async messagesTenusParMba(tenantId: string, jours: number): Promise<number> {
     const { rows } = await this.pool.query<{ n: string }>(

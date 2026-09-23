@@ -13,8 +13,15 @@ const url = process.env.DATABASE_URL ?? '';
  * jetable.
  *
  * Ce qu'il verrouille : le fragment PARTAGÉ `ORIGINE_EFFECTIVE_SQL` reconnaît bien `mba` sous ses deux
- * formes (colonne `origin` et dérivation `type = 'mba'`), et les deux gardes `not is_test` /
- * `tenant_id = $1` du sous-select comme de la requête extérieure.
+ * formes (colonne `origin` et dérivation `type = 'mba'`), et le filtre d'ORIGINE du sous-select est bien
+ * ACTIF : la conversation (b), qui n'a aucun message `mba`, ne doit PAS entrer dans le compte. Si ce filtre
+ * disparaissait du sous-select, elle y entrerait et le total du premier cas passerait de 2 à 3 : ce test
+ * tomberait.
+ *
+ * ⚠️ Il ne prouve PAS que `not is_test` ou `tenant_id = $1` seraient nécessaires des DEUX côtés (sous-select
+ * ET requête extérieure) : les deux filtrent la MÊME ligne de `conversations`, la double garde est
+ * redondante par construction (cf. le commentaire de `messagesTenusParMba` dans `src/stats/store.pg.ts`),
+ * et aucune fixture ne peut démontrer qu'un côté serait indépendamment requis.
  */
 describe.skipIf(!url)('PgStatsStore.messagesTenusParMba (Postgres)', () => {
   let pool: Pool;
