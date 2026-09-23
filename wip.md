@@ -100,7 +100,21 @@ Spec `docs/superpowers/specs/2026-09-22-pubs-ctwa-design.md`, plan
   `horsEntreeGratuite` RESTE, ses deux arguments étant des expressions de la requête appelante et jamais une
   valeur d'utilisateur ; `bilanContact` garde l'écart de gardes de livraison ANTÉRIEUR à ce lot et déclaré dans
   le code, parce que le fermer CHANGE un chiffre que le client voit et demande donc sa propre mesure.
-- Lot 2 « Connecter » : attend les prérequis Meta de la spec, § 11.
+- ⏳ **Lot 2 « Connecter » : ÉCRIT ET POUSSÉ le 2026-09-23, PAS DÉPLOYÉ.** Plan
+  `docs/superpowers/plans/2026-09-23-pubs-ctwa-lot2-connecter.md`. Migration **0167** écrite, pas
+  appliquée. Un espace connecte son compte publicitaire et sa Page depuis l'écran « Publicités » ; le
+  jeton d'utilisateur système est chiffré au repos, et le choix du compte est vérifié contre ce que le
+  jeton accorde, relu chez Meta.
+- 🔴 **CE QUI MANQUE AU LOT 2 AVANT D'ÊTRE VRAI** : sa revue finale, son déploiement (migration AVANT
+  le `up`), et surtout l'essai réel, qui dépend de DEUX gestes chez Meta côté Julien : lier la Page au
+  numéro WhatsApp (le code arrive dans l'Inbox) et poser un moyen de paiement. Sans le premier, la
+  liaison restera « inconnue » à l'écran, ce qui est le cas honnête, pas un défaut.
+- ⚠️ **L'écran est DÉJÀ EN LIGNE** (Vercel publie à chaque push) et dit « publicités non configurées »
+  tant que l'API n'est pas déployée ET que `META_ADS_CONFIG_ID` n'est pas posée dans le `.env.prod`. Un
+  test Playwright tient cette tolérance : c'est elle qui ferme la fenêtre Vercel/API.
+- ✅ **Revue du lot faite le jour même, 4 points, tous corrigés** (`4c93d5fb`), dont un qui comptait : le
+  chiffrement du jeton n'était tenu par AUCUN test, puisqu'il vit dans le câblage. `tests/pubs-cablage.test.ts`
+  le lit dans la source, comme le plafond de campagne.
 
 ## 🔴 OUTILS MAISON DE L'AGENT DE META (LOT 2 DÉPLOYÉ ET ÉPROUVÉ ; LOTS 3 ET 4 ÉCRITS LE 2026-09-22)
 
