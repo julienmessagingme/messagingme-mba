@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import { MbaNotice } from '@/components/MbaNotice';
 import { MbaTabs } from '@/components/MbaTabs';
+import { EnteteAgent } from '@/components/EnteteAgent';
+import { logoDuModele, pastilleDuModele } from '@/lib/logos-llm';
 import { useT, useLocale } from '@/lib/i18n';
 import { cardCls, inputCls, kickerCls } from '@/lib/ui';
 import {
@@ -21,7 +23,7 @@ import { AgentTest } from '@/components/AgentTest';
 import { HistoriquePanel } from '@/components/HistoriquePanel';
 import { appliquerProposition, lireBandeaux, lireSuggestions, manquesDe, type ManqueFiche } from '@/lib/api-agent-setup';
 import { ApiError } from '@/lib/http';
-import { consommationAgent, listerModeles, type ConsommationAgent, type ModeleProposable } from '@/lib/api-agent';
+import { consommationAgent, listerModeles, messagesAgent, type ConsommationAgent, type ModeleProposable } from '@/lib/api-agent';
 import { fmtCost } from '@/lib/format';
 import type { Locale } from '@/lib/locale';
 
@@ -82,12 +84,24 @@ function Ecran({ tenantId }: { tenantId: string }) {
   const [nouveau, setNouveau] = useState('');
   const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
-  // Ce qui manque pour ACTIVER, tel que le serveur le rend en 422. Séparé du message d'erreur : ce n'est pas
-  // une panne, c'est une liste de choses à faire, et chacune pointe l'onglet où elle se fait.
-  const [manques, setManques] = useState<ManqueFiche[]>([]);
+  /**
+   * Ce qui manque pour ACTIVER, tel que le serveur le rend. Séparé du message d'erreur : ce n'est pas une
+   * panne, c'est une liste de choses à faire, et chacune pointe l'onglet où elle se fait.
+   *
+   * 🔴 `null` = ON NE SAIT PAS, ET CE N'EST PAS UNE LISTE VIDE. Depuis que ces manques sont rendus par
+   * `EnteteAgent`, une liste vide y affiche « Tout est réglé » : la garder par défaut ferait affirmer que
+   * l'agent est complet avant même d'avoir lu la route, et pour toujours sur un serveur plus ancien qu'elle
+   * (elle rend alors 404, et cet écran doit marcher exactement comme avant). Même règle que `messages`
+   * juste en dessous, et pour la même raison : ne jamais annoncer ce qu'on n'a pas mesuré.
+   */
+  const [manques, setManques] = useState<ManqueFiche[] | null>(null);
   /** L'adresse notée par l'assistant de construction, pour l'onglet Base de connaissance. */
   const [urlSuggeree, setUrlSuggeree] = useState<string | null>(null);
+  /** ⚠️ `[]` SUFFIT ICI, contrairement aux manques : ce bandeau ne se rend QUE si la liste n'est pas vide, il
+   *  n'a donc aucun état « tout va bien » à affirmer quand on ne sait pas. */
   const [avertissements, setAvertissements] = useState<ManqueFiche[]>([]);
+  /** Les messages échangés sur 30 jours. `null` = on ne sait pas, l'en-tête n'affiche alors aucun chiffre. */
+  const [messages, setMessages] = useState<number | null>(null);
   // Le solde prépayé du workspace. `null` = aucun solde sur cette instance, on n'affiche rien plutôt que
   // d'annoncer « 0 € » à un client dont le compte n'est simplement pas branché.
   const [solde, setSolde] = useState<number | null>(null);
@@ -120,15 +134,19 @@ function Ecran({ tenantId }: { tenantId: string }) {
    * Relit ce qui manque à cet agent, SANS rien tenter.
    *
    * 🔴 BEST-EFFORT, jamais bloquant : c'est une aide au réglage, pas une condition. Un serveur plus ancien
-   * que cette route rend 404, et l'écran doit marcher exactement comme avant. On efface alors la liste
-   * plutôt que de laisser à l'écran un avertissement qu'on ne sait plus vérifier.
+   * que cette route rend 404, et l'écran doit marcher exactement comme avant. On retombe alors sur « on ne
+   * sait pas » plutôt que de laisser à l'écran un avertissement qu'on ne sait plus vérifier.
    */
   const rafraichirManques = useCallback((agentId: string) => {
-    // ⚠️ UN SEUL APPEL POUR LES DEUX BANDEAUX : la route rend les deux listes, et deux appels sur la même
-    // adresse doublaient la charge d'une route sous plafond de débit à chaque ouverture de fiche.
+    // ⚠️ UN SEUL APPEL POUR LES DEUX LISTES : la route les rend toutes les deux, et deux appels sur la même
+    // adresse doublaient la charge d'une route sous plafond de débit à chaque ouverture de fiche. (Elles
+    // disaient « les deux bandeaux » jusqu'au 2026-09-23 : les manques sont depuis les ÉTAPES de l'en-tête,
+    // seuls les avertissements sont restés un bandeau.)
     void lireBandeaux(tenantId, agentId)
       .then((b) => { setManques(b.manques); setAvertissements(b.avertissements); })
-      .catch(() => { setManques([]); setAvertissements([]); });
+      // 🔴 `null` ET PAS `[]` SUR UN ÉCHEC : une liste vide annoncerait « Tout est réglé » dans l'en-tête sur
+      // la seule base d'un 404, c'est-à-dire exactement là où l'on ne sait rien.
+      .catch(() => { setManques(null); setAvertissements([]); });
   }, [tenantId]);
 
   /**
@@ -137,16 +155,38 @@ function Ecran({ tenantId }: { tenantId: string }) {
    * d'avoir essayé son agent. Julien a cherché un réglage pendant que la réponse était calculée et tue.
    */
   useEffect(() => {
-    if (ouvert === null) { setManques([]); return; }
+    if (ouvert === null) { setManques(null); return; }
     rafraichirManques(ouvert.id);
   }, [ouvert?.id, rafraichirManques]);
+
+  /**
+   * COMBIEN DE MESSAGES CET AGENT A TENUS, sur 30 jours.
+   *
+   * 🔴 IL NE PART QUE SUR UNE FICHE OUVERTE, et le compteur se REMET à « on ne sait pas » à chaque
+   * changement d'agent : garder celui du précédent afficherait, le temps d'un aller-retour réseau, le
+   * chiffre d'un agent sous le nom d'un autre.
+   *
+   * 🔴 UN `.catch` QUI AVALE, comme sur l'écran jumeau : ni le 404 de la fenêtre où Vercel a publié l'écran
+   * avant le déploiement de l'API, ni le 403 d'un compte non administrateur ne doivent faire rendre la fiche
+   * comme une erreur. On n'affiche alors simplement aucun chiffre.
+   */
+  useEffect(() => {
+    setMessages(null);
+    if (ouvert === null) return;
+    let vivant = true;
+    void messagesAgent(tenantId, ouvert.id)
+      .then((n) => { if (vivant) setMessages(n); })
+      .catch(() => { if (vivant) setMessages(null); });
+    return () => { vivant = false; };
+  }, [ouvert?.id, tenantId]);
 
   /**
    * CE QUE L'ENTRETIEN A NOTÉ, lu ici plutôt que dans l'onglet (2026-09-18).
    *
    * ⚠️ UN APPEL À PART, ET IL NE SE MÉLANGE PAS AUX MANQUES : ces deux listes disent ce qui BLOQUE
-   * l'activation, quand ceci est une suggestion qui ne bloque rien. Les fondre ferait afficher une
-   * proposition d'import dans un bandeau intitulé « ce qui manque à cet agent ».
+   * l'activation, quand ceci est une suggestion qui ne bloque rien. Les fondre ferait compter une
+   * proposition d'import parmi les « n étapes à finir » de l'en-tête, c'est-à-dire dans un compteur de ce
+   * qui empêche l'agent de partir.
    *
    * ⚠️ UN ÉCHEC NE FAIT RIEN TOMBER : sans suggestion, l'onglet Base de connaissance se comporte comme
    * avant, avec son champ vide.
@@ -227,7 +267,10 @@ function Ecran({ tenantId }: { tenantId: string }) {
     if (!ouvert || busy) return;
     setBusy(true);
     setErreur(null);
-    setManques([]);
+    // ⚠️ `null` PENDANT L'ÉCRITURE, pas `[]` : ce geste peut être une activation, dont le refus 422 rapporte
+    // justement la liste. Tant qu'on n'a pas la réponse, on ne sait plus ce qui manque, et « Tout est réglé »
+    // le temps de l'aller-retour serait une affirmation prise sur rien.
+    setManques(null);
     try {
       // Le verrou de version accompagne TOUT patch de fiche : sans lui, deux surfaces qui écrivent la même
       // clé se recouvrent en silence. Le serveur refuse en 409, et le message dit de recharger.
@@ -254,50 +297,48 @@ function Ecran({ tenantId }: { tenantId: string }) {
 
   if (ouvert) {
     return (
-      <div className="mx-auto flex max-w-4xl flex-col gap-4">
+      <div className="mx-auto flex max-w-6xl flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <button onClick={() => { setOuvert(null); aller(null, ONGLET_PAR_DEFAUT); void charger(); }} className="text-sm text-brand-600 hover:underline">
             ← {t('Retour aux agents', 'Back to agents')}
           </button>
-          <div className="flex items-center gap-2">
-            <Activation agent={ouvert} busy={busy} onChange={(status) => void enregistrer({ status })} />
-            <button
-              data-testid="agent-supprimer"
-              disabled={busy}
-              onClick={() => void supprimer(ouvert)}
-              title={t('Supprimer cet agent', 'Delete this agent')}
-              className="rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-coral hover:bg-red-50 disabled:opacity-40"
-            >
-              {t('Supprimer', 'Delete')}
-            </button>
-          </div>
+          <button
+            data-testid="agent-supprimer"
+            disabled={busy}
+            onClick={() => void supprimer(ouvert)}
+            title={t('Supprimer cet agent', 'Delete this agent')}
+            className="rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-coral hover:bg-red-50 disabled:opacity-40"
+          >
+            {t('Supprimer', 'Delete')}
+          </button>
         </div>
-        <div>
-          <p className={kickerCls}>{t('AGENT IA', 'AI AGENT')}</p>
-          <h2 className="text-xl font-semibold tracking-tight text-ink-900">{ouvert.label}</h2>
-        </div>
+        {/**
+         * 🔴 L'EN-TÊTE PORTE L'IDENTITÉ, L'ÉTAT ET CE QUI MANQUE, comme sur l'écran de l'agent de Meta. Le
+         * sur-titre « AGENT IA » disparaît avec l'ancien bloc titre : la navigation le dit déjà, et le
+         * logo du fournisseur dit ce que le sur-titre ne disait pas.
+         *
+         * ⚠️ `Activation` DÉMÉNAGE ICI, il ne se recopie pas. Il porte la `Pastille` de statut et le bouton
+         * `agent-activer` : en laisser une copie dans la barre d'actions ferait exister chaque `data-testid`
+         * en double et jetterait `agents-fiche.spec.ts` en violation de mode strict.
+         *
+         * ⚠️ `etapes={manques}` SANS `?? []` et sans recopie : `ManqueFiche` porte déjà `{ message, onglet }`,
+         * et c'est le `null` qu'il faut laisser passer (« on ne sait pas encore »).
+         */}
+        <EnteteAgent
+          logo={logoDuModele(ouvert.modele)}
+          pastille={pastilleDuModele(ouvert.modele)}
+          nom={ouvert.label}
+          precision={ouvert.modele}
+          etat={<Activation agent={ouvert} busy={busy} onChange={(status) => void enregistrer({ status })} />}
+          etapes={manques}
+          messages30j={messages}
+          onOnglet={(cle) => aller(ouvert.id, lireOnglet(cle))}
+        />
         {erreur && <MbaNotice kind="error" testid="agent-erreur">{erreur}</MbaNotice>}
-        {manques.length > 0 && (
-          <MbaNotice kind="warning" testid="agent-manques">
-            {/* ⚠️ Le titre parle d'ACTIVATION parce que c'est ce que ces manques bloquent, mais ils s'affichent
-                désormais DÈS L'OUVERTURE de la fiche : le plus utile d'entre eux (« la base est remplie mais
-                l'outil de recherche est inactif ») explique aussi pourquoi un essai ne trouve rien, et c'est
-                dans le bac à sable qu'on s'en rend compte, pas au moment d'activer. */}
-            <span className="font-medium">{t('Ce qui manque à cet agent (et bloque son activation) :', 'What this agent is missing (and what blocks activation):')}</span>
-            <span className="mt-1 block">
-              {manques.map((m) => (
-                <button
-                  key={m.message}
-                  data-testid={`agent-manque-${m.onglet}`}
-                  onClick={() => aller(ouvert.id, m.onglet)}
-                  className="block text-left underline decoration-dotted hover:decoration-solid"
-                >
-                  {m.message}
-                </button>
-              ))}
-            </span>
-          </MbaNotice>
-        )}
+        {/* ⚠️ CE BANDEAU RESTE DANS LE CORPS, lui, et ce n'est pas un oubli : ces avertissements ne bloquent
+            pas l'activation, donc ils n'entrent pas dans le compteur d'étapes de l'en-tête. Les y verser
+            rendrait « n étapes à finir » faux, et donnerait à un serveur tiers un droit de veto lisible
+            comme un blocage. */}
         {avertissements.length > 0 && (
           <MbaNotice kind="warning" testid="agent-avertissements">
             {/* 🔴 CE BANDEAU EXISTE PARCE QUE LA PERTE ÉTAIT MUETTE. Un rafraîchissement de serveur MCP
@@ -320,75 +361,93 @@ function Ecran({ tenantId }: { tenantId: string }) {
             </span>
           </MbaNotice>
         )}
-        <MbaTabs
-          active={onglet}
-          onSelect={(k) => aller(ouvert.id, lireOnglet(k))}
-          tabs={[
-            { key: 'construction', label: t('Construire en parlant', 'Build by talking') },
-            { key: 'identite', label: t('Identité et ton', 'Identity and tone') },
-            { key: 'objectif', label: t('Objectif et transferts', 'Objective and handovers') },
-            { key: 'connaissance', label: t('Base de connaissance', 'Knowledge base') },
-            { key: 'outils', label: t('Outils', 'Tools') },
-            { key: 'perimetre', label: t('Périmètre et garde-fous', 'Scope and guardrails') },
-            { key: 'modele', label: t('Modèle', 'Model') },
-            { key: 'historique', label: t('Historique', 'History') },
-            { key: 'tester', label: t('Tester', 'Test') },
-          ]}
-        />
-        {/* La conversation n'ecrit RIEN toute seule : elle rend une proposition, et c'est cet ecran qui
-            l'applique, par les memes routes que le formulaire et avec le meme verrou de version. */}
-        {onglet === 'construction' && (
-          <AgentConstruction
-            tenantId={tenantId}
-            agentId={ouvert.id}
-            onApplique={async (p) => {
-              try {
-                await appliquerProposition(tenantId, ouvert.id, p, ouvert.ficheVersion);
-              } finally {
-                // Relu MÊME en cas d'échec, et c'est le point : un échec partiel (la fiche écrite, un outil
-                // refusé) laisse le numéro de version périmé en mémoire, et un second essai se ferait alors
-                // refuser en 409 pour une raison qui n'a rien à voir avec la cause réelle.
-                setOuvert(await getAgent(tenantId, ouvert.id));
-                await charger();
-                // ⚠️ ET LES MANQUES AUSSI, TROISIÈME CHEMIN DU MÊME DÉFAUT. Appliquer une proposition pose
-                // souvent des OUTILS : sans ce rappel, « Aucun outil actif » survivait au geste qui venait
-                // de le régler, exactement comme dans les panneaux Outils et Connaissance corrigés le
-                // 2026-09-11. L'effet `useEffect` ne rejoue pas, l'identifiant de l'agent n'ayant pas changé.
-                rafraichirManques(ouvert.id);
-              }
-            }}
-          />
-        )}
-        {onglet === 'identite' && <OngletIdentite agent={ouvert} busy={busy} onSave={enregistrer} />}
-        {onglet === 'objectif' && <OngletObjectif agent={ouvert} busy={busy} onSave={enregistrer} />}
-        {/* La connaissance vit dans SA table, pas dans la fiche jsonb : ce panneau a donc ses propres appels
-            et son propre verrou d'ecriture, il ne passe pas par `enregistrer`. */}
-        {onglet === 'connaissance' && (
-          <AgentConnaissance
-            tenantId={tenantId}
-            agentId={ouvert.id}
-            urlSuggeree={urlSuggeree}
-            onChange={() => rafraichirManques(ouvert.id)}
-          />
-        )}
-        {/* Les outils vivent dans LEUR table, avec leur propre consentement humain : ce panneau ne passe pas
-            non plus par `enregistrer`, qui n'ecrit que la fiche. */}
-        {onglet === 'outils' && <AgentOutils tenantId={tenantId} agentId={ouvert.id} onChange={() => rafraichirManques(ouvert.id)} />}
-        {onglet === 'perimetre' && <OngletPerimetre agent={ouvert} busy={busy} onSave={enregistrer} />}
-        {onglet === 'modele' && <OngletModele agent={ouvert} tenantId={tenantId} busy={busy} onSave={enregistrer} />}
-        {/* Le bac a sable fait tourner le VRAI cerveau, sans session ni run : il n ecrit rien, il ne passe
-            donc pas non plus par `enregistrer`. */}
-        {/* 🔴 LE MEME PANNEAU QUE LE MBA, avec la surface `agent` : deux implementations du meme journal
-            auraient diverge, et c est le genre d ecran qu on ne regarde que le jour ou quelque chose a
-            disparu, donc trop tard pour s apercevoir qu il ment. */}
-        {onglet === 'historique' && <HistoriquePanel tenantId={tenantId} surface="agent" agentId={ouvert.id} />}
-        {onglet === 'tester' && <AgentTest tenantId={tenantId} agentId={ouvert.id} />}
+        <div className="grid gap-4 lg:grid-cols-[14rem_1fr]">
+          {/* ⚠️ `min-w-0` ICI AUSSI, et pas seulement sur le contenu. Un élément de grille a
+              `min-width: auto`, donc il ne peut pas devenir plus étroit que son contenu : sous `lg`, le menu
+              redevient une barre horizontale à défilement (neuf entrées aux libellés longs), et la colonne de
+              grille prendrait cette largeur, ce qui ferait défiler la PAGE ENTIÈRE de travers sur un
+              téléphone au lieu de la seule barre d'onglets. Mesuré sur l'écran jumeau : 1029 px pour 390. */}
+          <div className="min-w-0 lg:border-r lg:border-ink-200 lg:pr-3">
+            <MbaTabs
+              orientation="verticale"
+              active={onglet}
+              onSelect={(k) => aller(ouvert.id, lireOnglet(k))}
+              tabs={[
+                { key: 'construction', label: t('Construire en parlant', 'Build by talking') },
+                { key: 'identite', label: t('Identité et ton', 'Identity and tone') },
+                { key: 'objectif', label: t('Objectif et transferts', 'Objective and handovers') },
+                { key: 'connaissance', label: t('Base de connaissance', 'Knowledge base') },
+                { key: 'outils', label: t('Outils', 'Tools') },
+                { key: 'perimetre', label: t('Périmètre et garde-fous', 'Scope and guardrails') },
+                { key: 'modele', label: t('Modèle', 'Model') },
+                { key: 'historique', label: t('Historique', 'History') },
+                { key: 'tester', label: t('Tester', 'Test') },
+              ]}
+            />
+          </div>
+
+          {/* ⚠️ `min-w-0` : une piste `1fr` prend la largeur MINIMALE de son contenu comme plancher, et un
+              panneau large (le tableau des appels d'outils, le journal) pousserait la grille et ferait
+              déborder la page. Même geste que sur l'écran de l'agent de Meta. */}
+          <div className="min-w-0">
+            {/* La conversation n'ecrit RIEN toute seule : elle rend une proposition, et c'est cet ecran qui
+                l'applique, par les memes routes que le formulaire et avec le meme verrou de version. */}
+            {onglet === 'construction' && (
+              <AgentConstruction
+                tenantId={tenantId}
+                agentId={ouvert.id}
+                onApplique={async (p) => {
+                  try {
+                    await appliquerProposition(tenantId, ouvert.id, p, ouvert.ficheVersion);
+                  } finally {
+                    // Relu MÊME en cas d'échec, et c'est le point : un échec partiel (la fiche écrite, un outil
+                    // refusé) laisse le numéro de version périmé en mémoire, et un second essai se ferait alors
+                    // refuser en 409 pour une raison qui n'a rien à voir avec la cause réelle.
+                    setOuvert(await getAgent(tenantId, ouvert.id));
+                    await charger();
+                    // ⚠️ ET LES MANQUES AUSSI, TROISIÈME CHEMIN DU MÊME DÉFAUT. Appliquer une proposition pose
+                    // souvent des OUTILS : sans ce rappel, « Aucun outil actif » survivait au geste qui venait
+                    // de le régler, exactement comme dans les panneaux Outils et Connaissance corrigés le
+                    // 2026-09-11. L'effet `useEffect` ne rejoue pas, l'identifiant de l'agent n'ayant pas changé.
+                    rafraichirManques(ouvert.id);
+                  }
+                }}
+              />
+            )}
+            {onglet === 'identite' && <OngletIdentite agent={ouvert} busy={busy} onSave={enregistrer} />}
+            {onglet === 'objectif' && <OngletObjectif agent={ouvert} busy={busy} onSave={enregistrer} />}
+            {/* La connaissance vit dans SA table, pas dans la fiche jsonb : ce panneau a donc ses propres appels
+                et son propre verrou d'ecriture, il ne passe pas par `enregistrer`. */}
+            {onglet === 'connaissance' && (
+              <AgentConnaissance
+                tenantId={tenantId}
+                agentId={ouvert.id}
+                urlSuggeree={urlSuggeree}
+                onChange={() => rafraichirManques(ouvert.id)}
+              />
+            )}
+            {/* Les outils vivent dans LEUR table, avec leur propre consentement humain : ce panneau ne passe pas
+                non plus par `enregistrer`, qui n'ecrit que la fiche. */}
+            {onglet === 'outils' && <AgentOutils tenantId={tenantId} agentId={ouvert.id} onChange={() => rafraichirManques(ouvert.id)} />}
+            {onglet === 'perimetre' && <OngletPerimetre agent={ouvert} busy={busy} onSave={enregistrer} />}
+            {onglet === 'modele' && <OngletModele agent={ouvert} tenantId={tenantId} busy={busy} onSave={enregistrer} />}
+            {/* Le bac a sable fait tourner le VRAI cerveau, sans session ni run : il n ecrit rien, il ne passe
+                donc pas non plus par `enregistrer`. */}
+            {/* 🔴 LE MEME PANNEAU QUE LE MBA, avec la surface `agent` : deux implementations du meme journal
+                auraient diverge, et c est le genre d ecran qu on ne regarde que le jour ou quelque chose a
+                disparu, donc trop tard pour s apercevoir qu il ment. */}
+            {onglet === 'historique' && <HistoriquePanel tenantId={tenantId} surface="agent" agentId={ouvert.id} />}
+            {onglet === 'tester' && <AgentTest tenantId={tenantId} agentId={ouvert.id} />}
+          </div>
+        </div>
       </div>
     );
   }
 
+  // ⚠️ `max-w-6xl` COMME LA FICHE, et c'est le seul intérêt de le changer ici : à deux largeurs différentes,
+  // la page sautait de 896 à 1152 px au moment d'ouvrir un agent, puis en sens inverse en revenant.
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-4">
+    <div className="mx-auto flex max-w-6xl flex-col gap-4">
       {solde !== null && <Solde microEur={solde} />}
       <div>
         <p className={kickerCls}>{t('AGENT IA', 'AI AGENT')}</p>
@@ -433,31 +492,57 @@ function Ecran({ tenantId }: { tenantId: string }) {
         {agents?.length === 0 && <p className="text-sm text-ink-500">{t('Aucun agent pour le moment.', 'No agent yet.')}</p>}
         {/* Une LIGNE, pas un bouton : la suppression vit ici, et un bouton dans un bouton n'est pas du HTML
             valide (le navigateur défait l'imbrication, et le clic devient imprévisible). */}
-        {(agents ?? []).map((a) => (
-          <div
-            key={a.id}
-            className="flex items-center gap-2 rounded-lg border border-ink-200 pr-2 hover:bg-ink-50"
-          >
-            <button
-              data-testid={`agent-ligne-${a.id}`}
-              onClick={() => aller(a.id, ONGLET_PAR_DEFAUT)}
-              className="flex flex-1 items-center justify-between gap-3 px-3 py-2 text-left"
+        {(agents ?? []).map((a) => {
+          // Calculé UNE fois par ligne : le logo et son repli se décident sur le même préfixe, et l'appeler
+          // deux fois dans le marquage laisserait les deux branches se désaccorder au premier changement.
+          const logo = logoDuModele(a.modele);
+          return (
+            <div
+              key={a.id}
+              className="flex items-center gap-2 rounded-lg border border-ink-200 pr-2 hover:bg-ink-50"
             >
-              <span className="truncate text-sm font-medium text-ink-800">{a.label}</span>
-              <Pastille status={a.status} />
-            </button>
-            <button
-              data-testid={`agent-supprimer-${a.id}`}
-              disabled={busy}
-              onClick={() => void supprimer({ id: a.id, label: a.label })}
-              title={t('Supprimer cet agent', 'Delete this agent')}
-              aria-label={t(`Supprimer ${a.label}`, `Delete ${a.label}`)}
-              className="shrink-0 rounded-lg border border-ink-300 px-2 py-1 text-xs text-coral hover:bg-red-50 disabled:opacity-40"
-            >
-              {t('Supprimer', 'Delete')}
-            </button>
-          </div>
-        ))}
+              <button
+                data-testid={`agent-ligne-${a.id}`}
+                onClick={() => aller(a.id, ONGLET_PAR_DEFAUT)}
+                className="flex flex-1 items-center justify-between gap-3 px-3 py-2 text-left"
+              >
+                {/* `min-w-0` : sans lui, ce groupe flex ne descend pas sous la largeur du nom et le `truncate`
+                    ne tronque jamais rien. */}
+                <span className="flex min-w-0 items-center gap-2">
+                  {/* 🔴 LE NOM ACCESSIBLE DE CE BOUTON NE DOIT PAS BOUGER. `alt` vient de `logoDuModele`, qui le
+                      rend VIDE et dit pourquoi (un test le fige) : le texte alternatif d'une image entre dans
+                      le nom accessible du bouton qui la porte, et `web/e2e/agents-modele.spec.ts` ouvre
+                      justement la fiche par `getByRole('button', { name: /Conseiller séjours/ })`. Même raison
+                      pour l'`aria-hidden` du repli : ces deux ou trois lettres sont un dessin, pas un mot. */}
+                  {logo !== null ? (
+                    // ⚠️ LE COMMENTAIRE DE DÉSACTIVATION VA ICI, collé à la balise : posé au-dessus du `{logo
+                    // !== null ?`, il couvrirait cette LIGNE-LÀ et l'avertissement resterait (piège relevé sur
+                    // `EnteteAgent`). Nos PNG sont servis par nous, et `next/image` n'apporte rien sur une icône
+                    // de 20 px déjà à sa taille finale.
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={logo.src} alt={logo.alt} className="h-5 w-5 shrink-0" />
+                  ) : (
+                    <span aria-hidden="true" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ink-100 text-[9px] font-semibold text-ink-600">
+                      {pastilleDuModele(a.modele)}
+                    </span>
+                  )}
+                  <span className="truncate text-sm font-medium text-ink-800">{a.label}</span>
+                </span>
+                <Pastille status={a.status} />
+              </button>
+              <button
+                data-testid={`agent-supprimer-${a.id}`}
+                disabled={busy}
+                onClick={() => void supprimer({ id: a.id, label: a.label })}
+                title={t('Supprimer cet agent', 'Delete this agent')}
+                aria-label={t(`Supprimer ${a.label}`, `Delete ${a.label}`)}
+                className="shrink-0 rounded-lg border border-ink-300 px-2 py-1 text-xs text-coral hover:bg-red-50 disabled:opacity-40"
+              >
+                {t('Supprimer', 'Delete')}
+              </button>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

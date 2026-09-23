@@ -362,7 +362,11 @@ export interface ManqueFiche {
 }
 
 /**
- * LES DEUX BANDEAUX D'UNE FICHE D'AGENT, EN UN SEUL ALLER-RETOUR.
+ * LES DEUX SIGNALEMENTS D'UNE FICHE D'AGENT, EN UN SEUL ALLER-RETOUR.
+ *
+ * ⚠️ « LES DEUX BANDEAUX » JUSQU'AU 2026-09-23, et ce n'est plus vrai depuis : les MANQUES sont devenus les
+ * étapes de `EnteteAgent`, seuls les AVERTISSEMENTS sont restés un bandeau du corps. L'appel, lui, n'a pas
+ * bougé, et c'est justement pour ça que le nom de ce qu'il rapporte ne parle plus de leur dessin.
  *
  * 🔴 POURQUOI CET APPEL EXISTE. Les manques étaient déjà calculés côté serveur, mais ils ne sortaient que
  * dans le corps d'un 422, c'est-à-dire APRÈS avoir cliqué « activer ». Un agent en brouillon qu'on essaie

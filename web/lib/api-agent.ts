@@ -62,11 +62,18 @@ export type PatchAgent = Partial<Omit<AgentComplet, 'id' | 'contenu' | 'ficheVer
 /**
  * Les agents du workspace. Par défaut les ACTIFS seulement, ce dont la palette du builder a besoin : un
  * brouillon proposé dans un scénario promettrait une conversation qui n'aurait pas lieu.
+ *
+ * 🔴 `modele` EST REPLIÉ SUR LA CHAÎNE VIDE, et ce n'est pas une coquetterie. Il est NEUF dans la projection
+ * du serveur (2026-09-23) : pendant la fenêtre où Vercel a publié la console au `git push` et où l'API
+ * attend son `up`, la production rend des lignes SANS lui. Le type dit `string`, la réponse vient du réseau
+ * et n'est pas validée, donc `logoDuModele(undefined)` appellerait `.indexOf` sur `undefined` et ferait
+ * tomber la LISTE ENTIÈRE des agents, pas seulement son icône. `logoDuModele('')` rend `null` (c'est tenu
+ * par `tests/web-logos-llm.test.ts`), donc la ligne retombe sur son repli sans rien casser.
  */
 export async function listAgents(tenantId: string, opts: { tous?: boolean } = {}): Promise<AgentResume[]> {
   const q = opts.tous ? '?statut=tous' : '';
   const r = await request<{ agents?: AgentResume[] }>(`/tenants/${tenantId}/agents${q}`);
-  return r.agents ?? [];
+  return (r.agents ?? []).map((a) => ({ ...a, modele: a.modele ?? '' }));
 }
 
 /**
@@ -126,6 +133,28 @@ export async function consommationAgent(tenantId: string, agentId: string): Prom
     `/tenants/${tenantId}/agents/${agentId}/consommation`,
   );
   return r.consommation ?? null;
+}
+
+/**
+ * Combien de messages ont été échangés dans les conversations que cet agent a tenues, sur 30 jours (la
+ * fenêtre est décidée par le serveur, la même que celle de la consommation juste au-dessus).
+ *
+ * 🔴 `null` = ON NE SAIT PAS, jamais zéro. Trois cas réels le produisent : la route n'est pas encore
+ * déployée (Vercel publie l'écran au `git push`, l'API attend son `up`), le compte n'est pas administrateur
+ * (le module est monté en `g.admin`, donc un manager reçoit 403), et le serveur lui-même rend `null` quand
+ * sa dépendance de comptage n'est pas câblée. Un zéro affirmerait que l'agent n'a parlé à personne.
+ *
+ * ⚠️ LE COMPTE EMBRASSE TOUT LE FIL, y compris ce que l'équipe a écrit après avoir reprise la main : c'est
+ * le volume de la conversation, pas le travail de l'agent. `EnteteAgent` le DIT à l'écran, et ce n'est pas
+ * facultatif (sans quoi le chiffre se lit comme une note de performance).
+ *
+ * ⚠️ `jours` est RENDU par la route et volontairement pas remonté : la légende de l'en-tête écrit « 30
+ * jours » en toutes lettres, et deux porteurs du même nombre finiraient par diverger. Si la fenêtre serveur
+ * change, c'est la légende du composant qu'il faut suivre (`JOURS_CONSOMMATION`, `src/http/agents.ts`).
+ */
+export async function messagesAgent(tenantId: string, agentId: string): Promise<number | null> {
+  const r = await request<{ messages?: number | null }>(`/tenants/${tenantId}/agents/${agentId}/messages`);
+  return r.messages ?? null;
 }
 
 /**
