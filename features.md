@@ -2113,8 +2113,8 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
 ### Créer un agent, et ce que « activé » veut dire
 
 - ✅ **La liste des agents** (menu AI Agent > Other AI agent) : on crée un agent avec un **nom interne** (celui
-  que vous voyez dans la liste et dans le constructeur, jamais le contact). Chaque ligne porte sa pastille :
-  **Brouillon**, **Actif** ou **Désactivé**.
+  que vous voyez dans la liste et dans le constructeur, jamais le contact). Chaque ligne porte le petit logo
+  du modèle qui le fait parler, puis sa pastille : **Brouillon**, **Actif** ou **Désactivé**.
 - ✅ **Un agent naît en brouillon** : il n'apparaît dans le constructeur de scénario qu'une fois **activé**,
   quand vous avez relu ce qu'il dira. Ici, « activé » ne veut pas dire « il répond à tout » (c'est le sens du
   répondeur Meta), mais « il est proposable dans un scénario ».
@@ -2126,6 +2126,24 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   scénario qui l'utilisent cessent de répondre. La confirmation le dit avant le clic. Le bouton est **sur
   chaque ligne de la liste** (2026-08-31) autant que dans la fiche : jeter un agent d'essai n'oblige plus à
   entrer dedans d'abord.
+
+### L'en-tête de la fiche : l'agent en un coup d'œil
+
+- ✅ **La fiche s'ouvre sur un en-tête qui identifie l'agent** : le logo du fournisseur de son modèle (une
+  pastille avec ses initiales quand aucun logo ne convient, par exemple un modèle en place mais retiré du
+  catalogue), son nom interne, son modèle, et sa pastille Brouillon / Actif / Désactivé.
+- ✅ **Ce qu'il reste à régler avant de pouvoir l'activer s'affiche juste en dessous**, sous la forme « n
+  étapes à finir » (ou « Tout est réglé »), et chaque étape est un lien direct vers l'onglet où elle se
+  corrige.
+- ✅ **Le nombre de messages échangés sur 30 jours s'affiche à côté, quand il est connu.** Il compte tous les
+  messages, entrants et sortants, des conversations que cet agent a tenues au moins une fois pendant cette
+  période, **y compris ceux écrits par votre équipe après avoir repris la main sur l'agent** : ce n'est donc
+  pas une mesure de ce que l'agent a lui-même produit, mais du volume de ces conversations. Les conversations
+  de test n'y comptent pas.
+  ⚠️ **Quand ce nombre n'est pas connu, rien ne s'affiche : jamais un zéro**, qui laisserait croire que
+  l'agent n'a parlé à personne.
+- ✅ **Le menu de la fiche est une colonne à gauche du contenu**, sur un écran assez large. Sous une largeur
+  de téléphone, il redevient la barre horizontale du haut.
 
 ### Les neuf onglets de sa fiche
 
@@ -2377,11 +2395,10 @@ La conversation est **partagée entre les administrateurs de l'espace** : chaque
 celui qui l'a écrit. Un message d'avant le 2026-09-14, ou écrit par un compte depuis supprimé, n'en affiche
 aucune plutôt qu'un nom inventé.
 
-### Ce qui manque à l'agent, dit dès l'ouverture (2026-09-08)
+### Ce qui manque à l'agent, visible dès l'ouverture
 
-- ✅ **Un bandeau en tête de la fiche liste ce qui manque**, sans attendre qu'on clique « activer », et
-  chaque ligne est un lien vers l'onglet où ça se corrige. Le contrôle existait déjà, mais il ne parlait
-  qu'au moment de l'activation : un agent en brouillon qu'on essaie dans le bac à sable ne le voyait jamais.
+- ✅ **Ce qui manque avant de pouvoir être activé apparaît dans l'en-tête de la fiche**, sans attendre qu'on
+  clique « activer » : un agent en brouillon qu'on essaie dans le bac à sable le voit aussi.
 - 🔴 **Le cas qui coûte le plus cher est couvert** : une base de connaissance REMPLIE avec l'outil de
   recherche DÉSACTIVÉ. L'agent transfère alors toutes les questions de fond, et l'écran d'une base bien
   garnie donne l'impression que tout va bien. C'est le pire des deux mondes : le travail est fait et inutile.
@@ -2535,6 +2552,24 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
   traiter la demande. Mesuré le 21/08/2026 : une réclamation qui décrit un incident ET demande un dédommagement
   obtient de l'agent une réponse **vide**, ce qui rend d'autant plus nécessaire de voir ces conversations
   remonter dans « À traiter ».
+
+### L'en-tête des paramètres : l'agent en un coup d'œil
+
+- ✅ **L'écran de réglage s'ouvre sur un en-tête qui identifie l'agent** : le logo de Meta, le nom
+  d'affichage du numéro, le numéro lui-même, et une pastille qui dit son état.
+- ✅ **Les étapes obligatoires qu'il reste à régler s'affichent juste en dessous**, chacune avec un lien
+  direct vers l'onglet où elle se corrige, avec en plus un ratio du type « n sur m réglages obligatoires ».
+- ✅ **Le nombre de messages échangés sur 30 jours s'affiche à côté, quand il est connu.** Il compte tous les
+  messages, entrants et sortants, des conversations que cet agent a tenues au moins une fois pendant cette
+  période, **y compris ceux écrits par votre équipe après avoir repris la main sur l'agent** : ce n'est donc
+  pas une mesure de ce que l'agent a lui-même produit, mais du volume de ces conversations. Les conversations
+  de test n'y comptent pas.
+  ⚠️ **Quand ce nombre n'est pas connu, rien ne s'affiche : jamais un zéro**, qui laisserait croire que
+  l'agent n'a parlé à personne.
+- ⚠️ **Sur un numéro que Meta n'a pas encore ouvert, ni les étapes ni ce chiffre ne s'affichent** : ils
+  mèneraient vers un écran bloqué.
+- ✅ **Le menu des onglets est une colonne à gauche du contenu**, sur un écran assez large. Sous une largeur
+  de téléphone, il redevient la barre horizontale du haut.
 
 ### Onglet « Assistant » : régler l'agent en lui parlant (2026-09-15)
 

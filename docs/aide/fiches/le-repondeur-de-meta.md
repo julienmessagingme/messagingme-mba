@@ -1,7 +1,7 @@
 ---
 ecran: mba-guide
 source_section: MBA, le répondeur de Meta (menu « AI Agent » > MBA, guide / MBA, paramètres)
-source_empreinte: 22e74d
+source_empreinte: a12ee9
 ---
 # Le répondeur de Meta : à quoi il sert, et comment le régler
 
@@ -17,12 +17,24 @@ conversation que s'il en existe une d'ouverte, et elle s'ouvre exactement quand 
 Deux écrans, sous le menu AI Agent : le **guide**, qui explique ce qu'il fait et comment le préparer, et les
 **paramètres**, qui le règlent pour de vrai.
 
+**Un en-tête identifie l'agent en haut des paramètres** : le logo de Meta, le nom d'affichage du numéro, le
+numéro lui-même, une pastille qui dit son état, les étapes obligatoires qu'il reste à régler (chacune est un
+lien direct vers l'onglet où elle se corrige, avec le nombre de réglages obligatoires déjà faits sur le
+total), et le nombre de messages échangés sur les 30 derniers jours dans les conversations que l'agent a
+tenues, une fois que ce nombre est connu. Il compte tout le fil, entrants et sortants, y compris ce que
+votre équipe a écrit après avoir repris la main : ce n'est donc pas une mesure de ce que l'agent a lui-même
+produit. Les conversations d'essai n'y entrent pas, et tant que ce nombre n'est pas connu, rien ne
+s'affiche. Sur un numéro que Meta n'a pas encore ouvert, ni les étapes ni ce nombre ne s'affichent : ils
+mèneraient vers un écran bloqué.
+
 **Les paramètres, en dix onglets** : Aperçu (l'état de l'agent), Assistant (le régler en lui parlant),
 Activation (qui parle au client), Business (les informations de votre entreprise), FAQ (question par
 question, ou en masse depuis un fichier ou une adresse, avec aperçu avant écriture et sans jamais dupliquer
 une question existante), Compétences (le ton, les procédures, les interdits, par exemple « ne jamais
 inventer un horaire »), Fichiers (jusqu'à 100 Mo de documents de connaissance), Sites web (les pages qu'il
 va lire), Historique et Tester (un bac à sable où vous lui parlez sans consommer de conversation facturée).
+Ce menu se range en colonne à gauche du contenu ; sur un téléphone, il redevient la barre horizontale du
+haut.
 
 Deux situations bloquent l'édition, et l'écran les distingue parce qu'elles ne se règlent pas au même
 endroit : **aucun numéro rattaché**, qui renvoie à l'Accueil, et **Meta n'a pas encore ouvert l'agent sur ce
