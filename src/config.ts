@@ -25,6 +25,15 @@ export const schema = z.object({
   /** Configuration Embedded Signup (Facebook Login for Business) : l'id de configuration du dashboard Meta.
    *  Vide -> bouton « Connecter » inactif au front et route de complétion en 503 (feature OFF). */
   META_ES_CONFIG_ID: z.string().default(''),
+  /**
+   * Configuration « publicités » (Facebook Login for Business) : l'id de la SECONDE configuration, celle
+   * qui demande le compte publicitaire et la Page. Vide -> écran « Publicités » inactif, avec sa raison.
+   *
+   * 🔴 UNE CONFIGURATION SÉPARÉE DE L'INSCRIPTION WHATSAPP, ET C'EST UN CHOIX. Ajouter les permissions
+   * publicitaires à la configuration d'inscription ferait demander l'accès aux comptes publicitaires d'un
+   * client au moment où il branche son NUMÉRO, c'est-à-dire pour quelque chose qu'il n'a pas demandé.
+   */
+  META_ADS_CONFIG_ID: z.string().default(''),
   /** Clé AES-256-GCM (64 hex = 32 octets) du chiffrement au repos des tokens business ES. Requise si ES activé. */
   ENCRYPTION_KEY: z.string().default(''),
   /**
@@ -918,6 +927,12 @@ export const schema = z.object({
     // onboarding. Fail-fast au boot : 64 hex exigés.
     if (c.META_ES_CONFIG_ID !== '' && !/^[0-9a-fA-F]{64}$/.test(c.ENCRYPTION_KEY)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['ENCRYPTION_KEY'], message: 'ENCRYPTION_KEY (64 hex) requise quand META_ES_CONFIG_ID est défini' });
+    }
+    // MÊME RAISON POUR LES PUBLICITÉS : le jeton d'utilisateur système qu'elles rapportent permet de
+    // dépenser l'argent du client chez Meta. Sans clé, il serait stocké en clair ou la connexion
+    // planterait au premier client. Fail-fast au boot, comme pour l'inscription.
+    if (c.META_ADS_CONFIG_ID !== '' && !/^[0-9a-fA-F]{64}$/.test(c.ENCRYPTION_KEY)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['ENCRYPTION_KEY'], message: 'ENCRYPTION_KEY (64 hex) requise quand META_ADS_CONFIG_ID est défini' });
     }
   }
 });

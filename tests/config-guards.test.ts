@@ -27,6 +27,28 @@ const originalNodeEnv = process.env.NODE_ENV;
 afterEach(() => { process.env.NODE_ENV = originalNodeEnv; });
 
 describe('gardes de config en production', () => {
+  /**
+   * 🔴 LE JETON DES PUBLICITÉS PERMET DE DÉPENSER L'ARGENT DU CLIENT CHEZ META. Sans clé de
+   * chiffrement, il serait gardé en clair ou la connexion planterait au premier client. La garde est
+   * la même que celle de l'inscription WhatsApp, et pour la même raison.
+   */
+  it('META_ADS_CONFIG_ID sans ENCRYPTION_KEY -> refusé, en nommant la clé', () => {
+    asProd();
+    const r = schema.safeParse({ ...prodEnv, META_ADS_CONFIG_ID: '1058398247092403' });
+    expect(r.success).toBe(false);
+    expect(errPaths(r)).toContain('ENCRYPTION_KEY');
+  });
+
+  it('META_ADS_CONFIG_ID AVEC une clé de 64 hex -> accepté (le fail-fast ne bloque pas une prod valide)', () => {
+    asProd();
+    expect(schema.safeParse({ ...prodEnv, META_ADS_CONFIG_ID: '1058398247092403', ENCRYPTION_KEY: 'a'.repeat(64) }).success).toBe(true);
+  });
+
+  it('⚠️ vide -> accepté SANS clé : la fonctionnalité est simplement éteinte, et rien ne doit bloquer', () => {
+    asProd();
+    expect(schema.safeParse({ ...prodEnv, META_ADS_CONFIG_ID: '' }).success).toBe(true);
+  });
+
   it('environnement complet -> accepté (le fail-fast ne bloque pas une prod valide)', () => {
     asProd();
     expect(schema.safeParse(prodEnv).success).toBe(true);
