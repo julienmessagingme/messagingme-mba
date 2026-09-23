@@ -85,7 +85,21 @@ export type AuditAction =
   | 'numero.connecte'
   /** Le numéro a été ACTIVÉ depuis la console (vérification par code si besoin, puis register Cloud API). */
   | 'numero.active'
-  | 'contact.exporte';
+  | 'contact.exporte'
+  /**
+   * LA CONNEXION PUBLICITAIRE (2026-09-23, lot 2 des publicités Click-to-WhatsApp).
+   *
+   * 🔴 ELLE APPARTIENT À LA MÊME FAMILLE QUE `connecteur.cree` : ce geste pose chez nous un JETON qui
+   * permet de dépenser l'argent du client chez Meta, et de mettre ses publicités en pause. Savoir QUI a
+   * connecté, QUI a choisi le compte et QUI a déconnecté est la première question qu'on posera le jour où
+   * une pub aura tourné sans qu'on s'y attende.
+   *
+   * ⚠️ LE DÉTAIL NE PORTE NI LE JETON NI SON EMPREINTE, seulement des identifiants Meta et des COMPTES
+   * (combien de comptes publicitaires, combien de Pages). Même règle que pour l'inscription WhatsApp.
+   */
+  | 'pubs.connectee'
+  | 'pubs.actifs_choisis'
+  | 'pubs.deconnectee';
 
 export interface AuditEntry {
   id: string;
