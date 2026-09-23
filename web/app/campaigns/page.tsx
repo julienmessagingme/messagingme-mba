@@ -340,7 +340,12 @@ function CampaignsInner({ session }: { session: Session }) {
               )}
             </p>
           ) : (
-            <p className="mt-0.5 text-xs text-ink-400">{t('coût estimé indisponible', 'estimated cost unavailable')}</p>
+            /* ⚠️ IL PORTE UN `data-testid`, ET CE N'EST PAS DE LA DÉCORATION. Son test le cherchait par son
+               TEXTE : un `getByText` non ancré matche aussi chaque ANCÊTRE dont le contenu contient la
+               phrase, donc le nombre d'éléments trouvés dépend de l'avancement du rendu. Le test passait ou
+               tombait en « strict mode violation » selon la charge du runner, ce qui se lit comme un défaut
+               du code alors que c'est le localisateur qui est imprécis. */
+            <p className="mt-0.5 text-xs text-ink-400" data-testid="campagnes-cout-indisponible">{t('coût estimé indisponible', 'estimated cost unavailable')}</p>
           )}
         </div>
         <div className="flex items-center gap-3">

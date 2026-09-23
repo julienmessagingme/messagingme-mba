@@ -103,7 +103,12 @@ test.describe('Campagnes : le coût est celui du serveur', () => {
     // Le front part sur Vercel au push et l'API sur le VPS plus tard : pendant cette fenêtre, l'écran doit
     // se taire plutôt que de retomber sur son ancien calcul.
     await brancher(page, null);
-    await expect(page.getByText(/coût estimé indisponible|estimated cost unavailable/i)).toBeVisible();
+    // Par son `data-testid`, pas par son texte : un `getByText` non ancré matche aussi les ancêtres du
+    // bandeau, donc le nombre d'éléments dépend de l'avancement du rendu. Le CAS exercé ne change pas,
+    // et le texte reste vérifié juste en dessous.
+    const bandeau = page.getByTestId('campagnes-cout-indisponible');
+    await expect(bandeau).toBeVisible();
+    await expect(bandeau).toHaveText(/coût estimé indisponible|estimated cost unavailable/i);
     await expect(page.getByTestId('campagne-cout-c-rcs')).toHaveText(/indisponible|unavailable/i);
   });
 
