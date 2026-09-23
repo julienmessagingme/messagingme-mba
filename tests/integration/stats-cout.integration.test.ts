@@ -499,6 +499,42 @@ describe.skipIf(!url)('Cout : la population du tableau par campagne (Postgres re
     expect(par.get(ids['modele']!)).toMatchObject({ category: 'marketing', count: 1, envois: 1 });
   });
 
+  it('🔴 le drapeau HORS RETENTION se pose sur une campagne dont les envois ont pu etre purges', async () => {
+    // ⚠️ POURQUOI EN INTEGRATION : le predicat est celui de la purge, repris terme a terme, et il melange
+    // un reglage d'espace, un defaut d'instance et une arithmetique de dates. Un faux pool prouverait la
+    // forme de la requete, jamais qu'elle marque la bonne campagne.
+    const vieille = await pool.query<{ id: string }>(
+      `insert into campaigns (tenant_id, name, category, channel) values ($1, 'vieux-scenario', 'marketing', 'whatsapp') returning id`,
+      [tenantId],
+    );
+    const id = vieille.rows[0]!.id;
+    const contactId = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164) values ($1, '+33600000805') returning id`, [tenantId],
+    )).rows[0]!.id;
+    // Un envoi VIEUX de 200 jours : au-dela des 90 jours de retention.
+    await pool.query(
+      `insert into campaign_recipients (campaign_id, contact_id, to_e164, resolved_params, status, sent_at, message_id)
+       values ($1, $2, '33600000805', '{}'::jsonb, 'sent', now() - interval '200 days', 'wamid.vieux')`,
+      [id, contactId],
+    );
+    const large = { from: '2026-01-01', to: AUJ };
+    const avec = await store.getVolumeParCampagne(tenantId, large, { retentionJours: 90 });
+    expect(avec.find((l) => l.campaignId === id)?.horsRetention, 'la vieille campagne est marquee').toBe(true);
+    // ...et les campagnes du jour ne le sont pas.
+    expect(avec.find((l) => l.campaignId === ids['scenario'])?.horsRetention).toBe(false);
+  });
+
+  it('🔴 retention d instance a ZERO : plus rien n est marque, c est le levier d urgence', async () => {
+    // `CONVERSATION_RETENTION_DAYS = 0` arrete la purge pour tout le monde. Rien n'etant supprime, aucun
+    // cout ne devient inconnaissable : marquer quand meme viderait des cases sans raison.
+    const large = { from: '2026-01-01', to: AUJ };
+    const sans = await store.getVolumeParCampagne(tenantId, large, { retentionJours: 0 });
+    expect(sans.every((l) => l.horsRetention === false)).toBe(true);
+    // Et sans le parametre du tout, le comportement d'avant : aucun marquage.
+    const defaut = await store.getVolumeParCampagne(tenantId, large);
+    expect(defaut.every((l) => l.horsRetention === false)).toBe(true);
+  });
+
   it('🔴 les archivees sont exclues par defaut, et la bascule les rend', async () => {
     const sans = await store.getVolumeParCampagne(tenantId, RANGE);
     expect(sans.some((l) => l.campaignId === ids['archivee'])).toBe(false);

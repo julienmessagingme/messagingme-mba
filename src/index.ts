@@ -527,6 +527,35 @@ async function main(): Promise<void> {
    */
   const cacheTarifsMeta = cacheCourt<PricingSummary | null>(60_000);
 
+  /**
+   * LE POINT DE PASSAGE UNIQUE vers le tarif de Meta. Les deux appelants passent par ici.
+   *
+   * 🔴 UN ECHEC N'EST PAS MEMORISE, ET C'EST LA PROMESSE DU MODULE QU'ON HONORE ICI (jaune de la relecture
+   * du 2026-09-23). `cacheCourt` ne garde jamais un REJET, il le dit en toutes lettres ; mais
+   * `getPricingAnalytics` AVALE ses pannes et rend `null`, c'est-a-dire une valeur RESOLUE. Un 429, un jeton
+   * expire ou une coupure d'une seconde eteignaient donc la colonne « cout » de TOUS les ecrans pendant une
+   * minute, sans qu'un rechargement n'y puisse rien. On oublie la cle aussitot : le prochain affichage
+   * retentera.
+   *
+   * ⚠️ ET ON NE MARTELE PAS META POUR AUTANT : la mutualisation des appels EN VOL reste acquise (vingt-cinq
+   * onglets qui arrivent ensemble font UN aller-retour, panne comprise). Ce qu'on retire, c'est seulement de
+   * resservir un echec a ceux qui arrivent APRES lui.
+   *
+   * ⚠️ UN SEUL POINT DE PASSAGE, parce qu'il y en avait deux et qu'un des deux avait ete oublie du cache
+   * pendant un cycle entier. Un sixieme appelant passera par ici ou nulle part.
+   */
+  const tarifMeta = async (
+    tenant: string,
+    startTs: number,
+    endTs: number,
+    appel: () => Promise<PricingSummary | null>,
+  ): Promise<PricingSummary | null> => {
+    const cle = `${tenant}:${startTs}:${endTs}`;
+    const v = await cacheTarifsMeta.lire(cle, appel);
+    if (v === null) cacheTarifsMeta.invalider(cle);
+    return v;
+  };
+
   const prixFactures = async (tenant: string, range: { from: string; to: string }): Promise<CategoryRates> => {
     const [wabaId, ligne] = await Promise.all([repo.getTenantWabaId(tenant), statsStore.grillePrix(tenant)]);
     const { startTs, endTs } = rangeToUnix(range);
@@ -548,7 +577,7 @@ async function main(): Promise<void> {
      * retard de quelques secondes, jamais à une décision. Un tarif affiché est exactement de ce genre.
      */
     const pricing = pricingClientT && wabaId
-      ? await cacheTarifsMeta.lire(`${tenant}:${startTs}:${endTs}`, () => pricingClientT.getPricingAnalytics(wabaId, startTs, endTs))
+      ? await tarifMeta(tenant, startTs, endTs, () => pricingClientT.getPricingAnalytics(wabaId, startTs, endTs))
       : null;
     // La transformation elle-meme vit dans `tarifsFactures`, PURE et testee : ce cablage ne fait que lire
     // la grille et la lui passer, pour que le cas « une marge de 150 majore le prix » reste eprouvable.
@@ -1109,7 +1138,7 @@ async function main(): Promise<void> {
         // (2026-09-23). Cette route sert « Detail par template », que l'onglet Campagnes appelle LUI AUSSI a
         // chaque montage : le cache pose sur l'autre chemin etait donc contourne par la porte d'a cote, et
         // l'ecran le plus ouvert du produit repartait chez Meta a chaque affichage. Meme cle, meme fenetre.
-        const brut = await cacheTarifsMeta.lire(`${tenant}:${startTs}:${endTs}`, () => pricing.getPricingAnalytics(wabaId, startTs, endTs));
+        const brut = await tarifMeta(tenant, startTs, endTs, () => pricing.getPricingAnalytics(wabaId, startTs, endTs));
         if (!brut) return brut;
         return pricingFacture(brut, grilleDepuisLigne(ligne));
       },
@@ -1142,7 +1171,9 @@ async function main(): Promise<void> {
        */
       getCoutParCampagne: async (tenant, range, opts) => {
         const [volumes, rates, serviceMois, ligne, rcs] = await Promise.all([
-          statsStore.getVolumeParCampagne(tenant, range, opts),
+          // ⚠️ LA RETENTION VOYAGE JUSQU'ICI, et c'est ce qui permet a une campagne dont les envois ont ete
+          // purges de garder une case VIDE plutot qu'un 0,00 € qui se lirait « gratuit ».
+          statsStore.getVolumeParCampagne(tenant, range, { ...opts, retentionJours: config.CONVERSATION_RETENTION_DAYS }),
           prixFactures(tenant, range),
           // 🔴 LE MEME CALCUL DE FRANCHISE QUE LA LIGNE « MESSAGES », par les mêmes deux lectures. Deux
           // façons de déduire la franchise donneraient deux coûts de service sur la MÊME carte, à deux

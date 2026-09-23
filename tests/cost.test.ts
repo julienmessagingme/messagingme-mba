@@ -148,6 +148,29 @@ describe('estimateCoutParCampagne', () => {
     expect(par.get('tp')).toMatchObject({ envoyes: 2, envois: 2, cout: 0.29 });
   });
 
+  it('🔴 une campagne dont les envois ont pu être PURGÉS n’affiche pas 0, mais RIEN', () => {
+    // Le cas qui arrive tout seul, un matin : les envois d'un scénario vivent dans les conversations, que
+    // la rétention supprime. Sans ce terme, la campagne serait passée de son vrai coût à 0,00 €, c'est-à-dire
+    // de « voilà ce qu'elle a coûté » à « elle n'a rien coûté », sans que personne ne touche à rien.
+    const vieille: VolumeCampagneRow = { campaignId: 'vx', nom: 'vieux scenario', template: null, canal: 'whatsapp', category: null, count: 0, envois: 4, horsRetention: true };
+    const r = estimateCoutParCampagne([vieille], TARIFS, new Map(), new Map([['vx', 2]]));
+    expect(r.lignes[0]).toMatchObject({ envois: 4, cout: null, coutParEngagement: null });
+  });
+
+  it('...et la MÊME campagne encore dans la fenêtre garde son coût connu', () => {
+    // L'autre sens : « rien de facturable » reste une réponse, tant qu'on peut encore la donner. C'est le
+    // comportement du lot 4, que ce terme ne doit pas défaire.
+    const recente: VolumeCampagneRow = { campaignId: 'rx', nom: 'scenario recent', template: null, canal: 'whatsapp', category: null, count: 0, envois: 4, horsRetention: false };
+    const r = estimateCoutParCampagne([recente], TARIFS, new Map(), new Map([['rx', 2]]));
+    expect(r.lignes[0]).toMatchObject({ cout: 0, coutParEngagement: 0 });
+  });
+
+  it('⚠️ un magasin qui ne rend PAS le drapeau garde le comportement d’avant', () => {
+    // Absent vaut `false` : une instance plus ancienne que ce calcul ne doit pas vider des cases.
+    const sansDrapeau: VolumeCampagneRow = { campaignId: 'sx', nom: 'sans drapeau', template: null, canal: 'whatsapp', category: null, count: 0, envois: 1 };
+    expect(estimateCoutParCampagne([sansDrapeau], TARIFS, new Map(), new Map()).lignes[0]!.cout).toBe(0);
+  });
+
   it('🔴 une campagne RCS est CHIFFRÉE, à 6 cts l’envoi simple (Julien, 2026-09-23)', () => {
     // Le prix RCS est saisi par espace depuis la migration 0154 et la ligne « coût des messages » le compte
     // déjà. Ce tableau affichait « — » : il disait « on ne sait pas » là où on savait.

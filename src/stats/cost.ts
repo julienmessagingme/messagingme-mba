@@ -148,6 +148,19 @@ export interface VolumeCampagneRow {
   count: number;
   /** Personnes TOUCHÉES par la campagne sur la période, facturable ou non. Même valeur sur chaque ligne d'une campagne. */
   envois: number;
+  /**
+   * Les envois de cette campagne ont-ils PU être purgés ?
+   *
+   * 🔴 CE QUI SÉPARE « ÇA N'A RIEN COÛTÉ » DE « ON NE PEUT PLUS LE SAVOIR ». Les envois d'un SCÉNARIO ne
+   * vivent pas dans `campaign_recipients` mais dans les conversations, et la purge de rétention les
+   * supprime. Une campagne ancienne rendait donc « zéro envoi facturable », exactement comme une campagne
+   * qui n'a vraiment rien facturé, et la case affichait 0,00 €. Sur un écran de coût, un zéro est une
+   * affirmation : il se lit « gratuit ».
+   *
+   * ⚠️ OPTIONNEL, et absent vaut `false` : une instance qui ne calcule pas encore ce drapeau garde le
+   * comportement d'avant plutôt que de vider des cases au déploiement.
+   */
+  horsRetention?: boolean;
 }
 
 /**
@@ -311,13 +324,18 @@ export function estimateCoutParCampagne(
    * vu sa marge avalee en silence, sans erreur du compilateur (il etait optionnel) ni d aucun test.
    */
 ): CoutParCampagne {
-  const par = new Map<string, LigneCoutCampagne & { chiffres: number; canal: string }>();
+  const par = new Map<string, LigneCoutCampagne & { chiffres: number; canal: string; horsRetention: boolean }>();
   for (const r of rows) {
     const ligne = par.get(r.campaignId) ?? {
       campaignId: r.campaignId, nom: r.nom, template: r.template, canal: r.canal,
       envoyes: 0, envois: 0, cout: 0, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, clics: null, coutParClic: null, chiffres: 0,
+      horsRetention: false,
     };
     ligne.envois = Math.max(ligne.envois, r.envois);
+    // ⚠️ UNE SEULE LIGNE SUFFIT A LE POSER : le drapeau porte sur la CAMPAGNE, pas sur une categorie, et le
+    // SQL le rend identique sur chacune de ses lignes. `||` plutot qu'une affectation, pour que l'ordre des
+    // lignes ne decide de rien.
+    ligne.horsRetention = ligne.horsRetention || r.horsRetention === true;
     // ⚠️ UNE CAMPAGNE SANS RIEN DE FACTURABLE A SA LIGNE (lot 4) : `count` à 0, aucune catégorie à juger. La
     // garde ÉVITE UN APPEL INUTILE à `chiffrer`, rien de plus : tous les compteurs ci-dessous s'incrémenteraient
     // de zéro sans elle. Ne pas lui prêter un effet qu'elle n'a pas (relevé en revue le 2026-09-23).
@@ -364,7 +382,13 @@ export function estimateCoutParCampagne(
     // alors qu'elle a envoye et que c'est le rattachement qui manque (une campagne anterieure a la
     // migration 0134, un envoi sans identifiant). La doctrine des cases vides de ce fichier tient : zero se
     // lit « rien coute », vide se lit « on ne sait pas ».
-    const rienAChiffrer = l.chiffres === 0 && l.nonChiffrables === 0 && nbRcs === 0 && l.canal === 'whatsapp';
+    //
+    // 🔴 ET UNE CAMPAGNE DONT LES ENVOIS ONT PU ETRE PURGES N'A PLUS DE COUT CONNU (jaune de la revue du
+    // 2026-09-23). Les envois d'un scenario vivent dans les conversations, que la retention supprime : passe
+    // cette borne, « zero envoi facturable » ne veut plus dire « rien n a ete facture ». Sans ce terme, une
+    // campagne de plus de 90 jours serait passee de son vrai cout a 0,00 €, toute seule, un matin.
+    const rienAChiffrer = l.chiffres === 0 && l.nonChiffrables === 0 && nbRcs === 0
+      && l.canal === 'whatsapp' && l.horsRetention !== true;
     const cout = l.chiffres > 0 || nbRcs > 0 || rienAChiffrer ? Math.round(brut * 100) / 100 : null;
     const n = clics.get(l.campaignId);
     const nbClics = n === undefined ? null : n;

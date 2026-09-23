@@ -1185,11 +1185,22 @@ export class PgStatsStore {
      * elles y entraient sans le dire. ⚠️ Le filtre s'applique AVANT le plafond : appliqué après, une archivée
      * prendrait la place d'une campagne visible, puis disparaîtrait de l'écran.
      */
-    opts: { inclureArchivees?: boolean } = {},
+    opts: {
+      inclureArchivees?: boolean;
+      /**
+       * La retention d'instance, en jours (`CONVERSATION_RETENTION_DAYS`). Elle sert a savoir si les envois
+       * d'une campagne ont PU etre purges, donc si son cout est encore connaissable.
+       *
+       * ⚠️ ABSENTE = on ne marque RIEN hors retention, donc le comportement d'avant. C'est le bon defaut :
+       * un appelant qui ignore ce parametre ne doit pas faire disparaitre des couts.
+       */
+      retentionJours?: number;
+    } = {},
   ): Promise<VolumeCampagneRow[]> {
     const { from, to } = range;
     const res = await this.pool.query<{
       campaign_id: string; nom: string; template: string | null; canal: string; category: string | null; count: string; envois: string;
+      hors_retention: boolean;
     }>(
       `with ${BOUNDS_CTE},
        v as (
@@ -1205,7 +1216,7 @@ export class PgStatsStore {
        -- ne sert sent_at : deux parcours au lieu d'un, assumés sur un écran d'administration qu'on ouvre pour se
        -- faire une idée (relevé en revue le 2026-09-23). À dériver du même passage le jour où la table grossit.
        e as (
-         select r.campaign_id as campaign_id, count(*)::int as n
+         select r.campaign_id as campaign_id, count(*)::int as n, max(r.sent_at) as dernier
          from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
          where c.tenant_id = $1 and r.status = 'sent'
            and r.sent_at >= b.start_ts and r.sent_at < b.end_ts
@@ -1231,16 +1242,32 @@ export class PgStatsStore {
          order by greatest(p.facturables, p.touches) desc, p.campaign_id asc limit $5
        )
        select g.campaign_id as campaign_id, c.name as nom, c.template_name as template, c.channel as canal,
-              v.category as category, coalesce(v.n, 0) as count, coalesce(e.n, 0) as envois
+              v.category as category, coalesce(v.n, 0) as count, coalesce(e.n, 0) as envois,
+              -- 🔴 LES ENVOIS DE CETTE CAMPAGNE ONT-ILS PU ETRE PURGES ? Un envoi de SCENARIO ne vit pas dans
+              -- campaign_recipients mais dans les conversations, et la purge les supprime (leurs messages
+              -- partent en cascade). Passe cette borne, « rien de facturable » ne veut plus dire « rien n a
+              -- ete facture » mais « on ne peut plus le savoir », et afficher 0 se lirait « gratuit ».
+              -- ⚠️ LE PREDICAT EST CELUI DE LA PURGE, repris terme a terme (purgeConversationsOlderThan) :
+              -- le zero d instance arrete tout, le zero d espace n arrete que cet espace, et la borne se
+              -- compte en jours. Deux definitions de « purge » divergeraient au premier reglage change.
+              -- ⚠️ ON SE CALE SUR LE DERNIER ENVOI de la campagne, pas sur sa creation : c est lui qui date
+              -- les conversations qu elle a ouvertes.
+              (coalesce(ts.conversation_retention_days, $7::int) > 0
+                 and $7::int > 0
+                 and coalesce(e.dernier, (select max(r2.sent_at) from campaign_recipients r2 where r2.campaign_id = g.campaign_id))
+                     < now() - make_interval(days => coalesce(ts.conversation_retention_days, $7::int))) as hors_retention
        from garde g
        join campaigns c on c.id = g.campaign_id and c.tenant_id = $1
+       left join tenant_settings ts on ts.tenant_id = $1
        left join v on v.campaign_id = g.campaign_id
        left join e on e.campaign_id = g.campaign_id`,
-      [tenantId, from, to, TZ, PLAFOND_CAMPAGNES_SYNTHESE + 1, opts.inclureArchivees === true],
+      [tenantId, from, to, TZ, PLAFOND_CAMPAGNES_SYNTHESE + 1, opts.inclureArchivees === true,
+       Math.max(0, Math.floor(opts.retentionJours ?? 0))],
     );
     return res.rows.map((r) => ({
       campaignId: r.campaign_id, nom: r.nom, template: r.template, canal: r.canal,
       category: r.category, count: Number(r.count), envois: Number(r.envois),
+      horsRetention: r.hors_retention === true,
     }));
   }
 

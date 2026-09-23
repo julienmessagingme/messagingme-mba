@@ -403,12 +403,13 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
      * UNE conversation précise. Sert le lien « Ouvrir la conversation » du mini-CRM, dont la cible peut être
      * un vieux fil, donc hors de la première page.
      *
-     * ⚠️ AUCUNE VALIDATION DE FORME ICI, et ce n'est pas un oubli : le magasin la passe en PARAMÈTRE lié,
-     * avec un `::uuid` explicite, donc une valeur qui n'est pas un identifiant fait échouer la requête et
-     * la route rend 500 plutôt qu'une liste. Ce qui compte est qu'elle ne puisse pas s'injecter, et le
-     * paramètre lié s'en charge ; la garde d'espace, elle, reste posée comme sur toute autre lecture.
+     * 🔴 `estUuid` COMME PARTOUT DANS CE FICHIER (relecture du 2026-09-23). Le paramètre lié empêche bien
+     * l'injection, mais ce n'est pas la question que pose la convention posée 120 lignes plus bas : un
+     * identifiant mal formé fait lever Postgres (`22P02`), donc un 500 que Cloudflare remplace par sa propre
+     * page, et l'opérateur ne voit même pas ce qu'on lui reproche. Ici, en plus, le commentaire juste
+     * au-dessus exige qu'un filtre mal formé rende la page NORMALE : on l'ignore donc, comme les autres.
      */
-    if (typeof q.id === 'string' && q.id !== '') opts.id = q.id;
+    if (typeof q.id === 'string' && estUuid(q.id)) opts.id = q.id;
     const limit = Number(q.limit);
     if (Number.isInteger(limit) && limit > 0) opts.limit = limit;
     if (q.aTraiter === '1' || q.aTraiter === 'true') opts.aTraiter = true;
@@ -579,6 +580,9 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!deps.ouvrirConversationDuContact) return reply.code(503).send({ error: 'ouverture de conversation non configuree' });
     const { contactId } = req.params as { contactId: string };
+    // ⚠️ `estUuid` AVANT la base, même raison qu'ailleurs dans ce fichier : un identifiant mal formé ferait
+    // lever Postgres, donc un 500 illisible, là où « ce contact n'existe pas » est la réponse juste.
+    if (!estUuid(contactId)) return reply.code(404).send({ error: 'contact introuvable, supprime, bloque, ou sans numero' });
     const id = await deps.ouvrirConversationDuContact(tenant, contactId);
     if (id === null) return reply.code(404).send({ error: 'contact introuvable, supprime, bloque, ou sans numero' });
     return reply.code(200).send({ conversationId: id });

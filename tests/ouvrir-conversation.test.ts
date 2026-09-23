@@ -73,6 +73,16 @@ describe('POST /contacts/:id/conversation', () => {
     expect(r.statusCode).toBe(503);
   });
 
+  it('🔴 un contact dont l identifiant n en est pas un rend 404, jamais 500', async () => {
+    // Meme convention que le reste du fichier : `estUuid` AVANT la base. « Ce contact n'existe pas » est la
+    // reponse juste ; un 500 est une panne de notre cote, et il ne dit rien a l'operateur.
+    let appele = false;
+    const a = app({ ouvrirConversationDuContact: async () => { appele = true; return CONV; } });
+    const r = await a.inject({ method: 'POST', url: '/tenants/t1/contacts/pas-un-uuid/conversation', ...auth() });
+    expect(r.statusCode).toBe(404);
+    expect(appele, 'la base n est meme pas interrogee').toBe(false);
+  });
+
   it('sans session, rien ne s ouvre', async () => {
     const a = app({ ouvrirConversationDuContact: async () => CONV });
     const r = await a.inject({ method: 'POST', url: `/tenants/t1/contacts/${CONTACT}/conversation` });
@@ -96,5 +106,17 @@ describe('GET /conversations?id=', () => {
     const a = app({ listConversations: async (_t, opts) => { vus.push(opts ?? {}); return []; } });
     await a.inject({ method: 'GET', url: '/tenants/t1/conversations?id=', ...auth() });
     expect(vus[0]?.id).toBeUndefined();
+  });
+
+  it('🔴 un identifiant MAL FORME rend la page normale, pas un 500', async () => {
+    // Le commentaire de cette route l'exige en toutes lettres : « un filtre mal forme doit rendre la page
+    // normale, jamais une page vide qui se lirait "aucune conversation" ». Sans `estUuid`, la valeur partait
+    // en base, Postgres levait `22P02`, et Cloudflare remplacait le corps du 500 par sa propre page : le
+    // client ne voyait meme pas ce qu'on lui reprochait.
+    const vus: ListConversationsOptions[] = [];
+    const a = app({ listConversations: async (_t, opts) => { vus.push(opts ?? {}); return []; } });
+    const r = await a.inject({ method: 'GET', url: '/tenants/t1/conversations?id=nawak', ...auth() });
+    expect(r.statusCode).toBe(200);
+    expect(vus[0]?.id, 'le filtre n est pas pose').toBeUndefined();
   });
 });
