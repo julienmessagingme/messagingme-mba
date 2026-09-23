@@ -32,6 +32,11 @@ interface Options {
   etape?: string;
   hubspot?: boolean;
   hubspotEnPause?: boolean;
+  /**
+   * Un portail HubSpot est-il LIE (lot 9, 2026-09-23) ? `undefined` = une API anterieure a ce lot ne rend
+   * pas le champ, et l'ecran garde alors le comportement d'hier.
+   */
+  portail?: boolean;
   /** Le total SERVEUR. Plus grand que la liste affichée = « Tout sélectionner (N) » apparaît. */
   total?: number;
   /** Les corps des POST de création, remplis au fil de l'eau. */
@@ -48,6 +53,7 @@ async function monter(page: Page, sur: Options = {}): Promise<void> {
       return json({
         controlHandbackSeconds: null, mbaHandoffMode: null, mbaEnabled: false, rcsEnabled: false,
         hubspotListsEnabled: sur.hubspot === true, campaignsPaused: sur.hubspotEnPause === true,
+        ...(sur.portail === undefined ? {} : { hubspotPortalConnecte: sur.portail }),
         autoRetryEnabled: true, timezone: 'Europe/Paris', businessHours: {},
       });
     }
@@ -144,6 +150,30 @@ test('HubSpot branche mais en pause : visible et grise', async ({ page }) => {
 });
 
 test('HubSpot branche et actif : cliquable', async ({ page }) => {
+  await monter(page, { hubspot: true });
+  await expect(page.getByTestId('audience-source-hubspot')).toBeEnabled();
+});
+
+test('🔴 interrupteur ALLUME mais AUCUN portail lie : la source disparait', async ({ page }) => {
+  /**
+   * LE DEFAUT QUE CE CAS INTERDIT (arbitrage de Julien du 2026-09-23). La source se masquait sur le seul
+   * `hubspotListsEnabled`, qui est un INTERRUPTEUR d'espace : un client qui DELIE son portail gardait son
+   * interrupteur allume, donc la source restait offerte et ne menait nulle part. Les deux drapeaux
+   * repondent a deux questions, « ce client VEUT-il cette source ? » et « est-elle seulement POSSIBLE ? ».
+   */
+  await monter(page, { hubspot: true, portail: false });
+  await expect(page.getByTestId('audience-source-hubspot')).toHaveCount(0);
+});
+
+test('🔴 interrupteur allume ET portail lie : la source revient', async ({ page }) => {
+  // La preuve inverse : sans elle, un masquage qui cacherait TOUT passerait le cas du dessus.
+  await monter(page, { hubspot: true, portail: true });
+  await expect(page.getByTestId('audience-source-hubspot')).toBeEnabled();
+});
+
+test('⚠️ une API qui ne rend PAS le drapeau garde le comportement d hier', async ({ page }) => {
+  // La fenetre entre le deploiement de la console et celui de l'API : traiter `undefined` comme « pas
+  // connecte » ferait disparaitre la source d'un client qui l'a, sans recours, pendant toute la fenetre.
   await monter(page, { hubspot: true });
   await expect(page.getByTestId('audience-source-hubspot')).toBeEnabled();
 });

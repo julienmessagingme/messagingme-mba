@@ -41,6 +41,24 @@ export interface SettingsRouteDeps {
    * injoignable empêcherait le client de régler son propre outil.
    */
   applyMbaHandoffEnabled?(tenantId: string, enabled: boolean): Promise<void>;
+  /**
+   * UN PORTAIL HUBSPOT EST-IL LIE A CET ESPACE ? (lot 9, 2026-09-23)
+   *
+   * 🔴 C'EST LE SEUL SIGNAL QUI REPOND A LA QUESTION, et ce n'est pas celui qu'on utilisait. L'ecran de
+   * campagne masquait sa source HubSpot sur `hubspotListsEnabled`, qui est un INTERRUPTEUR d'espace : un
+   * client qui DELIE son portail garde l'interrupteur allume, donc la source restait offerte et ne menait
+   * nulle part. Les deux drapeaux repondent a deux questions (« le client veut-il cette source ? » et
+   * « est-elle seulement possible ? ») et il faut les DEUX.
+   *
+   * ⚠️ LECTURE LOCALE, PAS UN APPEL AU CONNECTEUR : le mapping vit dans le schema `mmhs` de la MEME base
+   * (jointure indexee sur `tenant_id`). Un aller-retour reseau sur une route que tous les ecrans appellent
+   * aurait ete le mauvais prix.
+   *
+   * 🔴 REQUISE, PAS OPTIONNELLE : une dependance optionnelle vaudrait `undefined`, donc « pas connecte »,
+   * donc la source disparaitrait pour un client qui l'a, sur une instance qui a juste oublie de la cabler.
+   * C'est la regle du lot 2 du plan du 2026-09-14, appliquee a la lettre.
+   */
+  hubspotPortalConnecte(tenantId: string): Promise<boolean>;
   /** Fuseau IANA du tenant. */
   setTimezone(tenantId: string, timezone: string): Promise<void>;
   /** Heures d'ouverture par jour ('0'..'6'). */
@@ -143,7 +161,10 @@ export function registerSettings(
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const settings = await deps.getSettings(tenant);
     const rcsEnabled = deps.rcsEnabledFor ? await deps.rcsEnabledFor(tenant) : false;
-    return reply.code(200).send({ ...settings, rcsEnabled });
+    // ⚠️ EN PARALLELE, pas en cascade : cette route est sur le chemin d'ouverture de plusieurs ecrans, et
+    // les deux lectures sont independantes.
+    const hubspotPortalConnecte = await deps.hubspotPortalConnecte(tenant);
+    return reply.code(200).send({ ...settings, rcsEnabled, hubspotPortalConnecte });
   });
 
   app.put('/tenants/:tenantId/settings', opts, async (req, reply) => {
