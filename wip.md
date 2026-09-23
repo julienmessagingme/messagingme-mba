@@ -19,7 +19,7 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
-## API PUBLIQUE : « ENVOYER UN SIMPLE MESSAGE » (LOT 7, ÉCRIT LE 2026-09-23, PAS DÉPLOYÉ)
+## API PUBLIQUE : « ENVOYER UN SIMPLE MESSAGE » (LOT 7, DÉPLOYÉ LE 2026-09-23, ESSAI RÉEL DÛ)
 
 Lot 7 du plan `docs/superpowers/plans/2026-09-23-liste-julien.md`.
 
@@ -27,7 +27,10 @@ Lot 7 du plan `docs/superpowers/plans/2026-09-23-liste-julien.md`.
   n'a AUCUNE logique à elle : elle résout le contact, ouvre son fil avec la même fonction que le bouton du
   mini-CRM (qui EST la garde de blocage), et appelle `repondreDansLaFenetre`, déjà partagé par la console et
   le serveur MCP. Droit requis : `sends:create`, celui des envois.
-- 🔴 **MIGRATION 0166 À APPLIQUER AVANT LE DÉPLOIEMENT.** Elle RELÂCHE le CHECK de
+- ✅ **MIGRATION 0166 APPLIQUÉE le 2026-09-23 à 11 h 36, AVANT le `up`**, et relue en base : le CHECK de
+  `conversation_messages.origin` porte bien `api`. Ce qui suit dit pourquoi l'ordre n'était pas une
+  précaution.
+- 🔴 **ELLE ÉTAIT BLOQUANTE.** Elle RELÂCHE le CHECK de
   `conversation_messages.origin` pour y ajouter `api` (septième origine, même motif que 0101 pour `mcp`).
   Relâcher laisse vivre le code déployé, donc elle passe avant sans risque ; l'inverse ferait échouer le
   PREMIER appel de la route en `23514`, sur un envoi réel. Le nom de la contrainte a été LU en base, pas
@@ -51,7 +54,7 @@ Lot 7 du plan `docs/superpowers/plans/2026-09-23-liste-julien.md`.
   grille RCS, donc le terme vaut zéro ailleurs. La question est produit et le lot 8 (« Vos prix » dans
   `/ops`) va déplacer cette grille : à trancher là, pas par un demi-correctif d'ici là.
 
-## HUBSPOT MASQUÉ SANS PORTAIL (LOT 9, ÉCRIT LE 2026-09-23, PAS DÉPLOYÉ)
+## HUBSPOT MASQUÉ SANS PORTAIL (LOT 9, DÉPLOYÉ LE 2026-09-23, ESSAI RÉEL DÛ)
 
 Lot 9 du plan `docs/superpowers/plans/2026-09-23-liste-julien.md`, RÉDUIT à ses deux écarts réels après
 inventaire (arbitrage de Julien du 2026-09-23).
@@ -78,14 +81,18 @@ inventaire (arbitrage de Julien du 2026-09-23).
 - 🔴 **L'ESSAI RÉEL QUI CLÔT LE LOT** : un espace SANS portail ne voit ni la source HubSpot d'une campagne,
   ni le déclencheur « étape de deal ». Un espace connecté les voit toujours.
 
-## GRILLE DE PRIX UNIQUE DANS /ops (LOT 8, ÉCRIT LE 2026-09-23, PAS DÉPLOYÉ)
+## GRILLE DE PRIX UNIQUE DANS /ops (LOT 8, DÉPLOYÉ LE 2026-09-23, ESSAI RÉEL DÛ)
 
 Lot 8 du plan `docs/superpowers/plans/2026-09-23-liste-julien.md`.
 
 - ✅ **Écrit et vert** : une seule grille de prix pour tous les espaces, réglée dans `/ops`. L'écran « Vos
   prix » des Paramètres du client disparaît. Les six champs n'ont PAS été réécrits, ils vivent désormais
   dans `web/components/GrillePrixChamps.tsx`, partagés par les deux surfaces.
-- 🔴 **MIGRATION 0168 À APPLIQUER AVANT LE DÉPLOIEMENT.** Elle CRÉE `grille_prix`, un singleton structurel
+- ✅ **MIGRATION 0168 APPLIQUÉE le 2026-09-23 à 11 h 36, AVANT le `up`**, et relue en base : `grille_prix`
+  porte UNE ligne, reprise exacte (marge 100, service 2,48 cts, franchise 1000, RCS 6,00 et 8,00), avec
+  `modifie_par = 'migration 0168'`. La requête de contrôle rend « 1 grille distincte, 1 espace », donc le
+  `raise exception` ne pouvait pas se déclencher et personne ne voit un chiffre bouger.
+- 🔴 **CE QU'ELLE GARANTIT.** Elle CRÉE `grille_prix`, un singleton structurel
   (`id boolean primary key check (id)` : il ne PEUT pas y avoir deux grilles), et reprend la valeur actuelle.
   Elle REFUSE plutôt que d'inventer si les espaces divergent ; mesuré avant de l'écrire, un seul espace
   porte des prix, donc ce refus ne peut pas se déclencher. Elle ne touche à AUCUNE colonne existante, donc
