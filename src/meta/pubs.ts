@@ -50,6 +50,12 @@ const pageSchema = z.object({
   connected_whatsapp_business_account: z.object({ id: z.string() }).optional(),
 });
 
+/**
+ * Les permissions QUE NOUS RETIRONS à la déconnexion, et elles seules : celles qui n'ont aucun usage
+ * hors publicité dans cette application.
+ */
+const PERMISSIONS_PUB = ['ads_management', 'ads_read', 'pages_manage_ads'] as const;
+
 export class MetaPubsClient extends ClientGraph {
   /**
    * Les comptes publicitaires et les Pages que le jeton accorde, lus dans `debug_token`.
@@ -100,25 +106,38 @@ export class MetaPubsClient extends ClientGraph {
   }
 
   /**
-   * RETIRE NOTRE ACCÈS CHEZ META (`DELETE /me/permissions`, sans nommer de permission : l'application est
-   * désautorisée en entier).
+   * RETIRE NOS ACCÈS PUBLICITAIRES CHEZ META, permission par permission.
    *
-   * 🔴 POURQUOI CETTE MÉTHODE EXISTE, ET C'EST LA LEÇON DE LA CLÉ VERCEL (2026-09-09). Le jeton de cette
-   * connexion est un jeton d'utilisateur système SANS EXPIRATION : effacer notre ligne sans le révoquer le
-   * laisserait vivant chez Meta avec son identifiant PERDU de notre côté, donc utilisable et irrévocable
-   * PAR NOUS pour toujours. Le client garde toujours son propre recours (retirer l'application dans les
-   * paramètres de son entreprise), mais une porte qu'on ne sait plus fermer ne doit pas exister.
+   * 🔴 SURTOUT PAS `DELETE /me/permissions` SANS ARGUMENT, qui désautorise l'APPLICATION EN ENTIER.
+   * Et notre application est la MÊME pour les publicités et pour l'inscription WhatsApp (un seul
+   * `META_APP_ID`, seule la configuration difère) : un client qui cliquerait « Déconnecter » sur l'écran
+   * Publicités aurait pu perdre l'accès qui fait PARLER son numéro, donc tous ses messages, depuis un bouton
+   * qui ne parle que de publicités. Relevé en relecture à froid le 2026-09-23, avant tout déploiement.
    *
-   * ⚠️ CE CHEMIN N'A PAS ENCORE ÉTÉ MESURÉ SUR UN JETON D'UTILISATEUR SYSTÈME. La documentation décrit ce
-   * retrait pour un jeton d'utilisateur ; l'appelant traite donc son échec comme une information à DIRE, pas
-   * comme une panne qui empêche de se déconnecter. La première déconnexion réelle tranchera, et le journal
-   * d'audit gardera la réponse.
+   * 🔴 LA LISTE EST VOLONTAIREMENT PLUS COURTE QUE CE QUE LA CONFIGURATION DEMANDE. `business_management`,
+   * `pages_show_list` et `pages_read_engagement` n'y sont PAS : elles peuvent servir à autre chose qu'aux
+   * publicités dans la même application, et le seul moyen de le savoir serait de les retirer pour voir. On
+   * retire ce qui est publicitaire SANS AMBIGUÏTÉ, et on laisse le reste vivre.
+   *
+   * ⚠️ Ce qui reste après ce retrait ne peut plus rien faire en publicité : c'est la porte qu'on avait
+   * ouverte, et c'est celle-là qu'on referme. L'appelant traite un échec comme une information à DIRE.
    */
   async revoquerAcces(jeton: string): Promise<void> {
-    await this.call(`${this.baseUrl}/${this.version}/me/permissions`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${jeton}` },
-    });
+    // ⚠️ TOUTES SONT TENTÉES, MÊME APRÈS UN REFUS. S'arrêter au premier échec laisserait les suivantes en
+    // place alors qu'elles étaient peut-être retirables : on retire tout ce qu'on peut, et on dit ce qui
+    // a résisté, plutôt que de rendre un échec global qui ne distingue pas « rien » de « presque tout ».
+    const echecs: string[] = [];
+    for (const permission of PERMISSIONS_PUB) {
+      try {
+        await this.call(`${this.baseUrl}/${this.version}/me/permissions/${permission}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${jeton}` },
+        });
+      } catch (err) {
+        echecs.push(`${permission} (${err instanceof Error ? err.message : 'erreur inconnue'})`);
+      }
+    }
+    if (echecs.length > 0) throw new Error(`permissions non retirées : ${echecs.join(', ')}`);
   }
 }
 

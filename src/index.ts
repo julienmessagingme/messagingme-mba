@@ -127,6 +127,7 @@ import { lireMediaRecu } from './inbox/media-entrant';
 import { assurerCleGateway, remonterPlafondApresRecharge, revoquerCleGateway, type DepsProvisionCle } from './agent/provisionner-cle';
 import { encryptSecret, decryptSecret } from './crypto/secretbox';
 import { MetaPubsClient } from './meta/pubs';
+import { JetonNonEnregistre, PasDeConnexionPub } from './http/pubs';
 import { estJetonRefuse } from './meta/graph';
 import { PgPubConnexionStore } from './pubs/connexion.pg';
 import { PgAgentSessionStore } from './agent/session-store.pg';
@@ -2256,7 +2257,9 @@ async function main(): Promise<void> {
       const connexions = new PgPubConnexionStore(pool);
       const jetonClair = async (tenantId: string): Promise<string> => {
         const chiffre = await connexions.lireJetonChiffre(tenantId);
-        if (chiffre === null) throw new Error('aucune connexion publicitaire pour cet espace');
+        // Une erreur NOMMÉE : la route en fait un 409 « pas connecté », là où un `Error` nu ressortait en
+        // 502 « Meta ne répond pas » et envoyait le client chercher une panne qui n'existait pas.
+        if (chiffre === null) throw new PasDeConnexionPub();
         return decryptSecret(chiffre, config.ENCRYPTION_KEY);
       };
       /**
@@ -2280,9 +2283,16 @@ async function main(): Promise<void> {
         lire: (t: string) => connexions.lire(t),
         connecter: async (t: string, code: string, userId: string | null) => {
           const jeton = await clientPubs.exchangeCode(code);
-          // Le jeton est rangé AVANT de lire les actifs : Meta l'a déjà émis, il est vivant chez eux. Le
-          // perdre ici le rendrait irrévocable pour toujours.
-          await connexions.poserJeton(t, encryptSecret(jeton, config.ENCRYPTION_KEY), userId);
+          // 🔴 À PARTIR D'ICI, META A ÉMIS UN JETON SANS EXPIRATION. Il est rangé AVANT qu'on lise les
+          // actifs, et son échec porte un nom à LUI : ce n'est pas un refus de Meta, c'est NOTRE panne, et
+          // elle laisse derrière elle un accès vivant dont nous n'avons plus la trace.
+          try {
+            await connexions.poserJeton(t, encryptSecret(jeton, config.ENCRYPTION_KEY), userId);
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.error('jeton publicitaire NON enregistré, il reste vivant chez Meta:', err instanceof Error ? err.message : err);
+            throw new JetonNonEnregistre(err);
+          }
           return clientPubs.actifsAccordes(jeton);
         },
         actifsAccordes: async (t: string) => noterSiRefus(t, clientPubs.actifsAccordes(await jetonClair(t))),

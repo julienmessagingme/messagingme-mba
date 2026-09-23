@@ -112,6 +112,27 @@ test.describe('Publicités : les états de la connexion', () => {
     await expect(page.getByTestId('pubs-retrait-non-confirme')).toContainText(/paramètres de votre entreprise|Meta Business settings/);
   });
 
+  test('🔴 « Reconnecter » DÉCONNECTE d abord : un jeton sans expiration ne s écrase pas en silence', async ({ page }) => {
+    // Le nouveau jeton ecrasait l ancien dans la base, or l ancien reste vivant chez Meta et nous venions
+    // d en perdre le seul exemplaire. Les deux chemins qui perdent un jeton passent par la revocation.
+    const gestes: string[] = [];
+    await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
+    await page.route('**/api/backend/**', async (route) => {
+      const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+      const url = route.request().url();
+      if (url.includes('/pubs/connexion')) {
+        gestes.push(route.request().method());
+        if (route.request().method() === 'DELETE') return json({ ok: true, revoqueChezMeta: true });
+        return json(etatVivant({ connexion: CONNEXION }));
+      }
+      if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
+      return json({});
+    });
+    await page.goto('/publicites');
+    await page.getByRole('button', { name: /Reconnecter|Reconnect/ }).click();
+    await expect.poll(() => gestes.includes('DELETE')).toBe(true);
+  });
+
   test('⚠️ ni liste de pubs ni bouton Créer : ils sont le lot 3, et un bouton inerte serait pire que rien', async ({ page }) => {
     await brancher(page, etatVivant({ connexion: CONNEXION }));
     await expect(page.getByRole('button', { name: /^Créer|^Create/ })).toHaveCount(0);

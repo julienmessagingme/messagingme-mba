@@ -49,6 +49,28 @@ export interface PubsRouteDeps {
   audit: AuditSink;
 }
 
+/**
+ * 🔴 NOTRE PANNE N'EST PAS UN REFUS DE META, et les confondre coûte deux fois. La route enveloppait
+ * l'appel à Meta ET l'écriture en base dans un seul `catch` à 502 : une table absente rendait à l'admin le
+ * texte brut d'une erreur Postgres sous le message « échange refusé par Meta », sans aucune trace serveur,
+ * et surtout SANS DIRE que Meta venait d'émettre un jeton sans expiration dont nous perdions le seul
+ * exemplaire. Relevé en relecture à froid le 2026-09-23.
+ */
+export class JetonNonEnregistre extends Error {
+  constructor(readonly cause: unknown) {
+    super('jeton publicitaire non enregistré');
+    this.name = 'JetonNonEnregistre';
+  }
+}
+
+/** L'espace n'a aucune connexion publicitaire : une demande hors d'état, pas une panne. */
+export class PasDeConnexionPub extends Error {
+  constructor() {
+    super('aucune connexion publicitaire pour cet espace');
+    this.name = 'PasDeConnexionPub';
+  }
+}
+
 /** `.strict()` : une clé en trop est refusée, le navigateur ne choisit pas ce qu'il envoie. */
 const corpsEchange = z.object({ code: z.string().min(1).max(4096) }).strict();
 const corpsChoix = z.object({
@@ -58,7 +80,8 @@ const corpsChoix = z.object({
 
 export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: Guard, limiteCouteuse: PreHandler): void {
   const opts = { preHandler: garde };
-  // L'échange et le choix appellent Meta : ils portent le plafond des routes coûteuses, par espace.
+  // LES TROIS ÉCRITURES appellent Meta (l'échange, le choix, et la déconnexion depuis qu'elle révoque) :
+  // elles portent toutes le plafond des routes coûteuses, par espace. Seule la LECTURE en est dispensée.
   const couteux = gardeEtendue(garde, limiteCouteuse);
   const journal = makeJournal(deps.audit);
 
@@ -87,6 +110,16 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     try {
       actifs = await deps.connecter(tenantId, corps.data.code, req.auth?.userId ?? null);
     } catch (err) {
+      // 🔴 NOTRE PANNE APRÈS L'ÉCHANGE : Meta a déjà émis un jeton SANS EXPIRATION et nous n'avons pas pu
+      // le garder. On ne l'impute pas à Meta, et on DIT ce que le client peut faire : sa seule porte est
+      // de retirer l'application chez lui, puisque nous n'avons plus rien à révoquer.
+      if (err instanceof JetonNonEnregistre) {
+        return reply.code(500).send({
+          error: 'la connexion a été accordée par Meta mais n’a pas pu être enregistrée. Retirez l’application '
+            + 'dans les paramètres de votre entreprise Meta avant de réessayer.',
+          code: 'jeton_non_enregistre',
+        });
+      }
       // Le code a 30 secondes de vie et ne sert qu'une fois : l'échec le plus courant est un client qui a
       // laissé la fenêtre ouverte. On rend le message de Meta, c'est SON compte, et lui seul peut agir.
       return reply.code(502).send({ error: err instanceof Error ? err.message : 'échange refusé par Meta' });
@@ -113,6 +146,9 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     try {
       actifs = await deps.actifsAccordes(tenantId);
     } catch (err) {
+      // Un espace non connecté n'est pas une panne de Meta : le 502 l'aurait fait chercher du côté d'une
+      // panne, quand il lui suffit de se connecter.
+      if (err instanceof PasDeConnexionPub) return reply.code(409).send({ error: err.message, code: 'pas_connecte' });
       return reply.code(502).send({ error: err instanceof Error ? err.message : 'Meta ne répond pas' });
     }
     // `act_123` et `123` désignent le MÊME compte : un appelant qui recopie l'identifiant vu dans le
@@ -137,7 +173,9 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     return reply.send({ connexion });
   });
 
-  app.delete('/tenants/:tenantId/pubs/connexion', opts, async (req, reply) => {
+  // `couteux` et non `opts` : depuis qu'elle révoque chez Meta, cette route appelle l'extérieur comme les
+  // deux autres. C'est aussi le seul geste irréversible du module.
+  app.delete('/tenants/:tenantId/pubs/connexion', couteux, async (req, reply) => {
     const tenantId = scopeTenant(req);
     if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
     if (forbidNonAdmin(req, reply)) return;

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { registerPubs, type PubsRouteDeps } from '../src/http/pubs';
+import { JetonNonEnregistre, PasDeConnexionPub, registerPubs, type PubsRouteDeps } from '../src/http/pubs';
 import type { ConnexionPub } from '../src/pubs/connexion.pg';
 import type { ActifsAccordes } from '../src/meta/pubs';
 
@@ -106,6 +106,18 @@ describe('POST /echange : le code rendu par la fenêtre Meta', () => {
     expect(res.statusCode).toBe(502);
     expect(res.json().error).toContain('code expiré');
   });
+
+  it('🔴 NOTRE panne apres l echange ne s impute pas a Meta, et DIT que le jeton est perdu', async () => {
+    // Meta a deja emis un jeton SANS EXPIRATION : le rendre sous « echange refuse par Meta » enverrait
+    // l admin reessayer chez Meta, quand sa seule porte est de retirer l application chez lui.
+    const { srv } = app({ connecter: async () => { throw new JetonNonEnregistre(new Error('42P01 relation absente')); } });
+    const res = await srv.inject({ method: 'POST', url: url('/echange'), payload: { code: 'CODE' } });
+    expect(res.statusCode).toBe(500);
+    expect(res.json().code).toBe('jeton_non_enregistre');
+    expect(res.json().error).toMatch(/paramètres de votre entreprise/);
+    // et surtout : le texte de NOTRE erreur ne part pas au client
+    expect(res.json().error).not.toContain('42P01');
+  });
 });
 
 describe('POST /choix : le compte et la Page', () => {
@@ -141,6 +153,14 @@ describe('POST /choix : le compte et la Page', () => {
     const { srv, traces } = app();
     const res = await srv.inject({ method: 'POST', url: url('/choix'), payload: { comptePubId: '111', pageId: 'p-voisine' } });
     expect(res.statusCode).toBe(400);
+    expect(traces.choisi).toEqual([]);
+  });
+
+  it('🔴 un espace NON CONNECTE rend 409, pas un 502 qui accuserait Meta', async () => {
+    const { srv, traces } = app({ actifsAccordes: async () => { throw new PasDeConnexionPub(); } });
+    const res = await srv.inject({ method: 'POST', url: url('/choix'), payload: { comptePubId: '111', pageId: 'p1' } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().code).toBe('pas_connecte');
     expect(traces.choisi).toEqual([]);
   });
 

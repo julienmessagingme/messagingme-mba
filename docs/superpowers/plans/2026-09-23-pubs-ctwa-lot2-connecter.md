@@ -175,7 +175,7 @@ non configurées », c'est-à-dire exactement l'état d'un espace sans `META_ADS
 ## Tâche 7 : déploiement, puis l'essai qui clôt le lot
 
 Séquence, dans cet ordre, avec la revue finale attestée avant : `gh run list` lu job par job, `git pull` sur
-le VPS, `compose build mba-api`, `migrate`, **relecture de 0166 en base point par point** (colonnes, types,
+le VPS, `compose build mba-api`, `migrate`, **relecture des TROIS migrations en base point par point** (0166 est un `drop/add constraint`, 0167 la table `pub_connexion`, 0168 la table `grille_prix`) (colonnes, types,
 nullabilité, clé primaire, `on delete cascade`), `up -d --build`, contrôle public des portes, rechargement
 de NPM si un 502 apparaît.
 

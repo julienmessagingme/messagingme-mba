@@ -103,13 +103,33 @@ describe('sansPrefixeAct', () => {
   });
 });
 
-describe('revoquerAcces : retirer notre acces chez Meta', () => {
-  it('desautorise l application en entier, avec le jeton du client', async () => {
+describe('revoquerAcces : retirer nos acces PUBLICITAIRES, et eux seuls', () => {
+  it('🔴 ne desautorise JAMAIS l application en entier : chaque permission est nommee', async () => {
+    // `DELETE /me/permissions` sans argument retire TOUTES les permissions de l application, or c est la
+    // MEME application que l inscription WhatsApp : un clic sur « Deconnecter » de l ecran Publicites
+    // aurait pu faire taire le numero du client.
     const { appels } = graph([{ body: { success: true } }]);
     await client().revoquerAcces('JETON_CLIENT');
-    expect(appels[0]?.url).toContain('/me/permissions');
-    expect(appels[0]?.init?.method).toBe('DELETE');
-    expect((appels[0]?.init?.headers as Record<string, string>)?.Authorization).toBe('Bearer JETON_CLIENT');
+    const urls = appels.map((a) => a.url);
+    expect(urls.some((u) => /\/me\/permissions$/.test(u.split('?')[0] ?? ''))).toBe(false);
+    expect(urls.some((u) => u.includes('/me/permissions/ads_management'))).toBe(true);
+    expect(urls.some((u) => u.includes('/me/permissions/ads_read'))).toBe(true);
+    expect(urls.some((u) => u.includes('/me/permissions/pages_manage_ads'))).toBe(true);
+    for (const a of appels) {
+      expect(a.init?.method).toBe('DELETE');
+      expect((a.init?.headers as Record<string, string>)?.Authorization).toBe('Bearer JETON_CLIENT');
+    }
+  });
+
+  it('🔴 les permissions PARTAGEES avec l inscription WhatsApp ne sont PAS touchees', async () => {
+    // On ne peut pas savoir si `business_management` sert ailleurs dans la meme application sans la retirer
+    // pour voir. On referme la porte qu on a ouverte, pas celle du voisin.
+    const { appels } = graph([{ body: { success: true } }]);
+    await client().revoquerAcces('JETON');
+    const urls = appels.map((a) => a.url).join(' ');
+    expect(urls).not.toContain('business_management');
+    expect(urls).not.toContain('pages_show_list');
+    expect(urls).not.toContain('pages_read_engagement');
   });
 
   it('⚠️ un refus de Meta LEVE : c est l appelant qui decide si la deconnexion continue', async () => {

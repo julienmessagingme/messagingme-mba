@@ -94,8 +94,14 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0165**, et **prochaine libre = 0166** (relu dans `schema_migrations` juste après
-`migrate`, avec les horodatages, pas en écrivant cette ligne). Les trois dernières sont parties en DEUX fois :
+**Dernière appliquée : 0165.** **Écrites et PAS ENCORE APPLIQUÉES : 0166, 0167 et 0168**, et **prochaine
+libre = 0169**. Les trois passent AVANT le `up` : 0166 RELACHE un CHECK (`conversation_messages.origin`
+accepte `api`), 0167 CRÉE `pub_connexion`, 0168 CRÉE `grille_prix` ; l'ancien code survit aux trois.
+🔴 **DIXIÈME DÉRIVE, TROUVÉE PAR UNE RELECTURE À FROID LE 2026-09-23** : cette ligne annonçait
+« prochaine libre = 0166 » alors que le dépôt portait DÉJÀ les trois. La base, elle, n'avait pas bougé :
+c'est donc le DOSSIER qui tranche sur ce qui est PRIS, et la base sur ce qui est APPLIQUÉ. Les neuf
+précédentes ne comparaient qu'à la base, ce qui ne pouvait pas voir une migration écrite et non appliquée.
+(Relu dans `schema_migrations` juste après `migrate`, avec les horodatages, pas en écrivant cette ligne.) Les trois dernières sont parties en DEUX fois :
 **0164** (`escalade_mba`, `conversations.escaladee_le`) et **0165** (`reessai_par_campagne`,
 `campaigns.reessai_par_campagne`) le 2026-09-22 à 20 h 49, par la session qui les a écrites, trois heures avant
 que son code ne sorte ; **0163** (`pubs_capter`, `arrivees_pub` et `tarifs_meta`, lot 1 des publicités

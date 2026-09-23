@@ -106,6 +106,23 @@ function PublicitesInner({ session }: { session: Session }) {
     }
   }
 
+  /**
+   * 🔴 RECONNECTER PASSE PAR LA DÉCONNEXION, ET CE N'EST PAS UN DÉTOUR. Un second jeton écrasait le
+   * premier dans la base, or il est SANS EXPIRATION : l'ancien restait vivant chez Meta et nous venions
+   * d'en perdre le seul exemplaire. Les deux chemins qui perdent un jeton passent donc par le même, celui
+   * qui révoque d'abord. Relevé en relecture à froid le 2026-09-23.
+   *
+   * ⚠️ LA RÉVOCATION A LIEU AVANT LA FENÊTRE META, et l'ordre est le tout : la retirer APRÈS la nouvelle
+   * autorisation révoquerait ce que le client vient d'accorder.
+   *
+   * ⚠️ Conséquence assumée : une fenêtre Meta abandonnée laisse l'espace DÉCONNECTÉ. C'est réparable d'un
+   * clic, quand un jeton orphelin ne l'est jamais.
+   */
+  async function reconnecter(): Promise<void> {
+    await deconnecter();
+    await connecter();
+  }
+
   async function deconnecter(): Promise<void> {
     setErreur(null);
     setBusy(true);
@@ -157,7 +174,7 @@ function PublicitesInner({ session }: { session: Session }) {
         ) : etat.connexion === null ? (
           <NonConnecte t={t} busy={busy} connecter={connecter} />
         ) : (
-          <Connecte t={t} etat={etat} busy={busy} deconnecter={deconnecter} connecter={connecter} />
+          <Connecte t={t} etat={etat} busy={busy} deconnecter={deconnecter} reconnecter={reconnecter} />
         )}
       </section>
     </div>
@@ -232,8 +249,8 @@ function Choix({ t, actifs, busy, compte, page, setCompte, setPage, valider }: {
   );
 }
 
-function Connecte({ t, etat, busy, deconnecter, connecter }: {
-  t: T; etat: EtatPubs; busy: boolean; deconnecter: () => Promise<void>; connecter: () => Promise<void>;
+function Connecte({ t, etat, busy, deconnecter, reconnecter }: {
+  t: T; etat: EtatPubs; busy: boolean; deconnecter: () => Promise<void>; reconnecter: () => Promise<void>;
 }) {
   const c = etat.connexion!;
   return (
@@ -268,7 +285,7 @@ function Connecte({ t, etat, busy, deconnecter, connecter }: {
 
       <div className="mt-4 flex gap-2">
         <button
-          type="button" disabled={busy} onClick={() => void connecter()}
+          type="button" disabled={busy} onClick={() => void reconnecter()}
           className="rounded-xl border border-ink-200 px-4 py-2 text-sm font-medium text-ink-700 disabled:opacity-40"
         >
           {t('Reconnecter', 'Reconnect')}

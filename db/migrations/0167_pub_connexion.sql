@@ -21,8 +21,11 @@ create table if not exists pub_connexion (
   --
   -- 🔴 NOT NULL, quand tout le reste est nullable, et c'est un choix : une connexion EXISTE dès que le code
   -- est échangé, avant même que l'admin ait choisi son compte. Sans cette ligne intermédiaire, un client qui
-  -- ferme l'onglet entre les deux écrans perdrait un jeton que Meta a pourtant bien émis, et qui resterait
-  -- vivant chez eux sans que personne ne puisse plus le révoquer.
+  -- ferme l'onglet entre les deux écrans laisserait derrière lui un jeton que Meta a bien émis et dont nous
+  -- n'aurions gardé aucune trace : PLUS PERSONNE ne pourrait le révoquer.
+  -- ⚠⚠ CE QU'ELLE NE PERMET PAS, et il ne faut pas le lui prêter : reprendre le CHOIX là où on l'a laissé.
+  -- Au retour, l'écran n'offre que Reconnecter et Déconnecter. Ce que cette ligne sauve, c'est la
+  -- révocabilité du jeton, pas le confort du parcours.
   jeton_chiffre    text not null,
   -- Identifiants Meta choisis par l'admin, parmi ceux que le jeton accorde. Nuls tant que le choix n'est pas
   -- fait. Le compte publicitaire est stocké SANS le préfixe act_, que les appels ajoutent.
