@@ -2301,7 +2301,27 @@ async function main(): Promise<void> {
           if (etat === null) throw new Error('connexion publicitaire introuvable après enregistrement');
           return etat;
         },
-        deconnecter: (t: string) => connexions.supprimer(t),
+        deconnecter: async (t: string) => {
+          // 🔴 RÉVOQUER D'ABORD, EFFACER ENSUITE. Notre ligne est le seul endroit où ce jeton existe
+          // chez nous, et il n'expire JAMAIS : l'effacer sans avoir tenté le retrait laisserait un accès
+          // vivant que plus personne, de notre côté, ne pourrait fermer (le piège de la clé Vercel, 0124).
+          const chiffre = await connexions.lireJetonChiffre(t);
+          let revoqueChezMeta = false;
+          if (chiffre !== null) {
+            try {
+              await clientPubs.revoquerAcces(decryptSecret(chiffre, config.ENCRYPTION_KEY));
+              revoqueChezMeta = true;
+            } catch (err) {
+              // ⚠️ UN ÉCHEC N'EMPÊCHE PAS DE SE DÉCONNECTER, et c'est un arbitrage : bloquer la déconnexion
+              // sur une panne de Meta retiendrait un client qui veut partir. Le booléen remonte jusqu'à
+              // l'écran, qui lui dit alors de retirer l'application dans les paramètres de son entreprise.
+              // eslint-disable-next-line no-console
+              console.warn('retrait d’accès publicitaire non confirmé par Meta:', err instanceof Error ? err.message : err);
+            }
+          }
+          await connexions.supprimer(t);
+          return { revoqueChezMeta };
+        },
       };
     })(),
     account: {
