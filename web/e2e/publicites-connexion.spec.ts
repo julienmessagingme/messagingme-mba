@@ -11,6 +11,12 @@ import { test, expect } from '@playwright/test';
 
 const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
 
+/** Ce que Meta rend : un compte avec son NOM, sa devise, son fuseau et son statut. */
+const ACTIFS = {
+  comptesPub: [{ id: '111', nom: 'GMC', devise: 'EUR', fuseau: 'Europe/Paris', statut: 1 }],
+  pages: [{ id: 'p1', nom: 'Gerermonchantier' }],
+};
+
 const CONNEXION = {
   comptePubId: '111', pageId: 'p1', devise: 'EUR', fuseau: 'Europe/Paris',
   pageLiee: 'oui' as string | null, connectePar: 'u-1',

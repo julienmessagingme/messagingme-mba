@@ -41,9 +41,10 @@ export interface PubsRouteDeps {
   /**
    * Efface la connexion, APRÈS avoir tenté de retirer notre accès chez Meta.
    *
-   * 🔴 LE BOOLÉEN N'EST PAS DE L'ORNEMENT : quand Meta n'a pas confirmé le retrait, l'écran doit dire au
-   * client de retirer l'application depuis les paramètres de son entreprise, parce que le jeton n'expire
-   * jamais et que nous venons de perdre le seul exemplaire que nous en avions.
+   * ⚠️ LE BOOLÉEN NE VA PLUS À L'ÉCRAN, il va au JOURNAL D'AUDIT (décision de Julien du 2026-09-23). Le
+   * client n'est pas averti : un jeton que nous n'avons pas gardé n'est détenu par personne, et les deux
+   * gestes qu'on pourrait lui prescrire chez Meta cassent chacun quelque chose. Ce que le booléen sert
+   * désormais, c'est à MESURER si le retrait fonctionne sur un jeton d'utilisateur système.
    */
   deconnecter(tenantId: string): Promise<{ revoqueChezMeta: boolean }>;
   audit: AuditSink;
@@ -71,9 +72,11 @@ export class JetonNonEnregistre extends Error {
  */
 export class DejaConnectePub extends Error {
   /**
-   * `jetonOrphelin` : Meta avait DÉJÀ émis un jeton quand on s'en est aperçu. Le cas ordinaire (appel hors
-   * séquence) est refusé AVANT l'échange, donc à `false` ; seule une course entre deux connexions
-   * simultanées le met à `true`, et le client doit alors le savoir.
+   * `jetonOrphelin` : Meta avait DÉJÀ émis un jeton quand on s'en est aperçu (la course). Le cas
+   * ordinaire est refusé AVANT l'échange, donc à `false`.
+   *
+   * ⚠️ IL NE CHANGE PAS LE MESSAGE RENDU AU CLIENT : on ne lui demande aucun geste chez Meta, et la
+   * raison est écrite sur le `catch` de la route. Il sert à TRACER l'événement côté serveur.
    */
   constructor(readonly jetonOrphelin: boolean) {
     super('une connexion publicitaire existe déjà pour cet espace');
@@ -128,30 +131,28 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     try {
       actifs = await deps.connecter(tenantId, corps.data.code, req.auth?.userId ?? null);
     } catch (err) {
-      // 🔴 NOTRE PANNE APRÈS L'ÉCHANGE : Meta a déjà émis un jeton SANS EXPIRATION et nous n'avons pas pu
-      // le garder. On ne l'impute pas à Meta, et on DIT ce que le client peut faire : sa seule porte est
-      // de retirer l'application chez lui, puisque nous n'avons plus rien à révoquer.
-      // Déjà connecté : ce n'est ni une panne de Meta ni la nôtre, c'est un geste à faire dans l'ordre.
+      // 🔴 ON NE DEMANDE AU CLIENT AUCUN GESTE CHEZ META, ET C'EST UNE DÉCISION, PAS UN OUBLI.
+      // Deux raisons qui se renforcent. D'abord le produit : un jeton que nous n'avons pas gardé n'est
+      // détenu par PERSONNE, donc il n'y a rien à fermer (décision de Julien du 2026-09-23). Ensuite le
+      // danger : lui faire retirer les permissions publicitaires retirerait aussi celles de la connexion
+      // qui MARCHE, puisque le retrait porte sur le couple (application, entité) et non sur un jeton ; et
+      // lui faire retirer l'application ferait taire son numéro WhatsApp. Les deux gestes cassent quelque
+      // chose pour fermer un accès que nul ne peut exercer.
       if (err instanceof DejaConnectePub) {
         return reply.code(409).send({
           error: 'cet espace a déjà une connexion publicitaire. Déconnectez-la d’abord : c’est ce geste qui '
-            + 'retire notre accès chez Meta.'
-            // Une autorisation a été accordée pour rien pendant une course : elle vit chez Meta et nous ne
-            // l'avons pas gardée. Se taire laisserait un accès que le client seul peut encore fermer.
-            + (err.jetonOrphelin ? ' Une autorisation vient d’être accordée sans être enregistrée : retirez '
-              + 'les PERMISSIONS PUBLICITAIRES de notre application dans les paramètres de votre entreprise '
-              + 'Meta, et non l’application entière, qui porte aussi votre numéro WhatsApp.' : ''),
+            + 'retire notre accès chez Meta.',
           code: 'deja_connecte',
         });
       }
       if (err instanceof JetonNonEnregistre) {
         return reply.code(500).send({
-          // 🔴 ON NE DIT JAMAIS « retirez l'application » : il n'y a qu'UNE application Meta, et elle porte
-          // aussi le numéro WhatsApp du client. Prescrire ce geste ferait taire son numéro, alors que le
-          // code s'interdit de le faire lui-même, en capitales, dans `revoquerAcces`.
-          error: 'la connexion a été accordée par Meta mais n’a pas pu être enregistrée. Retirez les '
-            + 'PERMISSIONS PUBLICITAIRES de notre application dans les paramètres de votre entreprise Meta '
-            + '(surtout pas l’application entière, qui porte aussi votre numéro WhatsApp), puis réessayez.',
+          // 🔴 AUCUN GESTE PRESCRIT CHEZ META, pour les deux raisons écrites plus bas sur le 409 : le
+          // jeton perdu n'est détenu par personne, et les deux gestes possibles cassent quelque chose
+          // (les permissions publicitaires emportent la connexion voisine, l'application emporte le
+          // numéro WhatsApp). On dit donc ce qui s'est passé, et ce qui se fait CHEZ NOUS.
+          error: 'la connexion a été accordée par Meta mais n’a pas pu être enregistrée de notre côté. '
+            + 'Réessayez : si le problème persiste, c’est chez nous qu’il faut chercher, pas chez Meta.',
           code: 'jeton_non_enregistre',
         });
       }
@@ -190,10 +191,10 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     // Gestionnaire de publicités enverrait la forme préfixée, et se verrait refuser un compte qu'il a
     // pourtant accordé. On compare, et on enregistre, la forme nue.
     const comptePubId = sansPrefixeAct(corps.data.comptePubId);
-    if (!actifs.comptesPub.includes(comptePubId)) {
+    if (!actifs.comptesPub.some((c) => c.id === comptePubId)) {
       return reply.code(400).send({ error: 'ce compte publicitaire n’est pas accordé par la connexion' });
     }
-    if (!actifs.pages.includes(corps.data.pageId)) {
+    if (!actifs.pages.some((p) => p.id === corps.data.pageId)) {
       return reply.code(400).send({ error: 'cette Page n’est pas accordée par la connexion' });
     }
 

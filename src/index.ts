@@ -2310,13 +2310,21 @@ async function main(): Promise<void> {
           // avec le neuf retirerait donc les permissions de l'ANCIEN, c'est-à-dire de la connexion qu'on
           // vient de protéger. ⚠️ Hypothèse forte, PAS mesurée : c'est précisément pour ça qu'on ne tranche
           // pas dessus, et qu'on laisse un orphèlin rare plutôt qu'un risque de casser ce qui marche.
-          if (!pose) throw new DejaConnectePub(true);
+          if (!pose) {
+            // eslint-disable-next-line no-console
+            console.error(`connexion publicitaire concurrente sur l'espace ${t} : un jeton a été émis par Meta et n'a pas été gardé`);
+            throw new DejaConnectePub(true);
+          }
           return clientPubs.actifsAccordes(jeton);
         },
         actifsAccordes: async (t: string) => noterSiRefus(t, clientPubs.actifsAccordes(await jetonClair(t))),
         choisir: async (t: string, choix: { comptePubId: string; pageId: string }) => {
           const jeton = await jetonClair(t);
-          const infos = await noterSiRefus(t, clientPubs.infosCompte(choix.comptePubId, jeton));
+          // ⚠️ LA DEVISE ET LE FUSEAU VIENNENT DE LA LISTE DES ACTIFS, qui les porte déjà : les relire compte
+          // par compte était un appel pour rien, et surtout une SECONDE vérité qui pouvait diverger de
+          // celle que la route vient d'utiliser pour valider le choix.
+          const actifs = await noterSiRefus(t, clientPubs.actifsAccordes(jeton));
+          const compte = actifs.comptesPub.find((c) => c.id === choix.comptePubId);
           // Le WABA de l'espace : sans lui, il n'y a rien à comparer, donc le verdict est « inconnu » et non
           // « non liée ». Un espace sans numéro WhatsApp n'a pas une Page mal liée, il n'a pas de numéro.
           const waba = await wabaDeLEspace(t);
@@ -2324,7 +2332,7 @@ async function main(): Promise<void> {
           // propres échecs en 'inconnu' et ne lève jamais. L'entourer d'une garde donnerait à lire qu'un
           // refus de Meta sur la Page peut marquer le jeton, ce qui est faux.
           const pageLiee = waba === null ? 'inconnu' as const : await clientPubs.pageLieeAuCompte(choix.pageId, waba, jeton);
-          await connexions.choisirActifs(t, { ...choix, devise: infos.devise, fuseau: infos.fuseau, pageLiee });
+          await connexions.choisirActifs(t, { ...choix, devise: compte?.devise ?? null, fuseau: compte?.fuseau ?? null, pageLiee });
           const etat = await connexions.lire(t);
           if (etat === null) throw new Error('connexion publicitaire introuvable après enregistrement');
           return etat;

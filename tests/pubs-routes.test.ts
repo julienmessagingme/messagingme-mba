@@ -19,7 +19,13 @@ const etatVide: ConnexionPub = {
   connectePar: null, connecteLe: new Date('2026-09-23T08:00:00Z'), jetonRejeteLe: null,
 };
 const etatChoisi: ConnexionPub = { ...etatVide, comptePubId: '111', pageId: 'p1', devise: 'EUR', fuseau: 'Europe/Paris', pageLiee: 'oui' };
-const accordes: ActifsAccordes = { comptesPub: ['111', '222'], pages: ['p1'] };
+const accordes: ActifsAccordes = {
+  comptesPub: [
+    { id: '111', nom: 'GMC', devise: 'EUR', fuseau: 'Europe/Paris', statut: 1 },
+    { id: '222', nom: null, devise: null, fuseau: null, statut: null },
+  ],
+  pages: [{ id: 'p1', nom: 'Gerermonchantier' }],
+};
 
 interface Traces { connecte: string[]; choisi: unknown[]; deconnecte: string[]; audit: string[] }
 
@@ -118,13 +124,15 @@ describe('POST /echange : le code rendu par la fenêtre Meta', () => {
     expect(res.json().error).not.toMatch(/paramètres de votre entreprise/);
   });
 
-  it('🔴 si une AUTORISATION a ete accordee pour rien (la course), le client l apprend', async () => {
-    // Le jeton vit chez Meta et nous ne l avons pas garde. On ne peut pas le revoquer sans risquer de
-    // tuer la connexion existante : la seule porte est le client, donc il faut la lui montrer.
+  it('🔴 meme quand une autorisation a ete accordee pour rien, on ne demande RIEN chez Meta', async () => {
+    // Les deux gestes possibles cassent quelque chose : retirer les permissions publicitaires emporte la
+    // connexion qui MARCHE (le retrait porte sur le couple application-entite), retirer l application
+    // emporte le numero WhatsApp. Et le jeton perdu n est detenu par personne.
     const { srv } = app({ connecter: async () => { throw new DejaConnectePub(true); } });
     const res = await srv.inject({ method: 'POST', url: url('/echange'), payload: { code: 'CODE' } });
     expect(res.statusCode).toBe(409);
-    expect(res.json().error).toMatch(/paramètres de votre entreprise/);
+    expect(res.json().error).toMatch(/Déconnectez-la d’abord/);
+    expect(res.json().error).not.toMatch(/paramètres de votre entreprise|PERMISSIONS/);
   });
 
   it('🔴 NOTRE panne apres l echange ne s impute pas a Meta, et DIT que le jeton est perdu', async () => {
@@ -134,7 +142,8 @@ describe('POST /echange : le code rendu par la fenêtre Meta', () => {
     const res = await srv.inject({ method: 'POST', url: url('/echange'), payload: { code: 'CODE' } });
     expect(res.statusCode).toBe(500);
     expect(res.json().code).toBe('jeton_non_enregistre');
-    expect(res.json().error).toMatch(/paramètres de votre entreprise/);
+    // On dit ce qui s est passe et ce qui se fait CHEZ NOUS, sans prescrire un geste chez Meta.
+    expect(res.json().error).toMatch(/de notre côté/);
     // et surtout : le texte de NOTRE erreur ne part pas au client
     expect(res.json().error).not.toContain('42P01');
   });
@@ -150,8 +159,11 @@ describe('POST /echange : le code rendu par la fenêtre Meta', () => {
       const res = await srv.inject({ method: 'POST', url: url('/echange'), payload: { code: 'CODE' } });
       expect(res.statusCode).toBe(c.attendu);
       const texte: string = res.json().error;
-      expect(texte).toMatch(/PERMISSIONS PUBLICITAIRES/);
-      expect(texte).not.toMatch(/[Rr]etirez l.application (dans|depuis)/);
+      // La regle actuelle est plus large qu au debut : AUCUN geste chez Meta n est prescrit, ni retirer
+      // l application (qui coupe le numero WhatsApp), ni retirer des permissions (qui emporte la
+      // connexion voisine). La regex couvre l infinitif ET l imperatif, dans les deux sens.
+      expect(texte).not.toMatch(/[Rr]etir(ez|er) (l.application|les PERMISSIONS|les permissions)/);
+      expect(texte).not.toMatch(/paramètres de votre entreprise/);
     }
   });
 });

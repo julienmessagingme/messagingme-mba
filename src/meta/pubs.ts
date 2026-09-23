@@ -13,17 +13,26 @@ import { ClientGraph } from './graph';
  * l'identifiant (2026-09-09).
  */
 
-/** Ce que le jeton du client accorde, lu dans le jeton lui-même. */
-export interface ActifsAccordes {
-  /** Identifiants de comptes publicitaires, SANS le préfixe `act_` (les appels l'ajoutent). */
-  comptesPub: string[];
-  pages: string[];
-}
-
-export interface InfosComptePub {
+/** Un compte publicitaire accordé, avec ce que Meta en dit dans la même réponse. */
+export interface ComptePubAccorde {
+  /** SANS le préfixe `act_` : les appels l'ajoutent, et l'écran comme la base gardent la forme nue. */
+  id: string;
   nom: string | null;
   devise: string | null;
   fuseau: string | null;
+  /** `account_status` de Meta. 1 = actif ; tout le reste empêche de diffuser (désactivé, impayé...). */
+  statut: number | null;
+}
+
+export interface PageAccordee {
+  id: string;
+  nom: string | null;
+}
+
+/** Ce que le jeton du client accorde, LU AUX POINTS D'ENTRÉE DÉDIÉS (cf. `actifsAccordes`). */
+export interface ActifsAccordes {
+  comptesPub: ComptePubAccorde[];
+  pages: PageAccordee[];
 }
 
 /**
@@ -35,11 +44,19 @@ export interface InfosComptePub {
  */
 export type LiaisonPage = 'oui' | 'non' | 'inconnu';
 
-/** Le compte publicitaire, tel que Graph le rend. Tous les champs sont optionnels : on ne suppose rien. */
-const compteSchema = z.object({
-  name: z.string().optional(),
-  currency: z.string().optional(),
-  timezone_name: z.string().optional(),
+/** Les listes de Graph. Tout est optionnel sauf l'identifiant : on ne suppose rien du reste. */
+const listeComptesSchema = z.object({
+  data: z.array(z.object({
+    id: z.string(),
+    name: z.string().optional(),
+    currency: z.string().optional(),
+    timezone_name: z.string().optional(),
+    account_status: z.number().optional(),
+  })).optional(),
+});
+
+const listePagesSchema = z.object({
+  data: z.array(z.object({ id: z.string(), name: z.string().optional() })).optional(),
 });
 
 /**
@@ -58,28 +75,39 @@ const PERMISSIONS_PUB = ['ads_management', 'ads_read', 'pages_manage_ads'] as co
 
 export class MetaPubsClient extends ClientGraph {
   /**
-   * Les comptes publicitaires et les Pages que le jeton accorde, lus dans `debug_token`.
+   * Les comptes publicitaires et les Pages que le jeton accorde, lus à `GET /me/adaccounts` et
+   * `GET /me/accounts`.
    *
-   * ⚠️ DEUX SCOPES, DEUX LISTES, et aucune des deux n'est une erreur quand elle est vide : un client peut
-   * avoir accordé une Page sans compte publicitaire. C'est la route qui traduit cela en « connexion
-   * incomplète », parce qu'elle seule sait ce que l'écran doit dire.
+   * 🔴 SURTOUT PAS `debug_token`, ET C'EST UNE MESURE, PAS UN AVIS (2026-09-23, sur le vrai compte d'un
+   * client). Cette méthode lisait les `target_ids` des `granular_scopes`, comme le fait l'inscription
+   * WhatsApp pour les WABA. Sur un jeton d'utilisateur système d'intégration, Meta rend les scopes
+   * **SANS aucun `target_ids`** : les deux listes revenaient donc VIDES alors que la connexion était
+   * parfaite, et l'écran disait « la connexion n'a donné accès à aucun compte ». Les mêmes appels aux
+   * points d'entrée dédiés rendent le compte, son nom, sa devise, son fuseau et son statut.
+   *
+   * ⚠️ LA DEVISE ET LE FUSEAU ARRIVENT ICI, ce qui retire un appel : ils étaient relus compte par compte
+   * juste après, alors que Meta les donne dans la liste.
+   *
+   * ⚠️ Une liste vide n'est pas une erreur : un client peut n'avoir accordé qu'une Page. C'est la route
+   * qui le traduit, parce qu'elle seule sait ce que l'écran doit dire.
    */
   async actifsAccordes(jeton: string): Promise<ActifsAccordes> {
-    const comptes = await this.ciblesDuJeton(jeton, ['ads_management', 'ads_read']);
-    const pages = await this.ciblesDuJeton(jeton, ['pages_show_list', 'pages_manage_ads']);
-    return { comptesPub: comptes.map(sansPrefixeAct), pages };
-  }
-
-  /** Nom, devise et fuseau du compte publicitaire. Ils décident de la monnaie et des heures affichées. */
-  async infosCompte(comptePubId: string, jeton: string): Promise<InfosComptePub> {
-    const qs = new URLSearchParams({ fields: 'name,currency,timezone_name' });
-    const brut = await this.call(
-      `${this.baseUrl}/${this.version}/act_${encodeURIComponent(sansPrefixeAct(comptePubId))}?${qs.toString()}`,
-      { headers: { Authorization: `Bearer ${jeton}` } },
-    );
-    const lu = compteSchema.safeParse(brut);
-    if (!lu.success) return { nom: null, devise: null, fuseau: null };
-    return { nom: lu.data.name ?? null, devise: lu.data.currency ?? null, fuseau: lu.data.timezone_name ?? null };
+    const entete = { headers: { Authorization: `Bearer ${jeton}` } };
+    const brutComptes = await this.call(
+      `${this.baseUrl}/${this.version}/me/adaccounts?fields=id,name,currency,timezone_name,account_status&limit=100`, entete);
+    const brutPages = await this.call(`${this.baseUrl}/${this.version}/me/accounts?fields=id,name&limit=100`, entete);
+    const luComptes = listeComptesSchema.safeParse(brutComptes);
+    const luPages = listePagesSchema.safeParse(brutPages);
+    return {
+      comptesPub: (luComptes.success ? luComptes.data.data ?? [] : []).map((c) => ({
+        id: sansPrefixeAct(c.id),
+        nom: c.name ?? null,
+        devise: c.currency ?? null,
+        fuseau: c.timezone_name ?? null,
+        statut: c.account_status ?? null,
+      })),
+      pages: (luPages.success ? luPages.data.data ?? [] : []).map((p) => ({ id: p.id, nom: p.name ?? null })),
+    };
   }
 
   /**

@@ -80,8 +80,8 @@ function PublicitesInner({ session }: { session: Session }) {
               }
               const accordes = await echangerCodePub(session.tenantId, code);
               setActifs(accordes);
-              setCompteChoisi(accordes.comptesPub[0] ?? '');
-              setPageChoisie(accordes.pages[0] ?? '');
+              setCompteChoisi(accordes.comptesPub[0]?.id ?? '');
+              setPageChoisie(accordes.pages[0]?.id ?? '');
               await charger();
             } catch (err) {
               setErreur(err instanceof Error ? err.message : t('Connexion impossible', 'Connection failed'));
@@ -233,11 +233,19 @@ function Choix({ t, actifs, busy, compte, page, setCompte, setPage, valider }: {
         <>
           <label className="mt-3 block text-xs font-medium text-ink-500" htmlFor="compte-pub">{t('Compte publicitaire', 'Ad account')}</label>
           <select id="compte-pub" value={compte} onChange={(e) => setCompte(e.target.value)} className="mt-1 w-full rounded-xl border border-ink-200 px-3 py-2 text-sm">
-            {actifs.comptesPub.map((c) => <option key={c} value={c}>{c}</option>)}
+            {/* Le NOM d'abord : un admin reconnaît « GMC », pas un identifiant de quinze chiffres. Et un
+                compte que Meta ne dit pas actif (`statut !== 1`) le dit ici, avant qu'on s'étonne qu'une
+                pub ne parte pas. */}
+            {actifs.comptesPub.map((c) => (
+              <option key={c.id} value={c.id}>
+                {(c.nom ?? c.id) + (c.devise !== null ? ` (${c.devise})` : '')}
+                {c.statut !== null && c.statut !== 1 ? t(' — compte inactif chez Meta', ' — account inactive at Meta') : ''}
+              </option>
+            ))}
           </select>
           <label className="mt-3 block text-xs font-medium text-ink-500" htmlFor="page-pub">{t('Page Facebook', 'Facebook Page')}</label>
           <select id="page-pub" value={page} onChange={(e) => setPage(e.target.value)} className="mt-1 w-full rounded-xl border border-ink-200 px-3 py-2 text-sm">
-            {actifs.pages.map((p) => <option key={p} value={p}>{p}</option>)}
+            {actifs.pages.map((p) => <option key={p.id} value={p.id}>{p.nom ?? p.id}</option>)}
           </select>
           <button
             type="button" disabled={busy || compte === '' || page === ''} onClick={() => void valider()}

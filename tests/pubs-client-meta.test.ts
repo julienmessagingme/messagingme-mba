@@ -32,45 +32,51 @@ function scopes(...paires: Array<[string, string[]]>): unknown {
   return { data: { granular_scopes: paires.map(([scope, target_ids]) => ({ scope, target_ids })) } };
 }
 
-describe('actifsAccordes : ce que le jeton donne', () => {
-  it('rend les comptes publicitaires et les Pages, et retire le prefixe act_', async () => {
-    graph([
-      { body: scopes(['ads_management', ['act_111', '222']]) },
-      { body: scopes(['pages_show_list', ['p1', 'p2']]) },
-    ]);
-    await expect(client().actifsAccordes('JETON')).resolves.toEqual({ comptesPub: ['111', '222'], pages: ['p1', 'p2'] });
+describe('actifsAccordes : ce que le jeton donne VRAIMENT', () => {
+  const COMPTES = { data: [{ id: 'act_111', name: 'GMC', currency: 'EUR', timezone_name: 'Europe/Paris', account_status: 1 }] };
+  const PAGES = { data: [{ id: 'p1', name: 'Gerermonchantier' }] };
+
+  it('🔴 lit /me/adaccounts et /me/accounts, JAMAIS debug_token', async () => {
+    // Mesure du 2026-09-23 sur un vrai compte : un jeton d utilisateur systeme d integration rend ses
+    // `granular_scopes` SANS `target_ids`, donc la lecture par le jeton rendait deux listes vides alors que
+    // la connexion etait parfaite. Les points d entree dedies, eux, rendent tout.
+    const { appels } = graph([{ body: COMPTES }, { body: PAGES }]);
+    const actifs = await client().actifsAccordes('JETON');
+    expect(appels.map((a) => a.url).join(' ')).not.toContain('debug_token');
+    expect(appels[0]?.url).toContain('/me/adaccounts');
+    expect(appels[1]?.url).toContain('/me/accounts');
+    expect(actifs.comptesPub).toEqual([{ id: '111', nom: 'GMC', devise: 'EUR', fuseau: 'Europe/Paris', statut: 1 }]);
+    expect(actifs.pages).toEqual([{ id: 'p1', nom: 'Gerermonchantier' }]);
+  });
+
+  it('⚠️ le prefixe act_ est retire a la lecture : la base et l ecran gardent la forme nue', async () => {
+    graph([{ body: COMPTES }, { body: PAGES }]);
+    expect((await client().actifsAccordes('JETON')).comptesPub[0]?.id).toBe('111');
   });
 
   it('⚠️ deux listes vides ne sont PAS une erreur : c est la route qui en fait une connexion incomplete', async () => {
-    graph([{ body: { data: { granular_scopes: null } } }]);
+    graph([{ body: {} }, { body: {} }]);
     await expect(client().actifsAccordes('JETON')).resolves.toEqual({ comptesPub: [], pages: [] });
   });
 
-  it('inspecte le jeton du client AVEC le jeton d application, jamais avec celui du client', async () => {
-    const { appels } = graph([{ body: scopes(['ads_management', ['1']]) }, { body: scopes(['pages_show_list', []]) }]);
+  it('🔴 un champ du mauvais TYPE ne devient pas une valeur : le safeParse refuse la liste entiere', async () => {
+    graph([{ body: { data: [{ id: 'act_1', currency: 42 }] } }, { body: PAGES }]);
+    expect((await client().actifsAccordes('JETON')).comptesPub).toEqual([]);
+  });
+
+  it('⚠️ le nom, la devise, le fuseau et le STATUT absents rendent null, pas une valeur inventee', async () => {
+    graph([{ body: { data: [{ id: 'act_222' }] } }, { body: { data: [{ id: 'p2' }] } }]);
+    const actifs = await client().actifsAccordes('JETON');
+    expect(actifs.comptesPub).toEqual([{ id: '222', nom: null, devise: null, fuseau: null, statut: null }]);
+    expect(actifs.pages).toEqual([{ id: 'p2', nom: null }]);
+  });
+
+  it('les deux appels portent le jeton du client', async () => {
+    const { appels } = graph([{ body: COMPTES }, { body: PAGES }]);
     await client().actifsAccordes('JETON_CLIENT');
-    expect(appels[0]?.url).toContain('input_token=JETON_CLIENT');
-    expect(appels[0]?.url).toContain(`access_token=${encodeURIComponent('app-1|secret-1')}`);
-  });
-});
-
-describe('infosCompte : devise et fuseau', () => {
-  it('lit le nom, la devise et le fuseau, et remet le prefixe act_ dans l adresse', async () => {
-    const { appels } = graph([{ body: { name: 'MessagingMe', currency: 'EUR', timezone_name: 'Europe/Paris' } }]);
-    await expect(client().infosCompte('act_111', 'JETON')).resolves.toEqual({
-      nom: 'MessagingMe', devise: 'EUR', fuseau: 'Europe/Paris',
-    });
-    expect(appels[0]?.url).toContain('/act_111?');
-  });
-
-  it('🔴 une reponse qui ne porte pas ces champs rend trois nulls, jamais une valeur inventee', async () => {
-    graph([{ body: { id: 'act_111' } }]);
-    await expect(client().infosCompte('111', 'JETON')).resolves.toEqual({ nom: null, devise: null, fuseau: null });
-  });
-
-  it('🔴 un champ du mauvais TYPE ne passe pas pour une valeur : le safeParse le refuse', async () => {
-    graph([{ body: { name: 'MessagingMe', currency: 42, timezone_name: 'Europe/Paris' } }]);
-    await expect(client().infosCompte('111', 'JETON')).resolves.toEqual({ nom: null, devise: null, fuseau: null });
+    for (const a of appels) {
+      expect((a.init?.headers as Record<string, string>)?.Authorization).toBe('Bearer JETON_CLIENT');
+    }
   });
 });
 
@@ -171,6 +177,6 @@ describe('estJetonRefuse : un jeton mort, pas une panne', () => {
 
   it('⚠️ le MESSAGE de l erreur Graph n a pas changé d un caractère : c est une sous-classe, pas un format neuf', async () => {
     graph([{ ok: false, status: 400, body: { error: { message: 'champ inconnu', code: 100 } } }]);
-    await expect(client().infosCompte('111', 'JETON')).rejects.toThrow('Graph 400 (#100) : champ inconnu');
+    await expect(client().actifsAccordes('JETON')).rejects.toThrow('Graph 400 (#100) : champ inconnu');
   });
 });

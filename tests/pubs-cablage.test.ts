@@ -34,6 +34,16 @@ describe('câblage des publicités : le jeton ne touche jamais la base en clair'
     expect(sansCommentaires).toMatch(/return decryptSecret\(chiffre, config\.ENCRYPTION_KEY\);/);
   });
 
+  it('🔴 la connexion REFUSE avant d’échanger le code quand une connexion existe déjà', () => {
+    // Sans cette bretelle, chaque appel hors séquence fait émettre par Meta un jeton SANS EXPIRATION
+    // que la base refusera ensuite d’enregistrer : un orphelin à chaque fois. La supprimer ne fait
+    // tomber aucun autre test, d’où ce cas-ci (le fichier existe pour ça).
+    const bloc = sansCommentaires.slice(sansCommentaires.indexOf('connecter: async'));
+    const connexion = bloc.slice(0, bloc.indexOf('actifsAccordes:'));
+    expect(connexion).toMatch(/lireJetonChiffre\(t\) !== null\) throw new DejaConnectePub/);
+    expect(connexion.indexOf('lireJetonChiffre')).toBeLessThan(connexion.indexOf('exchangeCode'));
+  });
+
   it('🔴 la déconnexion RÉVOQUE chez Meta AVANT d’effacer la ligne, et pas l’inverse', () => {
     // Notre ligne est le seul endroit où ce jeton existe chez nous, et il n expire jamais : effacer
     // d abord laisserait un acces vivant que plus personne, de notre cote, ne pourrait fermer.

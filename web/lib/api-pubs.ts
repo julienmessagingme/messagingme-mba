@@ -39,9 +39,29 @@ export interface EtatPubs {
   connexion: ConnexionPubVue | null;
 }
 
+/**
+ * Ce que la connexion accorde, lu par le serveur à `GET /me/adaccounts` et `GET /me/accounts`.
+ *
+ * ⚠️ LES NOMS VIENNENT DE META, et c'est ce qui rend le choix possible : un admin reconnaît « GMC »,
+ * pas `2084133708982860`. Ils peuvent manquer, d'où le `null` et le repli sur l'identifiant.
+ */
+export interface ComptePubAccorde {
+  id: string;
+  nom: string | null;
+  devise: string | null;
+  fuseau: string | null;
+  /** `account_status` de Meta : 1 = actif. Tout le reste empêche de diffuser. */
+  statut: number | null;
+}
+
+export interface PageAccordee {
+  id: string;
+  nom: string | null;
+}
+
 export interface ActifsAccordes {
-  comptesPub: string[];
-  pages: string[];
+  comptesPub: ComptePubAccorde[];
+  pages: PageAccordee[];
 }
 
 export function getEtatPubs(tenantId: string): Promise<EtatPubs> {
