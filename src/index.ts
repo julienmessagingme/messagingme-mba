@@ -2734,7 +2734,7 @@ async function main(): Promise<void> {
         // de l'échange : une levée plus bas détruirait la connexion existante sans rien ranger.
         const chiffreNeuf = encryptSecret(jeton, config.ENCRYPTION_KEY);
         // 🔴 RÉVOQUER L'ANCIEN, MAIS SEULEMENT SI C'EST UNE AUTRE ENTITÉ : SINON ON TUE LE NEUF.
-        // Tout le raisonnement, les quatre issues et les mutations qui les gardent vivent dans
+        // Tout le raisonnement, les CINQ issues et les mutations qui les gardent vivent dans
         // `retirerAncienAcces` (`src/meta/pubs.ts`), qui s'exécute contre un faux client dans les tests.
         // Ce câblage ne fait que DÉLÉGUER : il n'a plus de décision à relire, donc plus de décision à
         // rater. Trois écritures successives de cette condition ont été prises en défaut ici même.

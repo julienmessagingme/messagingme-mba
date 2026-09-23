@@ -137,11 +137,19 @@ Spec `docs/superpowers/specs/2026-09-22-pubs-ctwa-design.md`, plan
 - ✅ **Lot 2 « Connecter » : ÉPROUVÉ EN PRODUCTION le 2026-09-23.** Un vrai compte publicitaire d'un vrai
   portefeuille est connecté depuis l'écran : nom, devise, fuseau et Page lus chez Meta. Migrations 0167
   et 0169 appliquées avant leur `up`, relues en base point par point.
-- ⏳ **MAIS DEUX RELECTURES À FROID ONT SUIVI, ET LEURS CORRECTIFS NE SONT PAS TOUS DÉPLOYÉS.** Dix
-  constats bloquants au total, dont le plus grave allait dans le SENS INVERSE de ce qu'on croyait
-  corriger : le dépôt par `/ops` révoquait l'ancien jeton sans voir que `DELETE /me/permissions` porte
-  sur l'ENTITÉ, donc il désarmait le jeton NEUF dans le cas le plus courant. On compare désormais les
-  identités avant de retirer quoi que ce soit.
+- ✅ **SIX RELECTURES À FROID ONT SUIVI, ET TOUT EST DÉPLOYÉ** (2026-09-23 au soir, `cc3380ee`).
+  Quatorze constats bloquants au total, et **chaque relecture a trouvé un défaut que la précédente
+  avait créé** : c'est le vrai enseignement du lot, plus que les défauts eux-mêmes.
+- 🔴 **LE PLUS GRAVE ALLAIT DANS LE SENS INVERSE DE CE QU'ON CROYAIT CORRIGER.** Le dépôt par `/ops`
+  révoquait l'ancien jeton sans voir que `DELETE /me/permissions` porte sur le couple (application,
+  ENTITÉ) : dans l'usage normal de cette route, il désarmait le jeton NEUF et répondait 200 sur une
+  connexion morte. Le raisonnement était déjà écrit 400 lignes plus haut dans le même fichier, non lu.
+  On compare désormais les identités (`GET /me`) avant de retirer quoi que ce soit.
+- 🔴 **ET LA GARDE CENSÉE PROTÉGER TOUT ÇA A ÉTÉ PRISE EN DÉFAUT DEUX FOIS**, parce qu'elle lisait le
+  TEXTE d'un `if` : trois orthographes du même bug l'ont traversée, et une réécriture censée la
+  renforcer l'a AFFAIBLIE. La décision vit désormais dans `retirerAncienAcces`, exécutée contre un faux
+  client : 13 mutants sur 14 tués, le survivant étant équivalent. **Un test de source ne sait pas juger
+  une sémantique**, il épingle une orthographe.
 - 🔴 **LES DEUX MESURES DU PLAN SONT TRANCHÉES, ET LA TROISIÈME N'AVAIT PAS ÉTÉ POSÉE.** La liaison
   Page / numéro ne se lit PAS chez Meta (le verdict `inconnu` est le cas normal, pas un repli) ; la
   devise et le fuseau se lisent SANS la permission `MANAGE`, ce qui valide l'arbitrage de la

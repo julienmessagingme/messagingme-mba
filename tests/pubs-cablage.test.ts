@@ -83,7 +83,14 @@ describe('câblage des publicités : le jeton ne touche jamais la base en clair'
     // à son compte. Le comportement, lui, s'exécute contre un faux client dans
     // `tests/pubs-client-meta.test.ts`, où chacune de ces mutations fait tomber un cas.
     const bloc = blocDe('deposerJetonPub: async');
-    expect(bloc).toMatch(/retirerAncienAcces\(/);
+    // 🔴 ET LES ARGUMENTS SONT ÉPINGLÉS, PAS SEULEMENT L'APPEL. La version précédente de cette garde
+    // ne disait rien de ce qu'on PASSE, et une relecture à froid a mesuré trois régressions du câblage
+    // qui passaient alors au vert : `(clientPubs, jeton, jeton)` (on compare le neuf à lui-même, donc
+    // `meme_entite`, donc l'ancien accès reste vivant), `(clientPubs, null, jeton)` (on ne lit plus
+    // jamais l'ancien) et le CHIFFRÉ passé sans déchiffrer (Meta rend 401, donc `indetermine`).
+    // Les trois rendent une valeur qui a l'air légitime à l'écran `/ops` et laissent chez Meta un accès
+    // qui n'expire jamais, c'est-à-dire exactement le défaut que tout ce dispositif existe pour fermer.
+    expect(bloc).toMatch(/retirerAncienAcces\(\s*clientPubs,\s*ancien === null \? null : decryptSecret\(/);
     // Et il ne reste AUCUNE décision locale : ni comparaison d'identités, ni appel direct au retrait.
     expect(bloc).not.toMatch(/idAncien|idNeuf|clientPubs\.revoquerAcces|clientPubs\.identite/);
   });

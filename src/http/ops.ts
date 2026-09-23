@@ -4,6 +4,7 @@ import type { SurveillanceOps } from '../ops/tentatives';
 import { estUuid } from './scope';
 import { valideGrille, BORNES_GRILLE, type GrillePrix } from '../stats/prix';
 import { journaliser } from '../lib/journal';
+import type { SortAncienAcces } from '../meta/pubs';
 import type { TenantOverviewRow, QueueLoadRow, QueueGroupLoadRow, QueueLatenceRow, GlobalDailyPoint, JobMortRow } from '../ops/store.pg';
 import type { WorkerHeartbeatRow } from '../ops/heartbeat-store.pg';
 
@@ -42,7 +43,14 @@ import type { WorkerHeartbeatRow } from '../ops/heartbeat-store.pg';
  *   dans les paramètres du portefeuille (les PERMISSIONS publicitaires, jamais l'application,
  *   qui porte le numéro WhatsApp).
  */
-export type SortAncienJetonPub = 'aucun' | 'retire' | 'meme_entite' | 'indetermine' | 'echec';
+/**
+ * ⚠️ UN ALIAS, PAS UNE SECONDE LISTE. Les cinq valeurs ont été écrites deux fois à la main pendant
+ * quelques heures. Le compilateur couplait les deux copies dans les sens dangereux, donc ce n'était
+ * pas un piège armé, mais c'était deux endroits à tenir alignés. La source est `SortAncienAcces`,
+ * là où la décision se prend ; ce qui reste ICI est la PROSE, qui dit le geste à faire pour chaque
+ * valeur, et c'est bien sa place : `/ops` est la surface où quelqu'un lit ce verdict et agit.
+ */
+export type SortAncienJetonPub = SortAncienAcces;
 
 /** Ce que la route d'exploitation rend après avoir déposé un jeton publicitaire. */
 export interface ConnexionPubDeposee {
