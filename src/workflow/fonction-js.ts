@@ -109,9 +109,21 @@ export async function executerFonctionJs(
   const runtime = QuickJS.newRuntime();
   try {
     runtime.setMemoryLimit(opts.memoireOctets ?? MEMOIRE_JS_OCTETS);
-    // 🔴 L'ÉCHÉANCE EST POSÉE AVANT LE CONTEXTE, et elle est absolue : le gestionnaire est rappelé pendant
-    // l'exécution et coupe dès qu'elle est passée. C'est ce qui rend une boucle infinie inoffensive.
-    const echeance = Date.now() + (opts.delaiMs ?? DELAI_JS_MS);
+    // 🔴 LE GESTIONNAIRE EST POSÉ TÔT, L'ÉCHÉANCE DÉMARRE TARD, ET LES DEUX MOMENTS SONT DISTINCTS.
+    // Le gestionnaire doit exister avant tout code, c'est lui qui rend une boucle infinie inoffensive.
+    // Mais le BUDGET ne commence qu'au moment où le code du CLIENT part (juste avant `evalCode`).
+    //
+    // 🔴 POURQUOI ÇA COMPTE, ET C'EST MESURÉ. L'échéance démarrait ici, donc la création du contexte et
+    // la construction de l'appel étaient PRISES SUR LES 200 ms DU CLIENT. Machine au repos, tout cela
+    // coûte 0 à 8 ms et rien ne se voit ; machine saturée, le budget est consommé avant que le client
+    // n'ait écrit une ligne, et `return valeur.toUpperCase()` rend « la fonction a dépassé 200 ms ».
+    // Constaté deux fois sur trois passages complets de la suite unitaire le 2026-09-23, avec ce
+    // symptôme exact. En production, cela veut dire qu'un bloc « Fonction JS » parfaitement correct
+    // échoue sur un worker chargé, avec un message qui accuse le code du client.
+    //
+    // ⚠️ `POSITIVE_INFINITY` tant que rien du client ne tourne : aucune interruption ne peut partir
+    // avant que le budget ne soit armé, ce qui est exactement la propriété qui manquait.
+    let echeance = Number.POSITIVE_INFINITY;
     runtime.setInterruptHandler(() => Date.now() > echeance);
     const ctx = runtime.newContext();
     try {
@@ -129,6 +141,9 @@ export async function executerFonctionJs(
        * n’emprunte qu’au passage d’un contact. Les deux noms désignent la même donnée.
        */
       const alias = nomDeParametreSur(opts.nomParametre);
+      // Le budget du client commence ICI, et il couvre la compilation de SON code comme son exécution :
+      // `evalCode` fait les deux, et un programme pathologique à compiler est aussi son affaire.
+      echeance = Date.now() + (opts.delaiMs ?? DELAI_JS_MS);
       const res = ctx.evalCode(alias
         ? `(function(valeur, ${alias}){
 ${code}
