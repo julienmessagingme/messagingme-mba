@@ -58,6 +58,25 @@ test.describe('MBA Paramètres : en-tête et menu en colonne', () => {
     await expect(page.getByTestId('entete-agent-etapes')).toContainText('1 étape à finir');
   });
 
+  test('🔴 numero PRESENT mais agent pas ouvert par Meta : aucune etape, aucun chiffre', async ({ page }) => {
+    // LE CROISEMENT QUE PERSONNE NE COUVRAIT, et c'est le cas COURANT d'un client qui vient de connecter
+    // son numéro : `phoneNumberId` existe (il vient de `getAccountStatus`), donc les lectures partaient,
+    // et `/completion` ne regarde pas l'éligibilité : elle rendait « aucune FAQ » en `a_faire`. L'en-tête
+    // annonçait alors « 1 étape à finir » avec un bouton qui change l'URL et ne produit RIEN, la bannière
+    // de blocage restant affichée quel que soit l'onglet demandé.
+    await mockMba(page, { status: { eligible: false, onboarded: false, agentId: null, settings: null } });
+    await page.goto('/mba/parametres');
+    await expect(page.getByTestId('mba-gate-not-eligible')).toBeVisible();
+
+    // L'IDENTITÉ RESTE, et c'est elle qui informe : le numéro, son nom, sa pastille d'état.
+    await expect(page.getByTestId('entete-agent')).toContainText('Boutique Test');
+    await expect(page.getByTestId('pastille-numero-statut')).toBeVisible();
+
+    await expect(page.getByTestId('entete-agent-etapes')).toHaveCount(0);
+    await expect(page.getByTestId('entete-agent-messages')).toHaveCount(0);
+    await expect(page.getByTestId('entete-etape-faq'), 'un bouton qui ne mène nulle part').toHaveCount(0);
+  });
+
   test('🔴 l en-tete est la MEME sur un ecran bloque, sans numero', async ({ page }) => {
     // Le blocage « aucun numéro » rend l'en-tête sans complétion ni chiffre : il doit tenir debout avec un
     // titre générique, et surtout ne pas faire tomber la page.

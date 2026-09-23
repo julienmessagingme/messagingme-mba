@@ -100,28 +100,43 @@ function MbaSettings({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean
    * console publiée chez Vercel avant le déploiement de l'API) ou un 403 (compte non administrateur)
    * effacerait alors un écran parfaitement utilisable. Ici, la valeur reste à `null` et l'en-tête n'affiche
    * simplement pas ce qu'il ne sait pas.
+   *
+   * 🔴 ET ILS NE PARTENT QUE SI L'ÉCRAN PEUT SERVIR À QUELQUE CHOSE, c'est-à-dire si Meta a ouvert l'agent
+   * sur ce numéro. Un numéro CONNECTÉ mais pas encore ouvert pose `phoneNumberId` (il vient de
+   * `getAccountStatus`) alors que l'écran restera sur sa bannière de blocage quel que soit l'onglet demandé.
+   * Or `/completion` ne regarde PAS l'éligibilité côté serveur : elle interroge les informations, les FAQ,
+   * les sites et les fichiers, donc elle rend de vraies tâches `a_faire` (« aucune FAQ » en premier). Sans
+   * cette garde, l'en-tête annonçait « 1 étape à finir » avec un bouton qui change l'URL et ne produit
+   * RIEN : le motif « offert-et-inerte », que ce produit s'interdit. Et c'est le cas COURANT d'un client qui
+   * vient de connecter son numéro, pas un cas limite.
+   *
+   * ⚠️ La dépendance est le BOOLÉEN, pas l'objet `status` : `majReglages` en reconstruit un à chaque
+   * enregistrement de réglage, ce qui relancerait les deux lectures réseau à chaque bascule d'interrupteur.
+   * Ce qui décide ici est l'éligibilité, et elle, elle ne change pas quand on enregistre.
    */
+  const eligible = status?.eligible === true;
+
   const [messages, setMessages] = useState<number | null>(null);
   useEffect(() => {
-    if (phoneNumberId === null) return;
+    if (phoneNumberId === null || !eligible) return;
     let vivant = true;
     void getMbaMessages(tenantId, phoneNumberId)
       .then((r) => { if (vivant) setMessages(r.messages); })
       .catch(() => { if (vivant) setMessages(null); });
     return () => { vivant = false; };
-  }, [tenantId, phoneNumberId]);
+  }, [tenantId, phoneNumberId, eligible]);
 
   // La complétion se lit ICI depuis que l'en-tête l'affiche (elle vivait dans `MbaCompletion`, supprimé) :
   // l'en-tête est purement présentationnel, il n'appelle rien lui-même.
   const [completion, setCompletion] = useState<CompletionMba | null>(null);
   useEffect(() => {
-    if (phoneNumberId === null) return;
+    if (phoneNumberId === null || !eligible) return;
     let vivant = true;
     void getMbaCompletion(tenantId, phoneNumberId)
       .then((r) => { if (vivant && Array.isArray(r?.taches)) setCompletion(r); })
       .catch(() => { if (vivant) setCompletion(null); });
     return () => { vivant = false; };
-  }, [tenantId, phoneNumberId]);
+  }, [tenantId, phoneNumberId, eligible]);
 
   // L'onglet vit dans l'adresse : la page est partageable, et le navigateur retrouve où on en était.
   const choisirOnglet = useCallback((cle: string) => {
