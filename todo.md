@@ -89,6 +89,24 @@ Reste à faire, par petits changements réversibles :
 9. ne pas acheter Cloudflare Business/Enterprise, Bot Management ou un second WAF Scaleway sans exigence ou
    incident précis.
 
+## 🟡 Deux écarts que la revue finale du déploiement a laissés porter (2026-09-23)
+
+Rapport : `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`. Aucun des deux n'est un défaut du lot relu, et
+c'est pour ça qu'ils sont ici plutôt que corrigés dans la foulée. Le troisième jaune de cette revue (le puits
+de tarifs en queue de paramètres optionnels) a été CORRIGÉ le jour même, en `PuitsAccuses`.
+
+- **`bilanContact` exclut les 72 h gratuites mais ne porte pas les gardes de livraison** des autres lectures de
+  coût (`status = 'sent'`, livraison non `failed`, canal WhatsApp). L'écart est ANTÉRIEUR au lot 1 des pubs et
+  DÉCLARÉ dans le code, pas caché. 🔴 **Le fermer change un chiffre que le client voit**, donc ça commence par
+  une MESURE sur les vraies données (combien de contacts changent de total, et de combien), jamais par le
+  correctif : un écran de coût qui bouge sans explication est pire qu'un écart documenté.
+- **`limiteCouteuse` est un paramètre OPTIONNEL dans huit modules de routes** (`agent-knowledge`, `agent-mcp`,
+  `campaigns`, `contacts`, `import`, `inbox`, `embeddedSignup`, servis par `gardeEtendue`). ⚠️ **Ce n'est PAS
+  le cas de la garde d'authentification, fermé le 2026-09-15**, et la nuance décide de la priorité :
+  `gardeEtendue` pose TOUJOURS son `preHandler`, donc un oubli coûte le plafond de débit par espace, jamais le
+  contrôle d'accès. À trancher pour les huit ENSEMBLE ou pour aucun : rendre le paramètre requis sur un seul
+  module laisserait croire que les sept autres sont gardés.
+
 ## 🟡 Un carrousel RCS dans un scénario (lot 3 de la spec du 2026-09-21)
 
 La bibliothèque compose des carrousels et l'assistant de campagne les envoie ; le bloc « Message RCS » d'un

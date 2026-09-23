@@ -1542,6 +1542,14 @@ scénario, comment importer des contacts.
   sans que rien ne le signale. Un refus explicite vaut mieux qu'une fonctionnalité qui a l'air de marcher.
 - ✅ **Les messages d'erreur de l'embarquement sont enfin lisibles** : quand Meta refuse, on affiche SON motif
   (code expiré, compte non partagé, plusieurs numéros à départager) au lieu d'un « Erreur 502 » opaque.
+- ✅ **Activer un numéro que Meta a laissé non vérifié** (2026-09-23, LIVE). Depuis la version 4 du parcours
+  d'inscription, un client peut le TERMINER avec un numéro que Meta n'a pas vérifié : le numéro est bien
+  rattaché, mais il ne peut pas encore envoyer. Avant, il n'avait aucun recours dans la console et il fallait
+  passer par WhatsApp Manager. Désormais la carte du numéro, sur l'Accueil, dit qu'il reste à activer et porte
+  le bouton : Meta envoie un code (par appel par défaut, par SMS au choix), le client le saisit, et le numéro
+  est enregistré dans la foulée. ⚠️ **Meta ne permet que dix demandes par numéro sur 72 heures**, toutes étapes
+  confondues, et bloque le numéro au-delà. L'écran protège donc ce quota : il refuse un second code avant une
+  minute, il ne réessaie jamais tout seul, et il ne demande pas de code à un numéro que Meta dit déjà vérifié.
 - ✅ **Logo Meta Business Agent** sur la carte MBA (produit de Meta), à la place de notre logo MM.
 
 ## Rappels avant ou après une date (menu Automation)
