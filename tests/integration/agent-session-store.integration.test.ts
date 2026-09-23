@@ -302,9 +302,56 @@ describe.skipIf(!url)('PgAgentSessionStore (Postgres)', () => {
     expect(n).toBe(2);
   });
 
-  it('🔴 il ne voit RIEN d un autre espace', async () => {
-    // `conversation_messages` n'a pas de tenant_id : si la jointure sautait, ce test le dirait.
-    const n = await store.messagesTenus(autreTenantId, agentId, 30);
-    expect(n).toBe(0);
+  /**
+   * 🔴 LE CAS PRÉCÉDENT NE PROUVAIT RIEN SUR `c.tenant_id = $1` (relevé en revue). `agentId` n'a de sessions
+   * que sous `tenantId` : appelé avec `autreTenantId`, le sous-select sur `agent_sessions` rend un ensemble
+   * VIDE de `wa_id`, et un `in (vide)` rend 0 QUE LE FILTRE DE LA REQUÊTE EXTERNE (`c.tenant_id = $1`) SOIT
+   * LÀ OU NON. Un test qui se contente d'appeler `messagesTenus(autreTenantId, ...)` reste donc vert même si
+   * ce filtre disparaît un jour, alors que c'est le SEUL contrôle d'isolation de `conversation_messages`
+   * (cette table n'a pas de `tenant_id` à elle, migration 0009).
+   *
+   * Pour que le test TOMBE si ce filtre disparaît, il faut une conversation qui PARTAGE le même `wa_id`
+   * qu'une conversation tenue par l'agent, mais chez un AUTRE tenant : le sous-select (borné par tenant) la
+   * désignera quand même, via son `wa_id`, et seule la jointure filtrée sur `c.tenant_id` empêche ses
+   * messages d'entrer dans le compte de `tenantId`. L'unique de `conversations` porte sur `(tenant_id,
+   * wa_id)`, jamais sur `wa_id` seul, donc cette ligne est parfaitement légale en base.
+   */
+  it('🔴 un doublon de wa_id chez un AUTRE tenant ne fuit pas dans le compte', async () => {
+    // ⚠️ COMPARÉ EN DELTA, PAS EN VALEUR ABSOLUE. Ce fichier ne nettoie qu'à `afterAll` (cascade du tenant) :
+    // le cas précédent laisse déjà une conversation `tenue` avec 2 messages sous ce même `tenantId`/`agentId`,
+    // et le compte absolu dépendrait donc de l'ORDRE d'exécution des tests, pas seulement du SQL qu'on teste.
+    // « avant » capture l'état une fois CETTE conversation posée, et la seule chose qui doit changer ensuite
+    // est l'ajout du doublon chez l'autre tenant.
+    const wa = '33650000004';
+    await store.open({ tenantId, runId: await nouveauRun(), agentId, nodeId: 'n1', waId: wa });
+
+    const conv = await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, is_test) values ($1, $2, false) returning id`,
+      [tenantId, wa],
+    );
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, body) values ($1, 'in', 'bonjour'), ($1, 'out', 'bonjour, en quoi puis-je aider')`,
+      [conv.rows[0]!.id],
+    );
+
+    const avant = await store.messagesTenus(tenantId, agentId, 30);
+
+    // Même wa_id, chez l'AUTRE tenant, avec ses propres messages : c'est cette conversation-là que le
+    // sous-select retrouverait si `c.tenant_id = $1` disparaissait de la requête externe.
+    const fuite = await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, is_test) values ($1, $2, false) returning id`,
+      [autreTenantId, wa],
+    );
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, body) values ($1, 'in', 'fuite'), ($1, 'out', 'fuite aussi')`,
+      [fuite.rows[0]!.id],
+    );
+
+    // Le doublon ne doit RIEN ajouter : sans `c.tenant_id = $1`, la jointure retrouverait AUSSI ses 2
+    // messages, et ce total augmenterait de 2 au lieu de rester identique.
+    expect(await store.messagesTenus(tenantId, agentId, 30)).toBe(avant);
+    // Et l'autre sens rend bien 0 : le sous-select est déjà borné par tenant. Ce cas-là reste, mais seul il
+    // ne dirait rien si `c.tenant_id = $1` disparaissait (cf. commentaire au-dessus du test).
+    expect(await store.messagesTenus(autreTenantId, agentId, 30)).toBe(0);
   });
 });
