@@ -5,6 +5,49 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-23 (après-midi) : trois lots de plus, et trois relectures pour un seul module
+
+**Déployé le 2026-09-23 vers 12 h 40**, par la session des publicités, après une revue finale qui a demandé
+TROIS passes. Contenu : l'API publique « envoyer un simple message » (`POST /v1/messages`), la grille de prix
+unique dans `/ops`, le masquage des fonctions HubSpot sans portail lié, et le lot 2 des publicités
+Click-to-WhatsApp. **Migrations 0166, 0167 et 0168 appliquées à 11 h 36, toutes AVANT le `up`**, ce qui
+n'était arrivé ni en 0141 ni en 0159 : aucune n'a eu besoin d'être mise de côté pendant le build.
+
+🔴 **CE QUE LES TROIS RELECTURES ONT TROUVÉ, ET POURQUOI IL EN A FALLU TROIS.** La première a rendu 2 rouges
+sur le module des publicités. Le correctif en a fermé deux et en a ouvert trois autres, dont un que le
+correctif lui-même rendait atteignable (un bandeau « votre compte est détaché » qui survivait à une
+reconnexion réussie, donc un écran affichant simultanément « connecté » et « détaché »). La troisième passe a
+fermé le reste. **La règle du dépôt, « c'est en corrigeant qu'on casse ailleurs », a été démontrée deux fois
+de suite dans la même après-midi**, sur le même module.
+
+🔴 **LE MÊME MOTIF EST APPARU TROIS FOIS SOUS TROIS FORMES : un accès qu'on abandonne sans pouvoir le
+fermer.** C'est le piège de la clé Vercel (0124), déjà écrit dans ce dépôt. Ses trois visages ici : une
+révocation qui désautorisait l'application Meta EN ENTIER, partagée avec l'inscription WhatsApp (donc un
+bouton « Déconnecter » des publicités pouvait couper le numéro du client) ; un « Reconnecter » qui écrasait
+le jeton sans le révoquer ; et, après correction, une insertion-seule qui orphelinait le jeton FRAIS au lieu
+de l'ancien. ⚠️ **Le correctif évident du troisième était un piège** : révoquer le jeton frais aurait détruit
+la connexion qui marche, la révocation portant sur l'ENTITÉ et non sur le jeton.
+
+⚠️ **ARBITRAGE DE JULIEN, ET IL RECADRE TOUT CE QUI PRÉCÈDE** : sur le jeton qui survit chez Meta, « on s'en
+fout, personne ne l'utilisera ». Il a raison, le secret n'est publié nulle part et n'a jamais fuité ; ce qui
+restait vrai était l'incapacité à répondre « tout est coupé » à une DSI, ce qui est un enjeu de conformité et
+non une faille. Ce qu'il a retenu comme important : le message d'écran qui, suivi par un client, coupait son
+WhatsApp.
+
+🔴 **INCIDENT : DEUX SESSIONS SE SONT ÉCRASÉES DANS `src/index.ts`, ET `main` A ÉTÉ ROUGE DIX MINUTES.** Le
+mécanisme, parce qu'il vaut plus que l'incident : un `git checkout origin/main -- <fichier>` a réaligné
+l'index d'une session APRÈS son push, écrivant par-dessus le travail non commité de l'autre. Le
+`git commit --only <ce fichier>` de celle-ci a ensuite commité le travail d'en face et perdu le sien.
+**`--only` ne protège que si le CONTENU du fichier est encore le sien**, et un `checkout` est une ÉCRITURE
+qui n'a l'air de rien. Parade convenue : trois annonces (fichier de câblage partagé, `checkout` dessus,
+suite e2e), inscrites dans le `CLAUDE.md` du dépôt.
+
+⚠️ **ET LA FICHE D'AIDE DES AUTOMATIONS ANNONÇAIT QUATRE DÉCLENCHEURS SUR SEPT**, depuis des semaines, sans
+rapport avec ces lots. `features.md` les listait bien tous les sept : la garde de dérive compare une fiche à
+la SECTION dont elle dérive, donc elle voit une section qui change, jamais une fiche qui ne suit pas un ajout
+fait par quelqu'un d'autre. Corrigée et rechargée dans l'index du bot. ⚠️ `la-fenetre-de-24-heures` a un
+frontmatter VIDE : elle n'est rattachée à aucun écran ni section, donc rien ne la surveillera jamais.
+
 ## 2026-09-23 : trois lots partis d'un bloc, et le compteur qui a failli coûter cher
 
 **Déployé le 2026-09-23 vers 9 h 15** : les 21 commits que la production n'avait pas, écrits par TROIS sessions

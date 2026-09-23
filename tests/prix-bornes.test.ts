@@ -3,7 +3,18 @@ import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { valideGrille, BORNES_GRILLE, GRILLE_DEFAUT, tarifsFactures, pricingFacture } from '../src/stats/prix';
 
-const SQL = readFileSync(join(resolve(__dirname, '..'), 'db', 'migrations', '0154_grille_prix_espace.sql'), 'utf8');
+/**
+ * 🔴 LA MIGRATION QUI FAIT FOI EST CELLE DE LA TABLE SERVIE, ET ELLE A CHANGE LE 2026-09-23. Ce test
+ * lisait `0154_grille_prix_espace.sql`, c'est-a-dire les six colonnes de `tenant_settings` que le lot 8 a
+ * rendues MORTES : la grille est desormais unique et vit dans `grille_prix` (0168). Les bornes
+ * coincidaient, donc rien n'etait casse, mais la garde surveillait une table que plus personne ne lit.
+ *
+ * ⚠️ CE QU'ELLE AURAIT LAISSE PASSER : porter `BORNES_GRILLE.centimes.max` a 200 aurait exige de
+ * modifier 0154 (morte), pendant que le CHECK de 0168 aurait garde `<= 100`. Un `PATCH /ops/prix` a 150
+ * aurait passe `valideGrille` puis se serait fait refuser par Postgres : un 500 sur un geste ordinaire,
+ * c'est-a-dire exactement le mode de panne que ce fichier existe pour fermer.
+ */
+const SQL = readFileSync(join(resolve(__dirname, '..'), 'db', 'migrations', '0168_grille_prix_globale.sql'), 'utf8');
 
 /**
  * LES BORNES DE SAISIE D UNE GRILLE DE PRIX.
@@ -15,7 +26,7 @@ const SQL = readFileSync(join(resolve(__dirname, '..'), 'db', 'migrations', '015
  * qu elles DIVERGENT : plus large que le CHECK rend un 500 sur un geste ordinaire, plus etroit refuse un
  * reglage legitime sans raison lisible.
  */
-describe('les bornes de saisie sont celles de la migration 0154', () => {
+describe('les bornes de saisie sont celles de la migration de la table SERVIE (0168)', () => {
   it('🔴 la marge : les memes deux nombres des deux cotes', () => {
     expect(SQL).toContain(`check (prix_marge_template between ${BORNES_GRILLE.margeTemplate.min} and ${BORNES_GRILLE.margeTemplate.max})`);
   });
@@ -261,11 +272,14 @@ describe('valideGrille refuse ce que la base refuserait ou corrigerait', () => {
     // `toContain` pour une raison qui n est pas celle qu il teste.
     expect(SQL, 'prix_marge_template doit etre un numeric(6,2), pas un smallint')
       .toMatch(/prix_marge_template\s+numeric\(6,2\)/);
-    // Et le changement de TYPE est inconditionnel : `add column if not exists` protege de l existence, pas
-    // du type. ⚠️ Il ne couvre PAS une base ou 0154 est deja inscrite, que le runner ne rejoue jamais : il
-    // couvre une base ou la colonne existe sans que 0154 le soit (creation a la main, reprise partielle).
-    expect(SQL, 'le type doit etre corrige sur une base ou la colonne existe hors de 0154')
-      .toMatch(/alter column prix_marge_template type numeric\(6,2\)/);
+    /**
+     * ⚠️ L'ASSERTION SUR `alter column ... type` A ETE RETIREE LE 2026-09-23, ET SON SUJET A DISPARU AVEC.
+     * Elle gardait un cas propre a 0154 : une colonne AJOUTEE a une table existante, ou `add column if not
+     * exists` protege de l'existence mais pas du TYPE, donc un `smallint` pose a la main survivait. 0168
+     * CREE la table, avec ses colonnes et leurs types d'un seul geste : une colonne pre-existante au mauvais
+     * type ne peut pas exister. Conserver l'assertion aurait exige de garder un `alter column` sans objet
+     * dans la migration, uniquement pour qu'un test passe.
+     */
   });
 
   it('deux decimales exactement restent acceptees sur les prix en centimes', () => {

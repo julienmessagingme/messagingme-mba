@@ -1670,6 +1670,16 @@ scénario, comment importer des contacts.
   langue du template valent désormais **null** (au lieu d'une chaîne vide) puisqu'un scénario n'a pas de template
   propre, et un champ **nom du scénario** apparaît. Un client qui affichait la chaîne vide telle quelle voyait
   jusqu'ici un libellé vide ; c'est ce que cette bascule corrige.
+- ✅ **Les fonctions HubSpot disparaissent quand aucun portail n'est relié** (2026-09-23) : la source
+  « HubSpot » d'une campagne et le déclencheur « un deal HubSpot atteint une étape » d'une automation ne
+  s'affichent plus du tout tant que votre espace n'a pas de portail HubSpot lié. Une intégration qu'on n'a
+  pas est du bruit, pas une information.
+  ⚠️ **Le réglage « campagnes via listes HubSpot » ne suffisait pas** : il dit que vous VOULEZ cette source,
+  le portail dit qu'elle est POSSIBLE. Un espace qui déliait son portail gardait le réglage allumé, donc la
+  source restait offerte et ne menait nulle part.
+  ⚠️ Le déclencheur d'automation était auparavant **grisé**, et seulement après l'avoir sélectionné une fois.
+  Il est désormais absent de la liste, comme la source de campagne l'était déjà.
+
 - ✅ **Envoyer un simple message** (2026-09-23) : `POST /v1/messages` envoie **un texte, à une personne**, dans la
   fenêtre de service de 24 h. C'est le pendant exact de la barre de réponse de l'Inbox : pas de template à faire
   approuver, pas de scénario, pas d'en-tête d'idempotence. Corps : `{ "to": "+33...", "text": "..." }`. Le message

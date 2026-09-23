@@ -141,7 +141,7 @@ export function unitesDe(operation: OperationApi, taille = 1): number {
 /**
  * DEMANDER AU GARDE, ET REFUSER SI BESOIN, EN UN SEUL GESTE.
  *
- * ⚠️ ELLE N'EST PLUS EXPORTÉE (revue du 2026-09-14) : les six routes passent par `compterOuRefuser` juste
+ * ⚠️ ELLE N'EST PLUS EXPORTÉE (revue du 2026-09-14) : les routes qui comptent passent par `compterOuRefuser` juste
  * en dessous, et un symbole exporté que personne n'importe finit par être appelé de travers, sans la
  * résolution d'identité que l'autre fait.
  *

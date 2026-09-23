@@ -930,6 +930,18 @@ depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui d
   22 fichiers de routes). Les points de passage obligés sont listés dans `documentation.md` (« Modules
   partagés ») : un fragment SQL, une classe Tailwind ou une normalisation de texte s'y importe, ne se recopie pas.
 - Git : rester sur `main`, committer sur `main`, push `origin`.
+- 🔴 **TROIS ANNONCES ENTRE SESSIONS QUI PARTAGENT CET ARBRE** (2026-09-23) : avant d'éditer un fichier de
+  CÂBLAGE partagé (`src/index.ts`, `src/server.ts`, `src/worker.ts`), avant un `git checkout -- ` dessus, et
+  avant une suite e2e. Un message, pas de verrou. ⚠️ La deuxième est celle qu'on oublie : un
+  `git checkout -- <fichier>` ÉCRIT dans l'arbre de l'autre, n'apparaît pas comme une modification et ne
+  laisse aucune trace de commit. Vécu ce jour-là : le geste qui a débloqué un pair le matin lui a fait
+  perdre vingt lignes l'après-midi, et son `git commit --only` a ensuite commité le travail d'en face.
+  `main` est resté rouge dix minutes. ⚠️ Corollaire : `--only` ne protège que si le CONTENU du fichier est
+  encore le sien, donc `git diff <ses chemins>` juste avant de commiter.
+- ⚠️ **DEUX SUITES E2E CONCURRENTES EMPOISONNENT `web/.next`** (2026-09-23), et le symptôme accuse le code :
+  `ENOENT` sur un fichier de `.next`, puis « Timed out waiting 180000ms from config.webServer ». La sortie
+  est `rm -rf web/.next` PUIS `npm run build` À LA MAIN, parce qu'un build à froid dépasse les 180 s que
+  Playwright accorde à son webServer. Le `rm` seul ne suffit pas, et c'est ce qui fait chercher ailleurs.
 - 🔴 **`gh run list` AVANT tout déploiement**, au même titre que `git log <déployé>..HEAD`. Un `npm test`
   vert en local ne prouve que la moitié : les tests d’intégration ne tournent qu’en CI, sur un Postgres
   jetable. Déployer sans avoir regardé le run, c’est déployer sans avoir vu la moitié des tests.
