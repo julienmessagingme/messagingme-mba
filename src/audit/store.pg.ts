@@ -99,7 +99,16 @@ export type AuditAction =
    */
   | 'pubs.connectee'
   | 'pubs.actifs_choisis'
-  | 'pubs.deconnectee';
+  | 'pubs.deconnectee'
+  /**
+   * 🔴 CRÉER ET PUBLIER SONT DEUX LIGNES DISTINCTES, ET LA SECONDE EST CELLE QUI COMPTE. Créer ne dépense
+   * rien : tout naît en pause chez Meta. PUBLIER met la campagne en diffusion, donc engage le budget du
+   * client sur son propre compte. Les fondre en une seule ligne rendrait impossible de répondre à « qui a
+   * décidé que cette campagne dépenserait, et quand », qui est exactement la question qu'on posera le jour
+   * où un montant surprendra quelqu'un.
+   */
+  | 'pubs.creee'
+  | 'pubs.publiee';
 
 export interface AuditEntry {
   id: string;

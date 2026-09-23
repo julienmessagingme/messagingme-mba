@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { DejaConnectePub, JetonNonEnregistre, PasDeConnexionPub, registerPubs, type PubsRouteDeps } from '../src/http/pubs';
 import type { ConnexionPub } from '../src/pubs/connexion.pg';
 import type { ActifsAccordes } from '../src/meta/pubs';
+import { aucunePubDeRoute } from './pubs-fixtures';
 
 /**
  * LES ROUTES DE LA CONNEXION PUBLICITAIRE (lot 2 « Connecter »).
@@ -35,6 +36,7 @@ function app(over: Partial<PubsRouteDeps> = {}, role = 'admin'): { srv: FastifyI
     configId: 'cfg-pub',
     appId: 'app-1',
     graphVersion: 'v23.0',
+    ...aucunePubDeRoute,
     lire: async () => etatVide,
     etatCompte: async () => ({ statut: 1, raisonDesactivation: 0, moyenPaiement: true }),
     connecter: async (_t, code) => { traces.connecte.push(code); return accordes; },

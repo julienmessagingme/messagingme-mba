@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runAutomations } from '../src/automation/runner';
 import type { AutomationRunnerDeps } from '../src/automation/runner';
-import { POSSESSEUR_LIEN_CHAINE } from '../src/automation/match';
+import { POSSESSEUR_LIEN_CHAINE, POSSESSEUR_PUBLICITE, reprendLaMain } from '../src/automation/match';
 import type { AutomationEvent, AutomationRow } from '../src/automation/match';
 import { WorkflowExecutor } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
@@ -155,5 +155,29 @@ describe('le câblage réel, et la constante que le SQL recopie', () => {
     // Et c'est bien cette valeur-là qui est ÉCRITE à la création, sinon les deux moitiés ne se rencontreraient
     // jamais malgré leur accord apparent.
     expect(lire('src', 'index.ts')).toContain(`possedePar: '${POSSESSEUR_LIEN_CHAINE}'`);
+  });
+
+  it('🔴 la constante des PUBLICITÉS et les gardes SQL de leur store disent la MÊME chaîne', () => {
+    // Même raison que pour les chaînes, et même prix. `possede_par = 'publicite'` vit en dur dans les
+    // requêtes de `PgPublicitesStore`, où c'est une GARDE MIROIR : ce store ne peut toucher QUE ses propres
+    // automations. Si la constante et le littéral divergeaient, l'automation d'une publicité deviendrait
+    // intouchable par son propriétaire ET invisible de l'écran Automations (qui exclut tout `possede_par`
+    // non nul) : elle continuerait de déclencher sans que personne puisse l'éteindre.
+    const store = lire('src', 'pubs', 'publicites.pg.ts');
+    // Elle est ÉCRITE à la création de l'automation...
+    expect(store).toContain(`'${POSSESSEUR_PUBLICITE}'`);
+    // ...et RELUE dans chacune des gardes, sans quoi les deux moitiés ne se rencontreraient jamais.
+    expect(store).toContain(`possede_par = '${POSSESSEUR_PUBLICITE}'`);
+  });
+
+  it('🔴 les DEUX propriétaires reprennent la main, et eux seuls', () => {
+    // La règle est NOMINATIVE, pas « possède un propriétaire quelconque » : un futur propriétaire (un autre
+    // canal, un connecteur) hériterait sinon d'un pouvoir que personne ne lui a accordé, sans qu'aucun type
+    // ne bouge. Les trois cas du haut de ce fichier gardent le sens inverse, celui qui protège un opérateur.
+    const p = (possedePar: string | null): AutomationRow => auto({ possedePar });
+    expect(reprendLaMain(p(POSSESSEUR_LIEN_CHAINE))).toBe(true);
+    expect(reprendLaMain(p(POSSESSEUR_PUBLICITE))).toBe(true);
+    expect(reprendLaMain(p(null))).toBe(false);
+    expect(reprendLaMain(p('un_autre_proprietaire'))).toBe(false);
   });
 });

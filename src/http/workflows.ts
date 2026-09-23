@@ -45,6 +45,21 @@ export interface WorkflowRouteDeps {
    *  la route de publication répond 503 (câblages de test qui ne montent pas le store). */
   publishWorkflow?(id: string, tenantId: string): Promise<WorkflowRow | null>;
   deleteWorkflow(id: string, tenantId: string): Promise<boolean>;
+  /**
+   * LES PUBLICITÉS VIVANTES QUI UTILISENT CE SCÉNARIO, par leur nom. Vide = aucune, la suppression passe.
+   *
+   * 🔴 REQUISE, JAMAIS OPTIONNELLE, et c'est une garde au sens strict. `publicites.workflow_id` est en
+   * `on delete set null` (migration 0170), choisi pour qu'une suppression de scénario ne fasse jamais
+   * échouer une contrainte sur un geste ordinaire. La conséquence est qu'un `delete` RÉUSSIT en silence et
+   * laisse la publicité avec une destination `scenario` et plus aucun scénario : ses prospects, qui ont
+   * coûté un clic, n'arrivent alors nulle part. Un câblage qui oublierait cette dépendance produirait
+   * exactement ce trou, et rien ne le signalerait. Le dépôt a payé deux fois ce motif (`estDesabonne`,
+   * la garde d'authentification), d'où le type qui l'impose.
+   *
+   * ⚠️ Les câblages de test qui ne parlent pas de publicités déclarent `aucunePubliciteUtilise`
+   * (`tests/pubs-fixtures.ts`), qui DIT l'hypothèse au lieu de la cacher, comme `jamaisDesabonne`.
+   */
+  publicitesQuiUtilisent(tenantId: string, workflowId: string): Promise<string[]>;
   /** Journal d'audit. Optionnel : absent -> publication sans trace (câblages de test). */
   audit?: AuditSink;
   /** Déclare dans le référentiel Tags les tags saisis dans les blocs « ajout de tag » du graphe (best-effort).
@@ -261,6 +276,19 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     if (forbidNonAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
     if (!estUuid(id)) return reply.code(404).send({ error: 'workflow inconnu' });
+    /**
+     * 🔴 LE REFUS SE POSE AVANT LA SUPPRESSION, ET C'EST TOUT CE QUI LE REND EFFICACE. La clé étrangère des
+     * publicités est en `on delete set null` : placé après, ce contrôle regarderait une publicité qui a DÉJÀ
+     * perdu son scénario, donc il ne verrait plus rien à refuser. C'est le motif « une garde ne garde que ce
+     * qui vient après elle », mesuré dans ce dépôt sur un `only:` posé sous un appel réseau.
+     */
+    const pubs = await deps.publicitesQuiUtilisent(tenant, id);
+    if (pubs.length > 0) {
+      return reply.code(409).send({
+        error: `ce scénario répond aux prospects de ${pubs.length > 1 ? 'ces publicités' : 'cette publicité'} : ${pubs.slice(0, 3).join(', ')}${pubs.length > 3 ? '…' : ''}. Changez leur destination, ou supprimez-les, puis réessayez.`,
+        code: 'utilise_par_publicite',
+      });
+    }
     try {
       const ok = await deps.deleteWorkflow(id, tenant);
       if (!ok) return reply.code(404).send({ error: 'workflow inconnu' });

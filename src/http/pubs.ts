@@ -3,7 +3,10 @@ import { z } from 'zod';
 import { forbidNonAdmin, gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
 import { scopeTenant } from './scope';
 import { sansPrefixeAct, type ActifsAccordes, type EtatComptePub } from '../meta/pubs';
+import { TAILLE_VISUEL_PUB_MAX, TYPES_VISUEL_PUB } from '../meta/pubs-creation';
 import type { ConnexionPub } from '../pubs/connexion.pg';
+import type { Publicite } from '../pubs/publicites.pg';
+import type { DemandeCreation, IssueCreation } from '../pubs/creation';
 import { makeJournal, type AuditSink } from '../audit/journal';
 
 /**
@@ -54,6 +57,17 @@ export interface PubsRouteDeps {
    * désormais, c'est à MESURER si le retrait fonctionne sur un jeton d'utilisateur système.
    */
   deconnecter(tenantId: string): Promise<{ revoqueChezMeta: boolean }>;
+  /** Les publicités de l'espace, la plus récente d'abord. */
+  listerPubs(tenantId: string): Promise<Publicite[]>;
+  /**
+   * Crée la publicité chez Meta, EN PAUSE, et range ce qui en revient.
+   *
+   * ⚠️ ELLE NE LÈVE PAS SUR UN REFUS DE META : tout sort par `IssueCreation`, parce que la route doit rendre
+   * le message de Meta au client, et distinguer « rien n'a été créé » de « quelque chose subsiste ».
+   */
+  creerPub(tenantId: string, d: Omit<DemandeCreation, 'comptePubId' | 'pageId' | 'numeroWhatsApp'>): Promise<IssueCreation>;
+  /** Allume l'automation PUIS Meta. Lève si Meta refuse : l'ordre est la règle, pas le succès. */
+  publierPub(tenantId: string, publiciteId: string): Promise<void>;
   audit: AuditSink;
 }
 
@@ -99,11 +113,65 @@ export class PasDeConnexionPub extends Error {
   }
 }
 
+/**
+ * LA CONNEXION EST INCOMPLÈTE : le compte publicitaire ou la Page n'a pas été choisi. On ne peut pas créer.
+ *
+ * ⚠️ Une erreur NOMMÉE plutôt qu'un 400 générique : c'est un état du parcours, pas une saisie fautive, et
+ * l'écran doit envoyer le client finir sa connexion au lieu de lui faire relire son formulaire.
+ */
+export class ConnexionPubIncomplete extends Error {
+  constructor() {
+    super('la connexion publicitaire est incomplète : choisissez un compte publicitaire et une Page');
+    this.name = 'ConnexionPubIncomplete';
+  }
+}
+
 /** `.strict()` : une clé en trop est refusée, le navigateur ne choisit pas ce qu'il envoie. */
 const corpsEchange = z.object({ code: z.string().min(1).max(4096) }).strict();
 const corpsChoix = z.object({
   comptePubId: z.string().min(1).max(64),
   pageId: z.string().min(1).max(64),
+}).strict();
+
+/**
+ * LE FORMULAIRE DE CRÉATION (lot 3, spec § 3.2). Minimal, et chaque borne a une raison.
+ *
+ * 🔴 `budgetTotal` ET `fin` SONT OBLIGATOIRES, ET C'EST LE GARDE-FOU DU PRODUIT. Sans eux, une publicité
+ * dépense sans limite et sans terme sur le compte du client. Meta exige d'ailleurs la même chose
+ * (`lifetime_budget` impose `end_time`) : la contrainte technique et la décision produit disent la même
+ * chose, ce qui n'est pas un hasard.
+ *
+ * 🔴 `horsCategorieSpeciale` DOIT VALOIR `true`. Une publicité de logement, d'emploi, de crédit ou de
+ * politique impose un ciblage restreint et des obligations légales que cet écran ne sait pas porter. On ne
+ * la refuse pas au client : on l'envoie dans le Gestionnaire, qui les porte.
+ */
+const corpsCreation = z.object({
+  nom: z.string().trim().min(1).max(120),
+  texte: z.string().trim().min(1).max(1000),
+  titre: z.string().trim().min(1).max(60),
+  messagePreRempli: z.string().trim().min(1).max(200),
+  accueil: z.string().trim().min(1).max(500),
+  budgetTotal: z.number().positive().max(1_000_000),
+  debut: z.string().min(1).max(64),
+  fin: z.string().min(1).max(64),
+  pays: z.array(z.string().length(2)).max(25).default([]),
+  villes: z.array(z.object({
+    cle: z.string().min(1).max(64),
+    rayon: z.number().int().positive().max(80),
+    unite: z.enum(['kilometer', 'mile']),
+  })).max(10).default([]),
+  ageMin: z.number().int().min(18).max(65),
+  ageMax: z.number().int().min(18).max(65),
+  destination: z.enum(['scenario', 'agent_meta']),
+  workflowId: z.string().uuid().nullable().default(null),
+  tagQualification: z.string().trim().min(1).max(64).nullable().default(null),
+  horsCategorieSpeciale: z.literal(true),
+  image: z.object({
+    type: z.enum(TYPES_VISUEL_PUB),
+    // La taille est vérifiée sur les OCTETS décodés, pas sur la longueur du base64 : cette borne-ci n'est
+    // qu'un premier filet, large de la surcharge de l'encodage.
+    base64: z.string().min(1).max(Math.ceil(TAILLE_VISUEL_PUB_MAX * 1.4)),
+  }),
 }).strict();
 
 export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: Guard, limiteCouteuse: PreHandler): void {
@@ -231,6 +299,109 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     await journal(tenantId, req, 'pubs.actifs_choisis', { kind: 'pub_connexion', id: tenantId },
       { comptePubId: connexion.comptePubId, pageId: connexion.pageId, pageLiee: connexion.pageLiee });
     return reply.send({ connexion });
+  });
+
+  app.get('/tenants/:tenantId/pubs', opts, async (req, reply) => {
+    const tenantId = scopeTenant(req);
+    if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+    return reply.send({ publicites: await deps.listerPubs(tenantId) });
+  });
+
+  /**
+   * CRÉER UNE PUBLICITÉ. Tout est créé EN PAUSE chez Meta : cette route ne fait dépenser personne.
+   *
+   * 🔴 `bodyLimit` DÉDIÉ, comme l'import de documents : le visuel transite en base64, donc environ un tiers
+   * de plus que sa taille réelle. Sans lui, le plafond global d'un mégaoctet refuserait toute image un peu
+   * grande avec une erreur qui ne parle ni d'image ni de taille.
+   *
+   * ⚠️ Plafond des routes coûteuses ET réservée aux admins : elle engage l'argent du client chez un tiers.
+   */
+  const optsCreation = { ...couteux, bodyLimit: Math.ceil(TAILLE_VISUEL_PUB_MAX * 1.4) };
+  app.post('/tenants/:tenantId/pubs', optsCreation, async (req, reply) => {
+    const tenantId = scopeTenant(req);
+    if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    const corps = corpsCreation.safeParse(req.body);
+    if (!corps.success) {
+      return reply.code(400).send({ error: 'formulaire incomplet ou invalide', detail: corps.error.issues[0]?.message });
+    }
+    const f = corps.data;
+
+    // Les trois contrôles que Zod ne sait pas exprimer, et qui feraient chacun une publicité absurde.
+    if (f.ageMin > f.ageMax) return reply.code(400).send({ error: 'l’âge minimum dépasse l’âge maximum' });
+    if (f.pays.length === 0 && f.villes.length === 0) {
+      return reply.code(400).send({ error: 'choisissez au moins un pays ou une ville' });
+    }
+    if (f.destination === 'scenario' && f.workflowId === null) {
+      return reply.code(400).send({ error: 'choisissez le scénario qui répondra aux prospects de cette publicité' });
+    }
+    // ⚠️ LA TAILLE SE VÉRIFIE SUR LES OCTETS DÉCODÉS, pas sur la longueur du base64 : l'encodage ajoute un
+    // tiers, donc une borne posée sur la chaîne refuserait des images conformes ou en laisserait passer de
+    // trop grandes selon le remplissage. C'est la même erreur de catégorie que compter des `.length` UTF-16
+    // pour un plafond en octets (cf. `lireCorpsBorne`).
+    const octets = Buffer.from(f.image.base64, 'base64');
+    if (octets.length === 0) return reply.code(400).send({ error: 'ce visuel est illisible' });
+    if (octets.length > TAILLE_VISUEL_PUB_MAX) {
+      return reply.code(400).send({ error: `ce visuel dépasse ${Math.round(TAILLE_VISUEL_PUB_MAX / (1024 * 1024))} Mo` });
+    }
+
+    let issue: IssueCreation;
+    try {
+      issue = await deps.creerPub(tenantId, {
+        formulaire: {
+          nom: f.nom, texte: f.texte, titre: f.titre, messagePreRempli: f.messagePreRempli, accueil: f.accueil,
+          budgetTotal: f.budgetTotal, debut: f.debut, fin: f.fin,
+          pays: f.pays, villes: f.villes, ageMin: f.ageMin, ageMax: f.ageMax,
+        },
+        imageBase64: f.image.base64,
+        destination: f.destination,
+        workflowId: f.destination === 'scenario' ? f.workflowId : null,
+        tagQualification: f.tagQualification,
+        creePar: req.auth?.userId ?? null,
+      });
+    } catch (err) {
+      if (err instanceof PasDeConnexionPub) return reply.code(409).send({ error: err.message, code: 'pas_connecte' });
+      if (err instanceof ConnexionPubIncomplete) return reply.code(409).send({ error: err.message, code: 'connexion_incomplete' });
+      return reply.code(502).send({ error: err instanceof Error ? err.message : 'Meta ne répond pas' });
+    }
+
+    if (issue.sorte === 'annulee') {
+      // 🔴 RIEN N'EXISTE CHEZ META, et c'est ce que ce statut dit. On rend le message de Meta tel quel :
+      // c'est SON compte, et lui seul peut agir sur ce qu'il refuse. Pas de repli silencieux.
+      return reply.code(502).send({ error: issue.raison, code: 'creation_refusee' });
+    }
+    await journal(tenantId, req, 'pubs.creee', { kind: 'publicite', id: issue.publiciteId },
+      { campagneId: issue.campagneId, destination: f.destination, budgetTotal: f.budgetTotal, issue: issue.sorte });
+    if (issue.sorte === 'echec_creation') {
+      return reply.code(502).send({
+        error: issue.raison,
+        code: 'creation_incomplete',
+        publiciteId: issue.publiciteId,
+      });
+    }
+    return reply.send({ publiciteId: issue.publiciteId, campagneId: issue.campagneId });
+  });
+
+  /**
+   * PUBLIER. C'est le SEUL geste de ce module qui fait dépenser de l'argent, et il est irréversible au sens
+   * où une impression payée ne se rembourse pas.
+   *
+   * 🔴 L'ORDRE EST DANS `publierLaPublicite`, PAS ICI : l'automation s'allume AVANT Meta. Le rappeler dans
+   * cette route ferait deux endroits où le savoir, et le second finirait par mentir.
+   */
+  app.post('/tenants/:tenantId/pubs/:id/publier', couteux, async (req, reply) => {
+    const tenantId = scopeTenant(req);
+    if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    const { id } = req.params as { id: string };
+    try {
+      await deps.publierPub(tenantId, id);
+    } catch (err) {
+      if (err instanceof PasDeConnexionPub) return reply.code(409).send({ error: err.message, code: 'pas_connecte' });
+      return reply.code(502).send({ error: err instanceof Error ? err.message : 'Meta ne répond pas' });
+    }
+    await journal(tenantId, req, 'pubs.publiee', { kind: 'publicite', id }, {});
+    return reply.send({ ok: true });
   });
 
   // `couteux` et non `opts` : depuis qu'elle révoque chez Meta, cette route appelle l'extérieur comme les

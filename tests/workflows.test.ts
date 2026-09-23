@@ -6,6 +6,7 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { WorkflowRouteDeps } from '../src/http/workflows';
 import type { WorkflowRow } from '../src/workflow/store.pg';
 import { WorkflowUtiliseParLienChaine } from '../src/workflow/store.pg';
+import { aucunePubliciteUtilise } from './pubs-fixtures';
 
 const SECRET = 'test-secret';
 // Un identifiant qui a la FORME d'un uuid : les routes refusent desormais en 404 ce qui n'en est pas un,
@@ -38,6 +39,7 @@ function app(over: Partial<WorkflowRouteDeps> = {}) {
   const deps: WorkflowRouteDeps = {
     createWorkflow: async (_t, name, graph) => { cap.created.push({ name, graph }); return { id: 'wNew' }; },
     tenantCode: async () => 'k7m2p3',
+    publicitesQuiUtilisent: aucunePubliciteUtilise,
     listWorkflows: async () => [sampleRow()],
     getWorkflow: async (id) => (id === W1 ? sampleRow() : null),
     updateWorkflow: async (id, _t, patch) => { cap.updated.push({ id, patch }); return { trouve: id === W1, brouillon: true }; },
@@ -208,6 +210,37 @@ describe('routes workflows', () => {
     const res = await server.inject({ method: 'DELETE', url: `/tenants/t1/workflows/${W1}`, ...h(adminTok) });
     expect(res.statusCode).toBe(409);
     expect(res.json<{ error: string }>().error).toContain('lien de chaîne WhatsApp');
+    await server.close();
+  });
+
+  it('🔴 DELETE d’un scénario utilisé par une PUBLICITÉ vivante : 409 nommé, et la suppression n’a PAS lieu', async () => {
+    // 🔴 LE REFUS SE POSE AVANT LA SUPPRESSION, sans quoi il ne verrait rien à refuser :
+    // `publicites.workflow_id` est en `on delete set null`, donc un `delete` RÉUSSIT et laisse la
+    // publicité avec une destination `scenario` et plus aucun scénario. Ses prospects, qui ont coûté un
+    // clic, n’arriveraient alors nulle part, sans la moindre erreur.
+    let supprime = false;
+    const { server } = app({
+      publicitesQuiUtilisent: async () => ['Rentrée 2026', 'Black Friday'],
+      deleteWorkflow: async () => { supprime = true; return true; },
+    });
+    const res = await server.inject({ method: 'DELETE', url: `/tenants/t1/workflows/${W1}`, ...h(adminTok) });
+    expect(res.statusCode).toBe(409);
+    const corps = res.json<{ error: string; code: string }>();
+    expect(corps.code).toBe('utilise_par_publicite');
+    // Le message NOMME les publicités : « ce scénario est utilisé » sans dire par quoi enverrait le
+    // client chercher dans une liste entière.
+    expect(corps.error).toContain('Rentrée 2026');
+    // 🔴 LE SENS QUI COMPTE AUTANT : la suppression n’a pas eu lieu.
+    expect(supprime).toBe(false);
+    await server.close();
+  });
+
+  it('aucune publicité ne l’utilise : la suppression passe, comme avant ce lot', async () => {
+    let supprime = false;
+    const { server } = app({ deleteWorkflow: async () => { supprime = true; return true; } });
+    const res = await server.inject({ method: 'DELETE', url: `/tenants/t1/workflows/${W1}`, ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(supprime).toBe(true);
     await server.close();
   });
 

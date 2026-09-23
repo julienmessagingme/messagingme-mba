@@ -127,7 +127,10 @@ import { lireMediaRecu } from './inbox/media-entrant';
 import { assurerCleGateway, remonterPlafondApresRecharge, revoquerCleGateway, type DepsProvisionCle } from './agent/provisionner-cle';
 import { encryptSecret, decryptSecret } from './crypto/secretbox';
 import { MetaPubsClient, sansPrefixeAct, retirerAncienAcces, type EtatComptePub } from './meta/pubs';
-import { DejaConnectePub, JetonNonEnregistre, PasDeConnexionPub } from './http/pubs';
+import { DejaConnectePub, JetonNonEnregistre, PasDeConnexionPub, ConnexionPubIncomplete } from './http/pubs';
+import { MetaPubsCreationClient } from './meta/pubs-creation';
+import { PgPublicitesStore } from './pubs/publicites.pg';
+import { creerLaPublicite, publierLaPublicite, type DemandeCreation } from './pubs/creation';
 import { estJetonRefuse } from './meta/graph';
 import { PgPubConnexionStore } from './pubs/connexion.pg';
 import { PgAgentSessionStore } from './agent/session-store.pg';
@@ -404,6 +407,11 @@ async function main(): Promise<void> {
   // chemins de chiffrement à tenir alignés.
   const clientPubs = new MetaPubsClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
   const connexionsPub = new PgPubConnexionStore(pool);
+  // Lot 3 : ce qui CRÉE une publicité sur le compte du client, donc ce qui dépense son argent. Client
+  // SÉPARÉ de celui de la connexion, qui ne fait que lire : une route de lecture ne doit pas avoir de
+  // quoi créer une campagne sous la main.
+  const clientCreationPubs = new MetaPubsCreationClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
+  const publicites = new PgPublicitesStore(pool);
   const esCredentialsStore = new PgEmbeddedSignupStore(pool);
   const metaCredentials = new MetaCredentialsResolver({
     getWabaIdForTenant: wabaDeLEspace,
@@ -2403,6 +2411,74 @@ async function main(): Promise<void> {
           await connexions.supprimer(t);
           return { revoqueChezMeta };
         },
+
+        listerPubs: (t: string) => publicites.lister(t),
+
+        /**
+         * CRÉER UNE PUBLICITÉ CHEZ META, EN PAUSE (lot 3, commit 2).
+         *
+         * 🔴 LA SÉQUENCE N'EST PAS ICI, ET C'EST DÉLIBÉRÉ. Ce câblage ne fait que LIER : il résout la
+         * connexion, dérive le jeton de Page, et donne à `creerLaPublicite` deux objets minuscules. La
+         * séquence elle-même, avec son rattrapage, vit dans `src/pubs/creation.ts`, où elle s'exécute
+         * contre de faux objets, chemins d'échec compris. Un chemin d'échec écrit dans un câblage est un
+         * chemin d'échec que personne n'exécute jamais avant le jour où il compte.
+         */
+        creerPub: async (t: string, d: Omit<DemandeCreation, 'comptePubId' | 'pageId' | 'numeroWhatsApp'>) => {
+          const etat = await connexions.lire(t);
+          if (etat === null) throw new PasDeConnexionPub();
+          if (etat.comptePubId === null || etat.pageId === null) throw new ConnexionPubIncomplete();
+          const jeton = await jetonClair(t);
+          const comptePubId = etat.comptePubId;
+          const pageId = etat.pageId;
+          // ⚠️ LE JETON DE PAGE NE SERT QU'À LA CRÉA, et il n'est jamais stocké. Meta documente qu'il faut un
+          // jeton de Page pour ce guide ; ce qui n'est PAS mesuré, c'est s'il est exigé partout ou seulement
+          // là où l'on agit sur la Page. Repli sur le jeton du client, et le refus de Meta sera lisible.
+          const jetonCrea = (await clientCreationPubs.jetonDePage(pageId, jeton)) ?? jeton;
+          /**
+           * ⚠️ LE NUMÉRO EST FACULTATIF CHEZ META, et on le pose quand on le connaît. Sans lui, Meta
+           * choisit le numéro associé à la Page, qui peut ne pas être celui de cet espace : les prospects
+           * écriraient alors à un autre numéro que le nôtre, et aucun webhook ne nous parviendrait. Meta
+           * l'attend en chiffres, sans le `+` de la forme E.164.
+           */
+          const affiche = (await phoneStatusStore.getPhoneNumber(t))?.displayPhoneNumber ?? null;
+          const numeroWhatsApp = affiche === null ? null : affiche.replace(/[^0-9]/g, '');
+          return creerLaPublicite(
+            { ...d, comptePubId, pageId, numeroWhatsApp },
+            {
+              televerserImage: (b64) => clientCreationPubs.televerserImage(comptePubId, jeton, b64),
+              creerCampagne: (p) => clientCreationPubs.creerCampagne(comptePubId, jeton, p),
+              creerEnsemble: (p) => clientCreationPubs.creerEnsemble(comptePubId, jeton, p),
+              creerCrea: (p) => clientCreationPubs.creerCrea(comptePubId, jetonCrea, p),
+              creerPub: (p) => clientCreationPubs.creerPub(comptePubId, jeton, p),
+              supprimerCampagne: (id) => clientCreationPubs.supprimerCampagne(id, jeton),
+            },
+            {
+              ouvrir: (v) => publicites.ouvrir(t, v),
+              noterIds: (id, v) => publicites.noterIds(t, id, v),
+              marquerEtat: (id, etatPub) => publicites.marquerEtat(t, id, etatPub),
+              memoriserPub: (adId, campagneId) => publicites.memoriserPub(t, adId, campagneId),
+              creerAutomation: (id, v) => publicites.creerAutomation(t, id, v),
+            },
+          );
+        },
+
+        /**
+         * PUBLIER : l'automation d'abord, Meta ensuite. L'ORDRE est dans `publierLaPublicite`, pas ici.
+         */
+        publierPub: async (t: string, publiciteId: string) => {
+          const pub = await publicites.lire(t, publiciteId);
+          if (pub === null) throw new Error('cette publicité n’existe pas');
+          const jeton = await jetonClair(t);
+          await publierLaPublicite(
+            publiciteId,
+            { campagneId: pub.campagneId, ensembleId: pub.ensembleId, pubId: pub.pubId },
+            { allumer: (objetId) => clientCreationPubs.changerStatut(objetId, jeton, 'ACTIVE') },
+            {
+              allumerAutomation: (id) => publicites.allumerAutomation(t, id),
+              marquerPubliee: (id) => publicites.marquerEtat(t, id, 'publiee'),
+            },
+          );
+        },
       };
     })(),
     account: {
@@ -2466,6 +2542,9 @@ async function main(): Promise<void> {
       publishWorkflow: (id, tenant) => workflowStore.publish(id, tenant),
       audit: auditSink,
       deleteWorkflow: (id, tenant) => workflowStore.remove(id, tenant),
+      // La garde du 409 : une publicite vivante retient son scenario. Requise par le type, parce qu un
+      // cablage qui l oublierait laisserait supprimer le scenario d une pub qui diffuse, en silence.
+      publicitesQuiUtilisent: (tenant, workflowId) => publicites.publicitesQuiUtilisent(tenant, workflowId),
       // Déclare les tags des blocs « ajout de tag » dans le référentiel (Contenus > Tags) à la sauvegarde.
       declareTags: async (tenant, tags) => { for (const t of tags) await tagStore.create(tenant, t); },
       // Lien de test (Lot F) : jeton stable posé au 1er clic, + numéro affiché pour construire le lien wa.me.
