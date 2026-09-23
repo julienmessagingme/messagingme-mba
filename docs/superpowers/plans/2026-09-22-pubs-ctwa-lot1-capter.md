@@ -203,6 +203,10 @@ EOF
   - `export function extraireTarif(data: unknown): TarifMeta | null`
   - `export interface TarifsMetaSink { enregistrer(phoneNumberId: string, t: TarifMeta): Promise<void> }`
   - `processStatuses(events, delivery, nodeEvents?, remiseMba?, tarifs?: TarifsMetaSink)`
+  - ⚠️ **CETTE SIGNATURE A ÉTÉ CHANGÉE APRÈS COUP**, le 2026-09-23, sur le jaune 1 de la revue finale du
+    déploiement : les trois puits secondaires voyagent désormais dans un objet NOMMÉ (`PuitsAccuses`) où
+    `tarifs` est OBLIGATOIRE. Les blocs de code qui suivent montrent la forme d'origine, qui ne compile
+    plus : ils disent ce qui a été PLANIFIÉ, pas ce que le dépôt porte aujourd'hui.
 
 - [ ] **Step 1 : écrire les tests qui échouent**
 

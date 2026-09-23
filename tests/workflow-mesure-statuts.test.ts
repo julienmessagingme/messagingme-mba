@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { processStatuses } from '../src/webhooks/delivery';
 import type { WebhookEvent } from '../src/webhooks/parse';
+import { aucunTarif } from './webhook-fixtures';
 
 /**
  * Le rattachement des ACCUSÉS Meta au bloc qui a envoyé le message (« Mes tableaux », mesure « combien lus »).
@@ -47,7 +48,7 @@ describe('accusés Meta -> mesure par bloc', () => {
   it('🔴 délivré et lu sont rattachés, avec leur identifiant de message', async () => {
     const { majs, store } = livraison();
     const { recus, sink } = puits();
-    await processStatuses([statut('wamid.1', 'delivered'), statut('wamid.1', 'read')], store as never, sink);
+    await processStatuses([statut('wamid.1', 'delivered'), statut('wamid.1', 'read')], store as never, { tarifs: aucunTarif, nodeEvents: sink });
     expect(recus).toEqual([{ id: 'wamid.1', kind: 'delivered' }, { id: 'wamid.1', kind: 'read' }]);
     expect(majs).toHaveLength(2); // la donnée métier est écrite comme avant
   });
@@ -57,14 +58,14 @@ describe('accusés Meta -> mesure par bloc', () => {
     // fois chaque message, et c'est le premier chiffre que l'on regarde dans un tableau.
     const { store } = livraison();
     const { recus, sink } = puits();
-    await processStatuses([statut('wamid.1', 'sent')], store as never, sink);
+    await processStatuses([statut('wamid.1', 'sent')], store as never, { tarifs: aucunTarif, nodeEvents: sink });
     expect(recus).toEqual([]);
   });
 
   it('un échec est rattaché aussi (un bloc qui échoue est une mesure en soi)', async () => {
     const { store } = livraison();
     const { recus, sink } = puits();
-    await processStatuses([statut('wamid.2', 'failed', 131026)], store as never, sink);
+    await processStatuses([statut('wamid.2', 'failed', 131026)], store as never, { tarifs: aucunTarif, nodeEvents: sink });
     expect(recus).toEqual([{ id: 'wamid.2', kind: 'failed' }]);
   });
 
@@ -73,13 +74,13 @@ describe('accusés Meta -> mesure par bloc', () => {
     // livraison à cause d'un compteur, ce qui serait un mauvais échange.
     const { majs, store } = livraison();
     const { sink } = puits(true);
-    await processStatuses([statut('wamid.3', 'read')], store as never, sink);
+    await processStatuses([statut('wamid.3', 'read')], store as never, { tarifs: aucunTarif, nodeEvents: sink });
     expect(majs).toEqual([{ id: 'wamid.3', status: 'read' }]);
   });
 
   it('sans puits de mesure, le comportement est exactement celui d’avant', async () => {
     const { majs, store } = livraison();
-    await processStatuses([statut('wamid.4', 'delivered')], store as never);
+    await processStatuses([statut('wamid.4', 'delivered')], store as never, { tarifs: aucunTarif });
     expect(majs).toEqual([{ id: 'wamid.4', status: 'delivered' }]);
   });
 });

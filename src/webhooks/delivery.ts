@@ -73,6 +73,21 @@ export interface RemiseMbaSurAccuse {
 }
 
 /**
+ * LES PUITS SECONDAIRES D'UN ACCUSÉ, ce que `processStatuses` fait EN PLUS de la livraison.
+ *
+ * 🔴 `tarifs` EST OBLIGATOIRE, et c'est la leçon des dépendances optionnelles de ce dépôt (`estDesabonne`,
+ * `garde`) : un puits qu'on peut omettre est un puits qu'on oublie, sans erreur ni trace. Un appel qui ne
+ * mesure pas les tarifs le DIT, avec la fixture `aucunTarif` de `tests/webhook-fixtures.ts`, au lieu de le
+ * taire. Les deux autres restent optionnels : ils étaient déjà là, et les rendre obligatoires est un autre
+ * sujet que celui de cette revue.
+ */
+export interface PuitsAccuses {
+  tarifs: TarifsMetaSink;
+  nodeEvents?: NodeStatusSink;
+  remiseMba?: RemiseMbaSurAccuse;
+}
+
+/**
  * Applique les événements de statut aux destinataires (par message_id). Ignore le reste.
  *
  * `nodeEvents` (optionnel) reçoit le MÊME statut pour la mesure par bloc. Les accusés Meta ne parlent que d'un
@@ -83,16 +98,15 @@ export interface RemiseMbaSurAccuse {
  * BEST-EFFORT sur la mesure : une panne de compteur ne doit pas empêcher la mise à jour d'une livraison, qui
  * est la donnée métier. L'échec reste visible en console.
  *
- * `tarifs` (optionnel ici, OBLIGATOIRE pour toute file qui traite des accusés, cf. `WebhookJobDeps`) garde le
- * tarif que Meta annonce : c'est lui qui dit qu'un message est gratuit.
+ * Les puits secondaires voyagent dans `puits`, NOMMÉS et jamais positionnels : un quatrième s'ajoute par
+ * son nom, là où une queue de paramètres optionnels se perd en silence (revue finale du 2026-09-23).
  */
 export async function processStatuses(
   events: WebhookEvent[],
   delivery: DeliveryStore,
-  nodeEvents?: NodeStatusSink,
-  remiseMba?: RemiseMbaSurAccuse,
-  tarifs?: TarifsMetaSink,
+  puits: PuitsAccuses,
 ): Promise<void> {
+  const { tarifs, nodeEvents, remiseMba } = puits;
   for (const ev of events) {
     if (ev.source !== 'statuses') continue;
     /**
@@ -102,7 +116,7 @@ export async function processStatuses(
      * ⚠️ BEST-EFFORT, comme la remise du fil plus bas : une exception ferait rejouer TOUT le job par pg-boss.
      * Un tarif manqué laisse le message compté comme payant, c'est-à-dire le comportement d'avant.
      */
-    if (tarifs && ev.phoneNumberId) {
+    if (ev.phoneNumberId) {
       const t = extraireTarif(ev.data);
       if (t) {
         try {

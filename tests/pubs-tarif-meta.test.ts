@@ -53,32 +53,32 @@ describe('processStatuses : le tarif de Meta', () => {
 
   it('enregistre le tarif, rattaché au numéro destinataire de l’accusé', async () => {
     const vus: Array<{ pn: string; t: TarifMeta }> = [];
-    await processStatuses([statut('wamid.1', 'sent', gratuit)], new FakeDelivery(), undefined, undefined, {
-      enregistrer: async (pn, t) => { vus.push({ pn, t }); },
+    await processStatuses([statut('wamid.1', 'sent', gratuit)], new FakeDelivery(), {
+      tarifs: { enregistrer: async (pn, t) => { vus.push({ pn, t }); } },
     });
     expect(vus).toEqual([{ pn: 'pn1', t: { messageId: 'wamid.1', type: 'free_entry_point', categorie: 'referral_conversion', facturable: false, modele: null } }]);
   });
 
   it('sans numéro destinataire, rien n’est enregistré (aucun espace à qui rattacher la ligne)', async () => {
     let n = 0;
-    await processStatuses([statut('wamid.2', 'sent', gratuit, null)], new FakeDelivery(), undefined, undefined, {
-      enregistrer: async () => { n += 1; },
+    await processStatuses([statut('wamid.2', 'sent', gratuit, null)], new FakeDelivery(), {
+      tarifs: { enregistrer: async () => { n += 1; } },
     });
     expect(n).toBe(0);
   });
 
   it('🔴 un échec d’écriture du tarif ne bloque ni la livraison ni le job', async () => {
     const delivery = new FakeDelivery();
-    await expect(processStatuses([statut('wamid.3', 'delivered', gratuit)], delivery, undefined, undefined, {
-      enregistrer: async () => { throw new Error('base indisponible'); },
+    await expect(processStatuses([statut('wamid.3', 'delivered', gratuit)], delivery, {
+      tarifs: { enregistrer: async () => { throw new Error('base indisponible'); } },
     })).resolves.toBeUndefined();
     expect(delivery.calls).toEqual(['wamid.3:delivered']);
   });
 
   it('le tarif est lu même sur un statut que la livraison ignore', async () => {
     const vus: string[] = [];
-    await processStatuses([statut('wamid.4', 'warning', { type: 'regular' })], new FakeDelivery(), undefined, undefined, {
-      enregistrer: async (_pn, t) => { vus.push(t.messageId); },
+    await processStatuses([statut('wamid.4', 'warning', { type: 'regular' })], new FakeDelivery(), {
+      tarifs: { enregistrer: async (_pn, t) => { vus.push(t.messageId); } },
     });
     expect(vus).toEqual(['wamid.4']);
   });
