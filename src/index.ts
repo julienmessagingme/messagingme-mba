@@ -2750,6 +2750,40 @@ async function main(): Promise<void> {
         getSendDetail: (sendId, tenant) => repo.getCampaignDetail(sendId, tenant),
       },
       /**
+       * `POST /v1/messages` : un simple texte dans la fenêtre de 24 h (lot 7 du 2026-09-23).
+       *
+       * 🔴 CE BLOC NE FAIT QUE BRANCHER, il ne décide de rien. Les quatre gestes (fenêtre, désabonnement,
+       * envoi, trace) vivent dans `repondreDansLaFenetre`, partagé avec la console et le serveur MCP.
+       *
+       * 🔴 ET `estDesabonne` EST BRANCHÉE ICI, ce qui n'était vrai que du seul MCP jusqu'à ce lot. La règle
+       * est « une MACHINE ne parle pas à quelqu'un qui a dit STOP » : elle se lisait `origine === 'mcp'`,
+       * donc en liste d'appelants, et l'API publique serait passée à travers sans qu'aucun test ne tombe.
+       * Elle demande désormais l'inverse (tout ce qui n'est pas un opérateur humain), et la dépendance est
+       * REQUISE par le type depuis le lot 3 du plan du 2026-09-14 : l'oublier ne compile pas.
+       */
+      messages: {
+        repondre: {
+          getConversationContext: (id, tenant) => inboxStore.getConversationContext(id, tenant),
+          getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
+          sendReply: async (tenant, phoneNumberId, to, text) => {
+            const client = await metaFactory.clientForTenant(tenant, phoneNumberId); // token PAR TENANT (B1)
+            return (await client.sendText(to, text)).messageId;
+          },
+          estDesabonne: (tenant, waId) => contactStore.estDesabonneParWaId(tenant, waId),
+          recordOutbound: (id, body, msgId, origine, type, cat, name, sender, canal, redaction) =>
+            inboxStore.recordOutbound(id, body, msgId, origine, type, cat, name, sender, canal, redaction),
+          // ⚠️ `app_human` comme pour un agent tiers, et pour la même raison : ce qui compte est que le
+          // scénario cesse d'avancer tout seul et que l'agent de Meta cesse de répondre, ce que cette
+          // valeur produit exactement. QUI a parlé est porté par l'ORIGINE du message (`api`, 0166), là où
+          // ça ne coûte aucune migration du chemin chaud.
+          takeControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human'); },
+        },
+        findContactByPhone: async (tenant, phone) => { const c = await contactStore.findByPhone(tenant, phone); return c ? { id: c.id } : null; },
+        // LA MÊME fonction que le bouton « Ouvrir la conversation » du mini-CRM : elle refuse un contact
+        // supprimé comme un contact bloqué, ce qui EST la garde de blocage de cette route.
+        ouvrirConversation: (tenant, contactId) => inboxStore.ouvrirConversationDuContact(tenant, contactId),
+      },
+      /**
        * Serveur MCP (`POST /mcp`) : les MÊMES fonctions que la console, jamais des variantes.
        *
        * Chaque ligne ci-dessous est déjà branchée plus haut pour les routes de l'inbox et du mini-CRM. C'est
@@ -2769,11 +2803,15 @@ async function main(): Promise<void> {
           return (await client.sendText(to, text)).messageId;
         },
         /**
-         * 🔴 BRANCHEE ICI ET NULLE PART AILLEURS, ET C EST TOUT LE SUJET. `repondreDansLaFenetre` est
-         * PARTAGEE avec la route de la console : c est la presence de cette dependance, sur le seul cablage
-         * MCP, qui fait qu une machine se tait quand un contact a dit STOP pendant qu un operateur, lui,
-         * peut encore repondre. La ne pas mettre sur le cablage de la console n est donc pas un oubli, c est
-         * l exemption elle-meme, rendue structurelle.
+         * 🔴 CE COMMENTAIRE A AFFIRME « BRANCHEE ICI ET NULLE PART AILLEURS » ET C ETAIT FAUX, avant meme le
+         * lot 7 (corrige le 2026-09-23). Il disait que l exemption de l operateur tenait a l ABSENCE de
+         * cette dependance sur le cablage de la console, « rendue structurelle ». Or elle y est branchee
+         * depuis que l envoi de MODELE depuis l Inbox en a eu besoin, et le type l exige partout depuis le
+         * 2026-09-15 : il y a TROIS branchements dans ce fichier, pas un.
+         *
+         * Ce qui exempte l operateur est la CONDITION, dans `repondreDansLaFenetre` : la garde ne se pose
+         * que sur une origine machine. Une justification fausse est pire qu aucune parce qu elle se
+         * recopie, et celle-ci l avait deja ete dans `todo.md`.
          */
         estDesabonne: (tenant, waId) => contactStore.estDesabonneParWaId(tenant, waId),
         recordOutbound: (id, body, msgId, origine, type, cat, name, sender, canal, redaction) => inboxStore.recordOutbound(id, body, msgId, origine, type, cat, name, sender, canal, redaction),

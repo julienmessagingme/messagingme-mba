@@ -402,8 +402,12 @@ prise du fil extrait), racontés dans `docs/JOURNAL-TECHNIQUE.md`.
    symbole. À faire au fil des touches, écran par écran ; le barrel se vide seul.
 5. **Le câblage MCP recopie 11 des 15 clés du bloc Inbox** dans `src/index.ts`, à 1600 lignes d'écart, dans le
    fichier le plus modifié du dépôt. Le module partagé (`repondreDansLaFenetre`) est bien fait ; c'est le
-   CÂBLAGE qui est dupliqué. ⚠️ L'asymétrie est VOULUE (`estDesabonne` branchée sur MCP, absente côté console)
-   et portée par un commentaire de huit lignes plutôt que par un type.
+   CÂBLAGE qui est dupliqué. ⚠️ **Cette ligne a dit « l'asymétrie est VOULUE (`estDesabonne` branchée sur MCP,
+   absente côté console) » et c'était FAUX** (corrigé le 2026-09-23) : la dépendance est branchée à TROIS
+   endroits d'`index.ts`, et le type l'exige partout depuis le 2026-09-15. Ce qui exempte l'opérateur est la
+   CONDITION posée dans `repondreDansLaFenetre`, pas une absence de câblage. L'affirmation venait d'un
+   commentaire de huit lignes de ce même fichier, recopiée ici : c'est le motif exact que le dépôt nomme,
+   une justification fausse se recopie.
 6. **158 dépendances optionnelles sur 388 membres** dans les 49 contrats de routes, dont ~10 seulement sont
    réellement conditionnelles en production. Les autres le sont pour que 73 câblages de test puissent en
    omettre : le coût est payé en production, par tous les lecteurs. À découper par domaine.

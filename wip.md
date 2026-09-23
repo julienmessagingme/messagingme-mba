@@ -19,6 +19,38 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
+## API PUBLIQUE : « ENVOYER UN SIMPLE MESSAGE » (LOT 7, ÉCRIT LE 2026-09-23, PAS DÉPLOYÉ)
+
+Lot 7 du plan `docs/superpowers/plans/2026-09-23-liste-julien.md`.
+
+- ✅ **Écrit et vert** : `POST /v1/messages` envoie un texte à une personne dans la fenêtre de 24 h. La route
+  n'a AUCUNE logique à elle : elle résout le contact, ouvre son fil avec la même fonction que le bouton du
+  mini-CRM (qui EST la garde de blocage), et appelle `repondreDansLaFenetre`, déjà partagé par la console et
+  le serveur MCP. Droit requis : `sends:create`, celui des envois.
+- 🔴 **MIGRATION 0166 À APPLIQUER AVANT LE DÉPLOIEMENT.** Elle RELÂCHE le CHECK de
+  `conversation_messages.origin` pour y ajouter `api` (septième origine, même motif que 0101 pour `mcp`).
+  Relâcher laisse vivre le code déployé, donc elle passe avant sans risque ; l'inverse ferait échouer le
+  PREMIER appel de la route en `23514`, sur un envoi réel. Le nom de la contrainte a été LU en base, pas
+  deviné, et la répartition des origines existantes mesurée avant d'écrire le fichier.
+- 🔴 **CE QUE LE LOT A RÉPARÉ EN PASSANT, et qui vaut plus que la route.** La garde « une machine ne parle pas
+  à quelqu'un qui a dit STOP » se lisait `origine === 'mcp'`, donc en LISTE D'APPELANTS : l'API publique
+  serait partie sans elle. Elle demande désormais l'inverse (tout ce qui n'est pas un opérateur humain).
+  ⚠️ Et le test qui la gardait ÉPINGLAIT cette chaîne dans la source : il serait resté VERT si la route
+  était partie sans garde, et il est tombé au premier élargissement légitime. Réécrit pour EXÉCUTER la
+  fonction sur chaque origine déclarée, liste dérivée d'`ORIGINES` : mutation vérifiée, cinq origines
+  tombent quand on remet l'ancienne forme, `api` comprise.
+- ⚠️ **FENÊTRE VERCEL / API, et elle est bénigne ici** : la page Documentation API part chez Vercel au
+  `git push`, la route attend le `up` du VPS. Elle ne l'APPELLE pas (elle la décrit), donc rien ne casse à
+  l'écran ; le risque est qu'un intégrateur lise le curl et reçoive un 404. À réduire en enchaînant la revue
+  finale et le déploiement, comme le prescrit [CLAUDE.md](CLAUDE.md).
+- 🔴 **L'ESSAI RÉEL QUI CLÔT LE LOT, et il appartient à Julien** : un `curl` avec sa clé d'API vers le numéro
+  d'essai, fenêtre ouverte (le message arrive et apparaît dans l'Inbox), puis fermée (422 `window_closed`).
+  Les tests sont verts, ce qui ne dit que ce que leur auteur a pensé à vérifier.
+- 🟡 **Un arbitrage reste ouvert et il est écrit dans [todo.md](todo.md)** : la grille RCS est en euros, les
+  tarifs Meta sont dans la devise du WABA, et les deux s'additionnent. Mesuré : un seul espace porte une
+  grille RCS, donc le terme vaut zéro ailleurs. La question est produit et le lot 8 (« Vos prix » dans
+  `/ops`) va déplacer cette grille : à trancher là, pas par un demi-correctif d'ici là.
+
 ## PUBLICITÉS CLICK-TO-WHATSAPP (LOT 1 « CAPTER » DÉPLOYÉ LE 2026-09-23, PAS ENCORE ÉPROUVÉ)
 
 Spec `docs/superpowers/specs/2026-09-22-pubs-ctwa-design.md`, plan

@@ -8,7 +8,7 @@
  * naturelle, en relisant la table, est de croire que `type` suffit.
  */
 
-export const ORIGINES = ['humain', 'scenario', 'ia', 'mba', 'campagne', 'mcp'] as const;
+export const ORIGINES = ['humain', 'scenario', 'ia', 'mba', 'campagne', 'mcp', 'api'] as const;
 export type OrigineMessage = (typeof ORIGINES)[number];
 
 /**
@@ -78,5 +78,18 @@ export const THEME_DE_ORIGINE: Record<string, 'ia' | 'scenario' | 'humain' | 'in
   scenario: 'scenario',
   humain: 'humain',
   campagne: 'scenario',
+  /**
+   * L'API publique du client (migration 0166) : un envoi par `POST /v1/messages`.
+   *
+   * 🔴 `scenario` ET SURTOUT PAS `ia`, ET LE CHOIX SE JUSTIFIE PAR CE QUI EST VRAI, pas par ce qui reste.
+   * Le theme repond a « qui a ecrit ce message ? » et il n'a que trois reponses. Ce n'est pas un humain
+   * (personne n'a tape la phrase dans la console), et il n'y a AUCUN modele au bout : le ranger dans « IA »
+   * afficherait un cout d'IA la ou il n'y en a pas. C'est un envoi AUTOMATISE, non redige sur le moment,
+   * donc exactement ce que `campagne` fait deja ici pour la meme raison.
+   *
+   * ⚠️ ET SURTOUT PAS `indeterminee`, qui veut dire « un chemin d'ecriture a oublie de poser son origine ».
+   * Ce theme-la est un SIGNAL DE PANNE : y verser une valeur parfaitement connue le rendrait muet.
+   */
+  api: 'scenario',
   indeterminee: 'indeterminee',
 };

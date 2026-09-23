@@ -39,6 +39,12 @@ const DE_L_ORIGINE: Record<string, Repondeur | undefined> = {
   mba: 'mba',
   ia: 'agent',
   mcp: 'agent',
+  // 🔴 L'API PUBLIQUE DU CLIENT EST BIEN UN REPONDEUR, A LA DIFFERENCE D'UNE CAMPAGNE, et la raison est une
+  // contrainte de Meta, pas une opinion : `POST /v1/messages` n'existe QUE dans la fenetre de 24 h, donc un
+  // tel message ne peut arriver qu'APRES que la personne a ecrit. Il repond par construction.
+  // ⚠️ `scripte` et pas un cinquieme badge : c'est automatise, sans aucun modele au bout, exactement ce que
+  // ce badge-la designe. En ajouter un serait une case que personne n'a demandee (cf. le docblock).
+  api: 'scripte',
 };
 
 /**

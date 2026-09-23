@@ -1639,6 +1639,8 @@ scénario, comment importer des contacts.
 - ✅ **Clés d'API** (2026-07-17) : un admin crée des clés depuis la console (nom + périmètres). La clé n'est
   **montrée qu'une fois** à la création (jamais re-affichée, seul son empreinte est stockée). Révocable.
   Deux périmètres : « écrire des contacts » et « lancer des envois » (une clé peut n'avoir que l'un des deux).
+  ⚠️ **« Lancer des envois » couvre AUSSI le simple message** depuis le 2026-09-23 (`POST /v1/messages`), pour la
+  raison écrite plus bas : les périmètres d'une clé se fixent à sa création et ne s'éditent pas.
 - ✅ **Créer / mettre à jour des contacts** : `POST /v1/contacts` (un contact) et `/v1/contacts/batch` (jusqu'à
   500). Champs de base ou perso, adressés par leur clé OU leur code ; un champ perso inconnu est créé
   automatiquement. Sert à pré-charger des contacts avant une campagne.
@@ -1660,6 +1662,21 @@ scénario, comment importer des contacts.
   langue du template valent désormais **null** (au lieu d'une chaîne vide) puisqu'un scénario n'a pas de template
   propre, et un champ **nom du scénario** apparaît. Un client qui affichait la chaîne vide telle quelle voyait
   jusqu'ici un libellé vide ; c'est ce que cette bascule corrige.
+- ✅ **Envoyer un simple message** (2026-09-23) : `POST /v1/messages` envoie **un texte, à une personne**, dans la
+  fenêtre de service de 24 h. C'est le pendant exact de la barre de réponse de l'Inbox : pas de template à faire
+  approuver, pas de scénario, pas d'en-tête d'idempotence. Corps : `{ "to": "+33...", "text": "..." }`. Le message
+  apparaît dans l'Inbox comme n'importe quel envoi, et **prendre la parole PREND le fil** (le scénario cesse
+  d'avancer seul, l'agent de Meta cesse de répondre sur cette conversation).
+  🔴 **Quatre refus explicites plutôt qu'un envoi silencieux** : hors fenêtre de 24 h (422 `window_closed`, le
+  message dit que le seul chemin restant est un template), numéro qui n'a jamais écrit (404 `contact_inconnu`),
+  contact bloqué ou supprimé (409 `contact_indisponible`), et contact désabonné (409 `contact_desabonne`).
+  ⚠️ **La garde de désabonnement vaut pour l'API comme pour tout appel automatisé, jamais pour un opérateur qui
+  répond à la main** : une machine ne parle pas à quelqu'un qui a dit STOP, une personne peut encore répondre à
+  une personne.
+  ⚠️ **Le droit requis est celui des envois** (« Déclencher des envois »), et pas un droit neuf : les droits d'une
+  clé se fixent à sa création et ne s'éditent pas, donc un droit neuf aurait obligé chaque intégrateur à refabriquer
+  sa clé. Une clé qui pouvait déclencher un template peut donc désormais écrire un texte libre, borné par la
+  fenêtre de 24 h et par le désabonnement.
 - ✅ **Cibler un bloc précis d'un scénario** : `POST /v1/sends` accepte aussi le **code d'un bloc** (`nod_...`, visible
   dans Contenu > Blocs) pour envoyer ce bloc à une liste de contacts. Réservé à la **fenêtre de 24 h** : un contact
   qui n'a pas écrit récemment est écarté (`out_of_window`), jamais forcé, et un numéro inconnu est écarté

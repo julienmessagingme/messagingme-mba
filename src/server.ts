@@ -53,6 +53,8 @@ import { registerEmbeddedSignup } from './http/embedded-signup';
 import { registerApiKeys } from './http/api-keys';
 import { registerV1Contacts } from './http/v1-contacts';
 import { registerV1Sends } from './http/v1-sends';
+import { registerV1Messages } from './http/v1-messages';
+import type { V1MessagesRouteDeps } from './http/v1-messages';
 import { registerMcp } from './http/mcp';
 import { registerMbaRelais, type MbaRelaisDeps } from './http/mba-relais';
 import { DROIT_RELAIS } from './mba/cle-relais';
@@ -234,6 +236,8 @@ export interface ServerDeps {
     apiKeys: ApiKeyLookup;
     contacts: Omit<V1ContactsRouteDeps, 'usage'>;
     sends?: Omit<V1SendsRouteDeps, 'usage'>;
+    /** Un simple texte dans la fenetre de 24 h (`POST /v1/messages`, lot 7). */
+    messages?: Omit<V1MessagesRouteDeps, 'usage'>;
     mcp?: DepsMcp;
     /** Le relais du Meta Business Agent : même autorité et même limiteur que /v1 (migration 0161). */
     mbaRelais?: MbaRelaisDeps;
@@ -516,6 +520,10 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
       const requireApiKey = makeRequireApiKey(v1.apiKeys, apiLimiter, apiPrefiltre);
       registerV1Contacts(app, { ...v1.contacts, usage: usageApi }, [requireApiKey, requireScope('contacts:write')]);
       if (v1.sends) registerV1Sends(app, { ...v1.sends, usage: usageApi }, [requireApiKey, requireScope('sends:create')]);
+      // MEME droit que les envois, et c'est un elargissement assume : les droits d'une cle se fixent a sa
+      // creation et ne s'editent pas, donc un droit neuf aurait oblige chaque integrateur a refabriquer sa
+      // cle pour un geste que « Declencher des envois » decrit deja. Le detail est dans `v1-messages.ts`.
+      if (v1.messages) registerV1Messages(app, { ...v1.messages, usage: usageApi }, [requireApiKey, requireScope('sends:create')]);
       // Serveur MCP : MÊME autorité et MÊME limiteur de débit que /v1. Il partage volontairement le
       // `requireApiKey` déjà construit.
       //

@@ -7,6 +7,8 @@ import type { AgentTurnJob } from '../src/agent/turn-job';
 import { WorkflowExecutor, EST_UN_ENVOI } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import type { WorkflowGraph } from '../src/workflow/graph';
+import { repondreDansLaFenetre, type DepsRepondre } from '../src/inbox/repondre';
+import { ORIGINES } from '../src/inbox/origine';
 
 /**
  * UN CONTACT DÉSABONNÉ NE REÇOIT RIEN D'AUTOMATIQUE.
@@ -235,17 +237,64 @@ describe('les deux chemins tranchés : modèle de l’Inbox, et agent MCP', () =
   });
 
   /**
-   * 🔴 ET LA DÉPENDANCE N'EST BRANCHÉE QUE SUR LE CÂBLAGE MCP. `repondreDansLaFenetre` est PARTAGÉE avec la
-   * console : c'est cette asymétrie de câblage qui fait l'exemption de l'opérateur. La brancher des deux
-   * côtés rendrait un opérateur muet, ce qui est exactement ce que la décision refuse.
+   * 🔴 LA GARDE VISE TOUTE MACHINE, ET L'EXEMPTION EST NOMMÉE UNE FOIS : L'OPÉRATEUR HUMAIN.
+   *
+   * ⚠️ CE CAS ÉPINGLAIT `origine === 'mcp'` DANS LA SOURCE, ET C'ÉTAIT LA MAUVAISE FORME (corrigé le
+   * 2026-09-23 avec le lot 7). Il fixait la LISTE D'APPELANTS d'un jour donné au lieu de la règle. Deux
+   * conséquences, et la seconde est la pire : il serait tombé au premier élargissement LÉGITIME (celui-ci),
+   * en laissant croire que la garde avait été affaiblie ; et surtout il n'aurait RIEN dit si l'API publique
+   * était partie sans la garde, puisque la chaîne `origine === 'mcp'` serait toujours là. Un test qui épingle
+   * une forme protège la forme, pas la règle.
+   *
+   * On EXÉCUTE donc la fonction pour CHAQUE origine déclarée, liste dérivée d'`ORIGINES` : une septième
+   * origine ajoutée demain est couverte sans rien éditer ici, et c'est exactement ce qui a manqué.
    */
-  it('🔴 `estDesabonne` est branchée sur le câblage MCP, et le refus a son propre motif', () => {
-    const src = readFileSync(new URL('../src/inbox/repondre.ts', import.meta.url), 'utf8');
-    expect(src, 'le refus d’opt-out doit avoir son propre motif, jamais le repli « fenêtre fermée »')
-      .toMatch(/motif: 'contact_desabonne'/);
-    expect(src, 'la garde ne doit viser que l’origine machine').toMatch(/origine === 'mcp'/);
-    const outils = readFileSync(new URL('../src/mcp/outils.ts', import.meta.url), 'utf8');
-    expect(outils, 'l’agent doit recevoir la raison exacte, pas « fenêtre fermée »').toMatch(/contact_desabonne/);
+  describe('une MACHINE se tait devant un contact désabonné, un opérateur non', () => {
+    const deps = (desabonne: boolean) => {
+      const envois: string[] = [];
+      const lu: string[] = [];
+      const d: DepsRepondre = {
+        getConversationContext: async () => ({ waId: '33600', lastInboundAt: null, windowOpen: true }),
+        getTenantPhoneNumberId: async () => 'pn1',
+        sendReply: async (_t, _pn, to) => { envois.push(to); return 'wamid.1'; },
+        estDesabonne: async (_t, waId) => { lu.push(waId); return desabonne; },
+        recordOutbound: async () => {},
+      };
+      return { d, envois, lu };
+    };
+
+    it.each([...ORIGINES])('origine « %s » : refusée si désabonné, sauf pour un humain', async (origine) => {
+      const { d, envois, lu } = deps(true);
+      const res = await repondreDansLaFenetre(d, 't1', 'c1', 'coucou', null, origine);
+      if (origine === 'humain') {
+        // L'exemption, et sa raison : sans elle, un opérateur ne pourrait même plus accuser réception d'un
+        // opt-out, ni répondre à une réclamation posée juste après.
+        expect(res, 'un opérateur doit pouvoir répondre').toHaveProperty('messageId');
+        expect(envois, 'le message part').toEqual(['33600']);
+        expect(lu, 'et la console ne paie aucune requête de plus').toEqual([]);
+      } else {
+        expect(res, `origine « ${origine} » : une machine ne doit pas parler`).toEqual({ refus: { motif: 'contact_desabonne' } });
+        expect(envois, 'rien ne part').toEqual([]);
+        expect(lu, 'la garde a bien été interrogée').toEqual(['33600']);
+      }
+    });
+
+    it('contact NON désabonné : toutes les origines passent, y compris les machines', async () => {
+      // La preuve inverse : sans elle, une garde qui refuserait TOUT passerait les cas ci-dessus.
+      for (const origine of ORIGINES) {
+        const { d, envois } = deps(false);
+        const res = await repondreDansLaFenetre(d, 't1', 'c1', 'coucou', null, origine);
+        expect(res, `origine « ${origine} »`).toHaveProperty('messageId');
+        expect(envois).toEqual(['33600']);
+      }
+    });
+
+    it('🔴 le refus a son propre motif, jamais le repli « fenêtre fermée »', () => {
+      const src = readFileSync(new URL('../src/inbox/repondre.ts', import.meta.url), 'utf8');
+      expect(src).toMatch(/motif: 'contact_desabonne'/);
+      const outils = readFileSync(new URL('../src/mcp/outils.ts', import.meta.url), 'utf8');
+      expect(outils, 'l’agent doit recevoir la raison exacte, pas « fenêtre fermée »').toMatch(/contact_desabonne/);
+    });
   });
 });
 
