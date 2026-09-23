@@ -19,7 +19,7 @@ const AGENT = {
 
 type Patch = Record<string, unknown>;
 
-async function mockAgents(page: import('@playwright/test').Page, patches: Patch[], liste: unknown[] = [{ id: 'ag1', label: 'Conseiller séjours', status: 'draft', sorties: [] }]) {
+async function mockAgents(page: import('@playwright/test').Page, patches: Patch[], liste: unknown[] = [{ id: 'ag1', label: 'Conseiller séjours', status: 'draft', sorties: [], modele: 'anthropic/claude-haiku-4.5' }]) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   let courant = { ...AGENT };
   await page.route('**/api/backend/**', async (route) => {

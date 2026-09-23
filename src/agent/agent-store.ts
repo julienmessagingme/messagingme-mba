@@ -81,6 +81,8 @@ export interface AgentResume {
   label: string;
   status: StatutAgent;
   sorties: SortieAgent[];
+  /** Le modèle qui fait tourner cet agent. La liste en dérive le logo du fournisseur, sans relire la fiche. */
+  modele: string;
 }
 
 export type StatutAgent = 'draft' | 'active' | 'disabled';

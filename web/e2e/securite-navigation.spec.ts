@@ -33,7 +33,7 @@ async function monter(page: Page, opts: { requetes?: Array<{ id: string; label: 
     // ⚠️ AVANT le `endsWith('/settings')` : `/settings/poussee-optout` ne finit pas par `/settings`, mais
     // l'ordre reste explicite pour que l'ajout d'un `includes` un jour ne les confonde pas.
     // La fiche d un agent, pour le cas qui verifie que le selecteur a bien quitte cet ecran.
-    if (chemin.endsWith('/agents')) return json({ agents: [{ id: 'ag-1', label: 'Conseiller sejours', status: 'active', sorties: [] }] });
+    if (chemin.endsWith('/agents')) return json({ agents: [{ id: 'ag-1', label: 'Conseiller sejours', status: 'active', sorties: [], modele: 'anthropic/claude-haiku-4.5' }] });
     if (chemin.includes('/agents/ag-1')) {
       return json({
         agent: {

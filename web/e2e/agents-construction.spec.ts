@@ -73,7 +73,7 @@ async function mock(page: import('@playwright/test').Page, appels: Appel[], opts
       }
       return json({ agent: AGENT });
     }
-    if (/\/agents(\?|$)/.test(url)) return json({ agents: [{ id: AG, label: 'Conseiller séjours', status: 'draft', sorties: [] }] });
+    if (/\/agents(\?|$)/.test(url)) return json({ agents: [{ id: AG, label: 'Conseiller séjours', status: 'draft', sorties: [], modele: 'anthropic/claude-haiku-4.5' }] });
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     return json({});
   });
@@ -323,7 +323,7 @@ test.describe('Agents IA : construire en parlant', () => {
       if (/\/setup$/.test(url)) return json({ messages: [], couverture: { manquants: [], total: 9, pointOuvert: null } });
       if (/\/knowledge/.test(url)) return json({ fiches: [] });
       if (new RegExp(`/agents/${AG}$`).test(url)) return json({ agent: AGENT });
-      if (/\/agents(\?|$)/.test(url)) return json({ agents: [{ id: AG, label: 'Conseiller séjours', status: 'draft', sorties: [] }] });
+      if (/\/agents(\?|$)/.test(url)) return json({ agents: [{ id: AG, label: 'Conseiller séjours', status: 'draft', sorties: [], modele: 'anthropic/claude-haiku-4.5' }] });
       if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
       return json({});
     });
@@ -413,7 +413,7 @@ test.describe('Agents IA : construire en parlant', () => {
       if (/\/tools/.test(req.url())) return json({ outils: [], catalogue: [] });
       if (/\/knowledge/.test(req.url())) return json({ fiches: [] });
       if (new RegExp(`/agents/${AG}$`).test(req.url())) return json({ agent: AGENT });
-      if (/\/agents(\?|$)/.test(req.url())) return json({ agents: [{ id: AG, label: 'Conseiller séjours', status: 'draft', sorties: [] }] });
+      if (/\/agents(\?|$)/.test(req.url())) return json({ agents: [{ id: AG, label: 'Conseiller séjours', status: 'draft', sorties: [], modele: 'anthropic/claude-haiku-4.5' }] });
       return json({});
     });
     await page.goto(`/agents?id=${AG}&tab=construction`);

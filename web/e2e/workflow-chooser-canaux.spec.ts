@@ -47,7 +47,7 @@ async function mockBuilder(
     if (url.includes('/flows')) return json({ flows: [] });
     if (url.includes('/tags')) return json({ tags: [] });
     if (url.includes('/user-fields')) return json({ fields: [] });
-    if (url.includes('/agents')) return json({ agents: opts.agent ? [{ id: 'ag1', label: 'Conseiller', sorties: [] }] : [] });
+    if (url.includes('/agents')) return json({ agents: opts.agent ? [{ id: 'ag1', label: 'Conseiller', sorties: [], modele: 'anthropic/claude-haiku-4.5' }] : [] });
     if (url.includes('/settings')) return json({ mbaEnabled: false, rcsEnabled: opts.rcs, hubspotListsEnabled: false, campaignsPaused: false });
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     return json({});

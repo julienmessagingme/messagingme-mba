@@ -47,8 +47,8 @@ const COMPLET: AgentComplet = {
   contactInconnu: 'lecture_seule', contenu: ficheVide(), ficheVersion: 1,
 };
 
-const ACTIFS: AgentResume[] = [{ id: AG1, label: 'Conseiller séjours', status: 'active', sorties: [{ code: 'besoin_cerne', label: 'Besoin cerné' }] }];
-const TOUTES: AgentResume[] = [...ACTIFS, { id: AG2, label: 'Brouillon', status: 'draft', sorties: [] }];
+const ACTIFS: AgentResume[] = [{ id: AG1, label: 'Conseiller séjours', status: 'active', sorties: [{ code: 'besoin_cerne', label: 'Besoin cerné' }], modele: 'anthropic/claude-haiku-4.5' }];
+const TOUTES: AgentResume[] = [...ACTIFS, { id: AG2, label: 'Brouillon', status: 'draft', sorties: [], modele: 'anthropic/claude-haiku-4.5' }];
 
 function app(cleModele?: (tenant: string) => Promise<unknown>, extra?: Partial<AgentsRouteDeps>) {
   const cap = {

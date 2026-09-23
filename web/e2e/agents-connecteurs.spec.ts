@@ -89,7 +89,7 @@ async function mock(page: import('@playwright/test').Page, capture: { posts: Arr
     if (url.includes('/agent-sources')) return json({ sources: over.sources ?? [SOURCE] });
     if (/\/agents\/[^/]+\/tools$/.test(url)) return json({ outils: over.outils ?? [], catalogue: [] });
     if (/\/agents\/[^/]+$/.test(url)) return json({ agent: AGENT });
-    if (url.endsWith('/agents')) return json({ agents: [{ id: AG, label: 'Support', status: 'draft' }] });
+    if (url.endsWith('/agents')) return json({ agents: [{ id: AG, label: 'Support', status: 'draft', modele: 'anthropic/claude-haiku-4.5' }] });
     if (url.includes('/agents/solde')) return json({ soldeMicroEur: 10_000_000 });
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     if (url.includes('/settings')) return json({ mbaEnabled: false, rcsEnabled: false, hubspotListsEnabled: false, campaignsPaused: false });

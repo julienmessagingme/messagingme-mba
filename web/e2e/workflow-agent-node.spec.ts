@@ -18,6 +18,7 @@ const AGENT = {
   id: 'ag1',
   label: 'Conseiller séjours',
   sorties: [{ code: 'besoin_cerne', label: 'Besoin cerné' }, { code: 'hors_sujet', label: 'Hors sujet' }],
+  modele: 'anthropic/claude-haiku-4.5',
 };
 
 async function mockBuilder(page: import('@playwright/test').Page, initial: Graph, saved: Graph[], agents: unknown[] = [AGENT]) {

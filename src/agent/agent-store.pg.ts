@@ -75,13 +75,15 @@ export class PgAgentStore implements AgentStore {
    *  finissent pas par voir deux agents différents sous le même nom. Le filtre est un fragment LITTÉRAL de
    *  ce fichier, jamais une valeur d'appelant : il n'y a rien à interpoler depuis l'extérieur. */
   private async resumes(tenantId: string, filtreStatut: string): Promise<AgentResume[]> {
-    const res = await this.pool.query<{ id: string; label: string; status: StatutAgent; fiche: unknown }>(
-      `select id, label, status, fiche from agents
+    const res = await this.pool.query<{ id: string; label: string; status: StatutAgent; fiche: unknown; modele: string }>(
+      `select id, label, status, fiche, modele from agents
         where tenant_id = $1 ${filtreStatut}
         order by lower(label)`,
       [tenantId],
     );
-    return res.rows.map((r) => ({ id: r.id, label: r.label, status: r.status, sorties: sortiesDeLaFiche(r.fiche) }));
+    return res.rows.map((r) => ({
+      id: r.id, label: r.label, status: r.status, sorties: sortiesDeLaFiche(r.fiche), modele: r.modele,
+    }));
   }
 
   /**

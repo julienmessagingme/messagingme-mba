@@ -31,7 +31,7 @@ describe.skipIf(!url)('plomberie de lecture de l agent (Postgres)', () => {
     autreTenantId = t2.rows[0]!.id;
     const a = await pool.query<{ id: string }>(
       `insert into agents (tenant_id, label, mention_ia, modele, max_tours, max_appels_outils, budget_micro_eur, inactivite_minutes)
-       values ($1, 'itest', 'Je suis une IA.', 'modele-test', 5, 7, 12345, 42) returning id`,
+       values ($1, 'itest', 'Je suis une IA.', 'anthropic/claude-haiku-4.5', 5, 7, 12345, 42) returning id`,
       [tenantId],
     );
     agentId = a.rows[0]!.id;
@@ -103,6 +103,14 @@ describe.skipIf(!url)('plomberie de lecture de l agent (Postgres)', () => {
     // Et il n'apparaît PAS dans la liste que lit le builder.
     expect((await agents.listActifs(tenantId)).map((a) => a.label)).not.toContain('itest-neuf');
     expect((await agents.listToutes(tenantId)).map((a) => a.label)).toContain('itest-neuf');
+  });
+
+  it('🔴 le résumé porte le MODÈLE : la liste en fait un logo', async () => {
+    // Sans lui, la liste des agents devrait lire chaque fiche une par une pour afficher un logo, soit une
+    // requête par ligne, sur un écran qui en affiche potentiellement des dizaines.
+    const resumes = await agents.listToutes(tenantId);
+    const cree = resumes.find((r) => r.id === agentId);
+    expect(cree?.modele).toBe('anthropic/claude-haiku-4.5');
   });
 
   it('🔴 un patch PARTIEL n efface pas ce qu il ne mentionne pas', async () => {

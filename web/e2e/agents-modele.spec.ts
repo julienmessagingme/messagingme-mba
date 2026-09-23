@@ -43,7 +43,7 @@ async function monter(page: import('@playwright/test').Page, opts: { modeles?: u
       return json({ agent: courant });
     }
     if (/\/agents\/ag1$/.test(url)) return json({ agent: courant });
-    if (/\/agents(\?|$)/.test(url)) return json({ agents: [{ id: 'ag1', label: 'Conseiller séjours', status: 'draft', sorties: [] }] });
+    if (/\/agents(\?|$)/.test(url)) return json({ agents: [{ id: 'ag1', label: 'Conseiller séjours', status: 'draft', sorties: [], modele: 'anthropic/claude-haiku-4.5' }] });
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     return json({});
   });

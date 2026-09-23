@@ -14,6 +14,9 @@ export interface AgentResume {
   label: string;
   status: StatutAgent;
   sorties: SortieAgent[];
+  /** Le modèle, pour le logo du fournisseur dans la liste. Miroir manuel du type serveur : la frontière de
+   *  build interdit au front d'importer `src/`. */
+  modele: string;
 }
 
 /** La partie de la fiche que le client décrit, et que l'IA de construction remplira un jour. */

@@ -68,7 +68,7 @@ async function monter(
     if (chemin.endsWith('/templates')) return json({ templates: TEMPLATES });
     if (chemin.endsWith('/workflows')) return json({ workflows: WORKFLOWS });
     if (chemin.endsWith('/users')) return json({ users: sur.users ?? USERS });
-    if (chemin.endsWith('/agents')) return json({ agents: sur.agents ?? [{ id: 'ag1', label: 'Conseiller', status: 'actif', sorties: [] }] });
+    if (chemin.endsWith('/agents')) return json({ agents: sur.agents ?? [{ id: 'ag1', label: 'Conseiller', status: 'actif', sorties: [], modele: 'anthropic/claude-haiku-4.5' }] });
     return json({});
   });
   const q = new URLSearchParams({
