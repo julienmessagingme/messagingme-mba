@@ -25,9 +25,16 @@ export class ErreurGraph extends Error {
   }
 }
 
-/** Meta a refusé NOTRE ACCÈS (jeton expiré, révoqué, permissions retirées), par opposition à une panne. */
+/**
+ * Meta a refusé LE JETON LUI-MÊME (expiré, révoqué, session fermée), par opposition à une panne.
+ *
+ * ⚠️ LE CODE 10 EST DÉLIBÉRÉMENT DEHORS. Il dit « cette ACTION n'est pas permise », pas « ce jeton est
+ * mort » : le retenir ferait afficher « reconnectez-vous » à un client dont la connexion est parfaitement
+ * valide, pour un appel précis qui, lui, restera refusé après la reconnexion. L'erreur remonte de toute
+ * façon à l'écran avec le message de Meta.
+ */
 export function estJetonRefuse(err: unknown): boolean {
-  return err instanceof ErreurGraph && (err.status === 401 || err.code === 190 || err.code === 102 || err.code === 10);
+  return err instanceof ErreurGraph && (err.status === 401 || err.code === 190 || err.code === 102);
 }
 
 export abstract class ClientGraph {

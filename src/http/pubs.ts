@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { forbidNonAdmin, gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
 import { scopeTenant } from './scope';
-import type { ActifsAccordes } from '../meta/pubs';
+import { sansPrefixeAct, type ActifsAccordes } from '../meta/pubs';
 import type { ConnexionPub } from '../pubs/connexion.pg';
 import { makeJournal, type AuditSink } from '../audit/journal';
 
@@ -108,7 +108,11 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     } catch (err) {
       return reply.code(502).send({ error: err instanceof Error ? err.message : 'Meta ne répond pas' });
     }
-    if (!actifs.comptesPub.includes(corps.data.comptePubId)) {
+    // `act_123` et `123` désignent le MÊME compte : un appelant qui recopie l'identifiant vu dans le
+    // Gestionnaire de publicités enverrait la forme préfixée, et se verrait refuser un compte qu'il a
+    // pourtant accordé. On compare, et on enregistre, la forme nue.
+    const comptePubId = sansPrefixeAct(corps.data.comptePubId);
+    if (!actifs.comptesPub.includes(comptePubId)) {
       return reply.code(400).send({ error: 'ce compte publicitaire n’est pas accordé par la connexion' });
     }
     if (!actifs.pages.includes(corps.data.pageId)) {
@@ -117,7 +121,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
 
     let connexion: ConnexionPub;
     try {
-      connexion = await deps.choisir(tenantId, corps.data);
+      connexion = await deps.choisir(tenantId, { comptePubId, pageId: corps.data.pageId });
     } catch (err) {
       return reply.code(502).send({ error: err instanceof Error ? err.message : 'Meta ne répond pas' });
     }

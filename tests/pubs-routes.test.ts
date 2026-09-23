@@ -118,6 +118,15 @@ describe('POST /choix : le compte et la Page', () => {
     expect(traces.audit).toEqual(['pubs.actifs_choisis']);
   });
 
+  it('⚠️ `act_111` et `111` désignent le MÊME compte : la forme préfixée est acceptée et rangée nue', async () => {
+    // C'est la forme que le Gestionnaire de publicités affiche. La refuser dirait à un admin que son
+    // propre compte n'est pas accordé, ce qui est faux et indébrouillable.
+    const { srv, traces } = app();
+    const res = await srv.inject({ method: 'POST', url: url('/choix'), payload: { comptePubId: 'act_111', pageId: 'p1' } });
+    expect(res.statusCode).toBe(200);
+    expect(traces.choisi).toEqual([{ comptePubId: '111', pageId: 'p1' }]);
+  });
+
   it('🔴 un compte publicitaire que le jeton n ACCORDE PAS est refusé, et rien n est enregistré', async () => {
     // Les identifiants viennent du navigateur : sans ce contrôle, un admin enregistrerait le compte d une
     // autre entreprise, que nos appels utiliseraient ensuite en son nom.

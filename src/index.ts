@@ -2279,7 +2279,10 @@ async function main(): Promise<void> {
           // Le WABA de l'espace : sans lui, il n'y a rien à comparer, donc le verdict est « inconnu » et non
           // « non liée ». Un espace sans numéro WhatsApp n'a pas une Page mal liée, il n'a pas de numéro.
           const waba = await wabaDeLEspace(t);
-          const pageLiee = waba === null ? 'inconnu' as const : await noterSiRefus(t, clientPubs.pageLieeAuCompte(choix.pageId, waba, jeton));
+          // ⚠️ PAS de `noterSiRefus` ici, et ce n'est pas un oubli : `pageLieeAuCompte` traduit SES
+          // propres échecs en 'inconnu' et ne lève jamais. L'entourer d'une garde donnerait à lire qu'un
+          // refus de Meta sur la Page peut marquer le jeton, ce qui est faux.
+          const pageLiee = waba === null ? 'inconnu' as const : await clientPubs.pageLieeAuCompte(choix.pageId, waba, jeton);
           await connexions.choisirActifs(t, { ...choix, devise: infos.devise, fuseau: infos.fuseau, pageLiee });
           const etat = await connexions.lire(t);
           if (etat === null) throw new Error('connexion publicitaire introuvable après enregistrement');

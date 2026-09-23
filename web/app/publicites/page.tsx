@@ -229,10 +229,10 @@ function Connecte({ t, etat, busy, deconnecter, connecter }: {
     <div>
       <h2 className="text-sm font-semibold text-ink-900">{t('Compte publicitaire connecté', 'Ad account connected')}</h2>
       <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
-        <Ligne t={t} id="compte" cle={t('Compte', 'Account')} valeur={c.comptePubId ?? t('à choisir', 'to be chosen')} />
-        <Ligne t={t} id="page" cle={t('Page', 'Page')} valeur={c.pageId ?? t('à choisir', 'to be chosen')} />
-        <Ligne t={t} id="devise" cle={t('Devise', 'Currency')} valeur={c.devise ?? '—'} />
-        <Ligne t={t} id="fuseau" cle={t('Fuseau', 'Time zone')} valeur={c.fuseau ?? '—'} />
+        <Ligne id="compte" cle={t('Compte', 'Account')} valeur={c.comptePubId ?? t('à choisir', 'to be chosen')} />
+        <Ligne id="page" cle={t('Page', 'Page')} valeur={c.pageId ?? t('à choisir', 'to be chosen')} />
+        <Ligne id="devise" cle={t('Devise', 'Currency')} valeur={c.devise ?? '—'} />
+        <Ligne id="fuseau" cle={t('Fuseau', 'Time zone')} valeur={c.fuseau ?? '—'} />
       </dl>
 
       {/*
@@ -273,7 +273,7 @@ function Connecte({ t, etat, busy, deconnecter, connecter }: {
   );
 }
 
-function Ligne({ id, cle, valeur }: { t: T; id: string; cle: string; valeur: string }) {
+function Ligne({ id, cle, valeur }: { id: string; cle: string; valeur: string }) {
   return (
     <div>
       <dt className="text-xs font-medium text-ink-400">{cle}</dt>

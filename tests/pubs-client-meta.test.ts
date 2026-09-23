@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { MetaPubsClient, sansPrefixeAct } from '../src/meta/pubs';
+import { ErreurGraph, estJetonRefuse } from '../src/meta/graph';
 
 /**
  * LE CLIENT GRAPH DES PUBLICITÉS (lot 2, « Connecter »).
@@ -99,5 +100,29 @@ describe('sansPrefixeAct', () => {
   it('retire act_ une seule fois, et laisse un identifiant nu tel quel', () => {
     expect(sansPrefixeAct('act_123')).toBe('123');
     expect(sansPrefixeAct('123')).toBe('123');
+  });
+});
+
+describe('estJetonRefuse : un jeton mort, pas une panne', () => {
+  it('retient le jeton expiré (190), la session fermée (102) et le 401', () => {
+    expect(estJetonRefuse(new ErreurGraph(400, 190, 'Graph 400 (#190) : token expiré'))).toBe(true);
+    expect(estJetonRefuse(new ErreurGraph(400, 102, 'Graph 400 (#102) : session'))).toBe(true);
+    expect(estJetonRefuse(new ErreurGraph(401, null, 'Graph 401 : non autorisé'))).toBe(true);
+  });
+
+  it('🔴 le code 10 reste DEHORS : une action refusée n est pas un jeton mort', () => {
+    // Le retenir afficherait « reconnectez-vous » à un client dont la connexion est valide, pour un appel
+    // qui restera refusé après la reconnexion.
+    expect(estJetonRefuse(new ErreurGraph(403, 10, 'Graph 403 (#10) : permission'))).toBe(false);
+  });
+
+  it('⚠️ une panne ordinaire n est pas un refus : ni un 500 de Meta, ni une erreur réseau', () => {
+    expect(estJetonRefuse(new ErreurGraph(500, 1, 'Graph 500 (#1) : erreur interne'))).toBe(false);
+    expect(estJetonRefuse(new Error('fetch failed'))).toBe(false);
+  });
+
+  it('⚠️ le MESSAGE de l erreur Graph n a pas changé d un caractère : c est une sous-classe, pas un format neuf', async () => {
+    graph([{ ok: false, status: 400, body: { error: { message: 'champ inconnu', code: 100 } } }]);
+    await expect(client().infosCompte('111', 'JETON')).rejects.toThrow('Graph 400 (#100) : champ inconnu');
   });
 });
