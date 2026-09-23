@@ -126,6 +126,9 @@ import { transcrireMessage } from './inbox/transcrire';
 import { lireMediaRecu } from './inbox/media-entrant';
 import { assurerCleGateway, remonterPlafondApresRecharge, revoquerCleGateway, type DepsProvisionCle } from './agent/provisionner-cle';
 import { encryptSecret, decryptSecret } from './crypto/secretbox';
+import { MetaPubsClient } from './meta/pubs';
+import { estJetonRefuse } from './meta/graph';
+import { PgPubConnexionStore } from './pubs/connexion.pg';
 import { PgAgentSessionStore } from './agent/session-store.pg';
 import { PgSourceStore } from './agent/sources.pg';
 import { PgMcpStore } from './agent/mcp/store.pg';
@@ -2221,6 +2224,68 @@ async function main(): Promise<void> {
           }
           await esCredentialsStore.enregistrerPin(waba, tenant, encryptSecret(pin, config.ENCRYPTION_KEY));
         },
+      };
+    })(),
+    /**
+     * LES PUBLICITÉS CLICK-TO-WHATSAPP (lot 2 « Connecter », migration 0167).
+     *
+     * 🔴 LE JETON EST CHIFFRÉ ET DÉCHIFFRÉ ICI, NULLE PART AILLEURS. La route ne le voit jamais : elle ne
+     * reçoit qu'un `tenantId`, exactement comme pour l'inscription WhatsApp. Un jeton qui n'entre pas dans une
+     * route ne peut ni fuiter dans un journal, ni partir dans un corps de réponse, ni se lire dans une trace
+     * de pile.
+     *
+     * ⚠️ `META_ADS_CONFIG_ID` VIDE = les routes sont montées mais l'échange répond 503, et l'écran l'annonce
+     * avant de proposer quoi que ce soit. La configuration refuse déjà de démarrer si cette variable est
+     * posée sans `ENCRYPTION_KEY` : on ne peut donc pas arriver ici avec un jeton à chiffrer et pas de clé.
+     */
+    pubs: (() => {
+      const clientPubs = new MetaPubsClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
+      const connexions = new PgPubConnexionStore(pool);
+      const jetonClair = async (tenantId: string): Promise<string> => {
+        const chiffre = await connexions.lireJetonChiffre(tenantId);
+        if (chiffre === null) throw new Error('aucune connexion publicitaire pour cet espace');
+        return decryptSecret(chiffre, config.ENCRYPTION_KEY);
+      };
+      /**
+       * 🔴 UN JETON REFUSÉ SE RETIENT, UNE PANNE NON. C'est la différence entre « reconnectez-vous » et
+       * « réessayez » à l'écran, et elle se lit sur le CODE de Meta (`estJetonRefuse`), jamais sur la phrase :
+       * un message se reformule et la garde casserait en silence. L'erreur remonte dans les deux cas.
+       */
+      const noterSiRefus = async <T>(tenantId: string, appel: Promise<T>): Promise<T> => {
+        try {
+          return await appel;
+        } catch (err) {
+          if (estJetonRefuse(err)) await connexions.marquerJetonRejete(tenantId);
+          throw err;
+        }
+      };
+      return {
+        audit: auditSink,
+        configId: config.META_ADS_CONFIG_ID,
+        appId: config.META_APP_ID,
+        graphVersion: config.META_GRAPH_VERSION,
+        lire: (t: string) => connexions.lire(t),
+        connecter: async (t: string, code: string, userId: string | null) => {
+          const jeton = await clientPubs.exchangeCode(code);
+          // Le jeton est rangé AVANT de lire les actifs : Meta l'a déjà émis, il est vivant chez eux. Le
+          // perdre ici le rendrait irrévocable pour toujours.
+          await connexions.poserJeton(t, encryptSecret(jeton, config.ENCRYPTION_KEY), userId);
+          return clientPubs.actifsAccordes(jeton);
+        },
+        actifsAccordes: async (t: string) => noterSiRefus(t, clientPubs.actifsAccordes(await jetonClair(t))),
+        choisir: async (t: string, choix: { comptePubId: string; pageId: string }) => {
+          const jeton = await jetonClair(t);
+          const infos = await noterSiRefus(t, clientPubs.infosCompte(choix.comptePubId, jeton));
+          // Le WABA de l'espace : sans lui, il n'y a rien à comparer, donc le verdict est « inconnu » et non
+          // « non liée ». Un espace sans numéro WhatsApp n'a pas une Page mal liée, il n'a pas de numéro.
+          const waba = await wabaDeLEspace(t);
+          const pageLiee = waba === null ? 'inconnu' as const : await noterSiRefus(t, clientPubs.pageLieeAuCompte(choix.pageId, waba, jeton));
+          await connexions.choisirActifs(t, { ...choix, devise: infos.devise, fuseau: infos.fuseau, pageLiee });
+          const etat = await connexions.lire(t);
+          if (etat === null) throw new Error('connexion publicitaire introuvable après enregistrement');
+          return etat;
+        },
+        deconnecter: (t: string) => connexions.supprimer(t),
       };
     })(),
     account: {

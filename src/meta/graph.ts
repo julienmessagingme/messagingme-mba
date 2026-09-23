@@ -10,6 +10,26 @@
  * passent SANS avoir été touchés. Si l'un d'eux avait dû changer, l'extraction aurait changé un
  * comportement du chemin d'inscription, qui est le plus structurant du produit.
  */
+/**
+ * L'ÉCHEC D'UN APPEL GRAPH, AVEC SON STATUT ET SON CODE, pas seulement sa phrase.
+ *
+ * 🔴 LE MESSAGE NE CHANGE PAS D'UN CARACTÈRE : c'est une sous-classe d'`Error`, pas un format neuf. Ce
+ * qu'elle ajoute, c'est de quoi DISTINGUER un jeton refusé (401, ou code 190) d'une panne passagère, sans
+ * relire la phrase à l'expression régulière. Un message se traduit, se reformule et casse en silence ; un
+ * code est un contrat.
+ */
+export class ErreurGraph extends Error {
+  constructor(readonly status: number, readonly code: number | null, message: string) {
+    super(message);
+    this.name = 'ErreurGraph';
+  }
+}
+
+/** Meta a refusé NOTRE ACCÈS (jeton expiré, révoqué, permissions retirées), par opposition à une panne. */
+export function estJetonRefuse(err: unknown): boolean {
+  return err instanceof ErreurGraph && (err.status === 401 || err.code === 190 || err.code === 102 || err.code === 10);
+}
+
 export abstract class ClientGraph {
   constructor(
     protected readonly appId: string,
@@ -23,7 +43,11 @@ export abstract class ClientGraph {
     const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     if (!res.ok) {
       const err = (body as { error?: { message?: string; code?: number } }).error;
-      throw new Error(`Graph ${res.status}${err?.code !== undefined ? ` (#${err.code})` : ''} : ${err?.message ?? 'erreur inconnue'}`);
+      throw new ErreurGraph(
+        res.status,
+        typeof err?.code === 'number' ? err.code : null,
+        `Graph ${res.status}${err?.code !== undefined ? ` (#${err.code})` : ''} : ${err?.message ?? 'erreur inconnue'}`,
+      );
     }
     return body;
   }
