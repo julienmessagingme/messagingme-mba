@@ -1283,19 +1283,22 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   cette page existe pour permettre. En dessous d'un grand écran, une seule colonne, dans le même ordre.
   Le titre « Synthèse » a été retiré : l'onglet actif le portait déjà juste au-dessus.
 - ✅ **« Ce que coûte un engagement »** (2026-09-08, sur la page de synthèse) : une ligne par campagne ayant
-  envoyé sur la période, avec ses **envoyés**, son **coût estimé**, ses **clics** et son **coût par clic**.
-  C'est la question qu'on se pose en arrivant sur l'onglet, et elle se lit sur tout l'historique dès le
-  premier jour.
+  envoyé sur la période, avec ses **envoyés**, ses **engagés** et son **coût par engagé**. C'est la question
+  qu'on se pose en arrivant sur l'onglet, et elle se lit sur tout l'historique dès le premier jour.
+  ⚠️ **Cette phrase annonçait « coût estimé, clics et coût par clic » jusqu'au 2026-09-23**, c'est-à-dire
+  trois colonnes dont une seule existe encore. Le tableau est passé du CLIC à l'ENGAGEMENT, qui compte toute
+  réaction du contact (un clic, mais aussi une réponse) : une campagne à scénario n'a pas de lien tracé et
+  affichait donc une colonne vide là où elle avait bel et bien fait réagir des gens. Le coût, lui, se lit en
+  ouvrant la ligne.
   🔴 **Le coût est une ESTIMATION, pas une facture, et l'écran le dit.** Aucun coût par campagne n'est
   stocké : il se recalcule (envois × votre prix pour la catégorie) à partir des tarifs que Meta rend pour la
   période, exactement comme le graphe de coût de l'onglet Quantitatif, avec lequel il partage sa population
   d'envois et sa lecture des tarifs.
   ⚠️ **Trois cases restent VIDES plutôt que d'afficher zéro**, et chacune dit pourquoi au survol : le coût
   quand Meta ne rend aucun tarif ou que la catégorie de l'envoi est inconnue (les envois, eux, sont comptés
-  à part et annoncés) ; les clics quand la campagne envoie un **scénario** et non un template, ou quand son
-  template ne porte aucun lien tracé (« sans lien tracé », et non « non attribuable », qui se lisait comme
-  une panne d'attribution) ; et le ratio dès qu'un des deux termes manque ou que les clics valent zéro. Un
-  zéro affirmerait « ça n'a rien coûté » ou « personne n'a cliqué ».
+  à part et annoncés) ; le nombre d'engagés quand rien ne permet de le rattacher à la campagne ; et le ratio
+  dès qu'un des deux termes manque ou que le dénominateur vaut zéro. Un zéro affirmerait « ça n'a rien
+  coûté » ou « personne n'a réagi ».
   ⚠️ **Le tableau montre au plus 50 campagnes**, celles qui ont le plus envoyé, et il DIT quand la période
   en compte davantage : une troncature muette se lirait comme l'inventaire complet de la période.
   ⚠️ **Deux réserves sont écrites sous le tableau**, pas cachées dans une infobulle : un template approuvé

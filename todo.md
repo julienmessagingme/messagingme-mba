@@ -276,6 +276,22 @@ elle recommande de les prendre.
   pour la marge. Le cout est nul (cle primaire, une ligne par espace), mais les deux lectures peuvent
   encadrer un `PATCH` de la grille et afficher une marge qui n est pas celle qui a servi au prix. Deriver
   la marge de la meme lecture que `getPricing` ferme les deux.
+- 🟡 **LA GRILLE RCS EST EN EUROS, LES TARIFS META SONT DANS LA DEVISE DU WABA, ET ON LES ADDITIONNE**
+  (releve le 2026-09-23, a trancher avec le lot « Vos prix » qui remonte la grille dans `/ops`).
+  `coutRcsEuros` rend des euros, tires de `tenant_settings.prix_rcs_centimes` que le client saisit ;
+  `estimateCoutParCampagne` et `coutMessages` l ajoutent au cout des modeles, qui vient de
+  `pricing_analytics` et porte `rates.currency`, la devise de facturation du WABA. Si les deux different, la
+  somme n est dans AUCUNE devise et l ecran l etiquette avec celle de Meta.
+  ⚠️ **Ce n est pas un trou vivant aujourd hui, et c est mesure** : un seul espace porte une grille RCS
+  (6,00 / 8,00 centimes), les autres n en ont aucune, donc le terme RCS y vaut zero. La devise du WABA de
+  cet espace n a PAS pu etre lue depuis le poste (l `ENCRYPTION_KEY` locale n est pas la vraie, donc le
+  jeton par espace ne se dechiffre pas) : la mesure se fera sur le VPS, ou depuis `/ops`.
+  🔴 **La question est produit, pas technique** : dans quelle devise le client saisit-il ses prix, et que
+  fait-on quand Meta le facture dans une autre ? Trois reponses possibles, et une seule doit etre choisie
+  UNE fois, parce que le lot « Vos prix » va deplacer cette grille : (a) la grille porte sa devise et on
+  refuse de sommer deux devises, (b) la grille est toujours celle du WABA et l ecran de saisie affiche ce
+  symbole-la, (c) on convertit, ce qui demande un taux, donc une source et une date. Ne pas corriger a la
+  main d ici la : un demi-correctif ici rendrait le lot plus difficile.
 
 
 ## 🟡 Quatre ecarts mineurs releves par les revues finales (2026-09-17 et 18)

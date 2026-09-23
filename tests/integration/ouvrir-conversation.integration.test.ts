@@ -110,6 +110,25 @@ describe.skipIf(!url)('Ouvrir la conversation d un contact (Postgres reel)', () 
     }
   });
 
+  it('🔴 un identifiant VIDE se comporte comme aucun identifiant, archivage compris', async () => {
+    // Le filtre par identifiant s'armait sur « une chaine non vide », celui de l'archivage sur « pas
+    // undefined » : `{ id: '' }` ne demandait donc AUCUN fil precis tout en DESARMANT l'exclusion des
+    // archivees. Le symptome n'est pas une erreur, c'est une page ordinaire ou les fils ranges reapparaissent.
+    // Les deux conditions lisent desormais la meme variable. Aucune route ne produit ce cas (`estUuid` ecarte
+    // la chaine vide) : ce test tient la PROPRIETE, pour le quatrieme appelant qui n'existe pas encore.
+    const id = await store.ouvrirConversationDuContact(tenantId, avecNumero);
+    await pool.query(`update conversations set archived_at = now() where id = $1::uuid`, [id]);
+    try {
+      const vide = await store.listConversations(tenantId, { id: '' });
+      expect(vide.some((c) => c.id === id), 'un id vide ne doit pas faire remonter les archivees').toBe(false);
+      // ...et il rend bien la MEME chose qu'un appel sans option du tout.
+      const sansOption = await store.listConversations(tenantId, {});
+      expect(vide.map((c) => c.id)).toEqual(sansOption.map((c) => c.id));
+    } finally {
+      await pool.query(`update conversations set archived_at = null where id = $1::uuid`, [id]);
+    }
+  });
+
   it('🔴 un contact BLOQUE n ouvre aucun fil, au lieu d un cul-de-sac silencieux', async () => {
     // La liste ecarte les contacts bloques de TOUS les dossiers (« il n'apparait nulle part », regle du
     // produit) : rendre un identifiant aurait envoye l'operateur sur un ecran qui ne montre rien. On refuse,

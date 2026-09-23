@@ -118,6 +118,19 @@ function CampaignsInner({ session }: { session: Session }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [polling, setPolling] = useState(false);
+  /**
+   * 🔴 CE QUI FAIT RELIRE LE COÛT, ET RIEN D'AUTRE (jaune du 2026-09-23). Il était chargé une seule fois par
+   * montage : lancer une campagne depuis cet écran laissait donc sa case sur la valeur d'AVANT l'envoi, en
+   * général « indisponible », jusqu'à ce qu'on recharge la page. Un chiffre périmé qui a l'air frais est le
+   * défaut que ce tableau existe pour éviter.
+   *
+   * ⚠️ UN COMPTEUR, PAS UN APPEL DE PLUS DANS `reload()`. La raison écrite plus bas tient toujours : `reload`
+   * est sondée six fois en douze secondes pendant un envoi, et marteler une agrégation à cette cadence
+   * coûterait cher pour un chiffre qui ne bouge pas si vite. On le fait avancer UNE fois, quand le sondage
+   * est fini. Passer par l'effet plutôt que par un appel direct garde son garde-fou `vivant`, qui est ce qui
+   * empêche une réponse tardive d'écraser l'état d'un autre espace.
+   */
+  const [coutsVersion, setCoutsVersion] = useState(0);
   // Corbeille : la liste montre SOIT les campagnes actives SOIT les archivées, jamais les deux mélangées.
   const [showArchived, setShowArchived] = useState(false);
   // Tarifs Meta chargés UNE fois au montage (hors reload() pollé 6×/2s pendant l'envoi -> pas de martèlement).
@@ -174,7 +187,7 @@ function CampaignsInner({ session }: { session: Session }) {
       })
       .catch(() => { if (vivant) setCouts(null); });
     return () => { vivant = false; };
-  }, [session.tenantId, showArchived]);
+  }, [session.tenantId, showArchived, coutsVersion]);
 
   /**
    * ⚠️ ELLE NE CHARGE PLUS QUE LES CAMPAGNES, ET C'EST UNE CONSÉQUENCE DU RETRAIT DU 2026-09-13. Les
@@ -222,6 +235,8 @@ function CampaignsInner({ session }: { session: Session }) {
       setError(err instanceof Error ? err.message : t('Lancement impossible', 'Launch failed'));
     } finally {
       setPolling(false);
+      // Le sondage est fini : la campagne a envoyé, donc son coût a changé. Une relecture, une seule.
+      setCoutsVersion((v) => v + 1);
     }
   }
 
