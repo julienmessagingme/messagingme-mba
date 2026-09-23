@@ -196,6 +196,9 @@ const icons = {
   // alors que les deux diffusent : une campagne parle a des contacts connus, une chaine a des abonnes
   // anonymes, et confondre les deux a l oeil ferait chercher ses contacts dans le mauvais ecran.
   chaine: 'M8 12h.01M12 12h.01M16 12h.01M21 12a9 9 0 01-13.2 7.9L3 21l1.1-4.8A9 9 0 1121 12z',
+  // Publicites : une cible. Surtout PAS le porte-voix de Campagnes : une campagne parle a des contacts
+  // qu on possede deja, une publicite va en chercher qu on ne connait pas.
+  pubs: 'M12 2a10 10 0 100 20 10 10 0 000-20zM12 7a5 5 0 100 10 5 5 0 000-10zM12 11.2a.8.8 0 100 1.6.8.8 0 000-1.6z',
   content: 'M4 4h16v4H4zM4 12h10v8H4zM18 12h2v8h-2z',
   analytics: 'M3 3v18h18M8 17V9M13 17V5M18 17v-6',
   flow: 'M5 4h4v4H5zM15 16h4v4h-4zM7 8v4a2 2 0 002 2h6',
@@ -250,6 +253,9 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
     { key: 'campagnes', href: '/campaigns', label: t('Campagnes', 'Campaigns'), d: icons.campaign },
     // Juste apres Campagnes : les deux repondent a « comment je parle a plusieurs personnes a la fois ».
     { key: 'chaine', href: '/chaine', label: t('Chaîne', 'Channel'), d: icons.chaine },
+    // Juste apres Chaine : les trois entrees repondent a « comment j'atteins des gens ». La publicite est
+    // la seule des trois qui va chercher quelqu'un qui ne nous connait pas encore.
+    { key: 'publicites', href: '/publicites', label: t('Publicités', 'Ads'), d: icons.pubs },
     { key: 'automations', href: '/automations', label: t('Automation', 'Automation'), d: icons.automation },
     // Les DEUX répondeurs que le client peut faire parler : l'agent de Meta (MBA, son guide et ses réglages,
     // qui gardent leurs URL) et le nôtre. MBA est un SOUS-GROUPE et non deux entrées voisines : ses deux

@@ -17,6 +17,7 @@ import {
   type MeResponse, type AccountStatusResponse, type AccountDot, type EsConfig, type CanalCodeNumero,
 } from '@/lib/api';
 import { getMbaStatus, putMbaActivation, type MbaStatus } from '@/lib/api-mba';
+import { loadFbSdk, type FbLoginResponse } from '@/lib/fb-sdk';
 
 export default function AccueilPage() {
   return <AppShell active="accueil">{(session) => <AccueilInner session={session} />}</AppShell>;
@@ -761,39 +762,8 @@ function BadgeField({ label, badge }: { label: string; badge: StatusBadge }) {
   );
 }
 
-/** SDK JS Facebook (Embedded Signup). Chargé à la demande, une seule fois. */
-declare global {
-  interface Window {
-    FB?: {
-      init(opts: { appId: string; autoLogAppEvents?: boolean; xfbml?: boolean; version: string }): void;
-      login(cb: (resp: FbLoginResponse) => void, opts: Record<string, unknown>): void;
-    };
-  }
-}
-interface FbLoginResponse {
-  authResponse?: { code?: string } | null;
-  status?: string;
-}
-
-let fbSdkLoading: Promise<void> | null = null;
-function loadFbSdk(appId: string, version: string, t: (fr: string, en?: string) => string): Promise<void> {
-  if (window.FB) return Promise.resolve();
-  if (fbSdkLoading) return fbSdkLoading;
-  fbSdkLoading = new Promise<void>((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://connect.facebook.net/en_US/sdk.js';
-    s.async = true;
-    s.defer = true;
-    s.onload = () => {
-      if (!window.FB) { fbSdkLoading = null; reject(new Error(t('SDK Facebook indisponible', 'Facebook SDK unavailable'))); return; }
-      window.FB.init({ appId, autoLogAppEvents: false, xfbml: false, version });
-      resolve();
-    };
-    s.onerror = () => { fbSdkLoading = null; reject(new Error(t('chargement du SDK Facebook impossible (bloqueur de pub ?)', 'could not load the Facebook SDK (ad blocker?)'))); };
-    document.head.appendChild(s);
-  });
-  return fbSdkLoading;
-}
+// Le SDK Facebook vit dans `@/lib/fb-sdk` depuis le 2026-09-23 : l'écran des publicités ouvre lui aussi
+// une fenêtre Meta, et `fbSdkLoading` est un singleton de module qu'on ne peut pas dupliquer.
 
 /** Attend qu'une valeur apparaisse (session info postMessage), sinon null au timeout. */
 function waitFor<T>(get: () => T | undefined, timeoutMs: number): Promise<T | null> {
