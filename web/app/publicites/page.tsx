@@ -260,10 +260,13 @@ function Choix({ t, actifs, busy, compte, page, setCompte, setPage, valider }: {
 }
 
 function Connecte({ t, etat, compte, busy, deconnecter, reconnecter }: {
-  t: T; etat: EtatPubs; compte: EtatComptePub | null; busy: boolean;
+  t: T; etat: EtatPubs; compte: EtatComptePub | null | undefined; busy: boolean;
   deconnecter: () => Promise<boolean>; reconnecter: () => Promise<void>;
 }) {
   const c = etat.connexion!;
+  // L'absence du champ et son `null` disent la MÊME chose (« je n'ai pas pu demander »), et les
+  // ramener ici évite que chaque lecture plus bas ait à y penser. Voir `EtatPubs.compte`.
+  const diffusion = compte ?? null;
   return (
     <div>
       <h2 className="text-sm font-semibold text-ink-900">{t('Compte publicitaire connecté', 'Ad account connected')}</h2>
@@ -286,11 +289,19 @@ function Connecte({ t, etat, compte, busy, deconnecter, reconnecter }: {
         tard. `null` = nous n'avons pas pu demander à Meta, ce qui n'est PAS un feu vert.
       */}
       <p data-testid="pubs-diffusion" className="mt-4 text-sm text-ink-600">
-        {compte === null
+        {/*
+          🔴 `?? null` ET PAS `=== null` : L'API DÉPLOYÉE PEUT NE PAS ENCORE PORTER CE CHAMP. Vercel publie
+          cette console à CHAQUE push, l'API attend son `up -d --build` : entre les deux, la réponse n'a pas
+          de clé `compte`, donc `undefined`, que `=== null` laisse passer vers `compte.statut` et qui fait
+          TOMBER l'écran entier. C'est la fenêtre que le CLAUDE.md du dépôt décrit (onglet « Outils » en 404
+          pendant plus d'une heure le 2026-09-21) : ici, l'absence est traitée comme « je n'ai pas pu
+          demander », ce qui est exactement ce qu'elle veut dire.
+        */}
+        {diffusion === null
           ? t('Nous n’avons pas pu demander à Meta si ce compte peut diffuser.', 'We could not ask Meta whether this account can deliver.')
-          : compte.statut === 1 && compte.moyenPaiement
+          : diffusion.statut === 1 && diffusion.moyenPaiement
             ? t('✓ Prêt à diffuser : compte actif, moyen de paiement en place.', '✓ Ready to deliver: account active, payment method in place.')
-            : compte.statut !== 1
+            : diffusion.statut !== 1
               ? t('Ce compte publicitaire n’est pas actif chez Meta : une publicité ne partirait pas.', 'This ad account is not active at Meta: an ad would not deliver.')
               : t('Aucun moyen de paiement sur ce compte : une publicité se créerait mais ne partirait jamais.', 'No payment method on this account: an ad would be created but would never deliver.')}
       </p>

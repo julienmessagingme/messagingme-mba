@@ -51,7 +51,14 @@ export interface EtatPubs {
   appId: string;
   graphVersion: string;
   connexion: ConnexionPubVue | null;
-  compte: EtatComptePub | null;
+  /**
+   * 🔴 OPTIONNEL, ET CE N'EST PAS DE LA PRUDENCE : L'API DÉPLOYÉE PEUT NE PAS ENCORE LE PORTER.
+   * Vercel publie cette console à chaque `git push`, l'API attend son `up -d --build` : entre les deux,
+   * la réponse n'a pas cette clé. Le déclarer non optionnel ferait mentir le type pendant cette fenêtre,
+   * et un lecteur qui écrirait `=== null` tomberait sur `undefined`. En le déclarant ainsi, c'est le
+   * COMPILATEUR qui force chaque lecteur à traiter l'absence, au lieu de compter sur qui s'en souvient.
+   */
+  compte?: EtatComptePub | null;
 }
 
 /**

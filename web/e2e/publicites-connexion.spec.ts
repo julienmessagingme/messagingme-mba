@@ -114,6 +114,18 @@ test.describe('Publicités : les états de la connexion', () => {
     await expect(page.getByTestId('pubs-diffusion')).not.toContainText(/Prêt à diffuser|Ready to deliver/);
   });
 
+  test('🔴 le champ ABSENT ne fait pas tomber l ecran : l API d hier ne le porte pas', async ({ page }) => {
+    // La console est publiée par Vercel à chaque push, l'API attend son déploiement : pendant cette
+    // fenêtre, la réponse n'a AUCUNE clé `compte`. `undefined` n'est pas `null`, et le confondre avec
+    // « tout va bien » ou le laisser filer vers `compte.statut` casse la page entière.
+    // `compte: undefined` et la clé absente donnent le MÊME corps une fois passés par `JSON.stringify`
+    // dans `brancher` : c'est bien une réponse SANS la clé que la page reçoit.
+    await brancher(page, etatVivant({ connexion: CONNEXION, compte: undefined }));
+    await expect(page.getByTestId('pubs-compte')).toHaveText('GMC');
+    await expect(page.getByTestId('pubs-diffusion'))
+      .toHaveText(/pas pu demander|could not ask/);
+  });
+
   test('🔴 un jeton refusé par Meta demande une RECONNEXION, et ne fait pas passer l’espace pour jamais connecté', async ({ page }) => {
     await brancher(page, etatVivant({ connexion: { ...CONNEXION, jetonRejeteLe: '2026-09-23T10:00:00.000Z' } }));
     await expect(page.getByTestId('pubs-jeton-rejete')).toContainText(/Reconnectez-vous|Reconnect to continue/);
