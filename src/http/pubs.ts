@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { forbidNonAdmin, gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
 import { scopeTenant } from './scope';
-import { sansPrefixeAct, type ActifsAccordes } from '../meta/pubs';
+import { sansPrefixeAct, type ActifsAccordes, type EtatComptePub } from '../meta/pubs';
 import type { ConnexionPub } from '../pubs/connexion.pg';
 import { makeJournal, type AuditSink } from '../audit/journal';
 
@@ -32,6 +32,13 @@ export interface PubsRouteDeps {
   graphVersion: string;
   /** L'état de la connexion, SANS le jeton. */
   lire(tenantId: string): Promise<ConnexionPub | null>;
+  /**
+   * Le compte publicitaire peut-il diffuser ? Lu EN DIRECT chez Meta, `null` si on ne sait pas.
+   *
+   * 🔴 `null` N'EST PAS « TOUT VA BIEN » : c'est « je n'ai pas pu demander » (pas de connexion, ou Meta
+   * muet). L'écran doit le dire ainsi, sinon un compte bloqué passerait pour prêt.
+   */
+  etatCompte(tenantId: string): Promise<EtatComptePub | null>;
   /** Échange le code (TTL 30 s), chiffre le jeton, le range, et rend ce que ce jeton accorde. */
   connecter(tenantId: string, code: string, userId: string | null): Promise<ActifsAccordes>;
   /** Ce que le jeton DÉJÀ rangé accorde. Sert à vérifier un choix, donc relu chez Meta, pas en base. */
@@ -110,12 +117,17 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     const tenantId = scopeTenant(req);
     if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
     const connexion = await deps.lire(tenantId);
+    // ⚠️ BEST-EFFORT, ET C'EST DÉLIBÉRÉ : cet état vient de Meta, et une panne chez eux ne doit pas
+    // empêcher d'AFFICHER une connexion qu'on lit, elle, dans notre base. `null` dit « je n'ai pas pu
+    // demander », jamais « tout va bien ».
+    const compte = connexion === null ? null : await deps.etatCompte(tenantId).catch(() => null);
     return reply.send({
       configure: deps.configId !== '',
       configId: deps.configId,
       appId: deps.appId,
       graphVersion: deps.graphVersion,
       connexion,
+      compte,
     });
   });
 

@@ -8,7 +8,7 @@ import { ApiError, estAnnulation } from '@/lib/http';
 import { loadFbSdk } from '@/lib/fb-sdk';
 import {
   choisirActifsPub, deconnecterPubs, echangerCodePub, getEtatPubs,
-  type ActifsAccordes, type EtatPubs,
+  type ActifsAccordes, type EtatComptePub, type EtatPubs,
 } from '@/lib/api-pubs';
 
 /**
@@ -176,7 +176,7 @@ function PublicitesInner({ session }: { session: Session }) {
         ) : etat.connexion === null ? (
           <NonConnecte t={t} busy={busy} connecter={connecter} />
         ) : (
-          <Connecte t={t} etat={etat} busy={busy} deconnecter={deconnecter} reconnecter={reconnecter} />
+          <Connecte t={t} etat={etat} compte={etat.compte} busy={busy} deconnecter={deconnecter} reconnecter={reconnecter} />
         )}
       </section>
     </div>
@@ -259,8 +259,9 @@ function Choix({ t, actifs, busy, compte, page, setCompte, setPage, valider }: {
   );
 }
 
-function Connecte({ t, etat, busy, deconnecter, reconnecter }: {
-  t: T; etat: EtatPubs; busy: boolean; deconnecter: () => Promise<boolean>; reconnecter: () => Promise<void>;
+function Connecte({ t, etat, compte, busy, deconnecter, reconnecter }: {
+  t: T; etat: EtatPubs; compte: EtatComptePub | null; busy: boolean;
+  deconnecter: () => Promise<boolean>; reconnecter: () => Promise<void>;
 }) {
   const c = etat.connexion!;
   return (
@@ -280,16 +281,34 @@ function Connecte({ t, etat, busy, deconnecter, reconnecter }: {
       </dl>
 
       {/*
-        Trois valeurs, trois phrases, et la troisième dit une IGNORANCE. Meta documente comment FAIRE la
-        liaison entre une Page et un numéro WhatsApp, pas comment la VÉRIFIER : afficher « non liée » sur une
-        ignorance enverrait le client refaire une liaison qui existe déjà.
+        🔴 PRÊT À DIFFUSER, LU EN DIRECT. Le statut du compte et la présence d'un moyen de paiement
+        décident si une pub PARTIRA : sans eux, elle se crée et ne diffuse jamais, et l'erreur arrive
+        tard. `null` = nous n'avons pas pu demander à Meta, ce qui n'est PAS un feu vert.
       */}
-      <p className="mt-4 text-sm text-ink-600">
-        {c.pageLiee === 'oui' && t('La Page est bien liée à votre numéro WhatsApp.', 'The Page is linked to your WhatsApp number.')}
-        {c.pageLiee === 'non' && t('Cette Page est liée à un AUTRE compte WhatsApp. Une publicité créée ici n’arriverait pas dans votre Inbox.',
-                                   'This Page is linked to ANOTHER WhatsApp account. An ad created here would not reach your Inbox.')}
-        {c.pageLiee === 'inconnu' && t('Meta ne nous dit pas si cette Page est liée à votre numéro. La liaison se fait dans les paramètres de la Page, et le code de vérification arrive dans votre Inbox.',
-                                       'Meta does not tell us whether this Page is linked to your number. The link is set in the Page settings, and the verification code arrives in your Inbox.')}
+      <p data-testid="pubs-diffusion" className="mt-4 text-sm text-ink-600">
+        {compte === null
+          ? t('Nous n’avons pas pu demander à Meta si ce compte peut diffuser.', 'We could not ask Meta whether this account can deliver.')
+          : compte.statut === 1 && compte.moyenPaiement
+            ? t('✓ Prêt à diffuser : compte actif, moyen de paiement en place.', '✓ Ready to deliver: account active, payment method in place.')
+            : compte.statut !== 1
+              ? t('Ce compte publicitaire n’est pas actif chez Meta : une publicité ne partirait pas.', 'This ad account is not active at Meta: an ad would not deliver.')
+              : t('Aucun moyen de paiement sur ce compte : une publicité se créerait mais ne partirait jamais.', 'No payment method on this account: an ad would be created but would never deliver.')}
+      </p>
+
+      {/*
+        🔴 META N'EXPOSE PAS CETTE LIAISON, ET ON LE DIT AU LIEU DE FAIRE SEMBLANT. Mesuré le 2026-09-23 :
+        dix champs essayés sur les trois objets concernés (numéro, compte WhatsApp, Page). Aucun ne la
+        rend, alors que le WhatsApp Manager l'affiche. On emmène donc le client là où c'est écrit,
+        plutôt que de le laisser avec un « je ne sais pas » sans suite.
+      */}
+      <p className="mt-2 text-sm text-ink-500">
+        {t('La Page doit être reliée à votre numéro WhatsApp pour que les clics arrivent dans votre Inbox. Meta ne nous permet pas de le vérifier : ',
+           'The Page must be linked to your WhatsApp number for clicks to reach your Inbox. Meta does not let us verify it: ')}
+        <a href="https://business.facebook.com/wa/manage/phone-numbers/" target="_blank" rel="noreferrer"
+          className="underline hover:text-ink-700">
+          {t('voir la liaison chez Meta', 'check the link at Meta')}
+        </a>
+        {t(' (section « Comptes sociaux » du numéro).', ' (the number’s “Social accounts” section).')}
       </p>
 
       {c.jetonRejeteLe !== null && (

@@ -33,6 +33,17 @@ export interface ConnexionPubVue {
   jetonRejeteLe: string | null;
 }
 
+/**
+ * Ce qui empêche, ou non, de diffuser. Lu EN DIRECT chez Meta à chaque ouverture de l'écran.
+ *
+ * 🔴 `null` côté `EtatPubs.compte` n'est PAS « tout va bien » : c'est « nous n'avons pas pu demander ».
+ */
+export interface EtatComptePub {
+  statut: number | null;
+  raisonDesactivation: number | null;
+  moyenPaiement: boolean;
+}
+
 export interface EtatPubs {
   /** `META_ADS_CONFIG_ID` est renseignée côté serveur. Faux = fonctionnalité éteinte sur cette instance. */
   configure: boolean;
@@ -40,6 +51,7 @@ export interface EtatPubs {
   appId: string;
   graphVersion: string;
   connexion: ConnexionPubVue | null;
+  compte: EtatComptePub | null;
 }
 
 /**

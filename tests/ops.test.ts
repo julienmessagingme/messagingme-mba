@@ -362,3 +362,80 @@ describe('/ops : révoquer la clé de modèle', () => {
     expect((await srv.inject({ method: 'DELETE', url: `/ops/cle-modele/${T}` })).statusCode).toBe(401);
   });
 });
+
+/**
+ * DÉPÔT D'UN JETON PUBLICITAIRE PAR `/ops` (2026-09-23).
+ *
+ * Cette porte existe parce que la fenêtre Meta ne peut PAS servir le portefeuille qui possède notre
+ * application, c'est-à-dire le nôtre : Meta le grise dans la liste des clients. Le jeton est donc créé à
+ * la main et déposé ici. C'est la SEULE route du dépôt qui reçoit un secret Meta dans un corps de
+ * requête, d'où les deux cas qui regardent ce qui EN SORT.
+ */
+describe('/ops : déposer un jeton publicitaire créé à la main', () => {
+  const T = '11111111-2222-3333-4444-555555555555';
+  const JETON = 'EAAG' + 'x'.repeat(120);
+  const DEPOSEE = {
+    comptePubId: '475266278124562', compteNom: 'Messaging Me', pageId: '2084133708982860',
+    pageNom: 'Messaging Me', devise: 'EUR', fuseau: 'Europe/Paris', pageLiee: 'inconnu',
+  };
+  const corps = { jeton: JETON, comptePubId: '475266278124562', pageId: '2084133708982860' };
+
+  it('dépose, et rend les actifs que Meta a confirmés', async () => {
+    const vus: Array<[string, string, string, string]> = [];
+    const srv = app(OPS, { deposerJetonPub: async (t, j, c, pg) => { vus.push([t, j, c, pg]); return DEPOSEE; } });
+    const res = await srv.inject({ method: 'POST', url: `/ops/pubs/connexion/${T}`, payload: corps, ...withTok(OPS) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ connexion: unknown }>().connexion).toEqual(DEPOSEE);
+    // Le jeton arrive INTACT au câblage : c'est lui qui le chiffre, la route n'y touche pas.
+    expect(vus).toEqual([[T, JETON, '475266278124562', '2084133708982860']]);
+    await srv.close();
+  });
+
+  it('🔴 le jeton ne ressort NI dans la réponse NI dans le journal', async () => {
+    const srv = app(OPS, { deposerJetonPub: async () => DEPOSEE });
+    const { resultat: res, lignes } = await capturerJournal(() =>
+      srv.inject({ method: 'POST', url: `/ops/pubs/connexion/${T}`, payload: corps, ...withTok(OPS) }));
+    expect(res.statusCode).toBe(200);
+    expect(res.body).not.toContain(JETON);
+    // La trace EXISTE (une dépôt de secret ne se fait pas en silence) mais ne porte que les actifs.
+    const trace = lignes.find((l) => l.msg === 'ops_jeton_pub_depose');
+    expect(trace).toBeDefined();
+    expect(JSON.stringify(lignes)).not.toContain(JETON);
+    expect(trace?.comptePubId).toBe('475266278124562');
+    await srv.close();
+  });
+
+  it('🔴 un jeton que Meta refuse n est PAS gardé : 422, et la raison est lisible', async () => {
+    const srv = app(OPS, { deposerJetonPub: async () => { throw new Error("ce jeton n'accorde pas la Page 42"); } });
+    const res = await srv.inject({ method: 'POST', url: `/ops/pubs/connexion/${T}`, payload: corps, ...withTok(OPS) });
+    expect(res.statusCode).toBe(422);
+    expect(res.json<{ error: string }>().error).toContain('Page 42');
+    expect(res.body).not.toContain(JETON);
+    await srv.close();
+  });
+
+  it('un corps incomplet est refusé AVANT tout appel à Meta', async () => {
+    let appele = false;
+    const srv = app(OPS, { deposerJetonPub: async () => { appele = true; return DEPOSEE; } });
+    const court = await srv.inject({ method: 'POST', url: `/ops/pubs/connexion/${T}`, payload: { ...corps, jeton: 'trop-court' }, ...withTok(OPS) });
+    expect(court.statusCode).toBe(400);
+    const sansPage = await srv.inject({ method: 'POST', url: `/ops/pubs/connexion/${T}`, payload: { jeton: JETON, comptePubId: '1' }, ...withTok(OPS) });
+    expect(sansPage.statusCode).toBe(400);
+    expect(appele).toBe(false);
+    await srv.close();
+  });
+
+  it('sans jeton d exploitation -> 401, même avec un corps parfait', async () => {
+    const srv = app(OPS, { deposerJetonPub: async () => DEPOSEE });
+    const res = await srv.inject({ method: 'POST', url: `/ops/pubs/connexion/${T}`, payload: corps });
+    expect(res.statusCode).toBe(401);
+    await srv.close();
+  });
+
+  it('🔴 sans la dépendance -> 503, jamais un 404 qui ferait croire à une faute de frappe', async () => {
+    const srv = app();
+    const res = await srv.inject({ method: 'POST', url: `/ops/pubs/connexion/${T}`, payload: corps, ...withTok(OPS) });
+    expect(res.statusCode).toBe(503);
+    await srv.close();
+  });
+});

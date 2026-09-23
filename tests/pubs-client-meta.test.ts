@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect, afterEach } from 'vitest';
 import { MetaPubsClient, sansPrefixeAct } from '../src/meta/pubs';
 import { ErreurGraph, estJetonRefuse } from '../src/meta/graph';
@@ -80,25 +81,53 @@ describe('actifsAccordes : ce que le jeton donne VRAIMENT', () => {
   });
 });
 
-describe('pageLieeAuCompte : trois verdicts, pas deux', () => {
-  it('oui quand la Page porte le compte WhatsApp de l espace', async () => {
-    graph([{ body: { connected_whatsapp_business_account: { id: 'WABA_1' } } }]);
-    await expect(client().pageLieeAuCompte('p1', 'WABA_1', 'JETON')).resolves.toBe('oui');
+describe('etatCompte : ce qui empeche de diffuser', () => {
+  it('compte actif avec moyen de paiement : pret', async () => {
+    graph([{ body: { account_status: 1, disable_reason: 0, funding_source_details: { id: '58976' } } }]);
+    await expect(client().etatCompte('111', 'JETON')).resolves.toEqual({ statut: 1, raisonDesactivation: 0, moyenPaiement: true });
   });
 
-  it('non quand elle en porte un AUTRE : la liaison existe, mais pas avec nous', async () => {
-    graph([{ body: { connected_whatsapp_business_account: { id: 'WABA_VOISIN' } } }]);
-    await expect(client().pageLieeAuCompte('p1', 'WABA_1', 'JETON')).resolves.toBe('non');
+  it('🔴 SANS moyen de paiement, `moyenPaiement` est faux : une pub se creerait sans jamais partir', async () => {
+    graph([{ body: { account_status: 1, disable_reason: 0 } }]);
+    expect((await client().etatCompte('111', 'JETON')).moyenPaiement).toBe(false);
   });
 
-  it('🔴 inconnu quand le champ manque : une ignorance ne se dit pas « non liee »', async () => {
-    graph([{ body: { id: 'p1' } }]);
-    await expect(client().pageLieeAuCompte('p1', 'WABA_1', 'JETON')).resolves.toBe('inconnu');
+  it('⚠️ un moyen de paiement SANS identifiant ne compte pas : on ne devine pas', async () => {
+    graph([{ body: { account_status: 1, funding_source_details: {} } }]);
+    expect((await client().etatCompte('111', 'JETON')).moyenPaiement).toBe(false);
   });
 
-  it('🔴 inconnu quand Graph REFUSE l appel, et sans lever : le champ reste a mesurer sur un vrai compte', async () => {
-    graph([{ ok: false, status: 400, body: { error: { message: 'champ inconnu', code: 100 } } }]);
-    await expect(client().pageLieeAuCompte('p1', 'WABA_1', 'JETON')).resolves.toBe('inconnu');
+  it('un compte desactive rend son statut et sa raison', async () => {
+    graph([{ body: { account_status: 2, disable_reason: 3, funding_source_details: { id: 'x' } } }]);
+    await expect(client().etatCompte('111', 'JETON')).resolves.toEqual({ statut: 2, raisonDesactivation: 3, moyenPaiement: true });
+  });
+});
+
+/**
+ * ⚠️ OÙ SONT PASSÉS LES QUATRE CAS DE `pageLieeAuCompte`, plutôt que de les faire disparaître en silence.
+ *
+ * Ils éprouvaient les trois verdicts d'un appel qui N'EXISTE PLUS : mesuré le 2026-09-23 sur le compte
+ * réel, aucune API de Meta n'expose la liaison Page / numéro (dix champs essayés, détail dans
+ * `src/meta/pubs.ts`). Le quatrième cas disait lui-même « le champ reste à mesurer sur un vrai compte » :
+ * la mesure a tranché, et l'appel était condamné à un 400 à chaque choix.
+ *
+ * Il n'y a donc PAS de remplaçant à écrire côté client : on ne teste pas une méthode qu'on retire. Ce qui
+ * reste à garder, c'est qu'on ne la réécrive pas sans remesurer, et c'est le cas ci-dessous. Le
+ * comportement VISIBLE (l'écran envoie chez Meta au lieu de prétendre savoir) est tenu par
+ * `web/e2e/publicites-connexion.spec.ts`.
+ */
+describe("la liaison Page / numéro ne se redemande pas à Meta sans l'avoir remesurée", () => {
+  it('🔴 aucun appel ne demande `connected_whatsapp_business_account` : ce champ n existe pas', () => {
+    const source = readFileSync(new URL('../src/meta/pubs.ts', import.meta.url), 'utf8');
+    // Si Meta l'expose un jour, ce test se retire EN MÊME TEMPS que l'appel est réécrit, et après une
+    // nouvelle mesure sur un compte réel. C'est précisément ce qu'il demande : remesurer d'abord.
+    // ⚠️ Le commentaire qui EXPLIQUE la mesure nomme le champ lui aussi : on ne cherche donc que les
+    // lignes de code, sinon ce test échouerait sur sa propre justification.
+    const code = source.split(/\r?\n/).filter((l) => {
+      const t = l.trimStart();
+      return !t.startsWith('*') && !t.startsWith('//') && !t.startsWith('/*');
+    });
+    expect(code.join(' ')).not.toContain('connected_whatsapp_business_account');
   });
 });
 

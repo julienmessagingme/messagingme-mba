@@ -26,7 +26,34 @@ import type { WorkerHeartbeatRow } from '../ops/heartbeat-store.pg';
  * se change que d'ici. ⚠️ Elle est cross-espace par NATURE, et c'est ce qui la distingue des deux autres
  * écritures : `/ops/credits` et `/ops/verrou` visent un espace, celle-ci n'en vise aucun.
  */
+/** Ce que la route d'exploitation rend après avoir déposé un jeton publicitaire. */
+export interface ConnexionPubDeposee {
+  comptePubId: string;
+  compteNom: string | null;
+  pageId: string;
+  pageNom: string | null;
+  devise: string | null;
+  fuseau: string | null;
+  pageLiee: string | null;
+}
+
 export interface OpsRouteDeps {
+  /**
+   * DÉPOSER UN JETON PUBLICITAIRE CRÉÉ À LA MAIN. Absent -> la route répond 503.
+   *
+   * 🔴 POURQUOI CETTE ROUTE EXISTE, ET POURQUOI ELLE EST DANS `/ops`. Le parcours de connexion de
+   * l'écran Publicités ne peut PAS servir le portefeuille Meta qui possède notre application : Meta
+   * exige que le portefeuille du client soit distinct de celui de l'app, et grèse ce portefeuille dans
+   * la fenêtre (mesuré le 2026-09-23). Or c'est précisément celui de MessagingMe, où vivent notre
+   * numéro WhatsApp, notre Page et notre compte publicitaire. Sans cette porte, NOUS ne pourrions
+   * jamais faire nos propres publicités avec notre propre produit.
+   *
+   * ⚠️ ELLE EST CROSS-ESPACE, comme le rechargement de crédit, et c'est délibéré : `/ops` s'authentifie
+   * par un JETON d'exploitation, pas par une session. Le jeton publicitaire déposé est chiffré par le
+   * câblage, jamais gardé en clair, et n'est JAMAIS renvoyé dans la réponse.
+   */
+  deposerJetonPub?(tenantId: string, jeton: string, comptePubId: string, pageId: string): Promise<ConnexionPubDeposee>;
+
   /**
    * Les compteurs d'usage de l'API publique. ABSENT -> `/ops/usage` rend une liste vide.
    *
@@ -384,6 +411,38 @@ export function registerOps(
     // eslint-disable-next-line no-console
     console.log(JSON.stringify({ lvl: 'warn', msg: 'ops_recharge_agent', tenantId, montantMicroEur: montant, soldeMicroEur: solde, at: new Date().toISOString() }));
     return reply.code(200).send({ tenantId, soldeMicroEur: solde });
+  });
+
+  /**
+   * DÉPÔT D'UN JETON PUBLICITAIRE D'UTILISATEUR SYSTÈME (2026-09-23).
+   *
+   * 🔴 LE JETON ARRIVE DANS LE CORPS, ET C'EST LA SEULE FOIS. Il n'est ni journalisé, ni renvoyé, ni
+   * écrit ailleurs qu'en base, chiffré. La trace qui part en console ne porte que les identifiants des
+   * actifs choisis, jamais le secret : une tentative ratée est presque toujours un jeton voisin du vrai.
+   *
+   * ⚠️ LE JETON EST VÉRIFIÉ CHEZ META AVANT D'ÊTRE GARDÉ, par le même chemin que la connexion par
+   * l'écran : si le compte ou la Page ne sont pas accordés, on refuse plutôt que de ranger un jeton qui
+   * ne sert à rien et qu'on croirait bon.
+   */
+  app.post('/ops/pubs/connexion/:tenantId', opts, async (req, reply) => {
+    if (!deps.deposerJetonPub) return reply.code(503).send({ error: 'dépôt de jeton publicitaire non disponible sur cette instance' });
+    const { tenantId } = req.params as { tenantId: string };
+    if (!estUuid(tenantId)) return reply.code(404).send({ error: 'espace inconnu' });
+    const corps = (req.body ?? {}) as { jeton?: unknown; comptePubId?: unknown; pageId?: unknown };
+    const jeton = typeof corps.jeton === 'string' ? corps.jeton.trim() : '';
+    const comptePubId = typeof corps.comptePubId === 'string' ? corps.comptePubId.trim() : '';
+    const pageId = typeof corps.pageId === 'string' ? corps.pageId.trim() : '';
+    if (jeton.length < 20) return reply.code(400).send({ error: 'jeton requis' });
+    if (comptePubId === '' || pageId === '') return reply.code(400).send({ error: 'comptePubId et pageId requis' });
+    let depose: ConnexionPubDeposee;
+    try {
+      depose = await deps.deposerJetonPub(tenantId, jeton, comptePubId, pageId);
+    } catch (err) {
+      return reply.code(422).send({ error: err instanceof Error ? err.message : 'jeton refusé' });
+    }
+    // eslint-disable-next-line no-console
+    console.log(JSON.stringify({ lvl: 'warn', msg: 'ops_jeton_pub_depose', tenantId, comptePubId: depose.comptePubId, pageId: depose.pageId, at: new Date().toISOString() }));
+    return reply.code(200).send({ tenantId, connexion: depose });
   });
 
   /**

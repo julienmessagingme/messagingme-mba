@@ -23,7 +23,7 @@ const CONNEXION = {
   connecteLe: '2026-09-23T08:00:00.000Z', jetonRejeteLe: null as string | null,
 };
 
-type Etat = { configure: boolean; configId: string; appId: string; graphVersion: string; connexion: unknown } | 404;
+type Etat = { configure: boolean; configId: string; appId: string; graphVersion: string; connexion: unknown; compte?: unknown } | 404;
 
 const brancher = async (page: import('@playwright/test').Page, etat: Etat, role = 'admin') => {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), { ...SESSION, role });
@@ -40,8 +40,9 @@ const brancher = async (page: import('@playwright/test').Page, etat: Etat, role 
   await page.goto('/publicites');
 };
 
-const etatVivant = (over: Partial<{ configure: boolean; connexion: unknown }> = {}): Etat => ({
-  configure: true, configId: 'cfg-pub', appId: 'app-1', graphVersion: 'v23.0', connexion: null, ...over,
+const etatVivant = (over: Partial<{ configure: boolean; connexion: unknown; compte: unknown }> = {}): Etat => ({
+  configure: true, configId: 'cfg-pub', appId: 'app-1', graphVersion: 'v23.0', connexion: null,
+  compte: { statut: 1, raisonDesactivation: 0, moyenPaiement: true }, ...over,
 });
 
 test.describe('Publicités : les états de la connexion', () => {
@@ -82,7 +83,12 @@ test.describe('Publicités : les états de la connexion', () => {
     await expect(page.getByText('111', { exact: true })).toBeVisible();
     await expect(page.getByTestId('pubs-devise')).toHaveText('EUR');
     await expect(page.getByTestId('pubs-fuseau')).toHaveText('Europe/Paris');
-    await expect(page.getByText(/La Page est bien liée|The Page is linked/)).toBeVisible();
+    // ⚠️ LE CAS QU'EXERÇAIT L'ANCIENNE ASSERTION EST CONSERVÉ, et son verdict a changé : l'écran
+    // affirmait « la Page est bien liée ». Meta n'expose PAS cette liaison (mesuré le 2026-09-23), donc
+    // l'écran n'affirme plus rien : il emmène le client là où Meta l'affiche. C'est ce lien qui compte,
+    // parce qu'un « je ne sais pas » sans suite est ce qu'on remplace.
+    await expect(page.getByRole('link', { name: /voir la liaison chez Meta|check the link at Meta/ }))
+      .toHaveAttribute('href', 'https://business.facebook.com/wa/manage/phone-numbers/');
   });
 
   test('⚠️ sans nom (connexion d avant la migration 0169), l ecran retombe sur l identifiant', async ({ page }) => {
@@ -91,17 +97,21 @@ test.describe('Publicités : les états de la connexion', () => {
     await expect(page.getByTestId('pubs-page')).toHaveText('p1');
   });
 
-  test('🔴 une liaison INCONNUE ne se dit pas « non liée » : on annonce l’ignorance, pas un refus', async ({ page }) => {
-    // Meta documente comment FAIRE la liaison, pas comment la VÉRIFIER. Dire « non liée » enverrait le
-    // client refaire une liaison qui existe déjà.
-    await brancher(page, etatVivant({ connexion: { ...CONNEXION, pageLiee: 'inconnu' } }));
-    await expect(page.getByText(/Meta ne nous dit pas|Meta does not tell us/)).toBeVisible();
-    await expect(page.getByText(/liée à un AUTRE compte|linked to ANOTHER WhatsApp/)).toHaveCount(0);
+  test('🔴 « pret a diffuser » quand le compte est actif ET porte un moyen de paiement', async ({ page }) => {
+    await brancher(page, etatVivant({ connexion: CONNEXION }));
+    await expect(page.getByTestId('pubs-diffusion')).toContainText(/Prêt à diffuser|Ready to deliver/);
   });
 
-  test('une Page liée à un AUTRE compte le dit, avec sa conséquence', async ({ page }) => {
-    await brancher(page, etatVivant({ connexion: { ...CONNEXION, pageLiee: 'non' } }));
-    await expect(page.getByText(/n’arriverait pas dans votre Inbox|would not reach your Inbox/)).toBeVisible();
+  test('🔴 SANS moyen de paiement, l ecran dit que la pub ne partirait JAMAIS', async ({ page }) => {
+    // Sans ca, la pub se cree, ne diffuse pas, et l erreur arrive des jours plus tard.
+    await brancher(page, etatVivant({ connexion: CONNEXION, compte: { statut: 1, raisonDesactivation: 0, moyenPaiement: false } }));
+    await expect(page.getByTestId('pubs-diffusion')).toContainText(/moyen de paiement|payment method/);
+  });
+
+  test('🔴 `compte: null` ne passe PAS pour un feu vert : on dit qu on n a pas pu demander', async ({ page }) => {
+    await brancher(page, etatVivant({ connexion: CONNEXION, compte: null }));
+    await expect(page.getByTestId('pubs-diffusion')).toContainText(/pas pu demander|could not ask/);
+    await expect(page.getByTestId('pubs-diffusion')).not.toContainText(/Prêt à diffuser|Ready to deliver/);
   });
 
   test('🔴 un jeton refusé par Meta demande une RECONNEXION, et ne fait pas passer l’espace pour jamais connecté', async ({ page }) => {

@@ -24,6 +24,19 @@ export interface ComptePubAccorde {
   statut: number | null;
 }
 
+/**
+ * CE QUI EMPÊCHE, OU NON, DE DIFFUSER. Lu EN DIRECT à l'ouverture de l'écran, jamais mémorisé : un
+ * indicateur de disponibilité qui date ne sert à rien, et une carte qui expire ne prévient personne.
+ */
+export interface EtatComptePub {
+  /** `account_status` : 1 = actif. Tout le reste empêche de diffuser. */
+  statut: number | null;
+  /** `disable_reason` : 0 quand rien ne cloche. */
+  raisonDesactivation: number | null;
+  /** Un moyen de paiement est rattaché (`funding_source_details`). Sans lui, la diffusion ne part pas. */
+  moyenPaiement: boolean;
+}
+
 export interface PageAccordee {
   id: string;
   nom: string | null;
@@ -44,6 +57,21 @@ export interface ActifsAccordes {
  */
 export type LiaisonPage = 'oui' | 'non' | 'inconnu';
 
+/**
+ * 🔴 POURQUOI PLUS AUCUN CODE NE CALCULE CE VERDICT, ET POURQUOI LE TYPE RESTE.
+ *
+ * Mesuré le 2026-09-23 sur le compte réel, après avoir vérifié dans le WhatsApp Manager que la Page ÉTAIT
+ * bien liée au numéro : DIX champs essayés sur les trois objets concernés. Sur le numéro,
+ * `connected_pages`, `linked_pages`, `facebook_page`, `page`, `connected_page` n'existent pas. Sur la Page,
+ * `connected_whatsapp_business_account` n'existe pas et `whatsapp_number` revient VIDE (il ne parle que de
+ * l'ancienne connexion « WhatsApp Business app »). Meta affiche la liaison dans son interface et ne
+ * l'expose par aucune API que nous puissions appeler.
+ *
+ * L'appel a donc été RETIRÉ : il était condamné à un 400 à chaque choix, pour toujours rendre « inconnu ».
+ * Le type et la colonne restent, parce que le jour où Meta exposera cette liaison, c'est ici qu'elle
+ * reviendra ; l'écran, lui, emmène le client là où Meta l'affiche.
+ */
+
 /** Les listes de Graph. Tout est optionnel sauf l'identifiant : on ne suppose rien du reste. */
 const listeComptesSchema = z.object({
   data: z.array(z.object({
@@ -55,16 +83,14 @@ const listeComptesSchema = z.object({
   })).optional(),
 });
 
-const listePagesSchema = z.object({
-  data: z.array(z.object({ id: z.string(), name: z.string().optional() })).optional(),
+const etatCompteSchema = z.object({
+  account_status: z.number().optional(),
+  disable_reason: z.number().optional(),
+  funding_source_details: z.object({ id: z.string().optional() }).optional(),
 });
 
-/**
- * La Page et son compte WhatsApp lié. Le champ est demandé explicitement ; s'il n'existe pas pour cette
- * Page, ou si Graph refuse de le rendre, la réponse ne le portera pas et le verdict sera `inconnu`.
- */
-const pageSchema = z.object({
-  connected_whatsapp_business_account: z.object({ id: z.string() }).optional(),
+const listePagesSchema = z.object({
+  data: z.array(z.object({ id: z.string(), name: z.string().optional() })).optional(),
 });
 
 /**
@@ -111,27 +137,27 @@ export class MetaPubsClient extends ClientGraph {
   }
 
   /**
-   * La Page est-elle liée au compte WhatsApp de l'espace ?
+   * L'état du compte publicitaire : peut-il diffuser aujourd'hui ?
    *
-   * 🔴 LE REFUS DE META EST UN `inconnu`, PAS UN `non`. La liaison Page et numéro se fait à la main dans
-   * les réglages de la Page, et la documentation dit comment la FAIRE, pas comment la VÉRIFIER. Ce champ
-   * est le candidat ; tant qu'il n'a pas été mesuré sur un vrai compte, le seul verdict honnête quand il
-   * manque est « je ne sais pas ». Une exception ici n'en est donc pas une : elle se traduit.
+   * ⚠️ TROIS CHAMPS, ET LE TROISIÈME EST CELUI QU'ON CHERCHAIT. `funding_source_details` dit qu'un moyen
+   * de paiement est rattaché ; sans lui, une pub se crée mais ne part jamais, et l'erreur arrive tard.
+   * Mesuré le 2026-09-23 : ces trois champs se lisent avec la tâche ADVERTISE, sans `MANAGE`.
    */
-  async pageLieeAuCompte(pageId: string, wabaId: string, jeton: string): Promise<LiaisonPage> {
-    const qs = new URLSearchParams({ fields: 'connected_whatsapp_business_account' });
-    let brut: Record<string, unknown>;
-    try {
-      brut = await this.call(`${this.baseUrl}/${this.version}/${encodeURIComponent(pageId)}?${qs.toString()}`, {
-        headers: { Authorization: `Bearer ${jeton}` },
-      });
-    } catch {
-      return 'inconnu';
-    }
-    const lu = pageSchema.safeParse(brut);
-    if (!lu.success || lu.data.connected_whatsapp_business_account === undefined) return 'inconnu';
-    return lu.data.connected_whatsapp_business_account.id === wabaId ? 'oui' : 'non';
+  async etatCompte(comptePubId: string, jeton: string): Promise<EtatComptePub> {
+    const qs = new URLSearchParams({ fields: 'account_status,disable_reason,funding_source_details' });
+    const brut = await this.call(
+      `${this.baseUrl}/${this.version}/act_${encodeURIComponent(sansPrefixeAct(comptePubId))}?${qs.toString()}`,
+      { headers: { Authorization: `Bearer ${jeton}` } },
+    );
+    const lu = etatCompteSchema.safeParse(brut);
+    if (!lu.success) return { statut: null, raisonDesactivation: null, moyenPaiement: false };
+    return {
+      statut: lu.data.account_status ?? null,
+      raisonDesactivation: lu.data.disable_reason ?? null,
+      moyenPaiement: (lu.data.funding_source_details?.id ?? '') !== '',
+    };
   }
+
 
   /**
    * RETIRE NOS ACCÈS PUBLICITAIRES CHEZ META, permission par permission.
@@ -147,11 +173,16 @@ export class MetaPubsClient extends ClientGraph {
    * publicités dans la même application, et le seul moyen de le savoir serait de les retirer pour voir. On
    * retire ce qui est publicitaire SANS AMBIGUÏTÉ, et on laisse le reste vivre.
    *
-   * ⚠️ CE CHEMIN N'EST PAS MESURÉ SUR UN JETON D'UTILISATEUR SYSTÈME, et le retrait par permission NOMMÉE
-   * l'est encore moins que le retrait nu : la documentation de Meta décrit les deux pour un jeton
-   * d'UTILISATEUR. On ne sait donc pas si ce qui reste peut encore servir en publicité, et on ne l'écrit
-   * pas comme si on le savait (règle de 0129 : une justification fausse est pire qu'aucune). La première
-   * déconnexion réelle tranchera, et son résultat vit dans le journal d'audit.
+   * ⚠️ **MESURÉ SUR UN JETON D'UTILISATEUR SYSTÈME LE 2026-09-23**, et ce commentaire disait le contraire
+   * jusque-là (« ce chemin n'est pas mesuré », écrit avant la première déconnexion réelle). Les trois
+   * permissions ont été retirées du jeton de Gerermonchantier avant de déposer celui de notre propre
+   * compte : **HTTP 200 sur les trois**. Le retrait par permission NOMMÉE fonctionne donc sur ce type de
+   * jeton, là où la documentation de Meta ne décrit que le cas d'un jeton d'UTILISATEUR.
+   *
+   * ⚠️ CE QUI RESTE INCONNU, et qu'on n'écrit donc pas comme su : si les trois permissions laissées en
+   * place (`business_management`, `pages_show_list`, `pages_read_engagement`) permettent encore quoi que
+   * ce soit en publicité. Le seul moyen de le savoir serait de les retirer pour voir, sur un jeton qui
+   * fait AUSSI parler un numéro WhatsApp.
    */
   async revoquerAcces(jeton: string): Promise<void> {
     // ⚠️ TOUTES SONT TENTÉES, MÊME APRÈS UN REFUS. S'arrêter au premier échec laisserait les suivantes en

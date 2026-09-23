@@ -126,7 +126,7 @@ import { transcrireMessage } from './inbox/transcrire';
 import { lireMediaRecu } from './inbox/media-entrant';
 import { assurerCleGateway, remonterPlafondApresRecharge, revoquerCleGateway, type DepsProvisionCle } from './agent/provisionner-cle';
 import { encryptSecret, decryptSecret } from './crypto/secretbox';
-import { MetaPubsClient } from './meta/pubs';
+import { MetaPubsClient, sansPrefixeAct } from './meta/pubs';
 import { DejaConnectePub, JetonNonEnregistre, PasDeConnexionPub } from './http/pubs';
 import { estJetonRefuse } from './meta/graph';
 import { PgPubConnexionStore } from './pubs/connexion.pg';
@@ -398,6 +398,12 @@ async function main(): Promise<void> {
   // Le WABA de l'espace, une lecture par process : le cache de jeton etant indexe par WABA, cette requete
   // etait payee AVANT lui a chaque construction de client Meta. Reponses positives seulement.
   const wabaDeLEspace = creerWabaDeLEspace((t) => repo.getTenantWabaId(t));
+  // ⚠️ HISSÉS HORS DU CÂBLAGE DE L'ÉCRAN parce qu'ils ont DEUX consommateurs depuis le 2026-09-23 : les
+  // routes de l'écran Publicités, et la route `/ops` qui dépose un jeton créé à la main (le portefeuille
+  // qui possède l'app ne peut pas passer par la fenêtre Meta). Les construire deux fois donnerait deux
+  // chemins de chiffrement à tenir alignés.
+  const clientPubs = new MetaPubsClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
+  const connexionsPub = new PgPubConnexionStore(pool);
   const esCredentialsStore = new PgEmbeddedSignupStore(pool);
   const metaCredentials = new MetaCredentialsResolver({
     getWabaIdForTenant: wabaDeLEspace,
@@ -2253,8 +2259,7 @@ async function main(): Promise<void> {
      * posée sans `ENCRYPTION_KEY` : on ne peut donc pas arriver ici avec un jeton à chiffrer et pas de clé.
      */
     pubs: (() => {
-      const clientPubs = new MetaPubsClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
-      const connexions = new PgPubConnexionStore(pool);
+      const connexions = connexionsPub;
       const jetonClair = async (tenantId: string): Promise<string> => {
         const chiffre = await connexions.lireJetonChiffre(tenantId);
         // Une erreur NOMMÉE : la route en fait un 409 « pas connecté », là où un `Error` nu ressortait en
@@ -2281,6 +2286,13 @@ async function main(): Promise<void> {
         appId: config.META_APP_ID,
         graphVersion: config.META_GRAPH_VERSION,
         lire: (t: string) => connexions.lire(t),
+        etatCompte: async (t: string) => {
+          const etat = await connexions.lire(t);
+          if (etat === null || etat.comptePubId === null) return null;
+          // Pas de `noterSiRefus` : un refus ici ne doit pas marquer la connexion morte pour un
+          // indicateur d'affichage. La route traite déjà l'échec comme « je ne sais pas ».
+          return clientPubs.etatCompte(etat.comptePubId, await jetonClair(t));
+        },
         connecter: async (t: string, code: string, userId: string | null) => {
           // 🔴 BRETELLES : on refuse AVANT L'ÉCHANGE quand une connexion existe déjà. Meta n'émet alors
           // AUCUN jeton, donc rien ne peut être orphelin sur le chemin ordinaire (un appel hors séquence).
@@ -2326,13 +2338,10 @@ async function main(): Promise<void> {
           const actifs = await noterSiRefus(t, clientPubs.actifsAccordes(jeton));
           const compte = actifs.comptesPub.find((c) => c.id === choix.comptePubId);
           const page = actifs.pages.find((p) => p.id === choix.pageId);
-          // Le WABA de l'espace : sans lui, il n'y a rien à comparer, donc le verdict est « inconnu » et non
-          // « non liée ». Un espace sans numéro WhatsApp n'a pas une Page mal liée, il n'a pas de numéro.
-          const waba = await wabaDeLEspace(t);
-          // ⚠️ PAS de `noterSiRefus` ici, et ce n'est pas un oubli : `pageLieeAuCompte` traduit SES
-          // propres échecs en 'inconnu' et ne lève jamais. L'entourer d'une garde donnerait à lire qu'un
-          // refus de Meta sur la Page peut marquer le jeton, ce qui est faux.
-          const pageLiee = waba === null ? 'inconnu' as const : await clientPubs.pageLieeAuCompte(choix.pageId, waba, jeton);
+          // ⚠️ `inconnu` SANS APPELER META, et c'est une mesure, pas un renoncement : aucune API n'expose
+          // la liaison Page / numéro (dix champs essayés le 2026-09-23, détail dans `src/meta/pubs.ts`).
+          // L'écran dit où la voir chez Meta plutôt que de prétendre la connaître.
+          const pageLiee = 'inconnu' as const;
           await connexions.choisirActifs(t, {
             ...choix,
             // Les NOMS sont gardés ici et nulle part ailleurs (0169) : l'écran les relirait sinon chez Meta
@@ -2673,6 +2682,38 @@ async function main(): Promise<void> {
        * la seule trace durable du POURQUOI. Ce câblage l'écrivait aussi, par un journal de Fastify qui était
        * muet ; le rendre audible avait doublé chaque ligne.
        */
+      /**
+       * 🔴 DÉPOSER UN JETON PUBLICITAIRE CRÉÉ À LA MAIN, parce que la fenêtre Meta ne peut pas servir
+       * notre PROPRE portefeuille : Meta exige que celui du client soit distinct de celui qui possède
+       * l'application, et le grise dans la liste (mesuré le 2026-09-23). Sans cette porte, MessagingMe ne
+       * pourrait jamais faire ses propres publicités avec son propre produit.
+       *
+       * 🔴 LE JETON EST VÉRIFIÉ CHEZ META AVANT D'ÊTRE GARDÉ, par les MÊMES appels que la connexion par
+       * l'écran : on refuse un compte ou une Page que ce jeton n'accorde pas, plutôt que de ranger un
+       * secret qui ne servirait à rien et qu'on croirait bon. Et il est chiffré ICI, comme partout.
+       *
+       * ⚠️ IL REMPLACE une connexion existante, là où l'écran la REFUSE. La raison tient à qui fait le
+       * geste : l'écran est utilisé par un client qui pourrait écraser son propre jeton sans le savoir,
+       * quand `/ops` est notre surface d'exploitation, où remplacer est précisément ce qu'on vient faire.
+       */
+      deposerJetonPub: async (tenantId, jeton, comptePubId, pageId) => {
+        const actifs = await clientPubs.actifsAccordes(jeton);
+        const compte = actifs.comptesPub.find((c) => c.id === sansPrefixeAct(comptePubId));
+        const page = actifs.pages.find((p) => p.id === pageId);
+        if (compte === undefined) throw new Error(`ce jeton n'accorde pas le compte publicitaire ${comptePubId}`);
+        if (page === undefined) throw new Error(`ce jeton n'accorde pas la Page ${pageId}`);
+        const pageLiee = 'inconnu' as const; // Meta n'expose pas la liaison (cf. `src/meta/pubs.ts`).
+        await connexionsPub.supprimer(tenantId);
+        await connexionsPub.poserJeton(tenantId, encryptSecret(jeton, config.ENCRYPTION_KEY), null);
+        await connexionsPub.choisirActifs(tenantId, {
+          comptePubId: compte.id, compteNom: compte.nom, pageId: page.id, pageNom: page.nom,
+          devise: compte.devise, fuseau: compte.fuseau, pageLiee,
+        });
+        return {
+          comptePubId: compte.id, compteNom: compte.nom, pageId: page.id, pageNom: page.nom,
+          devise: compte.devise, fuseau: compte.fuseau, pageLiee,
+        };
+      },
       verrouillerEspace: (tenantId, verrouille, _note) => opsStore.verrouillerEspace(tenantId, verrouille),
       getTenantOverview: () => opsStore.getTenantOverview(),
       /**

@@ -94,11 +94,13 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0168**, appliquée le 2026-09-23 à 13 h 36 avec 0166 et 0167, AVANT le `up`, et les
-trois relues en base point par point juste après `migrate`. **Écrite et PAS ENCORE APPLIQUÉE : 0169**
-(`pub_connexion_noms`, le nom du compte publicitaire et celui de la Page, pour que l'écran cesse de
-n'afficher que des identifiants). **Prochaine libre = 0170**. Les trois passent AVANT le `up` : 0166 RELACHE un CHECK (`conversation_messages.origin`
-accepte `api`), 0167 CRÉE `pub_connexion`, 0168 CRÉE `grille_prix` ; l'ancien code survit aux trois.
+**Dernière appliquée : 0169**, le 2026-09-23 à 12 h 29 UTC (`pub_connexion_noms`, le nom du compte
+publicitaire et celui de la Page, pour que l'écran cesse de n'afficher que des identifiants), AVANT le
+`up` qui a porté son code. **Prochaine libre = 0170**, et le dossier `db/migrations/` s'arrête bien à 0169.
+Avant elle, **0166, 0167 et 0168** le même jour à 11 h 36 UTC, elles aussi avant le `up`, et les trois
+relues en base point par point juste après `migrate` : 0166 RELÂCHE un CHECK
+(`conversation_messages.origin` accepte `api`), 0167 CRÉE `pub_connexion`, 0168 CRÉE `grille_prix` ;
+l'ancien code survit aux quatre.
 🔴 **DIXIÈME DÉRIVE, TROUVÉE PAR UNE RELECTURE À FROID LE 2026-09-23** : cette ligne annonçait
 « prochaine libre = 0166 » alors que le dépôt portait DÉJÀ les trois. La base, elle, n'avait pas bougé :
 c'est donc le DOSSIER qui tranche sur ce qui est PRIS, et la base sur ce qui est APPLIQUÉ. Les neuf
