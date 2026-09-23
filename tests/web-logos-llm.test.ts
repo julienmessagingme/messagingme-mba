@@ -14,24 +14,17 @@ import { fournisseurDuModele, logoDuModele, pastilleDuModele } from '../web/lib/
 const RACINE = resolve(__dirname, '..');
 const DOSSIER = join(RACINE, 'web', 'public', 'llm');
 
-const RAISON_MARQUE_A_DEPOSER_A_LA_MAIN =
-  'marque officielle a deposer a la main : la redessiner de memoire donnerait un logo approximatif, qui a l air juste';
-
-/** Les fournisseurs qu'on assume SANS logo, avec la raison. */
-const SANS_LOGO: ReadonlyMap<string, string> = new Map([
-  ['openai', RAISON_MARQUE_A_DEPOSER_A_LA_MAIN],
-  ['anthropic', RAISON_MARQUE_A_DEPOSER_A_LA_MAIN],
-  ['google', RAISON_MARQUE_A_DEPOSER_A_LA_MAIN],
-  ['mistral', RAISON_MARQUE_A_DEPOSER_A_LA_MAIN],
-  ['zai', RAISON_MARQUE_A_DEPOSER_A_LA_MAIN],
-]);
+/** Les fournisseurs qu'on assume SANS logo, avec la raison. Vide aujourd'hui : les cinq marques du
+ * catalogue sont déposées dans `web/public/llm/`. Reste déclarée pour qu'un fournisseur ajouté demain
+ * sans logo puisse encore se dispenser. */
+const SANS_LOGO: ReadonlyMap<string, string> = new Map([]);
 
 describe('les logos de fournisseurs de modèles', () => {
   it('🔴 chaque fournisseur du catalogue a son fichier, ou sa dispense écrite', () => {
     const manquants = [...new Set(MODELES_CHOISIS.map((m) => fournisseurDuModele(m.id)))]
       .filter((f): f is string => f !== null)
-      .filter((f) => !existsSync(join(DOSSIER, `${f}.svg`)) && !SANS_LOGO.has(f));
-    expect(manquants, 'fournisseur(s) du catalogue sans logo : déposez `web/public/llm/<fournisseur>.svg`, '
+      .filter((f) => !existsSync(join(DOSSIER, `${f}.png`)) && !SANS_LOGO.has(f));
+    expect(manquants, 'fournisseur(s) du catalogue sans logo : déposez `web/public/llm/<fournisseur>.png`, '
       + 'ou inscrivez-le dans SANS_LOGO avec sa raison').toEqual([]);
   });
 
@@ -44,7 +37,7 @@ describe('les logos de fournisseurs de modèles', () => {
 
   it('le logo se dérive du PRÉFIXE, et son alt est VIDE', () => {
     const l = logoDuModele('anthropic/claude-haiku-4.5');
-    expect(l).toEqual({ src: '/llm/anthropic.svg', alt: '' });
+    expect(l).toEqual({ src: '/llm/anthropic.png', alt: '' });
   });
 
   it('🔴 un modèle hors catalogue ou sans préfixe rend null, il ne jette pas', () => {
