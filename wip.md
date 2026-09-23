@@ -51,6 +51,33 @@ Lot 7 du plan `docs/superpowers/plans/2026-09-23-liste-julien.md`.
   grille RCS, donc le terme vaut zéro ailleurs. La question est produit et le lot 8 (« Vos prix » dans
   `/ops`) va déplacer cette grille : à trancher là, pas par un demi-correctif d'ici là.
 
+## HUBSPOT MASQUÉ SANS PORTAIL (LOT 9, ÉCRIT LE 2026-09-23, PAS DÉPLOYÉ)
+
+Lot 9 du plan `docs/superpowers/plans/2026-09-23-liste-julien.md`, RÉDUIT à ses deux écarts réels après
+inventaire (arbitrage de Julien du 2026-09-23).
+
+- 🔴 **L'INVENTAIRE A MONTRÉ QUE LE LOT N'ÉTAIT PAS CE QUE LE PLAN DÉCRIVAIT**, et c'est le vrai résultat de
+  cette étape. Sur les quatre fonctions à masquer : la source de campagne l'était **déjà**, mais sur le
+  MAUVAIS signal ; le déclencheur « étape de deal » était **grisé** et seulement après sélection ; la
+  « mention injoignable dans HubSpot » n'est **pas un écran** mais une écriture du balayage de relance ; et
+  la quatrième (l'action du bloc) n'existe pas encore.
+- ✅ **Écrit et vert** : les deux écrans se masquent désormais sur le **lien du portail**, pas sur
+  l'interrupteur `hubspotListsEnabled`. Un client qui DÉLIE son portail gardait son interrupteur allumé,
+  donc la source restait offerte et ne menait nulle part.
+- ⚠️ **Aucune migration.** Le lien du portail est une lecture LOCALE (schéma `mmhs` de la même base), jointe
+  aux réglages, donc aucun aller-retour réseau sur une route que plusieurs écrans appellent.
+- 🔴 **`undefined` VEUT DIRE « ON NE SAIT PAS », ET ON MONTRE.** Une API antérieure à ce lot ne rend pas le
+  drapeau : le traiter comme « pas connecté » ferait DISPARAÎTRE la source d'un client qui l'a, pendant
+  toute la fenêtre entre le déploiement de la console et celui de l'API. Entre les deux erreurs possibles,
+  une seule se rattrape d'un clic. Tenu par un cas e2e.
+- ⚠️ **CE QUI RESTE DEHORS, PAR DÉCISION DE JULIEN** : `flagUnreachable` (le balayage écrit « injoignable »
+  dans HubSpot) n'est neutralisé que quand l'INSTANCE n'a pas de connecteur, pas quand un ESPACE n'a pas de
+  portail. Le neutraliser par espace toucherait un chemin que la production emprunte. Consigné, pas oublié.
+- 🔴 **ET LA SECONDE MOITIÉ DU LOT VIT DANS UN AUTRE DÉPÔT** : l'action « mettre à jour un champ HubSpot »
+  demande une route générique d'écriture de propriété dans `mm-hubspot`, seul détenteur du jeton. Non faite.
+- 🔴 **L'ESSAI RÉEL QUI CLÔT LE LOT** : un espace SANS portail ne voit ni la source HubSpot d'une campagne,
+  ni le déclencheur « étape de deal ». Un espace connecté les voit toujours.
+
 ## GRILLE DE PRIX UNIQUE DANS /ops (LOT 8, ÉCRIT LE 2026-09-23, PAS DÉPLOYÉ)
 
 Lot 8 du plan `docs/superpowers/plans/2026-09-23-liste-julien.md`.

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
+import { sansPortailHubspot } from './hubspot';
 import { GRILLE_DEFAUT } from '../src/stats/prix';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
@@ -30,6 +31,8 @@ function app(o: { cable?: boolean } = {}) {
   const ecrits: boolean[] = [];
   let courant = false;
   const settings: SettingsRouteDeps = {
+    // Aucun portail lie : c est le defaut, et la fixture le DIT (cf. `tests/hubspot.ts`).
+    hubspotPortalConnecte: sansPortailHubspot,
     getSettings: async () => ({
       mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
       controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: courant,

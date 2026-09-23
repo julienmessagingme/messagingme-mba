@@ -72,7 +72,7 @@ const PIPELINES = [
 ];
 
 test.describe('Automation : déclencheur « étape de deal HubSpot »', () => {
-  async function ouvrir(page: import('@playwright/test').Page, dealStages: unknown) {
+  async function ouvrir(page: import('@playwright/test').Page, dealStages: unknown, portail?: boolean) {
     const posted: Array<Record<string, unknown>> = [];
     let appelsEtapes = 0;
     await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
@@ -81,6 +81,14 @@ test.describe('Automation : déclencheur « étape de deal HubSpot »', () => {
       const url = req.url();
       const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
       if (url.includes('/hubspot/deal-stages')) { appelsEtapes += 1; return json(dealStages); }
+      // Le lien du portail voyage avec les REGLAGES (lot 9) : `undefined` = API anterieure a ce lot.
+      if (url.endsWith('/settings')) {
+        return json({
+          mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: true,
+          controlHandbackSeconds: null, timezone: 'Europe/Paris', businessHours: {},
+          ...(portail === undefined ? {} : { hubspotPortalConnecte: portail }),
+        });
+      }
       if (url.endsWith('/automations') && req.method() === 'POST') {
         posted.push(req.postDataJSON() as Record<string, unknown>);
         return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ id: 'a2' }) });
@@ -130,6 +138,25 @@ test.describe('Automation : déclencheur « étape de deal HubSpot »', () => {
     await page.getByTestId('automation-workflow').selectOption('wf1');
     // Une automation sans étape partirait sur TOUS les changements du portail : le bouton doit rester mort.
     await expect(page.getByTestId('automation-submit')).toBeDisabled();
+  });
+
+  test('🔴 AUCUN portail lié : le déclencheur n’est même pas proposé', async ({ page }) => {
+    /**
+     * Arbitrage de Julien du 2026-09-23 : une intégration qu'on n'a pas est du bruit, pas une information.
+     * Il était GRISÉ, et seulement APRÈS une première sélection (lire les étapes coûte un aller-retour
+     * jusqu'à HubSpot). Le lien du portail, lui, est une lecture locale : on peut la payer à l'ouverture.
+     */
+    await ouvrir(page, { connected: false, pipelines: [] }, false);
+    const menu = page.getByTestId('automation-trigger');
+    await expect(menu.locator('option[value="hubspot_deal_stage"]')).toHaveCount(0);
+    // Les autres déclencheurs restent : on masque UNE option, pas la liste.
+    await expect(menu.locator('option[value="keyword"]')).toHaveCount(1);
+  });
+
+  test('🔴 portail lié : le déclencheur est proposé', async ({ page }) => {
+    // La preuve inverse : sans elle, un masquage qui cacherait toujours l’option passerait le cas du dessus.
+    await ouvrir(page, { connected: true, pipelines: PIPELINES }, true);
+    await expect(page.getByTestId('automation-trigger').locator('option[value="hubspot_deal_stage"]')).toHaveCount(1);
   });
 
   test('portail non relié : on le dit, sans menu et sans erreur rouge', async ({ page }) => {

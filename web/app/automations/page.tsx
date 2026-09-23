@@ -5,7 +5,7 @@ import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
 import { useT } from '@/lib/i18n';
 import {
-  listAutomations, createAutomation, updateAutomation, deleteAutomation, listWorkflows, listHubspotDealStages,
+  listAutomations, createAutomation, updateAutomation, deleteAutomation, listWorkflows, listHubspotDealStages, getSettings,
   listUserFields, estEnLigne,
   type Automation, type AutomationTriggerKind, type WorkflowSummary, type HubspotDealPipeline, type UserFieldDef,
 } from '@/lib/api';
@@ -85,6 +85,28 @@ function AutomationsInner({ session }: { session: Session }) {
    * annulait la requête en vol, et l'écran restait figé sur « Lecture des étapes… » pour toujours. Trouvé par
    * le test de bout en bout, pas à la lecture.
    */
+  /**
+   * UN PORTAIL HUBSPOT EST-IL LIE ? (lot 9, 2026-09-23)
+   *
+   * 🔴 LE DECLENCHEUR « ETAPE DE DEAL » ETAIT GRISE, PAS MASQUE, ET SEULEMENT APRES COUP. On ne savait
+   * qu'aucun portail n'etait relie qu'APRES avoir selectionne le declencheur, parce que lire les etapes
+   * coute un aller-retour jusqu'a HubSpot. L'arbitrage de Julien est de le MASQUER : une fonction qu'on
+   * n'a pas est du bruit, pas une information. Le lien du portail, lui, est une lecture LOCALE, donc on
+   * peut la payer a l'ouverture de l'ecran.
+   *
+   * ⚠️ `null` = on ne sait pas encore (ou l'API est anterieure a ce lot) : on MONTRE, comme avant. Le
+   * grisage apres selection reste en place et sert alors de seconde ligne.
+   */
+  const [portailHubspot, setPortailHubspot] = useState<boolean | null>(null);
+  useEffect(() => {
+    let vivant = true;
+    void getSettings(session.tenantId)
+      .then((s) => { if (vivant) setPortailHubspot(s.hubspotPortalConnecte ?? null); })
+      // Silencieux : l'ecran des automations ne doit pas tomber parce qu'un drapeau d'affichage manque.
+      .catch(() => {});
+    return () => { vivant = false; };
+  }, [session.tenantId]);
+
   const etapesDemandees = useRef(false);
   useEffect(() => {
     if (triggerKind !== 'hubspot_deal_stage' || etapesDemandees.current) return;
@@ -259,14 +281,18 @@ function AutomationsInner({ session }: { session: Session }) {
               <option value="new_contact">{t('un nouveau contact écrit pour la 1re fois', 'a new contact writes for the first time')}</option>
               <option value="tag_added">{t('une étiquette est posée sur un contact', 'a tag is added to a contact')}</option>
               <option value="conversation_analyzed">{t('une conversation vient d’être analysée', 'a conversation has just been analyzed')}</option>
-              {/* Grisée dès qu'on SAIT qu'aucun portail n'est relié : la config serait acceptée par l'écran et
-                  ne partirait jamais. On ne le sait qu'après une première sélection (lire les étapes coûte un
-                  aller-retour jusqu'à HubSpot, qu'on ne paie pas à chaque ouverture de l'écran). */}
-              <option value="hubspot_deal_stage" disabled={etatEtapes === 'non_connecte'}>
-                {etatEtapes === 'non_connecte'
-                  ? t('un deal HubSpot atteint une étape (HubSpot non connecté)', 'a HubSpot deal reaches a stage (HubSpot not connected)')
-                  : t('un deal HubSpot atteint une étape', 'a HubSpot deal reaches a stage')}
-              </option>
+              {/* 🔴 MASQUÉE quand AUCUN portail n'est lié (arbitrage de Julien du 2026-09-23) : une intégration
+                  qu'on n'a pas est du bruit, pas une information. ⚠️ `=== false` et non `!== true` : `null`
+                  veut dire « on ne sait pas encore », et on montre alors, comme avant ce lot.
+                  Le grisage après sélection RESTE : il attrape le cas où le portail est lié mais où les
+                  étapes ne remontent pas (consentement à renouveler, synchro en pause). */}
+              {portailHubspot !== false && (
+                <option value="hubspot_deal_stage" disabled={etatEtapes === 'non_connecte'}>
+                  {etatEtapes === 'non_connecte'
+                    ? t('un deal HubSpot atteint une étape (HubSpot non connecté)', 'a HubSpot deal reaches a stage (HubSpot not connected)')
+                    : t('un deal HubSpot atteint une étape', 'a HubSpot deal reaches a stage')}
+                </option>
+              )}
               <option value="avant_date">{t('un délai avant ou après une date enregistrée', 'a delay before or after a stored date')}</option>
               <option value="ctwa_ad">{t('le contact arrive d’une publicité WhatsApp', 'the contact comes from a WhatsApp ad')}</option>
             </select>

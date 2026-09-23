@@ -113,10 +113,18 @@ function AssistantInner({ session }: { session: Session }) {
         setCapacites({
           rcsEnabled: s.rcsEnabled === true,
           mbaEnabled: s.mbaEnabled === true,
-          // ⚠️ Mêmes deux drapeaux que l'ancien formulaire : le connecteur branché décide si la source
-          // HubSpot est AFFICHÉE, la pause décide si elle est cliquable. Les confondre montrerait un
-          // panneau vide à un espace qui n'a pas HubSpot, ou masquerait une pause qui se lève d'un clic.
-          hubspotListes: s.hubspotListsEnabled === true,
+          /**
+           * 🔴 DEUX QUESTIONS, PAS UNE, ET IL FALLAIT LES DEUX (lot 9, 2026-09-23). L'interrupteur
+           * `hubspotListsEnabled` dit « ce client VEUT cette source » ; le portail dit « elle est seulement
+           * POSSIBLE ». On ne lisait que le premier : un espace qui DELIE son portail gardait son
+           * interrupteur allume, donc la source restait offerte et ne menait nulle part. Arbitrage de
+           * Julien du 2026-09-23 : sans portail lie, les fonctions HubSpot sont MASQUEES.
+           *
+           * ⚠️ `!== false` ET NON `=== true` : une API anterieure a ce lot ne rend pas le champ, et
+           * `undefined` veut dire « on ne sait pas », pas « pas connecte ». Le traiter comme un refus ferait
+           * disparaitre la source d'un client qui l'a, pendant toute la fenetre Vercel / API.
+           */
+          hubspotListes: s.hubspotListsEnabled === true && s.hubspotPortalConnecte !== false,
           hubspotEnPause: s.campaignsPaused === true,
           ...(s.businessHours ? { businessHours: s.businessHours as BusinessHours } : {}),
         });

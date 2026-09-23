@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
+import { sansPortailHubspot } from './hubspot';
 import { GRILLE_DEFAUT } from '../src/stats/prix';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
@@ -97,6 +98,8 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     ...over.stats,
   };
   const settings: SettingsRouteDeps = {
+    // Aucun portail lie : c est le defaut, et la fixture le DIT (cf. `tests/hubspot.ts`).
+    hubspotPortalConnecte: sansPortailHubspot,
     getSettings: async () => ({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, optoutRequestId: null, mentionIaFrequence: null, timezone: 'Europe/Paris', businessHours: {}, prix: GRILLE_DEFAUT }),
     setMbaEnabled: async () => {},
     setHubspotListsEnabled: async () => {},
@@ -735,7 +738,9 @@ describe('PATCH /settings/mba-handoff', () => {
     // Sinon le client règle son outil un dimanche et voit le passage de main allumé jusqu'au balayage suivant.
     const tousFermes = Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [String(d), { closed: true, open: '', close: '' }]));
     const { a, modes, appliques } = espion({
-      getSettings: async () => ({
+      // Aucun portail lie : c est le defaut, et la fixture le DIT (cf. `tests/hubspot.ts`).
+    hubspotPortalConnecte: sansPortailHubspot,
+    getSettings: async () => ({
         mbaEnabled: true, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
         controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, timezone: 'Europe/Paris', businessHours: tousFermes,
       }),

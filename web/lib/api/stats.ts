@@ -638,6 +638,16 @@ export interface TenantSettings {
   timezone: string;
   /** Heures d'ouverture par jour ('0'..'6', 0 = dimanche). */
   businessHours: BusinessHours;
+  /**
+   * UN PORTAIL HUBSPOT EST-IL LIE A CET ESPACE ? (lot 9, 2026-09-23)
+   *
+   * 🔴 OPTIONNEL A LA LECTURE, ET LE DEFAUT EST « ON MONTRE ». Une API anterieure a ce lot ne rend pas le
+   * champ : `undefined` doit alors se lire « on ne sait pas », donc on garde le comportement d'hier. Le
+   * traiter comme « pas connecte » ferait DISPARAITRE la source HubSpot d'un client qui l'a, pendant toute
+   * la fenetre entre le deploiement de la console et celui de l'API. Entre les deux erreurs possibles, une
+   * seule se rattrape d'un clic.
+   */
+  hubspotPortalConnecte?: boolean;
   /*
    * `prix` A QUITTE LES REGLAGES LE 2026-09-23 (lot 8, migration 0168). Il n'y a plus qu'une grille, pour
    * tous les espaces, et elle se lit dans /ops : la laisser ici aurait permis a n'importe quel ecran du

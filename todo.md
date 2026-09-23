@@ -282,6 +282,18 @@ elle recommande de les prendre.
   aucune garde, aucune conversion, aucune colonne de devise. ⚠️ Ce qui rendrait la question VIVANTE, et donc
   ce qu il faut surveiller : un premier client dont le WABA facture dans une autre devise. Ce jour-la,
   l addition ne serait dans AUCUNE devise, et l ecran l etiquetterait avec celle de Meta.
+- 🟡 **`flagUnreachable` N EST NEUTRALISE QU AU NIVEAU DE L INSTANCE, PAS DE L ESPACE** (releve au lot 9, le
+  2026-09-23, laisse dehors par decision de Julien). Le balayage de relance ecrit « injoignable » dans
+  HubSpot au second echec 131026. Quand `HUBSPOT_SERVICE_URL` est absente, il devient un no-op qui REUSSIT,
+  ce qui est juste. Mais sur une instance qui A le connecteur, un espace SANS portail lie appelle quand meme
+  mm-hubspot. Ce qu il faut verifier avant de decider : l appel echoue-t-il ? Si oui, `markUnreachableDone`
+  n est jamais atteint et le destinataire est reliste a CHAQUE tour de balayage, pour toujours. ⚠️ Ce n est
+  pas un correctif d affichage : il toucherait un chemin que la production emprunte, et lire le portail par
+  contact injoignable coute une requete de plus (ou un cache, donc une invalidation).
+- 🟡 **L ACTION « METTRE A JOUR UN CHAMP HUBSPOT » RESTE A FAIRE, ET ELLE COMMENCE DANS `mm-hubspot`** (lot 9,
+  seconde moitie). Elle demande une route generique d ecriture de propriete dans le depot voisin, seul
+  detenteur du jeton HubSpot, PUIS le branchement du bloc action ici. Rien n a ete ecrit ni verifie dans ce
+  depot-la.
 - 🟡 **« VOS PRIX » VIT DANS LA SECTION « CONTACTS & CRM » DE `features.md`, ET IL N Y A AUCUNE RAISON**
   (constate le 2026-09-23). Decouvert par la garde de derive des fiches d aide : modifier l entree des prix
   a peri la fiche « importer-mes-contacts », qui ne parle pas de prix du tout. Elle a ete RELUE, elle reste
