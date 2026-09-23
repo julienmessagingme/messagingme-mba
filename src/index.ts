@@ -2282,6 +2282,12 @@ async function main(): Promise<void> {
         graphVersion: config.META_GRAPH_VERSION,
         lire: (t: string) => connexions.lire(t),
         connecter: async (t: string, code: string, userId: string | null) => {
+          // 🔴 BRETELLES : on refuse AVANT L'ÉCHANGE quand une connexion existe déjà. Meta n'émet alors
+          // AUCUN jeton, donc rien ne peut être orphelin sur le chemin ordinaire (un appel hors séquence).
+          // ⚠️ Ce n'est PAS un contrôle suffisant à lui seul, et il ne remplace pas la base : entre cette
+          // lecture et l'insertion, deux connexions simultanées passeraient toutes les deux. La ceinture
+          // reste l'insertion seule de `poserJeton` ; ceci ne fait qu'éviter d'émettre un jeton pour rien.
+          if (await connexions.lireJetonChiffre(t) !== null) throw new DejaConnectePub(false);
           const jeton = await clientPubs.exchangeCode(code);
           // 🔴 À PARTIR D'ICI, META A ÉMIS UN JETON SANS EXPIRATION. Il est rangé AVANT qu'on lise les
           // actifs, et son échec porte un nom à LUI : ce n'est pas un refus de Meta, c'est NOTRE panne, et
@@ -2294,10 +2300,17 @@ async function main(): Promise<void> {
             console.error('jeton publicitaire NON enregistré, il reste vivant chez Meta:', err instanceof Error ? err.message : err);
             throw new JetonNonEnregistre(err);
           }
-          // 🔴 LA BASE A REFUSÉ D'ÉCRASER UNE CONNEXION EXISTANTE, et c'est elle qui tient l'invariant.
-          // Le jeton qu'on vient d'échanger est PERDU pour nous, donc on le dit comme tel : ce cas ne se
-          // produit que si l'on a sauté la déconnexion, qui est le seul geste qui révoque.
-          if (!pose) throw new DejaConnectePub();
+          // 🔴 LA BASE A REFUSÉ D'ÉCRASER UNE CONNEXION EXISTANTE : c'est la course, et elle est rare
+          // (la vérification ci-dessus attrape tout le reste). Le jeton qu'on vient d'échanger est PERDU
+          // pour nous, et le client l'apprend dans la réponse.
+          //
+          // 🔴 NE PAS LE RÉVOQUER ICI, ET C'EST UN PIÈGE QUI PARAÎT ÉVIDENT. `DELETE /me/permissions/...`
+          // porte sur le couple (application, entité), pas sur LE jeton : « me » se résout depuis le
+          // porteur, et l'ancien comme le neuf désignent la même entité sous la même application. Révoquer
+          // avec le neuf retirerait donc les permissions de l'ANCIEN, c'est-à-dire de la connexion qu'on
+          // vient de protéger. ⚠️ Hypothèse forte, PAS mesurée : c'est précisément pour ça qu'on ne tranche
+          // pas dessus, et qu'on laisse un orphèlin rare plutôt qu'un risque de casser ce qui marche.
+          if (!pose) throw new DejaConnectePub(true);
           return clientPubs.actifsAccordes(jeton);
         },
         actifsAccordes: async (t: string) => noterSiRefus(t, clientPubs.actifsAccordes(await jetonClair(t))),

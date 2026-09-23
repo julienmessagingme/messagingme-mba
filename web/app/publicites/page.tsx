@@ -40,6 +40,7 @@ function PublicitesInner({ session }: { session: Session }) {
   const [pageChoisie, setPageChoisie] = useState('');
   const [erreur, setErreur] = useState<string | null>(null);
   const [retraitNonConfirme, setRetraitNonConfirme] = useState(false);
+  const [retraitFait, setRetraitFait] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const charger = useCallback(async () => {
@@ -60,6 +61,12 @@ function PublicitesInner({ session }: { session: Session }) {
   async function connecter(): Promise<void> {
     if (etat === null || !etat.configure) return;
     setErreur(null);
+    // ⚠️ UN SEUL DES DEUX BANDEAUX S'ÉTEINT, ET LA DIFFÉRENCE EST TOUT.
+    // « Nos accès ont été retirés » décrit une déconnexion TERMINÉE : il n'a plus de sens dès qu'on
+    // reconnecte. « Le retrait n'a pas été confirmé », lui, parle d'un accès qui VIT ENCORE chez Meta :
+    // il reste vrai après la reconnexion, et l'éteindre ferait disparaître le seul avertissement qui
+    // compte, au moment exact où le cas se produit (reconnecter après un jeton refusé).
+    setRetraitFait(false);
     setBusy(true);
     try {
       await loadFbSdk(etat.appId, etat.graphVersion, t);
@@ -135,6 +142,7 @@ function PublicitesInner({ session }: { session: Session }) {
       // Meta n'a pas confirmé le retrait : l'accès vit encore chez eux et nous venons d'en perdre le seul
       // exemplaire. Le taire laisserait le client croire que tout est détaché.
       setRetraitNonConfirme(!revoqueChezMeta);
+      setRetraitFait(revoqueChezMeta);
       setActifs(null);
       await charger();
       return true;
@@ -158,10 +166,23 @@ function PublicitesInner({ session }: { session: Session }) {
         <p role="alert" data-testid="pubs-erreur" className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{erreur}</p>
       )}
 
+      {/*
+        🔴 CE QUI RESTE VIVANT APRÈS UN RETRAIT RÉUSSI, ET QUI NE DOIT PAS ÊTRE TU. Nous ne retirons que les
+        trois permissions sans ambiguïté publicitaire ; les trois autres que la connexion accorde sont
+        partagées avec l'application qui porte WhatsApp, et les retirer couperait le numéro. Le client a le
+        droit de savoir qu'un accès en lecture subsiste, et que lui seul peut le fermer.
+      */}
+      {retraitFait && (
+        <p data-testid="pubs-retrait-partiel" className="mt-4 rounded-xl bg-ink-50 px-4 py-3 text-sm text-ink-600">
+          {t('Nos accès publicitaires ont été retirés chez Meta. Restent en place les permissions partagées avec votre numéro WhatsApp (lecture de votre entreprise et de vos Pages) : les retirer couperait vos messages, c’est pourquoi nous ne le faisons pas. Vous pouvez les retirer vous-même dans les paramètres de votre entreprise Meta.',
+             'Our advertising access has been removed at Meta. The permissions shared with your WhatsApp number (reading your business and your Pages) remain: removing them would cut your messages, which is why we do not. You can remove them yourself in your Meta Business settings.')}
+        </p>
+      )}
+
       {retraitNonConfirme && (
         <p role="alert" data-testid="pubs-retrait-non-confirme" className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          {t('Votre compte est détaché d’Engage Me, mais Meta n’a pas confirmé le retrait de notre accès. Retirez l’application depuis les paramètres de votre entreprise Meta pour le fermer complètement.',
-             'Your account is detached from Engage Me, but Meta did not confirm that our access was removed. Remove the app from your Meta Business settings to close it fully.')}
+          {t('Meta n’a pas confirmé le retrait de nos accès publicitaires : un accès peut rester actif de leur côté. Pour le fermer, retirez les PERMISSIONS PUBLICITAIRES de notre application dans les paramètres de votre entreprise Meta. ⚠️ Ne retirez pas l’application entière : elle porte aussi votre numéro WhatsApp, qui cesserait d’envoyer et de recevoir.',
+             'Meta did not confirm that our advertising access was removed, so an access may still be live on their side. To close it, remove our app’s ADVERTISING PERMISSIONS in your Meta Business settings. ⚠️ Do not remove the whole app: it also carries your WhatsApp number, which would stop sending and receiving.')}
         </p>
       )}
 

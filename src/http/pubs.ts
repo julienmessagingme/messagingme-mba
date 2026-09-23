@@ -70,7 +70,12 @@ export class JetonNonEnregistre extends Error {
  * pas seulement celui qui passe par le bouton : l'invariant ne dépend plus de l'écran.
  */
 export class DejaConnectePub extends Error {
-  constructor() {
+  /**
+   * `jetonOrphelin` : Meta avait DÉJÀ émis un jeton quand on s'en est aperçu. Le cas ordinaire (appel hors
+   * séquence) est refusé AVANT l'échange, donc à `false` ; seule une course entre deux connexions
+   * simultanées le met à `true`, et le client doit alors le savoir.
+   */
+  constructor(readonly jetonOrphelin: boolean) {
     super('une connexion publicitaire existe déjà pour cet espace');
     this.name = 'DejaConnectePub';
   }
@@ -130,14 +135,23 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
       if (err instanceof DejaConnectePub) {
         return reply.code(409).send({
           error: 'cet espace a déjà une connexion publicitaire. Déconnectez-la d’abord : c’est ce geste qui '
-            + 'retire notre accès chez Meta.',
+            + 'retire notre accès chez Meta.'
+            // Une autorisation a été accordée pour rien pendant une course : elle vit chez Meta et nous ne
+            // l'avons pas gardée. Se taire laisserait un accès que le client seul peut encore fermer.
+            + (err.jetonOrphelin ? ' Une autorisation vient d’être accordée sans être enregistrée : retirez '
+              + 'les PERMISSIONS PUBLICITAIRES de notre application dans les paramètres de votre entreprise '
+              + 'Meta, et non l’application entière, qui porte aussi votre numéro WhatsApp.' : ''),
           code: 'deja_connecte',
         });
       }
       if (err instanceof JetonNonEnregistre) {
         return reply.code(500).send({
-          error: 'la connexion a été accordée par Meta mais n’a pas pu être enregistrée. Retirez l’application '
-            + 'dans les paramètres de votre entreprise Meta avant de réessayer.',
+          // 🔴 ON NE DIT JAMAIS « retirez l'application » : il n'y a qu'UNE application Meta, et elle porte
+          // aussi le numéro WhatsApp du client. Prescrire ce geste ferait taire son numéro, alors que le
+          // code s'interdit de le faire lui-même, en capitales, dans `revoquerAcces`.
+          error: 'la connexion a été accordée par Meta mais n’a pas pu être enregistrée. Retirez les '
+            + 'PERMISSIONS PUBLICITAIRES de notre application dans les paramètres de votre entreprise Meta '
+            + '(surtout pas l’application entière, qui porte aussi votre numéro WhatsApp), puis réessayez.',
           code: 'jeton_non_enregistre',
         });
       }

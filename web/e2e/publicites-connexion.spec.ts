@@ -117,6 +117,10 @@ test.describe('Publicités : les états de la connexion', () => {
     // d en perdre le seul exemplaire. Les deux chemins qui perdent un jeton passent par la revocation.
     const gestes: string[] = [];
     await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
+    // Le SDK de Meta est BLOQUÉ exprès : son chargement échoue, donc l'erreur affichée PROUVE que
+    // `connecter()` a bien démarré derrière la déconnexion. Sans ça, la fenêtre Meta s'ouvrirait
+    // vraiment et n'en reviendrait jamais, et le test ne distinguerait pas `reconnecter` de `deconnecter`.
+    await page.route('**/connect.facebook.net/**', (route) => route.abort());
     await page.route('**/api/backend/**', async (route) => {
       const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
       const url = route.request().url();
@@ -131,6 +135,12 @@ test.describe('Publicités : les états de la connexion', () => {
     await page.goto('/publicites');
     await page.getByRole('button', { name: /Reconnecter|Reconnect/ }).click();
     await expect.poll(() => gestes.includes('DELETE')).toBe(true);
+    // ⚠️ ET LA CONNEXION EST BIEN TENTÉE DERRIÈRE : sans cette assertion, le test passerait si
+    // `reconnecter()` se réduisait à `deconnecter()`. Le SDK de Meta n'existe pas dans ce navigateur de
+    // test, donc l'échec de son chargement EST la preuve que `connecter()` a bien démarré.
+    await expect(page.getByTestId('pubs-erreur')).toContainText(/SDK Facebook|Facebook SDK|bloqueur/);
+    // Le bandeau « nos accès ont été retirés » s'éteint : il décrivait une déconnexion terminée.
+    await expect(page.getByTestId('pubs-retrait-partiel')).toHaveCount(0);
   });
 
   test('🔴 si la DÉCONNEXION échoue, « Reconnecter » S ARRÊTE : pas de jeton écrasé sans révocation', async ({ page }) => {

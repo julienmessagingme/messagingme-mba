@@ -59,8 +59,12 @@ export function choisirActifsPub(tenantId: string, choix: { comptePubId: string;
 
 /**
  * Déconnecte. `revoqueChezMeta` à false = notre accès VIT ENCORE chez Meta et nous n'en avons plus la
- * trace : l'écran doit alors dire au client de retirer l'application depuis les paramètres de son
- * entreprise, parce que ce jeton-là n'expire jamais tout seul.
+ * trace : l'écran doit alors dire au client de retirer les PERMISSIONS PUBLICITAIRES de notre
+ * application, et surtout pas l'application elle-même, qui porte aussi son numéro WhatsApp.
+ *
+ * ⚠️ À `true`, le retrait a réussi pour les trois permissions publicitaires, et TROIS AUTRES restent en
+ * place, délibérément (elles sont partagées avec WhatsApp). L'écran le dit aussi : un succès muet
+ * laisserait croire que tout est fermé.
  */
 export function deconnecterPubs(tenantId: string): Promise<{ ok: true; revoqueChezMeta: boolean }> {
   return request<{ ok: true; revoqueChezMeta: boolean }>(base(tenantId), { method: 'DELETE' });

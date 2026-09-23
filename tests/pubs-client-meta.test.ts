@@ -132,6 +132,19 @@ describe('revoquerAcces : retirer nos acces PUBLICITAIRES, et eux seuls', () => 
     expect(urls).not.toContain('pages_read_engagement');
   });
 
+  it('🔴 un retrait PARTIEL leve quand meme, et NOMME ce qui a resiste', async () => {
+    // Deux sur trois retirees n est pas un succes : le silence laisserait croire que tout est ferme,
+    // alors qu un acces vit encore chez Meta et que nous effacons notre seule copie juste apres.
+    const { appels } = graph([
+      { body: { success: true } },
+      { ok: false, status: 400, body: { error: { message: 'refus cible', code: 200 } } },
+      { body: { success: true } },
+    ]);
+    await expect(client().revoquerAcces('JETON')).rejects.toThrow(/ads_read/);
+    // et les TROIS ont bien ete tentees : un refus n arrete pas les suivantes
+    expect(appels).toHaveLength(3);
+  });
+
   it('⚠️ un refus de Meta LEVE : c est l appelant qui decide si la deconnexion continue', async () => {
     graph([{ ok: false, status: 400, body: { error: { message: 'non supporte', code: 100 } } }]);
     await expect(client().revoquerAcces('JETON')).rejects.toThrow('Graph 400 (#100) : non supporte');

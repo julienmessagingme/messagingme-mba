@@ -110,10 +110,21 @@ describe('POST /echange : le code rendu par la fenêtre Meta', () => {
   it('🔴 une connexion qui EXISTE ne s ecrase pas : 409, meme par un appel direct a la route', async () => {
     // Le jeton en place n expire jamais. Le remplacer sans l avoir revoque laisserait un acces vivant
     // dont nous perdrions le seul exemplaire : pour reconnecter, il faut passer par la deconnexion.
-    const { srv } = app({ connecter: async () => { throw new DejaConnectePub(); } });
+    const { srv } = app({ connecter: async () => { throw new DejaConnectePub(false); } });
     const res = await srv.inject({ method: 'POST', url: url('/echange'), payload: { code: 'CODE' } });
     expect(res.statusCode).toBe(409);
     expect(res.json().code).toBe('deja_connecte');
+    // Aucun jeton n a ete emis (refus AVANT l echange) : on ne demande donc rien au client.
+    expect(res.json().error).not.toMatch(/paramètres de votre entreprise/);
+  });
+
+  it('🔴 si une AUTORISATION a ete accordee pour rien (la course), le client l apprend', async () => {
+    // Le jeton vit chez Meta et nous ne l avons pas garde. On ne peut pas le revoquer sans risquer de
+    // tuer la connexion existante : la seule porte est le client, donc il faut la lui montrer.
+    const { srv } = app({ connecter: async () => { throw new DejaConnectePub(true); } });
+    const res = await srv.inject({ method: 'POST', url: url('/echange'), payload: { code: 'CODE' } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toMatch(/paramètres de votre entreprise/);
   });
 
   it('🔴 NOTRE panne apres l echange ne s impute pas a Meta, et DIT que le jeton est perdu', async () => {
@@ -126,6 +137,22 @@ describe('POST /echange : le code rendu par la fenêtre Meta', () => {
     expect(res.json().error).toMatch(/paramètres de votre entreprise/);
     // et surtout : le texte de NOTRE erreur ne part pas au client
     expect(res.json().error).not.toContain('42P01');
+  });
+  it('🔴 AUCUN message ne dit « retirez l application » : elle porte aussi le numero WhatsApp', async () => {
+    // Il n y a qu UN META_APP_ID. Prescrire le retrait de l application ferait taire le numero du client,
+    // alors que le code s interdit de le faire lui-meme, en capitales, dans `revoquerAcces`.
+    const cas = [
+      { deps: { connecter: async () => { throw new JetonNonEnregistre(new Error('x')); } }, attendu: 500 },
+      { deps: { connecter: async () => { throw new DejaConnectePub(true); } }, attendu: 409 },
+    ];
+    for (const c of cas) {
+      const { srv } = app(c.deps as Partial<PubsRouteDeps>);
+      const res = await srv.inject({ method: 'POST', url: url('/echange'), payload: { code: 'CODE' } });
+      expect(res.statusCode).toBe(c.attendu);
+      const texte: string = res.json().error;
+      expect(texte).toMatch(/PERMISSIONS PUBLICITAIRES/);
+      expect(texte).not.toMatch(/[Rr]etirez l.application (dans|depuis)/);
+    }
   });
 });
 
