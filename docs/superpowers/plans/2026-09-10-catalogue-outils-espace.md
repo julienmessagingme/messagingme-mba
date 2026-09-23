@@ -1280,7 +1280,7 @@ git commit --only db/migrations/0128_outils_colonnes_retirees.sql -m "feat(outil
 - [ ] **Step 4: Séquence de déploiement, dans cet ordre exact**
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 ubuntu@146.59.233.252
+ssh -i ~/.ssh/id_ed25519 ubuntu@$VPS
 cd /home/ubuntu/mba && git pull
 sudo docker compose build mba-api
 sudo docker compose run --rm --no-deps mba-api npm run migrate    # applique 0127 SEULEMENT si 0128 est encore hors de l image
