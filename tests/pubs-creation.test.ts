@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { creerLaPublicite, publierLaPublicite, type ClientCreationPub, type DemandeCreation, type DepotCreationPub } from '../src/pubs/creation';
+import { creerLaPublicite, publierLaPublicite, PublicationRefusee, type ClientCreationPub, type DemandeCreation, type DepotCreationPub } from '../src/pubs/creation';
 import type { FormulairePub } from '../src/meta/pubs-payloads';
 
 /**
@@ -53,6 +53,7 @@ function fauxDepot(over: Partial<DepotCreationPub> = {}) {
     marquerEtat: async (_id, etat) => { ecrits.push(`etat:${etat}`); },
     memoriserPub: async (adId, campagneId) => { ecrits.push(`memorise:${adId}->${campagneId}`); },
     creerAutomation: async () => { ecrits.push('automation'); return 'auto-1'; },
+    supprimerAutomation: async (id) => { ecrits.push(`automation-supprimee:${id}`); },
     ...over,
   };
   return { depot, ecrits };
@@ -213,7 +214,7 @@ describe('publier', () => {
 
   it('🔴 l’automation est allumée AVANT le premier appel à Meta', async () => {
     const { ordre, client, depot } = capte();
-    await publierLaPublicite('p1', { campagneId: 'c-1', ensembleId: 'e-1', pubId: 'ad-1' }, client, depot);
+    await publierLaPublicite('p1', { campagneId: 'c-1', ensembleId: 'e-1', pubId: 'ad-1', etat: 'prete' as const, destination: 'scenario' as const }, client, depot);
     expect(ordre[0]).toBe('automation');
   });
 
@@ -222,26 +223,26 @@ describe('publier', () => {
     // en pause, allumer la seule campagne ne diffuserait rien ; et l'allumer en premier ferait diffuser dès
     // que l'ensemble suivrait, avant que la publicité ne soit prête.
     const { ordre, client, depot } = capte();
-    await publierLaPublicite('p1', { campagneId: 'c-1', ensembleId: 'e-1', pubId: 'ad-1' }, client, depot);
+    await publierLaPublicite('p1', { campagneId: 'c-1', ensembleId: 'e-1', pubId: 'ad-1', etat: 'prete' as const, destination: 'scenario' as const }, client, depot);
     expect(ordre).toEqual(['automation', 'meta:ad-1', 'meta:e-1', 'meta:c-1', 'publiee']);
   });
 
   it('les trois niveaux sont allumés, pas seulement la campagne', async () => {
     const { ordre, client, depot } = capte();
-    await publierLaPublicite('p1', { campagneId: 'c-1', ensembleId: 'e-1', pubId: 'ad-1' }, client, depot);
+    await publierLaPublicite('p1', { campagneId: 'c-1', ensembleId: 'e-1', pubId: 'ad-1', etat: 'prete' as const, destination: 'scenario' as const }, client, depot);
     expect(ordre.filter((o) => o.startsWith('meta:'))).toHaveLength(3);
   });
 
   it('une création incomplète (pas d’ensemble, pas de pub) n’allume que ce qui existe', async () => {
     const { ordre, client, depot } = capte();
-    await publierLaPublicite('p1', { campagneId: 'c-1', ensembleId: null, pubId: null }, client, depot);
+    await publierLaPublicite('p1', { campagneId: 'c-1', ensembleId: null, pubId: null, etat: 'prete' as const, destination: 'agent_meta' as const }, client, depot);
     expect(ordre).toEqual(['automation', 'meta:c-1', 'publiee']);
   });
 
   it('🔴 Meta refuse : on ne marque PAS la publicité comme publiée', async () => {
     const ordre: string[] = [];
     await expect(publierLaPublicite(
-      'p1', { campagneId: 'c-1', ensembleId: null, pubId: null },
+      'p1', { campagneId: 'c-1', ensembleId: null, pubId: null, etat: 'prete' as const, destination: 'agent_meta' as const },
       { allumer: async () => { throw new Error('compte suspendu'); } },
       {
         allumerAutomation: async () => { ordre.push('automation'); return true; },
@@ -251,5 +252,70 @@ describe('publier', () => {
     // L'automation reste allumée, et c'est le bon sens du compromis : elle n'a simplement rien à faire tant
     // que rien ne diffuse. Ce qui compte est qu'on n'annonce pas « publiée » une publicité qui ne l'est pas.
     expect(ordre).toEqual(['automation']);
+  });
+});
+
+/**
+ * LES DEUX REFUS DE PUBLICATION, POSÉS AVANT LE PREMIER APPEL À META.
+ *
+ * 🔴 TOUS DEUX NÉS D'UNE RELECTURE À FROID. Le premier ferme le cas où l'on publierait une publicité dont
+ * Meta n'a qu'une campagne (rien ne diffuserait, et elle sortirait du balayage du suivi en étant marquée
+ * `publiee`). Le second ferme celui où l'automation n'aurait pas pu être allumée : la règle « un échec ne
+ * laisse jamais une pub active sans routage » ne tenait que par l'ORDRE des appels, donc pas du tout.
+ */
+describe('publier : ce qui est REFUSÉ, avant tout appel à Meta', () => {
+  const rien = { allumer: async () => { throw new Error('Meta ne devrait pas être appelé'); } };
+  const depotOk = { allumerAutomation: async () => true, marquerPubliee: async () => {} };
+
+  for (const etat of ['creation', 'echec_creation', 'publiee'] as const) {
+    it(`🔴 état « ${etat} » : refusé, et META N'EST PAS APPELÉ`, async () => {
+      await expect(publierLaPublicite(
+        'p1', { campagneId: 'c-1', ensembleId: null, pubId: null, etat, destination: 'agent_meta' },
+        rien, depotOk,
+      )).rejects.toBeInstanceOf(PublicationRefusee);
+    });
+  }
+
+  it('🔴 destination « scénario » dont l’automation ne s’allume PAS : refusé, et Meta n’est pas appelé', async () => {
+    // Sans ce refus, Meta diffuserait et chaque clic payé tomberait dans le vide, sans erreur visible : on
+    // ne s'en apercevrait qu'en lisant les conversations, des heures plus tard.
+    await expect(publierLaPublicite(
+      'p1', { campagneId: 'c-1', ensembleId: 'e-1', pubId: 'ad-1', etat: 'prete', destination: 'scenario' },
+      rien, { allumerAutomation: async () => false, marquerPubliee: async () => {} },
+    )).rejects.toBeInstanceOf(PublicationRefusee);
+  });
+
+  it('⚠️ une destination « agent de Meta » SANS automation se publie : elle n’en a pas besoin', async () => {
+    const allumes: string[] = [];
+    await publierLaPublicite(
+      'p1', { campagneId: 'c-1', ensembleId: null, pubId: null, etat: 'prete', destination: 'agent_meta' },
+      { allumer: async (id) => { allumes.push(id); } },
+      { allumerAutomation: async () => false, marquerPubliee: async () => {} },
+    );
+    expect(allumes).toEqual(['c-1']);
+  });
+});
+
+describe('le rattrapage défait AUSSI l’automation', () => {
+  it('🔴 une automation créée puis une création qui échoue : elle est supprimée', async () => {
+    // Sans ce retrait, elle survivrait à sa publicité : possédée, donc invisible de l'écran Automations, et
+    // intouchable par un propriétaire qui vient de disparaître.
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { client } = faux();
+    const { depot, ecrits } = fauxDepot({ marquerEtat: async (_id, etat) => {
+      if (etat === 'prete') throw new Error('base indisponible');
+    } });
+    await creerLaPublicite(demande(), client, depot);
+    spy.mockRestore();
+    expect(ecrits).toContain('automation-supprimee:auto-1');
+  });
+
+  it('⚠️ aucune automation créée : rien à défaire, et on ne le tente pas', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { client } = faux('ensemble');
+    const { depot, ecrits } = fauxDepot();
+    await creerLaPublicite(demande(), client, depot);
+    spy.mockRestore();
+    expect(ecrits.some((e) => e.startsWith('automation-supprimee'))).toBe(false);
   });
 });

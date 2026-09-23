@@ -59,7 +59,21 @@ export interface FormulairePub {
   accueil: string;
   /** Budget TOTAL, dans l'unité PRINCIPALE de la devise du compte (des euros, pas des centimes). */
   budgetTotal: number;
-  /** Bornes de diffusion, déjà exprimées dans le fuseau du compte publicitaire par l'appelant. */
+  /**
+   * Bornes de diffusion, TELLES QUE LE CLIENT LES A SAISIES, transmises à Meta sans conversion.
+   *
+   * 🔴 CE COMMENTAIRE A DIT « déjà exprimées dans le fuseau du compte publicitaire par l'appelant », ET
+   * C'ÉTAIT FAUX : aucun appelant ne convertit quoi que ce soit, et `pub_connexion.fuseau` n'entre nulle
+   * part dans ce chemin. Relevé par une relecture à froid. Une justification fausse est pire qu'aucune,
+   * parce qu'elle sera recopiée, puis elle servira de preuve.
+   *
+   * ⚠️ CE QUE CELA VEUT DIRE EN PRATIQUE, ET QUI N'EST PAS MESURÉ : une date sans décalage horaire est
+   * interprétée par Meta dans le fuseau du compte publicitaire (sa documentation donne les deux formes,
+   * `2015-03-12 23:59:59-07:00` et `2015-03-12 23:59:59 PDT`). Pour un compte en Europe/Paris et un client
+   * en France, c'est ce qu'on veut. Pour un compte dont le fuseau diffère de celui du client, l'écart est
+   * réel et vaut quelques heures de diffusion. La première campagne du pilote le tranchera, en comparant
+   * l'heure de début affichée dans le Gestionnaire à celle qui a été saisie ici.
+   */
   debut: string;
   fin: string;
   /** Pays en ISO 2 lettres. Vide si un rayon est donné. */

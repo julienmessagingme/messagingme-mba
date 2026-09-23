@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { processRoutagePub, type RoutagePubDeps } from '../src/webhooks/routage-pub';
+import { processRoutagePub, rendreLesFilsSansReponse, type RoutagePubDeps } from '../src/webhooks/routage-pub';
 import { processTriggers } from '../src/webhooks/triggers';
 import { runAutomations } from '../src/automation/runner';
 import { POSSESSEUR_PUBLICITE } from '../src/automation/match';
@@ -34,6 +34,7 @@ const PUB_AGENT: PubDuLead = { campagneId: 'camp-2', destination: 'agent_meta', 
 /** Un faux qui RETIENT ce qui sort. Tout part de `pub` : c'est la seule chose que chaque cas fait varier. */
 function monter(over: Partial<RoutagePubDeps> & { pub?: PubDuLead | null } = {}) {
   const reprises: string[] = [];
+  const rendus: string[] = [];
   const notes: Array<{ messageId: string; campagneId: string | null; issue: IssueRoutage; avecHeure: boolean }> = [];
   const memorisees: Array<{ adId: string }> = [];
   const pub = over.pub === undefined ? PUB_SCENARIO : over.pub;
@@ -45,12 +46,13 @@ function monter(over: Partial<RoutagePubDeps> & { pub?: PubDuLead | null } = {})
     contactBloque: async () => false,
     estDesabonne: async () => false,
     reprendreLeFil: async (_t, waId) => { reprises.push(waId); return true; },
+    rendreLeFil: async (_t, waId) => { rendus.push(waId); },
     noterIssue: async (_t, messageId, v) => {
       notes.push({ messageId, campagneId: v.campagneId, issue: v.issue, avecHeure: v.repriseLe !== null });
     },
     ...over,
   };
-  return { deps, reprises, notes, memorisees };
+  return { deps, reprises, rendus, notes, memorisees };
 }
 
 describe('processRoutagePub : ce qui part, et ce qui s’inscrit sur l’arrivée', () => {
@@ -59,7 +61,7 @@ describe('processRoutagePub : ce qui part, et ce qui s’inscrit sur l’arrivé
     const routes = await processRoutagePub(payload([message('wamid.1', referral())]), deps);
     expect(reprises).toEqual([]);
     expect(notes).toEqual([{ messageId: 'wamid.1', campagneId: 'camp-1', issue: 'scenario', avecHeure: false }]);
-    expect(routes.get('wamid.1')).toEqual({ restriction: { sorte: 'seule', automationId: 'auto-pub' }, campagneId: 'camp-1' });
+    expect(routes.get('wamid.1')).toEqual({ restriction: { sorte: 'seule', automationId: 'auto-pub' }, campagneId: 'camp-1', repris: null });
   });
 
   it('🔴 message STANDBY sur une pub « scénario » : LE FIL EST REPRIS, et l’heure est inscrite', async () => {
@@ -105,7 +107,7 @@ describe('processRoutagePub : ce qui part, et ce qui s’inscrit sur l’arrivé
     });
     const routes = await processRoutagePub(payload([message('wamid.5', referral())]), deps);
     expect(notes).toEqual([{ messageId: 'wamid.5', campagneId: null, issue: 'inchange', avecHeure: false }]);
-    expect(routes.get('wamid.5')).toEqual({ restriction: { sorte: 'tous' }, campagneId: null });
+    expect(routes.get('wamid.5')).toEqual({ restriction: { sorte: 'tous' }, campagneId: null, repris: null });
     expect(lectures).toEqual([]);
   });
 
@@ -218,7 +220,7 @@ describe('processTriggers : la doctrine du standby, et son unique exception', ()
     const { deps, appels } = capte();
     await processTriggers(
       payload([message('wamid.s2', referral())], 'standby'), deps, undefined,
-      new Map([['wamid.s2', { restriction: { sorte: 'seule' as const, automationId: 'auto-pub' }, campagneId: 'camp-1' }]]),
+      new Map([['wamid.s2', { restriction: { sorte: 'seule' as const, automationId: 'auto-pub' }, campagneId: 'camp-1', repris: null }]]),
     );
     expect(appels).toHaveLength(1);
     expect(appels[0]?.seule).toBe('auto-pub');
@@ -228,7 +230,7 @@ describe('processTriggers : la doctrine du standby, et son unique exception', ()
     const { deps, appels } = capte();
     await processTriggers(
       payload([message('wamid.s3', referral())], 'standby'), deps, undefined,
-      new Map([['wamid.s3', { restriction: { sorte: 'aucun' as const }, campagneId: 'camp-1' }]]),
+      new Map([['wamid.s3', { restriction: { sorte: 'aucun' as const }, campagneId: 'camp-1', repris: null }]]),
     );
     expect(appels).toEqual([]);
   });
@@ -237,7 +239,7 @@ describe('processTriggers : la doctrine du standby, et son unique exception', ()
     const { deps, appels } = capte();
     await processTriggers(
       payload([message('wamid.n1', referral())]), deps, undefined,
-      new Map([['wamid.n1', { restriction: { sorte: 'aucun' as const }, campagneId: 'camp-2' }]]),
+      new Map([['wamid.n1', { restriction: { sorte: 'aucun' as const }, campagneId: 'camp-2', repris: null }]]),
     );
     expect(appels).toEqual([]);
   });
@@ -246,7 +248,7 @@ describe('processTriggers : la doctrine du standby, et son unique exception', ()
     const { deps, appels } = capte();
     await processTriggers(
       payload([message('wamid.n2', referral())]), deps, undefined,
-      new Map([['wamid.n2', { restriction: { sorte: 'seule' as const, automationId: 'auto-pub' }, campagneId: 'camp-1' }]]),
+      new Map([['wamid.n2', { restriction: { sorte: 'seule' as const, automationId: 'auto-pub' }, campagneId: 'camp-1', repris: null }]]),
     );
     const ev = appels[0]?.ev;
     expect(ev?.kind === 'message' ? ev.campagneId : undefined).toBe('camp-1');
@@ -330,5 +332,83 @@ describe('la restriction écarte réellement les autres automations', () => {
     const { deps, partis } = monterRunner([ailleurs]);
     expect(await runAutomations('t1', ev, deps, { seuleAutomation: 'auto-pub' })).toBe(0);
     expect(partis).toEqual([]);
+  });
+});
+
+/**
+ * LE FIL PRIS POUR RIEN, ET RENDU.
+ *
+ * 🔴 CE QUE CE BLOC DÉFEND, ET POURQUOI IL A FALLU UNE RELECTURE À FROID POUR LE VOIR. Le fil se prend
+ * AVANT les déclencheurs, parce qu'un scénario ne démarre pas sur un fil que l'agent de Meta tient. On ne
+ * peut donc pas savoir, au moment de le prendre, si quelque chose va parler : l'automation peut encore
+ * être retenue par son anti-rebond, ou refuser parce que son scénario a disparu. Quand c'est le cas, le
+ * fil nous reste et PERSONNE ne répond, jusqu'au balayage de contrôle à vingt-quatre heures, quand la
+ * fenêtre de service de Meta est déjà fermée. Sur un clic PAYÉ, c'est un silence complet.
+ */
+describe('rendreLesFilsSansReponse', () => {
+  const carte = (over: Partial<{ repris: { tenantId: string; waId: string } | null }> = {}) =>
+    new Map([['wamid.x', {
+      restriction: { sorte: 'seule' as const, automationId: 'auto-pub' },
+      campagneId: 'camp-1',
+      repris: over.repris === undefined ? { tenantId: 't1', waId: '33611223344' } : over.repris,
+    }]]);
+
+  const capte = () => {
+    const rendus: string[] = [];
+    return { rendus, deps: { rendreLeFil: async (_t: string, waId: string) => { rendus.push(waId); } } };
+  };
+
+  it('🔴 fil PRIS et rien démarré : il est RENDU', async () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { rendus, deps } = capte();
+    await rendreLesFilsSansReponse(carte(), new Set(), deps);
+    spy.mockRestore();
+    expect(rendus).toEqual(['33611223344']);
+  });
+
+  it('🔴 fil PRIS et un scénario a démarré : on ne rend RIEN', async () => {
+    // Rendre un fil sur lequel un scénario vient de parler le donnerait à l'agent de Meta au milieu d'une
+    // conversation qu'il ne connaît pas. Ce sens-là compte autant que l'autre.
+    const { rendus, deps } = capte();
+    await rendreLesFilsSansReponse(carte(), new Set(['wamid.x']), deps);
+    expect(rendus).toEqual([]);
+  });
+
+  it('⚠️ on ne rend que ce qu’on a PRIS : un message sans reprise ne déclenche aucun geste', async () => {
+    const { rendus, deps } = capte();
+    await rendreLesFilsSansReponse(carte({ repris: null }), new Set(), deps);
+    expect(rendus).toEqual([]);
+  });
+
+  it('⚠️ un échec de remise ne lève pas : le job webhook porte aussi les accusés et l’inbox', async () => {
+    const spyW = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const spyE = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(rendreLesFilsSansReponse(carte(), new Set(), {
+      rendreLeFil: async () => { throw new Error('Meta ne répond pas'); },
+    })).resolves.toBeUndefined();
+    spyW.mockRestore();
+    spyE.mockRestore();
+  });
+});
+
+describe('ce que `processRoutagePub` retient de la reprise', () => {
+  it('une reprise RÉUSSIE retient à qui rendre le fil', async () => {
+    const { deps } = monter();
+    const routes = await processRoutagePub(payload([message('wamid.r1', referral())], 'standby'), deps);
+    expect(routes.get('wamid.r1')?.repris).toEqual({ tenantId: 't1', waId: '33611223344' });
+  });
+
+  it('🔴 une reprise REFUSÉE ne retient RIEN : il n’y a rien à rendre', async () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { deps } = monter({ reprendreLeFil: async () => false });
+    const routes = await processRoutagePub(payload([message('wamid.r2', referral())], 'standby'), deps);
+    spy.mockRestore();
+    expect(routes.get('wamid.r2')?.repris).toBeNull();
+  });
+
+  it('un message NORMAL ne prend aucun fil, donc n’en retient aucun', async () => {
+    const { deps } = monter();
+    const routes = await processRoutagePub(payload([message('wamid.r3', referral())]), deps);
+    expect(routes.get('wamid.r3')?.repris).toBeNull();
   });
 });

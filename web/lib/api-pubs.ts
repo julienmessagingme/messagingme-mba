@@ -118,3 +118,127 @@ export function choisirActifsPub(tenantId: string, choix: { comptePubId: string;
 export function deconnecterPubs(tenantId: string): Promise<{ ok: true; revoqueChezMeta: boolean }> {
   return request<{ ok: true; revoqueChezMeta: boolean }>(base(tenantId), { method: 'DELETE' });
 }
+
+/* ── Lot 3 : les publicités elles-mêmes ─────────────────────────────────────────────────────────── */
+
+/** Où vont les prospects de cette publicité. Exclusif : l'un OU l'autre, jamais les deux. */
+export type DestinationPub = 'scenario' | 'agent_meta';
+
+/**
+ * L'état LOCAL d'une publicité, le nôtre. Il ne se confond pas avec `statutMeta`, qui vient de Meta.
+ *
+ * `creation` : les appels sont en cours. `echec_creation` : une étape a échoué et la campagne n'a pas pu
+ * être supprimée chez Meta, donc quelque chose y subsiste, EN PAUSE. `prete` : tout est créé, tout est en
+ * pause, rien ne dépense. `publiee` : l'automation est allumée et Meta diffuse.
+ */
+export type EtatPublicite = 'creation' | 'echec_creation' | 'prete' | 'publiee';
+
+export interface Publicite {
+  id: string;
+  campagneId: string;
+  ensembleId: string | null;
+  creaId: string | null;
+  pubId: string | null;
+  nom: string;
+  etat: EtatPublicite;
+  /** `effective_status` de Meta, tel quel. `null` = le suivi n'a encore rien lu, PAS « tout va bien ». */
+  statutMeta: string | null;
+  motifRefus: string | null;
+  budgetTotal: number | null;
+  debut: string | null;
+  fin: string | null;
+  destination: DestinationPub;
+  workflowId: string | null;
+  tagQualification: string | null;
+  automationId: string | null;
+  depense: number | null;
+  clics: number | null;
+  luLe: string | null;
+  creeLe: string;
+}
+
+/**
+ * Une étape de l'entonnoir.
+ *
+ * 🔴 `null` VEUT DIRE « NON DISPONIBLE », JAMAIS ZÉRO, et l'écran doit l'écrire ainsi. Zéro prospect ne
+ * donne pas un coût par prospect de zéro : il n'en donne aucun. Afficher « 0 € » là où l'on ne sait pas
+ * ressemble au meilleur résultat imaginable, sur l'écran qui sert à décider d'arrêter ou de remettre du
+ * budget. Le calcul, lui, est fait côté serveur (`src/pubs/entonnoir.ts`), pas ici.
+ */
+export interface EtapeEntonnoir {
+  nombre: number | null;
+  cout: number | null;
+  /** Part de l'étape précédente qui arrive ici, entre 0 et 1. */
+  passage: number | null;
+}
+
+export interface Entonnoir {
+  depense: number | null;
+  clics: EtapeEntonnoir;
+  leads: EtapeEntonnoir;
+  qualifies: EtapeEntonnoir;
+  /** Prospects reçus mais non pris en charge : reprise refusée, désabonnés, bloqués. Des clics payés. */
+  nonPrisEnCharge: number;
+}
+
+/** Ce que le formulaire envoie. Les bornes sont vérifiées côté serveur, qui reste la seule autorité. */
+export interface FormulaireCreationPub {
+  nom: string;
+  texte: string;
+  titre: string;
+  messagePreRempli: string;
+  accueil: string;
+  budgetTotal: number;
+  debut: string;
+  fin: string;
+  pays: string[];
+  villes: Array<{ cle: string; rayon: number; unite: 'kilometer' | 'mile' }>;
+  ageMin: number;
+  ageMax: number;
+  destination: DestinationPub;
+  workflowId: string | null;
+  tagQualification: string | null;
+  /** Doit valoir `true` : le serveur refuse tout le reste. Une catégorie spéciale passe par le Gestionnaire. */
+  horsCategorieSpeciale: true;
+  image: { type: 'image/jpeg' | 'image/png'; base64: string };
+}
+
+/**
+ * LES BORNES DU VISUEL, ANNONCÉES PAR L'ÉCRAN.
+ *
+ * 🔴 ELLES DOIVENT ÉGALER CELLES DU SERVEUR (`TAILLE_VISUEL_PUB_MAX`, `TYPES_VISUEL_PUB`), et c'est un test
+ * de parité qui le tient (`tests/web-pubs-parity.test.ts`). Deux chiffres qui divergent donnent le pire des
+ * deux : un écran qui promet ce que le serveur refuse, avec un 413 ou un 400 que personne ne relie à la
+ * promesse. L'écran refuse AVANT de téléverser, le serveur refuse en dernier ressort, et lui seul protège.
+ */
+export const TAILLE_VISUEL_MAX = 5 * 1024 * 1024;
+export const TYPES_VISUEL = ['image/jpeg', 'image/png'] as const;
+
+const basePubs = (tenantId: string): string => `/tenants/${tenantId}/pubs`;
+
+export function listerPubs(tenantId: string): Promise<{ publicites: Publicite[] }> {
+  return request<{ publicites: Publicite[] }>(basePubs(tenantId));
+}
+
+export function lirePub(tenantId: string, id: string): Promise<{ publicite: Publicite; entonnoir: Entonnoir }> {
+  return request<{ publicite: Publicite; entonnoir: Entonnoir }>(`${basePubs(tenantId)}/${id}`);
+}
+
+/**
+ * Crée la publicité chez Meta, TOUT EN PAUSE. Cet appel ne fait dépenser personne.
+ *
+ * ⚠️ Un refus de Meta remonte en `ApiError` avec SON message : on le montre tel quel, c'est le compte du
+ * client et lui seul peut agir dessus. Pas de reformulation, pas de repli silencieux.
+ */
+export function creerPub(tenantId: string, f: FormulaireCreationPub): Promise<{ publiciteId: string; campagneId: string }> {
+  return request<{ publiciteId: string; campagneId: string }>(basePubs(tenantId), { method: 'POST', body: JSON.stringify(f) });
+}
+
+/** PUBLIER : le seul geste qui engage le budget. Le serveur allume l'automation AVANT Meta. */
+export function publierPub(tenantId: string, id: string): Promise<{ ok: true }> {
+  return request<{ ok: true }>(`${basePubs(tenantId)}/${id}/publier`, { method: 'POST' });
+}
+
+export function basculerPub(tenantId: string, id: string, actif: boolean): Promise<{ ok: true }> {
+  return request<{ ok: true }>(`${basePubs(tenantId)}/${id}/${actif ? 'reprendre' : 'pause'}`, { method: 'POST' });
+}

@@ -170,6 +170,36 @@ Spec `docs/superpowers/specs/2026-09-22-pubs-ctwa-design.md`, plan
   Meta : le portefeuille qui possède l'app ne peut pas être son propre client. D'où
   `POST /ops/pubs/connexion/:tenantId`, qui dépose un jeton d'utilisateur système créé à la main après
   l'avoir vérifié chez Meta. Notre propre espace est connecté ainsi depuis le 2026-09-23.
+
+### Lot 3 « Router, créer, suivre » : ÉCRIT, PAS ENCORE DÉPLOYÉ (2026-09-23)
+
+Plan : `docs/superpowers/plans/2026-09-23-pubs-ctwa-lot3-router-creer-suivre.md`. Livré en trois commits,
+comme le cadrage l'impose (routage, puis création, puis suivi), CI verte sur les trois.
+
+- 🔴 **MIGRATION 0170 ÉCRITE ET PAS ENCORE APPLIQUÉE** (`pubs_router` : `publicites`, `pubs_connues`, et
+  quatre colonnes de routage sur `arrivees_pub`). Elle n'AJOUTE que, donc elle passe AVANT le `up`, et elle
+  se relit en base point par point juste après `migrate`. Le compteur qui fait foi est celui de `CLAUDE.md`.
+- ✅ **Le routage** : une fonction PURE, les six lignes du tableau de la spec, et une exception à la doctrine
+  du `standby` pour un seul cas, celui d'un lead dont on a DÉJÀ repris le fil chez Meta.
+- ✅ **La création** : tout est créé EN PAUSE chez Meta, chaque identifiant rangé dès qu'il arrive, et un
+  rattrapage qui supprime la campagne dès qu'une étape échoue. Publier allume l'automation AVANT Meta.
+- ✅ **Le suivi** : deux appels par compte toutes les quinze minutes, l'entonnoir, la pause et la reprise.
+- 🔴 **DEUX ROUGES TROUVÉS PAR LA RELECTURE À FROID, ET CORRIGÉS AVANT TOUT DÉPLOIEMENT.** Le second était
+  une RÉGRESSION, pas une capacité manquante : le fil était pris à l'agent de Meta dès qu'un lead arrivait en
+  `standby`, SANS regarder s'il y avait quoi que ce soit à démarrer. Sur une publicité créée et pas encore
+  publiée (son automation naît éteinte), un clic PAYÉ recevait donc un silence de vingt-quatre heures, là où
+  l'agent de Meta répondait avant ce lot. Deux moitiés au correctif : la règle ne prend plus le fil sans
+  automation ALLUMÉE, et le handler REND le fil quand il l'a pris et que rien n'a finalement démarré.
+- ⚠️ **L'ÉCRAN PART APRÈS LE DÉPLOIEMENT DE L'API**, et c'est la règle Vercel du `CLAUDE.md` : la console se
+  publie à chaque `git push`, l'API attend son `up -d --build`.
+
+**Ce qui reste, dans l'ordre** : déployer (migration d'abord), pousser l'écran, puis l'ESSAI RÉEL, qui seul
+clôt la feature : première campagne MessagingMe créée depuis Engage Me, un vrai clic depuis un téléphone,
+l'agent de Meta qui se tait pendant que le scénario parle, et les cinq mesures de la spec § 6.
+
+⚠️ **Deux points que seule cette première campagne tranchera**, et qui sont écrits dans le code à l'endroit
+où on les changera : l'optimisation `CONVERSATIONS` pour un annonceur français, et l'emplacement de
+`page_welcome_message` dans la créa, sur lequel la documentation de Meta se contredit.
   ⚠️ L'App Review, elle, n'est PAS bloquée : la démonstration se fait avec un portefeuille client, ce
   qui est le cas d'usage réel.
 

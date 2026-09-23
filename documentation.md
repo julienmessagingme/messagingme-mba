@@ -241,12 +241,23 @@ Meta -> POST /webhooks/meta (mba-api)
         capture du referral CTWA (premier message seulement) : champs de la fiche
         enregistrement dans le fil
         arrivée publicitaire (`arrivees_pub`, ctwa_clid et standby compris), isolée
+        routage du lead publicitaire (lot 3), isolé : il ANNOTE l'arrivée ci-dessus et
+          RESTREINT les déclencheurs ci-dessous, et il reprend le fil à l'agent de Meta
+          quand la publicité confie ses prospects à un scénario
         puis, DANS CET ORDRE et chacun isolé en try/catch :
           1. mapping de formulaire  (nfm_reply -> champs de la fiche)
           2. jeton de test          (CONSOMME le message, personne d'autre ne le voit)
-          3. automations            (mot-clé, tag, lien de chaîne) -- CONSOMMENT aussi
-          4. avance de scénario     (le contact a répondu, sur ce qui reste)
+          3. automations            (mot-clé, tag, lien de chaîne) -- CONSOMMENT aussi,
+             et le routage publicitaire peut n'en autoriser QU'UNE, ou aucune
+          4. rendu des fils pris pour rien (le routage a pris le fil, rien n'a démarré)
+          5. avance de scénario     (le contact a répondu, sur ce qui reste)
 ```
+
+🔴 **LE ROUTAGE PUBLICITAIRE EST ENCADRÉ PAR SES DEUX VOISINS, ET C'EST LA MOITIÉ DE SON COMPORTEMENT.**
+Après l'arrivée, parce qu'il annote la ligne qu'elle vient d'écrire ; avant les déclencheurs, parce que
+c'est eux qu'il restreint. Il perce aussi, pour UN cas et un seul, la doctrine « un message `standby` ne
+déclenche rien » : un lead dont il a DÉJÀ repris le fil chez Meta. Le rendu des fils pris pour rien vient
+après les déclencheurs, parce qu'eux seuls savent si quelque chose a réellement démarré.
 
 🔴 **L'ordre n'est pas décoratif, et chaque maillon est isolé.** Ils partagent le MÊME job : une exception
 dans l'un rejouerait le job entier, donc les statuts de livraison et l'avance de scénario avec. Aucun ne throw.

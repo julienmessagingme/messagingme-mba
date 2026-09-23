@@ -2459,6 +2459,7 @@ async function main(): Promise<void> {
               marquerEtat: (id, etatPub) => publicites.marquerEtat(t, id, etatPub),
               memoriserPub: (adId, campagneId) => publicites.memoriserPub(t, adId, campagneId),
               creerAutomation: (id, v) => publicites.creerAutomation(t, id, v),
+              supprimerAutomation: (id) => publicites.supprimerAutomation(t, id),
             },
           );
         },
@@ -2472,7 +2473,7 @@ async function main(): Promise<void> {
           const jeton = await jetonClair(t);
           await publierLaPublicite(
             publiciteId,
-            { campagneId: pub.campagneId, ensembleId: pub.ensembleId, pubId: pub.pubId },
+            { campagneId: pub.campagneId, ensembleId: pub.ensembleId, pubId: pub.pubId, etat: pub.etat, destination: pub.destination },
             { allumer: (objetId) => clientCreationPubs.changerStatut(objetId, jeton, 'ACTIVE') },
             {
               allumerAutomation: (id) => publicites.allumerAutomation(t, id),
@@ -2509,6 +2510,9 @@ async function main(): Promise<void> {
           const pub = await publicites.lire(t, publiciteId);
           if (pub === null) throw new Error('cette publicité n’existe pas');
           await clientCreationPubs.changerStatut(pub.campagneId, await jetonClair(t), actif ? 'ACTIVE' : 'PAUSED');
+          // Meta vient d'accepter : on l'écrit tout de suite, sinon l'écran afficherait « Diffuse » sur une
+          // campagne qu'on vient d'arrêter, jusqu'au balayage suivant, et le client recliquerait.
+          await publicites.noterStatutMeta(t, publiciteId, actif ? 'ACTIVE' : 'PAUSED');
         },
       };
     })(),

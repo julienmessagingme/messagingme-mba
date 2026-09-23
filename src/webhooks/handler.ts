@@ -9,7 +9,7 @@ import { processHandovers } from './handover';
 import { processTriggers } from './triggers';
 import { processTestTokens } from './test-token';
 import { processArriveesPub, type ArriveesPubDeps } from './arrivees-pub';
-import { processRoutagePub, type RoutagePubDeps } from './routage-pub';
+import { processRoutagePub, rendreLesFilsSansReponse, type RoutagePubDeps } from './routage-pub';
 import type { RoutageDuMessage } from '../pubs/routage';
 import type { TarifsMetaSink } from './tarif-meta';
 import type { DeliveryStore } from './delivery';
@@ -166,7 +166,9 @@ export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Prom
   let routage: ReadonlyMap<string, RoutageDuMessage> = new Map();
   if (routagePub) {
     try {
-      routage = await processRoutagePub(raw, routagePub);
+      // `alreadySeen` : ce que Meta nous redélivre. Le routage s'en sert pour ne pas reprendre le fil
+      // une seconde fois, ce qui arracherait une conversation à l'opérateur qui l'aurait reprise.
+      routage = await processRoutagePub(raw, routagePub, alreadySeen);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('handleWebhookJob: routage publicitaire ignoré:', err instanceof Error ? err.message : err);
@@ -223,6 +225,18 @@ export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Prom
       // Union : un message consommé par un jeton de test l'était déjà, un message qui vient de démarrer un
       // scénario le devient. L'avance ci-dessous ne verra ni l'un ni l'autre.
       if (parAutomation.size > 0) consumed = new Set([...consumed, ...parAutomation]);
+      /**
+       * 🔴 LE FIL PRIS POUR RIEN SE REND, ET C'EST ICI QU'ON PEUT LE SAVOIR. Le routage prend le fil à
+       * l'agent de Meta AVANT cette étape, parce qu'un scénario ne démarre pas sur un fil qu'il tient.
+       * Personne ne peut donc savoir, au moment de le prendre, si quelque chose va réellement parler :
+       * l'automation peut encore être retenue par son anti-rebond, ou refuser parce que son scénario a
+       * disparu. C'est `parAutomation` qui tranche, et il n'existe qu'ici.
+       *
+       * ⚠️ Sans ce retour, le fil nous resterait et PERSONNE ne répondrait jusqu'au balayage de contrôle,
+       * vingt-quatre heures plus tard, quand la fenêtre de service de Meta est déjà fermée. Sur un clic
+       * PAYÉ, c'est un silence complet.
+       */
+      if (routagePub) await rendreLesFilsSansReponse(routage, parAutomation, routagePub);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('handleWebhookJob: automations ignorées:', err instanceof Error ? err.message : err);

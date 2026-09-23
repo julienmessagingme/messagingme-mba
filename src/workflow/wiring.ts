@@ -462,9 +462,12 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   /**
    * REPRENDRE LE FIL POUR L'APP, geste partagé par tout ce qui démarre DÉLIBÉRÉMENT une prise de parole.
    *
-   * 🔴 IL EST EXPOSÉ PLUTÔT QUE RECOPIÉ, et c'est la règle du dépôt. Il a DEUX consommateurs depuis le
-   * 2026-09-14 : `reclaimControl` (les quatre chemins qui démarrent un parcours) et le devenir « la
-   * conversation arrive dans l'Inbox » d'un étage de campagne (`assignerReponse`, migration 0144). En
+   * 🔴 IL EST EXPOSÉ PLUTÔT QUE RECOPIÉ, et c'est la règle du dépôt. Ses consommateurs se NOMMENT ici, on
+   * n'en écrit plus le compte : cette phrase a dit « DEUX » jusqu'au lot 3 des publicités, qui en a ajouté
+   * un troisième, et c'est le motif « trois commentaires disaient DEUX appelants » déjà payé ailleurs.
+   * `reclaimControl` (les quatre chemins qui démarrent un parcours), le devenir « la conversation arrive
+   * dans l'Inbox » d'un étage de campagne (`assignerReponse`, migration 0144), et la reprise du fil à
+   * l'arrivée d'un lead publicitaire (`processRoutagePub`, lot 3). En
    * écrire un second exemplaire en ferait le troisième doublon de cette famille, après le constructeur de
    * composants Meta et la préparation des visuels de carousel, qui ont chacun cassé la production le
    * 2026-08-15.

@@ -108,6 +108,10 @@ create table if not exists pubs_connues (
 -- on delete set null le ferait en silence, et l'entonnoir d'hier ne rendrait plus le même chiffre aujourd'hui.
 alter table arrivees_pub add column if not exists campagne_id text;
 
+-- 🔴 `sans_scenario` A ÉTÉ AJOUTÉE APRÈS UNE RELECTURE À FROID, AVANT TOUTE APPLICATION. Cette migration
+-- n'a jamais tourné nulle part quand cette valeur est arrivée : la modifier était donc sans risque, et
+-- c'est exactement la fenêtre où une migration se corrige. Elle nomme le cas où une publicité confie ses
+-- leads à un scénario qui n'existe pas, ou qui n'est pas encore publié.
 -- L'issue du routage, telle que la règle pure l'a décidée. Nulle = arrivée d'avant ce lot, ou routage qui n'a
 -- pas pu tourner. Les sept valeurs sont le tableau de la spec § 3.3, mot pour mot.
 alter table arrivees_pub add column if not exists issue text;
@@ -121,7 +125,7 @@ alter table arrivees_pub add column if not exists qualifie_le timestamptz;
 
 alter table arrivees_pub drop constraint if exists arrivees_pub_issue_chk;
 alter table arrivees_pub add constraint arrivees_pub_issue_chk check (
-  issue is null or issue in ('inchange', 'agent_meta', 'reprise_reussie', 'reprise_refusee', 'desabonne', 'bloque', 'scenario')
+  issue is null or issue in ('inchange', 'agent_meta', 'reprise_reussie', 'reprise_refusee', 'desabonne', 'bloque', 'scenario', 'sans_scenario')
 );
 
 -- Sert l'entonnoir d'une pub : les arrivées d'une campagne, dans un espace. Index PARTIEL sur

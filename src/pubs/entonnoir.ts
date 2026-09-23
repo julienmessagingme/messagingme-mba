@@ -113,5 +113,10 @@ export function entonnoir(c: ComptesPub): Entonnoir {
  *
  * ⚠️ `inchange` non plus : ce sont les leads d'avant le lien, ou d'une pub qu'on ne pilote pas. Ils ne
  * concernent pas l'entonnoir de CETTE campagne.
+ *
+ * 🔴 `sans_scenario` EN FAIT PARTIE, ET C'EST LE CAS LE PLUS UTILE DE LA LISTE. Il dit qu'une publicité
+ * promet un scénario qui n'existe pas, ou qui n'est pas encore publié : le client a payé le clic, et
+ * notre routage ne lui a rien servi. C'est un défaut de CONFIGURATION, donc réparable, et le seul moyen
+ * de le voir est qu'il apparaisse dans ce compte plutôt que de se fondre dans les prospects servis.
  */
-export const ISSUES_NON_PRISES_EN_CHARGE = ['reprise_refusee', 'desabonne', 'bloque'] as const;
+export const ISSUES_NON_PRISES_EN_CHARGE = ['reprise_refusee', 'desabonne', 'bloque', 'sans_scenario'] as const;

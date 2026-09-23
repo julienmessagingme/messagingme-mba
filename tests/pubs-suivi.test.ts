@@ -11,7 +11,7 @@ import type { DepensePub, EtatCampagneMeta } from '../src/meta/pubs-creation';
  * encore rien diffusé. Ce sont les cas nominaux d'un pilote, pas des cas rares.
  */
 
-const etat = (statut: string): EtatCampagneMeta => ({ statut, motifRefus: null, debut: null, fin: null });
+const etat = (statut: string): EtatCampagneMeta => ({ statut, motifRefus: null, debut: null, fin: null, budgetTotal: null });
 const depense = (d: number, c: number): DepensePub => ({ depense: d, clics: c });
 
 interface Traces {

@@ -527,6 +527,10 @@ async function main(): Promise<void> {
         // 🔴 LE GESTE QUI EXISTE, CÂBLÉ ET PAS RECOPIÉ : `take` avec un seul rejeu, puis l'état local à
         // `app_workflow`. En écrire un second exemplaire en ferait le quatrième de cette famille.
         reprendreLeFil: (t, waId) => reprendreLeFilPourLApp(t, waId),
+        // 🔴 LE FILET DU FIL PRIS POUR RIEN. On prend le fil AVANT de savoir si l'automation va réellement
+        // démarrer ; quand elle ne démarre pas, ce geste le rend. `remiseMbaSiPersonneNeSuit` porte déjà
+        // les deux gardes utiles : rien ne part si l'agent de Meta est éteint, ni si un parcours attend.
+        rendreLeFil: (t, waId) => remiseMbaSiPersonneNeSuit(t, waId),
         noterIssue: (t, messageId, v) => arriveesPubStore.noterIssue(t, messageId, v),
       },
       // Acteur `null` : c'est le contact lui-même qui a coché, via WhatsApp. Aucun humain de l'équipe n'a agi,
@@ -1765,6 +1769,7 @@ async function main(): Promise<void> {
           motifRefus: v.etat?.motifRefus ?? null,
           debut: v.etat?.debut ?? null,
           fin: v.etat?.fin ?? null,
+          budgetTotal: v.etat?.budgetTotal ?? null,
           depense: v.depense?.depense ?? null,
           clics: v.depense?.clics ?? null,
         }),
@@ -1774,7 +1779,6 @@ async function main(): Promise<void> {
         estJetonRefuse,
         alerter: (sujet, message) => { alert(sujet, message); },
       });
-      // eslint-disable-next-line no-console
       if (bilan.campagnes > 0 || bilan.jetonsRejetes > 0) {
         // eslint-disable-next-line no-console
         console.log(`suivi-pubs: ${bilan.campagnes} campagne(s) relue(s) sur ${bilan.espaces} espace(s), ${bilan.jetonsRejetes} jeton(s) rejeté(s)`);

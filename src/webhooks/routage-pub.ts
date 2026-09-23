@@ -60,6 +60,14 @@ export interface RoutagePubDeps {
    */
   reprendreLeFil(tenantId: string, waId: string): Promise<boolean>;
   /**
+   * REND LE FIL À L'AGENT DE META, quand on l'a pris et que personne n'a finalement parlé.
+   *
+   * ⚠️ C'est `remiseMbaSiPersonneNeSuit` (`src/workflow/wiring.ts`), le geste qui EXISTE, et qui porte déjà
+   * les deux gardes qu'il faut : il ne rend rien si l'agent de Meta est éteint, ni si un parcours attend
+   * une réponse. On le câble, on ne le récrit pas.
+   */
+  rendreLeFil(tenantId: string, waId: string): Promise<void>;
+  /**
    * Inscrit sur l'arrivée déjà écrite ce que le routage a décidé.
    *
    * ⚠️ N'ÉCRIT QUE SI L'ISSUE EST ENCORE NULLE (premier routage gagnant) : Meta redélivre ses webhooks, et
@@ -90,6 +98,16 @@ const SOURCE_PUBLICATION = 'post';
 export async function processRoutagePub(
   payload: unknown,
   deps: RoutagePubDeps,
+  /**
+   * Les messages que Meta nous REDÉLIVRE (`insertEvent` a dit « déjà vu »).
+   *
+   * 🔴 ON NE REPREND PAS LE FIL UNE SECONDE FOIS. `noterIssue` protège l'HISTOIRE (« le premier routage
+   * gagne »), pas le GESTE : un second `take` reposerait `app_workflow` sur un fil qu'un opérateur aurait
+   * pu reprendre entre-temps, donc lui arracherait une conversation qu'il est en train de mener. La
+   * RESTRICTION, elle, se recalcule : elle doit rester la même, sinon une automation ordinaire ramasserait
+   * au rejeu un lead qu'elle n'avait pas le droit de toucher à la première livraison.
+   */
+  dejaVus?: ReadonlySet<string>,
 ): Promise<ReadonlyMap<string, RoutageDuMessage>> {
   const routes = new Map<string, RoutageDuMessage>();
   for (const m of extractInbound(payload)) {
@@ -119,15 +137,26 @@ export async function processRoutagePub(
       let repriseReussie = false;
       let repriseLe: Date | null = null;
       if (decision.sorte === 'reprendre_puis_pub') {
-        repriseReussie = await deps.reprendreLeFil(tenantId, m.waId);
-        if (repriseReussie) repriseLe = new Date();
+        if (dejaVus?.has(m.messageId) === true) {
+          // Rejeu : le fil a déjà été pris (ou refusé) à la première livraison. On ne refait pas le geste,
+          // et on considère la reprise acquise pour que la restriction reste celle d'alors.
+          repriseReussie = true;
+        } else {
+          repriseReussie = await deps.reprendreLeFil(tenantId, m.waId);
+          if (repriseReussie) repriseLe = new Date();
+        }
       }
 
       const issue: IssueRoutage = decision.sorte === 'reprendre_puis_pub'
         ? (repriseReussie ? 'reprise_reussie' : 'reprise_refusee')
         : decision.issue;
 
-      routes.set(m.messageId, { restriction: restrictionDuRoutage(decision, repriseReussie), campagneId });
+      routes.set(m.messageId, {
+        restriction: restrictionDuRoutage(decision, repriseReussie),
+        campagneId,
+        // On ne retient QUE les prises réussies : il n'y a que celles-là qu'on puisse avoir à rendre.
+        repris: repriseReussie ? { tenantId, waId: m.waId } : null,
+      });
       await deps.noterIssue(tenantId, m.messageId, { campagneId, issue, repriseLe });
 
       if (issue === 'reprise_refusee') {
@@ -167,5 +196,39 @@ async function campagneDuLead(
     // eslint-disable-next-line no-console
     console.warn(`routage pub : campagne de la publicité ${adId} non résolue chez Meta :`, err instanceof Error ? err.message : err);
     return null;
+  }
+}
+
+/**
+ * REND LES FILS QU'ON A PRIS POUR RIEN.
+ *
+ * 🔴 CE QU'IL FERME, ET POURQUOI L'ORDRE DU JOB L'IMPOSE. Le fil se prend AVANT les déclencheurs, parce
+ * qu'un scénario ne démarre pas sur un fil tenu par l'agent de Meta. On ne peut donc pas savoir, au moment
+ * de le prendre, si quelque chose va réellement parler : l'automation de la publicité peut encore être
+ * retenue par son anti-rebond, ou refuser parce que son scénario a disparu. Quand c'est le cas, le fil nous
+ * reste et PERSONNE ne répond : le seul filet est le balayage de contrôle, vingt-quatre heures plus tard,
+ * quand la fenêtre de service de Meta est déjà fermée. Sur un clic PAYÉ, c'est un silence complet.
+ *
+ * ⚠️ IL NE REND QUE CE QU'ON A PRIS, et seulement si rien n'a démarré. Rendre un fil sur lequel un scénario
+ * vient de parler le donnerait à l'agent de Meta au milieu d'une conversation qu'il ne connaît pas.
+ *
+ * ⚠️ ISOLÉ, et il ne lève jamais : son appelant est le job webhook, partagé avec les accusés, l'inbox et
+ * les flows. Un fil non rendu est rattrapé par le balayage ; un job en DLQ emporte tout le reste.
+ */
+export async function rendreLesFilsSansReponse(
+  routes: ReadonlyMap<string, RoutageDuMessage>,
+  demarres: ReadonlySet<string>,
+  deps: Pick<RoutagePubDeps, 'rendreLeFil'>,
+): Promise<void> {
+  for (const [messageId, route] of routes) {
+    if (route.repris === null || demarres.has(messageId)) continue;
+    try {
+      await deps.rendreLeFil(route.repris.tenantId, route.repris.waId);
+      // eslint-disable-next-line no-console
+      console.warn(`routage pub : fil repris pour le lead ${messageId} mais aucun scénario n’a démarré, il est rendu à l’agent de Meta`);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('routage pub : fil non rendu :', err instanceof Error ? err.message : err);
+    }
   }
 }

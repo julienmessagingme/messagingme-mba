@@ -6,6 +6,7 @@ import { sansPrefixeAct, type ActifsAccordes, type EtatComptePub } from '../meta
 import { TAILLE_VISUEL_PUB_MAX, TYPES_VISUEL_PUB } from '../meta/pubs-creation';
 import type { ConnexionPub } from '../pubs/connexion.pg';
 import type { Publicite } from '../pubs/publicites.pg';
+import { PublicationRefusee } from '../pubs/creation';
 import type { DemandeCreation, IssueCreation } from '../pubs/creation';
 import type { Entonnoir } from '../pubs/entonnoir';
 import { makeJournal, type AuditSink } from '../audit/journal';
@@ -356,6 +357,16 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     // pour un plafond en octets (cf. `lireCorpsBorne`).
     const octets = Buffer.from(f.image.base64, 'base64');
     if (octets.length === 0) return reply.code(400).send({ error: 'ce visuel est illisible' });
+    /**
+     * 🔴 LE TYPE SE LIT DANS LES OCTETS, PAS DANS CE QUE LE CLIENT DÉCLARE. Le champ `type` du corps est une
+     * chaîne que le navigateur choisit : la valider contre une énumération ne prouve rien sur le CONTENU.
+     * Or ces octets partent chez un tiers, sous l'identité du client, et le commentaire de
+     * `TYPES_VISUEL_PUB` annonçait « une garde de SÉCURITÉ, pas de confort ». Une justification plus forte
+     * que le code est pire qu'aucune. Relevé par une relecture à froid, avant tout déploiement.
+     */
+    if (!estJpegOuPng(octets)) {
+      return reply.code(400).send({ error: 'ce fichier n’est pas une image JPEG ou PNG' });
+    }
     if (octets.length > TAILLE_VISUEL_PUB_MAX) {
       return reply.code(400).send({ error: `ce visuel dépasse ${Math.round(TAILLE_VISUEL_PUB_MAX / (1024 * 1024))} Mo` });
     }
@@ -412,6 +423,9 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     try {
       await deps.publierPub(tenantId, id);
     } catch (err) {
+      // ⚠️ UN REFUS N'EST PAS UNE PANNE DE META : 409, et le message dit ce qu'il faut réparer. Un 502
+      // enverrait le client chercher un problème chez Meta, qui n'a même pas été appelé.
+      if (err instanceof PublicationRefusee) return reply.code(409).send({ error: err.message, code: 'publication_refusee' });
       if (err instanceof PasDeConnexionPub) return reply.code(409).send({ error: err.message, code: 'pas_connecte' });
       return reply.code(502).send({ error: err instanceof Error ? err.message : 'Meta ne répond pas' });
     }
@@ -474,4 +488,19 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     await journal(tenantId, req, 'pubs.deconnectee', { kind: 'pub_connexion', id: tenantId }, { revoqueChezMeta });
     return reply.send({ ok: true, revoqueChezMeta });
   });
+}
+
+/**
+ * CES OCTETS SONT-ILS UN JPEG OU UN PNG ? Lu sur la SIGNATURE du fichier, la seule chose qu'un client ne
+ * peut pas nous faire croire en changeant un champ de son formulaire.
+ *
+ * ⚠️ CE N'EST PAS UN DÉCODEUR D'IMAGE, et ça n'a pas à l'être : Meta refusera de toute façon un fichier
+ * corrompu, avec son message. Ce que cette garde ferme, c'est l'envoi d'un SVG (un document exécutable) ou
+ * de n'importe quoi d'autre sous une étiquette `image/png`.
+ */
+function estJpegOuPng(o: Buffer): boolean {
+  // JPEG : FF D8 FF. PNG : 89 50 4E 47 0D 0A 1A 0A.
+  if (o.length >= 3 && o[0] === 0xff && o[1] === 0xd8 && o[2] === 0xff) return true;
+  const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  return o.length >= png.length && png.every((b, i) => o[i] === b);
 }

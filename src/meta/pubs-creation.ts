@@ -54,6 +54,14 @@ export interface EtatCampagneMeta {
   motifRefus: string | null;
   debut: string | null;
   fin: string | null;
+  /**
+   * Le budget total, tel que Meta le renvoie, dans l'unité PRINCIPALE de la devise.
+   *
+   * ⚠️ META LE REND EN UNITÉS MINEURES (des centimes), comme il l'attend à l'écriture : on reconvertit ici,
+   * une fois, pour que tout ce qui est en aval manipule des euros. C'est l'exacte symétrie de
+   * `budgetEnUnitesMineures`, et la seule chose qui empêche un budget de 150 € de s'afficher à 15 000.
+   */
+  budgetTotal: number | null;
 }
 
 /** La dépense et les clics d'une campagne, depuis le début. */
@@ -70,6 +78,8 @@ const campagneSuivieSchema = z.object({
   effective_status: z.string().optional(),
   start_time: z.string().optional(),
   stop_time: z.string().optional(),
+  // Meta rend les montants en CHAÎNE, et en unités mineures : `"15000"` pour 150 €.
+  lifetime_budget: z.string().optional(),
   issues_info: z.array(z.object({
     error_summary: z.string().optional(),
     error_message: z.string().optional(),
@@ -225,6 +235,7 @@ export class MetaPubsCreationClient extends ClientGraph {
           motifRefus: c.issues_info?.[0]?.error_summary ?? c.issues_info?.[0]?.error_message ?? null,
           debut: c.start_time ?? null,
           fin: c.stop_time ?? null,
+          budgetTotal: c.lifetime_budget === undefined ? null : Number(c.lifetime_budget) / 100,
         });
       }
     }

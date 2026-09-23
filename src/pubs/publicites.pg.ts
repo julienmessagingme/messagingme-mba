@@ -117,8 +117,21 @@ export class PgPublicitesStore {
    */
   async pubDeLaCampagne(tenantId: string, campagneId: string): Promise<PubDuLead | null> {
     const { rows } = await this.pool.query<{ campagne_id: string; destination: string; automation_id: string | null }>(
-      `select campagne_id, destination, automation_id
-         from publicites where tenant_id = $1 and campagne_id = $2`,
+      /**
+       * 🔴 L'AUTOMATION N'EST RENDUE QUE SI ELLE EST ALLUMÉE, et cette jointure est un CORRECTIF, pas une
+       * optimisation. Sans elle, une publicité créée et pas encore publiée (son automation naît éteinte)
+       * faisait PRENDRE LE FIL à l'agent de Meta pour que personne ne parle ensuite : un clic payé répondu
+       * par un silence de vingt-quatre heures, là où l'agent de Meta répondait avant ce lot. Relevé par une
+       * relecture à froid le 2026-09-23, avant tout déploiement.
+       *
+       * ⚠️ `possede_par = 'publicite'` EN GARDE MIROIR, ici aussi : cette jointure ne doit pouvoir lire que
+       * l'automation de la publicité, jamais une autre qui porterait le même identifiant.
+       */
+      `select p.campagne_id, p.destination,
+              (select a.id from automations a
+                where a.id = p.automation_id and a.tenant_id = p.tenant_id
+                  and a.possede_par = 'publicite' and a.enabled) as automation_id
+         from publicites p where p.tenant_id = $1 and p.campagne_id = $2`,
       [tenantId, campagneId],
     );
     const r = rows[0];
@@ -207,6 +220,21 @@ export class PgPublicitesStore {
     );
   }
 
+  /**
+   * Écrit tout de suite le statut Meta après une pause ou une reprise, sans attendre le balayage.
+   *
+   * ⚠️ UN STATUT OPTIMISTE, ET IL FAUT LE DIRE : Meta vient d'accepter le geste, donc cette valeur est
+   * celle qu'il aura. Sans elle, l'écran afficherait « Diffuse » sur une campagne qu'on vient de mettre en
+   * pause, jusqu'à quinze minutes, ce qui ferait recliquer. Le balayage suivant la remplace par ce que Meta
+   * dit vraiment, et c'est lui qui fait foi.
+   */
+  async noterStatutMeta(tenantId: string, id: string, statut: string): Promise<void> {
+    await this.pool.query(
+      'update publicites set statut_meta = $3 where tenant_id = $1 and id = $2',
+      [tenantId, id, statut],
+    );
+  }
+
   async marquerEtat(tenantId: string, id: string, etat: EtatPublicite): Promise<void> {
     await this.pool.query(
       'update publicites set etat = $3 where tenant_id = $1 and id = $2',
@@ -292,13 +320,6 @@ export class PgPublicitesStore {
   }
 
   /**
-   * CE SCÉNARIO EST-IL UTILISÉ PAR UNE PUBLICITÉ VIVANTE ? Sert le refus 409 de la suppression d'un scénario.
-   *
-   * ⚠️ « VIVANTE » EXCLUT `echec_creation`, et seulement elle : une création ratée ne diffuse rien et ne
-   * recevra jamais de lead, donc elle ne doit pas retenir un scénario que le client veut supprimer. Une pub
-   * `prete` (créée, en pause chez Meta), elle, le retient : elle sera publiée, et son scénario doit exister.
-   */
-  /**
    * LES ESPACES QUE LE BALAYAGE DOIT RELIRE : connectés, et portant au moins une publicité publiée.
    *
    * ⚠️ LA JOINTURE SUR `pub_connexion` N'EST PAS DÉCORATIVE : sans elle, un espace déconnecté avec des
@@ -323,8 +344,12 @@ export class PgPublicitesStore {
    * juste un balayage complet de la table à chaque passage, toutes les quinze minutes, pour toujours. Un
    * index partiel est un contrat avec une requête précise (leçon de 0122 et 0143).
    *
-   * ⚠️ `nulls first` : une publicité jamais lue passe avant celles qu'on vient de relire. Sans cet ordre,
-   * une campagne neuve pourrait attendre derrière toutes les anciennes.
+   * ⚠️ `nulls first` N'A AUCUN EFFET OBSERVABLE AUJOURD'HUI, et il faut le dire : cette requête n'a pas de
+   * plafond, donc le balayage traite TOUTES les campagnes du passage, et rien n'attend derrière rien. Le
+   * commentaire précédent affirmait le contraire (« une campagne neuve pourrait attendre derrière toutes
+   * les anciennes »), ce qui était une raison inscrite dans le code que le prochain lecteur aurait crue.
+   * L'ordre reste, pour le jour où un plafond arrivera : la lecture par paquets de cinquante chez Meta y
+   * invite, et c'est alors la publicité la moins fraîche qui devra passer d'abord.
    */
   async campagnesASuivre(tenantId: string): Promise<string[]> {
     const { rows } = await this.pool.query<{ campagne_id: string }>(
@@ -345,19 +370,29 @@ export class PgPublicitesStore {
    */
   async noterSuivi(tenantId: string, campagneId: string, v: {
     statutMeta: string | null; motifRefus: string | null; debut: string | null; fin: string | null;
+    /**
+     * Le budget total, TEL QUE META LE RENVOIE.
+     *
+     * 🔴 IL ÉTAIT DEMANDÉ À META ET JETÉ, relevé par une relecture à froid. La spec annonce « budget total,
+     * début, fin, tels que Meta les renvoie au suivi », et l'écran affiche « dépense sur budget » : un
+     * budget modifié dans le Gestionnaire ne serait jamais rattrapé, donc le rapport affiché deviendrait
+     * faux sans que rien ne le signale.
+     */
+    budgetTotal: number | null;
     depense: number | null; clics: number | null;
   }): Promise<void> {
     await this.pool.query(
       `update publicites
           set statut_meta = coalesce($3, statut_meta),
               motif_refus = coalesce($4, motif_refus),
-              debut       = coalesce($5::timestamptz, debut),
-              fin         = coalesce($6::timestamptz, fin),
-              depense     = coalesce($7, depense),
-              clics       = coalesce($8, clics),
-              lu_le       = now()
+              debut        = coalesce($5::timestamptz, debut),
+              fin          = coalesce($6::timestamptz, fin),
+              budget_total = coalesce($7, budget_total),
+              depense      = coalesce($8, depense),
+              clics        = coalesce($9, clics),
+              lu_le        = now()
         where tenant_id = $1 and campagne_id = $2`,
-      [tenantId, campagneId, v.statutMeta, v.motifRefus, v.debut, v.fin, v.depense, v.clics],
+      [tenantId, campagneId, v.statutMeta, v.motifRefus, v.debut, v.fin, v.budgetTotal, v.depense, v.clics],
     );
   }
 
@@ -396,6 +431,13 @@ export class PgPublicitesStore {
     };
   }
 
+  /**
+   * CE SCÉNARIO EST-IL UTILISÉ PAR UNE PUBLICITÉ VIVANTE ? Sert le refus 409 de la suppression d'un scénario.
+   *
+   * ⚠️ « VIVANTE » EXCLUT `echec_creation`, et seulement elle : une création ratée ne diffuse rien et ne
+   * recevra jamais de lead, donc elle ne doit pas retenir un scénario que le client veut supprimer. Une pub
+   * `prete` (créée, en pause chez Meta), elle, le retient : elle sera publiée, et son scénario doit exister.
+   */
   async publicitesQuiUtilisent(tenantId: string, workflowId: string): Promise<string[]> {
     const { rows } = await this.pool.query<{ nom: string }>(
       `select nom from publicites

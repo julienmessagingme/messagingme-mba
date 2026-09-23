@@ -87,18 +87,48 @@ describe('l’ORDRE des tests, qui est une partie de la règle', () => {
   });
 });
 
-describe('l’automation absente : la pub existe, son scénario a été supprimé', () => {
-  it('message normal : la décision reste `pub_seule`, sans automation', () => {
+/**
+ * RIEN À DÉMARRER : ON NE TOUCHE À RIEN, ET SURTOUT PAS AU FIL.
+ *
+ * 🔴 CE BLOC EST NÉ D'UNE RÉGRESSION, TROUVÉE PAR UNE RELECTURE À FROID AVANT TOUT DÉPLOIEMENT. La règle
+ * rendait `reprendre_puis_pub` dès qu'un message arrivait en `standby`, SANS regarder s'il y avait quoi que
+ * ce soit à démarrer. On prenait donc le fil à l'agent de Meta, puis la restriction valait `aucun`, et
+ * PERSONNE ne parlait : un clic PAYÉ répondu par un silence de vingt-quatre heures (le seul filet est le
+ * balayage de contrôle, à 24 h, quand la fenêtre de service est déjà fermée), là où l'agent de Meta
+ * répondait AVANT ce lot. Une capacité manquante est un désagrément ; une régression sur le chemin d'un
+ * client qui paie est autre chose.
+ *
+ * ⚠️ `automationId` à `null` COUVRE DEUX ÉTATS, et le second est le plus fréquent : le scénario supprimé
+ * (`on delete set null`), et la publicité PAS ENCORE PUBLIÉE, dont l'automation naît éteinte. C'est la
+ * requête qui les réunit (elle ne rend l'identifiant que si l'automation est allumée).
+ */
+describe('rien à démarrer : aucune automation ALLUMÉE sur cette publicité', () => {
+  it('message normal : aucun déclencheur, et l’issue le DIT', () => {
     expect(routerLeLead(faits({ pub: pub({ automationId: null }) })))
-      .toEqual({ sorte: 'pub_seule', issue: 'scenario', automationId: null });
+      .toEqual({ sorte: 'aucun_declencheur', issue: 'sans_scenario' });
+  });
+
+  it('🔴 message STANDBY : ON NE PREND PAS LE FIL. C’est tout le correctif.', () => {
+    // Le test qui manquait. L'ancien code rendait `reprendre_puis_pub` ici, donc un `take` chez Meta pour
+    // que rien ne parle ensuite.
+    expect(routerLeLead(faits({ pub: pub({ automationId: null }), enStandby: true })))
+      .toEqual({ sorte: 'aucun_declencheur', issue: 'sans_scenario' });
   });
 
   it('🔴 et la restriction vaut `aucun`, JAMAIS `tous`', () => {
-    // C'est l'état ATTEIGNABLE que le CHECK de la migration 0170 autorise exprès (`on delete set null` sur
-    // le scénario). Retomber sur le chemin ordinaire ferait ramasser ce lead par une automation par
-    // mot-clé, c'est-à-dire répondre à côté sur un clic payé.
-    const d = routerLeLead(faits({ pub: pub({ automationId: null }) }));
+    // Retomber sur le chemin ordinaire ferait ramasser ce lead par une automation par mot-clé,
+    // c'est-à-dire répondre à côté sur un clic payé.
+    const d = routerLeLead(faits({ pub: pub({ automationId: null }), enStandby: true }));
     expect(restrictionDuRoutage(d, false)).toEqual({ sorte: 'aucun' });
+  });
+
+  it('⚠️ le blocage et le désabonnement passent TOUJOURS avant : ils disent une autre raison', () => {
+    // L'ordre compte : un contact bloqué dont la pub n'a pas de scénario est d'abord un contact bloqué,
+    // et l'entonnoir doit le compter comme tel.
+    expect(routerLeLead(faits({ pub: pub({ automationId: null }), bloque: true })))
+      .toEqual({ sorte: 'aucun_declencheur', issue: 'bloque' });
+    expect(routerLeLead(faits({ pub: pub({ automationId: null }), desabonne: true })))
+      .toEqual({ sorte: 'aucun_declencheur', issue: 'desabonne' });
   });
 });
 

@@ -59,6 +59,14 @@ export interface DepotCreationPub {
    * Meta n'a aucun scénario à démarrer, donc aucune automation à posséder.
    */
   creerAutomation(id: string, v: { nom: string; campagneId: string; workflowId: string }): Promise<string>;
+  /**
+   * Défait l'automation qu'on vient de créer, quand la création échoue juste après.
+   *
+   * 🔴 SANS CE RATTRAPAGE, ELLE SURVIT À SA PUBLICITÉ. Une automation possédée est exclue du prédicat de
+   * `PgAutomationStore`, donc absente de l'écran Automations : plus personne ne pourrait l'effacer. Elle
+   * est éteinte, donc inoffensive, mais une ligne que nul ne peut retirer est une dette permanente.
+   */
+  supprimerAutomation(automationId: string): Promise<void>;
 }
 
 /**
@@ -147,6 +155,10 @@ export async function creerLaPublicite(
     return { sorte: 'annulee', raison: raisonDe(err) };
   }
 
+  // 🔴 RETENU POUR LE RATTRAPAGE. Une automation possédée qu'on laisserait derrière serait INVISIBLE de
+  // l'écran Automations (qui exclut tout `possede_par` non nul) et intouchable par son propriétaire, qui
+  // vient de disparaître. Elle est éteinte, donc inoffensive, mais personne ne pourrait plus l'effacer.
+  let automationId: string | null = null;
   try {
     const ensembleId = await client.creerEnsemble(payloadEnsemble(d.formulaire, {
       campagneId, pageId: d.pageId, numeroWhatsApp: d.numeroWhatsApp,
@@ -166,7 +178,7 @@ export async function creerLaPublicite(
 
     // L'automation possédée, ÉTEINTE. C'est la publication qui l'allume, et elle l'allume AVANT Meta.
     if (d.destination === 'scenario' && d.workflowId !== null) {
-      await depot.creerAutomation(publiciteId, { nom: d.formulaire.nom, campagneId, workflowId: d.workflowId });
+      automationId = await depot.creerAutomation(publiciteId, { nom: d.formulaire.nom, campagneId, workflowId: d.workflowId });
     }
 
     await depot.marquerEtat(publiciteId, 'prete');
@@ -179,6 +191,8 @@ export async function creerLaPublicite(
       // eslint-disable-next-line no-console
       console.error(`création de publicité : campagne ${campagneId} NON supprimée après échec, elle reste chez Meta EN PAUSE :`, raisonDe(errSuppression));
     }
+    // Et l'automation qu'on venait peut-être de créer : sans ce retrait, elle survivrait à la publicité.
+    if (automationId !== null) await depot.supprimerAutomation(automationId).catch(() => undefined);
     // ⚠️ L'ÉTAT EST LE MÊME QUE LA SUPPRESSION AIT RÉUSSI OU NON, et c'est voulu : ce que l'état dit, c'est
     // « cette création a échoué », pas « il reste quelque chose chez Meta ». Le second fait vit dans le
     // journal, qui est le seul endroit où il est certain ; prétendre le porter dans une colonne obligerait à
@@ -220,6 +234,25 @@ export interface ObjetsMeta {
   campagneId: string;
   ensembleId: string | null;
   pubId: string | null;
+  /**
+   * L'état LOCAL de la publicité au moment de publier.
+   *
+   * 🔴 SEUL `prete` SE PUBLIE, et c'est un refus, pas une précaution. Une publicité en `echec_creation` n'a
+   * souvent ni ensemble ni publicité chez Meta : publier n'allumerait que la campagne, ne diffuserait rien,
+   * et la marquerait quand même `publiee`, donc elle sortirait du balayage du suivi. Une en `creation` est
+   * en cours d'écriture par un autre appel.
+   */
+  etat: 'creation' | 'echec_creation' | 'prete' | 'publiee';
+  /** La destination, parce qu'une publicité « scénario » ne se publie pas sans routage derrière. */
+  destination: 'scenario' | 'agent_meta';
+}
+
+/** Une publication refusée AVANT tout appel à Meta : rien n'a bougé, et la raison est lisible. */
+export class PublicationRefusee extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PublicationRefusee';
+  }
 }
 
 /**
@@ -232,7 +265,31 @@ export async function publierLaPublicite(
   client: ClientPublicationPub,
   depot: DepotPublicationPub,
 ): Promise<void> {
-  await depot.allumerAutomation(publiciteId);
+  /**
+   * 🔴 LES DEUX REFUS SE POSENT AVANT LE PREMIER APPEL À META, et l'ordre est tout : posés après, ils
+   * regarderaient une campagne qui diffuse déjà. Une garde ne garde que ce qui vient après elle.
+   */
+  if (objets.etat !== 'prete') {
+    throw new PublicationRefusee(
+      objets.etat === 'publiee' ? 'cette publicité est déjà publiée'
+        : 'cette publicité n’est pas prête à être publiée',
+    );
+  }
+
+  /**
+   * 🔴 ET LE BOOLÉEN DE L'AUTOMATION EST LU, PAS JETÉ. La règle de la spec (« un échec ne laisse jamais une
+   * pub active sans routage ») ne tenait que par l'ORDRE des appels : si l'allumage échouait, on allumait
+   * Meta quand même, et chaque clic payé tombait dans le vide. Relevé par une relecture à froid.
+   *
+   * ⚠️ Une publicité « agent de Meta » n'a AUCUNE automation, et c'est normal : le booléen ne décide que
+   * pour une destination `scenario`.
+   */
+  const allumee = await depot.allumerAutomation(publiciteId);
+  if (objets.destination === 'scenario' && !allumee) {
+    throw new PublicationRefusee(
+      'le scénario de cette publicité n’a pas pu être branché : rien ne répondrait aux prospects',
+    );
+  }
   // De l'intérieur vers l'extérieur : la campagne en dernier, parce que c'est elle qui décide.
   if (objets.pubId !== null) await client.allumer(objets.pubId);
   if (objets.ensembleId !== null) await client.allumer(objets.ensembleId);

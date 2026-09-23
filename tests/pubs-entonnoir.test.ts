@@ -106,7 +106,11 @@ describe('les prospects non pris en charge', () => {
   it('🔴 `agent_meta` N’EN FAIT PAS PARTIE : un lead confié à l’agent de Meta EST pris en charge', () => {
     // C'est la distinction qui décide de la justesse de l'écran. Le compter comme perdu afficherait
     // « 100 % de prospects perdus » sur une publicité qui fonctionne exactement comme prévu.
-    expect([...ISSUES_NON_PRISES_EN_CHARGE]).toEqual(['reprise_refusee', 'desabonne', 'bloque']);
+    expect([...ISSUES_NON_PRISES_EN_CHARGE]).toEqual(['reprise_refusee', 'desabonne', 'bloque', 'sans_scenario']);
+    // 🔴 `sans_scenario` EN FAIT PARTIE : la publicité promet un scénario qui n'existe pas ou n'est pas
+    // encore publié. Le clic a été payé, notre routage n'a rien servi, et c'est réparable : le fondre
+    // dans les prospects servis empêcherait de voir le défaut de configuration.
+    expect([...ISSUES_NON_PRISES_EN_CHARGE]).toContain('sans_scenario');
     expect([...ISSUES_NON_PRISES_EN_CHARGE]).not.toContain('agent_meta');
     expect([...ISSUES_NON_PRISES_EN_CHARGE]).not.toContain('scenario');
     expect([...ISSUES_NON_PRISES_EN_CHARGE]).not.toContain('reprise_reussie');

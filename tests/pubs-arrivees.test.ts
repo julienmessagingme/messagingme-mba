@@ -121,6 +121,7 @@ describe('handleWebhookJob : l’arrivée publicitaire', () => {
         contactBloque: async () => false,
         estDesabonne: async () => false,
         reprendreLeFil: async () => true,
+        rendreLeFil: async () => {},
         noterIssue: async () => {},
       },
     });

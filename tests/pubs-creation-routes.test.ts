@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { ConnexionPubIncomplete, PasDeConnexionPub, registerPubs, type PubsRouteDeps } from '../src/http/pubs';
+import { PublicationRefusee } from '../src/pubs/creation';
 import type { ConnexionPub } from '../src/pubs/connexion.pg';
 import type { ActifsAccordes } from '../src/meta/pubs';
 import { aucunePubDeRoute } from './pubs-fixtures';
@@ -60,7 +61,10 @@ const corpsValide = (over: Record<string, unknown> = {}): Record<string, unknown
   pays: ['FR'], villes: [], ageMin: 25, ageMax: 55,
   destination: 'scenario', workflowId: '11111111-1111-4111-8111-111111111111',
   tagQualification: 'devis', horsCategorieSpeciale: true,
-  image: { type: 'image/jpeg', base64: Buffer.from('un petit fichier de test').toString('base64') },
+  // ⚠️ UN VRAI EN-TÊTE JPEG : la route lit la SIGNATURE des octets, pas le champ `type`. Un corps de
+  // test qui portait « un petit fichier » passait le schéma et serait refusé par la garde, donc tous ces
+  // tests auraient viré au 400 en disant le contraire de ce qu'ils vérifient.
+  image: { type: 'image/jpeg', base64: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]).toString('base64') },
   ...over,
 });
 
@@ -303,5 +307,44 @@ describe('GET /pubs : la liste', () => {
   it('🔴 un espace ne lit pas les publicités d’un autre', async () => {
     const { srv } = app({ listerPubs: async () => [] });
     expect((await srv.inject({ method: 'GET', url: '/tenants/t-voisin/pubs' })).statusCode).toBe(403);
+  });
+});
+
+describe('🔴 LE TYPE DU VISUEL SE LIT DANS LES OCTETS', () => {
+  it('un fichier qui n’est ni JPEG ni PNG est refusé, quel que soit le `type` déclaré', async () => {
+    // C'est tout l'intérêt : le champ `type` est choisi par le navigateur. Le valider contre une
+    // énumération ne prouve rien sur ce qui part réellement chez Meta, sous l'identité du client.
+    let appele = false;
+    const { srv } = app({ creerPub: async () => { appele = true; return creee; } });
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>').toString('base64');
+    const res = await srv.inject({
+      method: 'POST', url: urlPubs(),
+      payload: corpsValide({ image: { type: 'image/png', base64: svg } }),
+    });
+    expect(res.statusCode).toBe(400);
+    expect(String(res.json().error)).toContain('JPEG');
+    expect(appele).toBe(false);
+  });
+
+  it('un vrai PNG passe', async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]).toString('base64');
+    const { srv } = app({ creerPub: async () => creee });
+    const res = await srv.inject({
+      method: 'POST', url: urlPubs(),
+      payload: corpsValide({ image: { type: 'image/png', base64: png } }),
+    });
+    expect(res.statusCode).toBe(200);
+  });
+});
+
+describe('publier : un REFUS n’est pas une panne de Meta', () => {
+  it('🔴 rend 409, pas 502 : Meta n’a même pas été appelé', async () => {
+    const { srv, traces } = app({
+      publierPub: async () => { throw new PublicationRefusee('cette publicité n’est pas prête à être publiée'); },
+    });
+    const res = await srv.inject({ method: 'POST', url: urlPubs('/pub-1/publier') });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().code).toBe('publication_refusee');
+    expect(traces.audit).toEqual([]);
   });
 });

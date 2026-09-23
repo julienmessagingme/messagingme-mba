@@ -40,7 +40,18 @@ export type IssueRoutage =
   /** Le contact est bloqué. Rien ne part. */
   | 'bloque'
   /** Cas nominal : le scénario de la pub, et lui seul, est évalué. */
-  | 'scenario';
+  | 'scenario'
+  /**
+   * La publicité confie ses leads à un scénario, et il n'y a RIEN à démarrer : scénario supprimé, ou
+   * publicité pas encore publiée (son automation naît éteinte).
+   *
+   * 🔴 ELLE EXISTE PARCE QU'ON NE PREND PAS LE FIL DANS CE CAS, et c'est tout ce qu'elle dit. Relevée par
+   * une relecture à froid : sans elle, un lead `standby` faisait prendre le fil à l'agent de Meta pour
+   * que PERSONNE ne parle ensuite, donc un clic PAYÉ répondu par un silence de vingt-quatre heures, là
+   * où l'agent de Meta répondait avant ce lot. Une capacité manquante est un désagrément ; une
+   * RÉGRESSION sur le chemin d'un client qui paie est autre chose.
+   */
+  | 'sans_scenario';
 
 /** La publicité qui pilote ce lead, telle que nos tables la connaissent. */
 export interface PubDuLead {
@@ -48,9 +59,16 @@ export interface PubDuLead {
   campagneId: string;
   destination: DestinationPub;
   /**
-   * L'automation possédée par cette pub. `null` est un état ATTEIGNABLE : le scénario a été supprimé, et la
-   * clé étrangère est en `on delete set null` (migration 0170). On ne déclenche alors RIEN, plutôt que de
-   * laisser une automation ordinaire ramasser un lead qui ne lui était pas destiné.
+   * L'automation possédée par cette pub, ET SEULEMENT SI ELLE EST ALLUMÉE.
+   *
+   * 🔴 `null` VEUT DIRE « RIEN NE PARTIRA », ET C'EST CE SENS-LÀ QUI COMPTE. Il couvre DEUX états, et les
+   * confondre est précisément ce qui a créé une régression : le scénario supprimé (`on delete set null`,
+   * migration 0170) ET la publicité pas encore publiée, dont l'automation naît éteinte. Dans les deux cas
+   * il n'y a rien à démarrer, donc rien ne justifie de prendre le fil à l'agent de Meta.
+   *
+   * ⚠️ LE FILTRE SUR `enabled` EST DANS LA REQUÊTE, pas ici : la règle est pure, elle ne sait pas
+   * interroger. C'est `PgPublicitesStore.pubDeLaCampagne` qui ne rend l'identifiant que si l'automation
+   * est allumée, et un test d'intégration le tient.
    */
   automationId: string | null;
 }
@@ -77,7 +95,7 @@ export interface FaitsDuLead {
  */
 export type DecisionRoutage =
   | { sorte: 'inchange'; issue: 'inchange' }
-  | { sorte: 'aucun_declencheur'; issue: 'agent_meta' | 'bloque' | 'desabonne' }
+  | { sorte: 'aucun_declencheur'; issue: 'agent_meta' | 'bloque' | 'desabonne' | 'sans_scenario' }
   | { sorte: 'pub_seule'; issue: 'scenario'; automationId: string | null }
   | { sorte: 'reprendre_puis_pub'; automationId: string | null };
 
@@ -106,6 +124,12 @@ export function routerLeLead(f: FaitsDuLead): DecisionRoutage {
   if (f.pub.destination === 'agent_meta') return { sorte: 'aucun_declencheur', issue: 'agent_meta' };
   if (f.bloque) return { sorte: 'aucun_declencheur', issue: 'bloque' };
   if (f.desabonne) return { sorte: 'aucun_declencheur', issue: 'desabonne' };
+  // 🔴 RIEN À DÉMARRER : ON NE TOUCHE À RIEN, ET SURTOUT PAS AU FIL. `automationId` est nul quand le
+  // scénario a été supprimé, ou quand la publicité n'est pas encore publiée (son automation naît éteinte,
+  // et c'est la publication qui l'allume). Prendre le fil à l'agent de Meta pour que personne ne parle
+  // ensuite transformerait un clic payé en silence de vingt-quatre heures, alors que sans nous l'agent de
+  // Meta aurait répondu. Ce test passe donc AVANT le standby, et c'est tout son intérêt.
+  if (f.pub.automationId === null) return { sorte: 'aucun_declencheur', issue: 'sans_scenario' };
   if (f.enStandby) return { sorte: 'reprendre_puis_pub', automationId: f.pub.automationId };
   return { sorte: 'pub_seule', issue: 'scenario', automationId: f.pub.automationId };
 }
@@ -128,17 +152,6 @@ export type RestrictionDeclencheurs =
   | { sorte: 'seule'; automationId: string };
 
 /**
- * La restriction qui découle de la décision, une fois la reprise tentée.
- *
- * ⚠️ `repriseReussie` n'est lu que pour la décision qui en demande une, et il vaut alors exactement ce que
- * Meta a répondu. Sur un refus, on retombe sur `aucun` : l'agent de Meta garde le lead et NOUS ne devons
- * surtout pas lui répondre par-dessus, ce qui ferait recevoir deux messages au contact.
- *
- * ⚠️ UNE AUTOMATION ABSENTE VAUT `aucun`, JAMAIS `tous`. Le scénario d'une pub a pu être supprimé : la pub
- * reste, la destination reste `scenario`, et il n'y a plus rien à démarrer. Retomber sur le chemin ordinaire
- * ferait ramasser ce lead par une automation par mot-clé, c'est-à-dire répondre à côté sur un clic payé.
- */
-/**
  * CE QUE LE ROUTAGE LÈGUE AUX DÉCLENCHEURS pour UN message.
  *
  * ⚠️ LA CAMPAGNE VOYAGE AVEC LA RESTRICTION, et pas seulement l'automation à retenir. L'automation d'une pub
@@ -150,8 +163,30 @@ export interface RoutageDuMessage {
   restriction: RestrictionDeclencheurs;
   /** `null` = campagne inconnue. C'est le cas de tout le trafic d'avant ce lot. */
   campagneId: string | null;
+  /**
+   * LE FIL A ÉTÉ PRIS À L'AGENT DE META POUR CE MESSAGE, et voici à qui il appartient. `null` = on n'a rien
+   * pris, donc il n'y a rien à rendre.
+   *
+   * 🔴 IL EXISTE POUR QU'ON PUISSE LE RENDRE, et c'est le filet du seul cas que la règle ne peut pas
+   * prévoir : on prend le fil AVANT de savoir si l'automation va réellement démarrer. Elle peut encore
+   * être retenue par son anti-rebond, ou refuser parce que son scénario a disparu. Sans ce retour, le fil
+   * resterait à nous et personne ne parlerait, jusqu'au balayage de contrôle, vingt-quatre heures plus
+   * tard, quand la fenêtre de service de Meta est déjà fermée.
+   */
+  repris: { tenantId: string; waId: string } | null;
 }
 
+/**
+ * La restriction qui découle de la décision, une fois la reprise tentée.
+ *
+ * ⚠️ `repriseReussie` n'est lu que pour la décision qui en demande une, et il vaut alors exactement ce que
+ * Meta a répondu. Sur un refus, on retombe sur `aucun` : l'agent de Meta garde le lead et NOUS ne devons
+ * surtout pas lui répondre par-dessus, ce qui ferait recevoir deux messages au contact.
+ *
+ * ⚠️ UNE AUTOMATION ABSENTE VAUT `aucun`, JAMAIS `tous`. Le scénario d'une pub a pu être supprimé : la pub
+ * reste, la destination reste `scenario`, et il n'y a plus rien à démarrer. Retomber sur le chemin ordinaire
+ * ferait ramasser ce lead par une automation par mot-clé, c'est-à-dire répondre à côté sur un clic payé.
+ */
 export function restrictionDuRoutage(d: DecisionRoutage, repriseReussie: boolean): RestrictionDeclencheurs {
   if (d.sorte === 'inchange') return { sorte: 'tous' };
   if (d.sorte === 'aucun_declencheur') return { sorte: 'aucun' };

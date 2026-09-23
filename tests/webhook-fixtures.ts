@@ -26,5 +26,6 @@ export const aucunRoutagePub: RoutagePubDeps = {
   contactBloque: () => { throw new Error('aucunRoutagePub : contactBloque ne devrait pas être appelée'); },
   estDesabonne: () => { throw new Error('aucunRoutagePub : estDesabonne ne devrait pas être appelée'); },
   reprendreLeFil: () => { throw new Error('aucunRoutagePub : reprendreLeFil ne devrait pas être appelée'); },
+  rendreLeFil: () => { throw new Error('aucunRoutagePub : rendreLeFil ne devrait pas être appelée'); },
   noterIssue: () => { throw new Error('aucunRoutagePub : noterIssue ne devrait pas être appelée'); },
 };
