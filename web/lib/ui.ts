@@ -1,3 +1,5 @@
+import type { AccountDot } from './api/compte';
+
 /**
  * Classes Tailwind partagées de la console.
  *
@@ -24,3 +26,15 @@ export const cardCls = 'rounded-2xl border border-ink-200 bg-white p-5 shadow-sm
 
 /** Le sur-titre coloré d'un en-tête de page (« MBA », « CAMPAGNES »). */
 export const kickerCls = 'text-xs font-semibold uppercase tracking-wide text-brand-600';
+
+/**
+ * Couleur de la pastille de statut, en hexadécimal DIRECT et pas en nuance Tailwind : la classe
+ * `bg-<couleur>-500` d'une valeur calculée n'est pas vue par le balayage de Tailwind, donc absente du CSS
+ * produit, donc la pastille sort sans couleur. Le style en ligne n'a pas ce défaut.
+ *
+ * ⚠️ Elle était déclarée dans `web/app/accueil/page.tsx`, où six endroits la lisent. L'extraction de la
+ * pastille du numéro (`components/PastilleNumero.tsx`, 2026-09-23) en aurait fait une SECONDE copie : deux
+ * tables de couleurs pour la même pastille, qui divergent à la première retouche de teinte.
+ */
+export const DOT_HEX: Record<AccountDot, string> =
+  { green: '#17C74E', amber: '#E8A400', red: '#FF4D4F', grey: '#B8BEC9' };

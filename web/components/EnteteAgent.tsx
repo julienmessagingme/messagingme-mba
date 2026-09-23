@@ -28,8 +28,16 @@ export interface EnteteAgentProps {
   precision?: string;
   /** L'état, rendu tel quel : la pastille d'activation d'un agent IA, celle du numéro côté Meta. */
   etat?: ReactNode;
-  /** Ce qui reste à faire. Liste VIDE = tout est réglé, et l'en-tête le dit. */
-  etapes: EtapeEntete[];
+  /**
+   * Ce qui reste à faire. Liste VIDE = tout est réglé, et l'en-tête le dit.
+   *
+   * 🔴 `null` = ON NE SAIT PAS, ET CE N'EST PAS LA MÊME CHOSE QU'UNE LISTE VIDE. La lecture des manques peut
+   * n'avoir pas encore abouti, avoir échoué, ou ne pas s'appliquer (l'écran de l'agent de Meta rend son
+   * en-tête AVANT de savoir s'il a un numéro). Y passer `[]` dans ces cas afficherait « Tout est réglé » à
+   * côté d'un bandeau qui dit « aucun numéro rattaché », c'est-à-dire une affirmation que personne n'a
+   * mesurée. Même règle que `messages30j`, et pour la même raison.
+   */
+  etapes: EtapeEntete[] | null;
   /** Rendu en plus du compte, et SEULEMENT quand il existe un ratio vrai (l'agent de Meta en a un). */
   ratio?: { faites: number; total: number };
   /** `null` = on ne sait pas. On n'affiche alors AUCUN chiffre. Voir le commentaire plus bas. */
@@ -85,17 +93,19 @@ export function EnteteAgent({
           <p data-testid="entete-agent-precision" className="truncate text-sm text-ink-600">{precision}</p>
         )}
 
-        <p data-testid="entete-agent-etapes" className="pt-1 text-sm font-medium text-ink-800">
-          {libelleEtapes(etapes.length, t)}
-          {ratio !== undefined && (
-            <span data-testid="entete-agent-ratio" className="ml-2 font-normal text-ink-500">
-              {t(`${ratio.faites} sur ${ratio.total} réglages obligatoires`,
-                 `${ratio.faites} of ${ratio.total} required settings`)}
-            </span>
-          )}
-        </p>
+        {etapes !== null && (
+          <p data-testid="entete-agent-etapes" className="pt-1 text-sm font-medium text-ink-800">
+            {libelleEtapes(etapes.length, t)}
+            {ratio !== undefined && (
+              <span data-testid="entete-agent-ratio" className="ml-2 font-normal text-ink-500">
+                {t(`${ratio.faites} sur ${ratio.total} réglages obligatoires`,
+                   `${ratio.faites} of ${ratio.total} required settings`)}
+              </span>
+            )}
+          </p>
+        )}
 
-        {etapes.length > 0 && (
+        {etapes !== null && etapes.length > 0 && (
           <ul className="space-y-1 pt-1">
             {etapes.map((e) => (
               <li key={e.message} className="text-sm text-ink-600">
@@ -124,10 +134,22 @@ export function EnteteAgent({
           abouti, la route n'est pas encore déployée (Vercel publie l'écran au push, l'API attend son
           déploiement), et le compte n'est pas administrateur (les deux modules sont montés en `g.admin`,
           donc un manager reçoit 403). Un « 0 » se lirait « cet agent n'a parlé à personne ». */}
+      {/* 🔴 LE CHIFFRE COMPTE TOUT LE FIL, Y COMPRIS CE QUE L'ÉQUIPE A ÉCRIT APRÈS AVOIR REPRIS LA MAIN, et
+          l'écran le DIT (décision du 2026-09-23, à la relecture du lot serveur). La légende courte d'avant,
+          « messages échangés sur 30 jours », laissait lire ce nombre comme une mesure du travail de l'agent :
+          un client aurait comparé deux agents sur un chiffre qui mesure le VOLUME de la conversation. Le
+          « y compris » est le mot qui porte l'aveu, il ne s'abrège pas. */}
       {messages30j !== null && (
-        <div data-testid="entete-agent-messages" className="shrink-0 text-right">
+        <div data-testid="entete-agent-messages" className="shrink-0 sm:max-w-[15rem] sm:text-right">
           <p className="text-2xl font-semibold tabular-nums text-ink-900">{messages30j.toLocaleString('fr-FR')}</p>
-          <p className="text-xs text-ink-500">{t('messages échangés sur 30 jours', 'messages exchanged over 30 days')}</p>
+          <p className="text-xs font-medium text-ink-700">
+            {t('Messages échangés dans les conversations que cet agent a tenues',
+               'Messages exchanged in the conversations this agent handled')}
+          </p>
+          <p className="pt-0.5 text-xs text-ink-500">
+            {t('Tous les messages de ces conversations sur 30 jours, y compris ceux écrits par votre équipe après une reprise.',
+               'All messages in those conversations over 30 days, including those written by your team after a takeover.')}
+          </p>
         </div>
       )}
     </header>

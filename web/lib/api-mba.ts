@@ -68,6 +68,24 @@ export function getMbaCompletion(tenantId: string, phoneNumberId: string): Promi
   return request<CompletionMba>(`${base(tenantId, phoneNumberId)}/completion`);
 }
 
+/**
+ * Combien de messages ont ete echanges dans les conversations que l agent de Meta a tenues.
+ *
+ * 🔴 `messages: null` = ON NE SAIT PAS, jamais zero. Trois cas reels le produisent : la route n est pas
+ * encore deployee (Vercel publie l ecran au push, l API attend son `up`), le compte n est pas administrateur
+ * (le module est monte en `g.admin`, donc un manager recoit 403), et le serveur lui-meme rend `null` quand sa
+ * dependance de comptage n est pas cablee. Un zero affirmerait que l agent n a parle a personne.
+ *
+ * ⚠️ LE COMPTE EMBRASSE TOUT LE FIL, y compris ce que l equipe a ecrit apres avoir reprise la main : c est le
+ * volume de la conversation, pas le travail de l agent. `EnteteAgent` le DIT a l ecran, et ce n est pas
+ * facultatif (sans quoi le chiffre se lit comme une mesure de performance de l agent).
+ */
+export interface MessagesMba { messages: number | null; jours: number }
+
+export function getMbaMessages(tenantId: string, phoneNumberId: string): Promise<MessagesMba> {
+  return request<MessagesMba>(`${base(tenantId, phoneNumberId)}/messages`);
+}
+
 export interface MbaSettingsPatch {
   aiAudience?: 'EVERYONE' | 'ALLOWLISTED_ONLY';
   neverSay?: string[];

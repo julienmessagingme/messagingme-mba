@@ -4,10 +4,15 @@ import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { useT } from '@/lib/i18n';
-import { kickerCls } from '@/lib/ui';
-import { getAccountStatus } from '@/lib/api';
-import { getMbaStatus, type MbaSettings, type MbaStatus } from '@/lib/api-mba';
+import { getAccountStatus, type AccountStatusResponse } from '@/lib/api';
+import {
+  getMbaStatus, getMbaCompletion, getMbaMessages,
+  type CompletionMba, type MbaSettings, type MbaStatus,
+} from '@/lib/api-mba';
+import { LIBELLES } from '@/lib/libelles-mba';
 import { MbaTabs } from '@/components/MbaTabs';
+import { EnteteAgent } from '@/components/EnteteAgent';
+import { PastilleNumero } from '@/components/PastilleNumero';
 import { MbaAssistantPanel } from '@/components/MbaAssistantPanel';
 import { HistoriquePanel } from '@/components/HistoriquePanel';
 import { MbaNotice } from '@/components/MbaNotice';
@@ -20,7 +25,6 @@ import { MbaSkillsPanel } from '@/components/MbaSkillsPanel';
 import { MbaWebsitesPanel } from '@/components/MbaWebsitesPanel';
 import { MbaFilesPanel } from '@/components/MbaFilesPanel';
 import { MbaTestPanel } from '@/components/MbaTestPanel';
-import { MbaCompletion } from '@/components/MbaCompletion';
 import { OutilsMba } from '@/components/mba-outils/OutilsMba';
 
 export default function MbaSettingsPage() {
@@ -65,6 +69,9 @@ function MbaSettings({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean
   const onglet = lireOnglet(params.get('tab'));
 
   const [phoneNumberId, setPhoneNumberId] = useState<string | null>(null);
+  // La réponse ENTIÈRE du compte, et pas seulement l'identifiant du numéro : l'en-tête y lit le nom
+  // d'affichage, le numéro et la pastille d'état. N'en garder qu'un champ obligerait à la relire ailleurs.
+  const [compte, setCompte] = useState<AccountStatusResponse | null>(null);
   const [status, setStatus] = useState<MbaStatus | null>(null);
   const [chargement, setChargement] = useState(true);
   const [err, setErr] = useState('');
@@ -72,17 +79,64 @@ function MbaSettings({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean
   useEffect(() => {
     let vivant = true;
     (async () => {
-      const compte = await getAccountStatus(tenantId);
+      const c = await getAccountStatus(tenantId);
       if (!vivant) return;
-      if (!compte.hasNumber || compte.phoneNumberId === null) return;
-      setPhoneNumberId(compte.phoneNumberId);
-      const s = await getMbaStatus(tenantId, compte.phoneNumberId);
+      // AVANT la sortie anticipée : sans numéro, l'écran est bloqué mais l'en-tête garde du sens (la
+      // pastille dit pourquoi). Le poser après aurait laissé l'en-tête muet sur le seul état où il informe.
+      setCompte(c);
+      if (!c.hasNumber || c.phoneNumberId === null) return;
+      setPhoneNumberId(c.phoneNumberId);
+      const s = await getMbaStatus(tenantId, c.phoneNumberId);
       if (vivant) setStatus(s);
     })()
       .catch((e: unknown) => { if (vivant) setErr(e instanceof Error ? e.message : String(e)); })
       .finally(() => { if (vivant) setChargement(false); });
     return () => { vivant = false; };
   }, [tenantId]);
+
+  /**
+   * 🔴 DEUX EFFETS À PART, ET DEUX `.catch` QUI AVALENT. Les joindre à la chaîne ci-dessus les ferait tomber
+   * dans SON `.catch` unique, qui rend la page entière comme une erreur (`mba-page-error`) : un 404 (la
+   * console publiée chez Vercel avant le déploiement de l'API) ou un 403 (compte non administrateur)
+   * effacerait alors un écran parfaitement utilisable. Ici, la valeur reste à `null` et l'en-tête n'affiche
+   * simplement pas ce qu'il ne sait pas.
+   *
+   * 🔴 ET ILS NE PARTENT QUE SI L'ÉCRAN PEUT SERVIR À QUELQUE CHOSE, c'est-à-dire si Meta a ouvert l'agent
+   * sur ce numéro. Un numéro CONNECTÉ mais pas encore ouvert pose `phoneNumberId` (il vient de
+   * `getAccountStatus`) alors que l'écran restera sur sa bannière de blocage quel que soit l'onglet demandé.
+   * Or `/completion` ne regarde PAS l'éligibilité côté serveur : elle interroge les informations, les FAQ,
+   * les sites et les fichiers, donc elle rend de vraies tâches `a_faire` (« aucune FAQ » en premier). Sans
+   * cette garde, l'en-tête annonçait « 1 étape à finir » avec un bouton qui change l'URL et ne produit
+   * RIEN : le motif « offert-et-inerte », que ce produit s'interdit. Et c'est le cas COURANT d'un client qui
+   * vient de connecter son numéro, pas un cas limite.
+   *
+   * ⚠️ La dépendance est le BOOLÉEN, pas l'objet `status` : `majReglages` en reconstruit un à chaque
+   * enregistrement de réglage, ce qui relancerait les deux lectures réseau à chaque bascule d'interrupteur.
+   * Ce qui décide ici est l'éligibilité, et elle, elle ne change pas quand on enregistre.
+   */
+  const eligible = status?.eligible === true;
+
+  const [messages, setMessages] = useState<number | null>(null);
+  useEffect(() => {
+    if (phoneNumberId === null || !eligible) return;
+    let vivant = true;
+    void getMbaMessages(tenantId, phoneNumberId)
+      .then((r) => { if (vivant) setMessages(r.messages); })
+      .catch(() => { if (vivant) setMessages(null); });
+    return () => { vivant = false; };
+  }, [tenantId, phoneNumberId, eligible]);
+
+  // La complétion se lit ICI depuis que l'en-tête l'affiche (elle vivait dans `MbaCompletion`, supprimé) :
+  // l'en-tête est purement présentationnel, il n'appelle rien lui-même.
+  const [completion, setCompletion] = useState<CompletionMba | null>(null);
+  useEffect(() => {
+    if (phoneNumberId === null || !eligible) return;
+    let vivant = true;
+    void getMbaCompletion(tenantId, phoneNumberId)
+      .then((r) => { if (vivant && Array.isArray(r?.taches)) setCompletion(r); })
+      .catch(() => { if (vivant) setCompletion(null); });
+    return () => { vivant = false; };
+  }, [tenantId, phoneNumberId, eligible]);
 
   // L'onglet vit dans l'adresse : la page est partageable, et le navigateur retrouve où on en était.
   const choisirOnglet = useCallback((cle: string) => {
@@ -98,14 +152,31 @@ function MbaSettings({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean
     }));
   }, []);
 
+  /**
+   * 🔴 RENDU DANS LES CINQ ÉTATS, y compris les deux blocages et le chargement : il est à l'intérieur de
+   * `coquille`. Il doit donc tenir avec `compte === null` (titre générique, aucune précision, aucun état) et
+   * avec `completion === null` (aucune étape, aucun ratio). Un en-tête qui n'apparaîtrait qu'une fois tout
+   * chargé ferait sauter la page au moment où la lecture aboutit.
+   */
   const entete = (
-    <header className="space-y-1">
-      <span className={kickerCls}>{t('MBA', 'MBA')}</span>
-      <h2 className="text-xl font-semibold tracking-tight text-ink-900">{t('Paramètres de l’agent', 'Agent settings')}</h2>
-      <p className="text-sm text-ink-600">
-        {t('Ce que votre agent sait, ce qu’il a le droit de dire, et à qui il répond.', 'What your agent knows, what it may say, and who it answers.')}
-      </p>
-    </header>
+    <EnteteAgent
+      logo={{ src: '/meta-business-agent.png', alt: '' }}
+      pastille="MB"
+      nom={compte?.verifiedName ?? t('Paramètres de l’agent', 'Agent settings')}
+      // ⚠️ `number` n'est PAS normalisé par le serveur : le préfixe `+` se pose à l'affichage, exactement
+      // comme sur l'Accueil (`web/app/accueil/page.tsx`). Deux gestes différents feraient deux numéros.
+      precision={compte?.number ? (compte.number.startsWith('+') ? compte.number : `+${compte.number}`) : undefined}
+      etat={compte?.status ? <PastilleNumero status={compte.status} /> : undefined}
+      // 🔴 `null` TANT QU'ON N'A PAS LU LA COMPLÉTION, jamais une liste vide : `[]` ferait annoncer « Tout
+      // est réglé » pendant le chargement et sur les deux écrans bloqués, à côté d'un bandeau qui dit qu'il
+      // n'y a pas de numéro. C'est le défaut que `MbaCompletion` évitait en ne s'affichant pas du tout.
+      etapes={completion === null ? null : completion.taches
+        .filter((x) => x.etat === 'a_faire')
+        .map((x) => ({ message: x.raison ?? t(LIBELLES[x.cle].fr, LIBELLES[x.cle].en), onglet: LIBELLES[x.cle].onglet }))}
+      ratio={completion ? { faites: completion.faites, total: completion.total } : undefined}
+      messages30j={messages}
+      onOnglet={choisirOnglet}
+    />
   );
   /**
    * ⚠️ `max-w-6xl` et non `4xl` (demandé par Julien le 2026-09-10) : huit onglets et des panneaux qui
@@ -122,43 +193,53 @@ function MbaSettings({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean
   const props = { tenantId, phoneNumberId };
 
   return coquille(
-    <>
-      {/* La complétion AVANT les onglets : c'est ce qui manque qui doit se voir en arrivant, pas la liste
-          des endroits où chercher. Elle n'apparaît que si la lecture a abouti. */}
-      {phoneNumberId && <MbaCompletion tenantId={tenantId} phoneNumberId={phoneNumberId} onOnglet={choisirOnglet} />}
-      <MbaTabs
-        active={onglet}
-        onSelect={choisirOnglet}
-        tabs={[
-          { key: 'apercu', label: t('Vue d’ensemble', 'Overview') },
-          { key: 'assistant', label: t('Assistant', 'Assistant') },
-          { key: 'activation', label: t('Activation', 'Activation') },
-          { key: 'business', label: t('Informations', 'Business info') },
-          { key: 'faq', label: t('FAQ', 'FAQ') },
-          { key: 'competences', label: t('Compétences', 'Skills') },
-          { key: 'outils', label: t('Outils', 'Tools') },
-          { key: 'fichiers', label: t('Fichiers', 'Files') },
-          { key: 'sites', label: t('Sites web', 'Websites') },
-          { key: 'historique', label: t('Historique', 'History') },
-          { key: 'test', label: t('Tester', 'Test') },
-        ]}
-      />
+    <div className="grid gap-4 lg:grid-cols-[14rem_1fr]">
+      {/* ⚠️ `min-w-0` ICI AUSSI, et pas seulement sur le contenu. Un élément de grille a `min-width: auto`,
+          donc il ne peut pas devenir plus étroit que son contenu : sous `lg`, le menu redevient une barre
+          horizontale à défilement (onze entrées, environ 1 030 px), et la grille prenait cette largeur. La
+          PAGE ENTIÈRE défilait alors horizontalement sur un téléphone, au lieu de la seule barre d'onglets.
+          Mesuré avant correction : `scrollWidth` 1029 pour un `clientWidth` de 390. */}
+      <div className="min-w-0 lg:border-r lg:border-ink-200 lg:pr-3">
+        <MbaTabs
+          orientation="verticale"
+          active={onglet}
+          onSelect={choisirOnglet}
+          tabs={[
+            { key: 'apercu', label: t('Vue d’ensemble', 'Overview') },
+            { key: 'assistant', label: t('Assistant', 'Assistant') },
+            { key: 'activation', label: t('Activation', 'Activation') },
+            { key: 'business', label: t('Informations', 'Business info') },
+            { key: 'faq', label: t('FAQ', 'FAQ') },
+            { key: 'competences', label: t('Compétences', 'Skills') },
+            { key: 'outils', label: t('Outils', 'Tools') },
+            { key: 'fichiers', label: t('Fichiers', 'Files') },
+            { key: 'sites', label: t('Sites web', 'Websites') },
+            { key: 'historique', label: t('Historique', 'History') },
+            { key: 'test', label: t('Tester', 'Test') },
+          ]}
+        />
+      </div>
 
-      {onglet === 'apercu' && <MbaOverviewPanel {...props} status={status} onChange={majReglages} />}
-      {onglet === 'assistant' && <MbaAssistantPanel tenantId={tenantId} />}
-      {onglet === 'activation' && <MbaActivationPanel tenantId={tenantId} />}
-      {onglet === 'business' && <MbaBusinessInfoPanel {...props} />}
-      {onglet === 'faq' && <MbaFaqPanel {...props} />}
-      {onglet === 'competences' && <MbaSkillsPanel {...props} />}
-      {/* 🔴 LES OUTILS DE L'AGENT DE META, ET EUX SEULS (spec 2026-09-21-outils-maison-mba, § 9). L'ancien
-          écran mélangeait la bibliothèque de l'espace et ce que Meta peut appeler, et Julien l'a trouvé
-          illisible : on y décide désormais seulement ce que fait l'agent de Meta, et enregistrer envoie chez
-          Meta. Les connecteurs d'un agent IA se gèrent depuis sa fiche. */}
-      {onglet === 'outils' && <OutilsMba tenantId={tenantId} isAdmin={isAdmin} />}
-      {onglet === 'fichiers' && <MbaFilesPanel {...props} />}
-      {onglet === 'sites' && <MbaWebsitesPanel {...props} />}
-      {onglet === 'historique' && <HistoriquePanel tenantId={tenantId} surface="mba" />}
-      {onglet === 'test' && <MbaTestPanel {...props} />}
-    </>,
+      {/* ⚠️ `min-w-0` : une piste de grille `1fr` prend la largeur MINIMALE de son contenu comme plancher, et
+          un panneau large (le tableau de FAQ, la liste des fichiers) pousserait alors la grille et ferait
+          déborder la page entière. Même geste que la mise en page de l'Inbox. */}
+      <div className="min-w-0 space-y-6">
+        {onglet === 'apercu' && <MbaOverviewPanel {...props} status={status} onChange={majReglages} />}
+        {onglet === 'assistant' && <MbaAssistantPanel tenantId={tenantId} />}
+        {onglet === 'activation' && <MbaActivationPanel tenantId={tenantId} />}
+        {onglet === 'business' && <MbaBusinessInfoPanel {...props} />}
+        {onglet === 'faq' && <MbaFaqPanel {...props} />}
+        {onglet === 'competences' && <MbaSkillsPanel {...props} />}
+        {/* 🔴 LES OUTILS DE L'AGENT DE META, ET EUX SEULS (spec 2026-09-21-outils-maison-mba, § 9). L'ancien
+            écran mélangeait la bibliothèque de l'espace et ce que Meta peut appeler, et Julien l'a trouvé
+            illisible : on y décide désormais seulement ce que fait l'agent de Meta, et enregistrer envoie chez
+            Meta. Les connecteurs d'un agent IA se gèrent depuis sa fiche. */}
+        {onglet === 'outils' && <OutilsMba tenantId={tenantId} isAdmin={isAdmin} />}
+        {onglet === 'fichiers' && <MbaFilesPanel {...props} />}
+        {onglet === 'sites' && <MbaWebsitesPanel {...props} />}
+        {onglet === 'historique' && <HistoriquePanel tenantId={tenantId} surface="mba" />}
+        {onglet === 'test' && <MbaTestPanel {...props} />}
+      </div>
+    </div>,
   );
 }
