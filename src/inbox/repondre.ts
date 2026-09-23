@@ -103,18 +103,24 @@ export async function repondreDansLaFenetre(
 
   /**
    * 🔴 UNE MACHINE NE PARLE PAS À QUELQU'UN QUI A DIT STOP, UN OPÉRATEUR SI (décision de Julien du
-   * 2026-09-13). C'est la SEULE divergence voulue entre les deux appelants de cette fonction, et elle est
+   * 2026-09-13). C'est la SEULE divergence voulue entre les appelants de cette fonction, et elle est
    * écrite ici plutôt que chez l'un d'eux : la recopier côté MCP aurait rendu possible qu'elle dérive, et
-   * ce fichier existe précisément pour que les deux chemins ne divergent jamais par accident.
+   * ce fichier existe précisément pour que les chemins ne divergent jamais par accident.
    *
    * La raison de l'exception humaine doit survivre à ce commentaire : sans elle, un opérateur ne pourrait
    * même plus accuser réception d'un opt-out, ni répondre à une réclamation posée juste après. La machine
    * se tait ; la personne peut encore répondre à la personne.
    *
-   * ⚠️ LA REQUÊTE N'EST PAYÉE QUE PAR L'ORIGINE MACHINE : le chemin de la console, qui est le plus
+   * 🔴 ELLE NOMMAIT `mcp`, DONC UN SEUL APPELANT, ET C'ÉTAIT LA MAUVAISE FORME (lot 7, 2026-09-23). La règle
+   * énoncée est « une MACHINE », pas « MCP » : écrite en liste d'appelants, elle s'ouvre en grand dès qu'on
+   * en ajoute un, et l'API publique du client serait passée à travers sans qu'aucun test ne tombe. On
+   * demande donc l'INVERSE, qui est ce que la règle dit : tout ce qui n'est pas un opérateur humain.
+   * L'exception se nomme une fois, les machines n'ont plus à se déclarer.
+   *
+   * ⚠️ LA REQUÊTE N'EST TOUJOURS PAYÉE QUE PAR L'ORIGINE MACHINE : le chemin de la console, le plus
    * fréquent de loin, ne lit rien de plus qu'avant.
    */
-  if (origine === 'mcp' && await deps.estDesabonne(tenantId, ctx.waId)) {
+  if (origine !== 'humain' && await deps.estDesabonne(tenantId, ctx.waId)) {
     return { refus: { motif: 'contact_desabonne' } };
   }
 

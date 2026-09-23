@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import type { Pool } from 'pg';
 import { ORIGINE_EFFECTIVE_SQL, THEME_DE_ORIGINE, DETAIL_IA, ORIGINES, BASCULE_ORIGINE } from '../src/inbox/origine';
 import { PgInboxStore } from '../src/inbox/store.pg';
@@ -120,10 +120,26 @@ describe('origine d’un message de service', () => {
 
   describe('les migrations de la colonne', () => {
     const sql = readFileSync(new URL('../db/migrations/0099_message_origine.sql', import.meta.url), 'utf8');
-    // La contrainte a été ROUVERTE par 0101 (l'origine `mcp`). C'est la DERNIÈRE qui fait foi : lire 0099
-    // seule aurait fait échouer ce test à chaque nouvelle valeur, et surtout l'aurait fait échouer POUR LA
-    // MAUVAISE RAISON, en laissant croire que le code écrit une valeur interdite.
-    const sqlCourant = readFileSync(new URL('../db/migrations/0101_origine_mcp.sql', import.meta.url), 'utf8');
+    /**
+     * LA DERNIÈRE MIGRATION QUI REDÉFINIT LE CHECK, TROUVÉE DANS LE DOSSIER, jamais nommée ici.
+     *
+     * 🔴 CE NOM ÉTAIT ÉCRIT EN DUR (`0101_origine_mcp.sql`) ET IL FALLAIT PENSER À LE CHANGER. Chaque
+     * nouvelle origine rouvre le CHECK dans une migration de plus : le test aurait continué de lire 0101,
+     * donc d'affirmer que la contrainte n'accepte que six valeurs, et il serait tombé en annonçant que le
+     * CODE écrit une valeur interdite. Un test qui échoue POUR LA MAUVAISE RAISON coûte plus cher qu'un
+     * test absent : on cherche le défaut là où il n'est pas. La liste se dérive donc du dossier, et la
+     * prochaine origine n'aura rien à éditer ici.
+     *
+     * ⚠️ TRI PAR NOM, comme le runner de migrations lui-même (`db/`), et pas par date de fichier : c'est
+     * l'ordre qui fait foi, et deux sessions qui écrivent en parallèle ne le respecteraient pas.
+     */
+    const dossier = new URL('../db/migrations/', import.meta.url);
+    const redefinissent = readdirSync(dossier)
+      .filter((f) => f.endsWith('.sql'))
+      .filter((f) => /check \(origin in \(/.test(readFileSync(new URL(f, dossier), 'utf8')))
+      .sort();
+    const derniere = redefinissent[redefinissent.length - 1]!;
+    const sqlCourant = readFileSync(new URL(derniere, dossier), 'utf8');
 
     it('🔴 contraint la colonne aux SEULES origines déclarées en TypeScript', () => {
       // Les deux listes doivent rester alignées : une valeur écrite par le code mais absente du `check`
@@ -168,5 +184,8 @@ describe('le détail sous le thème « IA » (2026-09-15)', () => {
     expect(DETAIL_IA.humain).toBeUndefined();
     expect(DETAIL_IA.scenario).toBeUndefined();
     expect(DETAIL_IA.campagne).toBeUndefined();
+    // L'API publique du client : un envoi automatise, sans aucun modele au bout. Le ranger sous « IA »
+    // afficherait un cout d'IA la ou il n'y en a pas (migration 0166).
+    expect(DETAIL_IA.api).toBeUndefined();
   });
 });

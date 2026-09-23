@@ -198,6 +198,44 @@ Idempotency-Key: commande-8412
         </p>
       </Section>
 
+      <Section title={t('Envoyer un simple message', 'Send a plain message')}>
+        <p className="text-ink-500">{t('Droit requis', 'Required scope')} : <C>sends:create</C></p>
+        <Verb method="POST" path="/v1/messages" />
+        <p>
+          {t(
+            'Un texte, a une personne, dans la fenetre de service de 24 h : c\'est le pendant exact de la barre de reponse de l\'Inbox. Pas de template a faire approuver, pas de scenario.',
+            'One text, to one person, inside the 24-hour service window: the exact counterpart of the Inbox reply bar. No template to get approved, no scenario.',
+          )}
+        </p>
+        <pre className={codeCls}>{`{ "to": "+33612345678", "text": "Votre commande est prete." }`}</pre>
+        <p>
+          {t('Reponse 200 :', '200 response:')}{' '}
+          <C>{'{ "messageId": "wamid...", "conversationId": "..." }'}</C>
+          {t(
+            ". Le message apparait dans l'Inbox comme n'importe quel envoi, et prendre la parole PREND le fil : le scenario cesse d'avancer seul et l'agent de Meta cesse de repondre sur cette conversation.",
+            ". The message shows up in the Inbox like any other send, and speaking TAKES the thread: the scenario stops advancing on its own and the Meta agent stops replying on that conversation.",
+          )}
+        </p>
+        <p className="text-ink-500">
+          {t(
+            'La fenetre de 24 h est une regle de Meta, pas une regle du produit : elle s\'ouvre quand la personne vous ecrit et se referme 24 h apres son dernier message. Hors fenetre, la reponse est un 422 portant le code window_closed, et le seul chemin restant est un template (POST /v1/sends).',
+            'The 24-hour window is a Meta rule, not a product rule: it opens when the person writes to you and closes 24 hours after their last message. Outside it, the answer is a 422 carrying code window_closed, and the only remaining path is a template (POST /v1/sends).',
+          )}
+        </p>
+        <p className="text-ink-500">
+          {t(
+            'Trois refus explicites plutot qu\'un envoi silencieux : 404 contact_inconnu (ce numero n\'a jamais ecrit), 409 contact_indisponible (contact bloque ou supprime), 409 contact_desabonne (il a demande a ne plus recevoir de messages). Cette derniere garde vaut pour l\'API comme pour tout appel automatise, jamais pour un operateur qui repond a la main.',
+            'Three explicit refusals rather than a silent send: 404 contact_inconnu (this number never wrote), 409 contact_indisponible (contact blocked or deleted), 409 contact_desabonne (they asked to stop receiving messages). That last guard applies to the API as to any automated call, never to an operator replying by hand.',
+          )}
+        </p>
+        <p className="text-ink-500">
+          {t(
+            'Pas d\'en-tete Idempotency-Key ici, a la difference des envois : un message de session est un geste unitaire, comme un operateur qui appuie sur Envoyer. Rejouer l\'appel envoie un second message.',
+            'No Idempotency-Key header here, unlike sends: a session message is a single gesture, like an operator pressing Send. Replaying the call sends a second message.',
+          )}
+        </p>
+      </Section>
+
       <Section title={t('Codes d\'erreur', 'Error codes')}>
         <table className="w-full text-left text-sm">
           <tbody>
@@ -206,7 +244,8 @@ Idempotency-Key: commande-8412
               ['401', t('Clé absente, mal formée, inconnue ou révoquée.', 'Key missing, malformed, unknown or revoked.')],
               ['403', t('La clé n\'a pas le droit demandé (message : scope requis : ...).', 'The key lacks the required scope (message: scope requis: ...).')],
               ['404', t('Scénario ou bloc introuvable ; envoi inconnu.', 'Scenario or block not found; unknown send.')],
-              ['409', t('Envoi identique déjà en cours, ou nom de scénario ambigu (utilise le code scn_).', 'Identical send already in flight, or ambiguous scenario name (use the scn_ code).')],
+              ['409', t('Envoi identique déjà en cours, nom de scénario ambigu (utilise le code scn_), ou contact bloqué / désabonné.', 'Identical send already in flight, ambiguous scenario name (use the scn_ code), or blocked / unsubscribed contact.')],
+              ['422', t('Fenêtre de 24 h fermée (code window_closed) : passe par un template.', 'The 24-hour window is closed (code window_closed): use a template instead.')],
               ['429', t('Débit dépassé. Attends la durée de retry-after.', 'Rate limit exceeded. Wait for retry-after.')],
             ].map(([code, desc]) => (
               <tr key={code} className="border-b border-ink-50 last:border-0">
@@ -216,6 +255,13 @@ Idempotency-Key: commande-8412
             ))}
           </tbody>
         </table>
+      </Section>
+
+      <Section title={t('Exemple : un simple message', 'Example: a plain message')}>
+        <pre className={codeCls}>{`curl -X POST ${ADRESSE_API}/v1/messages \\
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \\
+  -H "Content-Type: application/json" \\
+  -d '{ "to": "+33612345678", "text": "Votre commande est prete." }'`}</pre>
       </Section>
 
       <Section title={t('Exemple complet', 'Full example')}>
