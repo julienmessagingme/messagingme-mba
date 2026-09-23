@@ -42,7 +42,30 @@ questions du `CLAUDE.md` global :
 Deux « oui » en haut, donc revue humaine du diff. `feature-loop` est exclu : ses critères ne sont pas
 mécaniquement testables ici, puisque l'essentiel se passe chez Meta.
 
-## Ce qui est MESURÉ avant d'être écrit
+## Ce qui est MESURÉ avant d'être écrit : réponses du 2026-09-23, sur un vrai compte
+
+🔴 **LES DEUX ONT ÉTÉ MESURÉES EN PRODUCTION, et elles ne répondent pas dans le même sens.**
+
+1. **La liaison Page / numéro : NON, Meta ne répond pas, ET L'APPEL A FINI PAR ÊTRE RETIRÉ.** La première
+   mesure ne portait que sur `connected_whatsapp_business_account`, absent de la Page. La seconde, faite
+   le même jour en sachant que le WhatsApp Manager AFFICHE la liaison, a essayé DIX champs sur les trois
+   objets concernés : aucun ne la rend. L'appel était donc condamné à un 400 à chaque choix, pour
+   toujours rendre `inconnu`. ⚠️ **Cette ligne a dit « l'écran annonce une ignorance », ce n'est plus ce
+   qui est livré** : un « je ne sais pas » sans suite ne sert personne, donc l'écran emmène le client là
+   où Meta l'affiche. Le type et la colonne `page_liee` restent pour le jour où Meta l'exposera.
+2. **La devise et le fuseau SANS la permission `MANAGE` : OUI.** Ils arrivent dans
+   `GET /me/adaccounts`, avec le nom du compte et son `account_status`. L'arbitrage de ne demander que
+   `ADVERTISE` à la configuration est donc validé par la mesure, et aucun client ne verra
+   « contrôler les finances » dans sa fenêtre de connexion.
+
+🔴 **ET UNE TROISIÈME RÉPONSE, QUE PERSONNE N'AVAIT PENSÉ À POSER** : un jeton d'utilisateur système
+d'intégration **ne déclare pas ses actifs**. `debug_token` rend ses permissions sans aucun `target_ids`,
+là où l'inscription WhatsApp y trouve ses WABA. Les actifs se DEMANDENT (`/me/adaccounts`,
+`/me/accounts`), ils ne se déduisent pas du jeton. C'est ce qui rendait les deux listes vides alors que
+la connexion était parfaite.
+
+### L'énoncé d'origine, gardé pour mémoire
+
 
 Deux inconnues, et aucune ne se devine. Elles se mesurent sur le vrai compte, avec le vrai jeton, et le
 résultat décide du code. Tant qu'elles ne sont pas mesurées, les tâches 4 et 6 restent ouvertes.

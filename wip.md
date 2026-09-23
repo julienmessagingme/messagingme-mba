@@ -134,21 +134,31 @@ Spec `docs/superpowers/specs/2026-09-22-pubs-ctwa-design.md`, plan
   `horsEntreeGratuite` RESTE, ses deux arguments étant des expressions de la requête appelante et jamais une
   valeur d'utilisateur ; `bilanContact` garde l'écart de gardes de livraison ANTÉRIEUR à ce lot et déclaré dans
   le code, parce que le fermer CHANGE un chiffre que le client voit et demande donc sa propre mesure.
-- ⏳ **Lot 2 « Connecter » : ÉCRIT ET POUSSÉ le 2026-09-23, PAS DÉPLOYÉ.** Plan
-  `docs/superpowers/plans/2026-09-23-pubs-ctwa-lot2-connecter.md`. Migration **0167** écrite, pas
-  appliquée. Un espace connecte son compte publicitaire et sa Page depuis l'écran « Publicités » ; le
-  jeton d'utilisateur système est chiffré au repos, et le choix du compte est vérifié contre ce que le
-  jeton accorde, relu chez Meta.
-- 🔴 **CE QUI MANQUE AU LOT 2 AVANT D'ÊTRE VRAI** : sa revue finale, son déploiement (migration AVANT
-  le `up`), et surtout l'essai réel, qui dépend de DEUX gestes chez Meta côté Julien : lier la Page au
-  numéro WhatsApp (le code arrive dans l'Inbox) et poser un moyen de paiement. Sans le premier, la
-  liaison restera « inconnue » à l'écran, ce qui est le cas honnête, pas un défaut.
-- ⚠️ **L'écran est DÉJÀ EN LIGNE** (Vercel publie à chaque push) et dit « publicités non configurées »
-  tant que l'API n'est pas déployée ET que `META_ADS_CONFIG_ID` n'est pas posée dans le `.env.prod`. Un
-  test Playwright tient cette tolérance : c'est elle qui ferme la fenêtre Vercel/API.
-- ✅ **Revue du lot faite le jour même, 4 points, tous corrigés** (`4c93d5fb`), dont un qui comptait : le
-  chiffrement du jeton n'était tenu par AUCUN test, puisqu'il vit dans le câblage. `tests/pubs-cablage.test.ts`
-  le lit dans la source, comme le plafond de campagne.
+- ✅ **Lot 2 « Connecter » : DÉPLOYÉ ET ÉPROUVÉ le 2026-09-23.** Un vrai compte publicitaire d'un vrai
+  portefeuille est connecté depuis l'écran : nom, devise, fuseau et Page lus chez Meta. Migrations 0167
+  et 0169 appliquées avant leur `up`, relues en base point par point.
+- 🔴 **LES DEUX MESURES DU PLAN SONT TRANCHÉES, ET LA TROISIÈME N'AVAIT PAS ÉTÉ POSÉE.** La liaison
+  Page / numéro ne se lit PAS chez Meta (le verdict `inconnu` est le cas normal, pas un repli) ; la
+  devise et le fuseau se lisent SANS la permission `MANAGE`, ce qui valide l'arbitrage de la
+  configuration ; et un jeton d'utilisateur système **ne déclare pas ses actifs**, il faut les
+  DEMANDER. Ce dernier point a coûté un écran qui annonçait « aucun compte » sur une connexion
+  parfaite : `brain/LEARNINGS.md`, 2026-09-23.
+- ✅ **LES DEUX GESTES QUI MANQUAIENT CÔTÉ JULIEN SONT FAITS** (points 4 et 5 de la spec § 11) : la Page
+  « Messaging Me » est liée au numéro, et le compte publicitaire porte un moyen de paiement actif.
+  ⚠️ La Page à choisir reste CELLE QUI EST LIÉE au numéro : c'est elle qui décide vers quel WhatsApp le
+  bouton ouvre la conversation.
+- 🔴 **L'ÉCRAN MONTRE DÉSORMAIS SI LE COMPTE PEUT DIFFUSER, et il ne prétend plus connaître la
+  liaison.** Le statut du compte et la présence d'un moyen de paiement sont lus EN DIRECT chez Meta,
+  parce que sans eux une pub se crée et ne diffuse jamais, et l'erreur arrive des jours plus tard.
+  `null` y veut dire « je n'ai pas pu demander », jamais « tout va bien ». La liaison Page / numéro,
+  elle, n'est plus demandée du tout : dix champs essayés, aucun ne la rend, et l'appel était condamné
+  à un 400 à chaque choix. L'écran emmène le client là où Meta l'affiche.
+- ⚠️ **MessagingMe ne peut pas connecter SON PROPRE compte par cet écran**, et c'est structurel chez
+  Meta : le portefeuille qui possède l'app ne peut pas être son propre client. D'où
+  `POST /ops/pubs/connexion/:tenantId`, qui dépose un jeton d'utilisateur système créé à la main après
+  l'avoir vérifié chez Meta. Notre propre espace est connecté ainsi depuis le 2026-09-23.
+  ⚠️ L'App Review, elle, n'est PAS bloquée : la démonstration se fait avec un portefeuille client, ce
+  qui est le cas d'usage réel.
 
 ## 🔴 OUTILS MAISON DE L'AGENT DE META (LOT 2 DÉPLOYÉ ET ÉPROUVÉ ; LOTS 3 ET 4 ÉCRITS LE 2026-09-22)
 
@@ -444,7 +454,7 @@ Inviter quelqu'un, changer son rôle, créer puis révoquer une clé d'API, et o
 quatre lignes doivent y être, avec le bon auteur et le bon horodatage, et **aucune ne doit porter d'email
 ailleurs que dans la colonne auteur**.
 
-### 3. Tester un scénario À PARTIR D'UN BLOC — ✅ ÇA MARCHE depuis le 2026-09-16 au soir
+### 3. Tester un scénario À PARTIR D'UN BLOC : ✅ ÇA MARCHE depuis le 2026-09-16 au soir
 
 ✅ **CONFIRMÉ PAR JULIEN le 2026-09-16 au soir : « ça a marché, le scénario est parti ».** C'est le geste 1
 de la liste ci-dessous, et il a fallu DEUX essais ratés pour y arriver.
