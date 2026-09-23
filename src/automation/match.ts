@@ -57,6 +57,21 @@ export type KeywordMode = 'contains' | 'equals';
 export const POSSESSEUR_LIEN_CHAINE = 'channelsme_link';
 
 /**
+ * Le propriétaire d'une automation née d'une PUBLICITÉ Click-to-WhatsApp (lot 3, migration 0170).
+ *
+ * ⚠️ AU PREMIER COMMIT DU LOT 3, CETTE VALEUR EST LUE ET PAR PERSONNE ÉCRITE, et il faut le dire plutôt que
+ * de laisser croire le contraire : le routage sait déjà qu'une automation de publicité reprend la main
+ * (`reprendLaMain`), mais rien ne crée encore une telle automation. C'est la CRÉATION d'une publicité
+ * (commit 2) qui l'écrit, avec ses gardes miroir en SQL, et c'est à ce moment-là que le test de source
+ * viendra tenir les deux moitiés alignées, comme il le fait pour les liens de chaîne.
+ *
+ * 🔴 CE QUE CET ALIGNEMENT PROTÉGERA. Si la constante et le littéral SQL divergeaient, l'automation
+ * deviendrait intouchable par son propriétaire ET invisible de l'écran Automations (`HORS_WEBHOOK` exclut
+ * tout `possede_par` non nul) : elle continuerait de déclencher sans que personne puisse l'éteindre.
+ */
+export const POSSESSEUR_PUBLICITE = 'publicite';
+
+/**
  * Cette automation vient-elle d'un BOUTON DE CHAÎNE ?
  *
  * 🔴 CE QUE CETTE QUESTION DÉCIDE, et pourquoi elle a un nom. Julien, le 2026-09-08 : « quand ça vient d'une
@@ -74,6 +89,25 @@ export const POSSESSEUR_LIEN_CHAINE = 'channelsme_link';
  */
 export function vientDuneChaine(a: AutomationRow): boolean {
   return a.possedePar === POSSESSEUR_LIEN_CHAINE;
+}
+
+/**
+ * CE DÉMARRAGE REPREND-IL LA CONDUITE DU FIL, même tenue par un opérateur ou par l'agent de Meta ?
+ *
+ * 🔴 DEUX PROPRIÉTAIRES, NOMMÉS, ET PAS « POSSÈDE UN PROPRIÉTAIRE QUELCONQUE ». Le bouton de chaîne (2026-09-08)
+ * et la publicité Click-to-WhatsApp (lot 3) ont la même justification : le contact a fait un geste EXPLICITE
+ * vers CE scénario, en cliquant un bouton ou une publicité. Un futur propriétaire (un autre canal, un
+ * connecteur) hériterait sinon d'un pouvoir que personne ne lui a accordé, et sans qu'aucun type ne bouge.
+ *
+ * 🔴 ET LA PUBLICITÉ EN A ENCORE PLUS BESOIN QUE LA CHAÎNE. Le lead d'une pub arrive très souvent sur un fil
+ * que l'agent de Meta tient déjà (c'est le cas du numéro du pilote, où il répond à tout le monde) : sans la
+ * reprise, le scénario ne démarrerait jamais, en silence des deux côtés, sur un clic PAYÉ.
+ *
+ * ⚠️ UNE AUTOMATION ORDINAIRE VAUT TOUJOURS `false`, et ce sens-là compte autant que l'autre : un mot-clé qui
+ * reprendrait la main ferait écrire un scénario par-dessus l'opérateur en train de répondre au client.
+ */
+export function reprendLaMain(a: AutomationRow): boolean {
+  return vientDuneChaine(a) || a.possedePar === POSSESSEUR_PUBLICITE;
 }
 
 export interface AutomationRow {
@@ -116,7 +150,11 @@ export type AutomationEvent =
    *  prouvée ouverte : un message RCS ne prouve RIEN côté Meta (cf. `runAutomations`). */
   /** `adId` = la publicité Click-to-WhatsApp d'où vient ce message, quand il y en a une. Meta ne le
    *  transmet que sur le PREMIER message après le clic. */
-  | { kind: 'message'; waId: string; body: string | null; isNewContact: boolean; channel: 'whatsapp' | 'rcs'; adId?: string }
+  /** `campagneId` = la CAMPAGNE de cette publicité, résolue par le routage (lot 3) avant d'arriver ici. Meta
+   *  ne la transmet PAS dans le webhook : elle vient de `pubs_connues`, ou d'un appel fait une seule fois
+   *  pour une pub jamais vue. Absente = campagne inconnue, ce qui est le cas de tout le trafic d'avant ce
+   *  lot et de toute pub qu'on ne pilote pas. */
+  | { kind: 'message'; waId: string; body: string | null; isNewContact: boolean; channel: 'whatsapp' | 'rcs'; adId?: string; campagneId?: string }
   | { kind: 'tag_added'; waId: string; tag: string }
   /** Une conversation vient d'être analysée : `sentiment` catégoriel (pas de score numérique) + `resolved`. */
   | { kind: 'analysis'; waId: string; sentiment: string; resolved: boolean }
@@ -180,10 +218,28 @@ export function matchesTrigger(a: AutomationRow, ev: AutomationEvent): boolean {
     if (ev.kind !== 'message') return false;
     const venuDeLaPub = (ev.adId ?? '').trim();
     if (venuDeLaPub === '') return false;
+    /**
+     * 🔴 LA CAMPAGNE PASSE AVANT LA PUB, et c'est le niveau du lien depuis le lot 3 (décision de Julien du
+     * 2026-09-22). Une automation possédée par une publicité porte `campaignId` : elle vaut alors pour la
+     * campagne ENTIÈRE, donc pour les copies faites dans le Gestionnaire, qui portent chacune un identifiant
+     * de pub neuf. Router sur l'identifiant de pub ferait perdre le scénario au premier duplicata.
+     *
+     * ⚠️ Une campagne demandée mais INCONNUE de ce message ne correspond pas : c'est une égalité, pas un
+     * repli sur la pub. Retomber sur `adId` ferait déclencher une automation de campagne sur un lead dont on
+     * n'a justement pas su dire la campagne.
+     */
+    const campagneVoulue = String(a.triggerConfig.campaignId ?? '').trim();
+    if (campagneVoulue !== '') return campagneVoulue === (ev.campagneId ?? '').trim();
     // ⚠️ Doctrine DIFFÉRENTE de « tag ajouté » et « étape de deal », où une config vide n'attrape RIEN.
     // Ici, vide veut dire « n'importe quelle pub », et c'est légitime : « tout lead qui arrive par une pub
     // part dans le scénario d'accueil » est le montage le plus courant. La portée reste bornée aux messages
     // issus d'une pub, elle ne peut pas déborder sur le trafic ordinaire.
+    //
+    // 🔴 ET ELLE NE PART PLUS POUR UNE CAMPAGNE RELIÉE, depuis le lot 3. Ce n'est PAS écrit ici, et ça ne
+    // peut pas l'être : « n'importe quelle pub » reste vrai du point de vue de la correspondance. C'est la
+    // RESTRICTION posée en amont par le routage (`src/pubs/routage.ts`) qui écarte cette automation quand la
+    // pub confie ses leads à un scénario précis. Changement de comportement pour les automations DÉJÀ
+    // créées, assumé et tenu par un test.
     const voulue = String(a.triggerConfig.adId ?? '').trim();
     return voulue === '' || voulue === venuDeLaPub;
   }

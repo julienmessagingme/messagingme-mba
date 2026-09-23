@@ -528,6 +528,14 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   segmentable en campagne. ⚠️ Meta ne transmet cette origine qu'au PREMIER message après le clic, et l'envoie
   seulement si l'attribution est activée côté WhatsApp Business : à vérifier dans les réglages avant la
   première campagne publicitaire.
+  🔴 **CE DÉCLENCHEUR A CHANGÉ DE COMPORTEMENT LE 2026-09-23, y compris pour les automations DÉJÀ créées.**
+  Dès qu'une publicité est **pilotée depuis Engage Me** (elle a sa fiche, et elle dit qui répond à ses leads),
+  ses leads ne sont plus évalués que par **le scénario de cette publicité** : une automation réglée sur
+  « toutes les pubs », ou sur « premier message d'un nouveau contact », ne part plus pour eux. C'est
+  volontaire, et c'est ce qui permet à une publicité de promettre un scénario précis : sans cette règle, le
+  lead recevrait deux réponses, dont une qui n'a rien à voir. Les leads des publicités que vous continuez de
+  gérer dans le Gestionnaire de Meta, eux, ne changent pas d'un iota. Et quand la publicité confie ses leads
+  à l'agent de Meta, **aucune** automation ne part : c'est lui qui répond.
 - ✅ **Le bloc « message rapide » peut porter un BOUTON DE LIEN** (2026-09-11). Une case « ce message porte
   un bouton de lien », puis un libellé (20 caractères) et une adresse : le contact reçoit un bouton qui ouvre
   la page dans son navigateur. ⚠️ **Il exclut les réponses rapides, et ce n'est pas notre choix** : chez Meta,

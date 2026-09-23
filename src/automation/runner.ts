@@ -1,6 +1,6 @@
 import { evaluateConditionGroup } from '../workflow/conditions';
 import type { EvalContext } from '../workflow/conditions';
-import { matchesTrigger, isInCooldown, vientDuneChaine } from './match';
+import { matchesTrigger, isInCooldown, reprendLaMain } from './match';
 import type { AutomationRow, AutomationEvent, AutomationTriggerKind } from './match';
 
 /**
@@ -71,8 +71,9 @@ export interface AutomationRunnerDeps {
     /**
      * Ce démarrage REPREND la conduite du fil, même tenue par un opérateur ou par l'agent de Meta.
      *
-     * Réservé aux boutons de chaîne (`vientDuneChaine`) : c'est un geste EXPLICITE de l'abonné vers ce
-     * scénario, exactement comme une campagne est un geste explicite d'un opérateur. Une automation
+     * Réservé aux automations POSSÉDÉES qui naissent d'un geste du contact (`reprendLaMain`) : le bouton
+     * d'une chaîne, et depuis le lot 3 le clic sur une publicité. C'est un geste EXPLICITE de l'abonné vers
+     * ce scénario, exactement comme une campagne est un geste explicite d'un opérateur. Une automation
      * ordinaire vaut `false` et reste bloquée par un fil tenu, ce qui est le bon défaut.
      */
     reprendLaMain: boolean;
@@ -98,6 +99,24 @@ export interface AutomationRunnerDeps {
   now?: () => number;
 }
 
+/**
+ * CE QUI RESTREINT UN TOUR D'ÉVALUATION, quand l'appelant en sait plus que le déclencheur.
+ *
+ * 🔴 UN SEUL APPELANT LA POSE AUJOURD'HUI : le routage d'un lead publicitaire (lot 3, spec § 3.3), qui exige
+ * que **seule** l'automation de la publicité soit évaluée. Ce n'est pas exprimable par la mise en
+ * correspondance : une automation `ctwa_ad` sans pub précise veut dire « n'importe quelle pub », et elle a
+ * raison de le vouloir partout ailleurs. Il fallait donc pouvoir dire « celle-là, et aucune autre ».
+ *
+ * ⚠️ ELLE NE DISPENSE D'AUCUN FILTRE : l'automation nommée passe quand même l'anti-rebond, sa condition et
+ * son plafond. Restreindre l'ENSEMBLE des candidates n'est pas donner un laissez-passer à celle qui reste.
+ */
+export interface OptionsRun {
+  /** `null` = aucune restriction, c'est-à-dire le comportement de tous les appelants sauf un. */
+  seuleAutomation: string | null;
+}
+
+const SANS_RESTRICTION: OptionsRun = { seuleAutomation: null };
+
 /** Les types de déclencheur qu'un événement donné peut activer (évite de charger des automations hors sujet). */
 function kindsFor(ev: AutomationEvent): AutomationTriggerKind[] {
   if (ev.kind === 'message') return ['keyword', 'new_contact', 'ctwa_ad'];
@@ -115,13 +134,23 @@ function kindsFor(ev: AutomationEvent): AutomationTriggerKind[] {
  * Isolation PAR AUTOMATION : une automation qui échoue (scénario supprimé, base indisponible) ne doit pas
  * empêcher les autres de se déclencher, ni faire échouer l'appelant (le job webhook est partagé).
  */
-export async function runAutomations(tenantId: string, ev: AutomationEvent, deps: AutomationRunnerDeps): Promise<number> {
+export async function runAutomations(
+  tenantId: string,
+  ev: AutomationEvent,
+  deps: AutomationRunnerDeps,
+  opts: OptionsRun = SANS_RESTRICTION,
+): Promise<number> {
   const now = deps.now ?? (() => Date.now());
   // Contact BLOQUÉ : son message reste enregistré et lisible, mais il ne déclenche plus rien. C'est le seul
   // point d'entrée des automations, donc la seule garde nécessaire pour que « bloqué » veuille dire quelque
   // chose côté scénarios. Dépendance optionnelle : absente, rien ne change.
   if (deps.contactBloque && (await deps.contactBloque(tenantId, ev.waId))) return 0;
-  const candidates = (await deps.listEnabled(tenantId, kindsFor(ev))).filter((a) => a.enabled && matchesTrigger(a, ev));
+  // ⚠️ LA RESTRICTION S'APPLIQUE AVANT LA MISE EN CORRESPONDANCE, et l'ordre de ces deux filtres n'est pas
+  // indifférent : l'inverse évaluerait `matchesTrigger` sur des automations qu'on vient d'écarter, donc
+  // ferait dépendre le résultat de leur configuration. Ici, « seule celle-là » veut dire exactement ça.
+  const candidates = (await deps.listEnabled(tenantId, kindsFor(ev)))
+    .filter((a) => opts.seuleAutomation === null || a.id === opts.seuleAutomation)
+    .filter((a) => a.enabled && matchesTrigger(a, ev));
   if (candidates.length === 0) return 0;
 
   // Contexte contact construit UNE seule fois, et SEULEMENT si au moins une candidate porte une condition
@@ -228,11 +257,12 @@ export async function runAutomations(tenantId: string, ev: AutomationEvent, deps
       const issue = await deps.startWorkflow(tenantId, a.workflowId, ev.waId, {
         startNodeId: a.startNodeId,
         windowOpen,
-        // 🔴 SEULE LA CHAÎNE REPREND LA MAIN. Julien, le 2026-09-08 : « quand ça vient d'une chaîne et que ça
-        // pointe vers un scénario, ça reprend la main ». Sans ça le clic ne lançait RIEN dès que le fil était
-        // tenu, ce qui est le cas presque à chaque fois au second clic : l'agent de Meta étant allumé, chaque
-        // scénario lui rend le fil en arrivant au bout, pour 24 heures. Et c'était MUET des deux côtés.
-        reprendLaMain: vientDuneChaine(a),
+        // 🔴 SEULES LA CHAÎNE ET LA PUBLICITÉ REPRENNENT LA MAIN. Julien, le 2026-09-08 : « quand ça vient
+        // d'une chaîne et que ça pointe vers un scénario, ça reprend la main ». Sans ça le clic ne lançait
+        // RIEN dès que le fil était tenu, ce qui est le cas presque à chaque fois au second clic : l'agent de
+        // Meta étant allumé, chaque scénario lui rend le fil en arrivant au bout, pour 24 heures. Et c'était
+        // MUET des deux côtés. Le lead d'une publicité arrive dans exactement la même situation.
+        reprendLaMain: reprendLaMain(a),
       });
       // `false` OU une chaîne (la raison du refus) = PAS parti. Tester la simple vérité JS comptait une
       // chaîne comme un succès : le tir restait marqué et l'anti-rebond avalait en silence la prochaine

@@ -94,7 +94,16 @@ describe('processArriveesPub', () => {
 });
 
 describe('handleWebhookJob : l’arrivée publicitaire', () => {
-  it('🔴 elle s’écrit APRÈS l’upsert du contact, qu’elle retrouve par son wa_id', async () => {
+  /**
+   * 🔴 L'ORDRE DES TROIS ÉTAPES EST LA MOITIÉ DE LEUR COMPORTEMENT, et aucune ne le dit toute seule.
+   *
+   * L'upsert d'abord, parce que l'arrivée retrouve la fiche par son `wa_id` : avant lui, elle n'en trouve
+   * aucune et la ligne est perdue pour toujours (Meta n'envoie `ctwa_clid` qu'une fois). Le routage ensuite,
+   * parce qu'il ANNOTE la ligne que l'arrivée vient d'écrire : avant elle, il annoterait une ligne qui
+   * n'existe pas. Et les déclencheurs après le routage, puisque c'est eux qu'il restreint, ce que garde le
+   * test voisin (`tests/pubs-routage-cablage.test.ts`).
+   */
+  it('🔴 arrivée APRÈS l’upsert du contact, routage APRÈS l’arrivée', async () => {
     const ordre: string[] = [];
     await handleWebhookJob(payload([message('wamid.h', '33611', referral)]), {
       store: { insertEvent: async () => true },
@@ -104,7 +113,17 @@ describe('handleWebhookJob : l’arrivée publicitaire', () => {
         phoneNumberTenant: async () => 't1',
         enregistrer: async () => { ordre.push('arrivee'); return 'ecrite'; },
       },
+      routagePub: {
+        phoneNumberTenant: async () => { ordre.push('routage'); return null; },
+        campagneConnue: async () => null,
+        resoudreChezMeta: async () => null,
+        publiciteDeLaCampagne: async () => null,
+        contactBloque: async () => false,
+        estDesabonne: async () => false,
+        reprendreLeFil: async () => true,
+        noterIssue: async () => {},
+      },
     });
-    expect(ordre).toEqual(['upsert', 'arrivee']);
+    expect(ordre).toEqual(['upsert', 'arrivee', 'routage']);
   });
 });

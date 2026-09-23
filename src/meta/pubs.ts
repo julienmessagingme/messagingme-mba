@@ -97,6 +97,25 @@ const PERMISSIONS_PUB = ['ads_management', 'ads_read', 'pages_manage_ads'] as co
 /** `GET /me?fields=id` : l'entité qui porte le jeton. */
 const identiteSchema = z.object({ id: z.string() });
 
+/** `GET /{ad-id}?fields=campaign_id`. `campaign_id` optionnel : on ne suppose rien de la réponse. */
+const campagneDeLaPubSchema = z.object({ campaign_id: z.string().optional() });
+
+/**
+ * PLAFOND DE DURÉE DE LA RÉSOLUTION D'UNE PUB, en millisecondes (spec § 3.3 : « un appel à Meta, 3 s
+ * maximum »).
+ *
+ * 🔴 BIEN PLUS COURT QUE LE PLAFOND GRAPH ORDINAIRE, ET C'EST LE SEUL APPEL DU DÉPÔT DANS CE CAS. Les autres
+ * appels Graph servent un écran : leur plafond de trente secondes ne borne qu'un appel perdu. Celui-ci est
+ * sur le CHEMIN CHAUD D'UN MESSAGE ENTRANT, derrière lequel attendent l'inbox, les scénarios et la réponse
+ * au client. Trente secondes d'attente y seraient trente secondes de silence pour un vrai contact, et pour
+ * TOUS les autres messages du même lot que Meta nous a envoyé.
+ *
+ * ⚠️ DÉPASSER LE DÉLAI N'EST PAS UNE PANNE : la campagne reste inconnue, le lead suit le chemin ordinaire, et
+ * la résolution sera retentée au prochain lead de la même pub. On échange une information contre le temps de
+ * réponse, délibérément.
+ */
+export const DELAI_RESOLUTION_PUB_MS = 3000;
+
 export class MetaPubsClient extends ClientGraph {
   /**
    * Les comptes publicitaires et les Pages que le jeton accorde, lus à `GET /me/adaccounts` et
@@ -154,6 +173,38 @@ export class MetaPubsClient extends ClientGraph {
       raisonDesactivation: lu.data.disable_reason ?? null,
       moyenPaiement: (lu.data.funding_source_details?.id ?? '') !== '',
     };
+  }
+
+  /**
+   * LA CAMPAGNE D'UNE PUBLICITÉ (`GET /{ad-id}?fields=campaign_id`). `null` = Meta n'a pas répondu, a refusé,
+   * ou a dépassé les trois secondes.
+   *
+   * 🔴 C'EST CE QUI RELIE LES COPIES FAITES DANS LE GESTIONNAIRE (spec § 3.3). Le webhook ne porte que
+   * l'identifiant de la PUB ; le lien, lui, est par CAMPAGNE. Une pub dupliquée porte un identifiant neuf et
+   * la même campagne : un seul appel, mémorisé pour toujours (`pubs_connues`), et la copie route comme
+   * l'originale. Sans lui, chaque duplicata perdrait son scénario en silence.
+   *
+   * ⚠️ ELLE NE LÈVE JAMAIS, contrairement au reste de ce client. Son appelant est le chemin d'un message
+   * entrant : un refus de Meta ne doit pas devenir une exception qui traverse le routage d'un lot entier de
+   * messages. Le refus est journalisé ici, une fois, avec ce qu'il faut pour le comprendre.
+   *
+   * ⚠️ LE MESSAGE D'UN ABANDON ANNONCERA LE PLAFOND GRAPH ORDINAIRE, pas celui-ci : `ClientGraph.call` ne
+   * connaît que sa propre constante quand il traduit un abandon. Le journal ci-dessous dit donc le vrai
+   * délai, pour que personne ne cherche une panne de trente secondes qui n'a pas eu lieu.
+   */
+  async campagneDeLaPub(adId: string, jeton: string): Promise<string | null> {
+    try {
+      const brut = await this.call(`${this.baseUrl}/${this.version}/${encodeURIComponent(adId)}?fields=campaign_id`, {
+        headers: { Authorization: `Bearer ${jeton}` },
+        signal: AbortSignal.timeout(DELAI_RESOLUTION_PUB_MS),
+      });
+      const lu = campagneDeLaPubSchema.safeParse(brut);
+      return lu.success ? lu.data.campaign_id ?? null : null;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(`campagne de la publicité ${adId} non résolue (plafond ${DELAI_RESOLUTION_PUB_MS} ms) :`, err instanceof Error ? err.message : err);
+      return null;
+    }
   }
 
   /**

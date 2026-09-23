@@ -39,6 +39,9 @@ import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
 import { PgInboxStore } from './inbox/store.pg';
 import { PgArriveesPubStore } from './pubs/arrivees.pg';
 import { PgTarifsMetaStore } from './pubs/tarifs-meta.pg';
+import { PgPublicitesStore } from './pubs/publicites.pg';
+import { PgPubConnexionStore } from './pubs/connexion.pg';
+import { MetaPubsClient } from './meta/pubs';
 import { PgTenantSettingsStore } from './settings/store.pg';
 import { runControlSweep } from './inbox/control-sweep';
 import { runHandoffSweep } from './mba/handoff-sweep';
@@ -219,6 +222,11 @@ async function main(): Promise<void> {
   // Lot 1 des publicités Click-to-WhatsApp : ce qui se perd si on ne le garde pas à la réception.
   const arriveesPubStore = new PgArriveesPubStore(pool);
   const tarifsMetaStore = new PgTarifsMetaStore(pool);
+  // Lot 3 : où va le lead. Les deux dépôts se lisent sur le chemin chaud d'un message entrant (deux requêtes
+  // sur clé), le client Meta ne sert qu'à résoudre une publicité JAMAIS VUE, une fois, puis on mémorise.
+  const publicitesStore = new PgPublicitesStore(pool);
+  const connexionsPubStore = new PgPubConnexionStore(pool);
+  const clientPubs = new MetaPubsClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
   // Le journal des erreurs. Le worker n'en LIT jamais : il y écrit les échecs d'avance de scénario, qui
   // n'avaient aucun domicile et disparaissaient dans un `console.error` (lot 4 du plan post-audit).
   const erreursLivraison = new PgErreursLivraisonStore(pool);
@@ -362,9 +370,10 @@ async function main(): Promise<void> {
       // tour, contrairement à une campagne. L'anti-rebond du runner borne l'enchaînement.
       //
       // 🔴 `ignoreHumanControl` N'EST PAS POSÉ POUR TOUTES LES AUTOMATIONS, seulement pour celles qui
-      // viennent d'un BOUTON DE CHAÎNE, et le runner a déjà tranché (`vientDuneChaine`). Le poser partout
-      // ferait écrire un scénario dans le fil d'un client pendant qu'un opérateur lui répond, sur n'importe
-      // quel mot-clé. `tests/campagne-controle-humain.test.ts` garde les DEUX sens de cette distinction.
+      // naissent d'un geste EXPLICITE du contact : un BOUTON DE CHAÎNE, et depuis le lot 3 des publicités un
+      // CLIC SUR UNE PUBLICITÉ. Le runner a déjà tranché (`reprendLaMain`). Le poser partout ferait écrire un
+      // scénario dans le fil d'un client pendant qu'un opérateur lui répond, sur n'importe quel mot-clé.
+      // `tests/campagne-controle-humain.test.ts` garde les DEUX sens de cette distinction.
       const unitaire = { emitEvents: true, ignoreHumanControl: opts.reprendLaMain };
       if (opts.startNodeId) return workflowExecutor.startFromNode(tenant, workflowId, wf.graph, contact, opts.startNodeId, unitaire);
       // Fenêtre PROUVÉE ouverte (le contact vient d'écrire) -> le scénario peut ouvrir par un message rapide ou
@@ -399,6 +408,33 @@ async function main(): Promise<void> {
     // Isolé dans son propre try : un souci de campagne ne doit pas faire échouer l'événement, donc rejouer le
     // scénario déjà démarré. Une campagne perdue se rattrape au balayage (destinataires en attente), un
     // scénario démarré deux fois ne se rattrape pas.
+    /**
+     * TROISIÈME CONSOMMATEUR DU MÊME ÉVÉNEMENT : la QUALIFICATION d'un lead publicitaire (lot 3, spec § 3.4).
+     *
+     * 🔴 POURQUOI ICI ET PAS DANS UNE BRANCHE DE `runAutomations`. Poser un tag et démarrer un scénario sont
+     * deux effets indépendants du même fait : un espace peut vouloir l'un, l'autre, ou les deux. Le runner
+     * ne sait rien des publicités, et lui apprendre les campagnes le rendrait dépendant d'un domaine qui ne
+     * le regarde pas, exactement comme pour les campagnes au fil de l'eau juste en dessous.
+     *
+     * ⚠️ ISOLÉ DANS SON PROPRE `try`, pour la même raison que sa voisine : une qualification ratée ne doit
+     * pas faire échouer l'événement, donc rejouer un scénario DÉJÀ démarré. Un compteur d'entonnoir en
+     * retard se rattrape en regardant la conversation ; un scénario parti deux fois, non.
+     *
+     * ⚠️ ELLE NE VOIT QUE LES CHEMINS UNITAIRES, et c'est voulu : l'action en masse, l'import CSV et l'outil
+     * MCP n'émettent pas `tag_added` (invariant du dépôt : un chemin de masse n'émet jamais), donc ils ne
+     * qualifient personne. L'écran de la publicité le dit.
+     */
+    if (job.event.kind === 'tag_added') {
+      try {
+        const campagne = await arriveesPubStore.qualifier(job.tenantId, job.event.waId, job.event.tag);
+        // eslint-disable-next-line no-console
+        if (campagne !== null) console.log(`qualification pub : lead qualifié sur la campagne ${campagne}`);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('qualification pub : échec', err instanceof Error ? err.message : err);
+      }
+    }
+
     if (job.event.kind === 'webhook') {
       try {
         const r = await alimenterCampagnesWebhook(job.tenantId, job.event.webhookId, job.event.waId, webhookFeedDeps);
@@ -444,6 +480,38 @@ async function main(): Promise<void> {
       arriveesPub: {
         phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
         enregistrer: (t, w, a) => arriveesPubStore.enregistrer(t, w, a),
+      },
+      /**
+       * OÙ VA CE LEAD (lot 3). Sur CETTE file seulement, pour la même raison que l'arrivée qu'il annote : un
+       * message entrant n'arrive jamais par `webhook-status`.
+       *
+       * 🔴 LES DEUX MOITIÉS VONT ENSEMBLE, et le type l'impose (`WebhookJobDeps`). Écrire l'arrivée sans
+       * router le lead ne produirait aucune erreur : la ligne serait là, et chaque lead partirait dans les
+       * automations ordinaires, y compris ceux d'une pub qui confie ses leads à l'agent de Meta.
+       */
+      routagePub: {
+        phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
+        campagneConnue: (t, adId) => publicitesStore.campagneConnue(t, adId),
+        resoudreChezMeta: async (t, adId) => {
+          // Sans connexion publicitaire, rien à demander : l'espace n'a pas de jeton, et un appel anonyme
+          // serait refusé. La campagne reste inconnue, donc le chemin ordinaire, comme avant ce lot.
+          const chiffre = await connexionsPubStore.lireJetonChiffre(t);
+          if (chiffre === null) return null;
+          const campagneId = await clientPubs.campagneDeLaPub(adId, decryptSecret(chiffre, config.ENCRYPTION_KEY));
+          // ⚠️ ON NE MÉMORISE QUE LES SUCCÈS. Écrire un échec figerait une panne réseau en verdict permanent,
+          // et le lead suivant de la même publicité n'aurait plus aucune chance d'être routé.
+          if (campagneId !== null) await publicitesStore.memoriserPub(t, adId, campagneId);
+          return campagneId;
+        },
+        publiciteDeLaCampagne: (t, campagneId) => publicitesStore.pubDeLaCampagne(t, campagneId),
+        contactBloque: (t, waId) => contactStore.isBlockedByWaId(t, waId),
+        // LA MÊME lecture que l'exécuteur de scénario et que l'agent, sur le MÊME dépôt : deux lectures
+        // différentes du même fait finiraient par ne plus dire la même chose.
+        estDesabonne: (t, waId) => contactStore.estDesabonneParWaId(t, waId),
+        // 🔴 LE GESTE QUI EXISTE, CÂBLÉ ET PAS RECOPIÉ : `take` avec un seul rejeu, puis l'état local à
+        // `app_workflow`. En écrire un second exemplaire en ferait le quatrième de cette famille.
+        reprendreLeFil: (t, waId) => reprendreLeFilPourLApp(t, waId),
+        noterIssue: (t, messageId, v) => arriveesPubStore.noterIssue(t, messageId, v),
       },
       // Acteur `null` : c'est le contact lui-même qui a coché, via WhatsApp. Aucun humain de l'équipe n'a agi,
       // et le journal doit le dire plutôt que d'attribuer le geste à personne en silence.
@@ -498,7 +566,10 @@ async function main(): Promise<void> {
       // contrôle du fil est celle de l'executor : un scénario déclenché n'écrit pas dans un fil tenu par un humain.
       triggers: {
         phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
-        run: (tenant, ev) => runAutomations(tenant, ev, automationRunnerDeps),
+        // 🔴 `opts` VIENT DE L'APPELANT, JAMAIS D'UN LITTÉRAL POSÉ ICI. C'est le routage publicitaire qui
+        // décide « seule celle-là » ; le poser en dur à `null` rendrait le lot 3 inopérant sans qu'aucun
+        // type ne bouge, et un lead de publicité redeviendrait ramassable par n'importe quel mot-clé.
+        run: (tenant, ev, opts) => runAutomations(tenant, ev, automationRunnerDeps, opts),
       },
       // Jetons de test d'un scénario (Lot F) : le testeur envoie le mot de son lien wa.me / QR depuis son
       // propre téléphone. C'est LUI qui ouvre la fenêtre 24 h, donc le scénario peut démarrer en session.

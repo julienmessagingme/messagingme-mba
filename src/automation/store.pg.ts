@@ -65,8 +65,9 @@ function toRow(r: Raw): AutomationRow | null {
     startNodeId: r.start_node_id,
     cooldownSeconds: r.cooldown_seconds,
     maxFiresPerHour: r.max_fires_per_hour,
-    // Lu par le CHEMIN CHAUD depuis le 2026-09-08 : c'est lui qui dit si le declenchement vient d'un bouton
-    // de chaine, donc s'il reprend la main sur le fil (`vientDuneChaine`).
+    // Lu par le CHEMIN CHAUD depuis le 2026-09-08 : c'est lui qui dit si le declenchement vient d'un geste
+    // EXPLICITE du contact (un bouton de chaine, ou depuis le lot 3 un clic sur une publicite), donc s'il
+    // reprend la main sur le fil (`reprendLaMain`).
     possedePar: r.possede_par,
   };
 }
@@ -82,7 +83,8 @@ const COLS = 'id, tenant_id, name, enabled, trigger_kind, trigger_config, condit
  * 1. `trigger_kind = 'webhook'` (migration 0074) : creees, modifiees et supprimees depuis l'ecran
  *    Tools > Webhooks, via `PgWebhookStore`, qui ecrit ses propres requetes.
  * 2. `possede_par is not null` (migration 0114) : le proprietaire se nomme dans la colonne,
- *    'channelsme_link' pour un lien de chaine WhatsApp. Sans ce second terme, une automation `keyword`
+ *    'channelsme_link' pour un lien de chaine WhatsApp, 'publicite' pour une publicite Click-to-WhatsApp
+ *    (lot 3). Sans ce second terme, une automation `keyword`
  *    posee par un lien resterait listable, modifiable et supprimable ici : un PATCH la reaffecterait a un
  *    autre declencheur, un DELETE la retirerait, et le bouton d'un post DEJA PUBLIE cesserait de declencher
  *    en silence. Un post publie circule pour toujours, il n'y a pas de retour arriere.
@@ -91,14 +93,15 @@ const COLS = 'id, tenant_id, name, enabled, trigger_kind, trigger_config, condit
  * part : vrai aujourd'hui, faux le jour ou une route le rend pour une raison quelconque.
  *
  * ⚠️ `listEnabled` (chemin chaud) ne le porte PAS et ne doit jamais le porter : l'y ajouter rendrait muets
- * le webhook ET le lien de chaine. `create` non plus, evidemment : c'est par la qu'une automation possedee
- * naît.
+ * le webhook, le lien de chaine ET la publicite. `create` non plus, evidemment : c'est par la qu'une
+ * automation possedee naît.
  *
  * ⚠️ Et depuis le 2026-09-08, `possede_par` n'est plus seulement un PREDICAT de portee : sa VALEUR est lue
- * par le chemin chaud (elle est dans `COLS`), parce qu'une automation nee d'un lien de chaine reprend la
- * main sur le fil quand une automation ordinaire ne le fait pas. La retirer de `COLS` ne casserait aucun
- * type, elle rendrait seulement `possedePar` nul partout et les boutons de chaine cesseraient de demarrer
- * des qu'un fil est tenu.
+ * par le chemin chaud (elle est dans `COLS`), parce qu'une automation nee d'un lien de chaine, et depuis le
+ * lot 3 d'une publicite, reprend la main sur le fil quand une automation ordinaire ne le fait pas. La
+ * retirer de `COLS` ne casserait aucun type, elle rendrait seulement `possedePar` nul partout : les boutons
+ * de chaine cesseraient de demarrer des qu'un fil est tenu, et les leads d'une publicite avec eux, sur un
+ * numero ou l'agent de Meta tient justement tous les fils.
  *
  * Le NOM de la constante reste `HORS_WEBHOOK` alors qu'elle couvre desormais deux familles : la renommer
  * dans le meme commit melerait un renommage a un changement de comportement, et rendrait la relecture du

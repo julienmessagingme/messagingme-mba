@@ -241,4 +241,43 @@ describe('déclencheur publicité (ctwa_ad)', () => {
     expect(matchesTrigger(autoPub({ adId: '120212345678901234' }), pub('120212345678901234'))).toBe(true);
     expect(matchesTrigger(autoPub({ adId: '120299999999999999' }), pub('120212345678901234'))).toBe(false);
   });
+
+  /**
+   * 🔴 LA CAMPAGNE, NIVEAU DU LIEN DEPUIS LE LOT 3 (décision de Julien du 2026-09-22). Une pub se COPIE dans
+   * le Gestionnaire de Meta en deux clics, et chaque copie porte un identifiant neuf : router sur
+   * l'identifiant de PUB ferait perdre le scénario au premier duplicata, sans aucun signe. La campagne, elle,
+   * survit aux copies faites à l'intérieur d'elle-même.
+   */
+  describe('par CAMPAGNE (lot 3)', () => {
+    const pubDeCampagne = (adId: string, campagneId?: string): AutomationEvent => ({
+      kind: 'message', waId: '33611', body: 'Bonjour', isNewContact: true, channel: 'whatsapp', adId,
+      ...(campagneId ? { campagneId } : {}),
+    });
+
+    it('une campagne PRÉCISE déclenche sur n’importe quelle pub DE CETTE CAMPAGNE', () => {
+      expect(matchesTrigger(autoPub({ campaignId: 'camp-1' }), pubDeCampagne('ad-originale', 'camp-1'))).toBe(true);
+      // La copie : identifiant de pub DIFFÉRENT, même campagne. C'est tout l'intérêt du niveau choisi.
+      expect(matchesTrigger(autoPub({ campaignId: 'camp-1' }), pubDeCampagne('ad-copiee', 'camp-1'))).toBe(true);
+    });
+
+    it('une autre campagne ne déclenche pas', () => {
+      expect(matchesTrigger(autoPub({ campaignId: 'camp-1' }), pubDeCampagne('ad-1', 'camp-2'))).toBe(false);
+    });
+
+    it('🔴 une campagne demandée mais INCONNUE du message ne déclenche pas, et ne retombe PAS sur la pub', () => {
+      // Le repli serait tentant et il serait faux : il ferait déclencher une automation de campagne sur un
+      // lead dont on n'a justement pas su dire la campagne.
+      expect(matchesTrigger(autoPub({ campaignId: 'camp-1' }), pubDeCampagne('ad-1'))).toBe(false);
+      expect(matchesTrigger(autoPub({ campaignId: 'camp-1', adId: 'ad-1' }), pubDeCampagne('ad-1'))).toBe(false);
+    });
+
+    it('la campagne PASSE AVANT la pub quand les deux sont réglées', () => {
+      expect(matchesTrigger(autoPub({ campaignId: 'camp-1', adId: 'ad-AUTRE' }), pubDeCampagne('ad-1', 'camp-1'))).toBe(true);
+    });
+
+    it('une campagne sur le MESSAGE ne change rien à une automation qui n’en demande pas', () => {
+      expect(matchesTrigger(autoPub(), pubDeCampagne('ad-1', 'camp-1'))).toBe(true);
+      expect(matchesTrigger(autoPub({ adId: 'ad-1' }), pubDeCampagne('ad-1', 'camp-1'))).toBe(true);
+    });
+  });
 });

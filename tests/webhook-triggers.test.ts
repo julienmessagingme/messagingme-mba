@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { handleWebhookJob } from '../src/webhooks/handler';
 import { processTriggers } from '../src/webhooks/triggers';
-import { aucuneArriveePub } from './webhook-fixtures';
+import { aucuneArriveePub, aucunRoutagePub } from './webhook-fixtures';
 import type { AutomationEvent } from '../src/automation/match';
 
 /**
@@ -81,6 +81,7 @@ describe('handleWebhookJob : intégration des automations', () => {
       store: eventStore,
       inbox,
       arriveesPub: aucuneArriveePub,
+      routagePub: aucunRoutagePub,
       inboundContactUpsert: async () => 'created',
       triggers: { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { seen.push(ev); return 1; } },
     });
@@ -93,6 +94,7 @@ describe('handleWebhookJob : intégration des automations', () => {
       store: eventStore,
       inbox,
       arriveesPub: aucuneArriveePub,
+      routagePub: aucunRoutagePub,
       inboundContactUpsert: async () => 'updated',
       triggers: { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { seen.push(ev); return 1; } },
     });
@@ -112,6 +114,7 @@ describe('handleWebhookJob : intégration des automations', () => {
       store: eventStore,
       inbox,
       arriveesPub: aucuneArriveePub,
+      routagePub: aucunRoutagePub,
       inboundContactUpsert: async () => 'created',
       triggers: { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { flags.push(ev.kind === 'message' && ev.isNewContact); return 1; } },
     });
@@ -124,6 +127,7 @@ describe('handleWebhookJob : intégration des automations', () => {
       store: eventStore,
       inbox: { phoneNumberTenant: async () => 't1', recordInbound: async () => { inboundRecorded += 1; } },
       arriveesPub: aucuneArriveePub,
+      routagePub: aucunRoutagePub,
       inboundContactUpsert: async () => 'updated',
       triggers: { phoneNumberTenant: async () => { throw new Error('base indisponible'); }, run: async () => 0 },
     })).resolves.toBeUndefined();
@@ -135,6 +139,7 @@ describe('handleWebhookJob : intégration des automations', () => {
       store: eventStore,
       inbox,
       arriveesPub: aucuneArriveePub,
+      routagePub: aucunRoutagePub,
       inboundContactUpsert: async () => 'updated',
     })).resolves.toBeUndefined();
   });
@@ -153,6 +158,7 @@ describe('handleWebhookJob : intégration des automations', () => {
       store: eventStore,
       inbox,
       arriveesPub: aucuneArriveePub,
+      routagePub: aucunRoutagePub,
       workflowAdvance: { phoneNumberTenant: async () => 't1', advance: async (_t, waId) => { advanced.push(waId); } },
       inboundContactUpsert: async () => 'updated',
       triggers: { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { triggered.push(ev.waId); return 1; } },
@@ -176,6 +182,7 @@ describe('handleWebhookJob : intégration des automations', () => {
       store: eventStore,
       inbox,
       arriveesPub: aucuneArriveePub,
+      routagePub: aucunRoutagePub,
       workflowAdvance: { phoneNumberTenant: async () => 't1', advance: async (_t, waId) => { advanced.push(waId); } },
       inboundContactUpsert: async () => 'updated',
       triggers: { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { triggered.push(ev.waId); return demarres; } },
@@ -216,6 +223,7 @@ describe('handleWebhookJob : intégration des automations', () => {
       store: deja,
       inbox,
       arriveesPub: aucuneArriveePub,
+      routagePub: aucunRoutagePub,
       inboundContactUpsert: async () => 'updated',
       testTokens: {
         phoneNumberTenant: async () => 't1',
@@ -232,6 +240,7 @@ describe('handleWebhookJob : intégration des automations', () => {
       store: eventStore,
       inbox,
       arriveesPub: aucuneArriveePub,
+      routagePub: aucunRoutagePub,
       inboundContactUpsert: async () => 'updated',
       testTokens: {
         phoneNumberTenant: async () => { throw new Error('base indisponible'); },

@@ -9,6 +9,8 @@ import { processHandovers } from './handover';
 import { processTriggers } from './triggers';
 import { processTestTokens } from './test-token';
 import { processArriveesPub, type ArriveesPubDeps } from './arrivees-pub';
+import { processRoutagePub, type RoutagePubDeps } from './routage-pub';
+import type { RoutageDuMessage } from '../pubs/routage';
 import type { TarifsMetaSink } from './tarif-meta';
 import type { DeliveryStore } from './delivery';
 import type { InboxStore, InboundAssignation, InboundContactUpsert, InboundOptOut } from './inbound';
@@ -86,24 +88,33 @@ interface WebhookJobDepsCommunes {
 }
 
 /**
- * 🔴 DEUX COUPLES DE DÉPENDANCES OBLIGATOIRES (lot 1 des publicités Click-to-WhatsApp).
+ * 🔴 DEUX COUPLES DE DÉPENDANCES OBLIGATOIRES (lot 1 des publicités Click-to-WhatsApp), DONT UN TRIPLET
+ * DEPUIS LE LOT 3.
  *
  * Une file qui traite des ACCUSÉS (`delivery`) doit garder leur tarif (`tarifsMeta`) : c'est la seule source de
  * « Meta ne facture pas ce message », et les accusés arrivent par DEUX files (`webhook` et `webhook-status`).
  * Une file qui traite des ENTRANTS (`inbox`) doit garder les arrivées publicitaires (`arriveesPub`) : Meta
  * n'envoie `ctwa_clid` qu'une fois. Un oubli ne se verrait nulle part, donc c'est le compilateur qui le refuse.
- * Les tests qui n'en parlent pas passent `aucunTarif` et `aucuneArriveePub` (`tests/webhook-fixtures.ts`), qui
- * DISENT leur hypothèse, comme `jamaisDesabonne`.
+ * Les tests qui n'en parlent pas passent `aucunTarif`, `aucuneArriveePub` et `aucunRoutagePub`
+ * (`tests/webhook-fixtures.ts`), qui DISENT leur hypothèse, comme `jamaisDesabonne`.
+ *
+ * 🔴 `routagePub` ENTRE DANS LE MÊME COUPLE QUE `arriveesPub`, ET C'EST LA GARDE DU LOT 3. Un câblage qui
+ * enregistrerait l'arrivée sans router le lead ne produirait AUCUNE erreur : la ligne serait écrite, et
+ * chaque lead d'une publicité pilotée partirait dans les automations ordinaires, y compris celles d'une pub
+ * qui confie ses leads à l'agent de Meta. Un clic payé répondu par le mauvais scénario, en silence.
  */
 export type WebhookJobDeps = WebhookJobDepsCommunes
   & ({ delivery: DeliveryStore; tarifsMeta: TarifsMetaSink } | { delivery?: undefined; tarifsMeta?: undefined })
-  & ({ inbox: InboxStore; arriveesPub: ArriveesPubDeps } | { inbox?: undefined; arriveesPub?: undefined });
+  & (
+    { inbox: InboxStore; arriveesPub: ArriveesPubDeps; routagePub: RoutagePubDeps }
+    | { inbox?: undefined; arriveesPub?: undefined; routagePub?: undefined }
+  );
 
 export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Promise<void> {
   const {
     store, delivery, inbox, flowMapping, workflowAdvance, remiseMbaEntrant, inboundContactUpsert,
     handover, triggers, testTokens, nodeEvents, inboundOptOut, inboundAssignation, remiseMba,
-    tarifsMeta, arriveesPub,
+    tarifsMeta, arriveesPub, routagePub,
   } = deps;
   const events = parseWebhook(raw);
   // `insertEvent` renvoie false quand l'événement était DÉJÀ enregistré : c'est le signal « ce webhook est un
@@ -136,6 +147,31 @@ export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Prom
   // L'arrivée publicitaire, APRÈS l'upsert du contact qu'elle retrouve par son wa_id. Isolée par message dans
   // `processArriveesPub` : elle ne fait jamais échouer le job.
   if (arriveesPub) await processArriveesPub(raw, arriveesPub);
+  /**
+   * LE ROUTAGE D'UN LEAD PUBLICITAIRE (lot 3, spec § 3.3), entre l'arrivée et les déclencheurs.
+   *
+   * 🔴 SA PLACE EST LA MOITIÉ DE SON COMPORTEMENT, dans les deux sens. APRÈS l'arrivée, parce qu'il annote la
+   * ligne que celle-ci vient d'écrire (l'issue, la campagne, l'heure de la reprise). AVANT les déclencheurs,
+   * parce que c'est eux qu'il restreint : placé après, il regarderait partir les automations qu'il devait
+   * écarter, et un lead de publicité recevrait la réponse d'un mot-clé.
+   *
+   * ⚠️ IL REPREND LE FIL CHEZ META pour un lead `standby`, donc il appelle l'extérieur. C'est un appel BORNÉ
+   * (un essai plus un rejeu, plafond d'attente de deux secondes, cf. `creerPrendreLeFilAvecUnRejeu`) et il
+   * est isolé comme ses voisins : un Meta muet ne doit pas DLQ un webhook qui porte aussi des accusés, une
+   * inbox et des flows.
+   *
+   * ⚠️ UNE PANNE ICI REND LA CARTE VIDE, donc le chemin ORDINAIRE. C'est le repli le moins surprenant, et il
+   * est délibéré : mieux vaut un lead ramassé par « toutes les pubs » qu'un lead qui ne va nulle part.
+   */
+  let routage: ReadonlyMap<string, RoutageDuMessage> = new Map();
+  if (routagePub) {
+    try {
+      routage = await processRoutagePub(raw, routagePub);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('handleWebhookJob: routage publicitaire ignoré:', err instanceof Error ? err.message : err);
+    }
+  }
   // Report Flow -> user fields. ISOLÉ : ne doit JAMAIS faire échouer le job (partagé avec les statuts de
   // livraison + l'inbox). Un throw ici rejouerait/DLQ tout le webhook, donc aussi les statuts déjà traités.
   if (flowMapping) {
@@ -183,7 +219,7 @@ export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Prom
         // CONSOMMÉ une seule fois : si Meta batche deux messages du même nouveau contact dans le même webhook,
         // seul le PREMIER est un « 1er message ». Sans le retrait, le second déclencherait aussi l'accueil.
         isNewContact: async (tenantId, waId) => createdContacts.delete(`${tenantId}:${waId}`),
-      }, consumed);
+      }, consumed, routage);
       // Union : un message consommé par un jeton de test l'était déjà, un message qui vient de démarrer un
       // scénario le devient. L'avance ci-dessous ne verra ni l'un ni l'autre.
       if (parAutomation.size > 0) consumed = new Set([...consumed, ...parAutomation]);

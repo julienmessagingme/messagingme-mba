@@ -96,7 +96,10 @@ cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la li
 
 **Dernière appliquée : 0169**, le 2026-09-23 à 12 h 29 UTC (`pub_connexion_noms`, le nom du compte
 publicitaire et celui de la Page, pour que l'écran cesse de n'afficher que des identifiants), AVANT le
-`up` qui a porté son code. **Prochaine libre = 0170**, et le dossier `db/migrations/` s'arrête bien à 0169.
+`up` qui a porté son code. **ÉCRITE ET PAS ENCORE APPLIQUÉE : 0170** (`pubs_router`, lot 3 des publicités :
+`publicites`, `pubs_connues`, et les quatre colonnes de routage d'`arrivees_pub`). Elle n'AJOUTE que, donc
+elle passe AVANT le `up` qui portera son code. **Prochaine libre = 0171**, et le dossier `db/migrations/`
+s'arrête bien à 0170.
 Avant elle, **0166, 0167 et 0168** le même jour à 11 h 36 UTC, elles aussi avant le `up`, et les trois
 relues en base point par point juste après `migrate` : 0166 RELÂCHE un CHECK
 (`conversation_messages.origin` accepte `api`), 0167 CRÉE `pub_connexion`, 0168 CRÉE `grille_prix` ;
