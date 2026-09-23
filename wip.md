@@ -19,19 +19,28 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
-## PUBLICITÉS CLICK-TO-WHATSAPP (LOT 1 « CAPTER » ÉCRIT LE 2026-09-22, PAS ENCORE DÉPLOYÉ)
+## PUBLICITÉS CLICK-TO-WHATSAPP (LOT 1 « CAPTER » DÉPLOYÉ LE 2026-09-23, PAS ENCORE ÉPROUVÉ)
 
 Spec `docs/superpowers/specs/2026-09-22-pubs-ctwa-design.md`, plan
 `docs/superpowers/plans/2026-09-22-pubs-ctwa-lot1-capter.md`.
 
-- Lot 1 « Capter » : arrivées publicitaires (`arrivees_pub`, `ctwa_clid` compris) et tarifs de Meta
-  (`tarifs_meta`) gardés à la réception, 72 h gratuites exclues de toute lecture de coût, `ctwa_clid` effacé
-  par la purge RGPD. Migration 0163 à appliquer AVANT le déploiement. ⚠️ La capture des arrivées n'est PAS
-  éprouvée : aucun clic réel n'est encore arrivé. Elle le sera pendant l'essai réel du lot 3 (première
-  campagne MessagingMe créée depuis Engage Me).
-- ⚠️ L'attestation locale (`.git/revue-finale.json`) couvre À TORT les commits de ce lot : une autre session l'a
-  posée sur `HEAD` pendant qu'ils arrivaient. La revue finale de ce déploiement part du dernier commit
-  réellement relu, celui des lots 3 et 4 des outils maison.
+- ✅ **Lot 1 « Capter », DÉPLOYÉ le 2026-09-23 vers 9 h 15**, par une session qui n'en avait écrit aucune
+  ligne : arrivées publicitaires (`arrivees_pub`, `ctwa_clid` compris) et tarifs de Meta (`tarifs_meta`)
+  gardés à la réception, 72 h gratuites exclues de toute lecture de coût, `ctwa_clid` effacé par la purge
+  RGPD. Migration 0163 appliquée AVANT le `up` et relue en base point par point (le détail vit dans
+  [CLAUDE.md](CLAUDE.md) § Déploiement, il ne se recopie pas ici). Revue finale : 0 rouge.
+- 🔴 **CE QUI N'EST PAS ÉPROUVÉ, ET C'EST L'ESSENTIEL : aucun clic réel n'est encore arrivé.** La chaîne
+  `referral` vers `arrivees_pub` n'a jamais vu de vraie publicité, donc `en_standby` n'a RIEN mesuré, et c'est
+  lui qui tranche entre le plan A du lot 3 (prendre le fil à l'arrivée) et le plan B (routage par liste
+  blanche). Les tests sont verts, ce qui ne dit que ce que leur auteur a pensé à vérifier.
+- ⚠️ **La moitié TARIFS se prouve, elle, SANS publicité** : `tarifs_meta` se remplit à chaque accusé ordinaire.
+  C'est la preuve la moins chère que le lot tourne vraiment en production, et elle se lit en base. Pas faite.
+- 🟡 **Les jaunes de la revue finale qui portent sur ce lot**, rapport
+  `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md` : le puits de tarifs en queue de paramètres optionnels est
+  CORRIGÉ depuis (`PuitsAccuses`, nommé et obligatoire, vérifié dans les deux sens) ; l'interpolation SQL de
+  `horsEntreeGratuite` RESTE, ses deux arguments étant des expressions de la requête appelante et jamais une
+  valeur d'utilisateur ; `bilanContact` garde l'écart de gardes de livraison ANTÉRIEUR à ce lot et déclaré dans
+  le code, parce que le fermer CHANGE un chiffre que le client voit et demande donc sa propre mesure.
 - Lot 2 « Connecter » : attend les prérequis Meta de la spec, § 11.
 
 ## 🔴 OUTILS MAISON DE L'AGENT DE META (LOT 2 DÉPLOYÉ ET ÉPROUVÉ ; LOTS 3 ET 4 ÉCRITS LE 2026-09-22)
