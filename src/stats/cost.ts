@@ -1,4 +1,5 @@
 import type { DailyPoint, CostVolumeRow } from './store.pg';
+import { coutRcsEuros, type GrillePrix } from './prix';
 
 /** Coût estimé par jour et catégorie, sur la plage. `hasRates=false` si Meta n'a fourni aucun tarif. */
 export interface CostSeries {
@@ -129,8 +130,37 @@ export interface VolumeCampagneRow {
   nom: string;
   /** Le template de la campagne, `null` pour une campagne à scénario. C'est ce qui décide si un clic existe. */
   template: string | null;
+  /**
+   * Le canal de la campagne.
+   *
+   * ⚠️ IL NE DECIDE PLUS D'UNE CASE VIDE, IL DECIDE DE LA SOURCE DU PRIX (2026-09-23). Ce tableau a longtemps
+   * dit « je ne connais que les tarifs Meta, donc une campagne RCS garde sa case vide » ; c'etait faux depuis
+   * la migration 0154, qui porte les deux prix RCS de l'espace. Le canal sert maintenant a savoir quoi faire
+   * quand RIEN n'a ete chiffre : une campagne WhatsApp sans envoi facturable a coute ce que coutent ses
+   * messages de service, une campagne RCS dont aucun envoi n'a pu etre rattache reste inconnue.
+   */
+  canal: string;
   category: string | null;
+  /**
+   * Envois FACTURABLES de cette catégorie. ⚠️ `0` (et `category` à `null`) sur la ligne unique d'une campagne qui
+   * a touché quelqu'un sans rien de facturable : elle a sa ligne quand même (lot 4 de la liste du 2026-09-23).
+   */
   count: number;
+  /** Personnes TOUCHÉES par la campagne sur la période, facturable ou non. Même valeur sur chaque ligne d'une campagne. */
+  envois: number;
+  /**
+   * Les envois de cette campagne ont-ils PU être purgés ?
+   *
+   * 🔴 CE QUI SÉPARE « ÇA N'A RIEN COÛTÉ » DE « ON NE PEUT PLUS LE SAVOIR ». Les envois d'un SCÉNARIO ne
+   * vivent pas dans `campaign_recipients` mais dans les conversations, et la purge de rétention les
+   * supprime. Une campagne ancienne rendait donc « zéro envoi facturable », exactement comme une campagne
+   * qui n'a vraiment rien facturé, et la case affichait 0,00 €. Sur un écran de coût, un zéro est une
+   * affirmation : il se lit « gratuit ».
+   *
+   * ⚠️ OPTIONNEL, et absent vaut `false` : une instance qui ne calcule pas encore ce drapeau garde le
+   * comportement d'avant plutôt que de vider des cases au déploiement.
+   */
+  horsRetention?: boolean;
 }
 
 /**
@@ -153,6 +183,16 @@ export interface LigneCoutCampagne {
   template: string | null;
   /** Envois facturables de la période, chiffrables ou non. */
   envoyes: number;
+  /**
+   * Ce que la colonne « Envoyés » affiche : les personnes TOUCHÉES sur la période, facturable ou non. Une
+   * campagne à scénario ou RCS n'a souvent aucun envoi facturable, et « 0 envoyé » se lirait « rien n'est parti ».
+   *
+   * 🔴 JAMAIS MOINS QUE `envoyes` (revue finale du 2026-09-23). Les envois facturables peuvent venir de
+   * l'ATTRIBUTION, qui n'a aucune borne basse : une campagne partie il y a trois semaines dont les modèles
+   * partent cette semaine a des envois facturables et AUCUN destinataire daté de la période. Elle affichait
+   * alors « 0 envoyés » en face d'un coût, c'est-à-dire l'inverse de ce que ce lot cherche.
+   */
+  envois: number;
   /**
    * Coût ESTIMÉ (envois × tarif Meta de la catégorie). `null` quand AUCUN des envois de la campagne n'a pu
    * être chiffré : la case reste vide et le dit, plutôt que d'afficher un zéro qui se lirait « gratuit ».
@@ -259,6 +299,23 @@ export function estimateCoutParCampagne(
    */
   service?: { parCampagne: Map<string, number>; prixUnitaire: number },
   /**
+   * LES ENVOIS RCS IMPUTES A CHAQUE CAMPAGNE, et la grille qui les tarife.
+   *
+   * 🔴 LE RCS A UN PRIX, ET CE DEPOT LE CONNAIT (Julien, 2026-09-23 : « on a justement defini un cout, 6 cts
+   * si pas conversationnel et 8 si conversationnel »). Il est saisi par espace depuis la migration 0154, et
+   * la ligne « cout des messages envoyes » le compte deja. Ne pas le compter ICI laissait une campagne RCS
+   * avec une case vide, c'est-a-dire « on ne sait pas » la ou on savait.
+   *
+   * 🔴 LA BASCULE CONVERSATIONNELLE EST DEJA TRANCHEE PAR L'APPELANT (`basculesRcs`), et ce n'est pas un
+   * detail de cablage : la regle porte sur l'ECHANGE entier sur sept jours, donc elle a besoin d'envois que
+   * cette campagne n'a pas faits. La recalculer ici avec les seules donnees d'une campagne donnerait un
+   * SECOND verdict, plus faible, sur la meme question.
+   *
+   * ⚠️ ABSENT = on n'impute aucun RCS. Ce n'est pas « zero RCS » : c'est une instance qui ne sait pas encore
+   * les rattacher, et la case doit alors rester vide plutot que d'afficher un zero.
+   */
+  rcs?: { parCampagne: Map<string, { simple: number; conversationnel: number }>; grille: GrillePrix },
+  /**
    * ⚠️ IL N Y A PLUS DE PARAMETRE DE MARGE ICI, ET C EST VOLONTAIRE. Elle a vecu a cette place quelques
    * heures, le temps qu une revue montre que deux AUTRES consommateurs des memes tarifs l ignoraient. Elle
    * est desormais posee UNE SEULE FOIS, a la source (`tarifsFactures`), donc `rates` porte deja le prix de
@@ -267,23 +324,34 @@ export function estimateCoutParCampagne(
    * vu sa marge avalee en silence, sans erreur du compilateur (il etait optionnel) ni d aucun test.
    */
 ): CoutParCampagne {
-  const par = new Map<string, LigneCoutCampagne & { chiffres: number }>();
+  const par = new Map<string, LigneCoutCampagne & { chiffres: number; canal: string; horsRetention: boolean }>();
   for (const r of rows) {
     const ligne = par.get(r.campaignId) ?? {
-      campaignId: r.campaignId, nom: r.nom, template: r.template,
-      envoyes: 0, cout: 0, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, clics: null, coutParClic: null, chiffres: 0,
+      campaignId: r.campaignId, nom: r.nom, template: r.template, canal: r.canal,
+      envoyes: 0, envois: 0, cout: 0, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, clics: null, coutParClic: null, chiffres: 0,
+      horsRetention: false,
     };
-    // ⚠️ MÊME PARTAGE DES DEUX CAUSES QUE `estimateCostSeries`, et pour la même raison qu'elles y sont
-    // partagées : les deux écrans du même onglet doivent nommer la même chose de la même façon.
-    const verdict = chiffrer(r.category, rates);
-    ligne.envoyes += r.count;
-    if ('refus' in verdict) {
-      if (verdict.refus === 'sansCategorie') ligne.sansCategorie += r.count; else ligne.sansTarif += r.count;
-      ligne.nonChiffrables += r.count;
-    } else {
-      ligne.chiffres += r.count;
-      // `rates` porte DEJA le prix de vente : la marge est posee une fois pour toutes par `prixFactures`.
-      ligne.cout = (ligne.cout ?? 0) + r.count * verdict.tarif;
+    ligne.envois = Math.max(ligne.envois, r.envois);
+    // ⚠️ UNE SEULE LIGNE SUFFIT A LE POSER : le drapeau porte sur la CAMPAGNE, pas sur une categorie, et le
+    // SQL le rend identique sur chacune de ses lignes. `||` plutot qu'une affectation, pour que l'ordre des
+    // lignes ne decide de rien.
+    ligne.horsRetention = ligne.horsRetention || r.horsRetention === true;
+    // ⚠️ UNE CAMPAGNE SANS RIEN DE FACTURABLE A SA LIGNE (lot 4) : `count` à 0, aucune catégorie à juger. La
+    // garde ÉVITE UN APPEL INUTILE à `chiffrer`, rien de plus : tous les compteurs ci-dessous s'incrémenteraient
+    // de zéro sans elle. Ne pas lui prêter un effet qu'elle n'a pas (relevé en revue le 2026-09-23).
+    if (r.count > 0) {
+      // ⚠️ MÊME PARTAGE DES DEUX CAUSES QUE `estimateCostSeries`, et pour la même raison qu'elles y sont
+      // partagées : les deux écrans du même onglet doivent nommer la même chose de la même façon.
+      const verdict = chiffrer(r.category, rates);
+      ligne.envoyes += r.count;
+      if ('refus' in verdict) {
+        if (verdict.refus === 'sansCategorie') ligne.sansCategorie += r.count; else ligne.sansTarif += r.count;
+        ligne.nonChiffrables += r.count;
+      } else {
+        ligne.chiffres += r.count;
+        // `rates` porte DEJA le prix de vente : la marge est posee une fois pour toutes par `prixFactures`.
+        ligne.cout = (ligne.cout ?? 0) + r.count * verdict.tarif;
+      }
     }
     par.set(r.campaignId, ligne);
   }
@@ -298,10 +366,30 @@ export function estimateCoutParCampagne(
      * règle des trois cases vides de ce fichier ne se contourne pas par une addition.
      */
     const services = service?.parCampagne.get(l.campaignId) ?? 0;
-    const brut = (l.cout ?? 0) + (service ? services * service.prixUnitaire : 0);
+    // Le RCS de cette campagne, deja separe en simple et conversationnel par l'appelant.
+    const envoisRcs = rcs?.parCampagne.get(l.campaignId) ?? { simple: 0, conversationnel: 0 };
+    const nbRcs = envoisRcs.simple + envoisRcs.conversationnel;
+    const prixRcs = rcs ? coutRcsEuros(envoisRcs.simple, envoisRcs.conversationnel, rcs.grille) : 0;
+    const brut = (l.cout ?? 0) + (service ? services * service.prixUnitaire : 0) + prixRcs;
     // Aucun envoi chiffré -> la case COÛT est vide, pas à zéro. Un zéro se lirait « cette campagne n'a rien
     // coûté », alors que la vérité est « on ne sait pas ce qu'elle a coûté ».
-    const cout = l.chiffres > 0 ? Math.round(brut * 100) / 100 : null;
+    // 🔴 SAUF QUAND IL N'Y AVAIT RIEN À CHIFFRER (lot 4) : une campagne WhatsApp sans aucun envoi facturable a
+    // un coût CONNU, celui de ses messages de service (souvent nul). Une campagne RCS, elle, garde sa case
+    // vide : ce tableau ne connaît que les tarifs Meta, et « 0 » y serait faux.
+    // 🔴 ET LE RCS COMPTE COMME UN ENVOI CHIFFRE : son prix vient de la grille de l'espace, pas de Meta.
+    // Une campagne RCS qui a touche quelqu'un a donc un cout, la ou elle affichait « — » (2026-09-23).
+    // ⚠️ MAIS UNE CAMPAGNE RCS SANS AUCUN ENVOI RATTACHE GARDE SA CASE VIDE : ecrire 0 la dirait gratuite,
+    // alors qu'elle a envoye et que c'est le rattachement qui manque (une campagne anterieure a la
+    // migration 0134, un envoi sans identifiant). La doctrine des cases vides de ce fichier tient : zero se
+    // lit « rien coute », vide se lit « on ne sait pas ».
+    //
+    // 🔴 ET UNE CAMPAGNE DONT LES ENVOIS ONT PU ETRE PURGES N'A PLUS DE COUT CONNU (jaune de la revue du
+    // 2026-09-23). Les envois d'un scenario vivent dans les conversations, que la retention supprime : passe
+    // cette borne, « zero envoi facturable » ne veut plus dire « rien n a ete facture ». Sans ce terme, une
+    // campagne de plus de 90 jours serait passee de son vrai cout a 0,00 €, toute seule, un matin.
+    const rienAChiffrer = l.chiffres === 0 && l.nonChiffrables === 0 && nbRcs === 0
+      && l.canal === 'whatsapp' && l.horsRetention !== true;
+    const cout = l.chiffres > 0 || nbRcs > 0 || rienAChiffrer ? Math.round(brut * 100) / 100 : null;
     const n = clics.get(l.campaignId);
     const nbClics = n === undefined ? null : n;
     // Le ratio n'existe que si ses DEUX termes existent, et si le dénominateur n'est pas nul.
@@ -313,7 +401,8 @@ export function estimateCoutParCampagne(
       ? Math.round((cout / nbEngagements) * 10000) / 10000
       : null;
     return {
-      campaignId: l.campaignId, nom: l.nom, template: l.template, envoyes: l.envoyes, cout,
+      // `envois` ne descend jamais sous les envois facturables : voir sa documentation, et le cas de l'attribution.
+      campaignId: l.campaignId, nom: l.nom, template: l.template, envoyes: l.envoyes, envois: Math.max(l.envois, l.envoyes), cout,
       nonChiffrables: l.nonChiffrables, sansCategorie: l.sansCategorie, sansTarif: l.sansTarif,
       clics: nbClics, coutParClic, engagements: nbEngagements, coutParEngagement,
     };
@@ -329,11 +418,15 @@ export function estimateCoutParCampagne(
    * On rejoue donc EXACTEMENT le critère du SQL (volume décroissant, identifiant en départage), on coupe,
    * puis on trie au coût pour l'affichage.
    */
+  // 🔴 ET LE CRITÈRE EST CELUI QUE LA COLONNE MONTRE (`envois`, revue finale du 2026-09-23). Trié sur les seuls
+  // envois FACTURABLES, tout ce qui n'a rien de facturable se retrouvait à égalité (0), départagé par
+  // l'identifiant : au-delà de 50 campagnes, une campagne à scénario de 5 000 personnes sortait pendant qu'une
+  // campagne à un seul envoi restait, sous une phrase qui dit « celles qui ont le plus envoyé ».
   const tronque = lignes.length > PLAFOND_CAMPAGNES_SYNTHESE;
   const gardees = tronque
-    ? [...lignes].sort((a, b) => b.envoyes - a.envoyes || a.campaignId.localeCompare(b.campaignId)).slice(0, PLAFOND_CAMPAGNES_SYNTHESE)
+    ? [...lignes].sort((a, b) => b.envois - a.envois || a.campaignId.localeCompare(b.campaignId)).slice(0, PLAFOND_CAMPAGNES_SYNTHESE)
     : lignes;
-  gardees.sort((a, b) => (b.cout ?? -1) - (a.cout ?? -1) || b.envoyes - a.envoyes || a.nom.localeCompare(b.nom));
+  gardees.sort((a, b) => (b.cout ?? -1) - (a.cout ?? -1) || b.envois - a.envois || a.nom.localeCompare(b.nom));
 
   return {
     lignes: gardees,

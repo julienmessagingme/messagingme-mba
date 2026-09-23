@@ -211,11 +211,43 @@ Même enveloppe que pour un connecteur : `200 {succes, reponse}` ou `200 {succes
 |---|---|
 | Poser un tag | « C'est fait, c'est enregistré sur la fiche du client. Confirme-le-lui sans citer de nom technique. » |
 | Enregistrer une information | « C'est enregistré sur la fiche du client. » |
-| Envoyer un bloc | « Le client vient de recevoir le message prévu, envoyé par Engage Me. N'ajoute rien pour cette demande. » |
-| Lancer un scénario | « Engage Me déroule maintenant un parcours avec le client, il en reçoit déjà les messages. N'écris rien pour cette demande : la conversation te reviendra à la fin. » |
+| Envoyer un bloc | « C'est fait : le client vient de recevoir le message prévu. Ne rappelle pas cet outil pour cette demande, et n'en répète pas le contenu. » |
+| Lancer un scénario | « C'est fait : le parcours est lancé et le client en reçoit déjà les messages. Ne rappelle pas cet outil, et n'écris rien de plus pour cette demande : la conversation te reviendra à la fin du parcours. » |
 
 Le nom de l'étiquette ou du champ n'est jamais renvoyé : ce sont des noms internes, que l'agent répéterait au
 client.
+
+🔴 **CORRIGÉ APRÈS L'ESSAI RÉEL DU 2026-09-22.** Les deux dernières lignes disaient d'abord « Engage Me déroule
+maintenant un parcours… N'écris rien pour cette demande » : l'agent de Meta a rappelé « Lancer un scénario » SEPT
+fois dans le même tour, et le client a reçu sept fois le premier message. La réponse du tag, qui commence par
+« C'est fait », avait conclu le tour du premier coup. D'où le « C'est fait » et le « Ne rappelle pas cet outil », et
+surtout un garde qui ne dépend pas du modèle : un envoi ne se rejoue pas pour le même client et le même outil
+pendant deux minutes (`src/mba/anti-rejeu.ts`), y compris quand les appels arrivent SIMULTANÉMENT (la clé se
+prend d'un seul geste, sans attente). Le rappel reçoit « Cette demande vient déjà d'être traitée pour ce client :
+ne rappelle plus cet outil pour elle », et rien de plus : ni « le client a reçu » (faux après une panne ou un
+refus), ni « n'écris rien » (le rappel part aussi quand aucun parcours ne tourne, et le client resterait sans
+réponse).
+
+🔴 **META COUPE UN OUTIL VERS TROIS SECONDES (essai réel du 2026-09-22, l'après-midi).** Un envoi de bloc bien
+parti, mais dont le relais a répondu en 3 005 ms, a été traité comme un échec : l'agent de Meta a annoncé au client
+qu'« un membre de l'équipe reprendra la conversation ». Un message d'opérateur envoyé depuis l'Inbox, lui, ne le
+déclenche pas (vérifié par Julien) : c'est bien le délai, pas la prise du fil. C'est aussi, très probablement, la
+vraie cause des sept rappels du matin, chaque lancement dépassant ce délai. Un envoi fait deux appels à Meta
+(prendre le fil, envoyer) : le relais ne l'attend donc que 1,5 s (`DELAI_REPONSE_ENVOI_MS`). S'il a fini, Meta lit
+l'issue réelle, refus compris ; sinon il lit « C'est parti : … » (`REPONSE_EN_COURS`), l'envoi continue, et le
+journal des appels se clôt sur son issue réelle.
+Un envoi qui échoue APRÈS cette réponse (le lancement d'un scénario reprend le fil avant ses autres refus) est dit à
+l'agent de Meta par un événement `envoi_echoue` (`src/mba/signaler-echec-tardif.ts`), seulement si le fil est à
+lui : sans ça, ayant lu « n'écris rien de plus », il se taisait et le client restait sans réponse.
+
+🔴 **LE DÉLAI N'ÉTAIT PAS LA CAUSE DE L'AVIS, et c'est mesuré (essai du scénario, 15 h 27).** Le relais a répondu en
+1,5 s et l'avis « un membre de l'équipe reprendra la conversation » est revenu quand même. Ce n'est pas le message
+de passage à un humain réglé sur l'agent (« Je transmets votre demande… ») mais un texte générique de Meta, et il
+n'est apparu que lorsque nous prenions le fil PENDANT que l'agent attendait la réponse de l'outil. L'essai de
+l'Inbox (aucun avis) prenait le fil HORS de son tour, il ne départageait donc pas les deux causes. **Expérience
+décidée par Julien** : le relais répond d'abord et demande à l'agent d'annoncer l'envoi en une phrase ; le geste
+attend ensuite son écho (`src/mba/fin-de-tour.ts`, 15 s au plus) et seulement alors prend le fil et envoie. Le
+journal du serveur dit `fin-de-tour: reponse|delai|illisible` : c'est ce que l'essai suivant doit lire.
 
 ## 8. La publication chez Meta
 

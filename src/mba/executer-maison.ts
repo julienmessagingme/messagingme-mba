@@ -1,4 +1,5 @@
 import { REPONSE_MAISON, lireValeurChamp, type CibleMaison } from './outils-maison';
+import { DUREE_ANTI_REJEU_MS, PLANCHER_ANTI_REJEU_MS, type AntiRejeu } from './anti-rejeu';
 
 /**
  * EXÉCUTER UN GESTE DE L'AGENT DE META pour un contact (spec 2026-09-21-outils-maison-mba, § 3).
@@ -27,6 +28,14 @@ export interface DepsMaison {
   envoyerBloc(tenantId: string, waId: string, cible: { workflowId: string; code: string }): Promise<true | string>;
   /** Lance le scénario depuis son début, exactement comme le bouton de l'Inbox. Même contrat de retour. */
   lancerScenario(tenantId: string, waId: string, workflowId: string): Promise<true | string>;
+  /** Un envoi ne se rejoue pas pour le même client et le même outil, le temps d'une demande (`src/mba/anti-rejeu.ts`). */
+  antiRejeu: Pick<AntiRejeu, 'prendreTous' | 'oublier'>;
+  /**
+   * L'identifiant du dernier message REÇU du client (`PgInboxStore.dernierMessageDuClient`), ou `null`. Il entre
+   * dans la clé de l'anti-rejeu : un rappel dans le même tour de l'agent partage ce message, une nouvelle demande
+   * du client, non.
+   */
+  dernierMessageDuClient(tenantId: string, waId: string): Promise<string | null>;
 }
 
 export type IssueMaison = { ok: true; reponse: string } | { ok: false; erreur: string };
@@ -36,7 +45,7 @@ export const CHAMP_DISPARU = "Ce champ n'existe plus sur la fiche du client : l'
 
 export async function executerOutilMaison(
   deps: DepsMaison,
-  input: { tenantId: string; waId: string; cible: CibleMaison; corps: unknown },
+  input: { tenantId: string; waId: string; outilId: string; cible: CibleMaison; corps: unknown },
 ): Promise<IssueMaison> {
   const { tenantId, waId, cible } = input;
   switch (cible.handler) {
@@ -54,13 +63,43 @@ export async function executerOutilMaison(
     case 'scenario_fixe': {
       // 🔴 LE BLOCAGE EST LU AVANT TOUT ENVOI : une garde posée après l'effet ne garde rien.
       if (await deps.estBloque(tenantId, waId)) return { ok: false, erreur: CONTACT_BLOQUE };
+      // 🔴 UN RAPPEL DU MÊME OUTIL POUR LE MÊME MESSAGE DU CLIENT NE RENVOIE RIEN (essai réel du 2026-09-22 : sept
+      // appels dans le même tour, sept fois le premier message du scénario). Il répond « déjà traitée », ce qui
+      // clôt le tour. La clé se PREND d'un seul geste, APRÈS la dernière attente : sept appels simultanés n'en
+      // laissent partir qu'un. Elle est GARDÉE sur une exception (le message a pu partir) ; seul un refus, qui n'a
+      // rien envoyé, l'oublie.
+      // ⚠️ LE MESSAGE DU CLIENT EST DANS LA CLÉ (second essai du même jour) : « Je peux avoir le statut de ma
+      // commande ? Encore une fois », 55 s après la première demande, était pris pour un rappel et rien ne
+      // repartait. Une NOUVELLE demande du client est un nouveau message, donc une nouvelle clé.
+      // ⚠️ ET UN PLANCHER DE 30 S, QUEL QUE SOIT LE MESSAGE (relecture du même jour) : une réaction ou une demande en
+      // deux messages changent aussi le dernier message reçu. Les deux clés se prennent ensemble, ou aucune.
+      const dernier = await deps.dernierMessageDuClient(tenantId, waId);
+      const plancher = `${tenantId}:${waId}:${input.outilId}`;
+      const cle = `${plancher}:${dernier ?? '-'}`;
+      if (!deps.antiRejeu.prendreTous([[plancher, PLANCHER_ANTI_REJEU_MS], [cle, DUREE_ANTI_REJEU_MS]])) {
+        return { ok: true, reponse: REPONSE_DEJA_TRAITE };
+      }
       const issue = cible.handler === 'bloc_fixe'
         ? await deps.envoyerBloc(tenantId, waId, { workflowId: cible.workflowId, code: cible.code })
         : await deps.lancerScenario(tenantId, waId, cible.workflowId);
-      return issue === true ? { ok: true, reponse: REPONSE_MAISON[cible.handler] } : { ok: false, erreur: issue };
+      if (issue === true) return { ok: true, reponse: REPONSE_MAISON[cible.handler] };
+      deps.antiRejeu.oublier(plancher, cle);
+      return { ok: false, erreur: issue };
     }
   }
 }
+
+/**
+ * Ce que l'agent de Meta lit quand il rappelle un envoi déjà pris en charge pour ce client : de quoi clore son tour.
+ *
+ * 🔴 IL N'AFFIRME RIEN DE PLUS QUE « DÉJÀ TRAITÉE » (revues finales du 2026-09-22). Ni « le client a reçu » : faux
+ * après une exception, ou quand le premier appel finit en refus, et l'agent de Meta le répéterait au client. Ni
+ * « n'écris rien, la conversation te reviendra » : ce rappel part aussi quand AUCUN parcours ne tourne (premier
+ * appel refusé, exception, parcours court déjà fini et client qui redemande), le fil est alors déjà revenu à
+ * l'agent de Meta, et lui ordonner le silence laisserait le client sans réponse. La consigne d'attendre la fin du
+ * parcours est portée par la PREMIÈRE réponse (`REPONSE_MAISON.scenario_fixe`), dans le même tour.
+ */
+export const REPONSE_DEJA_TRAITE = 'Cette demande vient déjà d’être traitée pour ce message du client : ne rappelle pas cet outil maintenant. Si le client le redemande plus tard, rappelle cet outil.';
 
 /** Ce que l'agent de Meta lit quand le client est bloqué dans l'Inbox. */
 export const CONTACT_BLOQUE = 'Ce client est bloqué : aucun message ne lui est envoyé.';

@@ -1,5 +1,94 @@
 # todo.md : backlog
 
+## 🟠 Pré-câbler la route Azure OpenAI France, sans bouton ni promesse prématurée (2026-09-21)
+
+**Décision de Julien :** Vercel AI Gateway reste le chemin ordinaire. Pour un contrat dont le RSSI exige une
+inférence OpenAI en France, Engage Me doit pouvoir appeler directement un déploiement Azure OpenAI régional
+France. Le choix est posé manuellement par l'exploitation pour l'espace ; il n'y a pas de toggle dans
+l'interface client. Source d'architecture et limites : `docs/ARCHITECTURE-CIBLE.md`, §2.1.
+
+**Aujourd'hui ce n'est PAS vrai en production.** `GatewayChatClient`, le catalogue, les clés par espace et le
+coût sont spécifiques à Vercel. La documentation RSSI doit dire « option architecturée, non activée » jusqu'à
+la recette réelle.
+
+Lot borné à livrer, sans refonte générale :
+
+1. **ne pas créer une seconde boucle d'agent ni une interface en doublon** : la couture existe déjà dans
+   `GatewayBrainDeps.completer` (`src/agent/brain.gateway.ts`) et dans les injections de `src/index.ts` et
+   `src/worker.ts` ; rendre au besoin ses types neutres, sans changer son comportement ;
+2. conserver `GatewayChatClient` et ses tests sans changement fonctionnel pour la route Vercel ;
+3. ajouter un client Azure OpenAI qui satisfait le même contrat structurel et réutilise les briques existantes
+   de transport, timeout, retries et erreurs au lieu de les recopier ;
+4. résoudre la route d'un espace une seule fois derrière ce contrat, puis injecter le même résolveur dans le
+   bac à sable (`agentTest`) et le worker de production ; **ne pas** basculer par effet de bord l'assistant de
+   construction, le bot d'aide, la traduction, les embeddings, le reranking ou les analyses ;
+5. conserver Vercel par défaut et rendre le choix modifiable seulement par l'exploitation ; réutiliser le
+   chiffrement de secrets existant plutôt que créer un deuxième coffre applicatif ;
+6. pour Azure, configurer endpoint, nom de déploiement, type de déploiement et authentification ; l'API v1
+   attend le nom du déploiement dans `model`. Revalider le modèle disponible en France au moment de l'achat ;
+7. calculer le coût Azure depuis les jetons avec un tarif de déploiement versionné, puisque
+   `provider_metadata.gateway.cost` est propre à Vercel ; ne pas modifier le débit Vercel ;
+8. interdire tout fallback automatique Azure -> Vercel pour un espace France ;
+9. journaliser fournisseur, région et déploiement sans prompt ni secret ;
+10. tester la parité bac à sable/production, les appels d'outils, la non-régression Vercel, les erreurs et
+    l'absence de fallback ;
+11. avant de déclarer l'option disponible, faire un smoke test sur une vraie ressource Azure **de type
+    Standard/Régional ou provisionné régional en France** et archiver région, modèle, DPA et résultat. Un
+    déploiement Global ou Data Zone UE créé dans `francecentral` ne prouve pas un traitement en France.
+
+**Périmètre à ne pas inventer :** ce premier lot peut couvrir seulement les tours conversationnels. Assistant
+de construction, embeddings, reranking, transcription, traduction et analyses restent à inventorier. On ne
+répond « tous les traitements IA restent en France » que lorsqu'ils sont tous couverts et testés.
+
+## 🟠 Configurer et prouver Cloudflare Pro, sans casser les webhooks (2026-09-21)
+
+**Décision de Julien :** Cloudflare Pro est retenu pour `api.messagingme.app` et `mba.messagingme.app`.
+`engageme.messagingme.app` reste directement chez Vercel. L'abonnement seul ne ferme aucun écart RSSI : ce
+sont la configuration, la fermeture de l'origine et les preuves qui comptent. Source :
+`docs/ARCHITECTURE-CIBLE.md`, §7.3 à §7.7.
+
+**Déjà acquis, ne pas refaire :** `api.messagingme.app` et `mba.messagingme.app` sont déjà proxifiés ; l'origine
+VPS refuse l'accès direct et le vrai chemin Meta a été éprouvé le 2026-09-21 (`DEPLOY.md`, lignes 15 à 41).
+Les plafonds applicatifs existent déjà par clé sur `/v1`, `/mcp` et `/mba/relais/outils/*`, et par code sur
+`/w/:code`.
+
+Reste à faire, par petits changements réversibles :
+
+1. relever l'état du compte Cloudflare ; si ce n'est pas déjà acquis, imposer MFA, comptes nominatifs et
+   moindre privilège. Une configuration déjà active devient une preuve, pas un chantier à refaire ;
+2. vérifier si le **Cloudflare Managed Ruleset** est déjà actif ; sinon l'activer avec ses actions par défaut,
+   relire les faux positifs, puis ne
+   durcir que les règles comprises ; laisser l'OWASP Core Ruleset éteint tant qu'une mesure ou une exigence
+   ne justifie pas son bruit supplémentaire ;
+3. ne pas chercher à « consommer » les deux règles de rate limiting parce qu'elles sont incluses. Pro compte
+   seulement par IP et ne sait ni compter par clé API, ni reproduire les quotas par espace ; ses compteurs ne
+   sont pas exacts à la requête près. Deux candidats réels existent, à activer seulement avec des seuils
+   mesurés :
+   - un fusible large sur l'API externe : `/v1/*` sur `api.`, son ancien chemin `/api/backend/v1/*` sur
+     `mba.`, et `/mcp` sur `mba.`. Inclure `/mcp`, oublié dans la version précédente du lot ;
+   - les chemins d'authentification anonymes qui écrivent : `/auth/login`, `/auth/choose-workspace`,
+     `/auth/google`, `/auth/signup`, `/auth/forgot-password`, `/auth/reset-password` et
+     `/auth/invitations/accept`. Ne pas inclure `/auth/config` ni tout `/auth/*` en bloc ;
+4. pour l'auth, compter largement par IP au bord sans remplacer les limites applicatives par discriminant.
+   `engageme.` ne relaie pas ces appels : le navigateur appelle `api.` directement, donc Cloudflare voit bien
+   l'appelant. Prévoir le cas d'une entreprise entière derrière une IP partagée et préférer un refus HTTP à
+   un challenge susceptible de casser un appel `fetch` ;
+5. n'appliquer **aucun challenge navigateur** à un appel machine à machine, y compris `/v1/*`, `/mcp`,
+   `/webhooks/meta`, `/rcs/callback/*`, `/w/*`, `/hubspot/deal-stage` et `/mba/relais/outils/*`. Une exception
+   WAF se limite à la règle qui produit un faux positif : ne jamais désactiver tout le WAF sur ces chemins ;
+6. avant un blocage, éprouver les chemins publics réellement utilisés, y compris leurs variantes historiques
+   sous `mba.messagingme.app/api/backend/*` : vrai message Meta entrant, vrais statuts, rappel RCS, webhook
+   entrant, relais HubSpot/MBA, `/v1`, `/mcp`, lien `/r/*` et média `/m/*` ;
+7. préserver la fermeture actuelle du VPS et sa preuve ; ne la reconfigurer que si elle régresse. À la bascule
+   Scaleway seulement, vérifier que le nom technique du conteneur refuse un appel sans authentification
+   d'origine avant de changer le DNS ;
+8. distinguer les preuves : les **Audit Logs** retracent les changements de configuration Cloudflare ; les
+   **Security Events** montrent le trafic filtré mais leur rétention Pro est courte. Conserver captures et
+   exports de configuration, tandis que les journaux durables restent aujourd'hui dans Engage Me et, après
+   la migration seulement, dans Cockpit ;
+9. ne pas acheter Cloudflare Business/Enterprise, Bot Management ou un second WAF Scaleway sans exigence ou
+   incident précis.
+
 ## 🟡 Un carrousel RCS dans un scénario (lot 3 de la spec du 2026-09-21)
 
 La bibliothèque compose des carrousels et l'assistant de campagne les envoie ; le bloc « Message RCS » d'un

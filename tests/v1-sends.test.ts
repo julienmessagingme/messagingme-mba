@@ -80,6 +80,16 @@ describe('POST /v1/sends', () => {
     await server.close();
   });
 
+  it('🔴 elle ne transmet AUCUN choix de relance, et c’est ce qui lui garde la règle d’avant (0165)', async () => {
+    // `insertCampaignRow` pose `reessai_par_campagne` sur `input.reessayer !== undefined` : le jour où quelqu’un
+    // ajoute `reessayer: true` ici par symétrie avec la console, chaque envoi de l’API se remet à relancer ses
+    // échecs (131049 le lendemain, contact marqué injoignable chez HubSpot), sans qu’aucun autre test ne rougisse.
+    const { server, cap } = app();
+    await server.inject({ method: 'POST', url: '/v1/sends', ...H(SEND_KEY, 'idem-relance'), payload: { target: { scenario: 'scn_ok' }, category: 'marketing', recipients: ['+33612345671'] } });
+    expect(Object.keys(cap.sends[0]!.input as Record<string, unknown>)).not.toContain('reessayer');
+    await server.close();
+  });
+
   it('sans Idempotency-Key -> 400', async () => {
     const { server } = app();
     const res = await server.inject({ method: 'POST', url: '/v1/sends', ...H(SEND_KEY), payload: { target: { scenario: 'scn_ok' }, category: 'marketing', recipients: ['+33612345671'] } });

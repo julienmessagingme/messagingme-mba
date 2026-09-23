@@ -16,7 +16,7 @@ function faux(o: { detenteur?: string; numero?: string | null; corps?: string | 
     detenteur: async () => o.detenteur ?? 'mba',
     numero: async () => (o.numero === undefined ? 'PN1' : o.numero),
     corpsDuMessage: async (_t, id) => { lus.push(id); return o.corps === undefined ? 'Vous êtes ouverts dimanche ?' : o.corps; },
-    envoyer: async (_t, pn, to, event) => { envois.push({ pn, to, event }); },
+    envoyer: async (_t, pn, to, event) => { envois.push({ pn, to, event }); return { id: 'ev42' }; },
     journal: (l) => { journal.push(l); },
   };
   return { transmettre: creerTransmettreHorsParcours(deps), envois, lus, journal };
@@ -31,6 +31,8 @@ describe('transmettre la réponse « à côté »', () => {
     expect(f.envois[0]!.pn).toBe('PN1');
     expect(f.envois[0]!.to).toBe('+33612345678');
     expect(JSON.parse(f.envois[0]!.event.payload)).toEqual({ message: 'Vous êtes ouverts dimanche ?' });
+    // L'identifiant rendu par Meta est journalisé : c'est lui qui permet de savoir si l'événement a été traité.
+    expect(f.journal).toEqual([expect.stringContaining('ev42')]);
   });
 
   it('🔴 rien si le fil n’est pas à l’agent de Meta (test, release refusé, marqueur en attente)', async () => {

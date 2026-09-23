@@ -140,7 +140,7 @@ export function FormulaireOutilMba({ tenantId, type, outil, occupe, onOccupe, on
         <CibleBloc tenantId={tenantId} workflowId={cible.workflowId} code={cible.code}
           onChange={(workflowId, code, nom) => {
             setCible({ type: 'bloc', workflowId, code });
-            if (title.trim() === '') changerTitre(nom);
+            if (title.trim() === '' && nom !== '') changerTitre(nom);
           }} />
       )}
       {cible?.type === 'scenario' && (

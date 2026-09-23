@@ -76,8 +76,35 @@ export const RISQUE_MAISON: Record<HandlerMaisonMba, RisqueOutil> = {
 export const REPONSE_MAISON: Record<HandlerMaisonMba, string> = {
   tag_fixe: 'C’est fait, c’est enregistré sur la fiche du client. Confirme-le-lui sans citer de nom technique.',
   champ_fixe: 'C’est enregistré sur la fiche du client.',
-  bloc_fixe: 'Le client vient de recevoir le message prévu, envoyé par Engage Me. N’ajoute rien pour cette demande.',
-  scenario_fixe: 'Engage Me déroule maintenant un parcours avec le client, il en reçoit déjà les messages. N’écris rien pour cette demande : la conversation te reviendra à la fin.',
+  // 🔴 « C'EST FAIT » ET « NE RAPPELLE PAS CET OUTIL » (essai réel du 2026-09-22). La première version disait
+  // « Engage Me déroule maintenant un parcours… N'écris rien » : l'agent de Meta a rappelé l'outil sept fois dans le
+  // même tour, sans jamais conclure. La réponse du tag, qui dit « c'est fait », avait marché du premier coup.
+  // 🔴 L'INTERDICTION DE RAPPELER EST BORNÉE AU MESSAGE EN COURS, ET LA SUITE EST PERMISE EN TOUTES LETTRES (essais
+  // réels du 2026-09-22, 16 h 32, 16 h 50, 17 h 01). « Ne rappelle pas cet outil. », sans borne, a été lu comme
+  // valant pour TOUTE la conversation : l'agent s'en souvenait, ne rappelait plus l'outil quand le client
+  // redemandait, et escaladait vers un humain faute d'autre moyen. Un test tient la borne sur chaque réponse.
+  bloc_fixe: 'C’est fait : le client vient de recevoir le message prévu. Ne rappelle pas cet outil pour ce message-ci du client, et n’en répète pas le contenu. Si le client le redemande plus tard, rappelle cet outil.',
+  scenario_fixe: 'C’est fait : le parcours est lancé et le client en reçoit déjà les messages. Ne rappelle pas cet outil pour ce message-ci du client, et n’écris rien de plus pour cette demande : la conversation te reviendra à la fin du parcours. Si le client le redemande plus tard, rappelle cet outil.',
+};
+
+/**
+ * Ce que l'agent de Meta lit quand l'envoi n'a pas FINI dans le délai de réponse du relais : il continue sans lui.
+ *
+ * 🔴 META COUPE UN OUTIL VERS TROIS SECONDES (essai réel du 2026-09-22, mesure en conversation) : notre relais a
+ * répondu en 3 005 ms, et l'agent de Meta a traité l'appel comme un échec. Il a passé la main à « un membre de
+ * l'équipe » six secondes après que le bloc soit bien parti ; c'est très probablement aussi ce qui lui avait fait
+ * RAPPELER sept fois un scénario le matin même. Un envoi prend le fil puis envoie : deux appels à Meta, sa durée
+ * n'est pas à nous. Le relais n'attend donc l'envoi que `DELAI_REPONSE_ENVOI_MS` (`src/http/mba-relais.ts`), puis
+ * répond ceci, et l'envoi continue. S'il échoue ensuite, l'agent l'apprend par un événement
+ * (`src/mba/signaler-echec-tardif.ts`).
+ *
+ * 🔴 ET L'ENVOI N'A LIEU QU'APRÈS SON TOUR (expérience du 2026-09-22, `src/mba/fin-de-tour.ts`) : prendre le fil
+ * pendant que l'agent attend l'outil fait envoyer par Meta « un membre de l'équipe reprendra la conversation ».
+ * L'agent est donc invité à annoncer l'envoi en UNE phrase : c'est son écho qui dit que son tour est fini.
+ */
+export const REPONSE_EN_COURS: Record<'bloc_fixe' | 'scenario_fixe', string> = {
+  bloc_fixe: 'C’est parti : le message prévu arrive au client dans quelques secondes. Dis-lui seulement, en une phrase courte, que tu le lui envoies, sans en donner le contenu. Ne rappelle pas cet outil pour ce message-ci du client. Si le client le redemande plus tard, rappelle cet outil.',
+  scenario_fixe: 'C’est parti : le parcours démarre dans quelques secondes. Dis seulement au client, en une phrase courte, que tu lances ça pour lui, puis n’écris plus rien pour cette demande : la conversation te reviendra à la fin du parcours. Ne rappelle pas cet outil pour ce message-ci du client. Si le client le redemande plus tard, rappelle cet outil.',
 };
 
 export const VARIABLE_VALEUR = 'valeur';

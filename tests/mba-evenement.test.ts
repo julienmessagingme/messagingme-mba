@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { evenementHorsParcours, destinataireAgentEvent, TYPE_HORS_PARCOURS } from '../src/mba/evenement';
+import { evenementHorsParcours, destinataireAgentEvent, traceReponse, TYPE_HORS_PARCOURS } from '../src/mba/evenement';
 
 /**
  * L'événement « réponse hors parcours » (spec 2026-09-21-outils-maison-mba, § 5).
@@ -34,5 +34,19 @@ describe('l’événement « réponse hors parcours »', () => {
   it('🔴 le destinataire est au format MESURÉ : E.164 avec « + », jamais doublé', () => {
     expect(destinataireAgentEvent('33612345678')).toBe('+33612345678');
     expect(destinataireAgentEvent('+33612345678')).toBe('+33612345678');
+  });
+
+  it('🔴 la consigne fait REPRENDRE la conversation, même sur un simple accusé (« Cool », essai du 2026-09-22)', () => {
+    const d = evenementHorsParcours('Cool').description;
+    expect(d).toContain('tu reprends la conversation');
+    expect(d).toContain('même si son message n’appelle pas de réponse précise');
+  });
+
+  it('la trace de la réponse de Meta est bornée, et ne lève jamais', () => {
+    expect(traceReponse({ id: 'ev1' })).toBe('{"id":"ev1"}');
+    expect(traceReponse('x'.repeat(500)).length).toBeLessThanOrEqual(300);
+    const cycle: Record<string, unknown> = {};
+    cycle.soi = cycle;
+    expect(() => traceReponse(cycle)).not.toThrow();
   });
 });

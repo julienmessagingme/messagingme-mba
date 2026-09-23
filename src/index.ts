@@ -148,6 +148,9 @@ import { type OutilAPublier } from './mba/publication';
 import { outilsAPublier } from './mba/outils-a-publier';
 import { blocsProposables } from './mba/outils-maison';
 import { creerGestesEnvoi } from './mba/gestes-envoi';
+import { AntiRejeu, DUREE_ANTI_REJEU_MS } from './mba/anti-rejeu';
+import { creerSignalerEchecTardif } from './mba/signaler-echec-tardif';
+import { creerAttendreFinDuTour } from './mba/fin-de-tour';
 import { cleAJour, depsCleRelaisDepuis } from './mba/cle-relais';
 import { creerAppliquerGeste } from './mba/appliquer-publication';
 import { baseDuRelais } from './mba/relais';
@@ -156,6 +159,7 @@ import { JOURNAL_MUET } from './agent/journal-muet';
 import { installGracefulShutdown } from './shutdown';
 import type { CountryCode } from 'libphonenumber-js';
 import { handlerMaison } from './agent/outils-maison';
+import type { PricingSummary } from './meta/pricing';
 
 async function main(): Promise<void> {
   /**
@@ -514,11 +518,67 @@ async function main(): Promise<void> {
    * lue par cle primaire : ce n est pas la lecture qui coute sur ce chemin, c est l aller-retour chez Meta
    * juste au-dessus.
    */
+  /**
+   * Le tarif de Meta, par espace ET par fenetre. Soixante secondes : voir `prixFactures` juste en dessous.
+   *
+   * ⚠️ DECLARE ICI, DANS LE CABLAGE, et pas dans un module : il n'y a qu'un seul processus d'API, et un
+   * cache par process est exactement ce que `cacheCourt` promet. Le sortir dans un module partage le ferait
+   * partager par le worker, qui n'affiche aucun tarif.
+   */
+  const cacheTarifsMeta = cacheCourt<PricingSummary | null>(60_000);
+
+  /**
+   * LE POINT DE PASSAGE UNIQUE vers le tarif de Meta. Les deux appelants passent par ici.
+   *
+   * 🔴 UN ECHEC N'EST PAS MEMORISE, ET C'EST LA PROMESSE DU MODULE QU'ON HONORE ICI (jaune de la relecture
+   * du 2026-09-23). `cacheCourt` ne garde jamais un REJET, il le dit en toutes lettres ; mais
+   * `getPricingAnalytics` AVALE ses pannes et rend `null`, c'est-a-dire une valeur RESOLUE. Un 429, un jeton
+   * expire ou une coupure d'une seconde eteignaient donc la colonne « cout » de TOUS les ecrans pendant une
+   * minute, sans qu'un rechargement n'y puisse rien. On oublie la cle aussitot : le prochain affichage
+   * retentera.
+   *
+   * ⚠️ ET ON NE MARTELE PAS META POUR AUTANT : la mutualisation des appels EN VOL reste acquise (vingt-cinq
+   * onglets qui arrivent ensemble font UN aller-retour, panne comprise). Ce qu'on retire, c'est seulement de
+   * resservir un echec a ceux qui arrivent APRES lui.
+   *
+   * ⚠️ UN SEUL POINT DE PASSAGE, parce qu'il y en avait deux et qu'un des deux avait ete oublie du cache
+   * pendant un cycle entier. Un sixieme appelant passera par ici ou nulle part.
+   */
+  const tarifMeta = async (
+    tenant: string,
+    startTs: number,
+    endTs: number,
+    appel: () => Promise<PricingSummary | null>,
+  ): Promise<PricingSummary | null> => {
+    const cle = `${tenant}:${startTs}:${endTs}`;
+    const v = await cacheTarifsMeta.lire(cle, appel);
+    if (v === null) cacheTarifsMeta.invalider(cle);
+    return v;
+  };
+
   const prixFactures = async (tenant: string, range: { from: string; to: string }): Promise<CategoryRates> => {
     const [wabaId, ligne] = await Promise.all([repo.getTenantWabaId(tenant), statsStore.grillePrix(tenant)]);
     const { startTs, endTs } = rangeToUnix(range);
     const pricingClientT = wabaId ? await metaFactory.pricingClientForTenant(tenant) : null;
-    const pricing = pricingClientT && wabaId ? await pricingClientT.getPricingAnalytics(wabaId, startTs, endTs) : null;
+    /**
+     * 🔴 L'ALLER-RETOUR CHEZ META PASSE SOUS MICRO-CACHE (revue finale du 2026-09-23, son seul rouge).
+     *
+     * Cet appel n'en avait AUCUN, et quatre écrans le déclenchent : le graphe de coût, la synthèse de
+     * Performance Lab, le total des messages envoyés, et depuis ce jour l'onglet Campagnes, qu'on ouvre en
+     * permanence. Chaque montage, chaque changement de période et chaque bascule partait donc chez Meta,
+     * pour un TARIF qui ne bouge pas dans la minute. C'est une API tierce à quota : la faire appeler par un
+     * écran de travail était le vrai défaut, pas la taille de la fenêtre demandée.
+     *
+     * ⚠️ LA CLÉ PORTE L'ESPACE ET LA FENÊTRE : deux périodes différentes sont deux tarifs différents, et les
+     * confondre ferait lire à un écran le prix moyen d'une autre plage. L'espace y est pour la raison
+     * habituelle (le filtrage en code est le seul contrôle d'isolation).
+     *
+     * ⚠️ SOIXANTE SECONDES, comme les compteurs de l'Inbox : ce cache convient à ce qui tolère d'être en
+     * retard de quelques secondes, jamais à une décision. Un tarif affiché est exactement de ce genre.
+     */
+    const pricing = pricingClientT && wabaId
+      ? await tarifMeta(tenant, startTs, endTs, () => pricingClientT.getPricingAnalytics(wabaId, startTs, endTs))
+      : null;
     // La transformation elle-meme vit dans `tarifsFactures`, PURE et testee : ce cablage ne fait que lire
     // la grille et la lui passer, pour que le cas « une marge de 150 majore le prix » reste eprouvable.
     return tarifsFactures({
@@ -743,6 +803,8 @@ async function main(): Promise<void> {
     },
     inbox: {
       listConversations: (tenant, opts) => inboxStore.listConversations(tenant, opts),
+      // « Ouvrir la conversation » depuis la fiche d un contact du mini-CRM : trouve le fil, ou le cree.
+      ouvrirConversationDuContact: (tenant, contactId) => inboxStore.ouvrirConversationDuContact(tenant, contactId),
       // Effacer le CONTENU d une conversation. Reserve aux administrateurs par la garde de `server.ts`, et
       // trace au Journal des actions (sans le numero ni le texte : y ecrire ce qu on vient d effacer
       // annulerait l effacement).
@@ -967,23 +1029,27 @@ async function main(): Promise<void> {
          * ⚠️ Ce commentaire a dit « il n'existe aucune action `take` chez Meta ». C'était faux, et c'est ce
          * qui a laissé l'agent de Meta répondre juste après un clic sur « Reprendre la main ».
          */
+        // ⚠️ LES QUATRE BRANCHES CLÔTURENT L'ESCALADE : c'est le même geste délibéré, quelle que soit la valeur
+        // écrite. Trois d'entre elles posent `app_workflow`, que « À traiter » exclut : la conversation
+        // disparaissait avec son drapeau intact, et plus rien ne l'effaçait (revue finale du 2026-09-23).
         if ((await inboxStore.getControlOwner(tenant, waId)) === 'mba') {
-          await inboxStore.setControlOwner(tenant, waId, 'app_workflow');
+          await inboxStore.setControlOwner(tenant, waId, 'app_workflow', { effacerEscalade: true });
           return 'app_workflow';
         }
         const reglages = await settingsStore.get(tenant);
         if (!reglages.mbaEnabled) {
-          await inboxStore.setControlOwner(tenant, waId, 'app_workflow');
+          await inboxStore.setControlOwner(tenant, waId, 'app_workflow', { effacerEscalade: true });
           return 'app_workflow';
         }
         const rendu = await rendreLeFilAuMba(tenant, waId);
         if (!rendu) {
           // Aucun numéro connecté : il n'y a pas de fil à rendre chez Meta, et notre état local reste la
           // seule vérité. Ce n'est pas un échec, c'est un espace sans WhatsApp.
-          await inboxStore.setControlOwner(tenant, waId, 'app_workflow');
+          await inboxStore.setControlOwner(tenant, waId, 'app_workflow', { effacerEscalade: true });
           return 'app_workflow';
         }
-        await inboxStore.setControlOwner(tenant, waId, 'mba');
+        // Geste DÉLIBÉRÉ d'un opérateur (« Rendre la main ») : il clôt l'escalade, elle n'attend plus personne.
+        await inboxStore.setControlOwner(tenant, waId, 'mba', { effacerEscalade: true });
         return 'mba';
       },
       /** Lancement d'un SCÉNARIO depuis l'Inbox : le chemin partagé avec l'agent de Meta (`lancerScenarioPourContact`). */
@@ -1068,7 +1134,11 @@ async function main(): Promise<void> {
         if (!wabaId) return null;
         const { startTs, endTs } = rangeToUnix(range);
         const pricing = await metaFactory.pricingClientForTenant(tenant); // token PAR TENANT (B1), repli global en sommeil
-        const brut = await pricing.getPricingAnalytics(wabaId, startTs, endTs);
+        // 🔴 LE MEME CACHE QUE `prixFactures`, ET C'EST LE CINQUIEME APPELANT QU'UNE RELECTURE A TROUVE
+        // (2026-09-23). Cette route sert « Detail par template », que l'onglet Campagnes appelle LUI AUSSI a
+        // chaque montage : le cache pose sur l'autre chemin etait donc contourne par la porte d'a cote, et
+        // l'ecran le plus ouvert du produit repartait chez Meta a chaque affichage. Meme cle, meme fenetre.
+        const brut = await tarifMeta(tenant, startTs, endTs, () => pricing.getPricingAnalytics(wabaId, startTs, endTs));
         if (!brut) return brut;
         return pricingFacture(brut, grilleDepuisLigne(ligne));
       },
@@ -1099,15 +1169,22 @@ async function main(): Promise<void> {
        * lire donneraient deux coûts sur deux écrans du même onglet, et le client comparerait. Le calcul,
        * lui, est pur (`estimateCoutParCampagne`) et vit à côté de celui de la série, avec ses règles.
        */
-      getCoutParCampagne: async (tenant, range) => {
-        const [volumes, rates, serviceMois, ligne] = await Promise.all([
-          statsStore.getVolumeParCampagne(tenant, range),
+      getCoutParCampagne: async (tenant, range, opts) => {
+        const [volumes, rates, serviceMois, ligne, rcs] = await Promise.all([
+          // ⚠️ LA RETENTION VOYAGE JUSQU'ICI, et c'est ce qui permet a une campagne dont les envois ont ete
+          // purges de garder une case VIDE plutot qu'un 0,00 € qui se lirait « gratuit ».
+          statsStore.getVolumeParCampagne(tenant, range, { ...opts, retentionJours: config.CONVERSATION_RETENTION_DAYS }),
           prixFactures(tenant, range),
           // 🔴 LE MEME CALCUL DE FRANCHISE QUE LA LIGNE « MESSAGES », par les mêmes deux lectures. Deux
           // façons de déduire la franchise donneraient deux coûts de service sur la MÊME carte, à deux
           // lignes d'écart, et le client comparerait. Voir `estimateCoutParCampagne` pour le prorata.
           statsStore.serviceParMois(tenant, range),
           statsStore.grillePrix(tenant),
+          // 🔴 ET LE MEME LOT DE RCS QUE CETTE LIGNE-LA, par la même lecture et la même règle de bascule.
+          // Une campagne RCS affichait « — » alors que son prix est saisi depuis la migration 0154.
+          // ⚠️ `attribuer` : SEUL cet appelant lit `campaignId`, et l'attribution coute une sous-requete
+          // correlee par message RCS, non servie par un index. L'autre route s'en passe desormais.
+          statsStore.envoisEtReactionsRcs(tenant, range, FENETRE_BASCULE_MS, { attribuer: true }),
         ]);
         const ids = [...new Set(volumes.map((v) => v.campaignId))];
         // ⚠️ LES TROIS ENSEMBLE, pas l'une après l'autre : ce sont des lectures indépendantes sur la même
@@ -1133,9 +1210,32 @@ async function main(): Promise<void> {
           grilleDepuisLigne(ligne),
         );
         const prixUnitaire = cm.service.envoyes > 0 ? cm.service.cout / cm.service.envoyes : 0;
+        /**
+         * LES RCS DE CHAQUE CAMPAGNE, SIMPLES D'UN COTE, CONVERSATIONNELS DE L'AUTRE.
+         *
+         * 🔴 LA BASCULE SE CALCULE SUR TOUS LES ENVOIS DE L'ESPACE, PAS SUR CEUX D'UNE CAMPAGNE, et c'est la
+         * règle elle-même qui l'impose : elle fait passer l'ECHANGE entier à 8 cts dès qu'une réaction suit
+         * l'un de ses envois dans les sept jours. Un RCS envoyé hors campagne peut donc faire basculer les
+         * RCS de campagne du même échange. `basculesRcs` reçoit ainsi la totalité, puis on impute.
+         *
+         * ⚠️ LES LIGNES SANS CAMPAGNE SONT IGNOREES A L'IMPUTATION, mais pas à la bascule (voir ci-dessus).
+         */
+        const envoisRcs = rcs.conversations.flatMap((c) =>
+          c.instants.map((at) => ({ id: '', conversationId: c.conversationId, waId: c.waId, at })));
+        const bascules = basculesRcs(envoisRcs, rcs.reactions);
+        const rcsParCampagne = new Map<string, { simple: number; conversationnel: number }>();
+        for (const c of rcs.conversations) {
+          if (c.campaignId === null) continue;
+          const acc = rcsParCampagne.get(c.campaignId) ?? { simple: 0, conversationnel: 0 };
+          if (bascules.has(c.conversationId)) acc.conversationnel += c.envois; else acc.simple += c.envois;
+          rcsParCampagne.set(c.campaignId, acc);
+        }
         // La marge est DEJA dans `rates` (cf. `prixFactures`) : la reappliquer ici la compterait deux fois.
+        // ⚠️ La marge ne touche PAS le RCS : elle porte sur le tarif Meta, quand le prix RCS est saisi par
+        // l'espace, donc déjà un prix de vente (migration 0154).
         return estimateCoutParCampagne(volumes, rates, clics, engagements,
-          { parCampagne: services, prixUnitaire });
+          { parCampagne: services, prixUnitaire },
+          { parCampagne: rcsParCampagne, grille: grilleDepuisLigne(ligne) });
       },
       /**
        * LE COUT TOTAL DES MESSAGES DE LA PERIODE : templates margés, service franchise déduite, RCS.
@@ -1321,7 +1421,6 @@ async function main(): Promise<void> {
       rcsEnabledFor: (tenant) => workflowRuntime.rcsStack.agents.hasAgent(tenant),
       setMbaEnabled: (tenant, enabled) => settingsStore.setMbaEnabled(tenant, enabled),
       setHubspotListsEnabled: (tenant, enabled) => settingsStore.setHubspotListsEnabled(tenant, enabled),
-      setAutoRetryEnabled: (tenant, enabled) => settingsStore.setAutoRetryEnabled(tenant, enabled),
       setControlHandbackSeconds: (tenant, seconds) => settingsStore.setControlHandbackSeconds(tenant, seconds),
       // La grille de prix de l'espace. Elle etait posee en base depuis 0154 et AUCUN chemin ne l'ecrivait :
       // la marge negociee n'etait atteignable que par un `UPDATE` a la main. Releve en revue finale.
@@ -1828,7 +1927,10 @@ async function main(): Promise<void> {
         const w = await workflowStore.getById(id, tenant);
         return w ? { name: w.name, graph: w.graph } : null;
       },
-      blocs: async (tenant) => blocsProposables((await workflowStore.list(tenant)).map((w) => ({ id: w.id, name: w.name, graph: w.graph }))),
+      blocs: async (tenant, id) => {
+        const w = await workflowStore.getById(id, tenant);
+        return w ? blocsProposables([{ id: w.id, name: w.name, graph: w.graph }]) : [];
+      },
       requete: (tenant, id) => agentRequetes.parId(tenant, id),
       champs: async (tenant) => (await fieldStore.list(tenant)).map((f) => f.key),
       creerMaison: (tenant, pn, outil, par) => toolCatalog.ajouterMaisonPourMba(tenant, pn, outil, par),
@@ -2566,6 +2668,18 @@ async function main(): Promise<void> {
         // 2026-09-21, `wip.md`) : sans lui, une macro que Meta cesserait de remplir serait invisible.
         // eslint-disable-next-line no-console
         journaliserForme: (f) => console.info(`mba-relais: en-tete du numero ${f}`),
+        // Borne l'attente d'un ENVOI avant de répondre à Meta, qui coupe un outil vers trois secondes
+        // (`DELAI_REPONSE_ENVOI_MS`, `src/http/mba-relais.ts`).
+        attendre: (ms) => new Promise((r) => { setTimeout(r, ms); }),
+        // Un envoi qui échoue APRÈS « C'est parti » est dit à l'agent de Meta par un événement (les gardes vivent
+        // dans le module, testé), comme la réponse « à côté » du lot 4.
+        signalerEchecTardif: creerSignalerEchecTardif({
+          detenteur: (t, w) => inboxStore.getControlOwner(t, w),
+          numero: (t) => repo.getTenantPhoneNumberId(t),
+          envoyer: async (t, pn, to, event) => (await metaFactory.mbaClientForTenant(t)).agentEvent(pn, to, event, AbortSignal.timeout(10_000)),
+          // eslint-disable-next-line no-console
+          journal: (ligne) => console.log(ligne),
+        }),
         // Les gestes maison : les MÊMES fonctions que les agents IA et le mini-CRM, aucune réécrite ici.
         maison: {
           poserTag: workflowRuntime.poserTagDepuisAgent,
@@ -2574,6 +2688,8 @@ async function main(): Promise<void> {
           // ne seraient pas d'accord sur ce qui existe.
           champExiste: async (t, champ) => (await fieldStore.list(t)).some((f) => f.key === champ),
           estBloque: (t, waId) => contactStore.isBlockedByWaId(t, waId),
+          antiRejeu: new AntiRejeu(DUREE_ANTI_REJEU_MS),
+          dernierMessageDuClient: (t, waId) => inboxStore.dernierMessageDuClient(t, waId),
           // Les deux gestes qui ENVOIENT : ils rendent le fil sur toute issue ratée, exception comprise
           // (`src/mba/gestes-envoi.ts`, testé ; revue finale du 2026-09-22).
           ...creerGestesEnvoi({
@@ -2585,6 +2701,16 @@ async function main(): Promise<void> {
             ),
             lancerScenario: (t, workflowId, waId, ouverte) => lancerScenarioPourContact(t, workflowId, waId, ouverte),
             rendreLaMain: (t, waId) => workflowRuntime.rendreLaMainApresParcours(t, waId),
+            // Expérience du 2026-09-22 : on ne prend le fil qu'une fois le tour de l'agent de Meta fini.
+            attendreFinDuTour: creerAttendreFinDuTour({
+              dernierMessageDeLAgent: (t, waId) => inboxStore.dernierMessageDeLAgent(t, waId),
+              attendre: (ms) => new Promise((r) => { setTimeout(r, ms); }),
+              maintenant: () => Date.now(),
+              // eslint-disable-next-line no-console
+              journal: (ligne) => console.log(ligne),
+            }),
+            empreinteDuFil: (t, waId) => inboxStore.empreinteDuFil(t, waId),
+            estBloque: (t, waId) => contactStore.isBlockedByWaId(t, waId),
           }),
         },
       },

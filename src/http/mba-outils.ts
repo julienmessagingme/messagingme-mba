@@ -44,8 +44,11 @@ export interface MbaOutilsDeps {
   reactiver(tenantId: string, phoneNumberId: string, outilId: string, parUtilisateur: string): Promise<boolean>;
   /** Un scénario de l'espace, avec son graphe PUBLIÉ (celui que le relais joue), ou `null`. */
   workflow(tenantId: string, id: string): Promise<{ name: string; graph: WorkflowGraph } | null>;
-  /** Les blocs des scénarios publiés, envoyables seuls ou non, pour le choix de l'écran. */
-  blocs(tenantId: string): Promise<BlocPropose[]>;
+  /**
+   * Les blocs d'UN scénario publié, envoyables seuls ou non, pour le choix de l'écran. 🔴 Un scénario à la fois
+   * (Julien, essai réel du 2026-09-22) : lister tous les blocs de tous les scénarios ne tient pas à 200 scénarios.
+   */
+  blocs(tenantId: string, workflowId: string): Promise<BlocPropose[]>;
 }
 
 const NOM = z.string().trim().regex(/^[a-z0-9_]{1,64}$/, 'nom technique au format [a-z0-9_], 64 caractères au plus');
@@ -144,7 +147,9 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
   app.get(`${base}/blocs`, opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'espace interdit' });
-    return reply.code(200).send({ blocs: await deps.blocs(tenant) });
+    const workflowId = (req.query as { workflowId?: unknown } | undefined)?.workflowId;
+    if (typeof workflowId !== 'string' || !estUuid(workflowId)) return reply.code(400).send({ error: 'choisissez d’abord un scénario' });
+    return reply.code(200).send({ blocs: await deps.blocs(tenant, workflowId) });
   });
 
   app.post(base, opts, async (req, reply) => {

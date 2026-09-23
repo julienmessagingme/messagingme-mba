@@ -2,69 +2,51 @@ import { test, expect } from '@playwright/test';
 import { mockAccueil } from './support/accueil';
 
 /**
- * « Relancer automatiquement les échecs » : le toggle vit dans PARAMÈTRES depuis le 2026-08-23.
+ * « Relancer automatiquement les échecs » N'EST PLUS UN RÉGLAGE D'ESPACE (lot 3 de la liste de Julien du
+ * 2026-09-23, migration 0165).
  *
- * Il était sur l'Accueil, dans la carte du Meta Business Agent, où il n'avait rien à faire : il ne dit pas
- * qui répond au client, il règle ce qui se passe quand un envoi échoue. Ce fichier remplace
- * `accueil-auto-retry.spec.ts` : mêmes garanties (rendu, bascule optimiste, état initial lu du serveur,
- * admin seul), sur le bon écran.
+ * La relance obéit à la case « Réessayer les envois qui échouent » de chaque campagne, que le balayage ne lisait
+ * pas : elle était offerte et inerte, pendant que l'interrupteur des Paramètres décidait seul. Les campagnes
+ * d'avant gardent la règle de l'espace, qui ne se change plus. Ce fichier remplaçait déjà
+ * `accueil-auto-retry.spec.ts` ; il garde ce qui reste vrai : l'interrupteur n'est ni dans les Paramètres, ni
+ * sur l'Accueil.
  */
-const SESSION = (role: string) => ({ token: 'e2e-token', email: 'a@e2e.test', role, tenantId: 't-e2e' });
+const SESSION = { token: 'e2e-token', email: 'a@e2e.test', role: 'admin', tenantId: 't-e2e' };
 
-async function monter(page: import('@playwright/test').Page, autoRetryEnabled: boolean, role = 'admin') {
-  const patchs: Array<Record<string, unknown>> = [];
-  await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION(role));
+async function monter(page: import('@playwright/test').Page) {
+  await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const url = route.request().url();
     const method = route.request().method();
     const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
-    if (url.includes('/settings/auto-retry')) {
-      patchs.push(JSON.parse(route.request().postData() ?? '{}'));
-      return json({ autoRetryEnabled: true });
-    }
     if (url.endsWith('/settings') && method === 'GET') {
-      return json({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled, controlHandbackSeconds: null, mbaHandoffMode: null, timezone: 'Europe/Paris', businessHours: {} });
+      return json({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: true, controlHandbackSeconds: null, mbaHandoffMode: null, timezone: 'Europe/Paris', businessHours: {} });
     }
     if (url.includes('/unread-count')) return json({ count: 0 });
-    if (url.endsWith('/me')) return json({ email: 'a@e2e.test', name: 'Jean Test', role });
+    if (url.endsWith('/me')) return json({ email: 'a@e2e.test', name: 'Jean Test', role: 'admin' });
     return json({});
   });
   await page.goto('/parametres');
-  return patchs;
 }
 
-test.describe('Paramètres : relancer automatiquement les échecs', () => {
-  test('🔴 le toggle est rendu et bascule (optimiste)', async ({ page }) => {
-    await monter(page, false);
-    const toggle = page.getByTestId('param-auto-retry-toggle');
-    await expect(toggle).toBeVisible();
-    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
-    await toggle.click();
-    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+test.describe('Relancer automatiquement les échecs : plus un réglage d’espace', () => {
+  test('🔴 il n’est PLUS dans les Paramètres, même quand l’espace l’avait activé', async ({ page }) => {
+    await monter(page);
+    // La page a VRAIMENT rendu ses sections d'administrateur...
+    await expect(page.getByTestId('param-save-hours')).toBeVisible();
+    // ... et l'interrupteur n'y est plus.
+    await expect(page.getByTestId('param-auto-retry-card')).toHaveCount(0);
+    await expect(page.getByTestId('param-auto-retry-toggle')).toHaveCount(0);
   });
 
-  test('🔴 part activé si le réglage le dit', async ({ page }) => {
-    await monter(page, true);
-    await expect(page.getByTestId('param-auto-retry-toggle')).toHaveAttribute('aria-pressed', 'true');
-  });
-
-  test('la bascule est bien ENVOYÉE au serveur', async ({ page }) => {
-    const patchs = await monter(page, false);
-    await page.getByTestId('param-auto-retry-toggle').click();
-    await expect.poll(() => patchs.length).toBeGreaterThan(0);
-    expect(patchs[0]).toEqual({ enabled: true });
-  });
-
-  test('🔴 il n’est PLUS sur l’Accueil', async ({ page }) => {
-    // Sans cette assertion, un doublon oublié laisserait deux interrupteurs pour un seul réglage.
-    //
+  test('🔴 il n’est pas non plus sur l’Accueil', async ({ page }) => {
     // ⚠️ Le harnais de l'ACCUEIL est indispensable ici. Une première version montait la page avec le mock de
     // Paramètres : l'accueil ne se chargeait alors pas du tout, et l'absence était garantie d'avance. Le test
     // passait même en remettant un `auto-retry-toggle` en dur dans la page.
     await mockAccueil(page, { account: { hasNumber: true } });
     // La page a VRAIMENT rendu ses cartes...
     await expect(page.getByTestId('mba-toggle')).toBeVisible();
-    // ... et le toggle déplacé n'y est plus.
+    // ... et aucun interrupteur de relance n'y est.
     await expect(page.getByTestId('auto-retry-toggle')).toHaveCount(0);
   });
 });

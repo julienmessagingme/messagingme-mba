@@ -86,8 +86,9 @@ describe('la bascule vers un humain rend son verdict', () => {
   const source = sansCommentaires('../src/worker.ts');
 
   it('🔴 `escalateToHuman` REND ce que `setControlOwner` a répondu, il ne l’avale pas', () => {
+    // ⚠️ `escalade: true` depuis le 2026-09-23 : la prise de fil d'un agent IA est une ESCALADE (migration 0164).
     expect(source).toContain(
-      "escalateToHuman: (t, waId) => inboxStore.setControlOwner(t, waId, 'app_human', { only: ['app_workflow'] })",
+      "escalateToHuman: (t, waId) => inboxStore.setControlOwner(t, waId, 'app_human', { only: ['app_workflow'], escalade: true })",
     );
   });
 

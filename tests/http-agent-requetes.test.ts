@@ -63,7 +63,8 @@ function app(
     },
     patch: async (_t, id, p) => { cap.patches.push(p); return id === RQ ? { ...requete, ...p } : null; },
     supprimer: async (_t, id) => { cap.suppressions.push(id); return id === RQ; },
-    sourcePourTest: async () => ({ baseUrl: 'https://api.client.fr/v1', entetes: { authorization: 'Bearer SECRET-42' }, status: 'active' }),
+    // ⚠️ Les clés d'une source sont en MINUSCULES (`enTetesAuthSource`), comme celles d'un appel assemblé.
+    sourcePourTest: async () => ({ baseUrl: 'https://api.client.fr/v1', entetes: { accept: 'application/json', authorization: 'Bearer SECRET-42', 'x-api-key': 'SECRET-42' }, status: 'active' }),
     clesDeChamps: async () => champs,
     ...(fetchImpl ? { fetchImpl } : {}),
     // La garde de RÉSOLUTION est injectée comme `fetch` : sans elle, ces tests partiraient interroger le DNS
@@ -98,6 +99,8 @@ describe('requêtes : déclarer', () => {
       corps({ corps: { mode: 'json', gabarit: '{"v": "{{ville}}"}' } }),
       corps({ parametres: [{ cle: 'q', valeur: '{{ville}}' }] }),
       corps({ chemin: '/commandes/{ref}/{ville}' }),
+      // Les EN-TÊTES aussi (revue du 2026-09-23) : sans eux dans l'inventaire, seul le test unitaire le voyait.
+      corps({ entetes: [{ nom: 'X-Ville', valeur: '{{ville}}' }] }),
     ]) {
       const res = await srv.inject({ method: 'POST', url: base(), ...h(adminTok), payload: p });
       expect(res.statusCode, JSON.stringify(p)).toBe(400);
@@ -406,6 +409,27 @@ describe('requêtes : le bouton Test', () => {
     expect(appels).toBe(0);
     // Et le message ne décrit pas notre réseau.
     expect(JSON.stringify(res.json())).not.toMatch(/172\.|169\.254|docker|localhost/i);
+  });
+
+  it('🔴 les en-têtes PARTIS sont rendus, variables substituées, sans ceux de la source (revue du 2026-09-23)', async () => {
+    // C'est ce qui rend l'essai réel du lot faisable : sans eux, rien ne montrait ce qu'une variable avait produit
+    // dans un en-tête.
+    const { srv } = app({
+      entetes: [{ nom: 'X-Ref', valeur: 'ref-{{ref}}' }],
+    }, reponse('{"a":1}'));
+    const res = await srv.inject({ method: 'POST', url: `${base()}/${RQ}/test`, ...h(adminTok), payload: {} });
+    const envoye = res.json().envoye;
+    expect(envoye.entetes['x-ref']).toBe('ref-CMD-1');
+    expect(envoye.entetes).not.toHaveProperty('authorization');
+  });
+
+  it('🔴 un en-tête que le SECRET DE LA SOURCE écrase n’est pas affiché comme parti (revue finale du 2026-09-23)', async () => {
+    // L'envoi fusionne `{ ...appel.entetes, ...source.entetes }` : la valeur de la requête n'est jamais partie.
+    // L'afficher quand même, sur l'écran qui existe pour dire ce qui part, serait la seule chose à ne pas faire.
+    const { srv } = app({ entetes: [{ nom: 'X-Api-Key', valeur: 'celle-de-la-requete' }] }, reponse('{"a":1}'));
+    const res = await srv.inject({ method: 'POST', url: `${base()}/${RQ}/test`, ...h(adminTok), payload: {} });
+    expect(res.json().envoye.entetes).not.toHaveProperty('x-api-key');
+    expect(res.body).not.toContain('celle-de-la-requete');
   });
 
   it('🔴 le secret de la source n’apparaît nulle part dans la réponse du test', async () => {

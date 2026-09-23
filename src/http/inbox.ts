@@ -59,6 +59,14 @@ export interface InboxRouteDeps {
    */
   audit?: AuditSink;
   listConversations(tenantId: string, opts?: ListConversationsOptions): Promise<ConversationSummary[]>;
+  /**
+   * TROUVE OU CRÉE la conversation d'un contact, et rend son identifiant (`null` = contact inconnu de cet
+   * espace, supprimé, ou sans aucune identité joignable).
+   *
+   * ⚠️ OPTIONNELLE, et c'est la seule raison acceptable ici : une instance dont le magasin est plus ancien
+   * que cette route doit répondre « pas configuré » plutôt que tomber. La route le dit en 503.
+   */
+  ouvrirConversationDuContact?(tenantId: string, contactId: string): Promise<string | null>;
   /** Nombre de conversations non lues (pastille du menu). Optionnel : absent -> 0, la pastille ne s'affiche pas. */
   countUnread?(tenantId: string, acteur: { userId: string | null; role: string | null }): Promise<number>;
   /** Nombre de conversations « À traiter ». Optionnel : absent -> le compteur n'est pas rendu. */
@@ -387,10 +395,21 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     // Query string = entrée NON FIABLE. Chaque paramètre est lu dans sa forme attendue et ignoré sinon : un
     // filtre mal formé doit rendre la page normale, jamais une page vide qui se lirait « aucune conversation ».
     const q = (req.query ?? {}) as {
-      limit?: unknown; beforeAt?: unknown; beforeId?: unknown;
+      limit?: unknown; beforeAt?: unknown; beforeId?: unknown; id?: unknown;
       aTraiter?: unknown; signalees?: unknown; archivees?: unknown; traitees?: unknown; affectee?: unknown;
     };
     const opts: ListConversationsOptions = {};
+    /**
+     * UNE conversation précise. Sert le lien « Ouvrir la conversation » du mini-CRM, dont la cible peut être
+     * un vieux fil, donc hors de la première page.
+     *
+     * 🔴 `estUuid` COMME PARTOUT DANS CE FICHIER (relecture du 2026-09-23). Le paramètre lié empêche bien
+     * l'injection, mais ce n'est pas la question que pose la convention posée 120 lignes plus bas : un
+     * identifiant mal formé fait lever Postgres (`22P02`), donc un 500 que Cloudflare remplace par sa propre
+     * page, et l'opérateur ne voit même pas ce qu'on lui reproche. Ici, en plus, le commentaire juste
+     * au-dessus exige qu'un filtre mal formé rende la page NORMALE : on l'ignore donc, comme les autres.
+     */
+    if (typeof q.id === 'string' && estUuid(q.id)) opts.id = q.id;
     const limit = Number(q.limit);
     if (Number.isInteger(limit) && limit > 0) opts.limit = limit;
     if (q.aTraiter === '1' || q.aTraiter === 'true') opts.aTraiter = true;
@@ -542,6 +561,33 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    * de bascule ne doit pas le faire passer pour raté). Ici c'est l'inverse : la bascule EST le geste, un
    * échec doit se voir. On ne l'avale donc pas.
    */
+  /**
+   * OUVRIR LA CONVERSATION D'UN CONTACT depuis le mini-CRM (demande de Julien du 2026-09-23).
+   *
+   * 🔴 `POST` ET PAS `GET`, parce qu'elle ÉCRIT : un contact qui n'a jamais parlé n'a pas de fil, et ce
+   * geste le crée. Un `GET` qui crée une ligne est le genre de route qu'un préchargement de navigateur
+   * déclenche tout seul.
+   *
+   * ⚠️ ELLE EST IDEMPOTENTE : deux clics rendent le MÊME identifiant, parce que la clé `(tenant_id, wa_id)`
+   * de 0009 l'impose et que le magasin s'appuie dessus (`on conflict`). Cliquer deux fois ne crée pas deux
+   * fils, et n'en fait pas remonter un ancien.
+   *
+   * 404 quand le contact est inconnu de cet espace, supprimé, ou sans aucune identité joignable : il n'y a
+   * alors aucun fil possible, et en inventer un le rendrait inatteignable.
+   */
+  app.post('/tenants/:tenantId/contacts/:contactId/conversation', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.ouvrirConversationDuContact) return reply.code(503).send({ error: 'ouverture de conversation non configuree' });
+    const { contactId } = req.params as { contactId: string };
+    // ⚠️ `estUuid` AVANT la base, même raison qu'ailleurs dans ce fichier : un identifiant mal formé ferait
+    // lever Postgres, donc un 500 illisible, là où « ce contact n'existe pas » est la réponse juste.
+    if (!estUuid(contactId)) return reply.code(404).send({ error: 'contact introuvable, supprime, bloque, ou sans numero' });
+    const id = await deps.ouvrirConversationDuContact(tenant, contactId);
+    if (id === null) return reply.code(404).send({ error: 'contact introuvable, supprime, bloque, ou sans numero' });
+    return reply.code(200).send({ conversationId: id });
+  });
+
   app.post('/tenants/:tenantId/conversations/:conversationId/prendre', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });

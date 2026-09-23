@@ -31,6 +31,9 @@ function MessagesInner({ session }: { session: Session }) {
       const serie = (v: unknown): DailyPoint[] => (Array.isArray(v) ? (v as DailyPoint[]) : []);
       setStats({
         contacts: serie(s?.contacts),
+        // ⚠️ `undefined` QUAND L'API NE L'ENVOIE PAS, et surtout pas un tableau vide : la bascule se masque
+        // alors, au lieu de proposer une courbe plate qu'on lirait « plus aucun contact ».
+        ...(Array.isArray(s?.contactsActifs) ? { contactsActifs: s.contactsActifs } : {}),
         templates: { marketing: serie(s?.templates?.marketing), utility: serie(s?.templates?.utility) },
         exchanged: serie(s?.exchanged),
         service: serie(s?.service),
@@ -60,15 +63,7 @@ function MessagesInner({ session }: { session: Session }) {
         <p className="text-sm text-ink-500">{t('Chargement des statistiques...', 'Loading statistics...')}</p>
       ) : stats ? (
         <div className="grid gap-4 lg:grid-cols-2">
-          <DailyChart
-            title={t('Contacts', 'Contacts')}
-            subtitle={t('total cumulé', 'cumulative total')}
-            zonePdf="quanti-contacts"
-            from={range.from}
-            to={range.to}
-            summary="last"
-            series={[{ label: t('Contacts', 'Contacts'), color: '#009AFE', points: stats.contacts }]}
-          />
+          <CarteContacts stats={stats} range={range} />
           <DailyChart
             title={t('Messages échangés', 'Messages exchanged')}
             subtitle={t('reçus + réponses (hors template)', 'received + replies (excluding templates)')}
@@ -105,3 +100,58 @@ function MessagesInner({ session }: { session: Session }) {
     </div>
   );
 }
+
+/**
+ * LA CARTE DES CONTACTS, AVEC SA BASCULE CUMULES / ACTIFS (demande de Julien du 2026-09-23).
+ *
+ * 🔴 DEUX QUESTIONS DIFFERENTES, PAS DEUX VERSIONS DE LA MEME. « Cumules » dit ce qu'on a COLLECTE depuis le
+ * debut, « actifs » ce qu'on a ENCORE dans le mini-CRM. Une base qu'on nettoie voit les deux courbes
+ * diverger, et c'est l'ECART qui est l'information : une seule des deux, quelle qu'elle soit, la cache.
+ *
+ * ⚠️ « CUMULES » RESTE LE DEFAUT, parce que c'est ce que cette carte a toujours montre : changer la courbe
+ * par defaut ferait lire une baisse la ou rien n'a bouge, pour tous ceux qui regardent cet ecran chaque
+ * semaine.
+ *
+ * ⚠️ LA BASCULE DISPARAIT SI L'API NE REND PAS LES ACTIFS (le temps d'un deploiement, le front neuf parle a
+ * l'API d'avant). Un bouton qui ne montrerait rien est pire que pas de bouton.
+ */
+function CarteContacts({ stats, range }: { stats: DashboardStats; range: StatsRange }) {
+  const t = useT();
+  const [actifs, setActifs] = useState(false);
+  const dispo = Array.isArray(stats.contactsActifs) && stats.contactsActifs.length > 0;
+  const montreActifs = actifs && dispo;
+  return (
+    <DailyChart
+      title={t('Contacts', 'Contacts')}
+      subtitle={montreActifs
+        ? t('encore dans le mini-CRM', 'still in the mini-CRM')
+        : t('total cumulé', 'cumulative total')}
+      zonePdf="quanti-contacts"
+      from={range.from}
+      to={range.to}
+      summary="last"
+      series={[{
+        label: montreActifs ? t('Actifs', 'Active') : t('Contacts', 'Contacts'),
+        color: montreActifs ? '#17C74E' : '#009AFE',
+        points: montreActifs ? stats.contactsActifs! : stats.contacts,
+      }]}
+      actions={dispo ? (
+        <div className="sans-impression inline-flex rounded-lg border border-ink-200 p-0.5 text-xs" data-testid="contacts-bascule">
+          {([false, true] as const).map((v) => (
+            <button
+              key={String(v)}
+              type="button"
+              onClick={() => setActifs(v)}
+              aria-pressed={actifs === v}
+              data-testid={v ? 'contacts-actifs' : 'contacts-cumules'}
+              className={`rounded-md px-2 py-0.5 font-medium transition ${actifs === v ? 'bg-ink-100 text-ink-900' : 'text-ink-500 hover:text-ink-800'}`}
+            >
+              {v ? t('Actifs', 'Active') : t('Cumulés', 'Cumulative')}
+            </button>
+          ))}
+        </div>
+      ) : undefined}
+    />
+  );
+}
+

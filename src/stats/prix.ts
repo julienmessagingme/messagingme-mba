@@ -36,6 +36,21 @@ export interface GrillePrix {
  * reglage facture exactement le tarif Meta, donc lit aujourd'hui le meme chiffre qu'hier. Un defaut qui
  * margerait tout seul ferait bouger un nombre que des clients ont deja lu.
  */
+/**
+ * CE QUE COUTE UN LOT DE RCS, en euros. Deux tarifs, aucune franchise, aucun message de service.
+ *
+ * 🔴 UNE SEULE FORMULE POUR LES DEUX ECRANS QUI L'AFFICHENT (le total des messages envoyes, et le cout par
+ * engagement campagne par campagne). Elle tenait en une ligne, ce qui est exactement la raison pour laquelle
+ * elle allait etre recopiee : deux ecrans du meme onglet, deux additions, et le jour ou un tarif change de
+ * place l'une des deux reste plausible. Le depot applique deja cette regle a `chiffrer`.
+ *
+ * ⚠️ LES PRIX SONT EN CENTIMES DANS LA GRILLE, le resultat est en EUROS : c'est la conversion qu'on oublie
+ * en recopiant, et elle rend un chiffre cent fois trop grand sans qu'aucun type ne bronche.
+ */
+export function coutRcsEuros(simple: number, conversationnel: number, g: GrillePrix): number {
+  return Math.round((simple * g.rcsSimpleCentimes + conversationnel * g.rcsConversationnelCentimes)) / 100;
+}
+
 export const GRILLE_DEFAUT: GrillePrix = {
   margeTemplate: 100,
   serviceCentimes: 2.48,

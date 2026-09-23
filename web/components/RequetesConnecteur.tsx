@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useT } from '@/lib/i18n';
-import { cardCls, inputCls } from '@/lib/ui';
+import { cardCls, inputCls, inputClsAuto } from '@/lib/ui';
 import { MbaNotice } from '@/components/MbaNotice';
 import type { SourceAgent } from '@/lib/api-agent-sources';
 import {
@@ -349,7 +349,7 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
           <input
             className={`${inputCls} mt-1 font-mono`} data-testid="requete-chemin" value={brouillon.chemin}
             onFocus={(e) => { cible.current = e.currentTarget; }}
-            onChange={(e) => maj({ chemin: e.target.value })} placeholder="/commandes/{ref}"
+            onChange={(e) => maj({ chemin: e.target.value })} placeholder="/commandes/{{ref}}"
           />
         </label>
         <button
@@ -537,18 +537,37 @@ function OngletVariables({ brouillon, maj, champs, catalogue }: {
     <div className="flex flex-col gap-2">
       <p className="text-[11px] text-ink-500">
         {t(
-          'Chaque donnée envoyée porte un nom, et vous dites d’où vient sa valeur. Insérez-la ensuite dans le chemin, les paramètres ou le corps avec les pastilles.',
-          'Each piece of data sent has a name, and you say where its value comes from. Then insert it into the path, params or body with the chips.',
+          'Chaque donnée envoyée porte un nom, et vous dites d’où vient sa valeur. Insérez-la ensuite dans le chemin, les paramètres, les en-têtes ou le corps avec les pastilles.',
+          'Each piece of data sent has a name, and you say where its value comes from. Then insert it into the path, params, headers or body with the chips.',
         )}
       </p>
+      {/* Mêmes intitulés visibles que les autres onglets : la VALEUR D'ESSAI surtout, qui, remplie, se lisait comme
+          la donnée elle-même (Julien, 2026-09-23).
+          ⚠️ LES LIGNES NE PASSENT PLUS À LA LIGNE, le bloc DÉFILE : une ligne qui se replie décale ses champs sous
+          des intitulés qui, eux, ne bougent pas (revue du 2026-09-23). Et les champs portent `inputClsAuto`, pas
+          `inputCls` : son `w-full` l'emporte sur `w-32` en Tailwind 3, donc aucune colonne n'avait sa largeur. */}
+      <div className="overflow-x-auto p-0.5">
+      <div className="flex w-max flex-col gap-2">
+      {brouillon.variables.length > 0 && (
+        <div className="flex gap-2 text-[11px] font-medium text-ink-500" data-testid="var-intitules">
+          <span className="w-32">{t('Nom de la donnée', 'Data name')}</span>
+          <span className="w-56">{t('D’où vient sa valeur', 'Where its value comes from')}</span>
+          <span className="w-28">{t('Type', 'Type')}</span>
+          <span className="w-40">{t('Obligatoire', 'Required')}</span>
+          <span className="w-32">{t('Valeur d’essai', 'Test value')}</span>
+        </div>
+      )}
       {brouillon.variables.map((v, i) => (
-        <div key={i} className="flex flex-wrap items-center gap-2">
+        <div key={i} className="flex items-start gap-2">
           <input
-            className={`${inputCls} w-32 font-mono`} data-testid={`var-nom-${i}`} value={v.nom} placeholder="ville"
+            className={`${inputClsAuto} w-32 font-mono`} data-testid={`var-nom-${i}`} value={v.nom} placeholder="ville"
+            aria-label={t('Nom de la donnée', 'Data name')}
             onChange={(e) => changer(i, { nom: e.target.value })}
           />
+          <div className="flex w-56 flex-col gap-1">
           <select
-            className={`${inputCls} w-56`} data-testid={`var-origine-${i}`} value={clefDe(v.origine)}
+            className={`${inputClsAuto} w-56`} data-testid={`var-origine-${i}`} value={clefDe(v.origine)}
+            aria-label={t('D’où vient sa valeur', 'Where its value comes from')}
             onChange={(e) => changer(i, { origine: origineDe(e.target.value) })}
           >
             <option value="modele">{t('décidée par l’agent', 'decided by the agent')}</option>
@@ -565,24 +584,26 @@ function OngletVariables({ brouillon, maj, champs, catalogue }: {
           </select>
           {v.origine.type === 'fixe' && (
             <input
-              className={`${inputCls} w-32`} data-testid={`var-fixe-${i}`} value={String(v.origine.valeur)}
+              className={`${inputClsAuto} w-56`} data-testid={`var-fixe-${i}`} value={String(v.origine.valeur)}
+              placeholder={t('la valeur fixe', 'the fixed value')} aria-label={t('Valeur fixe', 'Fixed value')}
               onChange={(e) => changer(i, { origine: { type: 'fixe', valeur: e.target.value } })}
             />
           )}
-          <select className={`${inputCls} w-28`} data-testid={`var-type-${i}`} value={v.type} onChange={(e) => changer(i, { type: e.target.value as VariableRequete['type'] })}>
+          </div>
+          <select className={`${inputClsAuto} w-28`} aria-label={t('Type', 'Type')} data-testid={`var-type-${i}`} value={v.type} onChange={(e) => changer(i, { type: e.target.value as VariableRequete['type'] })}>
             <option value="string">{t('texte', 'text')}</option>
             <option value="number">{t('nombre', 'number')}</option>
             <option value="integer">{t('entier', 'integer')}</option>
             <option value="boolean">{t('oui/non', 'yes/no')}</option>
           </select>
-          <label className="flex items-center gap-1 text-[11px] text-ink-600">
+          <label className="flex w-40 items-center gap-1 text-[11px] text-ink-600">
             <input type="checkbox" data-testid={`var-requis-${i}`} checked={v.requis === true} onChange={(e) => changer(i, { requis: e.target.checked })} />
             {t('sans elle, on n’appelle pas', 'without it, no call')}
           </label>
           {/* La valeur d'essai vit À CÔTÉ de la variable : c'est là qu'on la cherche au moment d'essayer. */}
           <input
-            className={`${inputCls} w-32`} data-testid={`var-test-${i}`} value={String(brouillon.valeursTest[v.nom] ?? '')}
-            placeholder={t('valeur de test', 'test value')}
+            className={`${inputClsAuto} w-32`} data-testid={`var-test-${i}`} value={String(brouillon.valeursTest[v.nom] ?? '')}
+            placeholder={t('valeur de test', 'test value')} aria-label={t('Valeur d’essai', 'Test value')}
             onChange={(e) => maj({ valeursTest: { ...brouillon.valeursTest, [v.nom]: e.target.value } })}
           />
           <button data-testid={`var-retirer-${i}`} onClick={() => maj({ variables: brouillon.variables.filter((_, j) => j !== i) })} className="text-xs text-coral hover:underline">
@@ -590,6 +611,8 @@ function OngletVariables({ brouillon, maj, champs, catalogue }: {
           </button>
         </div>
       ))}
+      </div>
+      </div>
       <button
         data-testid="var-ajouter"
         onClick={() => maj({ variables: [...brouillon.variables, { nom: '', type: 'string', origine: { type: 'modele' } }] })}
@@ -730,14 +753,27 @@ function Paires({ lignes, onChange, libelles, testidPrefixe, cible }: {
   const t = useT();
   return (
     <div className="flex flex-col gap-2">
+      {/* 🔴 DES INTITULÉS TOUJOURS VISIBLES (Julien, 2026-09-23). Ils n'étaient que des `placeholder`, qui
+          disparaissent dès qu'un champ est rempli : en modifiant un appel existant, on ne savait plus quelle
+          colonne était le nom et laquelle la valeur. */}
+      <div className="overflow-x-auto p-0.5">
+      <div className="flex w-max flex-col gap-2">
+      {lignes.length > 0 && (
+        <div className="flex gap-2 text-[11px] font-medium text-ink-500" data-testid={`${testidPrefixe}-intitules`}>
+          <span className="w-40">{libelles[0]}</span>
+          <span className="w-64">{libelles[1]}</span>
+        </div>
+      )}
       {lignes.map((l, i) => (
-        <div key={i} className="flex flex-wrap items-center gap-2">
+        <div key={i} className="flex items-center gap-2">
           <input
-            className={`${inputCls} w-40`} data-testid={`${testidPrefixe}-cle-${i}`} value={l.cle} placeholder={libelles[0]}
+            className={`${inputClsAuto} w-40`} data-testid={`${testidPrefixe}-cle-${i}`} value={l.cle} placeholder={libelles[0]}
+            aria-label={libelles[0]}
             onChange={(e) => onChange(lignes.map((x, j) => (j === i ? { ...x, cle: e.target.value } : x)))}
           />
           <input
-            className={`${inputCls} w-64 font-mono`} data-testid={`${testidPrefixe}-valeur-${i}`} value={l.valeur} placeholder={libelles[1]}
+            className={`${inputClsAuto} w-64 font-mono`} data-testid={`${testidPrefixe}-valeur-${i}`} value={l.valeur} placeholder={libelles[1]}
+            aria-label={libelles[1]}
             onFocus={(e) => { cible.current = e.currentTarget; }}
             onChange={(e) => onChange(lignes.map((x, j) => (j === i ? { ...x, valeur: e.target.value } : x)))}
           />
@@ -746,6 +782,8 @@ function Paires({ lignes, onChange, libelles, testidPrefixe, cible }: {
           </button>
         </div>
       ))}
+      </div>
+      </div>
       <button data-testid={`${testidPrefixe}-ajouter`} onClick={() => onChange([...lignes, { cle: '', valeur: '' }])} className="self-start text-xs text-brand-600 hover:underline">
         {t('+ une ligne', '+ a line')}
       </button>
@@ -804,6 +842,12 @@ function OngletReponse({ brouillon, maj, resultat }: {
             <p className="break-all text-[11px] text-ink-500" data-testid="reponse-envoye">
               {resultat.envoye.methode} {resultat.envoye.url}
               {resultat.envoye.corps ? ` ${resultat.envoye.corps}` : ''}
+            </p>
+          )}
+          {/* Les en-têtes PARTIS, variables substituées. Jamais ceux de la source : le serveur ne les rend pas. */}
+          {resultat.envoye?.entetes && Object.keys(resultat.envoye.entetes).length > 0 && (
+            <p className="break-all font-mono text-[11px] text-ink-500" data-testid="reponse-envoye-entetes">
+              {Object.entries(resultat.envoye.entetes).map(([k, v]) => <span key={k} className="block">{k}: {v}</span>)}
             </p>
           )}
           <pre className="max-h-48 overflow-auto rounded-lg bg-ink-50 p-2 text-[11px] text-ink-700" data-testid="reponse-apercu">{resultat.apercu}</pre>

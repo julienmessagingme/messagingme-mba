@@ -486,6 +486,7 @@ async function main(): Promise<void> {
         phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
         // Sans `only` : Meta fait autorité sur qui détient le fil, notre état ne fait que refléter le sien.
         setControlOwner: (t, w, o) => inboxStore.setControlOwner(t, w, o),
+        marquerEscalade: (t, w) => inboxStore.marquerEscalade(t, w),
         // `origine: 'mba'` et pas `'ia'` : l'agent de Meta EST une IA, mais garder les deux valeurs
         // distinctes en base coûte zéro et permet de dire un jour laquelle des deux a parlé. Le
         // regroupement en un seul thème « IA » se fait à l'affichage (`THEME_DE_ORIGINE`).
@@ -1144,7 +1145,9 @@ async function main(): Promise<void> {
   taches.programmer('tours-agent-bloques', 60_000, toursBloquesSweep);
 
   // Auto-relance des échecs (F6) : 131049 (fenêtre matinale Europe/Paris, 1 relance) + 131026 (1 relance puis
-  // injoignable au 2e échec). Le sweep lui-même ne touche QUE les tenants ayant activé le toggle auto_retry.
+  // injoignable au 2e échec). Le sweep lui-même ne touche QUE ce que la campagne autorise depuis la migration
+  // 0165 (sa case « Réessayer »), ou, pour une campagne créée avant, le réglage d'espace `auto_retry_enabled`,
+  // qui n'a plus d'écran (`listAutoRetry`, `src/campaign/store.pg.ts`).
   //
   // 🔴 IL N'EST PLUS GATÉ PAR HUBSPOT, et c'est une correction, pas un élargissement de confort. Il était monté
   // sous `if (config.HUBSPOT_SERVICE_URL)` parce que le flag injoignable en dépendait : conséquence non voulue,
@@ -1743,7 +1746,10 @@ async function main(): Promise<void> {
       // tour de savoir que sa garde de détenteur est fausse à cause de LUI. Le jeter ici rendait muette la
       // dernière phrase de l'agent quand l'équipe est fermée : la question à poser à un câblage est
       // « que suppose-t-il du module que je viens de changer ? », et celui-ci en suppose la réponse.
-      escalateToHuman: (t, waId) => inboxStore.setControlOwner(t, waId, 'app_human', { only: ['app_workflow'] }),
+      // 🔴 `escalade: true` DEPUIS LE 2026-09-23 (arbitrage de Julien, les TROIS chemins) : un agent IA qui passe
+      // la main promet la même chose que l'agent de Meta, donc la conversation entre dans « À traiter » tout de
+      // suite et n'est pas rendue tant que personne n'a répondu. Le booléen rendu reste ce qu'il était.
+      escalateToHuman: (t, waId) => inboxStore.setControlOwner(t, waId, 'app_human', { only: ['app_workflow'], escalade: true }),
     });
 
     // Les VRAIS outils maison. À comparer à `resolvers/simulation.ts`, qui sert le bac à sable : ici chaque

@@ -168,6 +168,14 @@ export type CostFilter = FiltreCampagneOuTemplate;
 export interface DashboardStats {
   /** CUMULATIF : total de contacts à chaque jour (dense, une valeur/jour, reporte les jours sans ajout). */
   contacts: DailyPoint[];
+  /**
+   * Les contacts ENCORE dans le mini-CRM ce jour-là (arbitrage de Julien du 2026-09-23).
+   *
+   * ⚠️ DEUX QUESTIONS DIFFERENTES, PAS DEUX VERSIONS DE LA MEME. Les cumulés disent ce qu'on a collecté,
+   * les actifs ce qu'on a encore : une base qu'on nettoie voit les deux courbes diverger, et c'est
+   * précisément l'écart qui est l'information. Rendre les deux d'un coup permet la bascule sans réseau.
+   */
+  contactsActifs: DailyPoint[];
   templates: { utility: DailyPoint[]; marketing: DailyPoint[] };
   exchanged: DailyPoint[];
   /**
@@ -538,7 +546,22 @@ export class PgStatsStore {
     // 1) Contacts CUMULÉS / jour : total courant = baseline (contacts créés AVANT la plage) +
     //    somme courante des nouveaux/jour. Série DENSE (generate_series de from à to) pour que les jours
     //    sans nouvel ajout reportent le total (pas de retour à 0), sans logique côté front.
-    const contacts = await this.pool.query<{ d: string; count: string }>(
+    //
+    // 🔴 ET LA MEME REQUETE REND LES ACTIFS (demande de Julien du 2026-09-23 : une bascule cumules/actifs).
+    // « Actif » = encore dans le mini-CRM ce jour-là, c'est-à-dire créé avant la fin du jour et pas encore
+    // supprimé. La suppression est DOUCE (`deleted_at`, migration 0049, aucun `delete from contacts` dans le
+    // dépôt), donc l'historique est reconstructible : on ne montre pas une courbe qui commence aujourd'hui.
+    //
+    // 🔴 PAR DIFFERENCE, ET PAS PAR UNE SOUS-REQUETE PAR JOUR. « Combien de contacts vivants au jour J »
+    // s'écrit naturellement en comptant les contacts pour CHAQUE jour de la série : c'est un balayage de la
+    // table des contacts par jour affiché, donc jusqu'à 366 balayages pour une plage d'un an. Les supprimés
+    // se cumulent exactement comme les créés, et actifs(J) = cumulés(J) - supprimés(J). Un contact créé ET
+    // supprimé le même jour entre dans les deux sommes, donc il ne compte pas, ce qui est juste.
+    //
+    // ⚠️ UN CONTACT SUPPRIME APRES LA PLAGE EST ACTIF PENDANT TOUTE LA PLAGE, et c'est ce que la borne haute
+    // de `supprimes_dans` garantit : sans elle, une suppression d'aujourd'hui ferait baisser la courbe d'il
+    // y a trois semaines, c'est-à-dire réécrirait le passé.
+    const contacts = await this.pool.query<{ d: string; count: string; actifs: string }>(
       `with ${BOUNDS_CTE},
        series as (
          select generate_series($2::date, $3::date, interval '1 day')::date as day
@@ -552,10 +575,25 @@ export class PgStatsStore {
          from contacts, bounds b
          where tenant_id = $1 and created_at >= b.start_ts and created_at < b.end_ts
          group by 1
+       ),
+       supprimes_avant as (
+         select count(*)::int as n from contacts
+         where tenant_id = $1 and deleted_at is not null and deleted_at < (select start_ts from bounds)
+       ),
+       supprimes_dans as (
+         select date_trunc('day', deleted_at at time zone $4)::date as day, count(*)::int as n
+         from contacts, bounds b
+         where tenant_id = $1 and deleted_at is not null
+           and deleted_at >= b.start_ts and deleted_at < b.end_ts
+         group by 1
        )
        select to_char(s.day, 'YYYY-MM-DD') as d,
-              ((select n from baseline) + coalesce(sum(dl.n) over (order by s.day), 0))::int as count
-       from series s left join daily dl on dl.day = s.day
+              ((select n from baseline) + coalesce(sum(dl.n) over (order by s.day), 0))::int as count,
+              ((select n from baseline) + coalesce(sum(dl.n) over (order by s.day), 0)
+               - (select n from supprimes_avant) - coalesce(sum(sp.n) over (order by s.day), 0))::int as actifs
+       from series s
+       left join daily dl on dl.day = s.day
+       left join supprimes_dans sp on sp.day = s.day
        order by s.day`,
       [tenantId, from, to, TZ],
     );
@@ -645,6 +683,7 @@ export class PgStatsStore {
 
     return {
       contacts: contacts.rows.map((r) => ({ date: r.d, count: Number(r.count) })),
+      contactsActifs: contacts.rows.map((r) => ({ date: r.d, count: Number(r.actifs) })),
       templates: { utility, marketing },
       exchanged: exchanged.rows.map((r) => ({ date: r.d, count: Number(r.count) })),
       service: exchanged.rows.map((r) => ({ date: r.d, count: Number(r.sortants) })),
@@ -1136,8 +1175,10 @@ export class PgStatsStore {
   /**
    * Le VOLUME d'envois facturables de la période, par campagne et par catégorie.
    *
-   * ⚠️ Même population que le graphe de coût (`envoisTemplateFacturables`, attribution comprise) : c'est ce
-   * qui garantit que le total du tableau et le total du graphe disent la même chose. Le coût lui-même ne se
+   * ⚠️ MÊMES VOLUMES FACTURABLES que le graphe de coût (`envoisTemplateFacturables`, attribution comprise) :
+   * c'est ce qui garantit que les deux écrans chiffrent la même chose. La POPULATION, elle, est plus large
+   * depuis le lot 4 : ce tableau porte aussi les campagnes qui ont touché quelqu'un sans rien de facturable,
+   * avec un volume nul. Les totaux de coût restent donc égaux, pas le nombre de lignes. Le coût lui-même ne se
    * calcule pas ici : il se calcule dans `estimateCoutParCampagne`, avec les mêmes règles que la série
    * (une catégorie inconnue ou sans tarif ne produit aucun coût et se COMPTE à part).
    *
@@ -1145,9 +1186,31 @@ export class PgStatsStore {
    * campagne, et il n'y a pas de ligne « le reste » à laquelle les rattacher. Le graphe de coût, lui, les
    * porte, ce qui explique qu'il puisse totaliser davantage.
    */
-  async getVolumeParCampagne(tenantId: string, range: DateRange): Promise<VolumeCampagneRow[]> {
+  async getVolumeParCampagne(
+    tenantId: string,
+    range: DateRange,
+    /**
+     * Les campagnes ARCHIVÉES entrent-elles dans le tableau ? Non par défaut (lot 4 de la liste du 2026-09-23) :
+     * elles y entraient sans le dire. ⚠️ Le filtre s'applique AVANT le plafond : appliqué après, une archivée
+     * prendrait la place d'une campagne visible, puis disparaîtrait de l'écran.
+     */
+    opts: {
+      inclureArchivees?: boolean;
+      /**
+       * La retention d'instance, en jours (`CONVERSATION_RETENTION_DAYS`). Elle sert a savoir si les envois
+       * d'une campagne ont PU etre purges, donc si son cout est encore connaissable.
+       *
+       * ⚠️ ABSENTE = on ne marque RIEN hors retention, donc le comportement d'avant. C'est le bon defaut :
+       * un appelant qui ignore ce parametre ne doit pas faire disparaitre des couts.
+       */
+      retentionJours?: number;
+    } = {},
+  ): Promise<VolumeCampagneRow[]> {
     const { from, to } = range;
-    const res = await this.pool.query<{ campaign_id: string; nom: string; template: string | null; category: string | null; count: string }>(
+    const res = await this.pool.query<{
+      campaign_id: string; nom: string; template: string | null; canal: string; category: string | null; count: string; envois: string;
+      hors_retention: boolean;
+    }>(
       `with ${BOUNDS_CTE},
        v as (
          select envois.campaign_id as campaign_id, envois.category as category, count(*)::int as n
@@ -1155,23 +1218,65 @@ export class PgStatsStore {
          where envois.campaign_id is not null
          group by 1, 2
        ),
+       -- 🔴 LES CAMPAGNES QUI ONT TOUCHÉ QUELQU'UN, FACTURABLE OU NON (lot 4). Seules celles qui avaient un envoi de
+       -- MODÈLE facturable apparaissaient : une campagne à scénario (texte dans la fenêtre de service), RCS, ou
+       -- envoyée à un numéro de test, disparaissait du tableau. Mesuré : 2 campagnes visibles sur 7.
+       -- ⚠️ ELLE REPARCOURT campaign_recipients, QUE LA BRANCHE 1 DES FACTURABLES PARCOURT DÉJÀ, et aucun index
+       -- ne sert sent_at : deux parcours au lieu d'un, assumés sur un écran d'administration qu'on ouvre pour se
+       -- faire une idée (relevé en revue le 2026-09-23). À dériver du même passage le jour où la table grossit.
+       e as (
+         select r.campaign_id as campaign_id, count(*)::int as n, max(r.sent_at) as dernier
+         from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
+         where c.tenant_id = $1 and r.status = 'sent'
+           and r.sent_at >= b.start_ts and r.sent_at < b.end_ts
+           and (r.delivery_status is null or r.delivery_status <> 'failed')
+         group by 1
+       ),
+       -- Les deux comptes CÔTE À CÔTE : le facturable (qui chiffre) et le touché (que la colonne montre).
+       p as (
+         select coalesce(f.campaign_id, e.campaign_id) as campaign_id,
+                coalesce(f.facturables, 0) as facturables, coalesce(e.n, 0) as touches
+         from (select campaign_id, sum(n)::int as facturables from v group by campaign_id) f
+         full outer join e on e.campaign_id = f.campaign_id
+       ),
        -- Les campagnes qui ont le PLUS envoye, plafonnees. Une de plus que le plafond : c'est ainsi que
        -- l'appelant sait qu'il tronque, et le dit. Le tri final se fait au COUT, que le SQL ne connait pas
        -- encore (il ne voit pas les tarifs Meta) : la ligne ecartee est donc la moins envoyee.
+       -- 🔴 LA COUPE SE FAIT SUR CE QUE LA COLONNE MONTRE (revue finale du 2026-09-23), c'est-à-dire le plus grand
+       -- des deux comptes, et estimateCoutParCampagne rejoue EXACTEMENT ce critère. Trier sur le seul
+       -- facturable mettait toutes les campagnes à scénario à égalité (0), départagées par leur identifiant.
        garde as (
-         select campaign_id from v group by campaign_id
-         order by sum(n) desc, campaign_id asc limit $5
+         select p.campaign_id from p join campaigns c on c.id = p.campaign_id and c.tenant_id = $1
+         where ($6::boolean or c.archived_at is null)
+         order by greatest(p.facturables, p.touches) desc, p.campaign_id asc limit $5
        )
-       select v.campaign_id as campaign_id, c.name as nom, c.template_name as template,
-              v.category as category, v.n as count
-       from v
-       join garde g on g.campaign_id = v.campaign_id
-       join campaigns c on c.id = v.campaign_id and c.tenant_id = $1`,
-      [tenantId, from, to, TZ, PLAFOND_CAMPAGNES_SYNTHESE + 1],
+       select g.campaign_id as campaign_id, c.name as nom, c.template_name as template, c.channel as canal,
+              v.category as category, coalesce(v.n, 0) as count, coalesce(e.n, 0) as envois,
+              -- 🔴 LES ENVOIS DE CETTE CAMPAGNE ONT-ILS PU ETRE PURGES ? Un envoi de SCENARIO ne vit pas dans
+              -- campaign_recipients mais dans les conversations, et la purge les supprime (leurs messages
+              -- partent en cascade). Passe cette borne, « rien de facturable » ne veut plus dire « rien n a
+              -- ete facture » mais « on ne peut plus le savoir », et afficher 0 se lirait « gratuit ».
+              -- ⚠️ LE PREDICAT EST CELUI DE LA PURGE, repris terme a terme (purgeConversationsOlderThan) :
+              -- le zero d instance arrete tout, le zero d espace n arrete que cet espace, et la borne se
+              -- compte en jours. Deux definitions de « purge » divergeraient au premier reglage change.
+              -- ⚠️ ON SE CALE SUR LE DERNIER ENVOI de la campagne, pas sur sa creation : c est lui qui date
+              -- les conversations qu elle a ouvertes.
+              (coalesce(ts.conversation_retention_days, $7::int) > 0
+                 and $7::int > 0
+                 and coalesce(e.dernier, (select max(r2.sent_at) from campaign_recipients r2 where r2.campaign_id = g.campaign_id))
+                     < now() - make_interval(days => coalesce(ts.conversation_retention_days, $7::int))) as hors_retention
+       from garde g
+       join campaigns c on c.id = g.campaign_id and c.tenant_id = $1
+       left join tenant_settings ts on ts.tenant_id = $1
+       left join v on v.campaign_id = g.campaign_id
+       left join e on e.campaign_id = g.campaign_id`,
+      [tenantId, from, to, TZ, PLAFOND_CAMPAGNES_SYNTHESE + 1, opts.inclureArchivees === true,
+       Math.max(0, Math.floor(opts.retentionJours ?? 0))],
     );
     return res.rows.map((r) => ({
-      campaignId: r.campaign_id, nom: r.nom, template: r.template,
-      category: r.category, count: Number(r.count),
+      campaignId: r.campaign_id, nom: r.nom, template: r.template, canal: r.canal,
+      category: r.category, count: Number(r.count), envois: Number(r.envois),
+      horsRetention: r.hors_retention === true,
     }));
   }
 
@@ -1337,25 +1442,74 @@ export class PgStatsStore {
    *
    * ⚠️ UNE REACTION EST UN ENTRANT SUR LE MEME CANAL. Un contact qui répondrait sur WhatsApp à un RCS ne
    * fait pas basculer l'échange RCS : ce sont deux tuyaux, et Meta comme smsmode facturent le leur.
+   *
+   * 🔴 CHAQUE LIGNE DIT DE QUELLE CAMPAGNE ELLE VIENT, et c'est ce qui permet au tableau « coût par
+   * engagement » de chiffrer une campagne RCS (demande de Julien du 2026-09-23 : « on a justement défini un
+   * coût, 6 cts si pas conversationnel et 8 si conversationnel, donc il faut le compter ici »). Le
+   * groupement est donc (conversation, campagne) et plus (conversation) seule.
+   *
+   * ⚠️ LES ENVOIS SANS CAMPAGNE RESTENT DANS LE LOT, avec `campaignId` à `null`, et ce n'est pas du
+   * remplissage : la bascule porte sur l'ÉCHANGE ENTIER, donc une réaction qui suit un RCS envoyé hors
+   * campagne fait quand même passer à 8 cts les RCS de campagne du même échange. Ne rendre que les envois
+   * rattachés aurait sous-facturé ce cas, sans que rien ne le signale.
+   *
+   * ⚠️ LA CAMPAGNE SE TROUVE EN TROIS COUPS, du plus sûr au plus faible : l'identifiant du message porté par
+   * le destinataire, puis celui porté par l'étage (`campaign_envois`, migration 0134), puis l'ATTRIBUTION,
+   * la même heuristique que les templates de scénario. Les deux premiers sont des égalités exactes ; le
+   * troisième porte les limites écrites sur `ATTRIBUTION`, et les partager est précisément ce qui évite
+   * deux définitions de « cet envoi vient de cette campagne ».
+   *
+   * 🔴 ET LE TROISIEME COUP SE DEBRANCHE, parce qu'il COUTE et que l'un des deux appelants JETTE ce qu'il
+   * calcule (relevé en relecture le 2026-09-23). `ATTRIBUTION_CAMPAGNE_SCENARIO` est une sous-requête
+   * corrélée, exécutée une fois PAR MESSAGE RCS, et son prédicat n'est servi par AUCUN index : la migration
+   * 0096 a explicitement refusé celui de `campaign_recipients(to_e164, sent_at)`. Or `getCoutMessages` ne
+   * lit que les instants et les volumes, jamais la campagne. Aggravant : la page de synthèse appelle les
+   * DEUX routes, donc l'attribution tournait deux fois par affichage.
+   *
+   * ⚠️ C'EST LE MOTIF QUE CE FICHIER PORTE DEJA, et pas une invention : `envoisTemplateFacturables` prend son
+   * attribution en paramètre pour exactement cette raison, avec `SANS_ATTRIBUTION` en face. Un seul fragment,
+   * deux branchements.
    */
-  async envoisEtReactionsRcs(tenantId: string, range: DateRange, fenetreMs: number): Promise<{
-    conversations: { conversationId: string; waId: string; envois: number; instants: string[] }[];
+  async envoisEtReactionsRcs(
+    tenantId: string,
+    range: DateRange,
+    fenetreMs: number,
+    /**
+     * Faut-il RATTACHER chaque envoi à sa campagne ? Le rattachement coûte une sous-requête corrélée par
+     * message RCS, non servie par un index : seul l'appelant qui LIT `campaignId` doit la payer.
+     *
+     * ⚠️ DEFAUT `false`, donc le moins cher : un appelant qui ne demande rien ne paie rien et reçoit
+     * `campaignId: null` partout. C'est l'inverse du défaut qui flatte, et c'est voulu : oublier de
+     * demander se voit (les coûts par campagne tombent à vide), oublier de NE PAS demander ne se voit pas.
+     */
+    opts: { attribuer?: boolean } = {},
+  ): Promise<{
+    conversations: { conversationId: string; campaignId: string | null; waId: string; envois: number; instants: string[] }[];
     reactions: { waId: string; at: string }[];
   }> {
     const { from, to } = range;
     const secondes = Math.round(fenetreMs / 1000);
     const [envois, reactions] = await Promise.all([
-      this.pool.query<{ conversation_id: string; wa_id: string; envois: number; instants: string[] }>(
-        `with ${BOUNDS_CTE}
-         select cv.id::text as conversation_id, cv.wa_id as wa_id, count(*)::int as envois,
-                array_agg(to_char(m.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
-                          order by m.created_at) as instants
-           from conversation_messages m
-           join conversations cv on cv.id = m.conversation_id, bounds b
-          where cv.tenant_id = $1 and not cv.is_test and m.channel = 'rcs' and m.direction = 'out'
-            and m.created_at >= b.start_ts and m.created_at < b.end_ts
-          group by 1, 2`,
-        [tenantId, from, to, TZ],
+      this.pool.query<{ conversation_id: string; campaign_id: string | null; wa_id: string; envois: number; instants: string[] }>(
+        `with ${BOUNDS_CTE},
+         envois as (
+           select cv.id::text as conversation_id, cv.wa_id as wa_id, m.created_at as at,
+                  case when $5::boolean then coalesce(
+                    (select r.campaign_id from campaign_recipients r join campaigns c on c.id = r.campaign_id
+                      where c.tenant_id = cv.tenant_id and r.message_id = m.meta_message_id limit 1),
+                    (select e.campaign_id from campaign_envois e join campaigns c on c.id = e.campaign_id
+                      where c.tenant_id = cv.tenant_id and e.message_id = m.meta_message_id limit 1),
+                    ${ATTRIBUTION_CAMPAGNE_SCENARIO}
+                  ) end::text as campaign_id
+             from conversation_messages m
+             join conversations cv on cv.id = m.conversation_id, bounds b
+            where cv.tenant_id = $1 and not cv.is_test and m.channel = 'rcs' and m.direction = 'out'
+              and m.created_at >= b.start_ts and m.created_at < b.end_ts
+         )
+         select conversation_id, campaign_id, wa_id, count(*)::int as envois,
+                array_agg(to_char(at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') order by at) as instants
+           from envois group by 1, 2, 3`,
+        [tenantId, from, to, TZ, opts.attribuer === true],
       ),
       this.pool.query<{ wa_id: string; at: string }>(
         `with ${BOUNDS_CTE}
@@ -1372,6 +1526,7 @@ export class PgStatsStore {
     return {
       conversations: envois.rows.map((r) => ({
         conversationId: r.conversation_id,
+        campaignId: r.campaign_id,
         waId: r.wa_id,
         envois: Number(r.envois),
         instants: Array.isArray(r.instants) ? r.instants : [],

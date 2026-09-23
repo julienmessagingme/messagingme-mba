@@ -368,12 +368,18 @@ bloc agent atteint -> executor ouvre une session -> job `agent-turn`
      brain.gateway.penserTrace :   <- LA boucle, partagée par la production ET le bac à sable
        prompt : mention d'IA EN TÊTE, si le régime de l'ESPACE la demande pour CE tour (0126, remontée à
        l'espace par 0140 : l'obligation pèse sur la marque déployante, pas sur chaque robot)
-       appel du modèle (Vercel AI Gateway)
+       appel du modèle (Vercel AI Gateway, seul chemin livré aujourd'hui)
        si appel d'outil : executor d'outil (validation, injection, budget de temps, journal, troncature)
          résultat encadré par `blocResultatOutil`, jamais concaténé au prompt
        jusqu'à une SORTIE nommée, un plafond, ou une erreur
    -> le parcours repart par le handle `sortie:<code>`
 ```
+
+⚠️ **LE FOURNISSEUR IA N'EST PAS ENCORE INTERCHANGEABLE.** `GatewayChatClient`, le catalogue, le coût rendu
+par le Gateway et les clés par espace sont spécifiques à Vercel. La cible prévoit une route Azure OpenAI
+régionale France activable manuellement pour certains contrats, sans bouton dans Engage Me ; tant que le lot
+n'est pas livré et testé, elle reste une option d'architecture et non une capacité de production. La source
+unique de cette cible et de ses limites est `docs/ARCHITECTURE-CIBLE.md`, §2.1.
 
 🔴 **LA DÉFINITION D'UN OUTIL APPARTIENT À L'ESPACE, LE CONSENTEMENT AU COUPLE (outil, consommateur).**
 `agent_tools` porte ce qu'un outil EST (son nom, unique par espace, sa description, ses paramètres, sa
@@ -676,13 +682,35 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 
 **Conversations**
 
-- `conversations` (`control_owner`, `assigned_to`, `archived_at`, `traitee_le`, `last_direction`),
-  `conversation_messages` (`media_id`, `media_mime`, `media_nom`).
+- `conversations` (`control_owner`, `assigned_to`, `archived_at`, `traitee_le`, `last_direction`,
+  `escaladee_le`), `conversation_messages` (`media_id`, `media_mime`, `media_nom`).
+- 🔴 **UNE ESCALADE EST « À TRAITER » TOUT DE SUITE** (`escaladee_le`, migration 0164), et TROIS chemins la
+  posent : l'agent de Meta qui nous passe le fil (`control_passed`), le bloc « passer à un humain » d'un
+  scénario, et l'escalade d'un agent IA. Les trois font la même promesse au client, et souffraient du même
+  défaut : leur dernière phrase est SORTANTE, donc la conversation n'entrait dans le dossier qu'au message
+  suivant du client. Elle devient `app_human`, entre dans le dossier même si la dernière phrase est sortante,
+  et sort d'« Archivé » et de « Traité ». Elle y reste jusqu'à ce que quelqu'un agisse : la PREMIÈRE réponse
+  d'un opérateur, « Traité », « Archiver » ou le bouton « Rendre la main » la clôt, et le balayage de reprise
+  ne rend JAMAIS un fil escaladé à l'agent (arbitrage de Julien : on ne le lui rend qu'après une réponse
+  humaine, puis les 2 h habituelles).
+  ⚠️ Un `standby` de Meta postérieur à l'escalade fait exception : il prouve que l'agent a repris le fil.
+  🔴 CE QUI N'EST PAS UNE ESCALADE, et la nuance décide du sort du fil : un ÉCHEC (fenêtre de 24 h fermée à la
+  reprise d'un parcours, envoi refusé, bouton qui ne mène nulle part) remonte bien la conversation à l'équipe,
+  mais SANS le drapeau. Le contact vient d'écrire dans la plupart de ces cas, donc « À traiter » la porte déjà
+  par son `last_direction` ; poser le drapeau n'ajouterait que la collance, et l'agent de Meta ne reprendrait
+  plus jamais ce fil. Le choix se fait au POINT D'APPEL (`escalateToHuman(..., escalade)`), jamais dans le
+  câblage, qui le relaie.
+  ⚠️ DEUX POINTS D'APPEL NE RÉPONDENT PAS PAR OUI OU PAR NON, ils LISENT. Au DÉMARRAGE d'un scénario (le
+  chemin des campagnes), le drapeau suit ce que le contact a reçu : un scénario qui ouvre directement sur
+  « passer à un humain » sans rien envoyer poserait une escalade par destinataire, sur des gens à qui on n'a
+  rien promis, et aucune action de masse ne les libère. Et au rattrapage d'un parcours resté sur un bloc
+  d'agent IA sans session vivante, le drapeau suit le STATUT de la session close : `sortie` est une fin
+  délibérée (c'est l'escalade de l'agent), `erreur`, `plafond` et `inactivite` sont des pannes.
 - 🔴 **LES DOSSIERS N'ONT PAS LA MÊME NATURE, et c'est ce qui décide de ce qu'on peut y ranger.**
   « Archivé » (`archived_at`), « Traité » (`traitee_le`) et l'affectation (`assigned_to`) sont des ÉTATS
   ÉCRITS ; « À traiter » est DÉRIVÉ (`A_TRAITER_SQL`, `src/inbox/store.pg.ts` : scénario qui ne tient pas le
-  fil, dernier message qui n'est pas de nous, pas marquée traitée), donc y ranger une conversation veut dire
-  PRENDRE le fil ; et
+  fil, dernier message qui n'est pas de nous OU escalade de l'agent de Meta en cours, pas marquée traitée),
+  donc y ranger une conversation veut dire PRENDRE le fil ; et
   « Signalé » réunit DEUX sources, le constat de l'analyse (`conversation_analysis.abusive`) et un
   signalement humain (`signalee_le`, migration 0123). ⚠️ Les deux sources restent SÉPARÉES : `abusive` est
   recalculé à chaque ré-analyse, un signalement humain écrit dedans disparaîtrait au passage suivant. La
@@ -736,7 +764,7 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 | `mba_enabled` | l'agent Meta Business Agent est actif sur cet espace |
 | `hubspot_lists_enabled` | l'import de contacts HubSpot (pas les étapes de deal) |
 | `campaigns_paused` | coupe-circuit d'envoi pour tout l'espace |
-| `auto_retry_enabled` | auto-relance des échecs |
+| `auto_retry_enabled` | auto-relance des échecs des campagnes d'AVANT la migration 0165 ; ce réglage n'a plus d'écran et ne s'écrit plus. Une campagne créée depuis obéit à SA case `campaigns.reessayer` (`campaigns.reessai_par_campagne`) |
 | `timezone` et `business_hours` | le fuseau (une heure murale sans fuseau est interprétée là) et les horaires |
 | `mba_handoff_mode` | `always` \| `business_hours` \| `never` |
 

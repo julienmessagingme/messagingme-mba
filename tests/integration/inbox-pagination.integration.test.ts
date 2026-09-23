@@ -32,8 +32,11 @@ describe.skipIf(!url)('PgInboxStore : pagination par curseur (Supabase)', () => 
       const at = new Date(Date.UTC(2026, 7, 21, 10, minute, 0)).toISOString();
       // Une conversation sur trois est « à traiter » (le scénario ne la gère plus).
       const owner = i % 3 === 0 ? 'app_human' : 'app_workflow';
+      // ⚠️ `last_direction` EST ECRIT, parce que toute conversation reelle en porte un : depuis le
+      // 2026-09-23, « A traiter » exige un message (un fil qu'on vient d'ouvrir a la main n'y entre pas).
+      // Une fixture sans sens decrirait un etat que la production n'a pas, et viderait ce dossier.
       await pool.query(
-        `insert into conversations (tenant_id, wa_id, last_message_at, control_owner) values ($1, $2, $3, $4)`,
+        `insert into conversations (tenant_id, wa_id, last_message_at, control_owner, last_direction) values ($1, $2, $3, $4, 'in')`,
         [tenantId, `3360000${String(i).padStart(4, '0')}`, at, owner],
       );
     }

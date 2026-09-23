@@ -65,7 +65,7 @@ const IA = {
 
 async function mock(
   page: import('@playwright/test').Page,
-  opts: { cout?: unknown; messages?: unknown; ia?: unknown; statutCout?: number } = {},
+  opts: { cout?: unknown; messages?: unknown; ia?: unknown; statutCout?: number; urlsCout?: string[] } = {},
 ) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), ADMIN);
   await page.route('**/api/backend/**', async (route) => {
@@ -77,6 +77,7 @@ async function mock(
     if (url.includes('/stats/cost/messages')) return json(opts.messages ?? MESSAGES);
     if (url.includes('/stats/cost/ia')) return json(opts.ia ?? IA);
     if (url.includes('/stats/cost/campaigns')) {
+      opts.urlsCout?.push(url);
       if (opts.statutCout && opts.statutCout !== 200) {
         return route.fulfill({ status: opts.statutCout, contentType: 'application/json', body: JSON.stringify({ error: 'nope' }) });
       }
@@ -222,13 +223,36 @@ test.describe('Performance Lab : la carte des couts', () => {
     await expect(page.getByTestId('cout-valeur-messages')).toContainText('€');
   });
 
-  test('⚠️ aucune campagne sur la periode : l accordeon ne s ouvre pas sur un tableau vide', async ({ page }) => {
-    // ⚠️ MAIS IL S OUVRE QUAND DES CAMPAGNES EXISTENT SANS ETRE MESURABLES : le tableau montre alors
-    // lesquelles et pourquoi leur case est vide, ce qui est l explication qu on vient chercher. Le critere
-    // est donc « y a-t-il des lignes », pas « y a-t-il un chiffre ».
+  test('⚠️ aucune campagne sur la periode : l accordeon s ouvre sur une PHRASE, jamais sur un tableau vide', async ({ page }) => {
+    // Il restait ferme jusqu au lot 4 de la liste du 2026-09-23. Il s ouvre desormais, parce que c est la que
+    // vit la bascule des archivees : fermee, elle serait inatteignable sur une periode dont toutes les
+    // campagnes sont archivees. Ce qui ne change pas : pas de tableau vide, une phrase qui dit pourquoi.
     await mock(page, { cout: { ...COUT, lignes: [] } });
     await page.goto('/performance');
-    await expect(page.getByTestId('cout-bascule-engagement')).toBeDisabled();
+    await page.getByTestId('cout-bascule-engagement').click();
+    await expect(page.getByTestId('cout-aucune-campagne')).toBeVisible();
+    await expect(page.getByTestId('carte-couts').locator('table')).toHaveCount(0);
+    await expect(page.getByTestId('cout-archivees')).toBeVisible();
+  });
+
+  test('🔴 les archivees sont EXCLUES par defaut, et la bascule les redemande (lot 4)', async ({ page }) => {
+    const urlsCout: string[] = [];
+    await mock(page, { urlsCout });
+    await page.goto('/performance');
+    await page.getByTestId('cout-bascule-engagement').click();
+    await expect(page.getByTestId('cout-archivees')).not.toBeChecked();
+    expect(urlsCout.every((u) => !u.includes('archivees='))).toBe(true);
+    await page.getByTestId('cout-archivees').check();
+    await expect.poll(() => urlsCout.some((u) => u.includes('archivees=1'))).toBe(true);
+  });
+
+  test('🔴 « Envoyes » montre les personnes TOUCHEES, pas les seuls envois facturables (lot 4)', async ({ page }) => {
+    // Une campagne a scenario n a souvent aucun envoi de modele facturable : « 0 » se lirait « rien n est parti ».
+    const lignes = (COUT as { lignes: Array<Record<string, unknown>> }).lignes.map((l) => ({ ...l, envois: 7 }));
+    await mock(page, { cout: { ...COUT, lignes } });
+    await page.goto('/performance');
+    await page.getByTestId('cout-bascule-engagement').click();
+    await expect(page.getByTestId('cout-envoyes-c-promo')).toHaveText('7');
   });
 });
 

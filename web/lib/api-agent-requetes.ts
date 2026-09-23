@@ -72,7 +72,7 @@ export interface ResultatTest {
   httpStatus?: number;
   dureeMs?: number;
   /** Ce qui est PARTI, pour que le client voie ce que sa configuration produit. Sans l'authentification. */
-  envoye?: { url: string; methode: string; corps: string | null };
+  envoye?: { url: string; methode: string; corps: string | null; entetes?: Record<string, string> };
   apercu?: string;
   /** Les chemins à cocher, dérivés de la réponse RÉELLE : c'est ce qui remplace « écris `livraison.date` ». */
   chemins?: string[];

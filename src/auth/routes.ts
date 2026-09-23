@@ -104,12 +104,13 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '');
  * (ne pas partager l'instance du login). Anti-énumération : login/forgot ne révèlent jamais l'existence d'un email.
  */
 /**
- * Clé de rate-limit : `req.ip::discriminant`. `req.ip` seul est INSUFFISANT sur ce déploiement : le front proxifie
- * /api/backend/* vers mba-api, donc le pair TCP (req.ip) est TOUJOURS le conteneur mba-web, une constante. Un limiteur
- * clé sur req.ip seul est alors GLOBAL à toute la plateforme (un seul attaquant bloque les logins de tous). Le
- * discriminant (email normalisé, ou token pour reset/invite) rend la clé propre à la tentative -> plus de blocage
- * transverse. NB : borner trustProxy pour récupérer la vraie IP client est un chantier séparé (chaîne XFF à vérifier
- * en prod avant de risquer un spoofing) ; ce discriminant ferme le trou sans en dépendre.
+ * Clé de rate-limit : `req.ip::discriminant`. `req.ip` seul est INSUFFISANT sur ce déploiement : Fastify tourne
+ * sans `trustProxy` derrière Cloudflare puis NPM, donc son pair TCP est le proxy et non le navigateur. La console
+ * Vercel appelle aujourd'hui `api.messagingme.app` directement ; c'est Cloudflare qui voit l'IP publique, pas ce
+ * processus. Un limiteur applicatif par `req.ip` pur serait donc transverse. On ajoute un discriminant contrôlé et
+ * stable (email normalisé, hash du token) : le plafond reste par identité tentée. Une limite de bord Cloudflare peut
+ * compléter ce contrôle par IP ; borner `trustProxy` dans l'application reste un chantier séparé (chaîne XFF à
+ * vérifier jusqu'au proxy de bord avant de l'activer).
  */
 /**
  * ⚠️ LE DISCRIMINANT EST BORNÉ EN TAILLE, et ce n'est pas cosmétique. `/auth/google` passait le jeton Google

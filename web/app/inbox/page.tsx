@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { AppShell, UNREAD_CHANGED_EVENT } from '@/components/AppShell';
 import { TemplatePreview } from '@/components/TemplatePreview';
 import { isCampaignEligible } from '@/lib/campaign-eligibility';
-import { dayKey, dayLabel, hourMin } from '@/lib/day';
+import { dayKey, dayLabel, hourMin, jourHeure } from '@/lib/day';
 import type { ControlOwner } from '@/lib/api';
 import type { Session } from '@/lib/session';
 import { useT, useLocale } from '@/lib/i18n';
@@ -431,16 +431,47 @@ function InboxInner({ session }: { session: Session }) {
     }
   }
 
-  // Deep-link ?c=<id> : quand la liste est chargée, pré-sélectionne la conversation correspondante (une seule
-  // fois, pour ne pas ré-écraser un choix manuel aux refresh suivants). Conv absente de la liste -> ignorée.
+  /**
+   * Deep-link `?c=<id>` : pré-sélectionne la conversation visée, UNE seule fois (pour ne pas ré-écraser un
+   * choix manuel aux rafraîchissements suivants).
+   *
+   * 🔴 ET ELLE VA LA CHERCHER QUAND ELLE N'EST PAS DANS LA PAGE (2026-09-23). Ce lien vient désormais du
+   * bouton « Ouvrir la conversation » d'une fiche du mini-CRM, et le fil d'un contact peut dater de
+   * plusieurs mois : hors de la première page, donc invisible de cette liste. Le lien était alors IGNORÉ en
+   * silence, ce qui se lit comme un bouton cassé. On demande le fil par son identifiant, et on l'ajoute en
+   * tête de la liste affichée.
+   *
+   * ⚠️ IL IGNORE LE DOSSIER COURANT, délibérément : on a demandé CE fil-là. Un fil archivé ou déjà traité
+   * n'appartient à aucun dossier ordinaire, et ce sont justement les cas où l'on clique pour aller le relire.
+   *
+   * ⚠️ ÉCHEC SILENCIEUX : une API plus ancienne que le paramètre `id` rend la liste entière, et le fil visé
+   * s'y trouve ou non, exactement comme avant. On ne montre pas d'erreur pour un lien : l'Inbox reste
+   * utilisable, c'est l'essentiel de l'écran.
+   */
   useEffect(() => {
-    if (deepLinkApplied.current || !deepLinkId || conversations.length === 0) return;
+    if (deepLinkApplied.current || !deepLinkId) return;
     const match = conversations.find((c) => c.id === deepLinkId);
     if (match) {
       setSelected(match);
       deepLinkApplied.current = true;
+      return;
     }
-  }, [deepLinkId, conversations]);
+    // ⚠️ ON ATTEND LA FIN DU PREMIER CHARGEMENT, PAS UNE LISTE NON VIDE. La liste peut etre legitimement
+    // VIDE (un espace neuf, un dossier sans rien), et c'est justement le cas ou le fil visé n'y est pas :
+    // se caler sur sa longueur laissait le lien sans effet, exactement le defaut qu'on repare.
+    if (loading) return;
+    deepLinkApplied.current = true;
+    let vivant = true;
+    void listConversations(session.tenantId, { id: deepLinkId, limit: 1 })
+      .then((r) => {
+        const conv = (r.conversations ?? []).find((c) => c.id === deepLinkId);
+        if (!vivant || !conv) return;
+        setConversations((prev) => (prev.some((c) => c.id === conv.id) ? prev : [conv, ...prev]));
+        setSelected(conv);
+      })
+      .catch(() => { /* un lien qui ne mène nulle part ne doit pas casser l'Inbox */ });
+    return () => { vivant = false; };
+  }, [deepLinkId, conversations, loading, session.tenantId]);
 
   // Auto-refresh de la liste (~15 s), seulement quand l'onglet est visible (pas de martèlement en arrière-plan) ;
   // reload immédiat au retour de focus. Réutilise l'endpoint existant, aucun changement backend.
@@ -655,7 +686,7 @@ function InboxInner({ session }: { session: Session }) {
                         </span>
                       )}
                     </span>
-                    <span className="pointer-events-none shrink-0 text-[11px] text-ink-400">{hourMin(c.lastMessageAt, locale)}</span>
+                    <span className="pointer-events-none shrink-0 text-[11px] text-ink-400">{jourHeure(c.lastMessageAt, locale)}</span>
                   </div>
                   {/* 🔴 PLUS AUCUN BADGE DANS LA LISTE (demande de Julien, 2026-09-11 : « quand un agent a
                       la main, laisse juste le frame en blanc, pas obligé d'écrire Vous avez la main »).
@@ -819,6 +850,14 @@ function RangerDans({ session, conversation, dossier, controlOwner, onFait }: {
   const archivee = dossier === 'archivees';
   const signaleeMain = conversation.signaleeMain === true;
   const traitee = conversation.traitee === true;
+  /**
+   * CE FIL A-T-IL DEJA PORTE UN MESSAGE ?
+   *
+   * ⚠️ L'APERCU EST CE QUE L'ECRAN SAIT, et il suffit : toute ecriture de message en pose un
+   * (`upsertConversationByWaId`), et un fil qu'un operateur vient d'OUVRIR depuis la fiche d'un contact n'en
+   * a aucun. C'est le seul etat qui produit un aperçu nul.
+   */
+  const aParle = conversation.lastPreview !== null;
 
   async function ranger(action: ActionRangement): Promise<void> {
     setBusy(true);
@@ -852,7 +891,12 @@ function RangerDans({ session, conversation, dossier, controlOwner, onFait }: {
           le bouton « Rendre la main » qui offre le geste inverse. */}
       {/* ⚠️ Et jamais sur une conversation TRAITÉE : prendre le fil ne la ferait pas entrer dans « À
           traiter », que le statut exclut. C'est « Ne plus marquer traité » qui l'y rend. */}
-      {controlOwner === 'app_workflow' && !traitee && <option value="a-traiter">{libelleRangement('a-traiter', t)}</option>}
+      {/* ⚠️ ET JAMAIS SUR UN FIL SANS AUCUN MESSAGE (relecture du 2026-09-23). Un fil qu'on vient d'ouvrir
+          depuis une fiche contact est `app_workflow` par defaut : l'option s'affichait, la prise du fil
+          REUSSISSAIT, et le fil n'entrait pourtant pas dans « A traiter », que ce dossier exclut faute de
+          message. L'ecran annoncait donc un succes sans effet visible, ce qui est le motif « offert-et-inerte »
+          que ce produit s'interdit ailleurs. */}
+      {controlOwner === 'app_workflow' && !traitee && aParle && <option value="a-traiter">{libelleRangement('a-traiter', t)}</option>}
       {/* « Traité » ou son contraire, selon l'état de CETTE conversation. Rien depuis Archivé : une
           conversation archivée n'apparaît dans aucun dossier ordinaire, le statut n'y serait pas visible. */}
       {!archivee && (traitee
@@ -1657,9 +1701,6 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
                     : t('Passer à l’agent Meta', 'Hand to Meta agent')}
             </button>
           )}
-          <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${windowOpen ? 'bg-mint-50 text-mint-700' : 'bg-amber-50 text-amber-700'}`}>
-            {windowOpen ? t('fenêtre 24 h ouverte', '24h window open') : t('fenêtre 24 h fermée', '24h window closed')}
-          </span>
           {/* 🔴 EFFACER LE CONTENU. Réservé aux administrateurs côté serveur ; on ne montre pas le bouton aux
               autres, mais c'est la garde du serveur qui décide, pas cet affichage.
               La confirmation DIT la conséquence que personne ne devine : effacer les messages ferme la fenêtre

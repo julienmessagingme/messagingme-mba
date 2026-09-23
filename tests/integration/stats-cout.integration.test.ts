@@ -437,3 +437,211 @@ describe.skipIf(!url)('Cout : les deux lectures comptent la MEME population (Pos
     });
   });
 });
+
+/**
+ * LA POPULATION DU TABLEAU « COUT PAR ENGAGEMENT » (lot 4 de la liste de Julien du 2026-09-23).
+ *
+ * 🔴 POURQUOI EN INTEGRATION : tout se joue dans le SQL de `getVolumeParCampagne`. Une campagne qui a touche
+ * quelqu un sans rien de facturable (scenario en fenetre de service, RCS, numero de test) n avait aucune ligne :
+ * mesure faite en production, 2 campagnes visibles sur 7. Et les archivees entraient sans le dire.
+ */
+describe.skipIf(!url)('Cout : la population du tableau par campagne (Postgres reel)', () => {
+  let pool: Pool;
+  let store: PgStatsStore;
+  let tenantId: string;
+  const ids: Record<string, string> = {};
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: url, ssl: pgSsl(), max: 2 });
+    store = new PgStatsStore(pool);
+    tenantId = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-cout-population') returning id`)).rows[0]!.id;
+    const contact = async (num: string) => (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164) values ($1, $2) returning id`, [tenantId, num],
+    )).rows[0]!.id;
+    /** Une campagne qui a TOUCHE une personne dans la periode, avec ou sans modele, archivee ou non. */
+    const campagne = async (nom: string, opts: { template?: string; canal?: string; archivee?: boolean }, num: string) => {
+      const id = (await pool.query<{ id: string }>(
+        `insert into campaigns (tenant_id, name, category, template_name, channel, archived_at)
+         values ($1, $2, 'marketing', $3, $4, case when $5::boolean then now() else null end) returning id`,
+        [tenantId, nom, opts.template ?? null, opts.canal ?? 'whatsapp', opts.archivee === true],
+      )).rows[0]!.id;
+      await pool.query(
+        `insert into campaign_recipients (campaign_id, contact_id, to_e164, resolved_params, status, sent_at, message_id)
+         values ($1, $2, $3, '{}'::jsonb, 'sent', $4::date, $5)`,
+        [id, await contact(num), num.replace('+', ''), AUJ, `wamid.pop-${nom}`],
+      );
+      ids[nom] = id;
+      return id;
+    };
+    await campagne('modele', { template: 'itest_pop_tpl' }, '+33600000801');
+    await campagne('scenario', {}, '+33600000802');
+    await campagne('rcs', { canal: 'rcs' }, '+33600000803');
+    await campagne('archivee', { template: 'itest_pop_tpl' }, '+33600000804');
+    await pool.query(`update campaigns set archived_at = now() where id = $1`, [ids['archivee']]);
+  });
+
+  afterAll(async () => {
+    if (tenantId) {
+      await pool.query(`delete from campaign_recipients where campaign_id in (select id from campaigns where tenant_id = $1)`, [tenantId]);
+      await pool.query(`delete from campaigns where tenant_id = $1`, [tenantId]);
+      await pool.query(`delete from contacts where tenant_id = $1`, [tenantId]);
+      await pool.query(`delete from tenants where id = $1`, [tenantId]);
+    }
+    await pool.end();
+  });
+
+  it('🔴 une campagne SANS rien de facturable a sa ligne, avec les personnes touchees', async () => {
+    const lignes = await store.getVolumeParCampagne(tenantId, RANGE);
+    const par = new Map(lignes.map((l) => [l.campaignId, l]));
+    expect(par.get(ids['scenario']!)).toMatchObject({ nom: 'scenario', template: null, canal: 'whatsapp', category: null, count: 0, envois: 1 });
+    expect(par.get(ids['rcs']!)).toMatchObject({ nom: 'rcs', canal: 'rcs', count: 0, envois: 1 });
+    // La campagne à modèle garde SON compte facturable, et porte les personnes touchées en plus.
+    expect(par.get(ids['modele']!)).toMatchObject({ category: 'marketing', count: 1, envois: 1 });
+  });
+
+  it('🔴 le drapeau HORS RETENTION se pose sur une campagne dont les envois ont pu etre purges', async () => {
+    // ⚠️ POURQUOI EN INTEGRATION : le predicat est celui de la purge, repris terme a terme, et il melange
+    // un reglage d'espace, un defaut d'instance et une arithmetique de dates. Un faux pool prouverait la
+    // forme de la requete, jamais qu'elle marque la bonne campagne.
+    const vieille = await pool.query<{ id: string }>(
+      `insert into campaigns (tenant_id, name, category, channel) values ($1, 'vieux-scenario', 'marketing', 'whatsapp') returning id`,
+      [tenantId],
+    );
+    const id = vieille.rows[0]!.id;
+    const contactId = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164) values ($1, '+33600000805') returning id`, [tenantId],
+    )).rows[0]!.id;
+    // Un envoi VIEUX de 200 jours : au-dela des 90 jours de retention.
+    await pool.query(
+      `insert into campaign_recipients (campaign_id, contact_id, to_e164, resolved_params, status, sent_at, message_id)
+       values ($1, $2, '33600000805', '{}'::jsonb, 'sent', now() - interval '200 days', 'wamid.vieux')`,
+      [id, contactId],
+    );
+    const large = { from: '2026-01-01', to: AUJ };
+    const avec = await store.getVolumeParCampagne(tenantId, large, { retentionJours: 90 });
+    expect(avec.find((l) => l.campaignId === id)?.horsRetention, 'la vieille campagne est marquee').toBe(true);
+    // ...et les campagnes du jour ne le sont pas.
+    expect(avec.find((l) => l.campaignId === ids['scenario'])?.horsRetention).toBe(false);
+  });
+
+  it('🔴 retention d instance a ZERO : plus rien n est marque, c est le levier d urgence', async () => {
+    // `CONVERSATION_RETENTION_DAYS = 0` arrete la purge pour tout le monde. Rien n'etant supprime, aucun
+    // cout ne devient inconnaissable : marquer quand meme viderait des cases sans raison.
+    const large = { from: '2026-01-01', to: AUJ };
+    const sans = await store.getVolumeParCampagne(tenantId, large, { retentionJours: 0 });
+    expect(sans.every((l) => l.horsRetention === false)).toBe(true);
+    // Et sans le parametre du tout, le comportement d'avant : aucun marquage.
+    const defaut = await store.getVolumeParCampagne(tenantId, large);
+    expect(defaut.every((l) => l.horsRetention === false)).toBe(true);
+  });
+
+  it('🔴 les archivees sont exclues par defaut, et la bascule les rend', async () => {
+    const sans = await store.getVolumeParCampagne(tenantId, RANGE);
+    expect(sans.some((l) => l.campaignId === ids['archivee'])).toBe(false);
+    const avec = await store.getVolumeParCampagne(tenantId, RANGE, { inclureArchivees: true });
+    expect(avec.some((l) => l.campaignId === ids['archivee'])).toBe(true);
+    // ⚠️ Et la bascule ne change rien aux autres : elle AJOUTE, elle ne remplace pas.
+    expect(avec.length).toBe(sans.length + 1);
+  });
+});
+
+/**
+ * UN ENVOI RCS RETROUVE SA CAMPAGNE (demande de Julien du 2026-09-23 : le RCS a un prix, il faut le compter).
+ *
+ * 🔴 POURQUOI EN INTEGRATION : le rattachement est TOUT ENTIER dans le SQL, et il se fait en trois coups
+ * (l identifiant du message porte par le destinataire, celui porte par l etage, puis l attribution du
+ * scenario). Un faux pool prouverait la forme de la requete, jamais qu elle rattache la bonne ligne. Et un
+ * envoi RCS qui ne retrouve pas sa campagne ne casse rien : il affiche une case vide, donc le defaut est
+ * MUET, ce qui est precisement le mode de panne que ce fichier existe pour fermer.
+ */
+describe.skipIf(!url)('Cout : un envoi RCS retrouve sa campagne (Postgres reel)', () => {
+  let pool: Pool;
+  let store: PgStatsStore;
+  let tenantId: string;
+  let campagneRcs: string;
+
+  const MSG_RCS = 'rbm-itest-rcs-1';
+  const HORS_CAMPAGNE = 'rbm-itest-rcs-2';
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: url, ssl: pgSsl(), max: 2 });
+    store = new PgStatsStore(pool);
+    tenantId = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-cout-rcs') returning id`)).rows[0]!.id;
+
+    const contactId = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164) values ($1, '+33600000901') returning id`, [tenantId],
+    )).rows[0]!.id;
+    campagneRcs = (await pool.query<{ id: string }>(
+      `insert into campaigns (tenant_id, name, category, channel) values ($1, 'rcs-cout', 'marketing', 'rcs') returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    // Le destinataire porte l identifiant du message RBM : c est le premier des trois coups.
+    await pool.query(
+      `insert into campaign_recipients (campaign_id, contact_id, to_e164, resolved_params, status, sent_at, message_id)
+       values ($1, $2, '33600000901', '{}'::jsonb, 'sent', $3::date, $4)`,
+      [campagneRcs, contactId, AUJ, MSG_RCS],
+    );
+
+    const conv = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, last_message_at) values ($1, '33600000901', now()) returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    const convHors = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, last_message_at) values ($1, '33600000902', now()) returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    const rcsOut = async (convId: string, metaId: string, at: string) => pool.query(
+      `insert into conversation_messages (conversation_id, direction, type, body, channel, meta_message_id, created_at)
+       values ($1, 'out', 'text', 'coucou', 'rcs', $2, $3)`,
+      [convId, metaId, at],
+    );
+    await rcsOut(conv, MSG_RCS, `${AUJ}T09:00:00Z`);
+    // Un RCS que RIEN ne rattache : il doit rester dans le lot, avec une campagne nulle.
+    await rcsOut(convHors, HORS_CAMPAGNE, `${AUJ}T09:05:00Z`);
+    // Une reaction du contact, deux heures apres : elle fait basculer l echange en conversationnel.
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, type, body, channel, created_at)
+       values ($1, 'in', 'text', 'oui', 'rcs', $2)`,
+      [conv, `${AUJ}T11:00:00Z`],
+    );
+  });
+
+  afterAll(async () => {
+    if (tenantId) {
+      await pool.query(`delete from conversation_messages where conversation_id in (select id from conversations where tenant_id = $1)`, [tenantId]);
+      await pool.query(`delete from conversations where tenant_id = $1`, [tenantId]);
+      await pool.query(`delete from campaign_recipients where campaign_id in (select id from campaigns where tenant_id = $1)`, [tenantId]);
+      await pool.query(`delete from campaigns where tenant_id = $1`, [tenantId]);
+      await pool.query(`delete from contacts where tenant_id = $1`, [tenantId]);
+      await pool.query(`delete from tenants where id = $1`, [tenantId]);
+    }
+    await pool.end();
+  });
+
+  it('🔴 l envoi RCS porte SA campagne, et celui qu on ne rattache pas reste dans le lot', async () => {
+    const r = await store.envoisEtReactionsRcs(tenantId, RANGE, 7 * 24 * 60 * 60 * 1000, { attribuer: true });
+    const dela = r.conversations.find((c) => c.campaignId === campagneRcs);
+    expect(dela, 'l envoi rattache a sa campagne').toBeDefined();
+    expect(dela).toMatchObject({ waId: '33600000901', envois: 1 });
+    // ⚠️ L AUTRE N EST PAS FILTRE, et ce n est pas du remplissage : la bascule porte sur l ECHANGE entier,
+    // donc un RCS hors campagne peut faire basculer les RCS de campagne du meme echange. Le filtrer ici
+    // aurait sous-facture ce cas, sans que rien ne le signale.
+    expect(r.conversations.some((c) => c.campaignId === null), 'l envoi sans campagne reste rendu').toBe(true);
+  });
+
+  it('🔴 SANS attribution, aucun envoi ne porte de campagne, et c est le defaut', async () => {
+    // Le rattachement coute une sous-requete correlee par message RCS, sans index : seul l'appelant qui LIT
+    // la colonne doit la payer. Le defaut est donc le moins cher, et il se VOIT quand on l'oublie (les couts
+    // par campagne tombent a vide) plutot que de couter en silence.
+    const r = await store.envoisEtReactionsRcs(tenantId, RANGE, 7 * 24 * 60 * 60 * 1000);
+    expect(r.conversations.length, 'les envois sont toujours rendus').toBeGreaterThan(0);
+    expect(r.conversations.every((c) => c.campaignId === null), 'aucun rattachement calcule').toBe(true);
+    // ...et les reactions, elles, ne dependent pas de ce choix.
+    expect(r.reactions.some((x) => x.waId === '33600000901')).toBe(true);
+  });
+
+  it('la reaction du contact est rendue, c est elle qui fait basculer au tarif haut', async () => {
+    const r = await store.envoisEtReactionsRcs(tenantId, RANGE, 7 * 24 * 60 * 60 * 1000);
+    expect(r.reactions.some((x) => x.waId === '33600000901')).toBe(true);
+  });
+});

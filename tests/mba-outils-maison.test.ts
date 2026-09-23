@@ -1,5 +1,7 @@
+import { REPONSE_DEJA_TRAITE } from '../src/mba/executer-maison';
 import { describe, it, expect } from 'vitest';
 import {
+  REPONSE_EN_COURS,
   HANDLERS_MAISON_MBA, cibleMaisonSchema, lireCibleMaison, typeDeLaCible, variablesPourMeta, lireValeurChamp,
   REPONSE_MAISON, RISQUE_MAISON, blocSeul, blocsProposables, type CibleChamp,
 } from '../src/mba/outils-maison';
@@ -110,9 +112,15 @@ describe('la cible d’un bloc et d’un scénario', () => {
     expect(RISQUE_MAISON.scenario_fixe).toBe('irreversible');
   });
 
-  it('🔴 la réponse dit à l’agent de Meta de ne rien ajouter : le message est déjà parti', () => {
-    expect(REPONSE_MAISON.bloc_fixe).toContain('N’ajoute rien');
-    expect(REPONSE_MAISON.scenario_fixe).toContain('N’écris rien');
+  it('🔴 la réponse dit « c’est fait » et « ne rappelle pas cet outil » : sinon l’agent de Meta boucle', () => {
+    // Essai réel du 2026-09-22 : « Engage Me déroule maintenant un parcours… N'écris rien » a fait rappeler
+    // l'outil sept fois dans le même tour. La réponse du tag, qui dit « c'est fait », avait marché du premier coup.
+    for (const r of [REPONSE_MAISON.bloc_fixe, REPONSE_MAISON.scenario_fixe]) {
+      expect(r.startsWith('C’est fait')).toBe(true);
+      expect(r).toContain('Ne rappelle pas cet outil');
+    }
+    // Le scénario garde sa consigne de silence : la conversation revient à l'agent de Meta à la fin du parcours.
+    expect(REPONSE_MAISON.scenario_fixe).toContain('n’écris rien');
   });
 
   it('rien à remplir pour l’agent de Meta : le bloc et le scénario sont fixés', () => {
@@ -164,5 +172,18 @@ describe('envoyer un bloc SEUL', () => {
     expect(l.map((b) => [b.code, b.nom, b.envoyable])).toEqual([[CODE('A'), 'Brochure', true], [CODE('C'), 'Oui ou non ?', false]]);
     expect(l[1]!.raison).toContain('Lancer un scénario');
     expect(l[0]).toMatchObject({ workflowId: WF, scenario: 'Accueil', type: 'quick_message', raison: null });
+  });
+  it('🔴 aucune réponse d’outil n’interdit l’outil pour la SUITE de la conversation (essais du 2026-09-22)', () => {
+    // « Ne rappelle pas cet outil. », sans borne, valait pour toute la conversation aux yeux de l'agent : il ne
+    // rappelait plus l'outil quand le client redemandait, et escaladait vers un humain.
+    const reponses = [
+      REPONSE_MAISON.bloc_fixe, REPONSE_MAISON.scenario_fixe,
+      REPONSE_EN_COURS.bloc_fixe, REPONSE_EN_COURS.scenario_fixe, REPONSE_DEJA_TRAITE,
+    ];
+    for (const r of reponses) {
+      expect(r).toContain('Si le client le redemande plus tard, rappelle cet outil.');
+      expect(r).not.toMatch(/rappelle pas cet outil\./i);
+      expect(r).not.toMatch(/ne rappelle plus/i);
+    }
   });
 });

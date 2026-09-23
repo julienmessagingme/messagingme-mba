@@ -77,7 +77,8 @@ export interface StatsRouteDeps {
    * OPTIONNELLE -> 503 quand elle manque, comme ses voisines : un tableau vide se lirait « aucune campagne
    * n'a envoyé sur la période », qui est une affirmation, alors que la vérité serait « rien n'est branché ».
    */
-  getCoutParCampagne?(tenantId: string, range: DateRange): Promise<CoutParCampagne>;
+  /** `inclureArchivees` : la bascule de la carte (lot 4 de la liste du 2026-09-23). Absente = exclues. */
+  getCoutParCampagne?(tenantId: string, range: DateRange, opts: { inclureArchivees: boolean }): Promise<CoutParCampagne>;
   /**
    * Le COUT TOTAL DES MESSAGES de la période (ligne 2 de la carte « Coûts »).
    *
@@ -310,7 +311,8 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
     if (!deps.getCoutParCampagne) return reply.code(503).send({ error: 'cout par campagne non configure' });
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
-    return reply.code(200).send(await deps.getCoutParCampagne(tenant, r.range));
+    const inclureArchivees = (req.query as Record<string, unknown>).archivees === '1';
+    return reply.code(200).send(await deps.getCoutParCampagne(tenant, r.range, { inclureArchivees }));
   });
 
   /**

@@ -80,9 +80,10 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 - ✅ **HubSpot a son propre bloc sur l'Accueil** (2026-08-23), sous celui du Meta Business Agent. Il était
   imbriqué dans la carte du numéro WhatsApp, où il passait inaperçu alors qu'il gouverne une intégration
   entière. Il ne s'affiche que si un numéro est rattaché : sans numéro, il n'y a rien à synchroniser.
-- ✅ **« Relancer automatiquement les échecs » a rejoint Paramètres** (2026-08-23). Ce réglage était sur
-  l'Accueil, dans la carte du Meta Business Agent, où il n'avait rien à faire : il ne dit pas qui répond au
-  client, il règle ce qui se passe quand un envoi échoue. C'est un réglage d'espace, comme le fuseau horaire.
+- 🗑️ **« Relancer automatiquement les échecs » a QUITTÉ les Paramètres** (2026-09-23). Ce n'est plus un réglage
+  d'espace : la relance obéit à la case « Réessayer les envois qui échouent » de chaque campagne, qui existait
+  déjà et que rien ne lisait. Les campagnes créées avant gardent la règle d'espace, figée dans l'état où elle
+  était (voir « Campagnes »).
 - ✅ **Paramètres (menu « Paramètres », admin ; un manager n'y voit que le réglage « Je m'en occupe »)** : le
   **fuseau horaire** de l'espace et les **heures d'ouverture**
   jour par jour (heure de début, heure de fin, ou « fermé »). C'est la base sur laquelle s'appuient les conditions
@@ -722,6 +723,28 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 ## Campagnes
 
+- ✅ **Le coût estimé d'une campagne est CELUI DU SERVEUR** (2026-09-23), calculé sur ce qui est réellement
+  parti : modèles au tarif Meta, messages de service (franchise déduite) et RCS à vos deux prix. Cet écran
+  le calculait lui-même, en multipliant les
+  destinataires par le tarif Meta de la catégorie, si bien qu'une campagne à scénario n'ayant envoyé aucun
+  modèle facturable, et une campagne RCS, affichaient un prix de modèle qu'elles n'avaient jamais payé.
+  ⚠️ **Ce n'est pas le même chiffre que la fiche** de Performance Lab, et les confondre induirait en erreur :
+  cette liste compte les modèles, les messages de service et le RCS sur la période lue, quand la fiche compte
+  les seuls modèles, séparés en lancement et relances, sur toute la vie de la campagne.
+  ⚠️ **« indisponible » n'est pas « gratuit »** : une campagne de plus de **90 jours**, ou au-delà des
+  cinquante que ce calcul rend, garde sa case vide, et le total de la liste dit combien de campagnes il n'a
+  pas su chiffrer.
+  ⚠️ **Pour le coût d'une campagne plus ancienne**, passez par **Performance Lab > Synthèse**, carte
+  « Coûts », et déplacez la période jusqu'à la couvrir (au-delà d'un an, déplacez plutôt que d'élargir : la
+  plage est bornée à 366 jours). Cliquez alors sa ligne : c'est la FICHE qui porte le détail, la ligne montrant
+  l'engagement. ⚠️ Si la campagne est archivée, cochez « Inclure les campagnes archivées » ; et le tableau ne
+  garde que les cinquante plus grosses de la période, ce qui joue contre une petite campagne ancienne.
+  ⚠️ **Passé la durée de conservation des conversations** (90 jours par défaut, réglable), le coût d'une
+  campagne à SCÉNARIO n'est plus reconstituable : ses envois vivaient dans les conversations, qui ont été
+  purgées. Une campagne à modèle direct, elle, garde son compte.
+  ⚠️ Le panneau de détail de cet onglet-ci, lui, montre le même « indisponible » que la liste : il lit le
+  même calcul.
+
 - ✅ **Envoyer uniquement pendant les heures ouvrées** (2026-09-08, **seule question horaire depuis le
   2026-09-13**) : une case à cocher, à l'étape **Canal** de l'assistant. Elle vaut pour les premiers envois
   **et pour les relances**, avec chaîne de repli ou sans : c'est une contrainte de la campagne, pas de son
@@ -912,7 +935,9 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   Un mini-formulaire propose les champs concernés : on saisit la bonne valeur, elle est **enregistrée sur la fiche
   du contact** (les autres champs ne sont pas touchés), et le message repart. Si la variable est **toujours** vide,
   le renvoi est refusé avec un message clair plutôt que de rejouer le même échec.
-- ✅ **Auto-relance des échecs de livraison** (réglable sur l'Accueil, désactivée par défaut) : quand un message
+- ✅ **Auto-relance des échecs de livraison** (la case « Réessayer les envois qui échouent » de la campagne,
+  cochée par défaut ; une campagne créée avant le 2026-09-23 suit l'ancien réglage d'espace, et un envoi créé par
+  l'API publique aussi, faute de choix exprimé) : quand un message
   échoue pour une raison connue pour être passagère, la console le **rejoue toute seule une fois**. Les échecs de
   type « pas de fenêtre » repartent au **début de la journée suivante** (entre 8 h et midi, heure de Paris), là où
   le destinataire est le plus susceptible de recevoir. Un numéro qui échoue **deux fois** est signalé
@@ -960,6 +985,18 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   « Renvoyer » : le message repart tel quel, ce qui suffit quand la cause était un défaut d'envoi corrigé depuis.
 
 ## Inbox
+
+- ✅ **« Ouvrir la conversation » depuis la fiche d'un contact** (2026-09-23, menu Contacts). Le bouton est en
+  haut de la fiche du mini-CRM et emmène directement sur le fil de ce contact dans l'Inbox.
+  🔴 **Le fil est CRÉÉ s'il n'existe pas**, et c'est le cas qui compte : un contact qu'on vient d'importer n'a
+  jamais écrit, donc n'a aucune conversation, et c'est précisément là qu'on veut lui parler. Cliquer deux fois
+  n'ouvre pas deux fils.
+  ⚠️ **Un fil qu'on vient d'ouvrir n'entre PAS dans « À traiter »** : ce dossier veut dire « la balle est dans
+  notre camp », et l'ouvrir soi-même ne met la balle dans aucun camp. Il y entrera au premier message du
+  contact. Il est visible dans « Toutes », en tête.
+  ⚠️ **Un fil ANCIEN s'ouvre aussi**, même s'il est trop vieux pour figurer dans la page affichée, ou rangé
+  dans « Archivé » ou « Traité » : on a demandé ce fil-là. Un contact sans numéro ni identifiant WhatsApp,
+  lui, n'a aucun fil possible, et l'écran le dit au lieu de mener nulle part.
 
 - ✅ **LIRE LES MESSAGES REÇUS DANS SA LANGUE** (2026-09-13) : un interrupteur « Traduire les messages
   reçus », dans l'en-tête de la conversation. Allumé, les messages entrants du fil s'affichent dans la
@@ -1228,6 +1265,15 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 ## Analytics (menu Analytics)
 
+- ✅ **Contacts : cumulés ou actifs** (2026-09-23), une bascule sur la carte Contacts de Quantitatif >
+  Messages & contacts. **Cumulés** = tout ce que vous avez collecté depuis le début, la courbe historique,
+  qui ne baisse jamais. **Actifs** = ce qu'il vous reste dans le mini-CRM ce jour-là, donc la même courbe
+  moins les contacts supprimés, à la date de leur suppression. L'écart entre les deux est l'information :
+  une base qu'on nettoie le montre, une seule des deux courbes le cache.
+  ⚠️ **L'historique est reconstruit**, la courbe ne commence pas aujourd'hui : supprimer un contact le range
+  hors du mini-CRM sans effacer sa ligne, donc on sait à quelle date chacun est parti. Et une suppression
+  d'aujourd'hui ne change rien à la courbe d'il y a trois semaines.
+
 - ✅ **Page de synthèse, en tête du Performance Lab** (2026-09-08, remaniée le 2026-09-09) : la première
   page de l'onglet, à l'adresse `/performance`. Elle répond à des questions que les autres écrans ne posent
   pas : où en sont les conversations, et ce que coûte un engagement.
@@ -1473,9 +1519,9 @@ scénario, comment importer des contacts.
 - ✅ **Guide « Configurer HubSpot avec Messaging Me »** (ouvert dans un nouvel onglet depuis l'Accueil et depuis le
   Guide MBA) : connecter son compte HubSpot, **ajouter la carte Messaging Me sur la fiche contact** (Paramètres >
   Objets > Contacts > onglet Personnalisation de la fiche > Ajouter des cartes), et ce que cette carte affiche.
-- ✅ **Relancer automatiquement les échecs** (interrupteur sur la carte MBA) : un envoi bloqué par une limite Meta est
-  relancé le lendemain matin ; un numéro non délivrable est retenté une fois, puis marqué injoignable dans HubSpot au
-  2e échec. Désactivable par espace.
+- 🗑️ **Relancer automatiquement les échecs : PLUS D'INTERRUPTEUR D'ESPACE** (2026-09-23). La case de la campagne
+  décide (« Réessayer les envois qui échouent ») : un envoi bloqué par une limite Meta est retenté le lendemain
+  matin ; un numéro non délivrable une fois, puis marqué injoignable dans HubSpot au 2e échec.
 - 🗑️ **« À la reprise, le fil… » : SUPPRIMÉ le 2026-08-18** (voir la section Inbox). Ce réglage d’espace
   n’existe plus, et le sélecteur par conversation non plus.
 - ✅ **Onboarding « Connecter mon compte WhatsApp » (Embedded Signup)** : un espace **sans numéro rattaché** voit un
@@ -1641,7 +1687,10 @@ scénario, comment importer des contacts.
 - ✅ **Mettre au point un APPEL, dans la même page** (2026-09-02), et non plus dans chaque agent. Un appel est
   décrit une fois, éprouvé, puis ouvert aux agents qui en ont besoin. L'écran suit l'ordre du raisonnement :
   quelles données on envoie, où on les envoie, on essaie, on coche ce qu'on garde.
-- ✅ **Choisir la méthode** (GET, POST, PUT, PATCH, DELETE) et le chemin, avec des variables (`/commandes/{ref}`).
+- ✅ **Choisir la méthode** (GET, POST, PUT, PATCH, DELETE) et le chemin, avec des variables
+  (`/commandes/{{ref}}`, insérées par les mêmes pastilles que partout ailleurs). Les **en-têtes** portent eux
+  aussi des variables. ⚠️ Une valeur qui vaut « . » ou « .. » est refusée : elle déplacerait l'appel dans le
+  chemin. Le bouton « Essayer » montre ce qui est PARTI, en-têtes compris, sans jamais le secret de la source.
 - ✅ **Envoyer des données**, ce qui manquait : des **paramètres d'URL**, et surtout un **corps de requête**,
   saisissable de deux façons au choix : une **liste de champs** (aucune accolade à écrire) ou du **JSON brut**
   (collez l'exemple de votre documentation et remplacez les valeurs par des variables). La bascule de la liste
@@ -2194,6 +2243,11 @@ partir. Les blocs Agent, Inbox, Attente et RCS sont écartés, l'exécuteur les 
 - ✅ **L'agent passe la main quand la demande sort de son périmètre, ou quand le contact le demande.** La
   conversation remonte alors dans « À traiter » dans l'Inbox, la session de l'agent est close, et le parcours
   repart par la sortie 🙋 « Transfert à un humain ».
+- ✅ **Elle y entre TOUT DE SUITE, et elle y reste tant que personne n'a répondu** (2026-09-23). C'est la même
+  règle que pour l'agent de Meta et que pour le bloc « passer à un humain » d'un scénario : la dernière phrase
+  étant la nôtre, la conversation n'apparaissait qu'au message suivant du contact, et le robot reprenait la
+  main au bout de deux heures alors que personne n'avait répondu. La première réponse d'un opérateur,
+  « Traité », « Archiver » ou « Rendre la main » lève la marque, et les deux heures courent ensuite.
 - ✅ **Une fois la main passée, l'agent ne reprend pas la parole tout seul.** C'est la différence avec un
   simple changement d'étiquette : sans cela, l'humain aurait traité, puis l'agent aurait repris la
   conversation qu'on venait de lui retirer.
@@ -2593,12 +2647,18 @@ a pas de numéro d'expéditeur, et **aucun modèle à faire approuver** : on éc
   fermée : le RCS n'a pas de fenêtre. Ce qui suit le bloc RCS part aussi, à une exception près que l'éditeur
   signale : un **formulaire** WhatsApp placé juste derrière ne partira que si le contact a écrit **sur
   WhatsApp** dans les 24 h, car répondre en RCS ne rouvre pas cette fenêtre.
-- ✅ **Les chiffres ne mélangent plus les deux canaux** (2026-08-25). Trois corrections qui changent ce que
-  disent les écrans : une réponse ou un clic reçu en RCS ne compte plus comme une réponse au **template
-  WhatsApp** d'une campagne (et l'inverse) ; une campagne RCS ne rentre plus dans le **coût estimé**, calculé
-  au tarif de Meta qui ne facture rien sur ce canal, ni dans le détail « par template » ; et les envois RCS
-  sortent de la série « Service » du tableau de bord, dont l'écran affirme que Meta ne les facture pas. Le
-  volume RCS n'a pas encore de série à lui : il vaut mieux ne pas le montrer que le montrer comme gratuit.
+- ✅ **Les chiffres ne mélangent plus les deux canaux** (2026-08-25). Une réponse ou un clic reçu en RCS ne
+  compte plus comme une réponse au **template WhatsApp** d'une campagne (et l'inverse), et les envois RCS
+  sortent de la série « Service » du tableau de bord, puisque Meta ne les facture pas.
+- ✅ **Le RCS a un PRIX, et le coût par engagement le compte** (2026-09-23). Ces écrans ont longtemps dit
+  qu'une campagne RCS n'avait pas de coût « parce que Meta ne facture rien sur ce canal ». C'était vrai du
+  tarif de Meta et faux du prix réel : ce sont **vos** deux prix RCS, saisis dans Vos prix (simple et
+  conversationnel), et le total « coût des messages envoyés » les comptait déjà. Une campagne RCS affiche
+  donc son coût, au tarif **conversationnel** dès que le contact a réagi dans les sept jours, comme partout
+  ailleurs dans le produit.
+- ⚠️ **Une campagne RCS dont aucun envoi n'est retrouvé garde sa case vide**, elle n'affiche pas « 0 € » : le
+  cas existe pour les campagnes antérieures au suivi par étage. Vide se lit « on ne sait pas », zéro se
+  lirait « ça n'a rien coûté ».
 - ⚠️ **Ce que le canal ne dit pas à l'avance** : le fournisseur ne sait pas dire si un numéro est joignable en
   RCS avant d'essayer. La sortie « Non joignable » se déclenche donc sur le **rapport de livraison**, quelques
   instants à quelques minutes après l'envoi, et non au moment où le bloc est atteint.

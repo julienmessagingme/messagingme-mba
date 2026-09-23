@@ -1,5 +1,6 @@
 /**
- * Le CORPS et les PARAMÈTRES D'URL d'un appel de connecteur, construits à partir de gabarits à variables.
+ * Le CORPS, les PARAMÈTRES D'URL et les EN-TÊTES d'un appel de connecteur, construits à partir de gabarits à
+ * variables (le CHEMIN, lui, se remplit dans `http-cible.ts`).
  *
  * 🔴 CE QUI MANQUAIT, ET POURQUOI C'ÉTAIT BLOQUANT. Jusqu'ici un connecteur ne savait remplir qu'un gabarit
  * de CHEMIN (`/commandes/{numero}`). Un `POST` partait donc avec un corps VIDE, ce qui ne sert à rien : un
@@ -21,6 +22,8 @@
  * n'est pas un manque, c'est le prix de la garantie ci-dessus, et le besoin est d'envoyer des champs, pas
  * d'écrire un langage de gabarit.
  */
+
+import { VARIABLE_DE_CHEMIN } from './http-cible';
 
 /** Variables nommées `{{ville}}`. MÊME motif que l'éditeur de la console (`web/components/VariableBodyEditor`),
  *  pour que ce qui s'écrit à l'écran soit exactement ce qui se substitue ici. */
@@ -274,11 +277,32 @@ export function assemblerAppel(input: {
 
   // 4. LES EN-TÊTES. Un en-tête réservé saisi malgré tout est IGNORÉ plutôt que transmis : la route le refuse
   // déjà, et deux gardes qui se recouvrent valent mieux qu'une seule sur un chemin qui porte un secret.
+  // 🔴 SUBSTITUÉS COMME LES PARAMÈTRES D'URL (2026-09-23) : l'écran propose d'y insérer une variable, et
+  // `{{client_id}}` partait tel quel chez le client. Une valeur à retour à la ligne est REFUSÉE : glissée dans
+  // un en-tête, elle en fabriquerait un second (injection d'en-tête), et elle peut venir du modèle.
   const entetes: Record<string, string> = { accept: 'application/json' };
+  const manquantes = new Set<string>();
   for (const e of input.entetes ?? []) {
     const nom = e.nom.trim().toLowerCase();
     if (nom === '' || estEnTeteReserve(nom)) continue;
-    entetes[nom] = e.valeur;
+    VARIABLE.lastIndex = 0;
+    const valeur = e.valeur.replace(VARIABLE, (_m, v: string) => {
+      if (!(v in input.valeurs)) { manquantes.add(v); return ''; }
+      const x = input.valeurs[v];
+      return x === null || x === undefined ? '' : String(x);
+    });
+    if (/[\r\n]/.test(valeur)) return { ok: false, raison: `l’en-tête « ${e.nom.trim()} » contiendrait un retour à la ligne : il n’est pas envoyé` };
+    // 🔴 ET TOUT CE QU'UN EN-TÊTE NE PEUT PAS PORTER (revue du 2026-09-23) : `fetch` lève sur un caractère au-delà
+    // de 0xFF (l'apostrophe ’, « œ », un emoji de nom de profil) ou de contrôle. Levée à l'appel, l'erreur passait
+    // pour une panne réseau : la SOURCE notée « injoignable », et le modèle disant que le système est indisponible.
+    if (/[^\t\x20-\x7e\x80-\xff]/.test(valeur)) {
+      return { ok: false, raison: `l’en-tête « ${e.nom.trim()} » contiendrait un caractère qu’un en-tête ne peut pas porter (apostrophe typographique, emoji…) : il n’est pas envoyé` };
+    }
+    // Vide après substitution : omis, comme un paramètre d'URL. Un en-tête vide fait répondre 400 à certaines API.
+    if (valeur !== '') entetes[nom] = valeur;
+  }
+  if (manquantes.size > 0) {
+    return { ok: false, raison: `variable(s) sans valeur dans les en-têtes : ${[...manquantes].sort().join(', ')}` };
   }
   // Posé d'après ce qui part RÉELLEMENT, jamais d'après une déclaration : annoncer un corps qu'on n'envoie
   // pas fait répondre 400 à certaines API.
@@ -330,10 +354,15 @@ export function cheminsDeLaReponse(valeur: unknown, max = 200, profondeurMax = 5
  * ne l'as pas déclarée » AVANT l'envoi, et pour que la fenêtre de création d'un agent puisse annoncer au
  * client ce qui partira réellement dans la requête.
  *
- * Balaye le corps ET les paramètres d'URL : les deux portent des variables, et n'en lire qu'un ferait mentir
- * la liste à moitié.
+ * Balaye le corps, les paramètres d'URL, le chemin ET les en-têtes : tous portent des variables, et en oublier
+ * un ferait mentir la liste (les en-têtes l'ont été jusqu'au 2026-09-23).
  */
-export function variablesUtilisees(corps: GabaritCorps, parametres: readonly ParametreUrl[] | null | undefined, chemin?: string): string[] {
+export function variablesUtilisees(
+  corps: GabaritCorps,
+  parametres: readonly ParametreUrl[] | null | undefined,
+  chemin?: string,
+  entetes?: readonly EnTete[] | null,
+): string[] {
   const vues = new Set<string>();
   const balayer = (s: string): void => {
     VARIABLE.lastIndex = 0;
@@ -345,8 +374,10 @@ export function variablesUtilisees(corps: GabaritCorps, parametres: readonly Par
   if (corps.mode === 'json') balayer(corps.gabarit);
   if (corps.mode === 'champs') for (const c of corps.champs) balayer(c.valeur);
   for (const p of parametres ?? []) balayer(p.valeur);
-  // Le CHEMIN utilise la notation `{nom}` (une seule accolade), héritée de `http-cible.ts` : on la lit aussi,
-  // sinon la liste annoncée au client oublierait les variables de l'URL elle-même.
-  for (const m of (chemin ?? '').matchAll(/\{([a-zA-Z0-9_]+)\}/g)) vues.add(m[1]!);
+  for (const e of entetes ?? []) balayer(e.valeur);
+  // Le CHEMIN admet `{{nom}}` ET `{nom}` : la même expression que la substitution (`http-cible.ts`), pour que la
+  // liste annoncée ne diverge jamais de ce qui est réellement remplacé.
+  VARIABLE_DE_CHEMIN.lastIndex = 0; // `matchAll` recopie le `lastIndex` de l'expression partagée
+  for (const m of (chemin ?? '').matchAll(VARIABLE_DE_CHEMIN)) vues.add((m[1] ?? m[2])!);
   return [...vues].sort();
 }

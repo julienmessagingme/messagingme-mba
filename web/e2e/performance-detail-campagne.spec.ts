@@ -294,6 +294,17 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
     await expect(page.getByTestId('funnel-liens-n1')).toHaveText('0');
     await expect(page.getByTestId('funnel-envoyes-n1')).toHaveText('40');
   });
+  test('🔴 le titre de la fiche MÈNE aux résultats de la campagne (Quantitatif > Funnel)', async ({ page }) => {
+    // Demande de Julien du 2026-09-23. On lit un coût, on veut voir ce qu'il a produit : le nom de la
+    // campagne est le chemin le plus court, et c'est un LIEN (clic du milieu, copie, partage), avec la même
+    // adresse que le bouton « Voir les résultats » de l'onglet Campagnes.
+    await mock(page);
+    await page.goto('/performance');
+    await ouvrirEngagement(page);
+    await page.getByTestId('cout-ligne-c-parcours').click();
+    await expect(page.getByTestId('modale-titre-lien')).toHaveAttribute('href', '/dashboard/funnel?campagne=c-parcours');
+  });
+
   test('le nom de la campagne est un vrai bouton, donc atteignable au clavier', async ({ page }) => {
     // Un `<tr onClick>` seul est invisible d'un lecteur d'écran et inatteignable sans souris.
     await mock(page);

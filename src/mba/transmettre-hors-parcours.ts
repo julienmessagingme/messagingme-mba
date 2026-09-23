@@ -1,4 +1,4 @@
-import { destinataireAgentEvent, evenementHorsParcours, type EvenementAgent } from './evenement';
+import { traceReponse, destinataireAgentEvent, evenementHorsParcours, type EvenementAgent } from './evenement';
 
 /**
  * LA RÉPONSE « À CÔTÉ » PART CHEZ L'AGENT DE META (spec 2026-09-21-outils-maison-mba, § 5), une fois le fil rendu.
@@ -33,9 +33,18 @@ export function creerTransmettreHorsParcours(deps: DepsTransmettre) {
       return;
     }
     const pn = await deps.numero(tenantId);
-    if (!pn) return;
+    if (!pn) {
+      deps.journal?.(`agent_event non envoyé pour ${waId} : aucun numéro connecté`);
+      return;
+    }
     const texte = (await deps.corpsDuMessage(tenantId, messageId))?.trim() ?? '';
-    if (texte === '') return;
-    await deps.envoyer(tenantId, pn, destinataireAgentEvent(waId), evenementHorsParcours(texte));
+    if (texte === '') {
+      deps.journal?.(`agent_event non envoyé pour ${waId} : le message ${messageId} n’a pas de texte lisible`);
+      return;
+    }
+    const reponse = await deps.envoyer(tenantId, pn, destinataireAgentEvent(waId), evenementHorsParcours(texte));
+    // La réponse de Meta porte l'identifiant de l'événement : sans elle, impossible de lui demander ensuite s'il
+    // l'a traité ou ignoré (`GET /{phone_number_id}/agent_event/{id}`), ce qui a manqué à l'essai du 2026-09-22.
+    deps.journal?.(`agent_event hors parcours envoyé pour ${waId} : ${traceReponse(reponse)}`);
   };
 }

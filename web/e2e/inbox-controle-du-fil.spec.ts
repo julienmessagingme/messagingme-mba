@@ -43,7 +43,7 @@ test.describe('Contrôle du fil : un seul réglage, à un seul endroit', () => {
     // deux gestes distincts depuis le lot du 2026-08-21.
     await page.getByRole('button', { name: /Ouvrir la conversation|Open conversation/ }).click();
     // Le fil s'ouvre bel et bien : sans cette assertion, un écran cassé passerait pour un écran sans sélecteur.
-    await expect(page.getByText(/fenêtre 24 h ouverte|24h window open/)).toBeVisible();
+    await expect(page.getByTestId('bouton-envoyer')).toBeVisible();
 
     await expect(page.getByTestId('thread-return-select')).toHaveCount(0);
     expect(appels.filter((a) => a.includes('return-behavior'))).toEqual([]);
@@ -131,7 +131,7 @@ test.describe('Contrôle du fil : un seul réglage, à un seul endroit', () => {
     });
     await page.goto('/inbox');
     await page.getByRole('button', { name: /Ouvrir la conversation|Open conversation/ }).click();
-    await expect(page.getByText(/fenêtre 24 h ouverte|24h window open/)).toBeVisible();
+    await expect(page.getByTestId('bouton-envoyer')).toBeVisible();
     await expect(page.getByTestId('inbox-rendre-la-main')).toHaveCount(0);
   });
 

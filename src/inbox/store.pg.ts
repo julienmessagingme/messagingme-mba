@@ -96,6 +96,15 @@ export interface CompteursInbox {
 }
 
 export interface ListConversationsOptions {
+  /**
+   * UNE conversation précise, par son identifiant. Sert le lien « Ouvrir la conversation » du mini-CRM :
+   * le fil visé peut être vieux, donc hors de la première page, et l'écran ne saurait pas le montrer.
+   *
+   * ⚠️ IL IGNORE LES DOSSIERS, DÉLIBÉRÉMENT. On demande CE fil-là : le filtrer par dossier rendrait une
+   * liste vide pour une conversation archivée ou déjà traitée, c'est-à-dire exactement les cas où l'on
+   * clique pour aller la relire. La garde d'espace, elle, reste posée comme sur toute autre lecture.
+   */
+  id?: string;
   /** Taille de page. Défaut 100, borné à 200 : la valeur vient d'une query string. */
   limit?: number;
   /**
@@ -249,9 +258,15 @@ const UNREAD_SQL = `exists (
  * exact de ce que le commentaire promettait. Attrapé par le test d'intégration « un fil SANS sens connu reste
  * dans le dossier » : aucun test unitaire ne peut voir ça, la faute est dans le SQL.
  *
- * ⚠️ Une conversation sans valeur connue reste donc dans le dossier, exactement comme avant la migration. Un
- * filtre qui ferait DISPARAÎTRE des fils au déploiement serait la pire façon de l'introduire, personne ne
- * cherchant ce qu'il ne sait pas avoir perdu.
+ * ⚠️ CETTE PHRASE A CHANGÉ DE SENS LE 2026-09-23, ET IL FAUT DIRE LEQUEL. Elle disait : « une conversation
+ * sans valeur connue reste dans le dossier, exactement comme avant la migration », parce qu'en 2026-09-11 un
+ * `last_direction` nul voulait dire « on ne sait pas encore », et faire disparaître ces fils au déploiement
+ * aurait été la pire façon d'introduire le filtre. La reprise de 0130 les a tous renseignés : mesuré en
+ * production le 2026-09-23, ZÉRO conversation porte encore un sens nul, et zéro fil sort du dossier par ce
+ * changement. Un sens nul veut désormais dire AUCUN MESSAGE, ce qui est un état neuf : une conversation
+ * qu'un opérateur vient d'OUVRIR depuis la fiche d'un contact (lot 6). Elle n'entre pas dans « À traiter »,
+ * parce que personne n'y attend de réponse : ce dossier veut dire « la balle est dans notre camp », et
+ * l'ouvrir soi-même ne met la balle dans aucun camp. Elle y entrera au premier message du contact.
  *
  * ⚠️ Fragment PARTAGÉ par les trois lecteurs (la liste, les compteurs du menu, la vieille route de comptage) :
  * les écrire trois fois les ferait diverger au premier ajustement, et le dossier afficherait un nombre que la
@@ -264,8 +279,16 @@ const UNREAD_SQL = `exists (
  * d'elle-même au message SUIVANT du contact, parce que cette écriture-là efface `traitee_le`
  * (`upsertConversationByWaId`). ⚠️ Sauf une RÉACTION (👍), qui ne retire pas le statut ni ne change qui a
  * parlé en dernier (arbitrage de Julien du 2026-09-19).
+ *
+ * 🔴 ET UNE ESCALADE DE L'AGENT DE META Y ENTRE TOUT DE SUITE (migration 0164, Julien, 2026-09-23). Sa dernière
+ * phrase (« un membre de l'équipe va vous répondre ») est SORTANTE : la conversation n'arrivait ici que si le
+ * client réécrivait, alors qu'il attend justement qu'on lui réponde. `escaladee_le` la fait entrer jusqu'à la
+ * première réponse d'un opérateur.
  */
-const A_TRAITER_SQL = `c.control_owner <> 'app_workflow' and c.last_direction is distinct from 'out' and c.traitee_le is null`;
+const A_TRAITER_SQL = `c.control_owner <> 'app_workflow' and ((c.last_direction is not null and c.last_direction <> 'out') or c.escaladee_le is not null) and c.traitee_le is null`;
+
+/** Voir `PgInboxStore.empreinteDuFil`. */
+export interface EmpreinteDuFil { detenteur: string | null; changeLe: string | null; dernierEnvoi: string | null }
 
 /** Store Postgres de la boîte de réception (conversations + messages). */
 export class PgInboxStore implements InboxStore {
@@ -487,17 +510,72 @@ export class PgInboxStore implements InboxStore {
     tenantId: string,
     waId: string,
     owner: ControlOwner,
-    opts?: { only?: readonly ControlOwner[] },
+    opts?: {
+      only?: readonly ControlOwner[]; saufEscalade?: boolean; effacerEscalade?: boolean; messageEnvoyeLe?: Date;
+      /**
+       * 🔴 CETTE PRISE DE FIL EST UNE ESCALADE (arbitrage de Julien du 2026-09-23, étendu aux TROIS chemins).
+       *
+       * Le bloc « passer à un humain » d'un scénario et l'escalade d'un agent IA posaient `app_human` comme
+       * l'agent de Meta, avec le même symptôme : leur dernière phrase est SORTANTE, donc la conversation
+       * n'entrait pas dans « À traiter », et le balayage la rendait à l'agent au bout de 2 h sans réponse.
+       * ⚠️ N'écrit que si la bascule a lieu (`control_owner is distinct from` + `only`) : si quelqu'un tenait
+       * déjà le fil, il n'y a pas d'escalade à poser, et le booléen rendu le dit à l'appelant.
+       */
+      escalade?: boolean;
+    },
   ): Promise<boolean> {
     const only = opts?.only;
+    // 🔴 RENDRE LE FIL À L'AGENT DE META N'EFFACE L'ESCALADE QUE SI ON LE DEMANDE (revue finale du 2026-09-23).
+    // Elle s'effaçait dès qu'une écriture posait `mba`, donc aussi quand la FIN D'UN PARCOURS rendait le fil
+    // (`rendreLeFilMaintenant`) : la conversation sortait d'« À traiter » sans que personne ait répondu, ce que
+    // l'arbitrage de Julien interdit. Ne le demandent que les DEUX gestes qui disent vraiment « l'agent reprend » :
+    // le bouton « Rendre la main » de l'Inbox (dans ses QUATRE branches : elles n'écrivent pas toutes `mba`, et
+    // trois d'entre elles laissaient le drapeau sur une conversation qui quittait « À traiter », donc un piège
+    // armé pour le jour où elle redeviendrait `app_human`), et le balayage quand il déplace un fil qui n'est
+    // PAS une escalade en cours (il saute les `app_human` escaladées avant d'en arriver là).
+    // ⚠️ `saufEscalade` : n'écrit PAS sur une conversation escaladée. Posé par le `standby` d'un entrant
+    // (`accorderLeDetenteur`) : une fois le fil passé à l'équipe, Meta nous envoie les messages sur `messages`,
+    // donc un `standby` traité après l'escalade est un RETARDATAIRE (traitements en parallèle), et il rendait
+    // la conversation à l'agent sous le nez de l'équipe.
+    // 🔴 SAUF S'IL EST PLUS RÉCENT QUE L'ESCALADE (`messageEnvoyeLe`, revue finale du 2026-09-23) : Meta ne nous
+    // envoie un standby que lorsqu'une AUTRE app tient le fil, donc un standby postérieur prouve que l'agent l'a
+    // repris. Sans cette porte, l'escalade ne se levait que par un geste humain, donc éventuellement jamais.
+    // ⚠️ SANS DATE, LA GARDE RESTE STRICTE : une donnée externe manquante n'ouvre rien.
     const res = await this.pool.query(
-      `update conversations set control_owner = $3, control_changed_at = now()
+      `update conversations set control_owner = $3, control_changed_at = now(),
+              escaladee_le = case when $6::boolean then null
+                                  when $8::boolean and $3 = 'app_human' then now()
+                                  else escaladee_le end,
+              traitee_le = case when $8::boolean and $3 = 'app_human' then null else traitee_le end,
+              archived_at = case when $8::boolean and $3 = 'app_human' then null else archived_at end
        where tenant_id = $1 and wa_id = $2
          and control_owner is distinct from $3
-         and ($4::text[] is null or control_owner = any($4::text[]))`,
-      [tenantId, waId, owner, only ? [...only] : null],
+         and ($4::text[] is null or control_owner = any($4::text[]))
+         and (not $5::boolean or escaladee_le is null
+              or ($7::timestamptz is not null and $7::timestamptz > escaladee_le))`,
+      [tenantId, waId, owner, only ? [...only] : null, opts?.saufEscalade === true, opts?.effacerEscalade === true,
+       opts?.messageEnvoyeLe ?? null, opts?.escalade === true],
     );
     return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * L'AGENT DE META A PASSÉ LA MAIN À L'ÉQUIPE (`control_passed`, migration 0164, Julien, 2026-09-23).
+   *
+   * La conversation devient la nôtre (`app_human`), entre dans « À traiter » (`escaladee_le`) même si la dernière
+   * phrase est celle de l'agent, sort d'« Archivées » et de « Traité » : quelqu'un attend une réponse humaine.
+   * 🔴 UPSERT : la passation peut être traitée AVANT l'écho de la phrase de l'agent, qui crée d'habitude la
+   * conversation (traitements en parallèle). Sans la créer ici, l'escalade serait perdue.
+   */
+  async marquerEscalade(tenantId: string, waId: string): Promise<void> {
+    await this.pool.query(
+      `insert into conversations (tenant_id, wa_id, contact_id, control_owner, control_changed_at, escaladee_le)
+       values ($1, $2, (select id from contacts where tenant_id = $1 ${MATCH_BY_WAID_SQL}), 'app_human', now(), now())
+       on conflict (tenant_id, wa_id) do update set
+         control_owner = 'app_human', control_changed_at = now(), escaladee_le = now(),
+         traitee_le = null, archived_at = null`,
+      [tenantId, waId],
+    );
   }
 
   /**
@@ -537,6 +615,11 @@ export class PgInboxStore implements InboxStore {
    *    lot 4, acquittés sans que personne n'écrive `accuse_le` : pour eux, `null` ne veut pas dire « pas encore
    *    acquitté », et sans elle la règle reposerait le marqueur sur des fils déjà réglés.
    * ⚠️ Fenêtre résiduelle assumée : un client qui écrit dans la seconde même de notre envoi. Le balayage reste le filet.
+   *
+   * 🔴 L'ÉCHO DE L'AGENT DE META N'EST PAS « NOTRE » ENVOI (`type = 'mba'`, revue du 2026-09-22). Depuis que le relais
+   * attend la phrase d'annonce de l'agent avant d'envoyer (`src/mba/fin-de-tour.ts`), cet écho est souvent le dernier
+   * sortant quand un envoi échoue : le marqueur s'y posait, le fil restait en `app_human`, et l'événement qui devait
+   * prévenir l'agent (`signalerEchecTardif`) ne partait jamais.
    */
   async demanderReleaseMba(tenantId: string, waId: string): Promise<string | null> {
     const res = await this.pool.query<{ release_mba_apres_message: string | null }>(
@@ -546,6 +629,7 @@ export class PgInboxStore implements InboxStore {
               from (select m.meta_message_id, m.accuse_le, m.created_at
                       from conversation_messages m
                      where m.conversation_id = c.id and m.direction = 'out' and m.meta_message_id is not null
+                       and m.type is distinct from 'mba'
                      order by m.created_at desc limit 1) d
              where d.accuse_le is null
                and d.created_at > now() - $3::interval
@@ -610,7 +694,7 @@ export class PgInboxStore implements InboxStore {
   async listHeldControl(
     limit = 500,
     ageScenarioMs = 0,
-  ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null; lastMessageAt: Date | null }>> {
+  ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null; lastMessageAt: Date | null; escaladee: boolean }>> {
     /**
      * 🔴 LES FILS TENUS PAR UN SCÉNARIO ENTRENT ICI DEPUIS LE 2026-09-14, ET SEULEMENT LES VIEUX.
      *
@@ -658,11 +742,18 @@ export class PgInboxStore implements InboxStore {
      * que lui), donc qu'il n'y a rien à transmettre. L'inverse n'est pas vrai : un dernier message RÉCENT
      * mais SORTANT peut recouvrir une fenêtre fermée. C'est le balayage qui absorbe cette imprécision, en
      * appelant Meta AVANT d'écrire.
+     *
+     * 🔴 LES ESCALADES SORTENT DU LOT EN SQL (revue finale du 2026-09-23). Le lot est plafonné à 500 et trié par
+     * ancienneté : les escalades, qui ne se vident jamais tant que personne n'a répondu, s'y accumulaient en TÊTE
+     * et n'étaient écartées qu'en mémoire, après la coupe. À 500 escalades en attente, tous espaces confondus, le
+     * balayage cessait de rendre le moindre autre fil. La garde de `runControlSweep` reste, elle, pour les
+     * dépôts qui ne filtrent pas (elle est le contrat, ce SQL n'en est qu'une mise en œuvre).
      */
-    const res = await this.pool.query<{ tenant_id: string; wa_id: string; control_owner: ControlOwner; control_changed_at: Date | null; last_message_at: Date | null }>(
-      `select tenant_id, wa_id, control_owner, control_changed_at, last_message_at
+    const res = await this.pool.query<{ tenant_id: string; wa_id: string; control_owner: ControlOwner; control_changed_at: Date | null; last_message_at: Date | null; escaladee: boolean }>(
+      `select tenant_id, wa_id, control_owner, control_changed_at, last_message_at, escaladee_le is not null as escaladee
        from conversations
-       where control_owner <> 'app_workflow'
+       where (escaladee_le is null or control_owner <> 'app_human')
+         and (control_owner <> 'app_workflow'
           or (
             $2::bigint > 0
             and last_message_at > now() - interval '24 hours'
@@ -670,7 +761,7 @@ export class PgInboxStore implements InboxStore {
               control_changed_at is null
               or control_changed_at < now() - make_interval(secs => $2::bigint / 1000.0)
             )
-          )
+          ))
        order by control_changed_at nulls first
        limit $1`,
       [limit, Math.max(0, Math.floor(ageScenarioMs))],
@@ -681,6 +772,7 @@ export class PgInboxStore implements InboxStore {
       owner: r.control_owner,
       changedAt: r.control_changed_at,
       lastMessageAt: r.last_message_at,
+      escaladee: r.escaladee === true,
     }));
   }
 
@@ -768,6 +860,52 @@ export class PgInboxStore implements InboxStore {
   }
 
   /**
+   * TROUVE OU CRÉE la conversation d'un contact, et rend son identifiant.
+   *
+   * Demandé par Julien le 2026-09-23 : depuis la fiche d'un contact du mini-CRM, un bouton « Ouvrir la
+   * conversation », qui crée le fil s'il n'existe pas.
+   *
+   * 🔴 ELLE NE FAIT SEMBLANT DE RIEN, et c'est toute la différence avec `upsertConversationByWaId`, juste
+   * au-dessus. Celle-là avance `last_message_at`, écrit un aperçu et pose le SENS du dernier message, parce
+   * qu'un message vient vraiment de partir ou d'arriver. Ici, rien n'a été dit : écrire un sens ferait
+   * entrer le fil dans « À traiter » (ou l'en sortirait) sur la foi d'un geste qui n'a parlé à personne.
+   * Le sens reste donc NUL, et `A_TRAITER_SQL` l'exclut pour cette raison précise.
+   *
+   * ⚠️ `last_message_at` PREND SON DÉFAUT (`now()`, colonne NOT NULL depuis 0009), donc un fil neuf apparaît
+   * en tête de « Toutes » : c'est ce qui permet au lien de le retrouver sans rien chercher. Sur un fil qui
+   * EXISTE DÉJÀ, en revanche, on n'y touche pas : le faire remonter mentirait sur l'activité du contact, et
+   * l'écran sait aller chercher un vieux fil par son identifiant (`ListConversationsOptions.id`).
+   *
+   * ⚠️ LE `wa_id` D'UN CONTACT SE DÉRIVE ICI COMME AILLEURS : les chiffres nus du téléphone, sinon le bsuid
+   * (`src/automation/store.pg.ts` écrit la même expression). C'est la clé unique `(tenant_id, wa_id)` de
+   * 0009 qui garantit qu'on ne crée pas un doublon du fil que l'inbound alimentera plus tard.
+   *
+   * Rend `null` quand le contact n'existe pas dans cet espace, est supprimé, est BLOQUÉ, ou n'a NI numéro
+   * NI bsuid : sans identité, il n'y a aucun fil possible, et en inventer un le rendrait inatteignable.
+   *
+   * 🔴 LE CONTACT BLOQUÉ EST REFUSÉ ICI, ET PAS LAISSÉ AU HASARD DE L'AFFICHAGE (revue du 2026-09-23). La
+   * liste écarte les contacts bloqués de TOUS les dossiers (« il n'apparaît nulle part », c'est une règle
+   * du produit) : ouvrir son fil aurait donc rendu un identifiant vers un écran qui ne montre rien. On
+   * refuse, et la route le DIT, plutôt que de fabriquer un cul-de-sac silencieux.
+   */
+  async ouvrirConversationDuContact(tenantId: string, contactId: string): Promise<string | null> {
+    const res = await this.pool.query<{ id: string }>(
+      `with cible as (
+         select coalesce(nullif(regexp_replace(coalesce(c.phone_e164, ''), '[^0-9]', '', 'g'), ''), c.bsuid) as wa_id
+           from contacts c
+          where c.id = $2::uuid and c.tenant_id = $1 and c.deleted_at is null and c.blocked_at is null
+       )
+       insert into conversations (tenant_id, wa_id, contact_id)
+       select $1, cible.wa_id, $2::uuid from cible where cible.wa_id is not null
+       on conflict (tenant_id, wa_id) do update
+         set contact_id = coalesce(conversations.contact_id, excluded.contact_id)
+       returning id::text as id`,
+      [tenantId, contactId],
+    );
+    return res.rows[0]?.id ?? null;
+  }
+
+  /**
    * Une page de conversations, de la plus récente à la plus ancienne.
    *
    * Le filtrage et la pagination sont faits en SQL, et c'est le point. L'écran filtrait auparavant en mémoire
@@ -785,6 +923,12 @@ export class PgInboxStore implements InboxStore {
     const params: unknown[] = [tenantId];
     const where: string[] = ['c.tenant_id = $1'];
 
+    // UNE conversation par son identifiant, avant tout filtre de dossier : voir `ListConversationsOptions.id`.
+    if (typeof opts.id === 'string' && opts.id !== '') {
+      params.push(opts.id);
+      where.push(`c.id = $${params.length}::uuid`);
+    }
+
     if (opts.aTraiter === true) {
       where.push(A_TRAITER_SQL);
     }
@@ -795,7 +939,20 @@ export class PgInboxStore implements InboxStore {
     // Les dossiers ordinaires excluent les archivées ; le dossier Archivé ne montre qu'elles. Une conversation
     // archivée n'est donc comptée nulle part ailleurs. ⚠️ « Traité », lui, n'est PAS exclusif : une
     // conversation traitée est aussi dans « Tout » (arbitrage du 2026-09-19), seul Archivé cache.
-    where.push(opts.archivees === true ? 'c.archived_at is not null' : 'c.archived_at is null');
+    /**
+     * 🔴 LE FILTRE D'ARCHIVAGE NE S'APPLIQUE PAS QUAND ON DEMANDE UN FIL PRÉCIS (revue du 2026-09-23).
+     *
+     * Il était poussé inconditionnellement, donc `?id=` d'un fil ARCHIVÉ rendait zéro ligne, et le lien
+     * « Ouvrir la conversation » menait à une Inbox qui ne montre rien : exactement le symptôme que ce
+     * paramètre existe pour réparer. Trois textes promettaient déjà l'inverse, ce qui est la pire forme du
+     * défaut (on croit la doc, on ne relit pas le SQL).
+     *
+     * ⚠️ « Traité » n'a jamais eu le problème : son filtre ne se pose que sur demande. C'est bien un état
+     * ARCHIVÉ, exclu par DÉFAUT de tous les dossiers ordinaires, qui ne pouvait pas être atteint.
+     */
+    if (opts.id === undefined) {
+      where.push(opts.archivees === true ? 'c.archived_at is not null' : 'c.archived_at is null');
+    }
     if (opts.signalees === true) {
       // 🔴 UNION des DEUX sources, et l'ordre des membres compte pour le planificateur : le signalement
       // manuel est indexé (`conversations_signalees_main_idx`) et se teste sans sortir de la ligne, le
@@ -1060,7 +1217,11 @@ export class PgInboxStore implements InboxStore {
       // Le drapeau passe en PARAMÈTRE plutôt que d'être concaténé dans la requête. Il vient d'un booléen,
       // donc rien n'était injectable, mais une requête construite par concaténation demande à chaque
       // relecture de vérifier d'où vient le morceau. Celle-ci ne le demande plus.
-      `update conversations set archived_at = case when $3::boolean then now() else null end
+      // 🔴 ARCHIVER CLÔT AUSSI UNE ESCALADE (revue finale du 2026-09-23), exactement comme « Traité » : sinon
+      // la conversation quitte la liste sans que rien ne la rende jamais à l'agent (le balayage saute les
+      // escalades), et le fil reste à l'équipe pour toujours.
+      `update conversations set archived_at = case when $3::boolean then now() else null end,
+              escaladee_le = case when $3::boolean then null else escaladee_le end
         where id = $1 and tenant_id = $2`,
       [conversationId, tenantId, archive],
     );
@@ -1079,7 +1240,9 @@ export class PgInboxStore implements InboxStore {
    */
   async marquerTraitee(tenantId: string, conversationId: string, traitee: boolean): Promise<boolean> {
     const res = await this.pool.query(
-      `update conversations set traitee_le = case when $3::boolean then now() else null end
+      // « Traité » clôt aussi une escalade (0164) : l'opérateur a jugé qu'il n'y avait rien à répondre.
+      `update conversations set traitee_le = case when $3::boolean then now() else null end,
+              escaladee_le = case when $3::boolean then null else escaladee_le end
         where id = $1 and tenant_id = $2`,
       [conversationId, tenantId, traitee],
     );
@@ -1519,6 +1682,69 @@ export class PgInboxStore implements InboxStore {
     return res.rows[0]?.body ?? null;
   }
 
+  /**
+   * L'identifiant du DERNIER message de l'agent de Meta dans cette conversation (son écho, `type = 'mba'`), ou
+   * `null`. Lu par `attendreFinDuTour` (`src/mba/fin-de-tour.ts`) : un identifiant qui CHANGE dit que l'agent a
+   * parlé, sans comparer l'horloge de ce serveur à celle de la base.
+   */
+  async dernierMessageDeLAgent(tenantId: string, waId: string): Promise<string | null> {
+    const res = await this.pool.query<{ id: string }>(
+      `select m.id
+         from conversation_messages m
+         join conversations c on c.id = m.conversation_id
+        where c.tenant_id = $1 and c.wa_id = $2 and m.direction = 'out' and m.type = 'mba'
+        order by m.created_at desc, m.id desc
+        limit 1`,
+      [tenantId, waId],
+    );
+    return res.rows[0]?.id ?? null;
+  }
+
+  /**
+   * L'EMPREINTE DU FIL, relue avant et après l'attente de fin de tour d'un outil de l'agent de Meta
+   * (`src/mba/gestes-envoi.ts`) : le détenteur, la date de son dernier changement, et NOTRE dernier envoi (l'écho de
+   * l'agent exclu). 🔴 LE DÉTENTEUR SEUL NE SUFFIT PAS (revue du 2026-09-22) : un parcours lancé pendant l'attente
+   * réécrit `app_workflow`, qui est aussi la valeur d'une conversation menée par l'agent depuis le début, et
+   * `setControlOwner` ne touche à rien sur une valeur identique. Ce parcours, lui, ENVOIE : c'est ce que le dernier
+   * envoi voit. Servie par `conversation_messages_origin_idx` (0099). `null` = aucune conversation.
+   */
+  async empreinteDuFil(tenantId: string, waId: string): Promise<EmpreinteDuFil | null> {
+    const res = await this.pool.query<{ control_owner: string | null; control_changed_at: Date | null; dernier_envoi: string | null }>(
+      `select c.control_owner, c.control_changed_at,
+              (select m.id
+                 from conversation_messages m
+                where m.conversation_id = c.id and m.direction = 'out' and m.type is distinct from 'mba'
+                order by m.created_at desc, m.id desc
+                limit 1) as dernier_envoi
+         from conversations c
+        where c.tenant_id = $1 and c.wa_id = $2`,
+      [tenantId, waId],
+    );
+    const r = res.rows[0];
+    return r
+      ? { detenteur: r.control_owner, changeLe: r.control_changed_at ? r.control_changed_at.toISOString() : null, dernierEnvoi: r.dernier_envoi }
+      : null;
+  }
+
+  /**
+   * L'identifiant du dernier message REÇU du client dans cette conversation, ou `null`. Il entre dans la clé de
+   * l'anti-rejeu des outils de l'agent de Meta (`src/mba/executer-maison.ts`) : une nouvelle demande du client est
+   * un nouveau message. ⚠️ Une RÉACTION n'en est pas une (`recordInbound` l'écrit en `in`, type `reaction`) : elle
+   * ne demande rien. Servie par `conversation_messages_conv_idx` (conversation, date).
+   */
+  async dernierMessageDuClient(tenantId: string, waId: string): Promise<string | null> {
+    const res = await this.pool.query<{ id: string }>(
+      `select m.id
+         from conversation_messages m
+         join conversations c on c.id = m.conversation_id
+        where c.tenant_id = $1 and c.wa_id = $2 and m.direction = 'in' and m.type is distinct from 'reaction'
+        order by m.created_at desc, m.id desc
+        limit 1`,
+      [tenantId, waId],
+    );
+    return res.rows[0]?.id ?? null;
+  }
+
   async derniereSaisieDuContact(tenantId: string, waId: string): Promise<string | null> {
     const res = await this.pool.query<{ body: string }>(
       `select m.body
@@ -1586,6 +1812,9 @@ export class PgInboxStore implements InboxStore {
       `update conversations set last_message_at = now(), last_preview = $2, last_direction = 'out',
          control_changed_at = case when $3::boolean and control_owner = 'app_human'
                                    then now() else control_changed_at end,
+         -- 🔴 LA PREMIÈRE RÉPONSE D'UN HUMAIN CLÔT L'ESCALADE (0164) : le balayage pourra rendre le fil à l'agent
+         -- après les 2 h habituelles de silence, pas avant (arbitrage de Julien du 2026-09-23).
+         escaladee_le = case when $3::boolean then null else escaladee_le end,
          analysis_status = case when analysis_status in ('done', 'failed') then 'pending' else analysis_status end
        where id = $1`,
       [conversationId, body, origine === 'humain'],

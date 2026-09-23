@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import Link from 'next/link';
 import { useT } from '@/lib/i18n';
 
 /**
@@ -16,9 +17,18 @@ import { useT } from '@/lib/i18n';
  * dialogue aux lecteurs d'écran. Les copies n'ont ni l'un ni l'autre.
  */
 export function Modale({
-  titre, sousTitre, taille = 'moyenne', actions, onClose, children,
+  titre, titreHref, sousTitre, taille = 'moyenne', actions, onClose, children,
 }: {
   titre: string;
+  /**
+   * Quand il est fourni, le titre devient un LIEN vers cette adresse (demande de Julien, 2026-09-23 : depuis
+   * la fiche de coût d'une campagne, recliquer sur son nom doit mener à ses résultats).
+   *
+   * ⚠️ UN VRAI LIEN, PAS UN `onClick` : il s'ouvre dans un nouvel onglet au clic du milieu, se copie et se
+   * partage, exactement comme le bouton « Voir les résultats » de l'onglet Campagnes, qui va au même endroit.
+   * Absent, le titre reste le texte qu'il a toujours été : les autres fenêtres du produit ne bougent pas.
+   */
+  titreHref?: string;
   sousTitre?: React.ReactNode;
   /** `moyenne` pour une fiche, `large` pour une liste qui a besoin de colonnes. */
   taille?: 'moyenne' | 'large';
@@ -51,7 +61,11 @@ export function Modale({
       >
         <div className="flex items-start justify-between gap-3 border-b border-ink-100 px-5 py-4">
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold tracking-tight text-ink-900">{titre}</h3>
+            <h3 className="text-sm font-semibold tracking-tight text-ink-900">
+              {titreHref
+                ? <Link href={titreHref} data-testid="modale-titre-lien" className="hover:text-violet hover:underline">{titre}</Link>
+                : titre}
+            </h3>
             {sousTitre && <div className="mt-0.5 text-xs text-ink-400">{sousTitre}</div>}
           </div>
           <div className="flex shrink-0 items-center gap-2">

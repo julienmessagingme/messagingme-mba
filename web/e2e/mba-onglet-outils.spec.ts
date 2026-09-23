@@ -50,6 +50,8 @@ interface Monture {
   apercuEchoue?: () => boolean;
   /** Les blocs des scénarios publiés (`GET /mba-outils/blocs`). */
   blocs?: unknown[];
+  /** L'API déployée est ENCORE l'ancienne : elle ignore `workflowId` et rend les blocs de tous les scénarios. */
+  blocsAncienneRoute?: boolean;
   /** La liste des scénarios (`GET /workflows`). */
   workflows?: unknown[];
   /** Ces lectures échouent (500) : une lecture ratée n'est pas une liste vide. */
@@ -62,6 +64,7 @@ async function monterOutils(page: Page, m: Monture = {}) {
   const ecrits: Array<{ method: string; url: string; body: Record<string, unknown> | null }> = [];
   const ordre: string[] = [];
   let publications = 0;
+  const blocsDemandes: Array<string | null> = [];
   await mockMba(page, {
     custom: async (route, method, url, body) => {
       const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
@@ -80,7 +83,15 @@ async function monterOutils(page: Page, m: Monture = {}) {
         return true;
       }
       // AVANT la liste des outils : son adresse contient aussi `/mba-outils`.
-      if (url.includes(`/tenants/${TENANT}/mba-outils/blocs`)) { await json({ blocs: m.blocs ?? [] }); return true; }
+      if (url.includes(`/tenants/${TENANT}/mba-outils/blocs`)) {
+        // Comme le serveur : les blocs du SEUL scénario demandé, et 400 sans scénario.
+        const wf = new URL(url).searchParams.get('workflowId');
+        blocsDemandes.push(wf);
+        if (m.blocsAncienneRoute) { await json({ blocs: m.blocs ?? [] }); return true; }
+        if (!wf) { await json({ error: 'choisissez d’abord un scénario' }, 400); return true; }
+        await json({ blocs: (m.blocs ?? []).filter((b) => (b as { workflowId?: string }).workflowId === wf) });
+        return true;
+      }
       if (url.includes(`/tenants/${TENANT}/workflows`)) { await json({ workflows: m.workflows ?? [] }); return true; }
       if (url.includes(`/tenants/${TENANT}/mba-outils`)) {
         if (method === 'GET') {
@@ -118,7 +129,7 @@ async function monterOutils(page: Page, m: Monture = {}) {
       return false;
     },
   });
-  return { ecrits, ordre, publications: () => publications };
+  return { ecrits, ordre, publications: () => publications, blocsDemandes };
 }
 
 test.describe('MBA Paramètres : onglet Outils', () => {
@@ -199,32 +210,106 @@ test.describe('MBA Paramètres : onglet Outils', () => {
   });
 
   /**
-   * 🔴 ENVOYER UN BLOC (lot 3) : le bloc part SEUL, donc un bloc qui attend une réponse ne se choisit pas. Il reste
-   * VISIBLE, grisé, avec sa raison qui renvoie vers « Lancer un scénario » : caché, on croirait qu'il a disparu.
+   * 🔴 ENVOYER UN BLOC (lot 3), en DEUX TEMPS (Julien, essai réel du 2026-09-22 : « si y a 200 scénarios tu vas
+   * jamais réussir à tout afficher ») : le scénario dans une liste, puis les blocs de CE scénario seulement.
+   * Le bloc part SEUL, donc un bloc qui attend une réponse ne se choisit pas. Il reste VISIBLE, grisé, avec sa
+   * raison qui renvoie vers « Lancer un scénario » : caché, on croirait qu'il a disparu.
    */
-  test('🔴 Ajouter > Envoyer un bloc : le bloc à boutons est grisé avec sa raison, le bloc choisi part dans le POST', async ({ page }) => {
+  test('🔴 Ajouter > Envoyer un bloc : le scénario d’abord, puis ses seuls blocs, le bloc à boutons grisé', async ({ page }) => {
     const WF = '11111111-1111-4111-8111-111111111111';
+    const AUTRE = '33333333-3333-4333-8333-333333333333';
     const CODE_A = `nod_abc_${'A'.repeat(26)}`;
     const CODE_B = `nod_abc_${'B'.repeat(26)}`;
+    const CODE_C = `nod_abc_${'C'.repeat(26)}`;
     const m = await monterOutils(page, {
       outils: [], gestes: [{ type: 'outil_creer', nom: 'brochure' }],
+      workflows: [
+        { id: WF, name: 'Accueil', nodeCount: 3 },
+        { id: AUTRE, name: 'Relance', nodeCount: 2 },
+        { id: '22222222-2222-4222-8222-222222222222', name: 'Brouillon jamais publié', nodeCount: 0 },
+      ],
       blocs: [
         { workflowId: WF, scenario: 'Accueil', code: CODE_A, nom: 'Brochure', type: 'quick_message', envoyable: true, raison: null },
         { workflowId: WF, scenario: 'Accueil', code: CODE_B, nom: 'Oui ou non ?', type: 'quick_message', envoyable: false,
           raison: 'ce bloc attend une réponse du client : utilisez « Lancer un scénario »' },
+        { workflowId: AUTRE, scenario: 'Relance', code: CODE_C, nom: 'Petit rappel', type: 'quick_message', envoyable: true, raison: null },
       ],
     });
     await page.goto('/mba/parametres?tab=outils');
     await page.getByTestId('mba-outils-ajouter').click();
     await page.getByTestId('mba-type-bloc').click();
+    // Une LISTE de scénarios publiés, et aucun bloc tant qu'aucun n'est choisi (aucune lecture de blocs non plus).
+    await expect(page.getByTestId('mba-cible-bloc-scenario').locator('option')).toHaveText(['Choisir un scénario', 'Accueil', 'Relance']);
+    await expect(page.getByTestId('mba-cible-bloc-liste')).toHaveCount(0);
+    expect(m.blocsDemandes).toEqual([]);
+    await page.getByTestId('mba-cible-bloc-scenario').selectOption(WF);
     await expect(page.getByTestId(`mba-cible-bloc-${CODE_B}`)).toBeDisabled();
     await expect(page.getByTestId(`mba-cible-bloc-raison-${CODE_B}`)).toContainText('Lancer un scénario');
+    // Les blocs d'un AUTRE scénario n'apparaissent pas : la liste est bornée à celui qu'on a choisi.
+    await expect(page.getByTestId(`mba-cible-bloc-${CODE_C}`)).toHaveCount(0);
+    expect(m.blocsDemandes).toEqual([WF]);
+    // Choisir un scénario ne remplit pas le titre : seul le BLOC a un nom qui convient.
+    await expect(page.getByTestId('mba-form-titre')).toHaveValue('');
     await page.getByTestId(`mba-cible-bloc-${CODE_A}`).check();
     await expect(page.getByTestId('mba-form-titre')).toHaveValue('Brochure');
     await page.getByTestId('mba-form-quand').fill(CONSIGNE);
     await page.getByTestId('mba-form-enregistrer').click();
     await expect.poll(() => m.publications()).toBe(1);
     expect(m.ecrits[0]!.body).toMatchObject({ name: 'brochure', cible: { type: 'bloc', workflowId: WF, code: CODE_A } });
+  });
+
+  /**
+   * 🔴 LA FENÊTRE ENTRE LE PUSH ET LE DÉPLOIEMENT (CLAUDE.md, § Déploiement) : Vercel publie cet écran avant l'API
+   * qui borne la liste au scénario, et l'ancienne route rend les blocs de TOUS les scénarios. L'écran les filtre.
+   */
+  test('🔴 contre l’ANCIENNE route, qui rend tous les blocs, l’écran ne montre que ceux du scénario choisi', async ({ page }) => {
+    const WF = '11111111-1111-4111-8111-111111111111';
+    const AUTRE = '33333333-3333-4333-8333-333333333333';
+    const CODE_A = `nod_abc_${'A'.repeat(26)}`;
+    const CODE_C = `nod_abc_${'C'.repeat(26)}`;
+    await monterOutils(page, {
+      outils: [], blocsAncienneRoute: true,
+      workflows: [{ id: WF, name: 'Accueil', nodeCount: 3 }, { id: AUTRE, name: 'Relance', nodeCount: 2 }],
+      blocs: [
+        { workflowId: WF, scenario: 'Accueil', code: CODE_A, nom: 'Brochure', type: 'quick_message', envoyable: true, raison: null },
+        { workflowId: AUTRE, scenario: 'Relance', code: CODE_C, nom: 'Petit rappel', type: 'quick_message', envoyable: true, raison: null },
+      ],
+    });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outils-ajouter').click();
+    await page.getByTestId('mba-type-bloc').click();
+    await page.getByTestId('mba-cible-bloc-scenario').selectOption(WF);
+    await expect(page.getByTestId(`mba-cible-bloc-${CODE_A}`)).toBeVisible();
+    await expect(page.getByTestId(`mba-cible-bloc-${CODE_C}`)).toHaveCount(0);
+  });
+
+  test('changer de scénario vide le bloc choisi : on ne peut pas enregistrer un bloc d’un autre scénario', async ({ page }) => {
+    const WF = '11111111-1111-4111-8111-111111111111';
+    const AUTRE = '33333333-3333-4333-8333-333333333333';
+    const CODE_A = `nod_abc_${'A'.repeat(26)}`;
+    const CODE_C = `nod_abc_${'C'.repeat(26)}`;
+    const m = await monterOutils(page, {
+      outils: [], gestes: [{ type: 'outil_creer', nom: 'rappel' }],
+      workflows: [{ id: WF, name: 'Accueil', nodeCount: 3 }, { id: AUTRE, name: 'Relance', nodeCount: 2 }],
+      blocs: [
+        { workflowId: WF, scenario: 'Accueil', code: CODE_A, nom: 'Brochure', type: 'quick_message', envoyable: true, raison: null },
+        { workflowId: AUTRE, scenario: 'Relance', code: CODE_C, nom: 'Petit rappel', type: 'quick_message', envoyable: true, raison: null },
+      ],
+    });
+    await page.goto('/mba/parametres?tab=outils');
+    await page.getByTestId('mba-outils-ajouter').click();
+    await page.getByTestId('mba-type-bloc').click();
+    await page.getByTestId('mba-cible-bloc-scenario').selectOption(WF);
+    await page.getByTestId(`mba-cible-bloc-${CODE_A}`).check();
+    await page.getByTestId('mba-cible-bloc-scenario').selectOption(AUTRE);
+    await expect(page.getByTestId(`mba-cible-bloc-${CODE_A}`)).toHaveCount(0);
+    await expect(page.getByTestId(`mba-cible-bloc-${CODE_C}`)).not.toBeChecked();
+    await page.getByTestId(`mba-cible-bloc-${CODE_C}`).check();
+    await page.getByTestId('mba-form-titre').fill('Rappel');
+    await page.getByTestId('mba-form-quand').fill(CONSIGNE);
+    await page.getByTestId('mba-form-enregistrer').click();
+    await expect.poll(() => m.publications()).toBe(1);
+    expect(m.ecrits[0]!.body).toMatchObject({ cible: { type: 'bloc', workflowId: AUTRE, code: CODE_C } });
   });
 
   test('🔴 Ajouter > Lancer un scénario : seul un scénario publié est proposé', async ({ page }) => {

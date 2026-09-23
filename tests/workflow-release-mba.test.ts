@@ -99,8 +99,8 @@ describe('release : la minuterie de reprise après un humain', () => {
     const releases: string[] = [];
     const deps: ControlSweepDeps = {
       listHeldControl: async () => [
-        { tenantId: 'avec', waId: 'a', owner: 'app_human', changedAt: ago(100 * H), lastMessageAt: dernierMessage },
-        { tenantId: 'sans', waId: 'b', owner: 'app_human', changedAt: ago(100 * H), lastMessageAt: dernierMessage },
+        { tenantId: 'avec', waId: 'a', owner: 'app_human', changedAt: ago(100 * H), lastMessageAt: dernierMessage, escaladee: false },
+        { tenantId: 'sans', waId: 'b', owner: 'app_human', changedAt: ago(100 * H), lastMessageAt: dernierMessage, escaladee: false },
       ],
       setControlOwner: async (_t, waId, owner) => { rendues.push({ waId, dest: owner }); return true; },
       mbaActifParTenant: async () => new Set(avecMba),
@@ -198,6 +198,60 @@ describe('la réponse « à côté » est transmise à l’agent de Meta', () =>
   it('🔴 une fin NORMALE de parcours rend le fil SANS rien transmettre', async () => {
     const { ex, ordre } = executeur(question(), { mbaActif: true });
     await ex.advance('t1', '33600000001', 'msg1', 'Oui');
+    expect(ordre).toEqual(['release 33600000001']);
+  });
+
+  it('🔴 une réponse écrite qui suit une flèche LIBRE vers un bloc MUET est transmise (essai du 2026-09-22)', async () => {
+    // « Parfait biloute » sous un bloc à boutons dont la flèche libre menait à une action : la chaîne s'est
+    // terminée sans rien envoyer, et l'agent a repris le fil sans savoir que le client venait d'écrire.
+    const libre = g(
+      [n('n1', 'quick_message', { body: 'bonjour ca va', quickReplies: [{ text: 'Oui' }] }), n('n2', 'tag', { tag: 'ok' }), n('n3', 'tag', { tag: 'libre' })],
+      [['n1', 'n2', 'btn:0'], ['n1', 'n3']],
+    );
+    const { ex, ordre } = executeur(libre, { mbaActif: true });
+    await ex.advance('t1', '33600000001', 'msg1', null);
+    expect(ordre).toEqual(['release 33600000001', 'transmis 33600000001 msg1']);
+  });
+
+  it('🔴 une réponse que la chaîne a RECUEILLIE n’est pas transmise non plus (arbitrage de Julien du 2026-09-23)', async () => {
+    // « Votre e-mail ? », flèche libre, action « écrire le champ = dernière saisie », fin sans envoi : le message
+    // avait bien un destinataire, la chaîne. Le transmettre en plus faisait commenter une adresse e-mail hors
+    // contexte par l'agent de Meta.
+    const recueille = g(
+      [
+        n('n1', 'quick_message', { body: 'Votre e-mail ?', quickReplies: [] }),
+        n('n2', 'field', { key: 'email', valueKind: 'derniere_saisie' }),
+      ],
+      [['n1', 'n2']],
+    );
+    const { ex, ordre } = executeur(recueille, { mbaActif: true });
+    await ex.advance('t1', '33600000001', 'msg1', null);
+    expect(ordre).toEqual(['release 33600000001']);
+  });
+
+  it('⚠️ mais un bloc qui lit la saisie AILLEURS dans le graphe ne rend pas le reste muet', async () => {
+    // On regarde les blocs réellement TRAVERSÉS, pas le graphe entier : sinon un scénario qui recueille une
+    // donnée sur une de ses branches cesserait de transmettre sur toutes les autres.
+    const ailleurs = g(
+      [
+        n('n1', 'quick_message', { body: 'bonjour', quickReplies: [{ text: 'Oui' }] }),
+        n('n2', 'field', { key: 'email', valueKind: 'derniere_saisie' }),
+        n('n3', 'tag', { tag: 'libre' }),
+      ],
+      [['n1', 'n2', 'btn:0'], ['n1', 'n3']],
+    );
+    const { ex, ordre } = executeur(ailleurs, { mbaActif: true });
+    await ex.advance('t1', '33600000001', 'msg1', null);
+    expect(ordre).toEqual(['release 33600000001', 'transmis 33600000001 msg1']);
+  });
+
+  it('🔴 une réponse écrite à laquelle la chaîne a RÉPONDU n’est pas transmise : l’agent parlerait par-dessus', async () => {
+    const repond = g(
+      [n('n1', 'quick_message', { body: 'Votre e-mail ?', quickReplies: [] }), n('n2', 'quick_message', { body: 'Merci, noté.', quickReplies: [] })],
+      [['n1', 'n2']],
+    );
+    const { ex, ordre } = executeur(repond, { mbaActif: true });
+    await ex.advance('t1', '33600000001', 'msg1', null);
     expect(ordre).toEqual(['release 33600000001']);
   });
 

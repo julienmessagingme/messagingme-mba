@@ -167,4 +167,102 @@ describe.skipIf(!url)('PgInboxStore : le marqueur de remise à l’agent de Meta
     // Et un release demandé ensuite n'attend plus rien : l'accusé est déjà là.
     expect(await store.demanderReleaseMba(tenantId, waId)).toBeNull();
   });
+
+  it('🔴 le dernier message de l’agent de Meta : SON écho le plus récent, jamais le nôtre ni celui du client', async () => {
+    // Lu par `attendreFinDuTour` (src/mba/fin-de-tour.ts) : un identifiant qui change dit que l'agent a parlé.
+    const waId = '33600000110';
+    const conv = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id) values ($1, $2) returning id`, [tenantId, waId],
+    )).rows[0]!.id;
+    expect(await store.dernierMessageDeLAgent(tenantId, waId)).toBeNull();
+    const ecrire = async (direction: string, type: string, decalage: number) => (await pool.query<{ id: string }>(
+      `insert into conversation_messages (conversation_id, direction, type, body, created_at)
+       values ($1, $2, $3, 'x', now() + ($4 || ' seconds')::interval) returning id`,
+      [conv, direction, type, String(decalage)],
+    )).rows[0]!.id;
+    const premier = await ecrire('out', 'mba', 0);
+    await ecrire('out', 'text', 1); // NOTRE envoi
+    await ecrire('in', 'text', 2); // le client
+    expect(await store.dernierMessageDeLAgent(tenantId, waId)).toBe(premier);
+    const second = await ecrire('out', 'mba', 3);
+    expect(await store.dernierMessageDeLAgent(tenantId, waId)).toBe(second);
+    // Isolé par espace : le même numéro dans un autre espace ne voit rien.
+    expect(await store.dernierMessageDeLAgent('00000000-0000-4000-8000-000000000000', waId)).toBeNull();
+  });
+
+  it('🔴 l’écho de l’agent de Meta n’est jamais « notre » envoi : aucun marqueur sur lui (revue du 2026-09-22)', async () => {
+    // Le relais attend la phrase d'annonce de l'agent avant d'envoyer : si l'envoi échoue, cet écho est le dernier
+    // sortant. Le marqueur s'y posait, le fil restait `app_human` et l'agent n'était jamais prévenu.
+    const waId = '33600000111';
+    const conv = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id) values ($1, $2) returning id`, [tenantId, waId],
+    )).rows[0]!.id;
+    const ecrire = async (direction: string, type: string, wamid: string | null, decalage: number, accuse: boolean) => {
+      await pool.query(
+        `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, created_at, accuse_le)
+         values ($1, $2, $3, 'x', $4, now() + ($5 || ' seconds')::interval, case when $6 then now() else null end)`,
+        [conv, direction, type, wamid, String(decalage), accuse],
+      );
+    };
+    await ecrire('out', 'text', 'wamid.N1', -120, true); // notre envoi ancien, acquitté
+    await ecrire('in', 'text', 'wamid.N2', -60, false); // le client
+    await ecrire('out', 'mba', 'wamid.N3', -5, false); // la phrase d'annonce de l'agent, pas encore acquittée
+    expect(await store.demanderReleaseMba(tenantId, waId)).toBeNull();
+  });
+
+  it('🔴 notre envoi récent et non acquitté reste attendu, même suivi d’un écho de l’agent', async () => {
+    const waId = '33600000112';
+    const conv = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id) values ($1, $2) returning id`, [tenantId, waId],
+    )).rows[0]!.id;
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, created_at)
+       values ($1, 'out', 'text', 'le bloc', 'wamid.P1', now() - interval '3 seconds'),
+              ($1, 'out', 'mba', 'je vous l’envoie', 'wamid.P2', now() - interval '1 seconds')`,
+      [conv],
+    );
+    expect(await store.demanderReleaseMba(tenantId, waId)).toBe('wamid.P1');
+  });
+
+  it('🔴 l’empreinte du fil : détenteur, date du changement, et NOTRE dernier envoi, jamais l’écho de l’agent', async () => {
+    // Relue avant et après l'attente de fin de tour (src/mba/gestes-envoi.ts, relecture du 2026-09-22).
+    const waId = '33600000113';
+    expect(await store.empreinteDuFil(tenantId, waId)).toBeNull();
+    const conv = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, control_owner, control_changed_at)
+       values ($1, $2, 'app_workflow', '2026-09-22T10:00:00Z') returning id`, [tenantId, waId],
+    )).rows[0]!.id;
+    const ecrire = async (direction: string, type: string, decalage: number) => (await pool.query<{ id: string }>(
+      `insert into conversation_messages (conversation_id, direction, type, body, created_at)
+       values ($1, $2, $3, 'x', now() + ($4 || ' seconds')::interval) returning id`,
+      [conv, direction, type, String(decalage)],
+    )).rows[0]!.id;
+    const notre = await ecrire('out', 'text', 0);
+    await ecrire('in', 'text', 1);
+    await ecrire('out', 'mba', 2);
+    expect(await store.empreinteDuFil(tenantId, waId)).toEqual({
+      detenteur: 'app_workflow', changeLe: '2026-09-22T10:00:00.000Z', dernierEnvoi: notre,
+    });
+    expect(await store.empreinteDuFil('00000000-0000-4000-8000-000000000000', waId)).toBeNull();
+  });
+
+  it('🔴 le dernier message REÇU du client : jamais le nôtre ni l’écho de l’agent, isolé par espace', async () => {
+    // Il entre dans la clé de l'anti-rejeu (src/mba/executer-maison.ts, essai réel du 2026-09-22).
+    const waId = '33600000114';
+    const conv = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id) values ($1, $2) returning id`, [tenantId, waId],
+    )).rows[0]!.id;
+    expect(await store.dernierMessageDuClient(tenantId, waId)).toBeNull();
+    const ecrire = async (direction: string, type: string, decalage: number) => (await pool.query<{ id: string }>(
+      `insert into conversation_messages (conversation_id, direction, type, body, created_at)
+       values ($1, $2, $3, 'x', now() + ($4 || ' seconds')::interval) returning id`,
+      [conv, direction, type, String(decalage)],
+    )).rows[0]!.id;
+    const client = await ecrire('in', 'text', 0);
+    await ecrire('out', 'mba', 1);
+    await ecrire('out', 'text', 2);
+    await ecrire('in', 'reaction', 3); // une réaction ne demande rien
+    expect(await store.dernierMessageDuClient(tenantId, waId)).toBe(client);
+    expect(await store.dernierMessageDuClient('00000000-0000-4000-8000-000000000000', waId)).toBeNull();
+  });
 });

@@ -7,6 +7,8 @@ import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
 import { explainMetaError } from '@/lib/meta-errors';
 import { fmtCost, campaignSendLabel } from '@/lib/format';
+import { getCoutParCampagne } from '@/lib/api/stats';
+import { presetRange } from '@/lib/range';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 import {
@@ -28,23 +30,51 @@ import {
   type CampaignSummary,
   type CampaignDetail,
   type CampaignRecipient,
-  type CampaignCategory,
   type PricingSummary,
 } from '@/lib/api';
 import { LaunchCounts } from '@/components/LaunchCounts';
 
 /**
- * Coût estimé d'une campagne = envois facturables (counts.sent) × VOTRE PRIX pour la catégorie. null si le
- * tarif est indisponible. Sur-estime l'utility en fenêtre de service gratuite -> à présenter comme « ~ estimé ».
+ * LE COUT D'UNE CAMPAGNE VIENT DU SERVEUR, IL NE SE CALCULE PLUS ICI.
  *
- * ⚠️ CE N'EST PLUS LE TARIF META NU depuis le 2026-09-18 : le serveur applique la marge de l'espace avant de
- * rendre `ratePerMessage` (cf. `getPricing`). Sans ce changement, la MÊME campagne valait 1,00 € ici et
- * 1,50 € sur sa fiche Performance Lab, qu'on ouvre en cliquant dessus.
+ * 🔴 CE QUE CETTE PAGE FAISAIT, ET POURQUOI C'ETAIT FAUX (Julien, 2026-09-23). Elle multipliait les
+ * DESTINATAIRES par le tarif Meta de la CATEGORIE de la campagne, sans regarder le canal ni ce qui etait
+ * reellement parti. Mesure sur l'espace d'essai : 5 campagnes sur 7 affichaient un prix faux. Quatre
+ * campagnes a scenario n'avaient envoye AUCUN modele facturable et affichaient pourtant 0,0712 € chacune ;
+ * une campagne RCS affichait le tarif d'un modele Meta alors que le RCS a ses propres prix.
+ *
+ * 🔴 ET LE CHIFFRE VIENT DE LA MEME ROUTE QUE LA FICHE DE PERFORMANCE LAB, pas d'une seconde source. C'est
+ * ce qui garantit que les deux ecrans ne peuvent plus se contredire : ils lisent le meme calcul, avec les
+ * memes regles (modeles facturables au tarif Meta marge, RCS au tarif simple ou conversationnel selon que
+ * le contact a reagi). Deux calculs « equivalents » divergent le jour ou l'un des deux change.
+ *
+ * ⚠️ TROIS CAS RENDENT UN COUT INCONNU, et l'ecran ecrit alors « indisponible » plutot qu'un zero : une
+ * campagne plus vieille que la plage lue, une campagne au-dela des cinquante que ce tableau rend, et une
+ * campagne dont rien n'a pu etre chiffre. Zero se lirait « ca n'a rien coute ».
+ *
+ * 🔴 QUATRE-VINGT-DIX JOURS, ET C'EST LA CORRECTION DU SEUL ROUGE DE LA REVUE FINALE DU 2026-09-23. Cette
+ * plage valait 366, le maximum que l'API accepte, « puisqu'on peut ». Or cet ecran n'est pas un ecran
+ * d'analyse qu'on ouvre pour se faire une idee : c'est l'ecran de travail des campagnes, ouvert en
+ * permanence, et chaque montage declenchait l'agregation la plus lourde du produit sur la fenetre la plus
+ * large, plus un aller-retour chez Meta. Une campagne plus vieille que 90 jours garde sa case
+ * « indisponible », ce qui est la reponse juste (on ne l'a pas lue) et pas un prix invente.
+ *
+ * ⚠️ ET LA CONTREPARTIE ANNONCEE N'EXISTAIT PAS, ce qui est le vrai defaut que la relecture a trouve : cette
+ * phrase disait « son cout exact reste a un clic, sur sa fiche de resultats ». C'est faux des deux cotes. Le
+ * panneau de detail de CET ecran recoit le meme cout que la liste (`cout={couts?.get(detail.id)}`), donc il
+ * reaffiche « indisponible » ; et « Voir les resultats » mene au Funnel, qui n'affiche aucun cout. Le cout
+ * d'une campagne plus ancienne se lit dans Performance Lab > SYNTHESE, carte « Couts », en DEPLACANT la
+ * periode (l'elargir bute sur les 366 jours de `MAX_SPAN_DAYS`) ; « Performance Lab > Couts » est un AUTRE
+ * ecran, qui ne porte ni le cout par engagement ni la fiche d'une campagne. Une
+ * justification fausse se recopie : celle-ci l'avait deja ete, du code vers `features.md`, donc vers les
+ * fiches d'aide servies au client.
+ *
+ * ⚠️ ET LA PLAGE SE CALCULE A CHAQUE CHARGEMENT, PAS AU CHARGEMENT DU MODULE (meme revue). Evaluee une fois
+ * pour toutes, un onglet laisse ouvert traverse minuit avec un `to` de la veille ; pire, une page chargee
+ * juste apres minuit cote navigateur, alors que le serveur n'a pas encore bascule, prend un 400 « to ne
+ * peut pas etre dans le futur » qui eteint toute la colonne.
  */
-function estimateCampaignCost(sent: number, category: CampaignCategory, pricing: PricingSummary | null): number | null {
-  const rate = pricing?.byCategory[category]?.ratePerMessage;
-  return rate == null ? null : sent * rate;
-}
+const JOURS_COUT = 90;
 
 export default function CampaignsPage() {
   return <AppShell active="campagnes" fullBleed>{(session) => <CampaignsInner session={session} />}</AppShell>;
@@ -93,6 +123,14 @@ function CampaignsInner({ session }: { session: Session }) {
   // Tarifs Meta chargés UNE fois au montage (hors reload() pollé 6×/2s pendant l'envoi -> pas de martèlement).
   const [pricing, setPricing] = useState<PricingSummary | null>(null);
   /**
+   * Le cout REEL de chaque campagne, par identifiant, lu sur la route du cout par campagne.
+   *
+   * ⚠️ `null` = pas encore charge, ou route indisponible : l'ecran dit « indisponible », il n'invente pas.
+   * Une campagne absente de la carte est dans le meme cas (trop vieille, ou au-dela des cinquante rendues).
+   */
+  const [couts, setCouts] = useState<Map<string, number | null> | null>(null);
+  const [deviseCout, setDeviseCout] = useState<string | null>(null);
+  /**
    * Brouillons de COMPOSITION : des campagnes qu'on a commencé à écrire. Chargés à part de `reload()`, qui
    * est pollé pendant un envoi : un brouillon ne bouge pas six fois en douze secondes.
    */
@@ -118,6 +156,25 @@ function CampaignsInner({ session }: { session: Session }) {
   useEffect(() => {
     getTemplateStats(session.tenantId).then((ts) => setPricing(ts.pricing)).catch(() => setPricing(null));
   }, [session.tenantId]);
+
+  /**
+   * ⚠️ IL SUIT LA CORBEILLE. Le tableau du cout exclut les campagnes archivees par defaut ; quand la liste
+   * montre les archivees, il faut les demander, sinon toute la corbeille afficherait « indisponible ».
+   *
+   * ⚠️ HORS DE `reload()`, qui est sondee six fois en douze secondes pendant un envoi : un cout ne bouge pas
+   * a cette cadence, et le marteler couterait une agregation a chaque battement.
+   */
+  useEffect(() => {
+    let vivant = true;
+    getCoutParCampagne(session.tenantId, presetRange(JOURS_COUT), showArchived)
+      .then((r) => {
+        if (!vivant) return;
+        setCouts(new Map((r.lignes ?? []).map((l) => [l.campaignId, l.cout])));
+        setDeviseCout(r.currency ?? null);
+      })
+      .catch(() => { if (vivant) setCouts(null); });
+    return () => { vivant = false; };
+  }, [session.tenantId, showArchived]);
 
   /**
    * ⚠️ ELLE NE CHARGE PLUS QUE LES CAMPAGNES, ET C'EST UNE CONSÉQUENCE DU RETRAIT DU 2026-09-13. Les
@@ -248,15 +305,27 @@ function CampaignsInner({ session }: { session: Session }) {
           <h2 className="text-base font-semibold tracking-tight text-ink-900">
             {showArchived ? t('Campagnes archivées', 'Archived campaigns') : t('Campagnes', 'Campaigns')} ({campaigns.length})
           </h2>
-          {pricing ? (
+          {couts !== null ? (
             /* « des campagnes affichées », et non « total » : la somme porte sur la liste RENDUE, qui exclut
                désormais les archivées. Le dashboard, lui, compte tout. Deux chiffres différents sur deux écrans
-               sont acceptables tant que chacun dit sur quoi il porte ; « total » ici serait un mensonge. */
+               sont acceptables tant que chacun dit sur quoi il porte ; « total » ici serait un mensonge.
+               ⚠️ LA CONDITION SUIT LA SOURCE DU CHIFFRE, et elle a changé avec elle (2026-09-23) : ce total
+               dépendait des tarifs Meta parce qu'il les multipliait lui-même. Il lit maintenant le coût rendu
+               par le serveur, donc c'est SON absence qui doit faire taire la ligne. Laisser la condition sur
+               `pricing` aurait affiché un total à 0 € quand la route du coût est indisponible. */
             <p className="mt-0.5 text-xs text-ink-500">
-              {t('coût estimé des campagnes affichées', 'estimated cost of listed campaigns')} ≈ <span className="font-semibold text-ink-800">{fmtCost(campaigns.reduce((acc, c) => acc + (estimateCampaignCost(c.counts.sent, c.category, pricing) ?? 0), 0), locale, pricing?.currency)}</span>{!pricing?.currency && <span className="text-ink-400"> ({t('devise du compte', 'account currency')})</span>}
+              {t('coût estimé des campagnes affichées', 'estimated cost of listed campaigns')} ≈ <span className="font-semibold text-ink-800" data-testid="campagnes-cout-total">{fmtCost(campaigns.reduce((acc, c) => acc + (couts?.get(c.id) ?? 0), 0), locale, deviseCout ?? pricing?.currency)}</span>{!(deviseCout ?? pricing?.currency) && <span className="text-ink-400"> ({t('devise du compte', 'account currency')})</span>}
+              {/* ⚠️ IL DIT CE QU'IL NE COMPTE PAS. Une campagne dont le coût est inconnu vaut zéro dans cette
+                  somme, ce qui est la seule addition possible, mais la taire ferait lire le total comme
+                  complet. On nomme donc les campagnes écartées plutôt que de les fondre dedans. */}
+              {couts !== null && campaigns.some((c) => (couts.get(c.id) ?? null) === null) && (
+                <span className="text-ink-400" data-testid="campagnes-cout-partiel">
+                  {' '}({campaigns.filter((c) => (couts.get(c.id) ?? null) === null).length} {t('sans coût connu', 'without a known cost')})
+                </span>
+              )}
             </p>
           ) : (
-            <p className="mt-0.5 text-xs text-ink-400">{t('coût estimé indisponible (tarif Meta)', 'estimated cost unavailable (Meta pricing)')}</p>
+            <p className="mt-0.5 text-xs text-ink-400">{t('coût estimé indisponible', 'estimated cost unavailable')}</p>
           )}
         </div>
         <div className="flex items-center gap-3">
@@ -364,10 +433,12 @@ function CampaignsInner({ session }: { session: Session }) {
                     </p>
                     <LaunchCounts counts={c.counts} className="mt-1 text-xs text-ink-500" />
                     {(() => {
-                      const cost = estimateCampaignCost(c.counts.sent, c.category, pricing);
+                      // `?? null` et pas `?? undefined` : une campagne absente de la carte est un coût INCONNU,
+                      // au même titre qu'un coût rendu vide. Les deux s'affichent « indisponible ».
+                      const cost = couts?.get(c.id) ?? null;
                       return (
                         <p className="mt-1 text-xs text-ink-400">
-                          {t('coût estimé', 'estimated cost')} {cost != null ? <>≈ <span className="font-medium text-ink-700">{fmtCost(cost, locale, pricing?.currency)}</span>{!pricing?.currency && ` (${t('devise du compte', 'account currency')})`}</> : t('indisponible', 'unavailable')}
+                          {t('coût estimé', 'estimated cost')} {cost != null ? <>≈ <span className="font-medium text-ink-700" data-testid={`campagne-cout-${c.id}`}>{fmtCost(cost, locale, deviseCout ?? pricing?.currency)}</span>{!(deviseCout ?? pricing?.currency) && ` (${t('devise du compte', 'account currency')})`}</> : <span data-testid={`campagne-cout-${c.id}`}>{t('indisponible', 'unavailable')}</span>}
                         </p>
                       );
                     })()}
@@ -447,7 +518,7 @@ function CampaignsInner({ session }: { session: Session }) {
                 </div>
                 {detail?.id === c.id && (
                   <div className="mt-3">
-                    <DetailPanel detail={detail} pricing={pricing} tenantId={session.tenantId} onClose={() => setDetail(null)} onRetried={() => void openDetail(detail.id)} />
+                    <DetailPanel detail={detail} cout={couts?.get(detail.id) ?? null} devise={deviseCout ?? pricing?.currency ?? null} tenantId={session.tenantId} onClose={() => setDetail(null)} onRetried={() => void openDetail(detail.id)} />
                   </div>
                 )}
               </li>
@@ -462,12 +533,27 @@ function CampaignsInner({ session }: { session: Session }) {
 /** Codes d'erreur Meta « variable de template » renvoyables après correction (F7). Aligné sur le back. */
 const RETRYABLE_VAR_CODES = new Set([131009, 132012, 132000]);
 
-function DetailPanel({ detail, pricing, tenantId, onClose, onRetried }: { detail: CampaignDetail; pricing: PricingSummary | null; tenantId: string; onClose: () => void; onRetried: () => void }) {
+function DetailPanel({ detail, cout, devise, tenantId, onClose, onRetried }: {
+  detail: CampaignDetail;
+  /**
+   * Le coût rendu par le serveur pour CETTE campagne. `null` = inconnu, et l'écran l'écrit.
+   *
+   * 🔴 IL N'EST PLUS RECALCULE ICI (Julien, 2026-09-23 : « dans l'onglet campagne dans détail, pareil, tu ne
+   * mets pas le prix comme si c'était un template Meta car c'était un RCS »). Ce panneau multipliait les
+   * destinataires par le tarif de la catégorie, donc il affichait un tarif de modèle sur une campagne RCS
+   * et sur une campagne à scénario qui n'a envoyé aucun modèle facturable.
+   */
+  cout: number | null;
+  devise: string | null;
+  tenantId: string;
+  onClose: () => void;
+  onRetried: () => void;
+}) {
   const t = useT();
   const { locale } = useLocale();
   // Date d'envoi d'un destinataire, même format que l'historique de la fiche contact (fuseau imposé par day.ts).
   const stamp = (iso: string) => `${formatDate(iso, locale, { day: '2-digit', month: '2-digit', year: '2-digit' })} ${hourMin(iso, locale)}`;
-  const cost = estimateCampaignCost(detail.counts.sent, detail.category, pricing);
+
   // Champs (source:field) du template : ce que l'admin peut corriger sur le contact avant de renvoyer (F7).
   const fieldKeys = detail.paramMapping.filter((p) => p.source.type === 'field' && p.source.key).map((p) => p.source.key as string);
   const [retryFor, setRetryFor] = useState<string | null>(null);
@@ -505,7 +591,7 @@ function DetailPanel({ detail, pricing, tenantId, onClose, onRetried }: { detail
           <span className="text-sm font-semibold">{detail.name}</span>
           <Badge status={detail.status} />
           <span className="text-xs text-ink-500">{campaignSendLabel(detail, locale)}</span>
-          <span className="text-xs text-ink-400">{t('coût estimé', 'estimated cost')} {cost != null ? `≈ ${fmtCost(cost, locale, pricing?.currency)}${pricing?.currency ? '' : ` (${t('devise du compte', 'account currency')})`}` : t('indisponible', 'unavailable')}</span>
+          <span className="text-xs text-ink-400" data-testid="detail-cout-estime">{t('coût estimé', 'estimated cost')} {cout != null ? `≈ ${fmtCost(cout, locale, devise)}${devise ? '' : ` (${t('devise du compte', 'account currency')})`}` : t('indisponible', 'unavailable')}</span>
         </div>
         <div className="flex items-center gap-3">
           {/*

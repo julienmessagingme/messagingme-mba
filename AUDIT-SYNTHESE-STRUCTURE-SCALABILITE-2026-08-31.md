@@ -57,16 +57,16 @@ surtout des repousses de concentration :
 | `web/lib/api.ts` | 1 834 lignes | Hub de 275 exports, dette déjà connue et en croissance |
 | `web/components/CampaignCreateForm.tsx` | 1 686 lignes | Extraction faite, mais monolithe interne conservé |
 | `web/components/WorkflowBuilder.tsx` | 1 860 lignes | Trois composants majeurs dans le même fichier |
-| `src/worker.ts` | 1 151 lignes dans le working tree actuel | Composition, consommateurs et nombreux sweepers/timers |
+| `src/worker.ts` | 1 151 lignes dans l'état courant | Composition, consommateurs et nombreux sweepers/timers |
 | `src/workflow/executor.ts` | 1 322 lignes | Complexe, mais environ la moitié documente des incidents réels |
 | `src/campaign/store.pg.ts` | 1 042 lignes | Plusieurs responsabilités et plusieurs classes |
-| `src/crm/contact-store.pg.ts` | 966 lignes dans le working tree actuel | Identité, CRM, bulk, consentement et purge |
+| `src/crm/contact-store.pg.ts` | 966 lignes dans l'état courant | Identité, CRM, bulk, consentement et purge |
 
 ### Changement intégré pendant la rédaction
 
-La rétention de `webhook_events` a été intégrée pendant la rédaction de ce document par le commit `5456d14` et
-est marquée déployée dans `documentation.md`. La migration `0093` ajoute le numéro destinataire, les index, une
-purge à 30 jours et l'effacement scopé lors d'une purge contact.
+La rétention de `webhook_events` a été intégrée pendant la rédaction de ce document par le commit `5456d14`.
+Le commit de suivi `0532f0d` confirme l'application de 0093 et une première purge de 62 événements. La migration
+ajoute le numéro destinataire, les index, une purge à 30 jours et l'effacement scopé lors d'une purge contact.
 
 Il ne faut donc pas rouvrir ce chantier. Le reste de l'item 5.2 concerne la rétention des **conversations et
 analyses**, qui attend encore une durée décidée par le produit. Les limites documentées de 0093 — anciennes lignes
@@ -369,9 +369,10 @@ d'isolation prouvant que deux numéros du même tenant ne fusionnent ni conversa
 
 ### Sujet récemment livré : rétention de `webhook_events`
 
-**État.** Le chantier a été livré dans `5456d14` via la migration 0093 et un sweeper borné. Il ajoute
-`phone_number_id`, des index et une purge par ancienneté, ainsi qu'un effacement dans la purge contact. Ce n'est
-plus une action ouverte de cette feuille de route.
+**État.** Le chantier a été livré dans `5456d14` via la migration 0093 et un sweeper borné, puis observé en
+production avec une première purge de 62 événements (`0532f0d`). Il ajoute `phone_number_id`, des index et une
+purge par ancienneté, ainsi qu'un effacement dans la purge contact. Ce n'est plus une action ouverte de cette
+feuille de route.
 
 **Impact.** Fermer une croissance non bornée et rendre les données brutes attribuables puis effaçables par tenant.
 
@@ -608,9 +609,9 @@ Chaque ligne doit idéalement correspondre à une PR ou un petit groupe de PR co
 
 Ne jamais lancer les intégrations locales contre la configuration actuelle : le dépôt indique que `.env` peut
 pointer vers la production. Les tests nécessitant PostgreSQL doivent utiliser une base explicitement jetable ou la
-CI. Le baseline validé avant l'apparition du travail en cours 0093 était : typechecks backend/frontend réussis,
-244 fichiers et 3 111 tests backend réussis, 13 fichiers et 125 tests web réussis. Ces chiffres ne valident pas le
-working tree non commité actuel : il faut rerun les gates après intégration de 0093.
+CI. Sur l'état courant incluant `0532f0d`, les typechecks backend et frontend réussissent, ainsi que 245 fichiers
+et 3 125 tests backend, puis 13 fichiers et 125 tests web. Les tests d'intégration PostgreSQL n'ont volontairement
+pas été lancés localement.
 
 ## 11. Consignes d'exécution pour Claude
 

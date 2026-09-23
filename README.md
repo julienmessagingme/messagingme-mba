@@ -28,15 +28,14 @@ Une phrase trouvée dedans se revérifie dans le manuel avant d'être crue.
 ## La topologie, en un coup d'oeil
 
 ```
-   navigateur, Meta, contacts, opérateur télécom
-                      |
-                 Cloudflare
-     /                |                    \
-engageme.        api.messagingme.app    mba.messagingme.app
-messagingme.app   l'API et le worker     l'ancienne console
-  la console       (VPS OVH, Docker)     + adresses historiques
-   (Vercel)              |
-                     Supabase
+ navigateur                         Meta, contacts, opérateur télécom
+     |                                           |
+ engageme.messagingme.app                    Cloudflare
+ console, Vercel direct                   /              \
+                            api.messagingme.app    mba.messagingme.app
+                             API + worker VPS       ancienne console
+                                     |              + adresses historiques
+                                  Supabase
 ```
 
 Trois noms, deux hébergeurs. Le détail, et surtout ce qu'il faut faire **avant** d'éteindre le VPS, est dans

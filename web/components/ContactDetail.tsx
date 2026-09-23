@@ -10,6 +10,7 @@
  */
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { ContactHistoryPanel } from '@/components/ContactHistoryPanel';
 import { useT, useLocale } from '@/lib/i18n';
 import { fieldValue, SOCLE_CLES, waIdDuContact } from '@/lib/fields';
@@ -22,6 +23,7 @@ import {
   setContactBlocked,
   contactIdentity,
   getContactResume,
+  ouvrirConversationDuContact,
   type Contact,
   type ResumeContact,
   type UserFieldDef,
@@ -145,6 +147,7 @@ export function ContactDetail({
   onClose: () => void;
 }) {
   const t = useT();
+  const router = useRouter();
   const { locale } = useLocale();
   const badge = OPT_IN_LABEL[contact.optInStatus] ?? OPT_IN_LABEL.unknown!;
   /**
@@ -292,6 +295,35 @@ export function ContactDetail({
     if (await apply({ addTags: [tag] })) setNewTag('');
   }
 
+  /**
+   * OUVRIR LA CONVERSATION DE CE CONTACT (demande de Julien du 2026-09-23).
+   *
+   * 🔴 LE FIL EST CRÉÉ S'IL N'EXISTE PAS, et c'est le serveur qui le fait : un contact qu'on vient
+   * d'importer n'a jamais écrit, donc n'a aucune conversation, et c'est précisément quand on veut lui
+   * parler qu'on ouvre sa fiche. Sans création, le bouton n'aurait servi qu'aux contacts qui ont déjà
+   * répondu, c'est-à-dire ceux pour qui on n'en a pas besoin.
+   *
+   * ⚠️ `router.push` ET PAS UN LIEN : l'identifiant du fil n'est connu qu'APRÈS la réponse du serveur. Un
+   * `<a>` demanderait de le connaître avant le clic, donc d'appeler la route à l'ouverture de CHAQUE fiche.
+   *
+   * ⚠️ L'ÉCHEC SE DIT SUR PLACE plutôt que de laisser un bouton inerte : une instance dont l'API n'est pas
+   * encore déployée rend 503, et un contact sans numéro ni identifiant WhatsApp rend 404. Dans les deux cas
+   * il n'y a pas de fil possible, et le silence se lirait comme une panne de l'écran.
+   */
+  const [ouverture, setOuverture] = useState(false);
+  const [erreurOuverture, setErreurOuverture] = useState<string | null>(null);
+  async function ouvrirLaConversation() {
+    setOuverture(true);
+    setErreurOuverture(null);
+    try {
+      const { conversationId } = await ouvrirConversationDuContact(tenantId, contact.id);
+      router.push(`/inbox?c=${encodeURIComponent(conversationId)}`);
+    } catch (err) {
+      setErreurOuverture(err instanceof Error ? err.message : t('Conversation indisponible', 'Conversation unavailable'));
+      setOuverture(false);
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -300,8 +332,21 @@ export function ContactDetail({
             <h3 className="text-lg font-semibold tracking-tight text-ink-900">{contact.profileName ?? contactIdentity(contact) ?? '-'}</h3>
             <p className="font-mono text-xs text-ink-400">{contactIdentity(contact) ?? '-'}</p>
           </div>
-          <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-700">×</button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => void ouvrirLaConversation()}
+              disabled={ouverture}
+              data-testid="fiche-ouvrir-conversation"
+              className="rounded-lg border border-ink-200 px-2.5 py-1 text-xs font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-50"
+            >
+              {ouverture ? t('Ouverture…', 'Opening…') : t('Ouvrir la conversation', 'Open conversation')}
+            </button>
+            <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-700">×</button>
+          </div>
         </div>
+        {erreurOuverture && (
+          <p className="mt-2 rounded-lg bg-coral/10 px-3 py-2 text-xs text-coral" data-testid="fiche-ouvrir-erreur">{erreurOuverture}</p>
+        )}
 
         <div className="mt-4 flex gap-1 border-b border-ink-100 text-sm">
           {(['fiche', 'historique'] as const).map((k) => (

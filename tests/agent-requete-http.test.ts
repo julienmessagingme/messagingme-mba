@@ -213,6 +213,49 @@ describe('assemblage de l’appel complet', () => {
     expect((r as { raison: string }).raison).toContain('manquante');
   });
 
+  it('🔴 les en-têtes sont SUBSTITUÉS comme les paramètres d’URL (2026-09-23)', () => {
+    const r = assemblerAppel({
+      ...base, methode: 'GET', chemin: '/x', entetes: [{ nom: 'X-Client-Id', valeur: 'id-{{client}}' }],
+      corps: { mode: 'aucun' }, valeurs: { client: '42' },
+    });
+    expect((r as { entetes: Record<string, string> }).entetes['x-client-id']).toBe('id-42');
+    const manque = assemblerAppel({
+      ...base, methode: 'GET', chemin: '/x', entetes: [{ nom: 'X-Client-Id', valeur: '{{client}}' }],
+      corps: { mode: 'aucun' }, valeurs: {},
+    });
+    expect(manque).toEqual({ ok: false, raison: 'variable(s) sans valeur dans les en-têtes : client' });
+  });
+
+  it('🔴 une valeur à retour à la ligne ne fabrique pas un second en-tête : refusée', () => {
+    // La valeur peut venir du modèle, donc d'un texte qu'un contact influence.
+    const r = assemblerAppel({
+      ...base, methode: 'GET', chemin: '/x', entetes: [{ nom: 'X-Note', valeur: '{{note}}' }],
+      corps: { mode: 'aucun' }, valeurs: { note: 'a\r\nX-Admin: 1' },
+    });
+    expect(r.ok).toBe(false);
+    expect((r as { raison: string }).raison).toContain('X-Note');
+  });
+
+  it('🔴 un caractère qu’un en-tête ne peut pas porter est refusé LISIBLEMENT, pas levé par fetch (revue du 2026-09-23)', () => {
+    // `fetch` lève sur un caractère au-delà de 0xFF : l'erreur passait pour une panne réseau et notait la SOURCE
+    // « injoignable ». L'apostrophe typographique et l'emoji sont ce qu'un modèle ou un nom de profil produisent.
+    for (const note of ['l’adresse', 'Julien 🚀', 'a\u0000b', 'cœur']) {
+      const r = assemblerAppel({
+        ...base, methode: 'GET', chemin: '/x', entetes: [{ nom: 'X-Note', valeur: '{{note}}' }],
+        corps: { mode: 'aucun' }, valeurs: { note },
+      });
+      expect(r.ok, JSON.stringify(note)).toBe(false);
+      expect((r as { raison: string }).raison).toContain('X-Note');
+    }
+    // Le latin-1 passe : `fetch` l'accepte.
+    const ok = assemblerAppel({
+      ...base, methode: 'GET', chemin: '/x', entetes: [{ nom: 'X-Note', valeur: '{{note}}' }],
+      corps: { mode: 'aucun' }, valeurs: { note: 'Zoë' },
+    });
+    expect((ok as { entetes: Record<string, string> }).entetes['x-note']).toBe('Zoë');
+    expect(() => new Headers((ok as { entetes: Record<string, string> }).entetes)).not.toThrow();
+  });
+
   it('les paramètres s’ajoutent avec & quand le chemin en porte déjà', () => {
     const r = assemblerAppel({
       ...base, methode: 'GET', chemin: '/x?deja=1', parametres: [{ cle: 'p', valeur: '2' }],
@@ -228,6 +271,11 @@ describe('variables réclamées par un gabarit', () => {
     // au moment de brancher l'outil sur un agent.
     const v = variablesUtilisees(json('{"a": "{{ville}}"}'), [{ cle: 'q', valeur: '{{depuis}}' }], '/commandes/{numero}');
     expect(v).toEqual(['depuis', 'numero', 'ville']);
+  });
+
+  it('🔴 lit AUSSI les en-têtes, et le chemin sous ses deux formes (2026-09-23)', () => {
+    expect(variablesUtilisees({ mode: 'aucun' }, null, '/a/{{x.y}}/b/{z}', [{ nom: 'X-T', valeur: '{{jeton}}' }]))
+      .toEqual(['jeton', 'x.y', 'z']);
   });
 
   it('🔴 lit AUSSI le mode liste de champs', () => {

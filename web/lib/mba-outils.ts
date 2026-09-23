@@ -136,23 +136,32 @@ export const TEXTES_PAR_TYPE: Record<TypeOutilMba, TextesType> = {
     titre: ['Envoyer un bloc', 'Send a block'],
     badge: ['Bloc', 'Block'],
     aide: ['Un message d’un de vos scénarios', 'A message from one of your scenarios'],
+    // 🔴 L'AGENT ANNONCE L'ENVOI EN UNE PHRASE (essais réels du 2026-09-22) : le message part après SON tour
+    // (`src/mba/fin-de-tour.ts`), et c'est cette phrase qui dit que son tour est fini. « N'écris rien » le
+    // contredisait. « Ne passe pas la main » : sans outil sous la main, il escaladait vers un humain.
     quand: [
-      `Appelle cet outil dès que le client ${PLACEHOLDER}. Le message part tout seul : n’écris rien de plus au client pour cette demande.`,
-      `Call this tool as soon as the customer ${PLACEHOLDER_EN}. The message is sent automatically: write nothing more for this request.`,
+      `Appelle cet outil dès que le client ${PLACEHOLDER}. Le message part tout seul quelques secondes après : dis-lui seulement, en une phrase courte, que tu le lui envoies, sans en donner le contenu. Ne passe pas la main pour cette demande.`,
+      `Call this tool as soon as the customer ${PLACEHOLDER_EN}. The message is sent automatically a few seconds later: just tell them, in one short sentence, that you are sending it, without giving its content. Do not hand over for this request.`,
     ],
-    pasQuand: ['N’appelle pas cet outil deux fois pour la même demande.', 'Do not call this tool twice for the same request.'],
+    pasQuand: [
+      'N’appelle pas cet outil deux fois pour le même message du client.',
+      'Do not call this tool twice for the same customer message.',
+    ],
   },
   scenario: {
     titre: ['Lancer un scénario', 'Start a scenario'],
     badge: ['Scénario', 'Scenario'],
     aide: ['Du début, puis la main revient à l’agent', 'From the start, then back to the agent'],
+    // 🔴 « SI UN PARCOURS VIENT DÉJÀ D'ÊTRE LANCÉ » A FAIT ESCALADER L'AGENT (essai réel du 2026-09-22, 16 h 32) : il
+    // l'a lu comme « déjà lancé plus tôt dans la conversation », s'est interdit l'outil, et a passé la main à un
+    // humain faute d'autre moyen. La borne est le MESSAGE du client, pas la conversation.
     quand: [
-      `Appelle cet outil dès que le client ${PLACEHOLDER}. Engage Me prend alors la conversation et te la rend à la fin : n’écris rien au client pour cette demande.`,
-      `Call this tool as soon as the customer ${PLACEHOLDER_EN}. Engage Me then takes the conversation and hands it back at the end: write nothing for this request.`,
+      `Appelle cet outil dès que le client ${PLACEHOLDER}, même si tu l’as déjà fait plus tôt dans la conversation. Engage Me prend alors la conversation et te la rend à la fin du parcours : dis seulement au client, en une phrase courte, que tu lances ça pour lui, puis n’écris plus rien. Ne passe pas la main pour cette demande.`,
+      `Call this tool as soon as the customer ${PLACEHOLDER_EN}, even if you already did earlier in the conversation. Engage Me then takes the conversation and hands it back at the end of the journey: just tell the customer, in one short sentence, that you are starting it, then write nothing more. Do not hand over for this request.`,
     ],
     pasQuand: [
-      'N’appelle pas cet outil si un parcours vient déjà d’être lancé pour cette demande.',
-      'Do not call this tool if a journey was just started for this request.',
+      'N’appelle pas cet outil deux fois pour le même message du client.',
+      'Do not call this tool twice for the same customer message.',
     ],
   },
   connecteur: {

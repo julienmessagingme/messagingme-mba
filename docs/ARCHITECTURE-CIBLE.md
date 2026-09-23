@@ -6,8 +6,8 @@
 >
 > **Enrichi le 2026-09-21** avec un mémo externe sur l'architecture et la sécurité (daté du 2026-09-19),
 > **vérifié contre le code et la production avant d'être repris**. Ce qui en a été écarté, et pourquoi, est
-> au §14. Deux décisions de Julien du même jour : **deux workers** (§5) et **les fichiers hors de Postgres**
-> (§6).
+> au §14. Trois décisions de Julien du même jour : **deux workers** (§5), **les fichiers hors de Postgres**
+> (§6) et **Cloudflare Pro retenu pour la cible** (§7.7).
 
 Ce document ne décrit pas ce qui tourne aujourd'hui (voir `documentation.md`). Il décrit **ce qu'on vise**,
 **les quatre chantiers à finir avant**, et **la séquence du jour J**.
@@ -60,7 +60,7 @@ ferme de ce document.
      endpoint privé seul         (instance privée)             (instance privée)
                                              \                     /
                                           Public Gateway (sortie seule, §7.4)
-                                          vers Meta, Anthropic, Vercel, HubSpot
+                                          vers Meta, fournisseurs IA, HubSpot
 
    Object Storage privé (HTTPS + IAM, §6) : médias RCS, pièces jointes de l'assistant MBA
    Connecteur HubSpot ----> SA PROPRE base (§8)
@@ -81,6 +81,74 @@ refaire ces deux arithmétiques, pas seulement de bouger un curseur.
 internet. L'aller-retour est aujourd'hui de 11 ms mesurés ; entre deux fournisseurs il serait bien pire, et il
 serait payé sur chacune des 131 transactions par minute mesurées AU REPOS, avant tout client. **Le calcul et
 la base dans la même région, toujours.** Déménager l'un sans l'autre est un pas en arrière.
+
+### 2.1 Deux routes IA, choisies manuellement — aucune bascule automatique
+
+Le chemin qui existe aujourd'hui reste **Vercel AI Gateway**. Une deuxième route est prévue pour les contrats
+qui imposent que l'inférence conversationnelle de l'agent soit traitée en France : **Azure OpenAI appelé
+directement depuis le worker**, avec un déploiement régional en France. Ce n'est ni une migration générale
+vers Azure, ni Azure Foundry Agent Service : l'orchestration, les outils, la mémoire, la base de connaissance,
+les conversations et les fichiers restent dans Engage Me sur Scaleway.
+
+```text
+worker Engage Me, Scaleway France
+             |
+             +-- route ordinaire --> Vercel AI Gateway --> modèles autorisés
+             |
+             +-- route France -----> Azure OpenAI régional France
+                                      (appel direct, sans Vercel au milieu)
+```
+
+🔴 **Cette route Azure n'est PAS livrée aujourd'hui.** Le client de complétion, le catalogue, les coûts et les
+clés par espace sont encore couplés au Gateway Vercel. Tant que le lot correspondant de `todo.md` n'est pas
+terminé et éprouvé contre une vraie ressource Azure, la réponse RSSI exacte est « option architecturée, non
+activée », jamais « disponible » ou « hébergée en France ».
+
+Le choix n'a pas besoin d'un bouton dans Engage Me. Il est posé par un opérateur, à la signature du contrat,
+dans une configuration backend rattachée à l'espace. Le défaut reste Vercel. Le secret et l'endpoint Azure
+restent côté serveur. Si plusieurs clients « France » partagent une ressource Azure, leurs plafonds et leur
+comptabilité restent séparés dans Engage Me ; une ressource Azure dédiée n'est créée que si le contrat paie
+et exige cette isolation.
+
+🔴 **Aucun repli silencieux d'Azure vers Vercel.** Pour un espace soumis à une résidence France, une panne
+Azure doit produire les retries bornés, l'alerte et le comportement de panne prévus. Envoyer ensuite le prompt
+à Vercel rendrait la promesse fausse précisément au moment où le système est dégradé. Un repli vers une autre
+région n'existe que s'il est explicitement autorisé par le contrat.
+
+Le pré-câblage doit réutiliser la frontière étroite qui existe déjà, pas en créer une deuxième :
+
+- `GatewayBrainDeps.completer` est déjà le contrat injecté dans le cerveau, le bac à sable et le worker ; au
+  besoin, ses types peuvent être déplacés hors du fichier nommé `chat-client`, mais la boucle d'agent ne bouge
+  pas et aucune nouvelle interface parallèle n'est ajoutée ;
+- un résolveur backend par espace, administré hors de l'interface client ;
+- un adaptateur Vercel qui garde strictement le comportement actuel ;
+- un client Azure qui satisfait le même contrat et réutilise transport, délais, retries et erreurs existants ;
+  avec l'API Azure OpenAI v1, `model` porte le nom du déploiement ;
+- une comptabilité indépendante de `provider_metadata.gateway.cost`, absent chez Azure : les jetons sont la
+  mesure commune, et le tarif Azure est une configuration versionnée ;
+- des journaux qui portent fournisseur, région et déploiement, mais jamais la clé ni le prompt.
+
+Le premier lot injecte ce résolveur **uniquement** dans les deux entrées du même cerveau : bac à sable
+`agentTest` dans `src/index.ts` et production dans `src/worker.ts`. Réutiliser sans discernement l'objet
+`gateway` de l'API ferait aussi basculer la traduction ; toucher `gatewayAide` ferait basculer l'assistant de
+construction et le bot d'aide, alors que ce premier lot ne les promet pas en France.
+
+⚠️ **« L'agent conversationnel est inféré en France » et « aucun traitement IA ne sort de France » ne sont
+pas la même promesse.** L'assistant de construction, les embeddings, le reranking, la transcription, la
+traduction et l'analyse de conversations font aussi des appels IA. Le premier lot peut ne router que les tours
+de l'agent, mais la réponse RSSI doit alors se limiter à ces tours. Pour promettre que *tous* les traitements IA
+d'un espace restent en France, chacun de ces chemins doit être inventorié, routé vers un service régional
+compatible et testé. Un modèle indisponible en déploiement **Standard/Régional ou provisionné régional** en
+France empêche cette promesse ; créer une ressource `francecentral` ne suffit pas si son type est `Data Zone
+EU` (traitement possible ailleurs dans l'UE) ou `Global` (traitement possible ailleurs dans le monde).
+
+Références à revalider au moment de l'achat : [disponibilité des modèles par région et type de déploiement
+Azure](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure-region-availability),
+[API v1 Azure OpenAI](https://learn.microsoft.com/en-us/rest/api/microsoft-foundry/azureopenai/chat), [données
+et confidentialité Azure OpenAI](https://learn.microsoft.com/en-us/azure/foundry/responsible-ai/openai/data-privacy),
+[résidence européenne de l'API OpenAI](https://openai.com/index/introducing-data-residency-in-europe/). La résidence
+OpenAI directe en Europe est une troisième possibilité future, mais **elle ne prouve pas un traitement en
+France**.
 
 ---
 
@@ -337,10 +405,12 @@ workers.
 ⚠️ **Ne pas recopier `DB_POOL_MAX=8` sur chaque processus sans ce calcul.** Un pooler ne crée aucune capacité
 Postgres : il fait partager des connexions qui, sinon, resteraient occupées pour rien.
 
-### 7.6 Les webhooks ne subissent JAMAIS les quotas des clients
+### 7.6 Les webhooks de statut ne subissent JAMAIS les quotas des clients
 
-Les plafonds des clés clients s'appliquent à `/v1/*` et `/mcp`, et à rien d'autre. **Jamais** à
-`/webhooks/meta`, `/rcs/callback/*`, `/w/*`, ni par effet de bord à `/r/*` et `/m/*`. Meta peut renvoyer une
+Le même limiteur de clé API protège volontairement `/v1/*`, `/mcp` et le relais d'outils du MBA
+`/mba/relais/outils/*` ; ce dernier porte une clé et un droit dédiés à Meta. Il ne doit **jamais** déborder sur
+`/webhooks/meta`, `/rcs/callback/*`, `/w/*`, `/hubspot/deal-stage`, ni par effet de bord à `/r/*` et `/m/*`.
+Meta peut renvoyer une
 rafale de statuts après un retard, et un appel de machine à machine ne passe pas de défi navigateur. Ces
 chemins gardent leurs protections propres : signature Meta, code opaque RCS, secret du webhook entrant,
 limites de taille, mise en file immédiate. C'est déjà le cas aujourd'hui (le plafond par utilisateur est posé
@@ -354,9 +424,31 @@ Cloudflare de demain.
 - **L'adresse que Cloudflare annonce pour le client (`CF-Connecting-IP`) n'est fiable que si l'origine refuse
   tout ce qui ne vient pas de Cloudflare.** Sinon quiconque joint l'origine en direct l'invente. Notre code ne
   s'y fie nulle part (Fastify est construit sans `trustProxy`) : la règle vaut pour le jour où il s'y fierait.
-- **L'offre gratuite de Cloudflare suffit.** Pro (20 à 25 $/mois constatés le 2026-09-19) ne se prend que pour
-  une fonctionnalité précise dont on sait décrire la preuve attendue : une exigence d'appel d'offres ou de RSSI,
-  des règles de pare-feu ou de débit en plus, des robots réellement observés.
+- **Cloudflare Pro est retenu pour la cible**, non parce que le mot « Pro » constitue une preuve, mais pour
+  activer et régler le Cloudflare Managed Ruleset, davantage de règles personnalisées et jusqu'à deux règles
+  de limitation de débit. L'OWASP Core Ruleset reste éteint par défaut et ne s'ajoute qu'après une mesure qui
+  justifie ses faux positifs possibles. La protection DDoS standard existe déjà sur toutes les offres ; elle
+  ne doit pas être présentée comme un gain propre à Pro.
+- **Pro ne remplace pas les contrôles applicatifs.** Ses limites de débit ne savent pas porter nos quotas par
+  clé et par espace avec la précision du code : Pro compte seulement par IP et ses compteurs ne sont pas exacts
+  à la requête près. On ne configure pas deux règles pour remplir deux cases. Les deux candidats utiles sont
+  un fusible large sur l'API externe (`/v1` **et** `/mcp`) et les seuls chemins anonymes d'authentification qui
+  écrivent. Les quotas et limites par discriminant restent dans Engage Me.
+- **Cloudflare voit bien l'IP du navigateur sur l'auth actuelle.** `engageme.` ne relaie rien : le navigateur
+  appelle `api.` directement (`documentation.md`, §2). Le seuil doit néanmoins tolérer une entreprise entière
+  derrière une IP partagée. La règle vise la liste exacte des POST sensibles, jamais `/auth/config` ni le
+  préfixe `/auth/*` entier ; un refus HTTP est plus sûr qu'un challenge sur un appel `fetch`.
+- **Pro ne fournit pas la MFA de `/ops`.** Le plan de zone Cloudflare et Cloudflare Access sont deux produits
+  différents ; la cible de comptes nominatifs et MFA applicative pour l'administration reste entière.
+- **Aucun challenge navigateur sur les appels machine à machine**, y compris `/v1`, `/mcp`, Meta, RCS,
+  HubSpot et les webhooks entrants. Ils ne peuvent pas résoudre un CAPTCHA. Une exception WAF est étroite et
+  vise seulement la règle qui produit un faux positif ; elle ne retire ni validation de signature, ni limite
+  de taille, ni mise en file rapide (§7.6).
+- **Les événements WAF de Pro ne sont pas un journal de sécurité durable.** La rétention du tableau Security
+  Events est courte et Logpush HTTP n'est pas inclus dans Pro. Cockpit et les journaux applicatifs restent la
+  preuve durable ; Cloudflare apporte une preuve de filtrage et des captures/export périodiques, pas un SIEM.
+- **`engageme.messagingme.app` reste hors de Cloudflare.** Le frontend continue d'utiliser les protections
+  Vercel. Il est faux de dessiner Cloudflare devant les trois domaines pour simplifier un questionnaire.
 
 ---
 
@@ -470,6 +562,10 @@ diverge. La bascule est franche, et le retour arrière est la restauration du du
 - `https://api.messagingme.app/live` répond, à travers Cloudflare.
 - Le nom technique du conteneur, appelé en direct sans le jeton d'origine, **refuse**.
 - `mba.messagingme.app/api/backend/webhooks/meta`, les anciens `/r/` et `/m/` fonctionnent toujours.
+- Les Managed Rules Cloudflare sont actives sur `api.` et `mba.`, avec leur configuration exportée ou capturée.
+- Toute règle de débit Pro réellement activée est testée sur ses chemins exacts ; un dépassement est visible
+  dans Security Events et ne touche aucun webhook, callback RCS, relais MBA/HubSpot, lien `/r/` ni média `/m/`.
+- Un échantillon de faux positifs est relu avant de passer une règle sensible en blocage.
 
 **Ce qui doit rester fermé**
 - La base n'a plus d'endpoint public ; ni elle ni Redis (s'il existe) ne sont joignables d'Internet.
@@ -489,6 +585,15 @@ diverge. La bascule est franche, et le retour arrière est la restauration du du
 - Tuer le worker d'analyse ne ralentit ni les entrants ni les campagnes.
 - Tuer le worker principal déclenche l'alerte de heartbeat qui le NOMME.
 - Les deux rôles sont visibles séparément dans `/ops`.
+
+**La route IA optionnelle, seulement si elle a été achetée et livrée**
+- Un espace témoin configuré Vercel passe toujours par Vercel et conserve outils, coûts et plafonds actuels.
+- Un espace témoin configuré Azure appelle directement le déploiement régional attendu, avec un vrai appel
+  d'outil et une réponse complète.
+- Couper Azure ne provoque aucun appel à Vercel pour cet espace ; l'échec est borné, visible et alerté.
+- Les preuves consignent fournisseur, région, type de déploiement et modèle, sans prompt ni secret.
+- La liste des autres traitements IA encore hors de cette route est jointe à la réponse RSSI ; aucun « tout
+  en France » n'est déclaré par extension.
 
 **L'exploitation**
 - Le commit déployé se lit depuis `/ops`, sans être exposé publiquement.
@@ -511,7 +616,13 @@ diverge. La bascule est franche, et le retour arrière est la restauration du du
 - **Un bucket public** pour simplifier une adresse, **des fichiers dans une seconde base PostgreSQL**, **un
   endpoint public de base laissé ouvert** « derrière une liste d'adresses ».
 - **Un plafond de débit global** qui toucherait aussi les webhooks (§7.6).
-- **Cloudflare Pro** sans fonctionnalité précise et preuve attendue (§7.7).
+- **Cloudflare Business/Enterprise, Logpush ou Bot Management** sans exigence précise. Pro est la cible ; les
+  étages supérieurs ne s'achètent que pour une preuve ou une capacité absente et contractuellement nécessaire.
+- **Un bouton de choix du fournisseur IA dans Engage Me.** C'est une option contractuelle posée par
+  l'exploitation, pas une préférence utilisateur.
+- **Azure Foundry Agent Service.** Engage Me possède déjà l'orchestration, la mémoire, les outils et la base
+  de connaissance ; ajouter un deuxième moteur d'agents disperserait l'état sans répondre mieux au RSSI.
+- **Un fallback automatique Azure vers Vercel** pour un espace dont le contrat exige la France (§2.1).
 
 ---
 
@@ -526,10 +637,15 @@ Aucun de ces choix ne doit être remplacé par une valeur technique arbitraire.
 4. **Quand** les deux workers : la cible est décidée (§5), le moment ne l'est pas.
 5. **Le niveau de disponibilité** acheté pour la base (développement, production, haute disponibilité) au
    premier client important.
-6. **Le moment où Cloudflare Pro** apporte une preuve commerciale ou RSSI qui justifie son coût.
+6. **L'utilité réelle des règles de rate limiting Cloudflare Pro.** Candidats : un fusible large sur l'API
+   externe (`/v1` et `/mcp`) et les chemins anonymes d'authentification qui écrivent. Ne les activer qu'avec
+   des seuils mesurés tolérant les IP d'entreprise partagées ; ne jamais limiter `/auth/config`.
 7. **L'accès à `/ops`.** La décision écrite est celle du 2026-09-03 : `/ops` est SURVEILLÉ, pas durci. Le plan
    de réduction RSSI du 2026-09-09 recommande des comptes nominatifs avec double authentification ; le mémo
    du 2026-09-19 le présentait comme « la cible décidée », ce qui n'est pas le cas.
+8. **Le périmètre exact d'une option IA France.** Tours conversationnels seulement, ou également construction,
+   embeddings, reranking, transcription, traduction et analyses. Le prix et la disponibilité régionale des
+   modèles décident ; la documentation commerciale doit nommer le périmètre réellement testé.
 
 ---
 
@@ -552,6 +668,6 @@ trouvé par la mesure, jamais par le raisonnement : les 16 clients vers le poole
 les dix-sept par seconde en rafale, les 738 000 jetons par minute du Gateway sans un seul refus.
 
 Ce document ne demande donc rien à construire « au cas où ». Il nomme **quatre états-dans-un-processus à
-supprimer avant de multiplier les processus**, **sept propriétés à ne pas casser** d'ici là, et **deux
-décisions de structure** prises par Julien (deux workers, les fichiers hors de Postgres). Tout le reste se
+supprimer avant de multiplier les processus**, **sept propriétés à ne pas casser** d'ici là, et **trois
+décisions de structure** prises par Julien (deux workers, fichiers hors de Postgres, Cloudflare Pro). Tout le reste se
 décidera avec des chiffres qu'on n'a pas encore.

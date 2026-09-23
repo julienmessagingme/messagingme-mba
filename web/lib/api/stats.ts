@@ -18,6 +18,13 @@ export interface DailyPoint {
 }
 export interface DashboardStats {
   contacts: DailyPoint[];
+  /**
+   * Les contacts ENCORE dans le mini-CRM ce jour-la (bascule cumules/actifs, demandee le 2026-09-23).
+   *
+   * ⚠️ OPTIONNEL A LA LECTURE : un backend plus ancien que ce champ ne l'envoie pas, et l'ecran masque alors
+   * la bascule au lieu de tracer une courbe vide qu'on prendrait pour « plus aucun contact ».
+   */
+  contactsActifs?: DailyPoint[];
   templates: { utility: DailyPoint[]; marketing: DailyPoint[] };
   exchanged: DailyPoint[];
   /** Sortants qui ne sont PAS des templates (inbox, scenario dans la fenetre de 24 h). Sous-ensemble d'`exchanged`. */
@@ -381,6 +388,11 @@ export interface LigneCoutCampagne {
   sansCategorie?: number;
   /** ...dont Meta ne rend pas le tarif : panne VIVANTE, reparable. Meme reserve d'absence. */
   sansTarif?: number;
+  /**
+   * Personnes TOUCHÉES sur la période, facturable ou non : ce que la colonne « Envoyés » affiche (lot 4).
+   * ⚠️ OPTIONNEL, même réserve de RÉSEAU que `sansCategorie` : absent, l'écran retombe sur `envoyes`.
+   */
+  envois?: number;
   clics: number | null;
   coutParClic: number | null;
   /**
@@ -464,8 +476,10 @@ export function getDetailCoutCampagne(tenantId: string, campaignId: string): Pro
   return request<DetailCoutCampagne>(`/tenants/${tenantId}/stats/cost/campaigns/${campaignId}`);
 }
 
-export function getCoutParCampagne(tenantId: string, range?: StatsRange): Promise<CoutParCampagne> {
-  return request<CoutParCampagne>(`/tenants/${tenantId}/stats/cost/campaigns${rangeQuery(range)}`);
+export function getCoutParCampagne(tenantId: string, range?: StatsRange, inclureArchivees = false): Promise<CoutParCampagne> {
+  const q = rangeQuery(range);
+  const archivees = inclureArchivees ? `${q === '' ? '?' : '&'}archivees=1` : '';
+  return request<CoutParCampagne>(`/tenants/${tenantId}/stats/cost/campaigns${q}${archivees}`);
 }
 
 /**
@@ -664,10 +678,6 @@ export function putSettings(tenantId: string, mbaEnabled: boolean): Promise<Tena
 /** Active/désactive le toggle « Campagnes via données HubSpot ». */
 export function setHubspotListsEnabled(tenantId: string, enabled: boolean): Promise<{ hubspotListsEnabled: boolean }> {
   return request(`/tenants/${tenantId}/settings/hubspot-lists`, { method: 'PATCH', body: JSON.stringify({ enabled }) });
-}
-/** Active/désactive l'auto-relance des échecs de livraison (F6). */
-export function setAutoRetryEnabled(tenantId: string, enabled: boolean): Promise<{ autoRetryEnabled: boolean }> {
-  return request(`/tenants/${tenantId}/settings/auto-retry`, { method: 'PATCH', body: JSON.stringify({ enabled }) });
 }
 
 /**

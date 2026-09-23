@@ -39,9 +39,14 @@ describe.skipIf(!url)('compteurs du menu de dossiers', () => {
        values ($1, $2, ${opts.bloque ? 'now()' : 'null'}) returning id`,
       [tenantId, `+${waId}`],
     )).rows[0]!.id;
+    // ⚠️ UN SENS DE DERNIER MESSAGE, PARCE QUE TOUTE CONVERSATION REELLE EN PORTE UN (2026-09-23). La
+    // fixture n'en ecrivait aucun, donc elle fabriquait un etat que la production n'a pas : mesure faite le
+    // 2026-09-23, les 15 conversations existantes portent toutes leur sens (la reprise de 0130 les a
+    // renseignees). Depuis que « A traiter » exige un message, une fixture sans sens vidait le dossier et
+    // faisait tomber des tests qui ne parlent pas de ca.
     const conv = (await pool.query<{ id: string }>(
-      `insert into conversations (tenant_id, wa_id, contact_id, last_message_at, control_owner, assigned_to, archived_at)
-       values ($1, $2, $3, now(), $4, $5, ${opts.archivee ? 'now()' : 'null'}) returning id`,
+      `insert into conversations (tenant_id, wa_id, contact_id, last_message_at, last_direction, control_owner, assigned_to, archived_at)
+       values ($1, $2, $3, now(), 'in', $4, $5, ${opts.archivee ? 'now()' : 'null'}) returning id`,
       [tenantId, waId, contact, opts.tenu ? 'app_human' : 'app_workflow', opts.affectee ?? null],
     )).rows[0]!.id;
     if (opts.signalee) {
@@ -119,16 +124,23 @@ describe.skipIf(!url)('compteurs du menu de dossiers', () => {
       if (espace) await pool.query('delete from tenants where id = $1', [espace]);
     });
 
-    /** Une conversation de CET espace, avec son contact et son détenteur. */
-    async function conv(waId: string, owner: 'app_workflow' | 'app_human' | 'mba'): Promise<string> {
+    /**
+     * Une conversation de CET espace, avec son contact, son détenteur et le SENS de son dernier message.
+     *
+     * ⚠️ `sens` VAUT `'in'` PAR DÉFAUT parce que c'est l'état de toute conversation réelle : elle naît d'un
+     * message, entrant ou sortant. `null` reste possible et se demande explicitement, pour le seul état qui
+     * le produit vraiment : un fil qu'un opérateur vient d'OUVRIR depuis la fiche d'un contact, sur lequel
+     * personne n'a encore parlé (lot 6, 2026-09-23).
+     */
+    async function conv(waId: string, owner: 'app_workflow' | 'app_human' | 'mba', sens: 'in' | 'out' | null = 'in'): Promise<string> {
       const contact = (await pool.query<{ id: string }>(
         `insert into contacts (tenant_id, phone_e164) values ($1, $2) returning id`,
         [espace, `+${waId}`],
       )).rows[0]!.id;
       return (await pool.query<{ id: string }>(
-        `insert into conversations (tenant_id, wa_id, contact_id, last_message_at, control_owner)
-         values ($1, $2, $3, now(), $4) returning id`,
-        [espace, waId, contact, owner],
+        `insert into conversations (tenant_id, wa_id, contact_id, last_message_at, control_owner, last_direction)
+         values ($1, $2, $3, now(), $4, $5) returning id`,
+        [espace, waId, contact, owner, sens],
       )).rows[0]!.id;
     }
 
@@ -243,18 +255,30 @@ describe.skipIf(!url)('compteurs du menu de dossiers', () => {
       expect(apres.getTime()).toBe(avant.getTime());
     });
 
-    it('🔴 un fil SANS sens connu reste dans le dossier, exactement comme avant', async () => {
+    it('🔴 la règle ne se réécrit pas en logique à TROIS valeurs, qui ferait disparaître des fils', async () => {
       // 🔴 CE TEST A TROUVÉ UNE VRAIE FAUTE, et c'est la raison d'être des tests d'intégration ici. La règle
       // s'écrivait `not (owner = 'app_human' and last_direction = 'out')`, qui vaut NULL quand la colonne est
       // NULL (logique à TROIS valeurs), et un prédicat NULL EXCLUT la ligne : toutes les conversations
-      // d'avant la migration, tenues par un humain, auraient DISPARU du dossier au déploiement. Aucun test
-      // unitaire ne peut voir ça, la faute est dans le SQL.
-      const id = await conv('33610000005', 'app_human');
+      // tenues par un humain auraient DISPARU du dossier au déploiement. Aucun test unitaire ne peut voir
+      // ça, la faute est dans le SQL. Le cas reste donc gardé, sur un fil qui a bien un sens.
+      const id = await conv('33610000005', 'app_human', 'in');
+      expect(await dansLeDossier(id)).toBe(true);
+    });
+
+    it('🔴 un fil SANS AUCUN MESSAGE n entre PAS dans le dossier (2026-09-23)', async () => {
+      // ⚠️ CE TEST AFFIRMAIT L'INVERSE JUSQU'AU 2026-09-23, et le renversement est un ARBITRAGE, pas une
+      // correction de bug. En 2026-09-11, un `last_direction` nul voulait dire « on ne sait pas encore » :
+      // faire disparaître ces fils au déploiement aurait été la pire façon d'introduire le filtre, et le
+      // test gardait ce choix. La reprise de 0130 les a tous renseignés (mesuré en production le
+      // 2026-09-23 : ZÉRO conversation porte encore un sens nul), et un sens nul ne décrit plus qu'un état
+      // NEUF : un fil qu'un opérateur vient d'ouvrir depuis la fiche d'un contact. Personne n'y attend de
+      // réponse, donc il n'a rien à faire dans une file de travail.
+      const id = await conv('33610000091', 'app_human', null);
       const sens = await pool.query<{ last_direction: string | null }>(
         'select last_direction from conversations where id = $1', [id],
       );
       expect(sens.rows[0]!.last_direction).toBeNull();
-      expect(await dansLeDossier(id)).toBe(true);
+      expect(await dansLeDossier(id)).toBe(false);
     });
   });
 

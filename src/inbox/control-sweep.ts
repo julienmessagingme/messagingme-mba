@@ -20,12 +20,13 @@ export interface ControlSweepDeps {
   listHeldControl(
     limit?: number,
     ageScenarioMs?: number,
-  ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null; lastMessageAt: Date | null }>>;
+  ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null; lastMessageAt: Date | null; escaladee: boolean }>>;
   setControlOwner(
     tenantId: string,
     waId: string,
     owner: ControlOwner,
-    opts?: { only?: readonly ControlOwner[] },
+    /** `effacerEscalade` : le drapeau de la migration 0164, périmé dès lors qu'on déplace ce fil (cf. plus bas). */
+    opts?: { only?: readonly ControlOwner[]; effacerEscalade?: boolean },
   ): Promise<boolean>;
   /**
    * Délai d'inactivité par détenteur, en ms. C'est le DÉFAUT du serveur : il s'applique aux clients qui
@@ -100,6 +101,10 @@ export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
     // seule durée qui relève d'un arbitrage métier (combien de temps on laisse un opérateur travailler).
     const reglageClient = c.owner === 'app_human' ? parTenant.get(c.tenantId) : undefined;
     const ms = reglageClient ?? deps.timeouts[c.owner];
+    // 🔴 UNE ESCALADE SANS RÉPONSE NE REVIENT PAS À L'AGENT (0164, arbitrage de Julien du 2026-09-23) : le client
+    // attend un humain, lui renvoyer le robot serait pire que le silence. La première réponse d'un opérateur
+    // efface l'escalade ; les 2 h habituelles courent ensuite depuis elle.
+    if (c.owner === 'app_human' && c.escaladee) continue;
     // Absent ou 0 = jamais de reprise automatique pour cet état. Un client qui pose 0 garde la main
     // jusqu'à ce qu'un opérateur la rende explicitement, c'est un choix légitime.
     if (ms === undefined || ms <= 0) continue;
@@ -194,7 +199,10 @@ export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
       }
     }
     const dest: ControlOwner = versMba ? 'mba' : 'app_workflow';
-    if (!(await deps.setControlOwner(c.tenantId, c.waId, dest, { only: [c.owner] }))) continue;
+    // ⚠️ `effacerEscalade` : arrivé ici, une escalade EN COURS a déjà été sautée (`c.escaladee` plus haut). Un
+    // drapeau qui subsiste est donc périmé, et le laisser sur une conversation qu'on déplace l'armerait pour le
+    // jour où elle redeviendrait `app_human` : le balayage ne la rendrait alors plus jamais.
+    if (!(await deps.setControlOwner(c.tenantId, c.waId, dest, { only: [c.owner], effacerEscalade: true }))) continue;
     rendues += 1;
   }
   return rendues;

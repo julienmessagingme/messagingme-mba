@@ -26,6 +26,9 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
   const stats: StatsRouteDeps = {
     getDashboard: async () => ({
       contacts: [{ date: '2026-07-09', count: 3 }],
+      // ⚠️ PLUS BAS QUE LES CUMULÉS, DÉLIBÉRÉMENT : une fixture où les deux courbes seraient égales ferait
+      // passer un écran qui affiche la mauvaise, sans que rien ne bronche.
+      contactsActifs: [{ date: '2026-07-09', count: 2 }],
       templates: { utility: [{ date: '2026-07-09', count: 1 }], marketing: [{ date: '2026-07-09', count: 2 }] },
       exchanged: [{ date: '2026-07-09', count: 5 }],
       service: [{ date: '2026-07-09', count: 2 }],
@@ -65,8 +68,8 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     }),
     getCoutParCampagne: async () => ({
       lignes: [
-        { campaignId: CAMP_A, nom: 'Promo ete', template: 'promo', envoyes: 10, cout: 1.43, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, clics: 4, coutParClic: 0.3575 },
-        { campaignId: CAMP_B, nom: 'Relance', template: null, envoyes: 5, cout: null, nonChiffrables: 5, sansCategorie: 5, sansTarif: 0, clics: null, coutParClic: null },
+        { campaignId: CAMP_A, nom: 'Promo ete', template: 'promo', envoyes: 10, envois: 10, cout: 1.43, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, clics: 4, coutParClic: 0.3575 },
+        { campaignId: CAMP_B, nom: 'Relance', template: null, envoyes: 5, envois: 5, cout: null, nonChiffrables: 5, sansCategorie: 5, sansTarif: 0, clics: null, coutParClic: null },
       ],
       currency: 'EUR',
       hasRates: true,
@@ -97,7 +100,6 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     getSettings: async () => ({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, optoutRequestId: null, mentionIaFrequence: null, timezone: 'Europe/Paris', businessHours: {}, prix: GRILLE_DEFAUT }),
     setMbaEnabled: async () => {},
     setHubspotListsEnabled: async () => {},
-    setAutoRetryEnabled: async () => {},
     setMbaHandoffMode: async () => {},
     setControlHandbackSeconds: async () => {},
     setTimezone: async () => {},
@@ -190,6 +192,18 @@ describe('stats route', () => {
     // absences par des zéros ferait mentir l'écran sans qu'aucune erreur ne se voie.
     expect(b.lignes[1]).toMatchObject({ cout: null, clics: null, coutParClic: null });
     expect(b.currency).toBe('EUR');
+    await a.close();
+  });
+
+  it('🔴 la bascule des archivées arrive au câblage, et son absence vaut « exclues » (lot 4)', async () => {
+    // Une flèche à deux paramètres est assignable à un contrat qui en déclare trois : c'est ce test, pas le
+    // compilateur, qui dit que la route TRANSMET la bascule.
+    const vus: Array<{ inclureArchivees: boolean }> = [];
+    const a = app({ stats: { getCoutParCampagne: async (_t, _r, opts) => { vus.push(opts); return { lignes: [], currency: null, hasRates: false, tronque: false }; } } });
+    await a.inject({ method: 'GET', url: '/tenants/t1/stats/cost/campaigns?days=30', ...h(adminTok) });
+    await a.inject({ method: 'GET', url: '/tenants/t1/stats/cost/campaigns?days=30&archivees=1', ...h(adminTok) });
+    await a.inject({ method: 'GET', url: '/tenants/t1/stats/cost/campaigns?days=30&archivees=oui', ...h(adminTok) });
+    expect(vus).toEqual([{ inclureArchivees: false }, { inclureArchivees: true }, { inclureArchivees: false }]);
     await a.close();
   });
 
@@ -613,20 +627,12 @@ describe('settings route', () => {
     await bad.close();
   });
 
-  it('PATCH /settings/auto-retry admin -> 200 + persiste ; agent -> 403 ; body invalide -> 400 (F6)', async () => {
-    let saved: [string, boolean] | null = null;
-    const ok = app({ settings: { setAutoRetryEnabled: async (t, e) => { saved = [t, e]; } } });
-    const r1 = await ok.inject({ method: 'PATCH', url: '/tenants/t1/settings/auto-retry', ...h(adminTok), payload: { enabled: true } });
-    expect(r1.statusCode).toBe(200);
-    expect(r1.json<{ autoRetryEnabled: boolean }>().autoRetryEnabled).toBe(true);
-    expect(saved).toEqual(['t1', true]);
-    await ok.close();
-    const ag = app();
-    expect((await ag.inject({ method: 'PATCH', url: '/tenants/t1/settings/auto-retry', ...h(agentTok), payload: { enabled: true } })).statusCode).toBe(403);
-    await ag.close();
-    const bad = app();
-    expect((await bad.inject({ method: 'PATCH', url: '/tenants/t1/settings/auto-retry', ...h(adminTok), payload: { enabled: 'oui' } })).statusCode).toBe(400);
-    await bad.close();
+  it('⚠️ PATCH /settings/auto-retry n’existe plus : la relance obéit à la case de chaque campagne (0165)', async () => {
+    // Remplace le test F6 de la route : le réglage d'espace a quitté l'écran, et une route qui l'écrirait encore
+    // changerait sans écran le sort des campagnes d'avant 0165.
+    const a = app();
+    expect((await a.inject({ method: 'PATCH', url: '/tenants/t1/settings/auto-retry', ...h(adminTok), payload: { enabled: true } })).statusCode).toBe(404);
+    await a.close();
   });
 
   it('PUT /settings body invalide -> 400', async () => {

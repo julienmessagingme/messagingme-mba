@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { estimateCostSeries, enumerateDays, estimateCoutParCampagne } from '../src/stats/cost';
+import { GRILLE_DEFAUT } from '../src/stats/prix';
 import type { CategoryRates, VolumeCampagneRow } from '../src/stats/cost';
 import type { CostVolumeRow } from '../src/stats/store.pg';
 
@@ -127,7 +128,100 @@ describe('estimateCostSeries', () => {
 describe('estimateCoutParCampagne', () => {
   const TARIFS: CategoryRates = { marketing: 0.1431, utility: 0.05, currency: 'EUR' };
   const ligne = (campaignId: string, nom: string, category: string | null, count: number, template: string | null = 'tpl'): VolumeCampagneRow =>
-    ({ campaignId, nom, template, category, count });
+    ({ campaignId, nom, template, canal: 'whatsapp', category, count, envois: count });
+
+  const RCS = (campaignId: string, simple: number, conversationnel: number) =>
+    ({ parCampagne: new Map([[campaignId, { simple, conversationnel }]]), grille: GRILLE_DEFAUT });
+
+  it('🔴 une campagne SANS RIEN DE FACTURABLE a sa ligne, à coût connu ; une campagne RCS NON RATTACHÉE, à coût vide (lot 4)', () => {
+    // Seules les campagnes à envoi de MODÈLE facturable apparaissaient : 2 sur 7 dans l'espace d'essai.
+    // ⚠️ Le cas RCS de ce test est celui dont AUCUN envoi n'a pu être rattaché (campagne antérieure à la
+    // migration 0134, envoi sans identifiant) : là, la case reste vide. Une campagne RCS dont les envois sont
+    // connus est chiffrée, c'est le test suivant.
+    const scenario: VolumeCampagneRow = { campaignId: 'sc', nom: 'test4', template: null, canal: 'whatsapp', category: null, count: 0, envois: 3 };
+    const rcs: VolumeCampagneRow = { campaignId: 'rc', nom: 'gr sentis', template: null, canal: 'rcs', category: null, count: 0, envois: 1 };
+    const r = estimateCoutParCampagne([scenario, rcs, ligne('tp', 'Promo', 'marketing', 2)], TARIFS, new Map(), new Map([['sc', 1], ['rc', 1], ['tp', 1]]));
+    const par = new Map(r.lignes.map((l) => [l.campaignId, l]));
+    // La ligne vide de facturable ne compte pas comme un envoi « sans catégorie » : il n'y en a aucun.
+    expect(par.get('sc')).toMatchObject({ envoyes: 0, envois: 3, cout: 0, nonChiffrables: 0, sansCategorie: 0, coutParEngagement: 0 });
+    expect(par.get('rc')).toMatchObject({ envoyes: 0, envois: 1, cout: null, coutParEngagement: null });
+    expect(par.get('tp')).toMatchObject({ envoyes: 2, envois: 2, cout: 0.29 });
+  });
+
+  it('🔴 une campagne dont les envois ont pu être PURGÉS n’affiche pas 0, mais RIEN', () => {
+    // Le cas qui arrive tout seul, un matin : les envois d'un scénario vivent dans les conversations, que
+    // la rétention supprime. Sans ce terme, la campagne serait passée de son vrai coût à 0,00 €, c'est-à-dire
+    // de « voilà ce qu'elle a coûté » à « elle n'a rien coûté », sans que personne ne touche à rien.
+    const vieille: VolumeCampagneRow = { campaignId: 'vx', nom: 'vieux scenario', template: null, canal: 'whatsapp', category: null, count: 0, envois: 4, horsRetention: true };
+    const r = estimateCoutParCampagne([vieille], TARIFS, new Map(), new Map([['vx', 2]]));
+    expect(r.lignes[0]).toMatchObject({ envois: 4, cout: null, coutParEngagement: null });
+  });
+
+  it('...et la MÊME campagne encore dans la fenêtre garde son coût connu', () => {
+    // L'autre sens : « rien de facturable » reste une réponse, tant qu'on peut encore la donner. C'est le
+    // comportement du lot 4, que ce terme ne doit pas défaire.
+    const recente: VolumeCampagneRow = { campaignId: 'rx', nom: 'scenario recent', template: null, canal: 'whatsapp', category: null, count: 0, envois: 4, horsRetention: false };
+    const r = estimateCoutParCampagne([recente], TARIFS, new Map(), new Map([['rx', 2]]));
+    expect(r.lignes[0]).toMatchObject({ cout: 0, coutParEngagement: 0 });
+  });
+
+  it('⚠️ un magasin qui ne rend PAS le drapeau garde le comportement d’avant', () => {
+    // Absent vaut `false` : une instance plus ancienne que ce calcul ne doit pas vider des cases.
+    const sansDrapeau: VolumeCampagneRow = { campaignId: 'sx', nom: 'sans drapeau', template: null, canal: 'whatsapp', category: null, count: 0, envois: 1 };
+    expect(estimateCoutParCampagne([sansDrapeau], TARIFS, new Map(), new Map()).lignes[0]!.cout).toBe(0);
+  });
+
+  it('🔴 une campagne RCS est CHIFFRÉE, à 6 cts l’envoi simple (Julien, 2026-09-23)', () => {
+    // Le prix RCS est saisi par espace depuis la migration 0154 et la ligne « coût des messages » le compte
+    // déjà. Ce tableau affichait « — » : il disait « on ne sait pas » là où on savait.
+    const rcs: VolumeCampagneRow = { campaignId: 'rc', nom: 'gr sentis', template: null, canal: 'rcs', category: null, count: 0, envois: 2 };
+    const r = estimateCoutParCampagne([rcs], TARIFS, new Map(), new Map([['rc', 1]]), undefined, RCS('rc', 2, 0));
+    expect(r.lignes[0]).toMatchObject({ envois: 2, cout: 0.12, coutParEngagement: 0.12 });
+  });
+
+  it('🔴 un échange devenu CONVERSATIONNEL passe à 8 cts, et le mélange des deux s’additionne', () => {
+    // La bascule est tranchée par l'appelant (`basculesRcs`) : elle porte sur l'échange entier sur sept
+    // jours, donc elle a besoin d'envois que cette campagne n'a pas faits. Ici on vérifie le seul tarif.
+    const rcs: VolumeCampagneRow = { campaignId: 'rc', nom: 'gr sentis', template: null, canal: 'rcs', category: null, count: 0, envois: 3 };
+    const r = estimateCoutParCampagne([rcs], TARIFS, new Map(), new Map(), undefined, RCS('rc', 1, 2));
+    expect(r.lignes[0]).toMatchObject({ cout: 0.22 }); // 1 x 6 cts + 2 x 8 cts
+  });
+
+  it('🔴 le RCS s’AJOUTE au modèle d’une campagne qui a fait les deux', () => {
+    // Une campagne WhatsApp avec un étage RCS : les deux coûts sont réels, et n'en montrer qu'un mentirait
+    // dans le sens qui flatte.
+    const r = estimateCoutParCampagne([ligne('mx', 'Mixte', 'marketing', 2)], TARIFS, new Map(), new Map(), undefined, RCS('mx', 5, 0));
+    expect(r.lignes[0]).toMatchObject({ cout: 0.59 }); // 2 x 0,1431 arrondi + 5 x 6 cts
+  });
+
+  it('🔴 « Envoyés » ne descend JAMAIS sous les envois facturables (revue finale du 2026-09-23)', () => {
+    // Les envois facturables viennent parfois de l'ATTRIBUTION, qui n'a pas de borne basse : une campagne partie
+    // il y a trois semaines dont les modèles partent cette semaine n'a AUCUN destinataire daté de la période.
+    // Elle affichait « 0 envoyés » en face d'un coût, c'est-à-dire l'inverse de ce que ce lot cherche.
+    const attribuee: VolumeCampagneRow = { campaignId: 'at', nom: 'scenario ancien', template: null, canal: 'whatsapp', category: 'marketing', count: 12, envois: 0 };
+    const r = estimateCoutParCampagne([attribuee], TARIFS, new Map(), new Map());
+    expect(r.lignes[0]).toMatchObject({ envoyes: 12, envois: 12, cout: 1.72 });
+  });
+
+  it('🔴 la COUPE garde les campagnes au plus grand nombre d’ENVOYÉS, pas au plus grand facturable', () => {
+    // Le SQL coupe sur `greatest(facturables, touches)` et ce tri le rejoue : trié sur le seul facturable, toutes
+    // les campagnes à scénario se retrouvaient à égalité (0), départagées par leur identifiant, et une campagne
+    // de 5 000 personnes sortait pendant qu'une campagne à un envoi restait.
+    const grosse: VolumeCampagneRow = { campaignId: 'zzz-grosse', nom: 'scenario 5000', template: null, canal: 'whatsapp', category: null, count: 0, envois: 5000 };
+    const petites = Array.from({ length: 50 }, (_, i): VolumeCampagneRow => (
+      { campaignId: `c${String(i).padStart(3, '0')}`, nom: `petite ${i}`, template: 'tpl', canal: 'whatsapp', category: 'marketing', count: 1, envois: 1 }
+    ));
+    const r = estimateCoutParCampagne([...petites, grosse], TARIFS, new Map(), new Map());
+    expect(r.tronque).toBe(true);
+    expect(r.lignes).toHaveLength(50);
+    expect(r.lignes.some((l) => l.campaignId === 'zzz-grosse')).toBe(true);
+  });
+
+  it('🔴 sans facturable mais avec des messages de SERVICE, le coût est celui du service', () => {
+    const scenario: VolumeCampagneRow = { campaignId: 'sc', nom: 'test4', template: null, canal: 'whatsapp', category: null, count: 0, envois: 1 };
+    const r = estimateCoutParCampagne([scenario], TARIFS, new Map(), new Map([['sc', 1]]), { parCampagne: new Map([['sc', 10]]), prixUnitaire: 0.01 });
+    expect(r.lignes[0]).toMatchObject({ cout: 0.1, coutParEngagement: 0.1 });
+  });
 
   it('coût = envois × tarif, additionné sur les catégories de la campagne', () => {
     const r = estimateCoutParCampagne(
@@ -252,7 +346,7 @@ describe('estimateCoutParCampagne', () => {
  * campagnes dont les gens reagissent plusieurs fois.
  */
 describe('le cout par ENGAGEMENT', () => {
-  const rows = [{ campaignId: 'c1', nom: 'Testjulien2', template: 'promo', category: 'marketing', count: 100 }];
+  const rows = [{ campaignId: 'c1', nom: 'Testjulien2', template: 'promo', canal: 'whatsapp', category: 'marketing', count: 100, envois: 100 }];
   const rates = { marketing: 0.05, utility: 0.01 };
 
   it('🔴 une campagne SANS clic mais AVEC des reponses a bien un cout par engagement', () => {
@@ -282,7 +376,7 @@ describe('le cout par ENGAGEMENT', () => {
   });
 
   it('sans cout chiffrable, pas de ratio non plus', () => {
-    const sansTarif = [{ campaignId: 'c1', nom: 'X', template: 'p', category: null, count: 10 }];
+    const sansTarif = [{ campaignId: 'c1', nom: 'X', template: 'p', canal: 'whatsapp', category: null, count: 10, envois: 10 }];
     const r = estimateCoutParCampagne(sansTarif as never, rates as never, new Map(), new Map([['c1', 5]]));
     expect(r.lignes[0]!.cout).toBeNull();
     expect(r.lignes[0]!.coutParEngagement).toBeNull();

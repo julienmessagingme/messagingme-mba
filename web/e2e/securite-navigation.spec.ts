@@ -163,7 +163,7 @@ test.describe('Centre de sécurité & compliance', () => {
   test('⚠️ ils ne sont plus dans Parametres, qui repond toujours', async ({ page }) => {
     await monter(page);
     await page.goto('/parametres');
-    await expect(page.getByTestId('param-auto-retry-toggle')).toBeVisible();
+    await expect(page.getByTestId('param-save-hours')).toBeVisible();
     await expect(page.getByTestId('audit-journal')).toHaveCount(0);
     await expect(page.getByTestId('erreurs-livraison')).toHaveCount(0);
   });

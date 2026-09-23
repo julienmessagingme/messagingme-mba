@@ -1,5 +1,5 @@
 import { chiffrer, type CategoryRates } from './cost';
-import type { GrillePrix } from './prix';
+import { coutRcsEuros, type GrillePrix } from './prix';
 
 /**
  * LE COUT TOTAL DES MESSAGES ENVOYES SUR UNE PERIODE : templates, messages de service, RCS.
@@ -153,10 +153,9 @@ export function coutMessages(e: EntreeCoutMessages, g: GrillePrix): CoutMessages
   }
   const coutService = round2((factures * g.serviceCentimes) / 100);
 
-  // ---- RCS : deux tarifs, aucune franchise, aucun message de service.
-  const coutRcs = round2(
-    (e.rcsSimple * g.rcsSimpleCentimes + e.rcsConversationnel * g.rcsConversationnelCentimes) / 100,
-  );
+  // ---- RCS : deux tarifs, aucune franchise, aucun message de service. La formule vit dans `prix.ts`,
+  // parce que le tableau du cout par engagement l'applique aussi, campagne par campagne.
+  const coutRcs = coutRcsEuros(e.rcsSimple, e.rcsConversationnel, g);
 
   const templates = { marketing: round2(marketing), utility: round2(utility) };
   return {

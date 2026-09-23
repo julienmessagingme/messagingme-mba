@@ -1,0 +1,21 @@
+-- 0164 : QUAND L'AGENT DE META PASSE LA MAIN À L'ÉQUIPE (liste de Julien du 2026-09-23, lot 2 de
+-- docs/superpowers/plans/2026-09-23-liste-julien.md).
+--
+-- L'agent de Meta dit au client « un membre de l'équipe va vous répondre », puis nous passe le fil
+-- (`messaging_handovers` / `control_passed`, src/webhooks/handover.ts). Deux défauts, vécus par Julien :
+--   - la conversation n'arrivait dans « À traiter » que si le client réécrivait, alors qu'il attend justement
+--     qu'on lui réponde : la dernière phrase étant celle de l'agent (sortante), le dossier l'excluait ;
+--   - au bout de 2 h sans message, le balayage la rendait à l'agent, même si personne ne lui avait répondu.
+--
+-- `escaladee_le` : posée à la passation, effacée à la première réponse d'un opérateur, sur « Traité », ou quand
+-- le fil est rendu à l'agent. Tant qu'elle est posée, la conversation est « À traiter » et le balayage ne la
+-- rend pas (arbitrage de Julien : « après une réponse humaine », puis les 2 h habituelles).
+--
+-- NULLABLE ET SANS DÉFAUT : aucune conversation existante n'est escaladée, donc rien ne bouge pour personne à
+-- l'application. Le code neuf l'ÉCRIT et la NOMME dans le prédicat « À traiter » (liste, compteurs) : elle
+-- passe AVANT le déploiement. L'ancien code l'ignore, il y survit.
+--
+-- AUCUN INDEX : le prédicat « À traiter » n'est servi par aucun index partiel (vérifié), et une colonne
+-- presque toujours nulle n'en mérite pas.
+
+alter table conversations add column if not exists escaladee_le timestamptz;

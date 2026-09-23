@@ -326,7 +326,19 @@ export interface WorkflowExecutorDeps {
    * ⚠️ OPTIONNEL DANS LA SIGNATURE mais toujours passe par les appelants : un cablage qui l oublierait
    * laisserait la conversation non affectee, c est-a-dire le comportement d avant, qui ne casse rien.
    */
-  escalateToHuman?(tenantId: string, waId: string, assigneA?: string | null): Promise<void>;
+  /**
+   * Remonte la conversation à un humain.
+   *
+   * 🔴 `escalade` EST OBLIGATOIRE, ET C'EST TOUT L'INTÉRÊT (arbitrage de Julien du 2026-09-23). Elle dit si
+   * quelqu'un ATTEND une réponse : un bloc « passer à un humain », un bouton qui ne mène nulle part, un envoi
+   * refusé alors que le contact vient d'écrire. La conversation entre alors dans « À traiter » tout de suite,
+   * même si notre dernière phrase est sortante, et le balayage ne rend plus le fil à l'agent de Meta tant que
+   * personne n'a répondu (migration 0164).
+   * ⚠️ `false` POUR LES ÉCHECS DE RÉVEIL (fenêtre fermée, envoi refusé à la reprise) : personne n'a écrit, le
+   * contact n'attend rien à cet instant, et rendre ces fils collants les soustrairait à l'agent pour toujours.
+   * Un paramètre REQUIS oblige chaque appelant à trancher ; un optionnel aurait laissé le défaut décider.
+   */
+  escalateToHuman?(tenantId: string, waId: string, assigneA: string | null, escalade: boolean): Promise<void>;
   /**
    * Joue un appel de la bibliothèque (Tools > Connecteurs API) pour ce contact, et rend ce qu'il faut ranger
    * dans un champ.
@@ -998,7 +1010,8 @@ export class WorkflowExecutor {
       await this.deps.runs.setState(run.id, { currentNode: null, status: 'inbox' });
       // ⚠️ AUCUN AFFECTATAIRE ICI, et ce n est pas un oubli : on n a atteint aucun bloc « passer a un
       // humain », c est la fenetre de 24 h qui s est fermee. Personne n a designe qui doit traiter ce fil.
-      if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null);
+      // Et AUCUNE ESCALADE : c'est un reveil, le contact n'a rien ecrit et n'attend rien a cet instant.
+      if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null, false);
       return false;
     }
     // Refus au réveil sans qu'aucun message ne parte : le contact n'a rien reçu. Laisser le run en attente le
@@ -1011,8 +1024,9 @@ export class WorkflowExecutor {
         // Garde de VIVACITÉ ici aussi : remonter en `inbox` et escalader à un humain une conversation qui a
         // déjà été remplacée mettrait un opérateur sur un parcours abandonné.
         if (!(await this.ecrireSiVivant(tenantId, run.id, { currentNode: null, status: 'inbox' }))) return false;
-        // Remontee SANS bloc « passer a un humain » : pas d affectataire, le fil part au pot commun.
-        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null);
+        // Remontee SANS bloc « passer a un humain » : pas d affectataire, le fil part au pot commun. Pas
+        // d'escalade non plus : au REVEIL, personne n'attend (voir le contrat de `escalateToHuman`).
+        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null, false);
         return false;
       }
     }
@@ -1020,7 +1034,7 @@ export class WorkflowExecutor {
     // desormais par destinataire) : ecrire sans regarder le ressusciterait AVEC son echeance.
     if (!(await this.ecrireSiVivant(tenantId, run.id, { ...restToState(rest, this.now()), channel: canal }))) return false;
     if (rest.status === 'inbox' && this.deps.escalateToHuman) {
-      await this.deps.escalateToHuman(tenantId, waId, rest.assigneA ?? null);
+      await this.deps.escalateToHuman(tenantId, waId, rest.assigneA ?? null, true);
     }
     if (rest.status === 'done') await this.rendreLaMainAMba(tenantId, waId);
     // Bloc AGENT atteint au réveil : ouvrir la session et enfiler le premier tour. APRÈS les sorties
@@ -1378,8 +1392,17 @@ export class WorkflowExecutor {
       ? await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state, opts.figerLeGraphe === true ? graph : null)
       : null;
     // Le run a atteint un bloc `inbox` -> la conversation passe explicitement à un humain (badge honnête, A.5).
+    //
+    // 🔴 `partis > 0`, ET C'EST LE SEUL DÉMARRAGE QUI LE DEMANDE (revue finale du 2026-09-23). Ce chemin sert
+    // les CAMPAGNES : un scénario qui ouvre directement sur « passer à un humain » y escalade un fil PAR
+    // DESTINATAIRE, et une escalade est collante (le balayage ne rend plus le fil à l'agent de Meta tant que
+    // personne n'a répondu). Mille contacts qui n'ont RIEN reçu feraient mille fils qu'aucune action de masse
+    // ne libère. Le critère du drapeau est « quelqu'un attend-il une réponse ? » : quand rien n'est parti, on
+    // n'a rien promis, donc rien n'est attendu. La conversation passe quand même à `app_human`, comme avant.
+    // ⚠️ Une campagne qui ENVOIE puis passe la main garde son escalade : là, le contact a bien reçu un message
+    // et le client a délibérément demandé que l'équipe prenne le relais.
     if (rest.status === 'inbox' && this.deps.escalateToHuman) {
-      await this.deps.escalateToHuman(tenantId, contact.waId, rest.assigneA ?? null);
+      await this.deps.escalateToHuman(tenantId, contact.waId, rest.assigneA ?? null, partis > 0);
     }
     if (rest.status === 'done') await this.rendreLaMainAMba(tenantId, contact.waId);
     // Bloc AGENT en ouverture : la session naît maintenant, le run existe enfin.
@@ -1773,9 +1796,22 @@ export class WorkflowExecutor {
         // eslint-disable-next-line no-console
         console.error(`workflow ${run.workflowId}: run ${run.id} sur un bloc agent sans session vivante, remonté en inbox`);
         await ecrire({ currentNode: null, status: 'inbox', lastMessageId: messageId });
-        // Remontee a l humain sans qu aucun bloc ne l ait demande (envoi refuse, fenetre fermee) : personne
-        // n a designe d affectataire, le fil part au pot commun.
-        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null);
+        // Remontee a l humain sans qu aucun bloc ne l ait demande : pas d affectataire, le fil part au pot
+        // commun.
+        //
+        // 🔴 L'ESCALADE SE LIT SUR LA SESSION CLOSE, ELLE NE SE SUPPOSE PAS (revue finale du 2026-09-23). Cette
+        // branche disait « le contact a demande un humain a l'agent IA », ce qu'elle ne peut pas savoir : elle
+        // se declenche sur « un bloc agent sans session vivante », et la meme absence suit un tour bloque clos
+        // en `erreur` par `cloreSessionDuRun`, un `plafond` ou une `inactivite`, c'est-a-dire une PANNE. Seule
+        // une fin DELIBEREE (`status === 'sortie'`, ce que `src/agent/escalade.ts` ecrit avant de basculer le
+        // fil) porte une promesse faite au contact.
+        // ⚠️ ET LE DRAPEAU EST DEJA POSE DANS LE CAS NOMINAL : l'escalade de l'agent IA appelle elle-meme le
+        // cablage avec `escalade: true` (`src/worker.ts`). Ce rattrapage ne sert que si le processus est mort
+        // entre la cloture de la session et la bascule du fil, fenetre que `escalade.ts` documente. Sur une
+        // panne, poser le drapeau rendrait le fil COLLANT (l'agent de Meta ne le reprendrait plus jamais) pour
+        // rien : le contact vient d'ecrire, donc « A traiter » le porte deja par son `last_direction`.
+        const finDeliberee = session?.status === 'sortie';
+        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null, finDeliberee);
         return;
       }
       // ⚠️ ORDRE : on enfile AVANT de marquer le message consommé, comme partout ailleurs dans ce fichier
@@ -1857,7 +1893,11 @@ export class WorkflowExecutor {
       if (boutonSansSuite) {
         // eslint-disable-next-line no-console
         console.error(`workflow ${run.workflowId}: le bouton « ${buttonPayload} » du bloc ${run.currentNode} ne mène nulle part, ${waId} a cliqué et n'a rien reçu`);
-        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null);
+        // ⚠️ PAS D'ESCALADE, ET LE RAISONNEMENT COMPTE (revue finale du 2026-09-23) : le contact vient de
+        // cliquer, donc `last_direction` est ENTRANT et « À traiter » porte déjà cette conversation. Le drapeau
+        // n'ajouterait que la collance (le fil ne repartirait plus jamais chez l'agent de Meta), sans rien
+        // montrer de plus à l'équipe.
+        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null, false);
       } else {
         // (a) : son message part aussi chez l'agent de Meta, qui y répond (réponse « à côté »). 🔴 Seulement un
         // VRAI message WhatsApp : cette branche reçoit aussi une réaction (sa charge porte le message visé) et un
@@ -1879,18 +1919,43 @@ export class WorkflowExecutor {
       if (partis === 0) {
         await ecrire({ currentNode: null, status: 'inbox', lastMessageId: messageId });
         // Remontee a l humain sans qu aucun bloc ne l ait demande (envoi refuse, fenetre fermee) : personne
-        // n a designe d affectataire, le fil part au pot commun.
-        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null);
+        // n a designe d affectataire, le fil part au pot commun. ⚠️ PAS D'ESCALADE : le contact vient d'ecrire,
+        // donc « A traiter » la porte deja par son `last_direction` entrant (meme raison qu'au bouton sans suite).
+        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId, null, false);
         return;
       }
     }
     await ecrire({ ...restToState(rest, this.now()), lastMessageId: messageId, channel: canal });
     if (rest.status === 'inbox' && this.deps.escalateToHuman) {
-      await this.deps.escalateToHuman(tenantId, waId, rest.assigneA ?? null);
+      await this.deps.escalateToHuman(tenantId, waId, rest.assigneA ?? null, true);
     }
     // Chaîne terminée sans attendre de choix : l'agent reprend. `waiting` garde la main (le scénario attend un
     // bouton), `inbox` la donne à un humain : ni l'un ni l'autre ne relâche.
-    if (rest.status === 'done') await this.rendreLaMainAMba(tenantId, waId);
+    // 🔴 ET SI LE CLIENT A ÉCRIT SANS QUE RIEN NE LUI RÉPONDE, SON MESSAGE PART CHEZ L'AGENT (essai réel du
+    // 2026-09-22) : une flèche LIBRE sous un bloc à boutons menait à un bloc muet (une action) ; « Parfait
+    // biloute » l'a suivie, la chaîne s'est terminée sans rien envoyer, et l'agent a repris le fil sans savoir que
+    // le client venait d'écrire. Il n'a parlé qu'au message suivant. Même règle que la réponse « à côté » plus haut,
+    // et seulement quand la chaîne n'a RIEN envoyé : si elle a répondu, l'agent répondrait par-dessus.
+    if (rest.status === 'done') {
+      /**
+       * 🔴 SAUF SI LA CHAÎNE A DÉJÀ RECUEILLI CE MESSAGE (arbitrage de Julien du 2026-09-23). Cas type :
+       * « Votre e-mail ? », flèche libre, action « écrire le champ = dernière saisie », fin sans envoi. Le
+       * message avait bien un destinataire, la chaîne ; le transmettre en plus faisait commenter une adresse
+       * e-mail hors contexte par l'agent de Meta.
+       *
+       * ⚠️ ON REGARDE LES BLOCS RÉELLEMENT TRAVERSÉS (`actions[].nodeId`), jamais le graphe entier : un
+       * scénario qui lit la dernière saisie AILLEURS ne doit pas rendre muet tout le reste de ses chemins.
+       *
+       * ⚠️ LIMITE CONNUE, ET ELLE PENCHE DU BON CÔTÉ (revue finale du 2026-09-23) : un bloc « Appel HTTP » qui
+       * pousse la saisie vers le système du client la lit par une VARIABLE DE CONNECTEUR
+       * (`origine: systeme/derniere_saisie`, portée par la requête, pas par le bloc), donc cette détection ne la
+       * voit pas et le message part quand même chez l'agent. Une détection incomplète laisse l'agent PARLER,
+       * jamais l'inverse : c'est le sens que Julien a demandé le 2026-09-22.
+       */
+      const aLuLaSaisie = actions.some((a) => graph.nodes.find((n) => n.id === a.nodeId)?.data.valueKind === 'derniere_saisie');
+      const sansReponse = buttonPayload === null && canalRetour === 'whatsapp' && partis === 0 && !aLuLaSaisie;
+      await this.rendreLaMainAMba(tenantId, waId, sansReponse ? { transmettre: messageId } : {});
+    }
     // 🔴 TRANSITION FRAÎCHE vers un bloc agent, à ne pas confondre avec la branche du haut. Là-haut, le run
     // était DÉJÀ sur le bloc agent et le contact répondait pendant la conversation. Ici, sa réponse fait
     // AVANCER le parcours depuis un autre bloc (typiquement un template de campagne) jusqu'au bloc agent, pour
