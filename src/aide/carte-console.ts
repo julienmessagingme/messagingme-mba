@@ -31,6 +31,7 @@ export const CARTE_CONSOLE: EcranAide[] = [
   {"cle":"nodes","href":"/nodes","fr":"Blocs","en":"Blocks","acces":"admin","chemin":["Contenu","Bibliothèque"]},
   {"cle":"parametres","href":"/parametres","fr":"Paramètres","en":"Settings","acces":"encadrement","chemin":[]},
   {"cle":"perf-synthese","href":"/performance","fr":"Synthèse","en":"Summary","acces":"admin","chemin":[]},
+  {"cle":"publicites","href":"/publicites","fr":"Publicités","en":"Ads","acces":"admin","chemin":[]},
   {"cle":"quanti-couts","href":"/dashboard/couts","fr":"Coûts","en":"Costs","acces":"admin","chemin":["Quantitatif"]},
   {"cle":"quanti-funnel","href":"/dashboard/funnel","fr":"Funnel","en":"Funnel","acces":"admin","chemin":["Quantitatif"]},
   {"cle":"quanti-messages","href":"/dashboard","fr":"Messages & contacts","en":"Messages & contacts","acces":"admin","chemin":["Quantitatif"]},
