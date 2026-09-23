@@ -1,7 +1,7 @@
 ---
 ecran: mba-guide
 source_section: MBA, le répondeur de Meta (menu « AI Agent » > MBA, guide / MBA, paramètres)
-source_empreinte: a12ee9
+source_empreinte: 90f630
 ---
 # Le répondeur de Meta : à quoi il sert, et comment le régler
 
@@ -27,12 +27,14 @@ produit. Les conversations d'essai n'y entrent pas, et tant que ce nombre n'est 
 s'affiche. Sur un numéro que Meta n'a pas encore ouvert, ni les étapes ni ce nombre ne s'affichent : ils
 mèneraient vers un écran bloqué.
 
-**Les paramètres, en dix onglets** : Aperçu (l'état de l'agent), Assistant (le régler en lui parlant),
+**Les paramètres, en onze onglets** : Aperçu (l'état de l'agent), Assistant (le régler en lui parlant),
 Activation (qui parle au client), Business (les informations de votre entreprise), FAQ (question par
 question, ou en masse depuis un fichier ou une adresse, avec aperçu avant écriture et sans jamais dupliquer
 une question existante), Compétences (le ton, les procédures, les interdits, par exemple « ne jamais
-inventer un horaire »), Fichiers (jusqu'à 100 Mo de documents de connaissance), Sites web (les pages qu'il
-va lire), Historique et Tester (un bac à sable où vous lui parlez sans consommer de conversation facturée).
+inventer un horaire »), Outils (ce que l'agent a le droit de faire : poser une étiquette, enregistrer une
+information, envoyer un bloc, lancer un scénario, appeler un système que vous avez connecté), Fichiers
+(jusqu'à 100 Mo de documents de connaissance), Sites web (les pages qu'il va lire), Historique et Tester (un
+bac à sable où vous lui parlez sans consommer de conversation facturée).
 Ce menu se range en colonne à gauche du contenu ; sur un téléphone, il redevient la barre horizontale du
 haut.
 

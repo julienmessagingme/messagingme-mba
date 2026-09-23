@@ -2531,13 +2531,15 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
   guide) ; **prérequis + transparence des coûts** ; encart **« bientôt configurable ici »**. Page de PRÉPARATION :
   la config live s'ouvrira quand Meta rendra l'agent disponible pour le numéro (gating vertical + ToS).
 - ✅ **Page « Paramètres de l'agent »** (LIVE depuis le 2026-08-18) : l'écran de réglage de
-  l'agent MBA, en **dix onglets**, branché pour de vrai sur la configuration Meta du numéro.
+  l'agent MBA, en **onze onglets**, branché pour de vrai sur la configuration Meta du numéro.
   **Aperçu** (l'état de l'agent), **Assistant** (régler l'agent en lui parlant, cf. ci-dessous),
   **Activation** (qui parle au client, cf. ci-dessous),
   **Business** (les informations de l'entreprise), **FAQ** (saisie question par question **et
   import en masse** depuis un CSV, un Excel, un PDF ou une URL, avec aperçu avant écriture et
   sans jamais dupliquer une question déjà posée), **Compétences** (le ton, les procédures et les
-  interdits, par exemple « ne jamais inventer un horaire »), **Fichiers** (jusqu'à 100 Mo de
+  interdits, par exemple « ne jamais inventer un horaire »), **Outils** (ce que l'agent a le droit
+  de FAIRE : poser une étiquette, enregistrer une information, envoyer un bloc, lancer un scénario,
+  appeler un système que vous avez connecté), **Fichiers** (jusqu'à 100 Mo de
   documents de connaissance : PDF, Word, CSV, Excel), **Sites web** (les pages que l'agent va
   lire), **Historique** (ce qui a changé et ce qui a été effacé, cf. ci-dessous) et **Tester**
   (un bac à sable où l'on parle à l'agent sans consommer de conversation facturée).
