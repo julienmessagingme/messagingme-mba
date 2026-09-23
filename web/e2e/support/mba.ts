@@ -44,6 +44,9 @@ const compteParDefaut = {
   hasNumber: true,
   phoneNumberId: PN,
   number: '+33 5 25 68 03 01',
+  // ⚠️ `verifiedName` NOURRIT LE TITRE DE L'EN-TÊTE de l'écran de réglage. Sans lui, les six suites MBA
+  // liraient le titre de repli (« Paramètres de l'agent »), donc aucune ne verrait l'agent nommé.
+  verifiedName: 'Boutique Test',
   quality: 'GREEN',
   numberStatus: 'CONNECTED',
   hubspotConnected: false,
@@ -152,6 +155,18 @@ export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]>
         const res = f.importResult ?? { source: 'csv', created: 0, updated: 0, unchanged: 0, remaining: 0, ids: { created: [], updated: [] }, failed: null };
         // 207 = import interrompu. Le front doit le lire comme un succès HTTP et regarder `failed`.
         return json(res, (res as { failed?: unknown }).failed ? 207 : 200);
+      }
+      // ⚠️ AVANT LES BRANCHES COURTES. Le routage se fait par `includes` et non par égalité : une branche
+      // courte posée plus haut attraperait un chemin plus long qui la contient.
+      if (url.includes('/messages')) return json({ messages: 412, jours: 30 });
+      if (url.includes('/completion')) {
+        return json({
+          taches: [
+            { cle: 'business_info', requise: true, etat: 'fait' },
+            { cle: 'faq', requise: true, etat: 'a_faire', raison: 'Aucune question enregistrée.' },
+          ],
+          faites: 1, total: 2, indeterminees: 0,
+        });
       }
       if (url.includes('/status')) return json({ ...statutParDefaut, ...f.status, settings });
       if (url.includes('/business-info')) {

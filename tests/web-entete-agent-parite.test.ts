@@ -26,4 +26,13 @@ describe('EnteteAgent', () => {
   it('⚠️ une étape sans onglet reste affichée', () => {
     expect(SRC).toContain('e.onglet === undefined');
   });
+
+  it('🔴 n annonce « tout est réglé » QUE s il a lu les manques', () => {
+    // Même famille que le chiffre : `etapes` à `null` veut dire « on ne sait pas ». Rendre la ligne quand
+    // même afficherait « Tout est réglé » pendant le chargement et sur un écran bloqué, donc une affirmation
+    // que personne n'a mesurée, juste à côté d'un bandeau qui dit le contraire.
+    expect(SRC).toContain('etapes !== null');
+    expect(SRC, 'un `?? []` transformerait « on ne sait pas » en « tout est réglé »')
+      .not.toMatch(/etapes\s*\?\?\s*\[\]/);
+  });
 });

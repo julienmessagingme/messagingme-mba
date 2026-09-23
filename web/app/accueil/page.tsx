@@ -14,17 +14,16 @@ import {
   getHubspotInstallLink,
   getStats, getTemplateStats, getCostSeries, getEsConfig, completeEmbeddedSignup,
   demanderCodeNumero, activerNumero,
-  type MeResponse, type AccountStatusResponse, type AccountDot, type EsConfig, type CanalCodeNumero,
+  type MeResponse, type AccountStatusResponse, type EsConfig, type CanalCodeNumero,
 } from '@/lib/api';
+import { DOT_HEX } from '@/lib/ui';
+import { PastilleNumero } from '@/components/PastilleNumero';
 import { getMbaStatus, putMbaActivation, type MbaStatus } from '@/lib/api-mba';
 import { loadFbSdk, type FbLoginResponse } from '@/lib/fb-sdk';
 
 export default function AccueilPage() {
   return <AppShell active="accueil">{(session) => <AccueilInner session={session} />}</AppShell>;
 }
-
-/** Couleur de la pastille de statut compte (hex direct -> aucun risque de shade Tailwind manquant). */
-const DOT_HEX: Record<AccountDot, string> = { green: '#17C74E', amber: '#E8A400', red: '#FF4D4F', grey: '#B8BEC9' };
 
 /** Logo HubSpot (sprocket officiel monochrome, Simple Icons) en couleur de marque. Marque l'intégration au niveau du toggle. */
 function HubSpotMark({ className }: { className?: string }) {
@@ -453,12 +452,7 @@ function AccueilInner({ session }: { session: Session }) {
             <div data-testid="numero-card" className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Numéro WhatsApp', 'WhatsApp number')}</h3>
-                {account && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-ink-50 px-2.5 py-1 text-xs font-medium text-ink-700">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: DOT_HEX[account.status.dot] }} />
-                    {account.status.label}
-                  </span>
-                )}
+                {account && <PastilleNumero status={account.status} />}
               </div>
               <div className="flex items-center gap-3">
                 {/**
