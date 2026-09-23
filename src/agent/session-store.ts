@@ -45,6 +45,8 @@ export interface AgentSession {
 export interface AgentSessionStore {
   /** Ce que cet agent a consomme sur les `jours` derniers jours. */
   consommation?(tenantId: string, agentId: string, jours: number): Promise<ConsommationAgent>;
+  /** Les messages échangés dans les conversations que cet agent a tenues, sur une fenêtre de N jours. */
+  messagesTenus?(tenantId: string, agentId: string, jours: number): Promise<number>;
   /**
    * Ouvre une session sur un parcours. LÈVE si ce parcours en a déjà une vivante : l'invariant « une seule
    * session par run » est un index partiel en base (migration 0086), pas une convention de code.

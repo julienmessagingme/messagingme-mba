@@ -37,6 +37,15 @@ export interface AgentsRouteDeps {
    */
   consommationAgent?(tenantId: string, agentId: string, jours: number): Promise<ConsommationAgent>;
   /**
+   * Les messages échangés dans les conversations que cet agent a tenues, sur une fenêtre de N jours.
+   *
+   * ⚠️ OPTIONNELLE, comme `consommationAgent` juste au-dessus, et pour la même raison : deux fixtures de
+   * test construisent un littéral complet de cette interface (`tests/http-agents.test.ts:61`,
+   * `tests/agent-setup-lint.test.ts:118`). La rendre requise les casserait sans rien acheter, et l'écran
+   * sait déjà ne rien afficher quand le chiffre manque.
+   */
+  messagesAgent?(tenantId: string, agentId: string, jours: number): Promise<number>;
+  /**
    * L'état à opposer au lint d'ACTIVATION. Absent, l'activation n'est pas contrôlée : c'est le montage des
    * tests de routes voisins, jamais la production.
    */
@@ -143,6 +152,28 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
     // « depuis toujours », qui relit toutes les sessions de l'espace pour un chiffre qui ne dit rien de
     // l'usage courant.
     return reply.code(200).send({ consommation: await deps.consommationAgent(tenant, agentId, JOURS_CONSOMMATION) });
+  });
+
+  /**
+   * Combien de messages ont été échangés dans les conversations que cet agent a tenues.
+   *
+   * 🔴 LA MÊME FENÊTRE QUE LA CONSOMMATION, et c'est ce qui rend les deux chiffres comparables : ils sont
+   * lus sur le même écran. `jours` est RENDU par le serveur, jamais deviné par l'écran, exactement comme
+   * `ConsommationAgent.jours`.
+   *
+   * ⚠️ `messages: null` QUAND ON NE SAIT PAS, jamais 0. Un zéro affirmerait que l'agent n'a parlé à
+   * personne, ce qui est une information FAUSSE présentée comme une mesure.
+   */
+  app.get('/tenants/:tenantId/agents/:agentId/messages', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { agentId } = req.params as { agentId: string };
+    if (!estUuid(agentId)) return reply.code(404).send({ error: 'agent introuvable' });
+    if (!deps.messagesAgent) return reply.code(200).send({ messages: null, jours: JOURS_CONSOMMATION });
+    return reply.code(200).send({
+      messages: await deps.messagesAgent(tenant, agentId, JOURS_CONSOMMATION),
+      jours: JOURS_CONSOMMATION,
+    });
   });
 
   app.get('/tenants/:tenantId/agents', opts, async (req, reply) => {

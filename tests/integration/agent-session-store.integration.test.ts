@@ -252,4 +252,59 @@ describe.skipIf(!url)('PgAgentSessionStore (Postgres)', () => {
     await store.sortieAppliquee(autreTenantId, s.id);
     expect(await marque(s.id)).not.toBeNull();
   });
+
+  /**
+   * LE COMPTAGE DES MESSAGES D'UN AGENT (tâche 4 du plan « refactor-ecrans-agents »).
+   *
+   * `conversation_messages` n'a pas de `tenant_id` et `agent_sessions` n'a pas de `conversation_id` : le
+   * rapprochement se fait par `wa_id`, à l'intérieur du tenant. Les conversations et leurs messages sont
+   * insérés par SQL direct, comme le reste de ce fichier fait pour les tables que le store ne gère pas.
+   */
+  it('🔴 messagesTenus compte les DEUX sens, et EXCLUT les fils de test', async () => {
+    // Deux conversations : une tenue par l'agent (2 messages, un dans chaque sens), une de TEST tenue par
+    // le même agent (1 message). Le compte doit valoir 2 et pas 3.
+    // Et une troisième conversation du même espace que l'agent n'a jamais tenue (1 message) : elle ne doit
+    // pas entrer non plus, sinon la mesure compterait tout l'espace au lieu de cet agent.
+    const waTenue = '33650000001';
+    const waTest = '33650000002';
+    const waEtrangere = '33650000003';
+    await store.open({ tenantId, runId: await nouveauRun(), agentId, nodeId: 'n1', waId: waTenue });
+    await store.open({ tenantId, runId: await nouveauRun(), agentId, nodeId: 'n1', waId: waTest });
+
+    const conv = await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, is_test) values ($1, $2, false) returning id`,
+      [tenantId, waTenue],
+    );
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, body) values ($1, 'in', 'bonjour'), ($1, 'out', 'bonjour, en quoi puis-je aider')`,
+      [conv.rows[0]!.id],
+    );
+
+    const convTest = await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, is_test) values ($1, $2, true) returning id`,
+      [tenantId, waTest],
+    );
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, body) values ($1, 'in', 'essai depuis le scenario')`,
+      [convTest.rows[0]!.id],
+    );
+
+    const convEtrangere = await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, is_test) values ($1, $2, false) returning id`,
+      [tenantId, waEtrangere],
+    );
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, body) values ($1, 'in', 'un autre client')`,
+      [convEtrangere.rows[0]!.id],
+    );
+
+    const n = await store.messagesTenus(tenantId, agentId, 30);
+    expect(n).toBe(2);
+  });
+
+  it('🔴 il ne voit RIEN d un autre espace', async () => {
+    // `conversation_messages` n'a pas de tenant_id : si la jointure sautait, ce test le dirait.
+    const n = await store.messagesTenus(autreTenantId, agentId, 30);
+    expect(n).toBe(0);
+  });
 });

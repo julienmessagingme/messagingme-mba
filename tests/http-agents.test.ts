@@ -50,7 +50,7 @@ const COMPLET: AgentComplet = {
 const ACTIFS: AgentResume[] = [{ id: AG1, label: 'Conseiller séjours', status: 'active', sorties: [{ code: 'besoin_cerne', label: 'Besoin cerné' }] }];
 const TOUTES: AgentResume[] = [...ACTIFS, { id: AG2, label: 'Brouillon', status: 'draft', sorties: [] }];
 
-function app(cleModele?: (tenant: string) => Promise<unknown>) {
+function app(cleModele?: (tenant: string) => Promise<unknown>, extra?: Partial<AgentsRouteDeps>) {
   const cap = {
     listes: [] as string[],
     ordre: [] as string[],
@@ -77,6 +77,7 @@ function app(cleModele?: (tenant: string) => Promise<unknown>) {
     remove: async (tenant, id) => { cap.supprimes.push({ tenant, id }); return id === AG1; },
     modeleParDefaut: 'modele-config',
     ...(cleModele ? { assurerCleModele: async (t: string) => { cap.ordre.push('cle'); return cleModele(t); } } : {}),
+    ...extra,
   };
   return { cap, srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, agents: deps }) };
 }
@@ -348,5 +349,33 @@ describe('routes agents : le modèle par défaut', () => {
     });
     const res = await srv.inject({ method: 'POST', url: '/tenants/t1/agents', ...h(adminTok), payload: { label: 'X' } });
     expect(res.statusCode).toBe(422);
+  });
+});
+
+describe('GET /tenants/:tenantId/agents/:agentId/messages', () => {
+  it('rend le compte et la fenêtre', async () => {
+    const { srv } = app(undefined, { messagesAgent: async () => 412 });
+    const res = await srv.inject({ method: 'GET', url: `/tenants/t1/agents/${AG1}/messages`, ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ messages: 412, jours: 30 });
+  });
+
+  it('🔴 rend null, PAS zéro, quand la dépendance est absente', async () => {
+    // Même convention que `/consommation` juste à côté : un zéro se lirait « cet agent n a parlé à
+    // personne », alors que la vérité est « cette instance ne sait pas compter ».
+    const { srv } = app();
+    const res = await srv.inject({ method: 'GET', url: `/tenants/t1/agents/${AG1}/messages`, ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ messages: null, jours: 30 });
+  });
+
+  it('🔴 refuse un identifiant d agent mal formé AVANT de toucher au store', async () => {
+    // Un identifiant non-uuid dans un `where` sur une colonne uuid fait LEVER Postgres (500), il ne rend
+    // pas zéro. L'ordre des gardes n'est pas décoratif.
+    let appele = false;
+    const { srv } = app(undefined, { messagesAgent: async () => { appele = true; return 1; } });
+    const res = await srv.inject({ method: 'GET', url: '/tenants/t1/agents/pas-un-uuid/messages', ...h(adminTok) });
+    expect(res.statusCode).toBe(404);
+    expect(appele).toBe(false);
   });
 });

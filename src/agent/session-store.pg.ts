@@ -255,4 +255,42 @@ export class PgAgentSessionStore implements AgentSessionStore {
       jours,
     };
   }
+
+  /**
+   * Les messages échangés dans les conversations que cet agent a tenues sur la fenêtre.
+   *
+   * 🔴 LA JOINTURE SUR `conversations` EST LE SEUL CONTRÔLE D'ISOLATION. `conversation_messages` ne porte
+   * PAS de `tenant_id` (migration 0009) : une requête qui compterait les messages sur la seule fenêtre de
+   * temps compterait ceux de TOUS les espaces. Ce n'est pas une imprécision, c'est une fuite entre clients.
+   *
+   * 🔴 `not c.is_test` : sans lui, les conversations ouvertes par « Tester le scénario » gonflent le
+   * chiffre. Tout le reste des statistiques de ce dépôt les exclut, et un chiffre qui les compterait ici
+   * contredirait le Performance Lab à deux écrans de distance.
+   *
+   * ⚠️ LE RAPPROCHEMENT SE FAIT SUR `wa_id`, ET IL N'Y A PAS D'AUTRE CLÉ. `agent_sessions` ne porte aucun
+   * `conversation_id` ; `conversations` porte un `unique (tenant_id, wa_id)`, ce qui rend le rapprochement
+   * déterministe à l'intérieur d'un espace. Ne pas chercher une clé étrangère, il n'y en a pas, et
+   * `run_id` ne mène pas à une conversation.
+   *
+   * ⚠️ FENÊTRE GLISSANTE, comme `consommation` juste au-dessus, et pas les bornes civiles de `BOUNDS_CTE` :
+   * les deux chiffres se lisent côte à côte sur le même écran, et deux fenêtres différentes y seraient
+   * illisibles.
+   */
+  async messagesTenus(tenantId: string, agentId: string, jours: number): Promise<number> {
+    const { rows } = await this.pool.query<{ n: string }>(
+      `select count(*)::text as n
+         from conversation_messages m
+         join conversations c on c.id = m.conversation_id
+        where c.tenant_id = $1
+          and not c.is_test
+          and m.created_at > now() - make_interval(days => $3)
+          and c.wa_id in (
+            select s.wa_id from agent_sessions s
+             where s.tenant_id = $1 and s.agent_id = $2
+               and s.created_at > now() - make_interval(days => $3)
+          )`,
+      [tenantId, agentId, jours],
+    );
+    return Number(rows[0]?.n ?? 0);
+  }
 }
