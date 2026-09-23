@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, it, expect, afterEach } from 'vitest';
-import { MetaPubsClient, sansPrefixeAct, doitRevoquerAncien } from '../src/meta/pubs';
+import { MetaPubsClient, sansPrefixeAct, retirerAncienAcces, type ClientRetrait } from '../src/meta/pubs';
 import { ErreurGraph, estJetonRefuse } from '../src/meta/graph';
 
 /**
@@ -132,31 +132,63 @@ describe("la liaison Page / numéro ne se redemande pas à Meta sans l'avoir rem
 });
 
 /**
- * 🔴 LA DÉCISION DE RÉVOQUER SE TESTE PAR VALEURS, ET C'EST UNE LEÇON PAYÉE.
+ * 🔴 LE RETRAIT DE L'ANCIEN ACCÈS S'EXÉCUTE POUR DE VRAI, CONTRE UN FAUX CLIENT.
  *
- * Elle vivait dans un `if` du câblage, gardée par un test qui lisait le TEXTE de ce `if`. Mesuré par
- * une relecture à froid : cette garde tombait sur l'inversion des corps, mais restait VERTE si on
- * NIAIT la condition (le bug d'origine exactement, écrit autrement) ou si on ajoutait un retrait
- * inconditionnel au-dessus ; et elle CASSAIT sur deux réécritures correctes. Elle épinglait une
- * orthographe. Ici, les quatre cas qui existent sont exercés pour de vrai.
+ * Cette décision a vécu dans un `if` du câblage, gardée par un test qui lisait le TEXTE de ce `if`.
+ * Deux relectures à froid l'ont mesuré, et les deux fois la garde a été prise en défaut : la première
+ * écriture laissait passer la condition NIÉE, la seconde laissait passer le `!` RETIRÉ et les corps
+ * ÉCHANGÉS. Trois orthographes du MÊME bug, celui qui désarme le jeton qu'on vient de déposer et fait
+ * répondre 200 sur une connexion morte. **Un test de source ne sait pas juger une sémantique.**
+ *
+ * Ici les cinq issues sont exercées par le vrai code, et ce qui est asserté est CE QUI PART chez Meta :
+ * la liste des jetons révoqués. Une mutation qui inverse la décision la remplit quand elle doit rester
+ * vide, et aucune réécriture correcte ne peut faire tomber ces cas.
  */
-describe('doitRevoquerAncien : on ne retire que sur une différence CONSTATÉE', () => {
-  it("🔴 deux entités DIFFÉRENTES : on retire, c'est le seul cas où c'est sûr", () => {
-    expect(doitRevoquerAncien('sys-1', 'sys-2')).toBe(true);
+describe('retirerAncienAcces : on ne retire que sur une différence CONSTATÉE', () => {
+  const faux = (identites: Record<string, string | null>, refuse = false) => {
+    const revoques: string[] = [];
+    const client: ClientRetrait = {
+      identite: async (j) => identites[j] ?? null,
+      revoquerAcces: async (j) => {
+        revoques.push(j);
+        if (refuse) throw new Error('Meta refuse');
+      },
+    };
+    return { client, revoques };
+  };
+
+  it('sans ancien jeton, il n y a rien à retirer', async () => {
+    const { client, revoques } = faux({});
+    await expect(retirerAncienAcces(client, null, 'NEUF')).resolves.toBe('aucun');
+    expect(revoques).toEqual([]);
   });
 
-  it('🔴 la MÊME entité : on ne retire PAS, sinon on désarme le jeton neuf', () => {
-    // `DELETE /me/permissions` porte sur le couple (application, entité) : retirer l'ancien
-    // retirerait les permissions du neuf, et la route répondrait 200 sur une connexion morte.
-    expect(doitRevoquerAncien('sys-1', 'sys-1')).toBe(false);
+  it("🔴 deux entités DIFFÉRENTES : on retire l'ancien, et lui seul", async () => {
+    const { client, revoques } = faux({ ANCIEN: 'sys-1', NEUF: 'sys-2' });
+    await expect(retirerAncienAcces(client, 'ANCIEN', 'NEUF')).resolves.toBe('retire');
+    expect(revoques).toEqual(['ANCIEN']);
   });
 
-  it('🔴 une identité INCONNUE vaut refus, des DEUX côtés', () => {
-    // Meta n'a pas répondu : une identité absente ne PROUVE pas une différence, et un doute ne
-    // justifie pas de casser ce qui marche.
-    expect(doitRevoquerAncien(null, 'sys-2')).toBe(false);
-    expect(doitRevoquerAncien('sys-1', null)).toBe(false);
-    expect(doitRevoquerAncien(null, null)).toBe(false);
+  it('🔴 la MÊME entité : AUCUN appel de retrait ne part, sinon on désarme le neuf', async () => {
+    const { client, revoques } = faux({ ANCIEN: 'sys-1', NEUF: 'sys-1' });
+    await expect(retirerAncienAcces(client, 'ANCIEN', 'NEUF')).resolves.toBe('meme_entite');
+    // C'est CE QUI PART qui compte : un `revoques` non vide ici est le bug, quelle que soit la valeur rendue.
+    expect(revoques).toEqual([]);
+  });
+
+  it('🔴 une identité INCONNUE vaut refus, des DEUX côtés, et rien ne part', async () => {
+    const cas: Array<Record<string, string | null>> = [{ NEUF: 'sys-2' }, { ANCIEN: 'sys-1' }, {}];
+    for (const identites of cas) {
+      const { client, revoques } = faux(identites);
+      await expect(retirerAncienAcces(client, 'ANCIEN', 'NEUF')).resolves.toBe('indetermine');
+      expect(revoques).toEqual([]);
+    }
+  });
+
+  it('⚠️ un refus de Meta ne lève pas, il se DIT : `echec`, pas `retire`', async () => {
+    const { client, revoques } = faux({ ANCIEN: 'sys-1', NEUF: 'sys-2' }, true);
+    await expect(retirerAncienAcces(client, 'ANCIEN', 'NEUF')).resolves.toBe('echec');
+    expect(revoques).toEqual(['ANCIEN']);
   });
 });
 

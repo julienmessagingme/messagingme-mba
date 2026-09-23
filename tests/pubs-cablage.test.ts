@@ -74,26 +74,25 @@ describe('câblage des publicités : le jeton ne touche jamais la base en clair'
     expect(bloc.indexOf('encryptSecret(')).toBeLessThan(bloc.indexOf('connexionsPub.remplacer'));
   });
 
-  it('🔴 le dépôt DEMANDE les deux identités et passe par `doitRevoquerAncien`', () => {
-    // ⚠️ CE TEST NE JUGE PLUS LA DÉCISION, il vérifie seulement que le câblage la DEMANDE. La décision
-    // elle-même est une fonction pure, éprouvée PAR VALEURS dans `tests/pubs-client-meta.test.ts`.
-    // La version précédente lisait le texte d'un `if` : mesurée par une relecture à froid, elle
-    // restait VERTE sur deux formes du bug (condition niée, retrait inconditionnel ajouté au-dessus)
-    // et CASSAIT sur deux réécritures correctes. Un test de source ne sait pas juger une sémantique ;
-    // ce qu'il sait faire, c'est constater qu'un câblage n'a pas débranché la question.
+  it('🔴 le dépôt DÉLÈGUE le sort de l ancien jeton, il ne le décide pas ici', () => {
+    // ⚠️ CE TEST NE JUGE PAS LA DÉCISION, et c'est désormais explicite. Il a essayé deux fois, et deux
+    // relectures à froid l'ont pris en défaut : la première écriture laissait passer la condition NIÉE,
+    // la seconde laissait passer le `!` RETIRÉ et les corps ÉCHANGÉS, et elle avait en plus PERDU un cas
+    // que la première attrapait. Trois orthographes du même bug. Un test de source ne sait pas juger
+    // une sémantique ; ce qu'il sait faire, c'est constater qu'un câblage n'a pas repris la décision
+    // à son compte. Le comportement, lui, s'exécute contre un faux client dans
+    // `tests/pubs-client-meta.test.ts`, où chacune de ces mutations fait tomber un cas.
     const bloc = blocDe('deposerJetonPub: async');
-    expect(bloc).toMatch(/clientPubs\.identite\(clair\)/);
-    expect(bloc).toMatch(/clientPubs\.identite\(jeton\)/);
-    expect(bloc).toMatch(/doitRevoquerAncien\(idAncien, idNeuf\)/);
-    expect(bloc.indexOf('doitRevoquerAncien')).toBeLessThan(bloc.indexOf('revoquerAcces'));
+    expect(bloc).toMatch(/retirerAncienAcces\(/);
+    // Et il ne reste AUCUNE décision locale : ni comparaison d'identités, ni appel direct au retrait.
+    expect(bloc).not.toMatch(/idAncien|idNeuf|clientPubs\.revoquerAcces|clientPubs\.identite/);
   });
 
-  it('🔴 le dépôt par `/ops` RÉVOQUE l’ancien jeton AVANT de l’écraser', () => {
-    // L'écran REFUSE quand une connexion existe ; `/ops` REMPLACE. Écraser sans jamais tenter le
-    // retrait laisse un accès vivant chez Meta dont on vient de perdre le seul exemplaire.
+  it('🔴 le sort de l ancien jeton se joue AVANT le remplacement, pas après', () => {
+    // Notre ligne est le seul endroit où l'ancien jeton existe chez nous : une fois `remplacer` passé,
+    // il est perdu, et plus personne ne peut décider quoi que ce soit à son sujet.
     const bloc = blocDe('deposerJetonPub: async');
-    expect(bloc).toMatch(/revoquerAcces/);
-    expect(bloc.indexOf('revoquerAcces')).toBeLessThan(bloc.indexOf('connexionsPub.remplacer'));
+    expect(bloc.indexOf('retirerAncienAcces')).toBeLessThan(bloc.indexOf('connexionsPub.remplacer'));
   });
 
   it('🔴 le jeton relu est DÉCHIFFRÉ, il ne part pas chiffré chez Meta', () => {

@@ -5,6 +5,41 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-23 (soir) : deux commits qui ne se révoquent plus séparément, et cinq relectures
+
+🔴 **`a2e0baed` ET `33ce31fe` SE RÉVOQUENT ENSEMBLE OU PAS DU TOUT.** Le premier est un correctif de
+l'écran Publicités ; il a emporté, sous un message qui n'en parle pas, une ligne de câblage du lot
+voisin (`messagesTenus:` dans le bloc `mba:` de `src/index.ts`). Les deux moitiés de cette ligne, la
+déclaration sur `MbaRouteDeps` et la méthode sur `PgStatsStore`, étaient encore non commitées : le
+commit ne compilait donc pas seul, et `main` est resté rouge de 17 h 25 à 17 h 31 UTC, jusqu'à
+`33ce31fe` qui a apporté les deux moitiés.
+
+⚠️ **CE QUI RESTE VIVANT, ET QU'IL FAUT SAVOIR AVANT DE TOUCHER À CES COMMITS** : un
+`git revert a2e0baed` retirerait la ligne de câblage en laissant la dépendance OPTIONNELLE en place.
+La route répondrait alors 200 avec `messages: null`, donc le compteur de messages de l'agent de Meta
+s'éteindrait EN SILENCE, sans erreur, au moment précis où l'on croit ne défaire qu'un correctif
+publicitaire. L'histoire est poussée, donc on ne la réécrit pas : on écrit la dépendance ici.
+
+🔴 **LA CAUSE N'EST PAS `--only`, C'EST LE MOMENT OÙ L'ON RELIT LE DIFF.** Le diff de `src/index.ts`
+avait été relu et ne portait que les deux lignes attendues. Puis `hooks/rayon-de-souffle.js` a refusé
+le commit pour faire relire sa liste, et la même commande a été relancée SANS relire le diff : la ligne
+du voisin est arrivée entre les deux. **Le hook agrandit la fenêtre qu'il est censé aider à
+surveiller.** Et le contrôle d'intrus qui tournait ne regardait que les NOMS DE FICHIERS : il rendait
+zéro, puisque `src/index.ts` était légitimement sur la liste. Ce qui était étranger était une ligne
+DEDANS. La parade qui ne dépend d'aucun timing avait été utilisée une heure plus tôt, sur le même
+fichier et avec succès : fabriquer le blob soi-même (arbre MOINS les lignes du pair) et commiter par
+`GIT_INDEX_FILE` temporaire.
+
+⚠️ **CINQ RELECTURES À FROID POUR UN SEUL LOT, ET CHACUNE A TROUVÉ QUELQUE CHOSE QUE LA PRÉCÉDENTE
+AVAIT CRÉÉ.** La première a trouvé un accès Meta rendu irrévocable ; le correctif révoquait à
+l'aveugle et aurait désarmé le jeton NEUF, ce que la deuxième a vu ; la troisième a montré que le
+correctif suivant avait réécrit un bandeau qu'une décision produit avait fait retirer le jour même ;
+la quatrième, qu'en retirant ce bandeau on avait emporté le rechargement de l'écran ; la cinquième,
+que la garde censée protéger tout cela laissait passer trois orthographes du bug d'origine. **C'est en
+corrigeant qu'on casse**, et le seul remède qui ait fonctionné est d'arrêter de garder une décision
+par un test qui lit du TEXTE : elle vit désormais dans `retirerAncienAcces`, exécutée contre un faux
+client, où chaque mutation fait tomber un cas.
+
 ## 2026-09-23 (après-midi) : trois lots de plus, et trois relectures pour un seul module
 
 **Déployé le 2026-09-23 vers 12 h 40**, par la session des publicités, après une revue finale qui a demandé
