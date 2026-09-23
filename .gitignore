@@ -20,6 +20,11 @@ playwright-report/
 # feature-loop (artefacts de travail)
 .loop/
 
+# subagent-driven-development : registre de progression, briefs et paquets de revue d un plan en cours.
+# Meme famille que .loop/ juste au-dessus. L arbre est PARTAGE entre sessions : sans cette ligne, ces
+# artefacts apparaissent dans le git status de l autre session, qui peut les emporter dans un commit.
+.superpowers/
+
 # Audits, contre-audits, plans RSSI et mémos d'architecture : ils inventorient des faiblesses (parfois encore
 # ouvertes) et citent des prospects et leurs questionnaires. Le dépôt est PUBLIC depuis le 2026-09-15, donc ils
 # vivent dans `docs/prive/`, jamais committé. Les motifs de la racine rattrapent un nouveau document déposé là
