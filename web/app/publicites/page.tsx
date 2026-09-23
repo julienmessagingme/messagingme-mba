@@ -119,11 +119,15 @@ function PublicitesInner({ session }: { session: Session }) {
    * clic, quand un jeton orphelin ne l'est jamais.
    */
   async function reconnecter(): Promise<void> {
-    await deconnecter();
+    // 🔴 ON S'ARRÊTE SI LA DÉCONNEXION A ÉCHOUÉ, et c'est le tout. Enchaîner quand même ferait échanger un
+    // nouveau jeton par-dessus un ancien qu'on n'a pas révoqué, et `connecter` effacerait au passage le
+    // message d'erreur que personne n'aurait eu le temps de lire. Une garde qui n'arrête pas la suite ne
+    // garde rien (relecture croisée du 2026-09-23). Le serveur refuse de toute façon : c'est la ceinture.
+    if (!await deconnecter()) return;
     await connecter();
   }
 
-  async function deconnecter(): Promise<void> {
+  async function deconnecter(): Promise<boolean> {
     setErreur(null);
     setBusy(true);
     try {
@@ -133,8 +137,10 @@ function PublicitesInner({ session }: { session: Session }) {
       setRetraitNonConfirme(!revoqueChezMeta);
       setActifs(null);
       await charger();
+      return true;
     } catch (err) {
       setErreur(err instanceof Error ? err.message : t('Déconnexion impossible', 'Could not disconnect'));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -250,7 +256,7 @@ function Choix({ t, actifs, busy, compte, page, setCompte, setPage, valider }: {
 }
 
 function Connecte({ t, etat, busy, deconnecter, reconnecter }: {
-  t: T; etat: EtatPubs; busy: boolean; deconnecter: () => Promise<void>; reconnecter: () => Promise<void>;
+  t: T; etat: EtatPubs; busy: boolean; deconnecter: () => Promise<boolean>; reconnecter: () => Promise<void>;
 }) {
   const c = etat.connexion!;
   return (

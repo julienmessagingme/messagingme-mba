@@ -59,24 +59,28 @@ export class PgPubConnexionStore {
   }
 
   /**
-   * Pose le jeton fraîchement échangé, AVANT tout choix d'actifs.
+   * Pose le jeton fraîchement échangé. Rend `false` quand une connexion EXISTE DÉJÀ, sans rien écraser.
    *
-   * 🔴 IDEMPOTENT PAR LA CLÉ PRIMAIRE, et c'est ce qui rend deux connexions simultanées inoffensives. Une
-   * reconnexion REMET À ZÉRO le choix et le rejet : le jeton neuf n'accorde pas forcément les mêmes actifs
-   * que l'ancien, donc garder l'ancien compte reviendrait à afficher un compte auquel on n'a plus accès.
+   * 🔴 L'INVARIANT EST TENU PAR LA BASE, PAS PAR L'ÉCRAN NI PAR UN CONTRÔLE PRÉALABLE. Cette méthode
+   * faisait un `do update set jeton_chiffre`, et un second jeton écrasait le premier : l'ancien, SANS
+   * EXPIRATION, restait vivant chez Meta alors que nous venions d'en perdre le seul exemplaire. C'est le
+   * piège de la clé Vercel (0124), et il s'était déplacé deux fois avant d'arriver ici : d'abord non vu, puis
+   * confié à un enchaînement de l'écran qui ne s'arrêtait pas en cas d'échec (relecture du 2026-09-23).
+   *
+   * ⚠️ `on conflict do nothing` et pas un `select` préalable : entre la lecture et l'écriture, deux
+   * connexions simultanées passeraient toutes les deux. Ici la seconde repart avec `false`, toujours.
+   *
+   * Pour reconnecter, il faut donc PASSER PAR LA DÉCONNEXION, qui révoque avant d'effacer.
    */
-  async poserJeton(tenantId: string, jetonChiffre: string, parUserId: string | null): Promise<void> {
-    await this.pool.query(
+  async poserJeton(tenantId: string, jetonChiffre: string, parUserId: string | null): Promise<boolean> {
+    const { rows } = await this.pool.query<{ tenant_id: string }>(
       `insert into pub_connexion (tenant_id, jeton_chiffre, connecte_par, connecte_le)
        values ($1, $2, $3, now())
-       on conflict (tenant_id) do update set
-         jeton_chiffre = excluded.jeton_chiffre,
-         connecte_par = excluded.connecte_par,
-         connecte_le = now(),
-         compte_pub_id = null, page_id = null, devise = null, fuseau = null, page_liee = null,
-         jeton_rejete_le = null`,
+       on conflict (tenant_id) do nothing
+       returning tenant_id`,
       [tenantId, jetonChiffre, parUserId],
     );
+    return rows.length === 1;
   }
 
   /** Enregistre le compte et la Page choisis, avec ce que Meta a dit d'eux. */

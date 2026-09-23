@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { JetonNonEnregistre, PasDeConnexionPub, registerPubs, type PubsRouteDeps } from '../src/http/pubs';
+import { DejaConnectePub, JetonNonEnregistre, PasDeConnexionPub, registerPubs, type PubsRouteDeps } from '../src/http/pubs';
 import type { ConnexionPub } from '../src/pubs/connexion.pg';
 import type { ActifsAccordes } from '../src/meta/pubs';
 
@@ -105,6 +105,15 @@ describe('POST /echange : le code rendu par la fenêtre Meta', () => {
     const res = await srv.inject({ method: 'POST', url: url('/echange'), payload: { code: 'VIEUX' } });
     expect(res.statusCode).toBe(502);
     expect(res.json().error).toContain('code expiré');
+  });
+
+  it('🔴 une connexion qui EXISTE ne s ecrase pas : 409, meme par un appel direct a la route', async () => {
+    // Le jeton en place n expire jamais. Le remplacer sans l avoir revoque laisserait un acces vivant
+    // dont nous perdrions le seul exemplaire : pour reconnecter, il faut passer par la deconnexion.
+    const { srv } = app({ connecter: async () => { throw new DejaConnectePub(); } });
+    const res = await srv.inject({ method: 'POST', url: url('/echange'), payload: { code: 'CODE' } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().code).toBe('deja_connecte');
   });
 
   it('🔴 NOTRE panne apres l echange ne s impute pas a Meta, et DIT que le jeton est perdu', async () => {

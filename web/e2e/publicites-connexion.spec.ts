@@ -133,6 +133,31 @@ test.describe('Publicités : les états de la connexion', () => {
     await expect.poll(() => gestes.includes('DELETE')).toBe(true);
   });
 
+  test('🔴 si la DÉCONNEXION échoue, « Reconnecter » S ARRÊTE : pas de jeton écrasé sans révocation', async ({ page }) => {
+    // Une garde qui n arrete pas la suite ne garde rien : enchainer ouvrirait la fenetre Meta, echangerait
+    // un nouveau jeton par-dessus l ancien NON revoque, et effacerait au passage le message d erreur.
+    const gestes: string[] = [];
+    await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
+    await page.route('**/api/backend/**', async (route) => {
+      const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+      const url = route.request().url();
+      if (url.includes('/pubs/connexion')) {
+        gestes.push(route.request().method());
+        if (route.request().method() === 'DELETE') {
+          return route.fulfill({ status: 502, contentType: 'application/json', body: '{"error":"Meta ne repond pas"}' });
+        }
+        return json(etatVivant({ connexion: CONNEXION }));
+      }
+      if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
+      return json({});
+    });
+    await page.goto('/publicites');
+    await page.getByRole('button', { name: /Reconnecter|Reconnect/ }).click();
+    // Le message d erreur RESTE lisible, et aucun echange n a ete tente.
+    await expect(page.getByTestId('pubs-erreur')).toContainText(/Meta ne repond pas/);
+    expect(gestes.filter((m) => m === 'POST')).toHaveLength(0);
+  });
+
   test('⚠️ ni liste de pubs ni bouton Créer : ils sont le lot 3, et un bouton inerte serait pire que rien', async ({ page }) => {
     await brancher(page, etatVivant({ connexion: CONNEXION }));
     await expect(page.getByRole('button', { name: /^Créer|^Create/ })).toHaveCount(0);

@@ -63,6 +63,19 @@ export class JetonNonEnregistre extends Error {
   }
 }
 
+/**
+ * 🔴 UNE CONNEXION EXISTE DÉJÀ, et on ne l'écrase pas. Le jeton en place n'expire jamais : le remplacer
+ * sans l'avoir révoqué laisserait un accès vivant dont nous perdrions le seul exemplaire. Pour reconnecter,
+ * il faut passer par la déconnexion, qui révoque d'abord. Un appel DIRECT à la route reçoit donc 409, et
+ * pas seulement celui qui passe par le bouton : l'invariant ne dépend plus de l'écran.
+ */
+export class DejaConnectePub extends Error {
+  constructor() {
+    super('une connexion publicitaire existe déjà pour cet espace');
+    this.name = 'DejaConnectePub';
+  }
+}
+
 /** L'espace n'a aucune connexion publicitaire : une demande hors d'état, pas une panne. */
 export class PasDeConnexionPub extends Error {
   constructor() {
@@ -113,6 +126,14 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
       // 🔴 NOTRE PANNE APRÈS L'ÉCHANGE : Meta a déjà émis un jeton SANS EXPIRATION et nous n'avons pas pu
       // le garder. On ne l'impute pas à Meta, et on DIT ce que le client peut faire : sa seule porte est
       // de retirer l'application chez lui, puisque nous n'avons plus rien à révoquer.
+      // Déjà connecté : ce n'est ni une panne de Meta ni la nôtre, c'est un geste à faire dans l'ordre.
+      if (err instanceof DejaConnectePub) {
+        return reply.code(409).send({
+          error: 'cet espace a déjà une connexion publicitaire. Déconnectez-la d’abord : c’est ce geste qui '
+            + 'retire notre accès chez Meta.',
+          code: 'deja_connecte',
+        });
+      }
       if (err instanceof JetonNonEnregistre) {
         return reply.code(500).send({
           error: 'la connexion a été accordée par Meta mais n’a pas pu être enregistrée. Retirez l’application '

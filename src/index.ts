@@ -127,7 +127,7 @@ import { lireMediaRecu } from './inbox/media-entrant';
 import { assurerCleGateway, remonterPlafondApresRecharge, revoquerCleGateway, type DepsProvisionCle } from './agent/provisionner-cle';
 import { encryptSecret, decryptSecret } from './crypto/secretbox';
 import { MetaPubsClient } from './meta/pubs';
-import { JetonNonEnregistre, PasDeConnexionPub } from './http/pubs';
+import { DejaConnectePub, JetonNonEnregistre, PasDeConnexionPub } from './http/pubs';
 import { estJetonRefuse } from './meta/graph';
 import { PgPubConnexionStore } from './pubs/connexion.pg';
 import { PgAgentSessionStore } from './agent/session-store.pg';
@@ -2286,13 +2286,18 @@ async function main(): Promise<void> {
           // 🔴 À PARTIR D'ICI, META A ÉMIS UN JETON SANS EXPIRATION. Il est rangé AVANT qu'on lise les
           // actifs, et son échec porte un nom à LUI : ce n'est pas un refus de Meta, c'est NOTRE panne, et
           // elle laisse derrière elle un accès vivant dont nous n'avons plus la trace.
+          let pose = false;
           try {
-            await connexions.poserJeton(t, encryptSecret(jeton, config.ENCRYPTION_KEY), userId);
+            pose = await connexions.poserJeton(t, encryptSecret(jeton, config.ENCRYPTION_KEY), userId);
           } catch (err) {
             // eslint-disable-next-line no-console
             console.error('jeton publicitaire NON enregistré, il reste vivant chez Meta:', err instanceof Error ? err.message : err);
             throw new JetonNonEnregistre(err);
           }
+          // 🔴 LA BASE A REFUSÉ D'ÉCRASER UNE CONNEXION EXISTANTE, et c'est elle qui tient l'invariant.
+          // Le jeton qu'on vient d'échanger est PERDU pour nous, donc on le dit comme tel : ce cas ne se
+          // produit que si l'on a sauté la déconnexion, qui est le seul geste qui révoque.
+          if (!pose) throw new DejaConnectePub();
           return clientPubs.actifsAccordes(jeton);
         },
         actifsAccordes: async (t: string) => noterSiRefus(t, clientPubs.actifsAccordes(await jetonClair(t))),
