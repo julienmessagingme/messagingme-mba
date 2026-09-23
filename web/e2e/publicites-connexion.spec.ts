@@ -147,28 +147,43 @@ test.describe('Publicités : les états de la connexion', () => {
     await expect(page.getByRole('button', { name: /Reconnecter|Reconnect/ })).toBeEnabled();
   });
 
-  test('🔴 le retrait chez Meta ne produit AUCUN bandeau, dans les deux sens', async ({ page }) => {
-    // ⚠️ C EST UNE DECISION DE JULIEN (2026-09-23), pas un oubli, et ce cas la GARDE dans les deux sens.
-    // Le jeton residuel n est detenu par PERSONNE (on vient de supprimer notre seule copie), donc
-    // avertir revenait a inquieter un client pour un acces que nul ne peut exercer. Et un bandeau
-    // re-ecrit ici le meme jour s est revele DANGEREUX : il survivait a une reconnexion et disait a un
-    // client fraichement reconnecte de retirer les permissions qu il venait d accorder.
+  test('🔴 la deconnexion FAIT DISPARAITRE la carte, et ne produit aucun bandeau', async ({ page }) => {
+    // DEUX proprietes en un cas, parce qu elles se cassent ensemble : un correctif qui retirait le
+    // bandeau a emporte le rechargement, et l ecran a continue d afficher « connecte » sur un espace
+    // deconnecte. Le cas precedent ne pouvait pas le voir : son faux serveur rendait TOUJOURS une
+    // connexion, donc la carte etait visible avant le clic comme apres.
+    //
+    // ⚠️ L ABSENCE DE BANDEAU EST UNE DECISION DE JULIEN (2026-09-23), pas un oubli : le jeton residuel
+    // n est detenu par PERSONNE, donc avertir revient a inquieter pour un acces que nul ne peut
+    // exercer, et les gestes qu on pourrait prescrire cassent chacun quelque chose.
     for (const revoqueChezMeta of [true, false]) {
+      const gestes: string[] = [];
+      let deconnecte = false;
       await page.addInitScript((sess) => window.localStorage.setItem('mba.session', JSON.stringify(sess)), SESSION);
       await page.route('**/api/backend/**', async (route) => {
         const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
         const url = route.request().url();
         if (url.includes('/pubs/connexion')) {
-          if (route.request().method() === 'DELETE') return json({ ok: true, revoqueChezMeta });
-          return json(etatVivant({ connexion: CONNEXION }));
+          gestes.push(route.request().method());
+          if (route.request().method() === 'DELETE') {
+            deconnecte = true;
+            return json({ ok: true, revoqueChezMeta });
+          }
+          // 🔴 LE SERVEUR DIT LA VERITE : apres le DELETE, l espace n a plus de connexion. C est ce
+          // qui rend ce cas capable de voir un ecran qui ne se recharge pas.
+          return json(etatVivant({ connexion: deconnecte ? null : CONNEXION }));
         }
         if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
         return json({});
       });
       await page.goto('/publicites');
-      await page.getByRole('button', { name: /^Déconnecter$|^Disconnect$/ }).click();
-      // Le geste a bien eu lieu (l ecran repart sur l etat charge), et rien ne prescrit quoi que ce soit.
       await expect(page.getByTestId('pubs-compte')).toBeVisible();
+      await page.getByRole('button', { name: /^Déconnecter$|^Disconnect$/ }).click();
+      await expect.poll(() => gestes.includes('DELETE')).toBe(true);
+      // La carte disparait, et le bouton de connexion revient : l ecran a bien RELU l etat.
+      await expect(page.getByTestId('pubs-compte')).toHaveCount(0);
+      await expect(page.getByRole('button', { name: /Connecter mes publicités|Connect my ads/ })).toBeVisible();
+      // Et rien ne prescrit quoi que ce soit, dans les deux sens du retrait.
       await expect(page.getByTestId('pubs-avis')).toHaveCount(0);
       await expect(page.getByText(/Retirez-les vous-même|Remove them yourself/)).toHaveCount(0);
       await expect(page.getByText(/retirer l’application|remove the app/i)).toHaveCount(0);

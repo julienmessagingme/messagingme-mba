@@ -126,7 +126,7 @@ import { transcrireMessage } from './inbox/transcrire';
 import { lireMediaRecu } from './inbox/media-entrant';
 import { assurerCleGateway, remonterPlafondApresRecharge, revoquerCleGateway, type DepsProvisionCle } from './agent/provisionner-cle';
 import { encryptSecret, decryptSecret } from './crypto/secretbox';
-import { MetaPubsClient, sansPrefixeAct, type EtatComptePub } from './meta/pubs';
+import { MetaPubsClient, sansPrefixeAct, doitRevoquerAncien, type EtatComptePub } from './meta/pubs';
 import type { SortAncienJetonPub } from './http/ops';
 import { DejaConnectePub, JetonNonEnregistre, PasDeConnexionPub } from './http/pubs';
 import { estJetonRefuse } from './meta/graph';
@@ -1603,6 +1603,7 @@ async function main(): Promise<void> {
       // compte n'était pas encore arrivé au moment du clic.
       numeroDuTenant: (tenant) => repo.getTenantPhoneNumberId(tenant),
       ecrireDrapeauMba: (tenant, enabled) => settingsStore.setMbaEnabled(tenant, enabled),
+      messagesTenus: (tenant, jours) => statsStore.messagesTenusParMba(tenant, jours),
     },
     // Agents IA, en lecture : la palette du builder a besoin de la liste pour proposer le bloc.
     agents: {
@@ -2761,7 +2762,7 @@ async function main(): Promise<void> {
             clientPubs.identite(clair),
             clientPubs.identite(jeton),
           ]);
-          if (idAncien === null || idNeuf === null || idAncien === idNeuf) {
+          if (!doitRevoquerAncien(idAncien, idNeuf)) {
             // Même entité : l'ancien jeton reste VALIDE et on ne peut pas le tuer seul. Le seul geste
             // qui le fait est de régénérer le jeton de l'utilisateur système chez Meta, à la main.
             ancienRevoque = idAncien !== null && idNeuf !== null ? 'meme_entite' : 'indetermine';

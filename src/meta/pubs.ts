@@ -222,6 +222,29 @@ export class MetaPubsClient extends ClientGraph {
   }
 }
 
+/**
+ * FAUT-IL RETIRER LES PERMISSIONS DE L'ANCIEN JETON, quand un dépôt en remplace un ?
+ *
+ * 🔴 UNE FONCTION PURE, ET C'EST TOUT L'INTÉRÊT. La décision vivait dans un `if` du câblage, et la
+ * seule garde qui la protégeait lisait le TEXTE de ce `if` : elle tombait sur l'inversion des corps,
+ * mais restait VERTE si on niait la condition, ou si on ajoutait un retrait inconditionnel au-dessus.
+ * Deux formes du même bug passaient, et deux réécritures correctes la cassaient. Une décision qui
+ * compte se teste PAR VALEURS, pas par orthographe.
+ *
+ * 🔴 CE QU'ELLE PROTÈGE. `DELETE /me/permissions/<perm>` porte sur le couple (application, ENTITÉ),
+ * pas sur LE jeton : deux jetons de la même entité sous la même application se révoquent ensemble.
+ * Retirer l'ancien désarmerait donc le neuf, qu'on vient de vérifier, et la route répondrait 200 sur
+ * une connexion morte.
+ *
+ * ⚠️ `null` VAUT REFUS, DANS LES DEUX SENS : une identité que Meta n'a pas rendue ne prouve pas une
+ * différence, et un doute ne justifie pas de casser ce qui marche. On ne retire que sur une
+ * différence CONSTATÉE.
+ */
+export function doitRevoquerAncien(idAncien: string | null, idNeuf: string | null): boolean {
+  if (idAncien === null || idNeuf === null) return false;
+  return idAncien !== idNeuf;
+}
+
 /** `act_123` et `123` désignent le même compte : on garde la forme nue, et les appels remettent le préfixe. */
 export function sansPrefixeAct(id: string): string {
   return id.startsWith('act_') ? id.slice(4) : id;

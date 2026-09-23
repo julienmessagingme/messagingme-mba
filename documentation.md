@@ -1126,14 +1126,24 @@ général à partir des quatre routes qu'elle venait de lire, et elle a en plus 
 pas** : un lecteur qui croit « toutes traçables » ne cherchera pas la trace qui manque. Le trou le plus
 gênant est `cle-modele`, qui révoque une clé facturée chez Vercel sans dire qui ni pourquoi.
 
-⚠️ **Ce qui vaut, lui, pour les sept** : elles sont délibérément **cross-espace** (`/ops`
-s'authentifie par un JETON d'exploitation, pas par une session) et refusées en session d'observation par
-la garde d'observation. ⚠️ Cette page a nommé ici « la garde de MÉTHODE » : ce mécanisme-là vit dans
-`makeRequireAuth`, alors que `/ops` est gardé par `makeRequireOps`, qui compare un en-tête et ne lit
-JAMAIS `req.auth`. La protection réelle est plus forte que celle qui était écrite ; c'est la
-justification qui était fausse, dans le paragraphe même qui prêche la mesure. ⚠️ Le comportement quand une dépendance
-manque n'est PAS uniforme : la plupart rendent **503**, mais `dlq/replay` n'est pas montée du tout et
-rend donc **404**.
+⚠️ **Ce qui vaut, lui, pour les sept** : elles sont délibérément **cross-espace**, parce que `/ops`
+s'authentifie par un JETON d'exploitation (`x-ops-token`) et jamais par une session. ⚠️ Le comportement
+quand une dépendance manque n'est PAS uniforme : la plupart rendent **503**, mais `dlq/replay` n'est pas
+montée du tout et rend donc **404**.
+
+🔴 **ET UNE SESSION, D'OBSERVATION OU NON, N'ATTEINT JAMAIS `/ops` : elle est refusée en 401 par
+`makeRequireOps`, faute de `x-ops-token`.** Ce n'est PAS la garde de méthode qui l'arrête : celle-là vit
+dans `makeRequireAuth` et ne s'exécute pas sur cette surface, qui n'a qu'un `preHandler`,
+`makeRequireOps`, et ne lit jamais `req.auth`. La protection réelle est donc plus forte que celle qui
+était écrite : une autorité séparée, pas un filtre de verbe. `scripts/auto-attaque.mts` le tient, en
+attendant **401** sur la classe `jeton-ops` (« un admin de tenant n'entre pas ») et en ne balayant la
+garde d'observation que sur les routes de tenant.
+
+⚠️ **CETTE LIGNE A ÉTÉ FAUSSE TROIS FOIS DE SUITE, LE MÊME JOUR, ET C'EST ÇA QUI EST INSTRUCTIF.** Elle
+a d'abord nommé « la garde de MÉTHODE », puis « la garde d'observation » : deux mécanismes réels, aucun
+des deux à cet endroit. À chaque fois la correction a changé le NOM sans aller lire QUI monte le
+`preHandler`, dans le paragraphe même qui prêche la mesure. **Un mécanisme de sécurité se nomme en
+l'ayant suivi jusqu'à son point de montage**, jamais de mémoire.
 
 🔴 **`POST /ops/pubs/connexion/:tenantId` est la SEULE route du dépôt qui reçoit un secret Meta dans
 un corps de requête**, et la seule qui REMPLACE une connexion existante là où l'écran la refuse. Elle
@@ -1147,7 +1157,9 @@ conclure qu'aucun accès vivant ne reste derrière. `DELETE /me/permissions/<per
 (application, **entité**), pas sur LE jeton : remplacer le jeton d'un utilisateur système par un autre
 du même portefeuille, c'est-à-dire l'usage normal de cette route, donne deux jetons de la MÊME entité,
 et retirer les permissions de l'ancien DÉSARMERAIT le neuf. Le dépôt compare donc les identités
-(`GET /me`) et ne retire que si elles DIFFÈRENT ; sinon il le dit (`meme_entite`), et l'ancienne chaîne
+(`GET /me`) et ne retire que si elles DIFFÈRENT. Sinon il le DIT, et il y a **deux** cas de non-retrait, pas un :
+`meme_entite` (identités égales) et `indetermine` (Meta n'a pas dit qui portait l'un des deux jetons).
+Les deux appellent le même geste, et l'ancienne chaîne
 reste VALIDE jusqu'à ce qu'on régénère le jeton de l'utilisateur système chez Meta. ⚠️ Ce geste-là
 invalide AUSSI le jeton qu'on vient de déposer : il faut le redéposer derrière.
 

@@ -144,6 +144,14 @@ function PublicitesInner({ session }: { session: Session }) {
       // à un client fraîchement reconnecté de retirer lui-même les permissions publicitaires, donc de
       // désarmer le jeton qu'il venait d'accorder. Le retrait reste TENTÉ, et son résultat va au journal.
       await deconnecterPubs(session.tenantId);
+      // 🔴 ET ON RECHARGE, ce qui N'A RIEN À VOIR avec le bandeau ci-dessus : une première version de
+      // ce correctif a emporté ces deux lignes en retirant le bandeau. Sans elles, `etat` garde son
+      // ancienne connexion, donc l'écran continue d'afficher « Compte publicitaire connecté », le nom
+      // du compte, le verdict « prêt à diffuser » et jusqu'à l'alerte de jeton refusé, sur un espace
+      // dont la ligne vient d'être supprimée. L'ironie était complète : on retirait un bandeau qui
+      // SURVIVAIT à une reconnexion en laissant toute la carte SURVIVRE à une déconnexion.
+      setActifs(null);
+      await charger();
       return true;
     } catch (err) {
       setErreur(err instanceof Error ? err.message : t('Déconnexion impossible', 'Could not disconnect'));

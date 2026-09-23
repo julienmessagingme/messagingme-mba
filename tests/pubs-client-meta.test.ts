@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, it, expect, afterEach } from 'vitest';
-import { MetaPubsClient, sansPrefixeAct } from '../src/meta/pubs';
+import { MetaPubsClient, sansPrefixeAct, doitRevoquerAncien } from '../src/meta/pubs';
 import { ErreurGraph, estJetonRefuse } from '../src/meta/graph';
 
 /**
@@ -128,6 +128,35 @@ describe("la liaison Page / numéro ne se redemande pas à Meta sans l'avoir rem
       return !t.startsWith('*') && !t.startsWith('//') && !t.startsWith('/*');
     });
     expect(code.join(' ')).not.toContain('connected_whatsapp_business_account');
+  });
+});
+
+/**
+ * 🔴 LA DÉCISION DE RÉVOQUER SE TESTE PAR VALEURS, ET C'EST UNE LEÇON PAYÉE.
+ *
+ * Elle vivait dans un `if` du câblage, gardée par un test qui lisait le TEXTE de ce `if`. Mesuré par
+ * une relecture à froid : cette garde tombait sur l'inversion des corps, mais restait VERTE si on
+ * NIAIT la condition (le bug d'origine exactement, écrit autrement) ou si on ajoutait un retrait
+ * inconditionnel au-dessus ; et elle CASSAIT sur deux réécritures correctes. Elle épinglait une
+ * orthographe. Ici, les quatre cas qui existent sont exercés pour de vrai.
+ */
+describe('doitRevoquerAncien : on ne retire que sur une différence CONSTATÉE', () => {
+  it("🔴 deux entités DIFFÉRENTES : on retire, c'est le seul cas où c'est sûr", () => {
+    expect(doitRevoquerAncien('sys-1', 'sys-2')).toBe(true);
+  });
+
+  it('🔴 la MÊME entité : on ne retire PAS, sinon on désarme le jeton neuf', () => {
+    // `DELETE /me/permissions` porte sur le couple (application, entité) : retirer l'ancien
+    // retirerait les permissions du neuf, et la route répondrait 200 sur une connexion morte.
+    expect(doitRevoquerAncien('sys-1', 'sys-1')).toBe(false);
+  });
+
+  it('🔴 une identité INCONNUE vaut refus, des DEUX côtés', () => {
+    // Meta n'a pas répondu : une identité absente ne PROUVE pas une différence, et un doute ne
+    // justifie pas de casser ce qui marche.
+    expect(doitRevoquerAncien(null, 'sys-2')).toBe(false);
+    expect(doitRevoquerAncien('sys-1', null)).toBe(false);
+    expect(doitRevoquerAncien(null, null)).toBe(false);
   });
 });
 

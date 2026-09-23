@@ -74,22 +74,18 @@ describe('câblage des publicités : le jeton ne touche jamais la base en clair'
     expect(bloc.indexOf('encryptSecret(')).toBeLessThan(bloc.indexOf('connexionsPub.remplacer'));
   });
 
-  it('🔴 le dépôt COMPARE LES IDENTITÉS avant de révoquer, sinon il désarme le jeton NEUF', () => {
-    // `DELETE /me/permissions/<perm>` porte sur le couple (application, ENTITÉ), pas sur LE jeton.
-    // Remplacer le jeton d'un utilisateur système par un autre du MÊME portefeuille, c'est-à-dire
-    // l'usage normal de cette route, donne deux jetons de la MÊME entité : révoquer l'ancien retire
-    // alors les permissions du neuf, et la route répond 200 sur une connexion morte. La première
-    // version de ce dépôt le faisait, alors que la bretelle de `connecter` énonce déjà le piege.
+  it('🔴 le dépôt DEMANDE les deux identités et passe par `doitRevoquerAncien`', () => {
+    // ⚠️ CE TEST NE JUGE PLUS LA DÉCISION, il vérifie seulement que le câblage la DEMANDE. La décision
+    // elle-même est une fonction pure, éprouvée PAR VALEURS dans `tests/pubs-client-meta.test.ts`.
+    // La version précédente lisait le texte d'un `if` : mesurée par une relecture à froid, elle
+    // restait VERTE sur deux formes du bug (condition niée, retrait inconditionnel ajouté au-dessus)
+    // et CASSAIT sur deux réécritures correctes. Un test de source ne sait pas juger une sémantique ;
+    // ce qu'il sait faire, c'est constater qu'un câblage n'a pas débranché la question.
     const bloc = blocDe('deposerJetonPub: async');
-    expect(bloc).toMatch(/clientPubs\.identite\(/);
-    expect(bloc.indexOf('clientPubs.identite(')).toBeLessThan(bloc.indexOf('revoquerAcces'));
-    // Et le retrait est SOUS une condition, jamais inconditionnel : c'est la condition qui protège.
-    // 🔴 L'ASSERTION PORTE SUR LA STRUCTURE, PAS SUR LA PRÉSENCE DES MOTS. Une première version
-    // vérifiait que `idAncien === idNeuf` APPARAISSAIT : en inversant les corps des deux branches,
-    // c'est-à-dire en révoquant quand les identités sont ÉGALES (le bug d'origine, exactement), elle
-    // restait VERTE. Une garde qui passe sur le défaut qu'elle interdit n'est pas une garde.
-    // Ici : le test d'égalité, puis un `else`, et le retrait DANS ce `else`.
-    expect(bloc).toMatch(/idAncien === idNeuf[\s\S]*?\} else {[\s\S]*?revoquerAcces/);
+    expect(bloc).toMatch(/clientPubs\.identite\(clair\)/);
+    expect(bloc).toMatch(/clientPubs\.identite\(jeton\)/);
+    expect(bloc).toMatch(/doitRevoquerAncien\(idAncien, idNeuf\)/);
+    expect(bloc.indexOf('doitRevoquerAncien')).toBeLessThan(bloc.indexOf('revoquerAcces'));
   });
 
   it('🔴 le dépôt par `/ops` RÉVOQUE l’ancien jeton AVANT de l’écraser', () => {
