@@ -255,8 +255,12 @@ const UNREAD_SQL = `exists (
  * Écrite `not (c.control_owner = 'app_human' and c.last_direction = 'out')`, elle valait NULL quand
  * `last_direction` est NULL (logique à TROIS valeurs de SQL), et un prédicat NULL EXCLUT la ligne. Toutes les
  * conversations d'avant la migration auraient donc DISPARU du dossier au déploiement, c'est-à-dire l'inverse
- * exact de ce que le commentaire promettait. Attrapé par le test d'intégration « un fil SANS sens connu reste
- * dans le dossier » : aucun test unitaire ne peut voir ça, la faute est dans le SQL.
+ * exact de ce que le commentaire promettait. Attrapé par le test d'intégration « la règle ne se réécrit pas
+ * en logique à TROIS valeurs, qui ferait disparaître des fils » (`tests/integration/inbox-compteurs`) :
+ * aucun test unitaire ne peut voir ça, la faute est dans le SQL.
+ * ⚠️ Ce texte citait « un fil SANS sens connu reste dans le dossier », qui N'EXISTE PLUS : c'est le cas que
+ * le changement du 2026-09-23 a retourné, donc celui qu'il a fallu réécrire. Une citation survit à ce
+ * qu'elle nomme, et le prochain lecteur aurait cherché un test absent.
  *
  * ⚠️ CETTE PHRASE A CHANGÉ DE SENS LE 2026-09-23, ET IL FAUT DIRE LEQUEL. Elle disait : « une conversation
  * sans valeur connue reste dans le dossier, exactement comme avant la migration », parce qu'en 2026-09-11 un
@@ -923,8 +927,22 @@ export class PgInboxStore implements InboxStore {
     const params: unknown[] = [tenantId];
     const where: string[] = ['c.tenant_id = $1'];
 
-    // UNE conversation par son identifiant, avant tout filtre de dossier : voir `ListConversationsOptions.id`.
-    if (typeof opts.id === 'string' && opts.id !== '') {
+    /**
+     * UNE conversation par son identifiant, avant tout filtre de dossier : voir `ListConversationsOptions.id`.
+     *
+     * 🔴 UNE SEULE LECTURE DE `opts.id`, PARCE QUE DEUX CONDITIONS EN DÉPENDENT (jaune du 2026-09-23). Ce
+     * filtre-ci s'armait sur « une chaîne non vide », et celui de l'archivage vingt lignes plus bas sur
+     * « pas `undefined` ». `{ id: '' }` ne demandait donc AUCUN fil précis tout en DÉSARMANT l'exclusion des
+     * archivées : une page ordinaire où les fils rangés se mêlent aux autres, sans que rien ne le signale.
+     *
+     * ⚠️ AUCUN APPELANT NE PRODUIT CE CAS AUJOURD'HUI, et c'est pour ça que c'est un jaune : la route écarte
+     * la chaîne vide (`estUuid`), l'écran n'envoie le paramètre que pour un identifiant reçu du serveur. Ce
+     * qu'on retire est la DIVERGENCE, pas un trou vivant : deux lectures de la même option se
+     * désynchronisent au premier ajustement, une seule non. C'est la règle qu'`A_TRAITER_SQL` applique
+     * quelques centaines de lignes plus haut, pour la même raison.
+     */
+    const unSeulFil = typeof opts.id === 'string' && opts.id !== '';
+    if (unSeulFil) {
       params.push(opts.id);
       where.push(`c.id = $${params.length}::uuid`);
     }
@@ -950,7 +968,7 @@ export class PgInboxStore implements InboxStore {
      * ⚠️ « Traité » n'a jamais eu le problème : son filtre ne se pose que sur demande. C'est bien un état
      * ARCHIVÉ, exclu par DÉFAUT de tous les dossiers ordinaires, qui ne pouvait pas être atteint.
      */
-    if (opts.id === undefined) {
+    if (!unSeulFil) {
       where.push(opts.archivees === true ? 'c.archived_at is not null' : 'c.archived_at is null');
     }
     if (opts.signalees === true) {

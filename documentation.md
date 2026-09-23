@@ -720,6 +720,11 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   dépendance partagée : un envoi automatisé ne rouvre rien. ⚠️ Une RÉACTION emoji sort d'Archivé mais ne
   retire pas « Traité » ni ne change `last_direction` (arbitrage du 2026-09-19) ; `last_direction` n'est lu
   QUE par « À traiter ». « Traité » n'est pas exclusif : la conversation reste dans « Tout ».
+  ⚠️ **Un fil SANS AUCUN message n'entre pas dans « À traiter »** (2026-09-23) : c'est le cas d'une
+  conversation qu'un opérateur vient d'OUVRIR depuis la fiche d'un contact. Le dossier veut dire « la balle
+  est dans notre camp », et l'ouvrir soi-même ne met la balle dans aucun camp. Elle y entre au premier
+  message du contact. ⚠️ Un `last_direction` nul voulait dire « on ne sait pas » jusqu'à la reprise de la
+  migration 0130 ; il veut dire « aucun message » depuis, et c'est ce qui autorise à l'exclure.
 - 🔴 **UNE PIÈCE JOINTE REÇUE N'EST PAS COPIÉE CHEZ NOUS** : on garde l'identifiant de Meta et on sert les
   octets à la demande (`lireMediaRecu`, `src/inbox/media-entrant.ts`). Meta efface un média REÇU au bout de
   SEPT jours (`DUREE_MEDIA_RECU_JOURS`, mesuré ; trente jours ne vaut que pour ce qu'on téléverse) : le fil
@@ -1440,6 +1445,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/crm/date-iso.ts` | normaliser une date venue d'un tiers, et REFUSER l'ambigu en le disant |
 | `src/crm/contact-filters.ts` | les règles de filtrage des contacts (bornes, opérateurs, plafonds) |
 | `src/stats/range.ts` -> `BOUNDS_CTE` | les bornes de date, robustes au changement d'heure |
+| `src/stats/prix.ts` -> `coutRcsEuros()` | le prix d'un lot de RCS depuis la grille de l'espace (simple / conversationnel). 🔴 Deux écrans l'appliquent, « coût des messages envoyés » et « coût par engagement » : la formule tient en une ligne, ce qui est exactement pourquoi elle allait être recopiée, et deux copies donneraient deux prix pour le même envoi |
 | `src/stats/store.pg.ts` -> `envoisTemplateFacturables()` | les envois facturables d'une période, et 🔴 l'UNIQUE heuristique d'attribution d'un fait à une campagne à scénario, désormais lue par TROIS mesures (les envois, les événements de bloc, les clics de lien) : la dernière campagne scénario réclamée pour ce numéro avant le fait. Une seconde heuristique, même voisine, donnerait deux vérités sur le même écran |
 | `src/campaign/echecs-sql.ts` | 🔴 la POPULATION d'un échec d'envoi et sa DATE, lues par quatre écrans |
 | `src/campaign/store.pg.ts` -> `insertCampaignRow`, `summarySelect()` | l'INSERT d'une campagne et la projection des résumés |

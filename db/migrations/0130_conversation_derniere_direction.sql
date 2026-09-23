@@ -14,6 +14,14 @@
 -- exactement comme avant cette migration. Aucun fil ne disparait du dossier au deploiement, ce qui serait
 -- la pire facon d introduire un filtre (personne ne cherche ce qu il ne sait pas avoir perdu).
 --
+-- 🔴 CE PARAGRAPHE N EST PLUS VRAI DEPUIS LE 2026-09-23, ET ON NE LE REECRIT PAS : il dit ce qui etait juste
+-- le jour ou cette migration est passee, et la suite appartient au code. `A_TRAITER_SQL` exige desormais
+-- `last_direction is not null`, donc un fil sans valeur est EXCLU du dossier. Ce qui a change n est pas la
+-- regle mais le SENS de null : la reprise ci-dessous a renseigne tous les fils existants (verifie en
+-- production le 2026-09-23, zero conversation sans valeur), si bien qu un null ne peut plus vouloir dire
+-- « on ne sait pas encore ». Il veut dire « aucun message », l etat d une conversation qu un operateur vient
+-- d OUVRIR depuis la fiche d un contact. La regle vivante se lit dans `src/inbox/store.pg.ts`, jamais ici.
+--
 -- ⚠️ ELLE AJOUTE UNE COLONNE QUE LE CODE ECRIT : elle passe AVANT le deploiement. Et le code la LIT avec un
 -- `is distinct from`, donc l ancien code (qui l ignore) et le nouveau cohabitent sans se genir.
 --

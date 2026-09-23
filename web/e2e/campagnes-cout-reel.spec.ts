@@ -27,6 +27,8 @@ const CAMPAIGNS = [
   campagne('c-tpl', 'Testjulien2', 'bordeo'),
   campagne('c-rcs', 'gr sentis', null),
   campagne('c-wf', 'test4', null),
+  // Un BROUILLON, seul statut qui porte le bouton « Lancer » : c'est lui qui sert le test du rafraichissement.
+  { ...campagne('c-draft', 'A lancer', 'bordeo'), status: 'draft' },
 ];
 
 /** Ce que rend la route du cout : un modele chiffre, un RCS conversationnel a 8 cts, un scenario inconnu. */
@@ -35,6 +37,10 @@ const COUT = {
     { campaignId: 'c-tpl', nom: 'Testjulien2', template: 'bordeo', envoyes: 1, envois: 1, cout: 0.0712, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, clics: null, coutParClic: null },
     { campaignId: 'c-rcs', nom: 'gr sentis', template: null, envoyes: 0, envois: 1, cout: 0.08, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, clics: null, coutParClic: null },
     { campaignId: 'c-wf', nom: 'test4', template: null, envoyes: 0, envois: 1, cout: null, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, clics: null, coutParClic: null },
+    // Le brouillon : cout CONNU et nul (il n'a rien envoye). Sans cette ligne il compterait « sans cout
+    // connu », et le cas voisin, qui dit qu'il y en a exactement UNE, tomberait sur mon ajout au lieu de
+    // son propre sujet.
+    { campaignId: 'c-draft', nom: 'A lancer', template: 'bordeo', envoyes: 0, envois: 0, cout: 0, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0, clics: null, coutParClic: null },
   ],
   tronque: false, currency: 'EUR', hasRates: true,
 };
@@ -53,6 +59,7 @@ const brancher = async (page: import('@playwright/test').Page, cout: unknown = C
       if (cout === null) return route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"indisponible"}' });
       return json(cout);
     }
+    if (url.includes('/run')) return json({ ok: true });
     if (url.includes('/stats/templates')) return json({ breakdown: [], pricing: { byCategory: { marketing: { volume: 1, ratePerMessage: 0.0712 } }, totalCost: 0.0712, currency: 'EUR' } });
     if (url.includes('/campaigns/c-')) return json({ ...CAMPAIGNS[2], paramMapping: [], recipients: [], chaine: [] });
     if (url.includes('/campaigns')) return json({ campaigns: CAMPAIGNS });
@@ -98,6 +105,22 @@ test.describe('Campagnes : le coût est celui du serveur', () => {
     await brancher(page, null);
     await expect(page.getByText(/coût estimé indisponible|estimated cost unavailable/i)).toBeVisible();
     await expect(page.getByTestId('campagne-cout-c-rcs')).toHaveText(/indisponible|unavailable/i);
+  });
+
+  test('🔴 lancer une campagne fait RELIRE le cout, au lieu de laisser le chiffre d avant l envoi', async ({ page }) => {
+    /**
+     * Le cout etait charge une seule fois par montage. Lancer une campagne depuis cet ecran laissait donc sa
+     * case sur la valeur d'AVANT l'envoi, en general « indisponible », jusqu'a ce qu'on recharge la page :
+     * un chiffre perime qui a l'air frais, c'est-a-dire exactement ce que ce tableau existe pour eviter.
+     *
+     * ⚠️ CE TEST EST LENT ET IL DOIT L'ETRE : le sondage post-lancement dure douze secondes (six tours de
+     * deux), et la relecture se fait APRES, une fois. L'abreger en sondant le seul appel de montage
+     * prouverait le contraire de ce qu'on veut. La borne est large pour ne pas dependre de la charge.
+     */
+    await brancher(page);
+    await expect.poll(() => fenetres.length).toBe(1);
+    await page.getByRole('button', { name: 'Lancer' }).click();
+    await expect.poll(() => fenetres.length, { timeout: 25_000 }).toBe(2);
   });
 
   test('🔴 l ecran ne demande PAS la fenetre maximale (rouge de la revue finale)', async ({ page }) => {
