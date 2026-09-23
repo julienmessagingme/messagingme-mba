@@ -1,7 +1,7 @@
 ---
 ecran: automations
 source_section: Automation (menu « Automation ») | Rappels avant ou après une date (menu Automation) | Automatisations (menu « Scénario », ex-« Flow »)
-source_empreinte: ec2828 | 08adbf | db8bec
+source_empreinte: ec2828 | 08adbf | 4b3bb3
 ---
 # Lancer un scénario tout seul, sans campagne
 
@@ -25,7 +25,8 @@ clair, le scénario visé, et si c'est allumé ou non.
   (en minutes, en heures ou en jours), de quel côté de la date, et sur quel champ. Il vous faut pour cela un
   champ « date et heure » dans votre espace ; sinon l'écran vous le dit et vous propose d'en créer un.
 - **Le contact arrive d'une publicité WhatsApp** : l'identifiant de la publicité est facultatif. Laissé vide,
-  le scénario part pour toute personne arrivant par une publicité.
+  le scénario part pour toute personne arrivant par une publicité, **sauf celles que vous pilotez depuis
+  l'écran Publicités** : ces campagnes-là disent elles-mêmes qui répond à leurs prospects.
 
 Deux de ces déclencheurs demandent une précision, parce qu'ils surprennent :
 
@@ -37,6 +38,14 @@ contacts concernés partiraient d'un coup.
 **Sur l'arrivée par une publicité**, le contact vient de vous écrire : la fenêtre de vingt-quatre heures est
 donc ouverte, et ce scénario peut commencer par un message rapide, sans modèle à faire approuver. C'est le
 seul déclencheur qui vous laisse ouvrir librement.
+
+Il y a une seconde chose à savoir, et elle compte si vous créez vos publicités ici. **Une publicité pilotée
+depuis l'écran Publicités choisit elle-même qui répond à ses prospects** : le scénario que vous lui avez
+désigné, ou l'agent de Meta. Pour ces prospects-là, aucune autre automation ne part, ni « toute personne
+arrivant par une publicité », ni « un nouveau contact écrit pour la première fois ». C'est ce qui garantit
+qu'un clic que vous avez payé reçoit la réponse que vous aviez prévue, et une seule. Les publicités que vous
+continuez de gérer dans le Gestionnaire de Meta, elles, ne changent pas : leurs prospects passent par les
+automations de cet écran, comme avant.
 
 **Une automation neuve est toujours créée éteinte.** Vous la relisez, puis vous l'allumez d'un clic sur son
 badge. Pour changer son déclencheur ou son scénario, vous la supprimez et vous la recréez : c'est
