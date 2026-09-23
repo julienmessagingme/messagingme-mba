@@ -1,0 +1,184 @@
+import { test, expect } from '@playwright/test';
+
+/**
+ * L'ÉCRAN « PUBLICITÉS », PARTIE LOT 3 : la liste, le bouton Créer, et l'entonnoir.
+ *
+ * 🔴 CE QUE CE SPEC PROTÈGE, ET QU'AUCUN TEST DE SERVEUR NE PEUT VOIR. Deux choses, et les deux décident de
+ * ce qu'un client fait de son argent :
+ *
+ *  1. **Le bouton Créer n'existe que quand créer a un sens**, et quand il manque, l'écran DIT ce qui manque.
+ *     Un bouton présent mais inerte est le motif « offert-et-inerte » que le produit s'interdit ; un bouton
+ *     absent sans explication fait chercher une panne là où il n'y a qu'une étape non faite.
+ *  2. **« non disponible » ne devient jamais « 0 »** dans l'entonnoir. Le calcul rend `null` côté serveur,
+ *     et c'est ICI qu'on peut vérifier que l'écran ne le transforme pas en zéro, ce qui ressemblerait au
+ *     meilleur résultat imaginable sur la page qui sert à décider d'arrêter ou de remettre du budget.
+ */
+
+const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
+
+const CONNEXION = {
+  comptePubId: '111' as string | null, compteNom: 'GMC', pageId: 'p1' as string | null, pageNom: 'Page test', devise: 'EUR',
+  fuseau: 'Europe/Paris', pageLiee: 'oui', connectePar: 'u-1',
+  connecteLe: '2026-09-23T08:00:00.000Z', jetonRejeteLe: null as string | null,
+};
+
+const PUB_PUBLIEE = {
+  id: 'pub-1', campagneId: 'c-1', ensembleId: 'e-1', creaId: 'cr-1', pubId: 'ad-1',
+  nom: 'Rentrée 2026', etat: 'publiee', statutMeta: 'ACTIVE', motifRefus: null,
+  budgetTotal: 150, debut: '2026-10-01T00:00:00.000Z', fin: '2026-10-31T23:00:00.000Z',
+  destination: 'scenario', workflowId: 'wf-1', tagQualification: 'devis', automationId: 'a-1',
+  depense: 12.5, clics: 40, luLe: '2026-09-23T20:00:00.000Z', creeLe: '2026-09-23T10:00:00.000Z',
+};
+
+const PUB_PRETE = { ...PUB_PUBLIEE, id: 'pub-2', nom: 'Black Friday', etat: 'prete', statutMeta: null, depense: null, clics: null, luLe: null };
+
+/** Un entonnoir dont TOUT est inconnu : c'est l'état d'une publicité qui vient d'être publiée. */
+const ENTONNOIR_VIDE = {
+  depense: null,
+  clics: { nombre: null, cout: null, passage: null },
+  leads: { nombre: 0, cout: null, passage: null },
+  qualifies: { nombre: 0, cout: null, passage: null },
+  nonPrisEnCharge: 0,
+};
+
+interface Options {
+  connexion?: typeof CONNEXION | null;
+  compte?: { statut: number | null; raisonDesactivation: number | null; moyenPaiement: boolean } | null;
+  publicites?: unknown[];
+  entonnoir?: unknown;
+}
+
+const brancher = async (page: import('@playwright/test').Page, o: Options = {}) => {
+  await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
+  await page.route('**/api/backend/**', async (route) => {
+    const url = route.request().url();
+    const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+    if (url.includes('/pubs/connexion')) {
+      return json({
+        configure: true, configId: 'cfg', appId: 'app', graphVersion: 'v23.0',
+        connexion: o.connexion === undefined ? CONNEXION : o.connexion,
+        compte: o.compte === undefined ? { statut: 1, raisonDesactivation: 0, moyenPaiement: true } : o.compte,
+      });
+    }
+    // La page d'une publicité, AVANT la liste : `/pubs/pub-1` contient `/pubs`, donc l'ordre compte.
+    if (/\/pubs\/[^/]+$/.test(url.split('?')[0] ?? '')) {
+      return json({ publicite: PUB_PUBLIEE, entonnoir: o.entonnoir ?? ENTONNOIR_VIDE });
+    }
+    if (url.includes('/pubs')) return json({ publicites: o.publicites ?? [] });
+    if (url.includes('/workflows')) return json({ workflows: [] });
+    if (url.includes('/settings')) return json({ mbaEnabled: true });
+    if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
+    return json({});
+  });
+  await page.goto('/publicites');
+};
+
+test.describe('Publicités : la liste et le bouton Créer', () => {
+  test('connexion complète et compte qui peut diffuser : le bouton Créer est là', async ({ page }) => {
+    await brancher(page);
+    await expect(page.getByTestId('pubs-creer')).toBeVisible();
+    await expect(page.getByTestId('pubs-creation-bloquee')).toHaveCount(0);
+  });
+
+  test('🔴 SANS MOYEN DE PAIEMENT : pas de bouton, et la RAISON est écrite', async ({ page }) => {
+    // C'est le pire des cas bloquants, parce que tout a l'air d'avoir marché : la publicité se crée, se
+    // publie, et ne part JAMAIS. Le dire avant vaut mieux que de le découvrir en regardant zéro impression.
+    await brancher(page, { compte: { statut: 1, raisonDesactivation: 0, moyenPaiement: false } });
+    await expect(page.getByTestId('pubs-creer')).toHaveCount(0);
+    await expect(page.getByTestId('pubs-creation-bloquee')).toContainText(/moyen de paiement|payment method/);
+  });
+
+  test('🔴 JETON REFUSÉ PAR META : pas de bouton, et l’écran dit de se reconnecter', async ({ page }) => {
+    await brancher(page, { connexion: { ...CONNEXION, jetonRejeteLe: '2026-09-23T19:00:00.000Z' } });
+    await expect(page.getByTestId('pubs-creer')).toHaveCount(0);
+    await expect(page.getByTestId('pubs-creation-bloquee')).toContainText(/reconnect/i);
+  });
+
+  test('compte ou Page pas encore choisis : pas de bouton, et l’écran dit lequel', async ({ page }) => {
+    await brancher(page, { connexion: { ...CONNEXION, comptePubId: null } });
+    await expect(page.getByTestId('pubs-creer')).toHaveCount(0);
+    await expect(page.getByTestId('pubs-creation-bloquee')).toContainText(/compte publicitaire|ad account/);
+  });
+
+  test('⚠️ un état de compte INCONNU ne bloque PAS : c’est Meta qui tranchera', async ({ page }) => {
+    // `null` veut dire « nous n'avons pas pu demander », pas « ce compte est mauvais ». Refuser sur une
+    // ignorance bloquerait un client dont le compte va très bien.
+    await brancher(page, { compte: null });
+    await expect(page.getByTestId('pubs-creer')).toBeVisible();
+  });
+
+  test('aucune publicité : l’écran le dit, il ne reste pas vide', async ({ page }) => {
+    await brancher(page);
+    await expect(page.getByTestId('pubs-liste-vide')).toBeVisible();
+  });
+
+  test('sans connexion, la section des publicités n’apparaît pas du tout', async ({ page }) => {
+    // Avant la connexion il n'y a rien à lister et rien à créer : afficher une section vide donnerait
+    // l'impression d'un écran cassé.
+    await brancher(page, { connexion: null });
+    await expect(page.getByTestId('pubs-section')).toHaveCount(0);
+  });
+});
+
+test.describe('Publicités : ce que la liste montre', () => {
+  test('une publicité publiée montre son nom et son statut Meta en clair', async ({ page }) => {
+    await brancher(page, { publicites: [PUB_PUBLIEE] });
+    await expect(page.getByTestId('pubs-liste')).toContainText('Rentrée 2026');
+    await expect(page.getByTestId('pubs-liste')).toContainText(/Diffuse|Delivering/);
+  });
+
+  test('une publicité PRÊTE propose « Publier », une publiée propose la pause', async ({ page }) => {
+    await brancher(page, { publicites: [PUB_PRETE, PUB_PUBLIEE] });
+    await expect(page.getByTestId('pub-publier-pub-2')).toBeVisible();
+    await expect(page.getByTestId('pub-bascule-pub-1')).toBeVisible();
+    // Une publicité prête n'a pas de bouton de pause : il n'y a rien à mettre en pause.
+    await expect(page.getByTestId('pub-bascule-pub-2')).toHaveCount(0);
+  });
+
+  test('🔴 PUBLIER DEMANDE CONFIRMATION, EN ANNONÇANT LA DÉPENSE MAXIMALE', async ({ page }) => {
+    // C'est le seul geste de l'écran qui engage de l'argent, et il est irréversible au sens qui compte :
+    // une impression payée ne se rembourse pas.
+    await brancher(page, { publicites: [PUB_PRETE] });
+    let texte = '';
+    page.on('dialog', (d) => { texte = d.message(); void d.dismiss(); });
+    await page.getByTestId('pub-publier-pub-2').click();
+    expect(texte).toContain('150');
+  });
+
+  test('une création échouée le DIT, parce que quelque chose peut subsister chez Meta', async ({ page }) => {
+    await brancher(page, { publicites: [{ ...PUB_PRETE, etat: 'echec_creation' }] });
+    await expect(page.getByTestId('pub-echec')).toBeVisible();
+  });
+});
+
+test.describe('Publicités : l’entonnoir', () => {
+  test('🔴 UN ENTONNOIR SANS CHIFFRES DIT « NON DISPONIBLE », JAMAIS « 0 »', async ({ page }) => {
+    await brancher(page, { publicites: [PUB_PUBLIEE] });
+    await page.getByTestId('pub-detail-pub-1').click();
+    const bloc = page.getByTestId('pub-entonnoir-pub-1');
+    await expect(bloc).toBeVisible();
+    // Quatre « non disponible » au moins : la dépense, le nombre de clics, et les coûts des étapes.
+    await expect(bloc).toContainText(/non disponible|not available/);
+    // Et surtout PAS de « 0 € » là où l'on ne sait pas : c'est le chiffre le plus trompeur de cet écran.
+    await expect(bloc).not.toContainText('coût 0');
+  });
+
+  test('les prospects non pris en charge sont comptés À PART, et nommés', async ({ page }) => {
+    await brancher(page, {
+      publicites: [PUB_PUBLIEE],
+      entonnoir: { ...ENTONNOIR_VIDE, leads: { nombre: 12, cout: null, passage: null }, nonPrisEnCharge: 3 },
+    });
+    await page.getByTestId('pub-detail-pub-1').click();
+    const hors = page.getByTestId('pub-non-pris-pub-1');
+    await expect(hors).toContainText('3');
+    await expect(hors).toContainText(/désabonnés|unsubscribed/);
+  });
+
+  test('⚠️ l’écran DIT quand les chiffres ont été relus chez Meta', async ({ page }) => {
+    // Ils viennent d'un balayage toutes les quinze minutes, pas d'un appel à l'ouverture : sans cette
+    // mention, on chercherait une panne là où il n'y a qu'un délai.
+    await brancher(page, { publicites: [PUB_PUBLIEE] });
+    await page.getByTestId('pub-detail-pub-1').click();
+    await expect(page.getByTestId('pub-entonnoir-pub-1')).toContainText(/Relus chez Meta|Read from Meta/);
+  });
+});

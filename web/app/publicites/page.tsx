@@ -7,9 +7,12 @@ import { useT } from '@/lib/i18n';
 import { ApiError, estAnnulation } from '@/lib/http';
 import { loadFbSdk } from '@/lib/fb-sdk';
 import {
-  choisirActifsPub, deconnecterPubs, echangerCodePub, getEtatPubs,
-  type ActifsAccordes, type EtatComptePub, type EtatPubs,
+  choisirActifsPub, deconnecterPubs, echangerCodePub, getEtatPubs, listerPubs,
+  type ActifsAccordes, type EtatComptePub, type EtatPubs, type Publicite,
 } from '@/lib/api-pubs';
+import { listWorkflows, estEnLigne, getSettings, type WorkflowSummary } from '@/lib/api';
+import { PubsListe } from '@/components/PubsListe';
+import { PubFormulaire } from '@/components/PubFormulaire';
 
 /**
  * PUBLICITÉS CLICK-TO-WHATSAPP : la connexion de l'espace à son compte publicitaire (lot 2 « Connecter »).
@@ -31,8 +34,9 @@ import {
  * revenait à inquiéter un client pour un accès que nul ne peut exercer. Le retrait, lui, reste tenté, et
  * son résultat va au journal d'audit : c'est là qu'on mesurera s'il fonctionne sur ce type de jeton.
  *
- * 🔴 LA LISTE DES PUBS, LE BOUTON CRÉER ET L'ENTONNOIR N'EXISTENT PAS ENCORE, pas même désactivés : ils sont
- * le lot 3. Un bouton qui ne fait rien est le motif « offert-et-inerte » que le produit s'interdit.
+ * 🔴 LE BOUTON CRÉER N'EXISTE QUE QUAND LA CONNEXION EST COMPLÈTE, et quand il manque, l'écran DIT ce qui
+ * manque. Un bouton présent mais inerte est le motif « offert-et-inerte » que le produit s'interdit ; un
+ * bouton absent sans explication fait chercher une panne là où il n'y a qu'une étape non faite.
  */
 export default function PublicitesPage() {
   return <AppShell active="publicites">{(session) => <PublicitesInner session={session} />}</AppShell>;
@@ -47,6 +51,10 @@ function PublicitesInner({ session }: { session: Session }) {
   const [pageChoisie, setPageChoisie] = useState('');
   const [erreur, setErreur] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pubs, setPubs] = useState<Publicite[] | null>(null);
+  const [scenarios, setScenarios] = useState<WorkflowSummary[]>([]);
+  const [agentMetaOuvert, setAgentMetaOuvert] = useState(false);
+  const [formOuvert, setFormOuvert] = useState(false);
 
   const charger = useCallback(async () => {
     setErreur(null);
@@ -61,7 +69,42 @@ function PublicitesInner({ session }: { session: Session }) {
     }
   }, [session.tenantId, t]);
 
+  /**
+   * LES PUBLICITÉS, ET CE QUE LE FORMULAIRE A BESOIN DE SAVOIR.
+   *
+   * ⚠️ TOUT EST BEST-EFFORT, ET C'EST DÉLIBÉRÉ. Une liste de scénarios qui ne charge pas ne doit pas
+   * empêcher de VOIR ses publicités, et une route pas encore déployée ne doit pas casser la page. C'est la
+   * même règle que le lot 2 : Vercel publie cette console à chaque `git push`, l'API attend son
+   * déploiement, et entre les deux ces routes n'existent pas.
+   */
+  const chargerPubs = useCallback(async () => {
+    try {
+      // ⚠️ `?? []` N'EST PAS DE LA PARANOÏA : la même route peut, pendant la fenêtre de déploiement,
+      // répondre 200 avec un corps qui n'a pas encore cette clé. Un `undefined` traverserait le type sans
+      // que rien ne proteste et casserait la liste à l'affichage, sur un écran qui doit surtout ne pas
+      // disparaître.
+      setPubs((await listerPubs(session.tenantId)).publicites ?? []);
+    } catch (err) {
+      if (estAnnulation(err)) return;
+      // Route absente : on laisse `null`, l'écran n'affiche simplement pas encore la liste.
+      if (err instanceof ApiError && err.status === 404) return;
+      setErreur(err instanceof Error ? err.message : t('Chargement impossible', 'Loading failed'));
+    }
+  }, [session.tenantId, t]);
+
+  const chargerContexte = useCallback(async () => {
+    // 🔴 SEULS LES SCÉNARIOS EN LIGNE SONT PROPOSÉS. Un brouillon ne répondrait à personne : le proposer
+    // ferait créer une publicité dont les prospects payés tomberaient dans le vide.
+    await listWorkflows(session.tenantId)
+      .then((r) => setScenarios((r.workflows ?? []).filter(estEnLigne)))
+      .catch(() => setScenarios([]));
+    await getSettings(session.tenantId)
+      .then((r) => setAgentMetaOuvert(r.mbaEnabled === true))
+      .catch(() => setAgentMetaOuvert(false));
+  }, [session.tenantId]);
+
   useEffect(() => { void charger(); }, [charger]);
+  useEffect(() => { void chargerPubs(); void chargerContexte(); }, [chargerPubs, chargerContexte]);
 
   async function connecter(): Promise<void> {
     if (etat === null || !etat.configure) return;
@@ -193,8 +236,98 @@ function PublicitesInner({ session }: { session: Session }) {
           <Connecte t={t} etat={etat} compte={etat.compte} busy={busy} deconnecter={deconnecter} reconnecter={reconnecter} />
         )}
       </section>
+
+      {/* LES PUBLICITÉS (lot 3). La section n'apparaît qu'une fois la connexion établie : avant, il n'y a
+          rien à lister et rien à créer, et l'afficher vide donnerait l'impression d'un écran cassé. */}
+      {!absent && etat !== null && etat.configure && etat.connexion !== null && (
+        <section className="mt-5 rounded-2xl border border-ink-200 bg-white p-5 shadow-sm" data-testid="pubs-section">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-sm font-semibold text-ink-900">{t('Vos publicités', 'Your ads')}</h2>
+              <p className="mt-1 text-xs text-ink-500">
+                {t('Créées ici, en pause chez Meta tant que vous ne les publiez pas.',
+                   'Created here, paused at Meta until you publish them.')}
+              </p>
+            </div>
+            {/* 🔴 LE BOUTON N'EXISTE QUE SI LA CONNEXION EST COMPLÈTE, et la RAISON est dite juste dessous
+                quand il manque. Un bouton désactivé sans explication fait chercher une panne. */}
+            {peutCreer(etat) ? (
+              <button
+                type="button" onClick={() => setFormOuvert(true)}
+                className="shrink-0 rounded-xl bg-ink-900 px-4 py-2 text-sm font-medium text-white"
+                data-testid="pubs-creer"
+              >
+                {t('Créer une publicité', 'Create an ad')}
+              </button>
+            ) : null}
+          </div>
+
+          {!peutCreer(etat) && (
+            <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="pubs-creation-bloquee">
+              {raisonPasDeCreation(etat, t)}
+            </p>
+          )}
+
+          {formOuvert && (
+            <PubFormulaire
+              tenantId={session.tenantId}
+              scenarios={scenarios.map((w) => ({ id: w.id, name: w.name }))}
+              agentMetaOuvert={agentMetaOuvert}
+              fermer={() => setFormOuvert(false)}
+              creee={chargerPubs}
+            />
+          )}
+
+          <div className="mt-4">
+            {pubs === null
+              ? <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
+              : <PubsListe tenantId={session.tenantId} publicites={pubs} recharger={chargerPubs} />}
+          </div>
+        </section>
+      )}
     </div>
   );
+}
+
+/**
+ * PEUT-ON CRÉER UNE PUBLICITÉ ?
+ *
+ * 🔴 TROIS CONDITIONS, ET CHACUNE A DÉJÀ COÛTÉ QUELQUE CHOSE AILLEURS. Le compte et la Page doivent être
+ * choisis (sans eux, la création échouerait chez Meta après avoir créé une campagne). Le jeton ne doit pas
+ * être rejeté (tous les appels échoueraient). Et le compte doit pouvoir diffuser : sans moyen de paiement,
+ * la publicité se crée, se publie, et ne part JAMAIS, ce qui est le pire des trois cas parce que tout a
+ * l'air d'avoir marché.
+ *
+ * ⚠️ `compte === undefined` N'EST PAS UN REFUS : c'est une API pas encore déployée. `null` non plus : c'est
+ * « nous n'avons pas pu demander ». Dans les deux cas on laisse créer, et c'est Meta qui tranchera, avec
+ * son message. Refuser sur une ignorance bloquerait un client dont le compte va très bien.
+ */
+function peutCreer(etat: EtatPubs): boolean {
+  if (etat.connexion === null) return false;
+  if (etat.connexion.comptePubId === null || etat.connexion.pageId === null) return false;
+  if (etat.connexion.jetonRejeteLe !== null) return false;
+  const c = etat.compte;
+  if (c === undefined || c === null) return true;
+  return c.moyenPaiement && (c.statut === null || c.statut === 1);
+}
+
+function raisonPasDeCreation(etat: EtatPubs, t: T): string {
+  if (etat.connexion === null) return t('Connectez votre compte publicitaire.', 'Connect your ad account.');
+  if (etat.connexion.comptePubId === null || etat.connexion.pageId === null) {
+    return t('Choisissez le compte publicitaire et la Page avant de créer une publicité.',
+             'Choose the ad account and the Page before creating an ad.');
+  }
+  if (etat.connexion.jetonRejeteLe !== null) {
+    return t('Meta a refusé notre accès à ce compte : reconnectez-vous avant de créer une publicité.',
+             'Meta rejected our access to this account: reconnect before creating an ad.');
+  }
+  const c = etat.compte;
+  if (c !== undefined && c !== null && !c.moyenPaiement) {
+    return t('Ce compte publicitaire n’a pas de moyen de paiement : une publicité s’y créerait mais ne partirait jamais.',
+             'This ad account has no payment method: an ad would be created but would never run.');
+  }
+  return t('Ce compte publicitaire ne peut pas diffuser pour l’instant, d’après Meta.',
+           'This ad account cannot deliver right now, according to Meta.');
 }
 
 type T = (fr: string, en?: string) => string;
