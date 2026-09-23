@@ -57,6 +57,11 @@ export function choisirActifsPub(tenantId: string, choix: { comptePubId: string;
   return request<{ connexion: ConnexionPubVue }>(`${base(tenantId)}/choix`, { method: 'POST', body: JSON.stringify(choix) });
 }
 
-export function deconnecterPubs(tenantId: string): Promise<{ ok: true }> {
-  return request<{ ok: true }>(base(tenantId), { method: 'DELETE' });
+/**
+ * Déconnecte. `revoqueChezMeta` à false = notre accès VIT ENCORE chez Meta et nous n'en avons plus la
+ * trace : l'écran doit alors dire au client de retirer l'application depuis les paramètres de son
+ * entreprise, parce que ce jeton-là n'expire jamais tout seul.
+ */
+export function deconnecterPubs(tenantId: string): Promise<{ ok: true; revoqueChezMeta: boolean }> {
+  return request<{ ok: true; revoqueChezMeta: boolean }>(base(tenantId), { method: 'DELETE' });
 }

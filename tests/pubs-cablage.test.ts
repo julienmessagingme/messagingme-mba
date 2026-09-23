@@ -34,6 +34,15 @@ describe('câblage des publicités : le jeton ne touche jamais la base en clair'
     expect(sansCommentaires).toMatch(/return decryptSecret\(chiffre, config\.ENCRYPTION_KEY\);/);
   });
 
+  it('🔴 la déconnexion RÉVOQUE chez Meta AVANT d’effacer la ligne, et pas l’inverse', () => {
+    // Notre ligne est le seul endroit où ce jeton existe chez nous, et il n expire jamais : effacer
+    // d abord laisserait un acces vivant que plus personne, de notre cote, ne pourrait fermer.
+    const bloc = sansCommentaires.slice(sansCommentaires.indexOf('deconnecter: async'));
+    const deconnexion = bloc.slice(0, bloc.indexOf('};'));
+    expect(deconnexion).toMatch(/revoquerAcces/);
+    expect(deconnexion.indexOf('revoquerAcces')).toBeLessThan(deconnexion.indexOf('connexions.supprimer'));
+  });
+
   it('⚠️ les routes sont câblées avec la configuration « publicités », pas celle de l’inscription', () => {
     // Deux configurations Facebook Login for Business coexistent. Les confondre enverrait le client dans le
     // parcours WhatsApp au moment où il croit connecter ses publicités, et ne rapporterait aucun compte.

@@ -1426,6 +1426,19 @@ async function main(): Promise<void> {
       rcsEnabledFor: (tenant) => workflowRuntime.rcsStack.agents.hasAgent(tenant),
       setMbaEnabled: (tenant, enabled) => settingsStore.setMbaEnabled(tenant, enabled),
       setHubspotListsEnabled: (tenant, enabled) => settingsStore.setHubspotListsEnabled(tenant, enabled),
+      /**
+       * UN PORTAIL HUBSPOT EST-IL LIE A CET ESPACE ? (lot 9, 2026-09-23)
+       *
+       * ⚠️ LECTURE LOCALE : le mapping vit dans le schema `mmhs` de la MEME base, donc une jointure indexee
+       * sur `tenant_id`, pas un aller-retour vers le connecteur. C'est ce qui rend acceptable de la poser
+       * sur une route que plusieurs ecrans appellent a l'ouverture.
+       *
+       * 🔴 `catch -> false` ET C'EST LE BON SENS DU REPLI, a la difference de la plupart des gardes de ce
+       * depot. Le cas d'erreur reel n'est pas un hoquet reseau, c'est une base ou le schema `mmhs` N'EXISTE
+       * PAS (instance sans connecteur HubSpot, base de CI) : `42P01`. Repondre « connecte » y offrirait une
+       * source qui ne peut pas fonctionner. La route du statut de compte fait deja exactement ce repli.
+       */
+      hubspotPortalConnecte: (tenant) => phoneStatusStore.getHubspotPortal(tenant).then((p) => p.connected).catch(() => false),
       setControlHandbackSeconds: (tenant, seconds) => settingsStore.setControlHandbackSeconds(tenant, seconds),
       setMbaHandoffMode: (tenant, mode) => settingsStore.setMbaHandoffMode(tenant, mode),
       // Applique le choix chez Meta immédiatement. Mêmes helpers que le balayage horaire, pour que « je viens

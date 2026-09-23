@@ -39,6 +39,7 @@ function PublicitesInner({ session }: { session: Session }) {
   const [compteChoisi, setCompteChoisi] = useState('');
   const [pageChoisie, setPageChoisie] = useState('');
   const [erreur, setErreur] = useState<string | null>(null);
+  const [retraitNonConfirme, setRetraitNonConfirme] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const charger = useCallback(async () => {
@@ -109,7 +110,10 @@ function PublicitesInner({ session }: { session: Session }) {
     setErreur(null);
     setBusy(true);
     try {
-      await deconnecterPubs(session.tenantId);
+      const { revoqueChezMeta } = await deconnecterPubs(session.tenantId);
+      // Meta n'a pas confirmé le retrait : l'accès vit encore chez eux et nous venons d'en perdre le seul
+      // exemplaire. Le taire laisserait le client croire que tout est détaché.
+      setRetraitNonConfirme(!revoqueChezMeta);
       setActifs(null);
       await charger();
     } catch (err) {
@@ -129,6 +133,13 @@ function PublicitesInner({ session }: { session: Session }) {
 
       {erreur !== null && (
         <p role="alert" data-testid="pubs-erreur" className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{erreur}</p>
+      )}
+
+      {retraitNonConfirme && (
+        <p role="alert" data-testid="pubs-retrait-non-confirme" className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {t('Votre compte est détaché d’Engage Me, mais Meta n’a pas confirmé le retrait de notre accès. Retirez l’application depuis les paramètres de votre entreprise Meta pour le fermer complètement.',
+             'Your account is detached from Engage Me, but Meta did not confirm that our access was removed. Remove the app from your Meta Business settings to close it fully.')}
+        </p>
       )}
 
       <section className="mt-5 rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">

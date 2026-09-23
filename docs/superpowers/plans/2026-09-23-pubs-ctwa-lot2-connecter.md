@@ -131,6 +131,14 @@ et l'isolation (un espace ne lit jamais la ligne d'un autre), contre un vrai Pos
 | `POST /tenants/:tenantId/pubs/connexion/choix` | admin | enregistre le compte et la Page choisis, lit devise et fuseau, calcule la liaison |
 | `DELETE /tenants/:tenantId/pubs/connexion` | admin | déconnecte, et le dit clairement si une pub tourne encore |
 
+🔴 **ÉCART TROUVÉ EN RELECTURE À FROID, LE 2026-09-23 : LA DÉCONNEXION RÉVOQUE MAINTENANT CHEZ META.**
+Le plan d'origine se contentait d'effacer la ligne. Or elle est le seul endroit où ce jeton existe chez
+nous, et il est SANS EXPIRATION : l'effacer laissait un accès vivant chez Meta, irrévocable par nous pour
+toujours. C'est le piège de la clé Vercel (0124) à l'identique. La route appelle donc
+`DELETE /me/permissions` AVANT d'effacer, un test de câblage lit cet ORDRE dans la source, et l'échec du
+retrait n'empêche pas de se déconnecter : il remonte à l'écran, qui dit alors au client de retirer
+l'application depuis les paramètres de son entreprise.
+
 🔴 **Le jeton n'entre JAMAIS dans la route**, exactement comme dans `EmbeddedSignupRouteDeps` : le câblage
 le résout, le chiffre et ne laisse passer que le `tenantId`. Un jeton qui n'entre pas dans une route ne peut
 ni fuiter dans un journal ni partir dans un corps de réponse.

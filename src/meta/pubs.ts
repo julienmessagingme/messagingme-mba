@@ -98,6 +98,28 @@ export class MetaPubsClient extends ClientGraph {
     if (!lu.success || lu.data.connected_whatsapp_business_account === undefined) return 'inconnu';
     return lu.data.connected_whatsapp_business_account.id === wabaId ? 'oui' : 'non';
   }
+
+  /**
+   * RETIRE NOTRE ACCÈS CHEZ META (`DELETE /me/permissions`, sans nommer de permission : l'application est
+   * désautorisée en entier).
+   *
+   * 🔴 POURQUOI CETTE MÉTHODE EXISTE, ET C'EST LA LEÇON DE LA CLÉ VERCEL (2026-09-09). Le jeton de cette
+   * connexion est un jeton d'utilisateur système SANS EXPIRATION : effacer notre ligne sans le révoquer le
+   * laisserait vivant chez Meta avec son identifiant PERDU de notre côté, donc utilisable et irrévocable
+   * PAR NOUS pour toujours. Le client garde toujours son propre recours (retirer l'application dans les
+   * paramètres de son entreprise), mais une porte qu'on ne sait plus fermer ne doit pas exister.
+   *
+   * ⚠️ CE CHEMIN N'A PAS ENCORE ÉTÉ MESURÉ SUR UN JETON D'UTILISATEUR SYSTÈME. La documentation décrit ce
+   * retrait pour un jeton d'utilisateur ; l'appelant traite donc son échec comme une information à DIRE, pas
+   * comme une panne qui empêche de se déconnecter. La première déconnexion réelle tranchera, et le journal
+   * d'audit gardera la réponse.
+   */
+  async revoquerAcces(jeton: string): Promise<void> {
+    await this.call(`${this.baseUrl}/${this.version}/me/permissions`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${jeton}` },
+    });
+  }
 }
 
 /** `act_123` et `123` désignent le même compte : on garde la forme nue, et les appels remettent le préfixe. */

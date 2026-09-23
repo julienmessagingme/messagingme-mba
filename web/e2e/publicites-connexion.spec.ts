@@ -95,6 +95,23 @@ test.describe('Publicités : les états de la connexion', () => {
     await expect(page.getByRole('button', { name: /Reconnecter|Reconnect/ })).toBeEnabled();
   });
 
+  test('🔴 une déconnexion que Meta n a pas confirmée le DIT, au lieu de laisser croire que tout est détaché', async ({ page }) => {
+    // Ce jeton n expire jamais : si Meta n a pas retire notre acces et que nous avons efface notre ligne,
+    // le seul recours du client est de retirer l application lui-meme. Le taire serait le laisser sans.
+    await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
+    await page.route('**/api/backend/**', async (route) => {
+      const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+      const url = route.request().url();
+      if (url.includes('/pubs/connexion') && route.request().method() === 'DELETE') return json({ ok: true, revoqueChezMeta: false });
+      if (url.includes('/pubs/connexion')) return json(etatVivant({ connexion: CONNEXION }));
+      if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
+      return json({});
+    });
+    await page.goto('/publicites');
+    await page.getByRole('button', { name: /Déconnecter|Disconnect/ }).click();
+    await expect(page.getByTestId('pubs-retrait-non-confirme')).toContainText(/paramètres de votre entreprise|Meta Business settings/);
+  });
+
   test('⚠️ ni liste de pubs ni bouton Créer : ils sont le lot 3, et un bouton inerte serait pire que rien', async ({ page }) => {
     await brancher(page, etatVivant({ connexion: CONNEXION }));
     await expect(page.getByRole('button', { name: /^Créer|^Create/ })).toHaveCount(0);

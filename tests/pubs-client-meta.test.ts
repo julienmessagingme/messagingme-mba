@@ -103,6 +103,21 @@ describe('sansPrefixeAct', () => {
   });
 });
 
+describe('revoquerAcces : retirer notre acces chez Meta', () => {
+  it('desautorise l application en entier, avec le jeton du client', async () => {
+    const { appels } = graph([{ body: { success: true } }]);
+    await client().revoquerAcces('JETON_CLIENT');
+    expect(appels[0]?.url).toContain('/me/permissions');
+    expect(appels[0]?.init?.method).toBe('DELETE');
+    expect((appels[0]?.init?.headers as Record<string, string>)?.Authorization).toBe('Bearer JETON_CLIENT');
+  });
+
+  it('⚠️ un refus de Meta LEVE : c est l appelant qui decide si la deconnexion continue', async () => {
+    graph([{ ok: false, status: 400, body: { error: { message: 'non supporte', code: 100 } } }]);
+    await expect(client().revoquerAcces('JETON')).rejects.toThrow('Graph 400 (#100) : non supporte');
+  });
+});
+
 describe('estJetonRefuse : un jeton mort, pas une panne', () => {
   it('retient le jeton expiré (190), la session fermée (102) et le 401', () => {
     expect(estJetonRefuse(new ErreurGraph(400, 190, 'Graph 400 (#190) : token expiré'))).toBe(true);

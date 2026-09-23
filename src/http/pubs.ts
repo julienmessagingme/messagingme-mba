@@ -38,7 +38,14 @@ export interface PubsRouteDeps {
   actifsAccordes(tenantId: string): Promise<ActifsAccordes>;
   /** Enregistre le choix après avoir lu chez Meta la devise, le fuseau et l'état de la liaison. */
   choisir(tenantId: string, choix: { comptePubId: string; pageId: string }): Promise<ConnexionPub>;
-  deconnecter(tenantId: string): Promise<void>;
+  /**
+   * Efface la connexion, APRÈS avoir tenté de retirer notre accès chez Meta.
+   *
+   * 🔴 LE BOOLÉEN N'EST PAS DE L'ORNEMENT : quand Meta n'a pas confirmé le retrait, l'écran doit dire au
+   * client de retirer l'application depuis les paramètres de son entreprise, parce que le jeton n'expire
+   * jamais et que nous venons de perdre le seul exemplaire que nous en avions.
+   */
+  deconnecter(tenantId: string): Promise<{ revoqueChezMeta: boolean }>;
   audit: AuditSink;
 }
 
@@ -134,8 +141,8 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     const tenantId = scopeTenant(req);
     if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
     if (forbidNonAdmin(req, reply)) return;
-    await deps.deconnecter(tenantId);
-    await journal(tenantId, req, 'pubs.deconnectee', { kind: 'pub_connexion', id: tenantId });
-    return reply.send({ ok: true });
+    const { revoqueChezMeta } = await deps.deconnecter(tenantId);
+    await journal(tenantId, req, 'pubs.deconnectee', { kind: 'pub_connexion', id: tenantId }, { revoqueChezMeta });
+    return reply.send({ ok: true, revoqueChezMeta });
   });
 }

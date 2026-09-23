@@ -33,7 +33,7 @@ function app(over: Partial<PubsRouteDeps> = {}, role = 'admin'): { srv: FastifyI
     connecter: async (_t, code) => { traces.connecte.push(code); return accordes; },
     actifsAccordes: async () => accordes,
     choisir: async (_t, choix) => { traces.choisi.push(choix); return etatChoisi; },
-    deconnecter: async (t) => { traces.deconnecte.push(t); },
+    deconnecter: async (t) => { traces.deconnecte.push(t); return { revoqueChezMeta: true }; },
     audit: async (_tenantId, _acteur, action) => { traces.audit.push(action); },
     ...over,
   };
@@ -162,6 +162,16 @@ describe('DELETE : la déconnexion', () => {
     const { srv, traces } = app();
     expect((await srv.inject({ method: 'DELETE', url: url() })).statusCode).toBe(200);
     expect(traces.deconnecte).toEqual([TENANT]);
+    expect(traces.audit).toEqual(['pubs.deconnectee']);
+  });
+
+  it('🔴 quand Meta n a PAS confirmé le retrait, la réponse le DIT, et le journal le garde', async () => {
+    // Le jeton n expire jamais et nous venons d en perdre le seul exemplaire : taire ce cas laisserait
+    // le client croire que son compte est detache alors qu un acces vit toujours chez Meta.
+    const { srv, traces } = app({ deconnecter: async () => ({ revoqueChezMeta: false }) });
+    const res = await srv.inject({ method: 'DELETE', url: url() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, revoqueChezMeta: false });
     expect(traces.audit).toEqual(['pubs.deconnectee']);
   });
 
