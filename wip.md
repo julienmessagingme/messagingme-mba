@@ -183,7 +183,7 @@ invariants dans [documentation.md](documentation.md) § Conversations, migration
 déployé le 2026-09-18 au soir par une autre session) alors qu'aucune attestation de revue finale n'était
 enregistrée dans ce dépôt pour ses 25 commits. Ce déploiement-ci n'a fait relire que ce qui le suit.
 
-## 🔴 PERFORMANCE LAB : LES COÛTS ET L'ANALYSE (2026-09-17, POUSSÉ, RIEN DE DÉPLOYÉ)
+## PERFORMANCE LAB : LES COÛTS ET L'ANALYSE (2026-09-17, DÉPLOYÉ LE 2026-09-23 AU PLUS TARD)
 
 Refonte de l'onglet Synthèse demandée par Julien : une carte « Coûts » à gauche (coût moyen par
 engagement, coût total des messages envoyés, coût total IA), les intentions et la matrice
