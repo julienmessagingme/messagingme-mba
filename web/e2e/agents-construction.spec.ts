@@ -242,10 +242,13 @@ test.describe('Agents IA : construire en parlant', () => {
     await page.goto(`/agents?id=${AG}&tab=identite`);
     await page.getByTestId('agent-activer').click();
 
-    await expect(page.getByTestId('agent-manques')).toBeVisible();
-    await expect(page.getByTestId('agent-manque-connaissance')).toBeVisible();
+    // ⚠️ LES MANQUES ONT DÉMÉNAGÉ DANS L'EN-TÊTE (2026-09-23), ils n'ont pas disparu : le bandeau
+    // `agent-manques` du corps est remplacé par les étapes de `EnteteAgent`. Le cas exercé est le MÊME, « un
+    // manque affiché mène à l'onglet où il se comble » ; seuls les identifiants changent.
+    await expect(page.getByTestId('entete-agent-etapes')).toContainText('2 étapes à finir');
+    await expect(page.getByTestId('entete-etape-connaissance')).toBeVisible();
     // Le lien mène à l'onglet où ça se corrige.
-    await page.getByTestId('agent-manque-outils').click();
+    await page.getByTestId('entete-etape-outils').click();
     await expect(page).toHaveURL(/tab=outils/);
   });
 
@@ -328,13 +331,16 @@ test.describe('Agents IA : construire en parlant', () => {
       return json({});
     });
     await page.goto(`/agents?id=${AG}&tab=outils`);
-    await expect(page.getByTestId('agent-manques')).toBeVisible();
+    await expect(page.getByTestId('entete-etape-outils')).toBeVisible();
     const avant = manques.length;
 
     await page.getByTestId('outil-activer-o1').click();
 
-    // 🔴 SANS QUITTER L'AGENT : c'est tout le défaut. Le bandeau part parce que les manques ont été RELUS.
-    await expect(page.getByTestId('agent-manques')).toHaveCount(0, { timeout: 5000 });
+    // 🔴 SANS QUITTER L'AGENT : c'est tout le défaut. L'étape part parce que les manques ont été RELUS, et
+    // l'en-tête bascule sur « Tout est réglé », qui prouve que la lecture a bien abouti (une étape absente
+    // parce que rien n'a été lu laisserait l'en-tête muet).
+    await expect(page.getByTestId('entete-etape-outils')).toHaveCount(0, { timeout: 5000 });
+    await expect(page.getByTestId('entete-agent-etapes')).toContainText('Tout est réglé');
     expect(manques.length).toBeGreaterThan(avant);
   });
 
@@ -352,10 +358,10 @@ test.describe('Agents IA : construire en parlant', () => {
       }],
     });
     await page.goto(`/agents?id=${AG}&tab=tester`);
-    // Aucun clic sur « activer » : le bandeau est là dès l'ouverture, et sur l'onglet où l'on constate le
-    // symptôme.
-    await expect(page.getByTestId('agent-manques')).toBeVisible();
-    await expect(page.getByTestId('agent-manque-outils')).toContainText(/Chercher dans la base/);
+    // Aucun clic sur « activer » : l'étape est là dès l'ouverture, et sur l'onglet où l'on constate le
+    // symptôme. (Elle vit dans l'en-tête depuis le 2026-09-23, plus dans un bandeau du corps.)
+    await expect(page.getByTestId('entete-agent-etapes')).toContainText('1 étape à finir');
+    await expect(page.getByTestId('entete-etape-outils')).toContainText(/Chercher dans la base/);
   });
 
   test('🔴 un outil MCP debranche par un rafraichissement apparait, NOMME, dans son propre bandeau', async ({ page }) => {
@@ -368,6 +374,10 @@ test.describe('Agents IA : construire en parlant', () => {
      * garde dure de l activation : y verser ce cas donnerait a un serveur TIERS un droit de veto sur
      * l activation de l agent d un client. C est l ecart assume avec l etape 5 du plan, qui prescrivait
      * `agent-manques`.
+     *
+     * ⚠️ ET LA SEPARATION A SURVECU AU DEMENAGEMENT DES MANQUES (2026-09-23) : ceux-ci sont montes dans
+     * `EnteteAgent`, ce bandeau-ci est RESTE dans le corps, precisement parce qu il ne bloque pas
+     * l activation et n a donc rien a faire dans un compteur d etapes.
      */
     await mock(page, [], {
       manques: [],
@@ -380,15 +390,18 @@ test.describe('Agents IA : construire en parlant', () => {
     await page.goto(`/agents?id=${AG}&tab=tester`);
     await expect(page.getByTestId('agent-avertissements')).toBeVisible();
     await expect(page.getByTestId('agent-avertissement-outils')).toContainText('notion_search');
-    // 🔴 IL NE SE DEGUISE PAS EN MANQUE : le bandeau bloquant reste absent, donc l activation reste possible.
-    await expect(page.getByTestId('agent-manques')).toHaveCount(0);
+    // 🔴 IL NE SE DEGUISE PAS EN MANQUE : aucune etape dans l en-tete, donc l activation reste possible. Le
+    // « Tout est regle » est ce qui distingue « rien ne bloque » de « on n a pas encore lu ».
+    await expect(page.getByTestId('entete-agent-etapes')).toContainText('Tout est réglé');
+    await expect(page.getByTestId('entete-etape-outils')).toHaveCount(0);
   });
 
-  test('sans manque, aucun bandeau : preuve inverse', async ({ page }) => {
-    // Sans ce cas, un bandeau affiché en permanence passerait le test ci-dessus.
+  test('sans manque, aucune etape : preuve inverse', async ({ page }) => {
+    // Sans ce cas, une étape affichée en permanence passerait le test ci-dessus.
     await mock(page, [], { manques: [] });
     await page.goto(`/agents?id=${AG}&tab=tester`);
-    await expect(page.getByTestId('agent-manques')).toHaveCount(0);
+    await expect(page.getByTestId('entete-agent-etapes')).toContainText('Tout est réglé');
+    await expect(page.getByTestId('entete-etape-outils')).toHaveCount(0);
     // Sans ce cas, un bandeau d avertissement affiche en permanence passerait le test ci-dessus.
     await expect(page.getByTestId('agent-avertissements')).toHaveCount(0);
   });
