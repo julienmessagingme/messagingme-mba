@@ -94,11 +94,25 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0170**, le 2026-09-24 à 3 h 01 UTC (`pubs_router`, lot 3 des publicités :
-`publicites`, `pubs_connues`, et les quatre colonnes de routage d'`arrivees_pub`), AVANT le `up` qui a
-porté son code. **ÉCRITE ET PAS ENCORE APPLIQUÉE : 0171** (`pubs_brouillons`, les brouillons de
-publicité ; purement additive, une table neuve et rien d'autre, donc AVANT le `up`). **Prochaine libre =
-0172**, et le dossier `db/migrations/` s'arrête à 0171.
+**Dernière appliquée : 0171**, le 2026-09-24 à 13 h 46 UTC (`pubs_brouillons`, les brouillons de
+publicité), AVANT le `up` qui a porté son code. **Prochaine libre = 0172**, et le dossier
+`db/migrations/` s'arrête à 0171.
+
+🔴 **RELUE EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT, PAS EN ÉCRIVANT CETTE LIGNE.**
+`schema_migrations` rend `0171_pubs_brouillons.sql` en tête à 13 h 46 UTC, après 0170 à 3 h 01 ; les douze
+champs du formulaire sont `text NOT NULL DEFAULT ''` (un brouillon sert à garder un travail INCOMPLET,
+exiger une date valide ou un nombre refuserait la moitié des brouillons qu'on veut poser) ; `destination`
+porte son défaut `'scenario'` et son CHECK à deux valeurs ; `visuel_octets` est `bytea` nullable et le CHECK
+lie la PAIRE (un type sans octets afficherait une image vide, des octets sans type ne pourraient pas être
+rendus) ; `workflow_id` est en **`on delete set null`** (`confdeltype = 'n'`, une cascade détruirait le
+brouillon pour la suppression d'un scénario) quand `tenant_id` est en cascade ; et il y a exactement DEUX
+index, la clé primaire et `(tenant_id, modifie_le desc)`, celui de la seule requête qui existe sur cette
+table.
+
+⚠️ **RIEN N'A BOUGÉ POUR PERSONNE, ET C'EST MESURÉ** : la table est VIDE. Les trois conteneurs sont sains,
+le worker a repris ses neuf files, et les DEUX portes publiques rendent 200 après le `up` et le
+rechargement NPM, contrôlées depuis l'extérieur. ⚠️ Le rechargement a été fait APRÈS avoir attendu
+`mba-api` sain, et **le 502 n'est pas apparu cette fois** : c'est la première fois de la semaine.
 
 🔴 **ONZIÈME DÉRIVE, TROUVÉE PAR LA RELECTURE À FROID DU 2026-09-24.** Cette ligne annonçait « prochaine
 libre = 0171, et le dossier s'arrête bien à 0170 » alors que le commit qui la lisait venait d'y ajouter
