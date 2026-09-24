@@ -178,7 +178,11 @@ création : une lecture demande une clé neuve, ce qui est acceptable puisque pe
   du plafond par espace. `tags` s'AJOUTENT, n'en retirent jamais.
 - `consent` : `"opted_in"` ou `"opted_out"`, absent = inchangé. Il REMPLACE `optIn` / `optInSource`, dont le
   `false` ne voulait rien dire.
-  - `opted_in` promeut, par l'upsert existant.
+  - `opted_in` fait passer une fiche de « inconnu » à « opt-in ». 🔴 **Il ne lève JAMAIS un STOP** : sur une
+    fiche `opted_out`, 409 `opted_out`, et ni ses champs, ni ses étiquettes, ni son consentement ne bougent
+    (décision de Julien du 2026-09-24 : une machine ne réabonne pas quelqu'un qui a dit stop ; seul un
+    opérateur, depuis la fiche de la console, ou la personne elle-même le peut). La garde vit dans la
+    requête du dépôt, pour tenir un STOP arrivé pendant l'appel.
   - `opted_out` est un VRAI désabonnement : statut, date (`opt_out_at`, invariant de 0138) et ligne d'audit
     `contact.optout` (source `api`). L'upsert ne sait que promouvoir, et c'est une bonne garde qu'on garde :
     le désabonnement est donc une SECONDE écriture après l'upsert, sur l'identifiant rendu, comme la route
@@ -289,8 +293,8 @@ une option que personne n'appellerait serait du code mort (écart relevé par le
   qu'un `bsuid` est écarté `unknown_contact` : un envoi ne fonde pas une fiche sur un identifiant qu'aucun
   message n'a encore confirmé (`/v1/contacts`, lui, le peut). Le paramètre `createMissing` disparaît.
 - **`consent` par destinataire** : écrit sur la fiche AVANT la construction de l'envoi, avec le même sens que
-  sur `/v1/contacts` (un `opted_in` promeut, un `opted_out` désabonne et écarte ce destinataire en
-  `opted_out`). C'est ce qui permet à un outil où vit le consentement (Batch, Brevo) d'envoyer sans pousser
+  sur `/v1/contacts` (un `opted_in` promeut une fiche inconnue mais ne lève jamais un STOP, un `opted_out`
+  désabonne ; dans ces deux derniers cas le destinataire est écarté en `opted_out`). C'est ce qui permet à un outil où vit le consentement (Batch, Brevo) d'envoyer sans pousser
   chaque fiche au préalable. `consentSource` absent vaut `api`.
 - Un destinataire mal formé est ÉCARTÉ (`invalid_recipient`, `invalid_phone`), il ne fait pas tomber l'envoi.
 - **Aucune perte silencieuse** : doublon (`duplicate`), identités contradictoires (`identity_conflict`),
@@ -734,8 +738,8 @@ rappelle pas. `/revue` après chaque lot, `/revue-finale` avant chaque déploiem
 - **Variables dans un scénario** : un parcours n'a pas de contexte où les ranger.
 - **BSUID d'abord** pour le routage WhatsApp : changerait tous les envois, pas seulement l'API.
 - **Suppression de fiche par API** (effacement RGPD) : irréversible, à discuter.
-- **Re-consentement d'un contact qui a dit STOP** : `consent: "opted_in"` le réabonne, comme l'import CSV
-  aujourd'hui. Comportement existant, gardé tel quel, à trancher à part s'il pose question.
+- **Re-consentement par l'IMPORT CSV** : l'import réabonne encore un contact qui a dit STOP, alors que l'API
+  ne le peut plus (§ 2, décision du 2026-09-24). Aligner l'import est à trancher à part.
 - **Statut de livraison sur la bulle de l'Inbox** : le § 5 écrit l'échec et le journal le montre ; l'afficher
   sur la bulle demanderait une jointure sur la lecture du fil, rafraîchie toutes les 4 secondes. À cadrer à
   part.
