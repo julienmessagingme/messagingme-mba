@@ -1,7 +1,10 @@
-# L'API publique `/v1` : une identité, un vocabulaire, et le RCS
+# L'API publique `/v1` : une identité, un vocabulaire, le RCS, et les signaux vers Batch
 
 **Date** : 2026-09-24. **Statut** : design validé par Julien le 2026-09-24 (analyse de la doc, trois rondes de
-questions, trois parties validées une à une, la première après une reprise), spec à relire.
+questions, trois parties validées une à une, la première après une reprise), puis AMENDÉ le même jour après la
+lecture du montage Batch (session « Intégration Batch ») : identifiant externe, idempotence dans le corps,
+consentement par destinataire, échecs des messages libres, intentions retail, signaux et adaptateur Batch.
+Spec à relire.
 
 ## Le problème
 
@@ -27,6 +30,15 @@ refusé en `contact_desabonne` par l'autre. Les codes mélangent français et an
    qu'il envoie en premier. Viser une condition, une étiquette ou un champ qui mène à un message rapide ne
    demande aucune fenêtre : le message part vers des gens qui n'ont pas écrit et Meta le refuse (131047).
    Relevé par Julien pendant le cadrage : « cela dépend du premier node, il ne faut pas se tromper là-dessus ».
+4. **L'échec de livraison d'un message LIBRE n'est écrit nulle part.** Le rapport de smsmode (`onDlr`,
+   `src/index.ts`) ne met à jour que les destinataires de campagne, les mesures par bloc et les parcours ; les
+   statuts de Meta (`processStatuses`, `src/webhooks/delivery.ts`) que les destinataires de campagne (plus le
+   tarif, la remise du fil et les mesures par bloc). Un message de conversation ne porte aucun statut de
+   livraison. Une réponse de l'Inbox, un RCS libre ou un message d'API qui n'arrive pas n'apparaît donc ni
+   dans Sécurité > Journal des erreurs, ni sur la bulle, et le cache de joignabilité RCS n'en apprend rien.
+   Trouvé en répondant à Julien (« si le RCS n'est pas délivré, est-ce qu'on verra une entrée dans le
+   journal ? ») : la première version de cette spec affirmait à tort qu'un tel échec « arrive ensuite dans
+   l'Inbox ».
 
 **Ce qui est flou ou absent.**
 
@@ -46,6 +58,18 @@ refusé en `contact_desabonne` par l'autre. Les codes mélangent français et an
 - Le RCS n'existe pas dans l'API, sauf, sans que la doc le dise, à travers un scénario qui contient des blocs
   RCS.
 
+**Ce que le montage Batch ajoute** (session « Intégration Batch », et doc de Batch relue le 2026-09-24) :
+
+- Batch appelle un service tiers par son **Universal Channel** : un POST par profil, corps JSON rempli par ses
+  variables de profil (`{{b.phone_number}}`, `{{b.custom_id}}`…). Sa doc ne dit PAS que les en-têtes se
+  remplissent par profil.
+- **Batch ne lit pas notre réponse** (« Batch only confirms delivery of the request ») : son orchestration
+  réagit à ce qui est écrit dans SON profil, par son API Profils (`POST /profiles/update`, clé par `custom_id`,
+  attributs et événements). Ce qu'on lui renvoie est donc une POUSSÉE de notre part, pas un endpoint qu'il lit.
+- Ses profils se désignent par SON identifiant (`custom_id`), comme ceux de Brevo, SFMC ou Splio.
+- Nos intentions calculées sont celles des services et de l'assurance ; il n'y a pas d'« achat », alors que les
+  clients de Batch sont surtout dans le retail.
+
 **Personne n'est branché sur l'API aujourd'hui** (Julien, 2026-09-24) : on casse proprement, sans garder les
 anciennes formes.
 
@@ -53,32 +77,43 @@ anciennes formes.
 
 Trois règles, qui tiennent toute l'API :
 
-1. **Une personne est une FICHE.** L'intégrateur la désigne par ce qu'il a (`contactId`, `phone` ou `bsuid`),
-   et ces clés ne servent qu'à la TROUVER. L'adresse d'envoi, le produit la déduit de la fiche et du canal.
+1. **Une personne est une FICHE.** L'intégrateur la désigne par ce qu'il a (`contactId`, `externalId`, `phone`,
+   `bsuid`), et ces clés ne servent qu'à la TROUVER. L'adresse d'envoi, le produit la déduit de la fiche et du
+   canal.
 2. **Le canal n'est jamais un paramètre.** Il se lit dans ce qu'on envoie (la cible d'un envoi) ou dans
    l'adresse de la route (le message simple).
 3. **Un même refus porte le même code partout**, qu'il arrive en erreur sur un message ou en motif d'écart
    dans un envoi.
+
+Et une quatrième pour le retour : **ce qu'on remonte est un dictionnaire de signaux indépendant de l'outil
+cible** ; un adaptateur le traduit pour chaque outil, Batch en premier.
 
 ## Les arbitrages (Julien, 2026-09-24)
 
 | Question | Décision |
 |---|---|
 | Identifiant d'une personne | `contactId`, l'identifiant de fiche qui existe déjà (`contacts.id`) |
-| Désigner un destinataire | exactement une clé parmi `contactId`, `phone`, `bsuid` |
+| Identifiant de l'outil du client | `externalId` (le `custom_id` de Batch), gardé sur la fiche, unique par espace |
+| Désigner un destinataire | au moins une clé parmi `contactId`, `externalId`, `phone`, `bsuid` ; toutes désignent la même fiche |
 | Routage WhatsApp quand la fiche a numéro ET BSUID | inchangé : la règle du mini-CRM (`waIdOf`, le numéro sinon le BSUID) |
 | Intégrations existantes | aucune : on casse proprement |
 | Qui peut recevoir un RCS libre d'une machine | contact connu, non bloqué, non désabonné, ET (`opted_in` OU nous a déjà écrit) |
 | Message simple WhatsApp et RCS | deux routes distinctes, leurs règles n'ont presque rien en commun |
+| Idempotence d'un envoi | la clé en en-tête OU dans le corps (le Universal Channel ne remplit pas ses en-têtes par profil) |
+| Consentement | porté aussi par chaque destinataire d'un envoi (il vit chez l'outil du client) |
+| Échecs des messages libres | capturés : journal des erreurs, joignabilité RCS, signal `em_message_failed` |
+| Intentions | ajout de `achat`, `suivi_commande`, `retour`, maintenant |
+| Signaux remontés | dictionnaire + adaptateur Batch dans cette spec |
 | Périmètre | lecture de fiche, désabonnement, catalogues (templates WhatsApp, scénarios, messages RCS), variables par destinataire |
 | Le `contactId` dans la console | affiché sur la fiche du mini-CRM, avec un bouton Copier |
-| Hors périmètre | webhooks sortants, variables dans un scénario, BSUID d'abord, identifiant du CRM client, suppression de fiche par API |
+| Hors périmètre | webhooks sortants génériques, variables dans un scénario, BSUID d'abord, suppression de fiche par API |
 
 ## 1. L'identité d'une personne
 
 | Donnée | Sur la fiche (`contacts`) | Qui la remplit | Dans l'API | Sert à |
 |---|---|---|---|---|
 | Identifiant de fiche | `id` | créé avec la fiche | `contactId` | désigner la fiche sans dépendre d'un numéro |
+| Identifiant externe | `external_id` (**nouveau**) | l'outil du client, par l'API | `externalId` | retrouver la fiche par l'identifiant de l'outil du client, et savoir dans quel profil réécrire |
 | Numéro | `phone_e164` (`+33…`) | message WhatsApp entrant, import, API, saisie | `phone` | adresse RCS (obligatoire) ; adresse WhatsApp quand il existe |
 | BSUID | `bsuid` | message entrant d'un utilisateur à nom d'utilisateur ; import, API | `bsuid` | adresse WhatsApp quand il n'y a pas de numéro |
 | `wa_id` | pas une colonne : calculé par `waIdOf` | | pas exposé | l'adresse WhatsApp réellement utilisée |
@@ -86,12 +121,26 @@ Trois règles, qui tiennent toute l'API :
 **Comment la fiche se remplit** : Meta envoie un `wa_id` à chaque message entrant, et `classifyWaId`
 (`src/crm/identity.ts`) le range : de 7 à 15 chiffres, c'est un numéro ; sinon, un BSUID. Aucun BSUID n'a été
 reçu à ce jour. **Rien dans cette spec ne dépend de la façon dont il arrivera** : le jour où il arrive, l'entrant
-remplit `bsuid` et l'API retrouve la fiche par `bsuid` ou par `contactId` ; s'il n'arrive jamais, la clé `bsuid`
-ne sert pas.
+remplit `bsuid` et l'API retrouve la fiche par `bsuid`, `externalId` ou `contactId` ; s'il n'arrive jamais, la
+clé `bsuid` ne sert pas.
 
-**Trouver la fiche** (dans `/v1/messages/*` et dans chaque destinataire de `/v1/sends`) : exactement UNE clé
-parmi `contactId`, `phone`, `bsuid`. Zéro ou deux : `invalid_recipient`. Le `phone` est normalisé en E.164 avec
-la France par défaut, comme aujourd'hui (`normalizePhone`).
+**`externalId`** : texte de 512 caractères au plus (la borne du `custom_id` de Batch), unique par espace,
+jamais obligatoire. Il n'est pas une adresse : il ne sert qu'à retrouver la fiche et à réécrire dans l'outil du
+client.
+
+**Trouver la fiche** (dans `/v1/contacts`, dans `/v1/messages/*` et dans chaque destinataire de `/v1/sends`),
+par UNE fonction partagée :
+
+- au moins une clé parmi `contactId`, `externalId`, `phone`, `bsuid`, sinon `invalid_recipient` ;
+- toutes les clés données doivent désigner LA MÊME fiche, sinon `identity_conflict` et rien n'est écrit ;
+- une clé que la fiche trouvée ne porte pas encore lui est RATTACHÉE (Batch envoie naturellement le numéro ET
+  son `custom_id` ensemble) ; `contactId`, lui, ne se rattache jamais, il existe ou il est inconnu ;
+- aucune clé ne trouve de fiche : une fiche est créée SEULEMENT si la route crée (voir chaque route) ET qu'un
+  `phone` ou un `bsuid` est donné (la base exige l'un des deux). Sinon `unknown_contact`.
+- Le `phone` est normalisé en E.164 avec la France par défaut, comme aujourd'hui (`normalizePhone`).
+
+⚠️ Cette règle remplace « exactement une clé », validée en première lecture : elle est tombée devant le premier
+cas réel, un Universal Channel qui envoie le numéro et le `custom_id` dans le même corps.
 
 **L'adresse d'envoi** ne vient JAMAIS de la clé reçue :
 
@@ -111,6 +160,7 @@ création : une lecture demande une clé neuve, ce qui est acceptable puisque pe
 ```json
 {
   "phone": "+33612345678",
+  "externalId": "batch-7781",
   "bsuid": "…",
   "name": "Camille Roy",
   "fields": { "ville": "Lyon" },
@@ -120,9 +170,8 @@ création : une lecture demande une clé neuve, ce qui est acceptable puisque pe
 }
 ```
 
-- Au moins `phone` ou `bsuid`. La fiche se retrouve par `phone`, sinon par `bsuid`. Si les deux désignent deux
-  fiches DIFFÉRENTES : 409 `identity_conflict`, rien n'est écrit. Si l'une trouve la fiche et l'autre est neuve,
-  la neuve est rattachée à la fiche.
+- La fiche se trouve par la règle du § 1, et cette route CRÉE : une fiche neuve exige `phone` ou `bsuid`.
+  `externalId` seul et inconnu rend 404 `unknown_contact`.
 - `fields` : adressés par clé technique ou par code `fld_`. Un champ inconnu est créé en texte, dans la limite
   du plafond par espace. `tags` s'AJOUTENT, n'en retirent jamais.
 - `consent` : `"opted_in"` ou `"opted_out"`, absent = inchangé. Il REMPLACE `optIn` / `optInSource`, dont le
@@ -142,6 +191,7 @@ fait pas tomber le lot (contrat actuel, inchangé).
 ```json
 {
   "contactId": "…",
+  "externalId": "batch-7781",
   "phone": "+33612345678",
   "bsuid": null,
   "name": "Camille Roy",
@@ -156,20 +206,23 @@ fait pas tomber le lot (contrat actuel, inchangé).
 ```
 
 `reachability` : `true` / `false` quand c'est connu, `null` sinon. WhatsApp vient de
-`contacts.whatsapp_joignable` (0133), RCS du cache de joignabilité. Une fiche supprimée rend 404.
+`contacts.whatsapp_joignable` (0133), RCS du cache de joignabilité (`PgReachabilityStore`, que le § 5 alimente
+désormais). Une fiche supprimée rend 404.
 
-### `POST /v1/contacts/search` : retrouver une fiche par numéro ou BSUID (`contacts:read`)
+### `POST /v1/contacts/search` : retrouver une fiche (`contacts:read`)
 
-Corps `{ "phone": "…" }` ou `{ "bsuid": "…" }` (exactement une clé). Réponse 200 `{ "contact": {…} | null }`,
-même forme que `GET`. **Le numéro voyage dans le corps, jamais dans l'adresse** : une adresse
-`/v1/contacts/+33…` l'inscrirait dans les journaux d'accès du proxy et de Cloudflare.
+Corps `{ "phone" }`, `{ "bsuid" }` ou `{ "externalId" }` (exactement une clé : c'est une recherche, pas un
+rattachement). Réponse 200 `{ "contact": {…} | null }`, même forme que `GET`. **Le numéro voyage dans le corps,
+jamais dans l'adresse** : une adresse `/v1/contacts/+33…` l'inscrirait dans les journaux d'accès du proxy et de
+Cloudflare.
 
 ### `PATCH /v1/contacts/{contactId}` : modifier une fiche (`contacts:write`)
 
-`{ "name", "fields", "addTags", "removeTags", "consent", "consentSource" }`, tous optionnels.
+`{ "name", "fields", "addTags", "removeTags", "consent", "consentSource", "externalId" }`, tous optionnels.
 
 - `fields` : une valeur `null` VIDE le champ ; les autres se fusionnent.
 - `consent` : même sens que sur `POST`.
+- `externalId` : se pose ou se remplace ; déjà porté par une autre fiche, 409 `identity_conflict`.
 - Le numéro et le BSUID ne se modifient PAS ici : ils portent les conversations, un changement les couperait
   de leur historique.
 - Réponse 200 `{ "contactId": "…" }` ; 404 `unknown_contact`.
@@ -180,13 +233,13 @@ Un envoi est un LOT : asynchrone, idempotent, visible dans Campagnes, suivi par 
 
 ```json
 POST /v1/sends
-Idempotency-Key: commande-8412
 
 {
+  "idempotencyKey": "relance-panier-batch-7781-2026-09-24",
   "target": { "template": { "name": "confirmation", "language": "fr" } },
   "recipients": [
-    { "contactId": "…", "variables": { "commande": "8412" } },
-    { "phone": "+33698765432" }
+    { "externalId": "batch-7781", "phone": "+33612345678", "consent": "opted_in", "variables": { "commande": "8412" } },
+    { "contactId": "…" }
   ],
   "params": [{ "position": 1, "source": { "type": "variable", "key": "commande" } }],
   "ratePerMinute": 20
@@ -224,16 +277,22 @@ sur le type du bloc, disparaît.
 
 ### Les destinataires
 
-- `recipients` : 50 au plus, chacun `{ contactId | phone | bsuid, variables? }`.
-- **Un `phone` inconnu crée la fiche** (un template ou un RCS partent vers quelqu'un qui n'a pas écrit), SAUF
-  pour une ouverture `whatsapp_session`, où il est écarté `unknown_contact` : il n'a par construction aucune
-  fenêtre ouverte. Un `contactId` ou un `bsuid` inconnu est écarté `unknown_contact`. Le paramètre
-  `createMissing` disparaît.
+- `recipients` : 50 au plus, chacun `{ contactId?, externalId?, phone?, bsuid?, consent?, consentSource?, variables? }`,
+  résolu par la règle du § 1.
+- **Cette route CRÉE** la fiche d'un destinataire inconnu qui porte un `phone` (un template ou un RCS partent
+  vers quelqu'un qui n'a pas écrit), SAUF pour une ouverture `whatsapp_session`, où il est écarté
+  `unknown_contact` : il n'a par construction aucune fenêtre ouverte. Un destinataire inconnu qui ne porte
+  qu'un `bsuid` est écarté `unknown_contact` : un envoi ne fonde pas une fiche sur un identifiant qu'aucun
+  message n'a encore confirmé (`/v1/contacts`, lui, le peut). Le paramètre `createMissing` disparaît.
+- **`consent` par destinataire** : écrit sur la fiche AVANT la construction de l'envoi, avec le même sens que
+  sur `/v1/contacts` (un `opted_in` promeut, un `opted_out` désabonne et écarte ce destinataire en
+  `opted_out`). C'est ce qui permet à un outil où vit le consentement (Batch, Brevo) d'envoyer sans pousser
+  chaque fiche au préalable. `consentSource` absent vaut `api`.
 - Un destinataire mal formé est ÉCARTÉ (`invalid_recipient`, `invalid_phone`), il ne fait pas tomber l'envoi.
-- **Aucune perte silencieuse** : doublon (`duplicate`), bloqué (`blocked_contact`), désabonné (`opted_out`,
-  y compris le STOP RCS sur une ouverture `rcs`), consentement manquant pour un envoi marketing (`no_consent`),
-  fenêtre fermée (`window_closed`), variable manquante (`missing_variable`), pas de numéro pour le RCS
-  (`no_phone`).
+- **Aucune perte silencieuse** : doublon (`duplicate`), identités contradictoires (`identity_conflict`),
+  bloqué (`blocked_contact`), désabonné (`opted_out`, y compris le STOP RCS sur une ouverture `rcs`),
+  consentement manquant pour un envoi marketing (`no_consent`), fenêtre fermée (`window_closed`), variable
+  manquante (`missing_variable`), pas de numéro pour le RCS (`no_phone`).
 
 ### Les variables par destinataire
 
@@ -253,16 +312,23 @@ sur le type du bloc, disparaît.
   consentement exigé : `marketing` écarte tout ce qui n'est pas `opted_in`, `utility` n'écarte que les
   désabonnés.
 - **Numéro WhatsApp** : exigé pour `template`, `scenario` et `node` (la console l'exige pour toute campagne
-  de scénario) ; il n'est PAS exigé pour `rcsMessage`, qui part de l'agent RCS de l'espace. `phoneNumberId` reste optionnel et documenté ; absent, le numéro par
-  défaut de l'espace.
+  de scénario) ; il n'est PAS exigé pour `rcsMessage`, qui part de l'agent RCS de l'espace. `phoneNumberId`
+  reste optionnel et documenté ; absent, le numéro par défaut de l'espace.
 - **`ratePerMinute`** : entier de 1 à 80, sinon 400, comme dans la console. Le plafond réel du canal
   s'applique ensuite (`plafondDuCanal`), et la doc le dit.
 
 ### Idempotence
 
-`Idempotency-Key` reste obligatoire. Nouveau : l'EMPREINTE du corps est gardée avec la clé. La même clé avec
-un autre corps rend 422 `idempotency_key_reused` au lieu de rejouer en silence le rapport du premier. La doc
-dit enfin que la clé vit 24 h.
+- La clé est OBLIGATOIRE, et elle se donne **en en-tête (`Idempotency-Key`) OU dans le corps
+  (`idempotencyKey`)**. Les deux présentes et différentes : 400 `invalid_body`. Raison : le Universal Channel
+  de Batch remplit son CORPS avec les variables du profil, et sa doc ne dit pas qu'il en fait autant pour ses
+  en-têtes.
+- L'EMPREINTE du corps est gardée avec la clé. La même clé avec un autre corps rend 422
+  `idempotency_key_reused` au lieu de rejouer en silence le rapport du premier. La clé vit 24 h, et la doc le
+  dit.
+- ⚠️ **À faire dire par Batch avant la recette** : quelle variable rend un passage UNIQUE (un même profil peut
+  repasser par la même étape). Une clé faite du seul `custom_id` écarterait en silence le second passage
+  légitime.
 
 ### La réponse 201
 
@@ -294,6 +360,7 @@ que soit la clé utilisée. La liste reste tronquée à 200, `skippedTotal` donn
   "recipients": [
     {
       "contactId": "…",
+      "externalId": "batch-7781",
       "channel": "whatsapp",
       "status": "sent",
       "messageId": "wamid…",
@@ -313,15 +380,15 @@ parcours se lit dans la console.
 ## 4. Envoyer un message simple
 
 Un message simple est un TEXTE, à UNE personne, synchrone, visible dans l'Inbox. Écrire PREND le fil (le
-scénario cesse d'avancer seul, l'agent de Meta cesse de répondre), comme aujourd'hui. Pas d'`Idempotency-Key`,
-comme la barre de réponse de l'Inbox. La personne doit avoir une FICHE : un message simple ne fonde pas une
-relation, c'est un envoi (`/v1/sends`) qui le fait.
+scénario cesse d'avancer seul, l'agent de Meta cesse de répondre), comme aujourd'hui. Pas de clé
+d'idempotence, comme la barre de réponse de l'Inbox. La personne doit avoir une FICHE : ces routes ne créent
+pas, un message simple ne fonde pas une relation, c'est un envoi (`/v1/sends`) qui le fait.
 
 Réponse 200 des deux routes : `{ "messageId": "…", "conversationId": "…", "channel": "whatsapp" | "rcs" }`.
 
 ### `POST /v1/messages/whatsapp` (`sends:create`)
 
-`{ "contactId" | "phone" | "bsuid": "…", "text": "…" }`, texte de 4 096 caractères au plus.
+`{ "contactId"?, "externalId"?, "phone"?, "bsuid"?, "text" }` (règle du § 1), texte de 4 096 caractères au plus.
 
 Règles d'aujourd'hui, inchangées : la fiche existe (404 `unknown_contact`), n'est pas bloquée (409
 `blocked_contact`), n'est pas désabonnée (409 `opted_out`), l'espace a un numéro (409 `no_whatsapp_number`), la
@@ -330,8 +397,7 @@ console et le serveur MCP.
 
 ### `POST /v1/messages/rcs` (`sends:create`)
 
-`{ "contactId" | "phone" | "bsuid": "…", "text": "…" }`, texte de 3 072 caractères au plus
-(`RCS_TEXTE_MAX`). Pas de fenêtre. Dans l'ordre :
+Même corps, texte de 3 072 caractères au plus (`RCS_TEXTE_MAX`). Pas de fenêtre. Dans l'ordre :
 
 | Condition | Refus |
 |---|---|
@@ -341,18 +407,45 @@ console et le serveur MCP.
 | elle n'est pas désabonnée, ni en général ni du RCS (`rcs_optout_at`) | 409 `opted_out` |
 | **elle a consenti (`opted_in`) OU nous a déjà écrit** (au moins un message entrant, tout canal) | 409 `no_consent` |
 | le canal RCS est actif sur l'espace | 409 `rcs_not_enabled` |
-| elle n'est pas connue comme injoignable en RCS | 422 `rcs_unreachable` |
+| le cache de joignabilité ne la dit pas injoignable pour l'agent de l'espace | 422 `rcs_unreachable` |
 
 - **Un seul chemin pour l'API et le bouton RCS de l'Inbox.** L'envoi libre de `sendRcsFromInbox`
   (`src/index.ts`) devient une fonction partagée, sur le modèle de `repondreDansLaFenetre`. La condition de
   consentement ne s'applique qu'aux MACHINES (API), jamais à l'opérateur, comme la garde de désabonnement
   aujourd'hui.
-- ⚠️ **La joignabilité n'est connue d'avance que si elle a déjà été constatée** : smsmode ne sait pas la
-  vérifier avant l'envoi (`canCheckReachability = false`). Sinon, le message est accepté et un échec éventuel
-  arrive ensuite dans l'Inbox. Sans webhooks sortants, l'intégrateur ne le voit pas : c'est une limite dite dans
-  la doc, pas cachée.
+- ⚠️ **La joignabilité n'est connue qu'après coup.** smsmode ne sait pas la vérifier avant l'envoi
+  (`canCheckReachability = false`) : le PREMIER RCS libre vers un numéro non RCS est accepté, puis son échec
+  arrive par le rapport de livraison. Depuis le § 5, cet échec est écrit (journal, joignabilité, signal) et le
+  suivant est refusé en `rcs_unreachable`. La route lit le cache DIRECTEMENT, pas à travers l'envoyeur, qui
+  saute ce contrôle quand le fournisseur ne sait pas vérifier.
 
-## 5. Les catalogues (`sends:create`)
+## 5. Les échecs des messages libres
+
+C'est la correction du défaut 4.
+
+- **Où l'échec est capté.** Dans le traitement des statuts de Meta (`processStatuses`) et dans le rapport de
+  smsmode (`onDlr`) : quand un échec (`failed` chez Meta, `echecDefinitif` chez smsmode) porte l'identifiant
+  d'un message qui n'est PAS un destinataire de campagne mais un message SORTANT de conversation (index unique
+  `conversation_messages_wamid_uidx`), une ligne est écrite dans une table d'échecs. Seuls les échecs sont
+  écrits : la table reste petite, sur le modèle des échecs d'avance de scénario (0108).
+- **Ce qu'elle porte** : espace, identifiant du message, `wa_id`, canal, ORIGINE du message (opérateur, API,
+  MCP, scénario, agent : la colonne `origin` du message), code Meta s'il y en a un, motif, date. Purge avec
+  la même rétention que les échecs d'avance.
+- **Le journal des erreurs** (`PgErreursLivraisonStore.lister`) la lit comme une quatrième source, origine
+  `message`, avec les mêmes filtres (numéro, texte, dates). Filtrer par code Meta ne rend que les lignes qui en
+  portent un.
+- **La joignabilité RCS** : un échec définitif écrit `injoignable` dans le cache (`PgReachabilityStore.put`)
+  pour l'agent et le numéro ; une livraison (`delivered`) y écrit `joignable`. C'est ce que lisent
+  `/v1/messages/rcs` et `GET /v1/contacts`.
+- **Le signal** `em_message_failed` part du même point (§ 8).
+- ⚠️ Un bloc RCS de scénario qui prend sa sortie « non joignable » y apparaît AUSSI, origine scénario : c'est
+  bien un message non délivré, même si le parcours a su quoi faire. Ce n'est pas une erreur de traitement,
+  c'est un fait de livraison.
+- ⚠️ **Le chemin des statuts est très chaud** (chaque message envoyé en reçoit plusieurs). La lecture de plus
+  n'a lieu que pour un ÉCHEC qui n'a touché aucun destinataire de campagne : un statut `sent`, `delivered` ou
+  `read` ne coûte rien de plus, sauf pour un espace qui a un adaptateur de signaux actif (§ 8).
+
+## 6. Les catalogues (`sends:create`)
 
 - **`GET /v1/templates`** : les templates WhatsApp APPROUVÉS,
   `{ "name", "language", "category", "header": "none" | "text" | "image" | "video" | "document", "variables": [{ "position", "source" }] }`.
@@ -362,7 +455,76 @@ console et le serveur MCP.
   fonction que `/v1/sends`.
 - **`GET /v1/rcs-messages`** : `{ "name", "kind": "text" | "card" | "carousel", "variables": ["prenom"] }`.
 
-## 6. Les erreurs
+## 7. Les intentions : `achat`, `suivi_commande`, `retour`
+
+- La liste `INTENTS` (`src/analysis/schema.ts`) gagne trois valeurs : `achat` (le client veut acheter),
+  `suivi_commande` (où en est ma commande), `retour` (retour ou échange d'un produit). Le prompt de l'analyse
+  (`src/analysis/engine.ts`) décrit chacune, pour que le modèle sache les distinguer de `demande_devis`, `sav`
+  et `reclamation`.
+- Les écrans et exports qui les nomment suivent : `web/components/CarteIntentions.tsx`,
+  `web/components/ConversationAnalysisCard.tsx`, `web/lib/quali-export.ts`, les statistiques
+  (`src/stats/conversation-stats.pg.ts`, `src/http/stats.ts`, `web/lib/api/stats.ts`).
+- Les analyses passées ne sont PAS reclassées : elles gardent leur intention d'origine.
+- 🔴 **Deux lectures à faire avant d'écrire la première ligne**, dans le plan :
+  - la migration 0027 porte-t-elle une contrainte sur les valeurs d'intention ? Si oui, une migration la
+    RELÂCHE avant le déploiement (l'ancien code y survit) ;
+  - **le connecteur HubSpot (`mm-hubspot`, dépôt séparé) reçoit `analysis.intent`** dans l'événement poussé
+    (`src/analysis/connector-push.ts`). S'il valide la liste strictement, une intention neuve lui fait refuser
+    l'événement, donc la remontée HubSpot casse. Il se met à jour et se déploie AVANT.
+
+## 8. Les signaux et l'adaptateur Batch
+
+### Le dictionnaire
+
+Un contrat indépendant de l'outil cible. Préfixe `em_`, noms de 30 caractères au plus en `[a-z0-9_]` (la borne
+de Batch, la plus stricte connue).
+
+| Type | Nom | Quand | Contenu |
+|---|---|---|---|
+| événement | `em_message_delivered` | immédiat | canal, origine, `sendId` si c'est un envoi |
+| événement | `em_message_read` | immédiat | idem |
+| événement | `em_message_failed` | immédiat | idem, plus le motif et le code Meta |
+| événement | `em_replied` | immédiat | canal, bouton tapé s'il y en a un. **Jamais le texte du message.** |
+| événement | `em_link_clicked` | immédiat | le lien tracé cliqué, l'envoi ou le template |
+| événement | `em_opted_out` | immédiat | canal ou source du désabonnement |
+| événement | `em_conversation_analyzed` | à la fin d'une conversation | `intent`, `sentiment`, `satisfaction`, `urgence`, `resolved`, `topic`, `action_suggestion`, `handled_by`, `exchanges_count`, et `summary` SI l'option est activée |
+| attribut | `em_contact_id` | à la première poussée | notre `contactId`, pour que l'outil nous renvoie la fiche sans ambiguïté |
+| attributs | `em_last_intent`, `em_last_sentiment`, `em_satisfaction`, `em_urgency`, `em_last_resolved`, `em_last_reply_at`, `em_whatsapp_optout`, `em_rcs_optout`, `em_rcs_reachable` | avec les événements | l'état courant du contact |
+
+- **« À la fin d'une conversation »** veut dire : 25 minutes sans message (`CONVERSATION_INACTIVITY_MS`), puis
+  le passage du balayage, toutes les 5 minutes. Un « veut acheter » arrive donc une demi-heure environ après le
+  dernier message : assez pour une relance, pas pour une alerte immédiate. La doc le dit.
+- **`em_satisfaction` et `em_urgency`** reprennent la note de la DERNIÈRE conversation analysée ; une analyse
+  sans note ne les écrase pas (l'absence veut dire « pas de mesure », jamais 0).
+- **Le résumé** ne peut pas être un attribut (un attribut texte de Batch plafonne à 300 caractères, le résumé
+  en fait jusqu'à 800) : il voyage dans l'événement, et seulement si l'espace a activé l'option, parce qu'il
+  contient des propos du client.
+- Les points d'émission : les deux traitements de statuts (§ 5), les deux traitements d'entrants (Meta et
+  RCS), la redirection des liens tracés, les chemins de désabonnement, et le point de sortie de l'analyse
+  (`makeOnAnalyzed`, qui sert déjà la poussée HubSpot et reste inchangé pour elle).
+
+### L'adaptateur Batch
+
+- **Réglage** : Paramètres > Intégrations > Batch, réservé aux admins. La clé REST et la clé de projet
+  (`X-Batch-Project`) sont chiffrées comme les autres secrets d'espace (`ENCRYPTION_KEY`) et ne sont jamais
+  relues en clair par l'écran. Une case « Envoyer le résumé des conversations », décochée par défaut.
+- **Poussée** : vers `POST /profiles/update` de Batch, profil désigné par `custom_id` = notre `externalId`.
+  Une fiche SANS `externalId` n'est pas poussée, et le compte des signaux non poussés pour cette raison se lit
+  dans l'écran du réglage : un intégrateur qui a oublié de nous passer ses identifiants doit le voir.
+- **Transport** : une file pg-boss dédiée, déclarée dans `BASE_QUEUES` (sinon invisible de `/ops`), groupée
+  par espace. Nouvel essai sur 429, 5xx et panne réseau ; un 4xx est terminal. Bornes de Batch respectées :
+  200 profils et 15 événements par appel, 300 mises à jour par seconde.
+- **Un échec de poussée est visible** dans la moitié « système » du journal des erreurs, comme un connecteur
+  qui refuse un appel.
+- Batch est un HÔTE FIXE, pas une adresse saisie par un client : la garde d'adresse publique ne s'applique
+  pas, comme pour les clients de Meta et de smsmode.
+- ⚠️ **À confirmer avec Batch avant la recette** : qu'un événement ou un attribut poussé déclenche bien une
+  orchestration (affirmé dans la session Batch, non retrouvé sur la page de l'API Profils relue le
+  2026-09-24), s'ils rejouent un appel du Universal Channel en cas d'échec, et quelle variable identifie un
+  passage (§ 3, idempotence). Un événement peut arriver DEUX fois si notre poussée est rejouée : chaque
+  événement porte donc un `em_event_id` stable.
+
+## 9. Les erreurs
 
 Toute erreur a la forme `{ "error": "<phrase en français>", "code": "<code>" }`. Les codes sont en anglais
 snake_case : ce sont des identifiants, lus par des programmes.
@@ -382,7 +544,7 @@ l'interdit ; 422 la demande est juste mais ne peut pas partir comme ça ; 429 d�
 | `missing_scope` | 403 | |
 | `unknown_contact` | 404 | oui |
 | `duplicate` | | oui |
-| `identity_conflict` | 409 | |
+| `identity_conflict` | 409 | oui |
 | `blocked_contact` | 409 | oui |
 | `opted_out` | 409 | oui |
 | `no_consent` | 409 | oui |
@@ -405,115 +567,159 @@ l'interdit ; 422 la demande est juste mais ne peut pas partir comme ça ; 429 d�
 (`src/auth/api-key.ts`, `src/auth/rate-limit.ts`). Ils sont partagés : leur ajouter un `code` ne doit changer
 ni leurs statuts ni leurs en-têtes (`retry-after`, `x-ratelimit-*`).
 
-## 7. La console
+## 10. La console
 
 - **Fiche du mini-CRM** (`web/components/ContactDetail.tsx`) : l'identifiant de fiche s'affiche, libellé
-  « Identifiant API », avec un bouton Copier. C'est la valeur que l'API appelle `contactId`.
+  « Identifiant API », avec un bouton Copier. C'est la valeur que l'API appelle `contactId`. L'identifiant
+  externe s'affiche aussi quand il existe.
 - **Clés d'API** (`web/app/developers/keys/page.tsx`) : le droit `contacts:read` apparaît (« Lire les
   contacts »). La liste des droits vit en DEUX endroits à tenir d'accord (`VALID_API_SCOPES` dans
   `src/http/api-keys.ts`, `API_SCOPES` dans `web/lib/api/integrations.ts`) : un test de parité les compare.
+- **Réglage Batch** : § 8.
 - **Documentation API** (`web/app/developers/api/page.tsx`) : réécrite. Deux familles clairement séparées
   (« Envoyer un message simple », « Déclencher un envoi »), la table d'identité, chaque paramètre, la table des
-  codes, des exemples RCS, avec les accents.
+  codes, des exemples RCS, avec les accents. Plus deux sections : **« Brancher Batch »** (la recette du
+  Universal Channel : adresse, en-tête d'authentification, corps type avec `externalId`, `phone`, `consent`,
+  `variables` et `idempotencyKey`) et **« Ce que nous remontons »** (le dictionnaire du § 8).
   - **Les exemples de corps vivent dans un module** importé par la page ET par un test qui les passe aux
     validateurs des routes : la page ne peut plus décrire un corps que le serveur refuse.
 
-## 8. Ce qu'on stocke
+## 11. Ce qu'on stocke
 
-Deux migrations additives, numérotées au moment de les écrire (le compteur vit dans `CLAUDE.md`, section
-Déploiement, et le DOSSIER tranche sur ce qui est pris). Les deux passent AVANT le déploiement du code qui les
-écrit :
+Toutes additives, numérotées au moment de les écrire (le compteur vit dans `CLAUDE.md`, section Déploiement, et
+le DOSSIER tranche sur ce qui est pris). Toutes passent AVANT le déploiement du code qui les écrit :
 
 - `api_idempotency.request_hash text` nullable : l'empreinte du corps. Une ligne d'avant (hash `null`) rejoue
   son rapport comme aujourd'hui.
 - `campaign_recipients.variables jsonb` nullable : les variables d'un destinataire, relues à l'envoi d'un
   message RCS (un template résout les siennes à la construction, dans `resolved_params`, comme aujourd'hui).
+- `contacts.external_id text` nullable, et son index unique PARTIEL `(tenant_id, external_id) where
+  external_id is not null`. ⚠️ `contacts` est la plus grosse table : l'index se crée `CONCURRENTLY`, donc
+  dans une migration hors transaction (`-- migrate: no-transaction`), aux instructions idempotentes, avec
+  `indisvalid` vérifié après coup (précédent : 0115).
+- La table des échecs de messages libres (§ 5), avec un index qui sert la lecture du journal par espace et par
+  date.
+- La table du réglage Batch (§ 8) : une ligne par espace, secrets chiffrés, option du résumé.
+- Si la migration 0027 contraint les intentions (§ 7) : sa contrainte relâchée pour les trois valeurs neuves.
 
-Aucune colonne sur `contacts` : `contactId`, `phone` et `bsuid` existent déjà.
+## 12. Les lots
 
-## 9. Les lots
+1. **Identité et contacts** : la fonction de résolution de fiche (§ 1), `external_id`, `POST` et `batch`
+   refondus (`consent`, `identity_conflict`), `GET`, `search`, `PATCH`, droit `contacts:read`, identifiants
+   affichés sur la fiche.
+2. **Envois refondus** : destinataires par la résolution partagée, `consent` par destinataire, rapport par
+   index sans perte silencieuse, codes unifiés, jugement de l'ouverture depuis un bloc (défaut 3), gardes
+   alignées sur la console, catégorie lue chez Meta, idempotence en en-tête ou dans le corps avec empreinte,
+   contrat de `GET /v1/sends`. `/v1/messages/whatsapp` remplace `/v1/messages`.
+3. **RCS, variables, échecs** : cible `rcsMessage`, `/v1/messages/rcs` et sa fonction partagée avec l'Inbox,
+   variables par destinataire, capture des échecs des messages libres et joignabilité RCS (défaut 4).
+4. **Catalogues et doc** : les trois catalogues, la page réécrite (recette Batch comprise), le module
+   d'exemples et son test, `features.md`.
+5. **Intentions** : les trois valeurs neuves, le prompt, les écrans, et le connecteur HubSpot mis à jour et
+   déployé AVANT.
+6. **Signaux et adaptateur Batch** : les points d'émission, le réglage, la file, la poussée, les échecs dans
+   le journal, la section « Ce que nous remontons ».
 
-1. **Identité et contacts** : `POST` et `batch` refondus (`bsuid`, `consent`, `identity_conflict`), `GET`,
-   `search`, `PATCH`, droit `contacts:read`, identifiant affiché sur la fiche.
-2. **Envois refondus** : destinataires par clé, rapport par index sans perte silencieuse, codes unifiés,
-   jugement de l'ouverture depuis un bloc (défaut 3), gardes alignées sur la console, catégorie lue chez Meta,
-   empreinte d'idempotence, contrat de `GET /v1/sends`. `/v1/messages/whatsapp` remplace `/v1/messages`.
-3. **RCS et variables** : cible `rcsMessage`, `/v1/messages/rcs` et sa fonction partagée avec l'Inbox,
-   variables par destinataire.
-4. **Catalogues et doc** : les trois catalogues, la page réécrite, le module d'exemples et son test,
-   `features.md`.
-
-## 10. Tests
+## 13. Tests
 
 - **Chaque défaut constaté a son test de non-régression, vérifié dans les deux sens** (remettre le code fautif,
   voir le test échouer avec le bon symptôme, restaurer) : contact bloqué perdu en silence, bloc sur une
   condition qui mène à un message rapide, scénario à ouverture de session accepté, template inconnu accepté,
-  même clé d'idempotence avec un autre corps.
+  même clé d'idempotence avec un autre corps, échec d'un message libre écrit nulle part.
 - **Parité** : `opening` rendu par le catalogue, par `/v1/sends` et par la console sur les mêmes graphes (la
   fonction est unique, le test le garde).
+- **Identité** : chaque clé retrouve la même fiche ; deux clés sur deux fiches rendent `identity_conflict` sans
+  rien écrire ; une clé neuve est rattachée ; `contactId` inconnu ne crée jamais rien ; l'adresse WhatsApp
+  d'une fiche à numéro et BSUID reste le numéro, quelle que soit la clé reçue.
+- **Consentement** : `consent: "opted_out"` pose le statut, la date et la ligne d'audit ; un `POST` sans
+  `consent` ne rétrograde jamais ; le `consent` d'un destinataire est écrit AVANT le tri marketing.
 - **Consentement RCS** : les quatre cas (`opted_in` sans message, message entrant sans `opted_in`, ni l'un ni
   l'autre, désabonné RCS), et l'opérateur de l'Inbox qui n'y est PAS soumis.
-- **Identité** : chaque clé retrouve la même fiche ; `phone` et `bsuid` sur deux fiches rendent
-  `identity_conflict` sans rien écrire ; l'adresse WhatsApp d'une fiche à numéro et BSUID reste le numéro,
-  quelle que soit la clé reçue.
-- **Désabonnement** : `consent: "opted_out"` pose le statut, la date et la ligne d'audit ; un `POST` sans
-  `consent` ne rétrograde jamais.
+- **Idempotence** : en-tête seul, corps seul, les deux identiques, les deux différents.
+- **Échecs** : un échec Meta et un échec smsmode d'un message libre écrivent une ligne, un échec de
+  destinataire de campagne n'en écrit PAS de seconde, un statut `delivered` n'écrit rien ; la joignabilité RCS
+  bascule dans les deux sens ; le journal rend la nouvelle source avec ses filtres.
+- **Intentions** : la liste de `schema.ts`, le prompt et les libellés des écrans nomment les MÊMES valeurs
+  (dérivé, pas relu à la main).
+- **Adaptateur Batch** : la traduction du dictionnaire vers le corps de Batch est une fonction PURE testée ;
+  tout nom d'événement tient en 30 caractères `[a-z0-9_]` ; aucun attribut texte ne dépasse 300 caractères ;
+  le résumé n'apparaît que si l'option est cochée ; une fiche sans `externalId` n'est pas poussée ; la file est
+  dans `BASE_QUEUES` (`tests/queue-names.test.ts` le vérifie déjà pour toute file).
 - **Intégration** (job `integration` de la CI, jamais en local : le `DATABASE_URL` local est la production) :
-  `search`, `PATCH`, l'upsert par BSUID et les deux migrations.
+  `search`, `PATCH`, la résolution multi-clés, l'index d'`external_id`, la table des échecs et les migrations.
 
-## 11. L'essai réel qui clôt la feature
+## 14. L'essai réel qui clôt la feature
 
 Avec une VRAIE clé, en production, sur le numéro d'essai, en regardant le téléphone, Campagnes et l'Inbox :
 
-1. `POST /v1/contacts` avec le numéro d'essai, puis `GET` et `search` rendent la même fiche, et son identifiant
-   est celui qu'affiche la fiche du mini-CRM.
-2. `POST /v1/sends` : un template avec une variable par destinataire, puis un message RCS de la bibliothèque.
-   Les deux arrivent sur le téléphone, la variable est remplie.
-3. `POST /v1/messages/rcs` : le RCS libre arrive et apparaît dans l'Inbox.
+1. `POST /v1/contacts` avec le numéro d'essai et un `externalId`, puis `GET` et `search` (par numéro, puis par
+   `externalId`) rendent la même fiche, et son identifiant est celui qu'affiche la fiche du mini-CRM.
+2. `POST /v1/sends` avec l'idempotence DANS LE CORPS : un template avec une variable par destinataire, puis un
+   message RCS de la bibliothèque. Les deux arrivent sur le téléphone, la variable est remplie.
+3. `POST /v1/messages/rcs` : le RCS libre arrive et apparaît dans l'Inbox. Puis vers un numéro NON RCS : le
+   premier est accepté, son échec apparaît dans Sécurité > Journal des erreurs, le second rend
+   `rcs_unreachable`.
 4. `POST /v1/messages/whatsapp` dans la fenêtre (après avoir écrit depuis le téléphone), puis hors fenêtre :
    422 `window_closed`.
 5. `PATCH` avec `consent: "opted_out"`, puis un envoi : écarté `opted_out`, et la ligne d'audit existe.
+6. **Batch** : sur un espace Batch de test (à obtenir de Batch, c'est un prérequis), une étape Universal
+   Channel appelle `/v1/sends`, le WhatsApp arrive, on y répond et on clique un lien ; les événements
+   `em_message_delivered`, `em_replied`, `em_link_clicked`, puis `em_conversation_analyzed`, apparaissent sur
+   le profil Batch. **Sans espace Batch de test, le lot 6 ne peut pas se clore** : il reste vert, pas éprouvé.
 
-## 12. Méthode de livraison
+## 15. Méthode de livraison
 
 **Implémenteur par lot, avec revue humaine du diff.** Ce sont des chemins que la production emprunte (envoi de
-messages, écriture du consentement), porteurs d'invariants invisibles (l'upsert qui ne sait que promouvoir,
-l'index partiel de chaque identité, le scellement de l'idempotence AVANT l'enfilement, la fenêtre de 24 h). Un
-message parti ne se rappelle pas. `/revue` après chaque lot, `/revue-finale` avant le déploiement.
+messages, écriture du consentement, traitement de chaque statut de livraison), porteurs d'invariants
+invisibles (l'upsert qui ne sait que promouvoir, l'index partiel de chaque identité, le scellement de
+l'idempotence AVANT l'enfilement, la fenêtre de 24 h, le chemin chaud des statuts). Un message parti ne se
+rappelle pas. `/revue` après chaque lot, `/revue-finale` avant chaque déploiement.
 
-## 13. Déploiement
+## 16. Déploiement
 
-- Les deux migrations passent AVANT le `up` de l'API qui les écrit (`compose build`, `migrate`, `up -d
-  --build`), puis relecture en base juste après `migrate`, et contrôle public des deux portes (502 de NPM).
+- Les migrations passent AVANT le `up` de l'API qui les écrit (`compose build`, `migrate`, `up -d --build`),
+  puis relecture en base juste après `migrate` (et `indisvalid` pour l'index d'`external_id`), et contrôle
+  public des deux portes (502 de NPM).
 - 🔴 **La doc se pousse APRÈS le déploiement de l'API.** Vercel publie la console à chaque push : une page qui
   décrit des routes que la production n'a pas encore tromperait l'intégrateur qui la lit. Même piège que
-  l'onglet « Outils » du 2026-09-21. L'identifiant sur la fiche, lui, ne dépend d'aucune route neuve.
+  l'onglet « Outils » du 2026-09-21. L'identifiant sur la fiche, lui, ne dépend d'aucune route neuve ; l'écran
+  du réglage Batch, si : il suit la même règle.
+- 🔴 **Le connecteur HubSpot se déploie AVANT les intentions neuves** (§ 7).
 - `/v1/messages` disparaît au profit de `/v1/messages/whatsapp` : sans intégrateur branché, aucune transition.
 
-## 14. Rayon de souffle déjà repéré
+## 17. Rayon de souffle déjà repéré
 
 - `exigeFenetre24h` et ses tests (`tests/v1-sends.test.ts`) : la fonction disparaît, les cas qu'elle exerçait
   sont CONSERVÉS dans les tests du nouveau jugement (règle du dépôt : réécrire un test garde son cas).
 - `scanOpening` sert la console, la liste des scénarios, le sélecteur de l'Inbox et l'éditeur : lui ajouter un
   point de départ ne doit rien changer à l'appel sans point de départ (`tests/workflow-ouverture.test.ts`,
   `tests/web-campaign-eligibility.test.ts`).
-- `upsertContactsFromApi` sert AUSSI le webhook entrant et l'import de listes : `consent` et l'upsert par BSUID
-  ne doivent pas changer leur comportement. Le schéma de l'API se sépare de l'entrée partagée si besoin.
+- `upsertContactsFromApi` sert AUSSI le webhook entrant et l'import de listes : `consent`, `externalId` et la
+  résolution multi-clés ne doivent pas changer leur comportement. Le schéma de l'API se sépare de l'entrée
+  partagée si besoin.
 - `sendRcsFromInbox` devient une fonction partagée : le bouton de l'Inbox doit rester identique (e2e de
   l'envoi RCS dans l'Inbox).
+- `processStatuses` et `onDlr` : chemins CHAUDS, chaque ajout y est best-effort (une exception y ferait
+  rejouer tout le job par pg-boss) et ne coûte aucune requête sur un statut ordinaire (§ 5).
+- Le journal des erreurs trie en mémoire deux sources aujourd'hui (`PgErreursLivraisonStore.lister`) : une
+  troisième suit la même fusion bornée par `limit`.
+- Les intentions (§ 7), et le connecteur HubSpot qui les reçoit.
 - `features.md` (§ API publique : « deux périmètres », `/v1/messages`, `recipients`), `todo.md` (l'entrée
   « L'API publique v1 ne sait pas dire désabonné » se ferme), `documentation.md` si un invariant y décrit
-  l'API.
+  l'API ou le journal des erreurs.
 - Le serveur MCP n'est PAS touché : ses outils désignent un fil par `conversation_id`, ce qui a du sens pour un
   agent qui lit l'Inbox.
 
-## 15. Hors périmètre
+## 18. Hors périmètre
 
-- **Webhooks sortants** (livraison, réponses, désabonnements) : le seul moyen de suivre un message simple
-  après coup. Le plus gros morceau, à cadrer à part.
+- **Webhooks sortants GÉNÉRIQUES** (une adresse quelconque, un corps modelable) : le dictionnaire du § 8 en
+  sera le contenu le jour où on les fait, mais cette spec ne construit que l'adaptateur Batch.
+- **Adaptateurs Brevo, SFMC, Splio** : même dictionnaire, construits quand un client les tire.
 - **Variables dans un scénario** : un parcours n'a pas de contexte où les ranger.
 - **BSUID d'abord** pour le routage WhatsApp : changerait tous les envois, pas seulement l'API.
-- **Identifiant du CRM du client** sur la fiche.
 - **Suppression de fiche par API** (effacement RGPD) : irréversible, à discuter.
 - **Re-consentement d'un contact qui a dit STOP** : `consent: "opted_in"` le réabonne, comme l'import CSV
   aujourd'hui. Comportement existant, gardé tel quel, à trancher à part s'il pose question.
+- **Statut de livraison sur la bulle de l'Inbox** : le § 5 écrit l'échec et le journal le montre ; l'afficher
+  sur la bulle demanderait une jointure sur la lecture du fil, rafraîchie toutes les 4 secondes. À cadrer à
+  part.
