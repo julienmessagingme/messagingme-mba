@@ -93,12 +93,13 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0172**, le 2026-09-24 à 20 h 01 UTC (`contacts_external_id`, l'identifiant de
-l'outil du client gardé sur la fiche, lot 1 de l'API publique), SEULE et AVANT tout code qui la lit : aucun
-`up` n'a suivi, l'ancien code ignore la colonne. **0173 est ÉCRITE et PAS ENCORE APPLIQUÉE**
-(`idempotence_empreinte`, `api_idempotency.request_hash`, lot 2 de l'API publique : additive et BLOQUANTE, le
-code neuf la lit et l'écrit à chaque `POST /v1/sends`, donc AVANT le `up`). **Prochaine libre = 0174**, et le
-dossier `db/migrations/` s'arrête à 0173. Avant 0172, **0171** le même jour à 13 h 46 UTC (`pubs_brouillons`).
+**Dernière appliquée : 0173**, le 2026-09-24 à 21 h 33 UTC (`idempotence_empreinte`,
+`api_idempotency.request_hash`, lot 2 de l'API publique), AVANT le `up` qui a porté son code : relue en base
+juste après `migrate` (`text` nullable SANS défaut, table vide). **0174 et 0175 sont ÉCRITES et PAS ENCORE
+APPLIQUÉES** (`variables_destinataire` et `echecs_messages`, lot 3 : additives et BLOQUANTES toutes les deux,
+la création de campagne et la purge RGPD les nomment, donc AVANT le `up`). **Prochaine libre = 0176**, et le
+dossier `db/migrations/` s'arrête à 0175. Avant 0173, **0172** le même jour à 20 h 01 UTC
+(`contacts_external_id`), puis **0171** à 13 h 46 UTC (`pubs_brouillons`).
 
 🔴 **0172 RELUE EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT** : `schema_migrations` la rend en tête à
 20 h 01 UTC ; `external_id` est `text` nullable SANS défaut ; l'index `contacts_tenant_external_id_uidx` est

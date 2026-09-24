@@ -73,6 +73,17 @@ export interface RemiseMbaSurAccuse {
 }
 
 /**
+ * L'ÉCHEC D'UN MESSAGE LIBRE (spec 2026-09-24, § 5, « défaut 4 »).
+ *
+ * 🔴 APPELÉ SEULEMENT SUR UN `failed` QUI N'A TOUCHÉ AUCUN DESTINATAIRE DE CAMPAGNE : un statut ordinaire ne
+ * coûte aucune requête de plus, et l'échec d'un destinataire de campagne est déjà porté par sa ligne.
+ * Implémenté par `PgEchecsMessagesStore` (`src/delivery/echecs-messages.pg.ts`).
+ */
+export interface EchecsLibresSink {
+  noter(e: { messageId: string; code: number | null; motif: string | null; tenantId?: string }): Promise<unknown>;
+}
+
+/**
  * LES PUITS SECONDAIRES D'UN ACCUSÉ, ce que `processStatuses` fait EN PLUS de la livraison.
  *
  * 🔴 `tarifs` EST OBLIGATOIRE, et c'est la leçon des dépendances optionnelles de ce dépôt (`estDesabonne`,
@@ -83,6 +94,11 @@ export interface RemiseMbaSurAccuse {
  */
 export interface PuitsAccuses {
   tarifs: TarifsMetaSink;
+  /**
+   * 🔴 OBLIGATOIRE, comme `tarifs` et pour la même raison : un puits qu'on peut omettre est un puits qu'on
+   * oublie. Les tests qui n'en parlent pas passent `aucunEchecLibre` (`tests/webhook-fixtures.ts`).
+   */
+  echecsLibres: EchecsLibresSink;
   nodeEvents?: NodeStatusSink;
   remiseMba?: RemiseMbaSurAccuse;
 }
@@ -106,7 +122,7 @@ export async function processStatuses(
   delivery: DeliveryStore,
   puits: PuitsAccuses,
 ): Promise<void> {
-  const { tarifs, nodeEvents, remiseMba } = puits;
+  const { tarifs, echecsLibres, nodeEvents, remiseMba } = puits;
   for (const ev of events) {
     if (ev.source !== 'statuses') continue;
     /**
@@ -129,7 +145,21 @@ export async function processStatuses(
     }
     const d = extractDelivery(ev.data);
     if (!d) continue;
-    await delivery.updateDeliveryByMessageId(d.messageId, d.status, d.error, d.errorCode);
+    const touches = await delivery.updateDeliveryByMessageId(d.messageId, d.status, d.error, d.errorCode);
+    /**
+     * 🔴 L'ÉCHEC D'UN MESSAGE LIBRE, ÉCRIT NULLE PART JUSQU'ICI (défaut 4). Une réponse de l'Inbox, un message
+     * de l'API ou d'un bloc de scénario qui échoue n'est pas un destinataire de campagne : `touches` vaut 0,
+     * et c'est le seul cas qui paie une requête de plus.
+     * ⚠️ BEST-EFFORT : une exception ici ferait rejouer tout le job par pg-boss pour un journal.
+     */
+    if (d.status === 'failed' && touches === 0) {
+      try {
+        await echecsLibres.noter({ messageId: d.messageId, code: d.errorCode, motif: d.error });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('échec de message libre non journalisé:', err instanceof Error ? err.message : err);
+      }
+    }
     /**
      * 🔴 TOUS LES STATUTS, PAS SEULEMENT `sent`, ET PAS SEULEMENT LES SUCCÈS. Ce qu'on attend n'est pas une
      * bonne nouvelle, c'est la PREUVE que Meta a fini de traiter cet envoi : un `failed` la porte aussi, et

@@ -734,8 +734,8 @@ export class PgCampaignRepo {
    * même 131009). L'appelant (route) enfile le run sur `queued`.
    */
   async resetRecipientForRetry(tenantId: string, campaignId: string, recipientId: string): Promise<RetryReset> {
-    const rec = await this.pool.query<{ contact_id: string; status: string; error_code: number | null; param_mapping: TemplateParam[] | null }>(
-      `select r.contact_id, r.status, r.error_code, c.param_mapping
+    const rec = await this.pool.query<{ contact_id: string; status: string; error_code: number | null; param_mapping: TemplateParam[] | null; variables: Record<string, string> | null }>(
+      `select r.contact_id, r.status, r.error_code, c.param_mapping, r.variables
        from campaign_recipients r join campaigns c on c.id = r.campaign_id
        where r.id = $1 and r.campaign_id = $2 and c.tenant_id = $3`,
       [recipientId, campaignId, tenantId],
@@ -753,7 +753,10 @@ export class PgCampaignRepo {
     if (!contact) return { result: 'not_found' };
     const { values, missing } = resolveTemplateParams(row.param_mapping ?? [], {
       phone_e164: contact.phone_e164, bsuid: contact.bsuid, profile_name: contact.profile_name, fields: contact.fields ?? {},
-    }, { now: new Date() });
+    // 🔴 LES VARIABLES DU DESTINATAIRE REPARTENT AVEC LUI (migration 0174). Sans elles, une source
+    // « variable » d'un envoi de l'API serait toujours manquante au renvoi, et le bouton « Corriger +
+    // renvoyer » répondrait `missing_var` sur un destinataire parfaitement renseigné.
+    }, { now: new Date(), ...(row.variables ? { variables: row.variables } : {}) });
     if (missing.length > 0) return { result: 'missing_var', missing };
     const upd = await this.pool.query(
       `update campaign_recipients set status = 'pending', resolved_params = $2::jsonb, error = null, error_code = null, claimed_at = null
@@ -1676,12 +1679,15 @@ async function bulkInsertRecipients(
   const contactIds = recipients.map((r) => r.contactId);
   const toE164s = recipients.map((r) => r.toE164);
   const params = recipients.map((r) => JSON.stringify(r.resolvedParams));
+  // null (et pas '{}') pour un destinataire sans variables : « il n'en porte pas » reste distinguable d'un
+  // objet vide, et toute campagne de la console écrit exactement ce qu'elle écrivait (migration 0174).
+  const variables = recipients.map((r) => (r.variables ? JSON.stringify(r.variables) : null));
   const res = await q.query(
-    `insert into campaign_recipients (campaign_id, contact_id, to_e164, resolved_params)
-     select $1, c, t, p::jsonb
-     from unnest($2::uuid[], $3::text[], $4::text[]) as u(c, t, p)
+    `insert into campaign_recipients (campaign_id, contact_id, to_e164, resolved_params, variables)
+     select $1, c, t, p::jsonb, v::jsonb
+     from unnest($2::uuid[], $3::text[], $4::text[], $5::text[]) as u(c, t, p, v)
      on conflict (campaign_id, contact_id) do nothing`,
-    [campaignId, contactIds, toE164s, params],
+    [campaignId, contactIds, toE164s, params, variables],
   );
   return res.rowCount ?? 0;
 }
@@ -1794,12 +1800,13 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
       resolved_params: string[];
       status: Recipient['status'];
       etage_courant: number;
+      variables: Record<string, string> | null;
     }>(
       // 🔴 `etage_courant` EST RELU ICI PARCE QUE C'EST LE MOTEUR QUI DÉCIDE QUOI ENVOYER. Il a manqué
       // pendant un lot : la bascule faisait avancer le rang, `listPending` ne le rendait pas, et le run
       // repartait donc sur le contenu du rang 1. La colonne est `not null default 1` (migration 0134),
       // aucune ligne ne peut la rendre nulle.
-      `select id, contact_id, to_e164, resolved_params, status, etage_courant
+      `select id, contact_id, to_e164, resolved_params, status, etage_courant, variables
        from campaign_recipients
        where campaign_id = $1 and status = 'pending'
        order by id`,
@@ -1812,6 +1819,7 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
       resolvedParams: r.resolved_params,
       status: r.status,
       etageCourant: r.etage_courant,
+      variables: r.variables,
     }));
   }
 

@@ -2,7 +2,7 @@ import type { Recipient } from './types';
 import type { SendResult } from '../meta/types';
 import type { RcsSender } from '../rcs/sender';
 import type { RcsOutbound } from '../rcs/types';
-import { appliquerVariables } from '../rcs/variables';
+import { aDesVariables, appliquerVariables, fusionnerVariables } from '../rcs/variables';
 import { aDesLiensTracables } from '../links/rcs-liens';
 
 /**
@@ -18,7 +18,7 @@ import { aDesLiensTracables } from '../links/rcs-liens';
 export interface CampaignSender {
   /** `jeton` = le jeton public du destinataire, écrit dans les liens tracés du message pour savoir QUI a
    *  cliqué. Absent = lien tracé mais anonyme. */
-  sendTo(recipient: Pick<Recipient, 'id' | 'toE164'>, jeton?: string): Promise<SendResult | { skipped: string }>;
+  sendTo(recipient: Pick<Recipient, 'id' | 'toE164' | 'variables'>, jeton?: string): Promise<SendResult | { skipped: string }>;
   /**
    * Ce sender a-t-il besoin qu'on lui fournisse un jeton par destinataire ?
    *
@@ -54,8 +54,11 @@ export function makeCampaignSender(o: RcsCampaignSenderOpts): CampaignSender {
     // URL (règle de `src/rcs/variables.ts`), donc la réponse est la même pour tout le monde.
     aBesoinDeJeton: aDesLiensTracables(o.message),
     async sendTo(recipient, jeton) {
-      const message = o.varsFor
-        ? appliquerVariables(o.message, await o.varsFor(o.tenantId, recipient.toE164))
+      // Les variables du DESTINATAIRE s'appliquent même sans résolution de fiche câblée : elles viennent de
+      // l'envoi, pas de la base. La fiche ne complète que ce qu'elles ne disent pas.
+      const aResoudre = o.varsFor !== undefined || (recipient.variables != null && aDesVariables(o.message));
+      const message = aResoudre
+        ? appliquerVariables(o.message, fusionnerVariables(o.varsFor ? await o.varsFor(o.tenantId, recipient.toE164) : {}, recipient.variables))
         : o.message;
       return o.rcs.sendTo(o.tenantId, o.agentId, recipient.toE164, message, recipient.id, jeton);
     },

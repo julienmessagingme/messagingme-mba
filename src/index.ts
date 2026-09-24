@@ -45,6 +45,8 @@ import { resoudreFiche } from './api/fiche';
 import { appliquerConsentement, depsConsentementDe } from './api/consentement';
 import { PgAuditStore } from './audit/store.pg';
 import { PgErreursLivraisonStore } from './ops/erreurs-livraison.pg';
+import { PgEchecsMessagesStore } from './delivery/echecs-messages.pg';
+import { traiterRapportRcs } from './rcs/rapport-livraison';
 import { PLAFOND_CONTACTS_ERREUR } from './http/stats';
 import { PgPoolAttentesStore, viderVersLaBase } from './ops/pool-attentes.pg';
 import { PgWorkflowNodeEventStore } from './workflow/node-events.pg';
@@ -238,6 +240,9 @@ async function main(): Promise<void> {
   const idempotencyStore = new PgApiIdempotencyStore(pool);
   const auditStore = new PgAuditStore(pool);
   const erreursLivraison = new PgErreursLivraisonStore(pool);
+  // Les échecs des messages LIBRES (migration 0175), que le rapport de smsmode alimente depuis le lot 3 de
+  // l'API publique. Le cache de joignabilité RCS qu'il alimente aussi est `rcsJoignabilite`, plus bas.
+  const echecsMessages = new PgEchecsMessagesStore(pool);
   const poolAttentesStore = new PgPoolAttentesStore(pool);
   const nodeEventStore = new PgWorkflowNodeEventStore(pool);
   const trackedLinkStore = new PgTrackedLinkStore(pool);
@@ -396,7 +401,8 @@ async function main(): Promise<void> {
   const emailTemplates = new PgEmailTemplateStore(pool);
   const rcsMessageStore = new PgRcsMessageStore(pool);
   const rcsMediaStore = new PgRcsMediaStore(pool);
-  // Le cache de joignabilité RCS, en LECTURE (fiche de l'API publique). L'envoi a le sien dans `rcsStack`.
+  // Le cache de joignabilité RCS : LU par la fiche de l'API publique, ÉCRIT par le rapport de livraison smsmode
+  // (`traiterRapportRcs`, lot 3). L'envoi a le sien dans `rcsStack`.
   const rcsJoignabilite = new PgReachabilityStore(pool);
   const emailResolver = new EmailAccountResolver({
     getDecrypted: (t, id) => emailAccounts.getDecrypted(t, id),
@@ -1203,6 +1209,9 @@ async function main(): Promise<void> {
         from: range.from,
         to: range.to,
         ...filter,
+        // Les seules campagnes : le compteur cliqué (`getErrorBreakdown`) ne compte qu'elles. Sans ce filtre,
+        // un « 12 » ouvrirait aussi les messages libres du même code (lot 3 de l'API publique).
+        campagnesSeulement: true,
         // Une ligne de plus que le plafond : c'est ainsi que la route sait qu'elle tronque, et le dit.
         limit: PLAFOND_CONTACTS_ERREUR + 1,
       }),
@@ -2648,34 +2657,20 @@ async function main(): Promise<void> {
     rcsCallback: {
       parCode: (code) => workflowRuntime.rcsStack.agents.parWebhookCode(code),
       noterRappel: (tenant, corps) => workflowRuntime.rcsStack.agents.noterRappel(tenant, corps),
-      onDlr: async (tenant, dlr) => {
-        // 1. Le destinataire de campagne, par identifiant de message. Même chemin que les accusés Meta : une
-        //    seule échelle de statuts dans le produit, donc un seul écran de résultats à lire.
-        if (dlr.status !== null) {
-          await recipientStore.updateDeliveryByMessageId(dlr.messageId, dlr.status, dlr.detail, null);
-          // 1 bis. La MESURE PAR BLOC (Analytics > Mes tableaux). Le chemin Meta le fait depuis toujours
-          //    (webhooks/delivery.ts), pas celui-ci : un bloc RCS n'affichait donc jamais « délivré » ni
-          //    « lu », alors que smsmode remonte bien DELIVERED et READ et que l'envoi RCS écrit bien son
-          //    identifiant dans workflow_node_events. Best-effort, comme côté Meta : une mesure ne doit pas
-          //    faire échouer le traitement d'un rapport de livraison.
-          if (dlr.status !== 'sent') {
-            try {
-              await nodeEventStore.recordStatusForMessage(dlr.messageId, dlr.status);
-            } catch (err) {
-              // eslint-disable-next-line no-console
-              console.error('mesure de bloc RCS (statut) ignorée:', err instanceof Error ? err.message : err);
-            }
-          }
-        }
-        // 2. Les DEUX sorties du bloc RCS. C'est ICI, et nulle part ailleurs, qu'elles s'allument : chez
-        //    smsmode le sort d'un message ne se sait pas avant l'envoi, il se constate APRÈS, sur un rapport.
-        //    Échec définitif -> repli WhatsApp. Remis -> la suite du parcours (sauf si le bloc attend encore
-        //    un clic, cf. `rcsDelivered`).
-        if (dlr.to !== '') {
-          if (dlr.echecDefinitif) await workflowRuntime.executor.rcsUndeliverable(tenant, dlr.to, dlr.messageId);
-          else if (dlr.status === 'delivered') await workflowRuntime.executor.rcsDelivered(tenant, dlr.to, dlr.messageId);
-        }
-      },
+      /**
+       * Le rapport de livraison : destinataire de campagne, mesure par bloc, échec d'un message libre,
+       * joignabilité RCS, sorties du bloc. La logique et ses raisons vivent dans `traiterRapportRcs`, testée ;
+       * ce câblage ne fait que brancher.
+       */
+      onDlr: (tenant, dlr) => traiterRapportRcs({
+        majLivraison: (id, statut, detail) => recipientStore.updateDeliveryByMessageId(id, statut, detail, null),
+        mesureBloc: (id, statut) => nodeEventStore.recordStatusForMessage(id, statut),
+        echecs: echecsMessages,
+        joignabilite: rcsJoignabilite,
+        rcsInjoignable: (t, to, id) => workflowRuntime.executor.rcsUndeliverable(t, to, id),
+        rcsDelivre: (t, to, id) => workflowRuntime.executor.rcsDelivered(t, to, id),
+        maintenant: () => Date.now(),
+      }, tenant, dlr),
       onMo: async (tenant, mo) => {
         // Une position ou un fichier n'ont pas de texte : `apercuMo` en fabrique un LISIBLE plutôt que de
         // laisser une bulle vide et de jeter les coordonnées.

@@ -1,0 +1,23 @@
+-- 0174_variables_destinataire.sql : les variables propres à UN destinataire d'un envoi de l'API publique.
+--
+-- Spec 2026-09-24 (API publique cohérente), § 3 et § 11, lot 3. Un intégrateur passe, destinataire par
+-- destinataire, des valeurs qui n'ont rien à faire sur la fiche (un numéro de commande, un montant) :
+-- recipients[].variables. Elles ne sont JAMAIS écrites sur la fiche du contact.
+--
+-- Deux lecteurs :
+--   - un message RCS les relit À L'ENVOI (makeCampaignSender) : {{commande}} prend la variable du
+--     destinataire, sinon le champ de fiche du même nom ;
+--   - le renvoi d'un destinataire en échec de variable (F7, resetRecipientForRetry) re-résout le template :
+--     sans elles, une source « variable » y manquerait toujours.
+-- Un template les résout à la CONSTRUCTION dans resolved_params, comme aujourd'hui.
+-- La purge RGPD (PgContactStore.purgeMany) la remet à null avec les autres données du destinataire : un
+-- numéro de commande ou un montant désignent la personne autant que son prénom.
+--
+-- Nullable SANS défaut : null = « ce destinataire n'en porte pas », le cas de tous les destinataires d'avant
+-- et de toute campagne créée par la console. Une colonne nullable sans défaut ne réécrit aucune ligne.
+--
+-- 🔴 BLOQUANTE POUR LE CODE, DONC AVANT LE DÉPLOIEMENT. bulkInsertRecipients l'écrit (TOUTE création de
+-- campagne, console comprise) et listPending la lit (TOUT run de campagne) : déployer d'abord ferait tomber
+-- chaque création et chaque envoi de campagne en 42703. L'ancien code ne la nomme pas et y survit.
+
+alter table campaign_recipients add column if not exists variables jsonb;

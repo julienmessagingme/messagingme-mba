@@ -100,6 +100,20 @@ export function appliquerVariables(msg: RcsOutbound, vars: Record<string, string
 }
 
 /**
+ * La table de substitution d'UN destinataire : les variables qu'il porte (API publique, spec 2026-09-24 § 3)
+ * PRIMENT sur les champs de sa fiche du même nom. Construite SANS prototype, comme `contactVars`.
+ */
+export function fusionnerVariables(
+  fiche: Readonly<Record<string, string | null>>,
+  destinataire: Readonly<Record<string, string>> | null | undefined,
+): Record<string, string | null> {
+  const out: Record<string, string | null> = Object.create(null);
+  for (const [k, v] of Object.entries(fiche)) out[k] = v;
+  for (const [k, v] of Object.entries(destinataire ?? {})) out[k] = v;
+  return out;
+}
+
+/**
  * Retire les boutons qu'un envoi refuserait. Aujourd'hui : un bouton Agenda dont une date n'est pas une
  * date-heure valide, parce que la variable n'a pas été résolue (contact sans valeur, canal de variables non
  * câblé) ou parce qu'elle a été saisie de travers.

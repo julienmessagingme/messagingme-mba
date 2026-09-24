@@ -32,6 +32,16 @@ const CODES: Record<number, [string, string]> = {
   470: ['fenêtre de service expirée', 'service window expired'],
 };
 
+/** D'où venait un message libre non délivré : la colonne `origin` du message, en mots. */
+const ORIGINES_MESSAGE: Record<string, [string, string]> = {
+  humain: ['réponse d’un opérateur', 'operator reply'],
+  api: ['envoi par l’API', 'API send'],
+  mcp: ['agent branché par MCP', 'MCP agent'],
+  scenario: ['bloc de scénario', 'scenario block'],
+  ia: ['agent IA', 'AI agent'],
+  mba: ['agent de Meta', 'Meta agent'],
+};
+
 export function ErreursLivraison({ tenantId }: { tenantId: string }) {
   const t = useT();
   const { locale } = useLocale();
@@ -55,6 +65,12 @@ export function ErreursLivraison({ tenantId }: { tenantId: string }) {
     if (code === null) return '';
     const l = CODES[code];
     return l ? t(...l) : '';
+  };
+  /** Le libellé d'une ligne `message` : son canal, et d'où venait le message quand on le sait. */
+  const libelleMessage = (e: ErreurLivraison): string => {
+    const base = e.canal === 'rcs' ? t('RCS non délivré', 'RCS not delivered') : t('message non délivré', 'message not delivered');
+    const origine = e.origineMessage ? ORIGINES_MESSAGE[e.origineMessage] : undefined;
+    return origine ? `${base} (${t(...origine)})` : base;
   };
 
   function exporter(): void {
@@ -130,14 +146,16 @@ export function ErreursLivraison({ tenantId }: { tenantId: string }) {
               </span>
               <span className="font-mono text-xs text-ink-600">{e.telephone}</span>
               <span className="text-xs text-ink-500">{e.campaignName}</span>
-              {/* L'ORIGINE distingue trois pannes très différentes : un refus à l'envoi vient de notre appel,
-                  un échec de livraison vient du téléphone d'en face, et un échec de scénario ne vient d'aucun
-                  des deux, c'est notre traitement du message ENTRANT qui n'a pas abouti. Chercher au mauvais
+              {/* L'ORIGINE distingue quatre pannes très différentes : un refus à l'envoi vient de notre appel,
+                  un échec de livraison vient du téléphone d'en face, un échec de scénario ne vient d'aucun
+                  des deux, c'est notre traitement du message ENTRANT qui n'a pas abouti, et un message libre
+                  non délivré vient du téléphone d'en face, hors de toute campagne. Chercher au mauvais
                   endroit coûte cher. */}
               <span className="text-[11px] text-ink-400">
                 {e.origine === 'envoi' && t('jamais parti', 'never sent')}
                 {e.origine === 'livraison' && t('parti, non délivré', 'sent, not delivered')}
                 {e.origine === 'scenario' && t('scénario bloqué sur une réponse', 'scenario stuck on a reply')}
+                {e.origine === 'message' && libelleMessage(e)}
               </span>
               <span className="w-full text-xs text-ink-600">
                 {sens(e.code) || e.message || t('sans détail', 'no detail')}

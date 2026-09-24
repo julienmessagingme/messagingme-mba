@@ -3,6 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgContactStore } from '../../src/crm/contact-store.pg';
+import { PgCampaignRepo } from '../../src/campaign/store.pg';
 
 /**
  * Intégration de la PURGE RGPD. ISOLÉE par tenant jetable (créé/détruit ici), jamais la prod « métier ».
@@ -116,6 +117,27 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
 
     // L'identifiant de l'outil du client (migration 0172) : il désigne cette personne chez le client.
     await pool.query(`update contacts set external_id = 'itest-ext-purge' where id = $1`, [contactId]);
+
+    // LOT 3 DE L'API PUBLIQUE : les VARIABLES d'un destinataire (migration 0174) et l'ÉCHEC d'un message libre
+    // (migration 0175) portent des données de la personne (un numéro de commande, un numéro de téléphone).
+    // Une ligne d'échec est posée AUSSI chez le voisin, sur le même numéro : elle prouve le cloisonnement.
+    await new PgCampaignRepo(pool).createWithRecipients(
+      { tenantId, phoneNumberId: '', name: 'itest-purge-variables', category: 'utility', templateName: 'confirmation', templateLanguage: 'fr', paramMapping: [] },
+      [{ contactId, toE164: E164, resolvedParams: ['8412'], variables: { commande: '8412' } }],
+    );
+    await pool.query(
+      `insert into echecs_messages (tenant_id, message_id, wa_id, canal, motif)
+       values ($1, 'itest-purge-echec', $2, 'rcs', 'UNDELIVERABLE'), ($3, 'itest-purge-echec-voisin', $2, 'rcs', 'UNDELIVERABLE')`,
+      [tenantId, WA_ID, autreTenantId],
+    );
+    // ANCRE : les deux données existent AVANT la purge. Sans elle, les assertions d'absence plus bas
+    // passeraient à vide sur une insertion ratée.
+    const avant = await pool.query<{ v: unknown; e: number }>(
+      `select (select variables from campaign_recipients where contact_id = $1) as v,
+              (select count(*)::int from echecs_messages where tenant_id = $2 and wa_id = $3) as e`,
+      [contactId, tenantId, WA_ID],
+    );
+    expect(avant.rows[0]).toEqual({ v: { commande: '8412' }, e: 1 });
   });
 
   afterAll(async () => {
@@ -191,6 +213,18 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
     );
     expect(r.rowCount).toBe(1);
     expect(r.rows[0]!.ctwa_clid).toBeNull();
+  });
+
+  it('🔴 les VARIABLES du destinataire partent (migration 0174), la ligne de campagne reste', async () => {
+    const r = await pool.query<{ to_e164: string; variables: unknown }>(
+      'select to_e164, variables from campaign_recipients where contact_id = $1', [contactId],
+    );
+    expect(r.rows).toEqual([{ to_e164: 'anonyme', variables: null }]);
+  });
+
+  it('🔴 l’échec d’un message libre de la personne est effacé, pas celui d’un autre espace (migration 0175)', async () => {
+    const r = await pool.query<{ tenant_id: string }>('select tenant_id from echecs_messages where wa_id = $1', [WA_ID]);
+    expect(r.rows.map((x) => x.tenant_id)).toEqual([autreTenantId]);
   });
 
   /**

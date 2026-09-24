@@ -263,8 +263,12 @@ export interface ErreurLivraison {
    * `envoi` = Meta a refusé l'appel, le message n'est jamais parti. `livraison` = il est parti puis a échoué.
    * `scenario` = l'avance d'un parcours a échoué sur un message ENTRANT : rien n'a été refusé ni perdu en
    * route, c'est notre traitement qui n'a pas abouti, et le contact reste posé sur son bloc.
+   * `message` = un message libre (réponse de l'Inbox, API, MCP, bloc de scénario, agent) n'est pas arrivé.
    */
-  origine: 'envoi' | 'livraison' | 'scenario';
+  origine: 'envoi' | 'livraison' | 'scenario' | 'message';
+  /** Ligne `message` : un message LIBRE n'est pas arrivé. D'où il venait (colonne origin), et son canal. */
+  origineMessage?: string | null;
+  canal?: 'whatsapp' | 'rcs';
   at: string | null;
 }
 

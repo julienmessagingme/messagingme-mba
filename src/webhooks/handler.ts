@@ -1,6 +1,6 @@
 import { parseWebhook } from './parse';
 import { processStatuses } from './delivery';
-import type { NodeStatusSink, RemiseMbaSurAccuse } from './delivery';
+import type { EchecsLibresSink, NodeStatusSink, RemiseMbaSurAccuse } from './delivery';
 import { processInbound } from './inbound';
 import { processFlowCompletions } from './flow-mapping';
 import { processWorkflowAdvance } from './workflow-advance';
@@ -104,7 +104,12 @@ interface WebhookJobDepsCommunes {
  * qui confie ses leads à l'agent de Meta. Un clic payé répondu par le mauvais scénario, en silence.
  */
 export type WebhookJobDeps = WebhookJobDepsCommunes
-  & ({ delivery: DeliveryStore; tarifsMeta: TarifsMetaSink } | { delivery?: undefined; tarifsMeta?: undefined })
+  & (
+    // `echecsLibres` entre dans le couple des accusés (lot 3 de l'API publique) : une file qui applique des
+    // statuts doit aussi noter l'échec d'un message libre, sinon il redevient invisible selon la file.
+    { delivery: DeliveryStore; tarifsMeta: TarifsMetaSink; echecsLibres: EchecsLibresSink }
+    | { delivery?: undefined; tarifsMeta?: undefined; echecsLibres?: undefined }
+  )
   & (
     { inbox: InboxStore; arriveesPub: ArriveesPubDeps; routagePub: RoutagePubDeps }
     | { inbox?: undefined; arriveesPub?: undefined; routagePub?: undefined }
@@ -114,7 +119,7 @@ export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Prom
   const {
     store, delivery, inbox, flowMapping, workflowAdvance, remiseMbaEntrant, inboundContactUpsert,
     handover, triggers, testTokens, nodeEvents, inboundOptOut, inboundAssignation, remiseMba,
-    tarifsMeta, arriveesPub, routagePub,
+    tarifsMeta, echecsLibres, arriveesPub, routagePub,
   } = deps;
   const events = parseWebhook(raw);
   // `insertEvent` renvoie false quand l'événement était DÉJÀ enregistré : c'est le signal « ce webhook est un
@@ -126,7 +131,7 @@ export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Prom
     const isNew = await store.insertEvent({ source: ev.source, dedupKey: ev.dedupKey, data: ev.data });
     if (!isNew && ev.dedupKey.startsWith('msg:')) alreadySeen.add(ev.dedupKey.slice(4));
   }
-  if (delivery) await processStatuses(events, delivery, { tarifs: tarifsMeta, nodeEvents, remiseMba });
+  if (delivery) await processStatuses(events, delivery, { tarifs: tarifsMeta, echecsLibres, nodeEvents, remiseMba });
   // Contacts CRÉÉS par ce webhook (clé `tenant:waId`). Le signal « 1er message d'un contact inconnu » n'existe
   // qu'à l'instant de l'upsert : une fois la fiche créée, plus rien ne le distingue d'un habitué. On le capture
   // donc au vol, pour la durée de CE job (aucun état global, aucune requête supplémentaire).

@@ -109,6 +109,7 @@ import { creerWabaDeLEspace } from './meta/numero-espace';
 import { runPhoneStatusSweep, type PhoneProblem } from './account/status-sweep';
 import { PgOpsStore } from './ops/store.pg';
 import { PgErreursLivraisonStore } from './ops/erreurs-livraison.pg';
+import { PgEchecsMessagesStore } from './delivery/echecs-messages.pg';
 import { PgPoolAttentesStore, viderVersLaBase } from './ops/pool-attentes.pg';
 import { creerDlqSweep } from './ops/dlq-sweep';
 import { creerWebhooksMuetsSweep } from './ops/webhooks-muets-sweep';
@@ -246,6 +247,9 @@ async function main(): Promise<void> {
   // Le journal des erreurs. Le worker n'en LIT jamais : il y écrit les échecs d'avance de scénario, qui
   // n'avaient aucun domicile et disparaissaient dans un `console.error` (lot 4 du plan post-audit).
   const erreursLivraison = new PgErreursLivraisonStore(pool);
+  // Les échecs de livraison des MESSAGES LIBRES (lot 3 de l'API publique, migration 0175) : écrits par les
+  // deux files qui voient des accusés, purgés par le balayage de rétention.
+  const echecsMessages = new PgEchecsMessagesStore(pool);
   const settingsStore = new PgTenantSettingsStore(pool);
   const flowStore = new PgFlowStore(pool);
   /**
@@ -481,6 +485,8 @@ async function main(): Promise<void> {
       // 🔴 SUR LES DEUX FILES qui voient des accusés, pour la raison écrite juste au-dessus : le tarif est la
       // seule source de « Meta ne facture pas ce message ».
       tarifsMeta: tarifsMetaStore,
+      // 🔴 SUR LES DEUX FILES qui voient des accusés, comme le tarif : un échec arrive par l'une ou par l'autre.
+      echecsLibres: echecsMessages,
       /**
        * 🔴 SUR CETTE FILE ET PAS SUR L'AUTRE, contrairement à `remiseMba` juste au-dessus. Un message
        * ENTRANT n'arrive jamais par `webhook-status` : le receveur n'y route que les lots d'accusés purs.
@@ -700,7 +706,7 @@ async function main(): Promise<void> {
     // Trois dépendances NOMMÉES là où il y avait sept `undefined` d'affilée : ce qui est absent l'est
     // volontairement (aucune conversation, aucune automation, aucun scénario ne se déclenche sur un accusé),
     // et ça se lit maintenant sans compter les virgules.
-    await handleWebhookJob(data, { store: eventStore, delivery: recipientStore, nodeEvents: nodeEventStore, remiseMba: remiseMbaSurAccuse, tarifsMeta: tarifsMetaStore });
+    await handleWebhookJob(data, { store: eventStore, delivery: recipientStore, nodeEvents: nodeEventStore, remiseMba: remiseMbaSurAccuse, tarifsMeta: tarifsMetaStore, echecsLibres: echecsMessages });
   });
 
   // File campaign-run (Loop 5). DRY_RUN=true : sender de démo (aucun appel Meta). Sinon : token résolu PAR TENANT
@@ -1603,6 +1609,9 @@ async function main(): Promise<void> {
     // d'audit qui, lui, est immuable par construction.
     await etape('avances', `échec(s) d’avance effacé(s) (au-delà de ${config.AVANCE_ECHECS_RETENTION_DAYS} j)`,
       () => erreursLivraison.purgeEchecsAvanceOlderThan(config.AVANCE_ECHECS_RETENTION_DAYS));
+    // Les échecs de messages libres (migration 0175) : même nature, même rétention que les échecs d'avance.
+    await etape('messages', `échec(s) de message libre effacé(s) (au-delà de ${config.AVANCE_ECHECS_RETENTION_DAYS} j)`,
+      () => echecsMessages.purgerAvant(config.AVANCE_ECHECS_RETENTION_DAYS));
     await etape('pool', `minute(s) d’attente du pool effacée(s) (au-delà de ${config.POOL_ATTENTES_RETENTION_DAYS} j)`,
       () => poolAttentes.purgeOlderThan(config.POOL_ATTENTES_RETENTION_DAYS));
     // Les essais du bac a sable. Retention COURTE et en dur (14 j) : ce ne sont pas des conversations de

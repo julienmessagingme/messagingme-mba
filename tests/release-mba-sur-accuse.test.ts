@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { processStatuses } from '../src/webhooks/delivery';
 import type { WebhookEvent } from '../src/webhooks/parse';
-import { aucunTarif } from './webhook-fixtures';
+import { aucunTarif, aucunEchecLibre } from './webhook-fixtures';
 
 /**
  * RENDRE LE FIL À L'AGENT DE META QUAND L'ACCUSÉ DE NOTRE DERNIER ENVOI ARRIVE (migration 0149).
@@ -41,7 +41,7 @@ describe('l’accusé d’un envoi déclenche la remise du fil', () => {
     const vus: string[] = [];
     await processStatuses(
       [statut('wamid.AAA', 'sent'), statut('wamid.BBB', 'delivered')],
-      m.delivery as never, { tarifs: aucunTarif, remiseMba: async (id) => { vus.push(id); } },
+      m.delivery as never, { tarifs: aucunTarif, echecsLibres: aucunEchecLibre, remiseMba: async (id) => { vus.push(id); } },
     );
     expect(vus).toEqual(['wamid.AAA', 'wamid.BBB']);
   });
@@ -50,7 +50,7 @@ describe('l’accusé d’un envoi déclenche la remise du fil', () => {
     // Un fil qui n'attendrait qu'un `sent` resterait gelé jusqu'au balayage quand l'envoi échoue.
     const m = magasin();
     const vus: string[] = [];
-    await processStatuses([statut('wamid.CCC', 'failed')], m.delivery as never, { tarifs: aucunTarif, remiseMba: async (id) => { vus.push(id); } });
+    await processStatuses([statut('wamid.CCC', 'failed')], m.delivery as never, { tarifs: aucunTarif, echecsLibres: aucunEchecLibre, remiseMba: async (id) => { vus.push(id); } });
     expect(vus).toEqual(['wamid.CCC']);
   });
 
@@ -60,14 +60,14 @@ describe('l’accusé d’un envoi déclenche la remise du fil', () => {
     const m = magasin();
     await processStatuses(
       [statut('wamid.AAA', 'sent'), statut('wamid.BBB', 'read')],
-      m.delivery as never, { tarifs: aucunTarif, remiseMba: async () => { throw new Error('Meta refuse'); } },
+      m.delivery as never, { tarifs: aucunTarif, echecsLibres: aucunEchecLibre, remiseMba: async () => { throw new Error('Meta refuse'); } },
     );
     expect(m.majs.map((x) => x.id)).toEqual(['wamid.AAA', 'wamid.BBB']);
   });
 
   it('⚠️ sans remise câblée, les livraisons s’appliquent comme avant', async () => {
     const m = magasin();
-    await processStatuses([statut('wamid.AAA', 'sent')], m.delivery as never, { tarifs: aucunTarif });
+    await processStatuses([statut('wamid.AAA', 'sent')], m.delivery as never, { tarifs: aucunTarif, echecsLibres: aucunEchecLibre });
     expect(m.majs).toEqual([{ id: 'wamid.AAA', status: 'sent' }]);
   });
 
@@ -76,7 +76,7 @@ describe('l’accusé d’un envoi déclenche la remise du fil', () => {
     const vus: string[] = [];
     await processStatuses(
       [{ source: 'messages', dedupKey: 'msg:x', data: { id: 'wamid.ZZZ' } } as unknown as WebhookEvent],
-      m.delivery as never, { tarifs: aucunTarif, remiseMba: async (id) => { vus.push(id); } },
+      m.delivery as never, { tarifs: aucunTarif, echecsLibres: aucunEchecLibre, remiseMba: async (id) => { vus.push(id); } },
     );
     expect(vus).toEqual([]);
     expect(m.majs).toEqual([]);

@@ -4,7 +4,23 @@ export type ParamSource =
   | { type: 'field'; key: string }
   | { type: 'attribute'; key: 'name' | 'phone' | 'bsuid' | 'wa_id' }
   | { type: 'now' }
-  | { type: 'literal'; value: string };
+  | { type: 'literal'; value: string }
+  /**
+   * UNE VARIABLE DU DESTINATAIRE, passée par l'API publique dans `recipients[].variables` (spec 2026-09-24,
+   * § 3, lot 3). Elle ne vit que le temps d'un envoi et n'est JAMAIS écrite sur la fiche.
+   *
+   * 🔴 ACCEPTÉE SEULEMENT LÀ OÙ ELLE A UN SENS (`validateParamMapping(..., { accepterVariables: true })`,
+   * appelé par `/v1/sends`). La console et les indices de template la refusent : un mapping de campagne de
+   * la console qui la porterait écarterait TOUS ses destinataires en `missing_variable`, puisqu'aucun n'a de
+   * variables.
+   */
+  | { type: 'variable'; key: string };
+
+/**
+ * Le nom d'une variable de destinataire. La MÊME classe de caractères que les `{{nom}}` d'un message RCS
+ * (`MOTIF`, `src/rcs/variables.ts`) : une variable nommée ici doit pouvoir y être appelée.
+ */
+export const CLE_VARIABLE = /^[A-Za-z0-9_.-]{1,64}$/;
 
 /** Fuseau par défaut pour la source NOW quand l'appelant n'en fournit pas. ⚠️ v1 : AUCUN chemin d'envoi ne
  *  fournit `tz` aujourd'hui -> NOW s'affiche toujours dans ce fuseau (marché principal FR), même si le tenant a
@@ -13,7 +29,12 @@ const DEFAULT_NOW_TZ = 'Europe/Paris';
 
 /** Contexte de résolution non lié au contact : `now` (source NOW) + fuseau d'affichage. Optionnel — un template
  *  qui n'utilise pas la source NOW n'en a pas besoin. */
-export interface ResolveOpts { now?: Date; tz?: string }
+export interface ResolveOpts {
+  now?: Date;
+  tz?: string;
+  /** Les variables du destinataire (source `variable`). Absentes = aucune, donc toute source `variable` manque. */
+  variables?: Readonly<Record<string, string>>;
+}
 
 /** Formate la source NOW en date du jour (JJ/MM/AAAA) dans le fuseau du tenant. */
 export function formatNow(now: Date, tz: string): string {
@@ -35,9 +56,10 @@ export interface ResolvableContact {
   fields?: Record<string, unknown>;
 }
 
-function isValidSource(s: unknown): s is ParamSource {
+function isValidSource(s: unknown, accepterVariables = false): s is ParamSource {
   if (typeof s !== 'object' || s === null) return false;
   const src = s as { type?: unknown; key?: unknown; value?: unknown };
+  if (src.type === 'variable') return accepterVariables && typeof src.key === 'string' && CLE_VARIABLE.test(src.key);
   if (src.type === 'literal') return typeof src.value === 'string';
   if (src.type === 'field') return typeof src.key === 'string' && src.key !== '';
   if (src.type === 'attribute') return src.key === 'name' || src.key === 'phone' || src.key === 'bsuid' || src.key === 'wa_id';
@@ -52,14 +74,14 @@ function isValidSource(s: unknown): s is ParamSource {
  * le tableau typé si valide, sinon null -> la route répond 400 plutôt que de laisser
  * resolveTemplateParams throw en 500.
  */
-export function validateParamMapping(raw: unknown): TemplateParam[] | null {
+export function validateParamMapping(raw: unknown, options: { accepterVariables?: boolean } = {}): TemplateParam[] | null {
   if (!Array.isArray(raw)) return null;
   const params: TemplateParam[] = [];
   for (const item of raw) {
     if (typeof item !== 'object' || item === null) return null;
     const p = item as { position?: unknown; source?: unknown; fallback?: unknown };
     if (typeof p.position !== 'number' || !Number.isInteger(p.position)) return null;
-    if (!isValidSource(p.source)) return null;
+    if (!isValidSource(p.source, options.accepterVariables === true)) return null;
     if (p.fallback !== undefined && typeof p.fallback !== 'string') return null;
     const tp: TemplateParam = { position: p.position, source: p.source };
     if (typeof p.fallback === 'string') tp.fallback = p.fallback;
@@ -118,6 +140,10 @@ function valueOf(source: ParamSource, c: ResolvableContact, opts?: ResolveOpts):
       return undefined;
     case 'field':
       return c.fields?.[source.key];
+    case 'variable':
+      // `Object.hasOwn` et pas une lecture directe : `constructor` est un nom de variable valide, et
+      // `{}['constructor']` rendrait la fonction du prototype, envoyée ensuite en texte à Meta.
+      return opts?.variables && Object.hasOwn(opts.variables, source.key) ? opts.variables[source.key] : undefined;
   }
 }
 

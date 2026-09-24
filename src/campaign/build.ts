@@ -8,6 +8,11 @@ export interface BuildContact extends ResolvableContact {
   /** BSUID (identité sans numéro). Le destinataire = phone_e164 sinon bsuid. */
   bsuid?: string | null;
   optInStatus: 'opted_in' | 'opted_out' | 'unknown';
+  /**
+   * Les variables propres à CE destinataire d'un envoi de l'API publique (lot 3). Jamais lues sur la fiche,
+   * jamais écrites dessus : elles naissent avec l'envoi et meurent avec lui. Absentes pour la console.
+   */
+  variables?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -28,6 +33,8 @@ export interface BuiltRecipient {
   contactId: string;
   toE164: string;
   resolvedParams: string[];
+  /** Gardées avec le destinataire (migration 0174) : relues à l'envoi d'un message RCS et au renvoi F7. */
+  variables?: Readonly<Record<string, string>>;
 }
 
 /** Destinataire écarté à la construction, avec son MOTIF. */
@@ -83,12 +90,13 @@ export function buildRecipients(
     if (!optInAllows(category, c)) { skipped.push({ contactId: c.id, toE164: to, reason: 'not_opted_in' }); continue; }
     if (seen.has(to)) continue;
     seen.add(to);
-    const { values, missing } = resolveTemplateParams(paramMapping, c, opts);
+    const { values, missing } = resolveTemplateParams(paramMapping, c, c.variables ? { ...opts, variables: c.variables } : opts);
     if (missing.length > 0) {
       skipped.push({ contactId: c.id, toE164: to, reason: 'missing_variable', missing });
       continue;
     }
-    recipients.push({ contactId: c.id, toE164: to, resolvedParams: values });
+    // La clé n'existe QUE si le destinataire porte des variables : la console écrit ce qu'elle écrivait.
+    recipients.push({ contactId: c.id, toE164: to, resolvedParams: values, ...(c.variables ? { variables: c.variables } : {}) });
   }
   return { recipients, skipped };
 }

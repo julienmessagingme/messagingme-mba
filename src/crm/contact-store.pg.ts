@@ -1460,11 +1460,23 @@ export class PgContactStore implements ContactStore {
         );
       }
 
+      // L'ÉCHEC D'UN MESSAGE LIBRE (migration 0175, lot 3 de l'API publique) garde le numéro et le motif.
+      // EFFACÉ, pas anonymisé : c'est un journal d'exploitation, il n'a aucun quantitatif à préserver. Scopé à
+      // l'espace, et visé par les DEUX formes du numéro (fils trouvés ET numéro de la fiche) : un échec survit à
+      // son fil, et un rapport arrivé avant l'inscription du message n'en a jamais eu (`noterSansMessage`).
+      if (waIdsAAnonymiser.length > 0) {
+        await client.query(
+          `delete from echecs_messages where tenant_id = $1 and wa_id = any($2::text[])`,
+          [tenantId, waIdsAAnonymiser],
+        );
+      }
+
       // Quantitatif préservé : la ligne de campagne reste (statut, horodatage, livraison), son numéro et ses
-      // variables résolues partent. `resolved_params` porte les valeurs injectées dans le template, donc
-      // typiquement le prénom.
+      // variables partent. `resolved_params` porte les valeurs injectées dans le template, donc typiquement le
+      // prénom ; `variables` (migration 0174, lot 3 de l'API publique) porte ce que l'intégrateur a passé pour CE
+      // destinataire (un numéro de commande, un montant). `null` et pas '{}' : « n'en porte pas ».
       await client.query(
-        `update campaign_recipients set to_e164 = 'anonyme', resolved_params = '{}'::jsonb
+        `update campaign_recipients set to_e164 = 'anonyme', resolved_params = '{}'::jsonb, variables = null
           where contact_id = any($1::uuid[])`,
         [ids],
       );

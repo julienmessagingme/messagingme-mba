@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import { matchWaIdPredicat } from '../crm/contact-store.pg';
 import { RECIPIENT_FAILED_SQL, INSTANT_ECHEC_SQL } from '../campaign/echecs-sql';
 import { STATS_TZ } from '../stats/range';
+import { PgEchecsMessagesStore } from '../delivery/echecs-messages.pg';
 
 /**
  * LE JOURNAL DES ERREURS DE LIVRAISON : ce que Meta nous a répondu quand un message n'est pas parti, ou n'est
@@ -52,9 +53,18 @@ export interface ErreurLivraison {
    *  - `scenario` : l'avance d'un parcours a échoué sur un message ENTRANT. Ni l'un ni l'autre des deux
    *    précédents : rien n'a été refusé ni perdu en route, c'est notre traitement qui n'a pas abouti, et le
    *    contact reste posé sur son bloc en attendant.
+   *  - `message` : un message LIBRE n'est pas arrivé (migration 0175). Jamais un envoi de campagne, que les
+   *    deux premières portent déjà.
    */
-  origine: 'envoi' | 'livraison' | 'scenario';
+  origine: 'envoi' | 'livraison' | 'scenario' | 'message';
   at: string | null;
+  /**
+   * Ligne `message` seulement (migration 0175) : un message LIBRE (réponse de l'Inbox, API, MCP, bloc de
+   * scénario, agent) n'est pas arrivé. `origineMessage` est la colonne origin du message, `canal` son tuyau.
+   * Absents sur les trois autres origines.
+   */
+  origineMessage?: string | null;
+  canal?: 'whatsapp' | 'rcs';
 }
 
 export interface FiltreErreurs {
@@ -80,6 +90,12 @@ export interface FiltreErreurs {
    */
   campaignIds?: string[];
   templateNames?: string[];
+  /**
+   * Les seules erreurs de CAMPAGNE (Analytics). Le détail d'un code s'y ouvre depuis un compteur que
+   * `getErrorBreakdown` calcule sur les destinataires de campagne seulement : y mêler les messages libres
+   * ferait ouvrir quatorze lignes sous un « 12 ».
+   */
+  campagnesSeulement?: boolean;
 }
 
 interface Ligne {
@@ -118,7 +134,14 @@ export interface EchecAppelSysteme {
 }
 
 export class PgErreursLivraisonStore {
-  constructor(private readonly pool: Pool) {}
+  /**
+   * `echecsMessages` : la quatrième source (migration 0175). Injectable pour un test, construite ici par
+   * défaut : les deux câblages (API et worker) n'ont qu'un `pool` à passer.
+   */
+  constructor(
+    private readonly pool: Pool,
+    private readonly echecsMessages: PgEchecsMessagesStore = new PgEchecsMessagesStore(pool),
+  ) {}
 
   /**
    * Les appels de connecteur EN ÉCHEC d'un espace, du plus récent au plus ancien.
@@ -234,15 +257,19 @@ export class PgErreursLivraisonStore {
       at: r.at ? r.at.toISOString() : null,
     }));
 
+    // Analytics ne veut QUE les campagnes : son compteur par code n'en compte pas d'autres (`getErrorBreakdown`).
+    if (filtre.campagnesSeulement) return campagnes;
+
     const avances = await this.listerEchecsAvance(tenantId, filtre, limit);
+    // La QUATRIÈME source (migration 0175) : les messages libres non délivrés.
+    const messages = await this.echecsMessages.lister(tenantId, filtre, limit);
 
     /**
-     * Fusion en MÉMOIRE plutôt qu'en `union` SQL, et c'est un choix. Les deux sources n'ont ni les mêmes
-     * colonnes ni les mêmes filtres (un échec d'avance n'a pas de code Meta), donc une union aurait fait
-     * cohabiter deux jeux de fragments de WHERE dans une seule requête, à tenir alignés pour toujours. Les
-     * deux lectures étant déjà bornées par `limit`, on tient au plus deux fois `limit` lignes le temps du tri.
+     * Fusion en MÉMOIRE plutôt qu'en `union` SQL, et c'est un choix. Les sources n'ont ni les mêmes colonnes
+     * ni les mêmes filtres, donc une union ferait cohabiter plusieurs jeux de fragments de WHERE dans une seule
+     * requête. Chaque lecture étant bornée par `limit`, on tient au plus trois fois `limit` lignes le temps du tri.
      */
-    return [...campagnes, ...avances]
+    return [...campagnes, ...avances, ...messages]
       .sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''))
       .slice(0, limit);
   }

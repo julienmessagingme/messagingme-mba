@@ -1,4 +1,5 @@
 import type { TarifsMetaSink } from '../src/webhooks/tarif-meta';
+import type { EchecsLibresSink } from '../src/webhooks/delivery';
 import type { ArriveesPubDeps } from '../src/webhooks/arrivees-pub';
 import type { RoutagePubDeps } from '../src/webhooks/routage-pub';
 
@@ -8,6 +9,9 @@ import type { RoutagePubDeps } from '../src/webhooks/routage-pub';
  * cacher, comme `jamaisDesabonne` (`tests/consentement.ts`).
  */
 export const aucunTarif: TarifsMetaSink = { enregistrer: async () => {} };
+
+/** Aucun journal des échecs de messages libres (lot 3 de l'API publique) : le puits est inerte et le DIT. */
+export const aucunEchecLibre: EchecsLibresSink = { noter: async () => null };
 export const aucuneArriveePub: ArriveesPubDeps = { phoneNumberTenant: async () => null, enregistrer: async () => 'ecrite' };
 
 /**

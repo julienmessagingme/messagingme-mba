@@ -84,6 +84,11 @@ export interface Recipient {
    * l'omettre, seul un faux le peut.
    */
   etageCourant?: number;
+  /**
+   * Les variables propres à ce destinataire (API publique, `campaign_recipients.variables`, migration 0174).
+   * `null` ou absent = aucune, le cas de toute campagne de la console. Relues par l'envoi d'un message RCS.
+   */
+  variables?: Readonly<Record<string, string>> | null;
 }
 
 export interface GuardrailThresholds {
