@@ -12,8 +12,30 @@ const MIGRATIONS = new URL('../db/migrations/', import.meta.url);
  * parfaitement correcte, appliquée depuis des mois.
  */
 function sansCommentaires(sql: string): string {
-  return sql.split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');
+  // ⚠️ `\r?\n` et pas `\n` : un fichier extrait en CRLF (poste Windows) garde son `\r` en fin de ligne, que
+  // `.` ne traverse pas, donc `--.*$` ne retirait RIEN. Mesuré sur 0115, dont le commentaire nomme
+  // `CREATE INDEX CONCURRENTLY` : la garde lisait le commentaire comme du SQL.
+  return sql.split(/\r?\n/).map((l) => l.replace(/--.*$/, '')).join('\n');
 }
+
+/**
+ * Le SQL porte-t-il une instruction CONCURRENTLY, donc interdite dans une transaction ?
+ *
+ * 🔴 LA RÈGLE NE VOYAIT PAS `create unique index concurrently` : son motif exigeait `index` juste après
+ * `create`. Une migration d'index unique sans la directive aurait échoué au déploiement, migration à moitié
+ * passée, sans que ce test ne dise rien. Même chose pour `drop index concurrently` et `reindex ... concurrently`,
+ * tout aussi interdits en transaction (le commentaire de 0172 prescrit justement un `drop index concurrently`
+ * de reprise).
+ */
+const construitConcurrently = (corps: string): boolean =>
+  /(create\s+(unique\s+)?index|drop\s+index|reindex\s+\w+)\s+concurrently/i.test(corps);
+/**
+ * ⚠️ Le `if not exists` se cherche DANS le regard en avant, pas après un `\s+` consommé : sinon, devant plusieurs
+ * blancs ou un saut de ligne, `\s+` recule d'un caractère, le regard voit « ␣if » et la garde crie « non
+ * rejouable » sur une migration correcte.
+ */
+const concurrentlySansGarde = (corps: string): boolean =>
+  /create\s+(unique\s+)?index\s+concurrently(?!\s+if\s+not\s+exists)/i.test(corps);
 
 /**
  * La directive `-- migrate: no-transaction` décide si une migration est jouée SANS filet. Une reconnaissance
@@ -45,6 +67,25 @@ describe('directive de migration hors transaction', () => {
     expect(veutHorsTransaction(tardif)).toBe(false);
   });
 
+  it('🔴 un index UNIQUE construit CONCURRENTLY est soumis à la même règle', () => {
+    expect(construitConcurrently('create unique index concurrently if not exists x on t (a)')).toBe(true);
+    expect(concurrentlySansGarde('create unique index concurrently x on t (a)')).toBe(true);
+    expect(concurrentlySansGarde('create unique index concurrently if not exists x on t (a)')).toBe(false);
+  });
+
+  it('⚠️ plusieurs blancs ou un saut de ligne avant `if not exists` : la garde est bien là', () => {
+    expect(concurrentlySansGarde('create index concurrently\n  if not exists x on t (a)')).toBe(false);
+    expect(concurrentlySansGarde('create unique index concurrently   if not exists x on t (a)')).toBe(false);
+    expect(concurrentlySansGarde('create index concurrently\n  x on t (a)')).toBe(true);
+  });
+
+  it('🔴 `drop index` et `reindex` CONCURRENTLY exigent eux aussi la directive', () => {
+    expect(construitConcurrently('drop index concurrently x')).toBe(true);
+    expect(construitConcurrently('drop index concurrently if exists x')).toBe(true);
+    expect(construitConcurrently('reindex index concurrently x')).toBe(true);
+    expect(construitConcurrently('drop index x')).toBe(false);
+  });
+
   it('🔴 les migrations RÉELLES du dépôt respectent les deux sens de la règle', () => {
     // Garde de non-régression sur les fichiers eux-mêmes, dans les deux sens :
     //  - un `CREATE INDEX CONCURRENTLY` SANS la directive échouerait au déploiement (Postgres l'interdit
@@ -55,12 +96,12 @@ describe('directive de migration hors transaction', () => {
       const sql = readFileSync(new URL(f, MIGRATIONS), 'utf8');
       const hors = veutHorsTransaction(sql);
       const corps = sansCommentaires(sql);
-      const concurrently = /create\s+index\s+concurrently/i.test(corps);
+      const concurrently = construitConcurrently(corps);
       if (concurrently) {
         expect(hors, `${f} : CONCURRENTLY sans la directive -> échec au déploiement`).toBe(true);
       }
       if (hors) {
-        const nonIdempotent = /create\s+index\s+concurrently\s+(?!if\s+not\s+exists)/i.test(corps);
+        const nonIdempotent = concurrentlySansGarde(corps);
         expect(nonIdempotent, `${f} : hors transaction, un CONCURRENTLY sans \`if not exists\` -> non rejouable`).toBe(false);
       }
     }
@@ -105,5 +146,15 @@ describe('découpage d’une migration en instructions', () => {
     const instructions = decouperInstructions(sql);
     expect(instructions).toHaveLength(3);
     for (const i of instructions) expect(i.toLowerCase()).toContain('create index concurrently if not exists');
+  });
+
+  it('la migration de `contacts.external_id` se découpe en DEUX instructions : la colonne, puis l’index unique', () => {
+    const f = readdirSync(MIGRATIONS).find((x) => x.endsWith('_contacts_external_id.sql'));
+    expect(f, 'la migration existe').toBeDefined();
+    const instructions = decouperInstructions(readFileSync(new URL(f!, MIGRATIONS), 'utf8'));
+    expect(instructions).toHaveLength(2);
+    expect(instructions[0]!.toLowerCase()).toContain('alter table contacts add column if not exists external_id text');
+    expect(instructions[1]!.toLowerCase()).toContain('create unique index concurrently if not exists contacts_tenant_external_id_uidx');
+    expect(instructions[1]!.toLowerCase()).toContain('where external_id is not null');
   });
 });

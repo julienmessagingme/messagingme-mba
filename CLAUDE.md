@@ -95,8 +95,11 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
 **Dernière appliquée : 0171**, le 2026-09-24 à 13 h 46 UTC (`pubs_brouillons`, les brouillons de
-publicité), AVANT le `up` qui a porté son code. **Prochaine libre = 0172**, et le dossier
-`db/migrations/` s'arrête à 0171.
+publicité), AVANT le `up` qui a porté son code. **ÉCRITE ET PAS ENCORE APPLIQUÉE : 0172**
+(`contacts_external_id`, l'identifiant de l'outil du client gardé sur la fiche, lot 1 de l'API publique ;
+additive, index unique partiel construit `CONCURRENTLY` hors transaction, donc AVANT tout déploiement du code
+qui lit la colonne, et `indisvalid` à relire après `migrate`). **Prochaine libre = 0173**, et le dossier
+`db/migrations/` s'arrête à 0172.
 
 🔴 **RELUE EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT, PAS EN ÉCRIVANT CETTE LIGNE.**
 `schema_migrations` rend `0171_pubs_brouillons.sql` en tête à 13 h 46 UTC, après 0170 à 3 h 01 ; les douze
