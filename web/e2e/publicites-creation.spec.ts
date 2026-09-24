@@ -79,6 +79,13 @@ interface Options {
   brouillons?: unknown[] | 'absent';
   /** Ce que la lecture d'UN brouillon ajoute au premier de la liste, le visuel notamment. */
   detailBrouillon?: Record<string, unknown>;
+  /**
+   * `true` fait rendre 404 aux ECRITURES sur UN brouillon, la route existant par ailleurs.
+   *
+   * C'est le second sens du 404 : « ce brouillon n'existe pas », parce qu'il a ete supprime entre
+   * temps. Le confondre avec « la route n'existe pas » perd le travail en silence.
+   */
+  brouillonDisparu?: boolean;
 }
 
 /**
@@ -150,7 +157,11 @@ const brancher = async (page: import('@playwright/test').Page, o: Options = {}) 
       return json({ brouillons: Array.isArray(o.brouillons) ? o.brouillons : [] });
     }
     if (/\/pubs\/brouillons\/[^/]+$/.test(url.split('?')[0] ?? '')) {
-      if (route.request().method() !== 'GET') return route.fulfill({ status: 204, body: '' });
+      if (route.request().method() !== 'GET') {
+        return o.brouillonDisparu === true
+          ? route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'ce brouillon n’existe pas' }) })
+          : route.fulfill({ status: 204, body: '' });
+      }
       const b = Array.isArray(o.brouillons) ? o.brouillons[0] : undefined;
       return json({ brouillon: { ...(b ?? {}), ...(o.detailBrouillon ?? {}) } });
     }
@@ -775,5 +786,41 @@ test.describe('Publicités : quand l’API n’a pas encore les brouillons', () 
     await page.getByTestId('pubs-creer').click();
     await expect(page.getByTestId('pub-enregistrer-brouillon')).toBeVisible();
     await expect(page.getByTestId('pub-brouillons-indispo')).toHaveCount(0);
+  });
+});
+
+/**
+ * 🔴 LES DEUX SENS DU 404, ET POURQUOI LES CONFONDRE COÛTE UN TRAVAIL.
+ *
+ * La route des brouillons rend 404 pour deux raisons qui n'ont rien à voir : « je n'existe pas » (la
+ * fenêtre entre le push et le déploiement de l'API) et « ce brouillon n'existe pas » (il a été supprimé
+ * entre-temps, depuis la liste rendue juste sous le formulaire).
+ *
+ * ⚠️ CE CAS EXISTE PARCE QU'UN CORRECTIF A CRÉÉ LE DÉFAUT. La première version du traitement du 404 les
+ * habillait tous les deux en « le serveur se met à jour » : l'écran annonçait une panne passagère sur un
+ * brouillon MORT, l'utilisateur réessayait, recevait le même message rassurant, et son travail était perdu
+ * en silence. C'est le motif que ce dépôt a payé plusieurs fois, « chaque relecture trouve un défaut que
+ * la précédente avait créé », et c'est la relecture du correctif qui l'a attrapé.
+ */
+test.describe('Publicités : un brouillon supprimé pendant qu’on l’édite', () => {
+  const BR = {
+    id: 'br-1', nom: 'En cours', titre: '', texte: '', accueil: '', messagePreRempli: '',
+    budgetTotal: '', debut: '', fin: '', pays: 'FR', ageMin: '18', ageMax: '65',
+    tagQualification: '', destination: 'scenario', workflowId: null, aUnVisuel: false,
+    creeLe: '2026-09-24T08:00:00.000Z', modifieLe: '2026-09-24T08:00:00.000Z',
+  };
+
+  test('🔴 l’écran dit que le brouillon n’existe plus, et PAS que le serveur se met à jour', async ({ page }) => {
+    await brancher(page, { brouillons: [BR], brouillonDisparu: true });
+    await page.getByTestId('pub-brouillon-ouvrir-br-1').click();
+    await expect(page.getByTestId('pub-formulaire')).toBeVisible();
+    await page.locator('#pub-nom').fill('TRAVAIL-EN-COURS-E2E');
+    await page.getByTestId('pub-enregistrer-brouillon').click();
+    await expect(page.getByTestId('pub-form-erreur')).toContainText(/n’existe plus|no longer exists/);
+    // 🔴 LA MOITIÉ QUI FAIT TOMBER LE DÉFAUT D'ORIGINE : le message rassurant ne doit PAS sortir ici.
+    await expect(page.getByTestId('pub-form-erreur')).not.toContainText(/mise à jour du serveur|server update/);
+    // Et le travail reste récupérable : le bouton repropose un enregistrement NEUF, pas une modification.
+    await expect(page.getByTestId('pub-enregistrer-brouillon')).toContainText(/Enregistrer le brouillon|Save draft/);
+    await expect(page.locator('#pub-nom')).toHaveValue('TRAVAIL-EN-COURS-E2E');
   });
 });

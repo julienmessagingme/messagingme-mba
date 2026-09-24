@@ -195,12 +195,28 @@ export function PubFormulaire({
       setVisuelTouche(false);
       await brouillonsChanges();
     } catch (err) {
-      // ⚠️ CEINTURE EN PLUS DU BOUTON MASQUÉ : la route peut disparaître ENTRE le montage de l'écran et
-      // le clic (c'est la fenêtre Vercel/API, qui dure quelques minutes). Un message de routeur brut ne
-      // se relie à rien ; celui-ci dit ce qui se passe et que la création, elle, reste possible.
-      if (err instanceof ApiError && err.status === 404) {
+      /**
+       * 🔴 DEUX 404 DIFFÉRENTS ARRIVENT ICI, ET LES CONFONDRE PERD LE TRAVAIL EN SILENCE.
+       *
+       * La route rend 404 pour « je n'existe pas » (fenêtre Vercel/API) ET pour « ce brouillon n'existe
+       * pas » (`src/http/pubs.ts:484`, quand il a été supprimé entre-temps). La première version de ce
+       * `catch` les habillait tous les deux en « le serveur se met à jour » : on reprend un brouillon, on
+       * le supprime par erreur dans la liste juste en dessous, on continue d'écrire, et l'écran annonce
+       * une panne passagère sur un brouillon MORT. On réessaie, même message rassurant, travail perdu.
+       * Trouvé par une relecture à froid du correctif lui-même, avant tout déploiement.
+       *
+       * ⚠️ LE CRITÈRE QUI LES SÉPARE EST `brouillonId`. À la CRÉATION, un 404 ne peut vouloir dire que
+       * « la route n'existe pas » : il n'y a aucun identifiant à ne pas trouver. À la MISE À JOUR, c'est
+       * le brouillon qui a disparu, et on le DIT, en remettant l'identifiant à `null` pour que le clic
+       * suivant le recrée. Le travail redevient récupérable en un geste au lieu d'être perdu.
+       */
+      if (err instanceof ApiError && err.status === 404 && brouillonId === null) {
         setErreur(t('Les brouillons attendent la mise à jour du serveur. Vous pouvez créer la publicité normalement.',
                     'Drafts are waiting for the server update. You can still create the ad as usual.'));
+      } else if (err instanceof ApiError && err.status === 404) {
+        setBrouillonId(null);
+        setErreur(t('Ce brouillon n’existe plus. Cliquez de nouveau pour l’enregistrer comme un nouveau brouillon.',
+                    'This draft no longer exists. Click again to save it as a new draft.'));
       } else {
         setErreur(err instanceof Error ? err.message : t('Enregistrement impossible', 'Could not save'));
       }
