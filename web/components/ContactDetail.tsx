@@ -197,6 +197,9 @@ export function ContactDetail({
   const [newKey, setNewKey] = useState('');
   const [newVal, setNewVal] = useState('');
   const [newTag, setNewTag] = useState('');
+  // « Copié » (ou « Copie impossible ») pendant deux secondes : sans retour, on reclique en croyant que rien
+  // ne s'est passé. L'échec a le sien : presse-papiers absent (contexte non sécurisé) ou écriture refusée.
+  const [idCopie, setIdCopie] = useState<'ok' | 'echec' | null>(null);
   // Création d'un NOUVEAU champ (pas seulement piocher dans l'existant) depuis la fiche.
   const [creatingField, setCreatingField] = useState(false);
   const [cLabel, setCLabel] = useState('');
@@ -395,6 +398,38 @@ export function ContactDetail({
           <span className="font-mono text-ink-900" title={t("Dérivé du numéro (chiffres seuls) ou du BSUID. C'est la clé qui relie ce contact à sa conversation et à ses parcours. Non modifiable.", "Derived from the number (digits only) or the BSUID. It is the key linking this contact to its conversation and journeys. Not editable.")}>
             {waIdDuContact(contact) ?? <span className="font-sans text-ink-300">{t('aucun', 'none')}</span>}
           </span>
+          {/* L'IDENTIFIANT API : la valeur que l'API publique appelle `contactId` (spec du 2026-09-24, § 10).
+              Toujours affiché, avec un bouton Copier : c'est ce qu'un intégrateur vient chercher ici. */}
+          <span className="text-ink-400">{t('Identifiant API', 'API ID')}</span>
+          <span className="flex min-w-0 items-center gap-2">
+            {/* `break-all` et pas `truncate` : sur un écran étroit, un UUID coupé par une ellipse ne se lit plus
+                en entier, et c'est la seule issue quand la copie échoue. */}
+            <span data-testid="fiche-identifiant-api" className="min-w-0 break-all font-mono text-xs text-ink-900" title={t('La valeur que l’API appelle « contactId ».', 'The value the API calls “contactId”.')}>
+              {contact.id}
+            </span>
+            <button
+              type="button"
+              data-testid="fiche-copier-identifiant"
+              onClick={() => {
+                const signaler = (etat: 'ok' | 'echec'): void => { setIdCopie(etat); setTimeout(() => setIdCopie(null), 2000); };
+                if (!navigator.clipboard) { signaler('echec'); return; }
+                navigator.clipboard.writeText(contact.id).then(() => signaler('ok'), () => signaler('echec'));
+              }}
+              className="shrink-0 text-xs text-brand-600 underline decoration-dotted transition hover:text-brand-700"
+            >
+              {idCopie === 'ok' ? t('Copié', 'Copied') : idCopie === 'echec' ? t('Copie impossible', 'Copy failed') : t('Copier', 'Copy')}
+            </button>
+          </span>
+          {/* L'IDENTIFIANT EXTERNE n'apparaît que s'il existe : il ne se remplit que par l'API, une ligne vide
+              se lirait « à remplir ». */}
+          {contact.externalId ? (
+            <>
+              <span className="text-ink-400">{t('Identifiant externe', 'External ID')}</span>
+              <span data-testid="fiche-identifiant-externe" className="break-all font-mono text-xs text-ink-900" title={t('L’identifiant de cette personne dans l’outil qui appelle l’API.', 'This person’s identifier in the tool that calls the API.')}>
+                {contact.externalId}
+              </span>
+            </>
+          ) : null}
           <span className="text-ink-400">{t('Consentement', 'Consent')}</span>
           {/* Modifiable À LA MAIN, et ce n'est pas du confort : le garde-fou de campagne exige un opt-in
               EXPLICITE pour le marketing, donc un contact « inconnu » est écarté des envois en silence. Sans ce

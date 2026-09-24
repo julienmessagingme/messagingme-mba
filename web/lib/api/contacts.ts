@@ -16,6 +16,11 @@ export interface Contact {
   phoneE164: string | null;
   /** Identité BSUID (compte WhatsApp) quand le contact n'a pas de numéro. */
   bsuid: string | null;
+  /**
+   * L'identifiant de l'outil du client, posé par l'API publique (`externalId`). `null` ou absent = aucun.
+   * Il sert à retrouver la fiche, jamais d'adresse d'envoi.
+   */
+  externalId?: string | null;
   profileName: string | null;
   optInStatus: string;
   fields: Record<string, unknown>;

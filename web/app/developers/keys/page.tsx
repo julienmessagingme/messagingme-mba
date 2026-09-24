@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
-import { listApiKeys, createApiKey, revokeApiKey, API_SCOPES, API_SCOPES_PAR_DEFAUT, type ApiKeyRow, type ApiKeyCreated } from '@/lib/api';
+import { listApiKeys, createApiKey, revokeApiKey, API_SCOPES, API_SCOPES_PAR_DEFAUT, type ApiKeyRow, type ApiKeyCreated, type ApiScope } from '@/lib/api';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 import { inputCls } from '@/lib/ui';
@@ -42,8 +42,10 @@ function KeysInner({ session }: { session: Session }) {
   /** Le droit de la clé que la publication pose chez Meta (`src/mba/cle-relais.ts`). */
   const DROIT_RELAIS = 'mba:relais';
 
-  const SCOPE_LABEL: Record<string, string> = {
+  // Typé sur `ApiScope` : un droit ajouté à la liste sans libellé ne compile pas.
+  const SCOPE_LABEL: Record<ApiScope, string> = {
     'contacts:write': t('Créer et mettre à jour des contacts', 'Create and update contacts'),
+    'contacts:read': t('Lire les contacts', 'Read contacts'),
     'sends:create': t('Déclencher des envois', 'Trigger sends'),
     'mcp:read': t('MCP : lire les conversations et les contacts', 'MCP: read conversations and contacts'),
     'mcp:write': t('MCP : répondre, taguer, affecter', 'MCP: reply, tag, assign'),
