@@ -221,6 +221,17 @@ describe('ecrireFiches : le consentement', () => {
     expect(audits).toEqual([]);
   });
 
+  it('🔴 le refus tombe AVANT la résolution : une clé NEUVE n’est pas rattachée à la fiche désabonnée (revue finale du lot 1)', async () => {
+    const { service, repertoire, audits } = monter();
+    const f = repertoire.ajouter(T, { phoneE164: '+33612345678', optInStatus: 'opted_out', optInSource: 'stop' });
+    const [r] = await service.ecrireFiches(T, [{ phone: '+33612345678', externalId: 'crm-1', consent: 'opted_in' }]);
+    expect(r).toMatchObject({ status: 'error', code: 'opted_out' });
+    // Sans la vérification AVANT la résolution, `rattacherCles` posait `crm-1` sur la fiche puis le service refusait.
+    expect(f.externalId).toBeNull();
+    expect(repertoire.ecritures).toEqual([]);
+    expect(audits).toEqual([]);
+  });
+
   it('🔴 même règle sur PATCH : `opted_out`, et rien n’est écrit', async () => {
     const { service, repertoire, audits } = monter();
     const f = repertoire.ajouter(T, { phoneE164: '+33612345678', optInStatus: 'opted_out', optInSource: 'stop' });

@@ -141,6 +141,12 @@ const INCONNUE_POUR_ECRIRE = 'aucune fiche ne correspond, et il faut un « phone
  * champ, ni étiquette, ni nom modifié.
  */
 const STOP_NON_LEVABLE = 'cette personne a demandé l’arrêt des messages (STOP) : l’API ne peut pas la réabonner, seul un opérateur (depuis sa fiche) ou la personne elle-même le peut. Ni ses champs, ni ses étiquettes, ni son consentement n’ont été modifiés.';
+/**
+ * Le STOP est arrivé PENDANT l'appel, entre la vérification et l'écriture du consentement : la garde du dépôt a
+ * refusé le réabonnement, mais les champs, étiquettes ou nom demandés ont déjà pu être écrits. Le dire, plutôt
+ * que de réutiliser un message qui affirmerait le contraire (revue finale du lot 1).
+ */
+const STOP_PENDANT_L_APPEL = 'cette personne a demandé l’arrêt des messages (STOP) pendant cet appel : son consentement n’a pas été modifié, mais les autres champs demandés ont pu l’être.';
 
 export function creerServiceContactsV1(deps: DepsServiceContactsV1): ServiceContactsV1 {
   const maintenant = deps.maintenant ?? ((): Date => new Date());
@@ -159,6 +165,22 @@ export function creerServiceContactsV1(deps: DepsServiceContactsV1): ServiceCont
     return (await deps.contacts.lireFicheApi(tenantId, contactId))?.optInStatus === 'opted_out';
   }
 
+  /**
+   * 🔴 LA MÊME QUESTION, POSÉE AVANT LA RÉSOLUTION, et c'est ce qui la rend juste (revue finale du lot 1) :
+   * `resoudreFiche` ÉCRIT (elle rattache une clé neuve, elle peut ressusciter une fiche), donc un refus posé après
+   * elle laissait un `externalId` rattaché à une fiche désabonnée. Ici, rien que des lectures : les fiches que
+   * désignent les clés, puis leur consentement. Seulement quand le corps demande `opted_in`.
+   */
+  async function clesDesignentUnStop(tenantId: string, item: ContactV1): Promise<boolean> {
+    if (item.consent !== 'opted_in') return false;
+    const n = normaliserCles(item);
+    if (!n.ok) return false; // la résolution rendra la bonne erreur de clé
+    for (const f of await deps.contacts.chercherParCles(tenantId, n.cles)) {
+      if (await leveraitUnStop(tenantId, f.id, 'opted_in')) return true;
+    }
+    return false;
+  }
+
   async function lireFiche(tenantId: string, contactId: string): Promise<FicheApi | null> {
     if (!estUuid(contactId)) return null;
     const ligne = await deps.contacts.lireFicheApi(tenantId, contactId);
@@ -168,12 +190,13 @@ export function creerServiceContactsV1(deps: DepsServiceContactsV1): ServiceCont
   }
 
   async function ecrireUne(tenantId: string, index: number, item: ContactV1, valeurs: Record<string, string>): Promise<ResultatFiche> {
+    // AVANT la résolution, qui écrit : un refus ne doit rien laisser, pas même une clé rattachée.
+    if (await clesDesignentUnStop(tenantId, item)) {
+      return { index, status: 'error', code: 'opted_out', reason: STOP_NON_LEVABLE };
+    }
     const r = await resoudreFiche(deps.contacts, tenantId, item, { creer: 'phone_ou_bsuid' });
     if (!r.ok) {
       return { index, status: 'error', code: r.code, reason: r.code === 'unknown_contact' ? INCONNUE_POUR_ECRIRE : MESSAGE_RESOLUTION[r.code] };
-    }
-    if (await leveraitUnStop(tenantId, r.contactId, item.consent)) {
-      return { index, status: 'error', code: 'opted_out', reason: STOP_NON_LEVABLE };
     }
     const nom = typeof item.name === 'string' && item.name.trim() !== '' ? item.name.trim().slice(0, 200) : undefined;
     const tags = normalizeTags(item.tags);
@@ -190,7 +213,7 @@ export function creerServiceContactsV1(deps: DepsServiceContactsV1): ServiceCont
       const issue = await appliquerConsentement(consentement, tenantId, r.contactId, item.consent, item.consentSource ?? 'api');
       if (issue === 'absente') return { index, status: 'error', code: 'unknown_contact', reason: MESSAGE_RESOLUTION.unknown_contact };
       // Un STOP arrivé entre la vérification et cette écriture : le dépôt a refusé, on ne répond pas « updated ».
-      if (issue === 'refuse') return { index, status: 'error', code: 'opted_out', reason: STOP_NON_LEVABLE };
+      if (issue === 'refuse') return { index, status: 'error', code: 'opted_out', reason: STOP_PENDANT_L_APPEL };
     }
     return { index, status: r.cree ? 'created' : 'updated', contactId: r.contactId };
   }
@@ -331,7 +354,7 @@ export function creerServiceContactsV1(deps: DepsServiceContactsV1): ServiceCont
       if (patch.consent) {
         const issue = await appliquerConsentement(consentement, tenantId, r.contactId, patch.consent, patch.consentSource ?? 'api');
         if (issue === 'absente') return { ok: false, code: 'unknown_contact', reason: 'fiche inconnue' };
-        if (issue === 'refuse') return { ok: false, code: 'opted_out', reason: STOP_NON_LEVABLE };
+        if (issue === 'refuse') return { ok: false, code: 'opted_out', reason: STOP_PENDANT_L_APPEL };
       }
       return { ok: true, contactId: r.contactId };
     },
