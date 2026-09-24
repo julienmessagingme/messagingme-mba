@@ -46,6 +46,15 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
   // Les campagnes archivées, exclues par défaut : elles entraient dans le tableau sans le dire (lot 4).
   const [archivees, setArchivees] = useState(false);
 
+  /**
+   * L'adresse du détail, période comprise. Les postes de messages y mènent (cf. `Poste`).
+   *
+   * ⚠️ `du` ET `au`, LES MÊMES NOMS QUE LA PAGE D'ARRIVÉE LIT. Écrits deux fois, à deux endroits : un seul
+   * qui change et le lien retombe sur la période par défaut, en silence, ce qui est exactement le défaut
+   * que ces paramètres existent pour éviter. `web/e2e/performance-cout.spec.ts` recolle les deux.
+   */
+  const lienCouts = `/dashboard/couts?du=${encodeURIComponent(range.from)}&au=${encodeURIComponent(range.to)}`;
+
   useEffect(() => {
     let vivant = true;
     setCampagnes(null); setMessages(null); setIa(null);
@@ -216,10 +225,15 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
         >
           {messages !== null && messages !== 'erreur' && (
             <>
+              {/* 🔴 LA PÉRIODE VOYAGE DANS L'ADRESSE, ET CE N'EST PAS UN CONFORT. La page Coûts s'ouvre sur
+                  30 jours par défaut : sans ces deux paramètres, quitter une synthèse réglée sur 90 jours
+                  rendrait des chiffres qui ne se recoupent pas, et le lecteur conclurait que l'un des deux
+                  écrans ment. Un lien qui change la période en silence est pire que pas de lien. */}
               <dl className="space-y-1 text-[13px]">
-                <Poste libelle={t('Templates marketing', 'Marketing templates')} valeur={fmtCost(messages.templates.marketing, locale, deviseMessages)} />
-                <Poste libelle={t('Templates utility', 'Utility templates')} valeur={fmtCost(messages.templates.utility, locale, deviseMessages)} />
+                <Poste libelle={t('Templates marketing', 'Marketing templates')} valeur={fmtCost(messages.templates.marketing, locale, deviseMessages)} href={lienCouts} />
+                <Poste libelle={t('Templates utility', 'Utility templates')} valeur={fmtCost(messages.templates.utility, locale, deviseMessages)} href={lienCouts} />
                 <Poste
+                  href={lienCouts}
                   libelle={t('Messages de service', 'Service messages')}
                   valeur={fmtCost(messages.service.cout, locale, deviseMessages)}
                   detail={t(
@@ -228,6 +242,7 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
                   )}
                 />
                 <Poste
+                  href={lienCouts}
                   libelle={t('RCS', 'RCS')}
                   valeur={fmtCost(messages.rcs.cout, locale, deviseMessages)}
                   detail={t(
@@ -429,12 +444,30 @@ function Ligne({ cle, titre, valeur, vide, etat, depliable = true, ouverte, onBa
   );
 }
 
-function Poste({ libelle, valeur, detail }: { libelle: string; valeur: string; detail?: string }) {
+/**
+ * Une ligne de poste, et son libellé peut être une PORTE vers le détail.
+ *
+ * 🔴 `href` EXISTE PARCE QUE CES LIGNES ONT ÉTÉ CLIQUÉES SANS RIEN DONNER (Julien, 2026-09-24). Un intitulé
+ * de poste au-dessus d'un chiffre se lit comme un lien, donc il en devient un : la synthèse dit COMBIEN,
+ * Quantitatif > Coûts dit DE QUOI (l'estimation, la facture de Meta, le détail par modèle).
+ *
+ * ⚠️ LE TITRE DU BLOC, LUI, CONTINUE DE DÉPLIER, et c'est l'arbitrage de Julien : l'accordéon porte la
+ * franchise mensuelle, le RCS et les messages de service, que la page Coûts ne montre nulle part. En faire
+ * une porte aurait fait disparaître ces quatre détails de la console entière.
+ */
+function Poste({ libelle, valeur, detail, href }: { libelle: string; valeur: string; detail?: string; href?: string }) {
+  const intitule = (
+    <>
+      {libelle}
+      {detail && <span className="ml-1.5 text-xs text-ink-400">{detail}</span>}
+    </>
+  );
   return (
     <div className="flex items-baseline justify-between gap-3">
       <dt className="text-ink-600">
-        {libelle}
-        {detail && <span className="ml-1.5 text-xs text-ink-400">{detail}</span>}
+        {href === undefined
+          ? intitule
+          : <Link href={href} className="text-brand-700 underline decoration-dotted underline-offset-2 hover:decoration-solid">{intitule}</Link>}
       </dt>
       <dd className="shrink-0 tabular-nums text-ink-900">{valeur}</dd>
     </div>

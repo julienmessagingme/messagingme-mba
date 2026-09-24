@@ -65,7 +65,11 @@ const IA = {
 
 async function mock(
   page: import('@playwright/test').Page,
-  opts: { cout?: unknown; messages?: unknown; ia?: unknown; statutCout?: number; urlsCout?: string[] } = {},
+  opts: {
+    cout?: unknown; messages?: unknown; ia?: unknown; statutCout?: number; urlsCout?: string[];
+    /** Les adresses appelees par la page Quantitatif > Couts, pour lire la periode qu elle a retenue. */
+    urlsTemplates?: string[];
+  } = {},
 ) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), ADMIN);
   await page.route('**/api/backend/**', async (route) => {
@@ -83,6 +87,15 @@ async function mock(
       }
       return json(opts.cout ?? COUT);
     }
+    if (url.includes('/stats/templates')) {
+      opts.urlsTemplates?.push(url);
+      return json({ breakdown: [], currency: 'EUR', hasRates: true });
+    }
+    // ⚠️ LA LISTE DES CAMPAGNES SE TERMINE PAR `/campaigns`, ET C EST TOUT L INTERET DE L ANCRE. Un
+    // `includes('/campaigns')` attraperait aussi `/stats/cost/campaigns` : il ne le fait pas aujourd hui
+    // parce qu il est pose plus bas, donc la correctitude tiendrait a l ORDRE des lignes. C est exactement
+    // le piege que le commentaire du dessus decrit, et une ancre le ferme pour de bon.
+    if (/\/campaigns(\?|$)/.test(url)) return json({ campaigns: [] });
     if (url.includes('/stats/conversations/nuage')) return json({ points: [], moyenne: null, mesurees: 0, sansMesure: 0 });
     if (url.includes('/unread-count')) return json({ count: 0 });
     if (url.endsWith('/me')) return json({ email: ADMIN.email, name: 'Jean Test', role: 'admin' });
@@ -264,6 +277,45 @@ test.describe('Performance Lab : le cout des messages', () => {
     await page.getByTestId('cout-bascule-messages').click();
     await expect(page.getByTestId('cout-bloc-messages')).toContainText(/Templates marketing|Marketing templates/);
     await expect(page.getByTestId('cout-bloc-messages')).toContainText('RCS');
+  });
+
+  test('🔴 un poste de messages EMMENE au detail, avec la MEME periode', async ({ page }) => {
+    /**
+     * Demande de Julien du 2026-09-24 : ces quatre lignes se cliquaient sans rien donner. La synthese dit
+     * COMBIEN, Quantitatif > Couts dit DE QUOI.
+     *
+     * 🔴 LA PERIODE EST LE VRAI SUJET DE CE TEST, PAS LE LIEN. La page d arrivee s ouvre sur 30 jours par
+     * defaut : un lien qui ne transporte pas la periode y rendrait des chiffres qui ne se recoupent pas
+     * avec ceux qu on vient de quitter, et le lecteur conclurait qu un des deux ecrans ment. Le test part
+     * donc de 90 jours EXPRES : sur la periode par defaut, il passerait meme avec un lien casse.
+     *
+     * ⚠️ ET IL RECOLLE LES DEUX NOMS DE PARAMETRE, `du` et `au`, ecrits une fois dans `CarteCouts` et une
+     * fois dans la page d arrivee. Un seul qui change, et le lien retombe sur 30 jours en silence.
+     */
+    const urlsTemplates: string[] = [];
+    await mock(page, { urlsTemplates });
+    await page.goto('/performance');
+    await page.getByRole('button', { name: /^90 / }).click();
+
+    const barre = page.locator('[data-testid="range-bar"] input[type="date"]');
+    const du = await barre.first().inputValue();
+    const au = await barre.last().inputValue();
+    expect(du, 'la periode de depart doit etre reglee sur 90 jours').not.toBe('');
+
+    await page.getByTestId('cout-bascule-messages').click();
+    await page.getByRole('link', { name: /Templates marketing|Marketing templates/ }).click();
+
+    // ⚠️ UNE CHAINE, PAS UNE EXPRESSION REGULIERE : le « ? » d une adresse doit y etre echappe, et un
+    // echappement de travers rend un motif qui ne matche rien tout en ayant l air juste.
+    await expect(page).toHaveURL(`/dashboard/couts?du=${du}&au=${au}`);
+    // 🔴 L ADRESSE NE SUFFIT PAS : elle prouve le depart, pas l arrivee. Ce qui compte est que la page
+    // d arrivee ait LU ces deux parametres, donc que sa propre barre de periode les porte, et surtout que
+    // l appel qu elle emet les emporte.
+    const barreArrivee = page.locator('[data-testid="range-bar"] input[type="date"]');
+    await expect(barreArrivee.first()).toHaveValue(du);
+    await expect(barreArrivee.last()).toHaveValue(au);
+    expect(urlsTemplates.some((u) => u.includes(`from=${du}`) && u.includes(`to=${au}`)),
+      `aucun appel de /stats/templates sur ${du}..${au} : ${urlsTemplates.join(' | ')}`).toBe(true);
   });
 
   test('🔴 la FRANCHISE est celle du MOIS, sur une ligne a part de la periode', async ({ page }) => {

@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { RangeBar } from '@/components/RangeBar';
 import { CostChartCard, FactureCard, TemplateBreakdownCard } from '@/components/analytics/cartes';
@@ -18,14 +19,51 @@ import { presetRange } from '@/lib/range';
  * chaque lecture. Voisines, l'explication tient dans une phrase de `FactureCard`.
  */
 export default function CoutsPage() {
-  return <AppShell active="quanti-couts">{(session) => <CoutsInner session={session} />}</AppShell>;
+  /**
+   * ⚠️ `Suspense` PARCE QUE `useSearchParams` L'EXIGE dans l'App Router, comme sur le Funnel : sans lui, la
+   * page entière bascule en rendu client au build et Next le signale. Le repli est l'écran sans période
+   * demandée, donc exactement le comportement d'avant l'adresse datée.
+   */
+  return (
+    <AppShell active="quanti-couts">
+      {(session) => (
+        <Suspense fallback={null}>
+          <CoutsInner session={session} />
+        </Suspense>
+      )}
+    </AppShell>
+  );
+}
+
+/**
+ * La période demandée par l'adresse (`?du=&au=`), posée par les postes de messages de la synthèse.
+ *
+ * 🔴 VALIDÉE, PAS SEULEMENT LUE. Ces deux valeurs partent droit dans un appel d'API : une adresse bricolée
+ * à la main enverrait n'importe quoi au serveur. Le format civil est le seul accepté, et le moindre doute
+ * retombe sur le défaut, qui est le comportement d'avant.
+ */
+function periodeDemandee(du: string | null, au: string | null): StatsRange | null {
+  const civil = /^\d{4}-\d{2}-\d{2}$/;
+  if (du === null || au === null || !civil.test(du) || !civil.test(au) || du > au) return null;
+  return { from: du, to: au };
 }
 
 function CoutsInner({ session }: { session: Session }) {
   const t = useT();
-  // Même période par défaut que les autres sous-onglets : passer de l'un à l'autre ne doit pas changer la
-  // fenêtre sous les pieds du lecteur.
-  const [range, setRange] = useState<StatsRange>(() => presetRange(30));
+  /**
+   * Même période par DÉFAUT que les autres sous-onglets : passer de l'un à l'autre ne change pas la fenêtre
+   * sous les pieds du lecteur. Mais l'ADRESSE gagne quand elle en porte une, parce qu'on arrive ici depuis
+   * la synthèse : rendre 30 jours là où elle en montrait 90 ferait deux écrans qui se contredisent sur la
+   * même question, et c'est le pire des deux défauts.
+   *
+   * 🔴 CE CHOIX CASSE L'INVARIANT DU DESSUS DANS UN SENS, ET C'EST ASSUMÉ. Arrivé ici sur 90 jours par un
+   * lien, le lecteur qui repart vers « Messages & contacts » retombe sur 30 : cet écran-là ne lit aucune
+   * période dans l'adresse. Le jour où ça gêne, la réparation n'est pas de retirer la lecture ici, c'est de
+   * faire voyager la période entre tous les sous-onglets, ce qui est un autre lot.
+   */
+  const params = useSearchParams();
+  const [range, setRange] = useState<StatsRange>(
+    () => periodeDemandee(params.get('du'), params.get('au')) ?? presetRange(30));
   const [templateStats, setTemplateStats] = useState<TemplateStats | null>(null);
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
   const [loading, setLoading] = useState(true);
