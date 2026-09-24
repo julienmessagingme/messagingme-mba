@@ -19,7 +19,11 @@ import { RETRY_DELAY_MS } from '../lib/http';
 const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
 
 const CONNEXION = {
-  comptePubId: '111' as string | null, compteNom: 'GMC', pageId: 'p1' as string | null, pageNom: 'Page test', devise: 'EUR',
+  // `as string | null` sur les champs qu'un cas REMPLACE par null : sans lui, TypeScript infère `string`
+  // depuis la valeur du fixture et refuse l'écrasement. `pageNom` a rejoint ses deux voisins quand
+  // l'aperçu a eu besoin du cas « connexion antérieure à 0169 ».
+  comptePubId: '111' as string | null, compteNom: 'GMC', pageId: 'p1' as string | null,
+  pageNom: 'Page test' as string | null, devise: 'EUR',
   fuseau: 'Europe/Paris', pageLiee: 'oui', connectePar: 'u-1',
   connecteLe: '2026-09-23T08:00:00.000Z', jetonRejeteLe: null as string | null,
 };
@@ -54,6 +58,22 @@ interface Options {
    * 🔴 LES DEUX SONT LE MÊME ÉTAT CÔTÉ ÉCRAN : « nous ne savons pas », qui n'est PAS « éteint ».
    */
   reglages?: boolean | 'vide' | 'panne';
+  /**
+   * Les scénarios rendus par la LISTE. Vide par défaut, comme avant : l'écran ne propose que les scénarios
+   * EN LIGNE, et il le juge sur `nodeCount`, calculé en base sur le graphe PUBLIÉ (`graph->'nodes'`).
+   */
+  scenarios?: Array<{ id: string; name: string; nodeCount: number }>;
+  /**
+   * Le DÉTAIL d'un scénario (`GET /workflows/:id`), d'où l'aperçu tire la première réponse.
+   *
+   * ⚠️ C'est `graph` et jamais `draftGraph` : un lead publicitaire parcourt ce qui est en ligne.
+   * `'panne'` rend un 500, pour éprouver que l'écran avoue son échec de lecture au lieu d'inventer.
+   */
+  detailScenario?: { graph: { nodes: unknown[]; edges: unknown[] } } | 'panne';
+  /** Les brouillons rendus par la liste, SANS leurs octets de visuel (c'est le contrat de cette route). */
+  brouillons?: unknown[];
+  /** Ce que la lecture d'UN brouillon ajoute au premier de la liste, le visuel notamment. */
+  detailBrouillon?: Record<string, unknown>;
 }
 
 /**
@@ -114,12 +134,32 @@ const brancher = async (page: import('@playwright/test').Page, o: Options = {}) 
         compte: o.compte === undefined ? { statut: 1, raisonDesactivation: 0, moyenPaiement: true } : o.compte,
       });
     }
+    // 🔴 LES BROUILLONS AVANT LA PAGE D'UNE PUBLICITÉ, et ce n'est pas cosmétique : `/pubs/brouillons`
+    // SATISFAIT la regex `/pubs/<id>` juste en dessous. Sans cet ordre, la liste des brouillons recevait
+    // le fixture d'une publicité, `r.brouillons` valait `undefined`, et le repli `?? []` rendait le cas
+    // VERT en n'affichant jamais aucun brouillon. C'est le même piège que la ligne suivante décrit déjà.
+    if (/\/pubs\/brouillons$/.test(url.split('?')[0] ?? '')) {
+      return json({ brouillons: o.brouillons ?? [] });
+    }
+    if (/\/pubs\/brouillons\/[^/]+$/.test(url.split('?')[0] ?? '')) {
+      if (route.request().method() !== 'GET') return route.fulfill({ status: 204, body: '' });
+      const b = (o.brouillons ?? [])[0];
+      return json({ brouillon: { ...(b ?? {}), ...(o.detailBrouillon ?? {}) } });
+    }
     // La page d'une publicité, AVANT la liste : `/pubs/pub-1` contient `/pubs`, donc l'ordre compte.
     if (/\/pubs\/[^/]+$/.test(url.split('?')[0] ?? '')) {
       return json({ publicite: PUB_PUBLIEE, entonnoir: o.entonnoir ?? ENTONNOIR_VIDE });
     }
     if (url.includes('/pubs')) return json({ publicites: o.publicites ?? [] });
-    if (url.includes('/workflows')) return json({ workflows: [] });
+    // Le DÉTAIL d'un scénario AVANT la liste : `/workflows/wf-1` contient `/workflows`, donc l'ordre
+    // compte, exactement comme pour `/pubs/pub-1` vingt lignes plus haut.
+    if (/\/workflows\/[^/]+$/.test(url.split('?')[0] ?? '')) {
+      if (o.detailScenario === 'panne') return route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
+      return json({
+        workflow: { id: 'wf-1', name: 'Qualification', ...(o.detailScenario ?? { graph: { nodes: [], edges: [] } }) },
+      });
+    }
+    if (url.includes('/workflows')) return json({ workflows: o.scenarios ?? [] });
     if (url.includes('/settings')) {
       lecturesReglages += 1;
       if (o.reglages === 'panne') return route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
@@ -406,5 +446,292 @@ test.describe('Publicités : l’entonnoir', () => {
     await brancher(page, { publicites: [PUB_PUBLIEE] });
     await page.getByTestId('pub-detail-pub-1').click();
     await expect(page.getByTestId('pub-entonnoir-pub-1')).toContainText(/Relus chez Meta|Read from Meta/);
+  });
+});
+
+/**
+ * L'APERÇU DE LA PUBLICITÉ : ce que le prospect verra, pendant qu'on le saisit.
+ *
+ * 🔴 CES CAS PINCENT UNE INVERSION, PAS UNE PRÉSENCE. Un aperçu se garde mal : « le panneau existe » est
+ * satisfait par un panneau VIDE, et « le texte est sur la page » l'est déjà par le champ de saisie qui le
+ * contient. Chaque cas ci-dessous lit donc un emplacement PRÉCIS de l'aperçu et vérifie en plus que le
+ * texte de l'autre champ n'y est PAS : c'est la seule forme qui tombe si on échange deux valeurs.
+ *
+ * ⚠️ LA PAIRE QUI COMPTE EST accueil / message pré-rempli. Ce sont deux chaînes libres, toutes deux
+ * valides, qui partent dans le MÊME objet chez Meta (`page_welcome_message`) à deux emplacements
+ * différents. Les inverser produit une publicité absurde (le prospect s'accueille lui-même) qu'aucune
+ * validation ne peut refuser. Le formulaire porte déjà une note à ce sujet ; l'aperçu est ce qui la rend
+ * vérifiable d'un coup d'œil, et ce cas est ce qui l'empêche de régresser.
+ */
+test.describe('Publicités : l’aperçu de ce que verra le prospect', () => {
+  const PNG_1x1 = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+
+  const ouvrir = async (page: import('@playwright/test').Page) => {
+    await page.getByTestId('pubs-creer').click();
+    await expect(page.getByTestId('pub-formulaire')).toBeVisible();
+  };
+
+  test('à l’ouverture, l’aperçu montre des repères et jamais du vide', async ({ page }) => {
+    await brancher(page);
+    await ouvrir(page);
+    // 🔴 ANCRE POSITIVE. Sans elle, les cas suivants seraient satisfaits par un aperçu qui ne rend rien :
+    // on vérifie d'abord que les trois emplacements EXISTENT avant de vérifier ce qu'ils portent.
+    await expect(page.getByTestId('pub-apercu')).toBeVisible();
+    await expect(page.getByTestId('pub-apercu-texte')).toContainText(/texte principal|primary text/);
+    await expect(page.getByTestId('pub-apercu-titre')).toContainText(/titre|headline/);
+    await expect(page.getByTestId('pub-apercu-visuel-absent')).toBeVisible();
+    await expect(page.getByTestId('pub-apercu-visuel')).toHaveCount(0);
+  });
+
+  test('le texte principal et le titre vont chacun à leur place', async ({ page }) => {
+    await brancher(page);
+    await ouvrir(page);
+    await page.locator('#pub-texte').fill('TEXTE-PRINCIPAL-E2E');
+    await page.locator('#pub-titre').fill('TITRE-E2E');
+    await expect(page.getByTestId('pub-apercu-texte')).toContainText('TEXTE-PRINCIPAL-E2E');
+    await expect(page.getByTestId('pub-apercu-titre')).toContainText('TITRE-E2E');
+    // Les deux moitiés qui font tomber une inversion.
+    await expect(page.getByTestId('pub-apercu-texte')).not.toContainText('TITRE-E2E');
+    await expect(page.getByTestId('pub-apercu-titre')).not.toContainText('TEXTE-PRINCIPAL-E2E');
+  });
+
+  test('🔴 l’accueil est une bulle reçue, le message pré-rempli est dans la zone de saisie', async ({ page }) => {
+    await brancher(page);
+    await ouvrir(page);
+    await page.locator('#pub-accueil').fill('ACCUEIL-E2E');
+    await page.locator('#pub-prerempli').fill('PREREMPLI-E2E');
+    await expect(page.getByTestId('pub-apercu-accueil')).toContainText('ACCUEIL-E2E');
+    await expect(page.getByTestId('pub-apercu-prerempli')).toContainText('PREREMPLI-E2E');
+    // 🔴 LE CŒUR DU CAS : échanger les deux champs le fait tomber, alors qu'il resterait vert si l'on
+    // se contentait de chercher les deux chaînes quelque part dans l'aperçu.
+    await expect(page.getByTestId('pub-apercu-accueil')).not.toContainText('PREREMPLI-E2E');
+    await expect(page.getByTestId('pub-apercu-prerempli')).not.toContainText('ACCUEIL-E2E');
+  });
+
+  test('le visuel choisi s’affiche, et le repère d’absence disparaît', async ({ page }) => {
+    await brancher(page);
+    await ouvrir(page);
+    await page.locator('#pub-image').setInputFiles({ name: 'visuel.png', mimeType: 'image/png', buffer: PNG_1x1 });
+    // Le `src` est construit depuis le base64 DÉJÀ lu pour le téléversement : rien n'est relu, rien ne part.
+    await expect(page.getByTestId('pub-apercu-visuel')).toHaveAttribute('src', /^data:image\/png;base64,/);
+    await expect(page.getByTestId('pub-apercu-visuel-absent')).toHaveCount(0);
+  });
+
+  test('l’aperçu nomme la Page connectée, jamais son identifiant', async ({ page }) => {
+    await brancher(page);
+    await ouvrir(page);
+    await expect(page.getByTestId('pub-apercu-page')).toContainText('Page test');
+    // ⚠️ `p1` est l'identifiant de la Page dans le fixture : un prospect ne voit JAMAIS un identifiant,
+    // et le repli d'un nom manquant doit être un libellé neutre, pas quinze chiffres.
+    await expect(page.getByTestId('pub-apercu-page')).not.toContainText('p1');
+  });
+
+  test('sans nom de Page (connexion antérieure à 0169), un libellé neutre et pas l’identifiant', async ({ page }) => {
+    await brancher(page, { connexion: { ...CONNEXION, pageNom: null } });
+    await ouvrir(page);
+    await expect(page.getByTestId('pub-apercu-page')).toContainText(/Votre Page|Your Page/);
+    await expect(page.getByTestId('pub-apercu-page')).not.toContainText('p1');
+  });
+});
+
+/**
+ * LE TROISIÈME ÉCRAN : ce que le prospect recevra en réponse.
+ *
+ * 🔴 CE QUI SE JOUE ICI EST UN ÉCART DE RÉGIME DE VÉRITÉ, ET IL DOIT RESTER VISIBLE. Un scénario est
+ * déterministe, donc l'aperçu montre ses MOTS EXACTS ; l'agent de Meta compose, donc l'aperçu montre une
+ * ILLUSTRATION et le dit. Le jour où quelqu'un unifie les deux affichages « pour simplifier », l'exemple
+ * inventé passerait pour une promesse : ce sont ces cas-là qui l'en empêchent.
+ *
+ * ⚠️ LES DEUX ALERTES VALENT PLUS QUE LE RESTE. Un scénario jamais publié, ou qui n'envoie rien depuis son
+ * entrée, veut dire qu'un clic PAYÉ reçoit le silence. C'est la régression que ce lot a déjà corrigée une
+ * fois côté serveur ; l'écran doit la montrer AVANT qu'on dépense, pas après.
+ */
+test.describe('Publicités : l’aperçu de la réponse', () => {
+  const EN_LIGNE = [{ id: 'wf-1', name: 'Qualification', nodeCount: 2 }];
+  const q = (body: string, data: Record<string, unknown> = {}) =>
+    ({ nodes: [{ id: 'a', type: 'quick_message', data: { body, ...data } }], edges: [] });
+
+  const ouvrir = async (page: import('@playwright/test').Page) => {
+    await page.getByTestId('pubs-creer').click();
+    await expect(page.getByTestId('pub-formulaire')).toBeVisible();
+  };
+
+  test('🔴 agent de Meta : un exemple, et l’écran DIT que ce n’en est qu’un', async ({ page }) => {
+    await brancher(page, { reglages: true });
+    await ouvrir(page);
+    await page.getByTestId('pub-destination').selectOption('agent_meta');
+    await expect(page.getByTestId('pub-apercu-reponse-texte')).not.toBeEmpty();
+    // 🔴 LE CŒUR DU CAS. Sans cette phrase, l'écran montrerait des mots inventés avec l'autorité de mots
+    // vrais, et le client croirait avoir validé la première réponse de sa publicité.
+    await expect(page.getByTestId('pub-apercu-reponse-note')).toContainText(/les mots non|the words will not/);
+  });
+
+  test('scénario publié : les mots EXACTS du scénario, et l’écran le dit aussi', async ({ page }) => {
+    await brancher(page, { scenarios: EN_LIGNE, detailScenario: { graph: q('REPONSE-EXACTE-E2E') } });
+    await ouvrir(page);
+    await page.getByTestId('pub-scenario').selectOption('wf-1');
+    await expect(page.getByTestId('pub-apercu-reponse-texte')).toContainText('REPONSE-EXACTE-E2E');
+    await expect(page.getByTestId('pub-apercu-reponse-note')).toContainText(/mots exacts|exact words/);
+  });
+
+  test('les réponses rapides du scénario apparaissent comme des boutons', async ({ page }) => {
+    await brancher(page, {
+      scenarios: EN_LIGNE,
+      detailScenario: { graph: q('Que cherchez-vous ?', { quickReplies: [{ text: 'BOUTON-A-E2E' }, { text: 'BOUTON-B-E2E' }] }) },
+    });
+    await ouvrir(page);
+    await page.getByTestId('pub-scenario').selectOption('wf-1');
+    await expect(page.getByTestId('pub-apercu-reponse')).toContainText('BOUTON-A-E2E');
+    await expect(page.getByTestId('pub-apercu-reponse')).toContainText('BOUTON-B-E2E');
+  });
+
+  test('🔴 un scénario sans rien en ligne : l’écran ALERTE, il ne se tait pas', async ({ page }) => {
+    // ⚠️ CAS DÉFENSIF, ET ASSUMÉ COMME TEL : la liste ne propose que les scénarios en ligne, jugés sur
+    // `nodeCount` (le graphe PUBLIÉ). Il reste atteignable si le scénario est dépublié entre le chargement
+    // de la liste et le choix. Une publicité qui part dans cet état paie des clics pour du silence.
+    await brancher(page, { scenarios: EN_LIGNE, detailScenario: { graph: { nodes: [], edges: [] } } });
+    await ouvrir(page);
+    await page.getByTestId('pub-scenario').selectOption('wf-1');
+    await expect(page.getByTestId('pub-apercu-reponse-alerte')).toContainText(/aucune réponse|no answer/);
+  });
+
+  test('🔴 un embranchement en entrée : on AVOUE au lieu de choisir une branche', async ({ page }) => {
+    await brancher(page, {
+      scenarios: EN_LIGNE,
+      detailScenario: { graph: {
+        nodes: [{ id: 'a', type: 'condition', data: {} }, { id: 'b', type: 'quick_message', data: { body: 'BRANCHE-VRAIE-E2E' } }],
+        edges: [{ source: 'a', target: 'b', sourceHandle: 'true' }],
+      } },
+    });
+    await ouvrir(page);
+    await page.getByTestId('pub-scenario').selectOption('wf-1');
+    await expect(page.getByTestId('pub-apercu-reponse-note-bloc')).toContainText(/embranchement|branch/);
+    // 🔴 LA MOITIÉ QUI COMPTE : le texte de la branche ne doit PAS être présenté comme la réponse. Sans
+    // elle, deviner une branche resterait vert.
+    await expect(page.getByTestId('pub-apercu-reponse')).not.toContainText('BRANCHE-VRAIE-E2E');
+  });
+
+  test('lecture du scénario en échec : on dit NOTRE échec, pas un verdict sur leur scénario', async ({ page }) => {
+    await brancher(page, { scenarios: EN_LIGNE, detailScenario: 'panne' });
+    await ouvrir(page);
+    await page.getByTestId('pub-scenario').selectOption('wf-1');
+    await expect(page.getByTestId('pub-apercu-reponse-note-bloc')).toContainText(/n’avons pas pu lire|could not read/);
+    // Un échec de lecture n'est pas une alerte sur leur montage : l'écran ne doit pas crier au silence.
+    await expect(page.getByTestId('pub-apercu-reponse-alerte')).toHaveCount(0);
+  });
+
+  test('le message pré-rempli est repris comme message ENVOYÉ par le prospect', async ({ page }) => {
+    await brancher(page, { scenarios: EN_LIGNE, detailScenario: { graph: q('Bien reçu') } });
+    await ouvrir(page);
+    await page.locator('#pub-prerempli').fill('ENVOI-PROSPECT-E2E');
+    // C'est ce qui fait du troisième écran une SUITE du deuxième et pas une vignette indépendante.
+    await expect(page.getByTestId('pub-apercu-reponse')).toContainText('ENVOI-PROSPECT-E2E');
+  });
+});
+
+/**
+ * LES BROUILLONS, ET LA LISTE EN TROIS GROUPES (migration 0171, demande de Julien du 2026-09-24).
+ *
+ * 🔴 CE QUE CES CAS DÉFENDENT : un brouillon ne doit RIEN promettre de ce qu'une publicité promet. Il ne
+ * dépense pas, il n'existe pas chez Meta, il n'a ni dépense ni clics. L'afficher dans la même liste que
+ * des publicités qui, elles, consomment un budget, est utile mais dangereux : c'est la phrase qui les
+ * sépare que ces cas épinglent, pas leur simple présence.
+ *
+ * ⚠️ ET LE GROUPEMENT SE DÉRIVE DE LA DATE DE FIN, donc les fixtures ci-dessous sont datées EXPRÈS de part
+ * et d'autre d'aujourd'hui. Un test qui les daterait toutes dans le passé rendrait le groupe « en cours »
+ * vide et passerait sans rien prouver.
+ */
+test.describe('Publicités : brouillons et groupes', () => {
+  const BROUILLON = {
+    id: 'br-1', nom: 'Rentrée (brouillon)', titre: 'Un devis', texte: 'Écrivez-nous',
+    accueil: 'Bonjour', messagePreRempli: 'Je veux un devis', budgetTotal: '', debut: '', fin: '',
+    pays: 'FR', ageMin: '18', ageMax: '65', tagQualification: '', destination: 'scenario',
+    workflowId: null, aUnVisuel: true, creeLe: '2026-09-24T08:00:00.000Z', modifieLe: '2026-09-24T08:30:00.000Z',
+  };
+  const PNG_1x1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+  const PUB_FINIE = { ...PUB_PUBLIEE, id: 'pub-9', nom: 'Soldes d’hiver', fin: '2026-01-31T23:00:00.000Z' };
+  const PUB_EN_COURS = { ...PUB_PUBLIEE, fin: '2099-10-31T23:00:00.000Z' };
+
+  test('les brouillons forment leur propre groupe, et disent que rien n’est parti chez Meta', async ({ page }) => {
+    await brancher(page, { brouillons: [BROUILLON], publicites: [PUB_EN_COURS] });
+    const groupe = page.getByTestId('pubs-groupe-brouillons');
+    await expect(groupe).toContainText('Rentrée (brouillon)');
+    // 🔴 LA PHRASE QUI SÉPARE. Sans elle, un brouillon ressemble à une publicité dont les chiffres
+    // seraient simplement vides, c'est-à-dire à une publicité qui ne marche pas.
+    await expect(groupe).toContainText(/Rien n’a été envoyé chez Meta|Nothing sent to Meta/);
+    await expect(groupe).toContainText(/visuel enregistré|image saved/);
+  });
+
+  test('🔴 « achevée » se lit sur la date de fin, pas sur le statut Meta', async ({ page }) => {
+    // Les deux publicités ont le MÊME `statutMeta` (`ACTIVE`) : seule leur date de fin les sépare. Un
+    // groupement qui lirait le statut les mettrait donc au même endroit, et ce cas tomberait.
+    await brancher(page, { publicites: [PUB_EN_COURS, PUB_FINIE] });
+    await expect(page.getByTestId('pubs-groupe-en-cours')).toContainText('Rentrée 2026');
+    await expect(page.getByTestId('pubs-groupe-en-cours')).not.toContainText('Soldes d’hiver');
+    await expect(page.getByTestId('pubs-groupe-achevees')).toContainText('Soldes d’hiver');
+    await expect(page.getByTestId('pubs-groupe-achevees')).not.toContainText('Rentrée 2026');
+  });
+
+  test('une publicité SANS date de fin reste « en cours », jamais « achevée »', async ({ page }) => {
+    // `null` veut dire « on ne sait pas ». La ranger dans les achevées la masquerait alors qu'elle
+    // dépense peut-être, et c'est la seule des deux erreurs qui ne se rattrape pas d'un clic.
+    await brancher(page, { publicites: [{ ...PUB_PUBLIEE, fin: null }] });
+    await expect(page.getByTestId('pubs-groupe-en-cours')).toContainText('Rentrée 2026');
+    await expect(page.getByTestId('pubs-groupe-achevees')).toHaveCount(0);
+  });
+
+  test('« Reprendre » rouvre le formulaire rempli, visuel compris', async ({ page }) => {
+    await brancher(page, {
+      brouillons: [BROUILLON],
+      detailBrouillon: { visuel: { type: 'image/png', base64: PNG_1x1 } },
+    });
+    await page.getByTestId('pub-brouillon-ouvrir-br-1').click();
+    await expect(page.getByTestId('pub-formulaire')).toBeVisible();
+    await expect(page.locator('#pub-titre')).toHaveValue('Un devis');
+    await expect(page.locator('#pub-accueil')).toHaveValue('Bonjour');
+    // 🔴 LE VISUEL SURVIT À LA RÉOUVERTURE, et c'est la promesse même de la décision de le stocker. On le
+    // lit dans l'APERÇU, pas dans le champ fichier : un `<input type=file>` ne peut pas être prérempli,
+    // donc c'est le rendu qui prouve que les octets sont revenus.
+    await expect(page.getByTestId('pub-apercu-visuel')).toHaveAttribute('src', /^data:image\/png;base64,/);
+    // Le bouton sait qu'il édite un brouillon existant et non qu'il en crée un second.
+    await expect(page.getByTestId('pub-enregistrer-brouillon')).toContainText(/modifications|changes/);
+  });
+
+  test('🔴 enregistrer un brouillon n’exige RIEN, contrairement à créer', async ({ page }) => {
+    await brancher(page);
+    await page.getByTestId('pubs-creer').click();
+    // Ni visuel, ni budget, ni case de catégorie : « Créer » est bloqué, « Enregistrer » ne l'est pas.
+    await expect(page.getByTestId('pub-creer')).toBeDisabled();
+    await expect(page.getByTestId('pub-enregistrer-brouillon')).toBeEnabled();
+    await page.locator('#pub-nom').fill('BROUILLON-E2E');
+    await page.getByTestId('pub-enregistrer-brouillon').click();
+    // Après l'enregistrement, l'écran DIT que rien n'est parti chez Meta.
+    await expect(page.getByTestId('pub-brouillon-actif')).toContainText(/Rien n’a été envoyé|Nothing was sent/);
+  });
+
+  test('le détail met le budget, la dépense et les clics EN FACE', async ({ page }) => {
+    await brancher(page, {
+      publicites: [PUB_EN_COURS],
+      entonnoir: { ...ENTONNOIR_VIDE, depense: 12.5, clics: { nombre: 40, cout: 0.31, passage: null } },
+    });
+    await page.getByTestId('pub-detail-pub-1').click();
+    const bilan = page.getByTestId('pub-bilan-pub-1');
+    await expect(bilan).toContainText('150');   // budget initial
+    await expect(bilan).toContainText('12.50'); // dépensé à date
+    await expect(bilan).toContainText('40');    // clics vers WhatsApp
+  });
+
+  test('🔴 dans ce bilan aussi, « non disponible » ne devient JAMAIS zéro', async ({ page }) => {
+    // C'est l'invariant du lot 3, et le rapprochement de ces trois nombres le rend plus dangereux encore :
+    // un budget de 150 en face d'une dépense affichée « 0 » ressemble au meilleur résultat imaginable.
+    await brancher(page, { publicites: [PUB_EN_COURS], entonnoir: ENTONNOIR_VIDE });
+    await page.getByTestId('pub-detail-pub-1').click();
+    const bilan = page.getByTestId('pub-bilan-pub-1');
+    await expect(bilan).toContainText(/non disponible|not available/);
+    await expect(bilan).not.toContainText(/\b0\b/);
   });
 });

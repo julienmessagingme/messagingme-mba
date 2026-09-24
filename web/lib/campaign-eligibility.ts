@@ -43,7 +43,7 @@ const cibleParSortie = (g: GraphLike, id: string, handle: string): string | null
   g.edges.find((e) => e.source === id && e.sourceHandle === handle)?.target ?? null;
 
 /** Un bloc « message rapide » / « formulaire » est-il CONFIGURÉ (donc réellement envoyé) ? Miroir de `actionOf`. */
-function envoieVraiment(node: GraphNodeLike): boolean {
+export function envoieVraiment(node: GraphNodeLike): boolean {
   if (node.type === 'flow') return String(node.data.flowId ?? '').trim() !== '';
   // Un corps suffit : sans réponse rapide, le bloc envoie un message texte simple (il n'est plus muet).
   if (node.type === 'quick_message') return String(node.data.body ?? '').trim() !== '';

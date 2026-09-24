@@ -130,6 +130,7 @@ import { MetaPubsClient, sansPrefixeAct, retirerAncienAcces, type EtatComptePub 
 import { DejaConnectePub, JetonNonEnregistre, PasDeConnexionPub, ConnexionPubIncomplete } from './http/pubs';
 import { MetaPubsCreationClient } from './meta/pubs-creation';
 import { PgPublicitesStore } from './pubs/publicites.pg';
+import { PgBrouillonsPubStore, type ChampsBrouillon } from './pubs/brouillons.pg';
 import { creerLaPublicite, publierLaPublicite, type DemandeCreation } from './pubs/creation';
 import { entonnoir, ISSUES_NON_PRISES_EN_CHARGE } from './pubs/entonnoir';
 import { estJetonRefuse } from './meta/graph';
@@ -413,6 +414,7 @@ async function main(): Promise<void> {
   // quoi créer une campagne sous la main.
   const clientCreationPubs = new MetaPubsCreationClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
   const publicites = new PgPublicitesStore(pool);
+  const brouillonsPub = new PgBrouillonsPubStore(pool);
   const esCredentialsStore = new PgEmbeddedSignupStore(pool);
   const metaCredentials = new MetaCredentialsResolver({
     getWabaIdForTenant: wabaDeLEspace,
@@ -2414,6 +2416,20 @@ async function main(): Promise<void> {
         },
 
         listerPubs: (t: string) => publicites.lister(t),
+
+        /**
+         * LES BROUILLONS (migration 0171). Cinq passe-plats, et c'est voulu : un brouillon est un
+         * formulaire mémorisé, il ne touche JAMAIS Meta, donc il n'y a rien à orchestrer ici.
+         *
+         * ⚠️ `listerBrouillons` ne transporte PAS les octets des visuels, `lireBrouillon` si. L'écart est
+         * porté par le store (deux requêtes distinctes) et pas par ce câblage : le dire ici en plus ferait
+         * une seconde vérité, et c'est celle du store qui décide.
+         */
+        listerBrouillons: (t: string) => brouillonsPub.lister(t),
+        lireBrouillon: (t: string, id: string) => brouillonsPub.lire(t, id),
+        creerBrouillon: (t: string, c: ChampsBrouillon) => brouillonsPub.creer(t, c),
+        majBrouillon: (t: string, id: string, c: ChampsBrouillon) => brouillonsPub.mettreAJour(t, id, c),
+        supprimerBrouillon: (t: string, id: string) => brouillonsPub.supprimer(t, id),
 
         /**
          * CRÉER UNE PUBLICITÉ CHEZ META, EN PAUSE (lot 3, commit 2).

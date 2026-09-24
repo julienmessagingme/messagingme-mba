@@ -17,10 +17,25 @@ export const aucunePubliciteUtilise = async (): Promise<string[]> => [];
  * connexion (lot 2). Elles LÈVENT plutôt que de rendre une valeur inerte : un test qui les atteindrait a
  * changé de sujet sans le savoir, et mieux vaut qu'il le dise bruyamment.
  */
-export const aucunePubDeRoute: Pick<PubsRouteDeps, 'listerPubs' | 'creerPub' | 'publierPub' | 'lirePub' | 'basculerPub'> = {
+export const aucunePubDeRoute: Pick<PubsRouteDeps,
+  'listerPubs' | 'creerPub' | 'publierPub' | 'lirePub' | 'basculerPub'
+  | 'listerBrouillons' | 'lireBrouillon' | 'creerBrouillon' | 'majBrouillon' | 'supprimerBrouillon'> = {
   listerPubs: async () => [],
   lirePub: async () => null,
   creerPub: () => { throw new Error('aucunePubDeRoute : creerPub ne devrait pas être appelée'); },
   publierPub: () => { throw new Error('aucunePubDeRoute : publierPub ne devrait pas être appelée'); },
   basculerPub: () => { throw new Error('aucunePubDeRoute : basculerPub ne devrait pas être appelée'); },
+  /**
+   * Les brouillons (migration 0171). Les LECTURES rendent le vide, les ÉCRITURES lèvent.
+   *
+   * 🔴 L'ASYMÉTRIE EST LA MÊME QUE CI-DESSUS ET ELLE EST DÉLIBÉRÉE. Une lecture qui rend le vide laisse un
+   * test monter l'écran sans s'occuper des brouillons ; une écriture qui rendrait silencieusement un
+   * succès ferait passer pour vert un test qui appelle une route qu'il ne croyait pas appeler. Un test qui
+   * veut écrire le dit en surchargeant, et c'est alors visible dans SON fichier.
+   */
+  listerBrouillons: async () => [],
+  lireBrouillon: async () => null,
+  creerBrouillon: () => { throw new Error('aucunePubDeRoute : creerBrouillon ne devrait pas être appelée'); },
+  majBrouillon: () => { throw new Error('aucunePubDeRoute : majBrouillon ne devrait pas être appelée'); },
+  supprimerBrouillon: () => { throw new Error('aucunePubDeRoute : supprimerBrouillon ne devrait pas être appelée'); },
 };

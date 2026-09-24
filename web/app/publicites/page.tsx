@@ -8,7 +8,9 @@ import { ApiError, estAnnulation } from '@/lib/http';
 import { loadFbSdk } from '@/lib/fb-sdk';
 import {
   choisirActifsPub, deconnecterPubs, echangerCodePub, getEtatPubs, listerPubs,
-  type ActifsAccordes, type EtatComptePub, type EtatPubs, type Publicite,
+  listerBrouillons, lireBrouillon, supprimerBrouillon,
+  type ActifsAccordes, type BrouillonPub, type BrouillonPubComplet, type EtatComptePub,
+  type EtatPubs, type Publicite,
 } from '@/lib/api-pubs';
 import { listWorkflows, estEnLigne, getSettings, type WorkflowSummary } from '@/lib/api';
 import { PubsListe } from '@/components/PubsListe';
@@ -76,6 +78,16 @@ function PublicitesInner({ session }: { session: Session }) {
   const [busy, setBusy] = useState(false);
   const [pubs, setPubs] = useState<Publicite[] | null>(null);
   const [scenarios, setScenarios] = useState<WorkflowSummary[]>([]);
+  /**
+   * LES BROUILLONS (migration 0171).
+   *
+   * ⚠️ TABLEAU VIDE PAR DÉFAUT, ET PAS `null` : contrairement à `pubs`, leur absence n'a aucune
+   * conséquence à l'écran. Une API antérieure à ce lot rend 404 sur leur route, et la bonne réponse est
+   * alors de ne montrer aucun brouillon, pas d'afficher une panne pour une commodité.
+   */
+  const [brouillons, setBrouillons] = useState<BrouillonPub[]>([]);
+  /** Le brouillon qu'on vient d'ouvrir, visuel compris. `null` = formulaire neuf. */
+  const [brouillonOuvert, setBrouillonOuvert] = useState<BrouillonPubComplet | null>(null);
   /**
    * 🔴 TROIS ÉTATS, PAS DEUX : `null` VEUT DIRE « PAS ENCORE LU ». À `false` par défaut, l'écran
    * affichait « l'agent de Meta ne répond plus, rallumez-le » sur le chemin NOMINAL, pendant les deux
@@ -182,8 +194,47 @@ function PublicitesInner({ session }: { session: Session }) {
       .catch(() => setAgentMetaOuvert(null));
   }, [session.tenantId]);
 
+  /**
+   * LES BROUILLONS. Silencieux en cas d'échec, et c'est la bonne réponse ici.
+   *
+   * ⚠️ UNE API ANTÉRIEURE À CE LOT REND 404 SUR CETTE ROUTE, pendant la fenêtre entre le `git push` qui
+   * publie la console chez Vercel et le `up` qui déploie l'API. Un brouillon est une commodité : ne pas en
+   * montrer est exact, afficher une panne ne le serait pas. Les publicités, elles, ont leur propre
+   * traitement du 404 (`routeAbsente`), parce que leur absence CHANGE ce que l'écran promet.
+   */
+  const chargerBrouillons = useCallback(async () => {
+    await listerBrouillons(session.tenantId)
+      .then((r) => setBrouillons(r.brouillons ?? []))
+      .catch(() => setBrouillons([]));
+  }, [session.tenantId]);
+
+  /** Ouvre un brouillon dans le formulaire, visuel compris. */
+  const ouvrirBrouillon = useCallback(async (id: string) => {
+    setErreurListe(null);
+    try {
+      const r = await lireBrouillon(session.tenantId, id);
+      setBrouillonOuvert(r.brouillon);
+      setFormOuvert(true);
+    } catch (err) {
+      if (estAnnulation(err)) return;
+      setErreurListe(err instanceof Error ? err.message : t('Brouillon illisible', 'Could not read draft'));
+    }
+  }, [session.tenantId, t]);
+
+  const jeterBrouillon = useCallback(async (id: string) => {
+    setErreurListe(null);
+    try {
+      await supprimerBrouillon(session.tenantId, id);
+      await chargerBrouillons();
+    } catch (err) {
+      if (estAnnulation(err)) return;
+      setErreurListe(err instanceof Error ? err.message : t('Suppression impossible', 'Could not delete'));
+    }
+  }, [session.tenantId, chargerBrouillons, t]);
+
   useEffect(() => { void charger(); }, [charger]);
-  useEffect(() => { void chargerPubs(); void chargerContexte(); }, [chargerPubs, chargerContexte]);
+  useEffect(() => { void chargerPubs(); void chargerContexte(); void chargerBrouillons(); },
+    [chargerPubs, chargerContexte, chargerBrouillons]);
 
   async function connecter(): Promise<void> {
     if (etat === null || !etat.configure) return;
@@ -285,8 +336,13 @@ function PublicitesInner({ session }: { session: Session }) {
     }
   }
 
+  // ⚠️ `5xl` ET PAS `3xl`, ET C'EST UNE CONTRAINTE MESURÉE, PAS UNE PRÉFÉRENCE. Le formulaire de création
+  // porte désormais l'aperçu dans une seconde colonne : dans 768 px, les deux se partageaient 678 px, et
+  // les champs de date rendaient « dd/mr » tronqué. Le point de rupture `lg:` de l'aperçu regarde la
+  // FENÊTRE, pas ce conteneur, donc l'élargir est ce qui rend les deux colonnes tenables. La liste et
+  // l'entonnoir y gagnent au passage : ce sont des tableaux, et 768 px les serrait.
   return (
-    <div className="mx-auto w-full max-w-3xl p-6">
+    <div className="mx-auto w-full max-w-5xl p-6">
       <h1 className="text-xl font-semibold tracking-tight text-ink-900">{t('Publicités', 'Ads')}</h1>
       <p className="mt-1 text-sm text-ink-500">
         {t('Les publicités Meta dont le bouton ouvre une conversation WhatsApp.',
@@ -340,7 +396,7 @@ function PublicitesInner({ session }: { session: Session }) {
                 route. Sa raison à lui n'est pas dite ici mais à l'emplacement de la liste, plus bas. */}
             {peutCreer(etat) && !routeAbsente ? (
               <button
-                type="button" onClick={() => setFormOuvert(true)}
+                type="button" onClick={() => { setBrouillonOuvert(null); setFormOuvert(true); }}
                 className="shrink-0 rounded-xl bg-ink-900 px-4 py-2 text-sm font-medium text-white"
                 data-testid="pubs-creer"
               >
@@ -357,14 +413,23 @@ function PublicitesInner({ session }: { session: Session }) {
 
           {formOuvert && (
             <PubFormulaire
+              /* 🔴 LA `key` REMONTE LE COMPOSANT QUAND ON CHANGE DE BROUILLON. Ses champs sont initialisés
+                 depuis la prop `brouillon` : sans cette clé, React réutiliserait l'instance et garderait
+                 l'état du brouillon précédent, donc ouvrir le second montrerait le premier. */
+              key={brouillonOuvert?.id ?? 'neuf'}
               tenantId={session.tenantId}
               scenarios={scenarios.map((w) => ({ id: w.id, name: w.name }))}
               /* Il reçoit les TROIS états : il se ferme sur l'inconnu, ce qui est le bon sens d'erreur,
                  mais il ne doit pas ANNONCER que l'agent de Meta est éteint quand nous avons seulement
                  échoué à lire notre réglage. Un `=== true` ici lui ôtait le moyen de faire la différence. */
               agentMetaOuvert={agentMetaOuvert}
-              fermer={() => setFormOuvert(false)}
+              /* Pour l'APERÇU seulement : le prospect lit le nom de la Page, jamais son identifiant. La
+                 publicité, elle, part sur le `pageId` que le serveur relit dans la connexion. */
+              nomPage={etat.connexion.pageNom}
+              brouillon={brouillonOuvert}
+              fermer={() => { setFormOuvert(false); setBrouillonOuvert(null); }}
               creee={chargerPubs}
+              brouillonsChanges={chargerBrouillons}
             />
           )}
 
@@ -380,6 +445,7 @@ function PublicitesInner({ session }: { session: Session }) {
               <PubsListe
                 tenantId={session.tenantId} publicites={pubs} recharger={chargerPubs}
                 comptePubId={etat.connexion.comptePubId} agentMetaOuvert={agentMetaOuvert}
+                brouillons={brouillons} ouvrirBrouillon={ouvrirBrouillon} jeterBrouillon={jeterBrouillon}
               />
             )}
           </div>

@@ -285,3 +285,91 @@ export function publierPub(tenantId: string, id: string): Promise<{ ok: true }> 
 export function basculerPub(tenantId: string, id: string, actif: boolean): Promise<{ ok: true }> {
   return request<{ ok: true }>(`${basePubs(tenantId)}/${id}/${actif ? 'reprendre' : 'pause'}`, { method: 'POST' });
 }
+
+/**
+ * LES BROUILLONS DE PUBLICITÉ (migration 0171).
+ *
+ * 🔴 UN BROUILLON EST UN FORMULAIRE MÉMORISÉ, PAS UNE PUBLICITÉ. D'où des champs tous en TEXTE, là où
+ * `FormulaireCreationPub` porte des nombres : on enregistre ce qui a été TAPÉ, y compris un budget à moitié
+ * saisi ou une date vide. La validation reste à la création, le seul geste qui engage de l'argent.
+ */
+export interface BrouillonPub {
+  id: string;
+  nom: string;
+  titre: string;
+  texte: string;
+  accueil: string;
+  messagePreRempli: string;
+  budgetTotal: string;
+  debut: string;
+  fin: string;
+  pays: string;
+  ageMin: string;
+  ageMax: string;
+  tagQualification: string;
+  destination: DestinationPub;
+  workflowId: string | null;
+  /**
+   * Y a-t-il un visuel, SANS le transporter.
+   *
+   * 🔴 LA LISTE NE RAPATRIE JAMAIS LES OCTETS, et ce booléen est ce qui le rend possible. Un brouillon peut
+   * porter 5 Mo : les charger tous à l'ouverture de l'écran en ferait un téléchargement. Seul
+   * `lireBrouillon` les demande, au moment où on rouvre CE brouillon-là.
+   */
+  aUnVisuel: boolean;
+  creeLe: string;
+  modifieLe: string;
+}
+
+export interface BrouillonPubComplet extends BrouillonPub {
+  visuel: { type: 'image/jpeg' | 'image/png'; base64: string } | null;
+}
+
+/**
+ * Ce que l'écran envoie pour enregistrer.
+ *
+ * 🔴 `image` A TROIS SENS, ET IL EN FAUT TROIS : clé ABSENTE = ne touche pas au visuel déjà enregistré,
+ * `null` = efface-le, objet = remplace-le. L'écran renvoie le formulaire entier à chaque enregistrement
+ * mais ne relit pas les octets déjà en base : sans le premier cas, corriger une faute de frappe effacerait
+ * l'image. Le serveur tient la même distinction, et un test de route la garde dans les trois sens.
+ */
+export interface FormulaireBrouillonPub {
+  nom: string;
+  titre: string;
+  texte: string;
+  accueil: string;
+  messagePreRempli: string;
+  budgetTotal: string;
+  debut: string;
+  fin: string;
+  pays: string;
+  ageMin: string;
+  ageMax: string;
+  tagQualification: string;
+  destination: DestinationPub;
+  workflowId: string | null;
+  image?: { type: 'image/jpeg' | 'image/png'; base64: string } | null;
+}
+
+const baseBrouillons = (tenantId: string): string => `${basePubs(tenantId)}/brouillons`;
+
+export function listerBrouillons(tenantId: string): Promise<{ brouillons: BrouillonPub[] }> {
+  return request<{ brouillons: BrouillonPub[] }>(baseBrouillons(tenantId));
+}
+
+/** Le brouillon AVEC son visuel : c'est ce qui repeuple le formulaire à la réouverture. */
+export function lireBrouillon(tenantId: string, id: string): Promise<{ brouillon: BrouillonPubComplet }> {
+  return request<{ brouillon: BrouillonPubComplet }>(`${baseBrouillons(tenantId)}/${id}`);
+}
+
+export function creerBrouillon(tenantId: string, f: FormulaireBrouillonPub): Promise<{ id: string }> {
+  return request<{ id: string }>(baseBrouillons(tenantId), { method: 'POST', body: JSON.stringify(f) });
+}
+
+export function majBrouillon(tenantId: string, id: string, f: FormulaireBrouillonPub): Promise<void> {
+  return request<void>(`${baseBrouillons(tenantId)}/${id}`, { method: 'PUT', body: JSON.stringify(f) });
+}
+
+export function supprimerBrouillon(tenantId: string, id: string): Promise<void> {
+  return request<void>(`${baseBrouillons(tenantId)}/${id}`, { method: 'DELETE' });
+}

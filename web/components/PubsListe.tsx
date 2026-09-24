@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useT } from '@/lib/i18n';
 import {
   basculerPub, enPauseChezMeta, lienGestionnaireMeta, lirePub, publierPub,
-  type Entonnoir, type EtapeEntonnoir, type Publicite,
+  type BrouillonPub, type Entonnoir, type EtapeEntonnoir, type Publicite,
 } from '@/lib/api-pubs';
 
 /**
@@ -55,7 +55,10 @@ function pourcent(v: number | null, t: T): string {
   return v === null ? t('non disponible', 'not available') : `${(v * 100).toFixed(1)} %`;
 }
 
-export function PubsListe({ tenantId, publicites, recharger, comptePubId, agentMetaOuvert }: {
+export function PubsListe({
+  tenantId, publicites, recharger, comptePubId, agentMetaOuvert,
+  brouillons, ouvrirBrouillon, jeterBrouillon,
+}: {
   tenantId: string; publicites: Publicite[]; recharger: () => Promise<void>;
   /** Le compte publicitaire connecté, pour ouvrir la campagne dans le Gestionnaire de Meta. */
   comptePubId: string | null;
@@ -75,11 +78,33 @@ export function PubsListe({ tenantId, publicites, recharger, comptePubId, agentM
    * la lecture échouait. Même règle que `enPauseChezMeta` : on n'invente pas un état qu'on n'a pas lu.
    */
   agentMetaOuvert: boolean | null;
+  /** Les brouillons de l'espace, sans leurs visuels : ils forment le premier groupe de la liste. */
+  brouillons: BrouillonPub[];
+  ouvrirBrouillon: (id: string) => Promise<void>;
+  jeterBrouillon: (id: string) => Promise<void>;
 }) {
   const t = useT();
   const [ouverte, setOuverte] = useState<string | null>(null);
 
-  if (publicites.length === 0) {
+  /**
+   * TROIS GROUPES, DEMANDÉS PAR JULIEN LE 2026-09-24 : brouillons, en cours, achevées.
+   *
+   * 🔴 « ACHEVÉE » SE DÉRIVE DE LA DATE DE FIN, ET DE RIEN D'AUTRE. Toute publicité de cet écran en porte
+   * une, obligatoire, parce que c'est elle qui borne la dépense : la dérivation est donc totale et il n'y
+   * a aucun état de plus à tenir juste. ⚠️ Ce qu'elle ne dit PAS : une publicité mise en pause avant sa fin
+   * reste « en cours », avec son statut Meta affiché à côté. Ajouter le signal de Meta au critère
+   * supposerait de savoir ce qu'il renvoie sur une campagne terminée, et **on ne l'a jamais mesuré**.
+   *
+   * ⚠️ UNE DATE DE FIN ABSENTE RANGE DANS « EN COURS », jamais dans « achevées » : `null` veut dire qu'on
+   * ne sait pas, et entre les deux erreurs possibles, masquer une publicité qui dépense peut-être est la
+   * seule qui ne se rattrape pas d'un clic.
+   */
+  const maintenant = Date.now();
+  const achevee = (p: Publicite): boolean => p.fin !== null && Date.parse(p.fin) < maintenant;
+  const enCours = publicites.filter((p) => !achevee(p));
+  const finies = publicites.filter(achevee);
+
+  if (publicites.length === 0 && brouillons.length === 0) {
     return (
       <p className="text-sm text-ink-500" data-testid="pubs-liste-vide">
         {t('Aucune publicité pour l’instant.', 'No ads yet.')}
@@ -88,8 +113,69 @@ export function PubsListe({ tenantId, publicites, recharger, comptePubId, agentM
   }
 
   return (
-    <ul className="divide-y divide-ink-100" data-testid="pubs-liste">
-      {publicites.map((p) => (
+    <div data-testid="pubs-liste">
+      {brouillons.length > 0 && (
+        <section data-testid="pubs-groupe-brouillons">
+          <Titre>{t('Brouillons', 'Drafts')}</Titre>
+          <ul className="divide-y divide-ink-100">
+            {brouillons.map((b) => (
+              <li key={b.id} className="flex items-start justify-between gap-4 py-3" data-testid={`pub-brouillon-${b.id}`}>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-ink-900">
+                    {b.nom.trim() === '' ? t('Brouillon sans nom', 'Untitled draft') : b.nom}
+                  </p>
+                  <p className="mt-0.5 text-xs text-ink-500">
+                    {/* ⚠️ RIEN N'EST PARTI CHEZ META, et c'est ce qu'un brouillon doit dire en premier :
+                        il ne dépense pas, il n'existe pas chez Meta, il n'a pas de chiffres. */}
+                    {t('Rien n’a été envoyé chez Meta', 'Nothing sent to Meta')}
+                    {b.aUnVisuel ? ` · ${t('visuel enregistré', 'image saved')}` : ` · ${t('sans visuel', 'no image')}`}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button" onClick={() => void ouvrirBrouillon(b.id)}
+                    className="rounded-lg border border-ink-200 px-3 py-1.5 text-xs font-medium text-ink-800"
+                    data-testid={`pub-brouillon-ouvrir-${b.id}`}
+                  >
+                    {t('Reprendre', 'Resume')}
+                  </button>
+                  <button
+                    type="button" onClick={() => void jeterBrouillon(b.id)}
+                    className="rounded-lg border border-ink-200 px-3 py-1.5 text-xs text-ink-600"
+                    data-testid={`pub-brouillon-jeter-${b.id}`}
+                  >
+                    {t('Supprimer', 'Delete')}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {enCours.length > 0 && (
+        <section data-testid="pubs-groupe-en-cours">
+          <Titre>{t('En cours', 'Running')}</Titre>
+          <Lignes publicites={enCours} />
+        </section>
+      )}
+      {finies.length > 0 && (
+        <section data-testid="pubs-groupe-achevees">
+          <Titre>{t('Achevées', 'Finished')}</Titre>
+          <Lignes publicites={finies} />
+        </section>
+      )}
+    </div>
+  );
+
+  function Titre({ children }: { children: React.ReactNode }) {
+    return <h3 className="mt-4 text-xs font-semibold uppercase tracking-wide text-ink-400 first:mt-0">{children}</h3>;
+  }
+
+  function Lignes({ publicites: liste }: { publicites: Publicite[] }) {
+    return (
+    <ul className="divide-y divide-ink-100">
+      {liste.map((p) => (
         <li key={p.id} className="py-3">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
@@ -151,11 +237,12 @@ export function PubsListe({ tenantId, publicites, recharger, comptePubId, agentM
               </button>
             </div>
           </div>
-          {ouverte === p.id && <Detail tenantId={tenantId} id={p.id} t={t} />}
+          {ouverte === p.id && <Detail tenantId={tenantId} id={p.id} t={t} budgetTotal={p.budgetTotal} />}
         </li>
       ))}
     </ul>
-  );
+    );
+  }
 }
 
 /**
@@ -225,7 +312,11 @@ function Actions({ tenantId, pub, recharger, t }: {
   );
 }
 
-function Detail({ tenantId, id, t }: { tenantId: string; id: string; t: T }) {
+function Detail({ tenantId, id, t, budgetTotal }: {
+  tenantId: string; id: string; t: T;
+  /** Le budget TOTAL saisi a la creation, deja porte par la ligne de liste : on ne le rappelle pas. */
+  budgetTotal: number | null;
+}) {
   const [vue, setVue] = useState<{ publicite: Publicite; entonnoir: Entonnoir } | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
 
@@ -254,6 +345,23 @@ function Detail({ tenantId, id, t }: { tenantId: string; id: string; t: T }) {
   const e = vue.entonnoir;
   return (
     <div className="mt-3 rounded-xl bg-ink-50 p-3" data-testid={`pub-entonnoir-${id}`}>
+      {/**
+        * 🔴 LES TROIS CHIFFRES EN FACE, DEMANDÉS PAR JULIEN LE 2026-09-24 : budget initial, dépensé à date,
+        * clics vers WhatsApp. C'est la seule comparaison qui répond à « est-ce que je remets du budget ? »,
+        * et elle était jusque-là éparpillée (le budget en petit dans la ligne de la liste, la dépense et les
+        * clics derrière un repli).
+        *
+        * ⚠️ « NON DISPONIBLE » RESTE « NON DISPONIBLE », ET SURTOUT PAS ZÉRO. Un budget de 150 € en face
+        * d'une dépense affichée « 0 € » alors qu'elle est INCONNUE ressemble au meilleur résultat
+        * imaginable : c'est le chiffre le plus trompeur que cette page puisse produire, et le rapprochement
+        * de ces trois nombres le rendrait encore plus convaincant. L'invariant du lot 3 vaut ici aussi.
+        */}
+      <dl className="mb-3 grid grid-cols-3 gap-3 border-b border-ink-200 pb-3" data-testid={`pub-bilan-${id}`}>
+        <Gros libelle={t('Budget initial', 'Initial budget')}
+              valeur={budgetTotal === null ? t('non disponible', 'not available') : arrondi(budgetTotal)} />
+        <Gros libelle={t('Dépensé à date', 'Spent to date')} valeur={ouRien(e.depense, t)} />
+        <Gros libelle={t('Clics vers WhatsApp', 'Clicks to WhatsApp')} valeur={ouRien(e.clics.nombre, t)} />
+      </dl>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
         <Chiffre libelle={t('Dépense', 'Spend')} valeur={ouRien(e.depense, t)} />
         <Etape t={t} libelle={t('Clics', 'Clicks')} etape={e.clics} />
@@ -275,6 +383,16 @@ function Detail({ tenantId, id, t }: { tenantId: string; id: string; t: T }) {
           ? t('Chiffres jamais relus chez Meta.', 'Numbers never read from Meta.')
           : `${t('Relus chez Meta le', 'Read from Meta on')} ${new Date(vue.publicite.luLe).toLocaleString()}`}
       </p>
+    </div>
+  );
+}
+
+/** Un des trois chiffres de tete : plus gros, parce que c'est sur eux qu'on tranche. */
+function Gros({ libelle, valeur }: { libelle: string; valeur: string }) {
+  return (
+    <div>
+      <dt className="text-[11px] text-ink-500">{libelle}</dt>
+      <dd className="mt-0.5 text-base font-semibold text-ink-900">{valeur}</dd>
     </div>
   );
 }

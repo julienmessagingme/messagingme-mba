@@ -1,8 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useT } from '@/lib/i18n';
-import { creerPub, TAILLE_VISUEL_MAX, TYPES_VISUEL, type DestinationPub, type FormulaireCreationPub } from '@/lib/api-pubs';
+import { getWorkflow, estEnLigne } from '@/lib/api';
+import { premiereReponse } from '@/lib/apercu-reponse';
+import {
+  creerPub, creerBrouillon, majBrouillon, supprimerBrouillon,
+  TAILLE_VISUEL_MAX, TYPES_VISUEL,
+  type BrouillonPubComplet, type DestinationPub, type FormulaireBrouillonPub, type FormulaireCreationPub,
+} from '@/lib/api-pubs';
+import { PubApercu, type EtatReponse } from '@/components/PubApercu';
 
 /**
  * LE FORMULAIRE DE CRÉATION D'UNE PUBLICITÉ (lot 3, spec § 3.2). Minimal, délibérément : tout ce qui n'est
@@ -18,7 +25,7 @@ import { creerPub, TAILLE_VISUEL_MAX, TYPES_VISUEL, type DestinationPub, type Fo
  */
 
 
-export function PubFormulaire({ tenantId, scenarios, agentMetaOuvert, fermer, creee }: {
+export function PubFormulaire({ tenantId, scenarios, agentMetaOuvert, nomPage, brouillon, fermer, creee, brouillonsChanges }: {
   tenantId: string;
   /** Les scénarios publiés de l'espace, pour choisir qui répond. */
   scenarios: Array<{ id: string; name: string }>;
@@ -36,31 +43,100 @@ export function PubFormulaire({ tenantId, scenarios, agentMetaOuvert, fermer, cr
    * la configuration Meta du client, et nous n'avons fait qu'échouer à lire NOTRE réglage.
    */
   agentMetaOuvert: boolean | null;
+  /**
+   * Le nom de la Page connectée, pour l'aperçu seulement (migration 0169).
+   *
+   * ⚠️ Il ne sert QU'À MONTRER, jamais à envoyer : la publicité part sur le `pageId` de la connexion, lu
+   * côté serveur. Un nom manquant dégrade donc l'aperçu et rien d'autre, ce qui est la bonne dépendance
+   * pour un champ décoratif.
+   */
+  nomPage: string | null;
+  /**
+   * Le brouillon qu'on rouvre, visuel compris, ou `null` pour un formulaire neuf.
+   *
+   * ⚠️ IL NE SERT QU'À L'INITIALISATION, et le composant doit donc être monté avec une `key` qui change
+   * avec lui. Le relire en cours de saisie écraserait ce que la personne est en train de taper.
+   */
+  brouillon: BrouillonPubComplet | null;
   fermer: () => void;
   creee: () => Promise<void>;
+  /** Recharge la liste des brouillons après un enregistrement ou une suppression. */
+  brouillonsChanges: () => Promise<void>;
 }) {
   const t = useT();
-  const [nom, setNom] = useState('');
-  const [texte, setTexte] = useState('');
-  const [titre, setTitre] = useState('');
-  const [messagePreRempli, setMessagePreRempli] = useState('');
-  const [accueil, setAccueil] = useState('');
-  const [budgetTotal, setBudgetTotal] = useState('');
-  const [debut, setDebut] = useState('');
-  const [fin, setFin] = useState('');
-  const [pays, setPays] = useState('FR');
-  const [ageMin, setAgeMin] = useState('18');
-  const [ageMax, setAgeMax] = useState('65');
-  const [destination, setDestination] = useState<DestinationPub>('scenario');
-  const [workflowId, setWorkflowId] = useState('');
-  const [tagQualification, setTagQualification] = useState('');
+  // Les valeurs de DÉPART viennent du brouillon quand il y en a un. Les défauts d'un formulaire neuf
+  // (« FR », 18, 65) ne s'appliquent donc qu'à un formulaire neuf : un brouillon qui a vidé le pays doit
+  // rouvrir vide, sinon l'écran réécrirait un choix que la personne avait retiré.
+  const [nom, setNom] = useState(brouillon?.nom ?? '');
+  const [texte, setTexte] = useState(brouillon?.texte ?? '');
+  const [titre, setTitre] = useState(brouillon?.titre ?? '');
+  const [messagePreRempli, setMessagePreRempli] = useState(brouillon?.messagePreRempli ?? '');
+  const [accueil, setAccueil] = useState(brouillon?.accueil ?? '');
+  const [budgetTotal, setBudgetTotal] = useState(brouillon?.budgetTotal ?? '');
+  const [debut, setDebut] = useState(brouillon?.debut ?? '');
+  const [fin, setFin] = useState(brouillon?.fin ?? '');
+  const [pays, setPays] = useState(brouillon === null ? 'FR' : brouillon.pays);
+  const [ageMin, setAgeMin] = useState(brouillon === null ? '18' : brouillon.ageMin);
+  const [ageMax, setAgeMax] = useState(brouillon === null ? '65' : brouillon.ageMax);
+  const [destination, setDestination] = useState<DestinationPub>(brouillon?.destination ?? 'scenario');
+  const [workflowId, setWorkflowId] = useState(brouillon?.workflowId ?? '');
+  const [tagQualification, setTagQualification] = useState(brouillon?.tagQualification ?? '');
   const [horsCategorie, setHorsCategorie] = useState(false);
-  const [image, setImage] = useState<{ type: 'image/jpeg' | 'image/png'; base64: string; nom: string } | null>(null);
+  const [image, setImage] = useState<{ type: 'image/jpeg' | 'image/png'; base64: string; nom: string } | null>(
+    brouillon?.visuel ? { ...brouillon.visuel, nom: '' } : null,
+  );
+  /**
+   * L'identifiant du brouillon en cours d'édition. `null` = on n'en a pas encore enregistré.
+   *
+   * ⚠️ IL BOUGE APRÈS LE PREMIER ENREGISTREMENT, ce qui évite le défaut le plus banal de ce genre d'écran :
+   * cliquer trois fois sur « Enregistrer le brouillon » créerait trois brouillons identiques.
+   */
+  const [brouillonId, setBrouillonId] = useState<string | null>(brouillon?.id ?? null);
+  /**
+   * 🔴 LE VISUEL A-T-IL ÉTÉ TOUCHÉ DEPUIS L'OUVERTURE ? C'est ce drapeau qui porte la sémantique à trois
+   * états côté serveur. Sans lui, on ne saurait pas distinguer « le brouillon avait une image et je n'y ai
+   * pas touché » (ne pas l'envoyer, donc la conserver) de « j'ai retiré l'image » (envoyer `null`). Envoyer
+   * systématiquement l'image relue serait possible mais ferait remonter 5 Mo à chaque enregistrement.
+   */
+  const [visuelTouche, setVisuelTouche] = useState(false);
+  const [brouillonBusy, setBrouillonBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [reponse, setReponse] = useState<EtatReponse>({ etat: 'sans_scenario' });
+
+  /**
+   * LE TROISIÈME ÉCRAN DE L'APERÇU : ce que le prospect recevra.
+   *
+   * 🔴 ON LIT LE GRAPHE PUBLIÉ, ET UNIQUEMENT LUI. `WorkflowSummary.graph` est « celui que les contacts
+   * parcourent » ; `draftGraph` est l'édition en cours. Un lead publicitaire ne verra JAMAIS le brouillon,
+   * donc l'afficher ferait valider un message que personne ne recevra tant qu'on n'a pas republié.
+   *
+   * ⚠️ `vivant` ferme la course : on change de scénario dans la liste plus vite que les réponses
+   * n'arrivent, et sans lui la réponse d'un scénario abandonné écraserait celle du scénario choisi.
+   */
+  useEffect(() => {
+    if (destination === 'agent_meta') { setReponse({ etat: 'agent_meta' }); return; }
+    if (workflowId === '') { setReponse({ etat: 'sans_scenario' }); return; }
+    let vivant = true;
+    setReponse({ etat: 'chargement' });
+    getWorkflow(tenantId, workflowId)
+      .then((r) => {
+        if (!vivant) return;
+        // Jamais publié : un clic payé recevrait le silence, et c'est une ALERTE, pas une information.
+        if (!estEnLigne(r.workflow)) { setReponse({ etat: 'hors_ligne' }); return; }
+        setReponse({ etat: 'connue', reponse: premiereReponse(r.workflow.graph ?? { nodes: [], edges: [] }) });
+      })
+      // ⚠️ NOTRE ÉCHEC DE LECTURE N'EST PAS UN VERDICT SUR LEUR SCÉNARIO : l'aperçu le dit, il n'invente
+      // ni réponse ni alerte. Même règle que l'état de l'agent de Meta, trois fois payée sur ce lot.
+      .catch(() => { if (vivant) setReponse({ etat: 'illisible' }); });
+    return () => { vivant = false; };
+  }, [tenantId, destination, workflowId]);
 
   async function choisirImage(f: File | null): Promise<void> {
     setErreur(null);
+    // Toute interaction avec le champ compte comme « touché », y compris celle qui vide la sélection :
+    // c'est le geste par lequel on RETIRE le visuel d'un brouillon.
+    setVisuelTouche(true);
     if (f === null) { setImage(null); return; }
     if (!(TYPES_VISUEL as readonly string[]).includes(f.type)) {
       setErreur(t('Le visuel doit être un JPEG ou un PNG.', 'The image must be a JPEG or a PNG.'));
@@ -74,6 +150,42 @@ export function PubFormulaire({ tenantId, scenarios, agentMetaOuvert, fermer, cr
     let binaire = '';
     for (const o of octets) binaire += String.fromCharCode(o);
     setImage({ type: f.type as 'image/jpeg' | 'image/png', base64: btoa(binaire), nom: f.name });
+  }
+
+  /**
+   * Le formulaire TEL QU'IL EST, sans aucune validation : c'est tout ce qu'un brouillon promet.
+   *
+   * 🔴 LA CLÉ `image` N'EST POSÉE QUE SI LE VISUEL A ÉTÉ TOUCHÉ. Absente, le serveur conserve celui qu'il a ;
+   * c'est ce qui permet de corriger un texte sans renvoyer, ni perdre, plusieurs mégaoctets.
+   */
+  function champsBrouillon(): FormulaireBrouillonPub {
+    return {
+      nom, titre, texte, accueil, messagePreRempli,
+      budgetTotal, debut, fin, pays, ageMin, ageMax, tagQualification, destination,
+      workflowId: workflowId === '' ? null : workflowId,
+      ...(visuelTouche ? { image: image === null ? null : { type: image.type, base64: image.base64 } } : {}),
+    };
+  }
+
+  async function enregistrerBrouillon(): Promise<void> {
+    setErreur(null);
+    setBrouillonBusy(true);
+    try {
+      if (brouillonId === null) {
+        const { id } = await creerBrouillon(tenantId, champsBrouillon());
+        // ⚠️ On RETIENT l'identifiant : sans ça, trois clics sur « Enregistrer » créeraient trois brouillons.
+        setBrouillonId(id);
+      } else {
+        await majBrouillon(tenantId, brouillonId, champsBrouillon());
+      }
+      // Le serveur porte désormais ce que nous venons d'envoyer : le visuel n'est plus « touché ».
+      setVisuelTouche(false);
+      await brouillonsChanges();
+    } catch (err) {
+      setErreur(err instanceof Error ? err.message : t('Enregistrement impossible', 'Could not save'));
+    } finally {
+      setBrouillonBusy(false);
+    }
   }
 
   async function envoyer(): Promise<void> {
@@ -105,6 +217,20 @@ export function PubFormulaire({ tenantId, scenarios, agentMetaOuvert, fermer, cr
     setBusy(true);
     try {
       await creerPub(tenantId, f);
+      if (brouillonId !== null) {
+        /**
+         * 🔴 LE BROUILLON DISPARAÎT AVEC LA CRÉATION, dans le même geste. Le laisser produirait deux lignes
+         * pour une seule intention, et le client corrigerait un jour le brouillon en croyant corriger sa
+         * publicité.
+         *
+         * ⚠️ MAIS SON ÉCHEC NE FAIT PAS ÉCHOUER LA CRÉATION, et c'est délibéré : la publicité EXISTE chez
+         * Meta à ce stade. Remonter une erreur ici ferait croire que rien n'a été créé, ce qui est le pire
+         * message possible sur un geste qui engage de l'argent. Le brouillon restant se voit dans la liste
+         * et se supprime à la main.
+         */
+        await supprimerBrouillon(tenantId, brouillonId).catch(() => {});
+        await brouillonsChanges();
+      }
       await creee();
       fermer();
     } catch (err) {
@@ -130,6 +256,12 @@ export function PubFormulaire({ tenantId, scenarios, agentMetaOuvert, fermer, cr
         <p role="alert" data-testid="pub-form-erreur" className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{erreur}</p>
       )}
 
+      {/* 🔴 DEUX COLONNES À PARTIR DE `lg`, ET L'APERÇU RESTE COLLÉ. Les champs seuls ne disaient rien de ce
+          qu'ils fabriquent : on saisissait six textes et une image sans jamais voir l'annonce. Sous `lg`,
+          la grille retombe en une colonne et l'aperçu passe SOUS le formulaire, jamais au-dessus : sur un
+          téléphone, ce qu'on vient remplir doit rester la première chose à portée. */}
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-6">
+        <div>
       <label className={label} htmlFor="pub-nom">{t('Nom de la campagne', 'Campaign name')}</label>
       <input id="pub-nom" className={champ} value={nom} onChange={(e) => setNom(e.target.value)} maxLength={120} />
 
@@ -274,9 +406,38 @@ export function PubFormulaire({ tenantId, scenarios, agentMetaOuvert, fermer, cr
         >
           {t('Créer (en pause)', 'Create (paused)')}
         </button>
+        {/* 🔴 IL N'A AUCUNE CONDITION, ET C'EST TOUT L'INTÉRÊT. « Créer » exige la case de catégorie, un
+            visuel, un budget et un scénario ; « Enregistrer le brouillon » n'exige rien, parce qu'on
+            enregistre précisément ce qui n'est pas encore prêt. */}
+        <button
+          type="button" disabled={brouillonBusy} onClick={() => void enregistrerBrouillon()}
+          className="rounded-xl border border-ink-300 px-4 py-2 text-sm font-medium text-ink-800 disabled:opacity-40"
+          data-testid="pub-enregistrer-brouillon"
+        >
+          {brouillonId === null
+            ? t('Enregistrer le brouillon', 'Save draft')
+            : t('Enregistrer les modifications', 'Save changes')}
+        </button>
         <button type="button" onClick={fermer} className="rounded-xl border border-ink-200 px-4 py-2 text-sm text-ink-700">
           {t('Annuler', 'Cancel')}
         </button>
+      </div>
+      {brouillonId !== null && (
+        <p className="mt-2 text-xs text-ink-400" data-testid="pub-brouillon-actif">
+          {t('Ce brouillon est enregistré. Rien n’a été envoyé chez Meta : il disparaîtra quand la publicité sera créée.',
+             'This draft is saved. Nothing was sent to Meta: it will disappear once the ad is created.')}
+        </p>
+      )}
+        </div>
+
+        <div className="mt-6 lg:mt-0">
+          <PubApercu
+            titre={titre} texte={texte} accueil={accueil} messagePreRempli={messagePreRempli}
+            visuel={image === null ? null : { type: image.type, base64: image.base64 }}
+            nomPage={nomPage} reponse={reponse}
+            className="lg:sticky lg:top-4"
+          />
+        </div>
       </div>
     </div>
   );

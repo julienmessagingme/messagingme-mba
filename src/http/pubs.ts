@@ -6,6 +6,7 @@ import { sansPrefixeAct, type ActifsAccordes, type EtatComptePub } from '../meta
 import { TAILLE_VISUEL_PUB_MAX, TYPES_VISUEL_PUB } from '../meta/pubs-creation';
 import type { ConnexionPub } from '../pubs/connexion.pg';
 import type { Publicite } from '../pubs/publicites.pg';
+import type { BrouillonPub, BrouillonPubComplet, ChampsBrouillon } from '../pubs/brouillons.pg';
 import { PublicationRefusee } from '../pubs/creation';
 import type { DemandeCreation, IssueCreation } from '../pubs/creation';
 import type { Entonnoir } from '../pubs/entonnoir';
@@ -65,6 +66,20 @@ export interface PubsRouteDeps {
   deconnecter(tenantId: string): Promise<{ revoqueChezMeta: boolean }>;
   /** Les publicités de l'espace, la plus récente d'abord. */
   listerPubs(tenantId: string): Promise<Publicite[]>;
+  /**
+   * Les BROUILLONS de l'espace, le plus récemment modifié d'abord, SANS les octets des visuels.
+   *
+   * 🔴 « SANS LES OCTETS » EST UN CONTRAT, PAS UN DÉTAIL : un brouillon peut porter 5 Mo d'image, et les
+   * transporter tous à chaque ouverture de l'écran transformerait la liste en téléchargement. Seule
+   * `lireBrouillon` a le droit de les lire.
+   */
+  listerBrouillons(tenantId: string): Promise<BrouillonPub[]>;
+  /** Un brouillon AVEC son visuel, pour repeupler le formulaire. `null` = inconnu dans cet espace. */
+  lireBrouillon(tenantId: string, id: string): Promise<BrouillonPubComplet | null>;
+  creerBrouillon(tenantId: string, c: ChampsBrouillon): Promise<string>;
+  /** `false` = le brouillon n'existe pas dans cet espace, ce que la route rend en 404. */
+  majBrouillon(tenantId: string, id: string, c: ChampsBrouillon): Promise<boolean>;
+  supprimerBrouillon(tenantId: string, id: string): Promise<boolean>;
   /**
    * Crée la publicité chez Meta, EN PAUSE, et range ce qui en revient.
    *
@@ -189,6 +204,62 @@ const corpsCreation = z.object({
     base64: z.string().min(1).max(Math.ceil(TAILLE_VISUEL_PUB_MAX * 1.4)),
   }),
 }).strict();
+
+/**
+ * LE CORPS D'UN BROUILLON, ET IL EST DÉLIBÉRÉMENT PERMISSIF LÀ OÙ LA CRÉATION EST STRICTE.
+ *
+ * 🔴 AUCUN CHAMP N'EST OBLIGATOIRE, ET C'EST TOUT L'INTÉRÊT. Un brouillon sert à garder un travail
+ * INCOMPLET : exiger un budget positif ou une date valide refuserait précisément les brouillons qu'on veut
+ * pouvoir poser. La validation stricte reste au seul endroit où elle protège quelque chose, `corpsCreation`,
+ * c'est-à-dire l'appel qui engage l'argent du client chez Meta.
+ *
+ * ⚠️ CE QUI RESTE BORNÉ MALGRÉ TOUT, parce que ce sont des frontières et pas de l'hygiène : les LONGUEURS
+ * (une table n'est pas un champ libre de taille infinie), l'ÉNUMÉRATION de la destination, la FORME de
+ * l'identifiant de scénario, le TYPE du visuel, et `.strict()` qui refuse toute clé inconnue. Un brouillon
+ * permissif sur son contenu n'est pas une porte dérobée pour écrire n'importe quoi en base.
+ *
+ * ⚠️ `image` A TROIS SENS ICI, et il en faut trois : ABSENTE = ne touche pas au visuel déjà enregistré,
+ * `null` = efface-le, un objet = remplace-le. Sans le premier, chaque enregistrement d'une modification de
+ * texte effacerait l'image, ce qui viderait de son sens la décision de la garder.
+ */
+const corpsBrouillon = z.object({
+  nom: z.string().max(120).default(''),
+  texte: z.string().max(1000).default(''),
+  titre: z.string().max(60).default(''),
+  messagePreRempli: z.string().max(200).default(''),
+  accueil: z.string().max(500).default(''),
+  budgetTotal: z.string().max(32).default(''),
+  debut: z.string().max(64).default(''),
+  fin: z.string().max(64).default(''),
+  pays: z.string().max(200).default(''),
+  ageMin: z.string().max(8).default(''),
+  ageMax: z.string().max(8).default(''),
+  destination: z.enum(['scenario', 'agent_meta']).default('scenario'),
+  workflowId: z.string().uuid().nullable().default(null),
+  tagQualification: z.string().max(64).default(''),
+  image: z.object({
+    type: z.enum(TYPES_VISUEL_PUB),
+    base64: z.string().min(1).max(Math.ceil(TAILLE_VISUEL_PUB_MAX * 1.4)),
+  }).nullable().optional(),
+}).strict();
+
+/**
+ * Du corps validé vers ce que le store attend.
+ *
+ * 🔴 UNE CLÉ `image` ABSENTE DOIT LE RESTER, d'où le spread conditionnel et non un `visuel: c.image`.
+ * Écrire `visuel: undefined` poserait la propriété avec la valeur `undefined`, ce qui est indiscernable
+ * d'un effacement pour un code qui teste `'visuel' in c` et fragile pour celui qui teste `=== undefined`.
+ * Le seul énoncé qui tient dans les deux lectures est de ne pas poser la clé du tout.
+ */
+function versChamps(c: z.infer<typeof corpsBrouillon>): ChampsBrouillon {
+  return {
+    nom: c.nom, titre: c.titre, texte: c.texte, accueil: c.accueil,
+    messagePreRempli: c.messagePreRempli, budgetTotal: c.budgetTotal,
+    debut: c.debut, fin: c.fin, pays: c.pays, ageMin: c.ageMin, ageMax: c.ageMax,
+    tagQualification: c.tagQualification, destination: c.destination, workflowId: c.workflowId,
+    ...(c.image === undefined ? {} : { visuel: c.image }),
+  };
+}
 
 export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: Guard, limiteCouteuse: PreHandler): void {
   const opts = { preHandler: garde };
@@ -321,6 +392,66 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     const tenantId = scopeTenant(req);
     if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
     return reply.send({ publicites: await deps.listerPubs(tenantId) });
+  });
+
+  /**
+   * LES BROUILLONS. Cinq routes qui ne touchent JAMAIS Meta : un brouillon est un formulaire mémorisé.
+   *
+   * ⚠️ `/pubs/brouillons` COEXISTE AVEC `/pubs/:id`, et c'est Fastify qui les départage : un segment
+   * STATIQUE l'emporte sur un segment paramétré, quel que soit l'ordre d'enregistrement. On les déclare
+   * quand même avant, pour que la lecture du fichier dise la même chose que le routeur.
+   *
+   * ⚠️ ADMIN POUR LES ÉCRITURES, comme partout dans ce module. Un brouillon ne dépense rien, mais il
+   * prépare une dépense et il porte le visuel : le laisser ouvert à tout le monde ferait de cette table
+   * le seul endroit du produit où un compte non admin écrit des mégaoctets.
+   */
+  const optsBrouillon = { ...opts, bodyLimit: Math.ceil(TAILLE_VISUEL_PUB_MAX * 1.4) };
+
+  app.get('/tenants/:tenantId/pubs/brouillons', opts, async (req, reply) => {
+    const tenantId = scopeTenant(req);
+    if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+    return reply.send({ brouillons: await deps.listerBrouillons(tenantId) });
+  });
+
+  app.get('/tenants/:tenantId/pubs/brouillons/:id', opts, async (req, reply) => {
+    const tenantId = scopeTenant(req);
+    if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+    const { id } = req.params as { id: string };
+    const b = await deps.lireBrouillon(tenantId, id);
+    if (b === null) return reply.code(404).send({ error: 'ce brouillon n’existe pas' });
+    return reply.send({ brouillon: b });
+  });
+
+  app.post('/tenants/:tenantId/pubs/brouillons', optsBrouillon, async (req, reply) => {
+    const tenantId = scopeTenant(req);
+    if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    const lu = corpsBrouillon.safeParse(req.body);
+    if (!lu.success) return reply.code(400).send({ error: 'brouillon invalide' });
+    const id = await deps.creerBrouillon(tenantId, versChamps(lu.data));
+    return reply.code(201).send({ id });
+  });
+
+  app.put('/tenants/:tenantId/pubs/brouillons/:id', optsBrouillon, async (req, reply) => {
+    const tenantId = scopeTenant(req);
+    if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    const { id } = req.params as { id: string };
+    const lu = corpsBrouillon.safeParse(req.body);
+    if (!lu.success) return reply.code(400).send({ error: 'brouillon invalide' });
+    const trouve = await deps.majBrouillon(tenantId, id, versChamps(lu.data));
+    if (!trouve) return reply.code(404).send({ error: 'ce brouillon n’existe pas' });
+    return reply.code(204).send();
+  });
+
+  app.delete('/tenants/:tenantId/pubs/brouillons/:id', opts, async (req, reply) => {
+    const tenantId = scopeTenant(req);
+    if (tenantId === null) return reply.code(403).send({ error: 'interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    const { id } = req.params as { id: string };
+    const trouve = await deps.supprimerBrouillon(tenantId, id);
+    if (!trouve) return reply.code(404).send({ error: 'ce brouillon n’existe pas' });
+    return reply.code(204).send();
   });
 
   /**

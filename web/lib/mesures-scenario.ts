@@ -191,7 +191,7 @@ interface BoutonDeclare {
  * pas ici : il vit dans `lienActif`/`lienTexte`, pas dans `quickReplies` (les deux s'excluent, cf. le bloc
  * dans `WorkflowConfigPanel`), et il n'y a rien à mesurer dessus, pour la raison écrite juste au-dessus.
  */
-function boutonsDe(n: GraphNode): BoutonDeclare[] {
+export function boutonsDe(n: GraphNode): BoutonDeclare[] {
   const d = n.data ?? {};
   // Les lignes du menu d'une QUESTION sont des choix au même titre que des réponses rapides, mais leur
   // libellé vit dans `title` et pas dans `text` : sans cette branche, le tableau afficherait « Réponse 1 »

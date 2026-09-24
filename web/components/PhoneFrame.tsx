@@ -50,7 +50,18 @@ function nomVerifie(tenantId: string): Promise<string | null> {
   return p;
 }
 
-export function PhoneFrame({ senderName, contentClassName, children }: { senderName?: string; contentClassName: string; children: ReactNode }) {
+export function PhoneFrame({ senderName, titre, contentClassName, children }: {
+  senderName?: string;
+  /**
+   * Le libellé au-dessus du cadre. Absent, c'est « Aperçu WhatsApp », ce que rendaient les deux appelants
+   * historiques : ajouter cette prop ne change donc rien pour eux. L'aperçu d'une publicité s'en sert pour
+   * dire QUAND cet écran apparaît (« Quand il appuie sur le bouton »), parce qu'il en montre deux à la suite
+   * et que « Aperçu WhatsApp » ne distinguerait pas le second du premier.
+   */
+  titre?: string;
+  contentClassName: string;
+  children: ReactNode;
+}) {
   const t = useT();
   const [resolu, setResolu] = useState<string | null>(null);
 
@@ -66,7 +77,7 @@ export function PhoneFrame({ senderName, contentClassName, children }: { senderN
 
   return (
     <div>
-      <p className="mb-2 text-xs font-medium text-ink-500">{t('Aperçu WhatsApp', 'WhatsApp preview')}</p>
+      <p className="mb-2 text-xs font-medium text-ink-500">{titre ?? t('Aperçu WhatsApp', 'WhatsApp preview')}</p>
       <div className="overflow-hidden rounded-2xl border border-ink-200 shadow-sm">
         <div className="flex items-center gap-2 bg-[#075E54] px-3 py-2 text-white">
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20 text-sm">🏢</div>
