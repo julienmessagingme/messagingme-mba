@@ -16,7 +16,22 @@ test.describe('MBA Paramètres : en-tête et menu en colonne', () => {
     await expect(page.getByTestId('entete-agent')).toBeVisible();
     await expect(page.getByTestId('entete-agent')).toContainText('Boutique Test');
     await expect(page.getByTestId('entete-agent-precision')).toContainText('+33 5 25 68 03 01');
-    await expect(page.getByTestId('pastille-numero-statut')).toContainText('Compte opérationnel');
+    /**
+     * 🔴 CHAQUE PASTILLE EST COLLÉE À CE QU'ELLE QUALIFIE (arbitrage de Julien du 2026-09-24). Celle du HAUT
+     * dit l'état de l'AGENT, celle du NUMÉRO est descendue DANS la ligne du numéro. Avant, la pastille du haut
+     * disait le numéro : sur un numéro sain dont l'agent est éteint, un point vert voisinait une liste
+     * d'étapes annonçant que personne ne répond.
+     *
+     * ⚠️ L'IMBRICATION EST ASSERTÉE, PAS SEULEMENT LA PRÉSENCE. Les deux pastilles existent dans les deux
+     * arrangements : seul leur EMPLACEMENT distingue le correctif de l'état d'avant, donc c'est lui qu'on
+     * tient. Un `toBeVisible` sur chacune passerait aussi bien avant qu'après.
+     */
+    await expect(page.getByTestId('entete-agent-precision').getByTestId('pastille-numero-statut'))
+      .toContainText('Compte opérationnel');
+    // La fixture ne pose aucun réglage `rollout`, donc l'agent est éteint, et la pastille du haut le dit.
+    await expect(page.getByTestId('pastille-agent-mba')).toContainText('Éteint');
+    // Et elle n'est PAS dans la ligne du numéro : c'est l'autre moitié de l'imbrication.
+    await expect(page.getByTestId('entete-agent-precision').getByTestId('pastille-agent-mba')).toHaveCount(0);
     await expect(page.getByTestId('entete-agent-messages')).toContainText('412');
     await expect(page.getByTestId('entete-agent-etapes')).toContainText('1 étape à finir');
     await expect(page.getByTestId('entete-agent-ratio')).toContainText('1 sur 2');
@@ -106,7 +121,14 @@ test.describe('MBA Paramètres : en-tête et menu en colonne', () => {
 
     // L'IDENTITÉ RESTE, et c'est elle qui informe : le numéro, son nom, sa pastille d'état.
     await expect(page.getByTestId('entete-agent')).toContainText('Boutique Test');
-    await expect(page.getByTestId('pastille-numero-statut')).toBeVisible();
+    await expect(page.getByTestId('entete-agent-precision').getByTestId('pastille-numero-statut')).toBeVisible();
+    /**
+     * ⚠️ ET LA PASTILLE DE L'AGENT EST LÀ AUSSI, à « Éteint ». Sur un numéro que Meta n'a pas ouvert, l'agent
+     * ne peut effectivement pas répondre : c'est le seul cas où les deux pastilles disent la même chose, et
+     * c'est correct. Le statut est LU (la fixture le pose), donc on ne tombe pas dans le cas `null` où l'on
+     * n'affiche rien.
+     */
+    await expect(page.getByTestId('pastille-agent-mba')).toContainText('Éteint');
 
     await expect(page.getByTestId('entete-agent-etapes')).toHaveCount(0);
     await expect(page.getByTestId('entete-agent-messages')).toHaveCount(0);

@@ -892,7 +892,17 @@ function CadreRcs({
           ⚠️ On part de ZÉRO suggestion : une suggestion posée d'office serait un bouton vide envoyé à des
           clients par celui qui n'aurait pas pensé à la retirer. */}
       <div>
-        <p className="text-sm font-medium text-ink-700">Suggestions</p>
+        {/*
+          🔴 « BOUTONS », PAS « SUGGESTIONS » (Julien, 2026-09-24). Cet écran était le SEUL à employer le mot
+          de Google : la bibliothèque (`RcsMessageForm`) et le panneau de scénario (`WorkflowConfigPanel`)
+          disent « Boutons » depuis toujours, et l'éditeur partagé retombe lui-même sur « + bouton ». C'est
+          pour ça que Julien a cru qu'on ne pouvait pas mettre de boutons dans une campagne RCS : ils y sont
+          depuis le 2026-09-12, sous un nom qu'un client ne cherche pas.
+          ⚠️ LA NUANCE QUE « SUGGESTION » PORTAIT N'EST PAS PERDUE : la différence entre une pastille sous la
+          bulle et un bouton pleine largeur dans la carte est dite par la phrase du visuel juste au-dessus, et
+          l'éditeur montre les six formes une par une.
+        */}
+        <p className="text-sm font-medium text-ink-700">Boutons</p>
         <div className="mt-1 w-full">
           <RcsButtonsEditor
             boutons={contenu.suggestions}
@@ -900,7 +910,6 @@ function CadreRcs({
             max={image.trim() !== '' ? MAX_BOUTONS_CARTE : MAX_BOUTONS_RCS}
             dateFields={references.userFields}
             testIdPrefix={`campagne-rcs-${rang}`}
-            libelleAjout="Ajouter une suggestion"
             compact
           />
         </div>

@@ -44,8 +44,14 @@ export interface EnteteAgentProps {
    */
   surTitre?: string;
   nom: string;
-  /** Sous le nom : le numéro pour l'agent de Meta, le modèle pour un agent IA. */
-  precision?: string;
+  /**
+   * Sous le nom : le numéro pour l'agent de Meta, le modèle pour un agent IA.
+   *
+   * ⚠️ UN NŒUD ET PLUS UNE CHAÎNE depuis le 2026-09-24. La pastille du NUMÉRO est descendue ici, à côté du
+   * numéro qu'elle qualifie, pour que celle du haut puisse dire l'état de l'AGENT. Une chaîne aurait obligé
+   * à inventer un troisième emplacement pour cette pastille, ou à la perdre.
+   */
+  precision?: ReactNode;
   /** L'état, rendu tel quel : la pastille d'activation d'un agent IA, celle du numéro côté Meta. */
   etat?: ReactNode;
   /**
@@ -137,7 +143,9 @@ export function EnteteAgent({
           {etat}
         </div>
         {precision !== undefined && precision !== '' && (
-          <p data-testid="entete-agent-precision" className="truncate text-sm text-ink-600">{precision}</p>
+          <div data-testid="entete-agent-precision" className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-ink-600">
+            {precision}
+          </div>
         )}
 
         {etapes !== null && (

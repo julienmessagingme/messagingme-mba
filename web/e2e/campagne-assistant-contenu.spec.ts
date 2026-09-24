@@ -225,10 +225,16 @@ test('🔴 sans assignation a une personne, aucune phrase d attribution', async 
   await expect(page.getByText(/conversations lui seront attribuées/)).toHaveCount(0);
 });
 
-test('le RCS garde ses suggestions, il ne se reduit pas a un lien', async ({ page }) => {
+test('le RCS garde ses BOUTONS, il ne se reduit pas a un lien', async ({ page }) => {
+  /**
+   * ⚠️ LE LIBELLE A CHANGE LE 2026-09-24, PAS LA CAPACITE. Cet ecran disait « Ajouter une suggestion », le
+   * mot de Google pour le RCS ; les trois autres ecrans qui editent ces memes boutons disent « bouton »
+   * depuis toujours. Julien a cherche « boutons » dans une campagne RCS et ne les a pas trouves, alors
+   * qu'ils y sont depuis le 2026-09-12 : c'est ce cas-la que ce test garde, sous le nom qu'un client cherche.
+   */
   await monter(page);
   await page.getByTestId('etage-2').click(); // deplie le cadre RCS
-  await expect(page.getByRole('button', { name: 'Ajouter une suggestion' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /bouton/i })).toBeVisible();
 });
 
 /**
@@ -264,18 +270,25 @@ test('les cadres d etage sont EMPILES, jamais cote a cote, et rien ne deborde en
   expect(deux.y).toBeGreaterThanOrEqual(un.y + un.height);
 });
 
-// ⚠️ L'editeur de suggestions RCS est le composant le plus large de l'ecran : un cadre deplie
-// avec onze suggestions est le pire cas realiste.
-test('onze suggestions RCS ne font pas deborder le cadre', async ({ page }) => {
+// ⚠️ L'editeur de boutons RCS est le composant le plus large de l'ecran : un cadre deplie avec onze
+// boutons est le pire cas realiste.
+test('onze boutons RCS ne font pas deborder le cadre', async ({ page }) => {
   await page.setViewportSize(TREIZE_POUCES);
   await monter(page, { troisieme: 'email' });
   await page.getByTestId('etage-2').click();
+  /**
+   * 🔴 PAR `data-testid`, PLUS PAR LE NOM DU BOUTON (2026-09-24). Ce cas cliquait « Ajouter une suggestion »,
+   * libelle qui a change en meme temps que l'ecran. Un locator par NOM aurait fait tomber ce cas au premier
+   * clic, ce qui est bruyant donc sans danger ; mais son assertion finale, une ABSENCE, serait devenue vraie
+   * par disparition du libelle et non par atteinte du plafond. Un identifiant survit au vocabulaire.
+   */
+  const ajouter = page.getByTestId('campagne-rcs-2-message-add-button');
   for (let i = 0; i < 11; i += 1) {
-    await page.getByRole('button', { name: 'Ajouter une suggestion' }).click();
+    await ajouter.click();
   }
   // 🔴 ONZE EST LE PLAFOND DU RCS : au douzième, le bouton d'ajout disparaît. Le vérifier ici garantit
-  // que les onze clics ont bien produit onze suggestions, et non dix plus un clic tombé dans le vide.
-  await expect(page.getByRole('button', { name: 'Ajouter une suggestion' })).toHaveCount(0);
+  // que les onze clics ont bien produit onze boutons, et non dix plus un clic tombé dans le vide.
+  await expect(ajouter).toHaveCount(0);
   await pasDeDebordement(page);
   await pasDeChevauchement(page, ['etage-1', 'etage-2', 'etage-3']);
 });

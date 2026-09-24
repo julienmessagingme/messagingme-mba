@@ -13,6 +13,7 @@ import { LIBELLES } from '@/lib/libelles-mba';
 import { MbaTabs } from '@/components/MbaTabs';
 import { EnteteAgent } from '@/components/EnteteAgent';
 import { PastilleNumero } from '@/components/PastilleNumero';
+import { PastilleAgentMba } from '@/components/PastilleAgentMba';
 import { MbaAssistantPanel } from '@/components/MbaAssistantPanel';
 import { HistoriquePanel } from '@/components/HistoriquePanel';
 import { MbaNotice } from '@/components/MbaNotice';
@@ -170,10 +171,30 @@ function MbaSettings({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean
       // aucun numéro, numéro non éligible) : « Paramètres de l'agent » y laissait le lecteur sans savoir
       // DUQUEL des deux répondeurs de la console il s'agissait.
       nom={compte?.verifiedName ?? t('Paramètres du Meta Business Agent', 'Meta Business Agent settings')}
+      /*
+        🔴 LA PASTILLE DU HAUT DIT L'ÉTAT DE L'AGENT, CELLE DU NUMÉRO EST DESCENDUE (arbitrage de Julien du
+        2026-09-24). Elle disait l'état du NUMÉRO : sur un numéro sain dont l'agent est éteint, l'écran
+        affichait un point vert juste à côté d'une liste d'étapes qui dit que personne ne répond. Chaque
+        pastille est désormais collée à ce qu'elle qualifie, et la contradiction ne peut plus exister.
+        ⚠️ ET ÇA REND LE PROP `etat` COHÉRENT ENTRE LES DEUX ÉCRANS : sur la fiche d'un agent IA, `etat` porte
+        déjà son activation. Il voulait dire deux choses différentes selon l'écran, ce qui est précisément ce
+        qui laisse passer une contradiction comme celle-ci.
+      */
       // ⚠️ `number` n'est PAS normalisé par le serveur : le préfixe `+` se pose à l'affichage, exactement
       // comme sur l'Accueil (`web/app/accueil/page.tsx`). Deux gestes différents feraient deux numéros.
-      precision={compte?.number ? (compte.number.startsWith('+') ? compte.number : `+${compte.number}`) : undefined}
-      etat={compte?.status ? <PastilleNumero status={compte.status} /> : undefined}
+      precision={compte?.number ? (
+        <>
+          <span className="truncate">{compte.number.startsWith('+') ? compte.number : `+${compte.number}`}</span>
+          {compte.status && <PastilleNumero status={compte.status} />}
+        </>
+      ) : undefined}
+      /*
+        🔴 `undefined` TANT QUE LE STATUT N'EST PAS LU, JAMAIS « éteint ». `status === null` veut dire « on ne
+        sait pas encore » ; afficher « Éteint » à ce moment-là serait une affirmation que personne n'a
+        mesurée, sur la seule chose que le client vient vérifier. En revanche `settings === null` (aucune
+        configuration chez Meta) veut bien dire éteint : il n'y a alors rien qui puisse répondre.
+      */
+      etat={status === null ? undefined : <PastilleAgentMba actif={status.settings?.rollout?.enabled === true} />}
       // 🔴 `null` TANT QU'ON N'A PAS LU LA COMPLÉTION, jamais une liste vide : `[]` ferait annoncer « Tout
       // est réglé » pendant le chargement et sur les deux écrans bloqués, à côté d'un bandeau qui dit qu'il
       // n'y a pas de numéro. C'est le défaut que `MbaCompletion` évitait en ne s'affichant pas du tout.

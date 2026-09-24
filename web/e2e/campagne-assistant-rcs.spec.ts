@@ -205,7 +205,7 @@ test.describe('Assistant : le canal RCS', () => {
     const f = await poserFaux(page);
     await surLEtageRcs(page);
     await page.getByTestId('rcs-texte').fill('Bonjour');
-    await page.getByRole('button', { name: /Ajouter une suggestion/ }).click();
+    await page.getByTestId('campagne-rcs-1-message-add-button').click();
     await page.getByTestId('campagne-rcs-1-bouton-kind-0').selectOption('openUrl');
     // Le libellé est rempli, l'adresse NON : c'est ce que la garde doit attraper.
     await page.getByPlaceholder('Libellé du bouton').fill('Voir l’offre');
@@ -222,7 +222,7 @@ test.describe('Assistant : le canal RCS', () => {
     await poserFaux(page, { rcsMessages: MESSAGES_RCS });
     await surLEtageRcs(page);
     await page.getByTestId('rcs-bibliotheque-1').selectOption('m1');
-    await page.getByRole('button', { name: /Ajouter une suggestion/ }).click();
+    await page.getByTestId('campagne-rcs-1-message-add-button').click();
     await pasDeDebordement(page);
   });
 });
