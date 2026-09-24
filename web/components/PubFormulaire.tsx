@@ -234,7 +234,7 @@ export function PubFormulaire({ tenantId, scenarios, agentMetaOuvert, fermer, cr
           {/* ⚠️ `=== true` ET PAS UNE VÉRACITÉ : `null` est falsy, donc le comportement serait le même,
               mais c'est précisément la forme qui a effacé la distinction trois fois dans ce lot. */}
           {agentMetaOuvert === true && (
-            <p className="mt-1 text-xs text-ink-400">
+            <p className="mt-1 text-xs text-ink-400" data-testid="pub-agent-ecarte">
               {t('L’agent de Meta sera écarté des prospects de cette publicité : c’est le scénario qui répond.',
                  'The Meta agent will be kept away from this ad’s leads: the scenario answers.')}
             </p>

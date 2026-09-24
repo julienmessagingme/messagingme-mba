@@ -215,9 +215,12 @@ describe('le bandeau de l’agent de Meta éteint', () => {
     const passages = [...page.matchAll(/agentMetaOuvert=\{([^}]*)\}/g)].map((m) => m[1] ?? '');
     // ÉGALITÉ STRICTE, pas « au moins deux » : un troisième consommateur doit faire TOMBER ce test,
     // pour qu'on aille regarder ce qu'il fait de l'état, au lieu de passer inaperçu.
+    // ⚠️ CE COMPTE NE TRAVERSE PAS UN SPREAD : un `{...{ agentMetaOuvert }}` n'est pas vu, comme le
+    // contrôle des propriétés en trop du compilateur. C'est la limite connue de cette garde, et ce
+    // qui la rend insuffisante à elle seule : le comportement, lui, est tenu par les cas Playwright.
     expect(passages).toHaveLength(2);
-    // `trim`, parce qu'une espace ou un retour à la ligne du formateur ne change rien : une garde qui
-    // tombe sur `prettier --write` envoie chercher un défaut qui n'existe pas.
+    // `trim`, parce qu'une espace ou un retour à la ligne dans le JSX ne change rien : une garde qui
+    // tombe sur une remise en forme envoie chercher un écrasement de `null` qui n'existe pas.
     for (const p of passages) expect(p.trim()).toBe('agentMetaOuvert');
     /**
      * 🔴 ET L'ÉCRASEMENT PEUT REMONTER AU SETTER, ce que les passages ne voient pas : remettre

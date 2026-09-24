@@ -54,7 +54,21 @@ interface Options {
   reglages?: boolean | 'vide' | 'panne';
 }
 
+/**
+ * Combien de fois `/settings` a été servi depuis le dernier `brancher`.
+ *
+ * 🔴 IL EXISTE PARCE QUE L'ÉTAT ATTENDU EST AUSSI L'ÉTAT INITIAL. « Nous ne savons pas » vaut `null`,
+ * et `null` est la valeur de départ : une assertion posée trop tôt se satisfait donc du départ et passe
+ * MÊME SI la lecture finit par dire autre chose. Le cas « panne » l'a prouvé : il restait vert avec le
+ * défaut remis, et son verdict dépendait du nombre de workers.
+ *
+ * ⚠️ UN 500 EST SERVI DEUX FOIS : `web/lib/http.ts` rejoue un GET en échec après 400 ms. Attendre UNE
+ * réponse ne suffirait donc pas pour ce cas-là.
+ */
+let lecturesReglages = 0;
+
 const brancher = async (page: import('@playwright/test').Page, o: Options = {}) => {
+  lecturesReglages = 0;
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const url = route.request().url();
@@ -73,6 +87,7 @@ const brancher = async (page: import('@playwright/test').Page, o: Options = {}) 
     if (url.includes('/pubs')) return json({ publicites: o.publicites ?? [] });
     if (url.includes('/workflows')) return json({ workflows: [] });
     if (url.includes('/settings')) {
+      lecturesReglages += 1;
       if (o.reglages === 'panne') return route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
       if (o.reglages === 'vide') return json({});
       return json({ mbaEnabled: o.reglages ?? true });
@@ -108,6 +123,8 @@ test.describe('Publicités : ce que le formulaire dit de l’agent de Meta', () 
     await expect(page.getByTestId('pub-agent-indispo')).toHaveCount(0);
     await expect(page.getByTestId('pub-agent-inconnu')).toHaveCount(0);
     await expect(page.getByRole('option', { name: /agent de Meta|Meta agent/ })).toHaveCount(1);
+    // La quatrieme branche du tri-etat, celle que personne ne rendait.
+    await expect(page.getByTestId('pub-agent-ecarte')).toHaveCount(1);
   });
 
   test('🔴 agent ÉTEINT : l’option disparaît, et l’écran dit que c’est leur numéro', async ({ page }) => {
@@ -118,9 +135,14 @@ test.describe('Publicités : ce que le formulaire dit de l’agent de Meta', () 
     await expect(page.getByRole('option', { name: /agent de Meta|Meta agent/ })).toHaveCount(0);
   });
 
-  for (const [nom, reglages] of [['une réponse SANS la clé', 'vide'], ['une lecture en PANNE', 'panne']] as const) {
+  for (const [nom, reglages, lectures] of [['une réponse SANS la clé', 'vide', 1], ['une lecture en PANNE', 'panne', 2]] as const) {
     test(`🔴 ${nom} : l’option disparaît, mais l’écran parle de NOUS, pas de leur numéro`, async ({ page }) => {
       await brancher(page, { reglages });
+      // 🔴 ON ATTEND QUE LA LECTURE SOIT RETOMBÉE. Sans ça, l'assertion se satisfait de l'état INITIAL,
+      // qui vaut déjà `null`, et le test reste vert avec le défaut remis. C'est le piège « l'état
+      // attendu est l'état de départ », et il ne se voit pas en lisant le test.
+      await expect.poll(() => lecturesReglages, { timeout: 5000 }).toBe(lectures);
+      await page.waitForLoadState('networkidle');
       await ouvrirLeFormulaire(page);
       // Le geste d'erreur est bon : l'option reste fermée.
       await expect(page.getByRole('option', { name: /agent de Meta|Meta agent/ })).toHaveCount(0);
@@ -130,6 +152,23 @@ test.describe('Publicités : ce que le formulaire dit de l’agent de Meta', () 
       await expect(page.locator('body')).not.toContainText(/pas ouvert à tout le monde|not open to everyone/);
     });
   }
+
+  test('🔴 ET LE BANDEAU DE LA LISTE SUIT LA MÊME RÈGLE : éteint le dit, inconnu se tait', async ({ page }) => {
+    /**
+     * Le bandeau de la liste est l'endroit où ce défaut a vécu EN PREMIER, et il n'était gardé que par des
+     * `toContain` sur le texte des sources, c'est-à-dire la forme dont ce lot a montré trois fois qu'elle
+     * pince une présence sans rien interdire.
+     */
+    const pubAgent = { ...PUB_PUBLIEE, id: 'pub-am', destination: 'agent_meta' };
+    await brancher(page, { reglages: false, publicites: [pubAgent] });
+    await expect(page.getByTestId('pub-agent-eteint-pub-am'))
+      .toContainText(/ne répond plus sur ce numéro|no longer answers on this number/);
+
+    await brancher(page, { reglages: 'panne', publicites: [pubAgent] });
+    await expect.poll(() => lecturesReglages, { timeout: 5000 }).toBe(2);
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByTestId('pub-agent-eteint-pub-am')).toHaveCount(0);
+  });
 });
 
 test.describe('Publicités : la liste et le bouton Créer', () => {
