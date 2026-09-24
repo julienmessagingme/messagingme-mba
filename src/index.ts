@@ -36,6 +36,9 @@ import { verifyGoogleIdToken } from './auth/google';
 import { PgFlowStore } from './flow/store.pg';
 import { PgApiKeyStore } from './auth/api-key-store.pg';
 import { upsertContactsFromApi } from './api/contacts-upsert';
+import { creerServiceContactsV1 } from './api/contacts-v1';
+import { PgReachabilityStore } from './rcs/reachability.pg';
+import { joignabiliteRcsToutesFormes } from './rcs/reachability';
 import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
 import { PgAuditStore } from './audit/store.pg';
 import { PgErreursLivraisonStore } from './ops/erreurs-livraison.pg';
@@ -199,9 +202,10 @@ async function main(): Promise<void> {
   const recipientStore = new PgRecipientStore(pool);
   const campaignDraftStore = new PgCampaignDraftStore(pool);
   /**
-   * 🔴 L'ANNONCE D'UN OPT-OUT, POSÉE SUR LE DÉPÔT LUI-MÊME. Elle couvre par CONSTRUCTION les trois méthodes
-   * capables d'écrire `opted_out` (mot-clé entrant, fiche contact, action en masse) au lieu d'être recopiée
-   * sur chaque appelant, où elle aurait été oubliée au prochain bouton. Elle n'appelle RIEN : elle enfile.
+   * 🔴 L'ANNONCE D'UN OPT-OUT, POSÉE SUR LE DÉPÔT LUI-MÊME. Elle couvre par CONSTRUCTION toutes les méthodes
+   * du dépôt capables d'écrire `opted_out` (la liste qui fait foi est dérivée par `tests/optout-poussee.test.ts`)
+   * au lieu d'être recopiée sur chaque appelant, où elle aurait été oubliée au prochain bouton. Elle n'appelle
+   * RIEN : elle enfile.
    * L'appel au connecteur, lui, vit dans le worker, avec ses réessais.
    */
   const contactStore = new PgContactStore(
@@ -389,6 +393,8 @@ async function main(): Promise<void> {
   const emailTemplates = new PgEmailTemplateStore(pool);
   const rcsMessageStore = new PgRcsMessageStore(pool);
   const rcsMediaStore = new PgRcsMediaStore(pool);
+  // Le cache de joignabilité RCS, en LECTURE (fiche de l'API publique). L'envoi a le sien dans `rcsStack`.
+  const rcsJoignabilite = new PgReachabilityStore(pool);
   const emailResolver = new EmailAccountResolver({
     getDecrypted: (t, id) => emailAccounts.getDecrypted(t, id),
     buildTransport: buildEmailTransport,
@@ -761,7 +767,8 @@ async function main(): Promise<void> {
       contactParJeton: (tenant, jeton) => trackedLinkStore.contactParJeton(tenant, jeton),
     },
     // Réception PUBLIQUE des webhooks entrants. L'appelant est un outil tiers : le tenant vient du code, et
-    // l'écriture du contact passe par le MÊME chemin partagé que l'API publique et l'import CSV.
+    // l'écriture du contact passe par `upsertContactsFromApi`, le chemin partagé avec la création à la main de
+    // la console.
     webhookEntrant: {
       limiter: new RateLimiter(config.WEBHOOK_IN_RATE_LIMIT_MAX, config.WEBHOOK_IN_RATE_LIMIT_WINDOW_MS),
       budgetInconnus: new RateLimiter(config.CODES_INCONNUS_PAR_MINUTE, 60_000),
@@ -2167,7 +2174,7 @@ async function main(): Promise<void> {
       // Champ socle absent -> on le crée au premier usage (idempotent). Aucun chemin d'inscription ne les
       // créait, donc un espace neuf refusait « Prénom » alors que l'écran le propose.
       ensureSocleField: async (tenant, key, label, type) => { await ensureFieldByKey(fieldStore, tenant, key, label, type); },
-      // Création à la main : MÊME upsert que l'API publique et l'import, avec le pays par défaut du tenant.
+      // Création à la main : MÊME upsert que le webhook entrant, avec le pays par défaut du tenant.
       createOneContact: async (tenant, input) => {
         const [r] = await upsertContactsFromApi(tenant, [input], { contacts: contactStore, fields: fieldStore, defaultCountry: config.DEFAULT_COUNTRY as CountryCode });
         return r ? { status: r.status, ...(r.contactId ? { contactId: r.contactId } : {}), ...(r.reason ? { reason: r.reason } : {}) } : { status: 'error', reason: 'aucun résultat' };
@@ -3080,9 +3087,18 @@ async function main(): Promise<void> {
           }),
         },
       },
-      contacts: {
-        upsertContacts: (tenant, items) => upsertContactsFromApi(tenant, items, { contacts: contactStore, fields: fieldStore }),
-      },
+      // Les fiches de l'API publique : identité multi-clés, consentement journalisé, lecture (spec § 2).
+      contacts: creerServiceContactsV1({
+        contacts: contactStore,
+        fields: fieldStore,
+        audit: auditSink,
+        joignabiliteRcs: async (tenant, e164) => {
+          const agentId = await workflowRuntime.rcsStack.agents.agentIdForTenant(tenant);
+          if (!agentId) return null;
+          // Les DEUX formes de clé du cache (`+33…` des campagnes, chiffres seuls des scénarios et de l'Inbox).
+          return joignabiliteRcsToutesFormes(rcsJoignabilite, agentId, e164, Date.now());
+        },
+      }),
       sends: {
         resolveScenario: (tenant, ref) => resolveScenario(tenant, ref, workflowStore),
         // Cible node : le code `nod_` vit dans le graphe -> scan des scénarios du tenant. Le libellé du bloc

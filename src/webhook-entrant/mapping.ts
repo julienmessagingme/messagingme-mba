@@ -68,7 +68,8 @@ export interface Extraction {
   telephone: string | null;
   nom: string | null;
   /** Référence de champ -> valeur texte. La résolution et la validation par TYPE restent à l'appelant, qui
-   *  a la base : c'est `upsertContactsFromApi` qui les fait, comme pour l'API publique et l'import. */
+   *  a la base : c'est `upsertContactsFromApi` qui les fait (sa préparation des champs est aussi celle de
+   *  l'API publique). */
   champs: Record<string, string>;
   /** Chemins qui n'ont rien rendu (absents du payload, ou valeur non stockable). Renvoyés pour que la réponse
    *  au tiers puisse le dire : un mapping muet sans trace est indébogable. */

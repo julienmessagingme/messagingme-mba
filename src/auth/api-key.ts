@@ -4,6 +4,7 @@ import type { ApiKeyLookup } from './api-key-store.pg';
 import { API_KEY_PREFIX } from './api-key-store.pg';
 import { sha256Hex } from '../lib/signature';
 import { ClesResolues, consommerAvecEntetes, consommerEnSilence, type RateLimiter } from './rate-limit';
+import { refuser } from '../api/erreurs';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -80,7 +81,7 @@ export function makeRequireApiKey(store: ApiKeyLookup, limiteurMetier: RateLimit
      * dire « mauvais format » renseignerait gratuitement celui qui cherche la forme des clés.
      */
     if (!raw || !raw.startsWith(API_KEY_PREFIX) || !FORMAT_CLE.test(raw.slice(API_KEY_PREFIX.length))) {
-      await reply.code(401).send({ error: 'clé d’API requise' });
+      await refuser(reply, 401, 'unauthorized', 'clé d’API requise');
       return;
     }
     /**
@@ -107,7 +108,7 @@ export function makeRequireApiKey(store: ApiKeyLookup, limiteurMetier: RateLimit
      * 🔴 EN SILENCE : ce budget est PARTAGÉ par tous les appelants, ses en-têtes n'appartiennent à personne
      * (`consommerEnSilence`). Les `x-ratelimit-*` qu'un client lit sont ceux de SA clé, posés plus bas.
      */
-    if (!connue && !(await consommerEnSilence(prefiltre, CLE_BUDGET_SPECULATIF, reply, 'trop de requêtes'))) return;
+    if (!connue && !(await consommerEnSilence(prefiltre, CLE_BUDGET_SPECULATIF, reply, 'trop de requêtes', 'rate_limited'))) return;
     /**
      * 🔴 LE PLAFOND PAR CLÉ NE COMPTE QUE DES CLÉS QUI EXISTENT (2026-09-21, même défaut que sur `/w/:code`
      * et les rappels RCS). Il se prend donc AVANT la base pour une empreinte déjà résolue, APRÈS pour les
@@ -138,20 +139,20 @@ export function makeRequireApiKey(store: ApiKeyLookup, limiteurMetier: RateLimit
      *
      * Le lookup reste fait à CHAQUE appel accepté : une révocation prend effet tout de suite.
      */
-    if (connue && !(await consommerAvecEntetes(limiteurMetier, empreinte, reply, 'trop de requêtes'))) return;
+    if (connue && !(await consommerAvecEntetes(limiteurMetier, empreinte, reply, 'trop de requêtes', 'rate_limited'))) return;
     const found = await store.findActiveByHash(empreinte);
     if (!found) {
       // Elle ne se résout plus (révoquée, ou jamais valide) : elle perd son laissez-passer et repasse
       // sous le budget dès l'appel suivant.
       connues.oublier(empreinte);
-      await reply.code(401).send({ error: 'clé d’API invalide ou révoquée' });
+      await refuser(reply, 401, 'unauthorized', 'clé d’API invalide ou révoquée');
       return;
     }
     // Elle a été résolue : elle ne sert pas à sonder. Le lookup reste fait à chaque appel, donc une
     // révocation prend effet tout de suite.
     connues.retenir(empreinte);
     // Première résolution dans ce process : le plafond par clé se prend ici, sur une clé qui existe.
-    if (!connue && !(await consommerAvecEntetes(limiteurMetier, empreinte, reply, 'trop de requêtes'))) return;
+    if (!connue && !(await consommerAvecEntetes(limiteurMetier, empreinte, reply, 'trop de requêtes', 'rate_limited'))) return;
     /**
      * 🔴 L'ARRÊT D'URGENCE D'UN ESPACE, ÉTENDU À LA SURFACE PUBLIQUE (tranché par Julien le 2026-09-14).
      * `tenants.status = 'locked'` était lu par la garde de SESSION et par elle seule : un espace suspendu
@@ -165,7 +166,7 @@ export function makeRequireApiKey(store: ApiKeyLookup, limiteurMetier: RateLimit
      * l'API de tous les espaces le jour où un statut est ajouté.
      */
     if (found.tenantStatus === 'locked') {
-      await reply.code(403).send({ error: 'espace suspendu', code: 'tenant_locked' });
+      await refuser(reply, 403, 'tenant_locked', 'espace suspendu');
       return;
     }
     // Empreinte de dernier usage : best-effort, ne doit jamais bloquer/échouer la requête.
@@ -180,7 +181,7 @@ export function makeRequireApiKey(store: ApiKeyLookup, limiteurMetier: RateLimit
 export function requireScope(scope: string): PreHandler {
   return async function checkScope(req: FastifyRequest, reply: FastifyReply): Promise<void> {
     if (!req.apiScopes?.includes(scope)) {
-      await reply.code(403).send({ error: `scope requis : ${scope}` });
+      await refuser(reply, 403, 'missing_scope', `scope requis : ${scope}`);
     }
   };
 }

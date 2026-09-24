@@ -9,12 +9,12 @@ import { makeJournal, type AuditSink } from '../audit/journal';
 /**
  * Les droits qu'une clé d'API peut porter.
  *
- * `mcp:read` et `mcp:write` sont SÉPARÉS des deux autres, et c'est voulu : une clé donnée à un agent tiers
+ * `mcp:read` et `mcp:write` sont SÉPARÉS des autres, et c'est voulu : une clé donnée à un agent tiers
  * pour lire l'inbox ne doit pas emporter au passage le droit de créer des contacts ou de lancer un envoi.
  * Le serveur MCP ne liste même pas les outils hors des scopes de la clé, donc « lecture seule » veut dire
  * qu'un agent ne VOIT pas l'outil qui écrit.
  */
-export const VALID_API_SCOPES = ['contacts:write', 'sends:create', 'mcp:read', 'mcp:write'] as const;
+export const VALID_API_SCOPES = ['contacts:write', 'contacts:read', 'sends:create', 'mcp:read', 'mcp:write'] as const;
 
 export interface ApiKeysRouteDeps {
   /**

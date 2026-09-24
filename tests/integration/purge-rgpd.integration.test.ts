@@ -113,6 +113,9 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
        values ($1, $2, 'wam-itest-arrivee', 'ad-itest', 'clid-itest', false)`,
       [tenantId, contactId],
     );
+
+    // L'identifiant de l'outil du client (migration 0172) : il désigne cette personne chez le client.
+    await pool.query(`update contacts set external_id = 'itest-ext-purge' where id = $1`, [contactId]);
   });
 
   afterAll(async () => {
@@ -157,14 +160,18 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
   });
 
   it('🔴 plus AUCUNE trace du numéro ni du nom sur la fiche, mais la ligne reste (quantitatif)', async () => {
-    const row = (await pool.query<{ phone_e164: string; profile_name: string | null; fields: unknown; anonymized_at: Date | null }>(
-      'select phone_e164, profile_name, fields, anonymized_at from contacts where id = $1', [contactId],
+    const row = (await pool.query<{ phone_e164: string; profile_name: string | null; fields: unknown; anonymized_at: Date | null; external_id: string | null }>(
+      'select phone_e164, profile_name, fields, anonymized_at, external_id from contacts where id = $1', [contactId],
     )).rows[0]!;
     expect(row.phone_e164.startsWith('anon:')).toBe(true);
     expect(row.phone_e164).not.toContain('600000901');
     expect(row.profile_name).toBeNull();
     expect(row.fields).toEqual({});
     expect(row.anonymized_at).not.toBeNull();
+    expect(row.external_id).toBeNull();
+    // Et l'identifiant est LIBÉRÉ : une fiche neuve peut le reprendre (index unique par espace).
+    const reprise = await store.creerFicheApi(tenantId, { phoneE164: '+33600000902', externalId: 'itest-ext-purge' });
+    expect(reprise).not.toBe('conflit');
   });
 
   it('🔴 les mesures par bloc sont ANONYMISEES, pas supprimees (le quanti survit a l’effacement)', async () => {

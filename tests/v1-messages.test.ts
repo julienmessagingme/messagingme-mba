@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
+import { contactsV1Muets } from './aide/contacts-v1';
 import { FakeQueue } from '../src/queue/fake';
 import { sha256Hex } from '../src/lib/signature';
 import { estLourde, unitesDe } from '../src/api/usage-guard';
@@ -75,7 +76,7 @@ function app(over: Partial<Monde> = {}) {
     queue: new FakeQueue(),
     v1: {
       apiKeys: keys,
-      contacts: { upsertContacts: async () => [] },
+      contacts: contactsV1Muets(),
       messages: {
         repondre,
         findContactByPhone: async (tenant, phone) => (tenant === 't1' && phone === NUMERO ? m.contact : null),

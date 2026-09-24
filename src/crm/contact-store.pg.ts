@@ -8,6 +8,11 @@ export interface ContactRow {
   phoneE164: string | null;
   /** Identité BSUID (business-scoped user id) quand le contact n'a pas de numéro. */
   bsuid: string | null;
+  /**
+   * L'identifiant de l'OUTIL DU CLIENT (migration 0172), posé par l'API publique. `null` = aucun.
+   * Il sert à RETROUVER la fiche et à réécrire dans l'outil qui l'a donné, jamais d'adresse d'envoi.
+   */
+  externalId: string | null;
   profileName: string | null;
   optInStatus: string;
   fields: Record<string, unknown>;
@@ -25,6 +30,59 @@ export interface ContactRow {
   whatsappJoignable: boolean | null;
   whatsappJoignableLe: string | null;
 }
+
+/** Ce qu'il faut d'une fiche pour savoir QUELLES clés elle porte (`resoudreFiche`, `src/api/fiche.ts`). */
+export interface FicheIdentite {
+  id: string;
+  externalId: string | null;
+  phoneE164: string | null;
+  bsuid: string | null;
+}
+
+/** Les clés d'une fiche, NORMALISÉES (numéro en E.164). L'appelant en donne au moins une. */
+export interface ClesNormalisees {
+  contactId?: string;
+  externalId?: string;
+  phoneE164?: string;
+  bsuid?: string;
+}
+
+/** Une fiche créée ou retrouvée par l'index du numéro ou du BSUID, ou le refus d'un index d'unicité. */
+export type CreationFiche = (FicheIdentite & { created: boolean }) | 'conflit';
+
+/** Tout ce que `GET /v1/contacts/{contactId}` rend, lu en UNE requête. Dates en ISO. */
+export interface FicheApiLigne {
+  id: string;
+  externalId: string | null;
+  phoneE164: string | null;
+  bsuid: string | null;
+  profileName: string | null;
+  fields: Record<string, unknown>;
+  tags: string[];
+  optInStatus: string;
+  optInSource: string | null;
+  optOutAt: string | null;
+  rcsOptoutAt: string | null;
+  blockedAt: string | null;
+  whatsappJoignable: boolean | null;
+  whatsappJoignableLe: string | null;
+  createdAt: string;
+}
+
+/**
+ * Ce que l'API publique écrit sur une fiche déjà résolue (`editerFicheApi`). `profileName` : `undefined` = on
+ * n'y touche pas, `null` = vider.
+ */
+export interface EditionFicheApi {
+  fields: Record<string, string>;
+  removeFields: string[];
+  addTags: string[];
+  removeTags: string[];
+  profileName?: string | null;
+}
+
+/** Une violation d'index unique : un refus de SAISIE, pas une panne. */
+const estUnicite = (err: unknown): boolean => (err as { code?: string }).code === '23505';
 
 /** Opérateurs de filtre sur un champ perso (jsonb, valeur STRING).
  *  `eq`/`contains`/`not_contains` exigent une valeur ; `empty`/`not_empty` n'en prennent pas. */
@@ -100,10 +158,10 @@ export interface BulkEdits {
   removeTags?: string[];
   setField?: { key: string; value: string };
   /**
-   * Bascule du consentement marketing depuis le mini-CRM. C'est le SEUL chemin capable d'écrire `opted_out` :
-   * l'upsert d'import et d'API ne fait JAMAIS régresser un statut (unknown -> opted_in seulement, cf.
-   * `upsertByPhone`), si bien qu'un client demandant à ne plus rien recevoir n'était enregistrable nulle part.
-   * Le garde-fou de campagne, lui, lisait déjà `opted_out` pour exclure.
+   * Bascule du consentement marketing depuis le mini-CRM, en masse. L'upsert d'import ne fait JAMAIS
+   * régresser un statut (unknown -> opted_in seulement, cf. `upsertByPhone`) : un refus s'écrit par une
+   * méthode dédiée, celle-ci, la fiche (`applyEdits`), le mot-clé entrant (`setOptInByWaId`) ou l'API
+   * publique (`ecrireConsentementParId`). La liste qui fait foi est dérivée par `tests/optout-poussee.test.ts`.
    */
   setOptIn?: 'opted_in' | 'opted_out';
 }
@@ -121,7 +179,7 @@ export class PgContactStore implements ContactStore {
    * vers le système du client » se tient PARTOUT ou nulle part, et le dépôt vient de payer exactement cette
    * leçon : la migration 0138 énonçait « la date se remet à null au réabonnement » et trois chemins
    * d'écriture sur quatre la tenaient. Posée sur les appelants, l'annonce aurait été oubliée au prochain
-   * bouton. Posée ici, elle couvre par CONSTRUCTION les trois méthodes capables d'écrire `opted_out`, et
+   * bouton. Posée ici, elle couvre par CONSTRUCTION toutes les méthodes capables d'écrire `opted_out`, et
    * `tests/optout-poussee.test.ts` DÉRIVE cette liste du fichier plutôt que de la recopier.
    *
    * ⚠️ ELLE NE PEUT PAS FAIRE ÉCHOUER L'ÉCRITURE : elle n'est appelée qu'APRÈS le `commit`, et ce qu'elle
@@ -289,7 +347,7 @@ export class PgContactStore implements ContactStore {
    *  si createMissing, ré-upserté donc ressuscité. Jamais destinataire d'un envoi. */
   async findByPhone(tenantId: string, phoneE164: string): Promise<ContactRow | null> {
     const res = await this.pool.query(
-      `select id, phone_e164, bsuid, profile_name, opt_in_status, fields, tags, created_at, blocked_at,
+      `select id, phone_e164, bsuid, external_id, profile_name, opt_in_status, fields, tags, created_at, blocked_at,
               whatsapp_joignable, whatsapp_joignable_le
        from contacts where tenant_id = $1 and phone_e164 = $2 and deleted_at is null limit 1`,
       [tenantId, phoneE164],
@@ -364,6 +422,51 @@ export class PgContactStore implements ContactStore {
     // numéro inconnu pousserait vers le système du client une personne qui n'existe pas chez nous.
     if (statut === 'opted_out' && id !== null) await this.annoncer(tenantId, [waId]);
     return id;
+  }
+
+  /**
+   * LE CONSENTEMENT POSÉ PAR L'API PUBLIQUE, sur une fiche désignée par son IDENTIFIANT (`appliquerConsentement`).
+   *
+   * 🔴 IL N'ÉCRIT QUE SI LE STATUT CHANGE (`is distinct from`). Un outil qui renvoie le même consentement à chaque
+   * appel ne repousse pas la date d'un désabonnement, et n'annonce pas dix fois le même refus.
+   * `opt_out_at` suit le statut dans les deux sens, comme sur les autres chemins (migration 0138).
+   *
+   * ⚠️ `inchange` et `absente` ne se distinguent qu'en relisant : la seconde requête ne part que si la première
+   * n'a rien touché, c'est-à-dire presque jamais sur un premier appel.
+   */
+  async ecrireConsentementParId(
+    tenantId: string,
+    contactId: string,
+    statut: 'opted_in' | 'opted_out',
+    source: string,
+  ): Promise<'change' | 'inchange' | 'refuse' | 'absente'> {
+    // 🔴 UN STOP NE SE LÈVE PAS PAR MACHINE (décision de Julien du 2026-09-24) : cette écriture sert l'API
+    // publique, et elle ne fait JAMAIS passer une fiche de `opted_out` à `opted_in`. Une synchronisation qui
+    // porte un consentement périmé réabonnerait quelqu'un qui nous a dit stop. La garde est DANS la requête,
+    // pas seulement dans le service qui vérifie avant d'écrire, pour tenir un STOP arrivé entre les deux.
+    // Seul un opérateur (la fiche de la console, `applyEdits`) ou la personne elle-même lève un STOP.
+    const res = await this.pool.query<{ phone_e164: string | null; bsuid: string | null }>(
+      `update contacts set opt_in_status = $3, opt_in_source = $4, updated_at = now(),
+              opt_out_at = case when $3 = 'opted_out' then now() else null end
+        where tenant_id = $1 and id = $2 and deleted_at is null and opt_in_status is distinct from $3
+          and not ($3 = 'opted_in' and opt_in_status = 'opted_out')
+        returning phone_e164, bsuid`,
+      [tenantId, contactId, statut, source],
+    );
+    const r = res.rows[0];
+    if (r) {
+      // APRÈS l'écriture, jamais avant : ce qui part vers le système du client décrit ce qui est enregistré.
+      if (statut === 'opted_out') await this.annoncer(tenantId, [waIdOf(r.phone_e164, r.bsuid)]);
+      return 'change';
+    }
+    // La relecture dit POURQUOI rien n'a bougé : fiche partie, STOP à respecter, ou statut déjà en place.
+    const existe = await this.pool.query<{ opt_in_status: string }>(
+      'select opt_in_status from contacts where tenant_id = $1 and id = $2 and deleted_at is null',
+      [tenantId, contactId],
+    );
+    const ligne = existe.rows[0];
+    if (!ligne) return 'absente';
+    return statut === 'opted_in' && ligne.opt_in_status === 'opted_out' ? 'refuse' : 'inchange';
   }
 
   /**
@@ -706,13 +809,222 @@ export class PgContactStore implements ContactStore {
     return waIdOf(r.phone_e164, r.bsuid);
   }
 
+  /**
+   * LES FICHES ACTIVES QUE DÉSIGNE CHACUNE DES CLÉS DONNÉES, en UNE requête (API publique, `resoudreFiche`).
+   *
+   * Chaque clé est unique par espace (clé primaire, `contacts_tenant_phone_uidx`, `contacts_tenant_bsuid_uidx`,
+   * `contacts_tenant_external_id_uidx`) : au plus une fiche par clé, donc au plus quatre lignes. C'est
+   * `resoudreFiche` qui juge si elles désignent la même personne, pas ce `select`.
+   *
+   * ⚠️ `contactId` DOIT avoir la forme d'un UUID (l'appelant le garantit) : sinon le cast lève `22P02`.
+   * ⚠️ Égalité EXACTE sur le numéro : l'API le normalise en E.164 avant de chercher, comme il est stocké.
+   */
+  async chercherParCles(tenantId: string, cles: ClesNormalisees): Promise<FicheIdentite[]> {
+    if (!cles.contactId && !cles.externalId && !cles.phoneE164 && !cles.bsuid) return [];
+    const res = await this.pool.query<{ id: string; external_id: string | null; phone_e164: string | null; bsuid: string | null }>(
+      `select id, external_id, phone_e164, bsuid from contacts
+        where tenant_id = $1 and deleted_at is null
+          and (id = $2::uuid or external_id = $3 or phone_e164 = $4 or bsuid = $5)
+        limit 4`,
+      // `|| null` et pas `?? null` : une chaîne vide vaut ABSENCE ici comme dans la garde juste au-dessus. Sinon
+      // un `contactId` vide lèverait `22P02` sur le cast, et une clé vide chercherait la valeur `''`.
+      [tenantId, cles.contactId || null, cles.externalId || null, cles.phoneE164 || null, cles.bsuid || null],
+    );
+    return res.rows.map((r) => ({ id: r.id, externalId: r.external_id, phoneE164: r.phone_e164, bsuid: r.bsuid }));
+  }
+
+  /**
+   * CRÉE UNE FICHE NUE pour l'API publique, par son numéro ou, à défaut, son BSUID.
+   *
+   * 🔴 `on conflict ... do update`, et pas `do nothing` : une fiche SUPPRIMÉE qui porte encore ce numéro (une
+   * suppression douce d'avant l'anonymisation) est RESSUSCITÉE, exactement comme le faisait l'upsert de l'API
+   * (`upsertByPhoneReturningId`, `deleted_at = null`). Les clés déjà portées sont GARDÉES (`coalesce`).
+   *
+   * 🔴 MAIS SEULEMENT SI LES CLÉS DEMANDÉES TIENNENT, et c'est le `where` du `do update` qui le garantit : une
+   * fiche retrouvée par l'index qui porte un AUTRE identifiant externe ou un AUTRE BSUID n'est ni ressuscitée ni
+   * touchée. Postgres ne rend alors aucune ligne, et c'est « conflit » : `resoudreFiche` relit la base, puis
+   * répond `identity_conflict` SANS avoir rien écrit. Sans ce `where`, la mise à jour partait toujours, et une
+   * requête refusée avait pourtant ressuscité une fiche et lui avait rattaché un BSUID.
+   *
+   * ⚠️ Une violation d'un AUTRE index unique (l'identifiant externe ou le BSUID pris par une autre fiche) rend
+   * « conflit » aussi : `resoudreFiche` relit alors la base, qui dit laquelle.
+   */
+  async creerFicheApi(tenantId: string, cles: { phoneE164?: string; bsuid?: string; externalId?: string }): Promise<CreationFiche> {
+    if (!cles.phoneE164 && !cles.bsuid) throw new Error('creerFicheApi : un numéro ou un BSUID est requis');
+    const conflit = cles.phoneE164
+      ? 'on conflict (tenant_id, phone_e164) where phone_e164 is not null'
+      : 'on conflict (tenant_id, bsuid) where bsuid is not null';
+    try {
+      const res = await this.pool.query<{ id: string; created: boolean; external_id: string | null; phone_e164: string | null; bsuid: string | null }>(
+        `insert into contacts (tenant_id, phone_e164, bsuid, external_id)
+         values ($1, $2, $3, $4)
+         ${conflit}
+         do update set
+           external_id = coalesce(contacts.external_id, excluded.external_id),
+           bsuid = coalesce(contacts.bsuid, excluded.bsuid),
+           deleted_at = null,
+           updated_at = now()
+         where (contacts.external_id is null or excluded.external_id is null or contacts.external_id = excluded.external_id)
+           and (contacts.bsuid is null or excluded.bsuid is null or contacts.bsuid = excluded.bsuid)
+         returning id, (xmax = 0) as created, external_id, phone_e164, bsuid`,
+        // `|| null` : une chaîne vide vaut ABSENCE, comme dans la garde au-dessus. Sinon `{ phoneE164: '' }`
+        // viserait l'index du BSUID mais INSÉRERAIT un numéro vide, qui occuperait ensuite l'index du numéro.
+        [tenantId, cles.phoneE164 || null, cles.bsuid || null, cles.externalId || null],
+      );
+      const r = res.rows[0];
+      // Aucune ligne : la fiche de ce numéro (ou de ce BSUID) porte une AUTRE clé, le `where` a tout refusé.
+      if (!r) return 'conflit';
+      return { id: r.id, created: r.created, externalId: r.external_id, phoneE164: r.phone_e164, bsuid: r.bsuid };
+    } catch (err) {
+      if (estUnicite(err)) return 'conflit';
+      throw err;
+    }
+  }
+
+  /**
+   * RATTACHE à une fiche les clés qu'elle ne porte PAS ENCORE. Ne remplace jamais une clé portée.
+   *
+   * 🔴 TOUT OU RIEN, et c'est le `where` qui le tient : chaque clé demandée doit être absente de la fiche ou y
+   * être déjà ÉGALE. Si une seule est portée AUTREMENT (ou qu'une écriture concurrente l'a posée entre la
+   * lecture et ici), la ligne n'est pas touchée du tout, et c'est « conflit ». Sans cette garde, les trois
+   * `coalesce` s'appliquaient chacun de son côté : un appel refusé en `identity_conflict` avait pourtant
+   * rattaché les autres clés, alors que la réponse dit « rien n'a été écrit ».
+   * Aucune ligne rendue : on relit pour distinguer la fiche ABSENTE (supprimée, purgée, autre espace) du conflit.
+   * ⚠️ Rattacher un numéro à une fiche qui n'avait qu'un BSUID change son adresse WhatsApp (`waIdOf` préfère
+   * le numéro) : aucune fiche n'est dans ce cas tant qu'aucun BSUID n'a été reçu.
+   */
+  async rattacherCles(
+    tenantId: string,
+    contactId: string,
+    cles: { externalId?: string; phoneE164?: string; bsuid?: string },
+  ): Promise<'ok' | 'conflit' | 'absente'> {
+    // Une chaîne vide vaut ABSENCE, ici comme dans `chercherParCles` : sinon `coalesce` poserait `''` comme
+    // identifiant, et `''` bloquerait ensuite cette valeur pour toute autre fiche de l'espace.
+    const voulu = {
+      externalId: cles.externalId || undefined,
+      phoneE164: cles.phoneE164 || undefined,
+      bsuid: cles.bsuid || undefined,
+    };
+    try {
+      const res = await this.pool.query<{ external_id: string | null; phone_e164: string | null; bsuid: string | null }>(
+        `update contacts
+            set external_id = coalesce(external_id, $3),
+                phone_e164 = coalesce(phone_e164, $4),
+                bsuid = coalesce(bsuid, $5),
+                updated_at = now()
+          where tenant_id = $1 and id = $2 and deleted_at is null
+            and ($3::text is null or external_id is null or external_id = $3)
+            and ($4::text is null or phone_e164 is null or phone_e164 = $4)
+            and ($5::text is null or bsuid is null or bsuid = $5)
+          returning external_id, phone_e164, bsuid`,
+        [tenantId, contactId, voulu.externalId ?? null, voulu.phoneE164 ?? null, voulu.bsuid ?? null],
+      );
+      const r = res.rows[0];
+      if (!r) {
+        const existe = await this.pool.query(
+          'select 1 from contacts where tenant_id = $1 and id = $2 and deleted_at is null',
+          [tenantId, contactId],
+        );
+        return (existe.rowCount ?? 0) > 0 ? 'conflit' : 'absente';
+      }
+      const tient = (v: string | undefined, porte: string | null): boolean => v === undefined || v === porte;
+      return tient(voulu.externalId, r.external_id) && tient(voulu.phoneE164, r.phone_e164) && tient(voulu.bsuid, r.bsuid) ? 'ok' : 'conflit';
+    } catch (err) {
+      if (estUnicite(err)) return 'conflit';
+      throw err;
+    }
+  }
+
+  /** POSE ou REMPLACE l'identifiant externe (`PATCH /v1/contacts/{contactId}`). Porté ailleurs : « conflit ». */
+  async poserExternalId(tenantId: string, contactId: string, externalId: string): Promise<'ok' | 'conflit' | 'absente'> {
+    try {
+      const res = await this.pool.query(
+        `update contacts set external_id = $3, updated_at = now()
+          where tenant_id = $1 and id = $2 and deleted_at is null`,
+        [tenantId, contactId, externalId],
+      );
+      return (res.rowCount ?? 0) > 0 ? 'ok' : 'absente';
+    } catch (err) {
+      if (estUnicite(err)) return 'conflit';
+      throw err;
+    }
+  }
+
+  /**
+   * ÉCRIT CE QUE L'API PUBLIQUE A DEMANDÉ SUR UNE FICHE DÉJÀ RÉSOLUE, en UNE requête : fusion des champs
+   * (une clé absente n'est jamais écrasée), retrait des clés vidées, union puis retrait des étiquettes, nom.
+   *
+   * 🔴 `deleted_at is null` DANS LE `where`, et c'est la raison de cette méthode. `applyEdits` (la fiche de la
+   * console) verrouille sans ce filtre : une purge passée entre `resoudreFiche` et l'écriture ferait réécrire
+   * un nom et des champs sur une fiche ANONYMISÉE. Ici, elle rend `false`, donc `unknown_contact`.
+   * 🔴 ET UNE SEULE REQUÊTE, sans transaction ni client dédié : `/v1/contacts/batch` en lance
+   * `ECRITURES_EN_VOL` à la fois, et une transaction par élément (connexion, `begin`, verrou, jusqu'à trois
+   * mises à jour, relecture, `commit`) retiendrait autant de connexions d'un pool que l'Inbox partage. L'ordre
+   * de `applyEdits` est gardé : on fusionne puis on retire, on ajoute puis on retire (une étiquette présente
+   * dans les deux listes n'est pas sur la fiche à la fin).
+   * ⚠️ Aucun événement d'automation n'en part : l'API n'émet jamais (invariant « aucun chemin de masse n'émet »).
+   */
+  async editerFicheApi(tenantId: string, contactId: string, e: EditionFicheApi): Promise<boolean> {
+    const res = await this.pool.query(
+      `update contacts
+          set fields = (coalesce(fields, '{}'::jsonb) || $3::jsonb) - $4::text[],
+              -- Sans etiquette a ajouter ni a retirer, la liste n est pas reecrite (ni triee, ni dedoublonnee),
+              -- comme applyEdits qui n y touche pas dans ce cas.
+              tags = case when cardinality($5::text[]) + cardinality($6::text[]) = 0 then tags
+                          else (select coalesce(array_agg(distinct t), '{}')
+                                  from unnest(coalesce(tags, '{}') || $5::text[]) t
+                                 where t <> all($6::text[]))
+                     end,
+              profile_name = case when $7::boolean then $8::text else profile_name end,
+              updated_at = now()
+        where tenant_id = $1 and id = $2 and deleted_at is null`,
+      [
+        tenantId, contactId, JSON.stringify(e.fields), e.removeFields, e.addTags, e.removeTags,
+        e.profileName !== undefined, e.profileName ?? null,
+      ],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * TOUT CE QUE L'API REND D'UNE FICHE, en une requête. Une fiche supprimée n'existe plus : `null`, donc 404.
+   * ⚠️ `contactId` doit avoir la forme d'un UUID : l'appelant le vérifie avant (`estUuid`).
+   */
+  async lireFicheApi(tenantId: string, contactId: string): Promise<FicheApiLigne | null> {
+    const res = await this.pool.query<{
+      id: string; external_id: string | null; phone_e164: string | null; bsuid: string | null; profile_name: string | null;
+      fields: Record<string, unknown> | null; tags: string[] | null; opt_in_status: string; opt_in_source: string | null;
+      opt_out_at: Date | null; rcs_optout_at: Date | null; blocked_at: Date | null;
+      whatsapp_joignable: boolean | null; whatsapp_joignable_le: Date | null; created_at: Date;
+    }>(
+      `select id, external_id, phone_e164, bsuid, profile_name, fields, tags, opt_in_status, opt_in_source,
+              opt_out_at, rcs_optout_at, blocked_at, whatsapp_joignable, whatsapp_joignable_le, created_at
+         from contacts
+        where tenant_id = $1 and id = $2 and deleted_at is null`,
+      [tenantId, contactId],
+    );
+    const r = res.rows[0];
+    if (!r) return null;
+    const iso = (d: Date | null): string | null => (d ? d.toISOString() : null);
+    return {
+      id: r.id, externalId: r.external_id, phoneE164: r.phone_e164, bsuid: r.bsuid, profileName: r.profile_name,
+      fields: r.fields ?? {}, tags: r.tags ?? [], optInStatus: r.opt_in_status, optInSource: r.opt_in_source,
+      optOutAt: iso(r.opt_out_at), rcsOptoutAt: iso(r.rcs_optout_at), blockedAt: iso(r.blocked_at),
+      whatsappJoignable: r.whatsapp_joignable, whatsappJoignableLe: iso(r.whatsapp_joignable_le),
+      createdAt: r.created_at.toISOString(),
+    };
+  }
+
   private static rowToContact(r: {
-    id: string; phone_e164: string | null; bsuid: string | null; profile_name: string | null; opt_in_status: string;
-    fields: Record<string, unknown>; tags: string[] | null; created_at: Date; blocked_at?: Date | null;
+    id: string; external_id?: string | null; phone_e164: string | null; bsuid: string | null; profile_name: string | null;
+    opt_in_status: string; fields: Record<string, unknown>; tags: string[] | null; created_at: Date; blocked_at?: Date | null;
     whatsapp_joignable?: boolean | null; whatsapp_joignable_le?: Date | null;
   }): ContactRow {
     return {
-      id: r.id, phoneE164: r.phone_e164, bsuid: r.bsuid, profileName: r.profile_name, optInStatus: r.opt_in_status,
+      id: r.id,
+      // `?? null`, pour la même raison que `whatsappJoignable` juste en dessous.
+      externalId: r.external_id ?? null,
+      phoneE164: r.phone_e164, bsuid: r.bsuid, profileName: r.profile_name, optInStatus: r.opt_in_status,
       fields: r.fields, tags: r.tags ?? [], createdAt: r.created_at.toISOString(),
       blockedAt: r.blocked_at ? r.blocked_at.toISOString() : null,
       // ⚠️ `?? null`, jamais `undefined` : un `undefined` traverserait `JSON.stringify` en DISPARAISSANT du
@@ -728,7 +1040,7 @@ export class PgContactStore implements ContactStore {
     };
   }
   private static readonly SELECT_ONE =
-    `select id, phone_e164, bsuid, profile_name, opt_in_status, fields, tags, created_at, blocked_at,
+    `select id, phone_e164, bsuid, external_id, profile_name, opt_in_status, fields, tags, created_at, blocked_at,
             whatsapp_joignable, whatsapp_joignable_le
        from contacts where id = $1 and tenant_id = $2`;
 
@@ -840,7 +1152,7 @@ export class PgContactStore implements ContactStore {
       id: string; phone_e164: string | null; bsuid: string | null; profile_name: string | null;
       opt_in_status: string; fields: Record<string, unknown>; tags: string[] | null; created_at: Date;
     }>(
-      `select id, phone_e164, bsuid, profile_name, opt_in_status, fields, tags, created_at, blocked_at,
+      `select id, phone_e164, bsuid, external_id, profile_name, opt_in_status, fields, tags, created_at, blocked_at,
               whatsapp_joignable, whatsapp_joignable_le
        from contacts where ${where}
        order by created_at desc limit ${limitRef} offset ${offsetRef}`,
@@ -1175,6 +1487,9 @@ export class PgContactStore implements ContactStore {
                 -- URL qui circulent encore. Le garder laisserait un identifiant vivant apres l effacement,
                 -- et ses clics futurs continueraient de lui etre attribues.
                 jeton_public = null,
+                -- L IDENTIFIANT EXTERNE part aussi : il designe cette personne dans l outil du client, et il
+                -- bloquerait la recreation d une fiche avec le meme identifiant (index unique par espace).
+                external_id = null,
                 updated_at = now()
           where tenant_id = $1 and id = any($2::uuid[]) and anonymized_at is null`,
         [tenantId, ids],

@@ -648,6 +648,32 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 
 - `contacts` : `fields jsonb` (merge qui n'écrase jamais une clé absente), `tags text[]`, opt-in tracé,
   `deleted_at` (soft delete, index partiel), `anonymized_at`, `blocked_at`.
+- 🔴 **`/v1/contacts` désigne une personne par sa FICHE, et UNE fonction la trouve** : `resoudreFiche`
+  (`src/api/fiche.ts`). Quatre clés, `contactId`, `externalId`, `phone`, `bsuid` : toutes celles qu'on donne
+  doivent désigner la même fiche (sinon `identity_conflict`, et la fiche n'est pas modifiée) ; une clé que la
+  fiche ne porte pas encore lui est RATTACHÉE, jamais substituée, et le rattachement est tout ou rien (le
+  `where` de `rattacherCles` et celui du `do update` de `creerFicheApi` gardent chaque clé demandée) ;
+  `contactId` ne crée jamais rien. Elle rend une fiche, jamais une adresse : l'adresse d'envoi se calcule sur
+  la fiche. `contacts.external_id` est unique PAR ESPACE (index partiel `contacts_tenant_external_id_uidx`), et
+  la purge l'efface avec le numéro. ⚠️ Exception assumée à « rien n'est écrit » : une définition de champ a pu
+  être créée (la préparation des champs passe avant la résolution), et elle compte dans le plafond de
+  l'espace. ⚠️ `/v1/sends` et `/v1/messages` résolvent encore par numéro (`findByPhone`), jusqu'au lot 2.
+  ⚠️ Rattacher un numéro à une fiche qui n'avait qu'un BSUID change son adresse WhatsApp (`waIdOf` préfère
+  le numéro).
+- 🔴 **L'API écrit champs, étiquettes et nom par `editerFicheApi`, jamais par `applyEdits`** : une requête
+  filtrée par `deleted_at is null`, sans transaction ni client dédié. Une fiche purgée entre la résolution et
+  l'écriture n'est donc pas réécrite (`unknown_contact`), et un lot ne retient pas une connexion par élément.
+  `applyEdits` (la fiche de la console) verrouille sans ce filtre.
+- 🔴 **Un consentement posé par l'API passe par `ecrireConsentementParId`**, qui n'écrit RIEN quand la valeur
+  ne change pas : un outil qui renvoie `opted_out` à chaque appel ne repousse pas la date du désabonnement et
+  n'écrit pas une ligne d'audit par appel. Sur une fiche déjà `opted_in`, un `opted_in` d'une autre source ne
+  réécrit rien : la source d'origine du consentement est gardée. L'opt-out s'annonce au connecteur du client
+  comme sur les autres chemins, et l'audit porte `contact.optin` ou `contact.optout` avec la source `api`.
+  Une fiche purgée entre la résolution et cette écriture rend `unknown_contact`, jamais « mis à jour ».
+- **Dans `/v1/contacts/batch`, les éléments d'une même personne s'écrivent DANS L'ORDRE** : deux éléments qui
+  partagent une clé normalisée forment une chaîne séquentielle (`enChaines`, `src/api/contacts-v1.ts`), les
+  chaînes partant par vagues bornées. En parallèle, le second pouvait se résoudre avant que le premier ait
+  créé la fiche.
 - 🔴 **`opted_out` et `unknown` ne veulent pas dire la même chose.** `optInAllows` exige un opt-in EXPLICITE
   pour une campagne **marketing** : un contact `unknown` est donc écarté **en silence**, seul `utility` passe.
   La saisie manuelle et l'import CSV créent en opt-in par défaut ; l'API publique et l'import HubSpot gardent
@@ -1501,6 +1527,9 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/server.ts` -> `modulesDeRoutes` | 🔴 le point de passage OBLIGÉ pour monter un module de routes. Chaque entrée déclare sa `ClasseDAcces` (six valeurs, pas deux), et la couverture du garde-fou d'authentification s'en DÉRIVE au lieu d'être recopiée. Monter une route ailleurs la sort du garde-fou sans qu'aucune erreur ne le dise |
 | `src/crm/contact-store.pg.ts` -> `MATCH_BY_WAID_SQL` | résoudre un contact par `wa_id` (E.164 exact, chiffres nus, BSUID) |
 | `src/crm/identity.ts` -> `waIdOfTarget` | la règle wa_id pour une cible d'envoi |
+| `src/api/fiche.ts` -> `resoudreFiche` | 🔴 trouver la fiche d'une personne à partir des clés reçues par l'API publique. Une seconde résolution divergerait sur la règle multi-clés, et une personne aurait deux fiches |
+| `src/api/consentement.ts` -> `appliquerConsentement` | le consentement écrit par une machine, et sa ligne d'audit |
+| `src/api/erreurs.ts` | `STATUT_PAR_CODE` et `refuser` : la forme `{ error, code }` des erreurs de `/v1/contacts` et de la garde de clé ; tout nouveau refus de l'API publique passe par là (`/v1/sends` et `/v1/messages` portent encore des refus sans code ou à code hors table, jusqu'au lot 2) |
 | `src/crm/date-iso.ts` | normaliser une date venue d'un tiers, et REFUSER l'ambigu en le disant |
 | `src/crm/contact-filters.ts` | les règles de filtrage des contacts (bornes, opérateurs, plafonds) |
 | `src/stats/range.ts` -> `BOUNDS_CTE` | les bornes de date, robustes au changement d'heure |

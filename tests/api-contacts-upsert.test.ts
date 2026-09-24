@@ -5,7 +5,7 @@ import type { PgUserFieldStore } from '../src/crm/field-store.pg';
 import type { UserFieldDef } from '../src/crm/types';
 
 /**
- * Le CHEMIN D'ÉCRITURE PARTAGÉ (API publique, import de liste, webhook entrant).
+ * Le CHEMIN D'ÉCRITURE PAR NUMÉRO (webhook entrant, création à la main de la console).
  *
  * Ce qui est vérifié ici et nulle part ailleurs : la SOURCE du consentement. Les tests de route passent par
  * un faux `ecrireContact` et ne touchent donc jamais cette fonction ; supprimer le passage de `optInSource`

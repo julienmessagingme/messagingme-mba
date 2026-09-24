@@ -34,6 +34,7 @@ describe('le calcul des unités', () => {
     // compteurs, ce qui est exactement ce qu'on cherche à voir.
     expect(unitesDe('contacts.batch', 0)).toBe(1);
     expect(unitesDe('sends.read')).toBe(1);
+    expect(unitesDe('contacts.read')).toBe(1);
     expect(unitesDe('mcp.refus')).toBe(1);
   });
 });
@@ -210,6 +211,7 @@ describe('les opérations LOURDES ont un plafond de places simultanées', () => 
     expect(estLourde('sends.create')).toBe(true);
     expect(estLourde('contacts.upsert')).toBe(false);
     expect(estLourde('sends.read')).toBe(false);
+    expect(estLourde('contacts.read')).toBe(false);
     expect(estLourde('mcp.call')).toBe(false);
     expect(estLourde('mcp.refus')).toBe(false);
   });

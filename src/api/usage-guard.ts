@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import type { CodeApi } from './erreurs';
 
 /**
  * LE GARDE D'USAGE DE L'API PUBLIQUE : ce que le produit compte, et ce qu'il déciderait d'en faire.
@@ -23,6 +24,8 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 export type OperationApi =
   | 'contacts.upsert'
   | 'contacts.batch'
+  // Lire une fiche (`GET /v1/contacts/{contactId}`, `POST /v1/contacts/search`) : une unité, et PAS lourde.
+  | 'contacts.read'
   | 'sends.create'
   | 'sends.read'
   // Un texte libre dans la fenetre de 24 h (`POST /v1/messages`). UNE unite par appel : un message, une
@@ -104,8 +107,9 @@ export interface ApiUsageGuard {
    * RÉSERVE UNE PLACE POUR UNE OPÉRATION LOURDE. Rend `null` quand il n'y en a plus.
    *
    * 🔴 LE CHIFFRE QUI REND CETTE PLACE NÉCESSAIRE : le pool sert **8 connexions pour TOUT le process
-   * API**, et `upsertContactsFromApi` en demande jusqu'à 4 par requête. Rien ne comptait les requêtes
-   * lourdes EN VOL : dix lots simultanés mettent quarante acquisitions en file derrière huit places,
+   * API**, et `ecrireFiches` (`src/api/contacts-v1.ts`, le chemin de `/v1/contacts/batch`) en demande
+   * jusqu'à `ECRITURES_EN_VOL` à la fois par requête. Rien ne comptait les requêtes lourdes EN VOL : dix
+   * lots simultanés mettent quarante acquisitions en file derrière huit places,
    * échouent au bout de huit secondes, et pendant ce temps l'Inbox et le worker se disputent les mêmes
    * huit emplacements.
    *
@@ -145,7 +149,7 @@ export function unitesDe(operation: OperationApi, taille = 1): number {
  * en dessous, et un symbole exporté que personne n'importe finit par être appelé de travers, sans la
  * résolution d'identité que l'autre fait.
  *
- * 🔴 POINT DE PASSAGE UNIQUE DES SIX ROUTES. Recopié six fois, le couple « compter puis refuser »
+ * 🔴 POINT DE PASSAGE UNIQUE DES ROUTES PUBLIQUES. Recopié dans chacune, le couple « compter puis refuser »
  * finirait par diverger : une route qui compte sans refuser, ou qui refuse en 500 au lieu de 429, et
  * personne ne le verrait avant l'incident. C'est le motif qui a déjà coûté cher ici avec les en-têtes de
  * débit, recopiés trois fois avant d'être rassemblés dans `consommerAvecEntetes`.
@@ -163,7 +167,7 @@ async function demanderOuRefuser(
 ): Promise<boolean> {
   const verdict = usage.demander(demande);
   if (verdict.accepte) return true;
-  await reply.code(429).send({ error: verdict.raison ?? 'quota d’usage atteint' });
+  await reply.code(429).send({ error: verdict.raison ?? 'quota d’usage atteint', code: 'rate_limited' satisfies CodeApi });
   return false;
 }
 
@@ -184,9 +188,9 @@ export function estLourde(operation: OperationApi): boolean {
 /**
  * COMPTER LE TRAVAIL D'UNE REQUÊTE AUTHENTIFIÉE, EN UN SEUL APPEL.
  *
- * 🔴 ELLE EXISTE PARCE QUE LES SIX ROUTES RECOPIAIENT LE MÊME OBJET (relevé en revue), dont le repli
- * `req.apiKeyId ?? 'inconnue'`. Six copies d'un repli, c'est six endroits où il peut diverger, et surtout
- * un compteur qui se rangerait sous « inconnue » sans que personne ne se demande pourquoi.
+ * 🔴 ELLE EXISTE PARCE QUE LES ROUTES PUBLIQUES RECOPIAIENT LE MÊME OBJET (relevé en revue), dont le repli
+ * `req.apiKeyId ?? 'inconnue'`. Une copie du repli par route, c'est autant d'endroits où il peut diverger, et
+ * surtout un compteur qui se rangerait sous « inconnue » sans que personne ne se demande pourquoi.
  *
  * ⚠️ ELLE REND `false` SI LA REQUÊTE N'EST PAS AUTHENTIFIÉE, sans rien compter : on ne mesure pas ce
  * qu'on a refusé à la porte, sinon les compteurs mélangeraient l'usage d'un client et le bruit d'un
@@ -216,7 +220,7 @@ async function reserverPlaceLourde(
     // chez l'appelant, et rien du tout chez nous. Mesuré en production le 2026-09-14.
     usage.noterRefus(demande);
     reply.header('retry-after', '2');
-    await reply.code(429).send({ error: 'trop d’opérations lourdes en cours sur cette instance, réessayez dans un instant' });
+    await reply.code(429).send({ error: 'trop d’opérations lourdes en cours sur cette instance, réessayez dans un instant', code: 'rate_limited' satisfies CodeApi });
     return false;
   }
   reply.raw.on('close', liberer);
@@ -232,7 +236,7 @@ export async function compterOuRefuser(
 ): Promise<boolean> {
   const tenantId = req.auth?.tenantId;
   if (!tenantId) {
-    await reply.code(401).send({ error: 'clé d’API requise' });
+    await reply.code(401).send({ error: 'clé d’API requise', code: 'unauthorized' satisfies CodeApi });
     return false;
   }
   const demande: DemandeUsage = {

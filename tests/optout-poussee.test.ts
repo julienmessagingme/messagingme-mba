@@ -217,7 +217,7 @@ describe('le dépôt ANNONCE le refus, après l’avoir écrit', () => {
  */
 describe('🔴 tout chemin qui écrit un opt-out ANNONCE, et la liste est dérivée du fichier', () => {
   /** Les méthodes dont les tests ci-dessus prouvent qu'elles annoncent. */
-  const METHODES_QUI_ANNONCENT = ['setOptInByWaId', 'applyEdits', 'applyEditsMany'];
+  const METHODES_QUI_ANNONCENT = ['setOptInByWaId', 'applyEdits', 'applyEditsMany', 'ecrireConsentementParId'];
 
   it('les méthodes qui posent `opt_out_at = now()` sont EXACTEMENT celles qui annoncent', () => {
     const source = readFileSync(new URL('../src/crm/contact-store.pg.ts', import.meta.url), 'utf8');

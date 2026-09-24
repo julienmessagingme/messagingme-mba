@@ -539,7 +539,12 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
        */
       const apiPrefiltre = new RateLimiter(config.API_KEY_PREFILTRE_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS);
       const requireApiKey = makeRequireApiKey(v1.apiKeys, apiLimiter, apiPrefiltre);
-      registerV1Contacts(app, { ...v1.contacts, usage: usageApi }, [requireApiKey, requireScope('contacts:write')]);
+      // DEUX droits, et une clé ne porte que ceux qu'on lui a donnés : lire une fiche (numéro, consentement,
+      // joignabilité) n'est pas le droit d'en écrire une, ni l'inverse.
+      registerV1Contacts(app, { ...v1.contacts, usage: usageApi }, {
+        ecrire: [requireApiKey, requireScope('contacts:write')],
+        lire: [requireApiKey, requireScope('contacts:read')],
+      });
       if (v1.sends) registerV1Sends(app, { ...v1.sends, usage: usageApi }, [requireApiKey, requireScope('sends:create')]);
       // MEME droit que les envois, et c'est un elargissement assume : les droits d'une cle se fixent a sa
       // creation et ne s'editent pas, donc un droit neuf aurait oblige chaque integrateur a refabriquer sa

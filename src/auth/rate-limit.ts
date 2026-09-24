@@ -1,4 +1,5 @@
 import type { FastifyReply } from 'fastify';
+import type { CodeApi } from '../api/erreurs';
 
 /**
  * Limiteur de débit en mémoire, par clé.
@@ -141,6 +142,11 @@ export async function consommerAvecEntetes(
   cle: string,
   reply: FastifyReply,
   message = 'trop de requêtes, patientez un instant',
+  /**
+   * ⚠️ FACULTATIF, et c'est délibéré : seule la surface PUBLIQUE (`/v1`, `/mcp`) le passe (spec de l'API,
+   * § 9). La console, les webhooks entrants et les rappels RCS gardent `{ error }` seul.
+   */
+  code?: CodeApi,
 ): Promise<boolean> {
   // Désactivé : aucun en-tête. Annoncer `x-ratelimit-limit: 0` sur un appel ACCEPTÉ ferait croire à un
   // intégrateur qu'il est à bout de quota alors qu'il n'y en a aucun.
@@ -151,7 +157,7 @@ export async function consommerAvecEntetes(
   reply.header('x-ratelimit-reset', String(Math.ceil(etat.resetAt / 1000)));
   if (limiteur.take(cle)) return true;
   reply.header('x-ratelimit-remaining', '0');
-  await refuserTropDeRequetes(reply, etat.attenteMs, message);
+  await refuserTropDeRequetes(reply, etat.attenteMs, message, code);
   return false;
 }
 
@@ -172,15 +178,16 @@ export async function consommerEnSilence(
   cle: string,
   reply: FastifyReply,
   message = 'trop de requêtes, patientez un instant',
+  code?: CodeApi,
 ): Promise<boolean> {
   if (limiteur.take(cle)) return true;
-  await refuserTropDeRequetes(reply, limiteur.remaining(cle).attenteMs, message);
+  await refuserTropDeRequetes(reply, limiteur.remaining(cle).attenteMs, message, code);
   return false;
 }
 
-async function refuserTropDeRequetes(reply: FastifyReply, attenteMs: number, message: string): Promise<void> {
+async function refuserTropDeRequetes(reply: FastifyReply, attenteMs: number, message: string, code?: CodeApi): Promise<void> {
   reply.header('retry-after', String(Math.max(1, Math.ceil(attenteMs / 1000))));
-  await reply.code(429).send({ error: message });
+  await reply.code(429).send(code ? { error: message, code } : { error: message });
 }
 
 /**

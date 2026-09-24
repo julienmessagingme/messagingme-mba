@@ -1,6 +1,7 @@
 import { jamaisDesabonne, toujoursDesabonne } from './consentement';
 import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
+import { contactsV1Muets } from './aide/contacts-v1';
 import { FakeQueue } from '../src/queue/fake';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
@@ -72,7 +73,7 @@ function app(over: Partial<DepsMcp> & { membres?: Array<{ id: string; name: stri
     .add(CLE_TOUT, { id: 'k1', tenantId: 't1', scopes: ['mcp:read', 'mcp:write'] })
     .add(CLE_LECTURE, { id: 'k2', tenantId: 't1', scopes: ['mcp:read'] })
     .add(CLE_AUTRE_ESPACE, { id: 'k3', tenantId: 't2', scopes: ['mcp:read', 'mcp:write'] });
-  const server = buildServer({ queue: new FakeQueue(), v1: { apiKeys: keys, contacts: { upsertContacts: async () => [] }, mcp } });
+  const server = buildServer({ queue: new FakeQueue(), v1: { apiKeys: keys, contacts: contactsV1Muets(), mcp } });
   return { server, traces };
 }
 

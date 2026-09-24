@@ -50,9 +50,9 @@ export interface WebhookEntrantRouteDeps {
    */
   trouverWaId(tenantId: string, waId: string): Promise<string | null>;
   /**
-   * Écrit le contact par le CHEMIN PARTAGÉ (`upsertContactsFromApi`) : mêmes règles de normalisation, de
-   * résolution de champ et de validation que l'API publique et l'import CSV. Le redériver ici créerait un
-   * second contact pour la même personne le jour où l'une des deux versions changerait.
+   * Écrit le contact par le CHEMIN PARTAGÉ (`upsertContactsFromApi`) : mêmes règles que la création à la main
+   * de la console ; sa préparation des champs (`preparateurDeChamps`) est aussi celle de l'API publique. Le
+   * redériver ici créerait un second contact pour la même personne le jour où l'une des deux versions changerait.
    */
   ecrireContact(
     tenantId: string,

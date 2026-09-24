@@ -7,9 +7,10 @@ import { cleApiDeTest } from './aide/cle-api';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { V1SendsRouteDeps } from '../src/http/v1-sends';
 import type { DepsMcp } from '../src/mcp/outils';
+import { contactsV1Muets } from './aide/contacts-v1';
 
 /**
- * L'OBSERVATION DE L'USAGE : ce que les six routes publiques comptent, et ce qu'elles ne refusent PAS.
+ * L'OBSERVATION DE L'USAGE : ce que les routes publiques comptent, et ce qu'elles ne refusent PAS.
  *
  * 🔴 AUCUN APPEL N'EST REFUSÉ AUJOURD'HUI, ET C'EST LE PREMIER CAS DE CE FICHIER. Aucun seuil n'est
  * inventé par ce chantier : on compte, on expose, on regarde, Julien tranche ensuite. Un seuil deviné qui
@@ -19,7 +20,7 @@ import type { DepsMcp } from '../src/mcp/outils';
  * `api_keys.last_used_at` ÉCRASÉ à chaque appel. Aucun compteur nulle part, donc aucune façon de répondre
  * à « qui consomme quoi » ni « ce seuil mordrait-il sur un vrai client ? ».
  *
- * ⚠️ LES SIX ROUTES SONT EXERCÉES POUR DE VRAI, pas inventoriées par `grep`. Un inventaire prouve qu'une
+ * ⚠️ LES ROUTES SONT EXERCÉES POUR DE VRAI, pas inventoriées par `grep`. Un inventaire prouve qu'une
  * liste est complète, jamais que les verdicts sont justes : c'est la leçon du chantier 6, où un test
  * d'inventaire affirmait qu'un chemin d'envoi était bloqué alors qu'il ne l'était pas.
  */
@@ -53,13 +54,13 @@ const sendsMuets: Omit<V1SendsRouteDeps, 'usage'> = {
 
 function monter() {
   const usage = new GardeUsageMemoire();
-  const cles = new FauxCles().ajouter(CLE, { id: 'k1', tenantId: 't1', scopes: ['contacts:write', 'sends:create'] });
+  const cles = new FauxCles().ajouter(CLE, { id: 'k1', tenantId: 't1', scopes: ['contacts:write', 'contacts:read', 'sends:create'] });
   const server = buildServer({
     queue: new FakeQueue(),
     usage,
     v1: {
       apiKeys: cles,
-      contacts: { upsertContacts: async (_t, items) => items.map((_, i) => ({ index: i, status: 'created' as const, contactId: `c${i}` })) },
+      contacts: contactsV1Muets(),
       sends: sendsMuets,
       mcp: {} as DepsMcp,
     },
@@ -81,11 +82,17 @@ const opsMuet = {
 };
 
 describe('l’usage de l’API publique est COMPTÉ', () => {
-  it('🔴 les six routes comptent, chacune sous son opération', async () => {
+  it('🔴 chaque route publique compte, sous son opération', async () => {
     const { server, usage } = monter();
+    const FICHE = '00000000-0000-4000-8000-000000000001';
 
     await server.inject({ method: 'POST', url: '/v1/contacts', headers: entetes, payload: { phone: '+33612345678' } });
     await server.inject({ method: 'POST', url: '/v1/contacts/batch', headers: entetes, payload: { contacts: [{ phone: '+33612345678' }, { phone: '+33698765432' }] } });
+    // Les routes de fiche : une lecture, une recherche (le double ne trouve rien, la route compte quand même),
+    // une modification.
+    await server.inject({ method: 'GET', url: `/v1/contacts/${FICHE}`, headers: entetes });
+    await server.inject({ method: 'POST', url: '/v1/contacts/search', headers: entetes, payload: { phone: '+33612345678' } });
+    await server.inject({ method: 'PATCH', url: `/v1/contacts/${FICHE}`, headers: entetes, payload: { name: 'Camille' } });
     await server.inject({
       method: 'POST', url: '/v1/sends',
       headers: { ...entetes, 'idempotency-key': 'idem-1' },
@@ -97,12 +104,15 @@ describe('l’usage de l’API publique est COMPTÉ', () => {
 
     const parOperation = Object.fromEntries(usage.compteurs().map((c) => [c.operation, c]));
     expect(Object.keys(parOperation).sort()).toEqual(
-      ['contacts.batch', 'contacts.upsert', 'mcp.call', 'mcp.refus', 'sends.create', 'sends.read'],
+      ['contacts.batch', 'contacts.read', 'contacts.upsert', 'mcp.call', 'mcp.refus', 'sends.create', 'sends.read'],
     );
     // 🔴 LE TRAVAIL, PAS L'APPEL : un lot de 2 contacts coûte 2, un envoi de 3 destinataires coûte 3.
     expect(parOperation['contacts.batch']).toMatchObject({ appels: 1, unites: 2 });
     expect(parOperation['sends.create']).toMatchObject({ appels: 1, unites: 3 });
-    expect(parOperation['contacts.upsert']).toMatchObject({ appels: 1, unites: 1 });
+    // `POST /v1/contacts` et `PATCH` : deux écritures d'UNE fiche, sous la même opération.
+    expect(parOperation['contacts.upsert']).toMatchObject({ appels: 2, unites: 2 });
+    // `GET` et `search` : deux lectures, une unité chacune.
+    expect(parOperation['contacts.read']).toMatchObject({ appels: 2, unites: 2 });
     await server.close();
   });
 
@@ -176,11 +186,11 @@ describe('le stockage se remplace sans toucher aux routes', () => {
    * 🔴 C'EST LA PROPRIÉTÉ QUI PRÉPARE LE MULTI-REPLICA, ET ELLE SE PROUVE PLUTÔT QU'ELLE NE SE PROMET. Le
    * jour où les compteurs devront être partagés entre deux process, on remplacera le STOCKAGE et rien
    * d'autre. Si une route connaissait `GardeUsageMemoire` plutôt que le contrat, ce jour-là demanderait de
-   * rouvrir les six routes, c'est-à-dire exactement ce que l'injection existe pour éviter.
+   * rouvrir chaque route, c'est-à-dire exactement ce que l'injection existe pour éviter.
    *
    * ⚠️ CE DOUBLE N'EST PAS UNE CLASSE DU DÉPÔT : il est écrit ici, à la main, et il suffit. C'est la preuve.
    */
-  it('🔴 un double maison suffit aux six routes : aucune ne connaît l’implémentation', async () => {
+  it('🔴 un double maison suffit à toutes les routes : aucune ne connaît l’implémentation', async () => {
     const vues: string[] = [];
     const double = { demander: (d: { operation: string }) => { vues.push(d.operation); return { accepte: true }; }, compteurs: () => [], entrerLourde: () => () => {}, noterRefus: () => {} };
     const cles = new FauxCles().ajouter(CLE, { id: 'k1', tenantId: 't1', scopes: ['contacts:write', 'sends:create'] });
@@ -189,7 +199,7 @@ describe('le stockage se remplace sans toucher aux routes', () => {
       usage: double,
       v1: {
         apiKeys: cles,
-        contacts: { upsertContacts: async () => [{ index: 0, status: 'created' as const, contactId: 'c0' }] },
+        contacts: contactsV1Muets(),
         sends: sendsMuets,
         mcp: {} as DepsMcp,
       },
@@ -209,7 +219,7 @@ describe('le stockage se remplace sans toucher aux routes', () => {
     const server = buildServer({
       queue: new FakeQueue(),
       usage: refusant,
-      v1: { apiKeys: cles, contacts: { upsertContacts: async () => [{ index: 0, status: 'created' as const, contactId: 'c0' }] } },
+      v1: { apiKeys: cles, contacts: contactsV1Muets() },
     });
     const res = await server.inject({ method: 'POST', url: '/v1/contacts', headers: entetes, payload: { phone: '+33612345678' } });
     expect(res.statusCode).toBe(429);
@@ -227,7 +237,7 @@ describe('ce que /ops montre de l’usage', () => {
       usage,
       opsToken: 'jeton-ops',
       ops: opsMuet,
-      v1: { apiKeys: cles, contacts: { upsertContacts: async () => [{ index: 0, status: 'created' as const, contactId: 'c0' }] } },
+      v1: { apiKeys: cles, contacts: contactsV1Muets() },
     });
     await server.inject({ method: 'POST', url: '/v1/contacts', headers: entetes, payload: { phone: '+33612345678' } });
 
@@ -251,7 +261,7 @@ describe('ce que /ops montre de l’usage', () => {
     const cles = new FauxCles().ajouter(CLE, { id: 'k1', tenantId: 't1', scopes: ['contacts:write'] });
     const server = buildServer({
       queue: new FakeQueue(), usage, opsToken: 'jeton-ops', ops: opsMuet,
-      v1: { apiKeys: cles, contacts: { upsertContacts: async () => [{ index: 0, status: 'created' as const, contactId: 'c0' }] } },
+      v1: { apiKeys: cles, contacts: contactsV1Muets() },
     });
     await server.inject({ method: 'POST', url: '/v1/contacts', headers: entetes, payload: { phone: '+33612345678' } });
     const res = await server.inject({ method: 'GET', url: '/ops/usage', headers: { 'x-ops-token': 'jeton-ops' } });
@@ -279,12 +289,12 @@ describe('le plafond des opérations LOURDES en vol', () => {
       usage,
       v1: {
         apiKeys: cles,
-        contacts: {
-          upsertContacts: async (_t, items) => {
+        contacts: contactsV1Muets({
+          ecrireFiches: async (_t, items) => {
             await enVol;
             return items.map((_, i) => ({ index: i, status: 'created' as const, contactId: `c${i}` }));
           },
-        },
+        }),
         sends: sendsMuets,
       },
     });
@@ -344,7 +354,12 @@ describe('le plafond des opérations LOURDES en vol', () => {
       usage,
       v1: {
         apiKeys: cles,
-        contacts: { upsertContacts: async (_t, items) => { await enVol; return items.map((_, i) => ({ index: i, status: 'created' as const, contactId: `c${i}` })); } },
+        contacts: contactsV1Muets({
+          ecrireFiches: async (_t, items) => {
+            await enVol;
+            return items.map((_, i) => ({ index: i, status: 'created' as const, contactId: `c${i}` }));
+          },
+        }),
       },
     });
     const gros = { contacts: Array.from({ length: 10 }, () => ({ phone: '+33612345678' })) };

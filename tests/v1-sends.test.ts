@@ -1,6 +1,7 @@
 import { exigeFenetre24h } from '../src/http/v1-sends';
 import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
+import { contactsV1Muets } from './aide/contacts-v1';
 import { FakeQueue } from '../src/queue/fake';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
@@ -64,7 +65,7 @@ function app(over: Partial<V1SendsRouteDeps> = {}) {
     sleep: async () => {}, // pas de temporisation réelle dans les tests de retry
     ...over,
   };
-  return { server: buildServer({ queue: new FakeQueue(), v1: { apiKeys: keys, contacts: { upsertContacts: async () => [] }, sends } }), cap, idem };
+  return { server: buildServer({ queue: new FakeQueue(), v1: { apiKeys: keys, contacts: contactsV1Muets(), sends } }), cap, idem };
 }
 const H = (key: string, idemKey?: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${key}`, ...(idemKey ? { 'idempotency-key': idemKey } : {}) } });
 

@@ -84,8 +84,9 @@ export interface ContactsRouteDeps {
    */
   ensureSocleField?(tenantId: string, key: string, label: string, type: UserFieldDef['type']): Promise<void>;
   /**
-   * Crée (ou met à jour) UN contact saisi à la main. Délègue au MÊME upsert que l'API publique et l'import :
-   * un second chemin de création divergerait sur la normalisation du numéro, l'opt-in ou les champs.
+   * Crée (ou met à jour) UN contact saisi à la main. Délègue au MÊME upsert que le webhook entrant, dont la
+   * préparation des champs est aussi celle de l'API publique : un second chemin divergerait sur la
+   * normalisation du numéro, l'opt-in ou les champs.
    * Optionnelle : sans elle la route n'est pas montée (503), donc les câblages de test restent inchangés.
    */
   createOneContact?(
@@ -532,8 +533,9 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     }
 
     if (action.type === 'set_optin') {
-      // Seul chemin capable de poser `opted_out` : l'import et l'API publique ne font jamais régresser un
-      // statut. C'est donc ici qu'un « ne m'envoyez plus rien » devient exécutoire pour les campagnes.
+      // L'import ne fait jamais régresser un statut. `opted_out` se pose ici (action en masse), sur la fiche,
+      // par le mot-clé entrant ou par l'API publique (`consent`) : la liste qui fait foi est dérivée par
+      // `tests/optout-poussee.test.ts`.
       const value = action.value === 'opted_in' || action.value === 'opted_out' ? action.value : null;
       if (value === null) return reply.code(400).send({ error: 'valeur requise (opted_in | opted_out)' });
       const affected = await deps.applyEditsMany(tenant, target, { setOptIn: value });

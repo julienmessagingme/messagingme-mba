@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { buildServer } from '../src/server';
+import { contactsV1Muets } from './aide/contacts-v1';
 import { AntiRejeu } from '../src/mba/anti-rejeu';
 import { FakeQueue } from '../src/queue/fake';
 import { sha256Hex } from '../src/lib/signature';
@@ -71,7 +72,7 @@ function monter(over: Partial<MbaRelaisDeps> = {}) {
     queue: new FakeQueue(),
     v1: {
       apiKeys: cles,
-      contacts: { upsertContacts: async (_t, items) => items.map((_, i) => ({ index: i, status: 'created' as const, contactId: `c${i}` })) },
+      contacts: contactsV1Muets(),
       mbaRelais,
     },
   });

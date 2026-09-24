@@ -427,6 +427,31 @@ vient d'une décision de Julien.
   reçoit un 429. Sans conséquence avec un seul intégrateur ; le jour où deux se croisent, il faudra une file
   d'attente courte ou un partage équitable, sans jamais relever le plafond au-delà de la moitié du pool.
 
+## 🟡 API publique, lot 1 : quatre restes que la relecture a laissés hors du lot (2026-09-24)
+
+Relevés par la relecture du lot 1 (identité et fiches), hors de ses fichiers. Aucun ne touche un client
+aujourd'hui ; chacun rend faux, à moitié, ce que le lot affirme.
+
+- **`/mcp` rend encore deux refus 401 sans `code`** (`src/http/mcp.ts`, les deux `if (!tenantId)` de `POST` et
+  `GET /mcp`). Inatteignables tant que la garde de clé est montée devant, mais la même situation passée par
+  `compterOuRefuser` rend `unauthorized`, et `src/auth/rate-limit.ts` affirme que `/mcp` porte le code. À
+  aligner par `refuser(reply, 401, 'unauthorized', …)` (`src/api/erreurs.ts`), au plus tard au lot 4, qui
+  documente les erreurs.
+- **Le parseur JSON est GLOBAL et avale tout corps illisible en `{}`** (`src/webhooks/receiver.ts`, posé pour
+  le webhook Meta). Un `POST /v1/contacts` au corps `{bad` passe donc la validation : il rend `invalid_recipient`
+  au lieu de `invalid_body`, et il est compté dans l'usage ; un `PATCH` illisible devient « rien à modifier ».
+  Correction : ne rendre `{}` que pour `/webhooks/meta`, ailleurs `done(err)` avec un statut 400, et faire
+  rendre aux adresses `/v1/*` `{ error: 'corps JSON illisible', code: 'invalid_body' }` dans `setErrorHandler`.
+  Un test de route le fixe : `payload: '{bad'` rend 400 `invalid_body` sans que le service soit appelé.
+- **La puce de `documentation.md` qui suit les trois ajoutées au lot 1** (section « Contacts », celle qui dit
+  que « l'API publique et l'import […] gardent l'exigence inverse ») décrit l'ancien modèle `optIn`. À
+  reformuler à la tâche 8 du lot 4 : l'API publique crée en `unknown`, sauf `consent` explicite, et sait
+  écrire `opted_out` comme `opted_in`.
+- **Le cache de joignabilité RCS porte un même numéro sous DEUX formes** (`+33…` écrit par les campagnes,
+  chiffres seuls par les scénarios et la réponse RCS de l'Inbox). La lecture de la fiche lit les deux
+  (`joignabiliteRcsToutesFormes`, `src/rcs/reachability.ts`). Au lot 3 (§ 5, écriture du cache) : écrire
+  une forme unique, sans casser les entrées déjà écrites sous l'autre.
+
 ## 🟡 `inbox-envoi-scenario.spec.ts` est INSTABLE, mesuré le 2026-09-19
 
 Les cas `:112` (« fenêtre FERMÉE -> seuls ceux qui ouvrent par un template ») et `:169` (« un refus du serveur
@@ -1726,28 +1751,6 @@ le **système** (adresse, authentification, secret) se déclare dans **Tools > C
 bibliothèque du workspace où plusieurs agents puisent ; l'**appel** que tel agent a le droit de faire se
 déclare dans son onglet Outils. Si la confusion revient malgré ça, la correction est de RENOMMER l'un des
 deux, pas de réexpliquer.
-
-## L'API publique v1 ne sait pas dire « désabonné » (reste du 5.1, 2026-08-29)
-
-La moitié conformité du 5.1 est faite : un STOP en WhatsApp désabonne désormais, comme en RCS. Reste la
-moitié API : un client dont le CRM sait que quelqu'un s'est désinscrit ne peut pas nous le dire par
-`/v1/contacts`, qui ne produit que `opted_in` ou `unknown`.
-
-🔴 **Et ça ne se règle PAS en réinterprétant `optIn: false`.** Deux raisons trouvées en regardant le code :
-
-1. `optIn: false` veut dire aujourd'hui « non renseigné ». Lui donner le sens « désabonné » réécrirait le sens
-   des payloads que les intégrations envoient déjà, et pourrait désabonner en masse sur un sync ordinaire.
-   Il faut un champ EXPLICITE (`optOut: true`), additif.
-2. Le champ ne peut pas passer par l'upsert. `upsertByPhoneReturningId` porte
-   `opt_in_status = case when excluded.opt_in_status = 'opted_in' then 'opted_in' else contacts.opt_in_status end`,
-   c'est-à-dire qu'il ne sait que **promouvoir**. C'est une bonne garde (un sync n'écrase jamais un
-   consentement), et elle rend l'opt-out impossible par ce chemin **par construction**. Il faut donc une
-   seconde écriture après l'upsert, sur l'identifiant rendu, comme le fait la route `PATCH` de la fiche.
-
-À faire avec son entrée de journal d'audit (`contact.optout`, source `api`), comme les trois autres chemins.
-
-**Ce n'est pas une brèche de conformité** : le refus exprimé À NOUS est désormais honoré, et l'opérateur a
-déjà trois chemins pour désabonner (fiche, action en masse, bloc « Action »). C'est un trou d'intégration.
 
 ## 🔴 À TRANCHER : une règle d'arrêt nommée `humain` fabrique deux poignées identiques (2026-08-29)
 

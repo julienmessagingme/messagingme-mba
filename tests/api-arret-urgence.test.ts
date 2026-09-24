@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
+import { contactsV1Muets } from './aide/contacts-v1';
 import { FakeQueue } from '../src/queue/fake';
 import { sha256Hex } from '../src/lib/signature';
 import { cleApiDeTest } from './aide/cle-api';
@@ -41,7 +42,7 @@ function monter(statut: string | undefined) {
     queue: new FakeQueue(),
     v1: {
       apiKeys: new FauxCles(CLE, statut),
-      contacts: { upsertContacts: async () => [{ index: 0, status: 'created' as const, contactId: 'c0' }] },
+      contacts: contactsV1Muets(),
       mcp: {} as never,
     },
   });
