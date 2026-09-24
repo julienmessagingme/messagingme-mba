@@ -17,8 +17,12 @@ import {
  * et marquer des outils indisponibles : écraser n'est acceptable que si l'on montre quoi avant de le faire.
  * C'est le même dispositif que la publication chez Meta, pour la même raison.
  *
- * 🔴 CES OUTILS NE VONT PAS À L'AGENT DE META, et l'écran le DIT au lieu de griser une case sans raison.
- * Meta n'accepte pas encore de connexion MCP.
+ * 🔴 CES OUTILS NE VONT PAS ENCORE À L'AGENT DE META, et l'écran le DIT au lieu de griser une case sans
+ * raison. ⚠️ MAIS LA RAISON A CHANGÉ DE CAMP LE 2026-09-24, et la phrase avec. Elle accusait Meta (« il
+ * n'accepte pas encore de connexion MCP »), ce qui était exact au 2026-09-10 et vérifié ce jour-là. Meta
+ * documente désormais `connector_protocol: MCP` sur ses connecteurs. Le verrou est donc CHEZ NOUS :
+ * `src/mba/outils-a-publier.ts` n'expédie que les appels HTTP et les gestes maison. Dire le contraire
+ * enverrait le client réclamer chez Meta une limite qui est la nôtre.
  */
 export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean }) {
   const t = useT();
@@ -77,11 +81,11 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
           {t('Les serveurs MCP que vos agents IA peuvent interroger. Déclarés une fois ici, leur catalogue d’outils est importé puis proposé à chaque agent dans son onglet Outils.',
             'The MCP servers your AI agents can query. Declared once here, their tool catalogue is imported and then offered to each agent in its Tools tab.')}
         </p>
-        {/* ⚠️ ON LE DIT, ON NE GRISE PAS. Meta n'accepte pas MCP : une case désactivée sans explication
-            enverrait le client ouvrir un ticket pour une limite qui n'est pas la nôtre. */}
+        {/* ⚠️ ON LE DIT, ON NE GRISE PAS : une case désactivée sans explication enverrait le client ouvrir
+            un ticket. Et on dit que la limite est LA NÔTRE, parce qu'elle l'est. */}
         <p className="mt-2 text-xs text-ink-500" data-testid="mcp-note-mba">
-          {t('Ces outils servent vos agents IA. L’agent de Meta ne peut pas les recevoir : Meta n’accepte pas encore de connexion MCP.',
-            'These tools serve your AI agents. Meta’s agent cannot receive them: Meta does not accept MCP connections yet.')}
+          {t('Ces outils servent vos agents IA. L’agent de Meta ne les reçoit pas encore : notre publication vers Meta ne sait envoyer que des appels HTTP.',
+            'These tools serve your AI agents. Meta’s agent does not receive them yet: what we publish to Meta can only carry HTTP calls.')}
         </p>
       </header>
 

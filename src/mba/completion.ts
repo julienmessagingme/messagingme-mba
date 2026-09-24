@@ -18,9 +18,9 @@ import type { BusinessInfo, Faq, Skill, Website, KnowledgeFile, AgentSettings } 
  *    coche verte sur `messagingme.fr` avec `crawl_status: "completed"` et ZÉRO page aspirée. Le crawl s'est
  *    « terminé » sans rien récolter. Une source de connaissance vide n'est pas une source de connaissance.
  *
- * 🔴 CE QU'ON NE SAIT PAS, ON LE DIT `inconnue`, ON NE LE COMPTE PAS. Le moyen de paiement ne se lit par
- * aucune route de l'API (Meta ne l'expose pas), et les connecteurs et outils ne sont pas encore pilotés
- * depuis Engage Me. Les compter comme faits serait une invention ; les compter comme à faire serait un
+ * 🔴 CE QU'ON NE SAIT PAS, ON LE DIT `inconnue`, ON NE LE COMPTE PAS. Les connecteurs et outils ne sont pas
+ * encore pilotés depuis Engage Me, et une lecture qui échoue chez Meta laisse sa tâche sans état
+ * connaissable. Les compter comme faits serait une invention ; les compter comme à faire serait un
  * reproche injuste. Ils sortent du dénominateur, ET du compte d'étapes de l'en-tête, et gardent leur ligne
  * avec la raison, dans la liste GRISE des signalements (`EnteteAgent`, prop `signalements`, qui ne retient
  * que les OBLIGATOIRES : les facultatifs `connecteurs` et `outils` n'y sont pas).
@@ -38,7 +38,7 @@ export type EtatTache = 'faite' | 'a_faire' | 'inconnue';
 
 export interface TacheMba {
   /** Clé stable, pour que l'écran lui associe son libellé et son onglet. */
-  cle: 'business_info' | 'faq' | 'competences' | 'activation' | 'paiement' | 'fichiers' | 'sites' | 'connecteurs' | 'outils';
+  cle: 'business_info' | 'faq' | 'competences' | 'activation' | 'fichiers' | 'sites' | 'connecteurs' | 'outils';
   /** Obligatoire chez Meta pour que l'agent réponde, ou facultative. */
   requise: boolean;
   etat: EtatTache;
@@ -145,23 +145,22 @@ export function calculerCompletion(e: EntreeCompletion): CompletionMba {
   });
 
   /**
-   * 🔴 HORS DE NOTRE PORTÉE, ET LA RAISON EST PRÉCISE, PAS « l'API ne l'expose pas ». Mesuré le 2026-09-10
-   * sur le WABA réel :
-   *  - `primary_funding_id` existe et répond **code 10** : « requires that the Business that owns this App
-   *    is a Business Solution Provider for WhatsApp ». Ce n'est donc pas une absence, c'est une porte
-   *    fermée derrière le statut BSP, qui est une décision d'entreprise et non un réglage ;
-   *  - `/{business}/extendedcredits` répond **code 200**, « requires business_management permission ». Là,
-   *    c'est une PORTÉE de jeton que nous ne demandons pas : celle-ci pourrait s'obtenir.
+   * 🔴 LE MOYEN DE PAIEMENT N'EST PAS UNE TÂCHE, ET C'EST UNE DÉCISION (Julien, 2026-09-24), PAS UN OUBLI.
+   * Il en était une jusqu'à cette date, toujours `inconnue`, donc il posait une ligne grise PERMANENTE que
+   * rien ne pouvait jamais faire disparaître. Elle ne disait rien de l'état de l'agent et ne se réglait pas
+   * dans la console : du bruit à chaque ouverture de l'écran, pas une information.
    *
-   * ⚠️ Et le déduire de « l'agent est allumé » serait faux dans les deux sens : une audience restreinte
-   * n'exige aucun paiement (mesuré dans la doc du 2026-09-10), et un paiement peut exister sans agent allumé.
+   * ⚠️ CE QUI A ÉTÉ MESURÉ LE 2026-09-10 RESTE VRAI, et c'est pourquoi il est écrit ICI plutôt que perdu
+   * avec la tâche. Sur le WABA réel : `primary_funding_id` répond **code 10** (« requires that the Business
+   * that owns this App is a Business Solution Provider for WhatsApp »), donc une porte fermée derrière le
+   * statut BSP, qui est une décision d'entreprise et non un réglage ; `/{business}/extendedcredits` répond
+   * **code 200** (« requires business_management permission »), une PORTÉE de jeton que nous ne demandons
+   * pas et qui, elle, POURRAIT s'obtenir. Le jour où on la demande, le paiement devient lisible, donc une
+   * vraie tâche avec un vrai état, et il reprend sa place ici.
+   *
+   * 🔴 ET IL NE SE DÉDUIT PAS DE « L'AGENT EST ALLUMÉ », dans les deux sens : une audience restreinte
+   * n'exige aucun paiement (doc du 2026-09-10), et un paiement peut exister sans agent allumé.
    */
-  taches.push({
-    cle: 'paiement',
-    requise: true,
-    etat: 'inconnue',
-    raison: 'Le moyen de paiement se lit derrière le statut BSP, que nous n’avons pas. À vérifier dans le Business Manager.',
-  });
 
   // --- Facultatives ------------------------------------------------------------------------------
   taches.push({ cle: 'fichiers', requise: false, ...etatListe(e.files, 'Aucun fichier de connaissance.') });

@@ -1864,8 +1864,11 @@ importez ce qu'il propose.
   serveurs MCP » : les outils importés y apparaissent à côté des outils maison et des appels de
   connecteur, et s'activent du même geste. Les paramètres, eux, se règlent ici, dans Tools >
   Connecteurs MCP.
-- ⛔ **L'agent de Meta ne reçoit PAS ces outils**, et l'écran le dit : le Meta Business Agent n'accepte pas
-  encore de connexion MCP. Ils se déclarent aux agents IA, dans **AI Agent > Outils**.
+- ⛔ **L'agent de Meta ne reçoit PAS encore ces outils**, et l'écran le dit. ⚠️ La raison a CHANGÉ, et la
+  phrase avec : elle accusait Meta (« il n'accepte pas encore de connexion MCP »), ce qui était vrai au
+  2026-09-10 et ne l'est plus. Meta accepte désormais un connecteur en protocole MCP. **Le verrou est
+  chez nous** : notre publication vers Meta ne sait traiter qu'un appel HTTP. Ils se déclarent donc aux
+  agents IA, dans **AI Agent > Outils**.
 - ⛔ **Pas encore : OAuth.** L'authentification se fait par jeton ou par en-tête. OAuth viendra ensuite.
 
 ## L'onglet « Outils » de l'agent de Meta (Meta Business Agent > Paramètres > Outils)
@@ -2512,7 +2515,7 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
 - ⛔ **Pas de « temps 2 »** : l'agent ne relit pas ses vraies conversations pour se corriger tout seul. Cela
   n'a de valeur qu'une fois qu'il existe des conversations.
 
-## MBA, le répondeur de Meta (menu « AI Agent » > MBA, guide / MBA, paramètres)
+## MBA, le répondeur de Meta (menu « AI Agent » > MBA > Guide / Paramètres)
 
 - ✅ **Il répond quand un client revient après un silence** (2026-09-16), même trois mois plus tard, et même
   si le dernier échange était passé par un autre canal. C'est la raison d'être de cet agent : répondre quand
@@ -2568,14 +2571,15 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
 
 ### L'en-tête des paramètres : l'agent en un coup d'œil
 
-- ✅ **L'écran de réglage s'ouvre sur un en-tête qui identifie l'agent** : le logo de Meta, le nom
-  d'affichage du numéro, le numéro lui-même, et une pastille qui dit **l'état du numéro WhatsApp**.
+- ✅ **L'écran de réglage s'ouvre sur un en-tête qui identifie l'agent** : le logo de Meta, la mention
+  « Meta Business Agent » qui dit ce que l'écran règle, le nom d'affichage du numéro, le numéro lui-même,
+  et une pastille qui dit **l'état du numéro WhatsApp**.
 - ✅ **Les étapes obligatoires qu'il reste à régler s'affichent juste en dessous**, chacune avec un lien
   direct vers l'onglet où elle se corrige, avec en plus un ratio du type « n sur m réglages obligatoires ».
-- ✅ **Et ce que nous ne pouvons pas vérifier est écrit en dessous, en gris et à part.** Le moyen de paiement
-  en est toujours : il se lit chez Meta derrière un statut que nous n'avons pas, donc il se vérifie dans le
-  Business Manager. Ces lignes n'entrent ni dans le compte d'étapes ni dans le ratio : les compter comme
-  faites serait une invention, les compter comme à faire serait un reproche injuste.
+- ✅ **Et ce que nous n'avons pas pu lire chez Meta est écrit en dessous, en gris et à part**, avec sa
+  raison. Ces lignes n'entrent ni dans le compte d'étapes ni dans le ratio : les compter comme faites serait
+  une invention, les compter comme à faire serait un reproche injuste pour notre propre angle mort. Elles
+  n'apparaissent que quand une lecture échoue vraiment, donc un écran sans ligne grise est la normale.
 - ✅ **Le nombre de messages échangés sur 30 jours s'affiche à côté, quand il est connu.** Il compte tous les
   messages, entrants et sortants, des conversations que cet agent a tenues au moins une fois pendant cette
   période, **y compris les envois de campagne et ce que votre équipe a écrit après avoir repris la main sur

@@ -296,11 +296,27 @@ export class MbaClient {
   /**
    * Les connecteurs d'un numéro, c'est-à-dire les systèmes que l'agent de Meta sait interroger.
    *
-   * ⚠️ UN CONNECTEUR CHEZ META EST UNE API REST, RIEN D'AUTRE. Son schéma exige `name`, `description`,
-   * `base_url` et `auth_type` (∈ `OAUTH2`, `OAUTH2_CLIENT_CREDENTIALS`, `API_KEY`, `BASIC`, `CUSTOM`,
-   * `NONE`), et n'a AUCUN champ de protocole : un serveur MCP n'y entre pas, vérifié sur le corpus OpenAPI
-   * officiel le 2026-09-10. C'est pour ça que la bibliothèque grise la case « exposé au MBA » sur un outil
-   * MCP le jour où il en existera.
+   * 🔴 CETTE LIGNE A DIT « RIEN D'AUTRE QU'UNE API REST » JUSQU'AU 2026-09-24, ET C'ÉTAIT DEVENU FAUX. Elle
+   * affirmait qu'aucun champ de protocole n'existait, « vérifié sur le corpus OpenAPI officiel le
+   * 2026-09-10 ». La vérification était bonne à sa date. Relue le 2026-09-24 sur la page de référence des
+   * connecteurs, la même surface porte désormais **`connector_protocol` ∈ `HTTP` | `MCP`** (« defaults to
+   * HTTP when omitted and cannot be changed after creation »), un `base_url` décrit comme « external HTTP
+   * API **or remote MCP server** », un `POST /{connector_id}/refreshMCPTools` et un objet `mcp_tool_sync`
+   * (`PENDING` / `READY` / `ERROR`). Un serveur MCP y entre donc.
+   *
+   * ⚠️ CE CLIENT NE L'ENVOIE PAS, et c'est un manque de code, pas une limite de Meta : `createConnector`
+   * n'expédie jamais `connector_protocol`, donc tout part en HTTP par défaut. Même remarque pour les deux
+   * autres portes que la page documente et que nous n'appelons pas, `upsertOAuth` et `upsertCertificate`
+   * (mTLS) : nous ne savons poser qu'une clé d'API (`upsertApiKey`). ⚠️ Et l'énumération d'`auth_type` en
+   * liste six (`OAUTH2`, `OAUTH2_CLIENT_CREDENTIALS`, `API_KEY`, `BASIC`, `CUSTOM`, `NONE`) alors que la
+   * page dit que TROIS seulement sont supportés (`OAUTH2_CLIENT_CREDENTIALS`, `API_KEY`, `NONE`) : lire
+   * l'énumération sans lire la phrase mène droit à un refus à l'exécution.
+   *
+   * ⚠️ LA LEÇON GÉNÉRALE, puisque c'est la deuxième fois que cette page nous surprend : une vérification
+   * porte une DATE, et une affirmation sur un tiers sans sa date devient un mensonge par vieillissement.
+   * Celle-ci avait même été RECOPIÉE dans l'écran des connecteurs MCP, où elle disait au client d'aller se
+   * plaindre chez Meta d'une limite qui est la nôtre. La veille qui aurait dû le voir existe
+   * (`ops/mba-docs-watch.mjs`, qui empreinte précisément cette page) et personne n'a reçu son alerte.
    */
   async listConnectors(phoneNumberId: string): Promise<Array<{ id: string; name: string; base_url?: string; auth_type?: string }>> {
     const r = await this.appel<unknown>('GET', `${phoneNumberId}/agent_connectors`);

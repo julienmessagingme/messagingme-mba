@@ -43,7 +43,7 @@ describe('la carte émise', () => {
   });
 
   it('le CHEMIN d’un écran imbriqué nomme ses groupes, dans l’ordre', () => {
-    // C'est ce qui permet au bot de dire « AI Agent > MBA > MBA, guide » plutôt que « MBA, guide », qui ne
+    // C'est ce qui permet au bot de dire « AI Agent > MBA > Guide » plutôt que « Guide » tout court, qui ne
     // se trouve pas dans un menu de quinze entrées.
     const guide = CARTE_CONSOLE.find((e) => e.cle === 'mba-guide');
     expect(guide?.chemin).toEqual(['AI Agent', 'MBA']);

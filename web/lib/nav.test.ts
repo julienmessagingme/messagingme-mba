@@ -14,8 +14,8 @@ const NAV: NavEntree[] = [
   { key: 'accueil', href: '/accueil', label: 'Accueil' },
   { key: 'ia', label: 'AI Agent', children: [
     { key: 'mba', label: 'MBA', children: [
-      { key: 'mba-guide', href: '/mba', label: 'MBA, guide' },
-      { key: 'mba-settings', href: '/mba/parametres', label: 'MBA, paramètres' },
+      { key: 'mba-guide', href: '/mba', label: 'Guide' },
+      { key: 'mba-settings', href: '/mba/parametres', label: 'Paramètres' },
     ] },
     { key: 'agents', href: '/agents', label: 'Other AI agent' },
   ] },
@@ -35,7 +35,7 @@ const NAV: NavEntree[] = [
 
 describe('cheminDeNav', () => {
   it('une page de TROISIÈME niveau rend ses deux ancêtres, dans l’ordre', () => {
-    // C'est le cas qui a motivé le module : avec l'ancienne table plate, « MBA, guide » n'avait qu'un
+    // C'est le cas qui a motivé le module : avec l'ancienne table plate, le Guide du MBA n'avait qu'un
     // ancêtre connu et le sous-menu « MBA » restait fermé sur la page où l'on venait d'arriver.
     expect(cheminDeNav(NAV, 'mba-guide')).toEqual(['ia', 'mba']);
     expect(cheminDeNav(NAV, 'mba-settings')).toEqual(['ia', 'mba']);

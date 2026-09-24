@@ -162,7 +162,14 @@ function MbaSettings({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean
     <EnteteAgent
       logo={{ src: '/meta-business-agent.png', alt: '' }}
       pastille="MB"
-      nom={compte?.verifiedName ?? t('Paramètres de l’agent', 'Agent settings')}
+      // ⚠️ NI TRADUIT NI ABRÉGÉ : « Meta Business Agent » est le nom du produit de META, il reste tel quel
+      // partout (CLAUDE.md). C'est lui qui dit CE QUE cet écran règle, puisque `nom` porte l'identité du
+      // NUMÉRO et pas un titre d'écran.
+      surTitre="Meta Business Agent"
+      // ⚠️ LE REPLI NOMME L'ÉCRAN, PAS « L'AGENT ». Il ne sert que dans les états sans compte (chargement,
+      // aucun numéro, numéro non éligible) : « Paramètres de l'agent » y laissait le lecteur sans savoir
+      // DUQUEL des deux répondeurs de la console il s'agissait.
+      nom={compte?.verifiedName ?? t('Paramètres du Meta Business Agent', 'Meta Business Agent settings')}
       // ⚠️ `number` n'est PAS normalisé par le serveur : le préfixe `+` se pose à l'affichage, exactement
       // comme sur l'Accueil (`web/app/accueil/page.tsx`). Deux gestes différents feraient deux numéros.
       precision={compte?.number ? (compte.number.startsWith('+') ? compte.number : `+${compte.number}`) : undefined}
@@ -173,10 +180,9 @@ function MbaSettings({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean
       etapes={completion === null ? null : completion.taches
         .filter((x) => x.etat === 'a_faire')
         .map((x) => ({ message: x.raison ?? t(LIBELLES[x.cle].fr, LIBELLES[x.cle].en), onglet: LIBELLES[x.cle].onglet }))}
-      // 🔴 LES OBLIGATOIRES DONT L'ÉTAT EST HORS DE NOTRE PORTÉE, rendues à part et en gris. Il y en a
-      // toujours au moins une, le moyen de paiement, que `calculerCompletion` pose en `inconnue` et
-      // `requise` : il se lit derrière le statut BSP que nous n'avons pas. Les autres n'apparaissent que
-      // quand une lecture chez Meta échoue.
+      // 🔴 LES OBLIGATOIRES DONT L'ÉTAT EST HORS DE NOTRE PORTÉE, rendues à part et en gris. Depuis le
+      // retrait du moyen de paiement (2026-09-24), il n'y en a PLUS EN PERMANENCE : cette liste ne se montre
+      // que quand une lecture chez Meta a vraiment échoué, ce qui est exactement ce qu'on veut qu'elle dise.
       // 🔴 `requise` DANS LE FILTRE, ET CE N'EST PAS DÉCORATIF. `connecteurs` et `outils` sont aussi
       // `inconnue`, mais FACULTATIFS : les afficher poserait sous les yeux du client deux lignes grises
       // permanentes qui ne disent rien de l'état de son agent. Le serveur les compte d'ailleurs à part

@@ -51,11 +51,15 @@ test.describe('MBA Paramètres : en-tête et menu en colonne', () => {
 
   test('🔴 ce qu on ne sait pas garde sa ligne, en gris et HORS du compte d etapes', async ({ page }) => {
     /**
-     * LA CAPACITÉ QUI AVAIT DISPARU SANS QUE PERSONNE NE LE REMARQUE (revue finale du 2026-09-23).
-     * `calculerCompletion` pose TOUJOURS une tâche `paiement`, `inconnue` et `requise` : le moyen de paiement
-     * se lit derrière le statut BSP, que nous n'avons pas. L'ancien `MbaCompletion` l'affichait dans une
-     * seconde liste grisée ; l'en-tête qui l'a remplacé ne gardait que les `a_faire`, et cette ligne n'était
-     * plus nulle part. Aucun test ne la couvrait, et cinq textes continuaient de la promettre.
+     * LA CAPACITÉ QUI AVAIT DISPARU SANS QUE PERSONNE NE LE REMARQUE (revue finale du 2026-09-23). Une tâche
+     * OBLIGATOIRE dont l'état est `inconnue` garde sa ligne, en gris, sous les étapes. L'ancien
+     * `MbaCompletion` l'affichait ; l'en-tête qui l'a remplacé ne gardait que les `a_faire`, et ces lignes
+     * n'étaient plus nulle part. Aucun test ne les couvrait, et cinq textes continuaient de les promettre.
+     *
+     * ⚠️ LE CAS EXERCÉ EST LE MÊME, SA CAUSE A CHANGÉ. Il reposait sur le moyen de paiement, qui était
+     * `inconnue` par construction ; cette tâche a été retirée le 2026-09-24 (décision de Julien : une ligne
+     * grise permanente ne dit rien de l'état de l'agent). La fixture porte donc désormais la vraie cause
+     * restante, une lecture qui a échoué chez Meta.
      *
      * 🔴 LES TROIS ASSERTIONS DISENT TROIS CHOSES DIFFÉRENTES, et la deuxième est celle qui compte : elle est
      * RENDUE, elle n'est PAS comptée comme une étape, et elle n'est PAS cliquable (elle ne se règle pas ici).
@@ -64,11 +68,11 @@ test.describe('MBA Paramètres : en-tête et menu en colonne', () => {
     await page.goto('/mba/parametres');
 
     await expect(page.getByTestId('entete-agent-signalements'))
-      .toContainText('Le moyen de paiement se lit derrière le statut BSP');
+      .toContainText('Lecture impossible chez Meta');
     // Le compte d'étapes n'a pas bougé : une seule tâche est `a_faire`, la FAQ.
     await expect(page.getByTestId('entete-agent-etapes')).toContainText('1 étape à finir');
-    // Et pas de bouton : personne ne peut « ouvrir l'onglet » du moyen de paiement, il n'y en a pas.
-    await expect(page.getByTestId('entete-etape-paiement')).toHaveCount(0);
+    // Et pas de bouton : une lecture qui a échoué n'ouvre aucun onglet, il n'y a rien à y régler.
+    await expect(page.getByTestId('entete-etape-competences')).toHaveCount(0);
 
     // ⚠️ ET LES FACULTATIFS RESTENT DEHORS. `connecteurs` est `inconnue` lui aussi, mais non requis : le
     // montrer poserait une ligne grise permanente qui ne dit rien de l'état de l'agent, et le serveur
@@ -119,7 +123,10 @@ test.describe('MBA Paramètres : en-tête et menu en colonne', () => {
     await mockMba(page, { account: { hasNumber: false, phoneNumberId: null, verifiedName: null, number: null } });
     await page.goto('/mba/parametres');
     await expect(page.getByTestId('mba-gate-no-number')).toBeVisible();
-    await expect(page.getByTestId('entete-agent')).toContainText('Paramètres de l’agent');
+    await expect(page.getByTestId('entete-agent')).toContainText('Paramètres du Meta Business Agent');
+    // 🔴 ET LE SUR-TITRE EST LÀ MÊME SANS NUMÉRO : c'est lui qui dit duquel des deux répondeurs il s'agit,
+    // et il ne dépend d'aucune lecture, donc aucun état de l'écran ne doit le faire disparaître.
+    await expect(page.getByTestId('entete-agent-surtitre')).toHaveText('Meta Business Agent');
     await expect(page.getByTestId('entete-agent-messages')).toHaveCount(0);
     await expect(page.getByTestId('entete-agent-ratio')).toHaveCount(0);
     // 🔴 ET SURTOUT PAS « Tout est réglé » : la complétion n'a jamais été lue, rien n'a été mesuré. Une

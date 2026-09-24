@@ -1,7 +1,7 @@
 ---
 ecran: mba-guide
-source_section: MBA, le répondeur de Meta (menu « AI Agent » > MBA, guide / MBA, paramètres)
-source_empreinte: 5ebc5f
+source_section: MBA, le répondeur de Meta (menu « AI Agent » > MBA > Guide / Paramètres)
+source_empreinte: 4ab4c2
 ---
 # Le répondeur de Meta : à quoi il sert, et comment le régler
 
@@ -14,19 +14,20 @@ qui l'obtient. Si quelqu'un de votre équipe travaille sur la conversation dans 
 Et le fil lui repasse au moment où le message arrive, pas avant : Meta ne peut se voir confier une
 conversation que s'il en existe une d'ouverte, et elle s'ouvre exactement quand la personne écrit.
 
-Deux écrans, sous le menu AI Agent : le **guide**, qui explique ce qu'il fait et comment le préparer, et les
-**paramètres**, qui le règlent pour de vrai.
+Deux écrans, sous le menu AI Agent, dans le groupe MBA : le **Guide**, qui explique ce qu'il fait et comment
+le préparer, et les **Paramètres**, qui le règlent pour de vrai.
 
-**Un en-tête identifie l'agent en haut des paramètres** : le logo de Meta, le nom d'affichage du numéro, le
-numéro lui-même, une pastille qui dit l'état du numéro WhatsApp, les étapes obligatoires qu'il reste à régler
+**Un en-tête identifie l'agent en haut des paramètres** : le logo de Meta, la mention « Meta Business Agent »
+qui dit ce que l'écran règle, le nom d'affichage du numéro, le numéro lui-même, une pastille qui dit l'état du
+numéro WhatsApp, les étapes obligatoires qu'il reste à régler
 (chacune est un lien direct vers l'onglet où elle se corrige, avec le nombre de réglages obligatoires déjà
 faits sur le total), et le nombre de messages échangés sur les 30 derniers jours dans les conversations que
 l'agent a tenues, une fois que ce nombre est connu.
 
-**Une catégorie est montrée à part, en gris, sous les étapes** : ce que nous ne pouvons pas vérifier pour
-vous. Le moyen de paiement en est toujours, parce qu'il se lit chez Meta derrière un statut que nous n'avons
-pas : il se vérifie dans le Business Manager. Ces lignes ne comptent ni dans les étapes qu'il vous reste, ni
-dans le total des réglages obligatoires, puisque personne ne sait où elles en sont.
+**Une catégorie peut être montrée à part, en gris, sous les étapes** : ce que nous n'avons pas pu lire chez
+Meta, avec sa raison. Ces lignes ne comptent ni dans les étapes qu'il vous reste, ni dans le total des
+réglages obligatoires, puisque personne ne sait où elles en sont. La plupart du temps il n'y en a aucune, et
+c'est la situation normale.
 
 Le nombre de messages, lui, compte tout le fil, entrants et sortants, y compris les envois de campagne et ce
 que votre équipe a écrit après avoir repris la main : ce n'est donc pas une mesure de ce que l'agent a

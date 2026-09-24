@@ -33,6 +33,15 @@ export interface EnteteAgentProps {
   logo: { src: string; alt: string } | null;
   /** Le repli quand `logo` est nul : deux ou trois lettres. */
   pastille: string;
+  /**
+   * Le sur-titre, au-dessus du nom : CE QUE cet écran règle, quand le nom ne le dit pas.
+   *
+   * 🔴 IL EXISTE PARCE QUE `nom` PORTE UNE IDENTITÉ, PAS UN TITRE D'ÉCRAN. Côté agent de Meta, `nom` est le
+   * nom vérifié du NUMÉRO (« Boutique Test ») : rien à l'écran ne disait plus qu'on réglait le Meta Business
+   * Agent, l'ancien en-tête ayant perdu son sur-titre « MBA » en gagnant son identité le 2026-09-23. Un agent
+   * IA n'en a pas besoin, son nom est déjà celui de l'agent, d'où le `undefined`.
+   */
+  surTitre?: string;
   nom: string;
   /** Sous le nom : le numéro pour l'agent de Meta, le modèle pour un agent IA. */
   precision?: string;
@@ -52,9 +61,10 @@ export interface EnteteAgentProps {
    * CE QU'ON NE SAIT PAS, dit en gris sous les étapes : une phrase par ligne, telle quelle.
    *
    * 🔴 SURTOUT PAS DANS `etapes`, ET DEUX COMMENTAIRES DU SERVEUR L'INTERDISENT (`src/mba/completion.ts`
-   * et le champ `indeterminees`). Le moyen de paiement de l'agent de Meta est `inconnue` et `requise` : le
-   * verser dans les étapes le ferait entrer dans « n étapes à finir », c'est-à-dire reprocher au client une
-   * chose que NOUS ne savons pas lire, et qui ne se règle même pas dans la console.
+   * et le champ `indeterminees`). Une obligatoire `inconnue` est une chose que NOUS n'avons pas su lire, pas
+   * une chose que le client a oubliée : la verser dans les étapes la ferait entrer dans « n étapes à finir »,
+   * c'est-à-dire lui reprocher notre propre angle mort. Aujourd'hui, une seule cause reste : une lecture qui
+   * a échoué chez Meta.
    *
    * ⚠️ `undefined` = rien à signaler, ou on n'a rien lu. Cette liste n'a aucun état « tout va bien » à
    * affirmer (elle ne se rend que si elle porte quelque chose), donc elle n'a pas besoin du `null` que
@@ -87,7 +97,7 @@ export function libelleEtapes(n: number, t: (fr: string, en: string) => string):
 }
 
 export function EnteteAgent({
-  logo, pastille, nom, precision, etat, etapes, signalements, ratio, messages30j, onOnglet,
+  logo, pastille, surTitre, nom, precision, etat, etapes, signalements, ratio, messages30j, onOnglet,
 }: EnteteAgentProps) {
   const t = useT();
   const { locale } = useLocale();
@@ -116,6 +126,11 @@ export function EnteteAgent({
       )}
 
       <div className="min-w-0 flex-1 space-y-1">
+        {surTitre !== undefined && surTitre !== '' && (
+          <p data-testid="entete-agent-surtitre" className="truncate text-[11px] font-semibold uppercase tracking-wide text-ink-400">
+            {surTitre}
+          </p>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="truncate text-xl font-semibold tracking-tight text-ink-900">{nom}</h2>
           {etat}

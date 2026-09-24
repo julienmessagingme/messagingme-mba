@@ -51,7 +51,7 @@ export function getMbaStatus(tenantId: string, phoneNumberId: string): Promise<M
  */
 export type EtatTacheMba = 'faite' | 'a_faire' | 'inconnue';
 export interface TacheMba {
-  cle: 'business_info' | 'faq' | 'competences' | 'activation' | 'paiement' | 'fichiers' | 'sites' | 'connecteurs' | 'outils';
+  cle: 'business_info' | 'faq' | 'competences' | 'activation' | 'fichiers' | 'sites' | 'connecteurs' | 'outils';
   requise: boolean;
   etat: EtatTacheMba;
   /** Pourquoi ce n est pas fait, ou pourquoi on ne peut pas le dire. Absent quand c est fait. */
@@ -62,7 +62,8 @@ export interface CompletionMba {
   faites: number;
   total: number;
   /**
-   * Taches obligatoires hors de notre portee (le paiement, plus toute lecture qui a echoue chez Meta).
+   * Taches obligatoires hors de notre portee, c est-a-dire aujourd hui les seules lectures qui ont echoue
+   * chez Meta. Le moyen de paiement en etait une jusqu au 2026-09-24 : il n est plus une tache du tout.
    *
    * ⚠️ L ECRAN NE LIT PAS CE NOMBRE, il filtre `taches` sur `etat === 'inconnue' && requise` pour en faire
    * les `signalements` de l en-tete : la liste GRISE sous les etapes, hors du ratio et hors de « n etapes a

@@ -45,7 +45,7 @@ const compteParDefaut = {
   phoneNumberId: PN,
   number: '+33 5 25 68 03 01',
   // ⚠️ `verifiedName` NOURRIT LE TITRE DE L'EN-TÊTE de l'écran de réglage. Sans lui, les six suites MBA
-  // liraient le titre de repli (« Paramètres de l'agent »), donc aucune ne verrait l'agent nommé.
+  // liraient le titre de repli (« Paramètres du Meta Business Agent »), donc aucune ne verrait l'agent nommé.
   verifiedName: 'Boutique Test',
   quality: 'GREEN',
   numberStatus: 'CONNECTED',
@@ -160,16 +160,17 @@ export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]>
       // courte posée plus haut attraperait un chemin plus long qui la contient.
       if (url.includes('/messages')) return json({ messages: 412, jours: 30 });
       if (url.includes('/completion')) {
-        // 🔴 `paiement` EST DANS LA FIXTURE PARCE QUE `calculerCompletion` LE POSE TOUJOURS : `inconnue` et
-        // `requise`, hors du ratio (`total` ne compte que les états connaissables) mais pas hors de l'écran.
-        // Sans lui ici, aucun test ne voyait la liste grise des signalements, et c'est exactement comment
-        // elle a pu disparaître sans que rien ne crie. `connecteurs` y est aussi : `inconnue` mais
-        // FACULTATIF, donc l'en-tête ne doit PAS l'afficher.
+        // 🔴 UNE OBLIGATOIRE EN `inconnue` EST DANS LA FIXTURE EXPRÈS : sans elle, aucun test ne voit la
+        // liste grise des signalements, et c'est exactement comme ça qu'elle a pu disparaître de l'écran
+        // sans que rien ne crie (revue finale du 2026-09-23). Elle porte ici sa VRAIE cause, une lecture qui
+        // a échoué chez Meta ; le moyen de paiement tenait ce rôle jusqu'au 2026-09-24, il n'est plus une
+        // tâche du tout. `connecteurs` y est aussi : `inconnue` mais FACULTATIF, donc l'en-tête ne doit PAS
+        // l'afficher.
         return json({
           taches: [
             { cle: 'business_info', requise: true, etat: 'faite' },
             { cle: 'faq', requise: true, etat: 'a_faire', raison: 'Aucune question enregistrée.' },
-            { cle: 'paiement', requise: true, etat: 'inconnue', raison: 'Le moyen de paiement se lit derrière le statut BSP, que nous n’avons pas.' },
+            { cle: 'competences', requise: true, etat: 'inconnue', raison: 'Lecture impossible chez Meta pour l’instant.' },
             { cle: 'connecteurs', requise: false, etat: 'inconnue', raison: 'Pas encore piloté depuis Engage Me.' },
           ],
           faites: 1, total: 2, indeterminees: 1,

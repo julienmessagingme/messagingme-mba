@@ -158,7 +158,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
 
   /**
    * Rendu RÉCURSIF d'une liste d'entrées. Trois niveaux existent aujourd'hui (« AI Agent » > « MBA » >
-   * « MBA, guide ») et la récursion en accepte davantage sans nouveau code : c'est ce qui évite qu'un
+   * « Guide ») et la récursion en accepte davantage sans nouveau code : c'est ce qui évite qu'un
    * quatrième niveau se règle un jour par un troisième bloc copié-collé.
    *
    * Ce qui change avec la profondeur : le premier niveau seul porte une icône et le style « entrée », les

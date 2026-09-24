@@ -1,7 +1,7 @@
 /**
  * Le modèle de la barre de navigation, et la seule fonction qui sache où se trouve une page dedans.
  *
- * Pourquoi un module à part : la barre a désormais TROIS niveaux (« AI Agent » > « MBA » > « MBA, guide »).
+ * Pourquoi un module à part : la barre a désormais TROIS niveaux (« AI Agent » > « MBA » > « Guide »).
  * Tant qu'elle en avait deux, l'appartenance d'une page à son groupe se lisait dans une table plate écrite à
  * la main dans `AppShell`. À trois niveaux ça ne suffit plus, parce qu'une page a maintenant une CHAÎNE
  * d'ancêtres et que deux choses en dépendent : le groupe à surligner (le premier), et les groupes à déplier
@@ -21,7 +21,7 @@ export interface NavEntree {
 }
 
 /**
- * La chaîne des groupes qui MÈNENT à `key`, du plus haut au plus bas (`['ia', 'mba']` pour « MBA, guide »).
+ * La chaîne des groupes qui MÈNENT à `key`, du plus haut au plus bas (`['ia', 'mba']` pour le Guide du MBA).
  *
  * Vide si la clé est une entrée de premier niveau, ou si elle est inconnue : l'appelant traite les deux de
  * la même façon (aucun groupe à ouvrir), et c'est voulu. Une clé inconnue est une page dont l'onglet n'a pas
@@ -262,9 +262,11 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
     // écrans parlent du même agent, les mettre au même rang que « Other AI agent » laissait croire à trois
     // agents. C'est ce qui a fait passer la barre à trois niveaux (cf. `lib/nav.ts`).
     { key: 'ia', label: t('AI Agent', 'AI Agent'), d: icons.mba, children: [
+      // Les deux enfants ne RÉPÈTENT PAS « MBA » : leur groupe le porte déjà, et la barre affiche les
+      // trois niveaux. « MBA, guide » sous un groupe « MBA » disait deux fois la même chose.
       { key: 'mba', label: t('MBA', 'MBA'), children: [
-        { key: 'mba-guide', href: '/mba', label: t('MBA, guide', 'MBA, guide') },
-        { key: 'mba-settings', href: '/mba/parametres', label: t('MBA, paramètres', 'MBA, settings') },
+        { key: 'mba-guide', href: '/mba', label: t('Guide', 'Guide') },
+        { key: 'mba-settings', href: '/mba/parametres', label: t('Paramètres', 'Settings') },
       ] },
       /**
        * « Other AI agent » devient un GROUPE le 2026-09-08 (demande de Julien) : la fiche des agents d'un

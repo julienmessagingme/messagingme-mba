@@ -72,14 +72,20 @@ describe('calculerCompletion — le compte', () => {
     files: [],
   };
 
-  it('🔴 le moyen de paiement sort du DÉNOMINATEUR, il ne se devine pas', () => {
-    // Meta ne l'expose par aucune route. Le déduire de « l'agent est allumé » serait faux dans les deux
-    // sens : une audience restreinte n'en exige pas, et un paiement peut exister sans agent allumé.
+  it('🔴 le moyen de paiement n’est PAS une tâche, et rien ne le remplace en douce', () => {
+    // 🔴 CE TEST REMPLACE « le paiement sort du dénominateur » (retiré le 2026-09-24, décision de Julien).
+    // Le cas exercé a changé de sens, pas de sujet : la tâche posait une ligne grise PERMANENTE que rien ne
+    // pouvait faire disparaître, puisqu'elle était `inconnue` par construction. Ce qui est gardé ici, c'est
+    // qu'elle ne revienne pas sans décision, et surtout qu'elle ne revienne pas sous un AUTRE état : la
+    // déduire de « l'agent est allumé » serait faux dans les deux sens (une audience restreinte n'exige
+    // aucun paiement, et un paiement peut exister sans agent allumé).
     const c = calculerCompletion(complet);
-    expect(tache(c, 'paiement').etat).toBe('inconnue');
+    expect(c.taches.map((t) => t.cle)).not.toContain('paiement');
     expect(c.faites).toBe(4);
     expect(c.total).toBe(4); // business_info, faq, competences, activation
-    expect(c.indeterminees).toBe(1); // le paiement
+    // Sur une lecture complète, plus AUCUNE obligatoire n'est indéterminée : la liste grise ne se montre
+    // désormais que quand une lecture échoue vraiment chez Meta.
+    expect(c.indeterminees).toBe(0);
   });
 
   it('l’agent éteint fait tomber le compte, et la raison nomme la conséquence', () => {
@@ -110,7 +116,7 @@ describe('calculerCompletion — le compte', () => {
     // pourquoi « Tester » n'y est pas : « avoir testé » n'est pas un état de la configuration.
     const c = calculerCompletion(complet);
     expect(c.taches.map((t) => t.cle).sort()).toEqual(
-      ['activation', 'business_info', 'competences', 'connecteurs', 'faq', 'fichiers', 'outils', 'paiement', 'sites'],
+      ['activation', 'business_info', 'competences', 'connecteurs', 'faq', 'fichiers', 'outils', 'sites'],
     );
   });
 });
