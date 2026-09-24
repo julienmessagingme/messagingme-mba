@@ -228,6 +228,23 @@ où on les changera : l'optimisation `CONVERSATIONS` pour un annonceur français
   ⚠️ L'App Review, elle, n'est PAS bloquée : la démonstration se fait avec un portefeuille client, ce
   qui est le cas d'usage réel.
 
+### Brouillons et aperçu : ÉCRIT ET POUSSÉ, PAS ENCORE DÉPLOYÉ (2026-09-24)
+
+Demande de Julien du 2026-09-24. Plan : `docs/superpowers/plans/2026-09-24-pubs-brouillons-et-liste.md`.
+
+- 🔴 **MIGRATION 0171 ÉCRITE ET PAS ENCORE APPLIQUÉE** (`pubs_brouillons`). Purement additive, donc AVANT
+  le `up`. Le compteur qui fait foi est celui de [CLAUDE.md](CLAUDE.md).
+- ✅ **L'aperçu** : l'annonce dans le fil, la conversation qui s'ouvre, puis la réponse. Un scénario est
+  déterministe, donc ses mots exacts sont lus dans le graphe PUBLIÉ ; l'agent de Meta compose, donc c'est
+  une illustration et l'écran le dit.
+- ✅ **Les brouillons** vivent dans leur table, pas comme un état de `publicites` : `campagne_id` y est
+  `not null` et porte l'unique par laquelle le routage retrouve la publicité d'un lead payé.
+- ✅ **La liste en trois groupes** (brouillons, en cours, achevées), « achevée » dérivé de la date de fin.
+  Au clic, budget initial, dépensé à date et clics en face.
+- 🔴 **L'ESSAI RÉEL QUI CLÔT CE LOT, et il appartient à Julien** : écrire un brouillon avec un visuel,
+  fermer l'onglet, revenir, le rouvrir et retrouver l'image, puis le transformer en publicité et voir le
+  brouillon disparaître.
+
 ## 🔴 OUTILS MAISON DE L'AGENT DE META (LOT 2 DÉPLOYÉ ET ÉPROUVÉ ; LOTS 3 ET 4 ÉCRITS LE 2026-09-22)
 
 Spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`, plan
