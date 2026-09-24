@@ -67,7 +67,30 @@ interface Options {
  */
 let lecturesReglages = 0;
 
+/**
+ * Attend que la lecture des réglages ait CESSÉ de bouger.
+ *
+ * 🔴 ON NE COMPTE PLUS LES LECTURES EN DUR. Une version précédente attendait exactement deux réponses
+ * pour une panne, parce que `web/lib/http.ts` rejoue un GET en échec une fois. C'était un contrat avec
+ * un AUTRE fichier, tenu par un commentaire : changer la politique de rejeu ne rendait pas un échec
+ * lisible, le sondage n'atteignait simplement jamais son compte et le cas mourait en timeout, ce qui
+ * ressemble à une panne de l'écran. La stabilisation ne suppose rien de ce fichier-là.
+ */
+const attendreLectureRetombee = async (page: import('@playwright/test').Page) => {
+  await expect.poll(async () => {
+    const avant = lecturesReglages;
+    // Plus long que le délai de rejeu du client HTTP, pour qu'un rejeu en vol soit forcément vu.
+    await page.waitForTimeout(700);
+    return avant > 0 && avant === lecturesReglages;
+  }, { timeout: 15000 }).toBe(true);
+};
+
 const brancher = async (page: import('@playwright/test').Page, o: Options = {}) => {
+  // ⚠️ APPELABLE DEUX FOIS DANS UN MÊME CAS. Sans ce désarmement, chaque appel empilerait un handler
+  // sur le même motif, et le cas ne tiendrait que par la règle non écrite « le dernier enregistré
+  // gagne » : le jour où l'un ferait `route.fallback()`, le premier reprendrait la main avec le
+  // fixture de la phase précédente, et le test éprouverait silencieusement autre chose.
+  await page.unrouteAll();
   lecturesReglages = 0;
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
@@ -133,22 +156,25 @@ test.describe('Publicités : ce que le formulaire dit de l’agent de Meta', () 
     await expect(page.getByTestId('pub-agent-indispo')).toContainText(/pas ouvert à tout le monde|not open to everyone/);
     await expect(page.getByTestId('pub-agent-inconnu')).toHaveCount(0);
     await expect(page.getByRole('option', { name: /agent de Meta|Meta agent/ })).toHaveCount(0);
+    await expect(page.getByTestId('pub-agent-ecarte')).toHaveCount(0);
   });
 
-  for (const [nom, reglages, lectures] of [['une réponse SANS la clé', 'vide', 1], ['une lecture en PANNE', 'panne', 2]] as const) {
+  for (const [nom, reglages] of [['une réponse SANS la clé', 'vide'], ['une lecture en PANNE', 'panne']] as const) {
     test(`🔴 ${nom} : l’option disparaît, mais l’écran parle de NOUS, pas de leur numéro`, async ({ page }) => {
       await brancher(page, { reglages });
       // 🔴 ON ATTEND QUE LA LECTURE SOIT RETOMBÉE. Sans ça, l'assertion se satisfait de l'état INITIAL,
       // qui vaut déjà `null`, et le test reste vert avec le défaut remis. C'est le piège « l'état
       // attendu est l'état de départ », et il ne se voit pas en lisant le test.
-      await expect.poll(() => lecturesReglages, { timeout: 5000 }).toBe(lectures);
-      await page.waitForLoadState('networkidle');
+      await attendreLectureRetombee(page);
       await ouvrirLeFormulaire(page);
       // Le geste d'erreur est bon : l'option reste fermée.
       await expect(page.getByRole('option', { name: /agent de Meta|Meta agent/ })).toHaveCount(0);
       // Mais la PHRASE change, et c'est tout le sujet : on ne déclare pas éteint ce qu'on n'a pas lu.
       await expect(page.getByTestId('pub-agent-inconnu')).toContainText(/n’avons pas pu lire|could not read/);
       await expect(page.getByTestId('pub-agent-indispo')).toHaveCount(0);
+      // 🔴 LA QUATRIÈME BRANCHE AUSSI : « l'agent de Meta sera écarté » est un énoncé sur LEUR
+      // configuration. Sans ce sens-là, la passer en `!== false` ne faisait tomber aucun test.
+      await expect(page.getByTestId('pub-agent-ecarte')).toHaveCount(0);
       await expect(page.locator('body')).not.toContainText(/pas ouvert à tout le monde|not open to everyone/);
     });
   }
@@ -165,8 +191,11 @@ test.describe('Publicités : ce que le formulaire dit de l’agent de Meta', () 
       .toContainText(/ne répond plus sur ce numéro|no longer answers on this number/);
 
     await brancher(page, { reglages: 'panne', publicites: [pubAgent] });
-    await expect.poll(() => lecturesReglages, { timeout: 5000 }).toBe(2);
-    await page.waitForLoadState('networkidle');
+    await attendreLectureRetombee(page);
+    // ⚠️ ANCRE POSITIVE D'ABORD : `toHaveCount(0)` est aussi l'état d'une page qui n'a rendu AUCUNE
+    // publicité. Sans cette ligne, vider la fixture rendait ce cas vert avec le défaut en place,
+    // c'est-à-dire le piège que ce même cas existe pour fermer, descendu d'un étage.
+    await expect(page.getByTestId('pubs-liste')).toContainText(PUB_PUBLIEE.nom);
     await expect(page.getByTestId('pub-agent-eteint-pub-am')).toHaveCount(0);
   });
 });

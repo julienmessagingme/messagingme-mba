@@ -73,6 +73,13 @@ function PublicitesInner({ session }: { session: Session }) {
   const [routeAbsente, setRouteAbsente] = useState(false);
   /** L'API a déjà servi la liste au moins une fois. Référence, pour ne pas entrer en dépendance. */
   const listeDejaServie = useRef(false);
+  /**
+   * L'erreur affichée vient-elle de la LISTE ?
+   *
+   * ⚠️ L'écran n'a qu'UN emplacement d'erreur pour cinq opérations. Sans cette signature, le succès de
+   * l'une effacerait le message d'une autre, et l'écran se tairait sur une panne qui dure.
+   */
+  const erreurDeLaListe = useRef(false);
   const [formOuvert, setFormOuvert] = useState(false);
 
   const charger = useCallback(async () => {
@@ -105,11 +112,25 @@ function PublicitesInner({ session }: { session: Session }) {
       setPubs((await listerPubs(session.tenantId)).publicites ?? []);
       listeDejaServie.current = true;
       setRouteAbsente(false);
-      // ⚠️ AU SUCCÈS, PAS À L'ENTRÉE. Sans ça, un 404 passager laissait un bandeau rouge que le
-      // rafraîchissement suivant ne retirait plus. Mais l'effacer À L'ENTRÉE serait trop large :
-      // l'écran n'a qu'UN emplacement d'erreur, partagé par cinq opérations, et une action de liste
-      // effacerait alors l'échec d'une déconnexion sans que rien ne le concerne.
-      setErreur(null);
+      /**
+       * 🔴 ON N'EFFACE QUE SA PROPRE ERREUR, ET C'EST LE TROISIÈME PLACEMENT DE CETTE LIGNE.
+       *
+       * À l'entrée, elle effaçait avant tout `await`, donc rien ne pouvait exister : inoffensif, mais
+       * elle laissait un bandeau périmé quand un 404 passager était suivi d'un succès. Au succès SANS
+       * condition, elle effaçait l'erreur des QUATRE AUTRES opérations qui partagent cet unique
+       * emplacement : un échec de `charger()` non rejoué (403, 422, et surtout 429, que le plafond de
+       * débit de ce produit rend atteignable) arrivait APRÈS le succès de la liste et se faisait
+       * effacer, laissant l'écran sur « Chargement… » sans dire pourquoi. Mesuré en navigateur.
+       *
+       * ⚠️ ET LA JUSTIFICATION DU PLACEMENT PRÉCÉDENT ÉTAIT FAUSSE. Elle disait que l'effacement à
+       * l'entrée était trop large parce qu'« une action de liste effacerait l'échec d'une déconnexion » :
+       * or une action de liste qui RÉUSSIT appelle `recharger`, donc passe ici, donc effaçait pareil.
+       * Les deux placements avaient le même défaut ; seule la signature le ferme.
+       *
+       * ⚠️ Le 500 masquait le défaut par HASARD : `web/lib/http.ts` le rejoue, donc `charger()` met
+       * deux allers-retours quand la liste n'en met qu'un, et son erreur arrivait après l'effacement.
+       */
+      if (erreurDeLaListe.current) { erreurDeLaListe.current = false; setErreur(null); }
     } catch (err) {
       if (estAnnulation(err)) return;
       // Route absente : l'écran le DIT, au lieu de tourner indéfiniment sur « Chargement… ».
@@ -125,6 +146,8 @@ function PublicitesInner({ session }: { session: Session }) {
       // ⚠️ ET S'IL ARRIVE APRÈS UN SUCCÈS, IL TOMBE DANS L'ERREUR ORDINAIRE plutôt que d'être MUET : une
       // liste qui a cessé de se rafraîchir sans le dire est « un chiffre périmé qui a l'air frais ».
       if (err instanceof ApiError && err.status === 404 && !listeDejaServie.current) { setRouteAbsente(true); return; }
+      // On SIGNE l'erreur, pour que le succès suivant n'efface que celle-ci.
+      erreurDeLaListe.current = true;
       setErreur(err instanceof Error ? err.message : t('Chargement impossible', 'Loading failed'));
     }
   }, [session.tenantId, t]);
