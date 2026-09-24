@@ -259,9 +259,11 @@ POST /v1/sends
 ### Ce qu'un scénario ou un bloc envoie EN PREMIER
 
 C'est la correction du défaut 3. `scanOpening` (`src/workflow/engine.ts`) apprend à partir d'un bloc donné au
-lieu de l'entrée, et `canalDOuverture` (`src/workflow/store.pg.ts`) gagne la même option. UNE fonction juge
-donc le scénario (depuis son entrée), le bloc (depuis lui-même) et le catalogue. `exigeFenetre24h`, qui jugeait
-sur le type du bloc, disparaît.
+lieu de l'entrée, et une fonction neuve, `ouvertureApi` (`src/workflow/ouverture-api.ts`), en dérive le verdict
+de l'API. UNE fonction juge donc le scénario (depuis son entrée), le bloc (depuis lui-même) et le catalogue.
+`canalDOuverture` (`src/workflow/store.pg.ts`), lue par trois écrans de la console, ne change PAS : lui ajouter
+une option que personne n'appellerait serait du code mort (écart relevé par le plan du lot 2, tranché ainsi).
+`exigeFenetre24h`, qui jugeait sur le type du bloc, disparaît.
 
 | Premier envoi atteint | `opening` | Règle |
 |---|---|---|
@@ -543,6 +545,7 @@ l'interdit ; 422 la demande est juste mais ne peut pas partir comme ça ; 429 d�
 | `invalid_phone` | 400 | oui |
 | `unauthorized` | 401 | |
 | `missing_scope` | 403 | |
+| `tenant_locked` | 403 | |
 | `unknown_contact` | 404 | oui |
 | `duplicate` | | oui |
 | `identity_conflict` | 409 | oui |
@@ -618,7 +621,7 @@ le DOSSIER tranche sur ce qui est pris). Toutes passent AVANT le déploiement du
    contrat de `GET /v1/sends`. `/v1/messages/whatsapp` remplace `/v1/messages`.
 3. **RCS, variables, échecs** : cible `rcsMessage`, `/v1/messages/rcs` et sa fonction partagée avec l'Inbox,
    variables par destinataire, capture des échecs des messages libres et joignabilité RCS (défaut 4).
-4. **Catalogues et doc** : les trois catalogues, la page réécrite (recette Batch comprise), le module
+4. **Catalogues et doc** : les trois catalogues, la page réécrite (recette « un outil qui appelle par contact » comprise, sans nommer d'outil), le module
    d'exemples et son test, `features.md`.
 5. **Intentions** : les trois valeurs neuves, le prompt, les écrans, et le connecteur HubSpot mis à jour et
    déployé AVANT.
