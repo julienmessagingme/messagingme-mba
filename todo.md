@@ -105,13 +105,19 @@ prevoit deja (`rcsCardSchema`), et le `.refine` « titre OU media » devient att
 
 ### 2. La question de vocabulaire est TRANCHÉE (2026-09-24), et mon chiffre était faux
 
-**Julien : « Boutons » partout.** Fait dans `db292cf6`.
+**Julien : « Boutons » partout.** Fait en DEUX fois : `db292cf6` pour le libellé du champ, puis
+`5d85f202` pour la description du canal, restée en « suggestions » jusqu'à ce qu'une relecture à froid la
+trouve.
 
-⚠️ **ET LE « QUATRE ÉCRANS » QUE CETTE SECTION ANNONÇAIT ÉTAIT FAUX : il y en avait UN.** `RcsMessageForm` et
+⚠️ **ET LE « QUATRE ÉCRANS » QUE CETTE SECTION ANNONÇAIT ÉTAIT FAUX.** `RcsMessageForm` et
 `WorkflowConfigPanel` disaient « Boutons » depuis toujours, et l'éditeur partagé retombait lui-même sur
-« + bouton ». Seul l'écran de campagne divergeait, ce qui explique entièrement que le mot cherché n'ait pas
-été trouvé. Le chiffre avait été avancé pour évaluer un coût, il a servi à décider, et il était faux dans le
-sens qui décourage : j'ai présenté comme un chantier ce qui tenait en deux lignes.
+« + bouton ». Ce qui portait le mot de Google : le LIBELLÉ du champ de l'écran de campagne, et la
+DESCRIPTION du canal RCS deux étapes plus tôt. Le chiffre avait été avancé pour évaluer un coût, il a servi
+à décider, et il était faux dans le sens qui décourage.
+
+🔴 **ET LE PREMIER BALAYAGE N'A VU QUE LE LIBELLÉ, PAS LE MOT**, d'où la seconde passe. Un renommage se
+balaie sur le MOT, sans distinction de casse, sur tout ce que le client LIT, pas en comparant les libellés
+des écrans entre eux.
 
 ⚠️ Corollaire trouvé en le faisant : le prop `libelleAjout` de `RcsButtonsEditor` n'existait que pour cet
 appelant divergent. Son seul APPEL est parti avec le renommage (`db292cf6`, dans `EtapeContenu.tsx`), sa

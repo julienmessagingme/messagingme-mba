@@ -92,9 +92,10 @@ test.describe('Agents IA : l en-tête et le menu en colonne', () => {
      * 🔴 LA TROISIÈME MANQUAIT, ET C'ÉTAIT PRÉCISÉMENT CELLE QUI TIENT LE MODE DE DÉFAILLANCE DÉCRIT
      * CI-DESSUS : retirer `whitespace-nowrap` seul laissait cette assertion verte et rendait le retour à la
      * ligne. Une garde qui lit deux des trois règles d'un utilitaire en garde deux tiers.
-     * ⚠️ ET « NI UN CONTRÔLE DE DÉBORDEMENT » ÉTAIT TROP FORT : `scrollWidth > clientWidth` sur ce span
-     * distingue bien les deux états. Lire les règles nomme la CAUSE, le débordement n'en montre que l'EFFET,
-     * mais les deux voient le défaut. Une justification qui exclut l'autre approche fait renoncer à un filet.
+     * ⚠️ ET « NI UN CONTRÔLE DE DÉBORDEMENT » ÉTAIT TROP FORT, mais son remplaçant ne serait pas mieux
+     * mesuré : un `scrollWidth > clientWidth` ne distinguerait les deux états que si ce texte déborde
+     * vraiment à la largeur du viewport, ce qui n'a pas été vérifié. On lit donc les RÈGLES, qui nomment la
+     * cause et ne dépendent d'aucune largeur.
      */
     const precision = page.getByTestId('entete-agent-precision').locator('span').first();
     expect(await precision.evaluate((el) => getComputedStyle(el).textOverflow)).toBe('ellipsis');

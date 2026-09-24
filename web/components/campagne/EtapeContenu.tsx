@@ -820,13 +820,13 @@ function CadreRcs({
         juste au-dessus sachant seulement en reprendre un déjà enregistré : le composeur de l'étage ne sait
         éditer que le visuel, le texte et les boutons.
         ⚠️ CETTE PHRASE A DIT « ET VERS UNE CARTE À TITRE », ET C'ÉTAIT FAUX, en se contredisant avec le
-        commentaire du sélecteur dix-huit lignes plus haut, dans ce même fichier. Le modèle accepte un titre
+        commentaire du sélecteur, plus haut dans ce même fichier. Le modèle accepte un titre
         sur une carte SIMPLE, mais aucun composeur n'expose ce champ : ouvrir le créateur n'ouvre donc pas ce
         chemin-là. 🔴 Corrigée ici le 2026-09-24 après avoir été déclarée corrigée PARTOUT deux fois : la
         première ne couvrait que le composant voisin et `todo.md`, la seconde qu'un fichier e2e. Ce qui a
         fini par la trouver n'est pas un troisième souvenir, c'est un `grep` sur la FORMULATION.
         🔴 ET CETTE MÊME PHRASE A ENSUITE GARDÉ SON AUTRE MOITIÉ FAUSSE, « le seul chemin vers un
-        CARROUSEL », que le commentaire du sélecteur dix-huit lignes plus haut et le filtre de ses options
+        CARROUSEL », que le commentaire du sélecteur, plus haut dans ce fichier, et le filtre de ses options
         contredisent tous les deux : un carrousel déjà enregistré entre dans une campagne SANS ce créateur.
         Corriger une phrase fausse sur le point qu'on vient de mesurer laisse intact ce qu'on n'a pas mesuré.
         ⚠️ ET LE `grep` CI-DESSUS ÉTAIT SENSIBLE À LA CASSE : il comptait quinze occurrences quand la base en
@@ -903,7 +903,8 @@ function CadreRcs({
         max={maxTexteRcs(image)}
       />
       {/* 🔴 LE RCS NE SE RÉDUIT PAS À UN LIEN : ses suggestions sont ce qui le distingue d'un SMS enrichi,
-          et l'éditeur partagé est celui des trois autres écrans, pas une quatrième copie.
+          et l'éditeur partagé est celui de la bibliothèque, du carrousel et du bloc de scénario, pas une
+          copie de plus.
           ⚠️ On part de ZÉRO suggestion : une suggestion posée d'office serait un bouton vide envoyé à des
           clients par celui qui n'aurait pas pensé à la retirer. */}
       <div>

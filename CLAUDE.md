@@ -1003,22 +1003,26 @@ depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui d
   sur ses seuls fichiers, `git commit-tree -p origin/main`, `git push origin <sha>:main`). Ni l'index
   partagé ni l'arbre sur disque ne sont touchés, et le commit ne peut PAS emporter ce qu'on n'a pas nommé.
   ⚠️ Corollaire pour le reste : après un refus du hook, on relit son `git diff` AVANT de relancer.
-- ⚠️ **DEUX SUITES E2E CONCURRENTES EMPOISONNENT `web/.next`** (2026-09-23), et le symptôme accuse le code :
-  `ENOENT` sur un fichier de `.next`, puis « Timed out waiting 180000ms from config.webServer ». La sortie
-  est `rm -rf web/.next` PUIS `npm run build` À LA MAIN. Le `rm` seul ne suffit pas, et c'est ce qui fait
-  chercher ailleurs.
-  🔴 **MAIS LE TIMEOUT ARRIVE AUSSI SANS AUCUNE CONCURRENCE, ET CETTE LIGNE DONNAIT LA MAUVAISE CAUSE**
-  (mesuré le 2026-09-24, trois builds perdus à la chercher ailleurs). Le `webServer` lance
-  `npm run build && npm run start` : il refait donc un `next build` **complet**, qui ne tient pas dans ses
-  180 s même avec un `.next` fraîchement construit et un cache chaud. Préconstruire à la main n'y change
-  RIEN, puisque Playwright rebuild quand même. **La sortie est de démarrer le serveur SOI-MÊME**
+- 🔴 **DEUX DÉFAUTS DISTINCTS DE L'E2E, LONGTEMPS PRIS POUR UN SEUL** parce que leurs symptômes se
+  suivent. Les séparer est ce qui évite de chercher au mauvais endroit.
+  **`ENOENT` sur un fichier de `.next` : DEUX BUILDS SIMULTANÉS** (2026-09-23, revécu trois fois le
+  2026-09-24, chaque fois avec confirmation du voisin). La sortie est `rm -rf web/.next`. Le symptôme accuse
+  le code, et c'est ce qui fait chercher ailleurs.
+  **« Timed out waiting 180000ms from config.webServer » : LE `webServer` REFAIT UN BUILD COMPLET**, quelle
+  que soit la concurrence (mesuré le 2026-09-24 sans aucun voisin, après trois builds perdus à chercher du
+  côté de `.next`). Il lance `npm run build && npm run start`, donc un `next build` entier, qui ne tient pas
+  dans ses 180 s même avec un cache chaud : **préconstruire à la main n'y change RIEN**, Playwright rebuild
+  quand même. La sortie est de **démarrer le serveur SOI-MÊME**
   (`cd web && NEXT_TELEMETRY_DISABLED=1 BACKEND_URL=http://127.0.0.1:9 NODE_ENV=production sh -c 'npm run
   build && npm run start'`, l'environnement étant celui de `playwright.config.ts`), puis d'attendre que le
-  port 3000 réponde : `reuseExistingServer` vaut `!CI`, donc hors CI Playwright REUTILISE ce serveur et la
-  suite part en quelques secondes. ⚠️ Et il faut alors penser au bundle : `next start` sert `.next`, donc
-  après une mutation il faut tuer le serveur, reconstruire et le relancer, sinon on mesure l'ancien code.
-  ⚠️ **Le code de sortie de `playwright test` MENT sur ce timeout** : il rend 0 en affichant
-  « Timed out waiting 180000ms », exactement comme `gh run watch --exit-status`. Lire la SORTIE, jamais `$?`.
+  port 3000 réponde : `reuseExistingServer` vaut `!CI`, donc hors CI Playwright RÉUTILISE ce serveur et la
+  suite part en quelques secondes. ⚠️ Penser au bundle : `next start` sert `.next`, donc après une mutation
+  il faut tuer le serveur, reconstruire et le relancer, sinon on mesure l'ancien code.
+  ⚠️ **ET LE VERDICT SE LIT DANS LA SORTIE, PAS DANS `$?`.** Ce timeout a été observé avec un code de
+  sortie à 0, mais la commande passait par `| tail` : le 0 était celui du PIPE et ne dit rien de Playwright.
+  L'affirmation « `playwright test` rend 0 sur ce timeout » n'est donc PAS établie, et elle a été retirée
+  d'ici. Ce qui reste vrai suffit : **un `| tail` masque le code de sortie de ce qui précède**, mesuré le
+  même jour sur `tsc`, où un « code 0 » annonçait un typecheck en échec.
 - 🔴 **`gh run list` AVANT tout déploiement**, au même titre que `git log <déployé>..HEAD`. Un `npm test`
   vert en local ne prouve que la moitié : les tests d’intégration ne tournent qu’en CI, sur un Postgres
   jetable. Déployer sans avoir regardé le run, c’est déployer sans avoir vu la moitié des tests.
