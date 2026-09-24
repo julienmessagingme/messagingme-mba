@@ -19,6 +19,72 @@ le risque n'est donc pas qu'il réponde faux aujourd'hui, c'est que la PROCHAINE
 section périmée le fasse. 🔴 Et la garde de dérive ne peut rien y voir, par construction : elle compare une
 fiche à SA section, jamais une section à la réalité.
 
+## 🟡 Le reste du refactor des deux écrans d'agent (2026-09-23)
+
+Le lot est livré, relu de bout en bout et déployé. Ce qui suit est ce qui reste, et **le premier point est
+le seul qui touche du code**.
+
+### 1. Deux `!` qui font compiler un câblage qui tomberait à l'exécution
+
+`src/index.ts`, bloc `agents:`, deux lignes voisines (vers 1637) :
+
+```ts
+consommationAgent: (tenant, agentId, jours) => agentSessions.consommation!(tenant, agentId, jours),
+messagesAgent:     (tenant, agentId, jours) => agentSessions.messagesTenus!(tenant, agentId, jours),
+```
+
+🔴 **CES DEUX `!` SONT REDONDANTS, ET C'EST LE MOINS GRAVE.** Mesuré par la relecture à froid de la session
+voisine : `agentSessions` est construit par `new PgAgentSessionStore(pool)` **sans annotation de type**, et
+la classe déclare `consommation` et `messagesTenus` en méthodes pleines. TypeScript n'a donc besoin d'aucune
+assertion. Le motif écrit dans le plan du lot (« il est là parce que la méthode est optionnelle dans
+l'interface ») ne s'applique pas à une référence de classe concrète.
+
+⚠️ **Ce qui reste après le constat de redondance est un SILENCIEUX.** Le `!` continuerait de compiler le
+jour où quelqu'un retype cette variable par l'interface `AgentSessionStore`, où les deux méthodes SONT
+optionnelles. Le symptôme serait alors `is not a function` à l'exécution, sur un écran d'administration. Ce
+n'est pas théorique : `src/workflow/executor.ts` type déjà un store par son interface.
+
+**Deux façons de le fermer, et la seconde est la bonne** : retirer les deux `!` ferme le cas d'aujourd'hui ;
+rendre les deux méthodes REQUISES sur l'interface `AgentSessionStore` (`src/agent/session-store.ts`) le
+ferme structurellement et fait tomber les `!` d'eux-mêmes. ⚠️ La seconde touche `consommation`, donc du code
+hors du lot : elle se décide, elle ne se glisse pas.
+
+🔴 **`src/index.ts` EST UN FICHIER DE CÂBLAGE PARTAGÉ.** Annoncer à la session voisine avant de l'ouvrir, et
+**construire le commit en plomberie** (`GIT_INDEX_FILE` temporaire, `read-tree origin/main`, `hash-object`,
+`commit-tree`) plutôt qu'en `git commit --only`. Raison mesurée le 2026-09-23 : `--only` ne protège que si
+le CONTENU du fichier est encore le sien, et le hook `rayon-de-souffle` AGRANDIT la fenêtre en ajoutant un
+aller-retour entre la vérification du diff et le commit. Deux sessions y ont perdu du travail le même jour.
+
+### 2. Un arbitrage qui attend Julien : la pastille de l'en-tête
+
+Sur l'écran de l'agent de Meta, la pastille de l'en-tête montre l'état du **numéro**, pas celui de l'agent.
+Sur un numéro sain dont l'agent est éteint, l'écran affiche donc un point vert à côté d'une ligne qui dit
+que personne ne répond. Les textes ont été corrigés pour dire « l'état du numéro WhatsApp » ; le choix, lui,
+reste ouvert. L'information qui manque vraiment serait l'interrupteur de l'agent, disponible dans les
+réglages que l'onglet Activation lit déjà.
+
+### 3. L'essai réel qui clôt la feature, et qu'aucun test vert ne remplace
+
+Ouvrir les deux écrans, sur un agent complètement réglé et sur un agent vide, et vérifier quatre choses : le
+bon logo de fournisseur, le nombre d'étapes restantes comparé à ce que les onglets contiennent vraiment, le
+chiffre de messages comparé au Performance Lab sur la même période, et la colonne d'onglets sur un téléphone,
+où elle doit redevenir la barre horizontale.
+
+⚠️ **Le troisième point ne tombera PAS juste, et c'est attendu** : l'en-tête compte tous les messages des
+conversations tenues, envois de campagne compris, là où le Performance Lab exclut les modèles sortants. La
+légende l'avoue désormais. Ce qu'on vérifie est que l'écart va dans ce sens et dans cet ordre de grandeur,
+pas qu'il est nul.
+
+### 4. Trois constats mineurs laissés porter, relus par la revue suivante
+
+- `web/app/agents/page.tsx` : `avertissements` n'est pas remis à `null` au changement d'agent, alors que
+  `manques` et le chiffre le sont désormais. Une ligne, dans le même fichier, sous le commentaire qui la
+  réclame.
+- `web/components/EnteteAgent.tsx` : `key={e.message}` suppose des messages d'étape uniques.
+- La fixture e2e de la complétion MBA décrit un état qui ne peut pas exister en vrai (un total de deux sans
+  les compétences ni l'activation). C'est ce genre d'approximation qui avait laissé passer la disparition de
+  la ligne « moyen de paiement ».
+
 ## 🟠 Pré-câbler la route Azure OpenAI France, sans bouton ni promesse prématurée (2026-09-21)
 
 **Décision de Julien :** Vercel AI Gateway reste le chemin ordinaire. Pour un contrat dont le RSSI exige une
