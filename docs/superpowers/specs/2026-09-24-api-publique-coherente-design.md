@@ -611,7 +611,9 @@ le DOSSIER tranche sur ce qui est pris). Toutes passent AVANT le déploiement du
 - `campaign_recipients.variables jsonb` nullable : les variables d'un destinataire, relues à l'envoi d'un
   message RCS (un template résout les siennes à la construction, dans `resolved_params`, comme aujourd'hui).
 - `contacts.external_id text` nullable, et son index unique PARTIEL `(tenant_id, external_id) where
-  external_id is not null`. ⚠️ `contacts` est la plus grosse table : l'index se crée `CONCURRENTLY`, donc
+  external_id is not null and deleted_at is null` : unique parmi les fiches ACTIVES, une fiche supprimée ne
+  retient plus son identifiant (revue finale du 2026-09-24 ; ressusciter une fiche dont l'identifiant a été
+  repris rend `identity_conflict`). ⚠️ `contacts` est la plus grosse table : l'index se crée `CONCURRENTLY`, donc
   dans une migration hors transaction (`-- migrate: no-transaction`), aux instructions idempotentes, avec
   `indisvalid` vérifié après coup (précédent : 0115).
 - La table des échecs de messages libres (§ 5), avec un index qui sert la lecture du journal par espace et par
@@ -738,8 +740,10 @@ rappelle pas. `/revue` après chaque lot, `/revue-finale` avant chaque déploiem
 - **Variables dans un scénario** : un parcours n'a pas de contexte où les ranger.
 - **BSUID d'abord** pour le routage WhatsApp : changerait tous les envois, pas seulement l'API.
 - **Suppression de fiche par API** (effacement RGPD) : irréversible, à discuter.
-- **Re-consentement par l'IMPORT CSV** : l'import réabonne encore un contact qui a dit STOP, alors que l'API
-  ne le peut plus (§ 2, décision du 2026-09-24). Aligner l'import est à trancher à part.
+- **Les autres chemins qui lèvent encore un STOP** : l'import CSV, le WEBHOOK ENTRANT avec `optIn` (un outil
+  tiers, par l'upsert partagé) et le bloc « Action » d'un scénario réabonnent encore un contact qui a dit STOP,
+  alors que l'API ne le peut plus (§ 2, décision du 2026-09-24). Relevé par la revue finale du 2026-09-24 ;
+  aligner ces trois chemins est à trancher par Julien à part.
 - **Statut de livraison sur la bulle de l'Inbox** : le § 5 écrit l'échec et le journal le montre ; l'afficher
   sur la bulle demanderait une jointure sur la lecture du fil, rafraîchie toutes les 4 secondes. À cadrer à
   part.

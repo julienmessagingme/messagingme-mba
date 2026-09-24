@@ -155,6 +155,7 @@ describe('découpage d’une migration en instructions', () => {
     expect(instructions).toHaveLength(2);
     expect(instructions[0]!.toLowerCase()).toContain('alter table contacts add column if not exists external_id text');
     expect(instructions[1]!.toLowerCase()).toContain('create unique index concurrently if not exists contacts_tenant_external_id_uidx');
-    expect(instructions[1]!.toLowerCase()).toContain('where external_id is not null');
+    // Parmi les fiches ACTIVES : une fiche supprimée ne retient plus son identifiant (revue finale du 2026-09-24).
+    expect(instructions[1]!.toLowerCase()).toContain('where external_id is not null and deleted_at is null');
   });
 });

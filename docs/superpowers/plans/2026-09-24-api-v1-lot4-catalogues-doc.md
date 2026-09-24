@@ -2541,8 +2541,8 @@ function DocsInner() {
           <li>{t('tags : ils s’AJOUTENT, n’en retirent jamais (pour retirer, PATCH).', 'tags: they are ADDED, never removed (to remove, use PATCH).')}</li>
           <li>
             {t(
-              'consent : opted_in ou opted_out, absent = inchangé. opted_out est un vrai désabonnement (statut, date, trace dans le journal d’audit). consentSource dit d’où vient le consentement.',
-              'consent: opted_in or opted_out, absent = unchanged. opted_out is a real opt-out (status, date, audit log entry). consentSource says where the consent comes from.',
+              'consent : opted_in ou opted_out, absent = inchangé. opted_out est un vrai désabonnement (statut, date, trace dans le journal d’audit). opted_in ne lève JAMAIS un STOP : sur une fiche désabonnée, 409 opted_out, et rien n’est modifié ; seul un opérateur ou la personne elle-même peut la réabonner. consentSource dit d’où vient le consentement.',
+              'consent: opted_in or opted_out, absent = unchanged. opted_out is a real opt-out (status, date, audit log entry). opted_in NEVER lifts a STOP: on an opted-out contact, 409 opted_out, and nothing is changed; only an operator or the person themselves can re-subscribe them. consentSource says where the consent comes from.',
             )}
           </li>
         </ul>

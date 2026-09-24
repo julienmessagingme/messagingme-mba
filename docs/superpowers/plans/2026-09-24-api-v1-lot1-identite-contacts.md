@@ -66,6 +66,30 @@ export GIT_INDEX_FILE="$(cygpath -m "$(mktemp -u)")" \
 2. Construire le blob depuis `origin` : `B="$(cygpath -m "$(mktemp)")" && git show origin/main:<fichier> > "$B"`, appliquer LE MÊME remplacement à `"$B"` (outil Edit sur ce chemin absolu), puis, dans la boucle de P, remplacer la ligne du fichier par `git update-index --add --cacheinfo "100644,$(git hash-object -w --path=<fichier> "$B"),<fichier>"`.
 3. Relire `git diff origin/main --cached -- <fichier>` (avec `GIT_INDEX_FILE` exporté) : il ne doit montrer QUE son remplacement.
 
+## Amendements du 2026-09-24, après la revue finale (ils PRIMENT sur les tâches ci-dessous)
+
+🔴 **1. UN STOP NE SE LÈVE PAS PAR MACHINE** (décision de Julien du 2026-09-24, spec § 2). Partout où les tâches 5,
+7, 9 et 10 décrivent un réabonnement par l'API (`opted_in` qui fait passer une fiche `opted_out` en `opted_in`,
+`opt_out_at` remis à null, test « un réabonnement s'écrit »), elles sont REMPLACÉES par ceci, déjà codé :
+- `PgContactStore.ecrireConsentementParId` porte la garde DANS sa requête (`and not ($3 = 'opted_in' and
+  opt_in_status = 'opted_out')`) et rend `'change' | 'inchange' | 'refuse' | 'absente'` ; `refuse` = `opted_in`
+  sur une fiche `opted_out`, relu par la relecture qui suit une écriture sans effet ;
+- `appliquerConsentement` rend ce même `IssueConsentement`, et ne journalise que `change` ;
+- le service (`src/api/contacts-v1.ts`) VÉRIFIE avant toute écriture (`leveraitUnStop`, une lecture et seulement
+  quand le corps demande `opted_in`) et rend `opted_out` (409) avec un message qui dit que ni les champs, ni les
+  étiquettes, ni le consentement n'ont bougé ; un `refuse` du dépôt (STOP arrivé pendant l'appel) rend le même
+  code ;
+- tests : `tests/contacts-consentement-store.test.ts` (« refuse », forme de la requête),
+  `tests/api-contacts-v1.test.ts` (POST, PATCH, course), `tests/integration/contacts-identite.integration.test.ts`
+  (`refuse` en base, date du premier désabonnement gardée), vérifiés dans les deux sens par mutation de chacune
+  des deux gardes.
+
+🔴 **2. L'INDEX DE `external_id` NE COMPTE QUE LES FICHES ACTIVES** : `where external_id is not null and
+deleted_at is null` (tâche 3). Une fiche supprimée ne retient plus son identifiant ; la ressusciter alors qu'une
+fiche active l'a repris viole l'index, et le dépôt le rend en `conflit`. Le répertoire en mémoire des tests
+(`tests/aide/fiches-memoire.ts`) suit cette règle, deux cas unitaires (`tests/api-fiche.test.ts`) et un cas
+d'intégration la fixent.
+
 ## Carte des fichiers
 
 | Fichier | Rôle | Tâche |
