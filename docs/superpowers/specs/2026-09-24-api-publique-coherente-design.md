@@ -412,6 +412,10 @@ Même corps, texte de 3 072 caractères au plus (`RCS_TEXTE_MAX`). Pas de fenêt
 | le canal RCS est actif sur l'espace | 409 `rcs_not_enabled` |
 | le cache de joignabilité ne la dit pas injoignable pour l'agent de l'espace | 422 `rcs_unreachable` |
 
+- **Colonne « Répondu par » de l'analyse des conversations** (décision de Julien du 2026-09-24) : un message
+  de l'API ne compte comme « Scripté » que s'il RÉPOND à un client qui avait déjà écrit dans ce fil. Quand il
+  écrit le premier (RCS libre à une fiche qui a seulement consenti), il ne compte pas, comme un envoi de
+  campagne : la colonne ne dit jamais « on a répondu » à quelqu'un qui n'avait rien dit.
 - **Un seul chemin pour l'API et le bouton RCS de l'Inbox.** L'envoi libre de `sendRcsFromInbox`
   (`src/index.ts`) devient une fonction partagée, sur le modèle de `repondreDansLaFenetre`. La condition de
   consentement ne s'applique qu'aux MACHINES (API), jamais à l'opérateur, comme la garde de désabonnement
