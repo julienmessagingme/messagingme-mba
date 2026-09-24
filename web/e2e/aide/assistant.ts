@@ -95,6 +95,16 @@ export async function poserFaux(page: Page, o: Options = {}): Promise<Faux> {
     appels: [],
   };
   let n = faux.brouillons.length;
+  /**
+   * 🔴 COLLECTION MUTABLE : un POST ajoute, donc le GET suivant rend le message neuf.
+   *
+   * Sans ça, la création d'un message RCS à la volée serait INVÉRIFIABLE : elle RETROUVE le message par
+   * DIFFÉRENCE entre deux lectures de la bibliothèque, et un faux serveur qui rend toujours la même liste
+   * ferait échouer cette recherche pour une raison qui n'existe qu'en test. C'est la même décision que la
+   * fixture des outils de l'agent de Meta, et pour la même raison : un faux immuable rend invérifiable tout
+   * ce qui se passe APRÈS une écriture.
+   */
+  const messagesRcs: unknown[] = [...(o.rcsMessages ?? [])];
 
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route: Route) => {
@@ -172,7 +182,15 @@ export async function poserFaux(page: Page, o: Options = {}): Promise<Faux> {
     if (chemin.includes('/user-fields')) return json({ fields: o.userFields ?? [] });
     if (chemin.includes('/phone-numbers')) return json({ phoneNumbers: o.phoneNumbers ?? [{ id: 'pn1', displayPhoneNumber: '+33525680250', verifiedName: 'Demo' }] });
     if (chemin.endsWith('/rcs-agents')) return json({ agents: o.rcsAgents ?? [{ agentId: 'ag1', brandName: 'Ma marque', status: 'launched' }] });
-    if (chemin.endsWith('/rcs-messages')) return json({ messages: o.rcsMessages ?? [] });
+    if (chemin.endsWith('/rcs-messages')) {
+      if (method === 'POST') {
+        const b = (body ?? {}) as { name?: string; content?: unknown };
+        const neuf = { id: `m-neuf-${messagesRcs.length + 1}`, name: b.name ?? '', content: b.content ?? null, createdAt: '', updatedAt: '' };
+        messagesRcs.push(neuf);
+        return json({ message: neuf }, 201);
+      }
+      return json({ messages: messagesRcs });
+    }
     if (chemin.includes('/webhooks')) return json({ webhooks: o.webhooks ?? [] });
     if (chemin.includes('/contacts/count')) return json({ total: o.total ?? (o.contacts ?? CONTACTS_DEFAUT).length });
     if (chemin.includes('/contacts')) return json({ contacts: o.contacts ?? CONTACTS_DEFAUT });

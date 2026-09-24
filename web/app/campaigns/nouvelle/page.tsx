@@ -6,7 +6,7 @@ import type { Session } from '@/lib/session';
 import { useRouter } from 'next/navigation';
 import {
   getSettings, listTemplates, listWorkflows, listEmailTemplates, listUsers,
-  listTags, listUserFields, listPhoneNumbers, listRcsAgents, listRcsMessages,
+  listTags, listUserFields, listPhoneNumbers, listRcsAgents, listRcsMessages, type RcsMessage,
   listCampaignDrafts,
   type BusinessHours, type CampaignDraft, type TemplateSummary, type WorkflowSummary,
 } from '@/lib/api';
@@ -80,6 +80,20 @@ function AssistantInner({ session }: { session: Session }) {
     const tous = (Array.isArray(r?.workflows) ? r.workflows : [])
       .filter((w) => w.campaignEligible ?? (w.graph ? isCampaignEligible(w.graph) : false));
     setReferences((ref) => ({ ...ref, workflows: tous }));
+    return tous;
+  }, [session.tenantId]);
+
+  /**
+   * Relit la bibliothèque de messages RCS et rend la liste complète.
+   *
+   * ⚠️ JUMELLE DE `rechargerScenarios`, ET SANS FILTRE, parce que la bibliothèque n'en a pas : le sélecteur
+   * de l'étage écarte lui-même ce qu'il ne sait pas poser. Elle sert à la création à la volée, qui a besoin
+   * de RETROUVER le message qu'on vient d'écrire, donc une liste amputée le ferait passer pour absent.
+   */
+  const rechargerMessagesRcs = useCallback(async (): Promise<RcsMessage[]> => {
+    const r = await listRcsMessages(session.tenantId);
+    const tous = Array.isArray(r?.messages) ? r.messages : [];
+    setReferences((ref) => ({ ...ref, messagesRcs: tous }));
     return tous;
   }, [session.tenantId]);
 
@@ -236,6 +250,7 @@ function AssistantInner({ session }: { session: Session }) {
       references={references}
       rechargerTemplates={rechargerTemplates}
       rechargerScenarios={rechargerScenarios}
+      rechargerMessagesRcs={rechargerMessagesRcs}
       etapeInitiale={etapeInitiale}
       etatInitial={{ ...(formule ? { formule } : {}), ...(troisieme ? { troisieme } : {}) }}
       {...(brouillon ? { brouillon } : {})}

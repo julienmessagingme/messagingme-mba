@@ -1,0 +1,129 @@
+'use client';
+
+import { useState } from 'react';
+import { RcsMessageForm } from '@/components/RcsMessageForm';
+import { RcsCarouselForm } from '@/components/RcsCarouselForm';
+import type { RcsMessage, UserFieldDef } from '@/lib/api';
+
+/**
+ * ÉCRIRE UN MESSAGE RCS SANS QUITTER LA CAMPAGNE EN COURS, simple ou carrousel.
+ *
+ * 🔴 CE QU'IL RÉPARE (Julien, 2026-09-24) : dans une campagne RCS on ne pouvait que PARTIR d'un message
+ * déjà enregistré. Un carrousel ne s'y créait pas du tout, et une carte à TITRE non plus, parce que le
+ * composeur de l'étage ne sait éditer que trois champs (visuel, texte, suggestions). Le vrai créateur
+ * existait, mais dans un autre écran, donc il fallait abandonner sa campagne pour aller y écrire.
+ *
+ * 🔴 IL MONTE LES FORMULAIRES DE PRODUCTION, PAS UNE VERSION ALLÉGÉE. `RcsMessageForm` et
+ * `RcsCarouselForm` sont ceux de Contenu > RCS > Messages : même validation, même bornage de boutons,
+ * même route d'enregistrement. Une seconde façon d'écrire un message RCS aurait fait deux endroits à
+ * corriger le jour où smsmode change une règle. C'est la même décision que `CreationModeleEnLigne` pour
+ * les modèles WhatsApp, dont ce composant est le jumeau.
+ *
+ * ⚠️ BEAUCOUP PLUS SIMPLE QUE SON JUMEAU, ET LA RAISON EST PRODUIT : un modèle WhatsApp passe en revue chez
+ * Meta, donc il naît inenvoyable et il faut sonder son statut. Un message RCS est utilisable tout de suite.
+ * Pas de sondage, pas d'attente, pas de panneau de statut.
+ *
+ * 🔴 LE MESSAGE NEUF EST RETROUVÉ PAR DIFFÉRENCE, parce que les deux formulaires rendent `onSaved(): void`
+ * et ne disent pas ce qu'ils ont créé. On relit donc la bibliothèque et on cherche l'identifiant qui n'y
+ * était pas à l'ouverture. Changer la signature des deux formulaires aurait touché l'écran en service pour
+ * un besoin qui n'est pas le sien. ⚠️ Et si la différence est vide (relecture en échec, ou message créé en
+ * parallèle dans un autre onglet), on ne devine PAS : on le dit, et on renvoie au sélecteur du dessus.
+ */
+export function CreationMessageRcsEnLigne({ tenantId, champs, rechargerMessagesRcs, onCree }: {
+  tenantId: string;
+  champs: UserFieldDef[];
+  /** Relit la bibliothèque et rend la liste COMPLÈTE, celle que le sélecteur de l'étage propose. */
+  rechargerMessagesRcs: () => Promise<RcsMessage[]>;
+  /** Le message neuf, tel que la bibliothèque le rend. L'hôte décide comment le poser sur l'étage. */
+  onCree: (m: RcsMessage) => void;
+}) {
+  const [mode, setMode] = useState<null | 'choix' | 'simple' | 'carrousel'>(null);
+  /** Les identifiants présents AVANT l'ouverture : c'est eux qui font la différence. */
+  const [avant, setAvant] = useState<readonly string[]>([]);
+  const [souci, setSouci] = useState<string | null>(null);
+
+  async function ouvrir(): Promise<void> {
+    setSouci(null);
+    // ⚠️ L'INSTANTANÉ EST PRIS SUR UNE RELECTURE, PAS SUR LA LISTE DÉJÀ EN MÉMOIRE. Celle de l'écran peut
+    // dater de l'ouverture de la page ; un message créé entre-temps y manquerait, et il passerait donc pour
+    // « le neuf » tout à l'heure.
+    try {
+      setAvant((await rechargerMessagesRcs()).map((m) => m.id));
+    } catch {
+      // Une relecture ratée ici n'empêche pas d'écrire : elle rend seulement la différence moins sûre, et
+      // le cas « introuvable » ci-dessous dit alors quoi faire.
+      setAvant([]);
+    }
+    setMode('choix');
+  }
+
+  async function apresEnregistrement(): Promise<void> {
+    try {
+      const apres = await rechargerMessagesRcs();
+      const neuf = apres.find((m) => !avant.includes(m.id));
+      if (neuf) { onCree(neuf); setMode(null); return; }
+      setSouci('Le message est enregistré, mais nous ne l’avons pas retrouvé pour le poser ici. Choisissez-le dans « Partir d’un message enregistré » juste au-dessus.');
+    } catch {
+      setSouci('Le message est enregistré. La bibliothèque n’a pas pu être relue : choisissez-le dans « Partir d’un message enregistré » juste au-dessus.');
+    }
+    setMode(null);
+  }
+
+  if (mode === null) {
+    return (
+      <div className="flex flex-col gap-1">
+        <button
+          type="button"
+          onClick={() => { void ouvrir(); }}
+          data-testid="rcs-creer-message"
+          className="self-start text-xs text-brand-600 hover:underline"
+        >
+          ＋ Créer un nouveau message
+        </button>
+        {souci !== null && (
+          <p className="text-xs text-amber-700" data-testid="rcs-creer-souci">{souci}</p>
+        )}
+      </div>
+    );
+  }
+
+  if (mode === 'choix') {
+    return (
+      <div className="w-full rounded-xl border border-brand-200 bg-brand-50/40 p-3" data-testid="rcs-creer-choix">
+        <p className="text-xs font-medium text-ink-800">Quel genre de message ?</p>
+        {/* ⚠️ LE CARROUSEL EST UN CHOIX À PART, PAS UNE CASE DANS LE FORMULAIRE SIMPLE : ce sont deux
+            formulaires différents dans l'écran en service (un message a trois champs, un carrousel a de
+            deux à dix cartes qui en ont chacune trois). Les fondre ici aurait fabriqué un troisième
+            formulaire, c'est-à-dire exactement ce que ce composant existe pour éviter. */}
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button type="button" data-testid="rcs-creer-simple" onClick={() => setMode('simple')}
+            className="rounded-lg border border-ink-300 bg-white px-3 py-1.5 text-xs font-medium text-ink-700 hover:bg-ink-50">
+            Message simple
+          </button>
+          <button type="button" data-testid="rcs-creer-carrousel" onClick={() => setMode('carrousel')}
+            className="rounded-lg border border-ink-300 bg-white px-3 py-1.5 text-xs font-medium text-ink-700 hover:bg-ink-50">
+            Carrousel
+          </button>
+          <button type="button" onClick={() => setMode(null)} className="px-2 py-1.5 text-xs text-ink-500 hover:underline">
+            Annuler
+          </button>
+        </div>
+        <p className="mt-2 text-[11px] text-ink-500">
+          Un message simple porte un texte, un visuel et des boutons. Un carrousel porte de deux à dix cartes,
+          chacune avec son titre, son texte, son visuel et ses boutons.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full rounded-xl border border-brand-200 bg-brand-50/40 p-3" data-testid={`rcs-creer-${mode}-ouvert`}>
+      {mode === 'simple'
+        ? <RcsMessageForm tenantId={tenantId} fields={champs} onSaved={() => { void apresEnregistrement(); }} />
+        : <RcsCarouselForm tenantId={tenantId} fields={champs} onSaved={() => { void apresEnregistrement(); }} />}
+      <button type="button" onClick={() => setMode(null)} className="mt-2 text-xs text-ink-500 hover:underline">
+        Annuler
+      </button>
+    </div>
+  );
+}

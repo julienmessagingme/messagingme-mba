@@ -400,6 +400,7 @@ export function AssistantCampagne({
   etatInitial,
   rechargerTemplates,
   rechargerScenarios,
+  rechargerMessagesRcs,
   brouillon,
   onCree,
 }: {
@@ -419,6 +420,8 @@ export function AssistantCampagne({
    * le sélecteur afficherait un vide sur un champ pourtant rempli.
    */
   rechargerScenarios?: () => Promise<WorkflowSummary[]>;
+  /** Cf. `EtapeContenu.rechargerMessagesRcs`. Absente = pas de création de message RCS à la volée. */
+  rechargerMessagesRcs?: () => Promise<RcsMessage[]>;
   /** Ce que l'étape Contenu propose à choisir. Absent = tout est vide, et chaque cas vide le DIT. */
   references?: ReferencesContenu;
   /** L'étape d'ouverture. Sert au retour sur un brouillon, et aux tests d'écran qui visent une étape. */
@@ -749,6 +752,7 @@ export function AssistantCampagne({
           onContenu={modifierContenu}
           {...(rechargerTemplates ? { rechargerTemplates } : {})}
           {...(rechargerScenarios ? { rechargerScenarios } : {})}
+          {...(rechargerMessagesRcs ? { rechargerMessagesRcs } : {})}
           modeleSoumis={modeleSoumis}
           onModeleSoumis={setModeleSoumis}
         />

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { getTemplateHints, getWorkflow, type RcsSuggestion, type UserFieldDef } from '@/lib/api';
+import { getTemplateHints, getWorkflow, type RcsMessage, type RcsSuggestion, type UserFieldDef } from '@/lib/api';
 import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
 import { TemplatePreview } from '@/components/TemplatePreview';
 import { ChampImageHebergee } from '@/components/ChampImageHebergee';
@@ -9,6 +9,7 @@ import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
 import { CreationModeleEnLigne } from '@/components/campagne/CreationModeleEnLigne';
 import type { CreatedTemplate } from '@/components/TemplateForm';
 import { MAX_BOUTONS_CARTE, MAX_BOUTONS_RCS, maxTexteRcs, versBrouillonRcs } from '@/lib/rcs';
+import { CreationMessageRcsEnLigne } from '@/components/campagne/CreationMessageRcsEnLigne';
 import { versBrouillonCarrousel } from '@/lib/rcs-carrousel';
 import { RcsCarouselPreview } from '@/components/RcsCarouselPreview';
 import { RcsPhoneFrame } from '@/components/RcsPhoneFrame';
@@ -81,6 +82,7 @@ export function EtapeContenu({
   rangsIncomplets,
   rechargerTemplates,
   rechargerScenarios,
+  rechargerMessagesRcs,
   modeleSoumis,
   onModeleSoumis,
   onChange,
@@ -120,6 +122,14 @@ export function EtapeContenu({
    * sélecteur afficherait un vide sur un champ pourtant rempli.
    */
   rechargerScenarios?: () => Promise<WorkflowSummary[]>;
+  /**
+   * Relit la bibliothèque de messages RCS et rend la liste COMPLÈTE. ABSENTE = « Créer un nouveau message »
+   * n'est pas proposé, même convention que les deux au-dessus.
+   *
+   * ⚠️ SANS FILTRE, contrairement aux scénarios : le sélecteur de l'étage écarte lui-même ce qu'il ne sait
+   * pas poser. Filtrée, elle ferait passer pour absent le message qu'on vient justement d'écrire.
+   */
+  rechargerMessagesRcs?: () => Promise<RcsMessage[]>;
   /** Le modèle en cours de revue chez Meta. Il vit dans la COQUILLE : cf. `AssistantCampagne`. */
   modeleSoumis: CreatedTemplate | null;
   onModeleSoumis: (t: CreatedTemplate | null) => void;
@@ -185,6 +195,7 @@ export function EtapeContenu({
           references={references}
           {...(rechargerTemplates ? { rechargerTemplates } : {})}
           {...(rechargerScenarios ? { rechargerScenarios } : {})}
+          {...(rechargerMessagesRcs ? { rechargerMessagesRcs } : {})}
           capacites={capacites}
           modeleSoumis={modeleSoumis}
           onModeleSoumis={onModeleSoumis}
@@ -242,6 +253,7 @@ function CadreEtage({
   references,
   rechargerTemplates,
   rechargerScenarios,
+  rechargerMessagesRcs,
   modeleSoumis,
   onModeleSoumis,
   onChange,
@@ -255,6 +267,8 @@ function CadreEtage({
   rechargerTemplates?: (silencieux?: boolean) => Promise<TemplateSummary[]>;
   /** Cf. `EtapeContenu.rechargerScenarios`. */
   rechargerScenarios?: () => Promise<WorkflowSummary[]>;
+  /** Cf. `EtapeContenu.rechargerMessagesRcs`. */
+  rechargerMessagesRcs?: () => Promise<RcsMessage[]>;
   /** Ce que l'espace sait faire, pour l'éditeur de scénario ouvert à la volée. */
   capacites: CapacitesEspace;
   modeleSoumis: CreatedTemplate | null;
@@ -311,6 +325,7 @@ function CadreEtage({
               references={references}
               capacites={capacites}
               {...(rechargerScenarios ? { rechargerScenarios } : {})}
+              {...(rechargerMessagesRcs ? { rechargerMessagesRcs } : {})}
               onChange={onChange}
             />
           )}
@@ -725,6 +740,24 @@ function EditeurVariables({
   );
 }
 
+/**
+ * Poser un message de la bibliothèque sur l'étage. DEUX appelants : le sélecteur « partir d'un message
+ * enregistré », et la création à la volée.
+ *
+ * 🔴 SORTI EN FONCTION PARCE QU'IL PORTE DEUX INVARIANTS QU'ON NE RECOPIE PAS. ⚠️ UN SEUL PATCH POUR LES
+ * TROIS CHAMPS : trois appels de suite partiraient du même état de rendu et les deux derniers effaceraient
+ * le premier. 🔴 ET CHOISIR UN MESSAGE SIMPLE RETIRE LE CARROUSEL, sans quoi il continuerait de partir à la
+ * place de ce qu'on vient de choisir. Recopié, le second appelant aurait oublié l'un des deux.
+ *
+ * ⚠️ C'est une COPIE, jamais un lien : la campagne garde le message tel qu'il était au moment où on l'a
+ * repris, donc modifier la bibliothèque ensuite ne réécrit pas une campagne déjà partie.
+ */
+function poserMessageRcs(c: RcsMessage['content'] | null, onChange: (patch: Partial<ContenuEtage>) => void): void {
+  if (c?.kind === 'carousel') { onChange({ carrouselRcs: c }); return; }
+  const b = versBrouillonRcs(c);
+  if (b) onChange({ texteRcs: b.text, imageRcs: b.imageUrl, suggestions: b.suggestions, carrouselRcs: undefined });
+}
+
 function CadreRcs({
   tenantId,
   rang,
@@ -732,6 +765,7 @@ function CadreRcs({
   references,
   capacites,
   rechargerScenarios,
+  rechargerMessagesRcs,
   onChange,
 }: {
   /** L'espace, pour TÉLÉVERSER le visuel : c'est le seul appel réseau de ce cadre. */
@@ -743,6 +777,8 @@ function CadreRcs({
   capacites: CapacitesEspace;
   /** Cf. `EtapeContenu.rechargerScenarios`. */
   rechargerScenarios?: () => Promise<WorkflowSummary[]>;
+  /** Cf. `EtapeContenu.rechargerMessagesRcs`. */
+  rechargerMessagesRcs?: () => Promise<RcsMessage[]>;
   onChange: (patch: Partial<ContenuEtage>) => void;
 }) {
   const image = contenu.imageRcs ?? '';
@@ -770,23 +806,30 @@ function CadreRcs({
         testId={`rcs-bibliotheque-${rang}`}
         valeur=""
         onChange={(id) => {
-          const c = references.messagesRcs.find((m) => m.id === id)?.content ?? null;
-          if (c?.kind === 'carousel') {
-            onChange({ carrouselRcs: c });
-            return;
-          }
-          const b = versBrouillonRcs(c);
-          // ⚠️ UN SEUL PATCH POUR LES TROIS CHAMPS : trois appels de suite partiraient du même état de
-          // rendu et les deux derniers effaceraient le premier. Même règle que le choix d'un modèle.
-          // 🔴 Et choisir un message simple RETIRE le carrousel, sans quoi il continuerait de partir à la
-          // place de ce qu'on vient de choisir.
-          if (b) onChange({ texteRcs: b.text, imageRcs: b.imageUrl, suggestions: b.suggestions, carrouselRcs: undefined });
+          poserMessageRcs(references.messagesRcs.find((m) => m.id === id)?.content ?? null, onChange);
         }}
         options={references.messagesRcs
           .filter((m) => versBrouillonRcs(m.content) !== null || m.content?.kind === 'carousel')
           .map((m) => ({ valeur: m.id, libelle: m.content?.kind === 'carousel' ? `${m.name} (carrousel)` : m.name }))}
         vide="Aucun message RCS enregistré sur cet espace."
       />
+      {/*
+        🔴 ÉCRIRE UN MESSAGE SANS QUITTER LA CAMPAGNE (Julien, 2026-09-24 : « il faut dire : partir d'un
+        message enregistré, ou créer un nouveau modèle de message, et là ça ouvre le créateur, soit normal
+        soit carrousel »). C'est le seul chemin vers un CARROUSEL et vers une carte à TITRE depuis une
+        campagne : le composeur de l'étage ne sait éditer que le visuel, le texte et les suggestions.
+        ⚠️ SOUS LE SÉLECTEUR ET NON DEDANS, pour la même raison que « Créer un scénario » : une option dans
+        une liste déroulante se sélectionnerait comme une valeur, et un brouillon rechargé porterait un
+        identifiant qui ne désigne rien.
+      */}
+      {rechargerMessagesRcs && (
+        <CreationMessageRcsEnLigne
+          tenantId={tenantId}
+          champs={references.userFields}
+          rechargerMessagesRcs={rechargerMessagesRcs}
+          onCree={(m) => poserMessageRcs(m.content, onChange)}
+        />
+      )}
       {carrousel ? (
         /*
           🔴 UN CARROUSEL SE MONTRE, IL NE S'ÉDITE PAS ICI : c'est une copie figée, et les champs du message

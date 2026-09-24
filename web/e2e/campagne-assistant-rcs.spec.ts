@@ -56,6 +56,63 @@ async function lancer(page: Page): Promise<void> {
   await page.getByTestId('bouton-lancer').click();
 }
 
+test.describe('Assistant : ecrire un message RCS a la volee', () => {
+  /**
+   * Demande de Julien du 2026-09-24 : « il faut dire : partir d'un message enregistré, ou créer un nouveau
+   * modèle de message, et là ça ouvre le créateur, soit normal soit carrousel ».
+   *
+   * 🔴 CE QUI ÉTAIT IMPOSSIBLE AVANT, ET QUI L'EST DEUX FOIS. Depuis une campagne, on ne pouvait que
+   * REPRENDRE un message déjà écrit ailleurs. Un CARROUSEL ne s'y créait pas du tout, et une carte à TITRE
+   * non plus, parce que le composeur de l'étage ne sait éditer que le visuel, le texte et les suggestions.
+   */
+  test('🔴 un message simple ecrit ici se POSE sur l etage, sans quitter la campagne', async ({ page }) => {
+    const faux = await poserFaux(page, { rcsMessages: MESSAGES_RCS });
+    await surLEtageRcs(page);
+
+    await page.getByTestId('rcs-creer-message').click();
+    await expect(page.getByTestId('rcs-creer-choix')).toBeVisible();
+    await page.getByTestId('rcs-creer-simple').click();
+
+    // Le formulaire de PRODUCTION, celui de Contenu > RCS > Messages : ses `data-testid` sont les siens.
+    await page.getByTestId('rcs-message-name').fill('Relance du jeudi');
+    await page.getByTestId('rcs-message-text').fill('Votre commande part demain.');
+    await page.getByTestId('rcs-message-save').click();
+
+    /**
+     * 🔴 LE TEXTE DE L'ÉTAGE PORTE LE MESSAGE NEUF : c'est la seule preuve qui compte, parce qu'elle dit que
+     * le message a été RETROUVÉ par différence entre les deux lectures de la bibliothèque. Un simple « le
+     * formulaire s'est fermé » passerait alors que rien ne serait posé.
+     */
+    // ⚠️ `toContainText` ET NON `toHaveValue` : ce champ est un contenteditable, pas un `input`, et c'est
+    // la convention du reste du fichier. Un `toHaveValue` echoue ici avec « Not an input element ».
+    await expect(page.getByTestId('rcs-texte')).toContainText('Votre commande part demain.', { timeout: 15_000 });
+    // Et il a bien été enregistré dans la bibliothèque, pas seulement recopié à l'écran.
+    expect(faux.appels.some((a) => a.method === 'POST' && a.url.includes('/rcs-messages')),
+      'aucun POST vers la bibliotheque des messages RCS').toBe(true);
+  });
+
+  test('🔴 un CARROUSEL se cree depuis la campagne, ce qui etait impossible', async ({ page }) => {
+    await poserFaux(page, { rcsMessages: MESSAGES_RCS });
+    await surLEtageRcs(page);
+
+    await page.getByTestId('rcs-creer-message').click();
+    await page.getByTestId('rcs-creer-carrousel').click();
+
+    // Deux cartes existent d'emblée : un carrousel en dessous de deux n'en est pas un.
+    await page.getByTestId('rcs-carrousel-nom').fill('Nos trois villes');
+    await page.getByTestId('rcs-carte-0-titre').fill('Nice');
+    await page.getByTestId('rcs-carte-1-titre').fill('Lyon');
+    await page.getByTestId('rcs-carrousel-enregistrer').click();
+
+    /**
+     * 🔴 IL SE POSE EN ENTIER, PAS DANS LES TROIS CHAMPS DE L'ÉTAGE : un carrousel porte plusieurs cartes,
+     * que le composeur de l'étage ne sait pas représenter. L'aperçu figé est donc la preuve qu'il est arrivé
+     * sur l'étage par la bonne porte (`carrouselRcs`) et non aplati en message simple.
+     */
+    await expect(page.getByTestId('rcs-carrousel-etage-1')).toBeVisible({ timeout: 15_000 });
+  });
+});
+
 test.describe('Assistant : le canal RCS', () => {
   test('sans agent déposé, le canal RCS est VISIBLE mais éteint et non cliquable', async ({ page }) => {
     // Le canal reste montré (on prépare son projet), mais rien ne partirait tant qu'aucun agent n'est

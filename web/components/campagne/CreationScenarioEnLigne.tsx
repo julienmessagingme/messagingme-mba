@@ -84,7 +84,12 @@ export function CreationScenarioEnLigne({
         onClick={() => { setEtape('nom'); }}
         className="text-xs font-medium text-brand-600 hover:underline"
       >
-        Créer un scénario
+        {/* ⚠️ LE « ＋ » ALIGNE LES TROIS CRÉATIONS À LA VOLÉE (2026-09-24). Julien a demandé de pouvoir créer
+            un scénario depuis une campagne alors que c'était déjà le cas depuis le 2026-09-14 : le bouton
+            existait mais ne se voyait pas, entre un menu déroulant et le reste du formulaire. Les deux
+            autres portes du même genre (« ＋ Créer un nouveau modèle », « ＋ Créer un nouveau message ») le
+            portent déjà, et trois affordances identiques se repèrent mieux qu'une seule isolée. */}
+        ＋ Créer un scénario
       </button>
 
       {etape === 'nom' && (
