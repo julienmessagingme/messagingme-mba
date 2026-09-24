@@ -9,9 +9,15 @@ import type { RcsMessage, UserFieldDef } from '@/lib/api';
  * ÉCRIRE UN MESSAGE RCS SANS QUITTER LA CAMPAGNE EN COURS, simple ou carrousel.
  *
  * 🔴 CE QU'IL RÉPARE (Julien, 2026-09-24) : dans une campagne RCS on ne pouvait que PARTIR d'un message
- * déjà enregistré. Un carrousel ne s'y créait pas du tout, et une carte à TITRE non plus, parce que le
- * composeur de l'étage ne sait éditer que trois champs (visuel, texte, suggestions). Le vrai créateur
+ * déjà enregistré. Un CARROUSEL ne s'y créait pas du tout, alors que ses cartes portent chacune un titre :
+ * le composeur de l'étage ne sait éditer que trois champs (visuel, texte, suggestions). Le vrai créateur
  * existait, mais dans un autre écran, donc il fallait abandonner sa campagne pour aller y écrire.
+ *
+ * ⚠️ CE COMMENTAIRE A DIT « ET UNE CARTE À TITRE NON PLUS », ET C'ÉTAIT FAUX (relecture à froid du
+ * 2026-09-24). Le modèle accepte bien un titre sur une carte SIMPLE (`RcsCard.title`, `src/rcs/types.ts`),
+ * mais AUCUN écran ne sait le saisir : `RcsMessageForm` n'a pas ce champ. Ouvrir ce composeur n'ouvre donc
+ * pas ce chemin-là, et le dire aurait envoyé quelqu'un chercher un champ qui n'existe nulle part. Le titre
+ * d'une carte simple reste hors de portée de la console, c'est noté dans `todo.md`.
  *
  * 🔴 IL MONTE LES FORMULAIRES DE PRODUCTION, PAS UNE VERSION ALLÉGÉE. `RcsMessageForm` et
  * `RcsCarouselForm` sont ceux de Contenu > RCS > Messages : même validation, même bornage de boutons,
@@ -38,8 +44,16 @@ export function CreationMessageRcsEnLigne({ tenantId, champs, rechargerMessagesR
   onCree: (m: RcsMessage) => void;
 }) {
   const [mode, setMode] = useState<null | 'choix' | 'simple' | 'carrousel'>(null);
-  /** Les identifiants présents AVANT l'ouverture : c'est eux qui font la différence. */
-  const [avant, setAvant] = useState<readonly string[]>([]);
+  /**
+   * Les identifiants présents AVANT l'ouverture : c'est eux qui font la différence.
+   *
+   * 🔴 `null` = ON N'A PAS PU LIRE, ET CE N'EST PAS UNE LISTE VIDE (relecture à froid du 2026-09-24). Sur un
+   * instantané raté, le code posait `[]`, donc la différence rendait le PREMIER message de la bibliothèque
+   * et l'écran le posait sur l'étage comme s'il venait d'être écrit. C'est exactement le défaut que la
+   * vérification par mutation avait mis en évidence, et le repli « introuvable » censé le couvrir devenait
+   * inatteignable, puisqu'une différence n'est jamais vide quand on compare à rien.
+   */
+  const [avant, setAvant] = useState<readonly string[] | null>(null);
   const [souci, setSouci] = useState<string | null>(null);
 
   async function ouvrir(): Promise<void> {
@@ -50,14 +64,21 @@ export function CreationMessageRcsEnLigne({ tenantId, champs, rechargerMessagesR
     try {
       setAvant((await rechargerMessagesRcs()).map((m) => m.id));
     } catch {
-      // Une relecture ratée ici n'empêche pas d'écrire : elle rend seulement la différence moins sûre, et
-      // le cas « introuvable » ci-dessous dit alors quoi faire.
-      setAvant([]);
+      // Une relecture ratée ici n'empêche pas d'ÉCRIRE : le message sera enregistré quand même. Elle
+      // empêche seulement de le RETROUVER, et on le dira plutôt que de désigner n'importe lequel.
+      setAvant(null);
     }
     setMode('choix');
   }
 
   async function apresEnregistrement(): Promise<void> {
+    if (avant === null) {
+      // 🔴 ON NE DEVINE PAS. Sans instantané, « le message absent d'avant » n'a aucun sens : le premier de
+      // la liste passerait pour le neuf, et l'étage porterait un message que personne n'a choisi.
+      setSouci('Le message est enregistré. Nous n’avons pas pu lire la bibliothèque à l’ouverture, donc nous ne savons pas lequel est le vôtre : choisissez-le dans « Partir d’un message enregistré » juste au-dessus.');
+      setMode(null);
+      return;
+    }
     try {
       const apres = await rechargerMessagesRcs();
       const neuf = apres.find((m) => !avant.includes(m.id));

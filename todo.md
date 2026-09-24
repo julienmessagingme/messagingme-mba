@@ -88,6 +88,21 @@ le lot de l'assistant). Ce qui suit est ce qui reste.
 - 🔴 **Le déploiement de l'API** : la ligne « moyen de paiement » est retirée côté serveur
   (`src/mba/completion.ts`), donc elle reste affichée jusqu'au `up -d --build`.
 
+### 1 bis. Le titre d'une carte RCS SIMPLE reste hors de portee de la console (2026-09-24)
+
+⚠️ **Le modele l'accepte, aucun ecran ne sait le saisir.** `RcsCard.title` existe dans `src/rcs/types.ts` et
+part bien chez smsmode (`toCardContent`), mais `RcsMessageForm` n'a pas ce champ : seules les cartes d'un
+CARROUSEL portent un titre editable (`rcs-carte-N-titre`). Un client qui veut une carte simple titree doit
+donc faire un carrousel d'une carte, ce que le formulaire refuse (deux au minimum).
+
+🔴 **Trouve parce qu'un commentaire l'affirmait a tort**, dans `CreationMessageRcsEnLigne.tsx` : il disait
+ouvrir le chemin vers « une carte a TITRE ». Corrige le 2026-09-24. C'est exactement le motif du depot,
+une justification fausse est pire qu'aucune parce qu'elle sera recopiee, et elle l'avait deja ete dans le
+message de commit `b008edb0`, qu'on ne peut plus corriger.
+
+Le geste, s'il est decide : un champ titre dans `RcsMessageForm`, borne a 200 caracteres comme le schema le
+prevoit deja (`rcsCardSchema`), et le `.refine` « titre OU media » devient atteignable sans image.
+
 ### 2. Une question de vocabulaire, posée et sans réponse
 
 Les boutons d'un message RCS s'appellent **« Suggestions »** à l'écran, le vocabulaire de Google pour le RCS.

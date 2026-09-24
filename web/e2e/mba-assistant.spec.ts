@@ -79,4 +79,42 @@ test.describe('MBA Assistant : ce que l ecran propose', () => {
     await expect(page.getByTestId('mba-assistant-etat')).toContainText('1 étape');
     await expect(page.getByTestId('entete-agent-etapes')).toContainText('1 étape à finir');
   });
+
+  test('🔴 une etape FACULTATIVE a faire ne se dit jamais « obligatoire »', async ({ page }) => {
+    /**
+     * 🔴 LE CAS QUI A LAISSE PASSER UN LIBELLE FAUX, trouve par une relecture a froid le 2026-09-24. Le
+     * compte affiche est celui de l'en-tete, donc il inclut les etapes FACULTATIVES restant a faire
+     * (`fichiers` et `sites` sont `requise: false` dans `src/mba/completion.ts`). La ligne d'etat disait
+     * « il reste N etape(s) OBLIGATOIRE(S) » : un espace dont tout l'obligatoire est regle, sans fichier de
+     * connaissance ni site declare, lisait « il reste 2 etapes obligatoires » alors qu'il n'en restait zero.
+     *
+     * ⚠️ LE CORRECTIF N'A PAS ETE DE FILTRER SUR `requise`, ET CE TEST TIENT LES DEUX MOITIES. Filtrer aurait
+     * fait diverger ce chiffre de celui de l'en-tete, donc deux comptes differents sur le meme ecran : pire
+     * que le mot faux. On tient donc a la fois que le mot a disparu ET que les deux chiffres concordent.
+     *
+     * La completion posee ici est le cas exact : tout l'obligatoire fait, deux FACULTATIVES a faire.
+     */
+    await mockMba(page, {
+      completion: {
+        taches: [
+          { cle: 'business_info', requise: true, etat: 'faite' },
+          { cle: 'faq', requise: true, etat: 'faite' },
+          { cle: 'competences', requise: true, etat: 'faite' },
+          { cle: 'activation', requise: true, etat: 'faite' },
+          { cle: 'fichiers', requise: false, etat: 'a_faire', raison: 'Aucun fichier de connaissance.' },
+          { cle: 'sites', requise: false, etat: 'a_faire', raison: 'Aucun site déclaré.' },
+        ],
+        faites: 4, total: 4, indeterminees: 0,
+      },
+    });
+    await page.goto('/mba/parametres?tab=assistant');
+
+    const etat = page.getByTestId('mba-assistant-etat');
+    // L'ancre positive : le compte est bien celui de l'en-tete, deux etapes.
+    await expect(etat).toContainText('2 étape');
+    await expect(page.getByTestId('entete-agent-etapes')).toContainText('2 étapes à finir');
+    // Et le mot faux ne revient pas, dans aucune des deux langues.
+    await expect(etat, 'la ligne d etat qualifie de nouveau des facultatives d obligatoires')
+      .not.toContainText(/obligatoire|required/i);
+  });
 });

@@ -36,9 +36,10 @@ export interface PointMba {
 /**
  * Les questions, par clé de tâche.
  *
- * ⚠️ TOUTES LES TÂCHES N'EN ONT PAS, et c'est voulu : `paiement` est hors de notre portée (Meta ne l'expose
- * pas), `connecteurs` et `outils` se règlent au formulaire. Une tâche sans question n'entre pas dans
- * l'ordre du jour, elle reste visible dans l'écran de complétude.
+ * ⚠️ TOUTES LES TÂCHES N'EN ONT PAS, et c'est voulu : `connecteurs` et `outils` se règlent au formulaire,
+ * dans WhatsApp Manager. Une tâche sans question n'entre pas dans l'ordre du jour, elle reste visible dans
+ * l'écran de complétude. (Le moyen de paiement était le troisième cas jusqu'au 2026-09-24 : il n'est plus
+ * une tâche du tout, cf. `src/mba/completion.ts`.)
  */
 const QUESTIONS: Partial<Record<TacheMba['cle'], { question: string; pistes: string[] }>> = {
   business_info: {
@@ -94,8 +95,8 @@ export function ordreDuJourMba(completion: CompletionMba): PointMba[] {
      * jour, donc l'assistant n'aurait JAMAIS posé la question des sites, alors que c'est une demande
      * explicite de Julien (« l'assistant doit lui poser la question à un moment ! »).
      *
-     * ⚠️ Ce qui filtre, c'est « y a-t-il une question à poser ? » : une tâche hors de notre portée
-     * (le paiement) ou qui se règle au formulaire n'en a pas, et n'entre donc pas.
+     * ⚠️ Ce qui filtre, c'est « y a-t-il une question à poser ? » : une tâche qui se règle ailleurs que
+     * chez nous (les connecteurs, les outils) n'en a pas, et n'entre donc pas.
      */
     .filter((t) => t.etat === 'a_faire' && QUESTIONS[t.cle] !== undefined)
     .sort((a, b) => RANG(a.cle) - RANG(b.cle))

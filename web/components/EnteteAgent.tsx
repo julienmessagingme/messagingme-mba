@@ -20,11 +20,12 @@ export interface EtapeEntete {
    * L'onglet où ça se corrige. Absent = ça ne se règle pas sur cet écran, et l'étape reste alors affichée
    * en texte simple.
    *
-   * ⚠️ CE N'EST PAS LE MOYEN DE PAIEMENT, contrairement à ce que cette ligne a dit jusqu'au 2026-09-23.
-   * Les trois tâches de complétion sans onglet (paiement, connecteurs, outils) sont TOUTES `inconnue`, donc
-   * aucune n'entre jamais dans `etapes` : elles passent par `signalements`. Ce qui reste ici est un
+   * ⚠️ LES TÂCHES SANS ONGLET NE PASSENT PAS PAR ICI. `connecteurs` et `outils` se règlent dans WhatsApp
+   * Manager et sont TOUJOURS `inconnue`, donc aucune n'entre jamais dans `etapes` : elles passeraient par
+   * `signalements` si elles étaient obligatoires, ce qu'elles ne sont pas. Ce qui reste ici est un
    * contrat : un appelant PEUT donner une étape sans geste, et la masquer ferait disparaître une condition
-   * réelle d'un en-tête qui prétend les lister toutes.
+   * réelle d'un en-tête qui prétend les lister toutes. (Le moyen de paiement a occupé cette place jusqu'au
+   * 2026-09-24, où il a cessé d'être une tâche.)
    */
   onglet?: string;
 }
@@ -175,12 +176,13 @@ export function EnteteAgent({
           </ul>
         )}
 
-        {/* 🔴 CE QU'ON NE SAIT PAS, EN GRIS ET HORS DU COMPTE. Cette liste avait DISPARU avec l'ancien
-            composant `MbaCompletion` le 2026-09-23, et rien ne l'a signalé : le moyen de paiement de
-            l'agent de Meta est `inconnue` et `requise`, il ne passait donc plus ni par les étapes (qui ne
-            gardent que `a_faire`) ni par le ratio (qui l'exclut au serveur). Cinq textes continuaient
-            d'affirmer qu'il « gardait sa ligne ». Il la garde à nouveau, ICI, et surtout pas dans
-            « n étapes à finir » : ce compteur dit ce que le CLIENT doit faire. */}
+        {/* 🔴 CE QU'ON N'A PAS PU LIRE, EN GRIS ET HORS DU COMPTE. Cette liste avait DISPARU avec l'ancien
+            composant `MbaCompletion` le 2026-09-23 sans que rien ne le signale, et cinq textes continuaient
+            d'affirmer qu'elle était là : c'est ce qui l'a fait revenir, avec un test.
+            ⚠️ Son occupante permanente d'alors, le moyen de paiement, n'est plus une tâche depuis le
+            2026-09-24. La liste ne se montre donc plus que quand une lecture échoue VRAIMENT chez Meta, ce
+            qui est exactement ce qu'on veut qu'elle dise. Et surtout pas dans « n étapes à finir » : ce
+            compteur dit ce que le CLIENT doit faire, pas ce que NOUS n'avons pas su lire. */}
         {signalements !== undefined && signalements.length > 0 && (
           <ul data-testid="entete-agent-signalements" className="space-y-1 pt-1">
             {signalements.map((s) => (

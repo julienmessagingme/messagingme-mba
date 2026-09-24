@@ -39,6 +39,13 @@ export interface MbaFixtures {
    * `f.messages.length` : c est pour cette raison que l onglet Assistant n avait aucun test d interface.
    */
   assistant?: { messages?: unknown[]; accueil?: string | null; total?: number; budgetEpuise?: boolean };
+  /**
+   * La completion, telle quelle. Absente = celle par defaut plus bas.
+   *
+   * Sert a poser des cas que le defaut ne couvre pas, notamment une tache FACULTATIVE en `a_faire` :
+   * c est ce cas-la qui a laisse passer un libelle faux (« obligatoires ») sur un compte qui les inclut.
+   */
+  completion?: unknown;
   allowlist?: Array<Record<string, unknown>>;
   preview?: Record<string, unknown>;
   importResult?: Record<string, unknown>;
@@ -179,6 +186,7 @@ export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]>
       }
       if (url.includes('/messages')) return json({ messages: 412, jours: 30 });
       if (url.includes('/completion')) {
+        if (f.completion !== undefined) return json(f.completion);
         // 🔴 UNE OBLIGATOIRE EN `inconnue` EST DANS LA FIXTURE EXPRÈS : sans elle, aucun test ne voit la
         // liste grise des signalements, et c'est exactement comme ça qu'elle a pu disparaître de l'écran
         // sans que rien ne crie (revue finale du 2026-09-23). Elle porte ici sa VRAIE cause, une lecture qui

@@ -33,7 +33,11 @@ const EXEMPLES: readonly (readonly [string, string])[] = [
 export function MbaAssistantPanel({ tenantId, etapesRestantes = null }: {
   tenantId: string;
   /**
-   * Combien d'étapes obligatoires restent à régler, ou `null` si on ne le sait pas encore.
+   * Combien d'étapes restent à finir, ou `null` si on ne le sait pas encore.
+   *
+   * ⚠️ TOUTES LES ÉTAPES `a_faire`, FACULTATIVES COMPRISES, exactement comme l'en-tête de l'écran. Ce
+   * n'est pas un oubli : deux comptes différents sur le même écran se contredisent, et le lecteur ne
+   * sait alors lequel croire. C'est pour ça que le libellé dit « à finir » et jamais « obligatoires ».
    *
    * 🔴 IL VIENT DE LA COMPLÉTION RÉELLE, IL NE S'INVENTE PAS. L'assistant d'un agent IA affiche « Entretien :
    * X points sur Y » parce qu'il MÈNE un entretien en neuf points ; celui-ci ne mène aucun entretien, il
@@ -161,8 +165,19 @@ export function MbaAssistantPanel({ tenantId, etapesRestantes = null }: {
                   'Tell it what to set up or change. It proposes, you accept.')
                 : etapesRestantes === 0
                   ? t('Tout est réglé. Dites-lui ce que vous voulez changer.', 'Everything is set. Tell it what you want to change.')
-                  : t(`Il reste ${etapesRestantes} étape(s) obligatoire(s). Dites-lui de s'en occuper, ou réglez-les dans les onglets.`,
-                    `${etapesRestantes} required step(s) left. Ask it to handle them, or do it in the tabs.`)}
+                  /*
+                     🔴 PAS LE MOT « OBLIGATOIRES », ET C'EST UN CORRECTIF (relecture à froid du 2026-09-24).
+                     Ce compte est celui de l'en-tête, donc il inclut les étapes FACULTATIVES qui restent à
+                     faire (`fichiers` et `sites` sont `requise: false` dans `src/mba/completion.ts`). Un
+                     espace dont tout l'obligatoire est réglé, sans fichier de connaissance ni site déclaré,
+                     lisait « il reste 2 étapes obligatoires » alors qu'il n'en restait aucune.
+                     ⚠️ ET LE CORRECTIF N'EST PAS DE FILTRER SUR `requise`, C'EST DE RETIRER LE MOT. Filtrer
+                     ferait diverger ce chiffre de celui de l'en-tête, donc DEUX comptes différents sur le
+                     même écran, ce qui est pire que le mot faux. Le même compte, le même registre que
+                     l'en-tête (« n étapes à finir »), et la contradiction ne peut pas exister.
+                  */
+                  : t(`Il reste ${etapesRestantes} étape(s) à finir. Dites-lui de s'en occuper, ou réglez-les dans les onglets.`,
+                    `${etapesRestantes} step(s) left to finish. Ask it to handle them, or do it in the tabs.`)}
             </p>
           </div>
         </div>
