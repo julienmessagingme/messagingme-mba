@@ -204,18 +204,23 @@ comme le cadrage l'impose (routage, puis création, puis suivi), CI verte sur le
 - ✅ **La création** : tout est créé EN PAUSE chez Meta, chaque identifiant rangé dès qu'il arrive, et un
   rattrapage qui supprime la campagne dès qu'une étape échoue. Publier allume l'automation AVANT Meta.
 - ✅ **Le suivi** : deux appels par compte toutes les quinze minutes, l'entonnoir, la pause et la reprise.
-- 🔴 **DEUX ROUGES TROUVÉS PAR LA RELECTURE À FROID, ET CORRIGÉS AVANT TOUT DÉPLOIEMENT.** Le second était
-  une RÉGRESSION, pas une capacité manquante : le fil était pris à l'agent de Meta dès qu'un lead arrivait en
-  `standby`, SANS regarder s'il y avait quoi que ce soit à démarrer. Sur une publicité créée et pas encore
-  publiée (son automation naît éteinte), un clic PAYÉ recevait donc un silence de vingt-quatre heures, là où
-  l'agent de Meta répondait avant ce lot. Deux moitiés au correctif : la règle ne prend plus le fil sans
-  automation ALLUMÉE, et le handler REND le fil quand il l'a pris et que rien n'a finalement démarré.
-- ⚠️ **L'ÉCRAN PART APRÈS LE DÉPLOIEMENT DE L'API**, et c'est la règle Vercel du `CLAUDE.md` : la console se
-  publie à chaque `git push`, l'API attend son `up -d --build`.
+- 🔴 **LE PLUS GROS DÉFAUT DU LOT ÉTAIT UNE RÉGRESSION, PAS UNE CAPACITÉ MANQUANTE**, et c'est une relecture
+  à froid qui l'a vu : le fil était pris à l'agent de Meta dès qu'un lead arrivait en `standby`, SANS
+  regarder s'il y avait quoi que ce soit à démarrer. Sur une publicité créée et pas encore publiée (son
+  automation naît éteinte), un clic PAYÉ recevait donc un silence de vingt-quatre heures, là où l'agent de
+  Meta répondait avant ce lot. Deux moitiés au correctif : la règle ne prend plus le fil sans automation
+  ALLUMÉE, et le handler REND le fil quand il l'a pris et que rien n'a finalement démarré.
+  ⚠️ **Aucun compte de relectures ni de rouges n'est écrit ici.** Cette ligne a annoncé « deux rouges »
+  pendant que les relectures suivantes en trouvaient d'autres : c'est un fait dérivable du `git log`, donc
+  il n'a pas sa place en prose. Le détail vit dans `.git/revue-finale-rapport.md`, hors versionnement.
+- ✅ **DÉPLOYÉ le 2026-09-24** : migration 0170 d'abord, relue en base point par point, puis l'API et le
+  worker, puis le contrôle des portes publiques, qui a de nouveau rendu 502 le temps d'un `nginx -s
+  reload`. La fenêtre Vercel est refermée : l'écran et les routes qu'il appelle sont en ligne ensemble.
 
-**Ce qui reste, dans l'ordre** : déployer (migration d'abord), pousser l'écran, puis l'ESSAI RÉEL, qui seul
-clôt la feature : première campagne MessagingMe créée depuis Engage Me, un vrai clic depuis un téléphone,
-l'agent de Meta qui se tait pendant que le scénario parle, et les cinq mesures de la spec § 6.
+**Ce qui reste** : l'ESSAI RÉEL, qui seul clôt la feature, et qui appartient à Julien : première campagne
+MessagingMe créée depuis Engage Me, un vrai clic depuis un téléphone, l'agent de Meta qui se tait pendant
+que le scénario parle, et les cinq mesures de la spec § 6. 🔴 Rien de ce qui précède ne le remplace : aucun
+mécanisme de ce lot n'a encore tourné sur de l'argent réel.
 
 ⚠️ **Deux points que seule cette première campagne tranchera**, et qui sont écrits dans le code à l'endroit
 où on les changera : l'optimisation `CONVERSATIONS` pour un annonceur français, et l'emplacement de

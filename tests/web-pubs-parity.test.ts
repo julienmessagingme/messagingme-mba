@@ -118,6 +118,44 @@ describe('ce que l’écran annonce sur les prospects non pris en charge', () =>
 });
 
 /**
+ * LA LISTE NE PEUT PAS ÉCRIRE DANS L'EMPLACEMENT D'ERREUR DE LA COQUILLE.
+ *
+ * 🔴 C'EST UNE SÉPARATION, PAS UNE DISCIPLINE, ET C'EST TOUT L'INTÉRÊT. Le partage d'un emplacement unique
+ * a produit TROIS défauts de suite, chacun corrigé par une règle un peu plus fine que la précédente :
+ * effacer à l'entrée laissait un bandeau périmé, effacer au succès emportait l'erreur des autres, et une
+ * étiquette de source y remédiait sauf si la liste échouait entre-temps. Une discipline partagée sur une
+ * ressource unique se défait toujours par un cas qu'on n'a pas énuméré.
+ *
+ * ⚠️ CE TEST LIT LE CORPS DE `chargerPubs` et exige qu'il n'y nomme AUCUN `setErreur`. Le comportement,
+ * lui, est tenu par un cas Playwright qui éprouve l'ordre complet ; celui-ci ferme la porte en amont, pour
+ * que la question ne se repose pas au prochain écrivain.
+ */
+describe('les deux emplacements d’erreur de l’écran des publicités', () => {
+  const corpsDeChargerPubs = (): string => {
+    const source = readFileSync(join(process.cwd(), 'web/app/publicites/page.tsx'), 'utf8');
+    // Par bornes, pas par expression régulière : les échappements d'une regex écrite pour reconnaître du
+    // code sont une source d'erreur à eux seuls, et ce qu'on cherche ici est un simple découpage.
+    const debut = source.indexOf('const chargerPubs = useCallback');
+    const fin = source.indexOf('\n  }, [', debut);
+    expect(debut, 'le début de `chargerPubs` est introuvable').toBeGreaterThan(-1);
+    expect(fin, 'la fin de `chargerPubs` est introuvable').toBeGreaterThan(debut);
+    return source.slice(debut, fin);
+  };
+
+  it('🔴 `chargerPubs` n’écrit QUE dans l’emplacement de la liste', () => {
+    const corps = corpsDeChargerPubs();
+    expect(corps).toContain('setErreurListe(');
+    expect(corps).not.toContain('setErreur(');
+  });
+
+  it('et l’écran REND bien les deux, sans quoi l’un serait écrit et jamais lu', () => {
+    const source = readFileSync(join(process.cwd(), 'web/app/publicites/page.tsx'), 'utf8');
+    expect(source).toContain("data-testid=\"pubs-erreur\"");
+    expect(source).toContain("data-testid=\"pubs-liste-erreur\"");
+  });
+});
+
+/**
  * LE LIEN VERS LE GESTIONNAIRE DE META, ET CE QU'IL RATTRAPE.
  *
  * 🔴 IL EST LA CONTREPARTIE D'UN CHOIX FAIT AILLEURS. `lireCampagnes` ne garde qu'UN motif de refus quand

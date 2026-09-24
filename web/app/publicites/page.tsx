@@ -50,20 +50,29 @@ function PublicitesInner({ session }: { session: Session }) {
   const [compteChoisi, setCompteChoisi] = useState('');
   const [pageChoisie, setPageChoisie] = useState('');
   /**
-   * L'UNIQUE EMPLACEMENT D'ERREUR DE CET ÉCRAN, ET SON PROPRIÉTAIRE.
+   * L'ERREUR DE LA COQUILLE : connexion, choix des actifs, déconnexion, lecture de l'état. QUATRE
+   * écrivains, et la liste n'en fait PAS partie.
    *
-   * 🔴 LA SOURCE VIT DANS L'ÉTAT, PAS À CÔTÉ, ET C'EST LE TROISIÈME ESSAI. Une référence posée par la
-   * seule liste ne disait pas « l'erreur affichée vient de la liste » mais « la liste a échoué depuis son
-   * dernier succès » : les quatre autres opérations prenaient l'emplacement sans la lever, si bien qu'une
-   * liste qui repartait effaçait le message d'une DÉCONNEXION ratée. Mesuré en navigateur.
+   * 🔴 C'EST LE QUATRIÈME ESSAI, ET LES TROIS PREMIERS PARTAGEAIENT UN SEUL EMPLACEMENT. Le partage a
+   * produit trois défauts de suite, chacun corrigé par une discipline un peu plus fine que la
+   * précédente : effacer à l'entrée laissait un bandeau périmé ; effacer au succès emportait l'erreur
+   * des autres ; une étiquette de source y remédiait SAUF si la liste échouait entre-temps, auquel cas
+   * elle prenait l'emplacement puis l'effaçait légitimement, et le message de la déconnexion était perdu.
    *
-   * ⚠️ CE QUI REND CETTE FORME SÛRE : le type EXIGE la source à chaque écriture, donc un sixième écrivain
-   * devra la déclarer pour compiler, au lieu d'avoir à se souvenir de lever un drapeau ailleurs. Et
-   * l'effacement de la liste passe par une mise à jour FONCTIONNELLE : il lit l'état réel, pas un souvenir.
+   * ⚠️ DEUX EMPLACEMENTS FERMENT LA FAMILLE ENTIÈRE, là où une étiquette ne fermait qu'un ordre d'arrivée :
+   * la liste ne peut PLUS écrire ici, donc elle ne peut plus rien y écraser, et il n'y a plus d'ordre à
+   * raisonner. Une discipline partagée sur une ressource unique se défait toujours par un cas qu'on n'a
+   * pas énuméré ; une séparation, non.
    */
-  const [erreur, setErreur] = useState<{ texte: string; source: 'liste' | 'autre' } | null>(null);
-  /** Pose une erreur qui n'appartient PAS à la liste : le succès de la liste ne l'effacera pas. */
-  const erreurAutre = useCallback((texte: string) => setErreur({ texte, source: 'autre' }), []);
+  const [erreur, setErreur] = useState<string | null>(null);
+  /**
+   * L'ERREUR DE LA LISTE DES PUBLICITÉS, rendue DANS sa section et par elle seule.
+   *
+   * ⚠️ Elle vit ici et non dans `PubsListe` parce que `chargerPubs` a DEUX appelants : cet écran au
+   * montage, et la liste elle-même après une action. La descendre dans le composant en ferait une
+   * seconde copie pour le premier appelant.
+   */
+  const [erreurListe, setErreurListe] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [pubs, setPubs] = useState<Publicite[] | null>(null);
   const [scenarios, setScenarios] = useState<WorkflowSummary[]>([]);
@@ -98,9 +107,9 @@ function PublicitesInner({ session }: { session: Session }) {
       // Route absente : l'API qui la porte n'est pas encore déployée. On le dit comme une fonctionnalité
       // éteinte, jamais comme une panne, parce que pour le client c'est exactement la même chose.
       if (err instanceof ApiError && err.status === 404) { setAbsent(true); return; }
-      erreurAutre(err instanceof Error ? err.message : t('Chargement impossible', 'Loading failed'));
+      setErreur(err instanceof Error ? err.message : t('Chargement impossible', 'Loading failed'));
     }
-  }, [session.tenantId, t, erreurAutre]);
+  }, [session.tenantId, t]);
 
   /**
    * LES PUBLICITÉS, ET CE QUE LE FORMULAIRE A BESOIN DE SAVOIR.
@@ -137,8 +146,8 @@ function PublicitesInner({ session }: { session: Session }) {
        * ⚠️ Le 500 masquait le défaut par HASARD : `web/lib/http.ts` le rejoue, donc `charger()` met
        * deux allers-retours quand la liste n'en met qu'un, et son erreur arrivait après l'effacement.
        */
-      // ⚠️ FONCTIONNEL, ET IL NE TOUCHE QUE LA SIENNE : l'erreur d'une autre opération reste à l'écran.
-      setErreur((e) => (e?.source === 'liste' ? null : e));
+      // Son emplacement à elle : elle ne peut pas effacer celui de la coquille, par construction.
+      setErreurListe(null);
     } catch (err) {
       if (estAnnulation(err)) return;
       // Route absente : l'écran le DIT, au lieu de tourner indéfiniment sur « Chargement… ».
@@ -154,7 +163,7 @@ function PublicitesInner({ session }: { session: Session }) {
       // ⚠️ ET S'IL ARRIVE APRÈS UN SUCCÈS, IL TOMBE DANS L'ERREUR ORDINAIRE plutôt que d'être MUET : une
       // liste qui a cessé de se rafraîchir sans le dire est « un chiffre périmé qui a l'air frais ».
       if (err instanceof ApiError && err.status === 404 && !listeDejaServie.current) { setRouteAbsente(true); return; }
-      setErreur({ texte: err instanceof Error ? err.message : t('Chargement impossible', 'Loading failed'), source: 'liste' });
+      setErreurListe(err instanceof Error ? err.message : t('Chargement impossible', 'Loading failed'));
     }
   }, [session.tenantId, t]);
 
@@ -188,7 +197,7 @@ function PublicitesInner({ session }: { session: Session }) {
             try {
               const code = resp?.authResponse?.code;
               if (typeof code !== 'string' || code === '') {
-                erreurAutre(t('Connexion Meta annulée ou refusée.', 'Meta connection cancelled or denied.'));
+                setErreur(t('Connexion Meta annulée ou refusée.', 'Meta connection cancelled or denied.'));
                 return;
               }
               const accordes = await echangerCodePub(session.tenantId, code);
@@ -197,7 +206,7 @@ function PublicitesInner({ session }: { session: Session }) {
               setPageChoisie(accordes.pages[0]?.id ?? '');
               await charger();
             } catch (err) {
-              erreurAutre(err instanceof Error ? err.message : t('Connexion impossible', 'Connection failed'));
+              setErreur(err instanceof Error ? err.message : t('Connexion impossible', 'Connection failed'));
             } finally {
               setBusy(false);
             }
@@ -206,7 +215,7 @@ function PublicitesInner({ session }: { session: Session }) {
         { config_id: etat.configId, response_type: 'code', override_default_response_type: true },
       );
     } catch (err) {
-      erreurAutre(err instanceof Error ? err.message : t('Connexion impossible', 'Connection failed'));
+      setErreur(err instanceof Error ? err.message : t('Connexion impossible', 'Connection failed'));
       setBusy(false);
     }
   }
@@ -219,7 +228,7 @@ function PublicitesInner({ session }: { session: Session }) {
       setActifs(null);
       await charger();
     } catch (err) {
-      erreurAutre(err instanceof Error ? err.message : t('Enregistrement impossible', 'Could not save'));
+      setErreur(err instanceof Error ? err.message : t('Enregistrement impossible', 'Could not save'));
     } finally {
       setBusy(false);
     }
@@ -269,7 +278,7 @@ function PublicitesInner({ session }: { session: Session }) {
       await charger();
       return true;
     } catch (err) {
-      erreurAutre(err instanceof Error ? err.message : t('Déconnexion impossible', 'Could not disconnect'));
+      setErreur(err instanceof Error ? err.message : t('Déconnexion impossible', 'Could not disconnect'));
       return false;
     } finally {
       setBusy(false);
@@ -285,7 +294,7 @@ function PublicitesInner({ session }: { session: Session }) {
       </p>
 
       {erreur !== null && (
-        <p role="alert" data-testid="pubs-erreur" className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{erreur.texte}</p>
+        <p role="alert" data-testid="pubs-erreur" className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{erreur}</p>
       )}
 
       <section className="mt-5 rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
@@ -311,6 +320,12 @@ function PublicitesInner({ session }: { session: Session }) {
           rien à lister et rien à créer, et l'afficher vide donnerait l'impression d'un écran cassé. */}
       {!absent && etat !== null && etat.configure && etat.connexion !== null && (
         <section className="mt-5 rounded-2xl border border-ink-200 bg-white p-5 shadow-sm" data-testid="pubs-section">
+          {/* ⚠️ L'ERREUR DE LA LISTE VIT DANS SA SECTION, pas dans le bandeau de la coquille. C'est ce qui
+              rend impossible qu'elle efface le message d'une déconnexion ratée, quel que soit l'ordre
+              d'arrivée : elle n'écrit tout simplement plus au même endroit. */}
+          {erreurListe !== null && (
+            <p role="alert" data-testid="pubs-liste-erreur" className="mb-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{erreurListe}</p>
+          )}
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-sm font-semibold text-ink-900">{t('Vos publicités', 'Your ads')}</h2>

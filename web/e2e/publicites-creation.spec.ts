@@ -83,6 +83,10 @@ let lecturesReglages = 0;
  * `RETRY_DELAY_MS`, et non devinée : si ce délai passait au-dessus, la fenêtre retomberait entre deux
  * tentatives, la lecture serait déclarée retombée alors qu'elle est en vol, et les cas redeviendraient
  * verts sur l'état de DÉPART, c'est-à-dire le piège même que cette fonction existe pour fermer.
+ *
+ * ⚠️ ET LA DÉRIVATION NE PROTÈGE QUE D'UN CHANGEMENT DE VALEUR, PAS DE FORME : elle est juste tant que
+ * le rejeu est UNIQUE et à délai CONSTANT. Un second essai en recul (800 ms là où le premier attend
+ * 400) retomberait sous la fenêtre sans que rien ne le signale.
  */
 const attendreLectureRetombee = async (page: import('@playwright/test').Page) => {
   await expect.poll(async () => {
@@ -213,13 +217,17 @@ test.describe('Publicités : ce que le formulaire dit de l’agent de Meta', () 
 });
 
 /**
- * L'ÉCRAN N'A QU'UN EMPLACEMENT D'ERREUR POUR CINQ OPÉRATIONS, ET IL NE DOIT PAS SE TAIRE.
+ * LA LISTE ET LA COQUILLE ONT CHACUNE SON EMPLACEMENT D'ERREUR, ET NE PEUVENT PLUS S'ÉCRASER.
  *
- * 🔴 CE CAS EXISTE PARCE QUE LE CORRECTIF PRÉCÉDENT NE FERMAIT QU'UN SENS. Une référence posée par la
- * liste disait « la liste a échoué depuis son dernier succès », pas « l'erreur affichée vient de la
- * liste » : les quatre autres opérations prenaient l'emplacement sans la lever, et une liste qui repartait
- * effaçait le message d'une DÉCONNEXION ratée. Aucun test ne l'exerçait, et c'est ce qui a laissé le trou
- * survivre à sa propre correction.
+ * 🔴 CE CAS EXISTE PARCE QUE LE PARTAGE A PRODUIT TROIS DÉFAUTS DE SUITE, chacun corrigé par une
+ * discipline un peu plus fine : effacer à l'entrée laissait un bandeau périmé, effacer au succès
+ * emportait l'erreur des autres, et une étiquette de source y remédiait SAUF si la liste échouait
+ * entre-temps, auquel cas elle prenait l'emplacement puis l'effaçait légitimement.
+ *
+ * ⚠️ LE CAS ÉPROUVE PRÉCISÉMENT L'ORDRE QUE L'ÉTIQUETTE NE FERMAIT PAS : déconnexion ratée, PUIS
+ * rafraîchissement de la liste en échec, PUIS rafraîchissement qui repart. Avec deux emplacements, la
+ * question de l'ordre ne se pose plus du tout, et c'est le but : une discipline partagée se défait
+ * toujours par un cas qu'on n'a pas énuméré, une séparation non.
  */
 test.describe('Publicités : l’emplacement d’erreur partagé', () => {
   test('🔴 la liste qui repart n’efface QUE son erreur, pas celle d’une déconnexion ratée', async ({ page }) => {
@@ -259,22 +267,27 @@ test.describe('Publicités : l’emplacement d’erreur partagé', () => {
     await page.goto('/publicites');
     await expect(page.getByTestId('pubs-liste')).toContainText(PUB_PUBLIEE.nom);
 
-    // 1. Le rafraîchissement de la liste échoue : son erreur occupe l'emplacement.
-    listeEnPanne = true;
-    await page.getByTestId(`pub-bascule-${PUB_PUBLIEE.id}`).click();
-    await expect(page.getByTestId('pubs-erreur')).toContainText(/liste cassee/);
-
-    // 2. La déconnexion échoue à son tour : elle PREND l'emplacement, ce qui est correct.
+    // 1. La déconnexion échoue : son message occupe l'emplacement de la COQUILLE.
     await page.getByRole('button', { name: /^Déconnecter$|^Disconnect$/ }).click();
     await expect(page.getByTestId('pubs-erreur')).toContainText(/deconnexion refusee/);
 
-    // 3. La liste repart. Son succès ne doit PAS emporter le message de la déconnexion : c'est le seul
+    // 2. Le rafraîchissement de la liste échoue à son tour. C'est l'ordre que l'étiquette de source ne
+    //    fermait PAS : elle réétiquetait l'emplacement partagé, puis l'effaçait au succès suivant.
+    listeEnPanne = true;
+    await page.getByTestId(`pub-bascule-${PUB_PUBLIEE.id}`).click();
+    await expect(page.getByTestId('pubs-liste-erreur')).toContainText(/liste cassee/);
+    // Les deux coexistent : chacune dans la sienne.
+    await expect(page.getByTestId('pubs-erreur')).toContainText(/deconnexion refusee/);
+
+    // 3. La liste repart. Elle efface la SIENNE, et laisse celle de la déconnexion : c'est le seul
     //    endroit qui dit au client que sa déconnexion n'a pas eu lieu.
     listeEnPanne = false;
     listeRepartie = true;
     await page.getByTestId(`pub-bascule-${PUB_PUBLIEE.id}`).click();
-    // On attend que le succès soit RENDU, pas seulement demandé.
+    // On attend que le succès soit RENDU, pas seulement demandé : sans cette ancre, l'assertion
+    // suivante se satisferait du message encore affiché, avant l'effacement.
     await expect(page.getByTestId('pubs-liste')).toContainText(PUB_PRETE.nom);
+    await expect(page.getByTestId('pubs-liste-erreur')).toHaveCount(0);
     await expect(page.getByTestId('pubs-erreur')).toContainText(/deconnexion refusee/);
   });
 });
@@ -322,6 +335,10 @@ test.describe('Publicités : la liste et le bouton Créer', () => {
     // Avant la connexion il n'y a rien à lister et rien à créer : afficher une section vide donnerait
     // l'impression d'un écran cassé.
     await brancher(page, { connexion: null });
+    // 🔴 ANCRE POSITIVE D'ABORD, et elle manquait : `toHaveCount(0)` est aussi l'état d'une page qui
+    // n'a RIEN rendu. Vérifié par une relecture à froid, qui a fait avorter toutes les requêtes et vu
+    // le cas rester vert : il ne prouvait donc rien sur `connexion: null`.
+    await expect(page.getByRole('button', { name: /Connecter|Connect/ })).toBeVisible();
     await expect(page.getByTestId('pubs-section')).toHaveCount(0);
   });
 });
