@@ -52,7 +52,9 @@ describe.skipIf(!url)('identité des fiches : external_id et les clés de l’AP
 
   it('🔴 l’index d’external_id existe, est VALIDE, et porte son prédicat partiel', async () => {
     const def = await pool.query<{ indexdef: string }>(`select indexdef from pg_indexes where indexname = 'contacts_tenant_external_id_uidx'`);
-    expect(def.rows[0]?.indexdef).toMatch(/UNIQUE INDEX .* \(tenant_id, external_id\) WHERE \(external_id IS NOT NULL\)/);
+    // Parmi les fiches ACTIVES (revue finale du 2026-09-24). La forme est celle que Postgres rend, relue en
+    // production juste après `migrate` : les deux conditions parenthésées sous un AND.
+    expect(def.rows[0]?.indexdef).toMatch(/UNIQUE INDEX .* \(tenant_id, external_id\) WHERE \(\(external_id IS NOT NULL\) AND \(deleted_at IS NULL\)\)/);
     const valide = await pool.query<{ indisvalid: boolean }>(`select indisvalid from pg_index where indexrelid = 'contacts_tenant_external_id_uidx'::regclass`);
     expect(valide.rows[0]?.indisvalid).toBe(true);
   });
