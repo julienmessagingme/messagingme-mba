@@ -31,6 +31,10 @@ export type OperationApi =
   // Un texte libre à une personne : `POST /v1/messages/whatsapp` (fenêtre de 24 h) et `POST /v1/messages/rcs`.
   // UNE unité par appel : un message, une personne. Le travail ne dépend pas du corps envoyé.
   | 'messages.send'
+  // Une lecture de catalogue (`GET /v1/templates`, `/v1/scenarios`, `/v1/rcs-messages`). UNE unité : le
+  // travail ne dépend pas de ce que l'appelant envoie. ⚠️ `/v1/templates` interroge Meta (liste paginée du
+  // WABA) : c'est la raison de la compter à part, pour voir une boucle de lectures avant qu'elle coûte.
+  | 'catalogues.read'
   | 'mcp.call'
   | 'mcp.refus';
 

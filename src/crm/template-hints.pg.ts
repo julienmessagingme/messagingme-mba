@@ -7,6 +7,12 @@ export interface ParamHint {
   source: ParamSource;
 }
 
+/** Un indice de l'espace, avec le template qui le porte : ce que le catalogue de l'API publique lit en UNE fois. */
+export interface IndiceDuTemplate extends ParamHint {
+  name: string;
+  language: string;
+}
+
 /**
  * Store Postgres des indices de mapping variable -> champ d'un template (table `template_param_hints`).
  * `save` REMPLACE tous les indices d'un (template, langue) en une transaction (le corps a pu changer).
@@ -45,6 +51,23 @@ export class PgTemplateHintStore {
       [tenantId, name, language],
     );
     return res.rows.map((r) => ({ position: r.position, source: r.source }));
+  }
+
+  /**
+   * TOUS les indices de l'espace, en UNE requête, pour `GET /v1/templates`.
+   *
+   * ⚠️ UNE requête et pas une par template : le catalogue liste tous les templates approuvés du WABA, et
+   * `get` appelé en boucle ferait autant d'allers-retours. La clé primaire commence par `tenant_id`, elle
+   * sert donc ce filtre. La source sort telle que stockée : c'est la ROUTE qui la revalide avant de la
+   * rendre à un tiers.
+   */
+  async listerParEspace(tenantId: string): Promise<IndiceDuTemplate[]> {
+    const res = await this.pool.query<{ template_name: string; template_language: string; position: number; source: ParamSource }>(
+      `select template_name, template_language, position, source from template_param_hints
+       where tenant_id = $1 order by template_name, template_language, position`,
+      [tenantId],
+    );
+    return res.rows.map((r) => ({ name: r.template_name, language: r.template_language, position: r.position, source: r.source }));
   }
 
   /** Retire les indices d'un template (toutes langues) — appelé à la suppression du template. */

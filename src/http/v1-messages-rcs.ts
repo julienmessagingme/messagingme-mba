@@ -58,7 +58,7 @@ export interface V1MessagesRcsRouteDeps {
  * Les clés de fiche du lot 1, plus le texte. `strictObject` : une clé inconnue (un `rcsMessageId` d'Inbox, une
  * faute de frappe) est un défaut de forme, pas un champ ignoré.
  */
-const schemaMessageRcs = z.strictObject({
+export const schemaMessageRcs = z.strictObject({
   ...schemaClesFiche.shape,
   text: z.string().trim().min(1).max(RCS_TEXTE_MAX),
 });

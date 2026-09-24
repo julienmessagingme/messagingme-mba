@@ -84,8 +84,8 @@ export interface V1SendsRouteDeps {
   sleep?(ms: number): Promise<void>;
 }
 
-const MAX_RECIPIENTS = 50;
-const MAX_SKIPPED_REPORT = 200;
+export const MAX_RECIPIENTS = 50;
+export const MAX_SKIPPED_REPORT = 200;
 /** Retry borné de l'enqueue : 3 tentatives, backoff court entre chacune. Cf. la note au call site sur ce qui
  *  rend ce retry sûr (ce n'est PAS une déduplication de file). */
 const ENQUEUE_MAX_ATTEMPTS = 3;
@@ -165,7 +165,7 @@ interface CibleResolue {
   rcs?: { agentId: string; contenu: RcsOutbound };
 }
 
-interface RapportEnvoi {
+export interface RapportEnvoi {
   sendId: string;
   opening: OuvertureApi;
   recipientCount: number;
@@ -175,7 +175,7 @@ interface RapportEnvoi {
   skippedTotal: number;
 }
 
-function lireCible(corps: Corps, params: TemplateParam[]): CibleDemandee | { message: string } {
+export function lireCible(corps: Corps, params: TemplateParam[]): CibleDemandee | { message: string } {
   const t = corps.target;
   if ('template' in t) {
     // La catégorie d'un template est LUE CHEZ META : l'accepter du corps laisserait un appelant la déclarer.
@@ -350,6 +350,10 @@ async function fenetresParContact(deps: V1SendsRouteDeps, tenantId: string, cont
 
 const FORME_ID_ENVOI = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const schemaIdEnvoi = z.object({ sendId: z.string().regex(FORME_ID_ENVOI) });
+
+/** Les validateurs de cette route, sous les noms que la documentation de l'API éprouve (`tests/api-exemples.test.ts`). */
+export const schemaCorpsEnvoi = schemaCorps;
+export const schemaDestinataireEnvoi = schemaDestinataire;
 
 /**
  * API publique /v1 des envois (spec 2026-09-24, § 3). Tenant issu de la clé (`req.auth`), jamais du corps.

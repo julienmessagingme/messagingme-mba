@@ -54,6 +54,8 @@ import { registerEmbeddedSignup } from './http/embedded-signup';
 import { registerApiKeys } from './http/api-keys';
 import { registerV1Contacts } from './http/v1-contacts';
 import { registerV1Sends } from './http/v1-sends';
+import { registerV1Catalogues } from './http/v1-catalogues';
+import type { V1CataloguesRouteDeps } from './http/v1-catalogues';
 import { registerV1Messages } from './http/v1-messages';
 import type { V1MessagesRouteDeps } from './http/v1-messages';
 import { registerV1MessagesRcs } from './http/v1-messages-rcs';
@@ -244,6 +246,8 @@ export interface ServerDeps {
     apiKeys: ApiKeyLookup;
     contacts: Omit<V1ContactsRouteDeps, 'usage'>;
     sends?: Omit<V1SendsRouteDeps, 'usage'>;
+    /** Les trois catalogues (`GET /v1/templates`, `/v1/scenarios`, `/v1/rcs-messages`), lot 4 du 2026-09-24. */
+    catalogues?: Omit<V1CataloguesRouteDeps, 'usage'>;
     /** Un simple texte dans la fenetre de 24 h (`POST /v1/messages/whatsapp`, lot 7, adresse renommee le 2026-09-24). */
     messages?: Omit<V1MessagesRouteDeps, 'usage'>;
     /** Un simple texte en RCS à une fiche (`POST /v1/messages/rcs`, lot 3 de l'API publique). */
@@ -550,6 +554,10 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
         lire: [requireApiKey, requireScope('contacts:read')],
       });
       if (v1.sends) registerV1Sends(app, { ...v1.sends, usage: usageApi }, [requireApiKey, requireScope('sends:create')]);
+      // Les catalogues : MÊME droit que les envois, qu'ils servent à construire, et MÊME `requireApiKey`, donc
+      // le même limiteur par clé. Un droit neuf aurait obligé chaque intégrateur à refabriquer sa clé pour
+      // LIRE ce qu'il a déjà le droit d'envoyer.
+      if (v1.catalogues) registerV1Catalogues(app, { ...v1.catalogues, usage: usageApi }, [requireApiKey, requireScope('sends:create')]);
       // MEME droit que les envois, et c'est un elargissement assume : les droits d'une cle se fixent a sa
       // creation et ne s'editent pas, donc un droit neuf aurait oblige chaque integrateur a refabriquer sa
       // cle pour un geste que « Declencher des envois » decrit deja. Le detail est dans `v1-messages.ts`.

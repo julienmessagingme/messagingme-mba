@@ -67,6 +67,9 @@ const schemaMessage = z.strictObject({
  */
 export const INCONNUE_POUR_UN_MESSAGE = 'aucune fiche pour cette personne : un message simple ne crée pas de fiche, un envoi (POST /v1/sends) le fait';
 
+/** Le validateur de cette route, sous le nom que la documentation de l'API éprouve (`tests/api-exemples.test.ts`). */
+export const schemaMessageWhatsapp = schemaMessage;
+
 /**
  * Le tenant vient à 100 % de `req.auth` (posé par `makeRequireApiKey`), jamais de l'URL ni du corps.
  * Garde attendue : `[makeRequireApiKey, requireScope('sends:create')]`.

@@ -74,6 +74,15 @@ export interface WorkflowResumeRow {
   canalOuverture: CanalOuverture;
 }
 
+/** Un scénario EN LIGNE tel que le catalogue de l'API publique le lit : le graphe PUBLIÉ, jamais le brouillon. */
+export interface ScenarioPublie {
+  code: string | null;
+  name: string;
+  /** null = mis en ligne avant que la date soit suivie (0095), pas « jamais publié ». */
+  publishedAt: string | null;
+  graph: WorkflowGraph;
+}
+
 export interface WorkflowRow {
   id: string;
   tenantId: string;
@@ -203,6 +212,35 @@ export class PgWorkflowStore {
       // du canal, donc les deux ne peuvent pas se contredire.
       campaignEligible: campagneOuvrable(r.graph),
       canalOuverture: canalDOuverture(r.graph),
+    }));
+  }
+
+  /**
+   * Les scénarios EN LIGNE, pour le catalogue de l'API publique (`GET /v1/scenarios`).
+   *
+   * 🔴 « EN LIGNE » VEUT DIRE : LE GRAPHE PUBLIÉ PORTE AU MOINS UN BLOC. Un scénario neuf part en brouillon
+   * avec un publié VIDE (`insert`), et un envoi joue le publié : l'annoncer ferait construire à un
+   * intégrateur un appel qui ne peut rien jouer. `published_at` ne décide PAS : il vaut null sur les
+   * scénarios mis en ligne avant 0095, qui tournent pourtant.
+   *
+   * ⚠️ Le graphe est transporté parce que l'ouverture se calcule dessus (`ouvertureApi`, lot 2), comme
+   * `listResume` le fait pour la console. Il ne sort pas vers l'intégrateur : la route n'en rend que
+   * l'ouverture.
+   */
+  async listPublies(tenantId: string): Promise<ScenarioPublie[]> {
+    const res = await this.pool.query<{ code: string | null; name: string; published_at: Date | null; graph: WorkflowGraph }>(
+      `select code, name, published_at, graph
+         from workflows
+        where tenant_id = $1
+          and jsonb_array_length(coalesce(graph->'nodes', '[]'::jsonb)) > 0
+        order by name, created_at`,
+      [tenantId],
+    );
+    return res.rows.map((r) => ({
+      code: r.code,
+      name: r.name,
+      publishedAt: r.published_at ? r.published_at.toISOString() : null,
+      graph: r.graph,
     }));
   }
 

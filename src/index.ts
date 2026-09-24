@@ -3002,6 +3002,23 @@ async function main(): Promise<void> {
     v1: {
       apiKeys: apiKeyStore,
       /**
+       * Les catalogues de l'API publique (lot 4 du 2026-09-24). CE BLOC NE FAIT QUE BRANCHER : le tri (ce qui
+       * peut partir) vit dans `src/http/v1-catalogues.ts`, testé.
+       *
+       * ⚠️ `templates` lit la liste COMPLÈTE du WABA chez Meta à chaque appel, sans le cache de
+       * `templateVarInfo` (qui est par template) : un catalogue se lit rarement, et un cache de cinq minutes y
+       * masquerait un template tout juste approuvé.
+       */
+      catalogues: {
+        templates: async (tenant) => {
+          const waba = await repo.getTenantWabaId(tenant);
+          return waba ? (await metaFactory.templateClientForTenant(tenant)).list(waba) : [];
+        },
+        indicesDeVariables: (tenant) => templateHintStore.listerParEspace(tenant),
+        scenariosPublies: (tenant) => workflowStore.listPublies(tenant),
+        messagesRcs: (tenant) => rcsMessageStore.list(tenant),
+      },
+      /**
        * Le relais du Meta Business Agent (migration 0161). Le MÊME point de passage que l'agent IA
        * (`creerAppelConnecteur`), avec les mêmes lectures paresseuses : un appel de l'agent de Meta passe par
        * les mêmes gardes, et se journalise sous l'appelant `mba`.
