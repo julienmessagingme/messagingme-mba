@@ -19,6 +19,26 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
+## LES DEUX ÉCRANS D'AGENT : EN-TÊTE ET MENU EN COLONNE (DÉPLOYÉ LE 2026-09-23, ESSAI RÉEL DÛ)
+
+Neuf tâches, relues une par une puis en bloc. Les deux écrans de réglage d'agent portent un en-tête qui
+IDENTIFIE l'agent (logo, nom, état, ce qui manque, messages échangés sur 30 jours) et leurs onglets sont
+descendus en colonne. Deux routes de comptage neuves, sans migration. Détail dans
+`docs/superpowers/plans/2026-09-23-refactor-ecrans-agents.md`.
+
+🔴 **L'ESSAI RÉEL, QUATRE POINTS, ET LE TROISIÈME NE TOMBERA PAS JUSTE.** Ouvrir les deux écrans sur un
+agent complètement réglé ET sur un agent vide : le bon logo de fournisseur ; le nombre d'étapes restantes
+comparé à ce que les onglets contiennent vraiment ; le chiffre de messages comparé au Performance Lab ; et
+la colonne sur un téléphone, où elle doit redevenir la barre horizontale.
+
+⚠️ **L'écart attendu sur le chiffre** : l'en-tête compte TOUS les messages des conversations tenues, envois
+de campagne compris, là où le Performance Lab exclut les modèles sortants. C'est le périmètre arbitré, la
+légende l'avoue. Ce qu'on vérifie est le SENS et l'ORDRE DE GRANDEUR de l'écart, pas qu'il soit nul.
+
+⚠️ **Un arbitrage attend Julien** : la pastille de l'en-tête montre l'état du NUMÉRO, pas celui de l'agent.
+Sur un numéro sain dont l'agent est éteint, l'écran affiche un point vert à côté d'une ligne qui dit que
+personne ne répond. Les textes ont été corrigés, le choix reste ouvert. Cf. `todo.md`.
+
 ## API PUBLIQUE : « ENVOYER UN SIMPLE MESSAGE » (LOT 7, DÉPLOYÉ LE 2026-09-23, ESSAI RÉEL DÛ)
 
 Lot 7 du plan `docs/superpowers/plans/2026-09-23-liste-julien.md`.

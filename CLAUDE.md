@@ -375,7 +375,7 @@ sept précédentes, et même parade : **la base tranche**, on RELIT `schema_migr
 jamais après avoir écrit le fichier SQL.
 
 Avant elle, dans l'ordre d'application : **0147** (`agent_setup_conversations.auteurs` : QUI a écrit chaque
-tour du fil, tableau PARALLÈLE à `messages` et pas une clé dedans, `tourSchema` étant strict — l'y ajouter
+tour du fil, tableau PARALLÈLE à `messages` et pas une clé dedans, `tourSchema` étant strict, l'y ajouter
 aurait fait échouer la relecture de TOUS les entretiens existants, qui seraient retombés sur l'entretien
 vierge, donc le client aurait perdu sa conversation en silence) ; **0146** (`reglages_historique`, à rétention
 ILLIMITÉE, et `assistant_depense_mois`, NOTRE dépense d'assistants, PAR ESPACE et pas par assistant) ;
@@ -963,6 +963,23 @@ depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui d
   perdre vingt lignes l'après-midi, et son `git commit --only` a ensuite commité le travail d'en face.
   `main` est resté rouge dix minutes. ⚠️ Corollaire : `--only` ne protège que si le CONTENU du fichier est
   encore le sien, donc `git diff <ses chemins>` juste avant de commiter.
+- 🔴 **UNE QUATRIÈME ANNONCE : MUTER UN FILTRE D'ISOLATION** (2026-09-23). Vérifier un test de
+  non-régression dans les deux sens reste obligatoire, mais sur un filtre `tenant_id` cela laisse, le temps
+  de la mesure, un arbre PARTAGÉ d'où une fuite entre clients partirait si quelqu'un construisait une image.
+  Vécu ce jour-là : `c.tenant_id = $1` retiré dix minutes de `session-store.pg.ts`, plus un `.bak` non
+  ignoré. Rien n'en est sorti parce que le VPS construit depuis son propre `git pull`, donc par chance et
+  non par conception. La mutation se fait, elle s'annonce, et la restauration se vérifie par comparaison
+  avec `origin` plutôt qu'à l'œil.
+- 🔴 **LE HOOK `rayon-de-souffle` AGRANDIT LA FENÊTRE QU'IL AIDE À SURVEILLER** (2026-09-23), et c'est la
+  cause EXACTE de l'incident du soir. La séquence sûre est « je lis `git diff`, je commite » ; le hook
+  refuse le premier commit pour faire relire sa liste, donc la séquence devient « je lis le diff, j'attends,
+  je relance sans relire ». L'arbre partagé change entre les deux. Une session a ainsi emporté la ligne de
+  câblage d'une autre dans son `--only`, et `main` n'a plus compilé. **Parade qui ne dépend d'aucun
+  timing** : pour un fichier de CÂBLAGE PARTAGÉ, on ne commite pas en `--only`, on construit le commit en
+  PLOMBERIE (`GIT_INDEX_FILE` temporaire hors du dépôt, `git read-tree origin/main`, `git hash-object -w`
+  sur ses seuls fichiers, `git commit-tree -p origin/main`, `git push origin <sha>:main`). Ni l'index
+  partagé ni l'arbre sur disque ne sont touchés, et le commit ne peut PAS emporter ce qu'on n'a pas nommé.
+  ⚠️ Corollaire pour le reste : après un refus du hook, on relit son `git diff` AVANT de relancer.
 - ⚠️ **DEUX SUITES E2E CONCURRENTES EMPOISONNENT `web/.next`** (2026-09-23), et le symptôme accuse le code :
   `ENOENT` sur un fichier de `.next`, puis « Timed out waiting 180000ms from config.webServer ». La sortie
   est `rm -rf web/.next` PUIS `npm run build` À LA MAIN, parce qu'un build à froid dépasse les 180 s que

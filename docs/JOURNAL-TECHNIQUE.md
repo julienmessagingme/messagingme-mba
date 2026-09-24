@@ -5,6 +5,51 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-23 (nuit) : les quinze fiches d'aide, puis les deux écrans d'agent
+
+Deux chantiers dans la même session, et le second a été mené par sous-agents, une tâche à la fois, avec une
+relecture entre chaque.
+
+**Les quinze fiches d'aide manquantes.** Le bot d'aide couvrait 8 des 31 sections de `features.md` ; les
+quinze qui manquaient décrivaient des écrans qu'un client ouvre. Elles sont écrites et chargées.
+🔴 **La garde a changé de nature** : le compte des sections sans fiche ne se décrémente plus, il vaut ZÉRO
+et le test NOMME toute section laissée sans réponse. Le motif reste dans le type exprès, sinon le prochain
+manque devrait se déguiser en décision.
+
+**Le refactor des deux écrans d'agent.** En-tête identitaire, menu en colonne, logos de fournisseurs, deux
+routes de comptage, aucune migration. Neuf tâches, relues une par une, puis une revue finale sur l'ensemble,
+puis une vague de correctifs, puis une re-revue de cette vague.
+
+🔴 **LES QUATRE DÉFAUTS TROUVÉS ÉTAIENT TOUS INVISIBLES DU COMPILATEUR**, et c'est le résultat le plus utile
+du lot. Rendre DEUX copies de la liste d'onglets aurait fait exister chaque `data-testid` en double et
+cassé cinq suites e2e. `AgentResume` ne portait pas le modèle, donc le logo de la liste exigeait un
+changement serveur que le plan n'avait pas vu. `logoDuModele(undefined)` faisait tomber la LISTE ENTIÈRE
+pendant la fenêtre où Vercel publie la console avant le déploiement de l'API. Et sur l'écran bloqué
+« Meta n'a pas ouvert l'agent », l'en-tête affichait des étapes CLIQUABLES qui ne menaient nulle part, le
+motif « offert-et-inerte » que ce produit s'interdit.
+
+🔴 **ET LA REVUE FINALE A TROUVÉ CE QU'AUCUNE REVUE DE TÂCHE NE POUVAIT VOIR : une capacité avait disparu.**
+La ligne « moyen de paiement », que l'ancien composant affichait à part parce qu'elle n'est pas vérifiable,
+n'était plus rendue nulle part, et CINQ textes du dépôt continuaient d'affirmer qu'elle y était. Aucun test
+ne la couvrait, donc la perte était muette. C'est l'argument entier en faveur d'une revue qui regarde
+l'ensemble après des revues qui regardent chaque pièce.
+
+⚠️ **DEUX TESTS NE GARDAIENT RIEN, ET LE SECOND ÉTAIT LE PIRE.** Retirer la fenêtre de 30 jours, ou le
+filtre par agent, les laissait verts. Sans ce dernier, le chiffre serait devenu par ESPACE au lieu de par
+AGENT, c'est-à-dire le même nombre sous deux noms d'agents, sans qu'aucun test ne bouge.
+
+🔴 **INCIDENT : UN COMMIT CROISÉ A LAISSÉ `main` SANS COMPILER.** Une session voisine a emporté une ligne de
+câblage `src/index.ts` alors que la méthode qu'elle appelle n'existait pas encore. La cause exacte, trouvée
+par cette session : **le hook `rayon-de-souffle` ajoute un aller-retour entre la vérification du diff et le
+commit**, et l'arbre partagé change entre les deux. Les deux sessions commitent désormais ce fichier en
+plomberie. C'est le deuxième incident du même arbre dans la journée, et la première parade (trois annonces)
+n'y suffisait pas.
+
+⚠️ **UNE RELECTURE QUI EXCLUT LES COMMITS D'UN PAIR REND L'ATTESTATION PLUS ÉTROITE QUE LE DÉPLOIEMENT.** La
+session voisine avait écrit à son relecteur « ne relis QUE tel commit, les autres appartiennent à une
+session parallèle » : mon code serait parti en production sans relecture à froid. Trouvé en le lui
+demandant, corrigé par une relecture dédiée avant son déploiement.
+
 ## 2026-09-23 (soir) : deux commits qui ne se révoquent plus séparément, et cinq relectures
 
 🔴 **`a2e0baed` ET `33ce31fe` SE RÉVOQUENT ENSEMBLE OU PAS DU TOUT.** Le premier est un correctif de
