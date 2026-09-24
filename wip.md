@@ -228,17 +228,18 @@ où on les changera : l'optimisation `CONVERSATIONS` pour un annonceur français
   ⚠️ L'App Review, elle, n'est PAS bloquée : la démonstration se fait avec un portefeuille client, ce
   qui est le cas d'usage réel.
 
-### Brouillons et aperçu : ÉCRIT ET POUSSÉ, PAS ENCORE DÉPLOYÉ (2026-09-24)
+### Brouillons et aperçu (2026-09-24, DÉPLOYÉ, ESSAI RÉEL DÛ)
 
 Demande de Julien du 2026-09-24. Plan : `docs/superpowers/plans/2026-09-24-pubs-brouillons-et-liste.md`.
 
-- 🔴 **MIGRATION 0171 ÉCRITE ET PAS ENCORE APPLIQUÉE** (`pubs_brouillons`). Purement additive, donc AVANT
-  le `up`. Le compteur qui fait foi est celui de [CLAUDE.md](CLAUDE.md).
+- **Migration 0171** (`pubs_brouillons`), purement additive, passée AVANT le `up`. L'état d'application ne
+  se recopie pas ici : il vit dans [CLAUDE.md](CLAUDE.md) § Déploiement, et la base tranche.
 - ✅ **L'aperçu** : l'annonce dans le fil, la conversation qui s'ouvre, puis la réponse. Un scénario est
   déterministe, donc ses mots exacts sont lus dans le graphe PUBLIÉ ; l'agent de Meta compose, donc c'est
   une illustration et l'écran le dit.
-- ✅ **Les brouillons** vivent dans leur table, pas comme un état de `publicites` : `campagne_id` y est
-  `not null` et porte l'unique par laquelle le routage retrouve la publicité d'un lead payé.
+- ✅ **Les brouillons** vivent dans leur table, pas comme un état de `publicites` : c'est
+  `publicites.campagne_id` qui est `not null` et porte l'unique par laquelle le routage retrouve la
+  publicité d'un lead payé, et un brouillon n'a aucune campagne chez Meta.
 - ✅ **La liste en trois groupes** (brouillons, en cours, achevées), « achevée » dérivé de la date de fin.
   Au clic, budget initial, dépensé à date et clics en face.
 - 🔴 **L'ESSAI RÉEL QUI CLÔT CE LOT, et il appartient à Julien** : écrire un brouillon avec un visuel,
