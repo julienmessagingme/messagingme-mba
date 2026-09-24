@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test';
+// La fenêtre d'observation se DÉRIVE du délai de rejeu du client HTTP, elle ne se devine pas.
+import { RETRY_DELAY_MS } from '../lib/http';
 
 /**
  * L'ÉCRAN « PUBLICITÉS », PARTIE LOT 3 : la liste, le bouton Créer, et l'entonnoir.
@@ -62,8 +64,9 @@ interface Options {
  * MÊME SI la lecture finit par dire autre chose. Le cas « panne » l'a prouvé : il restait vert avec le
  * défaut remis, et son verdict dépendait du nombre de workers.
  *
- * ⚠️ UN 500 EST SERVI DEUX FOIS : `web/lib/http.ts` rejoue un GET en échec après 400 ms. Attendre UNE
- * réponse ne suffirait donc pas pour ce cas-là.
+ * ⚠️ SA RAISON A CHANGÉ, ET LE TEXTE PRÉCÉDENT DISAIT ENCORE L'ANCIENNE. Il ne sert plus à atteindre un
+ * NOMBRE de lectures (un compte en dur était un contrat avec la politique de rejeu d'un autre fichier),
+ * il sert à savoir que quelque chose a BOUGÉ, ce que `attendreLectureRetombee` exploite.
  */
 let lecturesReglages = 0;
 
@@ -71,16 +74,20 @@ let lecturesReglages = 0;
  * Attend que la lecture des réglages ait CESSÉ de bouger.
  *
  * 🔴 ON NE COMPTE PLUS LES LECTURES EN DUR. Une version précédente attendait exactement deux réponses
- * pour une panne, parce que `web/lib/http.ts` rejoue un GET en échec une fois. C'était un contrat avec
- * un AUTRE fichier, tenu par un commentaire : changer la politique de rejeu ne rendait pas un échec
- * lisible, le sondage n'atteignait simplement jamais son compte et le cas mourait en timeout, ce qui
- * ressemble à une panne de l'écran. La stabilisation ne suppose rien de ce fichier-là.
+ * pour une panne, parce que `web/lib/http.ts` rejoue un GET en échec une fois. Changer cette politique
+ * ne rendait pas un échec lisible : le sondage n'atteignait jamais son compte et le cas mourait en
+ * timeout, ce qui ressemble à une panne de l'écran.
+ *
+ * ⚠️ CE QU'ELLE SUPPOSE ENCORE, ET IL FAUT LE DIRE PLUTÔT QUE DE JURER QU'ELLE NE SUPPOSE RIEN : que la
+ * fenêtre d'observation reste PLUS LONGUE que tout intervalle de rejeu. Elle est donc dérivée de
+ * `RETRY_DELAY_MS`, et non devinée : si ce délai passait au-dessus, la fenêtre retomberait entre deux
+ * tentatives, la lecture serait déclarée retombée alors qu'elle est en vol, et les cas redeviendraient
+ * verts sur l'état de DÉPART, c'est-à-dire le piège même que cette fonction existe pour fermer.
  */
 const attendreLectureRetombee = async (page: import('@playwright/test').Page) => {
   await expect.poll(async () => {
     const avant = lecturesReglages;
-    // Plus long que le délai de rejeu du client HTTP, pour qu'un rejeu en vol soit forcément vu.
-    await page.waitForTimeout(700);
+    await page.waitForTimeout(RETRY_DELAY_MS + 300);
     return avant > 0 && avant === lecturesReglages;
   }, { timeout: 15000 }).toBe(true);
 };
@@ -156,6 +163,10 @@ test.describe('Publicités : ce que le formulaire dit de l’agent de Meta', () 
     await expect(page.getByTestId('pub-agent-indispo')).toContainText(/pas ouvert à tout le monde|not open to everyone/);
     await expect(page.getByTestId('pub-agent-inconnu')).toHaveCount(0);
     await expect(page.getByRole('option', { name: /agent de Meta|Meta agent/ })).toHaveCount(0);
+    // Ancre : ce testid ne naît que sous la destination « scénario », donc un `0` dirait aussi bien
+    // « le sous-bloc n'est pas rendu ». Sans elle, l'assertion se viderait le jour où le défaut
+    // change.
+    await expect(page.getByTestId('pub-scenario')).toBeVisible();
     await expect(page.getByTestId('pub-agent-ecarte')).toHaveCount(0);
   });
 
@@ -174,6 +185,7 @@ test.describe('Publicités : ce que le formulaire dit de l’agent de Meta', () 
       await expect(page.getByTestId('pub-agent-indispo')).toHaveCount(0);
       // 🔴 LA QUATRIÈME BRANCHE AUSSI : « l'agent de Meta sera écarté » est un énoncé sur LEUR
       // configuration. Sans ce sens-là, la passer en `!== false` ne faisait tomber aucun test.
+      await expect(page.getByTestId('pub-scenario')).toBeVisible();
       await expect(page.getByTestId('pub-agent-ecarte')).toHaveCount(0);
       await expect(page.locator('body')).not.toContainText(/pas ouvert à tout le monde|not open to everyone/);
     });
@@ -197,6 +209,73 @@ test.describe('Publicités : ce que le formulaire dit de l’agent de Meta', () 
     // c'est-à-dire le piège que ce même cas existe pour fermer, descendu d'un étage.
     await expect(page.getByTestId('pubs-liste')).toContainText(PUB_PUBLIEE.nom);
     await expect(page.getByTestId('pub-agent-eteint-pub-am')).toHaveCount(0);
+  });
+});
+
+/**
+ * L'ÉCRAN N'A QU'UN EMPLACEMENT D'ERREUR POUR CINQ OPÉRATIONS, ET IL NE DOIT PAS SE TAIRE.
+ *
+ * 🔴 CE CAS EXISTE PARCE QUE LE CORRECTIF PRÉCÉDENT NE FERMAIT QU'UN SENS. Une référence posée par la
+ * liste disait « la liste a échoué depuis son dernier succès », pas « l'erreur affichée vient de la
+ * liste » : les quatre autres opérations prenaient l'emplacement sans la lever, et une liste qui repartait
+ * effaçait le message d'une DÉCONNEXION ratée. Aucun test ne l'exerçait, et c'est ce qui a laissé le trou
+ * survivre à sa propre correction.
+ */
+test.describe('Publicités : l’emplacement d’erreur partagé', () => {
+  test('🔴 la liste qui repart n’efface QUE son erreur, pas celle d’une déconnexion ratée', async ({ page }) => {
+    let listeEnPanne = false;
+    let listeRepartie = false;
+    await page.addInitScript((sess) => window.localStorage.setItem('mba.session', JSON.stringify(sess)), SESSION);
+    await page.route('**/api/backend/**', async (route) => {
+      const url = route.request().url();
+      const methode = route.request().method();
+      const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+      if (url.includes('/pubs/connexion')) {
+        if (methode === 'DELETE') {
+          return route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":"deconnexion refusee"}' });
+        }
+        return json({
+          configure: true, configId: 'cfg', appId: 'app', graphVersion: 'v23.0', connexion: CONNEXION,
+          compte: { statut: 1, raisonDesactivation: 0, moyenPaiement: true },
+        });
+      }
+      // La bascule d'une publicité réussit toujours : c'est son `recharger` qui nous intéresse.
+      if (methode === 'POST' && /\/pubs\/[^/]+\/(pause|reprendre)$/.test(url.split('?')[0] ?? '')) return json({ ok: true });
+      if (url.includes('/pubs')) {
+        // ⚠️ 422, PAS 500 : un 500 est REJOUÉ par le client HTTP, ce qui décalerait les arrivées et
+        // masquerait le défaut par hasard, exactement comme il le masquait en production.
+        if (listeEnPanne) return route.fulfill({ status: 422, contentType: 'application/json', body: '{"error":"liste cassee"}' });
+        // 🔴 LA TROISIÈME RÉPONSE EST DIFFÉRENTE DES PRÉCÉDENTES, ET C'EST CE QUI REND LE CAS VALIDE.
+        // Sans ça, l'assertion finale se satisfaisait du message ENCORE affiché, avant que le
+        // rechargement ne l'efface : le cas restait vert avec le défaut remis, vérifié par mutation.
+        // Attendre une publicité qu'on n'a jamais servie prouve que le succès a été RENDU.
+        return json({ publicites: listeRepartie ? [PUB_PRETE] : [PUB_PUBLIEE] });
+      }
+      if (url.includes('/workflows')) return json({ workflows: [] });
+      if (url.includes('/settings')) return json({ mbaEnabled: true });
+      if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
+      return json({});
+    });
+    await page.goto('/publicites');
+    await expect(page.getByTestId('pubs-liste')).toContainText(PUB_PUBLIEE.nom);
+
+    // 1. Le rafraîchissement de la liste échoue : son erreur occupe l'emplacement.
+    listeEnPanne = true;
+    await page.getByTestId(`pub-bascule-${PUB_PUBLIEE.id}`).click();
+    await expect(page.getByTestId('pubs-erreur')).toContainText(/liste cassee/);
+
+    // 2. La déconnexion échoue à son tour : elle PREND l'emplacement, ce qui est correct.
+    await page.getByRole('button', { name: /^Déconnecter$|^Disconnect$/ }).click();
+    await expect(page.getByTestId('pubs-erreur')).toContainText(/deconnexion refusee/);
+
+    // 3. La liste repart. Son succès ne doit PAS emporter le message de la déconnexion : c'est le seul
+    //    endroit qui dit au client que sa déconnexion n'a pas eu lieu.
+    listeEnPanne = false;
+    listeRepartie = true;
+    await page.getByTestId(`pub-bascule-${PUB_PUBLIEE.id}`).click();
+    // On attend que le succès soit RENDU, pas seulement demandé.
+    await expect(page.getByTestId('pubs-liste')).toContainText(PUB_PRETE.nom);
+    await expect(page.getByTestId('pubs-erreur')).toContainText(/deconnexion refusee/);
   });
 });
 

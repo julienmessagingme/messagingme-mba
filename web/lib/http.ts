@@ -81,7 +81,14 @@ export const SESSION_EXPIRED_EVENT = 'mba:session-expired';
  * WhatsApp en double, ce qu'aucun gain d'ergonomie ne justifie.
  */
 const RETRYABLE_METHODS = new Set(['GET', 'HEAD']);
-const RETRY_DELAY_MS = 400;
+/**
+ * Le recul avant de rejouer un GET en echec transitoire.
+ *
+ * EXPORTE parce qu un test e2e en DERIVE sa fenetre d observation : il attend que la lecture d un reglage
+ * ait cesse de bouger, et cette fenetre doit rester plus longue que ce delai. Recopier le nombre la-bas en
+ * ferait deux verites, et la seconde deviendrait fausse en silence.
+ */
+export const RETRY_DELAY_MS = 400;
 
 /**
  * Cette erreur est-elle une ANNULATION voulue (`AbortController`), et non une panne ?

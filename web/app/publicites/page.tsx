@@ -49,7 +49,21 @@ function PublicitesInner({ session }: { session: Session }) {
   const [actifs, setActifs] = useState<ActifsAccordes | null>(null);
   const [compteChoisi, setCompteChoisi] = useState('');
   const [pageChoisie, setPageChoisie] = useState('');
-  const [erreur, setErreur] = useState<string | null>(null);
+  /**
+   * L'UNIQUE EMPLACEMENT D'ERREUR DE CET ÉCRAN, ET SON PROPRIÉTAIRE.
+   *
+   * 🔴 LA SOURCE VIT DANS L'ÉTAT, PAS À CÔTÉ, ET C'EST LE TROISIÈME ESSAI. Une référence posée par la
+   * seule liste ne disait pas « l'erreur affichée vient de la liste » mais « la liste a échoué depuis son
+   * dernier succès » : les quatre autres opérations prenaient l'emplacement sans la lever, si bien qu'une
+   * liste qui repartait effaçait le message d'une DÉCONNEXION ratée. Mesuré en navigateur.
+   *
+   * ⚠️ CE QUI REND CETTE FORME SÛRE : le type EXIGE la source à chaque écriture, donc un sixième écrivain
+   * devra la déclarer pour compiler, au lieu d'avoir à se souvenir de lever un drapeau ailleurs. Et
+   * l'effacement de la liste passe par une mise à jour FONCTIONNELLE : il lit l'état réel, pas un souvenir.
+   */
+  const [erreur, setErreur] = useState<{ texte: string; source: 'liste' | 'autre' } | null>(null);
+  /** Pose une erreur qui n'appartient PAS à la liste : le succès de la liste ne l'effacera pas. */
+  const erreurAutre = useCallback((texte: string) => setErreur({ texte, source: 'autre' }), []);
   const [busy, setBusy] = useState(false);
   const [pubs, setPubs] = useState<Publicite[] | null>(null);
   const [scenarios, setScenarios] = useState<WorkflowSummary[]>([]);
@@ -73,13 +87,6 @@ function PublicitesInner({ session }: { session: Session }) {
   const [routeAbsente, setRouteAbsente] = useState(false);
   /** L'API a déjà servi la liste au moins une fois. Référence, pour ne pas entrer en dépendance. */
   const listeDejaServie = useRef(false);
-  /**
-   * L'erreur affichée vient-elle de la LISTE ?
-   *
-   * ⚠️ L'écran n'a qu'UN emplacement d'erreur pour cinq opérations. Sans cette signature, le succès de
-   * l'une effacerait le message d'une autre, et l'écran se tairait sur une panne qui dure.
-   */
-  const erreurDeLaListe = useRef(false);
   const [formOuvert, setFormOuvert] = useState(false);
 
   const charger = useCallback(async () => {
@@ -91,9 +98,9 @@ function PublicitesInner({ session }: { session: Session }) {
       // Route absente : l'API qui la porte n'est pas encore déployée. On le dit comme une fonctionnalité
       // éteinte, jamais comme une panne, parce que pour le client c'est exactement la même chose.
       if (err instanceof ApiError && err.status === 404) { setAbsent(true); return; }
-      setErreur(err instanceof Error ? err.message : t('Chargement impossible', 'Loading failed'));
+      erreurAutre(err instanceof Error ? err.message : t('Chargement impossible', 'Loading failed'));
     }
-  }, [session.tenantId, t]);
+  }, [session.tenantId, t, erreurAutre]);
 
   /**
    * LES PUBLICITÉS, ET CE QUE LE FORMULAIRE A BESOIN DE SAVOIR.
@@ -130,7 +137,8 @@ function PublicitesInner({ session }: { session: Session }) {
        * ⚠️ Le 500 masquait le défaut par HASARD : `web/lib/http.ts` le rejoue, donc `charger()` met
        * deux allers-retours quand la liste n'en met qu'un, et son erreur arrivait après l'effacement.
        */
-      if (erreurDeLaListe.current) { erreurDeLaListe.current = false; setErreur(null); }
+      // ⚠️ FONCTIONNEL, ET IL NE TOUCHE QUE LA SIENNE : l'erreur d'une autre opération reste à l'écran.
+      setErreur((e) => (e?.source === 'liste' ? null : e));
     } catch (err) {
       if (estAnnulation(err)) return;
       // Route absente : l'écran le DIT, au lieu de tourner indéfiniment sur « Chargement… ».
@@ -146,9 +154,7 @@ function PublicitesInner({ session }: { session: Session }) {
       // ⚠️ ET S'IL ARRIVE APRÈS UN SUCCÈS, IL TOMBE DANS L'ERREUR ORDINAIRE plutôt que d'être MUET : une
       // liste qui a cessé de se rafraîchir sans le dire est « un chiffre périmé qui a l'air frais ».
       if (err instanceof ApiError && err.status === 404 && !listeDejaServie.current) { setRouteAbsente(true); return; }
-      // On SIGNE l'erreur, pour que le succès suivant n'efface que celle-ci.
-      erreurDeLaListe.current = true;
-      setErreur(err instanceof Error ? err.message : t('Chargement impossible', 'Loading failed'));
+      setErreur({ texte: err instanceof Error ? err.message : t('Chargement impossible', 'Loading failed'), source: 'liste' });
     }
   }, [session.tenantId, t]);
 
@@ -182,7 +188,7 @@ function PublicitesInner({ session }: { session: Session }) {
             try {
               const code = resp?.authResponse?.code;
               if (typeof code !== 'string' || code === '') {
-                setErreur(t('Connexion Meta annulée ou refusée.', 'Meta connection cancelled or denied.'));
+                erreurAutre(t('Connexion Meta annulée ou refusée.', 'Meta connection cancelled or denied.'));
                 return;
               }
               const accordes = await echangerCodePub(session.tenantId, code);
@@ -191,7 +197,7 @@ function PublicitesInner({ session }: { session: Session }) {
               setPageChoisie(accordes.pages[0]?.id ?? '');
               await charger();
             } catch (err) {
-              setErreur(err instanceof Error ? err.message : t('Connexion impossible', 'Connection failed'));
+              erreurAutre(err instanceof Error ? err.message : t('Connexion impossible', 'Connection failed'));
             } finally {
               setBusy(false);
             }
@@ -200,7 +206,7 @@ function PublicitesInner({ session }: { session: Session }) {
         { config_id: etat.configId, response_type: 'code', override_default_response_type: true },
       );
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : t('Connexion impossible', 'Connection failed'));
+      erreurAutre(err instanceof Error ? err.message : t('Connexion impossible', 'Connection failed'));
       setBusy(false);
     }
   }
@@ -213,7 +219,7 @@ function PublicitesInner({ session }: { session: Session }) {
       setActifs(null);
       await charger();
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : t('Enregistrement impossible', 'Could not save'));
+      erreurAutre(err instanceof Error ? err.message : t('Enregistrement impossible', 'Could not save'));
     } finally {
       setBusy(false);
     }
@@ -263,7 +269,7 @@ function PublicitesInner({ session }: { session: Session }) {
       await charger();
       return true;
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : t('Déconnexion impossible', 'Could not disconnect'));
+      erreurAutre(err instanceof Error ? err.message : t('Déconnexion impossible', 'Could not disconnect'));
       return false;
     } finally {
       setBusy(false);
@@ -279,7 +285,7 @@ function PublicitesInner({ session }: { session: Session }) {
       </p>
 
       {erreur !== null && (
-        <p role="alert" data-testid="pubs-erreur" className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{erreur}</p>
+        <p role="alert" data-testid="pubs-erreur" className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{erreur.texte}</p>
       )}
 
       <section className="mt-5 rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
