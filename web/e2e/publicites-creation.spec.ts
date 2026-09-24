@@ -18,6 +18,15 @@ import { RETRY_DELAY_MS } from '../lib/http';
 
 const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
 
+/**
+ * Un PNG 1x1 VALIDE, au niveau module parce que TROIS blocs s'en servent.
+ *
+ * Il doit etre un vrai PNG : le serveur lit desormais la SIGNATURE des octets et refuse un faux
+ * base64, quel que soit le type annonce. Une copie de ce litteral existait plus bas sous un autre
+ * nom ; le depot interdit de recopier ce qui existe deja.
+ */
+const PNG_1x1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
 const CONNEXION = {
   // `as string | null` sur les champs qu'un cas REMPLACE par null : sans lui, TypeScript infère `string`
   // depuis la valeur du fixture et refuse l'écrasement. `pageNom` a rejoint ses deux voisins quand
@@ -79,6 +88,8 @@ interface Options {
   brouillons?: unknown[] | 'absent';
   /** Ce que la lecture d'UN brouillon ajoute au premier de la liste, le visuel notamment. */
   detailBrouillon?: Record<string, unknown>;
+  /** Fait TRAINER la mise a jour, pour pouvoir agir sur l'ecran pendant qu'elle est en vol. */
+  majLente?: boolean;
   /**
    * `true` fait rendre 404 aux ECRITURES sur UN brouillon, la route existant par ailleurs.
    *
@@ -104,6 +115,8 @@ let lecturesReglages = 0;
 
 /** Le corps du dernier `POST /pubs/brouillons`, pour verifier CE QUI PART et pas seulement l'ecran. */
 let corpsCreationBrouillon: Record<string, unknown> | null = null;
+/** Le corps du dernier `PUT /pubs/brouillons/:id`, meme raison : on lit CE QUI PART. */
+let corpsMajBrouillon: Record<string, unknown> | null = null;
 
 /**
  * Attend que la lecture des réglages ait CESSÉ de bouger.
@@ -139,6 +152,7 @@ const brancher = async (page: import('@playwright/test').Page, o: Options = {}) 
   await page.unrouteAll();
   lecturesReglages = 0;
   corpsCreationBrouillon = null;
+  corpsMajBrouillon = null;
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const url = route.request().url();
@@ -169,6 +183,8 @@ const brancher = async (page: import('@playwright/test').Page, o: Options = {}) 
     }
     if (/\/pubs\/brouillons\/[^/]+$/.test(url.split('?')[0] ?? '')) {
       if (route.request().method() !== 'GET') {
+        corpsMajBrouillon = route.request().postDataJSON() as Record<string, unknown>;
+        if (o.majLente === true) await new Promise((r) => setTimeout(r, 900));
         return o.brouillonDisparu === true
           ? route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'ce brouillon n’existe pas' }) })
           : route.fulfill({ status: 204, body: '' });
@@ -494,10 +510,6 @@ test.describe('Publicités : l’entonnoir', () => {
  * vérifiable d'un coup d'œil, et ce cas est ce qui l'empêche de régresser.
  */
 test.describe('Publicités : l’aperçu de ce que verra le prospect', () => {
-  const PNG_1x1 = Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
-    'base64',
-  );
 
   const ouvrir = async (page: import('@playwright/test').Page) => {
     await page.getByTestId('pubs-creer').click();
@@ -544,7 +556,7 @@ test.describe('Publicités : l’aperçu de ce que verra le prospect', () => {
   test('le visuel choisi s’affiche, et le repère d’absence disparaît', async ({ page }) => {
     await brancher(page);
     await ouvrir(page);
-    await page.locator('#pub-image').setInputFiles({ name: 'visuel.png', mimeType: 'image/png', buffer: PNG_1x1 });
+    await page.locator('#pub-image').setInputFiles({ name: 'visuel.png', mimeType: 'image/png', buffer: Buffer.from(PNG_1x1, 'base64') });
     // Le `src` est construit depuis le base64 DÉJÀ lu pour le téléversement : rien n'est relu, rien ne part.
     await expect(page.getByTestId('pub-apercu-visuel')).toHaveAttribute('src', /^data:image\/png;base64,/);
     await expect(page.getByTestId('pub-apercu-visuel-absent')).toHaveCount(0);
@@ -814,8 +826,6 @@ test.describe('Publicités : quand l’API n’a pas encore les brouillons', () 
  * la précédente avait créé », et c'est la relecture du correctif qui l'a attrapé.
  */
 test.describe('Publicités : un brouillon supprimé pendant qu’on l’édite', () => {
-  /** Un PNG 1x1 valide, pour que l'aller-retour du visuel soit comparable à l'octet près. */
-  const PNG_RE = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
   const BR = {
     id: 'br-1', nom: 'En cours', titre: '', texte: '', accueil: '', messagePreRempli: '',
     budgetTotal: '', debut: '', fin: '', pays: 'FR', ageMin: '18', ageMax: '65',
@@ -849,7 +859,7 @@ test.describe('Publicités : un brouillon supprimé pendant qu’on l’édite',
      */
     await brancher(page, {
       brouillons: [{ ...BR, aUnVisuel: true }],
-      detailBrouillon: { visuel: { type: 'image/png', base64: PNG_RE } },
+      detailBrouillon: { visuel: { type: 'image/png', base64: PNG_1x1 } },
       brouillonDisparu: true,
     });
     await page.getByTestId('pub-brouillon-ouvrir-br-1').click();
@@ -862,8 +872,54 @@ test.describe('Publicités : un brouillon supprimé pendant qu’on l’édite',
     // Second clic : celui que le message RÉCLAME. C'est une création, et elle doit porter l'image.
     await page.getByTestId('pub-enregistrer-brouillon').click();
     await expect(page.getByTestId('pub-brouillon-actif')).toBeVisible();
-    const corps = await page.evaluate(() => null).then(() => corpsCreationBrouillon);
-    expect(corps).not.toBeNull();
-    expect(corps?.image).toMatchObject({ type: 'image/png', base64: PNG_RE });
+    // L'ancre est l'assertion juste au-dessus : `pub-brouillon-actif` redevient visible SEULEMENT
+    // quand le POST a repondu, donc le corps est capture quand on le lit.
+    expect(corpsCreationBrouillon).not.toBeNull();
+    expect(corpsCreationBrouillon?.image).toMatchObject({ type: 'image/png', base64: PNG_1x1 });
+  });
+});
+
+/**
+ * 🔴 CHANGER D'IMAGE PENDANT QU'UN ENREGISTREMENT EST EN VOL.
+ *
+ * C'est la course que la TROISIÈME forme de cet état ferme par construction, et que les deux premières
+ * laissaient ouverte. Le champ fichier reste utilisable pendant l'envoi : choisir une autre image au
+ * milieu d'un téléversement changeait ce que l'écran affichait, et la remise à zéro du drapeau d'après la
+ * réponse déclarait alors que le serveur détenait la NOUVELLE alors qu'il avait reçu l'ANCIENNE.
+ * L'enregistrement suivant n'envoyait plus rien : l'écran montrait une image que le serveur n'a jamais eue.
+ *
+ * ⚠️ LE TEST LIT CE QUI PART, DEUX FOIS. Aucune assertion d'écran ne peut voir ce défaut, puisque l'écran
+ * est précisément ce qui a raison pendant que l'envoi a tort.
+ */
+test.describe('Publicités : une image choisie pendant l’enregistrement', () => {
+  const PNG_AUTRE = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const BR2 = {
+    id: 'br-1', nom: 'En cours', titre: '', texte: '', accueil: '', messagePreRempli: '',
+    budgetTotal: '', debut: '', fin: '', pays: 'FR', ageMin: '18', ageMax: '65',
+    tagQualification: '', destination: 'scenario', workflowId: null, aUnVisuel: true,
+    creeLe: '2026-09-24T08:00:00.000Z', modifieLe: '2026-09-24T08:00:00.000Z',
+  };
+
+  test('🔴 le second enregistrement emporte la NOUVELLE image, pas rien', async ({ page }) => {
+    await brancher(page, {
+      brouillons: [BR2],
+      detailBrouillon: { visuel: { type: 'image/png', base64: PNG_1x1 } },
+      majLente: true,
+    });
+    await page.getByTestId('pub-brouillon-ouvrir-br-1').click();
+    await expect(page.getByTestId('pub-apercu-visuel')).toBeVisible();
+
+    // Premier enregistrement : il traîne. Rien ne part du visuel, il est identique à celui du serveur.
+    await page.getByTestId('pub-enregistrer-brouillon').click();
+    // PENDANT qu'il est en vol, on choisit une AUTRE image.
+    await page.locator('#pub-image').setInputFiles({
+      name: 'autre.png', mimeType: 'image/png', buffer: Buffer.from(PNG_AUTRE, 'base64'),
+    });
+    await expect(page.getByTestId('pub-enregistrer-brouillon')).toBeEnabled();
+
+    // Second enregistrement : c'est lui qui doit porter la nouvelle image.
+    await page.getByTestId('pub-enregistrer-brouillon').click();
+    await expect.poll(() => (corpsMajBrouillon?.image as { base64?: string } | null | undefined)?.base64,
+      { timeout: 10000 }).toBe(PNG_AUTRE);
   });
 });

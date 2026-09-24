@@ -26,6 +26,19 @@ import { PubApercu, type EtatReponse } from '@/components/PubApercu';
  */
 
 
+/**
+ * Ce qu'un enregistrement dit du visuel : `undefined` = rien (le serveur garde le sien), `null` = efface,
+ * un objet = remplace. Les trois sens de la clé `image`, nommés une fois plutôt que devinés trois fois.
+ */
+type VisuelEnvoye = { type: 'image/jpeg' | 'image/png'; base64: string } | null | undefined;
+
+/** Deux visuels sont-ils le MÊME ? Comparaison par VALEUR : les objets sont reconstruits à chaque rendu. */
+function memeVisuel(a: VisuelEnvoye, b: VisuelEnvoye): boolean {
+  if (a === null || a === undefined) return b === null || b === undefined;
+  if (b === null || b === undefined) return false;
+  return a.type === b.type && a.base64 === b.base64;
+}
+
 export function PubFormulaire({
   tenantId, scenarios, agentMetaOuvert, nomPage, brouillon, brouillonsIndisponibles,
   fermer, creee, brouillonsChanges,
@@ -106,12 +119,21 @@ export function PubFormulaire({
    */
   const [brouillonId, setBrouillonId] = useState<string | null>(brouillon?.id ?? null);
   /**
-   * 🔴 LE VISUEL A-T-IL ÉTÉ TOUCHÉ DEPUIS L'OUVERTURE ? C'est ce drapeau qui porte la sémantique à trois
-   * états côté serveur. Sans lui, on ne saurait pas distinguer « le brouillon avait une image et je n'y ai
-   * pas touché » (ne pas l'envoyer, donc la conserver) de « j'ai retiré l'image » (envoyer `null`). Envoyer
-   * systématiquement l'image relue serait possible mais ferait remonter 5 Mo à chaque enregistrement.
+   * 🔴 CE QUE LE SERVEUR EST CENSÉ DÉTENIR COMME VISUEL. `null` = rien.
+   *
+   * C'EST LA TROISIÈME FORME DE CET ÉTAT, ET LES DEUX PREMIÈRES ONT PERDU DES IMAGES. C'était un booléen
+   * « le visuel a-t-il été touché ? », c'est-à-dire un DOUBLON STOCKÉ d'un fait DÉRIVABLE : « ce qui est à
+   * l'écran diffère-t-il de ce que le serveur a ? ». Tant qu'on le stockait, il fallait penser à le bouger
+   * à chaque transition, et on l'a oublié DEUX fois, à deux endroits, avec le même symptôme : une image
+   * affichée à l'écran que le serveur n'avait pas.
+   *
+   * ⚠️ EN GARDANT LA VALEUR PLUTÔT QU'UN DRAPEAU, la question se REPOSE à chaque envoi au lieu de se
+   * mémoriser, donc il n'y a plus rien à tenir en cohérence. Les deux défauts se ferment par construction :
+   * une remise à zéro oubliée ne peut plus exister, puisqu'il n'y a plus de remise à zéro.
    */
-  const [visuelTouche, setVisuelTouche] = useState(false);
+  const [visuelServeur, setVisuelServeur] = useState<VisuelEnvoye>(
+    brouillon?.visuel ? { type: brouillon.visuel.type, base64: brouillon.visuel.base64 } : null,
+  );
   const [brouillonBusy, setBrouillonBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -145,11 +167,19 @@ export function PubFormulaire({
     return () => { vivant = false; };
   }, [tenantId, destination, workflowId]);
 
+  /**
+   * Ce qu'il faut dire du visuel au prochain enregistrement, DÉRIVÉ et jamais mémorisé.
+   *
+   * ⚠️ `undefined` quand l'écran et le serveur portent le même visuel : il n'y a rien à dire, donc la clé
+   * ne part pas, donc on ne remonte pas plusieurs mégaoctets pour corriger une faute de frappe.
+   */
+  function visuelAEnvoyer(): VisuelEnvoye {
+    const actuel: VisuelEnvoye = image === null ? null : { type: image.type, base64: image.base64 };
+    return memeVisuel(actuel, visuelServeur) ? undefined : actuel;
+  }
+
   async function choisirImage(f: File | null): Promise<void> {
     setErreur(null);
-    // Toute interaction avec le champ compte comme « touché », y compris celle qui vide la sélection :
-    // c'est le geste par lequel on RETIRE le visuel d'un brouillon.
-    setVisuelTouche(true);
     if (f === null) { setImage(null); return; }
     if (!(TYPES_VISUEL as readonly string[]).includes(f.type)) {
       setErreur(t('Le visuel doit être un JPEG ou un PNG.', 'The image must be a JPEG or a PNG.'));
@@ -168,31 +198,43 @@ export function PubFormulaire({
   /**
    * Le formulaire TEL QU'IL EST, sans aucune validation : c'est tout ce qu'un brouillon promet.
    *
-   * 🔴 LA CLÉ `image` N'EST POSÉE QUE SI LE VISUEL A ÉTÉ TOUCHÉ. Absente, le serveur conserve celui qu'il a ;
-   * c'est ce qui permet de corriger un texte sans renvoyer, ni perdre, plusieurs mégaoctets.
+   * 🔴 LA CLÉ `image` N'EST POSÉE QUE SI LE VISUEL DIFFÈRE DE CELUI QUE LE SERVEUR DÉTIENT. Absente, le
+   * serveur conserve le sien ; c'est ce qui permet de corriger un texte sans renvoyer, ni perdre, plusieurs
+   * mégaoctets. `aEnvoyer` vaut `undefined` quand il n'y a rien à dire du visuel.
    */
-  function champsBrouillon(): FormulaireBrouillonPub {
+  function champsBrouillon(aEnvoyer: VisuelEnvoye): FormulaireBrouillonPub {
     return {
       nom, titre, texte, accueil, messagePreRempli,
       budgetTotal, debut, fin, pays, ageMin, ageMax, tagQualification, destination,
       workflowId: workflowId === '' ? null : workflowId,
-      ...(visuelTouche ? { image: image === null ? null : { type: image.type, base64: image.base64 } } : {}),
+      ...(aEnvoyer === undefined ? {} : { image: aEnvoyer }),
     };
   }
 
   async function enregistrerBrouillon(): Promise<void> {
     setErreur(null);
     setBrouillonBusy(true);
+    /**
+     * 🔴 CE QUI PART EST CALCULÉ **AVANT** L'ATTENTE, ET C'EST CE QUI FERME LA COURSE.
+     *
+     * Le champ fichier reste utilisable pendant l'envoi : choisir une autre image au milieu d'un
+     * téléversement de 5 Mo changeait `image`, et la remise à zéro d'après la réponse déclarait alors que
+     * le serveur détenait la NOUVELLE alors qu'il avait reçu l'ANCIENNE. L'écran affichait la neuve, le
+     * serveur gardait la vieille, et l'enregistrement suivant n'envoyait plus rien : perte définitive et
+     * muette. En capturant ici, on n'enregistre jamais comme « détenu » autre chose que ce qui est parti.
+     */
+    const aEnvoyer = visuelAEnvoyer();
     try {
       if (brouillonId === null) {
-        const { id } = await creerBrouillon(tenantId, champsBrouillon());
+        const { id } = await creerBrouillon(tenantId, champsBrouillon(aEnvoyer));
         // ⚠️ On RETIENT l'identifiant : sans ça, trois clics sur « Enregistrer » créeraient trois brouillons.
         setBrouillonId(id);
       } else {
-        await majBrouillon(tenantId, brouillonId, champsBrouillon());
+        await majBrouillon(tenantId, brouillonId, champsBrouillon(aEnvoyer));
       }
-      // Le serveur porte désormais ce que nous venons d'envoyer : le visuel n'est plus « touché ».
-      setVisuelTouche(false);
+      // Le serveur détient désormais ce qui vient de PARTIR, et rien d'autre. Une clé omise ne change
+      // rien à ce qu'il détenait déjà, donc on ne touche à cet état que si quelque chose est parti.
+      if (aEnvoyer !== undefined) setVisuelServeur(aEnvoyer);
       await brouillonsChanges();
     } catch (err) {
       /**
@@ -216,20 +258,16 @@ export function PubFormulaire({
       } else if (err instanceof ApiError && err.status === 404) {
         setBrouillonId(null);
         /**
-         * 🔴 ET `visuelTouche` PASSE À `true` AVEC LUI, SANS QUOI L'IMAGE SE PERD EN SILENCE.
+         * 🔴 ET LE SERVEUR NE DÉTIENT PLUS RIEN, PUISQUE LE BROUILLON N'EXISTE PLUS.
          *
-         * `champsBrouillon` n'émet la clé `image` que si le visuel a été TOUCHÉ, parce qu'une clé absente
-         * veut dire « conserve celui que tu as ». Cette lecture n'a de sens que sur une MISE À JOUR : sur
-         * une création, il n'y a rien à conserver, et le store le dit. Oublier ce drapeau ici faisait donc
-         * recréer le brouillon SANS son visuel, pendant que l'écran continuait de l'afficher et annonçait
-         * « ce brouillon est enregistré ». La perte ne se serait vue qu'à la réouverture suivante, quand
-         * le fichier d'origine n'est plus forcément sous la main.
+         * Le dire ici suffit : le prochain envoi comparera l'image de l'écran à « rien », les trouvera
+         * différentes, et la re-création emportera le visuel. C'est ce que la version précédente ratait,
+         * en recréant le brouillon SANS son image pendant que l'écran continuait de l'afficher.
          *
-         * ⚠️ DEUX ÉTATS QUI DOIVENT BOUGER ENSEMBLE, ET UN SEUL LE DISAIT. `brouillonId` gouverne le
-         * chemin (création ou mise à jour), `visuelTouche` gouverne ce que ce chemin transporte : les
-         * remettre en cohérence au même endroit est la seule forme qui ne se défasse pas.
+         * ⚠️ AUCUN DRAPEAU À REMETTRE EN COHÉRENCE : on énonce un FAIT sur le serveur, et ce qu'il faut
+         * envoyer s'en déduit. C'est la différence entre cette forme et les deux qui ont perdu des images.
          */
-        setVisuelTouche(true);
+        setVisuelServeur(null);
         setErreur(t('Ce brouillon n’existe plus. Cliquez de nouveau pour l’enregistrer comme un nouveau brouillon.',
                     'This draft no longer exists. Click again to save it as a new draft.'));
       } else {
