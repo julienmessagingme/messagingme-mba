@@ -8,6 +8,7 @@ import {
 import {
   TEXTES_PAR_TYPE, chezMetaSansLigne, effacementsImprevus, etatsChezMeta, type EtatChezMeta,
 } from '@/lib/mba-outils';
+import { IconeOutil } from '@/components/IconeOutil';
 import { ChoixTypeOutil } from './ChoixTypeOutil';
 import { FormulaireOutilMba } from './FormulaireOutilMba';
 import { useT } from '@/lib/i18n';
@@ -303,13 +304,29 @@ function LigneOutil({ o, t, isAdmin, etat, occupe, envoiEnCours, onEnvoyer, onRe
         )}
       </div>
       <span className="flex flex-wrap items-center gap-1 justify-self-start">
-        <span className="rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-700" data-testid={`mba-outil-type-${o.id}`}>
+        {/* 🔴 LE MÊME DESSIN QUE DANS « QUEL OUTIL AJOUTER ? », ET C'EST TOUT L'INTÉRÊT : on reconnaît ici
+            ce qu'on a choisi là-bas. Un outil dont le type est `inconnu` n'en porte AUCUN plutôt qu'un par
+            défaut, parce qu'un dessin affirmerait une nature que personne n'a lue. */}
+        <span className="flex items-center gap-1.5 rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-700" data-testid={`mba-outil-type-${o.id}`}>
+          {o.type !== 'inconnu' && <IconeOutil signe={TEXTES_PAR_TYPE[o.type].signe} className="h-3.5 w-3.5 shrink-0 text-ink-500" />}
           {t(badge[0], badge[1])}
         </span>
+        {/*
+          🔴 « IRRÉVERSIBLE » A ÉTÉ RETIRÉ DES ENVOIS, PAS DES APPELS (Julien, 2026-09-24 : « ça veut rien
+          dire, c'est confusant »). Le mot couvrait DEUX choses sous une seule étiquette : un bloc ou un
+          scénario, qui envoient un message au client, et un appel de connecteur en DELETE, qui détruit
+          quelque chose dans SON système. Pour les deux premiers, « irréversible » est vrai et inutile (tout
+          message envoyé l'est) ; ce que le client a besoin de lire, c'est que ça PART chez son contact. Pour
+          le troisième, le mot est exactement juste, donc il reste.
+          ⚠️ LE RISQUE EN BASE NE BOUGE PAS (`RISQUE_MAISON`, `src/mba/outils-maison.ts`) : c'est lui que le
+          journal et la garde d'autonomie d'un agent IA lisent. Seul le MOT affiché change.
+        */}
         {o.risque === 'irreversible' && (
           <span className="rounded-md bg-amber-50 px-2 py-0.5 text-xs text-amber-800" data-testid={`mba-outil-irreversible-${o.id}`}
             title={t('L’agent de Meta l’appelle sans validation humaine.', 'Meta’s agent calls it without human approval.')}>
-            {t('irréversible', 'irreversible')}
+            {o.type === 'bloc' || o.type === 'scenario'
+              ? t('part chez le client', 'reaches the customer')
+              : t('irréversible', 'irreversible')}
           </span>
         )}
       </span>

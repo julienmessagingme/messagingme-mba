@@ -140,6 +140,33 @@ test.describe('Agent : brancher le système du client', () => {
     // La source relue ne porte pas le secret : l'écran ne peut donc pas le réafficher.
     await deplier(page, SRC);
     await expect(page.getByTestId(`source-secret-${SRC}`)).toHaveValue('');
+    /**
+     * 🔴 ET L'ÉCRAN DIT POURQUOI IL EST VIDE (Julien, 2026-09-24 : « le bouton Remplacer est tout le temps
+     * grisé, c'est donc pas clair »). Le bouton n'a jamais été bloqué, sa seule condition est un champ non
+     * vide. Ce qui manquait, c'était de dire que le champ part vide PAR CONSTRUCTION et que le secret
+     * enregistré est intact : sans cette phrase, un client conclut qu'il l'a effacé, ou que le remplacement
+     * est impossible. Une phrase qu'aucun test ne lit finit par disparaître, comme la ligne du moyen de
+     * paiement le 2026-09-23.
+     */
+    await expect(page.getByTestId(`source-secret-aide-${SRC}`)).toContainText('ne se relit jamais');
+  });
+
+  test('🔴 l’ecran DIT la difference entre desactiver et supprimer', async ({ page }) => {
+    /**
+     * Julien, 2026-09-24 : « la différence entre désactiver et supprimer, je sais pas si ça vaut le coup de
+     * garder les 2 notions ». Ils ne se valent pas, mais rien à l'écran ne les distinguait, ce qui est la
+     * vraie cause de la question.
+     *
+     * ⚠️ ET LE MOT « DÉSACTIVER » N'A PAS LE MÊME SENS ICI QUE SUR UN OUTIL : désactiver un OUTIL le retire
+     * de la vue du modèle, désactiver un CONNECTEUR laisse l'outil proposé et fait échouer l'appel. C'est cet
+     * écart-là que la phrase doit nommer, et c'est lui qu'on tient ici.
+     */
+    await mock(page, { posts: [] });
+    await bibliotheque(page);
+    await deplier(page, SRC);
+    const phrase = page.getByTestId(`source-deux-gestes-${SRC}`);
+    await expect(phrase).toContainText('restent proposés à l’agent');
+    await expect(phrase).toContainText('refusé tant qu’un outil actif');
   });
 
   test('🔴 l’épreuve dit ce qui s’est passé, y compris quand elle ÉCHOUE', async ({ page }) => {
@@ -149,6 +176,13 @@ test.describe('Agent : brancher le système du client', () => {
     await mock(page, capture, { epreuve: { ok: false, httpStatus: 401, erreur: 'authentification refusée' } });
     await bibliotheque(page);
     await deplier(page, SRC);
+    /**
+     * 🔴 CE QU'ELLE ÉPROUVE EST ÉCRIT AVANT MÊME DE CLIQUER (Julien, 2026-09-24 : « à quoi sert Éprouver la
+     * connexion, quand on choisit un système déjà branché ? »). La question venait de l'écran, qui offrait un
+     * bouton sans dire qu'il fait un VRAI appel avec le VRAI en-tête d'authentification : il passait donc
+     * pour une revalidation d'adresse, c'est-à-dire pour rien sur un système déjà en service.
+     */
+    await expect(page.getByTestId(`source-epreuve-a-quoi-${SRC}`)).toContainText('avec votre authentification');
     await page.getByTestId(`source-eprouver-${SRC}`).click();
     await expect(page.getByTestId(`source-epreuve-${SRC}`)).toContainText(/authentification/i);
   });

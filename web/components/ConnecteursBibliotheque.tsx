@@ -208,6 +208,24 @@ function Source({ source, busy, epreuve, onEprouver, onPatch, onSupprimer }: {
         </div>
       </div>
 
+      {/*
+        🔴 LES DEUX GESTES NE FONT PAS LA MÊME CHOSE, ET L'ÉCRAN NE LE DISAIT PAS (Julien, 2026-09-24 :
+        « la différence entre désactiver et supprimer, je sais pas si ça vaut le coup de garder les 2 »).
+        Ils se ressemblent parce que rien ne les distinguait à l'écran, pas parce qu'ils se valent :
+        désactiver garde la ligne, son historique d'épreuves et les outils qui en dépendent, et fait échouer
+        chaque appel avec une raison lisible ; supprimer efface, et la route REFUSE en 409 tant qu'un outil
+        actif s'en sert. On garde donc les deux, et on dit lequel fait quoi.
+        ⚠️ ET LE MOT « DÉSACTIVER » NE VEUT PAS DIRE LA MÊME CHOSE ICI QUE SUR UN OUTIL, ce qui est la vraie
+        cause de la confusion : désactiver un OUTIL le retire de la vue du modèle, désactiver un CONNECTEUR
+        laisse l'outil visible et fait échouer l'appel. La phrase ci-dessous nomme cet écart.
+      */}
+      <p className="text-xs text-ink-500" data-testid={`source-deux-gestes-${source.id}`}>
+        {t(
+          'Désactiver garde ce connecteur et les outils qui s’en servent : ils restent proposés à l’agent, mais chaque appel échoue en disant pourquoi. Supprimer l’efface, et c’est refusé tant qu’un outil actif l’utilise.',
+          'Disabling keeps this connector and the tools that use it: they stay offered to the agent, but every call fails with a reason. Deleting removes it, and is refused while an active tool uses it.',
+        )}
+      </p>
+
       {/* 🔴 L'ÉPREUVE. Un jeton expiré ne produit aucune erreur applicative : l'agent dégraderait en silence
           au milieu d'une conversation. C'est le seul endroit où ça se voit avant qu'un contact ne le trouve. */}
       <div className="flex flex-wrap items-end gap-2 rounded-lg border border-ink-200 px-3 py-2">
@@ -223,6 +241,19 @@ function Source({ source, busy, epreuve, onEprouver, onPatch, onSupprimer }: {
         >
           {t('Éprouver', 'Test')}
         </button>
+        {/*
+          🔴 CE QU'ELLE ÉPROUVE, DIT À L'ÉCRAN (Julien, 2026-09-24 : « à quoi sert Éprouver la connexion sur
+          ce chemin, quand on choisit un système déjà branché ? »). La question était juste : l'écran offrait
+          un bouton sans dire qu'il fait un VRAI appel avec le VRAI en-tête d'authentification, donc qu'il
+          éprouve le SECRET et pas seulement l'adresse. Sans cette phrase, il passe pour une revalidation
+          d'URL, c'est-à-dire pour rien sur un système déjà branché.
+        */}
+        <p className="w-full text-xs text-ink-500" data-testid={`source-epreuve-a-quoi-${source.id}`}>
+          {t(
+            'Un vrai appel, avec votre authentification : c’est le seul endroit où un jeton expiré se voit avant qu’un client ne le trouve, parce qu’un jeton mort ne produit aucune erreur ailleurs.',
+            'A real call, with your authentication: this is the only place an expired token shows up before a customer finds it, because a dead token raises no error anywhere else.',
+          )}
+        </p>
         <p data-testid={`source-epreuve-${source.id}`} className="w-full text-xs text-ink-600">
           {epreuve ?? (source.lastError
             ? t(`Dernière erreur : ${source.lastError}`, `Last error: ${source.lastError}`)
@@ -232,25 +263,51 @@ function Source({ source, busy, epreuve, onEprouver, onPatch, onSupprimer }: {
         </p>
       </div>
 
-      {/* Le secret : jamais relu, donc jamais rempli. Le dire, sinon le client croira l'avoir effacé. */}
+      {/*
+        🔴 LE JETON SE REMPLACE, ET L'ÉCRAN LE DISAIT SI MAL QUE JULIEN A CRU QUE C'ÉTAIT IMPOSSIBLE
+        (2026-09-24 : « il faut qu'on puisse vraiment le remplacer, le bouton est tout le temps grisé, c'est
+        donc pas clair »). Le bouton n'a JAMAIS été bloqué : sa seule condition est que le champ ne soit pas
+        vide, et il se dégrise à la première frappe. Le défaut était l'AFFORDANCE, pas la capacité.
+        Trois choses le réparent, et aucune ne touche au mécanisme : le libellé dit quoi taper au lieu de
+        décrire une sémantique de formulaire qui n'existe pas ici (« laisser vide = inchangé » décrivait un
+        envoi global, alors qu'un bouton dédié ne part que quand on le clique) ; une phrase dit pourquoi le
+        champ est vide, sinon le client croit avoir effacé son secret ; et le bouton grisé porte enfin la
+        raison de l'être.
+        ⚠️ LE CHAMP RESTE VIDE À CHAQUE OUVERTURE, ET CE N'EST PAS NÉGOCIABLE : un secret ne se relit pas, ni
+        chez Meta ni chez nous. Le pré-remplir demanderait de le renvoyer au navigateur.
+      */}
       {source.authKind !== 'none' && (
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="flex-1 text-xs text-ink-600">
-            {t('Remplacer le secret (laisser vide = inchangé)', 'Replace the secret (leave empty = unchanged)')}
-            <input
-              type="password" autoComplete="off" className={`${inputCls} mt-1`}
-              data-testid={`source-secret-${source.id}`}
-              value={secret} onChange={(e) => setSecret(e.target.value)}
-              placeholder={source.aAuthentification ? '••••••••' : t('aucun secret enregistré', 'no secret stored')}
-            />
-          </label>
-          <button
-            disabled={busy || secret.trim() === ''}
-            onClick={() => { onPatch({ authSecret: secret.trim() }); setSecret(''); }}
-            className="rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:opacity-40"
-          >
-            {t('Remplacer', 'Replace')}
-          </button>
+        <div className="flex flex-col gap-1">
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex-1 text-xs text-ink-600">
+              {source.authKind === 'bearer'
+                ? t('Nouveau jeton', 'New token')
+                : t(`Nouveau secret pour l’en-tête ${source.authHeaderName ?? ''}`, `New secret for header ${source.authHeaderName ?? ''}`)}
+              <input
+                type="password" autoComplete="off" className={`${inputCls} mt-1`}
+                data-testid={`source-secret-${source.id}`}
+                value={secret} onChange={(e) => setSecret(e.target.value)}
+                placeholder={source.aAuthentification ? '••••••••' : t('aucun secret enregistré', 'no secret stored')}
+              />
+            </label>
+            <button
+              disabled={busy || secret.trim() === ''}
+              title={secret.trim() === ''
+                ? t('Tapez le nouveau secret pour activer ce bouton.', 'Type the new secret to enable this button.')
+                : undefined}
+              onClick={() => { onPatch({ authSecret: secret.trim() }); setSecret(''); }}
+              className="rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:opacity-40"
+            >
+              {t('Remplacer', 'Replace')}
+            </button>
+          </div>
+          <p className="text-xs text-ink-500" data-testid={`source-secret-aide-${source.id}`}>
+            {source.aAuthentification
+              ? t('Ce champ part toujours vide : un secret ne se relit jamais, pas même par nous. Le vôtre est bien enregistré. Tapez le nouveau, puis « Remplacer ».',
+                'This field always starts empty: a secret is never read back, not even by us. Yours is stored. Type the new one, then “Replace”.')
+              : t('Aucun secret enregistré pour l’instant. Tapez-en un, puis « Remplacer ».',
+                'No secret stored yet. Type one, then “Replace”.')}
+          </p>
         </div>
       )}
     </div>

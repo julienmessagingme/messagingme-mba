@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLocale, useT } from '@/lib/i18n';
 import { cardCls, inputCls, inputClsAuto } from '@/lib/ui';
 import { MbaNotice } from '@/components/MbaNotice';
+import { IconeOutil } from '@/components/IconeOutil';
+import { signeDuHandler } from '@/lib/signes-outils';
 import { AgentConnecteurs } from '@/components/AgentConnecteurs';
 import { normaliserNomOutil } from '@/lib/agent-outils';
 import { listNodes, type NodeListItem } from '@/lib/api/scenarios';
@@ -148,8 +150,13 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
           {restants.map((m) => (
             <div key={m.handler} data-testid={`outil-dispo-${m.handler}`} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-ink-200 px-3 py-2">
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-ink-800">
-                  <Bilingue texte={m.titre} /> <Risque risk={m.risk} />
+                <p className="flex items-center gap-2 text-sm font-medium text-ink-800">
+                  {signeDuHandler(m.handler) !== null && (
+                    <IconeOutil signe={signeDuHandler(m.handler)!} className="h-4 w-4 shrink-0 text-ink-400" />
+                  )}
+                  <span className="min-w-0">
+                    <Bilingue texte={m.titre} /> <Risque risk={m.risk} handler={m.handler} />
+                  </span>
                 </p>
                 <p className="mt-0.5 text-xs leading-relaxed text-ink-500"><Bilingue texte={m.description} /></p>
               </div>
@@ -252,13 +259,26 @@ function Bilingue({ texte }: { texte: TexteBilingue }) {
   return <>{locale === 'en' ? texte.en : texte.fr}</>;
 }
 
-/** Le risque est une PROPRIÉTÉ de l'outil, pas un réglage : il vient du catalogue serveur. Ce qui se règle,
- *  c'est l'autonomie, et seulement sur l'irréversible. */
-function Risque({ risk }: { risk: OutilAgent['risk'] }) {
+/**
+ * Le risque est une PROPRIÉTÉ de l'outil, pas un réglage : il vient du catalogue serveur. Ce qui se règle,
+ * c'est l'autonomie, et seulement sur le risque le plus haut.
+ *
+ * 🔴 IL DIT CE QUI SE PASSE, PLUS « IRRÉVERSIBLE » (Julien, 2026-09-24 : « ça veut rien dire, c'est
+ * confusant »). Le seul outil maison classé ainsi est « Envoyer un bloc » : ce que le client a besoin de
+ * lire, c'est que le message PART chez son contact, pas une propriété logique que tout envoi possède.
+ * ⚠️ `risk` NE BOUGE PAS, c'est la valeur du catalogue serveur, celle que la garde d'autonomie lit
+ * (`src/agent/executor.ts`). Seul le mot affiché change. `handler` est facultatif pour que le jour où un
+ * autre outil maison devient irréversible, l'étiquette retombe sur le mot général au lieu de mentir.
+ */
+function Risque({ risk, handler }: { risk: OutilAgent['risk']; handler?: string }) {
   const t = useT();
   if (risk === 'read') return <Etiquette classe="bg-ink-100 text-ink-600">{t('lecture', 'read')}</Etiquette>;
   if (risk === 'write') return <Etiquette classe="bg-sky/10 text-sky">{t('écriture', 'write')}</Etiquette>;
-  return <Etiquette classe="bg-amber-50 text-amber-800">{t('irréversible', 'irreversible')}</Etiquette>;
+  return (
+    <Etiquette classe="bg-amber-50 text-amber-800">
+      {handler === 'envoyer_bloc' ? t('part chez le client', 'reaches the customer') : t('sans retour', 'no undo')}
+    </Etiquette>
+  );
 }
 
 function Etiquette({ classe, children }: { classe: string; children: React.ReactNode }) {
@@ -281,8 +301,14 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
     <div data-testid={`outil-${outil.id}`} className={`${cardCls} flex flex-col gap-3`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-ink-800">
-            {outil.title} <Risque risk={outil.risk} />
+          <p className="flex items-center gap-2 truncate text-sm font-medium text-ink-800">
+            {/* 🔴 LE MÊME DESSIN QUE DANS « DONNER UN OUTIL DE PLUS » : on reconnaît ici ce qu'on a ajouté
+                là-bas. Un handler que cette console ne connaît pas n'en porte AUCUN, plutôt qu'un par
+                défaut : le catalogue vit côté serveur, donc une console plus ancienne que l'API en verra. */}
+            {signeDuHandler(String(outil.binding.handler ?? '')) !== null && (
+              <IconeOutil signe={signeDuHandler(String(outil.binding.handler ?? ''))!} className="h-4 w-4 shrink-0 text-ink-400" />
+            )}
+            {outil.title} <Risque risk={outil.risk} handler={String(outil.binding.handler ?? '')} />
             {outil.actif
               ? <Etiquette classe="bg-emerald-50 text-emerald-700">{t('actif', 'active')}</Etiquette>
               : <Etiquette classe="bg-ink-100 text-ink-600">{t('inactif', 'inactive')}</Etiquette>}
@@ -376,7 +402,7 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
           />
           <span>
             {t(
-              'Autoriser l’agent à faire ça SEUL. Non cochée, l’action est refusée à chaque appel : c’est irréversible, et le contact le reçoit vraiment.',
+              'Autoriser l’agent à faire ça SEUL. Non cochée, l’action est refusée à chaque appel : ce qui part, part vraiment chez le contact et ne se rappelle pas.',
               'Allow the agent to do this ON ITS OWN. Unchecked, the action is refused on every call: it is irreversible, and the contact really receives it.',
             )}
           </span>

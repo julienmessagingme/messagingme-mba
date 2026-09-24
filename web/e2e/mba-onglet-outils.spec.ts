@@ -334,7 +334,50 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     expect(m.ecrits[0]!.body).toMatchObject({ name: 'accueil', cible: { type: 'scenario', workflowId: PUBLIE } });
   });
 
-  test('la ligne d’un bloc dit son scénario, et qu’il est irréversible', async ({ page }) => {
+  test('🔴 le dessin d’un type est le MEME au choix et dans la liste des outils deployes', async ({ page }) => {
+    /**
+     * Demande de Julien du 2026-09-24 : « des petites icônes en face de chaque type d'outil qu'on peut
+     * rajouter, et qu'on les retrouve dans la liste des outils qui ont été déployés ».
+     *
+     * 🔴 « LES RETROUVER » EST LA MOITIÉ QUI SE CASSE, ET C'EST ELLE QU'ON TIENT ICI. Deux écrans qui
+     * dessinent chacun leur icône se mettent d'accord le premier jour et divergent au premier ajout de type.
+     * Le test compare donc le MARQUAGE des deux SVG, pas leur présence : une paire d'icônes différentes pour
+     * le même type passerait un `toBeVisible` des deux côtés sans broncher.
+     *
+     * ⚠️ Un type `inconnu` n'a AUCUN dessin, et c'est vérifié plus bas : un dessin par défaut affirmerait une
+     * nature que personne n'a lue.
+     */
+    const WF = '11111111-1111-4111-8111-111111111111';
+    await monterOutils(page, {
+      outils: [
+        { ...OUTIL, id: 'o9', name: 'brochure', title: 'Envoyer la brochure', type: 'bloc', risque: 'irreversible',
+          cible: { type: 'bloc', workflowId: WF, code: `nod_abc_${'A'.repeat(26)}`, scenario: 'Accueil', bloc: 'Brochure' } },
+        { ...OUTIL, id: 'o8', name: 'mystere', title: 'Outil d’une version plus neuve', type: 'inconnu',
+          cible: { type: 'inconnu' }, cibleManquante: null, aussiUtilisePar: [] },
+      ],
+    });
+    await page.goto('/mba/parametres?tab=outils');
+
+    const dansLaListe = page.getByTestId('mba-outil-type-o9').locator('svg');
+    await expect(dansLaListe).toHaveCount(1);
+    const marquageListe = await dansLaListe.evaluate((el) => el.innerHTML);
+
+    // Le type `inconnu` reste nu : il n'y a rien à dessiner pour ce qu'on n'a pas su lire.
+    await expect(page.getByTestId('mba-outil-type-o8').locator('svg')).toHaveCount(0);
+
+    await page.getByTestId('mba-outils-ajouter').click();
+    const auChoix = page.getByTestId('mba-type-bloc').locator('svg');
+    await expect(auChoix).toHaveCount(1);
+    const marquageChoix = await auChoix.evaluate((el) => el.innerHTML);
+
+    expect(marquageChoix, 'le dessin du type « bloc » diffère entre le choix et la liste').toBe(marquageListe);
+    // Et les cinq types proposés en portent chacun un : un type sans dessin ne se voit pas en relisant du code.
+    for (const type of ['tag', 'champ', 'bloc', 'scenario', 'connecteur']) {
+      await expect(page.getByTestId(`mba-type-${type}`).locator('svg'), `le type « ${type} » n’a pas de dessin`).toHaveCount(1);
+    }
+  });
+
+  test('la ligne d’un bloc dit son scénario, et que le message PART chez le client', async ({ page }) => {
     const WF = '11111111-1111-4111-8111-111111111111';
     await monterOutils(page, {
       outils: [{
@@ -344,7 +387,14 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     });
     await page.goto('/mba/parametres?tab=outils');
     await expect(page.getByTestId('mba-outil-cible-o9')).toHaveText('Bloc « Brochure » du scénario Accueil');
-    await expect(page.getByTestId('mba-outil-irreversible-o9')).toBeVisible();
+    /**
+     * 🔴 LE MOT, PAS SEULEMENT LA PRÉSENCE DE L'ÉTIQUETTE (2026-09-24). Elle disait « irréversible » pour un
+     * bloc comme pour un appel `DELETE`, deux choses différentes sous un même mot, et Julien l'a relevé :
+     * pour un envoi, « irréversible » est vrai et inutile, tout message envoyé l'est. Un `toBeVisible` seul
+     * laissait les deux branches interchangeables.
+     */
+    await expect(page.getByTestId('mba-outil-irreversible-o9')).toHaveText('part chez le client');
+    await expect(page.getByTestId('mba-outil-irreversible-o9')).not.toContainText('irréversible');
   });
 
   test('🔴 choisir un appel montre ce qu’Engage Me remplit et ce que l’agent de Meta demandera', async ({ page }) => {
@@ -868,7 +918,10 @@ test.describe('MBA Paramètres : onglet Outils', () => {
       outils: [{ ...OUTIL, risque: 'irreversible' }], requetes: [REQ('REQ9', 'Effacer la fiche')].map((r) => ({ ...r, methode: 'DELETE' })),
     });
     await page.goto('/mba/parametres?tab=outils');
-    await expect(page.getByTestId('mba-outil-irreversible-o1')).toBeVisible();
+    // 🔴 L'AUTRE BRANCHE DU MÊME MOT, ET ELLE GARDE « IRRÉVERSIBLE » : `o1` est un appel de connecteur en
+    // `DELETE`, qui détruit quelque chose dans le système du client. Là, le mot est exactement juste. Les
+    // deux assertions ensemble empêchent d'échanger les branches sans qu'un test tombe.
+    await expect(page.getByTestId('mba-outil-irreversible-o1')).toHaveText('irréversible');
     await page.getByTestId('mba-outils-ajouter').click();
     await page.getByTestId('mba-type-connecteur').click();
     await expect(page.getByTestId('mba-cible-appel-irreversible-REQ9')).toBeVisible();

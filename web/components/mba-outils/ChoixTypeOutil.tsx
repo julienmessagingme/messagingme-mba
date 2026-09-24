@@ -6,6 +6,7 @@ import { listUserFields } from '@/lib/api';
 import { listRequetes } from '@/lib/api-agent-requetes';
 import type { TypeOutilMba } from '@/lib/api-mba-outils';
 import { TEXTES_PAR_TYPE } from '@/lib/mba-outils';
+import { IconeOutil } from '@/components/IconeOutil';
 import { useT } from '@/lib/i18n';
 
 /** Les types proposés, dans l'ordre du croquis de Julien (2026-09-21). */
@@ -68,7 +69,13 @@ export function ChoixTypeOutil({ tenantId, onChoisir, onAnnuler }: {
               className={`rounded-xl border p-4 ${indisponible ? 'border-dashed border-ink-200 opacity-60' : 'border-ink-200 hover:border-brand-300 hover:bg-brand-50'}`}>
               <button type="button" disabled={indisponible || enAttente || illisible} data-testid={`mba-type-${type}`}
                 onClick={() => onChoisir(type)} className="block w-full text-left disabled:cursor-not-allowed">
-                <span className="block text-sm font-semibold text-ink-900">{t(x.titre[0], x.titre[1])}</span>
+                {/* ⚠️ L'ICÔNE EST DANS LA MÊME LIGNE QUE LE TITRE, pas au-dessus : c'est la ligne qu'on
+                    relit quand on cherche le bon outil, et c'est la même paire qu'on retrouvera dans la
+                    liste des outils déployés. */}
+                <span className="flex items-center gap-2 text-sm font-semibold text-ink-900">
+                  <IconeOutil signe={x.signe} className="h-4 w-4 shrink-0 text-ink-400" />
+                  <span className="min-w-0 truncate">{t(x.titre[0], x.titre[1])}</span>
+                </span>
                 <span className="mt-1 block text-xs text-ink-500">{t(x.aide[0], x.aide[1])}</span>
               </button>
               {indisponible && lien && (

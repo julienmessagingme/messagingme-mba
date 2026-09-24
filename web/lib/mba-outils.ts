@@ -1,6 +1,7 @@
 import type { GestePublication } from './api-agent-tools';
 import type { OutilMbaVue, TypeOutilMba } from './api-mba-outils';
 import { normaliserCodeSortie } from './agent-sorties';
+import type { SigneOutil } from './signes-outils';
 
 /**
  * LES AIDES PURES DE L'ONGLET « OUTILS » DE L'AGENT DE META (spec 2026-09-21-outils-maison-mba, § 9).
@@ -100,7 +101,14 @@ export function consigneIncomplete(texte: string): boolean {
 
 type Bilingue = readonly [string, string];
 
-interface TextesType { titre: Bilingue; badge: Bilingue; aide: Bilingue; quand: Bilingue; pasQuand: Bilingue }
+/**
+ * ⚠️ `signe` EST DANS CE RECORD ET PAS DANS UNE TABLE À CÔTÉ. `TEXTES_PAR_TYPE` est un
+ * `Record<TypeOutilMba, …>` : un sixième type d'outil ne compilera pas sans son dessin. Une seconde
+ * table aurait laissé l'oubli passer, et une icône manquante ne se voit pas en relisant du code.
+ */
+interface TextesType {
+  titre: Bilingue; badge: Bilingue; aide: Bilingue; quand: Bilingue; pasQuand: Bilingue; signe: SigneOutil;
+}
 
 /**
  * LES MOTS PAR TYPE D'OUTIL, dont les consignes pré-remplies (spec § 1).
@@ -110,6 +118,7 @@ interface TextesType { titre: Bilingue; badge: Bilingue; aide: Bilingue; quand: 
  */
 export const TEXTES_PAR_TYPE: Record<TypeOutilMba, TextesType> = {
   tag: {
+    signe: 'tag',
     titre: ['Poser un tag', 'Tag the contact'],
     badge: ['Tag', 'Tag'],
     aide: ['Une étiquette précise sur la fiche du client', 'A specific tag on the customer record'],
@@ -120,6 +129,7 @@ export const TEXTES_PAR_TYPE: Record<TypeOutilMba, TextesType> = {
     pasQuand: ['N’appelle pas cet outil si le client ne l’a pas demandé.', 'Do not call this tool if the customer did not ask for it.'],
   },
   champ: {
+    signe: 'info',
     titre: ['Enregistrer une information', 'Save a detail'],
     badge: ['Information', 'Detail'],
     aide: ['Un champ de la fiche, rempli par l’agent', 'A record field, filled by the agent'],
@@ -133,6 +143,7 @@ export const TEXTES_PAR_TYPE: Record<TypeOutilMba, TextesType> = {
     ],
   },
   bloc: {
+    signe: 'bloc',
     titre: ['Envoyer un bloc', 'Send a block'],
     badge: ['Bloc', 'Block'],
     aide: ['Un message d’un de vos scénarios', 'A message from one of your scenarios'],
@@ -149,6 +160,7 @@ export const TEXTES_PAR_TYPE: Record<TypeOutilMba, TextesType> = {
     ],
   },
   scenario: {
+    signe: 'scenario',
     titre: ['Lancer un scénario', 'Start a scenario'],
     badge: ['Scénario', 'Scenario'],
     aide: ['Du début, puis la main revient à l’agent', 'From the start, then back to the agent'],
@@ -165,6 +177,7 @@ export const TEXTES_PAR_TYPE: Record<TypeOutilMba, TextesType> = {
     ],
   },
   connecteur: {
+    signe: 'connecteur',
     titre: ['Appeler un connecteur API', 'Call an API connector'],
     badge: ['Connecteur API', 'API connector'],
     aide: ['Un appel déclaré dans Connecteurs API', 'A call declared in API connectors'],
