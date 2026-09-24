@@ -104,6 +104,7 @@ cible** ; un adaptateur le traduit pour chaque outil, Batch en premier.
 | Échecs des messages libres | capturés : journal des erreurs, joignabilité RCS, signal `em_message_failed` |
 | Intentions | ajout de `achat`, `suivi_commande`, `retour`, maintenant |
 | Signaux remontés | dictionnaire + adaptateur Batch dans cette spec |
+| Risque de désengagement par contact | lot 7, à cadrer (§ 19) |
 | Doc API | aucun outil tiers nommé, ni dans le texte ni dans les exemples : elle sert à tous les intégrateurs |
 | Périmètre | lecture de fiche, désabonnement, catalogues (templates WhatsApp, scénarios, messages RCS), variables par destinataire |
 | Le `contactId` dans la console | affiché sur la fiche du mini-CRM, avec un bouton Copier |
@@ -631,6 +632,9 @@ le DOSSIER tranche sur ce qui est pris). Toutes passent AVANT le déploiement du
    déployé AVANT.
 6. **Signaux et adaptateur Batch** : les points d'émission, le réglage, la file, la poussée, les échecs dans
    le journal, la section « Ce que nous remontons ».
+7. **Risque de désengagement, À CADRER** (demande de Julien du 2026-09-24, § 19) : un indicateur par contact,
+   poussé dans l'outil du client par le dictionnaire du lot 6. Aucun plan tant que sa définition n'est pas
+   tranchée.
 
 ## 13. Tests
 
@@ -735,3 +739,33 @@ rappelle pas. `/revue` après chaque lot, `/revue-finale` avant chaque déploiem
 - **Statut de livraison sur la bulle de l'Inbox** : le § 5 écrit l'échec et le journal le montre ; l'afficher
   sur la bulle demanderait une jointure sur la lecture du fil, rafraîchie toutes les 4 secondes. À cadrer à
   part.
+
+## 19. Lot 7, à cadrer : le risque de désengagement
+
+**La demande** (Julien, 2026-09-24) : que l'outil du client porte toujours, pour chaque contact, un indicateur
+clair de son risque de partir, calculé à partir des conversations, du non-engagement et de la lecture ou non
+des messages. Sa définition n'est pas faite : ce qui suit fixe le cadre, pas les règles.
+
+- **Le nom** : ce n'est pas un « churn rate », qui est un taux sur une base entière. C'est un RISQUE DE
+  DÉSENGAGEMENT par contact. Nous ne voyons pas le churn (seul le CRM sait qui résilie), nous voyons les
+  signaux conversationnels qui le précèdent.
+- **Les signaux disponibles** (tous en base aujourd'hui) : livré, lu, a répondu, a cliqué un lien tracé, date du
+  dernier signe de vie ; sentiment, satisfaction, urgence, réclamation non résolue ; STOP, blocage,
+  injoignabilité.
+- **Trois pièges à tenir dès la définition** :
+  - « non lu » n'est pas « désengagé » : une personne qui a coupé ses accusés de lecture peut ne jamais
+    renvoyer « lu ». Se MESURE sur nos données (un contact qui répond à un message resté « délivré » a coupé
+    ses accusés) et ne doit pas pénaliser ;
+  - le désengagement est souvent une ABSENCE d'événement : l'indicateur se recalcule chaque jour, pas
+    seulement quand un événement arrive ;
+  - un chiffre sans raison ne fait rien faire : on pousse un niveau (faible, moyen, élevé), un score de 0 à
+    100 ET les deux ou trois raisons principales, en codes courts (un attribut texte de Batch plafonne à 300
+    caractères).
+- **La forme recommandée pour une V1** : des règles TRANSPARENTES, pas un modèle appris, faute d'issue réelle
+  (qui a vraiment churné). Dans un second temps, si l'outil du client nous renvoie qui est parti, les poids se
+  calibrent sur la réalité.
+- **Sa place** : un attribut du dictionnaire des signaux (§ 8), poussé par l'adaptateur du lot 6. Le nom de
+  l'attribut se fixera au cadrage.
+- **À trancher au cadrage** : les règles et leurs poids, les seuils des niveaux, la fenêtre d'observation,
+  les codes de raisons, l'affichage éventuel dans la console (fiche, liste), et ce qui se passe pour un
+  contact sans aucun historique.
