@@ -32,6 +32,13 @@ export interface MbaFixtures {
   agentId?: string | null;
   websites?: Array<Record<string, unknown>>;
   files?: Array<Record<string, unknown>>;
+  /**
+   * Le fil de l assistant. Par defaut : VIDE, avec son message d accueil.
+   *
+   * Sans cette route, la fixture retombait sur son `json({})` final et le panneau tombait sur
+   * `f.messages.length` : c est pour cette raison que l onglet Assistant n avait aucun test d interface.
+   */
+  assistant?: { messages?: unknown[]; accueil?: string | null; total?: number; budgetEpuise?: boolean };
   allowlist?: Array<Record<string, unknown>>;
   preview?: Record<string, unknown>;
   importResult?: Record<string, unknown>;
@@ -158,6 +165,18 @@ export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]>
       }
       // ⚠️ AVANT LES BRANCHES COURTES. Le routage se fait par `includes` et non par égalité : une branche
       // courte posée plus haut attraperait un chemin plus long qui la contient.
+      // AVANT `/messages` : le chemin de l assistant ne le contient pas, mais l ordre de ce bloc est
+      // explicitement par longueur decroissante, et une branche d assistant ajoutee plus bas passerait
+      // apres `/status` qui, lui, est un prefixe de rien mais teste par `includes`.
+      if (url.includes('/mba/assistant')) {
+        const a = f.assistant ?? {};
+        return json({
+          messages: a.messages ?? [],
+          accueil: a.accueil === undefined ? 'Dites-moi ce que vous voulez regler.' : a.accueil,
+          total: a.total ?? (a.messages ?? []).length,
+          budgetEpuise: a.budgetEpuise ?? false,
+        });
+      }
       if (url.includes('/messages')) return json({ messages: 412, jours: 30 });
       if (url.includes('/completion')) {
         // 🔴 UNE OBLIGATOIRE EN `inconnue` EST DANS LA FIXTURE EXPRÈS : sans elle, aucun test ne voit la

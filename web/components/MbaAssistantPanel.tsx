@@ -5,11 +5,9 @@ import { useT } from '@/lib/i18n';
 import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from './MbaNotice';
 import {
-  appliquerAssistantMba, deposerPieceAssistantMba, effacerFilAssistantMba, lireFilAssistantMba,
-  parlerAssistantMba,
+  appliquerAssistantMba, effacerFilAssistantMba, lireFilAssistantMba, parlerAssistantMba,
   type OperationAssistantMba, type ResultatApplicationMba, type TourAssistantMba,
 } from '@/lib/api-mba';
-import { MBA_ASSISTANT_FILE_ACCEPT, MBA_FILE_MAX_BYTES } from '@/lib/mba-files';
 
 /**
  * L'ASSISTANT DU META BUSINESS AGENT : on lui parle, il propose, on accepte.
@@ -25,7 +23,29 @@ import { MBA_ASSISTANT_FILE_ACCEPT, MBA_FILE_MAX_BYTES } from '@/lib/mba-files';
  * C'est la leçon du « Create » d'OpenAI : le jour où cet onglet a disparu, des GPT sont devenus non
  * modifiables du jour au lendemain.
  */
-export function MbaAssistantPanel({ tenantId }: { tenantId: string }) {
+/** Les exemples proposés quand le fil est vide. Trois gestes que l'assistant sait vraiment faire. */
+const EXEMPLES: readonly (readonly [string, string])[] = [
+  ['Ajoute mes horaires du samedi', 'Add my Saturday hours'],
+  ['Ajoute une question fréquente sur les délais de livraison', 'Add an FAQ about delivery times'],
+  ['Dis-lui de ne jamais promettre de remise', 'Tell it to never promise a discount'],
+];
+
+export function MbaAssistantPanel({ tenantId, etapesRestantes = null }: {
+  tenantId: string;
+  /**
+   * Combien d'étapes obligatoires restent à régler, ou `null` si on ne le sait pas encore.
+   *
+   * 🔴 IL VIENT DE LA COMPLÉTION RÉELLE, IL NE S'INVENTE PAS. L'assistant d'un agent IA affiche « Entretien :
+   * X points sur Y » parce qu'il MÈNE un entretien en neuf points ; celui-ci ne mène aucun entretien, il
+   * exécute des demandes. Lui coller une barre de progression fabriquée aurait donné l'air d'un parcours
+   * guidé sans en être un. Ce chiffre-ci est celui que l'en-tête de l'écran affiche déjà, donc les deux ne
+   * peuvent pas se contredire.
+   *
+   * ⚠️ `null` N'EST PAS ZÉRO : la complétion peut n'avoir pas encore été lue, ou avoir échoué. Zéro veut dire
+   * « tout est réglé », ce qui est une affirmation.
+   */
+  etapesRestantes?: number | null;
+}) {
   const t = useT();
   const [messages, setMessages] = useState<TourAssistantMba[]>([]);
   const [accueil, setAccueil] = useState<string | null>(null);
@@ -38,7 +58,6 @@ export function MbaAssistantPanel({ tenantId }: { tenantId: string }) {
   const [erreur, setErreur] = useState<string | null>(null);
   const [budgetEpuise, setBudgetEpuise] = useState(false);
   const finDuFil = useRef<HTMLDivElement>(null);
-  const champFichier = useRef<HTMLInputElement>(null);
 
   const charger = useCallback(async () => {
     setChargement(true);
@@ -91,36 +110,6 @@ export function MbaAssistantPanel({ tenantId }: { tenantId: string }) {
    * devient le titre d'une fiche ; ici c'est le `file_name` que Meta garde, et il doit correspondre au
    * contenu, sinon l'ingestion échoue en silence.
    */
-  async function deposer(fichier: File) {
-    if (busy) return;
-    // Contrôle LOCAL du poids : faire monter 20 Mo de base64 pour se faire refuser après l'attente est une
-    // mauvaise expérience, et la limite de la route coupe le corps sans message lisible.
-    if (fichier.size > MBA_FILE_MAX_BYTES) {
-      setErreur(t(
-        `« ${fichier.name} » est trop lourd (${Math.round(MBA_FILE_MAX_BYTES / 1024 / 1024)} Mo maximum).`,
-        `“${fichier.name}” is too large (${Math.round(MBA_FILE_MAX_BYTES / 1024 / 1024)} MB maximum).`,
-      ));
-      return;
-    }
-    setBusy(true);
-    setErreur(null);
-    setResultat(null);
-    try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const lecteur = new FileReader();
-        lecteur.onerror = () => reject(new Error('lecture impossible'));
-        lecteur.onload = () => resolve(String(lecteur.result));
-        lecteur.readAsDataURL(fichier);
-      });
-      const r = await deposerPieceAssistantMba(tenantId, fichier.name, dataUrl);
-      setDiff((d) => [...d, r.operation]);
-    } catch (e) {
-      setErreur(e instanceof Error ? e.message : t('Document refusé', 'Document refused'));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function appliquer() {
     if (diff.length === 0 || busy) return;
     setBusy(true);
@@ -150,13 +139,32 @@ export function MbaAssistantPanel({ tenantId }: { tenantId: string }) {
 
   return (
     <div className={cardCls}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-ink-900">{t('Assistant', 'Assistant')}</h3>
-          <p className="mt-1 text-sm text-ink-500">
-            {t('Dites-lui ce que vous voulez changer. Il propose, vous acceptez.',
-              'Tell it what you want to change. It proposes, you accept.')}
-          </p>
+      {/*
+        🔴 UN EN-TÊTE DE CONVERSATION, PAS UN TITRE DE SECTION (Julien, 2026-09-24 : « fais en sorte que ça
+        ressemble vraiment à un bot d'aide à la construction ET à la mise à jour »). L'écart avec l'assistant
+        d'un agent IA n'était pas une question de fonction, les deux proposent un diff qu'on accepte : c'était
+        que l'un a l'air d'une messagerie et l'autre d'un formulaire. Le cadre, l'icône et la ligne d'état
+        sont ce qui fait la différence, et ils ne changent rien à ce que l'assistant SAIT faire.
+      */}
+      <div className="flex items-start justify-between gap-3 border-b border-ink-100 pb-3">
+        <div className="flex min-w-0 items-start gap-2.5">
+          <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-50 text-base">
+            💬
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-ink-900">{t('Assistant de configuration', 'Setup assistant')}</h3>
+            {/* 🔴 LE CHIFFRE VIENT DE LA COMPLÉTION, ET IL DIT LE MÊME QUE L'EN-TÊTE DE L'ÉCRAN. `null` ne
+                rend rien du tout plutôt qu'un « 0 étape » que personne n'a mesuré. */}
+            <p className="mt-0.5 text-xs text-ink-500" data-testid="mba-assistant-etat">
+              {etapesRestantes === null
+                ? t('Dites-lui ce que vous voulez régler ou changer. Il propose, vous acceptez.',
+                  'Tell it what to set up or change. It proposes, you accept.')
+                : etapesRestantes === 0
+                  ? t('Tout est réglé. Dites-lui ce que vous voulez changer.', 'Everything is set. Tell it what you want to change.')
+                  : t(`Il reste ${etapesRestantes} étape(s) obligatoire(s). Dites-lui de s'en occuper, ou réglez-les dans les onglets.`,
+                    `${etapesRestantes} required step(s) left. Ask it to handle them, or do it in the tabs.`)}
+            </p>
+          </div>
         </div>
         {messages.length > 0 && (
           <button onClick={() => { void repartir(); }} className="shrink-0 text-xs text-ink-400 hover:text-ink-700">
@@ -185,55 +193,83 @@ export function MbaAssistantPanel({ tenantId }: { tenantId: string }) {
         </p>
       )}
 
-      <div className="mt-4 max-h-[26rem] space-y-3 overflow-y-auto pr-1" data-testid="mba-assistant-fil">
-        {messages.length === 0 && accueil && (
-          <Bulle role="assistant">{accueil}</Bulle>
+      {/*
+        🔴 UNE HAUTEUR FIXE ET UN FOND, COMME L'ASSISTANT D'UN AGENT IA. Un `max-h` laisse la zone grandir
+        avec la conversation : le champ de saisie descend a chaque echange, et l'ecran n'a jamais l'air d'une
+        messagerie. La hauteur fixe est ce qui fait qu'on reconnait une conversation avant de lire un mot.
+      */}
+      <div className="mt-4 h-[420px] space-y-3 overflow-y-auto rounded-xl bg-ink-50/40 p-3" data-testid="mba-assistant-fil">
+        {messages.length === 0 && accueil && <Bulle role="assistant">{accueil}</Bulle>}
+        {/*
+          🔴 L'ETAT VIDE PROPOSE, IL NE SE CONTENTE PAS D'ATTENDRE. Un champ vide devant un bot ne dit pas ce
+          qu'on a le droit de lui demander, et le premier reflexe est de ne rien ecrire. Les trois exemples
+          sont des gestes que l'assistant sait vraiment faire : les inventer serait pire que ne rien proposer.
+          ⚠️ Ils REMPLISSENT le champ, ils n'envoient pas : on relit avant que ca parte au modele, et ca reste
+          modifiable, ce qui est le but d'un exemple.
+        */}
+        {messages.length === 0 && (
+          <div className="flex flex-wrap gap-2 pt-1" data-testid="mba-assistant-exemples">
+            {EXEMPLES.map(([fr, en]) => (
+              <button
+                key={fr}
+                type="button"
+                disabled={busy || budgetEpuise}
+                onClick={() => setSaisie(t(fr, en))}
+                className="rounded-full border border-ink-200 bg-white px-3 py-1 text-xs text-ink-600 hover:border-brand-300 hover:text-brand-700 disabled:opacity-50"
+              >
+                {t(fr, en)}
+              </button>
+            ))}
+          </div>
         )}
         {messages.map((m, i) => (
           // eslint-disable-next-line react/no-array-index-key
           <Bulle key={i} role={m.role}>{m.content}</Bulle>
         ))}
+        {/*
+          ⚠️ L'INDICATEUR NE S'AFFICHE QUE QUAND C'EST A L'ASSISTANT DE PARLER. `busy` couvre aussi
+          l'application d'un diff, qui n'appelle aucun modele : trois points qui rebondissent a ce moment-la
+          feraient croire qu'il reflechit alors qu'il ecrit chez Meta.
+        */}
+        {busy && messages.length > 0 && messages[messages.length - 1]!.role === 'user' && (
+          <div className="flex justify-start" data-testid="mba-assistant-ecrit">
+            <div className="flex gap-1 rounded-2xl rounded-bl-sm bg-white px-3.5 py-2.5 shadow-sm">
+              {[0, 150, 300].map((d) => (
+                <span key={d} className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink-300"
+                  style={{ animationDelay: `${d}ms` }} />
+              ))}
+            </div>
+          </div>
+        )}
         <div ref={finDuFil} />
       </div>
 
       {diff.length > 0 && <Diff operations={diff} busy={busy} onAppliquer={() => { void appliquer(); }} />}
       {resultat && <Resultat resultat={resultat} />}
 
-      <div className="mt-4 flex gap-2">
-        {/* ⚠️ Le champ de fichier est CACHÉ et déclenché par le bouton : un `input file` nu ne se met pas au
-            style du reste et affiche « Aucun fichier sélectionné » en permanence. */}
-        <input
-          ref={champFichier}
-          type="file"
-          accept={MBA_ASSISTANT_FILE_ACCEPT}
-          className="hidden"
-          data-testid="mba-assistant-fichier"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            // La valeur est remise à zéro : sans ça, redéposer le MÊME fichier ne déclenche aucun événement.
-            e.target.value = '';
-            if (f) void deposer(f);
-          }}
-        />
-        <button
-          type="button"
-          onClick={() => champFichier.current?.click()}
-          /* ⚠️ PAS `budgetEpuise` ICI : le plafond borne NOTRE dépense de modèle, or un dépôt n'appelle aucun
-             modèle. Le bloquer refuserait un geste gratuit au nom d'une limite qui ne le concerne pas, et le
-             document déposé reste applicable, « Appliquer » ne consultant pas le modèle non plus. */
-          disabled={busy}
-          data-testid="mba-assistant-joindre"
-          title={t('Joindre un document', 'Attach a document')}
-          className="shrink-0 rounded-lg border border-ink-200 px-3 py-2 text-sm text-ink-600 hover:bg-ink-50 disabled:opacity-50"
-        >
-          {t('Joindre', 'Attach')}
-        </button>
-        <input
-          className={inputCls}
+      {/*
+        🔴 LE BOUTON « JOINDRE » EST PARTI (Julien, 2026-09-24). Il ne perdait aucune capacite : l'onglet
+        Fichiers depose un document chez Meta par sa propre route, sans passer par le magasin en memoire de
+        l'assistant. Ce qu'il coutait, c'etait la place : il occupait le coin gauche de la zone de saisie, la
+        ou l'oeil cherche le champ, et il faisait ressembler la conversation a un formulaire d'envoi.
+        ⚠️ CONSEQUENCE A ASSUMER, PAS A DECOUVRIR : la route `POST .../mba/assistant/piece-jointe` n'a plus
+        aucun appelant cote ecran. Elle n'est pas OFFERTE et inerte, elle est simplement inutilisee ; la
+        retirer est une decision a part, notee dans `todo.md`.
+      */}
+      <div className="mt-4 flex items-end gap-2">
+        {/*
+          🔴 UN `textarea`, PLUS UN `input`, ET CE N'EST PAS COSMETIQUE. Le code gerait deja Maj+Entree pour
+          aller a la ligne, mais un `input` HTML ne peut PAS afficher deux lignes : la fonction existait et
+          son effet etait invisible. Or on decrit ici ce qu'on veut changer, en plusieurs phrases parfois.
+        */}
+        <textarea
+          className={`${inputCls} min-h-[42px] resize-y`}
+          rows={2}
           data-testid="mba-assistant-saisie"
           value={saisie}
           disabled={busy || budgetEpuise}
-          placeholder={t('Par exemple : ajoute mes horaires du samedi', 'For example: add my Saturday hours')}
+          placeholder={t('Par exemple : ajoute mes horaires du samedi. Entrée pour envoyer, Maj+Entrée pour aller à la ligne.',
+            'For example: add my Saturday hours. Enter to send, Shift+Enter for a new line.')}
           onChange={(e) => setSaisie(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void envoyer(); } }}
         />
@@ -254,8 +290,10 @@ function Bulle({ role, children }: { role: 'user' | 'assistant'; children: React
   const moi = role === 'user';
   return (
     <div className={`flex ${moi ? 'justify-end' : 'justify-start'}`}>
+      {/* ⚠️ LA QUEUE (`rounded-br-sm` / `rounded-bl-sm`) EST CE QUI FAIT LIRE « MESSAGERIE », et le fond
+          blanc des bulles de l'assistant les detache du fond teinte du fil, qui est desormais gris. */}
       <div className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm ${
-        moi ? 'bg-brand-600 text-white' : 'bg-ink-50 text-ink-800'
+        moi ? 'rounded-br-sm bg-brand-600 text-white' : 'rounded-bl-sm bg-white text-ink-800 shadow-sm'
       }`}>
         {children}
       </div>

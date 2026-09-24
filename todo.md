@@ -19,6 +19,100 @@ le risque n'est donc pas qu'il réponde faux aujourd'hui, c'est que la PROCHAINE
 section périmée le fasse. 🔴 Et la garde de dérive ne peut rien y voir, par construction : elle compare une
 fiche à SA section, jamais une section à la réalité.
 
+## 🔴 MCP par la ROUTE A : les outils MCP jusqu'à l'agent de Meta (2026-09-24)
+
+**Arbitré par Julien le 2026-09-24 : on garde la route A.** Ce lot mérite sa spec avant une ligne de code.
+
+🔴 **META ACCEPTE MCP DEPUIS MOINS DE DEUX SEMAINES, ET NOTRE CODE AFFIRMAIT LE CONTRAIRE.** Vérifié sur
+la page de référence des connecteurs le 2026-09-24 : `connector_protocol` ∈ `HTTP` | `MCP` (« defaults to
+HTTP when omitted and cannot be changed after creation »), `base_url` décrit comme « external HTTP API **or
+remote MCP server** », un `POST /{connector_id}/refreshMCPTools`, et un objet `mcp_tool_sync`
+(`PENDING` / `READY` / `ERROR`). Le commentaire de `src/mba/client.ts` disait l'inverse, daté et mesuré le
+2026-09-10 : c'était vrai ce jour-là. Corrigé dans `7fef0a32`.
+
+### Les deux routes, et pourquoi Julien a tranché pour la première
+
+- **Route A, par le relais.** Meta parle HTTP à NOTRE relais, nous parlons MCP au serveur du client. On garde
+  le consentement outil par outil, les paramètres cloués, les valeurs prises dans le mini-CRM, le journal des
+  appels, la garde d'adresse privée et la garde d'opt-out.
+- **Route B, le natif.** Meta parle MCP directement au serveur du client, `refreshMCPTools` découvre les
+  outils tout seul. Moins de code, mais on perd le milieu, donc les six gardes d'un coup. Et la découverte
+  automatique contredit de face la règle du produit « un outil n'est utilisable qu'une fois activé à la main ».
+
+### Ce qu'il reste à faire, mesuré
+
+1. Une branche `mcp` dans `src/mba/outils-a-publier.ts`, qui doit produire les **variables déclarées** que Meta
+   annonce à son modèle. Pour un connecteur HTTP elles viennent de `connector_requests` ; pour un MCP elles
+   viennent du schéma du serveur distant, que `src/agent/mcp/aplatir.ts` sait déjà mettre à plat.
+2. Une troisième branche dans `src/http/mba-relais.ts`, vers le résolveur MCP au lieu de
+   `creerAppelConnecteur`. ⚠️ Le résolveur (`src/agent/resolvers/mcp.ts`) **refuse délibérément** de passer
+   par ce point de passage, avec sa raison écrite : un MCP n'a pas de requête, ses paramètres viennent du
+   schéma distant, et son transport a son propre module. Ne pas l'y forcer.
+3. L'onglet Outils de l'agent de Meta doit proposer les outils MCP, et la phrase de `McpServeurs.tsx` change
+   à nouveau (elle dit aujourd'hui que le verrou est chez nous, ce qui sera faux une fois le lot fait).
+4. **Aucune migration**, sauf erreur : `agent_tools.origin` accepte déjà `mcp`, et le CHECK
+   `agent_tools_pour_agent_meta_chk` ne gouverne que le drapeau des outils MAISON, pas cette porte-ci.
+
+🔴 **LE POINT DUR EST UNE DÉCISION PRODUIT, PAS UN DÉTAIL TECHNIQUE.** Une variable déclarée porte son
+ORIGINE : remplie par le modèle, ou prise dans la fiche du contact. C'est **précisément ce que le relais a été
+créé pour permettre** (l'outil `add_tag` est parti chez Meta sans son corps le 2026-09-21, faute de ça). Un
+schéma MCP ne connaît pas cette notion. Sans écran pour la poser, **tous** les paramètres d'un outil MCP
+seraient remplis par le modèle de Meta, et on perdrait la raison d'être du relais sur ces outils. Soit on s'en
+contente pour commencer (aujourd'hui c'est zéro, donc ce serait déjà mieux), soit on ajoute le réglage
+d'origine par paramètre sur la fiche d'un outil MCP, et le lot double.
+
+### Deux voisins trouvés dans la même page de Meta, à ne pas mélanger avec ce lot
+
+- **`upsertOAuth` et `upsertCertificate` (mTLS) existent chez Meta**, nous ne savons poser qu'une clé d'API.
+  ⚠️ Sous la route A c'est **sans objet** : Meta présente notre clé à notre relais. Ce qui manque est OAuth
+  dans NOS connecteurs (`agent_tool_sources`), qui ne connaît que `none` / `bearer` / `header`, gravé dans un
+  CHECK de la migration 0088. Zéro machinerie de renouvellement dans tout `src/` (pas un `refresh_token`, pas
+  un `expires_in`) : l'OAuth HubSpot vit dans un AUTRE service. Écrit une fois, il servirait trois
+  consommateurs (agent IA, bloc Appel HTTP d'un scénario, relais MBA). La migration RELAcHE un CHECK, donc
+  **avant** le déploiement.
+- **L'énumération d'`auth_type` de Meta liste six valeurs et la page dit que TROIS sont supportées**
+  (`OAUTH2_CLIENT_CREDENTIALS`, `API_KEY`, `NONE`). Lire l'énumération sans lire la phrase mène à un refus à
+  l'exécution.
+
+## 🟡 Le reste du lot de retours de Julien du 2026-09-24
+
+Le lot est livré pour l'essentiel (`7fef0a32`, `b9ae5070`, `7cce2924`, `b008edb0`, `05f96762`, `e65a112a`, plus
+le lot de l'assistant). Ce qui suit est ce qui reste.
+
+### 1. Deux gestes en attente du go de Julien
+
+- 🔴 **`npm run aide:charger`** : la fiche d'aide du répondeur de Meta a changé DEUX fois le 2026-09-24
+  (empreinte `5ebc5f` → `4ab4c2` → `d65ab5`). Tant qu'elle n'est pas rechargée, **le bot d'aide sert au client
+  la version qui dit « Meta l'ouvre progressivement, par pays et par secteur »**, ce qui est faux. Ce script
+  écrit dans la base de PRODUCTION depuis ce poste, hors de la garde de déploiement.
+- 🔴 **Le déploiement de l'API** : la ligne « moyen de paiement » est retirée côté serveur
+  (`src/mba/completion.ts`), donc elle reste affichée jusqu'au `up -d --build`.
+
+### 2. Une question de vocabulaire, posée et sans réponse
+
+Les boutons d'un message RCS s'appellent **« Suggestions »** à l'écran, le vocabulaire de Google pour le RCS.
+C'est pour ça que Julien a cru qu'on ne pouvait pas mettre de boutons dans une campagne RCS : ils y sont
+depuis le 2026-09-12. Renommer en « Boutons » touche **quatre écrans** (bibliothèque, campagne, scénario,
+écran en service) et l'éditeur partagé `RcsButtonsEditor`. Sa décision.
+
+### 3. Trois constats laissés porter
+
+- ⚠️ **La route `POST .../mba/assistant/piece-jointe` n'a plus aucun appelant côté écran** depuis le retrait
+  du bouton « Joindre » (demande de Julien). Elle n'est pas offerte et inerte, elle est inutilisée : l'onglet
+  Fichiers dépose un document par sa propre route. La retirer (route, magasin en mémoire, ses deux tests) est
+  une décision à part.
+- Le diff de l'assistant du MBA reste en **tout ou rien**, là où celui d'un agent IA s'accepte ligne par ligne
+  et s'édite. C'est une décision écrite dans le code (« UN SEUL BOUTON, ET PAS DE SECONDE CONFIRMATION »,
+  2026-09-14) et Meta n'a ni corbeille ni annulation : la changer est un arbitrage produit, pas un alignement.
+- `web/app/agents/page.tsx` : `avertissements` n'est toujours pas remis à `null` au changement d'agent.
+
+### 4. L'entrée périmée du backlog, à nettoyer au prochain `/sync`
+
+🔴 L'entrée « BUG — « Modèle et scénario » demande DEUX choix au lieu d'un » (2026-09-13) est **corrigée
+depuis longtemps** : le sélecteur de modèle est conditionné à `formule === 'seul'`, et le modèle se déduit du
+premier bloc du scénario par `firstTemplateOf`. Un 🔴 périmé dans un backlog coûte plus cher qu'une ligne
+oubliée, parce qu'on le recroit.
+
 ## 🟡 Le reste du refactor des deux écrans d'agent (2026-09-23)
 
 Le lot est livré, relu de bout en bout et déployé. Ce qui suit est ce qui reste, et **le premier point est

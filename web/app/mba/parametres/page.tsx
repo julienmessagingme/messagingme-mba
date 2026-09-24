@@ -242,7 +242,14 @@ function MbaSettings({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean
           déborder la page entière. Même geste que la mise en page de l'Inbox. */}
       <div className="min-w-0 space-y-6">
         {onglet === 'apercu' && <MbaOverviewPanel {...props} status={status} onChange={majReglages} />}
-        {onglet === 'assistant' && <MbaAssistantPanel tenantId={tenantId} />}
+        {/* L'assistant affiche le MEME compte d etapes que l en-tete : les deux lisent la meme
+            completion, donc ils ne peuvent pas se contredire. `null` tant qu elle n a pas ete lue. */}
+        {onglet === 'assistant' && (
+          <MbaAssistantPanel
+            tenantId={tenantId}
+            etapesRestantes={completion === null ? null : completion.taches.filter((x) => x.etat === 'a_faire').length}
+          />
+        )}
         {onglet === 'activation' && <MbaActivationPanel tenantId={tenantId} />}
         {onglet === 'business' && <MbaBusinessInfoPanel {...props} />}
         {onglet === 'faq' && <MbaFaqPanel {...props} />}
