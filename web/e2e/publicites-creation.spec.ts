@@ -70,8 +70,13 @@ interface Options {
    * `'panne'` rend un 500, pour éprouver que l'écran avoue son échec de lecture au lieu d'inventer.
    */
   detailScenario?: { graph: { nodes: unknown[]; edges: unknown[] } } | 'panne';
-  /** Les brouillons rendus par la liste, SANS leurs octets de visuel (c'est le contrat de cette route). */
-  brouillons?: unknown[];
+  /**
+   * Les brouillons rendus par la liste, SANS leurs octets de visuel (c'est le contrat de cette route).
+   *
+   * `'absent'` rend 404 sur TOUTES les routes de brouillon : c'est la fenetre entre le `git push` qui
+   * publie la console chez Vercel et le `up` qui deploie l'API.
+   */
+  brouillons?: unknown[] | 'absent';
   /** Ce que la lecture d'UN brouillon ajoute au premier de la liste, le visuel notamment. */
   detailBrouillon?: Record<string, unknown>;
 }
@@ -138,12 +143,15 @@ const brancher = async (page: import('@playwright/test').Page, o: Options = {}) 
     // SATISFAIT la regex `/pubs/<id>` juste en dessous. Sans cet ordre, la liste des brouillons recevait
     // le fixture d'une publicité, `r.brouillons` valait `undefined`, et le repli `?? []` rendait le cas
     // VERT en n'affichant jamais aucun brouillon. C'est le même piège que la ligne suivante décrit déjà.
+    if (/\/pubs\/brouillons/.test(url.split('?')[0] ?? '') && o.brouillons === 'absent') {
+      return route.fulfill({ status: 404, contentType: 'application/json', body: '{"error":"Not Found"}' });
+    }
     if (/\/pubs\/brouillons$/.test(url.split('?')[0] ?? '')) {
-      return json({ brouillons: o.brouillons ?? [] });
+      return json({ brouillons: Array.isArray(o.brouillons) ? o.brouillons : [] });
     }
     if (/\/pubs\/brouillons\/[^/]+$/.test(url.split('?')[0] ?? '')) {
       if (route.request().method() !== 'GET') return route.fulfill({ status: 204, body: '' });
-      const b = (o.brouillons ?? [])[0];
+      const b = Array.isArray(o.brouillons) ? o.brouillons[0] : undefined;
       return json({ brouillon: { ...(b ?? {}), ...(o.detailBrouillon ?? {}) } });
     }
     // La page d'une publicité, AVANT la liste : `/pubs/pub-1` contient `/pubs`, donc l'ordre compte.
@@ -733,5 +741,39 @@ test.describe('Publicités : brouillons et groupes', () => {
     const bilan = page.getByTestId('pub-bilan-pub-1');
     await expect(bilan).toContainText(/non disponible|not available/);
     await expect(bilan).not.toContainText(/\b0\b/);
+  });
+});
+
+/**
+ * 🔴 LA FENÊTRE ENTRE LE PUSH ET LE DÉPLOIEMENT DE L'API.
+ *
+ * Vercel publie cette console à CHAQUE `git push`, l'API attend son `up -d --build` : entre les deux, un
+ * écran appelle une route que la production n'a pas. C'est un défaut CONNU de ce dépôt, payé le
+ * 2026-09-21 par l'onglet « Outils », resté en 404 plus d'une heure sur un espace qui avait pourtant des
+ * outils publiés.
+ *
+ * ⚠️ TOLÉRER L'ABSENCE EN LECTURE NE SUFFIT PAS. La liste des brouillons était déjà silencieuse sur un
+ * 404 ; c'est le BOUTON d'enregistrement qui restait offert, et un clic y rendait le message brut du
+ * routeur. Relevé en relecture à froid, par la session voisine et non par la mienne : mes propres
+ * commits, je les relis avec les yeux de leur auteur.
+ */
+test.describe('Publicités : quand l’API n’a pas encore les brouillons', () => {
+  test('🔴 le bouton d’enregistrement DISPARAÎT, et l’écran dit pourquoi', async ({ page }) => {
+    await brancher(page, { brouillons: 'absent' });
+    await page.getByTestId('pubs-creer').click();
+    await expect(page.getByTestId('pub-formulaire')).toBeVisible();
+    await expect(page.getByTestId('pub-enregistrer-brouillon')).toHaveCount(0);
+    await expect(page.getByTestId('pub-brouillons-indispo')).toContainText(/mise à jour du serveur|server update/);
+    // 🔴 ET LA CRÉATION RESTE POSSIBLE. Fermer le brouillon ne doit pas fermer la publicité : sa route,
+    // elle, existe en production depuis le lot 3. Sans cette moitié, le correctif casserait l'écran.
+    await expect(page.getByTestId('pub-creer')).toBeVisible();
+  });
+
+  test('quand l’API les a, le bouton est bien là : l’ancre positive du cas précédent', async ({ page }) => {
+    // Sans elle, masquer le bouton EN TOUTES CIRCONSTANCES laisserait le cas ci-dessus vert.
+    await brancher(page, { brouillons: [] });
+    await page.getByTestId('pubs-creer').click();
+    await expect(page.getByTestId('pub-enregistrer-brouillon')).toBeVisible();
+    await expect(page.getByTestId('pub-brouillons-indispo')).toHaveCount(0);
   });
 });

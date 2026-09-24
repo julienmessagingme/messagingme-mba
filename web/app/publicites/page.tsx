@@ -86,6 +86,8 @@ function PublicitesInner({ session }: { session: Session }) {
    * alors de ne montrer aucun brouillon, pas d'afficher une panne pour une commodité.
    */
   const [brouillons, setBrouillons] = useState<BrouillonPub[]>([]);
+  /** L'API déployée n'a pas encore la route des brouillons : le formulaire doit cesser de la proposer. */
+  const [brouillonsAbsents, setBrouillonsAbsents] = useState(false);
   /** Le brouillon qu'on vient d'ouvrir, visuel compris. `null` = formulaire neuf. */
   const [brouillonOuvert, setBrouillonOuvert] = useState<BrouillonPubComplet | null>(null);
   /**
@@ -204,8 +206,20 @@ function PublicitesInner({ session }: { session: Session }) {
    */
   const chargerBrouillons = useCallback(async () => {
     await listerBrouillons(session.tenantId)
-      .then((r) => setBrouillons(r.brouillons ?? []))
-      .catch(() => setBrouillons([]));
+      .then((r) => { setBrouillons(r.brouillons ?? []); setBrouillonsAbsents(false); })
+      .catch((err) => {
+        setBrouillons([]);
+        /**
+         * 🔴 UN 404 ICI FERME AUSSI LE BOUTON D'ENREGISTREMENT, et c'est le vrai correctif.
+         *
+         * Tolérer l'absence de la route en LECTURE ne suffisait pas : le bouton « Enregistrer le
+         * brouillon » restait visible et actif pendant toute la fenêtre entre le `git push` (qui publie
+         * cette console chez Vercel) et le `up` de l'API. Un clic y rendait le message brut du routeur,
+         * puis un 500 tant que la migration n'était pas passée. C'est mot pour mot le défaut de l'onglet
+         * « Outils » du 2026-09-21, resté en 404 plus d'une heure. Relevé en relecture à froid.
+         */
+        setBrouillonsAbsents(err instanceof ApiError && err.status === 404);
+      });
   }, [session.tenantId]);
 
   /** Ouvre un brouillon dans le formulaire, visuel compris. */
@@ -427,6 +441,7 @@ function PublicitesInner({ session }: { session: Session }) {
                  publicité, elle, part sur le `pageId` que le serveur relit dans la connexion. */
               nomPage={etat.connexion.pageNom}
               brouillon={brouillonOuvert}
+              brouillonsIndisponibles={brouillonsAbsents}
               fermer={() => { setFormOuvert(false); setBrouillonOuvert(null); }}
               creee={chargerPubs}
               brouillonsChanges={chargerBrouillons}

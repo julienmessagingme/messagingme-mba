@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { ApiError } from '@/lib/http';
 import { useT } from '@/lib/i18n';
 import { getWorkflow, estEnLigne } from '@/lib/api';
 import { premiereReponse } from '@/lib/apercu-reponse';
@@ -25,7 +26,10 @@ import { PubApercu, type EtatReponse } from '@/components/PubApercu';
  */
 
 
-export function PubFormulaire({ tenantId, scenarios, agentMetaOuvert, nomPage, brouillon, fermer, creee, brouillonsChanges }: {
+export function PubFormulaire({
+  tenantId, scenarios, agentMetaOuvert, nomPage, brouillon, brouillonsIndisponibles,
+  fermer, creee, brouillonsChanges,
+}: {
   tenantId: string;
   /** Les scénarios publiés de l'espace, pour choisir qui répond. */
   scenarios: Array<{ id: string; name: string }>;
@@ -58,6 +62,15 @@ export function PubFormulaire({ tenantId, scenarios, agentMetaOuvert, nomPage, b
    * avec lui. Le relire en cours de saisie écraserait ce que la personne est en train de taper.
    */
   brouillon: BrouillonPubComplet | null;
+  /**
+   * 🔴 L'API DÉPLOYÉE N'A PAS ENCORE LA ROUTE DES BROUILLONS, ET LE FORMULAIRE CESSE DE LA PROPOSER.
+   *
+   * Vercel publie cette console à CHAQUE `git push`, l'API attend son `up` : entre les deux, un bouton
+   * qui appelle une route absente rend le message brut du routeur. Tolérer l'absence en LECTURE ne
+   * suffisait pas, c'est l'ÉCRITURE qu'il fallait fermer. Même défaut que l'onglet « Outils » du
+   * 2026-09-21, resté en 404 plus d'une heure sur un espace qui avait pourtant des outils publiés.
+   */
+  brouillonsIndisponibles: boolean;
   fermer: () => void;
   creee: () => Promise<void>;
   /** Recharge la liste des brouillons après un enregistrement ou une suppression. */
@@ -182,7 +195,15 @@ export function PubFormulaire({ tenantId, scenarios, agentMetaOuvert, nomPage, b
       setVisuelTouche(false);
       await brouillonsChanges();
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : t('Enregistrement impossible', 'Could not save'));
+      // ⚠️ CEINTURE EN PLUS DU BOUTON MASQUÉ : la route peut disparaître ENTRE le montage de l'écran et
+      // le clic (c'est la fenêtre Vercel/API, qui dure quelques minutes). Un message de routeur brut ne
+      // se relie à rien ; celui-ci dit ce qui se passe et que la création, elle, reste possible.
+      if (err instanceof ApiError && err.status === 404) {
+        setErreur(t('Les brouillons attendent la mise à jour du serveur. Vous pouvez créer la publicité normalement.',
+                    'Drafts are waiting for the server update. You can still create the ad as usual.'));
+      } else {
+        setErreur(err instanceof Error ? err.message : t('Enregistrement impossible', 'Could not save'));
+      }
     } finally {
       setBrouillonBusy(false);
     }
@@ -406,22 +427,33 @@ export function PubFormulaire({ tenantId, scenarios, agentMetaOuvert, nomPage, b
         >
           {t('Créer (en pause)', 'Create (paused)')}
         </button>
-        {/* 🔴 IL N'A AUCUNE CONDITION, ET C'EST TOUT L'INTÉRÊT. « Créer » exige la case de catégorie, un
-            visuel, un budget et un scénario ; « Enregistrer le brouillon » n'exige rien, parce qu'on
-            enregistre précisément ce qui n'est pas encore prêt. */}
-        <button
-          type="button" disabled={brouillonBusy} onClick={() => void enregistrerBrouillon()}
-          className="rounded-xl border border-ink-300 px-4 py-2 text-sm font-medium text-ink-800 disabled:opacity-40"
-          data-testid="pub-enregistrer-brouillon"
-        >
-          {brouillonId === null
-            ? t('Enregistrer le brouillon', 'Save draft')
-            : t('Enregistrer les modifications', 'Save changes')}
-        </button>
+        {/* 🔴 IL N'A AUCUNE CONDITION DE CONTENU, ET C'EST TOUT L'INTÉRÊT. « Créer » exige la case de
+            catégorie, un visuel, un budget et un scénario ; « Enregistrer le brouillon » n'exige rien,
+            parce qu'on enregistre précisément ce qui n'est pas encore prêt.
+            ⚠️ La SEULE condition est l'existence de la route côté serveur : un bouton qui appelle une
+            route que la production n'a pas est le motif « offert-et-inerte », en pire, puisqu'il rend
+            une erreur de routeur que personne ne peut relier à quoi que ce soit. */}
+        {!brouillonsIndisponibles && (
+          <button
+            type="button" disabled={brouillonBusy} onClick={() => void enregistrerBrouillon()}
+            className="rounded-xl border border-ink-300 px-4 py-2 text-sm font-medium text-ink-800 disabled:opacity-40"
+            data-testid="pub-enregistrer-brouillon"
+          >
+            {brouillonId === null
+              ? t('Enregistrer le brouillon', 'Save draft')
+              : t('Enregistrer les modifications', 'Save changes')}
+          </button>
+        )}
         <button type="button" onClick={fermer} className="rounded-xl border border-ink-200 px-4 py-2 text-sm text-ink-700">
           {t('Annuler', 'Cancel')}
         </button>
       </div>
+      {brouillonsIndisponibles && (
+        <p className="mt-2 text-xs text-ink-500" data-testid="pub-brouillons-indispo">
+          {t('Les brouillons attendent la mise à jour du serveur. Vous pouvez créer la publicité normalement.',
+             'Drafts are waiting for the server update. You can still create the ad as usual.')}
+        </p>
+      )}
       {brouillonId !== null && (
         <p className="mt-2 text-xs text-ink-400" data-testid="pub-brouillon-actif">
           {t('Ce brouillon est enregistré. Rien n’a été envoyé chez Meta : il disparaîtra quand la publicité sera créée.',

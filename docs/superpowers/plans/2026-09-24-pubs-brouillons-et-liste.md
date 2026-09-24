@@ -100,6 +100,23 @@ Au clic : **budget initial**, **dépensé à date**, **clics vers WhatsApp**, c�
 déjà présent. ⚠️ `null` veut dire « jamais relu chez Meta » et jamais zéro : c'est l'invariant que le lot 3
 tient déjà, et il ne doit pas se perdre en réorganisant l'affichage.
 
+### 🔴 La fenêtre entre le push et le déploiement de l'API
+
+**Elle manquait à ce plan, et `CLAUDE.md` l'exige explicitement.** Vercel publie la console à chaque
+`git push`, l'API attend son `up -d --build` : entre les deux, l'écran appelle `/pubs/brouillons`, que la
+production n'a pas. Le défaut a déjà coûté plus d'une heure de 404 à l'onglet « Outils » le 2026-09-21.
+
+**La parade retenue est « faire tolérer l'absence de la route »**, des deux côtés et pas d'un seul :
+
+- la LISTE des brouillons était déjà silencieuse sur un 404 (tableau vide, aucun message de panne) ;
+- le BOUTON d'enregistrement, lui, restait offert. Il DISPARAÎT désormais quand la route répond 404, avec
+  une phrase qui dit que les brouillons attendent la mise à jour du serveur et que **la création reste
+  possible**. Un second filet dans le `catch` couvre le cas où la route disparaît entre l'ouverture de
+  l'écran et le clic.
+
+⚠️ **Ce qui reste vrai malgré la parade** : la fenêtre se RÉDUIT en enchaînant la revue finale et le
+déploiement, elle ne se ferme pas. L'ordre qui la referait durer est de pousser puis d'attendre.
+
 ### 4. L'écran élargi
 
 L'écran de création passe au large. Il est déjà passé de `max-w-3xl` à `max-w-5xl` avec l'aperçu ; ce lot
