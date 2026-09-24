@@ -244,6 +244,39 @@ const corpsBrouillon = z.object({
 }).strict();
 
 /**
+ * CE QUE VALENT VRAIMENT DES OCTETS D'IMAGE. Rend le message de refus, ou `null` si le visuel passe.
+ *
+ * 🔴 UNE SEULE FONCTION POUR LES DEUX ROUTES, ET C'EST LA CORRECTION D'UNE ASYMÉTRIE. La création
+ * portait ces trois contrôles EN LIGNE ; les routes de brouillon, écrites après, n'en portaient aucun et
+ * se contentaient d'une borne de LONGUEUR sur la chaîne base64, c'est-à-dire sur une taille ENCODÉE et
+ * sur un type seulement DÉCLARÉ. Relevé par une relecture à froid avant tout déploiement.
+ *
+ * ⚠️ LE PLAN NOMMAIT CETTE GARDE et le code ne la tenait pas : « le plafond est celui du formulaire,
+ * vérifié côté serveur COMME À LA CRÉATION ». C'est le motif « une capacité câblée sur un consommateur
+ * sur deux », déjà payé plusieurs fois ici. Recopier les trois contrôles dans la seconde route aurait
+ * refermé le trou du jour ; les factoriser empêche le prochain.
+ *
+ * 🔴 LE TYPE SE LIT DANS LES OCTETS, PAS DANS CE QUE LE CLIENT DÉCLARE. Le champ `type` du corps est une
+ * chaîne que le navigateur choisit : la valider contre une énumération ne prouve rien sur le CONTENU. Sur
+ * la création, ces octets partent chez un tiers sous l'identité du client ; sur un brouillon, ils sont
+ * relus plus tard et rendus au navigateur en `data:` URL. Les deux chemins méritent la même lecture.
+ */
+function refusDuVisuel(base64: string): string | null {
+  // ⚠️ LA TAILLE SE VÉRIFIE SUR LES OCTETS DÉCODÉS, pas sur la longueur du base64 : l'encodage ajoute un
+  // tiers, donc une borne posée sur la chaîne refuserait des images conformes ou en laisserait passer de
+  // trop grandes selon le remplissage. C'est la même erreur de catégorie que compter des `.length` UTF-16
+  // pour un plafond en octets (cf. `lireCorpsBorne`). Cette justification a suivi le décodage quand il a
+  // été factorisé ici : laissée au point d'appel, elle expliquait un contrôle qui n'y était plus.
+  const octets = Buffer.from(base64, 'base64');
+  if (octets.length === 0) return 'ce visuel est illisible';
+  if (!estJpegOuPng(octets)) return 'ce fichier n’est pas une image JPEG ou PNG';
+  if (octets.length > TAILLE_VISUEL_PUB_MAX) {
+    return `ce visuel dépasse ${Math.round(TAILLE_VISUEL_PUB_MAX / (1024 * 1024))} Mo`;
+  }
+  return null;
+}
+
+/**
  * Du corps validé vers ce que le store attend.
  *
  * 🔴 UNE CLÉ `image` ABSENTE DOIT LE RESTER, d'où le spread conditionnel et non un `visuel: c.image`.
@@ -428,6 +461,10 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     if (forbidNonAdmin(req, reply)) return;
     const lu = corpsBrouillon.safeParse(req.body);
     if (!lu.success) return reply.code(400).send({ error: 'brouillon invalide' });
+    // Même lecture des octets qu'à la création : un brouillon n'est pas une porte dérobée pour écrire
+    // n'importe quoi en base, et le plan le posait comme l'une des deux gardes du stockage du visuel.
+    const refus = lu.data.image ? refusDuVisuel(lu.data.image.base64) : null;
+    if (refus !== null) return reply.code(400).send({ error: refus });
     const id = await deps.creerBrouillon(tenantId, versChamps(lu.data));
     return reply.code(201).send({ id });
   });
@@ -439,6 +476,10 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     const { id } = req.params as { id: string };
     const lu = corpsBrouillon.safeParse(req.body);
     if (!lu.success) return reply.code(400).send({ error: 'brouillon invalide' });
+    // ⚠️ `image` ABSENTE ne passe pas ici, et c'est correct : il n'y a pas d'octets neufs à juger, et
+    // ceux qui sont déjà en base ont été lus à leur écriture. Seul un visuel FOURNI se vérifie.
+    const refus = lu.data.image ? refusDuVisuel(lu.data.image.base64) : null;
+    if (refus !== null) return reply.code(400).send({ error: refus });
     const trouve = await deps.majBrouillon(tenantId, id, versChamps(lu.data));
     if (!trouve) return reply.code(404).send({ error: 'ce brouillon n’existe pas' });
     return reply.code(204).send();
@@ -482,25 +523,10 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     if (f.destination === 'scenario' && f.workflowId === null) {
       return reply.code(400).send({ error: 'choisissez le scénario qui répondra aux prospects de cette publicité' });
     }
-    // ⚠️ LA TAILLE SE VÉRIFIE SUR LES OCTETS DÉCODÉS, pas sur la longueur du base64 : l'encodage ajoute un
-    // tiers, donc une borne posée sur la chaîne refuserait des images conformes ou en laisserait passer de
-    // trop grandes selon le remplissage. C'est la même erreur de catégorie que compter des `.length` UTF-16
-    // pour un plafond en octets (cf. `lireCorpsBorne`).
-    const octets = Buffer.from(f.image.base64, 'base64');
-    if (octets.length === 0) return reply.code(400).send({ error: 'ce visuel est illisible' });
-    /**
-     * 🔴 LE TYPE SE LIT DANS LES OCTETS, PAS DANS CE QUE LE CLIENT DÉCLARE. Le champ `type` du corps est une
-     * chaîne que le navigateur choisit : la valider contre une énumération ne prouve rien sur le CONTENU.
-     * Or ces octets partent chez un tiers, sous l'identité du client, et le commentaire de
-     * `TYPES_VISUEL_PUB` annonçait « une garde de SÉCURITÉ, pas de confort ». Une justification plus forte
-     * que le code est pire qu'aucune. Relevé par une relecture à froid, avant tout déploiement.
-     */
-    if (!estJpegOuPng(octets)) {
-      return reply.code(400).send({ error: 'ce fichier n’est pas une image JPEG ou PNG' });
-    }
-    if (octets.length > TAILLE_VISUEL_PUB_MAX) {
-      return reply.code(400).send({ error: `ce visuel dépasse ${Math.round(TAILLE_VISUEL_PUB_MAX / (1024 * 1024))} Mo` });
-    }
+    // Les trois contrôles des octets vivent dans `refusDuVisuel`, partagé avec les routes de brouillon :
+    // deux copies d'une même garde finissent toujours par diverger, et c'est arrivé ici.
+    const refus = refusDuVisuel(f.image.base64);
+    if (refus !== null) return reply.code(400).send({ error: refus });
 
     let issue: IssueCreation;
     try {

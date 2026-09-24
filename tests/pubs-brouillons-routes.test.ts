@@ -51,6 +51,9 @@ function app(over: Partial<PubsRouteDeps> = {}, role = 'admin'): FastifyInstance
 
 const url = (suite = ''): string => `/tenants/${TENANT}/pubs/brouillons${suite}`;
 
+/** Un PNG 1x1 VALIDE. La garde lit la signature des octets, donc un faux base64 ne passe plus. */
+const PNG_1x1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
 describe('un brouillon s’enregistre INCOMPLET, c’est sa raison d’être', () => {
   it('un corps entièrement vide est accepté', async () => {
     let recu: ChampsBrouillon | null = null;
@@ -128,9 +131,51 @@ describe('🔴 le visuel a TROIS états, et il en faut trois', () => {
   it('clé avec un objet = remplace le visuel', async () => {
     const c = capture();
     const srv = app(c.deps);
-    const r = await srv.inject({ method: 'PUT', url: url('/b-1'), payload: { image: { type: 'image/png', base64: 'QUJD' } } });
+    const r = await srv.inject({ method: 'PUT', url: url('/b-1'), payload: { image: { type: 'image/png', base64: PNG_1x1 } } });
     expect(r.statusCode).toBe(204);
-    expect(c.recu()).toMatchObject({ visuel: { type: 'image/png', base64: 'QUJD' } });
+    expect(c.recu()).toMatchObject({ visuel: { type: 'image/png', base64: PNG_1x1 } });
+  });
+});
+
+/**
+ * 🔴 LE VISUEL D'UN BROUILLON SE LIT DANS SES OCTETS, comme à la création.
+ *
+ * Ces cas existent parce que la première version ne les tenait pas : elle bornait la LONGUEUR de la
+ * chaîne base64, c'est-à-dire une taille ENCODÉE, sur un type seulement DÉCLARÉ par le navigateur. La
+ * relecture à froid l'a relevé, et le plan le posait pourtant comme l'une des deux gardes du stockage.
+ *
+ * ⚠️ ET LE PREMIER À TOMBER A ÉTÉ UN TEST À MOI : son fixture envoyait `QUJD`, c'est-à-dire « ABC ».
+ * Une garde qui mord sur un faux visuel dès sa pose est une garde qui sert.
+ */
+describe('🔴 les octets du visuel se lisent, ils ne se croient pas sur parole', () => {
+  it('des octets qui ne sont ni JPEG ni PNG sont refusés, quel que soit le type annoncé', async () => {
+    const srv = app();
+    const r = await srv.inject({ method: 'POST', url: url(), payload: { image: { type: 'image/png', base64: 'QUJD' } } });
+    expect(r.statusCode).toBe(400);
+    expect(r.json().error).toMatch(/JPEG ou PNG/);
+  });
+
+  it('un visuel vide est refusé', async () => {
+    const srv = app();
+    const r = await srv.inject({ method: 'POST', url: url(), payload: { image: { type: 'image/png', base64: '====' } } });
+    expect(r.statusCode).toBe(400);
+  });
+
+  it('⚠️ la MISE À JOUR les lit aussi : la garde ne vaut que si elle est sur les DEUX écritures', async () => {
+    // C'est exactement l'asymétrie qui vient d'être corrigée, déplacée d'un cran : une garde posée sur la
+    // création et pas sur la modification laisserait le même trou, atteignable en deux appels.
+    const srv = app({ majBrouillon: async () => true });
+    const r = await srv.inject({ method: 'PUT', url: url('/b-1'), payload: { image: { type: 'image/jpeg', base64: 'QUJD' } } });
+    expect(r.statusCode).toBe(400);
+  });
+
+  it('un vrai PNG passe, sur les deux écritures', async () => {
+    // L'ancre positive : sans elle, les trois cas ci-dessus resteraient verts si TOUT était refusé.
+    const srv = app({ creerBrouillon: async () => 'b-1', majBrouillon: async () => true });
+    const cree = await srv.inject({ method: 'POST', url: url(), payload: { image: { type: 'image/png', base64: PNG_1x1 } } });
+    expect(cree.statusCode).toBe(201);
+    const maj = await srv.inject({ method: 'PUT', url: url('/b-1'), payload: { image: { type: 'image/png', base64: PNG_1x1 } } });
+    expect(maj.statusCode).toBe(204);
   });
 });
 

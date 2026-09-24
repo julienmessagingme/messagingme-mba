@@ -96,7 +96,16 @@ cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la li
 
 **Dernière appliquée : 0170**, le 2026-09-24 à 3 h 01 UTC (`pubs_router`, lot 3 des publicités :
 `publicites`, `pubs_connues`, et les quatre colonnes de routage d'`arrivees_pub`), AVANT le `up` qui a
-porté son code. **Prochaine libre = 0171**, et le dossier `db/migrations/` s'arrête bien à 0170.
+porté son code. **ÉCRITE ET PAS ENCORE APPLIQUÉE : 0171** (`pubs_brouillons`, les brouillons de
+publicité ; purement additive, une table neuve et rien d'autre, donc AVANT le `up`). **Prochaine libre =
+0172**, et le dossier `db/migrations/` s'arrête à 0171.
+
+🔴 **ONZIÈME DÉRIVE, TROUVÉE PAR LA RELECTURE À FROID DU 2026-09-24.** Cette ligne annonçait « prochaine
+libre = 0171, et le dossier s'arrête bien à 0170 » alors que le commit qui la lisait venait d'y ajouter
+0171 : les deux moitiés de la phrase étaient fausses en même temps. Même cause que la dixième, et même
+leçon, déjà écrite trois paragraphes plus bas : **le DOSSIER tranche sur ce qui est PRIS, la base sur ce
+qui est APPLIQUÉ**. La parade qui manquait n'est pas de faire attention, c'est d'écrire la ligne DANS le
+commit qui prend le numéro, et non après.
 
 🔴 **RELUE EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT, PAS EN ÉCRIVANT CETTE LIGNE.**
 `schema_migrations` rend bien `0170_pubs_router.sql` en tête avec son horodatage ; `publicites` porte son
