@@ -1249,9 +1249,11 @@ export class WorkflowExecutor {
    * l'état (sauf 100 % synchrone -> done). `startNodeId` inconnu (bloc supprimé entre-temps) -> `walk` renvoie
    * `done` sans action : aucun envoi, aucun throw.
    *
-   * ⚠️ `opts.allowSessionOpen` est la SEULE façon de lever la garde fenêtre 24 h, et il n'est posé que par
-   * `startFromNode` (appelé par /v1/sends, qui a DÉJÀ vérifié la fenêtre par destinataire). Le défaut
-   * (`start`, campagne classique) garde la garde : ne jamais l'inverser.
+   * ⚠️ `opts.allowSessionOpen` est la SEULE façon de lever la garde fenêtre 24 h. Deux appelants la posent :
+   * `startInWindow` (un entrant récent prouve la fenêtre) et `startFromNode` (cible node de /v1/sends : quand le
+   * bloc ouvre par un message de session, `ouvertureApi`, la fenêtre a été vérifiée destinataire par
+   * destinataire à la création de l'envoi ; un bloc qui ouvre par un template ou un RCS n'en a pas besoin).
+   * Le défaut (`start`, campagne classique) garde la garde : ne jamais l'inverser.
    *
    * Renvoie la RAISON (une chaîne lisible) quand le run N'A PAS démarré : bloc de départ absent du graphe (bloc supprimé entre-temps),
    * fil détenu par un humain/MBA, ou ouverture par un message de session hors fenêtre. Sans ce signal, l'appelant

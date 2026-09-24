@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import { STATS_TZ, BOUNDS_CTE } from './range';
 import type { DateRange } from './range';
 import { retentionEffective } from '../inbox/retention';
+import { originesQuiRepondent } from '../inbox/origine';
 import type { Intent } from '../analysis/schema';
 
 /**
@@ -193,6 +194,7 @@ export interface AnalyzedConversationRow {
    *
    * ⚠️ UNE LISTE VIDE EST UN CAS NORMAL : une conversation dont tous les sortants sont anterieurs a la
    * migration 0099 n'a aucune origine. L'ecran n'affiche alors aucun badge, plutot que d'en inventer un.
+   * ⚠️ `api` n'y figure que si l'un de ses messages SUIT un entrant du fil (`originesQuiRepondent`).
    */
   origines: string[];
 }
@@ -460,6 +462,7 @@ export class PgConversationStatsStore {
       sentiment: string; intent: string; topic: string; resolved: boolean; action_suggestion: string;
       confidence: number; justification: string; handled_by: string; exchanges_count: number; created_at: Date;
       summary: string | null; entities: Record<string, unknown> | null; origines: string[] | null;
+      dernier_api: Date | null; premier_entrant: Date | null;
     }>(
       `with ${BOUNDS_CTE}
        select ca.conversation_id, c.wa_id, ct.profile_name,
@@ -472,7 +475,13 @@ export class PgConversationStatsStore {
               coalesce((select array_agg(distinct m.origin)
                           from conversation_messages m
                          where m.conversation_id = ca.conversation_id and m.direction = 'out'
-                           and m.origin is not null), '{}') as origines
+                           and m.origin is not null), '{}') as origines,
+              -- Un message de l API ne repond que s il SUIT un entrant du meme fil : les deux instants qui
+              -- le tranchent, la decision vit dans originesQuiRepondent (src/inbox/origine.ts).
+              (select max(m.created_at) from conversation_messages m
+                where m.conversation_id = ca.conversation_id and m.direction = 'out' and m.origin = 'api') as dernier_api,
+              (select min(m.created_at) from conversation_messages m
+                where m.conversation_id = ca.conversation_id and m.direction = 'in') as premier_entrant
        from conversation_analysis ca
          join conversations c on c.id = ca.conversation_id
          left join contacts ct on ct.id = c.contact_id, bounds b
@@ -504,7 +513,7 @@ export class PgConversationStatsStore {
       analyzedAt: r.created_at.toISOString(),
       inboxHref: `/inbox?c=${r.conversation_id}`,
       summary: r.summary,
-      origines: Array.isArray(r.origines) ? r.origines : [],
+      origines: originesQuiRepondent(Array.isArray(r.origines) ? r.origines : [], r.dernier_api, r.premier_entrant),
       entities: r.entities ?? {},
     }));
   }

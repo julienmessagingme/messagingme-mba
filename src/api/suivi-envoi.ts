@@ -1,6 +1,7 @@
 import type { EnvoiApiBrut } from '../campaign/store.pg';
 import type { CampaignStatus } from '../campaign/types';
 import { ouvertureApi, type OuvertureApi } from '../workflow/ouverture-api';
+import { nomDuMessageRcs } from './cible-rcs';
 
 /**
  * LE CONTRAT DE `GET /v1/sends/{sendId}` (spec 2026-09-24, § 3).
@@ -13,8 +14,9 @@ import { ouvertureApi, type OuvertureApi } from '../workflow/ouverture-api';
  *
  * ⚠️ LA LECTURE VOIT TOUTE CAMPAGNE DE L'ESPACE, console comprise. Une campagne RCS de la console porte
  * `template_name` à `''` : le CANAL est donc jugé AVANT le template, et un nom vide n'est jamais une cible.
- * Sa cible est `{ rcsMessage: null }` : la campagne garde le CONTENU du message (`campaigns.rcs_message`), pas
- * son nom dans la bibliothèque, et ce lot ne l'invente pas.
+ * Sa cible est `{ rcsMessage: <nom> }` pour un envoi de l'API (lot 3 : le nom du message, relu derrière le
+ * préfixe `[API] ` du nom de la campagne), `{ rcsMessage: null }` pour une campagne de la console, qui ne garde
+ * que le CONTENU du message (`campaigns.rcs_message`) : aucun nom n'y est inventé.
  *
  * ⚠️ `channel` EST CELUI DE CHAQUE DESTINATAIRE : au rang 1, le canal d'ouverture ; au-delà (chaîne de repli de
  * la console, 0134), le canal de l'étage où il est, e-mail compris.
@@ -63,7 +65,9 @@ const nomDeTemplate = (b: EnvoiApiBrut): string | null =>
 
 function cibleDe(b: EnvoiApiBrut): CibleSuivi {
   // Le CANAL d'abord : une campagne RCS porte `template_name` à `''`, pas null.
-  if (b.channel === 'rcs') return { rcsMessage: null };
+  // Lot 3 : un envoi RCS de l'API NOMME son message (relu derrière `[API] ` dans le nom de la campagne) ; une
+  // campagne RCS de la console reste à `null`, elle ne garde que le contenu.
+  if (b.channel === 'rcs') return { rcsMessage: nomDuMessageRcs(b.name) };
   const nom = nomDeTemplate(b);
   if (nom !== null) return { template: { name: nom, language: b.templateLanguage ?? '' } };
   if (b.startNodeId !== null) {

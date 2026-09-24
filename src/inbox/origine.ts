@@ -93,3 +93,30 @@ export const THEME_DE_ORIGINE: Record<string, 'ia' | 'scenario' | 'humain' | 'in
   api: 'scenario',
   indeterminee: 'indeterminee',
 };
+
+/**
+ * LES ORIGINES QUI RÉPONDENT, celles dont se dérivent les badges « Répondu par » (`web/lib/qui-a-repondu.ts`).
+ *
+ * 🔴 UN MESSAGE DE L'API NE RÉPOND QUE S'IL SUIT UN ENTRANT DU MÊME FIL (décision de Julien du 2026-09-24).
+ * L'argument d'avant, « `POST /v1/messages/whatsapp` n'existe que dans la fenêtre de 24 h, donc il répond
+ * par construction », est faux depuis `POST /v1/messages/rcs` : aucune fenêtre, une fiche qui a seulement
+ * consenti suffit, et l'API peut donc écrire LA PREMIÈRE. Elle ouvre alors l'échange exactement comme une
+ * campagne, et ne compte pas plus qu'elle ; elle ne compte comme « Scripté » que si le client avait déjà
+ * écrit AVANT l'un de ses messages.
+ *
+ * ⚠️ `dernierApi` et `premierEntrant` suffisent à trancher : un message de l'API suit un entrant si et
+ * seulement si le PREMIER entrant du fil est antérieur au DERNIER message de l'API. La lecture
+ * (`PgConversationStatsStore.listAnalyzed`) rend ces deux instants, la décision se prend ici, testée.
+ * ⚠️ Les autres origines passent telles quelles : `campagne` est déjà sans badge, et un humain, un scénario
+ * ou un agent qui écrit n'a pas besoin d'un entrant pour être celui qui a répondu.
+ */
+export function originesQuiRepondent(
+  origines: readonly string[],
+  dernierApi: Date | null,
+  premierEntrant: Date | null,
+): string[] {
+  // Une valeur absente (`null`, ou une colonne qu'une lecture n'aurait pas rendue) veut dire « pas d'entrant »
+  // ou « pas de message de l'API » : l'API ne répond pas.
+  const apiRepond = dernierApi instanceof Date && premierEntrant instanceof Date && premierEntrant.getTime() < dernierApi.getTime();
+  return origines.filter((o) => o !== 'api' || apiRepond);
+}

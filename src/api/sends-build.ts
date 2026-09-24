@@ -21,7 +21,11 @@ export interface Ecart { index: number; reason: CodeEcart }
 
 /** Un destinataire après résolution de sa fiche, ou le motif qui l'a écarté avant même de la lire. */
 export type DestinataireResolu =
-  | { index: number; contactId: string; consent?: 'opted_in' | 'opted_out'; consentSource?: string }
+  | {
+    index: number; contactId: string; consent?: 'opted_in' | 'opted_out'; consentSource?: string;
+    /** Les variables propres à ce destinataire (lot 3), portées jusqu'à la construction, jamais sur la fiche. */
+    variables?: Readonly<Record<string, string>>;
+  }
   | { index: number; ecart: CodeEcart };
 
 /**
@@ -49,7 +53,11 @@ export interface EntreeTri {
 }
 
 export interface ResultatTri {
-  eligibles: Array<{ index: number; contact: ContactEnvoi }>;
+  /**
+   * `variables` (lot 3) : celles du DESTINATAIRE, gardées À CÔTÉ de la fiche chargée et jamais dessus. Seule la
+   * copie que `construireDestinataires` passe à la construction les porte.
+   */
+  eligibles: Array<{ index: number; contact: ContactEnvoi; variables?: Readonly<Record<string, string>> }>;
   ecarts: Ecart[];
 }
 
@@ -89,7 +97,7 @@ export function trierDestinataires(e: EntreeTri): ResultatTri {
     if (!c) { ecarts.push({ index: r.index, reason: 'unknown_contact' }); continue; }
     const motif = motifDEcart(c, e);
     if (motif) { ecarts.push({ index: r.index, reason: motif }); continue; }
-    eligibles.push({ index: r.index, contact: c });
+    eligibles.push({ index: r.index, contact: c, ...(r.variables ? { variables: r.variables } : {}) });
   }
   return { eligibles, ecarts };
 }
@@ -114,11 +122,18 @@ export function construireDestinataires(
   params: TemplateParam[],
   tri: ResultatTri,
   now: Date,
+  /** Le canal de la campagne (lot 3) : `rcs` pour une cible `rcsMessage`. Absent = WhatsApp, comme au lot 2. */
+  canal: 'whatsapp' | 'rcs' = 'whatsapp',
 ): { recipients: BuiltRecipient[]; ecarts: Ecart[] } {
   // Une adresse VIDE vaut absence, comme dans le tri (`!c.phone_e164`). `buildRecipients` prend
   // `phone_e164 ?? bsuid` : sans ceci, un numéro `''` masquait le BSUID et la fiche sortait sans motif.
-  const contacts = tri.eligibles.map((x) => ({ ...x.contact, phone_e164: x.contact.phone_e164 || null, bsuid: x.contact.bsuid || null }));
-  const built = buildRecipients(category, params, contacts, { now });
+  // Les variables du DESTINATAIRE (lot 3) sont posées sur cette COPIE, jamais sur la fiche chargée : elles
+  // résolvent la source « variable » et partent avec le destinataire construit.
+  const contacts = tri.eligibles.map((x) => ({
+    ...x.contact, phone_e164: x.contact.phone_e164 || null, bsuid: x.contact.bsuid || null,
+    ...(x.variables ? { variables: x.variables } : {}),
+  }));
+  const built = buildRecipients(category, params, contacts, { now }, canal);
   const indexDe = new Map(tri.eligibles.map((x) => [x.contact.id, x.index]));
   const ecarts = [...tri.ecarts];
   for (const s of built.skipped) {

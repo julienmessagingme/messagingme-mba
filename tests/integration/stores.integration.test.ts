@@ -2063,8 +2063,14 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       [tenantId, vieille],
     );
     expect(await store.claim(tenantId, vieille, 'empreinte-f')).toEqual({ claimed: true });
-    // sweep purge tout (fenêtre 0).
+    // 🔴 La purge ne descend JAMAIS sous la vie d'une clé (`DUREE_CLE_IDEMPOTENCE_MS`), même à fenêtre 0 : elle
+    // retire la ligne vieillie au-delà, et laisse une clé fraîche prise (sinon un rejeu enverrait deux fois).
+    await pool.query(
+      `update api_idempotency set created_at = now() - interval '24 hours 1 minute' where tenant_id = $1 and idempotency_key = $2`,
+      [tenantId, ancienne],
+    );
     expect(await store.sweepOlderThan(0)).toBeGreaterThanOrEqual(1);
+    expect(await store.claim(tenantId, key, 'empreinte-a')).toMatchObject({ claimed: false });
   });
 
   it('resolveScenario (Postgres réel) : par code scn_, par nom, nom AMBIGU -> ambiguous', async () => {

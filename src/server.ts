@@ -56,6 +56,8 @@ import { registerV1Contacts } from './http/v1-contacts';
 import { registerV1Sends } from './http/v1-sends';
 import { registerV1Messages } from './http/v1-messages';
 import type { V1MessagesRouteDeps } from './http/v1-messages';
+import { registerV1MessagesRcs } from './http/v1-messages-rcs';
+import type { V1MessagesRcsRouteDeps } from './http/v1-messages-rcs';
 import { registerMcp } from './http/mcp';
 import { registerMbaRelais, type MbaRelaisDeps } from './http/mba-relais';
 import { DROIT_RELAIS } from './mba/cle-relais';
@@ -233,7 +235,7 @@ export interface ServerDeps {
   apiKeys?: ApiKeysRouteDeps;
   /** API publique /v1 (authentifiée par clé d'API, autorité SÉPARÉE du JWT, comme /ops). */
   /**
-   * L'API publique. ⚠️ `usage` EST RETIRÉ DES DEUX DÉPENDANCES DE ROUTES, et c'est ce qui rend le garde
+   * L'API publique. ⚠️ `usage` EST RETIRÉ DES DÉPENDANCES DE CHAQUE MODULE DE ROUTES, et c'est ce qui rend le garde
    * d'usage OBLIGATOIRE sans le faire écrire par chaque appelant : le contrat des routes l'exige, et
    * c'est `buildServer` qui l'injecte, une seule fois, comme il injecte déjà les limiteurs de débit.
    * L'appelant (le câblage, les tests) ne peut donc ni l'oublier ni en fournir un second.
@@ -244,6 +246,8 @@ export interface ServerDeps {
     sends?: Omit<V1SendsRouteDeps, 'usage'>;
     /** Un simple texte dans la fenetre de 24 h (`POST /v1/messages/whatsapp`, lot 7, adresse renommee le 2026-09-24). */
     messages?: Omit<V1MessagesRouteDeps, 'usage'>;
+    /** Un simple texte en RCS à une fiche (`POST /v1/messages/rcs`, lot 3 de l'API publique). */
+    messagesRcs?: Omit<V1MessagesRcsRouteDeps, 'usage'>;
     mcp?: DepsMcp;
     /** Le relais du Meta Business Agent : même autorité et même limiteur que /v1 (migration 0161). */
     mbaRelais?: MbaRelaisDeps;
@@ -519,7 +523,7 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
     entree('apiKeys', 'tenant', deps.apiKeys, (app, d, g) => registerApiKeys(app, d, g.admin)),
     entree('webhooksAdmin', 'tenant', deps.webhooksAdmin, (app, d, g) => registerWebhooksAdmin(app, d, g.admin)),
     /**
-     * API publique /v1 et serveur MCP : UNE SEULE entrée pour les trois montages, et c'est délibéré.
+     * API publique /v1 et serveur MCP : UNE SEULE entrée pour tous leurs montages, et c'est délibéré.
      *
      * 🔴 LES TROIS PARTAGENT UNE AUTORITÉ ET UN LIMITEUR, et c'est un invariant, pas une commodité : une
      * seconde instance de limiteur aurait doublé le quota d'une clé selon la porte empruntée, ce qui
@@ -550,6 +554,8 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
       // creation et ne s'editent pas, donc un droit neuf aurait oblige chaque integrateur a refabriquer sa
       // cle pour un geste que « Declencher des envois » decrit deja. Le detail est dans `v1-messages.ts`.
       if (v1.messages) registerV1Messages(app, { ...v1.messages, usage: usageApi }, [requireApiKey, requireScope('sends:create')]);
+      // MÊME droit, même limiteur et même garde que le message WhatsApp : c'est le même geste sur un autre canal.
+      if (v1.messagesRcs) registerV1MessagesRcs(app, { ...v1.messagesRcs, usage: usageApi }, [requireApiKey, requireScope('sends:create')]);
       // Serveur MCP : MÊME autorité et MÊME limiteur de débit que /v1. Il partage volontairement le
       // `requireApiKey` déjà construit.
       //

@@ -55,17 +55,16 @@ export const schemaChamps = z.record(z.string().max(MAX_CLE_CHAMP), valeurDeCham
 export const schemaTags = z.array(z.union([z.string(), z.number()]).transform(String)).max(MAX_TAGS_PAR_CONTACT);
 
 /**
- * CE QU'UN CONTACT POUSSÉ PAR L'API A LE DROIT D'ÊTRE.
+ * LA FORME D'UN CONTACT QU'ÉCRIT `upsertContactsFromApi`, dont dérive le type `ApiContactInput`.
  *
- * 🔴 IL EXISTE PARCE QUE LA ROUTE CASTAIT (`as ApiContactInput[]`) APRÈS AVOIR COMPTÉ LES ÉLÉMENTS.
- * Le `as` est un mensonge au compilateur : tout le contenu arrivait non vérifié dans un service écrit
- * pour des objets bien formés. Quatre gestes ordinaires d'un intégrateur suffisaient à faire des dégâts,
- * dont deux définitifs (un champ personnalisé par caractère dans l'espace du client, une valeur stockée
- * « [object Object] ») et un opaque (un `null` au milieu d'un lot emportait le LOT ENTIER en 500, dont
- * Cloudflare remplace le corps par sa page).
+ * ⚠️ AUCUNE ROUTE NE VALIDE PLUS SON CORPS AVEC CE SCHÉMA. Il a été écrit pour l'ancien `POST /v1/contacts`, qui
+ * castait son corps (`as ApiContactInput[]`) : l'API publique valide désormais par ses propres schémas
+ * (`schemaClesFiche`, `src/api/contacts-v1.ts`) et ne passe plus par `upsertContactsFromApi`. Les appelants
+ * restants (le webhook entrant et la création à la main dans la console, `src/index.ts`) construisent cet objet
+ * eux-mêmes : ce schéma n'est plus que la source du type, et ses bornes ne protègent aucune entrée aujourd'hui.
  *
- * ⚠️ LES CLÉS INCONNUES SONT ÉCARTÉES, PAS REFUSÉES (comportement par défaut de Zod, vérifié) : un
- * intégrateur qui laisse traîner un champ de son propre modèle ne doit pas être bloqué pour ça.
+ * ⚠️ S'il revalidait un jour un corps : les clés inconnues y sont ÉCARTÉES, pas refusées (comportement par
+ * défaut de Zod, vérifié), et un tableau démesuré y est refusé, pas tronqué.
  */
 export const schemaContactApi = z.object({
   phone: z.string().trim().min(1),
@@ -83,7 +82,7 @@ export const schemaContactApi = z.object({
 });
 
 /**
- * UN CONTACT POUSSÉ PAR L'API : téléphone + attributs optionnels. `fields` adressés par clé technique OU code.
+ * UN CONTACT ÉCRIT PAR `upsertContactsFromApi` : téléphone + attributs optionnels. `fields` adressés par clé technique OU code.
  *
  * 🔴 IL EST DÉRIVÉ DU SCHÉMA, ET C'EST TOUT L'INTÉRÊT. Écrit à la main à côté, il redeviendrait une
  * seconde vérité : le jour où l'un des deux gagne un champ, l'autre le refuse ou le laisse passer sans

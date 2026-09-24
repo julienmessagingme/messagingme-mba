@@ -5,8 +5,9 @@ import { MAX_TAGS_PAR_CONTACT, preparateurDeChamps, raisonDeValidation, schemaTa
 import type { UserFieldDef } from '../src/crm/types';
 
 /**
- * LA PRÉPARATION DES CHAMPS D'UN CONTACT, extraite pour être PARTAGÉE (l'upsert d'import et le service des
- * fiches de l'API publique). Ce qui compte : le cache des définitions est chargé UNE fois et grossit au fil
+ * LA PRÉPARATION DES CHAMPS D'UN CONTACT, extraite pour être PARTAGÉE (`upsertContactsFromApi`, qui sert le
+ * webhook entrant et la création à la main dans la console, et le service des fiches de l'API publique,
+ * `src/api/contacts-v1.ts`). Ce qui compte : le cache des définitions est chargé UNE fois et grossit au fil
  * des appels, donc un champ auto-créé par le premier contact n'est pas recréé par le second, et le plafond
  * par espace se compte sur ce cache vivant.
  */

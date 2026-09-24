@@ -210,7 +210,11 @@ export class PgContactStore implements ContactStore {
     }
   }
 
-  /** Comme upsertByPhone mais renvoie AUSSI l'id du contact (pour l'API : upsert-then-send adresse par id). */
+  /**
+   * Comme upsertByPhone mais renvoie AUSSI l'id du contact. Sert le webhook entrant et la création à la main
+   * dans la console (`upsertContactsFromApi`). L'API publique n'y passe plus : elle résout une fiche par
+   * `resoudreFiche` (lot 1) et la crée par `creerFicheApi`.
+   */
   async upsertByPhoneReturningId(c: ContactUpsert): Promise<{ id: string; created: boolean }> {
     // Index unique PARTIEL contacts_tenant_phone_uidx (where phone_e164 is not null) :
     // le ON CONFLICT doit répéter le prédicat pour cibler cet index.
@@ -229,11 +233,13 @@ export class PgContactStore implements ContactStore {
            else contacts.opt_in_status
          end,
          -- LA DATE DE DESABONNEMENT SUIT LE STATUT, ICI AUSSI (releve en revue le 2026-09-13). Cet upsert
-         -- est le QUATRIEME chemin capable de faire repasser un contact en opted_in (import CSV, API
-         -- publique avec consentement explicite), et il ne touchait pas opt_out_at : la colonne gardait la
-         -- date d un refus leve depuis. Elle ne mentait a personne aujourd hui (la liste filtre sur le
-         -- statut), et elle aurait menti au premier lecteur qui ne filtrerait pas. La migration 0138 enonce
-         -- l invariant ; c est ici qu il se tient.
+         -- est un des chemins capables de faire repasser un contact en opted_in (le webhook entrant et la
+         -- creation a la main dans la console, par upsertContactsFromApi ; l import CSV passe par son pendant
+         -- en lot, upsertManyByPhone, qui tient la meme regle ; l API publique ne passe plus par ici depuis
+         -- le lot 1, elle ecrit par ecrireConsentementParId), et il ne touchait pas opt_out_at : la colonne
+         -- gardait la date d un refus leve depuis. Elle ne mentait a personne aujourd hui (la liste filtre
+         -- sur le statut), et elle aurait menti au premier lecteur qui ne filtrerait pas. La migration 0138
+         -- enonce l invariant ; c est ici qu il se tient.
          opt_out_at = case when excluded.opt_in_status = 'opted_in' then null else contacts.opt_out_at end,
          opt_in_source = coalesce(excluded.opt_in_source, contacts.opt_in_source),
          -- Union dédupliquée : les nouveaux tags s'ajoutent, jamais d'écrasement.
@@ -316,11 +322,12 @@ export class PgContactStore implements ContactStore {
            else contacts.opt_in_status
          end,
          -- LA DATE DE DESABONNEMENT SUIT LE STATUT, ICI AUSSI (releve en revue le 2026-09-13). Cet upsert
-         -- est le QUATRIEME chemin capable de faire repasser un contact en opted_in (import CSV, API
-         -- publique avec consentement explicite), et il ne touchait pas opt_out_at : la colonne gardait la
-         -- date d un refus leve depuis. Elle ne mentait a personne aujourd hui (la liste filtre sur le
-         -- statut), et elle aurait menti au premier lecteur qui ne filtrerait pas. La migration 0138 enonce
-         -- l invariant ; c est ici qu il se tient.
+         -- en lot sert l import CSV, un des chemins capables de faire repasser un contact en opted_in (son
+         -- pendant unitaire, upsertByPhoneReturningId, sert le webhook entrant et la creation a la main ;
+         -- l API publique ecrit le consentement par ecrireConsentementParId), et il ne touchait pas
+         -- opt_out_at : la colonne gardait la date d un refus leve depuis. Elle ne mentait a personne
+         -- aujourd hui (la liste filtre sur le statut), et elle aurait menti au premier lecteur qui ne
+         -- filtrerait pas. La migration 0138 enonce l invariant ; c est ici qu il se tient.
          opt_out_at = case when excluded.opt_in_status = 'opted_in' then null else contacts.opt_out_at end,
          opt_in_source = coalesce(excluded.opt_in_source, contacts.opt_in_source),
          tags = (select coalesce(array_agg(distinct t), '{}') from unnest(contacts.tags || excluded.tags) t),
@@ -630,6 +637,46 @@ export class PgContactStore implements ContactStore {
       [tenantId, waId],
     );
     return res.rows[0]?.opt_in_status === 'opted_out';
+  }
+
+  /**
+   * CE CONTACT A-T-IL CONSENTI, OU NOUS A-T-IL DÉJÀ ÉCRIT ? La garde d'un RCS libre envoyé par une MACHINE
+   * (spec 2026-09-24, § 4) : un message simple ne fonde pas une relation.
+   *
+   * « A écrit » = au moins un message ENTRANT dans son fil, tout canal (le fil est unique par contact, 0056).
+   * ⚠️ Un contact INCONNU n'a ni consenti ni écrit : `false`, et c'est la route qui l'a déjà refusé en 404.
+   * ⚠️ Le `exists` s'arrête au premier entrant, par l'index (conversation_id, created_at) de 0009.
+   */
+  async aConsentiOuEcritParWaId(tenantId: string, waId: string): Promise<boolean> {
+    const res = await this.pool.query<{ ok: boolean }>(
+      `select (opt_in_status = 'opted_in')
+              or exists (
+                select 1
+                  from conversations v
+                  join conversation_messages m on m.conversation_id = v.id
+                 where v.tenant_id = $1 and v.wa_id = $2 and m.direction = 'in'
+              ) as ok
+         from contacts
+        where tenant_id = $1 and deleted_at is null
+        ${MATCH_BY_WAID_SQL}`,
+      [tenantId, waId],
+    );
+    return res.rows[0]?.ok === true;
+  }
+
+  /**
+   * Ce qu'un envoi simple doit savoir d'une fiche : son numéro, et si elle est bloquée. `null` = introuvable
+   * dans cet espace, ou supprimée. Sert `POST /v1/messages/rcs` (lot 3 de l'API publique).
+   */
+  async etatPourEnvoi(tenantId: string, contactId: string): Promise<{ phoneE164: string | null; bloque: boolean } | null> {
+    const res = await this.pool.query<{ phone_e164: string | null; bloque: boolean }>(
+      `select phone_e164, (blocked_at is not null) as bloque
+         from contacts
+        where tenant_id = $1 and id = $2::uuid and deleted_at is null`,
+      [tenantId, contactId],
+    );
+    const r = res.rows[0];
+    return r ? { phoneE164: r.phone_e164, bloque: r.bloque } : null;
   }
 
   /**

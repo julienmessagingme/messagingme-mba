@@ -9,8 +9,9 @@ import { validateParamMapping, type TemplateParam } from '../crm/template';
 import type { ResolveResult } from '../ids/resolve';
 import type { WorkflowGraph } from '../workflow/graph';
 import { ouvertureApi, type OuvertureApi } from '../workflow/ouverture-api';
+import { actionOf, scanOpening } from '../workflow/engine';
 import type { IdempotencyClaim } from '../api/idempotency-store.pg';
-import { cleIdempotence, empreinteCorps } from '../api/idempotence';
+import { cleIdempotence, DUREE_CLE_IDEMPOTENCE_MS, empreinteCorps } from '../api/idempotence';
 import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
 import { refuser, type CodeApi } from '../api/erreurs';
 import { schemaClesFiche, videEnAbsent, type ClesFiche, type ModeCreation, type ResolutionFiche } from '../api/fiche';
@@ -20,6 +21,9 @@ import { construireDestinataires, marquerDoublons, trierDestinataires, type Dest
 import type { LectureModele } from '../api/modele-envoi';
 import { messageDeForme } from '../api/forme';
 import { formaterSuiviEnvoi } from '../api/suivi-envoi';
+import type { RcsOutbound } from '../rcs/types';
+import { PREFIXE_ENVOI_API, resoudreCibleRcs, schemaCibleRcs, type DepsCibleRcs } from '../api/cible-rcs';
+import { destinataireAvecVariablesInterdites, schemaVariables } from '../api/variables';
 
 export interface V1SendCreateInput {
   tenantId: string;
@@ -32,6 +36,10 @@ export interface V1SendCreateInput {
   workflowId?: string;
   /** Cible node : le run démarre à ce bloc du scénario (au lieu de son entrée). */
   startNodeId?: string;
+  /** Cible `rcsMessage` (lot 3) : une campagne RCS, partie de l'agent de l'espace. Absent = WhatsApp. */
+  channel?: 'rcs';
+  rcsAgentId?: string;
+  rcsMessage?: RcsOutbound;
 }
 
 export interface V1SendsRouteDeps {
@@ -70,6 +78,8 @@ export interface V1SendsRouteDeps {
   idempotencyRelease(tenantId: string, key: string): Promise<void>;
   /** L'envoi tel que `GET /v1/sends/{sendId}` le décrit, avant mise en forme (`lireEnvoiApi`). */
   lireEnvoi(sendId: string, tenantId: string): Promise<EnvoiApiBrut | null>;
+  /** La cible `rcsMessage` (lot 3) : un message de la bibliothèque par son nom, et l'agent RCS de l'espace. */
+  rcs: DepsCibleRcs;
   /** Attente entre deux tentatives d'enqueue. Injectable pour tester le retry sans temporisation réelle. */
   sleep?(ms: number): Promise<void>;
 }
@@ -82,13 +92,15 @@ const ENQUEUE_MAX_ATTEMPTS = 3;
 const ENQUEUE_RETRY_DELAYS_MS = [100, 300];
 
 /**
- * LES TROIS CIBLES DE CE LOT. Strictes : un objet qui porterait deux cibles, ou une clé mal orthographiée, est
- * refusé plutôt que lu à moitié. Le lot 3 ajoute `rcsMessage` à cette union.
+ * LES QUATRE CIBLES. Strictes : un objet qui porterait deux cibles, ou une clé mal orthographiée, est
+ * refusé plutôt que lu à moitié.
  */
 const schemaCible = z.union([
   z.strictObject({ template: z.strictObject({ name: z.string().trim().min(1).max(512), language: z.string().trim().min(1).max(20) }) }),
   z.strictObject({ scenario: z.string().trim().min(1).max(200) }),
   z.strictObject({ node: z.string().trim().min(1).max(200) }),
+  // Lot 3 : un message de Contenu > Messages RCS, par son NOM (`src/api/cible-rcs.ts`).
+  schemaCibleRcs,
 ]);
 
 /**
@@ -121,10 +133,13 @@ const schemaCorps = z.strictObject({
 const schemaDestinataire = schemaClesFiche.extend({
   consent: z.preprocess(videEnAbsent, z.enum(['opted_in', 'opted_out']).optional()),
   consentSource: z.preprocess(videEnAbsent, z.string().trim().min(1).max(MAX_OPT_IN_SOURCE).optional()),
+  // Lot 3 : des valeurs propres à CE destinataire, jamais écrites sur sa fiche. Mal formées, elles écartent le
+  // destinataire (`invalid_recipient`), comme toute autre clé fautive.
+  variables: schemaVariables.optional(),
 });
 
 const PRECISIONS = {
-  target: 'une cible parmi { "template": { "name", "language" } }, { "scenario": "scn_…" ou un nom } et { "node": "nod_…" }',
+  target: 'une cible parmi { "template": { "name", "language" } }, { "scenario": "scn_…" ou un nom }, { "node": "nod_…" } et { "rcsMessage": "<nom d’un message RCS>" }',
 } as const;
 
 type Corps = z.infer<typeof schemaCorps>;
@@ -134,7 +149,8 @@ type Refus = { refus: { statut: 400 | 404 | 409 | 422; code: CodeApi; message: s
 type CibleDemandee =
   | { kind: 'template'; name: string; language: string }
   | { kind: 'scenario'; ref: string; category: CampaignCategory }
-  | { kind: 'node'; code: string; category: CampaignCategory };
+  | { kind: 'node'; code: string; category: CampaignCategory }
+  | { kind: 'rcsMessage'; nom: string; category: CampaignCategory };
 
 /** La cible résolue : ce qui part en premier, la catégorie qui décide du consentement, ce qu'on écrit. */
 interface CibleResolue {
@@ -145,6 +161,8 @@ interface CibleResolue {
   templateLanguage: string;
   workflowId?: string;
   startNodeId?: string;
+  /** Cible `rcsMessage` : l'agent qui envoie et le contenu, qui partent dans la campagne RCS. */
+  rcs?: { agentId: string; contenu: RcsOutbound };
 }
 
 interface RapportEnvoi {
@@ -164,11 +182,60 @@ function lireCible(corps: Corps, params: TemplateParam[]): CibleDemandee | { mes
     if (corps.category !== undefined) return { message: 'category : refusé sur un template, sa catégorie est lue chez Meta' };
     return { kind: 'template', name: t.template.name, language: t.template.language };
   }
-  if (corps.category === undefined) return { message: 'category : requise sur un scénario ou un bloc (marketing | utility)' };
-  if (params.length > 0) return { message: 'params : n’a de sens que sur un template (aucune variable n’est envoyée à un scénario ou à un bloc)' };
-  return 'scenario' in t
-    ? { kind: 'scenario', ref: t.scenario, category: corps.category }
-    : { kind: 'node', code: t.node, category: corps.category };
+  if (corps.category === undefined) return { message: 'category : requise sur un scénario, un bloc ou un message RCS (marketing | utility)' };
+  if ('scenario' in t) {
+    // Un scénario qui ouvre par un template accepte `params` : une campagne de scénario les transmet à son
+    // template d'ouverture (`startWorkflow`, `src/campaign/engine.ts`), comme dans la console. Le reste de la
+    // règle (ouverture, nombre de variables) se juge sur le scénario résolu, dans `resoudreCible`.
+    // La source « variable » n'y a aucun sens : un scénario ne reçoit pas de variables par destinataire.
+    if (params.some((p) => p.source.type === 'variable')) {
+      return { message: 'params : la source « variable » n’a de sens que sur un template (un scénario ne reçoit pas de variables par destinataire)' };
+    }
+    return { kind: 'scenario', ref: t.scenario, category: corps.category };
+  }
+  // Un bloc démarre sans variables transmises (`startWorkflowFromNode`) : son template les résout par les
+  // sources enregistrées dans la console. Des `params` y seraient ignorés en silence, donc refusés.
+  if (params.length > 0) {
+    return { message: 'params : n’a de sens que sur un template ou un scénario qui ouvre par un template (un bloc résout son template par les sources enregistrées dans la console ; les {{variables}} d’un message RCS viennent de recipients[].variables)' };
+  }
+  if ('rcsMessage' in t) return { kind: 'rcsMessage', nom: t.rcsMessage, category: corps.category };
+  return { kind: 'node', code: t.node, category: corps.category };
+}
+
+/**
+ * UN TEMPLATE QUI VA PARTIR, LU CHEZ META : sa catégorie, et le nombre de variables de son corps.
+ *
+ * Sert la cible `template` ET le template d'ouverture d'un scénario : les deux partent paramétrés par `params`.
+ * 🔴 LE NOMBRE DE VARIABLES SE VÉRIFIE AVANT L'ENVOI. Un template qui en attend N et en reçoit un autre nombre
+ * est refusé par Meta pour CHAQUE destinataire, après un 201 qui annonçait le contraire : c'est ce qui arrivait
+ * à tout scénario ouvrant par un template à variable, `params` y étant alors refusé.
+ * ⚠️ `illisible` n'est jamais ramené à « utility », `categorie_non_admise` ne suggère pas de réessayer.
+ */
+async function modeleEnvoyable(
+  deps: V1SendsRouteDeps, tenantId: string, name: string, language: string, params: TemplateParam[], quoi: string,
+): Promise<{ categorie: CampaignCategory } | Refus> {
+  const lu = await deps.lireModele(tenantId, name, language);
+  if (lu.statut === 'absent') {
+    return { refus: { statut: 404, code: 'template_not_found', message: `${quoi} introuvable, non approuvé ou d’une autre langue : ${name} (${language})` } };
+  }
+  if (lu.statut === 'illisible') {
+    return { refus: { statut: 422, code: 'template_category_unknown', message: `la catégorie de ce ${quoi} n’a pas pu être lue chez Meta : l’envoi est refusé par prudence, réessayez dans un instant` } };
+  }
+  if (lu.statut === 'categorie_non_admise') {
+    // LUE, et définitive : réessayer n'y changera rien, le message ne doit pas le suggérer.
+    return { refus: { statut: 422, code: 'template_category_unknown', message: `catégorie ${lu.categorie.slice(0, 40)} non envoyable par l’API : un template marketing ou utility est attendu` } };
+  }
+  if (params.length !== lu.variables) {
+    return { refus: { statut: 422, code: 'unsendable_target', message: `le ${quoi} ${name} attend ${lu.variables} variable(s) dans son corps et params en décrit ${params.length} : Meta refuserait chaque message` } };
+  }
+  return { categorie: lu.categorie };
+}
+
+/** Le template qui ouvre ce graphe, lu comme l'exécuteur le lira (`actionOf`, langue `fr` par défaut). */
+function modeleDOuverture(graph: WorkflowGraph): { templateName: string; language: string } | null {
+  const premier = scanOpening(graph).firstTemplate;
+  const a = premier ? actionOf(premier) : null;
+  return a?.kind === 'sendTemplate' ? { templateName: a.templateName, language: a.language } : null;
 }
 
 async function numeroDEnvoi(deps: V1SendsRouteDeps, tenantId: string, demande: string | undefined): Promise<{ phoneNumberId: string } | Refus> {
@@ -191,20 +258,19 @@ async function numeroDEnvoi(deps: V1SendsRouteDeps, tenantId: string, demande: s
  *
  * 🔴 UNE CIBLE `node` EST JUGÉE SUR CE QUI PART EN PREMIER DEPUIS ELLE (défaut 3), plus sur le type du bloc.
  */
-async function resoudreCible(deps: V1SendsRouteDeps, tenantId: string, c: CibleDemandee): Promise<CibleResolue | Refus> {
+async function resoudreCible(deps: V1SendsRouteDeps, tenantId: string, c: CibleDemandee, params: TemplateParam[]): Promise<CibleResolue | Refus> {
   if (c.kind === 'template') {
-    const lu = await deps.lireModele(tenantId, c.name, c.language);
-    if (lu.statut === 'absent') {
-      return { refus: { statut: 404, code: 'template_not_found', message: `template introuvable, non approuvé ou d’une autre langue : ${c.name} (${c.language})` } };
-    }
-    if (lu.statut === 'illisible') {
-      return { refus: { statut: 422, code: 'template_category_unknown', message: 'la catégorie de ce template n’a pas pu être lue chez Meta : l’envoi est refusé par prudence, réessayez dans un instant' } };
-    }
-    if (lu.statut === 'categorie_non_admise') {
-      // LUE, et définitive : réessayer n'y changera rien, le message ne doit pas le suggérer.
-      return { refus: { statut: 422, code: 'template_category_unknown', message: `catégorie ${lu.categorie.slice(0, 40)} non envoyable par l’API : un template marketing ou utility est attendu` } };
-    }
-    return { ouverture: 'whatsapp_template', category: lu.categorie, label: c.name, templateName: c.name, templateLanguage: c.language };
+    const m = await modeleEnvoyable(deps, tenantId, c.name, c.language, params, 'template');
+    if ('refus' in m) return m;
+    return { ouverture: 'whatsapp_template', category: m.categorie, label: c.name, templateName: c.name, templateLanguage: c.language };
+  }
+  if (c.kind === 'rcsMessage') {
+    const r = await resoudreCibleRcs(deps.rcs, tenantId, c.nom);
+    if (!r.ok) return { refus: { statut: r.statut, code: r.code, message: r.message } };
+    return {
+      ouverture: 'rcs', category: c.category, label: r.nom, templateName: '', templateLanguage: '',
+      rcs: { agentId: r.agentId, contenu: r.contenu },
+    };
   }
   if (c.kind === 'scenario') {
     const r = await deps.resolveScenario(tenantId, c.ref);
@@ -217,7 +283,22 @@ async function resoudreCible(deps: V1SendsRouteDeps, tenantId: string, c: CibleD
     if (v.ouverture === 'whatsapp_session') {
       return { refus: { statut: 422, code: 'unsendable_target', message: 'ce scénario ouvre par un message de session (message rapide, question, formulaire ou agent), qui exige que le contact ait écrit dans les 24 h : visez le bloc (cible node) pour écrire à quelqu’un dans sa fenêtre' } };
     }
-    return { ouverture: v.ouverture, category: c.category, label: r.value.name, templateName: '', templateLanguage: '', workflowId: r.value.id };
+    if (v.ouverture === 'rcs') {
+      if (params.length > 0) {
+        return { refus: { statut: 400, code: 'invalid_body', message: 'params : ce scénario ouvre en RCS, il n’a aucun template d’ouverture à paramétrer' } };
+      }
+      return { ouverture: 'rcs', category: c.category, label: r.value.name, templateName: '', templateLanguage: '', workflowId: r.value.id };
+    }
+    // Il ouvre par un template : c'est lui que `params` paramètre, lu chez Meta comme la cible template.
+    const ouvre = modeleDOuverture(r.value.graph);
+    if (!ouvre) return { refus: { statut: 422, code: 'unsendable_target', message: 'le template d’ouverture de ce scénario n’a pas pu être identifié' } };
+    const m = await modeleEnvoyable(deps, tenantId, ouvre.templateName, ouvre.language, params, 'template d’ouverture du scénario');
+    if ('refus' in m) return m;
+    // 🔴 LA CATÉGORIE NE SE RELÂCHE JAMAIS : celle que Meta donne au template d'ouverture l'emporte sur une
+    // déclaration plus permissive. Un template marketing annoncé « utility » partirait sinon aux contacts sans
+    // consentement, exactement le défaut que la lecture chez Meta a fermé sur la cible template.
+    const category: CampaignCategory = m.categorie === 'marketing' || c.category === 'marketing' ? 'marketing' : 'utility';
+    return { ouverture: 'whatsapp_template', category, label: r.value.name, templateName: '', templateLanguage: '', workflowId: r.value.id };
   }
   const r = await deps.resolveNode(tenantId, c.code);
   if (!r.ok) return { refus: { statut: 404, code: 'node_not_found', message: 'bloc introuvable dans les scénarios publiés' } };
@@ -242,11 +323,16 @@ async function resoudreDestinataires(
   for (const [index, brut] of bruts.entries()) {
     const d = schemaDestinataire.safeParse(brut);
     if (!d.success) { resolus.push({ index, ecart: 'invalid_recipient' }); continue; }
-    const { consent, consentSource, ...cles } = d.data;
+    // `variables` est retiré des clés : `resoudreFiche` ne les voit pas, et elles ne touchent JAMAIS la fiche.
+    const { consent, consentSource, variables, ...cles } = d.data;
     const r = await deps.resoudreFiche(tenantId, cles, { creer });
     if (!r.ok) { resolus.push({ index, ecart: r.code }); continue; }
     if (r.cree) created += 1; else matched += 1;
-    resolus.push(consent ? { index, contactId: r.contactId, consent, consentSource: consentSource ?? 'api' } : { index, contactId: r.contactId });
+    resolus.push({
+      index, contactId: r.contactId,
+      ...(consent ? { consent, consentSource: consentSource ?? 'api' } : {}),
+      ...(variables ? { variables } : {}),
+    });
   }
   return { resolus, created, matched };
 }
@@ -291,10 +377,17 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
     if (!idem.ok) return refuser(reply, 400, idem.code, idem.message);
     // Même validation que la route console : une source malformée casserait sinon au moment de résoudre les
     // variables, en 500 sur un endpoint public au lieu d'un 400 déterministe.
-    const params = validateParamMapping(corps.params ?? []);
+    // La source « variable » (lot 3) est admise ici, et nulle part dans la console.
+    const params = validateParamMapping(corps.params ?? [], { accepterVariables: true });
     if (params === null) return refuser(reply, 400, 'invalid_body', 'params : positions 1..N contiguës et sources valides attendues');
     const demandee = lireCible(corps, params);
     if ('message' in demandee) return refuser(reply, 400, 'invalid_body', demandee.message);
+    // Un scénario ou un bloc n'a aucun endroit où ranger des variables par destinataire (spec § 3) : refusé
+    // AVANT le compteur d'usage et le claim d'idempotence, sur les destinataires tels que reçus.
+    const fautif = destinataireAvecVariablesInterdites(demandee.kind, corps.recipients);
+    if (fautif !== null) {
+      return refuser(reply, 400, 'invalid_body', `recipients.${fautif}.variables : un scénario ou un bloc n’a aucun endroit où ranger des variables par destinataire`);
+    }
 
     /**
      * ⚠️ COMPTÉ AVANT LA RÉSOLUTION DE LA CIBLE, qui fait déjà des lectures (scénario, bloc, template chez
@@ -307,7 +400,7 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
     // rejeu du rapport, tel quel.
     const claim = await deps.idempotencyClaim(tenantId, idem.cle, empreinteCorps(req.body));
     if (!claim.claimed && 'reused' in claim) {
-      return refuser(reply, 422, 'idempotency_key_reused', 'cette clé d’idempotence a déjà servi pour un autre corps : une clé désigne un seul envoi, et elle vit 24 h');
+      return refuser(reply, 422, 'idempotency_key_reused', `cette clé d’idempotence a déjà servi pour un autre corps : une clé désigne un seul envoi, et elle vit ${DUREE_CLE_IDEMPOTENCE_MS / 3_600_000} h`);
     }
     if (!claim.claimed && 'pending' in claim) {
       return refuser(reply, 409, 'idempotency_in_progress', 'un envoi avec cette clé d’idempotence est en cours : réessayez dans un instant');
@@ -323,9 +416,12 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
     // Rempli + scellé dans le try ; l'enqueue (hors try) le lit après scellement (definite assignment).
     let report!: RapportEnvoi;
     try {
-      const numero = await numeroDEnvoi(deps, tenantId, corps.phoneNumberId);
+      // Un message RCS part de l'agent RCS de l'espace : AUCUN numéro WhatsApp n'est exigé (spec § 3), et un
+      // `phoneNumberId` fourni est ignoré (il reste optionnel). `numeroDEnvoi` rendrait sinon 409
+      // `no_whatsapp_number` à un espace qui n'a que le RCS.
+      const numero = demandee.kind === 'rcsMessage' ? { phoneNumberId: '' } : await numeroDEnvoi(deps, tenantId, corps.phoneNumberId);
       if ('refus' in numero) return await libererEtRefuser(numero.refus);
-      const cible = await resoudreCible(deps, tenantId, demandee);
+      const cible = await resoudreCible(deps, tenantId, demandee, params);
       if ('refus' in cible) return await libererEtRefuser(cible.refus);
       const { resolus, created, matched } = await resoudreDestinataires(
         deps, tenantId, corps.recipients, cible.ouverture === 'whatsapp_session' ? 'jamais' : 'phone',
@@ -355,7 +451,7 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
         category: cible.category, ouverture: cible.ouverture, resolus: uniques, contacts,
         ...(fenetre ? { fenetreOuverteParContact: fenetre } : {}),
       });
-      const { recipients, ecarts } = construireDestinataires(cible.category, params, tri, new Date());
+      const { recipients, ecarts } = construireDestinataires(cible.category, params, tri, new Date(), cible.rcs ? 'rcs' : 'whatsapp');
       report = {
         sendId: '',
         opening: cible.ouverture,
@@ -367,10 +463,15 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
       };
       const send = await deps.createSend(
         {
-          tenantId, phoneNumberId: numero.phoneNumberId, name: `[API] ${cible.label}`.slice(0, 120), category: cible.category,
+          // 🔴 Le préfixe est `PREFIXE_ENVOI_API`, que le suivi relit (`nomDuMessageRcs`). Le nom d'un envoi RCS
+          // n'est PAS coupé : le suivi y relit le nom du message, qui va jusqu'à 120 caractères dans la
+          // bibliothèque (126 préfixe compris ; la colonne n'a pas de borne). Les autres cibles gardent leur coupe.
+          tenantId, phoneNumberId: numero.phoneNumberId, category: cible.category,
+          name: cible.rcs ? `${PREFIXE_ENVOI_API}${cible.label}` : `${PREFIXE_ENVOI_API}${cible.label}`.slice(0, 120),
           templateName: cible.templateName, templateLanguage: cible.templateLanguage, paramMapping: params,
           ...(cible.workflowId ? { workflowId: cible.workflowId } : {}),
           ...(cible.startNodeId ? { startNodeId: cible.startNodeId } : {}),
+          ...(cible.rcs ? { channel: 'rcs' as const, rcsAgentId: cible.rcs.agentId, rcsMessage: cible.rcs.contenu } : {}),
         },
         recipients,
       );

@@ -18,6 +18,9 @@ const TEMPLATE: EnvoiApiBrut = {
   status: 'running',
   createdAt: '2026-09-24T10:00:00.000Z',
   channel: 'whatsapp',
+  // 🔴 SANS le préfixe de l'API, délibérément : le cas « une campagne RCS de la console » ÉTALE cette fixture
+  // en changeant son canal, et attend `{ rcsMessage: null }`. Un nom préfixé en ferait un envoi RCS de l'API.
+  name: 'Confirmation de commande',
   templateName: 'confirmation',
   templateLanguage: 'fr',
   workflowCode: null,

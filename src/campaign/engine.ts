@@ -200,8 +200,11 @@ export interface EngineDeps {
   startWorkflow?: (tenantId: string, workflowId: string, waId: string, contactId: string, firstTemplateParams: string[]) => Promise<void | boolean | string>;
   /**
    * Campagne NODE (/v1/sends, D-1) : démarre le workflow à un bloc PRÉCIS. Pas de `firstTemplateParams` (la
-   * cible node n'est pas une ouverture de template paramétrée) et pas de garde fenêtre 24 h dans l'executor :
-   * la fenêtre a été vérifiée destinataire par destinataire à la création de l'envoi.
+   * cible node n'est pas une ouverture de template paramétrée : un template y résout ses variables par les
+   * sources enregistrées dans la console, et `/v1/sends` refuse `params` sur un bloc) et pas de garde fenêtre
+   * 24 h dans l'executor : quand le bloc ouvre par un message de session (`ouvertureApi`), la fenêtre a été
+   * vérifiée destinataire par destinataire à la création de l'envoi ; un bloc qui ouvre par un template ou un
+   * RCS n'en a pas besoin.
    */
   startWorkflowFromNode?: (tenantId: string, workflowId: string, startNodeId: string, waId: string, contactId: string) => Promise<void | boolean | string>;
   /**

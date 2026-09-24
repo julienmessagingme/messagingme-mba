@@ -47,6 +47,7 @@ import { PgAuditStore } from './audit/store.pg';
 import { PgErreursLivraisonStore } from './ops/erreurs-livraison.pg';
 import { PgEchecsMessagesStore } from './delivery/echecs-messages.pg';
 import { traiterRapportRcs } from './rcs/rapport-livraison';
+import { envoyerRcsLibre, phraseOperateur, type DepsRcsLibre } from './rcs/envoyer-libre';
 import { PLAFOND_CONTACTS_ERREUR } from './http/stats';
 import { PgPoolAttentesStore, viderVersLaBase } from './ops/pool-attentes.pg';
 import { PgWorkflowNodeEventStore } from './workflow/node-events.pg';
@@ -54,7 +55,6 @@ import { PgWorkflowReportStore } from './workflow/reports.pg';
 import { PgTrackedLinkStore } from './links/tracked-links.pg';
 import { lienDe, lienTraceAvecJeton } from './links/rewrite';
 import { noeudsTemplate, compteursDeClics, liensRcsDesNoeuds, compteursDeClicsRcs } from './links/mesures';
-import { aDesLiensTracables } from './links/rcs-liens';
 import { fabriquerJeton } from './links/jeton-contact';
 import { newTrackingCode } from './ids/code';
 import type { AuditSink } from './audit/journal';
@@ -97,7 +97,6 @@ import type { StartOutcome } from './workflow/executor';
 import { PgEmailAccountStore } from './email/account-store.pg';
 import { PgEmailTemplateStore } from './email/template-store.pg';
 import { PgRcsMessageStore } from './rcs/message-store.pg';
-import type { RcsOutbound } from './rcs/types';
 import { PgRcsMediaStore } from './rcs/media-store.pg';
 import { urlImageRcs } from './rcs/image';
 import { newMediaCode } from './ids/code';
@@ -107,8 +106,6 @@ import { lireCatalogueGateway } from './agent/llm/modeles-gateway';
 import { modelesProposables, type ModeleGateway } from './agent/modeles';
 import { apercuMo } from './rcs/callback';
 import { estDemandeArret } from './crm/consentement';
-import { apercuRcsSortant } from './rcs/schema';
-import { aDesVariables, appliquerVariables } from './rcs/variables';
 import { contactVars } from './crm/render';
 import { resolveHintParams } from './crm/template';
 import { EmailAccountResolver } from './email/resolver';
@@ -655,6 +652,24 @@ async function main(): Promise<void> {
   // (`depsConsentementDe`, que `creerServiceContactsV1` appelle aussi), jamais une seconde écrite à la main.
   const depsConsentement = depsConsentementDe(contactStore, auditSink);
 
+  /**
+   * L'ENVOI RCS LIBRE, partagé par le bouton RCS de l'Inbox et par `POST /v1/messages/rcs` (lot 3 de l'API
+   * publique). Les gardes vivent dans `envoyerRcsLibre`, testée ; ce bloc ne fait que brancher.
+   */
+  const depsRcsLibre: DepsRcsLibre = {
+    agentIdForTenant: (t) => workflowRuntime.rcsStack.agents.agentIdForTenant(t),
+    estDesabonne: (t, waId) => contactStore.estDesabonneParWaId(t, waId),
+    estDesabonneRcs: (t, e164) => workflowRuntime.rcsStack.optout.isOptedOut(t, e164),
+    aConsentiOuEcrit: (t, waId) => contactStore.aConsentiOuEcritParWaId(t, waId),
+    lireJoignabilite: (agentId, e164) => rcsJoignabilite.get(agentId, e164),
+    lireMessageRcs: (t, id) => rcsMessageStore.getById(t, id),
+    variablesDeLaFiche: async (t, waId) => contactVars(await contactStore.getResolvableByPhone(t, waId) ?? {}),
+    jetonDuContact: async (t, waId) => (await trackedLinkStore.jetonPourE164(t, waId, fabriquerJeton).catch(() => null)) ?? undefined,
+    envoyer: (t, agentId, waId, msg, id, jeton) => workflowRuntime.rcsStack.sender.sendTo(t, agentId, waId, msg, id, jeton),
+    nouvelId: () => randomUUID(),
+    maintenant: () => Date.now(),
+  };
+
   const app = buildServer({
     /**
      * 🔴 SURVEILLANCE DE `/ops` (décision de Julien, 2026-09-03). `/ops` ouvre la lecture de toutes les
@@ -974,46 +989,15 @@ async function main(): Promise<void> {
         return { values, labels };
       },
       /**
-       * Envoi d'un message RCS depuis l'inbox. Le message vient de la bibliothèque et ses variables sont
-       * résolues sur la fiche du contact, exactement comme dans une campagne : c'est le MÊME chemin d'envoi
-       * (`rcsStack.sender`), donc les mêmes garde-fous (opt-out, élagage des boutons, normalisation des
-       * charges utiles) sans en réécrire un seul.
-       *
-       * Chaque refus porte sa RAISON, destinée à l'opérateur qui a le doigt sur le bouton : « le canal RCS
-       * n'est pas activé » et « ce contact s'est désabonné » demandent deux gestes différents.
+       * Envoi d'un message RCS depuis l'inbox, par le MÊME chemin que `POST /v1/messages/rcs`
+       * (`envoyerRcsLibre`). Origine `humain` : ni la garde de consentement, ni celle du désabonnement général,
+       * ni le cache de joignabilité ne s'appliquent à un opérateur (le bouton reste identique, spec § 17) ; le
+       * STOP RCS, si, par le point de passage unique de l'envoi.
+       * Chaque refus porte sa RAISON, destinée à l'opérateur (`phraseOperateur`).
        */
       sendRcsFromInbox: async (tenant, waId, contenu) => {
-        const agentId = await workflowRuntime.rcsStack.agents.agentIdForTenant(tenant);
-        if (!agentId) return { refus: "Le canal RCS n'est pas activé sur cet espace (page d'accueil, sous le numéro WhatsApp)." };
-        // Réponse LIBRE : rien à relire en bibliothèque, et rien à substituer non plus. L'opérateur a écrit ce
-        // qu'il voulait dire ; y chercher des {{champ}} transformerait une accolade tapée par erreur en trou.
-        let brut: RcsOutbound;
-        if ('text' in contenu) {
-          brut = { kind: 'text', text: contenu.text };
-        } else {
-          const enregistre = await rcsMessageStore.getById(tenant, contenu.rcsMessageId);
-          if (!enregistre?.content) return { refus: 'Ce message RCS n’existe plus, ou son format n’est plus reconnu.' };
-          brut = enregistre.content;
-        }
-        const message = 'text' in contenu
-          ? brut
-          : aDesVariables(brut)
-            ? appliquerVariables(brut, contactVars(await contactStore.getResolvableByPhone(tenant, waId) ?? {}))
-            : brut;
-        // QUI a cliqué : le jeton du contact ouvert, écrit dans les liens tracés du message. Lu SEULEMENT si
-        // le message porte un lien, et jamais bloquant : sans jeton, le lien part tracé mais anonyme.
-        const jeton = aDesLiensTracables(message)
-          ? (await trackedLinkStore.jetonPourE164(tenant, waId, fabriquerJeton).catch(() => null)) ?? undefined
-          : undefined;
-        const issue = await workflowRuntime.rcsStack.sender.sendTo(tenant, agentId, waId, message, randomUUID(), jeton);
-        if ('skipped' in issue) {
-          return {
-            refus: issue.skipped === 'rcs_optout'
-              ? 'Ce contact s’est désabonné du RCS (il a répondu STOP). Passez par WhatsApp.'
-              : 'Ce contact n’est pas joignable en RCS.',
-          };
-        }
-        return { messageId: issue.messageId, apercu: apercuRcsSortant(message) };
+        const issue = await envoyerRcsLibre(depsRcsLibre, tenant, waId, contenu, 'humain');
+        return 'refus' in issue ? { refus: phraseOperateur(issue.refus) } : issue;
       },
       // Un opérateur qui écrit prend le fil : le scénario cesse d'avancer TOUT SEUL sur ce contact et MBA cesse de répondre.
       // 🔴 ÉCRIRE SUFFIT, ET C'EST MESURÉ (2026-09-10) : après une réponse depuis l'Inbox pendant que l'agent
@@ -3154,6 +3138,11 @@ async function main(): Promise<void> {
         idempotencyComplete: (tenant, key, sendId, response) => idempotencyStore.complete(tenant, key, sendId, response),
         idempotencyRelease: (tenant, key) => idempotencyStore.release(tenant, key),
         lireEnvoi: (sendId, tenant) => repo.lireEnvoiApi(sendId, tenant),
+        // La cible `rcsMessage` (lot 3) : la bibliothèque par son nom, et l'agent RCS de l'espace.
+        rcs: {
+          messageRcsParNom: (tenant, nom) => rcsMessageStore.getByName(tenant, nom),
+          agentIdForTenant: (tenant) => workflowRuntime.rcsStack.agents.agentIdForTenant(tenant),
+        },
       },
       /**
        * `POST /v1/messages/whatsapp` : un simple texte dans la fenêtre de 24 h (lot 7 du 2026-09-23, adresse
@@ -3191,6 +3180,23 @@ async function main(): Promise<void> {
         // LA MÊME fonction que le bouton « Ouvrir la conversation » du mini-CRM : elle refuse un contact
         // supprimé comme un contact bloqué, ce qui EST la garde de blocage de cette route.
         ouvrirConversation: (tenant, contactId) => inboxStore.ouvrirConversationDuContact(tenant, contactId),
+      },
+      /**
+       * `POST /v1/messages/rcs` (lot 3). Ce bloc ne fait que brancher : les gardes du RCS vivent dans
+       * `envoyerRcsLibre`, la MÊME fonction que le bouton RCS de l'Inbox (`depsRcsLibre`).
+       */
+      messagesRcs: {
+        // La MÊME fermeture que les blocs `sends` et `messages` : le MÊME dépôt que `/v1/contacts`, sinon une
+        // personne serait trouvée par une route et pas par l'autre. Ses quatre paramètres passent.
+        resoudreFiche: (tenant, cles, o) => resoudreFiche(contactStore, tenant, cles, o),
+        etatPourEnvoi: (tenant, id) => contactStore.etatPourEnvoi(tenant, id),
+        rcs: depsRcsLibre,
+        ouvrirConversation: (tenant, contactId) => inboxStore.ouvrirConversationDuContact(tenant, contactId),
+        // `app_human`, comme les autres machines : le scénario cesse d'avancer seul. QUI a parlé est porté par
+        // l'origine du message (`api`).
+        takeControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human'); },
+        recordOutbound: (id, body, msgId, origine, type, cat, name, sender, canal, redaction) =>
+          inboxStore.recordOutbound(id, body, msgId, origine, type, cat, name, sender, canal, redaction),
       },
       /**
        * Serveur MCP (`POST /mcp`) : les MÊMES fonctions que la console, jamais des variantes.

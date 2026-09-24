@@ -1,5 +1,5 @@
 {
-  "commentaire": "Lu par ~/.claude/hooks/deploiement-garde.js : aucun deploiement de l'API sur le VPS sans revue finale attestee (/revue-finale). La garde reconnait le deploiement au CHEMIN dans la commande ssh. 'hote' est un alias ssh, jamais l'IP d'origine : ce depot est public. pushDeploie reste a false : la console Vercel se deploie a chaque push, mais exiger une attestation par push serait intenable, plusieurs sessions poussant en continu.",
+  "commentaire": "Lu par ~/.claude/hooks/deploiement-garde.js : aucun deploiement de l'API sur le VPS sans revue finale attestee (/revue-finale). La garde reconnait le deploiement au CHEMIN dans la commande ssh. 'hote' est un alias ssh, jamais l'IP d'origine : ce depot est public. pushDeploie reste a false : la console Vercel se deploie a chaque push, mais exiger une attestation par push serait intenable, plusieurs sessions poussant en continu. ATTENTION : cette garde n'est branchee dans AUCUN settings.json, donc elle ne bloque rien aujourd'hui (decision de Julien du 2026-09-24 de la laisser debranchee).",
   "pushDeploie": false,
   "branche": "main",
   "cibles": [

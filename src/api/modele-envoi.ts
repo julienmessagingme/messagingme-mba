@@ -16,7 +16,11 @@
  * lieu d'inviter l'intégrateur à recommencer.
  */
 export type LectureModele =
-  | { statut: 'approuve'; categorie: 'marketing' | 'utility' }
+  /**
+   * `variables` : le nombre de variables du CORPS (la plus haute position `{{n}}`, `countTemplateVariables`),
+   * celui que Meta exige à chaque envoi. `params` doit en décrire exactement autant (`src/http/v1-sends.ts`).
+   */
+  | { statut: 'approuve'; categorie: 'marketing' | 'utility'; variables: number }
   | { statut: 'absent' }
   | { statut: 'illisible' }
   | { statut: 'categorie_non_admise'; categorie: string };
@@ -26,11 +30,13 @@ export interface ModeleLu {
   statut?: string;
   langue?: string;
   category?: string;
+  /** Le nombre de variables du corps, tel que la lecture partagée le calcule. */
+  count: number;
 }
 
 export function verdictModele(info: ModeleLu | null, langue: string): LectureModele {
   if (info === null || info.langue !== langue || info.statut !== 'APPROVED') return { statut: 'absent' };
-  if (info.category === 'marketing' || info.category === 'utility') return { statut: 'approuve', categorie: info.category };
+  if (info.category === 'marketing' || info.category === 'utility') return { statut: 'approuve', categorie: info.category, variables: info.count };
   if (info.category !== undefined && info.category !== '') return { statut: 'categorie_non_admise', categorie: info.category };
   return { statut: 'illisible' };
 }

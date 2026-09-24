@@ -216,6 +216,11 @@ export interface EnvoiApiBrut {
   createdAt: string;
   /** `campaigns.channel` (0056, `not null default 'whatsapp'`). Une campagne RCS n'a jamais de scénario. */
   channel: 'whatsapp' | 'rcs';
+  /**
+   * Le nom de la campagne (lot 3). Pour un envoi RCS de l'API, `[API] <nom du message>`, jamais coupé : c'est
+   * là que le suivi relit la cible `rcsMessage` (`nomDuMessageRcs`), la campagne ne gardant que le CONTENU.
+   */
+  name: string;
   templateName: string | null;
   templateLanguage: string | null;
   /** Code public `scn_…` du scénario. null pour un template, ou un scénario supprimé depuis. */
@@ -1132,7 +1137,11 @@ export class PgCampaignRepo {
     return res.rows.map((r) => ({ id: r.id, displayPhoneNumber: r.display_phone_number, verifiedName: r.verified_name }));
   }
 
-  /** Comme listContactsForBuild mais BORNÉ à des ids précis (API /v1/sends : évite de charger tout le CRM). */
+  /**
+   * Comme listContactsForBuild mais BORNÉE à des ids précis : la console, quand une campagne vise une liste
+   * explicite (`createCampaignWithRecipients`). L'API publique n'y passe plus : elle lit les bloqués AUSSI
+   * (`listContactsPourEnvoiApi`), et c'est `trierDestinataires` qui les écarte, avec le motif `blocked_contact`.
+   */
   async listContactsForBuildByIds(tenantId: string, ids: string[]): Promise<BuildContact[]> {
     if (ids.length === 0) return [];
     const res = await this.pool.query<{
@@ -1140,8 +1149,9 @@ export class PgCampaignRepo {
       fields: Record<string, unknown>; opt_in_status: 'opted_in' | 'opted_out' | 'unknown';
     }>(
       `select id, phone_e164, bsuid, profile_name, fields, opt_in_status
-       -- Un contact bloqué n'est plus un destinataire, sur AUCUN chemin. Le filtrer ici plutôt que dans le
-       -- build garantit qu'aucune campagne, présente ou future, ne l'atteindra.
+       -- Un contact bloqué n'est pas un destinataire d'une campagne de la console : filtré ici, avant le build.
+       -- L'API publique lit les bloqués (listContactsPourEnvoiApi) pour les écarter avec leur motif
+       -- (trierDestinataires, blocked_contact) : elle ne les atteint pas davantage.
        from contacts where tenant_id = $1 and deleted_at is null and blocked_at is null and id = any($2::uuid[])`,
       [tenantId, ids],
     );
@@ -1187,10 +1197,10 @@ export class PgCampaignRepo {
    */
   async lireEnvoiApi(campaignId: string, tenantId: string): Promise<EnvoiApiBrut | null> {
     const tete = await this.pool.query<{
-      id: string; status: CampaignStatus; created_at: Date; channel: string; template_name: string | null; template_language: string | null;
+      id: string; status: CampaignStatus; created_at: Date; channel: string; name: string; template_name: string | null; template_language: string | null;
       start_node_id: string | null; workflow_code: string | null; graph: WorkflowGraph | null;
     }>(
-      `select c.id, c.status, c.created_at, c.channel, c.template_name, c.template_language, c.start_node_id,
+      `select c.id, c.status, c.created_at, c.channel, c.name, c.template_name, c.template_language, c.start_node_id,
               w.code as workflow_code, w.graph
          from campaigns c
          left join workflows w on w.id = c.workflow_id and w.tenant_id = c.tenant_id
@@ -1235,6 +1245,7 @@ export class PgCampaignRepo {
       createdAt: t.created_at.toISOString(),
       // Deux valeurs en base (0056) ; toute autre retombe sur WhatsApp, le défaut de la colonne.
       channel: t.channel === 'rcs' ? 'rcs' : 'whatsapp',
+      name: t.name,
       templateName: t.template_name,
       templateLanguage: t.template_language,
       workflowCode: t.workflow_code,

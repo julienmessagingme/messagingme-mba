@@ -309,7 +309,17 @@ une option que personne n'appellerait serait du code mort (écart relevé par le
   `variables.commande`. Absente et sans `fallback` : `missing_variable`, comme une source de champ vide.
 - **Message RCS** : `{{commande}}` prend `variables.commande` en priorité, puis le champ de fiche du même nom.
 - **Scénario et bloc** : `variables` refusé (400 `invalid_body`) : un parcours n'a aujourd'hui aucun endroit où
-  les ranger. `params` n'a de sens que sur un template (400 ailleurs).
+  les ranger.
+- **`params`** : sur un template, et sur un **scénario qui ouvre par un template** : une campagne de scénario
+  transmet ces valeurs à son template d'ouverture, comme dans la console. Ce template est alors lu chez Meta
+  comme la cible `template` (introuvable : 404 `template_not_found` ; catégorie illisible ou non admise : 422
+  `template_category_unknown`), et `params` doit décrire exactement le nombre de variables de son corps, sur
+  les deux cibles (sinon 422 `unsendable_target` : Meta refuserait chaque message après un 201). La source
+  `variable` y est refusée (400). Ailleurs, `params` est refusé (400) : un scénario qui ouvre en RCS n'a aucun
+  template d'ouverture, un bloc résout son template par les sources enregistrées dans la console, un message
+  RCS prend ses `{{variables}}` dans `recipients[].variables`. (Corrigé après le lot 2, qui refusait `params`
+  sur tout scénario : un scénario ouvrant par un template à variable rendait 201, puis échouait chez Meta pour
+  chaque destinataire.)
 
 ### Catégorie, numéro, débit
 
@@ -318,7 +328,8 @@ une option que personne n'appellerait serait du code mort (écart relevé par le
   `category` est refusé sur un template.
 - **Scénario, bloc, message RCS** : `category` (`marketing` | `utility`) est obligatoire. Elle décide du
   consentement exigé : `marketing` écarte tout ce qui n'est pas `opted_in`, `utility` n'écarte que les
-  désabonnés.
+  désabonnés. Pour un scénario qui ouvre par un template, la catégorie lue chez Meta pour ce template
+  l'emporte si elle est plus stricte : un template marketing annoncé `utility` reste marketing.
 - **Numéro WhatsApp** : exigé pour `template`, `scenario` et `node` (la console l'exige pour toute campagne
   de scénario) ; il n'est PAS exigé pour `rcsMessage`, qui part de l'agent RCS de l'espace. `phoneNumberId`
   reste optionnel et documenté ; absent, le numéro par défaut de l'espace.

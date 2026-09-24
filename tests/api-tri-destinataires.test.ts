@@ -149,3 +149,36 @@ describe('construireDestinataires', () => {
     expect(ecarts).toEqual([{ index: 1, reason: 'duplicate' }]);
   });
 });
+
+describe('les variables d’un destinataire (lot 3 de l’API publique)', () => {
+  it('🔴 elles voyagent du tri à la construction, et résolvent la source « variable »', () => {
+    const tri = trierDestinataires({
+      category: 'utility', ouverture: 'whatsapp_template',
+      resolus: [{ index: 0, contactId: 'a', variables: { commande: '8412' } }, vers(1, 'b')],
+      contacts: [ct({ id: 'a' }), ct({ id: 'b', phone_e164: '+33600000002' })],
+    });
+    const params: TemplateParam[] = [{ position: 1, source: { type: 'variable', key: 'commande' } }];
+    const { recipients, ecarts } = construireDestinataires('utility', params, tri, new Date());
+    expect(recipients).toEqual([{ contactId: 'a', toE164: '+33600000001', resolvedParams: ['8412'], variables: { commande: '8412' } }]);
+    expect(ecarts).toEqual([{ index: 1, reason: 'missing_variable' }]);
+  });
+
+  it('🔴 elles ne touchent JAMAIS la fiche chargée : seule la copie envoyée à la construction les porte', () => {
+    const fiche = ct({ id: 'a' });
+    const tri = trierDestinataires({
+      category: 'utility', ouverture: 'whatsapp_template',
+      resolus: [{ index: 0, contactId: 'a', variables: { commande: '8412' } }], contacts: [fiche],
+    });
+    construireDestinataires('utility', [], tri, new Date());
+    expect(fiche).not.toHaveProperty('variables');
+    expect(tri.eligibles[0]!.contact).not.toHaveProperty('variables');
+  });
+
+  it('le canal atteint la construction : sur une campagne RCS, une fiche sans numéro est écartée no_phone', () => {
+    // Le tri l'écarte déjà sur une ouverture rcs ; ici, un tri WhatsApp isole la construction.
+    const tri = trierDestinataires({ category: 'utility', ouverture: 'whatsapp_template', resolus: [vers(0, 'b')], contacts: [ct({ id: 'b', phone_e164: null, bsuid: 'BS-b' })] });
+    expect(construireDestinataires('utility', [], tri, new Date(), 'rcs').ecarts).toEqual([{ index: 0, reason: 'no_phone' }]);
+    // Ancre positive : sans le canal, la même fiche part sur son BSUID, comme au lot 2.
+    expect(construireDestinataires('utility', [], tri, new Date()).recipients.map((r) => r.toE164)).toEqual(['BS-b']);
+  });
+});

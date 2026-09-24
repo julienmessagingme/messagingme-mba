@@ -5,6 +5,7 @@ import { sha256Hex } from '../src/lib/signature';
 import { verdictLigne, type IdempotencyClaim } from '../src/api/idempotency-store.pg';
 import { empreinteCorps } from '../src/api/idempotence';
 import { formaterSuiviEnvoi } from '../src/api/suivi-envoi';
+import { nomDuMessageRcs, PREFIXE_ENVOI_API } from '../src/api/cible-rcs';
 import { appliquerConsentement, type IssueConsentement } from '../src/api/consentement';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { V1SendsRouteDeps, V1SendCreateInput } from '../src/http/v1-sends';
@@ -59,10 +60,18 @@ const noeud = (id: string, type: WorkflowNode['type'], data: Record<string, unkn
 
 const G_TEMPLATE: WorkflowGraph = { nodes: [noeud('t', 'template', { templateName: 'promo' })], edges: [] };
 const G_SESSION: WorkflowGraph = { nodes: [noeud('q', 'quick_message', { body: 'Bonjour' })], edges: [] };
-const SCENARIOS: Record<string, WorkflowGraph> = { scn_template: G_TEMPLATE, scn_session: G_SESSION, scn_vide: { nodes: [], edges: [] } };
-/** Les cibles `node` : `nod_<id du bloc>`. */
+const G_RCS: WorkflowGraph = { nodes: [noeud('r', 'rcs_message', { text: 'Carte' })], edges: [] };
+const SCENARIOS: Record<string, WorkflowGraph> = { scn_template: G_TEMPLATE, scn_session: G_SESSION, scn_rcs: G_RCS, scn_vide: { nodes: [], edges: [] } };
+/**
+ * Les cibles `node` : `nod_<id du bloc>`.
+ *
+ * ⚠️ `debut` PRÉCÈDE la condition, et il est là pour le test du défaut 3 : sans lui, `cond` serait l'ENTRÉE
+ * du scénario, et « juger depuis l'entrée » rendrait le même verdict que « juger depuis le bloc visé ». Un
+ * template en entrée fait diverger les deux (l'entrée ouvre par un template, le bloc par un message de session).
+ */
 const G_NODES: WorkflowGraph = {
   nodes: [
+    noeud('debut', 'template', { templateName: 'accueil' }),
     noeud('cond', 'condition'),
     noeud('qm', 'quick_message', { body: 'On en parle ?' }),
     noeud('rcs', 'rcs_message', { text: 'Carte' }),
@@ -71,6 +80,7 @@ const G_NODES: WorkflowGraph = {
     noeud('tpl2', 'template', { templateName: 'rappel' }),
   ],
   edges: [
+    { id: 'e0', source: 'debut', target: 'cond' },
     { id: 'e1', source: 'cond', target: 'qm', sourceHandle: 'true' },
     { id: 'e2', source: 'attente', target: 'tpl2' },
   ],
@@ -87,7 +97,7 @@ function app(over: Partial<Omit<V1SendsRouteDeps, 'usage'>> = {}, monde: Partial
   const m: Monde = {
     fiches: new Map([[C1, fiche(C1, 1)], [C2, fiche(C2, 2)]]),
     fenetre: new Map([['33612345001', true], ['33612345002', true]]),
-    modele: { statut: 'approuve', categorie: 'utility' },
+    modele: { statut: 'approuve', categorie: 'utility', variables: 0 },
     ...monde,
   };
   const cap = {
@@ -185,6 +195,13 @@ function app(over: Partial<Omit<V1SendsRouteDeps, 'usage'>> = {}, monde: Partial
     idempotencyComplete: async (_t, key, sendId, response) => { const l = idem.get(key); if (l) { l.sendId = sendId; l.response = response; } },
     idempotencyRelease: async (_t, key) => { idem.delete(key); },
     lireEnvoi: async () => null,
+    // La cible `rcsMessage` (lot 3) : un seul message dans la bibliothèque, un agent RCS actif.
+    rcs: {
+      messageRcsParNom: async (_t, nom) => (nom === 'relance-panier'
+        ? { name: 'relance-panier', content: { kind: 'text', text: 'Votre commande {{commande}} est prête' } }
+        : null),
+      agentIdForTenant: async () => 'agent-1',
+    },
     sleep: async () => {}, // pas de temporisation réelle dans les tests de retry
     ...over,
   };
@@ -203,7 +220,7 @@ interface Rapport { sendId: string; opening: string; recipientCount: number; cre
 
 describe('POST /v1/sends : cible template', () => {
   it('201 : catégorie LUE CHEZ META, ouverture whatsapp_template, campagne créée puis enfilée', async () => {
-    const { server, cap } = app({}, { modele: { statut: 'approuve', categorie: 'marketing' } });
+    const { server, cap } = app({}, { modele: { statut: 'approuve', categorie: 'marketing', variables: 0 } });
     const res = await envoyer(server, { ...TPL, recipients: [{ contactId: C1 }] }, 'i-tpl');
     expect(res.statusCode).toBe(201);
     expect(res.json()).toEqual({ sendId: 'camp1', opening: 'whatsapp_template', recipientCount: 1, created: 0, matched: 1, skipped: [], skippedTotal: 0 });
@@ -301,12 +318,15 @@ describe('POST /v1/sends : cible scénario', () => {
     await server.close();
   });
 
-  it('sans `category` ou avec une catégorie inconnue -> 400 ; avec des `params` -> 400', async () => {
+  it('sans `category` ou avec une catégorie inconnue -> 400 ; des `params` sur un scénario qui ouvre en RCS -> 400', async () => {
     const { server } = app();
     expect((await envoyer(server, { target: { scenario: 'scn_template' }, recipients: [{ contactId: C1 }] }, 'i-sans-cat')).json()).toMatchObject({ code: 'invalid_body' });
     expect((await envoyer(server, { target: { scenario: 'scn_template' }, category: 'spam', recipients: [{ contactId: C1 }] }, 'i-cat-spam')).statusCode).toBe(400);
+    // Un scénario qui ouvre en RCS n'a aucun template d'ouverture à paramétrer. (Ceux qui ouvrent par un
+    // template acceptent `params` depuis le lot 3 : cf. le describe qui leur est consacré.)
     const params = [{ position: 1, source: { type: 'field', key: 'prenom' } }];
-    expect((await envoyer(server, { ...SCN('scn_template'), recipients: [{ contactId: C1 }], params }, 'i-params')).statusCode).toBe(400);
+    const rcs = await envoyer(server, { ...SCN('scn_rcs'), recipients: [{ contactId: C1 }], params }, 'i-params');
+    expect([rcs.statusCode, rcs.json<{ code: string }>().code]).toEqual([400, 'invalid_body']);
     await server.close();
   });
 
@@ -452,7 +472,7 @@ describe('POST /v1/sends : les destinataires', () => {
       [C4, fiche(C4, 4, { optInStatus: 'unknown' })],
       [C5, fiche(C5, 5)],
     ]);
-    const { server } = app({}, { fiches, modele: { statut: 'approuve', categorie: 'marketing' } });
+    const { server } = app({}, { fiches, modele: { statut: 'approuve', categorie: 'marketing', variables: 1 } });
     const recipients = [
       { contactId: C1 },                        // 0 : part
       null,                                       // 1 : invalid_recipient
@@ -514,7 +534,7 @@ describe('POST /v1/sends : les destinataires', () => {
 
 describe('POST /v1/sends : le consentement par destinataire', () => {
   it('🔴 il est écrit AVANT la lecture des fiches, donc avant le tri marketing, et il est journalisé', async () => {
-    const { server, cap } = app({}, { modele: { statut: 'approuve', categorie: 'marketing' }, fiches: new Map([[C1, fiche(C1, 1, { optInStatus: 'unknown' })]]) });
+    const { server, cap } = app({}, { modele: { statut: 'approuve', categorie: 'marketing', variables: 0 }, fiches: new Map([[C1, fiche(C1, 1, { optInStatus: 'unknown' })]]) });
     const res = await envoyer(server, { ...TPL, recipients: [{ contactId: C1, consent: 'opted_in' }] }, 'i-consent');
     expect(res.json()).toMatchObject({ recipientCount: 1, skippedTotal: 0 });
     expect(cap.consentements).toEqual([{ contactId: C1, consent: 'opted_in', source: 'api', lecturesAvant: 0 }]);
@@ -672,7 +692,7 @@ describe('POST /v1/sends : idempotence', () => {
     const r1 = await envoyer(server, CORPS, 'k-libere');
     expect(r1.statusCode).toBe(404);
     expect(idem.has('k-libere')).toBe(false);
-    m.modele = { statut: 'approuve', categorie: 'utility' };
+    m.modele = { statut: 'approuve', categorie: 'utility', variables: 0 };
     const r2 = await envoyer(server, CORPS, 'k-libere');
     expect(r2.statusCode).toBe(201);
     expect(cap.sends).toHaveLength(1);
@@ -803,6 +823,7 @@ describe('GET /v1/sends/{sendId}', () => {
   const ID = '11111111-1111-4111-8111-111111111111';
   const BRUT: EnvoiApiBrut = {
     id: ID, status: 'running', createdAt: '2026-09-24T10:00:00.000Z', channel: 'whatsapp', templateName: 'confirmation', templateLanguage: 'fr',
+    name: '[API] confirmation',
     workflowCode: null, startNodeId: null, graph: null,
     counts: { pending: 0, sending: 0, sent: 1, failed: 0, skipped: 0 },
     recipientsTotal: 1,
@@ -827,6 +848,214 @@ describe('GET /v1/sends/{sendId}', () => {
     expect(pasUuid.statusCode).toBe(404);
     expect(pasUuid.json()).toMatchObject({ code: 'send_not_found' });
     expect(lectures).toBe(1);
+    await server.close();
+  });
+});
+
+describe('POST /v1/sends : la cible rcsMessage et les variables par destinataire (lot 3)', () => {
+  const RCS = (nom = 'relance-panier') => ({ target: { rcsMessage: nom }, category: 'utility' as const });
+
+  it('🔴 201 : ouverture rcs, campagne RCS SANS numéro WhatsApp (l’espace n’en a même aucun), variables gardées', async () => {
+    const { server, cap } = app({ getTenantPhoneNumberId: async () => null });
+    const res = await envoyer(server, { ...RCS(), recipients: [{ contactId: C1, variables: { commande: '8412' } }] }, 'i-rcs-1');
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ opening: 'rcs', recipientCount: 1, skipped: [] });
+    expect(cap.sends[0]!.input).toMatchObject({
+      channel: 'rcs', rcsAgentId: 'agent-1', phoneNumberId: '', name: '[API] relance-panier', category: 'utility',
+      templateName: '', templateLanguage: '', paramMapping: [],
+      rcsMessage: { kind: 'text', text: 'Votre commande {{commande}} est prête' },
+    });
+    expect(cap.sends[0]!.recipients).toEqual([{ contactId: C1, toE164: PHONE(1), resolvedParams: [], variables: { commande: '8412' } }]);
+    await server.close();
+  });
+
+  it('un phoneNumberId fourni est IGNORÉ sur une cible rcsMessage (§ 3 : il reste optionnel, et un RCS part de l’agent)', async () => {
+    const { server, cap } = app();
+    const res = await envoyer(server, { ...RCS(), phoneNumberId: 'pn-autrui', recipients: [{ contactId: C1 }] }, 'i-rcs-pn');
+    expect(res.statusCode).toBe(201);
+    expect(cap.sends[0]!.input.phoneNumberId).toBe('');
+    await server.close();
+  });
+
+  it('message inconnu : 404 ; contenu illisible : 422 ; canal éteint : 409 ; ni campagne, ni fiche résolue', async () => {
+    const { server, cap } = app({
+      rcs: {
+        messageRcsParNom: async (_t, nom) => (nom === 'illisible' ? { name: 'illisible', content: null } : null),
+        agentIdForTenant: async () => 'agent-1',
+      },
+    });
+    const r1 = await envoyer(server, { ...RCS('inconnu'), recipients: [{ contactId: C1 }] }, 'i-rcs-404');
+    expect([r1.statusCode, r1.json<{ code: string }>().code]).toEqual([404, 'rcs_message_not_found']);
+    const r2 = await envoyer(server, { ...RCS('illisible'), recipients: [{ contactId: C1 }] }, 'i-rcs-422');
+    expect([r2.statusCode, r2.json<{ code: string }>().code]).toEqual([422, 'unsendable_target']);
+    expect(cap.sends).toEqual([]);
+    expect(cap.resolutions).toEqual([]);
+    await server.close();
+    const eteint = app({ rcs: { messageRcsParNom: async () => ({ name: 'x', content: { kind: 'text', text: 'x' } }), agentIdForTenant: async () => null } });
+    const r3 = await envoyer(eteint.server, { ...RCS('x'), recipients: [{ contactId: C1 }] }, 'i-rcs-409');
+    expect([r3.statusCode, r3.json<{ code: string }>().code]).toEqual([409, 'rcs_not_enabled']);
+    expect(eteint.cap.sends).toEqual([]);
+    await eteint.server.close();
+  });
+
+  it('sans category : 400 ; params non vides : 400 ; une liste params VIDE vaut son absence', async () => {
+    const { server, cap } = app();
+    const sansCat = await envoyer(server, { target: { rcsMessage: 'relance-panier' }, recipients: [{ contactId: C1 }] }, 'i-rcs-cat');
+    expect([sansCat.statusCode, sansCat.json<{ code: string }>().code]).toEqual([400, 'invalid_body']);
+    const params = [{ position: 1, source: { type: 'literal', value: 'x' } }];
+    expect((await envoyer(server, { ...RCS(), params, recipients: [{ contactId: C1 }] }, 'i-rcs-params')).statusCode).toBe(400);
+    expect((await envoyer(server, { ...RCS(), params: [], recipients: [{ contactId: C1 }] }, 'i-rcs-params-vides')).statusCode).toBe(201);
+    expect(cap.sends).toHaveLength(1);
+    await server.close();
+  });
+
+  it('🔴 un nom plus long que la bibliothèque n’en accepte : 400 invalid_body, rien n’est cherché', async () => {
+    const { server, cap } = app();
+    expect((await envoyer(server, { ...RCS('x'.repeat(121)), recipients: [{ contactId: C1 }] }, 'i-rcs-121')).statusCode).toBe(400);
+    expect(cap.sends).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 un nom de 120 caractères n’est PAS coupé : le suivi relit le message entier', async () => {
+    const nom = 'x'.repeat(120);
+    const { server, cap } = app({ rcs: { messageRcsParNom: async (_t, n) => ({ name: n, content: { kind: 'text', text: 'Bonjour' } }), agentIdForTenant: async () => 'agent-1' } });
+    await envoyer(server, { ...RCS(nom), recipients: [{ contactId: C1 }] }, 'i-rcs-120');
+    expect(cap.sends[0]!.input.name).toBe(`${PREFIXE_ENVOI_API}${nom}`);
+    expect(nomDuMessageRcs(cap.sends[0]!.input.name)).toBe(nom);
+    await server.close();
+  });
+
+  it('🔴 variables sur un scénario ou un bloc : 400 invalid_body, AVANT toute résolution de fiche', async () => {
+    const { server, cap } = app();
+    const r1 = await envoyer(server, { ...SCN('scn_template'), recipients: [{ contactId: C1 }, { contactId: C2, variables: { a: 'b' } }] }, 'i-var-scn');
+    expect([r1.statusCode, r1.json<{ code: string }>().code]).toEqual([400, 'invalid_body']);
+    expect(r1.json<{ error: string }>().error).toContain('recipients.1.variables');
+    const r2 = await envoyer(server, { ...NODE('nod_qm'), recipients: [{ contactId: C1, variables: { a: 'b' } }] }, 'i-var-node');
+    expect([r2.statusCode, r2.json<{ code: string }>().code]).toEqual([400, 'invalid_body']);
+    expect(cap.resolutions).toEqual([]);
+    expect(cap.sends).toEqual([]);
+    await server.close();
+  });
+
+  it('un nom de variable invalide ÉCARTE ce destinataire (invalid_recipient), sans faire tomber l’envoi', async () => {
+    const { server } = app();
+    const res = await envoyer(server, { ...RCS(), recipients: [{ contactId: C1, variables: { 'a b': 'x' } }, { contactId: C2 }] }, 'i-var-nom');
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ recipientCount: 1, skipped: [{ index: 0, reason: 'invalid_recipient' }] });
+    await server.close();
+  });
+
+  it('🔴 STOP RCS : opted_out ; fiche sans numéro : no_phone (le tri du lot 2, sur l’ouverture rcs)', async () => {
+    const fiches = new Map<string, ContactEnvoi>([
+      [C3, fiche(C3, 3, { rcsDesabonne: true })],
+      [C4, fiche(C4, 4, { phone_e164: null, bsuid: 'BS4' })],
+    ]);
+    const { server } = app({}, { fiches });
+    const res = await envoyer(server, { ...RCS(), recipients: [{ contactId: C3 }, { contactId: C4 }] }, 'i-rcs-ecarts');
+    expect(res.json()).toMatchObject({ recipientCount: 0, skipped: [{ index: 0, reason: 'opted_out' }, { index: 1, reason: 'no_phone' }] });
+    await server.close();
+  });
+
+  it('template : la source « variable » lit la variable du destinataire, sinon missing_variable à son index', async () => {
+    const { server, cap } = app({}, { modele: { statut: 'approuve', categorie: 'utility', variables: 1 } });
+    const res = await envoyer(server, {
+      ...TPL, params: [{ position: 1, source: { type: 'variable', key: 'commande' } }],
+      recipients: [{ contactId: C1, variables: { commande: '8412' } }, { contactId: C2 }],
+    }, 'i-tpl-var');
+    expect(res.statusCode).toBe(201);
+    expect(cap.sends[0]!.recipients.map((r) => r.resolvedParams)).toEqual([['8412']]);
+    expect(res.json()).toMatchObject({ skipped: [{ index: 1, reason: 'missing_variable' }] });
+    await server.close();
+  });
+});
+
+describe('POST /v1/sends : les params d’un scénario qui ouvre par un template (correctif du lot 3)', () => {
+  /**
+   * 🔴 LE DÉFAUT : `params` était refusé sur toute cible scénario, alors qu'une campagne de scénario transmet ses
+   * variables à son template d'ouverture (`startWorkflow`, `src/campaign/engine.ts`) et que la console
+   * l'accepte. Un scénario qui ouvre par un template à variable rendait donc 201, puis chaque destinataire
+   * échouait chez Meta (le template partait sans ses variables).
+   */
+  const PRENOM = [{ position: 1, source: { type: 'field', key: 'prenom' } }];
+  const CAMILLE = new Map<string, ContactEnvoi>([[C1, fiche(C1, 1, { fields: { prenom: 'Camille' } })]]);
+
+  it('🔴 le template d’ouverture attend une variable et aucun params ne la couvre : 422 unsendable_target, rien n’est créé', async () => {
+    const { server, cap } = app({}, { modele: { statut: 'approuve', categorie: 'utility', variables: 1 } });
+    const res = await envoyer(server, { ...SCN('scn_template'), recipients: [{ contactId: C1 }] }, 'i-scn-sans-params');
+    expect([res.statusCode, res.json<{ code: string }>().code]).toEqual([422, 'unsendable_target']);
+    expect(res.json<{ error: string }>().error).toContain('promo');
+    expect(cap.sends).toEqual([]);
+    expect(cap.resolutions).toEqual([]);
+    await server.close();
+  });
+
+  it('params qui la couvrent : 201, le mapping est gardé et la valeur part résolue avec le destinataire', async () => {
+    const lus: string[] = [];
+    const { server, cap } = app(
+      { lireModele: async (_t, nom, langue) => { lus.push(`${nom}|${langue}`); return { statut: 'approuve', categorie: 'utility', variables: 1 }; } },
+      { fiches: CAMILLE },
+    );
+    const res = await envoyer(server, { ...SCN('scn_template'), params: PRENOM, recipients: [{ contactId: C1 }] }, 'i-scn-params');
+    expect(res.statusCode).toBe(201);
+    // Le template d'OUVERTURE, lu chez Meta dans la langue du bloc (`fr` par défaut, comme l'exécuteur).
+    expect(lus).toEqual(['promo|fr']);
+    expect(cap.sends[0]!.input).toMatchObject({ workflowId: 'wf-scn_template', paramMapping: PRENOM });
+    expect(cap.sends[0]!.recipients.map((r) => r.resolvedParams)).toEqual([['Camille']]);
+    await server.close();
+  });
+
+  it('un nombre de params différent de celui du template : 422 ; la source « variable » sur un scénario : 400', async () => {
+    const { server, cap } = app({}, { modele: { statut: 'approuve', categorie: 'utility', variables: 2 }, fiches: CAMILLE });
+    const trop = await envoyer(server, { ...SCN('scn_template'), params: PRENOM, recipients: [{ contactId: C1 }] }, 'i-scn-compte');
+    expect([trop.statusCode, trop.json<{ code: string }>().code]).toEqual([422, 'unsendable_target']);
+    const variable = await envoyer(server, {
+      ...SCN('scn_template'), params: [{ position: 1, source: { type: 'variable', key: 'commande' } }], recipients: [{ contactId: C1 }],
+    }, 'i-scn-variable');
+    expect([variable.statusCode, variable.json<{ code: string }>().code]).toEqual([400, 'invalid_body']);
+    expect(cap.sends).toEqual([]);
+    await server.close();
+  });
+
+  it('le template d’ouverture illisible chez Meta : 422 template_category_unknown ; absent : 404 template_not_found', async () => {
+    const illisible = app({}, { modele: { statut: 'illisible' } });
+    const r1 = await envoyer(illisible.server, { ...SCN('scn_template'), recipients: [{ contactId: C1 }] }, 'i-scn-illisible');
+    expect([r1.statusCode, r1.json<{ code: string }>().code]).toEqual([422, 'template_category_unknown']);
+    expect(illisible.cap.sends).toEqual([]);
+    await illisible.server.close();
+    const absent = app({}, { modele: { statut: 'absent' } });
+    const r2 = await envoyer(absent.server, { ...SCN('scn_template'), recipients: [{ contactId: C1 }] }, 'i-scn-absent');
+    expect([r2.statusCode, r2.json<{ code: string }>().code]).toEqual([404, 'template_not_found']);
+    await absent.server.close();
+  });
+
+  it('🔴 la catégorie lue chez Meta ne se relâche jamais : un template marketing annoncé utility écarte qui n’a pas consenti', async () => {
+    const { server, cap } = app({}, {
+      modele: { statut: 'approuve', categorie: 'marketing', variables: 0 },
+      fiches: new Map([[C1, fiche(C1, 1, { optInStatus: 'unknown' })]]),
+    });
+    const res = await envoyer(server, { ...SCN('scn_template'), recipients: [{ contactId: C1 }] }, 'i-scn-marketing');
+    expect(res.json()).toMatchObject({ recipientCount: 0, skipped: [{ index: 0, reason: 'no_consent' }] });
+    expect(cap.sends[0]!.input.category).toBe('marketing');
+    await server.close();
+  });
+
+  it('un scénario qui ouvre en RCS n’est pas lu chez Meta, et garde la catégorie déclarée', async () => {
+    let lectures = 0;
+    const { server, cap } = app({ lireModele: async () => { lectures += 1; return { statut: 'absent' }; } });
+    const res = await envoyer(server, { ...SCN('scn_rcs'), recipients: [{ contactId: C1 }] }, 'i-scn-rcs');
+    expect(res.statusCode).toBe(201);
+    expect(lectures).toBe(0);
+    expect(cap.sends[0]!.input.category).toBe('utility');
+    await server.close();
+  });
+
+  it('comme la cible template : un template à une variable sans params -> 422, et le bon nombre -> 201', async () => {
+    const { server, cap } = app({}, { modele: { statut: 'approuve', categorie: 'utility', variables: 1 }, fiches: CAMILLE });
+    const sans = await envoyer(server, { ...TPL, recipients: [{ contactId: C1 }] }, 'i-tpl-sans-params');
+    expect([sans.statusCode, sans.json<{ code: string }>().code]).toEqual([422, 'unsendable_target']);
+    const avec = await envoyer(server, { ...TPL, params: PRENOM, recipients: [{ contactId: C1 }] }, 'i-tpl-avec-params');
+    expect(avec.statusCode).toBe(201);
+    expect(cap.sends).toHaveLength(1);
     await server.close();
   });
 });

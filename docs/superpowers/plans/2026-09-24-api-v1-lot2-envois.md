@@ -4200,7 +4200,7 @@ Avec une VRAIE clé (Developers > Clés d'API, droits `sends:create` et `contact
 4. Défaut 2 : un template inexistant rend 404 `template_not_found` ; un scénario qui ouvre par un message rapide rend 422 `unsendable_target`.
 5. Défaut 3 : un bloc CONDITION qui mène à un message rapide (`nod_…` d'un scénario publié), vers une fiche dont la fenêtre est FERMÉE : écartée `window_closed`, rien ne part. Puis écrire depuis le téléphone d'essai et recommencer : le message rapide arrive.
 6. `POST /v1/messages/whatsapp` `{ "externalId": "essai-lot2", "text": "…" }` dans la fenêtre : il arrive et apparaît dans l'Inbox, origine `api`. Vers une fiche d'essai qui n'a pas écrit depuis plus de 24 h : 422 `window_closed`. L'ancienne adresse `POST /v1/messages` rend 404.
-7. `POST /v1/sends` avec `consent: "opted_out"` sur le destinataire : écarté `opted_out`, et la ligne d'audit `contact.optout` existe. Remettre ensuite la fiche d'essai en `opted_in` par un `consent: "opted_in"`.
+7. `POST /v1/sends` avec `consent: "opted_out"` sur le destinataire : écarté `opted_out`, et la ligne d'audit `contact.optout` existe. Remettre ensuite la fiche d'essai en `opted_in` DEPUIS SA FICHE DANS LA CONSOLE : l'API ne réabonne jamais (un `consent: "opted_in"` sur une fiche `opted_out` rend 409 `opted_out` sur `/v1/contacts` sans rien écrire, et l'écarte `opted_out` sur `/v1/sends` sans lever le STOP).
 8. Défaut 1 : bloquer une fiche d'essai dans le mini-CRM, l'envoyer par `contactId` : écartée `blocked_contact`, `matched` la compte, `recipientCount + skippedTotal` égale le nombre de destinataires. La débloquer ensuite.
 
 ## Rayon de souffle

@@ -611,6 +611,12 @@ l'envers (7 à 15 chiffres -> numéro, sinon BSUID). `contacts` porte `phone_e16
 (`33612345678`), la fiche un E.164 (`+33612345678`), et le cache de joignabilité RCS a pour clé l'E.164. La
 correspondance passe par le prédicat partagé `MATCH_BY_WAID_SQL`, jamais par une égalité directe.
 
+⚠️ **Le cache de joignabilité RCS est écrit par le RAPPORT DE LIVRAISON**, smsmode ne sachant pas la dire avant
+l'envoi : un échec définitif y pose « injoignable », une livraison « joignable », pour l'agent qui a envoyé et
+toujours en E.164 (`traiterRapportRcs`, `src/rcs/rapport-livraison.ts`). `envoyerRcsLibre` le lit directement
+pour une MACHINE seulement (l'opérateur de l'Inbox n'y est pas soumis), et un « injoignable » plus vieux que
+`TTL_MS` ne refuse plus rien.
+
 ⚠️ **La règle d'AFFICHAGE « numéro sinon BSUID » n'est PAS factorisée** : elle est réécrite à la main dans
 `web/lib/api.ts` (`contactIdentity`, le seul vivant), `src/api/sends-build.ts` et `src/campaign/build.ts`.
 Chantier ouvert, pas un acquis.
@@ -671,6 +677,13 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   réécrit rien : la source d'origine du consentement est gardée. L'opt-out s'annonce au connecteur du client
   comme sur les autres chemins, et l'audit porte `contact.optin` ou `contact.optout` avec la source `api`.
   Une fiche purgée entre la résolution et cette écriture rend `unknown_contact`, jamais « mis à jour ».
+- 🔴 **L'API ne réabonne jamais** (décision de Julien du 2026-09-24) : un `consent: "opted_in"` sur une fiche
+  `opted_out` rend 409 `opted_out` et n'écrit RIEN, ni le consentement, ni les champs, ni les étiquettes, ni une
+  clé rattachée : le refus tombe AVANT la résolution de la fiche, qui écrit (`clesDesignentUnStop`,
+  `src/api/contacts-v1.ts`) ; dans `/v1/contacts/batch`, l'élément est en erreur `opted_out`. Un STOP arrivé
+  pendant l'appel est refusé par le dépôt lui-même (`ecrireConsentementParId` rend `refuse`). Sur `/v1/sends`, le
+  destinataire est écarté `opted_out` et la fiche reste désabonnée. Lever un STOP est un geste d'opérateur,
+  depuis la fiche de la console, ou de la personne elle-même.
 - **Dans `/v1/contacts/batch`, les éléments d'une même personne s'écrivent DANS L'ORDRE** : deux éléments qui
   partagent une clé normalisée forment une chaîne séquentielle (`enChaines`, `src/api/contacts-v1.ts`), les
   chaînes partant par vagues bornées. En parallèle, le second pouvait se résoudre avant que le premier ait
@@ -1438,6 +1451,25 @@ suit est la règle, en une formulation courte.
 11. **Un envoi qui n'a rien montré au contact ne se journalise pas** ; un envoi qui est parti se journalise
     toujours, quel que soit son déclencheur (campagne, inbox, bloc de scénario). Un opérateur qui voit la
     réponse sans voir la question ne peut pas reprendre la conversation.
+
+Ajoutés par le lot 3 de l'API publique, et numérotés après le dernier invariant de ce § 12 pour ne décaler
+aucun renvoi :
+
+32. **L'échec d'un message LIBRE s'écrit dans `echecs_messages`, et lui seul** (`processStatuses` pour Meta,
+   `traiterRapportRcs` pour smsmode) : un échec qui a touché un destinataire de campagne est déjà porté par sa
+   ligne, et un message d'origine `campagne` est exclu à l'écriture. La lecture de plus n'a lieu que sur un
+   échec qui n'a touché aucun destinataire : un statut ordinaire de Meta ne coûte aucune requête. Un rapport
+   smsmode qui DEVANCE l'inscription du message dans le fil est écrit quand même, origine inconnue
+   (`noterSansMessage`). Le journal des erreurs le lit en quatrième source (`message`) ; Analytics l'exclut
+   (`campagnesSeulement`), parce que son compteur par code ne compte que les campagnes ; la purge RGPD efface
+   les lignes de la personne.
+33. **Un RCS libre a UN chemin, `envoyerRcsLibre`**, pour le bouton de l'Inbox et `POST /v1/messages/rcs`.
+   Une MACHINE ne l'envoie qu'à une fiche qui a consenti ou nous a déjà écrit, qui n'a dit STOP ni en général
+   ni en RCS, et que le cache ne dit pas injoignable ; l'OPÉRATEUR n'est soumis qu'au STOP RCS, par le point de
+   passage unique de l'envoi, et son bouton reste celui d'avant.
+34. **Les variables d'un destinataire de l'API ne touchent jamais la fiche** : `campaign_recipients.variables`,
+   relues à l'envoi d'un message RCS (elles priment sur le champ de fiche du même nom) et au renvoi F7, remises
+   à `null` par la purge RGPD. Un scénario ou un bloc les refuse (400) : il n'a nulle part où les ranger.
 
 ### Sur les contrats externes
 

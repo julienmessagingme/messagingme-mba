@@ -36,6 +36,7 @@ import { enqueueCampaignRun } from './campaign/enqueue';
 import { plafondDuCanal, plafondLePlusBas, resolveRatePerMinute } from './campaign/pacing';
 import { flagContactUnreachable } from './crm/hubspot-service';
 import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
+import { DUREE_CLE_IDEMPOTENCE_MS } from './api/idempotence';
 import { PgInboxStore } from './inbox/store.pg';
 import { PgArriveesPubStore } from './pubs/arrivees.pg';
 import { PgTarifsMetaStore } from './pubs/tarifs-meta.pg';
@@ -813,8 +814,10 @@ async function main(): Promise<void> {
         // (l'opérateur EST celui qui a la main), et le scénario reprend la conduite du fil pour pouvoir avancer.
         return workflowExecutor.start(tenant, workflowId, wf.graph, { waId, contactId }, firstTemplateParams, { ignoreHumanControl: true });
       },
-      // Campagne NODE (/v1/sends) : démarre le workflow au bloc ciblé. Fenêtre 24 h déjà vérifiée à la création
-      // de l'envoi -> l'executor n'applique pas la garde (startFromNode).
+      // Campagne NODE (/v1/sends) : démarre le workflow au bloc ciblé, et l'executor n'applique pas la garde de
+      // fenêtre (startFromNode). La fenêtre de 24 h n'a été vérifiée destinataire par destinataire, à la création
+      // de l'envoi, que si le bloc ouvre par un message de session (`ouvertureApi`) ; un bloc qui ouvre par un
+      // template ou un RCS n'en a pas besoin.
       startWorkflowFromNode: async (tenant, workflowId, startNodeId, waId, contactId) => {
         const wf = await workflowStore.getById(workflowId, tenant);
         if (!wf) return false;
@@ -1409,12 +1412,13 @@ async function main(): Promise<void> {
   void handoffSweep();
   taches.programmer('handoff-mba', config.CONTROL_SWEEP_INTERVAL_MS, handoffSweep);
 
-  // Sweeper d'idempotence API : purge les clés Idempotency-Key plus vieilles que 24h (fenêtre de dédup).
+  // Sweeper d'idempotence API : purge les clés plus vieilles que leur durée de vie (`DUREE_CLE_IDEMPOTENCE_MS`),
+  // la MÊME que celle du claim. Le store la prend pour plancher : une purge plus courte ferait envoyer deux fois.
   const idempotencyStore = new PgApiIdempotencyStore(pool);
   const webhookStore = new PgWebhookStore(pool);
   const idempotencySweep = async (): Promise<void> => {
     try {
-      const n = await idempotencyStore.sweepOlderThan(24 * 60 * 60 * 1000);
+      const n = await idempotencyStore.sweepOlderThan(DUREE_CLE_IDEMPOTENCE_MS);
       // eslint-disable-next-line no-console
       if (n > 0) console.log(`idempotency-sweep: ${n} clé(s) d'idempotence purgée(s)`);
     } catch (err) {

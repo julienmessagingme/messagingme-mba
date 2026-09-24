@@ -53,6 +53,19 @@ export class PgRcsMessageStore {
     return rows[0] ? toMessage(rows[0]) : null;
   }
 
+  /**
+   * Un message par son NOM : la cible `rcsMessage` de `/v1/sends` (lot 3 de l'API publique). Servi par l'index
+   * unique PARTIEL `rcs_messages_tenant_name` (0077), dont le prédicat `deleted_at is null` est repris mot pour
+   * mot : s'en écarter ferait lire toute la bibliothèque de l'espace sans qu'aucune erreur ne le dise.
+   */
+  async getByName(tenantId: string, name: string): Promise<RcsMessage | null> {
+    const { rows } = await this.pool.query<Row>(
+      `select ${COLS} from rcs_messages where tenant_id=$1 and name=$2 and deleted_at is null`,
+      [tenantId, name],
+    );
+    return rows[0] ? toMessage(rows[0]) : null;
+  }
+
   async create(tenantId: string, name: string, content: RcsOutbound): Promise<RcsMessage> {
     const { rows } = await this.pool.query<Row>(
       `insert into rcs_messages (tenant_id, name, content) values ($1,$2,$3::jsonb) returning ${COLS}`,

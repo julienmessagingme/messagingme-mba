@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { DUREE_CLE_IDEMPOTENCE_MS } from './idempotence';
 
 export type IdempotencyClaim =
   | { claimed: true }
@@ -50,8 +51,8 @@ export class PgApiIdempotencyStore {
     // l'insertion, et la clé redevient libre à l'heure exacte.
     await this.pool.query(
       `delete from api_idempotency
-       where tenant_id = $1 and idempotency_key = $2 and created_at < now() - interval '24 hours'`,
-      [tenantId, key],
+       where tenant_id = $1 and idempotency_key = $2 and created_at < now() - ($3::bigint || ' milliseconds')::interval`,
+      [tenantId, key, DUREE_CLE_IDEMPOTENCE_MS],
     );
     const ins = await this.pool.query<{ id: string }>(
       `insert into api_idempotency (tenant_id, idempotency_key, request_hash) values ($1, $2, $3)
@@ -83,10 +84,14 @@ export class PgApiIdempotencyStore {
   }
 
   /** Purge les clés plus vieilles que `ms` (worker). Retourne le nb supprimé. */
+  /**
+   * Le ménage des clés expirées. 🔴 La fenêtre ne descend JAMAIS sous la vie d'une clé
+   * (`DUREE_CLE_IDEMPOTENCE_MS`) : purgée plus tôt, une clé redeviendrait libre et un rejeu enverrait deux fois.
+   */
   async sweepOlderThan(ms: number): Promise<number> {
     const res = await this.pool.query(
       `delete from api_idempotency where created_at < now() - ($1::bigint || ' milliseconds')::interval`,
-      [Math.floor(ms)],
+      [Math.max(Math.floor(ms), DUREE_CLE_IDEMPOTENCE_MS)],
     );
     return res.rowCount ?? 0;
   }

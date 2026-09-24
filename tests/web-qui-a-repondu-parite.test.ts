@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ORIGINES } from '../src/inbox/origine';
+import { ORIGINES, originesQuiRepondent } from '../src/inbox/origine';
 import { repondeursDe, REPONDEURS } from '../web/lib/qui-a-repondu';
 
 /**
@@ -59,11 +59,20 @@ describe('parité : les origines du serveur et les badges de l’écran', () => 
     }
   });
 
-  it('🔴 `api` répond, à la différence d’une campagne', () => {
-    // Le cas qui a motivé ce fichier. Un message d'API n'existe QUE dans la fenêtre de 24 h, donc il ne
-    // peut arriver qu'APRÈS que la personne a écrit : il répond par construction.
-    expect(repondeursDe(['api'])).toEqual(['scripte']);
-    expect(repondeursDe(['campagne'])).toEqual([]);
+  it('🔴 `api` ne répond que s’il SUIT un entrant du fil (décision de Julien du 2026-09-24)', () => {
+    // `POST /v1/messages/rcs` n'a aucune fenêtre de 24 h : l'API peut écrire la PREMIÈRE, et elle ouvre alors
+    // l'échange comme une campagne. La lecture (`listAnalyzed`) passe ses origines par `originesQuiRepondent`.
+    const avant = new Date('2026-09-24T10:00:00.000Z');
+    const apres = new Date('2026-09-24T10:05:00.000Z');
+    // `api` seul : personne n'a écrit, l'API a ouvert. Rien.
+    expect(repondeursDe(originesQuiRepondent(['api'], apres, null))).toEqual([]);
+    // `api` qui PRÉCÈDE le premier entrant : elle a ouvert, le client a répondu après. Rien non plus.
+    expect(repondeursDe(originesQuiRepondent(['api'], avant, apres))).toEqual([]);
+    // `api` après un entrant : elle répond. Scripté.
+    expect(repondeursDe(originesQuiRepondent(['api'], apres, avant))).toEqual(['scripte']);
+    // Ancres : les autres origines ne dépendent pas d'un entrant, et une campagne reste sans badge.
+    expect(repondeursDe(originesQuiRepondent(['humain', 'api'], apres, null))).toEqual(['humain']);
+    expect(repondeursDe(originesQuiRepondent(['campagne'], null, null))).toEqual([]);
   });
 
   it('une origine INCONNUE du serveur ne casse rien et ne porte aucun badge', () => {

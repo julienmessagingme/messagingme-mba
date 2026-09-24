@@ -39,9 +39,12 @@ const DE_L_ORIGINE: Record<string, Repondeur | undefined> = {
   mba: 'mba',
   ia: 'agent',
   mcp: 'agent',
-  // 🔴 L'API PUBLIQUE DU CLIENT EST BIEN UN REPONDEUR, A LA DIFFERENCE D'UNE CAMPAGNE, et la raison est une
-  // contrainte de Meta, pas une opinion : `POST /v1/messages/whatsapp` n'existe QUE dans la fenetre de 24 h, donc un
-  // tel message ne peut arriver qu'APRES que la personne a ecrit. Il repond par construction.
+  // 🔴 L'API PUBLIQUE DU CLIENT REPOND QUAND ELLE SUIT LE CLIENT, ET SEULEMENT ALORS (decision de Julien du
+  // 2026-09-24). Elle peut ecrire LA PREMIERE (`POST /v1/messages/rcs` n'a aucune fenetre de 24 h, une fiche
+  // qui a consenti suffit) : elle ouvre alors l'echange comme une campagne, et ne compte pas plus qu'elle. Ce
+  // tri ne se fait PAS ici, faute de l'ordre des messages : la lecture ne rend `api` que si l'un de ses
+  // messages SUIT un entrant du fil (`originesQuiRepondent`, `src/inbox/origine.ts`). Une origine `api` qui
+  // arrive jusqu'ici a donc repondu.
   // ⚠️ `scripte` et pas un cinquieme badge : c'est automatise, sans aucun modele au bout, exactement ce que
   // ce badge-la designe. En ajouter un serait une case que personne n'a demandee (cf. le docblock).
   api: 'scripte',

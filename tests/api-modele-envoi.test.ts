@@ -9,27 +9,27 @@ import { verdictModele } from '../src/api/modele-envoi';
  * contacts dont le consentement est inconnu. Elle est désormais lue chez Meta, comme dans l'Inbox.
  */
 describe('verdictModele', () => {
-  it('approuvé, dans la langue demandée : sa catégorie, lue chez Meta', () => {
-    expect(verdictModele({ statut: 'APPROVED', langue: 'fr', category: 'marketing' }, 'fr')).toEqual({ statut: 'approuve', categorie: 'marketing' });
-    expect(verdictModele({ statut: 'APPROVED', langue: 'fr', category: 'utility' }, 'fr')).toEqual({ statut: 'approuve', categorie: 'utility' });
+  it('approuvé, dans la langue demandée : sa catégorie, lue chez Meta, et le nombre de variables de son corps', () => {
+    expect(verdictModele({ statut: 'APPROVED', langue: 'fr', category: 'marketing', count: 2 }, 'fr')).toEqual({ statut: 'approuve', categorie: 'marketing', variables: 2 });
+    expect(verdictModele({ statut: 'APPROVED', langue: 'fr', category: 'utility', count: 0 }, 'fr')).toEqual({ statut: 'approuve', categorie: 'utility', variables: 0 });
   });
 
   it('🔴 défaut 2 : introuvable, non approuvé, ou d’une AUTRE langue -> absent', () => {
     expect(verdictModele(null, 'fr')).toEqual({ statut: 'absent' });
-    expect(verdictModele({ statut: 'PENDING', langue: 'fr', category: 'utility' }, 'fr')).toEqual({ statut: 'absent' });
-    expect(verdictModele({ statut: 'REJECTED', langue: 'fr', category: 'utility' }, 'fr')).toEqual({ statut: 'absent' });
+    expect(verdictModele({ statut: 'PENDING', langue: 'fr', category: 'utility', count: 0 }, 'fr')).toEqual({ statut: 'absent' });
+    expect(verdictModele({ statut: 'REJECTED', langue: 'fr', category: 'utility', count: 0 }, 'fr')).toEqual({ statut: 'absent' });
     // La lecture partagée retombe sur le NOM SEUL quand la langue ne correspond pas : pour l'API c'est un autre
     // template, et l'envoi échouerait chez Meta pour chaque destinataire.
-    expect(verdictModele({ statut: 'APPROVED', langue: 'en', category: 'utility' }, 'fr')).toEqual({ statut: 'absent' });
+    expect(verdictModele({ statut: 'APPROVED', langue: 'en', category: 'utility', count: 0 }, 'fr')).toEqual({ statut: 'absent' });
   });
 
   it('catégorie ABSENTE -> illisible, jamais « utility » par défaut', () => {
-    expect(verdictModele({ statut: 'APPROVED', langue: 'fr' }, 'fr')).toEqual({ statut: 'illisible' });
-    expect(verdictModele({ statut: 'APPROVED', langue: 'fr', category: '' }, 'fr')).toEqual({ statut: 'illisible' });
+    expect(verdictModele({ statut: 'APPROVED', langue: 'fr', count: 0 }, 'fr')).toEqual({ statut: 'illisible' });
+    expect(verdictModele({ statut: 'APPROVED', langue: 'fr', category: '', count: 0 }, 'fr')).toEqual({ statut: 'illisible' });
   });
 
   it('⚠️ catégorie LUE mais hors des deux admises -> categorie_non_admise, qui la nomme : réessayer n’y changerait rien', () => {
-    expect(verdictModele({ statut: 'APPROVED', langue: 'fr', category: 'authentication' }, 'fr'))
+    expect(verdictModele({ statut: 'APPROVED', langue: 'fr', category: 'authentication', count: 0 }, 'fr'))
       .toEqual({ statut: 'categorie_non_admise', categorie: 'authentication' });
   });
 });

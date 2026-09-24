@@ -12,7 +12,8 @@ import { messageDeForme } from '../api/forme';
  * API PUBLIQUE /v1 DES MESSAGES SIMPLES : `POST /v1/messages/whatsapp`, un texte, à UNE fiche, dans la
  * fenêtre de service de 24 h (spec 2026-09-24, § 4). Elle remplace `POST /v1/messages` : le canal se lit dans
  * l'adresse, jamais dans un paramètre, et la personne se désigne par sa FICHE (`contactId`, `externalId`,
- * `phone` ou `bsuid`). Le lot 3 ajoute `POST /v1/messages/rcs` ici.
+ * `phone` ou `bsuid`). Son pendant RCS, `POST /v1/messages/rcs`, vit dans son propre module (`v1-messages-rcs.ts`) :
+ * leurs règles n'ont presque rien en commun.
  *
  * 🔴 ELLE N'A AUCUNE LOGIQUE D'ENVOI À ELLE, ET C'EST TOUT LE POINT. Les gestes (la fenêtre, le désabonnement,
  * l'envoi, la trace dans l'Inbox) vivent dans `repondreDansLaFenetre`, qui sert déjà la console et le serveur
@@ -62,9 +63,9 @@ const schemaMessage = z.strictObject({
 /**
  * Le refus d'une résolution de fiche : le statut vient de la table des codes, le message de la résolution
  * PARTAGÉE (`MESSAGE_RESOLUTION`, lot 1), comme sur `/v1/contacts`. Une seule précision propre à cette route :
- * une fiche inconnue n'y est jamais créée, et le message dit où elle l'est.
+ * une fiche inconnue n'y est jamais créée, et le message dit où elle l'est. `POST /v1/messages/rcs` le reprend.
  */
-const INCONNUE_POUR_UN_MESSAGE = 'aucune fiche pour cette personne : un message simple ne crée pas de fiche, un envoi (POST /v1/sends) le fait';
+export const INCONNUE_POUR_UN_MESSAGE = 'aucune fiche pour cette personne : un message simple ne crée pas de fiche, un envoi (POST /v1/sends) le fait';
 
 /**
  * Le tenant vient à 100 % de `req.auth` (posé par `makeRequireApiKey`), jamais de l'URL ni du corps.

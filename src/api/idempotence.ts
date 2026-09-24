@@ -12,6 +12,16 @@ import { sha256Hex } from '../lib/signature';
  * corps est refusée au lieu de rejouer en silence le rapport du premier envoi.
  */
 
+/**
+ * LA DURÉE DE VIE D'UNE CLÉ : 24 h, écrite UNE fois. Le claim libère une clé plus vieille
+ * (`PgApiIdempotencyStore.claim`), la purge du worker fait le ménage avec la même durée, et le message du 422
+ * l'annonce (`src/http/v1-sends.ts`).
+ *
+ * 🔴 LA PURGE NE DESCEND JAMAIS DESSOUS : une clé purgée trop tôt redevient libre, et un rejeu légitime
+ * recréerait l'envoi, donc enverrait deux fois. `sweepOlderThan` la prend pour plancher, et un test le garde.
+ */
+export const DUREE_CLE_IDEMPOTENCE_MS = 24 * 60 * 60 * 1000;
+
 /** La borne d'une clé : de quoi porter un identifiant, une étape et une date, pas un document. */
 export const CLE_IDEMPOTENCE_MAX = 255;
 

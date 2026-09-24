@@ -93,16 +93,16 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0175**, le 2026-09-24 à 21 h 58 UTC, avec **0174** dans le même `migrate`
-(`variables_destinataire` et `echecs_messages`, lot 3 de l'API publique), AVANT tout code qui les lit : relues
-en base juste après (`variables` en `jsonb` nullable sans défaut ; `echecs_messages` avec ses neuf colonnes,
-l'index unique sur `message_id`, l'index `(tenant_id, at desc)` et la cascade sur l'espace ; les deux vides).
-Avant elles, **0173** à 21 h 33 UTC (`idempotence_empreinte`, `api_idempotency.request_hash`, lot 2), AVANT le
-`up` qui a porté son code, relue en base (`text` nullable SANS défaut, table vide). **0176 est
-ÉCRITE et PAS ENCORE APPLIQUÉE** (`intentions_commerce`, lot 5 : elle RELÂCHE le CHECK de l'intention, l'ancien
-code y survit, et le code neuf échouerait en 23514 sans elle, donc AVANT le `up`). **Prochaine libre = 0177**,
-et le dossier `db/migrations/` s'arrête à 0176. Avant 0173, **0172** le même jour à 20 h 01 UTC
-(`contacts_external_id`), puis **0171** à 13 h 46 UTC (`pubs_brouillons`).
+**Dernière appliquée : 0176**, le 2026-09-24 à 22 h 19 UTC (`intentions_commerce`, lot 5 de l'API
+publique : elle RELÂCHE `conversation_analysis_intent_check` à neuf valeurs), AVANT tout code qui la lit : relue
+en base juste après (UN seul CHECK sur l'intention, neuf valeurs, répartition des analyses inchangée).
+Avant elle, **0175** et **0174** à 21 h 58 UTC dans le même `migrate` (`echecs_messages` et
+`variables_destinataire`, lot 3), relues en base (`variables` en `jsonb` nullable sans défaut ;
+`echecs_messages` avec ses neuf colonnes, l'index unique sur `message_id`, l'index `(tenant_id, at desc)` et la
+cascade sur l'espace ; les deux vides). Puis **0173** à 21 h 33 UTC (`idempotence_empreinte`, lot 2), relue en
+base (`text` nullable SANS défaut, table vide). Toutes les quatre sont passées AVANT le `up` de leur code.
+**Prochaine libre = 0177**, et le dossier `db/migrations/` s'arrête à 0176. Avant 0173, **0172** le même jour à
+20 h 01 UTC (`contacts_external_id`), puis **0171** à 13 h 46 UTC (`pubs_brouillons`).
 
 🔴 **0172 RELUE EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT** : `schema_migrations` la rend en tête à
 20 h 01 UTC ; `external_id` est `text` nullable SANS défaut ; l'index `contacts_tenant_external_id_uidx` est

@@ -53,6 +53,7 @@ const sendsMuets: Omit<V1SendsRouteDeps, 'usage'> = {
   idempotencyComplete: async () => { /* rien */ },
   idempotencyRelease: async () => { /* rien */ },
   lireEnvoi: async () => null,
+  rcs: { messageRcsParNom: async () => null, agentIdForTenant: async () => null },
 };
 
 function monter() {

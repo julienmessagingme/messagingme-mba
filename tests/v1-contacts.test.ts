@@ -177,6 +177,20 @@ describe('POST /v1/contacts/search', () => {
     expect(illisible.json()).toEqual({ error: 'illisible', code: 'invalid_phone' });
     await server.close();
   });
+
+  it('🔴 sans le droit `contacts:read` (une clé qui écrit, ou qui envoie) : 403 `missing_scope`, et rien n’est cherché', async () => {
+    // La recherche rend un numéro, un consentement et une joignabilité : c'est une LECTURE de fiche, et elle
+    // exige le même droit que `GET /v1/contacts/{contactId}`, jamais celui d'écrire.
+    const vus: unknown[] = [];
+    const { server } = app({ chercherFiche: async (_t, r) => { vus.push(r); return { ok: true, fiche: FICHE }; } });
+    for (const cle of [ECRITURE, NOSCOPE]) {
+      const res = await server.inject({ method: 'POST', url: '/v1/contacts/search', ...auth(cle), payload: { phone: '+33612345678' } });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ code: 'missing_scope' });
+    }
+    expect(vus).toEqual([]);
+    await server.close();
+  });
 });
 
 describe('PATCH /v1/contacts/:contactId', () => {
