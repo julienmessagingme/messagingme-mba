@@ -2533,9 +2533,15 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
   main à l'Inbox, vous gardez le contrôle) ; **paramétrer en 5 étapes** (activer via les conditions Meta Business
   AI + éligibilité → base de connaissance → personnalité → tester → activer et garder la main) ; **gestion des
   connecteurs** avec les DEUX sens bien séparés (**pendant la conversation** = l'agent consulte un système externe,
-  sur mesure via accompagnement ; **vers votre CRM** = les conversations remontent, HubSpot dispo + lien vers son
-  guide) ; **prérequis + transparence des coûts** ; encart **« bientôt configurable ici »**. Page de PRÉPARATION :
-  la config live s'ouvrira quand Meta rendra l'agent disponible pour le numéro (gating vertical + ToS).
+  que le client déclare LUI-MÊME dans Tools > Connecteurs API ; **vers votre CRM** = les conversations remontent,
+  HubSpot dispo + lien vers son guide) ; **prérequis + transparence des coûts** ; encart qui MÈNE aux paramètres.
+  ⚠️ **TROIS AFFIRMATIONS DE CETTE PAGE ÉTAIENT FAUSSES, corrigées le 2026-09-24**, et la page n'avait alors
+  aucun test : elle promettait une config live « bientôt » alors qu'elle existe depuis le 2026-08-18, elle
+  rangeait les connecteurs en prestation alors qu'ils sont en libre-service depuis le relais du 2026-09-21, et
+  surtout elle annonçait un déploiement « progressif, secteur par secteur ». 🔴 **META DOCUMENTE L'INVERSE** :
+  tous les secteurs SAUF finance, secteur public, santé, alcool, jeux d'argent, médicaments sans ordonnance et
+  services matrimoniaux. Une liste d'EXCLUSION, pas une file d'attente, donc la page faisait patienter des
+  prospects éligibles et entretenait l'espoir de ceux qui ne le seront jamais.
 - ✅ **Page « Paramètres de l'agent »** (LIVE depuis le 2026-08-18) : l'écran de réglage de
   l'agent MBA, en **onze onglets**, branché pour de vrai sur la configuration Meta du numéro.
   **Aperçu** (l'état de l'agent), **Assistant** (régler l'agent en lui parlant, cf. ci-dessous),

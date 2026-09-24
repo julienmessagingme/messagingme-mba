@@ -1,7 +1,7 @@
 ---
 ecran: mba-guide
 source_section: MBA, le répondeur de Meta (menu « AI Agent » > MBA > Guide / Paramètres)
-source_empreinte: 4ab4c2
+source_empreinte: d65ab5
 ---
 # Le répondeur de Meta : à quoi il sert, et comment le régler
 
@@ -49,8 +49,10 @@ haut.
 
 Deux situations bloquent l'édition, et l'écran les distingue parce qu'elles ne se règlent pas au même
 endroit : **aucun numéro rattaché**, qui renvoie à l'Accueil, et **Meta n'a pas encore ouvert l'agent sur ce
-numéro**, qui renvoie au guide (Meta l'ouvre progressivement, par pays et par secteur, et les conditions se
-signent dans WhatsApp Manager).
+numéro**, qui renvoie au guide. Meta accepte tous les secteurs SAUF la finance, le secteur public, la santé,
+l'alcool, les jeux d'argent, les médicaments sans ordonnance et les services matrimoniaux ; il demande aussi un
+pays autorisé, un compte en règle, et qu'aucun autre agent conversationnel ne tourne déjà sur ce numéro. Les
+conditions, elles, se signent dans WhatsApp Manager.
 
 **L'onglet Activation** porte les deux réglages qui décident qui parle au client. D'abord, ce que fait
 l'agent quand le client demande un humain ou qu'il refuse de traiter la demande : il passe la main et la
