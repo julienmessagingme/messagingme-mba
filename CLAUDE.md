@@ -101,7 +101,9 @@ Avant elle, **0175** et **0174** à 21 h 58 UTC dans le même `migrate` (`echecs
 `echecs_messages` avec ses neuf colonnes, l'index unique sur `message_id`, l'index `(tenant_id, at desc)` et la
 cascade sur l'espace ; les deux vides). Puis **0173** à 21 h 33 UTC (`idempotence_empreinte`, lot 2), relue en
 base (`text` nullable SANS défaut, table vide). Toutes les quatre sont passées AVANT le `up` de leur code.
-**Prochaine libre = 0177**, et le dossier `db/migrations/` s'arrête à 0176. Avant 0173, **0172** le même jour à
+**0177 est ÉCRITE et PAS ENCORE APPLIQUÉE** (`signaux_batch`, lot 6 : elle CRÉE `integration_batch` et RELÂCHE
+`agent_tool_calls_source_check` pour `signaux` ; l'ancien code y survit, donc AVANT le `up` du code qui écrit le
+réglage ou le journal). **Prochaine libre = 0178**, et le dossier `db/migrations/` s'arrête à 0177. Avant 0173, **0172** le même jour à
 20 h 01 UTC (`contacts_external_id`), puis **0171** à 13 h 46 UTC (`pubs_brouillons`).
 
 🔴 **0172 RELUE EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT** : `schema_migrations` la rend en tête à

@@ -517,11 +517,18 @@ de Batch, la plus stricte connue).
 - **« À la fin d'une conversation »** veut dire : 25 minutes sans message (`CONVERSATION_INACTIVITY_MS`), puis
   le passage du balayage, toutes les 5 minutes. Un « veut acheter » arrive donc une demi-heure environ après le
   dernier message : assez pour une relance, pas pour une alerte immédiate. La doc le dit.
+- **« Immédiat »** veut dire : enfilé sur le fait, sans attendre de balayage, puis poussé par la file de
+  l'adaptateur, un job à la fois par espace. Les réponses, clics, désabonnements et analyses y passent DEVANT
+  les accusés (priorité de file) ; derrière une campagne de plusieurs milliers de destinataires, les accusés
+  de livraison et de lecture peuvent donc arriver avec plusieurs dizaines de minutes de retard. La doc le dit.
 - **`em_satisfaction` et `em_urgency`** reprennent la note de la DERNIÈRE conversation analysée ; une analyse
   sans note ne les écrase pas (l'absence veut dire « pas de mesure », jamais 0).
-- **Le résumé** ne peut pas être un attribut (un attribut texte de Batch plafonne à 300 caractères, le résumé
-  en fait jusqu'à 800) : il voyage dans l'événement, et seulement si l'espace a activé l'option, parce qu'il
-  contient des propos du client.
+- **Le résumé** ne tient pas en un seul champ : un texte plafonne à 300 caractères chez Batch, pour un
+  attribut de fiche COMME pour un attribut d'événement (la page renvoie des seconds aux premiers, relue le
+  2026-09-24), et le résumé en fait jusqu'à 800. Il voyage donc dans l'événement, en morceaux consécutifs de
+  300 caractères au plus (`summary_1` à `summary_3`, à recoller bout à bout), et seulement si l'espace a
+  activé l'option, parce qu'il contient des propos du client. Les noms de ces morceaux, comme ceux de tous
+  les champs, sont fixés par le dictionnaire, pas par l'adaptateur.
 - Les points d'émission : les deux traitements de statuts (§ 5), les deux traitements d'entrants (Meta et
   RCS), la redirection des liens tracés, les chemins de désabonnement, et le point de sortie de l'analyse
   (`makeOnAnalyzed`, qui sert déjà la poussée HubSpot et reste inchangé pour elle).
@@ -675,8 +682,9 @@ le DOSSIER tranche sur ce qui est pris). Toutes passent AVANT le déploiement du
 - **Intentions** : la liste de `schema.ts`, le prompt et les libellés des écrans nomment les MÊMES valeurs
   (dérivé, pas relu à la main).
 - **Adaptateur Batch** : la traduction du dictionnaire vers le corps de Batch est une fonction PURE testée ;
-  tout nom d'événement tient en 30 caractères `[a-z0-9_]` ; aucun attribut texte ne dépasse 300 caractères ;
-  le résumé n'apparaît que si l'option est cochée ; une fiche sans `externalId` n'est pas poussée ; la file est
+  tout nom d'événement tient en 30 caractères `[a-z0-9_]` ; aucun texte, de fiche ou d'événement, ne dépasse
+  300 caractères ni n'est vide ; le résumé n'apparaît que si l'option est cochée, et il arrive entier, en
+  morceaux ; une fiche sans `externalId` n'est pas poussée ; la file est
   dans `BASE_QUEUES` (`tests/queue-names.test.ts` le vérifie déjà pour toute file).
 - **Intégration** (job `integration` de la CI, jamais en local : le `DATABASE_URL` local est la production) :
   `search`, `PATCH`, la résolution multi-clés, l'index d'`external_id`, la table des échecs et les migrations.

@@ -35,4 +35,10 @@ describe('les appelants du journal des connecteurs', () => {
   it('la liste lue en base contient bien l’agent de Meta (relais, migration 0161)', () => {
     expect(listeEnBase()).toContain('mba');
   });
+
+  it('🔴 la liste lue en base contient la remontée des signaux (lot 6 de l’API publique)', () => {
+    // Sans elle, l'échec d'une poussée vers l'outil d'un client serait refusé par le CHECK, et le journal
+    // (best-effort) l'avalerait en silence : le client ne verrait jamais que sa remontée ne marche pas.
+    expect(listeEnBase()).toContain('signaux');
+  });
 });

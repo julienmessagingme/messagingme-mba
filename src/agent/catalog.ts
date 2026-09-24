@@ -24,8 +24,12 @@ export type RisqueOutil = 'read' | 'write' | 'irreversible';
  * ⚠️ CE N'EST PAS `OrigineOutil`. Celle-ci dit de quelle NATURE est l'outil (`mba`, `http`, `mcp`) ;
  * celle-là dit quel CHEMIN du produit a passé l'appel. Un connecteur `http` peut être appelé par chacun
  * d'eux, l'agent de Meta compris depuis le relais (migration 0161).
+ *
+ * `signaux` (lot 6 de l'API publique) : la poussée des signaux vers l'outil qu'un client a branché dans
+ * Paramètres > Intégrations. Elle n'appelle aucun connecteur, mais son échec est de la même nature : le
+ * système du CLIENT a refusé ce que nous lui passions.
  */
-export const SOURCES_APPEL = ['agent', 'scenario', 'optout', 'mba'] as const;
+export const SOURCES_APPEL = ['agent', 'scenario', 'optout', 'mba', 'signaux'] as const;
 
 /**
  * ⚠️ DÉRIVÉ DU TABLEAU, et pas l'inverse : un appelant ajouté au seul type laissait le tableau (donc le test de

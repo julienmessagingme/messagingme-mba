@@ -221,6 +221,7 @@ export function ErreursSysteme({ tenantId }: { tenantId: string }) {
     if (source === 'scenario') return t('un bloc « Appel HTTP » d’un scénario', 'a scenario’s HTTP block');
     if (source === 'optout') return t('la poussée d’un désabonnement', 'an unsubscribe push');
     if (source === 'mba') return t('l’agent de Meta', 'Meta’s agent');
+    if (source === 'signaux') return t('la remontée des signaux vers votre outil', 'the signal push to your tool');
     return source;
   };
 
