@@ -6,11 +6,20 @@ name: CI
 # CI quand un push ne touche QUE des `.md` ; un commit qui mêle doc ET code la relance normalement.
 # ⚠️ Tient parce qu'on n'a pas de branch protection avec check requis (solo sur main, pas de PR) : sinon un
 # run sauté laisserait le check « en attente ».
+# 🔴 ET ON PEUT LA RÉCLAMER À LA MAIN, parce que `paths-ignore` a un angle mort mesuré le 2026-09-24 : le
+# job `unit` joue `tests/aide-proposer.test.ts` et `tests/aide-fiches-format.test.ts`, qui LISENT les `.md` de
+# `docs/aide/fiches/`. Un mot changé dans `features.md` a donc rendu la CI ROUGE, et le commit qui réparait les
+# deux empreintes ne touchant QUE des `.md`, aucun run n'a pu enregistrer le retour au vert : le dernier
+# verdict au tableau restait l'échec, juste avant un déploiement. `workflow_dispatch` permet d'en réclamer un
+# sur la tête courante (`gh workflow run ci.yml --ref main`) sans fabriquer un commit de code pour ça.
+# ⚠️ Il ne remplace PAS `paths-ignore`, qui reste la raison d'être du dispositif (un tiers du quota mensuel
+# brûlé par des commits docs, mesuré le 2026-09-04) : il en est la porte de secours, à la demande.
 on:
   push:
     branches: [main]
     paths-ignore:
       - '**.md'
+  workflow_dispatch:
   pull_request:
     paths-ignore:
       - '**.md'

@@ -816,14 +816,23 @@ function CadreRcs({
       {/*
         🔴 ÉCRIRE UN MESSAGE SANS QUITTER LA CAMPAGNE (Julien, 2026-09-24 : « il faut dire : partir d'un
         message enregistré, ou créer un nouveau modèle de message, et là ça ouvre le créateur, soit normal
-        soit carrousel »). C'est le seul chemin vers un CARROUSEL depuis une campagne : le composeur de
-        l'étage ne sait éditer que le visuel, le texte et les boutons.
+        soit carrousel »). C'est le seul chemin pour CRÉER un carrousel depuis une campagne, le sélecteur
+        juste au-dessus sachant seulement en reprendre un déjà enregistré : le composeur de l'étage ne sait
+        éditer que le visuel, le texte et les boutons.
         ⚠️ CETTE PHRASE A DIT « ET VERS UNE CARTE À TITRE », ET C'ÉTAIT FAUX, en se contredisant avec le
         commentaire du sélecteur dix-huit lignes plus haut, dans ce même fichier. Le modèle accepte un titre
         sur une carte SIMPLE, mais aucun composeur n'expose ce champ : ouvrir le créateur n'ouvre donc pas ce
         chemin-là. 🔴 Corrigée ici le 2026-09-24 après avoir été déclarée corrigée PARTOUT deux fois : la
         première ne couvrait que le composant voisin et `todo.md`, la seconde qu'un fichier e2e. Ce qui a
         fini par la trouver n'est pas un troisième souvenir, c'est un `grep` sur la FORMULATION.
+        🔴 ET CETTE MÊME PHRASE A ENSUITE GARDÉ SON AUTRE MOITIÉ FAUSSE, « le seul chemin vers un
+        CARROUSEL », que le commentaire du sélecteur dix-huit lignes plus haut et le filtre de ses options
+        contredisent tous les deux : un carrousel déjà enregistré entre dans une campagne SANS ce créateur.
+        Corriger une phrase fausse sur le point qu'on vient de mesurer laisse intact ce qu'on n'a pas mesuré.
+        ⚠️ ET LE `grep` CI-DESSUS ÉTAIT SENSIBLE À LA CASSE : il comptait quinze occurrences quand la base en
+        portait seize (`tests/web-rcs-brouillon.test.ts`, « Carte » majuscule). La seizième était juste, donc
+        le correctif tient, mais le chiffre avancé comme preuve d'exhaustivité ne l'était pas. Un balayage ne
+        vaut que si son motif ignore la casse.
         ⚠️ SOUS LE SÉLECTEUR ET NON DEDANS, pour la même raison que « Créer un scénario » : une option dans
         une liste déroulante se sélectionnerait comme une valeur, et un brouillon rechargé porterait un
         identifiant qui ne désigne rien.
@@ -899,14 +908,18 @@ function CadreRcs({
           clients par celui qui n'aurait pas pensé à la retirer. */}
       <div>
         {/*
-          🔴 « BOUTONS », PAS « SUGGESTIONS » (Julien, 2026-09-24). Cet écran était le SEUL à employer le mot
-          de Google : la bibliothèque (`RcsMessageForm`) et le panneau de scénario (`WorkflowConfigPanel`)
-          disent « Boutons » depuis toujours, et l'éditeur partagé retombe lui-même sur « + bouton ». C'est
-          pour ça que Julien a cru qu'on ne pouvait pas mettre de boutons dans une campagne RCS : ils y sont
-          depuis le 2026-09-12, sous un nom qu'un client ne cherche pas.
+          🔴 « BOUTONS », PAS « SUGGESTIONS » (Julien, 2026-09-24). La bibliothèque (`RcsMessageForm`) et le
+          panneau de scénario (`WorkflowConfigPanel`) disent « Boutons » depuis toujours, et l'éditeur partagé
+          retombe lui-même sur « + bouton ». C'est pour ça que Julien a cru qu'on ne pouvait pas mettre de
+          boutons dans une campagne RCS : ils y sont depuis le 2026-09-12, sous un nom qu'un client ne
+          cherche pas.
           ⚠️ LA NUANCE QUE « SUGGESTION » PORTAIT N'EST PAS PERDUE : la différence entre une pastille sous la
           bulle et un bouton pleine largeur dans la carte est dite par la phrase du visuel juste au-dessus, et
           l'éditeur montre les six formes une par une.
+          ⚠️ CE COMMENTAIRE A DIT « CET ÉCRAN ÉTAIT LE SEUL À EMPLOYER LE MOT DE GOOGLE », ET C'ÉTAIT FAUX : le
+          choix du canal du même assistant (`EtapeCanal`) le disait aussi, dans une phrase VISIBLE DU CLIENT.
+          Il était resté parce que le balayage cherchait le libellé d'un champ, pas le mot. Ne pas écrire
+          « le seul » sans avoir balayé le MOT, sans distinction de casse, sur tout ce que le client lit.
         */}
         <p className="text-sm font-medium text-ink-700">Boutons</p>
         <div className="mt-1 w-full">

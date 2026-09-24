@@ -3,9 +3,13 @@ import type { RcsSuggestion } from './rcs-types';
 /**
  * Les six formes de bouton RCS, côté écran : leur libellé, leur fabrication, et le test « est-il complet ? ».
  *
- * Module PUR (aucun import navigateur) : il est testé depuis la suite racine, comme `web/lib/rcs.ts`. Trois
- * écrans composent des boutons (bibliothèque, assistant de campagne, bloc de scénario) et se partageaient
- * jusqu'ici trois copies de la même logique, déjà divergentes sur les valeurs par défaut. Une seule ici.
+ * Module PUR (aucun import navigateur) : il est testé depuis la suite racine, comme `web/lib/rcs.ts`. Les
+ * écrans qui composent des boutons (bibliothèque, carrousel, assistant de campagne, bloc de scénario) passent
+ * tous par `RcsButtonsEditor`, qui passe ici. Trois d'entre eux en avaient leur propre copie, déjà
+ * divergentes sur les valeurs par défaut. Une seule ici.
+ *
+ * ⚠️ LE COMPTE NE S'ÉCRIT PLUS : cette ligne a dit « trois écrans » au présent, sans le carrousel, pendant
+ * que le fichier voisin en listait quatre. `grep RcsButtonsEditor` rend la liste juste à chaque fois.
  */
 
 export type KindBouton = RcsSuggestion['kind'];

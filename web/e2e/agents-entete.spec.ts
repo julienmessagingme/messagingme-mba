@@ -84,13 +84,22 @@ test.describe('Agents IA : l en-tête et le menu en colonne', () => {
      * cette fiche-ci a perdu sa troncature sans qu'un seul test bouge, et un identifiant de modèle ne se
      * coupe pas tout seul, donc il poussait la mise en page.
      *
-     * ⚠️ NI `toContainText` NI UN CONTRÔLE DE DÉBORDEMENT NE LE VOIENT. Le texte est là dans les deux cas, et
-     * un texte non tronqué revient à la ligne au lieu de déborder de la page. Ce qui distingue les deux états
-     * est la RÈGLE appliquée, donc c'est elle qu'on lit.
+     * ⚠️ `toContainText` NE LE VOIT PAS : le texte est là dans les deux cas, et un texte non tronqué revient
+     * à la ligne au lieu de déborder de la page. Ce qui distingue les deux états est la RÈGLE appliquée, donc
+     * c'est elle qu'on lit, et LES TROIS : `truncate` pose `overflow: hidden`, `text-overflow: ellipsis` ET
+     * `white-space: nowrap`.
+     *
+     * 🔴 LA TROISIÈME MANQUAIT, ET C'ÉTAIT PRÉCISÉMENT CELLE QUI TIENT LE MODE DE DÉFAILLANCE DÉCRIT
+     * CI-DESSUS : retirer `whitespace-nowrap` seul laissait cette assertion verte et rendait le retour à la
+     * ligne. Une garde qui lit deux des trois règles d'un utilitaire en garde deux tiers.
+     * ⚠️ ET « NI UN CONTRÔLE DE DÉBORDEMENT » ÉTAIT TROP FORT : `scrollWidth > clientWidth` sur ce span
+     * distingue bien les deux états. Lire les règles nomme la CAUSE, le débordement n'en montre que l'EFFET,
+     * mais les deux voient le défaut. Une justification qui exclut l'autre approche fait renoncer à un filet.
      */
     const precision = page.getByTestId('entete-agent-precision').locator('span').first();
     expect(await precision.evaluate((el) => getComputedStyle(el).textOverflow)).toBe('ellipsis');
     expect(await precision.evaluate((el) => getComputedStyle(el).overflow)).toBe('hidden');
+    expect(await precision.evaluate((el) => getComputedStyle(el).whiteSpace)).toBe('nowrap');
 
     // L'état d'activation a DÉMÉNAGÉ dans l'en-tête, et il n'y est qu'une fois (la fiche n'affiche pas la
     // liste) : deux copies jetteraient `agents-fiche.spec.ts` en violation de mode strict.

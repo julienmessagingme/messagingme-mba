@@ -10,7 +10,7 @@ import type { RcsMessage, UserFieldDef } from '@/lib/api';
  *
  * 🔴 CE QU'IL RÉPARE (Julien, 2026-09-24) : dans une campagne RCS on ne pouvait que PARTIR d'un message
  * déjà enregistré. Un CARROUSEL ne s'y créait pas du tout, alors que ses cartes portent chacune un titre :
- * le composeur de l'étage ne sait éditer que trois champs (visuel, texte, suggestions). Le vrai créateur
+ * le composeur de l'étage ne sait éditer que trois champs (visuel, texte, boutons). Le vrai créateur
  * existait, mais dans un autre écran, donc il fallait abandonner sa campagne pour aller y écrire.
  *
  * ⚠️ CE COMMENTAIRE A DIT « ET UNE CARTE À TITRE NON PLUS », ET C'ÉTAIT FAUX (relecture à froid du

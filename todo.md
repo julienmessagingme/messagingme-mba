@@ -114,10 +114,15 @@ prevoit deja (`rcsCardSchema`), et le `.refine` « titre OU media » devient att
 sens qui décourage : j'ai présenté comme un chantier ce qui tenait en deux lignes.
 
 ⚠️ Corollaire trouvé en le faisant : le prop `libelleAjout` de `RcsButtonsEditor` n'existait que pour cet
-appelant divergent. Il est parti dans `310caf7a`, un commit APRÈS le renommage, sinon il restait une porte
-de sortie ouverte pour la divergence qu'on venait de refermer. (Cette ligne a d'abord attribué son retrait
-à `db292cf6`, qui ne touche même pas ce fichier : une attribution écrite de mémoire plutôt que lue dans
-`git show --stat`.)
+appelant divergent. Son seul APPEL est parti avec le renommage (`db292cf6`, dans `EtapeContenu.tsx`), sa
+DÉCLARATION deux commits plus tard (`310caf7a`, dans `RcsButtonsEditor.tsx`) : deux commits, deux fichiers,
+sinon il restait une porte de sortie ouverte pour la divergence qu'on venait de refermer.
+
+🔴 **ET CETTE PARENTHÈSE S'EST ACCUSÉE D'UNE FAUTE QU'ELLE N'AVAIT PAS COMMISE.** Elle disait que la ligne
+avait « d'abord attribué son retrait à `db292cf6`, qui ne touche même pas ce fichier ». Deux erreurs : aucune
+version de ce fichier n'a jamais nommé `db292cf6` ici (elle disait « parti avec lui », sans commit), et
+`db292cf6` touche bien `EtapeContenu.tsx`. Une confession inventée est une fausseté de plus, pas une
+réparation : un aveu se vérifie dans `git log -S` comme n'importe quelle autre affirmation.
 
 ### 3. Trois constats laissés porter
 

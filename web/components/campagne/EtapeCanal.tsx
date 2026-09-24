@@ -74,10 +74,14 @@ export function EtapeCanal({
             coche={etat.formule === 'whatsapp'}
             onCheck={() => onChange({ formule: 'whatsapp' })}
           />
+          {/* 🔴 « BOUTONS », comme partout ailleurs depuis l'arbitrage de Julien du 2026-09-24. La
+              description ci-dessous a gardé « suggestions » pendant que l'écran de contenu, deux étapes plus
+              loin, était renommé : c'était la DERNIÈRE chaîne visible du client à employer le mot de Google,
+              et un commentaire de cet autre écran affirmait même être le seul à l'avoir fait. */}
           <Entree
             groupe="formule"
             libelle="RCS"
-            description="Un message riche, avec ses suggestions, depuis votre agent RCS."
+            description="Un message riche, avec ses boutons, depuis votre agent RCS."
             coche={etat.formule === 'rcs'}
             desactive={rcsIndisponible}
             onCheck={() => onChange({ formule: 'rcs' })}

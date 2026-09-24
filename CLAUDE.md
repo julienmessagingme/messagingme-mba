@@ -991,8 +991,20 @@ depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui d
   ⚠️ Corollaire pour le reste : après un refus du hook, on relit son `git diff` AVANT de relancer.
 - ⚠️ **DEUX SUITES E2E CONCURRENTES EMPOISONNENT `web/.next`** (2026-09-23), et le symptôme accuse le code :
   `ENOENT` sur un fichier de `.next`, puis « Timed out waiting 180000ms from config.webServer ». La sortie
-  est `rm -rf web/.next` PUIS `npm run build` À LA MAIN, parce qu'un build à froid dépasse les 180 s que
-  Playwright accorde à son webServer. Le `rm` seul ne suffit pas, et c'est ce qui fait chercher ailleurs.
+  est `rm -rf web/.next` PUIS `npm run build` À LA MAIN. Le `rm` seul ne suffit pas, et c'est ce qui fait
+  chercher ailleurs.
+  🔴 **MAIS LE TIMEOUT ARRIVE AUSSI SANS AUCUNE CONCURRENCE, ET CETTE LIGNE DONNAIT LA MAUVAISE CAUSE**
+  (mesuré le 2026-09-24, trois builds perdus à la chercher ailleurs). Le `webServer` lance
+  `npm run build && npm run start` : il refait donc un `next build` **complet**, qui ne tient pas dans ses
+  180 s même avec un `.next` fraîchement construit et un cache chaud. Préconstruire à la main n'y change
+  RIEN, puisque Playwright rebuild quand même. **La sortie est de démarrer le serveur SOI-MÊME**
+  (`cd web && NEXT_TELEMETRY_DISABLED=1 BACKEND_URL=http://127.0.0.1:9 NODE_ENV=production sh -c 'npm run
+  build && npm run start'`, l'environnement étant celui de `playwright.config.ts`), puis d'attendre que le
+  port 3000 réponde : `reuseExistingServer` vaut `!CI`, donc hors CI Playwright REUTILISE ce serveur et la
+  suite part en quelques secondes. ⚠️ Et il faut alors penser au bundle : `next start` sert `.next`, donc
+  après une mutation il faut tuer le serveur, reconstruire et le relancer, sinon on mesure l'ancien code.
+  ⚠️ **Le code de sortie de `playwright test` MENT sur ce timeout** : il rend 0 en affichant
+  « Timed out waiting 180000ms », exactement comme `gh run watch --exit-status`. Lire la SORTIE, jamais `$?`.
 - 🔴 **`gh run list` AVANT tout déploiement**, au même titre que `git log <déployé>..HEAD`. Un `npm test`
   vert en local ne prouve que la moitié : les tests d’intégration ne tournent qu’en CI, sur un Postgres
   jetable. Déployer sans avoir regardé le run, c’est déployer sans avoir vu la moitié des tests.

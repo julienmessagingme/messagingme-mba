@@ -15,9 +15,11 @@ import { inputCls } from '@/lib/ui';
  * plus bas le même jour disait « les quatre » : un compte en prose est faux au premier montage ajouté, et
  * `grep RcsButtonsEditor` le rend juste à chaque fois.
  *
- * Il existe parce que les trois avaient chacun leur copie, déjà divergentes sur les valeurs par défaut, et
- * qu'ajouter trois formes de bouton dans trois copies aurait garanti trois comportements différents pour la
- * même saisie.
+ * Il existe parce que la bibliothèque, l'assistant de campagne et le bloc de scénario en avaient chacun leur
+ * copie, déjà divergentes sur les valeurs par défaut, et qu'ajouter trois formes de bouton dans trois copies
+ * aurait garanti trois comportements différents pour la même saisie. Le carrousel s'est branché dessus
+ * ensuite, sans copie. ⚠️ « LES TROIS » ÉTAIT ÉCRIT ICI DEUX LIGNES SOUS UNE LISTE DE QUATRE : un compte
+ * relatif à un antécédent devient faux quand l'antécédent s'allonge, même si le fait historique reste vrai.
  */
 export function RcsButtonsEditor({
   boutons, onChange, max = 11, dateFields = [], compact = false, testIdPrefix = 'rcs',
