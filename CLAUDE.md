@@ -94,12 +94,19 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0171**, le 2026-09-24 à 13 h 46 UTC (`pubs_brouillons`, les brouillons de
-publicité), AVANT le `up` qui a porté son code. **ÉCRITE ET PAS ENCORE APPLIQUÉE : 0172**
-(`contacts_external_id`, l'identifiant de l'outil du client gardé sur la fiche, lot 1 de l'API publique ;
-additive, index unique partiel construit `CONCURRENTLY` hors transaction, donc AVANT tout déploiement du code
-qui lit la colonne, et `indisvalid` à relire après `migrate`). **Prochaine libre = 0173**, et le dossier
-`db/migrations/` s'arrête à 0172.
+**Dernière appliquée : 0172**, le 2026-09-24 à 20 h 01 UTC (`contacts_external_id`, l'identifiant de
+l'outil du client gardé sur la fiche, lot 1 de l'API publique), SEULE et AVANT tout code qui la lit : aucun
+`up` n'a suivi, l'ancien code ignore la colonne. **Prochaine libre = 0173**, et le dossier `db/migrations/`
+s'arrête à 0172. Avant elle, **0171** le même jour à 13 h 46 UTC (`pubs_brouillons`).
+
+🔴 **0172 RELUE EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT** : `schema_migrations` la rend en tête à
+20 h 01 UTC ; `external_id` est `text` nullable SANS défaut ; l'index `contacts_tenant_external_id_uidx` est
+UNIQUE sur `(tenant_id, external_id)` avec le prédicat EXACT `external_id IS NOT NULL AND deleted_at IS NULL`
+(parmi les fiches ACTIVES, décidé par la revue finale : la seule suppression est la purge, qui vide la
+colonne, et le prédicat est une ceinture) ; et surtout **`indisvalid = true`**, puisqu'il a été construit
+`CONCURRENTLY` hors transaction, sans filet. Aucune transaction longue n'était ouverte juste avant (lu dans
+`pg_stat_activity`), zéro fiche ne porte d'identifiant, donc rien n'a bougé pour personne, et les deux portes
+publiques rendent 200.
 
 🔴 **RELUE EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT, PAS EN ÉCRIVANT CETTE LIGNE.**
 `schema_migrations` rend `0171_pubs_brouillons.sql` en tête à 13 h 46 UTC, après 0170 à 3 h 01 ; les douze
