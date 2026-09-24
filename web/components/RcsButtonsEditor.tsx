@@ -8,8 +8,12 @@ import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 
 /**
- * Éditeur des boutons d'un message RCS, partagé par les TROIS écrans qui en composent : la bibliothèque
- * (Contenu > Messages RCS), l'assistant de campagne et le bloc de scénario.
+ * Éditeur des boutons d'un message RCS, partagé par tous les écrans qui en composent : la bibliothèque
+ * (Contenu > Messages RCS), le carrousel, l'assistant de campagne et le bloc de scénario.
+ *
+ * ⚠️ LE COMPTE NE S'ÉCRIT PLUS ICI. Cette ligne a dit « les TROIS écrans » pendant qu'un commentaire ajouté
+ * plus bas le même jour disait « les quatre » : un compte en prose est faux au premier montage ajouté, et
+ * `grep RcsButtonsEditor` le rend juste à chaque fois.
  *
  * Il existe parce que les trois avaient chacun leur copie, déjà divergentes sur les valeurs par défaut, et
  * qu'ajouter trois formes de bouton dans trois copies aurait garanti trois comportements différents pour la
@@ -151,7 +155,7 @@ export function RcsButtonsEditor({
           {/* ⚠️ `libelleAjout` A EXISTÉ ICI POUR UN SEUL APPELANT, l'assistant de campagne, qui disait
               « Ajouter une suggestion ». Cet écran est passé à « Boutons » le 2026-09-24 sur décision de
               Julien, donc le prop n'avait plus aucun appelant : une porte de sortie ouverte pour une
-              divergence qu'on venait de refermer. Les quatre écrans disent le même mot. */}
+              divergence qu'on venait de refermer. Tous les écrans disent le même mot. */}
           {`+ ${t('bouton', 'button')}`}
         </button>
       )}

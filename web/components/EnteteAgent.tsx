@@ -144,12 +144,17 @@ export function EnteteAgent({
         </div>
         {precision !== undefined && precision !== '' && (
           /*
-            ⚠️ `min-w-0` ET `truncate` SUR LE CONTENU TEXTE, pas seulement sur le conteneur. Le passage d'un
+            🔴 LA TRONCATURE APPARTIENT À L'ÉLÉMENT DE TEXTE, PAS AU CONTENEUR. Le passage d'un
             `<p class="truncate">` à ce `<div class="flex">` le 2026-09-24 a fait perdre la troncature à
             l'AUTRE consommateur, l'écran des agents IA, qui passe ici un identifiant de modèle
             (`anthropic/claude-...`) qui ne se coupe pas tout seul et poussait donc la mise en page. Un
-            `truncate` sur un conteneur flex ne descend pas sur ses enfants : c'est l'enfant texte qui doit le
-            porter, d'où l'enveloppe ci-dessous pour une précision qui est une simple chaîne.
+            `truncate` posé sur un conteneur flex ne descend pas sur ses enfants, d'où l'enveloppe ci-dessous
+            pour une précision qui est une simple chaîne.
+            ⚠️ LA VERSION PRÉCÉDENTE DE CE COMMENTAIRE EXIGEAIT « `min-w-0` ET `truncate` », ce qui est plus
+            fort que la réalité : `overflow: hidden` met déjà la taille minimale automatique à zéro, et
+            `truncate` seul tronque à l'identique (mesuré en Chromium le 2026-09-24). Le `min-w-0` reste
+            écrit parce qu'il dit l'intention, mais une règle trop forte fait « corriger » du code sain :
+            l'appelant d'à côté, qui passe un nœud, n'a PAS besoin d'être touché.
           */
           <div data-testid="entete-agent-precision" className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-ink-600">
             {typeof precision === 'string' ? <span className="min-w-0 truncate">{precision}</span> : precision}

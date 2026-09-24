@@ -543,7 +543,7 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   type. Cocher la case retire donc les réponses rapides, avec la raison écrite à l'endroit où elles
   disparaissent. Le contact qui clique **ne renvoie rien** au scénario (Meta n'émet aucun retour pour ce
   bouton) : le bloc n'a donc pas de sortie à relier, et le parcours continue tout de suite après, comme après
-  un simple texte. Sur un parcours **RCS**, le même bloc part avec une suggestion « ouvrir un lien », si bien
+  un simple texte. Sur un parcours **RCS**, le même bloc part avec un bouton « ouvrir un lien », si bien
   qu'un scénario se monte une fois pour les deux canaux. Une adresse vide, mal formée ou porteuse d'une
   variable **fait refuser l'envoi** au lieu de laisser partir le message sans son bouton, et l'écran la
   signale dès la saisie.

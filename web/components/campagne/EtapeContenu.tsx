@@ -816,8 +816,14 @@ function CadreRcs({
       {/*
         🔴 ÉCRIRE UN MESSAGE SANS QUITTER LA CAMPAGNE (Julien, 2026-09-24 : « il faut dire : partir d'un
         message enregistré, ou créer un nouveau modèle de message, et là ça ouvre le créateur, soit normal
-        soit carrousel »). C'est le seul chemin vers un CARROUSEL et vers une carte à TITRE depuis une
-        campagne : le composeur de l'étage ne sait éditer que le visuel, le texte et les suggestions.
+        soit carrousel »). C'est le seul chemin vers un CARROUSEL depuis une campagne : le composeur de
+        l'étage ne sait éditer que le visuel, le texte et les boutons.
+        ⚠️ CETTE PHRASE A DIT « ET VERS UNE CARTE À TITRE », ET C'ÉTAIT FAUX, en se contredisant avec le
+        commentaire du sélecteur dix-huit lignes plus haut, dans ce même fichier. Le modèle accepte un titre
+        sur une carte SIMPLE, mais aucun composeur n'expose ce champ : ouvrir le créateur n'ouvre donc pas ce
+        chemin-là. 🔴 Corrigée ici le 2026-09-24 après avoir été déclarée corrigée PARTOUT deux fois : la
+        première ne couvrait que le composant voisin et `todo.md`, la seconde qu'un fichier e2e. Ce qui a
+        fini par la trouver n'est pas un troisième souvenir, c'est un `grep` sur la FORMULATION.
         ⚠️ SOUS LE SÉLECTEUR ET NON DEDANS, pour la même raison que « Créer un scénario » : une option dans
         une liste déroulante se sélectionnerait comme une valeur, et un brouillon rechargé porterait un
         identifiant qui ne désigne rien.

@@ -114,8 +114,10 @@ prevoit deja (`rcsCardSchema`), et le `.refine` « titre OU media » devient att
 sens qui décourage : j'ai présenté comme un chantier ce qui tenait en deux lignes.
 
 ⚠️ Corollaire trouvé en le faisant : le prop `libelleAjout` de `RcsButtonsEditor` n'existait que pour cet
-appelant divergent. Il est parti avec lui, sinon il restait une porte de sortie ouverte pour la divergence
-qu'on venait de refermer.
+appelant divergent. Il est parti dans `310caf7a`, un commit APRÈS le renommage, sinon il restait une porte
+de sortie ouverte pour la divergence qu'on venait de refermer. (Cette ligne a d'abord attribué son retrait
+à `db292cf6`, qui ne touche même pas ce fichier : une attribution écrite de mémoire plutôt que lue dans
+`git show --stat`.)
 
 ### 3. Trois constats laissés porter
 

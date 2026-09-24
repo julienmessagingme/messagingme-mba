@@ -78,6 +78,19 @@ test.describe('Agents IA : l en-tête et le menu en colonne', () => {
     await expect(page.getByTestId('entete-agent-logo')).toBeVisible();
     // Le modèle sous le nom : c'est la précision de CET écran, là où l'agent de Meta y met son numéro.
     await expect(page.getByTestId('entete-agent-precision')).toContainText('anthropic/claude-haiku-4.5');
+    /**
+     * 🔴 ET IL SE TRONQUE, ce qu'aucune assertion ne gardait. Le 2026-09-24, `precision` est passé d'un
+     * `<p class="truncate">` à un `<div class="flex">` pour loger la pastille du numéro sur l'AUTRE écran :
+     * cette fiche-ci a perdu sa troncature sans qu'un seul test bouge, et un identifiant de modèle ne se
+     * coupe pas tout seul, donc il poussait la mise en page.
+     *
+     * ⚠️ NI `toContainText` NI UN CONTRÔLE DE DÉBORDEMENT NE LE VOIENT. Le texte est là dans les deux cas, et
+     * un texte non tronqué revient à la ligne au lieu de déborder de la page. Ce qui distingue les deux états
+     * est la RÈGLE appliquée, donc c'est elle qu'on lit.
+     */
+    const precision = page.getByTestId('entete-agent-precision').locator('span').first();
+    expect(await precision.evaluate((el) => getComputedStyle(el).textOverflow)).toBe('ellipsis');
+    expect(await precision.evaluate((el) => getComputedStyle(el).overflow)).toBe('hidden');
 
     // L'état d'activation a DÉMÉNAGÉ dans l'en-tête, et il n'y est qu'une fois (la fiche n'affiche pas la
     // liste) : deux copies jetteraient `agents-fiche.spec.ts` en violation de mode strict.
