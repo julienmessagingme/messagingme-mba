@@ -1,9 +1,10 @@
 import { test, expect } from '@playwright/test';
+import { INTENTIONS } from '../lib/intentions';
 
 /**
  * LA COLONNE DE DROITE DE LA SYNTHESE : les intentions, leurs sujets, et le chemin vers l ecran d analyse.
  *
- * 🔴 CE QUE CE FICHIER PROTEGE, ET QUI EST LE VRAI SUJET DE LA CARTE. Les six intentions sont une
+ * 🔴 CE QUE CE FICHIER PROTEGE, ET QUI EST LE VRAI SUJET DE LA CARTE. Les intentions sont une
  * enumeration FERMEE : elles n enflent pas. Le sujet, lui, est du texte LIBRE, et c est la que vit
  * l inflation que Julien redoutait (« on a un theme demande de devis, si un moment tu decides de creer un
  * theme demande de cotation, c est un peu con »). Mesure en production le 2026-09-17 : 13 sujets distincts
@@ -17,7 +18,7 @@ const RESUME = {
   retentionDays: 90,
   total: 14,
   sentiment: { positif: 5, neutre: 6, negatif: 3 },
-  intent: { demande_devis: 0, sav: 0, reclamation: 0, information: 9, prise_rdv: 2, autre: 3 },
+  intent: { demande_devis: 0, sav: 0, reclamation: 0, information: 9, prise_rdv: 2, achat: 0, suivi_commande: 0, retour: 0, autre: 3 },
   resolution: { resolved: 9, unresolved: 5, rate: 9 / 14 },
   handledBy: { humain: 6, automatise: 8, mba: 0 },
   exchanges: { avg: 3.2, median: 3 },
@@ -45,6 +46,10 @@ async function mock(page: import('@playwright/test').Page, resume: unknown = RES
     // ⚠️ Le NUAGE avant le RESUME : les deux adresses commencent par `/stats/conversations`, et l inverse
     // ferait servir le resume au nuage. C est le genre d ordre qui rend un test vert pour la mauvaise raison.
     if (url.includes('/stats/conversations/nuage')) return json({ points: [], moyenne: null, mesurees: 0, sansMesure: 0 });
+    // ⚠️ La LISTE avant le RESUME aussi. Sans elle, `/dashboard/quali` recevait le resume en guise de liste,
+    // `rows` valait `undefined` et la page tombait des que la reponse arrivait : les cas qui y atterrissent
+    // passaient ou non selon que leur assertion gagnait la course (vu echouer le 2026-09-25, a froid et sous charge).
+    if (url.includes('/stats/conversations/list')) return json({ conversations: [] });
     if (url.includes('/stats/conversations')) return json(resume);
     if (url.includes('/stats/cost/campaigns')) return json({ lignes: [], currency: 'EUR', hasRates: true, tronque: false });
     if (url.includes('/unread-count')) return json({ count: 0 });
@@ -55,13 +60,13 @@ async function mock(page: import('@playwright/test').Page, resume: unknown = RES
 }
 
 test.describe('Performance Lab : les intentions et leurs sujets', () => {
-  test('les six intentions sont la, dans un ordre FIXE', async ({ page }) => {
+  test('toutes les intentions sont la, dans un ordre FIXE', async ({ page }) => {
     // Un classement par volume ferait danser les barres d une periode a l autre, et l oeil prendrait ce
-    // mouvement pour une information.
+    // mouvement pour une information. La liste vient du module de la console, lui-meme tenu egal a INTENTS.
     await mock(page);
     await page.goto('/performance');
     await expect(page.getByTestId('carte-intentions')).toBeVisible();
-    for (const i of ['demande_devis', 'sav', 'reclamation', 'information', 'prise_rdv', 'autre']) {
+    for (const i of INTENTIONS) {
       await expect(page.getByTestId(`intention-${i}`)).toBeVisible();
     }
   });
@@ -120,7 +125,17 @@ test.describe('Performance Lab : les intentions et leurs sujets', () => {
     await expect(page.getByTestId('intention-deplier-information')).toBeDisabled();
   });
 
-  test('aucune conversation analysee -> une phrase, pas six barres a zero', async ({ page }) => {
+  test('🔴 une API plus ANCIENNE, qui ne connait pas les intentions ajoutees depuis, montre des barres a zero', async ({ page }) => {
+    // Entre le push de la console et le deploiement de l API, `intent` ne porte pas les cles neuves. Leur
+    // barre doit exister, a zero et non cliquable, et rien ne doit afficher NaN.
+    await mock(page, { ...RESUME, intent: { demande_devis: 0, sav: 0, reclamation: 0, information: 9, prise_rdv: 2, autre: 3 } });
+    await page.goto('/performance');
+    await expect(page.getByTestId('intention-ouvrir-achat')).toBeDisabled();
+    await expect(page.getByTestId('intention-ouvrir-information')).toBeEnabled();
+    await expect(page.getByTestId('carte-intentions')).not.toContainText('NaN');
+  });
+
+  test('aucune conversation analysee -> une phrase, pas des barres a zero', async ({ page }) => {
     await mock(page, { ...RESUME, total: 0, intent: { demande_devis: 0, sav: 0, reclamation: 0, information: 0, prise_rdv: 0, autre: 0 }, topicsParIntention: {} });
     await page.goto('/performance');
     await expect(page.getByTestId('intentions-vide')).toBeVisible();

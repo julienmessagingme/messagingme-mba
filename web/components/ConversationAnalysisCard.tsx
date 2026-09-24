@@ -21,6 +21,7 @@ import { BoutonPdf } from './BoutonPdf';
 import { phraseResumeAbsent } from '@/lib/resume-conversation';
 import { toCsv, downloadCsv } from '@/lib/csv';
 import { entetesQuali, ligneQuali } from '@/lib/quali-export';
+import { INTENTIONS, comptesParIntention, estIntention, libelleIntention } from '@/lib/intentions';
 
 /**
  * Plafond de lignes ramenées quand on ouvre une liste pour l'exporter.
@@ -42,7 +43,7 @@ const SECTION_LABEL = 'mb-2 text-xs font-medium uppercase tracking-wide text-ink
 
 // Clés d'énumération LLM (filtres + mapping libellé). Les VALEURS backend passent telles quelles si inconnues.
 const SENTIMENTS = ['positif', 'neutre', 'negatif'] as const;
-const INTENTS = ['demande_devis', 'sav', 'reclamation', 'information', 'prise_rdv', 'autre'] as const;
+// Les intentions vivent dans `@/lib/intentions` (liste, ordre, libellés), partagées avec la carte du Performance Lab.
 const ACTIONS = ['creer_devis', 'rappeler', 'relancer', 'escalader', 'aucune'] as const;
 
 /** Libellé localisé d'un sentiment (repli : valeur brute si clé inconnue). */
@@ -52,17 +53,6 @@ function sentimentLabel(s: string, t: Tr): string {
     case 'neutre': return t('Neutre', 'Neutral');
     case 'negatif': return t('Négatif', 'Negative');
     default: return s;
-  }
-}
-function intentLabel(i: string, t: Tr): string {
-  switch (i) {
-    case 'demande_devis': return t('Demande de devis', 'Quote request');
-    case 'sav': return t('SAV', 'After-sales');
-    case 'reclamation': return t('Réclamation', 'Complaint');
-    case 'information': return t('Information', 'Information');
-    case 'prise_rdv': return t('Prise de RDV', 'Appointment');
-    case 'autre': return t('Autre', 'Other');
-    default: return i;
   }
 }
 function actionLabel(a: string, t: Tr): string {
@@ -183,8 +173,11 @@ function QuantiBlock({ summary, sujet, onSujet, onAction }: {
   const resolvedDen = summary.resolution.resolved + summary.resolution.unresolved;
   const avg = summary.exchanges.avg;
 
-  // Intentions triées par volume décroissant (demande_devis remonte = signal commercial).
-  const intents = INTENTS.map((k) => ({ key: k, label: intentLabel(k, t), value: summary.intent[k] }))
+  // Intentions triées par volume décroissant (demande_devis remonte = signal commercial). `comptesParIntention`
+  // ramène à zéro une intention qu'une API plus ancienne ne connaît pas : sans lui, `Math.max` rendrait NaN
+  // et `fmtNum(undefined)` ferait tomber toute la page.
+  const intents = comptesParIntention(summary.intent)
+    .map(({ intention, n }) => ({ key: intention, label: libelleIntention(intention, t), value: n }))
     .sort((a, b) => b.value - a.value);
   const intentMax = Math.max(1, ...intents.map((i) => i.value));
 
@@ -213,7 +206,7 @@ function QuantiBlock({ summary, sujet, onSujet, onAction }: {
         </div>
         <div>
           <div className={SECTION_LABEL}>{t('Par intention', 'By intent')}</div>
-          <div className="space-y-2">
+          <div className="space-y-2" data-testid="quali-intentions">
             {intents.map((i) => (
               <Bar key={i.key} label={i.label} pct={Math.round((i.value / intentMax) * 100)} value={fmtNum(i.value, locale)} cls="bg-brand-500" />
             ))}
@@ -294,7 +287,7 @@ function BoutonCsv({ rows, nom }: { rows: AnalyzedConversation[]; nom: string })
   const t = useT();
   const libelles = {
     sentiment: (v: string) => sentimentLabel(v, t),
-    intent: (v: string) => intentLabel(v, t),
+    intent: (v: string) => libelleIntention(v, t),
     action: (v: string) => actionLabel(v, t),
   };
   return (
@@ -358,7 +351,7 @@ function FicheConversation({ c, onClose }: { c: AnalyzedConversation; onClose: (
           {champ(t('Sentiment', 'Sentiment'), (
             <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${sentimentBadge(c.sentiment)}`}>{sentimentLabel(c.sentiment, t)}</span>
           ))}
-          {champ(t('Intention', 'Intent'), intentLabel(c.intent, t))}
+          {champ(t('Intention', 'Intent'), libelleIntention(c.intent, t))}
           {champ(t('Sujet', 'Topic'), c.topic)}
           {champ(t('Résolu', 'Resolved'), c.resolved ? t('Oui', 'Yes') : t('Non', 'No'))}
           {champ(t('Action suggérée', 'Suggested action'), actionLabel(c.actionSuggestion, t))}
@@ -517,7 +510,7 @@ function QualiTable({ tenantId, range, sujet, onSujet, intentionInitiale, journe
    * que rien n explique pourquoi.
    */
   const [intent, setIntent] = useState(
-    intentionInitiale && (INTENTS as readonly string[]).includes(intentionInitiale) ? intentionInitiale : '',
+    intentionInitiale && estIntention(intentionInitiale) ? intentionInitiale : '',
   );
   const [action, setAction] = useState('');
   const [rows, setRows] = useState<AnalyzedConversation[]>([]);
@@ -569,7 +562,7 @@ function QualiTable({ tenantId, range, sujet, onSujet, intentionInitiale, journe
         </select>
         <select value={intent} onChange={(e) => setIntent(e.target.value)} className={SELECT} data-testid="quali-filtre-intent">
           <option value="">{t('Intention : toutes', 'Intent: all')}</option>
-          {INTENTS.map((i) => <option key={i} value={i}>{intentLabel(i, t)}</option>)}
+          {INTENTIONS.map((i) => <option key={i} value={i}>{libelleIntention(i, t)}</option>)}
         </select>
         <select value={action} onChange={(e) => setAction(e.target.value)} className={SELECT}>
           <option value="">{t('Action : toutes', 'Action: all')}</option>
@@ -642,7 +635,7 @@ function QualiTable({ tenantId, range, sujet, onSujet, intentionInitiale, journe
                         {sentimentLabel(r.sentiment, t)}
                       </span>
                     </td>
-                    <td className={`${td} text-ink-600`}>{intentLabel(r.intent, t)}</td>
+                    <td className={`${td} text-ink-600`}>{libelleIntention(r.intent, t)}</td>
                     <td className={`${td} text-ink-600`}>{r.topic}</td>
                     <td className={td} data-testid="quali-repondeurs">
                       {/**

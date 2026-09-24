@@ -9,6 +9,7 @@
  */
 
 import { request } from '../http';
+import type { Intention } from '../intentions';
 
 // --- Dashboard (stats + réglages) ---
 
@@ -307,7 +308,13 @@ export interface ConversationAnalysisSummary {
   retentionDays?: number;
   total: number;
   sentiment: { positif: number; neutre: number; negatif: number };
-  intent: { demande_devis: number; sav: number; reclamation: number; information: number; prise_rdv: number; autre: number };
+  /**
+   * ⚠️ PARTIEL A LA LECTURE, comme `topicsParIntention` plus bas et pour la meme raison de RESEAU : une API
+   * plus ancienne que la console ne connait pas les intentions ajoutees depuis, et une cle absente n est pas
+   * un zero que l API aurait envoye. Le type oblige chaque lecteur a passer par `comptesParIntention`
+   * (`web/lib/intentions.ts`), qui la ramene a zero.
+   */
+  intent: Partial<Record<Intention, number>>;
   resolution: { resolved: number; unresolved: number; rate: number | null };
   handledBy: { humain: number; automatise: number; mba: number };
   exchanges: { avg: number | null; median: number | null };

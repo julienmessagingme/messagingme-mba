@@ -172,4 +172,17 @@ test.describe('Analytics qualitatif : le tableau devient actionnable', () => {
     await expect(page.getByText(/sans limite de durée/)).toBeVisible();
     await expect(page.getByText(/conservées 0 jours/)).toHaveCount(0);
   });
+
+  test('🔴 une API qui ne connait pas les intentions neuves ne fait pas tomber la page', async ({ page }) => {
+    // RESUME ne porte que les six intentions d avant le 2026-09-24 : c est exactement la reponse d une API
+    // plus ancienne que la console. Sans repli a zero, `Math.max` rendrait NaN et `fmtNum(undefined)`
+    // leverait une TypeError : la page entiere tomberait, pas seulement une barre.
+    const appels: string[] = [];
+    await mock(page, appels);
+    await page.goto('/dashboard/quali');
+    const bloc = page.getByTestId('quali-intentions');
+    await expect(bloc).toContainText('Demande de devis');
+    await expect(bloc).toContainText('Suivi de commande');
+    await expect(bloc).not.toContainText('NaN');
+  });
 });

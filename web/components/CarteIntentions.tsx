@@ -5,13 +5,15 @@ import { useRouter } from 'next/navigation';
 import { getConversationAnalysisSummary, type ConversationAnalysisSummary, type StatsRange } from '@/lib/api';
 import { fmtNum } from '@/lib/format';
 import { useT, useLocale } from '@/lib/i18n';
+import { comptesParIntention, libelleIntention, type Intention } from '@/lib/intentions';
 
 /**
  * « COMBIEN DE CONVERSATIONS PAR INTENTION », avec leurs SUJETS empilés dessous.
  *
- * 🔴 DEUX NIVEAUX, ET LE SECOND EST LE VRAI SUJET DE CETTE CARTE. Les six intentions sont une énumération
- * FERMÉE (`src/analysis/schema.ts`) : le modèle ne peut pas en inventer une septième, donc elles
- * n'enflent pas. Le `topic`, lui, est du texte LIBRE, et c'est là que vit l'inflation que Julien redoutait
+ * 🔴 DEUX NIVEAUX, ET LE SECOND EST LE VRAI SUJET DE CETTE CARTE. Les intentions sont une énumération
+ * FERMÉE (`src/analysis/schema.ts`, copiée dans `web/lib/intentions.ts`) : le modèle ne peut pas en
+ * inventer d'autres, donc elles n'enflent pas. Le `topic`, lui, est du texte LIBRE, et c'est là que vit
+ * l'inflation que Julien redoutait
  * (« on a un thème demande de devis, si un moment tu décides de créer un thème demande de cotation, c'est
  * un peu con »). Mesuré en production le 2026-09-17 : 13 sujets distincts pour 14 analyses, dont QUATRE
  * variantes de « consultation tarifs ». Rangés à plat, ces quatre-là sont dispersés et personne ne voit
@@ -31,28 +33,15 @@ import { useT, useLocale } from '@/lib/i18n';
 
 const CARD = 'rounded-2xl border border-ink-200 bg-white p-5 shadow-sm';
 
-/** L'ordre d'affichage, et il est FIXE : un classement par volume ferait danser les barres d'une période
- *  à l'autre, et l'œil prendrait ce mouvement pour une information. */
-const INTENTS = ['demande_devis', 'sav', 'reclamation', 'information', 'prise_rdv', 'autre'] as const;
-type Intent = (typeof INTENTS)[number];
-
-function libelle(i: Intent, t: (fr: string, en?: string) => string): string {
-  switch (i) {
-    case 'demande_devis': return t('Demande de devis', 'Quote request');
-    case 'sav': return t('SAV', 'After-sales');
-    case 'reclamation': return t('Réclamation', 'Complaint');
-    case 'information': return t('Information', 'Information');
-    case 'prise_rdv': return t('Prise de RDV', 'Appointment');
-    case 'autre': return t('Autre', 'Other');
-  }
-}
+/** La liste, son ordre FIXE d'affichage et les libellés vivent dans `@/lib/intentions`, partagés avec
+ *  l'Analyse des conversations. */
 
 export function CarteIntentions({ tenantId, range }: { tenantId: string; range: StatsRange }) {
   const t = useT();
   const { locale } = useLocale();
   const router = useRouter();
   const [resume, setResume] = useState<ConversationAnalysisSummary | null | 'erreur'>(null);
-  const [depliee, setDepliee] = useState<Intent | null>(null);
+  const [depliee, setDepliee] = useState<Intention | null>(null);
 
   useEffect(() => {
     let vivant = true;
@@ -65,7 +54,7 @@ export function CarteIntentions({ tenantId, range }: { tenantId: string; range: 
     return () => { vivant = false; };
   }, [tenantId, range.from, range.to]);
 
-  const versAnalyse = (i: Intent): void => {
+  const versAnalyse = (i: Intention): void => {
     // La période voyage avec l'intention : arriver sur une autre fenêtre que celle qu'on regardait
     // donnerait un compte différent de celui qu'on vient de cliquer, et le chiffre passerait pour faux.
     router.push(`/dashboard/quali?intention=${i}&from=${range.from}&to=${range.to}`);
@@ -98,8 +87,7 @@ export function CarteIntentions({ tenantId, range }: { tenantId: string; range: 
 
       {resume !== null && resume !== 'erreur' && resume.total > 0 && (
         <div className="space-y-1.5">
-          {INTENTS.map((i) => {
-            const n = resume.intent[i] ?? 0;
+          {comptesParIntention(resume.intent).map(({ intention: i, n }) => {
             const pct = resume.total > 0 ? Math.round((n / resume.total) * 100) : 0;
             const sujets = resume.topicsParIntention?.[i] ?? [];
             return (
@@ -113,7 +101,7 @@ export function CarteIntentions({ tenantId, range }: { tenantId: string; range: 
                     onClick={() => setDepliee((v) => (v === i ? null : i))}
                     disabled={sujets.length === 0}
                     aria-expanded={depliee === i}
-                    aria-label={t(`Voir les sujets de ${libelle(i, t)}`, `Show topics for ${libelle(i, t)}`)}
+                    aria-label={t(`Voir les sujets de ${libelleIntention(i, t)}`, `Show topics for ${libelleIntention(i, t)}`)}
                     data-testid={`intention-deplier-${i}`}
                     className="shrink-0 rounded p-0.5 text-ink-400 transition hover:bg-ink-100 disabled:invisible"
                   >
@@ -126,7 +114,7 @@ export function CarteIntentions({ tenantId, range }: { tenantId: string; range: 
                     data-testid={`intention-ouvrir-${i}`}
                     className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-left transition hover:bg-ink-50 disabled:cursor-default disabled:hover:bg-transparent"
                   >
-                    <span className="w-32 shrink-0 truncate text-xs text-ink-600">{libelle(i, t)}</span>
+                    <span className="w-32 shrink-0 truncate text-xs text-ink-600">{libelleIntention(i, t)}</span>
                     <span className="h-5 flex-1 overflow-hidden rounded-md bg-ink-50">
                       <span className="block h-full rounded-md bg-brand-400" style={{ width: `${pct}%` }} />
                     </span>

@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { INTENTS } from '../src/analysis/schema';
 import { buildPrompt } from '../src/analysis/engine';
+import { INTENTIONS, libelleIntention } from '../web/lib/intentions';
 
 /**
  * LES INTENTIONS : UNE LISTE QUI FAIT FOI, ET TOUT CE QUI LA NOMME.
@@ -84,4 +85,46 @@ describe('les intentions : la synthèse du serveur compte chacune', () => {
     expect(source.split("count(*) filter (where intent = '").length - 1, 'une intention comptée que le schéma ne connaît pas')
       .toBe(INTENTS.length);
   });
+});
+
+describe('les intentions : la console connaît les mêmes, et sait les nommer', () => {
+  it('🔴 la copie de la console est INTENTS, dans le même ordre', () => {
+    // L'ordre compte : c'est l'ordre FIXE des barres. Un ordre différent ne casserait rien, il ferait
+    // seulement diverger deux listes qu'on croirait identiques.
+    expect([...INTENTIONS]).toEqual([...INTENTS]);
+  });
+
+  it('🔴 chaque intention a un libellé français ET anglais, jamais sa clé brute', () => {
+    const fr = (f: string): string => f;
+    const en = (f: string, e?: string): string => e ?? f;
+    for (const i of INTENTS) {
+      expect(libelleIntention(i, fr), `pas de libellé français pour ${i}`).not.toBe(i);
+      expect(libelleIntention(i, en), `pas de libellé anglais pour ${i}`).not.toBe(i);
+    }
+  });
+
+  it('⚠️ aucun libellé pour une intention que le schéma ne connaît pas', () => {
+    // Un `case` orphelin est le reste d'une valeur retirée : il ne casse rien, mais il ment sur la liste.
+    const cases = [...lire('web/lib/intentions.ts').matchAll(/case '([a-z_]+)':/g)].map((m) => m[1]);
+    expect([...cases].sort()).toEqual([...INTENTS].sort());
+  });
+});
+
+describe('les intentions : les écrans n’en portent plus de copie', () => {
+  // 🔴 LA PARITÉ DU MODULE NE VOIT QUE LE MODULE. Les deux écrans portaient chacun leur liste et leurs
+  // libellés, et c'est ainsi qu'une intention ajoutée au schéma n'arrivait sur aucun des deux. Une copie
+  // réintroduite dans un écran repasserait sans que le bloc précédent la voie : celui-ci la refuse.
+  const ECRANS = ['web/components/CarteIntentions.tsx', 'web/components/ConversationAnalysisCard.tsx'];
+
+  for (const ecran of ECRANS) {
+    it(`🔴 ${ecran} lit la liste et les libellés dans web/lib/intentions.ts`, () => {
+      const source = lire(ecran);
+      expect(source, `${ecran} n’importe pas @/lib/intentions`).toContain("from '@/lib/intentions'");
+      for (const i of INTENTS) {
+        expect(source, `${ecran} porte son propre libellé pour ${i}`).not.toContain(`case '${i}'`);
+      }
+      expect(source, `${ecran} porte sa propre liste d’intentions`).not.toContain("'prise_rdv'");
+      expect(source, `${ecran} porte sa propre liste d’intentions`).not.toMatch(/const INTENTS\b/);
+    });
+  }
 });
