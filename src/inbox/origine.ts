@@ -79,7 +79,7 @@ export const THEME_DE_ORIGINE: Record<string, 'ia' | 'scenario' | 'humain' | 'in
   humain: 'humain',
   campagne: 'scenario',
   /**
-   * L'API publique du client (migration 0166) : un envoi par `POST /v1/messages`.
+   * L'API publique du client (migration 0166) : un envoi par `POST /v1/messages/whatsapp`.
    *
    * 🔴 `scenario` ET SURTOUT PAS `ia`, ET LE CHOIX SE JUSTIFIE PAR CE QUI EST VRAI, pas par ce qui reste.
    * Le theme repond a « qui a ecrit ce message ? » et il n'a que trois reponses. Ce n'est pas un humain

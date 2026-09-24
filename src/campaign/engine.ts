@@ -893,8 +893,9 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
           }
         }
       } else if (contenu.workflowId && campaign.startNodeId) {
-        // Campagne NODE (/v1/sends) : on démarre le workflow à un BLOC PRÉCIS. Les destinataires hors fenêtre
-        // 24 h ont déjà été écartés (`out_of_window`) à la création, donc l'envoi de session est légitime ici.
+        // Campagne NODE (/v1/sends) : on démarre le workflow à un BLOC PRÉCIS. Quand ce bloc fait partir un
+        // message de SESSION en premier (`ouvertureApi`), les destinataires hors fenêtre de 24 h ont déjà été
+        // écartés (`window_closed`) à la création ; un bloc qui ouvre par un template ou un RCS n'en a pas.
         if (!deps.startWorkflowFromNode) throw new Error('startWorkflowFromNode non câblé');
         const waId = waIdOfTarget(r.toE164);
         const started = await deps.startWorkflowFromNode(campaign.tenantId, contenu.workflowId, campaign.startNodeId, waId, r.contactId);

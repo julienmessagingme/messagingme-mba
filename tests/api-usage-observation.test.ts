@@ -39,17 +39,20 @@ const CLE = cleApiDeTest('usage');
  */
 const sendsMuets: Omit<V1SendsRouteDeps, 'usage'> = {
   resolveScenario: async () => ({ ok: false, reason: 'not_found' }),
+  resolveNode: async () => ({ ok: false, reason: 'not_found' }),
+  lireModele: async () => ({ statut: 'absent' }),
+  getWindowOpenByWaIds: async () => new Map(),
   getTenantPhoneNumberId: async () => 'pn-1',
   phoneNumberBelongsToTenant: async () => true,
-  findContactByPhone: async () => null,
-  createContactByPhone: async () => ({ id: 'c1' }),
-  listContactsForBuildByIds: async () => [],
+  resoudreFiche: async () => ({ ok: false, code: 'unknown_contact' }),
+  appliquerConsentement: async () => 'inchange',
+  listContactsPourEnvoi: async () => [],
   createSend: async () => ({ campaignId: 'camp1', recipientCount: 0 }),
   enqueue: async () => { /* rien */ },
   idempotencyClaim: async () => ({ claimed: true as const }),
   idempotencyComplete: async () => { /* rien */ },
   idempotencyRelease: async () => { /* rien */ },
-  getSendDetail: async () => null,
+  lireEnvoi: async () => null,
 };
 
 function monter() {

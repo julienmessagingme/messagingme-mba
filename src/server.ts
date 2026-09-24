@@ -242,7 +242,7 @@ export interface ServerDeps {
     apiKeys: ApiKeyLookup;
     contacts: Omit<V1ContactsRouteDeps, 'usage'>;
     sends?: Omit<V1SendsRouteDeps, 'usage'>;
-    /** Un simple texte dans la fenetre de 24 h (`POST /v1/messages`, lot 7). */
+    /** Un simple texte dans la fenetre de 24 h (`POST /v1/messages/whatsapp`, lot 7, adresse renommee le 2026-09-24). */
     messages?: Omit<V1MessagesRouteDeps, 'usage'>;
     mcp?: DepsMcp;
     /** Le relais du Meta Business Agent : même autorité et même limiteur que /v1 (migration 0161). */

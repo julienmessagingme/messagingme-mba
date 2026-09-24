@@ -1457,8 +1457,9 @@ export class WorkflowExecutor {
 
   /**
    * Démarre un run à un bloc ARBITRAIRE du graphe (cible `node` de /v1/sends, D-1). La garde fenêtre 24 h n'est
-   * PAS appliquée ici : l'appelant a déjà écarté les contacts hors fenêtre (`out_of_window`), et l'intérêt même
-   * de la cible node est d'envoyer un message de session (quick_message/flow) à quelqu'un qui vient d'écrire.
+   * PAS appliquée ici : quand ce qui part en premier depuis ce bloc est un message de session (`ouvertureApi`),
+   * l'appelant a déjà écarté les contacts hors fenêtre (`window_closed`), et l'intérêt même de la cible node
+   * est d'écrire à quelqu'un qui vient d'écrire.
    *
    * ⚠️ `figerLeGraphe` est réservé aux démarrages de TEST, qui jouent le BROUILLON : sans lui, le parcours
    * reprendrait sur le publié à la première réponse du contact. `start` (campagne) ne l'offre pas.

@@ -34,6 +34,21 @@ export interface DepsConsentement {
   audit: AuditSink;
 }
 
+/**
+ * LES DÉPENDANCES DU CONSENTEMENT, CONSTRUITES ICI ET NULLE PART AILLEURS : `creerServiceContactsV1`
+ * (`/v1/contacts`) et le câblage de `/v1/sends` (`src/index.ts`) passent par elle. Deux constructions
+ * écrites à la main divergeraient, et une route journaliserait un consentement que l'autre écrirait sans trace.
+ *
+ * ⚠️ La flèche garde le `this` du dépôt : passer `contacts.ecrireConsentementParId` tel quel le perdrait sur
+ * une instance de `PgContactStore`.
+ */
+export function depsConsentementDe(contacts: Pick<DepsConsentement, 'ecrireConsentementParId'>, audit: AuditSink): DepsConsentement {
+  return {
+    ecrireConsentementParId: (tenantId, contactId, statut, source) => contacts.ecrireConsentementParId(tenantId, contactId, statut, source),
+    audit,
+  };
+}
+
 export async function appliquerConsentement(
   deps: DepsConsentement,
   tenantId: string,

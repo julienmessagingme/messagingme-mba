@@ -170,6 +170,13 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   // Porte AUSSI l'en-tête média, pour la même raison que les cartes : Meta l'exige à chaque envoi et l'URL expire.
   type TplInfo = {
     count: number;
+    /**
+     * Statut Meta et langue du template TROUVÉ (`APPROVED`, `PENDING`…). L'API publique refuse un template non
+     * approuvé, et la langue dit si la lecture est retombée sur le nom seul (`verdictModele`). Aucun autre
+     * lecteur ne les lit : le worker et l'Inbox n'en dépendent pas.
+     */
+    statut: string;
+    langue: string;
     carousel?: { cards: OutboundCarouselCard[] };
     headerFormat?: 'IMAGE' | 'VIDEO' | 'DOCUMENT';
     headerMediaUrl?: string;
@@ -257,6 +264,8 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       : undefined;
     const info: TplInfo = {
       count: countTemplateVariables(tpl.body),
+      statut: tpl.status,
+      langue: tpl.language,
       ...(tpl.category ? { category: tpl.category.toLowerCase() } : {}),
       ...(tpl.carousel ? { carousel: tpl.carousel } : {}),
       ...(media ? { headerFormat: media } : {}),

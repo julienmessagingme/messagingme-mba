@@ -60,8 +60,8 @@ describe('buildRecipients', () => {
  * Un contact écarté faute d'opt-in doit être RAPPORTÉ, pas jeté en silence.
  *
  * Vécu : une campagne marketing montée sur une liste HubSpot rendait 0 destinataire et l'écran accusait la
- * variable de template, seul motif qu'il connaissait. Le motif existait déjà sur la voie API
- * (`buildApiRecipients`), il manquait sur la voie écran, celle que l'opérateur utilise.
+ * variable de template, seul motif qu'il connaissait. Le motif existait déjà sur la voie API (aujourd'hui
+ * `trierDestinataires`, `src/api/sends-build.ts`), il manquait sur la voie écran, celle que l'opérateur utilise.
  */
 describe('buildRecipients : motif de l’écart pour opt-in', () => {
   it('marketing : le contact sans opt-in part dans `skipped` avec le motif, pas dans le vide', () => {

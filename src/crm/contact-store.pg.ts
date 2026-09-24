@@ -221,7 +221,7 @@ export class PgContactStore implements ContactStore {
        do update set
          fields = contacts.fields || excluded.fields,
          profile_name = coalesce(excluded.profile_name, contacts.profile_name),
-         -- coalesce, et pas une affectation seche : un upsert SANS bsuid (import CSV, /v1/sends) ne doit pas
+         -- coalesce, et pas une affectation seche : un upsert SANS bsuid (webhook entrant, création à la main dans la console) ne doit pas
          -- effacer l'identifiant d'un contact arrivé par l'inbound sans numéro partagé.
          bsuid = coalesce(excluded.bsuid, contacts.bsuid),
          opt_in_status = case
@@ -238,7 +238,7 @@ export class PgContactStore implements ContactStore {
          opt_in_source = coalesce(excluded.opt_in_source, contacts.opt_in_source),
          -- Union dédupliquée : les nouveaux tags s'ajoutent, jamais d'écrasement.
          tags = (select coalesce(array_agg(distinct t), '{}') from unnest(contacts.tags || excluded.tags) t),
-         -- Ré-ajouter un contact (import CSV, /v1/sends createMissing) le RESSUSCITE : re-poser le numéro
+         -- Ré-ajouter un contact (webhook entrant, création à la main dans la console) le RESSUSCITE : re-poser le numéro
          -- efface la suppression douce. Sur un contact déjà actif, no-op (deleted_at était déjà null).
          deleted_at = null,
          updated_at = now()
@@ -343,8 +343,8 @@ export class PgContactStore implements ContactStore {
   }
 
   /** Contact ACTIF par téléphone E.164 exact (tenant scopé). null si absent OU supprimé (soft-delete) : un
-   *  contact supprimé est « introuvable » pour l'API d'envoi (/v1/sends) -> il est skippé (unknown_contact) ou,
-   *  si createMissing, ré-upserté donc ressuscité. Jamais destinataire d'un envoi. */
+   *  contact supprimé est « introuvable » pour le serveur MCP (`contactParTelephone`). `/v1/sends` ne passe
+   *  plus par ici : il résout une fiche par `resoudreFiche` (lot 1). Jamais destinataire d'un envoi. */
   async findByPhone(tenantId: string, phoneE164: string): Promise<ContactRow | null> {
     const res = await this.pool.query(
       `select id, phone_e164, bsuid, external_id, profile_name, opt_in_status, fields, tags, created_at, blocked_at,

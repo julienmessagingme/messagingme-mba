@@ -10,7 +10,7 @@ import {
   ECRITURES_EN_VOL, MAX_CHAMPS_PAR_CONTACT, MAX_CLE_CHAMP, MAX_OPT_IN_SOURCE,
   normalizeTags, preparateurDeChamps, schemaChamps, schemaTags, valeurDeChamp,
 } from './contacts-upsert';
-import { appliquerConsentement, type DepsConsentement } from './consentement';
+import { appliquerConsentement, depsConsentementDe } from './consentement';
 import type { CodeApi } from './erreurs';
 import { MAX_EXTERNAL_ID, MESSAGE_RESOLUTION, normaliserCles, resoudreFiche, schemaClesFiche, videEnAbsent } from './fiche';
 
@@ -150,10 +150,8 @@ const STOP_PENDANT_L_APPEL = 'cette personne a demandé l’arrêt des messages 
 
 export function creerServiceContactsV1(deps: DepsServiceContactsV1): ServiceContactsV1 {
   const maintenant = deps.maintenant ?? ((): Date => new Date());
-  const consentement: DepsConsentement = {
-    ecrireConsentementParId: (t, id, statut, source) => deps.contacts.ecrireConsentementParId(t, id, statut, source),
-    audit: deps.audit,
-  };
+  // UNE construction, partagée avec `/v1/sends` (`src/index.ts`) : `depsConsentementDe`.
+  const consentement = depsConsentementDe(deps.contacts, deps.audit);
   const optsChamps = {
     fields: deps.fields,
     ...(deps.maxChampsParEspace === undefined ? {} : { maxChampsParEspace: deps.maxChampsParEspace }),

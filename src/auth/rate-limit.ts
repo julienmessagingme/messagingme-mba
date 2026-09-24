@@ -11,8 +11,8 @@ import type { CodeApi } from '../api/erreurs';
  * plafond en conséquence. Une justification fausse est pire qu'aucune, parce qu'elle sera recopiée.
  *
  * ⚠️ C'EST CE QUI A RENDU NÉCESSAIRE LE PLAFOND D'OPÉRATIONS LOURDES SIMULTANÉES (`ApiUsageGuard`) : dix
- * requêtes d'une même fenêtre suffisent à saturer le pool sans jamais franchir le plafond affiché. Aucune dépendance de RUNTIME : le seul import de
- * ce fichier est un `import type`, effacé à la compilation. À garder ainsi, pour que le limiteur reste
+ * requêtes d'une même fenêtre suffisent à saturer le pool sans jamais franchir le plafond affiché. Aucune dépendance de RUNTIME : ce
+ * fichier n'a que des `import type`, effacés à la compilation. À garder ainsi, pour que le limiteur reste
  * chargeable depuis n'importe quel contexte, y compris hors du serveur HTTP.
  *
  * ⚠️ Il ne sert plus seulement `/auth/login`, et la CLÉ change avec l'appelant, ce qui est tout le sujet :

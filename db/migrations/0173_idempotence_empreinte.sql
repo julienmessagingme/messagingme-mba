@@ -1,0 +1,11 @@
+-- 0173_idempotence_empreinte.sql : l'EMPREINTE du corps d'un envoi par l'API, gardee avec sa cle d'idempotence.
+--
+-- POURQUOI : la meme cle avec un AUTRE corps rejouait en silence le rapport du premier envoi. L'appelant
+-- croyait le sien parti. Avec l'empreinte, ce cas est refuse (idempotency_key_reused).
+--
+-- PUREMENT ADDITIVE : une colonne nullable, sans defaut, sans index. L'ancien code l'ignore ; le code neuf
+-- l'ECRIT a chaque claim, donc elle passe AVANT le deploiement.
+--
+-- null = une ligne d'avant cette migration : elle rejoue son rapport comme aujourd'hui, et disparait avec la
+-- purge des 24 h (sweepOlderThan, worker).
+alter table api_idempotency add column if not exists request_hash text;

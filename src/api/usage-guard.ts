@@ -28,7 +28,7 @@ export type OperationApi =
   | 'contacts.read'
   | 'sends.create'
   | 'sends.read'
-  // Un texte libre dans la fenetre de 24 h (`POST /v1/messages`). UNE unite par appel : un message, une
+  // Un texte libre dans la fenetre de 24 h (`POST /v1/messages/whatsapp`). UNE unite par appel : un message, une
   // personne. C'est la seule operation de l'API dont le travail ne depend pas du corps envoye.
   | 'messages.send'
   | 'mcp.call'

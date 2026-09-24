@@ -10,6 +10,20 @@ export interface BuildContact extends ResolvableContact {
   optInStatus: 'opted_in' | 'opted_out' | 'unknown';
 }
 
+/**
+ * Un contact vu par un envoi de l'API publique : ce que la construction lit, PLUS ce qui l'écarte avec un
+ * motif (spec 2026-09-24, § 3 « Aucune perte silencieuse »).
+ *
+ * 🔴 `bloque` EST LU, JAMAIS FILTRÉ. La lecture de la console (`listContactsForBuildByIds`) retire les
+ * bloqués, ce qui est juste pour elle ; l'API les comptait puis les perdait sans motif (défaut 1).
+ */
+export interface ContactEnvoi extends BuildContact {
+  /** `blocked_at is not null` : écarté `blocked_contact`. */
+  bloque: boolean;
+  /** `rcs_optout_at is not null` : STOP reçu en RCS, écarté `opted_out` sur une ouverture RCS. */
+  rcsDesabonne: boolean;
+}
+
 export interface BuiltRecipient {
   contactId: string;
   toE164: string;
@@ -64,8 +78,8 @@ export function buildRecipients(
       continue;
     }
     // Écart RAPPORTÉ, et non silencieux : une campagne marketing sur une liste sans opt-in explicite rendait
-    // 0 destinataire sans que rien ne dise pourquoi. Le motif était déjà nommé sur la voie API
-    // (`buildApiRecipients`), il manquait sur la voie écran, qui est justement celle qu'un opérateur utilise.
+    // 0 destinataire sans que rien ne dise pourquoi. Le motif était déjà nommé sur la voie API (aujourd'hui
+    // `trierDestinataires`, `src/api/sends-build.ts`), il manquait sur la voie écran, celle d'un opérateur.
     if (!optInAllows(category, c)) { skipped.push({ contactId: c.id, toE164: to, reason: 'not_opted_in' }); continue; }
     if (seen.has(to)) continue;
     seen.add(to);

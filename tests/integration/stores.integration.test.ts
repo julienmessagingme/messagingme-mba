@@ -2022,25 +2022,47 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(await store.revoke('00000000-0000-0000-0000-000000000000', other.id)).toBe(false);
   });
 
-  it('PgApiIdempotencyStore : claim atomique, complete rejoue, release libère, sweep purge', async () => {
+  it('PgApiIdempotencyStore : claim atomique AVEC empreinte, complete rejoue, reused refusé, release libère, sweep purge', async () => {
     const store = new PgApiIdempotencyStore(pool);
     const key = `idem-${Date.now()}`;
-    const c1 = await store.claim(tenantId, key);
-    expect(c1).toEqual({ claimed: true });
-    // 2e claim avant complete -> pending.
-    expect(await store.claim(tenantId, key)).toEqual({ claimed: false, pending: true });
+    expect(await store.claim(tenantId, key, 'empreinte-a')).toEqual({ claimed: true });
+    // 2e claim avant complete, MÊME corps -> pending ; AUTRE corps -> reused, même pendant le calcul.
+    expect(await store.claim(tenantId, key, 'empreinte-a')).toEqual({ claimed: false, pending: true });
+    expect(await store.claim(tenantId, key, 'empreinte-b')).toEqual({ claimed: false, reused: true });
     await store.complete(tenantId, key, '11111111-1111-1111-1111-111111111111', { ok: 1 });
-    // après complete -> rejeu du rapport.
-    const replay = await store.claim(tenantId, key);
-    expect(replay).toMatchObject({ claimed: false, sendId: '11111111-1111-1111-1111-111111111111', response: { ok: 1 } });
+    // après complete -> rejeu du rapport pour le même corps, refus pour un autre.
+    expect(await store.claim(tenantId, key, 'empreinte-a')).toMatchObject({ claimed: false, sendId: '11111111-1111-1111-1111-111111111111', response: { ok: 1 } });
+    expect(await store.claim(tenantId, key, 'empreinte-b')).toEqual({ claimed: false, reused: true });
+    // 🔴 L'empreinte est bien ÉCRITE : c'est la colonne de la migration, et le claim la nomme.
+    const ligne = await pool.query<{ request_hash: string | null }>(
+      'select request_hash from api_idempotency where tenant_id = $1 and idempotency_key = $2',
+      [tenantId, key],
+    );
+    expect(ligne.rows[0]?.request_hash).toBe('empreinte-a');
+    // Une ligne d'AVANT la migration (empreinte nulle) rejoue son rapport, quel que soit le corps.
+    const ancienne = `idem-ancienne-${Date.now()}`;
+    await pool.query(
+      'insert into api_idempotency (tenant_id, idempotency_key, send_id, response) values ($1, $2, $3, $4::jsonb)',
+      [tenantId, ancienne, '22222222-2222-2222-2222-222222222222', JSON.stringify({ ok: 2 })],
+    );
+    expect(await store.claim(tenantId, ancienne, 'nimporte')).toMatchObject({ claimed: false, sendId: '22222222-2222-2222-2222-222222222222', response: { ok: 2 } });
     // release ne touche PAS une clé complétée (send_id non null).
     await store.release(tenantId, key);
-    expect((await store.claim(tenantId, key)).claimed).toBe(false);
+    expect((await store.claim(tenantId, key, 'empreinte-a')).claimed).toBe(false);
     // release libère une clé PENDING (claim sans complete).
     const key2 = `idem2-${Date.now()}`;
-    await store.claim(tenantId, key2);
+    await store.claim(tenantId, key2, 'empreinte-c');
     await store.release(tenantId, key2);
-    expect(await store.claim(tenantId, key2)).toEqual({ claimed: true }); // re-claimable
+    expect(await store.claim(tenantId, key2, 'empreinte-d')).toEqual({ claimed: true }); // re-claimable, nouvel envoi
+    // 🔴 Une clé de PLUS de 24 h est libre au claim, sans attendre la purge horaire.
+    const vieille = `idem-vieille-${Date.now()}`;
+    await store.claim(tenantId, vieille, 'empreinte-e');
+    await store.complete(tenantId, vieille, '33333333-3333-3333-3333-333333333333', { ok: 3 });
+    await pool.query(
+      `update api_idempotency set created_at = now() - interval '24 hours 1 minute' where tenant_id = $1 and idempotency_key = $2`,
+      [tenantId, vieille],
+    );
+    expect(await store.claim(tenantId, vieille, 'empreinte-f')).toEqual({ claimed: true });
     // sweep purge tout (fenêtre 0).
     expect(await store.sweepOlderThan(0)).toBeGreaterThanOrEqual(1);
   });
@@ -2080,6 +2102,74 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(build).toHaveLength(1);
     expect(build[0]).toMatchObject({ id: first.id, phone_e164: phone, optInStatus: 'opted_in' });
     expect(await repo.listContactsForBuildByIds(tenantId, [])).toEqual([]);
+  });
+
+  /**
+   * 🔴 DÉFAUT 1 DE LA SPEC API (2026-09-24) : la lecture de l'API LIT les bloqués au lieu de les filtrer.
+   * `listContactsForBuildByIds` les retire (`blocked_at is null`), et la route les perdait en silence après
+   * les avoir comptés. Celle-ci les rend, avec de quoi les écarter en `blocked_contact`.
+   */
+  it('PgCampaignRepo.listContactsPourEnvoiApi : bloqués et STOP RCS LUS, supprimés absents, espace tenu', async () => {
+    const store = new PgContactStore(pool);
+    const repo = new PgCampaignRepo(pool);
+    const libre = await store.upsertByPhoneReturningId({ tenantId, phoneE164: '+33600002401', profileName: null, fields: {}, optInStatus: 'opted_in' });
+    const bloque = await store.upsertByPhoneReturningId({ tenantId, phoneE164: '+33600002402', profileName: null, fields: {}, optInStatus: 'unknown' });
+    const supprime = await store.upsertByPhoneReturningId({ tenantId, phoneE164: '+33600002403', profileName: null, fields: {}, optInStatus: 'unknown' });
+    const stopRcs = await store.upsertByPhoneReturningId({ tenantId, phoneE164: '+33600002405', profileName: null, fields: {}, optInStatus: 'unknown' });
+    // Deux fiches, deux colonnes : un croisement des deux (`bloque` lu dans `rcs_optout_at`) se verrait.
+    await pool.query('update contacts set blocked_at = now() where id = $1 and tenant_id = $2', [bloque.id, tenantId]);
+    await pool.query('update contacts set rcs_optout_at = now() where id = $1 and tenant_id = $2', [stopRcs.id, tenantId]);
+    await pool.query('update contacts set deleted_at = now() where id = $1 and tenant_id = $2', [supprime.id, tenantId]);
+    const lus = await repo.listContactsPourEnvoiApi(tenantId, [libre.id, bloque.id, supprime.id, stopRcs.id]);
+    expect(lus.map((c) => c.id).sort()).toEqual([libre.id, bloque.id, stopRcs.id].sort());
+    expect(lus.find((c) => c.id === libre.id)).toMatchObject({ phone_e164: '+33600002401', optInStatus: 'opted_in', bloque: false, rcsDesabonne: false });
+    expect(lus.find((c) => c.id === bloque.id)).toMatchObject({ bloque: true, rcsDesabonne: false });
+    expect(lus.find((c) => c.id === stopRcs.id)).toMatchObject({ bloque: false, rcsDesabonne: true });
+    // Un autre espace ne lit rien de celui-ci, même avec les bons identifiants.
+    expect(await repo.listContactsPourEnvoiApi('00000000-0000-0000-0000-000000000000', [libre.id])).toEqual([]);
+    expect(await repo.listContactsPourEnvoiApi(tenantId, [])).toEqual([]);
+  });
+
+  it('PgCampaignRepo.lireEnvoiApi : l’envoi, ses compteurs et ses destinataires, identifiant externe compris, tenus à l’espace', async () => {
+    const store = new PgContactStore(pool);
+    const repo = new PgCampaignRepo(pool);
+    const c = await store.upsertByPhoneReturningId({ tenantId, phoneE164: '+33600002404', profileName: null, fields: {}, optInStatus: 'opted_in' });
+    await pool.query('update contacts set external_id = $3 where id = $1 and tenant_id = $2', [c.id, tenantId, 'crm-itest-2404']);
+    const { campaignId } = await repo.createWithRecipients(
+      { tenantId, phoneNumberId: 'pn-suivi', name: '[API] suivi', category: 'utility', templateName: 'confirmation', templateLanguage: 'fr', paramMapping: [] },
+      [{ contactId: c.id, toE164: '+33600002404', resolvedParams: [] }],
+    );
+    const lu = await repo.lireEnvoiApi(campaignId, tenantId);
+    expect(lu).toMatchObject({
+      id: campaignId, status: 'draft', channel: 'whatsapp', templateName: 'confirmation', templateLanguage: 'fr',
+      workflowCode: null, startNodeId: null, graph: null,
+      counts: { pending: 1, sending: 0, sent: 0, failed: 0, skipped: 0 },
+      recipientsTotal: 1,
+    });
+    expect(lu!.recipients).toEqual([{
+      contactId: c.id, externalId: 'crm-itest-2404', rang: 1, canalEtage: 'whatsapp', status: 'pending', messageId: null, error: null,
+      errorCode: null, sentAt: null, deliveryStatus: null, deliveryError: null,
+    }]);
+    expect(await repo.lireEnvoiApi(campaignId, '00000000-0000-0000-0000-000000000000')).toBeNull();
+  });
+
+  it('PgCampaignRepo.lireEnvoiApi : un envoi de bloc rend le code du scénario, le bloc de départ et le graphe PUBLIÉ', async () => {
+    const wf = new PgWorkflowStore(pool);
+    const repo = new PgCampaignRepo(pool);
+    const graphe = { nodes: [{ id: 'q', type: 'quick_message' as const, position: { x: 0, y: 0 }, data: { body: 'Bonjour', code: 'nod_itest_q' } }], edges: [] };
+    const { id } = await wf.insert(tenantId, 'Suivi API', graphe);
+    await wf.publish(id, tenantId);
+    // Un BROUILLON différent, posé après la publication : c'est le PUBLIÉ que l'envoi doit lire, pas lui.
+    await wf.update(id, tenantId, { graph: { nodes: [{ id: 'r', type: 'rcs_message' as const, position: { x: 0, y: 0 }, data: { text: 'Brouillon' } }], edges: [] } });
+    const { campaignId } = await repo.createWithRecipients(
+      { tenantId, phoneNumberId: 'pn-suivi', name: '[API] bloc', category: 'utility', templateName: '', templateLanguage: '', paramMapping: [], workflowId: id, startNodeId: 'q' },
+      [],
+    );
+    const lu = await repo.lireEnvoiApi(campaignId, tenantId);
+    const code = (await wf.getById(id, tenantId))!.code;
+    expect(lu).toMatchObject({ templateName: null, workflowCode: code, startNodeId: 'q' });
+    expect(lu!.graph?.nodes.map((n) => n.id)).toEqual(['q']);
+    expect(lu!.recipients).toEqual([]);
   });
 
   it('createWithRecipients : rollback si un destinataire échoue (pas de campagne orpheline)', async () => {

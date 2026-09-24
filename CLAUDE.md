@@ -70,14 +70,13 @@ appelle une route que la production n'a pas. Vécu avec l'onglet « Outils » de
 production pendant plus d'une heure, pour un espace qui avait des outils publiés et à qui l'écran disait
 « Aucun outil ». La parade : pousser l'écran APRÈS le déploiement de l'API qui porte sa route, ou le faire
 tolérer l'absence de la route ; sinon, dire la fenêtre dans le plan et la réduire (revue finale et
-déploiement dans la foulée). ⚠️ **Ce que la garde de déploiement couvre, exactement** (`.claude/deploy.json`,
-lu par `~/.claude/hooks/deploiement-garde.js`) : par `ssh`, dans une commande qui nomme `/home/ubuntu/mba`, un
-`docker compose up`, un `pm2 restart|reload|start`, une MIGRATION (`npm run migrate`, ajoutée le 2026-09-22 sur
-décision de Julien : elle change la base de production AVANT le `up`) ou un script `*deploy*` ; et, depuis ce
-dépôt, un `vercel --prod` (qui exige en outre un arbre propre). Tout cela sans revue finale attestée. Elle ne
-couvre NI le `compose build` (rien ne change en production), NI une migration lancée depuis ce poste (la garde
-ne lit que le `ssh`, alors que le `.env` local pointe AUSSI sur la production), NI le `git push` qui publie la
-console chez Vercel (`pushDeploie` y est délibérément à `false`).
+déploiement dans la foulée).
+
+🔴 **AUCUNE GARDE MÉCANIQUE NE BLOQUE UN DÉPLOIEMENT, et c'est décidé** (Julien, 2026-09-24). Le hook
+`~/.claude/hooks/deploiement-garde.js` (et sa configuration `.claude/deploy.json`) existe mais n'est branché
+dans AUCUN `settings.json` : il n'a jamais rien bloqué, et il reste débranché. Cette page a longtemps décrit ce
+qu'il « couvrait » ; c'était faux. Ce qui tient l'ordre, c'est la discipline : une relecture par lot (un rouge =
+ce qui casse la production), la CI lue avant le `up`, la migration AVANT le code qui la lit.
 
 Runbook VPS complet + checklist live : [DEPLOY.md](DEPLOY.md). **LIVE (`DRY_RUN=false`)**, numéro Zadarma réel.
 Auth **JWT (login)** + **RBAC** (écritures réservées aux admins).
@@ -96,8 +95,10 @@ cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la li
 
 **Dernière appliquée : 0172**, le 2026-09-24 à 20 h 01 UTC (`contacts_external_id`, l'identifiant de
 l'outil du client gardé sur la fiche, lot 1 de l'API publique), SEULE et AVANT tout code qui la lit : aucun
-`up` n'a suivi, l'ancien code ignore la colonne. **Prochaine libre = 0173**, et le dossier `db/migrations/`
-s'arrête à 0172. Avant elle, **0171** le même jour à 13 h 46 UTC (`pubs_brouillons`).
+`up` n'a suivi, l'ancien code ignore la colonne. **0173 est ÉCRITE et PAS ENCORE APPLIQUÉE**
+(`idempotence_empreinte`, `api_idempotency.request_hash`, lot 2 de l'API publique : additive et BLOQUANTE, le
+code neuf la lit et l'écrit à chaque `POST /v1/sends`, donc AVANT le `up`). **Prochaine libre = 0174**, et le
+dossier `db/migrations/` s'arrête à 0173. Avant 0172, **0171** le même jour à 13 h 46 UTC (`pubs_brouillons`).
 
 🔴 **0172 RELUE EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT** : `schema_migrations` la rend en tête à
 20 h 01 UTC ; `external_id` est `text` nullable SANS défaut ; l'index `contacts_tenant_external_id_uidx` est

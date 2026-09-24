@@ -128,10 +128,16 @@ export interface OpeningScan {
  *
  * En LARGEUR (file, pas pile) : « le premier template » doit être le plus proche de l'entrée, sinon le mapping
  * de variables d'une campagne viserait un template arbitraire selon l'ordre d'insertion des blocs.
+ *
+ * `depuis` : le bloc d'où partir, pour la cible `node` de l'API publique (`ouvertureApi`). Absent, on part de
+ * l'entrée, et rien ne change pour ses appelants serveur : la garde de création de campagne
+ * (`src/http/campaigns.ts`) et `canalDOuverture`, dont dérivent `campaignEligible` et `canalOuverture` de la
+ * liste des scénarios. L'éditeur lit le MIROIR `web/lib/campaign-eligibility.ts`, qui n'a pas de point de
+ * départ et ne doit pas en avoir. Un `depuis` absent du graphe rend un examen vide : rien n'ouvre.
  */
-export function scanOpening(graph: WorkflowGraph): OpeningScan {
+export function scanOpening(graph: WorkflowGraph, depuis?: string): OpeningScan {
   const out: OpeningScan = { sessionOpen: false, rcsOpen: false, firstTemplate: null, ambiguousTemplate: false, waitBeforeTemplate: false, unnamedOpeningTemplate: false };
-  const entry = entryNode(graph);
+  const entry = depuis ?? entryNode(graph);
   if (!entry) return out;
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const seen = new Set<string>();

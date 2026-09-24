@@ -1,26 +1,32 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { buildServer } from '../src/server';
-import { contactsV1Muets } from './aide/contacts-v1';
 import { FakeQueue } from '../src/queue/fake';
 import { sha256Hex } from '../src/lib/signature';
 import { estLourde, unitesDe } from '../src/api/usage-guard';
+import { GardeUsageMemoire } from '../src/api/usage-guard.memoire';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { DepsRepondre } from '../src/inbox/repondre';
 import type { OrigineMessage } from '../src/inbox/origine';
+import type { ClesFiche, ModeCreation } from '../src/api/fiche';
 import { cleApiDeTest } from './aide/cle-api';
+import { contactsV1Muets } from './aide/contacts-v1';
 
 /**
- * `POST /v1/messages` : UN SIMPLE TEXTE DANS LA FENÊTRE DE 24 H (lot 7 du 2026-09-23).
+ * `POST /v1/messages/whatsapp` : UN SIMPLE TEXTE, À UNE FICHE, DANS LA FENÊTRE DE 24 H (spec 2026-09-24, § 4).
  *
- * 🔴 CE QUE CES CAS PROTÈGENT VRAIMENT, ET CE N'EST PAS LA ROUTE. La route ne décide de rien : elle
- * résout un contact, ouvre son fil, et appelle `repondreDansLaFenetre`, partagé avec la console et le
- * serveur MCP. Ce qui mérite un test, c'est que ce TROISIÈME appelant hérite bien des mêmes garde-fous,
- * parce qu'il est arrivé exactement l'inverse : la garde de désabonnement se lisait `origine === 'mcp'`,
- * donc en LISTE D'APPELANTS, et l'API publique serait passée au travers sans qu'aucun test existant ne
- * tombe. Un garde-fou écrit en liste d'appelants s'ouvre en grand au quatrième.
+ * 🔴 CE QUE CES CAS PROTÈGENT VRAIMENT, ET CE N'EST PAS LA ROUTE. La route ne décide de rien : elle résout
+ * une fiche par la fonction partagée du lot 1, ouvre son fil, et appelle `repondreDansLaFenetre`, partagé
+ * avec la console et le serveur MCP. Ce qui mérite un test, c'est que ce troisième appelant hérite bien des
+ * mêmes garde-fous, et que les refus portent les codes unifiés.
  *
- * ⚠️ LES ASSERTIONS PORTENT SUR CE QUI PART ET SUR CE QUI EST ENREGISTRÉ, pas sur ce que la fonction rend :
- * une garde qu'on peut débrancher sans qu'aucun test ne tombe n'est pas une garde.
+ * ⚠️ LES ASSERTIONS PORTENT SUR CE QUI PART ET SUR CE QUI EST ENREGISTRÉ, pas sur ce que la fonction rend.
+ * ⚠️ Les cas de l'ancienne route sont conservés : `contact_inconnu` est devenu `unknown_contact`,
+ * `contact_indisponible` `blocked_contact`, `contact_desabonne` `opted_out`, `aucun_numero`
+ * `no_whatsapp_number` ; la normalisation du numéro vit désormais dans la résolution partagée.
+ * ⚠️ Les fiches portent des identifiants au FORMAT d'un vrai (`C1`, `C2`) : le corps passe par
+ * `schemaClesFiche` (lot 1), dont `contactId` est un GUID, et le schéma est STRICT ici. Un « c1 » rendrait
+ * 400 `invalid_body` avant même la résolution.
  */
 class FakeApiKeys implements ApiKeyLookup {
   private readonly byHash = new Map<string, { id: string; tenantId: string; scopes: string[] }>();
@@ -29,21 +35,24 @@ class FakeApiKeys implements ApiKeyLookup {
   async touchLastUsed(): Promise<void> {}
 }
 
+const C1 = '11111111-1111-4111-8111-000000000001';
+const C2 = '11111111-1111-4111-8111-000000000002';
 const VALID = cleApiDeTest('valide');
 const NOSCOPE = cleApiDeTest('sans_scope');
 const NUMERO = '+33612345678';
+const URL_WA = '/v1/messages/whatsapp';
 
 interface Monde {
-  /** Le contact existe-t-il pour ce numéro ? */
-  contact: { id: string } | null;
-  /** `null` = contact bloqué ou supprimé : `ouvrirConversationDuContact` refuse. */
+  /** La fiche que les clés désignent. `null` = inconnue. */
+  fiche: { id: string } | null;
+  /** `null` = fiche bloquée ou supprimée : `ouvrirConversation` refuse. */
   conversation: string | null;
   fenetreOuverte: boolean;
   desabonne: boolean;
   numeroDeLEspace: string | null;
 }
 
-const MONDE: Monde = { contact: { id: 'c1' }, conversation: 'conv-1', fenetreOuverte: true, desabonne: false, numeroDeLEspace: 'pn1' };
+const MONDE: Monde = { fiche: { id: C1 }, conversation: 'conv-1', fenetreOuverte: true, desabonne: false, numeroDeLEspace: 'pn1' };
 
 function app(over: Partial<Monde> = {}) {
   const m: Monde = { ...MONDE, ...over };
@@ -51,14 +60,15 @@ function app(over: Partial<Monde> = {}) {
   const enregistres: Array<{ body: string; origine: OrigineMessage; auteur: string | null; type?: string }> = [];
   const desabonneLu: string[] = [];
   const prises: string[] = [];
+  const resolutions: Array<{ tenant: string; cles: ClesFiche; creer: ModeCreation }> = [];
+  const contextesLus: string[] = [];
+  const usage = new GardeUsageMemoire();
 
   const repondre: DepsRepondre = {
-    getConversationContext: async (id, tenant) => (
-      // L'isolation : un fil d'un autre espace n'existe pas pour celui-ci.
-      tenant === 't1' && id === m.conversation
-        ? { waId: '33612345678', lastInboundAt: null, windowOpen: m.fenetreOuverte }
-        : null
-    ),
+    getConversationContext: async (id, tenant) => {
+      contextesLus.push(id);
+      return tenant === 't1' && id === m.conversation ? { waId: '33612345678', lastInboundAt: null, windowOpen: m.fenetreOuverte } : null;
+    },
     getTenantPhoneNumberId: async () => m.numeroDeLEspace,
     sendReply: async (_t, _pn, to, text) => { envois.push({ to, text }); return 'wamid.envoye'; },
     estDesabonne: async (_t, waId) => { desabonneLu.push(waId); return m.desabonne; },
@@ -74,137 +84,214 @@ function app(over: Partial<Monde> = {}) {
 
   const server = buildServer({
     queue: new FakeQueue(),
+    usage,
     v1: {
       apiKeys: keys,
       contacts: contactsV1Muets(),
       messages: {
         repondre,
-        findContactByPhone: async (tenant, phone) => (tenant === 't1' && phone === NUMERO ? m.contact : null),
-        ouvrirConversation: async (tenant, contactId) => (tenant === 't1' && contactId === 'c1' ? m.conversation : null),
+        /** Double de la résolution du lot 1 : elle NORMALISE le numéro (format national compris). */
+        resoudreFiche: async (tenant, cles, o) => {
+          resolutions.push({ tenant, cles, creer: o.creer });
+          if (!cles.contactId && !cles.externalId && !cles.phone && !cles.bsuid) return { ok: false, code: 'invalid_recipient' };
+          const tel = cles.phone?.replace(/\s/g, '').replace(/^0/, '+33');
+          if (tel !== undefined && !/^\+\d{8,15}$/.test(tel)) return { ok: false, code: 'invalid_phone' };
+          if (cles.contactId === C2 && tel === NUMERO) return { ok: false, code: 'identity_conflict' };
+          const designe = cles.contactId === C1 || tel === NUMERO || cles.externalId === 'crm-7781';
+          return tenant === 't1' && designe && m.fiche ? { ok: true, contactId: m.fiche.id, cree: false } : { ok: false, code: 'unknown_contact' };
+        },
+        ouvrirConversation: async (tenant, contactId) => (tenant === 't1' && contactId === C1 ? m.conversation : null),
       },
     },
   });
-  return { server, envois, enregistres, desabonneLu, prises };
+  return { server, envois, enregistres, desabonneLu, prises, resolutions, contextesLus, usage };
 }
 
 const auth = (key: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` } });
-const post = (server: ReturnType<typeof app>['server'], payload: unknown, key = VALID) =>
-  server.inject({ method: 'POST', url: '/v1/messages', ...auth(key), payload: payload as object });
+const post = (server: ReturnType<typeof app>['server'], payload: unknown, key = VALID, url = URL_WA) =>
+  server.inject({ method: 'POST', url, ...auth(key), payload: payload as object });
 
-describe('POST /v1/messages', () => {
-  it('clé valide -> 200, le texte PART et il est enregistré avec l origine `api`', async () => {
-    const { server, envois, enregistres, prises } = app();
-    const res = await post(server, { to: NUMERO, text: 'bonjour' });
+describe('POST /v1/messages/whatsapp', () => {
+  it('par contactId -> 200, le texte PART, il est enregistré avec l’origine `api`, et le canal est dit', async () => {
+    const { server, envois, enregistres, prises, resolutions } = app();
+    const res = await post(server, { contactId: C1, text: 'bonjour' });
     expect(res.statusCode).toBe(200);
-    expect(res.json<{ messageId: string; conversationId: string }>()).toEqual({ messageId: 'wamid.envoye', conversationId: 'conv-1' });
+    expect(res.json()).toEqual({ messageId: 'wamid.envoye', conversationId: 'conv-1', channel: 'whatsapp' });
     expect(envois).toEqual([{ to: '33612345678', text: 'bonjour' }]);
-    // 🔴 L'ORIGINE EST LE SUJET DE LA MIGRATION 0166 : sans elle, cet envoi serait indiscernable d'une
-    // réponse de scénario en base, et l'écran « qui a écrit les messages de service » mentirait.
-    // `auteur` à null : personne ne SIGNE ce message, aucun opérateur ne l'a écrit.
+    // 🔴 L'ORIGINE EST LE SUJET DE LA MIGRATION 0166 ; `auteur` à null : aucun opérateur ne signe.
     expect(enregistres).toEqual([{ body: 'bonjour', origine: 'api', auteur: null, type: 'text' }]);
     // Le fil est PRIS : le scénario cesse d'avancer seul, l'agent de Meta cesse de répondre.
     expect(prises).toEqual(['33612345678']);
+    expect(resolutions[0]!.tenant).toBe('t1');
     await server.close();
   });
 
-  it('🔴 un contact DÉSABONNÉ est refusé, et RIEN ne part', async () => {
-    /**
-     * LE CAS QUI JUSTIFIE CE FICHIER. La règle est « une MACHINE ne parle pas à quelqu'un qui a dit STOP,
-     * un opérateur si ». Elle s'écrivait `origine === 'mcp'`, donc elle ne couvrait qu'un appelant : cette
-     * route serait partie sans la garde, et c'est la troisième fois en deux semaines que ce dépôt paie le
-     * motif « une garde câblée sur un consommateur sur trois ».
-     */
+  it('🔴 un message simple ne CRÉE jamais de fiche : la route le demande à la résolution', async () => {
+    const { server, resolutions } = app();
+    await post(server, { phone: NUMERO, text: 'x' });
+    expect(resolutions.map((r) => r.creer)).toEqual(['jamais']);
+    await server.close();
+  });
+
+  it('par numéro ou par identifiant externe, relayés TELS QUELS à la résolution partagée', async () => {
+    // La normalisation du numéro est tenue par les tests de `src/api/fiche.ts` : le double ne la prouve pas.
+    const { server, envois, resolutions } = app();
+    expect((await post(server, { phone: '06 12 34 56 78', text: 'salut' })).statusCode).toBe(200);
+    expect((await post(server, { externalId: 'crm-7781', text: 'salut' })).statusCode).toBe(200);
+    expect(resolutions.map((r) => r.cles)).toEqual([{ phone: '06 12 34 56 78' }, { externalId: 'crm-7781' }]);
+    expect(envois).toHaveLength(2);
+    await server.close();
+  });
+
+  it('⚠️ la clé neuve est RELAYÉE à la résolution (donc rattachée) même quand le message est refusé : comportement actuel, figé', async () => {
+    const { server, envois, resolutions } = app({ fenetreOuverte: false });
+    const res = await post(server, { contactId: C1, externalId: 'crm-7781', text: 'x' });
+    expect(res.json()).toMatchObject({ code: 'window_closed' });
+    expect(resolutions.map((r) => r.cles)).toEqual([{ contactId: C1, externalId: 'crm-7781' }]);
+    expect(envois).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 une fiche DÉSABONNÉE est refusée 409 opted_out, et RIEN ne part', async () => {
     const { server, envois, enregistres, desabonneLu } = app({ desabonne: true });
-    const res = await post(server, { to: NUMERO, text: 'bonjour' });
+    const res = await post(server, { contactId: C1, text: 'bonjour' });
     expect(res.statusCode).toBe(409);
-    expect(res.json<{ code: string }>().code).toBe('contact_desabonne');
+    expect(res.json()).toMatchObject({ code: 'opted_out' });
     expect(desabonneLu, 'la garde doit avoir été INTERROGÉE').toEqual(['33612345678']);
-    expect(envois, 'aucun message ne part').toEqual([]);
-    expect(enregistres, 'et rien n est enregistré').toEqual([]);
+    expect(envois).toEqual([]);
+    expect(enregistres).toEqual([]);
     await server.close();
   });
 
-  it('🔴 hors fenêtre de 24 h -> 422 `window_closed`, et rien ne part', async () => {
+  it('🔴 hors fenêtre de 24 h -> 422 window_closed, le message dit l’autre chemin, et rien ne part', async () => {
     const { server, envois } = app({ fenetreOuverte: false });
-    const res = await post(server, { to: NUMERO, text: 'bonjour' });
+    const res = await post(server, { contactId: C1, text: 'bonjour' });
     expect(res.statusCode).toBe(422);
-    expect(res.json<{ code: string }>().code).toBe('window_closed');
-    // Le message DIT l'autre chemin : sans ça, un intégrateur cherche un défaut de son côté.
+    expect(res.json()).toMatchObject({ code: 'window_closed' });
     expect(res.json<{ error: string }>().error).toContain('/v1/sends');
     expect(envois).toEqual([]);
     await server.close();
   });
 
-  it('🔴 un contact BLOQUÉ ou SUPPRIMÉ -> 409, et la fenêtre n est même pas consultée', async () => {
-    // `ouvrirConversation` EST la garde de blocage, la même que le bouton du mini-CRM. Elle se pose AVANT
-    // l'envoi : une garde ne garde que ce qui vient après elle.
-    const { server, envois, desabonneLu } = app({ conversation: null });
-    const res = await post(server, { to: NUMERO, text: 'bonjour' });
+  it('🔴 une fiche BLOQUÉE ou SUPPRIMÉE -> 409 blocked_contact, et la fenêtre n’est même pas consultée', async () => {
+    const { server, envois, desabonneLu, contextesLus } = app({ conversation: null });
+    const res = await post(server, { contactId: C1, text: 'bonjour' });
     expect(res.statusCode).toBe(409);
-    expect(res.json<{ code: string }>().code).toBe('contact_indisponible');
+    expect(res.json()).toMatchObject({ code: 'blocked_contact' });
     expect(envois).toEqual([]);
-    expect(desabonneLu, 'on s arrête avant, donc aucune lecture de plus').toEqual([]);
+    expect(desabonneLu).toEqual([]);
+    expect(contextesLus).toEqual([]);
     await server.close();
   });
 
-  it('un numéro inconnu de cet espace -> 404 `contact_inconnu`', async () => {
-    const { server } = app({ contact: null });
-    const res = await post(server, { to: NUMERO, text: 'bonjour' });
-    expect(res.statusCode).toBe(404);
-    expect(res.json<{ code: string }>().code).toBe('contact_inconnu');
+  it('une fiche inconnue -> 404 unknown_contact ; deux clés sur deux fiches -> 409 identity_conflict', async () => {
+    const inconnue = app({ fiche: null });
+    const r1 = await post(inconnue.server, { phone: NUMERO, text: 'x' });
+    expect(r1.statusCode).toBe(404);
+    expect(r1.json()).toMatchObject({ code: 'unknown_contact' });
+    await inconnue.server.close();
+    const { server } = app();
+    const r2 = await post(server, { contactId: C2, phone: NUMERO, text: 'x' });
+    expect(r2.statusCode).toBe(409);
+    expect(r2.json()).toMatchObject({ code: 'identity_conflict' });
     await server.close();
   });
 
-  it('aucun numéro WhatsApp sur l espace -> 409, pas un 500', async () => {
+  it('aucun numéro WhatsApp sur l’espace -> 409 no_whatsapp_number, pas un 500', async () => {
     const { server, envois } = app({ numeroDeLEspace: null });
-    const res = await post(server, { to: NUMERO, text: 'bonjour' });
+    const res = await post(server, { contactId: C1, text: 'x' });
     expect(res.statusCode).toBe(409);
-    expect(res.json<{ code: string }>().code).toBe('aucun_numero');
+    expect(res.json()).toMatchObject({ code: 'no_whatsapp_number' });
     expect(envois).toEqual([]);
     await server.close();
   });
 
-  it('corps invalide -> 400, et le numéro est normalisé avant tout', async () => {
+  it('corps invalide -> 400 invalid_body ; aucune clé -> 400 invalid_recipient ; numéro invalide -> 400 invalid_phone', async () => {
     const { server } = app();
-    for (const corps of [{}, { to: NUMERO }, { text: 'x' }, { to: NUMERO, text: '' }, { to: NUMERO, text: 'x'.repeat(4097) }, { to: 123, text: 'x' }]) {
-      expect((await post(server, corps)).statusCode, JSON.stringify(corps)).toBe(400);
+    for (const corps of [{}, { contactId: C1 }, { contactId: C1, text: '' }, { contactId: C1, text: 'x'.repeat(4097) }, { contactId: C1, text: 123 }]) {
+      const res = await post(server, corps);
+      expect(res.statusCode, JSON.stringify(corps).slice(0, 60)).toBe(400);
+      expect(res.json(), JSON.stringify(corps).slice(0, 60)).toMatchObject({ code: 'invalid_body' });
     }
-    // Un numéro syntaxiquement acceptable mais invalide : refusé par `normalizePhone`, pas par le schéma.
-    expect((await post(server, { to: '00', text: 'x' })).statusCode).toBe(400);
+    // L'ancienne forme `{ to, text }` est refusée en NOMMANT le champ : l'intégrateur sait quoi changer.
+    const ancienne = await post(server, { to: NUMERO, text: 'x' });
+    expect(ancienne.json()).toMatchObject({ code: 'invalid_body' });
+    expect(ancienne.json<{ error: string }>().error).toContain('to');
+    expect((await post(server, { text: 'x' })).json()).toMatchObject({ code: 'invalid_recipient' });
+    expect((await post(server, { phone: '00', text: 'x' })).json()).toMatchObject({ code: 'invalid_phone' });
     await server.close();
   });
 
-  it('🔴 un numéro au format NATIONAL désigne le même contact : la normalisation est faite ici', async () => {
-    // Sans elle, `06 12 34 56 78` ne trouverait aucun contact et l intégrateur recevrait un 404 trompeur.
-    const { server, envois } = app();
-    expect((await post(server, { to: '06 12 34 56 78', text: 'salut' })).statusCode).toBe(200);
-    expect(envois).toEqual([{ to: '33612345678', text: 'salut' }]);
+  it('un `contactId` qui n’est pas au format d’un identifiant -> 400 invalid_body qui le nomme, sans résolution ni envoi', async () => {
+    const { server, envois, resolutions } = app();
+    const res = await post(server, { contactId: 'pas-un-uuid', text: 'x' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ code: 'invalid_body' });
+    expect(res.json<{ error: string }>().error).toContain('contactId');
+    expect(resolutions).toEqual([]);
+    expect(envois).toEqual([]);
     await server.close();
   });
 
-  it('sans Bearer -> 401 ; clé sans le droit `sends:create` -> 403', async () => {
+  it('l’ancienne adresse `POST /v1/messages` n’existe plus', async () => {
     const { server } = app();
-    const sans = await server.inject({ method: 'POST', url: '/v1/messages', headers: { 'content-type': 'application/json' }, payload: { to: NUMERO, text: 'x' } });
+    expect((await post(server, { contactId: C1, text: 'x' }, VALID, '/v1/messages')).statusCode).toBe(404);
+    await server.close();
+  });
+
+  it('sans Bearer -> 401 unauthorized ; clé sans le droit `sends:create` -> 403 missing_scope', async () => {
+    const { server } = app();
+    const sans = await server.inject({ method: 'POST', url: URL_WA, headers: { 'content-type': 'application/json' }, payload: { contactId: C1, text: 'x' } });
     expect(sans.statusCode).toBe(401);
-    expect((await post(server, { to: NUMERO, text: 'x' }, NOSCOPE)).statusCode).toBe(403);
+    expect(sans.json()).toMatchObject({ code: 'unauthorized' });
+    const scope = await post(server, { contactId: C1, text: 'x' }, NOSCOPE);
+    expect(scope.statusCode).toBe(403);
+    expect(scope.json()).toMatchObject({ code: 'missing_scope' });
     await server.close();
   });
 
-  it('🔴 le tenant vient de la CLÉ, jamais du corps', async () => {
-    // Le filtrage en code est le SEUL contrôle d'isolation (la RLS est contournée par le pooler superuser).
+  it('🔴 le tenant vient de la CLÉ, jamais du corps : un `tenantId` dans le corps est refusé, rien ne part', async () => {
     const { server, envois } = app();
-    const res = await post(server, { to: NUMERO, text: 'x', tenantId: 'autre-espace' });
-    expect(res.statusCode).toBe(200);
-    expect(envois).toHaveLength(1); // résolu sur `t1`, celui de la clé
+    const res = await post(server, { contactId: C1, text: 'x', tenantId: 'autre-espace' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ code: 'invalid_body' });
+    expect(envois).toEqual([]);
     await server.close();
   });
 
-  it('le garde d usage compte UNE unité, et l opération n est pas « lourde »', () => {
-    // Un message, une personne : c'est la seule opération de l'API dont le travail ne dépend pas du corps.
+  it('un défaut de CLÉ (aucune clé, numéro illisible) est refusé AVANT le compteur, sans résolution', async () => {
+    const { server, usage, resolutions } = app();
+    expect((await post(server, { text: 'x' })).json()).toMatchObject({ code: 'invalid_recipient' });
+    expect((await post(server, { phone: '00', text: 'x' })).json()).toMatchObject({ code: 'invalid_phone' });
+    expect(usage.compteurs().find((c) => c.operation === 'messages.send')).toBeUndefined();
+    expect(resolutions).toEqual([]);
+    await post(server, { contactId: C1, text: 'x' });
+    expect(usage.compteurs().find((c) => c.operation === 'messages.send')).toMatchObject({ appels: 1 });
+    await server.close();
+  });
+
+  it('le garde d’usage compte UNE unité, et l’opération n’est pas « lourde »', () => {
     expect(unitesDe('messages.send', 999)).toBe(1);
-    // ⚠️ DÉLIBÉRÉMENT hors des lourdes : elle fait trois requêtes, comme `mcp.call` qui en est exclu pour
-    // la même raison. L'y mettre ferait refuser un message pendant qu'un lot de contacts s'écrit, ce qui
-    // transformerait une protection du pool en panne d'envoi.
     expect(estLourde('messages.send')).toBe(false);
+  });
+});
+
+describe('câblage de /v1/messages/whatsapp, lu dans `src/index.ts`', () => {
+  /**
+   * 🔴 UN TEST DE SOURCE, POUR LA MÊME RAISON QUE `tests/v1-cablage.test.ts`. Une flèche à moins de paramètres
+   * est assignable au contrat : `(tenant, cles) => resoudreFiche(contactStore, tenant, cles, { creer: 'phone' })`
+   * compilerait, avalerait le `jamais` de la route, et un message simple CRÉERAIT des fiches. Le cas de route
+   * ci-dessus ne le verrait pas (il monte un double), et celui de `/v1/sends` trouve déjà la même ligne dans
+   * le bloc des envois : il faut donc la chercher DANS le bloc des messages.
+   */
+  it('🔴 la résolution de fiche lit le MÊME dépôt que `/v1/contacts`, et le mode de création de la route passe', () => {
+    const source = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    const debut = source.indexOf('      messages: {');
+    const fin = source.indexOf('ouvrirConversation: (tenant, contactId) => inboxStore.ouvrirConversationDuContact', debut);
+    expect(debut, 'le bloc `messages:` du câblage').toBeGreaterThan(-1);
+    expect(fin, 'la fin du bloc `messages:`').toBeGreaterThan(debut);
+    expect(source.slice(debut, fin)).toMatch(/resoudreFiche: \(tenant, cles, o\) => resoudreFiche\(contactStore, tenant, cles, o\),/);
   });
 });

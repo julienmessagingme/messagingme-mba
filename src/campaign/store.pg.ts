@@ -2,7 +2,8 @@ import type { Pool, PoolClient } from 'pg';
 import type { MotifDePause } from './pause';
 import type { Campaign, CampaignStatus, CampaignCategory, Recipient, QualityRating } from './types';
 import type { CampaignStore, RecipientStore, FrequencyStore, QualityProvider } from './engine';
-import type { BuildContact, BuiltRecipient } from './build';
+import type { BuildContact, BuiltRecipient, ContactEnvoi } from './build';
+import type { WorkflowGraph } from '../workflow/graph';
 import { resolveTemplateParams, type TemplateParam } from '../crm/template';
 import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
 import { RECIPIENT_FAILED_SQL } from './echecs-sql';
@@ -181,6 +182,59 @@ export interface CampaignDetail extends CampaignSummary {
     messageId: string | null;
     error: string | null;
     /** Code d'erreur Meta numérique (null hors échec). Pilote le bouton « Corriger + renvoyer » (F7, famille variables). */
+    errorCode: number | null;
+    sentAt: string | null;
+    deliveryStatus: string | null;
+    deliveryError: string | null;
+  }>;
+}
+
+/**
+ * CE QUE LA LECTURE D'UN ENVOI DE L'API REND, AVANT MISE EN FORME (`formaterSuiviEnvoi`,
+ * `src/api/suivi-envoi.ts`).
+ *
+ * 🔴 CE N'EST PAS `CampaignDetail` : l'API renvoyait l'objet de la console (`chaine`, `paramMapping`,
+ * `archivedAt`), donc un changement de la console changeait l'API. Cette lecture ne sert que l'API.
+ *
+ * ⚠️ `graph` est le graphe PUBLIÉ relu MAINTENANT : l'ouverture d'un envoi de scénario ou de bloc se recalcule
+ * dessus, aucune colonne ne la fige.
+ *
+ * ⚠️ `channel` EST LU, parce que `GET /v1/sends/{sendId}` lit N'IMPORTE QUELLE campagne de l'espace, console
+ * comprise : une campagne RCS de la console porte `template_name` à `''` (pas null, `insertCampaignRow`), et
+ * sans son canal le suivi l'annoncerait comme un template WhatsApp au nom vide.
+ *
+ * ⚠️ `recipients` EST BORNÉ À 500 LIGNES (un envoi de l'API en compte 50 au plus, une campagne de la console
+ * peut en compter des milliers). `recipientsTotal` dit combien il y en a : une liste tronquée se voit.
+ *
+ * ⚠️ LE CANAL D'UN DESTINATAIRE N'EST PAS TOUJOURS CELUI DE LA CAMPAGNE : une chaîne de repli (0134) fait
+ * passer un destinataire au rang 2 ou 3, sur un autre canal (`campaign_recipients.etage_courant`). Le rang
+ * et le canal de SON étage sont donc lus ligne par ligne.
+ */
+export interface EnvoiApiBrut {
+  id: string;
+  status: CampaignStatus;
+  createdAt: string;
+  /** `campaigns.channel` (0056, `not null default 'whatsapp'`). Une campagne RCS n'a jamais de scénario. */
+  channel: 'whatsapp' | 'rcs';
+  templateName: string | null;
+  templateLanguage: string | null;
+  /** Code public `scn_…` du scénario. null pour un template, ou un scénario supprimé depuis. */
+  workflowCode: string | null;
+  startNodeId: string | null;
+  graph: WorkflowGraph | null;
+  counts: { pending: number; sending: number; sent: number; failed: number; skipped: number };
+  /** Le nombre de destinataires de la campagne, que `recipients` soit tronqué ou non. */
+  recipientsTotal: number;
+  recipients: Array<{
+    contactId: string;
+    externalId: string | null;
+    /** `campaign_recipients.etage_courant` : 1 tant qu'aucune bascule ne l'a fait avancer. */
+    rang: number;
+    /** Le canal de l'étage où est le destinataire (`campaign_etages.canal`). null si l'étage n'existe pas. */
+    canalEtage: 'whatsapp' | 'rcs' | 'email' | null;
+    status: string;
+    messageId: string | null;
+    error: string | null;
     errorCode: number | null;
     sentAt: string | null;
     deliveryStatus: string | null;
@@ -1091,6 +1145,121 @@ export class PgCampaignRepo {
     return res.rows.map((r) => ({
       id: r.id, phone_e164: r.phone_e164, bsuid: r.bsuid, profile_name: r.profile_name, fields: r.fields, optInStatus: r.opt_in_status,
     }));
+  }
+
+  /**
+   * Les contacts d'un envoi de l'API publique, BLOQUÉS COMPRIS, avec ce qui les écarte.
+   *
+   * 🔴 ELLE NE FILTRE PAS `blocked_at`, à la différence de `listContactsForBuildByIds` (la console, qui la
+   * garde) : l'API doit DIRE qu'un contact est bloqué (`blocked_contact`), sinon il est compté puis perdu en
+   * silence (défaut 1 de la spec du 2026-09-24). Une fiche SUPPRIMÉE reste absente : la route l'écarte
+   * `unknown_contact`.
+   */
+  async listContactsPourEnvoiApi(tenantId: string, ids: string[]): Promise<ContactEnvoi[]> {
+    if (ids.length === 0) return [];
+    const res = await this.pool.query<{
+      id: string; phone_e164: string | null; bsuid: string | null; profile_name: string | null;
+      fields: Record<string, unknown>; opt_in_status: 'opted_in' | 'opted_out' | 'unknown';
+      bloque: boolean; rcs_desabonne: boolean;
+    }>(
+      `select id, phone_e164, bsuid, profile_name, fields, opt_in_status,
+              blocked_at is not null as bloque, rcs_optout_at is not null as rcs_desabonne
+         from contacts
+        where tenant_id = $1 and deleted_at is null and id = any($2::uuid[])`,
+      [tenantId, ids],
+    );
+    return res.rows.map((r) => ({
+      id: r.id, phone_e164: r.phone_e164, bsuid: r.bsuid, profile_name: r.profile_name, fields: r.fields,
+      optInStatus: r.opt_in_status, bloque: r.bloque, rcsDesabonne: r.rcs_desabonne,
+    }));
+  }
+
+  /**
+   * UN ENVOI DE L'API, tel que `GET /v1/sends/{sendId}` le décrit. null si absent ou d'un autre espace.
+   *
+   * ⚠️ TROIS REQUÊTES, TOUTES TENUES À L'ESPACE : l'en-tête filtre `c.tenant_id = $2`, et les deux lectures de
+   * destinataires JOIGNENT la campagne sur ce même espace plutôt que de s'en remettre à la première.
+   * ⚠️ Mêmes définitions que les compteurs de la console (`summarySelect`) : « envoyé » exclut un échec de
+   * livraison, « en échec » est `RECIPIENT_FAILED_SQL`.
+   */
+  async lireEnvoiApi(campaignId: string, tenantId: string): Promise<EnvoiApiBrut | null> {
+    const tete = await this.pool.query<{
+      id: string; status: CampaignStatus; created_at: Date; channel: string; template_name: string | null; template_language: string | null;
+      start_node_id: string | null; workflow_code: string | null; graph: WorkflowGraph | null;
+    }>(
+      `select c.id, c.status, c.created_at, c.channel, c.template_name, c.template_language, c.start_node_id,
+              w.code as workflow_code, w.graph
+         from campaigns c
+         left join workflows w on w.id = c.workflow_id and w.tenant_id = c.tenant_id
+        where c.id = $1 and c.tenant_id = $2`,
+      [campaignId, tenantId],
+    );
+    const t = tete.rows[0];
+    if (!t) return null;
+    const compte = await this.pool.query<{ total: string; pending: string; sending: string; sent: string; failed: string; skipped: string }>(
+      `select count(r.id) as total,
+              count(r.id) filter (where r.status = 'pending') as pending,
+              count(r.id) filter (where r.status = 'sending') as sending,
+              count(r.id) filter (where r.status = 'sent' and r.delivery_status is distinct from 'failed') as sent,
+              count(r.id) filter (where ${RECIPIENT_FAILED_SQL}) as failed,
+              count(r.id) filter (where r.status = 'skipped') as skipped
+         from campaign_recipients r
+         join campaigns c on c.id = r.campaign_id and c.tenant_id = $2
+        where r.campaign_id = $1`,
+      [campaignId, tenantId],
+    );
+    const k = compte.rows[0];
+    const dest = await this.pool.query<{
+      contact_id: string; external_id: string | null; status: string; message_id: string | null; error: string | null;
+      error_code: number | null; sent_at: Date | null; delivery_status: string | null; delivery_error: string | null;
+      etage_courant: number; canal_etage: string | null;
+    }>(
+      // Même ordre que le détail de la console (`order by status, id`) : une liste tronquée garde un sens.
+      `select r.contact_id, ct.external_id, r.status, r.message_id, r.error, r.error_code, r.sent_at,
+              r.delivery_status, r.delivery_error, r.etage_courant, e.canal as canal_etage
+         from campaign_recipients r
+         join campaigns c on c.id = r.campaign_id and c.tenant_id = $2
+         left join contacts ct on ct.id = r.contact_id and ct.tenant_id = $2
+         left join campaign_etages e on e.campaign_id = c.id and e.rang = r.etage_courant
+        where r.campaign_id = $1
+        order by r.status, r.id
+        limit 500`,
+      [campaignId, tenantId],
+    );
+    return {
+      id: t.id,
+      status: t.status,
+      createdAt: t.created_at.toISOString(),
+      // Deux valeurs en base (0056) ; toute autre retombe sur WhatsApp, le défaut de la colonne.
+      channel: t.channel === 'rcs' ? 'rcs' : 'whatsapp',
+      templateName: t.template_name,
+      templateLanguage: t.template_language,
+      workflowCode: t.workflow_code,
+      startNodeId: t.start_node_id,
+      graph: t.graph,
+      counts: {
+        pending: Number(k?.pending ?? 0),
+        sending: Number(k?.sending ?? 0),
+        sent: Number(k?.sent ?? 0),
+        failed: Number(k?.failed ?? 0),
+        skipped: Number(k?.skipped ?? 0),
+      },
+      recipientsTotal: Number(k?.total ?? 0),
+      recipients: dest.rows.map((r) => ({
+        contactId: r.contact_id,
+        externalId: r.external_id,
+        rang: r.etage_courant,
+        // Trois valeurs en base (CHECK de 0134) ; toute autre est rendue inconnue plutôt qu'inventée.
+        canalEtage: r.canal_etage === 'whatsapp' || r.canal_etage === 'rcs' || r.canal_etage === 'email' ? r.canal_etage : null,
+        status: r.status,
+        messageId: r.message_id,
+        error: r.error,
+        errorCode: r.error_code,
+        sentAt: r.sent_at ? r.sent_at.toISOString() : null,
+        deliveryStatus: r.delivery_status,
+        deliveryError: r.delivery_error,
+      })),
+    };
   }
 
   /** Contacts du tenant prêts pour buildRecipients (id, phone, bsuid, name, fields, opt-in). */

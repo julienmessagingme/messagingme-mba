@@ -355,7 +355,8 @@ WhatsApp, et le faire partir en RCS chez un contact qu'on vient de constater inj
 distinctes.** Peuvent ouvrir à froid : un **template** WhatsApp, ou un **bloc RCS** configuré (le RCS n'a
 aucune fenêtre, c'est une règle de WhatsApp et pas du monde). Après une attente, seul un template part encore ;
 un message rapide, une question ou un formulaire seront refusés. Cette règle a **trois détenteurs** :
-`besoinsFenetre` (reprise), la garde de `runFrom` (ouverture à froid) et `exigeFenetre24h` (API publique).
+`besoinsFenetre` (reprise), la garde de `runFrom` (ouverture à froid) et `ouvertureApi` (API publique,
+`src/workflow/ouverture-api.ts`, qui juge ce qui part en PREMIER depuis l'entrée ou depuis le bloc visé).
 
 ⚠️ **Répondre à un message RCS ne rouvre pas la fenêtre WhatsApp** : ce sont deux tuyaux distincts. Seul le
 formulaire reste impossible derrière un RCS, n'ayant aucun équivalent : le parcours ne fait pas semblant, il
@@ -657,7 +658,7 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   la fiche. `contacts.external_id` est unique PAR ESPACE (index partiel `contacts_tenant_external_id_uidx`), et
   la purge l'efface avec le numéro. ⚠️ Exception assumée à « rien n'est écrit » : une définition de champ a pu
   être créée (la préparation des champs passe avant la résolution), et elle compte dans le plafond de
-  l'espace. ⚠️ `/v1/sends` et `/v1/messages` résolvent encore par numéro (`findByPhone`), jusqu'au lot 2.
+  l'espace. ⚠️ `/v1/sends` (mode `phone`, `jamais` pour une ouverture de session) et `/v1/messages/whatsapp` (mode `jamais`) passent par cette même résolution ; la seconde rattache une clé neuve même quand le message est ensuite refusé.
   ⚠️ Rattacher un numéro à une fiche qui n'avait qu'un BSUID change son adresse WhatsApp (`waIdOf` préfère
   le numéro).
 - 🔴 **L'API écrit champs, étiquettes et nom par `editerFicheApi`, jamais par `applyEdits`** : une requête
@@ -1529,7 +1530,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/crm/identity.ts` -> `waIdOfTarget` | la règle wa_id pour une cible d'envoi |
 | `src/api/fiche.ts` -> `resoudreFiche` | 🔴 trouver la fiche d'une personne à partir des clés reçues par l'API publique. Une seconde résolution divergerait sur la règle multi-clés, et une personne aurait deux fiches |
 | `src/api/consentement.ts` -> `appliquerConsentement` | le consentement écrit par une machine, et sa ligne d'audit |
-| `src/api/erreurs.ts` | `STATUT_PAR_CODE` et `refuser` : la forme `{ error, code }` des erreurs de `/v1/contacts` et de la garde de clé ; tout nouveau refus de l'API publique passe par là (`/v1/sends` et `/v1/messages` portent encore des refus sans code ou à code hors table, jusqu'au lot 2) |
+| `src/api/erreurs.ts` | `STATUT_PAR_CODE` et `refuser` : la forme `{ error, code }` des erreurs de `/v1/contacts`, `/v1/sends`, `/v1/messages/whatsapp` et de la garde de clé ; tout nouveau refus de l'API publique passe par là |
 | `src/crm/date-iso.ts` | normaliser une date venue d'un tiers, et REFUSER l'ambigu en le disant |
 | `src/crm/contact-filters.ts` | les règles de filtrage des contacts (bornes, opérateurs, plafonds) |
 | `src/stats/range.ts` -> `BOUNDS_CTE` | les bornes de date, robustes au changement d'heure |

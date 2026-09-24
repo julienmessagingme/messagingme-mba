@@ -40,6 +40,9 @@ import { creerServiceContactsV1 } from './api/contacts-v1';
 import { PgReachabilityStore } from './rcs/reachability.pg';
 import { joignabiliteRcsToutesFormes } from './rcs/reachability';
 import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
+import { verdictModele } from './api/modele-envoi';
+import { resoudreFiche } from './api/fiche';
+import { appliquerConsentement, depsConsentementDe } from './api/consentement';
 import { PgAuditStore } from './audit/store.pg';
 import { PgErreursLivraisonStore } from './ops/erreurs-livraison.pg';
 import { PLAFOND_CONTACTS_ERREUR } from './http/stats';
@@ -641,6 +644,10 @@ async function main(): Promise<void> {
    * voir. Dix minutes lui feraient croire que son geste n'a rien fait.
    */
   const etatComptePubCache = cacheCourt<EtatComptePub | null>(2 * 60_000);
+
+  // Les dépendances du consentement posé par l'API : la MÊME construction que `/v1/contacts`
+  // (`depsConsentementDe`, que `creerServiceContactsV1` appelle aussi), jamais une seconde écrite à la main.
+  const depsConsentement = depsConsentementDe(contactStore, auditSink);
 
   const app = buildServer({
     /**
@@ -3101,23 +3108,45 @@ async function main(): Promise<void> {
       }),
       sends: {
         resolveScenario: (tenant, ref) => resolveScenario(tenant, ref, workflowStore),
-        // Cible node : le code `nod_` vit dans le graphe -> scan des scénarios du tenant. Le libellé du bloc
-        // (ou son code à défaut) sert à nommer la campagne dans la console.
+        /**
+         * Cible node : le code `nod_` vit dans le graphe PUBLIÉ, d'où le scan des scénarios de l'espace. Le
+         * graphe est rendu AVEC le bloc : c'est depuis lui que `ouvertureApi` juge ce qui part en premier.
+         * Le libellé du bloc (ou son code à défaut) nomme la campagne dans la console.
+         */
         resolveNode: async (tenant, code) => {
           const r = await resolveNode(tenant, code, workflowStore);
           // Un code `nod_` est unique : resolveNode ne produit jamais 'ambiguous', seulement not_found.
           if (!r.ok) return { ok: false, reason: 'not_found' };
           const node = r.value.graph.nodes.find((n) => n.id === r.value.nodeId);
           const label = String(node?.data.label ?? '').trim() || code;
-          // Le TYPE décide si la fenêtre de service WhatsApp s'applique à cette cible (cf. exigeFenetre24h).
-          return { ok: true, value: { workflowId: r.value.workflowId, nodeId: r.value.nodeId, label, type: node?.type ?? null } };
+          return { ok: true, value: { workflowId: r.value.workflowId, nodeId: r.value.nodeId, label, graph: r.value.graph } };
+        },
+        /**
+         * 🔴 LA CATÉGORIE D'UN TEMPLATE EST LUE CHEZ META, comme dans l'Inbox (`categorieDuModele`) : déclarée
+         * par l'appelant, un template marketing annoncé « utility » partait aux contacts sans consentement.
+         * MÊME lecture et MÊME cache court que le worker. Une panne de lecture est « illisible », jamais
+         * « utility » par défaut.
+         */
+        lireModele: async (tenant, name, language) => {
+          try {
+            return verdictModele(await workflowRuntime.templateVarInfo(tenant, name, language), language);
+          } catch (err) {
+            // Journalisée : une panne DURABLE (jeton révoqué, compte déconnecté) rendrait sinon 422 pour toujours
+            // sans aucune trace chez nous. Le verdict reste « illisible », jamais « utility » par défaut.
+            console.error('v1/sends: lecture du template chez Meta échouée:', err instanceof Error ? err.message : err);
+            return { statut: 'illisible' };
+          }
         },
         getWindowOpenByWaIds: (tenant, waIds) => inboxStore.getWindowOpenByWaIds(tenant, waIds),
         getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
         phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
-        findContactByPhone: async (tenant, phone) => { const c = await contactStore.findByPhone(tenant, phone); return c ? { id: c.id } : null; },
-        createContactByPhone: (tenant, phone) => contactStore.upsertByPhoneReturningId({ tenantId: tenant, phoneE164: phone, profileName: null, fields: {}, optInStatus: 'unknown' }),
-        listContactsForBuildByIds: (tenant, ids) => repo.listContactsForBuildByIds(tenant, ids),
+        // La résolution de fiche et l'écriture du consentement du lot 1, sur les MÊMES dépendances que
+        // `/v1/contacts` : le dépôt des contacts lui-même, et `depsConsentementDe`. Les quatre paramètres de
+        // chaque flèche sont gardés par `tests/v1-cablage.test.ts`.
+        resoudreFiche: (tenant, cles, o) => resoudreFiche(contactStore, tenant, cles, o),
+        appliquerConsentement: (tenant, contactId, consent, source) => appliquerConsentement(depsConsentement, tenant, contactId, consent, source),
+        // Bloqués COMPRIS : l'API les écarte avec un motif au lieu de les perdre (défaut 1).
+        listContactsPourEnvoi: (tenant, ids) => repo.listContactsPourEnvoiApi(tenant, ids),
         createSend: (input, recipients) => repo.createWithRecipients(input, recipients),
         enqueue: (campaignId, tenantId, count, rate) =>
           enqueueCampaignRun(queue, {
@@ -3126,13 +3155,14 @@ async function main(): Promise<void> {
             pendingCount: count,
             resolvedRatePerMinute: resolveRatePerMinute(rate, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE, plafondLePlusBas(config)),
           }),
-        idempotencyClaim: (tenant, key) => idempotencyStore.claim(tenant, key),
+        idempotencyClaim: (tenant, key, empreinte) => idempotencyStore.claim(tenant, key, empreinte),
         idempotencyComplete: (tenant, key, sendId, response) => idempotencyStore.complete(tenant, key, sendId, response),
         idempotencyRelease: (tenant, key) => idempotencyStore.release(tenant, key),
-        getSendDetail: (sendId, tenant) => repo.getCampaignDetail(sendId, tenant),
+        lireEnvoi: (sendId, tenant) => repo.lireEnvoiApi(sendId, tenant),
       },
       /**
-       * `POST /v1/messages` : un simple texte dans la fenêtre de 24 h (lot 7 du 2026-09-23).
+       * `POST /v1/messages/whatsapp` : un simple texte dans la fenêtre de 24 h (lot 7 du 2026-09-23, adresse
+       * renommée par le lot 2 de l'API cohérente du 2026-09-24).
        *
        * 🔴 CE BLOC NE FAIT QUE BRANCHER, il ne décide de rien. Les quatre gestes (fenêtre, désabonnement,
        * envoi, trace) vivent dans `repondreDansLaFenetre`, partagé avec la console et le serveur MCP.
@@ -3160,7 +3190,9 @@ async function main(): Promise<void> {
           // ça ne coûte aucune migration du chemin chaud.
           takeControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human'); },
         },
-        findContactByPhone: async (tenant, phone) => { const c = await contactStore.findByPhone(tenant, phone); return c ? { id: c.id } : null; },
+        // La MÊME résolution de fiche, sur le MÊME dépôt, que `/v1/contacts` et `/v1/sends` (lot 1). La route
+        // demande `jamais` : un message simple ne crée pas de fiche, le câblage n'en décide pas.
+        resoudreFiche: (tenant, cles, o) => resoudreFiche(contactStore, tenant, cles, o),
         // LA MÊME fonction que le bouton « Ouvrir la conversation » du mini-CRM : elle refuse un contact
         // supprimé comme un contact bloqué, ce qui EST la garde de blocage de cette route.
         ouvrirConversation: (tenant, contactId) => inboxStore.ouvrirConversationDuContact(tenant, contactId),
