@@ -104,6 +104,7 @@ cible** ; un adaptateur le traduit pour chaque outil, Batch en premier.
 | Échecs des messages libres | capturés : journal des erreurs, joignabilité RCS, signal `em_message_failed` |
 | Intentions | ajout de `achat`, `suivi_commande`, `retour`, maintenant |
 | Signaux remontés | dictionnaire + adaptateur Batch dans cette spec |
+| Doc API | aucun outil tiers nommé, ni dans le texte ni dans les exemples : elle sert à tous les intégrateurs |
 | Périmètre | lecture de fiche, désabonnement, catalogues (templates WhatsApp, scénarios, messages RCS), variables par destinataire |
 | Le `contactId` dans la console | affiché sur la fiche du mini-CRM, avec un bouton Copier |
 | Hors périmètre | webhooks sortants génériques, variables dans un scénario, BSUID d'abord, suppression de fiche par API |
@@ -160,7 +161,7 @@ création : une lecture demande une clé neuve, ce qui est acceptable puisque pe
 ```json
 {
   "phone": "+33612345678",
-  "externalId": "batch-7781",
+  "externalId": "crm-7781",
   "bsuid": "…",
   "name": "Camille Roy",
   "fields": { "ville": "Lyon" },
@@ -191,7 +192,7 @@ fait pas tomber le lot (contrat actuel, inchangé).
 ```json
 {
   "contactId": "…",
-  "externalId": "batch-7781",
+  "externalId": "crm-7781",
   "phone": "+33612345678",
   "bsuid": null,
   "name": "Camille Roy",
@@ -235,10 +236,10 @@ Un envoi est un LOT : asynchrone, idempotent, visible dans Campagnes, suivi par 
 POST /v1/sends
 
 {
-  "idempotencyKey": "relance-panier-batch-7781-2026-09-24",
+  "idempotencyKey": "relance-panier-crm-7781-2026-09-24",
   "target": { "template": { "name": "confirmation", "language": "fr" } },
   "recipients": [
-    { "externalId": "batch-7781", "phone": "+33612345678", "consent": "opted_in", "variables": { "commande": "8412" } },
+    { "externalId": "crm-7781", "phone": "+33612345678", "consent": "opted_in", "variables": { "commande": "8412" } },
     { "contactId": "…" }
   ],
   "params": [{ "position": 1, "source": { "type": "variable", "key": "commande" } }],
@@ -360,7 +361,7 @@ que soit la clé utilisée. La liste reste tronquée à 200, `skippedTotal` donn
   "recipients": [
     {
       "contactId": "…",
-      "externalId": "batch-7781",
+      "externalId": "crm-7781",
       "channel": "whatsapp",
       "status": "sent",
       "messageId": "wamid…",
@@ -578,9 +579,13 @@ ni leurs statuts ni leurs en-têtes (`retry-after`, `x-ratelimit-*`).
 - **Réglage Batch** : § 8.
 - **Documentation API** (`web/app/developers/api/page.tsx`) : réécrite. Deux familles clairement séparées
   (« Envoyer un message simple », « Déclencher un envoi »), la table d'identité, chaque paramètre, la table des
-  codes, des exemples RCS, avec les accents. Plus deux sections : **« Brancher Batch »** (la recette du
-  Universal Channel : adresse, en-tête d'authentification, corps type avec `externalId`, `phone`, `consent`,
-  `variables` et `idempotencyKey`) et **« Ce que nous remontons »** (le dictionnaire du § 8).
+  codes, des exemples RCS, avec les accents. Plus deux sections : **« Brancher un outil qui appelle par
+  contact »** (plateforme d'orchestration, CRM, outil marketing : adresse, en-tête d'authentification, corps
+  type avec `externalId`, `phone`, `consent`, `variables` et `idempotencyKey`) et **« Ce que nous
+  remontons »** (le dictionnaire du § 8).
+  - 🔴 **La page ne nomme AUCUN outil tiers**, ni dans son texte ni dans ses exemples (décision de Julien du
+    2026-09-24) : elle sert à tous les intégrateurs. Les identifiants d'exemple sont neutres (`crm-7781`).
+    Le nom de Batch n'apparaît que sur l'écran de réglage de son adaptateur (Paramètres > Intégrations).
   - **Les exemples de corps vivent dans un module** importé par la page ET par un test qui les passe aux
     validateurs des routes : la page ne peut plus décrire un corps que le serveur refuse.
 
