@@ -128,8 +128,16 @@ export function PubFormulaire({
    * affichée à l'écran que le serveur n'avait pas.
    *
    * ⚠️ EN GARDANT LA VALEUR PLUTÔT QU'UN DRAPEAU, la question se REPOSE à chaque envoi au lieu de se
-   * mémoriser, donc il n'y a plus rien à tenir en cohérence. Les deux défauts se ferment par construction :
-   * une remise à zéro oubliée ne peut plus exister, puisqu'il n'y a plus de remise à zéro.
+   * mémoriser : il n'y a plus de remise à zéro APRÈS CHAQUE ENREGISTREMENT, qui était la source des deux
+   * pertes.
+   *
+   * 🔴 ET CE CHAMP N'EST PAS LU DIRECTEMENT : passer par `visuelDetenu()`. Sans brouillon sur le serveur,
+   * le serveur ne détient RIEN, quoi que ce champ ait gardé. Écrire cette implication une fois vaut mieux
+   * que d'apparier deux remises à zéro à la main : une première version de ce commentaire affirmait qu'il
+   * n'y avait « plus rien à tenir en cohérence » alors que la branche du 404 appariait encore deux
+   * `set`. Relevé en relecture à froid. Une justification fausse est pire qu'aucune : celle-là aurait fait
+   * croire au prochain qu'il pouvait remettre `brouillonId` à `null` tout seul, et la perte silencieuse du
+   * visuel serait revenue une troisième fois.
    */
   const [visuelServeur, setVisuelServeur] = useState<VisuelEnvoye>(
     brouillon?.visuel ? { type: brouillon.visuel.type, base64: brouillon.visuel.base64 } : null,
@@ -173,9 +181,21 @@ export function PubFormulaire({
    * ⚠️ `undefined` quand l'écran et le serveur portent le même visuel : il n'y a rien à dire, donc la clé
    * ne part pas, donc on ne remonte pas plusieurs mégaoctets pour corriger une faute de frappe.
    */
+  /**
+   * Ce que le serveur détient VRAIMENT, dérivé et jamais apparié à la main.
+   *
+   * 🔴 PAS DE BROUILLON, PAS DE VISUEL. C'est une implication, pas une coïncidence : un brouillon qui
+   * n'existe plus ne détient rien. L'écrire ici supprime la seule paire de remises à zéro qui restait
+   * (`brouillonId` et ce champ, sur la branche du 404), donc le seul endroit où l'on pouvait encore en
+   * oublier une. C'est la même faute que le drapeau d'avant, à un cran de profondeur.
+   */
+  function visuelDetenu(): VisuelEnvoye {
+    return brouillonId === null ? null : visuelServeur;
+  }
+
   function visuelAEnvoyer(): VisuelEnvoye {
     const actuel: VisuelEnvoye = image === null ? null : { type: image.type, base64: image.base64 };
-    return memeVisuel(actuel, visuelServeur) ? undefined : actuel;
+    return memeVisuel(actuel, visuelDetenu()) ? undefined : actuel;
   }
 
   async function choisirImage(f: File | null): Promise<void> {
@@ -256,18 +276,13 @@ export function PubFormulaire({
         setErreur(t('Les brouillons attendent la mise à jour du serveur. Vous pouvez créer la publicité normalement.',
                     'Drafts are waiting for the server update. You can still create the ad as usual.'));
       } else if (err instanceof ApiError && err.status === 404) {
-        setBrouillonId(null);
         /**
-         * 🔴 ET LE SERVEUR NE DÉTIENT PLUS RIEN, PUISQUE LE BROUILLON N'EXISTE PLUS.
-         *
-         * Le dire ici suffit : le prochain envoi comparera l'image de l'écran à « rien », les trouvera
-         * différentes, et la re-création emportera le visuel. C'est ce que la version précédente ratait,
-         * en recréant le brouillon SANS son image pendant que l'écran continuait de l'afficher.
-         *
-         * ⚠️ AUCUN DRAPEAU À REMETTRE EN COHÉRENCE : on énonce un FAIT sur le serveur, et ce qu'il faut
-         * envoyer s'en déduit. C'est la différence entre cette forme et les deux qui ont perdu des images.
+         * 🔴 UN SEUL `set`, ET C'EST TOUT L'INTÉRÊT. Le brouillon n'existe plus, donc le serveur ne détient
+         * plus rien : `visuelDetenu()` le DÉDUIT de `brouillonId`, il n'y a pas de second état à remettre à
+         * zéro ici. Le prochain envoi comparera l'image de l'écran à « rien », les trouvera différentes, et
+         * la re-création emportera le visuel, ce que deux versions précédentes rataient.
          */
-        setVisuelServeur(null);
+        setBrouillonId(null);
         setErreur(t('Ce brouillon n’existe plus. Cliquez de nouveau pour l’enregistrer comme un nouveau brouillon.',
                     'This draft no longer exists. Click again to save it as a new draft.'));
       } else {
