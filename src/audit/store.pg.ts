@@ -114,7 +114,15 @@ export type AuditAction =
    * souvent le geste qu'on cherche à dater quand un client demande « pourquoi ma campagne s'est arrêtée ».
    */
   | 'pubs.pausee'
-  | 'pubs.reprise';
+  | 'pubs.reprise'
+  /**
+   * LE BRANCHEMENT D'UN OUTIL QUI REÇOIT LES SIGNAUX (lot 6 de l'API publique, 2026-09-24). Même famille que
+   * `connecteur.cree` : c'est par lui que des données de contacts QUITTENT l'espace. Le détail ne porte jamais
+   * les clés, seulement l'outil, l'option du résumé et le fait que les clés ont changé.
+   */
+  | 'integration.branchee'
+  | 'integration.modifiee'
+  | 'integration.debranchee';
 
 export interface AuditEntry {
   id: string;

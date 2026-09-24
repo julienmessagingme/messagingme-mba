@@ -305,11 +305,24 @@ export type InboundOptOut = (tenantId: string, waId: string) => Promise<string |
  */
 export type InboundAssignation = (tenantId: string, waId: string) => Promise<unknown>;
 
-export async function processInbound(
-  payload: unknown,
-  store: InboxStore,
-  upsertContact?: InboundContactUpsert,
-  optOut?: InboundOptOut,
+/**
+ * Remonte une RÉPONSE comme signal (spec 2026-09-24, § 8). Reçoit le message ENTIER, et c'est au puits de n'en
+ * garder que ce que le dictionnaire autorise : jamais le texte, seulement le bouton tapé.
+ */
+export type SignalReponse = (tenantId: string, m: InboundMessage) => Promise<void>;
+
+/**
+ * Les dépendances SECONDAIRES de `processInbound`, NOMMÉES (lot 6 de l'API publique, 2026-09-24).
+ *
+ * 🔴 UN OBJET, PLUS UNE QUEUE DE PARAMÈTRES OPTIONNELS. Le quatrième s'ajoutait au rang six, derrière trois
+ * optionnels de types voisins : un rang inversé y passe le compilateur en silence. Même leçon que
+ * `WebhookJobDeps` (`./handler.ts`) et `PuitsAccuses` (`./delivery.ts`, revue finale du 2026-09-23). Toutes
+ * restent optionnelles ICI (les tests de réception s'en passent) ; c'est `WebhookJobDeps` qui exige le puits
+ * des signaux avec `inbox`.
+ */
+export interface DepsEntrants {
+  upsertContact?: InboundContactUpsert;
+  optOut?: InboundOptOut;
   /**
    * RÉPARTITION D'UNE RÉPONSE DE CAMPAGNE (migration 0134). Absente -> aucune affectation automatique,
    * c'est-à-dire le comportement d'avant : la conversation tombe dans « À traiter ».
@@ -319,8 +332,17 @@ export async function processInbound(
    * avant, elle ne trouverait rien à affecter sur la toute première réponse d'un contact, c'est-à-dire
    * précisément le cas qu'elle existe pour servir.
    */
-  assignation?: InboundAssignation,
+  assignation?: InboundAssignation;
+  /** Les signaux (spec 2026-09-24, § 8). APRÈS `recordInbound` : on ne remonte pas un message non enregistré. */
+  signalReponse?: SignalReponse;
+}
+
+export async function processInbound(
+  payload: unknown,
+  store: InboxStore,
+  deps: DepsEntrants = {},
 ): Promise<void> {
+  const { upsertContact, optOut, assignation, signalReponse } = deps;
   for (const m of extractInbound(payload)) {
     const tenantId = await store.phoneNumberTenant(m.phoneNumberId);
     if (!tenantId) continue;
@@ -345,6 +367,14 @@ export async function processInbound(
       }
     }
     await store.recordInbound(tenantId, m);
+    if (signalReponse) {
+      try {
+        await signalReponse(tenantId, m);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('processInbound: signal de réponse ignoré:', err instanceof Error ? err.message : err);
+      }
+    }
     /**
      * ⚠️ ISOLÉE, comme l'auto-création de contact plus haut et pour la même raison : l'enregistrement du
      * message est le CŒUR du webhook, et une affectation ratée ne doit jamais le faire échouer. Un throw

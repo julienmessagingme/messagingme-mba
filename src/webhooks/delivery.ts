@@ -1,5 +1,6 @@
 import type { WebhookEvent } from './parse';
 import { extraireTarif, type TarifsMetaSink } from './tarif-meta';
+import { asRecord } from './json';
 
 export type DeliveryStatus = 'sent' | 'delivered' | 'read' | 'failed';
 
@@ -39,6 +40,38 @@ export function extractDelivery(
     error = parts.join(' ').trim() || null;
   }
   return { messageId: s.id, status: s.status as DeliveryStatus, error, errorCode };
+}
+
+/**
+ * Ce que la remontée des SIGNAUX reçoit d'un accusé (spec 2026-09-24, § 8).
+ *
+ * 🔴 BEST-EFFORT, ET GRATUIT PAR DÉFAUT : ce chemin traite chaque accusé de chaque message de la plateforme. Le
+ * puits décide lui-même de ne rien lire (statut `sent`, aucun espace branché) ; il ne doit jamais faire échouer
+ * le traitement d'une livraison, qui est la donnée métier.
+ */
+export interface AccuseDuStatut {
+  messageId: string;
+  status: DeliveryStatus;
+  /** Le destinataire tel que Meta le nomme (`recipient_id`) : numéro en chiffres nus, ou BSUID. */
+  waId: string | null;
+  motif: string | null;
+  codeMeta: number | null;
+  /** L'instant que Meta a daté (`timestamp`), en ISO ; `null` s'il manque. La file des accusés peut avoir du retard. */
+  le: string | null;
+}
+export type SignalAccuse = (phoneNumberId: string, accuse: AccuseDuStatut) => Promise<void>;
+
+/** Le destinataire d'un statut Meta, ou `null`. Ne lève jamais. */
+export function destinataireDuStatut(data: unknown): string | null {
+  const r = asRecord(data)['recipient_id'];
+  return typeof r === 'string' && r.trim() !== '' ? r : null;
+}
+
+/** L'instant d'un statut Meta (secondes Unix), en ISO, ou `null`. Ne lève jamais. */
+export function instantDuStatut(data: unknown): string | null {
+  const brut = asRecord(data)['timestamp'];
+  const secondes = typeof brut === 'string' || typeof brut === 'number' ? Number(brut) : Number.NaN;
+  return Number.isFinite(secondes) && secondes > 0 ? new Date(secondes * 1000).toISOString() : null;
 }
 
 /**
@@ -101,6 +134,8 @@ export interface PuitsAccuses {
   echecsLibres: EchecsLibresSink;
   nodeEvents?: NodeStatusSink;
   remiseMba?: RemiseMbaSurAccuse;
+  /** Les signaux (spec 2026-09-24, § 8). Requis au niveau du handler, qui est le seul appelant de production. */
+  signaux?: SignalAccuse;
 }
 
 /**
@@ -122,7 +157,7 @@ export async function processStatuses(
   delivery: DeliveryStore,
   puits: PuitsAccuses,
 ): Promise<void> {
-  const { tarifs, echecsLibres, nodeEvents, remiseMba } = puits;
+  const { tarifs, echecsLibres, nodeEvents, remiseMba, signaux } = puits;
   for (const ev of events) {
     if (ev.source !== 'statuses') continue;
     /**
@@ -185,6 +220,23 @@ export async function processStatuses(
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error('mesure de bloc (statut) ignorée:', err instanceof Error ? err.message : err);
+      }
+    }
+    // 🔴 LES SIGNAUX (spec 2026-09-24, § 8), EN DERNIER ET ISOLÉS : ils ne décident de rien pour la livraison,
+    // et le puits se charge de ne rien lire quand personne n'écoute.
+    if (signaux && ev.phoneNumberId) {
+      try {
+        await signaux(ev.phoneNumberId, {
+          messageId: d.messageId,
+          status: d.status,
+          waId: destinataireDuStatut(ev.data),
+          motif: d.error,
+          codeMeta: d.errorCode,
+          le: instantDuStatut(ev.data),
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('signal d’accusé ignoré:', err instanceof Error ? err.message : err);
       }
     }
   }

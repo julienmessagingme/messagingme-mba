@@ -3,7 +3,7 @@ import { processStatuses } from '../src/webhooks/delivery';
 import type { DeliveryStore, DeliveryStatus, EchecsLibresSink } from '../src/webhooks/delivery';
 import { handleWebhookJob } from '../src/webhooks/handler';
 import type { WebhookEvent } from '../src/webhooks/parse';
-import { aucunTarif } from './webhook-fixtures';
+import { aucunTarif, aucunSignalAccuse } from './webhook-fixtures';
 
 /**
  * L'ÉCHEC D'UN MESSAGE LIBRE N'ÉTAIT ÉCRIT NULLE PART (défaut 4 de la spec 2026-09-24).
@@ -69,7 +69,7 @@ describe('processStatuses : l’échec d’un message LIBRE', () => {
         metadata: { phone_number_id: 'pn1' },
         statuses: [{ id: 'wamid.h1', status: 'failed', errors: [INJOIGNABLE] }],
       } }] }],
-    }, { store: { insertEvent: async () => true }, delivery: new Livraison(), tarifsMeta: aucunTarif, echecsLibres: sink });
+    }, { store: { insertEvent: async () => true }, delivery: new Livraison(), tarifsMeta: aucunTarif, echecsLibres: sink, signauxAccuse: aucunSignalAccuse });
     expect(notes.map((n) => n.messageId)).toEqual(['wamid.h1']);
   });
 });

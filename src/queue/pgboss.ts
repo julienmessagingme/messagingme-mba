@@ -119,6 +119,25 @@ export function workConcurrencyOptions(opts: {
 }
 
 /**
+ * Options d'ENVOI passées à `boss.send`. Fonction PURE et exportée pour être testée, comme `workConcurrencyOptions`
+ * (`tests/queue-priorite.test.ts`).
+ *
+ * ⚠️ `priority` est transmise dès qu'elle est DÉFINIE, 0 compris : une valeur explicite n'est pas une absence
+ * (même piège que `concurrency: 0`). `expireInSeconds` et `groupId` gardent EXACTEMENT leur règle d'avant.
+ */
+export function sendOptions(opts: { expireInSeconds?: number; groupId?: string; priority?: number } = {}): {
+  expireInSeconds?: number;
+  group?: { id: string };
+  priority?: number;
+} {
+  return {
+    ...(opts.expireInSeconds ? { expireInSeconds: opts.expireInSeconds } : {}),
+    ...(opts.groupId ? { group: { id: opts.groupId } } : {}),
+    ...(opts.priority !== undefined ? { priority: opts.priority } : {}),
+  };
+}
+
+/**
  * Implémentation durable via pg-boss (Postgres/Supabase).
  * Chaque file a une dead-letter queue `<name>-dlq` et un retryLimit.
  */
@@ -212,16 +231,14 @@ export class PgBossQueue implements Queue {
   async enqueue(
     name: string,
     data: unknown,
-    opts?: { expireInSeconds?: number; groupId?: string },
+    opts?: { expireInSeconds?: number; groupId?: string; priority?: number },
   ): Promise<void> {
     await this.ensure(name);
     // `expireInSeconds` PAR JOB (prime sur la policy de file) : dimensionne la durée max d'un run de campagne
     // throttlé sur son travail réel, sinon un run long expirerait et serait rejoué en parallèle.
     // `groupId` -> `group.id` : porte le tenant, sur lequel `work` applique un plafond de concurrence par groupe.
-    await this.boss.send(name, data as object, {
-      ...(opts?.expireInSeconds ? { expireInSeconds: opts.expireInSeconds } : {}),
-      ...(opts?.groupId ? { group: { id: opts.groupId } } : {}),
-    });
+    // `priority` : voir `sendOptions`, et `PRIORITE_SIGNAL` (`src/signaux/emetteur.ts`) pour son premier usage.
+    await this.boss.send(name, data as object, sendOptions(opts));
   }
 
   filesTravaillees(): readonly string[] {

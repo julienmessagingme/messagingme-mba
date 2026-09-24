@@ -10,16 +10,18 @@ const CODE = 'ab12cd34ef56';
 interface Capture {
   clics: Array<{ code: string; tenantId: string }>;
   lus: string[];
+  signaux: Array<{ tenantId: string; contactId: string; code: string }>;
 }
 
 function app(over: Partial<LinksRouteDeps> = {}): { server: ReturnType<typeof buildServer>; cap: Capture } {
-  const cap: Capture = { clics: [], lus: [] };
+  const cap: Capture = { clics: [], lus: [], signaux: [] };
   const links: LinksRouteDeps = {
     getByCode: async (code): Promise<DestinationLien | null> => {
       cap.lus.push(code);
       return code === CODE ? { tenantId: 't1', destination: 'https://client.fr/promo' } : null;
     },
     recordClick: async (code, tenantId) => { cap.clics.push({ code, tenantId }); },
+    signalerClic: async (tenantId, contactId, code) => { cap.signaux.push({ tenantId, contactId, code }); },
     ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), links }), cap };
@@ -165,6 +167,46 @@ describe('redirection publique /r/:code', () => {
     const server = buildServer({ queue: new FakeQueue() });
     const res = await server.inject({ method: 'GET', url: `/r/${CODE}` });
     expect(res.statusCode).toBe(404);
+    await server.close();
+  });
+
+  it('🔴 un clic ATTRIBUÉ remonte comme signal, dans l’espace du LIEN', async () => {
+    const jeton = 'abcdefghjkmnpqrs';
+    const { server, cap } = app({ contactParJeton: async (t, j) => (t === 't1' && j === jeton ? 'contact-1' : null) });
+    const res = await server.inject({ method: 'GET', url: `/r/${CODE}/${jeton}` });
+    expect(res.statusCode).toBe(302);
+    expect(cap.signaux).toEqual([{ tenantId: 't1', contactId: 'contact-1', code: CODE }]);
+    await server.close();
+  });
+
+  it('un clic ANONYME ne remonte pas : sans fiche, il n’y a pas de profil à mettre à jour', async () => {
+    const { server, cap } = app();
+    await server.inject({ method: 'GET', url: `/r/${CODE}` });
+    expect(cap.clics).toHaveLength(1);
+    expect(cap.signaux).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 un clic de robot ne remonte pas non plus', async () => {
+    const { server, cap } = app({ contactParJeton: async () => 'contact-1' });
+    await server.inject({ method: 'GET', url: `/r/${CODE}/abcdefghjkmnpqrs`, headers: { 'user-agent': 'facebookexternalhit/1.1' } });
+    expect(cap.signaux).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 un signal en panne REDIRIGE quand même', async () => {
+    const { server } = app({ contactParJeton: async () => 'contact-1', signalerClic: async () => { throw new Error('file pleine'); } });
+    const res = await server.inject({ method: 'GET', url: `/r/${CODE}/abcdefghjkmnpqrs` });
+    expect(res.statusCode).toBe(302);
+    expect(res.headers.location).toBe('https://client.fr/promo');
+    await server.close();
+  });
+
+  it('🔴 la redirection n’ATTEND PAS le signal : une file lente ne retarde aucun clic', async () => {
+    // Un signal qui ne se termine jamais : si la route l'attendait, `inject` ne rendrait jamais la main.
+    const { server } = app({ contactParJeton: async () => 'contact-1', signalerClic: () => new Promise<void>(() => {}) });
+    const res = await server.inject({ method: 'GET', url: `/r/${CODE}/abcdefghjkmnpqrs` });
+    expect(res.statusCode).toBe(302);
     await server.close();
   });
 });

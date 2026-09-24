@@ -87,6 +87,15 @@ import { PgCreditStore } from './agent/credits.pg';
 import { PgSourceStore } from './agent/sources.pg';
 import { PgRequeteStore } from './agent/requetes.pg';
 import { creerAnnonceOptOut, creerTravailPousseeOptOut, FILE_POUSSEE_OPTOUT } from './crm/poussee-optout';
+import { cacheCourt } from './lib/cache-court';
+import { PgIntegrationBatchStore } from './signaux/integration-batch.pg';
+import { PgSignauxStore } from './signaux/store.pg';
+import { completerSignal } from './signaux/completer';
+import {
+  creerEmetteur, creerPuitsSignauxMeta, annoncerAussiAuxSignaux, signalAnalyse, DUREE_CACHE_ESPACES_ACTIFS_MS,
+} from './signaux/emetteur';
+import { FILE_SIGNAUX_BATCH, pousserVersBatch } from './signaux/batch';
+import { creerTravailSignauxBatch } from './signaux/travail-batch';
 import { creerResolveurHttp } from './agent/resolvers/http';
 import { creerResolveurMcp } from './agent/resolvers/mcp';
 import { creerResolveurMba } from './agent/resolvers/mba';
@@ -254,17 +263,49 @@ async function main(): Promise<void> {
   const settingsStore = new PgTenantSettingsStore(pool);
   const flowStore = new PgFlowStore(pool);
   /**
+   * LES SIGNAUX (spec 2026-09-24, § 8) : ce que la console remonte vers l'outil d'un client.
+   *
+   * 🔴 L'ÉMETTEUR EST CONSTRUIT AVANT LE DÉPÔT DES CONTACTS, qui l'appelle à chaque désabonnement. Il ne
+   * connaît aucun outil : chaque adaptateur est une DESTINATION (sa file, ses espaces actifs lus à travers
+   * un cache court, qui rattrape un branchement fait depuis l'écran en une minute au plus).
+   */
+  const integrationBatch = new PgIntegrationBatchStore(pool);
+  const espacesBatch = cacheCourt<ReadonlySet<string>>(DUREE_CACHE_ESPACES_ACTIFS_MS);
+  const emetteur = creerEmetteur({
+    destinations: [{ file: FILE_SIGNAUX_BATCH, espacesActifs: () => espacesBatch.lire('actifs', () => integrationBatch.espacesActifs()) }],
+    enfiler: (file, job, opts) => queue.enqueue(file, job, opts),
+    // eslint-disable-next-line no-console
+    log: (m) => console.warn(m),
+  });
+  /**
+   * Le numéro Meta -> son espace, pour les ACCUSÉS, qui ne portent que le numéro. Consulté seulement quand un
+   * espace au moins a branché un outil. ⚠️ Seules les réponses POSITIVES restent en cache : une réponse nulle
+   * deviendrait fausse à l'instant où un client branche son premier numéro (leçon de `src/meta/numero-espace.ts`).
+   */
+  const espaceDuNumero = cacheCourt<string | null>(5 * 60_000);
+  const puitsSignaux = creerPuitsSignauxMeta({
+    emetteur,
+    tenantDuNumero: async (pnid) => {
+      const t = await espaceDuNumero.lire(pnid, () => inboxStore.phoneNumberTenant(pnid));
+      if (t === null) espaceDuNumero.invalider(pnid);
+      return t;
+    },
+  });
+  /**
    * 🔴 LA MEME ANNONCE QUE COTE API, ET C'EST OBLIGATOIRE. Le mot-cle « stop » d'un message entrant est
    * traite ICI, dans le worker : monter l'annonce uniquement cote API aurait couvert la fiche contact et
    * l'action en masse, et laisse le chemin le plus important, celui ou la personne elle-meme refuse, muet.
    */
   const contactStore = new PgContactStore(
     pool,
-    creerAnnonceOptOut({
-      enfiler: (job, opts) => queue.enqueue(FILE_POUSSEE_OPTOUT, job, opts),
-      // eslint-disable-next-line no-console
-      log: (m) => console.warn(m),
-    }),
+    annoncerAussiAuxSignaux(
+      creerAnnonceOptOut({
+        enfiler: (job, opts) => queue.enqueue(FILE_POUSSEE_OPTOUT, job, opts),
+        // eslint-disable-next-line no-console
+        log: (m) => console.warn(m),
+      }),
+      emetteur,
+    ),
   );
   // Sert à déclarer les champs « Pub » la première fois qu'un contact arrive par une publicité : sans
   // définition, la valeur serait écrite mais invisible dans le CRM, donc infiltrable et insegmentable.
@@ -488,6 +529,10 @@ async function main(): Promise<void> {
       tarifsMeta: tarifsMetaStore,
       // 🔴 SUR LES DEUX FILES qui voient des accusés, comme le tarif : un échec arrive par l'une ou par l'autre.
       echecsLibres: echecsMessages,
+      // 🔴 LES SIGNAUX (spec 2026-09-24, § 8), SUR LES DEUX FILES qui voient des accusés, pour la raison écrite
+      // au-dessus de `remiseMba` ; la réponse, elle, n'arrive que par celle-ci.
+      signauxAccuse: puitsSignaux.accuse,
+      signalReponse: puitsSignaux.reponse,
       /**
        * 🔴 SUR CETTE FILE ET PAS SUR L'AUTRE, contrairement à `remiseMba` juste au-dessus. Un message
        * ENTRANT n'arrive jamais par `webhook-status` : le receveur n'y route que les lots d'accusés purs.
@@ -707,7 +752,7 @@ async function main(): Promise<void> {
     // Trois dépendances NOMMÉES là où il y avait sept `undefined` d'affilée : ce qui est absent l'est
     // volontairement (aucune conversation, aucune automation, aucun scénario ne se déclenche sur un accusé),
     // et ça se lit maintenant sans compter les virgules.
-    await handleWebhookJob(data, { store: eventStore, delivery: recipientStore, nodeEvents: nodeEventStore, remiseMba: remiseMbaSurAccuse, tarifsMeta: tarifsMetaStore, echecsLibres: echecsMessages });
+    await handleWebhookJob(data, { store: eventStore, delivery: recipientStore, nodeEvents: nodeEventStore, remiseMba: remiseMbaSurAccuse, tarifsMeta: tarifsMetaStore, echecsLibres: echecsMessages, signauxAccuse: puitsSignaux.accuse });
   });
 
   // File campaign-run (Loop 5). DRY_RUN=true : sender de démo (aucun appel Meta). Sinon : token résolu PAR TENANT
@@ -917,6 +962,45 @@ async function main(): Promise<void> {
     log: (m) => console.warn(m),
   }));
 
+  /**
+   * File signaux-batch (spec 2026-09-24, § 8) : pousser les signaux vers Batch, un job (de 1 à
+   * `SIGNAUX_PAR_JOB` signaux d'un même espace) à la fois par espace.
+   *
+   * 🔴 INCONDITIONNELLE, comme `optout-poussee` : le travail relit le réglage et ne fait rien s'il n'y en a pas.
+   * Ne pas consommer quand personne n'est branché laisserait s'empiler des jobs que personne ne dépile.
+   *
+   * ⚠️ Groupée par ESPACE (le `groupId` posé par l'émetteur) : la rafale d'un client ne passe pas devant les
+   * autres. Dans un espace, la PRIORITÉ (`PRIORITE_SIGNAL`) fait passer réponses, clics, désabonnements et
+   * analyses devant un arriéré d'accusés. Les DEUX options de concurrence vont ensemble, `groupConcurrency`
+   * étant un no-op tant que `concurrency` vaut 1. Deux en vol restent loin des 300 mises à jour par seconde
+   * que Batch accepte.
+   */
+  const signauxStore = new PgSignauxStore(pool);
+  await queue.work(FILE_SIGNAUX_BATCH, creerTravailSignauxBatch({
+    reglage: async (t) => {
+      const s = await integrationBatch.secrets(t);
+      if (s === null) return null;
+      return {
+        cles: {
+          cleRest: decryptSecret(s.cleRestChiffree, config.ENCRYPTION_KEY),
+          cleProjet: decryptSecret(s.cleProjetChiffree, config.ENCRYPTION_KEY),
+        },
+        envoyerResume: s.envoyerResume,
+        suspendu: s.refusClesLe !== null,
+      };
+    },
+    completer: (t, s) => completerSignal(signauxStore, t, s),
+    pousser: (requete, cles) => pousserVersBatch(requete, cles, transport),
+    noterSansIdentifiant: (t, n) => integrationBatch.noterSansIdentifiant(t, n),
+    suspendre: async (t) => {
+      await integrationBatch.suspendre(t);
+      espacesBatch.invalider('actifs');
+    },
+    journal: new PgJournalAppels(pool),
+    // eslint-disable-next-line no-console
+    log: (m) => console.warn(m),
+  }), { concurrency: 2, groupConcurrency: 1 });
+
   // File analyze-conversation (Pièce 1). INERTE tant que CONVERSATION_ANALYSIS_ENABLED != 'true' : aucun worker,
   // aucun balayage, aucun appel LLM, zéro coût. Le déclencheur (balayage d'inactivité) est REMPLAÇABLE (temps réel plus tard).
   if (config.CONVERSATION_ANALYSIS_ENABLED === 'true') {
@@ -984,8 +1068,9 @@ async function main(): Promise<void> {
       onError: (err) => console.error('push-analysis enqueue échoué (best-effort):', err instanceof Error ? err.message : err),
     });
 
-    // DEUX consommateurs du même point de sortie : le push connecteur (Pièce 2) et, depuis E.2, les
-    // automations « conversation analysée » (relancer un client mécontent, par exemple). Chacun est isolé :
+    // TROIS consommateurs du même point de sortie : le push connecteur (Pièce 2), les signaux (lot 6 de l'API
+    // publique) et, depuis E.2, les automations « conversation analysée » (relancer un client mécontent, par
+    // exemple). Chacun est isolé :
     // un échec de l'un ne prive pas l'autre, et aucun ne fait échouer le job d'analyse lui-même.
     const onAnalyzed: typeof pushAnalyzed = async (stored) => {
       // Chaque consommateur a SON try/catch ici : l'isolation devient une propriété de cette composition, et
@@ -996,6 +1081,15 @@ async function main(): Promise<void> {
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error('push connecteur ignoré (best-effort):', err instanceof Error ? err.message : err);
+      }
+      try {
+        // 🔴 AVANT L'AUTOMATION, qui SORT de la fonction (`if (!ctx) return;`) quand la conversation n'a pas de
+        // contexte : placé après, le signal disparaîtrait dans ce cas-là, en silence. Il ne relit rien ici,
+        // la fiche et l'analyse se relisent au moment de pousser.
+        await emetteur.emettreSignal(stored.tenantId, signalAnalyse(stored.conversationId));
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('signal « conversation analysée » ignoré (best-effort):', err instanceof Error ? err.message : err);
       }
       try {
         // L'analyse identifie une CONVERSATION ; le moteur de scénario raisonne par wa_id.

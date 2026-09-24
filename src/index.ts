@@ -61,6 +61,12 @@ import type { AuditSink } from './audit/journal';
 import { resolveScenario, resolveNode } from './ids/resolve';
 import { enqueueCampaignRun } from './campaign/enqueue';
 import { creerAnnonceOptOut, FILE_POUSSEE_OPTOUT } from './crm/poussee-optout';
+import { PgIntegrationBatchStore } from './signaux/integration-batch.pg';
+import {
+  creerEmetteur, annoncerAussiAuxSignaux, signalDeLAccuse, signalDeLaReponse, signalDesabonnement, signalDuClic,
+  DUREE_CACHE_ESPACES_ACTIFS_MS,
+} from './signaux/emetteur';
+import { FILE_SIGNAUX_BATCH } from './signaux/batch';
 import { plafondLePlusBas, resolveRatePerMinute } from './campaign/pacing';
 import { fetchHubspotLists, importHubspotList, disconnectHubspot, fetchHubspotDealStages } from './crm/hubspot-service';
 import { PgTemplateHintStore } from './crm/template-hints.pg';
@@ -174,6 +180,7 @@ import { installGracefulShutdown } from './shutdown';
 import type { CountryCode } from 'libphonenumber-js';
 import { handlerMaison } from './agent/outils-maison';
 import type { PricingSummary } from './meta/pricing';
+import type { TemplateSummary } from './meta/templates';
 
 async function main(): Promise<void> {
   /**
@@ -204,6 +211,21 @@ async function main(): Promise<void> {
   const recipientStore = new PgRecipientStore(pool);
   const campaignDraftStore = new PgCampaignDraftStore(pool);
   /**
+   * LES SIGNAUX (spec 2026-09-24, § 8). L'API en émet aussi : les rappels RCS, les clics sur un lien suivi et
+   * les désabonnements écrits depuis la console ou l'API publique arrivent ICI, pas dans le worker.
+   *
+   * 🔴 CONSTRUIT AVANT LE DÉPÔT DES CONTACTS, qui l'appelle à chaque désabonnement. Le cache des espaces actifs
+   * est invalidé par l'écran du réglage : un outil branché reçoit les signaux de l'API sans attendre.
+   */
+  const integrationBatch = new PgIntegrationBatchStore(pool);
+  const espacesBatch = cacheCourt<ReadonlySet<string>>(DUREE_CACHE_ESPACES_ACTIFS_MS);
+  const emetteur = creerEmetteur({
+    destinations: [{ file: FILE_SIGNAUX_BATCH, espacesActifs: () => espacesBatch.lire('actifs', () => integrationBatch.espacesActifs()) }],
+    enfiler: (file, job, opts) => queue.enqueue(file, job, opts),
+    // eslint-disable-next-line no-console
+    log: (m) => console.warn(m),
+  });
+  /**
    * 🔴 L'ANNONCE D'UN OPT-OUT, POSÉE SUR LE DÉPÔT LUI-MÊME. Elle couvre par CONSTRUCTION toutes les méthodes
    * du dépôt capables d'écrire `opted_out` (la liste qui fait foi est dérivée par `tests/optout-poussee.test.ts`)
    * au lieu d'être recopiée sur chaque appelant, où elle aurait été oubliée au prochain bouton. Elle n'appelle
@@ -212,11 +234,14 @@ async function main(): Promise<void> {
    */
   const contactStore = new PgContactStore(
     pool,
-    creerAnnonceOptOut({
-      enfiler: (job, opts) => queue.enqueue(FILE_POUSSEE_OPTOUT, job, opts),
-      // eslint-disable-next-line no-console
-      log: (m) => console.warn(m),
-    }),
+    annoncerAussiAuxSignaux(
+      creerAnnonceOptOut({
+        enfiler: (job, opts) => queue.enqueue(FILE_POUSSEE_OPTOUT, job, opts),
+        // eslint-disable-next-line no-console
+        log: (m) => console.warn(m),
+      }),
+      emetteur,
+    ),
   );
   const contactHistoryStore = new PgContactHistoryStore(pool);
   const templateHintStore = new PgTemplateHintStore(pool);
@@ -648,6 +673,20 @@ async function main(): Promise<void> {
    */
   const etatComptePubCache = cacheCourt<EtatComptePub | null>(2 * 60_000);
 
+  /**
+   * Micro-cache du CATALOGUE DES TEMPLATES de `GET /v1/templates` : une minute, par espace et par WABA.
+   *
+   * 🔴 C'EST UNE ROUTE D'API PUBLIQUE, DONC APPELABLE EN BOUCLE. Sans cache, chaque appel relisait la liste
+   * COMPLÈTE du WABA chez Meta (jusqu'à vingt pages) : un intégrateur qui boucle épuiserait le quota de l'API
+   * de gestion du WABA, et `isMetaAuthError` prendrait ce refus pour une panne d'authentification, donc
+   * invaliderait le jeton du WABA et bloquerait les envois de l'espace.
+   *
+   * ⚠️ UN ÉCHEC DE META N'EST PAS GARDÉ : `cacheCourt` ne met jamais un rejet en cache, et `list` lève sur une
+   * réponse en erreur au lieu de rendre une liste vide. Un espace SANS WABA n'y entre pas non plus (la clé
+   * porte le WABA) : il en recevra un tout de suite après l'avoir branché.
+   */
+  const catalogueTemplatesCache = cacheCourt<TemplateSummary[]>(60_000);
+
   // Les dépendances du consentement posé par l'API : la MÊME construction que `/v1/contacts`
   // (`depsConsentementDe`, que `creerServiceContactsV1` appelle aussi), jamais une seconde écrite à la main.
   const depsConsentement = depsConsentementDe(contactStore, auditSink);
@@ -793,6 +832,8 @@ async function main(): Promise<void> {
       // QUI a clique (migration 0106). L espace vient du LIEN, jamais de l URL : un jeton d un autre client
       // ne doit pas s attribuer ce clic-ci.
       contactParJeton: (tenant, jeton) => trackedLinkStore.contactParJeton(tenant, jeton),
+      // Le clic ATTRIBUÉ devient un signal (spec 2026-09-24, § 8). L'espace vient du LIEN, comme pour le clic.
+      signalerClic: (tenant, contactId, code) => emetteur.emettreSignal(tenant, signalDuClic(contactId, code)),
     },
     // Réception PUBLIQUE des webhooks entrants. L'appelant est un outil tiers : le tenant vient du code, et
     // l'écriture du contact passe par `upsertContactsFromApi`, le chemin partagé avec la création à la main de
@@ -2612,6 +2653,36 @@ async function main(): Promise<void> {
     // Node « Envoi de mail » : boîtes SMTP + modèles (Contenu), et le résolveur qu'invalident les routes
     // d'écriture pour ne jamais garder un transport périmé (hôte/mot de passe changés).
     email: { accounts: emailAccounts, templates: emailTemplates, resolver: emailResolver },
+    // Paramètres > Intégrations > Batch. Les clés sont chiffrées ICI, jamais stockées en clair, et le cache de
+    // l'émetteur de l'API est invalidé à chaque changement : brancher ou débrancher prend effet tout de suite.
+    integrationBatch: {
+      lire: (tenant) => integrationBatch.lire(tenant),
+      // Mesuré avec la VRAIE fonction de chiffrement, pas une copie de sa règle (la regex de la clé est déjà
+      // écrite trois fois dans `src/config.ts`) : c'est exactement ce qu'`enregistrer` va appeler.
+      chiffrementPret: (() => {
+        try {
+          encryptSecret('sonde', config.ENCRYPTION_KEY);
+          return true;
+        } catch {
+          return false;
+        }
+      })(),
+      enregistrer: async (tenant, r) => {
+        const fait = await integrationBatch.enregistrer(tenant, {
+          cleRestChiffree: r.cleRest === undefined ? null : encryptSecret(r.cleRest, config.ENCRYPTION_KEY),
+          cleProjetChiffree: r.cleProjet === undefined ? null : encryptSecret(r.cleProjet, config.ENCRYPTION_KEY),
+          envoyerResume: r.envoyerResume,
+        });
+        espacesBatch.invalider('actifs');
+        return fait;
+      },
+      supprimer: async (tenant) => {
+        const fait = await integrationBatch.supprimer(tenant);
+        espacesBatch.invalider('actifs');
+        return fait;
+      },
+      audit: auditSink,
+    },
     rcsChannel: {
       etat: (tenant) => workflowRuntime.rcsStack.agents.etatPour(tenant),
       verifier: (apiKey) => verifierCleRcs(fetchGet, apiKey),
@@ -2646,7 +2717,8 @@ async function main(): Promise<void> {
        * joignabilité RCS, sorties du bloc. La logique et ses raisons vivent dans `traiterRapportRcs`, testée ;
        * ce câblage ne fait que brancher.
        */
-      onDlr: (tenant, dlr) => traiterRapportRcs({
+      onDlr: async (tenant, dlr) => {
+        await traiterRapportRcs({
         majLivraison: (id, statut, detail) => recipientStore.updateDeliveryByMessageId(id, statut, detail, null),
         mesureBloc: (id, statut) => nodeEventStore.recordStatusForMessage(id, statut),
         echecs: echecsMessages,
@@ -2654,7 +2726,15 @@ async function main(): Promise<void> {
         rcsInjoignable: (t, to, id) => workflowRuntime.executor.rcsUndeliverable(t, to, id),
         rcsDelivre: (t, to, id) => workflowRuntime.executor.rcsDelivered(t, to, id),
         maintenant: () => Date.now(),
-      }, tenant, dlr),
+        }, tenant, dlr);
+        // 3. Les SIGNAUX (spec 2026-09-24, § 8). APRÈS le rapport du lot 3 (livraison, échec d'un message libre,
+        //    joignabilité, sorties du bloc) : l'état que l'outil relira est alors écrit. L'émetteur ne lève
+        //    jamais : un rapport de livraison ne doit pas échouer pour lui.
+        if (dlr.status !== null && dlr.to !== '') {
+          const signal = signalDeLAccuse({ messageId: dlr.messageId, status: dlr.status, waId: dlr.to, motif: dlr.detail, codeMeta: null, le: null }, 'rcs');
+          if (signal !== null) await emetteur.emettreSignal(tenant, signal);
+        }
+      },
       onMo: async (tenant, mo) => {
         // Une position ou un fichier n'ont pas de texte : `apercuMo` en fabrique un LISIBLE plutôt que de
         // laisser une bulle vide et de jeter les coordonnées.
@@ -2668,6 +2748,9 @@ async function main(): Promise<void> {
             // eslint-disable-next-line no-console
             console.error(`STOP RCS reçu de ${mo.from} (${tenant}) sans fiche contact : rien à désabonner`);
           }
+          // Le STOP RCS n'écrit pas par le dépôt des contacts (il pose `rcs_optout_at`) : l'annonce composée
+          // plus haut ne le voit pas, il émet donc lui-même son signal.
+          if (marque) await emetteur.emettreSignal(tenant, signalDesabonnement(mo.from, 'rcs'));
         }
         // 2. Le fil d'inbox : un échange RCS se lit au même endroit qu'un échange WhatsApp, dans le fil unique
         //    du contact. La bulle porte son canal.
@@ -2681,6 +2764,10 @@ async function main(): Promise<void> {
           profileName: null,
           field: 'messages',
         }, 'rcs');
+        // 2 ter. La RÉPONSE comme signal (spec 2026-09-24, § 8) : le bouton tapé seulement, jamais le texte.
+        await emetteur.emettreSignal(tenant, signalDeLaReponse({
+          messageId: mo.messageId, waId: mo.from, bouton: mo.kind === 'suggestion' ? mo.text : null,
+        }, 'rcs'));
         // 2 bis. La FICHE CONTACT et les AUTOMATIONS, que le chemin Meta branche depuis toujours et pas
         //    celui-ci. Un client qui écrivait DEVIS en RCS ne déclenchait rien, sans le moindre journal :
         //    l'opérateur croyait son automation cassée. C'est aussi ce qui produisait le « STOP RCS sans
@@ -3005,14 +3092,16 @@ async function main(): Promise<void> {
        * Les catalogues de l'API publique (lot 4 du 2026-09-24). CE BLOC NE FAIT QUE BRANCHER : le tri (ce qui
        * peut partir) vit dans `src/http/v1-catalogues.ts`, testé.
        *
-       * ⚠️ `templates` lit la liste COMPLÈTE du WABA chez Meta à chaque appel, sans le cache de
-       * `templateVarInfo` (qui est par template) : un catalogue se lit rarement, et un cache de cinq minutes y
-       * masquerait un template tout juste approuvé.
+       * ⚠️ `templates` lit la liste COMPLÈTE du WABA chez Meta, à travers `catalogueTemplatesCache` (une
+       * minute, par espace et par WABA) : sans lui, un intégrateur qui boucle épuiserait le quota Meta du WABA.
+       * Un template tout juste approuvé y paraît au plus une minute plus tard, ce qui reste en deçà de ce que
+       * l'envoi tolère déjà (`templateVarInfo` garde cinq minutes par template).
        */
       catalogues: {
         templates: async (tenant) => {
           const waba = await repo.getTenantWabaId(tenant);
-          return waba ? (await metaFactory.templateClientForTenant(tenant)).list(waba) : [];
+          if (!waba) return [];
+          return catalogueTemplatesCache.lire(`${tenant}:${waba}`, async () => (await metaFactory.templateClientForTenant(tenant)).list(waba));
         },
         indicesDeVariables: (tenant) => templateHintStore.listerParEspace(tenant),
         scenariosPublies: (tenant) => workflowStore.listPublies(tenant),

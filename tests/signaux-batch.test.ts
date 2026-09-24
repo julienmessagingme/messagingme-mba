@@ -191,6 +191,26 @@ describe('versBatch : la traduction du dictionnaire (fonction PURE)', () => {
       }
     }
   });
+
+  it('🔴 `evenementsDepuis` : un événement plus ancien ne part pas, il est COMPTÉ, et l’état de sa fiche part quand même', () => {
+    // L'outil refuse un événement de plus de 24 h (page de l'API Profils, relue le 2026-09-25). La coupure est
+    // une OPTION (la fonction reste pure, sans date) : c'est le travail de la file qui la calcule.
+    const vieux = { ...signal(livre('rcs'), { id: '1'.repeat(32) }), le: '2026-09-23T09:00:00.000Z' };
+    const recent = signal(echecRcs, { id: '2'.repeat(32) });
+    const r = versBatch([vieux, recent], { resume: false, evenementsDepuis: '2026-09-23T10:00:00.000Z' });
+    expect(r.tropVieux).toBe(1);
+    const p = seul(r);
+    expect(p.events?.map((e) => e.attributes[CHAMP_ID_EVENEMENT])).toEqual(['2'.repeat(32)]);
+    expect(p.attributes?.em_rcs_reachable).toBe(false);
+
+    // Tous trop vieux : un profil SANS `events`, qui porte l'état de la fiche (celui du vieux signal compris).
+    const seulVieux = versBatch([vieux], { resume: false, evenementsDepuis: '2026-09-23T10:00:00.000Z' });
+    expect(seulVieux.tropVieux).toBe(1);
+    expect(seul(seulVieux)).toEqual({ identifiers: { custom_id: 'crm-7781' }, attributes: { em_contact_id: C, em_whatsapp_optout: false, em_rcs_optout: false, em_rcs_reachable: true } });
+
+    // Sans l'option, rien n'est écarté : le comportement d'avant.
+    expect(versBatch([vieux], { resume: false }).tropVieux).toBe(0);
+  });
 });
 
 class FauxTransport implements HttpTransport {

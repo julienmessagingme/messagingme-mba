@@ -21,6 +21,8 @@ import type { TriggerDeps } from './triggers';
 import type { TestTokenDeps } from './test-token';
 import type { EventStore } from './store';
 import type { AuditSink } from '../audit/journal';
+import type { SignalAccuse } from './delivery';
+import type { SignalReponse } from './inbound';
 
 /** Report des valeurs d'un WhatsApp Flow rempli vers les user fields du contact (optionnel). */
 export interface FlowMappingDeps {
@@ -102,24 +104,29 @@ interface WebhookJobDepsCommunes {
  * enregistrerait l'arrivée sans router le lead ne produirait AUCUNE erreur : la ligne serait écrite, et
  * chaque lead d'une publicité pilotée partirait dans les automations ordinaires, y compris celles d'une pub
  * qui confie ses leads à l'agent de Meta. Un clic payé répondu par le mauvais scénario, en silence.
+ *
+ * 🔴 LES SIGNAUX ENTRENT DANS LES MÊMES COUPLES (lot 6 de l'API publique) : un accusé arrive par DEUX files
+ * (`webhook` et `webhook-status`), et un câblage qui oublierait le puits sur l'une perdrait les accusés d'un
+ * découpage de lots qui appartient à Meta, sans aucune erreur. Les tests qui n'en parlent pas passent
+ * `aucunSignalAccuse` et `aucunSignalReponse` (`tests/webhook-fixtures.ts`).
  */
 export type WebhookJobDeps = WebhookJobDepsCommunes
   & (
     // `echecsLibres` entre dans le couple des accusés (lot 3 de l'API publique) : une file qui applique des
     // statuts doit aussi noter l'échec d'un message libre, sinon il redevient invisible selon la file.
-    { delivery: DeliveryStore; tarifsMeta: TarifsMetaSink; echecsLibres: EchecsLibresSink }
-    | { delivery?: undefined; tarifsMeta?: undefined; echecsLibres?: undefined }
+    { delivery: DeliveryStore; tarifsMeta: TarifsMetaSink; echecsLibres: EchecsLibresSink; signauxAccuse: SignalAccuse }
+    | { delivery?: undefined; tarifsMeta?: undefined; echecsLibres?: undefined; signauxAccuse?: undefined }
   )
   & (
-    { inbox: InboxStore; arriveesPub: ArriveesPubDeps; routagePub: RoutagePubDeps }
-    | { inbox?: undefined; arriveesPub?: undefined; routagePub?: undefined }
+    { inbox: InboxStore; arriveesPub: ArriveesPubDeps; routagePub: RoutagePubDeps; signalReponse: SignalReponse }
+    | { inbox?: undefined; arriveesPub?: undefined; routagePub?: undefined; signalReponse?: undefined }
   );
 
 export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Promise<void> {
   const {
     store, delivery, inbox, flowMapping, workflowAdvance, remiseMbaEntrant, inboundContactUpsert,
     handover, triggers, testTokens, nodeEvents, inboundOptOut, inboundAssignation, remiseMba,
-    tarifsMeta, echecsLibres, arriveesPub, routagePub,
+    tarifsMeta, echecsLibres, arriveesPub, routagePub, signauxAccuse, signalReponse,
   } = deps;
   const events = parseWebhook(raw);
   // `insertEvent` renvoie false quand l'événement était DÉJÀ enregistré : c'est le signal « ce webhook est un
@@ -131,7 +138,7 @@ export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Prom
     const isNew = await store.insertEvent({ source: ev.source, dedupKey: ev.dedupKey, data: ev.data });
     if (!isNew && ev.dedupKey.startsWith('msg:')) alreadySeen.add(ev.dedupKey.slice(4));
   }
-  if (delivery) await processStatuses(events, delivery, { tarifs: tarifsMeta, echecsLibres, nodeEvents, remiseMba });
+  if (delivery) await processStatuses(events, delivery, { tarifs: tarifsMeta, echecsLibres, nodeEvents, remiseMba, signaux: signauxAccuse });
   // Contacts CRÉÉS par ce webhook (clé `tenant:waId`). Le signal « 1er message d'un contact inconnu » n'existe
   // qu'à l'instant de l'upsert : une fois la fiche créée, plus rien ne le distingue d'un habitué. On le capture
   // donc au vol, pour la durée de CE job (aucun état global, aucune requête supplémentaire).
@@ -148,7 +155,11 @@ export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Prom
         return r;
       }
     : undefined;
-  if (inbox) await processInbound(raw, inbox, upsert, inboundOptOut, inboundAssignation);
+  if (inbox) {
+    await processInbound(raw, inbox, {
+      upsertContact: upsert, optOut: inboundOptOut, assignation: inboundAssignation, signalReponse,
+    });
+  }
   // L'arrivée publicitaire, APRÈS l'upsert du contact qu'elle retrouve par son wa_id. Isolée par message dans
   // `processArriveesPub` : elle ne fait jamais échouer le job.
   if (arriveesPub) await processArriveesPub(raw, arriveesPub);

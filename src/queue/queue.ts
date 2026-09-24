@@ -30,7 +30,12 @@ export interface Queue {
   enqueue(
     name: string,
     data: unknown,
-    opts?: { expireInSeconds?: number; groupId?: string },
+    /**
+     * `priority` (lot 6 de l'API publique, 2026-09-24) : pg-boss prend les jobs par `priority desc`, puis par
+     * date de création. Absente = 0, le comportement de toutes les files d'avant. Sert à faire passer les
+     * signaux qui répondent à un geste du contact devant un arriéré d'accusés (`PRIORITE_SIGNAL`).
+     */
+    opts?: { expireInSeconds?: number; groupId?: string; priority?: number },
   ): Promise<void>;
   /**
    * Enregistre un worker qui traite les jobs de la file `name`.

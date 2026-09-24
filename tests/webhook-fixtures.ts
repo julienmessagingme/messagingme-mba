@@ -2,6 +2,8 @@ import type { TarifsMetaSink } from '../src/webhooks/tarif-meta';
 import type { EchecsLibresSink } from '../src/webhooks/delivery';
 import type { ArriveesPubDeps } from '../src/webhooks/arrivees-pub';
 import type { RoutagePubDeps } from '../src/webhooks/routage-pub';
+import type { SignalAccuse } from '../src/webhooks/delivery';
+import type { SignalReponse } from '../src/webhooks/inbound';
 
 /**
  * Les dépendances que `WebhookJobDeps` rend obligatoires (lot 1 des publicités Click-to-WhatsApp, puis le
@@ -12,6 +14,10 @@ export const aucunTarif: TarifsMetaSink = { enregistrer: async () => {} };
 
 /** Aucun journal des échecs de messages libres (lot 3 de l'API publique) : le puits est inerte et le DIT. */
 export const aucunEchecLibre: EchecsLibresSink = { noter: async () => null };
+
+/** Aucun signal remonté : le test ne porte pas sur les signaux, et le DIT (lot 6 de l'API publique). */
+export const aucunSignalAccuse: SignalAccuse = async () => {};
+export const aucunSignalReponse: SignalReponse = async () => {};
 export const aucuneArriveePub: ArriveesPubDeps = { phoneNumberTenant: async () => null, enregistrer: async () => 'ecrite' };
 
 /**

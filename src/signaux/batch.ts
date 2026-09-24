@@ -33,6 +33,14 @@ export const BATCH_MAX_EVENEMENTS = 15;
  * et la donnée disparaît. D'où le résumé en morceaux (`morceauxDuResume`), et `propre`, qui écarte le vide.
  */
 export const BATCH_MAX_TEXTE = 300;
+/**
+ * 🔴 L'OUTIL N'ACCEPTE QUE LES ÉVÉNEMENTS DES DERNIÈRES 24 HEURES, et aucun dans le futur (page de l'API Profils,
+ * relue le 2026-09-25). Un événement plus vieux y est refusé seul, en 202 `SUCCESS_WITH_PARTIAL_ERRORS`.
+ * Fenêtre retenue : 24 h MOINS CINQ MINUTES, la marge couvrant la durée d'un appel et de ses rejeux
+ * (`withRetry`, quelques dizaines de secondes au plus) : un événement coupé à 23 h 56 se dit dans le journal du
+ * job, un événement envoyé à 24 h 01 serait refusé par l'outil.
+ */
+export const BATCH_FENETRE_EVENEMENT_MS = 24 * 60 * 60_000 - 5 * 60_000;
 
 export type ValeurBatch = string | number | boolean;
 export interface EvenementBatch {
@@ -48,6 +56,12 @@ export interface ProfilBatch {
 export interface OptionsBatch {
   /** L'espace a coché « Envoyer le résumé des conversations ». */
   resume: boolean;
+  /**
+   * Instant (ISO) avant lequel un ÉVÉNEMENT n'est plus envoyé : l'outil le refuserait (`BATCH_FENETRE_EVENEMENT_MS`).
+   * Il est compté (`tropVieux`), et l'état de sa fiche part quand même. Absent = aucun filtre. Calculé par
+   * l'appelant, pour que cette fonction reste pure.
+   */
+  evenementsDepuis?: string;
 }
 
 type Brut = Record<string, ValeurBatch | null | undefined>;
@@ -140,8 +154,8 @@ function attributsDEvenement(c: ContenuSignal): Brut {
 
 /**
  * ⚠️ `time` est la date du signal. La page de l'API Profils (relue le 2026-09-25) n'accepte que des événements
- * des DERNIÈRES 24 HEURES, et aucun dans le futur : la traduction reste pure et ne filtre rien, c'est à la file de
- * ne pas rejouer une poussée au-delà de ce délai.
+ * des DERNIÈRES 24 HEURES, et aucun dans le futur : la traduction reste pure, et c'est l'option
+ * `evenementsDepuis`, calculée par le travail de la file, qui écarte un événement trop vieux (`versBatch`).
  */
 function evenement(s: SignalComplet, o: OptionsBatch): EvenementBatch {
   const c = s.contenu;
@@ -168,9 +182,16 @@ function evenement(s: SignalComplet, o: OptionsBatch): EvenementBatch {
  * - Bornes de Batch : `BATCH_MAX_PROFILS` profils par appel, `BATCH_MAX_EVENEMENTS` événements par profil et par
  *   appel. Au-delà, la fiche repasse dans l'appel SUIVANT (jamais deux fois dans le même), et son état part avec
  *   sa dernière tranche.
+ * - Un événement antérieur à `evenementsDepuis` n'est pas envoyé, il est compté (`tropVieux`) ; son signal
+ *   contribue quand même à l'état de la fiche, qui part seul (sans `events`) si plus aucun événement ne reste.
  */
-export function versBatch(signaux: readonly SignalComplet[], options: OptionsBatch): { requetes: ProfilBatch[][]; sansIdentifiant: number } {
+export function versBatch(
+  signaux: readonly SignalComplet[],
+  options: OptionsBatch,
+): { requetes: ProfilBatch[][]; sansIdentifiant: number; tropVieux: number } {
   let sansIdentifiant = 0;
+  let tropVieux = 0;
+  const depuis = options.evenementsDepuis === undefined ? Number.NEGATIVE_INFINITY : Date.parse(options.evenementsDepuis);
   const parProfil = new Map<string, { attributes: Record<string, ValeurBatch>; events: EvenementBatch[] }>();
   for (const s of signaux) {
     const customId = s.contact.externalId?.trim() ?? '';
@@ -180,7 +201,8 @@ export function versBatch(signaux: readonly SignalComplet[], options: OptionsBat
     }
     const p = parProfil.get(customId) ?? { attributes: {}, events: [] };
     Object.assign(p.attributes, attributsDeFiche(s));
-    p.events.push(evenement(s, options));
+    if (Date.parse(s.le) < depuis) tropVieux += 1;
+    else p.events.push(evenement(s, options));
     parProfil.set(customId, p);
   }
 
@@ -188,16 +210,22 @@ export function versBatch(signaux: readonly SignalComplet[], options: OptionsBat
   for (const [customId, p] of parProfil) {
     const tranches: EvenementBatch[][] = [];
     for (let i = 0; i < p.events.length; i += BATCH_MAX_EVENEMENTS) tranches.push(p.events.slice(i, i + BATCH_MAX_EVENEMENTS));
+    // Tous ses événements étaient trop vieux : l'état de la fiche part SEUL, dans une tranche sans événement.
+    if (tranches.length === 0) tranches.push([]);
     let depart = 0;
     tranches.forEach((events, i) => {
       let r = depart;
       while ((requetes[r]?.length ?? 0) >= BATCH_MAX_PROFILS) r += 1;
       const derniere = i === tranches.length - 1;
-      (requetes[r] ??= []).push({ identifiers: { custom_id: customId }, ...(derniere ? { attributes: p.attributes } : {}), events });
+      (requetes[r] ??= []).push({
+        identifiers: { custom_id: customId },
+        ...(derniere ? { attributes: p.attributes } : {}),
+        ...(events.length > 0 ? { events } : {}),
+      });
       depart = r + 1;
     });
   }
-  return { requetes, sansIdentifiant };
+  return { requetes, sansIdentifiant, tropVieux };
 }
 
 /**

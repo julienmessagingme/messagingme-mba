@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { BASE_QUEUES, ALL_QUEUES, dlqName, filetNotifieSecondes, notifieePour, pollingSecondsFor, FILES_NOTIFIEES, QUEUE_POLLING_SECONDS, SEUIL_RAFALE, SEUILS_RAFALE, seuilRafalePour, SONDAGE_FILET_NOTIFIE } from '../src/queue/names';
+import { FILE_SIGNAUX_BATCH } from '../src/signaux/batch';
 
 /**
  * Garde-fou anti-drift : /ops, pg-boss et le worker doivent voir la MÊME liste de files. Si on ajoute une file
@@ -32,6 +33,7 @@ describe('queue names (source unique)', () => {
       if (name === 'AUTOMATION_EVENT_QUEUE') return 'automation-event';
       if (name === 'AGENT_TURN_QUEUE') return 'agent-turn';
       if (name === 'FILE_POUSSEE_OPTOUT') return 'optout-poussee';
+      if (name === 'FILE_SIGNAUX_BATCH') return FILE_SIGNAUX_BATCH;
       throw new Error(`constante de file inconnue du test : ${name} (ajoute sa résolution ici)`);
     });
     const worked = [...new Set([...literals, ...resolved])];
@@ -51,6 +53,7 @@ describe('queue names (source unique)', () => {
       AUTOMATION_EVENT_QUEUE: 'automation-event',
       AGENT_TURN_QUEUE: 'agent-turn',
       FILE_POUSSEE_OPTOUT: 'optout-poussee',
+      FILE_SIGNAUX_BATCH,
     };
     const resolus = new Set([...literals, ...viaConst.map((n) => RESOLUTION[n] ?? n)]);
     for (const q of BASE_QUEUES) {
@@ -283,5 +286,17 @@ describe('cadence de polling par file', () => {
     for (const o of options) {
       expect(o, `concurrency sans groupConcurrency : ${o}`).toContain('groupConcurrency');
     }
+  });
+});
+
+describe('la file des signaux (lot 6 de l’API publique)', () => {
+  it('🔴 elle est déclarée, donc visible de /ops avec sa DLQ', () => {
+    expect(BASE_QUEUES as readonly string[]).toContain(FILE_SIGNAUX_BATCH);
+    expect(ALL_QUEUES).toContain(dlqName(FILE_SIGNAUX_BATCH));
+  });
+
+  it('traitement de fond : sondée lentement, jamais réveillée', () => {
+    expect(pollingSecondsFor(FILE_SIGNAUX_BATCH)).toBe(30);
+    expect(notifieePour(FILE_SIGNAUX_BATCH)).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { arriveeDepuisMessage, processArriveesPub, type ArriveePub, type IssueArrivee } from '../src/webhooks/arrivees-pub';
 import { handleWebhookJob } from '../src/webhooks/handler';
+import { aucunSignalReponse } from './webhook-fixtures';
 
 const referral = {
   source_url: 'https://fb.me/x', source_id: '120212345678901234', source_type: 'ad',
@@ -108,6 +109,7 @@ describe('handleWebhookJob : l’arrivée publicitaire', () => {
     await handleWebhookJob(payload([message('wamid.h', '33611', referral)]), {
       store: { insertEvent: async () => true },
       inbox: { phoneNumberTenant: async () => 't1', recordInbound: async () => {} },
+      signalReponse: aucunSignalReponse,
       inboundContactUpsert: async () => { ordre.push('upsert'); return 'created'; },
       arriveesPub: {
         phoneNumberTenant: async () => 't1',

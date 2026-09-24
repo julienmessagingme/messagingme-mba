@@ -8,6 +8,7 @@ import { registerImport } from './http/import';
 import { registerCampaigns } from './http/campaigns';
 import { registerRcsMessages } from './http/rcs-messages';
 import { registerRcsChannel } from './http/rcs-channel';
+import { registerIntegrationBatch } from './http/integration-batch';
 import { registerRcsCallback } from './http/rcs-callback';
 import { registerRcsMedia } from './http/rcs-media';
 import { registerTemplates } from './http/templates';
@@ -87,6 +88,7 @@ import type { ImportRouteDeps } from './http/import';
 import type { CampaignRouteDeps } from './http/campaigns';
 import type { RcsMessageRouteDeps } from './http/rcs-messages';
 import type { RcsChannelRouteDeps } from './http/rcs-channel';
+import type { IntegrationBatchRouteDeps } from './http/integration-batch';
 import type { RcsCallbackRouteDeps } from './http/rcs-callback';
 import type { RcsMediaRouteDeps } from './http/rcs-media';
 import type { TemplateRouteDeps } from './http/templates';
@@ -162,6 +164,8 @@ export interface ServerDeps {
   rcsMessages?: RcsMessageRouteDeps;
   /** Activation du canal RCS d'un workspace (page d'accueil). Écritures admin-only. */
   rcsChannel?: RcsChannelRouteDeps;
+  /** Paramètres > Intégrations > Batch : l'outil qui reçoit les signaux (lot 6 de l'API publique). Admin, lecture comprise. */
+  integrationBatch?: IntegrationBatchRouteDeps;
   /** Rappels smsmode du canal RCS (livraison + réponses). PUBLIQUE : le code d'URL porte le workspace. */
   rcsCallback?: RcsCallbackRouteDeps;
   /** Visuels des messages RCS : téléversement admin, et service PUBLIC du fichier (`/m/<code>.jpg`). */
@@ -464,6 +468,7 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
     // handlers par `forbidNonAdmin`, comme pour les templates.
     entree('rcsMessages', 'tenant', deps.rcsMessages, (app, d, g) => registerRcsMessages(app, d, g.auth)),
     entree('rcsChannel', 'tenant', deps.rcsChannel, (app, d, g) => registerRcsChannel(app, d, g.auth)),
+    entree('integrationBatch', 'tenant', deps.integrationBatch, (app, d, g) => registerIntegrationBatch(app, d, g.admin)),
     // Visuels RCS. Monté avec `auth` alors qu'il porte AUSSI une route publique `/m/<code>.<ext>` : les
     // gardes de ce projet sont posées par route (`preHandler`), pas par groupe, donc la route de lecture
     // reste ouverte comme elle doit l'être. C'est l'opérateur télécom qui télécharge l'image, sans session.

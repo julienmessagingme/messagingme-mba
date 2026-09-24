@@ -40,3 +40,14 @@ describe('câblage de /v1/sends', () => {
     expect(source).toMatch(/listContactsPourEnvoi: \(tenant, ids\) => repo\.listContactsPourEnvoiApi\(tenant, ids\)/);
   });
 });
+
+describe('câblage de /v1/templates', () => {
+  it('🔴 la liste des templates chez Meta passe par un cache d’UNE minute, par espace et par WABA', () => {
+    // Sans lui, un intégrateur qui boucle sur `GET /v1/templates` relit la liste COMPLÈTE chez Meta à chaque
+    // appel, épuise le quota de l'API de gestion du WABA, et le refus pris pour une panne d'authentification
+    // invaliderait le jeton du WABA, donc bloquerait les envois de l'espace. Un échec de Meta n'est jamais
+    // gardé : c'est la promesse de `cacheCourt` (`tests/cache-court.test.ts`).
+    expect(source).toMatch(/const catalogueTemplatesCache = cacheCourt<TemplateSummary\[\]>\(60_000\)/);
+    expect(source).toMatch(/templates: async \(tenant\) => \{\s*const waba = await repo\.getTenantWabaId\(tenant\);\s*if \(!waba\) return \[\];\s*return catalogueTemplatesCache\.lire\(`\$\{tenant\}:\$\{waba\}`, async \(\) => \(await metaFactory\.templateClientForTenant\(tenant\)\)\.list\(waba\)\);/);
+  });
+});

@@ -40,6 +40,19 @@ export interface LinksRouteDeps {
    * exactement le comportement d'avant.
    */
   contactParJeton?(tenantId: string, jeton: string): Promise<string | null>;
+  /**
+   * Remonte le clic comme SIGNAL (spec 2026-09-24, § 8), seulement quand on sait QUI a cliqué : un clic
+   * anonyme n'a pas de fiche, donc pas de profil à mettre à jour chez l'outil du client.
+   *
+   * REQUISE : la redirection est le seul endroit où le clic se sait, un câblage qui l'oublierait perdrait tous
+   * les clics sans erreur.
+   *
+   * 🔴 LA REDIRECTION NE L'ATTEND PAS, contrairement à `recordClick`. Au premier clic après l'expiration du cache
+   * des espaces actifs, l'émetteur lit la base puis enfile un job : l'attendre ajouterait ces deux allers-retours
+   * au chemin de CHAQUE lien déjà envoyé, pour une donnée que personne ne regarde à la seconde. Lancée sans être
+   * attendue, sa panne se journalise et ne touche pas au 302.
+   */
+  signalerClic(tenantId: string, contactId: string, code: string): Promise<void>;
 }
 
 /** Un code est 12 caractères base32 minuscules. Tout le reste est refusé sans toucher la base. */
@@ -117,6 +130,18 @@ export function registerLinks(app: FastifyInstance, deps: LinksRouteDeps): void 
         await deps.recordClick(normalise, lien.tenantId, contactId);
       } catch (err) {
         journaliser('error', 'clic_non_enregistre', { err, code: normalise, tenantId: lien.tenantId });
+      }
+      if (contactId !== null) {
+        const attribue = contactId;
+        // Lancé, JAMAIS attendu (voir `signalerClic`). La fonction `async` enveloppe aussi une levée SYNCHRONE du
+        // câblage : aucune promesse rejetée ne reste sans gestionnaire.
+        void (async () => {
+          try {
+            await deps.signalerClic(lien.tenantId, attribue, normalise);
+          } catch (err) {
+            journaliser('error', 'signal_clic_non_emis', { err, code: normalise, tenantId: lien.tenantId });
+          }
+        })();
       }
     }
 

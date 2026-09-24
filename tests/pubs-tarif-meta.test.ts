@@ -4,7 +4,7 @@ import { processStatuses } from '../src/webhooks/delivery';
 import type { DeliveryStore, DeliveryStatus } from '../src/webhooks/delivery';
 import type { WebhookEvent } from '../src/webhooks/parse';
 import { handleWebhookJob } from '../src/webhooks/handler';
-import { aucunEchecLibre } from './webhook-fixtures';
+import { aucunEchecLibre, aucunSignalAccuse } from './webhook-fixtures';
 
 const accuse = (id: string, status: string, pricing?: unknown): unknown =>
   ({ id, status, ...(pricing === undefined ? {} : { pricing }) });
@@ -101,6 +101,7 @@ describe('handleWebhookJob : le tarif des accusés', () => {
       store: { insertEvent: async () => true },
       delivery: new FakeDelivery(),
       echecsLibres: aucunEchecLibre,
+      signauxAccuse: aucunSignalAccuse,
       tarifsMeta: { enregistrer: async (pn, t) => { vus.push(`${pn}:${t.messageId}:${t.type}`); } },
     });
     expect(vus).toEqual(['pn9:wamid.h1:free_entry_point']);

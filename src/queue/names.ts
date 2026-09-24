@@ -10,7 +10,7 @@
  * sont enregistrées qu'à l'exécution (analyse activée / push connecteur), mais la file EXISTE côté /ops même
  * désactivée — getQueueLoad renvoie zéro job si aucun n'a été enfilé — donc on les liste inconditionnellement.
  */
-export const BASE_QUEUES = ['webhook', 'webhook-status', 'campaign-run', 'analyze-conversation', 'push-analysis', 'hubspot-catchup', 'automation-event', 'agent-turn', 'optout-poussee'] as const;
+export const BASE_QUEUES = ['webhook', 'webhook-status', 'campaign-run', 'analyze-conversation', 'push-analysis', 'hubspot-catchup', 'automation-event', 'agent-turn', 'optout-poussee', 'signaux-batch'] as const;
 
 /**
  * Convention de nommage de la dead-letter queue d'une file. UNE seule définition : PgBossQueue.ensure()
@@ -50,6 +50,11 @@ export const ALL_QUEUES: string[] = BASE_QUEUES.flatMap((q) => [q, dlqName(q)]);
  * - `optout-poussee` : pousse un refus vers le systeme du client. Traitement de fond lui aussi, et la
  *   demi-minute d'attente ne change rien a la conformite : ce qui compte est que le refus soit ECRIT,
  *   ce qui est deja fait quand le job est enfile -> 30 s.
+ * - `signaux-batch` : pousse les signaux vers l'outil qu'un client a branché (lot 6 de l'API publique).
+ *   Traitement de fond : un signal remonté trente secondes plus tard ne change rien à une orchestration qui
+ *   réagit en minutes -> 30 s. ⚠️ Ce qui tient la promesse « dans la minute » des réponses, clics et
+ *   désabonnements n'est pas cette cadence, c'est leur PRIORITÉ (`PRIORITE_SIGNAL`) : sans elle, ils
+ *   attendraient derrière l'arriéré d'accusés d'une grosse campagne, que la file d'un espace traite un par un.
  *
  * `tests/queue-names.test.ts` garde l'invariant : toute file de `BASE_QUEUES` a une entrée ici.
  */
@@ -63,6 +68,7 @@ export const QUEUE_POLLING_SECONDS: Record<(typeof BASE_QUEUES)[number], number>
   'hubspot-catchup': 30,
   'agent-turn': 2,
   'optout-poussee': 30,
+  'signaux-batch': 30,
 };
 
 /**
@@ -96,6 +102,7 @@ export const FILES_NOTIFIEES: Record<(typeof BASE_QUEUES)[number], boolean> = {
   'push-analysis': false, // traitement de fond
   'hubspot-catchup': false, // traitement de fond
   'optout-poussee': false, // le refus est deja ecrit ; sa diffusion peut attendre le tour d'horloge
+  'signaux-batch': false, // traitement de fond, et une rafale d'accusés en produit autant : l'espacer protège la base
 };
 
 /**
