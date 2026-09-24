@@ -124,10 +124,18 @@ function MbaGuide() {
           <div className={cardCls}>
             <div className="mb-2 inline-flex rounded-lg bg-brand-50 p-2 text-brand-600"><Ico d="M4 13h4l2 3h4l2-3h4M4 13V6a2 2 0 012-2h12a2 2 0 012 2v7" /></div>
             <h4 className="text-sm font-semibold text-ink-900">{t('Pendant la conversation', 'During the conversation')}</h4>
+            {/*
+              🔴 « ON LES MET EN PLACE AVEC VOUS » EST DEVENU FAUX, et c'est une capacité qu'on se cachait à
+              soi-même (corrigé le 2026-09-24). Cette phrase datait d'avant Tools > Connecteurs API et
+              d'avant le relais du 2026-09-21 : le client DÉCLARE son système lui-même, et l'onglet Outils de
+              l'agent décide ce que l'agent a le droit d'appeler. Dire le contraire range une fonction en
+              libre-service dans la case « prestation », donc personne ne la trouve et personne ne s'en sert.
+              ⚠️ L'accompagnement reste vrai, il n'est simplement plus un PRÉALABLE.
+            */}
             <p className="mt-1 text-sm leading-relaxed text-ink-600">
               {t(
-                'L’agent consulte un de vos systèmes en direct pour aider le client : vérifier une commande, proposer un créneau, mettre à jour une fiche. Ces connexions sont propres à votre métier : on les met en place avec vous, dans le cadre de l’accompagnement.',
-                'The agent checks one of your systems live to help the customer: look up an order, offer a slot, update a record. These connections are specific to your business: we set them up with you, as part of the onboarding service.',
+                'L’agent consulte un de vos systèmes en direct pour aider le client : vérifier une commande, proposer un créneau, mettre à jour une fiche. Vous déclarez l’appel vous-même dans Tools > Connecteurs API, puis vous dites dans l’onglet Outils de l’agent ce qu’il a le droit d’appeler. Nous vous accompagnons si vous le souhaitez, mais vous n’attendez personne.',
+                'The agent checks one of your systems live to help the customer: look up an order, offer a slot, update a record. You declare the call yourself in Tools > API connectors, then the agent’s Tools tab says what it may call. We help if you want, but you are not waiting on anyone.',
               )}
             </p>
           </div>
@@ -155,7 +163,21 @@ function MbaGuide() {
           {[
             t('Un numéro WhatsApp connecté à votre espace.', 'A WhatsApp number connected to your workspace.'),
             t('Les conditions Meta Business AI acceptées sur ce numéro.', 'The Meta Business AI terms accepted on that number.'),
-            t('Un secteur d’activité ouvert par Meta : le déploiement est progressif, secteur par secteur.', 'A business sector opened by Meta: the rollout is gradual, sector by sector.'),
+            /*
+              🔴 CETTE LIGNE DISAIT L'INVERSE DE LA DOCUMENTATION DE META, ET DANS LES DEUX SENS (corrigée le
+              2026-09-24, page de référence relue ce jour-là). Elle annonçait « un secteur ouvert par Meta, le
+              déploiement est progressif, secteur par secteur », donc « attendez votre tour ». Meta écrit
+              l'opposé : « all verticals are supported except Finance, Government, Health, Alcohol, Gambling,
+              over-the-counter drugs, and matrimony services ». Ce n'est pas une file d'attente, c'est une
+              liste d'exclusion. Un prospect de la santé lisait « plus tard » quand la réponse est « non », et
+              tous les autres lisaient « plus tard » quand la réponse est « oui ».
+              ⚠️ La page ne mentionne NI déploiement progressif, NI acceptation de conditions parmi les
+              critères d'éligibilité, NI tarif. Les conditions restent listées ci-dessous parce que NOTRE
+              mesure les a rencontrées (un 403 de conditions non signées), pas parce que Meta les documente.
+            */
+            t('Un secteur d’activité accepté : Meta prend tous les secteurs SAUF la finance, le secteur public, la santé, l’alcool, les jeux d’argent, les médicaments sans ordonnance et les services matrimoniaux.', 'An accepted business sector: Meta supports all verticals EXCEPT finance, government, health, alcohol, gambling, over-the-counter drugs and matrimony services.'),
+            t('Un pays autorisé, et un compte WhatsApp Business Platform d’entreprise en règle, ni restreint ni banni.', 'An authorized country, and an enterprise WhatsApp Business Platform account in good standing, neither restricted nor banned.'),
+            t('Aucun autre agent conversationnel déjà en service sur ce numéro.', 'No other AI agent already running on that number.'),
           ].map((li) => (
             <li key={li} className="flex items-start gap-2 text-sm text-ink-700">
               <Ico d="M20 6L9 17l-5-5" className="mt-0.5 h-4 w-4 shrink-0 text-mint-600" />
@@ -172,12 +194,29 @@ function MbaGuide() {
             )}
           </p>
         </div>
+        {/*
+          🔴 CE BLOC PROMETTAIT UN FUTUR DÉJÀ ARRIVÉ, ET C'ÉTAIT LA DERNIÈRE CHOSE QUE LE LECTEUR VOYAIT. Il
+          annonçait que la configuration en direct « s'ouvrira sur cette page » : elle existe depuis
+          mi-août, dans Paramètres, avec onze onglets. Un guide qui finit sur « bientôt » alors que c'est
+          fait envoie le client attendre devant une porte ouverte, et fait douter du reste de la page.
+        */}
         <div className="rounded-xl border border-brand-200 bg-brand-50/50 p-4 text-sm leading-relaxed text-ink-700">
-          <p className="font-medium text-brand-700">{t('Bientôt configurable ici', 'Configurable here soon')}</p>
+          <p className="font-medium text-brand-700">{t('C’est configurable ici', 'Configure it here')}</p>
           <p className="mt-1">
             {t(
-              'La configuration en direct de l’agent (connaissance, personnalité, activation) s’ouvrira sur cette page dès que Meta rendra l’agent disponible pour votre numéro. En attendant, ce guide vous permet de tout préparer.',
-              'Live configuration of the agent (knowledge, personality, activation) will open on this page as soon as Meta makes the agent available for your number. In the meantime, this guide lets you prepare everything.',
+              'La configuration en direct de l’agent se fait dans Paramètres : sa connaissance, son ton, ce qu’il a le droit de faire, et sa mise en service. Ce guide reste là pour comprendre à quoi il sert et ce qu’il faut préparer.',
+              'Live configuration happens in Settings: its knowledge, its tone, what it may do, and putting it into service. This guide stays here to explain what it is for and what to prepare.',
+            )}
+          </p>
+          {/* ⚠️ UN LIEN, PAS UNE INVITATION À CHERCHER : les deux écrans sont voisins dans le menu, mais
+              quelqu'un qui lit ce guide ne connaît pas encore ce menu. */}
+          <Link href="/mba/parametres" className="mt-2 inline-block font-medium text-brand-700 underline">
+            {t('Ouvrir les paramètres de l’agent', 'Open the agent settings')}
+          </Link>
+          <p className="mt-2 text-xs text-ink-500">
+            {t(
+              'Si Meta n’a pas encore ouvert l’agent sur votre numéro, cet écran vous le dira et vous renverra ici : rien ne se perd.',
+              'If Meta has not opened the agent on your number yet, that screen will say so and send you back here: nothing is lost.',
             )}
           </p>
         </div>
