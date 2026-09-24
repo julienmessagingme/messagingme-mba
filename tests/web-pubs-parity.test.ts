@@ -180,7 +180,10 @@ describe('le bandeau de l’agent de Meta éteint', () => {
   it('🔴 `null` NE VAUT PAS « éteint » : le bandeau exige un FAUX lu', () => {
     // Le défaut corrigé : `!agentMetaOuvert` sortait aussi sur `null`, donc l'avertissement paraissait
     // sur le chemin nominal avant que le réglage soit lu, et restait à demeure si la lecture échouait.
-    expect(source()).not.toContain('!agentMetaOuvert');
+    // ⚠️ LES DEUX FICHIERS, pas seulement la liste : le défaut a vécu dans le FORMULAIRE la dernière
+    // fois, et cette assertion ne regardait que l'écran de liste, donc pas là où il était.
+    const form = readFileSync(join(process.cwd(), 'web/components/PubFormulaire.tsx'), 'utf8');
+    for (const fichier of [source(), form]) expect(fichier).not.toContain('!agentMetaOuvert');
     const page = readFileSync(join(process.cwd(), 'web/app/publicites/page.tsx'), 'utf8');
     // ⚠️ ANCRÉES SUR LE SYMBOLE, pas sur un fragment qui traîne. `useState<boolean | null>(null)` seul
     // serait satisfait par le premier AUTRE tri-état ajouté à cet écran, et la garde redeviendrait
@@ -209,8 +212,18 @@ describe('le bandeau de l’agent de Meta éteint', () => {
      * occurrence transmette la variable nue.
      */
     const page = readFileSync(join(process.cwd(), 'web/app/publicites/page.tsx'), 'utf8');
-    const passages = [...page.matchAll(/agentMetaOuvert=\{([^}]*)\}/g)].map((m) => m[1]);
-    expect(passages.length).toBeGreaterThanOrEqual(2);
-    for (const p of passages) expect(p).toBe('agentMetaOuvert');
+    const passages = [...page.matchAll(/agentMetaOuvert=\{([^}]*)\}/g)].map((m) => m[1] ?? '');
+    // ÉGALITÉ STRICTE, pas « au moins deux » : un troisième consommateur doit faire TOMBER ce test,
+    // pour qu'on aille regarder ce qu'il fait de l'état, au lieu de passer inaperçu.
+    expect(passages).toHaveLength(2);
+    // `trim`, parce qu'une espace ou un retour à la ligne du formateur ne change rien : une garde qui
+    // tombe sur `prettier --write` envoie chercher un défaut qui n'existe pas.
+    for (const p of passages) expect(p.trim()).toBe('agentMetaOuvert');
+    /**
+     * 🔴 ET L'ÉCRASEMENT PEUT REMONTER AU SETTER, ce que les passages ne voient pas : remettre
+     * `r.mbaEnabled === true` à la lecture laisse les deux passages nus et refait le défaut une ligne
+     * plus haut. C'est exactement le déplacement qui a produit ce lot, dans l'autre sens.
+     */
+    expect(page).toContain("typeof r.mbaEnabled === 'boolean' ? r.mbaEnabled : null");
   });
 });

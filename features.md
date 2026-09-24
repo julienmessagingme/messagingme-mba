@@ -2866,8 +2866,15 @@ cet écran ne montre pas (audience, placements, historique de diffusion).
 création que si l'agent répond, mais il peut s'éteindre ensuite : plus personne ne répond aux prospects, aucun
 scénario ne prend le relais, et ces prospects-là ne comptent PAS parmi les non pris en charge (l'entonnoir
 suppose qu'un agent répond). Sans ce bandeau, l'écran montrerait une publicité qui marche alors que ses
-prospects n'ont personne en face. ⚠️ Il ne paraît que si le réglage a été LU : tant qu'on ne le sait pas,
-ou si sa lecture échoue, l'écran se tait plutôt que d'annoncer une panne qu'il n'a pas constatée.
+prospects n'ont personne en face. ⚠️ **Ce bandeau ne paraît que si le réglage a été LU à « éteint ».** Tant
+qu'on ne le sait pas, ou si sa lecture échoue, il ne paraît pas : on n'annonce pas une panne qu'on n'a pas
+constatée.
+
+🔴 **Dans ce troisième cas, le formulaire de création, lui, PARLE, et il parle de NOUS.** Il n'offre pas
+l'agent de Meta comme destination (l'offrir sans l'avoir lu ferait créer une publicité sans répondeur) et il
+dit « nous n'avons pas pu lire l'état de l'agent de Meta pour cet espace », au lieu de déclarer que l'agent
+n'est pas ouvert sur le numéro du client. Se fermer sur l'inconnu et l'affirmer sont deux décisions
+différentes : la première est prudente, la seconde serait fausse.
 
 **Un prospect qualifié** est celui à qui l'on pose le tag choisi pour la publicité, dans les 28 jours suivant
 son arrivée, la plus récente comptant seule. ⚠️ Seuls les chemins un par un comptent (un scénario, l'Inbox,

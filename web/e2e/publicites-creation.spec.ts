@@ -46,6 +46,12 @@ interface Options {
   compte?: { statut: number | null; raisonDesactivation: number | null; moyenPaiement: boolean } | null;
   publicites?: unknown[];
   entonnoir?: unknown;
+  /**
+   * Ce que rend `/settings`. `'vide'` = un 200 SANS la clé `mbaEnabled`, `'panne'` = un 500.
+   *
+   * 🔴 LES DEUX SONT LE MÊME ÉTAT CÔTÉ ÉCRAN : « nous ne savons pas », qui n'est PAS « éteint ».
+   */
+  reglages?: boolean | 'vide' | 'panne';
 }
 
 const brancher = async (page: import('@playwright/test').Page, o: Options = {}) => {
@@ -66,12 +72,65 @@ const brancher = async (page: import('@playwright/test').Page, o: Options = {}) 
     }
     if (url.includes('/pubs')) return json({ publicites: o.publicites ?? [] });
     if (url.includes('/workflows')) return json({ workflows: [] });
-    if (url.includes('/settings')) return json({ mbaEnabled: true });
+    if (url.includes('/settings')) {
+      if (o.reglages === 'panne') return route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
+      if (o.reglages === 'vide') return json({});
+      return json({ mbaEnabled: o.reglages ?? true });
+    }
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     return json({});
   });
   await page.goto('/publicites');
 };
+
+/**
+ * CE QUE LE FORMULAIRE DIT DE L'AGENT DE META, DANS SES TROIS ÉTATS.
+ *
+ * 🔴 CES CAS EXISTENT PARCE QUE LE MÊME DÉFAUT EST REVENU TROIS FOIS, chaque fois déplacé d'un cran :
+ * `!agentMetaOuvert` dans la liste, puis `agentMetaOuvert === true` au passage vers le formulaire. Les
+ * gardes écrites à chaque fois lisaient le TEXTE des sources, donc elles pinçaient une PRÉSENCE et
+ * n'interdisaient rien : échanger le corps des deux branches, ou ajouter un quatrième paragraphe, les
+ * laissait vertes. Un test qui REND l'écran pince la phrase, la branche et l'option d'un seul coup.
+ *
+ * ⚠️ LA DISTINCTION QUI COMPTE : se FERMER sur l'inconnu est le bon sens d'erreur (proposer l'agent de
+ * Meta sans l'avoir lu ferait créer une publicité sans répondeur) ; l'AFFIRMER est un énoncé sur la
+ * configuration Meta du client, alors que nous n'avons fait qu'échouer à lire NOTRE réglage.
+ */
+test.describe('Publicités : ce que le formulaire dit de l’agent de Meta', () => {
+  const ouvrirLeFormulaire = async (page: import('@playwright/test').Page) => {
+    await page.getByTestId('pubs-creer').click();
+    await expect(page.getByTestId('pub-formulaire')).toBeVisible();
+  };
+
+  test('agent OUVERT : l’option existe, et aucune des deux phrases ne sort', async ({ page }) => {
+    await brancher(page, { reglages: true });
+    await ouvrirLeFormulaire(page);
+    await expect(page.getByTestId('pub-agent-indispo')).toHaveCount(0);
+    await expect(page.getByTestId('pub-agent-inconnu')).toHaveCount(0);
+    await expect(page.getByRole('option', { name: /agent de Meta|Meta agent/ })).toHaveCount(1);
+  });
+
+  test('🔴 agent ÉTEINT : l’option disparaît, et l’écran dit que c’est leur numéro', async ({ page }) => {
+    await brancher(page, { reglages: false });
+    await ouvrirLeFormulaire(page);
+    await expect(page.getByTestId('pub-agent-indispo')).toContainText(/pas ouvert à tout le monde|not open to everyone/);
+    await expect(page.getByTestId('pub-agent-inconnu')).toHaveCount(0);
+    await expect(page.getByRole('option', { name: /agent de Meta|Meta agent/ })).toHaveCount(0);
+  });
+
+  for (const [nom, reglages] of [['une réponse SANS la clé', 'vide'], ['une lecture en PANNE', 'panne']] as const) {
+    test(`🔴 ${nom} : l’option disparaît, mais l’écran parle de NOUS, pas de leur numéro`, async ({ page }) => {
+      await brancher(page, { reglages });
+      await ouvrirLeFormulaire(page);
+      // Le geste d'erreur est bon : l'option reste fermée.
+      await expect(page.getByRole('option', { name: /agent de Meta|Meta agent/ })).toHaveCount(0);
+      // Mais la PHRASE change, et c'est tout le sujet : on ne déclare pas éteint ce qu'on n'a pas lu.
+      await expect(page.getByTestId('pub-agent-inconnu')).toContainText(/n’avons pas pu lire|could not read/);
+      await expect(page.getByTestId('pub-agent-indispo')).toHaveCount(0);
+      await expect(page.locator('body')).not.toContainText(/pas ouvert à tout le monde|not open to everyone/);
+    });
+  }
+});
 
 test.describe('Publicités : la liste et le bouton Créer', () => {
   test('connexion complète et compte qui peut diffuser : le bouton Créer est là', async ({ page }) => {

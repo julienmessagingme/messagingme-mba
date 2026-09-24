@@ -97,6 +97,10 @@ function PublicitesInner({ session }: { session: Session }) {
    * déploiement, et entre les deux ces routes n'existent pas.
    */
   const chargerPubs = useCallback(async () => {
+    // ⚠️ ON EFFACE L'ERREUR PRÉCÉDENTE, comme `charger` le fait. Sans ça, un 404 passager posait un
+    // bandeau rouge que le rafraîchissement suivant, réussi, ne retirait pas : un bandeau d'erreur
+    // périmé sur une liste fraîche, c'est-à-dire l'inverse du défaut qu'on venait de corriger.
+    setErreur(null);
     try {
       // ⚠️ `?? []` N'EST PAS DE LA PARANOÏA : la même route peut, pendant la fenêtre de déploiement,
       // répondre 200 avec un corps qui n'a pas encore cette clé. Un `undefined` traverserait le type sans

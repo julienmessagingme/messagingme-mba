@@ -1,7 +1,7 @@
 ---
 ecran: publicites
 source_section: Publicités Click-to-WhatsApp (menu Publicités)
-source_empreinte: 55f80d
+source_empreinte: 28fa53
 ---
 # Lancer une publicité qui ouvre une conversation WhatsApp
 
@@ -49,6 +49,11 @@ Chaque publicité le choisit, et c'est l'un ou l'autre :
   écarté des personnes venues de cette publicité ;
 - **l'agent de Meta** : proposé seulement s'il répond déjà à tout le monde sur votre numéro. Ses messages
   restent facturés au jeton, même pendant les 72 heures gratuites qui suivent un clic.
+
+⚠️ S'il n'est pas proposé, l'écran dit pourquoi, et les deux raisons ne se confondent pas : soit l'agent
+de Meta n'est pas ouvert à tout le monde sur votre numéro, soit **nous n'avons pas pu lire son état** (dans
+ce cas, rechargez la page). Nous préférons ne pas vous le proposer quand nous ne savons pas, plutôt que de
+vous laisser créer une publicité dont personne ne répondrait aux prospects.
 
 ⚠️ Pour les personnes venues d'une publicité que vous pilotez ici, **aucune autre automation ne part**, ni
 « toute personne arrivant par une publicité », ni « un nouveau contact écrit pour la première fois ». C'est
