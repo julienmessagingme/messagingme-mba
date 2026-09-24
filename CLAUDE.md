@@ -94,12 +94,30 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0169**, le 2026-09-23 à 12 h 29 UTC (`pub_connexion_noms`, le nom du compte
-publicitaire et celui de la Page, pour que l'écran cesse de n'afficher que des identifiants), AVANT le
-`up` qui a porté son code. **ÉCRITE ET PAS ENCORE APPLIQUÉE : 0170** (`pubs_router`, lot 3 des publicités :
-`publicites`, `pubs_connues`, et les quatre colonnes de routage d'`arrivees_pub`). Elle n'AJOUTE que, donc
-elle passe AVANT le `up` qui portera son code. **Prochaine libre = 0171**, et le dossier `db/migrations/`
-s'arrête bien à 0170.
+**Dernière appliquée : 0170**, le 2026-09-24 à 3 h 01 UTC (`pubs_router`, lot 3 des publicités :
+`publicites`, `pubs_connues`, et les quatre colonnes de routage d'`arrivees_pub`), AVANT le `up` qui a
+porté son code. **Prochaine libre = 0171**, et le dossier `db/migrations/` s'arrête bien à 0170.
+
+🔴 **RELUE EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT, PAS EN ÉCRIVANT CETTE LIGNE.**
+`schema_migrations` rend bien `0170_pubs_router.sql` en tête avec son horodatage ; `publicites` porte son
+unique `(tenant_id, campagne_id)`, son CHECK à SENS UNIQUE (`workflow_id is null or destination =
+'scenario'`, l'inverse étant un état atteignable) et ses trois clés étrangères en `on delete set null`
+(une cascade détruirait la publicité pour la suppression d'un scénario) ; `pubs_connues` a sa clé primaire
+`(tenant_id, ad_id)` ; les quatre colonnes d'`arrivees_pub` sont nullables SANS défaut ; le CHECK des
+issues porte ses HUIT valeurs, `sans_scenario` comprise ; et les deux index PARTIELS ont le prédicat
+exact de leur requête (`etat = 'publiee'`, `campagne_id is not null`).
+
+⚠️ **AUCUN COMPORTEMENT N'A BOUGÉ POUR PERSONNE, ET C'EST MESURÉ** : les deux tables neuves sont VIDES,
+zéro arrivée porte une issue, zéro automation de publicité existe. Et le chemin chaud a été exécuté PAR LE
+VRAI CODE juste après le déploiement (`PgPublicitesStore.pubDeLaCampagne`, `campagneConnue`, `lister`,
+`espacesASuivre`, `campagnesASuivre`, `comptesDeLaCampagne` puis `entonnoir`) : une campagne inconnue rend
+`null`, donc le routage retombe exactement sur le comportement d'avant ce lot, et l'entonnoir rend des
+coûts à `null` et non à zéro. La sonde a été effacée ensuite.
+
+⚠️ **ET LE 502 PUBLIC EST ARRIVÉ, une fois de plus** : les trois conteneurs `healthy`, et pourtant 502 sur
+`api.` comme sur le chemin `/api/backend/` de `mba.`. NPM tenait l'ancienne IP, `nginx -s reload` a suffi,
+et les deux portes sont revenues à 200. Le contrôle public après CHAQUE `up --build` reste la seule façon
+de voir ce défaut.
 Avant elle, **0166, 0167 et 0168** le même jour à 11 h 36 UTC, elles aussi avant le `up`, et les trois
 relues en base point par point juste après `migrate` : 0166 RELÂCHE un CHECK
 (`conversation_messages.origin` accepte `api`), 0167 CRÉE `pub_connexion`, 0168 CRÉE `grille_prix` ;
