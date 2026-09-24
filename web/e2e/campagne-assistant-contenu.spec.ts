@@ -234,7 +234,15 @@ test('le RCS garde ses BOUTONS, il ne se reduit pas a un lien', async ({ page })
    */
   await monter(page);
   await page.getByTestId('etage-2').click(); // deplie le cadre RCS
-  await expect(page.getByRole('button', { name: /bouton/i })).toBeVisible();
+  /**
+   * ⚠️ PAR `data-testid`, ET NON PAR UN MOTIF `/bouton/i` A L ECHELLE DE LA PAGE. Le premier jet de ce
+   * correctif avait remplace le nom exact par ce motif, ce qui l affaiblissait sans qu on le voie : une page
+   * qui ne rendrait PLUS l editeur de boutons mais porterait n importe quel autre bouton dont le nom contient
+   * « bouton » l aurait laisse vert. L identifiant designe l editeur et lui seul.
+   */
+  await expect(page.getByTestId('campagne-rcs-2-message-add-button')).toBeVisible();
+  // Et il porte bien le mot que le client cherche, ce qui est le sujet du renommage.
+  await expect(page.getByTestId('campagne-rcs-2-message-add-button')).toContainText(/bouton/i);
 });
 
 /**

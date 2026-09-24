@@ -103,12 +103,19 @@ message de commit `b008edb0`, qu'on ne peut plus corriger.
 Le geste, s'il est decide : un champ titre dans `RcsMessageForm`, borne a 200 caracteres comme le schema le
 prevoit deja (`rcsCardSchema`), et le `.refine` « titre OU media » devient atteignable sans image.
 
-### 2. Une question de vocabulaire, posée et sans réponse
+### 2. La question de vocabulaire est TRANCHÉE (2026-09-24), et mon chiffre était faux
 
-Les boutons d'un message RCS s'appellent **« Suggestions »** à l'écran, le vocabulaire de Google pour le RCS.
-C'est pour ça que Julien a cru qu'on ne pouvait pas mettre de boutons dans une campagne RCS : ils y sont
-depuis le 2026-09-12. Renommer en « Boutons » touche **quatre écrans** (bibliothèque, campagne, scénario,
-écran en service) et l'éditeur partagé `RcsButtonsEditor`. Sa décision.
+**Julien : « Boutons » partout.** Fait dans `db292cf6`.
+
+⚠️ **ET LE « QUATRE ÉCRANS » QUE CETTE SECTION ANNONÇAIT ÉTAIT FAUX : il y en avait UN.** `RcsMessageForm` et
+`WorkflowConfigPanel` disaient « Boutons » depuis toujours, et l'éditeur partagé retombait lui-même sur
+« + bouton ». Seul l'écran de campagne divergeait, ce qui explique entièrement que le mot cherché n'ait pas
+été trouvé. Le chiffre avait été avancé pour évaluer un coût, il a servi à décider, et il était faux dans le
+sens qui décourage : j'ai présenté comme un chantier ce qui tenait en deux lignes.
+
+⚠️ Corollaire trouvé en le faisant : le prop `libelleAjout` de `RcsButtonsEditor` n'existait que pour cet
+appelant divergent. Il est parti avec lui, sinon il restait une porte de sortie ouverte pour la divergence
+qu'on venait de refermer.
 
 ### 3. Trois constats laissés porter
 

@@ -61,9 +61,14 @@ test.describe('Assistant : ecrire un message RCS a la volee', () => {
    * Demande de Julien du 2026-09-24 : « il faut dire : partir d'un message enregistré, ou créer un nouveau
    * modèle de message, et là ça ouvre le créateur, soit normal soit carrousel ».
    *
-   * 🔴 CE QUI ÉTAIT IMPOSSIBLE AVANT, ET QUI L'EST DEUX FOIS. Depuis une campagne, on ne pouvait que
-   * REPRENDRE un message déjà écrit ailleurs. Un CARROUSEL ne s'y créait pas du tout, et une carte à TITRE
-   * non plus, parce que le composeur de l'étage ne sait éditer que le visuel, le texte et les suggestions.
+   * 🔴 CE QUI ÉTAIT IMPOSSIBLE AVANT. Depuis une campagne, on ne pouvait que REPRENDRE un message déjà écrit
+   * ailleurs : un CARROUSEL ne s'y créait pas du tout, alors que ses cartes portent chacune un titre, et le
+   * composeur de l'étage ne sait éditer que le visuel, le texte et les boutons.
+   *
+   * ⚠️ CETTE PHRASE A DIT « ET UNE CARTE À TITRE NON PLUS », ET C'ÉTAIT FAUX. Le modèle accepte bien un titre
+   * sur une carte SIMPLE (`RcsCard.title`), mais AUCUN écran ne sait le saisir : `RcsMessageForm` n'a pas ce
+   * champ. La correction avait été faite dans le composant et dans `todo.md` le 2026-09-24, et OUBLIÉE ici :
+   * c'est le motif « corriger à un endroit et le laisser à trois autres », relevé par la relecture suivante.
    */
   test('🔴 un message simple ecrit ici se POSE sur l etage, sans quitter la campagne', async ({ page }) => {
     const faux = await poserFaux(page, { rcsMessages: MESSAGES_RCS });
@@ -89,6 +94,37 @@ test.describe('Assistant : ecrire un message RCS a la volee', () => {
     // Et il a bien été enregistré dans la bibliothèque, pas seulement recopié à l'écran.
     expect(faux.appels.some((a) => a.method === 'POST' && a.url.includes('/rcs-messages')),
       'aucun POST vers la bibliotheque des messages RCS').toBe(true);
+  });
+
+  test('🔴 sans instantane, l ecran ne DEVINE pas quel message est le neuf', async ({ page }) => {
+    /**
+     * 🔴 LA BRANCHE QUI POSAIT LE MAUVAIS MESSAGE SUR L ETAGE, EN SILENCE (corrigee le 2026-09-24, relevee
+     * par une relecture a froid). La creation a la volee retrouve le message neuf par DIFFERENCE entre deux
+     * lectures de la bibliotheque. Quand la lecture d ouverture echouait, le code posait `avant = []` : la
+     * difference rendait alors le PREMIER message de la bibliotheque, et l ecran le posait sur l etage comme
+     * s il venait d etre ecrit. C est exactement ce que la verification par mutation avait montre.
+     *
+     * ⚠️ CE QU ON TIENT ICI EST UN REFUS, PAS UNE REUSSITE. Le message EST enregistre, l ecran le dit, et il
+     * renvoie au selecteur du dessus plutot que de designer n importe lequel. L ancre positive est le POST :
+     * sans elle, un ecran qui n aurait rien enregistre du tout passerait aussi.
+     */
+    const faux = await poserFaux(page, { rcsMessages: MESSAGES_RCS, rcsMessagesIllisibles: true });
+    await surLEtageRcs(page);
+
+    await page.getByTestId('rcs-creer-message').click();
+    await page.getByTestId('rcs-creer-simple').click();
+    await page.getByTestId('rcs-message-name').fill('Relance du jeudi');
+    await page.getByTestId('rcs-message-text').fill('Votre commande part demain.');
+    await page.getByTestId('rcs-message-save').click();
+
+    // Il le DIT, et il renvoie au selecteur.
+    await expect(page.getByTestId('rcs-creer-souci')).toContainText(/n’avons pas pu lire la biblioth/i, { timeout: 15_000 });
+    // 🔴 ET SURTOUT IL NE POSE RIEN : le texte de l etage ne doit porter AUCUN des messages existants.
+    await expect(page.getByTestId('rcs-texte')).not.toContainText('Bonjour, votre offre');
+    await expect(page.getByTestId('rcs-texte')).not.toContainText('Votre commande part demain.');
+    // L ancre positive : l enregistrement a bien eu lieu, c est la DESIGNATION qui a echoue.
+    expect(faux.appels.some((a) => a.method === 'POST' && a.url.includes('/rcs-messages')),
+      'le message n a pas ete enregistre : ce n est pas le cas qu on veut eprouver').toBe(true);
   });
 
   test('🔴 un CARROUSEL se cree depuis la campagne, ce qui etait impossible', async ({ page }) => {

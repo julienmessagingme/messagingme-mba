@@ -56,6 +56,14 @@ export interface Options {
   phoneNumbers?: unknown[];
   rcsAgents?: unknown[];
   rcsMessages?: unknown[];
+  /**
+   * Fait echouer la LECTURE de la bibliotheque RCS, sans toucher a l ecriture.
+   *
+   * Sert le seul cas ou la creation a la volee ne peut PAS retrouver son message : sans instantane a
+   * l ouverture, elle refuse de deviner. Ce chemin-la posait le PREMIER message de la bibliotheque sur
+   * l etage jusqu au 2026-09-24, en silence.
+   */
+  rcsMessagesIllisibles?: boolean;
   webhooks?: unknown[];
   contacts?: unknown[];
   /** Le total rendu par `/contacts/count`. Les comptes du récapitulatif le lisent aussi. */
@@ -183,6 +191,9 @@ export async function poserFaux(page: Page, o: Options = {}): Promise<Faux> {
     if (chemin.includes('/phone-numbers')) return json({ phoneNumbers: o.phoneNumbers ?? [{ id: 'pn1', displayPhoneNumber: '+33525680250', verifiedName: 'Demo' }] });
     if (chemin.endsWith('/rcs-agents')) return json({ agents: o.rcsAgents ?? [{ agentId: 'ag1', brandName: 'Ma marque', status: 'launched' }] });
     if (chemin.endsWith('/rcs-messages')) {
+      // ⚠️ SEULE LA LECTURE TOMBE : l ecriture doit reussir, sinon on n eprouve pas le bon cas. Ce qu on
+      // veut voir est un message BIEN ENREGISTRE que l ecran ne sait pas designer.
+      if (method === 'GET' && o.rcsMessagesIllisibles === true) return json({ error: 'nope' }, 500);
       if (method === 'POST') {
         const b = (body ?? {}) as { name?: string; content?: unknown };
         const neuf = { id: `m-neuf-${messagesRcs.length + 1}`, name: b.name ?? '', content: b.content ?? null, createdAt: '', updatedAt: '' };

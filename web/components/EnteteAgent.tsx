@@ -143,8 +143,16 @@ export function EnteteAgent({
           {etat}
         </div>
         {precision !== undefined && precision !== '' && (
+          /*
+            ⚠️ `min-w-0` ET `truncate` SUR LE CONTENU TEXTE, pas seulement sur le conteneur. Le passage d'un
+            `<p class="truncate">` à ce `<div class="flex">` le 2026-09-24 a fait perdre la troncature à
+            l'AUTRE consommateur, l'écran des agents IA, qui passe ici un identifiant de modèle
+            (`anthropic/claude-...`) qui ne se coupe pas tout seul et poussait donc la mise en page. Un
+            `truncate` sur un conteneur flex ne descend pas sur ses enfants : c'est l'enfant texte qui doit le
+            porter, d'où l'enveloppe ci-dessous pour une précision qui est une simple chaîne.
+          */
           <div data-testid="entete-agent-precision" className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-ink-600">
-            {precision}
+            {typeof precision === 'string' ? <span className="min-w-0 truncate">{precision}</span> : precision}
           </div>
         )}
 
