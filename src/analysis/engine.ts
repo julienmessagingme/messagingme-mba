@@ -1,4 +1,4 @@
-import { llmOutputSchema, NOTE_MIN, NOTE_MAX, type LlmOutput, type HandledBy } from './schema';
+import { llmOutputSchema, INTENTS, NOTE_MIN, NOTE_MAX, type Intent, type LlmOutput, type HandledBy } from './schema';
 
 /** Un message de conversation, forme minimale utilisée par l'analyse (pur, agnostique du stockage). */
 export interface AnalysisMessage {
@@ -46,12 +46,42 @@ export function buildTranscript(messages: AnalysisMessage[], maxChars = 6000): s
   return out;
 }
 
+/**
+ * CE QUE VEUT DIRE CHAQUE INTENTION, TEL QU'ON LE DIT AU MODÈLE.
+ *
+ * 🔴 UN `Record<Intent, string>`, ET C'EST LA GARDE : une valeur ajoutée à `INTENTS` sans sa description ne
+ * compile pas. Une intention que le schéma accepte mais que le prompt ne propose pas ne serait jamais rendue,
+ * et l'écran montrerait une barre toujours vide sans que rien ne dise pourquoi.
+ *
+ * ⚠️ ÉCRITES POUR SÉPARER LES VOISINES (spec du 2026-09-24, § 7) : `achat` contre `demande_devis`,
+ * `suivi_commande` contre `reclamation`, `retour` contre `sav`. Sans ces frontières, le modèle placerait la
+ * limite différemment d'une conversation à l'autre, et la répartition ne voudrait plus rien dire.
+ */
+export const DESCRIPTIONS_INTENTION: Record<Intent, string> = {
+  demande_devis: "le client demande un prix ou un devis chiffré AVANT de s'engager (quantité, prestation sur mesure)",
+  sav: "le client a besoin d'aide sur un produit ou un service qu'il a déjà et qu'il GARDE (panne, réglage, mode d'emploi, garantie)",
+  reclamation: "le client se plaint d'un préjudice (retard, erreur, produit abîmé, facturation) et attend une réparation ou un geste",
+  information: 'question générale, sans démarche en cours (horaires, conditions, disponibilité, tarifs affichés)',
+  prise_rdv: 'le client veut fixer, déplacer ou annuler un rendez-vous',
+  achat: 'le client veut acheter MAINTENANT un produit ou une offre identifiée (commander, payer, réserver un article), sans demander de devis',
+  suivi_commande: "le client demande où en est une commande DÉJÀ passée (expédition, livraison, délai, numéro de suivi), sans s'en plaindre",
+  retour: 'le client veut retourner, échanger ou se faire rembourser un produit reçu',
+  autre: 'aucune des intentions ci-dessus',
+};
+
 const SYSTEM_INSTRUCTIONS = [
   'Tu es un analyste de conversations WhatsApp (support et commercial).',
   'Analyse la conversation et renvoie UNIQUEMENT un objet JSON valide, sans texte autour, sans balises de code.',
   'Champs attendus :',
   '- sentiment : "positif" | "neutre" | "negatif" (ressenti global du client).',
-  '- intent : "demande_devis" | "sav" | "reclamation" | "information" | "prise_rdv" | "autre".',
+  // La liste ET ses descriptions sont DÉRIVÉES de `INTENTS` : écrites à la main ici, elles feraient une copie
+  // de plus, et c'est celle qu'on oublie qui fait qu'une intention n'est jamais proposée au modèle.
+  `- intent : ${INTENTS.map((i) => `"${i}"`).join(' | ')}.`,
+  ...INTENTS.map((i) => `  - ${i} : ${DESCRIPTIONS_INTENTION[i]}.`),
+  '  Entre deux voisines : une commande en retard dont le client se PLAINT est reclamation, la même question',
+  "  posée sans reproche est suivi_commande ; un produit qu'il veut RENVOYER ou échanger est retour, un produit",
+  "  qu'il garde mais qui ne marche pas est sav ; une commande à passer est achat, un prix demandé avant de",
+  '  décider est demande_devis.',
   '- topic : le sujet en 2 à 5 mots (français), ex. "retard de livraison".',
   '- resolved : true si la demande du client est résolue, false sinon.',
   '- entities : objet des infos utiles extraites (ex. {"produit":"Pack Pro","quantite":50,"budget":12000}). {} si rien.',

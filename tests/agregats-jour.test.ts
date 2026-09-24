@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { AGREGAT_JOUR_SQL } from '../src/stats/conversation-stats.pg';
+import { INTENTS } from '../src/analysis/schema';
 
 const RACINE = resolve(__dirname, '..');
 /**
@@ -73,13 +74,16 @@ describe('les deux sources de comptage ne peuvent pas diverger', () => {
     expect(occurrences, 'le compte et les deux sommes doivent porter le MEME filtre').toBe(3);
   });
 
-  it('🔴 les SIX intentions sont comptees, et le compte n’est pas ecrit a la main ailleurs', () => {
-    // L'enumeration est FERMEE (`src/analysis/schema.ts`). Si une septieme apparait un jour, ce test le
-    // signale ici plutot que de la laisser disparaitre silencieusement de l'agregat, ou une journee
-    // agregee compterait moins de conversations que la meme journee lue en direct.
-    for (const intent of ['demande_devis', 'sav', 'reclamation', 'information', 'prise_rdv', 'autre']) {
-      expect(AGREGAT_JOUR_SQL, `l’intention ${intent} n’est pas comptee`).toContain(`'${intent}', count(*)`);
+  it('🔴 CHAQUE intention du schema est comptee, et aucune de plus', () => {
+    // La liste est DERIVEE de `INTENTS` (`src/analysis/schema.ts`), plus recopiee. La version d'avant
+    // enumerait six valeurs a la main : une intention ajoutee au schema passait la validation de l'analyse,
+    // puis disparaissait en silence de la repartition agregee, qui ne retombait plus sur le total du jour.
+    for (const intent of INTENTS) {
+      expect(AGREGAT_JOUR_SQL, `l’intention ${intent} n’est pas comptee`)
+        .toContain(`'${intent}', count(*) filter (where ca.intent = '${intent}')`);
     }
+    const comptees = AGREGAT_JOUR_SQL.split('count(*) filter (where ca.intent = ').length - 1;
+    expect(comptees, 'une intention comptee que le schema ne connait pas').toBe(INTENTS.length);
   });
 
   it('⚠️ le fragment attend l’alias `ca` et le fuseau en $4, et les deux requetes les fournissent', () => {

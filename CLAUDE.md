@@ -93,12 +93,15 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0173**, le 2026-09-24 à 21 h 33 UTC (`idempotence_empreinte`,
-`api_idempotency.request_hash`, lot 2 de l'API publique), AVANT le `up` qui a porté son code : relue en base
-juste après `migrate` (`text` nullable SANS défaut, table vide). **0174 et 0175 sont ÉCRITES et PAS ENCORE
-APPLIQUÉES** (`variables_destinataire` et `echecs_messages`, lot 3 : additives et BLOQUANTES toutes les deux,
-la création de campagne et la purge RGPD les nomment, donc AVANT le `up`). **Prochaine libre = 0176**, et le
-dossier `db/migrations/` s'arrête à 0175. Avant 0173, **0172** le même jour à 20 h 01 UTC
+**Dernière appliquée : 0175**, le 2026-09-24 à 21 h 58 UTC, avec **0174** dans le même `migrate`
+(`variables_destinataire` et `echecs_messages`, lot 3 de l'API publique), AVANT tout code qui les lit : relues
+en base juste après (`variables` en `jsonb` nullable sans défaut ; `echecs_messages` avec ses neuf colonnes,
+l'index unique sur `message_id`, l'index `(tenant_id, at desc)` et la cascade sur l'espace ; les deux vides).
+Avant elles, **0173** à 21 h 33 UTC (`idempotence_empreinte`, `api_idempotency.request_hash`, lot 2), AVANT le
+`up` qui a porté son code, relue en base (`text` nullable SANS défaut, table vide). **0176 est
+ÉCRITE et PAS ENCORE APPLIQUÉE** (`intentions_commerce`, lot 5 : elle RELÂCHE le CHECK de l'intention, l'ancien
+code y survit, et le code neuf échouerait en 23514 sans elle, donc AVANT le `up`). **Prochaine libre = 0177**,
+et le dossier `db/migrations/` s'arrête à 0176. Avant 0173, **0172** le même jour à 20 h 01 UTC
 (`contacts_external_id`), puis **0171** à 13 h 46 UTC (`pubs_brouillons`).
 
 🔴 **0172 RELUE EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT** : `schema_migrations` la rend en tête à

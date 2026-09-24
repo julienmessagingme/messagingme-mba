@@ -14,11 +14,15 @@ import type { ConversationAnalysisSummary, AnalyzedConversationRow, AnalyzedConv
 import { scopeTenant, estUuid } from './scope';
 import type { NodeEventCount } from '../workflow/node-events.pg';
 import type { CompteurClic } from '../links/mesures';
+import { INTENTS as INTENTS_ANALYSE } from '../analysis/schema';
 
-// Valeurs d'enum admises pour les filtres de la liste quali (miroir de src/analysis/schema.ts). On ne passe au
-// store QUE des valeurs valides -> pas d'injection de filtre arbitraire, et le NULL = « pas de filtre ».
+// Valeurs d'enum admises pour les filtres de la liste quali. On ne passe au store QUE des valeurs valides ->
+// pas d'injection de filtre arbitraire, et le NULL = « pas de filtre ».
+// 🔴 LES INTENTIONS DÉRIVENT DU SCHÉMA DE L'ANALYSE : une copie en dur aurait ignoré `?intent=achat` et rendu
+// TOUTES les conversations sous un filtre « Achat » affiché (lot 5 de l'API publique). Sentiments et actions
+// restent des miroirs de `src/analysis/schema.ts`.
 const SENTIMENTS = new Set(['positif', 'neutre', 'negatif']);
-const INTENTS = new Set(['demande_devis', 'sav', 'reclamation', 'information', 'prise_rdv', 'autre']);
+const INTENTS = new Set<string>(INTENTS_ANALYSE);
 const ACTIONS = new Set(['creer_devis', 'rappeler', 'relancer', 'escalader', 'aucune']);
 const inSet = (s: Set<string>, v: unknown): string | undefined => (typeof v === 'string' && s.has(v) ? v : undefined);
 

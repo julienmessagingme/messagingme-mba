@@ -1,7 +1,21 @@
 import { z } from 'zod';
 
 export const SENTIMENTS = ['positif', 'neutre', 'negatif'] as const;
-export const INTENTS = ['demande_devis', 'sav', 'reclamation', 'information', 'prise_rdv', 'autre'] as const;
+/**
+ * Les intentions d'une conversation. CETTE LISTE FAIT FOI : le prompt (`src/analysis/engine.ts`), le CHECK en
+ * base (dernière migration qui pose `conversation_analysis_intent_check`), les statistiques et la copie de la
+ * console (`web/lib/intentions.ts`) la suivent, et `tests/intentions-parite.test.ts` exige qu'ils nomment
+ * exactement les mêmes valeurs.
+ *
+ * `achat`, `suivi_commande` et `retour` (spec du 2026-09-24, § 7) : les six premières étaient celles des
+ * services et de l'assurance, aucune ne disait « veut acheter ». Insérées AVANT `autre`, qui reste le dernier
+ * recours du modèle et la dernière barre des écrans.
+ *
+ * 🔴 AJOUTER UNE VALEUR DEMANDE UNE MIGRATION qui relâche le CHECK, appliquée AVANT le déploiement : sans
+ * elle, l'INSERT de l'analyse échoue en 23514 et le job la rejoue, appel au modèle compris, jusqu'à la DLQ.
+ */
+export const INTENTS = ['demande_devis', 'sav', 'reclamation', 'information', 'prise_rdv', 'achat', 'suivi_commande', 'retour', 'autre'] as const;
+export type Intent = (typeof INTENTS)[number];
 export const ACTIONS = ['creer_devis', 'rappeler', 'relancer', 'escalader', 'aucune'] as const;
 export const HANDLED_BY = ['humain', 'automatise', 'mba'] as const;
 export type HandledBy = (typeof HANDLED_BY)[number];

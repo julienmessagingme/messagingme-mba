@@ -8,6 +8,7 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { StatsRouteDeps } from '../src/http/stats';
 import type { AnalyzedConversationsFilter } from '../src/stats/conversation-stats.pg';
 import type { SettingsRouteDeps } from '../src/http/settings';
+import { INTENTS } from '../src/analysis/schema';
 
 const SECRET = 'test-secret';
 let adminTok = '';
@@ -55,7 +56,7 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     getConversationSummary: async () => ({
       enabled: true, retentionDays: 365, total: 3,
       sentiment: { positif: 1, neutre: 1, negatif: 1 },
-      intent: { demande_devis: 2, sav: 1, reclamation: 0, information: 0, prise_rdv: 0, autre: 0 },
+      intent: { demande_devis: 2, sav: 1, reclamation: 0, information: 0, prise_rdv: 0, achat: 0, suivi_commande: 0, retour: 0, autre: 0 },
       resolution: { resolved: 2, unresolved: 1, rate: 2 / 3 },
       handledBy: { humain: 1, automatise: 2, mba: 0 },
       exchanges: { avg: 3.5, median: 3 },
@@ -156,6 +157,19 @@ describe('stats route', () => {
     const bad = await a.inject({ method: 'GET', url: '/tenants/t1/stats/conversations/list?days=30&sentiment=PIRATE&action=drop', ...h(adminTok) });
     expect(bad.statusCode).toBe(200);
     expect(captured[1]).toEqual({}); // aucune valeur d'enum valide -> aucun filtre
+    await a.close();
+  });
+
+  it('🔴 le filtre accepte CHAQUE intention du schéma, les neuves comprises', async () => {
+    // La liste admise était une copie en dur des six premières : `?intent=achat` y aurait été ignoré, et la
+    // route aurait rendu TOUTES les conversations sous un filtre « Achat » affiché à l'écran. Elle DÉRIVE
+    // désormais de INTENTS.
+    const captured: AnalyzedConversationsFilter[] = [];
+    const a = app({ stats: { listAnalyzedConversations: async (_t, _r, f) => { captured.push(f); return []; } } });
+    for (const i of INTENTS) {
+      await a.inject({ method: 'GET', url: `/tenants/t1/stats/conversations/list?days=30&intent=${i}`, ...h(adminTok) });
+    }
+    expect(captured.map((f) => f.intent)).toEqual([...INTENTS]);
     await a.close();
   });
 

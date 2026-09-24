@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import { STATS_TZ, BOUNDS_CTE } from './range';
 import type { DateRange } from './range';
 import { retentionEffective } from '../inbox/retention';
+import type { Intent } from '../analysis/schema';
 
 /**
  * LECTURE des agrégats d'analyse de conversation (Pièce 1, table `conversation_analysis`). Séparé du store
@@ -33,9 +34,11 @@ const TZ = STATS_TZ;
  * sept journees moyennes sans leur poids donne une moyenne de moyennes, fausse des que les journees n ont
  * pas le meme nombre de mesures. La moyenne se recalcule a l affichage, a n importe quelle maille.
  *
- * ⚠️ LES SIX INTENTIONS SONT COMPTEES UNE PAR UNE, et pas par un `jsonb_object_agg` : celui-ci echouerait
- * sur des cles dupliquees, et l enumeration est FERMEE de toute facon (`src/analysis/schema.ts`). Une
- * septieme valeur ferait echouer la validation de l analyse bien avant d arriver ici.
+ * ⚠️ LES INTENTIONS SONT COMPTEES UNE PAR UNE, et pas par un `jsonb_object_agg` : celui-ci echouerait sur
+ * des cles dupliquees. L enumeration est FERMEE (`INTENTS`, `src/analysis/schema.ts`), mais une valeur
+ * ajoutee la-bas PASSE la validation de l analyse : oubliee ici, elle disparaitrait en silence de la
+ * repartition agregee, qui ne retomberait plus sur le total du jour. `tests/agregats-jour.test.ts` derive
+ * la liste de `INTENTS` et les exige toutes.
  *
  * ⚠️ `ca` EST L ALIAS ATTENDU de `conversation_analysis`, et `$4` le fuseau : les deux requetes qui
  * l utilisent doivent les fournir.
@@ -52,6 +55,9 @@ export const AGREGAT_JOUR_SQL = `
            'reclamation', count(*) filter (where ca.intent = 'reclamation'),
            'information', count(*) filter (where ca.intent = 'information'),
            'prise_rdv', count(*) filter (where ca.intent = 'prise_rdv'),
+           'achat', count(*) filter (where ca.intent = 'achat'),
+           'suivi_commande', count(*) filter (where ca.intent = 'suivi_commande'),
+           'retour', count(*) filter (where ca.intent = 'retour'),
            'autre', count(*) filter (where ca.intent = 'autre')
          ) as intentions`;
 
@@ -74,7 +80,9 @@ export interface ConversationAnalysisSummary {
   retentionDays: number;
   total: number;
   sentiment: { positif: number; neutre: number; negatif: number };
-  intent: { demande_devis: number; sav: number; reclamation: number; information: number; prise_rdv: number; autre: number };
+  /** Une clé par valeur de `INTENTS` : un `Record` et pas un objet écrit à la main, pour qu'une intention
+   *  ajoutée au schéma sans son compte ne compile pas. */
+  intent: Record<Intent, number>;
   resolution: { resolved: number; unresolved: number; rate: number | null }; // rate 0..1, null si total=0
   handledBy: { humain: number; automatise: number; mba: number };
   exchanges: { avg: number | null; median: number | null };
@@ -233,7 +241,8 @@ export class PgConversationStatsStore {
     const agg = await this.pool.query<{
       total: string;
       s_pos: string; s_neu: string; s_neg: string;
-      i_devis: string; i_sav: string; i_recl: string; i_info: string; i_rdv: string; i_autre: string;
+      i_devis: string; i_sav: string; i_recl: string; i_info: string; i_rdv: string;
+      i_achat: string; i_suivi: string; i_retour: string; i_autre: string;
       resolved: string; unresolved: string;
       h_humain: string; h_auto: string; h_mba: string;
       avg_ex: string | null; median_ex: string | null;
@@ -256,6 +265,9 @@ export class PgConversationStatsStore {
          count(*) filter (where intent = 'reclamation')::int as i_recl,
          count(*) filter (where intent = 'information')::int as i_info,
          count(*) filter (where intent = 'prise_rdv')::int as i_rdv,
+         count(*) filter (where intent = 'achat')::int as i_achat,
+         count(*) filter (where intent = 'suivi_commande')::int as i_suivi,
+         count(*) filter (where intent = 'retour')::int as i_retour,
          count(*) filter (where intent = 'autre')::int as i_autre,
          count(*) filter (where resolved)::int as resolved,
          count(*) filter (where not resolved)::int as unresolved,
@@ -296,8 +308,8 @@ export class PgConversationStatsStore {
     /**
      * LES SUJETS, RANGES SOUS LEUR INTENTION (demande de Julien du 2026-09-17).
      *
-     * 🔴 CE QUE CE REGROUPEMENT REND VISIBLE, ET QUI EST LE VRAI SUJET. Les six intentions sont une
-     * énumération FERMÉE : le modèle ne peut pas en inventer une septième. Le `topic`, lui, est du texte
+     * 🔴 CE QUE CE REGROUPEMENT REND VISIBLE, ET QUI EST LE VRAI SUJET. Les intentions sont une
+     * énumération FERMÉE (`INTENTS`) : le modèle ne peut pas en inventer d'autres. Le `topic`, lui, est du texte
      * LIBRE, et c'est là que vit l'inflation que Julien redoutait. Mesuré en production le 2026-09-17 :
      * 13 sujets distincts pour 14 analyses, dont QUATRE variantes de « consultation tarifs ». Rangés à plat
      * dans une liste, ces quatre-là sont dispersés et personne ne voit qu'ils sont parents ; sous
@@ -351,7 +363,8 @@ export class PgConversationStatsStore {
       sentiment: { positif: Number(r.s_pos), neutre: Number(r.s_neu), negatif: Number(r.s_neg) },
       intent: {
         demande_devis: Number(r.i_devis), sav: Number(r.i_sav), reclamation: Number(r.i_recl),
-        information: Number(r.i_info), prise_rdv: Number(r.i_rdv), autre: Number(r.i_autre),
+        information: Number(r.i_info), prise_rdv: Number(r.i_rdv), achat: Number(r.i_achat),
+        suivi_commande: Number(r.i_suivi), retour: Number(r.i_retour), autre: Number(r.i_autre),
       },
       resolution: { resolved, unresolved: Number(r.unresolved), rate: total > 0 ? resolved / total : null },
       handledBy: { humain: Number(r.h_humain), automatise: Number(r.h_auto), mba: Number(r.h_mba) },

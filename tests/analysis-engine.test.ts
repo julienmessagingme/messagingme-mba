@@ -66,6 +66,14 @@ describe('engine — parseLlmOutput', () => {
   it('enum hors liste -> null', () => {
     expect(parseLlmOutput(JSON.stringify({ ...valid, sentiment: 'euphorique' }))).toBeNull();
   });
+  it('🔴 les intentions de commerce en ligne sont ACCEPTÉES (spec du 2026-09-24, § 7)', () => {
+    // Refusées par le schéma, elles feraient perdre l'analyse ENTIÈRE : `safeParse` échoue sur l'objet, le
+    // job rappelle le modèle une fois puis marque la conversation en échec, et « veut acheter » n'arrive
+    // jamais sur aucun écran.
+    for (const intent of ['achat', 'suivi_commande', 'retour']) {
+      expect(parseLlmOutput(JSON.stringify({ ...valid, intent }))?.intent, intent).toBe(intent);
+    }
+  });
   it('🔴 summary ABSENT -> analyse valide quand même, et le champ reste indéfini', () => {
     // Le résumé (migration 0100) est arrivé après coup, comme `abusive` avant lui : un modèle qui l'omet
     // ne doit pas faire perdre TOUTE l'analyse, qui coûte un appel LLM. Et son absence doit rester

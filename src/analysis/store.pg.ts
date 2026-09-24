@@ -197,7 +197,8 @@ export class PgConversationAnalysisStore {
     );
     const r = res.rows[0];
     if (!r) return null;
-    // Les CHECK SQL (0027) garantissent des valeurs d'enum valides -> cast direct vers les unions du schéma.
+    // Les CHECK SQL (0027, et 0176 pour l'intention) garantissent des valeurs d'enum valides -> cast direct
+    // vers les unions du schéma. `tests/intentions-parite.test.ts` tient l'égalité du CHECK et de `INTENTS`.
     return {
       conversationId: r.conversation_id,
       tenantId: r.tenant_id,
