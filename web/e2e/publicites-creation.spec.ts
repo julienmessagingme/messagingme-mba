@@ -102,6 +102,9 @@ interface Options {
  */
 let lecturesReglages = 0;
 
+/** Le corps du dernier `POST /pubs/brouillons`, pour verifier CE QUI PART et pas seulement l'ecran. */
+let corpsCreationBrouillon: Record<string, unknown> | null = null;
+
 /**
  * Attend que la lecture des réglages ait CESSÉ de bouger.
  *
@@ -135,6 +138,7 @@ const brancher = async (page: import('@playwright/test').Page, o: Options = {}) 
   // fixture de la phase précédente, et le test éprouverait silencieusement autre chose.
   await page.unrouteAll();
   lecturesReglages = 0;
+  corpsCreationBrouillon = null;
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const url = route.request().url();
@@ -154,6 +158,13 @@ const brancher = async (page: import('@playwright/test').Page, o: Options = {}) 
       return route.fulfill({ status: 404, contentType: 'application/json', body: '{"error":"Not Found"}' });
     }
     if (/\/pubs\/brouillons$/.test(url.split('?')[0] ?? '')) {
+      // 🔴 LE POST AVANT LE GET : les deux tombaient sur la meme branche, donc une creation resolvait
+      // avec `id === undefined` et aucun cas ne pouvait eprouver la RE-CREATION d'un brouillon. C'est
+      // exactement l'endroit ou le defaut du visuel perdu se cachait.
+      if (route.request().method() === 'POST') {
+        corpsCreationBrouillon = route.request().postDataJSON() as Record<string, unknown>;
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ id: 'br-2' }) });
+      }
       return json({ brouillons: Array.isArray(o.brouillons) ? o.brouillons : [] });
     }
     if (/\/pubs\/brouillons\/[^/]+$/.test(url.split('?')[0] ?? '')) {
@@ -803,6 +814,8 @@ test.describe('Publicités : quand l’API n’a pas encore les brouillons', () 
  * la précédente avait créé », et c'est la relecture du correctif qui l'a attrapé.
  */
 test.describe('Publicités : un brouillon supprimé pendant qu’on l’édite', () => {
+  /** Un PNG 1x1 valide, pour que l'aller-retour du visuel soit comparable à l'octet près. */
+  const PNG_RE = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
   const BR = {
     id: 'br-1', nom: 'En cours', titre: '', texte: '', accueil: '', messagePreRempli: '',
     budgetTotal: '', debut: '', fin: '', pays: 'FR', ageMin: '18', ageMax: '65',
@@ -822,5 +835,35 @@ test.describe('Publicités : un brouillon supprimé pendant qu’on l’édite',
     // Et le travail reste récupérable : le bouton repropose un enregistrement NEUF, pas une modification.
     await expect(page.getByTestId('pub-enregistrer-brouillon')).toContainText(/Enregistrer le brouillon|Save draft/);
     await expect(page.locator('#pub-nom')).toHaveValue('TRAVAIL-EN-COURS-E2E');
+  });
+
+  test('🔴 la re-création emporte le VISUEL, qui se perdait en silence', async ({ page }) => {
+    /**
+     * Le cas qui lit CE QUI PART, et pas ce que l'écran montre.
+     *
+     * L'écran continuait d'afficher l'image et d'annoncer « ce brouillon est enregistré » pendant que la
+     * re-création partait SANS elle : `champsBrouillon` n'émet la clé `image` que si le visuel a été
+     * TOUCHÉ, et rouvrir un brouillon ne le touche pas. Trois assertions d'écran seraient restées vertes ;
+     * seule la lecture du CORPS ENVOYÉ fait tomber ce défaut. C'est la règle du dépôt : le test qui compte
+     * lit ce qui part, jamais ce que la fonction rend.
+     */
+    await brancher(page, {
+      brouillons: [{ ...BR, aUnVisuel: true }],
+      detailBrouillon: { visuel: { type: 'image/png', base64: PNG_RE } },
+      brouillonDisparu: true,
+    });
+    await page.getByTestId('pub-brouillon-ouvrir-br-1').click();
+    await expect(page.getByTestId('pub-apercu-visuel')).toHaveAttribute('src', /^data:image\/png;base64,/);
+
+    // Premier clic : la mise à jour échoue, l'écran dit que le brouillon n'existe plus.
+    await page.getByTestId('pub-enregistrer-brouillon').click();
+    await expect(page.getByTestId('pub-form-erreur')).toContainText(/n’existe plus|no longer exists/);
+
+    // Second clic : celui que le message RÉCLAME. C'est une création, et elle doit porter l'image.
+    await page.getByTestId('pub-enregistrer-brouillon').click();
+    await expect(page.getByTestId('pub-brouillon-actif')).toBeVisible();
+    const corps = await page.evaluate(() => null).then(() => corpsCreationBrouillon);
+    expect(corps).not.toBeNull();
+    expect(corps?.image).toMatchObject({ type: 'image/png', base64: PNG_RE });
   });
 });

@@ -215,6 +215,21 @@ export function PubFormulaire({
                     'Drafts are waiting for the server update. You can still create the ad as usual.'));
       } else if (err instanceof ApiError && err.status === 404) {
         setBrouillonId(null);
+        /**
+         * 🔴 ET `visuelTouche` PASSE À `true` AVEC LUI, SANS QUOI L'IMAGE SE PERD EN SILENCE.
+         *
+         * `champsBrouillon` n'émet la clé `image` que si le visuel a été TOUCHÉ, parce qu'une clé absente
+         * veut dire « conserve celui que tu as ». Cette lecture n'a de sens que sur une MISE À JOUR : sur
+         * une création, il n'y a rien à conserver, et le store le dit. Oublier ce drapeau ici faisait donc
+         * recréer le brouillon SANS son visuel, pendant que l'écran continuait de l'afficher et annonçait
+         * « ce brouillon est enregistré ». La perte ne se serait vue qu'à la réouverture suivante, quand
+         * le fichier d'origine n'est plus forcément sous la main.
+         *
+         * ⚠️ DEUX ÉTATS QUI DOIVENT BOUGER ENSEMBLE, ET UN SEUL LE DISAIT. `brouillonId` gouverne le
+         * chemin (création ou mise à jour), `visuelTouche` gouverne ce que ce chemin transporte : les
+         * remettre en cohérence au même endroit est la seule forme qui ne se défasse pas.
+         */
+        setVisuelTouche(true);
         setErreur(t('Ce brouillon n’existe plus. Cliquez de nouveau pour l’enregistrer comme un nouveau brouillon.',
                     'This draft no longer exists. Click again to save it as a new draft.'));
       } else {
