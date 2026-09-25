@@ -6,8 +6,8 @@ import { LocaleToggle } from '@/components/LocaleToggle';
 import { useT } from '@/lib/i18n';
 
 /**
- * Le cadre des documentations lues SANS compte (le serveur MCP, et bientôt l'API, qui porte encore sa
- * copie de ce cadre) : un intégrateur y arrive depuis la vitrine (`site/`), avant d'avoir un espace.
+ * Le cadre des documentations lues SANS compte (l'API et le serveur MCP) : un intégrateur y arrive depuis la
+ * vitrine (`site/`), avant d'avoir un espace.
  * La marque ramène à la vitrine, « Se connecter » à la console.
  */
 export function CadrePublic({ children }: { children: React.ReactNode }) {

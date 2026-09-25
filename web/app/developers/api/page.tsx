@@ -3,8 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
-import { Logo } from '@/components/Logo';
-import { LocaleToggle } from '@/components/LocaleToggle';
+import { CadrePublic } from '@/components/CadrePublic';
 import { useT } from '@/lib/i18n';
 import { getSession } from '@/lib/session';
 import { accesAutorise } from '@/lib/nav';
@@ -53,30 +52,7 @@ export default function ApiDocsPage() {
   }, []);
   if (dansLaConsole === undefined) return null;
   if (dansLaConsole) return <AppShell active="api-docs">{() => <DocsInner />}</AppShell>;
-  return <DocPublique />;
-}
-
-function DocPublique() {
-  const t = useT();
-  return (
-    <main className="min-h-screen px-4 py-8">
-      <header className="mx-auto mb-8 flex max-w-3xl items-center justify-between gap-4">
-        <a href="https://engageme.messagingme.fr" className="flex items-center gap-2 text-base font-semibold tracking-tight text-ink-900">
-          <Logo className="h-7 w-7" />
-          Engage Me
-        </a>
-        <div className="flex items-center gap-3">
-          <LocaleToggle />
-          <Link href="/login" className="rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-sm font-medium text-ink-800 transition hover:border-brand-500 hover:text-brand-600">
-            {t('Se connecter', 'Sign in')}
-          </Link>
-        </div>
-      </header>
-      <div className="mx-auto max-w-3xl">
-        <DocsInner />
-      </div>
-    </main>
-  );
+  return <CadrePublic><DocsInner /></CadrePublic>;
 }
 
 const codeCls = 'overflow-x-auto rounded-lg bg-ink-900 px-4 py-3 font-mono text-xs leading-relaxed text-ink-50';
