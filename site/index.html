@@ -271,13 +271,33 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .fils path.fin{stroke:var(--line)}
 .noeud{align-self:center;display:grid;place-items:center;width:76px;height:76px;border-radius:50%;background:var(--surface);border:1px solid var(--line);box-shadow:0 18px 36px -18px var(--ombre)}
 .noeud svg{width:40px;height:40px}
+/* Sur mobile, le schéma garde l'esprit du bureau : les entrées en cadres compacts sur une rangée, le logo
+   centré, les répondants en cadres, reliés par des flèches que le script calcule sur la position RÉELLE des
+   cadres (elles restent justes quel que soit le nombre de lignes d'un titre). Toucher un cadre affiche son
+   détail dans l'encart du bas. */
+.detail-mobile{display:none}
 @media (max-width:860px){
-  .schema{grid-template-columns:minmax(0,1fr);justify-items:start;min-height:0}
+  .schema{position:relative;display:grid;grid-template-columns:minmax(0,1fr);justify-items:stretch;min-height:0}
   .fils{display:none}
-  .pole{width:100%;gap:18px;grid-auto-rows:auto}
-  .pole.entrees{text-align:left}
-  .pole.entrees strong{justify-content:flex-start}
-  .noeud{margin:28px 0}
+  .pole,.pole.entrees{grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);grid-auto-rows:auto;gap:8px;text-align:center}
+  .pole li{align-self:stretch;display:flex;align-items:center;justify-content:center;min-height:56px;padding:9px 6px;border:1px solid var(--line);border-radius:12px;background:var(--surface);cursor:pointer;transition:border-color .15s,box-shadow .15s}
+  .pole li > span{display:none}
+  .pole strong,.pole.entrees strong{flex-direction:column;justify-content:center;gap:4px;font-size:.74rem;line-height:1.25;letter-spacing:0}
+  .pole img{width:18px;height:18px}
+  .pole .natif{font-size:.62rem;padding:0 6px}
+  .pole li.actif{border-color:var(--action);box-shadow:0 0 0 3px rgb(0 128 214 / .16)}
+  .pole li:focus-visible{outline:2px solid var(--action);outline-offset:2px}
+  .noeud{justify-self:center;margin:64px 0}
+  .detail-mobile{display:block;min-height:3.4em;margin:18px 0 0;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font-size:.86rem;line-height:1.45;color:var(--muted)}
+  .detail-mobile strong{color:var(--ink)}
+  .fleches-mobile{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}
+  .fleches-mobile path{fill:none;stroke:var(--action);stroke-width:1.75}
+  .fleches-mobile path.fin{stroke:#B9C0D6}
+  .fleches-mobile marker path{fill:var(--action);stroke:none}
+}
+@media (max-width:360px){.pole strong,.pole.entrees strong{font-size:.68rem}}
+@media (max-width:860px) and (prefers-reduced-motion:no-preference){
+  .js .fleches-mobile{opacity:0;animation:apparait-flux .6s .15s forwards}
 }
 
 /* 3. La qualification, dite en une phrase */
@@ -535,9 +555,10 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
           </div>
           <ul class="pole repondants">
             <li><strong>Vos agents IA</strong><span>Vos règles, vos outils, vos connaissances</span></li>
-            <li><strong><img src="meta-business-agent.png" alt="" width="24" height="24">Meta Business Agent <span class="natif">natif</span></strong><span>L’agent de Meta, configuré depuis la console</span></li>
+            <li data-fort><strong><img src="meta-business-agent.png" alt="" width="24" height="24">Meta Business Agent <span class="natif">natif</span></strong><span>L’agent de Meta, configuré depuis la console</span></li>
             <li><strong>Votre équipe</strong><span>Dans une boîte partagée, elle reprend la main</span></li>
           </ul>
+          <p class="detail-mobile" aria-live="polite"></p>
         </div>
 
         <div class="schema schema-rcs">
@@ -559,9 +580,10 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
             </svg>
           </div>
           <ul class="pole repondants">
-            <li><strong>Vos agents IA</strong><span>Vos règles, vos outils, vos connaissances</span></li>
+            <li data-fort><strong>Vos agents IA</strong><span>Vos règles, vos outils, vos connaissances</span></li>
             <li><strong>Votre équipe</strong><span>Dans la même boîte partagée que WhatsApp</span></li>
           </ul>
+          <p class="detail-mobile" aria-live="polite"></p>
         </div>
       </div>
     </div>
@@ -672,6 +694,67 @@ claude mcp add --transport http mba https://api.messagingme.app/mcp \
       if (e[0].isIntersecting && !minuterie) { jouer(); minuterie = setInterval(jouer, 9000); }
       else if (!e[0].isIntersecting && minuterie) { clearInterval(minuterie); minuterie = null; }
     }, { threshold: 0.4 }).observe(bloc);
+  })();
+  // Mobile : dessine les flèches du relais d'après la position RÉELLE des cadres, et rend les cadres cliquables
+  // (le détail s'affiche dans l'encart). Redessine au changement de taille, de canal, et une fois les polices là.
+  (function () {
+    var mq = matchMedia('(max-width: 860px)'), NS = 'http://www.w3.org/2000/svg';
+    function chemin(svg, d, classe) {
+      var p = document.createElementNS(NS, 'path');
+      p.setAttribute('d', d); p.setAttribute('marker-end', 'url(#pointe-mobile)');
+      if (classe) p.setAttribute('class', classe);
+      svg.appendChild(p);
+    }
+    function dessiner(schema) {
+      var ancien = schema.querySelector('.fleches-mobile');
+      if (ancien) ancien.remove();
+      if (!mq.matches || schema.offsetParent === null) return;
+      var b = schema.getBoundingClientRect(), n = schema.querySelector('.noeud').getBoundingClientRect();
+      var cx = n.left + n.width / 2 - b.left, haut = n.top - b.top, bas = n.bottom - b.top;
+      var svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('class', 'fleches-mobile'); svg.setAttribute('aria-hidden', 'true');
+      svg.innerHTML = '<defs><marker id="pointe-mobile" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M1 2 L5 8 L9 2 Z" transform="rotate(-90 5 5)"/></marker></defs>';
+      schema.querySelectorAll('.pole.entrees li').forEach(function (li) {
+        var r = li.getBoundingClientRect(), x = r.left + r.width / 2 - b.left, y = r.bottom - b.top + 3, m = (y + haut) / 2;
+        chemin(svg, 'M' + x + ' ' + y + ' C' + x + ' ' + m + ' ' + cx + ' ' + m + ' ' + cx + ' ' + (haut - 3));
+      });
+      schema.querySelectorAll('.pole.repondants li').forEach(function (li) {
+        var r = li.getBoundingClientRect(), x = r.left + r.width / 2 - b.left, y = r.top - b.top - 3, m = (bas + y) / 2;
+        chemin(svg, 'M' + cx + ' ' + (bas + 3) + ' C' + cx + ' ' + m + ' ' + x + ' ' + m + ' ' + x + ' ' + y, li.hasAttribute('data-fort') ? '' : 'fin');
+      });
+      schema.appendChild(svg);
+    }
+    function montrer(schema, li) {
+      schema.querySelectorAll('.pole li').forEach(function (autre) { autre.classList.toggle('actif', autre === li); autre.setAttribute('aria-pressed', String(autre === li)); });
+      var titre = li.querySelector('strong').textContent.replace(/\s+/g, ' ').trim(), texte = li.querySelector(':scope > span').textContent;
+      schema.querySelector('.detail-mobile').innerHTML = '<strong></strong> : <span></span>';
+      schema.querySelector('.detail-mobile strong').textContent = titre;
+      schema.querySelector('.detail-mobile span').textContent = texte;
+    }
+    var schemas = document.querySelectorAll('.schema');
+    schemas.forEach(function (schema) {
+      var cadres = schema.querySelectorAll('.pole li');
+      cadres.forEach(function (li) {
+        li.addEventListener('click', function () { if (mq.matches) montrer(schema, li); });
+        li.addEventListener('keydown', function (e) { if (mq.matches && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); montrer(schema, li); } });
+      });
+      montrer(schema, cadres[0]);
+    });
+    function accessibilite() {
+      schemas.forEach(function (schema) {
+        schema.querySelectorAll('.pole li').forEach(function (li) {
+          if (mq.matches) { li.setAttribute('role', 'button'); li.setAttribute('tabindex', '0'); }
+          else { li.removeAttribute('role'); li.removeAttribute('tabindex'); li.removeAttribute('aria-pressed'); }
+        });
+      });
+    }
+    function tout() { accessibilite(); schemas.forEach(dessiner); }
+    var attente = null;
+    window.addEventListener('resize', function () { clearTimeout(attente); attente = setTimeout(tout, 120); });
+    document.querySelectorAll('input[name="canal"]').forEach(function (r) { r.addEventListener('change', tout); });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(tout);
+    window.addEventListener('load', tout);
+    tout();
   })();
   // Trace le relais quand il entre à l'écran. Sans IntersectionObserver, il s'affiche tout de suite.
   (function () {
