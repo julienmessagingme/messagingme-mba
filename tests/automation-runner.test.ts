@@ -3,6 +3,7 @@ import { runAutomations } from '../src/automation/runner';
 import type { AutomationRunnerDeps } from '../src/automation/runner';
 import type { AutomationRow, AutomationEvent } from '../src/automation/match';
 import type { EvalContext } from '../src/workflow/conditions';
+import { NumeroDelieError } from '../src/meta/numero-delie';
 
 /**
  * Orchestration d'un déclenchement (IO injectée).
@@ -298,6 +299,19 @@ describe('runAutomations', () => {
       expect(trace.cleared).toEqual([]); // pas d'annulation : on ne sait pas si un message est parti
     });
 
+    /**
+     * 🔴 SAUF LE NUMÉRO DÉLIÉ (migration 0180) : le point de passage des envois refuse AVANT tout appel à Meta,
+     * donc on SAIT que rien n'est parti par WhatsApp. Garder le tir taisait le contact pendant tout l'anti-rebond,
+     * soit 30 jours pour « risque élevé ».
+     */
+    it('🔴 scénario refusé par le NUMÉRO DÉLIÉ -> le tir est EFFACÉ, même en « risque élevé »', async () => {
+      const risque = auto({ triggerKind: 'risque_eleve', triggerConfig: {} });
+      const { deps, trace } = make([risque], { startWorkflow: async () => { throw new NumeroDelieError('pn1'); } });
+      expect(await runAutomations('t1', { kind: 'risque_eleve', waId: '33611' }, deps)).toBe(0);
+      expect(trace.fired).toEqual(['a1']);
+      expect(trace.cleared).toEqual(['a1']);
+    });
+
     it('démarrage réussi -> le tir reste (c’est lui qui protège de la boucle)', async () => {
       const { deps, trace } = make([auto()]);
       await runAutomations('t1', MSG, deps);
@@ -432,6 +446,16 @@ describe('runAutomations : le claim d’occurrence (avant_date)', () => {
     const { deps, trace } = make([autoDate()]);
     expect(await runAutomations('t1', AVANT_DATE, deps)).toBe(1);
     expect(trace.started).toHaveLength(1);
+  });
+
+  it('🔴 NUMÉRO DÉLIÉ sur un rappel avant_date : le tir est GARDÉ, sinon le balayage le relance chaque minute', async () => {
+    // Relevé en relecture le 2026-09-25 : effacer le tir faisait disparaître le marqueur d'occurrence, le balayage
+    // republiait le rappel à la minute suivante, et un scénario [e-mail puis template] renvoyait l'e-mail à
+    // chaque passage pendant toute la tolérance.
+    const { deps, trace } = make([autoDate()], { startWorkflow: async () => { throw new NumeroDelieError('pn1'); } });
+    expect(await runAutomations('t1', AVANT_DATE, deps)).toBe(0);
+    expect(trace.fired).toEqual(['a1']);
+    expect(trace.cleared).toEqual([]);
   });
 
   it('🔴 le marqueur d’occurrence est bien la VALEUR de la date, pas juste « déjà tiré »', async () => {

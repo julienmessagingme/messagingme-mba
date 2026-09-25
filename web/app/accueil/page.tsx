@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import { RcsChannelCard, useCanalRcs } from '@/components/RcsChannelCard';
 import { CanauxServices } from '@/components/CanauxServices';
+import { LogoHubSpot } from '@/components/LogosCanaux';
 import { Toggle } from '@/components/Toggle';
 import type { Session } from '@/lib/session';
 import { useT, useLocale } from '@/lib/i18n';
@@ -25,15 +26,6 @@ import { useInstallationHubspot } from '@/lib/hubspot-installation';
 
 export default function AccueilPage() {
   return <AppShell active="accueil">{(session) => <AccueilInner session={session} />}</AppShell>;
-}
-
-/** Logo HubSpot (sprocket officiel monochrome, Simple Icons) en couleur de marque. Marque l'intégration au niveau du toggle. */
-function HubSpotMark({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="#FF7A59" role="img" aria-label="HubSpot" xmlns="http://www.w3.org/2000/svg">
-      <path d="M18.164 7.93V5.084a2.198 2.198 0 001.267-1.978v-.067A2.2 2.2 0 0017.238.845h-.067a2.2 2.2 0 00-2.193 2.193v.067a2.196 2.196 0 001.252 1.973l.013.006v2.852a6.22 6.22 0 00-2.969 1.31l.012-.01-7.828-6.095A2.497 2.497 0 104.3 4.656l-.012.006 7.697 5.991a6.176 6.176 0 00-1.038 3.446c0 1.343.425 2.588 1.147 3.607l-.013-.02-2.342 2.343a1.968 1.968 0 00-.58-.095h-.002a2.033 2.033 0 102.033 2.033 1.978 1.978 0 00-.1-.595l.005.014 2.317-2.317a6.247 6.247 0 104.782-11.134l-.036-.005zm-.964 9.378a3.206 3.206 0 113.215-3.207v.002a3.206 3.206 0 01-3.207 3.207z" />
-    </svg>
-  );
 }
 
 /** Prénom depuis le nom complet ; repli sur la partie locale de l'email ; sinon vide. */
@@ -350,7 +342,6 @@ function AccueilInner({ session }: { session: Session }) {
         <h2 className="text-xl font-semibold tracking-tight text-ink-900">
           {t('Bonjour', 'Hello')}{firstName ? ` ${firstName}` : ''}
         </h2>
-        <p className="mt-0.5 text-sm text-ink-500">{t("Voici l'état de ton compte WhatsApp Business.", 'Here is the status of your WhatsApp Business account.')}</p>
       </div>
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
@@ -588,7 +579,7 @@ function AccueilInner({ session }: { session: Session }) {
                 // Portail relié : on affiche SUR QUEL portail, puis le toggle de synchro PAR numéro (qui gate le push).
                 <div className="mt-4 border-t border-ink-100 pt-3">
                   <div className="flex items-center gap-2 text-sm font-semibold text-ink-800">
-                    <HubSpotMark className="h-[18px] w-[18px] shrink-0" />
+                    <LogoHubSpot className="h-[18px] w-[18px] shrink-0" />
                     <span>
                       {t('HubSpot : connecté au portail', 'HubSpot: connected to portal')}{' '}
                       <span className="font-mono text-brand-700">{account.hubspotPortal.hubDomain ?? account.hubspotPortal.hubId}</span>
@@ -750,7 +741,7 @@ function AccueilInner({ session }: { session: Session }) {
                 <div className="mt-4 flex items-center justify-between gap-3 border-t border-ink-100 pt-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 text-sm font-semibold text-ink-800">
-                      <HubSpotMark className="h-[18px] w-[18px] shrink-0" />
+                      <LogoHubSpot className="h-[18px] w-[18px] shrink-0" />
                       {t('HubSpot non connecté', 'HubSpot not connected')}
                     </div>
                     <p className="mt-0.5 text-xs text-ink-500">

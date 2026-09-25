@@ -29,6 +29,9 @@ export const STATUT_PAR_CODE = {
   rcs_unreachable: 422,
   rcs_not_enabled: 409,
   no_whatsapp_number: 409,
+  // Le numéro WhatsApp de l'espace est DÉLIÉ depuis l'Accueil (migration 0180) : rien ne part tant qu'un
+  // administrateur ne l'a pas relié. Distinct de `no_whatsapp_number` : le numéro existe, et se relie d'un clic.
+  number_unlinked: 409,
   scenario_not_found: 404,
   node_not_found: 404,
   template_not_found: 404,

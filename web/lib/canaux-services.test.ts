@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  demandeConfirmation, ligneNumero, ligneRcs, ligneChaine, lignePublicites, ligneHubspot, nombreDePublications, routeInconnue, type Geste,
+  demandeConfirmation, ligneNumero, ligneRcs, ligneChaine, lignePublicites, ligneHubspot, nombreDePublications, routeInconnue, teinte, type Geste,
 } from './canaux-services';
 
 describe('ligneNumero', () => {
@@ -99,5 +99,29 @@ describe('nombreDePublications', () => {
     expect(nombreDePublications({ posts: [] })).toBe(0);
     expect(nombreDePublications({})).toBeNull();
     expect(nombreDePublications(null)).toBeNull();
+  });
+});
+
+describe('teinte (la pastille d’une carte)', () => {
+  it('allumé : vert ; éteint : gris', () => {
+    expect(teinte({ allume: true, geste: 'delier_numero' })).toBe('vert');
+    expect(teinte({ allume: false, geste: 'relier_numero' })).toBe('gris');
+  });
+
+  it('allumé mais à terminer : ambre', () => {
+    expect(teinte({ allume: true, geste: 'deconnecter_publicites' }, true)).toBe('ambre');
+  });
+
+  it('🔴 éteint reste gris même « à terminer » : l’ambre ne dit jamais qu’un service éteint tourne', () => {
+    expect(teinte({ allume: false, geste: 'ouvrir_publicites' }, true)).toBe('gris');
+  });
+
+  it('🔴 état inconnu : pas de pastille, surtout pas un gris qui dirait « éteint »', () => {
+    expect(teinte({ allume: null, geste: null })).toBeNull();
+    expect(teinte({ allume: null, geste: null }, true)).toBeNull();
+  });
+
+  it('un interrupteur grisé (aucun geste possible) garde la teinte de son état', () => {
+    expect(teinte({ allume: true, geste: null })).toBe('vert');
   });
 });

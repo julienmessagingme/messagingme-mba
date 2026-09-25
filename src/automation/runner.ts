@@ -2,6 +2,7 @@ import { evaluateConditionGroup } from '../workflow/conditions';
 import type { EvalContext } from '../workflow/conditions';
 import { matchesTrigger, isInCooldown, reprendLaMain, antiRebondParDefaut } from './match';
 import type { AutomationRow, AutomationEvent, AutomationTriggerKind } from './match';
+import { NumeroDelieError } from '../meta/numero-delie';
 
 /**
  * Déclenche les scénarios abonnés à un événement. IO INJECTÉE (aucun import pg) -> testable sans base, comme
@@ -37,9 +38,10 @@ export interface AutomationRunnerDeps {
    */
   markFired(automationId: string, waId: string, marqueur?: string): Promise<boolean>;
   /**
-   * Annule le déclenchement enregistré. Appelé quand le scénario n'a PAS démarré (`false`) : dans ce cas rien
-   * n'a été envoyé (les gardes de l'exécuteur agissent AVANT tout envoi), donc consommer l'anti-rebond
-   * avalerait la prochaine vraie demande du client pendant toute la durée du délai.
+   * Annule le déclenchement enregistré. Appelé quand le scénario n'a PAS démarré (`false` ou une raison) : dans
+   * ce cas rien n'a été envoyé (les gardes de l'exécuteur agissent AVANT tout envoi), donc consommer l'anti-rebond
+   * avalerait la prochaine vraie demande du client pendant toute la durée du délai. Appelé aussi sur un refus
+   * du numéro délié (`NumeroDelieError`), pour la même raison.
    */
   clearFired(automationId: string, waId: string): Promise<void>;
   /**
@@ -291,6 +293,23 @@ export async function runAutomations(
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(`automation ${a.id} ignorée:`, err instanceof Error ? err.message : err);
+      /**
+       * 🔴 LE NUMÉRO DÉLIÉ EFFACE LE TIR, contrairement aux autres exceptions. Une exception ordinaire garde le
+       * tir parce qu'on ne sait pas si un message est parti ; celle-ci dit que l'envoi WhatsApp refusé n'est pas
+       * parti (`NumeroDelieError`, levée avant tout appel à Meta). Garder le tir ferait taire la prochaine vraie
+       * demande du contact pendant tout l'anti-rebond. Best-effort : un effacement raté ne doit pas masquer le
+       * refus journalisé juste au-dessus.
+       *
+       * 🔴 SAUF `avant_date`, qui GARDE son tir. Son balayage republie tout rappel dont le marqueur d'occurrence a
+       * disparu, chaque minute tant qu'on est dans la tolérance : effacer ici relancerait le scénario à chaque
+       * passage, et rejouerait à chaque fois ce que le parcours a déjà fait avant l'envoi refusé (un e-mail, un
+       * appel au système du client), soit jusqu'à soixante e-mails identiques par contact. Relevé en relecture
+       * le 2026-09-25, gardé par `tests/automation-runner.test.ts`.
+       *
+       * ⚠️ Limite connue, pour les autres déclencheurs : ce que le parcours a fait avant l'envoi refusé (e-mail,
+       * appel au système du client, envoi WhatsApp antérieur) repartira au prochain tir.
+       */
+      if (err instanceof NumeroDelieError && ev.kind !== 'avant_date') await deps.clearFired(a.id, ev.waId).catch(() => {});
     }
   }
   return started;

@@ -75,6 +75,12 @@ export class PgUserStore {
     return res.rows[0]?.name ?? null;
   }
 
+  /** Renomme un espace (Compte & équipe). `false` = espace inconnu : rien n'a été écrit. */
+  async setTenantName(tenantId: string, name: string): Promise<boolean> {
+    const res = await this.pool.query(`update tenants set name = $2 where id = $1`, [tenantId, name]);
+    return (res.rowCount ?? 0) > 0;
+  }
+
   async list(tenantId: string): Promise<UserRow[]> {
     const res = await this.pool.query<{ id: string; email: string; name: string | null; role: string; code: string | null; disabled_at: Date | null; pending: boolean; created_at: Date; last_login_at: Date | null }>(
       // 🔴 `pending` VEUT DIRE « N'A JAMAIS ACCEPTÉ SON INVITATION », ET SE LIT SUR `last_login_at`.

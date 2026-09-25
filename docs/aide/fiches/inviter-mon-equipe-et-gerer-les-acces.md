@@ -1,6 +1,6 @@
 ---
 source_section: Comptes & authentification
-source_empreinte: de244a
+source_empreinte: ab1475
 ---
 # Inviter mon équipe, et gérer les accès
 
@@ -36,3 +36,8 @@ un mot de passe que vous connaissez, passez par « Mon compte ».
 
 **Si votre session expire pendant que vous travaillez**, une bannière apparaît en haut de l'écran avec un
 bouton « Se reconnecter ». Rien de ce que vous tentez d'enregistrer ne part en silence.
+
+**Renommer l'espace** : en tête de Compte & équipe, la carte « Espace » montre le nom de l'espace dans un champ
+modifiable ; Enregistrer le change tout de suite. C'est ce nom qui s'affiche quand une adresse ouvre plusieurs
+espaces et doit choisir le sien à la connexion. Réservé aux administrateurs, de 1 à 80 caractères, et chaque
+renommage apparaît dans le journal des actions.

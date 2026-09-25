@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { DuplicateEmailError } from '../user/store.pg';
 import type { UserRow, UserMutation } from '../user/store.pg';
 import type { Guard } from '../auth/middleware';
@@ -40,8 +41,13 @@ export interface UsersRouteDeps {
   sendEmail?(input: { to: string; subject: string; text: string; html?: string }): Promise<void>;
   /** Nom (ou email de repli) de l'invitant, pour personnaliser l'email. Absent/null -> phrase générique. */
   getInviterName?(userId: string): Promise<string | null>;
-  /** Nom de l'espace de travail (tenant), pour personnaliser l'email. Absent/null -> phrase générique. */
+  /**
+   * Nom de l'espace de travail (tenant). Sert à personnaliser l'email d'invitation (absent/null -> phrase
+   * générique), et à la carte « Espace » de Compte & équipe (absent -> 503).
+   */
   getWorkspaceName?(tenantId: string): Promise<string | null>;
+  /** Renomme l'espace (`tenants.name`). `false` = espace inconnu. Absent -> renommage indisponible (503). */
+  renommerEspace?(tenantId: string, nom: string): Promise<boolean>;
   /** Base URL du front pour le lien d'invitation. */
   appUrl?: string;
 }
@@ -66,6 +72,19 @@ const ROLES = new Set(['admin', 'manager', 'agent']);
 const MAX_NOM = 60;
 // Validation d'email minimale (un @, pas d'espace) : le vrai contrôle d'unicité est en base.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Le NOM D'UN ESPACE, tel qu'il se choisit dans Compte & équipe : rogné, de 1 à 80 caractères, sans caractère de
+ * contrôle (`\p{Cc}`, C0, DEL et C1). Il s'affiche dans la liste des espaces à la connexion, dans /ops et dans
+ * l'email d'invitation : un retour à la ligne ou un octet nul y casserait trois écrans à la fois.
+ *
+ * ⚠️ `trim()` passe AVANT les bornes (Zod 4 applique ses vérifications dans l'ordre) : « 81 espaces » est vide,
+ * pas trop long, et un nom entouré d'espaces se compte sans eux.
+ */
+export const NOM_ESPACE_MAX = 80;
+const nomEspaceSchema = z.object({
+  nom: z.string().trim().min(1).max(NOM_ESPACE_MAX).refine((s) => !/\p{Cc}/u.test(s)),
+});
 
 /**
  * Gestion des comptes (onglet Admin). Le GROUPE est réservé aux admins via `garde`
@@ -226,5 +245,40 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
     if (result === 'last_admin') return reply.code(409).send({ error: 'au moins un administrateur actif est requis' });
     await journal(tenant, req, 'utilisateur.retire', { kind: 'user', id: userId });
     return reply.code(200).send({ id: userId, deleted: true });
+  });
+
+  /**
+   * LE NOM DE L'ESPACE (2026-09-25). `tenants.name` s'affichait au choix de l'espace à la connexion et dans /ops,
+   * et rien ne permettait de le changer : un espace créé « Demo +33 5 25 68 02 50 » le restait.
+   *
+   * ⚠️ Réservé aux admins par la garde du GROUPE (`g.admin` au montage, voir l'en-tête de ce module), comme
+   * toutes les écritures de Compte & équipe : un agent reçoit 403 avant d'entrer ici.
+   */
+  app.get('/tenants/:tenantId/nom', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.getWorkspaceName) return reply.code(503).send({ error: 'nom de l\'espace indisponible' });
+    const nom = await deps.getWorkspaceName(tenant);
+    if (nom === null) return reply.code(404).send({ error: 'espace inconnu' });
+    return reply.code(200).send({ nom });
+  });
+
+  app.patch('/tenants/:tenantId/nom', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.getWorkspaceName || !deps.renommerEspace) return reply.code(503).send({ error: 'renommage de l\'espace indisponible' });
+    const corps = nomEspaceSchema.safeParse(req.body ?? {});
+    if (!corps.success) {
+      return reply.code(400).send({ error: `nom invalide (1 à ${NOM_ESPACE_MAX} caractères, sans caractère de contrôle)` });
+    }
+    const nom = corps.data.nom;
+    // L'ancien nom est lu AVANT l'écriture : c'est lui que le journal garde, et il dit aussi si l'espace existe.
+    const ancien = await deps.getWorkspaceName(tenant);
+    if (ancien === null) return reply.code(404).send({ error: 'espace inconnu' });
+    // Rien n'a changé : ni écriture ni ligne de journal, qui est un registre de CHANGEMENTS.
+    if (ancien === nom) return reply.code(200).send({ nom });
+    if (!(await deps.renommerEspace(tenant, nom))) return reply.code(404).send({ error: 'espace inconnu' });
+    await journal(tenant, req, 'espace.renomme', { kind: 'tenant', id: tenant }, { ancien, nouveau: nom });
+    return reply.code(200).send({ nom });
   });
 }

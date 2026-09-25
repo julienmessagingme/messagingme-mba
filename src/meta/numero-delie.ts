@@ -14,7 +14,7 @@ import { cacheCourt } from '../lib/cache-court';
  * gestionnaire d'erreurs du serveur rend `err.message` sur un 4xx) et dans la trace d'un parcours.
  */
 export const MESSAGE_NUMERO_DELIE =
-  'Le numéro WhatsApp de cet espace est délié : aucun message ne part tant qu’un administrateur ne l’a pas relié depuis l’Accueil.';
+  'Le numéro WhatsApp de cet espace est délié : aucun message WhatsApp ne part tant qu’un administrateur ne l’a pas relié depuis l’Accueil.';
 
 /**
  * Un envoi refusé parce que le numéro est délié.
@@ -39,17 +39,26 @@ export class NumeroDelieError extends Error {
  * 🔴 CE CACHE EST UNE DÉCISION, ET SA FENÊTRE EST ASSUMÉE. `cache-court.ts` prévient qu'il convient à ce qui
  * tolère quelques secondes de retard, « jamais à une décision ». Celle-ci en est une, mais sans cache la garde
  * coûterait une requête PAR ENVOI : le runtime de scénario construit un client par message (`wiring.ts`), et le
- * dépôt a déjà retiré ce genre de lecture par destinataire (`numero-espace.ts`). Cinq secondes, c'est le pas
- * auquel un run de campagne relit son statut (`DEFAULT_STATUS_POLL_MS`) : les deux effets du geste « Délier »
- * (la campagne en pause, l'envoi refusé) tombent donc dans la MÊME fenêtre.
+ * dépôt a déjà retiré ce genre de lecture par destinataire (`numero-espace.ts`).
  *
  * Coût : au plus une lecture par clé primaire par numéro, toutes les cinq secondes, par process (API et worker
  * ont chacun le leur), mutualisée entre les appels simultanés.
  *
  * ⚠️ Les DEUX réponses sont gardées, contrairement au numéro de l'espace, parce que les deux deviennent fausses
- * au même rythme (un clic) et que la fenêtre est la même dans les deux sens : un envoi peut encore partir cinq
- * secondes après « Délier », ou être refusé cinq secondes après « Relier ». Dans le process qui porte la route,
- * le geste vide le cache (`invaliderTout`) : la fenêtre n'existe alors que dans l'autre process.
+ * au même rythme (un clic). Dans le process qui porte la route, le geste vide le cache (`invaliderTout`) ; dans
+ * l'autre (le worker), la réponse d'avant le geste peut survivre jusqu'à cinq secondes, et la fenêtre a deux sens :
+ *
+ * - APRÈS « DÉLIER », UN ENVOI PEUT ENCORE PARTIR du worker pendant ce délai. Une campagne de modèles n'interroge
+ *   même pas cette garde en cours de run : son client est construit une fois, au démarrage. Elle s'arrête quand
+ *   le run relit son statut, que « Délier » a passé en pause (au plus `DEFAULT_STATUS_POLL_MS`, cinq secondes).
+ * - APRÈS « RELIER », UN ENVOI PEUT ÊTRE REFUSÉ à tort pendant ce délai. Une campagne n'écrit pas de pause pour
+ *   autant : elle relit la base SANS ce cache avant (`numeroDelieEnBase`, `run-job.ts` et `engine.ts`) et, reliée,
+ *   rend le destinataire en vol à la file et laisse le balayage de reprise la relancer. Seul le destinataire d'un
+ *   étage « message et scénario » reste `sent`, son message parti et son scénario non démarré. Une automation
+ *   efface son tir (`runner.ts`), donc le prochain événement la redéclenche. La suite d'un parcours qu'une réponse
+ *   fait avancer échoue comme tout envoi refusé, et se lit dans le journal des échecs d'avance.
+ *
+ * L'Inbox et l'API publique envoient depuis le process qui porte la route : le geste y vide le cache, sans fenêtre.
  */
 export const NUMERO_DELIE_TTL_MS = 5_000;
 

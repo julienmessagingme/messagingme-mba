@@ -297,6 +297,7 @@ export const CODES_DOCUMENTES = [
   { code: 'rcs_unreachable', statut: 422, ecart: false, quoi: ['Ce numéro n’est pas joignable en RCS (appris d’un envoi précédent).', 'This number is not reachable over RCS (learned from a previous send).'] },
   { code: 'rcs_not_enabled', statut: 409, ecart: false, quoi: ['Le canal RCS n’est pas actif sur cet espace.', 'The RCS channel is not active on this workspace.'] },
   { code: 'no_whatsapp_number', statut: 409, ecart: false, quoi: ['Aucun numéro WhatsApp sur cet espace.', 'No WhatsApp number on this workspace.'] },
+  { code: 'number_unlinked', statut: 409, ecart: false, quoi: ['Le numéro WhatsApp de l’espace est délié depuis l’Accueil : rien ne part par WhatsApp tant qu’un administrateur ne l’a pas relié.', 'The workspace’s WhatsApp number is unlinked from the Home page: nothing goes out over WhatsApp until an admin relinks it.'] },
   { code: 'scenario_not_found', statut: 404, ecart: false, quoi: ['Scénario introuvable.', 'Scenario not found.'] },
   { code: 'node_not_found', statut: 404, ecart: false, quoi: ['Bloc introuvable.', 'Block not found.'] },
   { code: 'template_not_found', statut: 404, ecart: false, quoi: ['Template absent, ou pas encore approuvé.', 'Template missing, or not approved yet.'] },

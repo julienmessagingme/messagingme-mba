@@ -376,7 +376,8 @@ function DocsInner() {
           )}{' '}
           <Code c="unknown_contact" />, {t('bloquée ou sans adresse WhatsApp 409', 'blocked or without a WhatsApp address 409')} <Code c="blocked_contact" />,{' '}
           {t('fenêtre de 24 h fermée 422', '24-hour window closed 422')} <Code c="window_closed" />, {t('désabonnée 409', 'opted out 409')} <Code c="opted_out" />,{' '}
-          {t('espace sans numéro WhatsApp 409', 'workspace without a WhatsApp number 409')} <Code c="no_whatsapp_number" />.
+          {t('espace sans numéro WhatsApp 409', 'workspace without a WhatsApp number 409')} <Code c="no_whatsapp_number" />,{' '}
+          {t('numéro délié depuis l’Accueil 409', 'number unlinked from the Home page 409')} <Code c="number_unlinked" />.
         </p>
         <p className="text-ink-500">
           {t(

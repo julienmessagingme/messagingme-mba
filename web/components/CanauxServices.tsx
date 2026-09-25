@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Toggle } from '@/components/Toggle';
+import { LogoWhatsApp, LogoGoogleMessages, LogoChaineWhatsApp, LogoMeta, LogoHubSpot } from '@/components/LogosCanaux';
+import { DOT_HEX } from '@/lib/ui';
 import { useT, useLocale } from '@/lib/i18n';
 import { estAnnulation } from '@/lib/http';
 import { delierNumero, relierNumero, setHubspotActif, type AccountStatusResponse } from '@/lib/api';
@@ -12,12 +14,15 @@ import { getEtatPubs, deconnecterPubs, type EtatPubs } from '@/lib/api-pubs';
 import type { CanalRcs } from '@/components/RcsChannelCard';
 import type { ConnexionNumero } from '@/lib/connexion-numero';
 import {
-  demandeConfirmation, ligneNumero, ligneRcs, ligneChaine, lignePublicites, ligneHubspot, nombreDePublications, routeInconnue,
-  type Geste, type Ligne,
+  demandeConfirmation, ligneNumero, ligneRcs, ligneChaine, lignePublicites, ligneHubspot, nombreDePublications, routeInconnue, teinte,
+  type Geste, type Ligne, type Teinte,
 } from '@/lib/canaux-services';
 
 /**
  * LE BLOC « CANAUX ET SERVICES » DE L'ACCUEIL (plan du 2026-09-25, design validé par Julien).
+ *
+ * Une GRILLE DE CARTES depuis le 2026-09-25 après-midi (3 colonnes, 2, puis 1 selon la largeur) : le logo du
+ * canal, l'interrupteur, une pastille d'état (`teinte`), la phrase, puis le lien. Les gestes n'ont pas bougé.
  *
  * Cinq lignes, cinq interrupteurs, chacun branché sur un geste qui existe (ou sur l'un des deux neufs : délier le
  * numéro, débrancher la chaîne). Les décisions vivent dans `lib/canaux-services.ts`, testées sans navigateur ;
@@ -31,6 +36,8 @@ import {
 
 type Service = 'numero' | 'rcs' | 'chaine' | 'publicites' | 'hubspot';
 type Lecture<T> = T | 'echec' | null;
+
+const COULEUR: Record<Teinte, string> = { vert: DOT_HEX.green, gris: DOT_HEX.grey, ambre: DOT_HEX.amber };
 
 export function CanauxServices(p: {
   tenantId: string;
@@ -166,8 +173,8 @@ export function CanauxServices(p: {
     const numero = c.number ? (c.number.startsWith('+') ? c.number : `+${c.number}`) : t('le numéro', 'the number');
     if (typeof c.delieLe === 'string') {
       return t(
-        `${numero} délié le ${date(c.delieLe)} : aucun message ne part, et les messages reçus ne sont pas enregistrés.`,
-        `${numero} unlinked on ${date(c.delieLe)}: no message goes out, and incoming messages are not recorded.`,
+        `${numero} délié le ${date(c.delieLe)} : aucun message WhatsApp ne part, et les messages reçus ne sont pas enregistrés.`,
+        `${numero} unlinked on ${date(c.delieLe)}: no WhatsApp message goes out, and incoming messages are not recorded.`,
       );
     }
     return t(`Relié : ${numero}.`, `Linked: ${numero}.`);
@@ -212,12 +219,18 @@ export function CanauxServices(p: {
     return t('Allumé : le bloc HubSpot s’affiche sur l’Accueil.', 'On: the HubSpot block shows on the Home page.');
   };
 
-  const rangees: Array<{ service: Service; titre: string; phrase: string; lien: { href: string; texte: string } }> = [
-    { service: 'numero', titre: t('Numéro WhatsApp', 'WhatsApp number'), phrase: phraseNumero(), lien: { href: '#numero-whatsapp', texte: t('Voir le numéro', 'See the number') } },
-    { service: 'rcs', titre: t('Canal RCS', 'RCS channel'), phrase: phraseRcs(), lien: { href: '#canal-rcs', texte: t('Voir le canal', 'See the channel') } },
-    { service: 'chaine', titre: t('Chaîne', 'Channel'), phrase: phraseChaine(), lien: { href: '/chaine', texte: t('Ouvrir l’écran Chaîne', 'Open the Channel screen') } },
-    { service: 'publicites', titre: t('Compte publicitaire', 'Ad account'), phrase: phrasePubs(), lien: { href: '/publicites', texte: t('Ouvrir l’écran Publicités', 'Open the Ads screen') } },
-    { service: 'hubspot', titre: 'HubSpot', phrase: phraseHubspot(), lien: { href: '/parametres#integration-hubspot', texte: t('Ouvrir le réglage', 'Open the setting') } },
+  // « À terminer » : la même condition que la phrase « Connexion à terminer » de `phrasePubs`.
+  const pubsATerminer = pubs !== null && pubs !== 'echec' && pubs !== 'absent' && !!pubs.connexion && !pubs.connexion.comptePubId;
+
+  const rangees: Array<{
+    service: Service; titre: string; phrase: string; lien: { href: string; texte: string };
+    Logo: (x: { className?: string }) => React.ReactElement; aTerminer?: boolean;
+  }> = [
+    { service: 'numero', titre: t('Numéro WhatsApp', 'WhatsApp number'), phrase: phraseNumero(), lien: { href: '#numero-whatsapp', texte: t('Voir le numéro', 'See the number') }, Logo: LogoWhatsApp },
+    { service: 'rcs', titre: t('Canal RCS', 'RCS channel'), phrase: phraseRcs(), lien: { href: '#canal-rcs', texte: t('Voir le canal', 'See the channel') }, Logo: LogoGoogleMessages },
+    { service: 'chaine', titre: t('Chaîne', 'Channel'), phrase: phraseChaine(), lien: { href: '/chaine', texte: t('Ouvrir l’écran Chaîne', 'Open the Channel screen') }, Logo: LogoChaineWhatsApp },
+    { service: 'publicites', titre: t('Compte publicitaire', 'Ad account'), phrase: phrasePubs(), lien: { href: '/publicites', texte: t('Ouvrir l’écran Publicités', 'Open the Ads screen') }, Logo: LogoMeta, aTerminer: pubsATerminer },
+    { service: 'hubspot', titre: 'HubSpot', phrase: phraseHubspot(), lien: { href: '/parametres#integration-hubspot', texte: t('Ouvrir le réglage', 'Open the setting') }, Logo: LogoHubSpot },
   ];
 
   // ⚠️ Les erreurs de la fenêtre Meta et de la clé RCS restent dans LEUR carte (la zone de connexion, la carte
@@ -227,35 +240,52 @@ export function CanauxServices(p: {
     enCours === s || (s === 'numero' && p.connexionNumero.busy) || (s === 'rcs' && p.rcs.busy);
 
   return (
-    <section data-testid="canaux-services" className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+    <section data-testid="canaux-services">
       <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Canaux et services', 'Channels and services')}</h3>
-      <p className="mt-0.5 text-xs text-ink-500">
-        {t('Allumer ou éteindre chaque canal de cet espace. Éteindre demande une confirmation, rallumer non.', 'Turn each channel of this workspace on or off. Turning off asks for confirmation, turning back on does not.')}
-      </p>
       {info && <p data-testid="canaux-info" className="mt-3 rounded-lg bg-mint-50 px-3 py-2 text-xs text-mint-700">{info}</p>}
-      <ul className="mt-3 divide-y divide-ink-100">
-        {rangees.map(({ service, titre, phrase, lien }) => {
+      {/* ⚠️ 3 colonnes à partir de `xl` et non de `lg` : la colonne latérale (240 px) apparaît à `lg`, et trois
+          cartes y tomberaient sous 230 px, trop étroites pour une phrase d'état et un interrupteur. */}
+      <ul className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {rangees.map(({ service, titre, phrase, lien, Logo, aTerminer }) => {
           const l = lignes[service];
           const erreur = erreurDe(service);
+          const pastille = teinte(l, aTerminer);
           return (
-            <li key={service} data-testid={`canal-${service}`} className="flex items-start justify-between gap-4 py-3">
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-ink-800">{titre}</div>
-                <p data-testid={`canal-${service}-etat`} className="mt-0.5 text-xs text-ink-500">{phrase}</p>
-                {lien.href.startsWith('#')
-                  ? <a href={lien.href} data-testid={`canal-${service}-lien`} className="mt-0.5 inline-block text-xs text-brand-600 hover:underline">{lien.texte}</a>
-                  : <Link href={lien.href} data-testid={`canal-${service}-lien`} className="mt-0.5 inline-block text-xs text-brand-600 hover:underline">{lien.texte}</Link>}
-                {erreur && <p data-testid={`canal-${service}-erreur`} className="mt-1 text-xs text-coral">{erreur}</p>}
+            <li key={service} data-testid={`canal-${service}`} className="flex flex-col rounded-2xl border border-ink-200 bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <Logo className="h-8 w-8 shrink-0" />
+                  <div className="text-sm font-semibold text-ink-900">{titre}</div>
+                </div>
+                {l.allume !== null && (
+                  <Toggle
+                    testid={`canal-${service}-toggle`}
+                    checked={l.allume}
+                    onChange={() => actionner(l.geste)}
+                    disabled={l.geste === null || occupe(service)}
+                    title={titre}
+                  />
+                )}
               </div>
-              {l.allume !== null && (
-                <Toggle
-                  testid={`canal-${service}-toggle`}
-                  checked={l.allume}
-                  onChange={() => actionner(l.geste)}
-                  disabled={l.geste === null || occupe(service)}
-                  title={titre}
-                />
-              )}
+              <div className="mt-3 flex items-start gap-2">
+                {/* La phrase porte le sens : la pastille le double pour l'œil, d'où `aria-hidden`. */}
+                {pastille !== null && (
+                  <span
+                    data-testid={`canal-${service}-pastille`}
+                    data-teinte={pastille}
+                    aria-hidden="true"
+                    className="mt-[3px] h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: COULEUR[pastille] }}
+                  />
+                )}
+                <p data-testid={`canal-${service}-etat`} className="text-xs text-ink-600">{phrase}</p>
+              </div>
+              {erreur && <p data-testid={`canal-${service}-erreur`} className="mt-2 text-xs text-coral">{erreur}</p>}
+              <div className="mt-auto pt-3">
+                {lien.href.startsWith('#')
+                  ? <a href={lien.href} data-testid={`canal-${service}-lien`} className="text-xs text-brand-600 hover:underline">{lien.texte}</a>
+                  : <Link href={lien.href} data-testid={`canal-${service}-lien`} className="text-xs text-brand-600 hover:underline">{lien.texte}</Link>}
+              </div>
             </li>
           );
         })}
@@ -282,8 +312,9 @@ function Confirmation({ geste, onAnnuler, onConfirmer }: { geste: Geste; onAnnul
     delier_numero: {
       titre: t('Délier le numéro WhatsApp ?', 'Unlink the WhatsApp number?'),
       corps: [
-        t('Plus aucun message ne part de cet espace : campagnes, scénarios, Inbox et API.', 'No message goes out of this workspace anymore: campaigns, scenarios, Inbox and API.'),
+        t('Plus aucun message WhatsApp ne part de cet espace : campagnes, scénarios, Inbox et API. Le RCS et les e-mails continuent.', 'No WhatsApp message goes out of this workspace anymore: campaigns, scenarios, Inbox and API. RCS and emails keep going.'),
         t('Les campagnes en cours ou programmées passent en pause.', 'Running or scheduled campaigns are paused.'),
+        t('Une campagne « Au fil de l’eau » n’inscrit personne pendant ce temps : les contacts arrivés entre-temps ne seront pas repris au retour.', 'An “Au fil de l’eau” (live feed) campaign enrolls no one in the meantime: contacts who arrive then will not be picked up when the number is relinked.'),
         t('Les messages reçus sur ce numéro ne sont plus enregistrés.', 'Messages received on this number are no longer recorded.'),
         t('Rien ne change chez Meta : si l’agent de Meta est allumé, il continue de répondre. L’historique reste, et le numéro se relie d’un clic.', 'Nothing changes at Meta: if Meta’s agent is on, it keeps answering. History stays, and the number relinks in one click.'),
       ],

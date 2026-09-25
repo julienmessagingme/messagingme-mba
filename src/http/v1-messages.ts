@@ -5,6 +5,7 @@ import { repondreDansLaFenetre, type DepsRepondre } from '../inbox/repondre';
 import { TEXTE_MAX_CARACTERES } from '../traduction/traduire';
 import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
 import { STATUT_PAR_CODE, refuser } from '../api/erreurs';
+import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../meta/numero-delie';
 import { MESSAGE_RESOLUTION, normaliserCles, schemaClesFiche, type ClesFiche, type ModeCreation, type ResolutionFiche } from '../api/fiche';
 import { messageDeForme } from '../api/forme';
 import type { FilDuContact } from '../inbox/store.pg';
@@ -133,7 +134,19 @@ export function registerV1Messages(app: FastifyInstance, deps: V1MessagesRouteDe
      * `auteur` à `null` : personne ne SIGNE ce message dans l'Inbox. `origine` à `'api'` : c'est le système du
      * client qui parle (migration 0166).
      */
-    const res = await repondreDansLaFenetre(deps.repondre, tenantId, conversationId, text, null, 'api');
+    /**
+     * 🔴 LE NUMÉRO DÉLIÉ (migration 0180) sort du point de passage des envois en EXCEPTION, pas en refus typé :
+     * c'est ce qui le rend lisible sur toutes les routes d'un coup, par le gestionnaire d'erreurs du serveur.
+     * Mais celui-ci rend `{ error }` sans `code`, et l'enveloppe de l'API publique est `{ error, code }` : un
+     * programme doit pouvoir traiter ce cas sans lire la phrase. On l'attrape donc ICI, et seulement lui.
+     */
+    let res: Awaited<ReturnType<typeof repondreDansLaFenetre>>;
+    try {
+      res = await repondreDansLaFenetre(deps.repondre, tenantId, conversationId, text, null, 'api');
+    } catch (err) {
+      if (err instanceof NumeroDelieError) return refuser(reply, 409, 'number_unlinked', MESSAGE_NUMERO_DELIE);
+      throw err;
+    }
     if (!('refus' in res)) return reply.code(200).send({ messageId: res.messageId, conversationId, channel: 'whatsapp' } satisfies ReponseMessageSimple);
     const motif = res.refus.motif;
     switch (motif) {

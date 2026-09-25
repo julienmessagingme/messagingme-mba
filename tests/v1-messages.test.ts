@@ -11,6 +11,7 @@ import type { OrigineMessage } from '../src/inbox/origine';
 import type { ClesFiche, ModeCreation } from '../src/api/fiche';
 import { cleApiDeTest } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
+import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../src/meta/numero-delie';
 
 /**
  * `POST /v1/messages/whatsapp` : UN SIMPLE TEXTE, À UNE FICHE, DANS LA FENÊTRE DE 24 H (spec 2026-09-24, § 4).
@@ -52,9 +53,11 @@ interface Monde {
   fenetreOuverte: boolean;
   desabonne: boolean;
   numeroDeLEspace: string | null;
+  /** Le numéro a été DÉLIÉ depuis l'Accueil (migration 0180) : le point de passage des envois lève `NumeroDelieError`. */
+  numeroDelie: boolean;
 }
 
-const MONDE: Monde = { fiche: { id: C1 }, conversation: 'conv-1', sansFil: false, fenetreOuverte: true, desabonne: false, numeroDeLEspace: 'pn1' };
+const MONDE: Monde = { fiche: { id: C1 }, conversation: 'conv-1', sansFil: false, fenetreOuverte: true, desabonne: false, numeroDeLEspace: 'pn1', numeroDelie: false };
 
 function app(over: Partial<Monde> = {}) {
   const m: Monde = { ...MONDE, ...over };
@@ -73,7 +76,11 @@ function app(over: Partial<Monde> = {}) {
       return tenant === 't1' && id === m.conversation ? { waId: '33612345678', lastInboundAt: null, windowOpen: m.fenetreOuverte } : null;
     },
     getTenantPhoneNumberId: async () => m.numeroDeLEspace,
-    sendReply: async (_t, _pn, to, text) => { envois.push({ to, text }); return 'wamid.envoye'; },
+    sendReply: async (_t, pn, to, text) => {
+      if (m.numeroDelie) throw new NumeroDelieError(pn);
+      envois.push({ to, text });
+      return 'wamid.envoye';
+    },
     estDesabonne: async (_t, waId) => { desabonneLu.push(waId); return m.desabonne; },
     recordOutbound: async (_id, body, _msgId, origine, type, _cat, _name, sender) => {
       enregistres.push({ body, origine, auteur: sender ?? null, type });
@@ -223,6 +230,21 @@ describe('POST /v1/messages/whatsapp', () => {
     const r2 = await post(server, { contactId: C2, phone: NUMERO, text: 'x' });
     expect(r2.statusCode).toBe(409);
     expect(r2.json()).toMatchObject({ code: 'identity_conflict' });
+    await server.close();
+  });
+
+  /**
+   * 🔴 LE NUMÉRO DÉLIÉ SORT DANS L'ENVELOPPE DE L'API, `{ error, code }`. Il remonte du point de passage des
+   * envois en exception ; laissé au gestionnaire d'erreurs du serveur, il rendait un 409 `{ error }` SANS code,
+   * qu'un programme ne peut traiter qu'en lisant la phrase.
+   */
+  it('🔴 numéro délié depuis l’Accueil -> 409 number_unlinked, la phrase dans `error`, et rien n’est enregistré', async () => {
+    const { server, envois, enregistres } = app({ numeroDelie: true });
+    const res = await post(server, { contactId: C1, text: 'x' });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: MESSAGE_NUMERO_DELIE, code: 'number_unlinked' });
+    expect(envois).toEqual([]);
+    expect(enregistres).toEqual([]);
     await server.close();
   });
 

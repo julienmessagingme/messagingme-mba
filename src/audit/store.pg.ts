@@ -130,7 +130,13 @@ export type AuditAction =
    */
   | 'integration.branchee'
   | 'integration.modifiee'
-  | 'integration.debranchee';
+  | 'integration.debranchee'
+  /**
+   * L'ESPACE RENOMMÉ depuis Compte & équipe (2026-09-25). La cible est l'espace ; le détail porte l'ancien et le
+   * nouveau nom sous `ancien` et `nouveau`, jamais sous `nom` : c'est une clé INTERDITE (`CLES_INTERDITES`), qui
+   * aurait été retirée du détail. Le nom d'un espace est un libellé d'entreprise, pas l'identité d'une personne.
+   */
+  | 'espace.renomme';
 
 export interface AuditEntry {
   id: string;

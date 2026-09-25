@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
-import { listUsers, inviteMember, setUserRole, setUserDisabled, deleteUser, renommerMembre, type AdminUser, type UserRole } from '@/lib/api';
+import { listUsers, inviteMember, setUserRole, setUserDisabled, deleteUser, renommerMembre, lireNomEspace, renommerEspace, type AdminUser, type UserRole } from '@/lib/api';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 import { inputCls } from '@/lib/ui';
+import { estAnnulation } from '@/lib/http';
+import { routeInconnue } from '@/lib/canaux-services';
 
 export default function AdminPage() {
   return <AppShell active="admin">{(session) => <AdminInner session={session} />}</AppShell>;
@@ -98,6 +100,8 @@ function AdminInner({ session }: { session: Session }) {
     <div className="space-y-6">
       <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Compte', 'Account')}</h2>
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+
+      <EspaceCard tenantId={session.tenantId} />
 
       <InviteCard tenantId={session.tenantId} onInvited={load} />
 
@@ -266,6 +270,90 @@ function InviteCard({ tenantId, onInvited }: { tenantId: string; onInvited: () =
         )}
       </p>
       {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-mint-50 text-mint-700' : 'bg-red-50 text-red-700'}`}>{msg.text}</p>}
+    </form>
+  );
+}
+
+/**
+ * LE NOM DE L'ESPACE (2026-09-25). `tenants.name` s'affiche au choix de l'espace à la connexion et dans /ops, et il
+ * n'était modifiable nulle part. La règle (1 à 80 caractères une fois rogné, sans caractère de contrôle) est tenue
+ * par le SERVEUR : l'écran rogne, borne la saisie et affiche son refus tel quel.
+ *
+ * ⚠️ LA ROUTE PEUT MANQUER : Vercel publie la console à chaque `git push`, l'API attend son déploiement. Son 404 de
+ * routeur est dit comme tel, pas affiché comme une panne.
+ */
+function EspaceCard({ tenantId }: { tenantId: string }) {
+  const t = useT();
+  const [actuel, setActuel] = useState<string | null>(null);
+  const [saisie, setSaisie] = useState('');
+  const [lecture, setLecture] = useState<'en_cours' | 'ok' | 'indisponible'>('en_cours');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const pasAJour = t('Le renommage de l’espace n’est pas encore disponible : le serveur n’est pas à jour. Réessayez un peu plus tard.', 'Renaming the workspace is not available yet: the server is not up to date. Try again a bit later.');
+
+  useEffect(() => {
+    let vivant = true;
+    lireNomEspace(tenantId)
+      .then((r) => {
+        if (!vivant) return;
+        setActuel(r.nom);
+        setSaisie(r.nom);
+        setLecture('ok');
+      })
+      .catch((err: unknown) => {
+        if (!vivant || estAnnulation(err)) return;
+        setLecture('indisponible');
+        setMsg({ kind: 'err', text: routeInconnue(err) ? pasAJour : err instanceof Error ? err.message : t('Lecture du nom impossible', 'Unable to read the name') });
+      });
+    return () => { vivant = false; };
+    // `pasAJour` et `t` suivent la langue : relire le nom pour un changement de langue n'aurait aucun sens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId]);
+
+  const propre = saisie.trim();
+  const inchange = propre === '' || propre === actuel;
+
+  async function enregistrer(e: React.FormEvent) {
+    e.preventDefault();
+    if (inchange || busy) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      // Le nom EFFECTIF rendu par le serveur remplace la saisie : l'écran montre ce qui est en base.
+      const r = await renommerEspace(tenantId, propre);
+      setActuel(r.nom);
+      setSaisie(r.nom);
+      setMsg({ kind: 'ok', text: t('Nom de l’espace enregistré.', 'Workspace name saved.') });
+    } catch (err) {
+      setMsg({ kind: 'err', text: routeInconnue(err) ? pasAJour : err instanceof Error ? err.message : t('Enregistrement impossible', 'Unable to save') });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form data-testid="espace-carte" onSubmit={enregistrer} className="space-y-3 rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+      <div className="text-sm font-semibold text-ink-900">{t('Espace', 'Workspace')}</div>
+      {lecture === 'en_cours' && <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>}
+      {lecture === 'ok' && (
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[220px] flex-1">
+            <label htmlFor="espace-nom" className="mb-1 block text-xs font-medium text-ink-600">{t('Nom de l’espace', 'Workspace name')}</label>
+            <input id="espace-nom" data-testid="espace-nom" value={saisie} onChange={(e) => setSaisie(e.target.value)} maxLength={80} required className={inputCls} />
+          </div>
+          <button
+            type="submit"
+            data-testid="espace-enregistrer"
+            disabled={busy || inchange}
+            className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60"
+          >
+            {busy ? t('Enregistrement…', 'Saving…') : t('Enregistrer', 'Save')}
+          </button>
+        </div>
+      )}
+      {msg && (
+        <p data-testid="espace-message" className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-mint-50 text-mint-700' : 'bg-red-50 text-red-700'}`}>{msg.text}</p>
+      )}
     </form>
   );
 }

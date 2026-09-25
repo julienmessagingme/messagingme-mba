@@ -4,7 +4,8 @@ import { MetaCredentialsResolver } from '../src/meta/credentials';
 import type { HttpTransport, HttpResponse } from '../src/meta/http';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE, creerGardeNumeroDelie } from '../src/meta/numero-delie';
 import { campaignRunJob, type RunJobDeps } from '../src/campaign/run-job';
-import type { RecipientStore, CampaignStore, FrequencyStore, QualityProvider } from '../src/campaign/engine';
+import { runCampaign, RAISON_NUMERO_RELIE_ENTRE_TEMPS } from '../src/campaign/engine';
+import type { RecipientStore, CampaignStore, FrequencyStore, QualityProvider, EngineDeps } from '../src/campaign/engine';
 import type { Campaign, Recipient } from '../src/campaign/types';
 import type { MotifDePause } from '../src/campaign/pause';
 import { messageDePause } from '../src/campaign/pause';
@@ -126,6 +127,12 @@ const whatsapp: Campaign = {
   templateName: 'promo', templateLanguage: 'fr', paramMapping: [], status: 'running', workflowId: null, ratePerMinute: null, startNodeId: null,
 };
 
+/** Les relectures EN BASE, sans cache, que le run a faites avant d'écrire une pause. */
+function base(delie: boolean): { lectures: string[]; lire: (pn: string) => Promise<boolean> } {
+  const lectures: string[] = [];
+  return { lectures, lire: async (pn) => { lectures.push(pn); return delie; } };
+}
+
 function depsRun(campagne: Campaign, campagnes: Campagnes, over: Partial<RunJobDeps> = {}): RunJobDeps {
   return {
     getCampaign: async () => campagne,
@@ -134,6 +141,7 @@ function depsRun(campagne: Campaign, campagnes: Campagnes, over: Partial<RunJobD
     campaigns: campagnes,
     frequency: frequence,
     quality: qualite,
+    numeroDelieEnBase: async () => true,
     ...over,
   };
 }
@@ -141,11 +149,25 @@ function depsRun(campagne: Campaign, campagnes: Campagnes, over: Partial<RunJobD
 describe('campagne et numéro délié', () => {
   it('🔴 le point de passage refuse : la campagne passe en pause `numero_delie`, ÉCRITE, sans échéance', async () => {
     const campagnes = new Campagnes();
-    const report = await campaignRunJob({ campaignId: 'c1' }, depsRun(whatsapp, campagnes));
+    const enBase = base(true);
+    const report = await campaignRunJob({ campaignId: 'c1' }, depsRun(whatsapp, campagnes, { numeroDelieEnBase: enBase.lire }));
     expect(report).toMatchObject({ sent: 0, failed: 0, paused: true });
     expect(report.reason).toBe(messageDePause('numero_delie', null, undefined));
     // `reprise: null` : jamais d'échéance, donc jamais reprise par le balayage de reprise.
     expect(campagnes.statuts).toEqual([{ status: 'paused', pause: { raison: 'numero_delie', reprise: null } }]);
+    // Écrite après une relecture en base, sur le numéro que le refus nomme.
+    expect(enBase.lectures).toEqual(['pn1']);
+  });
+
+  /**
+   * 🔴 LA GARDE MISE EN CACHE PEUT DIRE « DÉLIÉ » JUSTE APRÈS « RELIER ». Une pause écrite sur cette réponse ne se
+   * lèverait jamais : le balayage de reprise ignore ce motif, et « Relier » a déjà eu lieu. La base tranche.
+   */
+  it('🔴 refus d’une garde périmée, numéro RELIÉ en base : AUCUNE pause écrite, la campagne reste en cours', async () => {
+    const campagnes = new Campagnes();
+    const report = await campaignRunJob({ campaignId: 'c1' }, depsRun(whatsapp, campagnes, { numeroDelieEnBase: base(false).lire }));
+    expect(campagnes.statuts).toEqual([]);
+    expect(report).toEqual({ sent: 0, skipped: 0, failed: 0, paused: false, reason: RAISON_NUMERO_RELIE_ENTRE_TEMPS });
   });
 
   it('🔴 même quand WhatsApp n’est qu’un étage de REPLI : la campagne entière attend, personne n’échoue', async () => {
@@ -167,6 +189,107 @@ describe('campagne et numéro délié', () => {
 
   it('le message dit QUI peut la relancer', () => {
     expect(messageDePause('numero_delie', null, undefined)).toMatch(/administrateur reliera le numéro/);
+  });
+});
+
+// --------------------------------------------------------------------------------------------------------
+// Pendant le run : un scénario démarré par destinataire construit un client PAR MESSAGE
+// --------------------------------------------------------------------------------------------------------
+
+/** Ce que le moteur a fait de chaque destinataire, dans l'ordre. */
+class DestinatairesTraces implements RecipientStore {
+  readonly gestes: string[] = [];
+  constructor(private readonly pending: Recipient[]) {}
+  async listPending(): Promise<Recipient[]> { return this.pending; }
+  async claim(id: string): Promise<boolean> { this.gestes.push(`claim ${id}`); return true; }
+  async relacher(id: string): Promise<void> { this.gestes.push(`relacher ${id}`); }
+  async markResult(id: string, r: { status: string; error?: string }): Promise<void> {
+    this.gestes.push(`${r.status} ${id}${r.error !== undefined ? ` (${r.error})` : ''}`);
+  }
+}
+const DEUX: Recipient[] = [
+  { id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' },
+  { id: 'r2', contactId: 'y', toE164: '+33622', resolvedParams: [], status: 'pending' },
+];
+const envoiInterdit: EngineDeps['sender'] = {
+  sendMarketing: async () => { throw new Error('aucun modèle direct dans ces cas'); },
+  sendTemplate: async () => { throw new Error('aucun modèle direct dans ces cas'); },
+};
+const pausesDe = (c: Campagnes) => c.statuts.filter((s) => s.status === 'paused');
+
+describe('campagne de scénario et numéro délié, en cours de run (le moteur)', () => {
+  function monter(campagne: Campaign, delieEnBase: boolean) {
+    const destinataires = new DestinatairesTraces(DEUX);
+    const campagnes = new Campagnes();
+    const demarrages: string[] = [];
+    const enBase = base(delieEnBase);
+    const refus = async (): Promise<boolean> => {
+      demarrages.push('démarrage');
+      throw new NumeroDelieError('pn1');
+    };
+    const deps: EngineDeps = {
+      sender: envoiInterdit, recipients: destinataires, campaigns: campagnes, frequency: frequence, quality: qualite,
+      startWorkflow: refus,
+      startWorkflowFromNode: refus,
+      numeroDelieEnBase: enBase.lire,
+    };
+    return { run: () => runCampaign(campagne, deps), destinataires, campagnes, demarrages, enBase };
+  }
+
+  /**
+   * 🔴 LE DESTINATAIRE EST RENDU À LA FILE, JAMAIS `failed`. Un `failed` n'est pas repris par « Relier » : la
+   * personne était perdue pour un état qu'un clic défait, et chaque suivant l'était aussi.
+   */
+  it.each([
+    ['campagne de scénario', { ...whatsapp, workflowId: 'wf1' }],
+    ['cible `node` (/v1/sends)', { ...whatsapp, workflowId: 'wf1', startNodeId: 'n1' }],
+  ])('🔴 %s : destinataire RENDU à la file, pause `numero_delie`, et le suivant n’est pas tenté', async (_nom, campagne) => {
+    const m = monter(campagne, true);
+    const report = await m.run();
+    expect(m.destinataires.gestes).toEqual(['claim r1', 'relacher r1']);
+    expect(m.demarrages).toEqual(['démarrage']); // UN seul : r2 n'est pas tenté
+    expect(report).toMatchObject({ sent: 0, failed: 0, paused: true, reason: messageDePause('numero_delie', null, undefined) });
+    expect(pausesDe(m.campagnes)).toEqual([{ status: 'paused', pause: { raison: 'numero_delie', reprise: null } }]);
+    expect(m.enBase.lectures).toEqual(['pn1']);
+  });
+
+  it('🔴 garde périmée, numéro RELIÉ en base : destinataire rendu à la file, AUCUNE pause, run arrêté', async () => {
+    const m = monter({ ...whatsapp, workflowId: 'wf1' }, false);
+    const report = await m.run();
+    expect(m.destinataires.gestes).toEqual(['claim r1', 'relacher r1']);
+    expect(pausesDe(m.campagnes)).toEqual([]);
+    // Ni `completed` : il reste du monde en file, que le balayage des campagnes gelées reprendra.
+    expect(m.campagnes.statuts.map((s) => s.status)).not.toContain('completed');
+    expect(report).toMatchObject({ paused: false, reason: RAISON_NUMERO_RELIE_ENTRE_TEMPS });
+  });
+
+  /**
+   * 🔴 « MESSAGE ET SCÉNARIO » : le message part par son canal (ici RCS), puis le scénario bute sur le numéro
+   * délié. Ce destinataire reste `sent` (le rendre à la file lui renverrait le message), mais on s'arrête après
+   * lui : chaque suivant recevrait son message sans jamais sa suite.
+   */
+  it('🔴 message et scénario : le destinataire reste `sent` avec sa raison, et le run s’arrête APRÈS lui', async () => {
+    const destinataires = new DestinatairesTraces(DEUX.map((r) => ({ ...r, etageCourant: 2 })));
+    const campagnes = new Campagnes();
+    const envoisRcs: string[] = [];
+    const campagne: Campaign = {
+      ...whatsapp,
+      channel: 'whatsapp',
+      chaine: [
+        { rang: 1, canal: 'whatsapp', templateName: 'promo', templateLanguage: 'fr' },
+        { rang: 2, canal: 'rcs', rcsMessage: { kind: 'text', text: 'le repli' }, workflowId: 'wf-42' },
+      ],
+    };
+    const report = await runCampaign(campagne, {
+      sender: envoiInterdit, recipients: destinataires, campaigns: campagnes, frequency: frequence, quality: qualite,
+      canaux: { rcs: { sender: { sendTo: async (r) => { envoisRcs.push(r.toE164); return { messageId: `rcs-${r.id}` }; } } } },
+      startWorkflow: async () => { throw new NumeroDelieError('pn1'); },
+      numeroDelieEnBase: async () => true,
+    });
+    expect(envoisRcs).toEqual(['+33611']);
+    expect(destinataires.gestes).toEqual(['claim r1', `sent r1 (Scénario non démarré : ${MESSAGE_NUMERO_DELIE})`]);
+    expect(report).toMatchObject({ sent: 1, failed: 0, paused: true });
+    expect(pausesDe(campagnes)).toEqual([{ status: 'paused', pause: { raison: 'numero_delie', reprise: null } }]);
   });
 });
 

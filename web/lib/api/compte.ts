@@ -377,6 +377,14 @@ export function inviteMember(tenantId: string, email: string, role: UserRole, na
 export function renommerMembre(tenantId: string, userId: string, name: string): Promise<{ id: string; name: string | null }> {
   return request(`/tenants/${tenantId}/users/${userId}/name`, { method: 'PATCH', body: JSON.stringify({ name }) });
 }
+/** Le nom de l'espace (`tenants.name`), carte « Espace » de Compte & équipe. Admin seulement. */
+export function lireNomEspace(tenantId: string): Promise<{ nom: string }> {
+  return request(`/tenants/${tenantId}/nom`);
+}
+/** Renomme l'espace. Le serveur rend le nom EFFECTIF (rogné), c'est lui que l'écran affiche. */
+export function renommerEspace(tenantId: string, nom: string): Promise<{ nom: string }> {
+  return request(`/tenants/${tenantId}/nom`, { method: 'PATCH', body: JSON.stringify({ nom }) });
+}
 /** Accepte une invitation : pose le mot de passe et connecte (renvoie une session comme le login). */
 export function acceptInvitation(token: string, password: string): Promise<LoginResult> {
   return request<LoginResult>('/auth/invitations/accept', { method: 'POST', body: JSON.stringify({ token, password }) });

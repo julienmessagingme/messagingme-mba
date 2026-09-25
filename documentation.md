@@ -1592,14 +1592,24 @@ Ajouté par le lot 4 de l'API publique :
    (`NumeroDelieError`, `statusCode = 409`) sort en 409 lisible de toute route d'envoi par le gestionnaire
    d'erreurs, sans qu'aucune ne le connaisse. La garde est REQUISE dans `MetaClientFactoryOpts` (`numeroDelie`).
    ⚠️ Elle est mise en cache 5 s par process (`NUMERO_DELIE_TTL_MS`) : un envoi peut encore partir du worker 5 s
-   après « Délier » ; le process de l'API vide son cache au geste.
+   après « Délier » ; le process de l'API vide son cache au geste. Dans l'autre sens, le worker peut refuser à tort
+   pendant 5 s après « Relier » : aucune pause `numero_delie` ne s'écrit sans relecture en base hors cache
+   (`numeroDelieEnBase`, requise dans `RunJobDeps`, transmise au moteur), et une automation refusée efface son tir,
+   SAUF un rappel « avant la date » : son balayage republie tout rappel sans marqueur, donc l'effacer le relancerait
+   chaque minute et rejouerait ce que le parcours a fait avant l'envoi refusé.
+   `POST /v1/messages/whatsapp` rend ce refus en 409 `number_unlinked` dans l'enveloppe `{ error, code }` ; les
+   autres routes le rendent en 409 `{ error }`.
 39. **Délier met en pause `numero_delie` les campagnes `running` et `scheduled` de l'espace dont un étage est
    WhatsApp** (repli compris), `paused_until` à nul, `scheduled_at` gardé. Le balayage de reprise ne les voit
    jamais (motif hors du `where` de `reprendreCampagnesDues` et du prédicat de `campaigns_reprise_idx`, tenu par
    `tests/numero-delie-migration.test.ts`). « Relier » les rend `scheduled` si `scheduled_at` est posé, `running`
    sinon, et c'est le balayage des campagnes gelées qui les relance dans la minute : aucun enfilement depuis
    l'API. Une campagne lancée ou reprise PENDANT la déliaison est mise en pause au premier refus du point de
-   passage, même quand WhatsApp n'est qu'un repli.
+   passage, même quand WhatsApp n'est qu'un repli. En cours de run, un scénario démarré par destinataire
+   (campagne de scénario, cible `node`) qui bute sur ce refus rend son destinataire à la file (`relacher`, jamais
+   `failed`) et arrête le run ; sur un étage « message et scénario », le destinataire reste `sent` (message parti,
+   scénario non démarré) et le run s'arrête après lui. Une campagne « Au fil de l'eau » en pause n'inscrit aucun
+   arrivant (`listRunningByWebhook` ne lit que `running`).
 40. **Les entrants d'un numéro délié sont écartés en TÊTE du job `webhook`** (`ecarterLesEntrantsDelies`), avant
    le journal brut et chaque étape : messages, échos de l'agent de Meta et bascules de contrôle. Les ACCUSÉS de
    livraison sont gardés. Coût : une lecture par clé primaire de `phone_numbers` par lot, zéro pour un lot
@@ -1607,7 +1617,19 @@ Ajouté par le lot 4 de l'API publique :
    Routes : `POST /tenants/:tenantId/numero/delier` et `/numero/relier` (admin), journalisées `numero.delie` et
    `numero.relie`. **Débrancher la chaîne** (`DELETE /tenants/:tenantId/channels-me/connection`, admin) supprime la
    seule ligne `channelsme_connections` : liens et publications n'ont aucune clé étrangère vers elle, les posts
-   déjà parus et leurs boutons continuent de démarrer leur scénario.
+   déjà parus et leurs boutons continuent de démarrer leur scénario. Sur l'Accueil, la pastille d'une carte se
+   déduit de son interrupteur par `teinte(ligne, aTerminer)` (`web/lib/canaux-services.ts`) : `null` quand l'état est
+   inconnu, jamais un gris (un gris dirait « éteint », ce qu'on n'a pas lu). Les logos vivent dans
+   `web/components/LogosCanaux.tsx` (SVG inline, tracés Simple Icons ; icône de la Chaîne WhatsApp dessinée maison) ;
+   `LogoHubSpot` y sert aussi le bloc HubSpot de l'Accueil.
+41. **Le nom de l'espace** : `GET /tenants/:tenantId/nom` rend `{ nom }`, `PATCH` avec `{ nom }` le change. Les deux
+   vivent dans le module `admin` (`src/http/users.ts`, monté avec `g.admin`) : `scopeTenant` et la garde admin du
+   groupe, un agent ou un manager reçoit 403. Validation `safeParse` : nom rogné, 1 à 80 caractères
+   (`NOM_ESPACE_MAX`), aucun caractère `\p{Cc}`. Écriture par `PgUserStore.setTenantName`, sans migration
+   (`tenants.name` existe depuis 0001). Un nom inchangé n'écrit rien. Audit `espace.renomme`, cible
+   `{ kind: 'tenant', id }`, détail `{ ancien, nouveau }` : jamais sous `nom`, clé de `CLES_INTERDITES` que le
+   filtre retirerait. La carte « Espace » de Compte & équipe traduit le 404 d'une API pas encore déployée par un
+   message au lieu d'une panne.
 
 ### Sur les contrats externes
 

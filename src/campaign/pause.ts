@@ -67,8 +67,12 @@ export function messageDePause(raison: MotifDePause, reprise: Date | null, code:
   if (raison === 'numero_delie') {
     // Ni Meta ni un incident : un administrateur a délié le numéro. Dire QUI peut la relancer, sinon on clique
     // « Reprendre » et elle se remet en pause aussitôt, sans comprendre pourquoi.
-    return 'Numéro WhatsApp délié de cet espace : campagne mise en pause, aucun destinataire perdu. '
-      + 'Elle reprendra quand un administrateur reliera le numéro depuis l’Accueil.';
+    //
+    // ⚠️ PAS « aucun destinataire perdu » : c'est vrai de ceux qui attendaient (le destinataire en vol est rendu
+    // à la file, cf. `arreterSurNumeroDelie`), pas du destinataire d'un étage « message et scénario », dont le
+    // message est parti et dont le scénario n'a pas démarré. La phrase dit ce qui attend, rien de plus.
+    return 'Numéro WhatsApp délié de cet espace : campagne mise en pause. Les destinataires qui n’avaient encore rien reçu '
+      + 'restent en attente, et elle reprendra quand un administrateur reliera le numéro depuis l’Accueil.';
   }
   if (raison === 'hors_horaires') {
     // Ni Meta ni un incident : le client l'a demandé. Le message doit le DIRE, sinon une campagne en pause

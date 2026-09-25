@@ -1,4 +1,4 @@
-import { runCampaign } from './engine';
+import { runCampaign, RAISON_NUMERO_RELIE_ENTRE_TEMPS } from './engine';
 import type {
   MessageSender,
   RecipientStore,
@@ -52,7 +52,7 @@ import type { CampaignSender } from './sender';
 export type CapacitesMoteur = Omit<
   EngineDeps,
   'sender' | 'channelSender' | 'rateLimiter' | 'renouvelerVerrou' | 'canaux'
-  | 'recipients' | 'campaigns' | 'frequency' | 'quality'
+  | 'recipients' | 'campaigns' | 'frequency' | 'quality' | 'numeroDelieEnBase'
 >;
 
 export interface RunJobDeps {
@@ -132,6 +132,18 @@ export interface RunJobDeps {
    * l'adresse `//messages`.
    */
   numeroDuTenant?: (tenantId: string) => Promise<string | null>;
+  /**
+   * Le numéro est-il délié, lu EN BASE, sans le cache de la garde du point de passage des envois
+   * (`PgNumeroDelieStore.estDelie`) ?
+   *
+   * 🔴 REQUISE, parce qu'elle décide si une pause `numero_delie` s'écrit, et qu'une telle pause écrite à tort ne
+   * se lève JAMAIS toute seule : le balayage de reprise ne la voit pas, et « Relier » a déjà eu lieu. Or le refus
+   * vient d'une garde mise en cache 5 s par process, qui peut répondre « délié » juste après « Relier ». Elle est
+   * relue ici avant la pause, et transmise au moteur pour la même relecture en cours de run.
+   *
+   * ⚠️ À PLAT, comme les quatre stores, et exclue de `CapacitesMoteur` : elle n'arrive au moteur que par ce job.
+   */
+  numeroDelieEnBase: (phoneNumberId: string) => Promise<boolean>;
   /**
    * SÉRIALISATION des runs d'une même campagne (R1-bis, cf. `run-lock.ts`). Les trois pièces vont ensemble,
    * d'où un seul objet : on ne peut pas câbler le verrou sans savoir dimensionner son bail, ni sans savoir
@@ -310,8 +322,17 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
          *   qu'elle attend (il ne relance que les pauses `numero_delie`).
          * On arrive ici quand la campagne a été lancée, reprise ou programmée APRÈS le geste « Délier », qui
          * met lui-même en pause celles qui tournaient.
+         *
+         * 🔴 RELU EN BASE AVANT D'ÉCRIRE LA PAUSE. Le refus vient d'une garde mise en cache 5 s par process : juste
+         * après « Relier », elle peut encore dire « délié ». Une pause écrite sur cette réponse ne se lèverait
+         * JAMAIS (le balayage de reprise ignore ce motif, et « Relier » a déjà eu lieu). Relié en base : rien
+         * n'est écrit, la campagne reste `running` sans run ni verrou, et le balayage des campagnes gelées la
+         * relance dans la minute, cache expiré.
          */
         if (err instanceof NumeroDelieError) {
+          if (!(await deps.numeroDelieEnBase(err.phoneNumberId))) {
+            return { sent: 0, skipped: 0, failed: 0, paused: false, reason: RAISON_NUMERO_RELIE_ENTRE_TEMPS };
+          }
           await deps.campaigns.setStatus(campaign.id, 'paused', { raison: 'numero_delie', reprise: null });
           return { sent: 0, skipped: 0, failed: 0, paused: true, reason: messageDePause('numero_delie', null, undefined) };
         }
@@ -354,6 +375,7 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
     campaigns: deps.campaigns,
     frequency: deps.frequency,
     quality: deps.quality,
+    numeroDelieEnBase: deps.numeroDelieEnBase,
   };
 
   const serialisation = deps.serialisation;

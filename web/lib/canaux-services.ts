@@ -112,3 +112,17 @@ export function routeInconnue(err: unknown): boolean {
 export function nombreDePublications(r: { posts?: unknown } | null): number | null {
   return r !== null && Array.isArray(r.posts) ? r.posts.length : null;
 }
+
+/** La pastille d'une carte : vert = allumé ou relié, gris = éteint, ambre = à terminer. */
+export type Teinte = 'vert' | 'gris' | 'ambre';
+
+/**
+ * La pastille se DÉDUIT de l'interrupteur, jamais d'une seconde lecture : elle ne peut donc pas dire « allumé » à
+ * côté d'un interrupteur éteint. `aTerminer` ne teinte qu'un service ALLUMÉ (une connexion commencée et pas
+ * finie). 🔴 `null` quand l'état est inconnu : un gris dirait « éteint », ce qu'on n'a pas constaté.
+ */
+export function teinte(l: Ligne, aTerminer = false): Teinte | null {
+  if (l.allume === null) return null;
+  if (!l.allume) return 'gris';
+  return aTerminer ? 'ambre' : 'vert';
+}

@@ -6,6 +6,7 @@ import { DuplicateEmailError } from '../src/user/store.pg';
 import type { UserRow } from '../src/user/store.pg';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { UsersRouteDeps } from '../src/http/users';
+import { detailSansDonneesPersonnelles } from '../src/audit/store.pg';
 
 const SECRET = 'test-secret';
 let adminTok = '';
@@ -392,5 +393,112 @@ describe('users route — le nom affiché', () => {
     });
     expect(res.statusCode).toBe(201);
     expect(cap.invited[0]?.name).toBeUndefined();
+  });
+});
+
+/**
+ * LE NOM DE L'ESPACE (2026-09-25) : la carte « Espace » de Compte & équipe.
+ *
+ * 🔴 `tenants.name` s'affichait à la connexion et dans /ops, et rien ne permettait de le changer. Ce qui compte
+ * ici : un agent ne renomme rien, un admin ne renomme que SON espace, un nom illisible est refusé avant toute
+ * écriture, et un renommage laisse une ligne de journal qui survit au filtre des données personnelles.
+ */
+describe('users route : le nom de l’espace', () => {
+  interface Trace { ecrits: Array<{ tenant: string; nom: string }>; audit: Array<{ action: string; target: { kind: string; id: string }; detail: Record<string, unknown> }> }
+  function appEspace(nomActuel: string | null = 'Demo +33 5 25 68 02 50') {
+    const trace: Trace = { ecrits: [], audit: [] };
+    const { server } = app({
+      getWorkspaceName: async () => nomActuel,
+      renommerEspace: async (tenant, nom) => { trace.ecrits.push({ tenant, nom }); return true; },
+      audit: async (_t, _acteur, action, target, detail) => { trace.audit.push({ action, target, detail: detail ?? {} }); },
+    });
+    return { server, trace };
+  }
+  const renommer = (tok: string, nom: unknown, tenant = 't1') =>
+    ({ method: 'PATCH' as const, url: `/tenants/${tenant}/nom`, ...h(tok), payload: { nom } });
+
+  it('un admin lit le nom de son espace', async () => {
+    const { server } = appEspace();
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/nom', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ nom: 'Demo +33 5 25 68 02 50' });
+  });
+
+  it('🔴 un admin renomme son espace : 200, le nom ROGNÉ est écrit et rendu, et une ligne de journal part', async () => {
+    const { server, trace } = appEspace();
+    const res = await server.inject(renommer(adminTok, '  Maison Dupont  '));
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ nom: 'Maison Dupont' });
+    expect(trace.ecrits).toEqual([{ tenant: 't1', nom: 'Maison Dupont' }]);
+    expect(trace.audit).toEqual([{
+      action: 'espace.renomme',
+      target: { kind: 'tenant', id: 't1' },
+      detail: { ancien: 'Demo +33 5 25 68 02 50', nouveau: 'Maison Dupont' },
+    }]);
+  });
+
+  it('🔴 le détail du journal SURVIT au filtre des données personnelles (`nom` y est une clé interdite)', async () => {
+    const { server, trace } = appEspace();
+    await server.inject(renommer(adminTok, 'Maison Dupont'));
+    expect(detailSansDonneesPersonnelles(trace.audit[0]!.detail).refuses).toEqual([]);
+  });
+
+  it('🔴 un AGENT et un MANAGER ne lisent ni ne renomment rien : 403, aucune écriture, aucun journal', async () => {
+    const managerTok = await signSession({ userId: 'u3', tenantId: 't1', role: 'manager' }, SECRET);
+    const { server, trace } = appEspace();
+    for (const tok of [agentTok, managerTok]) {
+      expect((await server.inject(renommer(tok, 'Pirate'))).statusCode).toBe(403);
+      expect((await server.inject({ method: 'GET', url: '/tenants/t1/nom', ...h(tok) })).statusCode).toBe(403);
+    }
+    expect(trace.ecrits).toEqual([]);
+    expect(trace.audit).toEqual([]);
+  });
+
+  it('🔴 isolation : un admin de l’espace t1 ne renomme pas l’espace t2', async () => {
+    const { server, trace } = appEspace();
+    expect((await server.inject(renommer(adminTok, 'Pirate', 't2'))).statusCode).toBe(403);
+    expect((await server.inject({ method: 'GET', url: '/tenants/t2/nom', ...h(adminTok) })).statusCode).toBe(403);
+    expect(trace.ecrits).toEqual([]);
+    expect(trace.audit).toEqual([]);
+  });
+
+  it('🔴 400 : vide, blanc, trop long, caractère de contrôle (C0, DEL, C1), pas une chaîne, absent ; rien n’est écrit', async () => {
+    const { server, trace } = appEspace();
+    for (const nom of ['', '   ', 'a'.repeat(81), 'Maison\nDupont', 'Maison\u0000', 'Maison\u007f', 'Maison\u0085Dupont', 42, null]) {
+      const res = await server.inject(renommer(adminTok, nom));
+      expect(res.statusCode, JSON.stringify(nom)).toBe(400);
+      expect(res.json().error).toMatch(/80/);
+    }
+    expect((await server.inject({ method: 'PATCH', url: '/tenants/t1/nom', ...h(adminTok), payload: {} })).statusCode).toBe(400);
+    expect(trace.ecrits).toEqual([]);
+    expect(trace.audit).toEqual([]);
+  });
+
+  it('la borne est incluse : 80 caractères passent, et les espaces autour ne comptent pas', async () => {
+    const { server, trace } = appEspace();
+    expect((await server.inject(renommer(adminTok, ` ${'a'.repeat(80)} `))).statusCode).toBe(200);
+    expect(trace.ecrits).toEqual([{ tenant: 't1', nom: 'a'.repeat(80) }]);
+  });
+
+  it('un nom inchangé ne réécrit rien et ne journalise rien', async () => {
+    const { server, trace } = appEspace('Maison Dupont');
+    const res = await server.inject(renommer(adminTok, ' Maison Dupont '));
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ nom: 'Maison Dupont' });
+    expect(trace.ecrits).toEqual([]);
+    expect(trace.audit).toEqual([]);
+  });
+
+  it('espace introuvable : 404, rien n’est écrit', async () => {
+    const { server, trace } = appEspace(null);
+    expect((await server.inject(renommer(adminTok, 'Maison Dupont'))).statusCode).toBe(404);
+    expect((await server.inject({ method: 'GET', url: '/tenants/t1/nom', ...h(adminTok) })).statusCode).toBe(404);
+    expect(trace.ecrits).toEqual([]);
+  });
+
+  it('câblage sans l’écriture : 503, et la lecture reste possible', async () => {
+    const { server } = app({ getWorkspaceName: async () => 'Acme Corp' });
+    expect((await server.inject(renommer(adminTok, 'X'))).statusCode).toBe(503);
+    expect((await server.inject({ method: 'GET', url: '/tenants/t1/nom', ...h(adminTok) })).statusCode).toBe(200);
   });
 });

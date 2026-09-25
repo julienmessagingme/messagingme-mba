@@ -24,11 +24,12 @@ const PUBS = {
   compte: null,
 };
 
-/** L'interrupteur d'une ligne et sa phrase. */
+/** L'interrupteur d'une ligne, sa phrase et sa pastille (la grille de cartes du 2026-09-25). */
 const ligne = (page: Page, service: string) => ({
   toggle: page.getByTestId(`canal-${service}-toggle`),
   etat: page.getByTestId(`canal-${service}-etat`),
   erreur: page.getByTestId(`canal-${service}-erreur`),
+  pastille: page.getByTestId(`canal-${service}-pastille`),
 });
 
 test.describe('Accueil : Canaux et services', () => {
@@ -55,6 +56,34 @@ test.describe('Accueil : Canaux et services', () => {
     await expect(page.getByText('Couper le canal RCS', { exact: true })).toHaveCount(0);
   });
 
+  test('la grille : un logo par carte, une pastille qui suit l’interrupteur, et plus de phrase d’explication', async ({ page }) => {
+    await mockAccueil(page, {
+      settings: { ...REGLAGES, hubspotActif: false },
+      canaux: { rcs: { active: true, channel: { agentId: 'a', brandName: 'Marque', displayName: 'Mon agent', status: 'launched', checkedAt: null } }, chaine: CHAINE, posts: [], pubs: PUBS },
+    });
+    // Ancre positive : le bloc a lu ses cinq services avant qu'on regarde ce qui n'y est plus.
+    await expect(ligne(page, 'publicites').etat).toHaveText('Connecté : GMC.');
+    for (const [s, logo] of [['numero', 'WhatsApp'], ['rcs', 'Google Messages'], ['chaine', 'Chaîne WhatsApp'], ['publicites', 'Meta'], ['hubspot', 'HubSpot']] as const) {
+      await expect(page.getByTestId(`canal-${s}`).getByRole('img', { name: logo, exact: true }), s).toBeVisible();
+    }
+    for (const [s, t] of [['numero', 'vert'], ['rcs', 'vert'], ['chaine', 'vert'], ['publicites', 'vert'], ['hubspot', 'gris']] as const) {
+      await expect(ligne(page, s).pastille, s).toHaveAttribute('data-teinte', t);
+    }
+    // Retirées à la demande de Julien (2026-09-25) : l'explication sous le titre, et la phrase sous « Bonjour ».
+    await expect(page.getByText('Canaux et services', { exact: true })).toBeVisible();
+    await expect(page.getByText(/Allumer ou éteindre chaque canal/)).toHaveCount(0);
+    await expect(page.getByText(/Voici l.état de ton compte/)).toHaveCount(0);
+    await expect(page.getByText(/^Bonjour/)).toBeVisible();
+  });
+
+  test('compte publicitaire connecté mais pas choisi : pastille AMBRE, « à terminer »', async ({ page }) => {
+    await mockAccueil(page, { canaux: { pubs: { ...PUBS, connexion: { ...PUBS.connexion, comptePubId: null, compteNom: null } } } });
+    const pubs = ligne(page, 'publicites');
+    await expect(pubs.etat).toContainText('Connexion à terminer');
+    await expect(pubs.pastille).toHaveAttribute('data-teinte', 'ambre');
+    await expect(pubs.toggle).toHaveAttribute('aria-pressed', 'true');
+  });
+
   test('🔴 délier le numéro : la confirmation dit ce qui s’arrête, « Annuler » n’envoie rien, confirmer délie', async ({ page }) => {
     const gestes: string[] = [];
     await mockAccueil(page, { canaux: { gestes } });
@@ -64,7 +93,9 @@ test.describe('Accueil : Canaux et services', () => {
     await numero.toggle.click();
     const dialogue = page.getByTestId('canaux-confirmation');
     await expect(dialogue).toBeVisible();
-    await expect(dialogue).toContainText('Plus aucun message ne part de cet espace');
+    await expect(dialogue).toContainText('Plus aucun message WhatsApp ne part de cet espace');
+    await expect(dialogue).toContainText('Le RCS et les e-mails continuent');
+    await expect(dialogue).toContainText('ne seront pas repris au retour');
     await expect(dialogue).toContainText('campagnes en cours ou programmées passent en pause');
     await expect(dialogue).toContainText('ne sont plus enregistrés');
     await expect(dialogue).toContainText('Rien ne change chez Meta');
@@ -76,6 +107,7 @@ test.describe('Accueil : Canaux et services', () => {
     await page.getByTestId('canaux-confirmation-ok').click();
     await expect(numero.etat).toContainText('délié le');
     await expect(numero.toggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(numero.pastille).toHaveAttribute('data-teinte', 'gris');
     await expect(page.getByTestId('canaux-info')).toContainText('2 campagne(s) mise(s) en pause');
     expect(gestes).toEqual(['POST /tenants/t-e2e/numero/delier']);
   });
@@ -162,6 +194,8 @@ test.describe('Accueil : Canaux et services', () => {
     await expect(ligne(page, 'chaine').etat).toContainText('Branchée');
     await expect(ligne(page, 'publicites').etat).toHaveText('Indisponible sur cette instance pour le moment.');
     await expect(ligne(page, 'publicites').toggle).toHaveCount(0);
+    // 🔴 Pas de pastille non plus : un gris dirait « éteint », ce qu'on n'a pas lu.
+    await expect(ligne(page, 'publicites').pastille).toHaveCount(0);
   });
 
   test('🔴 HubSpot : l’allumer ne demande rien et fait apparaître le bloc ; relié à un portail, l’extinction est grisée', async ({ page }) => {

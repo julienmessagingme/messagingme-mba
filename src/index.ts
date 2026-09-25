@@ -1607,6 +1607,7 @@ async function main(): Promise<void> {
         return u ? (u.name ?? u.email) : null;
       },
       getWorkspaceName: (tenantId) => userStore.getTenantName(tenantId),
+      renommerEspace: (tenantId, nom) => userStore.setTenantName(tenantId, nom),
       appUrl: config.APP_URL,
       ...(sendAuthEmail ? { sendEmail: sendAuthEmail } : {}),
     },

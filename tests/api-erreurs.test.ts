@@ -17,7 +17,7 @@ describe('les codes d’erreur de l’API publique', () => {
       unauthorized: 401, missing_scope: 403, tenant_locked: 403,
       unknown_contact: 404, duplicate: null, identity_conflict: 409, blocked_contact: 409, opted_out: 409, no_consent: 409,
       window_closed: 422, missing_variable: null, no_phone: 422, rcs_unreachable: 422,
-      rcs_not_enabled: 409, no_whatsapp_number: 409,
+      rcs_not_enabled: 409, no_whatsapp_number: 409, number_unlinked: 409,
       scenario_not_found: 404, node_not_found: 404, template_not_found: 404, rcs_message_not_found: 404, send_not_found: 404,
       scenario_ambiguous: 409, unsendable_target: 422, template_category_unknown: 422,
       idempotency_key_required: 400, idempotency_in_progress: 409, idempotency_key_reused: 422,

@@ -7,6 +7,7 @@ import { messagingTarget } from '../meta/types';
 import type { OrigineMessage } from '../inbox/origine';
 import type { SendResult, TemplateSpec, MarketingParams } from '../meta/types';
 import { MetaApiError, raisonDePause } from '../meta/errors';
+import { NumeroDelieError } from '../meta/numero-delie';
 import { instantDeReprise, messageDePause } from './pause';
 import type { MotifDePause } from './pause';
 import { withinBusinessHours } from '../workflow/conditions';
@@ -83,8 +84,9 @@ export interface RecipientStore {
    */
   claim(id: string): Promise<boolean | { ecart: EcartALEnvoi }>;
   /**
-   * Rend un destinataire réservé à la file (`sending` -> `pending`), l'inverse exact de `claim`. Un seul
-   * appelant : le plafond de numéro, où le contact n'a rien fait de mal et où aucun message n'est parti.
+   * Rend un destinataire réservé à la file (`sending` -> `pending`), l'inverse exact de `claim`. Deux
+   * appelants, où le refus vise le NUMÉRO et pas le contact : le plafond de numéro de Meta, et le numéro
+   * délié de l'espace (migration 0180).
    */
   relacher(id: string): Promise<void>;
   markResult(
@@ -327,7 +329,22 @@ export interface EngineDeps {
    * test et l'e2e muettes sur le sujet tant qu'elles n'en parlent pas.
    */
   horairesOuvres?: (tenantId: string) => Promise<{ timeZone: string; businessHours: BusinessHours } | null>;
+  /**
+   * Le numéro est-il délié, lu EN BASE, sans le cache de la garde du point de passage des envois
+   * (`PgNumeroDelieStore.estDelie`) ? Relue avant d'écrire une pause `numero_delie` (cf. `arreterSurNumeroDelie`).
+   *
+   * ⚠️ Absente (faux de test qui ne la câblent pas) : la pause est écrite sur la foi du refus. `run-job` la passe
+   * toujours, `RunJobDeps` l'exigeant.
+   */
+  numeroDelieEnBase?: (phoneNumberId: string) => Promise<boolean>;
 }
+
+/**
+ * La raison d'un run arrêté sur un refus « numéro délié » que la base dément : le numéro a été relié pendant que la
+ * garde, mise en cache, répondait encore « délié ». Aucune pause n'est écrite.
+ */
+export const RAISON_NUMERO_RELIE_ENTRE_TEMPS =
+  'numéro WhatsApp relié entre-temps : run arrêté sans pause, la campagne reste en cours et le balayage de reprise la relance dans la minute';
 
 /** Défaut du pas de relecture du statut : au pire une requête indexée toutes les 5 s par run en cours. */
 const DEFAULT_STATUS_POLL_MS = 5_000;
@@ -625,6 +642,32 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
   };
 
   /**
+   * LE NUMÉRO WHATSAPP DE L'ESPACE EST DÉLIÉ (migration 0180) : le run s'arrête et la campagne attend « Relier ».
+   *
+   * Même geste que le plafond de numéro de Meta, avec deux différences voulues :
+   * - la pause n'a JAMAIS d'échéance : seul « Relier » la lève (`PgNumeroDelieStore.relier`), le balayage de
+   *   reprise ne la voit pas ;
+   * - 🔴 elle n'est écrite qu'après une relecture EN BASE, sans cache (`numeroDelieEnBase`). Le refus vient d'une
+   *   garde mise en cache 5 s par process (`NUMERO_DELIE_TTL_MS`), qui peut encore répondre « délié » juste après
+   *   « Relier ». Écrire la pause sur cette réponse périmée la rendrait éternelle, puisque le geste qui la lève a
+   *   déjà eu lieu. Relié en base : on sort SANS pause, la campagne reste `running`, et le balayage des campagnes
+   *   gelées la relance dans la minute, cache expiré.
+   *
+   * ⚠️ L'appelant a déjà rendu à la file le destinataire en vol, s'il y en avait un : ce geste ne dépend pas de la
+   * relecture, rien n'étant parti vers lui par WhatsApp.
+   */
+  const arreterSurNumeroDelie = async (err: NumeroDelieError): Promise<RunReport> => {
+    if (deps.numeroDelieEnBase && !(await deps.numeroDelieEnBase(err.phoneNumberId))) {
+      report.reason = RAISON_NUMERO_RELIE_ENTRE_TEMPS;
+      return report;
+    }
+    report.paused = true;
+    report.reason = messageDePause('numero_delie', null, undefined);
+    await deps.campaigns.setStatus(campaign.id, 'paused', { raison: 'numero_delie', reprise: null });
+    return report;
+  };
+
+  /**
    * LE MODÈLE WHATSAPP N'EST PAS ENVOYABLE : on le sait avant d'avoir commencé.
    *
    * ⚠️ LE REFUS NE VISE QUE LES DESTINATAIRES DE L'ÉTAGE WHATSAPP, PAS TOUTE LA CAMPAGNE. Un modèle dont
@@ -884,6 +927,11 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
      * cette raison n'en fait pas un échec).
      */
     let scenarioNonDemarre: string | null = null;
+    /**
+     * Ce scénario-là a buté sur le NUMÉRO DÉLIÉ. Le destinataire reste `sent` (son message est parti), mais le
+     * run s'arrête après lui : les suivants recevraient leur message sans jamais leur suite.
+     */
+    let scenarioSurNumeroDelie: NumeroDelieError | null = null;
     try {
       if (servi.sender) {
         // Le jeton de CE destinataire, pour que le clic sur un lien du message dise QUI a réagi. Absent
@@ -930,6 +978,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
               }
             } catch (e) {
               scenarioNonDemarre = `Scénario non démarré : ${e instanceof Error ? e.message : String(e)}`;
+              if (e instanceof NumeroDelieError) scenarioSurNumeroDelie = e;
             }
           }
         }
@@ -980,6 +1029,15 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
             : await deps.sender.sendTemplate(r.toE164, tpl);
       }
     } catch (err) {
+      // 🔴 NUMÉRO DÉLIÉ (migration 0180), levé par le point de passage des envois : un scénario démarré pour ce
+      // destinataire (campagne de scénario, cible `node`) construit un client par message. Comme le plafond
+      // juste en dessous, le refus vise le NUMÉRO, pas ce contact : le marquer `failed` le perdrait (« Relier » ne
+      // reprend pas un `failed`), et le suivant échouerait pour la même raison. Rendu à la file, puis on s'arrête.
+      if (err instanceof NumeroDelieError) {
+        await deps.recipients.relacher(r.id);
+        return arreterSurNumeroDelie(err);
+      }
+
       const msg = err instanceof MetaApiError ? `${err.code ?? ''} ${err.message}`.trim() : String(err);
       const errorCode = err instanceof MetaApiError && typeof err.code === 'number' ? err.code : undefined;
 
@@ -1091,6 +1149,14 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
         /* log best-effort : ne casse jamais l'envoi réussi */
       }
     }
+
+    /**
+     * 🔴 « MESSAGE ET SCÉNARIO » SUR UN NUMÉRO DÉLIÉ : le message est parti par son canal, le scénario a buté sur
+     * le point de passage des envois WhatsApp. Ce destinataire reste `sent` avec sa raison, et il n'est PAS rendu
+     * à la file : il recevrait le message une seconde fois. Mais on s'arrête APRÈS lui, sans quoi chaque suivant
+     * recevrait son message sans jamais sa suite, et « Relier » n'y pourrait plus rien.
+     */
+    if (scenarioSurNumeroDelie !== null) return arreterSurNumeroDelie(scenarioSurNumeroDelie);
   }
 
   await deps.campaigns.setStatus(campaign.id, await statutDeSortie());

@@ -256,7 +256,7 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
       // ⚠️ Délié, la pastille le DIT, au lieu d'un « opérationnel » vrai chez Meta et faux chez nous : le numéro
       // marche, mais cet espace n'envoie ni ne reçoit plus rien par lui.
       status: pn.delieLe
-        ? { dot: 'grey', label: 'Numéro délié', reason: 'Numéro délié de cet espace : aucun message ne part, et les messages reçus ne sont pas enregistrés.' }
+        ? { dot: 'grey', label: 'Numéro délié', reason: 'Numéro délié de cet espace : aucun message WhatsApp ne part, et les messages reçus ne sont pas enregistrés.' }
         : computeAccountStatus(signals),
     };
     return reply.code(200).send(body);

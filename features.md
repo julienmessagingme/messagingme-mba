@@ -96,6 +96,11 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 ## Comptes & authentification
 
+- ✅ **Renommer l'espace** (2026-09-25) : une carte « Espace » en tête de **Compte & équipe** montre le nom de
+  l'espace dans un champ modifiable, avec un bouton Enregistrer. C'est le nom affiché au choix de l'espace à la
+  connexion et dans l'exploitation. Réservé aux administrateurs. Le nom fait de 1 à 80 caractères, sans caractère
+  de contrôle. Chaque renommage apparaît dans le journal des actions (« Espace renommé », avec l'ancien et le
+  nouveau nom).
 - ✅ **Une adresse mail, plusieurs espaces** (2026-08-21) : la même adresse peut désormais ouvrir plusieurs
   espaces de travail. Un seul mot de passe pour tous, comme chez Slack ou Notion. À la connexion, si l'adresse
   n'en dessert qu'un (le cas courant), **rien ne change** : on entre directement. Si elle en dessert plusieurs,
@@ -1564,11 +1569,16 @@ scénario, comment importer des contacts.
   (délie le compte HubSpot et révoque son accès ; un avertissement prévient que cela coupe **tous** les numéros de
   l'espace, le compte HubSpot étant lié à l'espace et non à un numéro). Si aucun portail -> un bouton
   **« Connecter HubSpot »** qui lance l'installation OAuth et relie ce numéro.
-- 🚧 **Canaux et services** (codé le 2026-09-25, pas encore déployé) : sur l'Accueil, un bloc avec une ligne par
-  canal ou service (numéro WhatsApp, canal RCS, chaîne, compte publicitaire, HubSpot), chacune avec son
-  interrupteur, son état en une phrase et le lien vers son écran. Éteindre demande une confirmation qui dit ce qui
-  s'arrête ; rallumer ne demande rien. Éteindre le numéro le **délie** de l'espace (plus aucun envoi, campagnes en
-  pause, messages reçus non enregistrés), sans rien toucher chez Meta : il se relie d'un clic. Éteindre la chaîne
+- ✅ **Canaux et services** (2026-09-25) : sur l'Accueil, une grille de cartes, une par canal ou service
+  (numéro WhatsApp, canal RCS, chaîne WhatsApp, compte publicitaire, HubSpot), sur 3 colonnes en grand écran, 2 en
+  moyen, 1 sur mobile. Chaque carte montre le logo du canal, son interrupteur, une pastille d'état (vert : allumé
+  ou relié ; gris : éteint ; ambre : à terminer, par exemple un compte publicitaire connecté dont le compte et la
+  Page restent à choisir), la phrase d'état et le lien vers son écran. Éteindre demande une confirmation qui dit ce qui
+  s'arrête ; rallumer ne demande rien. Éteindre le numéro le **délie** de l'espace (plus aucun message WhatsApp ne
+  part, le RCS et les e-mails continuent ; campagnes en pause ; messages reçus non enregistrés), sans rien toucher
+  chez Meta : l'agent de Meta, s'il est allumé, continue de répondre, et le numéro se relie d'un clic. Une campagne
+  « Au fil de l'eau » n'inscrit personne pendant la déliaison, et les contacts arrivés entre-temps ne sont pas
+  repris au retour. Éteindre la chaîne
   oublie ses identifiants, les publications déjà parues restent. Le lien « Couper le canal RCS » de la carte RCS
   est devenu l'interrupteur. Réservé aux administrateurs.
 - ✅ **Interrupteur HubSpot de l'espace** (2026-09-25, **Paramètres > Intégrations**, admin) : c'est lui, et non
