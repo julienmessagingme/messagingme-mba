@@ -7,12 +7,12 @@
 > ⚠️ **Un lot déployé qui traîne ici ne vieillit pas, il MENT.** Vidé pour la sixième fois le 2026-09-16 :
 > il annonçait encore `93a10c4` et répétait une mesure démentie depuis (voir plus bas).
 
-## L'ÉTAT EXACT, AU 2026-09-23
+## L'ÉTAT EXACT, AU 2026-09-25
 
 | | |
 |---|---|
 | `origin/main` | voir `git log` (ce fichier ne recopie plus un SHA, il a menti six fois) |
-| VPS (`mba-api`, `mba-worker`, `mba-web`) | ✅ **À JOUR AU 2026-09-23 vers 9 h 15** : les trois lots que la production n’avait pas, soit 21 commits, relus et déployés d’un bloc par une session qui n’en avait écrit aucun (les publicités Click-to-WhatsApp « Capter » ; l’activation d’un numéro que l’Embedded Signup v4 laisse non vérifié ; les jaunes de coûts et d’Inbox). Le SHA n’est pas recopié ici (`git log` et `.git/revue-finale.json` font foi). **Migration 0163 appliquée AVANT le `up`** ; 0164 et 0165 l’étaient depuis la veille 20 h 49. Le compteur qui fait foi est celui de `CLAUDE.md`, relu en base après `migrate`. |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | ✅ **À JOUR AU 2026-09-25 dans la nuit** : les lots 1 à 6 de l'API publique cohérente et leurs jaunes, déployés lot par lot après une relecture unique chacun (zéro rouge). Migrations 0172 à 0177 appliquées AVANT chaque `up`, relues en base. Le SHA n'est pas recopié ici (`git log` fait foi). |
 | Vercel (`engageme`) | suit `origin/main` tout seul |
 | Migrations | 🔴 **LE COMPTEUR N'EST PAS ICI, IL EST DANS [CLAUDE.md](CLAUDE.md), SECTION DÉPLOIEMENT.** Cette ligne l'a recopié et l'a eu FAUX (elle annonçait 0151 quand la base portait 0152, neuvième dérive), exactement comme `PLAN.md` et `brain/PROJECTS.md` avant elle. En cas de doute, c'est la BASE qui tranche : `select name from public.schema_migrations order by name desc`. |
 | CI | ✅ verte job par job, lue sur `gh run view <id> --json jobs` et jamais sur le code de sortie du watch. ⚠️ **Elle est passée ROUGE une fois le 2026-09-17**, sur le seul job qui voit une base (`integration`), pour un test qui laissait de la donnée derrière lui : la cause et la parade sont dans la section Performance Lab |
@@ -39,40 +39,39 @@ légende l'avoue. Ce qu'on vérifie est le SENS et l'ORDRE DE GRANDEUR de l'éca
 Sur un numéro sain dont l'agent est éteint, l'écran affiche un point vert à côté d'une ligne qui dit que
 personne ne répond. Les textes ont été corrigés, le choix reste ouvert. Cf. `todo.md`.
 
-## API PUBLIQUE : « ENVOYER UN SIMPLE MESSAGE » (LOT 7, DÉPLOYÉ LE 2026-09-23, ESSAI RÉEL DÛ)
+## API PUBLIQUE COHÉRENTE : LOTS 1 À 6 (DÉPLOYÉS LE 2026-09-25 DANS LA NUIT, ESSAIS RÉELS DUS)
 
-Lot 7 du plan `docs/superpowers/plans/2026-09-23-liste-julien.md`.
+Spec `docs/superpowers/specs/2026-09-24-api-publique-coherente-design.md`, plans
+`docs/superpowers/plans/2026-09-24-api-v1-lot*.md`. Tout est en production (API sur le VPS, console chez
+Vercel), migrations 0172 à 0177 appliquées avant le code et relues en base. Le récit : journal technique,
+2026-09-24 et 25. ⚠️ `POST /v1/messages` n'existe plus, c'est `POST /v1/messages/whatsapp` (on a cassé
+proprement, aucun intégrateur n'était branché).
 
-- ✅ **Écrit et vert** : `POST /v1/messages` envoie un texte à une personne dans la fenêtre de 24 h. La route
-  n'a AUCUNE logique à elle : elle résout le contact, ouvre son fil avec la même fonction que le bouton du
-  mini-CRM (qui EST la garde de blocage), et appelle `repondreDansLaFenetre`, déjà partagé par la console et
-  le serveur MCP. Droit requis : `sends:create`, celui des envois.
-- ✅ **MIGRATION 0166 APPLIQUÉE le 2026-09-23 à 11 h 36, AVANT le `up`**, et relue en base : le CHECK de
-  `conversation_messages.origin` porte bien `api`. Ce qui suit dit pourquoi l'ordre n'était pas une
-  précaution.
-- 🔴 **ELLE ÉTAIT BLOQUANTE.** Elle RELÂCHE le CHECK de
-  `conversation_messages.origin` pour y ajouter `api` (septième origine, même motif que 0101 pour `mcp`).
-  Relâcher laisse vivre le code déployé, donc elle passe avant sans risque ; l'inverse ferait échouer le
-  PREMIER appel de la route en `23514`, sur un envoi réel. Le nom de la contrainte a été LU en base, pas
-  deviné, et la répartition des origines existantes mesurée avant d'écrire le fichier.
-- 🔴 **CE QUE LE LOT A RÉPARÉ EN PASSANT, et qui vaut plus que la route.** La garde « une machine ne parle pas
-  à quelqu'un qui a dit STOP » se lisait `origine === 'mcp'`, donc en LISTE D'APPELANTS : l'API publique
-  serait partie sans elle. Elle demande désormais l'inverse (tout ce qui n'est pas un opérateur humain).
-  ⚠️ Et le test qui la gardait ÉPINGLAIT cette chaîne dans la source : il serait resté VERT si la route
-  était partie sans garde, et il est tombé au premier élargissement légitime. Réécrit pour EXÉCUTER la
-  fonction sur chaque origine déclarée, liste dérivée d'`ORIGINES` : mutation vérifiée, cinq origines
-  tombent quand on remet l'ancienne forme, `api` comprise.
-- ⚠️ **FENÊTRE VERCEL / API, et elle est bénigne ici** : la page Documentation API part chez Vercel au
-  `git push`, la route attend le `up` du VPS. Elle ne l'APPELLE pas (elle la décrit), donc rien ne casse à
-  l'écran ; le risque est qu'un intégrateur lise le curl et reçoive un 404. À réduire en enchaînant la revue
-  finale et le déploiement, comme le prescrit [CLAUDE.md](CLAUDE.md).
-- 🔴 **L'ESSAI RÉEL QUI CLÔT LE LOT, et il appartient à Julien** : un `curl` avec sa clé d'API vers le numéro
-  d'essai, fenêtre ouverte (le message arrive et apparaît dans l'Inbox), puis fermée (422 `window_closed`).
-  Les tests sont verts, ce qui ne dit que ce que leur auteur a pensé à vérifier.
-- 🟡 **Un arbitrage reste ouvert et il est écrit dans [todo.md](todo.md)** : la grille RCS est en euros, les
-  tarifs Meta sont dans la devise du WABA, et les deux s'additionnent. Mesuré : un seul espace porte une
-  grille RCS, donc le terme vaut zéro ailleurs. La question est produit et le lot 8 (« Vos prix » dans
-  `/ops`) va déplacer cette grille : à trancher là, pas par un demi-correctif d'ici là.
+🔴 **LES ESSAIS RÉELS, À FAIRE PAR JULIEN** (une vraie clé d'API, droits Écrire + Lire les contacts et
+Envois, le numéro d'essai) :
+1. **Lot 1** : `POST /v1/contacts` avec un `externalId`, puis la fiche dans le mini-CRM porte « Identifiant API ».
+2. **Lot 2** : `POST /v1/sends` cible template avec `idempotencyKey` dans le corps ; rejouer la même clé
+   avec un autre corps rend 422 `idempotency_key_reused` ; `GET /v1/sends/{id}` rend le rapport.
+3. **Lot 3** : les six gestes du plan du lot 3 (§ « Essai réel »), dont un RCS vers un appareil SANS RCS :
+   l'échec doit apparaître dans Sécurité > Journal des erreurs, et le second envoi rendre 422 `rcs_unreachable`.
+4. **Lot 4** : `GET /v1/templates`, `/v1/scenarios`, `/v1/rcs-messages` avec la clé ; relire la page
+   Developers > Documentation API.
+5. **Lot 5** : trois conversations d'essai (suivi de commande, retour, achat), chacune classée juste dans le
+   Performance Lab. La tâche 7 du lot 5 (le récit dans la doc) suit cet essai.
+6. **Lot 6** : brancher un outil dans Paramètres > Intégrations sur un espace d'essai et regarder arriver les
+   signaux ; relire la fiche d'aide « retrouver qui a fait quoi », réécrite (texte lu par les clients, elle
+   part au prochain `npm run aide:charger`).
+
+🟡 **LES DÉCISIONS QUI ATTENDENT JULIEN** (le code n'y a pas touché) :
+- un scénario « RCS puis attente » est accepté par l'API alors que la console le refuse (`ouverture-api.ts`) ;
+- une clé neuve (externalId) est rattachée à la fiche même quand le message est ensuite refusé ;
+- un `{{x}}` sans valeur part VIDE dans un RCS de l'API (un template, lui, écarte en `missing_variable`) ;
+- `POST /v1/messages/rcs` prend le fil en local, mais pas chez Meta quand l'agent de Meta le tient ;
+- chaque repli WhatsApp d'un bloc RCS de scénario écrit une ligne « RCS non délivré » dans le journal ;
+- `null` sur un champ de destinataire est refusé (et non lu comme une absence) ;
+- une panne de Meta rend 422 sans `code` (un code dédié élargirait la table des codes) ;
+- un événement trop vieux pour l'outil est écarté sans compteur visible, et un refus partiel répété de l'outil
+  écrit une ligne par job dans le journal (plafond à décider).
 
 ## HUBSPOT MASQUÉ SANS PORTAIL (LOT 9, DÉPLOYÉ LE 2026-09-23, ESSAI RÉEL DÛ)
 

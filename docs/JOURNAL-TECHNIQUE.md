@@ -5,6 +5,42 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-24 et 25 (nuit) : l'API publique cohérente, lots 1 à 6 d'un seul trait
+
+Six lots de la spec `docs/superpowers/specs/2026-09-24-api-publique-coherente-design.md`, codés par des
+agents, un lot à la fois ou deux en parallèle sur des fichiers disjoints, et TOUS en production au matin :
+identité par fiche (`contactId`, `externalId`, `phone`, `bsuid`), envois refondus, RCS dans l'API et
+variables par destinataire, catalogues et page de doc, trois intentions de commerce, signaux sortants vers
+l'outil du client. Migrations 0172 à 0177, chacune appliquée AVANT le `up` de son code et relue en base.
+
+🔴 **LE PROCESSUS A CHANGÉ EN COURS DE ROUTE, sur décision de Julien.** Une journée de relectures de
+relectures (dont un rouge pour une ligne mal placée) a fixé la règle : UNE relecture indépendante par lot,
+en fin de lot ; 🔴 = uniquement ce qui casse la production, scénario à l'appui ; le correctif d'un rouge
+n'est pas relu, son test vérifié dans les deux sens suffit ; les jaunes partent après le déploiement et la
+relecture suivante les couvre. Résultat mesuré sur la nuit : sept relectures, ZÉRO rouge, et chaque vague de
+jaunes corrigée et poussée dans la foulée.
+
+🔴 **LA GARDE DE DÉPLOIEMENT N'AVAIT JAMAIS ÉTÉ BRANCHÉE.** `hooks/deploiement-garde.js` n'est déclaré dans
+aucun `settings.json` ; ce qui bloquait était le classificateur du mode automatique. Des heures ont été
+perdues à « attendre une attestation » qu'aucune machine n'exigeait. Julien a décidé de la laisser
+débranchée ; `CLAUDE.md`, la skill et la mémoire le disent maintenant. Leçon : vérifier qu'un hook est
+BRANCHÉ avant d'affirmer qu'il bloque.
+
+⚠️ **UN COMMIT VIDE EST SUR `main` (`42782e69`), DE MON FAIT.** Le hook `rayon-de-souffle` a refusé une
+commande qui créait aussi la liste des fichiers ; relancée sans elle, la boucle n'a rien ajouté, et
+`commit-tree` a publié un arbre identique à son parent. Le `git reset HEAD -- <liste vide>` qui suivait a
+réaligné TOUT l'index partagé : il n'a effacé que des entrées périmées d'une autre session (vérifié : ses
+fichiers étaient identiques à leur dernier commit), mais par chance. Parade appliquée ensuite à chaque commit :
+la liste s'écrit dans une commande À PART, et la commande de commit refuse (`test`) si la liste ou l'index
+temporaire n'ont pas le nombre de fichiers attendu.
+
+⚠️ **UN TEST INSTABLE, QUANTIFIÉ AVANT D'ÊTRE CORRIGÉ** : `api-usage-observation` lisait le compteur de la
+première minute seulement ; sous la charge de la suite complète, ses trente appels chevauchaient une limite
+de minute (13 500 au lieu de 15 000). Il passait seul cinq fois sur cinq ; il somme désormais les minutes.
+
+**Reste dû** : les essais réels de chaque lot (une vraie clé d'API, le numéro d'essai, un RCS sur un appareil
+sans RCS, trois conversations d'intention, un outil branché), et les décisions listées dans `wip.md`.
+
 ## 2026-09-23 (nuit) : les quinze fiches d'aide, puis les deux écrans d'agent
 
 Deux chantiers dans la même session, et le second a été mené par sous-agents, une tâche à la fois, avec une
