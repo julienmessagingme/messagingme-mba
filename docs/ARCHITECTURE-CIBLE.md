@@ -9,6 +9,16 @@
 > au §14. Trois décisions de Julien du même jour : **deux workers** (§5), **les fichiers hors de Postgres**
 > (§6) et **Cloudflare Pro retenu pour la cible** (§7.7).
 
+🔴 **DEPUIS LE 2026-09-25, LA VITRINE PUBLIQUE L'ANNONCE COMME FAIT.** Le pied de page de
+`engageme.messagingme.fr` (`site/index.html`, classe `heberge`) affiche « Vos données hébergées en France
+chez Scaleway », sur décision de Julien (« tu fais comme si c'était fait »). Or la base tourne encore sur
+`aws-1-eu-west-2`, à Londres. Cette bascule n'est donc plus seulement une architecture cible : c'est une
+promesse publique, et chaque semaine sans migration la rend fausse un peu plus longtemps. Si la bascule est
+abandonnée ou repoussée sans date, la pastille se retire, elle ne se reformule pas.
+⚠️ **La phrase couvre le STOCKAGE, rien de plus** : la base et les fichiers. Elle ne couvre ni les appels IA
+(Vercel AI Gateway, §2.1), ni le transit des messages par Meta. Une question RSSI se répond avec le §2.1,
+jamais avec le pied de page.
+
 Ce document ne décrit pas ce qui tourne aujourd'hui (voir `documentation.md`). Il décrit **ce qu'on vise**,
 **les quatre chantiers à finir avant**, et **la séquence du jour J**.
 

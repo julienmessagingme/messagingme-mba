@@ -787,6 +787,9 @@ séquence du jour J vivent désormais dans **[docs/ARCHITECTURE-CIBLE.md](docs/A
 `documentation.md`, et elle commençait déjà à diverger. Le document est la source unique ; ceci est un
 pointeur, et il doit le rester.
 
+🔴 **Depuis le 2026-09-25, la vitrine affiche l'hébergement en France chez Scaleway comme FAIT**, alors que la
+base est encore à Londres : c'est désormais une promesse publique. Le détail est en tête du document.
+
 ## 🔴 L'essai réel du lot « consentement » reste DÛ (2026-09-15)
 
 Le consentement (`estDesabonne`) est une dépendance REQUISE depuis le 2026-09-15, livrée et déployée

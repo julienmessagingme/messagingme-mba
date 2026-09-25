@@ -322,6 +322,12 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .pied-marque svg{width:28px;height:28px}
 .pied-marque .par{display:inline-flex;align-items:center;gap:8px;font-weight:500;font-size:.85rem;color:var(--muted)}
 .pied-marque .par img{width:auto;height:21px}
+/* Hébergement : le drapeau en trois bandes (pas d'émoji : Windows l'affiche en lettres « FR »), le logo Scaleway en blanc. */
+.heberge{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px 9px;margin:0;padding:8px 14px;border:1px solid rgb(255 255 255 / .18);border-radius:999px;background:rgb(255 255 255 / .06);color:#fff;font-size:.82rem;font-weight:600;line-height:1.3}
+.drapeau{display:inline-flex;flex:none;width:21px;height:14px;border-radius:2px;overflow:hidden;box-shadow:0 0 0 1px rgb(255 255 255 / .25)}
+.drapeau i{flex:1}.drapeau i:nth-child(1){background:#002654}.drapeau i:nth-child(2){background:#FFFFFF}.drapeau i:nth-child(3){background:#CE1126}
+.heberge .chez{display:inline-flex;align-items:center;gap:6px;color:#C9CEEA;font-weight:500}
+.heberge svg{width:16px;height:16px;fill:#fff}
 .pied-accroche{margin:14px 0 0;max-width:19em;color:#fff;font-size:.95rem;line-height:1.5}
 .pied h3{margin:0 0 18px;color:#fff;font-size:1rem;font-weight:700}
 .pied ul{list-style:none;margin:0;padding:0;display:grid;gap:12px;font-size:.93rem}
@@ -665,6 +671,7 @@ claude mcp add --transport http mba https://api.messagingme.app/mcp \
   </div>
   <div class="cadre pied-bas">
     <span>© 2026 Messaging Me</span>
+    <p class="heberge"><span class="drapeau" aria-hidden="true"><i></i><i></i><i></i></span>Vos données hébergées en France <span class="chez">chez <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.605 11.11v5.72a1.77 1.77 0 01-1.54 1.69h-4a1.43 1.43 0 01-1.31-1.22 1.09 1.09 0 010-.18 1.37 1.37 0 011.37-1.36h1.74a1 1 0 001-1v-3.62a1.4 1.4 0 011.18-1.39h.17a1.37 1.37 0 011.39 1.36zm-6.46 1.74V9.26a1 1 0 011-1h1.85a1.37 1.37 0 001.37-1.37 1 1 0 000-.17 1.45 1.45 0 00-1.41-1.2h-3.96a1.81 1.81 0 00-1.58 1.66v5.7a1.37 1.37 0 001.37 1.37h.21a1.4 1.4 0 001.15-1.4zm12-4.29V20a4.53 4.53 0 01-4.15 4h-7.58a8.57 8.57 0 01-8.56-8.57V4.54A4.54 4.54 0 016.395 0h7.18a8.56 8.56 0 018.56 8.56zm-2.74 0a5.83 5.83 0 00-5.82-5.82h-7.19a1.79 1.79 0 00-1.8 1.8v10.89a5.83 5.83 0 005.82 5.8h7.44a1.79 1.79 0 001.54-1.48z"/></svg>Scaleway</span></p>
     <ul class="reseaux">
       <li><a href="https://www.instagram.com/messaging_me/" aria-label="Instagram"><svg class="ic" aria-hidden="true"><use href="#i-instagram"/></svg></a></li>
       <li><a href="https://www.facebook.com/messagingmefr" aria-label="Facebook"><svg class="ic" aria-hidden="true"><use href="#i-facebook"/></svg></a></li>
