@@ -50,12 +50,20 @@ describe('câblage de la catégorie du template (scénario)', () => {
   it('🔴 la catégorie est LUE de la réponse Meta, jamais devinée du nom du template', () => {
     // Elle ne coûte aucun appel : `tplClient.list` demande déjà `category` dans ses `fields`
     // (`src/meta/templates.ts`) et la rend. `TplInfo` la jetait, c'est tout ce qui manquait.
-    expect(sansCommentaires, 'templateVarInfo doit conserver la catégorie rendue par Meta')
-      .toMatch(/category: tpl\.category\.toLowerCase\(\)/);
+    // ⚠️ Depuis le 2026-09-25, `templateVarInfo` construit sa lecture par `modeleLuDe(tpl)` (la MÊME que le
+    // catalogue de l'API) : la catégorie se lit donc DANS cette fonction, sur le template trouvé.
+    expect(sansCommentaires, 'templateVarInfo doit construire sa lecture sur le template trouvé chez Meta')
+      .toMatch(/\.\.\.modeleLuDe\(tpl\),/);
+    const construction = readFileSync(new URL('../src/api/modele-envoi.ts', import.meta.url), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(construction, 'modeleLuDe doit conserver la catégorie rendue par Meta')
+      .toMatch(/category: t\.category\.toLowerCase\(\)/);
     // Minuscules : Meta rend 'MARKETING'/'UTILITY', la base stocke 'marketing'/'utility' côté campagne, et
     // `estimateCostSeries` compare en minuscules. Sans l'alignement, la ligne remonte et reste à zéro,
     // c'est-à-dire exactement le défaut qu'on répare, sous une autre forme.
-    expect(sansCommentaires, 'aucune catégorie ne doit être déduite du nom du template')
-      .not.toMatch(/category:\s*(name|templateName)\b/);
+    for (const [nom, texte] of [['wiring.ts', sansCommentaires], ['modele-envoi.ts', construction]] as const) {
+      expect(texte, `${nom} : aucune catégorie ne doit être déduite du nom du template`)
+        .not.toMatch(/category:\s*(name|templateName|t\.name)\b/);
+    }
   });
 });

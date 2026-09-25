@@ -61,9 +61,13 @@ export function ouvertureApi(graph: WorkflowGraph, depuis?: string): VerdictOuve
  * `scenario`), et `GET /v1/scenarios` l'annonce à l'intégrateur. Écrite deux fois, l'une annoncerait un jour un
  * template que l'autre ne paramètre pas. Elle n'a de sens que pour une ouverture `whatsapp_template` : sur un
  * scénario qui ouvre en RCS, le premier template trouvé est un REPLI, pas ce qui part au lancement.
+ *
+ * `depuis` : le bloc d'où l'on part (cible `node`), avec le MÊME examen que `ouvertureApi(graph, depuis)`. Un
+ * troisième consommateur, donc : la cible `node` y lit le template qu'elle fait partir, pour juger sa catégorie
+ * chez Meta comme la cible scénario (sans quoi un bloc d'entrée visé en « utility » contournait la règle).
  */
-export function modeleDOuverture(graph: WorkflowGraph): { templateName: string; language: string } | null {
-  const premier = scanOpening(graph).firstTemplate;
+export function modeleDOuverture(graph: WorkflowGraph, depuis?: string): { templateName: string; language: string } | null {
+  const premier = scanOpening(graph, depuis).firstTemplate;
   const a = premier ? actionOf(premier) : null;
   return a?.kind === 'sendTemplate' ? { templateName: a.templateName, language: a.language } : null;
 }

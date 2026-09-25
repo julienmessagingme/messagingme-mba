@@ -14,6 +14,13 @@ export function optInAllows(category: CampaignCategory, contact: OptInContact): 
   return contact.optInStatus === 'opted_in';
 }
 
+/**
+ * LE MOTIF D'UN ENVOI AUTOMATIQUE REFUSÉ À QUELQU'UN QUI A DIT STOP. Un texte pour le scénario
+ * (`WorkflowExecutor.apply`) et la campagne (la réclamation d'un destinataire, `PgRecipientStore.claim`) :
+ * l'opérateur lit le même refus, d'où qu'il vienne.
+ */
+export const MOTIF_DESABONNE = 'contact désabonné : il a demandé à ne plus recevoir de messages';
+
 /** Bloque si un envoi précédent au même contact date de moins de `windowMs`. */
 export function frequencyAllows(lastSentAtMs: number | null, nowMs: number, windowMs: number): boolean {
   if (lastSentAtMs === null) return true;

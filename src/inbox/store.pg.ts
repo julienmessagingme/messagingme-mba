@@ -294,6 +294,24 @@ const A_TRAITER_SQL = `c.control_owner <> 'app_workflow' and ((c.last_direction 
 /** Voir `PgInboxStore.empreinteDuFil`. */
 export interface EmpreinteDuFil { detenteur: string | null; changeLe: string | null; dernierEnvoi: string | null }
 
+/**
+ * LE `wa_id` D'UN CONTACT QUI PEUT AVOIR UN FIL (`$1` = l'espace, `$2` = le contact) : actif, non bloqué, et les
+ * chiffres nus de son téléphone, sinon son bsuid. UN fragment pour `ouvrirConversationDuContact` (qui crée le fil)
+ * et `filDuContact` (qui le cherche sans le créer) : recopié, l'un trouverait un fil que l'autre aurait ouvert
+ * ailleurs, sous une autre clé.
+ */
+const CIBLE_DU_CONTACT_SQL = `cible as (
+         select coalesce(nullif(regexp_replace(coalesce(c.phone_e164, ''), '[^0-9]', '', 'g'), ''), c.bsuid) as wa_id
+           from contacts c
+          where c.id = $2::uuid and c.tenant_id = $1 and c.deleted_at is null and c.blocked_at is null
+       )`;
+
+/**
+ * Le fil d'un contact, cherché SANS être créé (`PgInboxStore.filDuContact`). `injoignable` : fiche inconnue de
+ * l'espace, supprimée, bloquée, ou sans identité WhatsApp. `sans_fil` : joignable, mais aucun fil n'existe.
+ */
+export type FilDuContact = { etat: 'fil'; conversationId: string } | { etat: 'sans_fil' } | { etat: 'injoignable' };
+
 /** Store Postgres de la boîte de réception (conversations + messages). */
 export class PgInboxStore implements InboxStore {
   constructor(private readonly pool: Pool) {}
@@ -894,11 +912,7 @@ export class PgInboxStore implements InboxStore {
    */
   async ouvrirConversationDuContact(tenantId: string, contactId: string): Promise<string | null> {
     const res = await this.pool.query<{ id: string }>(
-      `with cible as (
-         select coalesce(nullif(regexp_replace(coalesce(c.phone_e164, ''), '[^0-9]', '', 'g'), ''), c.bsuid) as wa_id
-           from contacts c
-          where c.id = $2::uuid and c.tenant_id = $1 and c.deleted_at is null and c.blocked_at is null
-       )
+      `with ${CIBLE_DU_CONTACT_SQL}
        insert into conversations (tenant_id, wa_id, contact_id)
        select $1, cible.wa_id, $2::uuid from cible where cible.wa_id is not null
        on conflict (tenant_id, wa_id) do update
@@ -907,6 +921,34 @@ export class PgInboxStore implements InboxStore {
       [tenantId, contactId],
     );
     return res.rows[0]?.id ?? null;
+  }
+
+  /**
+   * LE FIL D'UN CONTACT, CHERCHÉ SANS ÊTRE CRÉÉ. Sert `POST /v1/messages/whatsapp`.
+   *
+   * 🔴 LA ROUTE OUVRAIT LE FIL AVANT SES REFUS (`ouvrirConversationDuContact`) : un message vers une fiche qui
+   * n'avait jamais écrit laissait un fil VIDE en tête de l'Inbox, puis rendait 422 (fenêtre fermée). Or la
+   * fenêtre de 24 h se lit dans les messages ENTRANTS du fil (`getConversationContext`) : sans fil, elle est
+   * fermée par construction, et il n'y a rien à ouvrir. Lecture SEULE, donc aucun refus ne laisse de trace.
+   *
+   * ⚠️ UNE DIFFÉRENCE ASSUMÉE AVEC L'OUVERTURE : un fil existant dont `contact_id` est nul (né d'un entrant avant
+   * la fiche) n'y est plus rattaché par l'API. Le prochain entrant, un envoi de scénario ou de campagne
+   * (`upsertConversationByWaId`) ou le bouton « Ouvrir la conversation » le rattachent (`coalesce` sur `contact_id`).
+   *
+   * Servie par la clé primaire de `contacts` et l'unique `(tenant_id, wa_id)` de `conversations` (0009).
+   */
+  async filDuContact(tenantId: string, contactId: string): Promise<FilDuContact> {
+    const res = await this.pool.query<{ id: string | null }>(
+      `with ${CIBLE_DU_CONTACT_SQL}
+       select conv.id::text as id
+         from cible
+         left join conversations conv on conv.tenant_id = $1 and conv.wa_id = cible.wa_id
+        where cible.wa_id is not null`,
+      [tenantId, contactId],
+    );
+    const ligne = res.rows[0];
+    if (!ligne) return { etat: 'injoignable' };
+    return ligne.id === null ? { etat: 'sans_fil' } : { etat: 'fil', conversationId: ligne.id };
   }
 
   /**

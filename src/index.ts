@@ -3285,9 +3285,10 @@ async function main(): Promise<void> {
         // La MÊME résolution de fiche, sur le MÊME dépôt, que `/v1/contacts` et `/v1/sends` (lot 1). La route
         // demande `jamais` : un message simple ne crée pas de fiche, le câblage n'en décide pas.
         resoudreFiche: (tenant, cles, o) => resoudreFiche(contactStore, tenant, cles, o),
-        // LA MÊME fonction que le bouton « Ouvrir la conversation » du mini-CRM : elle refuse un contact
-        // supprimé comme un contact bloqué, ce qui EST la garde de blocage de cette route.
-        ouvrirConversation: (tenant, contactId) => inboxStore.ouvrirConversationDuContact(tenant, contactId),
+        // Le fil CHERCHÉ, jamais créé : un refus ne laisse pas de fil vide dans l'Inbox. Le MÊME fragment que le
+        // bouton « Ouvrir la conversation » du mini-CRM : il refuse un contact supprimé comme un contact bloqué,
+        // ce qui EST la garde de blocage de cette route.
+        filDuContact: (tenant, contactId) => inboxStore.filDuContact(tenant, contactId),
       },
       /**
        * `POST /v1/messages/rcs` (lot 3). Ce bloc ne fait que brancher : les gardes du RCS vivent dans

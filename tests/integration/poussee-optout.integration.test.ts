@@ -116,6 +116,27 @@ describe.skipIf(!url)('poussée d’opt-out (Postgres)', () => {
   });
 
   /**
+   * 🔴 UN SEUL STOP, UNE SEULE ANNONCE. Avec l'ancien contournement (une automation sur le mot STOP vers un bloc
+   * « Action »), le mot-clé natif ET le bloc écrivaient `opted_out` : deux annonces, dont une à identifiant
+   * aléatoire, que l'outil du client ne peut pas dédoublonner. L'ancien statut est lu DANS l'instruction
+   * (`for update`) : le second passage trouve la fiche déjà désabonnée et se tait. Les deux écritures ont lieu.
+   */
+  it('🔴 le mot-clé STOP puis le bloc « Action » : un seul désabonnement annoncé, par le premier', async () => {
+    const annonces: Array<{ waIds: string[]; message?: string }> = [];
+    const contacts = new PgContactStore(pool, async (_t, waIds, message) => { annonces.push({ waIds, ...(message ? { message } : {}) }); });
+    await contacts.upsertByPhoneReturningId({ tenantId, phoneE164: '+33600000104', profileName: 'D', fields: {}, optInStatus: 'opted_in' });
+
+    expect(await contacts.setOptInByWaId(tenantId, '33600000104', 'opted_out', 'whatsapp_stop', 'wamid.stop-1')).not.toBeNull();
+    expect(await contacts.setOptInByWaId(tenantId, '33600000104', 'opted_out', 'scenario')).not.toBeNull();
+    expect(annonces).toEqual([{ waIds: ['33600000104'], message: 'wamid.stop-1' }]);
+
+    // Le témoin dans l'autre sens : réabonné puis de nouveau STOP, c'est un NOUVEAU refus, annoncé.
+    await contacts.setOptInByWaId(tenantId, '33600000104', 'opted_in', 'flow');
+    await contacts.setOptInByWaId(tenantId, '33600000104', 'opted_out', 'whatsapp_stop', 'wamid.stop-2');
+    expect(annonces.map((a) => a.message)).toEqual(['wamid.stop-1', 'wamid.stop-2']);
+  });
+
+  /**
    * 🔴 L'INDEX DE 0139 A ÉTÉ RETIRÉ PAR 0143, ET CE CAS GARDE LE RETRAIT.
    *
    * Il avait été créé en annonçant qu'il servirait « quelles requêtes sont branchées sur le consentement ? ».

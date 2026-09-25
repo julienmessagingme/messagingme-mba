@@ -17,6 +17,7 @@ import type { AgentSessionStatus, AgentSessionStore } from '../agent/session-sto
 import { BAIL_AVANCE_S, renouvelerLeBail, type GardeDuTour } from './bail-avance';
 import { SORTIE_TIMEOUT } from '../agent/sorties';
 import type { AgentTurnJob } from '../agent/turn-job';
+import { MOTIF_DESABONNE } from '../campaign/guardrails';
 
 /**
  * Résultat d'un démarrage : `true` = parti, une CHAÎNE = pas parti, avec la raison EXACTE. Le booléen seul
@@ -687,7 +688,7 @@ export class WorkflowExecutor {
       if (EST_UN_ENVOI.has(a.kind)) {
         desabonne ??= await this.deps.estDesabonne(tenantId, waId);
         if (desabonne) {
-          refus ??= 'contact désabonné : il a demandé à ne plus recevoir de messages';
+          refus ??= MOTIF_DESABONNE;
           await this.mesurer(tenantId, workflowId, nodeId, waId, 'failed');
           continue;
         }

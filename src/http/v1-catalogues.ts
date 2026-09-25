@@ -2,8 +2,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import type { TemplateSummary } from '../meta/templates';
-import { carouselSendBlocker, headerMediaSendBlocker } from '../meta/template-components';
-import { countTemplateVariables, parseParamHints } from '../crm/template';
+import { parseParamHints } from '../crm/template';
 import type { ParamSource } from '../crm/template';
 import type { IndiceDuTemplate } from '../crm/template-hints.pg';
 import type { ScenarioPublie } from '../workflow/store.pg';
@@ -12,9 +11,8 @@ import { modeleDOuverture, ouvertureApi } from '../workflow/ouverture-api';
 import type { OuvertureApi } from '../workflow/ouverture-api';
 import type { RcsOutbound } from '../rcs/types';
 import { variablesDe } from '../rcs/variables';
-import { estLienTraceAvecJeton } from '../links/rewrite';
 import { refuser } from '../api/erreurs';
-import { verdictModele } from '../api/modele-envoi';
+import { modeleLuDe, verdictModele } from '../api/modele-envoi';
 import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
 
 /**
@@ -31,13 +29,12 @@ import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
  * PUBLIÉS, et `opening` dit lequel peut partir (`null` : aucun ; `whatsapp_session` : seulement par son bloc
  * d'entrée, `entryNode`). Le taire ferait chercher à l'intégrateur un scénario qu'il voit dans la console.
  *
- * 🔴 CHAQUE TRI EST CELUI DE L'ENVOI, par SA fonction : `verdictModele` (statut et catégorie, lot 2),
- * `carouselSendBlocker` et `headerMediaSendBlocker` (le moteur, `src/campaign/engine.ts`), `modeleDOuverture`
- * (le template que `params` paramètre). Deux règles n'ont pas de fonction à l'envoi, parce que l'envoi ne les
- * VÉRIFIE pas, il se contente de ne rien fournir : `buildTemplateComponents` ne produit aucun paramètre d'en-tête
- * texte, et ne remplit une adresse de bouton que pour un lien tracé à jeton (`estLienTraceAvecJeton`, qui suit le
- * producteur de ces adresses). ⚠️ Seul reste imprévisible d'ici un visuel dont le re-téléversement échoue le jour
- * de l'envoi.
+ * 🔴 CHAQUE TRI EST CELUI DE L'ENVOI, par SA fonction : `verdictModele` sur `modeleLuDe`, la construction que
+ * la lecture partagée de `POST /v1/sends` emploie aussi (statut, catégorie, et `raisonNonEnvoyable` : en-tête
+ * qu'aucun envoi ne remplit, carrousel ou visuel que le moteur refuse, bouton de lien à variable non tracé), et
+ * `modeleDOuverture` (le template que `params` paramètre). L'envoi refusait jadis moins que le catalogue n'écartait
+ * (201 puis un échec par destinataire) : `tests/v1-sends.test.ts` tient désormais les deux sur les mêmes templates.
+ * ⚠️ Seul reste imprévisible d'ici un visuel dont le re-téléversement échoue le jour de l'envoi.
  *
  * 🔴 L'OUVERTURE D'UN SCÉNARIO VIENT DE `ouvertureApi`, LA FONCTION DE `/v1/sends`, jamais d'un calcul
  * voisin. Deux règles écrites en parallèle divergent un jour, et la divergence serait muette : le catalogue
@@ -100,19 +97,6 @@ export interface MessageRcsCatalogue {
 /** Nom et langue en une clé sans ambiguïté (un nom de template ne peut pas contenir de quoi la casser). */
 const cleTemplate = (name: string, language: string): string => JSON.stringify([name, language]);
 
-/**
- * Ce template porte-t-il un paramètre qu'AUCUN chemin d'envoi ne remplit ? Meta refuserait alors chaque message
- * (132000), sans qu'aucun refus ne le dise avant l'envoi.
- *
- * - un en-tête TEXTE à variable : `buildTemplateComponents` ne produit que l'en-tête MÉDIA ;
- * - un bouton de lien de premier niveau dont l'adresse porte une variable, sauf un lien tracé à jeton : c'est le
- *   seul suffixe que l'envoi fournit (`suffixesBoutons`). Les boutons de CARTE sont jugés par `carouselSendBlocker`.
- */
-function parametreSansSource(t: TemplateSummary): boolean {
-  if (t.headerFormat === 'TEXT' && countTemplateVariables(t.headerText ?? '') > 0) return true;
-  return (t.buttons ?? []).some((b) => b.type === 'URL' && countTemplateVariables(b.url ?? '') > 0 && !estLienTraceAvecJeton(b.url ?? ''));
-}
-
 /** Le code public d'un bloc, sous la forme que `mintNodeCodes` pose (le seul qu'une cible `node` retrouve). */
 const CODE_DE_BLOC = /^nod_[a-z0-9]+_[0-9A-HJKMNP-TV-Z]{26}$/;
 
@@ -134,39 +118,24 @@ export function catalogueTemplates(
 
   const sortie: TemplateCatalogue[] = [];
   for (const t of templates) {
-    // MAX des positions {{n}}, pas leur nombre : un corps `{{1}} … {{3}}` attend trois paramètres.
-    const nombre = countTemplateVariables(t.body);
     /**
-     * Statut et catégorie : la lecture de `POST /v1/sends` (`verdictModele`), jamais une règle voisine. Ce
-     * qu'on lui passe est construit comme la lecture partagée le construit (`templateVarInfo`,
-     * `src/workflow/wiring.ts`) : Meta rend la catégorie en majuscules, elle la passe en minuscules, et une
-     * catégorie vide y est absente (donc illisible, jamais « utility »).
+     * Le jugement de `POST /v1/sends`, jamais une règle voisine : `modeleLuDe` est la construction que la lecture
+     * partagée (`templateVarInfo`, `src/workflow/wiring.ts`) emploie, et `verdictModele` la lecture de l'envoi.
+     * Statut, catégorie ET ce qui empêcherait tout envoi (`raisonNonEnvoyable`) : un template n'entre que si
+     * l'envoi l'accepterait. `count` est le MAX des positions {{n}}, pas leur nombre.
      */
-    const verdict = verdictModele({
-      count: nombre,
-      statut: t.status,
-      langue: t.language,
-      ...(t.category ? { category: t.category.toLowerCase() } : {}),
-    }, t.language);
+    const verdict = verdictModele(modeleLuDe(t), t.language);
     if (verdict.statut !== 'approuve') continue;
+    // Garde de TYPE : un format hors de la table est déjà `non_envoyable` (`raisonNonEnvoyable`).
     const header = t.headerFormat === null ? 'none' : ENTETES.get(t.headerFormat);
     if (!header) continue;
-    /**
-     * Ce que le moteur d'envoi refuse AVANT de partir, par SES fonctions. ⚠️ À l'envoi, chaque visuel est
-     * RE-TÉLÉVERSÉ depuis son adresse pour obtenir son identifiant (`prepareCarouselMedia`,
-     * `prepareHeaderMedia`) ; le catalogue ne téléverse rien, donc l'adresse tient lieu d'identifiant : sans
-     * elle, l'envoi n'en aura jamais.
-     */
-    if (t.carousel && carouselSendBlocker(t.carousel.cards.map((c) => ({ ...c, mediaId: c.mediaId ?? c.mediaUrl }))) !== null) continue;
-    if (headerMediaSendBlocker(t.headerFormat ?? undefined, t.headerMediaUrl) !== null) continue;
-    if (parametreSansSource(t)) continue;
     const parPosition = sources.get(cleTemplate(t.name, t.language));
     sortie.push({
       name: t.name,
       language: t.language,
       category: verdict.categorie,
       header,
-      variables: Array.from({ length: nombre }, (_, k) => ({
+      variables: Array.from({ length: verdict.variables }, (_, k) => ({
         position: k + 1,
         source: parPosition?.get(k + 1) ?? null,
       })),

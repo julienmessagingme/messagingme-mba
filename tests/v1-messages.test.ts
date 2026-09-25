@@ -45,14 +45,16 @@ const URL_WA = '/v1/messages/whatsapp';
 interface Monde {
   /** La fiche que les clés désignent. `null` = inconnue. */
   fiche: { id: string } | null;
-  /** `null` = fiche bloquée ou supprimée : `ouvrirConversation` refuse. */
+  /** `null` = fiche bloquée ou supprimée : `filDuContact` la dit injoignable. */
   conversation: string | null;
+  /** La fiche est joignable mais n'a jamais écrit : aucun fil n'existe (`filDuContact` rend `sans_fil`). */
+  sansFil: boolean;
   fenetreOuverte: boolean;
   desabonne: boolean;
   numeroDeLEspace: string | null;
 }
 
-const MONDE: Monde = { fiche: { id: C1 }, conversation: 'conv-1', fenetreOuverte: true, desabonne: false, numeroDeLEspace: 'pn1' };
+const MONDE: Monde = { fiche: { id: C1 }, conversation: 'conv-1', sansFil: false, fenetreOuverte: true, desabonne: false, numeroDeLEspace: 'pn1' };
 
 function app(over: Partial<Monde> = {}) {
   const m: Monde = { ...MONDE, ...over };
@@ -62,6 +64,7 @@ function app(over: Partial<Monde> = {}) {
   const prises: string[] = [];
   const resolutions: Array<{ tenant: string; cles: ClesFiche; creer: ModeCreation }> = [];
   const contextesLus: string[] = [];
+  const filsCherches: string[] = [];
   const usage = new GardeUsageMemoire();
 
   const repondre: DepsRepondre = {
@@ -100,11 +103,15 @@ function app(over: Partial<Monde> = {}) {
           const designe = cles.contactId === C1 || tel === NUMERO || cles.externalId === 'crm-7781';
           return tenant === 't1' && designe && m.fiche ? { ok: true, contactId: m.fiche.id, cree: false } : { ok: false, code: 'unknown_contact' };
         },
-        ouvrirConversation: async (tenant, contactId) => (tenant === 't1' && contactId === C1 ? m.conversation : null),
+        filDuContact: async (tenant, contactId) => {
+          filsCherches.push(contactId);
+          if (tenant !== 't1' || contactId !== C1 || m.conversation === null) return { etat: 'injoignable' };
+          return m.sansFil ? { etat: 'sans_fil' } : { etat: 'fil', conversationId: m.conversation };
+        },
       },
     },
   });
-  return { server, envois, enregistres, desabonneLu, prises, resolutions, contextesLus, usage };
+  return { server, envois, enregistres, desabonneLu, prises, resolutions, contextesLus, filsCherches, usage };
 }
 
 const auth = (key: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` } });
@@ -170,6 +177,28 @@ describe('POST /v1/messages/whatsapp', () => {
     expect(res.json()).toMatchObject({ code: 'window_closed' });
     expect(res.json<{ error: string }>().error).toContain('/v1/sends');
     expect(envois).toEqual([]);
+    await server.close();
+  });
+
+  /**
+   * 🔴 LE DÉFAUT : la route OUVRAIT le fil (donc le créait) avant ses refus. Un appel vers une fiche qui n'avait
+   * jamais écrit laissait un fil vide en tête de l'Inbox, puis rendait 422. Sans fil, aucun entrant : la
+   * fenêtre est fermée par construction, et rien ne doit être écrit. Les dépendances de la route n'ont plus
+   * AUCUNE fonction qui crée un fil (le câblage est gardé plus bas) : ce cas tient le refus lui-même.
+   */
+  it('🔴 une fiche SANS fil (elle n’a jamais écrit) -> 422 window_closed, rien n’est ouvert, envoyé ni inscrit', async () => {
+    const { server, envois, enregistres, prises, contextesLus, desabonneLu, filsCherches } = app({ sansFil: true });
+    const res = await post(server, { contactId: C1, text: 'bonjour' });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({ code: 'window_closed' });
+    expect(res.json<{ error: string }>().error).toContain('/v1/sends');
+    // Le fil a été CHERCHÉ, et c'est tout : aucune lecture de contexte, aucun envoi, aucune prise, aucune trace.
+    expect(filsCherches).toEqual([C1]);
+    expect(contextesLus).toEqual([]);
+    expect(desabonneLu).toEqual([]);
+    expect(envois).toEqual([]);
+    expect(prises).toEqual([]);
+    expect(enregistres).toEqual([]);
     await server.close();
   });
 
@@ -289,9 +318,21 @@ describe('câblage de /v1/messages/whatsapp, lu dans `src/index.ts`', () => {
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/^\s*\/\/.*$/gm, '');
     const debut = source.indexOf('      messages: {');
-    const fin = source.indexOf('ouvrirConversation: (tenant, contactId) => inboxStore.ouvrirConversationDuContact', debut);
+    const fin = source.indexOf('filDuContact: (tenant, contactId) => inboxStore.filDuContact(tenant, contactId)', debut);
     expect(debut, 'le bloc `messages:` du câblage').toBeGreaterThan(-1);
     expect(fin, 'la fin du bloc `messages:`').toBeGreaterThan(debut);
     expect(source.slice(debut, fin)).toMatch(/resoudreFiche: \(tenant, cles, o\) => resoudreFiche\(contactStore, tenant, cles, o\),/);
+  });
+
+  it('🔴 le fil est CHERCHÉ, jamais ouvert : le bloc `messages:` ne branche aucune fonction qui crée un fil', () => {
+    const source = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    const debut = source.indexOf('      messages: {');
+    const fin = source.indexOf('      messagesRcs: {', debut);
+    expect(fin, 'le bloc suivant, `messagesRcs:`').toBeGreaterThan(debut);
+    const bloc = source.slice(debut, fin);
+    expect(bloc).toContain('filDuContact: (tenant, contactId) => inboxStore.filDuContact(tenant, contactId)');
+    expect(bloc).not.toMatch(/ouvrirConversation/);
   });
 });

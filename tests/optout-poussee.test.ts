@@ -30,8 +30,14 @@ function journal() {
   return { evenements, noter: (e: string) => { evenements.push(e); } };
 }
 
-function fauxPool(j: ReturnType<typeof journal>, opts: { idTouche?: string | null; lignesBulk?: Array<{ id: string; phone_e164: string | null; bsuid: string | null }> } = {}) {
+function fauxPool(j: ReturnType<typeof journal>, opts: {
+  idTouche?: string | null;
+  lignesBulk?: Array<{ id: string; phone_e164: string | null; bsuid: string | null }>;
+  /** Le statut AVANT l'écriture du mot-clé, tel que `setOptInByWaId` le lit dans la même instruction. */
+  avant?: 'opted_in' | 'opted_out' | 'unknown';
+} = {}) {
   const idTouche = opts.idTouche === undefined ? 'c1' : opts.idTouche;
+  const avant = opts.avant ?? 'opted_in';
   const lignesBulk = opts.lignesBulk ?? [{ id: 'c1', phone_e164: '+33600000001', bsuid: null }];
   const query = async (sql: string) => {
     /**
@@ -44,7 +50,7 @@ function fauxPool(j: ReturnType<typeof journal>, opts: { idTouche?: string | nul
     if (/update contacts set opt_in_status/i.test(sql)) {
       if (/where id = \(/i.test(sql)) {
         j.noter('ecriture:setOptInByWaId');
-        return { rows: idTouche === null ? [] : [{ id: idTouche }], rowCount: idTouche === null ? 0 : 1 };
+        return { rows: idTouche === null ? [] : [{ id: idTouche, avant }], rowCount: idTouche === null ? 0 : 1 };
       }
       j.noter('ecriture:applyEditsMany');
       return { rows: /returning/i.test(sql) ? lignesBulk : [], rowCount: lignesBulk.length };
@@ -125,6 +131,36 @@ describe('le dépôt ANNONCE le refus, après l’avoir écrit', () => {
 
     expect(j.evenements).toEqual(['ecriture:setOptInByWaId']);
     expect(recu).toEqual([]);
+  });
+
+  /**
+   * 🔴 UN SEUL STOP, UNE SEULE ANNONCE. Avec l'ancien contournement (une automation sur le mot STOP vers un bloc
+   * « Action »), le même refus était écrit deux fois et annoncé deux fois, dont une à identifiant aléatoire. Le
+   * dépôt lit l'ancien statut dans la même instruction (le SQL est tenu en intégration) et n'annonce que s'il
+   * CHANGE. Le premier cas de ce bloc (ancien statut `opted_in`, le défaut du faux) est le témoin dans l'autre sens.
+   */
+  it('🔴 une fiche DÉJÀ désabonnée : l’écriture a lieu, l’annonce non', async () => {
+    const j = journal();
+    const recu: Array<{ tenantId: string; waIds: string[] }> = [];
+    const store = new PgContactStore(fauxPool(j, { avant: 'opted_out' }), annonceQuiNote(j, recu));
+    const id = await store.setOptInByWaId(TENANT, '33600000001', 'opted_out', 'scenario');
+
+    expect(id).toBe('c1');
+    expect(j.evenements).toEqual(['ecriture:setOptInByWaId']);
+    expect(recu).toEqual([]);
+  });
+
+  it('🔴 le SQL lit l’ancien statut DANS l’instruction, sous verrou : deux STOP simultanés n’annoncent pas deux fois', () => {
+    // Sans les commentaires : celui qui EXPLIQUE le verrou le cite, et ferait passer une requête qui l'a perdu
+    // (mesuré en retirant le `for update` : ce cas restait vert tant que les commentaires étaient lus).
+    const source = readFileSync(new URL('../src/crm/contact-store.pg.ts', import.meta.url), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    const debut = source.indexOf('async setOptInByWaId(');
+    const corps = source.slice(debut, source.indexOf('async ecrireConsentementParId(', debut));
+    expect(corps).toMatch(/with avant as \(/);
+    expect(corps).toMatch(/for update/);
+    expect(corps).toMatch(/returning id, \(select opt_in_status from avant\) as avant/);
   });
 
   it('⚠️ un numéro INCONNU n’annonce rien : il n’y a personne à pousser chez le client', async () => {

@@ -9,7 +9,7 @@ import { waIdOf } from '../crm/identity';
 import type { DepsRepondre } from '../inbox/repondre';
 import { envoyerRcsLibre, type DepsRcsLibre, type RefusRcsLibre } from '../rcs/envoyer-libre';
 import { RCS_TEXTE_MAX } from '../rcs/schema';
-import { INCONNUE_POUR_UN_MESSAGE } from './v1-messages';
+import { INCONNUE_POUR_UN_MESSAGE, type ReponseMessageSimple } from './v1-messages';
 
 /**
  * `POST /v1/messages/rcs` : un TEXTE en RCS, à UNE personne qui a une fiche (spec 2026-09-24, § 4, lot 3).
@@ -131,6 +131,8 @@ export function registerV1MessagesRcs(app: FastifyInstance, deps: V1MessagesRcsR
       // eslint-disable-next-line no-console
       console.error(`v1/messages/rcs: RCS parti, fil introuvable pour ${fiche.contactId} (${tenantId}), bloqué ou supprimé entre-temps`);
     }
-    return reply.code(200).send({ messageId: issue.messageId, conversationId, channel: 'rcs' });
+    // ⚠️ `conversationId` peut valoir `null` (fil introuvable ci-dessus) : 200 quand même, le message est PARTI,
+    // et un 5xx ferait réessayer, donc envoyer deux fois. La documentation le dit (`ReponseMessageSimple`).
+    return reply.code(200).send({ messageId: issue.messageId, conversationId, channel: 'rcs' } satisfies ReponseMessageSimple);
   });
 }

@@ -202,16 +202,22 @@ export function lireCible(corps: Corps, params: TemplateParam[]): CibleDemandee 
 }
 
 /**
- * UN TEMPLATE QUI VA PARTIR, LU CHEZ META : sa catégorie, et le nombre de variables de son corps.
+ * UN TEMPLATE QUI VA PARTIR, LU CHEZ META : sa catégorie, ce qui l'empêcherait de partir, et le nombre de
+ * variables de son corps.
  *
- * Sert la cible `template` ET le template d'ouverture d'un scénario : les deux partent paramétrés par `params`.
+ * Sert la cible `template`, le template d'ouverture d'un scénario ET celui d'un bloc.
  * 🔴 LE NOMBRE DE VARIABLES SE VÉRIFIE AVANT L'ENVOI. Un template qui en attend N et en reçoit un autre nombre
  * est refusé par Meta pour CHAQUE destinataire, après un 201 qui annonçait le contraire : c'est ce qui arrivait
  * à tout scénario ouvrant par un template à variable, `params` y étant alors refusé.
+ * ⚠️ `params` à `null` : UN BLOC, qui démarre sans variables transmises (`startWorkflowFromNode`) et dont le
+ * template résout les siennes par les sources enregistrées dans la console, contact par contact. Il n'y a rien
+ * à comparer : exiger zéro variable refuserait tout bloc dont le template en porte une, ce qui marche.
+ * 🔴 `non_envoyable` (un paramètre que personne ne remplit, un visuel absent) est jugé par la fonction du
+ * catalogue (`raisonNonEnvoyable`) : l'envoi ne peut plus accepter ce que `GET /v1/templates` écarte.
  * ⚠️ `illisible` n'est jamais ramené à « utility », `categorie_non_admise` ne suggère pas de réessayer.
  */
 async function modeleEnvoyable(
-  deps: V1SendsRouteDeps, tenantId: string, name: string, language: string, params: TemplateParam[], quoi: string,
+  deps: V1SendsRouteDeps, tenantId: string, name: string, language: string, params: TemplateParam[] | null, quoi: string,
 ): Promise<{ categorie: CampaignCategory } | Refus> {
   const lu = await deps.lireModele(tenantId, name, language);
   if (lu.statut === 'absent') {
@@ -224,10 +230,23 @@ async function modeleEnvoyable(
     // LUE, et définitive : réessayer n'y changera rien, le message ne doit pas le suggérer.
     return { refus: { statut: 422, code: 'template_category_unknown', message: `catégorie ${lu.categorie.slice(0, 40)} non envoyable par l’API : un template marketing ou utility est attendu` } };
   }
-  if (params.length !== lu.variables) {
+  if (lu.statut === 'non_envoyable') {
+    return { refus: { statut: 422, code: 'unsendable_target', message: `le ${quoi} ${name} ne peut partir par aucun envoi : ${lu.raison}. Il n’apparaît pas dans GET /v1/templates` } };
+  }
+  if (params !== null && params.length !== lu.variables) {
     return { refus: { statut: 422, code: 'unsendable_target', message: `le ${quoi} ${name} attend ${lu.variables} variable(s) dans son corps et params en décrit ${params.length} : Meta refuserait chaque message` } };
   }
   return { categorie: lu.categorie };
+}
+
+/**
+ * 🔴 LA CATÉGORIE NE SE RELÂCHE JAMAIS : celle que Meta donne au template qui part l'emporte sur une déclaration
+ * plus permissive. Un template marketing annoncé « utility » partirait sinon aux contacts sans consentement,
+ * exactement le défaut que la lecture chez Meta a fermé sur la cible template. Une déclaration plus STRICTE que
+ * la lecture est gardée : l'appelant peut toujours se montrer plus prudent.
+ */
+function categoriePlusStricte(lue: CampaignCategory, declaree: CampaignCategory): CampaignCategory {
+  return lue === 'marketing' || declaree === 'marketing' ? 'marketing' : 'utility';
 }
 
 async function numeroDEnvoi(deps: V1SendsRouteDeps, tenantId: string, demande: string | undefined): Promise<{ phoneNumberId: string } | Refus> {
@@ -248,7 +267,8 @@ async function numeroDEnvoi(deps: V1SendsRouteDeps, tenantId: string, demande: s
  * 🔴 LES GARDES DE LA CONSOLE, ALIGNÉES (défaut 2) : l'API répondait 201 à un scénario que la création de
  * campagne refuse, à un template inconnu ou non approuvé, et chaque destinataire échouait ensuite chez Meta.
  *
- * 🔴 UNE CIBLE `node` EST JUGÉE SUR CE QUI PART EN PREMIER DEPUIS ELLE (défaut 3), plus sur le type du bloc.
+ * 🔴 UNE CIBLE `node` EST JUGÉE SUR CE QUI PART EN PREMIER DEPUIS ELLE (défaut 3), plus sur le type du bloc, et
+ * le template qu'elle fait partir est lu chez Meta comme celui d'un scénario.
  */
 async function resoudreCible(deps: V1SendsRouteDeps, tenantId: string, c: CibleDemandee, params: TemplateParam[]): Promise<CibleResolue | Refus> {
   if (c.kind === 'template') {
@@ -286,17 +306,30 @@ async function resoudreCible(deps: V1SendsRouteDeps, tenantId: string, c: CibleD
     if (!ouvre) return { refus: { statut: 422, code: 'unsendable_target', message: 'le template d’ouverture de ce scénario n’a pas pu être identifié' } };
     const m = await modeleEnvoyable(deps, tenantId, ouvre.templateName, ouvre.language, params, 'template d’ouverture du scénario');
     if ('refus' in m) return m;
-    // 🔴 LA CATÉGORIE NE SE RELÂCHE JAMAIS : celle que Meta donne au template d'ouverture l'emporte sur une
-    // déclaration plus permissive. Un template marketing annoncé « utility » partirait sinon aux contacts sans
-    // consentement, exactement le défaut que la lecture chez Meta a fermé sur la cible template.
-    const category: CampaignCategory = m.categorie === 'marketing' || c.category === 'marketing' ? 'marketing' : 'utility';
-    return { ouverture: 'whatsapp_template', category, label: r.value.name, templateName: '', templateLanguage: '', workflowId: r.value.id };
+    return {
+      ouverture: 'whatsapp_template', category: categoriePlusStricte(m.categorie, c.category), label: r.value.name,
+      templateName: '', templateLanguage: '', workflowId: r.value.id,
+    };
   }
   const r = await deps.resolveNode(tenantId, c.code);
   if (!r.ok) return { refus: { statut: 404, code: 'node_not_found', message: 'bloc introuvable dans les scénarios publiés' } };
   const v = ouvertureApi(r.value.graph, r.value.nodeId);
   if (v.ouverture === null) return { refus: { statut: 422, code: 'unsendable_target', message: `ce bloc ne peut pas partir : ${v.raison}` } };
-  return { ouverture: v.ouverture, category: c.category, label: r.value.label, templateName: '', templateLanguage: '', workflowId: r.value.workflowId, startNodeId: r.value.nodeId };
+  /**
+   * 🔴 UN BLOC QUI FAIT PARTIR UN TEMPLATE EST LU CHEZ META, COMME UN SCÉNARIO. Sa catégorie était celle que
+   * l'appelant DÉCLARAIT : le bloc d'entrée d'un scénario qui ouvre par un template marketing, visé en
+   * « utility » (le catalogue publie `entryNode`), partait aux contacts sans consentement et hors du plafond
+   * marketing. Même lecture, même règle : la plus stricte des deux catégories, illisible = refus.
+   */
+  let category = c.category;
+  if (v.ouverture === 'whatsapp_template') {
+    const part = modeleDOuverture(r.value.graph, r.value.nodeId);
+    if (!part) return { refus: { statut: 422, code: 'unsendable_target', message: 'le template qui part de ce bloc n’a pas pu être identifié' } };
+    const m = await modeleEnvoyable(deps, tenantId, part.templateName, part.language, null, 'template du bloc');
+    if ('refus' in m) return m;
+    category = categoriePlusStricte(m.categorie, c.category);
+  }
+  return { ouverture: v.ouverture, category, label: r.value.label, templateName: '', templateLanguage: '', workflowId: r.value.workflowId, startNodeId: r.value.nodeId };
 }
 
 /**

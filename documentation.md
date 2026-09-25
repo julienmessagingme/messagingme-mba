@@ -303,11 +303,19 @@ POST /campaigns/:id/run  -> job `campaign-run` (expiration DIMENSIONNÉE au volu
        relecture du statut (l'opérateur a pu mettre en pause)
        quality gate Meta, plafond de fréquence marketing
        claim ATOMIQUE (pending -> sending)   <- ce qui empêche le double envoi
+         et relit la fiche : STOP ou blocage posés depuis -> écarté (`skipped`), rien ne part
        envoi, puis résultat persisté HORS du catch d'envoi
 ```
 
 🔴 **Le claim atomique par destinataire est la seule garantie anti-double-envoi.** Ni la file ni le verrou ne
 la donnent : aucune file de ce dépôt ne déduplique quoi que ce soit (voir § 6).
+
+🔴 **Le consentement se lit DEUX fois : à la construction de la liste (`optInAllows`), puis au moment d'envoyer,
+par le claim** (`PgRecipientStore.claim`, son `returning` lit la fiche par sa clé primaire). Une campagne étalée
+(débit bas, pause, heures ouvrées) part des heures après sa construction : un STOP ou un blocage posés entre les
+deux rendent un écart, marqué `skipped` avec son motif (`MOTIF_ECART_A_L_ENVOI`, celui du STOP étant le texte du
+scénario), jamais `failed` (la porte de qualité ne le compte pas). Le destinataire est réservé quand même : un
+seul run l'écarte.
 
 🔴 **Un plafond de numéro Meta ne se compte pas en échec du destinataire.** Le refus vise le numéro émetteur,
 pas ce contact : on le rend à la file, on met la campagne en pause, et le balayage de reprise la relance. Le
@@ -1475,17 +1483,27 @@ aucun renvoi :
 
 Ajouté par le lot 4 de l'API publique :
 
-35. **Un catalogue de `/v1` n'annonce un template que s'il peut partir, jugé par les fonctions de l'envoi**
-   (`src/http/v1-catalogues.ts`) : `verdictModele`, `carouselSendBlocker`, `headerMediaSendBlocker`, et
-   `modeleDOuverture` (partagée avec `/v1/sends`) pour le template d'ouverture d'un scénario. Deux règles n'ont
-   pas de fonction à l'envoi parce que l'envoi ne les vérifie pas, il ne fournit simplement rien : un en-tête
-   TEXTE à variable (aucun paramètre d'en-tête texte n'est produit) et une adresse de bouton à variable qui
-   n'est pas un lien tracé à jeton (`estLienTraceAvecJeton`, `src/links/rewrite.ts`, qui suit la forme de
-   `lienTraceAvecJeton` ; l'envoi, lui, lit `tracked_links`). Le jour où l'envoi remplit l'un de ces
-   paramètres, le catalogue doit cesser de l'écarter. Un scénario publié est listé même s'il ne peut pas partir :
-   `opening` le dit, et `entryNode` donne le bloc à viser pour une ouverture de session. Le nombre de variables
-   du template d'ouverture n'est PAS relu pour `/v1/scenarios` (il coûterait la liste complète du WABA par
-   appel) : il se lit dans `/v1/templates`.
+35. **Le catalogue `/v1/templates` et l'envoi `/v1/sends` jugent un template par la MÊME construction**,
+   `modeleLuDe` (`src/api/modele-envoi.ts`), que la lecture partagée `templateVarInfo` emploie aussi, puis
+   `verdictModele`. Elle porte `raisonNonEnvoyable` : un en-tête d'un format qu'aucun envoi ne remplit, ce que
+   le moteur refuse avant de partir (`carouselSendBlocker`, `headerMediaSendBlocker`, l'adresse du visuel
+   tenant lieu d'identifiant), un en-tête TEXTE à variable (aucun paramètre d'en-tête texte n'est produit) et
+   une adresse de bouton à variable qui n'est pas un lien tracé à jeton (`estLienTraceAvecJeton`,
+   `src/links/rewrite.ts`). Le catalogue n'annonce pas ce template, l'envoi le refuse en 422
+   `unsendable_target` (cible template, template d'ouverture d'un scénario, template d'un bloc), et
+   `tests/v1-sends.test.ts` tient les deux sur les mêmes templates. Le jour où l'envoi remplit l'un de ces
+   paramètres, `raisonNonEnvoyable` cesse de l'écarter, pour les deux à la fois. Un scénario publié est listé
+   même s'il ne peut pas partir : `opening` le dit, et `entryNode` donne le bloc à viser pour une ouverture de
+   session. Le nombre de variables du template d'ouverture n'est PAS relu pour `/v1/scenarios` (il coûterait la
+   liste complète du WABA par appel) : il se lit dans `/v1/templates`.
+36. **Le template qu'une cible `node` fait partir est lu chez Meta, comme celui d'un scénario**
+   (`modeleDOuverture(graph, depuis)`) : la catégorie retenue est la plus stricte de la lue et de la déclarée
+   (`categoriePlusStricte`), illisible = refus. Le nombre de variables, lui, ne se compare PAS : `params` est
+   refusé sur un bloc, dont le template résout ses variables par les sources de la console, contact par contact.
+37. **`POST /v1/messages/whatsapp` cherche le fil, il ne le crée jamais** (`PgInboxStore.filDuContact`, même
+   fragment de `wa_id` que `ouvrirConversationDuContact`) : sans fil, pas d'entrant, donc fenêtre fermée par
+   construction, 422 sans rien écrire. `POST /v1/messages/rcs`, lui, ouvre le fil APRÈS l'envoi, et rend
+   `conversationId: null` si ce fil est devenu introuvable entre-temps (le message, lui, est parti).
 
 ### Sur les contrats externes
 
@@ -1573,6 +1591,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | Module | Ce qu'il porte |
 |---|---|
 | `src/http/scope.ts` | `scopeTenant` (le contrôle d'accès tenant), `nonEmpty`, `estUuid` |
+| `src/api/modele-envoi.ts` | ce qu'un envoi de l'API sait d'un template : `modeleLuDe` (la construction de la lecture partagée `templateVarInfo` ET du catalogue `/v1/templates`), `raisonNonEnvoyable` (ce qu'aucun envoi ne peut faire partir) et `verdictModele`. Le catalogue n'annonce que ce que l'envoi accepte |
 | `src/server.ts` -> `modulesDeRoutes` | 🔴 le point de passage OBLIGÉ pour monter un module de routes. Chaque entrée déclare sa `ClasseDAcces` (six valeurs, pas deux), et la couverture du garde-fou d'authentification s'en DÉRIVE au lieu d'être recopiée. Monter une route ailleurs la sort du garde-fou sans qu'aucune erreur ne le dise |
 | `src/crm/contact-store.pg.ts` -> `MATCH_BY_WAID_SQL` | résoudre un contact par `wa_id` (E.164 exact, chiffres nus, BSUID) |
 | `src/crm/identity.ts` -> `waIdOfTarget` | la règle wa_id pour une cible d'envoi |
@@ -1613,6 +1632,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/queue/names.ts` | les files, leur cadence, leur DLQ, leur réveil |
 | `src/signaux/types.ts` | 🔴 le DICTIONNAIRE des signaux remontés vers l'outil d'un client, indépendant de tout outil : noms d'événements et d'attributs, noms des CHAMPS de chaque événement (`CHAMPS_EVENEMENT`), borne des textes, résumé en morceaux, `idSignal` (l'`em_event_id` STABLE et opaque), `identifiantPoussable` (la fiche se pousse-t-elle, et sous quel identifiant : une règle pour le complément et pour l'adaptateur), libellé neutre du journal des erreurs. Un adaptateur le traduit, il ne l'étend ni ne le renomme. La documentation publique (`web/lib/signaux-dictionnaire.ts`) lui est tenue par `tests/web-signaux-parite.test.ts`, sans nommer aucun outil |
 | `src/signaux/emetteur.ts` | 🔴 le SEUL point d'émission d'un signal : il ne lève jamais, ne lit rien tant qu'aucun espace n'a branché d'outil, ne transporte que ce que le chemin chaud sait déjà, et enfile des jobs bornés (`SIGNAUX_PAR_JOB`) avec leur priorité (`PRIORITE_SIGNAL` : les accusés derrière). La fiche, l'origine et l'analyse se relisent au moment de pousser (`completer.ts`) |
+| `src/signaux/completer.ts` | relit, au moment de pousser, ce qu'un signal ne transporte pas (fiche et consentement courants, contexte d'un message, lien, analyse). 🔴 CONTRAT : il porte la règle d'identité de l'adaptateur actuel (`identifiantPoussable`, une fiche ne se pousse que sous son `externalId`, sinon ni contexte ni lien ne sont relus). Un adaptateur qui désignerait un profil autrement devra lui passer SON critère, sinon il recevrait des signaux amputés sans erreur |
 | `src/ids/code.ts` | les identifiants publics et les codes de lien |
 
 ### Front

@@ -56,15 +56,19 @@ type Verdict = 'bloque' | 'exempte' | 'delegue' | 'a_trancher';
  */
 const CLASSEMENT: Record<string, { verdict: Verdict; pourquoi: string }> = {
   'src/campaign/engine.ts': {
-    verdict: 'delegue',
-    pourquoi: 'Les destinataires sont filtrés à la CONSTRUCTION de la liste (`src/campaign/build.ts`, qui '
-      + 'appelle `optInAllows`). Le moteur envoie à une liste déjà purgée ; re-filtrer ici ferait deux '
-      + 'endroits où décider qui reçoit, et les compteurs d’écartés viendraient alors de deux sources.',
+    verdict: 'bloque',
+    pourquoi: 'Deux moments, deux questions. À la CONSTRUCTION de la liste (`src/campaign/build.ts`, '
+      + '`optInAllows`), qui peut recevoir cette campagne. Au moment d’ENVOYER, la réclamation du destinataire '
+      + '(`PgRecipientStore.claim`) relit la fiche : un STOP ou un blocage posés depuis rendent un écart, que le '
+      + 'moteur marque `skipped` avec son motif (`MOTIF_ECART_A_L_ENVOI`). 🔴 CE CHEMIN ÉTAIT CLASSÉ « délégué » '
+      + 'avec l’argument qu’une liste purgée suffisait, et c’était faux dès qu’un envoi s’étale (débit bas, pause, '
+      + 'heures ouvrées) : quelqu’un qui disait STOP entre-temps recevait quand même le message. Relevé par la '
+      + 'revue finale de l’API publique, le 2026-09-25.',
   },
   'src/campaign/sender.ts': {
     verdict: 'delegue',
-    pourquoi: 'Sender de canal RCS : il envoie ce que le moteur lui donne, à qui le moteur lui dit. Même '
-      + 'raison que ci-dessus.',
+    pourquoi: 'Sender de canal RCS : il envoie ce que le moteur lui donne, à qui le moteur lui dit, et le moteur '
+      + 'porte la garde (construction de la liste, puis réclamation au moment d’envoyer).',
   },
   'src/workflow/executor.ts': {
     verdict: 'delegue',
@@ -148,5 +152,22 @@ describe('les chemins d’envoi sont tous classés', () => {
       const src = readFileSync(new URL(f, import.meta.url), 'utf8');
       expect(src, `${f} n’appelle plus optInAllows`).toMatch(/optInAllows\s*\(/);
     }
+  });
+
+  /**
+   * 🔴 LE VERDICT `bloque` DU MOTEUR DE CAMPAGNE TIENT À LA RÉCLAMATION, et une réclamation qui cesserait de lire
+   * la fiche le rendrait faux sans qu'aucun inventaire ne rougisse. Son SQL est tenu en intégration
+   * (`PgRecipientStore.claim`), le traitement de l'écart par `tests/campaign-engine.test.ts` ; ce cas tient le
+   * lien entre les deux, sur les fichiers réels.
+   */
+  it('🔴 la réclamation d’un destinataire relit le STOP et le blocage, et le moteur écarte ce qu’elle signale', () => {
+    const store = readFileSync(new URL('../src/campaign/store.pg.ts', import.meta.url), 'utf8');
+    const claim = store.slice(store.indexOf('async claim(id: string)'), store.indexOf('async reclaimStale('));
+    expect(claim).toMatch(/opt_in_status = 'opted_out' then 'desabonne'/);
+    expect(claim).toMatch(/blocked_at is not null then 'bloque'/);
+    const moteur = readFileSync(new URL('../src/campaign/engine.ts', import.meta.url), 'utf8');
+    // Les deux sites de réclamation du moteur traitent l'écart, et aucun ne réduit la réservation à un booléen.
+    expect(moteur.match(/MOTIF_ECART_A_L_ENVOI\[reserve\.ecart\]/g)).toHaveLength(2);
+    expect(moteur).not.toMatch(/!\(await deps\.recipients\.claim\(/);
   });
 });

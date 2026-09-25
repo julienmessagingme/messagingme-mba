@@ -1000,6 +1000,45 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(ec).toBe(131049);
   });
 
+  /**
+   * 🔴 LE STOP (ET LE BLOCAGE) SE RELISENT À LA RÉCLAMATION, au moment d'envoyer. La liste est filtrée à sa
+   * construction ; une campagne étalée part des heures plus tard. Le `returning` de `claim` lit la fiche du
+   * destinataire : ce cas tient son SQL (le moteur, lui, est tenu par `tests/campaign-engine.test.ts`).
+   */
+  it('PgRecipientStore.claim : un STOP ou un blocage posés APRÈS la construction rendent un écart, et réservent quand même', async () => {
+    const repo = new PgCampaignRepo(pool);
+    const recipients = new PgRecipientStore(pool);
+    const mk = async (phone: string) => (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, opt_in_status) values ($1, $2, 'opted_in') returning id`, [tenantId, phone],
+    )).rows[0]!.id;
+    const [ok, stop, bloque, lesDeux] = [await mk('+33600000180'), await mk('+33600000181'), await mk('+33600000182'), await mk('+33600000183')];
+    const campaignId = await repo.insertCampaign({
+      tenantId, phoneNumberId: 'pn-claim', name: 'claim-stop', category: 'utility', templateName: 't', templateLanguage: 'fr', paramMapping: [],
+    });
+    await repo.insertRecipients(campaignId, [
+      { contactId: ok, toE164: '+33600000180', resolvedParams: [] },
+      { contactId: stop, toE164: '+33600000181', resolvedParams: [] },
+      { contactId: bloque, toE164: '+33600000182', resolvedParams: [] },
+      { contactId: lesDeux, toE164: '+33600000183', resolvedParams: [] },
+    ]);
+    // APRÈS la construction de la liste : c'est tout le cas.
+    await pool.query(`update contacts set opt_in_status = 'opted_out', opt_out_at = now() where id = any($1::uuid[])`, [[stop, lesDeux]]);
+    await pool.query(`update contacts set blocked_at = now() where id = any($1::uuid[])`, [[bloque, lesDeux]]);
+    const parTel = new Map((await recipients.listPending(campaignId)).map((p) => [p.toE164, p.id]));
+
+    expect(await recipients.claim(parTel.get('+33600000180')!)).toBe(true);
+    expect(await recipients.claim(parTel.get('+33600000181')!)).toEqual({ ecart: 'desabonne' });
+    expect(await recipients.claim(parTel.get('+33600000182')!)).toEqual({ ecart: 'bloque' });
+    // Le STOP prime sur le blocage : c'est le motif de conformité.
+    expect(await recipients.claim(parTel.get('+33600000183')!)).toEqual({ ecart: 'desabonne' });
+    // RÉSERVÉS dans les quatre cas (même `update` qu'avant) : un second run ne les reprend pas.
+    for (const tel of ['+33600000180', '+33600000181', '+33600000182', '+33600000183']) {
+      expect(await recipients.claim(parTel.get(tel)!), tel).toBe(false);
+    }
+    const statuts = (await pool.query<{ status: string }>(`select status from campaign_recipients where campaign_id = $1`, [campaignId])).rows;
+    expect(statuts.map((r) => r.status)).toEqual(['sending', 'sending', 'sending', 'sending']);
+  });
+
   it('PgStatsStore : campaign funnel (répondu=inbound après envoi), error breakdown, contacts touchés, cost volume', async () => {
     const repo = new PgCampaignRepo(pool);
     const recipients = new PgRecipientStore(pool);

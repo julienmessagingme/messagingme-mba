@@ -163,9 +163,16 @@ export function signalDuClic(contactId: string, code: string): Signal {
  *
  * 🔴 `messageDuStop` : l'identifiant du message qui a DIT STOP (le wamid de Meta, celui du fournisseur RCS). C'est
  * la clé naturelle du refus : un STOP que Meta nous redélivre, ou un job de webhook rejoué, rend le MÊME
- * `em_event_id`, et l'outil du client peut dédupliquer comme le promet la spec (§ 8). L'ALÉA ne reste que là où
- * aucun message ne porte le refus (la fiche, l'action en masse, l'API publique, un bloc de scénario) : il est
- * figé à l'émission, dans le job, donc stable pour un job rejoué, mais deux écritures font deux événements.
+ * `em_event_id`, et l'outil du client peut dédupliquer comme le promet la spec (§ 8). L'ALÉA reste partout où
+ * l'écriture ne connaît pas le message : la fiche, l'action en masse, l'API publique, un bloc de scénario. Il est
+ * figé à l'émission, dans le job, donc stable pour un job rejoué.
+ *
+ * ⚠️ « AUCUN MESSAGE NE PORTE LE REFUS » N'EST PAS LE CRITÈRE, et cette phrase l'a longtemps affirmé : un bloc
+ * « Action » déclenché par une automation sur un mot de refus (l'ancien contournement, d'avant le mot-clé natif)
+ * écrit un refus PORTÉ par un message, sans en connaître l'identifiant. Ce qui borne le doublon est ailleurs :
+ * un désabonnement n'est annoncé que si le statut CHANGE (`setOptInByWaId`, `ecrireConsentementParId`). Le même
+ * STOP écrit par le mot-clé puis par l'automation n'est donc annoncé qu'une fois, par le premier ; mais si le mot
+ * n'est reconnu QUE par l'automation, l'annonce part sous un identifiant aléatoire.
  */
 export function signalDesabonnement(waId: string, canal: CanalSignal, messageDuStop?: string): Signal {
   return { nom: 'em_opted_out', id: idSignal('em_opted_out', messageDuStop), le: maintenant(), waId, canal };

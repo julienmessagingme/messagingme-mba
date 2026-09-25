@@ -328,8 +328,14 @@ une option que personne n'appellerait serait du code mort (écart relevé par le
   `category` est refusé sur un template.
 - **Scénario, bloc, message RCS** : `category` (`marketing` | `utility`) est obligatoire. Elle décide du
   consentement exigé : `marketing` écarte tout ce qui n'est pas `opted_in`, `utility` n'écarte que les
-  désabonnés. Pour un scénario qui ouvre par un template, la catégorie lue chez Meta pour ce template
-  l'emporte si elle est plus stricte : un template marketing annoncé `utility` reste marketing.
+  désabonnés. Pour un scénario qui ouvre par un template, ET pour un bloc qui fait partir un template
+  (correctif de la revue finale du 2026-09-25 : le catalogue publie `entryNode`, qui contournait la règle), la
+  catégorie lue chez Meta pour ce template l'emporte si elle est plus stricte : un template marketing annoncé
+  `utility` reste marketing. Illisible, l'envoi est refusé ; le nombre de variables ne se compare pas sur un
+  bloc, qui les résout par les sources de la console.
+- **Ce qu'aucun envoi ne peut faire partir** (en-tête ou bouton de lien à variable que rien ne remplit, carrousel
+  ou visuel que le moteur refuse) : 422 `unsendable_target`, jugé par la MÊME fonction que le catalogue
+  (`raisonNonEnvoyable`), sur la cible template, le template d'ouverture d'un scénario et celui d'un bloc.
 - **Numéro WhatsApp** : exigé pour `template`, `scenario` et `node` (la console l'exige pour toute campagne
   de scénario) ; il n'est PAS exigé pour `rcsMessage`, qui part de l'agent RCS de l'espace. `phoneNumberId`
   reste optionnel et documenté ; absent, le numéro par défaut de l'espace.
@@ -403,7 +409,11 @@ scénario cesse d'avancer seul, l'agent de Meta cesse de répondre), comme aujou
 d'idempotence, comme la barre de réponse de l'Inbox. La personne doit avoir une FICHE : ces routes ne créent
 pas, un message simple ne fonde pas une relation, c'est un envoi (`/v1/sends`) qui le fait.
 
-Réponse 200 des deux routes : `{ "messageId": "…", "conversationId": "…", "channel": "whatsapp" | "rcs" }`.
+Réponse 200 des deux routes : `{ "messageId": "…", "conversationId": "…" | null, "channel": "whatsapp" | "rcs" }`.
+`conversationId` vaut `null` dans un seul cas, en RCS : le message est parti, mais la fiche a été bloquée ou
+supprimée entre-temps et aucun fil ne l'accueille (200 quand même, un 5xx ferait renvoyer). En WhatsApp, le fil
+est trouvé AVANT l'envoi, donc toujours rendu ; il n'est jamais créé par la route : sans fil, pas de message
+entrant, donc fenêtre fermée (422 `window_closed`, rien n'est écrit). Correctifs de la revue finale du 2026-09-25.
 
 ### `POST /v1/messages/whatsapp` (`sends:create`)
 
@@ -771,32 +781,60 @@ rappelle pas. `/revue` après chaque lot, `/revue-finale` avant chaque déploiem
   sur la bulle demanderait une jointure sur la lecture du fil, rafraîchie toutes les 4 secondes. À cadrer à
   part.
 
-## 19. Lot 7, à cadrer : le risque de désengagement
+## 19. Lot 7 : le risque de désengagement (cadré le 2026-09-25)
 
 **La demande** (Julien, 2026-09-24) : que l'outil du client porte toujours, pour chaque contact, un indicateur
 clair de son risque de partir, calculé à partir des conversations, du non-engagement et de la lecture ou non
-des messages. Sa définition n'est pas faite : ce qui suit fixe le cadre, pas les règles.
+des messages. Ce n'est pas un « churn rate » (un taux sur une base entière, que seul le CRM connaît) : c'est un
+RISQUE DE DÉSENGAGEMENT par contact, tiré des signaux conversationnels qui précèdent le départ.
 
-- **Le nom** : ce n'est pas un « churn rate », qui est un taux sur une base entière. C'est un RISQUE DE
-  DÉSENGAGEMENT par contact. Nous ne voyons pas le churn (seul le CRM sait qui résilie), nous voyons les
-  signaux conversationnels qui le précèdent.
-- **Les signaux disponibles** (tous en base aujourd'hui) : livré, lu, a répondu, a cliqué un lien tracé, date du
-  dernier signe de vie ; sentiment, satisfaction, urgence, réclamation non résolue ; STOP, blocage,
-  injoignabilité.
-- **Trois pièges à tenir dès la définition** :
-  - « non lu » n'est pas « désengagé » : une personne qui a coupé ses accusés de lecture peut ne jamais
-    renvoyer « lu ». Se MESURE sur nos données (un contact qui répond à un message resté « délivré » a coupé
-    ses accusés) et ne doit pas pénaliser ;
-  - le désengagement est souvent une ABSENCE d'événement : l'indicateur se recalcule chaque jour, pas
-    seulement quand un événement arrive ;
-  - un chiffre sans raison ne fait rien faire : on pousse un niveau (faible, moyen, élevé), un score de 0 à
-    100 ET les deux ou trois raisons principales, en codes courts (un attribut texte de Batch plafonne à 300
-    caractères).
-- **La forme recommandée pour une V1** : des règles TRANSPARENTES, pas un modèle appris, faute d'issue réelle
-  (qui a vraiment churné). Dans un second temps, si l'outil du client nous renvoie qui est parti, les poids se
-  calibrent sur la réalité.
-- **Sa place** : un attribut du dictionnaire des signaux (§ 8), poussé par l'adaptateur du lot 6. Le nom de
-  l'attribut se fixera au cadrage.
-- **À trancher au cadrage** : les règles et leurs poids, les seuils des niveaux, la fenêtre d'observation,
-  les codes de raisons, l'affichage éventuel dans la console (fiche, liste), et ce qui se passe pour un
-  contact sans aucun historique.
+**Décisions du cadrage** (Julien, 2026-09-25, en deux tours de questions) :
+
+- **Quatre surfaces** : l'outil du client (attributs du dictionnaire des signaux, § 8), la fiche du mini-CRM,
+  un filtre de la liste des contacts (donc ciblable par une campagne), et un champ de l'API publique.
+- **Fenêtre d'observation** : 90 jours.
+- **Toutes les familles de signaux** : réponses et clics, lecture, analyse, désabonnement et blocage.
+- **Règles transparentes, pas un modèle appris** (aucune issue réelle pour calibrer : mesuré le 2026-09-25,
+  la production porte 18 contacts dont 4 sollicités sur 90 jours).
+- **Calcul chaque nuit**, espace par espace, et pas à chaque événement : le désengagement est une ABSENCE
+  d'événement, et un seul chemin de calcul se teste mieux que deux.
+
+**La grille** (points de risque, total plafonné à 100 ; validée telle quelle) :
+
+| Signal, sur 90 jours | Code | Points |
+|---|---|---|
+| Aucun signe de vie (réponse, clic, lecture) depuis plus de 60 jours, avec au moins 2 messages délivrés | `silence_60j` | +40 |
+| Aucun signe de vie depuis plus de 30 jours (même condition) | `silence_30j` | +25 |
+| Les 3 derniers messages délivrés, sans réponse ni clic | `sans_reponse` | +15 |
+| Les 3 derniers messages délivrés, non lus, SEULEMENT si le contact lit d'habitude | `non_lu` | +15 |
+| Dernière conversation analysée : réclamation non résolue | `reclamation` | +20 |
+| Dernière conversation analysée : sentiment négatif | `negatif` | +10 |
+| Dernière conversation analysée : satisfaction de 3 sur 10 ou moins | `insatisfait` | +10 |
+| Injoignable au dernier envoi (WhatsApp ou RCS) | `injoignable` | +10 |
+| A répondu ou cliqué dans les 14 derniers jours | (allègement) | -25, plancher 0 |
+| Désabonné (STOP) ou bloqué | `stop`, `bloque` | 100 d'office |
+
+- `silence_60j` et `silence_30j` sont exclusifs (le plus fort s'applique).
+- **« Lit d'habitude »** = au moins un « lu » sur la fenêtre. Un contact qui répond sans jamais renvoyer « lu »
+  a coupé ses accusés de lecture : la lecture n'est pas comptée pour lui (1 contact sur 4 dans la mesure).
+- **Niveaux** : `faible` de 0 à 29, `moyen` de 30 à 59, `eleve` de 60 à 100. **`inconnu`**, sans score, quand
+  aucun message n'a été délivré au contact sur la fenêtre (on ne dit pas qu'un contact est fidèle ou perdu sans
+  l'avoir observé). Un STOP ou un blocage donne `eleve` à 100 même sans historique.
+- **Raisons** : les trois contributions les plus lourdes, en codes courts (texte de 300 caractères au plus
+  côté outil).
+- **Limite assumée de la V1** : la lecture et la livraison ne se mesurent que sur les envois de CAMPAGNE (seuls
+  à porter un statut par destinataire) ; un message libre ou un bloc de scénario ne compte que par la réponse
+  qu'il reçoit.
+
+**Ce que le changement de niveau déclenche** :
+- un événement `em_risk_changed` vers l'outil du client (ancien niveau, nouveau niveau, score, raisons), en
+  plus des attributs de fiche `em_risk_level`, `em_risk_score`, `em_risk_reasons` ;
+- un déclencheur d'automation « risque élevé », émis par le balayage de nuit quand un contact PASSE en élevé.
+  🔴 C'est un chemin de MASSE (une nuit peut faire basculer beaucoup de contacts, chacun pouvant lancer un
+  scénario facturé) : il est borné par le plafond horaire existant de chaque automation ET par un plafond de
+  **200 déclenchements par nuit et par espace** ; au-delà, le niveau est écrit sans déclencher, et c'est
+  journalisé.
+
+**Essai réel** : un contact d'essai laissé sans réponse passe en moyen puis en élevé ; on le constate sur la
+fiche, dans le filtre, dans l'API, dans l'outil branché, et par le scénario déclenché. Le seuil de silence est
+paramétrable dans les tests seulement, pour ne pas attendre 30 jours.

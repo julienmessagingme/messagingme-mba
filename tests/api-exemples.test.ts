@@ -13,7 +13,7 @@ import {
 import {
   schemaCorpsEnvoi, schemaDestinataireEnvoi, lireCible, MAX_RECIPIENTS, MAX_SKIPPED_REPORT, type RapportEnvoi,
 } from '../src/http/v1-sends';
-import { schemaMessageWhatsapp } from '../src/http/v1-messages';
+import { schemaMessageWhatsapp, type ReponseMessageSimple } from '../src/http/v1-messages';
 import { schemaMessageRcs } from '../src/http/v1-messages-rcs';
 import { validateParamMapping } from '../src/crm/template';
 import { destinataireAvecVariablesInterdites } from '../src/api/variables';
@@ -209,9 +209,10 @@ describe('les bornes affichées sont celles des routes', () => {
  * type du producteur rendu en lecture seule. Un champ MANQUANT ou MAL TYPÉ ne compile pas ; `MemesCles`
  * ferme l'autre sens (un champ EN TROP), que l'affectation seule laisserait passer, et nomme la clé fautive.
  *
- * ⚠️ Deux réponses restent sans producteur typé, parce que leurs routes les rendent par un objet littéral :
- * `messageEnvoye` (`{ messageId, conversationId, channel }`) et `contactModifie` (`{ contactId }`). Les
- * réponses de catalogue sont comparées plus bas à ce que produisent les fonctions de la route.
+ * ⚠️ Une réponse reste sans producteur typé, parce que sa route la rend par un objet littéral : `contactModifie`
+ * (`{ contactId }`). `messageEnvoye` a le sien (`ReponseMessageSimple`, posé en `satisfies` sur les deux routes) :
+ * son `conversationId` peut valoir `null` en RCS, et l'exemple, écrit en chaîne, l'aurait tu. Les réponses de
+ * catalogue sont comparées plus bas à ce que produisent les fonctions de la route.
  */
 type Lecture<T> = T extends ReadonlyArray<infer U>
   ? ReadonlyArray<Lecture<U>>
@@ -219,12 +220,19 @@ type Lecture<T> = T extends ReadonlyArray<infer U>
 type MemesCles<A, B> = [Exclude<keyof A, keyof B>, Exclude<keyof B, keyof A>] extends [never, never]
   ? true
   : [enTrop: Exclude<keyof A, keyof B>, manquant: Exclude<keyof B, keyof A>];
+/** Deux types ÉGAUX, dans les deux sens : l'affectation seule laisserait l'exemple plus étroit que la route. */
+type Egal<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 
 const suivi: Lecture<SuiviEnvoiApi> = EXEMPLES_REPONSES.envoiSuivi;
 const suiviCles: MemesCles<typeof EXEMPLES_REPONSES.envoiSuivi, SuiviEnvoiApi> = true;
 const suiviLigneCles: MemesCles<(typeof EXEMPLES_REPONSES.envoiSuivi.recipients)[number], SuiviEnvoiApi['recipients'][number]> = true;
 const cree: Lecture<RapportEnvoi> = EXEMPLES_REPONSES.envoiCree;
 const creeCles: MemesCles<typeof EXEMPLES_REPONSES.envoiCree, RapportEnvoi> = true;
+const envoye: Lecture<ReponseMessageSimple> = EXEMPLES_REPONSES.messageEnvoye;
+const envoyeCles: MemesCles<typeof EXEMPLES_REPONSES.messageEnvoye, ReponseMessageSimple> = true;
+// 🔴 `conversationId` : `string | null` des DEUX côtés. Écrit en chaîne, l'exemple promettait une chaîne à tout coup.
+const envoyeConversation: Egal<(typeof EXEMPLES_REPONSES.messageEnvoye)['conversationId'], ReponseMessageSimple['conversationId']> = true;
+const envoyeCanal: Egal<(typeof EXEMPLES_REPONSES.messageEnvoye)['channel'], ReponseMessageSimple['channel']> = true;
 const fiche: Lecture<FicheApi> = EXEMPLES_REPONSES.contactLu;
 const ficheCles: MemesCles<typeof EXEMPLES_REPONSES.contactLu, FicheApi> = true;
 const trouve: Lecture<{ contact: FicheApi | null }> = EXEMPLES_REPONSES.contactTrouve;
@@ -236,9 +244,9 @@ const scns: ReadonlyArray<Lecture<ScenarioCatalogue>> = EXEMPLES_REPONSES.scenar
 const rcsLus: ReadonlyArray<Lecture<MessageRcsCatalogue>> = EXEMPLES_REPONSES.messagesRcs.rcsMessages;
 
 describe('les réponses montrées ont le type de leurs producteurs', () => {
-  it('suivi d’un envoi, rapport 201, fiche lue, recherche, lot, écriture (tenus au typage)', () => {
-    expect([suiviCles, suiviLigneCles, creeCles, ficheCles]).toEqual([true, true, true, true]);
-    expect([suivi, cree, fiche, trouve, lot, ecrit, tpls, scns, rcsLus].every((v) => v !== null)).toBe(true);
+  it('suivi d’un envoi, rapport 201, fiche lue, recherche, lot, écriture, message simple (tenus au typage)', () => {
+    expect([suiviCles, suiviLigneCles, creeCles, ficheCles, envoyeCles, envoyeConversation, envoyeCanal]).toEqual([true, true, true, true, true, true, true]);
+    expect([suivi, cree, fiche, trouve, lot, ecrit, tpls, scns, rcsLus, envoye].every((v) => v !== null)).toBe(true);
   });
 });
 

@@ -1,7 +1,7 @@
 import type { Pool, PoolClient } from 'pg';
 import type { MotifDePause } from './pause';
 import type { Campaign, CampaignStatus, CampaignCategory, Recipient, QualityRating } from './types';
-import type { CampaignStore, RecipientStore, FrequencyStore, QualityProvider } from './engine';
+import type { CampaignStore, RecipientStore, FrequencyStore, QualityProvider, EcartALEnvoi } from './engine';
 import type { BuildContact, BuiltRecipient, ContactEnvoi } from './build';
 import type { WorkflowGraph } from '../workflow/graph';
 import { resolveTemplateParams, type TemplateParam } from '../crm/template';
@@ -1834,14 +1834,31 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
     }));
   }
 
-  /** Claim atomique pending -> sending (rowCount=1 si CE run réserve, 0 si déjà pris). */
-  async claim(id: string): Promise<boolean> {
-    const res = await this.pool.query(
+  /**
+   * Claim atomique pending -> sending (rowCount=1 si CE run réserve, 0 si déjà pris).
+   *
+   * 🔴 ET ELLE RELIT LA FICHE AU MOMENT D'ENVOYER : un STOP ou un blocage posé depuis la construction de la liste
+   * rend `{ ecart }`, que le moteur marque `skipped` avec son motif (`MOTIF_ECART_A_L_ENVOI`). Le destinataire est
+   * RÉSERVÉ quand même (même `update`, même prédicat qu'avant) : c'est ce qui garantit qu'un seul run l'écarte.
+   * Le STOP prime sur le blocage quand les deux sont posés.
+   *
+   * ⚠️ LA FORME DE LA RÉSERVATION NE CHANGE PAS : seul le `returning` s'ajoute. Sa sous-requête lit UNE fiche par
+   * sa clé primaire (`contacts_pkey`), sur le `contact_id` du destinataire ; aucun index neuf. Une fiche disparue
+   * (sous-requête vide) rend `null`, donc le comportement d'avant : le moteur envoie. Le `contact_id` vient d'une
+   * liste construite sur l'espace de la campagne : aucune fiche d'un autre espace ne peut y être lue.
+   */
+  async claim(id: string): Promise<boolean | { ecart: EcartALEnvoi }> {
+    const res = await this.pool.query<{ ecart: EcartALEnvoi | null }>(
       `update campaign_recipients set status = 'sending', claimed_at = now()
-       where id = $1 and status = 'pending'`,
+       where id = $1 and status = 'pending'
+       returning (select case when c.opt_in_status = 'opted_out' then 'desabonne'
+                              when c.blocked_at is not null then 'bloque' end
+                    from contacts c where c.id = campaign_recipients.contact_id) as ecart`,
       [id],
     );
-    return (res.rowCount ?? 0) === 1;
+    if ((res.rowCount ?? 0) !== 1) return false;
+    const ecart = res.rows[0]?.ecart ?? null;
+    return ecart === null ? true : { ecart };
   }
 
   /**

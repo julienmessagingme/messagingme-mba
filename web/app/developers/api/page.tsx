@@ -319,6 +319,12 @@ function DocsInner() {
         </p>
         <p>{t('Réponse 200 des deux routes :', '200 response of both routes:')}</p>
         <Bloc>{json(EXEMPLES_REPONSES.messageEnvoye)}</Bloc>
+        <p className="text-ink-500">
+          {t(
+            'conversationId vaut null dans un seul cas, en RCS : le message est parti, mais la fiche a été bloquée ou supprimée entre-temps et aucune conversation ne l’accueille. En WhatsApp, il est toujours renseigné.',
+            'conversationId is null in one case only, over RCS: the message was sent, but the record was blocked or deleted in the meantime and no conversation holds it. Over WhatsApp, it is always set.',
+          )}
+        </p>
 
         <SousTitre>WhatsApp</SousTitre>
         <Verb method="POST" path="/v1/messages/whatsapp" droit="sends:create" />

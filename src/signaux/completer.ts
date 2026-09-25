@@ -8,6 +8,13 @@ import {
  * chemin chaud : la fiche et son consentement COURANT, l'origine et l'envoi d'un message, le lien cliqué,
  * l'analyse. GÉNÉRIQUE : aucun outil cible n'est nommé ici, tout adaptateur en part.
  *
+ * 🔴 UN CONTRAT, PAS UNE GÉNÉRICITÉ TOTALE : il porte UNE règle d'identité, celle de l'adaptateur actuel
+ * (`identifiantPoussable` : une fiche ne se pousse que sous son `externalId`). Sans elle, il ne relit ni le
+ * contexte d'un message ni le lien d'un clic, puisque l'adaptateur comptera la fiche au lieu de la pousser. Un
+ * adaptateur qui désignerait un profil AUTREMENT (numéro, identifiant propre à son outil) devra faire passer SON
+ * critère ici, en paramètre, au lieu de lire `identifiantPoussable` en dur : sinon il recevrait des signaux
+ * amputés pour toutes les fiches sans `externalId`, sans qu'aucune erreur ne le dise.
+ *
  * `null` = plus rien à pousser (fiche supprimée, conversation ou analyse disparue) : ce n'est pas un échec.
  */
 export interface FicheDuSignal extends ContactDuSignal {
@@ -58,6 +65,7 @@ export async function completerSignal(l: LecturesSignal, tenantId: string, s: Si
    * externe, l'adaptateur la COMPTE et s'arrête là : le contexte d'un message (trois sous-requêtes, et un accusé
    * de campagne en produit des milliers) et le lien d'un clic seraient lus pour rien. L'analyse, elle, se relit
    * quand même : son absence veut dire « plus rien à pousser » (`null`), et la fiche ne serait plus comptée.
+   * ⚠️ C'est LA règle d'identité de l'adaptateur actuel, lue en dur : voir le contrat en tête de ce fichier.
    */
   const poussable = identifiantPoussable(fiche) !== null;
   const base = {

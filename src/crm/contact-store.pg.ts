@@ -412,6 +412,12 @@ export class PgContactStore implements ContactStore {
    * `messageDuStop` : l'identifiant du message entrant qui porte le refus (le mot-clé STOP), transmis à l'annonce
    * pour que le signal garde le même identifiant si Meta redélivre ce message. Le bloc « Action » d'un scénario
    * n'en a pas.
+   *
+   * 🔴 LE REFUS N'EST ANNONCÉ QUE SI LE STATUT CHANGE. Il l'était à chaque écriture : avec l'ancien contournement
+   * (une automation sur le mot STOP vers un bloc « Action »), un seul STOP était annoncé DEUX fois, dont une avec
+   * un identifiant aléatoire que l'outil du client ne peut pas dédoublonner. Le premier chemin qui écrit annonce,
+   * le second trouve la fiche déjà désabonnée et se tait. L'ÉCRITURE, elle, ne change pas (source et date suivent
+   * le dernier geste, comme avant) : seule l'annonce est conditionnée.
    */
   async setOptInByWaId(
     tenantId: string,
@@ -420,23 +426,29 @@ export class PgContactStore implements ContactStore {
     source: string,
     messageDuStop?: string,
   ): Promise<string | null> {
-    const res = await this.pool.query<{ id: string }>(
+    const res = await this.pool.query<{ id: string; avant: string | null }>(
       // 🔴 `opt_out_at` SUIT LE STATUT, DANS LES DEUX SENS (migration 0138) : posée en se désabonnant,
       // REMISE À NULL en se réabonnant. La colonne répond à « depuis quand est-il désabonné ? » ; garder une
       // date sur un contact réabonné ferait apparaître un refus là où il n'y en a plus.
-      `update contacts set opt_in_status = $4, opt_in_source = $3, updated_at = now(),
-              opt_out_at = case when $4 = 'opted_out' then now() else null end
-       where id = (
-         select id from contacts where tenant_id = $1
+      // ⚠️ L'ANCIEN STATUT EST LU DANS LA MÊME INSTRUCTION, SOUS VERROU (`for update`) : deux STOP simultanés (une
+      // redélivrance, le mot-clé et l'automation) liraient sinon tous deux « abonné », et annonceraient deux fois.
+      // Le second attend le premier, puis relit la fiche déjà désabonnée.
+      `with avant as (
+         select id, opt_in_status from contacts where tenant_id = $1
          ${MATCH_BY_WAID_SQL}
+         for update
        )
-       returning id`,
+       update contacts set opt_in_status = $4, opt_in_source = $3, updated_at = now(),
+              opt_out_at = case when $4 = 'opted_out' then now() else null end
+       where id = (select id from avant)
+       returning id, (select opt_in_status from avant) as avant`,
       [tenantId, waId, source, statut],
     );
     const id = res.rows[0]?.id ?? null;
-    // L'annonce vient APRÈS l'écriture, et seulement si elle a touché quelqu'un : annoncer le refus d'un
-    // numéro inconnu pousserait vers le système du client une personne qui n'existe pas chez nous.
-    if (statut === 'opted_out' && id !== null) await this.annoncer(tenantId, [waId], messageDuStop);
+    // L'annonce vient APRÈS l'écriture, et seulement si elle a touché quelqu'un ET changé son statut : annoncer le
+    // refus d'un numéro inconnu pousserait vers le système du client une personne qui n'existe pas chez nous, et
+    // réannoncer un refus déjà enregistré ferait deux événements d'un seul STOP.
+    if (statut === 'opted_out' && id !== null && res.rows[0]?.avant !== 'opted_out') await this.annoncer(tenantId, [waId], messageDuStop);
     return id;
   }
 

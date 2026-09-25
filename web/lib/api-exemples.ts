@@ -176,6 +176,20 @@ const CONTACT_LU = {
   createdAt: '2026-09-24T10:00:00.000Z',
 } as const;
 
+/**
+ * La réponse 200 des deux routes de message simple. ⚠️ `conversationId` peut valoir `null` en RCS : le message est
+ * parti, mais la fiche a été bloquée ou supprimée entre-temps et aucun fil ne l'accueille. Typée ici (et pas
+ * laissée à `as const`, qui l'aurait figée en chaîne) : `tests/api-exemples.test.ts` la tient égale à ce que les
+ * routes rendent.
+ */
+export interface MessageEnvoye {
+  readonly messageId: string;
+  readonly conversationId: string | null;
+  readonly channel: 'whatsapp' | 'rcs';
+}
+
+const MESSAGE_ENVOYE: MessageEnvoye = { messageId: 'wamid.exemple-8412', conversationId: CONVERSATION_ID, channel: 'whatsapp' };
+
 export const EXEMPLES_REPONSES = {
   contactEcrit: { contactId: CONTACT_ID, status: 'created' },
   contactsLot: {
@@ -190,7 +204,7 @@ export const EXEMPLES_REPONSES = {
   contactLu: CONTACT_LU,
   contactTrouve: { contact: CONTACT_LU },
   contactModifie: { contactId: CONTACT_ID },
-  messageEnvoye: { messageId: 'wamid.exemple-8412', conversationId: CONVERSATION_ID, channel: 'whatsapp' },
+  messageEnvoye: MESSAGE_ENVOYE,
   envoiCree: {
     sendId: SEND_ID,
     opening: 'whatsapp_template',

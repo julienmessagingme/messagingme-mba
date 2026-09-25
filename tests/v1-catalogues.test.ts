@@ -103,7 +103,7 @@ describe('GET /v1/templates : ce qui entre au catalogue', () => {
     for (const { over, entre } of cas) {
       const t = modele(over);
       const rendu = catalogueTemplates([t], []).length === 1;
-      const envoi = verdictModele({ statut: t.status, langue: t.language, category: t.category.toLowerCase(), count: 0 }, t.language);
+      const envoi = verdictModele({ statut: t.status, langue: t.language, category: t.category.toLowerCase(), count: 0, nonEnvoyable: null }, t.language);
       expect(rendu, `la valeur de la spec : ${JSON.stringify(over)}`).toBe(entre);
       expect(rendu, `la lecture de /v1/sends : ${JSON.stringify(over)}`).toBe(envoi.statut === 'approuve');
     }

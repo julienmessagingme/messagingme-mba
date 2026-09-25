@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runCampaign, etageServable } from '../src/campaign/engine';
+import { runCampaign, etageServable, MOTIF_ECART_A_L_ENVOI, type EcartALEnvoi } from '../src/campaign/engine';
 import type {
   MessageSender,
   RecipientStore,
@@ -48,14 +48,17 @@ class FakeRecipients implements RecipientStore {
   throwSentFor: Set<string> = new Set();
   /** ids déjà pris par un autre run (claim -> false). */
   claimFails: Set<string> = new Set();
+  /** ids dont la fiche, relue par la réclamation, interdit l'envoi (STOP ou blocage posés après la construction). */
+  ecartFor = new Map<string, EcartALEnvoi>();
   constructor(private readonly pending: Recipient[]) {}
   async listPending(): Promise<Recipient[]> {
     return this.pending;
   }
-  async claim(id: string): Promise<boolean> {
+  async claim(id: string): Promise<boolean | { ecart: EcartALEnvoi }> {
     if (this.claimFails.has(id)) return false;
     this.claimed.push(id);
-    return true;
+    const ecart = this.ecartFor.get(id);
+    return ecart ? { ecart } : true;
   }
   /** Destinataires RENDUS a la file (l'inverse de claim). Le plafond de numero est le seul a s'en servir. */
   readonly relaches: string[] = [];
@@ -136,6 +139,47 @@ describe('runCampaign', () => {
     expect(sender.calls).toEqual(['+33611', '+33622']);
     expect(recipients.results.get('r1')).toMatchObject({ status: 'sent', messageId: 'm-+33611' });
     expect(campaigns.statuses).toEqual(['running', 'completed']);
+  });
+
+  /**
+   * 🔴 LE DÉFAUT : le moteur ne relisait pas le STOP au moment d'envoyer, seulement à la construction de la liste.
+   * Un envoi étalé (débit bas, pause, heures ouvrées) partait donc vers quelqu'un qui avait dit STOP entre-temps.
+   * La réclamation relit la fiche (`PgRecipientStore.claim`, son SQL est tenu en intégration) ; ce cas tient ce
+   * que le MOTEUR en fait : rien ne part, le destinataire est ÉCARTÉ avec son motif, jamais compté en échec.
+   */
+  it('🔴 un STOP ou un blocage relus à la réclamation : RIEN ne part, écarté avec son motif, jamais en échec', async () => {
+    const sender = new FakeSender();
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622'), rec('r3', '+33633')]);
+    recipients.ecartFor.set('r1', 'desabonne');
+    recipients.ecartFor.set('r3', 'bloque');
+    const campaigns = new FakeCampaigns();
+    const notes: Array<{ recipientId: string; statut: string }> = [];
+    const report = await runCampaign(campaign, deps({
+      recipients, sender, campaigns,
+      noterEnvoi: async (t: TentativeEnvoi) => { notes.push({ recipientId: t.recipientId, statut: t.statut }); },
+    }));
+    expect(sender.calls).toEqual(['+33622']);
+    expect(report).toMatchObject({ sent: 1, skipped: 2, failed: 0, paused: false });
+    expect(recipients.results.get('r1')).toEqual({ status: 'skipped', error: MOTIF_ECART_A_L_ENVOI.desabonne });
+    expect(recipients.results.get('r3')).toEqual({ status: 'skipped', error: MOTIF_ECART_A_L_ENVOI.bloque });
+    // Le journal par canal le compte « sauté », comme un écart du canal, et la campagne se termine.
+    expect(notes.filter((n) => n.statut === 'saute').map((n) => n.recipientId)).toEqual(['r1', 'r3']);
+    expect(campaigns.statuses).toEqual(['running', 'completed']);
+    // Le motif du STOP est CELUI du scénario : l'opérateur lit le même refus d'où qu'il vienne.
+    expect(MOTIF_ECART_A_L_ENVOI.desabonne).toMatch(/^contact désabonné/);
+  });
+
+  it('🔴 même sur une campagne de SCÉNARIO : le parcours ne démarre pas pour un STOP relu à la réclamation', async () => {
+    const started: string[] = [];
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
+    recipients.ecartFor.set('r2', 'desabonne');
+    const report = await runCampaign({ ...campaign, workflowId: 'wf1' }, deps({
+      recipients,
+      startWorkflow: async (_t, _w, waId) => { started.push(waId); },
+    }));
+    expect(started).toEqual(['33611']);
+    expect(report).toMatchObject({ sent: 1, skipped: 1, failed: 0 });
+    expect(recipients.results.get('r2')).toEqual({ status: 'skipped', error: MOTIF_ECART_A_L_ENVOI.desabonne });
   });
 
   it('destinataire BSUID (marketing) -> routé en `recipient`, jamais `to`', async () => {
@@ -488,6 +532,20 @@ describe('runCampaign — template CAROUSEL', () => {
     expect(res?.status).toBe('failed');
     expect(res?.error).toContain('Carousel non envoyable');
     expect(res?.error).toContain('carte 1');
+  });
+
+  it('carousel non envoyable ET un STOP relu à la réclamation : ce destinataire est ÉCARTÉ, pas mis en échec', async () => {
+    const sender = new CapturingSender();
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
+    recipients.ecartFor.set('r2', 'desabonne');
+    const report = await runCampaign(campaign, deps({
+      recipients, sender,
+      getTemplateCarousel: async () => ({ cards: [{ body: 'carte sans image' }] }),
+    }));
+    expect(sender.specs).toHaveLength(0);
+    expect(report).toMatchObject({ sent: 0, failed: 1, skipped: 1 });
+    expect(recipients.results.get('r1')?.status).toBe('failed');
+    expect(recipients.results.get('r2')).toEqual({ status: 'skipped', error: MOTIF_ECART_A_L_ENVOI.desabonne });
   });
 
   it('carousel refusé sur 25 destinataires -> AUCUNE pause (le quality gate ne voit pas 100 % d échecs)', async () => {

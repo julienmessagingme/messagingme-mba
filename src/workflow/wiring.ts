@@ -14,7 +14,7 @@ import { PgContactStore } from '../crm/contact-store.pg';
 import { PgInboxStore } from '../inbox/store.pg';
 import { PgTenantSettingsStore } from '../settings/store.pg';
 import { PgCampaignRepo } from '../campaign/store.pg';
-import { countTemplateVariables } from '../crm/template';
+import { modeleLuDe } from '../api/modele-envoi';
 import { logTemplateSent } from '../inbox/outbound-log';
 import { MetaMediaClient } from '../meta/media';
 import { MetaClientFactory } from '../meta/factory';
@@ -188,10 +188,15 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
      * minuscules côté campagne : on aligne ICI plutôt que dans chaque lecteur.
      */
     category?: string;
+    /**
+     * Pourquoi AUCUN envoi de ce template ne peut partir (`raisonNonEnvoyable`), `null` s'il le peut. Seule
+     * l'API publique le lit (`verdictModele`) : le worker juge ses propres visuels à l'envoi.
+     */
+    nonEnvoyable: string | null;
   };
   const tplVarCache = new Map<string, { at: number } & TplInfo>();
   const TPL_CACHE_MS = 5 * 60_000;
-  // `count` = MAX des positions {{n}} (cf. countTemplateVariables) : « {{1}} ... {{3}} » attend 3 params pour Meta,
+  // `count` = MAX des positions {{n}} (cf. countTemplateVariables, via modeleLuDe) : « {{1}} ... {{3}} » attend 3 params pour Meta,
   // pas 2. null = indéterminable (WABA absent / template introuvable / réseau) -> l'appelant NE PAS envoyer.
   // WABA du tenant, mémoïsé au même TTL : `templateVarInfo` est appelé PAR DESTINATAIRE sur une campagne
   // scénario, et sans ça chaque envoi payait un SELECT avant même de regarder le cache de templates.
@@ -262,11 +267,10 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     const media = tpl.headerFormat === 'IMAGE' || tpl.headerFormat === 'VIDEO' || tpl.headerFormat === 'DOCUMENT'
       ? tpl.headerFormat
       : undefined;
+    // Le nombre de variables, le statut, la langue, la catégorie et ce qui empêcherait tout envoi : la MÊME
+    // construction que le catalogue de l'API (`modeleLuDe`), sinon l'un annoncerait ce que l'autre refuse.
     const info: TplInfo = {
-      count: countTemplateVariables(tpl.body),
-      statut: tpl.status,
-      langue: tpl.language,
-      ...(tpl.category ? { category: tpl.category.toLowerCase() } : {}),
+      ...modeleLuDe(tpl),
       ...(tpl.carousel ? { carousel: tpl.carousel } : {}),
       ...(media ? { headerFormat: media } : {}),
       ...(tpl.headerMediaUrl ? { headerMediaUrl: tpl.headerMediaUrl } : {}),

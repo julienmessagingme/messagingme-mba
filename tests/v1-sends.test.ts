@@ -12,7 +12,10 @@ import type { V1SendsRouteDeps, V1SendCreateInput } from '../src/http/v1-sends';
 import type { BuiltRecipient, ContactEnvoi } from '../src/campaign/build';
 import type { EnvoiApiBrut } from '../src/campaign/store.pg';
 import type { ClesFiche, ModeCreation } from '../src/api/fiche';
-import type { LectureModele } from '../src/api/modele-envoi';
+import { modeleLuDe, verdictModele, type LectureModele } from '../src/api/modele-envoi';
+import { catalogueTemplates } from '../src/http/v1-catalogues';
+import type { TemplateSummary } from '../src/meta/templates';
+import { lienTraceAvecJeton } from '../src/links/rewrite';
 import type { WorkflowGraph, WorkflowNode } from '../src/workflow/graph';
 import { cleApiDeTest } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
@@ -451,6 +454,146 @@ describe('POST /v1/sends : cible node', () => {
     const res = await envoyer(server, { ...NODE('nod_qm'), recipients: [{ contactId: C1 }], params }, 'i-node-params');
     expect(res.statusCode).toBe(400);
     expect(cap.sends).toHaveLength(0);
+    await server.close();
+  });
+});
+
+describe('POST /v1/sends : le template d’un bloc est lu chez Meta, comme celui d’un scénario', () => {
+  /**
+   * 🔴 LE DÉFAUT : une cible `node` prenait la catégorie DÉCLARÉE, sans jamais lire le template qu'elle fait
+   * partir. Le catalogue publie `entryNode` : le bloc d'entrée d'un scénario qui ouvre par un template marketing,
+   * visé avec `category: "utility"`, partait aux contacts sans consentement et hors du plafond marketing. La cible
+   * scénario, elle, lisait la catégorie chez Meta et gardait la plus stricte.
+   */
+  const INCONNU = new Map<string, ContactEnvoi>([[C1, fiche(C1, 1, { optInStatus: 'unknown' })]]);
+
+  it('🔴 le bloc d’ENTRÉE d’un scénario à template marketing, visé en « utility » : marketing, et qui n’a pas consenti est écarté', async () => {
+    const lus: string[] = [];
+    const { server, cap } = app(
+      { lireModele: async (_t, nom, langue) => { lus.push(`${nom}|${langue}`); return { statut: 'approuve', categorie: 'marketing', variables: 0 }; } },
+      { fiches: INCONNU },
+    );
+    const res = await envoyer(server, { ...NODE('nod_debut'), recipients: [{ contactId: C1 }] }, 'i-node-marketing');
+    expect(res.statusCode).toBe(201);
+    // Le template qui part DE CE BLOC, dans la langue de l'exécuteur (`fr` par défaut).
+    expect(lus).toEqual(['accueil|fr']);
+    expect(res.json()).toMatchObject({ opening: 'whatsapp_template', recipientCount: 0, skipped: [{ index: 0, reason: 'no_consent' }] });
+    expect(cap.sends[0]!.input).toMatchObject({ category: 'marketing', startNodeId: 'debut' });
+    await server.close();
+  });
+
+  it('un bloc template ailleurs dans le graphe : c’est SON template qui est lu, pas celui de l’entrée', async () => {
+    const lus: string[] = [];
+    const { server } = app({ lireModele: async (_t, nom, langue) => { lus.push(`${nom}|${langue}`); return { statut: 'approuve', categorie: 'utility', variables: 0 }; } });
+    expect((await envoyer(server, { ...NODE('nod_tpl'), recipients: [{ contactId: C1 }] }, 'i-node-relance')).statusCode).toBe(201);
+    expect(lus).toEqual(['relance|fr']);
+    await server.close();
+  });
+
+  it('une déclaration plus STRICTE que la lecture est gardée : marketing déclaré sur un template utility reste marketing', async () => {
+    const { server, cap } = app();
+    const res = await envoyer(server, { target: { node: 'nod_tpl' }, category: 'marketing', recipients: [{ contactId: C1 }] }, 'i-node-strict');
+    expect(res.statusCode).toBe(201);
+    expect(cap.sends[0]!.input.category).toBe('marketing');
+    await server.close();
+  });
+
+  it('illisible : 422 template_category_unknown ; absent : 404 ; non envoyable : 422 unsendable_target ; rien n’est créé', async () => {
+    const cas: Array<[LectureModele, number, string]> = [
+      [{ statut: 'illisible' }, 422, 'template_category_unknown'],
+      [{ statut: 'absent' }, 404, 'template_not_found'],
+      [{ statut: 'categorie_non_admise', categorie: 'authentication' }, 422, 'template_category_unknown'],
+      [{ statut: 'non_envoyable', raison: 'son en-tête texte porte une variable, qu’aucun envoi ne remplit' }, 422, 'unsendable_target'],
+    ];
+    for (const [modele, statut, code] of cas) {
+      const { server, cap } = app({}, { modele });
+      const res = await envoyer(server, { ...NODE('nod_debut'), recipients: [{ contactId: C1 }] }, `i-node-${modele.statut}`);
+      expect([res.statusCode, res.json<{ code: string }>().code], modele.statut).toEqual([statut, code]);
+      expect(cap.sends, modele.statut).toEqual([]);
+      expect(cap.resolutions, modele.statut).toEqual([]);
+      await server.close();
+    }
+  });
+
+  it('⚠️ le nombre de variables ne se compare pas : un bloc résout les siennes par les sources de la console', async () => {
+    // `params` est refusé sur un bloc (400) : exiger qu'il couvre les variables du template refuserait tout
+    // bloc dont le template en porte une, alors que l'exécuteur les résout contact par contact.
+    const { server } = app({}, { modele: { statut: 'approuve', categorie: 'utility', variables: 2 } });
+    expect((await envoyer(server, { ...NODE('nod_tpl'), recipients: [{ contactId: C1 }] }, 'i-node-vars')).statusCode).toBe(201);
+    await server.close();
+  });
+
+  it('un bloc qui ouvre par un message de session ou en RCS n’est pas lu chez Meta, et garde la catégorie déclarée', async () => {
+    let lectures = 0;
+    const { server, cap } = app({ lireModele: async () => { lectures += 1; return { statut: 'absent' }; } });
+    expect((await envoyer(server, { ...NODE('nod_qm'), recipients: [{ contactId: C1 }] }, 'i-node-qm')).statusCode).toBe(201);
+    expect((await envoyer(server, { ...NODE('nod_rcs'), recipients: [{ contactId: C1 }] }, 'i-node-rcs')).statusCode).toBe(201);
+    expect(lectures).toBe(0);
+    expect(cap.sends.map((e) => e.input.category)).toEqual(['utility', 'utility']);
+    await server.close();
+  });
+});
+
+describe('POST /v1/sends et GET /v1/templates jugent un template de la MÊME façon', () => {
+  /**
+   * 🔴 LE DÉFAUT : le catalogue écartait un en-tête texte à variable, un bouton de lien à variable non tracé, un
+   * carrousel ou un visuel que le moteur refuse ; l'envoi les acceptait en 201, puis chaque destinataire échouait.
+   * Les deux jugent désormais par `raisonNonEnvoyable`, construite par `modeleLuDe` : la lecture partagée de
+   * production (`templateVarInfo`) est exactement `verdictModele(modeleLuDe(tpl))`, ce que ce double reproduit.
+   */
+  const base = (over: Partial<TemplateSummary>): TemplateSummary => ({
+    id: 'x', name: 'confirmation', status: 'APPROVED', category: 'UTILITY', language: 'fr', body: 'Votre commande est prête.',
+    headerFormat: null, isCarousel: false, editable: true, ...over,
+  });
+  const carte = { mediaUrl: 'https://exemple.test/carte.jpg', mediaFormat: 'IMAGE' as const, body: 'Découvrez', buttons: [] };
+  const CAS: Array<[string, TemplateSummary]> = [
+    ['ordinaire', base({})],
+    ['en-tête texte fixe', base({ headerFormat: 'TEXT', headerText: 'Votre commande' })],
+    ['en-tête texte à variable', base({ headerFormat: 'TEXT', headerText: 'Commande {{1}}' })],
+    ['bouton de lien fixe', base({ buttons: [{ type: 'URL', text: 'Voir', url: 'https://exemple.test/commande' }] })],
+    ['bouton de lien à variable', base({ buttons: [{ type: 'URL', text: 'Voir', url: 'https://exemple.test/p/{{1}}' }] })],
+    ['bouton de lien tracé à jeton', base({ buttons: [{ type: 'URL', text: 'Voir', url: lienTraceAvecJeton('https://api.messagingme.app', 'k3f9qa01j8z3') }] })],
+    ['carrousel envoyable', base({ isCarousel: true, carousel: { cards: [carte, carte] } })],
+    ['carrousel à variable', base({ isCarousel: true, carousel: { cards: [carte, { ...carte, body: 'Pour {{1}}' }] } })],
+    ['carte sans visuel', base({ isCarousel: true, carousel: { cards: [{ ...carte, mediaUrl: undefined }] } })],
+    ['image avec adresse', base({ headerFormat: 'IMAGE', headerMediaUrl: 'https://exemple.test/visuel.jpg' })],
+    ['image sans adresse', base({ headerFormat: 'IMAGE' })],
+    ['en-tête de localisation', base({ headerFormat: 'LOCATION' })],
+    ['en attente', base({ status: 'PENDING' })],
+    ['authentification', base({ category: 'AUTHENTICATION' })],
+  ];
+
+  it.each(CAS)('%s', async (_nom, t) => {
+    const auCatalogue = catalogueTemplates([t], []).length === 1;
+    const { server, cap } = app({ lireModele: async (_t, _n, langue) => verdictModele(modeleLuDe(t), langue) });
+    const res = await envoyer(server, { target: { template: { name: t.name, language: 'fr' } }, recipients: [{ contactId: C1 }] }, 'i-parite');
+    expect(res.statusCode === 201, `catalogue ${auCatalogue}, envoi ${res.statusCode} ${res.body}`).toBe(auCatalogue);
+    expect(cap.sends.length === 1).toBe(auCatalogue);
+    await server.close();
+  });
+
+  it('🔴 les cas d’écart existent des deux côtés : six acceptés, et un refusé dit pourquoi en 422 unsendable_target', async () => {
+    // Sans ce témoin, une règle qui écarterait TOUT (ou rien) rendrait la parité ci-dessus verte.
+    const acceptes = CAS.filter(([, t]) => catalogueTemplates([t], []).length === 1).map(([n]) => n);
+    expect(acceptes).toEqual(['ordinaire', 'en-tête texte fixe', 'bouton de lien fixe', 'bouton de lien tracé à jeton', 'carrousel envoyable', 'image avec adresse']);
+    const t = base({ headerFormat: 'TEXT', headerText: 'Commande {{1}}' });
+    const { server, cap } = app({ lireModele: async (_t, _n, langue) => verdictModele(modeleLuDe(t), langue) });
+    const res = await envoyer(server, { ...TPL, recipients: [{ contactId: C1 }] }, 'i-entete-var');
+    expect([res.statusCode, res.json<{ code: string }>().code]).toEqual([422, 'unsendable_target']);
+    // Le message dit POURQUOI, et où chercher ce qui peut partir.
+    expect(res.json<{ error: string }>().error).toMatch(/en-tête texte porte une variable/);
+    expect(res.json<{ error: string }>().error).toContain('GET /v1/templates');
+    expect(cap.sends).toEqual([]);
+    expect(cap.resolutions).toEqual([]);
+    await server.close();
+  });
+
+  it('le template d’ouverture d’un scénario est jugé de même', async () => {
+    const t = base({ buttons: [{ type: 'URL', text: 'Voir', url: 'https://exemple.test/p/{{1}}' }] });
+    const { server, cap } = app({ lireModele: async (_t, _n, langue) => verdictModele(modeleLuDe(t), langue) });
+    const res = await envoyer(server, { ...SCN('scn_template'), recipients: [{ contactId: C1 }] }, 'i-scn-non-envoyable');
+    expect([res.statusCode, res.json<{ code: string }>().code]).toEqual([422, 'unsendable_target']);
+    expect(cap.sends).toEqual([]);
     await server.close();
   });
 });

@@ -1,5 +1,5 @@
 import type { Campaign, CampaignStatus, Recipient, RunReport, GuardrailThresholds, QualityRating } from './types';
-import { frequencyAllows, qualityGate } from './guardrails';
+import { frequencyAllows, qualityGate, MOTIF_DESABONNE } from './guardrails';
 import { buildTemplateComponents, carouselSendBlocker, headerMediaSendBlocker } from '../meta/template-components';
 import type { OutboundCarouselCard } from '../meta/template-components';
 import { refreshNowParams } from '../crm/template';
@@ -57,14 +57,31 @@ export interface MessageSender {
   sendTemplate(to: string, tpl: TemplateSpec): Promise<SendResult>;
 }
 
+/** Ce que la réclamation d'un destinataire a lu sur sa fiche, AU MOMENT D'ENVOYER, et qui interdit l'envoi. */
+export type EcartALEnvoi = 'desabonne' | 'bloque';
+
+/**
+ * Le motif écrit sur un destinataire écarté à l'envoi. Le STOP reprend le texte du scénario (`MOTIF_DESABONNE`) :
+ * l'opérateur lit le même refus d'où qu'il vienne.
+ */
+export const MOTIF_ECART_A_L_ENVOI: Readonly<Record<EcartALEnvoi, string>> = {
+  desabonne: MOTIF_DESABONNE,
+  bloque: 'contact bloqué : plus aucun message ne lui est envoyé',
+};
+
 export interface RecipientStore {
   listPending(campaignId: string): Promise<Recipient[]>;
   /**
    * Claim atomique d'un destinataire (pending -> sending). Retourne true si CE run l'a
    * réservé, false si un autre run/worker l'a déjà pris. Garantit qu'un destinataire n'est
    * envoyé qu'une fois malgré runs concurrents et replays pg-boss.
+   *
+   * 🔴 `{ ecart }` : RÉSERVÉ par ce run, mais il ne doit PAS partir. La liste est filtrée à sa CONSTRUCTION
+   * (`optInAllows`) ; un envoi étalé (débit bas, pause, heures ouvrées) partait ensuite vers quelqu'un qui avait
+   * dit STOP entre-temps. La réclamation relit donc la fiche au moment d'envoyer. Réservé d'abord, pour que
+   * le marquer `skipped` ne se fasse qu'une fois, même entre deux runs concurrents.
    */
-  claim(id: string): Promise<boolean>;
+  claim(id: string): Promise<boolean | { ecart: EcartALEnvoi }>;
   /**
    * Rend un destinataire réservé à la file (`sending` -> `pending`), l'inverse exact de `claim`. Un seul
    * appelant : le plafond de numéro, où le contact n'a rien fait de mal et où aucun message n'est parti.
@@ -626,7 +643,14 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     for (const r of pending) {
       if (r.status === 'sent') continue;
       if (etageServable(campaign, r.etageCourant, canauxServis).canal !== 'whatsapp') { restants.push(r); continue; }
-      if (!(await deps.recipients.claim(r.id))) continue;
+      const reserve = await deps.recipients.claim(r.id);
+      if (reserve === false) continue;
+      // Un contact qui a dit STOP est ÉCARTÉ, pas mis en échec : le modèle n'y est pour rien.
+      if (reserve !== true) {
+        await resoudre(r, { status: 'skipped', error: MOTIF_ECART_A_L_ENVOI[reserve.ecart] });
+        report.skipped += 1;
+        continue;
+      }
       await resoudre(r, { status: 'failed', error: reason });
       report.failed += 1;
     }
@@ -805,7 +829,21 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     }
 
     // Claim atomique : si un autre run/worker a déjà pris ce destinataire, on passe.
-    if (!(await deps.recipients.claim(r.id))) continue;
+    const reserve = await deps.recipients.claim(r.id);
+    if (reserve === false) continue;
+
+    /**
+     * 🔴 LE STOP (ET LE BLOCAGE) SE RELISENT AU MOMENT D'ENVOYER, par la réclamation. La liste a été filtrée à
+     * sa construction, mais une campagne étalée part des heures plus tard : sans cette relecture, quelqu'un qui
+     * a dit STOP entre-temps recevait quand même le message. ÉCARTÉ (`skipped`), jamais `failed` : ce n'est pas
+     * un échec, et la porte de qualité ne doit pas le compter. Placé AVANT le frein de cadence, comme le refus
+     * d'étage : rien ne part, aucun créneau n'est occupé.
+     */
+    if (reserve !== true) {
+      await resoudre(r, { status: 'skipped', error: MOTIF_ECART_A_L_ENVOI[reserve.ecart] });
+      report.skipped += 1;
+      continue;
+    }
 
     // 🔴 LE REFUS S'IL N'EST PAS SERVABLE (cf. `etageServable`). Placé APRÈS le claim parce qu'il faut
     // avoir réservé le destinataire pour le marquer, et AVANT le frein de cadence parce qu'un refus

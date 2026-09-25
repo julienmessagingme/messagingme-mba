@@ -158,4 +158,37 @@ describe.skipIf(!url)('Ouvrir la conversation d un contact (Postgres reel)', () 
       await pool.query(`delete from tenants where id = $1`, [autre]);
     }
   });
+
+  /**
+   * 🔴 `filDuContact` (POST /v1/messages/whatsapp) CHERCHE LE FIL SANS LE CREER. La route l'ouvrait avant ses
+   * refus : un appel vers une fiche qui n'avait jamais ecrit laissait un fil vide en tete de l'Inbox, puis
+   * rendait 422. Ce qui peut casser est en base : la lecture ne doit RIEN ecrire, et trouver le MEME fil que
+   * l'ouverture (meme derivation du wa_id, fragment partage).
+   */
+  it('🔴 filDuContact : sans fil, il le DIT et n en cree aucun ; une fois le fil ouvert, il rend CELUI-LA', async () => {
+    const neuf = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164) values ($1, '+33600000611') returning id`, [tenantId],
+    )).rows[0]!.id;
+    expect(await store.filDuContact(tenantId, neuf)).toEqual({ etat: 'sans_fil' });
+    const { rows } = await pool.query<{ n: string }>(
+      `select count(*) as n from conversations where tenant_id = $1 and wa_id = '33600000611'`, [tenantId],
+    );
+    expect(Number(rows[0]!.n), 'la lecture n a cree aucun fil').toBe(0);
+    const id = await store.ouvrirConversationDuContact(tenantId, neuf);
+    expect(await store.filDuContact(tenantId, neuf)).toEqual({ etat: 'fil', conversationId: id });
+  });
+
+  it('🔴 filDuContact : bloque, supprime ou d un autre espace -> injoignable, comme l ouverture', async () => {
+    const bloque = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, blocked_at) values ($1, '+33600000612', now()) returning id`, [tenantId],
+    )).rows[0]!.id;
+    expect(await store.filDuContact(tenantId, bloque)).toEqual({ etat: 'injoignable' });
+    expect(await store.filDuContact(tenantId, supprime)).toEqual({ etat: 'injoignable' });
+    const autre = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-fil-du-contact-autre') returning id`)).rows[0]!.id;
+    try {
+      expect(await store.filDuContact(autre, avecNumero)).toEqual({ etat: 'injoignable' });
+    } finally {
+      await pool.query(`delete from tenants where id = $1`, [autre]);
+    }
+  });
 });
