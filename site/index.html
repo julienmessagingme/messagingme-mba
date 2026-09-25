@@ -240,7 +240,8 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .pied-haut{display:grid;grid-template-columns:minmax(0,1.7fr) repeat(3,minmax(0,1fr)) minmax(0,1.2fr);gap:40px;padding-top:72px;padding-bottom:56px}
 .pied-marque{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;white-space:nowrap;color:#fff;font-weight:700;font-size:1.05rem}
 .pied-marque svg{width:28px;height:28px}
-.pied-marque small{font-weight:500;color:var(--muted)}
+.pied-marque .par{display:inline-flex;align-items:center;gap:8px;font-weight:500;font-size:.85rem;color:var(--muted)}
+.pied-marque .par img{width:auto;height:21px}
 .pied-accroche{margin:14px 0 0;max-width:19em;color:#fff;font-size:.95rem;line-height:1.5}
 .pied h3{margin:0 0 18px;color:#fff;font-size:1rem;font-weight:700}
 .pied ul{list-style:none;margin:0;padding:0;display:grid;gap:12px;font-size:.93rem}
@@ -503,7 +504,7 @@ claude mcp add --transport http mba https://api.messagingme.app/mcp \
 <footer class="pied">
   <div class="cadre pied-haut">
     <div>
-      <p class="pied-marque"><svg aria-hidden="true"><use href="#i-logo"/></svg>Engage Me <small>by Messaging Me</small></p>
+      <p class="pied-marque"><svg aria-hidden="true"><use href="#i-logo"/></svg>Engage Me <span class="par">by <img src="messagingme-logo.png" alt="Messaging Me" width="165" height="21"></span></p>
       <p class="pied-accroche">La plateforme conversationnelle qui comprend chaque conversation.</p>
     </div>
     <nav aria-label="Engage Me">
