@@ -1802,12 +1802,12 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/worker/taches.ts` -> `programmer(nom, cadence, passe, { immediat, enEchec })` | les tâches périodiques du worker. `immediat` lance la passe de démarrage SOUS la même garde de ré-entrance que les autres ; `enEchec` porte le journal et l'alerte (`echecDeBalayage`, `src/worker.ts`). Une passe lancée à côté (`void passe()`) échappe à la garde |
 | `src/lib/tenter.ts` -> `tenter` | une étape ISOLÉE : son échec est journalisé (`console.error(echec, message)`) puis avalé |
 | `src/lib/erreur.ts` -> `messageDe`, `texteDe` | le message d'une valeur levée : `messageDe` rend la valeur elle-même si ce n'est pas une `Error`, `texteDe` la convertit en texte. Un repli différent (« erreur inconnue ») reste sur place |
-| `src/meta/graph.ts` -> `appelGraph` | l'appel Graph authentifié des clients WhatsApp (modèles, flows, numéro, inscription, média entrant) : `Bearer`, `fetch` injectable, `MetaApiError` si non-2xx. ⚠️ Ni `ClientGraph.call` (plafond de durée, `ErreurGraph`), ni `MbaClient`, ni le transport des envois |
-| `src/campaign/enqueue.ts` -> `relanceurDeCampagnes` | l'enfilement d'un run au débit RÉSOLU sur la configuration du process : les relances du worker et l'envoi de l'API publique |
-| `src/stats/cost.ts` -> `chiffrer`, `chiffrerVolume`, `round2` | « chiffrable ou pourquoi pas », pour une catégorie ou un volume ; le seul arrondi au centime |
+| `src/meta/graph.ts` -> `appelGraph` | l'appel Graph authentifié des clients WhatsApp (modèles, flows, lecture du numéro, ajout et vérification d'un numéro, média entrant) : `Bearer`, `fetch` injectable, `MetaApiError` si non-2xx. ⚠️ Ni `ClientGraph.call` (plafond de durée, `ErreurGraph`), ni `MbaClient`, ni le transport des envois |
+| `src/campaign/enqueue.ts` -> `relanceurDeCampagnes` | l'enfilement d'un run au débit RÉSOLU sur la configuration du process : les relances du worker (hors planification et reprise après plafond, qui résolvent le débit dans leur balayage) et l'envoi de l'API publique |
+| `src/stats/cost.ts` -> `chiffrer`, `chiffrerVolume`, `round2` | « chiffrable ou pourquoi pas », pour une catégorie ou un volume ; `round2`, l'arrondi au centime des coûts |
 | `src/crm/contact-store.pg.ts` -> `projectionPourTiers` | 🔴 la fiche projetée pour tout ce qui sort vers un tiers (connecteur, opt-out poussé, relais de l'agent de Meta, `mba_lire_contact`) : nom, tags, champs, JAMAIS le numéro, le BSUID ni l'opt-in |
 | `src/workflow/engine.ts` -> `FENETRE_SERVICE_MS` | la fenêtre de service de Meta (24 h), pour le balayage de contrôle et la fenêtre ouverte de l'Inbox |
-| `src/crm/render.ts` -> `escapeHtml` | le seul échappement HTML, gabarits d'e-mail compris |
+| `src/crm/render.ts` -> `escapeHtml` | l'échappement HTML du dépôt (gabarits d'e-mail, pages d'erreur des liens tracés) |
 | `src/stats/range.ts` -> `isValidDateStr` | une date `YYYY-MM-DD` qui EXISTE (aller-retour strict), lue aussi par la grille de prix |
 
 ### Front

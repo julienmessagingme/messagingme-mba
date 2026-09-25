@@ -158,7 +158,7 @@ async function main(): Promise<void> {
     flowIntervalSeconds: 60,
     ecouteNotifications: true,
   });
-  // L'enfilement d'un run de campagne au débit RÉSOLU, partagé par les cinq chemins de relance du worker.
+  // L'enfilement d'un run de campagne au débit RÉSOLU, partagé par les relances du worker qui ne résolvent pas le débit dans leur propre balayage.
   const relancerCampagne = relanceurDeCampagnes(queue, config);
 
   // Alerte Telegram throttlée (mémoire process) sur les signaux d'erreur d'un worker VIVANT. Le cas « worker

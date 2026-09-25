@@ -49,7 +49,7 @@ describe('enqueueCampaignRun', () => {
 });
 
 /**
- * LE RELANCEUR D'UN PROCESS (audit ponytail du 2026-09-25) : les cinq relances du worker et l'envoi de l'API
+ * LE RELANCEUR D'UN PROCESS (audit ponytail du 2026-09-25) : les relances du worker et l'envoi de l'API
  * publique résolvaient chacun le débit à la main. Il doit rendre EXACTEMENT l'enfilement que chacun faisait :
  * débit stocké, sinon défaut du serveur, borné par le plafond du canal le plus bas.
  */

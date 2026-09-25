@@ -4,6 +4,7 @@ import { estClicAutomatique } from '../links/clic-automatique';
 import { estJeton } from '../links/jeton-contact';
 import type { DestinationLien } from '../links/tracked-links.pg';
 import { journaliser } from '../lib/journal';
+import { escapeHtml as echappe } from '../crm/render';
 
 /**
  * Redirection publique des liens tracés : `GET /r/:code` -> 302 vers la destination d'origine, après avoir
@@ -60,7 +61,6 @@ const CODE_RE = /^[0-9a-hjkmnp-tv-z]{12}$/;
 
 /** Page d'erreur minimale : lisible par un humain qui vient de cliquer, sans rien révéler de l'espace. */
 function pageErreur(titre: string, message: string): string {
-  const echappe = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] ?? c));
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8">`
     + `<meta name="viewport" content="width=device-width,initial-scale=1">`
     + `<title>${echappe(titre)}</title></head>`

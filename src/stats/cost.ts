@@ -390,7 +390,7 @@ export function estimateCoutParCampagne(
     // campagne de plus de 90 jours serait passee de son vrai cout a 0,00 €, toute seule, un matin.
     const rienAChiffrer = l.chiffres === 0 && l.nonChiffrables === 0 && nbRcs === 0
       && l.canal === 'whatsapp' && l.horsRetention !== true;
-    const cout = l.chiffres > 0 || nbRcs > 0 || rienAChiffrer ? Math.round(brut * 100) / 100 : null;
+    const cout = l.chiffres > 0 || nbRcs > 0 || rienAChiffrer ? round2(brut) : null;
     const n = clics.get(l.campaignId);
     const nbClics = n === undefined ? null : n;
     // Le ratio n'existe que si ses DEUX termes existent, et si le dénominateur n'est pas nul.
