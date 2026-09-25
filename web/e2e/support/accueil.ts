@@ -53,6 +53,15 @@ export async function mockAccueil(
     /** Fait échouer `POST /numero/activer` en 422 avec ce message (code faux, register refusé). */
     activerNumeroRefus?: string;
     /**
+     * Les chiffres de l'Accueil (2026-09-25) : la réponse de `GET /accueil/volumes` (cartes WhatsApp et RCS) et
+     * celle de `GET /mba/:pn/messages` (sous le cadre de l'agent de Meta). `'absent'` : le 404 du routeur, c'est-à-dire
+     * une API pas encore déployée. Absentes : `{}`, comme toute route que ce support ne connaît pas.
+     */
+    volumes?: unknown;
+    mbaMessages?: unknown;
+    /** Rempli par le mock : « VERBE chemin » de chaque lecture de ces deux routes, pour prouver qu'une lecture n'a PAS eu lieu. */
+    lecturesChiffres?: string[];
+    /**
      * Le bloc « Canaux et services » (2026-09-25). Chaque service garde un ÉTAT que ses gestes changent : délier
      * pose `delieLe` sur le statut du compte relu ensuite, couper le RCS le rend inactif, etc. Absent, chaque
      * lecture retombe sur `{}`, c'est-à-dire le comportement de ce support avant le bloc.
@@ -147,6 +156,17 @@ export async function mockAccueil(
     if (route.request().method() === 'POST' && url.endsWith('/hubspot/deconnexion')) return json({ hubspotConnected: false, disconnected: true });
     // Liste des numéros du tenant (GET .../phone-numbers, sans suffixe /hubspot).
     if (route.request().method() === 'GET' && url.endsWith('/phone-numbers')) return json({ phoneNumbers });
+    // Les chiffres de l'Accueil. `'absent'` rend le 404 du ROUTEUR (corps `error: 'Not Found'`), la forme exacte
+    // d'une API qui ne connaît pas encore la route.
+    const chiffre = (valeur: unknown): Promise<void> => {
+      over.lecturesChiffres?.push(`${route.request().method()} ${new URL(url).pathname.replace('/api/backend', '')}`);
+      if (valeur === 'absent') {
+        return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ message: 'Route not found', error: 'Not Found', statusCode: 404 }) });
+      }
+      return json(valeur ?? {});
+    };
+    if (url.endsWith('/accueil/volumes')) return chiffre(over.volumes);
+    if (url.includes('/mba/') && url.endsWith('/messages')) return chiffre(over.mbaMessages);
     // 🔴 L'ETAT REEL DE L'AGENT CHEZ META, mockable par les specs. La carte d'accueil l'affiche depuis le
     // 2026-09-10 : avant, elle montrait notre drapeau local sous une phrase ecrite en dur annoncant qu'on
     // attendait l'ouverture de Meta. Les deux etaient faux le meme jour. Defaut : eligible et ETEINT, le

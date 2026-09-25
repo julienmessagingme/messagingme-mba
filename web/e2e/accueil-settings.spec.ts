@@ -83,3 +83,46 @@ test.describe('Accueil : carte MBA + reprise opérateur (F1)', () => {
     await expect(toggle).toHaveAttribute('aria-pressed', 'false');
   });
 });
+
+/**
+ * LE CHIFFRE SOUS LE CADRE DE L'AGENT DE META (Julien, 2026-09-25) : les messages de ses conversations, la MÊME
+ * mesure et la MÊME légende que l'en-tête de MBA > Paramètres (`web/e2e/mba-parametres-entete.spec.ts`).
+ */
+test.describe('Accueil : les messages des conversations de l’agent de Meta', () => {
+  const REPOND = { phoneNumberId: 'PN1', eligible: true, onboarded: true, agentId: 'ag1', settings: { rollout: { enabled: true }, ai_audience: 'EVERYONE' } };
+
+  test('l’agent RÉPOND chez Meta : le chiffre sous le cadre, avec la légende qui dit ce qu’il compte', async ({ page }) => {
+    await mockAccueil(page, { mbaStatus: REPOND, mbaMessages: { messages: 1412, jours: 30 } });
+    const chiffre = page.getByTestId('mba-messages');
+    await expect(chiffre).toContainText('1 412');
+    await expect(chiffre).toContainText('Messages échangés dans les conversations que cet agent a tenues');
+    // Le « y compris » est l'aveu qui empêche de lire ce nombre comme le travail de l'agent : il ne s'abrège pas.
+    await expect(chiffre).toContainText('y compris les envois de campagne');
+    // SOUS le cadre, pas dedans.
+    await expect(page.getByTestId('settings-card').getByTestId('mba-messages')).toHaveCount(0);
+  });
+
+  test('🔴 agent éteint chez Meta, même avec NOTRE drapeau allumé : aucune lecture, aucun chiffre', async ({ page }) => {
+    const lectures: string[] = [];
+    await mockAccueil(page, {
+      settings: { controlHandbackSeconds: null, mbaEnabled: true, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false },
+      mbaMessages: { messages: 1412, jours: 30 },
+      lecturesChiffres: lectures,
+    });
+    // Ancre positive : le statut de Meta est lu (éligible, éteint), et notre drapeau est bien allumé.
+    await expect(page.getByTestId('mba-etat-reel')).toContainText(/agent éteint chez Meta|agent off at Meta/);
+    await expect(page.getByTestId('mba-toggle')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('mba-messages')).toHaveCount(0);
+    expect(lectures.filter((l) => l.endsWith('/messages'))).toEqual([]);
+  });
+
+  test('🔴 route absente, ou `messages: null` : pas de chiffre, jamais un zéro', async ({ page }) => {
+    for (const mbaMessages of ['absent', { messages: null, jours: 30 }]) {
+      const lectures: string[] = [];
+      await mockAccueil(page, { mbaStatus: REPOND, mbaMessages, lecturesChiffres: lectures });
+      await expect(page.getByTestId('mba-etat-reel')).toContainText(/RÉPOND en ce moment|IS ANSWERING right now/);
+      await expect.poll(() => lectures).toContain('GET /tenants/t-e2e/mba/PN1/messages');
+      await expect(page.getByTestId('mba-messages'), JSON.stringify(mbaMessages)).toHaveCount(0);
+    }
+  });
+});

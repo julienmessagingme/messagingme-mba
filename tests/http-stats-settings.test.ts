@@ -42,6 +42,8 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     }),
     // La marge de l espace, REQUISE : une fixture qui l oublierait ne compile pas, et c est le but.
     margeTemplate: async () => 100,
+    // Les volumes par canal des cartes de l'Accueil, REQUIS pour la même raison.
+    volumesParCanal: async () => ({ whatsapp: { envoyes: 1234, recus: 567 }, rcs: { envoyes: 12, recus: 0 } }),
     getTemplateBreakdown: async () => [{ name: 'promo', category: 'marketing', count: 4 }],
     getPricing: async () => ({ byCategory: { marketing: { category: 'marketing', cost: 0.5724, volume: 4, ratePerMessage: 0.1431 } }, totalCost: 0.5724, currency: 'EUR' }),
     getCampaignFunnel: async () => ({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1, sansAccuse: 0, buttonReplies: 2, urlClicks: 4, contactsVises: 10, parCanal: [] }),
@@ -877,6 +879,57 @@ describe('GET /tenants/:t/stats/templates rend la marge de l espace', () => {
     const res = await a.inject({ method: 'GET', url: '/tenants/AUTRE/stats/templates', ...h(adminTok) });
     expect(res.statusCode).toBe(403);
     expect(vus, 'aucune lecture pour un espace refuse').toEqual(['t1']);
+    await a.close();
+  });
+});
+
+/**
+ * LES VOLUMES PAR CANAL DES CARTES DE L'ACCUEIL (2026-09-25).
+ *
+ * Ce que la route promet : les chiffres du store tels quels, la fenêtre RENDUE, et l'espace du JETON, jamais
+ * celui de l'URL. Ce que le store compte (et le filtre `cv.tenant_id = $1` dans la requête) est tenu à part,
+ * par `tests/stats-volumes-canaux.test.ts` (forme de la requête) et par l'intégration (sur un vrai Postgres).
+ */
+describe('GET /tenants/:t/accueil/volumes', () => {
+  let adminT2 = '';
+  beforeAll(async () => {
+    adminT2 = await signSession({ userId: 'u3', tenantId: 't2', role: 'admin' }, SECRET);
+  });
+  // Deux espaces aux chiffres DIFFÉRENTS : une route qui lirait le mauvais rendrait des nombres reconnaissables.
+  const parEspace: Record<string, { whatsapp: { envoyes: number; recus: number }; rcs: { envoyes: number; recus: number } }> = {
+    t1: { whatsapp: { envoyes: 1234, recus: 567 }, rcs: { envoyes: 12, recus: 0 } },
+    t2: { whatsapp: { envoyes: 9, recus: 8 }, rcs: { envoyes: 7, recus: 6 } },
+  };
+
+  it('200 : les chiffres par canal, et la fenêtre de 30 jours rendue par le serveur', async () => {
+    const vus: Array<{ tenant: string; jours: number }> = [];
+    const a = app({ stats: { volumesParCanal: async (tenant, jours) => { vus.push({ tenant, jours }); return parEspace[tenant]!; } } });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/accueil/volumes', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ jours: 30, whatsapp: { envoyes: 1234, recus: 567 }, rcs: { envoyes: 12, recus: 0 } });
+    expect(vus).toEqual([{ tenant: 't1', jours: 30 }]);
+    await a.close();
+  });
+
+  it('🔴 isolation : chaque espace lit SES chiffres, et l espace d à côté est refusé sans lecture', async () => {
+    const vus: string[] = [];
+    const a = app({ stats: { volumesParCanal: async (tenant) => { vus.push(tenant); return parEspace[tenant]!; } } });
+    const t2 = await a.inject({ method: 'GET', url: '/tenants/t2/accueil/volumes', ...h(adminT2) });
+    expect(t2.statusCode).toBe(200);
+    expect(t2.json<{ whatsapp: unknown }>().whatsapp).toEqual({ envoyes: 9, recus: 8 });
+    // Le jeton de t1 sur l'URL de t2, et l'inverse : 403, et le store n'est même pas appelé.
+    expect((await a.inject({ method: 'GET', url: '/tenants/t2/accueil/volumes', ...h(adminTok) })).statusCode).toBe(403);
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/accueil/volumes', ...h(adminT2) })).statusCode).toBe(403);
+    expect(vus, 'aucune lecture pour un espace refusé').toEqual(['t2']);
+    await a.close();
+  });
+
+  it('garde : sans jeton 401, un agent 403 (les chiffres de l Accueil sont réservés aux admins)', async () => {
+    const vus: string[] = [];
+    const a = app({ stats: { volumesParCanal: async (tenant) => { vus.push(tenant); return parEspace[tenant]!; } } });
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/accueil/volumes' })).statusCode).toBe(401);
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/accueil/volumes', ...h(agentTok) })).statusCode).toBe(403);
+    expect(vus).toEqual([]);
     await a.close();
   });
 });

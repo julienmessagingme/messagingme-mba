@@ -8,7 +8,8 @@ import { LogoWhatsApp, LogoGoogleMessages, LogoChaineWhatsApp, LogoMeta, LogoHub
 import { DOT_HEX } from '@/lib/ui';
 import { useT, useLocale } from '@/lib/i18n';
 import { estAnnulation } from '@/lib/http';
-import { delierNumero, relierNumero, setHubspotActif, type AccountStatusResponse } from '@/lib/api';
+import { delierNumero, relierNumero, setHubspotActif, getVolumesCanaux, type AccountStatusResponse } from '@/lib/api';
+import { lireVolumesCanaux, phraseVolume, phrasePublications, type Volume, type VolumesCanaux } from '@/lib/chiffres-canaux';
 import { getConnexionChaine, listerPostsChaine, debrancherChaine, nomDeLaChaine, type ReponseConnexionChaine } from '@/lib/api-chaine';
 import { getEtatPubs, deconnecterPubs, type EtatPubs } from '@/lib/api-pubs';
 import type { CanalRcs } from '@/components/RcsChannelCard';
@@ -22,7 +23,8 @@ import {
  * LE BLOC « CANAUX ET SERVICES » DE L'ACCUEIL (plan du 2026-09-25, design validé par Julien).
  *
  * Une GRILLE DE CARTES depuis le 2026-09-25 après-midi (3 colonnes, 2, puis 1 selon la largeur) : le logo du
- * canal, l'interrupteur, une pastille d'état (`teinte`), la phrase, puis le lien. Les gestes n'ont pas bougé.
+ * canal, l'interrupteur, une pastille d'état (`teinte`), la phrase, puis au bas de la carte sa ligne de chiffre
+ * (`lib/chiffres-canaux.ts`, depuis le 2026-09-25) et son lien. Les gestes n'ont pas bougé.
  *
  * Cinq lignes, cinq interrupteurs, chacun branché sur un geste qui existe (ou sur l'un des deux neufs : délier le
  * numéro, débrancher la chaîne). Les décisions vivent dans `lib/canaux-services.ts`, testées sans navigateur ;
@@ -85,7 +87,21 @@ export function CanauxServices(p: {
     }
   }, [p.tenantId]);
 
-  useEffect(() => { void chargerChaine(); void chargerPubs(); }, [chargerChaine, chargerPubs]);
+  /**
+   * Envoyés et reçus sur 30 jours, pour les cartes WhatsApp et RCS (Julien, 2026-09-25). 🔴 Tout échec, 404 de
+   * routeur compris (la console publiée avant l'API), laisse `null` : la carte n'affiche PAS de chiffre, et
+   * surtout pas un zéro qui dirait que le canal n'a servi à rien.
+   */
+  const [volumes, setVolumes] = useState<VolumesCanaux | null>(null);
+  const chargerVolumes = useCallback(async () => {
+    try {
+      setVolumes(lireVolumesCanaux(await getVolumesCanaux(p.tenantId)));
+    } catch {
+      setVolumes(null);
+    }
+  }, [p.tenantId]);
+
+  useEffect(() => { void chargerChaine(); void chargerPubs(); void chargerVolumes(); }, [chargerChaine, chargerPubs, chargerVolumes]);
 
   const lignes: Record<Service, Ligne> = {
     numero: ligneNumero({ compte: p.compte, connexionDisponible: p.connexionNumero.cfg?.enabled === true }),
@@ -192,9 +208,9 @@ export function CanauxServices(p: {
     if (chaine === null) return lecture;
     if (chaine === 'echec' || lignes.chaine.allume === null) return inconnu;
     if (!chaine.connection) return t('Non branchée. L’allumer ouvre l’écran Chaîne, pour saisir les identifiants.', 'Not connected. Turning it on opens the Channel screen, to enter the credentials.');
+    // Le nombre de publications a quitté la phrase le 2026-09-25 : il est la ligne de chiffre de la carte.
     const nom = nomDeLaChaine(chaine);
-    const debut = nom ? t(`Branchée : « ${nom} »`, `Connected: “${nom}”`) : t('Branchée', 'Connected');
-    return publications === null ? `${debut}.` : t(`${debut}, ${publications} publication(s).`, `${debut}, ${publications} post(s).`);
+    return nom ? t(`Branchée : « ${nom} ».`, `Connected: “${nom}”.`) : t('Branchée.', 'Connected.');
   };
 
   const phrasePubs = (): string => {
@@ -222,15 +238,38 @@ export function CanauxServices(p: {
   // « À terminer » : la même condition que la phrase « Connexion à terminer » de `phrasePubs`.
   const pubsATerminer = pubs !== null && pubs !== 'echec' && pubs !== 'absent' && !!pubs.connexion && !pubs.connexion.comptePubId;
 
+  /**
+   * La LIGNE DE CHIFFRE d'une carte (Julien, 2026-09-25) : envoyés et reçus pour WhatsApp et RCS, publications pour
+   * la chaîne. `null` = on ne sait pas, et la carte n'affiche rien à cet endroit. L'`aide` (au survol) dit ce
+   * qui est compté, parce que ce n'est PAS le périmètre de « Messages échangés », juste au-dessus.
+   */
+  const aideVolume = t(
+    'Messages partis et arrivés sur ce canal ces 30 derniers jours, modèles de campagne compris, hors conversations de test.',
+    'Messages sent and received on this channel over the last 30 days, campaign templates included, test conversations excluded.',
+  );
+  const chiffreVolume = (v: Volume | null | undefined): { texte: string; aide: string } | null => {
+    const texte = volumes === null ? null : phraseVolume(v ?? null, volumes.jours, locale);
+    return texte === null ? null : { texte, aide: aideVolume };
+  };
+  // `publications` ne se lit que sur une chaîne branchée (`chargerChaine`) : `null` partout ailleurs.
+  const textePublications = phrasePublications(publications, locale);
+
+  // ⚠️ « Voir le numéro » et « Voir le canal » sont partis le 2026-09-25 : le détail des deux est juste en
+  // dessous, sur l'Accueil même. Leurs cartes portent désormais leur chiffre à la place.
   const rangees: Array<{
-    service: Service; titre: string; phrase: string; lien: { href: string; texte: string };
+    service: Service; titre: string; phrase: string; lien?: { href: string; texte: string };
+    chiffre: { texte: string; aide: string } | null;
     Logo: (x: { className?: string }) => React.ReactElement; aTerminer?: boolean;
   }> = [
-    { service: 'numero', titre: t('Numéro WhatsApp', 'WhatsApp number'), phrase: phraseNumero(), lien: { href: '#numero-whatsapp', texte: t('Voir le numéro', 'See the number') }, Logo: LogoWhatsApp },
-    { service: 'rcs', titre: t('Canal RCS', 'RCS channel'), phrase: phraseRcs(), lien: { href: '#canal-rcs', texte: t('Voir le canal', 'See the channel') }, Logo: LogoGoogleMessages },
-    { service: 'chaine', titre: t('Chaîne', 'Channel'), phrase: phraseChaine(), lien: { href: '/chaine', texte: t('Ouvrir l’écran Chaîne', 'Open the Channel screen') }, Logo: LogoChaineWhatsApp },
-    { service: 'publicites', titre: t('Compte publicitaire', 'Ad account'), phrase: phrasePubs(), lien: { href: '/publicites', texte: t('Ouvrir l’écran Publicités', 'Open the Ads screen') }, Logo: LogoMeta, aTerminer: pubsATerminer },
-    { service: 'hubspot', titre: 'HubSpot', phrase: phraseHubspot(), lien: { href: '/parametres#integration-hubspot', texte: t('Ouvrir le réglage', 'Open the setting') }, Logo: LogoHubSpot },
+    { service: 'numero', titre: t('Numéro WhatsApp', 'WhatsApp number'), phrase: phraseNumero(), chiffre: chiffreVolume(volumes?.whatsapp), Logo: LogoWhatsApp },
+    { service: 'rcs', titre: t('Canal RCS', 'RCS channel'), phrase: phraseRcs(), chiffre: chiffreVolume(volumes?.rcs), Logo: LogoGoogleMessages },
+    {
+      service: 'chaine', titre: t('Chaîne', 'Channel'), phrase: phraseChaine(), lien: { href: '/chaine', texte: t('Ouvrir l’écran Chaîne', 'Open the Channel screen') },
+      chiffre: textePublications === null ? null : { texte: textePublications, aide: t('Toutes les publications faites depuis la console.', 'Every post published from the console.') },
+      Logo: LogoChaineWhatsApp,
+    },
+    { service: 'publicites', titre: t('Compte publicitaire', 'Ad account'), phrase: phrasePubs(), lien: { href: '/publicites', texte: t('Ouvrir l’écran Publicités', 'Open the Ads screen') }, chiffre: null, Logo: LogoMeta, aTerminer: pubsATerminer },
+    { service: 'hubspot', titre: 'HubSpot', phrase: phraseHubspot(), lien: { href: '/parametres#integration-hubspot', texte: t('Ouvrir le réglage', 'Open the setting') }, chiffre: null, Logo: LogoHubSpot },
   ];
 
   // ⚠️ Les erreurs de la fenêtre Meta et de la clé RCS restent dans LEUR carte (la zone de connexion, la carte
@@ -246,7 +285,7 @@ export function CanauxServices(p: {
       {/* ⚠️ 3 colonnes à partir de `xl` et non de `lg` : la colonne latérale (240 px) apparaît à `lg`, et trois
           cartes y tomberaient sous 230 px, trop étroites pour une phrase d'état et un interrupteur. */}
       <ul className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {rangees.map(({ service, titre, phrase, lien, Logo, aTerminer }) => {
+        {rangees.map(({ service, titre, phrase, lien, chiffre, Logo, aTerminer }) => {
           const l = lignes[service];
           const erreur = erreurDe(service);
           const pastille = teinte(l, aTerminer);
@@ -281,10 +320,15 @@ export function CanauxServices(p: {
                 <p data-testid={`canal-${service}-etat`} className="text-xs text-ink-600">{phrase}</p>
               </div>
               {erreur && <p data-testid={`canal-${service}-erreur`} className="mt-2 text-xs text-coral">{erreur}</p>}
-              <div className="mt-auto pt-3">
-                {lien.href.startsWith('#')
-                  ? <a href={lien.href} data-testid={`canal-${service}-lien`} className="text-xs text-brand-600 hover:underline">{lien.texte}</a>
-                  : <Link href={lien.href} data-testid={`canal-${service}-lien`} className="text-xs text-brand-600 hover:underline">{lien.texte}</Link>}
+              {/* ⚠️ LE BAS DE CARTE RESTE, MÊME VIDE : son `mt-auto` pousse chiffre et lien au bas de la carte, ce
+                  qui les aligne d'une carte à l'autre dans une même rangée. */}
+              <div className="mt-auto flex flex-col items-start gap-1 pt-3">
+                {chiffre !== null && (
+                  <p data-testid={`canal-${service}-chiffre`} title={chiffre.aide} className="text-sm font-semibold tabular-nums text-ink-900">
+                    {chiffre.texte}
+                  </p>
+                )}
+                {lien && <Link href={lien.href} data-testid={`canal-${service}-lien`} className="text-xs text-brand-600 hover:underline">{lien.texte}</Link>}
               </div>
             </li>
           );

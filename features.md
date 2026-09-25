@@ -1573,7 +1573,12 @@ scénario, comment importer des contacts.
   (numéro WhatsApp, canal RCS, chaîne WhatsApp, compte publicitaire, HubSpot), sur 3 colonnes en grand écran, 2 en
   moyen, 1 sur mobile. Chaque carte montre le logo du canal, son interrupteur, une pastille d'état (vert : allumé
   ou relié ; gris : éteint ; ambre : à terminer, par exemple un compte publicitaire connecté dont le compte et la
-  Page restent à choisir), la phrase d'état et le lien vers son écran. Éteindre demande une confirmation qui dit ce qui
+  Page restent à choisir), la phrase d'état et le lien vers son écran. Les cartes « Numéro WhatsApp » et « Canal RCS » affichent
+  les messages envoyés et reçus sur ce canal ces 30 derniers jours (modèles de campagne compris, conversations de
+  test exclues) ; la carte « Chaîne » affiche le nombre total de publications faites depuis la console. Quand
+  l'agent de Meta répond, l'Accueil affiche sous son cadre le nombre de messages échangés dans ses conversations
+  sur 30 jours, avec la même légende que MBA > Paramètres. Un chiffre qu'on n'a pas pu lire ne s'affiche pas, il
+  n'est jamais remplacé par zéro. Éteindre demande une confirmation qui dit ce qui
   s'arrête ; rallumer ne demande rien. Éteindre le numéro le **délie** de l'espace (plus aucun message WhatsApp ne
   part, le RCS et les e-mails continuent ; campagnes en pause ; messages reçus non enregistrés), sans rien toucher
   chez Meta : l'agent de Meta, s'il est allumé, continue de répondre, et le numéro se relie d'un clic. Une campagne

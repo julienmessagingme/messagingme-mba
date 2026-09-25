@@ -165,6 +165,21 @@ export interface FiltreCampagneOuTemplate {
  */
 export type CostFilter = FiltreCampagneOuTemplate;
 
+/** Ce qui est parti et ce qui est arrivé sur UN canal, sur la fenêtre (cartes de l'Accueil). */
+export interface VolumeCanal {
+  envoyes: number;
+  recus: number;
+}
+
+/**
+ * Les volumes des deux canaux de messagerie. ⚠️ UN ZÉRO ICI EST MESURÉ : la requête a tourné et n'a trouvé
+ * aucun message sur ce canal. L'écran, lui, n'affiche RIEN quand il n'a pas de réponse, jamais un zéro.
+ */
+export interface VolumesParCanal {
+  whatsapp: VolumeCanal;
+  rcs: VolumeCanal;
+}
+
 export interface DashboardStats {
   /** CUMULATIF : total de contacts à chaque jour (dense, une valeur/jour, reporte les jours sans ajout). */
   contacts: DailyPoint[];
@@ -745,6 +760,58 @@ export class PgStatsStore {
       [tenantId, jours],
     );
     return Number(rows[0]?.n ?? 0);
+  }
+
+  /**
+   * Les messages ENVOYÉS et REÇUS par canal sur une fenêtre glissante de N jours : les chiffres des cartes
+   * « Numéro WhatsApp » et « Canal RCS » de l'Accueil (demande de Julien du 2026-09-25).
+   *
+   * CE QUI EST COMPTÉ : chaque ligne de `conversation_messages` (le fil de l'Inbox) sur la fenêtre, rangée par
+   * `channel` (migration 0056), `out` pour les envoyés et `in` pour les reçus. Tout ce qui part passe par ce
+   * fil : réponses d'opérateur, de l'agent IA, de l'agent de Meta, du MCP et de l'API, messages de scénario, et
+   * envois de campagne (journalisés par le moteur, `recordOutboundByWaId`, sur WhatsApp comme en RCS).
+   *
+   * 🔴 LES MODÈLES SONT COMPTÉS, et c'est l'écart délibéré avec « Messages échangés » (`getDashboard`, qui les
+   * écarte parce que la rangée voisine « Templates envoyés » les compte déjà). Cette carte dit ce qui est
+   * passé par le NUMÉRO : un espace qui ne fait que des campagnes lirait sinon « 3 envoyés » après en avoir
+   * envoyé 5 000, c'est-à-dire que son numéro ne sert à rien.
+   *
+   * CE QUI EST ÉCARTÉ, et pourquoi :
+   *  - les fils de TEST (`not cv.is_test`), comme partout dans les statistiques : c'est l'opérateur qui essaie
+   *    son propre scénario, pas un échange avec un client ;
+   *  - les ACCUSÉS (envoyé, remis, lu) : ce ne sont pas des messages, ils ne créent aucune ligne (ils posent
+   *    `accuse_le` ou le statut d'un destinataire de campagne), donc rien à exclure ;
+   *  - les canaux autres que `whatsapp` et `rcs` : aucun n'existe aujourd'hui, et un inconnu ne doit pas se
+   *    verser en silence dans l'un des deux.
+   * ⚠️ Un envoi dont la LIVRAISON a échoué ensuite reste compté, comme dans « Messages échangés » : il est
+   * parti de chez nous, et son échec se lit dans Sécurité > Journal des erreurs.
+   *
+   * 🔴 `cv.tenant_id = $1` EST LE SEUL CONTRÔLE D'ISOLATION : `conversation_messages` ne porte pas l'espace,
+   * il l'hérite de son fil, et la RLS est contournée en production.
+   *
+   * INDEX : le même chemin que « Messages échangés » et que `messagesTenusParMba`. Les fils de l'espace se
+   * trouvent par `conversations_tenant_wa_idx (tenant_id, wa_id)` (0058), puis leurs messages de la fenêtre par
+   * `conversation_messages_conv_idx (conversation_id, created_at)` (0009). `conversation_messages_created_idx
+   * (created_at)` (0042) reste l'autre plan possible si la fenêtre est plus sélective que l'espace.
+   */
+  async volumesParCanal(tenantId: string, jours: number): Promise<VolumesParCanal> {
+    const { rows } = await this.pool.query<{ canal: string; envoyes: string; recus: string }>(
+      `select m.channel as canal,
+              count(*) filter (where m.direction = 'out')::text as envoyes,
+              count(*) filter (where m.direction = 'in')::text as recus
+         from conversation_messages m
+         join conversations cv on cv.id = m.conversation_id
+        where cv.tenant_id = $1
+          and not cv.is_test
+          and m.created_at > now() - make_interval(days => $2)
+        group by m.channel`,
+      [tenantId, jours],
+    );
+    const volumes: VolumesParCanal = { whatsapp: { envoyes: 0, recus: 0 }, rcs: { envoyes: 0, recus: 0 } };
+    for (const r of rows) {
+      if (r.canal === 'whatsapp' || r.canal === 'rcs') volumes[r.canal] = { envoyes: Number(r.envoyes), recus: Number(r.recus) };
+    }
+    return volumes;
   }
 
   /**

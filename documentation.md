@@ -1622,6 +1622,15 @@ Ajouté par le lot 4 de l'API publique :
    inconnu, jamais un gris (un gris dirait « éteint », ce qu'on n'a pas lu). Les logos vivent dans
    `web/components/LogosCanaux.tsx` (SVG inline, tracés Simple Icons ; icône de la Chaîne WhatsApp dessinée maison) ;
    `LogoHubSpot` y sert aussi le bloc HubSpot de l'Accueil.
+   Les chiffres des cartes : `GET /tenants/:tenantId/accueil/volumes` (module stats, garde admin) rend `{ jours,
+   whatsapp: { envoyes, recus }, rcs: { envoyes, recus } }` sur une fenêtre glissante de `JOURS_VOLUMES` (30) jours,
+   calculé par `PgStatsStore.volumesParCanal` depuis `conversation_messages` (par `channel` et `direction`, fils de
+   test exclus, modèles INCLUS, isolation par `cv.tenant_id = $1`). Ce périmètre diffère volontairement de
+   « Messages échangés », qui exclut les modèles sortants : sans eux, un espace qui ne fait que des campagnes lirait
+   « 3 envoyés » après 5 000 messages. La console ne lit la réponse que par `lireVolumesCanaux`
+   (`web/lib/chiffres-canaux.ts`), qui rend `null` sur toute forme inattendue : la carte n'affiche alors rien,
+   jamais un zéro inventé. La légende du chiffre des conversations de l'agent de Meta vit dans un seul composant,
+   `ChiffreMessagesTenus` (`web/components/EnteteAgent.tsx`), partagé par MBA > Paramètres et l'Accueil.
 41. **Le nom de l'espace** : `GET /tenants/:tenantId/nom` rend `{ nom }`, `PATCH` avec `{ nom }` le change. Les deux
    vivent dans le module `admin` (`src/http/users.ts`, monté avec `g.admin`) : `scopeTenant` et la garde admin du
    groupe, un agent ou un manager reçoit 403. Validation `safeParse` : nom rogné, 1 à 80 caractères

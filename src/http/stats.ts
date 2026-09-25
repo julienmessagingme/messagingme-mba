@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
-import type { DashboardStats, TemplateBreakdownRow, CampaignFunnel, ErrorBreakdownRow, CostFilter } from '../stats/store.pg';
+import type { DashboardStats, TemplateBreakdownRow, CampaignFunnel, ErrorBreakdownRow, CostFilter, VolumesParCanal } from '../stats/store.pg';
 import type { ErreurLivraison } from '../ops/erreurs-livraison.pg';
 import type { FiltreCampagneOuTemplate } from '../stats/store.pg';
 import type { CostSeries, CoutParCampagne } from '../stats/cost';
@@ -135,7 +135,24 @@ export interface StatsRouteDeps {
    * vide, qui se lirait « ce scénario n'a rien produit » alors que rien n'est branché.
    */
   getWorkflowNodeCounts?(tenantId: string, workflowId: string, range: DateRange): Promise<Array<NodeEventCount | CompteurClic>>;
+  /**
+   * Les messages envoyés et reçus par canal, pour les cartes « Numéro WhatsApp » et « Canal RCS » de l'Accueil.
+   * Ce qui est compté et ce qui est écarté : `PgStatsStore.volumesParCanal`.
+   *
+   * 🔴 REQUISE, PAS `volumesParCanal?` : une dépendance optionnelle qu'un câblage oublie compile, se déploie
+   * et rend 503 en silence (la leçon de `margeTemplate`, juste au-dessus). L'écran, lui, tolère déjà l'absence
+   * de la route pendant la fenêtre où Vercel a publié la console et pas encore l'API.
+   */
+  volumesParCanal(tenantId: string, jours: number): Promise<VolumesParCanal>;
 }
+
+/**
+ * La fenêtre des volumes par canal : la même que la rangée « 30 derniers jours » de l'Accueil, qu'elles
+ * côtoient. ⚠️ GLISSANTE (maintenant moins 30 fois 24 h), comme le chiffre de l'agent de Meta posé sur la
+ * même page (`JOURS_MESSAGES`), et non en jours civils de Paris comme la rangée : l'écart tient en quelques
+ * heures, et la carte ne se lit pas contre elle (les modèles y sont comptés, pas dans « Messages échangés »).
+ */
+export const JOURS_VOLUMES = 30;
 
 /** Stats du dashboard (séries 1 pt/jour). Groupe admin-only (garde passé par server.ts). Plage de dates
  *  via ?from&?to (YYYY-MM-DD, Europe/Paris) ou repli ?days= ; invalide/futur/span>366 -> 400. */
@@ -180,6 +197,19 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
     return reply.code(200).send(await deps.getDashboard(tenant, r.range));
+  });
+
+  /**
+   * Les cartes « Numéro WhatsApp » et « Canal RCS » de l'Accueil : envoyés et reçus par canal, sur 30 jours.
+   * Dans CE module parce que c'est celui des chiffres de l'Accueil : même garde (admin), même isolation.
+   * Aucune plage en paramètre : la carte ne porte pas de sélecteur, et la fenêtre est RENDUE (`jours`) pour que
+   * l'écran ne l'invente pas.
+   */
+  app.get('/tenants/:tenantId/accueil/volumes', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const volumes = await deps.volumesParCanal(tenant, JOURS_VOLUMES);
+    return reply.code(200).send({ jours: JOURS_VOLUMES, whatsapp: volumes.whatsapp, rcs: volumes.rcs });
   });
 
   // Breakdown par template + prix Meta (pricing_analytics). Séparé de /stats : peut appeler Meta

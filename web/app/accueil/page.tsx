@@ -19,7 +19,9 @@ import {
 } from '@/lib/api';
 import { DOT_HEX } from '@/lib/ui';
 import { PastilleNumero } from '@/components/PastilleNumero';
-import { getMbaStatus, putMbaActivation, type MbaStatus } from '@/lib/api-mba';
+import { getMbaStatus, getMbaMessages, putMbaActivation, type MbaStatus } from '@/lib/api-mba';
+import { ChiffreMessagesTenus } from '@/components/EnteteAgent';
+import { agentMetaRepond, lireMessagesMba } from '@/lib/chiffres-canaux';
 import { useConnexionNumero, type ConnexionNumero } from '@/lib/connexion-numero';
 import { lireHubspotActif, affichageHubspotAccueil } from '@/lib/hubspot-actif';
 import { useInstallationHubspot } from '@/lib/hubspot-installation';
@@ -196,6 +198,27 @@ function AccueilInner({ session }: { session: Session }) {
       .catch(() => { if (vivant) setMbaReel(null); });
     return () => { vivant = false; };
   }, [session.tenantId, account?.phoneNumberId]);
+
+  /**
+   * Les messages échangés dans les conversations de l'agent de Meta, sous son cadre (Julien, 2026-09-25). LA MÊME
+   * mesure que l'en-tête de MBA > Paramètres (`getMbaMessages`), avec la même légende (`ChiffreMessagesTenus`).
+   *
+   * 🔴 LUE SEULEMENT QUAND META DIT QUE L'AGENT RÉPOND (`agentMetaRepond(mbaReel)`), jamais sur notre drapeau
+   * `mbaEnabled`. La dépendance est ce BOOLÉEN et pas l'objet `mbaReel`, recréé à chaque relecture du statut.
+   * ⚠️ `null` = on ne sait pas (lecture en cours, route pas encore déployée, compte non administrateur, dépendance
+   * non câblée côté serveur) : rien ne s'affiche, jamais un zéro.
+   */
+  const mbaRepond = agentMetaRepond(mbaReel);
+  const [messagesMba, setMessagesMba] = useState<number | null>(null);
+  useEffect(() => {
+    const pn = account?.phoneNumberId;
+    if (!pn || !mbaRepond) { setMessagesMba(null); return; }
+    let vivant = true;
+    getMbaMessages(session.tenantId, pn)
+      .then((r) => { if (vivant) setMessagesMba(lireMessagesMba(r)); })
+      .catch(() => { if (vivant) setMessagesMba(null); });
+    return () => { vivant = false; };
+  }, [session.tenantId, account?.phoneNumberId, mbaRepond]);
 
   /**
    * Allumer ou éteindre l'agent de Meta. UN appel, décidé côté SERVEUR.
@@ -379,62 +402,72 @@ function AccueilInner({ session }: { session: Session }) {
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           {/* Carte Meta Business Agent, remontée en tête du dashboard, avec la reprise après opérateur juste
-              en dessous du toggle (demande fondateur : les deux gouvernent qui répond au client). */}
-          <div data-testid="settings-card" className="flex flex-col rounded-2xl border border-ink-200 bg-gradient-to-br from-white to-navy-50 p-5 shadow-sm">
-            <div className="mb-3 flex items-start gap-3">
-              {/* Logo Meta Business Agent (produit Meta), et non notre logo MM : cette carte parle du MBA de Meta. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/meta-business-agent.png" alt="Meta Business Agent" className="h-10 w-10 shrink-0 rounded-lg object-contain" />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold tracking-tight text-ink-900">Meta Business Agent</div>
-                {/* 🔴 CE QUE META DIT, PAS CE QU'ON SUPPOSE. La phrase « En attente d'ouverture Meta » etait
-                    ECRITE EN DUR ici : elle ne mesurait rien, et elle est restee affichee des semaines
-                    apres que le numero soit devenu eligible. Elle ne s'affiche plus que quand elle est
-                    VRAIE, c'est-a-dire quand Meta repond `is_eligible: false`. */}
-                <p className="mt-0.5 text-xs text-ink-500" data-testid="mba-etat-reel">
-                  {mbaReel === null
-                    ? t('État chez Meta : non lu pour l’instant.', 'State at Meta: not read yet.')
-                    : !mbaReel.eligible
-                      ? t("Meta n'a pas encore ouvert l'agent sur ce numéro. Le bouton prépare le bloc MBA des scénarios en attendant.", 'Meta has not opened the agent on this number yet. The switch prepares the MBA block in scenarios meanwhile.')
-                      : mbaReel.settings?.rollout?.enabled
-                        ? t(
-                          `L'agent de Meta RÉPOND en ce moment, à ${mbaReel.settings?.ai_audience === 'ALLOWLISTED_ONLY' ? 'la liste autorisée' : 'tout le monde'}. Il répond avant nos scénarios.`,
-                          `Meta's agent IS ANSWERING right now, to ${mbaReel.settings?.ai_audience === 'ALLOWLISTED_ONLY' ? 'the allowlist' : 'everyone'}. It answers before our scenarios.`,
-                        )
-                        : t("Éligible, agent éteint chez Meta. Personne ne répond automatiquement.", 'Eligible, agent off at Meta. Nobody answers automatically.')}
-                </p>
-                {erreurMba && <p className="mt-1 text-xs text-coral" data-testid="mba-erreur">{erreurMba}</p>}
+              en dessous du toggle (demande fondateur : les deux gouvernent qui répond au client).
+              ⚠️ ENVELOPPÉE depuis le 2026-09-25, pour porter le chiffre de ses conversations SOUS le cadre : la
+              carte garde `flex-1`, donc elle s'étire encore jusqu'au bas de la rangée quand le chiffre manque. */}
+          <div className="flex flex-col gap-3">
+            <div data-testid="settings-card" className="flex flex-1 flex-col rounded-2xl border border-ink-200 bg-gradient-to-br from-white to-navy-50 p-5 shadow-sm">
+              <div className="mb-3 flex items-start gap-3">
+                {/* Logo Meta Business Agent (produit Meta), et non notre logo MM : cette carte parle du MBA de Meta. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/meta-business-agent.png" alt="Meta Business Agent" className="h-10 w-10 shrink-0 rounded-lg object-contain" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold tracking-tight text-ink-900">Meta Business Agent</div>
+                  {/* 🔴 CE QUE META DIT, PAS CE QU'ON SUPPOSE. La phrase « En attente d'ouverture Meta » etait
+                      ECRITE EN DUR ici : elle ne mesurait rien, et elle est restee affichee des semaines
+                      apres que le numero soit devenu eligible. Elle ne s'affiche plus que quand elle est
+                      VRAIE, c'est-a-dire quand Meta repond `is_eligible: false`. */}
+                  <p className="mt-0.5 text-xs text-ink-500" data-testid="mba-etat-reel">
+                    {mbaReel === null
+                      ? t('État chez Meta : non lu pour l’instant.', 'State at Meta: not read yet.')
+                      : !mbaReel.eligible
+                        ? t("Meta n'a pas encore ouvert l'agent sur ce numéro. Le bouton prépare le bloc MBA des scénarios en attendant.", 'Meta has not opened the agent on this number yet. The switch prepares the MBA block in scenarios meanwhile.')
+                        : mbaReel.settings?.rollout?.enabled
+                          ? t(
+                            `L'agent de Meta RÉPOND en ce moment, à ${mbaReel.settings?.ai_audience === 'ALLOWLISTED_ONLY' ? 'la liste autorisée' : 'tout le monde'}. Il répond avant nos scénarios.`,
+                            `Meta's agent IS ANSWERING right now, to ${mbaReel.settings?.ai_audience === 'ALLOWLISTED_ONLY' ? 'the allowlist' : 'everyone'}. It answers before our scenarios.`,
+                          )
+                          : t("Éligible, agent éteint chez Meta. Personne ne répond automatiquement.", 'Eligible, agent off at Meta. Nobody answers automatically.')}
+                  </p>
+                  {erreurMba && <p className="mt-1 text-xs text-coral" data-testid="mba-erreur">{erreurMba}</p>}
+                </div>
               </div>
-            </div>
-            <div className="flex items-center gap-3 pt-2">
-              <Toggle
-                testid="mba-toggle"
-                checked={mbaEnabled}
-                onChange={toggleMba}
-                disabled={!isAdmin || savingMba}
-                title={isAdmin ? '' : t('Réservé aux admins', 'Admins only')}
-              />
-              <span className="text-sm font-medium text-ink-700">{mbaEnabled ? t('Activé', 'Enabled') : t('Désactivé', 'Disabled')}</span>
-              {/* ⚠️ DIRE CE QUE LE BOUTON PILOTE. Tant que Meta n'a pas ouvert, il ne commande que notre
-                  cote, et se taire la-dessus est exactement ce qui a fait croire a une coupure. */}
-              {mbaReel !== null && !mbaReel.eligible && (
-                <span className="text-xs text-ink-400">{t('(côté Engage Me seulement)', '(Engage Me side only)')}</span>
+              <div className="flex items-center gap-3 pt-2">
+                <Toggle
+                  testid="mba-toggle"
+                  checked={mbaEnabled}
+                  onChange={toggleMba}
+                  disabled={!isAdmin || savingMba}
+                  title={isAdmin ? '' : t('Réservé aux admins', 'Admins only')}
+                />
+                <span className="text-sm font-medium text-ink-700">{mbaEnabled ? t('Activé', 'Enabled') : t('Désactivé', 'Disabled')}</span>
+                {/* ⚠️ DIRE CE QUE LE BOUTON PILOTE. Tant que Meta n'a pas ouvert, il ne commande que notre
+                    cote, et se taire la-dessus est exactement ce qui a fait croire a une coupure. */}
+                {mbaReel !== null && !mbaReel.eligible && (
+                  <span className="text-xs text-ink-400">{t('(côté Engage Me seulement)', '(Engage Me side only)')}</span>
+                )}
+              </div>
+              {/* La reprise après intervention d'un opérateur vivait ICI. Elle a rejoint MBA > Paramètres >
+                  Activation, avec le passage de main : ce sont les deux faces d'une même question, « qui parle
+                  au client », et les séparer obligeait à comprendre deux écrans pour régler une seule chose. */}
+              {account?.hasNumber && (
+                <div className="mt-4 border-t border-ink-100 pt-3">
+                  <Link href="/mba/parametres?tab=activation" className="text-sm font-medium text-brand-600 underline" data-testid="lien-activation">
+                    {t('Régler qui répond au client', 'Set who answers the customer')}
+                  </Link>
+                  <p className="mt-0.5 text-xs text-ink-500">
+                    {t(
+                      'Le passage de main vers un humain, et combien de temps un opérateur garde la conversation.',
+                      'Handover to a human, and how long an operator keeps the conversation.',
+                    )}
+                  </p>
+                </div>
               )}
             </div>
-            {/* La reprise après intervention d'un opérateur vivait ICI. Elle a rejoint MBA > Paramètres >
-                Activation, avec le passage de main : ce sont les deux faces d'une même question, « qui parle
-                au client », et les séparer obligeait à comprendre deux écrans pour régler une seule chose. */}
-            {account?.hasNumber && (
-              <div className="mt-4 border-t border-ink-100 pt-3">
-                <Link href="/mba/parametres?tab=activation" className="text-sm font-medium text-brand-600 underline" data-testid="lien-activation">
-                  {t('Régler qui répond au client', 'Set who answers the customer')}
-                </Link>
-                <p className="mt-0.5 text-xs text-ink-500">
-                  {t(
-                    'Le passage de main vers un humain, et combien de temps un opérateur garde la conversation.',
-                    'Handover to a human, and how long an operator keeps the conversation.',
-                  )}
-                </p>
+            {/* 🔴 `messagesMba !== null`, JAMAIS `?? 0` : un zéro dirait que l'agent n'a parlé à personne. */}
+            {messagesMba !== null && (
+              <div data-testid="mba-messages" className="rounded-2xl border border-ink-200 bg-white p-4 shadow-sm">
+                <ChiffreMessagesTenus messages={messagesMba} />
               </div>
             )}
           </div>
@@ -463,7 +496,7 @@ function AccueilInner({ session }: { session: Session }) {
           ) : account && !account.hasNumber ? (
             <ConnectNumberZone isAdmin={isAdmin} connexion={connexionNumero} />
           ) : (
-            <div id="numero-whatsapp" data-testid="numero-card" className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+            <div data-testid="numero-card" className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Numéro WhatsApp', 'WhatsApp number')}</h3>
                 {account && <PastilleNumero status={account.status} />}
@@ -820,7 +853,7 @@ function ConnectNumberZone({ isAdmin, connexion }: { isAdmin: boolean; connexion
   const { cfg, busy, error, connect } = connexion;
   const ready = cfg?.enabled === true && isAdmin;
   return (
-    <div id="numero-whatsapp" className="rounded-2xl border border-dashed border-ink-300 bg-ink-50 p-5 shadow-sm">
+    <div className="rounded-2xl border border-dashed border-ink-300 bg-ink-50 p-5 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold tracking-tight text-ink-500">{t('Numéro WhatsApp', 'WhatsApp number')}</h3>
         <span className="inline-flex items-center gap-1.5 rounded-full bg-ink-100 px-2.5 py-1 text-xs font-medium text-ink-500">

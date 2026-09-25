@@ -107,7 +107,6 @@ export function EnteteAgent({
   logo, pastille, surTitre, nom, precision, etat, etapes, signalements, ratio, messages30j, onOnglet,
 }: EnteteAgentProps) {
   const t = useT();
-  const { locale } = useLocale();
   return (
     <header
       data-testid="entete-agent"
@@ -229,17 +228,33 @@ export function EnteteAgent({
           l'ambiguïté, pas la requête. */}
       {messages30j !== null && (
         <div data-testid="entete-agent-messages" className="shrink-0 sm:max-w-[15rem] sm:text-right">
-          <p className="text-2xl font-semibold tabular-nums text-ink-900">{fmtNum(messages30j, locale)}</p>
-          <p className="text-xs font-medium text-ink-700">
-            {t('Messages échangés dans les conversations que cet agent a tenues',
-               'Messages exchanged in the conversations this agent handled')}
-          </p>
-          <p className="pt-0.5 text-xs text-ink-500">
-            {t('Tous les messages de ces conversations sur 30 jours, y compris les envois de campagne et ce que votre équipe a écrit après une reprise.',
-               'All messages in those conversations over 30 days, including campaign sends and what your team wrote after a takeover.')}
-          </p>
+          <ChiffreMessagesTenus messages={messages30j} />
         </div>
       )}
     </header>
+  );
+}
+
+/**
+ * Le chiffre des messages tenus par un agent, AVEC SA LÉGENDE, sorti de l'en-tête le 2026-09-25 pour que
+ * l'Accueil l'affiche sous le cadre de l'agent de Meta sans recopier le texte : deux copies d'une légende qui
+ * porte un aveu (« y compris ») finiraient par dire deux choses. Les raisons de chaque mot sont juste au-dessus.
+ * ⚠️ Il reçoit un NOMBRE : c'est à l'appelant de ne pas le rendre quand il ne sait pas, jamais à lui d'y mettre 0.
+ */
+export function ChiffreMessagesTenus({ messages }: { messages: number }) {
+  const t = useT();
+  const { locale } = useLocale();
+  return (
+    <>
+      <p className="text-2xl font-semibold tabular-nums text-ink-900">{fmtNum(messages, locale)}</p>
+      <p className="text-xs font-medium text-ink-700">
+        {t('Messages échangés dans les conversations que cet agent a tenues',
+           'Messages exchanged in the conversations this agent handled')}
+      </p>
+      <p className="pt-0.5 text-xs text-ink-500">
+        {t('Tous les messages de ces conversations sur 30 jours, y compris les envois de campagne et ce que votre équipe a écrit après une reprise.',
+           'All messages in those conversations over 30 days, including campaign sends and what your team wrote after a takeover.')}
+      </p>
+    </>
   );
 }

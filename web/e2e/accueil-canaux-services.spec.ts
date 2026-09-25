@@ -23,11 +23,14 @@ const PUBS = {
   connexion: { comptePubId: 'act_1', compteNom: 'GMC', pageId: 'p1', pageNom: 'Page', pageLiee: 'oui', jetonRejeteLe: null },
   compte: null,
 };
+/** La réponse de `GET /accueil/volumes` (2026-09-25). Des milliers, pour voir le groupement ; un zéro MESURÉ en RCS. */
+const VOLUMES = { jours: 30, whatsapp: { envoyes: 1234, recus: 567 }, rcs: { envoyes: 12, recus: 0 } };
 
 /** L'interrupteur d'une ligne, sa phrase et sa pastille (la grille de cartes du 2026-09-25). */
 const ligne = (page: Page, service: string) => ({
   toggle: page.getByTestId(`canal-${service}-toggle`),
   etat: page.getByTestId(`canal-${service}-etat`),
+  chiffre: page.getByTestId(`canal-${service}-chiffre`),
   erreur: page.getByTestId(`canal-${service}-erreur`),
   pastille: page.getByTestId(`canal-${service}-pastille`),
 });
@@ -37,11 +40,17 @@ test.describe('Accueil : Canaux et services', () => {
     await mockAccueil(page, {
       settings: { ...REGLAGES, hubspotActif: false },
       canaux: { rcs: { active: true, channel: { agentId: 'a', brandName: 'Marque', displayName: 'Mon agent', status: 'launched', checkedAt: null } }, chaine: CHAINE, posts: [{}, {}, {}], pubs: PUBS },
+      volumes: VOLUMES,
     });
     await expect(page.getByTestId('canaux-services')).toBeVisible();
     await expect(ligne(page, 'numero').etat).toHaveText('Relié : +33 5 25 68 02 50.');
     await expect(ligne(page, 'rcs').etat).toHaveText('Actif, sous l’agent « Mon agent ».');
-    await expect(ligne(page, 'chaine').etat).toHaveText('Branchée : « Ma chaîne », 3 publication(s).');
+    // Le nombre de publications a quitté la phrase (2026-09-25) : il est la ligne de chiffre de la carte.
+    await expect(ligne(page, 'chaine').etat).toHaveText('Branchée : « Ma chaîne ».');
+    await expect(ligne(page, 'chaine').chiffre).toHaveText('3 publications au total');
+    // Envoyés et reçus sur 30 jours ; l'espace fine insécable des milliers se lit comme un espace.
+    await expect(ligne(page, 'numero').chiffre).toHaveText('1 234 envoyés · 567 reçus (30 j)');
+    await expect(ligne(page, 'rcs').chiffre).toHaveText('12 envoyés · 0 reçu (30 j)');
     await expect(ligne(page, 'publicites').etat).toHaveText('Connecté : GMC.');
     await expect(ligne(page, 'hubspot').etat).toContainText('Éteint');
     for (const [s, allume] of [['numero', 'true'], ['rcs', 'true'], ['chaine', 'true'], ['publicites', 'true'], ['hubspot', 'false']] as const) {
@@ -50,7 +59,11 @@ test.describe('Accueil : Canaux et services', () => {
     await expect(page.getByTestId('canal-chaine-lien')).toHaveAttribute('href', '/chaine');
     await expect(page.getByTestId('canal-publicites-lien')).toHaveAttribute('href', '/publicites');
     await expect(page.getByTestId('canal-hubspot-lien')).toHaveAttribute('href', '/parametres#integration-hubspot');
-    await expect(page.getByTestId('canal-numero-lien')).toHaveAttribute('href', '#numero-whatsapp');
+    // « Voir le numéro » et « Voir le canal » sont partis (2026-09-25) : le détail est juste en dessous.
+    await expect(page.getByTestId('canal-numero-lien')).toHaveCount(0);
+    await expect(page.getByTestId('canal-rcs-lien')).toHaveCount(0);
+    await expect(page.getByText('Voir le numéro', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Voir le canal', { exact: true })).toHaveCount(0);
     await expect(page.getByTestId('canal-autres-lien')).toHaveAttribute('href', '/parametres');
     await expect(page.getByTestId('canal-autres-lien')).toHaveText('Autres intégrations+');
     // 🔴 « Couper le canal RCS » est DEVENU l'interrupteur : la carte ne le porte plus.
@@ -76,6 +89,23 @@ test.describe('Accueil : Canaux et services', () => {
     await expect(page.getByText(/Allumer ou éteindre chaque canal/)).toHaveCount(0);
     await expect(page.getByText(/Voici l.état de ton compte/)).toHaveCount(0);
     await expect(page.getByText(/^Bonjour/)).toBeVisible();
+  });
+
+  test('🔴 route des volumes pas encore déployée : ni chiffre ni zéro sur WhatsApp et RCS, le reste de la carte intact', async ({ page }) => {
+    const lectures: string[] = [];
+    await mockAccueil(page, {
+      canaux: { rcs: { active: true, channel: { agentId: 'a', brandName: 'Marque', displayName: 'Mon agent', status: 'launched', checkedAt: null } } },
+      volumes: 'absent',
+      lecturesChiffres: lectures,
+    });
+    // Ancres positives : les cartes ont lu leur état, ET la lecture des volumes a bien eu lieu (et a rendu 404).
+    await expect(ligne(page, 'numero').etat).toHaveText('Relié : +33 5 25 68 02 50.');
+    await expect(ligne(page, 'rcs').etat).toHaveText('Actif, sous l’agent « Mon agent ».');
+    await expect.poll(() => lectures).toContain('GET /tenants/t-e2e/accueil/volumes');
+    await expect(ligne(page, 'numero').chiffre).toHaveCount(0);
+    await expect(ligne(page, 'rcs').chiffre).toHaveCount(0);
+    await expect(page.getByTestId('canaux-services').getByText(/envoy|reçu/)).toHaveCount(0);
+    await expect(ligne(page, 'numero').toggle).toHaveAttribute('aria-pressed', 'true');
   });
 
   test('compte publicitaire connecté mais pas choisi : pastille AMBRE, « à terminer »', async ({ page }) => {
@@ -166,11 +196,14 @@ test.describe('Accueil : Canaux et services', () => {
     const gestes: string[] = [];
     await mockAccueil(page, { canaux: { gestes, chaine: CHAINE, posts: [{}] } });
     const chaine = ligne(page, 'chaine');
-    await expect(chaine.etat).toHaveText('Branchée : « Ma chaîne », 1 publication(s).');
+    await expect(chaine.etat).toHaveText('Branchée : « Ma chaîne ».');
+    await expect(chaine.chiffre).toHaveText('1 publication au total');
     await chaine.toggle.click();
     await expect(page.getByTestId('canaux-confirmation')).toContainText('Les publications déjà parues restent');
     await page.getByTestId('canaux-confirmation-ok').click();
     await expect(chaine.etat).toContainText('Non branchée');
+    // Débranchée, le compte ne se relit plus : la carte ne garde pas un chiffre qu'elle n'a plus lu.
+    await expect(chaine.chiffre).toHaveCount(0);
     expect(gestes).toEqual(['DELETE /tenants/t-e2e/channels-me/connection']);
 
     await chaine.toggle.click();

@@ -60,6 +60,16 @@ function rangeQuery(range?: StatsRange): string {
 export function getStats(tenantId: string, range?: StatsRange): Promise<DashboardStats> {
   return request<DashboardStats>(`/tenants/${tenantId}/stats${rangeQuery(range)}`);
 }
+/**
+ * Envoyés et reçus par canal sur 30 jours, pour les cartes « Numéro WhatsApp » et « Canal RCS » de l'Accueil.
+ *
+ * ⚠️ `unknown`, DÉLIBÉRÉMENT : la réponse ne se lit QUE par `lireVolumesCanaux` (`@/lib/chiffres-canaux`), qui
+ * rend `null` pour tout ce qui n'a pas la bonne forme (API plus ancienne, corps vide). Un type posé ici
+ * laisserait lire `r.whatsapp.envoyes` sans garde, donc `undefined` puis un zéro inventé à l'écran.
+ */
+export function getVolumesCanaux(tenantId: string): Promise<unknown> {
+  return request<unknown>(`/tenants/${tenantId}/accueil/volumes`);
+}
 /** Funnel d'UNE campagne : envoyés -> délivrés -> lus -> répondus + échecs. */
 export interface CampaignFunnel {
   sent: number;

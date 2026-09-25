@@ -1202,6 +1202,7 @@ async function main(): Promise<void> {
     } : {}),
     stats: {
       getDashboard: (tenant, range) => statsStore.getDashboard(tenant, range),
+      volumesParCanal: (tenant, jours) => statsStore.volumesParCanal(tenant, jours),
       getTemplateBreakdown: (tenant, range) => statsStore.getTemplateBreakdown(tenant, range),
       // La MEME grille que les prix affiches au-dessus : deux lectures donneraient deux marges.
       // ⚠️ `tenant` N'EST PLUS LU, et la fleche le garde parce que le CONTRAT de la route le passe : une
