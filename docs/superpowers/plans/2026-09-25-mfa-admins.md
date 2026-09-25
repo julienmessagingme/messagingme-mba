@@ -10,7 +10,8 @@ propre plan : il remplace le jeton partagé d'exploitation, ce qui n'a rien à v
 **Implémenteur par lot, puis revue humaine du DIFF et une relecture indépendante.** La connexion est le chemin
 que TOUTE la production emprunte, et le code touché porte des invariants invisibles (le hash-leurre contre la
 fuite d'existence, le jeton de choix signé, `verifySession` qui rejette tout jeton sans `tenantId` ni `role`).
-Deux « oui » en haut de la grille.
+Deux « oui » en haut de la grille. L'essai réel qui clôt le lot est une connexion de Julien en production,
+décrite en dernière section.
 
 ## Décisions techniques
 
