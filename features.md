@@ -1819,14 +1819,16 @@ scénario, comment importer des contacts.
   peuvent plus mentir** : ils vivent dans un module que la page affiche et qu'un test passe aux validateurs
   des routes.
   ⚠️ Elle ne nomme aucun outil tiers : elle sert à tous les intégrateurs.
-  🔴 **Depuis la refonte du 2026-09-25, elle tient en huit pages publiques** : Accueil (`/developers/api` :
-  l'adresse, la clé, un premier appel complet avec sa réponse), Contacts, Messages et envois (un tableau distingue le
-  message simple de l'envoi), Catalogues, Concepts (désigner une personne, consentement et STOP, fenêtre de 24 h,
-  idempotence : chaque règle à un seul endroit, les pages de routes y renvoient), un guide « Un appel par contact »
-  en six étapes, Événements et Référence (droits, débit, catalogue des codes). Navigation latérale sur ordinateur,
-  bouton « Documentation » sur mobile, bouton Copier sur chaque bloc, encadrés Note, Attention, Obligatoire.
-  Toujours lisibles sans compte, et dans la console pour un admin, en français et en anglais. La page Serveur MCP
-  prend le même cadre.
+  🔴 **Depuis la refonte du 2026-09-25 (lots 1 et 2), elle tient en dix pages publiques** : Accueil
+  (`/developers/api` : le premier appel complet et sa réponse, puis l'index des douze endpoints, l'adresse et la
+  clé), Contacts, Messages (les deux messages simples, et un tableau qui les distingue de l'envoi), Envois
+  (`/developers/api/sends` : cible, destinataires, paramètres, message d'ouverture, catégorie, suivi), Catalogues,
+  Concepts, un guide « Un appel par contact », Événements, Authentification, limites et erreurs (adresse
+  inchangée, `/developers/api/reference`), et Serveur MCP. Chaque route suit le même patron : méthode et chemin,
+  une phrase, le droit, le tableau de ses champs (type, obligation, description), la commande curl, la réponse,
+  ses erreurs propres, peu de notes. Chaque page de ressource s'ouvre sur « Sur cette page ». Les anciennes
+  ancres renvoient à leur nouvelle adresse. Toujours lisible sans compte, et dans la console pour un admin, en
+  français et en anglais.
 
 ### Ce que la console remonte vers l'outil du client (Paramètres > Intégrations)
 

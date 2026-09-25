@@ -4,8 +4,10 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useT } from '@/lib/i18n';
 import { BASE } from '@/lib/http';
-import type { NomDeCode } from '@/lib/api-exemples';
-import { pageDoc, type AncreDe, type CleDePage } from '@/lib/doc-api-pages';
+import { statutDe, type NomDeCode } from '@/lib/api-exemples';
+import type { ChampDoc, TableDeChamps } from '@/lib/api-champs';
+import { hrefDe, pageDoc, type AncreDe, type CleDePage, type LienVers } from '@/lib/doc-api-pages';
+import { ENDPOINTS, GROUPES_ENDPOINTS, endpoint, type CleEndpoint, type EndpointDoc, type Methode } from '@/lib/api-doc-endpoints';
 
 /**
  * LES BRIQUES DES PAGES DE LA DOCUMENTATION (refonte du 2026-09-25) : seulement ce que plusieurs pages répètent.
@@ -35,16 +37,21 @@ export const CLE_EXEMPLE = 'mba_xxxxxxxxxxxxxxxx';
 export const json = (v: unknown): string => JSON.stringify(v, null, 2);
 
 /**
- * Une commande prête à copier. Le corps part entre apostrophes droites : la suite refuse donc toute apostrophe
- * droite dans un exemple, qui fermerait la chaîne du shell au milieu du JSON.
+ * Une commande prête à copier, corps indenté pour être lu. Le corps part entre apostrophes droites : la suite
+ * refuse donc toute apostrophe droite dans un exemple, qui fermerait la chaîne du shell au milieu du JSON.
  */
-export function curl(chemin: string, corps: unknown): string {
+export function curl(chemin: string, corps: unknown, methode: 'POST' | 'PATCH' = 'POST'): string {
   return [
-    `curl -X POST ${ADRESSE_API}${chemin} \\`,
+    `curl -X ${methode} ${ADRESSE_API}${chemin} \\`,
     `  -H "Authorization: Bearer ${CLE_EXEMPLE}" \\`,
     '  -H "Content-Type: application/json" \\',
-    `  -d '${JSON.stringify(corps)}'`,
+    `  -d '${json(corps)}'`,
   ].join('\n');
+}
+
+/** Une lecture prête à copier : pas de corps. */
+export function curlGet(chemin: string): string {
+  return [`curl ${ADRESSE_API}${chemin} \\`, `  -H "Authorization: Bearer ${CLE_EXEMPLE}"`].join('\n');
 }
 
 const inlineCls = 'rounded bg-ink-100 px-1.5 py-0.5 font-mono text-[0.85em] text-ink-800 [overflow-wrap:anywhere]';
@@ -71,35 +78,93 @@ export function Section({ id, titre, children }: { id?: string; titre: React.Rea
   );
 }
 
-type Methode = 'GET' | 'POST' | 'PATCH';
 const COULEUR_METHODE: Record<Methode, string> = {
   GET: 'bg-mint-50 text-mint-700 ring-mint-200',
   POST: 'bg-brand-50 text-brand-700 ring-brand-200',
   PATCH: 'bg-amber-50 text-amber-800 ring-amber-200',
 };
 
-/**
- * Une route : son `h2` porte la méthode (en badge) et le chemin, repérables d'un coup d'œil ; le droit exigé
- * suit juste en dessous.
- */
-export function Route({ id, methode, chemin, droit, children }: {
-  id: string; methode: Methode; chemin: string; droit: string; children: React.ReactNode;
-}) {
-  const t = useT();
+export function BadgeMethode({ methode, petit = false }: { methode: Methode; petit?: boolean }) {
   return (
-    <section id={id} className="scroll-mt-20 space-y-4 border-t border-ink-200 pt-8">
+    <span className={`inline-block rounded-md font-mono font-semibold ring-1 ring-inset ${petit ? 'px-1.5 py-px text-[11px]' : 'px-2 py-0.5 text-sm'} ${COULEUR_METHODE[methode]}`}>
+      {methode}
+    </span>
+  );
+}
+
+/**
+ * Une route, toujours dans le même ordre : son `h2` (la méthode en badge, puis le chemin), sa phrase, son droit,
+ * puis ses sous-parties (Requête, Réponse, Erreurs, Notes). Méthode, chemin, phrase, droit et ancre viennent de
+ * l'index des endpoints (`@/lib/api-doc-endpoints`) : la page ne les réécrit pas.
+ */
+export function Route({ ep, children }: { ep: CleEndpoint; children: React.ReactNode }) {
+  const t = useT();
+  const e = endpoint(ep);
+  return (
+    <section id={e.lien.ancre} className="scroll-mt-20 space-y-4 border-t border-ink-200 pt-8">
       <div className="space-y-1.5">
         <h2 className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-lg font-semibold text-ink-900">
           {/* L'espace entre les deux compte : sans lui, le nom lu par un lecteur d'écran serait « POST/v1/… ». */}
-          <span className={`rounded-md px-2 py-0.5 text-sm ring-1 ring-inset ${COULEUR_METHODE[methode]}`}>{methode}</span>{' '}
-          <span className="min-w-0 [overflow-wrap:anywhere]">{chemin}</span>
+          <BadgeMethode methode={e.methode} />{' '}
+          <span className="min-w-0 [overflow-wrap:anywhere]">{e.chemin}</span>
         </h2>
+        <p className="text-[15px] leading-relaxed text-ink-700">{t(e.resume[0], e.resume[1])}</p>
         <p className="text-sm text-ink-500">
-          {t('Droit :', 'Scope:')} <C>{droit}</C>
+          {t('Droit :', 'Scope:')} <C>{e.droit}</C>
         </p>
       </div>
       <div className="space-y-4 text-[15px] leading-relaxed text-ink-700">{children}</div>
     </section>
+  );
+}
+
+/** Une ligne de l'index : badge, chemin (le lien), phrase, droit (masqué sur mobile). */
+function LignesEndpoints({ endpoints, droit }: { endpoints: readonly EndpointDoc[]; droit: boolean }) {
+  const t = useT();
+  return (
+    <div className="overflow-hidden rounded-lg border border-ink-200">
+      <table className="w-full text-left text-sm">
+        <tbody>
+          {endpoints.map((e) => (
+            <tr key={`${e.methode} ${e.chemin}`} className="border-b border-ink-100 align-top last:border-0">
+              <td className="w-16 py-2 pl-3 pr-1"><BadgeMethode methode={e.methode} petit /></td>
+              <td className="px-2 py-2">
+                <Link href={hrefDe(e.lien)} className={`font-mono text-[13px] [overflow-wrap:anywhere] ${lienCls}`}>{e.chemin}</Link>
+                <span className="mt-0.5 block text-ink-600">{t(e.resume[0], e.resume[1])}</span>
+              </td>
+              {droit && <td className="hidden w-40 whitespace-nowrap px-3 py-2 sm:table-cell"><C>{e.droit}</C></td>}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** « Tous les endpoints » : l'index complet, par groupe (accueil). */
+export function IndexEndpoints() {
+  const t = useT();
+  return (
+    <div className="space-y-5" data-testid="index-endpoints">
+      {GROUPES_ENDPOINTS.map((g) => (
+        <div key={g.cle} className="space-y-2">
+          <h3 className="text-base font-semibold text-ink-900">{t(g.titre[0], g.titre[1])}</h3>
+          <LignesEndpoints endpoints={ENDPOINTS.filter((e) => e.groupe === g.cle)} droit />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** « Sur cette page » : les endpoints d'une page de ressource, liens vers leurs ancres, depuis l'index. */
+export function SurCettePage({ page }: { page: CleDePage }) {
+  const t = useT();
+  const ici = ENDPOINTS.filter((e) => e.lien.page === page);
+  return (
+    <nav aria-label={t('Sur cette page', 'On this page')} className="space-y-2" data-testid="sur-cette-page">
+      <p className="text-xs font-semibold text-ink-500">{t('Sur cette page', 'On this page')}</p>
+      <LignesEndpoints endpoints={ici} droit={false} />
+    </nav>
   );
 }
 
@@ -122,24 +187,38 @@ export function Code({ c, testid }: { c: NomDeCode; testid?: string }) {
   return <code className={inlineCls} data-testid={testid}>{c}</code>;
 }
 
+/** Un refus cité dans le texte : son statut, LU dans la table des codes (`statutDe`), puis son code. */
+export function Refus({ c }: { c: NomDeCode }) {
+  return <span className="whitespace-nowrap">{statutDe(c)} <Code c={c} /></span>;
+}
+
 /** Un lien vers une page de la doc, ou vers une de ses ancres DÉCLARÉES (`@/lib/doc-api-pages`). */
 export function LienDoc<P extends CleDePage>({ page, ancre, children }: { page: P; ancre?: AncreDe<P>; children: React.ReactNode }) {
-  const { href } = pageDoc(page);
-  return <Link href={ancre ? `${href}#${ancre}` : href} className={lienCls}>{children}</Link>;
+  // Le type générique ne se réduit pas à l'union `LienVers` : la paire (page, ancre) est pourtant exactement l'une de ses branches.
+  return <Link href={hrefDe({ page, ancre } as LienVers)} className={lienCls}>{children}</Link>;
 }
 
 export function Liste({ children }: { children: React.ReactNode }) {
   return <ul className="list-disc space-y-2 pl-5 marker:text-ink-300">{children}</ul>;
 }
 
-/** Copier dans le presse-papier. Échec silencieux : sans permission, le texte reste sélectionnable à la main. */
-export function BoutonCopier({ texte, sombre = false }: { texte: string; sombre?: boolean }) {
+/**
+ * Copier dans le presse-papier. Échec silencieux : sans permission, le texte reste sélectionnable à la main.
+ * `quoi` nomme le bloc pour un lecteur d'écran (« Copier : Commande »), et la confirmation passe par une région
+ * vivante : le libellé visible, seul, changerait sans que personne ne l'entende.
+ */
+export function BoutonCopier({ texte, quoi, sombre = false, testid = 'copier' }: {
+  texte: string; quoi?: string; sombre?: boolean; testid?: string;
+}) {
   const t = useT();
   const [copie, setCopie] = useState(false);
   return (
+    <>
+    <span className="sr-only" aria-live="polite">{copie ? t('Copié', 'Copied') : ''}</span>
     <button
       type="button"
-      data-testid="copier"
+      data-testid={testid}
+      aria-label={quoi ? `${t('Copier', 'Copy')} : ${quoi}` : undefined}
       onClick={() => {
         void navigator.clipboard?.writeText(texte).then(() => { setCopie(true); setTimeout(() => setCopie(false), 2000); }).catch(() => {});
       }}
@@ -149,21 +228,24 @@ export function BoutonCopier({ texte, sombre = false }: { texte: string; sombre?
     >
       {copie ? t('Copié', 'Copied') : t('Copier', 'Copy')}
     </button>
+    </>
   );
 }
 
 /**
- * Un bloc de code, toujours copiable. `legende` nomme ce qu'il montre (« Corps », « Commande »…). Seul le bloc
- * défile en largeur, jamais la page.
+ * Un bloc de code, toujours copiable. `legende` nomme ce qu'il montre (« Commande », « Réponse »…), à l'écran et
+ * pour le bouton Copier : elle est donc obligatoire. Seul le bloc défile en largeur, jamais la page.
  */
-export function Bloc({ children, legende }: { children: string; legende?: string }) {
+export function Bloc({ children, legende, testid, testidCopier }: {
+  children: string; legende: string; testid?: string; testidCopier?: string;
+}) {
   return (
     <div className="min-w-0 overflow-hidden rounded-lg bg-ink-900">
       <div className="flex items-center justify-between gap-2 border-b border-white/10 py-1 pl-4 pr-1.5">
-        <span className="text-xs font-medium text-ink-300">{legende ?? ''}</span>
-        <BoutonCopier texte={children} sombre />
+        <span className="text-xs font-medium text-ink-300">{legende}</span>
+        <BoutonCopier texte={children} quoi={legende} sombre {...(testidCopier ? { testid: testidCopier } : {})} />
       </div>
-      <pre className="overflow-x-auto px-4 py-3 font-mono text-xs leading-relaxed text-ink-50">{children}</pre>
+      <pre className="overflow-x-auto px-4 py-3 font-mono text-xs leading-relaxed text-ink-50" data-testid={testid}>{children}</pre>
     </div>
   );
 }
@@ -187,6 +269,92 @@ export function Encadre({ sorte, children }: { sorte: SorteEncadre; children: Re
       <p className={`mb-1 text-sm font-semibold ${s.titre}`}>{t(s.libelle[0], s.libelle[1])}</p>
       <div className="space-y-2">{children}</div>
     </div>
+  );
+}
+
+/**
+ * Le tableau des champs d'un corps (`@/lib/api-champs`, tenu égal au schéma du serveur par la suite racine) : le
+ * nom et son type, l'obligation, ce qu'il fait. Suit une ligne sur les clés inconnues, et les clés refusées.
+ */
+export function Champs({ table }: { table: TableDeChamps }) {
+  const t = useT();
+  const obligation = (o: ChampDoc['obligatoire']): string => (o === 'oui' ? t('Oui', 'Yes') : o === 'non' ? t('Non', 'No') : t(o[0], o[1]));
+  // Sur mobile, l'obligation passe sous le nom du champ : la description garde la largeur.
+  return (
+    <div className="space-y-2">
+      <div className="overflow-x-auto rounded-lg border border-ink-200">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-ink-50">
+            <tr className="border-b border-ink-200">
+              <th className="px-3 py-2 text-xs font-semibold text-ink-600">{t('Champ', 'Field')}</th>
+              <th className="hidden px-3 py-2 text-xs font-semibold text-ink-600 sm:table-cell">{t('Obligatoire', 'Required')}</th>
+              <th className="px-3 py-2 text-xs font-semibold text-ink-600">{t('Description', 'Description')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {table.champs.map((c) => (
+              <tr key={c.nom} className="border-b border-ink-100 align-top last:border-0">
+                <td className="px-3 py-2 text-ink-700">
+                  <span className="whitespace-nowrap"><C>{c.nom}</C></span>
+                  <span className="mt-1 block font-mono text-xs text-ink-500">{c.type}</span>
+                  <span className="mt-0.5 block text-xs text-ink-500 sm:hidden">
+                    {c.obligatoire === 'oui' ? t('Obligatoire', 'Required') : c.obligatoire === 'non' ? t('Optionnel', 'Optional') : t(c.obligatoire[0], c.obligatoire[1])}
+                  </span>
+                </td>
+                <td className="hidden px-3 py-2 text-ink-700 sm:table-cell">{obligation(c.obligatoire)}</td>
+                <td className="px-3 py-2 text-ink-700">
+                  {t(c.quoi[0], c.quoi[1])}
+                  {c.valeurs && <> {t('Valeurs :', 'Values:')} {c.valeurs.map((v, i) => <span key={v}>{i > 0 ? ', ' : ''}<C>{v}</C></span>)}.</>}
+                  {c.voir && <> <Link href={hrefDe(c.voir.lien)} className={lienCls}>{t(c.voir.libelle[0], c.voir.libelle[1])}</Link></>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-sm text-ink-500">
+        {table.inconnues === 'ignorees'
+          ? t('Une clé inconnue est ignorée.', 'An unknown key is ignored.')
+          : <>{t('Une clé inconnue est refusée :', 'An unknown key is refused:')} <Refus c="invalid_body" />.</>}
+        {table.refusees && (
+          <>
+            {' '}{t('Refusées :', 'Refused:')} {table.refusees.noms.map((n, i) => <span key={n}>{i > 0 ? ', ' : ''}<C>{n}</C></span>)}
+            {' '}({t(table.refusees.pourquoi[0], table.refusees.pourquoi[1])}).
+          </>
+        )}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Les erreurs PROPRES à une route : statut, code, cause. Le statut est lu dans la table des codes (`statutDe`),
+ * jamais écrit à côté. `clesDeFiche` ajoute la ligne commune aux routes qui désignent une fiche, qui renvoie à
+ * la règle au lieu de la répéter. Le catalogue complet vit dans la Référence.
+ */
+export function Erreurs({ lignes, clesDeFiche = false }: {
+  lignes: ReadonlyArray<readonly [NomDeCode, React.ReactNode]>; clesDeFiche?: boolean;
+}) {
+  const t = useT();
+  const cles: NomDeCode[] = ['invalid_recipient', 'invalid_phone', 'identity_conflict'];
+  return (
+    <Tableau
+      entetes={[t('Statut', 'Status'), t('Code', 'Code'), t('Cause', 'Cause')]}
+      lignes={[
+        ...lignes.map(([code, cause]) => ({ cle: code, cellules: [String(statutDe(code) ?? ''), <Code key="c" c={code} />, cause] })),
+        ...(clesDeFiche ? [{
+          cle: 'cles',
+          cellules: [
+            [...new Set(cles.map((c) => statutDe(c)))].join(', '),
+            <span key="c" className="flex flex-col items-start gap-1">{cles.map((c) => <Code key={c} c={c} />)}</span>,
+            <span key="q">
+              {t('Clés de fiche absentes, illisibles ou contradictoires :', 'Record keys missing, unreadable or contradictory:')}{' '}
+              <LienDoc page="concepts" ancre="identification">{t('Désigner une personne', 'Identifying a person')}</LienDoc>
+            </span>,
+          ],
+        }] : []),
+      ]}
+    />
   );
 }
 

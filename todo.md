@@ -458,9 +458,10 @@ aujourd'hui ; chacun rend faux, à moitié, ce que le lot affirme.
   Correction : ne rendre `{}` que pour `/webhooks/meta`, ailleurs `done(err)` avec un statut 400, et faire
   rendre aux adresses `/v1/*` `{ error: 'corps JSON illisible', code: 'invalid_body' }` dans `setErrorHandler`.
   Un test de route le fixe : `payload: '{bad'` rend 400 `invalid_body` sans que le service soit appelé.
-  ⚠️ **La page Documentation API décrit ce comportement tel qu'il est** (section « Erreurs », avec le 415 sans
-  `code` d'un corps qui n'est pas du JSON, mesuré le 2026-09-25) : la corriger dans le même commit que le
-  parseur, sinon elle mentira dans l'autre sens.
+  ⚠️ **La documentation de l'API décrit ce comportement tel qu'il est** (page « Authentification, limites et
+  erreurs », `web/app/developers/api/reference/page.tsx`, section « Erreurs », avec le 415 sans `code` d'un corps
+  qui n'est pas du JSON, mesuré le 2026-09-25) : la corriger dans le même commit que le parseur, sinon elle
+  mentira dans l'autre sens.
 - ~~**La puce de `documentation.md` qui suit les trois ajoutées au lot 1**~~ **FAIT le 2026-09-25** (lot 4,
   tâche 8) : l'API publique y crée en `unknown`, sauf `consent` explicite, et sait écrire `opted_out` comme
   `opted_in`.
@@ -474,8 +475,9 @@ aujourd'hui ; chacun rend faux, à moitié, ce que le lot affirme.
 
 ## 🟡 API publique, lot 4 : un refus de Meta sort SANS `code` (décision de spec, réservée à Julien, 2026-09-25)
 
-Relevé par la relecture du lot 4. Le plan affirmait « 5xx sans corps » ; le code dit autre chose, et la page
-Documentation API dit désormais la vérité (section « Erreurs »), figée par `tests/v1-catalogues.test.ts`.
+Relevé par la relecture du lot 4. Le plan affirmait « 5xx sans corps » ; le code dit autre chose, et la
+documentation de l'API dit désormais la vérité (page « Authentification, limites et erreurs », section « Erreurs »,
+`web/app/developers/api/reference/page.tsx`), figée par `tests/v1-catalogues.test.ts`.
 
 - **Ce qui se passe** : le gestionnaire global (`setErrorHandler`, `src/server.ts`) rend une `MetaApiError` en
   422 `{ error: "Meta: …" }` SANS `code`, et toute autre exception (panne réseau vers Meta comprise) en 500
@@ -2871,3 +2873,12 @@ Performance lab, page d'accueil, « ce que coûte l'engagement ». Constaté par
 🔴 **UNE RÉPONSE EST UN ENGAGEMENT DE PREMIER NIVEAU, et ne pas la compter sous-estime exactement ce que
 la page prétend mesurer.** Quelqu'un qui prend la peine d'écrire s'est engagé plus fort que quelqu'un
 qui clique. Le coût par engagement doit donc compter les réponses avec les clics.
+
+## Relevés du 2026-09-25 (relectures et essai réel de l'API)
+
+- Écran de choix d'espace à la connexion : afficher un discriminant en plus du nom et du rôle (le code public de
+  l'espace). Aucune unicité ne pèse sur `tenants.name`.
+- `GET /v1/sends/{id}` : exposer le motif d'une pause. Une cible qui ouvre en RCS avec un repli WhatsApp peut encore
+  être acceptée puis rester en pause sans raison lisible par l'API.
+- `GET /v1/sends/{id}` pour une cible `scenario` ou `node` : `messageId` et `delivery` valent `null`, l'intégrateur
+  ne sait pas si le premier message est livré.

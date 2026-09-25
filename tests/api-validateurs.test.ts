@@ -14,7 +14,7 @@ import { schemaMessageRcs } from '../src/http/v1-messages-rcs';
  * LES VALIDATEURS DES CORPS /v1 SONT NOMMÉS ET EXPORTÉS.
  *
  * 🔴 ILS EXISTENT POUR ÊTRE INTERROGÉS DE L'EXTÉRIEUR : `tests/api-exemples.test.ts` leur soumet chaque
- * exemple de la page Documentation API. Une route qui validerait par un schéma anonyme, écrit dans son
+ * exemple de la documentation de l'API (`web/lib/api-exemples.ts`, affiché par ses pages). Une route qui validerait par un schéma anonyme, écrit dans son
  * handler, rendrait ce contrôle impossible, et la page pourrait de nouveau décrire un corps que le serveur
  * refuse (elle l'a fait : `optIn`, des destinataires en chaînes, `/v1/messages` sans accents).
  *

@@ -17,7 +17,9 @@ import { schemaMessageWhatsapp, type ReponseMessageSimple } from '../src/http/v1
 import { schemaMessageRcs } from '../src/http/v1-messages-rcs';
 import { validateParamMapping } from '../src/crm/template';
 import { destinataireAvecVariablesInterdites } from '../src/api/variables';
-import { cleIdempotence, DUREE_CLE_IDEMPOTENCE_MS } from '../src/api/idempotence';
+import { cleIdempotence, CLE_IDEMPOTENCE_MAX, DUREE_CLE_IDEMPOTENCE_MS } from '../src/api/idempotence';
+import { MAX_OPT_IN_SOURCE } from '../src/api/contacts-upsert';
+import { VALEUR_VARIABLE_MAX, VARIABLES_MAX } from '../src/api/variables';
 import { STATUT_PAR_CODE, type CodeApi } from '../src/api/erreurs';
 import { PLAFOND_API_DEFAUT } from '../src/auth/plafond-espace';
 import { CODES_ECART } from '../src/api/sends-build';
@@ -181,6 +183,24 @@ describe('les bornes affichées sont celles des routes', () => {
     expect(BORNES.dureeIdempotenceHeures * 3_600_000).toBe(DUREE_CLE_IDEMPOTENCE_MS);
   });
 
+  it('source du consentement, clé d’idempotence, variables d’un destinataire : les constantes des routes', () => {
+    expect(BORNES.consentSource).toBe(MAX_OPT_IN_SOURCE);
+    expect(BORNES.cleIdempotence).toBe(CLE_IDEMPOTENCE_MAX);
+    expect(BORNES.variablesParDestinataire).toBe(VARIABLES_MAX);
+    expect(BORNES.valeurVariable).toBe(VALEUR_VARIABLE_MAX);
+    // Et ce que les validateurs en font, pas un caractère de plus.
+    const un = EXEMPLES_CORPS.envoiTemplate.corps.recipients[0];
+    expect(schemaDestinataireEnvoi.safeParse({ ...un, consentSource: 'x'.repeat(BORNES.consentSource) }).success).toBe(true);
+    expect(schemaDestinataireEnvoi.safeParse({ ...un, consentSource: 'x'.repeat(BORNES.consentSource + 1) }).success).toBe(false);
+    expect(schemaDestinataireEnvoi.safeParse({ ...un, variables: { v: 'x'.repeat(BORNES.valeurVariable) } }).success).toBe(true);
+    expect(schemaDestinataireEnvoi.safeParse({ ...un, variables: { v: 'x'.repeat(BORNES.valeurVariable + 1) } }).success).toBe(false);
+    const variables = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`v${i}`, 'x']));
+    expect(schemaDestinataireEnvoi.safeParse({ ...un, variables: variables(BORNES.variablesParDestinataire) }).success).toBe(true);
+    expect(schemaDestinataireEnvoi.safeParse({ ...un, variables: variables(BORNES.variablesParDestinataire + 1) }).success).toBe(false);
+    expect(cleIdempotence('k'.repeat(BORNES.cleIdempotence), {}).ok).toBe(true);
+    expect(cleIdempotence('k'.repeat(BORNES.cleIdempotence + 1), {}).ok).toBe(false);
+  });
+
   it('le plafond de l’espace affiché est le défaut de la configuration (minute ET heure)', () => {
     expect({ minute: BORNES.plafondEspaceMinute, heure: BORNES.plafondEspaceHeure }).toEqual(PLAFOND_API_DEFAUT);
   });
@@ -341,7 +361,8 @@ describe('la documentation API (liste fermée de ses fichiers)', () => {
   const lire = (f: string): string => readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
   const sansCommentaires = (texte: string): string => texte.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   const sources = FICHIERS_DOC.map((f) => ({ f, code: sansCommentaires(lire(f)) }));
-  const tout = sources.map((s) => s.code).join('\n');
+  // Ce qu'une page AFFICHE : les pages et leurs composants, pas les modules de données qu'ils lisent.
+  const tout = sources.filter((s) => s.f.endsWith('.tsx')).map((s) => s.code).join('\n');
 
   /** Les pages réellement posées sous `web/app/developers/api/`, plus la page MCP, qui prend le même cadre. */
   function pagesDuDossier(dossier: string): string[] {
@@ -351,9 +372,20 @@ describe('la documentation API (liste fermée de ses fichiers)', () => {
 
   it('🔴 la liste est FERMÉE : chaque page du dossier y figure, et rien de plus', () => {
     const posees = [...pagesDuDossier('web/app/developers/api'), 'web/app/developers/mcp/page.tsx'].sort();
-    expect(posees.length).toBeGreaterThanOrEqual(8);
+    expect(posees.length).toBeGreaterThanOrEqual(10);
     expect(PAGES_DOC.map((p) => p.fichier).sort()).toEqual(posees);
     for (const p of PAGES_DOC) expect(FICHIERS_DOC, p.fichier).toContain(p.fichier);
+  });
+
+  it('🔴 chaque composant de web/components/doc-api/ y figure : un fichier posé là échapperait sinon aux gardes', () => {
+    const composants = readdirSync(new URL('../web/components/doc-api', import.meta.url)).map((f) => `web/components/doc-api/${f}`);
+    expect(composants.length).toBeGreaterThanOrEqual(2);
+    for (const c of composants) expect(FICHIERS_DOC, c).toContain(c);
+  });
+
+  it('🔴 chaque fichier de la liste existe, et la carte de la doc en fait partie', () => {
+    for (const f of FICHIERS_DOC) expect(() => lire(f), f).not.toThrow();
+    expect(FICHIERS_DOC).toContain('web/lib/doc-api-pages.ts');
   });
 
   it('🔴 aucun fichier n’écrit d’objet JSON à la main : tout corps et toute réponse viennent du module', () => {

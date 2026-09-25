@@ -467,7 +467,7 @@ describe('les trois routes des catalogues', () => {
 
   /**
    * 🔴 UN ESPACE SUSPENDU N'A PLUS D'API, catalogues compris : 403 `tenant_locked` (la clé est bonne, un 401
-   * l'enverrait en refaire une), et la page Documentation API documente ce code. Sur les TROIS routes : une
+   * l'enverrait en refaire une), et la documentation de l'API documente ce code (catalogue de la page Authentification, limites et erreurs). Sur les TROIS routes : une
    * route montée derrière une autre garde passerait le cas d'une seule.
    */
   it('🔴 espace suspendu : 403 `tenant_locked` sur les trois routes, et rien n’est lu', async () => {
@@ -482,7 +482,7 @@ describe('les trois routes des catalogues', () => {
   });
 
   /**
-   * 🔴 LES REFUS DE LA GARDE PORTENT LEUR CODE, pas seulement leur statut : la page Documentation API
+   * 🔴 LES REFUS DE LA GARDE PORTENT LEUR CODE, pas seulement leur statut : la documentation de l'API (page Authentification, limites et erreurs)
    * documente `missing_scope`, `unauthorized` et `rate_limited`, et affirme la forme `{ error, code }`. Un
    * contrôle du seul statut laisserait la page mentir sans qu'aucun test ne le voie.
    */
@@ -553,7 +553,7 @@ describe('monté dans l’entrée /v1 du registre', () => {
   }
 
   /**
-   * 🔴 CE QU'UNE PANNE DE META REND, parce que la page Documentation API le dit mot pour mot, et que le plan du
+   * 🔴 CE QU'UNE PANNE DE META REND, parce que la documentation de l'API (section Erreurs de la page Authentification, limites et erreurs) le dit mot pour mot, et que le plan du
    * lot 4 l'avait écrit faux (« 5xx sans corps »). Le catalogue n'attrape rien : le gestionnaire GLOBAL décide.
    * Un REFUS de Meta sort en 422 avec une phrase qui commence par « Meta: », une panne réseau en 500 opaque, et
    * dans les deux cas SANS `code` et JAMAIS en liste vide (qui ferait croire à l'intégrateur qu'il n'a aucun

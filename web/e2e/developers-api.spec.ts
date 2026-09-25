@@ -1,7 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
 import { CODES_DOCUMENTES } from '../lib/api-exemples';
 import { EVENEMENTS_SIGNAUX } from '../lib/signaux-dictionnaire';
-import { PAGES_DOC, pageDoc, type CleDePage } from '../lib/doc-api-pages';
+import { ANCRES_DEPLACEES, PAGES_DOC, hrefDe, pageDoc, type CleDePage, type LienVers } from '../lib/doc-api-pages';
+import { ENDPOINTS } from '../lib/api-doc-endpoints';
 import { LOCALE_STORAGE_KEY } from '../lib/locale';
 
 /**
@@ -30,24 +31,32 @@ async function sansSession(page: Page) {
   await page.route('**/api/backend/**', (route) => route.fulfill({ status: 401, contentType: 'application/json', body: '{}' }));
 }
 
-/** Les titres de section que chaque page doit montrer (en plus de son `h1`, tiré de la carte). */
+/**
+ * Les titres de section que chaque page doit montrer (en plus de son `h1`, tiré de la carte). Les routes s'y
+ * ajoutent d'elles-mêmes : chaque endpoint de l'index (`lib/api-doc-endpoints.ts`) a son titre sur SA page.
+ */
 const SECTIONS: Record<CleDePage, string[]> = {
-  accueil: ['Adresse de base', 'Authentification', 'Premier appel'],
-  contacts: ['POST /v1/contacts', 'POST /v1/contacts/batch', 'GET /v1/contacts/{contactId}', 'POST /v1/contacts/search', 'PATCH /v1/contacts/{contactId}'],
-  messages: ['Messages simples', 'POST /v1/messages/whatsapp', 'POST /v1/messages/rcs', 'POST /v1/sends', 'GET /v1/sends/{sendId}'],
-  catalogs: ['GET /v1/templates', 'GET /v1/scenarios', 'GET /v1/rcs-messages'],
+  accueil: ['Premier appel', 'Tous les endpoints', 'Adresse de base', 'Authentification'],
+  contacts: [],
+  messages: ['Message ou envoi'],
+  sends: ['Types de cible', 'Destinataires', 'Paramètres et variables', 'Message d’ouverture', 'Catégorie', 'Exemples de cibles'],
+  catalogs: [],
   concepts: ['Désigner une personne', 'Consentement et STOP', 'La fenêtre de 24 h', 'Idempotence'],
   'per-contact': ['1 L’adresse et l’en-tête', '3 La clé d’idempotence', '6 Éprouver l’appel'],
-  events: ['Ce que nous remontons', 'Délais', 'Les événements', 'Les attributs de la fiche'],
+  events: ['Ce que la console remonte', 'Délais', 'Les événements', 'Les attributs de la fiche'],
   reference: ['Authentification et droits', 'Débit', 'Erreurs'],
   mcp: ['Adresse', 'Ce que l’assistant peut faire', 'Ce qu’il ne fait pas'],
 };
+const titresDe = (cle: CleDePage): string[] => [
+  ...SECTIONS[cle],
+  ...ENDPOINTS.filter((e) => e.lien.page === cle).map((e) => `${e.methode} ${e.chemin}`),
+];
 
 /**
- * Les commandes complètes : elles vivaient toutes à la fin de l'ancienne page (« Exemples complets ») et sont
- * désormais posées à côté de leur route. Le compte par page garde qu'aucune ne s'est perdue au déplacement.
+ * Les commandes `curl` complètes, par page : une par route (plus le premier appel, les exemples de cibles et le
+ * guide). Le compte EXACT garde qu'aucune ne se perd et qu'aucune ne s'ajoute sans qu'on le voie.
  */
-const COMMANDES: Partial<Record<CleDePage, number>> = { accueil: 1, messages: 4, 'per-contact': 1 };
+const COMMANDES: Partial<Record<CleDePage, number>> = { accueil: 1, contacts: 5, messages: 2, sends: 3, catalogs: 3, 'per-contact': 1 };
 
 const OUTILS_TIERS = /custom_id|Universal Channel|Brevo|Salesforce|SFMC|Splio|HubSpot|Klaviyo|Braze|Zapier|smsmode|uchat/i;
 
@@ -61,10 +70,10 @@ test.describe('Developers : la documentation de l’API, page par page', () => {
       await expect(page.locator('h1')).toHaveText(p.titre[0]);
       await expect(page).toHaveURL(new RegExp(`${p.href.replace(/\//g, '\\/')}$`));
       const doc = page.getByTestId('doc-api');
-      for (const titre of SECTIONS[p.cle]) await expect(doc.getByRole('heading', { name: titre, exact: true })).toBeVisible();
+      for (const titre of titresDe(p.cle)) await expect(doc.getByRole('heading', { name: titre, exact: true })).toBeVisible();
       for (const ancre of p.ancres) await expect(page.locator(`[id="${ancre}"]`), `ancre #${ancre}`).toHaveCount(1);
       await expect(page.getByTestId('nav-doc').getByRole('link', { name: p.nav[0], exact: true })).toHaveAttribute('aria-current', 'page');
-      await expect(doc.locator('pre', { hasText: 'curl -X POST' })).toHaveCount(COMMANDES[p.cle] ?? 0);
+      await expect(doc.locator('pre', { hasText: /^curl / })).toHaveCount(COMMANDES[p.cle] ?? 0);
       // ⚠️ Le CONTENU de la page, pas `body` : la barre latérale de la console nomme d'autres écrans (une
       // intégration CRM y a sa page), ce qui ferait échouer ce cas pour une raison étrangère à la doc.
       const texte = await doc.innerText();
@@ -147,14 +156,73 @@ test.describe('Developers : la documentation de l’API, page par page', () => {
     await expect(page.locator('#idempotence')).toBeInViewport();
   });
 
+  test('une ancre mal encodée ne fait pas planter la page', async ({ page }) => {
+    await sansSession(page);
+    await page.goto(`${pageDoc('accueil').href}#%E0%A4%A`);
+    await expect(page.locator('h1')).toHaveText(pageDoc('accueil').titre[0]);
+  });
+
+  test('🔴 l’index de l’accueil liste les douze endpoints, et chaque lien mène à sa route', async ({ page }) => {
+    await sansSession(page);
+    await page.goto(`${pageDoc('accueil').href}#endpoints`);
+    const index = page.getByTestId('index-endpoints');
+    await expect(index.getByRole('link')).toHaveCount(ENDPOINTS.length);
+    for (const e of ENDPOINTS) {
+      await expect(index.getByRole('link', { name: e.chemin, exact: true }).and(page.locator(`[href="${hrefDe(e.lien)}"]`))).toHaveCount(1);
+    }
+    // Un clic de l'index mène à la route, et la montre.
+    const dernier = ENDPOINTS[ENDPOINTS.length - 1]!;
+    await index.locator(`[href="${hrefDe(dernier.lien)}"]`).click();
+    await expect(page).toHaveURL(new RegExp(`${pageDoc(dernier.lien.page).href}#${dernier.lien.ancre}$`));
+    await expect(page.locator(`[id="${dernier.lien.ancre}"]`)).toBeInViewport();
+  });
+
+  test('🔴 chaque route est à l’ancre que l’index annonce, et « Sur cette page » liste celles de sa page', async ({ page }) => {
+    await sansSession(page);
+    for (const cle of [...new Set(ENDPOINTS.map((e) => e.lien.page))]) {
+      await page.goto(pageDoc(cle).href);
+      const ici = ENDPOINTS.filter((e) => e.lien.page === cle);
+      await expect(page.getByTestId('sur-cette-page').getByRole('link')).toHaveCount(ici.length);
+      for (const e of ici) {
+        await expect(page.locator(`[id="${e.lien.ancre}"]`).getByRole('heading', { name: `${e.methode} ${e.chemin}`, exact: true })).toBeVisible();
+      }
+    }
+  });
+
+  test('la navigation mène à l’index des endpoints', async ({ page }) => {
+    await sansSession(page);
+    await page.goto(pageDoc('contacts').href);
+    await page.getByTestId('nav-doc').getByRole('link', { name: 'Endpoints', exact: true }).click();
+    await expect(page).toHaveURL(/\/developers\/api#endpoints$/);
+    await expect(page.locator('#endpoints')).toBeInViewport();
+  });
+
+  /**
+   * 🔴 LES ANCRES QUI ONT DÉMÉNAGÉ (`ANCRES_DEPLACEES`) : celles de l'ancienne page unique sur l'accueil, celles des
+   * envois sur la page Messages. Un favori vers l'une d'elles mène à sa nouvelle adresse, pas en haut de la page.
+   */
+  for (const [depart, table] of Object.entries(ANCRES_DEPLACEES) as Array<[CleDePage, Record<string, LienVers>]>) {
+    for (const [ancre, lien] of Object.entries(table)) {
+      test(`${pageDoc(depart).href}#${ancre} mène à ${hrefDe(lien)}`, async ({ page }) => {
+        await sansSession(page);
+        await page.goto(`${pageDoc(depart).href}#${ancre}`);
+        await expect(page).toHaveURL(new RegExp(`${hrefDe(lien).replace(/\//g, '\\/')}$`));
+        await expect(page.locator('h1')).toHaveText(pageDoc(lien.page).titre[0]);
+      });
+    }
+  }
+
   test.describe('le bouton Copier', () => {
     test.use({ permissions: ['clipboard-read', 'clipboard-write'] });
     test('copie exactement le bloc qu’il accompagne (l’adresse de base)', async ({ page }) => {
       await sansSession(page);
       await page.goto(pageDoc('accueil').href);
       const bloc = page.locator('#adresse').locator('pre');
+      // Le bouton dit QUEL bloc il copie, et la confirmation est annoncée aux lecteurs d'écran.
+      await expect(page.locator('#adresse').getByTestId('copier')).toHaveAttribute('aria-label', 'Copier : Adresse de base');
       await page.locator('#adresse').getByTestId('copier').click();
       await expect(page.locator('#adresse').getByTestId('copier')).toHaveText('Copié');
+      await expect(page.locator('#adresse [aria-live="polite"]')).toHaveText('Copié');
       expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(await bloc.innerText());
       expect(await bloc.innerText()).toMatch(/^https?:\/\/.+\/v1$/);
     });

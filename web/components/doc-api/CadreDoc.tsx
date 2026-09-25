@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { CadrePublic } from '@/components/CadrePublic';
 import { useT } from '@/lib/i18n';
 import { getSession, type Session } from '@/lib/session';
 import { accesAutorise } from '@/lib/nav';
-import { GROUPES_DOC, PAGES_DOC, pageDoc, type CleDePage } from '@/lib/doc-api-pages';
+import { GROUPES_DOC, LIENS_NAV, PAGES_DOC, ancreDeplacee, hrefDe, pageDoc, type CleDePage } from '@/lib/doc-api-pages';
 
 /**
  * LE CADRE DE CHAQUE PAGE DE LA DOCUMENTATION (API et serveur MCP) : la navigation de la doc à gauche, collante
@@ -36,12 +37,20 @@ export function CadreDoc({ page, children }: { page: CleDePage; children: (sessi
 
 function Colonnes({ page, children }: { page: CleDePage; children: React.ReactNode }) {
   const t = useT();
+  const router = useRouter();
   // Le contenu n'existe qu'après la lecture de la session : le navigateur a donc déjà renoncé à suivre
   // l'ancre de l'adresse quand il paraît. On la suit ici, une fois, au montage.
+  // Une ancre qui a quitté cette page (`ANCRES_DEPLACEES`) renvoie vers sa nouvelle adresse.
   useEffect(() => {
-    const ancre = window.location.hash.slice(1);
-    if (ancre) document.getElementById(decodeURIComponent(ancre))?.scrollIntoView();
-  }, []);
+    const brute = window.location.hash.slice(1);
+    if (!brute) return;
+    // Un `%` isolé dans l'adresse ferait lever `decodeURIComponent`, et planter la page au montage.
+    let ancre: string;
+    try { ancre = decodeURIComponent(brute); } catch { return; }
+    const ailleurs = ancreDeplacee(page, ancre);
+    if (ailleurs) { router.replace(ailleurs); return; }
+    document.getElementById(ancre)?.scrollIntoView();
+  }, [page, router]);
 
   return (
     <div className="lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-12">
@@ -76,9 +85,9 @@ function NavDoc({ page }: { page: CleDePage }) {
         <div key={g.cle}>
           <p className="px-3 text-xs font-semibold text-ink-400">{t(g.titre[0], g.titre[1])}</p>
           <ul className="mt-1.5 space-y-0.5">
-            {PAGES_DOC.filter((p) => p.groupe === g.cle).map((p) => {
+            {PAGES_DOC.filter((p) => p.groupe === g.cle).flatMap((p) => {
               const courante = p.cle === page;
-              return (
+              return [
                 <li key={p.cle}>
                   <Link
                     href={p.href}
@@ -89,8 +98,16 @@ function NavDoc({ page }: { page: CleDePage }) {
                   >
                     {t(p.nav[0], p.nav[1])}
                   </Link>
-                </li>
-              );
+                </li>,
+                // Les entrées qui ne sont pas des pages (l'index des endpoints), juste après la page qui les porte.
+                ...LIENS_NAV.filter((l) => l.apres === p.cle).map((l) => (
+                  <li key={`${p.cle}-${l.libelle[1]}`}>
+                    <Link href={hrefDe(l.lien)} className="block rounded-md px-3 py-1.5 text-sm text-ink-600 transition hover:bg-ink-100 hover:text-ink-900">
+                      {t(l.libelle[0], l.libelle[1])}
+                    </Link>
+                  </li>
+                )),
+              ];
             })}
           </ul>
         </div>

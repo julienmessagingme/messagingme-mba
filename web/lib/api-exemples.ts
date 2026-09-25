@@ -1,9 +1,10 @@
 // web/lib/api-exemples.ts
 /**
- * LES EXEMPLES DE LA PAGE « Documentation API », ses codes et ses bornes. Rien d'autre.
+ * LES EXEMPLES DE LA DOCUMENTATION DE L'API (ses pages, `web/lib/doc-api-pages.ts`), ses codes et ses bornes.
+ * Les tableaux de champs vivent à côté, dans `web/lib/api-champs.ts`.
  *
- * 🔴 UN MODULE, PAS DU TEXTE DANS LA PAGE, et c'est tout son intérêt : `tests/api-exemples.test.ts` passe
- * chaque corps aux règles de SA route (schéma zod, clé d'idempotence, règles de cible). La page ne peut donc
+ * 🔴 UN MODULE, PAS DU TEXTE DANS LES PAGES, et c'est tout son intérêt : `tests/api-exemples.test.ts` passe
+ * chaque corps aux règles de SA route (schéma zod, clé d'idempotence, règles de cible). Une page ne peut donc
  * plus montrer un corps que le serveur refuse. La même suite tient les codes égaux à ceux du serveur (nom,
  * statut, motif d'écart), les bornes égales à ce que les routes acceptent, et les réponses typées par ce que
  * les routes rendent.
@@ -297,7 +298,7 @@ export const CODES_DOCUMENTES = [
   { code: 'rcs_unreachable', statut: 422, ecart: false, quoi: ['Ce numéro n’est pas joignable en RCS (appris d’un envoi précédent).', 'This number is not reachable over RCS (learned from a previous send).'] },
   { code: 'rcs_not_enabled', statut: 409, ecart: false, quoi: ['Le canal RCS n’est pas actif sur cet espace.', 'The RCS channel is not active on this workspace.'] },
   { code: 'no_whatsapp_number', statut: 409, ecart: false, quoi: ['Aucun numéro WhatsApp sur cet espace.', 'No WhatsApp number on this workspace.'] },
-  { code: 'number_unlinked', statut: 409, ecart: false, quoi: ['Le numéro WhatsApp de l’espace est délié depuis l’Accueil : rien ne part par WhatsApp tant qu’un administrateur ne l’a pas relié.', 'The workspace’s WhatsApp number is unlinked from the Home page: nothing goes out over WhatsApp until an admin relinks it.'] },
+  { code: 'number_unlinked', statut: 409, ecart: false, quoi: ['Le numéro WhatsApp de l’espace est délié depuis l’Accueil : rien ne part par WhatsApp tant qu’un administrateur ne l’a pas relié. Rendu par POST /v1/messages/whatsapp, et par POST /v1/sends quand le premier message part en WhatsApp.', 'The workspace’s WhatsApp number is unlinked from the Home page: nothing goes out over WhatsApp until an admin relinks it. Returned by POST /v1/messages/whatsapp, and by POST /v1/sends when the first message goes out over WhatsApp.'] },
   { code: 'scenario_not_found', statut: 404, ecart: false, quoi: ['Scénario introuvable.', 'Scenario not found.'] },
   { code: 'node_not_found', statut: 404, ecart: false, quoi: ['Bloc introuvable.', 'Block not found.'] },
   { code: 'template_not_found', statut: 404, ecart: false, quoi: ['Template absent, ou pas encore approuvé.', 'Template missing, or not approved yet.'] },
@@ -308,17 +309,26 @@ export const CODES_DOCUMENTES = [
   { code: 'template_category_unknown', statut: 422, ecart: false, quoi: ['Catégorie du template illisible chez Meta : l’envoi est refusé plutôt que deviné.', 'The template category cannot be read at Meta: the send is refused rather than guessed.'] },
   { code: 'idempotency_key_required', statut: 400, ecart: false, quoi: ['Clé d’idempotence absente (en-tête ou corps).', 'Idempotency key missing (header or body).'] },
   { code: 'idempotency_in_progress', statut: 409, ecart: false, quoi: ['Un envoi avec cette clé est en cours.', 'A send with this key is in progress.'] },
-  { code: 'idempotency_key_reused', statut: 422, ecart: false, quoi: ['Cette clé a déjà servi pour un AUTRE corps.', 'This key was already used for a DIFFERENT body.'] },
+  { code: 'idempotency_key_reused', statut: 422, ecart: false, quoi: ['Cette clé a déjà servi pour un autre corps.', 'This key was already used for a different body.'] },
   { code: 'rate_limited', statut: 429, ecart: false, quoi: ['Débit dépassé : attendez la durée de retry-after.', 'Rate limit exceeded: wait for retry-after.'] },
 ] as const satisfies readonly CodeDocumente[];
 
 export type NomDeCode = (typeof CODES_DOCUMENTES)[number]['code'];
 
 /**
- * Les bornes que la page annonce. Toutes sont tenues par la suite (constantes des routes, durée de vie d'une
- * clé d'idempotence, et ce que leurs schémas acceptent, `debitParMinute` compris) SAUF la dernière :
- * `debitParCle` est le défaut de `API_KEY_RATE_LIMIT_MAX` (`src/config.ts`, qu'un test ne charge pas sans
- * environnement). La relire à la main quand cette valeur change.
+ * Le statut HTTP d'un code, lu dans la table : les pages le citent par là, jamais en chiffre écrit à côté du code
+ * (les deux divergeraient). `null` : le code n'arrive qu'en motif d'écart.
+ */
+export function statutDe(code: NomDeCode): number | null {
+  return CODES_DOCUMENTES.find((c) => c.code === code)!.statut;
+}
+
+/**
+ * Les bornes que la doc annonce. Toutes sont tenues par la suite (constantes des routes, durée de vie d'une clé
+ * d'idempotence, défauts de la configuration, et ce que les schémas acceptent, `debitParMinute` compris).
+ *
+ * ⚠️ `debitParCle` (le défaut de `API_KEY_RATE_LIMIT_MAX`) est parti le 2026-09-25 : il ne décrit plus que le
+ * relais du Meta Business Agent, que la doc ne documente pas, et plus aucune page ne l'affichait.
  */
 export const BORNES = {
   contactsParLot: 500,
@@ -329,12 +339,12 @@ export const BORNES = {
   externalId: 512,
   debitParMinute: 80,
   dureeIdempotenceHeures: 24,
-  debitParCle: 60,
-  /**
-   * Le plafond de l'API PAR ESPACE (2026-09-25), tenus égaux à `PLAFOND_API_DEFAUT` par `tests/api-exemples.test.ts`.
-   * ⚠️ Ils remplacent `debitParCle` dans la page : ce dernier ne décrit plus que le relais du Meta Business Agent,
-   * que la page ne documente pas, et part avec l'ancien texte.
-   */
+  /** Le plafond de l'API PAR ESPACE (2026-09-25), tenus égaux à `PLAFOND_API_DEFAUT` par `tests/api-exemples.test.ts`. */
   plafondEspaceMinute: 60,
   plafondEspaceHeure: 1000,
+  /** Les tableaux de champs (`api-champs.ts`) : la source du consentement, et les variables d'un destinataire. */
+  consentSource: 100,
+  cleIdempotence: 255,
+  variablesParDestinataire: 50,
+  valeurVariable: 1024,
 } as const;

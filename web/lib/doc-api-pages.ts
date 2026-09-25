@@ -19,13 +19,13 @@ import type { Bilingue } from './api-exemples';
  * contrainte que `api-exemples.ts`, dont il ne tire qu'un type, effacé à la compilation).
  */
 
-export type GroupeDoc = 'demarrer' | 'reference-api' | 'concepts' | 'plateforme';
+export type GroupeDoc = 'demarrer' | 'reference-api' | 'guides' | 'plateforme';
 
-/** Les groupes de la navigation, dans leur ordre d'affichage. */
+/** Les groupes de la navigation, dans leur ordre d'affichage. « Référence » ne désigne plus que les ressources. */
 export const GROUPES_DOC: ReadonlyArray<{ readonly cle: GroupeDoc; readonly titre: Bilingue }> = [
   { cle: 'demarrer', titre: ['Démarrer', 'Get started'] },
-  { cle: 'reference-api', titre: ['Référence de l’API', 'API reference'] },
-  { cle: 'concepts', titre: ['Concepts et guides', 'Concepts and guides'] },
+  { cle: 'reference-api', titre: ['Référence API', 'API reference'] },
+  { cle: 'guides', titre: ['Guides', 'Guides'] },
   { cle: 'plateforme', titre: ['Plateforme', 'Platform'] },
 ];
 
@@ -47,7 +47,7 @@ export const PAGES_DOC = [
   {
     cle: 'accueil', href: '/developers/api', fichier: 'web/app/developers/api/page.tsx', groupe: 'demarrer',
     nav: ['Accueil', 'Overview'], titre: ['API Engage Me', 'Engage Me API'],
-    ancres: ['adresse', 'authentification', 'premier-appel'],
+    ancres: ['premier-appel', 'endpoints', 'adresse', 'authentification'],
   },
   {
     cle: 'contacts', href: '/developers/api/contacts', fichier: 'web/app/developers/api/contacts/page.tsx', groupe: 'reference-api',
@@ -56,8 +56,13 @@ export const PAGES_DOC = [
   },
   {
     cle: 'messages', href: '/developers/api/messages', fichier: 'web/app/developers/api/messages/page.tsx', groupe: 'reference-api',
-    nav: ['Messages et envois', 'Messages and sends'], titre: ['Messages et envois', 'Messages and sends'],
-    ancres: ['messages-simples', 'message-whatsapp', 'message-rcs', 'envoi', 'ouverture', 'categorie', 'suivi'],
+    nav: ['Messages', 'Messages'], titre: ['Messages', 'Messages'],
+    ancres: ['messages-simples', 'message-whatsapp', 'message-rcs'],
+  },
+  {
+    cle: 'sends', href: '/developers/api/sends', fichier: 'web/app/developers/api/sends/page.tsx', groupe: 'reference-api',
+    nav: ['Envois', 'Sends'], titre: ['Envois', 'Sends'],
+    ancres: ['envoi', 'cibles', 'destinataires', 'parametres', 'ouverture', 'categorie', 'suivi'],
   },
   {
     cle: 'catalogs', href: '/developers/api/catalogs', fichier: 'web/app/developers/api/catalogs/page.tsx', groupe: 'reference-api',
@@ -65,12 +70,12 @@ export const PAGES_DOC = [
     ancres: ['templates', 'scenarios', 'messages-rcs'],
   },
   {
-    cle: 'concepts', href: '/developers/api/concepts', fichier: 'web/app/developers/api/concepts/page.tsx', groupe: 'concepts',
+    cle: 'concepts', href: '/developers/api/concepts', fichier: 'web/app/developers/api/concepts/page.tsx', groupe: 'guides',
     nav: ['Concepts', 'Concepts'], titre: ['Concepts', 'Concepts'],
     ancres: ['identification', 'consentement', 'fenetre-24h', 'idempotence'],
   },
   {
-    cle: 'per-contact', href: '/developers/api/guides/per-contact', fichier: 'web/app/developers/api/guides/per-contact/page.tsx', groupe: 'concepts',
+    cle: 'per-contact', href: '/developers/api/guides/per-contact', fichier: 'web/app/developers/api/guides/per-contact/page.tsx', groupe: 'guides',
     nav: ['Un appel par contact', 'One call per contact'], titre: ['Brancher un outil qui appelle par contact', 'Connecting a tool that calls per contact'],
     ancres: ['cle'],
   },
@@ -80,12 +85,13 @@ export const PAGES_DOC = [
     ancres: ['signaux'],
   },
   {
+    // L'adresse garde « reference » : publiée le 2026-09-25 (lot 1), elle peut déjà être en favori. Seul le titre change.
     cle: 'reference', href: '/developers/api/reference', fichier: 'web/app/developers/api/reference/page.tsx', groupe: 'plateforme',
-    nav: ['Référence', 'Reference'], titre: ['Référence', 'Reference'],
+    nav: ['Authentification, limites et erreurs', 'Authentication, limits and errors'],
+    titre: ['Authentification, limites et erreurs', 'Authentication, limits and errors'],
     ancres: ['authentification', 'debit', 'erreurs'],
   },
   {
-    // Même mise en page, contenu inchangé : son `h1` est écrit dans la page, et l'e2e le tient égal à ce titre.
     cle: 'mcp', href: '/developers/mcp', fichier: 'web/app/developers/mcp/page.tsx', groupe: 'plateforme',
     nav: ['Serveur MCP', 'MCP server'], titre: ['Serveur MCP', 'MCP server'],
     ancres: [],
@@ -101,14 +107,75 @@ export function pageDoc(cle: CleDePage): PageDoc {
   return PAGES_DOC.find((p) => p.cle === cle)!;
 }
 
+/** Une destination dans la doc : une page, et au besoin une de ses ancres DÉCLARÉES (une autre ne compile pas). */
+export type LienVers = { [P in CleDePage]: { readonly page: P; readonly ancre?: AncreDe<P> } }[CleDePage];
+
+export function hrefDe(lien: LienVers): string {
+  const { href } = pageDoc(lien.page);
+  return lien.ancre ? `${href}#${lien.ancre}` : href;
+}
+
 /**
- * LES FICHIERS DE LA DOCUMENTATION, LISTE FERMÉE : chaque page, et les composants que seules ces pages montent.
- * Les gardes de source lisent CETTE liste, jamais tout `web/` : elles doivent pouvoir exiger qu'une chose y soit
- * trouvée (un exemple affiché, l'adresse dérivée, la section du risque) sans être noyées par le reste de la console.
+ * LES ANCRES QUI ONT DÉMÉNAGÉ, page par page, et leur nouvelle adresse. Un favori ou un lien externe vers une
+ * ancre partie mènerait sinon en haut de la page : `CadreDoc` lit l'ancre au montage et renvoie vers sa nouvelle
+ * adresse. `web/e2e/developers-api.spec.ts` ouvre chacune.
+ * - L'accueil porte celles de l'ancienne page unique (avant le 2026-09-25). `#authentification` n'y figure pas :
+ *   l'accueil la porte encore.
+ * - Messages porte celles des envois, partis sur leur propre page (lot 2 de la refonte).
+ */
+export const ANCRES_DEPLACEES: Partial<Record<CleDePage, Readonly<Record<string, LienVers>>>> = {
+  accueil: {
+    debit: { page: 'reference', ancre: 'debit' },
+    identite: { page: 'concepts', ancre: 'identification' },
+    contacts: { page: 'contacts' },
+    'message-simple': { page: 'messages', ancre: 'messages-simples' },
+    envoi: { page: 'sends', ancre: 'envoi' },
+    catalogues: { page: 'catalogs' },
+    outil: { page: 'per-contact' },
+    erreurs: { page: 'reference', ancre: 'erreurs' },
+    exemples: { page: 'messages' },
+    signaux: { page: 'events', ancre: 'signaux' },
+  },
+  messages: {
+    envoi: { page: 'sends', ancre: 'envoi' },
+    ouverture: { page: 'sends', ancre: 'ouverture' },
+    categorie: { page: 'sends', ancre: 'categorie' },
+    suivi: { page: 'sends', ancre: 'suivi' },
+  },
+};
+
+/** La nouvelle adresse d'une ancre qui a quitté cette page, ou `null`. `hasOwn` : `#constructor` n'est pas une ancre. */
+export function ancreDeplacee(page: CleDePage, ancre: string): string | null {
+  const table = ANCRES_DEPLACEES[page];
+  return table && Object.hasOwn(table, ancre) ? hrefDe(table[ancre]!) : null;
+}
+
+/**
+ * LES ENTRÉES DE LA NAVIGATION QUI NE SONT PAS DES PAGES : l'index des endpoints vit sur l'accueil, et la
+ * navigation y mène directement. Chacune se place juste après la page qu'elle nomme.
+ */
+export const LIENS_NAV: ReadonlyArray<{ readonly apres: CleDePage; readonly libelle: Bilingue; readonly lien: LienVers }> = [
+  { apres: 'accueil', libelle: ['Endpoints', 'Endpoints'], lien: { page: 'accueil', ancre: 'endpoints' } },
+];
+
+/**
+ * LES FICHIERS DE LA DOCUMENTATION, LISTE FERMÉE : chaque page, les composants que seules ces pages montent, et
+ * les modules dont elles affichent le texte. Les gardes de source lisent CETTE liste, jamais tout `web/` : elles
+ * doivent pouvoir exiger qu'une chose y soit trouvée (un exemple affiché, l'adresse dérivée, la section du risque)
+ * sans être noyées par le reste de la console. `tests/api-exemples.test.ts` compare aussi la liste au dossier
+ * `web/components/doc-api/` : un composant posé là sans y être ajouté échapperait aux gardes.
+ *
+ * ⚠️ `web/lib/api-exemples.ts` n'y est pas : il a ses propres gardes, et la règle « chaque exemple est affiché »
+ * doit se lire dans les pages, pas dans le module qui les définit.
  */
 export const FICHIERS_DOC: readonly string[] = [
   ...PAGES_DOC.map((p) => p.fichier),
   'web/components/doc-api/CadreDoc.tsx',
   'web/components/doc-api/elements.tsx',
   'web/components/DocSignaux.tsx',
+  'web/lib/doc-api-pages.ts',
+  'web/lib/api-champs.ts',
+  'web/lib/api-doc-endpoints.ts',
+  'web/lib/signaux-dictionnaire.ts',
+  'web/lib/mcp-outils.ts',
 ];

@@ -33,54 +33,53 @@ function Guide() {
       <EnTetePage page="per-contact">
         <p>
           {t(
-            'Une plateforme d’orchestration, un CRM ou un outil marketing appelle souvent un service une fois par contact, avec un corps rempli par les données du profil. Voici l’appel type, en six étapes ; les étapes 3 à 5 se règlent une fois.',
-            'An orchestration platform, a CRM or a marketing tool often calls a service once per contact, with a body filled from the profile data. Here is the typical call, in six steps; steps 3 to 5 are set up once.',
+            'Pour un outil (orchestration, CRM, marketing) qui appelle une fois par contact, avec un corps rempli par le profil. Six étapes ; les étapes 3 à 5 se règlent une fois.',
+            'For a tool (orchestration, CRM, marketing) that calls once per contact, with a body filled from the profile. Six steps; steps 3 to 5 are set up once.',
           )}
         </p>
       </EnTetePage>
 
       <Etape n={1} titre={t('L’adresse et l’en-tête', 'The URL and the header')}>
-        <p>{t('Adresse :', 'URL:')}</p>
-        <Bloc>{`POST ${ADRESSE_API}/v1/sends`}</Bloc>
-        <p>{t('En-tête, avec le droit sends:create. Il est le même pour tous les contacts :', 'Header, with the sends:create scope. It is the same for every contact:')}</p>
-        <Bloc>{`Authorization: Bearer ${CLE_EXEMPLE}`}</Bloc>
+        <Bloc legende={t('Adresse', 'URL')}>{`POST ${ADRESSE_API}/v1/sends`}</Bloc>
+        <p>{t('En-tête identique pour tous les contacts ; clé avec le droit sends:create :', 'Same header for every contact; key with the sends:create scope:')}</p>
+        <Bloc legende={t('En-tête', 'Header')}>{`Authorization: Bearer ${CLE_EXEMPLE}`}</Bloc>
       </Etape>
 
       <Etape n={2} titre={t('Le corps', 'The body')}>
         <p>
           {t(
-            'Un destinataire par appel, désigné par votre identifiant (externalId) et son numéro. Nous gardons l’identifiant sur la fiche : c’est lui qui la retrouve aux appels suivants.',
-            'One recipient per call, designated by your id (externalId) and their phone number. We keep the id on the record: it is what finds the record on later calls.',
+            'Un destinataire par appel : externalId et numéro. L’externalId reste sur la fiche et la retrouve aux appels suivants.',
+            'One recipient per call: externalId and phone number. The externalId stays on the record and finds it on later calls.',
           )}
         </p>
-        <Bloc legende="JSON">{json(EXEMPLES_CORPS.outilParContact.corps)}</Bloc>
+        <Bloc legende={t('Corps', 'Body')}>{json(EXEMPLES_CORPS.outilParContact.corps)}</Bloc>
       </Etape>
 
       <Etape n={3} id="cle" titre={t('La clé d’idempotence', 'The idempotency key')}>
         <p>
           {t(
-            'La clé d’idempotence va dans le corps (idempotencyKey) : beaucoup d’outils remplissent le corps contact par contact, pas les en-têtes. Composez-la de l’identifiant du contact et de ce qui rend ce passage unique (l’étape, la date d’entrée dans le parcours).',
-            'The idempotency key goes in the body (idempotencyKey): many tools fill the body per contact, not the headers. Build it from the contact id and whatever makes this pass unique (the step, the journey entry date).',
+            'Dans le corps (idempotencyKey), rempli contact par contact. Composition : identifiant du contact, plus ce qui rend ce passage unique (étape, date d’entrée dans le parcours).',
+            'In the body (idempotencyKey), filled per contact. Composition: contact id, plus whatever makes this pass unique (step, journey entry date).',
           )}
         </p>
         <Encadre sorte="attention">
           <p>
             {t(
-              'Faite du seul identifiant du contact, elle ferait prendre le second passage légitime d’un même contact pour un rejeu : il ne partirait pas.',
-              'Built from the contact id alone, it would make a second legitimate pass of the same contact look like a replay: it would not go out.',
+              'Clé faite du seul identifiant du contact : un second passage légitime est pris pour un rejeu, et ne part pas.',
+              'Key built from the contact id alone: a second legitimate pass is taken for a replay, and does not go out.',
             )}
           </p>
         </Encadre>
         <p className="text-sm text-ink-500">
-          {t('Les règles de la clé :', 'The key’s rules:')} <LienDoc page="concepts" ancre="idempotence">{t('Idempotence', 'Idempotency')}</LienDoc>.
+          <LienDoc page="concepts" ancre="idempotence">{t('Idempotence', 'Idempotency')}</LienDoc>
         </p>
       </Etape>
 
       <Etape n={4} titre={t('Le consentement', 'Consent')}>
         <p>
           {t(
-            'Le consentement vit souvent dans votre outil : passez-le à chaque appel (consent, consentSource). Ce qu’il fait sur la fiche et sur l’envoi :',
-            'Consent often lives in your tool: pass it on every call (consent, consentSource). What it does to the record and to the send:',
+            'consent et consentSource à chaque appel, depuis l’outil qui tient le consentement.',
+            'consent and consentSource on every call, from the tool that holds the consent.',
           )}{' '}
           <LienDoc page="concepts" ancre="consentement">{t('Consentement et STOP', 'Consent and STOP')}</LienDoc>.
         </p>
@@ -89,8 +88,8 @@ function Guide() {
       <Etape n={5} titre={t('Les variables', 'Variables')}>
         <p>
           {t(
-            'variables porte ce qui est propre à ce contact (un numéro de commande, un produit). Rien n’en est écrit sur la fiche.',
-            'variables carries what is specific to this contact (an order number, a product). None of it is written on the record.',
+            'variables : les valeurs propres à ce contact (numéro de commande, produit). Rien n’est écrit sur la fiche.',
+            'variables: the values specific to this contact (order number, product). Nothing is written on the record.',
           )}
         </p>
       </Etape>
@@ -98,13 +97,13 @@ function Guide() {
       <Etape n={6} titre={t('Éprouver l’appel', 'Try the call')}>
         <p>
           {t(
-            'Un refus (destinataire écarté, cible introuvable) se lit dans la réponse 201 ou dans le code d’erreur. Si votre outil ne lit pas les réponses, éprouvez l’appel une fois à la main :',
-            'A refusal (skipped recipient, target not found) shows in the 201 response or in the error code. If your tool does not read responses, try the call once by hand:',
+            'Un refus se lit dans la réponse 201 (destinataire écarté) ou dans le code d’erreur (cible introuvable). Outil qui ne lit pas les réponses : un appel à la main d’abord.',
+            'A refusal shows in the 201 response (skipped recipient) or in the error code (target not found). Tool that does not read responses: one call by hand first.',
           )}
         </p>
         <Bloc legende={t('Commande', 'Command')}>{curl('/v1/sends', EXEMPLES_CORPS.outilParContact.corps)}</Bloc>
         <p className="text-sm text-ink-500">
-          <LienDoc page="messages" ancre="envoi">POST /v1/sends</LienDoc>
+          <LienDoc page="sends" ancre="envoi">POST /v1/sends</LienDoc>
           {' · '}
           <LienDoc page="reference" ancre="erreurs">{t('Erreurs', 'Errors')}</LienDoc>
         </p>

@@ -25,8 +25,11 @@ export interface EntreeAttribut {
 /** L'identifiant stable que porte CHAQUE événement, en plus de ses champs. */
 export const CHAMP_ID_DOC = 'em_event_id';
 
-/** Réponses, clics, désabonnements et analyses passent DEVANT les accusés dans la file. */
-const PRIORITAIRE = ['Dans la minute, en priorité', 'Within a minute, with priority'] as const;
+/**
+ * Réponses, clics, désabonnements et analyses passent DEVANT les accusés dans la file : l'intégrateur n'a pas à
+ * savoir comment, seulement que les premiers ne sont pas retardés par une campagne, et les seconds peuvent l'être.
+ */
+const PRIORITAIRE = ['Dans la minute, même pendant une grosse campagne', 'Within a minute, even during a large campaign'] as const;
 const ACCUSE = [
   'Dans la minute ; en retard derrière une grosse campagne',
   'Within a minute; delayed behind a large campaign',
@@ -96,7 +99,7 @@ export const EVENEMENTS_SIGNAUX: readonly EntreeEvenement[] = [
 ];
 
 export const ATTRIBUTS_SIGNAUX: readonly EntreeAttribut[] = [
-  { nom: 'em_contact_id', sens: ['Notre identifiant de fiche (contactId), pour nous renvoyer la fiche sans ambiguïté', 'Our contact id (contactId), to send the contact back to us unambiguously'] },
+  { nom: 'em_contact_id', sens: ['L’identifiant de la fiche (contactId), pour la désigner sans ambiguïté dans un appel à l’API', 'The contact id (contactId), to designate the contact unambiguously in an API call'] },
   { nom: 'em_last_intent', sens: ['L’intention de la dernière conversation analysée (mêmes valeurs que l’écran d’analyse)', 'The intent of the last analysed conversation (same values as the analysis screen)'] },
   { nom: 'em_last_sentiment', sens: ['Le sentiment de la dernière conversation analysée', 'The sentiment of the last analysed conversation'] },
   { nom: 'em_satisfaction', sens: ['La satisfaction, de 0 à 10. Absente d’une analyse, elle n’écrase pas la précédente', 'Satisfaction, from 0 to 10. Missing from an analysis, it does not overwrite the previous one'] },
