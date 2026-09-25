@@ -443,14 +443,36 @@ aujourd'hui ; chacun rend faux, à moitié, ce que le lot affirme.
   Correction : ne rendre `{}` que pour `/webhooks/meta`, ailleurs `done(err)` avec un statut 400, et faire
   rendre aux adresses `/v1/*` `{ error: 'corps JSON illisible', code: 'invalid_body' }` dans `setErrorHandler`.
   Un test de route le fixe : `payload: '{bad'` rend 400 `invalid_body` sans que le service soit appelé.
-- **La puce de `documentation.md` qui suit les trois ajoutées au lot 1** (section « Contacts », celle qui dit
-  que « l'API publique et l'import […] gardent l'exigence inverse ») décrit l'ancien modèle `optIn`. À
-  reformuler à la tâche 8 du lot 4 : l'API publique crée en `unknown`, sauf `consent` explicite, et sait
-  écrire `opted_out` comme `opted_in`.
+  ⚠️ **La page Documentation API décrit ce comportement tel qu'il est** (section « Erreurs », avec le 415 sans
+  `code` d'un corps qui n'est pas du JSON, mesuré le 2026-09-25) : la corriger dans le même commit que le
+  parseur, sinon elle mentira dans l'autre sens.
+- ~~**La puce de `documentation.md` qui suit les trois ajoutées au lot 1**~~ **FAIT le 2026-09-25** (lot 4,
+  tâche 8) : l'API publique y crée en `unknown`, sauf `consent` explicite, et sait écrire `opted_out` comme
+  `opted_in`.
 - **Le cache de joignabilité RCS porte un même numéro sous DEUX formes** (`+33…` écrit par les campagnes,
   chiffres seuls par les scénarios et la réponse RCS de l'Inbox). La lecture de la fiche lit les deux
   (`joignabiliteRcsToutesFormes`, `src/rcs/reachability.ts`). Au lot 3 (§ 5, écriture du cache) : écrire
   une forme unique, sans casser les entrées déjà écrites sous l'autre.
+
+## 🟡 API publique, lot 4 : un refus de Meta sort SANS `code` (décision de spec, réservée à Julien, 2026-09-25)
+
+Relevé par la relecture du lot 4. Le plan affirmait « 5xx sans corps » ; le code dit autre chose, et la page
+Documentation API dit désormais la vérité (section « Erreurs »), figée par `tests/v1-catalogues.test.ts`.
+
+- **Ce qui se passe** : le gestionnaire global (`setErrorHandler`, `src/server.ts`) rend une `MetaApiError` en
+  422 `{ error: "Meta: …" }` SANS `code`, et toute autre exception (panne réseau vers Meta comprise) en 500
+  opaque, qu'un proxy peut remplacer par sa page. Deux routes publiques y passent aujourd'hui :
+  `GET /v1/templates` (la liste du WABA) et `POST /v1/messages/whatsapp` (l'envoi du texte).
+- **La décision** : un code dédié (un pour la panne, un pour le refus, ou un seul), sous un statut qu'aucun
+  proxy ne réécrit, élargirait le § 9 de la spec et `CodeApi` (`src/api/erreurs.ts`),
+  donc la table de la page, que `tests/api-exemples.test.ts` tient égale à `CodeApi`. Rien n'est fait tant que
+  Julien n'a pas tranché ; le jour venu, les deux cas « panne de Meta » de `tests/v1-catalogues.test.ts`
+  tombent, et la page avec eux.
+- **Même lot, à savoir** : le catalogue des templates écarte un bouton de lien à variable qui n'est pas un lien
+  tracé à jeton, en reconnaissant la FORME de nos liens (`estLienTraceAvecJeton`, `src/links/rewrite.ts`),
+  quand l'envoi lit `tracked_links`. Les deux ne divergent que pour une adresse étrangère qui imiterait
+  exactement `/r/<code de 12 caractères>/{{1}}`. La parité stricte demanderait une lecture de `tracked_links`
+  câblée dans `src/index.ts`, hors du périmètre du lot.
 
 ## 🟡 `inbox-envoi-scenario.spec.ts` est INSTABLE, mesuré le 2026-09-19
 

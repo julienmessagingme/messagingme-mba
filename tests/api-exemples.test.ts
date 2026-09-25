@@ -23,6 +23,7 @@ import { CODES_ECART } from '../src/api/sends-build';
 import type { FicheApi, ResultatFiche } from '../src/api/contacts-v1';
 import type { SuiviEnvoiApi } from '../src/api/suivi-envoi';
 import { catalogueTemplates, catalogueScenarios, catalogueMessagesRcs } from '../src/http/v1-catalogues';
+import type { MessageRcsCatalogue, ScenarioCatalogue, TemplateCatalogue } from '../src/http/v1-catalogues';
 
 /**
  * LA PAGE DOCUMENTATION API NE PEUT PLUS DÉCRIRE UN CORPS QUE LE SERVEUR REFUSE (spec § 10).
@@ -248,11 +249,15 @@ const ficheCles: MemesCles<typeof EXEMPLES_REPONSES.contactLu, FicheApi> = true;
 const trouve: Lecture<{ contact: FicheApi | null }> = EXEMPLES_REPONSES.contactTrouve;
 const lot: ReadonlyArray<Lecture<ResultatFiche>> = EXEMPLES_REPONSES.contactsLot.results;
 const ecrit: Lecture<Pick<Extract<ResultatFiche, { status: 'created' | 'updated' }>, 'contactId' | 'status'>> = EXEMPLES_REPONSES.contactEcrit;
+// Les lignes de catalogue montrées ont les TYPES que la route rend (les clés sont comparées plus bas, à l'exécution).
+const tpls: ReadonlyArray<Lecture<TemplateCatalogue>> = EXEMPLES_REPONSES.templates.templates;
+const scns: ReadonlyArray<Lecture<ScenarioCatalogue>> = EXEMPLES_REPONSES.scenarios.scenarios;
+const rcsLus: ReadonlyArray<Lecture<MessageRcsCatalogue>> = EXEMPLES_REPONSES.messagesRcs.rcsMessages;
 
 describe('les réponses montrées ont le type de leurs producteurs', () => {
   it('suivi d’un envoi, rapport 201, fiche lue, recherche, lot, écriture (tenus au typage)', () => {
     expect([suiviCles, suiviLigneCles, creeCles, ficheCles]).toEqual([true, true, true, true]);
-    expect([suivi, cree, fiche, trouve, lot, ecrit].every((v) => v !== null)).toBe(true);
+    expect([suivi, cree, fiche, trouve, lot, ecrit, tpls, scns, rcsLus].every((v) => v !== null)).toBe(true);
   });
 });
 
@@ -275,6 +280,18 @@ describe('les réponses de catalogue montrées ont EXACTEMENT les champs que la 
     for (const s of EXEMPLES_REPONSES.scenarios.scenarios) expect(cles(s)).toEqual(cles(rendu!));
   });
 
+  /**
+   * 🔴 LE CODE DE BLOC MONTRÉ A LA FORME QUE LE CATALOGUE REND. Un code d'exemple d'une autre forme (un ULID en
+   * minuscules, par exemple) serait copié par l'intégrateur comme modèle, et ne désignerait jamais un bloc réel.
+   */
+  it('chaque entryNode montré est un code que le catalogue rendrait', () => {
+    for (const s of EXEMPLES_REPONSES.scenarios.scenarios) {
+      const graph = { nodes: [{ id: 'e', type: 'quick_message' as const, position: { x: 0, y: 0 }, data: { body: 'Coucou', code: s.entryNode } }], edges: [] };
+      const [rendu] = catalogueScenarios([{ code: s.code, name: s.name, publishedAt: null, graph }]);
+      expect(rendu!.entryNode, s.name).toBe(s.entryNode);
+    }
+  });
+
   it('messages RCS', () => {
     const [rendu] = catalogueMessagesRcs([{ name: 'a', content: { kind: 'text', text: 'Bonjour' } }]);
     expect(cles(EXEMPLES_REPONSES.messagesRcs)).toEqual(['rcsMessages']);
@@ -282,9 +299,59 @@ describe('les réponses de catalogue montrées ont EXACTEMENT les champs que la 
   });
 });
 
+/**
+ * 🔴 LES EXEMPLES SE RÉPONDENT, comme les routes : l'intégrateur qui suit la page lit le scénario dans le
+ * catalogue, cherche son template d'ouverture dans le catalogue des templates, et construit `params` d'après ses
+ * variables. Un exemple d'appel qui décrirait un autre nombre de variables que le template annoncé montrerait
+ * un appel que la route refuse en 422, sans qu'aucun validateur de forme ne le voie.
+ */
+describe('les exemples de la page se répondent', () => {
+  const [parTemplate, parSession] = EXEMPLES_REPONSES.scenarios.scenarios;
+
+  it('l’appel de scénario décrit EXACTEMENT les variables du template d’ouverture annoncé, sans source « variable »', () => {
+    expect(EXEMPLES_CORPS.envoiScenario.corps.target.scenario).toBe(parTemplate.code);
+    const modele = EXEMPLES_REPONSES.templates.templates.find(
+      (t) => t.name === parTemplate.openingTemplate?.name && t.language === parTemplate.openingTemplate?.language,
+    );
+    expect(modele, 'le template d’ouverture du scénario montré est absent du catalogue montré').toBeDefined();
+    const params = EXEMPLES_CORPS.envoiScenario.corps.params;
+    expect(params.map((p) => p.position)).toEqual(modele!.variables.map((v) => v.position));
+    const sources: string[] = params.map((p) => p.source.type);
+    expect(sources).not.toContain('variable');
+  });
+
+  it('l’appel de bloc vise le bloc d’entrée du scénario qui ouvre en session', () => {
+    expect(parSession.opening).toBe('whatsapp_session');
+    expect(EXEMPLES_CORPS.envoiBloc.corps.target.node).toBe(parSession.entryNode);
+  });
+});
+
 describe('🔴 le module d’exemples ne nomme aucun outil tiers', () => {
   const module = readFileSync(new URL('../web/lib/api-exemples.ts', import.meta.url), 'utf8');
   it.each(OUTILS_TIERS.map(([nom, motif]) => ({ nom, motif })))('$nom', ({ motif }) => {
     expect(module).not.toMatch(motif);
+  });
+});
+
+describe('la page Documentation API', () => {
+  const page = readFileSync(new URL('../web/app/developers/api/page.tsx', import.meta.url), 'utf8');
+  const code = page.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  it('🔴 elle n’écrit aucun objet JSON à la main : tout corps et toute réponse viennent du module', () => {
+    // Un `{ "clé": …` dans la page est un exemple que la suite ne verrait pas, donc un exemple qui peut mentir.
+    expect(code).not.toMatch(/\{\s*\\?"[A-Za-z_]+\\?"\s*:/);
+  });
+
+  it('🔴 elle affiche CHAQUE exemple du module', () => {
+    for (const cle of Object.keys(EXEMPLES_CORPS)) expect(code, `EXEMPLES_CORPS.${cle} n’est affiché nulle part`).toContain(`EXEMPLES_CORPS.${cle}`);
+    for (const cle of Object.keys(EXEMPLES_REPONSES)) expect(code, `EXEMPLES_REPONSES.${cle} n’est affiché nulle part`).toContain(`EXEMPLES_REPONSES.${cle}`);
+  });
+
+  it('elle dérive toujours son adresse de BASE (la règle de web/lib/api-base.test.ts)', () => {
+    expect(code).toMatch(/const ADRESSE_API = BASE\./);
+  });
+
+  it.each(OUTILS_TIERS.map(([nom, motif]) => ({ nom, motif })))('🔴 elle ne nomme pas $nom', ({ motif }) => {
+    expect(page).not.toMatch(motif);
   });
 });

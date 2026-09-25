@@ -1,5 +1,5 @@
 import type { WorkflowGraph } from './graph';
-import { scanOpening } from './engine';
+import { actionOf, scanOpening } from './engine';
 
 /**
  * CE QU'UN ENVOI PAR L'API FAIT PARTIR EN PREMIER, depuis l'entrée d'un scénario ou depuis un bloc.
@@ -52,4 +52,18 @@ export function ouvertureApi(graph: WorkflowGraph, depuis?: string): VerdictOuve
     return { ouverture: 'whatsapp_template' };
   }
   return { ouverture: null, raison: 'rien ne part : ni template, ni bloc RCS, ni message avant la fin du parcours' };
+}
+
+/**
+ * LE TEMPLATE QUI OUVRE CE GRAPHE, lu comme l'exécuteur le lira (`actionOf`, langue `fr` par défaut).
+ *
+ * 🔴 DEUX CONSOMMATEURS, UNE FONCTION : `POST /v1/sends` y lit le template que `params` paramètre (cible
+ * `scenario`), et `GET /v1/scenarios` l'annonce à l'intégrateur. Écrite deux fois, l'une annoncerait un jour un
+ * template que l'autre ne paramètre pas. Elle n'a de sens que pour une ouverture `whatsapp_template` : sur un
+ * scénario qui ouvre en RCS, le premier template trouvé est un REPLI, pas ce qui part au lancement.
+ */
+export function modeleDOuverture(graph: WorkflowGraph): { templateName: string; language: string } | null {
+  const premier = scanOpening(graph).firstTemplate;
+  const a = premier ? actionOf(premier) : null;
+  return a?.kind === 'sendTemplate' ? { templateName: a.templateName, language: a.language } : null;
 }

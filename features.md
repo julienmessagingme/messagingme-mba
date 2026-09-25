@@ -1652,32 +1652,71 @@ scénario, comment importer des contacts.
 
 ## API publique `/v1` (intégrateurs externes)
 
-- ✅ **Clés d'API** (2026-07-17) : un admin crée des clés depuis la console (nom + périmètres). La clé n'est
-  **montrée qu'une fois** à la création (jamais re-affichée, seul son empreinte est stockée). Révocable.
-  Deux périmètres : « écrire des contacts » et « lancer des envois » (une clé peut n'avoir que l'un des deux).
-  ⚠️ **« Lancer des envois » couvre AUSSI le simple message** depuis le 2026-09-23 (`POST /v1/messages`), pour la
-  raison écrite plus bas : les périmètres d'une clé se fixent à sa création et ne s'éditent pas.
-- ✅ **Créer / mettre à jour des contacts** : `POST /v1/contacts` (un contact) et `/v1/contacts/batch` (jusqu'à
-  500). Champs de base ou perso, adressés par leur clé OU leur code ; un champ perso inconnu est créé
-  automatiquement. Sert à pré-charger des contacts avant une campagne.
-  🔴 **Un contact mal formé est refusé À SA LIGNE, et les autres passent** (2026-09-14) : la réponse nomme
-  le champ fautif (« fields.adresse ») plutôt que de renvoyer une erreur globale. Une ligne vide au milieu
-  d'un lot ne fait plus perdre les 499 autres, et une valeur de champ qui n'est pas du texte (un objet,
-  une liste) est refusée au lieu d'être enregistrée illisible. Un nombre ou un oui/non reste accepté.
-  ⚠️ **Trois bornes larges** encadrent un contact : 64 caractères pour le nom d'un champ, 50 champs par
-  contact, 100 caractères pour l'origine du consentement. Un intégrateur normal ne les rencontre pas.
-- ✅ **Lancer un envoi** : `POST /v1/sends` envoie un **scénario** (par code ou par nom) ou un **template** à un
-  lot de destinataires (jusqu'à 50). L'API crée les contacts absents à la volée puis envoie. Réponse
-  **détaillée** : combien créés / retrouvés, et la liste des numéros écartés **avec la raison** (non opt-in,
-  numéro invalide, hors fenêtre...). Un en-tête `Idempotency-Key` **obligatoire** garantit qu'un même envoi
-  relancé ne part jamais deux fois. `GET /v1/sends/:id` donne le suivi : compteurs globaux (en attente, en cours,
-  envoyés, en échec, écartés) et **une ligne par destinataire** (statut, identifiant de message, erreur, état de
-  livraison : envoyé, délivré, lu, en échec). Les **réponses** ne figurent pas dans ce suivi, elles se lisent dans
-  Analytics.
-  ⚠️ **Changement de réponse (2026-08-11)** sur `GET /v1/sends/:id` : pour un envoi de **scénario**, le nom et la
-  langue du template valent désormais **null** (au lieu d'une chaîne vide) puisqu'un scénario n'a pas de template
-  propre, et un champ **nom du scénario** apparaît. Un client qui affichait la chaîne vide telle quelle voyait
-  jusqu'ici un libellé vide ; c'est ce que cette bascule corrige.
+- ✅ **Clés d'API** (2026-07-17) : un admin crée des clés depuis la console (nom + droits). La clé n'est
+  **montrée qu'une fois** à la création (seule son empreinte est stockée). Révocable. Les droits de l'API
+  publique : « Créer et mettre à jour des contacts » (`contacts:write`), « Lire les contacts »
+  (`contacts:read`, 2026-09-24) et « Déclencher des envois » (`sends:create`, qui couvre aussi les messages
+  simples, le suivi d'un envoi et les catalogues). Une clé peut aussi porter les droits du serveur MCP, décrits
+  dans leur propre section (« Serveur MCP : brancher un assistant sur la console »).
+  ⚠️ Les droits d'une clé se fixent à sa création et ne s'éditent pas : pour un droit de plus, on crée une clé.
+- ✅ **Une personne est une FICHE** (2026-09-24). L'intégrateur la désigne par ce qu'il a : l'identifiant de
+  fiche (`contactId`, affiché sur la fiche du mini-CRM sous « Identifiant API » avec un bouton Copier), SON
+  identifiant (`externalId`, gardé sur la fiche, unique par espace), le numéro ou le BSUID. Plusieurs clés
+  peuvent venir ensemble ; si elles désignent deux fiches différentes, la fiche n'est pas modifiée
+  (`identity_conflict`). Une clé que la fiche ne porte pas encore lui est rattachée. **L'adresse d'envoi vient
+  toujours de la fiche**, jamais de la clé reçue : un seul fil par personne.
+- ✅ **Contacts** : créer ou compléter une fiche (`POST /v1/contacts`, ou par lots), la lire
+  (`GET /v1/contacts/{contactId}`), la retrouver par numéro, BSUID ou identifiant externe
+  (`POST /v1/contacts/search`, le numéro voyage dans le corps et jamais dans l'adresse), la modifier
+  (`PATCH`, qui sait VIDER un champ et RETIRER une étiquette). Le consentement se dit en clair :
+  `consent: "opted_in"` ou `"opted_out"`, et un `opted_out` est un vrai désabonnement (statut, date, trace dans
+  le journal d'audit). 🔴 L'API ne réabonne jamais : un `opted_in` sur une fiche désabonnée est refusé
+  (`opted_out`) et rien n'est écrit. La lecture rend aussi la joignabilité WhatsApp et RCS quand elle est
+  connue.
+  🔴 Un contact mal formé dans un lot est refusé À SA LIGNE, les autres passent, et la réponse nomme le champ
+  fautif.
+- ✅ **Envoyer un message simple** : un texte, à une personne, tout de suite, visible dans l'Inbox. Deux routes,
+  parce que leurs règles n'ont presque rien en commun : `POST /v1/messages/whatsapp` (dans la fenêtre de 24 h)
+  et `POST /v1/messages/rcs` (sans fenêtre, mais seulement vers quelqu'un qui a consenti ou qui vous a déjà
+  écrit). Écrire PREND le fil : le scénario cesse d'avancer seul, l'agent de Meta cesse de répondre.
+  ⚠️ Ces routes ne créent pas de fiche : un message simple ne fonde pas une relation.
+  ⚠️ **La joignabilité RCS ne se sait qu'après coup** : le premier RCS libre vers un numéro sans RCS est
+  accepté, son échec apparaît dans Sécurité > Journal des erreurs, et le suivant est refusé
+  (`rcs_unreachable`). Plus largement, l'échec de livraison d'un message LIBRE (réponse de l'Inbox, RCS libre,
+  message de l'API, message d'un scénario) s'y lit désormais, origine comprise (2026-09-24) : il n'était
+  écrit nulle part.
+- ✅ **Déclencher un envoi** (`POST /v1/sends`) : un LOT de destinataires vers un template WhatsApp, un
+  scénario, un bloc précis d'un scénario, ou un message RCS de la bibliothèque (2026-09-24). Le canal se lit
+  dans la cible, jamais dans un paramètre. Chaque destinataire porte ses propres clés, son consentement (écrit
+  sur la fiche AVANT le tri) et ses propres **variables** (un numéro de commande, un produit), qui ne sont pas
+  écrites sur la fiche.
+  🔴 **Ce qu'un scénario ou un bloc envoie EN PREMIER décide de tout** : un template ou un bloc RCS part vers
+  quelqu'un qui n'a pas écrit, un message de session exige la fenêtre de 24 h, et une cible qui ne peut pas
+  partir (attente avant tout envoi, template sans nom, plusieurs templates possibles) est refusée AVANT
+  l'envoi. C'est la même règle que la console. Un scénario qui ouvre par un template reçoit les paramètres de
+  CE template, exactement autant qu'il a de variables, sinon il est refusé avant l'envoi.
+  🔴 **Aucun destinataire perdu en silence** : chaque écarté l'est avec son motif et sa position dans la liste
+  (bloqué, désabonné, sans consentement, hors fenêtre, variable manquante, sans numéro pour le RCS...).
+  ⚠️ La catégorie d'un template est lue chez Meta, jamais déclarée par l'appelant.
+  ⚠️ **Idempotence** : une clé obligatoire, en en-tête OU dans le corps (pour les outils qui remplissent leur
+  corps contact par contact). La même clé avec un autre corps est refusée au lieu de rejouer en silence.
+  `GET /v1/sends/{sendId}` rend un contrat écrit et stable : statut, compteurs, une ligne par destinataire
+  (canal, statut, identifiant de message, état de livraison, erreur).
+- ✅ **Les catalogues** (2026-09-24) : `GET /v1/templates` (les templates WhatsApp APPROUVÉS qu'un envoi sait
+  faire partir, leur catégorie, leur en-tête et, pour chaque variable, le champ que la console lui associe),
+  `GET /v1/scenarios` (les scénarios PUBLIÉS, leur ouverture calculée par la même règle que les envois, le
+  template qu'ils ouvrent et le code de leur bloc d'entrée) et `GET /v1/rcs-messages` (les messages RCS de la
+  bibliothèque, leur format et leurs variables). Un intégrateur construit ainsi son appel sans ouvrir la
+  console.
+  🔴 **Un template n'y figure que s'il peut vraiment partir** (2026-09-25) : ni un en-tête texte à variable,
+  ni un bouton de lien dont l'adresse porte une variable (hors liens de suivi des clics posés par la console),
+  qu'aucun envoi ne sait remplir et que Meta refuserait à chaque message.
+- ✅ **Des erreurs qu'un programme peut traiter** : un refus de l'API rend `{ error, code }`, une phrase en
+  français et un code stable en anglais, refus de la clé compris (clé absente, droit manquant, espace suspendu,
+  débit), et un même refus porte le même code partout, qu'il arrive en erreur ou en motif d'écart d'un envoi.
+  ⚠️ Trois cas n'ont pas de code, et la documentation les dit : un refus de Meta lui-même (lecture des
+  templates, message simple WhatsApp) sort en 422 avec une phrase « Meta: … », une panne sort en 500, et un
+  corps qui n'est pas du JSON lisible est refusé avant les règles ou lu comme vide.
 - ✅ **Les fonctions HubSpot disparaissent quand aucun portail n'est relié** (2026-09-23) : la source
   « HubSpot » d'une campagne et le déclencheur « un deal HubSpot atteint une étape » d'une automation ne
   s'affichent plus du tout tant que votre espace n'a pas de portail HubSpot lié. Une intégration qu'on n'a
@@ -1688,33 +1727,18 @@ scénario, comment importer des contacts.
   ⚠️ Le déclencheur d'automation était auparavant **grisé**, et seulement après l'avoir sélectionné une fois.
   Il est désormais absent de la liste, comme la source de campagne l'était déjà.
 
-- ✅ **Envoyer un simple message** (2026-09-23) : `POST /v1/messages` envoie **un texte, à une personne**, dans la
-  fenêtre de service de 24 h. C'est le pendant exact de la barre de réponse de l'Inbox : pas de template à faire
-  approuver, pas de scénario, pas d'en-tête d'idempotence. Corps : `{ "to": "+33...", "text": "..." }`. Le message
-  apparaît dans l'Inbox comme n'importe quel envoi, et **prendre la parole PREND le fil** (le scénario cesse
-  d'avancer seul, l'agent de Meta cesse de répondre sur cette conversation).
-  🔴 **Quatre refus explicites plutôt qu'un envoi silencieux** : hors fenêtre de 24 h (422 `window_closed`, le
-  message dit que le seul chemin restant est un template), numéro qui n'a jamais écrit (404 `contact_inconnu`),
-  contact bloqué ou supprimé (409 `contact_indisponible`), et contact désabonné (409 `contact_desabonne`).
-  ⚠️ **La garde de désabonnement vaut pour l'API comme pour tout appel automatisé, jamais pour un opérateur qui
-  répond à la main** : une machine ne parle pas à quelqu'un qui a dit STOP, une personne peut encore répondre à
-  une personne.
-  ⚠️ **Le droit requis est celui des envois** (« Déclencher des envois »), et pas un droit neuf : les droits d'une
-  clé se fixent à sa création et ne s'éditent pas, donc un droit neuf aurait obligé chaque intégrateur à refabriquer
-  sa clé. Une clé qui pouvait déclencher un template peut donc désormais écrire un texte libre, borné par la
-  fenêtre de 24 h et par le désabonnement.
-- ✅ **Cibler un bloc précis d'un scénario** : `POST /v1/sends` accepte aussi le **code d'un bloc** (`nod_...`, visible
-  dans Contenu > Blocs) pour envoyer ce bloc à une liste de contacts. Réservé à la **fenêtre de 24 h** : un contact
-  qui n'a pas écrit récemment est écarté (`out_of_window`), jamais forcé, et un numéro inconnu est écarté
-  (`unknown_contact`) au lieu d'être créé pour rien.
-- L'espace client est **toujours déduit de la clé** (jamais de l'URL) : une clé ne peut voir/toucher que les
+- L'espace client est **toujours déduit de la clé** (jamais de l'URL) : une clé ne peut voir ou toucher que les
   données de son espace. Débit borné par clé.
-- ✅ **Menu « Developers »** (2026-07-20), en bas de la barre latérale de l'onglet **Console**, réservé aux admins. Deux pages :
-  **Documentation API** (adresse de base, authentification, débit, chaque endpoint avec son corps de requête,
-  ses réponses et ses codes d'erreur, plus un exemple curl complet) et **Clés d'API** (créer avec un nom et des
-  périmètres, lister avec date de création et dernier appel, révoquer). La clé en clair s'affiche dans une
-  fenêtre au moment de la création, avec un bouton Copier : c'est le seul instant où elle existe. Une clé
-  révoquée reste dans la liste, marquée comme telle.
+- ✅ **Menu « Developers »** (2026-07-20), en bas de la barre latérale de l'onglet **Console**, réservé aux
+  admins : **Documentation API** et **Clés d'API** (créer avec un nom et des droits, lister avec date de
+  création et dernier appel, révoquer ; la clé en clair ne s'affiche qu'une fois, avec un bouton Copier ; une
+  clé révoquée reste dans la liste, marquée comme telle).
+  🔴 **La Documentation API a été réécrite le 2026-09-25** : les deux familles séparées, la désignation d'une
+  personne, chaque paramètre, les catalogues, la table des codes, des exemples RCS, et une section « Brancher
+  un outil qui appelle par contact » (plateforme d'orchestration, CRM, outil marketing). **Ses exemples ne
+  peuvent plus mentir** : ils vivent dans un module que la page affiche et qu'un test passe aux validateurs
+  des routes.
+  ⚠️ Elle ne nomme aucun outil tiers : elle sert à tous les intégrateurs.
 
 ## Brancher vos systèmes : les connecteurs API (menu « Tools » > Connecteurs API)
 

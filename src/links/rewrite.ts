@@ -38,6 +38,20 @@ export const lienDe = (base: string, code: string): string => `${base.replace(/\
 export const lienTraceAvecJeton = (base: string, code: string): string => `${lienDe(base, code)}/{{1}}`;
 
 /**
+ * Cette adresse de bouton, telle que Meta la rend, est-elle un lien tracé À JETON (la forme que
+ * `lienTraceAvecJeton` produit, sur un code de `newTrackingCode`) ?
+ *
+ * 🔴 C'EST LA SEULE VARIABLE D'ADRESSE QU'UN ENVOI REMPLIT : le suffixe de ce jeton (`suffixesBoutons`). Une
+ * autre URL à variable, posée hors de la console, n'a aucun chemin qui fournisse sa valeur, et Meta refuse le
+ * message. Le catalogue de l'API publique s'en sert pour ne pas l'annoncer.
+ *
+ * ⚠️ L'envoi, lui, lit `tracked_links` (les liens CONFIRMÉS et marqués `avec_jeton`), pas cette forme. Les deux ne
+ * divergent que pour une adresse étrangère qui imiterait exactement `/r/<code de 12 caractères>/{{1}}`.
+ * `tests/v1-catalogues.test.ts` tient la parité avec le producteur, sur des codes tirés par le vrai générateur.
+ */
+export const estLienTraceAvecJeton = (url: string): boolean => /\/r\/[0-9a-hjkmnp-tv-z]{12}\/\{\{1\}\}$/.test(url.trim());
+
+/**
  * L'adresse d'un code avec le jeton D'UN DESTINATAIRE écrit dedans, celle des messages RCS.
  *
  * 🔴 La différence avec `lienTraceAvecJeton` n'est pas cosmétique, c'est toute la différence entre les deux

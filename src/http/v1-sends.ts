@@ -8,8 +8,7 @@ import type { EnvoiApiBrut } from '../campaign/store.pg';
 import { validateParamMapping, type TemplateParam } from '../crm/template';
 import type { ResolveResult } from '../ids/resolve';
 import type { WorkflowGraph } from '../workflow/graph';
-import { ouvertureApi, type OuvertureApi } from '../workflow/ouverture-api';
-import { actionOf, scanOpening } from '../workflow/engine';
+import { modeleDOuverture, ouvertureApi, type OuvertureApi } from '../workflow/ouverture-api';
 import type { IdempotencyClaim } from '../api/idempotency-store.pg';
 import { cleIdempotence, DUREE_CLE_IDEMPOTENCE_MS, empreinteCorps } from '../api/idempotence';
 import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
@@ -229,13 +228,6 @@ async function modeleEnvoyable(
     return { refus: { statut: 422, code: 'unsendable_target', message: `le ${quoi} ${name} attend ${lu.variables} variable(s) dans son corps et params en décrit ${params.length} : Meta refuserait chaque message` } };
   }
   return { categorie: lu.categorie };
-}
-
-/** Le template qui ouvre ce graphe, lu comme l'exécuteur le lira (`actionOf`, langue `fr` par défaut). */
-function modeleDOuverture(graph: WorkflowGraph): { templateName: string; language: string } | null {
-  const premier = scanOpening(graph).firstTemplate;
-  const a = premier ? actionOf(premier) : null;
-  return a?.kind === 'sendTemplate' ? { templateName: a.templateName, language: a.language } : null;
 }
 
 async function numeroDEnvoi(deps: V1SendsRouteDeps, tenantId: string, demande: string | undefined): Promise<{ phoneNumberId: string } | Refus> {

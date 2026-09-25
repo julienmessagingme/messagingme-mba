@@ -40,8 +40,16 @@ const CONTACT_ID = '5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01';
 const CONTACT_ID_2 = '7a3d9c10-2e4b-4f6a-b8c1-0d9e8f7a6b5c';
 const SEND_ID = '0b9d7a42-3c1e-4f5a-8d2b-6e7f8a9b0c1d';
 const CONVERSATION_ID = 'c4e1b2a3-9d8f-4e7a-a6b5-1c2d3e4f5a6b';
-const SCENARIO = 'scn_k3f9qa_01j8z3m4v6x7y8z9a0b1c2d3e4';
-const BLOC = 'nod_k3f9qa_01j8z3n5w7x8y9z0a1b2c3d4e5';
+/**
+ * Les codes publics, sous la forme que le serveur les pose (`<type>_<code client>_<ULID en majuscules>`) : un
+ * code d'exemple d'une autre forme ne serait retrouvé par aucune cible. Deux scénarios : le premier ouvre par un
+ * template (`SCENARIO`, bloc d'entrée `ENTREE_SCENARIO`), le second par un message de session (`SCENARIO_FENETRE`,
+ * qui ne se vise que par son bloc d'entrée, `BLOC`).
+ */
+const SCENARIO = 'scn_k3f9qa_01J8Z3M4V6X7Y8Z9A0B1C2D3E4';
+const ENTREE_SCENARIO = 'nod_k3f9qa_01J8Z3Q7Y9Z0A1B2C3D4E5F6G7';
+const SCENARIO_FENETRE = 'scn_k3f9qa_01J8Z3P6X8Y9Z0A1B2C3D4E5F6';
+const BLOC = 'nod_k3f9qa_01J8Z3N5W7X8Y9Z0A1B2C3D4E5';
 
 export const EXEMPLES_CORPS = {
   contactCreer: {
@@ -95,13 +103,19 @@ export const EXEMPLES_CORPS = {
       ratePerMinute: 20,
     },
   },
+  // Le scénario ouvre par `confirmation_commande` (deux variables, `EXEMPLES_REPONSES.scenarios` et
+  // `.templates`) : `params` en décrit donc exactement deux, et jamais par la source « variable ».
   envoiScenario: {
     route: 'POST /v1/sends',
     corps: {
-      idempotencyKey: 'bienvenue-crm-7781-2026-09-24',
+      idempotencyKey: 'suivi-commande-crm-7781-2026-09-24',
       target: { scenario: SCENARIO },
-      category: 'marketing',
+      category: 'utility',
       recipients: [{ externalId: 'crm-7781' }],
+      params: [
+        { position: 1, source: { type: 'field', key: 'prenom' } },
+        { position: 2, source: { type: 'field', key: 'numero_commande' } },
+      ],
     },
   },
   envoiBloc: {
@@ -220,14 +234,21 @@ export const EXEMPLES_REPONSES = {
   },
   scenarios: {
     scenarios: [
-      { code: SCENARIO, name: 'Bienvenue', opening: 'whatsapp_template', publishedAt: '2026-09-20T08:30:00.000Z' },
-      { code: 'scn_k3f9qa_01j8z3p6x8y9z0a1b2c3d4e5f6', name: 'Relance dans la fenêtre', opening: 'whatsapp_session', publishedAt: null },
+      {
+        code: SCENARIO, name: 'Suivi de commande', opening: 'whatsapp_template',
+        openingTemplate: { name: 'confirmation_commande', language: 'fr' }, entryNode: ENTREE_SCENARIO,
+        publishedAt: '2026-09-20T08:30:00.000Z',
+      },
+      {
+        code: SCENARIO_FENETRE, name: 'Relance dans la fenêtre', opening: 'whatsapp_session',
+        openingTemplate: null, entryNode: BLOC, publishedAt: null,
+      },
     ],
   },
   messagesRcs: {
     rcsMessages: [{ name: 'rappel-rdv', kind: 'card', variables: ['prenom', 'date_rdv'] }],
   },
-  erreur: { error: 'fenêtre de 24 h fermée : ce contact n’a pas écrit récemment', code: 'window_closed' },
+  erreur: { error: 'fenêtre de 24 h fermée : cette personne n’a pas écrit récemment. Utilisez un template (POST /v1/sends).', code: 'window_closed' },
 } as const;
 
 /**

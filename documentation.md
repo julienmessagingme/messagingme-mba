@@ -690,8 +690,9 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   créé la fiche.
 - 🔴 **`opted_out` et `unknown` ne veulent pas dire la même chose.** `optInAllows` exige un opt-in EXPLICITE
   pour une campagne **marketing** : un contact `unknown` est donc écarté **en silence**, seul `utility` passe.
-  La saisie manuelle et l'import CSV créent en opt-in par défaut ; l'API publique et l'import HubSpot gardent
-  l'exigence inverse, leur appelant chargeant une liste dont il ne connaît pas chaque ligne. ⚠️ Conséquence :
+  La saisie manuelle et l'import CSV créent en opt-in par défaut ; l'import HubSpot garde l'exigence inverse,
+  son appelant chargeant une liste dont il ne connaît pas chaque ligne. L'API publique crée en `unknown`, sauf
+  `consent` explicite, et sait écrire `opted_out` comme `opted_in` (jamais lever un STOP, cf. plus haut). ⚠️ Conséquence :
   les contacts venus de HubSpot arrivent `unknown`, donc hors marketing tant qu'on ne les bascule pas.
 - 🔴 **Un seul geste de destruction.** `POST /contacts/purge` exige `confirm: 'SUPPRIMER'`. Il EFFACE ce qui
   identifie (conversation, messages, analyse, parcours, déclenchements, cache RCS) et ANONYMISE ce qui porte
@@ -1471,6 +1472,20 @@ aucun renvoi :
    relues à l'envoi d'un message RCS (elles priment sur le champ de fiche du même nom) et au renvoi F7, remises
    à `null` par la purge RGPD. Un scénario ou un bloc les refuse (400) : il n'a nulle part où les ranger.
 
+Ajouté par le lot 4 de l'API publique :
+
+35. **Un catalogue de `/v1` n'annonce un template que s'il peut partir, jugé par les fonctions de l'envoi**
+   (`src/http/v1-catalogues.ts`) : `verdictModele`, `carouselSendBlocker`, `headerMediaSendBlocker`, et
+   `modeleDOuverture` (partagée avec `/v1/sends`) pour le template d'ouverture d'un scénario. Deux règles n'ont
+   pas de fonction à l'envoi parce que l'envoi ne les vérifie pas, il ne fournit simplement rien : un en-tête
+   TEXTE à variable (aucun paramètre d'en-tête texte n'est produit) et une adresse de bouton à variable qui
+   n'est pas un lien tracé à jeton (`estLienTraceAvecJeton`, `src/links/rewrite.ts`, qui suit la forme de
+   `lienTraceAvecJeton` ; l'envoi, lui, lit `tracked_links`). Le jour où l'envoi remplit l'un de ces
+   paramètres, le catalogue doit cesser de l'écarter. Un scénario publié est listé même s'il ne peut pas partir :
+   `opening` le dit, et `entryNode` donne le bloc à viser pour une ouverture de session. Le nombre de variables
+   du template d'ouverture n'est PAS relu pour `/v1/scenarios` (il coûterait la liste complète du WABA par
+   appel) : il se lit dans `/v1/templates`.
+
 ### Sur les contrats externes
 
 12. **Toujours `safeParse`, jamais `parse`**, sur tout webhook entrant et toute sortie JSON d'un LLM. Jamais
@@ -1609,6 +1624,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `web/lib/libelles-mba.ts` -> `LIBELLES` | le seul lien entre une clé de tâche de complétion (serveur) et un onglet de l'écran, plus le libellé de repli quand le serveur ne joint pas de raison |
 | `web/lib/logos-llm.ts` | le logo d'un modèle, dérivé du PRÉFIXE de son identifiant, et la pastille de repli. 🔴 L'`alt` est VIDE délibérément : il entrerait dans le nom accessible du bouton qui porte l'image, que deux suites ciblent par ce nom |
 | `web/lib/campaign-eligibility.ts` | 🔴 le MIROIR de l'analyse d'ouverture serveur, tenu par un test de parité |
+| `web/lib/api-exemples.ts` | les exemples (corps et réponses), les codes d'erreur et les bornes de la page Documentation API. 🔴 La page n'écrit aucun JSON à la main : `tests/api-exemples.test.ts` passe chaque corps aux règles de sa route (schéma zod, règles de cible), type chaque réponse par ce que sa route rend, tient la table des codes égale à `CodeApi` (au typecheck), vérifie que les exemples se répondent (l'appel de scénario décrit les variables du template d'ouverture montré) et refuse tout nom d'outil tiers. ⚠️ Aucun import : il est lu par la console ET par la suite racine |
 | `web/lib/chemin-json.ts` | le miroir de `src/webhook-entrant/chemin.ts` : mêmes chemins d'or dans les deux jeux de tests |
 | `web/lib/contact-filters.ts` | les filtres du mini-CRM, miroir du parse serveur |
 | `web/lib/rcs.ts` | déduire le format d'un message RCS de sa saisie, miroir de `rcsOutboundOf` |
