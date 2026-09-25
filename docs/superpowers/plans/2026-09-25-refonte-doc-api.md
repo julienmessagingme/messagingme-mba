@@ -3,7 +3,7 @@
 Demande de Julien du 2026-09-25 : la page `/developers/api` contient les bonnes informations mais se lit comme
 un texte d'IA (une page de 5 000 mots, contrats en prose, majuscules d'emphase, règles répétées, détails
 internes). Arbitré le même jour : **sept pages** plus un guide, et la refonte démarre tout de suite, avant l'essai
-réel de l'API (`docs/PLAN-ESSAI-API-2026-09-25.md`), dont les écarts se corrigeront ensuite dans la nouvelle doc.
+réel de l'API (plan privé, `docs/prive/`, non versionné), dont les écarts se corrigeront ensuite dans la nouvelle doc.
 
 ## Méthode de livraison
 
