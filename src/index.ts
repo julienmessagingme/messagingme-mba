@@ -1507,6 +1507,8 @@ async function main(): Promise<void> {
       rcsEnabledFor: (tenant) => workflowRuntime.rcsStack.agents.hasAgent(tenant),
       setMbaEnabled: (tenant, enabled) => settingsStore.setMbaEnabled(tenant, enabled),
       setHubspotListsEnabled: (tenant, enabled) => settingsStore.setHubspotListsEnabled(tenant, enabled),
+      // L'interrupteur HubSpot de l'espace (migration 0179). La route refuse de l'eteindre avec un portail relie.
+      setHubspotActif: (tenant, actif) => settingsStore.setHubspotActif(tenant, actif),
       /**
        * UN PORTAIL HUBSPOT EST-IL LIE A CET ESPACE ? (lot 9, 2026-09-23)
        *

@@ -830,6 +830,36 @@ describe('POST /tenants/:tenantId/campaigns : au fil de l eau', () => {
     await app.close();
   });
 
+  it('🔴 un niveau de risque INCONNU dans la cible -> 400 : la campagne ne part pas à tout l’espace', async () => {
+    // Le filtre par risque est le seul qui se REFUSE au lieu de s'ignorer : ignoré, une campagne « risque
+    // élevé » mal écrite viserait tout ce que les autres filtres décrivent, c'est-à-dire souvent tout le monde.
+    const repo = new FakeRepo(contacts);
+    const ciblesVues: unknown[] = [];
+    const app = appWith(repo, { ciblesVues });
+    const res = await app.inject({
+      method: 'POST', url: '/tenants/t1/campaigns', ...auth(),
+      payload: { ...validBody, contactTarget: { filters: { risque: 'high' } } },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ error: string }>().error).toMatch(/risque/);
+    expect(ciblesVues).toEqual([]);
+    expect(repo.created).toEqual([]);
+    await app.close();
+  });
+
+  it('une cible par niveau de risque connu part résolue en base, le niveau compris', async () => {
+    const repo = new FakeRepo(contacts);
+    const ciblesVues: unknown[] = [];
+    const app = appWith(repo, { ciblesVues, ciblesResolues: ['c1'] });
+    const res = await app.inject({
+      method: 'POST', url: '/tenants/t1/campaigns', ...auth(),
+      payload: { ...validBody, contactTarget: { filters: { risque: 'eleve' } } },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(ciblesVues).toEqual([expect.objectContaining({ target: { filters: { risque: 'eleve' }, excludeIds: [] } })]);
+    await app.close();
+  });
+
   it('une cible ILLISIBLE est refusée, elle ne retombe pas sur « tous les contacts »', async () => {
     const repo = new FakeRepo(contacts);
     const app = appWith(repo, {});

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { buildContactWhere, buildBulkSelector } from '../src/crm/contact-store.pg';
 import { PEREMPTION_WHATSAPP_MS } from '../src/contacts/joignabilite';
 
@@ -147,5 +148,40 @@ describe('buildContactWhere — joignabilité WhatsApp', () => {
 
   it('absent -> aucune clause : le filtre ne s\'invite pas dans les requêtes qui ne le demandent pas', () => {
     expect(buildContactWhere('t1', {}).where).not.toContain('whatsapp_joignable');
+  });
+});
+
+/**
+ * LE FILTRE PAR NIVEAU DE RISQUE (lot 7 de l'API publique, spec § 19).
+ *
+ * 🔴 UN INDEX PARTIEL EST UN CONTRAT AVEC UNE REQUÊTE PRÉCISE. `contacts_tenant_risque_idx` (0178) porte
+ * `(tenant_id, risque_niveau) where deleted_at is null` : le WHERE doit porter l'espace, le prédicat EXACT et une
+ * égalité nue sur la seconde colonne. En sortir ne produit aucune erreur, seulement un balayage de la table des
+ * contacts à chaque ouverture de la liste filtrée. Le second cas RELIT la migration plutôt que de recopier ses
+ * colonnes : recopier déplacerait la dérive d'un fichier à l'autre.
+ */
+describe('buildContactWhere : risque de désengagement', () => {
+  it('🔴 une égalité nue sur risque_niveau, PARAMÉTRÉE, derrière l’espace et deleted_at is null', () => {
+    const { where, params } = buildContactWhere('t1', { risque: 'eleve' });
+    expect(where).toBe('tenant_id = $1 and deleted_at is null and risque_niveau = $2');
+    expect(params).toEqual(['t1', 'eleve']);
+  });
+
+  it('🔴 le WHERE tient le contrat de l’index de 0178 : ses deux colonnes et son prédicat', () => {
+    const sql = readFileSync(new URL('../db/migrations/0178_risque_desengagement.sql', import.meta.url), 'utf8');
+    const m = /create index concurrently if not exists contacts_tenant_risque_idx\s+on contacts \(([^)]*)\)\s+where ([^;]+);/.exec(sql);
+    expect(m, 'l’index du filtre n’a pas été trouvé dans 0178 : ce test ne garde plus rien').not.toBeNull();
+    const [col1, col2] = m![1]!.split(',').map((c) => c.trim());
+    const predicat = m![2]!.trim();
+    expect([col1, col2, predicat]).toEqual(['tenant_id', 'risque_niveau', 'deleted_at is null']);
+
+    const clauses = buildContactWhere('t1', { risque: 'moyen', tags: ['vip'] }).where.split(' and ');
+    expect(clauses).toContain(`${col1} = $1`);
+    expect(clauses).toContain(predicat);
+    expect(clauses.some((c) => new RegExp(`^${col2} = \\$\\d+$`).test(c)), clauses.join(' | ')).toBe(true);
+  });
+
+  it('absent -> aucune clause : une liste sans ce filtre ne lit pas la colonne', () => {
+    expect(buildContactWhere('t1', {}).where).not.toContain('risque');
   });
 });

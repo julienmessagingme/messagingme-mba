@@ -35,7 +35,7 @@ function app(o: { cable?: boolean } = {}) {
     hubspotPortalConnecte: sansPortailHubspot,
     getSettings: async () => ({
       mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
-      controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: courant,
+      controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: courant, hubspotActif: false,
       optoutRequestId: null, mentionIaFrequence: null, timezone: 'Europe/Paris', businessHours: {}, prix: GRILLE_DEFAUT,
     }),
     setMbaEnabled: async () => {},

@@ -29,6 +29,7 @@ export interface ImportRouteDeps extends ImportDeps {
 
 /** Parse les critères de « Liste de contacts » depuis les query params (tous optionnels, valeurs = strings).
  *  `tags`/`tagsExclude`=CSV, `fields`=JSON `[{key,op,value}]` (défensif : ignoré si illisible). Bornes anti-abus.
+ *  ⚠️ Seule exception à « ignoré » : un `risque` hors des quatre niveaux est REFUSÉ (400, `FiltreContactInvalide`).
  *  Exporté pour le test de round-trip anti-drift (filtersToQuery côté web <-> parseFilters ici). */
 export function parseFilters(q: Record<string, unknown>): ContactFilters {
   const csv = (v: unknown): string[] =>
@@ -50,6 +51,8 @@ export function parseFilters(q: Record<string, unknown>): ContactFilters {
     phoneContains: q.phoneContains,
     nameSearch: q.nameSearch,
     joignabilite: q.joignabilite,
+    // Une valeur hors des quatre niveaux LÈVE `FiltreContactInvalide` (400), jamais ignorée : cf. `risqueFiltre`.
+    risque: q.risque,
     fieldFilters,
   });
 }
@@ -58,7 +61,7 @@ export function parseFilters(q: Record<string, unknown>): ContactFilters {
 function hasFilters(f: ContactFilters): boolean {
   // 🔴 TOUT NOUVEAU CRITÈRE ENTRE ICI AUSSI. Cette porte décide du chemin requêtable : un critère oublié
   // n'echoue pas, il retombe sur la liste par défaut, donc il s'affiche coché et ne filtre RIEN.
-  return Boolean(f.tags?.length || f.tagsExclude?.length || f.optIn || f.phonePrefix || f.phoneContains || f.nameSearch || f.joignabiliteWhatsApp || f.fieldFilters?.length);
+  return Boolean(f.tags?.length || f.tagsExclude?.length || f.optIn || f.phonePrefix || f.phoneContains || f.nameSearch || f.joignabiliteWhatsApp || f.risque || f.fieldFilters?.length);
 }
 
 /** Construit un mapping par défaut depuis la reconnaissance de colonnes. */

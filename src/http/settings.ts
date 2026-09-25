@@ -88,6 +88,11 @@ export interface SettingsRouteDeps {
    */
   setAgentsPeuventPrendre?(tenantId: string, actif: boolean): Promise<void>;
   /**
+   * Allume ou éteint l'interrupteur HubSpot de l'espace (migration 0179). Absente -> la route rend 503, comme
+   * ses voisines : un écran qui dirait « enregistré » sans rien écrire est pire qu'un écran indisponible.
+   */
+  setHubspotActif?(tenantId: string, actif: boolean): Promise<void>;
+  /**
    * Les agents de l'espace et la PHRASE que chacun dit.
    *
    * 🔴 LA PHRASE, PAS SEULEMENT LE NOM, et c'est ce qui fait de cet écran autre chose qu'un interrupteur.
@@ -187,6 +192,36 @@ export function registerSettings(
     if (typeof enabled !== 'boolean') return reply.code(400).send({ error: 'enabled (booléen) requis' });
     await deps.setHubspotListsEnabled(tenant, enabled);
     return reply.code(200).send({ hubspotListsEnabled: enabled });
+  });
+
+  /**
+   * L'INTERRUPTEUR HUBSPOT DE L'ESPACE (migration 0179, Paramètres > Intégrations), admin seulement. Sa
+   * lecture voyage avec `GET /settings` (`hubspotActif`), comme ses voisins.
+   *
+   * 🔴 ÉTEINDRE EST REFUSÉ (409) TANT QU'UN PORTAIL EST RELIÉ. Les analyses continuent de partir vers un
+   * portail relié : un interrupteur éteint par-dessus mentirait. Le client délie d'abord (« Déconnexion
+   * complète » de l'Accueil), puis éteint. 409 et non 5xx : le message est destiné à l'administrateur, et
+   * Cloudflare remplace le corps des 5xx.
+   *
+   * ⚠️ LE LIEN SE LIT PAR `hubspotPortalConnecte`, la même lecture que le masquage du lot 9, dont le câblage
+   * rend `false` quand le schéma du connecteur n'existe pas (instance sans connecteur, où aucun portail ne
+   * peut être relié). Allumer n'est jamais refusé.
+   */
+  app.patch('/tenants/:tenantId/settings/hubspot-actif', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    if (!deps.setHubspotActif) return reply.code(503).send({ error: 'réglage indisponible' });
+    const actif = (req.body as { actif?: unknown } | null)?.actif;
+    // Un booléen, rien d'autre : une valeur bancale ne doit pas se lire « allumé » ni « éteint » par accident.
+    if (typeof actif !== 'boolean') return reply.code(400).send({ error: 'actif (booléen) requis' });
+    if (!actif && await deps.hubspotPortalConnecte(tenant)) {
+      return reply.code(409).send({
+        error: 'Un portail HubSpot est relié à cet espace : faites d’abord la « Déconnexion complète » depuis l’Accueil, puis éteignez HubSpot.',
+      });
+    }
+    await deps.setHubspotActif(tenant, actif);
+    return reply.code(200).send({ hubspotActif: actif });
   });
 
   /**

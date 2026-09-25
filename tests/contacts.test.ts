@@ -20,7 +20,7 @@ const h = (t: string) => ({ headers: { 'content-type': 'application/json', autho
 const CONTACT: ContactRow = {
   id: 'c1', phoneE164: '+33611', bsuid: null, externalId: null, profileName: 'Marc', optInStatus: 'opted_in',
   fields: { prenom: 'Marc' }, tags: ['vip'], createdAt: '2026-07-10T00:00:00.000Z', blockedAt: null,
-  whatsappJoignable: null, whatsappJoignableLe: null,
+  whatsappJoignable: null, whatsappJoignableLe: null, risque: null,
 };
 const FIELDS: UserFieldDef[] = [
   { key: 'prenom', label: 'Prénom', type: 'text' },
@@ -225,6 +225,23 @@ describe('POST /tenants/:t/contacts/bulk — action en masse', () => {
     expect(res.statusCode).toBe(200);
     expect(cap.bulk[0]!.target).toEqual({ filters: { tags: ['vip'] }, excludeIds: ['x'] });
     expect(cap.bulk[0]!.edits).toEqual({ removeTags: ['vip'] });
+    await server.close();
+  });
+
+  it('🔴 filtre de risque INCONNU dans la cible -> 400, et RIEN n’est touché (ignoré, il viserait tout l’espace)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts/bulk', ...h(adminTok), payload: { target: { filters: { risque: 'élevé' } }, action: { type: 'add_tag', tags: ['relance'] } } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ error: string }>().error).toMatch(/risque/);
+    expect(cap.bulk).toEqual([]);
+    await server.close();
+  });
+
+  it('filtre de risque connu dans la cible -> il part tel quel au store', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts/bulk', ...h(adminTok), payload: { target: { filters: { risque: 'eleve' } }, action: { type: 'add_tag', tags: ['relance'] } } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.bulk[0]!.target).toEqual({ filters: { risque: 'eleve' }, excludeIds: [] });
     await server.close();
   });
 

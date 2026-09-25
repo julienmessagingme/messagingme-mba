@@ -39,7 +39,7 @@ function app(depart: FrequenceMentionIa | null = null) {
     hubspotPortalConnecte: sansPortailHubspot,
     getSettings: async () => ({
       mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
-      controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, optoutRequestId: null, mentionIaFrequence: courant,
+      controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, hubspotActif: false, optoutRequestId: null, mentionIaFrequence: courant,
       timezone: 'Europe/Paris', businessHours: {}, prix: GRILLE_DEFAUT,
     }),
     setMbaEnabled: async () => {},

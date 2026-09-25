@@ -224,6 +224,22 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   possible. La raison inverse existait et était écrite (« un grand compte ne se facture pas comme un
   petit ») ; elle a été pesée contre celle-ci et elle a perdu. Le jour où un grand compte demandera son
   prix, ce sera une surcharge par espace à rouvrir.
+- 🚧 **Le risque de désengagement de chaque contact** (lot 7, 2026-09-25 ; livré avec la migration 0178, puis
+  l'API, puis la console). Chaque nuit, la console estime pour chaque fiche le risque que la personne se
+  désengage, à partir de ses 90 derniers jours : réponses et clics, lecture des messages, dernière conversation
+  analysée (réclamation non résolue, ressenti négatif, satisfaction basse), joignabilité, désabonnement et
+  blocage. Ce sont des **règles écrites, pas un modèle appris**, et la fiche dit POURQUOI.
+  - **Sur la fiche** : le niveau (**faible**, **moyen**, **élevé**, ou **inconnu**), le score sur 100, les
+    trois raisons principales en clair (« Ni réponse ni clic aux trois derniers messages »…) et la date du
+    calcul. **Inconnu** veut dire qu'aucun message ne lui a été délivré sur 90 jours : on ne dit pas qu'un
+    contact est fidèle ou perdu sans l'avoir observé, et il n'a pas de score. Une fiche que le calcul n'a
+    jamais vue affiche « pas encore calculé ». Un désabonné ou un contact bloqué est « élevé » à 100 d'office.
+  - **Dans les filtres de la liste des contacts**, donc aussi pour **cibler une campagne** : « Risque de
+    désengagement » élevé, moyen, faible ou inconnu. Une fiche jamais calculée n'est dans aucun niveau.
+  - ⚠️ **Limite assumée** : la livraison et la lecture ne se mesurent que sur les envois de **campagne**, seuls
+    à porter un statut par destinataire ; un message libre ou un bloc de scénario ne compte que par la réponse
+    qu'il reçoit. Et un contact qui répond sans jamais renvoyer d'accusé de lecture n'est pas pénalisé pour
+    « non lu » : il a coupé ses accusés, la lecture ne dit rien de lui.
 - ✅ **Le résumé de la conversation, en champ de base de la fiche** (2026-09-17) : dès qu'un contact a tenu au
   moins une conversation, sa fiche porte le **résumé de la dernière conversation analysée**, avec la date de
   l'analyse et un lien vers le fil. C'est le geste de quelqu'un qui ouvre une fiche avant de rappeler la
@@ -717,6 +733,13 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   moment-là, le scénario doit commencer par un envoi de template. L'étape est retenue par son IDENTIFIANT,
   jamais par son libellé : la renommer dans HubSpot ne casse rien. Si aucun portail n'est relié à l'espace,
   l'écran le dit et invite à connecter HubSpot dans Paramètres.
+- 🚧 **Un déclencheur « le risque de désengagement d'un contact devient élevé »** (lot 7, 2026-09-25), sans
+  réglage : le scénario part quand le calcul de nuit fait PASSER un contact en risque élevé, une fois par
+  passage (un contact qui y reste ne relance rien la nuit suivante). 🔴 C'est le seul déclencheur qui vient
+  d'un calcul portant sur toute la base, donc il est borné : **200 contacts au plus par nuit et par espace**
+  (au-delà, le niveau est bien enregistré sur la fiche, mais le scénario ne part pas pour eux), en plus du
+  plafond horaire de chaque automation. Un contact désabonné ou bloqué ne déclenche rien. Le contact n'a pas
+  écrit : le scénario doit commencer par un envoi de template. L'écran le dit avant la création.
 - ✅ **Ce qui ne déclenche RIEN** (annoncé à l'écran, pas seulement en coulisse) : un tag posé **en masse**, par
   **import de fichier** ou par un scénario lancé en **campagne** (poser un tag sur 5 000 contacts enverrait
   sinon 5 000 messages : pour toucher une liste, l'outil reste la campagne) ; une conversation quand
@@ -1534,6 +1557,17 @@ scénario, comment importer des contacts.
   (délie le compte HubSpot et révoque son accès ; un avertissement prévient que cela coupe **tous** les numéros de
   l'espace, le compte HubSpot étant lié à l'espace et non à un numéro). Si aucun portail -> un bouton
   **« Connecter HubSpot »** qui lance l'installation OAuth et relie ce numéro.
+- ✅ **Interrupteur HubSpot de l'espace** (2026-09-25, **Paramètres > Intégrations**, admin) : c'est lui, et non
+  plus la présence d'un numéro WhatsApp, qui fait apparaître le bloc HubSpot de l'Accueil. Un **espace neuf, sans
+  numéro**, peut donc connecter HubSpot : il allume l'interrupteur, et le bouton « Connecter HubSpot » apparaît
+  dans la carte des Intégrations comme sur l'Accueil, avec le lien vers le guide. La carte dit aussi si un portail
+  est relié, et lequel. **Éteint** par défaut sur un espace neuf ; les espaces déjà reliés à un portail l'ont
+  trouvé allumé. Éteint, l'Accueil n'affiche plus qu'une ligne discrète qui renvoie vers Paramètres >
+  Intégrations. ⚠️ **On ne l'éteint pas tant qu'un portail est relié** : l'interrupteur est grisé, avec la raison,
+  et il faut d'abord la « Déconnexion complète » de l'Accueil (sinon les analyses continueraient de partir vers
+  HubSpot depuis un espace où il paraît éteint). Sans numéro, cette déconnexion est un bouton du bloc HubSpot,
+  sans l'option « pause », qui se règle par numéro. Les fonctions HubSpot des campagnes et des automations
+  suivent toujours le portail relié, pas cet interrupteur.
 - ✅ **Toggle « Campagnes via données HubSpot »**, juste sous le bloc HubSpot : autorise l'import d'une liste HubSpot
   comme destinataires de campagne. Tant que l'accès aux listes n'a pas été accordé, un bouton **« Autoriser l'accès
   aux listes HubSpot »** demande ce droit au portail déjà connecté, sans re-solliciter le reste.
@@ -1674,7 +1708,8 @@ scénario, comment importer des contacts.
   `consent: "opted_in"` ou `"opted_out"`, et un `opted_out` est un vrai désabonnement (statut, date, trace dans
   le journal d'audit). 🔴 L'API ne réabonne jamais : un `opted_in` sur une fiche désabonnée est refusé
   (`opted_out`) et rien n'est écrit. La lecture rend aussi la joignabilité WhatsApp et RCS quand elle est
-  connue.
+  connue, et 🚧 le **risque de désengagement** (`engagementRisk` : niveau, score, codes des raisons, date du
+  calcul ; `null` tant qu'il n'a jamais été calculé), décrit dans la Documentation API.
   🔴 Un contact mal formé dans un lot est refusé À SA LIGNE, les autres passent, et la réponse nomme le champ
   fautif.
 - ✅ **Envoyer un message simple** : un texte, à une personne, tout de suite, visible dans l'Inbox. Deux routes,
@@ -1772,6 +1807,10 @@ scénario, comment importer des contacts.
   plus récent.
   ⚠️ « Conversation analysée » arrive environ une demi-heure après le dernier message : assez pour une
   relance, pas pour une alerte.
+  🚧 **Le risque de désengagement remonte aussi** (lot 7, 2026-09-25) : trois attributs de fiche (le niveau,
+  le score, les raisons en codes) et un événement `em_risk_changed` (ancien et nouveau niveau, score, raisons),
+  émis la nuit, et SEULEMENT quand le niveau change (le premier calcul d'une fiche compris). Sans outil
+  branché, rien ne part.
 
 ## Brancher vos systèmes : les connecteurs API (menu « Tools » > Connecteurs API)
 

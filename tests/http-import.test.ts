@@ -63,10 +63,10 @@ function inject(contacts: ContactStore, userFields: UserFieldStore, cap?: QueryC
       contacts,
       userFields,
       listContacts: async () => [
-        { id: 'c1', phoneE164: '+33611111111', bsuid: null, externalId: null, profileName: 'Julie', optInStatus: 'opted_in', fields: { ville: 'Lyon' }, tags: ['salon-2026'], createdAt: '2026-07-05T00:00:00.000Z', blockedAt: null, whatsappJoignable: null, whatsappJoignableLe: null },
+        { id: 'c1', phoneE164: '+33611111111', bsuid: null, externalId: null, profileName: 'Julie', optInStatus: 'opted_in', fields: { ville: 'Lyon' }, tags: ['salon-2026'], createdAt: '2026-07-05T00:00:00.000Z', blockedAt: null, whatsappJoignable: null, whatsappJoignableLe: null, risque: null },
       ],
       queryContacts: async (_t, filters) => { cap?.queryFilters.push(filters); return [
-        { id: 'c2', phoneE164: '+33612345678', bsuid: null, externalId: null, profileName: 'Marc', optInStatus: 'opted_in', fields: { ville: 'Paris' }, tags: ['vip'], createdAt: '2026-07-06T00:00:00.000Z', blockedAt: null, whatsappJoignable: null, whatsappJoignableLe: null },
+        { id: 'c2', phoneE164: '+33612345678', bsuid: null, externalId: null, profileName: 'Marc', optInStatus: 'opted_in', fields: { ville: 'Paris' }, tags: ['vip'], createdAt: '2026-07-06T00:00:00.000Z', blockedAt: null, whatsappJoignable: null, whatsappJoignableLe: null, risque: null },
       ]; },
       countContacts: async (_t, filters) => { cap?.countFilters.push(filters); return 3; },
       contactIdsForFilters: async (_t, filters) => { cap?.idsFilters.push(filters); return ['c2', 'c3']; },
@@ -196,6 +196,31 @@ describe('POST /tenants/:tenantId/contacts/import', () => {
     expect(ids.statusCode).toBe(200);
     expect(ids.json<{ ids: string[] }>().ids).toEqual(['c2', 'c3']);
     expect(cap.idsFilters[0]).toEqual({ optIn: 'opted_out' });
+    await app.close();
+  });
+
+  it('GET contacts?risque=eleve -> chemin requêtable, avec le niveau (un critère oublié dans hasFilters ne filtrerait RIEN)', async () => {
+    const cap: QueryCapture = { queryFilters: [], countFilters: [], idsFilters: [] };
+    const app = inject(new FakeContacts(), new FakeFields(), cap);
+    const res = await app.inject({ method: 'GET', url: '/tenants/t1/contacts?risque=eleve', headers: { authorization: `Bearer ${token}` } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ contacts: Array<{ profileName: string }> }>().contacts[0]?.profileName).toBe('Marc');
+    expect(cap.queryFilters).toEqual([{ risque: 'eleve' }]);
+    expect(cap.countFilters).toEqual([{ risque: 'eleve' }]);
+    await app.close();
+  });
+
+  it('🔴 un niveau de risque INCONNU est REFUSÉ en 400 sur la liste, le compte et les identifiants, jamais ignoré', async () => {
+    // Ignoré, il ne poserait aucune clause : « élevé » mal écrit rendrait TOUT l'espace, et le compteur
+    // annoncerait tout l'espace comme audience d'une campagne « risque élevé ».
+    const cap: QueryCapture = { queryFilters: [], countFilters: [], idsFilters: [] };
+    const app = inject(new FakeContacts(), new FakeFields(), cap);
+    for (const url of ['/tenants/t1/contacts?risque=%C3%A9lev%C3%A9', '/tenants/t1/contacts/count?risque=high', '/tenants/t1/contacts/ids?risque=critique']) {
+      const res = await app.inject({ method: 'GET', url, headers: { authorization: `Bearer ${token}` } });
+      expect(res.statusCode, url).toBe(400);
+      expect(res.json<{ error: string }>().error, url).toMatch(/risque/);
+    }
+    expect(cap).toEqual({ queryFilters: [], countFilters: [], idsFilters: [] });
     await app.close();
   });
 

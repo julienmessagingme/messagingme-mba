@@ -47,7 +47,7 @@ function app(branche: string | null = null) {
     hubspotPortalConnecte: sansPortailHubspot,
     getSettings: async () => ({
       mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
-      controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, optoutRequestId: courant, mentionIaFrequence: null, prix: GRILLE_DEFAUT,
+      controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, hubspotActif: false, optoutRequestId: courant, mentionIaFrequence: null, prix: GRILLE_DEFAUT,
       timezone: 'Europe/Paris', businessHours: {},
     }),
     setMbaEnabled: async () => {},

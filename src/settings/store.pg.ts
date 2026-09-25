@@ -100,6 +100,19 @@ export interface TenantSettings {
    * choisi. La règle qui l'applique : `peutPrendre` (`src/inbox/assignment.ts`).
    */
   agentsPeuventPrendre: boolean;
+  /**
+   * L'INTERRUPTEUR HUBSPOT DE L'ESPACE (migration 0179, Paramètres > Intégrations).
+   *
+   * Allumé, le bloc HubSpot s'affiche sur l'Accueil, numéro WhatsApp ou pas. `false` par défaut ; la
+   * migration l'a allumé pour les espaces déjà reliés à un portail.
+   *
+   * 🔴 IL NE S'ÉTEINT PAS TANT QU'UN PORTAIL EST RELIÉ (la route rend 409) : les analyses partiraient encore
+   * vers HubSpot depuis un espace où il paraîtrait éteint. On délie d'abord (« Déconnexion complète »).
+   *
+   * ⚠️ IL NE GOUVERNE PAS le masquage des fonctions HubSpot des campagnes et des automations : celui-là suit
+   * le PORTAIL relié (`hubspotPortalConnecte`, lot 9).
+   */
+  hubspotActif: boolean;
 }
 
 /**
@@ -163,7 +176,24 @@ export class PgTenantSettingsStore {
       // ⚠️ `=== true` et pas `?? false` : une base en retard sur 0160 ne rend pas la colonne (`select *`),
       // et c'est alors le comportement d'avant, que personne ne peut prendre.
       agentsPeuventPrendre: r?.agents_peuvent_prendre === true,
+      // ⚠️ `=== true`, même raison : une base en retard sur 0179 ne rend pas la colonne, et l'interrupteur
+      // se lit alors éteint. L'Accueil montre quand même le bloc d'un espace relié à un portail.
+      hubspotActif: r?.hubspot_actif === true,
     };
+  }
+
+  /**
+   * Allume ou éteint l'interrupteur HubSpot de l'espace. Upsert ciblé : n'écrase aucun autre réglage.
+   *
+   * ⚠️ LA RÈGLE « PAS D'EXTINCTION AVEC UN PORTAIL RELIÉ » EST DANS LA ROUTE, pas ici : ce store ne parle qu'à
+   * la base, et le lien du portail vit dans le schéma du connecteur.
+   */
+  async setHubspotActif(tenantId: string, actif: boolean): Promise<void> {
+    await this.pool.query(
+      `insert into tenant_settings (tenant_id, hubspot_actif, updated_at) values ($1, $2, now())
+       on conflict (tenant_id) do update set hubspot_actif = excluded.hubspot_actif, updated_at = now()`,
+      [tenantId, actif],
+    );
   }
 
   /**

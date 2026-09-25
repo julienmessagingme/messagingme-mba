@@ -1,7 +1,7 @@
 ---
 ecran: contacts
 source_section: Contacts & CRM
-source_empreinte: 4d1a91
+source_empreinte: f93199
 ---
 # Ajouter ou importer mes contacts
 
@@ -18,9 +18,16 @@ l'analyse, il ne se modifie pas à la main, et il disparaît en même temps que 
 atteint votre durée de conservation. L'onglet « Historique » de la fiche montre, lui, le résumé de chacune
 de ses conversations.
 
+La fiche montre aussi le **risque de désengagement** de la personne : faible, moyen, élevé, ou inconnu, avec
+un score sur 100, les raisons principales écrites en clair et la date du calcul. Il est recalculé chaque nuit
+à partir des 90 derniers jours : réponses, clics, lectures, dernière conversation analysée, joignabilité,
+désabonnement. « Inconnu » veut dire qu'aucun message ne lui a été délivré sur cette période, donc qu'il n'y
+avait rien à observer. Une fiche que le calcul n'a encore jamais vue affiche « pas encore calculé ».
+
 Une fois vos contacts en place, l'écran sert de moteur de recherche. Vous filtrez par tag, par consentement
-marketing, par nom, par numéro de téléphone, par la valeur d'un champ que vous avez créé, ou par la présence
-d'une adresse e-mail. Les filtres se cumulent. Vous cochez ensuite des lignes, et le menu « Action » applique
+marketing, par nom, par numéro de téléphone, par la valeur d'un champ que vous avez créé, par la présence
+d'une adresse e-mail, ou par niveau de risque de désengagement (de quoi préparer une campagne vers ceux qui
+décrochent). Les filtres se cumulent. Vous cochez ensuite des lignes, et le menu « Action » applique
 le même geste à toute la sélection : poser un tag, en retirer un, remplir un champ, passer en consentement
 accordé ou refusé, supprimer.
 

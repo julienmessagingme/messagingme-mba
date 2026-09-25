@@ -663,6 +663,22 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 
 - `contacts` : `fields jsonb` (merge qui n'écrase jamais une clé absente), `tags text[]`, opt-in tracé,
   `deleted_at` (soft delete, index partiel), `anonymized_at`, `blocked_at`.
+- 🔴 **Le risque de désengagement vit SUR LA FICHE** (migration 0178, lot 7 de l'API publique) :
+  `risque_niveau`, `risque_score`, `risque_raisons`, `risque_calcule_le`, nuls tant que la fiche n'a jamais été
+  calculée (les raisons valent alors un tableau vide). La cohérence est un CHECK en base : `inconnu` n'a jamais
+  de score, et un niveau ne va jamais sans sa date. Le SEUL écrivain est le balayage de nuit (§ 6). La grille
+  (points, seuils, niveaux, codes) vit dans `src/engagement/risque.ts`, en règles PURES, et sa justification
+  dans la spec (`docs/superpowers/specs/2026-09-24-api-publique-coherente-design.md` § 19) : elle n'est pas
+  recopiée ici. Trois lecteurs : la fiche de l'API publique (`engagementRisk`), la ligne de la console
+  (`ContactRow.risque`, dont chaque `select` nomme `COLONNES_RISQUE`) et le filtre de la liste.
+- 🔴 **Le filtre par niveau de risque est le SEUL filtre de contacts qui se REFUSE au lieu de s'ignorer.** Une
+  valeur hors des quatre niveaux lève `FiltreContactInvalide` dans `buildContactFilters`, et son `statusCode`
+  la fait rendre en 400 par le gestionnaire d'erreurs, sur toute route qui lit des filtres, sans que la route
+  ait à le traiter. Ignorée, elle ne poserait aucune clause, et « risque élevé » rendrait tout l'espace à une
+  campagne. ⚠️ Son prédicat est une égalité NUE, `risque_niveau = $n`, derrière `tenant_id = $1 and deleted_at
+  is null` : c'est le contrat de l'index partiel `contacts_tenant_risque_idx (tenant_id, risque_niveau) where
+  deleted_at is null`, et `tests/contact-where.test.ts` relit la migration pour le tenir. Une fiche jamais
+  calculée n'est dans aucun niveau, `inconnu` compris : `inconnu` est un calcul qui n'a rien pu observer.
 - 🔴 **`/v1/contacts` désigne une personne par sa FICHE, et UNE fonction la trouve** : `resoudreFiche`
   (`src/api/fiche.ts`). Quatre clés, `contactId`, `externalId`, `phone`, `bsuid` : toutes celles qu'on donne
   doivent désigner la même fiche (sinon `identity_conflict`, et la fiche n'est pas modifiée) ; une clé que la
@@ -828,6 +844,7 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 |---|---|
 | `mba_enabled` | l'agent Meta Business Agent est actif sur cet espace |
 | `hubspot_lists_enabled` | l'import de contacts HubSpot (pas les étapes de deal) |
+| `hubspot_actif` | l'interrupteur HubSpot de l'espace (0179, Paramètres > Intégrations) : allumé, le bloc HubSpot de l'Accueil s'affiche, numéro ou pas. `false` par défaut ; la reprise de 0179 l'a allumé pour les espaces reliés à un portail (`mmhs.tenant_portals` joint à `mmhs.portals`, la lecture de `getHubspotPortal`), gardée par `to_regclass` parce qu'une base sans connecteur n'a pas ce schéma. 🔴 **On ne l'éteint pas tant qu'un portail est relié** : `PATCH /settings/hubspot-actif` rend 409, sinon les analyses continueraient de partir vers HubSpot depuis un espace où il paraît éteint. On délie d'abord (« Déconnexion complète »), et un espace SANS numéro le fait par `POST /hubspot/deconnexion`, la même fonction que la porte d'un numéro. ⚠️ Il ne gouverne PAS le masquage des fonctions HubSpot des campagnes et des automations, qui suit le portail relié (`hubspotPortalConnecte`). ⚠️ Côté console, `undefined` (API plus ancienne) n'est pas `false` : `affichageHubspotAccueil` (`web/lib/hubspot-actif.ts`) garde alors l'ancien comportement |
 | `campaigns_paused` | coupe-circuit d'envoi pour tout l'espace |
 | `auto_retry_enabled` | auto-relance des échecs des campagnes d'AVANT la migration 0165 ; ce réglage n'a plus d'écran et ne s'écrit plus. Une campagne créée depuis obéit à SA case `campaigns.reessayer` (`campaigns.reessai_par_campagne`) |
 | `timezone` et `business_hours` | le fuseau (une heure murale sans fuseau est interprétée là) et les horaires |
@@ -949,12 +966,23 @@ Tous en `unref()`, chacun avec sa variable de cadence (les valeurs sont dans `sr
 | `mba/handoff-sweep` | applique le mode `business_hours` du passage de main Meta |
 | `analysis/sweep` | réclame les conversations closes à analyser |
 | `automation/date-sweep` | déclencheur « X avant ou après la date d'un champ » |
+| `engagement/balayage` | le risque de désengagement, une fois par nuit (3 h à 6 h, heure de Paris) et par espace : relit les faits par lots, écrit le niveau, émet les signaux sur un CHANGEMENT de niveau et l'événement d'automation `risque_eleve` sur un PASSAGE en élevé. Aussi à la demande, pour un espace : `POST /ops/risque/:tenantId` |
 | `account/status-sweep` | statut et qualité des numéros Meta |
 | rattrapage HubSpot | relance les marques restées sur un numéro reconnecté |
 | purge des payloads webhook | rétention du dernier payload d'un webhook entrant |
 | purge des événements Meta | `WEBHOOK_EVENTS_RETENTION_DAYS` |
 | `ops/dlq-sweep` | alerte Telegram sur les DLQ non vides |
 | heartbeat | écrit `worker_heartbeat`, lu par `/ops` pour voir un worker mort |
+
+🔴 **LE BALAYAGE DU RISQUE EST LE SEUL CHEMIN DE MASSE QUI ÉMET UN ÉVÉNEMENT D'AUTOMATION** (exception décidée,
+spec § 19, invariant 8). Trois bornes en sont la condition, et elles vivent au point d'émission
+(`src/engagement/balayage.ts`) : il n'émet que sur un PASSAGE en élevé, jamais chaque nuit où le contact y
+reste ; au plus `PLAFOND_DECLENCHEMENTS_PAR_NUIT` par nuit et par espace (au-delà, le niveau est écrit, rien ne
+part, et le bilan le compte) ; puis le plafond horaire de chaque automation. Un STOP ou un blocage donne
+« élevé » SANS déclencher. Il ÉCRIT avant de déclencher : un arrêt entre les deux perd un déclenchement, l'ordre
+inverse en doublerait un, facturé. Chaque espace est isolé (une panne est dans son bilan, le suivant passe). Le
+« déjà balayé aujourd'hui » vit en mémoire du worker : un redémarrage dans la fenêtre relance un passage sans
+effet, puisqu'aucun niveau ne change.
 
 ⚠️ **L'ordre enfiler / marquer n'est pas le même partout, et c'est voulu.** Le balayage des campagnes
 PROGRAMMÉES enfile puis marque : un échec d'enfilement laisse la campagne `scheduled`, reprise au tour
@@ -1172,14 +1200,17 @@ dès un changement d'IP. Le jeton reste la garde ; au 5e refus dans une fenêtre
 Telegram part, throttlée. 🔴 **Le jeton présenté n'est JAMAIS journalisé** : une tentative est presque toujours
 un secret voisin du vrai.
 
-⚠️ **`/ops` n'est plus en lecture seule, et il porte SEPT écritures.** `POST /ops/observe` (ouvrir une
+⚠️ **`/ops` n'est plus en lecture seule, et il porte HUIT écritures.** `POST /ops/observe` (ouvrir une
 observation), `POST /ops/credits/:tenantId` (recharger le solde prépayé, **la seule écriture d'argent du
 produit**, là précisément pour qu'un client ne puisse pas créditer son propre compte),
 `POST /ops/verrou/:tenantId`, `PATCH /ops/prix`, `DELETE /ops/cle-modele/:tenantId`,
-`POST /ops/pubs/connexion/:tenantId` et `POST /ops/dlq/replay`.
+`POST /ops/pubs/connexion/:tenantId`, `POST /ops/dlq/replay` et `POST /ops/risque/:tenantId` (le balayage
+du risque de désengagement d'un espace, lancé tout de suite : il écrit les fiches, émet les signaux et peut
+déclencher des automations, sous le même plafond que la nuit). Compté dans `src/http/ops.ts` le 2026-09-25.
 
-🔴 **LA NOTE OBLIGATOIRE N'EST PAS UN INVARIANT DE `/ops` : QUATRE SUR SEPT L'EXIGENT.** Mesuré route
-par route le 2026-09-23 : `credits`, `verrou`, `prix` et `pubs/connexion` refusent sans note ; `observe`,
+🔴 **LA NOTE OBLIGATOIRE N'EST PAS UN INVARIANT DE `/ops` : CINQ SUR HUIT L'EXIGENT.** Mesuré route
+par route le 2026-09-23 : `credits`, `verrou`, `prix` et `pubs/connexion` refusent sans note (et `risque`,
+ajoutée le 2026-09-25, aussi) ; `observe`,
 `cle-modele` et `dlq/replay` acceptent sans. ⚠️ **Cette page a affirmé le contraire le jour même**, en
 corrigeant une liste qui ne citait que deux écritures sur six : la correction a énoncé un invariant
 général à partir des quatre routes qu'elle venait de lire, et elle a en plus oublié la septième
@@ -1187,7 +1218,7 @@ général à partir des quatre routes qu'elle venait de lire, et elle a en plus 
 pas** : un lecteur qui croit « toutes traçables » ne cherchera pas la trace qui manque. Le trou le plus
 gênant est `cle-modele`, qui révoque une clé facturée chez Vercel sans dire qui ni pourquoi.
 
-⚠️ **Ce qui vaut, lui, pour les sept** : elles sont délibérément **cross-espace**, parce que `/ops`
+⚠️ **Ce qui vaut, lui, pour les huit** : elles sont délibérément **cross-espace**, parce que `/ops`
 s'authentifie par un JETON d'exploitation (`x-ops-token`) et jamais par une session. ⚠️ Le comportement
 quand une dépendance manque n'est PAS uniforme : la plupart rendent **503**, mais `dlq/replay` n'est pas
 montée du tout et rend donc **404**.
@@ -1400,6 +1431,12 @@ espace (`tenants.status`). Il ferme la console ET l'API publique (`/v1`, `/mcp` 
 `tenant_locked`). 🔴 Il n'arrête PAS les campagnes déjà enfilées : la séquence complète (verrouiller,
 lister les campagnes en cours, les mettre en pause) est dans le runbook de `DEPLOY.md`.
 
+`/ops/risque/:tenantId` (jeton d'exploitation, POST, note obligatoire) : lance TOUT DE SUITE le balayage du
+risque de désengagement d'un espace, pour l'essai réel et le dépannage, et rend son bilan (fiches évaluées,
+changements de niveau, automations déclenchées, passages au-delà du plafond, échecs). Il tourne DANS la
+requête. Rejoué, il ne redéclenche rien : un passage en élevé déjà écrit n'en est plus un. Un espace
+verrouillé n'est pas sauté (c'est un geste explicite).
+
 `/ops/usage` (jeton d'exploitation) : l'usage de l'API publique agrégé PAR MINUTE, par espace, par clé et
 par opération, avec le TRAVAIL demandé (un lot de 500 contacts y compte 500, pas 1). En mémoire du process
 qui sert la requête, jamais en base : une ligne SQL par appel ferait amplifier par la journalisation la
@@ -1450,7 +1487,8 @@ suit est la règle, en une formulation courte.
    partagée. L'exécuteur de scénario sert AUSSI les campagnes : publier depuis la pose de tag ferait émettre
    un événement par destinataire. Le défaut est « n'émet pas ».
 8. **Aucun chemin de MASSE n'émet** (action en masse, import CSV, API publique, campagne). Ajouter une
-   émission sur l'un d'eux = envoi de masse involontaire et facturé.
+   émission sur l'un d'eux = envoi de masse involontaire et facturé. ⚠️ UNE exception, décidée et bornée : le
+   balayage du risque de désengagement émet `risque_eleve` (§ 6, « Les balayeurs du worker »).
 9. **Un template avec en-tête média ou carousel EXIGE son média à CHAQUE envoi**, et il faut envoyer un
    `media id`, jamais un `link` : l'URL du CDN de Meta est ACCEPTÉE puis échoue deux secondes plus tard en
    `131053`, son propre téléchargeur se prenant un 403. Le piège est invisible à une sonde qui se contente de
@@ -1599,7 +1637,8 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/api/consentement.ts` -> `appliquerConsentement` | le consentement écrit par une machine, et sa ligne d'audit |
 | `src/api/erreurs.ts` | `STATUT_PAR_CODE` et `refuser` : la forme `{ error, code }` des erreurs de `/v1/contacts`, `/v1/sends`, `/v1/messages/whatsapp`, `/v1/messages/rcs`, des catalogues et de la garde de clé ; tout nouveau refus de l'API publique passe par là |
 | `src/crm/date-iso.ts` | normaliser une date venue d'un tiers, et REFUSER l'ambigu en le disant |
-| `src/crm/contact-filters.ts` | les règles de filtrage des contacts (bornes, opérateurs, plafonds) |
+| `src/crm/contact-filters.ts` | les règles de filtrage des contacts (bornes, opérateurs, plafonds), et le refus d'un niveau de risque inconnu (`FiltreContactInvalide`, 400) |
+| `src/engagement/risque.ts` | 🔴 la grille du risque de désengagement, en règles PURES (`calculerRisque`), ses niveaux et ses codes de raisons (`NIVEAUX_RISQUE`, `RAISONS_RISQUE`), les seuils par défaut et `passeEnEleve`. La base (CHECK de 0178), l'API, les signaux et la console (`web/lib/risque.ts`, par `tests/web-risque-parite.test.ts`) lui sont tenus |
 | `src/stats/range.ts` -> `BOUNDS_CTE` | les bornes de date, robustes au changement d'heure |
 | `src/inbox/origine.ts` -> `ORIGINE_EFFECTIVE_SQL` | 🔴 le fragment SQL qui dit d'OÙ vient un message sortant, avec sa dérivation bornée pour l'historique d'avant la migration 0099. Il attend l'alias `m` pour `conversation_messages`. Le recopier ferait diverger un total de sa ventilation : la ventilation du Performance Lab et le compte de messages de l'en-tête de l'agent de Meta doivent classer un message de la même façon. ⚠️ Une requête qui le lit se restreint aux SORTANTS (`m.direction = 'out'`), sans quoi elle sort du prédicat de l'index partiel `conversation_messages_origin_idx`, sans qu'aucune erreur ne le dise. `THEME_DE_ORIGINE` et `DETAIL_IA` vivent dans le même fichier, pour la même raison |
 | `src/stats/prix.ts` -> `coutRcsEuros()` | le prix d'un lot de RCS depuis la grille UNIQUE (simple / conversationnel ; « de l'espace » jusqu'au 2026-09-23, où la grille est devenue globale, migration 0168). 🔴 Deux écrans l'appliquent, « coût des messages envoyés » et « coût par engagement » : la formule tient en une ligne, ce qui est exactement pourquoi elle allait être recopiée, et deux copies donneraient deux prix pour le même envoi |
@@ -1652,6 +1691,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `web/lib/erreurs-livraison.ts` | l'ORIGINE d'une ligne du journal des erreurs de livraison, en mots (canal et provenance d'un message libre non délivré), et l'export CSV de ce journal : les mêmes mots à l'écran et dans l'export |
 | `web/lib/chemin-json.ts` | le miroir de `src/webhook-entrant/chemin.ts` : mêmes chemins d'or dans les deux jeux de tests |
 | `web/lib/contact-filters.ts` | les filtres du mini-CRM, miroir du parse serveur |
+| `web/lib/risque.ts` | le risque de désengagement à l'écran : badges des niveaux, libellés des raisons en deux langues, choix du filtre, et `risqueLu`, qui lit le champ venu du réseau et rend `null` (« pas encore calculé ») pour un champ absent, nul ou illisible, jamais un niveau inventé |
 | `web/lib/rcs.ts` | déduire le format d'un message RCS de sa saisie, miroir de `rcsOutboundOf` |
 | `web/lib/rcs-carrousel.ts` | le carrousel RCS côté écran (brouillon, message envoyable, manques carte par carte) et la relecture STRICTE d'un carrousel copié dans un brouillon de campagne : mal formé, il est jeté. Tenu contre `rcsOutboundSchema` par `tests/web-rcs-carrousel.test.ts` |
 | `web/components/Field.tsx` | le libellé de champ des formulaires de contenu (templates, messages RCS). Hors de `TemplateForm` pour ne pas embarquer ce module lourd |

@@ -1917,6 +1917,9 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     // Meme piege, meme remede, pour la prise d une conversation par un agent (migration 0160) : `false`
     // par defaut, donc personne ne prend rien tant qu un admin ou un manager ne l a pas active.
     agentsPeuventPrendre: false,
+    // Meme piege pour l interrupteur HubSpot (migration 0179) : `false` par defaut, un espace neuf ne voit
+    // pas HubSpot tant qu un admin ne l a pas allume.
+    hubspotActif: false,
     businessHours: DEFAULT_BUSINESS_HOURS, optoutRequestId: null, mentionIaFrequence: null,
     // ⚠️ `prix` A QUITTE CETTE FIXTURE avec la migration 0168 : la grille n appartient plus a un espace,
     // elle est unique et se regle dans /ops. La laisser ici aurait fait croire l inverse au prochain lecteur.

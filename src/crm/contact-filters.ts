@@ -1,3 +1,4 @@
+import { NIVEAUX_RISQUE, type NiveauRisque } from '../engagement/risque';
 import { isContactFieldOp, type ContactFieldFilter, type ContactFilters } from './contact-store.pg';
 
 /**
@@ -53,7 +54,34 @@ export interface EntreesFiltres {
   phoneContains: unknown;
   nameSearch: unknown;
   joignabilite: unknown;
+  risque: unknown;
   fieldFilters: ContactFieldFilter[];
+}
+
+/**
+ * Un filtre de contacts qu'on REFUSE au lieu de l'ignorer. `statusCode` le fait rendre en 400 par le gestionnaire
+ * d'erreurs de `src/server.ts`, avec ce message, par TOUTES les routes qui lisent des filtres (liste, compte,
+ * identifiants, action en masse, suppression, cible d'une campagne) : aucune ne peut oublier de le traiter, et
+ * celle qui l'oublierait rendrait quand même un refus, jamais une liste.
+ */
+export class FiltreContactInvalide extends Error {
+  readonly statusCode = 400;
+}
+
+/**
+ * Le niveau de risque demandé : absent, ou l'un des quatre niveaux.
+ *
+ * 🔴 TOUTE AUTRE VALEUR EST REFUSÉE, et c'est l'inverse du reste de ce module, délibérément. Ailleurs, une
+ * valeur incomprise est jetée : le filtre ne se pose pas, et l'écran qui l'a demandé le voit. Ici, un niveau
+ * mal orthographié (`élevé`, `high`, `eleve,moyen`) jeté en silence rendrait TOUT l'espace à qui demandait
+ * « risque élevé », et une campagne construite dessus partirait à tout le monde. Une chaîne vide, elle, n'est pas
+ * un filtre (le choix « tous » de l'écran).
+ */
+function risqueFiltre(v: unknown): NiveauRisque | undefined {
+  if (v === undefined || v === null || v === '') return undefined;
+  const estNiveau = (x: unknown): x is NiveauRisque => typeof x === 'string' && (NIVEAUX_RISQUE as readonly string[]).includes(x);
+  if (estNiveau(v)) return v;
+  throw new FiltreContactInvalide(`filtre de risque invalide : ${NIVEAUX_RISQUE.join(', ')}, ou rien`);
 }
 
 /** Assemble le `ContactFilters` final : seules les clés réellement renseignées y figurent. */
@@ -61,6 +89,7 @@ export function buildContactFilters(e: EntreesFiltres): ContactFilters {
   const optIn = texteFiltre(e.optIn);
   const tags = tagsFiltre(e.tags);
   const tagsExclude = tagsFiltre(e.tagsExclude);
+  const risque = risqueFiltre(e.risque);
   return {
     ...(tags.length > 0 ? { tags } : {}),
     ...(e.tagMode === 'or' ? { tagMode: 'or' as const } : {}),
@@ -72,6 +101,7 @@ export function buildContactFilters(e: EntreesFiltres): ContactFilters {
     // ⚠️ UNE SEULE VALEUR RECONNUE, le reste est JETÉ. C'est la règle de tout ce module : une donnée
     // cliente à moitié comprise viserait la mauvaise population, ce qui est pire que pas de filtre du tout.
     ...(e.joignabilite === 'connu_injoignable' ? { joignabiliteWhatsApp: 'connu_injoignable' as const } : {}),
+    ...(risque !== undefined ? { risque } : {}),
     ...(e.fieldFilters.length > 0 ? { fieldFilters: e.fieldFilters } : {}),
   };
 }

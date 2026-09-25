@@ -93,7 +93,14 @@ journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base éta
 (`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
 cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
 
-**Dernière appliquée : 0177**, le 2026-09-24 à 23 h 20 UTC (`signaux_batch`, lot 6 de l'API publique :
+**Dernière appliquée : 0178**, le 2026-09-25 à 7 h 48 UTC (`risque_desengagement`, lot 7 : quatre colonnes
+du risque sur `contacts`, leurs CHECK, et l'index du filtre construit `CONCURRENTLY`), AVANT le code qui la lit
+et après avoir vérifié qu'aucune transaction longue n'était ouverte : relue en base juste après (les quatre
+colonnes et leurs défauts, les quatre CHECK, `contacts_tenant_risque_idx` avec `indisvalid = true` et son
+prédicat exact, aucune fiche ne porte de niveau). **0179 est ÉCRITE et PAS ENCORE APPLIQUÉE**
+(`hubspot_actif`, l'interrupteur HubSpot par espace : une colonne de `tenant_settings` et une reprise gardée
+par `to_regclass` ; additive, et l'écriture de la route la nomme, donc AVANT le `up`). **Prochaine libre =
+0180.** Avant 0178, **0177** le 2026-09-24 à 23 h 20 UTC (`signaux_batch`, lot 6 de l'API publique :
 elle CRÉE `integration_batch` et RELÂCHE `agent_tool_calls_source_check` pour `signaux`), AVANT tout code qui
 la lit : relue en base juste après (huit colonnes, clé primaire sur l'espace et `on delete cascade`, le CHECK
 à cinq sources, table vide). Avant elle, **0176** à 22 h 19 UTC (`intentions_commerce`, lot 5 : elle RELÂCHE
@@ -103,10 +110,7 @@ valeurs, répartition des analyses inchangée). Avant elle, **0175** et **0174**
 `echecs_messages` avec ses neuf colonnes, l'index unique sur `message_id`, l'index `(tenant_id, at desc)` et la
 cascade sur l'espace ; les deux vides). Puis **0173** à 21 h 33 UTC (`idempotence_empreinte`, lot 2), relue en
 base (`text` nullable SANS défaut, table vide). Toutes sont passées AVANT le `up` de leur code.
-**0178 est ÉCRITE et PAS ENCORE APPLIQUÉE** (`risque_desengagement`, lot 7 : quatre colonnes du risque sur
-`contacts`, leurs CHECK, et l'index `contacts_tenant_risque_idx` construit `CONCURRENTLY` hors transaction ;
-additive et BLOQUANTE, la fiche de l'API et le balayage de nuit nomment ces colonnes, donc AVANT le `up`, puis
-`indisvalid` relu en base). **Prochaine libre = 0179**, et le dossier `db/migrations/` s'arrête à 0178. Avant 0173, **0172** le même jour à
+Le dossier `db/migrations/` s'arrête à 0179. Avant 0173, **0172** le même jour à
 20 h 01 UTC (`contacts_external_id`), puis **0171** à 13 h 46 UTC (`pubs_brouillons`).
 
 🔴 **0172 RELUE EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT** : `schema_migrations` la rend en tête à

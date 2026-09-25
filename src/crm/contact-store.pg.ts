@@ -30,6 +30,26 @@ export interface ContactRow {
    */
   whatsappJoignable: boolean | null;
   whatsappJoignableLe: string | null;
+  /**
+   * Le risque de désengagement (migration 0178), écrit par le seul balayage de nuit. `null` = jamais calculé :
+   * la console affiche alors « pas encore calculé ». Voir `RisqueContact`.
+   */
+  risque: RisqueContact | null;
+}
+
+/**
+ * Le risque de désengagement d'une fiche, tel que la console le lit (fiche du mini-CRM). La forme publique de
+ * la même donnée est `EngagementRisk` (`src/api/contacts-v1.ts`), en anglais : c'est un contrat d'API, celle-ci
+ * ne sort pas de la console.
+ */
+export interface RisqueContact {
+  niveau: NiveauRisque;
+  /** `null` pour `inconnu`, et seulement pour lui (CHECK de 0178). */
+  score: number | null;
+  /** Les trois raisons les plus lourdes, en codes (`RAISONS_RISQUE`) : la console les traduit. */
+  raisons: RaisonRisque[];
+  /** La date du dernier calcul, qu'il ait changé le niveau ou non. */
+  calculeLe: string;
 }
 
 /** Ce qu'il faut d'une fiche pour savoir QUELLES clés elle porte (`resoudreFiche`, `src/api/fiche.ts`). */
@@ -150,6 +170,15 @@ export interface ContactFilters {
    * « joignable », exactement ce que `src/contacts/joignabilite.ts` interdit.
    */
   joignabiliteWhatsApp?: 'connu_injoignable';
+  /**
+   * Le NIVEAU de risque de désengagement STOCKÉ (migration 0178, écrit par le balayage de nuit). Une fiche jamais
+   * calculée (`risque_niveau` à null) n'est dans aucun niveau, `inconnu` compris : `inconnu` est un calcul qui
+   * n'a rien pu observer, pas une absence de calcul.
+   *
+   * 🔴 UNE VALEUR HORS DES QUATRE NIVEAUX EST REFUSÉE (400) par `buildContactFilters`, jamais ignorée : ignorée,
+   * « risque élevé » mal orthographié montrerait tout l'espace, et une campagne partirait à tout le monde.
+   */
+  risque?: NiveauRisque;
   fieldFilters?: ContactFieldFilter[];
 }
 
@@ -365,7 +394,7 @@ export class PgContactStore implements ContactStore {
   async findByPhone(tenantId: string, phoneE164: string): Promise<ContactRow | null> {
     const res = await this.pool.query(
       `select id, phone_e164, bsuid, external_id, profile_name, opt_in_status, fields, tags, created_at, blocked_at,
-              whatsapp_joignable, whatsapp_joignable_le
+              whatsapp_joignable, whatsapp_joignable_le, ${PgContactStore.COLONNES_RISQUE}
        from contacts where tenant_id = $1 and phone_e164 = $2 and deleted_at is null limit 1`,
       [tenantId, phoneE164],
     );
@@ -1105,10 +1134,37 @@ export class PgContactStore implements ContactStore {
     };
   }
 
+  /**
+   * Les colonnes du risque (migration 0178), NOMMÉES par les trois `select` qui alimentent `rowToContact`
+   * (`findByPhone`, `SELECT_ONE`, `query`). Une constante et pas trois copies : un `select` qui les oublierait
+   * rendrait `risque: null` sur une fiche calculée, donc « pas encore calculé » à l'écran, sans aucune erreur.
+   *
+   * 🔴 LA MIGRATION 0178 PASSE AVANT CE CODE : sans elle, la liste des contacts, la fiche et sa modification
+   * rendent 42703.
+   */
+  private static readonly COLONNES_RISQUE = 'risque_niveau, risque_score, risque_raisons, risque_calcule_le';
+
+  /**
+   * Le risque d'une ligne. ⚠️ Un niveau sans date de calcul ne peut pas exister (CHECK de cohérence de 0178) :
+   * s'il se présentait quand même, on rend `null` plutôt qu'une date inventée, comme la fiche de l'API.
+   */
+  private static risqueDeLaLigne(r: {
+    risque_niveau?: NiveauRisque | null; risque_score?: number | null; risque_raisons?: RaisonRisque[] | null; risque_calcule_le?: Date | null;
+  }): RisqueContact | null {
+    if (!r.risque_niveau || !r.risque_calcule_le) return null;
+    return {
+      niveau: r.risque_niveau,
+      score: r.risque_niveau === 'inconnu' ? null : (r.risque_score ?? null),
+      raisons: r.risque_raisons ?? [],
+      calculeLe: r.risque_calcule_le.toISOString(),
+    };
+  }
+
   private static rowToContact(r: {
     id: string; external_id?: string | null; phone_e164: string | null; bsuid: string | null; profile_name: string | null;
     opt_in_status: string; fields: Record<string, unknown>; tags: string[] | null; created_at: Date; blocked_at?: Date | null;
     whatsapp_joignable?: boolean | null; whatsapp_joignable_le?: Date | null;
+    risque_niveau?: NiveauRisque | null; risque_score?: number | null; risque_raisons?: RaisonRisque[] | null; risque_calcule_le?: Date | null;
   }): ContactRow {
     return {
       id: r.id,
@@ -1127,11 +1183,12 @@ export class PgContactStore implements ContactStore {
       // construit sans ces clés (un faux de test), pas une table sans ces colonnes.
       whatsappJoignable: r.whatsapp_joignable ?? null,
       whatsappJoignableLe: r.whatsapp_joignable_le ? r.whatsapp_joignable_le.toISOString() : null,
+      risque: PgContactStore.risqueDeLaLigne(r),
     };
   }
   private static readonly SELECT_ONE =
     `select id, phone_e164, bsuid, external_id, profile_name, opt_in_status, fields, tags, created_at, blocked_at,
-            whatsapp_joignable, whatsapp_joignable_le
+            whatsapp_joignable, whatsapp_joignable_le, ${PgContactStore.COLONNES_RISQUE}
        from contacts where id = $1 and tenant_id = $2`;
 
   /** Un contact par id, scopé tenant. null si absent/autre tenant. */
@@ -1243,7 +1300,7 @@ export class PgContactStore implements ContactStore {
       opt_in_status: string; fields: Record<string, unknown>; tags: string[] | null; created_at: Date;
     }>(
       `select id, phone_e164, bsuid, external_id, profile_name, opt_in_status, fields, tags, created_at, blocked_at,
-              whatsapp_joignable, whatsapp_joignable_le
+              whatsapp_joignable, whatsapp_joignable_le, ${PgContactStore.COLONNES_RISQUE}
        from contacts where ${where}
        order by created_at desc limit ${limitRef} offset ${offsetRef}`,
       [...params, capped, Math.max(offset, 0)],
@@ -1661,6 +1718,14 @@ export function buildContactWhere(tenantId: string, f: ContactFilters): { where:
       `(whatsapp_joignable is not false or whatsapp_joignable_le is null` +
       ` or whatsapp_joignable_le < now() - (${add(PEREMPTION_WHATSAPP_MS)}::bigint * interval '1 millisecond'))`,
     );
+  }
+  if (f.risque !== undefined) {
+    // 🔴 UNE ÉGALITÉ NUE SUR LA COLONNE, et c'est un contrat avec l'index `contacts_tenant_risque_idx` (0178) :
+    // `(tenant_id, risque_niveau) where deleted_at is null`. Les deux premières clauses de ce WHERE portent
+    // l'espace et le prédicat de l'index, celle-ci la seconde colonne. Un `coalesce(risque_niveau, ...)` ou un
+    // `in (...)` réécrit sur une expression sortirait de l'index sans aucune erreur, seulement un balayage de
+    // la table des contacts à chaque ouverture de la liste. `tests/contact-where.test.ts` relit la migration.
+    clauses.push(`risque_niveau = ${add(f.risque)}`);
   }
   for (const ff of f.fieldFilters ?? []) {
     const key = String(ff.key ?? '').trim();

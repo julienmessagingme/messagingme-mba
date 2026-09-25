@@ -146,6 +146,8 @@ function normalizeContactFilters(raw: unknown): ContactFilters {
     phoneContains: r.phoneContains,
     nameSearch: r.nameSearch,
     joignabilite: r.joignabiliteWhatsApp,
+    // Hors des quatre niveaux : 400 (`FiltreContactInvalide`), y compris pour la cible d'une campagne.
+    risque: r.risque,
     fieldFilters: Array.isArray(r.fieldFilters) ? normalizeFieldFilters(r.fieldFilters) : [],
   });
 }

@@ -89,6 +89,50 @@ export interface AccountStatusResponse {
 export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
 
+  /**
+   * DÉCONNEXION COMPLÈTE du portail, partagée par ses deux portes (celle d'un numéro, celle de l'espace).
+   *
+   * On délie le portail côté connecteur (qui révoque le token si dernier tenant) PUIS on coupe en base
+   * SEULEMENT si l'appel a réussi. Jamais l'inverse : couper en base avant confirmation laisserait un drift (mba
+   * « coupé » alors que le portail pousse encore). La déconnexion est tenant-wide (le portail est lié par
+   * tenant) : tous les numéros du tenant passent coupés.
+   */
+  async function deconnecterPortail(tenant: string): Promise<{ ok: true; disconnected: boolean } | { ok: false; code: 502 | 503; error: string }> {
+    if (!deps.disconnectHubspot) return { ok: false, code: 503, error: 'canal de déconnexion HubSpot indisponible' };
+    let result: { disconnected: boolean; revoked: boolean };
+    try {
+      result = await deps.disconnectHubspot(tenant);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('disconnectHubspot (connecteur) échoué, reset local NON appliqué (anti-drift):', err instanceof Error ? err.message : err);
+      // ⚠️ 502 GARDÉ, DÉLIBÉRÉMENT : c'est NOTRE panne, pas une raison à lire. Le connecteur mm-hubspot est un
+      // service à nous, joint sur le réseau interne et déjà rejoué par `withRetry` ; l'administrateur n'a rien
+      // à y changer. Et l'écran d'accueil ne lit pas ce corps (il annule sa bascule optimiste), donc Cloudflare
+      // peut le remplacer sans rien faire perdre. Le jour où l'écran affichera `error`, ce code passe en 422
+      // (documentation.md, « Aucun message destiné à l'utilisateur dans un 5xx »).
+      return { ok: false, code: 502, error: 'échec de la déconnexion côté connecteur HubSpot' };
+    }
+    await deps.disconnectHubspotTenant(tenant);
+    return { ok: true, disconnected: result.disconnected };
+  }
+
+  /**
+   * DÉCONNEXION COMPLÈTE D'UN ESPACE SANS NUMÉRO (2026-09-25, interrupteur HubSpot, migration 0179).
+   *
+   * 🔴 SANS ELLE, L'INTERRUPTEUR ENFERMAIT L'ESPACE. Un espace neuf peut désormais relier un portail sans avoir
+   * de numéro ; l'interrupteur refuse de s'éteindre tant qu'un portail est relié ; et la seule porte de
+   * déconnexion passait par un NUMÉRO (`/phone-numbers/:id/hubspot`), qu'il n'a pas. Même geste, même ordre,
+   * même code : `deconnecterPortail`.
+   */
+  app.post('/tenants/:tenantId/hubspot/deconnexion', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    const r = await deconnecterPortail(tenant);
+    if (!r.ok) return reply.code(r.code).send({ error: r.error });
+    return reply.code(200).send({ hubspotConnected: false, disconnected: r.disconnected });
+  });
+
   app.get('/tenants/:tenantId/account-status', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
@@ -225,22 +269,9 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
     // tenant-wide (le portail est lié par tenant) -> tous les numéros du tenant passent coupés.
     if (body.action === 'disconnect') {
       if (body.connected !== false) return reply.code(400).send({ error: 'disconnect impose connected:false' });
-      if (!deps.disconnectHubspot) return reply.code(503).send({ error: 'canal de déconnexion HubSpot indisponible' });
-      let result: { disconnected: boolean; revoked: boolean };
-      try {
-        result = await deps.disconnectHubspot(tenant);
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error('disconnectHubspot (connecteur) échoué, reset local NON appliqué (anti-drift):', err instanceof Error ? err.message : err);
-        // ⚠️ 502 GARDÉ, DÉLIBÉRÉMENT : c'est NOTRE panne, pas une raison à lire. Le connecteur mm-hubspot est un
-        // service à nous, joint sur le réseau interne et déjà rejoué par `withRetry` ; l'administrateur n'a rien
-        // à y changer. Et l'écran d'accueil ne lit pas ce corps (il annule sa bascule optimiste), donc Cloudflare
-        // peut le remplacer sans rien faire perdre. Le jour où l'écran affichera `error`, ce code passe en 422
-        // (documentation.md, « Aucun message destiné à l'utilisateur dans un 5xx »).
-        return reply.code(502).send({ error: 'échec de la déconnexion côté connecteur HubSpot' });
-      }
-      await deps.disconnectHubspotTenant(tenant);
-      return reply.code(200).send({ phoneNumberId, hubspotConnected: false, disconnected: result.disconnected });
+      const r = await deconnecterPortail(tenant);
+      if (!r.ok) return reply.code(r.code).send({ error: r.error });
+      return reply.code(200).send({ phoneNumberId, hubspotConnected: false, disconnected: r.disconnected });
     }
     const { updated, resumedFrom } = await deps.setHubspotConnected(phoneNumberId, tenant, body.connected);
     if (!updated) return reply.code(404).send({ error: 'numéro inconnu pour ce tenant' });

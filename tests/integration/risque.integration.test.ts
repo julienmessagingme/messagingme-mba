@@ -175,6 +175,25 @@ describe.skipIf(!url)('risque de désengagement (Postgres)', () => {
     expect((await new PgContactStore(pool).lireFicheApi(B, ids.autre!))?.risqueNiveau).toBeNull();
   });
 
+  /**
+   * LE FILTRE DE LA CONSOLE ET LA FICHE DE LA CONSOLE (tâche 8 du lot 7), sur ce que le balayage ci-dessus vient
+   * d'écrire. ⚠️ Dépend de l'ordre des cas : il lit l'état laissé par le balayage (deux fiches en élevé dans A).
+   */
+  it('🔴 le filtre par niveau ne rend que ce niveau, dans l’espace ; une fiche jamais calculée n’est pas « inconnu »', async () => {
+    const contacts = new PgContactStore(pool);
+    const eleves = await contacts.query(A, { risque: 'eleve' });
+    expect(new Set(eleves.map((c) => c.id))).toEqual(new Set([ids.decroche, ids.stop]));
+    expect(await contacts.count(A, { risque: 'eleve' })).toBe(2);
+    expect(await contacts.query(B, { risque: 'eleve' })).toEqual([]);
+    // `jamais` n'a jamais été calculé : il n'est dans AUCUN niveau, `inconnu` compris.
+    expect((await contacts.query(A, { risque: 'inconnu' })).map((c) => c.id)).not.toContain(ids.jamais);
+    // La ligne de la console porte le risque, et la fiche jamais calculée le porte à null.
+    expect(eleves.find((c) => c.id === ids.decroche)?.risque).toEqual({
+      niveau: 'eleve', score: 70, raisons: ['silence_60j', 'sans_reponse', 'non_lu'], calculeLe: expect.any(String),
+    });
+    expect((await contacts.getById(A, ids.jamais!))?.risque).toBeNull();
+  });
+
   it('🔴 la cohérence tient en base : « inconnu » sans score, un niveau jamais sans sa date', async () => {
     await expect(pool.query(`update contacts set risque_niveau = 'inconnu', risque_score = 10, risque_calcule_le = now() where id = $1`, [ids.jamais]))
       .rejects.toMatchObject({ code: '23514' });

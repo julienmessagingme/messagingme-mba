@@ -201,6 +201,47 @@ describe('ContactRow porte l’identifiant externe', () => {
   });
 });
 
+/**
+ * LA FICHE DE LA CONSOLE PORTE LE RISQUE (lot 7). Les trois `select` qui alimentent `ContactRow` (la fiche par
+ * identifiant, celle par numéro, et la liste filtrée) doivent NOMMER les colonnes : un `select` qui les oublierait
+ * rendrait « pas encore calculé » sur une fiche calculée, sans aucune erreur.
+ */
+describe('ContactRow porte le risque de désengagement', () => {
+  const ligne = {
+    id: ID, phone_e164: '+33612345678', bsuid: null, external_id: null, profile_name: null, opt_in_status: 'unknown', fields: {},
+    tags: [], created_at: new Date('2026-09-01T00:00:00.000Z'), blocked_at: null, whatsapp_joignable: null, whatsapp_joignable_le: null,
+  };
+  const CALCULE = new Date('2026-09-25T03:05:00.000Z');
+
+  it('🔴 getById, findByPhone et la liste filtrée NOMMENT les quatre colonnes, et le rendent', async () => {
+    const { p, appels } = pool(() => ({
+      rows: [{ ...ligne, risque_niveau: 'eleve', risque_score: 72, risque_raisons: ['silence_60j', 'reclamation'], risque_calcule_le: CALCULE }],
+      rowCount: 1,
+    }));
+    const s = new PgContactStore(p);
+    const lus = [await s.getById(T, ID), await s.findByPhone(T, '+33612345678'), (await s.query(T, { risque: 'eleve' }))[0]];
+    expect(appels).toHaveLength(3);
+    for (const a of appels) expect(a.sql).toMatch(/risque_niveau, risque_score, risque_raisons, risque_calcule_le/);
+    for (const c of lus) {
+      expect(c?.risque).toEqual({ niveau: 'eleve', score: 72, raisons: ['silence_60j', 'reclamation'], calculeLe: '2026-09-25T03:05:00.000Z' });
+    }
+  });
+
+  it('jamais calculé : null, et non undefined (qui disparaîtrait du JSON)', async () => {
+    const vide = await new PgContactStore(pool(() => ({ rows: [{ ...ligne, risque_niveau: null, risque_score: null, risque_raisons: [], risque_calcule_le: null }], rowCount: 1 })).p).getById(T, ID);
+    expect(vide?.risque).toBeNull();
+    const absent = await new PgContactStore(pool(() => ({ rows: [ligne], rowCount: 1 })).p).getById(T, ID);
+    expect(absent?.risque).toBeNull();
+  });
+
+  it('« inconnu » n’a jamais de score ; un niveau sans date de calcul n’est pas rendu (aucune date inventée)', async () => {
+    const inconnu = await new PgContactStore(pool(() => ({ rows: [{ ...ligne, risque_niveau: 'inconnu', risque_score: null, risque_raisons: [], risque_calcule_le: CALCULE }], rowCount: 1 })).p).getById(T, ID);
+    expect(inconnu?.risque).toEqual({ niveau: 'inconnu', score: null, raisons: [], calculeLe: '2026-09-25T03:05:00.000Z' });
+    const sansDate = await new PgContactStore(pool(() => ({ rows: [{ ...ligne, risque_niveau: 'moyen', risque_score: 40, risque_raisons: [], risque_calcule_le: null }], rowCount: 1 })).p).getById(T, ID);
+    expect(sansDate?.risque).toBeNull();
+  });
+});
+
 describe('la purge', () => {
   it('🔴 efface l’identifiant externe avec le numéro et le nom', async () => {
     const sqls: string[] = [];

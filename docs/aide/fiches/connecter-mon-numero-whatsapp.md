@@ -1,7 +1,7 @@
 ---
 ecran: accueil
 source_section: Accueil (1re entrée du menu)
-source_empreinte: 6950d5
+source_empreinte: 4e776f
 ---
 # Connecter mon numéro WhatsApp, et lire son état
 
@@ -45,3 +45,8 @@ guide de configuration. La couper vous fait choisir entre une **pause**, révers
 pendant la pause sont renvoyées à la reprise), et une **déconnexion complète**, qui délie le compte HubSpot
 et coupe tous les numéros de l'espace. Un interrupteur juste dessous autorise l'usage de vos listes HubSpot
 comme destinataires de campagne.
+
+**Le bloc HubSpot s'allume dans Paramètres > Intégrations**, et c'est là qu'on le demande, numéro WhatsApp ou
+pas : un espace tout neuf peut donc connecter HubSpot avant d'avoir un numéro. Éteint, l'Accueil n'affiche
+qu'une ligne qui vous y renvoie. Tant qu'un portail est relié, il ne s'éteint pas : faites d'abord la
+déconnexion complète depuis le bloc HubSpot (sans numéro, c'est un bouton du bloc, sans l'option de pause).

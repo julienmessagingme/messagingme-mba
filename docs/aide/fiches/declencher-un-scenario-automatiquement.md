@@ -1,7 +1,7 @@
 ---
 ecran: automations
 source_section: Automation (menu « Automation ») | Rappels avant ou après une date (menu Automation) | Automatisations (menu « Scénario », ex-« Flow »)
-source_empreinte: ec2828 | 08adbf | 650781
+source_empreinte: 8ee8bd | 08adbf | 650781
 ---
 # Lancer un scénario tout seul, sans campagne
 
@@ -27,8 +27,11 @@ clair, le scénario visé, et si c'est allumé ou non.
 - **Le contact arrive d'une publicité WhatsApp** : l'identifiant de la publicité est facultatif. Laissé vide,
   le scénario part pour toute personne arrivant par une publicité, **sauf celles que vous pilotez depuis
   l'écran Publicités** : ces campagnes-là disent elles-mêmes qui répond à leurs prospects.
+- **Le risque de désengagement d'un contact devient élevé** : rien à régler. Le calcul de nuit fait passer un
+  contact en risque élevé, et le scénario part pour lui, une seule fois : un contact qui reste en risque élevé
+  ne relance rien la nuit suivante.
 
-Deux de ces déclencheurs demandent une précision, parce qu'ils surprennent :
+Trois de ces déclencheurs demandent une précision, parce qu'ils surprennent :
 
 **Sur le délai autour d'une date**, une échéance déjà passée n'envoie rien. Un rappel qui part en retard dit
 quelque chose de faux au client. Si la date change sur la fiche, le rappel repart sur la nouvelle. Et cela
@@ -46,6 +49,11 @@ arrivant par une publicité », ni « un nouveau contact écrit pour la premièr
 qu'un clic que vous avez payé reçoit la réponse que vous aviez prévue, et une seule. Les publicités que vous
 continuez de gérer dans le Gestionnaire de Meta, elles, ne changent pas : leurs prospects passent par les
 automations de cet écran, comme avant.
+
+**Sur le risque élevé**, le scénario part vers des contacts qui ne vous ont pas écrit : il doit commencer
+par un envoi de modèle. Comme le calcul porte sur toute votre base en une nuit, il est plafonné à 200
+contacts par nuit ; au-delà, le niveau est bien noté sur leur fiche, mais le scénario ne part pas pour eux.
+Un contact désabonné ou bloqué ne déclenche jamais rien.
 
 **Une automation neuve est toujours créée éteinte.** Vous la relisez, puis vous l'allumez d'un clic sur son
 badge. Pour changer son déclencheur ou son scénario, vous la supprimez et vous la recréez : c'est
