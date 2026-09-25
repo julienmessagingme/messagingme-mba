@@ -130,7 +130,10 @@ function McpInner({ session }: { session: Session | null }) {
             'Each tool depends on the key’s scope: a read-only key does not even see the tools that write.',
           )}
         </p>
-        <table className="mt-3 w-full text-left text-xs">
+        {/* Les noms d'outils, en police fixe, ne se coupent pas : sur mobile, le tableau défile dans son cadre
+            plutôt que de faire déborder la page entière (vu par l'e2e de la CI, 16 px). */}
+        <div className="mt-3 overflow-x-auto">
+        <table className="w-full text-left text-xs">
           <thead>
             <tr className="border-b border-ink-100 text-ink-400">
               <th className="px-2 py-2 font-medium">{t('Outil', 'Tool')}</th>
@@ -150,6 +153,7 @@ function McpInner({ session }: { session: Session | null }) {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       <div className={CARTE}>
