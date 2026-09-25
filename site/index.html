@@ -5,14 +5,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Engage Me · La plateforme conversationnelle qui comprend chaque conversation</title>
-<meta name="description" content="Engage Me réunit vos campagnes, vos scénarios, vos agents et votre équipe dans une seule console WhatsApp, bâtie sur les API officielles de Meta.">
+<title>Engage Me · Tout WhatsApp, dans une seule console</title>
+<meta name="description" content="Campagnes push, chaîne WhatsApp, publicités Click-to-WhatsApp et RCS dans une seule console. Vous choisissez qui répond, du Meta Business Agent natif à vos agents IA, et Engage Me qualifie chaque conversation.">
 <link rel="canonical" href="https://engageme.messagingme.fr/">
 <meta property="og:type" content="website">
 <meta property="og:locale" content="fr_FR">
 <meta property="og:url" content="https://engageme.messagingme.fr/">
-<meta property="og:title" content="Engage Me · La plateforme conversationnelle qui comprend chaque conversation">
-<meta property="og:description" content="Campagnes, scénarios, agents et équipe dans une seule console WhatsApp, bâtie sur les API officielles de Meta.">
+<meta property="og:title" content="Engage Me · Tout WhatsApp, dans une seule console">
+<meta property="og:description" content="Push, chaîne WhatsApp, publicités Click-to-WhatsApp et RCS, orchestrés au même endroit, avec chaque conversation qualifiée.">
 <meta name="theme-color" content="#F7F8FB" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0A0C1D" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -48,30 +48,46 @@ a:focus-visible{outline:2px solid var(--action);outline-offset:3px;border-radius
 @media (max-width:640px){.cadre{padding:0 16px}}
 
 /* En-tête */
-.entete{display:flex;align-items:center;justify-content:space-between;height:76px}
-.marque{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:700;font-size:1.05rem;letter-spacing:-.01em}
+.entete{display:flex;align-items:center;justify-content:space-between;gap:12px;height:76px}
+.marque{display:flex;align-items:center;gap:10px;white-space:nowrap;text-decoration:none;font-weight:700;font-size:1.05rem;letter-spacing:-.01em}
 .marque svg{width:30px;height:30px;flex:none}
+.nav{display:flex;align-items:center;gap:22px}
+.lien{font-size:.92rem;white-space:nowrap;font-weight:600;text-decoration:none;color:var(--muted);transition:color .15s}
+.lien:hover{color:var(--ink)}
+@media (max-width:480px){.marque{gap:8px;font-size:.95rem}.marque svg{width:26px;height:26px}.nav{gap:12px}.nav .lien{font-size:.85rem}.nav .bouton-trait{padding:.45em .8em;font-size:.85rem}}
 
 /* Boutons : une seule destination, un seul libellé */
-.bouton{display:inline-flex;align-items:center;gap:.5em;border-radius:10px;font-weight:600;text-decoration:none;transition:background-color .15s,border-color .15s,color .15s}
+.bouton{display:inline-flex;align-items:center;white-space:nowrap;border-radius:10px;font-weight:600;text-decoration:none;transition:background-color .15s,border-color .15s,color .15s}
 .bouton-plein{background:var(--action);color:var(--on-action);padding:.85em 1.45em;font-size:1rem}
 .bouton-plein:hover{background:var(--action-hover)}
 .bouton-trait{background:var(--surface);border:1px solid var(--line);padding:.5em 1em;font-size:.9rem}
 .bouton-trait:hover{border-color:var(--action);color:var(--action-ink)}
 
 /* La une */
-.une{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:72px;align-items:center;padding-top:56px;padding-bottom:104px}
-@media (max-width:960px){.une{grid-template-columns:minmax(0,1fr);gap:56px;padding-top:32px;padding-bottom:72px}}
-h1{font-size:clamp(2.35rem,5vw,4.1rem);line-height:1.03;letter-spacing:-.035em;font-weight:800;margin:0 0 28px;text-wrap:balance}
-h1 em{font-style:normal;text-decoration:underline;text-decoration-color:var(--signal);text-decoration-thickness:.09em;text-underline-offset:.12em;text-decoration-skip-ink:none}
-.chapeau{font-size:1.15rem;color:var(--muted);max-width:33em;margin:0 0 36px;text-wrap:pretty}
-.appel{display:flex;flex-wrap:wrap;align-items:center;gap:14px 20px}
-.appel small{font-size:.88rem;color:var(--muted)}
+.une{padding-top:64px;padding-bottom:56px}
+h1{font-size:clamp(2.5rem,6vw,4.6rem);line-height:1.02;letter-spacing:-.04em;font-weight:800;margin:0 0 28px;max-width:11.5em;text-wrap:balance}
+.chapeau{font-size:1.18rem;color:var(--muted);max-width:40em;margin:0 0 36px;text-wrap:pretty}
+.chapeau strong{color:var(--ink);font-weight:600}
+@media (max-width:640px){.une{padding-top:32px;padding-bottom:40px}}
 
-/* La conversation, et ce qui en est lu */
+/* Le flux : quatre entrées, une conversation, ce qu'Engage Me en comprend */
+.flux{display:grid;grid-template-columns:250px 56px minmax(0,1fr) 56px 232px;padding-bottom:104px}
+.colonne{display:flex;flex-direction:column;min-width:0}
+.legende{height:28px;margin:0 0 12px;font-family:var(--mono);font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);display:flex;align-items:flex-end}
+.liaison{padding-top:40px}
+.liaison svg{display:block;width:100%;height:100%;overflow:visible}
+.liaison path{fill:none;stroke:var(--line);stroke-width:1.5;vector-effect:non-scaling-stroke}
+.liaison path.actif{stroke:var(--action);stroke-width:2}
+
+.entrees{flex:1;list-style:none;margin:0;padding:0;display:grid;grid-template-rows:repeat(4,minmax(0,1fr))}
+.entree{align-self:center;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.entree strong{display:block;font-size:.93rem;font-weight:700;letter-spacing:-.005em}
+.entree span{display:block;font-size:.8rem;line-height:1.4;color:var(--muted);margin-top:2px}
+.entree.actif{border-color:var(--action);box-shadow:0 0 0 3px color-mix(in srgb,var(--action) 16%,transparent)}
+
 .fil{margin:0;background:var(--surface);border:1px solid var(--line);border-radius:20px;overflow:hidden;box-shadow:0 1px 2px rgb(16 19 46 / .04),0 28px 56px -28px rgb(16 19 46 / .22)}
 .fil-tete{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line);font-size:.88rem;font-weight:600}
-.fil-tete span{font-family:var(--mono);font-size:.68rem;font-weight:400;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.fil-tete span{font-family:var(--mono);font-size:.66rem;font-weight:400;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
 .messages{list-style:none;margin:0;padding:20px;display:flex;flex-direction:column;gap:10px}
 .messages li{display:flex;flex-direction:column}
 .msg{max-width:86%;border-radius:14px;padding:10px 14px 7px;font-size:.93rem;line-height:1.45}
@@ -80,27 +96,31 @@ h1 em{font-style:normal;text-decoration:underline;text-decoration-color:var(--si
 .entrant{align-self:flex-start;background:var(--bubble-in);border-bottom-left-radius:4px}
 .sortant{align-self:flex-end;background:var(--bubble-out);border-bottom-right-radius:4px}
 .auteur{display:block;font-size:.72rem;font-weight:700;color:var(--action-ink);margin-bottom:2px}
-.vocal{display:flex;align-items:center;gap:10px;min-width:210px}
-.vocal-lecture{flex:none;width:0;height:0;border-left:9px solid var(--ink);border-top:6px solid transparent;border-bottom:6px solid transparent}
-.onde{flex:1;display:flex;align-items:center;gap:2px;height:22px}
-.onde i{flex:1;max-width:3px;border-radius:2px;background:var(--muted);opacity:.65}
-.vocal-duree{font-family:var(--mono);font-size:.7rem;color:var(--muted)}
+.repond{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:10px 20px;border-bottom:1px solid var(--line)}
+.repond-titre{font-family:var(--mono);font-size:.64rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-right:4px}
+.choix{font-size:.76rem;font-weight:600;padding:3px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.choix.pris{border-color:var(--action);background:var(--bubble-out);color:var(--action-ink)}
+.cta-modele{display:block;margin-top:9px;padding-top:7px;border-top:1px solid color-mix(in srgb,var(--action) 22%,transparent);text-align:center;font-size:.85rem;font-weight:600;color:var(--action-ink)}
 
-/* Le signe d'une lecture : un point vert, une étiquette en chasse fixe */
-.etiquette{display:block;font-family:var(--mono);font-size:.66rem;text-transform:uppercase;letter-spacing:.07em;color:var(--signal-ink)}
-.annotation{position:relative;align-self:flex-start;max-width:86%;margin:2px 0 4px 14px;padding:1px 0 1px 16px;border-left:1.5px solid var(--signal);font-size:.86rem;line-height:1.45}
-.annotation::before{content:"";position:absolute;left:-4.5px;top:0;width:7px;height:7px;border-radius:50%;background:var(--signal)}
-.annotation .etiquette{margin-bottom:2px}
-.lu{border-top:1px dashed var(--line);padding:16px 20px 20px;background:color-mix(in srgb,var(--signal) 5%,var(--surface))}
-.lu .etiquette{display:flex;align-items:center;gap:8px;margin:0 0 14px}
-.lu .etiquette::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--signal)}
-.lu dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 24px;margin:0}
-.lu dt{font-family:var(--mono);font-size:.64rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
-.lu dd{margin:2px 0 0;font-size:.92rem;font-weight:600}
+.comprend{flex:1;display:flex;align-items:center}
+.lecture{width:100%;margin:0;padding:18px;border:1px solid color-mix(in srgb,var(--signal) 35%,var(--line));border-radius:16px;background:color-mix(in srgb,var(--signal) 6%,var(--surface));display:grid;gap:16px}
+.lecture dt{font-family:var(--mono);font-size:.64rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.lecture dd{margin:2px 0 0;font-size:.95rem;font-weight:700}
 .echelle{display:flex;gap:2px;margin-top:6px}
 .echelle i{flex:1;height:5px;border-radius:1px;background:var(--line)}
 .echelle i.plein{background:var(--ink)}
-.echelle.satisfaction i.plein{background:var(--signal)}
+.echelle.vert i.plein{background:var(--signal)}
+.legende-lu{color:var(--signal-ink);gap:8px}
+.legende-lu::before{content:"";width:7px;height:7px;margin-bottom:4px;border-radius:50%;background:var(--signal)}
+
+@media (max-width:1060px){
+  .flux{grid-template-columns:minmax(0,1fr);row-gap:28px;padding-bottom:72px}
+  .liaison{display:none}
+  .entrees{grid-template-rows:none;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .entree{align-self:stretch}
+  .lecture{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 24px}
+}
+@media (max-width:420px){.entrees{grid-template-columns:minmax(0,1fr)}}
 
 /* Ce que porte la console */
 .console{border-top:1px solid var(--line);padding:64px 0 88px}
@@ -111,14 +131,24 @@ h1 em{font-style:normal;text-decoration:underline;text-decoration-color:var(--si
 .modules h2{font-size:1.05rem;font-weight:700;letter-spacing:-.01em;margin:0 0 8px}
 .modules p{margin:0;color:var(--muted);font-size:.95rem;line-height:1.55}
 
+/* Développeurs */
+.dev{border-top:1px solid var(--line);padding:64px 0 72px}
+.dev .cadre{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:24px 48px}
+.dev h2{font-size:clamp(1.5rem,3vw,2.1rem);line-height:1.15;letter-spacing:-.025em;font-weight:800;margin:0 0 12px}
+.dev p{margin:0;color:var(--muted);max-width:36em}
+.routes{font-family:var(--mono);font-size:.78rem;color:var(--ink);margin-top:18px;display:flex;flex-wrap:wrap;gap:6px}
+.routes span{padding:3px 8px;border-radius:6px;background:var(--bubble-in)}
+
 .pied{border-top:1px solid var(--line)}
 .pied .cadre{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px 24px;padding-top:24px;padding-bottom:32px;font-size:.85rem;color:var(--muted)}
 
-/* La conversation se déroule une fois au chargement, puis la lecture s'écrit. Rien ne bouge sans préférence. */
+/* Au chargement : les entrées, puis le chemin de la campagne, la conversation, et enfin la lecture. */
 @media (prefers-reduced-motion:no-preference){
   .apparait{opacity:0;animation:apparait .5s cubic-bezier(.2,.7,.2,1) forwards;animation-delay:var(--d,0s)}
+  .trace{opacity:0;animation:fondu .5s ease-out forwards;animation-delay:var(--d,0s)}
   .echelle i.plein{transform-origin:left;animation:remplit .4s ease-out both;animation-delay:calc(var(--d,0s) + .15s)}
   @keyframes apparait{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  @keyframes fondu{to{opacity:1}}
   @keyframes remplit{from{transform:scaleX(0)}to{transform:none}}
 }
 </style>
@@ -135,72 +165,107 @@ h1 em{font-style:normal;text-decoration:underline;text-decoration-color:var(--si
     </svg>
     Engage Me
   </a>
-  <a class="bouton bouton-trait" href="https://engageme.messagingme.app/login">Se connecter</a>
+  <nav class="nav" aria-label="Principale">
+    <a class="lien" href="#developpeurs">Développeurs</a>
+    <a class="bouton bouton-trait" href="https://engageme.messagingme.app/login">Se connecter</a>
+  </nav>
 </header>
 
 <main>
   <section class="cadre une">
-    <div>
-      <h1>La plateforme conversationnelle qui <em>comprend</em> chaque conversation.</h1>
-      <p class="chapeau">Engage Me réunit vos campagnes, vos scénarios, vos agents et votre équipe dans une seule console WhatsApp, bâtie sur les API officielles de Meta. Chaque échange y est lu, qualifié et mesuré.</p>
-      <div class="appel">
-        <a class="bouton bouton-plein" href="https://engageme.messagingme.app/login">Se connecter</a>
-        <small>La console s’ouvre sur engageme.messagingme.app</small>
-      </div>
+    <h1>Tout WhatsApp, dans une seule console.</h1>
+    <p class="chapeau">Campagnes push, chaîne WhatsApp, publicités Click-to-WhatsApp et RCS en relais&nbsp;: toutes vos entrées arrivent au même endroit. <strong>Vous choisissez qui répond</strong>, du Meta Business Agent natif à vos propres agents IA, et Engage Me <strong>orchestre les parcours</strong> et <strong>qualifie vraiment chaque conversation</strong>, de l’intention d’achat au risque de churn.</p>
+    <a class="bouton bouton-plein" href="https://engageme.messagingme.app/login">Se connecter</a>
+  </section>
+
+  <section class="cadre flux" aria-label="Exemple : une campagne push, la conversation qu’elle ouvre, et ce qu’Engage Me en comprend">
+    <div class="colonne">
+      <p class="legende">Les entrées</p>
+      <ul class="entrees">
+        <li class="entree actif apparait" style="--d:.1s"><strong>Campagne push</strong><span>Vos offres et relances, envoyées au bon segment</span></li>
+        <li class="entree apparait" style="--d:.2s"><strong>Chaîne WhatsApp</strong><span>Un post de votre chaîne ouvre la conversation</span></li>
+        <li class="entree apparait" style="--d:.3s"><strong>Publicité Click-to-WhatsApp</strong><span>Le clic sur l’annonce lance le bon scénario</span></li>
+        <li class="entree apparait" style="--d:.4s"><strong>RCS</strong><span>Prend le relais quand WhatsApp ne passe pas</span></li>
+      </ul>
     </div>
 
-    <figure class="fil" aria-label="Exemple de conversation, et ce qu’Engage Me en retient">
-      <div class="fil-tete">Conversation WhatsApp <span>Exemple</span></div>
-      <ol class="messages">
-        <li class="apparait" style="--d:.2s">
-          <div class="msg entrant">
-            <p>Bonjour, ma commande n’est toujours pas arrivée et je pars lundi. Vous pouvez vérifier&nbsp;?</p>
-            <time>10:42</time>
-          </div>
-        </li>
-        <li class="apparait" style="--d:.7s">
-          <div class="msg entrant">
-            <div class="vocal" aria-label="Message vocal de 14 secondes">
-              <span class="vocal-lecture" aria-hidden="true"></span>
-              <span class="onde" aria-hidden="true"><i style="height:35%"></i><i style="height:60%"></i><i style="height:45%"></i><i style="height:80%"></i><i style="height:55%"></i><i style="height:90%"></i><i style="height:70%"></i><i style="height:40%"></i><i style="height:65%"></i><i style="height:85%"></i><i style="height:50%"></i><i style="height:75%"></i><i style="height:95%"></i><i style="height:60%"></i><i style="height:45%"></i><i style="height:70%"></i><i style="height:55%"></i><i style="height:80%"></i><i style="height:40%"></i><i style="height:60%"></i><i style="height:35%"></i><i style="height:50%"></i></span>
-              <span class="vocal-duree">0:14</span>
+    <div class="liaison" aria-hidden="true">
+      <svg viewBox="0 0 56 100" preserveAspectRatio="none">
+        <path d="M0 37.5 C28 37.5 28 50 56 50"/>
+        <path d="M0 62.5 C28 62.5 28 50 56 50"/>
+        <path d="M0 87.5 C28 87.5 28 50 56 50"/>
+        <path class="actif trace" style="--d:.6s" d="M0 12.5 C28 12.5 28 50 56 50"/>
+      </svg>
+    </div>
+
+    <div class="colonne">
+      <p class="legende">Une conversation</p>
+      <figure class="fil">
+        <div class="fil-tete">Conversation WhatsApp <span>Exemple</span></div>
+        <div class="repond">
+          <span class="repond-titre">Qui répond</span>
+          <span class="choix pris">Meta Business Agent</span>
+          <span class="choix">Agent IA</span>
+          <span class="choix">Équipe</span>
+        </div>
+        <ol class="messages">
+          <li class="apparait" style="--d:.9s">
+            <div class="msg sortant">
+              <span class="auteur">Votre marque</span>
+              <p>Nouvelle collection d’automne&nbsp;: -20&nbsp;% pour nos clients, jusqu’à dimanche.</p>
+              <span class="cta-modele">Voir la collection</span>
+              <time>10:30</time>
             </div>
-            <time>10:43</time>
-          </div>
-        </li>
-        <li class="apparait" style="--d:1.2s">
-          <p class="annotation"><span class="etiquette">Vocal transcrit</span>« C’est la commande 4471, normalement livrée en point relais. »</p>
-        </li>
-        <li class="apparait" style="--d:1.7s">
-          <div class="msg sortant">
-            <span class="auteur">Léa, service client</span>
-            <p>Je regarde tout de suite. Votre colis 4471 est arrivé au point relais ce matin, vous pouvez le retirer dès aujourd’hui.</p>
-            <time>10:44</time>
-          </div>
-        </li>
-        <li class="apparait" style="--d:2.2s">
-          <div class="msg entrant">
-            <p>Parfait, merci&nbsp;!</p>
-            <time>10:45</time>
-          </div>
-        </li>
-      </ol>
-      <div class="lu">
-        <p class="etiquette apparait" style="--d:2.7s">Lu par Engage Me</p>
-        <dl>
-          <div class="apparait" style="--d:2.85s"><dt>Intention</dt><dd>Suivi de commande</dd></div>
-          <div class="apparait" style="--d:3s"><dt>Statut</dt><dd>Résolue</dd></div>
+          </li>
+          <li class="apparait" style="--d:1.4s">
+            <div class="msg entrant">
+              <p>La veste en laine existe en taille M&nbsp;? Je la prends si oui.</p>
+              <time>10:41</time>
+            </div>
+          </li>
+          <li class="apparait" style="--d:1.9s">
+            <div class="msg sortant">
+              <span class="auteur">Meta Business Agent</span>
+              <p>Oui, il en reste trois en M. Je vous envoie le lien de paiement&nbsp;?</p>
+              <time>10:41</time>
+            </div>
+          </li>
+          <li class="apparait" style="--d:2.4s">
+            <div class="msg entrant">
+              <p>Oui, merci&nbsp;!</p>
+              <time>10:42</time>
+            </div>
+          </li>
+        </ol>
+      </figure>
+    </div>
+
+    <div class="liaison" aria-hidden="true">
+      <svg viewBox="0 0 56 100" preserveAspectRatio="none">
+        <path class="actif trace" style="--d:2.8s" d="M0 50 L56 50"/>
+      </svg>
+    </div>
+
+    <div class="colonne">
+      <p class="legende legende-lu">Ce qu’Engage Me comprend</p>
+      <div class="comprend">
+        <dl class="lecture">
+          <div class="apparait" style="--d:3s"><dt>Intention</dt><dd>Achat</dd></div>
           <div class="apparait" style="--d:3.15s">
-            <dt>Urgence</dt><dd>8 sur 10</dd>
-            <dd class="echelle" aria-hidden="true"><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i></i><i></i></dd>
+            <dt>Urgence</dt><dd>7 sur 10</dd>
+            <dd class="echelle" aria-hidden="true"><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i></i><i></i><i></i></dd>
           </div>
           <div class="apparait" style="--d:3.3s">
             <dt>Satisfaction</dt><dd>9 sur 10</dd>
-            <dd class="echelle satisfaction" aria-hidden="true"><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i></i></dd>
+            <dd class="echelle vert" aria-hidden="true"><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i></i></dd>
+          </div>
+          <div class="apparait" style="--d:3.45s">
+            <dt>Risque de churn</dt><dd>Faible</dd>
+            <dd class="echelle vert" aria-hidden="true"><i class="plein"></i><i></i><i></i></dd>
           </div>
         </dl>
       </div>
-    </figure>
+    </div>
   </section>
 
   <section class="console">
@@ -209,21 +274,32 @@ h1 em{font-style:normal;text-decoration:underline;text-decoration-color:var(--si
       <ul class="modules">
         <li>
           <h2>Campagnes</h2>
-          <p>Envoyez vos campagnes WhatsApp, et relancez en RCS ou par e-mail ceux que WhatsApp n’atteint pas.</p>
-        </li>
-        <li>
-          <h2>Scénarios</h2>
-          <p>Dessinez les parcours qui répondent, qualifient et orientent chaque contact, sans écrire de code.</p>
+          <p>Push, chaîne WhatsApp, publicités Click-to-WhatsApp et RCS, lancées et mesurées au même endroit.</p>
         </li>
         <li>
           <h2>Agents</h2>
-          <p>Configurez le Meta Business Agent ou vos propres agents IA, et reprenez la main quand il le faut.</p>
+          <p>Le Meta Business Agent natif, vos propres agents IA ou votre équipe dans l’Inbox&nbsp;: vous choisissez qui répond, et vous reprenez la main à tout moment.</p>
         </li>
         <li>
-          <h2>Inbox</h2>
-          <p>Votre équipe répond depuis une boîte partagée, traduction des messages et transcription des vocaux comprises.</p>
+          <h2>Orchestration</h2>
+          <p>Scénarios et agents s’enchaînent, et un contact que WhatsApp n’atteint pas est relancé en RCS, puis par e&#8209;mail.</p>
+        </li>
+        <li>
+          <h2>Qualification</h2>
+          <p>Chaque conversation est lue&nbsp;: intention d’achat, urgence, satisfaction, risque de churn. Vous savez qui relancer, et qui retenir.</p>
         </li>
       </ul>
+    </div>
+  </section>
+
+  <section class="dev" id="developpeurs">
+    <div class="cadre">
+      <div>
+        <h2>Développeurs</h2>
+        <p>Branchez Engage Me sur votre système&nbsp;: créez et retrouvez vos contacts, envoyez vos messages WhatsApp et RCS, déclenchez vos scénarios.</p>
+        <div class="routes" aria-hidden="true"><span>POST /v1/contacts</span><span>POST /v1/messages/whatsapp</span><span>POST /v1/messages/rcs</span><span>POST /v1/sends</span></div>
+      </div>
+      <a class="bouton bouton-plein" href="https://engageme.messagingme.app/developers/api">Lire la documentation de l’API</a>
     </div>
   </section>
 </main>
@@ -231,6 +307,7 @@ h1 em{font-style:normal;text-decoration:underline;text-decoration-color:var(--si
 <footer class="pied">
   <div class="cadre">
     <span>© 2026 MessagingMe</span>
+    <a class="lien" href="https://engageme.messagingme.app/developers/api">Documentation de l’API</a>
   </div>
 </footer>
 </body>
