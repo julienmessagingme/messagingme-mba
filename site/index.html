@@ -20,6 +20,12 @@
 <script>document.documentElement.classList.add('js')</script>
 <style>
 @font-face{font-family:"Plus Jakarta Sans";src:url("fonts/plus-jakarta-sans-latin.woff2") format("woff2");font-weight:200 800;font-style:normal;font-display:swap}
+/* Les polices des TÉLÉPHONES, qui imitent un système (Google Fonts, licence OFL, servies ici : aucun appel à Google
+   chez le visiteur). Sans elles, un PC Windows affichait les deux écrans en Segoe UI, la police de Windows.
+   Google Sans est celle de Google Messages. Inter remplace San Francisco, qui ne se diffuse pas sur le web : un
+   visiteur Apple garde le vrai (`-apple-system` passe en tête de `--ios`). */
+@font-face{font-family:"Google Sans";src:url("fonts/google-sans-latin.woff2") format("woff2");font-weight:400 700;font-style:normal;font-display:swap}
+@font-face{font-family:"Inter";src:url("fonts/inter-latin.woff2") format("woff2");font-weight:400 700;font-style:normal;font-display:swap}
 
 /* Rayons : boutons 10 px, panneaux 16 px, pastilles pleines. Les téléphones gardent les leurs : ce sont des objets.
    UN SEUL THÈME, celui de messagingme.fr : fond #010630, halo #101E8A, texte blanc, paragraphes à 66 %,
@@ -31,8 +37,8 @@
   --logo-navy:#FFFFFF;--code-bg:#000322;--code-ink:#E7E9F3;--code-muted:#8E94BC;--ombre:rgb(0 2 20 / .55);
   --sans:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:ui-monospace,"SF Mono","Cascadia Mono","Segoe UI Mono",Menlo,Consolas,monospace;
-  --ios:-apple-system,"SF Pro Text",system-ui,"Segoe UI",Roboto,sans-serif;
-  --android:"Google Sans",Roboto,system-ui,"Segoe UI",sans-serif;
+  --ios:-apple-system,"SF Pro Text","Inter",sans-serif;
+  --android:"Google Sans",Roboto,sans-serif;
   /* WhatsApp sur iOS, en clair : c'est l'écran d'un vrai téléphone, et il ressort sur le bleu nuit. */
   --wa-tete:#F6F6F6;--wa-fond:#EFEAE2;--wa-motif:rgb(17 27 33 / .045);--wa-recu:#FFFFFF;--wa-envoye:#D9FDD3;
   --wa-texte:#111B21;--wa-meta:#667781;--wa-coche:#53BDEB;--wa-lien:#027EB5;--wa-teinte:#007AFF;--wa-champ:#FFFFFF;--wa-date:#FFFFFF;
@@ -102,8 +108,8 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .iphone::before,.iphone::after{content:"";position:absolute;width:3px;border-radius:2px;background:#2A2B31}
 .iphone::before{left:-3px;top:104px;height:50px;box-shadow:0 64px 0 #2A2B31}
 .iphone::after{right:-3px;top:140px;height:72px}
-.ecran{position:relative;height:516px;border-radius:39px;overflow:hidden;display:flex;flex-direction:column;background:var(--wa-fond);font-family:var(--ios);color:var(--wa-texte)}
-.ios{position:relative;flex:none;display:flex;align-items:center;justify-content:space-between;height:44px;padding:6px 22px 0 30px;background:var(--wa-tete);font-size:.78rem;font-weight:600;letter-spacing:-.01em}
+.ecran{position:relative;height:516px;border-radius:39px;overflow:hidden;display:flex;flex-direction:column;background:var(--wa-fond);font-family:var(--ios);color:var(--wa-texte);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+.ios{position:relative;font-variant-numeric:tabular-nums;flex:none;display:flex;align-items:center;justify-content:space-between;height:44px;padding:6px 22px 0 30px;background:var(--wa-tete);font-size:.78rem;font-weight:600;letter-spacing:-.01em}
 .ilot{position:absolute;top:10px;left:50%;width:80px;height:23px;margin-left:-40px;border-radius:14px;background:#0A0A0B}
 .etat{display:flex;align-items:center;gap:4px;font-size:.92rem}
 .etat .pile{font-size:1.2rem}
@@ -126,7 +132,7 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .recu::before,.envoye::before{content:"";position:absolute;top:0;width:0;height:0;border-bottom:9px solid transparent}
 .recu::before{left:-7px;border-right:8px solid var(--wa-recu)}
 .envoye::before{right:-7px;border-left:8px solid var(--wa-envoye)}
-.heure{float:right;display:inline-flex;align-items:center;gap:3px;margin:5px 0 -3px 10px;font-size:.58rem;color:var(--wa-meta)}
+.heure{float:right;font-variant-numeric:tabular-nums;display:inline-flex;align-items:center;gap:3px;margin:5px 0 -3px 10px;font-size:.58rem;color:var(--wa-meta)}
 .heure .ic{font-size:.92rem;color:var(--wa-coche)}
 .bouton-modele{display:flex;align-items:center;justify-content:center;gap:5px;margin:7px -8px -5px -9px;padding:7px 0 8px;border-top:.5px solid rgb(11 20 26 / .12);font-size:.78rem;font-weight:500;color:var(--wa-lien)}
 .saisie{flex:none;display:flex;align-items:center;gap:10px;padding:7px 12px 22px;background:var(--wa-tete);color:var(--wa-teinte);font-size:1.25rem}
@@ -136,8 +142,8 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 /* L'Android et Google Messages (RCS) */
 .android{position:absolute;z-index:1;right:0;top:0;width:250px;padding:8px;border-radius:38px;background:linear-gradient(145deg,#3A3D42,#1C1E21);box-shadow:inset 0 0 0 1.5px #56595F,0 40px 70px -28px var(--ombre)}
 .android::after{content:"";position:absolute;right:-3px;top:120px;width:3px;height:60px;border-radius:2px;background:#3A3D42;box-shadow:0 78px 0 #3A3D42}
-.ecran-a{position:relative;height:562px;border-radius:31px;overflow:hidden;display:flex;flex-direction:column;background:var(--rcs-fond);font-family:var(--android);color:var(--rcs-texte)}
-.a-etat{flex:none;position:relative;display:flex;align-items:center;justify-content:space-between;height:30px;padding:4px 18px 0 20px;font-size:.72rem;font-weight:500}
+.ecran-a{position:relative;height:562px;border-radius:31px;overflow:hidden;display:flex;flex-direction:column;background:var(--rcs-fond);font-family:var(--android);color:var(--rcs-texte);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+.a-etat{flex:none;font-variant-numeric:tabular-nums;position:relative;display:flex;align-items:center;justify-content:space-between;height:30px;padding:4px 18px 0 20px;font-size:.72rem;font-weight:500}
 .a-etat .poincon{position:absolute;top:9px;left:50%;width:11px;height:11px;margin-left:-5.5px;border-radius:50%;background:#0A0A0B}
 .a-etat .etat{font-size:.85rem;gap:3px}
 .a-tete{flex:none;display:flex;align-items:center;gap:10px;padding:6px 10px 10px 12px;font-size:1.2rem}
