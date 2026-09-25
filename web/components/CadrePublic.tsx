@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Logo } from '@/components/Logo';
 import { LocaleToggle } from '@/components/LocaleToggle';
 import { useT } from '@/lib/i18n';
+import { classesBouton } from '@/components/Bouton';
 
 /**
  * Le cadre des documentations lues SANS compte (l'API et le serveur MCP) : un intégrateur y arrive depuis la
@@ -15,13 +16,13 @@ export function CadrePublic({ children }: { children: React.ReactNode }) {
   return (
     <main className="min-h-screen px-4 py-8">
       <header className="mx-auto mb-8 flex max-w-6xl items-center justify-between gap-4">
-        <a href="https://engageme.messagingme.fr" className="flex items-center gap-2 text-base font-semibold tracking-tight text-ink-900">
+        <a href="https://engageme.messagingme.fr" className="flex items-center gap-2 text-base font-semibold text-ink-900">
           <Logo className="h-7 w-7" />
           Engage Me
         </a>
         <div className="flex items-center gap-3">
           <LocaleToggle />
-          <Link href="/login" className="rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-sm font-medium text-ink-800 transition hover:border-brand-500 hover:text-brand-600">
+          <Link href="/login" className={classesBouton('secondaire')}>
             {t('Se connecter', 'Sign in')}
           </Link>
         </div>

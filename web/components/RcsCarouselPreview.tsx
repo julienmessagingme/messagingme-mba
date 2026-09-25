@@ -28,7 +28,7 @@ export function RcsCarouselPreview({ brouillon, sansFond = false }: { brouillon:
           const boutons = c.suggestions.filter((s) => s.text.trim() !== '');
           const vide = image === '' && titre === '' && texte === '' && boutons.length === 0;
           return (
-            <div key={i} data-testid={`rcs-carrousel-apercu-carte-${i}`} className="w-48 shrink-0 overflow-hidden rounded-2xl bg-mint-100">
+            <div key={i} data-testid={`rcs-carrousel-apercu-carte-${i}`} className="w-48 shrink-0 overflow-hidden rounded-2xl bg-succes-100">
               {image !== '' && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={image} alt={`${t('Carte', 'Card')} ${i + 1}`} referrerPolicy="no-referrer" className="aspect-video w-full bg-ink-100 object-cover" />
@@ -37,11 +37,11 @@ export function RcsCarouselPreview({ brouillon, sansFond = false }: { brouillon:
               {(titre !== '' || texte !== '') && (
                 <div className="px-3 py-2">
                   {titre !== '' && <div className="text-sm font-semibold text-ink-900">{titre}</div>}
-                  {texte !== '' && <div className="whitespace-pre-wrap text-sm text-ink-800">{texte}</div>}
+                  {texte !== '' && <div className="whitespace-pre-wrap text-sm text-ink-900">{texte}</div>}
                 </div>
               )}
               {boutons.map((s, j) => (
-                <div key={j} className="border-t border-mint-200 bg-white px-3 py-2 text-center text-sm font-medium text-ink-800">
+                <div key={j} className="border-t border-succes-200 bg-white px-3 py-2 text-center text-sm font-medium text-ink-900">
                   {ICONE_KIND[s.kind]}{s.text}
                 </div>
               ))}

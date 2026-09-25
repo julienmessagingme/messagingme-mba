@@ -5,6 +5,7 @@ import { useT } from '@/lib/i18n';
 import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from './MbaNotice';
 import { testMbaAgent } from '@/lib/api-mba';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * Bac à sable : parler à l'agent comme un client, sans destinataire réel et sans l'allumer. Meta ne facture pas
@@ -62,7 +63,7 @@ export function MbaTestPanel({ tenantId, phoneNumberId }: { tenantId: string; ph
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="text-sm font-semibold text-ink-900">{t('Tester l’agent', 'Test the agent')}</h3>
-            <p className="mt-1 text-xs leading-relaxed text-ink-600">
+            <p className="mt-1 text-xs leading-relaxed text-ink-500">
               {t(
                 'Aucun message réel n’est envoyé, et l’agent n’a pas besoin d’être allumé. Vérifiez surtout qu’il refuse d’inventer ce qu’il ne sait pas.',
                 'No real message is sent, and the agent does not need to be on. Above all, check that it refuses to make up what it does not know.',
@@ -71,7 +72,7 @@ export function MbaTestPanel({ tenantId, phoneNumberId }: { tenantId: string; ph
           </div>
           {tours.length > 0 && (
             <button
-              className="shrink-0 text-xs font-medium text-ink-500 hover:text-ink-800"
+              className="shrink-0 text-xs font-medium text-ink-500 hover:text-ink-900"
               data-testid="mba-test-reset"
               onClick={() => { setTours([]); setConversationId(undefined); }}
             >
@@ -86,7 +87,7 @@ export function MbaTestPanel({ tenantId, phoneNumberId }: { tenantId: string; ph
           )}
           {tours.map((tour, i) => (
             <div key={`${i}-${tour.texte.slice(0, 16)}`} className={`flex ${tour.role === 'client' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${tour.role === 'client' ? 'bg-brand-500 text-white' : 'bg-white text-ink-800 shadow-sm'}`}>
+              <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${tour.role === 'client' ? 'bg-brand-500 text-white' : 'bg-white text-ink-900'}`}>
                 <p className="whitespace-pre-wrap">{tour.texte}</p>
                 {tour.note !== undefined && <p className="mt-1 text-xs opacity-70" data-testid="mba-test-note">{tour.note}</p>}
               </div>
@@ -104,14 +105,14 @@ export function MbaTestPanel({ tenantId, phoneNumberId }: { tenantId: string; ph
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') void envoyer(); }}
           />
-          <button
-            className="shrink-0 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          <Bouton enCours={busy}
+            className="shrink-0"
             data-testid="mba-test-send"
             disabled={busy || message.trim() === ''}
             onClick={() => void envoyer()}
           >
             {busy ? t('…', '…') : t('Envoyer', 'Send')}
-          </button>
+          </Bouton>
         </div>
       </section>
     </div>

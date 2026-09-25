@@ -9,6 +9,8 @@ import { formatDate, hourMin } from '@/lib/day';
 import { inputCls } from '@/lib/ui';
 import { estAnnulation } from '@/lib/http';
 import { routeInconnue } from '@/lib/canaux-services';
+import { Bouton } from '@/components/Bouton';
+import { TitrePage } from '@/components/TitrePage';
 
 export default function AdminPage() {
   return <AppShell active="admin">{(session) => <AdminInner session={session} />}</AppShell>;
@@ -98,14 +100,14 @@ function AdminInner({ session }: { session: Session }) {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Compte', 'Account')}</h2>
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      <TitrePage>{t('Compte', 'Account')}</TitrePage>
+      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
       <EspaceCard tenantId={session.tenantId} />
 
       <InviteCard tenantId={session.tenantId} onInvited={load} />
 
-      <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
         <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">
           {t('Comptes', 'Accounts')} ({users.length})
         </div>
@@ -114,7 +116,7 @@ function AdminInner({ session }: { session: Session }) {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
+              <tr className="border-b border-ink-100 text-left text-xs text-ink-500">
                 <th className="px-5 py-2 font-medium">{t('Nom', 'Name')}</th>
                 <th className="px-5 py-2 font-medium">{t('Email', 'Email')}</th>
                 <th className="px-5 py-2 font-medium">{t('Rôle', 'Role')}</th>
@@ -139,17 +141,17 @@ function AdminInner({ session }: { session: Session }) {
                         onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
                         placeholder={t('prénom', 'first name')}
                         maxLength={60}
-                        className={`w-36 rounded-lg border border-transparent px-2 py-1 text-sm hover:border-ink-200 focus:border-brand-500 focus:outline-none ${u.disabled ? 'text-ink-400' : 'text-ink-800'}`}
+                        className={`w-36 rounded-lg border border-transparent px-2 py-1 text-sm hover:border-ink-200 focus:border-brand-500 focus:outline-none ${u.disabled ? 'text-ink-400' : 'text-ink-900'}`}
                       />
                     </td>
-                    <td className={`px-5 py-3 ${u.disabled ? 'text-ink-400' : 'text-ink-600'}`}>{u.email}</td>
+                    <td className={`px-5 py-3 ${u.disabled ? 'text-ink-400' : 'text-ink-500'}`}>{u.email}</td>
                     <td className="px-5 py-3">
                       <select
                         value={u.role}
                         disabled={isSelf}
                         onChange={(e) => changeRole(u, e.target.value as UserRole)}
                         title={isSelf ? t('Tu ne peux pas changer ton propre rôle', 'You cannot change your own role') : ''}
-                        className="rounded-lg border border-ink-300 bg-white px-2 py-1 text-sm text-ink-800 disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-ink-400"
+                        className="rounded-lg border border-ink-300 bg-white px-2 py-1 text-sm text-ink-900 disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-ink-400"
                       >
                         <option value="admin">Admin</option>
                         <option value="manager">Manager</option>
@@ -158,21 +160,21 @@ function AdminInner({ session }: { session: Session }) {
                     </td>
                     <td className="px-5 py-3">
                       {u.disabled ? (
-                        <span className="inline-flex items-center rounded-full bg-coral/10 px-2 py-0.5 text-xs font-medium text-coral">{t('Révoqué', 'Revoked')}</span>
+                        <span className="inline-flex items-center rounded-full bg-danger-50 px-2 py-0.5 text-xs font-medium text-danger">{t('Révoqué', 'Revoked')}</span>
                       ) : u.pending ? (
-                        <span className="inline-flex items-center rounded-full bg-gold/10 px-2 py-0.5 text-xs font-medium text-gold" title={t("A été invité mais n'a pas encore choisi son mot de passe", "Has been invited but hasn't chosen a password yet")}>{t('Invité', 'Invited')}</span>
+                        <span className="inline-flex items-center rounded-full bg-alerte-50 px-2 py-0.5 text-xs font-medium text-alerte" title={t("A été invité mais n'a pas encore choisi son mot de passe", "Has been invited but hasn't chosen a password yet")}>{t('Invité', 'Invited')}</span>
                       ) : (
-                        <span className="inline-flex items-center rounded-full bg-mint-50 px-2 py-0.5 text-xs font-medium text-mint-700">{t('Actif', 'Active')}</span>
+                        <span className="inline-flex items-center rounded-full bg-succes-50 px-2 py-0.5 text-xs font-medium text-succes-700">{t('Actif', 'Active')}</span>
                       )}
                     </td>
-                    <td className={`px-5 py-3 tabular-nums ${u.disabled ? 'text-ink-400' : 'text-ink-600'}`}>
+                    <td className={`px-5 py-3 tabular-nums ${u.disabled ? 'text-ink-400' : 'text-ink-500'}`}>
                       {u.lastLoginAt ? (
                         <>
                           {formatDate(u.lastLoginAt, locale, { day: '2-digit', month: '2-digit', year: '2-digit' })}
                           <span className="ml-1.5 text-ink-400">{hourMin(u.lastLoginAt, locale)}</span>
                         </>
                       ) : (
-                        <span className="text-ink-300" title={t('Aucune connexion depuis la mise en place du suivi', 'No sign-in since tracking was introduced')}>
+                        <span className="text-ink-400" title={t('Aucune connexion depuis la mise en place du suivi', 'No sign-in since tracking was introduced')}>
                           {t('Jamais', 'Never')}
                         </span>
                       )}
@@ -183,7 +185,7 @@ function AdminInner({ session }: { session: Session }) {
                           onClick={() => toggleDisabled(u)}
                           disabled={isSelf}
                           title={isSelf ? t('Tu ne peux pas révoquer ton propre compte', 'You cannot revoke your own account') : ''}
-                          className="text-ink-600 hover:text-ink-900 disabled:cursor-not-allowed disabled:text-ink-300"
+                          className="text-ink-500 hover:text-ink-900 disabled:cursor-not-allowed disabled:text-ink-400"
                         >
                           {u.disabled ? t('Réactiver', 'Reactivate') : t('Révoquer', 'Revoke')}
                         </button>
@@ -191,7 +193,7 @@ function AdminInner({ session }: { session: Session }) {
                           onClick={() => removeUser(u)}
                           disabled={isSelf}
                           title={isSelf ? t('Tu ne peux pas supprimer ton propre compte', 'You cannot delete your own account') : t('Suppression définitive', 'Permanent deletion')}
-                          className="text-coral hover:text-coral/80 disabled:cursor-not-allowed disabled:text-ink-300"
+                          className="text-danger hover:text-danger-500 disabled:cursor-not-allowed disabled:text-ink-400"
                         >
                           {t('Supprimer', 'Delete')}
                         </button>
@@ -235,41 +237,41 @@ function InviteCard({ tenantId, onInvited }: { tenantId: string; onInvited: () =
   }
 
   return (
-    <form onSubmit={submit} className="space-y-3 rounded-2xl border border-brand-200 bg-brand-50/40 p-5 shadow-sm">
+    <form onSubmit={submit} className="space-y-3 rounded-2xl border border-brand-200 bg-brand-50/40 p-5">
       <div className="text-sm font-semibold text-ink-900">{t('Inviter un membre', 'Invite a member')}</div>
       <p className="text-xs text-ink-500">{t("Il reçoit un email pour choisir son mot de passe et rejoindre l'espace.", 'They receive an email to choose their password and join the workspace.')}</p>
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-[200px] flex-1">
-          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Email', 'Email')}</label>
+          <label className="mb-1 block text-xs font-medium text-ink-500">{t('Email', 'Email')}</label>
           <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} placeholder={t('membre@entreprise.fr', 'member@company.com')} />
         </div>
         {/* ⚠️ FACULTATIF, mais proposé ICI : posé à l'invitation, le membre apparaît tout de suite sous son
             prénom dans l'Inbox. Saisi plus tard, il aura été une adresse e-mail entre-temps. */}
         <div className="min-w-[140px]">
-          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Prénom (facultatif)', 'First name (optional)')}</label>
+          <label className="mb-1 block text-xs font-medium text-ink-500">{t('Prénom (facultatif)', 'First name (optional)')}</label>
           <input value={nom} onChange={(e) => setNom(e.target.value)} maxLength={60} className={inputCls} placeholder={t('Camille', 'Camille')} />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Rôle', 'Role')}</label>
-          <select value={role} onChange={(e) => setRole(e.target.value as UserRole)} className="rounded-lg border border-ink-300 bg-white px-3 py-2 text-sm text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100">
+          <label className="mb-1 block text-xs font-medium text-ink-500">{t('Rôle', 'Role')}</label>
+          <select value={role} onChange={(e) => setRole(e.target.value as UserRole)} className="rounded-lg border border-ink-300 bg-white px-3 py-2 text-sm text-ink-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100">
             <option value="agent">{t('Agent (inbox)', 'Agent (inbox)')}</option>
             <option value="manager">{t('Manager (inbox)', 'Manager (inbox)')}</option>
             <option value="admin">Admin</option>
           </select>
         </div>
-        <button type="submit" disabled={busy} className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60">
+        <Bouton enCours={busy} type="submit" disabled={busy}>
           {busy ? t('Envoi…', 'Sending…') : t('Inviter', 'Invite')}
-        </button>
+        </Bouton>
       </div>
       {/* Dit franchement ce que les rôles donnent AUJOURD'HUI : « manager » est un statut, ses droits propres
           restent à définir. Sans cette ligne, on invite un manager en s'attendant à ce qu'il voie tout. */}
-      <p className="text-[11px] leading-snug text-ink-400">
+      <p className="text-xs leading-snug text-ink-400">
         {t(
           'Manager et agent accèdent à l’inbox. Seul un admin accède au reste de la console.',
           'Managers and agents get the inbox. Only an admin reaches the rest of the console.',
         )}
       </p>
-      {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-mint-50 text-mint-700' : 'bg-red-50 text-red-700'}`}>{msg.text}</p>}
+      {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-700'}`}>{msg.text}</p>}
     </form>
   );
 }
@@ -332,27 +334,26 @@ function EspaceCard({ tenantId }: { tenantId: string }) {
   }
 
   return (
-    <form data-testid="espace-carte" onSubmit={enregistrer} className="space-y-3 rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+    <form data-testid="espace-carte" onSubmit={enregistrer} className="space-y-3 rounded-2xl border border-ink-200 bg-white p-5">
       <div className="text-sm font-semibold text-ink-900">{t('Espace', 'Workspace')}</div>
       {lecture === 'en_cours' && <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>}
       {lecture === 'ok' && (
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[220px] flex-1">
-            <label htmlFor="espace-nom" className="mb-1 block text-xs font-medium text-ink-600">{t('Nom de l’espace', 'Workspace name')}</label>
+            <label htmlFor="espace-nom" className="mb-1 block text-xs font-medium text-ink-500">{t('Nom de l’espace', 'Workspace name')}</label>
             <input id="espace-nom" data-testid="espace-nom" value={saisie} onChange={(e) => setSaisie(e.target.value)} maxLength={80} required className={inputCls} />
           </div>
-          <button
+          <Bouton enCours={busy}
             type="submit"
             data-testid="espace-enregistrer"
             disabled={busy || inchange}
-            className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60"
           >
             {busy ? t('Enregistrement…', 'Saving…') : t('Enregistrer', 'Save')}
-          </button>
+          </Bouton>
         </div>
       )}
       {msg && (
-        <p data-testid="espace-message" className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-mint-50 text-mint-700' : 'bg-red-50 text-red-700'}`}>{msg.text}</p>
+        <p data-testid="espace-message" className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-700'}`}>{msg.text}</p>
       )}
     </form>
   );

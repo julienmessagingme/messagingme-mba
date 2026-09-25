@@ -7,6 +7,7 @@ import { MbaNotice } from '@/components/MbaNotice';
 import { listSources, type SourceAgent } from '@/lib/api-agent-sources';
 import { listRequetes, testerBrouillon, type RequeteApi } from '@/lib/api-agent-requetes';
 import { ajouterConnecteur, type NatureOutil, type OutilAgent } from '@/lib/api-agent-tools';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * CE QUE CET AGENT A LE DROIT D'APPELER dans les systèmes du workspace.
@@ -96,9 +97,9 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
         return (
           <div key={rq.id} className={`${cardCls} flex flex-col gap-2`} data-testid={`agent-requete-${rq.id}`}>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="text-sm font-medium text-ink-800">{rq.label}</p>
+              <p className="text-sm font-medium text-ink-900">{rq.label}</p>
               <p className="text-xs text-ink-500">
-                <span className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-[11px]">{rq.methode}</span>{' '}
+                <span className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-xs">{rq.methode}</span>{' '}
                 {libelleSource(rq.sourceId)} {rq.chemin}
               </p>
             </div>
@@ -108,7 +109,7 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
             ) : (
               <ul className="space-y-0.5">
                 {siens.map((o) => (
-                  <li key={o.id} className="text-xs text-ink-600">
+                  <li key={o.id} className="text-xs text-ink-500">
                     <code>{o.name}</code>
                     {!o.actif && <span className="ml-1 text-ink-400">{t('(inactif)', '(inactive)')}</span>}
                   </li>
@@ -249,7 +250,7 @@ function NouvelAppel({ tenantId, requete, busy, onCreer }: {
         * contacts, voire leur dernier message, à un système tiers.
         */}
       <div className="rounded-lg bg-ink-50 p-3" data-testid="envoi-resume">
-        <p className="text-xs font-medium text-ink-800">
+        <p className="text-xs font-medium text-ink-900">
           {t('Cet appel enverra à votre système :', 'This call will send to your system:')}
         </p>
         {requete.variables.length === 0 ? (
@@ -257,7 +258,7 @@ function NouvelAppel({ tenantId, requete, busy, onCreer }: {
         ) : (
           <ul className="mt-1 space-y-0.5">
             {requete.variables.map((v) => (
-              <li key={v.nom} className="text-xs text-ink-600">
+              <li key={v.nom} className="text-xs text-ink-500">
                 <code>{v.nom}</code> : {t(...libelleOrigine(v.origine))}
               </li>
             ))}
@@ -267,10 +268,10 @@ function NouvelAppel({ tenantId, requete, busy, onCreer }: {
 
       {/* PREMIÈRE QUESTION, et la seule quand la réponse est « ça pousse ». */}
       <div className="flex flex-col gap-1" data-testid="outil-nature">
-        <p className="text-xs font-medium text-ink-800">
+        <p className="text-xs font-medium text-ink-900">
           {t('Que fait cet appel ?', 'What does this call do?')}
         </p>
-        <label className="flex items-start gap-2 text-xs text-ink-700">
+        <label className="flex items-start gap-2 text-xs text-ink-900">
           <input
             type="radio" name={`nature-${requete.id}`} data-testid="nature-pousse" className="mt-0.5"
             checked={nature === 'pousse'} onChange={() => { setNature('pousse'); setChamps([]); }}
@@ -283,7 +284,7 @@ function NouvelAppel({ tenantId, requete, busy, onCreer }: {
             </span>
           </span>
         </label>
-        <label className="flex items-start gap-2 text-xs text-ink-700">
+        <label className="flex items-start gap-2 text-xs text-ink-900">
           <input
             type="radio" name={`nature-${requete.id}`} data-testid="nature-integre" className="mt-0.5"
             checked={nature === 'integre'} onChange={() => { setNature('integre'); setChamps(requete.outputPaths); }}
@@ -302,29 +303,28 @@ function NouvelAppel({ tenantId, requete, busy, onCreer }: {
       {nature === 'integre' && (
         <div className="flex flex-col gap-2 rounded-lg border border-ink-200 p-2" data-testid="outil-champs">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-xs font-medium text-ink-800">
+            <p className="text-xs font-medium text-ink-900">
               {t('Que doit-il récupérer ?', 'What should it read?')}
             </p>
-            <button
+            <Bouton variante="secondaire" taille="petite" enCours={essai}
               data-testid="outil-essayer" disabled={essai}
               onClick={() => { void essayer(); }}
-              className="rounded border border-brand-500 px-2 py-0.5 text-[11px] font-semibold text-brand-600 hover:bg-brand-50 disabled:opacity-50"
             >
               {essai ? t('Essai…', 'Trying…') : t('Essayer pour voir la réponse', 'Try it to see the response')}
-            </button>
+            </Bouton>
           </div>
           {erreurEssai !== null && (
-            <p className="text-[11px] text-coral" data-testid="outil-essai-erreur">{erreurEssai}</p>
+            <p className="text-xs text-danger" data-testid="outil-essai-erreur">{erreurEssai}</p>
           )}
           {proposes.length === 0 ? (
-            <p className="text-[11px] text-ink-500" data-testid="outil-champs-vides">
+            <p className="text-xs text-ink-500" data-testid="outil-champs-vides">
               {t('Lancez l’essai pour voir ce que votre système répond, puis cochez ce que l’agent a le droit de lire.',
                 'Run the test to see what your system answers, then tick what the agent may read.')}
             </p>
           ) : (
             <div className="flex flex-col gap-0.5">
               {proposes.map((c) => (
-                <label key={c} className="flex items-center gap-2 text-[11px] text-ink-700">
+                <label key={c} className="flex items-center gap-2 text-xs text-ink-900">
                   <input
                     type="checkbox" data-testid={`outil-champ-${c}`} checked={champs.includes(c)}
                     onChange={(e) => setChamps((v) => (e.target.checked ? [...v, c] : v.filter((x) => x !== c)))}
@@ -334,26 +334,26 @@ function NouvelAppel({ tenantId, requete, busy, onCreer }: {
               ))}
             </div>
           )}
-          <p className="text-[11px] text-ink-500">
+          <p className="text-xs text-ink-500">
             {t('Seuls les champs cochés partent chez le fournisseur du modèle.',
               'Only the ticked fields reach the model provider.')}
           </p>
         </div>
       )}
 
-      <label className="text-xs text-ink-600">
+      <label className="text-xs text-ink-500">
         {t('Nom technique (vu par l’agent)', 'Technical name (seen by the agent)')}
         <input className={`${inputCls} mt-1`} data-testid="outil-nom" value={name} onChange={(e) => setName(e.target.value)} placeholder="lire_commande" />
       </label>
-      <label className="text-xs text-ink-600">
+      <label className="text-xs text-ink-500">
         {t('Titre lisible', 'Readable title')}
         <input className={`${inputCls} mt-1`} data-testid="outil-titre" value={title} onChange={(e) => setTitle(e.target.value)} />
       </label>
-      <label className="text-xs text-ink-600">
+      <label className="text-xs text-ink-500">
         {t('À quoi ça sert (l’agent le lit pour décider quand appeler)', 'What it does (the agent reads this to decide when to call)')}
         <textarea className={`${inputCls} mt-1`} rows={2} data-testid="outil-description" value={description} onChange={(e) => setDescription(e.target.value)} />
       </label>
-      <label className="text-xs text-ink-600">
+      <label className="text-xs text-ink-500">
         {t('Quand NE PAS l’appeler', 'When NOT to call it')}
         <textarea className={`${inputCls} mt-1`} rows={2} data-testid="outil-nepasutiliser" value={nePasUtiliser} onChange={(e) => setNePasUtiliser(e.target.value)} />
       </label>
@@ -361,7 +361,7 @@ function NouvelAppel({ tenantId, requete, busy, onCreer }: {
       {/* 🔴 LA RAISON EST VISIBLE, PAS SEULEMENT EN INFOBULLE. Une infobulle suppose qu'on survole un bouton
           gris, ce que personne ne fait : on cherche ailleurs ce qu'on a raté. Le titre reste, pour le clavier. */}
       <div className="flex flex-wrap items-center gap-2">
-        <button
+        <Bouton taille="petite"
           data-testid="outil-creer"
           disabled={manque !== null}
           title={manque ?? ''}
@@ -371,11 +371,11 @@ function NouvelAppel({ tenantId, requete, busy, onCreer }: {
             // et deux endroits qui écrivent la même cohérence valent mieux qu'un seul qui l'oublie.
             nature, outputPaths: nature === 'pousse' ? [] : champs,
           })}
-          className="self-start rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+          className="self-start"
         >
           {t('Donner cet appel à l’agent', 'Give this call to the agent')}
-        </button>
-        {manque !== null && <span className="text-[11px] text-ink-500" data-testid="outil-creer-manque">{manque}</span>}
+        </Bouton>
+        {manque !== null && <span className="text-xs text-ink-500" data-testid="outil-creer-manque">{manque}</span>}
       </div>
     </div>
   );

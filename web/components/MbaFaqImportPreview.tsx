@@ -20,10 +20,10 @@ export function MbaFaqImportPreview({ apercu }: { apercu: MbaFaqPreview }) {
 
   const liste = (titre: string, entrees: Array<{ question: string; answer: string }>, testid: string, cle: (i: number) => string) => (
     <div className="mt-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">{titre}</p>
+      <p className="text-xs font-medium text-ink-500">{titre}</p>
       <ul className="mt-1 space-y-1" data-testid={testid}>
         {entrees.slice(0, LIGNES).map((f, i) => (
-          <li key={cle(i)} className="truncate text-xs text-ink-700">
+          <li key={cle(i)} className="truncate text-xs text-ink-900">
             <span className="font-medium">{f.question}</span> <span className="text-ink-500">{f.answer}</span>
           </li>
         ))}

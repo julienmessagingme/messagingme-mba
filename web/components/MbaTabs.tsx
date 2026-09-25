@@ -41,14 +41,14 @@ export function MbaTabs({ tabs, active, onSelect, orientation = 'horizontale' }:
     ? 'flex gap-1 overflow-x-auto lg:flex-col lg:overflow-x-visible'
     : 'flex gap-1 overflow-x-auto border-b border-ink-200';
   const base = vertical
-    ? 'shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm transition lg:w-full'
-    : '-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm transition';
+    ? 'shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm transition-colors duration-150 lg:w-full'
+    : '-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors duration-150';
   const actif = vertical
     ? 'bg-brand-50 font-medium text-brand-700'
     : 'border-brand-500 font-medium text-brand-700';
   const inactif = vertical
-    ? 'text-ink-600 hover:bg-ink-100 hover:text-ink-900'
-    : 'border-transparent text-ink-500 hover:text-ink-800';
+    ? 'text-ink-500 hover:bg-ink-100 hover:text-ink-900'
+    : 'border-transparent text-ink-500 hover:text-ink-900';
 
   return (
     <div

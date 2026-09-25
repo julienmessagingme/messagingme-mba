@@ -10,6 +10,8 @@ import { BlockedContacts } from '@/components/BlockedContacts';
 import { ReglageIntegrationBatch } from '@/components/ReglageIntegrationBatch';
 import { ReglageHubspot } from '@/components/ReglageHubspot';
 import { Toggle } from '@/components/Toggle';
+import { Bouton } from '@/components/Bouton';
+import { IntroPage, TitrePage } from '@/components/TitrePage';
 
 /**
  * 🔴 DEUX PAGES SOUS LA MÊME ADRESSE, SELON LE RÔLE (2026-09-19). Paramètres était réservé aux admins ; il
@@ -33,8 +35,8 @@ function ParametresEncadrement({ tenantId }: { tenantId: string }) {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <header className="space-y-1">
-        <span className="text-xs font-semibold uppercase tracking-wide text-brand-600">{t('Paramètres', 'Settings')}</span>
-        <h2 className="text-xl font-semibold tracking-tight text-ink-900">{t('Votre équipe', 'Your team')}</h2>
+        <span className="text-xs font-medium text-ink-500">{t('Paramètres', 'Settings')}</span>
+        <TitrePage>{t('Votre équipe', 'Your team')}</TitrePage>
       </header>
       <SectionPriseAgents tenantId={tenantId} />
     </div>
@@ -79,11 +81,11 @@ function SectionPriseAgents({ tenantId }: { tenantId: string }) {
   const libelle = statut === 'saving' ? t('enregistrement…', 'saving…') : statut === 'saved' ? t('enregistré', 'saved') : statut === 'error' ? t('erreur', 'error') : '';
 
   return (
-    <section className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm" data-testid="param-prise-agents">
+    <section className="rounded-2xl border border-ink-200 bg-white p-5" data-testid="param-prise-agents">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-ink-900">{t('Les agents peuvent prendre une conversation non affectée', 'Agents can take an unassigned conversation')}</h3>
-          <p className="mt-1 text-sm text-ink-600">
+          <p className="mt-1 text-sm text-ink-500">
             {t(
               'Activé, un agent voit « Je m’en occupe » sur une conversation que personne n’a, et se l’affecte. Il ne peut jamais la passer à un collègue ni la rendre : seuls les managers et les admins distribuent les conversations.',
               'When on, an agent sees “I’ll take it” on a conversation nobody has, and assigns it to themselves. They can never hand it to a colleague or give it back: only managers and admins distribute conversations.',
@@ -91,7 +93,7 @@ function SectionPriseAgents({ tenantId }: { tenantId: string }) {
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <span className={`text-xs ${statut === 'error' ? 'text-coral' : 'text-ink-400'}`}>{libelle}</span>
+          <span className={`text-xs ${statut === 'error' ? 'text-danger' : 'text-ink-400'}`}>{libelle}</span>
           {actif !== null && (
             <Toggle
               testid="param-prise-agents-toggle"
@@ -169,8 +171,8 @@ function Parametres({ tenantId }: { tenantId: string }) {
     apiSetBusinessHours(tenantId, hours).then(() => setBhStatus('saved')).catch(() => setBhStatus('error'));
   };
 
-  const cardCls = 'rounded-2xl border border-ink-200 bg-white p-5 shadow-sm';
-  const kicker = 'text-xs font-semibold uppercase tracking-wide text-brand-600';
+  const cardCls = 'rounded-2xl border border-ink-200 bg-white p-5';
+  const kicker = 'text-xs font-medium text-ink-500';
 
   const statusText = (s: typeof tzStatus) =>
     s === 'saving' ? t('enregistrement…', 'saving…') : s === 'saved' ? t('enregistré', 'saved') : s === 'error' ? t('erreur', 'error') : '';
@@ -179,8 +181,8 @@ function Parametres({ tenantId }: { tenantId: string }) {
     <div className="mx-auto max-w-3xl space-y-6">
       <header className="space-y-1">
         <span className={kicker}>{t('Paramètres', 'Settings')}</span>
-        <h2 className="text-xl font-semibold tracking-tight text-ink-900">{t('Fuseau & heures d’ouverture', 'Time zone & business hours')}</h2>
-        <p className="text-sm text-ink-600">{t('Base des conditions temporelles de vos scénarios (maintenant, jour de semaine, heures d’ouverture).', 'The basis for the time conditions in your scenarios (now, weekday, business hours).')}</p>
+        <TitrePage>{t('Fuseau & heures d’ouverture', 'Time zone & business hours')}</TitrePage>
+        <IntroPage>{t('Base des conditions temporelles de vos scénarios (maintenant, jour de semaine, heures d’ouverture).', 'The basis for the time conditions in your scenarios (now, weekday, business hours).')}</IntroPage>
       </header>
 
       {loading ? (
@@ -194,7 +196,7 @@ function Parametres({ tenantId }: { tenantId: string }) {
                 <h3 className="text-sm font-semibold text-ink-900">{t('Fuseau horaire', 'Time zone')}</h3>
                 <p className="text-xs text-ink-500">{t('Toutes les conditions de temps sont évaluées dans ce fuseau.', 'All time conditions are evaluated in this zone.')}</p>
               </div>
-              <span className={`text-xs ${tzStatus === 'error' ? 'text-coral' : 'text-ink-400'}`}>{statusText(tzStatus)}</span>
+              <span className={`text-xs ${tzStatus === 'error' ? 'text-danger' : 'text-ink-400'}`}>{statusText(tzStatus)}</span>
             </div>
             <select data-testid="param-timezone" value={timezone} onChange={(e) => onTimezone(e.target.value)} className={`${inputClsAuto} w-full bg-white sm:w-96`}>
               {TIMEZONES.map((o) => <option key={o.iana} value={o.iana}>{timezoneLabel(o, locale)}</option>)}
@@ -208,7 +210,7 @@ function Parametres({ tenantId }: { tenantId: string }) {
                 <h3 className="text-sm font-semibold text-ink-900">{t('Heures d’ouverture', 'Business hours')}</h3>
                 <p className="text-xs text-ink-500">{t('Par jour : heure de début et de fin, ou fermé.', 'Per day: opening and closing time, or closed.')}</p>
               </div>
-              <span className={`text-xs ${bhStatus === 'error' ? 'text-coral' : 'text-ink-400'}`}>{statusText(bhStatus)}</span>
+              <span className={`text-xs ${bhStatus === 'error' ? 'text-danger' : 'text-ink-400'}`}>{statusText(bhStatus)}</span>
             </div>
             <div className="space-y-2">
               {DAY_ORDER.map((d) => {
@@ -216,8 +218,8 @@ function Parametres({ tenantId }: { tenantId: string }) {
                 const invalid = !dayValid(day);
                 return (
                   <div key={d} className="flex flex-wrap items-center gap-3 rounded-xl border border-ink-100 px-3 py-2">
-                    <span className="w-24 shrink-0 text-sm font-medium text-ink-800">{t(...DAY_LABELS[d]!)}</span>
-                    <label className="flex items-center gap-1.5 text-sm text-ink-600">
+                    <span className="w-24 shrink-0 text-sm font-medium text-ink-900">{t(...DAY_LABELS[d]!)}</span>
+                    <label className="flex items-center gap-1.5 text-sm text-ink-500">
                       <input type="checkbox" checked={day.closed} onChange={(e) => patchDay(d, { closed: e.target.checked })} className="h-4 w-4 rounded border-ink-300" />
                       {t('Fermé', 'Closed')}
                     </label>
@@ -226,7 +228,7 @@ function Parametres({ tenantId }: { tenantId: string }) {
                         <input type="time" value={day.open} onChange={(e) => patchDay(d, { open: e.target.value })} className={`${inputClsAuto} bg-white`} />
                         <span className="text-sm text-ink-400">{t('à', 'to')}</span>
                         <input type="time" value={day.close} onChange={(e) => patchDay(d, { close: e.target.value })} className={`${inputClsAuto} bg-white`} />
-                        {invalid && <span className="text-xs text-coral">{t('l’heure de fin doit suivre le début', 'end time must be after start')}</span>}
+                        {invalid && <span className="text-xs text-danger">{t('l’heure de fin doit suivre le début', 'end time must be after start')}</span>}
                       </div>
                     )}
                   </div>
@@ -234,15 +236,14 @@ function Parametres({ tenantId }: { tenantId: string }) {
               })}
             </div>
             <div className="mt-4 flex items-center gap-3">
-              <button
+              <Bouton
                 data-testid="param-save-hours"
                 onClick={saveHours}
                 disabled={!allValid || bhStatus === 'saving'}
-                className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-ink-200"
               >
                 {t('Enregistrer les horaires', 'Save hours')}
-              </button>
-              {!allValid && <span className="text-xs text-coral">{t('Corrigez les jours en rouge avant d’enregistrer.', 'Fix the days in red before saving.')}</span>}
+              </Bouton>
+              {!allValid && <span className="text-xs text-danger">{t('Corrigez les jours en rouge avant d’enregistrer.', 'Fix the days in red before saving.')}</span>}
             </div>
           </section>
 

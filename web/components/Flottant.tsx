@@ -37,7 +37,7 @@ export function Flottant({
     <>
       <button type="button" aria-label={t('Fermer', 'Close')} className="fixed inset-0 z-40 cursor-default" onClick={onClose} />
       <div
-        className={`absolute z-50 overflow-y-auto rounded-xl border border-ink-200 bg-white p-1 shadow-lg ${
+        className={`absolute z-50 overflow-y-auto rounded-xl border border-ink-200 bg-white p-1 shadow-mm-md ${
           alignement === 'droite' ? 'right-0' : 'left-0'
         } ${hauteur === 'haute' ? 'max-h-80' : 'max-h-56'} ${
           ancrage === 'bas' ? 'bottom-11' : 'top-8'

@@ -8,6 +8,7 @@ import {
   appliquerAssistantMba, effacerFilAssistantMba, lireFilAssistantMba, parlerAssistantMba,
   type OperationAssistantMba, type ResultatApplicationMba, type TourAssistantMba,
 } from '@/lib/api-mba';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * L'ASSISTANT DU META BUSINESS AGENT : on lui parle, il propose, on accepte.
@@ -182,7 +183,7 @@ export function MbaAssistantPanel({ tenantId, etapesRestantes = null }: {
           </div>
         </div>
         {messages.length > 0 && (
-          <button onClick={() => { void repartir(); }} className="shrink-0 text-xs text-ink-400 hover:text-ink-700">
+          <button onClick={() => { void repartir(); }} className="shrink-0 text-xs text-ink-400 hover:text-ink-900">
             {t('Repartir de zéro', 'Start over')}
           </button>
         )}
@@ -230,7 +231,7 @@ export function MbaAssistantPanel({ tenantId, etapesRestantes = null }: {
                 type="button"
                 disabled={busy || budgetEpuise}
                 onClick={() => setSaisie(t(fr, en))}
-                className="rounded-full border border-ink-200 bg-white px-3 py-1 text-xs text-ink-600 hover:border-brand-300 hover:text-brand-700 disabled:opacity-50"
+                className="rounded-full border border-ink-200 bg-white px-3 py-1 text-xs text-ink-500 hover:border-brand-300 hover:text-brand-700 disabled:opacity-50"
               >
                 {t(fr, en)}
               </button>
@@ -248,7 +249,7 @@ export function MbaAssistantPanel({ tenantId, etapesRestantes = null }: {
         */}
         {busy && messages.length > 0 && messages[messages.length - 1]!.role === 'user' && (
           <div className="flex justify-start" data-testid="mba-assistant-ecrit">
-            <div className="flex gap-1 rounded-2xl rounded-bl-sm bg-white px-3.5 py-2.5 shadow-sm">
+            <div className="flex gap-1 rounded-2xl rounded-bl-sm bg-white px-3.5 py-2.5">
               {[0, 150, 300].map((d) => (
                 <span key={d} className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink-300"
                   style={{ animationDelay: `${d}ms` }} />
@@ -288,14 +289,14 @@ export function MbaAssistantPanel({ tenantId, etapesRestantes = null }: {
           onChange={(e) => setSaisie(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void envoyer(); } }}
         />
-        <button
+        <Bouton enCours={busy}
           onClick={() => { void envoyer(); }}
           disabled={busy || budgetEpuise || saisie.trim() === ''}
           data-testid="mba-assistant-envoyer"
-          className="shrink-0 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+          className="shrink-0"
         >
           {busy ? t('…', '…') : t('Envoyer', 'Send')}
-        </button>
+        </Bouton>
       </div>
     </div>
   );
@@ -308,7 +309,7 @@ function Bulle({ role, children }: { role: 'user' | 'assistant'; children: React
       {/* ⚠️ LA QUEUE (`rounded-br-sm` / `rounded-bl-sm`) EST CE QUI FAIT LIRE « MESSAGERIE », et le fond
           blanc des bulles de l'assistant les detache du fond teinte du fil, qui est desormais gris. */}
       <div className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm ${
-        moi ? 'rounded-br-sm bg-brand-600 text-white' : 'rounded-bl-sm bg-white text-ink-800 shadow-sm'
+        moi ? 'rounded-br-sm bg-brand-600 text-white' : 'rounded-bl-sm bg-white text-ink-900'
       }`}>
         {children}
       </div>
@@ -331,13 +332,13 @@ function Diff({ operations, busy, onAppliquer }: {
   const t = useT();
   return (
     <div className="mt-4 rounded-xl border border-ink-200 p-4" data-testid="mba-assistant-diff">
-      <p className="text-sm font-medium text-ink-800">{t('Ce que je vais faire', 'What I will do')}</p>
+      <p className="text-sm font-medium text-ink-900">{t('Ce que je vais faire', 'What I will do')}</p>
       <ul className="mt-2 space-y-1.5">
         {operations.map((o, i) => {
           const suppression = o.type.endsWith('.supprimer');
           return (
             // eslint-disable-next-line react/no-array-index-key
-            <li key={i} className={`text-sm ${suppression ? 'text-coral' : 'text-ink-700'}`}>
+            <li key={i} className={`text-sm ${suppression ? 'text-danger' : 'text-ink-900'}`}>
               {suppression ? '− ' : '+ '}{o.libelle}
               {suppression && (
                 <span className="ml-1 text-xs text-ink-500">
@@ -348,14 +349,14 @@ function Diff({ operations, busy, onAppliquer }: {
           );
         })}
       </ul>
-      <button
+      <Bouton
         onClick={onAppliquer}
         disabled={busy}
         data-testid="mba-assistant-appliquer"
-        className="mt-3 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+        className="mt-3"
       >
         {t('Appliquer', 'Apply')}
-      </button>
+      </Bouton>
     </div>
   );
 }
@@ -372,21 +373,21 @@ function Resultat({ resultat }: { resultat: ResultatApplicationMba }) {
     <div className="mt-4 rounded-xl border border-ink-200 p-4 text-sm" data-testid="mba-assistant-resultat">
       {resultat.passees.length > 0 && (
         <>
-          <p className="font-medium text-ink-800">{t('Fait', 'Done')}</p>
-          <ul className="mt-1 space-y-0.5 text-ink-600">
+          <p className="font-medium text-ink-900">{t('Fait', 'Done')}</p>
+          <ul className="mt-1 space-y-0.5 text-ink-500">
             {resultat.passees.map((l) => <li key={l}>✓ {l}</li>)}
           </ul>
         </>
       )}
       {resultat.echec && (
-        <div className="mt-3 rounded-lg bg-red-50 px-3 py-2">
-          <p className="font-medium text-red-800">{t('Arrêté sur', 'Stopped at')} : {resultat.echec.libelle}</p>
-          <p className="mt-0.5 text-red-700">{resultat.echec.message}</p>
+        <div className="mt-3 rounded-lg bg-danger-50 px-3 py-2">
+          <p className="font-medium text-danger-800">{t('Arrêté sur', 'Stopped at')} : {resultat.echec.libelle}</p>
+          <p className="mt-0.5 text-danger-700">{resultat.echec.message}</p>
         </div>
       )}
       {resultat.nonTentees.length > 0 && (
         <>
-          <p className="mt-3 font-medium text-ink-800">{t('Non tenté', 'Not attempted')}</p>
+          <p className="mt-3 font-medium text-ink-900">{t('Non tenté', 'Not attempted')}</p>
           <ul className="mt-1 space-y-0.5 text-ink-500">
             {resultat.nonTentees.map((l) => <li key={l}>· {l}</li>)}
           </ul>

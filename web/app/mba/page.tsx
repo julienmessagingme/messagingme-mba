@@ -3,6 +3,7 @@
 import { AppShell } from '@/components/AppShell';
 import Link from 'next/link';
 import { useT } from '@/lib/i18n';
+import { TitrePage } from '@/components/TitrePage';
 
 export default function MbaPage() {
   return <AppShell active="mba-guide">{() => <MbaGuide />}</AppShell>;
@@ -62,16 +63,16 @@ function MbaGuide() {
     },
   ];
 
-  const cardCls = 'rounded-2xl border border-ink-200 bg-white p-5 shadow-sm';
-  const kicker = 'text-xs font-semibold uppercase tracking-wide text-brand-600';
+  const cardCls = 'rounded-2xl border border-ink-200 bg-white p-5';
+  const kicker = 'text-xs font-medium text-ink-500';
 
   return (
     <div className="mx-auto max-w-4xl space-y-8">
       {/* En-tête */}
       <header className="space-y-2">
         <span className={kicker}>{t('Guide', 'Guide')}</span>
-        <h2 className="text-xl font-semibold tracking-tight text-ink-900">{t('L’agent MBA, votre répondeur intelligent WhatsApp', 'The MBA agent, your smart WhatsApp responder')}</h2>
-        <p className="text-sm leading-relaxed text-ink-600">
+        <TitrePage>{t('L’agent MBA, votre répondeur intelligent WhatsApp', 'The MBA agent, your smart WhatsApp responder')}</TitrePage>
+        <p className="max-w-prose text-sm leading-relaxed text-ink-500">
           {t(
             'Le Meta Business Agent (MBA) est un agent conversationnel qui répond automatiquement aux messages WhatsApp de vos clients, à partir de la connaissance que vous lui donnez. Il est hébergé par Meta : vous n’avez rien à installer. Quand une demande le dépasse, il passe la main à un humain, puis reprend le relais.',
             'The Meta Business Agent (MBA) is a conversational agent that automatically answers your customers’ WhatsApp messages, from the knowledge you give it. It is hosted by Meta: you have nothing to install. When a request is beyond it, it hands over to a human, then takes over again.',
@@ -89,7 +90,7 @@ function MbaGuide() {
           <div key={c.title} className={cardCls}>
             <div className="mb-2 inline-flex rounded-lg bg-brand-50 p-2 text-brand-600"><Ico d={c.icon} /></div>
             <h3 className="text-sm font-semibold text-ink-900">{c.title}</h3>
-            <p className="mt-1 text-sm text-ink-600">{c.body}</p>
+            <p className="mt-1 text-sm text-ink-500">{c.body}</p>
           </div>
         ))}
       </section>
@@ -98,7 +99,7 @@ function MbaGuide() {
       <section className="space-y-4">
         <div>
           <span className={kicker}>{t('Paramétrer', 'Set up')}</span>
-          <h3 className="mt-1 text-lg font-semibold tracking-tight text-ink-900">{t('Mettre votre agent en route', 'Getting your agent running')}</h3>
+          <h3 className="mt-1 text-lg font-semibold text-ink-900">{t('Mettre votre agent en route', 'Getting your agent running')}</h3>
         </div>
         <ol className="space-y-3">
           {steps.map((s) => (
@@ -106,7 +107,7 @@ function MbaGuide() {
               <div className="shrink-0 self-start rounded-lg bg-brand-50 p-2 text-brand-600"><Ico d={s.icon} /></div>
               <div>
                 <h4 className="text-sm font-semibold text-ink-900">{s.title}</h4>
-                <p className="mt-1 text-sm leading-relaxed text-ink-600">{s.body}</p>
+                <p className="mt-1 text-sm leading-relaxed text-ink-500">{s.body}</p>
               </div>
             </li>
           ))}
@@ -117,8 +118,8 @@ function MbaGuide() {
       <section className="space-y-4">
         <div>
           <span className={kicker}>{t('Connecteurs', 'Connectors')}</span>
-          <h3 className="mt-1 text-lg font-semibold tracking-tight text-ink-900">{t('Brancher l’agent à vos outils', 'Connecting the agent to your tools')}</h3>
-          <p className="mt-1 text-sm text-ink-600">{t('Il existe deux façons de relier l’agent à vos systèmes. Elles ne servent pas au même besoin.', 'There are two ways to link the agent to your systems. They serve different needs.')}</p>
+          <h3 className="mt-1 text-lg font-semibold text-ink-900">{t('Brancher l’agent à vos outils', 'Connecting the agent to your tools')}</h3>
+          <p className="mt-1 text-sm text-ink-500">{t('Il existe deux façons de relier l’agent à vos systèmes. Elles ne servent pas au même besoin.', 'There are two ways to link the agent to your systems. They serve different needs.')}</p>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className={cardCls}>
@@ -132,7 +133,7 @@ function MbaGuide() {
               libre-service dans la case « prestation », donc personne ne la trouve et personne ne s'en sert.
               ⚠️ L'accompagnement reste vrai, il n'est simplement plus un PRÉALABLE.
             */}
-            <p className="mt-1 text-sm leading-relaxed text-ink-600">
+            <p className="mt-1 text-sm leading-relaxed text-ink-500">
               {t(
                 'L’agent consulte un de vos systèmes en direct pour aider le client : vérifier une commande, proposer un créneau, mettre à jour une fiche. Vous déclarez l’appel vous-même dans Tools > Connecteurs API, puis vous dites dans l’onglet Outils de l’agent ce qu’il a le droit d’appeler. Nous vous accompagnons si vous le souhaitez, mais vous n’attendez personne.',
                 'The agent checks one of your systems live to help the customer: look up an order, offer a slot, update a record. You declare the call yourself in Tools > API connectors, then the agent’s Tools tab says what it may call. We help if you want, but you are not waiting on anyone.',
@@ -142,7 +143,7 @@ function MbaGuide() {
           <div className={cardCls}>
             <div className="mb-2 inline-flex rounded-lg bg-brand-50 p-2 text-brand-600"><Ico d="M20 6L9 17l-5-5" /></div>
             <h4 className="text-sm font-semibold text-ink-900">{t('Vers votre CRM', 'Into your CRM')}</h4>
-            <p className="mt-1 text-sm leading-relaxed text-ink-600">
+            <p className="mt-1 text-sm leading-relaxed text-ink-500">
               {t(
                 'Les conversations et leur analyse remontent dans votre CRM pour garder vos fiches clients à jour, sans double saisie. Le connecteur HubSpot est déjà disponible ; d’autres suivront.',
                 'Conversations and their analysis flow into your CRM to keep your customer records up to date, with no double entry. The HubSpot connector is already available; others will follow.',
@@ -157,7 +158,7 @@ function MbaGuide() {
       <section className="space-y-3">
         <div>
           <span className={kicker}>{t('Prérequis', 'Requirements')}</span>
-          <h3 className="mt-1 text-lg font-semibold tracking-tight text-ink-900">{t('Ce qu’il faut pour démarrer', 'What you need to start')}</h3>
+          <h3 className="mt-1 text-lg font-semibold text-ink-900">{t('Ce qu’il faut pour démarrer', 'What you need to start')}</h3>
         </div>
         <ul className="space-y-2">
           {[
@@ -179,14 +180,14 @@ function MbaGuide() {
             t('Un pays autorisé, et un compte WhatsApp Business Platform d’entreprise en règle, ni restreint ni banni.', 'An authorized country, and an enterprise WhatsApp Business Platform account in good standing, neither restricted nor banned.'),
             t('Aucun autre agent conversationnel déjà en service sur ce numéro.', 'No other AI agent already running on that number.'),
           ].map((li) => (
-            <li key={li} className="flex items-start gap-2 text-sm text-ink-700">
-              <Ico d="M20 6L9 17l-5-5" className="mt-0.5 h-4 w-4 shrink-0 text-mint-600" />
+            <li key={li} className="flex items-start gap-2 text-sm text-ink-900">
+              <Ico d="M20 6L9 17l-5-5" className="mt-0.5 h-4 w-4 shrink-0 text-succes-600" />
               <span>{li}</span>
             </li>
           ))}
         </ul>
-        <div className="rounded-xl border border-ink-200 bg-ink-50/60 p-4 text-sm leading-relaxed text-ink-600">
-          <p className="font-medium text-ink-800">{t('Coûts', 'Costs')}</p>
+        <div className="rounded-xl border border-ink-200 bg-ink-50/60 p-4 text-sm leading-relaxed text-ink-500">
+          <p className="font-medium text-ink-900">{t('Coûts', 'Costs')}</p>
           <p className="mt-1">
             {t(
               'L’agent est facturé par Meta à l’usage (selon les échanges), et payé directement à Meta. Nous affichons ces coûts en toute transparence pour éviter les mauvaises surprises.',
@@ -200,7 +201,7 @@ function MbaGuide() {
           mi-août, dans Paramètres, avec onze onglets. Un guide qui finit sur « bientôt » alors que c'est
           fait envoie le client attendre devant une porte ouverte, et fait douter du reste de la page.
         */}
-        <div className="rounded-xl border border-brand-200 bg-brand-50/50 p-4 text-sm leading-relaxed text-ink-700">
+        <div className="rounded-xl border border-brand-200 bg-brand-50/50 p-4 text-sm leading-relaxed text-ink-900">
           <p className="font-medium text-brand-700">{t('C’est configurable ici', 'Configure it here')}</p>
           <p className="mt-1">
             {t(

@@ -33,6 +33,8 @@ import {
   type PricingSummary,
 } from '@/lib/api';
 import { LaunchCounts } from '@/components/LaunchCounts';
+import { Bouton, classesBouton } from '@/components/Bouton';
+import { TitrePage } from '@/components/TitrePage';
 
 /**
  * LE COUT D'UNE CAMPAGNE VIENT DU SERVEUR, IL NE SE CALCULE PLUS ICI.
@@ -83,23 +85,23 @@ export default function CampaignsPage() {
 // Chaque statut porte ses DEUX libellés [fr, en] (résolus au rendu via t) : la const vit hors composant, donc
 // useT() y est inappelable -> on fait porter les deux langues à la valeur.
 const STATUS: Record<string, { text: [string, string]; cls: string }> = {
-  draft: { text: ['brouillon', 'draft'], cls: 'bg-ink-100 text-ink-600' },
-  scheduled: { text: ['planifiée', 'scheduled'], cls: 'bg-violet/10 text-violet' },
-  running: { text: ['en cours', 'running'], cls: 'bg-blue-50 text-blue-700' },
-  paused: { text: ['en pause', 'paused'], cls: 'bg-amber-50 text-amber-700' },
-  completed: { text: ['terminée', 'completed'], cls: 'bg-emerald-50 text-emerald-700' },
-  failed: { text: ['échec', 'failed'], cls: 'bg-red-50 text-red-700' },
-  pending: { text: ['en attente', 'pending'], cls: 'bg-ink-100 text-ink-600' },
-  sending: { text: ['envoi', 'sending'], cls: 'bg-blue-50 text-blue-700' },
-  sent: { text: ['envoyé', 'sent'], cls: 'bg-ink-100 text-ink-700' },
-  skipped: { text: ['ignoré', 'skipped'], cls: 'bg-amber-50 text-amber-700' },
+  draft: { text: ['brouillon', 'draft'], cls: 'bg-ink-100 text-ink-500' },
+  scheduled: { text: ['planifiée', 'scheduled'], cls: 'bg-ink-100 text-ink-900' },
+  running: { text: ['en cours', 'running'], cls: 'bg-brand-50 text-brand-700' },
+  paused: { text: ['en pause', 'paused'], cls: 'bg-alerte-50 text-alerte-700' },
+  completed: { text: ['terminée', 'completed'], cls: 'bg-succes-50 text-succes-700' },
+  failed: { text: ['échec', 'failed'], cls: 'bg-danger-50 text-danger-700' },
+  pending: { text: ['en attente', 'pending'], cls: 'bg-ink-100 text-ink-500' },
+  sending: { text: ['envoi', 'sending'], cls: 'bg-brand-50 text-brand-700' },
+  sent: { text: ['envoyé', 'sent'], cls: 'bg-ink-100 text-ink-900' },
+  skipped: { text: ['ignoré', 'skipped'], cls: 'bg-alerte-50 text-alerte-700' },
   // Statuts de livraison Meta
-  delivered: { text: ['délivré', 'delivered'], cls: 'bg-blue-50 text-blue-700' },
-  read: { text: ['lu', 'read'], cls: 'bg-emerald-50 text-emerald-700' },
+  delivered: { text: ['délivré', 'delivered'], cls: 'bg-brand-50 text-brand-700' },
+  read: { text: ['lu', 'read'], cls: 'bg-succes-50 text-succes-700' },
 };
 function Badge({ status }: { status: string }) {
   const t = useT();
-  const s = STATUS[status] ?? { text: [status, status] as [string, string], cls: 'bg-ink-100 text-ink-600' };
+  const s = STATUS[status] ?? { text: [status, status] as [string, string], cls: 'bg-ink-100 text-ink-500' };
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.cls}`}>{t(...s.text)}</span>;
 }
 
@@ -317,9 +319,9 @@ function CampaignsInner({ session }: { session: Session }) {
     <section>
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold tracking-tight text-ink-900">
+          <TitrePage className="tabular-nums">
             {showArchived ? t('Campagnes archivées', 'Archived campaigns') : t('Campagnes', 'Campaigns')} ({campaigns.length})
-          </h2>
+          </TitrePage>
           {couts !== null ? (
             /* « des campagnes affichées », et non « total » : la somme porte sur la liste RENDUE, qui exclut
                désormais les archivées. Le dashboard, lui, compte tout. Deux chiffres différents sur deux écrans
@@ -329,7 +331,7 @@ function CampaignsInner({ session }: { session: Session }) {
                par le serveur, donc c'est SON absence qui doit faire taire la ligne. Laisser la condition sur
                `pricing` aurait affiché un total à 0 € quand la route du coût est indisponible. */
             <p className="mt-0.5 text-xs text-ink-500">
-              {t('coût estimé des campagnes affichées', 'estimated cost of listed campaigns')} ≈ <span className="font-semibold text-ink-800" data-testid="campagnes-cout-total">{fmtCost(campaigns.reduce((acc, c) => acc + (couts?.get(c.id) ?? 0), 0), locale, deviseCout ?? pricing?.currency)}</span>{!(deviseCout ?? pricing?.currency) && <span className="text-ink-400"> ({t('devise du compte', 'account currency')})</span>}
+              {t('coût estimé des campagnes affichées', 'estimated cost of listed campaigns')} ≈ <span className="font-semibold text-ink-900" data-testid="campagnes-cout-total">{fmtCost(campaigns.reduce((acc, c) => acc + (couts?.get(c.id) ?? 0), 0), locale, deviseCout ?? pricing?.currency)}</span>{!(deviseCout ?? pricing?.currency) && <span className="text-ink-400"> ({t('devise du compte', 'account currency')})</span>}
               {/* ⚠️ IL DIT CE QU'IL NE COMPTE PAS. Une campagne dont le coût est inconnu vaut zéro dans cette
                   somme, ce qui est la seule addition possible, mais la taire ferait lire le total comme
                   complet. On nomme donc les campagnes écartées plutôt que de les fondre dedans. */}
@@ -365,34 +367,33 @@ function CampaignsInner({ session }: { session: Session }) {
               tout seul au changement : pas d'appel manuel ici, sinon on chargerait deux fois. */}
           <button
             onClick={() => { setDetail(null); setShowArchived((v) => !v); }}
-            className="text-xs text-ink-500 hover:text-ink-800 hover:underline"
+            className="text-xs text-ink-500 hover:text-ink-900 hover:underline"
           >
             {showArchived ? t('Voir les campagnes actives', 'View active campaigns') : t('Voir les archivées', 'View archived')}
           </button>
-          <button
+          <Bouton
             onClick={() => router.push('/campaigns/nouvelle')}
-            className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600"
           >
             + {t('Ajouter une campagne', 'Add a campaign')}
-          </button>
+          </Bouton>
         </div>
       </div>
-      {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {error && <p className="mb-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
       {/* Campagnes COMMENCÉES mais pas encore créées. Volontairement au-dessus de la liste et visuellement
           distinctes : ce ne sont pas des campagnes, elles n'ont ni destinataire ni envoi possible. Masquées
           dans la corbeille, qui ne parle que de campagnes archivées. */}
       {!showArchived && brouillons.length > 0 && (
         <section className="mb-4" data-testid="campaign-drafts">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
+          <h3 className="mb-2 text-xs font-medium text-ink-500">
             {t('Brouillons en cours', 'Drafts in progress')}
           </h3>
           <ul className="space-y-2">
             {brouillons.map((d) => (
               <li key={d.id} className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-ink-300 bg-white px-4 py-2.5">
                 <div className="min-w-0">
-                  <span className="truncate text-sm font-medium text-ink-800">{d.name}</span>
-                  <span className="ml-2 rounded bg-ink-100 px-1.5 py-0.5 text-[11px] text-ink-600">{t('brouillon', 'draft')}</span>
+                  <span className="truncate text-sm font-medium text-ink-900">{d.name}</span>
+                  <span className="ml-2 rounded bg-ink-100 px-1.5 py-0.5 text-xs text-ink-500">{t('brouillon', 'draft')}</span>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
                   <button
@@ -409,7 +410,7 @@ function CampaignsInner({ session }: { session: Session }) {
                       if (!window.confirm(t(`Supprimer le brouillon « ${d.name} » ?`, `Delete draft "${d.name}"?`))) return;
                       void deleteCampaignDraft(session.tenantId, d.id).then(rechargerBrouillons).catch(() => {});
                     }}
-                    className="text-sm text-ink-400 hover:text-red-600"
+                    className="text-sm text-ink-400 hover:text-danger-600"
                   >
                     {t('Supprimer', 'Delete')}
                   </button>
@@ -431,7 +432,7 @@ function CampaignsInner({ session }: { session: Session }) {
       ) : (
           <ul className="space-y-2">
             {campaigns.map((c) => (
-              <li key={c.id} className="rounded-2xl border border-ink-200 bg-white p-4 shadow-sm">
+              <li key={c.id} className="rounded-2xl border border-ink-200 bg-white p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
@@ -442,13 +443,13 @@ function CampaignsInner({ session }: { session: Session }) {
                           se terminera jamais d'elle-même. Sans cette pastille, son statut mentirait par
                           omission : c'est ce marqueur qui explique pourquoi elle est encore là. */}
                       {c.webhookId && (
-                        <span className="rounded-full bg-sky/10 px-2 py-0.5 text-[11px] font-medium text-sky" data-testid="campaign-badge-fil">
+                        <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-600" data-testid="campaign-badge-fil">
                           {t('au fil de l\'eau', 'continuous')}{c.webhookName ? ` · ${c.webhookName}` : ''}
                         </span>
                       )}
                     </div>
                     {c.status === 'scheduled' && c.scheduledAt && (
-                      <p className="mt-0.5 text-xs font-medium text-violet">
+                      <p className="mt-0.5 text-xs font-medium text-ink-500">
                         {t('Planifiée le', 'Scheduled for')} {new Date(c.scheduledAt).toLocaleString()}
                       </p>
                     )}
@@ -462,7 +463,7 @@ function CampaignsInner({ session }: { session: Session }) {
                       const cost = couts?.get(c.id) ?? null;
                       return (
                         <p className="mt-1 text-xs text-ink-400">
-                          {t('coût estimé', 'estimated cost')} {cost != null ? <>≈ <span className="font-medium text-ink-700" data-testid={`campagne-cout-${c.id}`}>{fmtCost(cost, locale, deviseCout ?? pricing?.currency)}</span>{!(deviseCout ?? pricing?.currency) && ` (${t('devise du compte', 'account currency')})`}</> : <span data-testid={`campagne-cout-${c.id}`}>{t('indisponible', 'unavailable')}</span>}
+                          {t('coût estimé', 'estimated cost')} {cost != null ? <>≈ <span className="font-medium text-ink-900" data-testid={`campagne-cout-${c.id}`}>{fmtCost(cost, locale, deviseCout ?? pricing?.currency)}</span>{!(deviseCout ?? pricing?.currency) && ` (${t('devise du compte', 'account currency')})`}</> : <span data-testid={`campagne-cout-${c.id}`}>{t('indisponible', 'unavailable')}</span>}
                         </p>
                       );
                     })()}
@@ -472,13 +473,12 @@ function CampaignsInner({ session }: { session: Session }) {
                         en pause par le quality gate (elle relance ses destinataires restants). Une campagne
                         en cours / terminée / en échec ne se (re)lance pas depuis la liste. */}
                     {(c.status === 'draft' || c.status === 'paused') && (
-                      <button
+                      <Bouton taille="petite"
                         onClick={() => run(c.id)}
                         disabled={polling}
-                        className="rounded-lg bg-brand-500 px-3 py-1 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
                       >
                         {c.status === 'paused' ? t('Reprendre', 'Resume') : t('Lancer', 'Launch')}
-                      </button>
+                      </Bouton>
                     )}
                     {/* ARRÊT D'URGENCE d'un envoi en cours. Jusqu'ici une campagne lancée n'avait aucun frein :
                         une erreur de ciblage sur 5 000 destinataires partait jusqu'au bout. L'envoi s'arrête
@@ -488,7 +488,7 @@ function CampaignsInner({ session }: { session: Session }) {
                         onClick={() => pause(c)}
                         data-testid="campaign-pause"
                         title={t('L\'envoi s\'arrête dans quelques secondes. Ce qui est déjà parti reste parti.', 'Sending stops within seconds. What has already gone out stays out.')}
-                        className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                        className="rounded-lg border border-alerte-300 bg-alerte-50 px-3 py-1 text-xs font-medium text-alerte-800 hover:bg-alerte-100"
                       >
                         {t('Mettre en pause', 'Pause')}
                       </button>
@@ -497,23 +497,21 @@ function CampaignsInner({ session }: { session: Session }) {
                         Le bouton n'existe donc QUE là, et pas sur une campagne ordinaire, qui se termine
                         quand son dernier destinataire est parti. */}
                     {c.webhookId && (c.status === 'running' || c.status === 'paused') && (
-                      <button
+                      <Bouton variante="secondaire" taille="petite"
                         onClick={() => stop(c)}
                         data-testid="campaign-stop"
-                        className="rounded-lg border border-ink-300 px-3 py-1 text-xs font-medium text-ink-700 hover:bg-ink-50"
                       >
                         {t('Arrêter', 'Stop')}
-                      </button>
+                      </Bouton>
                     )}
                     {/* Une campagne programmée part seule à l'échéance : pas de « Lancer », mais on peut annuler
                         la programmation (retour brouillon). */}
                     {c.status === 'scheduled' && (
-                      <button
+                      <Bouton variante="secondaire" taille="petite"
                         onClick={() => cancelSched(c.id)}
-                        className="rounded-lg border border-ink-300 px-3 py-1 text-xs font-medium text-ink-700 hover:bg-ink-50"
                       >
                         {t('Annuler la planification', 'Cancel schedule')}
-                      </button>
+                      </Bouton>
                     )}
                     <button
                       onClick={() => (detail?.id === c.id ? setDetail(null) : openDetail(c.id))}
@@ -526,15 +524,15 @@ function CampaignsInner({ session }: { session: Session }) {
                         bougé se supprime pour de bon. Le serveur retient la même garde et répond 409 s'il
                         n'est pas d'accord : ce test local ne fait qu'éviter de proposer un bouton perdant. */}
                     {c.archivedAt ? (
-                      <button onClick={() => unarchive(c.id)} className="text-xs text-ink-500 hover:text-ink-800 hover:underline">
+                      <button onClick={() => unarchive(c.id)} className="text-xs text-ink-500 hover:text-ink-900 hover:underline">
                         {t('Restaurer', 'Restore')}
                       </button>
                     ) : c.status === 'draft' && c.counts.total === c.counts.pending ? (
-                      <button onClick={() => remove(c)} className="text-xs text-red-600 hover:underline">
+                      <button onClick={() => remove(c)} className="text-xs text-danger-600 hover:underline">
                         {t('Supprimer', 'Delete')}
                       </button>
                     ) : (
-                      <button onClick={() => archive(c.id)} className="text-xs text-ink-500 hover:text-ink-800 hover:underline">
+                      <button onClick={() => archive(c.id)} className="text-xs text-ink-500 hover:text-ink-900 hover:underline">
                         {t('Archiver', 'Archive')}
                       </button>
                     )}
@@ -609,7 +607,7 @@ function DetailPanel({ detail, cout, devise, tenantId, onClose, onRetried }: {
   }
 
   return (
-    <div className="mb-4 overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
+    <div className="mb-4 overflow-hidden rounded-2xl border border-ink-200 bg-white">
       <div className="flex items-center justify-between border-b border-ink-100 px-4 py-2.5">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold">{detail.name}</span>
@@ -630,11 +628,11 @@ function DetailPanel({ detail, cout, devise, tenantId, onClose, onRetried }: {
           <Link
             href={`/dashboard/funnel?campagne=${encodeURIComponent(detail.id)}`}
             data-testid="campagne-voir-funnel"
-            className="rounded-lg border border-ink-200 px-2.5 py-1 text-xs font-medium text-ink-700 hover:bg-ink-50"
+            className={classesBouton('secondaire', 'petite')}
           >
             {t('Voir les résultats', 'See results')}
           </Link>
-          <button onClick={onClose} className="text-xs text-ink-400 hover:text-ink-700">{t('Fermer', 'Close')}</button>
+          <button onClick={onClose} className="text-xs text-ink-400 hover:text-ink-900">{t('Fermer', 'Close')}</button>
         </div>
       </div>
       {/* ⚠️ `?? []` N'EST PAS DE LA PRUDENCE DÉCORATIVE : le front part sur Vercel au push et l'API sur le
@@ -646,7 +644,7 @@ function DetailPanel({ detail, cout, devise, tenantId, onClose, onRetried }: {
       ) : (
         <div className="overflow-x-auto">
         <table className="w-full min-w-[640px] text-sm">
-          <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+          <thead className="bg-ink-50 text-left text-xs text-ink-500">
             <tr>
               <th className="px-4 py-2 font-medium">{t('Destinataire', 'Recipient')}</th>
               <th className="px-4 py-2 font-medium">{t('Envoi', 'Sending')}</th>
@@ -671,7 +669,7 @@ function DetailPanel({ detail, cout, devise, tenantId, onClose, onRetried }: {
                         type="button"
                         onClick={() => openRetry(r.id)}
                         data-testid={`retry-${r.id}`}
-                        className="mt-1 rounded-md border border-brand-200 px-2 py-0.5 text-xs font-medium text-brand-700 transition hover:bg-brand-50"
+                        className="mt-1 rounded-md border border-brand-200 px-2 py-0.5 text-xs font-medium text-brand-700 transition-colors duration-150 hover:bg-brand-50"
                       >
                         {/* Sans variable de champ à corriger, il n'y a RIEN à corriger : promettre l'inverse
                             envoie chercher une faute de saisie qui n'existe pas (cas d'un template dont
@@ -681,14 +679,14 @@ function DetailPanel({ detail, cout, devise, tenantId, onClose, onRetried }: {
                       </button>
                     )}
                     {msg?.rid === r.id && (
-                      <p className={`mt-1 ${msg.ok ? 'text-emerald-700' : 'text-red-600'}`}>{msg.text}</p>
+                      <p className={`mt-1 ${msg.ok ? 'text-succes-700' : 'text-danger-600'}`}>{msg.text}</p>
                     )}
                   </td>
                 </tr>,
                 retryFor === r.id ? (
                   <tr key={`${r.id}-form`} className="bg-ink-50/60">
                     <td colSpan={5} className="px-4 py-3">
-                      <p className="mb-2 text-xs text-ink-600">
+                      <p className="mb-2 text-xs text-ink-500">
                         {t("Corrige la ou les variables de template, puis renvoie ce message. La valeur est enregistrée sur le contact.", 'Fix the template variable(s), then resend this message. The value is saved on the contact.')}
                       </p>
                       {fieldKeys.length === 0 ? (
@@ -696,7 +694,7 @@ function DetailPanel({ detail, cout, devise, tenantId, onClose, onRetried }: {
                       ) : (
                         <div className="mb-2 flex flex-wrap gap-2">
                           {fieldKeys.map((k) => (
-                            <label key={k} className="text-xs text-ink-700">
+                            <label key={k} className="text-xs text-ink-900">
                               <span className="mr-1 font-medium">{k}</span>
                               <input
                                 value={vals[k] ?? ''}
@@ -710,22 +708,20 @@ function DetailPanel({ detail, cout, devise, tenantId, onClose, onRetried }: {
                         </div>
                       )}
                       <div className="flex gap-2">
-                        <button
+                        <Bouton taille="petite" enCours={busy}
                           type="button"
                           onClick={() => void submitRetry(r)}
                           disabled={busy}
                           data-testid={`retry-submit-${r.id}`}
-                          className="rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60"
                         >
                           {busy ? t('Renvoi...', 'Resending...') : t('Renvoyer', 'Resend')}
-                        </button>
-                        <button
+                        </Bouton>
+                        <Bouton variante="secondaire" taille="petite"
                           type="button"
                           onClick={() => { setRetryFor(null); setMsg(null); }}
-                          className="rounded-lg border border-ink-200 px-3 py-1.5 text-xs font-medium text-ink-700 transition hover:bg-ink-50"
                         >
                           {t('Annuler', 'Cancel')}
-                        </button>
+                        </Bouton>
                       </div>
                     </td>
                   </tr>
@@ -769,12 +765,12 @@ function CeQuiAEteLance({ chaine }: { chaine: CampaignDetail['chaine'] }) {
 
   return (
     <div className="border-b border-ink-100 px-4 py-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-ink-500">{t('Ce qui a été lancé', 'What was launched')}</p>
+      <p className="text-xs font-medium text-ink-500">{t('Ce qui a été lancé', 'What was launched')}</p>
       <ul className="mt-2 space-y-1.5">
         {chaine.map((e) => {
           const suite = devenir(e.devenir);
           return (
-            <li key={e.rang} className="text-sm text-ink-700">
+            <li key={e.rang} className="text-sm text-ink-900">
               <span className="font-medium">
                 {chaine.length > 1 ? `${t('Étage', 'Stage')} ${e.rang} · ` : ''}{canal(e.canal)}
               </span>
@@ -796,7 +792,7 @@ function CeQuiAEteLance({ chaine }: { chaine: CampaignDetail['chaine'] }) {
                       ? t('le scénario', 'the scenario')
                       : t('contenu inconnu', 'unknown content')}
               {e.workflowId && (
-                <span className="text-ink-600">
+                <span className="text-ink-500">
                   {' '}{e.templateName || e.rcsMessage || e.emailTemplateId ? `· ${t('puis le scénario', 'then scenario')} ` : ''}
                   {/* 🔴 LE NOM, PAS LE CODE. « 40f4a189 » ne désigne rien pour qui a écrit le parcours. Le nom
                       vient d'une jointure à la LECTURE : il suit les renommages, et il manque seulement si le

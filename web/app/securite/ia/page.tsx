@@ -9,6 +9,7 @@ import {
   type FrequenceMentionIa, type ModeTransfertAgent, type PolitiqueMentionIa, type PolitiqueTransfertAgent,
 } from '@/lib/api';
 import { cardCls } from '@/lib/ui';
+import { IntroPage, TitrePage } from '@/components/TitrePage';
 
 /**
  * L'IA, ET CE QU'ELLE DIT D'ELLE-MÊME.
@@ -96,13 +97,13 @@ function Ia({ tenantId, estAdmin }: { tenantId: string; estAdmin: boolean }) {
   return (
     <div className="mx-auto w-full max-w-4xl space-y-4 p-6" data-testid="securite-ia">
       <div className="space-y-1">
-        <h1 className="text-xl font-semibold text-ink-900">{t('IA', 'AI')}</h1>
-        <p className="text-sm text-ink-500">
+        <TitrePage>{t('IA', 'AI')}</TitrePage>
+        <IntroPage>
           {t(
             'Vos agents annoncent-ils qu’ils sont des IA, et avec quelle phrase. Ce choix vaut pour tout l’espace : l’obligation d’information pèse sur votre marque, pas sur chacun de vos robots.',
             'Do your agents announce that they are AI, and with which sentence. This choice applies to the whole workspace: the duty to inform lies with your brand, not with each of your bots.',
           )}
-        </p>
+        </IntroPage>
       </div>
 
       <section className={cardCls} data-testid="mention-ia">
@@ -117,7 +118,7 @@ function Ia({ tenantId, estAdmin }: { tenantId: string; estAdmin: boolean }) {
           )}
         </div>
 
-        {erreur !== null && <p className="px-4 py-3 text-sm text-red-700" data-testid="mention-ia-erreur">{erreur}</p>}
+        {erreur !== null && <p className="px-4 py-3 text-sm text-danger-700" data-testid="mention-ia-erreur">{erreur}</p>}
         {etat === null && erreur === null && <p className="px-4 py-3 text-sm text-ink-500">{t('Lecture…', 'Loading…')}</p>}
 
         {etat !== null && (
@@ -133,7 +134,7 @@ function Ia({ tenantId, estAdmin }: { tenantId: string; estAdmin: boolean }) {
                   onChange={() => { void choisir(o.valeur); }}
                 />
                 <span className="min-w-0">
-                  <span className="block text-sm text-ink-800">{o.titre}</span>
+                  <span className="block text-sm text-ink-900">{o.titre}</span>
                   <span className="block text-xs text-ink-500">{o.texte}</span>
                 </span>
               </label>
@@ -141,7 +142,7 @@ function Ia({ tenantId, estAdmin }: { tenantId: string; estAdmin: boolean }) {
           </div>
         )}
         {enregistre && erreur === null && (
-          <p className="px-4 pb-3 text-xs text-emerald-700" data-testid="mention-ia-ok">{t('Enregistré.', 'Saved.')}</p>
+          <p className="px-4 pb-3 text-xs text-succes-700" data-testid="mention-ia-ok">{t('Enregistré.', 'Saved.')}</p>
         )}
         {etat !== null && !estAdmin && (
           <p className="px-4 pb-3 text-xs text-ink-400">
@@ -179,7 +180,7 @@ function Ia({ tenantId, estAdmin }: { tenantId: string; estAdmin: boolean }) {
             {etat.agents.map((a) => (
               <li key={a.id} className="flex items-start justify-between gap-3 px-4 py-2" data-testid="mention-ia-agent">
                 <div className="min-w-0">
-                  <p className="text-sm text-ink-800">
+                  <p className="text-sm text-ink-900">
                     {a.label}
                     {a.status !== 'active' && (
                       <span className="ml-2 text-xs text-ink-400">
@@ -297,7 +298,7 @@ function TransfertEquipe({ tenantId, estAdmin }: { tenantId: string; estAdmin: b
         )}
       </p>
 
-      {erreur !== null && <p className="px-4 py-3 text-sm text-red-700" data-testid="transfert-agent-erreur">{erreur}</p>}
+      {erreur !== null && <p className="px-4 py-3 text-sm text-danger-700" data-testid="transfert-agent-erreur">{erreur}</p>}
       {etat === null && erreur === null && <p className="px-4 py-3 text-sm text-ink-500">{t('Lecture…', 'Loading…')}</p>}
 
       {etat !== null && (
@@ -313,7 +314,7 @@ function TransfertEquipe({ tenantId, estAdmin }: { tenantId: string; estAdmin: b
                 onChange={() => { void choisir(o.valeur); }}
               />
               <span className="min-w-0">
-                <span className="block text-sm text-ink-800">{o.titre}</span>
+                <span className="block text-sm text-ink-900">{o.titre}</span>
                 <span className="block text-xs text-ink-500">{o.texte}</span>
               </span>
             </label>
@@ -321,7 +322,7 @@ function TransfertEquipe({ tenantId, estAdmin }: { tenantId: string; estAdmin: b
         </div>
       )}
       {enregistre && erreur === null && (
-        <p className="px-4 pb-3 pt-2 text-xs text-emerald-700" data-testid="transfert-agent-ok">{t('Enregistré.', 'Saved.')}</p>
+        <p className="px-4 pb-3 pt-2 text-xs text-succes-700" data-testid="transfert-agent-ok">{t('Enregistré.', 'Saved.')}</p>
       )}
       {etat !== null && !estAdmin && (
         <p className="px-4 pb-3 pt-2 text-xs text-ink-400">

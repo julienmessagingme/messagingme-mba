@@ -21,7 +21,7 @@ export function PastilleNumero({ status }: { status: { dot: AccountDot; label: s
   return (
     <span
       data-testid="pastille-numero-statut"
-      className="inline-flex items-center gap-1.5 rounded-full bg-ink-50 px-2.5 py-1 text-xs font-medium text-ink-700"
+      className="inline-flex items-center gap-1.5 rounded-full bg-ink-50 px-2.5 py-1 text-xs font-medium text-ink-900"
     >
       <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: DOT_HEX[status.dot] ?? DOT_HEX.grey }} />
       {status.label}

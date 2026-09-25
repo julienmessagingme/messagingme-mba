@@ -31,9 +31,9 @@ import { useT, useLocale } from '@/lib/i18n';
  * route unique ferait disparaître la carte entière pour une panne d'un tiers de son contenu.
  */
 
-const CARD = 'rounded-2xl border border-ink-200 bg-white p-5 shadow-sm';
-const TH = 'px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-400';
-const TD = 'px-2 py-1.5 text-[13px] text-ink-700';
+const CARD = 'rounded-2xl border border-ink-200 bg-white p-5';
+const TH = 'px-2 py-1.5 text-left text-xs font-medium text-ink-500';
+const TD = 'px-2 py-1.5 text-sm text-ink-900';
 
 export function CarteCouts({ tenantId, range }: { tenantId: string; range: StatsRange }) {
   const t = useT();
@@ -132,7 +132,7 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
         >
           {moyen && campagnes !== null && campagnes !== 'erreur' && (
             <>
-              <label className="mb-2 flex w-fit cursor-pointer items-center gap-2 text-xs text-ink-600">
+              <label className="mb-2 flex w-fit cursor-pointer items-center gap-2 text-xs text-ink-500">
                 <input
                   type="checkbox" data-testid="cout-archivees" checked={archivees}
                   onChange={(e) => setArchivees(e.target.checked)}
@@ -159,7 +159,7 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
                     {campagnes.lignes.map((l) => (
                       <tr
                         key={l.campaignId}
-                        className="cursor-pointer border-b border-ink-50 transition hover:bg-ink-50"
+                        className="cursor-pointer border-b border-ink-50 transition-colors duration-150 hover:bg-ink-50"
                         data-testid={`cout-ligne-${l.campaignId}`}
                         onClick={() => setFiche({ id: l.campaignId, nom: l.nom })}
                       >
@@ -229,7 +229,7 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
                   30 jours par défaut : sans ces deux paramètres, quitter une synthèse réglée sur 90 jours
                   rendrait des chiffres qui ne se recoupent pas, et le lecteur conclurait que l'un des deux
                   écrans ment. Un lien qui change la période en silence est pire que pas de lien. */}
-              <dl className="space-y-1 text-[13px]">
+              <dl className="space-y-1 text-sm">
                 <Poste libelle={t('Templates marketing', 'Marketing templates')} valeur={fmtCost(messages.templates.marketing, locale, deviseMessages)} href={lienCouts} />
                 <Poste libelle={t('Templates utility', 'Utility templates')} valeur={fmtCost(messages.templates.utility, locale, deviseMessages)} href={lienCouts} />
                 <Poste
@@ -258,11 +258,11 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
                   dessus. Une ligne par mois traversé, parce qu'une période à cheval en a DEUX. */}
               {messages.service.parMois.length > 0 && (
                 <div className="mt-3 rounded-lg bg-ink-50 px-3 py-2" data-testid="cout-franchise">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">
+                  <p className="text-xs font-medium text-ink-500">
                     {t('Franchise mensuelle', 'Monthly allowance')}
                   </p>
                   {messages.service.parMois.map((m) => (
-                    <p key={m.mois} className="text-xs text-ink-600 tabular-nums">
+                    <p key={m.mois} className="text-xs text-ink-500 tabular-nums">
                       {m.mois} : {fmtNum(m.consommes, locale)} / {fmtNum(m.plafond, locale)}
                     </p>
                   ))}
@@ -419,20 +419,20 @@ function Ligne({ cle, titre, valeur, vide, etat, depliable = true, ouverte, onBa
         data-testid={`cout-bascule-${cle}`}
         className="flex w-full items-baseline justify-between gap-3 text-left disabled:cursor-default"
       >
-        <span className="flex items-center gap-1.5 text-sm text-ink-600">
+        <span className="flex items-center gap-1.5 text-sm text-ink-500">
           {titre}
           {etat === 'pret' && depliable && (
             <svg viewBox="0 0 24 24" className={`h-3.5 w-3.5 shrink-0 text-ink-400 transition-transform ${ouverte ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
           )}
         </span>
-        <span className="text-xl font-bold tracking-tight tabular-nums text-ink-900" data-testid={`cout-valeur-${cle}`}>
+        <span className="text-xl font-semibold tracking-tight tabular-nums text-ink-900" data-testid={`cout-valeur-${cle}`}>
           {etat === 'charge' && <span className="text-sm font-normal text-ink-400">…</span>}
-          {etat === 'erreur' && <span className="text-sm font-normal text-coral">{'—'}</span>}
+          {etat === 'erreur' && <span className="text-sm font-normal text-danger">{'—'}</span>}
           {etat === 'pret' && (valeur ?? <span className="text-sm font-normal text-ink-400">{'—'}</span>)}
         </span>
       </button>
       {etat === 'erreur' && (
-        <p className="mt-1 text-xs text-coral" data-testid={`cout-erreur-${cle}`}>
+        <p className="mt-1 text-xs text-danger" data-testid={`cout-erreur-${cle}`}>
           {/* Une panne d'UNE ligne ne doit pas faire disparaître les deux autres : c'est la raison d'être
               des trois appels séparés, et cette phrase est ce qui le rend lisible. */}
           Ce chiffre n’a pas pu être chargé.
@@ -464,7 +464,7 @@ function Poste({ libelle, valeur, detail, href }: { libelle: string; valeur: str
   );
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <dt className="text-ink-600">
+      <dt className="text-ink-500">
         {href === undefined
           ? intitule
           : <Link href={href} className="text-brand-700 underline decoration-dotted underline-offset-2 hover:decoration-solid">{intitule}</Link>}
@@ -476,5 +476,5 @@ function Poste({ libelle, valeur, detail, href }: { libelle: string; valeur: str
 
 /** Une case sans réponse. Le titre porte la raison : un tiret nu se lit « zéro » à la deuxième lecture. */
 function Vide({ titre }: { titre: string }) {
-  return <span className="text-ink-300" title={titre}>—</span>;
+  return <span className="text-ink-400" title={titre}>—</span>;
 }

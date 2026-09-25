@@ -11,6 +11,7 @@ import {
   type BrouillonPubComplet, type DestinationPub, type FormulaireBrouillonPub, type FormulaireCreationPub,
 } from '@/lib/api-pubs';
 import { PubApercu, type EtatReponse } from '@/components/PubApercu';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * LE FORMULAIRE DE CRÉATION D'UNE PUBLICITÉ (lot 3, spec § 3.2). Minimal, délibérément : tout ce qui n'est
@@ -358,7 +359,7 @@ export function PubFormulaire({
       </p>
 
       {erreur !== null && (
-        <p role="alert" data-testid="pub-form-erreur" className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{erreur}</p>
+        <p role="alert" data-testid="pub-form-erreur" className="mt-3 rounded-xl bg-danger-50 px-3 py-2 text-sm text-danger-700">{erreur}</p>
       )}
 
       {/* 🔴 DEUX COLONNES À PARTIR DE `lg`, ET L'APERÇU RESTE COLLÉ. Les champs seuls ne disaient rien de ce
@@ -455,7 +456,7 @@ export function PubFormulaire({
         </p>
       )}
       {destination === 'agent_meta' && (
-        <p className="mt-1 text-xs text-amber-700">
+        <p className="mt-1 text-xs text-alerte-700">
           {t('Ses messages restent facturés au jeton, même pendant les 72 heures gratuites.',
              'Its messages are still billed per token, even during the free 72 hours.')}
         </p>
@@ -487,7 +488,7 @@ export function PubFormulaire({
            'Counted when the tag is set by a scenario, the Inbox or an AI agent, within 28 days. Bulk tagging and imports do not count.')}
       </p>
 
-      <label className="mt-4 flex items-start gap-2 text-xs text-ink-700">
+      <label className="mt-4 flex items-start gap-2 text-xs text-ink-900">
         <input
           type="checkbox" checked={horsCategorie} onChange={(e) => setHorsCategorie(e.target.checked)}
           data-testid="pub-hors-categorie" className="mt-0.5"
@@ -504,13 +505,12 @@ export function PubFormulaire({
       </label>
 
       <div className="mt-5 flex items-center gap-2">
-        <button
+        <Bouton
           type="button" disabled={busy || !horsCategorie} onClick={() => void envoyer()}
-          className="rounded-xl bg-ink-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
           data-testid="pub-creer"
         >
           {t('Créer (en pause)', 'Create (paused)')}
-        </button>
+        </Bouton>
         {/* 🔴 IL N'A AUCUNE CONDITION DE CONTENU, ET C'EST TOUT L'INTÉRÊT. « Créer » exige la case de
             catégorie, un visuel, un budget et un scénario ; « Enregistrer le brouillon » n'exige rien,
             parce qu'on enregistre précisément ce qui n'est pas encore prêt.
@@ -518,19 +518,18 @@ export function PubFormulaire({
             route que la production n'a pas est le motif « offert-et-inerte », en pire, puisqu'il rend
             une erreur de routeur que personne ne peut relier à quoi que ce soit. */}
         {!brouillonsIndisponibles && (
-          <button
+          <Bouton variante="secondaire"
             type="button" disabled={brouillonBusy} onClick={() => void enregistrerBrouillon()}
-            className="rounded-xl border border-ink-300 px-4 py-2 text-sm font-medium text-ink-800 disabled:opacity-40"
             data-testid="pub-enregistrer-brouillon"
           >
             {brouillonId === null
               ? t('Enregistrer le brouillon', 'Save draft')
               : t('Enregistrer les modifications', 'Save changes')}
-          </button>
+          </Bouton>
         )}
-        <button type="button" onClick={fermer} className="rounded-xl border border-ink-200 px-4 py-2 text-sm text-ink-700">
+        <Bouton variante="secondaire" type="button" onClick={fermer}>
           {t('Annuler', 'Cancel')}
-        </button>
+        </Bouton>
       </div>
       {brouillonsIndisponibles && (
         <p className="mt-2 text-xs text-ink-500" data-testid="pub-brouillons-indispo">

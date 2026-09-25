@@ -47,7 +47,7 @@ export function ChainePublications(props: ChainePublicationsProps) {
   if (erreur !== null) {
     return (
       <div className={cardCls} data-testid="chaine-publications-erreur">
-        <p className="text-sm text-coral">{erreur}</p>
+        <p className="text-sm text-danger">{erreur}</p>
       </div>
     );
   }
@@ -83,9 +83,9 @@ export function ChainePublications(props: ChainePublicationsProps) {
   return (
     <div className={cardCls} data-testid="chaine-publications">
       <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-base font-semibold text-ink-800">{t('Publications', 'Posts')}</h2>
+        <h2 className="text-base font-semibold text-ink-900">{t('Publications', 'Posts')}</h2>
         {distant === 'injoignable' ? (
-          <span className="text-xs text-gold" data-testid="chaine-publications-injoignable">
+          <span className="text-xs text-alerte" data-testid="chaine-publications-injoignable">
             {t('Statuts indisponibles : Channels Me ne répond pas', 'Statuses unavailable: Channels Me is not answering')}
           </span>
         ) : null}
@@ -130,7 +130,7 @@ export function ChainePublications(props: ChainePublicationsProps) {
                         gras. ⚠️ Mais le texte STOCKÉ d'un post vaut corps + adresse wa.me, alors que
                         l'aperçu ne met en forme que le corps : sans `corpsDuPost`, on donnerait l'adresse
                         au formateur et sa longueur compterait dans le plafond d'analyse. */}
-                    <p className="truncate text-sm text-ink-800">
+                    <p className="truncate text-sm text-ink-900">
                       {corps === ''
                         ? t('(sans texte)', '(no text)')
                         : <TexteMisEnForme texte={corps} />}
@@ -169,10 +169,10 @@ export function ChainePublications(props: ChainePublicationsProps) {
 
                 {boutonMort ? (
                   <div
-                    className="mt-2 flex flex-wrap items-center gap-3 rounded-lg bg-coral/10 px-3 py-2"
+                    className="mt-2 flex flex-wrap items-center gap-3 rounded-lg bg-danger-50 px-3 py-2"
                     data-testid={`chaine-publication-bouton-mort-${p.id}`}
                   >
-                    <span className="text-xs text-ink-700">
+                    <span className="text-xs text-ink-900">
                       {t(
                         'Le bouton de cette publication ne démarre rien : son lien est éteint.',
                         'This post’s button starts nothing: its link is switched off.',
@@ -183,7 +183,7 @@ export function ChainePublications(props: ChainePublicationsProps) {
                         type="button"
                         onClick={() => void props.onRallumer(lien.id)}
                         disabled={rallumage === lien.id}
-                        className="rounded-md border border-coral px-2.5 py-1 text-xs font-medium text-coral hover:bg-coral/10 disabled:opacity-50"
+                        className="rounded-md border border-danger-500 px-2.5 py-1 text-xs font-medium text-danger hover:bg-danger-50 disabled:opacity-50"
                         data-testid={`chaine-publication-rallumer-${p.id}`}
                       >
                         {rallumage === lien.id ? t('Allumage…', 'Turning on…') : t('Rallumer le lien', 'Turn link back on')}

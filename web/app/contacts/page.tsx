@@ -24,6 +24,8 @@ import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { fieldValue } from '@/lib/fields';
 import { ContactDetail, OPT_IN_LABEL } from '@/components/ContactDetail';
+import { Bouton } from '@/components/Bouton';
+import { TitrePage } from '@/components/TitrePage';
 
 export default function ContactsPage() {
   return <AppShell active="contacts">{(session) => <ContactsInner session={session} />}</AppShell>;
@@ -168,11 +170,11 @@ function ContactsInner({ session }: { session: Session }) {
   return (
     <section>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Contacts', 'Contacts')} ({countLabel})</h2>
+        <TitrePage className="tabular-nums">{t('Contacts', 'Contacts')} ({countLabel})</TitrePage>
         <div className="flex items-center gap-3">
           <button
             onClick={() => setShowFilters((s) => !s)}
-            className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition ${active ? 'border-brand-300 bg-brand-50 text-brand-700' : 'border-ink-200 text-ink-600 hover:bg-ink-50'}`}
+            className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors duration-150 ${active ? 'border-brand-300 bg-brand-50 text-brand-700' : 'border-ink-200 text-ink-500 hover:bg-ink-50'}`}
             data-testid="contacts-toggle-filters"
           >
             {t('Filtres', 'Filters')}{active ? ' •' : ''}
@@ -181,19 +183,18 @@ function ContactsInner({ session }: { session: Session }) {
           {/* UN seul geste pour ajouter des contacts, et le choix de la façon ensuite. Les deux boutons côte à
               côte donnaient deux actions de même poids, alors qu'on cherche d'abord « en ajouter ». */}
           <div className="relative">
-            <button
+            <Bouton
               onClick={() => setAjoutMenuOuvert((o) => !o)}
               data-testid="contacts-ajouter-menu"
               aria-haspopup="menu"
               aria-expanded={ajoutMenuOuvert}
-              className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600"
             >
               + {t('Rajouter des contacts', 'Add contacts')}
-            </button>
+            </Bouton>
             {ajoutMenuOuvert && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setAjoutMenuOuvert(false)} />
-                <div role="menu" className="absolute right-0 z-20 mt-1 w-56 overflow-hidden rounded-lg border border-ink-200 bg-white py-1 text-sm shadow-lg">
+                <div role="menu" className="absolute right-0 z-20 mt-1 w-56 overflow-hidden rounded-lg border border-ink-200 bg-white py-1 text-sm shadow-mm-md">
                   {/* Ajout à l'unité : jusqu'ici il fallait fabriquer un fichier CSV pour un seul numéro. */}
                   <button
                     onClick={() => { setAjoutMenuOuvert(false); setAjoutOuvert(true); }}
@@ -217,9 +218,9 @@ function ContactsInner({ session }: { session: Session }) {
       </div>
 
       {info && (
-        <p className="mb-4 flex items-center justify-between gap-3 rounded-lg bg-mint-50 px-3 py-2 text-sm text-mint-700" data-testid="contact-info">
+        <p className="mb-4 flex items-center justify-between gap-3 rounded-lg bg-succes-50 px-3 py-2 text-sm text-succes-700" data-testid="contact-info">
           <span>{info}</span>
-          <button onClick={() => setInfo(null)} className="text-xs text-mint-700 hover:underline">{t('Fermer', 'Close')}</button>
+          <button onClick={() => setInfo(null)} className="text-xs text-succes-700 hover:underline">{t('Fermer', 'Close')}</button>
         </p>
       )}
 
@@ -251,7 +252,7 @@ function ContactsInner({ session }: { session: Session }) {
       {/* Barre de sélection + action : apparaît dès qu'un contact est coché. */}
       {selectedCount > 0 && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-brand-200 bg-brand-50/50 px-4 py-2.5">
-          <div className="flex flex-wrap items-center gap-3 text-sm text-ink-700">
+          <div className="flex flex-wrap items-center gap-3 text-sm text-ink-900">
             <span className="font-medium">{t(`${selectedCount} sélectionné(s)`, `${selectedCount} selected`)}</span>
             {!allMode && moreThanLoaded && allLoadedChecked && (
               <button onClick={selectAllMatching} className="text-brand-600 hover:underline" data-testid="contacts-select-all-matching">
@@ -261,17 +262,16 @@ function ContactsInner({ session }: { session: Session }) {
             <button onClick={clearSelection} className="text-ink-500 hover:underline">{t('Tout désélectionner', 'Clear selection')}</button>
           </div>
           <div className="relative">
-            <button
+            <Bouton
               onClick={() => setMenuOpen((o) => !o)}
-              className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600"
               data-testid="contacts-action"
             >
               {t('Action', 'Action')} ▾
-            </button>
+            </Bouton>
             {menuOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                <div className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-lg border border-ink-200 bg-white py-1 text-sm shadow-lg">
+                <div className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-lg border border-ink-200 bg-white py-1 text-sm shadow-mm-md">
                   <button onClick={() => { setAction('add_tag'); setMenuOpen(false); }} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Ajouter une étiquette', 'Add a tag')}</button>
                   <button onClick={() => { setAction('remove_tag'); setMenuOpen(false); }} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Retirer une étiquette', 'Remove a tag')}</button>
                   <button onClick={() => { setAction('set_field'); setMenuOpen(false); }} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Ajouter un champ', 'Set a field')}</button>
@@ -279,7 +279,7 @@ function ContactsInner({ session }: { session: Session }) {
                   <button onClick={() => { setAction('optin'); setMenuOpen(false); }} data-testid="contacts-action-optin" className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Passer en opt-in', 'Mark as opted in')}</button>
                   <button onClick={() => { setAction('optout'); setMenuOpen(false); }} data-testid="contacts-action-optout" className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Passer en opt-out', 'Mark as opted out')}</button>
                   <div className="my-1 border-t border-ink-100" />
-                  <button onClick={() => { setAction('delete'); setMenuOpen(false); }} data-testid="contacts-action-delete" className="block w-full px-4 py-2 text-left text-red-600 hover:bg-red-50">{t('Supprimer', 'Delete')}</button>
+                  <button onClick={() => { setAction('delete'); setMenuOpen(false); }} data-testid="contacts-action-delete" className="block w-full px-4 py-2 text-left text-danger-600 hover:bg-danger-50">{t('Supprimer', 'Delete')}</button>
                 </div>
               </>
             )}
@@ -287,7 +287,7 @@ function ContactsInner({ session }: { session: Session }) {
         </div>
       )}
 
-      {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {error && <p className="mb-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
       <ContactsTable
         contacts={contacts}
         loading={loading}
@@ -397,14 +397,14 @@ function AjoutContactModal({ tenantId, tagSuggestions, onDone, onClose }: {
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-semibold tracking-tight text-ink-900">{t('Ajouter un contact', 'Add a contact')}</h3>
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-mm-lg" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold text-ink-900">{t('Ajouter un contact', 'Add a contact')}</h3>
         <p className="mt-1 text-sm text-ink-500">{t('Le numéro suffit. Le reste peut se compléter ensuite sur la fiche.', 'The number is enough. The rest can be filled in later on the record.')}</p>
 
         <div className="mt-4 space-y-3">
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink-700">
-              {t('Téléphone', 'Phone')} <span className="text-red-500">*</span>
+            <label className="mb-1 block text-sm font-medium text-ink-900">
+              {t('Téléphone', 'Phone')} <span className="text-danger-500">*</span>
             </label>
             <input
               autoFocus value={phone} onChange={(e) => setPhone(e.target.value)}
@@ -415,26 +415,26 @@ function AjoutContactModal({ tenantId, tagSuggestions, onDone, onClose }: {
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink-700">{t('Prénom', 'First name')}</label>
+              <label className="mb-1 block text-sm font-medium text-ink-900">{t('Prénom', 'First name')}</label>
               <input value={prenom} onChange={(e) => setPrenom(e.target.value)} data-testid="ajout-prenom" className={inputCls} />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink-700">{t('Nom', 'Name')}</label>
+              <label className="mb-1 block text-sm font-medium text-ink-900">{t('Nom', 'Name')}</label>
               <input value={nom} onChange={(e) => setNom(e.target.value)} data-testid="ajout-nom" className={inputCls} />
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink-700">{t('E-mail (optionnel)', 'Email (optional)')}</label>
+            <label className="mb-1 block text-sm font-medium text-ink-900">{t('E-mail (optionnel)', 'Email (optional)')}</label>
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} data-testid="ajout-email" className={inputCls} />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink-700">{t('Étiquettes (optionnel)', 'Tags (optional)')}</label>
+            <label className="mb-1 block text-sm font-medium text-ink-900">{t('Étiquettes (optionnel)', 'Tags (optional)')}</label>
             {tags.length > 0 && (
               <div className="mb-1.5 flex flex-wrap gap-1.5" data-testid="ajout-tags-retenus">
                 {tags.map((tg) => (
                   <span key={tg} className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
                     {tg}
-                    <button type="button" onClick={() => setTags((prev) => prev.filter((x) => x !== tg))} aria-label={t('Retirer', 'Remove')} className="text-brand-400 transition hover:text-coral">×</button>
+                    <button type="button" onClick={() => setTags((prev) => prev.filter((x) => x !== tg))} aria-label={t('Retirer', 'Remove')} className="text-brand-400 transition-colors duration-150 hover:text-danger">×</button>
                   </span>
                 ))}
               </div>
@@ -446,15 +446,15 @@ function AjoutContactModal({ tenantId, tagSuggestions, onDone, onClose }: {
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); ajouterTag(); } }}
                 placeholder={t('Une étiquette, puis Entrée', 'A tag, then Enter')} data-testid="ajout-tag" className={inputCls}
               />
-              <button type="button" onClick={ajouterTag} disabled={tagBuffer.trim() === ''} data-testid="ajout-tag-valider"
-                className="shrink-0 rounded-lg border border-ink-300 px-3 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-50">
+              <Bouton variante="secondaire" type="button" onClick={ajouterTag} disabled={tagBuffer.trim() === ''} data-testid="ajout-tag-valider"
+                className="shrink-0">
                 {t('Ajouter', 'Add')}
-              </button>
+              </Bouton>
             </div>
             <datalist id="ajout-tag-suggestions">{tagSuggestions.map((tg) => <option key={tg} value={tg} />)}</datalist>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink-700">{t('Compte WhatsApp / BSUID (optionnel)', 'WhatsApp account / BSUID (optional)')}</label>
+            <label className="mb-1 block text-sm font-medium text-ink-900">{t('Compte WhatsApp / BSUID (optionnel)', 'WhatsApp account / BSUID (optional)')}</label>
             <input value={bsuid} onChange={(e) => setBsuid(e.target.value)} data-testid="ajout-bsuid" className={`${inputCls} font-mono`} />
             <p className="mt-1 text-xs text-ink-400">
               {t("Identifiant WhatsApp d'un client qui n'a pas partagé son numéro. À ne renseigner que si tu l'as.", "WhatsApp identifier for a customer who hasn't shared their number. Only fill this in if you have it.")}
@@ -462,21 +462,20 @@ function AjoutContactModal({ tenantId, tagSuggestions, onDone, onClose }: {
           </div>
           {/* Pré-cochée : voir le commentaire de `optIn`. Un contact saisi à la main sans opt-in serait ignoré
               par toutes les campagnes, sans que rien ne l'annonce au moment de la saisie. */}
-          <label className="flex items-start gap-2 text-sm text-ink-700">
+          <label className="flex items-start gap-2 text-sm text-ink-900">
             <input type="checkbox" checked={optIn} onChange={(e) => setOptIn(e.target.checked)} data-testid="ajout-optin" className="mt-0.5 h-4 w-4" />
             <span>{t('Ce contact a donné son accord pour recevoir des messages marketing', 'This contact agreed to receive marketing messages')}</span>
           </label>
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+          {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
         </div>
 
         <div className="mt-5 flex justify-end gap-2">
-          <button onClick={onClose} disabled={busy} className="rounded-lg px-3 py-2 text-sm text-ink-500 hover:text-ink-800 disabled:opacity-50">{t('Annuler', 'Cancel')}</button>
-          <button
+          <button onClick={onClose} disabled={busy} className="rounded-lg px-3 py-2 text-sm text-ink-500 hover:text-ink-900 disabled:opacity-50">{t('Annuler', 'Cancel')}</button>
+          <Bouton
             onClick={() => void submit()} disabled={!canSubmit} data-testid="ajout-valider"
-            className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
           >
             {busy ? t('Ajout…', 'Adding…') : t('Ajouter', 'Add')}
-          </button>
+          </Bouton>
         </div>
       </div>
     </div>
@@ -562,8 +561,8 @@ function BulkActionModal({ action, tenantId, target, count, userFields, tagSugge
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-semibold tracking-tight text-ink-900">{titles[action]}</h3>
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-mm-lg" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold text-ink-900">{titles[action]}</h3>
         <p className="mt-1 text-sm text-ink-500">{t(`${count} contact(s) concerné(s).`, `${count} contact(s) affected.`)}</p>
 
         <div className="mt-4 space-y-3">
@@ -583,35 +582,35 @@ function BulkActionModal({ action, tenantId, target, count, userFields, tagSugge
             </div>
           )}
           {action === 'optin' && (
-            <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            <p className="rounded-lg bg-succes-50 px-3 py-2 text-sm text-succes-800">
               {t(`Les ${count} contact(s) deviennent destinataires de campagne. À n'utiliser que si vous détenez une preuve de leur consentement.`, `The ${count} contact(s) become eligible for campaigns. Only use this if you hold proof of their consent.`)}
             </p>
           )}
           {action === 'optout' && (
-            <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <p className="rounded-lg bg-alerte-50 px-3 py-2 text-sm text-alerte-800">
               {t(`Les ${count} contact(s) seront exclus de toute campagne, y compris de celles déjà programmées. Leur fiche et leur historique restent intacts.`, `The ${count} contact(s) will be excluded from every campaign, including already scheduled ones. Their record and history stay intact.`)}
             </p>
           )}
           {action === 'delete' && (
             <>
-              <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+              <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">
                 {t(`IRRÉVERSIBLE. Pour les ${count} contact(s) : la fiche, la conversation dans l'Inbox, ses messages et son analyse sont détruits. Les compteurs de campagne restent justes, mais plus personne n'est reconnaissable.`, `IRREVERSIBLE. For the ${count} contact(s): the record, the Inbox conversation, its messages and its analysis are destroyed. Campaign counters stay accurate, but nobody is identifiable any more.`)}
               </p>
-              <label className="block text-sm text-ink-600">
+              <label className="block text-sm text-ink-500">
                 {t('Tapez SUPPRIMER pour confirmer', 'Type SUPPRIMER to confirm')}
                 <input autoFocus value={confirmation} onChange={(e) => setConfirmation(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) void submit(); }} placeholder="SUPPRIMER" data-testid="suppression-confirm" className={`${inputCls} mt-1`} />
               </label>
             </>
           )}
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+          {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
         </div>
 
         <div className="mt-5 flex justify-end gap-2">
-          <button onClick={onClose} disabled={busy} className="rounded-lg px-3 py-2 text-sm text-ink-500 hover:text-ink-800 disabled:opacity-50">{t('Annuler', 'Cancel')}</button>
+          <button onClick={onClose} disabled={busy} className="rounded-lg px-3 py-2 text-sm text-ink-500 hover:text-ink-900 disabled:opacity-50">{t('Annuler', 'Cancel')}</button>
           <button
             onClick={() => void submit()}
             disabled={busy || !canSubmit}
-            className={`rounded-lg px-3 py-2 text-sm font-semibold text-white disabled:opacity-50 ${action === 'delete' ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-500 hover:bg-brand-600'}`}
+            className={`rounded-lg px-3 py-2 text-sm font-semibold text-white disabled:opacity-50 ${action === 'delete' ? 'bg-danger-600 hover:bg-danger-700' : 'bg-brand-500 hover:bg-brand-600'}`}
             data-testid="bulk-submit"
           >
             {busy ? t('…', '…') : action === 'delete' ? t('Supprimer', 'Delete') : t('Appliquer', 'Apply')}
@@ -648,9 +647,9 @@ function ContactsTable({ contacts, loading, onSelect, isRowChecked, onToggleRow,
       </div>
     );
   return (
-    <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white shadow-sm">
+    <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white">
       <table className="w-full min-w-[920px] text-sm">
-        <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+        <thead className="bg-ink-50 text-left text-xs text-ink-500">
           <tr>
             <th className="w-10 px-4 py-2.5">
               <input type="checkbox" checked={headerChecked} onChange={onToggleHeader} aria-label={t('Tout sélectionner', 'Select all')} data-testid="contacts-select-all" className="h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-400" />
@@ -670,7 +669,7 @@ function ContactsTable({ contacts, loading, onSelect, isRowChecked, onToggleRow,
             const waId = waIdOf(c);
             const checked = isRowChecked(c.id);
             return (
-              <tr key={c.id} className={`transition hover:bg-brand-50 ${checked ? 'bg-brand-50/60' : ''}`}>
+              <tr key={c.id} className={`transition-colors duration-150 hover:bg-brand-50 ${checked ? 'bg-brand-50/60' : ''}`}>
                 <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
                   <input type="checkbox" checked={checked} onChange={() => onToggleRow(c.id)} aria-label={t('Sélectionner', 'Select')} className="h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-400" />
                 </td>
@@ -687,7 +686,7 @@ function ContactsTable({ contacts, loading, onSelect, isRowChecked, onToggleRow,
                     ? <span className="inline-flex max-w-[160px] items-center gap-1"><span className="truncate" title={waId}>{waId}</span></span>
                     : <span className="text-ink-400">-</span>}
                 </td>
-                <td className="cursor-pointer px-4 py-2.5 text-xs text-ink-700" onClick={() => onSelect(c)}>{fieldValue(c, 'email') ?? <span className="text-ink-400">-</span>}</td>
+                <td className="cursor-pointer px-4 py-2.5 text-xs text-ink-900" onClick={() => onSelect(c)}>{fieldValue(c, 'email') ?? <span className="text-ink-400">-</span>}</td>
                 <td className="cursor-pointer px-4 py-2.5" onClick={() => onSelect(c)}>
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>{t(...badge.text)}</span>
                 </td>

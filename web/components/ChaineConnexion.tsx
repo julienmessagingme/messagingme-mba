@@ -5,6 +5,7 @@ import { useT, useLocale } from '@/lib/i18n';
 import { fmtNum } from '@/lib/format';
 import { cardCls, inputCls, kickerCls } from '@/lib/ui';
 import type { ReponseConnexionChaine } from '@/lib/api-chaine';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * L'état de la connexion à Channels Me : la chaîne branchée et ses chiffres, ou l'écran vide qui explique
@@ -39,7 +40,7 @@ export function ChaineConnexion(props: ChaineConnexionProps) {
   if (erreur !== null) {
     return (
       <div className={cardCls} data-testid="chaine-connexion-erreur">
-        <p className="text-sm text-coral">{erreur}</p>
+        <p className="text-sm text-danger">{erreur}</p>
       </div>
     );
   }
@@ -109,7 +110,7 @@ function Connectee({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className={kickerCls}>{t('Chaîne WhatsApp', 'WhatsApp channel')}</p>
-          <h2 className="mt-1 text-lg font-semibold text-ink-800" data-testid="chaine-nom">
+          <h2 className="mt-1 text-lg font-semibold text-ink-900" data-testid="chaine-nom">
             {chaine?.name ?? etat.connection!.channelId}
           </h2>
           {etat.organisation?.name ? (
@@ -117,10 +118,10 @@ function Connectee({
           ) : null}
         </div>
         <span
-          className={`${PASTILLE} ${muet ? 'bg-gold/10 text-gold' : 'bg-mint-50 text-mint-600'}`}
+          className={`${PASTILLE} ${muet ? 'bg-alerte-50 text-alerte' : 'bg-succes-50 text-succes-600'}`}
           data-testid="chaine-etat-distant"
         >
-          <span className={`h-1.5 w-1.5 rounded-full ${muet ? 'bg-gold' : 'bg-mint-400'}`} />
+          <span className={`h-1.5 w-1.5 rounded-full ${muet ? 'bg-alerte-500' : 'bg-succes-400'}`} />
           {muet
             ? t('Channels Me est injoignable', 'Channels Me unreachable')
             : t('Chaîne active', 'Channel active')}
@@ -131,7 +132,7 @@ function Connectee({
           rien n'a été perdu. Sans lui, l'écran ressemble à « il n'y a rien », et le réflexe est de ressaisir
           des identifiants qui sont bons. */}
       {muet ? (
-        <p className="mt-4 rounded-lg bg-gold/10 px-3 py-2 text-sm text-ink-600" data-testid="chaine-injoignable">
+        <p className="mt-4 rounded-lg bg-alerte-50 px-3 py-2 text-sm text-ink-500" data-testid="chaine-injoignable">
           {t(
             'Les identifiants sont bien enregistrés : c’est Channels Me qui ne répond pas. Rien à ressaisir, réessaie dans un moment.',
             'Your credentials are saved: Channels Me is not answering. Nothing to re-enter, try again shortly.',
@@ -178,15 +179,14 @@ function Connectee({
           (`active !== 'inbox'`), donc un non-admin est renvoyé sur l'inbox avant d'atteindre cette page.
           Une garde de plus n'aurait jamais pu être fausse, et laisserait croire à un cas qui n'existe pas. */}
       <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-ink-100 pt-4">
-        <button
+        <Bouton variante="secondaire" enCours={busy}
           type="button"
           onClick={() => void tester()}
           disabled={busy}
-          className="rounded-lg border border-ink-300 px-3 py-1.5 text-sm font-medium text-ink-700 hover:bg-ink-50 disabled:opacity-50"
           data-testid="chaine-tester"
         >
           {busy ? t('Test en cours…', 'Testing…') : t('Tester la connexion', 'Test connection')}
-        </button>
+        </Bouton>
         <button
           type="button"
           onClick={() => setEdition((v) => !v)}
@@ -197,7 +197,7 @@ function Connectee({
         </button>
         {message ? (
           <span
-            className={`text-sm ${message.ton === 'ok' ? 'text-mint-600' : 'text-coral'}`}
+            className={`text-sm ${message.ton === 'ok' ? 'text-succes-600' : 'text-danger'}`}
             data-testid="chaine-test-resultat"
           >
             {message.texte}
@@ -223,8 +223,8 @@ function Mesure({ libelle, valeur, testid }: { libelle: string; valeur: string |
   if (valeur === null) return null;
   return (
     <div data-testid={testid}>
-      <dt className="text-xs uppercase tracking-wide text-ink-400">{libelle}</dt>
-      <dd className="mt-1 text-xl font-semibold tabular-nums text-ink-800">{valeur}</dd>
+      <dt className="text-xs text-ink-500 font-medium">{libelle}</dt>
+      <dd className="mt-1 text-xl font-semibold tabular-nums text-ink-900">{valeur}</dd>
     </div>
   );
 }
@@ -276,17 +276,16 @@ function FormulaireIdentifiants({
           'The key and secret are never shown again: re-enter all four fields to change one.',
         )}
       </p>
-      {erreur ? <p className="text-sm text-coral sm:col-span-2" data-testid="chaine-identifiants-erreur">{erreur}</p> : null}
+      {erreur ? <p className="text-sm text-danger sm:col-span-2" data-testid="chaine-identifiants-erreur">{erreur}</p> : null}
       <div className="sm:col-span-2">
-        <button
+        <Bouton enCours={busy}
           type="button"
           onClick={() => void soumettre()}
           disabled={busy || !complet}
-          className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50"
           data-testid="chaine-identifiants-enregistrer"
         >
           {busy ? t('Enregistrement…', 'Saving…') : t('Enregistrer', 'Save')}
-        </button>
+        </Bouton>
       </div>
     </div>
   );
@@ -299,7 +298,7 @@ function Champ({
 }) {
   return (
     <label className="block text-sm">
-      <span className="mb-1 block font-medium text-ink-600">{label}</span>
+      <span className="mb-1 block font-medium text-ink-500">{label}</span>
       <input
         className={inputCls}
         type={type ?? 'text'}
@@ -355,7 +354,7 @@ function EtatVide({
   return (
     <div className={`${cardCls} text-center`} data-testid="chaine-vide">
       <p className={kickerCls}>{t('Chaîne WhatsApp', 'WhatsApp channel')}</p>
-      <h2 className="mt-2 text-lg font-semibold text-ink-800">
+      <h2 className="mt-2 text-lg font-semibold text-ink-900">
         {t('Aucune chaîne branchée', 'No channel connected')}
       </h2>
       <p className="mx-auto mt-2 max-w-xl text-sm text-ink-500">
@@ -371,14 +370,14 @@ function EtatVide({
           <button
             type="button"
             onClick={() => setSaisie(false)}
-            className="mt-3 text-sm font-medium text-ink-500 hover:text-ink-700"
+            className="mt-3 text-sm font-medium text-ink-500 hover:text-ink-900"
             data-testid="chaine-saisie-annuler"
           >
             {t('Annuler', 'Cancel')}
           </button>
         </div>
       ) : etat === 'envoyee' ? (
-        <p className="mt-5 rounded-lg bg-mint-50 px-3 py-2 text-sm text-mint-600" data-testid="chaine-demande-envoyee">
+        <p className="mt-5 rounded-lg bg-succes-50 px-3 py-2 text-sm text-succes-600" data-testid="chaine-demande-envoyee">
           {t('Demande envoyée. Nous revenons vers toi rapidement.', 'Request sent. We will get back to you shortly.')}
         </p>
       ) : (
@@ -391,16 +390,16 @@ function EtatVide({
             onChange={(e) => setMessage(e.target.value)}
             data-testid="chaine-demande-message"
           />
-          {erreur ? <p className="mt-2 text-sm text-coral" data-testid="chaine-demande-erreur">{erreur}</p> : null}
-          <button
+          {erreur ? <p className="mt-2 text-sm text-danger" data-testid="chaine-demande-erreur">{erreur}</p> : null}
+          <Bouton
             type="button"
             onClick={() => void envoyer()}
             disabled={etat === 'envoi'}
-            className="mt-3 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50"
+            className="mt-3"
             data-testid="chaine-demande-envoyer"
           >
             {etat === 'envoi' ? t('Envoi…', 'Sending…') : t('Demander l’activation', 'Request activation')}
-          </button>
+          </Bouton>
           <p className="mt-4 border-t border-ink-100 pt-4 text-sm text-ink-500">
             {t('Ta chaîne existe déjà ?', 'Already have a channel?')}{' '}
             <button

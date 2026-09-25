@@ -10,6 +10,9 @@ import { formatDate } from '@/lib/day';
 import { fmtNum } from '@/lib/format';
 import { useLocale, useT } from '@/lib/i18n';
 import { saveSession } from '@/lib/session';
+import { Bouton } from '@/components/Bouton';
+import { TitrePage } from '@/components/TitrePage';
+import { alerte, brand, danger, ink, succes } from '@/lib/couleurs';
 
 const KEY = 'mba.ops';
 
@@ -87,9 +90,9 @@ export default function OpsPage() {
 
   if (!token) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#F7F8FB] p-4">
-        <form onSubmit={submit} className="w-full max-w-sm rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
-          <h1 className="text-lg font-semibold tracking-tight text-ink-900">{t("Console d'exploitation", 'Operations console')}</h1>
+      <main className="flex min-h-screen items-center justify-center bg-surface-subtle p-4">
+        <form onSubmit={submit} className="w-full max-w-sm rounded-2xl border border-ink-200 bg-white p-6">
+          <TitrePage>{t("Console d'exploitation", 'Operations console')}</TitrePage>
           <p className="mt-1 text-sm text-ink-500">{t("Accès cross-tenant en lecture seule. Saisis le jeton d'exploitation.", 'Read-only cross-tenant access. Enter the operations token.')}</p>
           <input
             type="password"
@@ -98,10 +101,10 @@ export default function OpsPage() {
             placeholder="OPS token"
             className="mt-4 w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
           />
-          {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-          <button type="submit" className="mt-4 w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600">
+          {error && <p className="mt-2 text-sm text-danger-600">{error}</p>}
+          <Bouton type="submit" className="mt-4 w-full">
             {t('Accéder', 'Access')}
-          </button>
+          </Bouton>
         </form>
       </main>
     );
@@ -113,17 +116,17 @@ export default function OpsPage() {
   const dailyTo = data?.daily[data.daily.length - 1]?.date;
 
   return (
-    <main className="min-h-screen bg-[#F7F8FB] px-4 py-8 sm:px-6">
+    <main className="min-h-screen bg-surface-subtle px-4 py-8 sm:px-6">
       <div className="mx-auto w-full max-w-7xl space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight text-ink-900">{t("Console d'exploitation", 'Operations console')}</h1>
+            <TitrePage>{t("Console d'exploitation", 'Operations console')}</TitrePage>
             <p className="text-sm text-ink-500">{t('Vue cross-tenant, lecture seule.', 'Cross-tenant view, read-only.')}</p>
           </div>
-          <button onClick={logout} className="rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-ink-600 hover:bg-ink-100">{t('Quitter', 'Exit')}</button>
+          <Bouton variante="secondaire" onClick={logout}>{t('Quitter', 'Exit')}</Bouton>
         </div>
 
-        {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
         {loading && !data ? (
           <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
         ) : data ? (
@@ -142,13 +145,13 @@ export default function OpsPage() {
             <EquiteCard groupes={data.queuesParGroupe ?? []} />
 
             {dailyFrom && dailyTo && data.daily.length > 0 && (
-              <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+              <div className="rounded-2xl border border-ink-200 bg-white p-5">
                 <DailyChart
                   title={t('Messages échangés (tous clients)', 'Messages exchanged (all clients)')}
                   subtitle={t('par jour, 14 derniers jours', 'per day, last 14 days')}
                   from={dailyFrom}
                   to={dailyTo}
-                  series={[{ label: t('Messages', 'Messages'), color: '#009AFE', points: data.daily }]}
+                  series={[{ label: t('Messages', 'Messages'), color: brand[400], points: data.daily }]}
                 />
               </div>
             )}
@@ -221,7 +224,7 @@ function GrillePrixCard({ token }: { token: string }) {
 
   if (absente) {
     return (
-      <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+      <div className="rounded-2xl border border-ink-200 bg-white p-5">
         <h2 className="text-sm font-semibold text-ink-900">{t('Grille de prix', 'Pricing grid')}</h2>
         <p className="mt-1 text-xs text-ink-400">
           {t('Indisponible sur cette instance : l’API n’a pas encore la route.', 'Unavailable on this instance: the API does not have the route yet.')}
@@ -232,7 +235,7 @@ function GrillePrixCard({ token }: { token: string }) {
   if (champs === null) return null;
 
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm" data-testid="ops-prix">
+    <div className="rounded-2xl border border-ink-200 bg-white p-5" data-testid="ops-prix">
       <h2 className="text-sm font-semibold text-ink-900">{t('Grille de prix', 'Pricing grid')}</h2>
       <p className="mt-1 text-xs text-ink-500">
         {t(
@@ -246,7 +249,7 @@ function GrillePrixCard({ token }: { token: string }) {
       {/* La NOTE est obligatoire cote serveur : le jeton d'exploitation est PARTAGE, donc c'est la seule
           trace de qui a change un prix et pourquoi. Le dire ici evite un 400 incomprehensible. */}
       <div className="mt-4">
-        <label htmlFor="prix-note" className="block text-xs font-medium text-ink-700">
+        <label htmlFor="prix-note" className="block text-xs font-medium text-ink-900">
           {t('Pourquoi ce changement ?', 'Why this change?')}
         </label>
         <input
@@ -260,15 +263,14 @@ function GrillePrixCard({ token }: { token: string }) {
       </div>
 
       <div className="mt-4 flex items-center gap-3">
-        <button
+        <Bouton
           type="button" onClick={enregistrer} disabled={statut === 'saving'} data-testid="ops-prix-enregistrer"
-          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-700 disabled:opacity-50"
         >
           {statut === 'saving' ? t('Enregistrement...', 'Saving...') : t('Enregistrer', 'Save')}
-        </button>
-        {statut === 'saved' && <span className="text-xs text-emerald-700" data-testid="ops-prix-ok">{t('Enregistré', 'Saved')}</span>}
+        </Bouton>
+        {statut === 'saved' && <span className="text-xs text-succes-700" data-testid="ops-prix-ok">{t('Enregistré', 'Saved')}</span>}
         {statut === 'error' && (
-          <span className="text-xs text-red-700" data-testid="ops-prix-erreur">
+          <span className="text-xs text-danger-700" data-testid="ops-prix-erreur">
             {champFautif
               ? t('Valeur refusée, corrigez le champ en rouge.', 'Value rejected, fix the field in red.')
               : msg ?? t('Enregistrement impossible.', 'Could not save.')}
@@ -289,9 +291,9 @@ function GrillePrixCard({ token }: { token: string }) {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-4 shadow-sm">
-      <div className="text-xs font-medium uppercase tracking-wide text-ink-400">{label}</div>
-      <div className="mt-1 text-2xl font-bold tracking-tight text-ink-900">{value}</div>
+    <div className="rounded-2xl border border-ink-200 bg-white p-4">
+      <div className="text-xs font-medium text-ink-500">{label}</div>
+      <div className="mt-1 text-2xl font-semibold tracking-tight tabular-nums text-ink-900">{value}</div>
     </div>
   );
 }
@@ -306,13 +308,13 @@ function WorkerCard({ worker }: { worker: WorkerHeartbeat | null }) {
   const t = useT();
   const { locale } = useLocale();
   const alive = worker !== null && worker.ageSeconds <= WORKER_STALE_S;
-  const color = worker === null ? '#B8BEC9' : alive ? '#17C74E' : '#FF4D4F';
+  const color = worker === null ? ink[300] : alive ? succes[400] : danger[500];
   const label = worker === null ? t('Aucun signal', 'No signal') : alive ? t('Actif', 'Alive') : t('Silencieux', 'Silent');
   const age = (s: number) => (s < 60 ? t(`il y a ${s} s`, `${s} s ago`) : t(`il y a ${Math.floor(s / 60)} min`, `${Math.floor(s / 60)} min ago`));
   const fmtDate = (iso: string) => formatDate(iso, locale, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
-      <h3 className="mb-3 text-sm font-semibold tracking-tight text-ink-900">{t('Worker (envoi des messages)', 'Worker (message sending)')}</h3>
+    <div className="rounded-2xl border border-ink-200 bg-white p-5">
+      <h3 className="mb-3 text-sm font-semibold text-ink-900">{t('Worker (envoi des messages)', 'Worker (message sending)')}</h3>
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
         <span className="inline-flex items-center gap-2">
           <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
@@ -320,9 +322,9 @@ function WorkerCard({ worker }: { worker: WorkerHeartbeat | null }) {
         </span>
         {worker ? (
           <>
-            <span className="text-xs text-ink-500">{t('Dernier battement', 'Last heartbeat')} : <span className="tabular-nums text-ink-700">{age(worker.ageSeconds)}</span></span>
-            {worker.bootedAt && <span className="text-xs text-ink-500">{t('Démarré', 'Booted')} : <span className="text-ink-700">{fmtDate(worker.bootedAt)}</span></span>}
-            {worker.instance && <span className="font-mono text-[11px] text-ink-400">{worker.instance}</span>}
+            <span className="text-xs text-ink-500">{t('Dernier battement', 'Last heartbeat')} : <span className="tabular-nums text-ink-900">{age(worker.ageSeconds)}</span></span>
+            {worker.bootedAt && <span className="text-xs text-ink-500">{t('Démarré', 'Booted')} : <span className="text-ink-900">{fmtDate(worker.bootedAt)}</span></span>}
+            {worker.instance && <span className="font-mono text-xs text-ink-400">{worker.instance}</span>}
           </>
         ) : (
           <span className="text-xs text-ink-500">{t('Le worker n’a jamais signalé de vie (jamais démarré, ou table absente).', 'The worker has never reported liveness (never started, or table missing).')}</span>
@@ -349,8 +351,8 @@ function EquiteCard({ groupes }: { groupes: QueueGroupLoadRow[] }) {
   if (groupes.length === 0) return null;
   const SEUIL_S = 300; // 5 min : le seuil du SLO 3, au-delà duquel un client se demande si ça marche pour lui.
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm" data-testid="ops-equite">
-      <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Qui attend le plus', 'Who is waiting longest')}</h3>
+    <div className="rounded-2xl border border-ink-200 bg-white p-5" data-testid="ops-equite">
+      <h3 className="text-sm font-semibold text-ink-900">{t('Qui attend le plus', 'Who is waiting longest')}</h3>
       <p className="mb-3 text-xs text-ink-400">
         {t(
           'Groupe = l’espace client pour les campagnes, le contact pour les entrants. Au-delà de 5 min, l’objectif d’équité est dépassé.',
@@ -361,12 +363,12 @@ function EquiteCard({ groupes }: { groupes: QueueGroupLoadRow[] }) {
         {groupes.map((g) => (
           <div key={`${g.queue}:${g.groupe}`} className="flex items-center justify-between rounded-lg bg-ink-50 px-3 py-2 text-xs">
             <span className="flex min-w-0 gap-2">
-              <span className="font-mono text-ink-700">{g.queue}</span>
+              <span className="font-mono text-ink-900">{g.queue}</span>
               <span className="truncate font-mono text-ink-400" title={g.groupe}>{g.groupe}</span>
             </span>
             <span className="flex shrink-0 gap-3 tabular-nums">
               <span className="text-ink-500">{fmtNum(g.backlog, locale)} {t('en file', 'queued')}</span>
-              <span className={g.ageMaxSecondes >= SEUIL_S ? 'font-medium text-coral' : 'text-ink-500'}>
+              <span className={g.ageMaxSecondes >= SEUIL_S ? 'font-medium text-danger' : 'text-ink-500'}>
                 {g.ageMaxSecondes >= 60 ? `${Math.round(g.ageMaxSecondes / 60)} min` : `${g.ageMaxSecondes} s`}
               </span>
             </span>
@@ -407,8 +409,8 @@ function PoolCard({ instantane, points }: { instantane: PoolInstantane | null; p
   const maxCourbe = Math.max(1, ...points.map((p) => p.maxMs));
 
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm" data-testid="ops-pool">
-      <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Pool de connexions', 'Connection pool')}</h3>
+    <div className="rounded-2xl border border-ink-200 bg-white p-5" data-testid="ops-pool">
+      <h3 className="text-sm font-semibold text-ink-900">{t('Pool de connexions', 'Connection pool')}</h3>
       <p className="mb-3 text-xs text-ink-400">
         {t(
           'Ce qui compte n’est pas la place restante, c’est de savoir si quelqu’un a ATTENDU une connexion, et combien de temps. Chaque acquisition est mesurée : aucun pic n’est raté.',
@@ -418,11 +420,11 @@ function PoolCard({ instantane, points }: { instantane: PoolInstantane | null; p
 
       {instantane && (
         <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg bg-ink-50 px-3 py-2 text-xs tabular-nums">
-          <span className="font-mono text-ink-700">{instantane.process}</span>
+          <span className="font-mono text-ink-900">{instantane.process}</span>
           <span className="text-ink-500">{fmtNum(instantane.total, locale)}/{fmtNum(instantane.max, locale)} {t('connexions', 'connections')}</span>
           <span className="text-ink-500">{fmtNum(instantane.libres, locale)} {t('libres', 'idle')}</span>
           {/* Le seul chiffre qui alarme : une requête en attente, c'est le pool saturé À CET INSTANT. */}
-          <span className={instantane.enAttente > 0 ? 'font-medium text-coral' : 'text-ink-500'}>
+          <span className={instantane.enAttente > 0 ? 'font-medium text-danger' : 'text-ink-500'}>
             {fmtNum(instantane.enAttente, locale)} {t('en attente', 'waiting')}
           </span>
           <span className="text-ink-400">{t('pic depuis le démarrage', 'peak since start')} : {fmtNum(instantane.maxMsDepuisDemarrage, locale)} ms</span>
@@ -437,7 +439,7 @@ function PoolCard({ instantane, points }: { instantane: PoolInstantane | null; p
         [...parProcess.entries()].map(([processus, liste]) => (
           <div key={processus} className="mt-3">
             <div className="mb-1 flex items-baseline justify-between text-xs">
-              <span className="font-mono text-ink-600">{processus}</span>
+              <span className="font-mono text-ink-500">{processus}</span>
               <span className="text-ink-400">
                 {t('acquisition max par minute, rouge = attente sur pool saturé', 'max acquisition per minute, red = wait on a saturated pool')} · {fmtNum(liste.reduce((n, p) => n + p.attentes, 0), locale)} {t('attente(s) sur pool saturé', 'wait(s) on a saturated pool')}
               </span>
@@ -451,7 +453,7 @@ function PoolCard({ instantane, points }: { instantane: PoolInstantane | null; p
                      suivait `maxMs`, qui inclut l'ouverture normale d'une connexion neuve : une barre rouge
                      pouvait donc s'afficher avec ZÉRO attente. Un indicateur qui crie au loup se fait ignorer
                      le jour où il a raison. Relevé par l'audit externe. */
-                  className={`w-1 shrink-0 rounded-t ${p.maxAttenteMs >= SEUIL_ATTENTE_MS ? 'bg-coral' : 'bg-ink-300'}`}
+                  className={`w-1 shrink-0 rounded-t ${p.maxAttenteMs >= SEUIL_ATTENTE_MS ? 'bg-danger' : 'bg-ink-300'}`}
                   style={{ height: `${Math.max(2, Math.round((p.maxMs / maxCourbe) * 100))}%` }}
                 />
               ))}
@@ -468,16 +470,16 @@ function QueueCard({ queues }: { queues: QueueLoadRow[] }) {
   const t = useT();
   const { locale } = useLocale();
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
-      <h3 className="mb-3 text-sm font-semibold tracking-tight text-ink-900">{t('Files de traitement (pg-boss)', 'Processing queues (pg-boss)')}</h3>
+    <div className="rounded-2xl border border-ink-200 bg-white p-5">
+      <h3 className="mb-3 text-sm font-semibold text-ink-900">{t('Files de traitement (pg-boss)', 'Processing queues (pg-boss)')}</h3>
       <div className="grid gap-2 sm:grid-cols-2">
         {queues.map((q) => (
           <div key={q.queue} className="flex items-center justify-between rounded-lg bg-ink-50 px-3 py-2">
-            <span className="font-mono text-xs text-ink-700">{q.queue}</span>
+            <span className="font-mono text-xs text-ink-900">{q.queue}</span>
             <span className="flex gap-3 text-xs tabular-nums">
-              <span title={t('en attente', 'pending')} className="text-ink-600">{fmtNum(q.backlog, locale)} {t('en file', 'queued')}</span>
+              <span title={t('en attente', 'pending')} className="text-ink-500">{fmtNum(q.backlog, locale)} {t('en file', 'queued')}</span>
               <span title={t('actifs', 'active')} className="text-brand-600">{fmtNum(q.active, locale)} {t('actifs', 'active')}</span>
-              <span title={t('échoués', 'failed')} className={q.failed > 0 ? 'font-medium text-coral' : 'text-ink-400'}>{fmtNum(q.failed, locale)} {t('échoués', 'failed')}</span>
+              <span title={t('échoués', 'failed')} className={q.failed > 0 ? 'font-medium text-danger' : 'text-ink-400'}>{fmtNum(q.failed, locale)} {t('échoués', 'failed')}</span>
               {/* 🔴 L'AGE du plus vieux job prêt, et pas seulement leur nombre : mille jobs avalés en trois
                   secondes vont bien, dix qui attendent depuis un quart d'heure vont mal. C'est ce chiffre
                   que les objectifs de service regardent (docs/SLO-2026-09-01.md). Le seuil d'alerte est
@@ -486,7 +488,7 @@ function QueueCard({ queues }: { queues: QueueLoadRow[] }) {
                 <span
                   data-testid={`file-age-${q.queue}`}
                   title={t('âge du plus vieux job prêt', 'age of the oldest ready job')}
-                  className={q.ageMaxSecondes >= 60 ? 'font-medium text-coral' : 'text-ink-400'}
+                  className={q.ageMaxSecondes >= 60 ? 'font-medium text-danger' : 'text-ink-400'}
                 >
                   {q.ageMaxSecondes >= 60 ? `${Math.round(q.ageMaxSecondes / 60)} min` : `${q.ageMaxSecondes} s`} {t('d’attente', 'waiting')}
                 </span>
@@ -528,8 +530,8 @@ function LatenceCard({ lignes }: { lignes: QueueLatenceRow[] }) {
    */
   const SEUIL_S = 30;
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
-      <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Latence réelle des files (24 h)', 'Actual queue latency (24 h)')}</h3>
+    <div className="rounded-2xl border border-ink-200 bg-white p-5">
+      <h3 className="text-sm font-semibold text-ink-900">{t('Latence réelle des files (24 h)', 'Actual queue latency (24 h)')}</h3>
       <p className="mb-3 mt-1 text-xs text-ink-500">
         {t(
           'Calculée sur les jobs terminés : les jobs échoués n’y figurent pas, ils se lisent sur la carte ci-dessus. À ne pas confondre avec l’âge, qui est une photo de l’instant.',
@@ -542,25 +544,25 @@ function LatenceCard({ lignes }: { lignes: QueueLatenceRow[] }) {
         <div className="grid gap-2">
           {utiles.map((l) => (
             <div key={l.queue} className="flex items-center justify-between rounded-lg bg-ink-50 px-3 py-2">
-              <span className="font-mono text-xs text-ink-700">{l.queue}</span>
+              <span className="font-mono text-xs text-ink-900">{l.queue}</span>
               <span className="flex gap-3 text-xs tabular-nums">
                 {/* L'effectif EN PREMIER : un p95 sur trois jobs ne veut rien dire. */}
                 <span className="text-ink-400" title={t('jobs terminés sur la fenêtre', 'jobs completed in window')}>
                   {fmtNum(l.echantillons, locale)} {t('jobs', 'jobs')}
                 </span>
-                <span className="text-ink-600" title={t('attente médiane avant prise', 'median wait before pickup')}>
+                <span className="text-ink-500" title={t('attente médiane avant prise', 'median wait before pickup')}>
                   p50 {fmtSecondes(l.attenteP50Secondes)}
                 </span>
                 <span
                   data-testid={`latence-p95-${l.queue}`}
-                  className={l.attenteP95Secondes >= SEUIL_S ? 'font-medium text-coral' : 'text-ink-600'}
+                  className={l.attenteP95Secondes >= SEUIL_S ? 'font-medium text-danger' : 'text-ink-500'}
                   title={t('attente au 95e centile', '95th percentile wait')}
                 >
                   p95 {fmtSecondes(l.attenteP95Secondes)}
                 </span>
                 <span
                   data-testid={`latence-bout-en-bout-${l.queue}`}
-                  className={l.boutEnBoutP95Secondes >= SEUIL_S ? 'font-medium text-coral' : 'text-ink-500'}
+                  className={l.boutEnBoutP95Secondes >= SEUIL_S ? 'font-medium text-danger' : 'text-ink-500'}
                   title={t('bout en bout au 95e centile (attente + traitement)', 'end-to-end 95th percentile')}
                 >
                   {t('bout en bout', 'end to end')} {fmtSecondes(l.boutEnBoutP95Secondes)}
@@ -573,7 +575,7 @@ function LatenceCard({ lignes }: { lignes: QueueLatenceRow[] }) {
                 */}
                 <span
                   data-testid={`latence-max-${l.queue}`}
-                  className={l.boutEnBoutMaxSecondes >= 120 ? 'font-medium text-coral' : 'text-ink-400'}
+                  className={l.boutEnBoutMaxSecondes >= 120 ? 'font-medium text-danger' : 'text-ink-400'}
                   title={t('pire cas bout en bout sur la fenêtre', 'worst end-to-end case in window')}
                 >
                   {t('pire', 'worst')} {fmtSecondes(l.boutEnBoutMaxSecondes)}
@@ -597,13 +599,13 @@ function fmtSecondes(s: number): string {
 function TenantTable({ tenants, onObserver }: { tenants: TenantOverviewRow[]; onObserver: (id: string, nom: string) => void }) {
   const t = useT();
   const { locale } = useLocale();
-  const dot = (q: string | null) => (q === 'GREEN' ? '#17C74E' : q === 'YELLOW' ? '#E8A400' : q === 'RED' ? '#FF4D4F' : '#B8BEC9');
+  const dot = (q: string | null) => (q === 'GREEN' ? succes[400] : q === 'YELLOW' ? alerte[500] : q === 'RED' ? danger[500] : ink[300]);
   const fmtDate = (iso: string | null) => (iso ? formatDate(iso, locale, { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—');
   return (
-    <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white shadow-sm">
+    <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white">
       <table className="w-full min-w-[820px] text-sm">
         <thead>
-          <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
+          <tr className="border-b border-ink-100 text-left text-xs text-ink-500">
             <th className="px-4 py-3 font-medium">{t('Client', 'Client')}</th>
             <th className="px-3 py-3 font-medium">MBA</th>
             <th className="px-3 py-3 font-medium">{t('Numéro', 'Number')}</th>
@@ -619,19 +621,19 @@ function TenantTable({ tenants, onObserver }: { tenants: TenantOverviewRow[]; on
             <tr key={tn.id} className="border-b border-ink-50 last:border-0">
               <td className="px-4 py-2.5">
                 <div className="font-medium text-ink-900">{tn.name}</div>
-                <div className="text-[11px] text-ink-400">{t('créé le', 'created on')} {fmtDate(tn.createdAt)}</div>
+                <div className="text-xs text-ink-400">{t('créé le', 'created on')} {fmtDate(tn.createdAt)}</div>
                 {/* Entrer dans l'espace pour VOIR ce que le client voit. Session en lecture seule, d'une
                     heure : elle ne peut rien modifier et ne marque rien comme lu. */}
                 <button
                   onClick={() => onObserver(tn.id, tn.name)}
                   data-testid={`observe-${tn.id}`}
-                  className="mt-1 text-[11px] font-medium text-brand-600 underline decoration-dotted hover:text-brand-700"
+                  className="mt-1 text-xs font-medium text-brand-600 underline decoration-dotted hover:text-brand-700"
                 >
                   {t('observer cet espace', 'observe this workspace')}
                 </button>
               </td>
               <td className="px-3 py-2.5">
-                <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${tn.mbaEnabled ? 'bg-mint-50 text-mint-700' : 'bg-ink-100 text-ink-500'}`}>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${tn.mbaEnabled ? 'bg-succes-50 text-succes-700' : 'bg-ink-100 text-ink-500'}`}>
                   {tn.mbaEnabled ? t('actif', 'active') : t('inactif', 'inactive')}
                 </span>
               </td>
@@ -639,16 +641,16 @@ function TenantTable({ tenants, onObserver }: { tenants: TenantOverviewRow[]; on
                 {tn.phone ? (
                   <span className="inline-flex items-center gap-1.5">
                     <span className="h-2 w-2 rounded-full" style={{ backgroundColor: dot(tn.quality) }} title={`${t('qualité', 'quality')} ${tn.quality ?? t('inconnue', 'unknown')}`} />
-                    <span className="font-mono text-xs text-ink-700">{tn.phone}</span>
+                    <span className="font-mono text-xs text-ink-900">{tn.phone}</span>
                   </span>
                 ) : (
                   <span className="text-xs text-ink-400">—</span>
                 )}
               </td>
-              <td className="px-3 py-2.5 text-right tabular-nums text-ink-700">{fmtNum(tn.users, locale)}</td>
-              <td className="px-3 py-2.5 text-right tabular-nums text-ink-700">{fmtNum(tn.contacts, locale)}</td>
-              <td className="px-3 py-2.5 text-right tabular-nums text-ink-700">{fmtNum(tn.messages, locale)}</td>
-              <td className="px-3 py-2.5 text-right tabular-nums text-ink-700">{fmtNum(tn.templatesUsed, locale)}</td>
+              <td className="px-3 py-2.5 text-right tabular-nums text-ink-900">{fmtNum(tn.users, locale)}</td>
+              <td className="px-3 py-2.5 text-right tabular-nums text-ink-900">{fmtNum(tn.contacts, locale)}</td>
+              <td className="px-3 py-2.5 text-right tabular-nums text-ink-900">{fmtNum(tn.messages, locale)}</td>
+              <td className="px-3 py-2.5 text-right tabular-nums text-ink-900">{fmtNum(tn.templatesUsed, locale)}</td>
               <td className="px-3 py-2.5 text-xs text-ink-500">{fmtDate(tn.lastSendAt)}</td>
             </tr>
           ))}

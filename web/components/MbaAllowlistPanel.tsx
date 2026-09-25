@@ -5,6 +5,7 @@ import { useT } from '@/lib/i18n';
 import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from './MbaNotice';
 import { addMbaAllowlistEntry, listMbaAllowlist, removeMbaAllowlistEntry, type MbaAllowlistEntry } from '@/lib/api-mba';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * Les numéros de TEST : ceux que l'agent a le droit de gérer quand l'audience est restreinte.
@@ -62,7 +63,7 @@ export function MbaAllowlistPanel({ tenantId, phoneNumberId, audience }: {
     <section className={`${cardCls} space-y-4`}>
       <div>
         <h3 className="text-sm font-semibold text-ink-900">{t('Numéros de test', 'Test numbers')}</h3>
-        <p className="mt-1 text-xs leading-relaxed text-ink-600">
+        <p className="mt-1 text-xs leading-relaxed text-ink-500">
           {t(
             'Quand l’audience est restreinte, l’agent ne répond QU’À ces numéros. Sert à l’essayer sur votre vrai numéro avant de l’ouvrir à vos clients, pas à autoriser les clients un par un.',
             'When the audience is restricted, the agent answers ONLY these numbers. Use it to try the agent on your own number before opening it to your customers, not to allow customers one by one.',
@@ -97,8 +98,8 @@ export function MbaAllowlistPanel({ tenantId, phoneNumberId, audience }: {
             value={phone}
             onChange={(e) => { setPhone(e.target.value); setErr(''); }}
           />
-          <button
-            className="shrink-0 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          <Bouton
+            className="shrink-0"
             data-testid="mba-allowlist-add"
             disabled={busy || phone.trim() === ''}
             onClick={() => {
@@ -108,7 +109,7 @@ export function MbaAllowlistPanel({ tenantId, phoneNumberId, audience }: {
             }}
           >
             {t('Ajouter', 'Add')}
-          </button>
+          </Bouton>
         </div>
       </div>
 
@@ -117,7 +118,7 @@ export function MbaAllowlistPanel({ tenantId, phoneNumberId, audience }: {
           <li key={e.id ?? e.consumer_phone_number} className="flex items-center justify-between gap-4 rounded-lg border border-ink-100 px-3 py-2">
             <span className="text-sm text-ink-900">{e.consumer_phone_number}</span>
             <button
-              className="text-xs font-medium text-rose-600 hover:text-rose-700"
+              className="text-xs font-medium text-danger-600 hover:text-danger-700"
               onClick={() => {
                 if (e.id === undefined) return;
                 void agir(() => removeMbaAllowlistEntry(tenantId, phoneNumberId, e.id as string));

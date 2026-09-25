@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { RcsMessageForm } from '@/components/RcsMessageForm';
 import { RcsCarouselForm } from '@/components/RcsCarouselForm';
 import type { RcsMessage, UserFieldDef } from '@/lib/api';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * ÉCRIRE UN MESSAGE RCS SANS QUITTER LA CAMPAGNE EN COURS, simple ou carrousel.
@@ -102,7 +103,7 @@ export function CreationMessageRcsEnLigne({ tenantId, champs, rechargerMessagesR
           ＋ Créer un nouveau message
         </button>
         {souci !== null && (
-          <p className="text-xs text-amber-700" data-testid="rcs-creer-souci">{souci}</p>
+          <p className="text-xs text-alerte-700" data-testid="rcs-creer-souci">{souci}</p>
         )}
       </div>
     );
@@ -111,25 +112,23 @@ export function CreationMessageRcsEnLigne({ tenantId, champs, rechargerMessagesR
   if (mode === 'choix') {
     return (
       <div className="w-full rounded-xl border border-brand-200 bg-brand-50/40 p-3" data-testid="rcs-creer-choix">
-        <p className="text-xs font-medium text-ink-800">Quel genre de message ?</p>
+        <p className="text-xs font-medium text-ink-900">Quel genre de message ?</p>
         {/* ⚠️ LE CARROUSEL EST UN CHOIX À PART, PAS UNE CASE DANS LE FORMULAIRE SIMPLE : ce sont deux
             formulaires différents dans l'écran en service (un message a trois champs, un carrousel a de
             deux à dix cartes qui en ont chacune trois). Les fondre ici aurait fabriqué un troisième
             formulaire, c'est-à-dire exactement ce que ce composant existe pour éviter. */}
         <div className="mt-2 flex flex-wrap gap-2">
-          <button type="button" data-testid="rcs-creer-simple" onClick={() => setMode('simple')}
-            className="rounded-lg border border-ink-300 bg-white px-3 py-1.5 text-xs font-medium text-ink-700 hover:bg-ink-50">
+          <Bouton variante="secondaire" taille="petite" type="button" data-testid="rcs-creer-simple" onClick={() => setMode('simple')}>
             Message simple
-          </button>
-          <button type="button" data-testid="rcs-creer-carrousel" onClick={() => setMode('carrousel')}
-            className="rounded-lg border border-ink-300 bg-white px-3 py-1.5 text-xs font-medium text-ink-700 hover:bg-ink-50">
+          </Bouton>
+          <Bouton variante="secondaire" taille="petite" type="button" data-testid="rcs-creer-carrousel" onClick={() => setMode('carrousel')}>
             Carrousel
-          </button>
+          </Bouton>
           <button type="button" onClick={() => setMode(null)} className="px-2 py-1.5 text-xs text-ink-500 hover:underline">
             Annuler
           </button>
         </div>
-        <p className="mt-2 text-[11px] text-ink-500">
+        <p className="mt-2 text-xs text-ink-500">
           Un message simple porte un texte, un visuel et des boutons. Un carrousel porte de deux à dix cartes,
           chacune avec son titre, son texte, son visuel et ses boutons.
         </p>

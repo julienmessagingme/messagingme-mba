@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { uploadRcsMedia } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * Une image que la console HÉBERGE : on choisit un fichier, et l'adresse publique se remplit toute seule.
@@ -93,7 +94,7 @@ export function ChampImageHebergee({
       type="button"
       onClick={() => { onChange(''); setErreur(null); }}
       data-testid={`${testIdPrefix}-image-clear`}
-      className="shrink-0 text-sm text-ink-400 hover:text-coral"
+      className="shrink-0 text-sm text-ink-400 hover:text-danger"
     >
       {t('Retirer', 'Remove')}
     </button>
@@ -126,15 +127,15 @@ export function ChampImageHebergee({
         </button>
       ) : (
         <div className="flex items-center gap-2">
-          <button
+          <Bouton variante="secondaire" enCours={busy}
             type="button"
             onClick={() => fichierRef.current?.click()}
             disabled={busy}
             data-testid={`${testIdPrefix}-image-upload`}
-            className="shrink-0 rounded-lg border border-ink-300 bg-white px-3 py-1.5 text-sm font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-40"
+            className="shrink-0"
           >
             {busy ? t('Envoi…', 'Uploading…') : t('Choisir une image', 'Choose an image')}
-          </button>
+          </Bouton>
           {aUneImage && (
             <>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -165,9 +166,9 @@ export function ChampImageHebergee({
         </div>
       ) : champAdresse(`${cls} mt-1.5`)}
 
-      {erreur && <p className="mt-1 text-[11px] text-red-700" data-testid={`${testIdPrefix}-image-error`}>{erreur}</p>}
+      {erreur && <p className="mt-1 text-xs text-danger-700" data-testid={`${testIdPrefix}-image-error`}>{erreur}</p>}
       {douteuse && (
-        <p className="mt-1 text-[11px] text-amber-700" data-testid={`${testIdPrefix}-image-warn`}>
+        <p className="mt-1 text-xs text-alerte-700" data-testid={`${testIdPrefix}-image-warn`}>
           {t('Cette adresse ne finit pas par .jpg, .png ou .gif : l’opérateur refusera l’envoi.', 'This URL does not end in .jpg, .png or .gif: the carrier will refuse the send.')}
         </p>
       )}

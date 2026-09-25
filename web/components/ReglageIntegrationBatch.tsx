@@ -5,6 +5,7 @@ import { lireIntegrationBatch, enregistrerIntegrationBatch, debrancherIntegratio
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 import { cardCls, inputCls } from '@/lib/ui';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * PARAMÈTRES > INTÉGRATIONS > BATCH (lot 6 de l'API publique, spec 2026-09-24, § 8) : les clés de l'outil qui
@@ -92,8 +93,8 @@ export function ReglageIntegrationBatch({ tenantId }: { tenantId: string }) {
   return (
     <section className="space-y-3" data-testid="integrations">
       <header className="space-y-1">
-        <span className="text-xs font-semibold uppercase tracking-wide text-brand-600">{t('Intégrations', 'Integrations')}</span>
-        <p className="text-sm text-ink-600">
+        <span className="text-xs font-medium text-ink-500">{t('Intégrations', 'Integrations')}</span>
+        <p className="text-sm text-ink-500">
           {t(
             'L’outil qui reçoit les signaux de la console (livraisons, réponses, clics, désabonnements, conversations analysées) sur les profils qu’il connaît.',
             'The tool that receives the console’s signals (deliveries, replies, clicks, unsubscribes, analysed conversations) on the profiles it knows.',
@@ -105,7 +106,7 @@ export function ReglageIntegrationBatch({ tenantId }: { tenantId: string }) {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h3 className="text-sm font-semibold text-ink-900">Batch</h3>
-            <p className="mt-1 text-sm text-ink-600" data-testid="integration-batch-etat">
+            <p className="mt-1 text-sm text-ink-500" data-testid="integration-batch-etat">
               {etat === null
                 ? erreur === null
                   ? t('Lecture…', 'Loading…')
@@ -119,7 +120,7 @@ export function ReglageIntegrationBatch({ tenantId }: { tenantId: string }) {
         </div>
 
         {branche && etat?.refusClesLe && (
-          <p className="mt-3 rounded-lg border border-coral px-3 py-2 text-sm text-coral" data-testid="integration-batch-refus">
+          <p className="mt-3 rounded-lg border border-danger-500 px-3 py-2 text-sm text-danger" data-testid="integration-batch-refus">
             {t(
               `Batch a refusé vos clés le ${date(etat.refusClesLe)} : la remontée est suspendue jusqu’à ce que vous enregistriez des clés valides.`,
               `Batch rejected your keys on ${date(etat.refusClesLe)}: signals are paused until you save valid keys.`,
@@ -128,7 +129,7 @@ export function ReglageIntegrationBatch({ tenantId }: { tenantId: string }) {
         )}
 
         {branche && (
-          <p className="mt-3 text-sm text-ink-600" data-testid="integration-batch-sans-identifiant">
+          <p className="mt-3 text-sm text-ink-500" data-testid="integration-batch-sans-identifiant">
             {perdus === 0
               ? t('Toutes les fiches concernées portaient un identifiant externe.', 'Every contact involved had an external id.')
               : perdus === 1
@@ -144,7 +145,7 @@ export function ReglageIntegrationBatch({ tenantId }: { tenantId: string }) {
         )}
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <label className="block text-sm text-ink-700">
+          <label className="block text-sm text-ink-900">
             {t('Clé d’API REST', 'REST API key')}
             <input
               type="password"
@@ -156,7 +157,7 @@ export function ReglageIntegrationBatch({ tenantId }: { tenantId: string }) {
               className={`${inputCls} mt-1`}
             />
           </label>
-          <label className="block text-sm text-ink-700">
+          <label className="block text-sm text-ink-900">
             {t('Clé de projet', 'Project key')}
             <input
               type="password"
@@ -170,7 +171,7 @@ export function ReglageIntegrationBatch({ tenantId }: { tenantId: string }) {
           </label>
         </div>
 
-        <label className="mt-3 flex items-start gap-2 text-sm text-ink-700">
+        <label className="mt-3 flex items-start gap-2 text-sm text-ink-900">
           <input
             type="checkbox"
             data-testid="integration-batch-resume"
@@ -190,30 +191,28 @@ export function ReglageIntegrationBatch({ tenantId }: { tenantId: string }) {
         </label>
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button
+          <Bouton
             data-testid="integration-batch-enregistrer"
             onClick={enregistrer}
             disabled={!peutEnregistrer}
-            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-ink-200"
           >
             {branche ? t('Enregistrer', 'Save') : t('Brancher', 'Connect')}
-          </button>
+          </Bouton>
           {branche && (
-            <button
+            <Bouton variante="secondaire"
               data-testid="integration-batch-debrancher"
               onClick={debrancher}
               disabled={statut === 'saving'}
-              className="rounded-lg border border-ink-300 px-4 py-2 text-sm font-medium text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed"
             >
               {t('Débrancher', 'Disconnect')}
-            </button>
+            </Bouton>
           )}
           {etat !== null && !branche && !clesSaisies && (
             <span className="text-xs text-ink-500">{t('Les deux clés sont requises pour brancher.', 'Both keys are required to connect.')}</span>
           )}
         </div>
 
-        {erreur !== null && <p className="mt-3 text-sm text-coral" data-testid="integration-batch-erreur">{erreur}</p>}
+        {erreur !== null && <p className="mt-3 text-sm text-danger" data-testid="integration-batch-erreur">{erreur}</p>}
       </div>
     </section>
   );

@@ -11,7 +11,7 @@ import type { ReactNode } from 'react';
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="mt-3">
-      <label className="mb-1 block text-sm font-medium text-ink-700">{label}</label>
+      <label className="mb-1 block text-sm font-medium text-ink-900">{label}</label>
       {children}
     </div>
   );

@@ -15,12 +15,12 @@ import type { RecipientCounts } from '@/lib/api';
  *
  * `className` absorbe le seul écart entre ses deux appelants historiques (marge et nuance de gris).
  */
-export function LaunchCounts({ counts, className = 'mt-2 text-xs text-ink-600' }: { counts: RecipientCounts; className?: string }) {
+export function LaunchCounts({ counts, className = 'mt-2 text-xs text-ink-500' }: { counts: RecipientCounts; className?: string }) {
   const t = useT();
   return (
     <p className={className}>
-      <b className="text-emerald-700">{counts.sent}</b> {t('envoyés', 'sent')}
-      {counts.failed > 0 && <> · <b className="text-red-700">{counts.failed}</b> {t('échecs', 'failures')}</>}
+      <b className="text-succes-700">{counts.sent}</b> {t('envoyés', 'sent')}
+      {counts.failed > 0 && <> · <b className="text-danger-700">{counts.failed}</b> {t('échecs', 'failures')}</>}
       {counts.pending > 0 && <> · {counts.pending} {t('en attente', 'pending')}</>}
       {counts.skipped > 0 && <> · {counts.skipped} {t('ignorés', 'skipped')}</>}
     </p>

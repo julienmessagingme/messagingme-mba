@@ -77,7 +77,7 @@ export function ConditionBuilder({ group, onChange, fields, tags }: {
       {clauses.length > 1 && (
         // Empilé et non en ligne : la phrase et son menu ne tiennent pas côte à côte dans 280 px, et sans
         // `flex-wrap` la ligne débordait du panneau au lieu de passer à la ligne.
-        <div className="space-y-1 text-xs text-ink-600">
+        <div className="space-y-1 text-xs text-ink-500">
           <span>{t('Le contact passe par « Si réunie » quand :', 'The contact takes “If met” when:')}</span>
           <select value={match} onChange={(e) => onChange({ match: e.target.value === 'any' ? 'any' : 'all', clauses })} className={`${sel} py-1`}>
             <option value="all">{t('toutes les conditions sont vraies', 'all conditions are true')}</option>
@@ -86,7 +86,7 @@ export function ConditionBuilder({ group, onChange, fields, tags }: {
         </div>
       )}
 
-      {clauses.length === 0 && <p className="text-[11px] text-ink-400">{t('Aucune condition : le contact part toujours sur « Si réunie ».', 'No condition: the contact always takes “If met”.')}</p>}
+      {clauses.length === 0 && <p className="text-xs text-ink-400">{t('Aucune condition : le contact part toujours sur « Si réunie ».', 'No condition: the contact always takes “If met”.')}</p>}
 
       {clauses.map((c, i) => (
         <div key={i} className="rounded-xl border border-ink-100 bg-ink-50/40 p-2">
@@ -105,7 +105,7 @@ export function ConditionBuilder({ group, onChange, fields, tags }: {
               </select>
               <ClauseOperands c={c} i={i} patch={patch} allFields={allFields} changeField={changeField} tags={tags} sel={sel} inp={inp} />
             </div>
-            <button type="button" onClick={() => remove(i)} className="shrink-0 pt-1.5 text-ink-400 hover:text-coral" aria-label={t('Retirer', 'Remove')}>×</button>
+            <button type="button" onClick={() => remove(i)} className="shrink-0 pt-1.5 text-ink-400 hover:text-danger" aria-label={t('Retirer', 'Remove')}>×</button>
           </div>
         </div>
       ))}
@@ -312,7 +312,7 @@ function WeekdayPicker({ days, onChange }: { days: number[]; onChange: (d: numbe
   return (
     <div className="flex flex-wrap gap-1">
       {DAYS.map(([d, lbl]) => (
-        <button key={d} type="button" onClick={() => toggle(d)} className={`h-7 w-7 rounded-md text-xs font-semibold transition ${days.includes(d) ? 'bg-brand-500 text-white' : 'bg-ink-100 text-ink-500 hover:bg-ink-200'}`}>
+        <button key={d} type="button" onClick={() => toggle(d)} className={`h-7 w-7 rounded-md text-xs font-semibold transition-colors duration-150 ${days.includes(d) ? 'bg-brand-500 text-white' : 'bg-ink-100 text-ink-500 hover:bg-ink-200'}`}>
           {t(...lbl)}
         </button>
       ))}

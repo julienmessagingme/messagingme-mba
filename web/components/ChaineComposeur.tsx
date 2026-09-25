@@ -14,10 +14,11 @@ import {
   imageAffichable, liensAProposer, libelleLien, phraseAcceptable, pretAPublier, resteAAfficher,
   type BrouillonChaine,
 } from '@/lib/chaine-apercu';
+import { Bouton } from '@/components/Bouton';
 
 /** Ce que chaque style MONTRE dans la barre. Le style lui-même vit dans `MARQUEURS`, ici c'est l'habillage. */
 const HABILLAGE: Record<StyleBarre, { fr: string; en: string; lettre: string; classe: string }> = {
-  gras: { fr: 'Gras', en: 'Bold', lettre: 'B', classe: 'font-bold' },
+  gras: { fr: 'Gras', en: 'Bold', lettre: 'B', classe: 'font-semibold' },
   italique: { fr: 'Italique', en: 'Italic', lettre: 'I', classe: 'italic' },
   barre: { fr: 'Barré', en: 'Strikethrough', lettre: 'S', classe: 'line-through' },
 };
@@ -95,7 +96,7 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
           ce n'était plus le `textarea` mais le bouton Gras. Cliquer sur le mot « Message » mettait donc du
           gras au lieu de placer le curseur, et un lecteur d'écran annonçait « Message » sur ce bouton. */}
       <div className="block">
-        <label htmlFor="chaine-texte" className="mb-1 block text-sm font-medium text-ink-600">
+        <label htmlFor="chaine-texte" className="mb-1 block text-sm font-medium text-ink-500">
           {t('Message', 'Message')}
         </label>
         {/* 🔴 LA BARRE AGIT SUR LA SÉLECTION, et la REPLACE ensuite. Un éditeur qui renvoie le curseur à la
@@ -114,7 +115,7 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
               title={t(HABILLAGE[style].fr, HABILLAGE[style].en)}
               aria-label={t(HABILLAGE[style].fr, HABILLAGE[style].en)}
               data-testid={`chaine-format-${style}`}
-              className="rounded-md border border-ink-300 px-2 py-1 text-xs text-ink-700 hover:bg-ink-50"
+              className="rounded-md border border-ink-300 px-2 py-1 text-xs text-ink-900 transition-colors duration-150 hover:bg-ink-50"
             >
               <span className={HABILLAGE[style].classe}>{HABILLAGE[style].lettre}</span>
             </button>
@@ -128,7 +129,7 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
               onClick={() => setEmojis((v) => !v)}
               aria-label={t('Smileys', 'Emojis')}
               data-testid="chaine-emojis"
-              className="rounded-md border border-ink-300 px-2 py-1 text-xs hover:bg-ink-50"
+              className="rounded-md border border-ink-300 px-2 py-1 text-xs text-ink-900 transition-colors duration-150 hover:bg-ink-50"
             >
               😊
             </button>
@@ -153,7 +154,7 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
         />
         {reste !== null ? (
           <span
-            className={`mt-1 block text-xs tabular-nums ${reste < 0 ? 'text-coral' : 'text-ink-400'}`}
+            className={`mt-1 block text-xs tabular-nums ${reste < 0 ? 'text-danger' : 'text-ink-400'}`}
             data-testid="chaine-texte-reste"
           >
             {reste < 0
@@ -164,7 +165,7 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
       </div>
 
       <div className="block">
-        <span className="mb-1 block text-sm font-medium text-ink-600">
+        <span className="mb-1 block text-sm font-medium text-ink-500">
           {t('Image (facultatif)', 'Image (optional)')}
         </span>
         {/* 🔴 ON HÉBERGE L'IMAGE, ON NE L'ENVOIE PAS AU FOURNISSEUR. Julien voulait un bouton pour
@@ -183,7 +184,7 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
           avertirExtension={false}
         />
         {imageRefusee ? (
-          <span className="mt-1 block text-xs text-coral" data-testid="chaine-image-refus">
+          <span className="mt-1 block text-xs text-danger" data-testid="chaine-image-refus">
             {t(
               'Il faut une adresse https publique. Une adresse interne ou en http sera refusée à la publication.',
               'A public https address is required. Internal or http addresses are rejected on publish.',
@@ -194,7 +195,7 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
 
       {/* --- Le bouton Discuter ------------------------------------------------------------------- */}
       <div className="rounded-xl border border-ink-200 p-4">
-        <p className="text-sm font-medium text-ink-700">{t('Bouton « Discuter »', '"Chat" button')}</p>
+        <p className="text-sm font-medium text-ink-900">{t('Bouton « Discuter »', '"Chat" button')}</p>
         <p className="mt-1 text-xs text-ink-400">
           {t(
             'Rattache un scénario : la publication portera un bouton qui ouvre une conversation et le démarre.',
@@ -203,7 +204,7 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
         </p>
 
         {phone === null ? (
-          <p className="mt-3 rounded-lg bg-gold/10 px-3 py-2 text-xs text-ink-600" data-testid="chaine-sans-numero">
+          <p className="mt-3 rounded-lg bg-alerte-50 px-3 py-2 text-xs text-ink-500" data-testid="chaine-sans-numero">
             {t(
               'Aucun numéro WhatsApp connecté : impossible de créer un lien tant qu’il n’y en a pas.',
               'No WhatsApp number connected: links cannot be created until there is one.',
@@ -237,7 +238,7 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
               <button
                 type="button"
                 onClick={() => setTousLesLiens(true)}
-                className="mt-1.5 block text-xs font-medium text-ink-500 hover:text-ink-700"
+                className="mt-1.5 block text-xs font-medium text-ink-500 hover:text-ink-900"
                 data-testid="chaine-tous-les-liens"
               >
                 {t(`Voir tous les liens (${liens.length})`, `Show all links (${liens.length})`)}
@@ -268,15 +269,15 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
       </div>
 
       {/* Pas de garde de rôle : `AppShell` renvoie déjà tout non-admin sur l'inbox avant cette page. */}
-      <button
+      <Bouton enCours={busy}
         type="button"
         onClick={() => void props.onPublier()}
         disabled={busy || !pretAPublier(brouillon)}
-        className="w-full rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+        className="w-full"
         data-testid="chaine-publier"
       >
         {busy ? t('Publication…', 'Publishing…') : t('Publier sur la chaîne', 'Publish to channel')}
-      </button>
+      </Bouton>
     </div>
   );
 }
@@ -318,7 +319,7 @@ function CreationLien({
   return (
     <div className="mt-3 space-y-3 rounded-lg bg-ink-50 p-3">
       <label className="block">
-        <span className="mb-1 block text-xs font-medium text-ink-600">{t('Scénario à démarrer', 'Scenario to start')}</span>
+        <span className="mb-1 block text-xs font-medium text-ink-500">{t('Scénario à démarrer', 'Scenario to start')}</span>
         <select
           className={inputCls}
           value={workflowId}
@@ -331,7 +332,7 @@ function CreationLien({
           ))}
         </select>
         {horsLigne ? (
-          <span className="mt-1 block text-xs text-coral" data-testid="chaine-scenario-hors-ligne">
+          <span className="mt-1 block text-xs text-danger" data-testid="chaine-scenario-hors-ligne">
             {t(
               'Ce scénario n’a aucune version publiée : publie-le d’abord, sinon le bouton ne démarrera rien.',
               'This scenario has no published version: publish it first, or the button will start nothing.',
@@ -341,7 +342,7 @@ function CreationLien({
       </label>
 
       <label className="block">
-        <span className="mb-1 block text-xs font-medium text-ink-600">
+        <span className="mb-1 block text-xs font-medium text-ink-500">
           {t('Phrase d’accroche', 'Opening phrase')}
         </span>
         <input
@@ -358,7 +359,7 @@ function CreationLien({
           )}
         </span>
         {reste !== null ? (
-          <span className={`mt-1 block text-xs tabular-nums ${reste < 0 ? 'text-coral' : 'text-ink-400'}`}>
+          <span className={`mt-1 block text-xs tabular-nums ${reste < 0 ? 'text-danger' : 'text-ink-400'}`}>
             {reste < 0
               ? t(`${-reste} caractères de trop`, `${-reste} characters too many`)
               : t(`${reste} caractères restants`, `${reste} characters left`)}
@@ -366,17 +367,16 @@ function CreationLien({
         ) : null}
       </label>
 
-      {erreur ? <p className="text-xs text-coral" data-testid="chaine-lien-erreur">{erreur}</p> : null}
+      {erreur ? <p className="text-xs text-danger" data-testid="chaine-lien-erreur">{erreur}</p> : null}
 
-      <button
+      <Bouton variante="secondaire" enCours={busy}
         type="button"
         onClick={() => void creer()}
         disabled={busy || !pret}
-        className="rounded-lg border border-brand-500 px-3 py-1.5 text-sm font-medium text-brand-600 hover:bg-brand-50 disabled:opacity-50"
         data-testid="chaine-creer-lien"
       >
         {busy ? t('Création…', 'Creating…') : t('Créer le lien', 'Create link')}
-      </button>
+      </Bouton>
     </div>
   );
 }

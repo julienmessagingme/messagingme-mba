@@ -22,10 +22,10 @@ export function estNiveauRisque(v: unknown): v is NiveauRisque {
  * qu'on n'a pas pu observer (rien ne lui a été délivré sur 90 jours), pas un contact fidèle.
  */
 export const BADGE_NIVEAU_RISQUE: Record<NiveauRisque, { text: readonly [string, string]; cls: string }> = {
-  eleve: { text: ['élevé', 'high'], cls: 'bg-red-50 text-red-700' },
-  moyen: { text: ['moyen', 'medium'], cls: 'bg-amber-50 text-amber-700' },
-  faible: { text: ['faible', 'low'], cls: 'bg-emerald-50 text-emerald-700' },
-  inconnu: { text: ['inconnu', 'unknown'], cls: 'bg-ink-100 text-ink-600' },
+  eleve: { text: ['élevé', 'high'], cls: 'bg-danger-50 text-danger-700' },
+  moyen: { text: ['moyen', 'medium'], cls: 'bg-alerte-50 text-alerte-700' },
+  faible: { text: ['faible', 'low'], cls: 'bg-succes-50 text-succes-700' },
+  inconnu: { text: ['inconnu', 'unknown'], cls: 'bg-ink-100 text-ink-500' },
 };
 
 /** L'ordre des choix du filtre : du plus urgent au moins observé. */

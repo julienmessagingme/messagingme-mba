@@ -7,6 +7,7 @@ import { listerBlocsMba, type BlocPropose } from '@/lib/api-mba-outils';
 import { BORNES_OUTIL, METHODES_IRREVERSIBLES, valeursPermises } from '@/lib/mba-outils';
 import { inputCls } from '@/lib/ui';
 import { useT } from '@/lib/i18n';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * LES CIBLES D'UN OUTIL DE L'AGENT DE META : ce que l'administrateur FIXE (spec 2026-09-21-outils-maison-mba,
@@ -30,12 +31,12 @@ export function CibleTag({ tenantId, valeur, onChange }: {
     return () => { vivant = false; };
   }, [tenantId]);
   return (
-    <label className="text-xs text-ink-600">
+    <label className="text-xs text-ink-500">
       {t('Étiquette à poser', 'Tag to set')}
       <input className={`${inputCls} mt-1`} list="mba-tags" data-testid="mba-cible-tag" value={valeur} maxLength={BORNES_OUTIL.tag}
         onChange={(e) => onChange(e.target.value)} placeholder="client_vip" />
       <datalist id="mba-tags">{tags.map((x) => <option key={x.tag} value={x.tag} />)}</datalist>
-      <span className="mt-1 block text-[11px] text-ink-500" data-testid="mba-cible-tag-note">
+      <span className="mt-1 block text-xs text-ink-500" data-testid="mba-cible-tag-note">
         {t(
           'Ne comptez pas sur vos automations « tag ajouté » : l’agent de Meta tient alors la conversation, le scénario qu’elles lanceraient ne démarre pas, et il n’est pas rejoué ensuite.',
           'Do not rely on your “tag added” automations: Meta’s agent holds the conversation then, the scenario they would start does not start, and it is not replayed later.',
@@ -69,7 +70,7 @@ export function CibleChamp({ tenantId, champ, valeurs, onChange }: {
   const disparu = Array.isArray(champs) && champ !== '' && !champs.some((f) => f.key === champ);
   return (
     <div className="flex flex-col gap-2">
-      <label className="text-xs text-ink-600">
+      <label className="text-xs text-ink-500">
         {t('Champ de la fiche', 'Record field')}
         <select className={`${inputCls} mt-1`} data-testid="mba-cible-champ" value={champ}
           onChange={(e) => onChange(e.target.value, valeurs)}>
@@ -87,17 +88,17 @@ export function CibleChamp({ tenantId, champ, valeurs, onChange }: {
       </label>
       {champs === 'erreur' && (
         <button type="button" data-testid="mba-cible-champ-illisible" onClick={() => setEssai((n) => n + 1)}
-          className="self-start text-[11px] text-coral underline">
+          className="self-start text-xs text-danger underline hover:text-danger-700">
           {t('Lecture des champs impossible : réessayer', 'Could not read the fields: retry')}
         </button>
       )}
       {disparu && (
-        <p className="text-[11px] text-coral" data-testid="mba-cible-champ-disparu">
+        <p className="text-xs text-danger" data-testid="mba-cible-champ-disparu">
           {t('Ce champ n’existe plus : l’agent de Meta ne peut plus l’enregistrer. Choisissez-en un autre, ou supprimez l’outil.',
             'This field no longer exists: Meta’s agent can no longer save it. Pick another one, or delete the tool.')}
         </p>
       )}
-      <label className="text-xs text-ink-600">
+      <label className="text-xs text-ink-500">
         {t('Valeurs permises, une par ligne (facultatif)', 'Allowed values, one per line (optional)')}
         <textarea className={`${inputCls} mt-1`} rows={3} data-testid="mba-cible-valeurs" value={texte}
           onChange={(e) => {
@@ -128,7 +129,7 @@ export function CibleConnecteur({ tenantId, requeteId, fixe, onChoisir }: {
   if (requetes === 'erreur') {
     return (
       <button type="button" data-testid="mba-cible-appels-illisibles" onClick={() => setEssai((n) => n + 1)}
-        className="self-start text-xs text-coral underline">
+        className="self-start text-xs text-danger underline hover:text-danger-700">
         {t('Lecture des appels impossible : réessayer', 'Could not read the calls: retry')}
       </button>
     );
@@ -138,8 +139,8 @@ export function CibleConnecteur({ tenantId, requeteId, fixe, onChoisir }: {
     // Plan, écart 1 : la définition d'un connecteur est partagée avec les agents IA, son appel ne change pas.
     return (
       <div className="flex flex-col gap-1" data-testid="mba-cible-appel-fixe">
-        <p className="text-sm text-ink-800">{choisie?.label ?? t('Appel supprimé', 'Deleted call')}</p>
-        <p className="text-[11px] text-ink-500">{t('Pour changer d’appel, créez un autre outil.', 'To change the call, create another tool.')}</p>
+        <p className="text-sm text-ink-900">{choisie?.label ?? t('Appel supprimé', 'Deleted call')}</p>
+        <p className="text-xs text-ink-500">{t('Pour changer d’appel, créez un autre outil.', 'To change the call, create another tool.')}</p>
         {choisie && <ValeursDeLAppel requete={choisie} />}
       </div>
     );
@@ -155,23 +156,22 @@ export function CibleConnecteur({ tenantId, requeteId, fixe, onChoisir }: {
           <li key={r.id}
             className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 ${r.id === requeteId ? 'border-brand-400 bg-brand-50' : 'border-ink-200'}`}>
             <span className="flex flex-wrap items-baseline gap-2">
-              <span className="text-sm text-ink-800">{r.label}</span>
-              <code className="text-[11px] text-ink-500">{r.methode} {r.chemin}</code>
+              <span className="text-sm text-ink-900">{r.label}</span>
+              <code className="text-xs text-ink-500">{r.methode} {r.chemin}</code>
               {METHODES_IRREVERSIBLES.includes(r.methode) && (
-                <span className="rounded bg-amber-50 px-1.5 text-[11px] text-amber-800" data-testid={`mba-cible-appel-irreversible-${r.id}`}>
+                <span className="rounded bg-alerte-50 px-1.5 text-xs text-alerte-800" data-testid={`mba-cible-appel-irreversible-${r.id}`}>
                   {t('irréversible', 'irreversible')}
                 </span>
               )}
             </span>
-            <button type="button" data-testid={`mba-cible-appel-${r.id}`} onClick={() => onChoisir(r)}
-              className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 text-xs font-medium text-ink-700 hover:bg-ink-50">
+            <Bouton variante="secondaire" taille="petite" type="button" data-testid={`mba-cible-appel-${r.id}`} onClick={() => onChoisir(r)}>
               {r.id === requeteId ? t('Choisi', 'Picked') : t('Choisir', 'Pick')}
-            </button>
+            </Bouton>
           </li>
         ))}
       </ul>
       {choisie && METHODES_IRREVERSIBLES.includes(choisie.methode) && (
-        <p className="text-[11px] text-amber-800" data-testid="mba-cible-appel-avertissement">
+        <p className="text-xs text-alerte-800" data-testid="mba-cible-appel-avertissement">
           {t('Cet appel est irréversible, et l’agent de Meta l’exécute sans validation humaine. Réservez-le à une demande explicite du client, et dites-le dans « Quand l’appeler ».',
             'This call is irreversible, and Meta’s agent runs it without human approval. Keep it for an explicit customer request, and say so in “When to call it”.')}
         </p>
@@ -191,7 +191,7 @@ function ValeursDeLAppel({ requete }: { requete: RequeteApi }) {
   const demandees = requete.variables.filter((v) => v.origine.type === 'modele').map((v) => v.nom);
   if (remplies.length === 0 && demandees.length === 0) return null;
   return (
-    <p className="text-xs text-ink-600" data-testid="mba-cible-valeurs-appel">
+    <p className="text-xs text-ink-500" data-testid="mba-cible-valeurs-appel">
       {remplies.length > 0 && (
         <span data-testid="mba-cible-valeurs-remplies">
           {t('Engage Me remplit lui-même : ', 'Engage Me fills in: ')}{remplies.join(', ')}.{' '}
@@ -248,7 +248,7 @@ export function CibleBloc({ tenantId, workflowId, code, onChange }: {
   const blocDisparu = Array.isArray(blocs) && code !== '' && !blocs.some((b) => b.code === code);
   return (
     <div className="flex flex-col gap-2" data-testid="mba-cible-blocs">
-      <label className="text-xs text-ink-600">
+      <label className="text-xs text-ink-500">
         {t('Scénario', 'Scenario')}
         {/* Changer de scénario vide le bloc choisi : un code n'a de sens que dans son scénario. */}
         <select className={`${inputCls} mt-1`} data-testid="mba-cible-bloc-scenario" value={workflowId}
@@ -261,13 +261,13 @@ export function CibleBloc({ tenantId, workflowId, code, onChange }: {
       </label>
       {scenarios === 'erreur' && (
         <button type="button" data-testid="mba-cible-scenarios-illisibles" onClick={() => setEssaiScenarios((n) => n + 1)}
-          className="self-start text-[11px] text-coral underline">
+          className="self-start text-xs text-danger underline hover:text-danger-700">
           {t('Lecture des scénarios impossible : réessayer', 'Could not read the scenarios: retry')}
         </button>
       )}
       {workflowId !== '' && blocs === 'erreur' && (
         <button type="button" data-testid="mba-cible-blocs-illisibles" onClick={() => setEssaiBlocs((n) => n + 1)}
-          className="self-start text-xs text-coral underline">
+          className="self-start text-xs text-danger underline hover:text-danger-700">
           {t('Lecture des blocs impossible : réessayer', 'Could not read the blocks: retry')}
         </button>
       )}
@@ -277,23 +277,23 @@ export function CibleBloc({ tenantId, workflowId, code, onChange }: {
         </p>
       )}
       {blocDisparu && (
-        <p className="text-[11px] text-coral" data-testid="mba-cible-bloc-disparu">
+        <p className="text-xs text-danger" data-testid="mba-cible-bloc-disparu">
           {t('Le bloc choisi n’existe plus dans ce scénario : choisissez-en un autre, ou supprimez l’outil.',
             'The chosen block no longer exists in this scenario: pick another one, or delete the tool.')}
         </p>
       )}
       {Array.isArray(blocs) && blocs.length > 0 && (
         <fieldset className="rounded-lg border border-ink-200 p-2" data-testid="mba-cible-bloc-liste">
-          <legend className="px-1 text-xs font-medium text-ink-700">
+          <legend className="px-1 text-xs font-medium text-ink-900">
             {t('Bloc à envoyer : il part SEUL, sans ce qui le suit', 'Block to send: it goes ALONE, without what follows')}
           </legend>
           {blocs.map((b) => (
-            <label key={b.code} className={`flex items-start gap-2 py-1 text-xs ${b.envoyable ? 'text-ink-800' : 'text-ink-400'}`}>
+            <label key={b.code} className={`flex items-start gap-2 py-1 text-xs ${b.envoyable ? 'text-ink-900' : 'text-ink-400'}`}>
               <input type="radio" name="mba-bloc" disabled={!b.envoyable} checked={b.code === code}
                 data-testid={`mba-cible-bloc-${b.code}`} onChange={() => onChange(workflowId, b.code, b.nom)} />
               <span>
                 {b.nom}
-                {b.raison && <span className="block text-[11px]" data-testid={`mba-cible-bloc-raison-${b.code}`}>{b.raison}</span>}
+                {b.raison && <span className="block text-xs" data-testid={`mba-cible-bloc-raison-${b.code}`}>{b.raison}</span>}
               </span>
             </label>
           ))}
@@ -326,7 +326,7 @@ export function CibleScenario({ tenantId, workflowId, onChange }: {
   const disparu = Array.isArray(scenarios) && workflowId !== '' && !scenarios.some((w) => w.id === workflowId);
   return (
     <div className="flex flex-col gap-2">
-      <label className="text-xs text-ink-600">
+      <label className="text-xs text-ink-500">
         {t('Scénario à lancer (depuis son début)', 'Scenario to start (from its beginning)')}
         <select className={`${inputCls} mt-1`} data-testid="mba-cible-scenario" value={workflowId}
           onChange={(e) => onChange(e.target.value, lus.find((w) => w.id === e.target.value)?.name ?? null)}>
@@ -338,11 +338,11 @@ export function CibleScenario({ tenantId, workflowId, onChange }: {
       </label>
       {scenarios === 'erreur' && (
         <button type="button" data-testid="mba-cible-scenarios-illisibles" onClick={() => setEssai((n) => n + 1)}
-          className="self-start text-[11px] text-coral underline">
+          className="self-start text-xs text-danger underline hover:text-danger-700">
           {t('Lecture des scénarios impossible : réessayer', 'Could not read the scenarios: retry')}
         </button>
       )}
-      <p className="text-[11px] text-ink-500">
+      <p className="text-xs text-ink-500">
         {t('Engage Me prend la conversation le temps du parcours, puis la rend à l’agent de Meta.',
           'Engage Me takes the conversation for the journey, then hands it back to Meta’s agent.')}
       </p>

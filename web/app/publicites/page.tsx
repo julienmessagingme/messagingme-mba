@@ -15,6 +15,8 @@ import {
 import { listWorkflows, estEnLigne, getSettings, type WorkflowSummary } from '@/lib/api';
 import { PubsListe } from '@/components/PubsListe';
 import { PubFormulaire } from '@/components/PubFormulaire';
+import { Bouton } from '@/components/Bouton';
+import { IntroPage, TitrePage } from '@/components/TitrePage';
 
 /**
  * PUBLICITÉS CLICK-TO-WHATSAPP : la connexion de l'espace à son compte publicitaire (lot 2 « Connecter »).
@@ -357,17 +359,17 @@ function PublicitesInner({ session }: { session: Session }) {
   // l'entonnoir y gagnent au passage : ce sont des tableaux, et 768 px les serrait.
   return (
     <div className="mx-auto w-full max-w-5xl p-6">
-      <h1 className="text-xl font-semibold tracking-tight text-ink-900">{t('Publicités', 'Ads')}</h1>
-      <p className="mt-1 text-sm text-ink-500">
+      <TitrePage>{t('Publicités', 'Ads')}</TitrePage>
+      <IntroPage>
         {t('Les publicités Meta dont le bouton ouvre une conversation WhatsApp.',
            'Meta ads whose button opens a WhatsApp conversation.')}
-      </p>
+      </IntroPage>
 
       {erreur !== null && (
-        <p role="alert" data-testid="pubs-erreur" className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{erreur}</p>
+        <p role="alert" data-testid="pubs-erreur" className="mt-4 rounded-xl bg-danger-50 px-4 py-3 text-sm text-danger-700">{erreur}</p>
       )}
 
-      <section className="mt-5 rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+      <section className="mt-5 rounded-2xl border border-ink-200 bg-white p-5">
         {absent || (etat !== null && !etat.configure) ? (
           <Eteint t={t} />
         ) : etat === null ? (
@@ -389,12 +391,12 @@ function PublicitesInner({ session }: { session: Session }) {
       {/* LES PUBLICITÉS (lot 3). La section n'apparaît qu'une fois la connexion établie : avant, il n'y a
           rien à lister et rien à créer, et l'afficher vide donnerait l'impression d'un écran cassé. */}
       {!absent && etat !== null && etat.configure && etat.connexion !== null && (
-        <section className="mt-5 rounded-2xl border border-ink-200 bg-white p-5 shadow-sm" data-testid="pubs-section">
+        <section className="mt-5 rounded-2xl border border-ink-200 bg-white p-5" data-testid="pubs-section">
           {/* ⚠️ L'ERREUR DE LA LISTE VIT DANS SA SECTION, pas dans le bandeau de la coquille. C'est ce qui
               rend impossible qu'elle efface le message d'une déconnexion ratée, quel que soit l'ordre
               d'arrivée : elle n'écrit tout simplement plus au même endroit. */}
           {erreurListe !== null && (
-            <p role="alert" data-testid="pubs-liste-erreur" className="mb-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{erreurListe}</p>
+            <p role="alert" data-testid="pubs-liste-erreur" className="mb-3 rounded-xl bg-danger-50 px-4 py-3 text-sm text-danger-700">{erreurListe}</p>
           )}
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -409,18 +411,18 @@ function PublicitesInner({ session }: { session: Session }) {
                 ⚠️ DEUXIÈME RAISON DE LE CACHER : `routeAbsente`, quand l'API déployée n'a pas encore la
                 route. Sa raison à lui n'est pas dite ici mais à l'emplacement de la liste, plus bas. */}
             {peutCreer(etat) && !routeAbsente ? (
-              <button
+              <Bouton
                 type="button" onClick={() => { setBrouillonOuvert(null); setFormOuvert(true); }}
-                className="shrink-0 rounded-xl bg-ink-900 px-4 py-2 text-sm font-medium text-white"
+                className="shrink-0"
                 data-testid="pubs-creer"
               >
                 {t('Créer une publicité', 'Create an ad')}
-              </button>
+              </Bouton>
             ) : null}
           </div>
 
           {!peutCreer(etat) && (
-            <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="pubs-creation-bloquee">
+            <p className="mt-3 rounded-xl bg-alerte-50 px-3 py-2 text-xs text-alerte-800" data-testid="pubs-creation-bloquee">
               {raisonPasDeCreation(etat, t)}
             </p>
           )}
@@ -533,12 +535,12 @@ function NonConnecte({ t, busy, connecter }: { t: T; busy: boolean; connecter: (
         {t('Connectez votre compte publicitaire Meta et la Page qui portera vos publicités.',
            'Connect your Meta ad account and the Page that will carry your ads.')}
       </p>
-      <button
+      <Bouton
         type="button" disabled={busy} onClick={() => void connecter()}
-        className="mt-4 rounded-xl bg-ink-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+        className="mt-4"
       >
         {t('Connecter mes publicités', 'Connect my ads')}
-      </button>
+      </Bouton>
     </div>
   );
 }
@@ -575,12 +577,12 @@ function Choix({ t, actifs, busy, compte, page, setCompte, setPage, valider }: {
           <select id="page-pub" value={page} onChange={(e) => setPage(e.target.value)} className="mt-1 w-full rounded-xl border border-ink-200 px-3 py-2 text-sm">
             {actifs.pages.map((p) => <option key={p.id} value={p.id}>{p.nom ?? p.id}</option>)}
           </select>
-          <button
+          <Bouton
             type="button" disabled={busy || compte === '' || page === ''} onClick={() => void valider()}
-            className="mt-4 rounded-xl bg-ink-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+            className="mt-4"
           >
             {t('Enregistrer', 'Save')}
-          </button>
+          </Bouton>
         </>
       )}
     </div>
@@ -660,7 +662,7 @@ function Connecte({ t, etat, compte, busy, deconnecter, reconnecter }: {
         demander tant qu'on ne sait pas DE QUEL compte on parle.
       */}
       {c.comptePubId !== null && (
-        <p data-testid="pubs-diffusion" className="mt-4 text-sm text-ink-600">
+        <p data-testid="pubs-diffusion" className="mt-4 text-sm text-ink-500">
           {messageDiffusion(diffusion, t)}
         </p>
       )}
@@ -675,29 +677,28 @@ function Connecte({ t, etat, compte, busy, deconnecter, reconnecter }: {
         {t('La Page doit être reliée à votre numéro WhatsApp pour que les clics arrivent dans votre Inbox. Meta ne nous permet pas de le vérifier : ',
            'The Page must be linked to your WhatsApp number for clicks to reach your Inbox. Meta does not let us verify it: ')}
         <a href="https://business.facebook.com/wa/manage/phone-numbers/" target="_blank" rel="noreferrer"
-          className="underline hover:text-ink-700">
+          className="underline hover:text-ink-900">
           {t('voir la liaison chez Meta', 'check the link at Meta')}
         </a>
         {t(' (section « Comptes sociaux » du numéro).', ' (the number’s “Social accounts” section).')}
       </p>
 
       {c.jetonRejeteLe !== null && (
-        <p role="alert" data-testid="pubs-jeton-rejete" className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <p role="alert" data-testid="pubs-jeton-rejete" className="mt-3 rounded-xl bg-alerte-50 px-4 py-3 text-sm text-alerte-800">
           {t('Meta a refusé notre accès à ce compte. Reconnectez-vous pour continuer.',
              'Meta refused our access to this account. Reconnect to continue.')}
         </p>
       )}
 
       <div className="mt-4 flex gap-2">
-        <button
+        <Bouton variante="secondaire"
           type="button" disabled={busy} onClick={() => void reconnecter()}
-          className="rounded-xl border border-ink-200 px-4 py-2 text-sm font-medium text-ink-700 disabled:opacity-40"
         >
           {t('Reconnecter', 'Reconnect')}
-        </button>
+        </Bouton>
         <button
           type="button" disabled={busy} onClick={() => void deconnecter()}
-          className="rounded-xl border border-red-200 px-4 py-2 text-sm font-medium text-red-700 disabled:opacity-40"
+          className="rounded-xl border border-danger-200 px-4 py-2 text-sm font-medium text-danger-700 transition-colors duration-150 hover:bg-danger-50 disabled:opacity-40"
         >
           {t('Déconnecter', 'Disconnect')}
         </button>

@@ -6,6 +6,7 @@ import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from './MbaNotice';
 import { isSendableButtonUrl } from '@/lib/button-url';
 import { createMbaWebsite, deleteMbaWebsite, listMbaWebsites, type MbaWebsite } from '@/lib/api-mba';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * Les pages du site que Meta explore pour nourrir l'agent.
@@ -19,11 +20,11 @@ import { createMbaWebsite, deleteMbaWebsite, listMbaWebsites, type MbaWebsite } 
 
 function libelleStatut(brut: string | undefined, t: (fr: string, en?: string) => string): { texte: string; classe: string } {
   const s = (brut ?? '').toUpperCase();
-  if (s === 'COMPLETED') return { texte: t('Exploré', 'Crawled'), classe: 'bg-emerald-50 text-emerald-700' };
-  if (s === 'FAILED') return { texte: t('Échec', 'Failed'), classe: 'bg-rose-50 text-rose-700' };
-  if (s === 'PENDING' || s === 'IN_PROGRESS') return { texte: t('En cours', 'In progress'), classe: 'bg-gold/20 text-ink-700' };
+  if (s === 'COMPLETED') return { texte: t('Exploré', 'Crawled'), classe: 'bg-succes-50 text-succes-700' };
+  if (s === 'FAILED') return { texte: t('Échec', 'Failed'), classe: 'bg-danger-50 text-danger-700' };
+  if (s === 'PENDING' || s === 'IN_PROGRESS') return { texte: t('En cours', 'In progress'), classe: 'bg-alerte-100 text-ink-900' };
   // Champ absent ou valeur non prévue : ni succès ni échec, on affiche la valeur brute.
-  return { texte: brut && brut !== '' ? brut : t('Inconnu', 'Unknown'), classe: 'bg-ink-100 text-ink-600' };
+  return { texte: brut && brut !== '' ? brut : t('Inconnu', 'Unknown'), classe: 'bg-ink-100 text-ink-500' };
 }
 
 export function MbaWebsitesPanel({ tenantId, phoneNumberId }: { tenantId: string; phoneNumberId: string }) {
@@ -79,7 +80,7 @@ export function MbaWebsitesPanel({ tenantId, phoneNumberId }: { tenantId: string
 
       <section className={cardCls}>
         <h3 className="text-sm font-semibold text-ink-900">{t('Ajouter une page', 'Add a page')}</h3>
-        <p className="mt-1 text-xs leading-relaxed text-ink-600">
+        <p className="mt-1 text-xs leading-relaxed text-ink-500">
           {t(
             'Meta explore l’adresse indiquée. Le périmètre ne se règle pas : on ne peut pas exclure une section, donc choisissez une adresse précise plutôt que la racine du site.',
             'Meta crawls the given address. The scope cannot be tuned: no section can be excluded, so pick a precise address rather than the site root.',
@@ -93,14 +94,14 @@ export function MbaWebsitesPanel({ tenantId, phoneNumberId }: { tenantId: string
             value={url}
             onChange={(e) => { setUrl(e.target.value); setErr(''); }}
           />
-          <button
-            className="shrink-0 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          <Bouton
+            className="shrink-0"
             data-testid="mba-website-add"
             disabled={busy || url.trim() === ''}
             onClick={ajouter}
           >
             {t('Ajouter', 'Add')}
-          </button>
+          </Bouton>
         </div>
       </section>
 
@@ -117,7 +118,7 @@ export function MbaWebsitesPanel({ tenantId, phoneNumberId }: { tenantId: string
                 </p>
               </div>
               <button
-                className="shrink-0 text-xs font-medium text-rose-600 hover:text-rose-700"
+                className="shrink-0 text-xs font-medium text-danger-600 hover:text-danger-700"
                 onClick={() => {
                   if (s.id === undefined) return;
                   if (!window.confirm(t(`Retirer ${s.url} de la connaissance de l’agent ?`, `Remove ${s.url} from the agent’s knowledge?`))) return;

@@ -85,7 +85,7 @@ export function ChoixTypeOutil({ tenantId, onChoisir, onAnnuler }: {
               )}
               {illisible && (
                 <button type="button" data-testid={`mba-type-${type}-relire`} onClick={() => setEssai((n) => n + 1)}
-                  className="mt-2 block text-xs text-coral underline">
+                  className="mt-2 block text-xs text-danger underline hover:text-danger-700">
                   {t('Lecture impossible : réessayer', 'Could not read: retry')}
                 </button>
               )}

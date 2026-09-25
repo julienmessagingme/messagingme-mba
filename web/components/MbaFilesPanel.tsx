@@ -79,13 +79,13 @@ export function MbaFilesPanel({ tenantId, phoneNumberId }: { tenantId: string; p
 
       <section className={cardCls}>
         <h3 className="text-sm font-semibold text-ink-900">{t('Ajouter un document', 'Add a document')}</h3>
-        <p className="mt-1 text-xs leading-relaxed text-ink-600">
+        <p className="mt-1 text-xs leading-relaxed text-ink-500">
           {t(
             'PDF, Word, images. Vos procédures, votre catalogue, vos conditions. Un document reçu n’est pas forcément exploitable : un PDF scanné sans texte n’apporte rien, et Meta ne le signale pas.',
             'PDF, Word, images. Your procedures, catalogue, terms. A received document is not necessarily usable: a scanned PDF with no text layer brings nothing, and Meta gives no warning.',
           )}
         </p>
-        <label className="mt-3 flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-ink-300 px-4 py-6 text-sm text-ink-600 hover:border-brand-400">
+        <label className="mt-3 flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-ink-300 px-4 py-6 text-sm text-ink-500 hover:border-brand-400">
           <input
             type="file"
             accept={MBA_FILE_ACCEPT}
@@ -112,7 +112,7 @@ export function MbaFilesPanel({ tenantId, phoneNumberId }: { tenantId: string; p
               </p>
             </div>
             <button
-              className="shrink-0 text-xs font-medium text-rose-600 hover:text-rose-700"
+              className="shrink-0 text-xs font-medium text-danger-600 hover:text-danger-700"
               onClick={() => {
                 if (!window.confirm(t(`Supprimer ${f.file_name ?? f.id} ?`, `Delete ${f.file_name ?? f.id}?`))) return;
                 setErr('');

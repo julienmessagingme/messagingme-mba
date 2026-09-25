@@ -9,6 +9,8 @@ import {
 } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
+import { Bouton } from '@/components/Bouton';
+import { IntroPage, TitrePage } from '@/components/TitrePage';
 
 /**
  * Écran « Boîtes email » (menu Compte, admin-only) : connecte une ou plusieurs boîtes SMTP, utilisées par le
@@ -123,25 +125,25 @@ function EmailAccountsInner({ session }: { session: Session }) {
   return (
     <div className="max-w-3xl space-y-6">
       <div>
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Boîtes email (SMTP)', 'Email accounts (SMTP)')}</h2>
-        <p className="mt-1 text-sm text-ink-500">
+        <TitrePage>{t('Boîtes email (SMTP)', 'Email accounts (SMTP)')}</TitrePage>
+        <IntroPage>
           {t(
             "Connecte une ou plusieurs boîtes SMTP : elles alimentent le node « Envoi de mail » des scénarios. Le mot de passe est chiffré et n'est plus jamais réaffiché une fois enregistré.",
             'Connect one or more SMTP mailboxes: they power the "Send email" scenario block. The password is encrypted and is never shown again once saved.',
           )}
-        </p>
+        </IntroPage>
       </div>
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
       {editing ? (
         <AccountForm form={form} setForm={setForm} isNew={isNew} busy={busy} onSave={() => void save()} onCancel={cancelEdit} />
       ) : (
-        <button onClick={startCreate} className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600">
+        <Bouton onClick={startCreate}>
           {t('+ Connecter une boîte', '+ Connect a mailbox')}
-        </button>
+        </Bouton>
       )}
 
-      <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
         <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">{t('Boîtes', 'Mailboxes')} ({accounts.length})</div>
         {loading ? (
           <p className="px-5 py-6 text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
@@ -152,7 +154,7 @@ function EmailAccountsInner({ session }: { session: Session }) {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
+              <tr className="border-b border-ink-100 text-left text-xs text-ink-500">
                 <th className="px-5 py-2 font-medium">{t('Libellé', 'Label')}</th>
                 <th className="px-5 py-2 font-medium">{t('Adresse d’envoi', 'Sending address')}</th>
                 <th className="px-5 py-2 font-medium">{t('Statut', 'Status')}</th>
@@ -162,11 +164,11 @@ function EmailAccountsInner({ session }: { session: Session }) {
             <tbody>
               {accounts.map((a) => (
                 <tr key={a.id} className="border-b border-ink-50 last:border-0">
-                  <td className="px-5 py-3 font-medium text-ink-800">{a.label}</td>
-                  <td className="px-5 py-3 text-ink-600">{a.fromAddress}</td>
+                  <td className="px-5 py-3 font-medium text-ink-900">{a.label}</td>
+                  <td className="px-5 py-3 text-ink-500">{a.fromAddress}</td>
                   <td className="px-5 py-3">
                     {a.verifiedAt ? (
-                      <span className="inline-flex items-center rounded-full bg-mint-50 px-2 py-0.5 text-xs font-medium text-mint-700">{t('Vérifiée', 'Verified')}</span>
+                      <span className="inline-flex items-center rounded-full bg-succes-50 px-2 py-0.5 text-xs font-medium text-succes-700">{t('Vérifiée', 'Verified')}</span>
                     ) : (
                       <span className="inline-flex items-center rounded-full bg-ink-100 px-2 py-0.5 text-xs font-medium text-ink-500">{t('Non testée', 'Not tested')}</span>
                     )}
@@ -174,8 +176,8 @@ function EmailAccountsInner({ session }: { session: Session }) {
                   <td className="px-5 py-3">
                     <div className="flex items-center justify-end gap-3">
                       <button onClick={() => startTest(a.id)} className="text-brand-600 hover:underline">{t('Tester', 'Test')}</button>
-                      <button onClick={() => startEdit(a)} className="text-ink-600 hover:text-ink-900">{t('Modifier', 'Edit')}</button>
-                      <button onClick={() => void remove(a)} className="text-coral hover:text-coral/80">{t('Supprimer', 'Delete')}</button>
+                      <button onClick={() => startEdit(a)} className="text-ink-500 hover:text-ink-900">{t('Modifier', 'Edit')}</button>
+                      <button onClick={() => void remove(a)} className="text-danger hover:text-danger-500">{t('Supprimer', 'Delete')}</button>
                     </div>
                   </td>
                 </tr>
@@ -187,9 +189,9 @@ function EmailAccountsInner({ session }: { session: Session }) {
 
       {testFor && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={() => setTestFor(null)}>
-          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold tracking-tight text-ink-900">{t('Envoyer un test', 'Send a test')}</h3>
-            <label className="mb-1 mt-4 block text-xs font-medium text-ink-600">{t('Adresse de destination', 'Destination address')}</label>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-mm-lg" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-ink-900">{t('Envoyer un test', 'Send a test')}</h3>
+            <label className="mb-1 mt-4 block text-xs font-medium text-ink-500">{t('Adresse de destination', 'Destination address')}</label>
             <input
               type="email"
               autoFocus
@@ -199,17 +201,16 @@ function EmailAccountsInner({ session }: { session: Session }) {
               placeholder={t('toi@exemple.fr', 'you@example.com')}
             />
             {testMsg && (
-              <p className={`mt-3 rounded-lg px-3 py-2 text-sm ${testMsg.kind === 'ok' ? 'bg-mint-50 text-mint-700' : 'bg-red-50 text-red-700'}`}>{testMsg.text}</p>
+              <p className={`mt-3 rounded-lg px-3 py-2 text-sm ${testMsg.kind === 'ok' ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-700'}`}>{testMsg.text}</p>
             )}
             <div className="mt-5 flex justify-end gap-2">
-              <button onClick={() => setTestFor(null)} className="rounded-lg px-3 py-2 text-sm text-ink-500 hover:text-ink-800">{t('Fermer', 'Close')}</button>
-              <button
+              <button onClick={() => setTestFor(null)} className="rounded-lg px-3 py-2 text-sm text-ink-500 hover:text-ink-900">{t('Fermer', 'Close')}</button>
+              <Bouton enCours={busy}
                 onClick={() => void runTest()}
                 disabled={busy || !testTo.trim()}
-                className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
               >
                 {busy ? t('Envoi…', 'Sending…') : t('Envoyer', 'Send')}
-              </button>
+              </Bouton>
             </div>
           </div>
         </div>
@@ -230,24 +231,24 @@ function AccountForm({ form, setForm, isNew, busy, onSave, onCancel }: {
   const canSave = form.label.trim() !== '' && form.host.trim() !== '' && form.username.trim() !== '' && form.fromAddress.trim() !== '' && (!isNew || form.password.trim() !== '');
 
   return (
-    <div className="space-y-3 rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+    <div className="space-y-3 rounded-2xl border border-ink-200 bg-white p-5">
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Libellé', 'Label')}</label>
+          <label className="mb-1 block text-xs font-medium text-ink-500">{t('Libellé', 'Label')}</label>
           <input data-testid="email-account-label" value={form.label} onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))} className={inputCls} placeholder={t('Support', 'Support')} />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Adresse d’envoi', 'Sending address')}</label>
+          <label className="mb-1 block text-xs font-medium text-ink-500">{t('Adresse d’envoi', 'Sending address')}</label>
           <input data-testid="email-account-from" type="email" value={form.fromAddress} onChange={(e) => setForm((f) => ({ ...f, fromAddress: e.target.value }))} className={inputCls} placeholder="support@exemple.fr" />
         </div>
       </div>
       <div className="flex flex-wrap gap-3">
         <div className="min-w-[220px] flex-1">
-          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Hôte SMTP', 'SMTP host')}</label>
+          <label className="mb-1 block text-xs font-medium text-ink-500">{t('Hôte SMTP', 'SMTP host')}</label>
           <input data-testid="email-account-host" value={form.host} onChange={(e) => setForm((f) => ({ ...f, host: e.target.value }))} className={inputCls} placeholder="ssl0.ovh.net" />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Port', 'Port')}</label>
+          <label className="mb-1 block text-xs font-medium text-ink-500">{t('Port', 'Port')}</label>
           <input
             data-testid="email-account-port"
             type="number"
@@ -259,12 +260,12 @@ function AccountForm({ form, setForm, isNew, busy, onSave, onCancel }: {
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-ink-600">{t('TLS', 'TLS')}</label>
+          <label className="mb-1 block text-xs font-medium text-ink-500">{t('TLS', 'TLS')}</label>
           <select
             data-testid="email-account-secure"
             value={form.secure ? '1' : '0'}
             onChange={(e) => setForm((f) => ({ ...f, secure: e.target.value === '1' }))}
-            className="rounded-lg border border-ink-300 bg-white px-2 py-2 text-sm text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+            className="rounded-lg border border-ink-300 bg-white px-2 py-2 text-sm text-ink-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
           >
             <option value="1">{t('Oui (465)', 'Yes (465)')}</option>
             <option value="0">{t('Non (587/25)', 'No (587/25)')}</option>
@@ -273,11 +274,11 @@ function AccountForm({ form, setForm, isNew, busy, onSave, onCancel }: {
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Identifiant', 'Username')}</label>
+          <label className="mb-1 block text-xs font-medium text-ink-500">{t('Identifiant', 'Username')}</label>
           <input data-testid="email-account-username" value={form.username} onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))} className={inputCls} placeholder="support@exemple.fr" />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Mot de passe', 'Password')}</label>
+          <label className="mb-1 block text-xs font-medium text-ink-500">{t('Mot de passe', 'Password')}</label>
           <input
             data-testid="email-account-password"
             type="password"
@@ -291,19 +292,19 @@ function AccountForm({ form, setForm, isNew, busy, onSave, onCancel }: {
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Nom affiché (optionnel)', 'Display name (optional)')}</label>
+          <label className="mb-1 block text-xs font-medium text-ink-500">{t('Nom affiché (optionnel)', 'Display name (optional)')}</label>
           <input data-testid="email-account-fromname" value={form.fromName ?? ''} onChange={(e) => setForm((f) => ({ ...f, fromName: e.target.value }))} className={inputCls} placeholder={t('Support Exemple', 'Example Support')} />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Reply-to (optionnel)', 'Reply-to (optional)')}</label>
+          <label className="mb-1 block text-xs font-medium text-ink-500">{t('Reply-to (optionnel)', 'Reply-to (optional)')}</label>
           <input data-testid="email-account-replyto" type="email" value={form.replyTo ?? ''} onChange={(e) => setForm((f) => ({ ...f, replyTo: e.target.value }))} className={inputCls} placeholder="contact@exemple.fr" />
         </div>
       </div>
       <div className="flex justify-end gap-2">
-        <button onClick={onCancel} className="rounded-lg px-3 py-2 text-sm text-ink-500 hover:text-ink-800">{t('Annuler', 'Cancel')}</button>
-        <button data-testid="email-account-save" onClick={onSave} disabled={busy || !canSave} className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50">
+        <button onClick={onCancel} className="rounded-lg px-3 py-2 text-sm text-ink-500 hover:text-ink-900">{t('Annuler', 'Cancel')}</button>
+        <Bouton enCours={busy} data-testid="email-account-save" onClick={onSave} disabled={busy || !canSave}>
           {busy ? t('Enregistrement…', 'Saving…') : t('Enregistrer', 'Save')}
-        </button>
+        </Bouton>
       </div>
     </div>
   );

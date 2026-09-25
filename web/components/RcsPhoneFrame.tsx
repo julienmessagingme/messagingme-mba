@@ -54,7 +54,7 @@ export function RcsPhoneFrame({ children }: { children: ReactNode }) {
       <p className="mb-2 text-xs font-medium text-ink-500">{t('Aperçu RCS', 'RCS preview')}</p>
       <div className="overflow-hidden rounded-2xl border border-ink-200 shadow-sm">
         <div className="flex items-center gap-2 border-b border-ink-100 bg-white px-3 py-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-mint-100 text-sm">🏢</div>
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-succes-100 text-sm">🏢</div>
           <div className="leading-tight">
             <div className="flex items-center gap-1 text-sm font-medium text-ink-900">
               <span data-testid="apercu-rcs-marque">{marque || t('Votre marque', 'Your brand')}</span>

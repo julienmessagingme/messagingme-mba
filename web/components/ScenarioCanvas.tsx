@@ -7,6 +7,7 @@ import { useT } from '@/lib/i18n';
 import { nodeMetaOf } from '@/lib/nodeMeta';
 import type { WorkflowNodeType } from '@/lib/api';
 import type { BlocMesurable } from '@/lib/mesures-scenario';
+import { ink } from '@/lib/couleurs';
 
 /**
  * Le scénario tel qu'il est DESSINÉ dans l'onglet Scénario, en lecture seule.
@@ -54,14 +55,14 @@ function CarteBloc({ data }: NodeProps) {
   // simple `opacity` aurait aussi délavé la sélection des blocs voisins et rendu le tout terne.
   const styleBloc = d.mesurable
     ? d.actif
-      ? 'border-brand-500 bg-white ring-2 ring-brand-200 shadow-md'
-      : 'border-ink-300 bg-white shadow-sm hover:border-brand-300'
+      ? 'border-brand-500 bg-white ring-2 ring-brand-200 shadow-mm-md'
+      : 'border-ink-300 bg-white shadow-mm-sm hover:border-brand-300'
     : 'border-dashed border-ink-200 bg-ink-50 shadow-none';
 
   return (
     <div
       data-testid={d.mesurable ? 'bloc-mesurable' : 'bloc-grise'}
-      className={`w-44 rounded-xl border transition ${styleBloc} ${d.mesurable ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+      className={`w-44 rounded-xl border transition-colors duration-150 ${styleBloc} ${d.mesurable ? 'cursor-pointer' : 'cursor-not-allowed'}`}
       title={d.mesurable ? undefined : t('Ce bloc n’envoie pas de message : il n’y a rien à y mesurer.', 'This block sends no message: there is nothing to measure.')}
     >
       {/* Poignées présentes mais INERTES : sans elles React Flow ne saurait pas où accrocher les flèches, et
@@ -69,7 +70,7 @@ function CarteBloc({ data }: NodeProps) {
       <Handle type="target" position={Position.Top} isConnectable={false} className="!h-2 !w-2 !border-0 !bg-ink-300" />
       <div className={`flex items-center gap-1.5 rounded-t-xl border-b px-2 py-1 ${d.mesurable ? 'border-ink-200 bg-white' : 'border-ink-100 bg-ink-50'}`}>
         <span className="text-xs">{meta.emoji}</span>
-        <span className={`truncate text-[11px] font-semibold ${d.mesurable ? 'text-ink-800' : 'text-ink-400'}`}>{t(...meta.label)}</span>
+        <span className={`truncate text-[11px] font-semibold ${d.mesurable ? 'text-ink-900' : 'text-ink-400'}`}>{t(...meta.label)}</span>
         {d.retenues > 0 && (
           <span className="ml-auto shrink-0 rounded-full bg-brand-500 px-1.5 text-[10px] font-semibold text-white">{d.retenues}</span>
         )}
@@ -81,7 +82,7 @@ function CarteBloc({ data }: NodeProps) {
           une chaîne traduite (`t(...meta.label)`) à une chaîne qui ne l'était pas, donc en anglais elle
           n'était JAMAIS égale et le doublon revenait sur tous les blocs. */}
       {d.titrePropre && (
-        <div className={`truncate px-2 py-1.5 text-[11px] ${d.mesurable ? 'text-ink-600' : 'text-ink-400'}`}>{d.titre}</div>
+        <div className={`truncate px-2 py-1.5 text-[11px] ${d.mesurable ? 'text-ink-500' : 'text-ink-400'}`}>{d.titre}</div>
       )}
       <Handle type="source" position={Position.Bottom} isConnectable={false} className="!h-2 !w-2 !border-0 !bg-ink-300" />
     </div>
@@ -138,9 +139,9 @@ export function ScenarioCanvas({ graph, blocs, selectionne, onSelect, retenuesPa
       source: e.source,
       target: e.target,
       ...(e.sourceHandle ? { label: libelleArete(e.source, e.sourceHandle) } : {}),
-      style: { stroke: '#c7ccd6' },
-      labelStyle: { fill: '#8a93a5', fontSize: 10 },
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#c7ccd6' },
+      style: { stroke: ink[200] },
+      labelStyle: { fill: ink[400], fontSize: 10 },
+      markerEnd: { type: MarkerType.ArrowClosed, color: ink[200] },
     })),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `libelleArete` ne depend que de `parId` et `t`
     [graph.edges, parId, t],
@@ -166,7 +167,7 @@ export function ScenarioCanvas({ graph, blocs, selectionne, onSelect, retenuesPa
         edgesFocusable={false}
         proOptions={{ hideAttribution: true }}
       >
-        <Background gap={16} color="#e6e9ef" />
+        <Background gap={16} color={ink[100]} />
         <Controls showInteractive={false} />
       </ReactFlow>
     </div>

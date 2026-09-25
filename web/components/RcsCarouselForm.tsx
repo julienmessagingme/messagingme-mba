@@ -15,6 +15,7 @@ import { RcsPhoneFrame } from '@/components/RcsPhoneFrame';
 import { ListeManques } from '@/components/ListeManques';
 import { useT } from '@/lib/i18n';
 import { inputClsAuto } from '@/lib/ui';
+import { Bouton } from '@/components/Bouton';
 
 /** Un carrousel qu'on modifie : son identifiant, son nom, et son contenu déjà relu en brouillon. */
 export interface CarrouselInitial {
@@ -82,9 +83,9 @@ export function RcsCarouselForm({ tenantId, fields, initial, onSaved }: {
   }
 
   return (
-    <div className="space-y-4 rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+    <div className="space-y-4 rounded-2xl border border-ink-200 bg-white p-5">
       <div>
-        <label className="mb-1 block text-xs font-medium text-ink-600">{t('Nom du carrousel (interne)', 'Carousel name (internal)')}</label>
+        <label className="mb-1 block text-xs font-medium text-ink-500">{t('Nom du carrousel (interne)', 'Carousel name (internal)')}</label>
         <input
           value={nom}
           onChange={(e) => setNom(e.target.value)}
@@ -96,7 +97,7 @@ export function RcsCarouselForm({ tenantId, fields, initial, onSaved }: {
       </div>
 
       <div className="space-y-3">
-        <div className="text-xs font-medium text-ink-600">
+        <div className="text-xs font-medium text-ink-500">
           {t('Cartes', 'Cards')} ({cartes.length}/{MAX_CARTES}, {t('2 minimum', 'min. 2')})
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
@@ -110,7 +111,7 @@ export function RcsCarouselForm({ tenantId, fields, initial, onSaved }: {
                     onClick={() => retirerCarte(c.cle)}
                     disabled={cartes.length <= MIN_CARTES}
                     data-testid={`rcs-carte-${i}-retirer`}
-                    className="text-xs text-ink-400 hover:text-coral disabled:opacity-40"
+                    className="text-xs text-ink-400 hover:text-danger disabled:opacity-40"
                   >
                     {t('Retirer', 'Remove')}
                   </button>
@@ -160,7 +161,7 @@ export function RcsCarouselForm({ tenantId, fields, initial, onSaved }: {
             onClick={ajouterCarte}
             disabled={cartes.length >= MAX_CARTES}
             data-testid="rcs-carrousel-ajouter-carte"
-            className="flex w-full shrink-0 flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-brand-200 px-4 py-6 text-brand-600 transition hover:border-brand-400 hover:bg-brand-50 disabled:opacity-40 sm:w-40"
+            className="flex w-full shrink-0 flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-brand-200 px-4 py-6 text-brand-600 transition-colors duration-150 hover:border-brand-400 hover:bg-brand-50 disabled:opacity-40 sm:w-40"
           >
             <span className="text-2xl leading-none">+</span>
             <span className="text-sm font-medium">{t('+ Ajouter une carte', '+ Add a card')}</span>
@@ -172,17 +173,16 @@ export function RcsCarouselForm({ tenantId, fields, initial, onSaved }: {
         <RcsCarouselPreview brouillon={brouillon} sansFond />
       </RcsPhoneFrame>
 
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
       <ListeManques manques={manques} testId="rcs-carrousel-manques" busy={busy} />
-      <button
+      <Bouton
         type="button"
         onClick={() => void enregistrer()}
         disabled={!canSubmit}
         data-testid="rcs-carrousel-enregistrer"
-        className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60"
       >
         {busy ? t('Enregistrement…', 'Saving…') : initial ? t('Enregistrer les modifications', 'Save changes') : t('Créer le carrousel', 'Create carousel')}
-      </button>
+      </Bouton>
     </div>
   );
 }

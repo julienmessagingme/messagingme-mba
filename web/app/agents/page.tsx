@@ -27,6 +27,8 @@ import { consommationAgent, listerModeles, messagesAgent, type ConsommationAgent
 import type { MessagesTenus } from '@/lib/chiffres-canaux';
 import { fmtCost } from '@/lib/format';
 import type { Locale } from '@/lib/locale';
+import { Bouton } from '@/components/Bouton';
+import { IntroPage, TitrePage } from '@/components/TitrePage';
 
 /**
  * Le tarif d'un modèle, entre parenthèses, tel que Julien l'a demandé : le prix par million de jetons ENVOYÉS
@@ -313,7 +315,7 @@ function Ecran({ tenantId }: { tenantId: string }) {
             disabled={busy}
             onClick={() => void supprimer(ouvert)}
             title={t('Supprimer cet agent', 'Delete this agent')}
-            className="rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-coral hover:bg-red-50 disabled:opacity-40"
+            className="rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-danger hover:bg-danger-50 disabled:opacity-40"
           >
             {t('Supprimer', 'Delete')}
           </button>
@@ -456,18 +458,18 @@ function Ecran({ tenantId }: { tenantId: string }) {
     <div className="mx-auto flex max-w-6xl flex-col gap-4">
       {solde !== null && <Solde microEur={solde} />}
       <div>
-        <p className={kickerCls}>{t('AGENT IA', 'AI AGENT')}</p>
-        <h2 className="text-xl font-semibold tracking-tight text-ink-900">{t('Vos agents', 'Your agents')}</h2>
-        <p className="mt-1 text-sm text-ink-500">
+        <p className={kickerCls}>{t('Agent IA', 'AI agent')}</p>
+        <TitrePage>{t('Vos agents', 'Your agents')}</TitrePage>
+        <IntroPage>
           {t(
             'Un agent tient une conversation sur plusieurs tours, là où vous posez un bloc « Agent IA » dans un scénario. Il ne répond nulle part ailleurs.',
             'An agent holds a conversation over several turns, wherever you place an “AI agent” block in a scenario. It answers nowhere else.',
           )}
-        </p>
+        </IntroPage>
       </div>
       {erreur && <MbaNotice kind="error" testid="agent-erreur">{erreur}</MbaNotice>}
       <div className={`${cardCls} flex flex-col gap-3`}>
-        <label className="text-sm font-medium text-ink-700">{t('Créer un agent', 'Create an agent')}</label>
+        <label className="text-sm font-medium text-ink-900">{t('Créer un agent', 'Create an agent')}</label>
         <div className="flex flex-wrap gap-2">
           <input
             data-testid="agent-nouveau-label"
@@ -477,14 +479,13 @@ function Ecran({ tenantId }: { tenantId: string }) {
             onKeyDown={(e) => { if (e.key === 'Enter') void creer(); }}
             placeholder={t('Nom interne, par exemple « Conseiller séjours »', 'Internal name, e.g. “Stay advisor”')}
           />
-          <button
+          <Bouton
             data-testid="agent-creer"
             onClick={() => void creer()}
             disabled={busy || nouveau.trim() === ''}
-            className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
           >
             {t('Créer', 'Create')}
-          </button>
+          </Bouton>
         </div>
         <p className="text-xs text-ink-500">
           {t(
@@ -528,11 +529,11 @@ function Ecran({ tenantId }: { tenantId: string }) {
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={logo.src} alt={logo.alt} className="h-5 w-5 shrink-0" />
                   ) : (
-                    <span aria-hidden="true" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ink-100 text-[9px] font-semibold text-ink-600">
+                    <span aria-hidden="true" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-semibold text-ink-500">
                       {pastilleDuModele(a.modele)}
                     </span>
                   )}
-                  <span className="truncate text-sm font-medium text-ink-800">{a.label}</span>
+                  <span className="truncate text-sm font-medium text-ink-900">{a.label}</span>
                 </span>
                 <Pastille status={a.status} />
               </button>
@@ -542,7 +543,7 @@ function Ecran({ tenantId }: { tenantId: string }) {
                 onClick={() => void supprimer({ id: a.id, label: a.label })}
                 title={t('Supprimer cet agent', 'Delete this agent')}
                 aria-label={t(`Supprimer ${a.label}`, `Delete ${a.label}`)}
-                className="shrink-0 rounded-lg border border-ink-300 px-2 py-1 text-xs text-coral hover:bg-red-50 disabled:opacity-40"
+                className="shrink-0 rounded-lg border border-ink-300 px-2 py-1 text-xs text-danger hover:bg-danger-50 disabled:opacity-40"
               >
                 {t('Supprimer', 'Delete')}
               </button>
@@ -594,8 +595,8 @@ function Solde({ microEur }: { microEur: number }) {
 function Pastille({ status }: { status: AgentResume['status'] }) {
   const t = useT();
   const libelle = status === 'active' ? t('Actif', 'Active') : status === 'draft' ? t('Brouillon', 'Draft') : t('Désactivé', 'Disabled');
-  const cls = status === 'active' ? 'bg-emerald-50 text-emerald-700' : status === 'draft' ? 'bg-ink-100 text-ink-600' : 'bg-amber-50 text-amber-800';
-  return <span data-testid={`agent-statut-${status}`} className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${cls}`}>{libelle}</span>;
+  const cls = status === 'active' ? 'bg-succes-50 text-succes-700' : status === 'draft' ? 'bg-ink-100 text-ink-500' : 'bg-alerte-50 text-alerte-800';
+  return <span data-testid={`agent-statut-${status}`} className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>{libelle}</span>;
 }
 
 /** Activation, agent par agent. Le seul geste qui rend un agent proposable dans un scénario. */
@@ -605,14 +606,13 @@ function Activation({ agent, busy, onChange }: { agent: AgentComplet; busy: bool
   return (
     <div className="flex items-center gap-2">
       <Pastille status={agent.status} />
-      <button
+      <Bouton variante="secondaire"
         data-testid="agent-activer"
         disabled={busy}
         onClick={() => onChange(actif ? 'disabled' : 'active')}
-        className="rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:opacity-40"
       >
         {actif ? t('Désactiver', 'Deactivate') : t('Activer', 'Activate')}
-      </button>
+      </Bouton>
     </div>
   );
 }
@@ -635,7 +635,7 @@ function Champ({ label, aide, valeur, multi, onSave, testId, busy }: {
   };
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-sm font-medium text-ink-700">{label}</label>
+      <label className="text-sm font-medium text-ink-900">{label}</label>
       {multi ? <textarea rows={4} {...commun} /> : <input {...commun} />}
       {aide && <p className="text-xs leading-relaxed text-ink-500">{aide}</p>}
     </div>
@@ -684,8 +684,8 @@ function OngletIdentite({ agent, busy, onSave }: { agent: AgentComplet; busy: bo
         plus. Pire ici : il croirait que ses agents n'annoncent plus rien.
       */}
       <div className="space-y-1" data-testid="agent-mention-frequence-renvoi">
-        <span className="block text-xs font-medium text-ink-700">{t('Quand l’annoncer', 'When to disclose')}</span>
-        <p className="text-[11px] text-ink-500">
+        <span className="block text-xs font-medium text-ink-900">{t('Quand l’annoncer', 'When to disclose')}</span>
+        <p className="text-xs text-ink-500">
           {t(
             'Ce choix vaut pour tout l’espace, et se règle dans ',
             'This choice applies to the whole workspace, and is set in ',
@@ -723,7 +723,7 @@ function OngletObjectif({ agent, busy, onSave }: { agent: AgentComplet; busy: bo
       </div>
       <div className={`${cardCls} flex flex-col gap-3`}>
         <div>
-          <p className="text-sm font-medium text-ink-700">{t('Règles d’arrêt', 'Stop rules')}</p>
+          <p className="text-sm font-medium text-ink-900">{t('Règles d’arrêt', 'Stop rules')}</p>
           <p className="mt-1 text-xs leading-relaxed text-ink-500">
             {t(
               'Chacune devient une SORTIE du bloc agent dans le builder : c’est là que vous branchez la suite du parcours. L’agent choisit celle qui correspond à ce qu’il vient de faire.',
@@ -756,7 +756,7 @@ function OngletPerimetre({ agent, busy, onSave }: { agent: AgentComplet; busy: b
         valeur={agent.inactiviteMinutes} onSave={(v) => onSave({ inactiviteMinutes: v })}
       />
       <div className="flex flex-col gap-1">
-        <label className="text-sm font-medium text-ink-700">{t('Contact inconnu du mini-CRM', 'Contact unknown to the mini-CRM')}</label>
+        <label className="text-sm font-medium text-ink-900">{t('Contact inconnu du mini-CRM', 'Contact unknown to the mini-CRM')}</label>
         <select
           data-testid="agent-contact-inconnu"
           className={`${inputCls} bg-white`}
@@ -825,11 +825,11 @@ function OngletModele({ agent, tenantId, busy, onSave }: {
         plutôt que sur un menu vide : mieux vaut ne pas pouvoir changer que croire qu'il n'y a rien.
       */}
       <div className="flex flex-col gap-1">
-        <label className="text-sm font-medium text-ink-700" htmlFor="agent-modele">{t('Modèle', 'Model')}</label>
+        <label className="text-sm font-medium text-ink-900" htmlFor="agent-modele">{t('Modèle', 'Model')}</label>
         {modeles === null ? (
           <>
             <input id="agent-modele" data-testid="agent-modele" className={inputCls} value={agent.modele} disabled readOnly />
-            <p className="text-xs leading-relaxed text-amber-700">
+            <p className="text-xs leading-relaxed text-alerte-700">
               {t('La liste des modèles est momentanément indisponible. Le modèle en place continue de fonctionner ; réessayez dans un moment pour en changer.', 'The model list is momentarily unavailable. The current model keeps working; try again later to change it.')}
             </p>
           </>
@@ -860,7 +860,7 @@ function OngletModele({ agent, tenantId, busy, onSave }: {
           proposé au réglage ici. */}
       {consoLue && conso !== null && (
         <div className="rounded-xl border border-ink-200 p-4" data-testid="agent-consommation">
-          <p className="text-sm font-medium text-ink-700">
+          <p className="text-sm font-medium text-ink-900">
             {t(`Consommation sur ${conso.jours} jours`, `Usage over ${conso.jours} days`)}
           </p>
           <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -875,7 +875,7 @@ function OngletModele({ agent, tenantId, busy, onSave }: {
               { k: 'cout', v: fmtCost(conso.coutMicroEur / 1_000_000, locale, 'EUR'), l: t('coût estimé', 'estimated cost') },
             ].map((x) => (
               <div key={x.k} data-testid={`agent-conso-${x.k}`}>
-                <dd className="text-lg font-semibold tabular-nums text-ink-800">{x.v}</dd>
+                <dd className="text-lg font-semibold tabular-nums text-ink-900">{x.v}</dd>
                 <dt className="text-xs text-ink-400">{x.l}</dt>
               </div>
             ))}
@@ -912,7 +912,7 @@ function Nombre({ label, aide, valeur, min, max, onSave, testId, busy }: {
   useEffect(() => { setV(String(valeur)); }, [valeur]);
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-sm font-medium text-ink-700">{label}</label>
+      <label className="text-sm font-medium text-ink-900">{label}</label>
       <input
         data-testid={testId}
         type="number"

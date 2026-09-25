@@ -20,6 +20,7 @@ import {
   type AvertissementPost, type ConversationsDunLien, type EtatDistant, type LienChaine, type PostChaine,
   type ReponseConnexionChaine,
 } from '@/lib/api-chaine';
+import { IntroPage, TitrePage } from '@/components/TitrePage';
 
 /**
  * Chaîne : publier à toute une audience un message dont le bouton démarre une conversation.
@@ -140,13 +141,13 @@ function ChaineInner({ session }: { session: Session }) {
     <div className="mx-auto max-w-6xl px-4 py-8">
       <header className="mb-6">
         <p className={kickerCls}>{t('Diffusion', 'Broadcast')}</p>
-        <h1 className="mt-1 text-2xl font-semibold text-ink-900">{t('Chaîne', 'Channel')}</h1>
-        <p className="mt-1 max-w-2xl text-sm text-ink-500">
+        <TitrePage className="mt-1">{t('Chaîne', 'Channel')}</TitrePage>
+        <IntroPage>
           {t(
             'Publie à tous tes abonnés, gratuitement, et laisse ceux qui veulent parler ouvrir une conversation d’un geste.',
             'Post to all your subscribers, for free, and let those who want to talk open a conversation in one tap.',
           )}
-        </p>
+        </IntroPage>
       </header>
 
       <ChaineConnexion
@@ -169,8 +170,8 @@ function ChaineInner({ session }: { session: Session }) {
       {branchee ? (
         <>
           {succes ? (
-            <div className="mt-6 rounded-xl bg-mint-50 px-4 py-3" data-testid="chaine-publie">
-              <p className="text-sm font-medium text-mint-600">
+            <div className="mt-6 rounded-xl bg-succes-50 px-4 py-3" data-testid="chaine-publie">
+              <p className="text-sm font-medium text-succes-600">
                 {t('Publication envoyée à la chaîne.', 'Post sent to the channel.')}
               </p>
               {/* 🔴 Ces avertissements n'étaient lus par AUCUN écran : un bouton mort ne se voyait que dans
@@ -180,7 +181,7 @@ function ChaineInner({ session }: { session: Session }) {
                 return (
                   <p
                     key={a}
-                    className={`mt-1 text-sm ${reparable ? 'text-coral' : 'text-ink-600'}`}
+                    className={`mt-1 text-sm ${reparable ? 'text-danger' : 'text-ink-500'}`}
                     data-testid={`chaine-avertissement-${a}`}
                   >
                     {texte}
@@ -191,14 +192,14 @@ function ChaineInner({ session }: { session: Session }) {
           ) : null}
 
           {erreur !== null && connexion !== null ? (
-            <p className="mt-6 rounded-xl bg-coral/10 px-4 py-3 text-sm text-coral" data-testid="chaine-erreur">
+            <p className="mt-6 rounded-xl bg-danger-50 px-4 py-3 text-sm text-danger" data-testid="chaine-erreur">
               {erreur}
             </p>
           ) : null}
 
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
-            <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold text-ink-800">
+            <div className="rounded-2xl border border-ink-200 bg-white p-5">
+              <h2 className="mb-4 text-base font-semibold text-ink-900">
                 {t('Nouvelle publication', 'New post')}
               </h2>
               <ChaineComposeur

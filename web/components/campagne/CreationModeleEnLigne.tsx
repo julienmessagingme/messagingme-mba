@@ -133,7 +133,7 @@ export function CreationModeleEnLigne({
             {/* ⚠️ LA PHRASE SUIT L'ÉTAT RÉEL, PAS LE STATUT. La sélection automatique s'abstient quand un
                 autre modèle a été choisi pendant l'attente : dire « il est sélectionné » dans ce cas
                 précis, c'est mentir exactement là où la garde a été écrite pour protéger le choix. */}
-            <p className="mt-1 text-xs text-ink-600">
+            <p className="mt-1 text-xs text-ink-500">
               {nomChoisi === soumis.name
                 ? 'Il est sélectionné pour cet envoi, vous pouvez continuer.'
                 : 'Choisissez-le dans la liste ci-dessus pour l’utiliser.'}
@@ -145,7 +145,7 @@ export function CreationModeleEnLigne({
               ⛔ Modèle « {soumis.name} » refusé par Meta.
             </p>
             {/* Le motif du refus n'est pas récupéré par la liste : ne pas prétendre l'expliquer ici. */}
-            <p className="mt-1 text-xs text-ink-600">
+            <p className="mt-1 text-xs text-ink-500">
               Le motif est indiqué par Meta dans l’écran Modèles. Corrigez-le là-bas, ou créez-en un autre.
             </p>
           </>
@@ -154,7 +154,7 @@ export function CreationModeleEnLigne({
             <p className="text-sm font-medium text-ink-900">
               Modèle « {soumis.name} » soumis (statut : {soumis.status}).
             </p>
-            <p className="mt-1 text-xs text-ink-600">
+            <p className="mt-1 text-xs text-ink-500">
               Il passe en revue chez Meta. On vérifie automatiquement et il sera sélectionné dès qu’il est
               approuvé : rien à faire, vous pouvez préparer le reste de la campagne.
             </p>

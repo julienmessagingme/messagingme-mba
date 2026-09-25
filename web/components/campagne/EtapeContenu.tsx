@@ -24,6 +24,7 @@ import { firstTemplateOf } from '@/lib/campaign-eligibility';
 import { appliquerIndices, exemplesDApercu, lignesParDefaut, type VarRow } from '@/lib/variables-template';
 import type { TemplateSummary } from '@/lib/api';
 import type { CapacitesEspace, ContenuEtage, Devenir, EtatCampagne, ReferencesContenu } from '@/components/campagne/AssistantCampagne';
+import { TitrePage } from '@/components/TitrePage';
 
 /**
  * ÉTAPE 3 : le contenu de chaque étage, puis le devenir de la conversation.
@@ -157,7 +158,7 @@ export function EtapeContenu({
 
   return (
     <section data-testid="etape-contenu" className="w-full">
-      <h2 className="text-lg font-semibold text-ink-800">Que reçoivent les contacts ?</h2>
+      <TitrePage>Que reçoivent les contacts ?</TitrePage>
       <p className="mt-1 text-sm text-ink-500">
         Un cadre par étage de la chaîne, dans l&apos;ordre d&apos;envoi. Ouvrez celui que vous voulez
         remplir.
@@ -171,7 +172,7 @@ export function EtapeContenu({
         cadres, et rien d'autre : exactement l'allure d'une page a moitie chargee.
       */}
       {chaine.length === 0 && (
-        <p className="mt-4 rounded-lg bg-gold/10 px-3 py-2 text-sm text-ink-700" data-testid="contenu-sans-canal">
+        <p className="mt-4 rounded-lg bg-alerte-50 px-3 py-2 text-sm text-ink-900" data-testid="contenu-sans-canal">
           Aucun canal n&apos;est choisi : revenez à l&apos;étape Canal pour dire par où partent les
           messages, et les étages à remplir apparaîtront ici.
         </p>
@@ -225,7 +226,7 @@ export function EtapeContenu({
       {/* Ce qui reste à remplir, nommé. Un bouton grisé sans sa raison est le défaut qu'on vient de
           corriger ailleurs : l'écran doit dire ce qu'il attend, au moment où il l'attend. */}
       {rangsIncomplets.length > 0 && (
-        <p className="mt-4 rounded-lg bg-gold/10 px-3 py-2 text-sm text-ink-700" data-testid="contenu-incomplet">
+        <p className="mt-4 rounded-lg bg-alerte-50 px-3 py-2 text-sm text-ink-900" data-testid="contenu-incomplet">
           {rangsIncomplets.length === 1
             ? `Le contenu de l'étage ${rangsIncomplets[0]} n'est pas encore choisi.`
             : `Le contenu des étages ${rangsIncomplets.join(', ')} n'est pas encore choisi.`}
@@ -295,7 +296,7 @@ function CadreEtage({
         aria-expanded={ouvert}
         className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left hover:bg-ink-50"
       >
-        <span id={titreId} className="min-w-0 break-words text-sm font-medium text-ink-800">
+        <span id={titreId} className="min-w-0 break-words text-sm font-medium text-ink-900">
           Étage {etage.rang} · {LIBELLE_CANAL[etage.canal]}
         </span>
         <span aria-hidden className="shrink-0 text-ink-400">{ouvert ? '–' : '+'}</span>
@@ -343,7 +344,7 @@ function CadreEtage({
           */}
           <div className="mt-4 border-t border-ink-100 pt-4">
             {contenu.formule === 'avec_scenario' ? (
-              <p className="text-sm text-ink-600" data-testid={`devenir-scenario-${etage.rang}`}>
+              <p className="text-sm text-ink-500" data-testid={`devenir-scenario-${etage.rang}`}>
                 Ce qui se passe quand le contact répond à cet étage est réglé dans le scénario.
               </p>
             ) : (
@@ -378,7 +379,7 @@ function BlocDevenirEtage({
 }) {
   return (
     <div data-testid={`bloc-devenir-${rang}`}>
-      <p className="text-sm font-medium text-ink-800">Que se passe-t-il quand le contact répond ?</p>
+      <p className="text-sm font-medium text-ink-900">Que se passe-t-il quand le contact répond ?</p>
       <div className="mt-3 space-y-2">
         <Radio
           groupe={`devenir-${rang}`}
@@ -397,12 +398,12 @@ function BlocDevenirEtage({
       {/* ⚠️ GRISÉ AVEC SA RAISON, comme les canaux de l'étape précédente : une option absente ferait croire
           que la fonctionnalité n'existe pas. */}
       {!capacites.mbaEnabled && (
-        <p className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-600">
+        <p className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-500">
           L’agent de Meta n’est pas activé sur cet espace.
         </p>
       )}
       {contenu.devenir === 'inbox' && (
-        <p className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-600">
+        <p className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-500">
           L’agent de Meta ne répondra pas : la conversation revient à votre équipe.
         </p>
       )}
@@ -695,7 +696,7 @@ function EditeurVariables({
     onChange(lignes.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   return (
     <div className="w-full" data-testid={`variables-${rang}`}>
-      <p className="text-sm font-medium text-ink-700">Variables ({nbVariables})</p>
+      <p className="text-sm font-medium text-ink-900">Variables ({nbVariables})</p>
       <div className="mt-1 w-full space-y-2">
         {lignes.map((l, i) => (
           <div key={`var-${i + 1}`} className="flex w-full items-center gap-1.5">
@@ -733,7 +734,7 @@ function EditeurVariables({
           </div>
         ))}
       </div>
-      <p className="mt-1.5 text-[11px] text-ink-400">
+      <p className="mt-1.5 text-xs text-ink-400">
         Un contact sans la valeur choisie est écarté de la campagne, et le récapitulatif le compte.
       </p>
     </div>
@@ -855,7 +856,7 @@ function CadreRcs({
           <RcsPhoneFrame>
             <RcsCarouselPreview brouillon={carrousel} sansFond />
           </RcsPhoneFrame>
-          <p className="text-[11px] text-ink-500">
+          <p className="text-xs text-ink-500">
             {'Copié depuis la bibliothèque : pour le modifier, modifiez-le dans Contenu > Messages RCS, puis choisissez-le à nouveau ici.'}
           </p>
           <button
@@ -877,7 +878,7 @@ function CadreRcs({
         ci-dessous suivent donc le visuel, sans quoi l'écran laisserait saisir ce que l'envoi refuserait.
       */}
       <div>
-        <p className="text-sm font-medium text-ink-700">Visuel</p>
+        <p className="text-sm font-medium text-ink-900">Visuel</p>
         <div className="mt-1 w-full">
           <ChampImageHebergee
             tenantId={tenantId}
@@ -922,7 +923,7 @@ function CadreRcs({
           Il était resté parce que le balayage cherchait le libellé d'un champ, pas le mot. Ne pas écrire
           « le seul » sans avoir balayé le MOT, sans distinction de casse, sur tout ce que le client lit.
         */}
-        <p className="text-sm font-medium text-ink-700">Boutons</p>
+        <p className="text-sm font-medium text-ink-900">Boutons</p>
         <div className="mt-1 w-full">
           <RcsButtonsEditor
             boutons={contenu.suggestions}
@@ -936,7 +937,7 @@ function CadreRcs({
       </div>
       </>
       )}
-      <p className="text-[11px] text-amber-700">
+      <p className="text-xs text-alerte-700">
         Les contacts non joignables en RCS ne reçoivent RIEN et sont comptés « ignorés » dans le rapport.
       </p>
       {/* ⚠️ Un scénario RCS n'a pas de modèle WhatsApp à paramétrer : on ne pose que son identifiant.
@@ -1003,7 +1004,7 @@ function CadreEmail({
         options={references.userFields.map((f) => ({ valeur: f.key, libelle: `${f.label} (${f.key})` }))}
         vide="Aucun champ perso sur cet espace : créez-en un dans Contacts > Champs perso."
       />
-      <p className="rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-600">
+      <p className="rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-500">
         L&apos;e-mail part à l&apos;adresse portée par ce champ. Un contact dont le champ est vide sort de
         la chaîne avant cet étage.
       </p>
@@ -1141,7 +1142,7 @@ function BlocAssignation({
   return (
     <div data-testid="bloc-assignation" className="mt-6 w-full rounded-xl border border-ink-200 p-4">
         <div className="mt-4 border-t border-ink-100 pt-4">
-          <p className="text-sm font-medium text-ink-700">À qui va la conversation ?</p>
+          <p className="text-sm font-medium text-ink-900">À qui va la conversation ?</p>
           <div className="mt-2 space-y-2">
             <Radio
               groupe="assignation"
@@ -1201,7 +1202,7 @@ function BlocAssignation({
                   ⚠️ À CETTE ÉTAPE, L'AUDIENCE N'EST PAS ENCORE CHOISIE (elle vient à l'étape 4) : on dit
                   donc ce qu'on sait, « toutes », et on renvoie au récapitulatif. Afficher un chiffre
                   inventé serait la seule faute vraiment grave ici. */}
-              <p className="text-xs text-ink-600">
+              <p className="text-xs text-ink-500">
                 {nbDestinataires === null
                   ? 'Toutes les conversations lui seront attribuées ; leur nombre s’affiche au récapitulatif, une fois l’audience choisie.'
                   : `${nbDestinataires.toLocaleString('fr-FR')} conversations lui seront attribuées.`}
@@ -1213,7 +1214,7 @@ function BlocAssignation({
             // ⚠️ LE TOUR DE RÔLE SE JOUE À L'ARRIVÉE DE LA RÉPONSE, PAS AU LANCEMENT. Répartir cinq mille
             // conversations d'avance attribuerait des conversations qui n'existeront jamais (la plupart
             // des destinataires ne répondront pas) et fausserait tous les compteurs de charge.
-            <p className="mt-3 text-xs text-ink-600">
+            <p className="mt-3 text-xs text-ink-500">
               Chaque conversation est attribuée au suivant de l&apos;équipe au moment où elle arrive, jamais
               d&apos;avance.
             </p>
@@ -1247,7 +1248,7 @@ function Selecteur({
 }) {
   return (
     <label className="block w-full text-sm">
-      <span className="block font-medium text-ink-700">{libelle}</span>
+      <span className="block font-medium text-ink-900">{libelle}</span>
       {options.length === 0 ? (
         <span className="mt-1 block text-xs text-ink-500">{vide}</span>
       ) : (
@@ -1287,7 +1288,7 @@ function Radio({
   onCheck: () => void;
 }) {
   return (
-    <label className={`flex w-full items-center gap-2 text-sm text-ink-800 ${desactive ? 'opacity-50' : ''}`}>
+    <label className={`flex w-full items-center gap-2 text-sm text-ink-900 ${desactive ? 'opacity-50' : ''}`}>
       <input
         type="radio"
         name={groupe}

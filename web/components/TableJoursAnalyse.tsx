@@ -6,6 +6,7 @@ import { fmtNum, fmtNote } from '@/lib/format';
 import { formatDate } from '@/lib/day';
 import { granularite, regrouper, SEUIL_SEMAINE_JOURS, type Granularite, type LignePeriode } from '@/lib/jours-analyse';
 import { useT, useLocale } from '@/lib/i18n';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * UNE LIGNE PAR JOUR, PAS PAR CONVERSATION.
@@ -25,8 +26,8 @@ import { useT, useLocale } from '@/lib/i18n';
  * dire, et laisser la main, coûte une ligne et referme le défaut.
  */
 
-const TH = 'px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-400';
-const TD = 'px-2 py-1.5 text-[13px] text-ink-700';
+const TH = 'px-2 py-1.5 text-left text-xs font-medium text-ink-500';
+const TD = 'px-2 py-1.5 text-sm text-ink-900';
 
 /** Combien de jours la période couvre, bornes comprises. Pur, et sans « aujourd'hui » caché. */
 function joursDeLaPeriode(range: StatsRange): number {
@@ -67,10 +68,10 @@ export function TableJoursAnalyse({ tenantId, range, choisie, onChoisir }: {
   const lignes = jours === 'erreur' || jours === null ? null : regrouper(brut, mode);
 
   return (
-    <section className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm" data-testid="jours-analyse">
+    <section className="rounded-2xl border border-ink-200 bg-white p-5" data-testid="jours-analyse">
       <header className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold tracking-tight text-ink-900">
+          <h3 className="text-sm font-semibold text-ink-900">
             {mode === 'jour' ? t('Par jour', 'By day') : t('Par semaine', 'By week')}
           </h3>
           {/* 🔴 LA GRANULARITE EST DITE, TOUJOURS. Sans cette phrase, deux captures de la même page en
@@ -81,18 +82,17 @@ export function TableJoursAnalyse({ tenantId, range, choisie, onChoisir }: {
               : t(`Regroupé par semaine : la période dépasse ${SEUIL_SEMAINE_JOURS} jours.`, `Grouped by week: the period exceeds ${SEUIL_SEMAINE_JOURS} days.`)}
           </p>
         </div>
-        <button
+        <Bouton variante="secondaire" taille="petite"
           type="button"
           onClick={() => { setForce(mode === 'jour' ? 'semaine' : 'jour'); onChoisir(null); }}
           data-testid="jours-bascule"
-          className="rounded-lg border border-ink-300 px-2.5 py-1 text-xs text-ink-700 transition hover:bg-ink-50"
         >
           {mode === 'jour' ? t('Voir par semaine', 'Show by week') : t('Voir par jour', 'Show by day')}
-        </button>
+        </Bouton>
       </header>
 
       {jours === 'erreur' && (
-        <p className="rounded-lg bg-coral/10 px-3 py-2 text-xs text-coral" data-testid="jours-erreur">
+        <p className="rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger" data-testid="jours-erreur">
           {t('Les journées n’ont pas pu être chargées.', 'Days could not be loaded.')}
         </p>
       )}
@@ -124,7 +124,7 @@ export function TableJoursAnalyse({ tenantId, range, choisie, onChoisir }: {
                     onClick={() => onChoisir(active ? null : l)}
                     data-testid={`jour-ligne-${l.debut}`}
                     aria-selected={active}
-                    className={`cursor-pointer border-b border-ink-50 transition ${active ? 'bg-brand-50' : 'hover:bg-ink-50'}`}
+                    className={`cursor-pointer border-b border-ink-50 transition-colors duration-150 ${active ? 'bg-brand-50' : 'hover:bg-ink-50'}`}
                   >
                     <td className={`${TD} font-medium text-ink-900`}>
                       <button
@@ -142,12 +142,12 @@ export function TableJoursAnalyse({ tenantId, range, choisie, onChoisir }: {
                         tout l'historique dans le coin « clients furieux ». */}
                     <td className={`${TD} text-right tabular-nums`} data-testid={`jour-satisfaction-${l.debut}`}>
                       {l.satisfaction === null
-                        ? <span className="text-ink-300" title={t('Aucune analyse de cette période ne porte cette note.', 'No analysis over this period carries this score.')}>—</span>
+                        ? <span className="text-ink-400" title={t('Aucune analyse de cette période ne porte cette note.', 'No analysis over this period carries this score.')}>—</span>
                         : fmtNote(l.satisfaction, locale)}
                     </td>
                     <td className={`${TD} text-right tabular-nums`} data-testid={`jour-urgence-${l.debut}`}>
                       {l.urgence === null
-                        ? <span className="text-ink-300" title={t('Aucune analyse de cette période ne porte cette note.', 'No analysis over this period carries this score.')}>—</span>
+                        ? <span className="text-ink-400" title={t('Aucune analyse de cette période ne porte cette note.', 'No analysis over this period carries this score.')}>—</span>
                         : fmtNote(l.urgence, locale)}
                     </td>
                   </tr>

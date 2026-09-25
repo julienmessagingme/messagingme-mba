@@ -72,7 +72,7 @@ function FunnelVertical({ etapes, sent, locale }: { etapes: EtapeFunnel[]; sent:
               autres se lit comme un fait mesuré ; c'est ce qui a fait conclure à une erreur de calcul là où
               il n'y avait qu'une absence d'accusé. La hauteur est fixée bas et la couleur devient neutre :
               la colonne reste à sa place, elle cesse seulement d'affirmer. */}
-          <div className={`text-xs font-semibold tabular-nums ${e.inconnue ? 'text-ink-400' : 'text-ink-800'}`}>
+          <div className={`text-xs font-semibold tabular-nums ${e.inconnue ? 'text-ink-400' : 'text-ink-900'}`}>
             {e.inconnue ? '—' : fmtNum(e.value, locale)}
           </div>
           <div
@@ -85,8 +85,8 @@ function FunnelVertical({ etapes, sent, locale }: { etapes: EtapeFunnel[]; sent:
           />
           {/* Le libellé SOUS la colonne, sur deux lignes au besoin : les étapes de clic ont des noms longs,
               et les tronquer ferait perdre l'unité, qui est justement ce qui les distingue. */}
-          <div className="h-8 w-full text-center text-[10px] leading-tight text-ink-500" title={e.label}>{e.label}</div>
-          <div className="h-3 text-[10px] tabular-nums text-ink-400">{e.inconnue ? '' : e.sub}</div>
+          <div className="h-8 w-full text-center text-xs leading-tight text-ink-500" title={e.label}>{e.label}</div>
+          <div className="h-3 text-xs tabular-nums text-ink-400">{e.inconnue ? '' : e.sub}</div>
         </div>
       ))}
     </div>
@@ -153,7 +153,7 @@ function FunnelCampagne({ tenantId, campagne }: { tenantId: string; campagne: Ca
 
   return (
     <div className="rounded-xl border border-ink-100 p-3" data-testid={`funnel-campagne-${campagne.id}`}>
-      <h4 className="mb-2 truncate text-sm font-medium text-ink-800" title={campagne.name}>{campagne.name}</h4>
+      <h4 className="mb-2 truncate text-sm font-medium text-ink-900" title={campagne.name}>{campagne.name}</h4>
       {loading ? (
         <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
       ) : !funnel || sent === 0 ? (
@@ -162,7 +162,7 @@ function FunnelCampagne({ tenantId, campagne }: { tenantId: string; campagne: Ca
         <>
           <FunnelVertical etapes={etapes} sent={sent} locale={locale} />
           {sansMesure && (
-            <p className="pt-2 text-xs text-amber-800" data-testid="funnel-sans-accuse">
+            <p className="pt-2 text-xs text-alerte-800" data-testid="funnel-sans-accuse">
               {t(
                 'Meta n’a rendu aucun accusé de livraison sur cette campagne : « délivrés » et « lus » sont inconnus, pas nuls. C’est le cas de toutes les campagnes qui envoient un scénario.',
                 'Meta returned no delivery receipt for this campaign: “delivered” and “read” are unknown, not zero. This is the case for every campaign that sends a scenario.',
@@ -170,7 +170,7 @@ function FunnelCampagne({ tenantId, campagne }: { tenantId: string; campagne: Ca
             </p>
           )}
           {funnel.failed > 0 && (
-            <p className="pt-2 text-xs text-ink-400">{t('Échecs :', 'Failures:')} <span className="font-medium text-coral">{fmtNum(funnel.failed, locale)}</span></p>
+            <p className="pt-2 text-xs text-ink-400">{t('Échecs :', 'Failures:')} <span className="font-medium text-danger">{fmtNum(funnel.failed, locale)}</span></p>
           )}
           <VentilationParCanal funnel={funnel} />
         </>
@@ -208,7 +208,7 @@ function VentilationParCanal({ funnel }: { funnel: CampaignFunnel }) {
 
   return (
     <div className="mt-3 border-t border-ink-100 pt-3">
-      <p className="mb-1 text-xs font-medium text-ink-700">{t('Par canal', 'By channel')}</p>
+      <p className="mb-1 text-xs font-medium text-ink-900">{t('Par canal', 'By channel')}</p>
       {/* ⚠️ La ligne de tête est au grain CONTACT : la somme des « tentatives » ci-dessous la dépasse dès
           qu'une personne a été jointe au second étage, et sans cette phrase l'écart se lit comme une erreur. */}
       {funnel.contactsVises !== undefined && (
@@ -240,20 +240,20 @@ function VentilationParCanal({ funnel }: { funnel: CampaignFunnel }) {
               return (
                 <tr key={l.canal} className="border-t border-ink-100">
                   <td className="py-1 pr-2">
-                    <span className="rounded bg-violet/10 px-1.5 py-0.5 font-medium text-ink-800">
+                    <span className="rounded bg-ink-100 px-1.5 py-0.5 font-medium text-ink-900">
                       {NOM_CANAL[l.canal] ?? l.canal}
                     </span>
                   </td>
-                  <td className="py-1 pr-2 text-right tabular-nums text-ink-700">{fmtNum(l.envois, locale)}</td>
-                  <td className="py-1 pr-2 text-right tabular-nums text-ink-700">{fmtNum(l.reussis, locale)}</td>
+                  <td className="py-1 pr-2 text-right tabular-nums text-ink-900">{fmtNum(l.envois, locale)}</td>
+                  <td className="py-1 pr-2 text-right tabular-nums text-ink-900">{fmtNum(l.reussis, locale)}</td>
                   {/* Un tiret, jamais un zéro : la valeur n'est pas nulle, elle est inconnue. */}
-                  <td className="py-1 pr-2 text-right tabular-nums text-ink-700" title={sansMesure ? t('Aucun accusé de Meta sur ce canal : inconnu, pas nul.', 'No Meta receipt on this channel: unknown, not zero.') : undefined}>
+                  <td className="py-1 pr-2 text-right tabular-nums text-ink-900" title={sansMesure ? t('Aucun accusé de Meta sur ce canal : inconnu, pas nul.', 'No Meta receipt on this channel: unknown, not zero.') : undefined}>
                     {sansMesure ? '—' : fmtNum(l.delivres, locale)}
                   </td>
-                  <td className="py-1 pr-2 text-right tabular-nums text-ink-700">
+                  <td className="py-1 pr-2 text-right tabular-nums text-ink-900">
                     {sansMesure ? '—' : fmtNum(l.lus, locale)}
                   </td>
-                  <td className="py-1 text-right tabular-nums text-ink-700">{fmtNum(l.repondus, locale)}</td>
+                  <td className="py-1 text-right tabular-nums text-ink-900">{fmtNum(l.repondus, locale)}</td>
                 </tr>
               );
             })}
@@ -297,11 +297,11 @@ export function CampaignFunnelCard({ tenantId, campaigns, initiale }: {
     .filter((c): c is CampaignSummary => c !== undefined);
 
   return (
-    <div id="quanti-funnel" className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+    <div id="quanti-funnel" className="rounded-2xl border border-ink-200 bg-white p-5">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Funnel par campagne', 'Funnel by campaign')}</h3>
+            <h3 className="text-sm font-semibold text-ink-900">{t('Funnel par campagne', 'Funnel by campaign')}</h3>
             <BoutonPdf zone="quanti-funnel" />
           </div>
           <p className="text-xs text-ink-400">{t('envoyés, délivrés, lus, répondus', 'sent, delivered, read, replied')}</p>
@@ -326,7 +326,7 @@ export function CampaignFunnelCard({ tenantId, campaigns, initiale }: {
       {/* Dit la limite au lieu de la taire : un lien ne sait pas quel envoi l'a porté, donc deux campagnes
           sur le même template lisent le même compteur. Le taire ferait prendre un chiffre de template pour
           un chiffre de campagne. */}
-      <p className="pt-3 text-[11px] leading-relaxed text-ink-400">
+      <p className="pt-3 text-xs leading-relaxed text-ink-400">
         {t(
           'Les clics sur le lien sont comptés sur le lien du template, à partir du premier envoi de la campagne. Si le même template sert ailleurs, ses clics apparaissent ici aussi.',
           'Link clicks are counted on the template link, from the campaign’s first send. If the same template is used elsewhere, its clicks show up here too.',
@@ -352,7 +352,7 @@ export function SelecteurMultiple({ libelleTous, options, selection, onChange, t
 }) {
   const t = useT();
   const dispo = options.filter((o) => !selection.includes(o.value));
-  const selectCls = 'rounded-lg border border-ink-300 bg-white px-2.5 py-1 text-xs text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+  const selectCls = 'rounded-lg border border-ink-300 bg-white px-2.5 py-1 text-xs text-ink-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
   const libelleDe = (v: string): string => options.find((o) => o.value === v)?.label ?? v;
 
   return (
@@ -374,7 +374,7 @@ export function SelecteurMultiple({ libelleTous, options, selection, onChange, t
             type="button"
             onClick={() => onChange(selection.filter((x) => x !== v))}
             aria-label={t('Retirer', 'Remove')}
-            className="text-brand-400 transition hover:text-coral"
+            className="text-brand-400 transition-colors duration-150 hover:text-danger"
           >
             ×
           </button>
@@ -429,17 +429,17 @@ export function OrigineServiceCard({ repartition, detailIa }: {
   const lignes = [
     { cle: 'ia', label: t('IA', 'AI'), aide: t('agent IA de la console, agent de Meta, agent tiers', 'console AI agent, Meta agent, third-party agent'), valeur: repartition.ia, couleur: 'bg-violet' },
     { cle: 'scenario', label: t('Scripté', 'Scripted'), aide: t('envoyé par un bloc de scénario', 'sent by a scenario block'), valeur: repartition.scenario, couleur: 'bg-brand-500' },
-    { cle: 'humain', label: t('Humain', 'Human'), aide: t('écrit par un opérateur depuis l’inbox', 'written by an operator from the inbox'), valeur: repartition.humain, couleur: 'bg-mint-400' },
+    { cle: 'humain', label: t('Humain', 'Human'), aide: t('écrit par un opérateur depuis l’inbox', 'written by an operator from the inbox'), valeur: repartition.humain, couleur: 'bg-succes-400' },
     ...(repartition.indeterminee > 0
       ? [{ cle: 'indeterminee', label: t('Origine non enregistrée', 'Origin not recorded'), aide: t('un envoi n’a pas déclaré son origine : à corriger', 'a send did not declare its origin: to be fixed'), valeur: repartition.indeterminee, couleur: 'bg-ink-300' }]
       : []),
   ];
   const total = lignes.reduce((a, l) => a + l.valeur, 0);
   return (
-    <div id="quanti-origine-service" className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+    <div id="quanti-origine-service" className="rounded-2xl border border-ink-200 bg-white p-5">
       <div className="mb-3">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Messages de service : qui les a écrits', 'Service messages: who wrote them')}</h3>
+          <h3 className="text-sm font-semibold text-ink-900">{t('Messages de service : qui les a écrits', 'Service messages: who wrote them')}</h3>
           <BoutonPdf zone="quanti-origine-service" />
         </div>
         <p className="text-xs text-ink-400">{t('sur la période, hors template', 'over the period, excluding templates')}</p>
@@ -461,10 +461,10 @@ export function OrigineServiceCard({ repartition, detailIa }: {
               <Fragment key={l.cle}>
               <tr data-testid={`origine-${l.cle}`} className="border-b border-ink-50">
                 <td className="px-2 py-2">
-                  <div className="font-medium text-ink-800">{l.label}</div>
-                  <div className="text-[11px] text-ink-400">{l.aide}</div>
+                  <div className="font-medium text-ink-900">{l.label}</div>
+                  <div className="text-xs text-ink-400">{l.aide}</div>
                 </td>
-                <td className="px-2 py-2 tabular-nums text-ink-700">{fmtNum(l.valeur, locale)}</td>
+                <td className="px-2 py-2 tabular-nums text-ink-900">{fmtNum(l.valeur, locale)}</td>
                 <td className="px-2 py-2 tabular-nums text-ink-500">{fmtPct(l.valeur, total, locale)}</td>
                 <td className="px-2 py-2">
                   <div className="h-1.5 overflow-hidden rounded-full bg-ink-50">
@@ -483,13 +483,13 @@ export function OrigineServiceCard({ repartition, detailIa }: {
               {l.cle === 'ia' && sousIa.map((d) => (
                 <tr key={d.cle} data-testid={`origine-ia-${d.cle}`} className="border-b border-ink-50">
                   <td className="py-1.5 pl-6 pr-2">
-                    <div className="flex items-center gap-2 text-[11px] text-ink-500">
+                    <div className="flex items-center gap-2 text-xs text-ink-500">
                       <span className="h-1 w-1 rounded-full bg-violet" aria-hidden="true" />
                       {d.label}
                     </div>
                   </td>
-                  <td className="px-2 py-1.5 tabular-nums text-[11px] text-ink-500">{fmtNum(d.valeur, locale)}</td>
-                  <td className="px-2 py-1.5 tabular-nums text-[11px] text-ink-400">{fmtPct(d.valeur, total, locale)}</td>
+                  <td className="px-2 py-1.5 tabular-nums text-xs text-ink-500">{fmtNum(d.valeur, locale)}</td>
+                  <td className="px-2 py-1.5 tabular-nums text-xs text-ink-400">{fmtPct(d.valeur, total, locale)}</td>
                   <td className="px-2 py-1.5" />
                 </tr>
               ))}
@@ -547,11 +547,11 @@ export function ErrorBreakdownCard({ errors, tenantId, range }: {
   const refermer = (suivant: string[]): boolean => { setOuvert(null); return suivant.length > 0; };
 
   return (
-    <div id="quanti-erreurs" className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+    <div id="quanti-erreurs" className="rounded-2xl border border-ink-200 bg-white p-5">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Erreurs Meta', 'Meta errors')}</h3>
+            <h3 className="text-sm font-semibold text-ink-900">{t('Erreurs Meta', 'Meta errors')}</h3>
             <BoutonPdf zone="quanti-erreurs" />
           </div>
           <p className="text-xs text-ink-400">{t('par code, sur la période', 'by code, over the period')}</p>
@@ -590,18 +590,18 @@ export function ErrorBreakdownCard({ errors, tenantId, range }: {
                 onClick={() => setOuvert((c) => (c === e.code ? null : e.code))}
                 aria-expanded={ouvert === e.code}
                 data-testid={`erreur-ligne-${e.code}`}
-                className="w-full rounded-lg px-1 py-0.5 text-left transition hover:bg-ink-50"
+                className="w-full rounded-lg px-1 py-0.5 text-left transition-colors duration-150 hover:bg-ink-50"
               >
                 {/* Des `span` en `block` et non des `div`/`p` : un bouton ne peut contenir que du contenu de
                     phrase. Le rendu est identique, le HTML cesse d'etre invalide. */}
                 <span className="flex items-baseline justify-between gap-2">
-                  <span className="font-mono text-xs font-medium text-ink-700">{e.code}</span>
+                  <span className="font-mono text-xs font-medium text-ink-900">{e.code}</span>
                   <span className="text-xs tabular-nums text-ink-500">{fmtNum(e.count, locale)}</span>
                 </span>
                 <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-ink-50">
-                  <span className="block h-full rounded-full bg-coral" style={{ width: `${max > 0 ? Math.max(4, Math.round((e.count / max) * 100)) : 0}%` }} />
+                  <span className="block h-full rounded-full bg-danger" style={{ width: `${max > 0 ? Math.max(4, Math.round((e.count / max) * 100)) : 0}%` }} />
                 </span>
-                <span className="mt-0.5 block text-[11px] text-ink-400">{metaCodeLabel(e.code, locale)}</span>
+                <span className="mt-0.5 block text-xs text-ink-400">{metaCodeLabel(e.code, locale)}</span>
               </button>
               {ouvert === e.code && (
                 <ContactsTouches
@@ -614,7 +614,7 @@ export function ErrorBreakdownCard({ errors, tenantId, range }: {
               )}
             </div>
           ))}
-          <p className="pt-1 text-xs text-ink-400">{t('Total :', 'Total:')} <span className="font-medium text-ink-700">{fmtNum(total, locale)}</span></p>
+          <p className="pt-1 text-xs text-ink-400">{t('Total :', 'Total:')} <span className="font-medium text-ink-900">{fmtNum(total, locale)}</span></p>
         </div>
       )}
       {/* 🔴 DIT LES DEUX CHOSES QUE CE DÉCOMPTE NE VOIT PAS, toutes deux mesurées le 2026-09-07 :
@@ -624,7 +624,7 @@ export function ErrorBreakdownCard({ errors, tenantId, range }: {
              production : un template inenvoyable, une panne réseau). Ceux-là sont dans le journal des
              erreurs de livraison, et l'écran doit y renvoyer plutôt que de laisser croire à un inventaire.
           Sans ces deux phrases, un écran vide se lirait « aucune erreur ». */}
-      <p className="pt-3 text-[11px] leading-relaxed text-ink-400">
+      <p className="pt-3 text-xs leading-relaxed text-ink-400">
         {t(
           'Ce décompte porte sur les envois de CAMPAGNE, et il est classé par code Meta. Un échec sur un envoi de scénario ou depuis l’inbox n’est pas enregistré, et un échec sans code Meta (template inenvoyable, panne réseau) n’a pas de ligne ici : le journal complet est dans Paramètres, « Erreurs de livraison ».',
           'This count covers CAMPAIGN sends, grouped by Meta code. A failure on a scenario or inbox send is not recorded, and a failure without a Meta code (unsendable template, network outage) has no row here: the full log lives in Settings, "Delivery errors".',
@@ -676,7 +676,7 @@ function ContactsTouches({ tenantId, range, code, campaignIds, templateNames }: 
     <div className="mt-2 rounded-lg border border-ink-100 bg-ink-50/50 p-2" data-testid={`erreur-contacts-${code}`}>
       {erreur !== null ? (
         // Un échec de chargement se DIT : sans ça, il se lirait « personne n'a été touché ».
-        <p className="text-xs text-coral">{t('Liste indisponible :', 'List unavailable:')} {erreur}</p>
+        <p className="text-xs text-danger">{t('Liste indisponible :', 'List unavailable:')} {erreur}</p>
       ) : etat === null ? (
         <p className="text-xs text-ink-500">{t('Chargement…', 'Loading…')}</p>
       ) : etat.contacts.length === 0 ? (
@@ -689,20 +689,20 @@ function ContactsTouches({ tenantId, range, code, campaignIds, templateNames }: 
               // campagnes, et sur la même campagne après un renvoi.
               <li key={c.recipientId} className="py-1">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-                  <span className="truncate text-xs font-medium text-ink-800">{c.contactNom ?? c.telephone}</span>
-                  <span className="text-[11px] text-ink-400">
+                  <span className="truncate text-xs font-medium text-ink-900">{c.contactNom ?? c.telephone}</span>
+                  <span className="text-xs text-ink-400">
                     {c.campaignName ?? ''}
                     {c.at !== null ? ` · ${formatDate(c.at, locale, { day: '2-digit', month: '2-digit' })}` : ''}
                   </span>
                 </div>
                 {/* Ce que Meta a répondu. C'est le champ le plus utile de la liste : sans lui, on sait QUI a
                     échoué mais pas ce qu'on peut y faire. */}
-                {c.message !== null && <p className="truncate text-[11px] text-ink-500" title={c.message}>{c.message}</p>}
+                {c.message !== null && <p className="truncate text-xs text-ink-500" title={c.message}>{c.message}</p>}
               </li>
             ))}
           </ul>
           {etat.tronque && (
-            <p className="pt-1 text-[11px] text-gold" data-testid={`erreur-contacts-tronque-${code}`}>
+            <p className="pt-1 text-xs text-alerte" data-testid={`erreur-contacts-tronque-${code}`}>
               {t(
                 `Liste limitée aux ${etat.plafond} plus récents.`,
                 `List limited to the ${etat.plafond} most recent.`,
@@ -746,15 +746,15 @@ export function CostChartCard({
   }, [tenantId, range, cleCampagnes, cleTemplates]);
 
   return (
-    <div id="quanti-cout" className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+    <div id="quanti-cout" className="rounded-2xl border border-ink-200 bg-white p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Coût estimé', 'Estimated cost')}</h3>
+            <h3 className="text-sm font-semibold text-ink-900">{t('Coût estimé', 'Estimated cost')}</h3>
             <BoutonPdf zone="quanti-cout" />
           </div>
           <p className="text-xs text-ink-400">
-            {t('par jour, votre prix × volume', 'per day, your price × volume')}{cost ? <> · {t('total ≈', 'total ≈')} <span className="font-medium text-ink-700">{fmtCost(cost.total, locale, cost.currency)}</span></> : null}
+            {t('par jour, votre prix × volume', 'per day, your price × volume')}{cost ? <> · {t('total ≈', 'total ≈')} <span className="font-medium text-ink-900">{fmtCost(cost.total, locale, cost.currency)}</span></> : null}
             {/* 🔴 CE QUE LE COÛT NE COMPTE PAS, DIT PLUTÔT QUE TU. Un envoi sans catégorie connue ne produit
                 aucun coût et disparaissait du calcul en silence : le client lisait zéro là où il avait bien
                 envoyé. Vécu sur 22 envois de scénario, dont la catégorie n'était pas écrite avant le
@@ -765,7 +765,7 @@ export function CostChartCard({
                 une panne du jour. Une seule phrase pour les deux laissait le lecteur sans savoir s'il devait
                 attendre ou aller réparer. */}
             {cost ? phrasesNonChiffrables(cost, 'periode', (n) => fmtNum(n, locale)).map((ph) => (
-              <span key={ph.fr} className="mt-1 block text-gold" data-testid="cout-non-chiffrables">{t(ph.fr, ph.en)}</span>
+              <span key={ph.fr} className="mt-1 block text-alerte" data-testid="cout-non-chiffrables">{t(ph.fr, ph.en)}</span>
             )) : null}
           </p>
         </div>
@@ -827,14 +827,14 @@ export function FactureCard({ data }: { data: TemplateStats | null }) {
   if (!pricing) return null;
 
   return (
-    <div id="quanti-facture" className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+    <div id="quanti-facture" className="rounded-2xl border border-ink-200 bg-white p-5">
       <div className="mb-3 flex items-center gap-2">
-        <h3 className="text-sm font-semibold tracking-tight text-ink-900">
+        <h3 className="text-sm font-semibold text-ink-900">
           {t('Facturé par Meta sur la période', 'Billed by Meta over the period')}
         </h3>
         <BoutonPdf zone="quanti-facture" />
       </div>
-      <div className="text-3xl font-bold tracking-tight text-ink-900">
+      <div className="text-3xl font-semibold tracking-tight tabular-nums text-ink-900">
         {fmtCost(pricing.totalCost, locale, pricing.currency)}
       </div>
       <p className="mt-2 text-xs text-ink-500">
@@ -888,11 +888,11 @@ export function TemplateBreakdownCard({ data }: { data: TemplateStats | null }) 
   const estimated = current && rate != null ? current.count * rate : null;
 
   return (
-    <div id="quanti-templates" className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+    <div id="quanti-templates" className="rounded-2xl border border-ink-200 bg-white p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Détail par template', 'Breakdown by template')}</h3>
+            <h3 className="text-sm font-semibold text-ink-900">{t('Détail par template', 'Breakdown by template')}</h3>
             <BoutonPdf zone="quanti-templates" />
           </div>
           <p className="text-xs text-ink-400">{t('volume + prix estimé sur la période', 'volume + estimated price over the period')}</p>
@@ -901,7 +901,7 @@ export function TemplateBreakdownCard({ data }: { data: TemplateStats | null }) 
           <select
             value={current?.name ?? ''}
             onChange={(e) => setSelected(e.target.value)}
-            className="rounded-lg border border-ink-300 bg-white px-3 py-1.5 text-sm text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+            className="rounded-lg border border-ink-300 bg-white px-3 py-1.5 text-sm text-ink-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
           >
             {rows.map((r) => (
               <option key={r.name} value={r.name}>
@@ -942,9 +942,9 @@ export function TemplateBreakdownCard({ data }: { data: TemplateStats | null }) 
 export function Metric({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div>
-      <div className="text-xs font-medium uppercase tracking-wide text-ink-400">{label}</div>
-      <div className="text-xl font-bold tracking-tight text-ink-900">{value}</div>
-      {hint && <div className="mt-0.5 text-[11px] text-ink-400">{hint}</div>}
+      <div className="text-xs font-medium text-ink-500">{label}</div>
+      <div className="text-xl font-semibold tracking-tight tabular-nums text-ink-900">{value}</div>
+      {hint && <div className="mt-0.5 text-xs text-ink-400">{hint}</div>}
     </div>
   );
 }

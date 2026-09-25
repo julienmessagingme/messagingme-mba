@@ -28,7 +28,7 @@ export function ListeManques({ manques, testId, busy = false }: {
   const t = useT();
   if (manques.length === 0 || busy) return null;
   return (
-    <p className="mt-3 rounded-lg bg-gold/10 px-3 py-2 text-sm text-ink-700" data-testid={testId}>
+    <p className="mt-3 rounded-lg bg-alerte-50 px-3 py-2 text-sm text-ink-900" data-testid={testId}>
       {t('Il manque : ', 'Missing: ')}
       {manques.join(t(', ', ', '))}.
     </p>

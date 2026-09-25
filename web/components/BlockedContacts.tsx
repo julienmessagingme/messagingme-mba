@@ -5,6 +5,7 @@ import { useT, useLocale } from '@/lib/i18n';
 import { cardCls } from '@/lib/ui';
 import { formatDate } from '@/lib/day';
 import { listBlockedContacts, setContactBlocked, type BlockedContact } from '@/lib/api';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * Contacts bloqués : la SEULE porte de sortie d'un blocage.
@@ -62,24 +63,24 @@ export function BlockedContacts({ tenantId }: { tenantId: string }) {
           'These contacts no longer receive any message, and their conversations no longer appear in the inbox. Their messages are still recorded.',
         )}
       </p>
-      {erreur !== '' && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{erreur}</p>}
+      {erreur !== '' && <p className="mt-2 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{erreur}</p>}
       <ul className="mt-3 space-y-2">
         {contacts.map((c) => (
           <li key={c.id} className="flex items-center justify-between gap-3 rounded-lg border border-ink-200 px-3 py-2">
             <span className="min-w-0">
-              <span className="block truncate text-sm text-ink-800">{c.profileName ?? c.phoneE164 ?? c.id}</span>
+              <span className="block truncate text-sm text-ink-900">{c.profileName ?? c.phoneE164 ?? c.id}</span>
               <span className="block text-xs text-ink-400">
                 {t('bloqué le ', 'blocked on ')}{formatDate(c.blockedAt, locale)}
               </span>
             </span>
-            <button
+            <Bouton variante="secondaire" taille="petite"
               onClick={() => { void debloquer(c); }}
               disabled={busy === c.id}
               data-testid={`unblock-${c.id}`}
-              className="shrink-0 rounded-lg border border-ink-300 px-2.5 py-1 text-xs font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-50"
+              className="shrink-0"
             >
               {busy === c.id ? t('…', '…') : t('Débloquer', 'Unblock')}
-            </button>
+            </Bouton>
           </li>
         ))}
       </ul>

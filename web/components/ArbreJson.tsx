@@ -70,28 +70,28 @@ function Ligne({
         data-cle={noeud.cle}
       >
         {branche ? (
-          <button type="button" onClick={() => setOuvert((v) => !v)} className="w-3 text-ink-400 hover:text-ink-700" aria-label={ouvert ? t('Replier', 'Collapse') : t('Déplier', 'Expand')}>
+          <button type="button" onClick={() => setOuvert((v) => !v)} className="w-3 text-ink-400 hover:text-ink-900" aria-label={ouvert ? t('Replier', 'Collapse') : t('Déplier', 'Expand')}>
             {ouvert ? '▾' : '▸'}
           </button>
         ) : (
           <span className="w-3" />
         )}
-        <span className="text-ink-700">{noeud.cle}</span>
+        <span className="text-ink-900">{noeud.cle}</span>
         <span className="truncate text-ink-400">{noeud.apercu}</span>
         <span className="ml-auto shrink-0">
           {noeud.attachable && !deja && (
             <button
               type="button"
               onClick={() => onAttacher(noeud.chemin)}
-              className="rounded border border-brand-200 bg-white px-1.5 py-0.5 text-[11px] font-sans font-medium text-brand-600 hover:bg-brand-50"
+              className="rounded border border-brand-200 bg-white px-1.5 py-0.5 text-xs font-sans font-medium text-brand-600 hover:bg-brand-50"
             >
               {t('Attacher…', 'Attach…')}
             </button>
           )}
-          {deja && <span className="text-[11px] font-sans text-ink-400">{t('déjà attaché', 'already attached')}</span>}
+          {deja && <span className="text-xs font-sans text-ink-400">{t('déjà attaché', 'already attached')}</span>}
           {/* Une clé inadressable est signalée : sans ça, l'utilisateur cherche pourquoi elle n'est pas cliquable. */}
           {!noeud.attachable && noeud.chemin === '' && noeud.type === 'valeur' && (
-            <span className="text-[11px] font-sans text-ink-400" title={t('Le nom de cette clé contient un point ou un crochet : elle ne peut pas être désignée.', 'This key name contains a dot or bracket: it cannot be addressed.')}>
+            <span className="text-xs font-sans text-ink-400" title={t('Le nom de cette clé contient un point ou un crochet : elle ne peut pas être désignée.', 'This key name contains a dot or bracket: it cannot be addressed.')}>
               {t('non adressable', 'not addressable')}
             </span>
           )}

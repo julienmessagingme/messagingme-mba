@@ -4,6 +4,7 @@ import { AppShell } from '@/components/AppShell';
 import { ConnecteursBibliotheque } from '@/components/ConnecteursBibliotheque';
 import { useT } from '@/lib/i18n';
 import type { Session } from '@/lib/session';
+import { IntroPage, TitrePage } from '@/components/TitrePage';
 
 /**
  * Menu Tools > Connecteurs API : la BIBLIOTHÈQUE de systèmes du workspace.
@@ -23,10 +24,10 @@ function Inner({ session }: { session: Session }) {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="text-lg font-semibold text-ink-900">{t('Connecteurs API', 'API connectors')}</h1>
-        <p className="mt-1 text-sm text-ink-600">
+        <TitrePage>{t('Connecteurs API', 'API connectors')}</TitrePage>
+        <IntroPage>
           {t('Les systèmes que vos agents IA peuvent interroger.', 'The systems your AI agents can query.')}
-        </p>
+        </IntroPage>
       </div>
       <ConnecteursBibliotheque tenantId={session.tenantId} />
     </div>

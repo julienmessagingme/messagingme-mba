@@ -3,9 +3,11 @@
 import { useState } from 'react';
 import { useT } from '@/lib/i18n';
 import { PRESETS, activePreset, presetRange, todayParis, type DateRange } from '@/lib/range';
+import { Bouton } from '@/components/Bouton';
+import { TitrePage } from '@/components/TitrePage';
 
 const inputCls =
-  'rounded-md border border-ink-300 bg-white px-2 py-1 text-xs text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+  'rounded-md border border-ink-300 bg-white px-2 py-1 text-xs text-ink-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
 /**
  * Bandeau de periode des ecrans Analytics : titre a gauche, raccourcis 7/30/90 jours et saisie libre a droite.
@@ -52,15 +54,15 @@ export function RangeBar({ title, range, onChange }: {
     // `data-testid` : une spec exige qu'il n'y ait JAMAIS deux barres de periode dans un meme ecran. Le
     // decoupage du Quantitatif en sous-onglets rendait la duplication facile (une copie par onglet), et deux
     // barres divergeraient des le premier ajustement.
-    <div data-testid="range-bar" className="sticky top-12 z-20 flex flex-wrap items-center justify-between gap-3 bg-[#F7F8FB] py-2">
-      {title !== undefined && <h2 className="text-base font-semibold tracking-tight text-ink-900">{title}</h2>}
+    <div data-testid="range-bar" className="sticky top-12 z-20 flex flex-wrap items-center justify-between gap-3 bg-surface-subtle py-2">
+      {title !== undefined && <TitrePage>{title}</TitrePage>}
       <div className="ml-auto flex flex-wrap items-center gap-2">
         <div className="inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-xs">
           {PRESETS.map((d) => (
             <button
               key={d}
               onClick={() => applyPreset(d)}
-              className={`rounded-md px-2.5 py-1 ${preset === d ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}
+              className={`rounded-md px-2.5 py-1 ${preset === d ? 'bg-white font-medium text-brand-700' : 'text-ink-500 hover:text-ink-900'}`}
             >
               {d} {t('j', 'd')}
             </button>
@@ -70,13 +72,12 @@ export function RangeBar({ title, range, onChange }: {
           <input type="date" value={draftFrom} max={draftTo || today} onChange={(e) => setDraftFrom(e.target.value)} className={inputCls} />
           <span className="text-ink-400">→</span>
           <input type="date" value={draftTo} min={draftFrom} max={today} onChange={(e) => setDraftTo(e.target.value)} className={inputCls} />
-          <button
+          <Bouton taille="petite"
             onClick={applyCustom}
             disabled={!draftFrom || !draftTo || draftFrom > draftTo}
-            className="rounded-md bg-brand-500 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-brand-600 disabled:opacity-50"
           >
             {t('Appliquer', 'Apply')}
-          </button>
+          </Bouton>
         </div>
       </div>
     </div>

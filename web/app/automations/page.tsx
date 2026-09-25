@@ -9,6 +9,8 @@ import {
   listUserFields, estEnLigne,
   type Automation, type AutomationTriggerKind, type WorkflowSummary, type HubspotDealPipeline, type UserFieldDef,
 } from '@/lib/api';
+import { Bouton } from '@/components/Bouton';
+import { IntroPage, TitrePage } from '@/components/TitrePage';
 
 export default function AutomationsPage() {
   return <AppShell active="automations">{(session) => <AutomationsInner session={session} />}</AppShell>;
@@ -245,17 +247,17 @@ function AutomationsInner({ session }: { session: Session }) {
   return (
     <div className="space-y-5 p-4">
       <div>
-        <h2 className="text-xl font-semibold tracking-tight text-ink-900">{t('Automation', 'Automation')}</h2>
-        <p className="mt-1 max-w-3xl text-sm text-ink-500">
+        <TitrePage>{t('Automation', 'Automation')}</TitrePage>
+        <IntroPage>
           {t(
             'Lance un scénario automatiquement quand un événement se produit, sans campagne. Un scénario ne part jamais si un opérateur a pris la main sur la conversation.',
             'Start a scenario automatically when an event happens, without a campaign. A scenario never runs if an operator has taken over the conversation.',
           )}
-        </p>
+        </IntroPage>
         {/* Deux familles de déclencheurs, et la différence change ce que le scénario a le droit d'envoyer.
             Le dire ici évite la promesse fausse « le client vient toujours d'écrire », qui n'était vraie que
             tant que seuls le mot-clé et le nouveau contact existaient. */}
-        <p className="mt-2 max-w-3xl text-xs text-ink-400">
+        <p className="mt-2 max-w-prose text-xs text-ink-400">
           {t(
             'Mot-clé et nouveau contact partent d’un message reçu : la fenêtre de 24 h est ouverte, le scénario peut donc commencer par un message rapide ou un formulaire. Tag posé, conversation analysée, étape de deal et risque élevé arrivent à froid : le scénario doit commencer par un envoi de template, sinon rien ne part.',
             'Keyword and new contact come from an incoming message: the 24 h window is open, so the scenario may start with a quick message or a form. Tag added, conversation analyzed, deal stage and high risk happen cold: the scenario must start with a template send, otherwise nothing goes out.',
@@ -263,20 +265,20 @@ function AutomationsInner({ session }: { session: Session }) {
         </p>
       </div>
 
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
       {!creating ? (
-        <button onClick={() => setCreating(true)} data-testid="automation-add" className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600">
+        <Bouton onClick={() => setCreating(true)} data-testid="automation-add">
           + {t('Ajouter une automation', 'Add an automation')}
-        </button>
+        </Bouton>
       ) : (
-        <div data-testid="automation-form" className="max-w-2xl space-y-3 rounded-2xl border border-ink-200 bg-white p-4 shadow-sm">
+        <div data-testid="automation-form" className="max-w-2xl space-y-3 rounded-2xl border border-ink-200 bg-white p-4">
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink-700">{t('Nom (interne)', 'Name (internal)')}</label>
+            <label className="mb-1 block text-sm font-medium text-ink-900">{t('Nom (interne)', 'Name (internal)')}</label>
             <input value={name} onChange={(e) => setName(e.target.value)} data-testid="automation-name" className={inputCls} placeholder={t('Demande de RDV', 'Appointment request')} />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink-700">{t('Quand…', 'When…')}</label>
+            <label className="mb-1 block text-sm font-medium text-ink-900">{t('Quand…', 'When…')}</label>
             <select value={triggerKind} onChange={(e) => setTriggerKind(e.target.value as AutomationTriggerKind)} data-testid="automation-trigger" className={inputCls}>
               <option value="keyword">{t('le client envoie un mot-clé', 'the customer sends a keyword')}</option>
               <option value="new_contact">{t('un nouveau contact écrit pour la 1re fois', 'a new contact writes for the first time')}</option>
@@ -326,7 +328,7 @@ function AutomationsInner({ session }: { session: Session }) {
           )}
           {triggerKind === 'ctwa_ad' && (
             <div data-testid="config-ctwa-ad">
-              <label className="mb-1 block text-sm font-medium text-ink-700">{t('Publicité (facultatif)', 'Ad (optional)')}</label>
+              <label className="mb-1 block text-sm font-medium text-ink-900">{t('Publicité (facultatif)', 'Ad (optional)')}</label>
               <input
                 value={adId}
                 onChange={(e) => setAdId(e.target.value)}
@@ -346,7 +348,7 @@ function AutomationsInner({ session }: { session: Session }) {
           )}
           {triggerKind === 'avant_date' && (
             <div data-testid="config-avant-date">
-              <label className="mb-1 block text-sm font-medium text-ink-700">{t('Combien de temps, et de quel côté', 'How long, and which side')}</label>
+              <label className="mb-1 block text-sm font-medium text-ink-900">{t('Combien de temps, et de quel côté', 'How long, and which side')}</label>
               <div className="flex flex-wrap items-center gap-2">
                 <input
                   type="number"
@@ -376,7 +378,7 @@ function AutomationsInner({ session }: { session: Session }) {
                 </select>
               </div>
               {champsDate.length === 0 ? (
-                <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800" data-testid="avant-date-aucun-champ">
+                <p className="mt-2 rounded-lg bg-alerte-50 px-3 py-2 text-sm text-alerte-800" data-testid="avant-date-aucun-champ">
                   {t(
                     'Aucun champ « date et heure » dans cet espace. Créez-en un dans Contenu > Champs, ou depuis le mapping d’un webhook : c’est lui qui portera l’échéance.',
                     'No “date & time” field in this workspace. Create one in Content > Fields, or from a webhook mapping: it is what will carry the due date.',
@@ -394,22 +396,22 @@ function AutomationsInner({ session }: { session: Session }) {
           )}
           {triggerKind === 'hubspot_deal_stage' && (
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink-700">{t('Étape du deal', 'Deal stage')}</label>
+              <label className="mb-1 block text-sm font-medium text-ink-900">{t('Étape du deal', 'Deal stage')}</label>
               {etatEtapes === 'chargement' ? (
                 <p className="text-xs text-ink-400">{t('Lecture des étapes du portail…', 'Reading portal stages…')}</p>
               ) : etatEtapes === 'non_connecte' ? (
-                <p className="text-xs text-amber-700">
+                <p className="text-xs text-alerte-700">
                   {t(
                     'Aucun portail HubSpot n’est relié à cet espace. Connecte HubSpot depuis l’Accueil, puis reviens ici.',
                     'No HubSpot portal is linked to this workspace. Connect HubSpot from the Home page, then come back here.',
                   )}
                 </p>
               ) : etatEtapes === 'erreur' ? (
-                <p className="text-xs text-red-700">
+                <p className="text-xs text-danger-700">
                   {t('Les étapes n’ont pas pu être lues. Réessaie dans un instant.', 'Stages could not be read. Try again shortly.')}
                 </p>
               ) : etapes.length === 0 ? (
-                <p className="text-xs text-amber-700">{t('Ce portail n’a aucune étape de deal.', 'This portal has no deal stage.')}</p>
+                <p className="text-xs text-alerte-700">{t('Ce portail n’a aucune étape de deal.', 'This portal has no deal stage.')}</p>
               ) : (
                 <select value={dealStageKey} onChange={(e) => setDealStageKey(e.target.value)} data-testid="automation-deal-stage" className={inputCls}>
                   <option value="">{t('Choisir une étape…', 'Choose a stage…')}</option>
@@ -436,7 +438,7 @@ function AutomationsInner({ session }: { session: Session }) {
           )}
           {triggerKind === 'tag_added' && (
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink-700">{t('Étiquette déclencheuse', 'Triggering tag')}</label>
+              <label className="mb-1 block text-sm font-medium text-ink-900">{t('Étiquette déclencheuse', 'Triggering tag')}</label>
               <input value={tag} onChange={(e) => setTag(e.target.value)} data-testid="automation-tag" className={inputCls} placeholder={t('rappeler', 'callback')} />
               <p className="mt-1 text-xs text-ink-400">
                 {t(
@@ -449,7 +451,7 @@ function AutomationsInner({ session }: { session: Session }) {
           {triggerKind === 'conversation_analyzed' && (
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm font-medium text-ink-700">{t('Ressenti du client', 'Customer sentiment')}</label>
+                <label className="mb-1 block text-sm font-medium text-ink-900">{t('Ressenti du client', 'Customer sentiment')}</label>
                 <select value={sentiment} onChange={(e) => setSentiment(e.target.value as '' | 'positif' | 'neutre' | 'negatif')} data-testid="automation-sentiment" className={inputCls}>
                   <option value="negatif">{t('négatif', 'negative')}</option>
                   <option value="neutre">{t('neutre', 'neutral')}</option>
@@ -458,7 +460,7 @@ function AutomationsInner({ session }: { session: Session }) {
                 </select>
               </div>
               <div className="flex items-end">
-                <label className="flex items-center gap-2 pb-1.5 text-sm text-ink-700">
+                <label className="flex items-center gap-2 pb-1.5 text-sm text-ink-900">
                   <input type="checkbox" checked={unresolvedOnly} onChange={(e) => setUnresolvedOnly(e.target.checked)} className="h-4 w-4" />
                   {t('seulement si la demande n’a pas été résolue', 'only if the request was not resolved')}
                 </label>
@@ -469,7 +471,7 @@ function AutomationsInner({ session }: { session: Session }) {
                   'Analysis runs once the conversation has gone idle: this trigger is therefore delayed, not immediate. As the customer is no longer writing, the scenario must start with a template send.',
                 )}
               </p>
-              <p className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-800 sm:col-span-2">
+              <p className="rounded-lg border border-alerte-300 bg-alerte-50 px-2.5 py-2 text-xs text-alerte-800 sm:col-span-2">
                 {t(
                   'Ce déclencheur repose sur l’analyse de conversation. Si elle n’est pas activée sur ton compte, l’automation s’affichera « active » mais ne partira jamais : vérifie-le dans Performance Lab > Analyse des conversations avant de compter dessus.',
                   'This trigger relies on conversation analysis. If it is not enabled on your account, the automation will show as "enabled" but will never run: check Performance Lab > Conversation analysis before relying on it.',
@@ -480,12 +482,12 @@ function AutomationsInner({ session }: { session: Session }) {
           {triggerKind === 'keyword' && (
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm font-medium text-ink-700">{t('Mots-clés (séparés par une virgule)', 'Keywords (comma-separated)')}</label>
+                <label className="mb-1 block text-sm font-medium text-ink-900">{t('Mots-clés (séparés par une virgule)', 'Keywords (comma-separated)')}</label>
                 <input value={keywords} onChange={(e) => setKeywords(e.target.value)} data-testid="automation-keywords" className={inputCls} placeholder={t('rdv, rendez-vous', 'appointment, booking')} />
                 <p className="mt-1 text-xs text-ink-400">{t('La casse et les accents sont ignorés.', 'Case and accents are ignored.')}</p>
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-ink-700">{t('Correspondance', 'Matching')}</label>
+                <label className="mb-1 block text-sm font-medium text-ink-900">{t('Correspondance', 'Matching')}</label>
                 <select value={mode} onChange={(e) => setMode(e.target.value as 'contains' | 'equals')} className={inputCls}>
                   <option value="contains">{t('le message contient le mot-clé', 'the message contains the keyword')}</option>
                   <option value="equals">{t('le message est exactement le mot-clé', 'the message is exactly the keyword')}</option>
@@ -494,9 +496,9 @@ function AutomationsInner({ session }: { session: Session }) {
             </div>
           )}
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink-700">{t('Alors lancer le scénario', 'Then start the scenario')}</label>
+            <label className="mb-1 block text-sm font-medium text-ink-900">{t('Alors lancer le scénario', 'Then start the scenario')}</label>
             {workflows.length === 0 ? (
-              <p className="text-xs text-amber-700">{t('Aucun scénario. Crée-en un dans le menu « Scénario ».', 'No scenario yet. Create one from the "Scenario" menu.')}</p>
+              <p className="text-xs text-alerte-700">{t('Aucun scénario. Crée-en un dans le menu « Scénario ».', 'No scenario yet. Create one from the "Scenario" menu.')}</p>
             ) : (
               <select value={workflowId} onChange={(e) => setWorkflowId(e.target.value)} data-testid="automation-workflow" className={inputCls}>
                 <option value="">{t('Choisir un scénario…', 'Choose a scenario…')}</option>
@@ -509,9 +511,9 @@ function AutomationsInner({ session }: { session: Session }) {
             )}
           </div>
           <div className="flex items-center gap-2 pt-1">
-            <button onClick={() => { void submit(); }} disabled={!canSubmit || busy} data-testid="automation-submit" className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-40">
+            <Bouton enCours={busy} onClick={() => { void submit(); }} disabled={!canSubmit || busy} data-testid="automation-submit">
               {busy ? t('Création…', 'Creating…') : t('Créer (désactivée)', 'Create (disabled)')}
-            </button>
+            </Bouton>
             <button onClick={() => setCreating(false)} className="text-sm text-ink-500 hover:underline">{t('Annuler', 'Cancel')}</button>
             <span className="text-xs text-ink-400">{t('Elle ne partira qu’une fois activée.', 'It will only run once enabled.')}</span>
           </div>
@@ -525,9 +527,9 @@ function AutomationsInner({ session }: { session: Session }) {
           {t('Aucune automation. Ajoutes-en une pour qu’un scénario se lance tout seul.', 'No automation yet. Add one so a scenario starts on its own.')}
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white">
           <table className="w-full text-sm">
-            <thead className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-500">
+            <thead className="border-b border-ink-100 text-left text-xs text-ink-500">
               <tr>
                 <th className="px-4 py-2 font-medium">{t('Nom', 'Name')}</th>
                 <th className="px-4 py-2 font-medium">{t('Quand', 'When')}</th>
@@ -539,20 +541,20 @@ function AutomationsInner({ session }: { session: Session }) {
             <tbody>
               {items.map((a) => (
                 <tr key={a.id} className="border-b border-ink-50 last:border-0">
-                  <td className="px-4 py-2 font-medium text-ink-800">{a.name}</td>
-                  <td className="px-4 py-2 text-ink-600">{describeTrigger(a)}</td>
-                  <td className="px-4 py-2 text-ink-600">{wfName(a.workflowId)}</td>
+                  <td className="px-4 py-2 font-medium text-ink-900">{a.name}</td>
+                  <td className="px-4 py-2 text-ink-500">{describeTrigger(a)}</td>
+                  <td className="px-4 py-2 text-ink-500">{wfName(a.workflowId)}</td>
                   <td className="px-4 py-2">
                     <button
                       onClick={() => { void toggle(a); }}
                       data-testid={`automation-toggle-${a.id}`}
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${a.enabled ? 'bg-mint-50 text-mint-700' : 'bg-ink-100 text-ink-500'}`}
+                      className={`rounded-full px-2 py-0.5 text-xs font-medium transition-colors duration-150 ${a.enabled ? 'bg-succes-50 text-succes-700 hover:bg-succes-100' : 'bg-ink-100 text-ink-500 hover:bg-ink-200'}`}
                     >
                       {a.enabled ? t('active', 'enabled') : t('désactivée', 'disabled')}
                     </button>
                   </td>
                   <td className="px-4 py-2 text-right">
-                    <button onClick={() => { void remove(a); }} className="text-xs text-coral hover:underline">{t('Supprimer', 'Delete')}</button>
+                    <button onClick={() => { void remove(a); }} className="text-xs text-danger hover:underline">{t('Supprimer', 'Delete')}</button>
                   </td>
                 </tr>
               ))}

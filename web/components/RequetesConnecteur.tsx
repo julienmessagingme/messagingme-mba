@@ -12,6 +12,7 @@ import {
 } from '@/lib/api-agent-requetes';
 import { lireGabarit, pastillesDe } from '@/lib/gabarit-pastilles';
 import { lireChemin } from '@/lib/chemin-relatif';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * METTRE AU POINT UN APPEL vers le système du client, et l'ÉPROUVER avant de l'ouvrir aux agents.
@@ -128,7 +129,7 @@ export function RequetesConnecteur({ tenantId, sources, sourceFiltre }: {
     <div className="flex flex-col gap-3" data-testid="requetes-bloc">
       <div>
         <h2 className="text-base font-semibold text-ink-900">{t('Appels API', 'API calls')}</h2>
-        <p className="mt-1 text-sm text-ink-600">
+        <p className="mt-1 text-sm text-ink-500">
           {t(
             'Mettez un appel au point une fois, éprouvez-le avec le bouton Essayer, puis ouvrez-le à vos agents dans leur onglet Outils. Un même appel sert à plusieurs agents.',
             'Set up a call once, test it with the Try button, then open it to your agents in their Tools tab. The same call serves several agents.',
@@ -155,8 +156,8 @@ export function RequetesConnecteur({ tenantId, sources, sourceFiltre }: {
           {visibles.map((r) => (
             <div key={r.id} className={`${cardCls} flex flex-col gap-2`} data-testid={`requete-${r.id}`}>
               <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="text-sm font-medium text-ink-800">
-                  <span className="mr-2 rounded bg-ink-100 px-1.5 py-0.5 font-mono text-[11px]">{r.methode}</span>
+                <p className="text-sm font-medium text-ink-900">
+                  <span className="mr-2 rounded bg-ink-100 px-1.5 py-0.5 font-mono text-xs">{r.methode}</span>
                   {r.label}
                   {/* ⚠️ IL Y AVAIT ICI UN BADGE « à finir » (2026-09-15, matin), retiré l'après-midi même
                       avec la migration 0150. Il signalait un appel sans champ de réponse, sur l'idée que tout
@@ -188,7 +189,7 @@ export function RequetesConnecteur({ tenantId, sources, sourceFiltre }: {
                   disabled={busy || r.outils > 0}
                   title={r.outils > 0 ? t('Retirez-le d’abord des agents qui l’utilisent.', 'Remove it from the agents using it first.') : ''}
                   onClick={() => agir(async () => { await supprimerRequete(tenantId, r.id); setEdite(null); })}
-                  className="text-coral hover:underline disabled:cursor-not-allowed disabled:text-ink-300 disabled:no-underline"
+                  className="text-danger hover:underline disabled:cursor-not-allowed disabled:text-ink-400 disabled:no-underline"
                 >
                   {t('Supprimer', 'Delete')}
                 </button>
@@ -323,28 +324,28 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
   const problemeChemin = lireChemin(brouillon.chemin, sources.find((x) => x.id === brouillon.sourceId)?.baseUrl ?? '');
 
   const ongletCls = (o: Onglet): string =>
-    `border-b-2 px-2 pb-1 text-xs ${onglet === o ? 'border-brand-500 font-medium text-brand-700' : 'border-transparent text-ink-500 hover:text-ink-700'}`;
+    `border-b-2 px-2 pb-1 text-xs ${onglet === o ? 'border-brand-500 font-medium text-brand-700' : 'border-transparent text-ink-500 hover:text-ink-900'}`;
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-ink-200 p-3">
       <div className="flex flex-wrap items-end gap-2">
-        <label className="text-xs text-ink-600">
+        <label className="text-xs text-ink-500">
           {t('Nom de l’appel', 'Call name')}
           <input className={`${inputCls} mt-1 w-56`} data-testid="requete-label" value={brouillon.label} onChange={(e) => maj({ label: e.target.value })} placeholder={t('Chercher une commande', 'Find an order')} />
         </label>
-        <label className="text-xs text-ink-600">
+        <label className="text-xs text-ink-500">
           {t('Système', 'System')}
           <select className={`${inputCls} mt-1 w-40`} data-testid="requete-source" value={brouillon.sourceId} onChange={(e) => maj({ sourceId: e.target.value })}>
             {sources.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
           </select>
         </label>
-        <label className="text-xs text-ink-600">
+        <label className="text-xs text-ink-500">
           {t('Méthode', 'Method')}
           <select className={`${inputCls} mt-1 w-28`} data-testid="requete-methode" value={brouillon.methode} onChange={(e) => maj({ methode: e.target.value as MethodeRequete })}>
             {METHODES.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
         </label>
-        <label className="min-w-[16rem] flex-1 text-xs text-ink-600">
+        <label className="min-w-[16rem] flex-1 text-xs text-ink-500">
           {t('Chemin (relatif au système)', 'Path (relative to the system)')}
           <input
             className={`${inputCls} mt-1 font-mono`} data-testid="requete-chemin" value={brouillon.chemin}
@@ -352,7 +353,7 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
             onChange={(e) => maj({ chemin: e.target.value })} placeholder="/commandes/{{ref}}"
           />
         </label>
-        <button
+        <Bouton variante="secondaire" taille="petite" enCours={essai}
           data-testid="requete-essayer"
           // ⚠️ IL MANQUE SEULEMENT L'ADRESSE : le serveur assemble l'appel avec le MÊME code que l'exécution,
           // donc ce qui passe ici passera en conversation. Ce qu'on exige avant de laisser essayer est donc
@@ -360,10 +361,9 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
           disabled={busy || essai || brouillon.sourceId === '' || brouillon.chemin.trim() === ''}
           title={brouillon.sourceId !== '' && brouillon.chemin.trim() !== '' ? '' : t('Choisissez un système et un chemin.', 'Pick a system and a path.')}
           onClick={() => { void essayer(); }}
-          className="rounded-lg border border-brand-500 px-3 py-1.5 text-xs font-semibold text-brand-600 hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-300"
         >
           {essai ? t('Essai…', 'Trying…') : t('Essayer', 'Try')}
-        </button>
+        </Bouton>
       </div>
 
       {/**
@@ -375,7 +375,7 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
         */}
       {problemeChemin.probleme !== null && (
         <div className="flex flex-wrap items-center gap-2" data-testid="chemin-avertissement">
-          <p className="text-[11px] text-coral">
+          <p className="text-xs text-danger">
             {problemeChemin.probleme === 'base-recopiee'
               ? t(
                 `Le chemin recommence par l’adresse du système. Gardez seulement ce qui la suit : ${problemeChemin.propose ?? ''}`,
@@ -387,12 +387,11 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
               )}
           </p>
           {problemeChemin.propose !== null && (
-            <button
+            <Bouton variante="secondaire" taille="petite"
               data-testid="chemin-corriger" onClick={() => maj({ chemin: problemeChemin.propose! })}
-              className="rounded border border-brand-500 px-2 py-0.5 text-[11px] font-semibold text-brand-600 hover:bg-brand-50"
             >
               {t('Corriger', 'Fix it')}
-            </button>
+            </Bouton>
           )}
         </div>
       )}
@@ -416,16 +415,16 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
         */}
       {onglet !== 'reponse' && (
         <div className="flex flex-wrap items-center gap-1" data-testid="pastilles-variables">
-          <span className="text-[11px] text-ink-500">{t('Insérer :', 'Insert:')}</span>
+          <span className="text-xs text-ink-500">{t('Insérer :', 'Insert:')}</span>
           {brouillon.variables.filter((v) => v.nom.trim() !== '').map((v) => (
-            <button key={v.nom} data-testid={`pastille-${v.nom}`} onClick={() => insererVariable(v.nom)} className="rounded bg-brand-100 px-1.5 py-0.5 text-[11px] font-medium text-brand-700 hover:bg-brand-200">
+            <button key={v.nom} data-testid={`pastille-${v.nom}`} onClick={() => insererVariable(v.nom)} className="rounded bg-brand-100 px-1.5 py-0.5 text-xs font-medium text-brand-700 hover:bg-brand-200">
               {v.nom}
             </button>
           ))}
           {brouillon.variables.every((v) => v.nom.trim() === '') && (
             <button
               data-testid="pastilles-vides" onClick={() => setOnglet('variables')}
-              className="text-[11px] text-brand-600 hover:underline"
+              className="text-xs text-brand-600 hover:underline"
             >
               {t(
                 'aucune donnée déclarée. Commencez par l’onglet « Données envoyées ».',
@@ -444,7 +443,7 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
         * d'URL et les en-têtes en portent aussi, et n'en couvrir qu'un serait un demi-contrôle.
         */}
       {onglet !== 'reponse' && nonDeclarees.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1 text-[11px] text-amber-700" data-testid="pastilles-inconnues">
+        <div className="flex flex-wrap items-center gap-1 text-xs text-alerte-700" data-testid="pastilles-inconnues">
           <span>{t('Utilisées mais pas déclarées :', 'Used but not declared:')}</span>
           {nonDeclarees.map((nom) => (
             <button
@@ -453,7 +452,7 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
                 maj({ variables: [...brouillon.variables.filter((v) => v.nom.trim() !== ''), { nom, type: 'string', origine: { type: 'modele' } }] });
                 setOnglet('variables');
               }}
-              className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800 hover:bg-amber-200"
+              className="rounded bg-alerte-100 px-1.5 py-0.5 font-medium text-alerte-800 hover:bg-alerte-200"
             >
               {t(`déclarer ${nom}`, `declare ${nom}`)}
             </button>
@@ -474,7 +473,7 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
       {onglet === 'corps' && <OngletCorps brouillon={brouillon} maj={maj} cible={cible} />}
       {onglet === 'entetes' && (
         <>
-          <p className="text-[11px] text-ink-500">
+          <p className="text-xs text-ink-500">
             {t(
               `L’authentification se déclare sur le système, pas ici. Ces en-têtes sont refusés : ${catalogue.entetesReserves.join(', ')}.`,
               `Authentication is declared on the system, not here. These headers are rejected: ${catalogue.entetesReserves.join(', ')}.`,
@@ -491,7 +490,7 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
       )}
       {onglet === 'reponse' && <OngletReponse brouillon={brouillon} maj={maj} resultat={resultat} />}
 
-      <button
+      <Bouton taille="petite"
         data-testid="requete-enregistrer"
         /**
          * 🔴 UN APPEL À MOITIÉ ÉCRIT S'ENREGISTRE, depuis le 2026-09-15. Ce bouton exigeait un champ de
@@ -507,10 +506,10 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
             'Saved as a draft: you will need to tick a field in the Response tab before opening it to an agent.')
           : ''}
         onClick={onEnregistrer}
-        className="self-start rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+        className="self-start"
       >
         {t('Enregistrer', 'Save')}
-      </button>
+      </Bouton>
     </div>
   );
 }
@@ -535,7 +534,7 @@ function OngletVariables({ brouillon, maj, champs, catalogue }: {
 
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-[11px] text-ink-500">
+      <p className="text-xs text-ink-500">
         {t(
           'Chaque donnée envoyée porte un nom, et vous dites d’où vient sa valeur. Insérez-la ensuite dans le chemin, les paramètres, les en-têtes ou le corps avec les pastilles.',
           'Each piece of data sent has a name, and you say where its value comes from. Then insert it into the path, params, headers or body with the chips.',
@@ -549,7 +548,7 @@ function OngletVariables({ brouillon, maj, champs, catalogue }: {
       <div className="overflow-x-auto p-0.5">
       <div className="flex w-max flex-col gap-2">
       {brouillon.variables.length > 0 && (
-        <div className="flex gap-2 text-[11px] font-medium text-ink-500" data-testid="var-intitules">
+        <div className="flex gap-2 text-xs font-medium text-ink-500" data-testid="var-intitules">
           <span className="w-32">{t('Nom de la donnée', 'Data name')}</span>
           <span className="w-56">{t('D’où vient sa valeur', 'Where its value comes from')}</span>
           <span className="w-28">{t('Type', 'Type')}</span>
@@ -596,7 +595,7 @@ function OngletVariables({ brouillon, maj, champs, catalogue }: {
             <option value="integer">{t('entier', 'integer')}</option>
             <option value="boolean">{t('oui/non', 'yes/no')}</option>
           </select>
-          <label className="flex w-40 items-center gap-1 text-[11px] text-ink-600">
+          <label className="flex w-40 items-center gap-1 text-xs text-ink-500">
             <input type="checkbox" data-testid={`var-requis-${i}`} checked={v.requis === true} onChange={(e) => changer(i, { requis: e.target.checked })} />
             {t('sans elle, on n’appelle pas', 'without it, no call')}
           </label>
@@ -606,7 +605,7 @@ function OngletVariables({ brouillon, maj, champs, catalogue }: {
             placeholder={t('valeur de test', 'test value')} aria-label={t('Valeur d’essai', 'Test value')}
             onChange={(e) => maj({ valeursTest: { ...brouillon.valeursTest, [v.nom]: e.target.value } })}
           />
-          <button data-testid={`var-retirer-${i}`} onClick={() => maj({ variables: brouillon.variables.filter((_, j) => j !== i) })} className="text-xs text-coral hover:underline">
+          <button data-testid={`var-retirer-${i}`} onClick={() => maj({ variables: brouillon.variables.filter((_, j) => j !== i) })} className="text-xs text-danger hover:underline">
             {t('retirer', 'remove')}
           </button>
         </div>
@@ -645,7 +644,7 @@ function OngletCorps({ brouillon, maj, cible }: {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-3 text-xs text-ink-700">
+      <div className="flex flex-wrap items-center gap-3 text-xs text-ink-900">
         {(['aucun', 'champs', 'json'] as const).map((m) => (
           <label key={m} className="flex items-center gap-1">
             <input
@@ -662,7 +661,7 @@ function OngletCorps({ brouillon, maj, cible }: {
 
       {mode === 'champs' && (
         <>
-          <p className="text-[11px] text-ink-500">
+          <p className="text-xs text-ink-500">
             {t('Une ligne par donnée à envoyer. Aucune accolade à écrire.', 'One line per piece of data to send. No braces to write.')}
           </p>
           <Paires
@@ -678,7 +677,7 @@ function OngletCorps({ brouillon, maj, cible }: {
 
       {mode === 'json' && (
         <>
-          <p className="text-[11px] text-ink-500">
+          <p className="text-xs text-ink-500">
             {t('Collez le corps attendu par votre API et remplacez les valeurs variables par une pastille.', 'Paste the body your API expects and replace variable values with a chip.')}
           </p>
           <textarea
@@ -711,7 +710,7 @@ function ApercuJson({ gabarit, onReparer }: { gabarit: string; onReparer: (repar
   if (gabarit.trim() === '') return null;
   try {
     JSON.parse(gabarit);
-    return <p className="text-[11px] text-emerald-700" data-testid="corps-json-etat">{t('JSON valide', 'Valid JSON')}</p>;
+    return <p className="text-xs text-succes-700" data-testid="corps-json-etat">{t('JSON valide', 'Valid JSON')}</p>;
   } catch {
     const { horsGuillemets, repare } = lireGabarit(gabarit);
     // Le correctif n'est proposé que s'il MARCHE : un gabarit cassé pour une autre raison (accolade
@@ -721,22 +720,21 @@ function ApercuJson({ gabarit, onReparer }: { gabarit: string; onReparer: (repar
       try { JSON.parse(repare); reparable = true; } catch { reparable = false; }
     }
     if (!reparable) {
-      return <p className="text-[11px] text-coral" data-testid="corps-json-etat">{t('Ce n’est pas du JSON valide.', 'This is not valid JSON.')}</p>;
+      return <p className="text-xs text-danger" data-testid="corps-json-etat">{t('Ce n’est pas du JSON valide.', 'This is not valid JSON.')}</p>;
     }
     return (
       <div className="flex flex-wrap items-center gap-2" data-testid="corps-json-etat">
-        <p className="text-[11px] text-coral">
+        <p className="text-xs text-danger">
           {t(
             `Une pastille se met entre guillemets : "{{${horsGuillemets[0]!}}}". Elle garde son type déclaré, un nombre part bien en nombre.`,
             `A chip goes inside quotes: "{{${horsGuillemets[0]!}}}". It keeps its declared type, a number is still sent as a number.`,
           )}
         </p>
-        <button
+        <Bouton variante="secondaire" taille="petite"
           data-testid="corps-json-reparer" onClick={() => onReparer(repare)}
-          className="rounded border border-brand-500 px-2 py-0.5 text-[11px] font-semibold text-brand-600 hover:bg-brand-50"
         >
           {t('Corriger', 'Fix it')}
-        </button>
+        </Bouton>
       </div>
     );
   }
@@ -759,7 +757,7 @@ function Paires({ lignes, onChange, libelles, testidPrefixe, cible }: {
       <div className="overflow-x-auto p-0.5">
       <div className="flex w-max flex-col gap-2">
       {lignes.length > 0 && (
-        <div className="flex gap-2 text-[11px] font-medium text-ink-500" data-testid={`${testidPrefixe}-intitules`}>
+        <div className="flex gap-2 text-xs font-medium text-ink-500" data-testid={`${testidPrefixe}-intitules`}>
           <span className="w-40">{libelles[0]}</span>
           <span className="w-64">{libelles[1]}</span>
         </div>
@@ -777,7 +775,7 @@ function Paires({ lignes, onChange, libelles, testidPrefixe, cible }: {
             onFocus={(e) => { cible.current = e.currentTarget; }}
             onChange={(e) => onChange(lignes.map((x, j) => (j === i ? { ...x, valeur: e.target.value } : x)))}
           />
-          <button data-testid={`${testidPrefixe}-retirer-${i}`} onClick={() => onChange(lignes.filter((_, j) => j !== i))} className="text-xs text-coral hover:underline">
+          <button data-testid={`${testidPrefixe}-retirer-${i}`} onClick={() => onChange(lignes.filter((_, j) => j !== i))} className="text-xs text-danger hover:underline">
             {t('retirer', 'remove')}
           </button>
         </div>
@@ -835,28 +833,28 @@ function OngletReponse({ brouillon, maj, resultat }: {
 
       {resultat?.ok && (
         <>
-          <p className="text-xs text-ink-600" data-testid="reponse-statut">
+          <p className="text-xs text-ink-500" data-testid="reponse-statut">
             {t(`HTTP ${resultat.httpStatus} en ${resultat.dureeMs} ms`, `HTTP ${resultat.httpStatus} in ${resultat.dureeMs} ms`)}
           </p>
           {resultat.envoye && (
-            <p className="break-all text-[11px] text-ink-500" data-testid="reponse-envoye">
+            <p className="break-all text-xs text-ink-500" data-testid="reponse-envoye">
               {resultat.envoye.methode} {resultat.envoye.url}
               {resultat.envoye.corps ? ` ${resultat.envoye.corps}` : ''}
             </p>
           )}
           {/* Les en-têtes PARTIS, variables substituées. Jamais ceux de la source : le serveur ne les rend pas. */}
           {resultat.envoye?.entetes && Object.keys(resultat.envoye.entetes).length > 0 && (
-            <p className="break-all font-mono text-[11px] text-ink-500" data-testid="reponse-envoye-entetes">
+            <p className="break-all font-mono text-xs text-ink-500" data-testid="reponse-envoye-entetes">
               {Object.entries(resultat.envoye.entetes).map(([k, v]) => <span key={k} className="block">{k}: {v}</span>)}
             </p>
           )}
-          <pre className="max-h-48 overflow-auto rounded-lg bg-ink-50 p-2 text-[11px] text-ink-700" data-testid="reponse-apercu">{resultat.apercu}</pre>
+          <pre className="max-h-48 overflow-auto rounded-lg bg-ink-50 p-2 text-xs text-ink-900" data-testid="reponse-apercu">{resultat.apercu}</pre>
           <div className="flex flex-col gap-1" data-testid="reponse-chemins">
             {(resultat.chemins ?? []).length === 0 ? (
               <p className="text-xs text-ink-500">{t('Aucun champ lisible dans cette réponse.', 'No readable field in this response.')}</p>
             ) : (
               (resultat.chemins ?? []).map((c) => (
-                <label key={c} className="flex items-center gap-2 text-xs text-ink-700">
+                <label key={c} className="flex items-center gap-2 text-xs text-ink-900">
                   <input type="checkbox" data-testid={`chemin-${c}`} checked={brouillon.outputPaths.includes(c)} onChange={() => basculer(c)} />
                   <code>{c}</code>
                 </label>
@@ -867,7 +865,7 @@ function OngletReponse({ brouillon, maj, resultat }: {
       )}
 
       {brouillon.outputPaths.length > 0 && (
-        <p className="text-xs text-ink-600" data-testid="reponse-gardes">
+        <p className="text-xs text-ink-500" data-testid="reponse-gardes">
           {t('L’agent lira :', 'The agent will read:')} <code>{brouillon.outputPaths.join(', ')}</code>
         </p>
       )}

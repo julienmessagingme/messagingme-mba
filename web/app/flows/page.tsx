@@ -8,6 +8,8 @@ import type { Session } from '@/lib/session';
 import { listFlows, publishFlow, duplicateFlow, deleteFlow, refreshFlows, type FlowSummary } from '@/lib/api';
 import { messageRafraichissement } from '@/lib/flows-refresh';
 import { useT } from '@/lib/i18n';
+import { Bouton } from '@/components/Bouton';
+import { IntroPage, TitrePage } from '@/components/TitrePage';
 
 export default function FlowsPage() {
   return <AppShell active="flows">{(session) => <FlowsInner session={session} />}</AppShell>;
@@ -110,17 +112,17 @@ function FlowsInner({ session }: { session: Session }) {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Formulaires', 'Forms')}</h2>
-        <p className="mt-1 text-sm text-ink-500">{t("Formulaires WhatsApp riches (titres, images, tous types de champs : saisie, choix, date, consentement) avec bouton final personnalisable : le client remplit dans WhatsApp, chaque champ se range dans une fiche contact, la réponse arrive dans l'inbox. Attache un formulaire publié à un template via un bouton « Flow ».", 'Rich WhatsApp forms (titles, images, all field types: text input, choice, date, consent) with a customizable final button: the customer fills it in inside WhatsApp, each field is saved to a contact record, and the response lands in the inbox. Attach a published form to a template through a “Flow” button.')}</p>
+        <TitrePage>{t('Formulaires', 'Forms')}</TitrePage>
+        <IntroPage>{t("Formulaires WhatsApp riches (titres, images, tous types de champs : saisie, choix, date, consentement) avec bouton final personnalisable : le client remplit dans WhatsApp, chaque champ se range dans une fiche contact, la réponse arrive dans l'inbox. Attache un formulaire publié à un template via un bouton « Flow ».", 'Rich WhatsApp forms (titles, images, all field types: text input, choice, date, consent) with a customizable final button: the customer fills it in inside WhatsApp, each field is saved to a contact record, and the response lands in the inbox. Attach a published form to a template through a “Flow” button.')}</IntroPage>
       </div>
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-      {note && <p data-testid="flows-note-rafraichissement" className="rounded-lg bg-brand-50 px-3 py-2 text-sm text-ink-700">{note}</p>}
+      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+      {note && <p data-testid="flows-note-rafraichissement" className="rounded-lg bg-brand-50 px-3 py-2 text-sm text-ink-900">{note}</p>}
 
       {editing ? (
-        <div className="rounded-2xl border border-brand-200 bg-brand-50/40 p-5 shadow-sm">
+        <div className="rounded-2xl border border-brand-200 bg-brand-50/40 p-5">
           <div className="mb-3 flex items-center justify-between">
             <div className="text-sm font-semibold text-ink-900">{t(`Modifier « ${editing.name} »`, `Edit “${editing.name}”`)} <span className="ml-2 text-xs font-normal text-ink-400">({t('brouillon', 'draft')})</span></div>
-            <button onClick={() => setEditing(null)} className="text-xs text-ink-400 hover:text-ink-700">{t('Fermer', 'Close')}</button>
+            <button onClick={() => setEditing(null)} className="text-xs text-ink-400 hover:text-ink-900">{t('Fermer', 'Close')}</button>
           </div>
           <FlowBuilder
             key={editing.id}
@@ -135,10 +137,10 @@ function FlowsInner({ session }: { session: Session }) {
           />
         </div>
       ) : creating ? (
-        <div className="rounded-2xl border border-brand-200 bg-brand-50/40 p-5 shadow-sm">
+        <div className="rounded-2xl border border-brand-200 bg-brand-50/40 p-5">
           <div className="mb-3 flex items-center justify-between">
             <div className="text-sm font-semibold text-ink-900">{t('Nouveau formulaire', 'New form')}</div>
-            <button onClick={() => setCreating(false)} className="text-xs text-ink-400 hover:text-ink-700">{t('Fermer', 'Close')}</button>
+            <button onClick={() => setCreating(false)} className="text-xs text-ink-400 hover:text-ink-900">{t('Fermer', 'Close')}</button>
           </div>
           <FlowBuilder tenantId={session.tenantId} onCreated={() => { void load(); setCreating(false); }} />
         </div>
@@ -155,17 +157,16 @@ function FlowsInner({ session }: { session: Session }) {
             <div className="flex items-center gap-2">
               {/* La liste vient de NOTRE base : un formulaire créé dans WhatsApp Manager, ou publié là-bas,
                   n'arrive ici que par cette réconciliation. */}
-              <button
+              <Bouton variante="secondaire" enCours={refreshing}
                 onClick={() => void refresh()}
                 disabled={refreshing}
                 title={t('Va chercher les formulaires du compte WhatsApp Manager et met la liste à jour', 'Fetches the forms from the WhatsApp Manager account and updates the list')}
-                className="rounded-lg border border-ink-200 px-3 py-1.5 text-sm font-medium text-ink-700 transition hover:border-brand-300 hover:text-brand-600 disabled:opacity-50"
               >
                 {refreshing ? t('Rafraîchissement…', 'Refreshing…') : t('Rafraîchir', 'Refresh')}
-              </button>
+              </Bouton>
               {/* Le compte-rendu du rafraîchissement parle de la LISTE : le laisser au-dessus du constructeur
                   en ferait un message sans objet. */}
-              <button onClick={() => { setNote(null); setCreating(true); }} className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600">{t('+ Créer un formulaire', '+ Create a form')}</button>
+              <Bouton onClick={() => { setNote(null); setCreating(true); }}>{t('+ Créer un formulaire', '+ Create a form')}</Bouton>
             </div>
           </div>
           {loading ? (
@@ -193,32 +194,32 @@ function FlowCard({ flow: f, onPreview, onEdit, onPublish, onDuplicate, onDelete
   // Miniature = écran 1 seulement (crop) ; pas de resolveLabel -> pas de badge de condition dans la miniature.
   const first = f.screens && f.screens.length > 0 ? f.screens[0] : undefined;
   return (
-    <div className="flex flex-col rounded-2xl border border-ink-200 bg-white p-3 shadow-sm transition hover:border-brand-300">
+    <div className="flex flex-col rounded-2xl border border-ink-200 bg-white p-3 transition-colors duration-150 hover:border-brand-300">
       <button onClick={onPreview} title={t("Voir l'aperçu", 'View preview')} className="mb-2 block overflow-hidden rounded-xl border border-ink-100 bg-ink-50">
         <div className="pointer-events-none h-44 overflow-hidden">
           {first
             ? <FlowScreen elements={fromFlowElements(first.elements)} cta={f.cta} title={first.title || f.name} />
-            : <div className="flex h-full items-center justify-center px-3 text-center text-[11px] text-ink-400">{t('Structure inconnue : aperçu indisponible', 'Unknown structure: preview unavailable')}</div>}
+            : <div className="flex h-full items-center justify-center px-3 text-center text-xs text-ink-400">{t('Structure inconnue : aperçu indisponible', 'Unknown structure: preview unavailable')}</div>}
         </div>
       </button>
       <div className="flex items-center gap-2">
         <button onClick={onPreview} className="min-w-0 flex-1 truncate text-left text-sm font-medium text-ink-900 hover:text-brand-600" title={f.name}>{f.name}</button>
         {f.status === 'PUBLISHED'
-          ? <span className="shrink-0 rounded-full bg-mint-50 px-2 py-0.5 text-[11px] font-medium text-mint-700">{t('Publié', 'Published')}</span>
-          : <span className="shrink-0 rounded-full bg-gold/10 px-2 py-0.5 text-[11px] font-medium text-gold">{t('Brouillon', 'Draft')}</span>}
+          ? <span className="shrink-0 rounded-full bg-succes-50 px-2 py-0.5 text-xs font-medium text-succes-700">{t('Publié', 'Published')}</span>
+          : <span className="shrink-0 rounded-full bg-alerte-50 px-2 py-0.5 text-xs font-medium text-alerte">{t('Brouillon', 'Draft')}</span>}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
         {f.status === 'DRAFT' ? (
           <>
             {first
               ? <button onClick={onEdit} className="font-medium text-brand-600 hover:text-brand-700">{t('Éditer', 'Edit')}</button>
-              : <span className="text-ink-300" title={t("Formulaire non construit dans la console (importé de WhatsApp Manager, ou antérieur au modèle riche) : Meta n'en renvoie pas la structure. À recréer ici pour l'éditer.", 'Form not built in the console (imported from WhatsApp Manager, or predating the rich model): Meta does not return its structure. Recreate it here to edit it.')}>{t('Éditer', 'Edit')}</span>}
+              : <span className="text-ink-400" title={t("Formulaire non construit dans la console (importé de WhatsApp Manager, ou antérieur au modèle riche) : Meta n'en renvoie pas la structure. À recréer ici pour l'éditer.", 'Form not built in the console (imported from WhatsApp Manager, or predating the rich model): Meta does not return its structure. Recreate it here to edit it.')}>{t('Éditer', 'Edit')}</span>}
             <button onClick={onPublish} className="font-medium text-brand-600 hover:text-brand-700">{t('Publier', 'Publish')}</button>
           </>
         ) : (
           <button onClick={onDuplicate} className="font-medium text-brand-600 hover:text-brand-700" title={t('Un formulaire publié est immuable : on en crée une copie modifiable', 'A published form is immutable: an editable copy is created')}>{t('Dupliquer', 'Duplicate')}</button>
         )}
-        <button onClick={onDelete} className="font-medium text-coral hover:text-red-700">{t('Supprimer', 'Delete')}</button>
+        <button onClick={onDelete} className="font-medium text-danger hover:text-danger-700">{t('Supprimer', 'Delete')}</button>
       </div>
     </div>
   );
@@ -235,13 +236,13 @@ function FlowPreviewModal({ flow, onClose }: { flow: FlowSummary; onClose: () =>
   const scr = screens ? screens[cur] : null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-5 shadow-mm-lg" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-start justify-between">
           <div>
             <h3 className="text-sm font-semibold text-ink-900">{flow.name}</h3>
             <p className="text-xs text-ink-400">{flow.status === 'PUBLISHED' ? t('Publié', 'Published') : t('Brouillon', 'Draft')} · {flow.fields.length} {t('champ', 'field')}{flow.fields.length > 1 ? 's' : ''}</p>
           </div>
-          <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-700">×</button>
+          <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-900">×</button>
         </div>
         {!scr ? (
           <p className="text-sm text-ink-500">{flow.fields.length > 0 ? flow.fields.map((f) => f.label).join(', ') : t("Formulaire non construit dans la console : Meta n'en renvoie pas la structure, l'aperçu détaillé est donc indisponible.", 'Form not built in the console: Meta does not return its structure, so the detailed preview is unavailable.')}</p>

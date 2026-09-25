@@ -6,6 +6,8 @@ import type { Session } from '@/lib/session';
 import { listTags, createTag, renameTag, deleteTag, listContacts, type TagCount, type Contact } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { fieldValue } from '@/lib/fields';
+import { Bouton } from '@/components/Bouton';
+import { IntroPage, TitrePage } from '@/components/TitrePage';
 
 export default function TagsPage() {
   return <AppShell active="tags">{(session) => <TagsInner session={session} />}</AppShell>;
@@ -76,10 +78,10 @@ function TagsInner({ session }: { session: Session }) {
   return (
     <div className="max-w-2xl space-y-6">
       <div>
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Étiquettes', 'Tags')}</h2>
-        <p className="mt-1 text-sm text-ink-500">{t('Crée une étiquette réutilisable, ou renomme/supprime (répercuté sur tous les contacts qui la portent).', 'Create a reusable tag, or rename/delete it (applied to every contact that carries it).')}</p>
+        <TitrePage>{t('Étiquettes', 'Tags')}</TitrePage>
+        <IntroPage>{t('Crée une étiquette réutilisable, ou renomme/supprime (répercuté sur tous les contacts qui la portent).', 'Create a reusable tag, or rename/delete it (applied to every contact that carries it).')}</IntroPage>
       </div>
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
       <div className="flex items-center gap-2">
         <input
@@ -89,10 +91,10 @@ function TagsInner({ session }: { session: Session }) {
           placeholder={t('Nouvelle étiquette…', 'New tag…')}
           className="flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
         />
-        <button onClick={create} disabled={newTag.trim() === ''} className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50">{t('Créer une étiquette', 'Create a tag')}</button>
+        <Bouton onClick={create} disabled={newTag.trim() === ''}>{t('Créer une étiquette', 'Create a tag')}</Bouton>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
         <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">{t('Étiquettes', 'Tags')} ({tags.length})</div>
         {loading ? (
           <p className="px-5 py-6 text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
@@ -101,7 +103,7 @@ function TagsInner({ session }: { session: Session }) {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
+              <tr className="border-b border-ink-100 text-left text-xs text-ink-500">
                 <th className="px-5 py-2 font-medium">{t('Étiquette', 'Tag')}</th>
                 <th className="px-5 py-2 font-medium">{t('Contacts', 'Contacts')}</th>
                 <th className="px-5 py-2 text-right font-medium">{t('Actions', 'Actions')}</th>
@@ -122,7 +124,7 @@ function TagsInner({ session }: { session: Session }) {
                     ) : (
                       <span className="inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">{tc.tag}</span>
                     )}
-                    {tc.code && <div className="mt-0.5 font-mono text-[10px] text-ink-300" title={t('Code public (API)', 'Public code (API)')}>{tc.code}</div>}
+                    {tc.code && <div className="mt-0.5 font-mono text-xs text-ink-400" title={t('Code public (API)', 'Public code (API)')}>{tc.code}</div>}
                   </td>
                   <td className="px-5 py-3">
                     {tc.count > 0 ? (
@@ -136,12 +138,12 @@ function TagsInner({ session }: { session: Session }) {
                       {editing === tc.tag ? (
                         <>
                           <button onClick={() => void saveRename(tc.tag)} className="font-medium text-brand-600 hover:text-brand-700">{t('Enregistrer', 'Save')}</button>
-                          <button onClick={() => setEditing(null)} className="text-ink-400 hover:text-ink-700">{t('Annuler', 'Cancel')}</button>
+                          <button onClick={() => setEditing(null)} className="text-ink-400 hover:text-ink-900">{t('Annuler', 'Cancel')}</button>
                         </>
                       ) : (
                         <>
-                          <button onClick={() => { setEditing(tc.tag); setDraft(tc.tag); }} className="text-ink-600 hover:text-ink-900">{t('Renommer', 'Rename')}</button>
-                          <button onClick={() => void remove(tc.tag)} className="text-coral hover:text-coral/80">{t('Supprimer', 'Delete')}</button>
+                          <button onClick={() => { setEditing(tc.tag); setDraft(tc.tag); }} className="text-ink-500 hover:text-ink-900">{t('Renommer', 'Rename')}</button>
+                          <button onClick={() => void remove(tc.tag)} className="text-danger hover:text-danger-500">{t('Supprimer', 'Delete')}</button>
                         </>
                       )}
                     </div>
@@ -174,15 +176,15 @@ function TagContactsModal({ tenantId, tag, onClose }: { tenantId: string; tag: s
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
-      <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-mm-lg" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-start justify-between">
           <div>
             <h3 className="text-sm font-semibold text-ink-900">{t('Contacts du tag', 'Contacts with this tag')}</h3>
             <p className="text-xs text-ink-400"><span className="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">{tag}</span></p>
           </div>
-          <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-700">×</button>
+          <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-900">×</button>
         </div>
-        {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
         {!contacts ? (
           <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
         ) : contacts.length === 0 ? (
@@ -197,7 +199,7 @@ function TagContactsModal({ tenantId, tag, onClose }: { tenantId: string; tag: s
                 </div>
               ))}
             </div>
-            {contacts.length === 500 && <p className="mt-2 text-[11px] text-ink-400">{t('Affichage limité aux 500 premiers contacts.', 'Showing the first 500 contacts only.')}</p>}
+            {contacts.length === 500 && <p className="mt-2 text-xs text-ink-400">{t('Affichage limité aux 500 premiers contacts.', 'Showing the first 500 contacts only.')}</p>}
           </>
         )}
       </div>

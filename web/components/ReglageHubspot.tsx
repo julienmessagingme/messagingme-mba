@@ -8,6 +8,7 @@ import { cardCls } from '@/lib/ui';
 import { Toggle } from '@/components/Toggle';
 import { lireHubspotActif, etatCarteHubspot } from '@/lib/hubspot-actif';
 import { useInstallationHubspot } from '@/lib/hubspot-installation';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * PARAMÈTRES > INTÉGRATIONS > HUBSPOT : l'interrupteur HubSpot de l'espace (migration 0179, design validé par
@@ -90,7 +91,7 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-ink-900">HubSpot</h3>
-          <p className="mt-1 text-sm text-ink-600" data-testid="integration-hubspot-etat">
+          <p className="mt-1 text-sm text-ink-500" data-testid="integration-hubspot-etat">
             {actif === undefined
               ? lecture === 'en_cours'
                 ? t('Lecture…', 'Loading…')
@@ -103,7 +104,7 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
                 : t('Éteint : HubSpot n’apparaît pas sur l’Accueil.', 'Off: HubSpot does not show on the Home page.')}
           </p>
           {relie !== undefined && (
-            <p className="mt-1 text-sm text-ink-600" data-testid="integration-hubspot-portail">
+            <p className="mt-1 text-sm text-ink-500" data-testid="integration-hubspot-portail">
               {relie
                 ? nomPortail
                   ? t(`Relié au portail ${nomPortail}.`, `Linked to portal ${nomPortail}.`)
@@ -127,26 +128,25 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
       </div>
 
       {etat?.extinctionBloquee && (
-        <p className="mt-3 text-sm text-ink-600" data-testid="integration-hubspot-raison">
+        <p className="mt-3 text-sm text-ink-500" data-testid="integration-hubspot-raison">
           {raison}{' '}
           <Link href="/accueil" className="text-brand-600 hover:underline">{t('Aller à l’Accueil', 'Go to Home')}</Link>
         </p>
       )}
 
-      {erreur && <p className="mt-3 text-sm text-coral" data-testid="integration-hubspot-erreur">{erreur}</p>}
+      {erreur && <p className="mt-3 text-sm text-danger" data-testid="integration-hubspot-erreur">{erreur}</p>}
 
       {actif && (
         <div className="mt-4 flex flex-wrap items-center gap-3">
           {etat?.proposerConnexion && (
-            <button
+            <Bouton
               type="button"
               data-testid="integration-hubspot-connecter"
               onClick={() => void ouvrir()}
               disabled={enCours}
-              className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60"
             >
               {t('Connecter HubSpot', 'Connect HubSpot')}
-            </button>
+            </Bouton>
           )}
           <a href="/tuto-hubspot" target="_blank" rel="noopener noreferrer" data-testid="integration-hubspot-tuto" className="text-sm text-brand-600 hover:underline">
             {t('Quoi faire dans HubSpot après la connexion ? (tuto)', 'What to do in HubSpot after connecting? (guide)')}

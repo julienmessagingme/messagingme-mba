@@ -37,8 +37,8 @@ type Nature = 'envoyes' | 'boutons' | 'reponses' | 'liens';
 const NATURES: { cle: Nature; fr: string; en: string; couleur: string; gestesSeuls?: boolean }[] = [
   { cle: 'envoyes', fr: 'Envoyés', en: 'Sent', couleur: 'bg-brand-400' },
   { cle: 'liens', fr: 'Clics lien', en: 'Link clicks', couleur: 'bg-ink-300', gestesSeuls: true },
-  { cle: 'boutons', fr: 'Boutons', en: 'Buttons', couleur: 'bg-mint-400' },
-  { cle: 'reponses', fr: 'Réponses', en: 'Replies', couleur: 'bg-gold' },
+  { cle: 'boutons', fr: 'Boutons', en: 'Buttons', couleur: 'bg-succes-400' },
+  { cle: 'reponses', fr: 'Réponses', en: 'Replies', couleur: 'bg-alerte-500' },
 ];
 
 /**
@@ -120,7 +120,7 @@ export function FunnelNodes({ etapes, titres, devise }: {
             </div>
             {/* Le nom du bloc SOUS ses barres, tronque : un nom long ne doit pas elargir la colonne et
                 desaligner les hauteurs d'un bloc a l'autre. */}
-            <p className="mt-1.5 truncate border-t border-ink-100 pt-1 text-center text-[11px] font-medium text-ink-800"
+            <p className="mt-1.5 truncate border-t border-ink-100 pt-1 text-center text-[11px] font-medium text-ink-900"
               title={titres.get(e.nodeId) ?? e.nodeId}>
               {titres.get(e.nodeId) ?? e.nodeId}
             </p>
@@ -135,7 +135,7 @@ export function FunnelNodes({ etapes, titres, devise }: {
 
       {/* La legende, qui porte la seule reserve du graphe. Sans elle, les quatre couleurs se lisent comme
           quatre mesures de meme nature, et la barre des liens passerait pour un compte de personnes. */}
-      <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-ink-500" data-testid="funnel-legende">
+      <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-500" data-testid="funnel-legende">
         {NATURES.map((n) => (
           <li key={n.cle} className="flex items-center gap-1.5">
             <span className={`inline-block h-2.5 w-2.5 rounded-sm ${n.couleur} ${n.gestesSeuls ? 'opacity-70' : ''}`} aria-hidden="true" />

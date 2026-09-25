@@ -11,6 +11,8 @@ import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
 import { SelecteurVariable } from '@/components/SelecteurVariable';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
+import { Bouton } from '@/components/Bouton';
+import { IntroPage, TitrePage } from '@/components/TitrePage';
 
 /**
  * Contenu > Modeles d'email : les modeles utilises par le node « Envoi de mail » des scenarios. Deux formats
@@ -113,36 +115,36 @@ function EmailTemplatesInner({ session }: { session: Session }) {
   return (
     <div className="max-w-3xl space-y-6">
       <div>
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Modèles d’email', 'Email templates')}</h2>
-        <p className="mt-1 text-sm text-ink-500">
+        <TitrePage>{t('Modèles d’email', 'Email templates')}</TitrePage>
+        <IntroPage>
           {t(
             'Le node « Envoi de mail » d’un scénario choisit un de ces modèles. Sujet et corps acceptent des variables {{champ}}, remplacées par la fiche du contact à l’envoi.',
             'The "Send email" scenario block picks one of these templates. Subject and body accept {{field}} variables, filled in from the contact at send time.',
           )}
-        </p>
+        </IntroPage>
       </div>
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
       {editing ? (
-        <div className="space-y-3 rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+        <div className="space-y-3 rounded-2xl border border-ink-200 bg-white p-5">
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink-600">{t('Nom', 'Name')}</label>
+            <label className="mb-1 block text-xs font-medium text-ink-500">{t('Nom', 'Name')}</label>
             <input data-testid="email-template-name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className={inputCls} placeholder={t('Confirmation de commande', 'Order confirmation')} />
           </div>
           <div>
-            <span className="mb-1 block text-xs font-medium text-ink-600">{t('Format', 'Format')}</span>
+            <span className="mb-1 block text-xs font-medium text-ink-500">{t('Format', 'Format')}</span>
             <div className="inline-flex overflow-hidden rounded-lg border border-ink-200 text-xs">
-              <button type="button" data-testid="email-template-format-basic" onClick={() => setForm((f) => ({ ...f, format: 'basic' }))} className={`px-3 py-1.5 font-medium transition ${form.format === 'basic' ? 'bg-brand-500 text-white' : 'text-ink-600 hover:bg-ink-50'}`}>
+              <button type="button" data-testid="email-template-format-basic" onClick={() => setForm((f) => ({ ...f, format: 'basic' }))} className={`px-3 py-1.5 font-medium transition-colors duration-150 ${form.format === 'basic' ? 'bg-brand-500 text-white' : 'text-ink-500 hover:bg-ink-50'}`}>
                 {t('Texte simple', 'Plain text')}
               </button>
-              <button type="button" data-testid="email-template-format-html" onClick={() => setForm((f) => ({ ...f, format: 'html' }))} className={`px-3 py-1.5 font-medium transition ${form.format === 'html' ? 'bg-brand-500 text-white' : 'text-ink-600 hover:bg-ink-50'}`}>
+              <button type="button" data-testid="email-template-format-html" onClick={() => setForm((f) => ({ ...f, format: 'html' }))} className={`px-3 py-1.5 font-medium transition-colors duration-150 ${form.format === 'html' ? 'bg-brand-500 text-white' : 'text-ink-500 hover:bg-ink-50'}`}>
                 {t('HTML', 'HTML')}
               </button>
             </div>
           </div>
           <div>
             <div className="mb-1 flex items-center justify-between gap-2">
-              <label className="block text-xs font-medium text-ink-600">{t('Sujet', 'Subject')}</label>
+              <label className="block text-xs font-medium text-ink-500">{t('Sujet', 'Subject')}</label>
               <SelecteurVariable
                 fields={fields}
                 testId="email-template-subject-variable"
@@ -164,7 +166,7 @@ function EmailTemplatesInner({ session }: { session: Session }) {
               {/* Zone de CODE, pas d'editeur a chips : un contenteditable resérialise le DOM et abimerait un
                   HTML colle depuis un outil externe. Le selecteur, lui, est le meme qu'ailleurs. */}
               <div className="mb-1 flex items-center justify-between gap-2">
-                <label className="block text-xs font-medium text-ink-600">{t('Corps (HTML brut)', 'Body (raw HTML)')}</label>
+                <label className="block text-xs font-medium text-ink-500">{t('Corps (HTML brut)', 'Body (raw HTML)')}</label>
                 <SelecteurVariable
                   fields={fields}
                   testId="email-template-body-variable"
@@ -193,22 +195,21 @@ function EmailTemplatesInner({ session }: { session: Session }) {
             />
           )}
           <div className="flex justify-end gap-2">
-            <button onClick={cancelEdit} className="rounded-lg px-3 py-2 text-sm text-ink-500 hover:text-ink-800">{t('Annuler', 'Cancel')}</button>
-            <button
+            <button onClick={cancelEdit} className="rounded-lg px-3 py-2 text-sm text-ink-500 hover:text-ink-900">{t('Annuler', 'Cancel')}</button>
+            <Bouton enCours={busy}
               data-testid="email-template-save"
               onClick={() => void save()}
               disabled={busy || !form.name.trim() || !form.subject.trim() || !form.body.trim()}
-              className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
             >
               {busy ? t('Enregistrement…', 'Saving…') : t('Enregistrer', 'Save')}
-            </button>
+            </Bouton>
           </div>
         </div>
       ) : (
-        <button onClick={startCreate} className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600">{t('+ Nouveau modèle', '+ New template')}</button>
+        <Bouton onClick={startCreate}>{t('+ Nouveau modèle', '+ New template')}</Bouton>
       )}
 
-      <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
         <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">{t('Modèles', 'Templates')} ({items.length})</div>
         {loading ? (
           <p className="px-5 py-6 text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
@@ -217,7 +218,7 @@ function EmailTemplatesInner({ session }: { session: Session }) {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
+              <tr className="border-b border-ink-100 text-left text-xs text-ink-500">
                 <th className="px-5 py-2 font-medium">{t('Nom', 'Name')}</th>
                 <th className="px-5 py-2 font-medium">{t('Format', 'Format')}</th>
                 <th className="px-5 py-2 font-medium">{t('Sujet', 'Subject')}</th>
@@ -227,13 +228,13 @@ function EmailTemplatesInner({ session }: { session: Session }) {
             <tbody>
               {items.map((m) => (
                 <tr key={m.id} className="border-b border-ink-50 last:border-0">
-                  <td className="px-5 py-3 font-medium text-ink-800">{m.name}</td>
+                  <td className="px-5 py-3 font-medium text-ink-900">{m.name}</td>
                   <td className="px-5 py-3 text-ink-500">{m.format === 'html' ? 'HTML' : t('Texte', 'Text')}</td>
-                  <td className="max-w-xs truncate px-5 py-3 text-ink-600">{m.subject}</td>
+                  <td className="max-w-xs truncate px-5 py-3 text-ink-500">{m.subject}</td>
                   <td className="px-5 py-3 text-right">
                     <div className="flex items-center justify-end gap-3">
-                      <button onClick={() => startEdit(m)} className="text-ink-600 hover:text-ink-900">{t('Modifier', 'Edit')}</button>
-                      <button onClick={() => void remove(m)} className="text-coral hover:text-coral/80">{t('Supprimer', 'Delete')}</button>
+                      <button onClick={() => startEdit(m)} className="text-ink-500 hover:text-ink-900">{t('Modifier', 'Edit')}</button>
+                      <button onClick={() => void remove(m)} className="text-danger hover:text-danger-500">{t('Supprimer', 'Delete')}</button>
                     </div>
                   </td>
                 </tr>

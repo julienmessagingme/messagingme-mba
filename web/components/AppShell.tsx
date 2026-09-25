@@ -152,9 +152,9 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   const navBas = navPourRole(NAV_ADMIN_BAS, session.role);
 
   const itemCls = (on: boolean) =>
-    `flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition ${on ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900'}`;
+    `flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors duration-150 ${on ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100 hover:text-ink-900'}`;
   const subCls = (on: boolean) =>
-    `block rounded-md px-3 py-1.5 text-sm transition ${on ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100 hover:text-ink-800'}`;
+    `block rounded-md px-3 py-1.5 text-sm transition-colors duration-150 ${on ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100 hover:text-ink-900'}`;
 
   /**
    * Rendu RÉCURSIF d'une liste d'entrées. Trois niveaux existent aujourd'hui (« AI Agent » > « MBA » >
@@ -177,8 +177,8 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
               data-testid={`nav-groupe-${item.key}`}
               className={
                 niveau === 1
-                  ? `flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition hover:bg-ink-100 ${chemin.includes(item.key) ? 'font-medium text-brand-700' : 'text-ink-600'}`
-                  : `flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-sm transition hover:bg-ink-100 ${chemin.includes(item.key) ? 'font-medium text-brand-700' : 'text-ink-500'}`
+                  ? `flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors duration-150 hover:bg-ink-100 ${chemin.includes(item.key) ? 'font-medium text-brand-700' : 'text-ink-500'}`
+                  : `flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors duration-150 hover:bg-ink-100 ${chemin.includes(item.key) ? 'font-medium text-brand-700' : 'text-ink-500'}`
               }
             >
               {item.d && <Ico d={item.d} />}
@@ -204,7 +204,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
               <span
                 data-testid={`nav-badge-${item.key}`}
                 // `ml-auto` : la pastille se colle à droite de l'entrée, elle ne pousse jamais le libellé.
-                className="ml-auto min-w-[20px] rounded-full bg-coral px-1.5 py-0.5 text-center text-[11px] font-semibold leading-none text-white"
+                className="ml-auto min-w-[20px] rounded-full bg-danger px-1.5 py-0.5 text-center text-xs font-semibold leading-none tabular-nums text-white"
                 aria-label={t(`${item.badge} conversation(s) non lue(s)`, `${item.badge} unread conversation(s)`)}
               >
                 {item.badge > 99 ? '99+' : item.badge}
@@ -296,7 +296,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
      * deviendrait inatteignable. D'où `top-14` et `h-[calc(100vh-3.5rem)]` juste en dessous : les trois
      * valeurs doivent rester d'accord, 3.5rem ÉTANT h-14.
      */
-    <div className={`flex flex-col bg-[#F7F8FB] ${fullBleed ? 'min-h-screen lg:h-screen lg:overflow-hidden' : 'min-h-screen'}`}>
+    <div className={`flex flex-col bg-surface-subtle ${fullBleed ? 'min-h-screen lg:h-screen lg:overflow-hidden' : 'min-h-screen'}`}>
       <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center border-b border-ink-200 bg-white">
         {/**
           * 🔴 LA ZONE DE GAUCHE FAIT EXACTEMENT LA LARGEUR DE LA COLONNE LATÉRALE (`w-60`, soit 240 px), ET
@@ -320,21 +320,24 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
           */}
         <div className="flex h-full shrink-0 items-center gap-3 px-4 lg:w-60">
           {avecBarreLaterale && (
-            <button className="rounded-lg p-1.5 text-ink-600 hover:bg-ink-100 lg:hidden" onClick={() => setDrawerOpen(true)} aria-label={t('Ouvrir le menu', 'Open menu')}>
+            <button className="rounded-lg p-1.5 text-ink-500 hover:bg-ink-100 lg:hidden" onClick={() => setDrawerOpen(true)} aria-label={t('Ouvrir le menu', 'Open menu')}>
               <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
             </button>
           )}
           <Link href={session.role === 'admin' ? '/accueil' : '/inbox'} className="flex min-w-0 shrink items-center gap-2" title={t('Accueil', 'Home')}>
             <Logo className="h-8 w-8 shrink-0" />
-            <span className="hidden truncate text-sm font-semibold tracking-tight text-ink-900 sm:inline">Engage Me</span>
+            <span className="hidden truncate text-sm font-semibold text-ink-900 sm:inline">Engage Me</span>
           </Link>
         </div>
         {/**
           * ⚠️ LES ONGLETS SE TIENNENT À DISTANCE DU LOGO, ET ILS NE LUI RESSEMBLENT PAS (2026-09-08, Julien :
           * « la police n'est pas assez différenciante et c'est positionné beaucoup trop proche du logo »).
-          * Deux corrections, et les deux comptent : le séparateur vertical les détache de la marque, et la
-          * casse haute + l'interlettrage les sortent de la même famille visuelle que « Engage Me », qui est
-          * un nom, pas un bouton. Un onglet doit se lire comme une SECTION, pas comme la suite du logo.
+          * Le séparateur vertical les détache de la marque, et c'est lui qui porte la distinction.
+          *
+          * ⚠️ LA CASSE HAUTE ET L'INTERLETTRAGE ONT ÉTÉ RETIRÉS LE 2026-09-25 (passe « anti-slop » de la
+          * console) : des majuscules espacées pour structurer sont un marqueur d'interface générée. L'onglet se
+          * distingue désormais de « Engage Me » par sa graisse (medium contre semi-bold), sa couleur (gris
+          * secondaire, la marque est en encre) et la pastille de l'onglet actif, sans changer de famille.
           */}
         {/* ⚠️ `ml-4 lg:ml-0` : à partir de `lg`, la zone de gauche porte sa largeur et le séparateur DOIT
             tomber pile sur les 240 px, donc aucune marge. En dessous, cette largeur n'existe pas et une
@@ -349,7 +352,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
               href={o.href}
               data-testid={`onglet-${o.cle}`}
               aria-current={onglet === o.cle ? 'page' : undefined}
-              className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] transition ${
+              className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors duration-150 ${
                 onglet === o.cle
                   ? 'bg-brand-50 text-brand-700'
                   : 'text-ink-500 hover:bg-ink-100 hover:text-ink-900'
@@ -361,7 +364,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
                   data-testid={`nav-badge-${o.cle}`}
                   // `ml-1.5` et non `ml-auto` : dans un onglet, la pastille se colle au libellé. `ml-auto`
                   // la pousserait au bout d'une largeur que l'onglet n'a pas.
-                  className="ml-1.5 inline-block min-w-[20px] rounded-full bg-coral px-1.5 py-0.5 text-center text-[11px] font-semibold leading-none text-white"
+                  className="ml-1.5 inline-block min-w-[20px] rounded-full bg-danger px-1.5 py-0.5 text-center text-xs font-semibold leading-none tabular-nums text-white"
                   aria-label={t(`${o.badge} conversation(s) non lue(s)`, `${o.badge} unread conversation(s)`)}
                 >
                   {o.badge > 99 ? '99+' : o.badge}
@@ -403,14 +406,14 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
             `<main>` : le mode pleine largeur y applique `lg:overflow-hidden`, donc une bannière posée dedans
             aurait pu être coupée. `shrink-0` pour qu'elle ne se fasse pas écraser par le contenu. */}
         {sessionExpiree && (
-          <div className="shrink-0 border-b border-red-200 bg-red-50 px-4 py-2 sm:px-6" data-testid="session-expiree">
-            <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-3 text-sm text-red-700">
+          <div className="shrink-0 border-b border-danger-200 bg-danger-50 px-4 py-2 sm:px-6" data-testid="session-expiree">
+            <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-3 text-sm text-danger-700">
               <span>{t('Ta session a expiré. Reconnecte-toi pour continuer : rien n’est perdu, mais tes actions ne sont plus enregistrées.', 'Your session has expired. Sign in again to continue: nothing is lost, but your actions are no longer being saved.')}</span>
               <button
                 type="button"
                 onClick={logout}
                 data-testid="session-expiree-reconnecter"
-                className="ml-auto rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-700"
+                className="ml-auto rounded-lg bg-danger-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors duration-150 hover:bg-danger-700"
               >
                 {t('Reconnecter', 'Sign in again')}
               </button>
@@ -421,8 +424,8 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
             sans lui on oublie qu'on regarde chez quelqu'un d'autre, et on prend ses chiffres pour les siens.
             La lecture seule est imposée par le SERVEUR ; ce bandeau ne protège rien, il informe. */}
         {session.observation && (
-          <div className="shrink-0 border-b border-amber-300 bg-amber-50 px-4 py-2 sm:px-6" data-testid="bandeau-observation">
-            <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-3 text-sm text-amber-900">
+          <div className="shrink-0 border-b border-alerte-300 bg-alerte-50 px-4 py-2 sm:px-6" data-testid="bandeau-observation">
+            <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-3 text-sm text-alerte-900">
               <span>
                 {t(
                   `Observation de l’espace « ${session.observation} ». Vous voyez ce que ce client voit. Aucune modification n’est possible.`,
@@ -433,7 +436,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
                 type="button"
                 onClick={logout}
                 data-testid="quitter-observation"
-                className="ml-auto rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-700"
+                className="ml-auto rounded-lg bg-alerte-700 px-3 py-1.5 text-xs font-semibold text-white transition-colors duration-150 hover:bg-alerte-800"
               >
                 {t('Quitter l’observation', 'Leave observation')}
               </button>

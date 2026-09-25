@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useT } from '@/lib/i18n';
 import { previewImport, importCsv, type ImportReport, type ImportPreview, type ColumnMapping } from '@/lib/api';
 import { inputCls } from '@/lib/ui';
+import { Bouton } from '@/components/Bouton';
 
 // --- Import CSV avec mapping des colonnes (composant partagé Contacts + Campagne) ---
 
@@ -174,18 +175,18 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
   // sans jamais afficher les données.
   if (!preview) {
     return (
-      <section className="rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Importer un CSV', 'Import a CSV')}</h2>
+      <section className="rounded-2xl border border-ink-200 bg-white p-6">
+        <h2 className="text-base font-semibold text-ink-900">{t('Importer un CSV', 'Import a CSV')}</h2>
         <p className="mt-1 text-xs text-ink-500">{t("On lit la 1re ligne (les en-têtes) et tu associes chaque colonne à un champ. Tes données ne s'affichent pas ici.", 'We read the first row (the headers) and you map each column to a field. Your data is not displayed here.')}</p>
 
         <label className="mt-4 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-ink-300 px-3 py-10 text-center hover:border-brand-500">
-          <svg viewBox="0 0 24 24" className="h-8 w-8 text-ink-300" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 20h16" /></svg>
-          <span className="text-sm font-medium text-ink-700">{busy ? t('Analyse en cours…', 'Analyzing…') : t('Choisir un fichier .csv', 'Choose a .csv file')}</span>
+          <svg viewBox="0 0 24 24" className="h-8 w-8 text-ink-400" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 20h16" /></svg>
+          <span className="text-sm font-medium text-ink-900">{busy ? t('Analyse en cours…', 'Analyzing…') : t('Choisir un fichier .csv', 'Choose a .csv file')}</span>
           <span className="text-xs text-ink-400">{fileName ?? t('ou glisse-le ici', 'or drag it here')}</span>
           <input type="file" accept=".csv,text/csv" onChange={onFile} className="hidden" disabled={busy} />
         </label>
 
-        {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        {error && <p className="mt-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
         <div className="mt-3 text-center">
           <button onClick={() => setShowPaste((s) => !s)} className="text-xs text-ink-400 hover:text-brand-600">
@@ -201,13 +202,13 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
               placeholder={t('Prénom,Nom,Téléphone\nJulie,Dumas,+33612345678', 'First name,Name,Phone\nJulie,Dumas,+33612345678')}
               className="w-full rounded-lg border border-ink-300 px-3 py-2 font-mono text-xs outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
             />
-            <button
+            <Bouton enCours={busy}
               onClick={() => analyze()}
               disabled={busy || csv.trim() === ''}
-              className="mt-2 w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
+              className="mt-2 w-full"
             >
               {busy ? t('Analyse...', 'Analyzing...') : t('Analyser →', 'Analyze →')}
-            </button>
+            </Bouton>
           </div>
         )}
       </section>
@@ -216,9 +217,9 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
 
   // Étape 2 : mapping des colonnes.
   return (
-    <section className="rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
+    <section className="rounded-2xl border border-ink-200 bg-white p-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Associer les colonnes', 'Map the columns')}</h2>
+        <h2 className="text-base font-semibold text-ink-900">{t('Associer les colonnes', 'Map the columns')}</h2>
         <button onClick={() => { setPreview(null); setReport(null); }} className="text-xs text-brand-600 hover:underline">
           {t('Changer de fichier', 'Change file')}
         </button>
@@ -246,7 +247,7 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
               </div>
               {c.include ? (
                 <>
-                  <span className="text-ink-300">→</span>
+                  <span className="text-ink-400">→</span>
                   <select
                     value={c.choice}
                     onChange={(e) => setChoice(h, { choice: e.target.value })}
@@ -274,33 +275,33 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
       </div>
 
       {!hasPhone && (
-        <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+        <p className="mt-3 rounded-lg bg-alerte-50 px-3 py-2 text-xs text-alerte-700">
           {t('Associe au moins une colonne à', 'Map at least one column to')} <b>{t('Téléphone', 'Phone')}</b> {t(": c'est la clé d'un contact.", ": it's a contact's key.")}
         </p>
       )}
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <div>
-          <label className="mb-1 block text-sm font-medium text-ink-700">
+          <label className="mb-1 block text-sm font-medium text-ink-900">
             {requireTag ? t('Étiquettes (obligatoire)', 'Tags (required)') : t('Étiquettes (optionnel)', 'Tags (optional)')}
           </label>
           <input value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} placeholder={t('salon-2026, prospect', 'expo-2026, prospect')} className={inputCls} />
           {requireTag && tagsMissing && (
-            <p className="mt-1 text-xs text-amber-600">{t('Ajoute au moins une étiquette pour retrouver ces contacts dans ta campagne.', 'Add at least one tag to find these contacts in your campaign.')}</p>
+            <p className="mt-1 text-xs text-alerte-600">{t('Ajoute au moins une étiquette pour retrouver ces contacts dans ta campagne.', 'Add at least one tag to find these contacts in your campaign.')}</p>
           )}
         </div>
-        <label className="flex items-end gap-2 pb-2 text-sm text-ink-700">
+        <label className="flex items-end gap-2 pb-2 text-sm text-ink-900">
           <input type="checkbox" checked={optIn} onChange={(e) => setOptIn(e.target.checked)} className="rounded" />
           {t('Consentement (opt-in) donné', 'Consent (opt-in) given')}
         </label>
       </div>
 
-      {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {error && <p className="mt-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
       {report && (
-        <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+        <div className="mt-3 rounded-lg bg-succes-50 px-3 py-2 text-sm text-succes-800">
           <b>{report.created}</b> {t('créés,', 'created,')} <b>{report.updated}</b> {t('mis à jour,', 'updated,')} <b>{report.skipped}</b> {t('ignorés.', 'skipped.')}
           {report.errors.length > 0 && (
-            <ul className="mt-1 list-inside list-disc text-xs text-emerald-700">
+            <ul className="mt-1 list-inside list-disc text-xs text-succes-700">
               {report.errors.slice(0, 5).map((e, i) => (
                 <li key={i}>{t('ligne', 'row')} {e.line} : {e.reason}</li>
               ))}
@@ -309,10 +310,10 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
         </div>
       )}
 
-      <button
+      <Bouton enCours={busy}
         onClick={submit}
         disabled={busy || !hasPhone || tagsMissing}
-        className="mt-4 w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
+        className="mt-4 w-full"
       >
         {busy
           ? t('Import en cours...', 'Importing...')
@@ -320,7 +321,7 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
               `Importer ${includedCount} colonne${includedCount > 1 ? 's' : ''} et ${preview.estime ? '≈ ' : ''}${preview.rowCount} ligne${preview.rowCount > 1 ? 's' : ''}`,
               `Import ${includedCount} column${includedCount > 1 ? 's' : ''} and ${preview.estime ? '≈ ' : ''}${preview.rowCount} row${preview.rowCount > 1 ? 's' : ''}`,
             )}
-      </button>
+      </Bouton>
     </section>
   );
 }

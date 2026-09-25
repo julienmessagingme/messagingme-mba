@@ -2,6 +2,7 @@
 
 import { useT } from '@/lib/i18n';
 import { imprimerZone } from '@/lib/impression';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * Export PDF d'UNE carte. `zone` est l'id porté par la carte à sortir : le reste de la page est masqué le
@@ -12,15 +13,15 @@ import { imprimerZone } from '@/lib/impression';
 export function BoutonPdf({ zone }: { zone: string }) {
   const t = useT();
   return (
-    <button
+    <Bouton variante="secondaire" taille="petite"
       type="button"
       onClick={() => imprimerZone(zone)}
       data-testid={`pdf-${zone}`}
       title={t('Ouvre la boîte d’impression : choisis « Enregistrer au format PDF ».', 'Opens the print dialog: pick "Save as PDF".')}
       aria-label={t('Exporter en PDF', 'Export to PDF')}
-      className="sans-impression shrink-0 rounded-md border border-ink-200 px-2 py-0.5 text-[11px] font-semibold tracking-wide text-ink-400 transition hover:border-ink-300 hover:bg-ink-50 hover:text-ink-700"
+      className="sans-impression shrink-0"
     >
       PDF
-    </button>
+    </Bouton>
   );
 }

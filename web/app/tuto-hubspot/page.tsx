@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Logo } from '@/components/Logo';
 import { LocaleToggle } from '@/components/LocaleToggle';
 import { useT } from '@/lib/i18n';
+import { TitrePage } from '@/components/TitrePage';
 
 /**
  * Tuto d'onboarding HubSpot (F4). Page PUBLIQUE (aucune auth) : elle explique quoi faire dans HubSpot après avoir
@@ -54,9 +55,9 @@ export default function TutoHubspotPage() {
       <div className="w-full max-w-2xl">
         <div className="mb-8 text-center">
           <Logo className="mx-auto mb-3 h-12 w-12" />
-          <h1 className="text-xl font-semibold tracking-tight text-ink-900">
+          <TitrePage>
             {t('Configurer HubSpot avec Messaging Me', 'Set up HubSpot with Messaging Me')}
-          </h1>
+          </TitrePage>
           <p className="mt-1 text-sm text-ink-500">
             {t('Trois étapes pour relier votre portail et voir les analyses de conversation dans HubSpot.', 'Three steps to link your portal and see conversation analyses in HubSpot.')}
           </p>
@@ -64,16 +65,16 @@ export default function TutoHubspotPage() {
 
         <ol className="space-y-4">
           {steps.map((s) => (
-            <li key={s.n} className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+            <li key={s.n} className="rounded-2xl border border-ink-200 bg-white p-5">
               <div className="flex items-start gap-3">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-500 text-sm font-semibold text-white">{s.n}</span>
                 <div className="min-w-0">
-                  <h2 className="text-base font-semibold tracking-tight text-ink-900">{s.title}</h2>
-                  <p className="mt-1 text-sm text-ink-600">{s.body}</p>
+                  <h2 className="text-base font-semibold text-ink-900">{s.title}</h2>
+                  <p className="mt-1 text-sm text-ink-500">{s.body}</p>
                   {s.sub && (
                     <ul className="mt-2 space-y-1.5">
                       {s.sub.map((line, i) => (
-                        <li key={i} className="flex gap-2 text-sm text-ink-600">
+                        <li key={i} className="flex gap-2 text-sm text-ink-500">
                           <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-ink-300" />
                           <span>{line}</span>
                         </li>

@@ -20,6 +20,8 @@ import { EDGE_OPTS, toRF, fromRF, type RFNode, type RFEdge } from '@/lib/workflo
 import { useEnregistrementScenario } from '@/lib/use-enregistrement-scenario';
 import { TemplatesCtx, TestDepuisBlocCtx, nodeTypes, edgeTypes } from '@/components/WorkflowNode';
 import { ConfigPanel } from '@/components/WorkflowConfigPanel';
+import { Bouton } from '@/components/Bouton';
+import { ink } from '@/lib/couleurs';
 
 function uid(): string {
   return (globalThis.crypto?.randomUUID?.() ?? `id-${Math.random().toString(36).slice(2)}-${Date.now()}`);
@@ -569,15 +571,14 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
             {NODE_META[nt].emoji} {t(...NODE_META[nt].label)}
           </button>
         ))}
-        <button
+        <Bouton variante="secondaire" taille="petite"
           onClick={autoArrange}
           disabled={nodes.length === 0}
-          className="rounded-md border border-ink-200 px-2 py-1 text-xs text-ink-600 hover:bg-ink-50 disabled:opacity-40"
           title={t('Aligner les blocs automatiquement (disposition horizontale)', 'Auto-arrange blocks (horizontal layout)')}
           data-testid="workflow-autoarrange"
         >
           ⇥ {t('Auto-arranger', 'Auto-arrange')}
-        </button>
+        </Bouton>
         {/* Indicateur d'enregistrement. Il existait déjà, mais placé en FIN de cette rangée, après une douzaine
             de boutons : sur un écran étroit il passait à la ligne et sortait du champ de vision, d'où le doute
             « est-ce que mon scénario est enregistré ». Il est désormais toujours VISIBLE (fond, bordure) et son
@@ -587,13 +588,13 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
         <div className="flex shrink-0 items-center gap-2 rounded-lg border border-ink-200 bg-white px-2.5 py-1 text-xs" data-testid="workflow-autosave">
           {enregistrement.erreur ? (
             <>
-              <span className="font-medium text-coral">⚠ {t('Échec de l’enregistrement', 'Save failed')}</span>
+              <span className="font-medium text-danger">⚠ {t('Échec de l’enregistrement', 'Save failed')}</span>
               <button onClick={enregistrement.enregistrer} className="font-medium text-brand-600 hover:underline">{t('réessayer', 'retry')}</button>
             </>
           ) : enregistrement.enCours ? (
             <span className="text-ink-500">{t('Enregistrement…', 'Saving…')}</span>
           ) : enregistrement.enregistreA ? (
-            <span className="text-mint-700">✓ {t('Brouillon enregistré à', 'Draft saved at')} {enregistrement.enregistreA.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            <span className="text-succes-700">✓ {t('Brouillon enregistré à', 'Draft saved at')} {enregistrement.enregistreA.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
           ) : (
             // ⚠️ Ce message DISAIT « aucun bouton à cliquer ». Depuis le lot 7 il y en a un, juste à côté, et
             // c'est lui qui met en ligne : promettre le contraire ferait croire qu'éditer suffit.
@@ -604,15 +605,15 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
             quand la version en cours est en ligne, parce que « rien à publier » et « jamais publié » ne sont
             pas la même situation et que la seconde mérite d'être vue. */}
         {enregistrement.aPublier ? (
-          <button
+          <Bouton taille="petite" enCours={publication.enCours}
             onClick={() => { void publier(); }}
             disabled={publication.enCours}
             data-testid="workflow-publier"
             title={t('Met cette version en ligne. Les parcours en cours basculent dessus, et il n’y a pas de retour arrière.', 'Puts this version live. Runs in progress switch to it, and there is no going back.')}
-            className="shrink-0 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-60"
+            className="shrink-0"
           >
             {publication.enCours ? t('Publication…', 'Publishing…') : t('Publier', 'Publish')}
-          </button>
+          </Bouton>
         ) : (
           <span className="shrink-0 rounded-lg border border-ink-200 bg-white px-2.5 py-1 text-xs text-ink-500" data-testid="workflow-publie">
             {publieA
@@ -624,19 +625,19 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
       </div>
 
       {refusOuverture !== null && (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-testid="refus-ouverture">
+        <div className="rounded-xl border border-alerte-300 bg-alerte-50 px-3 py-2 text-xs text-alerte-900" data-testid="refus-ouverture">
           {refusOuverture}
         </div>
       )}
 
       {publication.erreur && (
-        <div className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800" data-testid="workflow-publier-erreur">
+        <div className="rounded-xl border border-danger-300 bg-danger-50 px-3 py-2 text-xs text-danger-800" data-testid="workflow-publier-erreur">
           <b>{t('Publication impossible.', 'Could not publish.')}</b> {publication.erreur}
         </div>
       )}
 
       {refusTest !== null && (
-        <div className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800" data-testid="workflow-test-bloc-erreur">
+        <div className="rounded-xl border border-danger-300 bg-danger-50 px-3 py-2 text-xs text-danger-800" data-testid="workflow-test-bloc-erreur">
           {refusTest}
         </div>
       )}
@@ -644,7 +645,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
       {montageImpossible && (() => {
         const attente = attenteDite(montageImpossible.waitNodeId);
         return (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        <div className="rounded-xl border border-alerte-300 bg-alerte-50 px-3 py-2 text-xs text-alerte-900">
           <b>{t('Ce montage ne partira pas.', 'This setup will not be sent.')}</b>{' '}
           {t(
             `Le bloc « ${nomDuBloc(montageImpossible.waitNodeId)} » ${attente.quoi}, puis « ${nomDuBloc(montageImpossible.messageNodeId)} » envoie un message hors template. Passé 24 h sans nouveau message du contact, WhatsApp n'accepte plus qu'un template. ${attente.remede}`,
@@ -655,7 +656,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
       })()}
 
       {sessionApresRcs && (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-testid="alerte-session-apres-rcs">
+        <div className="rounded-xl border border-alerte-300 bg-alerte-50 px-3 py-2 text-xs text-alerte-900" data-testid="alerte-session-apres-rcs">
           <b>{t('Ce montage ne partira pas toujours.', 'This setup will not always be sent.')}</b>{' '}
           {t(
             `« ${nomDuBloc(sessionApresRcs.messageNodeId)} » n'existe QUE sur WhatsApp (formulaire ou question), et il est branché derrière le bloc RCS « ${nomDuBloc(sessionApresRcs.rcsNodeId)} ». Il part donc forcément par WhatsApp, qui ne l'accepte que si le contact y a écrit dans les 24 h. Répondre en RCS ne rouvre pas cette fenêtre. Un message rapide, lui, suivrait le canal du parcours.`,
@@ -667,7 +668,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
       <div className="flex flex-col gap-3 lg:min-h-0 lg:flex-1 lg:flex-row">
         {/* `data-canevas-edition` : c'est ce qui donne aux points de liaison leur zone de prise (globals.css).
             Mesuré le 2026-08-28 : sans elle, la tolérance de visée est de ±2 px sur un point de 5,7 px. */}
-        <div data-canevas-edition className="h-[70vh] overflow-hidden rounded-2xl border border-ink-200 bg-[#f3f4f6] lg:h-auto lg:min-h-0 lg:flex-1">
+        <div data-canevas-edition className="h-[70vh] overflow-hidden rounded-2xl border border-ink-200 bg-ink-50 lg:h-auto lg:min-h-0 lg:flex-1">
           <TemplatesCtx.Provider value={templates}>
           <TestDepuisBlocCtx.Provider value={rappelTest}>
           <ReactFlow
@@ -689,7 +690,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
             fitView
             proOptions={{ hideAttribution: true }}
           >
-            <Background color="#cbd5e1" gap={18} />
+            <Background color={ink[200]} gap={18} />
             <Controls showInteractive={false} />
           </ReactFlow>
           </TestDepuisBlocCtx.Provider>
@@ -705,7 +706,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
               <div className="fixed inset-0 z-40" onClick={() => setChooser(null)} />
               <div
                 data-testid="node-type-chooser"
-                className="fixed z-50 w-52 rounded-xl border border-ink-200 bg-white p-1.5 shadow-lg"
+                className="fixed z-50 w-52 rounded-xl border border-ink-200 bg-white p-1.5 shadow-mm-md"
                 // Bornée à la fenêtre : lâcher une flèche en bas ou à droite du canevas sortait la liste de
                 // l'écran, donc rendait le bloc impossible à choisir. La hauteur est DÉRIVÉE du nombre
                 // d'entrées : la valeur en dur d'avant était calibrée pour 7 et débordait dès qu'on en ajoutait.
@@ -714,7 +715,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
                   top: Math.max(8, Math.min(chooser.screenY, (typeof window !== 'undefined' ? window.innerHeight : 800) - (40 + choixBlocs.length * 30))),
                 }}
               >
-                <p className="px-2 py-1 text-[11px] font-medium text-ink-500">{t('Quel bloc ?', 'Which block?')}</p>
+                <p className="px-2 py-1 text-xs font-medium text-ink-500">{t('Quel bloc ?', 'Which block?')}</p>
                 {choixBlocs.map(({ nt, actif, titre }) => (
                   <button
                     key={nt}
@@ -722,7 +723,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
                     onClick={() => { if (actif) pickType(nt); }}
                     disabled={!actif}
                     title={titre}
-                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-ink-700 transition disabled:cursor-not-allowed disabled:text-ink-400 disabled:opacity-60 enabled:hover:bg-brand-50"
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-ink-900 transition-colors duration-150 disabled:cursor-not-allowed disabled:text-ink-400 disabled:opacity-60 enabled:hover:bg-brand-50"
                   >
                     <span>{NODE_META[nt].emoji}</span>
                     <span>{t(...NODE_META[nt].label)}</span>
@@ -733,7 +734,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
           )}
         </div>
 
-        <div className="rounded-2xl border border-ink-200 bg-white p-4 shadow-sm lg:w-[280px] lg:shrink-0 lg:overflow-y-auto">
+        <div className="rounded-2xl border border-ink-200 bg-white p-4 lg:w-[280px] lg:shrink-0 lg:overflow-y-auto">
           {!selected ? (
             <p className="text-sm text-ink-400">{t("Clique un bloc pour le configurer. Tire une flèche depuis le point d'un bloc : lâche sur un autre bloc pour relier, ou dans le vide pour créer un nouveau bloc. Le ✕ en coin d'un bloc le supprime.", "Click a block to configure it. Drag an arrow from a block's dot: drop it on another block to connect, or in empty space to create a new block. The ✕ in a block's corner deletes it.")}</p>
           ) : (

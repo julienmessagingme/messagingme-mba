@@ -15,7 +15,7 @@ export function LocaleToggle({ className = '' }: { className?: string }) {
           key={l}
           type="button"
           onClick={() => setLocale(l)}
-          className={`rounded-md px-2 py-0.5 font-medium uppercase ${locale === l ? 'bg-white text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}
+          className={`rounded-md px-2 py-0.5 font-medium uppercase ${locale === l ? 'bg-white text-brand-700' : 'text-ink-500 hover:text-ink-900'}`}
           aria-pressed={locale === l}
         >
           {l}

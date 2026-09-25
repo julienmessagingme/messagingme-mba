@@ -71,7 +71,7 @@ export function CarouselPreview({
   const t = useT();
   return (
     <PhoneFrame {...(senderName ? { senderName } : {})} contentClassName="space-y-2 px-3 py-4">
-          <div className="max-w-[88%] rounded-lg rounded-tl-none bg-white px-2.5 py-1.5 text-[13px] leading-snug text-ink-800 shadow-sm">
+          <div className="max-w-[88%] rounded-lg rounded-tl-none bg-white px-2.5 py-1.5 text-[13px] leading-snug text-ink-900 shadow-sm">
             {body.trim()
               ? <span className="whitespace-pre-wrap break-words"><TemplateBodyText body={body} examples={examples} {...(varLabels ? { varLabels } : {})} /></span>
               : <span className="text-ink-400">{t("Message d'introduction…", 'Introduction message…')}</span>}
@@ -87,7 +87,7 @@ export function CarouselPreview({
                     {/* Clé sur l'URL : changer d'image REMONTE la vignette, donc un échec précédent ne reste
                         pas collé sur une image qui, elle, est bonne. */}
                     <CardMedia key={c.imageUrl ?? `sans-image-${i}`} card={c} index={i} />
-                    {c.body?.trim() && <div className="px-2 py-1.5 text-[12px] leading-snug text-ink-800">{c.body}</div>}
+                    {c.body?.trim() && <div className="px-2 py-1.5 text-[12px] leading-snug text-ink-900">{c.body}</div>}
                     {cardButtons.length > 0 && (
                       <div>
                         {cardButtons.map((b, j) => (

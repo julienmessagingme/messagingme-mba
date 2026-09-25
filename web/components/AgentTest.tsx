@@ -10,6 +10,7 @@ import {
   essayerAgent, estSimule, listerEssais,
   type AppelTrace, type EssaiArchive, type ReponseEssai, type TourEssai,
 } from '@/lib/api-agent-test';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * L'onglet TESTER : parler à son agent avant de l'activer.
@@ -104,7 +105,7 @@ export function AgentTest({ tenantId, agentId }: { tenantId: string; agentId: st
             data-testid={`test-tour-${tour.role}`}
             className={tour.role === 'user'
               ? 'self-end max-w-[85%] rounded-2xl bg-brand-600 px-3 py-2 text-sm text-white'
-              : 'self-start max-w-[85%] rounded-2xl bg-ink-100 px-3 py-2 text-sm text-ink-800'}
+              : 'self-start max-w-[85%] rounded-2xl bg-ink-100 px-3 py-2 text-sm text-ink-900'}
           >
             {tour.content}
           </div>
@@ -121,14 +122,13 @@ export function AgentTest({ tenantId, agentId }: { tenantId: string; agentId: st
             onKeyDown={(e) => { if (e.key === 'Enter') void envoyer(saisie); }}
             placeholder={t('Bonjour, vous avez une piscine ?', 'Hi, do you have a pool?')}
           />
-          <button
+          <Bouton
             data-testid="test-envoyer"
             disabled={busy || saisie.trim() === ''}
             onClick={() => void envoyer(saisie)}
-            className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
           >
             {t('Envoyer', 'Send')}
-          </button>
+          </Bouton>
         </div>
       </div>
 
@@ -155,7 +155,7 @@ export function AgentTest({ tenantId, agentId }: { tenantId: string; agentId: st
 
       {appels.length > 0 && (
         <div data-testid="test-appels" className={`${cardCls} flex flex-col gap-2`}>
-          <p className="text-sm font-medium text-ink-700">{t('Ce que l’agent a fait', 'What the agent did')}</p>
+          <p className="text-sm font-medium text-ink-900">{t('Ce que l’agent a fait', 'What the agent did')}</p>
           {appels.map((a, i) => <Appel key={`${i}-${a.nom}`} appel={a} rang={i} />)}
         </div>
       )}
@@ -181,7 +181,7 @@ function Historique({ essais, busy, onReprendre }: {
   if (essais.length === 0) return null;
   return (
     <div data-testid="test-historique" className={`${cardCls} flex flex-col gap-2`}>
-      <p className="text-sm font-medium text-ink-700">{t('Vos essais précédents', 'Your previous tries')}</p>
+      <p className="text-sm font-medium text-ink-900">{t('Vos essais précédents', 'Your previous tries')}</p>
       <p className="text-xs text-ink-500">
         {t(
           'Gardés 14 jours. « Reprendre » repose exactement la même question à l’agent tel qu’il est réglé maintenant : c’est ce qui permet de voir si un changement a servi.',
@@ -212,17 +212,17 @@ function LigneEssai({ essai, busy, onReprendre }: { essai: EssaiArchive; busy: b
         )}
         {/* Les outils appelés : c'est ce qui distingue « il n'a pas trouvé » de « il n'a même pas cherché ». */}
         {essai.appels.length === 0
-          ? <Etiquette classe="bg-ink-100 text-ink-600">{t('aucun outil', 'no tool')}</Etiquette>
+          ? <Etiquette classe="bg-ink-100 text-ink-500">{t('aucun outil', 'no tool')}</Etiquette>
           : essai.appels.map((a, i) => (
             <Etiquette
               key={`${i}-${a.nom}`}
-              classe={a.status === 'ok' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-800'}
+              classe={a.status === 'ok' ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-800'}
             >
               {a.status === 'ok' ? a.nom : `${a.nom} : ${a.status}`}
             </Etiquette>
           ))}
       </div>
-      <p className="truncate text-sm text-ink-800">{question}</p>
+      <p className="truncate text-sm text-ink-900">{question}</p>
       {!ouvert && essai.reponse !== null && (
         <p className="line-clamp-2 text-xs text-ink-500">{essai.reponse}</p>
       )}
@@ -233,7 +233,7 @@ function LigneEssai({ essai, busy, onReprendre }: { essai: EssaiArchive; busy: b
               key={`${i}-${m.content.slice(0, 24)}`}
               className={m.role === 'user'
                 ? 'self-end max-w-[85%] rounded-2xl bg-brand-600 px-3 py-2 text-sm text-white'
-                : 'self-start max-w-[85%] rounded-2xl bg-ink-100 px-3 py-2 text-sm text-ink-800'}
+                : 'self-start max-w-[85%] rounded-2xl bg-ink-100 px-3 py-2 text-sm text-ink-900'}
             >
               {m.content}
             </div>
@@ -245,7 +245,7 @@ function LigneEssai({ essai, busy, onReprendre }: { essai: EssaiArchive; busy: b
               </p>
             )
             : (
-              <div className="self-start max-w-[85%] rounded-2xl bg-ink-100 px-3 py-2 text-sm text-ink-800">
+              <div className="self-start max-w-[85%] rounded-2xl bg-ink-100 px-3 py-2 text-sm text-ink-900">
                 {essai.reponse}
               </div>
             )}
@@ -282,19 +282,19 @@ function Appel({ appel, rang }: { appel: AppelTrace; rang: number }) {
   return (
     <div data-testid={`test-appel-${rang}`} className="flex flex-col gap-1 rounded-lg border border-ink-200 px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-mono text-xs text-ink-800">{appel.nom}</span>
+        <span className="font-mono text-xs text-ink-900">{appel.nom}</span>
         {appel.status === 'ok'
-          ? <Etiquette classe="bg-emerald-50 text-emerald-700">{t('exécuté', 'ran')}</Etiquette>
-          : <Etiquette classe="bg-rose-50 text-rose-800">{appel.status}</Etiquette>}
+          ? <Etiquette classe="bg-succes-50 text-succes-700">{t('exécuté', 'ran')}</Etiquette>
+          : <Etiquette classe="bg-danger-50 text-danger-800">{appel.status}</Etiquette>}
         {simule && (
-          <Etiquette classe="bg-gold/20 text-ink-800">
+          <Etiquette classe="bg-alerte-100 text-ink-900">
             <span data-testid={`test-simule-${rang}`}>{t('simulé', 'simulated')}</span>
           </Etiquette>
         )}
       </div>
-      <p className="break-all font-mono text-[11px] text-ink-500">{appel.arguments}</p>
+      <p className="break-all font-mono text-xs text-ink-500">{appel.arguments}</p>
       {simule && (
-        <p className="text-xs leading-relaxed text-amber-800">
+        <p className="text-xs leading-relaxed text-alerte-800">
           {t(
             'Rien n’a eu lieu pour de vrai : il n’y a ni contact ni conversation dans un test.',
             'Nothing actually happened: there is no contact and no conversation in a test.',
@@ -309,7 +309,7 @@ function Appel({ appel, rang }: { appel: AppelTrace; rang: number }) {
         {ouvert ? t('Masquer ce qu’il a reçu', 'Hide what it got back') : t('Voir ce qu’il a reçu', 'See what it got back')}
       </button>
       {ouvert && (
-        <pre className="max-h-48 overflow-auto rounded-lg bg-ink-50 p-2 text-[11px] leading-relaxed text-ink-700">
+        <pre className="max-h-48 overflow-auto rounded-lg bg-ink-50 p-2 text-xs leading-relaxed text-ink-900">
           {JSON.stringify(appel.contenu, null, 2)}
         </pre>
       )}
@@ -318,5 +318,5 @@ function Appel({ appel, rang }: { appel: AppelTrace; rang: number }) {
 }
 
 function Etiquette({ classe, children }: { classe: string; children: React.ReactNode }) {
-  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${classe}`}>{children}</span>;
+  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${classe}`}>{children}</span>;
 }

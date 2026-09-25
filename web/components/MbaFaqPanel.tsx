@@ -6,6 +6,7 @@ import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from './MbaNotice';
 import { MbaFaqImportPanel } from './MbaFaqImportPanel';
 import { createMbaFaq, deleteMbaFaq, listMbaFaqs, updateMbaFaq, type MbaFaq } from '@/lib/api-mba';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * La FAQ de l'agent : saisie une par une, plus le chargement en lot (panneau dédié).
@@ -77,23 +78,21 @@ export function MbaFaqPanel({ tenantId, phoneNumberId }: { tenantId: string; pho
       {err !== '' && <MbaNotice kind="error" testid="mba-faq-error">{err}</MbaNotice>}
 
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-sm text-ink-700" data-testid="mba-faq-count">
+        <span className="text-sm text-ink-900" data-testid="mba-faq-count">
           {t(`${faqs.length} question${faqs.length > 1 ? 's' : ''}`, `${faqs.length} question${faqs.length > 1 ? 's' : ''}`)}
         </span>
-        <button
-          className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white"
+        <Bouton
           data-testid="mba-faq-new"
           onClick={() => setEdition({ question: '', answer: '' })}
         >
           {t('Ajouter une question', 'Add a question')}
-        </button>
-        <button
-          className="rounded-lg border border-ink-300 px-4 py-2 text-sm font-medium text-ink-800"
+        </Bouton>
+        <Bouton variante="secondaire"
           data-testid="mba-faq-import-open"
           onClick={() => setImportOuvert((v) => !v)}
         >
           {importOuvert ? t('Fermer l’import', 'Close import') : t('Charger en lot', 'Bulk load')}
-        </button>
+        </Bouton>
         <input
           className={`${inputCls} ml-auto max-w-xs`}
           data-testid="mba-faq-search"
@@ -125,7 +124,7 @@ export function MbaFaqPanel({ tenantId, phoneNumberId }: { tenantId: string; pho
           <li key={faq.id ?? faq.question} className={`${cardCls} flex items-start justify-between gap-4 p-4`}>
             <div className="min-w-0">
               <p className="text-sm font-medium text-ink-900">{faq.question}</p>
-              <p className="mt-1 whitespace-pre-wrap text-sm text-ink-600">{faq.answer}</p>
+              <p className="mt-1 whitespace-pre-wrap text-sm text-ink-500">{faq.answer}</p>
             </div>
             <div className="flex shrink-0 gap-2">
               <button
@@ -134,7 +133,7 @@ export function MbaFaqPanel({ tenantId, phoneNumberId }: { tenantId: string; pho
               >
                 {t('Modifier', 'Edit')}
               </button>
-              <button className="text-xs font-medium text-rose-600 hover:text-rose-700" onClick={() => supprimer(faq)}>
+              <button className="text-xs font-medium text-danger-600 hover:text-danger-700" onClick={() => supprimer(faq)}>
                 {t('Supprimer', 'Delete')}
               </button>
             </div>
@@ -151,12 +150,12 @@ export function MbaFaqPanel({ tenantId, phoneNumberId }: { tenantId: string; pho
 
       {edition !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" role="dialog" aria-modal>
-          <div className="w-full max-w-xl rounded-2xl bg-white p-5 shadow-lg">
+          <div className="w-full max-w-xl rounded-2xl bg-white p-5 shadow-mm-lg">
             <h3 className="text-sm font-semibold text-ink-900">
               {edition.id === undefined ? t('Nouvelle question', 'New question') : t('Modifier la question', 'Edit question')}
             </h3>
             <label className="mt-4 block">
-              <span className="text-sm font-medium text-ink-800">{t('Question', 'Question')}</span>
+              <span className="text-sm font-medium text-ink-900">{t('Question', 'Question')}</span>
               <span className="mt-0.5 block text-xs text-ink-500">
                 {t('Écrivez-la comme vos clients la posent, et un seul sujet par question.', 'Write it the way your customers ask it, one topic per question.')}
               </span>
@@ -168,7 +167,7 @@ export function MbaFaqPanel({ tenantId, phoneNumberId }: { tenantId: string; pho
               />
             </label>
             <label className="mt-4 block">
-              <span className="text-sm font-medium text-ink-800">{t('Réponse', 'Answer')}</span>
+              <span className="text-sm font-medium text-ink-900">{t('Réponse', 'Answer')}</span>
               <span className="mt-0.5 block text-xs text-ink-500">
                 {t('Complète et autoportante : l’agent la lit seule, sans les autres.', 'Complete and self-contained: the agent reads it alone, without the others.')}
               </span>
@@ -181,11 +180,10 @@ export function MbaFaqPanel({ tenantId, phoneNumberId }: { tenantId: string; pho
               />
             </label>
             <div className="mt-5 flex justify-end gap-2">
-              <button className="rounded-lg border border-ink-300 px-4 py-2 text-sm" onClick={() => setEdition(null)}>
+              <Bouton variante="secondaire" onClick={() => setEdition(null)}>
                 {t('Annuler', 'Cancel')}
-              </button>
-              <button
-                className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              </Bouton>
+              <Bouton
                 data-testid="mba-faq-save"
                 disabled={busy || edition.question.trim() === '' || edition.answer.trim() === ''}
                 onClick={() => {
@@ -196,7 +194,7 @@ export function MbaFaqPanel({ tenantId, phoneNumberId }: { tenantId: string; pho
                 }}
               >
                 {t('Enregistrer', 'Save')}
-              </button>
+              </Bouton>
             </div>
           </div>
         </div>

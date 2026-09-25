@@ -11,6 +11,8 @@ import { listUsers, type AdminUser } from '@/lib/api/compte';
 import { listRequetes, type RequeteApi } from '@/lib/api-agent-requetes';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
+import { Bouton } from '@/components/Bouton';
+import { IntroPage, TitrePage } from '@/components/TitrePage';
 
 export default function WorkflowsPage() {
   // Suspense : useSearchParams (deep-link ?open=) exige une frontière Suspense au build (Next 15).
@@ -291,8 +293,8 @@ function WorkflowsInner({ session }: { session: Session }) {
    */
   const panneauDeTest = testing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={() => setTesting(null)}>
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()} data-testid="workflow-test-panel">
-            <h3 className="text-lg font-semibold tracking-tight text-ink-900">{t('Tester « ', 'Test "')}{testing.wf.name}{t(' »', '"')}</h3>
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-mm-lg" onClick={(e) => e.stopPropagation()} data-testid="workflow-test-panel">
+            <h3 className="text-lg font-semibold text-ink-900">{t('Tester « ', 'Test "')}{testing.wf.name}{t(' »', '"')}</h3>
             <p className="mt-1 text-sm text-ink-500">
               {t(
                 'Scanne ce QR code avec ton téléphone, ou ouvre le lien. WhatsApp s’ouvre avec le mot déjà écrit : appuie sur Envoyer et le scénario démarre sur ton propre numéro.',
@@ -311,17 +313,17 @@ function WorkflowsInner({ session }: { session: Session }) {
                   <img src={testing.qr} alt={t('QR code du lien de test', 'Test link QR code')} className="mx-auto my-4 h-[220px] w-[220px] rounded-lg border border-ink-200" />
                 )}
                 <div className="flex items-center gap-2">
-                  <input readOnly value={testing.lien} data-testid="workflow-test-lien" className="w-full rounded-lg border border-ink-300 bg-ink-50 px-3 py-1.5 text-xs text-ink-600" />
-                  <button
+                  <input readOnly value={testing.lien} data-testid="workflow-test-lien" className="w-full rounded-lg border border-ink-300 bg-ink-50 px-3 py-1.5 text-xs text-ink-500" />
+                  <Bouton variante="secondaire" taille="petite"
                     onClick={() => { void navigator.clipboard.writeText(testing.lien ?? '').then(() => setCopied(true)); }}
-                    className="shrink-0 rounded-lg border border-ink-300 px-3 py-1.5 text-xs font-medium text-ink-700 hover:bg-ink-50"
+                    className="shrink-0"
                   >
                     {copied ? t('Copié', 'Copied') : t('Copier', 'Copy')}
-                  </button>
+                  </Bouton>
                 </div>
               </>
             ) : (
-              <p className="my-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <p className="my-4 rounded-lg border border-alerte-300 bg-alerte-50 px-3 py-2 text-xs text-alerte-800">
                 {t(
                   'Aucun numéro WhatsApp connecté : envoie le mot ci-dessous à ton numéro professionnel pour lancer le test.',
                   'No WhatsApp number connected: send the word below to your business number to start the test.',
@@ -331,7 +333,7 @@ function WorkflowsInner({ session }: { session: Session }) {
 
             <p className="mt-3 text-xs text-ink-500">
               {t('Mot à envoyer : ', 'Word to send: ')}
-              <code data-testid="workflow-test-mot" className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-ink-800">{testing.mot}</code>
+              <code data-testid="workflow-test-mot" className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-ink-900">{testing.mot}</code>
             </p>
             <p className="mt-2 text-xs text-ink-400">
               {t(
@@ -340,7 +342,7 @@ function WorkflowsInner({ session }: { session: Session }) {
               )}
             </p>
             <div className="mt-5 flex justify-end">
-              <button onClick={() => setTesting(null)} className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-600">{t('Fermer', 'Close')}</button>
+              <Bouton onClick={() => setTesting(null)}>{t('Fermer', 'Close')}</Bouton>
             </div>
           </div>
         </div>
@@ -362,9 +364,9 @@ function WorkflowsInner({ session }: { session: Session }) {
       <div className="flex flex-col gap-3 p-3 lg:h-full">
         <div className="flex items-center justify-between">
           <button onClick={() => { setEditing(null); void load(); }} className="text-sm text-brand-600 hover:underline">← {t('Retour aux scénarios', 'Back to scenarios')}</button>
-          <h2 className="text-base font-semibold tracking-tight text-ink-900">{editing.name}</h2>
+          <TitrePage>{editing.name}</TitrePage>
         </div>
-        {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
         <div className="min-h-0 flex-1">
           {/* L'éditeur ouvre le BROUILLON s'il y en a un (lot 7) : c'est le travail en cours de l'auteur, pas
               forcément ce qui tourne. `brouillonInitial` allume le bouton « Publier » dès l'ouverture. */}
@@ -381,10 +383,10 @@ function WorkflowsInner({ session }: { session: Session }) {
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6 lg:h-full lg:overflow-y-auto">
       <div>
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Scénarios', 'Scenarios')}</h2>
-        <p className="mt-1 text-sm text-ink-500">{t("Construis des automatisations en blocs : ajout d’étiquette, envoi d'un template, formulaire, arrivée en inbox. Un scénario s'attache à une campagne et s'exécute pour chaque contact.", 'Build automations in blocks: add a tag, send a template, form, arrival in the inbox. A scenario attaches to a campaign and runs for each contact.')}</p>
+        <TitrePage>{t('Scénarios', 'Scenarios')}</TitrePage>
+        <IntroPage>{t("Construis des automatisations en blocs : ajout d’étiquette, envoi d'un template, formulaire, arrivée en inbox. Un scénario s'attache à une campagne et s'exécute pour chaque contact.", 'Build automations in blocks: add a tag, send a template, form, arrival in the inbox. A scenario attaches to a campaign and runs for each contact.')}</IntroPage>
       </div>
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
       <div className="flex items-center gap-2">
         <input
@@ -394,10 +396,10 @@ function WorkflowsInner({ session }: { session: Session }) {
           placeholder={t('Nom du scénario…', 'Scenario name…')}
           className="flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
         />
-        <button onClick={create} disabled={newName.trim() === ''} className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50">{t('Créer un scénario', 'Create a scenario')}</button>
+        <Bouton onClick={create} disabled={newName.trim() === ''}>{t('Créer un scénario', 'Create a scenario')}</Bouton>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
         <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">{t('Scénarios', 'Scenarios')} ({workflows.length})</div>
         {loading ? (
           <p className="px-5 py-6 text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
@@ -412,20 +414,20 @@ function WorkflowsInner({ session }: { session: Session }) {
           */}
           {selection.size > 0 && (
             <div className="mb-3 flex items-center justify-between rounded-lg bg-ink-50 px-4 py-2" data-testid="workflows-barre-selection">
-              <span className="text-sm text-ink-700">
+              <span className="text-sm text-ink-900">
                 {selection.size === 1
                   ? t('1 scénario sélectionné', '1 scenario selected')
                   : t(`${selection.size} scénarios sélectionnés`, `${selection.size} scenarios selected`)}
               </span>
               <div className="flex items-center gap-3">
-                <button onClick={() => setSelection(new Set())} className="text-sm text-ink-500 hover:text-ink-800">
+                <button onClick={() => setSelection(new Set())} className="text-sm text-ink-500 hover:text-ink-900">
                   {t('Annuler', 'Cancel')}
                 </button>
                 <button
                   onClick={() => { void removeSelection(); }}
                   disabled={busy}
                   data-testid="workflows-supprimer-selection"
-                  className="rounded-lg bg-coral px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+                  className="rounded-lg bg-danger px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
                 >
                   {t('Supprimer', 'Delete')}
                 </button>
@@ -434,7 +436,7 @@ function WorkflowsInner({ session }: { session: Session }) {
           )}
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
+              <tr className="border-b border-ink-100 text-left text-xs text-ink-500">
                 <th className="w-10 px-3 py-2">
                   {/* ⚠️ « Tout cocher » porte sur la LISTE AFFICHÉE, ce qui est la seule promesse tenable :
                       une liste filtrée un jour ne devrait pas cocher ce qu'elle ne montre pas. */}
@@ -472,12 +474,12 @@ function WorkflowsInner({ session }: { session: Session }) {
                   </td>
                   <td className="px-5 py-3">
                     <button onClick={() => open(w)} className="font-medium text-brand-600 hover:underline">{w.name}</button>
-                    {w.code && <div className="font-mono text-[10px] text-ink-300" title={t('Code public (API)', 'Public code (API)')}>{w.code}</div>}
+                    {w.code && <div className="font-mono text-xs text-ink-400" title={t('Code public (API)', 'Public code (API)')}>{w.code}</div>}
                     {/* Un brouillon en attente se voit DEPUIS LA LISTE : sans ça, un scénario modifié mais
                         jamais publié aurait l'air en ligne, et c'est précisément l'erreur que le bouton
                         « Publier » peut faire commettre. */}
                     {(w.hasDraft ?? Boolean(w.draftGraph)) && (
-                      <div className="mt-0.5 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800" data-testid={`workflow-brouillon-${w.id}`}>
+                      <div className="mt-0.5 inline-block rounded bg-alerte-100 px-1.5 py-0.5 text-xs font-medium text-alerte-800" data-testid={`workflow-brouillon-${w.id}`}>
                         {t('brouillon non publié', 'unpublished draft')}
                       </div>
                     )}
@@ -493,7 +495,7 @@ function WorkflowsInner({ session }: { session: Session }) {
                         <button
                           onClick={() => setMenuFor((m) => (m === w.id ? null : w.id))}
                           disabled={busy}
-                          className="rounded px-1.5 py-0.5 text-lg leading-none text-ink-400 hover:bg-ink-100 hover:text-ink-700 disabled:opacity-50"
+                          className="rounded px-1.5 py-0.5 text-lg leading-none text-ink-400 hover:bg-ink-100 hover:text-ink-900 disabled:opacity-50"
                           aria-label={t('Plus d\'actions', 'More actions')}
                           data-testid={`workflow-menu-${w.id}`}
                         >
@@ -512,14 +514,14 @@ function WorkflowsInner({ session }: { session: Session }) {
                               le haut ferait sortir le menu par le haut du tableau, ce qui déplace le défaut
                               au lieu de le corriger.
                             */}
-                            <div className={`absolute right-0 z-20 w-44 overflow-hidden rounded-lg border border-ink-200 bg-white py-1 text-left text-sm shadow-lg ${
+                            <div className={`absolute right-0 z-20 w-44 overflow-hidden rounded-lg border border-ink-200 bg-white py-1 text-left text-sm shadow-mm-md ${
                               workflows.length > 3 && i >= workflows.length - 2 ? 'bottom-full mb-1' : 'mt-1'
                             }`}>
                               <button onClick={() => { void openTest(w); }} data-testid={`workflow-test-${w.id}`} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Tester le scénario', 'Test scenario')}</button>
                               <button onClick={() => startRename(w)} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Renommer', 'Rename')}</button>
                               <button onClick={() => duplicate(w)} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Dupliquer', 'Duplicate')}</button>
                               <div className="my-1 border-t border-ink-100" />
-                              <button onClick={() => remove(w)} className="block w-full px-4 py-2 text-left text-coral hover:bg-red-50">{t('Supprimer', 'Delete')}</button>
+                              <button onClick={() => remove(w)} className="block w-full px-4 py-2 text-left text-danger hover:bg-danger-50">{t('Supprimer', 'Delete')}</button>
                             </div>
                           </>
                         )}
@@ -538,8 +540,8 @@ function WorkflowsInner({ session }: { session: Session }) {
 
       {renaming && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={() => setRenaming(null)}>
-          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold tracking-tight text-ink-900">{t('Renommer le scénario', 'Rename scenario')}</h3>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-mm-lg" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-ink-900">{t('Renommer le scénario', 'Rename scenario')}</h3>
             <input
               autoFocus
               value={renameVal}
@@ -550,8 +552,8 @@ function WorkflowsInner({ session }: { session: Session }) {
               data-testid="workflow-rename-input"
             />
             <div className="mt-5 flex justify-end gap-2">
-              <button onClick={() => setRenaming(null)} disabled={busy} className="rounded-lg px-3 py-2 text-sm text-ink-500 hover:text-ink-800 disabled:opacity-50">{t('Annuler', 'Cancel')}</button>
-              <button onClick={() => void submitRename()} disabled={busy || renameVal.trim() === ''} className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50">{t('Renommer', 'Rename')}</button>
+              <button onClick={() => setRenaming(null)} disabled={busy} className="rounded-lg px-3 py-2 text-sm text-ink-500 hover:text-ink-900 disabled:opacity-50">{t('Annuler', 'Cancel')}</button>
+              <Bouton onClick={() => void submitRename()} disabled={busy || renameVal.trim() === ''}>{t('Renommer', 'Rename')}</Bouton>
             </div>
           </div>
         </div>

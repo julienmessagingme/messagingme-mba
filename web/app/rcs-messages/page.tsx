@@ -12,6 +12,8 @@ import { RcsPreview } from '@/components/RcsPreview';
 import { RcsCarouselPreview } from '@/components/RcsCarouselPreview';
 import { RcsPhoneFrame } from '@/components/RcsPhoneFrame';
 import { useT } from '@/lib/i18n';
+import { Bouton } from '@/components/Bouton';
+import { TitrePage } from '@/components/TitrePage';
 
 /**
  * Contenu > Messages RCS : la bibliothèque des messages réutilisables du canal RCS.
@@ -101,10 +103,10 @@ function RcsMessagesInner({ session }: { session: Session }) {
   return (
     <div className="space-y-6">
       {editing ? (
-        <section className="rounded-2xl border border-brand-200 bg-brand-50/40 p-6 shadow-sm">
+        <section className="rounded-2xl border border-brand-200 bg-brand-50/40 p-6">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-semibold tracking-tight text-ink-900">{t(`Modifier « ${editing.name} »`, `Edit “${editing.name}”`)}</h2>
-            <button onClick={fermer} className="text-xs text-ink-400 hover:text-ink-700">{t('Fermer', 'Close')}</button>
+            <h2 className="text-base font-semibold text-ink-900">{t(`Modifier « ${editing.name} »`, `Edit “${editing.name}”`)}</h2>
+            <button onClick={fermer} className="text-xs text-ink-400 hover:text-ink-900">{t('Fermer', 'Close')}</button>
           </div>
           {carrouselEdite ? (
             <RcsCarouselForm
@@ -125,10 +127,10 @@ function RcsMessagesInner({ session }: { session: Session }) {
           ) : null}
         </section>
       ) : creating ? (
-        <section className="rounded-2xl border border-brand-200 bg-brand-50/40 p-6 shadow-sm">
+        <section className="rounded-2xl border border-brand-200 bg-brand-50/40 p-6">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Nouveau message RCS', 'New RCS message')}</h2>
-            <button onClick={fermer} className="text-xs text-ink-400 hover:text-ink-700">{t('Fermer', 'Close')}</button>
+            <h2 className="text-base font-semibold text-ink-900">{t('Nouveau message RCS', 'New RCS message')}</h2>
+            <button onClick={fermer} className="text-xs text-ink-400 hover:text-ink-900">{t('Fermer', 'Close')}</button>
           </div>
           <div className="inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-xs" role="group" aria-label={t('Format du message', 'Message format')}>
             {(['simple', 'carrousel'] as const).map((f) => (
@@ -138,7 +140,7 @@ function RcsMessagesInner({ session }: { session: Session }) {
                 onClick={() => setFormat(f)}
                 aria-pressed={format === f}
                 data-testid={`rcs-format-${f}`}
-                className={`rounded-md px-3 py-1 ${format === f ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}
+                className={`rounded-md px-3 py-1 ${format === f ? 'bg-white font-medium text-brand-700' : 'text-ink-500 hover:text-ink-900'}`}
               >
                 {f === 'simple' ? t('Message simple', 'Simple message') : t('Carrousel', 'Carousel')}
               </button>
@@ -158,21 +160,20 @@ function RcsMessagesInner({ session }: { session: Session }) {
 
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Messages RCS', 'RCS messages')} ({items.length})</h2>
+          <TitrePage className="tabular-nums">{t('Messages RCS', 'RCS messages')} ({items.length})</TitrePage>
           <div className="flex items-center gap-3">
             <button onClick={() => void reload()} className="text-xs text-brand-600 hover:underline">{t('Rafraîchir', 'Refresh')}</button>
             {!creating && !editing && (
-              <button
+              <Bouton
                 onClick={ouvrirCreation}
                 data-testid="rcs-message-new"
-                className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600"
               >
                 {t('+ Créer un message', '+ Create a message')}
-              </button>
+              </Bouton>
             )}
           </div>
         </div>
-        {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        {error && <p className="mb-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
         {loading ? (
           <p className="text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>
         ) : items.length === 0 ? (
@@ -180,9 +181,9 @@ function RcsMessagesInner({ session }: { session: Session }) {
             {t('Aucun message. Clique « + Créer un message » : il part tel qu’il est écrit, sans validation.', 'No messages yet. Click “+ Create a message”: it goes out as written, with no approval.')}
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white shadow-sm" data-testid="rcs-message-list">
+          <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white" data-testid="rcs-message-list">
             <table className="w-full min-w-[520px] text-sm">
-              <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+              <thead className="bg-ink-50 text-left text-xs text-ink-500">
                 <tr>
                   <th className="px-4 py-2.5 font-medium">{t('Nom', 'Name')}</th>
                   <th className="px-4 py-2.5 font-medium">{t('Format', 'Format')}</th>
@@ -206,7 +207,7 @@ function RcsMessagesInner({ session }: { session: Session }) {
                         </button>
                       </td>
                       <td className="px-4 py-2.5 text-xs text-ink-500" data-testid={`rcs-message-format-${m.id}`}>{t(...libelleFormatRcs(m.content))}</td>
-                      <td className="max-w-xs truncate px-4 py-2.5 text-xs text-ink-600">{extraitRcs(m.content)}</td>
+                      <td className="max-w-xs truncate px-4 py-2.5 text-xs text-ink-500">{extraitRcs(m.content)}</td>
                       <td className="px-4 py-2.5 text-right">
                         <div className="flex items-center justify-end gap-3 text-xs">
                           {editable ? (
@@ -219,7 +220,7 @@ function RcsMessagesInner({ session }: { session: Session }) {
                             </button>
                           ) : (
                             <span
-                              className="text-ink-300"
+                              className="text-ink-400"
                               title={m.content === null
                                 ? t('Contenu illisible : il ne peut pas être ouvert ici.', 'Unreadable content: it cannot be opened here.')
                                 : t('Une carte à titre (créée par l’API) ne s’édite pas ici.', 'A titled card (created through the API) cannot be edited here.')}
@@ -227,7 +228,7 @@ function RcsMessagesInner({ session }: { session: Session }) {
                               {t('Éditer', 'Edit')}
                             </span>
                           )}
-                          <button onClick={() => void supprimer(m)} className="font-medium text-coral hover:text-red-700">{t('Supprimer', 'Delete')}</button>
+                          <button onClick={() => void supprimer(m)} className="font-medium text-danger hover:text-danger-700">{t('Supprimer', 'Delete')}</button>
                         </div>
                       </td>
                     </tr>
@@ -250,13 +251,13 @@ function ApercuMessage({ message, onClose }: { message: RcsMessage; onClose: () 
   const carrousel = versBrouillonCarrousel(message.content);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()} data-testid="rcs-message-apercu">
+      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-mm-lg" onClick={(e) => e.stopPropagation()} data-testid="rcs-message-apercu">
         <div className="mb-3 flex items-start justify-between">
           <div>
             <h3 className="text-sm font-semibold text-ink-900">{message.name}</h3>
             <p className="text-xs text-ink-400">{t(...libelleFormatRcs(message.content))}</p>
           </div>
-          <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-700" aria-label={t('Fermer', 'Close')}>×</button>
+          <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-900" aria-label={t('Fermer', 'Close')}>×</button>
         </div>
         <RcsPhoneFrame>
           {carrousel ? (

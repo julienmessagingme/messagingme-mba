@@ -14,6 +14,7 @@ import {
   rattacherOutil, retirerOutil,
   type GesteMoment, type ModeleOutil, type OutilAgent, type OutilBibliotheque, type TexteBilingue,
 } from '@/lib/api-agent-tools';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * L'onglet OUTILS d'un agent IA.
@@ -146,11 +147,11 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
           catalogue maison. */}
       {restants.length > 0 && (
         <div className={`${cardCls} flex flex-col gap-3`}>
-          <p className="text-sm font-medium text-ink-700">{t('Donner un outil de plus', 'Give one more tool')}</p>
+          <p className="text-sm font-medium text-ink-900">{t('Donner un outil de plus', 'Give one more tool')}</p>
           {restants.map((m) => (
             <div key={m.handler} data-testid={`outil-dispo-${m.handler}`} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-ink-200 px-3 py-2">
               <div className="min-w-0 flex-1">
-                <p className="flex items-center gap-2 text-sm font-medium text-ink-800">
+                <p className="flex items-center gap-2 text-sm font-medium text-ink-900">
                   {signeDuHandler(m.handler) !== null && (
                     <IconeOutil signe={signeDuHandler(m.handler)!} className="h-4 w-4 shrink-0 text-ink-400" />
                   )}
@@ -160,14 +161,14 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
                 </p>
                 <p className="mt-0.5 text-xs leading-relaxed text-ink-500"><Bilingue texte={m.description} /></p>
               </div>
-              <button
+              <Bouton variante="secondaire"
                 data-testid={`outil-ajouter-${m.handler}`}
                 disabled={busy}
                 onClick={() => void agir(async () => { await ajouterOutil(tenantId, agentId, m.handler); })}
-                className="shrink-0 rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:opacity-40"
+                className="shrink-0"
               >
                 {t('Ajouter', 'Add')}
-              </button>
+              </Bouton>
             </div>
           ))}
         </div>
@@ -178,7 +179,7 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
           dans SES systèmes. Les systèmes eux-mêmes ne se déclarent pas ici : ils vivent dans Tools >
           Connecteurs API, parce qu'ils appartiennent au workspace et que plusieurs agents tapent dedans. */}
       <div className="border-t border-ink-200 pt-4">
-        <p className="text-sm font-semibold text-ink-800">{t('Vos systèmes', 'Your systems')}</p>
+        <p className="text-sm font-semibold text-ink-900">{t('Vos systèmes', 'Your systems')}</p>
         <p className="mb-2 text-xs text-ink-500">
           {t(
             'Déclarés une fois pour le workspace dans Tools > Connecteurs API, et partagés par tous vos agents. Ici, vous dites ce que CET agent a le droit d’y appeler.',
@@ -202,7 +203,7 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
         */}
       {((vue?.outils ?? []).some((o) => o.origin === 'mcp') || mcpARattacher.length > 0) && (
         <div className="border-t border-ink-200 pt-4" data-testid="agent-outils-mcp">
-          <p className="text-sm font-semibold text-ink-800">{t('Vos serveurs MCP', 'Your MCP servers')}</p>
+          <p className="text-sm font-semibold text-ink-900">{t('Vos serveurs MCP', 'Your MCP servers')}</p>
           <p className="mb-2 text-xs text-ink-500">
             {t(
               'Importés depuis Tools > Connecteurs MCP, et partagés par tous vos agents. Ici, vous dites ce que CET agent a le droit d’appeler. Les paramètres se règlent là-bas.',
@@ -212,13 +213,13 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
           <div className="flex flex-col gap-3">
             {mcpARattacher.length > 0 && (
               <div data-testid="mcp-a-rattacher" className="rounded-lg border border-dashed border-ink-300 p-3">
-                <p className="text-xs text-ink-600">
+                <p className="text-xs text-ink-500">
                   {t('Importés dans l’espace, pas encore donnés à cet agent :', 'Imported in the workspace, not yet given to this agent:')}
                 </p>
                 <ul className="mt-2 flex flex-col gap-1">
                   {mcpARattacher.map((o) => (
-                    <li key={o.id} className="flex items-center justify-between gap-2 text-sm text-ink-700">
-                      <span className="min-w-0 truncate">{o.title} <code className="text-[11px] text-ink-500">{o.name}</code></span>
+                    <li key={o.id} className="flex items-center justify-between gap-2 text-sm text-ink-900">
+                      <span className="min-w-0 truncate">{o.title} <code className="text-xs text-ink-500">{o.name}</code></span>
                       <button
                         data-testid={`mcp-rattacher-${o.id}`}
                         disabled={busy}
@@ -272,17 +273,17 @@ function Bilingue({ texte }: { texte: TexteBilingue }) {
  */
 function Risque({ risk, handler }: { risk: OutilAgent['risk']; handler?: string }) {
   const t = useT();
-  if (risk === 'read') return <Etiquette classe="bg-ink-100 text-ink-600">{t('lecture', 'read')}</Etiquette>;
-  if (risk === 'write') return <Etiquette classe="bg-sky/10 text-sky">{t('écriture', 'write')}</Etiquette>;
+  if (risk === 'read') return <Etiquette classe="bg-ink-100 text-ink-500">{t('lecture', 'read')}</Etiquette>;
+  if (risk === 'write') return <Etiquette classe="bg-brand-50 text-brand-600">{t('écriture', 'write')}</Etiquette>;
   return (
-    <Etiquette classe="bg-amber-50 text-amber-800">
+    <Etiquette classe="bg-alerte-50 text-alerte-800">
       {handler === 'envoyer_bloc' ? t('part chez le client', 'reaches the customer') : t('sans retour', 'no undo')}
     </Etiquette>
   );
 }
 
 function Etiquette({ classe, children }: { classe: string; children: React.ReactNode }) {
-  return <span className={`ml-1 rounded-full px-2 py-0.5 align-middle text-[11px] font-medium ${classe}`}>{children}</span>;
+  return <span className={`ml-1 rounded-full px-2 py-0.5 align-middle text-xs font-medium ${classe}`}>{children}</span>;
 }
 
 function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, onRetirer }: {
@@ -301,7 +302,7 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
     <div data-testid={`outil-${outil.id}`} className={`${cardCls} flex flex-col gap-3`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="flex items-center gap-2 truncate text-sm font-medium text-ink-800">
+          <p className="flex items-center gap-2 truncate text-sm font-medium text-ink-900">
             {/* 🔴 LE MÊME DESSIN QUE DANS « DONNER UN OUTIL DE PLUS » : on reconnaît ici ce qu'on a ajouté
                 là-bas. Un handler que cette console ne connaît pas n'en porte AUCUN, plutôt qu'un par
                 défaut : le catalogue vit côté serveur, donc une console plus ancienne que l'API en verra. */}
@@ -310,13 +311,13 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
             )}
             {outil.title} <Risque risk={outil.risk} handler={String(outil.binding.handler ?? '')} />
             {outil.actif
-              ? <Etiquette classe="bg-emerald-50 text-emerald-700">{t('actif', 'active')}</Etiquette>
-              : <Etiquette classe="bg-ink-100 text-ink-600">{t('inactif', 'inactive')}</Etiquette>}
+              ? <Etiquette classe="bg-succes-50 text-succes-700">{t('actif', 'active')}</Etiquette>
+              : <Etiquette classe="bg-ink-100 text-ink-500">{t('inactif', 'inactive')}</Etiquette>}
           </p>
-          <p className="mt-0.5 truncate font-mono text-[11px] text-ink-500">{outil.name}</p>
+          <p className="mt-0.5 truncate font-mono text-xs text-ink-500">{outil.name}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <button
+          <Bouton variante="secondaire" enCours={outil.actif}
             data-testid={`outil-activer-${outil.id}`}
             /**
              * ⚠️ PAS CLIQUABLE SUR UN OUTIL QUE LE BANDEAU VIENT DE DÉCLARER MORT. Le serveur refuse déjà
@@ -327,10 +328,9 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
              */
             disabled={busy || (!outil.actif && Boolean(outil.mcpNonActivable || outil.mcpIndisponibleLe))}
             onClick={() => onActiver(!outil.actif)}
-            className="rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:opacity-40"
           >
             {outil.actif ? t('Désactiver', 'Deactivate') : t('Activer', 'Activate')}
-          </button>
+          </Bouton>
           <button
             data-testid={`outil-retirer-${outil.id}`}
             disabled={busy}
@@ -350,7 +350,7 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
                 'Remove this tool from this agent (it stays available to your other agents)')
               : t('Retirer cette action de cet agent (elle est supprimée, avec ses réglages)',
                 'Remove this action from this agent (it is deleted, with its settings)')}
-            className="rounded px-2 py-1 text-sm text-coral hover:bg-red-50 disabled:opacity-40"
+            className="rounded px-2 py-1 text-sm text-danger hover:bg-danger-50 disabled:opacity-40"
           >
             ✕
           </button>
@@ -362,7 +362,7 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
           doit pouvoir la montrer à son fournisseur. */}
       {(outil.mcpIndisponibleLe || outil.mcpNonActivable) && (
         <p data-testid={`outil-mcp-mort-${outil.id}`}
-          className="rounded-lg border border-coral/40 bg-coral/10 px-3 py-2 text-sm text-ink-800">
+          className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-ink-900">
           {outil.mcpIndisponibleLe
             ? t('Cet outil a disparu du serveur MCP : il n’est plus appelable.',
               'This tool is gone from the MCP server: it can no longer be called.')
@@ -392,7 +392,7 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
       )}
 
       {outil.risk === 'irreversible' && (
-        <label data-testid={`outil-autonomie-${outil.id}`} className="flex items-start gap-2 rounded-lg border border-gold/40 bg-gold/10 px-3 py-2 text-sm text-ink-800">
+        <label data-testid={`outil-autonomie-${outil.id}`} className="flex items-start gap-2 rounded-lg border border-alerte-300 bg-alerte-50 px-3 py-2 text-sm text-ink-900">
           <input
             type="checkbox"
             className="mt-0.5"
@@ -478,7 +478,7 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
           {ouvert ? t('Masquer ce que le modèle voit', 'Hide what the model sees') : t('Voir ce que le modèle voit', 'See what the model sees')}
         </button>
         {ouvert && (
-          <pre data-testid={`outil-schema-${outil.id}`} className="mt-2 max-h-64 overflow-auto rounded-lg bg-ink-50 p-3 text-[11px] leading-relaxed text-ink-700">
+          <pre data-testid={`outil-schema-${outil.id}`} className="mt-2 max-h-64 overflow-auto rounded-lg bg-ink-50 p-3 text-xs leading-relaxed text-ink-900">
             {outil.expose === null
               ? t('Rien : cet outil n’a aucune valeur possible.', 'Nothing: this tool has no possible value.')
               : JSON.stringify(outil.expose, null, 2)}
@@ -502,7 +502,7 @@ function NomExpose({ outil, busy, onSave }: { outil: OutilAgent; busy: boolean; 
   const propre = normaliserNomOutil(v);
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-sm font-medium text-ink-700">{t('Nom vu par le modèle', 'Name seen by the model')}</label>
+      <label className="text-sm font-medium text-ink-900">{t('Nom vu par le modèle', 'Name seen by the model')}</label>
       <input
         data-testid={`outil-nom-${outil.id}`}
         className={`${inputCls} font-mono`}
@@ -512,7 +512,7 @@ function NomExpose({ outil, busy, onSave }: { outil: OutilAgent; busy: boolean; 
         onBlur={() => { if (propre !== '' && propre !== outil.name) onSave(propre); else setV(outil.name); }}
       />
       {propre !== v.trim() && propre !== '' && (
-        <span data-testid={`outil-nom-normalise-${outil.id}`} className="font-mono text-[11px] text-ink-500">{propre}</span>
+        <span data-testid={`outil-nom-normalise-${outil.id}`} className="font-mono text-xs text-ink-500">{propre}</span>
       )}
       <p className="text-xs leading-relaxed text-ink-500">
         {t('Un nom parlant fait un meilleur agent. Minuscules, chiffres et tirets bas seulement.', 'A meaningful name makes a better agent. Lowercase, digits and underscores only.')}
@@ -583,7 +583,7 @@ function ChoixDeBlocs({ tenantId, outilId, valeurs, busy, onSave }: {
 
   return (
     <div className="flex flex-col gap-2">
-      <label className="text-sm font-medium text-ink-700">{t('Blocs que l’agent peut envoyer', 'Blocks the agent may send')}</label>
+      <label className="text-sm font-medium text-ink-900">{t('Blocs que l’agent peut envoyer', 'Blocks the agent may send')}</label>
       <p className="text-xs leading-relaxed text-ink-500">
         {t(
           'Cochez les blocs. L’agent ne pourra envoyer que ceux-là, et seulement dans le scénario où se trouve déjà le contact.',
@@ -592,7 +592,7 @@ function ChoixDeBlocs({ tenantId, outilId, valeurs, busy, onSave }: {
       </p>
 
       {valeurs.length === 0 && (
-        <span className="text-xs text-amber-800">
+        <span className="text-xs text-alerte-800">
           {t('Aucun bloc coché : l’agent ne peut en envoyer aucun.', 'No block ticked: the agent cannot send any.')}
         </span>
       )}
@@ -601,15 +601,15 @@ function ChoixDeBlocs({ tenantId, outilId, valeurs, busy, onSave }: {
           a perdu son agent, disparaîtrait de la liste : le code resterait enregistré et invisible, donc
           impossible à retirer, sur un outil qui échouerait en silence. */}
       {valeurs.filter((v) => !connus.has(v)).map((v) => (
-        <span key={v} data-testid={`outil-bloc-inconnu-${v}`} className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">
+        <span key={v} data-testid={`outil-bloc-inconnu-${v}`} className="flex items-center gap-2 rounded-lg border border-alerte-300 bg-alerte-50 px-2 py-1 text-xs text-alerte-900">
           <span className="font-mono">{v}</span>
           <span>{t('ce bloc n’existe plus, ou son scénario n’a plus d’agent', 'this block no longer exists, or its scenario has no agent')}</span>
-          <button disabled={busy} onClick={() => bascule(v)} className="ml-auto text-coral disabled:opacity-40">✕</button>
+          <button disabled={busy} onClick={() => bascule(v)} className="ml-auto text-danger hover:text-danger-700 hover:underline disabled:opacity-40">✕</button>
         </span>
       ))}
 
       {blocs === null && !erreur && <p className="text-xs text-ink-500">{t('Chargement des scénarios…', 'Loading scenarios…')}</p>}
-      {erreur && <p className="text-xs text-coral">{t('Scénarios illisibles : réessayez en rouvrant cet onglet.', 'Scenarios unreadable: reopen this tab to retry.')}</p>}
+      {erreur && <p className="text-xs text-danger">{t('Scénarios illisibles : réessayez en rouvrant cet onglet.', 'Scenarios unreadable: reopen this tab to retry.')}</p>}
       {blocs !== null && proposables.length === 0 && (
         <p className="text-xs text-ink-500" data-testid="outil-blocs-aucun">
           {t(
@@ -621,10 +621,10 @@ function ChoixDeBlocs({ tenantId, outilId, valeurs, busy, onSave }: {
 
       {[...parScenario.entries()].map(([scenario, liste]) => (
         <div key={scenario} className="rounded-lg border border-ink-200 px-3 py-2">
-          <p className="text-xs font-semibold text-ink-700">{scenario}</p>
+          <p className="text-xs font-semibold text-ink-900">{scenario}</p>
           <div className="mt-1.5 flex flex-col gap-1">
             {liste.map((n) => (
-              <label key={n.code!} data-testid={`outil-bloc-${outilId}-${n.code}`} className="flex items-start gap-2 text-sm text-ink-800">
+              <label key={n.code!} data-testid={`outil-bloc-${outilId}-${n.code}`} className="flex items-start gap-2 text-sm text-ink-900">
                 <input
                   type="checkbox"
                   className="mt-0.5"
@@ -634,7 +634,7 @@ function ChoixDeBlocs({ tenantId, outilId, valeurs, busy, onSave }: {
                 />
                 <span>
                   {n.name.trim() === '' ? n.summary : n.name}
-                  <span className="ml-1 font-mono text-[11px] text-ink-400">{n.code}</span>
+                  <span className="ml-1 font-mono text-xs text-ink-400">{n.code}</span>
                 </span>
               </label>
             ))}
@@ -656,26 +656,26 @@ function ListeValeurs({ outilId, nom, aide, valeurs, busy, onSave }: {
   const propre = ajout.trim();
   return (
     <div className="flex flex-col gap-2">
-      <label className="text-sm font-medium text-ink-700">
+      <label className="text-sm font-medium text-ink-900">
         {t('Valeurs autorisées pour', 'Allowed values for')} <span className="font-mono text-xs">{nom}</span>
       </label>
       {aide && <p className="text-xs leading-relaxed text-ink-500"><Bilingue texte={aide} /></p>}
       <div className="flex flex-wrap gap-2">
         {valeurs.map((v) => (
-          <span key={v} data-testid={`outil-valeur-${outilId}-${v}`} className="flex items-center gap-1 rounded-full bg-ink-100 px-2 py-0.5 text-xs text-ink-700">
+          <span key={v} data-testid={`outil-valeur-${outilId}-${v}`} className="flex items-center gap-1 rounded-full bg-ink-100 px-2 py-0.5 text-xs text-ink-900">
             {v}
             <button
               data-testid={`outil-valeur-retirer-${outilId}-${v}`}
               disabled={busy}
               onClick={() => onSave(valeurs.filter((x) => x !== v))}
-              className="text-coral disabled:opacity-40"
+              className="text-danger hover:text-danger-700 hover:underline disabled:opacity-40"
             >
               ✕
             </button>
           </span>
         ))}
         {valeurs.length === 0 && (
-          <span className="text-xs text-amber-800">
+          <span className="text-xs text-alerte-800">
             {t('Aucune restriction : l’agent peut y mettre ce qu’il veut.', 'No restriction: the agent can put whatever it wants.')}
           </span>
         )}
@@ -690,14 +690,13 @@ function ListeValeurs({ outilId, nom, aide, valeurs, busy, onSave }: {
           onKeyDown={(e) => { if (e.key === 'Enter' && propre !== '' && !valeurs.includes(propre)) { onSave([...valeurs, propre]); setAjout(''); } }}
           placeholder={t('une valeur', 'a value')}
         />
-        <button
+        <Bouton variante="secondaire"
           data-testid={`outil-valeur-ajouter-${outilId}-${nom}`}
           disabled={busy || propre === '' || valeurs.includes(propre)}
           onClick={() => { onSave([...valeurs, propre]); setAjout(''); }}
-          className="rounded-lg border border-ink-300 px-3 py-2 text-sm text-ink-700 hover:bg-ink-50 disabled:opacity-40"
         >
           {t('Ajouter', 'Add')}
-        </button>
+        </Bouton>
       </div>
     </div>
   );
@@ -720,7 +719,7 @@ function Champ({ label, aide, valeur, multi, onSave, testId, busy }: {
   };
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-sm font-medium text-ink-700">{label}</label>
+      <label className="text-sm font-medium text-ink-900">{label}</label>
       {multi ? <textarea rows={3} {...commun} /> : <input {...commun} />}
       {aide && <p className="text-xs leading-relaxed text-ink-500">{aide}</p>}
     </div>
@@ -763,7 +762,7 @@ function Gestes({ outil, busy, onSave }: {
 
   return (
     <div data-testid={`outil-gestes-${outil.id}`} className="rounded-lg border border-ink-200 px-3 py-2">
-      <p className="text-xs font-medium text-ink-700">{t('Et en plus, faire ceci', 'And also do this')}</p>
+      <p className="text-xs font-medium text-ink-900">{t('Et en plus, faire ceci', 'And also do this')}</p>
       <p className="mt-0.5 text-xs leading-relaxed text-ink-500">
         {t(
           'Ce que nous faisons nous-mêmes quand ce moment se produit, sans le demander au modèle. Ces gestes partent MÊME SI l’appel ci-dessus échoue : ils marquent que la situation s’est produite, pas qu’elle a abouti. Écrivez donc « rendez-vous demandé » plutôt que « rendez-vous pris ».',
@@ -774,20 +773,20 @@ function Gestes({ outil, busy, onSave }: {
       {gestes.length > 0 && (
         <ul className="mt-2 flex flex-col gap-1">
           {gestes.map((g, i) => (
-            <li key={`${g.type}-${i}`} data-testid={`outil-geste-${outil.id}-${i}`} className="flex items-center justify-between gap-2 text-xs text-ink-800">
+            <li key={`${g.type}-${i}`} data-testid={`outil-geste-${outil.id}-${i}`} className="flex items-center justify-between gap-2 text-xs text-ink-900">
               <span className="min-w-0 truncate">
                 {g.type === 'tag'
                   ? t(`Poser le tag « ${g.valeur} »`, `Tag with “${g.valeur}”`)
                   : t(`Écrire « ${g.valeur} » dans le champ « ${g.champ} »`, `Write “${g.valeur}” into field “${g.champ}”`)}
               </span>
-              <button
+              <Bouton variante="secondaire" taille="petite"
                 data-testid={`outil-geste-retirer-${outil.id}-${i}`}
                 disabled={busy}
                 onClick={() => onSave(gestes.filter((_, j) => j !== i))}
-                className="shrink-0 rounded border border-ink-300 px-2 py-0.5 text-[11px] text-ink-600 hover:bg-ink-50 disabled:opacity-40"
+                className="shrink-0"
               >
                 {t('Retirer', 'Remove')}
-              </button>
+              </Bouton>
             </li>
           ))}
         </ul>
@@ -822,14 +821,13 @@ function Gestes({ outil, busy, onSave }: {
           disabled={busy}
           onChange={(e) => setValeur(e.target.value)}
         />
-        <button
+        <Bouton variante="secondaire" taille="petite"
           data-testid={`outil-geste-ajouter-${outil.id}`}
           disabled={busy || !prete}
           onClick={ajouter}
-          className="rounded-lg border border-ink-300 px-2 py-1 text-xs text-ink-700 hover:bg-ink-50 disabled:opacity-40"
         >
           {t('Ajouter', 'Add')}
-        </button>
+        </Bouton>
       </div>
     </div>
   );

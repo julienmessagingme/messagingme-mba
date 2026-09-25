@@ -8,6 +8,7 @@ import { statutDe, type NomDeCode } from '@/lib/api-exemples';
 import type { ChampDoc, TableDeChamps } from '@/lib/api-champs';
 import { hrefDe, pageDoc, type AncreDe, type CleDePage, type LienVers } from '@/lib/doc-api-pages';
 import { ENDPOINTS, GROUPES_ENDPOINTS, endpoint, type CleEndpoint, type EndpointDoc, type Methode } from '@/lib/api-doc-endpoints';
+import { TitrePage } from '@/components/TitrePage';
 
 /**
  * LES BRIQUES DES PAGES DE LA DOCUMENTATION (refonte du 2026-09-25) : seulement ce que plusieurs pages répètent.
@@ -54,7 +55,7 @@ export function curlGet(chemin: string): string {
   return [`curl ${ADRESSE_API}${chemin} \\`, `  -H "Authorization: Bearer ${CLE_EXEMPLE}"`].join('\n');
 }
 
-const inlineCls = 'rounded bg-ink-100 px-1.5 py-0.5 font-mono text-[0.85em] text-ink-800 [overflow-wrap:anywhere]';
+const inlineCls = 'rounded bg-ink-100 px-1.5 py-0.5 font-mono text-[0.85em] text-ink-900 [overflow-wrap:anywhere]';
 const lienCls = 'font-medium text-brand-600 underline decoration-brand-200 underline-offset-2 hover:text-brand-700 hover:decoration-brand-500';
 
 /** Le titre de la page, son seul `h1`, tiré de la carte de la doc ; `children` est la phrase d'introduction. */
@@ -62,8 +63,8 @@ export function EnTetePage({ page, children }: { page: CleDePage; children?: Rea
   const t = useT();
   return (
     <header className="space-y-3">
-      <h1 className="text-3xl font-semibold tracking-tight text-ink-900">{t(...pageDoc(page).titre)}</h1>
-      {children && <div className="space-y-2 text-base leading-relaxed text-ink-600">{children}</div>}
+      <TitrePage>{t(...pageDoc(page).titre)}</TitrePage>
+      {children && <div className="space-y-2 text-base leading-relaxed text-ink-500">{children}</div>}
     </header>
   );
 }
@@ -72,21 +73,21 @@ export function EnTetePage({ page, children }: { page: CleDePage; children?: Rea
 export function Section({ id, titre, children }: { id?: string; titre: React.ReactNode; children: React.ReactNode }) {
   return (
     <section id={id} className="scroll-mt-20 space-y-4 border-t border-ink-200 pt-8">
-      <h2 className="text-xl font-semibold tracking-tight text-ink-900">{titre}</h2>
-      <div className="space-y-4 text-[15px] leading-relaxed text-ink-700">{children}</div>
+      <h2 className="text-lg font-semibold text-ink-900">{titre}</h2>
+      <div className="space-y-4 text-base leading-relaxed text-ink-900">{children}</div>
     </section>
   );
 }
 
 const COULEUR_METHODE: Record<Methode, string> = {
-  GET: 'bg-mint-50 text-mint-700 ring-mint-200',
+  GET: 'bg-succes-50 text-succes-700 ring-succes-200',
   POST: 'bg-brand-50 text-brand-700 ring-brand-200',
-  PATCH: 'bg-amber-50 text-amber-800 ring-amber-200',
+  PATCH: 'bg-alerte-50 text-alerte-800 ring-alerte-200',
 };
 
 export function BadgeMethode({ methode, petit = false }: { methode: Methode; petit?: boolean }) {
   return (
-    <span className={`inline-block rounded-md font-mono font-semibold ring-1 ring-inset ${petit ? 'px-1.5 py-px text-[11px]' : 'px-2 py-0.5 text-sm'} ${COULEUR_METHODE[methode]}`}>
+    <span className={`inline-block rounded-md font-mono font-semibold ring-1 ring-inset ${petit ? 'px-1.5 py-px text-xs' : 'px-2 py-0.5 text-sm'} ${COULEUR_METHODE[methode]}`}>
       {methode}
     </span>
   );
@@ -108,12 +109,12 @@ export function Route({ ep, children }: { ep: CleEndpoint; children: React.React
           <BadgeMethode methode={e.methode} />{' '}
           <span className="min-w-0 [overflow-wrap:anywhere]">{e.chemin}</span>
         </h2>
-        <p className="text-[15px] leading-relaxed text-ink-700">{t(e.resume[0], e.resume[1])}</p>
+        <p className="text-base leading-relaxed text-ink-900">{t(e.resume[0], e.resume[1])}</p>
         <p className="text-sm text-ink-500">
           {t('Droit :', 'Scope:')} <C>{e.droit}</C>
         </p>
       </div>
-      <div className="space-y-4 text-[15px] leading-relaxed text-ink-700">{children}</div>
+      <div className="space-y-4 text-base leading-relaxed text-ink-900">{children}</div>
     </section>
   );
 }
@@ -129,8 +130,8 @@ function LignesEndpoints({ endpoints, droit }: { endpoints: readonly EndpointDoc
             <tr key={`${e.methode} ${e.chemin}`} className="border-b border-ink-100 align-top last:border-0">
               <td className="w-16 py-2 pl-3 pr-1"><BadgeMethode methode={e.methode} petit /></td>
               <td className="px-2 py-2">
-                <Link href={hrefDe(e.lien)} className={`font-mono text-[13px] [overflow-wrap:anywhere] ${lienCls}`}>{e.chemin}</Link>
-                <span className="mt-0.5 block text-ink-600">{t(e.resume[0], e.resume[1])}</span>
+                <Link href={hrefDe(e.lien)} className={`font-mono text-sm [overflow-wrap:anywhere] ${lienCls}`}>{e.chemin}</Link>
+                <span className="mt-0.5 block text-ink-500">{t(e.resume[0], e.resume[1])}</span>
               </td>
               {droit && <td className="hidden w-40 whitespace-nowrap px-3 py-2 sm:table-cell"><C>{e.droit}</C></td>}
             </tr>
@@ -175,7 +176,7 @@ export function Sous({ id, children }: { id?: string; children: React.ReactNode 
 
 /** Une subdivision d'un `h3`, quand une requête a plusieurs volets (la cible, les destinataires…). */
 export function SousSous({ id, children }: { id?: string; children: React.ReactNode }) {
-  return <h4 id={id} className="scroll-mt-20 pt-1 text-[15px] font-semibold text-ink-800">{children}</h4>;
+  return <h4 id={id} className="scroll-mt-20 pt-1 text-base font-semibold text-ink-900">{children}</h4>;
 }
 
 export function C({ children }: { children: React.ReactNode }) {
@@ -199,7 +200,7 @@ export function LienDoc<P extends CleDePage>({ page, ancre, children }: { page: 
 }
 
 export function Liste({ children }: { children: React.ReactNode }) {
-  return <ul className="list-disc space-y-2 pl-5 marker:text-ink-300">{children}</ul>;
+  return <ul className="list-disc space-y-2 pl-5 marker:text-ink-400">{children}</ul>;
 }
 
 /**
@@ -222,8 +223,8 @@ export function BoutonCopier({ texte, quoi, sombre = false, testid = 'copier' }:
       onClick={() => {
         void navigator.clipboard?.writeText(texte).then(() => { setCopie(true); setTimeout(() => setCopie(false), 2000); }).catch(() => {});
       }}
-      className={`shrink-0 rounded-md px-2 py-1 text-xs font-semibold transition ${
-        sombre ? 'text-ink-200 hover:bg-white/10 hover:text-white' : 'border border-ink-200 bg-white text-ink-600 hover:bg-ink-50'
+      className={`shrink-0 rounded-md px-2 py-1 text-xs font-semibold transition-colors duration-150 ${
+        sombre ? 'text-ink-200 hover:bg-white/10 hover:text-white' : 'border border-ink-200 bg-white text-ink-500 hover:bg-ink-50'
       }`}
     >
       {copie ? t('Copié', 'Copied') : t('Copier', 'Copy')}
@@ -242,7 +243,7 @@ export function Bloc({ children, legende, testid, testidCopier }: {
   return (
     <div className="min-w-0 overflow-hidden rounded-lg bg-ink-900">
       <div className="flex items-center justify-between gap-2 border-b border-white/10 py-1 pl-4 pr-1.5">
-        <span className="text-xs font-medium text-ink-300">{legende}</span>
+        <span className="text-xs font-medium text-ink-400">{legende}</span>
         <BoutonCopier texte={children} quoi={legende} sombre {...(testidCopier ? { testid: testidCopier } : {})} />
       </div>
       <pre className="overflow-x-auto px-4 py-3 font-mono text-xs leading-relaxed text-ink-50" data-testid={testid}>{children}</pre>
@@ -253,8 +254,8 @@ export function Bloc({ children, legende, testid, testidCopier }: {
 type SorteEncadre = 'note' | 'attention' | 'obligatoire';
 const STYLE_ENCADRE: Record<SorteEncadre, { boite: string; titre: string; libelle: readonly [string, string] }> = {
   note: { boite: 'border-brand-300 bg-brand-50/60', titre: 'text-brand-700', libelle: ['Note', 'Note'] },
-  attention: { boite: 'border-amber-400 bg-amber-50', titre: 'text-amber-800', libelle: ['Attention', 'Caution'] },
-  obligatoire: { boite: 'border-coral bg-coral/5', titre: 'text-coral', libelle: ['Obligatoire', 'Required'] },
+  attention: { boite: 'border-alerte-400 bg-alerte-50', titre: 'text-alerte-800', libelle: ['Attention', 'Caution'] },
+  obligatoire: { boite: 'border-danger-500 bg-danger-50', titre: 'text-danger', libelle: ['Obligatoire', 'Required'] },
 };
 
 /**
@@ -265,7 +266,7 @@ export function Encadre({ sorte, children }: { sorte: SorteEncadre; children: Re
   const t = useT();
   const s = STYLE_ENCADRE[sorte];
   return (
-    <div className={`rounded-r-lg border-l-4 px-4 py-3 text-[15px] leading-relaxed text-ink-800 ${s.boite}`} data-encadre={sorte}>
+    <div className={`rounded-r-lg border-l-4 px-4 py-3 text-base leading-relaxed text-ink-900 ${s.boite}`} data-encadre={sorte}>
       <p className={`mb-1 text-sm font-semibold ${s.titre}`}>{t(s.libelle[0], s.libelle[1])}</p>
       <div className="space-y-2">{children}</div>
     </div>
@@ -286,23 +287,23 @@ export function Champs({ table }: { table: TableDeChamps }) {
         <table className="w-full text-left text-sm">
           <thead className="bg-ink-50">
             <tr className="border-b border-ink-200">
-              <th className="px-3 py-2 text-xs font-semibold text-ink-600">{t('Champ', 'Field')}</th>
-              <th className="hidden px-3 py-2 text-xs font-semibold text-ink-600 sm:table-cell">{t('Obligatoire', 'Required')}</th>
-              <th className="px-3 py-2 text-xs font-semibold text-ink-600">{t('Description', 'Description')}</th>
+              <th className="px-3 py-2 text-xs font-semibold text-ink-500">{t('Champ', 'Field')}</th>
+              <th className="hidden px-3 py-2 text-xs font-semibold text-ink-500 sm:table-cell">{t('Obligatoire', 'Required')}</th>
+              <th className="px-3 py-2 text-xs font-semibold text-ink-500">{t('Description', 'Description')}</th>
             </tr>
           </thead>
           <tbody>
             {table.champs.map((c) => (
               <tr key={c.nom} className="border-b border-ink-100 align-top last:border-0">
-                <td className="px-3 py-2 text-ink-700">
+                <td className="px-3 py-2 text-ink-900">
                   <span className="whitespace-nowrap"><C>{c.nom}</C></span>
                   <span className="mt-1 block font-mono text-xs text-ink-500">{c.type}</span>
                   <span className="mt-0.5 block text-xs text-ink-500 sm:hidden">
                     {c.obligatoire === 'oui' ? t('Obligatoire', 'Required') : c.obligatoire === 'non' ? t('Optionnel', 'Optional') : t(c.obligatoire[0], c.obligatoire[1])}
                   </span>
                 </td>
-                <td className="hidden px-3 py-2 text-ink-700 sm:table-cell">{obligation(c.obligatoire)}</td>
-                <td className="px-3 py-2 text-ink-700">
+                <td className="hidden px-3 py-2 text-ink-900 sm:table-cell">{obligation(c.obligatoire)}</td>
+                <td className="px-3 py-2 text-ink-900">
                   {t(c.quoi[0], c.quoi[1])}
                   {c.valeurs && <> {t('Valeurs :', 'Values:')} {c.valeurs.map((v, i) => <span key={v}>{i > 0 ? ', ' : ''}<C>{v}</C></span>)}.</>}
                   {c.voir && <> <Link href={hrefDe(c.voir.lien)} className={lienCls}>{t(c.voir.libelle[0], c.voir.libelle[1])}</Link></>}
@@ -365,13 +366,13 @@ export function Tableau({ entetes, lignes }: { entetes: string[]; lignes: Array<
       <table className="w-full text-left text-sm">
         <thead className="bg-ink-50">
           <tr className="border-b border-ink-200">
-            {entetes.map((e, i) => <th key={`${i}-${e}`} className="px-3 py-2 text-xs font-semibold text-ink-600">{e}</th>)}
+            {entetes.map((e, i) => <th key={`${i}-${e}`} className="px-3 py-2 text-xs font-semibold text-ink-500">{e}</th>)}
           </tr>
         </thead>
         <tbody>
           {lignes.map((l) => (
             <tr key={l.cle} className="border-b border-ink-100 last:border-0">
-              {l.cellules.map((c, i) => <td key={i} className="px-3 py-2 align-top text-ink-700">{c}</td>)}
+              {l.cellules.map((c, i) => <td key={i} className="px-3 py-2 align-top text-ink-900">{c}</td>)}
             </tr>
           ))}
         </tbody>

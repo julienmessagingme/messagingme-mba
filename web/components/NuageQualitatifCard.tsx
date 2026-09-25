@@ -6,6 +6,7 @@ import { fmtNum, fmtNote } from '@/lib/format';
 import { useT, useLocale } from '@/lib/i18n';
 import type { Locale } from '@/lib/locale';
 import { NOTE_MIN, NOTE_MAX, MILIEU_ECHELLE, positionPct, rayonPoint, estAlerte } from '@/lib/nuage';
+import { brand, danger, ink } from '@/lib/couleurs';
 
 /**
  * Le nuage « satisfaction x urgence » de la page de synthèse (lot F du 2026-09-08).
@@ -33,7 +34,7 @@ const INNER_H = H - PAD.top - PAD.bottom;
 const cx = (satisfaction: number): number => PAD.left + (positionPct(satisfaction) / 100) * INNER_W;
 const cy = (urgence: number): number => PAD.top + INNER_H - (positionPct(urgence) / 100) * INNER_H;
 
-const CARD = 'rounded-2xl border border-ink-200 bg-white p-5 shadow-sm';
+const CARD = 'rounded-2xl border border-ink-200 bg-white p-5';
 
 export function NuageQualitatifCard({ tenantId, range }: { tenantId: string; range: StatsRange }) {
   const t = useT();
@@ -70,7 +71,7 @@ export function NuageQualitatifCard({ tenantId, range }: { tenantId: string; ran
       </header>
 
       {erreur && (
-        <p className="rounded-lg bg-coral/10 px-3 py-2 text-xs text-coral" data-testid="nuage-erreur">
+        <p className="rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger" data-testid="nuage-erreur">
           {t('Les mesures n’ont pas pu être chargées.', 'Scores could not be loaded.')}
         </p>
       )}
@@ -100,25 +101,25 @@ function Graphe({ nuage, t, locale }: { nuage: Nuage; t: (fr: string, en?: strin
           <rect
             x={PAD.left} y={PAD.top}
             width={INNER_W / 2} height={INNER_H / 2}
-            fill="#E4604A" opacity="0.05"
+            fill={danger[500]} opacity="0.05"
           />
-          <text x={PAD.left + 6} y={PAD.top + 14} className="fill-coral text-[9px]">
+          <text x={PAD.left + 6} y={PAD.top + 14} className="fill-danger-500 text-[9px]">
             {t('Urgent et mécontent', 'Urgent and unhappy')}
           </text>
 
           {/* Grille : une ligne par graduation, dans les deux sens. */}
           {graduations.map((g) => (
             <g key={`g-${g}`}>
-              <line x1={cx(g)} x2={cx(g)} y1={PAD.top} y2={PAD.top + INNER_H} stroke="#E7E9F0" strokeWidth="1" />
-              <line x1={PAD.left} x2={PAD.left + INNER_W} y1={cy(g)} y2={cy(g)} stroke="#E7E9F0" strokeWidth="1" />
+              <line x1={cx(g)} x2={cx(g)} y1={PAD.top} y2={PAD.top + INNER_H} stroke={ink[100]} strokeWidth="1" />
+              <line x1={PAD.left} x2={PAD.left + INNER_W} y1={cy(g)} y2={cy(g)} stroke={ink[100]} strokeWidth="1" />
               <text x={cx(g)} y={H - 16} textAnchor="middle" className="fill-ink-300 text-[10px] tabular-nums">{g}</text>
               <text x={PAD.left - 8} y={cy(g) + 3} textAnchor="end" className="fill-ink-300 text-[10px] tabular-nums">{g}</text>
             </g>
           ))}
 
           {/* Axes (les deux bords bas et gauche du carré utile). */}
-          <line x1={PAD.left} x2={PAD.left + INNER_W} y1={PAD.top + INNER_H} y2={PAD.top + INNER_H} stroke="#D0D3E1" strokeWidth="1" />
-          <line x1={PAD.left} x2={PAD.left} y1={PAD.top} y2={PAD.top + INNER_H} stroke="#D0D3E1" strokeWidth="1" />
+          <line x1={PAD.left} x2={PAD.left + INNER_W} y1={PAD.top + INNER_H} y2={PAD.top + INNER_H} stroke={ink[200]} strokeWidth="1" />
+          <line x1={PAD.left} x2={PAD.left} y1={PAD.top} y2={PAD.top + INNER_H} stroke={ink[200]} strokeWidth="1" />
 
           {/* Les cases occupées. Le `<title>` donne l'infobulle native : aucune JS d'un survol à écrire, et
               elle reste lisible au clavier et par un lecteur d'écran. */}
@@ -127,9 +128,9 @@ function Graphe({ nuage, t, locale }: { nuage: Nuage; t: (fr: string, en?: strin
               key={`${p.satisfaction}-${p.urgence}`}
               data-testid={`nuage-point-${p.satisfaction}-${p.urgence}`}
               cx={cx(p.satisfaction)} cy={cy(p.urgence)} r={rayonPoint(p.n, nMax)}
-              fill={estAlerte(p.satisfaction, p.urgence) ? '#E4604A' : '#0080D6'}
+              fill={estAlerte(p.satisfaction, p.urgence) ? danger[500] : brand[500]}
               fillOpacity="0.55"
-              stroke={estAlerte(p.satisfaction, p.urgence) ? '#E4604A' : '#0080D6'}
+              stroke={estAlerte(p.satisfaction, p.urgence) ? danger[500] : brand[500]}
               strokeWidth="1"
             >
               <title>{t(
@@ -143,9 +144,9 @@ function Graphe({ nuage, t, locale }: { nuage: Nuage; t: (fr: string, en?: strin
               serait pris pour une conversation, et c'est le seul point du graphe qui n'en est pas une. */}
           {nuage.moyenne && (
             <g data-testid="nuage-moyenne">
-              <circle cx={cx(nuage.moyenne.satisfaction)} cy={cy(nuage.moyenne.urgence)} r="8" fill="none" stroke="#131735" strokeWidth="1.5" />
-              <line x1={cx(nuage.moyenne.satisfaction) - 11} x2={cx(nuage.moyenne.satisfaction) + 11} y1={cy(nuage.moyenne.urgence)} y2={cy(nuage.moyenne.urgence)} stroke="#131735" strokeWidth="1.5" />
-              <line x1={cx(nuage.moyenne.satisfaction)} x2={cx(nuage.moyenne.satisfaction)} y1={cy(nuage.moyenne.urgence) - 11} y2={cy(nuage.moyenne.urgence) + 11} stroke="#131735" strokeWidth="1.5" />
+              <circle cx={cx(nuage.moyenne.satisfaction)} cy={cy(nuage.moyenne.urgence)} r="8" fill="none" stroke={ink[800]} strokeWidth="1.5" />
+              <line x1={cx(nuage.moyenne.satisfaction) - 11} x2={cx(nuage.moyenne.satisfaction) + 11} y1={cy(nuage.moyenne.urgence)} y2={cy(nuage.moyenne.urgence)} stroke={ink[800]} strokeWidth="1.5" />
+              <line x1={cx(nuage.moyenne.satisfaction)} x2={cx(nuage.moyenne.satisfaction)} y1={cy(nuage.moyenne.urgence) - 11} y2={cy(nuage.moyenne.urgence) + 11} stroke={ink[800]} strokeWidth="1.5" />
               <title>{t(
                 `Moyenne : satisfaction ${fmtNote(nuage.moyenne.satisfaction, locale)}, urgence ${fmtNote(nuage.moyenne.urgence, locale)}`,
                 `Average: satisfaction ${fmtNote(nuage.moyenne.satisfaction, locale)}, urgency ${fmtNote(nuage.moyenne.urgence, locale)}`,
@@ -166,7 +167,7 @@ function Graphe({ nuage, t, locale }: { nuage: Nuage; t: (fr: string, en?: strin
 
       <div className="mt-3 space-y-1 text-xs">
         {nuage.moyenne ? (
-          <p className="text-ink-600" data-testid="nuage-resume">
+          <p className="text-ink-500" data-testid="nuage-resume">
             {t(
               `${fmtNum(nuage.mesurees, locale)} conversation(s) mesurée(s) · moyenne : satisfaction ${fmtNote(nuage.moyenne.satisfaction, locale)}, urgence ${fmtNote(nuage.moyenne.urgence, locale)}`,
               `${fmtNum(nuage.mesurees, locale)} measured conversation(s) · average: satisfaction ${fmtNote(nuage.moyenne.satisfaction, locale)}, urgency ${fmtNote(nuage.moyenne.urgence, locale)}`,

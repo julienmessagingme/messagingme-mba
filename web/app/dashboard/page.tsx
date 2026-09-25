@@ -57,7 +57,7 @@ function MessagesInner({ session }: { session: Session }) {
     <div className="space-y-4">
       <RangeBar title={t('Messages & contacts', 'Messages & contacts')} range={range} onChange={setRange} />
 
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
       {loading ? (
         <p className="text-sm text-ink-500">{t('Chargement des statistiques...', 'Loading statistics...')}</p>
@@ -144,7 +144,7 @@ function CarteContacts({ stats, range }: { stats: DashboardStats; range: StatsRa
               onClick={() => setActifs(v)}
               aria-pressed={actifs === v}
               data-testid={v ? 'contacts-actifs' : 'contacts-cumules'}
-              className={`rounded-md px-2 py-0.5 font-medium transition ${actifs === v ? 'bg-ink-100 text-ink-900' : 'text-ink-500 hover:text-ink-800'}`}
+              className={`rounded-md px-2 py-0.5 font-medium transition-colors duration-150 ${actifs === v ? 'bg-ink-100 text-ink-900' : 'text-ink-500 hover:text-ink-900'}`}
             >
               {v ? t('Actifs', 'Active') : t('Cumulés', 'Cumulative')}
             </button>

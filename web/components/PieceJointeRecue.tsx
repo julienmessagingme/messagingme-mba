@@ -133,7 +133,7 @@ export function PieceJointeRecue({ tenantId, conversationId, message, nature, le
             type="button"
             onClick={() => setAgrandie((v) => !v)}
             title={agrandie ? t('Réduire', 'Shrink') : t('Agrandir', 'Enlarge')}
-            className="block"
+            className="block transition-opacity duration-150 hover:opacity-90"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -152,7 +152,7 @@ export function PieceJointeRecue({ tenantId, conversationId, message, nature, le
           onClick={() => { void telecharger(); }}
           disabled={occupe}
           data-testid={`piece-jointe-telecharger-${message.id}`}
-          className="flex max-w-full items-center gap-1.5 rounded-lg bg-white/70 px-2 py-1 text-left text-xs font-medium text-ink-700 hover:bg-white disabled:opacity-50"
+          className="flex max-w-full items-center gap-1.5 rounded-lg bg-white/70 px-2 py-1 text-left text-xs font-medium text-ink-900 hover:bg-white disabled:opacity-50"
         >
           <span aria-hidden="true">{nature === 'video' ? '🎬' : '📎'}</span>
           <span className="truncate">{nomAffiche}</span>
@@ -160,7 +160,7 @@ export function PieceJointeRecue({ tenantId, conversationId, message, nature, le
         </button>
       )}
       {legende !== null && <p className="whitespace-pre-wrap">{legende}</p>}
-      {erreur && <p className="text-xs text-red-600" data-testid={`piece-jointe-erreur-${message.id}`}>{erreur}</p>}
+      {erreur && <p className="text-xs text-danger-600" data-testid={`piece-jointe-erreur-${message.id}`}>{erreur}</p>}
     </div>
   );
 }

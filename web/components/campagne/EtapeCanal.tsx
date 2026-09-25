@@ -9,6 +9,7 @@ import {
 } from '@/lib/campagne-chaine';
 import { heuresDOuvertureReglees } from '@/lib/campagne-chaine';
 import type { CapacitesEspace, EtatCampagne } from '@/components/campagne/AssistantCampagne';
+import { TitrePage } from '@/components/TitrePage';
 
 /**
  * ÉTAPE 2 : le canal, le repli, le réessai, et UNE question d'horaire.
@@ -62,10 +63,10 @@ export function EtapeCanal({
 
   return (
     <section data-testid="etape-canal" className="w-full">
-      <h2 className="text-lg font-semibold text-ink-800">Par quel canal partent les messages ?</h2>
+      <TitrePage>Par quel canal partent les messages ?</TitrePage>
 
       <fieldset data-testid="choix-canal" className="mt-4 w-full rounded-xl border border-ink-200 p-4">
-        <legend className="px-1 text-sm font-medium text-ink-700">Canal</legend>
+        <legend className="px-1 text-sm font-medium text-ink-900">Canal</legend>
         <div className="space-y-2">
           <Entree
             groupe="formule"
@@ -99,7 +100,7 @@ export function EtapeCanal({
             n'existe pas ; une option grisée sans raison fait croire à une panne. On dit donc pourquoi,
             et où aller la régler. */}
         {rcsIndisponible && (
-          <p className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-600">
+          <p className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-500">
             Aucun agent RCS n&apos;est relié à cet espace. Reliez-en un dans Paramètres pour ouvrir ce
             canal et le repli.
           </p>
@@ -111,14 +112,14 @@ export function EtapeCanal({
           est gardé, et rien d'autre n'apparaît à l'écran. Sans cette phrase, l'écran ressemblerait à une
           page à moitié chargée. */}
       {!canalChoisi && (
-        <p className="mt-3 text-sm text-ink-600" data-testid="canal-a-choisir">
+        <p className="mt-3 text-sm text-ink-500" data-testid="canal-a-choisir">
           Choisissez un canal : la suite des questions en dépend.
         </p>
       )}
 
       {etat.formule === 'repli' && (
         <fieldset data-testid="choix-ordre" className="mt-4 w-full rounded-xl border border-ink-200 p-4">
-          <legend className="px-1 text-sm font-medium text-ink-700">Lequel part en premier ?</legend>
+          <legend className="px-1 text-sm font-medium text-ink-900">Lequel part en premier ?</legend>
           <div className="space-y-2">
             <Entree
               groupe="premier"
@@ -143,7 +144,7 @@ export function EtapeCanal({
 
       {etat.formule === 'repli' && (
         <fieldset data-testid="choix-troisieme" className="mt-4 w-full rounded-xl border border-ink-200 p-4">
-          <legend className="px-1 text-sm font-medium text-ink-700">Un troisième niveau ?</legend>
+          <legend className="px-1 text-sm font-medium text-ink-900">Un troisième niveau ?</legend>
           <div className="space-y-2">
             <Entree
               groupe="troisieme"
@@ -177,7 +178,7 @@ export function EtapeCanal({
             />
           </div>
           {etat.troisieme === 'email' && (
-            <p className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-600">
+            <p className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-500">
               L&apos;e-mail part à l&apos;adresse portée par la fiche du contact. Un contact sans adresse
               sort de la chaîne avant ce niveau.
             </p>
@@ -259,7 +260,7 @@ export function EtapeCanal({
             une limite connue, pas un oubli de câblage.
           */}
           {etat.heuresOuvrees && !horairesReglees && (
-            <p className="mt-3 rounded-lg bg-gold/10 px-3 py-2 text-xs text-ink-700" data-testid="horaires-absentes">
+            <p className="mt-3 rounded-lg bg-alerte-50 px-3 py-2 text-xs text-ink-900" data-testid="horaires-absentes">
               Aucune heure d&apos;ouverture n&apos;est réglée pour cet espace : cochée, cette case mettrait la
               campagne en pause sans jamais la reprendre. Réglez vos horaires dans Paramètres, ou décochez.
             </p>
@@ -298,7 +299,7 @@ function Entree({
   return (
     <div className={`w-full rounded-lg border p-3 ${coche ? 'border-brand-400 bg-brand-50/40' : 'border-ink-200'} ${desactive ? 'opacity-50' : ''}`}>
       <div className="flex items-center gap-2">
-        <label className="flex min-w-0 items-center gap-2 text-sm font-medium text-ink-800">
+        <label className="flex min-w-0 items-center gap-2 text-sm font-medium text-ink-900">
           <input
             type="radio"
             name={groupe}
@@ -309,7 +310,7 @@ function Entree({
           />
           <span className="min-w-0 break-words">{libelle}</span>
         </label>
-        {badge && <span className="shrink-0 rounded-full bg-ink-100 px-2 py-0.5 text-[11px] text-ink-500">{badge}</span>}
+        {badge && <span className="shrink-0 rounded-full bg-ink-100 px-2 py-0.5 text-xs text-ink-500">{badge}</span>}
       </div>
       {description && <p className="mt-1 pl-6 text-xs text-ink-500">{description}</p>}
     </div>
@@ -330,7 +331,7 @@ function Case({
 }) {
   return (
     <div className="w-full">
-      <label className="flex items-center gap-2 text-sm font-medium text-ink-800">
+      <label className="flex items-center gap-2 text-sm font-medium text-ink-900">
         <input
           type="checkbox"
           checked={coche}

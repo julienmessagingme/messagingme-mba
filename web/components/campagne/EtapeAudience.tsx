@@ -11,6 +11,7 @@ import {
 import { ListeDestinataires, useContactsFiltres, type RestaurationSelection } from '@/components/campagne/ListeDestinataires';
 import { SourceWebhook } from '@/components/campagne/SourceWebhook';
 import type { CapacitesEspace, EtatCampagne, ReferencesContenu } from '@/components/campagne/AssistantCampagne';
+import { TitrePage } from '@/components/TitrePage';
 
 /**
  * ÉTAPE 4 : QUI reçoit.
@@ -132,7 +133,7 @@ export function EtapeAudience({
 
   return (
     <section data-testid="etape-audience" className="w-full">
-      <h2 className="text-lg font-semibold text-ink-800">Audience</h2>
+      <TitrePage>Audience</TitrePage>
       <p className="mt-1 text-sm text-ink-500">
         Les contacts sans consentement marketing et ceux qui sont bloqués sont écartés à la création, quel
         que soit ce choix.
@@ -210,7 +211,7 @@ export function EtapeAudience({
               /* 🔴 LA SÉLECTION REPRISE A MAIGRI DEPUIS. On le DIT : revenir sur un brouillon qui vise
                  moins de monde qu'on ne l'a laissé, sans explication, est pire que de tout recocher,
                  parce qu'on ne s'en aperçoit pas. */
-              <div data-testid="selection-reduite" className="mb-2 flex items-start justify-between gap-2 rounded-lg bg-gold/10 px-3 py-2 text-xs text-ink-700">
+              <div data-testid="selection-reduite" className="mb-2 flex items-start justify-between gap-2 rounded-lg bg-alerte-50 px-3 py-2 text-xs text-ink-900">
                 <span>
                   {selectionReduite} contact(s) de votre sélection ne sont plus là (supprimés, ou sortis de
                   ces filtres depuis). Le reste est bien resté coché.
@@ -219,7 +220,7 @@ export function EtapeAudience({
                   type="button"
                   onClick={() => setSelectionReduite(null)}
                   aria-label="Fermer"
-                  className="shrink-0 leading-none text-ink-400 hover:text-ink-700"
+                  className="shrink-0 leading-none text-ink-400 hover:text-ink-900"
                 >
                   ×
                 </button>
@@ -233,7 +234,7 @@ export function EtapeAudience({
         ⚠️ LE COMPTE RESTE AFFICHÉ HORS DE LA SOURCE CRM, et il dit alors ce qu'il sait. Un import en
         cours ne change pas encore l'audience : le masquer ferait croire qu'il n'y en a plus.
       */}
-      <p className="mt-4 text-sm text-ink-700" data-testid="audience-compte">
+      <p className="mt-4 text-sm text-ink-900" data-testid="audience-compte">
         {/* 🔴 AU FIL DE L'EAU, IL N'Y A RIEN À COMPTER, ET UN CHIFFRE Y SERAIT UN MENSONGE : la campagne
             n'envoie à personne qui soit déjà là, elle prend les arrivants à partir de son lancement. */}
         {fil
@@ -246,7 +247,7 @@ export function EtapeAudience({
               // ⚠️ UNE LECTURE EN ÉCHEC N'AFFICHE PAS ZÉRO. Zéro est une réponse (« personne ne
               // correspond ») ; la confondre avec une panne ferait croire à une audience vide alors que
               // l'écran n'a simplement pas pu compter.
-              ? <span className="text-gold">Le nombre de contacts n&apos;a pas pu être lu.</span>
+              ? <span className="text-alerte">Le nombre de contacts n&apos;a pas pu être lu.</span>
               : <><b>{fmtNum(retenus, 'fr')}</b> contacts retenus</>}
       </p>
     </section>
@@ -276,7 +277,7 @@ function BoutonSource({
       onClick={onClick}
       {...(aide ? { title: aide } : {})}
       {...(testId ? { 'data-testid': testId } : {})}
-      className={`rounded-md px-2.5 py-1 disabled:cursor-not-allowed disabled:opacity-40 ${actif ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}
+      className={`rounded-md px-2.5 py-1 disabled:cursor-not-allowed disabled:opacity-40 ${actif ? 'bg-white font-medium text-brand-700' : 'text-ink-500 hover:text-ink-900'}`}
     >
       {libelle}
     </button>

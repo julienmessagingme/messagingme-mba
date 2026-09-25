@@ -18,6 +18,7 @@ import {
   demandeConfirmation, ligneNumero, ligneRcs, ligneChaine, lignePublicites, ligneHubspot, nombreDePublications, routeInconnue, teinte,
   numeroASurveiller, type Geste, type Ligne, type Teinte,
 } from '@/lib/canaux-services';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * LE BLOC « CANAUX ET SERVICES » DE L'ACCUEIL (plan du 2026-09-25, design validé par Julien).
@@ -302,8 +303,8 @@ export function CanauxServices(p: {
 
   return (
     <section data-testid="canaux-services">
-      <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Canaux et services', 'Channels and services')}</h3>
-      {info && <p data-testid="canaux-info" className="mt-3 rounded-lg bg-mint-50 px-3 py-2 text-xs text-mint-700">{info}</p>}
+      <h3 className="text-sm font-semibold text-ink-900">{t('Canaux et services', 'Channels and services')}</h3>
+      {info && <p data-testid="canaux-info" className="mt-3 rounded-lg bg-succes-50 px-3 py-2 text-xs text-succes-700">{info}</p>}
       {/* ⚠️ 3 colonnes à partir de `xl` et non de `lg` : la colonne latérale (240 px) apparaît à `lg`, et trois
           cartes y tomberaient sous 230 px, trop étroites pour une phrase d'état et un interrupteur. */}
       <ul className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -312,7 +313,7 @@ export function CanauxServices(p: {
           const erreur = erreurDe(service);
           const pastille = teinte(l, aTerminer);
           return (
-            <li key={service} data-testid={`canal-${service}`} className="flex flex-col rounded-2xl border border-ink-200 bg-white p-4 shadow-sm">
+            <li key={service} data-testid={`canal-${service}`} className="flex flex-col rounded-2xl border border-ink-200 bg-white p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-3">
                   {/* Le logo est DÉCORATIF ici : le titre juste à côté nomme déjà la carte, et un lecteur d'écran
@@ -344,9 +345,9 @@ export function CanauxServices(p: {
                     style={{ backgroundColor: COULEUR[pastille] }}
                   />
                 )}
-                <p data-testid={`canal-${service}-etat`} className="text-xs text-ink-600">{phrase}</p>
+                <p data-testid={`canal-${service}-etat`} className="text-xs text-ink-500">{phrase}</p>
               </div>
-              {erreur && <p data-testid={`canal-${service}-erreur`} className="mt-2 text-xs text-coral">{erreur}</p>}
+              {erreur && <p data-testid={`canal-${service}-erreur`} className="mt-2 text-xs text-danger">{erreur}</p>}
               {/* ⚠️ LE BAS DE CARTE RESTE, MÊME VIDE : son `mt-auto` pousse chiffre et lien au bas de la carte, ce
                   qui les aligne d'une carte à l'autre dans une même rangée. */}
               <div className="mt-auto flex flex-col items-start gap-1 pt-3">
@@ -367,7 +368,7 @@ export function CanauxServices(p: {
           <Link
             href="/parametres"
             data-testid="canal-autres-lien"
-            className="flex h-full min-h-[7.5rem] items-center justify-center gap-1.5 rounded-2xl border border-dashed border-ink-300 p-4 text-sm font-semibold text-brand-600 transition hover:border-brand-300 hover:bg-brand-50"
+            className="flex h-full min-h-[7.5rem] items-center justify-center gap-1.5 rounded-2xl border border-dashed border-ink-300 p-4 text-sm font-semibold text-brand-600 transition-colors duration-150 hover:border-brand-300 hover:bg-brand-50"
           >
             {t('Autres intégrations', 'Other integrations')}<span aria-hidden="true">+</span>
           </Link>
@@ -449,16 +450,16 @@ function Confirmation({ geste, onAnnuler, onConfirmer }: { geste: Geste; onAnnul
       onClick={onAnnuler}
       onKeyDown={(e) => { if (e.key === 'Escape') onAnnuler(); }}
     >
-      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h3 id="canaux-confirmation-titre" className="text-base font-semibold tracking-tight text-ink-900">{x.titre}</h3>
-        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-600">
+      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-mm-lg" onClick={(e) => e.stopPropagation()}>
+        <h3 id="canaux-confirmation-titre" className="text-base font-semibold text-ink-900">{x.titre}</h3>
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-500">
           {x.corps.map((c) => <li key={c}>{c}</li>)}
         </ul>
         <div className="mt-4 flex flex-wrap justify-end gap-2">
-          <button type="button" data-testid="canaux-confirmation-annuler" onClick={onAnnuler} className="rounded-lg border border-ink-200 px-3 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50">
+          <Bouton variante="secondaire" type="button" data-testid="canaux-confirmation-annuler" onClick={onAnnuler}>
             {t('Annuler', 'Cancel')}
-          </button>
-          <button type="button" data-testid="canaux-confirmation-ok" onClick={onConfirmer} className="rounded-lg bg-red-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-600">
+          </Bouton>
+          <button type="button" data-testid="canaux-confirmation-ok" onClick={onConfirmer} className="rounded-lg bg-danger-600 px-3 py-2 text-sm font-semibold text-white transition-colors duration-150 hover:bg-danger-700">
             {x.bouton}
           </button>
         </div>

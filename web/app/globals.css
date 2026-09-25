@@ -10,6 +10,38 @@ body {
   @apply bg-surface-subtle text-ink-900 antialiased;
 }
 
+@layer base {
+  /*
+   * L'ANNEAU DE FOCUS, UNE FOIS POUR TOUTE LA CONSOLE. `:focus-visible` et non `:focus` : le navigateur ne
+   * le montre qu'à la navigation au clavier, jamais après un clic de souris sur un bouton. Aucun des boutons
+   * n'en portait, donc un utilisateur au clavier ne savait pas où il était.
+   *
+   * ⚠️ Un champ qui porte `outline-none` (la classe utilitaire gagne sur cette couche) garde son propre
+   * repère, la bordure et l'anneau `focus:ring` de `inputCls`.
+   */
+  :focus-visible {
+    outline: 2px solid theme('colors.brand.500');
+    outline-offset: 2px;
+  }
+
+  /* Un retour au clic, léger, pour tous les boutons qui ne sont pas le composant `Bouton` (lui fonce sa
+     couleur de fond au clic, voir `components/Bouton.tsx`). */
+  button:not(:disabled):not(.bouton):active {
+    opacity: 0.8;
+  }
+
+  /* Les en-têtes de tableau se lisent en casse normale et en gris secondaire : sans cette règle, le gras du
+     navigateur l'emporte sur le `font-medium` posé sur le `thead`. */
+  th {
+    font-weight: 500;
+  }
+
+  /* Des chiffres alignés en colonne : un montant ou un compteur ne doit pas se décaler d'une ligne à l'autre. */
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
 /*
  * Export PDF : une carte porte la classe `zone-impression` le temps de l'impression (cf. lib/impression.ts),
  * et tout le reste de la page disparaît de la feuille.

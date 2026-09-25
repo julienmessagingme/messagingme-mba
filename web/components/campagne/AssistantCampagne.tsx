@@ -25,6 +25,8 @@ import type { RestaurationSelection } from '@/components/campagne/ListeDestinata
 import type { VarRow } from '@/lib/variables-template';
 import type { CarrouselRcs } from '@/lib/rcs-carrousel';
 import type { CampaignCategory, PhoneNumber, RcsAgent, RcsMessage, RcsSuggestion, TagCount, TemplateSummary, UserFieldDef, WorkflowSummary } from '@/lib/api';
+import { Bouton } from '@/components/Bouton';
+import { TitrePage } from '@/components/TitrePage';
 
 /**
  * L'ASSISTANT DE CRÉATION D'UNE CAMPAGNE : cinq étapes, une question par écran, retour libre.
@@ -656,7 +658,7 @@ export function AssistantCampagne({
       <ol className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-400" data-testid="assistant-etapes">
         {ORDRE.map((e, i) => (
           <li key={e} className={i === rang ? 'font-semibold text-brand-600' : ''}>
-            {i > 0 && <span className="mr-2 text-ink-300">/</span>}
+            {i > 0 && <span className="mr-2 text-ink-400">/</span>}
             {TITRES[e]}
           </li>
         ))}
@@ -664,10 +666,10 @@ export function AssistantCampagne({
 
       {etape === 'nom' && (
         <section data-testid="etape-nom">
-          <h2 className="text-lg font-semibold text-ink-800">Nom de la campagne</h2>
+          <TitrePage>Nom de la campagne</TitrePage>
           {/* ⚠️ Rien d'autre sur cet écran : c'est la décision d'ordre du 2026-09-12, une question par
               écran, et celle-ci est obligatoire avant tout le reste. */}
-          <label className="mt-4 block text-sm text-ink-700">
+          <label className="mt-4 block text-sm text-ink-900">
             <span className="block font-medium">Nom de la campagne</span>
             <input
               type="text"
@@ -693,7 +695,7 @@ export function AssistantCampagne({
             l'étape du contenu la ferait passer pour un détail de rédaction.
           */}
           <fieldset className="mt-6 w-full rounded-xl border border-ink-200 p-4" data-testid="choix-categorie">
-            <legend className="px-1 text-sm font-medium text-ink-700">Nature de la campagne</legend>
+            <legend className="px-1 text-sm font-medium text-ink-900">Nature de la campagne</legend>
             <div className="space-y-2">
               <RadioSimple
                 groupe="categorie"
@@ -789,23 +791,21 @@ export function AssistantCampagne({
 
       <div className="mt-8 flex items-center gap-2 border-t border-ink-100 pt-4">
         {rang > 0 && (
-          <button
+          <Bouton variante="secondaire"
             type="button"
             onClick={() => setEtape(ORDRE[rang - 1]!)}
-            className="rounded-lg border border-ink-200 px-4 py-2 text-sm font-medium text-ink-700 hover:bg-ink-50"
           >
             Retour
-          </button>
+          </Bouton>
         )}
         {rang < ORDRE.length - 1 && (
-          <button
+          <Bouton
             type="button"
             disabled={!peutAvancer}
             onClick={() => setEtape(ORDRE[rang + 1]!)}
-            className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
           >
             Suivant
-          </button>
+          </Bouton>
         )}
       </div>
     </div>
@@ -822,7 +822,7 @@ function RadioSimple({
   groupe, libelle, coche, onCheck,
 }: { groupe: string; libelle: string; coche: boolean; onCheck: () => void }) {
   return (
-    <label className="flex w-full items-center gap-2 text-sm text-ink-800">
+    <label className="flex w-full items-center gap-2 text-sm text-ink-900">
       <input
         type="radio"
         name={groupe}

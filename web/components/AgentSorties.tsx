@@ -5,6 +5,7 @@ import { useT } from '@/lib/i18n';
 import { inputClsAuto } from '@/lib/ui';
 import type { SortieAgent } from '@/lib/api-agent';
 import { MAX_SORTIES, normaliserCodeSortie } from '@/lib/agent-sorties';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * L'éditeur des RÈGLES D'ARRÊT d'un agent : la liste de ses sorties.
@@ -49,21 +50,21 @@ export function CodeSortieInput({ sorties, busy, onChange }: {
       )}
       {sorties.map((s) => (
         <div key={s.code} data-testid={`agent-sortie-${s.code}`} className="flex items-center gap-2 rounded-lg border border-ink-200 px-3 py-2">
-          <span className="shrink-0 rounded bg-ink-100 px-1.5 py-0.5 font-mono text-[11px] text-ink-600">{s.code}</span>
-          <span className="truncate text-sm text-ink-800">{s.label}</span>
+          <span className="shrink-0 rounded bg-ink-100 px-1.5 py-0.5 font-mono text-xs text-ink-500">{s.code}</span>
+          <span className="truncate text-sm text-ink-900">{s.label}</span>
           <button
             data-testid={`agent-sortie-retirer-${s.code}`}
             disabled={busy}
             onClick={() => onChange(sorties.filter((x) => x.code !== s.code))}
             title={t('Retirer cette règle d’arrêt', 'Remove this stop rule')}
-            className="ml-auto shrink-0 rounded px-1.5 text-sm text-coral hover:bg-red-50 disabled:opacity-40"
+            className="ml-auto shrink-0 rounded px-1.5 text-sm text-danger hover:bg-danger-50 disabled:opacity-40"
           >
             ✕
           </button>
         </div>
       ))}
       {plein ? (
-        <p className="text-xs text-amber-800">
+        <p className="text-xs text-alerte-800">
           {t(
             `Douze règles d’arrêt, c’est le maximum : au-delà, le bloc devient illisible et l’agent choisit mal.`,
             `Twelve stop rules is the maximum: beyond that the block becomes unreadable and the agent picks badly.`,
@@ -84,9 +85,9 @@ export function CodeSortieInput({ sorties, busy, onChange }: {
             {/* Le code normalisé est montré DÈS qu'il diffère de la saisie : le client comprend la règle en
                 la voyant s'appliquer, plutôt qu'en lisant un refus après coup. */}
             {codeNormalise !== code.trim() && codeNormalise !== '' && (
-              <span data-testid="agent-sortie-code-normalise" className="font-mono text-[11px] text-ink-500">{codeNormalise}</span>
+              <span data-testid="agent-sortie-code-normalise" className="font-mono text-xs text-ink-500">{codeNormalise}</span>
             )}
-            {deja && <span className="text-[11px] text-coral">{t('déjà utilisé', 'already used')}</span>}
+            {deja && <span className="text-xs text-danger">{t('déjà utilisé', 'already used')}</span>}
           </div>
           <input
             data-testid="agent-sortie-label"
@@ -97,14 +98,13 @@ export function CodeSortieInput({ sorties, busy, onChange }: {
             onKeyDown={(e) => { if (e.key === 'Enter') ajouter(); }}
             placeholder={t('ce que ça veut dire', 'what it means')}
           />
-          <button
+          <Bouton variante="secondaire"
             data-testid="agent-sortie-ajouter"
             onClick={ajouter}
             disabled={!peutAjouter}
-            className="rounded-lg border border-ink-300 px-3 py-2 text-sm text-ink-700 hover:bg-ink-50 disabled:opacity-40"
           >
             {t('Ajouter', 'Add')}
-          </button>
+          </Bouton>
         </div>
       )}
     </div>

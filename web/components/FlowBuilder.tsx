@@ -22,6 +22,7 @@ import { FlowScreen, conditionText, type FlowScreenElement } from '@/components/
 import { useT } from '@/lib/i18n';
 import { inputClsAuto } from '@/lib/ui';
 import { ListeManques } from '@/components/ListeManques';
+import { Bouton } from '@/components/Bouton';
 
 // Libellés bilingues [FR, EN] résolus au rendu via t(...) (useT est inappelable hors composant).
 const TYPE_LABELS: Record<FlowFieldType, [string, string]> = {
@@ -407,21 +408,21 @@ export function FlowBuilder({
             {/* Astérisque rouge : rien ne disait quels champs bloquent la création. Convention du dépôt
                 (`campaigns/page.tsx`). Le contour rouge n'apparaît qu'APRÈS avoir quitté le champ vide : le
                 peindre en rouge dès l'ouverture accuserait l'utilisateur de ne pas avoir encore saisi. */}
-            <label className="mb-1 block text-xs font-medium text-ink-600">
-              {t('Nom du formulaire', 'Form name')} <span className="text-red-500">*</span>
+            <label className="mb-1 block text-xs font-medium text-ink-500">
+              {t('Nom du formulaire', 'Form name')} <span className="text-danger-500">*</span>
             </label>
             <input
               value={name} onChange={(e) => setName(e.target.value)} onBlur={() => setNomTouche(true)}
               data-testid="flow-nom"
-              className={`${inputClsAuto} w-full ${nomTouche && name.trim() === '' ? 'border-coral focus:border-coral focus:ring-red-100' : ''}`}
+              className={`${inputClsAuto} w-full ${nomTouche && name.trim() === '' ? 'border-danger-500 focus:border-danger-500 focus:ring-danger-100' : ''}`}
               placeholder={t('Demande de rendez-vous', 'Appointment request')}
             />
             {nomTouche && name.trim() === '' && (
-              <p className="mt-1 text-[11px] text-coral">{t('Le nom est obligatoire.', 'The name is required.')}</p>
+              <p className="mt-1 text-xs text-danger">{t('Le nom est obligatoire.', 'The name is required.')}</p>
             )}
           </div>
           <div className="min-w-[160px]">
-            <label className="mb-1 block text-xs font-medium text-ink-600">{t('Bouton final (dernier écran)', 'Final button (last screen)')}</label>
+            <label className="mb-1 block text-xs font-medium text-ink-500">{t('Bouton final (dernier écran)', 'Final button (last screen)')}</label>
             <input value={cta} onChange={(e) => setCta(e.target.value)} maxLength={30} className={`${inputClsAuto} w-full`} placeholder={t('Envoyer', 'Send')} />
           </div>
         </div>
@@ -434,7 +435,7 @@ export function FlowBuilder({
                 key={s.uid}
                 type="button"
                 onClick={() => setActiveIdx(i)}
-                className={`max-w-[140px] truncate rounded-lg px-2.5 py-1 text-xs ${i === idx ? 'bg-brand-500 font-medium text-white' : 'border border-ink-200 bg-white text-ink-600 hover:bg-brand-50'}`}
+                className={`max-w-[140px] truncate rounded-lg px-2.5 py-1 text-xs ${i === idx ? 'bg-brand-500 font-medium text-white' : 'border border-ink-200 bg-white text-ink-500 hover:bg-brand-50'}`}
               >
                 {s.title.trim() || `${t('Écran', 'Screen')} ${i + 1}`}
               </button>
@@ -443,16 +444,16 @@ export function FlowBuilder({
             <span className="mx-0.5 h-4 w-px bg-ink-200" />
             <button type="button" onClick={() => moveScreen(-1)} disabled={idx === 0} className="rounded px-1.5 py-0.5 text-xs text-ink-400 hover:bg-ink-100 disabled:opacity-30" aria-label={t("Déplacer l'écran vers la gauche", 'Move screen left')}>◀</button>
             <button type="button" onClick={() => moveScreen(1)} disabled={idx === screens.length - 1} className="rounded px-1.5 py-0.5 text-xs text-ink-400 hover:bg-ink-100 disabled:opacity-30" aria-label={t("Déplacer l'écran vers la droite", 'Move screen right')}>▶</button>
-            <button type="button" onClick={removeScreen} disabled={screens.length <= 1} className="rounded px-1.5 py-0.5 text-xs text-ink-400 hover:bg-ink-100 hover:text-coral disabled:opacity-30" aria-label={t("Supprimer l'écran actif", 'Delete active screen')}>✕</button>
+            <button type="button" onClick={removeScreen} disabled={screens.length <= 1} className="rounded px-1.5 py-0.5 text-xs text-ink-400 hover:bg-ink-100 hover:text-danger disabled:opacity-30" aria-label={t("Supprimer l'écran actif", 'Delete active screen')}>✕</button>
           </div>
           <div className="flex flex-wrap gap-3">
             <div className="min-w-[200px] flex-1">
-              <label className="mb-1 block text-xs font-medium text-ink-600">{t("Titre de l'écran (en-tête WhatsApp)", 'Screen title (WhatsApp header)')}</label>
+              <label className="mb-1 block text-xs font-medium text-ink-500">{t("Titre de l'écran (en-tête WhatsApp)", 'Screen title (WhatsApp header)')}</label>
               <input value={scr.title} onChange={(e) => patchScreenMeta({ title: e.target.value })} maxLength={30} className={`${inputClsAuto} w-full`} placeholder={t('Vos coordonnées', 'Your details')} />
             </div>
             {idx < screens.length - 1 && (
               <div className="min-w-[160px]">
-                <label className="mb-1 block text-xs font-medium text-ink-600">{t('Bouton Continuer', 'Continue button')}</label>
+                <label className="mb-1 block text-xs font-medium text-ink-500">{t('Bouton Continuer', 'Continue button')}</label>
                 <input value={scr.cta} onChange={(e) => patchScreenMeta({ cta: e.target.value })} maxLength={30} className={`${inputClsAuto} w-full`} placeholder={t('Continuer', 'Continue')} />
               </div>
             )}
@@ -463,13 +464,13 @@ export function FlowBuilder({
           {scr.elements.map((e, i) => (
             <div key={e.uid} className="rounded-xl border border-ink-200 bg-white p-3">
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-medium uppercase tracking-wide text-ink-400">
+                <span className="text-xs font-medium text-ink-500">
                   {e.kind === 'field' ? t('Champ', 'Field') : e.kind === 'image' ? t('Image', 'Image') : t(...TEXT_LABELS[e.kind])}
                 </span>
                 <div className="flex items-center gap-1 text-ink-400">
                   <button type="button" onClick={() => move(e.uid, -1)} disabled={i === 0} className="rounded px-1.5 py-0.5 hover:bg-ink-100 disabled:opacity-30" aria-label={t('Monter', 'Move up')}>↑</button>
                   <button type="button" onClick={() => move(e.uid, 1)} disabled={i === scr.elements.length - 1} className="rounded px-1.5 py-0.5 hover:bg-ink-100 disabled:opacity-30" aria-label={t('Descendre', 'Move down')}>↓</button>
-                  <button type="button" onClick={() => remove(e.uid)} className="rounded px-1.5 py-0.5 hover:bg-ink-100 hover:text-coral" aria-label={t('Retirer', 'Remove')}>✕</button>
+                  <button type="button" onClick={() => remove(e.uid)} className="rounded px-1.5 py-0.5 hover:bg-ink-100 hover:text-danger" aria-label={t('Retirer', 'Remove')}>✕</button>
                 </div>
               </div>
 
@@ -495,7 +496,7 @@ export function FlowBuilder({
                     )}
                   </button>
                   <input ref={(el) => { fileRefs.current[e.uid] = el; }} type="file" accept="image/png,image/jpeg" className="hidden" onChange={(ev) => onFile(e.uid, ev.target.files?.[0])} />
-                  {e.error && <p className="text-xs text-coral">{e.error}</p>}
+                  {e.error && <p className="text-xs text-danger">{e.error}</p>}
                 </div>
               )}
 
@@ -508,7 +509,7 @@ export function FlowBuilder({
                         <option key={ft} value={ft}>{t(...TYPE_LABELS[ft])}</option>
                       ))}
                     </select>
-                    <label className="flex items-center gap-1.5 text-xs text-ink-600">
+                    <label className="flex items-center gap-1.5 text-xs text-ink-500">
                       <input type="checkbox" checked={e.required} onChange={(ev) => patch(e.uid, { required: ev.target.checked } as Partial<BElem>)} />
                       {t('Obligatoire', 'Required')}
                     </label>
@@ -525,7 +526,7 @@ export function FlowBuilder({
                             className={`${inputClsAuto} min-w-0 flex-1 py-1`}
                             placeholder={`${t('Option', 'Option')} ${oi + 1}`}
                           />
-                          <button type="button" onClick={() => patchField(e.uid, (f) => ({ ...f, options: f.options.filter((_, k) => k !== oi) }))} className="text-ink-400 hover:text-coral" aria-label={t("Retirer l'option", 'Remove option')}>✕</button>
+                          <button type="button" onClick={() => patchField(e.uid, (f) => ({ ...f, options: f.options.filter((_, k) => k !== oi) }))} className="text-ink-400 hover:text-danger" aria-label={t("Retirer l'option", 'Remove option')}>✕</button>
                         </div>
                       ))}
                       <button type="button" onClick={() => patchField(e.uid, (f) => ({ ...f, options: [...f.options, ''] }))} className="text-xs font-medium text-brand-600 hover:text-brand-700">{t('+ option', '+ option')}</button>
@@ -568,7 +569,7 @@ export function FlowBuilder({
                     {e.type !== 'optin' && e.saveTo === '' && (() => {
                       const sug = suggestBaseField(e.label);
                       return sug ? (
-                        <button type="button" onClick={() => patch(e.uid, { saveTo: sug.key } as Partial<BElem>)} className="text-[11px] font-medium text-brand-600 hover:text-brand-700">
+                        <button type="button" onClick={() => patch(e.uid, { saveTo: sug.key } as Partial<BElem>)} className="text-xs font-medium text-brand-600 hover:text-brand-700">
                           {t(`💡 Enregistrer sur le champ de base « ${sug.label} »`, `💡 Save to base field "${sug.label}"`)}
                         </button>
                       ) : null;
@@ -586,7 +587,7 @@ export function FlowBuilder({
                 const forbiddenOpts = curSrc && curSrc.type !== 'optin' && cleanOptions(curSrc.options).some(hasForbiddenChar);
                 return (
                   <div className="mt-2 border-t border-ink-100 pt-2">
-                    <button type="button" onClick={() => toggleCond(e.uid)} className="text-[11px] text-ink-400 hover:text-ink-600">
+                    <button type="button" onClick={() => toggleCond(e.uid)} className="text-xs text-ink-400 hover:text-ink-500">
                       👁 {e.visibleIf && curSrc
                         ? `${t('Visible si', 'Visible if')} ${conditionText(curSrc.label.trim() || '?', e.visibleIf.op, e.visibleIf.value)}`
                         : t('Visible si… (toujours visible)', 'Visible if… (always visible)')} {open ? '▴' : '▾'}
@@ -646,7 +647,7 @@ export function FlowBuilder({
                           )}
                         </div>
                         {forbiddenOpts && (
-                          <p className="text-[10px] text-ink-400">{t('Les options contenant une apostrophe ou un accent grave sont grisées : Meta les refuse dans une condition.', 'Options containing an apostrophe or a backtick are greyed out: Meta rejects them in a condition.')}</p>
+                          <p className="text-xs text-ink-400">{t('Les options contenant une apostrophe ou un accent grave sont grisées : Meta les refuse dans une condition.', 'Options containing an apostrophe or a backtick are greyed out: Meta rejects them in a condition.')}</p>
                         )}
                       </div>
                     )}
@@ -667,15 +668,15 @@ export function FlowBuilder({
           <button type="button" onClick={addField} className="rounded-md border border-ink-200 px-2 py-1 font-medium text-brand-600 hover:bg-brand-50">{t('+ Champ', '+ Field')}</button>
         </div>
 
-        {notice && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">{notice}</p>}
-        {scr.elements.length === 0 && <p className="text-xs text-gold">{t('Cet écran est vide : ajoute au moins un élément (le serveur le refuserait).', 'This screen is empty: add at least one element (the server would refuse it).')}</p>}
-        {fieldCount === 0 && <p className="text-xs text-gold">{t('Ajoute au moins un champ : un formulaire sans champ ne collecte rien.', 'Add at least one field: a form with no field collects nothing.')}</p>}
-        {!labelsUnique && <p className="text-xs text-gold">{t('Deux champs portent le même libellé : chaque libellé doit être unique, tous écrans confondus.', 'Two fields share the same label: each label must be unique across all screens.')}</p>}
-        {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-mint-50 text-mint-700' : 'bg-red-50 text-red-700'}`}>{msg.text}</p>}
+        {notice && <p className="rounded-lg bg-alerte-50 px-3 py-2 text-xs text-alerte-700">{notice}</p>}
+        {scr.elements.length === 0 && <p className="text-xs text-alerte">{t('Cet écran est vide : ajoute au moins un élément (le serveur le refuserait).', 'This screen is empty: add at least one element (the server would refuse it).')}</p>}
+        {fieldCount === 0 && <p className="text-xs text-alerte">{t('Ajoute au moins un champ : un formulaire sans champ ne collecte rien.', 'Add at least one field: a form with no field collects nothing.')}</p>}
+        {!labelsUnique && <p className="text-xs text-alerte">{t('Deux champs portent le même libellé : chaque libellé doit être unique, tous écrans confondus.', 'Two fields share the same label: each label must be unique across all screens.')}</p>}
+        {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-700'}`}>{msg.text}</p>}
 
-        <button onClick={submit} disabled={!canSubmit} data-testid="flow-creer" className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60">
+        <Bouton onClick={submit} disabled={!canSubmit} data-testid="flow-creer">
           {busy ? t('Enregistrement…', 'Saving…') : isEdit ? t('Enregistrer les modifications', 'Save changes') : autoPublish ? t('Créer et publier', 'Create and publish') : t('Créer le formulaire', 'Create form')}
-        </button>
+        </Bouton>
         {/* Bouton grisé SANS explication à portée de regard : les avertissements existent mais sont au-dessus,
             et le nom manquant n'en avait aucun. On énumère ici ce qui bloque, sous le bouton qu'on cherche à
             cliquer. Le bloc est partagé avec les formulaires de template et de carrousel, qui avaient le même

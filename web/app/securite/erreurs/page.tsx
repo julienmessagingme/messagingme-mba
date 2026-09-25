@@ -91,7 +91,7 @@ function ErreursInner({ session }: { session: Session }) {
       {voitAgregat && (
         <>
           <RangeBar title={t('Erreurs de livraison', 'Delivery errors')} range={range} onChange={setRange} />
-          {erreur && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{erreur}</p>}
+          {erreur && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{erreur}</p>}
           {chargement ? (
             <p className="text-sm text-ink-500">{t('Chargement des statistiques...', 'Loading statistics...')}</p>
           ) : (

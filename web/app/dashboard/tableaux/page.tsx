@@ -18,6 +18,8 @@ import {
   blocsDuScenario, mesuresDisponibles, handlesMesuresParBloc, handlesClicsLienParBloc, groupesDuTableau,
   type BlocMesurable, type CompteurBrut, type MesureDispo,
 } from '@/lib/mesures-scenario';
+import { Bouton } from '@/components/Bouton';
+import { IntroPage, TitrePage } from '@/components/TitrePage';
 
 /**
  * Analytics > Mes tableaux : construire son propre tableau de mesures sur un scénario.
@@ -165,20 +167,20 @@ function TableauxInner({ session }: { session: Session }) {
   return (
     <div className="space-y-5">
       <header className="space-y-1">
-        <h2 className="text-xl font-semibold tracking-tight text-ink-900">{t('Mes tableaux', 'My reports')}</h2>
-        <p className="text-sm text-ink-600">
+        <TitrePage>{t('Mes tableaux', 'My reports')}</TitrePage>
+        <IntroPage>
           {t(
             'Choisis un scénario, puis les mesures que tu veux suivre bloc par bloc.',
             'Pick a scenario, then the measures you want to follow block by block.',
           )}
-        </p>
+        </IntroPage>
       </header>
 
       <RangeBar title={t('Période', 'Period')} range={range} onChange={setRange} />
 
       {tableaux.length > 0 && (
         <section className={cardCls}>
-          <label className="mb-1 block text-sm font-medium text-ink-700">{t('Ouvrir un tableau enregistré', 'Open a saved report')}</label>
+          <label className="mb-1 block text-sm font-medium text-ink-900">{t('Ouvrir un tableau enregistré', 'Open a saved report')}</label>
           <select
             value={ouvertId}
             onChange={(e) => ouvrirTableau(e.target.value)}
@@ -192,7 +194,7 @@ function TableauxInner({ session }: { session: Session }) {
       )}
 
       <section className={cardCls}>
-        <label className="mb-1 block text-sm font-medium text-ink-700">{t('Scénario', 'Scenario')}</label>
+        <label className="mb-1 block text-sm font-medium text-ink-900">{t('Scénario', 'Scenario')}</label>
         <select
           value={choisi}
           onChange={(e) => setChoisi(e.target.value)}
@@ -204,7 +206,7 @@ function TableauxInner({ session }: { session: Session }) {
         </select>
       </section>
 
-      {erreur && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{erreur}</p>}
+      {erreur && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{erreur}</p>}
       {chargement && <p className="text-sm text-ink-400">{t('Chargement…', 'Loading…')}</p>}
 
       {/* `graph` conditionne le rendu, et pas seulement `chargement` : entre le choix du scenario et le premier
@@ -238,7 +240,7 @@ function TableauxInner({ session }: { session: Session }) {
                     <p className="mb-2 truncate text-sm font-semibold text-ink-900">{blocOuvert.titre}</p>
                     <div className="space-y-1.5">
                       {mesuresDisponibles(blocOuvert, locale, blocOuvert.id === premierMessage).map((m) => (
-                        <label key={m.cle} className="flex items-center gap-2 text-sm text-ink-700">
+                        <label key={m.cle} className="flex items-center gap-2 text-sm text-ink-900">
                           <input
                             type="checkbox"
                             checked={retenues.some((x) => x.cle === m.cle)}
@@ -287,7 +289,7 @@ function TableauxInner({ session }: { session: Session }) {
             <section className={cardCls}>
               <div className="flex flex-wrap items-end gap-2">
                 <div className="flex-1 min-w-[12rem]">
-                  <label className="mb-1 block text-sm font-medium text-ink-700">{t('Nom du tableau', 'Report name')}</label>
+                  <label className="mb-1 block text-sm font-medium text-ink-900">{t('Nom du tableau', 'Report name')}</label>
                   <input
                     value={nom}
                     onChange={(e) => { setNom(e.target.value); setEtat(null); }}
@@ -296,27 +298,25 @@ function TableauxInner({ session }: { session: Session }) {
                     className={`${inputClsAuto} w-full`}
                   />
                 </div>
-                <button
+                <Bouton
                   type="button"
                   onClick={() => void enregistrer()}
                   disabled={nom.trim() === ''}
                   data-testid="tableau-enregistrer"
-                  className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
                 >
                   {ouvertId ? t('Mettre à jour', 'Update') : t('Enregistrer', 'Save')}
-                </button>
+                </Bouton>
                 {ouvertId !== '' && (
-                  <button
+                  <Bouton variante="secondaire"
                     type="button"
                     onClick={() => void supprimer()}
                     data-testid="tableau-supprimer"
-                    className="rounded-lg border border-ink-300 px-3 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50"
                   >
                     {t('Supprimer', 'Delete')}
-                  </button>
+                  </Bouton>
                 )}
               </div>
-              {etat && <p className="mt-2 text-sm text-ink-600" data-testid="tableau-etat">{etat}</p>}
+              {etat && <p className="mt-2 text-sm text-ink-500" data-testid="tableau-etat">{etat}</p>}
             </section>
           )}
         </>

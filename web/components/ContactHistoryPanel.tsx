@@ -8,6 +8,7 @@ import { formatDate, hourMin } from '@/lib/day';
 import { explainMetaError } from '@/lib/meta-errors';
 import { phraseResumeAbsent } from '@/lib/resume-conversation';
 import { toCsv, downloadCsv } from '@/lib/csv';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * Onglet « Historique » de la fiche contact : ce qu'on lui a envoyé, et ce qu'il nous a répondu.
@@ -76,7 +77,7 @@ export function ContactHistoryPanel({ tenantId, contactId }: { tenantId: string;
 
   const stamp = (iso: string) => `${formatDate(iso, locale, { day: '2-digit', month: '2-digit', year: '2-digit' })} ${hourMin(iso, locale)}`;
 
-  if (error) return <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>;
+  if (error) return <p className="mt-4 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>;
   if (!history) return <p className="mt-4 text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>;
 
   return (
@@ -84,19 +85,19 @@ export function ContactHistoryPanel({ tenantId, contactId }: { tenantId: string;
       {bilan && <Bilan bilan={bilan} />}
       <section>
         <div className="mb-2 flex items-center justify-between gap-3">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-ink-500">
+          <h4 className="text-xs font-medium text-ink-500">
             {t('Campagnes reçues', 'Campaigns received')} ({history.sends.length})
           </h4>
           {history.sends.length > 0 && (
-            <button
+            <Bouton variante="secondaire" taille="petite" enCours={exporting}
               type="button"
               onClick={() => void exportCsv()}
               disabled={exporting}
               data-testid="contact-history-export"
-              className="shrink-0 rounded-lg border border-ink-200 px-2.5 py-1 text-xs font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-60"
+              className="shrink-0"
             >
               {exporting ? t('Export...', 'Exporting...') : t('Exporter en CSV', 'Export to CSV')}
-            </button>
+            </Bouton>
           )}
         </div>
         {history.sends.length === 0 ? (
@@ -109,7 +110,7 @@ export function ContactHistoryPanel({ tenantId, contactId }: { tenantId: string;
       </section>
 
       <section>
-        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
+        <h4 className="mb-2 text-xs font-medium text-ink-500">
           {t('Conversations', 'Conversations')} ({history.conversations.length})
         </h4>
         {history.conversations.length === 0 ? (
@@ -163,7 +164,7 @@ function SendRow({ send, stamp }: { send: ContactSend; stamp: (iso: string) => s
           </span>
         )}
       </p>
-      {send.error && <p className="mt-1 text-xs text-red-600">{send.error}</p>}
+      {send.error && <p className="mt-1 text-xs text-danger-600">{send.error}</p>}
     </li>
   );
 }
@@ -186,21 +187,21 @@ function SendRow({ send, stamp }: { send: ContactSend; stamp: (iso: string) => s
 function DeliveryBadge({ send, stamp }: { send: ContactSend; stamp: (iso: string) => string }) {
   const t = useT();
   if (send.status === 'skipped') {
-    return <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">{t('écarté', 'skipped')}</span>;
+    return <span className="rounded-full bg-alerte-50 px-2 py-0.5 text-alerte-700">{t('écarté', 'skipped')}</span>;
   }
   if (send.status === 'pending' || send.status === 'sending') {
-    return <span className="rounded-full bg-ink-100 px-2 py-0.5 text-ink-600">{t('en attente', 'pending')}</span>;
+    return <span className="rounded-full bg-ink-100 px-2 py-0.5 text-ink-500">{t('en attente', 'pending')}</span>;
   }
   if (send.status === 'failed') {
     // Échec de l'ENVOI. Le motif exact est affiché juste en dessous par `SendRow` (`send.error`).
-    return <span className="rounded-full bg-red-50 px-2 py-0.5 text-red-700">{t('envoi en échec', 'send failed')}</span>;
+    return <span className="rounded-full bg-danger-50 px-2 py-0.5 text-danger-700">{t('envoi en échec', 'send failed')}</span>;
   }
   // À partir d'ici le message est bien parti : il ne reste qu'à qualifier son suivi de livraison.
   const LABEL: Record<string, [string, string, string]> = {
-    sent: [t('envoyé', 'sent'), 'bg-ink-100', 'text-ink-600'],
-    delivered: [t('délivré', 'delivered'), 'bg-blue-50', 'text-blue-700'],
-    read: [t('lu', 'read'), 'bg-green-50', 'text-green-700'],
-    failed: [t('non délivré', 'not delivered'), 'bg-red-50', 'text-red-700'],
+    sent: [t('envoyé', 'sent'), 'bg-ink-100', 'text-ink-500'],
+    delivered: [t('délivré', 'delivered'), 'bg-brand-50', 'text-brand-700'],
+    read: [t('lu', 'read'), 'bg-succes-50', 'text-succes-700'],
+    failed: [t('non délivré', 'not delivered'), 'bg-danger-50', 'text-danger-700'],
   };
   const d = send.deliveryStatus ? LABEL[send.deliveryStatus] : undefined;
   if (!d) {
@@ -237,14 +238,14 @@ function ConversationRow({ conv, stamp }: { conv: ContactConversation; stamp: (i
       </div>
 
       {conv.analysis ? (
-        <div className="mt-1.5 text-xs text-ink-600">
-          <span className="text-ink-800">{conv.analysis.sentiment}</span> · {conv.analysis.topic || conv.analysis.intent} ·{' '}
+        <div className="mt-1.5 text-xs text-ink-500">
+          <span className="text-ink-900">{conv.analysis.sentiment}</span> · {conv.analysis.topic || conv.analysis.intent} ·{' '}
           {conv.analysis.resolved ? t('résolu', 'resolved') : t('non résolu', 'unresolved')} ·{' '}
           {t('traité par', 'handled by')} {conv.analysis.handledBy}
           {/* Une analyse existe mais un message est arrivé depuis : la montrer sans le dire ferait passer une
               lecture périmée pour un état courant. */}
           {conv.analysisStale && (
-            <span className="ml-1.5 rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">
+            <span className="ml-1.5 rounded bg-alerte-50 px-1.5 py-0.5 text-alerte-700">
               {t('analyse à rafraîchir', 'analysis outdated')}
             </span>
           )}
@@ -259,7 +260,7 @@ function ConversationRow({ conv, stamp }: { conv: ContactConversation; stamp: (i
               AVANT elle (Vercel suit `main`, le VPS se déploie à la main). Pendant cette fenêtre, on n'affiche
               rien plutôt que d'accuser chaque analyse d'être antérieure à la migration 0100. */}
           {conv.analysis.summary !== undefined && (
-            <p className={conv.analysis.summary ? 'mt-1 whitespace-pre-line text-ink-700' : 'mt-1 italic text-ink-400'}>
+            <p className={conv.analysis.summary ? 'mt-1 whitespace-pre-line text-ink-900' : 'mt-1 italic text-ink-400'}>
               {conv.analysis.summary ?? phraseResumeAbsent('sans-resume', t)}
             </p>
           )}
@@ -304,7 +305,7 @@ function Bilan({ bilan }: { bilan: BilanContact }) {
   return (
     <section data-testid="contact-bilan" className="grid gap-4 rounded-xl border border-ink-200 bg-ink-50/60 p-4 sm:grid-cols-[minmax(0,14rem)_1fr]">
       <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-ink-500">{t('Ce qu’il a coûté', 'What they cost')}</p>
+        <p className="text-xs font-medium text-ink-500">{t('Ce qu’il a coûté', 'What they cost')}</p>
         <p className="mt-1 text-2xl font-semibold tabular-nums text-ink-900" data-testid="contact-bilan-cout">{montant}</p>
         <p className="mt-0.5 text-xs text-ink-500">
           {t(`${cout.envoyes} envoi${cout.envoyes > 1 ? 's' : ''} de campagne, coût estimé`,
@@ -313,7 +314,7 @@ function Bilan({ bilan }: { bilan: BilanContact }) {
         {/* La troncature se DIT, et sa cause avec : une catégorie absente est un héritage définitif, un
             tarif manquant est une panne du jour. Les deux se réparent différemment. */}
         {cout.nonChiffrables > 0 && (
-          <p className="mt-1 text-xs text-amber-800" data-testid="contact-bilan-nonchiffrables">
+          <p className="mt-1 text-xs text-alerte-800" data-testid="contact-bilan-nonchiffrables">
             {t(`${cout.nonChiffrables} non chiffré${cout.nonChiffrables > 1 ? 's' : ''}`,
               `${cout.nonChiffrables} not priced`)}
             {cout.sansCategorie > 0 && t(` (${cout.sansCategorie} sans catégorie enregistrée)`, ` (${cout.sansCategorie} with no recorded category)`)}
@@ -323,7 +324,7 @@ function Bilan({ bilan }: { bilan: BilanContact }) {
       </div>
 
       <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-ink-500">{t('Jusqu’où il est allé', 'How far they went')}</p>
+        <p className="text-xs font-medium text-ink-500">{t('Jusqu’où il est allé', 'How far they went')}</p>
         {entonnoir.length === 0 ? (
           <p className="mt-2 text-sm text-ink-500" data-testid="contact-bilan-sans-engagement">
             {t('Il n’a réagi à aucun message.', 'They reacted to no message.')}
@@ -344,7 +345,7 @@ function Bilan({ bilan }: { bilan: BilanContact }) {
                     style={{ width: `${max > 0 ? Math.round((n.parcours / max) * 100) : 0}%` }}
                   />
                 </span>
-                <span className="w-6 shrink-0 text-right text-xs font-medium tabular-nums text-ink-700">{n.parcours}</span>
+                <span className="w-6 shrink-0 text-right text-xs font-medium tabular-nums text-ink-900">{n.parcours}</span>
               </div>
             ))}
             <p className="mt-1 text-xs text-ink-400">

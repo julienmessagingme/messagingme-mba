@@ -1,4 +1,5 @@
 import type { AccountDot } from './api/compte';
+import { alerte, danger, ink, succes } from './couleurs';
 
 /**
  * Classes Tailwind partagées de la console.
@@ -22,15 +23,19 @@ export const inputClsAuto =
  * Carte de contenu : le fond blanc arrondi qui porte une section de réglages. Recopié à l'identique dans une
  * dizaine d'écrans avant d'atterrir ici, pour la même raison que `inputCls`.
  */
-export const cardCls = 'rounded-2xl border border-ink-200 bg-white p-5 shadow-sm';
+export const cardCls = 'rounded-2xl border border-ink-200 bg-white p-5';
 
-/** Le sur-titre coloré d'un en-tête de page (« MBA », « CAMPAGNES »). */
-export const kickerCls = 'text-xs font-semibold uppercase tracking-wide text-brand-600';
+/**
+ * Le sur-titre d'un en-tête de page (« Agent IA », « Tools »). En casse normale et en gris secondaire depuis le
+ * 2026-09-25 : des majuscules espacées et colorées pour structurer sont un marqueur d'interface générée.
+ */
+export const kickerCls = 'text-xs font-medium text-ink-500';
 
 /**
  * Couleur de la pastille de statut, en hexadécimal DIRECT et pas en nuance Tailwind : la classe
  * `bg-<couleur>-500` d'une valeur calculée n'est pas vue par le balayage de Tailwind, donc absente du CSS
- * produit, donc la pastille sort sans couleur. Le style en ligne n'a pas ce défaut.
+ * produit, donc la pastille sort sans couleur. Le style en ligne n'a pas ce défaut. Les valeurs viennent des
+ * jetons d'état de `lib/couleurs.ts` : la pastille verte est le même vert que les bandeaux de succès.
  *
  * ⚠️ Elle était déclarée dans `web/app/accueil/page.tsx`, qui la lit à plusieurs endroits. L'extraction de
  * la pastille du numéro (`components/PastilleNumero.tsx`, 2026-09-23) en aurait fait une SECONDE copie :
@@ -41,4 +46,4 @@ export const kickerCls = 'text-xs font-semibold uppercase tracking-wide text-bra
  * rend la réponse, et il ne périme pas.
  */
 export const DOT_HEX: Record<AccountDot, string> =
-  { green: '#17C74E', amber: '#E8A400', red: '#FF4D4F', grey: '#B8BEC9' };
+  { green: succes[400], amber: alerte[500], red: danger[500], grey: ink[300] };

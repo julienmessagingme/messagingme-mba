@@ -56,14 +56,14 @@ export function Modale({
       aria-label={titre}
     >
       <div
-        className={`flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-xl ${taille === 'large' ? 'max-w-4xl' : 'max-w-xl'}`}
+        className={`flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-mm-lg ${taille === 'large' ? 'max-w-4xl' : 'max-w-xl'}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 border-b border-ink-100 px-5 py-4">
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold tracking-tight text-ink-900">
+            <h3 className="text-sm font-semibold text-ink-900">
               {titreHref
-                ? <Link href={titreHref} data-testid="modale-titre-lien" className="hover:text-violet hover:underline">{titre}</Link>
+                ? <Link href={titreHref} data-testid="modale-titre-lien" className="hover:text-brand-600 hover:underline">{titre}</Link>
                 : titre}
             </h3>
             {sousTitre && <div className="mt-0.5 text-xs text-ink-400">{sousTitre}</div>}
@@ -75,7 +75,7 @@ export function Modale({
               onClick={onClose}
               data-testid="modale-fermer"
               aria-label={t('Fermer', 'Close')}
-              className="sans-impression text-2xl leading-none text-ink-400 transition hover:text-ink-700"
+              className="sans-impression text-2xl leading-none text-ink-400 transition-colors duration-150 hover:text-ink-900"
             >
               ×
             </button>

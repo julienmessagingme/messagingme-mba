@@ -1,6 +1,7 @@
 import { MarkerType, type Node, type Edge } from '@xyflow/react';
 import type { WorkflowGraph, WorkflowNodeType } from '@/lib/api';
 import { poigneeCanevas, poigneeGraphe, uneAreteParSortie } from '@/lib/workflow-sorties';
+import { ink } from './couleurs';
 
 /**
  * La FRONTIÈRE entre le graphe enregistré et le canevas React Flow, plus le peu que les deux côtés du builder
@@ -16,7 +17,7 @@ export type RFNode = Node<Record<string, unknown>>;
 export type RFEdge = Edge;
 
 /** Style commun de toutes les arêtes : type `wf` (la courbe avec + et poubelle) et la flèche au bout. */
-export const EDGE_OPTS = { type: 'wf', markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8' } };
+export const EDGE_OPTS = { type: 'wf', markerEnd: { type: MarkerType.ArrowClosed, color: ink[300] } };
 
 /** Destinataire tel que porté par `data.to` du node email : `{kind:'literal',value}` ou `{kind:'field',field}`,
  *  lu défensivement (le graphe est opaque, cf. `actionOf` côté moteur). */

@@ -90,7 +90,7 @@ function CoutsInner({ session }: { session: Session }) {
   return (
     <div className="space-y-4">
       <RangeBar title={t('Coûts', 'Costs')} range={range} onChange={setRange} />
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
       {loading ? (
         <p className="text-sm text-ink-500">{t('Chargement des statistiques...', 'Loading statistics...')}</p>
       ) : (

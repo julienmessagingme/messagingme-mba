@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { useLocale, useT } from '@/lib/i18n';
 import { fmtNum } from '@/lib/format';
 import type { MessagesTenus, MessagesEcritsMba } from '@/lib/chiffres-canaux';
+import { TitrePage } from '@/components/TitrePage';
 
 /**
  * L'EN-TÊTE D'UN ÉCRAN D'AGENT : qui est cet agent, ce qui lui manque, ce qu'il a produit.
@@ -115,7 +116,7 @@ export function EnteteAgent({
   return (
     <header
       data-testid="entete-agent"
-      className="flex flex-col gap-4 rounded-2xl border border-ink-200 bg-white p-4 shadow-sm sm:flex-row sm:items-start sm:gap-5"
+      className="flex flex-col gap-4 rounded-2xl border border-ink-200 bg-white p-4 sm:flex-row sm:items-start sm:gap-5"
     >
       {logo !== null ? (
         // ⚠️ LA DÉSACTIVATION VA ICI, COLLÉE À LA BALISE. Posée au-dessus du ternaire, elle couvrait la
@@ -131,19 +132,19 @@ export function EnteteAgent({
         // DESSIN, pas un mot. Sans lui, elles se lisent à voix haute juste avant le nom de l'agent, qui est
         // écrit en toutes lettres à côté.
         <span data-testid="entete-agent-pastille" aria-hidden="true"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-semibold text-ink-600">
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-semibold text-ink-500">
           {pastille}
         </span>
       )}
 
       <div className="min-w-0 flex-1 space-y-1">
         {surTitre !== undefined && surTitre !== '' && (
-          <p data-testid="entete-agent-surtitre" className="truncate text-[11px] font-semibold uppercase tracking-wide text-ink-400">
+          <p data-testid="entete-agent-surtitre" className="truncate text-xs font-medium text-ink-500">
             {surTitre}
           </p>
         )}
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="truncate text-xl font-semibold tracking-tight text-ink-900">{nom}</h2>
+          <TitrePage className="truncate">{nom}</TitrePage>
           {etat}
         </div>
         {precision !== undefined && precision !== '' && (
@@ -160,13 +161,13 @@ export function EnteteAgent({
             écrit parce qu'il dit l'intention, mais une règle trop forte fait « corriger » du code sain :
             l'appelant d'à côté, qui passe un nœud, n'a PAS besoin d'être touché.
           */
-          <div data-testid="entete-agent-precision" className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-ink-600">
+          <div data-testid="entete-agent-precision" className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-ink-500">
             {typeof precision === 'string' ? <span className="min-w-0 truncate">{precision}</span> : precision}
           </div>
         )}
 
         {etapes !== null && (
-          <p data-testid="entete-agent-etapes" className="pt-1 text-sm font-medium text-ink-800">
+          <p data-testid="entete-agent-etapes" className="pt-1 text-sm font-medium text-ink-900">
             {libelleEtapes(etapes.length, t)}
             {ratio !== undefined && (
               <span data-testid="entete-agent-ratio" className="ml-2 font-normal text-ink-500">
@@ -180,7 +181,7 @@ export function EnteteAgent({
         {etapes !== null && etapes.length > 0 && (
           <ul className="space-y-1 pt-1">
             {etapes.map((e) => (
-              <li key={e.message} className="text-sm text-ink-600">
+              <li key={e.message} className="text-sm text-ink-500">
                 {/* ⚠️ UNE ÉTAPE SANS ONGLET RESTE AFFICHÉE, en texte simple : la masquer ferait disparaître
                     une condition réelle d'un en-tête qui prétend les lister toutes. Aucun appelant n'en
                     produit aujourd'hui (voir `EtapeEntete.onglet`), c'est le contrat du type qui l'autorise. */}
@@ -261,7 +262,7 @@ export function ChiffreMessagesTenus(chiffre: MessagesTenus | MessagesEcritsMba)
     return (
       <>
         <p className="text-2xl font-semibold tabular-nums text-ink-900">{fmtNum(chiffre.messages, locale)}</p>
-        <p className="text-xs font-medium text-ink-700">{t('Messages écrits par le MBA', 'Messages written by the MBA')}</p>
+        <p className="text-xs font-medium text-ink-900">{t('Messages écrits par le MBA', 'Messages written by the MBA')}</p>
       </>
     );
   }
@@ -269,7 +270,7 @@ export function ChiffreMessagesTenus(chiffre: MessagesTenus | MessagesEcritsMba)
   return (
     <>
       <p className="text-2xl font-semibold tabular-nums text-ink-900">{fmtNum(messages, locale)}</p>
-      <p className="text-xs font-medium text-ink-700">
+      <p className="text-xs font-medium text-ink-900">
         {t('Messages échangés dans les conversations que cet agent a tenues',
            'Messages exchanged in the conversations this agent handled')}
       </p>

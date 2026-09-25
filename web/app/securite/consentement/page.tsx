@@ -6,6 +6,7 @@ import { AppShell } from '@/components/AppShell';
 import { useT } from '@/lib/i18n';
 import { listeDesabonnes, refusPossibles, pousseeOptOut, setPousseeOptOut, type ContactDesabonne, type RefusPossible } from '@/lib/api';
 import { cardCls } from '@/lib/ui';
+import { IntroPage, TitrePage } from '@/components/TitrePage';
 
 /**
  * LE CONSENTEMENT : qui a demandé à ne plus être contacté, depuis quand, et par quel chemin.
@@ -56,13 +57,13 @@ function Consentement({ tenantId, estAdmin }: { tenantId: string; estAdmin: bool
   return (
     <div className="mx-auto w-full max-w-5xl space-y-4 p-6" data-testid="securite-consentement">
       <div className="space-y-1">
-        <h1 className="text-xl font-semibold text-ink-900">{t('Consentement', 'Consent')}</h1>
-        <p className="text-sm text-ink-500">
+        <TitrePage>{t('Consentement', 'Consent')}</TitrePage>
+        <IntroPage>
           {t(
             'Les personnes qui ont demandé à ne plus être contactées. Aucun envoi automatique ne leur est adressé : ni campagne, ni scénario, ni automation, ni agent IA. Un opérateur peut encore leur répondre à la main.',
             'People who asked not to be contacted again. No automatic message is sent to them: no campaign, scenario, automation or AI agent. An operator can still reply to them by hand.',
           )}
-        </p>
+        </IntroPage>
       </div>
 
       <section className={cardCls} data-testid="desabonnes">
@@ -75,7 +76,7 @@ function Consentement({ tenantId, estAdmin }: { tenantId: string; estAdmin: bool
           )}
         </div>
 
-        {erreur !== null && <p className="px-4 py-3 text-sm text-red-700" data-testid="desabonnes-erreur">{erreur}</p>}
+        {erreur !== null && <p className="px-4 py-3 text-sm text-danger-700" data-testid="desabonnes-erreur">{erreur}</p>}
         {erreur === null && contacts === null && <p className="px-4 py-3 text-sm text-ink-500">{t('Lecture…', 'Loading…')}</p>}
         {erreur === null && contacts !== null && contacts.length === 0 && (
           <p className="px-4 py-3 text-sm text-ink-500" data-testid="desabonnes-vide">
@@ -96,7 +97,7 @@ function Consentement({ tenantId, estAdmin }: { tenantId: string; estAdmin: bool
             <tbody>
               {contacts.map((c) => (
                 <tr key={c.id} className="border-t border-ink-100" data-testid="desabonne-ligne">
-                  <td className="px-4 py-2 text-ink-800">
+                  <td className="px-4 py-2 text-ink-900">
                     {c.profileName ?? c.phoneE164 ?? t('sans nom', 'no name')}
                     {c.profileName && c.phoneE164 && <span className="ml-2 text-xs text-ink-400">{c.phoneE164}</span>}
                   </td>
@@ -112,12 +113,12 @@ function Consentement({ tenantId, estAdmin }: { tenantId: string; estAdmin: bool
                     * moindre modification de la fiche). Afficher une date fausse sur un écran de conformité
                     * serait pire que de n'en afficher aucune.
                     */}
-                  <td className="px-4 py-2 text-ink-600" data-testid="desabonne-date">
+                  <td className="px-4 py-2 text-ink-500" data-testid="desabonne-date">
                     {c.desabonneLe
                       ? new Date(c.desabonneLe).toLocaleString()
                       : <span className="text-ink-400">{t('date inconnue', 'date unknown')}</span>}
                   </td>
-                  <td className="px-4 py-2 text-ink-600">{sourceDite(c.source, t)}</td>
+                  <td className="px-4 py-2 text-ink-500">{sourceDite(c.source, t)}</td>
                   <td className="px-4 py-2 text-right">
                     {/* La fiche du contact : c'est là qu'on voit son historique complet, et le seul endroit
                         d'où l'on peut lever un opt-out en sachant à qui l'on a affaire. */}
@@ -177,7 +178,7 @@ function Consentement({ tenantId, estAdmin }: { tenantId: string; estAdmin: bool
             {aRelire.refus.map((r) => (
               <li key={r.messageId} className="flex items-start justify-between gap-3 px-4 py-2" data-testid="refus-possible-ligne">
                 <div className="min-w-0">
-                  <p className="truncate text-sm text-ink-800">{r.body}</p>
+                  <p className="truncate text-sm text-ink-900">{r.body}</p>
                   <p className="text-xs text-ink-400">
                     {r.profileName ?? r.waId} · {new Date(r.recuLe).toLocaleDateString()}
                   </p>
@@ -250,7 +251,7 @@ function PousseeVersLeSysteme({ tenantId }: { tenantId: string }) {
         )}
         {etat !== null && etat.requetes.length > 0 && (
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-xs font-medium text-ink-600">{t('Appel joué à chaque désabonnement', 'Request played on each unsubscribe')}</span>
+            <span className="text-xs font-medium text-ink-500">{t('Appel joué à chaque désabonnement', 'Request played on each unsubscribe')}</span>
             <select
               className="w-full max-w-md rounded border border-ink-200 px-2 py-1.5 text-sm"
               data-testid="poussee-optout-choix"
@@ -262,8 +263,8 @@ function PousseeVersLeSysteme({ tenantId }: { tenantId: string }) {
             </select>
           </label>
         )}
-        {erreur !== null && <p className="text-sm text-red-700" data-testid="poussee-optout-erreur">{erreur}</p>}
-        {enregistre && erreur === null && <p className="text-xs text-emerald-700" data-testid="poussee-optout-ok">{t('Enregistré.', 'Saved.')}</p>}
+        {erreur !== null && <p className="text-sm text-danger-700" data-testid="poussee-optout-erreur">{erreur}</p>}
+        {enregistre && erreur === null && <p className="text-xs text-succes-700" data-testid="poussee-optout-ok">{t('Enregistré.', 'Saved.')}</p>}
       </div>
     </section>
   );

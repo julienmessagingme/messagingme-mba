@@ -1,11 +1,13 @@
 import type { Metadata } from 'next';
-import { Plus_Jakarta_Sans } from 'next/font/google';
+import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { LocaleProvider } from '@/lib/i18n';
 
-// Police du design system Engage Me, self-hostée au build (aucun appel externe au
-// runtime). Exposée en variable CSS --font-pjs, consommée par Tailwind (fontFamily.sans).
-const pjs = Plus_Jakarta_Sans({ subsets: ['latin'], display: 'swap', variable: '--font-pjs' });
+// Polices de la console, self-hostées au build (aucun appel externe au runtime). Exposées en variables CSS,
+// consommées par Tailwind (`fontFamily.sans` et `fontFamily.mono`). La mono sert les numéros, identifiants
+// et extraits de code : sans police déclarée, elle retombait sur Consolas ou Courier selon la machine.
+const geist = Geist({ subsets: ['latin'], display: 'swap', variable: '--font-geist-sans' });
+const geistMono = Geist_Mono({ subsets: ['latin'], display: 'swap', variable: '--font-geist-mono' });
 
 // Métadonnées STATIQUES (SSR) : titre = marque (neutre), description en anglais (audience internationale,
 // reviewers Meta). Le contenu de l'app, lui, est bilingue via LocaleProvider.
@@ -18,7 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     // lang="fr" = défaut SSR (1er rendu toujours FR -> pas de mismatch d'hydratation). Le LocaleProvider
     // resynchronise document.documentElement.lang après montage (choix mémorisé OU toggle).
-    <html lang="fr" className={pjs.variable}>
+    <html lang="fr" className={`${geist.variable} ${geistMono.variable}`}>
       <body><LocaleProvider>{children}</LocaleProvider></body>
     </html>
   );

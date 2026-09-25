@@ -68,7 +68,7 @@ export function RcsButtonsEditor({
               <button
                 type="button"
                 onClick={() => onChange(boutons.filter((_, j) => j !== i))}
-                className="shrink-0 text-ink-400 hover:text-coral"
+                className="shrink-0 text-ink-400 hover:text-danger"
                 aria-label={t('Retirer', 'Remove')}
               >
                 ×
@@ -141,7 +141,7 @@ export function RcsButtonsEditor({
             )}
 
             {t(...AIDE_KIND[b.kind]) !== '' && (
-              <p className="mt-1 text-[11px] text-ink-400">{t(...AIDE_KIND[b.kind])}</p>
+              <p className="mt-1 text-xs text-ink-400">{t(...AIDE_KIND[b.kind])}</p>
             )}
           </div>
         ))}
@@ -188,7 +188,7 @@ function ChampDate({
 
   return (
     <div className="flex items-center gap-1.5">
-      <span className="w-12 shrink-0 text-[11px] text-ink-500">{libelle}</span>
+      <span className="w-12 shrink-0 text-xs text-ink-500">{libelle}</span>
       {champs.length > 0 && (
         <select
           value={estVariable ? 'champ' : 'fixe'}

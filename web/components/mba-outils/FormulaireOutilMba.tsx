@@ -8,6 +8,7 @@ import { BORNES_OUTIL, TEXTES_PAR_TYPE, consigneIncomplete, nomTechniqueDepuisTi
 import { CibleBloc, CibleChamp, CibleConnecteur, CibleScenario, CibleTag } from './CiblesOutil';
 import { inputCls } from '@/lib/ui';
 import { useT } from '@/lib/i18n';
+import { Bouton } from '@/components/Bouton';
 
 /** La cible de départ : celle de l'outil modifié, ou une cible vide du type choisi. */
 function cibleInitiale(type: TypeOutilMba, outil: OutilMbaVue | null): CibleSaisie | null {
@@ -127,7 +128,7 @@ export function FormulaireOutilMba({ tenantId, type, outil, occupe, onOccupe, on
   return (
     <section className="flex flex-col gap-3 rounded-2xl border border-ink-200 bg-white p-4" data-testid="mba-form">
       <p className="text-sm font-semibold text-ink-900">{t(textes.titre[0], textes.titre[1])}</p>
-      {erreur !== null && <p className="text-xs text-coral" data-testid="mba-form-erreur">{erreur}</p>}
+      {erreur !== null && <p className="text-xs text-danger" data-testid="mba-form-erreur">{erreur}</p>}
 
       {cible?.type === 'tag' && (
         <CibleTag tenantId={tenantId} valeur={cible.tag} onChange={(tag) => setCible({ type: 'tag', tag })} />
@@ -158,34 +159,33 @@ export function FormulaireOutilMba({ tenantId, type, outil, occupe, onOccupe, on
           }} />
       )}
 
-      <label className="text-xs text-ink-600">
+      <label className="text-xs text-ink-500">
         {t('Titre', 'Title')}
         <input className={`${inputCls} mt-1`} data-testid="mba-form-titre" value={title} maxLength={BORNES_OUTIL.titre}
           onChange={(e) => changerTitre(e.target.value)} />
       </label>
-      <label className="text-xs text-ink-600">
+      <label className="text-xs text-ink-500">
         {t('Nom technique (vu par l’agent de Meta)', 'Technical name (seen by Meta’s agent)')}
         <input className={`${inputCls} mt-1`} data-testid="mba-form-nom" value={name}
           onChange={(e) => { setNomTouche(true); setName(e.target.value); }} />
       </label>
-      <label className="text-xs text-ink-600">
+      <label className="text-xs text-ink-500">
         {t('Quand l’appeler', 'When to call it')}
         <textarea className={`${inputCls} mt-1`} rows={3} data-testid="mba-form-quand" value={description} maxLength={BORNES_OUTIL.texte}
           onChange={(e) => setDescription(e.target.value)} />
       </label>
-      <label className="text-xs text-ink-600">
+      <label className="text-xs text-ink-500">
         {t('Quand NE PAS l’appeler', 'When NOT to call it')}
         <textarea className={`${inputCls} mt-1`} rows={2} data-testid="mba-form-pasquand" value={nePasUtiliser} maxLength={BORNES_OUTIL.texte}
           onChange={(e) => setNePasUtiliser(e.target.value)} />
       </label>
 
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" data-testid="mba-form-enregistrer" disabled={manque !== null} title={manque ?? ''}
-          onClick={() => { void enregistrer(); }}
-          className="rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-50">
+        <Bouton taille="petite" type="button" data-testid="mba-form-enregistrer" disabled={manque !== null} title={manque ?? ''}
+          onClick={() => { void enregistrer(); }}>
           {busy ? t('Enregistrement…', 'Saving…') : t('Enregistrer et envoyer à Meta', 'Save and send to Meta')}
-        </button>
-        {manque !== null && <span className="text-[11px] text-ink-500" data-testid="mba-form-manque">{manque}</span>}
+        </Bouton>
+        {manque !== null && <span className="text-xs text-ink-500" data-testid="mba-form-manque">{manque}</span>}
         {/* Grisé pendant l'enregistrement : il démontait le formulaire en cours, dont l'erreur se perdait avec la
             saisie, et l'outil partait quand même chez Meta (relecture du 2026-09-22). */}
         <button type="button" data-testid="mba-form-annuler" disabled={busy} onClick={onAnnuler}

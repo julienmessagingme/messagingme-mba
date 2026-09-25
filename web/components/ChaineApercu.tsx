@@ -32,13 +32,13 @@ export function ChaineApercu({ texte, imageUrl, waMeUrl, nomChaine }: ChaineAper
 
   return (
     <div className="rounded-2xl border border-ink-200 bg-ink-50 p-4" data-testid="chaine-apercu">
-      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-400">
+      <p className="mb-3 text-xs font-medium text-ink-500">
         {t('Aperçu', 'Preview')}
       </p>
 
       {/* La bulle, aux couleurs de WhatsApp plutôt qu'à celles de la console : c'est une simulation de ce que
           l'abonné voit, pas un élément de notre interface. */}
-      <div className="mx-auto max-w-sm rounded-2xl bg-[#E7FFDB] p-3 shadow-sm">
+      <div className="mx-auto max-w-sm rounded-2xl bg-[#E7FFDB] p-3">
         <p className="mb-2 text-xs font-semibold text-ink-500" data-testid="chaine-apercu-nom">
           {nomChaine ?? t('Ta chaîne', 'Your channel')}
         </p>
@@ -62,7 +62,7 @@ export function ChaineApercu({ texte, imageUrl, waMeUrl, nomChaine }: ChaineAper
         {morceaux.map((m, i) => {
           if (m.kind === 'texte') {
             return (
-              <p key={i} className="whitespace-pre-wrap break-words text-sm text-ink-800" data-testid="chaine-apercu-texte">
+              <p key={i} className="whitespace-pre-wrap break-words text-sm text-ink-900" data-testid="chaine-apercu-texte">
                 {/* 🔴 L'APERÇU MONTRE LE GRAS, il n'affiche pas des étoiles. Sans ça, la mise en forme est un
                     mensonge : le client écrit `*promo*` et voit `*promo*`, donc il ne peut pas juger de ce
                     qu'il publie. Le découpage vit dans un module PUR, testé (`chaine-mise-en-forme.ts`) :
@@ -73,7 +73,7 @@ export function ChaineApercu({ texte, imageUrl, waMeUrl, nomChaine }: ChaineAper
           }
           if (m.kind === 'lien') {
             return (
-              <p key={i} className="mt-2 break-all text-xs text-sky underline" data-testid="chaine-apercu-lien">
+              <p key={i} className="mt-2 break-all text-xs text-brand-600 underline" data-testid="chaine-apercu-lien">
                 {m.contenu}
               </p>
             );
@@ -81,7 +81,7 @@ export function ChaineApercu({ texte, imageUrl, waMeUrl, nomChaine }: ChaineAper
           return (
             <div
               key={i}
-              className="mt-2 border-t border-ink-200/60 pt-2 text-center text-sm font-medium text-sky"
+              className="mt-2 border-t border-ink-200/60 pt-2 text-center text-sm font-medium text-brand-600"
               data-testid="chaine-apercu-bouton"
             >
               {m.contenu}

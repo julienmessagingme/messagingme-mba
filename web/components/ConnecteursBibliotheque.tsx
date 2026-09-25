@@ -9,6 +9,7 @@ import {
   creerSource, eprouverSource, listSources, patchSource, supprimerSource,
   type AuthSource, type SourceAgent,
 } from '@/lib/api-agent-sources';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * LA BIBLIOTHÈQUE DE SYSTÈMES du workspace (menu Tools).
@@ -68,14 +69,13 @@ export function ConnecteursBibliotheque({ tenantId }: { tenantId: string }) {
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-semibold text-ink-900">{t('Vos systèmes', 'Your systems')}</h2>
-        <button
+        <Bouton variante="secondaire"
           type="button"
           data-testid="source-ajouter"
           onClick={() => { setAjout((v) => !v); setOuvert(null); }}
-          className="rounded-lg border border-brand-500 px-3 py-1.5 text-sm font-medium text-brand-600 hover:bg-brand-50"
         >
           {ajout ? t('Annuler', 'Cancel') : t('+ Brancher un système', '+ Connect a system')}
-        </button>
+        </Bouton>
       </div>
 
       {/* Le formulaire d'ajout : REPLIE par défaut, et au-dessus de la liste quand il s'ouvre, là où on
@@ -104,7 +104,7 @@ export function ConnecteursBibliotheque({ tenantId }: { tenantId: string }) {
             data-testid={`source-ligne-${s.id}`}
             aria-expanded={ouvert === s.id}
             onClick={() => setOuvert((v) => (v === s.id ? null : s.id))}
-            className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition ${
+            className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors duration-150 ${
               ouvert === s.id ? 'border-brand-500 bg-brand-50/40' : 'border-ink-200 bg-white hover:bg-ink-50'
             }`}
           >
@@ -112,7 +112,7 @@ export function ConnecteursBibliotheque({ tenantId }: { tenantId: string }) {
             <span className="min-w-0 flex-1">
               <span className="flex flex-wrap items-baseline gap-2">
                 <span className="text-sm font-medium text-ink-900">{s.label}</span>
-                <span className={`rounded px-1.5 py-0.5 text-[11px] ${s.status === 'active' ? 'bg-mint/20 text-emerald-700' : 'bg-ink-100 text-ink-600'}`}>
+                <span className={`rounded px-1.5 py-0.5 text-xs ${s.status === 'active' ? 'bg-succes-100 text-succes-700' : 'bg-ink-100 text-ink-500'}`}>
                   {s.status === 'active' ? t('Actif', 'Active') : s.status === 'draft' ? t('Brouillon', 'Draft') : t('Désactivé', 'Disabled')}
                 </span>
               </span>
@@ -120,7 +120,7 @@ export function ConnecteursBibliotheque({ tenantId }: { tenantId: string }) {
             </span>
             {/* 🔴 QUI TAPE DEDANS, dès la liste : sans ce chiffre on croirait le système lié à l'agent d'où
                 on l'a vu, et on le supprimerait en cassant les autres. */}
-            <span data-testid={`source-usage-${s.id}`} className="shrink-0 text-right text-xs text-ink-600">
+            <span data-testid={`source-usage-${s.id}`} className="shrink-0 text-right text-xs text-ink-500">
               {s.agents === 0
                 ? t('aucun agent', 'no agent')
                 : t(`${s.agents} agent(s)`, `${s.agents} agent(s)`)}
@@ -189,19 +189,18 @@ function Source({ source, busy, epreuve, onEprouver, onPatch, onSupprimer }: {
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
-          <button
+          <Bouton variante="secondaire"
             data-testid={`source-statut-${source.id}`}
             disabled={busy}
             onClick={() => onPatch({ status: source.status === 'active' ? 'disabled' : 'active' })}
-            className="rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:opacity-40"
           >
             {source.status === 'active' ? t('Désactiver', 'Disable') : t('Activer', 'Activate')}
-          </button>
+          </Bouton>
           <button
             data-testid={`source-supprimer-${source.id}`}
             disabled={busy}
             onClick={onSupprimer}
-            className="rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-coral hover:bg-red-50 disabled:opacity-40"
+            className="rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-danger hover:bg-danger-50 disabled:opacity-40"
           >
             {t('Supprimer', 'Delete')}
           </button>
@@ -229,18 +228,17 @@ function Source({ source, busy, epreuve, onEprouver, onPatch, onSupprimer }: {
       {/* 🔴 L'ÉPREUVE. Un jeton expiré ne produit aucune erreur applicative : l'agent dégraderait en silence
           au milieu d'une conversation. C'est le seul endroit où ça se voit avant qu'un contact ne le trouve. */}
       <div className="flex flex-wrap items-end gap-2 rounded-lg border border-ink-200 px-3 py-2">
-        <label className="flex-1 text-xs text-ink-600">
+        <label className="flex-1 text-xs text-ink-500">
           {t('Éprouver la connexion sur ce chemin', 'Test the connection on this path')}
           <input className={`${inputCls} mt-1`} data-testid={`source-chemin-${source.id}`} value={chemin} onChange={(e) => setChemin(e.target.value)} />
         </label>
-        <button
+        <Bouton variante="secondaire"
           data-testid={`source-eprouver-${source.id}`}
           disabled={busy}
           onClick={() => onEprouver(chemin)}
-          className="rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:opacity-40"
         >
           {t('Éprouver', 'Test')}
-        </button>
+        </Bouton>
         {/*
           🔴 CE QU'ELLE ÉPROUVE, DIT À L'ÉCRAN (Julien, 2026-09-24 : « à quoi sert Éprouver la connexion sur
           ce chemin, quand on choisit un système déjà branché ? »). La question était juste : l'écran offrait
@@ -254,7 +252,7 @@ function Source({ source, busy, epreuve, onEprouver, onPatch, onSupprimer }: {
             'A real call, with your authentication: this is the only place an expired token shows up before a customer finds it, because a dead token raises no error anywhere else.',
           )}
         </p>
-        <p data-testid={`source-epreuve-${source.id}`} className="w-full text-xs text-ink-600">
+        <p data-testid={`source-epreuve-${source.id}`} className="w-full text-xs text-ink-500">
           {epreuve ?? (source.lastError
             ? t(`Dernière erreur : ${source.lastError}`, `Last error: ${source.lastError}`)
             : source.lastOkAt
@@ -279,7 +277,7 @@ function Source({ source, busy, epreuve, onEprouver, onPatch, onSupprimer }: {
       {source.authKind !== 'none' && (
         <div className="flex flex-col gap-1">
           <div className="flex flex-wrap items-end gap-2">
-            <label className="flex-1 text-xs text-ink-600">
+            <label className="flex-1 text-xs text-ink-500">
               {source.authKind === 'bearer'
                 ? t('Nouveau jeton', 'New token')
                 : t(`Nouveau secret pour l’en-tête ${source.authHeaderName ?? ''}`, `New secret for header ${source.authHeaderName ?? ''}`)}
@@ -290,16 +288,15 @@ function Source({ source, busy, epreuve, onEprouver, onPatch, onSupprimer }: {
                 placeholder={source.aAuthentification ? '••••••••' : t('aucun secret enregistré', 'no secret stored')}
               />
             </label>
-            <button
+            <Bouton variante="secondaire"
               disabled={busy || secret.trim() === ''}
               title={secret.trim() === ''
                 ? t('Tapez le nouveau secret pour activer ce bouton.', 'Type the new secret to enable this button.')
                 : undefined}
               onClick={() => { onPatch({ authSecret: secret.trim() }); setSecret(''); }}
-              className="rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:opacity-40"
             >
               {t('Remplacer', 'Replace')}
-            </button>
+            </Bouton>
           </div>
           <p className="text-xs text-ink-500" data-testid={`source-secret-aide-${source.id}`}>
             {source.aAuthentification
@@ -327,19 +324,19 @@ function NouvelleSource({ busy, onCreer }: {
 
   return (
     <div className={`${cardCls} flex flex-col gap-3`}>
-      <p className="text-sm font-medium text-ink-700">{t('Brancher un système', 'Connect a system')}</p>
-      <label className="text-xs text-ink-600">
+      <p className="text-sm font-medium text-ink-900">{t('Brancher un système', 'Connect a system')}</p>
+      <label className="text-xs text-ink-500">
         {t('Nom (pour vous)', 'Name (for you)')}
         <input className={`${inputCls} mt-1`} data-testid="source-label" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="ERP, CRM…" />
       </label>
-      <label className="text-xs text-ink-600">
+      <label className="text-xs text-ink-500">
         {t('Adresse de base (HTTPS, publique)', 'Base address (HTTPS, public)')}
         <input className={`${inputCls} mt-1`} data-testid="source-url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.mon-systeme.fr/v1" />
-        <span className="mt-1 block text-[11px] text-ink-500">
+        <span className="mt-1 block text-xs text-ink-500">
           {t('Vos agents ne pourront JAMAIS appeler ailleurs que sous cette adresse.', 'Your agents will NEVER be able to call outside this address.')}
         </span>
       </label>
-      <label className="text-xs text-ink-600">
+      <label className="text-xs text-ink-500">
         {t('Authentification', 'Authentication')}
         <select className={`${inputCls} mt-1`} data-testid="source-auth" value={authKind} onChange={(e) => setAuthKind(e.target.value as AuthSource)}>
           <option value="bearer">{t('Jeton (Bearer)', 'Token (Bearer)')}</option>
@@ -348,21 +345,21 @@ function NouvelleSource({ busy, onCreer }: {
         </select>
       </label>
       {authKind === 'header' && (
-        <label className="text-xs text-ink-600">
+        <label className="text-xs text-ink-500">
           {t('Nom de l’en-tête', 'Header name')}
           <input className={`${inputCls} mt-1`} data-testid="source-entete" value={authHeaderName} onChange={(e) => setAuthHeaderName(e.target.value)} />
         </label>
       )}
       {authKind !== 'none' && (
-        <label className="text-xs text-ink-600">
+        <label className="text-xs text-ink-500">
           {t('Secret', 'Secret')}
           <input type="password" autoComplete="off" className={`${inputCls} mt-1`} data-testid="source-secret" value={authSecret} onChange={(e) => setAuthSecret(e.target.value)} />
-          <span className="mt-1 block text-[11px] text-ink-500">
+          <span className="mt-1 block text-xs text-ink-500">
             {t('Chiffré chez nous, jamais réaffiché.', 'Encrypted on our side, never displayed again.')}
           </span>
         </label>
       )}
-      <button
+      <Bouton
         data-testid="source-creer"
         disabled={busy || label.trim() === '' || baseUrl.trim() === ''}
         onClick={() => onCreer({
@@ -370,10 +367,10 @@ function NouvelleSource({ busy, onCreer }: {
           ...(authKind === 'header' ? { authHeaderName: authHeaderName.trim() } : {}),
           ...(authKind !== 'none' ? { authSecret: authSecret.trim() } : {}),
         })}
-        className="self-start rounded-lg bg-brand-600 px-3 py-1.5 text-sm text-white hover:bg-brand-700 disabled:opacity-40"
+        className="self-start"
       >
         {t('Brancher', 'Connect')}
-      </button>
+      </Bouton>
     </div>
   );
 }

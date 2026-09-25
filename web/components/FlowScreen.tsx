@@ -144,7 +144,7 @@ export function FlowScreen({ elements, cta, title }: { elements: FlowScreenEleme
           <div key={i}>
             {e.condition && (
               <div className="mb-1">
-                <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-medium text-amber-700">
+                <span className="inline-flex items-center gap-1 rounded bg-alerte-50 px-1.5 py-0.5 text-[9px] font-medium text-alerte-700">
                   👁 {t('Visible si', 'Visible if')} {e.condition}
                 </span>
               </div>

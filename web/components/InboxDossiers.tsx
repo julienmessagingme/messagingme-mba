@@ -77,8 +77,8 @@ export function InboxDossiers({ dossier, compteurs, peutVoirAffectation, onChang
       data-testid={`dossier-${cle}`}
       aria-current={memeDossier(dossier, cible) ? 'true' : undefined}
       onClick={() => onChange(cible)}
-      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition ${
-        memeDossier(dossier, cible) ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900'
+      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors duration-150 ${
+        memeDossier(dossier, cible) ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100 hover:text-ink-900'
       }`}
     >
       <span className="truncate">{label}</span>
@@ -89,7 +89,7 @@ export function InboxDossiers({ dossier, compteurs, peutVoirAffectation, onChang
   return (
     <nav data-testid="inbox-dossiers" aria-label={t('Dossiers', 'Folders')} className="flex flex-col gap-4">
       <div className="flex flex-col gap-0.5">
-        <p className="px-2.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-400">
+        <p className="px-2.5 pb-1 text-xs font-medium text-ink-500">
           {t('Conversations', 'Conversations')}
         </p>
         {/* Les libellés viennent de `libelleDossier`, jamais réécrits ici : c'est la même phrase que le titre
@@ -108,7 +108,7 @@ export function InboxDossiers({ dossier, compteurs, peutVoirAffectation, onChang
 
       {peutVoirAffectation && (
         <div className="flex flex-col gap-0.5">
-          <p className="px-2.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-400">
+          <p className="px-2.5 pb-1 text-xs font-medium text-ink-500">
             {t('Affectation', 'Assignment')}
           </p>
           <Entree cle="nonAffectees" label={libelleDossier('nonAffectees', compteurs, t)} n={compteurs.nonAffectees} cible="nonAffectees" />

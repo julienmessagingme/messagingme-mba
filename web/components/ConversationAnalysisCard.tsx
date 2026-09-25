@@ -22,6 +22,8 @@ import { phraseResumeAbsent } from '@/lib/resume-conversation';
 import { toCsv, downloadCsv } from '@/lib/csv';
 import { entetesQuali, ligneQuali } from '@/lib/quali-export';
 import { INTENTIONS, comptesParIntention, estIntention, libelleIntention } from '@/lib/intentions';
+import { Bouton } from '@/components/Bouton';
+import { danger, ink, succes } from '@/lib/couleurs';
 
 /**
  * Plafond de lignes ramenées quand on ouvre une liste pour l'exporter.
@@ -36,10 +38,10 @@ const PLAFOND_EXPORT = 1000;
 /** Traducteur au point d'appel (cf. i18n.tsx). Réutilisé par les helpers de libellé. */
 type Tr = (fr: string, en?: string) => string;
 
-const CARD = 'rounded-2xl border border-ink-200 bg-white p-5 shadow-sm';
+const CARD = 'rounded-2xl border border-ink-200 bg-white p-5';
 const SELECT =
-  'rounded-lg border border-ink-300 bg-white px-2.5 py-1 text-xs text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
-const SECTION_LABEL = 'mb-2 text-xs font-medium uppercase tracking-wide text-ink-400';
+  'rounded-lg border border-ink-300 bg-white px-2.5 py-1 text-xs text-ink-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+const SECTION_LABEL = 'mb-2 text-xs font-medium text-ink-500';
 
 // Clés d'énumération LLM (filtres + mapping libellé). Les VALEURS backend passent telles quelles si inconnues.
 const SENTIMENTS = ['positif', 'neutre', 'negatif'] as const;
@@ -68,8 +70,8 @@ function actionLabel(a: string, t: Tr): string {
 
 /** Classe de badge selon le sentiment (3 couleurs). */
 function sentimentBadge(s: string): string {
-  if (s === 'positif') return 'bg-mint-50 text-mint-700';
-  if (s === 'negatif') return 'bg-red-50 text-red-700';
+  if (s === 'positif') return 'bg-succes-50 text-succes-700';
+  if (s === 'negatif') return 'bg-danger-50 text-danger-700';
   return 'bg-ink-100 text-ink-500';
 }
 
@@ -77,8 +79,8 @@ function sentimentBadge(s: string): string {
 function Counter({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-xs font-medium uppercase tracking-wide text-ink-400">{label}</div>
-      <div className="text-xl font-bold tracking-tight text-ink-900">{value}</div>
+      <div className="text-xs font-medium text-ink-500">{label}</div>
+      <div className="text-xl font-semibold tracking-tight tabular-nums text-ink-900">{value}</div>
     </div>
   );
 }
@@ -99,7 +101,7 @@ function Counter({ label, value }: { label: string; value: string }) {
 function Bar({ label, pct, value, cls, onClick, titre }: { label: string; pct: number; value: string; cls: string; onClick?: () => void; titre?: string }) {
   const corps = (
     <>
-      <div className="w-32 shrink-0 truncate text-xs text-ink-600" title={label}>{label}</div>
+      <div className="w-32 shrink-0 truncate text-xs text-ink-500" title={label}>{label}</div>
       <div className="h-6 flex-1 overflow-hidden rounded-md bg-ink-50">
         <div className={`h-full rounded-md ${cls}`} style={{ width: `${pct}%` }} />
       </div>
@@ -108,7 +110,7 @@ function Bar({ label, pct, value, cls, onClick, titre }: { label: string; pct: n
   );
   if (!onClick) return <div className="flex items-center gap-3">{corps}</div>;
   return (
-    <button type="button" onClick={onClick} title={titre} className="flex w-full items-center gap-3 rounded-md text-left transition hover:bg-ink-50">
+    <button type="button" onClick={onClick} title={titre} className="flex w-full items-center gap-3 rounded-md text-left transition-colors duration-150 hover:bg-ink-50">
       {corps}
     </button>
   );
@@ -119,15 +121,15 @@ function SentimentDonut({ summary, locale, t }: { summary: ConversationAnalysisS
   const { positif, neutre, negatif } = summary.sentiment;
   const total = positif + neutre + negatif;
   const segs = [
-    { key: 'positif', label: sentimentLabel('positif', t), value: positif, color: '#17C74E' },
-    { key: 'neutre', label: sentimentLabel('neutre', t), value: neutre, color: '#9AA3AF' },
-    { key: 'negatif', label: sentimentLabel('negatif', t), value: negatif, color: '#E4604A' },
+    { key: 'positif', label: sentimentLabel('positif', t), value: positif, color: succes[400] },
+    { key: 'neutre', label: sentimentLabel('neutre', t), value: neutre, color: ink[300] },
+    { key: 'negatif', label: sentimentLabel('negatif', t), value: negatif, color: danger[500] },
   ];
   let acc = 0; // offset cumulé (en % de circonférence) pour enchaîner les arcs
   return (
     <div className="flex items-center gap-4">
       <svg viewBox="0 0 36 36" className="h-28 w-28 shrink-0 -rotate-90" aria-hidden="true">
-        <circle cx="18" cy="18" r="15.915" fill="none" stroke="#F4F5F9" strokeWidth="4" />
+        <circle cx="18" cy="18" r="15.915" fill="none" stroke={ink[50]} strokeWidth="4" />
         {total > 0 && segs.map((s) => {
           if (s.value <= 0) return null;
           const pct = (s.value / total) * 100;
@@ -149,8 +151,8 @@ function SentimentDonut({ summary, locale, t }: { summary: ConversationAnalysisS
         {segs.map((s) => (
           <div key={s.key} className="flex items-center gap-2">
             <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: s.color }} />
-            <span className="text-ink-600">{s.label}</span>
-            <span className="font-medium tabular-nums text-ink-800">{fmtNum(s.value, locale)}</span>
+            <span className="text-ink-500">{s.label}</span>
+            <span className="font-medium tabular-nums text-ink-900">{fmtNum(s.value, locale)}</span>
             <span className="tabular-nums text-ink-400">{fmtPct(s.value, total, locale)}</span>
           </div>
         ))}
@@ -238,13 +240,13 @@ function QuantiBlock({ summary, sujet, onSujet, onAction }: {
         <div className={SECTION_LABEL}>{t('Qui a géré', 'Handled by')}</div>
         <div className="flex h-6 overflow-hidden rounded-md bg-ink-50">
           {hb.humain > 0 && <div className="bg-brand-500" style={{ width: `${hbW(hb.humain)}%` }} title={t('Humain', 'Human')} />}
-          {hb.automatise > 0 && <div className="bg-mint-400" style={{ width: `${hbW(hb.automatise)}%` }} title={t('Automatisé', 'Automated')} />}
+          {hb.automatise > 0 && <div className="bg-succes-400" style={{ width: `${hbW(hb.automatise)}%` }} title={t('Automatisé', 'Automated')} />}
           {hb.mba > 0 && <div className="bg-violet" style={{ width: `${hbW(hb.mba)}%` }} title="MBA" />}
         </div>
         <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-brand-500" /><span className="text-ink-600">{t('Humain', 'Human')}</span><span className="font-medium tabular-nums text-ink-800">{fmtNum(hb.humain, locale)}</span></span>
-          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-mint-400" /><span className="text-ink-600">{t('Automatisé', 'Automated')}</span><span className="font-medium tabular-nums text-ink-800">{fmtNum(hb.automatise, locale)}</span></span>
-          {hb.mba > 0 && <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-violet" /><span className="text-ink-600">MBA</span><span className="font-medium tabular-nums text-ink-800">{fmtNum(hb.mba, locale)}</span></span>}
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-brand-500" /><span className="text-ink-500">{t('Humain', 'Human')}</span><span className="font-medium tabular-nums text-ink-900">{fmtNum(hb.humain, locale)}</span></span>
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-succes-400" /><span className="text-ink-500">{t('Automatisé', 'Automated')}</span><span className="font-medium tabular-nums text-ink-900">{fmtNum(hb.automatise, locale)}</span></span>
+          {hb.mba > 0 && <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-violet" /><span className="text-ink-500">MBA</span><span className="font-medium tabular-nums text-ink-900">{fmtNum(hb.mba, locale)}</span></span>}
         </div>
       </div>
 
@@ -265,11 +267,11 @@ function QuantiBlock({ summary, sujet, onSujet, onAction }: {
                   aria-pressed={retenu}
                   onClick={() => onSujet(retenu ? null : tp.topic)}
                   title={retenu ? t('Retirer ce filtre', 'Remove this filter') : t('Ne garder que ce sujet', 'Keep only this topic')}
-                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition ${
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition-colors duration-150 ${
                     retenu ? 'bg-brand-500 text-white' : 'bg-ink-50 hover:bg-ink-100'
                   }`}
                 >
-                  <span className={retenu ? '' : 'text-ink-700'}>{tp.topic}</span>
+                  <span className={retenu ? '' : 'text-ink-900'}>{tp.topic}</span>
                   <span className={`tabular-nums ${retenu ? 'text-white/80' : 'text-ink-400'}`}>{fmtNum(tp.count, locale)}</span>
                   {retenu && <span aria-hidden="true">×</span>}
                 </button>
@@ -291,16 +293,16 @@ function BoutonCsv({ rows, nom }: { rows: AnalyzedConversation[]; nom: string })
     action: (v: string) => actionLabel(v, t),
   };
   return (
-    <button
+    <Bouton variante="secondaire" taille="petite"
       type="button"
       disabled={rows.length === 0}
       data-testid={`csv-${nom}`}
       onClick={() => downloadCsv(`${nom}.csv`, toCsv(entetesQuali(t), rows.map((c) => ligneQuali(c, t, libelles))))}
       title={t('Exporter cette liste en CSV', 'Export this list to CSV')}
-      className="sans-impression shrink-0 rounded-md border border-ink-200 px-2 py-0.5 text-[11px] font-semibold tracking-wide text-ink-400 transition hover:border-ink-300 hover:bg-ink-50 hover:text-ink-700 disabled:cursor-not-allowed disabled:opacity-40"
+      className="sans-impression shrink-0"
     >
       CSV
-    </button>
+    </Bouton>
   );
 }
 
@@ -319,8 +321,8 @@ function FicheConversation({ c, onClose }: { c: AnalyzedConversation; onClose: (
   const entites = Object.entries(c.entities ?? {});
   const champ = (label: string, valeur: React.ReactNode) => (
     <div>
-      <div className="text-[11px] font-medium uppercase tracking-wide text-ink-400">{label}</div>
-      <div className="text-sm text-ink-800">{valeur}</div>
+      <div className="text-xs font-medium text-ink-500">{label}</div>
+      <div className="text-sm text-ink-900">{valeur}</div>
     </div>
   );
   return (
@@ -331,7 +333,7 @@ function FicheConversation({ c, onClose }: { c: AnalyzedConversation; onClose: (
     >
       <div className="space-y-4" data-testid="fiche-conversation">
         <div>
-          <div className="text-[11px] font-medium uppercase tracking-wide text-ink-400">{t('Résumé de la conversation', 'Conversation summary')}</div>
+          <div className="text-xs font-medium text-ink-500">{t('Résumé de la conversation', 'Conversation summary')}</div>
           {/* Repli ASSUMÉ et NOMMÉ. Les analyses d'avant la migration 0100 n'ont pas de résumé, et
               afficher `justification` à la place serait un mensonge discret : elle explique le classement,
               pas ce qui s'est dit. Mieux vaut dire qu'il n'y en a pas.
@@ -339,7 +341,7 @@ function FicheConversation({ c, onClose }: { c: AnalyzedConversation; onClose: (
               en a besoin elle aussi : deux endroits qui affirment la même chose finissent par ne plus
               l'affirmer pareil. Le texte n'a pas changé, seulement son domicile. */}
           {c.summary && c.summary.trim() !== '' ? (
-            <p className="mt-0.5 whitespace-pre-line text-sm text-ink-700" data-testid="fiche-resume">{c.summary}</p>
+            <p className="mt-0.5 whitespace-pre-line text-sm text-ink-900" data-testid="fiche-resume">{c.summary}</p>
           ) : (
             <p className="mt-0.5 text-sm italic text-ink-400" data-testid="fiche-resume-absent">
               {phraseResumeAbsent('sans-resume', t)}
@@ -349,7 +351,7 @@ function FicheConversation({ c, onClose }: { c: AnalyzedConversation; onClose: (
 
         <div className="grid grid-cols-2 gap-3 border-t border-ink-100 pt-3 sm:grid-cols-3">
           {champ(t('Sentiment', 'Sentiment'), (
-            <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${sentimentBadge(c.sentiment)}`}>{sentimentLabel(c.sentiment, t)}</span>
+            <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${sentimentBadge(c.sentiment)}`}>{sentimentLabel(c.sentiment, t)}</span>
           ))}
           {champ(t('Intention', 'Intent'), libelleIntention(c.intent, t))}
           {champ(t('Sujet', 'Topic'), c.topic)}
@@ -361,17 +363,17 @@ function FicheConversation({ c, onClose }: { c: AnalyzedConversation; onClose: (
         </div>
 
         <div className="border-t border-ink-100 pt-3">
-          {champ(t('Justification de l’action', 'Action rationale'), <span className="text-ink-600">{c.justification}</span>)}
+          {champ(t('Justification de l’action', 'Action rationale'), <span className="text-ink-500">{c.justification}</span>)}
         </div>
 
         {entites.length > 0 && (
           <div className="border-t border-ink-100 pt-3">
-            <div className="text-[11px] font-medium uppercase tracking-wide text-ink-400">{t('Infos relevées', 'Extracted details')}</div>
+            <div className="text-xs font-medium text-ink-500">{t('Infos relevées', 'Extracted details')}</div>
             <dl className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
               {entites.map(([cle, valeur]) => (
                 <div key={cle}>
-                  <dt className="text-[11px] text-ink-400">{cle}</dt>
-                  <dd className="text-ink-800">{typeof valeur === 'object' ? JSON.stringify(valeur) : String(valeur)}</dd>
+                  <dt className="text-xs text-ink-400">{cle}</dt>
+                  <dd className="text-ink-900">{typeof valeur === 'object' ? JSON.stringify(valeur) : String(valeur)}</dd>
                 </div>
               ))}
             </dl>
@@ -379,14 +381,13 @@ function FicheConversation({ c, onClose }: { c: AnalyzedConversation; onClose: (
         )}
 
         <div className="sans-impression flex justify-end border-t border-ink-100 pt-3">
-          <button
+          <Bouton taille="petite"
             type="button"
             data-testid="fiche-vers-inbox"
             onClick={() => router.push(c.inboxHref)}
-            className="rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-600"
           >
             {t('Ouvrir la conversation dans l’inbox', 'Open the conversation in the inbox')}
-          </button>
+          </Bouton>
         </div>
       </div>
     </Modale>
@@ -433,7 +434,7 @@ function ListeParAction({ tenantId, range, action, onClose }: {
     >
       <div id="quali-liste-action">
         {erreur ? (
-          <p className="text-sm text-red-700">{t('Liste indisponible pour le moment.', 'List unavailable right now.')}</p>
+          <p className="text-sm text-danger-700">{t('Liste indisponible pour le moment.', 'List unavailable right now.')}</p>
         ) : rows === null ? (
           <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
         ) : rows.length === 0 ? (
@@ -443,7 +444,7 @@ function ListeParAction({ tenantId, range, action, onClose }: {
             {rows.length === PLAFOND_EXPORT && (
               // Dire la troncature plutôt que la subir : un export de 1000 lignes exactement est suspect,
               // et sans cette phrase personne ne saurait qu'il en manque.
-              <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <p className="mb-2 rounded-lg bg-alerte-50 px-3 py-2 text-xs text-alerte-800">
                 {t(`Liste limitée aux ${PLAFOND_EXPORT} plus récentes. Réduis la période pour tout voir.`, `List capped at the ${PLAFOND_EXPORT} most recent. Narrow the period to see them all.`)}
               </p>
             )}
@@ -469,10 +470,10 @@ function ListeParAction({ tenantId, range, action, onClose }: {
                       <td className="whitespace-nowrap px-2 py-2 text-ink-500">
                         {formatDate(r.analyzedAt, locale, { day: '2-digit', month: '2-digit', year: '2-digit' })} {hourMin(r.analyzedAt, locale)}
                       </td>
-                      <td className="px-2 py-2 font-medium text-ink-800">{r.profileName ?? r.waId}</td>
-                      <td className="px-2 py-2 text-ink-600">{r.topic}</td>
+                      <td className="px-2 py-2 font-medium text-ink-900">{r.profileName ?? r.waId}</td>
+                      <td className="px-2 py-2 text-ink-500">{r.topic}</td>
                       <td className="px-2 py-2">
-                        <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${sentimentBadge(r.sentiment)}`}>{sentimentLabel(r.sentiment, t)}</span>
+                        <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${sentimentBadge(r.sentiment)}`}>{sentimentLabel(r.sentiment, t)}</span>
                       </td>
                     </tr>
                   ))}
@@ -555,7 +556,7 @@ function QualiTable({ tenantId, range, sujet, onSujet, intentionInitiale, journe
   return (
     <div className="mt-6 border-t border-ink-100 pt-5" id="quali-detail">
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <div className="mr-auto text-xs font-medium uppercase tracking-wide text-ink-400">{t('Détail des conversations', 'Conversation details')}</div>
+        <div className="mr-auto text-xs font-medium text-ink-500">{t('Détail des conversations', 'Conversation details')}</div>
         <select value={sentiment} onChange={(e) => setSentiment(e.target.value)} className={SELECT}>
           <option value="">{t('Sentiment : tous', 'Sentiment: all')}</option>
           {SENTIMENTS.map((s) => <option key={s} value={s}>{sentimentLabel(s, t)}</option>)}
@@ -581,7 +582,7 @@ function QualiTable({ tenantId, range, sujet, onSujet, intentionInitiale, journe
             type="button"
             data-testid="quali-sujet-retirer"
             onClick={() => onSujet(null)}
-            className="inline-flex items-center gap-1.5 rounded-full bg-brand-500 px-2.5 py-1 text-white transition hover:bg-brand-600"
+            className="inline-flex items-center gap-1.5 rounded-full bg-brand-500 px-2.5 py-1 text-white transition-colors duration-150 hover:bg-brand-600"
           >
             {sujet}<span aria-hidden="true">×</span>
           </button>
@@ -629,14 +630,14 @@ function QualiTable({ tenantId, range, sujet, onSujet, intentionInitiale, journe
                     <td className={`${td} whitespace-nowrap text-ink-500`}>
                       {formatDate(r.analyzedAt, locale, { day: '2-digit', month: '2-digit', year: '2-digit' })} {hourMin(r.analyzedAt, locale)}
                     </td>
-                    <td className={`${td} font-medium text-ink-800`}>{r.profileName ?? r.waId}</td>
+                    <td className={`${td} font-medium text-ink-900`}>{r.profileName ?? r.waId}</td>
                     <td className={td}>
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${sentimentBadge(r.sentiment)}`}>
+                      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${sentimentBadge(r.sentiment)}`}>
                         {sentimentLabel(r.sentiment, t)}
                       </span>
                     </td>
-                    <td className={`${td} text-ink-600`}>{libelleIntention(r.intent, t)}</td>
-                    <td className={`${td} text-ink-600`}>{r.topic}</td>
+                    <td className={`${td} text-ink-500`}>{libelleIntention(r.intent, t)}</td>
+                    <td className={`${td} text-ink-500`}>{r.topic}</td>
                     <td className={td} data-testid="quali-repondeurs">
                       {/**
                         * ⚠️ AUCUN BADGE EST UN CAS NORMAL, PAS UN TROU : une conversation dont tous les
@@ -645,14 +646,14 @@ function QualiTable({ tenantId, range, sujet, onSujet, intentionInitiale, journe
                         * tiret le dit, plutot que d inventer un repondeur par defaut.
                         */}
                       {repondeursDe(r.origines ?? []).length === 0
-                        ? <span className="text-ink-300" title={t('Aucun message sortant identifié : personne n’a répondu, ou la conversation est antérieure à la mesure.', 'No identified outbound message: nobody answered, or the conversation predates the measure.')}>—</span>
+                        ? <span className="text-ink-400" title={t('Aucun message sortant identifié : personne n’a répondu, ou la conversation est antérieure à la mesure.', 'No identified outbound message: nobody answered, or the conversation predates the measure.')}>—</span>
                         : (
                           <span className="flex flex-wrap gap-1">
                             {repondeursDe(r.origines ?? []).map((rep) => (
                               <span
                                 key={rep}
                                 data-testid={'quali-badge-' + rep}
-                                className="inline-block rounded-full bg-ink-100 px-2 py-0.5 text-[11px] font-medium text-ink-600"
+                                className="inline-block rounded-full bg-ink-100 px-2 py-0.5 text-xs font-medium text-ink-500"
                               >
                                 {libelleRepondeur(rep, t)}
                               </span>
@@ -660,9 +661,9 @@ function QualiTable({ tenantId, range, sujet, onSujet, intentionInitiale, journe
                           </span>
                         )}
                     </td>
-                    <td className={td}>{r.resolved ? <span className="text-mint-600">✓</span> : <span className="text-ink-400">✗</span>}</td>
-                    <td className={`${td} text-ink-600`}>{actionLabel(r.actionSuggestion, t)}</td>
-                    <td className={`${td} tabular-nums ${conf < 50 ? 'text-ink-400' : 'text-ink-700'}`}>{conf}%</td>
+                    <td className={td}>{r.resolved ? <span className="text-succes-600">✓</span> : <span className="text-ink-400">✗</span>}</td>
+                    <td className={`${td} text-ink-500`}>{actionLabel(r.actionSuggestion, t)}</td>
+                    <td className={`${td} tabular-nums ${conf < 50 ? 'text-ink-400' : 'text-ink-900'}`}>{conf}%</td>
                     <td className={`${td} max-w-[16rem] truncate text-ink-500`} title={r.justification}>{r.justification}</td>
                   </tr>
                 );
@@ -733,7 +734,7 @@ export function ConversationAnalysisCard({ tenantId, range, intentionInitiale }:
   return (
     <div className={CARD}>
       <div className="mb-3">
-        <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Conversations (analyse)', 'Conversations (analysis)')}</h3>
+        <h3 className="text-sm font-semibold text-ink-900">{t('Conversations (analyse)', 'Conversations (analysis)')}</h3>
         <p className="text-xs text-ink-400">{t('Analyse IA, indicative', 'AI analysis, indicative')}</p>
       </div>
 
@@ -759,7 +760,7 @@ export function ConversationAnalysisCard({ tenantId, range, intentionInitiale }:
               sans rien effacer). Écrire « conservées 0 jours, au-delà elles ne sont plus consultables »
               dirait exactement l'inverse de ce que fait le serveur. */}
           {summary.retentionDays !== undefined && (
-            <p className="mt-4 text-[11px] text-ink-400">
+            <p className="mt-4 text-xs text-ink-400">
               {summary.retentionDays > 0
                 ? t(
                   `Les conversations et leurs analyses sont conservées ${summary.retentionDays} jours. Au-delà, elles ne sont plus consultables ni exportables.`,

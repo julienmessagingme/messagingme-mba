@@ -92,7 +92,7 @@ function McpInner({ session }: { session: Session | null }) {
             liste n'a pas pu être lue, on se tait : annoncer « aucune clé » à quelqu'un qui en a une l'enverrait
             en créer une seconde, et ce serait notre faute. */}
         {etatCle === 'aucune' && (
-          <div data-testid="mcp-sans-cle" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <div data-testid="mcp-sans-cle" className="rounded-lg border border-alerte-300 bg-alerte-50 px-3 py-2 text-sm text-alerte-900">
             {t(
               'Cet espace n’a aucune clé d’API avec un droit MCP : la commande ci-dessus sera refusée telle quelle.',
               'This workspace has no API key with an MCP scope: the command above will be rejected as is.',
@@ -113,8 +113,8 @@ function McpInner({ session }: { session: Session | null }) {
           lignes={OUTILS_MCP.map((o) => ({
             cle: o.nom,
             cellules: [
-              <span key="n" className="whitespace-nowrap font-mono text-ink-800">{o.nom}</span>,
-              <span key="s" className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${o.scope === 'mcp:write' ? 'bg-violet/10 text-violet' : 'bg-ink-100 text-ink-600'}`}>{o.scope}</span>,
+              <span key="n" className="whitespace-nowrap font-mono text-ink-900">{o.nom}</span>,
+              <span key="s" className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${o.scope === 'mcp:write' ? 'bg-brand-50 text-brand-700' : 'bg-ink-100 text-ink-500'}`}>{o.scope}</span>,
               t(...o.quoi),
             ],
           }))}
@@ -124,23 +124,23 @@ function McpInner({ session }: { session: Session | null }) {
       <Section titre={t('Ce qu’il ne fait pas', 'What it does not do')}>
         <Liste>
           <li>
-            <strong className="text-ink-800">{t('Pas d’envoi de template, pas de campagne.', 'No template sending, no campaigns.')}</strong>{' '}
+            <strong className="text-ink-900">{t('Pas d’envoi de template, pas de campagne.', 'No template sending, no campaigns.')}</strong>{' '}
             {t('Il répond dans une conversation ouverte ; il ne lance pas d’envoi de masse.', 'It replies inside an open conversation; it does not launch a mass send.')}
           </li>
           <li>
-            <strong className="text-ink-800">{t('Hors de la fenêtre de 24 h, rien ne part.', 'Outside the 24 h window, nothing is sent.')}</strong>{' '}
+            <strong className="text-ink-900">{t('Hors de la fenêtre de 24 h, rien ne part.', 'Outside the 24 h window, nothing is sent.')}</strong>{' '}
             {t('L’outil refuse, avec la raison.', 'The tool refuses, with the reason.')}
           </li>
           <li>
-            <strong className="text-ink-800">{t('Numéro WhatsApp délié, rien ne part.', 'WhatsApp number unlinked, nothing is sent.')}</strong>{' '}
+            <strong className="text-ink-900">{t('Numéro WhatsApp délié, rien ne part.', 'WhatsApp number unlinked, nothing is sent.')}</strong>{' '}
             {t('L’outil refuse, avec la raison, jusqu’à ce qu’un administrateur relie le numéro depuis l’Accueil.', 'The tool refuses, with the reason, until an admin relinks the number from the Home page.')}
           </li>
           <li>
-            <strong className="text-ink-800">{t('Les automations ne se déclenchent pas.', 'Automations are not triggered.')}</strong>{' '}
+            <strong className="text-ink-900">{t('Les automations ne se déclenchent pas.', 'Automations are not triggered.')}</strong>{' '}
             {t('Un tag posé par l’assistant classe le contact, sans réveiller les automations qui écoutent ce tag.', 'A tag set by the assistant classifies the contact, without waking the automations listening for that tag.')}
           </li>
           <li>
-            <strong className="text-ink-800">{t('L’accès passe par une clé, pas par un compte.', 'Access goes through a key, not an account.')}</strong>{' '}
+            <strong className="text-ink-900">{t('L’accès passe par une clé, pas par un compte.', 'Access goes through a key, not an account.')}</strong>{' '}
             {t('La clé porte l’espace et les droits. Couper un assistant : révoquer sa clé dans « Clés d’API ».', 'The key carries the workspace and the scopes. To cut an assistant off: revoke its key under "API keys".')}
           </li>
         </Liste>

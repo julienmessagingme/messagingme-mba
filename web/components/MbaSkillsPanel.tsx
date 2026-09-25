@@ -6,6 +6,7 @@ import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from './MbaNotice';
 import { isValidSkillTitle, slugSkillTitle, slugSkillTitleFrappe, SKILL_BODY_MAX, SKILL_DESCRIPTION_MAX, SKILL_TITLE_MAX } from '@/lib/mba-skills';
 import { createMbaSkill, deleteMbaSkill, listMbaSkills, updateMbaSkill, type MbaSkill } from '@/lib/api-mba';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * Les compétences : la personnalité et les procédures de l'agent, en langage naturel.
@@ -73,13 +74,12 @@ export function MbaSkillsPanel({ tenantId, phoneNumberId }: { tenantId: string; 
     <div className="space-y-5">
       {err !== '' && <MbaNotice kind="error" testid="mba-skills-error">{err}</MbaNotice>}
 
-      <button
-        className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white"
+      <Bouton
         data-testid="mba-skill-new"
         onClick={() => setEdition({ title: '', description: '', skill: '' })}
       >
         {t('Ajouter une compétence', 'Add a skill')}
-      </button>
+      </Bouton>
 
       <ul className="space-y-2" data-testid="mba-skills-list">
         {skills.map((s) => (
@@ -87,14 +87,14 @@ export function MbaSkillsPanel({ tenantId, phoneNumberId }: { tenantId: string; 
             <div className="min-w-0">
               <p className="font-mono text-sm font-medium text-ink-900">{s.title}</p>
               <p className="mt-1 text-xs text-ink-500">{s.description}</p>
-              <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm text-ink-600">{s.skill}</p>
+              <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm text-ink-500">{s.skill}</p>
             </div>
             <div className="flex shrink-0 gap-2">
               <button className="text-xs font-medium text-brand-600 hover:text-brand-700" onClick={() => setEdition(s)}>
                 {t('Modifier', 'Edit')}
               </button>
               <button
-                className="text-xs font-medium text-rose-600 hover:text-rose-700"
+                className="text-xs font-medium text-danger-600 hover:text-danger-700"
                 onClick={() => {
                   if (s.id === undefined) return;
                   if (!window.confirm(t(`Supprimer la compétence « ${s.title} » ?`, `Delete the skill “${s.title}”?`))) return;
@@ -111,13 +111,13 @@ export function MbaSkillsPanel({ tenantId, phoneNumberId }: { tenantId: string; 
 
       {edition !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" role="dialog" aria-modal>
-          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-lg">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-mm-lg">
             <h3 className="text-sm font-semibold text-ink-900">
               {edition.id === undefined ? t('Nouvelle compétence', 'New skill') : t('Modifier la compétence', 'Edit skill')}
             </h3>
 
             <label className="mt-4 block">
-              <span className="text-sm font-medium text-ink-800">{t('Nom', 'Name')}</span>
+              <span className="text-sm font-medium text-ink-900">{t('Nom', 'Name')}</span>
               <span className="mt-0.5 block text-xs text-ink-500">
                 {t('En minuscules, avec des tirets. Il est mis en forme pendant la saisie.', 'Lowercase with dashes. It is formatted as you type.')}
               </span>
@@ -130,14 +130,14 @@ export function MbaSkillsPanel({ tenantId, phoneNumberId }: { tenantId: string; 
                 onBlur={() => setEdition({ ...edition, title: titreEnvoye })}
               />
               {titreEnvoye !== '' && !titreValide && (
-                <span className="mt-1 block text-xs text-rose-600" data-testid="mba-skill-title-error">
+                <span className="mt-1 block text-xs text-danger-600" data-testid="mba-skill-title-error">
                   {t('Nom invalide : minuscules, chiffres et tirets uniquement.', 'Invalid name: lowercase, digits and dashes only.')}
                 </span>
               )}
             </label>
 
             <label className="mt-4 block">
-              <span className="text-sm font-medium text-ink-800">{t('Quand l’appliquer', 'When to apply it')}</span>
+              <span className="text-sm font-medium text-ink-900">{t('Quand l’appliquer', 'When to apply it')}</span>
               <span className="mt-0.5 block text-xs text-ink-500">
                 {t('Ex. « quand le client demande un remboursement ».', 'E.g. “when the customer asks for a refund”.')}
               </span>
@@ -151,7 +151,7 @@ export function MbaSkillsPanel({ tenantId, phoneNumberId }: { tenantId: string; 
             </label>
 
             <label className="mt-4 block">
-              <span className="text-sm font-medium text-ink-800">{t('Quoi faire', 'What to do')}</span>
+              <span className="text-sm font-medium text-ink-900">{t('Quoi faire', 'What to do')}</span>
               <span className="mt-0.5 block text-xs text-ink-500">
                 {t('Les instructions, en français courant.', 'The instructions, in plain language.')}
               </span>
@@ -167,11 +167,10 @@ export function MbaSkillsPanel({ tenantId, phoneNumberId }: { tenantId: string; 
             </label>
 
             <div className="mt-5 flex justify-end gap-2">
-              <button className="rounded-lg border border-ink-300 px-4 py-2 text-sm" onClick={() => setEdition(null)}>
+              <Bouton variante="secondaire" onClick={() => setEdition(null)}>
                 {t('Annuler', 'Cancel')}
-              </button>
-              <button
-                className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              </Bouton>
+              <Bouton
                 data-testid="mba-skill-save"
                 disabled={busy || !titreValide || edition.description.trim() === '' || edition.skill.trim() === ''}
                 onClick={() => {
@@ -182,7 +181,7 @@ export function MbaSkillsPanel({ tenantId, phoneNumberId }: { tenantId: string; 
                 }}
               >
                 {t('Enregistrer', 'Save')}
-              </button>
+              </Bouton>
             </div>
           </div>
         </div>

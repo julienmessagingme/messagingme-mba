@@ -30,13 +30,14 @@ import {
   type UserFieldDef,
   type UserFieldKind,
 } from '@/lib/api';
+import { Bouton } from '@/components/Bouton';
 
 // text porte les DEUX langues [fr, en] (résolu au rendu via t(...badge.text)) : cette const vit au niveau
 // module, où useT() est inappelable. opt-in / opt-out sont identiques dans les deux langues.
 export const OPT_IN_LABEL: Record<string, { text: [string, string]; cls: string }> = {
-  opted_in: { text: ['opt-in', 'opt-in'], cls: 'bg-emerald-50 text-emerald-700' },
-  opted_out: { text: ['opt-out', 'opt-out'], cls: 'bg-red-50 text-red-700' },
-  unknown: { text: ['inconnu', 'unknown'], cls: 'bg-ink-100 text-ink-600' },
+  opted_in: { text: ['opt-in', 'opt-in'], cls: 'bg-succes-50 text-succes-700' },
+  opted_out: { text: ['opt-out', 'opt-out'], cls: 'bg-danger-50 text-danger-700' },
+  unknown: { text: ['inconnu', 'unknown'], cls: 'bg-ink-100 text-ink-500' },
 };
 
 /**
@@ -48,9 +49,9 @@ export const OPT_IN_LABEL: Record<string, { text: [string, string]; cls: string 
  * l'écran ne dira que c'était une supposition. Gris, donc, comme le consentement inconnu juste au-dessus.
  */
 export const JOIGNABILITE_BADGE: Record<Verdict, { text: [string, string]; cls: string }> = {
-  oui: { text: ['joignable', 'reachable'], cls: 'bg-emerald-50 text-emerald-700' },
-  non: { text: ['injoignable', 'unreachable'], cls: 'bg-red-50 text-red-700' },
-  inconnu: { text: ['Jamais testé', 'Never tested'], cls: 'bg-ink-100 text-ink-600' },
+  oui: { text: ['joignable', 'reachable'], cls: 'bg-succes-50 text-succes-700' },
+  non: { text: ['injoignable', 'unreachable'], cls: 'bg-danger-50 text-danger-700' },
+  inconnu: { text: ['Jamais testé', 'Never tested'], cls: 'bg-ink-100 text-ink-500' },
 };
 
 
@@ -111,7 +112,7 @@ function EditableField({ value, type, mono, busy, editable = true, onSave, onDel
           />
         )}
         <button onClick={() => void commit()} disabled={busy} className="shrink-0 text-brand-600 hover:text-brand-700 disabled:opacity-50" aria-label={t('Enregistrer', 'Save')}>✓</button>
-        <button onClick={() => setEditing(false)} className="shrink-0 text-ink-400 hover:text-ink-700" aria-label={t('Annuler', 'Cancel')}>×</button>
+        <button onClick={() => setEditing(false)} className="shrink-0 text-ink-400 hover:text-ink-900" aria-label={t('Annuler', 'Cancel')}>×</button>
       </span>
     );
   }
@@ -119,10 +120,10 @@ function EditableField({ value, type, mono, busy, editable = true, onSave, onDel
     <span className="group flex items-center gap-2">
       <span className={`${mono ? 'font-mono ' : ''}break-words text-ink-900`}>{value !== '' ? value : '-'}</span>
       {editable && (
-        <button onClick={begin} data-testid="champ-modifier" className="shrink-0 text-xs text-brand-600 underline decoration-dotted transition hover:text-brand-700" aria-label={t('Modifier', 'Edit')}>{t('modifier', 'edit')}</button>
+        <button onClick={begin} data-testid="champ-modifier" className="shrink-0 text-xs text-brand-600 underline decoration-dotted transition-colors duration-150 hover:text-brand-700" aria-label={t('Modifier', 'Edit')}>{t('modifier', 'edit')}</button>
       )}
       {onDelete && value !== '' && (
-        <button onClick={() => void onDelete()} disabled={busy} data-testid="champ-supprimer" className="shrink-0 text-xs text-ink-400 underline decoration-dotted transition hover:text-coral disabled:opacity-50" aria-label={t('Supprimer', 'Delete')}>{t('supprimer', 'delete')}</button>
+        <button onClick={() => void onDelete()} disabled={busy} data-testid="champ-supprimer" className="shrink-0 text-xs text-ink-400 underline decoration-dotted transition-colors duration-150 hover:text-danger disabled:opacity-50" aria-label={t('Supprimer', 'Delete')}>{t('supprimer', 'delete')}</button>
       )}
     </span>
   );
@@ -331,26 +332,25 @@ export function ContactDetail({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-mm-lg" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between">
           <div>
-            <h3 className="text-lg font-semibold tracking-tight text-ink-900">{contact.profileName ?? contactIdentity(contact) ?? '-'}</h3>
+            <h3 className="text-lg font-semibold text-ink-900">{contact.profileName ?? contactIdentity(contact) ?? '-'}</h3>
             <p className="font-mono text-xs text-ink-400">{contactIdentity(contact) ?? '-'}</p>
           </div>
           <div className="flex items-center gap-3">
-            <button
+            <Bouton variante="secondaire" taille="petite" enCours={ouverture}
               onClick={() => void ouvrirLaConversation()}
               disabled={ouverture}
               data-testid="fiche-ouvrir-conversation"
-              className="rounded-lg border border-ink-200 px-2.5 py-1 text-xs font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-50"
             >
               {ouverture ? t('Ouverture…', 'Opening…') : t('Ouvrir la conversation', 'Open conversation')}
-            </button>
-            <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-700">×</button>
+            </Bouton>
+            <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-900">×</button>
           </div>
         </div>
         {erreurOuverture && (
-          <p className="mt-2 rounded-lg bg-coral/10 px-3 py-2 text-xs text-coral" data-testid="fiche-ouvrir-erreur">{erreurOuverture}</p>
+          <p className="mt-2 rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger" data-testid="fiche-ouvrir-erreur">{erreurOuverture}</p>
         )}
 
         <div className="mt-4 flex gap-1 border-b border-ink-100 text-sm">
@@ -358,7 +358,7 @@ export function ContactDetail({
             <button
               key={k}
               onClick={() => setTab(k)}
-              className={`-mb-px border-b-2 px-3 py-1.5 transition ${tab === k ? 'border-brand-500 font-medium text-brand-700' : 'border-transparent text-ink-500 hover:text-ink-800'}`}
+              className={`-mb-px border-b-2 px-3 py-1.5 transition-colors duration-150 ${tab === k ? 'border-brand-500 font-medium text-brand-700' : 'border-transparent text-ink-500 hover:text-ink-900'}`}
             >
               {k === 'fiche' ? t('Fiche', 'Details') : t('Historique', 'History')}
             </button>
@@ -391,14 +391,14 @@ export function ContactDetail({
               un diagnostic. Demandé par Julien le 2026-08-25. */}
           <span className="text-ink-400">{t('Compte WhatsApp', 'WhatsApp account')}</span>
           <span className="font-mono text-ink-900" title={t("BSUID : identifiant WhatsApp unique d'un client qui n'a pas partagé son numéro. Non modifiable, et absent tant que le client a partagé son numéro.", "BSUID: unique WhatsApp identifier for a customer who hasn't shared their number. Not editable, and absent as long as the customer shared their number.")}>
-            {contact.bsuid ?? <span className="font-sans text-ink-300">{t('aucun', 'none')}</span>}
+            {contact.bsuid ?? <span className="font-sans text-ink-400">{t('aucun', 'none')}</span>}
           </span>
           {/* L'identifiant WhatsApp n'est PAS stocké : il est DÉRIVÉ, exactement comme le fait la résolution
               serveur (`MATCH_BY_WAID_SQL`) : les chiffres du numéro, ou le BSUID à défaut. Le montrer évite de
               le recalculer de tête quand on cherche une conversation ou un parcours. */}
           <span className="text-ink-400">{t('Identifiant WhatsApp', 'WhatsApp ID')}</span>
           <span className="font-mono text-ink-900" title={t("Dérivé du numéro (chiffres seuls) ou du BSUID. C'est la clé qui relie ce contact à sa conversation et à ses parcours. Non modifiable.", "Derived from the number (digits only) or the BSUID. It is the key linking this contact to its conversation and journeys. Not editable.")}>
-            {waIdDuContact(contact) ?? <span className="font-sans text-ink-300">{t('aucun', 'none')}</span>}
+            {waIdDuContact(contact) ?? <span className="font-sans text-ink-400">{t('aucun', 'none')}</span>}
           </span>
           {/* L'IDENTIFIANT API : la valeur que l'API publique appelle `contactId` (spec du 2026-09-24, § 10).
               Toujours affiché, avec un bouton Copier : c'est ce qu'un intégrateur vient chercher ici. */}
@@ -417,7 +417,7 @@ export function ContactDetail({
                 if (!navigator.clipboard) { signaler('echec'); return; }
                 navigator.clipboard.writeText(contact.id).then(() => signaler('ok'), () => signaler('echec'));
               }}
-              className="shrink-0 text-xs text-brand-600 underline decoration-dotted transition hover:text-brand-700"
+              className="shrink-0 text-xs text-brand-600 underline decoration-dotted transition-colors duration-150 hover:text-brand-700"
             >
               {idCopie === 'ok' ? t('Copié', 'Copied') : idCopie === 'echec' ? t('Copie impossible', 'Copy failed') : t('Copier', 'Copy')}
             </button>
@@ -441,13 +441,13 @@ export function ContactDetail({
             <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>{t(...badge.text)}</span>
             {contact.optInStatus !== 'opted_in' && (
               <button onClick={() => void apply({ optInStatus: 'opted_in' })} disabled={busy} data-testid="fiche-optin"
-                className="shrink-0 text-xs text-brand-600 underline decoration-dotted transition hover:text-brand-700 disabled:opacity-50">
+                className="shrink-0 text-xs text-brand-600 underline decoration-dotted transition-colors duration-150 hover:text-brand-700 disabled:opacity-50">
                 {t('passer en opt-in', 'mark opted in')}
               </button>
             )}
             {contact.optInStatus !== 'opted_out' && (
               <button onClick={() => void apply({ optInStatus: 'opted_out' })} disabled={busy} data-testid="fiche-optout"
-                className="shrink-0 text-xs text-ink-400 underline decoration-dotted transition hover:text-coral disabled:opacity-50">
+                className="shrink-0 text-xs text-ink-400 underline decoration-dotted transition-colors duration-150 hover:text-danger disabled:opacity-50">
                 {t('passer en opt-out', 'mark opted out')}
               </button>
             )}
@@ -459,15 +459,15 @@ export function ContactDetail({
           <span className="flex flex-wrap items-center gap-2">
             {contact.blockedAt ? (
               <>
-                <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">{t('bloqué', 'blocked')}</span>
+                <span className="rounded-full bg-danger-50 px-2 py-0.5 text-xs font-medium text-danger-700">{t('bloqué', 'blocked')}</span>
                 <button onClick={() => void basculerBlocage(false)} disabled={busy} data-testid="fiche-debloquer"
-                  className="shrink-0 text-xs text-brand-600 underline decoration-dotted transition hover:text-brand-700 disabled:opacity-50">
+                  className="shrink-0 text-xs text-brand-600 underline decoration-dotted transition-colors duration-150 hover:text-brand-700 disabled:opacity-50">
                   {t('débloquer', 'unblock')}
                 </button>
               </>
             ) : (
               <button onClick={() => void basculerBlocage(true)} disabled={busy} data-testid="fiche-bloquer"
-                className="shrink-0 text-xs text-ink-400 underline decoration-dotted transition hover:text-coral disabled:opacity-50">
+                className="shrink-0 text-xs text-ink-400 underline decoration-dotted transition-colors duration-150 hover:text-danger disabled:opacity-50">
                 {t('bloquer ce contact', 'block this contact')}
               </button>
             )}
@@ -507,7 +507,7 @@ export function ContactDetail({
                 </span>
                 {/* Le score n'existe pas pour « inconnu » : rien n'a été observé, il n'y a rien à noter. */}
                 {risque.score !== null && (
-                  <span className="text-xs text-ink-600" data-testid="fiche-risque-score">{risque.score} / 100</span>
+                  <span className="text-xs text-ink-500" data-testid="fiche-risque-score">{risque.score} / 100</span>
                 )}
                 {/* « DEPUIS LE » ET PAS « CALCULÉ LE » : la date ne bouge qu'au changement de niveau, le calcul
                     repasse chaque nuit sans la toucher (`PgRisqueStore.ecrire`). */}
@@ -518,7 +518,7 @@ export function ContactDetail({
                   </span>
                 )}
                 {risque.raisons.length > 0 && (
-                  <ul className="basis-full list-disc space-y-0.5 pl-4 text-xs text-ink-600" data-testid="fiche-risque-raisons">
+                  <ul className="basis-full list-disc space-y-0.5 pl-4 text-xs text-ink-500" data-testid="fiche-risque-raisons">
                     {risque.raisons.map((r) => <li key={r}>{t(...libelleRaisonRisque(r))}</li>)}
                   </ul>
                 )}
@@ -548,7 +548,7 @@ export function ContactDetail({
         {etat !== 'aucune-conversation' && (
           <div className="mt-4 rounded-lg border border-ink-100 bg-ink-50/60 px-3 py-2" data-testid="fiche-contact-resume">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <span className="text-[11px] font-medium uppercase tracking-wide text-ink-400">
+              <span className="text-xs font-medium text-ink-500">
                 {t('Résumé de la conversation', 'Conversation summary')}
               </span>
               {/* La DATE de l'analyse, et le lien vers le fil. Sans la date, un résumé de mars et un résumé
@@ -563,7 +563,7 @@ export function ContactDetail({
               </span>
             </div>
             {etat === 'resume' ? (
-              <p className="mt-1 whitespace-pre-line text-sm text-ink-700" data-testid="fiche-contact-resume-texte">{resume?.texte}</p>
+              <p className="mt-1 whitespace-pre-line text-sm text-ink-900" data-testid="fiche-contact-resume-texte">{resume?.texte}</p>
             ) : (
               <p className="mt-1 text-sm italic text-ink-400" data-testid="fiche-contact-resume-absent">{phraseAbsent}</p>
             )}
@@ -571,7 +571,7 @@ export function ContactDetail({
                 présenter un résumé partiel comme s'il couvrait tout le fil. Même mot que dans l'onglet
                 Historique, pour que les deux écrans ne décrivent pas le même état de deux façons. */}
             {resume?.perime && (
-              <p className="mt-1 text-xs text-amber-700" data-testid="fiche-contact-resume-perime">
+              <p className="mt-1 text-xs text-alerte-700" data-testid="fiche-contact-resume-perime">
                 {t('Un message est arrivé depuis : ce résumé ne couvre pas la fin de la conversation.',
                    'A message has arrived since: this summary does not cover the end of the conversation.')}
               </p>
@@ -579,15 +579,15 @@ export function ContactDetail({
           </div>
         )}
 
-        {error && <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        {error && <p className="mt-4 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
         <div className="mt-5">
-          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">Tags</h4>
+          <h4 className="mb-2 text-xs font-medium text-ink-500">Tags</h4>
           <div className="flex flex-wrap items-center gap-1.5">
             {(contact.tags ?? []).map((tag) => (
               <span key={tag} className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
                 {tag}
-                <button onClick={() => void apply({ removeTags: [tag] })} disabled={busy} className="text-brand-400 hover:text-coral" aria-label={`${t('Retirer', 'Remove')} ${tag}`}>×</button>
+                <button onClick={() => void apply({ removeTags: [tag] })} disabled={busy} className="text-brand-400 hover:text-danger" aria-label={`${t('Retirer', 'Remove')} ${tag}`}>×</button>
               </span>
             ))}
             {(contact.tags ?? []).length === 0 && <span className="text-sm text-ink-400">{t('Aucune étiquette.', 'No tags.')}</span>}
@@ -602,12 +602,12 @@ export function ContactDetail({
               className="flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
             />
             <datalist id="tag-suggestions">{tagSuggestions.map((tag) => <option key={tag} value={tag} />)}</datalist>
-            <button onClick={addTag} disabled={busy || newTag.trim() === ''} className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50">{t('Ajouter', 'Add')}</button>
+            <Bouton onClick={addTag} disabled={busy || newTag.trim() === ''}>{t('Ajouter', 'Add')}</Bouton>
           </div>
         </div>
 
         <div className="mt-5">
-          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">{t('Champs', 'Fields')}</h4>
+          <h4 className="mb-2 text-xs font-medium text-ink-500">{t('Champs', 'Fields')}</h4>
           {fieldEntries.length === 0 ? (
             <p className="text-sm text-ink-400">{t('Aucun champ perso.', 'No custom fields.')}</p>
           ) : (
@@ -630,14 +630,14 @@ export function ContactDetail({
           <div className="mt-2 space-y-2">
             {addable.length > 0 && (
               <div className="flex flex-wrap items-center gap-2">
-                <select value={newKey} onChange={(e) => { setNewKey(e.target.value); setNewVal(''); }} className="rounded-lg border border-ink-300 bg-white px-2 py-2 text-sm text-ink-800">
+                <select value={newKey} onChange={(e) => { setNewKey(e.target.value); setNewVal(''); }} className="rounded-lg border border-ink-300 bg-white px-2 py-2 text-sm text-ink-900">
                   <option value="">{t('Ajouter un champ existant…', 'Add an existing field…')}</option>
                   {addable.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
                 </select>
                 {selectedDef && (
                   <>
                     <FieldValueInput type={selectedDef.type} value={newVal} onChange={setNewVal} />
-                    <button onClick={addField} disabled={busy || newVal.trim() === ''} className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50">{t('Ajouter', 'Add')}</button>
+                    <Bouton onClick={addField} disabled={busy || newVal.trim() === ''}>{t('Ajouter', 'Add')}</Bouton>
                   </>
                 )}
               </div>
@@ -648,7 +648,7 @@ export function ContactDetail({
               <div className="space-y-2 rounded-lg border border-brand-200 bg-brand-50/40 p-2.5">
                 <div className="flex flex-wrap items-center gap-2">
                   <input value={cLabel} onChange={(e) => setCLabel(e.target.value)} placeholder={t('Nom du champ (ex. Métier)', 'Field name (e.g. Job)')} className="flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
-                  <select value={cType} onChange={(e) => setCType(e.target.value as UserFieldKind)} className="rounded-lg border border-ink-300 bg-white px-2 py-2 text-sm text-ink-800">
+                  <select value={cType} onChange={(e) => setCType(e.target.value as UserFieldKind)} className="rounded-lg border border-ink-300 bg-white px-2 py-2 text-sm text-ink-900">
                     <option value="text">{t('texte', 'text')}</option>
                     <option value="number">{t('nombre', 'number')}</option>
                     <option value="date">{t('date', 'date')}</option>
@@ -659,8 +659,8 @@ export function ContactDetail({
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <FieldValueInput type={cType} value={cVal} onChange={setCVal} />
-                  <button onClick={createAndAddField} disabled={busy || cLabel.trim() === '' || cVal.trim() === ''} className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50">{t('Créer et ajouter', 'Create and add')}</button>
-                  <button onClick={() => { setCreatingField(false); setCLabel(''); setCVal(''); setCreatedRef(null); }} className="text-sm text-ink-400 hover:text-ink-700">{t('Annuler', 'Cancel')}</button>
+                  <Bouton onClick={createAndAddField} disabled={busy || cLabel.trim() === '' || cVal.trim() === ''}>{t('Créer et ajouter', 'Create and add')}</Bouton>
+                  <button onClick={() => { setCreatingField(false); setCLabel(''); setCVal(''); setCreatedRef(null); }} className="text-sm text-ink-400 hover:text-ink-900">{t('Annuler', 'Cancel')}</button>
                 </div>
               </div>
             )}

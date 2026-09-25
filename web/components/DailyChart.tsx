@@ -5,6 +5,7 @@ import type { DailyPoint } from '@/lib/api';
 import { fmtNum } from '@/lib/format';
 import { useT, useLocale } from '@/lib/i18n';
 import { BoutonPdf } from '@/components/BoutonPdf';
+import { ink } from '@/lib/couleurs';
 
 export interface ChartSeries {
   label: string;
@@ -143,20 +144,20 @@ export function DailyChart({
   const multi = series.length > 1;
 
   return (
-    <div id={zonePdf} className="rounded-2xl border border-ink-200/80 bg-white p-6 shadow-[0_1px_2px_rgba(11,14,36,0.04),0_12px_28px_-16px_rgba(11,14,36,0.14)]">
+    <div id={zonePdf} className="rounded-2xl border border-ink-200/80 bg-white p-6">
       {/* En-tête : libellé + grand chiffre + tendance / métriques */}
       <div className="mb-4 flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-400">
+          <div className="flex items-center gap-2 text-xs font-medium text-ink-500">
             <span className="truncate">{title}</span>
             {zonePdf && <BoutonPdf zone={zonePdf} />}
           </div>
           <div className="mt-1.5 flex items-baseline gap-2">
-            <span className="text-[2.5rem] font-light leading-none tracking-tight text-ink-900 tabular-nums">{fmtNum(hero, locale)}</span>
+            <span className="text-4xl font-semibold leading-none tracking-tight tabular-nums text-ink-900">{fmtNum(hero, locale)}</span>
             {delta !== null && (
               <span
                 className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs font-medium ${
-                  delta > 0 ? 'bg-mint-50 text-mint-700' : delta < 0 ? 'bg-coral/10 text-coral' : 'bg-ink-100 text-ink-500'
+                  delta > 0 ? 'bg-succes-50 text-succes-700' : delta < 0 ? 'bg-danger-50 text-danger' : 'bg-ink-100 text-ink-500'
                 }`}
               >
                 {delta > 0 ? '↗' : delta < 0 ? '↘' : '→'} {delta > 0 ? '+' : ''}
@@ -175,7 +176,7 @@ export function DailyChart({
               <span key={s.label} className="flex items-center gap-1.5 text-xs text-ink-500">
                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
                 {s.label}
-                <span className="font-semibold text-ink-800 tabular-nums">{fmtNum(s.values[s.values.length - 1] ?? 0, locale)}</span>
+                <span className="font-semibold text-ink-900 tabular-nums">{fmtNum(s.values[s.values.length - 1] ?? 0, locale)}</span>
               </span>
             ))}
           </div>
@@ -207,7 +208,7 @@ export function DailyChart({
               x2={W - PAD.right}
               y1={PAD.top + innerH * (1 - f)}
               y2={PAD.top + innerH * (1 - f)}
-              stroke="#EEF0F5"
+              stroke={ink[100]}
               strokeWidth="1"
               strokeDasharray={f === 0 ? '0' : '2 5'}
             />
@@ -235,7 +236,7 @@ export function DailyChart({
           {/* survol */}
           {hover !== null && (
             <>
-              <line x1={x(hover)} x2={x(hover)} y1={PAD.top} y2={PAD.top + innerH} stroke="#C7CBDA" strokeWidth="1" strokeDasharray="3 3" />
+              <line x1={x(hover)} x2={x(hover)} y1={PAD.top} y2={PAD.top + innerH} stroke={ink[200]} strokeWidth="1" strokeDasharray="3 3" />
               {data.map((s, si) => (
                 <circle key={si} cx={x(hover)} cy={y(s.values[hover] ?? 0)} r="4" fill="#fff" stroke={s.color} strokeWidth="2.25" />
               ))}
@@ -259,7 +260,7 @@ export function DailyChart({
 
         {hover !== null && (
           <div
-            className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg bg-ink-900 px-2.5 py-1.5 text-[11px] text-white shadow-lg"
+            className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg bg-ink-900 px-2.5 py-1.5 text-xs text-white shadow-mm-md"
             style={{ left: `${(x(hover) / W) * 100}%`, top: -4 }}
           >
             <div className="mb-0.5 font-semibold text-white/70">{fmtDay(dates[hover] ?? '')}</div>
@@ -280,8 +281,8 @@ export function DailyChart({
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg bg-ink-50 px-2.5 py-1.5 text-right">
-      <div className="text-[10px] font-medium uppercase tracking-wide text-ink-400">{label}</div>
-      <div className="text-sm font-semibold text-ink-800 tabular-nums">{value}</div>
+      <div className="text-xs font-medium text-ink-500">{label}</div>
+      <div className="text-sm font-semibold text-ink-900 tabular-nums">{value}</div>
     </div>
   );
 }

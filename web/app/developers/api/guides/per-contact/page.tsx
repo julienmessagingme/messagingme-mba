@@ -17,11 +17,11 @@ export default function ApiGuideParContactPage() {
 function Etape({ n, id, titre, children }: { n: number; id?: string; titre: string; children: React.ReactNode }) {
   return (
     <section id={id} className="scroll-mt-20 space-y-4 border-t border-ink-200 pt-8">
-      <h2 className="flex items-center gap-3 text-xl font-semibold tracking-tight text-ink-900">
+      <h2 className="flex items-center gap-3 text-lg font-semibold text-ink-900">
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-50 text-sm font-semibold text-brand-700">{n}</span>{' '}
         {titre}
       </h2>
-      <div className="space-y-4 text-[15px] leading-relaxed text-ink-700">{children}</div>
+      <div className="space-y-4 text-base leading-relaxed text-ink-900">{children}</div>
     </section>
   );
 }

@@ -8,6 +8,8 @@ import { getSession, pageDArrivee, type Session } from '@/lib/session';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { MIN_MOT_DE_PASSE, aideMotDePasse } from '@/lib/mot-de-passe';
+import { Bouton } from '@/components/Bouton';
+import { TitrePage } from '@/components/TitrePage';
 
 export default function ComptePage() {
   const t = useT();
@@ -45,23 +47,23 @@ export default function ComptePage() {
   return (
     <main className="mx-auto max-w-md px-4 py-10">
       <Link href={pageDArrivee(session.role)} className="mb-4 inline-block text-sm text-brand-600 hover:underline">← {t('Retour', 'Back')}</Link>
-      <h1 className="text-lg font-semibold tracking-tight text-ink-900">{t('Mon compte', 'My account')}</h1>
+      <TitrePage>{t('Mon compte', 'My account')}</TitrePage>
       <p className="mt-1 text-sm text-ink-400">{session.email}</p>
 
-      <form onSubmit={onSubmit} className="mt-6 space-y-4 rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
-        <h2 className="text-sm font-semibold text-ink-800">{t('Changer le mot de passe', 'Change password')}</h2>
+      <form onSubmit={onSubmit} className="mt-6 space-y-4 rounded-2xl border border-ink-200 bg-white p-6">
+        <h2 className="text-sm font-semibold text-ink-900">{t('Changer le mot de passe', 'Change password')}</h2>
         <div>
-          <label className="mb-1 block text-sm font-medium text-ink-700">{t('Mot de passe actuel', 'Current password')}</label>
+          <label className="mb-1 block text-sm font-medium text-ink-900">{t('Mot de passe actuel', 'Current password')}</label>
           <input type="password" required value={current} onChange={(e) => setCurrent(e.target.value)} className={inputCls} />
         </div>
         <div>
-          <label className="mb-1 block text-sm font-medium text-ink-700">{t('Nouveau mot de passe', 'New password')}</label>
+          <label className="mb-1 block text-sm font-medium text-ink-900">{t('Nouveau mot de passe', 'New password')}</label>
           <input type="password" required minLength={MIN_MOT_DE_PASSE} value={next} onChange={(e) => setNext(e.target.value)} className={inputCls} placeholder={t(aideMotDePasse().fr, aideMotDePasse().en)} />
         </div>
-        {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>{msg.text}</p>}
-        <button type="submit" disabled={loading} className="w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60">
+        {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-succes-50 text-succes-800' : 'bg-danger-50 text-danger-700'}`}>{msg.text}</p>}
+        <Bouton enCours={loading} type="submit" disabled={loading} className="w-full">
           {loading ? t('Mise à jour...', 'Updating...') : t('Mettre à jour', 'Update')}
-        </button>
+        </Bouton>
       </form>
     </main>
   );

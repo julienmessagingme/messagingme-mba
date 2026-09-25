@@ -54,9 +54,9 @@ export function ChampCorpsVariables({
   return (
     <div>
       <div className="mb-1 flex items-center justify-between gap-2">
-        {label ? <label className="block text-xs font-medium text-ink-600">{label}</label> : <span />}
+        {label ? <label className="block text-xs font-medium text-ink-500">{label}</label> : <span />}
         {max !== undefined && (
-          <span className={`text-[11px] ${trop ? 'font-medium text-coral' : 'text-ink-400'}`}>{valeur.length} / {max}</span>
+          <span className={`text-xs ${trop ? 'font-medium text-danger' : 'text-ink-400'}`}>{valeur.length} / {max}</span>
         )}
       </div>
 

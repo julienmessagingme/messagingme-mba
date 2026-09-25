@@ -5,6 +5,7 @@ import { WorkflowBuilder } from '@/components/WorkflowBuilder';
 import { createWorkflow } from '@/lib/api/scenarios';
 import { inputCls } from '@/lib/ui';
 import type { CanalEtage } from '@/lib/campagne-chaine';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * CRÉER UN SCÉNARIO SANS QUITTER SA CAMPAGNE.
@@ -94,7 +95,7 @@ export function CreationScenarioEnLigne({
 
       {etape === 'nom' && (
         <div className="mt-2 space-y-2 rounded-lg border border-ink-200 bg-ink-50 p-3" data-testid="creer-scenario-nom">
-          <label className="block text-xs font-medium text-ink-700" htmlFor="nouveau-scenario">
+          <label className="block text-xs font-medium text-ink-900" htmlFor="nouveau-scenario">
             Nom du scénario
           </label>
           <input
@@ -106,20 +107,19 @@ export function CreationScenarioEnLigne({
             placeholder="Relance panier abandonné"
           />
           <div className="flex gap-2">
-            <button
+            <Bouton taille="petite" enCours={enCours}
               type="button"
               data-testid="creer-scenario-valider"
               onClick={() => { void creer(); }}
               disabled={nom.trim() === '' || enCours}
-              className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
             >
               {enCours ? 'Création…' : 'Ouvrir l’éditeur'}
-            </button>
-            <button type="button" onClick={fermer} className="rounded-lg border border-ink-200 px-3 py-1.5 text-xs text-ink-600">
+            </Bouton>
+            <Bouton variante="secondaire" taille="petite" type="button" onClick={fermer}>
               Annuler
-            </button>
+            </Bouton>
           </div>
-          {erreur !== null && <p className="text-xs text-red-700" data-testid="creer-scenario-erreur">{erreur}</p>}
+          {erreur !== null && <p className="text-xs text-danger-700" data-testid="creer-scenario-erreur">{erreur}</p>}
         </div>
       )}
 
@@ -129,7 +129,7 @@ export function CreationScenarioEnLigne({
          * doit respirer en 13 pouces, où la fenêtre de la campagne est déjà étroite.
          */
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 p-4" data-testid="fenetre-scenario">
-          <div className="flex h-[min(85vh,48rem)] w-[min(92vw,80rem)] flex-col overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-2xl">
+          <div className="flex h-[min(85vh,48rem)] w-[min(92vw,80rem)] flex-col overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-mm-lg">
             <div className="flex items-center justify-between border-b border-ink-100 px-4 py-2.5">
               <span className="truncate text-sm font-semibold text-ink-900">{cree.name}</span>
               <button
@@ -137,7 +137,7 @@ export function CreationScenarioEnLigne({
                 onClick={fermer}
                 data-testid="fenetre-scenario-fermer"
                 aria-label="Fermer"
-                className="text-ink-400 hover:text-ink-700"
+                className="text-ink-400 hover:text-ink-900"
               >
                 ×
               </button>

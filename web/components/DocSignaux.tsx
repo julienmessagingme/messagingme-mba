@@ -4,7 +4,7 @@ import { useT } from '@/lib/i18n';
 import { EVENEMENTS_SIGNAUX, ATTRIBUTS_SIGNAUX, CHAMP_ID_DOC } from '@/lib/signaux-dictionnaire';
 import { C, Encadre, Liste, Section } from '@/components/doc-api/elements';
 
-const theadCls = 'border-b border-ink-200 bg-ink-50 text-ink-600';
+const theadCls = 'border-b border-ink-200 bg-ink-50 text-ink-500';
 
 /**
  * « CE QUE LA CONSOLE REMONTE » (spec 2026-09-24, § 8 et § 10) : le dictionnaire des signaux, pour l'intégrateur.
@@ -114,8 +114,8 @@ export function DocSignaux() {
               {EVENEMENTS_SIGNAUX.map((e) => (
                 <tr key={e.nom} className="border-b border-ink-100 align-top last:border-0" data-testid={`signal-${e.nom}`}>
                   <td className="px-3 py-2"><C>{e.nom}</C></td>
-                  <td className="px-3 py-2 text-ink-600">{t(...e.quand)}</td>
-                  <td className="px-3 py-2 text-ink-600">
+                  <td className="px-3 py-2 text-ink-500">{t(...e.quand)}</td>
+                  <td className="px-3 py-2 text-ink-500">
                     <span className="flex flex-wrap gap-1">
                       {e.champs.map((c) => <C key={c}>{c}</C>)}
                     </span>
@@ -141,7 +141,7 @@ export function DocSignaux() {
               {ATTRIBUTS_SIGNAUX.map((a) => (
                 <tr key={a.nom} className="border-b border-ink-100 align-top last:border-0">
                   <td className="px-3 py-2"><C>{a.nom}</C></td>
-                  <td className="px-3 py-2 text-ink-600">{t(...a.sens)}</td>
+                  <td className="px-3 py-2 text-ink-500">{t(...a.sens)}</td>
                 </tr>
               ))}
             </tbody>

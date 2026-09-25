@@ -43,8 +43,8 @@ import type { Locale } from '@/lib/locale';
  * égal au nombre de clics mentirait dans la colonne d'à côté.
  */
 
-const TH = 'px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-400';
-const TD = 'px-2 py-1.5 text-[13px] text-ink-700';
+const TH = 'px-2 py-1.5 text-left text-xs font-medium text-ink-500';
+const TD = 'px-2 py-1.5 text-sm text-ink-900';
 
 export function DetailCampagneModale({ tenantId, campaignId, nom, onClose }: {
   tenantId: string;
@@ -101,7 +101,7 @@ export function DetailCampagneModale({ tenantId, campaignId, nom, onClose }: {
       onClose={onClose}
     >
       {erreur && (
-        <p className="rounded-lg bg-coral/10 px-3 py-2 text-xs text-coral" data-testid="detail-erreur">
+        <p className="rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger" data-testid="detail-erreur">
           {t('Le détail de cette campagne n’a pas pu être chargé.', 'This campaign’s detail could not be loaded.')}
         </p>
       )}
@@ -122,7 +122,7 @@ function Contenu({ fiche, titres, locale, t }: {
   return (
     <div className="space-y-5">
       <section data-testid="detail-lancement">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-ink-400">
+        <h4 className="text-xs font-medium text-ink-500">
           {t('Le lancement', 'The launch')}
         </h4>
         <p className="mt-0.5 text-xs text-ink-400">
@@ -179,7 +179,7 @@ function Contenu({ fiche, titres, locale, t }: {
 
       {fiche.workflowId !== null && (
         <section data-testid="detail-etapes">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-ink-400">
+          <h4 className="text-xs font-medium text-ink-500">
             {t('Étape par étape', 'Step by step')}
           </h4>
           <p className="mt-0.5 text-xs text-ink-400">
@@ -207,7 +207,7 @@ function Contenu({ fiche, titres, locale, t }: {
                 */}
               <FunnelNodes etapes={fiche.etapes} titres={titres} devise={d} />
               <details className="mt-3" data-testid="detail-etapes-table">
-                <summary className="cursor-pointer text-xs text-ink-500 hover:text-ink-700">
+                <summary className="cursor-pointer text-xs text-ink-500 hover:text-ink-900">
                   {t('Voir les chiffres exacts', 'Show the exact figures')}
                 </summary>
             <div className="mt-2 overflow-x-auto">
@@ -241,7 +241,7 @@ function Contenu({ fiche, titres, locale, t }: {
                       <td className={`${TD} text-right tabular-nums`}>{deuxUnites(e.reponses, locale, t)}</td>
                       <td className={`${TD} text-right tabular-nums`} data-testid={`detail-ratio-${e.nodeId}`}>
                         {e.coutParInteraction === null
-                          ? <span className="text-ink-300" title={t('Aucune interaction à cette étape, ou coût du lancement inconnu.', 'No interaction at this step, or unknown launch cost.')}>—</span>
+                          ? <span className="text-ink-400" title={t('Aucune interaction à cette étape, ou coût du lancement inconnu.', 'No interaction at this step, or unknown launch cost.')}>—</span>
                           : fmtCost(e.coutParInteraction, locale, d)}
                       </td>
                     </tr>
@@ -286,7 +286,7 @@ function deuxUnites(v: { gestes: number; personnes: number } | undefined, locale
 function Chiffre({ libelle, valeur, aide, testid }: { libelle: string; valeur: string; aide?: string; testid?: string }) {
   return (
     <div title={aide} data-testid={testid}>
-      <dt className="text-[11px] uppercase tracking-wide text-ink-400">{libelle}</dt>
+      <dt className="text-xs text-ink-500 font-medium">{libelle}</dt>
       <dd className="text-sm font-medium tabular-nums text-ink-900">{valeur}</dd>
     </div>
   );

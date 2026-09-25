@@ -5,6 +5,7 @@ import { useT } from '@/lib/i18n';
 import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from './MbaNotice';
 import { getMbaBusinessInfo, patchMbaBusinessInfo, type MbaBusinessInfo, type MbaBusinessInfoPatch } from '@/lib/api-mba';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * Informations générales sur l'entreprise : ce que l'agent répond quand on lui demande les horaires, la
@@ -101,7 +102,7 @@ export function MbaBusinessInfoPanel({ tenantId, phoneNumberId }: { tenantId: st
 
   const champ = (cle: CleTexte | CleContact, label: string, aide: string, lignes: number, limite: number) => (
     <label className="block" key={cle}>
-      <span className="text-sm font-medium text-ink-800">{label}</span>
+      <span className="text-sm font-medium text-ink-900">{label}</span>
       <span className="mt-0.5 block text-xs text-ink-500">{aide}</span>
       {lignes > 1 ? (
         <textarea
@@ -147,14 +148,13 @@ export function MbaBusinessInfoPanel({ tenantId, phoneNumberId }: { tenantId: st
       </section>
 
       <div className="flex items-center gap-3">
-        <button
-          className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+        <Bouton enCours={busy}
           data-testid="mba-bi-save"
           disabled={busy || patch === null}
           onClick={() => void enregistrer()}
         >
           {busy ? t('Enregistrement…', 'Saving…') : t('Enregistrer', 'Save')}
-        </button>
+        </Bouton>
         {patch === null && !busy && <span className="text-xs text-ink-500">{t('Rien à enregistrer.', 'Nothing to save.')}</span>}
       </div>
     </div>

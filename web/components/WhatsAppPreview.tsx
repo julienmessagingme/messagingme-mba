@@ -116,7 +116,7 @@ export function WhatsAppPreview({ body, examples, varLabels, buttons, header, fo
                 )
               )}
               {textHeader && <div className="mb-1 break-words text-[13px] font-semibold text-ink-900">{textHeader}</div>}
-              <div className="whitespace-pre-wrap break-words text-[13px] leading-snug text-ink-800">
+              <div className="whitespace-pre-wrap break-words text-[13px] leading-snug text-ink-900">
                 {body.trim() ? renderBody(body, examples, varLabels) : <span className="text-ink-400">{t('Le message apparaîtra ici…', 'Your message will appear here…')}</span>}
               </div>
               {footer?.trim() && <div className="mt-1 break-words text-[11px] leading-snug text-ink-400">{footer}</div>}

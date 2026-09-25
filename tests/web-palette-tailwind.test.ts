@@ -5,7 +5,7 @@ import { join } from 'node:path';
 /**
  * UNE CLASSE TAILWIND QUI N'EXISTE PAS NE FAIT RIEN, ET NE LE DIT PAS.
  *
- * 🔴 CE N'EST PAS UNE PRÉCAUTION, C'EST UN CONSTAT. Le design system REMPLACE `sky` et `violet` par des
+ * 🔴 CE N'EST PAS UNE PRÉCAUTION, C'EST UN CONSTAT. Le design system REMPLAÇAIT `sky` et `violet` par des
  * couleurs SIMPLES (`sky: '#3A8BD8'`), pas des échelles. `bg-violet-50` et `text-violet-700` ne sont donc
  * générés nulle part : la pastille « agent Meta » de l'Inbox et le statut « planifiée » des campagnes
  * s'affichaient SANS fond et en couleur par défaut, depuis toujours, sur quatre fichiers et huit endroits.
@@ -44,8 +44,10 @@ describe('La palette Tailwind du projet', () => {
   it('🔴 aucune couleur SIMPLE n’est utilisée avec une nuance numérotée', () => {
     const simples = couleursSansEchelle();
     // Si l'extraction rate, le test passerait en ne vérifiant rien : on exige donc d'en trouver.
-    expect(simples.length, 'aucune couleur simple lue dans tailwind.config.ts').toBeGreaterThanOrEqual(3);
-    expect(simples).toContain('sky');
+    // ⚠️ Une seule depuis le 2026-09-25 : `sky`, `coral` et `gold` ont laissé la place aux échelles d'état
+    // (`danger`, `alerte`, `succes`, déclarées dans `web/lib/couleurs.ts`), il ne reste que la couleur de
+    // série `violet`.
+    expect(simples.length, 'aucune couleur simple lue dans tailwind.config.ts').toBeGreaterThanOrEqual(1);
     expect(simples).toContain('violet');
 
     /**

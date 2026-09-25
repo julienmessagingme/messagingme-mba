@@ -72,15 +72,15 @@ function FieldPicker({ options, onPick, onClose }: {
   return (
     <>
       <button type="button" aria-label={t('Fermer', 'Close')} className="fixed inset-0 z-40 cursor-default" onClick={onClose} />
-      <div className="absolute bottom-11 right-0 z-50 max-h-56 w-56 overflow-y-auto rounded-xl border border-ink-200 bg-white p-1 shadow-lg">
+      <div className="absolute bottom-11 right-0 z-50 max-h-56 w-56 overflow-y-auto rounded-xl border border-ink-200 bg-white p-1 shadow-mm-md">
         {groups.map((g) => {
           const items = options.filter((o) => o.group === g.id);
           if (items.length === 0) return null;
           return (
             <div key={g.id}>
-              <div className="px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-ink-400">{g.label}</div>
+              <div className="px-2 py-1 text-xs font-medium text-ink-500">{g.label}</div>
               {items.map((o, i) => (
-                <button type="button" key={`${g.id}-${i}`} onClick={() => onPick(o)} className="block w-full truncate rounded-md px-2 py-1.5 text-left text-sm text-ink-700 hover:bg-brand-50">{o.label}</button>
+                <button type="button" key={`${g.id}-${i}`} onClick={() => onPick(o)} className="block w-full truncate rounded-md px-2 py-1.5 text-left text-sm text-ink-900 hover:bg-brand-50">{o.label}</button>
               ))}
             </div>
           );
@@ -218,7 +218,7 @@ export function TemplateBodyField({ state, label, placeholder, hint }: {
 
   return (
     <div>
-      <label className="mb-1 block text-sm font-medium text-ink-700">{label}</label>
+      <label className="mb-1 block text-sm font-medium text-ink-900">{label}</label>
       <div className="relative">
         <VariableBodyEditor
           ref={state.editorRef}
@@ -264,7 +264,7 @@ export function TemplateVariableExamples({ state }: { state: TemplateBodyState }
   if (state.positions.length === 0) return null;
   return (
     <div>
-      <label className="mb-1 block text-sm font-medium text-ink-700">{t('Exemples de variables (requis par Meta)', 'Variable examples (required by Meta)')}</label>
+      <label className="mb-1 block text-sm font-medium text-ink-900">{t('Exemples de variables (requis par Meta)', 'Variable examples (required by Meta)')}</label>
       <div className="space-y-2">
         {/* Piloté par les positions RÉELLES du corps (index pos-1), pas un compte séquentiel : après suppression
             d'une variable du milieu, chaque ligne reste alignée avec sa source/exemple. */}

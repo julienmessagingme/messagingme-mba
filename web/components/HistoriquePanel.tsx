@@ -86,7 +86,7 @@ export function HistoriquePanel({ tenantId, surface, agentId }: {
           'Creations and edits made by hand in the tabs are not listed yet.')}
       </p>
 
-      {erreur && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{erreur}</p>}
+      {erreur && <p className="mt-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{erreur}</p>}
 
       {/* 🔴 On le DIT quand la liste est coupée : sans cette ligne, chercher une modification ancienne et ne
           pas la voir se lirait comme « elle n'a pas eu lieu ». */}
@@ -104,7 +104,7 @@ export function HistoriquePanel({ tenantId, surface, agentId }: {
           {lignes.map((l) => (
             <li key={l.id} className="py-2.5">
               <div className="flex items-baseline justify-between gap-3">
-                <span className={`text-sm ${l.operation === 'suppression' ? 'text-coral' : 'text-ink-800'}`}>
+                <span className={`text-sm ${l.operation === 'suppression' ? 'text-danger' : 'text-ink-900'}`}>
                   {signe(l.operation)} {l.libelle}
                 </span>
                 <span className="shrink-0 text-xs text-ink-400">{stamp(l.at)}</span>
@@ -120,7 +120,7 @@ export function HistoriquePanel({ tenantId, surface, agentId }: {
                     {' · '}
                     <button
                       onClick={() => setOuvert(ouvert === l.id ? null : l.id)}
-                      className="underline hover:text-ink-800"
+                      className="underline hover:text-ink-900"
                       data-testid={`historique-voir-${l.id}`}
                     >
                       {ouvert === l.id ? t('masquer le contenu', 'hide content') : t('voir le contenu effacé', 'show deleted content')}
@@ -130,7 +130,7 @@ export function HistoriquePanel({ tenantId, surface, agentId }: {
               </div>
               {ouvert === l.id && l.avant != null && (
                 <div className="mt-2 rounded-lg bg-ink-50 p-3">
-                  <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-ink-700">
+                  <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-ink-900">
                     {JSON.stringify(l.avant, null, 2)}
                   </pre>
                   {/* 🔴 LA PHRASE QUI ÉVITE UN MALENTENDU COÛTEUX : recopier ce contenu dans l'onglet crée un

@@ -9,6 +9,8 @@ import {
   supprimerServeurMcp,
   type AuthMcp, type ChangementMcp, type OutilMcp, type ServeurMcp,
 } from '@/lib/api-mcp-connecteurs';
+import { Bouton } from '@/components/Bouton';
+import { IntroPage, TitrePage } from '@/components/TitrePage';
 
 /**
  * Les serveurs MCP de l'espace, et ce qu'on a importé de chacun.
@@ -76,11 +78,11 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
   return (
     <section className="space-y-4" data-testid="mcp-serveurs">
       <header>
-        <h1 className="text-lg font-semibold text-ink-900">{t('Connecteurs MCP', 'MCP connectors')}</h1>
-        <p className="mt-1 text-sm text-ink-600">
+        <TitrePage>{t('Connecteurs MCP', 'MCP connectors')}</TitrePage>
+        <IntroPage>
           {t('Les serveurs MCP que vos agents IA peuvent interroger. Déclarés une fois ici, leur catalogue d’outils est importé puis proposé à chaque agent dans son onglet Outils.',
             'The MCP servers your AI agents can query. Declared once here, their tool catalogue is imported and then offered to each agent in its Tools tab.')}
-        </p>
+        </IntroPage>
         {/* ⚠️ ON LE DIT, ON NE GRISE PAS : une case désactivée sans explication enverrait le client ouvrir
             un ticket. Et on dit que la limite est LA NÔTRE, parce qu'elle l'est. */}
         <p className="mt-2 text-xs text-ink-500" data-testid="mcp-note-mba">
@@ -89,12 +91,12 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
         </p>
       </header>
 
-      {erreur && <p className="text-xs text-coral" data-testid="mcp-erreur">{erreur}</p>}
+      {erreur && <p className="text-xs text-danger" data-testid="mcp-erreur">{erreur}</p>}
 
       {isAdmin && (
         <div className={cardCls} data-testid="mcp-declarer">
           {neuf === null ? (
-            <button type="button" className="text-sm text-brand-700 underline" data-testid="mcp-declarer-ouvrir"
+            <button type="button" className="text-sm text-brand-700 underline hover:text-brand-800" data-testid="mcp-declarer-ouvrir"
               onClick={() => setNeuf({ label: '', baseUrl: '', authKind: 'bearer', authSecret: '', authHeaderName: '' })}>
               {t('+ déclarer un serveur MCP', '+ declare an MCP server')}
             </button>
@@ -126,8 +128,7 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
                   onChange={(e) => setNeuf({ ...neuf, authSecret: e.target.value })} />
               )}
               <div className="flex gap-2">
-                <button type="button" disabled={busy} data-testid="mcp-neuf-creer"
-                  className="rounded-lg bg-brand-600 px-2 py-0.5 text-xs font-medium text-white disabled:opacity-50"
+                <Bouton taille="petite" type="button" disabled={busy} data-testid="mcp-neuf-creer"
                   onClick={() => void agir(async () => {
                     await creerServeurMcp(tenantId, {
                       label: neuf.label, baseUrl: neuf.baseUrl, authKind: neuf.authKind,
@@ -138,9 +139,9 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
                     setServeurs((await listerServeursMcp(tenantId)).serveurs);
                   })}>
                   {t('Déclarer', 'Declare')}
-                </button>
-                <button type="button" className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 text-xs"
-                  onClick={() => setNeuf(null)}>{t('Annuler', 'Cancel')}</button>
+                </Bouton>
+                <Bouton variante="secondaire" taille="petite" type="button"
+                  onClick={() => setNeuf(null)}>{t('Annuler', 'Cancel')}</Bouton>
               </div>
             </div>
           )}
@@ -160,7 +161,7 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
                 <span className="font-medium text-ink-900">{s.label}</span>
                 <code className="text-xs text-ink-500">{s.baseUrl}</code>
                 {s.status !== 'active' && (
-                  <span className="rounded-full bg-ink-100 px-2 py-0.5 text-[11px] text-ink-600">{s.status}</span>
+                  <span className="rounded-full bg-ink-100 px-2 py-0.5 text-xs text-ink-500">{s.status}</span>
                 )}
               </div>
 
@@ -169,7 +170,7 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
                   conversation. */}
               <p className="mt-1 text-xs text-ink-500" data-testid={`mcp-etat-${s.id}`}>
                 {s.lastError
-                  ? <span className="text-coral">{t('Dernière erreur : ', 'Last error: ')}{s.lastError}</span>
+                  ? <span className="text-danger">{t('Dernière erreur : ', 'Last error: ')}{s.lastError}</span>
                   : s.lastOkAt
                     ? `${t('A répondu le ', 'Answered on ')}${new Date(s.lastOkAt).toLocaleString()}`
                     : t('Jamais éprouvé.', 'Never tested.')}
@@ -177,37 +178,34 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
 
               {isAdmin && (
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <button type="button" disabled={busy} data-testid={`mcp-eprouver-${s.id}`}
-                    className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 text-xs disabled:opacity-50"
+                  <Bouton variante="secondaire" taille="petite" type="button" disabled={busy} data-testid={`mcp-eprouver-${s.id}`}
                     onClick={() => void agir(async () => { setEpreuve({ sourceId: s.id, ...(await eprouverServeurMcp(tenantId, s.id)) }); })}>
                     {t('Éprouver la connexion', 'Test the connection')}
-                  </button>
-                  <button type="button" disabled={busy} data-testid={`mcp-apercu-${s.id}`}
-                    className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 text-xs disabled:opacity-50"
+                  </Bouton>
+                  <Bouton variante="secondaire" taille="petite" type="button" disabled={busy} data-testid={`mcp-apercu-${s.id}`}
                     onClick={() => void agir(async () => { setPlan({ sourceId: s.id, ...(await apercuMcp(tenantId, s.id)) }); })}>
                     {t('Voir ce qui va changer', 'Preview changes')}
-                  </button>
+                  </Bouton>
                   <button type="button" disabled={busy} data-testid={`mcp-supprimer-${s.id}`}
-                    className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 text-xs text-coral disabled:opacity-50"
+                    className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 text-xs text-danger transition-colors duration-150 hover:bg-danger-50 disabled:opacity-50"
                     onClick={() => void agir(async () => {
                       await supprimerServeurMcp(tenantId, s.id);
                       setServeurs((await listerServeursMcp(tenantId)).serveurs);
                     })}>
                     {t('Supprimer', 'Delete')}
                   </button>
-                  <button type="button" disabled={busy} data-testid={`mcp-outils-${s.id}`}
-                    className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 text-xs disabled:opacity-50"
+                  <Bouton variante="secondaire" taille="petite" type="button" disabled={busy} data-testid={`mcp-outils-${s.id}`}
                     onClick={() => void agir(async () => {
                       setOuvert(ouvert === s.id ? null : s.id);
                       if (ouvert !== s.id) await chargerOutils(s.id);
                     })}>
                     {t('Les outils importés', 'Imported tools')}
-                  </button>
+                  </Bouton>
                 </div>
               )}
 
               {epreuve?.sourceId === s.id && (
-                <p className={`mt-2 text-xs ${epreuve.ok ? 'text-mint-700' : 'text-coral'}`} data-testid={`mcp-epreuve-${s.id}`}>
+                <p className={`mt-2 text-xs ${epreuve.ok ? 'text-succes-700' : 'text-danger'}`} data-testid={`mcp-epreuve-${s.id}`}>
                   {epreuve.ok ? t('Le serveur répond.', 'The server answers.') : epreuve.erreur}
                 </p>
               )}
@@ -217,20 +215,20 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
                   {plan.tronque && (
                     /* 🔴 UN PLAFOND SILENCIEUX SE LIT COMME UNE COUVERTURE COMPLÈTE. Et il a une conséquence
                        que le client doit connaître : sur un catalogue tronqué, rien n'est retiré. */
-                    <p className="mb-2 rounded-lg bg-gold/10 px-2 py-1 text-xs text-ink-700" data-testid={`mcp-tronque-${s.id}`}>
+                    <p className="mb-2 rounded-lg bg-alerte-50 px-2 py-1 text-xs text-ink-900" data-testid={`mcp-tronque-${s.id}`}>
                       {t('Ce serveur annonce plus d’outils que nous n’en lisons d’un coup. Rien ne sera retiré tant que la liste est incomplète.',
                         'This server announces more tools than we read at once. Nothing will be removed while the list is incomplete.')}
                     </p>
                   )}
                   {plan.plan.length === 0 ? (
-                    <p className="text-xs text-mint-700">{t('Rien à changer.', 'Nothing to change.')}</p>
+                    <p className="text-xs text-succes-700">{t('Rien à changer.', 'Nothing to change.')}</p>
                   ) : (
                     <ul className="space-y-0.5">
                       {plan.plan.map((c, i) => (
-                        <li key={`${c.type}-${c.nom}-${i}`} className={`text-xs ${c.type === 'disparu' ? 'text-coral' : 'text-ink-600'}`}>
+                        <li key={`${c.type}-${c.nom}-${i}`} className={`text-xs ${c.type === 'disparu' ? 'text-danger' : 'text-ink-500'}`}>
                           <code>{c.nom}</code> : {LIBELLE[c.type]}
                           {'consentementsTombes' in c && c.consentementsTombes > 0 && (
-                            <span className="text-coral">
+                            <span className="text-danger">
                               {t(` (${c.consentementsTombes} agent(s) perdront l’accès)`, ` (${c.consentementsTombes} agent(s) will lose access)`)}
                             </span>
                           )}
@@ -239,8 +237,8 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
                     </ul>
                   )}
                   {plan.plan.length > 0 && (
-                    <button type="button" disabled={busy} data-testid={`mcp-importer-${s.id}`}
-                      className="mt-2 rounded-lg bg-brand-600 px-2 py-0.5 text-xs font-medium text-white disabled:opacity-50"
+                    <Bouton taille="petite" type="button" disabled={busy} data-testid={`mcp-importer-${s.id}`}
+                      className="mt-2"
                       onClick={() => void agir(async () => {
                         await importerMcp(tenantId, s.id);
                         setPlan(null);
@@ -248,7 +246,7 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
                         if (ouvert === s.id) await chargerOutils(s.id);
                       })}>
                       {t(`Appliquer ces ${plan.plan.length} changement(s)`, `Apply these ${plan.plan.length} change(s)`)}
-                    </button>
+                    </Bouton>
                   )}
                 </div>
               )}

@@ -7,6 +7,7 @@ import { formatDate, hourMin } from '@/lib/day';
 import { cardCls, inputCls } from '@/lib/ui';
 import { toCsv, downloadCsv } from '@/lib/csv';
 import { ACTIONS_JOURNAL, resumeDetail, lignesJournalCsv } from '@/lib/journal';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * Historique des actions sensibles sur les contacts : qui a ajouté, supprimé, effacé, ou basculé un
@@ -22,9 +23,9 @@ import { ACTIONS_JOURNAL, resumeDetail, lignesJournalCsv } from '@/lib/journal';
  */
 /** Rouge pour ce qui détruit, ambre pour ce qui coupe les envois, vert pour ce qui les ouvre. */
 const TONS: Record<string, string> = {
-  'contact.purged': 'bg-red-50 text-red-700',
-  'contact.optout': 'bg-amber-50 text-amber-800',
-  'contact.optin': 'bg-emerald-50 text-emerald-800',
+  'contact.purged': 'bg-danger-50 text-danger-700',
+  'contact.optout': 'bg-alerte-50 text-alerte-800',
+  'contact.optin': 'bg-succes-50 text-succes-800',
 };
 
 /** Ce que l'export va chercher, indépendamment des 100 dernières lignes affichées. Plafond serveur. */
@@ -91,15 +92,15 @@ export function AuditJournal({ tenantId }: { tenantId: string }) {
         </div>
         {/* `!entries` et non `entries === null` : une réponse sans `entries` (instance sans journal, coupure en
             vol) laisse `undefined`, et lire `.length` dessus fait tomber TOUTE la page Paramètres. */}
-        <button
+        <Bouton variante="secondaire" taille="petite" enCours={exportEnCours}
           type="button"
           onClick={() => void exporter()}
           disabled={exportEnCours || !entries || entries.length === 0}
           data-testid="journal-export-csv"
-          className="shrink-0 rounded-lg border border-ink-200 px-2.5 py-1 text-xs font-medium text-ink-600 transition hover:bg-ink-50 disabled:opacity-40"
+          className="shrink-0"
         >
           {exportEnCours ? t('Export…', 'Exporting…') : t('Exporter en CSV', 'Export to CSV')}
-        </button>
+        </Bouton>
       </div>
 
       {/* La recherche. Trois champs plutôt qu'un seul, parce que ce sont trois questions différentes : « quoi »,
@@ -120,9 +121,9 @@ export function AuditJournal({ tenantId }: { tenantId: string }) {
           className={`${inputCls} w-40`} data-testid="journal-telephone" value={saisie.telephone}
           onChange={(e) => setSaisie({ ...saisie, telephone: e.target.value })} placeholder={t('numéro du client', 'client number')}
         />
-        <button type="submit" data-testid="journal-chercher" className="rounded-lg border border-ink-300 px-3 py-1.5 text-xs font-medium text-ink-700 hover:bg-ink-50">
+        <Bouton variante="secondaire" taille="petite" type="submit" data-testid="journal-chercher">
           {t('Chercher', 'Search')}
-        </button>
+        </Bouton>
         {cherche && (
           <button
             type="button" data-testid="journal-effacer-filtre"
@@ -134,7 +135,7 @@ export function AuditJournal({ tenantId }: { tenantId: string }) {
         )}
       </form>
 
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
       {!error && entries === null && <p className="text-sm text-ink-400">{t('Chargement…', 'Loading…')}</p>}
       {!error && entries?.length === 0 && (
         <p className="text-sm text-ink-400" data-testid="journal-vide">
@@ -162,11 +163,11 @@ export function AuditJournal({ tenantId }: { tenantId: string }) {
               <span className="w-36 shrink-0 text-xs tabular-nums text-ink-400">
                 {formatDate(e.at, locale, { day: '2-digit', month: '2-digit', year: '2-digit' })} {hourMin(e.at, locale)}
               </span>
-              <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${TONS[e.action] ?? 'bg-ink-100 text-ink-700'}`}>
+              <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${TONS[e.action] ?? 'bg-ink-100 text-ink-900'}`}>
                 {libelleAction(e.action)}
               </span>
               {/* Acteur absent = le système (webhook, balayage), pas un humain : le dire plutôt que laisser un blanc. */}
-              <span className="text-ink-700">{e.actorEmail ?? t('Système', 'System')}</span>
+              <span className="text-ink-900">{e.actorEmail ?? t('Système', 'System')}</span>
               <span className="font-mono text-xs text-ink-400">{e.targetId}</span>
               {Object.keys(e.detail).length > 0 && (
                 <span className="text-xs text-ink-500">{resumeDetail(e.detail, t('oui', 'yes'), t('non', 'no'))}</span>

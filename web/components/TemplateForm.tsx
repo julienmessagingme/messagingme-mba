@@ -14,6 +14,7 @@ import { META_TEMPLATE_LANGUAGES } from '@/lib/languages';
 import { inputCls } from '@/lib/ui';
 import { ListeManques } from '@/components/ListeManques';
 import { Field } from '@/components/Field';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * Formulaire de creation (et d'edition) d'un template Meta.
@@ -263,12 +264,12 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
   const canSubmit = manques.length === 0 && !busy;
 
   return (
-    <div className={isEdit ? '' : 'rounded-2xl border border-ink-200 bg-white p-6 shadow-sm'}>
+    <div className={isEdit ? '' : 'rounded-2xl border border-ink-200 bg-white p-6'}>
       {/* Duplication HONNÊTE : on dit ce qui n'a pas pu être recopié, au lieu de laisser croire à une copie
           conforme. Meta ne rend pas le fichier d'origine d'un visuel, seulement une URL de validation qu'il
           refuse de retélécharger à l'envoi : le visuel doit donc être redéposé à la main. */}
       {duplique && initial && (
-        <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800" data-testid="template-duplication-bandeau">
+        <div className="mb-4 rounded-lg border border-alerte-300 bg-alerte-50 px-3 py-2 text-sm text-alerte-800" data-testid="template-duplication-bandeau">
           <p>
             {t('Copie de « ', 'Copy of "')}{initial.name}{t(' ». Rien n’est envoyé à Meta tant que tu n’as pas cliqué sur « Créer le template ».', '". Nothing is sent to Meta until you click "Create template".')}
           </p>
@@ -281,7 +282,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
       )}
       {!isEdit && (
         <>
-          <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Nouveau template', 'New template')}</h2>
+          <h2 className="text-base font-semibold text-ink-900">{t('Nouveau template', 'New template')}</h2>
           <p className="mt-1 text-xs text-ink-500">{t('Soumis à Meta pour validation (quelques minutes à quelques heures).', 'Submitted to Meta for review (a few minutes to a few hours).')}</p>
         </>
       )}
@@ -313,7 +314,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
           </div>
 
           <div className="mt-3">
-            <label className="mb-1 block text-sm font-medium text-ink-700">{t('En-tête (optionnel)', 'Header (optional)')}</label>
+            <label className="mb-1 block text-sm font-medium text-ink-900">{t('En-tête (optionnel)', 'Header (optional)')}</label>
             <div className="flex flex-wrap items-center gap-2">
               <select
                 value={headerType}
@@ -331,9 +332,9 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
               )}
               {(headerType === 'IMAGE' || headerType === 'VIDEO') && (
                 <>
-                  <button type="button" onClick={() => headerFileRef.current?.click()} disabled={headerUploading} className="rounded-lg border border-ink-300 px-3 py-2 text-sm text-ink-700 hover:bg-ink-50 disabled:opacity-50">
+                  <Bouton variante="secondaire" enCours={headerUploading} type="button" onClick={() => headerFileRef.current?.click()} disabled={headerUploading}>
                     {headerUploading ? 'Upload…' : headerHandle ? t('Remplacer', 'Replace') : headerType === 'IMAGE' ? t('Choisir une image', 'Choose an image') : t('Choisir une vidéo (mp4)', 'Choose a video (mp4)')}
-                  </button>
+                  </Bouton>
                   {headerFileName && <span className="max-w-[140px] truncate text-xs text-ink-500">{headerFileName} ✓</span>}
                   <input ref={headerFileRef} type="file" accept={headerType === 'IMAGE' ? 'image/png,image/jpeg' : 'video/mp4'} className="hidden" onChange={(e) => onHeaderFile(e.target.files?.[0])} />
                 </>
@@ -350,7 +351,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
           </div>
 
           <div className="mt-3">
-            <label className="mb-1 block text-sm font-medium text-ink-700">{t('Pied de page (optionnel)', 'Footer (optional)')}</label>
+            <label className="mb-1 block text-sm font-medium text-ink-900">{t('Pied de page (optionnel)', 'Footer (optional)')}</label>
             <input value={footer} onChange={(e) => setFooter(e.target.value)} maxLength={60} placeholder={t('Petit texte en bas (60 car. max, sans variable)', 'Small text at the bottom (60 char. max, no variable)')} className={inputCls} />
           </div>
 
@@ -360,7 +361,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
 
           <div className="mt-3">
             <div className="mb-1 flex items-center justify-between">
-              <label className="text-sm font-medium text-ink-700">{t('Boutons', 'Buttons')}</label>
+              <label className="text-sm font-medium text-ink-900">{t('Boutons', 'Buttons')}</label>
               <div className="flex gap-2 text-xs">
                 {/* Un bouton FLOW est EXCLUSIF (contrainte Meta) : on masque les autres si un FLOW est là,
                     et « + Flow » remplace tous les boutons par un unique bouton FLOW. */}
@@ -380,7 +381,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
                   <div key={i} className="space-y-1.5 rounded-lg border border-ink-100 bg-ink-50/50 p-2.5">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-medium text-ink-400">{t('Bouton du formulaire', 'Form button')}</span>
-                      <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="text-ink-400 hover:text-red-600" aria-label={t('Retirer', 'Remove')}>×</button>
+                      <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="text-ink-400 hover:text-danger-600" aria-label={t('Retirer', 'Remove')}>×</button>
                     </div>
                     <input
                       value={b.text}
@@ -416,12 +417,12 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
                         value={b.url ?? ''}
                         onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)))}
                         data-testid={`template-bouton-url-${i}`}
-                        className={`${inputCls} min-w-0 flex-[2] ${urlKo(b) ? 'border-coral focus:border-coral focus:ring-red-100' : ''}`}
+                        className={`${inputCls} min-w-0 flex-[2] ${urlKo(b) ? 'border-danger-500 focus:border-danger-500 focus:ring-danger-100' : ''}`}
                         title={urlKo(b) ? t('Adresse incomplète : commence par https://', 'Incomplete address: start with https://') : undefined}
                         placeholder={t('https://exemple.fr/page', 'https://example.com/page')}
                       />
                     )}
-                    <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="shrink-0 text-ink-400 hover:text-red-600" aria-label={t('Retirer', 'Remove')}>×</button>
+                    <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="shrink-0 text-ink-400 hover:text-danger-600" aria-label={t('Retirer', 'Remove')}>×</button>
                   </div>
                 )
               ))}
@@ -438,7 +439,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
                   <div className="rounded-xl border border-brand-200 bg-brand-50/40 p-4">
                     <div className="mb-3 flex items-center justify-between">
                       <span className="text-sm font-semibold text-ink-900">{t('Nouveau formulaire', 'New form')}</span>
-                      <button type="button" onClick={() => setCreatingFlow(false)} className="text-xs text-ink-400 hover:text-ink-700">{t('Annuler', 'Cancel')}</button>
+                      <button type="button" onClick={() => setCreatingFlow(false)} className="text-xs text-ink-400 hover:text-ink-900">{t('Annuler', 'Cancel')}</button>
                     </div>
                     <FlowBuilder
                       tenantId={tenantId}
@@ -456,18 +457,18 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
             )}
           </div>
 
-          {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-          {ok && <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{ok}</p>}
+          {error && <p className="mt-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+          {ok && <p className="mt-3 rounded-lg bg-succes-50 px-3 py-2 text-sm text-succes-800">{ok}</p>}
 
           <ListeManques manques={manques} testId="template-manques" busy={busy} />
-          <button
+          <Bouton
             type="button"
             onClick={submit}
             disabled={!canSubmit}
-            className="mt-4 w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
+            className="mt-4 w-full"
           >
             {busy ? t('Envoi...', 'Sending...') : isEdit ? t('Enregistrer les modifications', 'Save changes') : t('Créer le template', 'Create template')}
-          </button>
+          </Bouton>
         </div>
 
         {/* Colonne aperçu (collante quand elle est A COTE ; en dessous, il n'y a rien a suivre du regard). */}

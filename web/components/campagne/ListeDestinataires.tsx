@@ -6,6 +6,7 @@ import { contactIdentity, queryContacts, countContacts, type Contact, type Conta
 import { filtersActive } from '@/lib/contact-filters';
 import { useT } from '@/lib/i18n';
 import { estRetenu, nbRetenus, type SelectionDestinataires } from '@/lib/audience';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * LA SÉLECTION DES DESTINATAIRES DANS LE MINI-CRM : les filtres, le compteur, et les cases à cocher.
@@ -226,13 +227,12 @@ export function ListeDestinataires({
             </button>
           </>
         )}
-        <button
+        <Bouton variante="secondaire"
           type="button"
           onClick={() => onSelection({ toutFiltre: false, selected: new Set(), exclus: new Set() })}
-          className="rounded-lg border border-ink-300 px-2 py-0.5 text-ink-600 hover:bg-ink-50"
         >
           {t('Vider', 'Clear')}
-        </button>
+        </Bouton>
       </div>
 
       {/* Le mode « tout ce qui correspond » doit se VOIR : sans cette ligne, l'écran montre des cases
@@ -253,10 +253,10 @@ export function ListeDestinataires({
             <input type="checkbox" checked={estRetenu(selection, c.id)} onChange={() => basculer(c.id)} className="accent-brand-500" />
             <span className="truncate text-sm">{c.profileName ?? contactIdentity(c)}</span>
             {(c.tags ?? []).slice(0, 3).map((tag) => (
-              <span key={tag} className="shrink-0 rounded bg-brand-50 px-1 text-[10px] text-brand-700">{tag}</span>
+              <span key={tag} className="shrink-0 rounded bg-brand-50 px-1 text-xs text-brand-700">{tag}</span>
             ))}
-            <span className="ml-auto shrink-0 font-mono text-[11px] text-ink-400">{c.phoneE164 ?? <span title={t('Compte WhatsApp (sans numéro)', 'WhatsApp account (no number)')}>{c.bsuid}</span>}</span>
-            {c.optInStatus === 'opted_out' && <span className="shrink-0 rounded bg-red-50 px-1 text-[10px] text-red-600">opt-out</span>}
+            <span className="ml-auto shrink-0 font-mono text-xs text-ink-400">{c.phoneE164 ?? <span title={t('Compte WhatsApp (sans numéro)', 'WhatsApp account (no number)')}>{c.bsuid}</span>}</span>
+            {c.optInStatus === 'opted_out' && <span className="shrink-0 rounded bg-danger-50 px-1 text-xs text-danger-600">opt-out</span>}
           </label>
         ))}
         {contacts.length === 0 && (
@@ -267,7 +267,7 @@ export function ListeDestinataires({
           </p>
         )}
       </div>
-      <p className="mt-1 text-[11px] text-ink-400">{t('Les contacts opt-out sont ignorés automatiquement pour le marketing.', 'Opted-out contacts are automatically skipped for marketing.')}</p>
+      <p className="mt-1 text-xs text-ink-400">{t('Les contacts opt-out sont ignorés automatiquement pour le marketing.', 'Opted-out contacts are automatically skipped for marketing.')}</p>
     </div>
   );
 }

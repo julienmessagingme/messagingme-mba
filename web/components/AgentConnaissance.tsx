@@ -11,6 +11,7 @@ import {
   supprimerFiches,
   type ApercuImport, type FicheConnaissance,
 } from '@/lib/api-agent-knowledge';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * L'onglet BASE DE CONNAISSANCE d'un agent IA.
@@ -138,7 +139,7 @@ export function AgentConnaissance({ tenantId, agentId, onChange, urlSuggeree }: 
         {fiches !== null && fiches.length > 0 && (
           <>
             <div className="flex flex-wrap items-center gap-3">
-              <label className="flex items-center gap-2 text-sm text-ink-600">
+              <label className="flex items-center gap-2 text-sm text-ink-500">
                 <input
                   type="checkbox"
                   data-testid="kb-tout-cocher"
@@ -158,7 +159,7 @@ export function AgentConnaissance({ tenantId, agentId, onChange, urlSuggeree }: 
                     // doit pas être annoncée comme supprimée par ce clic.
                     return t(`${r.supprimees} fiche(s) supprimée(s).`, `${r.supprimees} entry(ies) deleted.`);
                   })}
-                  className="rounded-lg bg-coral px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40"
+                  className="rounded-lg bg-danger px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40"
                 >
                   {t(`Supprimer les ${coches.size} fiches cochées`, `Delete the ${coches.size} selected entries`)}
                 </button>
@@ -253,7 +254,7 @@ function ImportSource({ tenantId, agentId, busy, onImport, onErreur, urlSuggeree
   return (
     <div className={`${cardCls} flex flex-col gap-3`}>
       <div>
-        <p className="text-sm font-medium text-ink-700">{t('Lire une page de votre site', 'Read a page of your site')}</p>
+        <p className="text-sm font-medium text-ink-900">{t('Lire une page de votre site', 'Read a page of your site')}</p>
         <p className="mt-1 text-xs leading-relaxed text-ink-500">
           {t(
             'On lit la page une fois et on en fait des fiches, découpées sur ses titres. L’agent ne relit pas votre site à chaque question : c’est plus rapide, moins cher, et surtout vous pouvez corriger une mauvaise réponse ici même.',
@@ -262,7 +263,7 @@ function ImportSource({ tenantId, agentId, busy, onImport, onErreur, urlSuggeree
         </p>
       </div>
       {urlSuggeree && (
-        <p data-testid="kb-url-suggeree" className="rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs leading-relaxed text-ink-700">
+        <p data-testid="kb-url-suggeree" className="rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs leading-relaxed text-ink-900">
           {t(
             'L’assistant de construction a noté cette adresse pendant votre entretien. Relisez-la, puis voyez ce qui sera importé : rien n’est écrit avant que vous ne l’ayez vu.',
             'The setup assistant noted this address during your interview. Check it, then see what will be imported: nothing is written before you have seen it.',
@@ -280,21 +281,20 @@ function ImportSource({ tenantId, agentId, busy, onImport, onErreur, urlSuggeree
           onKeyDown={(e) => { if (e.key === 'Enter' && propre !== '') void voir(); }}
           placeholder="https://votre-site.fr/tarifs"
         />
-        <button
+        <Bouton enCours={occupe}
           data-testid="kb-importer"
           disabled={busy || occupe || propre === ''}
           onClick={() => void voir()}
-          className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
         >
           {occupe ? t('Lecture…', 'Reading…') : t('Voir ce qui sera importé', 'See what will be imported')}
-        </button>
+        </Bouton>
       </div>
 
       {/* 🔴 L'APERÇU N'ÉCRIT RIEN, et c'est tout son intérêt. Cinquante pages écrites d'un coup, ce sont
           cinquante jeux de fiches à relire ou supprimer une par une si la portée était mauvaise. */}
       {apercu !== null && (
         <div className="rounded-xl border border-ink-200 p-3" data-testid="kb-apercu">
-          <p className="text-sm font-medium text-ink-700">
+          <p className="text-sm font-medium text-ink-900">
             {apercu.portee === 'page'
               ? t('Cette page seule', 'This page only')
               : t(`Ce site : ${apercu.pages.length} page(s) lisible(s)`, `This site: ${apercu.pages.length} readable page(s)`)}
@@ -302,7 +302,7 @@ function ImportSource({ tenantId, agentId, busy, onImport, onErreur, urlSuggeree
           {/* ⚠️ Le plafond est DIT quand il mord : « 50 pages » n'est pas « tout le site », et le taire
               laisserait croire à une base complète alors qu'il en manque la moitié. */}
           {apercu.plafondAtteint && (
-            <p className="mt-1 text-xs text-amber-800" data-testid="kb-apercu-plafond">
+            <p className="mt-1 text-xs text-alerte-800" data-testid="kb-apercu-plafond">
               {t(
                 'Le plafond de pages est atteint : il en manque. Importez d’abord celles-ci, puis donnez une adresse plus précise pour le reste.',
                 'The page cap was reached: some are missing. Import these first, then give a more precise address for the rest.',
@@ -312,7 +312,7 @@ function ImportSource({ tenantId, agentId, busy, onImport, onErreur, urlSuggeree
           <ul className="mt-2 max-h-56 space-y-1 overflow-y-auto text-xs">
             {apercu.pages.map((p) => (
               <li key={p.url} className="flex justify-between gap-3">
-                <span className="truncate text-ink-600">{p.url}</span>
+                <span className="truncate text-ink-500">{p.url}</span>
                 <span className="shrink-0 tabular-nums text-ink-400">
                   {t(`${p.fiches} fiche(s), ${p.caracteres} car.`, `${p.fiches} entry(ies), ${p.caracteres} chars`)}
                 </span>
@@ -325,17 +325,17 @@ function ImportSource({ tenantId, agentId, busy, onImport, onErreur, urlSuggeree
               {apercu.ecartees.slice(0, 3).map((e) => e.raison).join(', ')}
             </p>
           )}
-          <button
+          <Bouton
             data-testid="kb-confirmer"
             disabled={busy || apercu.pages.length === 0}
             onClick={() => { onImport(apercu.url, apercu.pages.map((p) => p.url)); setApercu(null); setUrl(''); }}
-            className="mt-3 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
+            className="mt-3"
           >
             {t(`Importer ces ${apercu.pages.length} page(s)`, `Import these ${apercu.pages.length} page(s)`)}
-          </button>
+          </Bouton>
         </div>
       )}
-      <p className="text-xs leading-relaxed text-amber-800">
+      <p className="text-xs leading-relaxed text-alerte-800">
         {t(
           'Relire la même adresse REMPLACE les fiches qu’elle avait déjà produites : vos corrections sur celles-là seront perdues. Les fiches venues d’ailleurs, et celles que vous avez écrites à la main, ne bougent pas.',
           'Re-reading the same address REPLACES the entries it had already produced: your fixes on those will be lost. Entries from other sources, and the ones you wrote by hand, are untouched.',
@@ -363,7 +363,7 @@ function ImportDocument({ busy, onDeposer }: { busy: boolean; onDeposer: (nom: s
   return (
     <div className={`${cardCls} flex flex-col gap-3`}>
       <div>
-        <p className="text-sm font-medium text-ink-700">{t('Déposer un document', 'Upload a document')}</p>
+        <p className="text-sm font-medium text-ink-900">{t('Déposer un document', 'Upload a document')}</p>
         <p className="mt-1 text-xs leading-relaxed text-ink-500">
           {t(
             'Un PDF, un Word, un fichier texte ou CSV de questions-réponses. On en fait des fiches, découpées sur ses titres. Le type est reconnu au CONTENU du fichier, pas à son extension.',
@@ -372,15 +372,14 @@ function ImportDocument({ busy, onDeposer }: { busy: boolean; onDeposer: (nom: s
         </p>
       </div>
       <div>
-        <button
+        <Bouton variante="secondaire"
           type="button"
           data-testid="kb-document"
           disabled={busy}
           onClick={() => ref.current?.click()}
-          className="rounded-lg border border-ink-300 px-3 py-2 text-sm font-medium text-ink-700 hover:bg-ink-50 disabled:opacity-40"
         >
           {t('Choisir un fichier', 'Choose a file')}
-        </button>
+        </Bouton>
         <input
           ref={ref}
           type="file"
@@ -398,7 +397,7 @@ function ImportDocument({ busy, onDeposer }: { busy: boolean; onDeposer: (nom: s
           }}
         />
       </div>
-      <p className="text-xs leading-relaxed text-amber-800">
+      <p className="text-xs leading-relaxed text-alerte-800">
         {t(
           'Redéposer le MÊME fichier remplace les fiches qu’il avait déjà produites : vos corrections sur celles-là seront perdues. Les autres ne bougent pas.',
           'Re-uploading the SAME file replaces the entries it had already produced: your fixes on those will be lost. The others are untouched.',
@@ -415,7 +414,7 @@ function AjoutManuel({ busy, onAdd }: { busy: boolean; onAdd: (titre: string, co
   const pret = !busy && titre.trim() !== '' && corps.trim() !== '';
   return (
     <div className={`${cardCls} flex flex-col gap-2`}>
-      <p className="text-sm font-medium text-ink-700">{t('Écrire une fiche à la main', 'Write an entry by hand')}</p>
+      <p className="text-sm font-medium text-ink-900">{t('Écrire une fiche à la main', 'Write an entry by hand')}</p>
       <input
         data-testid="kb-nouveau-titre"
         maxLength={MAX_TITRE_FICHE}
@@ -436,14 +435,13 @@ function AjoutManuel({ busy, onAdd }: { busy: boolean; onAdd: (titre: string, co
         placeholder={t('La réponse, telle que vous voudriez la lire.', 'The answer, as you would want to read it.')}
       />
       <div>
-        <button
+        <Bouton variante="secondaire"
           data-testid="kb-ajouter"
           disabled={!pret}
           onClick={() => { onAdd(titre.trim(), corps.trim()); setTitre(''); setCorps(''); }}
-          className="rounded-lg border border-ink-300 px-3 py-2 text-sm text-ink-700 hover:bg-ink-50 disabled:opacity-40"
         >
           {t('Ajouter la fiche', 'Add entry')}
-        </button>
+        </Bouton>
       </div>
     </div>
   );
@@ -498,7 +496,7 @@ function LigneFiche({ fiche, busy, coche, ouverte, onCocher, onOuvrir, onSave, o
             type="button"
             data-testid={`kb-ouvrir-${fiche.id}`}
             onClick={onOuvrir}
-            className="text-left font-medium text-ink-800 hover:underline"
+            className="text-left font-medium text-ink-900 hover:underline"
           >
             {fiche.titre}
           </button>
@@ -537,7 +535,7 @@ function LigneFiche({ fiche, busy, coche, ouverte, onCocher, onOuvrir, onSave, o
           {perimee && (
             <span
               data-testid={`kb-perimee-${fiche.id}`}
-              className="mt-1 inline-block rounded-full bg-gold/20 px-2 py-0.5 font-medium text-ink-800"
+              className="mt-1 inline-block rounded-full bg-alerte-100 px-2 py-0.5 font-medium text-ink-900"
             >
               {t(`À relire : plus de ${JOURS_AVANT_ALERTE} jours`, `Worth re-reading: over ${JOURS_AVANT_ALERTE} days`)}
             </span>
@@ -587,7 +585,7 @@ function Fiche({ fiche, busy, onSave, onDelete }: {
           disabled={busy}
           onClick={onDelete}
           title={t('Supprimer cette fiche', 'Delete this entry')}
-          className="shrink-0 rounded px-2 py-1 text-sm text-coral hover:bg-red-50 disabled:opacity-40"
+          className="shrink-0 rounded px-2 py-1 text-sm text-danger hover:bg-danger-50 disabled:opacity-40"
         >
           ✕
         </button>
@@ -634,7 +632,7 @@ function Provenance({ fiche }: { fiche: FicheConnaissance }) {
         </span>
       )}
       {perimee && (
-        <span data-testid={`kb-perimee-${fiche.id}`} className="rounded-full bg-gold/20 px-2 py-0.5 font-medium text-ink-800">
+        <span data-testid={`kb-perimee-${fiche.id}`} className="rounded-full bg-alerte-100 px-2 py-0.5 font-medium text-ink-900">
           {t(`À relire : plus de ${JOURS_AVANT_ALERTE} jours`, `Worth re-reading: over ${JOURS_AVANT_ALERTE} days`)}
         </span>
       )}

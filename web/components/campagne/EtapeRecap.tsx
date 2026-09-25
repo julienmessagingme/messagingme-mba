@@ -14,6 +14,8 @@ import { messageAucunDestinataire } from '@/lib/campagne-ecartes';
 import type {
   EtapeAssistant, EtatCampagne, ReferencesContenu,
 } from '@/components/campagne/AssistantCampagne';
+import { Bouton } from '@/components/Bouton';
+import { TitrePage } from '@/components/TitrePage';
 
 /**
  * ÉTAPE 5 : LE RÉCAPITULATIF, QUI N'EST PAS UN RÉSUMÉ.
@@ -156,9 +158,9 @@ export function EtapeRecap({
 
   return (
     <section data-testid="etape-recap" className="w-full">
-      <h2 className="text-lg font-semibold text-ink-800">Récapitulatif</h2>
+      <TitrePage>Récapitulatif</TitrePage>
 
-      <p className="mt-3 text-sm text-ink-700">
+      <p className="mt-3 text-sm text-ink-900">
         {/*
           ⚠️ UN VRAI LIEN, PAS UN BOUTON DÉGUISÉ. Il porte l'adresse de l'étape (`?etape=audience`), donc
           il s'ouvre dans un onglet ou se copie ; le clic ordinaire, lui, revient en arrière SANS perdre
@@ -189,7 +191,7 @@ export function EtapeRecap({
       >
         <table className="w-full min-w-[36rem] border-collapse text-sm">
           <thead>
-            <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
+            <tr className="border-b border-ink-100 text-left text-xs text-ink-500">
               <th className="px-4 py-2 font-medium">Étage</th>
               <th className="px-4 py-2 font-medium">Canal</th>
               <th className="px-4 py-2 text-right font-medium">Contacts</th>
@@ -200,14 +202,14 @@ export function EtapeRecap({
             {lignes.map((l) => (
               <tr key={l.rang} className="border-b border-ink-50 last:border-0" data-testid={`repartition-${l.rang}`}>
                 <td className="px-4 py-2 text-ink-500">{l.rang}</td>
-                <td className="px-4 py-2 font-medium text-ink-800">{LIBELLE_CANAL[l.canal]}</td>
+                <td className="px-4 py-2 font-medium text-ink-900">{LIBELLE_CANAL[l.canal]}</td>
                 {/* ⚠️ `tabular-nums` + `whitespace-nowrap` : un compte à sept chiffres ne doit ni se couper
                     en deux lignes ni faire danser la colonne d'un rafraîchissement à l'autre. C'est la
                     cellule dont la largeur est commandée par la donnée, d'où le scroll du conteneur. */}
-                <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums text-ink-800">
+                <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums text-ink-900">
                   {l.nombre === null ? '—' : fmtNum(l.nombre, 'fr')}
                 </td>
-                <td className="px-4 py-2 text-ink-600">{l.texte}</td>
+                <td className="px-4 py-2 text-ink-500">{l.texte}</td>
               </tr>
             ))}
           </tbody>
@@ -219,32 +221,32 @@ export function EtapeRecap({
       <BlocQuand etat={etat} onChange={onChange} />
 
       {probleme && (
-        <p className="mt-4 rounded-lg bg-gold/10 px-3 py-2 text-sm text-ink-700" data-testid="recap-probleme">{probleme}</p>
+        <p className="mt-4 rounded-lg bg-alerte-50 px-3 py-2 text-sm text-ink-900" data-testid="recap-probleme">{probleme}</p>
       )}
       {erreur && (
-        <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" data-testid="recap-erreur">{erreur}</p>
+        <p className="mt-4 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700" data-testid="recap-erreur">{erreur}</p>
       )}
       {/* ⚠️ UN AVERTISSEMENT N'EST PAS UN REFUS : la campagne part, se met en pause au plafond et
           reprend. Il s'affiche donc à côté du succès, pas à la place. */}
       {avertissement && (
-        <p className="mt-4 rounded-lg bg-gold/10 px-3 py-2 text-sm text-ink-700" data-testid="recap-avertissement">{avertissement}</p>
+        <p className="mt-4 rounded-lg bg-alerte-50 px-3 py-2 text-sm text-ink-900" data-testid="recap-avertissement">{avertissement}</p>
       )}
       {envoi === 'fait' && (
-        <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800" data-testid="recap-lancee">
+        <p className="mt-4 rounded-lg bg-succes-50 px-3 py-2 text-sm text-succes-800" data-testid="recap-lancee">
           {etat.quand === 'plus_tard'
             ? 'La campagne est programmée. Vous pouvez annuler la programmation depuis la liste des campagnes.'
             : 'La campagne est lancée. Suivez-la depuis la liste des campagnes.'}
         </p>
       )}
       {envoi === 'creee' && (
-        <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800" data-testid="recap-creee">
+        <p className="mt-4 rounded-lg bg-succes-50 px-3 py-2 text-sm text-succes-800" data-testid="recap-creee">
           La campagne est créée avec ses destinataires, et n&apos;a rien envoyé. Lancez-la depuis la
           liste des campagnes quand vous voulez.
           {/* ⚠️ LA DATE N'A PAS ÉTÉ POSÉE, ET IL FAUT LE DIRE. « Créer sans envoyer » s'arrête à la
               création : la programmation, elle, se fait AU LANCEMENT. Se taire laisserait l'opérateur
               croire que sa campagne partira à la date qu'il vient de saisir, et elle ne partirait jamais. */}
           {etat.quand === 'plus_tard' && (
-            <span className="mt-0.5 block text-xs text-ink-600">
+            <span className="mt-0.5 block text-xs text-ink-500">
               La date que vous avez choisie n&apos;a pas été posée : reprenez-la au lancement, depuis la
               liste des campagnes.
             </span>
@@ -253,15 +255,14 @@ export function EtapeRecap({
       )}
 
       <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-        <button
+        <Bouton
           type="button"
           data-testid="bouton-lancer"
           disabled={probleme !== null || envoi !== 'repos'}
           onClick={() => { void creer(true); }}
-          className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
         >
           {envoi === 'en_cours' ? 'Lancement...' : etat.quand === 'plus_tard' ? 'Créer et programmer' : 'Lancer la campagne'}
-        </button>
+        </Bouton>
         {/*
           🔴 CRÉER SANS ENVOYER EST UN GESTE À PART, ET IL EXISTE DEPUIS TOUJOURS DANS L'ÉCRAN EN
           SERVICE. Il calcule les destinataires et s'arrête là : c'est ainsi qu'on vérifie QUI est retenu,
@@ -276,15 +277,14 @@ export function EtapeRecap({
           actif créerait une campagne dont la date saisie serait silencieusement perdue. Mieux vaut
           corriger la date, ou repasser en « Maintenant ».
         */}
-        <button
+        <Bouton variante="secondaire"
           type="button"
           data-testid="bouton-creer-sans-lancer"
           disabled={probleme !== null || envoi !== 'repos'}
           onClick={() => { void creer(false); }}
-          className="rounded-lg border border-ink-300 px-4 py-2 text-sm font-medium text-ink-700 hover:bg-ink-50 disabled:opacity-40"
         >
           Créer sans envoyer
-        </button>
+        </Bouton>
       </div>
     </section>
   );
@@ -309,7 +309,7 @@ function BlocQuand({
 }: { etat: EtatCampagne; onChange: (patch: Partial<EtatCampagne>) => void }) {
   return (
     <div className="mt-4 w-full rounded-xl border border-ink-200 p-4" data-testid="bloc-quand">
-      <h3 className="text-sm font-medium text-ink-700">Quand ?</h3>
+      <h3 className="text-sm font-medium text-ink-900">Quand ?</h3>
       <div className="mt-3 inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-sm">
         {([
           ['maintenant', 'Maintenant'],
@@ -320,7 +320,7 @@ function BlocQuand({
             type="button"
             onClick={() => onChange({ quand: valeur })}
             data-testid={`quand-${valeur}`}
-            className={`rounded-md px-3 py-1 ${etat.quand === valeur ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}
+            className={`rounded-md px-3 py-1 ${etat.quand === valeur ? 'bg-white font-medium text-brand-700' : 'text-ink-500 hover:text-ink-900'}`}
           >
             {libelle}
           </button>
@@ -328,7 +328,7 @@ function BlocQuand({
       </div>
       {etat.quand === 'plus_tard' && (
         <div className="mt-3">
-          <label className="block text-sm text-ink-700">
+          <label className="block text-sm text-ink-900">
             <span className="block font-medium">Date et heure du départ</span>
             <input
               type="datetime-local"
@@ -375,8 +375,8 @@ function BlocCout({
   return (
     <div className="mt-4 w-full rounded-xl border border-ink-200 p-4" data-testid="bloc-cout">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-medium text-ink-700">Débit d&apos;envoi</h3>
-        <span className="shrink-0 text-sm font-semibold text-ink-800" data-testid="debit-valeur">
+        <h3 className="text-sm font-medium text-ink-900">Débit d&apos;envoi</h3>
+        <span className="shrink-0 text-sm font-semibold text-ink-900" data-testid="debit-valeur">
           {debit} messages / min
         </span>
       </div>
@@ -400,13 +400,13 @@ function BlocCout({
         corriger sans déploiement, et une valeur en dur dans l'écran deviendrait fausse sans que rien ne
         le signale.
       */}
-      <p className="mt-2 text-[11px] text-ink-400">
+      <p className="mt-2 text-xs text-ink-400">
         Défaut 60/min. Plafond 80/min (limite WhatsApp) ; baisser le débit protège la réputation du
         numéro. Sur un étage RCS, le plafond est celui de l&apos;opérateur : un débit plus élevé y est
         ramené à l&apos;envoi.
       </p>
 
-      <p className="mt-3 border-t border-ink-100 pt-3 text-sm text-ink-600">
+      <p className="mt-3 border-t border-ink-100 pt-3 text-sm text-ink-500">
         {/* 🔴 AU FIL DE L'EAU, IL N'Y A PAS DE LOT À CHIFFRER : la campagne facture un message par contact
             qui arrive, aussi longtemps qu'elle reste ouverte. Afficher « jusqu'à 0 messages » serait faux
             dans le sens rassurant, qui est le pire des deux sur un écran de lancement. */}
@@ -416,7 +416,7 @@ function BlocCout({
             ? 'Le nombre de contacts retenus n’a pas pu être lu : le volume et la durée restent inconnus.'
             : <>Jusqu&apos;à <b>{fmtNum(retenus, 'fr')}</b> messages facturables au premier étage, plus un message par bascule.</>}
       </p>
-      <p className="mt-1 text-sm text-ink-600" data-testid="recap-duree">
+      <p className="mt-1 text-sm text-ink-500" data-testid="recap-duree">
         {fil
           ? 'Aucune durée : la campagne reste ouverte jusqu’à ce que vous l’arrêtiez.'
           : minutes === null

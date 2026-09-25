@@ -6,6 +6,7 @@ import {
   basculerPub, enPauseChezMeta, lienGestionnaireMeta, lirePub, publierPub,
   type BrouillonPub, type Entonnoir, type EtapeEntonnoir, type Publicite,
 } from '@/lib/api-pubs';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * LA LISTE DES PUBLICITÉS, ET LA PAGE D'UNE PUBLICITÉ (lot 3, spec § 3.7).
@@ -132,20 +133,18 @@ export function PubsListe({
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <button
+                  <Bouton variante="secondaire" taille="petite"
                     type="button" onClick={() => void ouvrirBrouillon(b.id)}
-                    className="rounded-lg border border-ink-200 px-3 py-1.5 text-xs font-medium text-ink-800"
                     data-testid={`pub-brouillon-ouvrir-${b.id}`}
                   >
                     {t('Reprendre', 'Resume')}
-                  </button>
-                  <button
+                  </Bouton>
+                  <Bouton variante="secondaire" taille="petite"
                     type="button" onClick={() => void jeterBrouillon(b.id)}
-                    className="rounded-lg border border-ink-200 px-3 py-1.5 text-xs text-ink-600"
                     data-testid={`pub-brouillon-jeter-${b.id}`}
                   >
                     {t('Supprimer', 'Delete')}
-                  </button>
+                  </Bouton>
                 </div>
               </li>
             ))}
@@ -169,7 +168,7 @@ export function PubsListe({
   );
 
   function Titre({ children }: { children: React.ReactNode }) {
-    return <h3 className="mt-4 text-xs font-semibold uppercase tracking-wide text-ink-400 first:mt-0">{children}</h3>;
+    return <h3 className="mt-4 text-xs font-medium text-ink-500 first:mt-0">{children}</h3>;
   }
 
   function Lignes({ publicites: liste }: { publicites: Publicite[] }) {
@@ -190,7 +189,7 @@ export function PubsListe({
                 {p.budgetTotal !== null ? ` · ${t('budget')} ${arrondi(p.budgetTotal)}` : ''}
               </p>
               {p.motifRefus !== null && (
-                <p className="mt-1 text-xs text-red-700" data-testid="pub-motif">{p.motifRefus}</p>
+                <p className="mt-1 text-xs text-danger-700" data-testid="pub-motif">{p.motifRefus}</p>
               )}
               {p.destination === 'agent_meta' && agentMetaOuvert === false && (
                 /* 🔴 PLUS PERSONNE NE RÉPOND, ET RIEN D'AUTRE NE LE DIRAIT. Ces prospects ne sont pas
@@ -198,7 +197,7 @@ export function PubsListe({
                    bandeau l'écran affiche une publicité qui marche alors que ses prospects n'ont personne
                    en face. ⚠️ Il ne regarde PAS si elle diffuse : la phrase a dit « pendant qu'elle brûle
                    du budget » jusqu'à ce qu'une relecture note qu'elle sort aussi sur une pub en pause. */
-                <p className="mt-1 text-xs text-amber-700" data-testid={`pub-agent-eteint-${p.id}`}>
+                <p className="mt-1 text-xs text-alerte-700" data-testid={`pub-agent-eteint-${p.id}`}>
                   {t('Cette publicité confie ses prospects à l’agent de Meta, qui ne répond plus sur ce numéro. Rallumez-le, ou changez la destination de la publicité.',
                      'This ad hands its leads to the Meta agent, which no longer answers on this number. Turn it back on, or change the ad’s destination.')}
                 </p>
@@ -219,7 +218,7 @@ export function PubsListe({
                 /* ⚠️ ON LE DIT, PARCE QUE QUELQUE CHOSE PEUT SUBSISTER CHEZ META. En pause, donc sans
                    dépense, mais le taire ferait découvrir la campagne au client dans le Gestionnaire
                    sans qu'il sache d'où elle vient. */
-                <p className="mt-1 text-xs text-amber-700" data-testid="pub-echec">
+                <p className="mt-1 text-xs text-alerte-700" data-testid="pub-echec">
                   {t('Cette création a échoué. Une campagne en pause peut subsister chez Meta : elle ne dépense rien.',
                      'This creation failed. A paused campaign may remain at Meta: it does not spend anything.')}
                 </p>
@@ -227,14 +226,13 @@ export function PubsListe({
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <Actions tenantId={tenantId} pub={p} recharger={recharger} t={t} />
-              <button
+              <Bouton variante="secondaire" taille="petite"
                 type="button"
                 onClick={() => setOuverte(ouverte === p.id ? null : p.id)}
-                className="rounded-lg border border-ink-200 px-2 py-1 text-xs text-ink-700"
                 data-testid={`pub-detail-${p.id}`}
               >
                 {ouverte === p.id ? t('Fermer', 'Close') : t('Chiffres', 'Numbers')}
-              </button>
+              </Bouton>
             </div>
           </div>
           {ouverte === p.id && <Detail tenantId={tenantId} id={p.id} t={t} budgetTotal={p.budgetTotal} />}
@@ -276,7 +274,7 @@ function Actions({ tenantId, pub, recharger, t }: {
   return (
     <div className="text-right">
       {pub.etat === 'prete' && (
-        <button
+        <Bouton taille="petite"
           type="button" disabled={busy}
           onClick={() => {
             const jusqua = pub.budgetTotal !== null ? arrondi(pub.budgetTotal) : '?';
@@ -291,23 +289,21 @@ function Actions({ tenantId, pub, recharger, t }: {
             ))) return;
             void agir(() => publierPub(tenantId, pub.id));
           }}
-          className="rounded-lg bg-ink-900 px-2 py-1 text-xs font-medium text-white disabled:opacity-40"
           data-testid={`pub-publier-${pub.id}`}
         >
           {t('Publier', 'Publish')}
-        </button>
+        </Bouton>
       )}
       {pub.etat === 'publiee' && (
-        <button
+        <Bouton variante="secondaire" taille="petite"
           type="button" disabled={busy}
           onClick={() => void agir(() => basculerPub(tenantId, pub.id, enPause))}
-          className="rounded-lg border border-ink-200 px-2 py-1 text-xs text-ink-700 disabled:opacity-40"
           data-testid={`pub-bascule-${pub.id}`}
         >
           {enPause ? t('Relancer', 'Resume') : t('Mettre en pause', 'Pause')}
-        </button>
+        </Bouton>
       )}
-      {erreur !== null && <p role="alert" className="mt-1 text-xs text-red-700">{erreur}</p>}
+      {erreur !== null && <p role="alert" className="mt-1 text-xs text-danger-700">{erreur}</p>}
     </div>
   );
 }
@@ -339,7 +335,7 @@ function Detail({ tenantId, id, t, budgetTotal }: {
     return () => { vivant = false; };
   }, [tenantId, id, t]);
 
-  if (erreur !== null) return <p role="alert" className="mt-2 text-xs text-red-700">{erreur}</p>;
+  if (erreur !== null) return <p role="alert" className="mt-2 text-xs text-danger-700">{erreur}</p>;
   if (vue === null) return <p className="mt-2 text-xs text-ink-500">{t('Chargement…', 'Loading…')}</p>;
 
   const e = vue.entonnoir;
@@ -391,7 +387,7 @@ function Detail({ tenantId, id, t, budgetTotal }: {
 function Gros({ libelle, valeur }: { libelle: string; valeur: string }) {
   return (
     <div>
-      <dt className="text-[11px] text-ink-500">{libelle}</dt>
+      <dt className="text-xs text-ink-500">{libelle}</dt>
       <dd className="mt-0.5 text-base font-semibold text-ink-900">{valeur}</dd>
     </div>
   );

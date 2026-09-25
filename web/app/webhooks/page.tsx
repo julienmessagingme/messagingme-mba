@@ -16,6 +16,8 @@ import { typeSuggere } from '@/lib/type-suggere';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 import { inputCls, inputClsAuto, cardCls, kickerCls } from '@/lib/ui';
+import { Bouton } from '@/components/Bouton';
+import { IntroPage, TitrePage } from '@/components/TitrePage';
 
 /**
  * Tools > Webhooks : recevoir un JSON d'un outil tiers, en tirer des champs de contact, et déclencher un
@@ -105,17 +107,17 @@ function WebhooksInner({ session }: { session: Session }) {
   return (
     <div className="max-w-4xl space-y-6">
       <div>
-        <p className={kickerCls}>{t('TOOLS', 'TOOLS')}</p>
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Webhooks', 'Webhooks')}</h2>
-        <p className="mt-1 text-sm text-ink-500">
+        <p className={kickerCls}>{t('Tools', 'Tools')}</p>
+        <TitrePage>{t('Webhooks', 'Webhooks')}</TitrePage>
+        <IntroPage>
           {t(
             'Donnez une adresse à un outil tiers (Zapier, Make, un CRM, le formulaire de votre site). Il y envoie du JSON, vous choisissez où va chaque valeur, et vous pouvez déclencher un scénario.',
             'Give an address to a third-party tool (Zapier, Make, a CRM, your website form). It posts JSON, you choose where each value goes, and you can trigger a scenario.',
           )}
-        </p>
+        </IntroPage>
       </div>
 
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
       {courant ? (
         <Detail
@@ -131,7 +133,7 @@ function WebhooksInner({ session }: { session: Session }) {
       ) : (
         <>
           <div className={cardCls}>
-            <label className="mb-1 block text-sm font-medium text-ink-700">{t('Nouveau webhook', 'New webhook')}</label>
+            <label className="mb-1 block text-sm font-medium text-ink-900">{t('Nouveau webhook', 'New webhook')}</label>
             <div className="flex gap-2">
               <input
                 value={nouveau}
@@ -140,13 +142,13 @@ function WebhooksInner({ session }: { session: Session }) {
                 className={inputCls}
                 data-testid="webhook-nom"
               />
-              <button
+              <Bouton enCours={busy}
                 onClick={() => { void creer(); }}
                 disabled={busy || !nouveau.trim()}
-                className="shrink-0 rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
+                className="shrink-0"
               >
                 {busy ? t('Création...', 'Creating...') : t('Créer', 'Create')}
-              </button>
+              </Bouton>
             </div>
           </div>
 
@@ -169,14 +171,14 @@ function Liste({
   const quand = (iso: string | null) => (iso ? `${formatDate(iso, locale, { day: '2-digit', month: '2-digit' })} ${hourMin(iso, locale)}` : t('jamais', 'never'));
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
       {loading ? (
         <p className="px-5 py-6 text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>
       ) : hooks.length === 0 ? (
         <p className="px-5 py-6 text-sm text-ink-500">{t('Aucun webhook. Créez-en un ci-dessus.', 'No webhooks yet. Create one above.')}</p>
       ) : (
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-ink-100 text-xs uppercase tracking-wide text-ink-500">
+          <thead className="border-b border-ink-100 text-xs text-ink-500">
             <tr>
               <th className="px-5 py-2 font-medium">{t('Nom', 'Name')}</th>
               <th className="px-5 py-2 font-medium">{t('État', 'Status')}</th>
@@ -189,17 +191,17 @@ function Liste({
             {hooks.map((w) => (
               <tr key={w.id} className="border-b border-ink-50 last:border-0">
                 <td className="px-5 py-2.5">
-                  <button onClick={() => onOuvrir(w.id)} className="font-medium text-ink-800 hover:text-brand-600 hover:underline">{w.name}</button>
+                  <button onClick={() => onOuvrir(w.id)} className="font-medium text-ink-900 hover:text-brand-600 hover:underline">{w.name}</button>
                 </td>
                 <td className="px-5 py-2.5">
                   {w.enabled
-                    ? <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs text-emerald-700">{t('actif', 'active')}</span>
+                    ? <span className="rounded bg-succes-50 px-1.5 py-0.5 text-xs text-succes-700">{t('actif', 'active')}</span>
                     : <span className="rounded bg-ink-100 px-1.5 py-0.5 text-xs text-ink-500">{t('désactivé', 'disabled')}</span>}
                 </td>
-                <td className="px-5 py-2.5 text-ink-600">{quand(w.lastReceivedAt)}</td>
-                <td className="px-5 py-2.5 text-ink-600">{w.contactsCreated}</td>
+                <td className="px-5 py-2.5 text-ink-500">{quand(w.lastReceivedAt)}</td>
+                <td className="px-5 py-2.5 text-ink-500">{w.contactsCreated}</td>
                 <td className="px-5 py-2.5 text-right">
-                  <button onClick={() => { void onSupprimer(w); }} className="text-xs text-red-600 hover:underline">{t('Supprimer', 'Delete')}</button>
+                  <button onClick={() => { void onSupprimer(w); }} className="text-xs text-danger-600 hover:underline">{t('Supprimer', 'Delete')}</button>
                 </td>
               </tr>
             ))}
@@ -339,9 +341,9 @@ function Detail({
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <button onClick={onFerme} className="text-sm text-ink-500 hover:text-ink-800">← {t('Tous les webhooks', 'All webhooks')}</button>
+        <button onClick={onFerme} className="text-sm text-ink-500 hover:text-ink-900">← {t('Tous les webhooks', 'All webhooks')}</button>
         <h3 className="text-sm font-semibold text-ink-900">{hook.name}</h3>
-        <label className="ml-auto flex items-center gap-2 text-sm text-ink-700">
+        <label className="ml-auto flex items-center gap-2 text-sm text-ink-900">
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="h-4 w-4 rounded border-ink-300" />
           {t('Actif', 'Active')}
         </label>
@@ -349,20 +351,20 @@ function Detail({
 
       {/* 1. L'adresse ------------------------------------------------------------------------------ */}
       <div className={cardCls}>
-        <h4 className="text-sm font-medium text-ink-800">{t('1. L’adresse à donner à votre outil', '1. The address to give your tool')}</h4>
+        <h4 className="text-sm font-medium text-ink-900">{t('1. L’adresse à donner à votre outil', '1. The address to give your tool')}</h4>
         <p className="mt-1 text-sm text-ink-500">{t('Méthode POST, corps JSON.', 'POST method, JSON body.')}</p>
         <div className="mt-2 flex items-center gap-2">
-          <code className="min-w-0 flex-1 overflow-x-auto rounded-lg bg-ink-50 px-3 py-2 font-mono text-xs text-ink-800" data-testid="webhook-url">{hook.url}</code>
-          <button
+          <code className="min-w-0 flex-1 overflow-x-auto rounded-lg bg-ink-50 px-3 py-2 font-mono text-xs text-ink-900" data-testid="webhook-url">{hook.url}</code>
+          <Bouton variante="secondaire"
             onClick={() => { void navigator.clipboard?.writeText(hook.url); }}
-            className="shrink-0 rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50"
+            className="shrink-0"
           >
             {t('Copier', 'Copy')}
-          </button>
+          </Bouton>
         </div>
 
         <div className="mt-4 border-t border-ink-100 pt-3">
-          <p className="text-sm font-medium text-ink-700">{t('Secret (facultatif)', 'Secret (optional)')}</p>
+          <p className="text-sm font-medium text-ink-900">{t('Secret (facultatif)', 'Secret (optional)')}</p>
           <p className="mt-0.5 text-sm text-ink-500">
             {t(
               'Si vous en posez un, votre outil devra l’envoyer dans l’en-tête X-Webhook-Secret. Un formulaire de site ne sait souvent pas le faire : dans ce cas, laissez sans.',
@@ -370,21 +372,21 @@ function Detail({
             )}
           </p>
           {secretClair && (
-            <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
-              <p className="text-sm text-amber-800">
+            <div className="mt-2 rounded-lg border border-alerte-200 bg-alerte-50 p-3">
+              <p className="text-sm text-alerte-800">
                 {t('Copiez-le maintenant : il ne sera plus jamais affiché.', 'Copy it now: it will never be shown again.')}
               </p>
-              <pre className="mt-2 overflow-x-auto rounded bg-white px-2 py-1 font-mono text-xs text-ink-800" data-testid="webhook-secret">{secretClair}</pre>
+              <pre className="mt-2 overflow-x-auto rounded bg-white px-2 py-1 font-mono text-xs text-ink-900" data-testid="webhook-secret">{secretClair}</pre>
             </div>
           )}
           <div className="mt-2 flex gap-2">
-            <button onClick={() => { void genererSecret(); }} className="rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50">
+            <Bouton variante="secondaire" onClick={() => { void genererSecret(); }}>
               {hook.hasSecret ? t('Régénérer le secret', 'Regenerate secret') : t('Générer un secret', 'Generate a secret')}
-            </button>
+            </Bouton>
             {hook.hasSecret && (
-              <button onClick={() => { void retirerSecret(); }} className="rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50">
+              <Bouton variante="secondaire" onClick={() => { void retirerSecret(); }}>
                 {t('Retirer le secret', 'Remove secret')}
-              </button>
+              </Bouton>
             )}
           </div>
         </div>
@@ -393,7 +395,7 @@ function Detail({
       {/* 2. Ce qu'on a reçu ------------------------------------------------------------------------ */}
       <div className={cardCls}>
         <div className="flex items-center gap-3">
-          <h4 className="text-sm font-medium text-ink-800">{t('2. Ce que votre outil a envoyé', '2. What your tool sent')}</h4>
+          <h4 className="text-sm font-medium text-ink-900">{t('2. Ce que votre outil a envoyé', '2. What your tool sent')}</h4>
           <button onClick={() => { void onChange(); }} className="ml-auto text-xs font-medium text-brand-600 hover:text-brand-700">
             {t('Vérifier maintenant', 'Check now')}
           </button>
@@ -410,7 +412,7 @@ function Detail({
             <p className="text-xs text-ink-500">
               {t('Reçu le', 'Received on')} {hook.lastReceivedAt ? `${formatDate(hook.lastReceivedAt, locale, { day: '2-digit', month: '2-digit' })} ${hourMin(hook.lastReceivedAt, locale)}` : '—'}
               {' · '}
-              <button onClick={() => { void oublierPayload(); }} className="text-ink-500 underline hover:text-ink-800">
+              <button onClick={() => { void oublierPayload(); }} className="text-ink-500 underline hover:text-ink-900">
                 {t('oublier ce contenu', 'forget this content')}
               </button>
             </p>
@@ -421,11 +423,11 @@ function Detail({
 
       {/* 3. Le mapping ----------------------------------------------------------------------------- */}
       <div className={cardCls}>
-        <h4 className="text-sm font-medium text-ink-800">{t('3. Où va chaque valeur', '3. Where each value goes')}</h4>
+        <h4 className="text-sm font-medium text-ink-900">{t('3. Où va chaque valeur', '3. Where each value goes')}</h4>
         {!aTelephone && (
           // Signalé AVANT le premier appel, et pas au moment où rien ne se passe : sans téléphone, le webhook
           // enregistre ce qu'il reçoit mais ne peut ni retrouver ni créer de contact.
-          <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800" data-testid="alerte-telephone">
+          <p className="mt-2 rounded-lg bg-alerte-50 px-3 py-2 text-sm text-alerte-800" data-testid="alerte-telephone">
             {t(
               'Il faut au moins une valeur envoyée vers Téléphone : c’est elle qui désigne le contact. Sans elle, ce webhook enregistrera ce qu’il reçoit sans rien pouvoir en faire.',
               'At least one value must go to Phone: it is what identifies the contact. Without it, this webhook will record what it receives without being able to act on it.',
@@ -438,7 +440,7 @@ function Detail({
           <ul className="mt-2 space-y-2" data-testid="liste-mapping">
             {mapping.map((r, i) => (
               <li key={`${r.chemin}-${i}`} className="flex flex-wrap items-center gap-2">
-                <code className="min-w-0 flex-1 truncate rounded bg-ink-50 px-2 py-1 font-mono text-xs text-ink-700">{r.chemin}</code>
+                <code className="min-w-0 flex-1 truncate rounded bg-ink-50 px-2 py-1 font-mono text-xs text-ink-900">{r.chemin}</code>
                 <span className="text-ink-400">→</span>
                 <select
                   value={r.cible}
@@ -454,7 +456,7 @@ function Detail({
                 </select>
                 <button
                   onClick={() => setMapping((m) => m.filter((_, k) => k !== i))}
-                  className="text-ink-400 hover:text-red-600"
+                  className="text-ink-400 hover:text-danger-600"
                   aria-label={t('Retirer', 'Remove')}
                 >
                   ✕
@@ -476,15 +478,14 @@ function Detail({
                     >
                       {USER_FIELD_KINDS.map((k) => <option key={k} value={k}>{t(...USER_FIELD_KIND_LABELS[k])}</option>)}
                     </select>
-                    <button
+                    <Bouton
                       onClick={() => { void creerLeChamp(); }}
                       disabled={busy || creation.label.trim() === ''}
-                      className="rounded-lg bg-brand-500 px-3 py-1 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
                       data-testid="creer-le-champ"
                     >
                       {t('Créer', 'Create')}
-                    </button>
-                    <button onClick={() => setCreation(null)} className="text-sm text-ink-500 hover:text-ink-800">
+                    </Bouton>
+                    <button onClick={() => setCreation(null)} className="text-sm text-ink-500 hover:text-ink-900">
                       {t('Annuler', 'Cancel')}
                     </button>
                   </div>
@@ -497,8 +498,8 @@ function Detail({
 
       {/* 4. Le contact ----------------------------------------------------------------------------- */}
       <div className={cardCls}>
-        <h4 className="text-sm font-medium text-ink-800">{t('4. Le contact', '4. The contact')}</h4>
-        <label className="mt-2 flex items-start gap-2 text-sm text-ink-700">
+        <h4 className="text-sm font-medium text-ink-900">{t('4. Le contact', '4. The contact')}</h4>
+        <label className="mt-2 flex items-start gap-2 text-sm text-ink-900">
           <input type="checkbox" checked={createContact} onChange={(e) => setCreateContact(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-ink-300" />
           <span>
             {t('Créer les contacts inconnus', 'Create unknown contacts')}
@@ -512,7 +513,7 @@ function Detail({
           </span>
         </label>
 
-        <label className="mt-3 flex items-start gap-2 border-t border-ink-100 pt-3 text-sm text-ink-700">
+        <label className="mt-3 flex items-start gap-2 border-t border-ink-100 pt-3 text-sm text-ink-900">
           <input
             type="checkbox"
             checked={optIn}
@@ -546,7 +547,7 @@ function Detail({
 
       {/* 5. Le scénario ---------------------------------------------------------------------------- */}
       <div className={cardCls}>
-        <h4 className="text-sm font-medium text-ink-800">{t('5. Déclencher un scénario (facultatif)', '5. Trigger a scenario (optional)')}</h4>
+        <h4 className="text-sm font-medium text-ink-900">{t('5. Déclencher un scénario (facultatif)', '5. Trigger a scenario (optional)')}</h4>
         <select
           value={workflowId ?? ''}
           onChange={(e) => setWorkflowId(e.target.value === '' ? null : e.target.value)}
@@ -568,14 +569,13 @@ function Detail({
       </div>
 
       <div className="flex justify-end">
-        <button
+        <Bouton enCours={busy}
           onClick={() => { void enregistrer(); }}
           disabled={busy}
-          className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
           data-testid="enregistrer-webhook"
         >
           {busy ? t('Enregistrement...', 'Saving...') : t('Enregistrer', 'Save')}
-        </button>
+        </Bouton>
       </div>
     </div>
   );

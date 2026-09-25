@@ -42,9 +42,9 @@ export function AccountMenu({ session, onLogout }: { session: Session; onLogout:
   }, [open]);
 
   const disabledItem = (label: string) => (
-    <div className="flex cursor-not-allowed items-center justify-between px-3 py-2 text-sm text-ink-300" title={t('Bientôt disponible', 'Coming soon')}>
+    <div className="flex cursor-not-allowed items-center justify-between px-3 py-2 text-sm text-ink-400" title={t('Bientôt disponible', 'Coming soon')}>
       {label}
-      <span className="rounded bg-ink-100 px-1.5 py-0.5 text-[10px] text-ink-400">{t('bientôt', 'soon')}</span>
+      <span className="rounded bg-ink-100 px-1.5 py-0.5 text-xs text-ink-400">{t('bientôt', 'soon')}</span>
     </div>
   );
 
@@ -52,19 +52,19 @@ export function AccountMenu({ session, onLogout }: { session: Session; onLogout:
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 rounded-lg border border-ink-200 py-1 pl-1 pr-2 text-sm text-ink-700 transition hover:bg-ink-50"
+        className="flex items-center gap-2 rounded-lg border border-ink-200 py-1 pl-1 pr-2 text-sm text-ink-900 transition-colors duration-150 hover:bg-ink-50"
         aria-haspopup="menu"
         aria-expanded={open}
       >
         <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-500 text-xs font-semibold text-white">{initials(session.email)}</span>
         <span className="hidden max-w-[160px] truncate sm:inline">{session.email}</span>
-        <svg viewBox="0 0 24 24" className={`h-4 w-4 text-ink-400 transition ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg viewBox="0 0 24 24" className={`h-4 w-4 text-ink-400 transition-colors duration-150 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M6 9l6 6 6-6" />
         </svg>
       </button>
 
       {open && (
-        <div className="absolute right-0 z-40 mt-2 w-56 overflow-hidden rounded-xl border border-ink-200 bg-white py-1 shadow-lg" role="menu">
+        <div className="absolute right-0 z-40 mt-2 w-56 overflow-hidden rounded-xl border border-ink-200 bg-white py-1 shadow-mm-md" role="menu">
           <div className="border-b border-ink-100 px-3 py-2">
             <div className="truncate text-sm font-medium text-ink-900">{session.email}</div>
             <div className="text-xs text-ink-400">{isAdmin ? t('Administrateur', 'Administrator') : t('Agent', 'Agent')}</div>
@@ -78,7 +78,7 @@ export function AccountMenu({ session, onLogout }: { session: Session; onLogout:
                   key={l}
                   onClick={() => setLocale(l)}
                   aria-pressed={locale === l}
-                  className={`px-2 py-0.5 font-medium transition ${locale === l ? 'bg-brand-500 text-white' : 'text-ink-600 hover:bg-ink-50'}`}
+                  className={`px-2 py-0.5 font-medium transition-colors duration-150 ${locale === l ? 'bg-brand-500 text-white' : 'text-ink-500 hover:bg-ink-50'}`}
                 >
                   {l.toUpperCase()}
                 </button>
@@ -87,13 +87,13 @@ export function AccountMenu({ session, onLogout }: { session: Session; onLogout:
           </div>
           {isAdmin && (
             <>
-              <Link href="/admin" onClick={() => setOpen(false)} className="block px-3 py-2 text-sm text-ink-700 hover:bg-ink-50">{t('Compte & équipe', 'Account & team')}</Link>
-              <Link href="/settings/email" onClick={() => setOpen(false)} className="block px-3 py-2 text-sm text-ink-700 hover:bg-ink-50">{t('Boîtes email', 'Email accounts')}</Link>
+              <Link href="/admin" onClick={() => setOpen(false)} className="block px-3 py-2 text-sm text-ink-900 hover:bg-ink-50">{t('Compte & équipe', 'Account & team')}</Link>
+              <Link href="/settings/email" onClick={() => setOpen(false)} className="block px-3 py-2 text-sm text-ink-900 hover:bg-ink-50">{t('Boîtes email', 'Email accounts')}</Link>
               {disabledItem(t('Abonnement', 'Subscription'))}
               {disabledItem(t('Billing', 'Billing'))}
             </>
           )}
-          <button onClick={onLogout} className="block w-full border-t border-ink-100 px-3 py-2 text-left text-sm text-coral hover:bg-ink-50">{t('Déconnexion', 'Log out')}</button>
+          <button onClick={onLogout} className="block w-full border-t border-ink-100 px-3 py-2 text-left text-sm text-danger hover:bg-ink-50">{t('Déconnexion', 'Log out')}</button>
         </div>
       )}
     </div>

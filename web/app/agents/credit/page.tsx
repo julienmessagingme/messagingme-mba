@@ -6,6 +6,7 @@ import { getSoldeAgent } from '@/lib/api-agent';
 import { eurosDepuisMicro, SOLDE_BAS_MICRO_EUR } from '@/lib/agent-solde';
 import type { Session } from '@/lib/session';
 import { useT } from '@/lib/i18n';
+import { TitrePage } from '@/components/TitrePage';
 
 /**
  * Le crédit des agents IA : ce qu'il reste, et ce qui le fait descendre.
@@ -38,10 +39,10 @@ function CreditInner({ session }: { session: Session }) {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-lg font-semibold tracking-tight text-ink-900">{t('Crédit des agents IA', 'AI agent credit')}</h1>
+      <TitrePage>{t('Crédit des agents IA', 'AI agent credit')}</TitrePage>
 
-      <section className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm" data-testid="credit-solde">
-        <div className="text-xs font-medium uppercase tracking-wide text-ink-400">{t('Crédit restant', 'Credit left')}</div>
+      <section className="rounded-2xl border border-ink-200 bg-white p-5" data-testid="credit-solde">
+        <div className="text-xs font-medium text-ink-500">{t('Crédit restant', 'Credit left')}</div>
         {!charge && <p className="mt-1 text-sm text-ink-400">{t('Chargement…', 'Loading…')}</p>}
         {charge && solde === null && (
           <p className="mt-1 text-sm text-ink-400">
@@ -50,9 +51,9 @@ function CreditInner({ session }: { session: Session }) {
         )}
         {charge && solde !== null && (
           <>
-            <div className="mt-1 text-3xl font-light tracking-tight text-ink-900 tabular-nums">{eurosDepuisMicro(solde)} €</div>
+            <div className="mt-1 text-3xl font-semibold tracking-tight tabular-nums text-ink-900">{eurosDepuisMicro(solde)} €</div>
             {solde <= 0 && (
-              <p className="mt-2 text-sm text-coral" data-testid="credit-epuise">
+              <p className="mt-2 text-sm text-danger" data-testid="credit-epuise">
                 {t(
                   'Épuisé : vos agents ne répondent plus et sortent par « Plafond atteint ».',
                   'Used up: your agents no longer answer and leave through “Cap reached”.',
@@ -60,7 +61,7 @@ function CreditInner({ session }: { session: Session }) {
               </p>
             )}
             {solde > 0 && solde < SOLDE_BAS_MICRO_EUR && (
-              <p className="mt-2 text-sm text-gold" data-testid="credit-bas">
+              <p className="mt-2 text-sm text-alerte" data-testid="credit-bas">
                 {t('C’est bas : au bout, vos agents cesseront de répondre.', 'That is low: once it runs out, your agents stop answering.')}
               </p>
             )}
@@ -68,7 +69,7 @@ function CreditInner({ session }: { session: Session }) {
         )}
       </section>
 
-      <section className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+      <section className="rounded-2xl border border-ink-200 bg-white p-5">
         <h2 className="text-sm font-semibold text-ink-900">{t('Recharger', 'Top up')}</h2>
         <p className="mt-1 text-sm text-ink-500">
           {t(

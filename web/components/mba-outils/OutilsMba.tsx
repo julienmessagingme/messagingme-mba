@@ -12,6 +12,7 @@ import { IconeOutil } from '@/components/IconeOutil';
 import { ChoixTypeOutil } from './ChoixTypeOutil';
 import { FormulaireOutilMba } from './FormulaireOutilMba';
 import { useT } from '@/lib/i18n';
+import { Bouton } from '@/components/Bouton';
 
 type Mode = { vue: 'liste' } | { vue: 'choix' } | { vue: 'form'; type: TypeOutilMba; outil: OutilMbaVue | null };
 type Traduire = (fr: string, en?: string) => string;
@@ -199,20 +200,19 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
     <section data-testid="mba-outils" className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold text-ink-900">{t('Outils de l’agent de Meta', 'Meta’s agent tools')}</h1>
+          <h2 className="text-base font-semibold text-ink-900">{t('Outils de l’agent de Meta', 'Meta’s agent tools')}</h2>
           <p className="text-sm text-ink-500">
             {t('Ce que l’agent de Meta peut faire pendant une conversation.', 'What Meta’s agent can do during a conversation.')}
           </p>
         </div>
         {isAdmin && mode.vue === 'liste' && (
-          <button type="button" data-testid="mba-outils-ajouter" onClick={() => setMode({ vue: 'choix' })}
-            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+          <Bouton type="button" data-testid="mba-outils-ajouter" onClick={() => setMode({ vue: 'choix' })}>
             {t('+ Ajouter un outil', '+ Add a tool')}
-          </button>
+          </Bouton>
         )}
       </div>
 
-      {erreur !== null && <p className="text-xs text-coral" data-testid="mba-outils-erreur">{erreur}</p>}
+      {erreur !== null && <p className="text-xs text-danger" data-testid="mba-outils-erreur">{erreur}</p>}
       {envoiEnCours && (
         <p className="text-xs text-ink-500" data-testid="mba-outils-attente">
           {t('Envoi chez Meta : il répond en quelques secondes. N’appuyez pas une seconde fois.',
@@ -231,7 +231,7 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
       )}
 
       {sansLigne.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-alerte-200 bg-alerte-50 px-3 py-2 text-xs text-alerte-900"
           data-testid="mba-outils-retraits">
           <span>
             {t('Encore chez Meta, sans outil ici : ', 'Still at Meta, with no tool here: ')}{sansLigne.join(', ')}.
@@ -241,7 +241,7 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
               title={t('Ce que vous venez de supprimer ici part sans autre question ; tout autre effacement vous est demandé en le nommant.',
                 'What you just deleted here goes without further question; any other deletion is asked first, by name.')}
               onClick={() => { void envoyer(new Set(sansLigne.filter((n) => supprimesIci.has(n)))); }}
-              className="rounded-lg border border-amber-300 bg-white px-2 py-0.5 font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50">
+              className="rounded-lg border border-alerte-300 bg-white px-2 py-0.5 font-medium text-alerte-800 hover:bg-alerte-100 disabled:opacity-50">
               {envoiEnCours ? t('Envoi…', 'Sending…') : t('Envoyer à Meta', 'Send to Meta')}
             </button>
           )}
@@ -249,12 +249,11 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
       )}
 
       {lectureRatee !== null ? (
-        <div className="flex flex-wrap items-center gap-2 text-sm text-coral" data-testid="mba-outils-lecture-ratee">
+        <div className="flex flex-wrap items-center gap-2 text-sm text-danger" data-testid="mba-outils-lecture-ratee">
           <span>{t('La liste des outils n’a pas pu être lue', 'The tool list could not be read')} ({lectureRatee}).</span>
-          <button type="button" data-testid="mba-outils-relire" onClick={() => { void charger(); }}
-            className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 text-xs font-medium text-ink-700 hover:bg-ink-50">
+          <Bouton variante="secondaire" taille="petite" type="button" data-testid="mba-outils-relire" onClick={() => { void charger(); }}>
             {t('Réessayer', 'Retry')}
-          </button>
+          </Bouton>
         </div>
       ) : outils.length === 0 ? (
         <p className="text-sm text-ink-500" data-testid="mba-outils-vide">
@@ -294,10 +293,10 @@ function LigneOutil({ o, t, isAdmin, etat, occupe, envoiEnCours, onEnvoyer, onRe
         <p className="truncate text-sm font-medium text-ink-900">{o.title}</p>
         <p className="truncate text-xs text-ink-500" data-testid={`mba-outil-cible-${o.id}`}>{libelleCible(o, t)}</p>
         {o.cibleManquante !== null && (
-          <p className="text-xs text-coral" data-testid={`mba-outil-manque-${o.id}`}>{o.cibleManquante}</p>
+          <p className="text-xs text-danger" data-testid={`mba-outil-manque-${o.id}`}>{o.cibleManquante}</p>
         )}
         {o.aussiUtilisePar.length > 0 && (
-          <p className="text-[11px] text-ink-500" data-testid={`mba-outil-partage-${o.id}`}>
+          <p className="text-xs text-ink-500" data-testid={`mba-outil-partage-${o.id}`}>
             {t('Aussi utilisé par : ', 'Also used by: ')}{o.aussiUtilisePar.join(', ')}
             {t('. Le modifier le modifie pour eux aussi.', '. Editing it edits it for them too.')}
           </p>
@@ -307,7 +306,7 @@ function LigneOutil({ o, t, isAdmin, etat, occupe, envoiEnCours, onEnvoyer, onRe
         {/* 🔴 LE MÊME DESSIN QUE DANS « QUEL OUTIL AJOUTER ? », ET C'EST TOUT L'INTÉRÊT : on reconnaît ici
             ce qu'on a choisi là-bas. Un outil dont le type est `inconnu` n'en porte AUCUN plutôt qu'un par
             défaut, parce qu'un dessin affirmerait une nature que personne n'a lue. */}
-        <span className="flex items-center gap-1.5 rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-700" data-testid={`mba-outil-type-${o.id}`}>
+        <span className="flex items-center gap-1.5 rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-900" data-testid={`mba-outil-type-${o.id}`}>
           {o.type !== 'inconnu' && <IconeOutil signe={TEXTES_PAR_TYPE[o.type].signe} className="h-3.5 w-3.5 shrink-0 text-ink-500" />}
           {t(badge[0], badge[1])}
         </span>
@@ -322,7 +321,7 @@ function LigneOutil({ o, t, isAdmin, etat, occupe, envoiEnCours, onEnvoyer, onRe
           journal et la garde d'autonomie d'un agent IA lisent. Seul le MOT affiché change.
         */}
         {o.risque === 'irreversible' && (
-          <span className="rounded-md bg-amber-50 px-2 py-0.5 text-xs text-amber-800" data-testid={`mba-outil-irreversible-${o.id}`}
+          <span className="rounded-md bg-alerte-50 px-2 py-0.5 text-xs text-alerte-800" data-testid={`mba-outil-irreversible-${o.id}`}
             title={t('L’agent de Meta l’appelle sans validation humaine.', 'Meta’s agent calls it without human approval.')}>
             {o.type === 'bloc' || o.type === 'scenario'
               ? t('part chez le client', 'reaches the customer')
@@ -332,7 +331,7 @@ function LigneOutil({ o, t, isAdmin, etat, occupe, envoiEnCours, onEnvoyer, onRe
       </span>
       <span data-testid={`mba-outil-etat-${o.id}`}>
         {etat === 'chargement' && <span className="text-xs text-ink-400">…</span>}
-        {etat === 'chez_meta' && <span className="text-xs text-mint-700">{t('✓ Chez Meta', '✓ At Meta')}</span>}
+        {etat === 'chez_meta' && <span className="text-xs text-succes-700">{t('✓ Chez Meta', '✓ At Meta')}</span>}
         {etat === 'inconnu' && (
           <span className="text-xs text-ink-400" title={t('Meta n’a pas pu être lu.', 'Meta could not be read.')}>?</span>
         )}
@@ -344,15 +343,14 @@ function LigneOutil({ o, t, isAdmin, etat, occupe, envoiEnCours, onEnvoyer, onRe
           </span>
         )}
         {(etat === 'desactive' || etat === 'desactive_a_retirer') && (
-          <span className="flex flex-wrap items-center gap-2 text-xs text-amber-800"
+          <span className="flex flex-wrap items-center gap-2 text-xs text-alerte-800"
             title={t('La personne qui l’avait ajouté a quitté l’espace : l’agent de Meta ne peut plus s’en servir.',
               'The person who added it left the workspace: Meta’s agent can no longer use it.')}>
             {t('Désactivé', 'Disabled')}
             {isAdmin && (
-              <button type="button" data-testid={`mba-outil-reactiver-${o.id}`} disabled={occupe} onClick={onReactiver}
-                className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 font-medium text-ink-700 hover:bg-ink-50 disabled:opacity-50">
+              <Bouton variante="secondaire" type="button" data-testid={`mba-outil-reactiver-${o.id}`} disabled={occupe} onClick={onReactiver}>
                 {t('Réactiver', 'Reactivate')}
-              </button>
+              </Bouton>
             )}
             {/* Rien ne republie au départ d'un collaborateur : Meta le liste encore, et l'agent l'appellerait pour
                 rien. L'envoi l'en retire ; cet effacement-là est demandé, il ne se fait donc pas confirmer. */}
@@ -360,7 +358,7 @@ function LigneOutil({ o, t, isAdmin, etat, occupe, envoiEnCours, onEnvoyer, onRe
               <button type="button" data-testid={`mba-outil-retirer-${o.id}`} disabled={occupe || !isAdmin} onClick={onRetirer}
                 title={t('Meta le liste encore : l’envoi l’en retire, avec tout ce qui attend.',
                   'Meta still lists it: sending removes it, along with everything pending.')}
-                className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-0.5 font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50">
+                className="rounded-lg border border-alerte-300 bg-alerte-50 px-2 py-0.5 font-medium text-alerte-800 hover:bg-alerte-100 disabled:opacity-50">
                 {envoiEnCours ? t('Envoi…', 'Sending…') : t('À envoyer', 'To send')}
               </button>
             )}
@@ -370,7 +368,7 @@ function LigneOutil({ o, t, isAdmin, etat, occupe, envoiEnCours, onEnvoyer, onRe
           <button type="button" data-testid={`mba-outil-envoyer-${o.id}`} disabled={occupe || !isAdmin}
             title={t('Envoie chez Meta tout ce qui attend, pas seulement cet outil.', 'Sends everything pending to Meta, not only this tool.')}
             onClick={onEnvoyer}
-            className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50">
+            className="rounded-lg border border-alerte-300 bg-alerte-50 px-2 py-0.5 text-xs font-medium text-alerte-800 hover:bg-alerte-100 disabled:opacity-50">
             {envoiEnCours ? t('Envoi…', 'Sending…') : t('À envoyer', 'To send')}
           </button>
         )}
@@ -381,12 +379,12 @@ function LigneOutil({ o, t, isAdmin, etat, occupe, envoiEnCours, onEnvoyer, onRe
               outil démontait le formulaire en cours, dont l'erreur se perdait avec la saisie, ou que la fin de
               l'enregistrement refermait (relecture du 2026-09-22). */}
           <button type="button" data-testid={`mba-outil-modifier-${o.id}`} disabled={o.type === 'inconnu' || occupe} onClick={onModifier}
-            className="text-ink-600 hover:underline disabled:opacity-40">{t('Modifier', 'Edit')}</button>
+            className="text-ink-500 hover:underline disabled:opacity-40">{t('Modifier', 'Edit')}</button>
           {/* Désactivé pendant un envoi, une suppression ou un enregistrement, comme « Enregistrer » et « Réactiver »
               (spec § 9.2) : sinon le retrait partait pendant qu'un autre envoi lisait encore l'ancien plan, et restait
               en attente sans le dire. */}
           <button type="button" data-testid={`mba-outil-supprimer-${o.id}`} disabled={occupe} onClick={onSupprimer}
-            className="text-coral hover:underline disabled:opacity-40">{t('Supprimer', 'Delete')}</button>
+            className="text-danger hover:underline disabled:opacity-40">{t('Supprimer', 'Delete')}</button>
         </span>
       )}
     </li>

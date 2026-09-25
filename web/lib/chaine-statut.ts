@@ -69,11 +69,11 @@ export function etatPublication(statut: string | null | undefined, locale: Local
 export function classesPastille(ton: TonPublication): string {
   switch (ton) {
     case 'publie':
-      return 'bg-mint-50 text-mint-600';
+      return 'bg-succes-50 text-succes-600';
     case 'attente':
-      return 'bg-gold/10 text-gold';
+      return 'bg-alerte-50 text-alerte';
     case 'refus':
-      return 'bg-coral/10 text-coral';
+      return 'bg-danger-50 text-danger';
     default:
       return 'bg-ink-100 text-ink-500';
   }

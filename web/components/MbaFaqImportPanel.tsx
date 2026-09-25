@@ -7,6 +7,7 @@ import { MbaNotice } from './MbaNotice';
 import { MbaFaqImportPreview } from './MbaFaqImportPreview';
 import { resumeImport } from '@/lib/mba-faq';
 import { importMbaFaq, previewMbaFaqImport, type MbaFaqPreview, type MbaFaqSource } from '@/lib/api-mba';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * Chargement en lot d'un jeu de questions/réponses, en deux temps : on analyse, on montre, puis seulement on
@@ -113,8 +114,8 @@ export function MbaFaqImportPanel({ tenantId, phoneNumberId, onImported }: {
       key={m}
       data-testid={`mba-import-mode-${m}`}
       onClick={() => { setMode(m); invalider(); }}
-      className={`rounded-lg border px-3 py-1.5 text-sm transition ${
-        mode === m ? 'border-brand-500 bg-brand-50 font-medium text-brand-700' : 'border-ink-200 text-ink-600 hover:text-ink-900'
+      className={`rounded-lg border px-3 py-1.5 text-sm transition-colors duration-150 ${
+        mode === m ? 'border-brand-500 bg-brand-50 font-medium text-brand-700' : 'border-ink-200 text-ink-500 hover:text-ink-900'
       }`}
     >
       {label}
@@ -125,7 +126,7 @@ export function MbaFaqImportPanel({ tenantId, phoneNumberId, onImported }: {
     <section className={`${cardCls} space-y-4`} data-testid="mba-faq-import">
       <div>
         <h3 className="text-sm font-semibold text-ink-900">{t('Charger des questions en lot', 'Bulk load questions')}</h3>
-        <p className="mt-1 text-xs leading-relaxed text-ink-600">
+        <p className="mt-1 text-xs leading-relaxed text-ink-500">
           {t(
             'Vos questions existent déjà quelque part : un tableur, une page de site. Chargez-les ici. Rien n’est écrit avant que vous ayez vu ce qui va l’être, et relancer la même source ne crée pas de doublon.',
             'Your questions already exist somewhere: a spreadsheet, a page on your site. Load them here. Nothing is written before you have seen what will be, and re-running the same source creates no duplicates.',
@@ -157,7 +158,7 @@ export function MbaFaqImportPanel({ tenantId, phoneNumberId, onImported }: {
 
       {mode === 'fichier' && (
         <div>
-          <label className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-ink-300 px-4 py-6 text-sm text-ink-600 hover:border-brand-400">
+          <label className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-ink-300 px-4 py-6 text-sm text-ink-500 hover:border-brand-400">
             <input
               type="file"
               accept=".csv,text/csv"
@@ -210,22 +211,20 @@ export function MbaFaqImportPanel({ tenantId, phoneNumberId, onImported }: {
       {resultat !== null && <MbaNotice kind={resultat.kind} testid="mba-import-result">{resultat.texte}</MbaNotice>}
 
       <div className="flex items-center gap-3">
-        <button
-          className="rounded-lg border border-ink-300 px-4 py-2 text-sm font-medium text-ink-800 disabled:opacity-50"
+        <Bouton variante="secondaire"
           data-testid="mba-import-analyse"
           disabled={busy || chargePrevue() === null}
           onClick={() => void analyser()}
         >
           {busy && apercu === null ? t('Analyse…', 'Analysing…') : t('Analyser', 'Analyse')}
-        </button>
-        <button
-          className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+        </Bouton>
+        <Bouton
           data-testid="mba-import-confirm"
           disabled={busy || source === null || apercu === null}
           onClick={() => void confirmer()}
         >
           {t('Confirmer l’import', 'Confirm import')}
-        </button>
+        </Bouton>
         {source === null && apercu === null && resultat === null && (
           <span className="text-xs text-ink-500">{t('Analysez d’abord pour voir ce qui sera écrit.', 'Analyse first to see what will be written.')}</span>
         )}

@@ -92,8 +92,8 @@ function NavDoc({ page }: { page: CleDePage }) {
                   <Link
                     href={p.href}
                     aria-current={courante ? 'page' : undefined}
-                    className={`block rounded-md px-3 py-1.5 text-sm transition ${
-                      courante ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900'
+                    className={`block rounded-md px-3 py-1.5 text-sm transition-colors duration-150 ${
+                      courante ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100 hover:text-ink-900'
                     }`}
                   >
                     {t(p.nav[0], p.nav[1])}
@@ -102,7 +102,7 @@ function NavDoc({ page }: { page: CleDePage }) {
                 // Les entrées qui ne sont pas des pages (l'index des endpoints), juste après la page qui les porte.
                 ...LIENS_NAV.filter((l) => l.apres === p.cle).map((l) => (
                   <li key={`${p.cle}-${l.libelle[1]}`}>
-                    <Link href={hrefDe(l.lien)} className="block rounded-md px-3 py-1.5 text-sm text-ink-600 transition hover:bg-ink-100 hover:text-ink-900">
+                    <Link href={hrefDe(l.lien)} className="block rounded-md px-3 py-1.5 text-sm text-ink-500 transition-colors duration-150 hover:bg-ink-100 hover:text-ink-900">
                       {t(l.libelle[0], l.libelle[1])}
                     </Link>
                   </li>

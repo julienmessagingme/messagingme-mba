@@ -2,6 +2,7 @@
 
 import { useT } from '@/lib/i18n';
 import type { GroupeTableau } from '@/lib/mesures-scenario';
+import { ink } from '@/lib/couleurs';
 
 /**
  * Le tableau, en HISTOGRAMME horizontal : des barres verticales groupées par bloc, posées sur une seule ligne
@@ -54,7 +55,7 @@ export function TableauHistogramme({ groupes }: TableauHistogrammeProps) {
     <div data-testid="tableaux-graphe">
       <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1.5" data-testid="tableau-legende">
         {legendeUnique.map((e) => (
-          <span key={e.cle} className="flex items-center gap-1.5 text-xs text-ink-600">
+          <span key={e.cle} className="flex items-center gap-1.5 text-xs text-ink-500">
             <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: e.couleur }} />
             {e.label}
           </span>
@@ -66,7 +67,7 @@ export function TableauHistogramme({ groupes }: TableauHistogrammeProps) {
       <div className="flex justify-center overflow-x-auto">
         <svg viewBox={`0 0 ${largeur} ${H}`} width={largeur} height={H} role="img" className="max-w-full">
           {/* L'axe, d'un bout à l'autre : un seul parcours, donc une seule ligne. */}
-          <line x1={MARGE / 2} y1={yAxe} x2={largeur - MARGE / 2} y2={yAxe} stroke="#b9c0cd" strokeWidth={1.5} />
+          <line x1={MARGE / 2} y1={yAxe} x2={largeur - MARGE / 2} y2={yAxe} stroke={ink[300]} strokeWidth={1.5} />
 
           {groupes.map((g) => {
             const debut = x;
@@ -89,7 +90,7 @@ export function TableauHistogramme({ groupes }: TableauHistogrammeProps) {
                       {/* La VALEUR seule au-dessus de la barre. Le nombre de personnes (différent du nombre
                           d'événements quand quelqu'un répond deux fois) tient dans l'infobulle : sur des
                           barres jointives, un second nombre chevaucherait celui de la barre d'à côté. */}
-                      <text x={bx + LARGEUR_BARRE / 2} y={yAxe - h - 8} textAnchor="middle" fontSize={11} fontWeight={600} fill="#2b3245">
+                      <text x={bx + LARGEUR_BARRE / 2} y={yAxe - h - 8} textAnchor="middle" fontSize={11} fontWeight={600} fill={ink[900]}>
                         {b.count}
                       </text>
                     </g>
@@ -97,7 +98,7 @@ export function TableauHistogramme({ groupes }: TableauHistogrammeProps) {
                 })}
                 {/* Nom du bloc sous son groupe, sur deux lignes au besoin : c'est ce qui ancre les barres à
                     une étape du parcours. */}
-                <text x={debut + lg / 2} y={yAxe + 18} textAnchor="middle" fontSize={11} fontWeight={600} fill="#4a5265">
+                <text x={debut + lg / 2} y={yAxe + 18} textAnchor="middle" fontSize={11} fontWeight={600} fill={ink[500]}>
                   {g.titre.length > 18 ? `${g.titre.slice(0, 17)}…` : g.titre}
                 </text>
               </g>

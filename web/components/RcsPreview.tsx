@@ -26,7 +26,7 @@ export function RcsPreview({ brouillon, vide, sansFond = false }: { brouillon: B
 
   return (
     <div className={sansFond ? '' : 'rounded-xl bg-ink-50 p-3'}>
-      <div className="max-w-[85%] overflow-hidden rounded-2xl bg-mint-100">
+      <div className="max-w-[85%] overflow-hidden rounded-2xl bg-succes-100">
         {avecImage && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -37,13 +37,13 @@ export function RcsPreview({ brouillon, vide, sansFond = false }: { brouillon: B
             className="aspect-video w-full bg-ink-100 object-cover"
           />
         )}
-        <div data-testid="rcs-preview-text" className="whitespace-pre-wrap px-3 py-2 text-sm text-ink-800">
+        <div data-testid="rcs-preview-text" className="whitespace-pre-wrap px-3 py-2 text-sm text-ink-900">
           {brouillon.text.trim() || <span className="italic text-ink-400">{vide ?? t('Votre message…', 'Your message…')}</span>}
         </div>
         {dansLaCarte.length > 0 && (
           <div data-testid="rcs-preview-card-buttons">
             {dansLaCarte.map((s, i) => (
-              <div key={i} className="border-t border-mint-200 bg-white px-3 py-2 text-center text-sm font-medium text-ink-800">
+              <div key={i} className="border-t border-succes-200 bg-white px-3 py-2 text-center text-sm font-medium text-ink-900">
                 {ICONE_KIND[s.kind]}{s.text}
               </div>
             ))}
@@ -52,7 +52,7 @@ export function RcsPreview({ brouillon, vide, sansFond = false }: { brouillon: B
       </div>
       <div data-testid="rcs-preview-buttons" className="mt-2 flex flex-wrap gap-1.5">
         {enPastilles.map((s, i) => (
-          <span key={i} className="rounded-full border border-mint-500 bg-white px-3 py-1 text-xs text-mint-700">
+          <span key={i} className="rounded-full border border-succes-500 bg-white px-3 py-1 text-xs text-succes-700">
             {ICONE_KIND[s.kind]}{s.text}
           </span>
         ))}

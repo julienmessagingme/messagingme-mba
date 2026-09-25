@@ -9,6 +9,7 @@ import { RcsCarouselPreview } from '@/components/RcsCarouselPreview';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { RCS_TEXTE_MAX } from '@/lib/rcs-limits';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * Envoyer un message RCS depuis une conversation.
@@ -77,10 +78,10 @@ export function InboxRcsPanel({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()} data-testid="inbox-rcs-panel">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-mm-lg" onClick={(e) => e.stopPropagation()} data-testid="inbox-rcs-panel">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Envoyer un message RCS', 'Send an RCS message')}</h3>
-          <button onClick={onClose} className="text-ink-400 hover:text-ink-700">×</button>
+          <h3 className="text-sm font-semibold text-ink-900">{t('Envoyer un message RCS', 'Send an RCS message')}</h3>
+          <button onClick={onClose} className="text-ink-400 hover:text-ink-900">×</button>
         </div>
         <p className="mt-1 text-xs text-ink-500">
           {t('Sous votre agent de marque, sans template à faire approuver et sans fenêtre de 24 h.', 'Under your brand agent, with no template to get approved and no 24h window.')}
@@ -92,7 +93,7 @@ export function InboxRcsPanel({
               key={v}
               onClick={() => setMode(v)}
               data-testid={`inbox-rcs-mode-${v}`}
-              className={`flex-1 rounded-md px-2 py-1 text-xs font-medium transition ${mode === v ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500 hover:text-ink-700'}`}
+              className={`flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors duration-150 ${mode === v ? 'bg-white text-ink-900' : 'text-ink-500 hover:text-ink-900'}`}
             >
               {libelle}
             </button>
@@ -101,7 +102,7 @@ export function InboxRcsPanel({
 
         {libre ? (
           <div className="mt-3">
-            <label className="mb-1 block text-sm font-medium text-ink-700">{t('Votre réponse', 'Your reply')}</label>
+            <label className="mb-1 block text-sm font-medium text-ink-900">{t('Votre réponse', 'Your reply')}</label>
             <textarea
               value={texte}
               onChange={(e) => setTexte(e.target.value)}
@@ -110,16 +111,16 @@ export function InboxRcsPanel({
               placeholder={t('Écrivez votre réponse…', 'Write your reply…')}
               className={inputCls}
             />
-            <p className="mt-1 text-[11px] text-ink-400">
+            <p className="mt-1 text-xs text-ink-400">
               {t('Part tel quel sous votre agent de marque. ', 'Sent as-is under your brand agent. ')}
               {texte.trim().length}/{RCS_TEXTE_MAX}
             </p>
           </div>
         ) : (
         <div className="mt-3">
-          <label className="mb-1 block text-sm font-medium text-ink-700">{t('Message enregistré', 'Saved message')}</label>
+          <label className="mb-1 block text-sm font-medium text-ink-900">{t('Message enregistré', 'Saved message')}</label>
           {messages.length === 0 ? (
-            <p className="text-xs text-amber-700">
+            <p className="text-xs text-alerte-700">
               {t('Aucun message RCS enregistré. Créez-en un dans Contenu → Messages RCS.', 'No saved RCS message. Create one in Content → RCS messages.')}
             </p>
           ) : (
@@ -137,38 +138,38 @@ export function InboxRcsPanel({
             {brouillon || carrousel ? (
               <>
                 {brouillon ? <RcsPreview brouillon={brouillon} /> : carrousel && <RcsCarouselPreview brouillon={carrousel} />}
-                <p className="mt-1 text-[11px] text-ink-400">
+                <p className="mt-1 text-xs text-ink-400">
                   {t('Les variables {{champ}} seront remplacées par la fiche de ce contact à l’envoi.', 'The {{field}} variables will be filled in from this contact at send time.')}
                 </p>
               </>
             ) : sel.content === null ? (
               // ⚠️ LE SERVEUR REFUSE CET ENVOI (« son format n'est plus reconnu ») : annoncer qu'il partira serait
               // une promesse fausse, et c'est ce que ce panneau disait jusqu'au 2026-09-21.
-              <p className="text-xs text-amber-700" data-testid="inbox-rcs-illisible">
+              <p className="text-xs text-alerte-700" data-testid="inbox-rcs-illisible">
                 {t('Ce message n’est plus lisible : son format n’est plus reconnu, il ne peut pas partir. Refaites-le dans Contenu > Messages RCS.', 'This message is no longer readable: its format is not recognised, it cannot be sent. Rebuild it in Content > RCS messages.')}
               </p>
             ) : (
-              <p className="text-xs text-amber-700">
+              <p className="text-xs text-alerte-700">
                 {t('Ce message a un format que l’aperçu ne sait pas dessiner (carte à titre). Il partira tel qu’il a été enregistré.', 'This message has a format the preview cannot draw (titled card). It will go out as saved.')}
               </p>
             )}
           </div>
         )}
 
-        {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" data-testid="inbox-rcs-error">{error}</p>}
+        {error && <p className="mt-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700" data-testid="inbox-rcs-error">{error}</p>}
 
         <div className="mt-4 flex gap-2">
-          <button onClick={onClose} className="flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm text-ink-700 hover:bg-ink-50">
+          <Bouton variante="secondaire" onClick={onClose} className="flex-1">
             {t('Annuler', 'Cancel')}
-          </button>
-          <button
+          </Bouton>
+          <Bouton enCours={busy}
             onClick={() => void envoyer()}
             disabled={busy || !pretAEnvoyer}
             data-testid="inbox-rcs-send"
-            className="flex-1 rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+            className="flex-1"
           >
             {busy ? t('Envoi...', 'Sending...') : t('Envoyer en RCS', 'Send over RCS')}
-          </button>
+          </Bouton>
         </div>
       </div>
     </div>

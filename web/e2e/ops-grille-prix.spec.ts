@@ -91,7 +91,7 @@ test.describe('Ops : la grille de prix', () => {
     await expect(page.getByTestId('ops-prix-erreur')).toBeVisible();
     await expect(page.getByTestId('ops-prix-ok')).toHaveCount(0);
     // Le champ fautif porte le liseré rouge : sans lui, il faut chercher lequel des six ne va pas.
-    await expect(page.getByTestId('prix-service')).toHaveClass(/border-red-400/);
+    await expect(page.getByTestId('prix-service')).toHaveClass(/border-danger-400/);
   });
 
   test('⚠️ la saisie reste du TEXTE tant qu’on tape : un séparateur décimal survit', async ({ page }) => {

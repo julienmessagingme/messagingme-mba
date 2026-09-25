@@ -58,7 +58,7 @@ export function SelecteurVariable({
                 key={f.key}
                 data-testid={`${testId}-${f.key}`}
                 onClick={() => { onInsert(f.key, f.label); setOuvert(false); }}
-                className="block w-full truncate rounded-md px-2 py-1.5 text-left text-sm text-ink-700 hover:bg-brand-50"
+                className="block w-full truncate rounded-md px-2 py-1.5 text-left text-sm text-ink-900 hover:bg-brand-50"
               >
                 {/* Le LIBELLÉ, jamais `{{clé}}` : c'est tout l'objet du composant. */}
                 {f.label}

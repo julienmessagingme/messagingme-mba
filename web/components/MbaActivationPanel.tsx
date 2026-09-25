@@ -136,7 +136,7 @@ export function MbaActivationPanel({ tenantId }: { tenantId: string }) {
             <label
               key={c.cle}
               data-testid={`handoff-${c.cle}`}
-              className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 transition ${mode === c.cle ? 'border-brand-500 bg-brand-50' : 'border-ink-200 hover:border-ink-300'} ${busy ? 'opacity-60' : ''}`}
+              className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 transition-colors duration-150 ${mode === c.cle ? 'border-brand-500 bg-brand-50' : 'border-ink-200 hover:border-ink-300'} ${busy ? 'opacity-60' : ''}`}
             >
               <input
                 type="radio"
@@ -147,7 +147,7 @@ export function MbaActivationPanel({ tenantId }: { tenantId: string }) {
                 onChange={() => { void choisirMode(c.cle); }}
               />
               <span className="min-w-0">
-                <span className="block text-sm font-medium text-ink-800">{c.titre}</span>
+                <span className="block text-sm font-medium text-ink-900">{c.titre}</span>
                 <span className="block text-xs text-ink-500">{c.detail}</span>
                 {c.cle === 'business_hours' && mode === 'business_hours' && (
                   <Link href="/parametres" className="mt-1 inline-block text-xs font-medium text-brand-600 underline">
@@ -183,7 +183,7 @@ export function MbaActivationPanel({ tenantId }: { tenantId: string }) {
             placeholder={t('par défaut', 'default')}
             className="w-28 rounded-lg border border-ink-300 px-3 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:opacity-60"
           />
-          <span className="text-sm text-ink-600">{t('minutes', 'minutes')}</span>
+          <span className="text-sm text-ink-500">{t('minutes', 'minutes')}</span>
         </div>
         <p className="mt-1.5 text-xs text-ink-400">
           {reprise.trim() === ''

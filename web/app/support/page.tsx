@@ -6,6 +6,8 @@ import type { Session } from '@/lib/session';
 import { sendSupportMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
+import { Bouton } from '@/components/Bouton';
+import { IntroPage, TitrePage } from '@/components/TitrePage';
 
 export default function SupportPage() {
   return <AppShell active="support">{(session) => <SupportInner session={session} />}</AppShell>;
@@ -37,33 +39,32 @@ function SupportInner({ session }: { session: Session }) {
   return (
     <div className="max-w-2xl space-y-6">
       <div>
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Support', 'Support')}</h2>
-        <p className="mt-1 text-sm text-ink-500">{t('Une question, un souci ? Écris-nous, on te répond par email', 'A question or an issue? Write to us and we will reply by email')} ({session.email}).</p>
+        <TitrePage>{t('Support', 'Support')}</TitrePage>
+        <IntroPage>{t('Une question, un souci ? Écris-nous, on te répond par email', 'A question or an issue? Write to us and we will reply by email')} ({session.email}).</IntroPage>
       </div>
 
       {sent ? (
-        <div className="rounded-2xl border border-mint-200 bg-mint-50 p-5 text-sm text-mint-700">
+        <div className="rounded-2xl border border-succes-200 bg-succes-50 p-5 text-sm text-succes-700">
           {t('Message envoyé. Nous te répondrons à', 'Message sent. We will reply to')} {session.email}.
-          <button onClick={() => { setSent(false); setSubject(''); setMessage(''); }} className="ml-2 font-medium underline">{t('Envoyer un autre message', 'Send another message')}</button>
+          <button onClick={() => { setSent(false); setSubject(''); setMessage(''); }} className="ml-2 font-medium underline hover:no-underline">{t('Envoyer un autre message', 'Send another message')}</button>
         </div>
       ) : (
-        <form onSubmit={submit} className="space-y-4 rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+        <form onSubmit={submit} className="space-y-4 rounded-2xl border border-ink-200 bg-white p-5">
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink-600">{t('Sujet', 'Subject')}</label>
+            <label className="mb-1 block text-xs font-medium text-ink-500">{t('Sujet', 'Subject')}</label>
             <input required maxLength={200} value={subject} onChange={(e) => setSubject(e.target.value)} className={inputCls} placeholder={t("Ex. Problème d'envoi de campagne", 'E.g. Campaign sending issue')} />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink-600">{t('Message', 'Message')}</label>
+            <label className="mb-1 block text-xs font-medium text-ink-500">{t('Message', 'Message')}</label>
             <textarea required maxLength={5000} rows={6} value={message} onChange={(e) => setMessage(e.target.value)} className={inputCls} placeholder={t('Décris ta demande…', 'Describe your request…')} />
           </div>
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-          <button
+          {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+          <Bouton enCours={busy}
             type="submit"
             disabled={busy || subject.trim() === '' || message.trim() === ''}
-            className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60"
           >
             {busy ? t('Envoi…', 'Sending…') : t('Envoyer', 'Send')}
-          </button>
+          </Bouton>
         </form>
       )}
     </div>

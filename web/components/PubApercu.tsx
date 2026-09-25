@@ -99,7 +99,7 @@ function ApercuFil({ titre, texte, visuel, nomPage }: {
       <p className="mb-2 text-xs font-medium text-ink-500">{t('Dans le fil d’actualité', 'In the feed')}</p>
       <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm" data-testid="pub-apercu-fil">
         <div className="flex items-center gap-2 px-3 py-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink-200 text-sm font-semibold text-ink-600">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink-200 text-sm font-semibold text-ink-500">
             {nom.slice(0, 1).toUpperCase()}
           </div>
           <div className="min-w-0 leading-tight">
@@ -108,7 +108,7 @@ function ApercuFil({ titre, texte, visuel, nomPage }: {
           </div>
         </div>
 
-        <p className="whitespace-pre-wrap break-words px-3 pb-2.5 text-[13px] leading-snug text-ink-800" data-testid="pub-apercu-texte">
+        <p className="whitespace-pre-wrap break-words px-3 pb-2.5 text-[13px] leading-snug text-ink-900" data-testid="pub-apercu-texte">
           {texte.trim()
             ? texte
             : <span className="text-ink-400">{t('Votre texte principal apparaîtra ici…', 'Your primary text will appear here…')}</span>}
@@ -141,7 +141,7 @@ function ApercuFil({ titre, texte, visuel, nomPage }: {
           </div>
           {/* Le libellé du bouton est posé par Meta (`call_to_action: WHATSAPP_MESSAGE`), pas par nous :
               il n'est donc pas saisissable dans le formulaire, et il ne doit pas en avoir l'air. */}
-          <span className="shrink-0 rounded-lg bg-ink-200 px-2.5 py-1.5 text-[12px] font-medium text-ink-700">
+          <span className="shrink-0 rounded-lg bg-ink-200 px-2.5 py-1.5 text-[12px] font-medium text-ink-900">
             {t('Envoyer un message', 'Send message')}
           </span>
         </div>
@@ -167,7 +167,7 @@ function ApercuConversation({ accueil, messagePreRempli }: { accueil: string; me
       <PhoneFrame titre={t('Quand il appuie sur le bouton', 'When they tap the button')} contentClassName="min-h-[200px] px-3 py-4">
         <div className="max-w-[88%]">
           <div className="rounded-lg rounded-tl-none bg-white px-2.5 py-1.5 shadow-sm">
-            <div className="whitespace-pre-wrap break-words text-[13px] leading-snug text-ink-800" data-testid="pub-apercu-accueil">
+            <div className="whitespace-pre-wrap break-words text-[13px] leading-snug text-ink-900" data-testid="pub-apercu-accueil">
               {accueil.trim()
                 ? accueil
                 : <span className="text-ink-400">{t('Votre phrase d’accueil apparaîtra ici…', 'Your greeting will appear here…')}</span>}
@@ -178,7 +178,7 @@ function ApercuConversation({ accueil, messagePreRempli }: { accueil: string; me
 
         <div className="mt-4 flex items-center gap-2">
           <div className="flex min-w-0 flex-1 items-center rounded-full bg-white px-3 py-2 shadow-sm">
-            <span className="truncate text-[13px] text-ink-800" data-testid="pub-apercu-prerempli">
+            <span className="truncate text-[13px] text-ink-900" data-testid="pub-apercu-prerempli">
               {messagePreRempli.trim()
                 ? messagePreRempli
                 : <span className="text-ink-400">{t('Message pré-rempli…', 'Pre-filled message…')}</span>}
@@ -221,7 +221,7 @@ function ApercuReponse({ reponse, messagePreRempli }: { reponse: EtatReponse; me
             qui fait de ce panneau une SUITE du précédent et pas un écran indépendant. */}
         <div className="flex justify-end">
           <div className="max-w-[88%] rounded-lg rounded-tr-none bg-[#d9fdd3] px-2.5 py-1.5 shadow-sm">
-            <div className="whitespace-pre-wrap break-words text-[13px] leading-snug text-ink-800">
+            <div className="whitespace-pre-wrap break-words text-[13px] leading-snug text-ink-900">
               {messagePreRempli.trim()
                 ? messagePreRempli
                 : <span className="text-ink-400">{t('Message pré-rempli…', 'Pre-filled message…')}</span>}
@@ -340,11 +340,11 @@ function Bulle({ children, testid, badge, boutons = [] }: {
     <div className="max-w-[88%]">
       <div className="rounded-lg rounded-tl-none bg-white px-2.5 py-1.5 shadow-sm">
         {badge !== undefined && (
-          <div className="mb-1 inline-flex rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-800">
+          <div className="mb-1 inline-flex rounded bg-alerte-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-alerte-800">
             {badge}
           </div>
         )}
-        <div className="whitespace-pre-wrap break-words text-[13px] leading-snug text-ink-800" data-testid={testid}>{children}</div>
+        <div className="whitespace-pre-wrap break-words text-[13px] leading-snug text-ink-900" data-testid={testid}>{children}</div>
         <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-ink-400">12:31</div>
         {boutons.length > 0 && (
           <div className="-mx-2.5 -mb-1.5 mt-1.5">
@@ -365,7 +365,7 @@ function Note({ children }: { children: React.ReactNode }) {
 /** Un état où un clic PAYÉ recevrait le silence : il ne se dit pas du même ton qu'une information. */
 function Alerte({ children, testid }: { children: React.ReactNode; testid: string }) {
   return (
-    <p className="rounded-lg bg-red-50 px-2.5 py-2 text-[12px] font-medium leading-snug text-red-700" data-testid={testid}>
+    <p className="rounded-lg bg-danger-50 px-2.5 py-2 text-[12px] font-medium leading-snug text-danger-700" data-testid={testid}>
       {children}
     </p>
   );

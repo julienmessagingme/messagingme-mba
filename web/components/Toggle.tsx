@@ -21,9 +21,9 @@ export function Toggle({ checked, onChange, disabled = false, title, testid }: {
       aria-pressed={checked}
       {...(title ? { title } : {})}
       {...(testid ? { 'data-testid': testid } : {})}
-      className={`relative h-7 w-12 shrink-0 rounded-full transition ${checked ? 'bg-brand-500' : 'bg-ink-300'} ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
+      className={`relative h-7 w-12 shrink-0 rounded-full transition-colors duration-150 ${checked ? 'bg-brand-500' : 'bg-ink-300'} ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
     >
-      <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${checked ? 'left-[22px]' : 'left-0.5'}`} />
+      <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow-mm-sm transition-all duration-150 ${checked ? 'left-[22px]' : 'left-0.5'}`} />
     </button>
   );
 }

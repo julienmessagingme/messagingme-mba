@@ -9,6 +9,7 @@ import {
   TAILLE_DOCUMENT_MAX, TAILLE_IMAGE_MAX,
   type Changement, type PropositionConstruction, type TourConstruction,
 } from '@/lib/api-agent-setup';
+import { Bouton } from '@/components/Bouton';
 
 /**
  * L'onglet CONSTRUCTION : l'assistant qui règle l'agent en discutant.
@@ -216,14 +217,14 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
             </div>
           </div>
           {tours.length > 0 && (
-            <button
+            <Bouton variante="secondaire" taille="petite"
               data-testid="setup-recommencer"
               disabled={busy}
               onClick={() => void recommencer()}
-              className="shrink-0 rounded-lg border border-ink-300 px-2.5 py-1 text-xs text-ink-600 hover:bg-ink-50 disabled:opacity-40"
+              className="shrink-0"
             >
               {t('Recommencer', 'Restart')}
-            </button>
+            </Bouton>
           )}
         </div>
 
@@ -234,7 +235,7 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
             <div data-testid="setup-vide" className="flex flex-col gap-3">
               {/* Une première bulle DE L'ASSISTANT, pas un mode d'emploi. C'est ce qui donne envie de répondre :
                   une page qui explique se lit, une phrase qui interroge se répond. */}
-              <div className="max-w-[85%] self-start rounded-2xl rounded-bl-sm bg-white px-3.5 py-2.5 text-sm text-ink-800 shadow-sm">
+              <div className="max-w-[85%] self-start rounded-2xl rounded-bl-sm bg-white px-3.5 py-2.5 text-sm text-ink-900">
                 {t(
                   'Bonjour ! On va régler votre agent en discutant. Je vous poserai une question à la fois, puis je vous montrerai ce que j’ai compris avant d’écrire quoi que ce soit. Pour commencer : à quoi sert votre agent, au-delà de répondre ?',
                   'Hello! We will set up your agent by talking. I will ask one question at a time, then show you what I understood before writing anything. To start: what is your agent for, beyond answering?',
@@ -265,7 +266,7 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
               data-testid={`setup-tour-${tour.role}`}
               className={tour.role === 'user'
                 ? 'max-w-[85%] self-end whitespace-pre-wrap rounded-2xl rounded-br-sm bg-brand-600 px-3.5 py-2.5 text-sm text-white'
-                : 'max-w-[85%] self-start whitespace-pre-wrap rounded-2xl rounded-bl-sm bg-white px-3.5 py-2.5 text-sm text-ink-800 shadow-sm'}
+                : 'max-w-[85%] self-start whitespace-pre-wrap rounded-2xl rounded-bl-sm bg-white px-3.5 py-2.5 text-sm text-ink-900'}
             >
               {tour.content}
               {/* 🔴 L'AUTEUR, SUR LES TOURS DU CLIENT ET SEULEMENT QUAND ON LE CONNAIT. Le fil est PARTAGE
@@ -273,13 +274,13 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
                   auteur (un message d'avant la migration 0147, ou un compte supprime) n'en affiche aucun :
                   inventer un nom serait faux. Les reponses de l'assistant n'en ont par definition pas. */}
               {tour.role === 'user' && auteurs[i] && (
-                <span className="mt-1 block text-[11px] text-white/70">{auteurs[i]}</span>
+                <span className="mt-1 block text-xs text-white/70">{auteurs[i]}</span>
               )}
             </div>
           ))}
 
           {busy && (
-            <div className="flex max-w-[85%] items-center gap-1.5 self-start rounded-2xl rounded-bl-sm bg-white px-3.5 py-3 shadow-sm">
+            <div className="flex max-w-[85%] items-center gap-1.5 self-start rounded-2xl rounded-bl-sm bg-white px-3.5 py-3">
               <span className="sr-only">{t('L’assistant réfléchit…', 'The assistant is thinking…')}</span>
               {[0, 150, 300].map((d) => (
                 <span
@@ -300,7 +301,7 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
           <label
             data-testid="setup-joindre"
             title={t('Joindre un document ou une image (il rejoint la base de connaissance)', 'Attach a document or image (it joins the knowledge base)')}
-            className={`mb-0.5 grid h-[42px] w-[42px] shrink-0 cursor-pointer place-items-center rounded-lg border border-ink-300 text-base text-ink-600 hover:bg-ink-50 ${busy || !charge ? 'pointer-events-none opacity-40' : ''}`}
+            className={`mb-0.5 grid h-[42px] w-[42px] shrink-0 cursor-pointer place-items-center rounded-lg border border-ink-300 text-base text-ink-500 hover:bg-ink-50 ${busy || !charge ? 'pointer-events-none opacity-40' : ''}`}
           >
             <span aria-hidden>📎</span>
             <span className="sr-only">{t('Joindre un fichier', 'Attach a file')}</span>
@@ -333,15 +334,15 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
             }}
             placeholder={t('Écrivez votre réponse… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne)', 'Write your answer… (Enter to send, Shift+Enter for a new line)')}
           />
-          <button
+          <Bouton
             data-testid="setup-envoyer"
             disabled={busy || !charge || saisie.trim() === ''}
             onClick={() => void envoyer(saisie)}
             aria-label={t('Envoyer', 'Send')}
-            className="mb-0.5 shrink-0 rounded-lg bg-brand-600 px-3 py-2.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
+            className="mb-0.5 shrink-0"
           >
             {t('Envoyer', 'Send')}
-          </button>
+          </Bouton>
         </div>
       </div>
 
@@ -411,7 +412,7 @@ function Diff({ changements, busy, onGarder, onJeter }: {
 
   return (
     <div data-testid="setup-diff" className={`${cardCls} flex flex-col gap-3`}>
-      <p className="text-sm font-medium text-ink-700">{t('Ce que ça changerait', 'What this would change')}</p>
+      <p className="text-sm font-medium text-ink-900">{t('Ce que ça changerait', 'What this would change')}</p>
       {changements.map((c) => {
         const garde = gardees.has(c.champ);
         return (
@@ -421,15 +422,15 @@ function Diff({ changements, busy, onGarder, onJeter }: {
             className={`flex flex-col gap-1 rounded-lg border px-3 py-2 ${garde ? 'border-ink-200' : 'border-ink-200 bg-ink-50 opacity-60'}`}
           >
             <div className="flex items-start justify-between gap-2">
-              <p className="text-xs font-medium text-ink-700">{c.label}</p>
+              <p className="text-xs font-medium text-ink-900">{c.label}</p>
               <button
                 data-testid={`setup-bascule-${c.champ}`}
                 disabled={busy}
                 aria-pressed={garde}
                 onClick={() => basculer(c.champ, c.apres)}
-                className={`shrink-0 rounded-lg border px-2 py-1 text-[11px] disabled:opacity-40 ${garde
+                className={`shrink-0 rounded-lg border px-2 py-1 text-xs disabled:opacity-40 ${garde
                   ? 'border-brand-600 bg-brand-50 text-brand-700'
-                  : 'border-ink-300 text-ink-600 hover:bg-white'}`}
+                  : 'border-ink-300 text-ink-500 hover:bg-white'}`}
               >
                 {garde ? t('Gardée', 'Kept') : t('Jetée', 'Dropped')}
               </button>
@@ -446,30 +447,28 @@ function Diff({ changements, busy, onGarder, onJeter }: {
                 onChange={(e) => corriger(c.champ, e.target.value)}
               />
             ) : (
-              <p className="whitespace-pre-wrap text-sm text-ink-800">{garde ? gardees.get(c.champ) : c.apres}</p>
+              <p className="whitespace-pre-wrap text-sm text-ink-900">{garde ? gardees.get(c.champ) : c.apres}</p>
             )}
           </div>
         );
       })}
       <div className="flex flex-wrap items-center gap-2">
-        <button
+        <Bouton
           data-testid="setup-garder"
           disabled={busy || gardees.size === 0}
           onClick={() => onGarder(gardees)}
-          className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
         >
           {gardees.size === changements.length
             ? t('Enregistrer', 'Save')
             : t(`Enregistrer les ${gardees.size} gardées`, `Save the ${gardees.size} kept`)}
-        </button>
-        <button
+        </Bouton>
+        <Bouton variante="secondaire"
           data-testid="setup-jeter"
           disabled={busy}
           onClick={onJeter}
-          className="rounded-lg border border-ink-300 px-3 py-2 text-sm text-ink-700 hover:bg-ink-50 disabled:opacity-40"
         >
           {t('Tout jeter', 'Drop all')}
-        </button>
+        </Bouton>
       </div>
     </div>
   );
