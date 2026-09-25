@@ -96,6 +96,13 @@ describe('filtresRepris', () => {
     }
   });
 
+  it('🔴 le niveau de risque d’un brouillon est repris, un niveau inconnu est jeté (l’écran le montre absent)', () => {
+    // Perdu à la reprise, le filtre ferait viser à la campagne TOUT ce que les autres filtres décrivent.
+    expect(filtresRepris({ risque: 'eleve' })).toEqual({ risque: 'eleve' });
+    expect(filtersActive(filtresRepris({ risque: 'eleve' }))).toBe(true);
+    for (const risque of ['élevé', 'high', 3, null]) expect(filtresRepris({ risque }), String(risque)).toEqual({});
+  });
+
   it('une chaîne VIDE ne devient pas un filtre : elle n’en est pas un', () => {
     // `filtersActive` la traiterait comme absente de toute façon ; la garder ferait seulement grossir le
     // brouillon et afficher un champ rempli de rien.

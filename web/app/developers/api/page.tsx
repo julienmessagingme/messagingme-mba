@@ -284,6 +284,29 @@ function DocsInner() {
           )}{' '}
           <Code c="unknown_contact" />.
         </p>
+        {/* LE RISQUE DE DÉSENGAGEMENT (lot 7, spec § 19). Les codes sont écrits EN CLAIR, pas tirés d'un module :
+            ils forment un contrat que l'intégrateur recopie, et `tests/web-risque-parite.test.ts` vérifie que
+            cette page les cite tous. */}
+        <p data-testid="doc-engagement-risk">
+          <C>engagementRisk</C>
+          {t(
+            ' : le risque que la personne se désengage, recalculé chaque nuit à partir des 90 derniers jours (réponses, clics, lectures, dernière conversation analysée, joignabilité, désabonnement, blocage). Il vaut null tant qu’il n’a jamais été calculé. level vaut ',
+            ': the risk that the person disengages, recomputed every night from the last 90 days (replies, clicks, reads, last analysed conversation, reachability, unsubscribe, block). It is null as long as it has never been computed. level is ',
+          )}
+          <C>faible</C>, <C>moyen</C>, <C>eleve</C>
+          {t(' (score de 0 à 29, 30 à 59, 60 à 100) ou ', ' (score 0 to 29, 30 to 59, 60 to 100) or ')}
+          <C>inconnu</C>
+          {t(
+            ', toujours avec score null : aucun message ne lui a été délivré sur la période. reasons porte au plus trois codes, du plus lourd au plus léger : ',
+            ', always with a null score: no message was delivered to them over the period. reasons carries at most three codes, heaviest first: ',
+          )}
+          <C>stop</C>, <C>bloque</C>, <C>silence_60j</C>, <C>silence_30j</C>, <C>sans_reponse</C>,{' '}
+          <C>non_lu</C>, <C>reclamation</C>, <C>negatif</C>, <C>insatisfait</C>, <C>injoignable</C>
+          {t(
+            '. Un désabonnement ou un blocage donne eleve à 100. computedAt est la date du dernier calcul, qu’il ait changé le niveau ou non.',
+            '. An unsubscribe or a block gives eleve at 100. computedAt is the date of the last computation, whether it changed the level or not.',
+          )}
+        </p>
 
         <Verb method="POST" path="/v1/contacts/search" droit="contacts:read" />
         <Bloc>{json(EXEMPLES_CORPS.contactRechercher.corps)}</Bloc>

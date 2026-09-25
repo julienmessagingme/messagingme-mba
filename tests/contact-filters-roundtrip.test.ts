@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { filtersToQuery, type ContactFilters } from '../web/lib/contact-filters';
 import { parseFilters } from '../src/http/import';
+import { FiltreContactInvalide } from '../src/crm/contact-filters';
+import { NIVEAUX_RISQUE } from '../src/engagement/risque';
 
 // Anti-drift : la sérialisation côté web (`filtersToQuery`) et le parse côté serveur (`parseFilters`) doivent
 // s'accorder sur le format fil. On sérialise puis on re-parse : le résultat doit être IDENTIQUE à l'entrée.
@@ -22,6 +24,7 @@ describe('filtersToQuery (web) <-> parseFilters (serveur) — round-trip', () =>
       phoneContains: '4242',
       nameSearch: 'marc',
       joignabiliteWhatsApp: 'connu_injoignable',
+      risque: 'eleve',
       fieldFilters: [
         { key: 'email', op: 'not_empty', value: '' },
         { key: 'ville', op: 'not_contains', value: 'paris' },
@@ -48,5 +51,32 @@ describe('filtersToQuery (web) <-> parseFilters (serveur) — round-trip', () =>
   // est simplement perdu en route, et l'écran affiche un filtre coché qui ne filtre pas.
   it('la joignabilité seule survit au round-trip', () => {
     expect(roundTrip({ joignabiliteWhatsApp: 'connu_injoignable' })).toEqual({ joignabiliteWhatsApp: 'connu_injoignable' });
+  });
+
+  it('🔴 chaque niveau de risque, SEUL, survit au round-trip', () => {
+    for (const risque of NIVEAUX_RISQUE) expect(roundTrip({ risque })).toEqual({ risque });
+  });
+});
+
+/**
+ * 🔴 LE NIVEAU DE RISQUE EST LE SEUL FILTRE QUI SE REFUSE AU LIEU DE S'IGNORER. Ignoré, un niveau mal écrit ne
+ * poserait aucune clause : « risque élevé » rendrait tout l'espace, et une campagne construite dessus partirait à
+ * tout le monde. Le refus porte un `statusCode` 400, que le gestionnaire d'erreurs du serveur rend tel quel.
+ */
+describe('parseFilters : le niveau de risque', () => {
+  it.each(['élevé', 'high', 'ELEVE', 'eleve,moyen', ' eleve'])('« %s » est REFUSÉ, pas ignoré', (risque) => {
+    let erreur: unknown = null;
+    try { parseFilters({ risque }); } catch (e) { erreur = e; }
+    expect(erreur).toBeInstanceOf(FiltreContactInvalide);
+    expect((erreur as FiltreContactInvalide).statusCode).toBe(400);
+  });
+
+  it('une valeur répétée dans l’adresse (un tableau) est refusée aussi', () => {
+    expect(() => parseFilters({ risque: ['eleve', 'moyen'] })).toThrow(FiltreContactInvalide);
+  });
+
+  it('vide ou absent : ce n’est pas un filtre, rien n’est posé', () => {
+    expect(parseFilters({ risque: '' })).toEqual({});
+    expect(parseFilters({})).toEqual({});
   });
 });

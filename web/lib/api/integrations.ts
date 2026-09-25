@@ -169,7 +169,7 @@ export function activerNumero(tenantId: string, code?: string): Promise<{ actif:
  * Automation ne les liste pas et la route refuse d'en créer (migration 0074). L'ajouter ici offrirait dans le
  * menu un type que le serveur rejette en 400.
  */
-export type AutomationTriggerKind = 'keyword' | 'new_contact' | 'tag_added' | 'conversation_analyzed' | 'hubspot_deal_stage' | 'avant_date' | 'ctwa_ad';
+export type AutomationTriggerKind = 'keyword' | 'new_contact' | 'tag_added' | 'conversation_analyzed' | 'hubspot_deal_stage' | 'avant_date' | 'ctwa_ad' | 'risque_eleve';
 
 export interface Automation {
   id: string;

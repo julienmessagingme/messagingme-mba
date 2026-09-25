@@ -376,3 +376,55 @@ test.describe('Automation : déclencheur publicité (CTWA)', () => {
     expect(posted[0]).toMatchObject({ triggerKind: 'ctwa_ad', triggerConfig: { adId: '120212345678901234' } });
   });
 });
+
+/**
+ * 🔴 Déclencheur « le risque de désengagement d'un contact devient élevé » (lot 7 de l'API publique).
+ *
+ * Il ne se règle pas, il se constate : la config part VIDE. Ce que l'écran doit dire AVANT la création, parce
+ * que ce déclencheur vient d'un chemin de MASSE (le balayage de nuit) et peut lancer des scénarios facturés :
+ * un passage et pas un état, 200 contacts au plus par nuit et par espace, rien pour un désabonné ou un bloqué,
+ * et un scénario qui commence par un template.
+ */
+test.describe('Automation : déclencheur « risque élevé »', () => {
+  async function monter(page: import('@playwright/test').Page, posted: Array<Record<string, unknown>>, listees: unknown[] = []) {
+    await page.addInitScript((sess) => window.localStorage.setItem('mba.session', JSON.stringify(sess)), SESSION);
+    await page.route('**/api/backend/**', async (route) => {
+      const req = route.request();
+      const url = req.url();
+      const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+      if (url.endsWith('/automations') && req.method() === 'POST') {
+        posted.push(req.postDataJSON() as Record<string, unknown>);
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ id: 'a1' }) });
+      }
+      if (url.endsWith('/automations')) return json({ automations: listees });
+      if (url.endsWith('/workflows')) return json({ workflows: [WF] });
+      if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
+      return json({});
+    });
+    await page.goto('/automations');
+  }
+
+  test('🔴 l’écran dit les bornes avant la création, et la config part VIDE', async ({ page }) => {
+    const posted: Array<Record<string, unknown>> = [];
+    await monter(page, posted);
+    await page.getByTestId('automation-add').click();
+    await page.getByTestId('automation-name').fill('Relance des partants');
+    await page.getByTestId('automation-trigger').selectOption('risque_eleve');
+    const explication = page.getByTestId('config-risque-eleve');
+    await expect(explication).toContainText('PASSE en risque élevé');
+    await expect(explication).toContainText('Au plus 200 contacts par nuit et par espace');
+    await expect(explication).toContainText('désabonné ou bloqué ne déclenche rien');
+    await expect(explication).toContainText('commencer par un envoi de template');
+    await page.getByTestId('automation-workflow').selectOption('wf1');
+    await page.getByTestId('automation-submit').click();
+
+    await expect.poll(() => posted.length, { timeout: 10_000 }).toBe(1);
+    expect(posted[0]).toMatchObject({ triggerKind: 'risque_eleve', triggerConfig: {}, enabled: false });
+  });
+
+  test('une automation existante se lit en clair dans la liste', async ({ page }) => {
+    const listee = { id: 'a9', name: 'Relance', enabled: false, triggerKind: 'risque_eleve', triggerConfig: {}, conditionGroup: null, workflowId: 'wf1', startNodeId: null, cooldownSeconds: null };
+    await monter(page, [], [listee]);
+    await expect(page.getByText('le risque de désengagement d’un contact devient élevé')).toBeVisible();
+  });
+});

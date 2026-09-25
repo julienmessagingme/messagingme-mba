@@ -10,6 +10,7 @@
 
 import { request } from '../http';
 import { teteCsv } from '../csv';
+import type { RisqueContact } from '../risque';
 
 export interface Contact {
   id: string;
@@ -40,6 +41,14 @@ export interface Contact {
    */
   whatsappJoignable?: boolean | null;
   whatsappJoignableLe?: string | null;
+  /**
+   * Le risque de désengagement (lot 7), recalculé chaque nuit. `null` OU ABSENT = pas encore calculé : une API
+   * d'avant le lot 7 ne le rend pas, et l'écran doit s'ouvrir quand même.
+   *
+   * ⚠️ NE JAMAIS LE LIRE DIRECTEMENT : il passe par `risqueLu` (`web/lib/risque.ts`), qui vérifie sa forme au
+   * lieu de la supposer.
+   */
+  risque?: RisqueContact | null;
 }
 /** Identité messageable d'un contact : le numéro s'il existe, sinon le BSUID. null si aucun. */
 export function contactIdentity(c: Pick<Contact, 'phoneE164' | 'bsuid'>): string | null {

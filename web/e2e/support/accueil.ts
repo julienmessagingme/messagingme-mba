@@ -42,7 +42,9 @@ const defaultSettings = { controlHandbackSeconds: null, mbaEnabled: false, hubsp
 export async function mockAccueil(
   page: Page,
   over: {
-    account?: AccountFixture; settings?: typeof defaultSettings; catchupTriggered?: boolean;
+    // `& Record<string, unknown>` : un réglage plus récent que ce support (`hubspotActif`, migration 0179) se
+    // passe sans le recopier ici. Absent, il reste absent : c'est le cas « API plus ancienne ».
+    account?: AccountFixture; settings?: typeof defaultSettings & Record<string, unknown>; catchupTriggered?: boolean;
     numbersCount?: number; mbaStatus?: unknown;
     /** Fait échouer `PUT /mba-activation` en 409 avec ce message : le cas « on n'a pas pu lire chez Meta ». */
     activationRefusee?: string;
@@ -72,6 +74,8 @@ export async function mockAccueil(
       if (b.action === 'disconnect') return json({ phoneNumberId: 'PN1', hubspotConnected: false, disconnected: true });
       return json({ phoneNumberId: 'PN1', hubspotConnected: b.connected === true, catchupTriggered: over.catchupTriggered ?? false });
     }
+    // Déconnexion complète d'un espace SANS numéro (POST .../hubspot/deconnexion, migration 0179).
+    if (route.request().method() === 'POST' && url.endsWith('/hubspot/deconnexion')) return json({ hubspotConnected: false, disconnected: true });
     // Liste des numéros du tenant (GET .../phone-numbers, sans suffixe /hubspot).
     if (route.request().method() === 'GET' && url.endsWith('/phone-numbers')) return json({ phoneNumbers });
     // 🔴 L'ETAT REEL DE L'AGENT CHEZ META, mockable par les specs. La carte d'accueil l'affiche depuis le

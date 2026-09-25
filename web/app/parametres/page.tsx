@@ -8,6 +8,7 @@ import { TIMEZONES, timezoneLabel, DEFAULT_TIMEZONE } from '@/lib/timezones';
 import { inputClsAuto } from '@/lib/ui';
 import { BlockedContacts } from '@/components/BlockedContacts';
 import { ReglageIntegrationBatch } from '@/components/ReglageIntegrationBatch';
+import { ReglageHubspot } from '@/components/ReglageHubspot';
 import { Toggle } from '@/components/Toggle';
 
 /**
@@ -259,6 +260,9 @@ function Parametres({ tenantId }: { tenantId: string }) {
           {/* INTÉGRATIONS (lot 6 de l'API publique) : l'outil qui reçoit les signaux. Admin seulement, comme
               tout ce bloc : un manager ne voit que la section de la prise par les agents. */}
           <ReglageIntegrationBatch tenantId={tenantId} />
+          {/* ...et l'interrupteur HubSpot (migration 0179) : c'est lui qui fait apparaître le bloc HubSpot de
+              l'Accueil, numéro ou pas. L'Accueil renvoie ici (`#integration-hubspot`) quand il est éteint. */}
+          <ReglageHubspot tenantId={tenantId} />
 
           {/* Contacts bloqués : SEULE porte de sortie d'un blocage. Un contact bloqué n'apparaît nulle part
               ailleurs, donc sans cet écran il serait introuvable. La section se masque quand la liste est vide. */}

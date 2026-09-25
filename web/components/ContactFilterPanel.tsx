@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useT } from '@/lib/i18n';
 import type { ContactFilters, ContactFieldFilter, ContactFieldOp, UserFieldDef } from '@/lib/api';
 import { inputClsAuto } from '@/lib/ui';
+import { BADGE_NIVEAU_RISQUE, NIVEAUX_DU_FILTRE, estNiveauRisque } from '@/lib/risque';
 
 /**
  * Panneau de filtres de contacts, CONTRÔLÉ (édite un ContactFilters via onChange). Partagé par le mini-CRM
@@ -11,8 +12,9 @@ import { inputClsAuto } from '@/lib/ui';
  * moteurs de recherche parallèles qui divergent. La sérialisation (filtersToQuery) et le parse serveur
  * (parseFilters / normalizeContactFilters) partagent déjà le même format ; ce composant est le miroir UI.
  *
- * Filtres : nom, opt-in, téléphone (commence par / contient), tags (possède ET/OU + ne possède pas), champs
- * perso répétables (contient / ne contient pas / égal / vide / rempli), et un contrôle Email dédié.
+ * Filtres : nom, opt-in, joignabilité, niveau de risque de désengagement, téléphone (commence par / contient),
+ * tags (possède ET/OU + ne possède pas), champs perso répétables (contient / ne contient pas / égal / vide /
+ * rempli), et un contrôle Email dédié.
  */
 export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestions, onClear }: {
   filters: ContactFilters;
@@ -103,6 +105,25 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
           >
             <option value="">{t('tous', 'all')}</option>
             <option value="connu_injoignable">{t('sauf les injoignables connus', 'except known unreachable')}</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-ink-500">
+          {t('Risque de désengagement', 'Disengagement risk')}
+          {/* Le niveau CALCULÉ chaque nuit. ⚠️ Une fiche jamais calculée n'est dans aucun niveau, « inconnu »
+              compris : « inconnu » est un calcul qui n'a rien pu observer (rien de délivré sur 90 jours). Le
+              choix part tel quel au serveur, qui refuse une valeur hors des quatre niveaux au lieu de l'ignorer. */}
+          <select
+            value={filters.risque ?? ''}
+            onChange={(e) => set({ risque: estNiveauRisque(e.target.value) ? e.target.value : undefined })}
+            className={`${inputClsAuto} bg-white`}
+            data-testid="filtre-risque"
+          >
+            <option value="">{t('tous', 'all')}</option>
+            {NIVEAUX_DU_FILTRE.map((n) => (
+              <option key={n} value={n}>
+                {n === 'inconnu' ? t('inconnu (rien de délivré sur 90 jours)', 'unknown (nothing delivered in 90 days)') : t(...BADGE_NIVEAU_RISQUE[n].text)}
+              </option>
+            ))}
           </select>
         </label>
         <label className="flex flex-col gap-1 text-xs text-ink-500">

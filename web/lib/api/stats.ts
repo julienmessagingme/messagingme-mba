@@ -655,6 +655,15 @@ export interface TenantSettings {
    * seule se rattrape d'un clic.
    */
   hubspotPortalConnecte?: boolean;
+  /**
+   * L'INTERRUPTEUR HUBSPOT DE L'ESPACE (migration 0179, Paramètres > Intégrations). Allumé, le bloc HubSpot
+   * s'affiche sur l'Accueil, numéro ou pas.
+   *
+   * ⚠️ OPTIONNEL À LA LECTURE, pour la même raison que son voisin : une API antérieure ne le rend pas, et
+   * `undefined` veut alors dire « comportement d'avant » (le bloc de l'Accueil suit la présence d'un numéro).
+   * Lu par `lireHubspotActif` (`lib/hubspot-actif.ts`), jamais directement.
+   */
+  hubspotActif?: boolean;
   /*
    * `prix` A QUITTE LES REGLAGES LE 2026-09-23 (lot 8, migration 0168). Il n'y a plus qu'une grille, pour
    * tous les espaces, et elle se lit dans /ops : la laisser ici aurait permis a n'importe quel ecran du
@@ -689,6 +698,13 @@ export function putSettings(tenantId: string, mbaEnabled: boolean): Promise<Tena
 /** Active/désactive le toggle « Campagnes via données HubSpot ». */
 export function setHubspotListsEnabled(tenantId: string, enabled: boolean): Promise<{ hubspotListsEnabled: boolean }> {
   return request(`/tenants/${tenantId}/settings/hubspot-lists`, { method: 'PATCH', body: JSON.stringify({ enabled }) });
+}
+/**
+ * Allume ou éteint l'interrupteur HubSpot de l'espace (admin). Le serveur REFUSE de l'éteindre (409, avec un
+ * message à afficher tel quel) tant qu'un portail est relié : il faut d'abord la « Déconnexion complète ».
+ */
+export function setHubspotActif(tenantId: string, actif: boolean): Promise<{ hubspotActif: boolean }> {
+  return request(`/tenants/${tenantId}/settings/hubspot-actif`, { method: 'PATCH', body: JSON.stringify({ actif }) });
 }
 
 /**

@@ -224,6 +224,7 @@ function AutomationsInner({ session }: { session: Session }) {
       const sens = c.sens === 'apres' ? t('après', 'after') : t('avant', 'before');
       return `${String(c.delai ?? '')} ${String(c.unite ?? '')} ${sens} « ${champ} »`;
     }
+    if (a.triggerKind === 'risque_eleve') return t('le risque de désengagement d’un contact devient élevé', 'a contact’s disengagement risk becomes high');
     if (a.triggerKind === 'hubspot_deal_stage') {
       // Le libellé n'est qu'un souvenir de ce qui a été choisi : s'il manque (automation créée par API), on
       // le dit plutôt que d'afficher un identifiant opaque qui ne parlerait à personne.
@@ -256,8 +257,8 @@ function AutomationsInner({ session }: { session: Session }) {
             tant que seuls le mot-clé et le nouveau contact existaient. */}
         <p className="mt-2 max-w-3xl text-xs text-ink-400">
           {t(
-            'Mot-clé et nouveau contact partent d’un message reçu : la fenêtre de 24 h est ouverte, le scénario peut donc commencer par un message rapide ou un formulaire. Tag posé, conversation analysée et étape de deal arrivent à froid : le scénario doit commencer par un envoi de template, sinon rien ne part.',
-            'Keyword and new contact come from an incoming message: the 24 h window is open, so the scenario may start with a quick message or a form. Tag added, conversation analyzed and deal stage happen cold: the scenario must start with a template send, otherwise nothing goes out.',
+            'Mot-clé et nouveau contact partent d’un message reçu : la fenêtre de 24 h est ouverte, le scénario peut donc commencer par un message rapide ou un formulaire. Tag posé, conversation analysée, étape de deal et risque élevé arrivent à froid : le scénario doit commencer par un envoi de template, sinon rien ne part.',
+            'Keyword and new contact come from an incoming message: the 24 h window is open, so the scenario may start with a quick message or a form. Tag added, conversation analyzed, deal stage and high risk happen cold: the scenario must start with a template send, otherwise nothing goes out.',
           )}
         </p>
       </div>
@@ -295,8 +296,29 @@ function AutomationsInner({ session }: { session: Session }) {
               )}
               <option value="avant_date">{t('un délai avant ou après une date enregistrée', 'a delay before or after a stored date')}</option>
               <option value="ctwa_ad">{t('le contact arrive d’une publicité WhatsApp', 'the contact comes from a WhatsApp ad')}</option>
+              <option value="risque_eleve">{t('le risque de désengagement d’un contact devient élevé', 'a contact’s disengagement risk becomes high')}</option>
             </select>
           </div>
+          {/* « RISQUE ÉLEVÉ » NE SE RÈGLE PAS, il se constate : aucune configuration, seulement ce qu'il faut savoir
+              AVANT de le brancher sur un scénario facturé. Les trois bornes sont celles du serveur
+              (`src/engagement/balayage.ts`) : un PASSAGE et pas un état, 200 par nuit et par espace, et rien
+              pour un désabonné ou un contact bloqué. */}
+          {triggerKind === 'risque_eleve' && (
+            <div data-testid="config-risque-eleve" className="space-y-1 text-xs text-ink-500">
+              <p>
+                {t('Chaque nuit, le risque de désengagement de chaque contact est recalculé (absence de réponse, de clic et de lecture, dernière conversation, joignabilité). Le scénario part quand un contact PASSE en risque élevé : une fois par passage, pas à chaque nuit où il y reste.',
+                    'Every night, each contact’s disengagement risk is recomputed (no reply, click or read, last conversation, reachability). The scenario runs when a contact MOVES to high risk: once per move, not every night they stay there.')}
+              </p>
+              <p>
+                {t('Au plus 200 contacts par nuit et par espace. Au-delà, le niveau est bien enregistré sur la fiche, mais le scénario ne part pas pour eux. Un contact désabonné ou bloqué ne déclenche rien.',
+                    'At most 200 contacts per night and per workspace. Beyond that, the level is still recorded on the contact, but the scenario does not run for them. An unsubscribed or blocked contact triggers nothing.')}
+              </p>
+              <p>
+                {t('Le contact n’a pas écrit : le scénario doit commencer par un envoi de template.',
+                    'The contact has not written: the scenario must start with a template send.')}
+              </p>
+            </div>
+          )}
           {triggerKind === 'ctwa_ad' && (
             <div data-testid="config-ctwa-ad">
               <label className="mb-1 block text-sm font-medium text-ink-700">{t('Publicité (facultatif)', 'Ad (optional)')}</label>

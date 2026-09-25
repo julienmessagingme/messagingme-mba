@@ -80,6 +80,14 @@ export function disconnectHubspot(tenantId: string, phoneNumberId: string): Prom
     body: JSON.stringify({ connected: false, action: 'disconnect' }),
   });
 }
+/**
+ * Déconnexion COMPLÈTE d'un espace SANS numéro (interrupteur HubSpot, migration 0179). Même geste que
+ * `disconnectHubspot`, sans le numéro que cette porte-là exige : un espace neuf peut relier un portail avant
+ * d'avoir un numéro, et doit pouvoir le délier.
+ */
+export function deconnecterHubspotEspace(tenantId: string): Promise<{ hubspotConnected: boolean; disconnected: boolean }> {
+  return request(`/tenants/${tenantId}/hubspot/deconnexion`, { method: 'POST', body: JSON.stringify({}) });
+}
 
 // --- Import de listes HubSpot (3e source de campagne) ---
 

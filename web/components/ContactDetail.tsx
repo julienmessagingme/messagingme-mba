@@ -16,6 +16,7 @@ import { useT, useLocale } from '@/lib/i18n';
 import { fieldValue, SOCLE_CLES, waIdDuContact } from '@/lib/fields';
 import { formatDate } from '@/lib/day';
 import { verdictWhatsApp, type Verdict } from '@/lib/joignabilite';
+import { BADGE_NIVEAU_RISQUE, libelleRaisonRisque, risqueLu } from '@/lib/risque';
 import { etatResume, phraseResumeAbsent } from '@/lib/resume-conversation';
 import {
   updateContact,
@@ -161,6 +162,7 @@ export function ContactDetail({
     contact.whatsappJoignableLe ? new Date(contact.whatsappJoignableLe) : null,
     new Date(),
   );
+  const risque = risqueLu(contact.risque);
   const defByKey = new Map(userFields.map((d) => [d.key, d]));
   // Les champs SOCLE ont leur ligne DÉDIÉE dans le bloc fixe ci-dessus (toujours visible, même vide) : les
   // exclure d'ici, sinon ils s'afficheraient deux fois dès qu'ils sont remplis, et seraient re-proposés à
@@ -482,6 +484,43 @@ export function ContactDetail({
                 sans elle personne ne peut juger s'il faut réessayer. */}
             {verdict !== 'inconnu' && contact.whatsappJoignableLe && (
               <span className="text-xs text-ink-400">{t('mesuré le', 'measured on')} {formatDate(contact.whatsappJoignableLe, locale)}</span>
+            )}
+          </span>
+          {/* LE RISQUE DE DÉSENGAGEMENT (lot 7), juste après la joignabilité : même famille de question, « ce
+              contact est-il encore là ». Calculé CHAQUE NUIT par le serveur, jamais ici : l'écran ne fait que
+              le lire, par `risqueLu`, qui rend `null` pour un champ absent (API d'avant le lot 7), `null` ou
+              illisible. Les trois se lisent « pas encore calculé », jamais un niveau inventé. */}
+          <span className="text-ink-400">{t('Risque de désengagement', 'Disengagement risk')}</span>
+          <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1" data-testid="fiche-risque">
+            {risque === null ? (
+              <span
+                className="text-xs text-ink-400"
+                data-testid="fiche-risque-absent"
+                title={t('Le calcul passe chaque nuit, pour les contacts qui ont reçu un message.', 'It is computed every night, for contacts who received a message.')}
+              >
+                {t('pas encore calculé', 'not computed yet')}
+              </span>
+            ) : (
+              <>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${BADGE_NIVEAU_RISQUE[risque.niveau].cls}`} data-testid="fiche-risque-niveau">
+                  {t(...BADGE_NIVEAU_RISQUE[risque.niveau].text)}
+                </span>
+                {/* Le score n'existe pas pour « inconnu » : rien n'a été observé, il n'y a rien à noter. */}
+                {risque.score !== null && (
+                  <span className="text-xs text-ink-600" data-testid="fiche-risque-score">{risque.score} / 100</span>
+                )}
+                <span className="text-xs text-ink-400">{t('calculé le', 'computed on')} {formatDate(risque.calculeLe, locale)}</span>
+                {risque.niveau === 'inconnu' && (
+                  <span className="basis-full text-xs text-ink-500">
+                    {t('Aucun message ne lui a été délivré sur les 90 derniers jours : rien à observer.', 'No message was delivered to them in the last 90 days: nothing to observe.')}
+                  </span>
+                )}
+                {risque.raisons.length > 0 && (
+                  <ul className="basis-full list-disc space-y-0.5 pl-4 text-xs text-ink-600" data-testid="fiche-risque-raisons">
+                    {risque.raisons.map((r) => <li key={r}>{t(...libelleRaisonRisque(r))}</li>)}
+                  </ul>
+                )}
+              </>
             )}
           </span>
           <span className="text-ink-400">{t('Ajouté le', 'Added on')}</span>

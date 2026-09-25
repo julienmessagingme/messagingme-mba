@@ -9,9 +9,8 @@ import type { Session } from '@/lib/session';
 import { useT, useLocale } from '@/lib/i18n';
 import { fmtNum, fmtCost, sendingLimitLabel, mmLiteBadge, accountReviewBadge, businessVerificationBadge, type StatusBadge } from '@/lib/format';
 import {
-  getMe, getSettings, getAccountStatus, setHubspotConnected, disconnectHubspot, listPhoneNumbers,
+  getMe, getSettings, getAccountStatus, setHubspotConnected, disconnectHubspot, deconnecterHubspotEspace, listPhoneNumbers,
   setHubspotListsEnabled as saveHubspotListsEnabled,
-  getHubspotInstallLink,
   getStats, getTemplateStats, getCostSeries, getEsConfig, completeEmbeddedSignup,
   demanderCodeNumero, activerNumero,
   type MeResponse, type AccountStatusResponse, type EsConfig, type CanalCodeNumero,
@@ -20,6 +19,8 @@ import { DOT_HEX } from '@/lib/ui';
 import { PastilleNumero } from '@/components/PastilleNumero';
 import { getMbaStatus, putMbaActivation, type MbaStatus } from '@/lib/api-mba';
 import { loadFbSdk, type FbLoginResponse } from '@/lib/fb-sdk';
+import { lireHubspotActif, affichageHubspotAccueil } from '@/lib/hubspot-actif';
+import { useInstallationHubspot } from '@/lib/hubspot-installation';
 
 export default function AccueilPage() {
   return <AppShell active="accueil">{(session) => <AccueilInner session={session} />}</AppShell>;
@@ -87,6 +88,11 @@ function AccueilInner({ session }: { session: Session }) {
   // Vrai brièvement après une REPRISE de pause : les analyses accumulées sont rattrapées côté worker (F3-a).
   const [catchupNotice, setCatchupNotice] = useState(false);
   const [hubspotListsEnabled, setHubspotListsEnabled] = useState(false);
+  /**
+   * L'interrupteur HubSpot de l'espace (Paramètres > Intégrations, migration 0179). `undefined` = pas lu, ou
+   * API plus ancienne : le bloc garde alors le comportement d'avant (`affichageHubspotAccueil`).
+   */
+  const [hubspotActif, setHubspotActif] = useState<boolean | undefined>(undefined);
   const [savingLists, setSavingLists] = useState(false);
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [loading, setLoading] = useState(true);
@@ -131,6 +137,7 @@ function AccueilInner({ session }: { session: Session }) {
     if (cfg.status === 'fulfilled') {
       setMbaEnabled(cfg.value.mbaEnabled);
       setHubspotListsEnabled(cfg.value.hubspotListsEnabled);
+      setHubspotActif(lireHubspotActif(cfg.value));
     }
     if (m.status === 'rejected' || cfg.status === 'rejected') {
       const reason = (m.status === 'rejected' ? m.reason : cfg.status === 'rejected' ? cfg.reason : null) as unknown;
@@ -271,7 +278,9 @@ function AccueilInner({ session }: { session: Session }) {
   // DÉCONNEXION COMPLÈTE (candidat 2) : délie le portail (le connecteur révoque le token si dernier tenant) et coupe
   // la synchro. Optimiste : coupé SANS pause (paused_at=null -> libellé « coupée », pas « en pause »).
   async function disconnectHubspotAction() {
-    if (!isAdmin || !account?.phoneNumberId) return;
+    // ⚠️ PLUS DE NUMÉRO EXIGÉ (2026-09-25) : un espace sans numéro peut relier un portail depuis que
+    // l'interrupteur existe, et doit pouvoir le délier. Il passe par la porte de l'ESPACE.
+    if (!isAdmin || !account) return;
     // Capture COMPLÈTE pour le rollback, y compris le portail (une déconnexion délie le portail côté serveur).
     const prev = { hubspotConnected: account.hubspotConnected, hubspotPausedAt: account.hubspotPausedAt, hubspotPortal: account.hubspotPortal };
     setSavingHubspot(true);
@@ -281,7 +290,8 @@ function AccueilInner({ session }: { session: Session }) {
     // fantôme qui reposerait hubspot_connected=true alors qu'aucun portail n'est lié (état orphelin).
     setAccount((a) => (a ? { ...a, hubspotConnected: false, hubspotPausedAt: null, hubspotPortal: { connected: false } } : a));
     try {
-      await disconnectHubspot(session.tenantId, account.phoneNumberId);
+      if (account.phoneNumberId) await disconnectHubspot(session.tenantId, account.phoneNumberId);
+      else await deconnecterHubspotEspace(session.tenantId);
     } catch {
       setAccount((a) => (a ? { ...a, ...prev } : a)); // rollback complet : le connecteur a échoué, rien n'a été délié côté serveur
     } finally {
@@ -303,23 +313,11 @@ function AccueilInner({ session }: { session: Session }) {
     }
   }
 
-  const [installPending, setInstallPending] = useState(false);
-  /**
-   * Ouvre le lien d'install/re-consentement HubSpot. Le lien est demandé au backend (route admin-only), qui y met un
-   * jeton SIGNÉ : le tenant n'est plus passé en clair dans l'URL (elle était forgeable). On ouvre ensuite l'URL renvoyée.
-   */
-  async function openHubspotInstall(grant?: 'lists') {
-    if (!isAdmin || installPending) return;
-    setInstallPending(true);
-    try {
-      const { installUrl } = await getHubspotInstallLink(session.tenantId, grant);
-      window.open(installUrl, '_blank', 'noopener,noreferrer');
-    } catch {
-      alert(t("Impossible de générer le lien HubSpot pour le moment.", 'Could not generate the HubSpot link right now.'));
-    } finally {
-      setInstallPending(false);
-    }
-  }
+  // Ouvre le lien d'install/re-consentement HubSpot : le MÊME geste que la carte de Paramètres > Intégrations.
+  const { ouvrir: openHubspotInstall, enCours: installPending } = useInstallationHubspot(session.tenantId, isAdmin);
+  const affichageHubspot = account
+    ? affichageHubspotAccueil({ actif: hubspotActif, aUnNumero: account.hasNumber, portailRelie: account.hubspotPortal?.connected === true })
+    : 'rien';
 
   const firstName = firstNameOf(me);
   const kpiRow = useMemo(
@@ -554,11 +552,14 @@ function AccueilInner({ session }: { session: Session }) {
 
           {/* HubSpot : carte SÉPARÉE, sous le bloc MBA. Elle vivait imbriquée dans la carte du numéro, où
               elle passait inaperçue alors qu'elle gouverne une intégration entière. La grille fait 2 colonnes :
-              placé en 3e position, ce bloc retombe sous le MBA. */}
-          {!accountLoading && !accountError && account?.hasNumber && (
+              placé en 3e position, ce bloc retombe sous le MBA.
+              🔴 DEPUIS LE 2026-09-25, C'EST L'INTERRUPTEUR DE PARAMÈTRES > INTÉGRATIONS QUI LE FAIT APPARAÎTRE, plus
+              la présence d'un numéro : un espace neuf doit pouvoir connecter HubSpot avant d'avoir un numéro. La
+              règle, et ses trois cas, vivent dans `affichageHubspotAccueil`. */}
+          {!accountLoading && !accountError && account && affichageHubspot === 'bloc' && (
             <div data-testid="hubspot-card" className="flex flex-col rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
               <h3 className="text-sm font-semibold tracking-tight text-ink-900">HubSpot</h3>
-              {account?.hasNumber && account.hubspotPortal?.connected && (
+              {account.hubspotPortal?.connected && (
                 // Portail relié : on affiche SUR QUEL portail, puis le toggle de synchro PAR numéro (qui gate le push).
                 <div className="mt-4 border-t border-ink-100 pt-3">
                   <div className="flex items-center gap-2 text-sm font-semibold text-ink-800">
@@ -571,6 +572,20 @@ function AccueilInner({ session }: { session: Session }) {
                   <a href="/tuto-hubspot" target="_blank" rel="noopener noreferrer" data-testid="hubspot-tuto-link" className="mt-1 inline-block text-xs text-brand-600 hover:underline">
                     {t('Comment afficher les analyses dans HubSpot ? (tuto)', 'How to show analyses in HubSpot? (guide)')}
                   </a>
+                  {/* La synchro se règle PAR NUMÉRO : sans numéro, pas de toggle, mais la déconnexion complète
+                      (tenant-wide) reste offerte, sans quoi l'interrupteur de Paramètres ne pourrait jamais s'éteindre. */}
+                  {!account.hasNumber && isAdmin && (
+                    <button
+                      type="button"
+                      data-testid="hubspot-deconnexion-espace"
+                      onClick={() => setShowDisconnect(true)}
+                      disabled={savingHubspot}
+                      className="mt-2 rounded-lg border border-ink-200 px-3 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-60"
+                    >
+                      {t('Déconnexion complète', 'Full disconnect')}
+                    </button>
+                  )}
+                  {account.hasNumber && (
                   <div className="mt-2 flex items-center justify-between">
                     <div className="min-w-0">
                       <div data-testid="hubspot-sync-state" className="flex items-center gap-1.5 text-sm font-semibold text-ink-800">
@@ -607,11 +622,13 @@ function AccueilInner({ session }: { session: Session }) {
                       />
                     )}
                   </div>
+                  )}
 
                   {/* Dialogue Pause vs Déconnexion complète (candidat 2), ouvert au clic « couper ». Tailwind pur, accessible
                       (role=dialog, aria-modal, fermeture Escape + clic hors carte). Deux issues : pause réversible (F3-a) ou
-                      déconnexion complète (délie le portail + révoque le token côté connecteur). */}
-                  {showDisconnect && account.phoneNumberId && (
+                      déconnexion complète (délie le portail + révoque le token côté connecteur). Sans numéro, la pause
+                      (qui se règle par numéro) n'est pas offerte : seule reste la déconnexion. */}
+                  {showDisconnect && (
                     <div
                       className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 px-4"
                       role="dialog"
@@ -623,11 +640,15 @@ function AccueilInner({ session }: { session: Session }) {
                     >
                       <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
                         <h3 id="hubspot-disconnect-title" className="text-base font-semibold tracking-tight text-ink-900">
-                          {t('Couper la synchronisation HubSpot', 'Turn off HubSpot sync')}
+                          {account.phoneNumberId
+                            ? t('Couper la synchronisation HubSpot', 'Turn off HubSpot sync')
+                            : t('Déconnecter HubSpot', 'Disconnect HubSpot')}
                         </h3>
-                        <p className="mt-1 text-sm text-ink-600">
-                          {t('Mettre en pause : réversible. À la reprise, les analyses produites pendant la pause sont renvoyées à HubSpot.', 'Pause: reversible. On resume, analyses produced during the pause are resent to HubSpot.')}
-                        </p>
+                        {account.phoneNumberId && (
+                          <p className="mt-1 text-sm text-ink-600">
+                            {t('Mettre en pause : réversible. À la reprise, les analyses produites pendant la pause sont renvoyées à HubSpot.', 'Pause: reversible. On resume, analyses produced during the pause are resent to HubSpot.')}
+                          </p>
+                        )}
                         <p className="mt-2 text-sm text-ink-600">
                           {t('Déconnexion complète : délie votre compte HubSpot et révoque son accès. Il faudra le reconnecter pour réactiver.', 'Full disconnect: unlinks your HubSpot account and revokes its access. You will need to reconnect it to re-enable.')}
                         </p>
@@ -643,13 +664,15 @@ function AccueilInner({ session }: { session: Session }) {
                           >
                             {t('Annuler', 'Cancel')}
                           </button>
-                          <button
-                            data-testid="hubspot-pause-btn"
-                            onClick={() => { setShowDisconnect(false); void applyHubspotState(false); }}
-                            className="rounded-lg bg-ink-100 px-3 py-2 text-sm font-semibold text-ink-800 transition hover:bg-ink-200"
-                          >
-                            {t('Mettre en pause', 'Pause')}
-                          </button>
+                          {account.phoneNumberId && (
+                            <button
+                              data-testid="hubspot-pause-btn"
+                              onClick={() => { setShowDisconnect(false); void applyHubspotState(false); }}
+                              className="rounded-lg bg-ink-100 px-3 py-2 text-sm font-semibold text-ink-800 transition hover:bg-ink-200"
+                            >
+                              {t('Mettre en pause', 'Pause')}
+                            </button>
+                          )}
                           <button
                             data-testid="hubspot-disconnect-btn"
                             onClick={() => { setShowDisconnect(false); void disconnectHubspotAction(); }}
@@ -696,7 +719,7 @@ function AccueilInner({ session }: { session: Session }) {
                   </div>
                 </div>
               )}
-              {account?.hasNumber && account.hubspotPortal && !account.hubspotPortal.connected && (
+              {account.hubspotPortal && !account.hubspotPortal.connected && (
                 // Aucun portail relié : on ne montre PAS le toggle par numéro (pousser sans portail ne fait rien).
                 // Le CTA lance l'install OAuth du connecteur en liant CE tenant (admin uniquement).
                 <div className="mt-4 flex items-center justify-between gap-3 border-t border-ink-100 pt-3">
@@ -725,6 +748,15 @@ function AccueilInner({ session }: { session: Session }) {
                 </div>
               )}
             </div>
+          )}
+          {/* Interrupteur éteint, aucun portail : une ligne DISCRÈTE, pas une carte. Elle dit où l'allumer. */}
+          {!accountLoading && !accountError && affichageHubspot === 'renvoi' && (
+            <p data-testid="hubspot-renvoi" className="text-xs text-ink-500 lg:col-span-2">
+              {t('HubSpot est éteint pour cet espace.', 'HubSpot is off for this workspace.')}{' '}
+              <Link href="/parametres#integration-hubspot" data-testid="hubspot-renvoi-lien" className="text-brand-600 hover:underline">
+                {t('L’allumer dans Paramètres > Intégrations', 'Turn it on in Settings > Integrations')}
+              </Link>
+            </p>
           )}
         </div>
       )}

@@ -4,6 +4,8 @@
 // tout nouvel opérateur / critère doit être ajouté aux DEUX bouts en même temps (sinon filtre silencieusement
 // no-op). Le test anti-drift verrouille ce contrat.
 
+import { estNiveauRisque, type NiveauRisque } from './risque';
+
 /** Opérateurs de filtre sur un champ perso. `eq`/`contains`/`not_contains` exigent une valeur ;
  *  `empty`/`not_empty` n'en prennent pas. Miroir de `ContactFieldOp` côté serveur. */
 export type ContactFieldOp = 'eq' | 'contains' | 'not_contains' | 'empty' | 'not_empty';
@@ -27,6 +29,12 @@ export interface ContactFilters {
    * l'audience, sinon le filtre viderait la liste de tout client qui démarre.
    */
   joignabiliteWhatsApp?: 'connu_injoignable';
+  /**
+   * Le niveau de risque de désengagement CALCULÉ (lot 7). Une fiche jamais calculée n'est dans aucun niveau.
+   * ⚠️ Le serveur REFUSE (400) une valeur hors des quatre niveaux, il ne l'ignore pas : ignorée, « élevé »
+   * rendrait tout l'espace.
+   */
+  risque?: NiveauRisque;
   fieldFilters?: ContactFieldFilter[];
 }
 
@@ -38,7 +46,7 @@ export type BulkTarget = { ids: string[] } | { filters: ContactFilters; excludeI
 export function filtersActive(f: ContactFilters): boolean {
   return Boolean(
     f.tags?.length || f.tagsExclude?.length || f.optIn || f.phonePrefix || f.phoneContains || f.nameSearch ||
-    f.joignabiliteWhatsApp ||
+    f.joignabiliteWhatsApp || f.risque ||
     f.fieldFilters?.some((ff) => ff.op === 'empty' || ff.op === 'not_empty' || ff.value.trim() !== ''),
   );
 }
@@ -80,6 +88,7 @@ export function filtresRepris(v: unknown): ContactFilters {
     ...(texte('phoneContains') ? { phoneContains: texte('phoneContains')! } : {}),
     ...(texte('nameSearch') ? { nameSearch: texte('nameSearch')! } : {}),
     ...(o.joignabiliteWhatsApp === 'connu_injoignable' ? { joignabiliteWhatsApp: 'connu_injoignable' as const } : {}),
+    ...(estNiveauRisque(o.risque) ? { risque: o.risque } : {}),
     ...(champs.length > 0 ? { fieldFilters: champs } : {}),
   };
 }
@@ -95,6 +104,7 @@ export function filtersToQuery(f: ContactFilters): URLSearchParams {
   if (f.phoneContains) qs.set('phoneContains', f.phoneContains);
   if (f.nameSearch) qs.set('nameSearch', f.nameSearch);
   if (f.joignabiliteWhatsApp) qs.set('joignabilite', f.joignabiliteWhatsApp);
+  if (f.risque) qs.set('risque', f.risque);
   if (f.fieldFilters && f.fieldFilters.length > 0) qs.set('fields', JSON.stringify(f.fieldFilters));
   return qs;
 }
