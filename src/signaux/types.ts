@@ -187,6 +187,18 @@ export interface ContactDuSignal {
   optOutRcs: boolean;
 }
 
+/**
+ * L'identifiant sous lequel une fiche se pousse chez l'outil, ou `null` : elle ne peut pas l'être.
+ *
+ * UNE règle pour ses deux lecteurs : le complément (`completerSignal`), qui ne relit pas ce qui ne servirait qu'à
+ * une poussée qui n'aura pas lieu, et l'adaptateur, qui compte la fiche au lieu de la pousser. Écrite deux fois,
+ * elle divergerait sur un identifiant fait d'espaces.
+ */
+export function identifiantPoussable(c: Pick<ContactDuSignal, 'externalId'>): string | null {
+  const v = c.externalId?.trim() ?? '';
+  return v === '' ? null : v;
+}
+
 /** Une analyse de conversation. `null` sur une note veut dire « pas de mesure », jamais 0. */
 export interface AnalyseDuSignal {
   intent: string;

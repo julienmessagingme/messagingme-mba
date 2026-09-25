@@ -75,6 +75,24 @@ function monter() {
 const entetes = { 'content-type': 'application/json', authorization: `Bearer ${CLE}` };
 
 /**
+ * Les compteurs d'une opération, TOUTES MINUTES CONFONDUES.
+ *
+ * ⚠️ LE GARDE AGRÈGE PAR MINUTE, et une suite complète sous charge fait chevaucher une limite de minute à une
+ * rafale d'appels : lire la seule ligne la plus récente rendait 13 500 unités au lieu de 15 000. Ce n'est pas
+ * affaiblir l'assertion, c'est vérifier ce qu'elle a toujours voulu dire : le TOTAL compté.
+ */
+function totaux(usage: GardeUsageMemoire): Record<string, { appels: number; unites: number; refusees: number }> {
+  const t: Record<string, { appels: number; unites: number; refusees: number }> = {};
+  for (const c of usage.compteurs()) {
+    const o = (t[c.operation] ??= { appels: 0, unites: 0, refusees: 0 });
+    o.appels += c.appels;
+    o.unites += c.unites;
+    o.refusees += c.refusees;
+  }
+  return t;
+}
+
+/**
  * ⚠️ `/ops` NE SE MONTE QUE SI ON LE CÂBLE, et c'est une propriété du produit, pas un détail de test : une
  * instance qui n'a pas explicitement fourni ces dépendances n'expose pas la surface d'exploitation. Ces
  * trois doubles vides suffisent à la monter ; `/ops/usage`, lui, ne lit que les compteurs.
@@ -106,7 +124,7 @@ describe('l’usage de l’API publique est COMPTÉ', () => {
     await server.inject({ method: 'POST', url: '/mcp', headers: entetes, payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' } });
     await server.inject({ method: 'GET', url: '/mcp', headers: entetes });
 
-    const parOperation = Object.fromEntries(usage.compteurs().map((c) => [c.operation, c]));
+    const parOperation = totaux(usage);
     expect(Object.keys(parOperation).sort()).toEqual(
       ['contacts.batch', 'contacts.read', 'contacts.upsert', 'mcp.call', 'mcp.refus', 'sends.create', 'sends.read'],
     );
@@ -132,7 +150,7 @@ describe('l’usage de l’API publique est COMPTÉ', () => {
     }
     // 15 000 contacts acceptés en trente appels : c'est précisément ce que le plafond de débit ne voit pas.
     expect(codes.every((c) => c === 200)).toBe(true);
-    expect(usage.compteurs().find((c) => c.operation === 'contacts.batch')).toMatchObject({ unites: 15_000, refusees: 0 });
+    expect(totaux(usage)['contacts.batch']).toMatchObject({ unites: 15_000, refusees: 0 });
     await server.close();
   });
 

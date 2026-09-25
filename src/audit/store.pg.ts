@@ -118,7 +118,8 @@ export type AuditAction =
   /**
    * LE BRANCHEMENT D'UN OUTIL QUI REÇOIT LES SIGNAUX (lot 6 de l'API publique, 2026-09-24). Même famille que
    * `connecteur.cree` : c'est par lui que des données de contacts QUITTENT l'espace. Le détail ne porte jamais
-   * les clés, seulement l'outil, l'option du résumé et le fait que les clés ont changé.
+   * les clés, seulement l'option du résumé et le fait que les clés ont changé ; ni lui ni la cible ne nomment
+   * l'outil (spec § 10 : ce journal est un écran de la marque).
    */
   | 'integration.branchee'
   | 'integration.modifiee'

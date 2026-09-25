@@ -1,5 +1,7 @@
 import { SOURCE_STOP_WHATSAPP } from '../crm/consentement';
-import { SOURCE_STOP_RCS, type AnalyseDuSignal, type CanalSignal, type ContactDuSignal, type Signal, type SignalComplet } from './types';
+import {
+  SOURCE_STOP_RCS, identifiantPoussable, type AnalyseDuSignal, type CanalSignal, type ContactDuSignal, type Signal, type SignalComplet,
+} from './types';
 
 /**
  * RELIRE CE QUE LE SIGNAL NE TRANSPORTE PAS (spec 2026-09-24, § 8), au moment de pousser et jamais sur le
@@ -45,9 +47,19 @@ async function ficheDu(l: LecturesSignal, tenantId: string, s: Signal): Promise<
   return l.ficheParWaId(tenantId, s.waId);
 }
 
+/** Ce qu'un accusé porte quand son message n'a pas été relu : ni origine, ni envoi. */
+const SANS_CONTEXTE = { origine: null, sendId: null } as const;
+
 export async function completerSignal(l: LecturesSignal, tenantId: string, s: Signal): Promise<SignalComplet | null> {
   const fiche = await ficheDu(l, tenantId, s);
   if (fiche === null) return null;
+  /**
+   * 🔴 CE QUI NE SERT QU'À LA POUSSÉE NE SE RELIT PAS POUR UNE FICHE QUI NE SERA JAMAIS POUSSÉE. Sans identifiant
+   * externe, l'adaptateur la COMPTE et s'arrête là : le contexte d'un message (trois sous-requêtes, et un accusé
+   * de campagne en produit des milliers) et le lien d'un clic seraient lus pour rien. L'analyse, elle, se relit
+   * quand même : son absence veut dire « plus rien à pousser » (`null`), et la fiche ne serait plus comptée.
+   */
+  const poussable = identifiantPoussable(fiche) !== null;
   const base = {
     id: s.id,
     le: s.le,
@@ -56,17 +68,17 @@ export async function completerSignal(l: LecturesSignal, tenantId: string, s: Si
   switch (s.nom) {
     case 'em_message_delivered':
     case 'em_message_read': {
-      const ctx = await l.contexteDuMessage(tenantId, s.messageId);
+      const ctx = poussable ? await l.contexteDuMessage(tenantId, s.messageId) : SANS_CONTEXTE;
       return { ...base, contenu: { nom: s.nom, canal: s.canal, origine: ctx.origine, sendId: ctx.sendId } };
     }
     case 'em_message_failed': {
-      const ctx = await l.contexteDuMessage(tenantId, s.messageId);
+      const ctx = poussable ? await l.contexteDuMessage(tenantId, s.messageId) : SANS_CONTEXTE;
       return { ...base, contenu: { nom: s.nom, canal: s.canal, origine: ctx.origine, sendId: ctx.sendId, motif: s.motif, codeMeta: s.codeMeta } };
     }
     case 'em_replied':
       return { ...base, contenu: { nom: s.nom, canal: s.canal, bouton: s.bouton } };
     case 'em_link_clicked': {
-      const lien = await l.lien(tenantId, s.lien);
+      const lien = poussable ? await l.lien(tenantId, s.lien) : null;
       return { ...base, contenu: { nom: s.nom, lien: s.lien, template: lien?.template ?? null, destination: lien?.destination ?? null } };
     }
     case 'em_opted_out':

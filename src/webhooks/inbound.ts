@@ -275,8 +275,15 @@ export function extractFlowCompletions(payload: unknown): FlowCompletion[] {
  *  consommé par le déclencheur d'automation `new_contact`. `void` reste accepté (câblages qui ne le disent pas). */
 export type InboundContactUpsert = (tenantId: string, m: InboundMessage) => Promise<void | 'created' | 'updated' | 'skipped'>;
 
-/** Enregistre le refus d'un contact qui a écrit STOP. Rend l'identifiant touché, `null` si aucune fiche. */
-export type InboundOptOut = (tenantId: string, waId: string) => Promise<string | null>;
+/**
+ * Enregistre le refus d'un contact qui a écrit STOP. Rend l'identifiant touché, `null` si aucune fiche.
+ *
+ * `messageId` : le wamid du message STOP, la CLÉ NATURELLE du refus. Il rend le signal `em_opted_out` stable si
+ * Meta redélivre le message ou si le job du webhook est rejoué (`signalDesabonnement`). ⚠️ Un câblage qui
+ * l'ignore compile quand même (une flèche à deux paramètres est assignable ici) : `tests/signaux-cablage.test.ts`
+ * lit le câblage du worker.
+ */
+export type InboundOptOut = (tenantId: string, waId: string, messageId: string) => Promise<string | null>;
 
 /**
  * Mappe chaque message entrant à son tenant et l'enregistre. Si `upsertContact` est fourni, crée/rafraîchit
@@ -356,7 +363,7 @@ export async function processInbound(
     }
     if (optOut && m.type === 'text' && estDemandeArret(m.body)) {
       try {
-        const touche = await optOut(tenantId, m.waId);
+        const touche = await optOut(tenantId, m.waId, m.messageId);
         if (!touche) {
           // eslint-disable-next-line no-console
           console.error(`STOP WhatsApp reçu de ${m.waId} (${tenantId}) sans fiche contact : rien à désabonner`);

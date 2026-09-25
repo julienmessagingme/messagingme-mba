@@ -53,9 +53,14 @@ function neutraliserOutil(message: string): string {
  *   rejoue le job ENTIER plus tard, tranches déjà passées comprises. Les mêmes `em_event_id` repartent : l'outil
  *   peut dédupliquer, et un attribut de fiche réécrit à l'identique ne coûte rien.
  * - 🔴 UN ÉVÉNEMENT DE PLUS DE 24 HEURES (un job rejoué tard, un worker longtemps arrêté) : l'outil le
- *   refuserait. Il n'est pas envoyé et le job le DIT dans son journal (nombre, noms, espace) ; l'ÉTAT DE LA FICHE
- *   part quand même, relu au moment de pousser, donc à jour. Ce n'est pas un refus de l'outil : rien n'est écrit
+ *   refuserait. Il n'est pas envoyé et le job le DIT dans son journal (nombre, noms, espace). Seul l'état de la
+ *   fiche RELU au moment de pousser part quand même (identifiant, désabonnements) : ce que le signal apprenait
+ *   lui-même (dernière réponse, joignabilité RCS, dernière analyse) datait de lui, et l'écrire maintenant
+ *   écraserait un état plus récent (`attributsDuSignal`). Ce n'est pas un refus de l'outil : rien n'est écrit
  *   dans le journal des erreurs de la marque.
+ * - 🔴 LE COMPTE DES FICHES SANS IDENTIFIANT S'ÉCRIT APRÈS LA DERNIÈRE TRANCHE, jamais avant : un job rejoué
+ *   après un 5xx recompterait les mêmes fiches, et l'écran du réglage annoncerait des signaux perdus qui ne
+ *   l'ont été qu'une fois. Seul un job qui ne LÈVE pas arrive jusque-là, et la file ne rejoue que ceux qui lèvent.
  * - La ligne de journal ne porte que le nombre de signaux, leurs NOMS et l'`em_event_id` du premier, jamais une
  *   donnée de la personne ; son libellé (`NOM_APPEL_SIGNAUX`) et son message (`neutraliserOutil`) ne nomment pas
  *   l'outil.
@@ -111,14 +116,7 @@ export function creerTravailSignauxBatch(deps: DepsTravailBatch): (data: unknown
     });
     if (tropVieux > 0) {
       const noms = [...new Set(complets.filter((c) => Date.parse(c.le) < depuis).map((c) => c.contenu.nom))].sort().join(',');
-      deps.log?.(`signaux-batch: ${tropVieux} evenement(s) de plus de 24 h non envoye(s) pour ${tenantId} (${noms}) : l'outil les refuserait, l'etat des fiches part quand meme`);
-    }
-    if (sansIdentifiant > 0) {
-      try {
-        await deps.noterSansIdentifiant(tenantId, sansIdentifiant);
-      } catch (err) {
-        deps.log?.(`signaux-batch: compte sans identifiant non ecrit pour ${tenantId}: ${texte(err)}`);
-      }
+      deps.log?.(`signaux-batch: ${tropVieux} evenement(s) de plus de 24 h non envoye(s) pour ${tenantId} (${noms}) : l'outil les refuserait, seul l'etat relu des fiches part`);
     }
 
     for (const requete of requetes) {
@@ -135,7 +133,7 @@ export function creerTravailSignauxBatch(deps: DepsTravailBatch): (data: unknown
             } catch (e) {
               deps.log?.(`signaux-batch: suspension non ecrite pour ${tenantId}: ${texte(e)}`);
             }
-            return;
+            break;
           }
           continue;
         }
@@ -144,6 +142,16 @@ export function creerTravailSignauxBatch(deps: DepsTravailBatch): (data: unknown
           err instanceof BatchApiError ? err.status : undefined,
         );
         throw err;
+      }
+    }
+
+    // APRÈS la dernière tranche (cf. le docblock) : un job qui a levé plus haut sera rejoué, et c'est le passage
+    // qui ira jusqu'ici qui comptera, une fois.
+    if (sansIdentifiant > 0) {
+      try {
+        await deps.noterSansIdentifiant(tenantId, sansIdentifiant);
+      } catch (err) {
+        deps.log?.(`signaux-batch: compte sans identifiant non ecrit pour ${tenantId}: ${texte(err)}`);
       }
     }
   };

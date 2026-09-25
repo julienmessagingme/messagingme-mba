@@ -607,8 +607,8 @@ function DocsInner() {
         <ul className="list-disc space-y-1 pl-5">
           <li>
             {t(
-              'Les scénarios PUBLIÉS, qu’ils puissent partir ou non. opening est calculé par la même règle que POST /v1/sends : null, il ne peut pas partir par l’API, quelle que soit la cible ; whatsapp_session, il se vise par son bloc d’entrée ; rcs ou whatsapp_template, il se vise par son code ou son nom.',
-              'The PUBLISHED scenarios, whether they can go out or not. opening is computed by the same rule as POST /v1/sends: null, it cannot go out through the API, whatever the target; whatsapp_session, it is targeted through its entry block; rcs or whatsapp_template, it is targeted by its code or its name.',
+              'Les scénarios PUBLIÉS, qu’ils puissent partir ou non. opening est calculé par la même règle que POST /v1/sends : null, il ne peut partir ni par son code ou son nom, ni par son bloc d’entrée (un autre de ses blocs, visé en cible node, est jugé pour lui-même) ; whatsapp_session, il se vise par son bloc d’entrée ; rcs ou whatsapp_template, il se vise par son code ou son nom.',
+              'The PUBLISHED scenarios, whether they can go out or not. opening is computed by the same rule as POST /v1/sends: null, it cannot go out by its code or its name, nor through its entry block (another of its blocks, targeted with a node target, is judged on its own); whatsapp_session, it is targeted through its entry block; rcs or whatsapp_template, it is targeted by its code or its name.',
             )}
           </li>
           <li>

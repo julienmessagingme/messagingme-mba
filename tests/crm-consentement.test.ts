@@ -38,17 +38,19 @@ const texte = (body: string, from = '33600000001'): Record<string, unknown> =>
 function harnais(over: { contactExiste?: boolean } = {}) {
   const gestes: string[] = [];
   const optOuts: Array<{ tenant: string; waId: string }> = [];
+  const messagesDuStop: string[] = [];
   const store: InboxStore = {
     phoneNumberTenant: async () => 't1',
     recordInbound: async () => { gestes.push('inbox'); },
   };
   const upsert = async (): Promise<'created'> => { gestes.push('upsert'); return 'created'; };
-  const optOut = async (tenant: string, waId: string): Promise<string | null> => {
+  const optOut = async (tenant: string, waId: string, messageId: string): Promise<string | null> => {
     gestes.push('optout');
     optOuts.push({ tenant, waId });
+    messagesDuStop.push(messageId);
     return over.contactExiste === false ? null : 'c1';
   };
-  return { gestes, optOuts, store, upsert, optOut };
+  return { gestes, optOuts, messagesDuStop, store, upsert, optOut };
 }
 
 describe('le prédicat de demande d’arrêt', () => {
@@ -76,6 +78,14 @@ describe('WhatsApp entrant : STOP désabonne, comme en RCS', () => {
     expect(h.optOuts).toEqual([{ tenant: 't1', waId: '33600000001' }]);
     // La source distingue ce refus de ceux posés à la main : c'est ce qui permet de dire D'OÙ il vient.
     expect(SOURCE_STOP_WHATSAPP).toBe('whatsapp_stop');
+  });
+
+  it('🔴 le refus reçoit le wamid du STOP : c’est la clé qui rend son signal stable si Meta le redélivre', async () => {
+    // Sans lui, l'`em_event_id` du désabonnement est tiré au hasard : un STOP redélivré (ou un job de webhook
+    // rejoué) produit un second événement que l'outil du client ne peut pas dédupliquer (spec § 8).
+    const h = harnais();
+    await processInbound(payload([texte('STOP')]), h.store, { upsertContact: h.upsert, optOut: h.optOut });
+    expect(h.messagesDuStop).toEqual(['wamid.STOP.33600000001']);
   });
 
   it('🔴 L’ORDRE : l’opt-out passe APRÈS l’upsert, sinon le cas qui compte le plus est perdu', async () => {

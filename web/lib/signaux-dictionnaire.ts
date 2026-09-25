@@ -61,8 +61,8 @@ export const EVENEMENTS_SIGNAUX: readonly EntreeEvenement[] = [
   {
     nom: 'em_link_clicked', quand: PRIORITAIRE, champs: ['lien', 'template', 'destination'],
     note: [
-      'lien : le code du lien suivi. Seulement quand le clic est attribué à une fiche ; un clic automatique (aperçu, robot) ne compte pas.',
-      'lien: the tracked link code. Only when the click is attributed to a contact; an automatic click (preview, bot) does not count.',
+      'lien : le code du lien suivi. Seulement quand le clic est attribué à une fiche ; un clic automatique (aperçu, robot) ne compte pas. destination : l’adresse vers laquelle le lien mène, absente au-delà de 300 caractères (une adresse coupée serait fausse).',
+      'lien: the tracked link code. Only when the click is attributed to a contact; an automatic click (preview, bot) does not count. destination: the address the link leads to, absent beyond 300 characters (a cut address would be wrong).',
     ],
   },
   {

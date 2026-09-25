@@ -473,9 +473,13 @@ C'est la correction du défaut 4.
 - **`GET /v1/templates`** : les templates WhatsApp APPROUVÉS,
   `{ "name", "language", "category", "header": "none" | "text" | "image" | "video" | "document", "variables": [{ "position", "source" }] }`.
   `source` est le champ suggéré quand la console le connaît (`template_param_hints`), `null` sinon.
-- **`GET /v1/scenarios`** : les scénarios PUBLIÉS, `{ "code", "name", "opening", "publishedAt" }`. `opening`
+- **`GET /v1/scenarios`** : les scénarios PUBLIÉS,
+  `{ "code", "name", "opening", "openingTemplate", "entryNode", "publishedAt" }`. `opening`
   vaut `whatsapp_template`, `whatsapp_session`, `rcs` ou `null` (ne peut pas partir), calculé par la même
-  fonction que `/v1/sends`.
+  fonction que `/v1/sends`. `openingTemplate` (`{ "name", "language" }`) est le template que `params`
+  paramètre, pour une ouverture `whatsapp_template` seulement, `null` sinon ; `entryNode` est le code `nod_`
+  du bloc d'entrée, à viser en cible `node` (seul chemin d'un `whatsapp_session`), `null` quand ce bloc n'a
+  pas de code public (`catalogueScenarios`, `src/http/v1-catalogues.ts`).
 - **`GET /v1/rcs-messages`** : `{ "name", "kind": "text" | "card" | "carousel", "variables": ["prenom"] }`.
 
 ## 7. Les intentions : `achat`, `suivi_commande`, `retour`
@@ -511,7 +515,7 @@ de Batch, la plus stricte connue).
 | événement | `em_link_clicked` | immédiat | le lien tracé cliqué, l'envoi ou le template |
 | événement | `em_opted_out` | immédiat | canal ou source du désabonnement |
 | événement | `em_conversation_analyzed` | à la fin d'une conversation | `intent`, `sentiment`, `satisfaction`, `urgence`, `resolved`, `topic`, `action_suggestion`, `handled_by`, `exchanges_count`, et `summary` SI l'option est activée |
-| attribut | `em_contact_id` | à la première poussée | notre `contactId`, pour que l'outil nous renvoie la fiche sans ambiguïté |
+| attribut | `em_contact_id` | à chaque poussée (réécrire la même valeur ne coûte rien, se souvenir de « déjà envoyé » serait un état de plus) | notre `contactId`, pour que l'outil nous renvoie la fiche sans ambiguïté |
 | attributs | `em_last_intent`, `em_last_sentiment`, `em_satisfaction`, `em_urgency`, `em_last_resolved`, `em_last_reply_at`, `em_whatsapp_optout`, `em_rcs_optout`, `em_rcs_reachable` | avec les événements | l'état courant du contact |
 
 - **« À la fin d'une conversation »** veut dire : 25 minutes sans message (`CONVERSATION_INACTIVITY_MS`), puis

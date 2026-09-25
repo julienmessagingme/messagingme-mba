@@ -145,6 +145,19 @@ describe('envoyerRcsLibre : les conditions communes', () => {
     expect(envois).toHaveLength(1);
   });
 
+  it('🔴 une lecture du cache écrite en MÉTHODE garde son `this`', async () => {
+    // `{ get: deps.lireJoignabilite }` détachait la méthode de son objet : une méthode qui lit `this` levait une
+    // TypeError, et la route de l'API répondait 500 au lieu d'un refus lisible.
+    const { deps, envois } = monde();
+    const avecThis = {
+      ...deps,
+      cache: { '+33612345678': { reachable: false, checkedAt: MAINTENANT - 1000 } } as Record<string, { reachable: boolean; checkedAt: number }>,
+      async lireJoignabilite(_agentId: string, e164: string) { return this.cache[e164] ?? null; },
+    };
+    expect(await envoyerRcsLibre(avecThis, 't1', NUMERO, { text: 'Bonjour' }, 'api')).toEqual({ refus: 'rcs_unreachable' });
+    expect(envois).toEqual([]);
+  });
+
   it('le fournisseur dit non joignable : rcs_unreachable', async () => {
     const { deps } = monde({ issue: { skipped: 'not_rcs_reachable' } });
     expect(await envoyerRcsLibre(deps, 't1', NUMERO, { text: 'Bonjour' }, 'api')).toEqual({ refus: 'rcs_unreachable' });

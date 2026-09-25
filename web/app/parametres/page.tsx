@@ -256,12 +256,12 @@ function Parametres({ tenantId }: { tenantId: string }) {
               qu on lui facture, alors que cette section vivait derriere un JWT qu il possede. Les six
               champs n ont pas ete reecrits, ils vivent dans `web/components/GrillePrixChamps.tsx`. */}
 
-          {/* Contacts bloqués : SEULE porte de sortie d'un blocage. Un contact bloqué n'apparaît nulle part
-              ailleurs, donc sans cet écran il serait introuvable. La section se masque quand la liste est vide. */}
           {/* INTÉGRATIONS (lot 6 de l'API publique) : l'outil qui reçoit les signaux. Admin seulement, comme
               tout ce bloc : un manager ne voit que la section de la prise par les agents. */}
           <ReglageIntegrationBatch tenantId={tenantId} />
 
+          {/* Contacts bloqués : SEULE porte de sortie d'un blocage. Un contact bloqué n'apparaît nulle part
+              ailleurs, donc sans cet écran il serait introuvable. La section se masque quand la liste est vide. */}
           <BlockedContacts tenantId={tenantId} />
 
           {/*

@@ -25,7 +25,8 @@ describe('le câblage des signaux dans l’API', () => {
 
   it('🔴 la réponse RCS et son STOP remontent', () => {
     expect(api).toMatch(/signalDeLaReponse\(\{\s*messageId: mo\.messageId/);
-    expect(api).toMatch(/signalDesabonnement\(mo\.from, 'rcs'\)/);
+    // Avec l'identifiant du message STOP : c'est lui qui rend le signal stable si le fournisseur le redélivre.
+    expect(api).toMatch(/signalDesabonnement\(mo\.from, 'rcs', mo\.messageId\)/);
   });
 
   it('le clic attribué remonte', () => {
@@ -42,6 +43,12 @@ const worker = sansCommentaires(readFileSync(new URL('../src/worker.ts', import.
 describe('le câblage des signaux dans le worker', () => {
   it('🔴 les désabonnements écrits par le worker (le STOP WhatsApp) deviennent des signaux', () => {
     expect(worker).toMatch(/new PgContactStore\(\s*pool,\s*annoncerAussiAuxSignaux\(/);
+  });
+
+  it('🔴 le wamid du STOP suit jusqu’au dépôt : une flèche qui l’oublierait compilerait quand même', () => {
+    // `InboundOptOut` déclare trois paramètres, et une flèche à deux lui reste assignable : le typage ne voit pas
+    // l'oubli, et l'`em_event_id` du désabonnement redeviendrait un aléa.
+    expect(worker).toMatch(/inboundOptOut: \(tenant, waId, messageId\) => contactStore\.setOptInByWaId\(tenant, waId, 'opted_out', SOURCE_STOP_WHATSAPP, messageId\)/);
   });
 
   it('🔴 les DEUX files qui voient des accusés passent le puits, et la réponse n’arrive que par une', () => {

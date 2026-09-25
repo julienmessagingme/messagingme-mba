@@ -187,10 +187,14 @@ export class PgContactStore implements ContactStore {
    *
    * ⚠️ ABSENTE = personne n'est prévenu, ce qui est le comportement d'avant. Les scripts et les tests qui
    * construisent ce dépôt avec le seul pool continuent donc de marcher à l'identique.
+   *
+   * `messageDuStop` : l'identifiant du message qui a dit STOP, quand le refus en vient (le mot-clé entrant). Il
+   * rend l'identifiant du signal STABLE d'une redélivrance à l'autre (`signalDesabonnement`) ; absent partout où
+   * aucun message ne porte le refus.
    */
   constructor(
     private readonly pool: Pool,
-    private readonly annoncerDesabonnement?: (tenantId: string, waIds: string[]) => Promise<void>,
+    private readonly annoncerDesabonnement?: (tenantId: string, waIds: string[], messageDuStop?: string) => Promise<void>,
   ) {}
 
   /**
@@ -198,12 +202,12 @@ export class PgContactStore implements ContactStore {
    * remonter ferait rendre 500 à la route qui vient pourtant de l'écrire, et l'opérateur croirait son geste
    * perdu.
    */
-  private async annoncer(tenantId: string, waIds: Array<string | null>): Promise<void> {
+  private async annoncer(tenantId: string, waIds: Array<string | null>, messageDuStop?: string): Promise<void> {
     if (!this.annoncerDesabonnement) return;
     const propres = waIds.filter((w): w is string => typeof w === 'string' && w.trim() !== '');
     if (propres.length === 0) return;
     try {
-      await this.annoncerDesabonnement(tenantId, propres);
+      await this.annoncerDesabonnement(tenantId, propres, messageDuStop);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(`contacts: annonce d opt-out impossible pour ${tenantId}:`, err instanceof Error ? err.message : err);
@@ -404,12 +408,17 @@ export class PgContactStore implements ContactStore {
    * divergé dans ce dépôt (bug de purge du 2026-08-18, où une correspondance recopiée à la main ne pouvait
    * jamais être vraie). Renvoie l'identifiant du contact touché, `null` si le numéro est inconnu. Merge-only :
    * ne crée aucune fiche.
+   *
+   * `messageDuStop` : l'identifiant du message entrant qui porte le refus (le mot-clé STOP), transmis à l'annonce
+   * pour que le signal garde le même identifiant si Meta redélivre ce message. Le bloc « Action » d'un scénario
+   * n'en a pas.
    */
   async setOptInByWaId(
     tenantId: string,
     waId: string,
     statut: 'opted_in' | 'opted_out',
     source: string,
+    messageDuStop?: string,
   ): Promise<string | null> {
     const res = await this.pool.query<{ id: string }>(
       // 🔴 `opt_out_at` SUIT LE STATUT, DANS LES DEUX SENS (migration 0138) : posée en se désabonnant,
@@ -427,7 +436,7 @@ export class PgContactStore implements ContactStore {
     const id = res.rows[0]?.id ?? null;
     // L'annonce vient APRÈS l'écriture, et seulement si elle a touché quelqu'un : annoncer le refus d'un
     // numéro inconnu pousserait vers le système du client une personne qui n'existe pas chez nous.
-    if (statut === 'opted_out' && id !== null) await this.annoncer(tenantId, [waId]);
+    if (statut === 'opted_out' && id !== null) await this.annoncer(tenantId, [waId], messageDuStop);
     return id;
   }
 

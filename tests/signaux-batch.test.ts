@@ -192,7 +192,7 @@ describe('versBatch : la traduction du dictionnaire (fonction PURE)', () => {
     }
   });
 
-  it('🔴 `evenementsDepuis` : un événement plus ancien ne part pas, il est COMPTÉ, et l’état de sa fiche part quand même', () => {
+  it('🔴 `evenementsDepuis` : un événement plus ancien ne part pas, il est COMPTÉ, et l’état RELU de sa fiche part quand même', () => {
     // L'outil refuse un événement de plus de 24 h (page de l'API Profils, relue le 2026-09-25). La coupure est
     // une OPTION (la fonction reste pure, sans date) : c'est le travail de la file qui la calcule.
     const vieux = { ...signal(livre('rcs'), { id: '1'.repeat(32) }), le: '2026-09-23T09:00:00.000Z' };
@@ -203,13 +203,43 @@ describe('versBatch : la traduction du dictionnaire (fonction PURE)', () => {
     expect(p.events?.map((e) => e.attributes[CHAMP_ID_EVENEMENT])).toEqual(['2'.repeat(32)]);
     expect(p.attributes?.em_rcs_reachable).toBe(false);
 
-    // Tous trop vieux : un profil SANS `events`, qui porte l'état de la fiche (celui du vieux signal compris).
+    // Tous trop vieux : un profil SANS `events`, qui ne porte que l'état RELU de la fiche.
     const seulVieux = versBatch([vieux], { resume: false, evenementsDepuis: '2026-09-23T10:00:00.000Z' });
     expect(seulVieux.tropVieux).toBe(1);
-    expect(seul(seulVieux)).toEqual({ identifiers: { custom_id: 'crm-7781' }, attributes: { em_contact_id: C, em_whatsapp_optout: false, em_rcs_optout: false, em_rcs_reachable: true } });
+    expect(seul(seulVieux)).toEqual({ identifiers: { custom_id: 'crm-7781' }, attributes: { em_contact_id: C, em_whatsapp_optout: false, em_rcs_optout: false } });
 
     // Sans l'option, rien n'est écarté : le comportement d'avant.
     expect(versBatch([vieux], { resume: false }).tropVieux).toBe(0);
+  });
+
+  it('🔴 un signal TROP VIEUX n’écrit que l’état RELU : un échec RCS rejoué tard ne dit pas « injoignable »', () => {
+    // Le scénario de la relecture : un job d'échec RCS rejoué le lendemain, après un « délivré » déjà poussé.
+    // `em_rcs_reachable = false` écraserait chez l'outil l'état plus récent. Même chose pour la date de la dernière
+    // réponse et pour la dernière analyse : ce que le signal apprenait était vrai à SA date, pas aujourd'hui.
+    // Seuls l'identifiant et les désabonnements, relus au moment de pousser, partent.
+    const depuis = '2026-09-24T09:00:00.000Z';
+    const vieux = (contenu: ContenuSignal, x: string) => ({ ...signal(contenu, { externalId: x }), le: '2026-09-23T09:00:00.000Z' });
+    const r = versBatch([
+      vieux(echecRcs, 'echec'),
+      vieux(livre('rcs'), 'livre'),
+      vieux({ nom: 'em_replied', canal: 'whatsapp', bouton: null }, 'reponse'),
+      vieux(analyse(), 'analyse'),
+    ], { resume: false, evenementsDepuis: depuis });
+    expect(r.tropVieux).toBe(4);
+    const relus = { em_contact_id: C, em_whatsapp_optout: false, em_rcs_optout: false };
+    for (const p of r.requetes.flat()) {
+      expect(p.attributes, p.identifiers.custom_id).toEqual(relus);
+      expect(p, p.identifiers.custom_id).not.toHaveProperty('events');
+    }
+    expect(r.requetes.flat()).toHaveLength(4);
+  });
+
+  it('🔴 une `destination` trop longue est OMISE, jamais coupée : une adresse coupée est une adresse fausse', () => {
+    const clic = (destination: string) => seul(versBatch([signal({ nom: 'em_link_clicked', lien: 'ab12cd34ef56', template: 'promo', destination })], { resume: false }));
+    const pile = `https://client.fr/${'x'.repeat(BATCH_MAX_TEXTE - 'https://client.fr/'.length)}`;
+    expect(pile).toHaveLength(BATCH_MAX_TEXTE);
+    expect(clic(pile).events?.[0]?.attributes.destination).toBe(pile);
+    expect(clic(`${pile}y`).events?.[0]?.attributes).toEqual({ em_event_id: ID, lien: 'ab12cd34ef56', template: 'promo' });
   });
 });
 

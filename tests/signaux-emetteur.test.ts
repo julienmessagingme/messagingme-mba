@@ -5,6 +5,8 @@ import {
 } from '../src/signaux/emetteur';
 import { NOMS_EVENEMENTS, SIGNAUX_PAR_JOB, schemaSignal, type JobSignaux, type Signal } from '../src/signaux/types';
 import type { InboundMessage } from '../src/webhooks/inbound';
+import type { Pool } from 'pg';
+import { PgContactStore } from '../src/crm/contact-store.pg';
 
 const T = '0b8f5c1e-3d2a-4c6b-9e7f-1a2b3c4d5e6f';
 const C = '6f1c2b3a-4d5e-4f60-8a7b-9c0d1e2f3a4b';
@@ -208,6 +210,34 @@ describe('annoncerAussiAuxSignaux : le désabonnement', () => {
     const waIds = Array.from({ length: 2 * SIGNAUX_PAR_JOB + 50 }, (_, i) => `3361234${String(i).padStart(4, '0')}`);
     await annoncerAussiAuxSignaux(async () => {}, emetteur)(T, waIds);
     expect(jobs.map((j) => j.job.signaux.length)).toEqual([SIGNAUX_PAR_JOB, SIGNAUX_PAR_JOB, 50]);
+  });
+
+  it('🔴 un STOP venu d’un MESSAGE garde son identifiant : le wamid est la clé naturelle, l’aléa ne reste que sans message', () => {
+    const a = signalDesabonnement('336', 'whatsapp', 'wamid.STOP');
+    expect(signalDesabonnement('336', 'whatsapp', 'wamid.STOP').id).toBe(a.id);
+    expect(signalDesabonnement('336', 'whatsapp', 'wamid.AUTRE').id).not.toBe(a.id);
+    // Le même message produit aussi une réponse : les deux événements ne se confondent pas.
+    expect(signalDeLaReponse({ messageId: 'wamid.STOP', waId: '336', bouton: null }, 'whatsapp').id).not.toBe(a.id);
+    // La fiche, l'action en masse, l'API : aucun message ne porte le refus.
+    expect(signalDesabonnement('336', 'whatsapp').id).not.toBe(signalDesabonnement('336', 'whatsapp').id);
+  });
+
+  it('🔴 un STOP que Meta REDÉLIVRE : le dépôt écrit deux fois, l’outil reçoit deux fois le MÊME em_event_id', async () => {
+    // Le chemin réel du mot-clé entrant : `setOptInByWaId` n'écrit pas « seulement si le statut change », donc
+    // la redélivrance repasse jusqu'à l'annonce. C'est l'identifiant qui permet à l'outil de dédupliquer.
+    const { emetteur, jobs } = emetteurDeTest();
+    const pool = { query: async () => ({ rows: [{ id: 'c1' }], rowCount: 1 }) } as unknown as Pool;
+    const store = new PgContactStore(pool, annoncerAussiAuxSignaux(async () => {}, emetteur));
+    for (let i = 0; i < 2; i += 1) await store.setOptInByWaId(T, '33612345678', 'opted_out', 'whatsapp_stop', 'wamid.STOP');
+    const ids = jobs.flatMap((j) => j.job.signaux.map((s) => s.id));
+    expect(ids).toHaveLength(2);
+    expect(ids[1]).toBe(ids[0]);
+  });
+
+  it('⚠️ la clé d’un message posée sur une LISTE est ignorée : un message n’a qu’un auteur', async () => {
+    const { emetteur, jobs } = emetteurDeTest();
+    await annoncerAussiAuxSignaux(async () => {}, emetteur)(T, ['336', '337'], 'wamid.STOP');
+    expect(new Set(jobs[0]!.job.signaux.map((s) => s.id)).size).toBe(2);
   });
 
   it('🔴 une annonce en panne n’empêche pas le signal, et son erreur remonte à qui la journalise', async () => {

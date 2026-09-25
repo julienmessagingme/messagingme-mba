@@ -36,7 +36,13 @@ const corpsReglage = z.object({
 }).strict();
 
 const vue = (v: VueIntegrationBatch | null) => (v === null ? { branche: false } : { branche: true, ...v });
-const CIBLE = { kind: 'integration', id: 'batch' };
+/**
+ * 🔴 LA LIGNE D'AUDIT NE NOMME PAS L'OUTIL : elle s'affiche dans Sécurité > Journal des actions, un écran de la
+ * MARQUE, et la spec (§ 10) réserve ce nom à l'écran de réglage (même règle que `NOM_APPEL_SIGNAUX`). La cible
+ * dit CE QUI est branché (la remontée des signaux), pas vers QUOI ; le détail ne porte que l'option et le fait
+ * que les clés ont changé.
+ */
+const CIBLE = { kind: 'integration', id: 'signaux' };
 
 export function registerIntegrationBatch(app: FastifyInstance, deps: IntegrationBatchRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
@@ -70,7 +76,7 @@ export function registerIntegrationBatch(app: FastifyInstance, deps: Integration
     });
     if (!fait) return reply.code(400).send({ error: 'La clé REST et la clé de projet sont requises pour brancher Batch.' });
     await journal(tenant, req, avant === null ? 'integration.branchee' : 'integration.modifiee', CIBLE, {
-      outil: 'batch', envoyerResume, clesChangees: cleRest !== undefined || cleProjet !== undefined,
+      envoyerResume, clesChangees: cleRest !== undefined || cleProjet !== undefined,
     });
     return reply.code(200).send(vue(await deps.lire(tenant)));
   });
@@ -79,7 +85,7 @@ export function registerIntegrationBatch(app: FastifyInstance, deps: Integration
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!(await deps.supprimer(tenant))) return reply.code(404).send({ error: 'Batch n’est pas branché sur cet espace.' });
-    await journal(tenant, req, 'integration.debranchee', CIBLE, { outil: 'batch' });
+    await journal(tenant, req, 'integration.debranchee', CIBLE);
     return reply.code(200).send({ branche: false });
   });
 }

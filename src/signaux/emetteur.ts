@@ -158,8 +158,17 @@ export function signalDuClic(contactId: string, code: string): Signal {
   return { nom: 'em_link_clicked', id: idSignal('em_link_clicked'), le: maintenant(), contactId, lien: code };
 }
 
-export function signalDesabonnement(waId: string, canal: CanalSignal): Signal {
-  return { nom: 'em_opted_out', id: idSignal('em_opted_out'), le: maintenant(), waId, canal };
+/**
+ * Un désabonnement.
+ *
+ * 🔴 `messageDuStop` : l'identifiant du message qui a DIT STOP (le wamid de Meta, celui du fournisseur RCS). C'est
+ * la clé naturelle du refus : un STOP que Meta nous redélivre, ou un job de webhook rejoué, rend le MÊME
+ * `em_event_id`, et l'outil du client peut dédupliquer comme le promet la spec (§ 8). L'ALÉA ne reste que là où
+ * aucun message ne porte le refus (la fiche, l'action en masse, l'API publique, un bloc de scénario) : il est
+ * figé à l'émission, dans le job, donc stable pour un job rejoué, mais deux écritures font deux événements.
+ */
+export function signalDesabonnement(waId: string, canal: CanalSignal, messageDuStop?: string): Signal {
+  return { nom: 'em_opted_out', id: idSignal('em_opted_out', messageDuStop), le: maintenant(), waId, canal };
 }
 
 /** La conversation analysée : une RÉFÉRENCE. L'analyse se relit au moment de pousser, jamais dans la file. */
@@ -217,16 +226,21 @@ export function creerPuitsSignauxMeta(deps: {
  *
  * 🔴 UNE SEULE ÉMISSION pour toute la liste : une action en masse de milliers de fiches s'enfile en quelques
  * jobs (`SIGNAUX_PAR_JOB`), dans la requête HTTP de l'opérateur, et non en un enfilement par fiche.
+ *
+ * ⚠️ `messageDuStop` (le message qui a dit STOP, cf. `signalDesabonnement`) ne vaut que pour UNE personne : un
+ * message n'a qu'un auteur. Posé sur une liste, il donnerait le même `em_event_id` à des fiches différentes, que
+ * l'outil fusionnerait ; il y est donc ignoré.
  */
 export function annoncerAussiAuxSignaux(
   annonce: (tenantId: string, waIds: string[]) => Promise<void>,
   emetteur: Emetteur,
-): (tenantId: string, waIds: string[]) => Promise<void> {
-  return async (tenantId, waIds) => {
+): (tenantId: string, waIds: string[], messageDuStop?: string) => Promise<void> {
+  return async (tenantId, waIds, messageDuStop) => {
     try {
       await annonce(tenantId, waIds);
     } finally {
-      await emetteur.emettreSignaux(tenantId, waIds.map((waId) => signalDesabonnement(waId, 'whatsapp')));
+      const cle = waIds.length === 1 ? messageDuStop : undefined;
+      await emetteur.emettreSignaux(tenantId, waIds.map((waId) => signalDesabonnement(waId, 'whatsapp', cle)));
     }
   };
 }

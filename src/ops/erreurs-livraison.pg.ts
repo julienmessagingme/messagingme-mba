@@ -35,7 +35,7 @@ import { PgEchecsMessagesStore } from '../delivery/echecs-messages.pg';
  */
 
 export interface ErreurLivraison {
-  /** Identifiant de LIGNE, quelle qu'en soit la source : destinataire de campagne, ou échec d'avance. */
+  /** Identifiant de LIGNE, quelle qu'en soit la source : destinataire de campagne, échec d'avance, ou échec d'un message libre. */
   recipientId: string;
   /** `null` pour un échec de scénario : il n'y a pas de campagne derrière. */
   campaignId: string | null;

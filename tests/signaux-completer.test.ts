@@ -81,6 +81,32 @@ describe('completerSignal : relire ce que le chemin chaud ne portait pas', () =>
     expect(await completerSignal(lectures({ analyse: async () => null }).l, T, signalAnalyse(CONV))).toBeNull();
   });
 
+  it('🔴 une fiche SANS identifiant externe : rien de ce qui ne sert qu’à la poussée n’est relu, et elle reste comptable', async () => {
+    // Elle ne sera jamais poussée : l'adaptateur la compte. Le contexte d'un accusé (trois sous-requêtes, des
+    // milliers d'accusés par campagne) et le lien d'un clic seraient lus pour rien.
+    for (const externalId of [null, '   ']) {
+      const lus: string[] = [];
+      const { l } = lectures({
+        ficheParWaId: async () => ({ ...FICHE, externalId }),
+        ficheParId: async () => ({ ...FICHE, externalId }),
+        contexteDuMessage: async () => { lus.push('contexte'); return { origine: 'campagne', sendId: S }; },
+        lien: async () => { lus.push('lien'); return { template: 'promo', destination: 'https://client.fr/promo' }; },
+        analyse: async () => { lus.push('analyse'); return ANALYSE; },
+      });
+      const livre = await completerSignal(l, T, accuse('delivered'));
+      const echec = await completerSignal(l, T, accuse('failed'));
+      const clic = await completerSignal(l, T, signalDuClic(C, 'ab12cd34ef56'));
+      const analyse = await completerSignal(l, T, signalAnalyse(CONV));
+      expect(lus, String(externalId)).toEqual(['analyse']);
+      // Non nuls : c'est ce qui permet à l'adaptateur de les COMPTER (`sansIdentifiant`) au lieu de les perdre.
+      expect(livre?.contenu).toEqual({ nom: 'em_message_delivered', canal: 'whatsapp', origine: null, sendId: null });
+      expect(echec?.contenu).toMatchObject({ nom: 'em_message_failed', origine: null, sendId: null, codeMeta: 131026 });
+      expect(clic?.contenu).toEqual({ nom: 'em_link_clicked', lien: 'ab12cd34ef56', template: null, destination: null });
+      // L'analyse, elle, est relue : son absence veut dire « plus rien à pousser », pas « à compter ».
+      expect(analyse?.contenu).toEqual({ nom: 'em_conversation_analyzed', analyse: ANALYSE });
+    }
+  });
+
   it('🔴 chaque lecture reçoit l’espace du JOB, jamais un autre', async () => {
     const { l, tenants } = lectures();
     for (const s of [accuse('delivered'), signalDuClic(C, 'ab12cd34ef56'), signalAnalyse(CONV)]) await completerSignal(l, T, s);

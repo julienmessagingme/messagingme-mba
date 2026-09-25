@@ -20,4 +20,6 @@ export const OUTILS_TIERS: ReadonlyArray<readonly [string, RegExp]> = [
   ['smsmode', /smsmode/i],
   ['custom_id', /custom_id/],
   ['Universal Channel', /Universal Channel/i],
+  // L'infrastructure sous-jacente de messagingme.app : elle reste invisible de tout ce qu'un client lit.
+  ['UChat', /uchat/i],
 ];

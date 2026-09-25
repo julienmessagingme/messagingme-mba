@@ -77,7 +77,9 @@ export async function envoyerRcsLibre(
 
   // Machine seulement : le bouton RCS de l'Inbox reste identique (spec § 17, cf. le docblock).
   if (origine !== 'humain') {
-    const joignable = await joignabiliteRcsToutesFormes({ get: deps.lireJoignabilite }, agentId, phoneE164, deps.maintenant());
+    // Une FLÈCHE, pas `deps.lireJoignabilite` détachée : une méthode de classe y perdrait son `this`.
+    const lire = { get: (a: string, e: string) => deps.lireJoignabilite(a, e) };
+    const joignable = await joignabiliteRcsToutesFormes(lire, agentId, phoneE164, deps.maintenant());
     if (joignable === false) return { refus: 'rcs_unreachable' };
   }
 

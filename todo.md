@@ -464,10 +464,13 @@ aujourd'hui ; chacun rend faux, à moitié, ce que le lot affirme.
 - ~~**La puce de `documentation.md` qui suit les trois ajoutées au lot 1**~~ **FAIT le 2026-09-25** (lot 4,
   tâche 8) : l'API publique y crée en `unknown`, sauf `consent` explicite, et sait écrire `opted_out` comme
   `opted_in`.
-- **Le cache de joignabilité RCS porte un même numéro sous DEUX formes** (`+33…` écrit par les campagnes,
-  chiffres seuls par les scénarios et la réponse RCS de l'Inbox). La lecture de la fiche lit les deux
-  (`joignabiliteRcsToutesFormes`, `src/rcs/reachability.ts`). Au lot 3 (§ 5, écriture du cache) : écrire
-  une forme unique, sans casser les entrées déjà écrites sous l'autre.
+- **Le cache de joignabilité RCS porte un même numéro sous DEUX formes** (`+33…` écrit par les campagnes et
+  par les rapports de livraison, `traiterRapportRcs` ; chiffres seuls par les scénarios et la réponse RCS de
+  l'Inbox). DEUX lecteurs lisent les deux formes, la plus récente gagnant (`joignabiliteRcsToutesFormes`,
+  `src/rcs/reachability.ts`) : la fiche de l'API (`GET /v1/contacts`) et, depuis `d7791116`, l'envoi RCS libre
+  d'une machine (`envoyerRcsLibre`, donc `POST /v1/messages/rcs`). ⚠️ **Le lot 3 s'est clos SANS l'écriture
+  unique qu'il prévoyait** : elle reste à faire (une forme unique à l'écriture, sans casser les entrées déjà
+  écrites sous l'autre). D'ici là, tout nouveau lecteur du cache passe par `joignabiliteRcsToutesFormes`.
 
 ## 🟡 API publique, lot 4 : un refus de Meta sort SANS `code` (décision de spec, réservée à Julien, 2026-09-25)
 

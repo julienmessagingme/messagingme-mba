@@ -1455,7 +1455,9 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   qui n'avait jamais rien envoyé).
 - ✅ **Conversations (analyse)** (2026-07-17, page **Analyse des conversations** depuis le 2026-07-20, renommée ainsi le 2026-09-17) : lecture de l'**analyse automatique des
   conversations** (une IA classe chaque conversation). **Quanti** : donut du **sentiment** (positif / neutre /
-  négatif), barres par **intention** (demande de devis, SAV, réclamation, info, prise de RDV, autre) et par
+  négatif), barres par **intention** (demande de devis, SAV, réclamation, information, prise de RDV, achat,
+  suivi de commande, retour ou échange, autre ; les trois de commerce en ligne depuis le 2026-09-25, et les
+  conversations analysées avant cette date gardent leur intention d'origine, elles ne sont pas reclassées) et par
   **action suggérée** (créer un devis / rappeler / relancer / escalader / aucune = le pipeline à traiter), **taux
   de résolution**, **qui a géré** (humain, automatisé, et l'agent de Meta quand il a répondu, ce 3e segment
   n'apparaissant que lorsqu'il y en a), **friction** (nb d'échanges moyen), top sujets. **Quali** : la table des
@@ -1765,7 +1767,9 @@ scénario, comment importer des contacts.
   ⚠️ **Une poussée refusée se lit dans Sécurité > Journal des erreurs**, moitié « système ». Des clés
   refusées par l'outil suspendent la remontée jusqu'à ce qu'on en enregistre de nouvelles, et l'écran le dit.
   Un événement resté plus de 24 heures dans la file (une panne prolongée) peut ne pas être envoyé, selon
-  l'outil ; l'état de la fiche part quand même.
+  l'outil ; partent alors seulement l'identifiant de la fiche et ses désabonnements, relus à l'envoi, jamais ce
+  que l'événement seul apprenait (dernière réponse, joignabilité RCS, dernière analyse), qui écraserait un état
+  plus récent.
   ⚠️ « Conversation analysée » arrive environ une demi-heure après le dernier message : assez pour une
   relance, pas pour une alerte.
 

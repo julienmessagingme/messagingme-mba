@@ -16,6 +16,8 @@ beforeAll(async () => {
 const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const en = (jeton: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${jeton}` } });
 const URL_T1 = '/tenants/t1/integrations/batch';
+/** La cible d'audit : ce qui est branché (la remontée des signaux), jamais le nom de l'outil (spec § 10). */
+const CIBLE = { kind: 'integration', id: 'signaux' };
 const VUE: VueIntegrationBatch = {
   envoyerResume: false, sansIdentifiant: 12, sansIdentifiantLe: '2026-09-24T09:00:00.000Z', refusClesLe: null, majLe: '2026-09-24T08:00:00.000Z',
 };
@@ -24,7 +26,7 @@ function monter(initial: VueIntegrationBatch | null = null, chiffrementPret = tr
   const trace = {
     enregistre: [] as Array<{ tenant: string; r: { cleRest?: string; cleProjet?: string; envoyerResume: boolean } }>,
     supprime: [] as string[],
-    audit: [] as Array<{ action: string; detail: unknown }>,
+    audit: [] as Array<{ action: string; cible: unknown; detail: unknown }>,
   };
   let ligne = initial;
   const deps: IntegrationBatchRouteDeps = {
@@ -37,7 +39,7 @@ function monter(initial: VueIntegrationBatch | null = null, chiffrementPret = tr
       return true;
     },
     supprimer: async (tenant) => { trace.supprime.push(tenant); const avait = ligne !== null; ligne = null; return avait; },
-    audit: async (_t, _acteur, action, _cible, detail) => { trace.audit.push({ action, detail }); },
+    audit: async (_t, _acteur, action, cible, detail) => { trace.audit.push({ action, cible, detail }); },
   };
   const app = buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, integrationBatch: deps });
   return { app, trace };
@@ -72,7 +74,7 @@ describe('le réglage de l’adaptateur Batch', () => {
     expect(r.json()).toMatchObject({ branche: true, envoyerResume: false });
     expect(trace.enregistre).toEqual([{ tenant: 't1', r: { cleRest: 'rest-1', cleProjet: 'projet-1', envoyerResume: false } }]);
     expect(JSON.stringify(r.json())).not.toContain('rest-1');
-    expect(trace.audit).toEqual([{ action: 'integration.branchee', detail: { outil: 'batch', envoyerResume: false, clesChangees: true } }]);
+    expect(trace.audit).toEqual([{ action: 'integration.branchee', cible: CIBLE, detail: { envoyerResume: false, clesChangees: true } }]);
     expect(JSON.stringify(trace.audit)).not.toContain('rest-1');
   });
 
@@ -81,7 +83,7 @@ describe('le réglage de l’adaptateur Batch', () => {
     const r = await app.inject({ method: 'PUT', url: URL_T1, ...en(admin), payload: { envoyerResume: true } });
     expect(r.statusCode).toBe(200);
     expect(trace.enregistre[0]!.r).toEqual({ envoyerResume: true });
-    expect(trace.audit).toEqual([{ action: 'integration.modifiee', detail: { outil: 'batch', envoyerResume: true, clesChangees: false } }]);
+    expect(trace.audit).toEqual([{ action: 'integration.modifiee', cible: CIBLE, detail: { envoyerResume: true, clesChangees: false } }]);
   });
 
   it('🔴 un corps hors contrat est refusé AVANT toute écriture (clé inconnue, option absente, clé vide)', async () => {
@@ -111,8 +113,18 @@ describe('le réglage de l’adaptateur Batch', () => {
   it('débrancher, puis débrancher ce qui ne l’est plus', async () => {
     const { app, trace } = monter(VUE);
     expect((await app.inject({ method: 'DELETE', url: URL_T1, ...en(admin) })).json()).toEqual({ branche: false });
-    expect(trace.audit).toEqual([{ action: 'integration.debranchee', detail: { outil: 'batch' } }]);
+    expect(trace.audit).toEqual([{ action: 'integration.debranchee', cible: CIBLE, detail: {} }]);
     expect((await app.inject({ method: 'DELETE', url: URL_T1, ...en(admin) })).statusCode).toBe(404);
+  });
+
+  it('🔴 le journal des ACTIONS ne nomme pas l’outil : c’est un écran de la marque (spec § 10)', async () => {
+    const { app, trace } = monter();
+    await app.inject({ method: 'PUT', url: URL_T1, ...en(admin), payload: { cleRest: 'rest-1', cleProjet: 'projet-1', envoyerResume: false } });
+    await app.inject({ method: 'PUT', url: URL_T1, ...en(admin), payload: { envoyerResume: true } });
+    await app.inject({ method: 'DELETE', url: URL_T1, ...en(admin) });
+    expect(trace.audit.map((a) => a.action)).toEqual(['integration.branchee', 'integration.modifiee', 'integration.debranchee']);
+    // Cible ET détail : les deux s'affichent dans Sécurité > Journal des actions, et partent dans son export.
+    expect(JSON.stringify(trace.audit)).not.toMatch(/batch/i);
   });
 
   it('🔴 un AGENT ne lit ni n’écrit rien : les clés de l’espace sont une décision d’admin', async () => {

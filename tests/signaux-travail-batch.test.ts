@@ -103,6 +103,35 @@ describe('le travail de la file signaux-batch', () => {
     expect(trace.pousses).toEqual([]);
   });
 
+  it('🔴 un job REJOUÉ après un 5xx ne recompte pas les fiches sans identifiant', async () => {
+    // Une fiche sans identifiant et une fiche poussée, dans le même job. Le premier passage échoue en 5xx (la
+    // file le rejouera), le second passe : l'écran du réglage doit dire UN signal non poussé, pas deux.
+    const sansId = signalDeLaReponse({ messageId: 'wamid.sansid', waId: '33600000000', bouton: null }, 'whatsapp');
+    let appels = 0;
+    const { travail, trace } = monter({
+      completer: async (_t, s) => complet(s, s.nom === 'em_replied' && s.waId === '33600000000' ? null : 'crm-7781'),
+      pousser: async (r) => { appels += 1; if (appels === 1) throw new BatchApiError(503, true, null); trace.pousses.push(r); return { partiel: null }; },
+    });
+    const job = { tenantId: T, signaux: [REPONSE, sansId] };
+    await expect(travail(job)).rejects.toBeInstanceOf(BatchApiError);
+    expect(trace.sansId, 'un passage qui lève n’a rien compté : il sera rejoué').toEqual([]);
+    await travail(job);
+    expect(trace.pousses).toHaveLength(1);
+    expect(trace.sansId).toEqual([1]);
+  });
+
+  it('🔴 des clés refusées arrêtent le job, et les fiches sans identifiant sont comptées quand même, une fois', async () => {
+    // Le job ne lève pas (401 : suspension), donc la file ne le rejouera pas : c'est son seul passage.
+    const sansId = signalDeLaReponse({ messageId: 'wamid.sansid', waId: '33600000000', bouton: null }, 'whatsapp');
+    const { travail, trace } = monter({
+      completer: async (_t, s) => complet(s, s.nom === 'em_replied' && s.waId === '33600000000' ? null : 'crm-7781'),
+      pousser: async () => { throw new BatchApiError(401, false, 'invalid key'); },
+    });
+    await expect(travail({ tenantId: T, signaux: [REPONSE, sansId] })).resolves.toBeUndefined();
+    expect(trace.suspendus).toEqual([T]);
+    expect(trace.sansId).toEqual([1]);
+  });
+
   it('le cas nominal : un appel, avec les clés, et aucune ligne de journal', async () => {
     let clesVues: unknown = null;
     const { travail, trace } = monter({ pousser: async (r, cles) => { trace.pousses.push(r); clesVues = cles; return { partiel: null }; } });
@@ -218,16 +247,17 @@ describe('le texte recopié dans le journal des erreurs ne nomme pas l’outil',
 /**
  * 🔴 DÉCISION 1 DE LA TÂCHE 7 (relue sur la page de l'outil le 2026-09-25) : l'outil n'accepte que les événements
  * des DERNIÈRES 24 HEURES. Un job rejoué au-delà (worker arrêté, file engorgée) verrait ses événements refusés un
- * par un, en « succès partiel ». La règle : l'ÉTAT DE LA FICHE part toujours (il est relu au moment de pousser,
- * donc à jour) ; un événement trop vieux n'est PAS envoyé, et le job le DIT dans son journal (le nombre et les
- * noms), au lieu de le laisser disparaître en silence.
+ * par un, en « succès partiel ». La règle : l'état RELU de la fiche part toujours (identifiant, désabonnements :
+ * lus au moment de pousser, donc à jour) ; un événement trop vieux n'est PAS envoyé, ce qu'il apprenait de la
+ * fiche (dernière réponse, joignabilité RCS, dernière analyse) non plus, et le job le DIT dans son journal (le
+ * nombre et les noms), au lieu de le laisser disparaître en silence.
  */
 describe('un événement trop vieux pour l’outil', () => {
   const MAINTENANT = Date.parse('2026-09-25T12:00:00.000Z');
   const vieux = signalDeLaReponse({ messageId: 'wamid.vieux', waId: '33612345678', bouton: null, le: '2026-09-24T11:00:00.000Z' }, 'whatsapp');
   const recent = signalDeLaReponse({ messageId: 'wamid.recent', waId: '33612345678', bouton: null, le: '2026-09-25T11:00:00.000Z' }, 'whatsapp');
 
-  it('🔴 ne part pas, l’état de la fiche part quand même, et le job le dit', async () => {
+  it('🔴 ne part pas, l’état relu de la fiche part quand même, et le job le dit', async () => {
     const { travail, trace } = monter({ maintenant: () => MAINTENANT });
     await expect(travail({ tenantId: T, signaux: [vieux, recent] })).resolves.toBeUndefined();
     expect(trace.pousses).toHaveLength(1);
@@ -247,6 +277,8 @@ describe('un événement trop vieux pour l’outil', () => {
     expect(profil).not.toHaveProperty('events');
     expect(profil.identifiers).toEqual({ custom_id: 'crm-7781' });
     expect(profil.attributes?.em_contact_id).toBe(C);
+    // La date de cette vieille réponse n'est pas l'état d'aujourd'hui : une réponse plus récente a pu être poussée.
+    expect(profil.attributes).not.toHaveProperty('date(em_last_reply_at)');
   });
 
   it('un événement récent ne dit rien : aucun journal', async () => {

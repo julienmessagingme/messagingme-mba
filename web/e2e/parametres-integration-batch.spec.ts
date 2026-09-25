@@ -50,6 +50,10 @@ test.describe('Paramètres > Intégrations > Batch', () => {
     const bouton = page.getByTestId('integration-batch-enregistrer');
     await expect(page.getByTestId('integration-batch-etat')).toContainText(/Non branché|Not connected/);
     await expect(bouton).toBeDisabled();
+    // `new-password`, pas `off` : Chrome ignore `off` sur un champ mot de passe et y remplirait celui de la console.
+    for (const champ of ['integration-batch-cle-rest', 'integration-batch-cle-projet']) {
+      await expect(page.getByTestId(champ)).toHaveAttribute('autocomplete', 'new-password');
+    }
     await page.getByTestId('integration-batch-cle-rest').fill('cle-rest-e2e');
     await expect(bouton).toBeDisabled();
     await page.getByTestId('integration-batch-cle-projet').fill('projet-e2e');
@@ -97,10 +101,22 @@ test.describe('Paramètres > Intégrations > Batch', () => {
     await expect(page.getByTestId('integration-batch-enregistrer')).toBeDisabled();
   });
 
-  test('débrancher', async ({ page }) => {
+  test('🔴 débrancher se CONFIRME : refusé, rien ne part ; accepté, le débranchement part', async ({ page }) => {
+    // Le geste efface les deux clés ET le compte des signaux non poussés, sans retour possible.
     const trace = await monter(page, {
       branche: true, envoyerResume: false, sansIdentifiant: 0, sansIdentifiantLe: null, refusClesLe: null, majLe: '2026-09-24T08:00:00.000Z',
     });
+    const dialogues: string[] = [];
+    let accepter = false;
+    page.on('dialog', (d) => { dialogues.push(d.message()); void (accepter ? d.accept() : d.dismiss()); });
+
+    await page.getByTestId('integration-batch-debrancher').click();
+    await expect.poll(() => dialogues.length).toBe(1);
+    expect(dialogues[0]).toMatch(/clés|keys/);
+    expect(trace.suppressions).toBe(0);
+    await expect(page.getByTestId('integration-batch-etat')).toContainText(/Branché|Connected/);
+
+    accepter = true;
     await page.getByTestId('integration-batch-debrancher').click();
     await expect.poll(() => trace.suppressions, { timeout: 10_000 }).toBe(1);
     await expect(page.getByTestId('integration-batch-etat')).toContainText(/Non branché|Not connected/);

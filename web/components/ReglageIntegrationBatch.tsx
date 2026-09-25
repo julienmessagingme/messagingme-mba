@@ -15,6 +15,10 @@ import { cardCls, inputCls } from '@/lib/ui';
  *
  * 🔴 LES CLÉS NE REVIENNENT JAMAIS À L'ÉCRAN : le serveur ne les rend pas, et celles qu'on vient de saisir sont
  * effacées des champs dès l'enregistrement. Un champ vide veut dire « garder celle qui est enregistrée ».
+ * ⚠️ `autoComplete="new-password"`, pas `off` : Chrome ignore `off` sur un champ mot de passe, et y remplirait
+ * le mot de passe de la console, qui partirait comme clé de l'outil.
+ *
+ * ⚠️ DÉBRANCHER SE CONFIRME : le geste efface les deux clés ET le compte des signaux non poussés, sans retour.
  *
  * 🔴 LE COMPTE DES SIGNAUX NON POUSSÉS EST LA RAISON D'ÊTRE DE CETTE CARTE, autant que les clés : une fiche sans
  * identifiant externe n'est pas remontée, et un intégrateur qui a oublié de nous passer ses identifiants doit le
@@ -70,6 +74,10 @@ export function ReglageIntegrationBatch({ tenantId }: { tenantId: string }) {
   };
 
   const debrancher = () => {
+    if (!window.confirm(t(
+      'Débrancher Batch ? Les deux clés enregistrées et le compte des signaux non poussés seront effacés, et plus aucun signal ne partira.',
+      'Disconnect Batch? Both saved keys and the count of signals not sent will be erased, and no signal will be sent anymore.',
+    ))) return;
     setStatut('saving');
     setErreur(null);
     debrancherIntegrationBatch(tenantId)
@@ -140,7 +148,7 @@ export function ReglageIntegrationBatch({ tenantId }: { tenantId: string }) {
             {t('Clé d’API REST', 'REST API key')}
             <input
               type="password"
-              autoComplete="off"
+              autoComplete="new-password"
               data-testid="integration-batch-cle-rest"
               value={cleRest}
               onChange={(e) => setCleRest(e.target.value)}
@@ -152,7 +160,7 @@ export function ReglageIntegrationBatch({ tenantId }: { tenantId: string }) {
             {t('Clé de projet', 'Project key')}
             <input
               type="password"
-              autoComplete="off"
+              autoComplete="new-password"
               data-testid="integration-batch-cle-projet"
               value={cleProjet}
               onChange={(e) => setCleProjet(e.target.value)}

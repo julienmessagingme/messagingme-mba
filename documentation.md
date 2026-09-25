@@ -871,7 +871,7 @@ La cadence de polling se règle **par file**, sur la latence réellement utile, 
 |---|---|---|
 | conversationnelle (quelqu'un attend) | 2 s | `webhook`, `agent-turn` |
 | interactive (l'opérateur regarde l'écran) | 5 s | `campaign-run`, `automation-event` |
-| de fond (personne n'attend) | 30 s | `webhook-status`, `analyze-conversation`, `push-analysis`, `hubspot-catchup`, `optout-poussee`, les files d'adaptateur de signaux (`signaux-*`) |
+| de fond (personne n'attend) | 30 s | `webhook-status`, `analyze-conversation`, `push-analysis`, `hubspot-catchup`, `optout-poussee`, les files d'adaptateur de signaux (`signaux-batch`, et toute future `signaux-*`) |
 | dépôt inspecté, consommé par personne | 60 s | toute DLQ |
 
 🔴 **Pourquoi pas le défaut de pg-boss (2 s partout)** : mesuré, le polling à vide des quatre process (mba api
@@ -1611,7 +1611,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/agent/fiche.ts` | les DEUX schémas de fiche : celui qui LIT, celui qui PATCHE |
 | `src/webhooks/json.ts` | `asArray`, `asRecord` : lecture défensive d'un payload Meta |
 | `src/queue/names.ts` | les files, leur cadence, leur DLQ, leur réveil |
-| `src/signaux/types.ts` | 🔴 le DICTIONNAIRE des signaux remontés vers l'outil d'un client, indépendant de tout outil : noms d'événements et d'attributs, noms des CHAMPS de chaque événement (`CHAMPS_EVENEMENT`), borne des textes, résumé en morceaux, `idSignal` (l'`em_event_id` STABLE et opaque), libellé neutre du journal des erreurs. Un adaptateur le traduit, il ne l'étend ni ne le renomme. La documentation publique (`web/lib/signaux-dictionnaire.ts`) lui est tenue par `tests/web-signaux-parite.test.ts`, sans nommer aucun outil |
+| `src/signaux/types.ts` | 🔴 le DICTIONNAIRE des signaux remontés vers l'outil d'un client, indépendant de tout outil : noms d'événements et d'attributs, noms des CHAMPS de chaque événement (`CHAMPS_EVENEMENT`), borne des textes, résumé en morceaux, `idSignal` (l'`em_event_id` STABLE et opaque), `identifiantPoussable` (la fiche se pousse-t-elle, et sous quel identifiant : une règle pour le complément et pour l'adaptateur), libellé neutre du journal des erreurs. Un adaptateur le traduit, il ne l'étend ni ne le renomme. La documentation publique (`web/lib/signaux-dictionnaire.ts`) lui est tenue par `tests/web-signaux-parite.test.ts`, sans nommer aucun outil |
 | `src/signaux/emetteur.ts` | 🔴 le SEUL point d'émission d'un signal : il ne lève jamais, ne lit rien tant qu'aucun espace n'a branché d'outil, ne transporte que ce que le chemin chaud sait déjà, et enfile des jobs bornés (`SIGNAUX_PAR_JOB`) avec leur priorité (`PRIORITE_SIGNAL` : les accusés derrière). La fiche, l'origine et l'analyse se relisent au moment de pousser (`completer.ts`) |
 | `src/ids/code.ts` | les identifiants publics et les codes de lien |
 
@@ -1628,6 +1628,8 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `web/lib/logos-llm.ts` | le logo d'un modèle, dérivé du PRÉFIXE de son identifiant, et la pastille de repli. 🔴 L'`alt` est VIDE délibérément : il entrerait dans le nom accessible du bouton qui porte l'image, que deux suites ciblent par ce nom |
 | `web/lib/campaign-eligibility.ts` | 🔴 le MIROIR de l'analyse d'ouverture serveur, tenu par un test de parité |
 | `web/lib/api-exemples.ts` | les exemples (corps et réponses), les codes d'erreur et les bornes de la page Documentation API. 🔴 La page n'écrit aucun JSON à la main : `tests/api-exemples.test.ts` passe chaque corps aux règles de sa route (schéma zod, règles de cible), type chaque réponse par ce que sa route rend, tient la table des codes égale à `CodeApi` (au typecheck), vérifie que les exemples se répondent (l'appel de scénario décrit les variables du template d'ouverture montré) et refuse tout nom d'outil tiers. ⚠️ Aucun import : il est lu par la console ET par la suite racine |
+| `web/lib/intentions.ts` | 🔴 la SEULE copie des intentions d'une conversation analysée côté console : la liste, l'ordre d'affichage (fixe, `autre` en dernier) et les libellés, pour la carte du Performance Lab ET l'Analyse des conversations. Miroir de `INTENTS` (`src/analysis/schema.ts`), tenu par `tests/intentions-parite.test.ts` (à la racine : seul `ci.yml` tourne quand `src/` change). Une intention absente d'une API plus ancienne vaut zéro (`comptesParIntention`) |
+| `web/lib/erreurs-livraison.ts` | l'ORIGINE d'une ligne du journal des erreurs de livraison, en mots (canal et provenance d'un message libre non délivré), et l'export CSV de ce journal : les mêmes mots à l'écran et dans l'export |
 | `web/lib/chemin-json.ts` | le miroir de `src/webhook-entrant/chemin.ts` : mêmes chemins d'or dans les deux jeux de tests |
 | `web/lib/contact-filters.ts` | les filtres du mini-CRM, miroir du parse serveur |
 | `web/lib/rcs.ts` | déduire le format d'un message RCS de sa saisie, miroir de `rcsOutboundOf` |

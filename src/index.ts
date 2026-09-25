@@ -2750,7 +2750,9 @@ async function main(): Promise<void> {
           }
           // Le STOP RCS n'écrit pas par le dépôt des contacts (il pose `rcs_optout_at`) : l'annonce composée
           // plus haut ne le voit pas, il émet donc lui-même son signal.
-          if (marque) await emetteur.emettreSignal(tenant, signalDesabonnement(mo.from, 'rcs'));
+          // L'identifiant du message STOP est la clé naturelle du refus : un STOP que le fournisseur redélivre
+          // garde le même `em_event_id`.
+          if (marque) await emetteur.emettreSignal(tenant, signalDesabonnement(mo.from, 'rcs', mo.messageId));
         }
         // 2. Le fil d'inbox : un échange RCS se lit au même endroit qu'un échange WhatsApp, dans le fil unique
         //    du contact. La bulle porte son canal.

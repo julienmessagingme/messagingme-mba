@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { parseRetryAfter, withRetry, type HttpTransport, type RetryOpts } from '../meta/http';
 import {
-  CHAMP_ID_EVENEMENT, MORCEAUX_RESUME, borneTexte, morceauxDuResume,
+  CHAMP_ID_EVENEMENT, MORCEAUX_RESUME, borneTexte, identifiantPoussable, morceauxDuResume,
   type ChampEvenement, type ContenuSignal, type NomEvenement, type SignalComplet,
 } from './types';
 
@@ -58,8 +58,8 @@ export interface OptionsBatch {
   resume: boolean;
   /**
    * Instant (ISO) avant lequel un ÉVÉNEMENT n'est plus envoyé : l'outil le refuserait (`BATCH_FENETRE_EVENEMENT_MS`).
-   * Il est compté (`tropVieux`), et l'état de sa fiche part quand même. Absent = aucun filtre. Calculé par
-   * l'appelant, pour que cette fonction reste pure.
+   * Il est compté (`tropVieux`), et seul l'état RELU de sa fiche part (`attributsRelus`), jamais ce que le signal
+   * lui-même apprenait. Absent = aucun filtre. Calculé par l'appelant, pour que cette fonction reste pure.
    */
   evenementsDepuis?: string;
 }
@@ -69,6 +69,12 @@ type Brut = Record<string, ValeurBatch | null | undefined>;
 type Champs<N extends NomEvenement> = Partial<Record<ChampEvenement<N>, ValeurBatch | null>>;
 
 const borne = (v: string): string => borneTexte(v, BATCH_MAX_TEXTE);
+
+/**
+ * 🔴 UNE ADRESSE NE SE COUPE PAS : coupée, elle mène ailleurs ou nulle part, et l'outil la prendrait pour vraie.
+ * Au-delà de la borne des textes, le champ est OMIS (`propre` écarte `null`), jamais borné comme un texte.
+ */
+const adresseEntiere = (v: string | null): string | null => (v !== null && v.length <= BATCH_MAX_TEXTE ? v : null);
 
 /**
  * Retire ce qui ne s'écrit pas chez l'outil et borne les textes.
@@ -92,18 +98,31 @@ function propre(o: Brut): Record<string, ValeurBatch> {
 }
 
 /**
- * L'état courant de la fiche, envoyé avec CHAQUE événement.
+ * L'état de la fiche RELU au moment de pousser (`completerSignal`) : identifiant et consentement COURANTS. Il est
+ * juste quel que soit l'âge du signal, donc il part toujours, trop vieux compris.
  *
  * ⚠️ `em_contact_id` part à chaque poussée, pas seulement à la première : réécrire la même valeur ne coûte
  * rien chez l'outil, et se souvenir de « déjà envoyé » demanderait un état de plus qui peut mentir.
  */
-function attributsDeFiche(s: SignalComplet): Record<string, ValeurBatch> {
-  const c = s.contenu;
-  const a: Brut = {
+function attributsRelus(s: SignalComplet): Brut {
+  return {
     em_contact_id: s.contact.contactId,
     em_whatsapp_optout: s.contact.optOutWhatsapp,
     em_rcs_optout: s.contact.optOutRcs,
   };
+}
+
+/**
+ * Ce que le SIGNAL LUI-MÊME apprend de la fiche : la dernière réponse, la joignabilité RCS, la dernière analyse.
+ * C'était vrai À LA DATE DU SIGNAL, pas forcément aujourd'hui.
+ *
+ * 🔴 D'OÙ `versBatch` NE L'ÉCRIT PAS POUR UN SIGNAL TROP VIEUX (son événement est écarté) : un échec RCS rejoué
+ * tard réécrirait `em_rcs_reachable = false` par-dessus un « délivré » plus récent, une analyse rejouée
+ * remplacerait `em_last_intent` par celle d'une conversation plus ancienne. Rien de tout cela ne se relit.
+ */
+function attributsDuSignal(s: SignalComplet): Brut {
+  const c = s.contenu;
+  const a: Brut = {};
   if (c.nom === 'em_replied') a['date(em_last_reply_at)'] = s.le;
   if ((c.nom === 'em_message_delivered' || c.nom === 'em_message_read') && c.canal === 'rcs') a.em_rcs_reachable = true;
   if (c.nom === 'em_message_failed' && c.canal === 'rcs') a.em_rcs_reachable = false;
@@ -115,7 +134,7 @@ function attributsDeFiche(s: SignalComplet): Record<string, ValeurBatch> {
     a.em_satisfaction = c.analyse.satisfaction;
     a.em_urgency = c.analyse.urgence;
   }
-  return propre(a);
+  return a;
 }
 
 /**
@@ -134,7 +153,7 @@ function attributsDEvenement(c: ContenuSignal): Brut {
     case 'em_replied':
       return { canal: c.canal, bouton: c.bouton } satisfies Champs<'em_replied'>;
     case 'em_link_clicked':
-      return { lien: c.lien, template: c.template, destination: c.destination } satisfies Champs<'em_link_clicked'>;
+      return { lien: c.lien, template: c.template, destination: adresseEntiere(c.destination) } satisfies Champs<'em_link_clicked'>;
     case 'em_opted_out':
       return { canal: c.canal, source: c.source } satisfies Champs<'em_opted_out'>;
     case 'em_conversation_analyzed':
@@ -182,8 +201,9 @@ function evenement(s: SignalComplet, o: OptionsBatch): EvenementBatch {
  * - Bornes de Batch : `BATCH_MAX_PROFILS` profils par appel, `BATCH_MAX_EVENEMENTS` événements par profil et par
  *   appel. Au-delà, la fiche repasse dans l'appel SUIVANT (jamais deux fois dans le même), et son état part avec
  *   sa dernière tranche.
- * - Un événement antérieur à `evenementsDepuis` n'est pas envoyé, il est compté (`tropVieux`) ; son signal
- *   contribue quand même à l'état de la fiche, qui part seul (sans `events`) si plus aucun événement ne reste.
+ * - Un événement antérieur à `evenementsDepuis` n'est pas envoyé, il est compté (`tropVieux`) ; son signal ne
+ *   contribue qu'à l'état RELU de la fiche (`attributsRelus`), qui part seul (sans `events`) si plus aucun
+ *   événement ne reste. Ce que le signal apprenait lui-même (`attributsDuSignal`) n'est pas écrit.
  */
 export function versBatch(
   signaux: readonly SignalComplet[],
@@ -194,14 +214,15 @@ export function versBatch(
   const depuis = options.evenementsDepuis === undefined ? Number.NEGATIVE_INFINITY : Date.parse(options.evenementsDepuis);
   const parProfil = new Map<string, { attributes: Record<string, ValeurBatch>; events: EvenementBatch[] }>();
   for (const s of signaux) {
-    const customId = s.contact.externalId?.trim() ?? '';
-    if (customId === '') {
+    const customId = identifiantPoussable(s.contact);
+    if (customId === null) {
       sansIdentifiant += 1;
       continue;
     }
     const p = parProfil.get(customId) ?? { attributes: {}, events: [] };
-    Object.assign(p.attributes, attributsDeFiche(s));
-    if (Date.parse(s.le) < depuis) tropVieux += 1;
+    const vieux = Date.parse(s.le) < depuis;
+    Object.assign(p.attributes, propre({ ...attributsRelus(s), ...(vieux ? {} : attributsDuSignal(s)) }));
+    if (vieux) tropVieux += 1;
     else p.events.push(evenement(s, options));
     parProfil.set(customId, p);
   }
@@ -210,7 +231,7 @@ export function versBatch(
   for (const [customId, p] of parProfil) {
     const tranches: EvenementBatch[][] = [];
     for (let i = 0; i < p.events.length; i += BATCH_MAX_EVENEMENTS) tranches.push(p.events.slice(i, i + BATCH_MAX_EVENEMENTS));
-    // Tous ses événements étaient trop vieux : l'état de la fiche part SEUL, dans une tranche sans événement.
+    // Tous ses événements étaient trop vieux : l'état relu de la fiche part SEUL, dans une tranche sans événement.
     if (tranches.length === 0) tranches.push([]);
     let depart = 0;
     tranches.forEach((events, i) => {

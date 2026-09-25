@@ -692,7 +692,8 @@ async function main(): Promise<void> {
       // WhatsApp : un contact qui repondait STOP restait `opted_in` et recevait la campagne suivante. La
       // source `whatsapp_stop` distingue ce refus de ceux poses a la main dans le mini-CRM, ce qui compte
       // le jour ou il faut prouver d ou vient un desabonnement.
-      inboundOptOut: (tenant, waId) => contactStore.setOptInByWaId(tenant, waId, 'opted_out', SOURCE_STOP_WHATSAPP),
+      // Le wamid du STOP suit jusqu'au signal : un STOP redelivre par Meta garde le meme `em_event_id`.
+      inboundOptOut: (tenant, waId, messageId) => contactStore.setOptInByWaId(tenant, waId, 'opted_out', SOURCE_STOP_WHATSAPP, messageId),
       /**
        * RÉPARTITION D'UNE RÉPONSE DE CAMPAGNE (`campaigns.assignation`, migration 0134).
        *
