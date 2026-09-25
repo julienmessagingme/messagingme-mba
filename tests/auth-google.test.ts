@@ -17,6 +17,8 @@ const fakeVerify = (idToken: string): Promise<GoogleIdentity | null> => {
   if (idToken === 'GOOD') return Promise.resolve({ email: 'known@x.fr', name: 'Jean', emailVerified: true, sub: 'g1' });
   if (idToken === 'NEW') return Promise.resolve({ email: 'new@x.fr', name: 'Alice', emailVerified: true, sub: 'g2' });
   if (idToken === 'REVOKED') return Promise.resolve({ email: 'revoked@x.fr', name: null, emailVerified: true, sub: 'g3' });
+  if (idToken === 'MULTI') return Promise.resolve({ email: 'multi@x.fr', name: 'Julien', emailVerified: true, sub: 'g4' });
+  if (idToken === 'MIXTE') return Promise.resolve({ email: 'mixte@x.fr', name: null, emailVerified: true, sub: 'g5' });
   if (idToken === 'UNVERIFIED') return Promise.resolve({ email: 'known@x.fr', name: 'Jean', emailVerified: false, sub: 'g1' });
   return Promise.resolve(null); // jeton invalide
 };
@@ -35,9 +37,22 @@ function app(over: Partial<AuthRouteDeps> = {}) {
     googleClientId: 'client-abc',
     verifyGoogle: fakeVerify,
     getUserByEmail: async (email) => {
-      if (email === 'known@x.fr') return { id: 'u1', tenantId: 't1', role: 'agent', disabled: false };
-      if (email === 'revoked@x.fr') return { id: 'u2', tenantId: 't1', role: 'admin', disabled: true };
-      return null;
+      if (email === 'known@x.fr') return [{ id: 'u1', tenantId: 't1', tenantName: 'Un', role: 'agent', disabled: false }];
+      if (email === 'revoked@x.fr') return [{ id: 'u2', tenantId: 't1', tenantName: 'Un', role: 'admin', disabled: true }];
+      if (email === 'multi@x.fr') {
+        return [
+          { id: 'u3', tenantId: 'tA', tenantName: 'Espace A', role: 'admin', disabled: false },
+          { id: 'u4', tenantId: 'tB', tenantName: 'Espace B', role: 'agent', disabled: false },
+        ];
+      }
+      if (email === 'mixte@x.fr') {
+        // Le révoqué est PREMIER, exprès : l'ancien `limit 1` l'aurait pris et aurait rendu 403.
+        return [
+          { id: 'u5', tenantId: 'tA', tenantName: 'Espace A', role: 'admin', disabled: true },
+          { id: 'u6', tenantId: 'tB', tenantName: 'Espace B', role: 'agent', disabled: false },
+        ];
+      }
+      return [];
     },
     ...over,
   };
@@ -105,6 +120,39 @@ describe('POST /auth/google', () => {
     const { server } = app();
     const res = await server.inject({ method: 'POST', url: '/auth/google', ...j, payload: { idToken: 'REVOKED' } });
     expect(res.statusCode).toBe(403);
+    await server.close();
+  });
+
+  it('🔴 plusieurs espaces -> un CHOIX, jamais une session (vécu : entrée au hasard dans le dernier créé)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/auth/google', ...j, payload: { idToken: 'MULTI' } });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ token?: string; choiceToken?: string; workspaces?: unknown }>();
+    expect(body.token).toBeUndefined();
+    expect(body.choiceToken).toBeTruthy();
+    expect(body.workspaces).toEqual([
+      { tenantId: 'tA', tenantName: 'Espace A', role: 'admin' },
+      { tenantId: 'tB', tenantName: 'Espace B', role: 'agent' },
+    ]);
+    expect(cap.created).toHaveLength(0);
+
+    // Le jeton de choix Google ouvre l'espace retenu par la MÊME route que le mot de passe, et aucun autre.
+    const choisi = await server.inject({ method: 'POST', url: '/auth/choose-workspace', ...j, payload: { choiceToken: body.choiceToken, tenantId: 'tB' } });
+    expect(choisi.statusCode).toBe(200);
+    expect(choisi.json<{ user: unknown }>().user).toEqual({ email: 'multi@x.fr', role: 'agent', tenantId: 'tB' });
+    const intrus = await server.inject({ method: 'POST', url: '/auth/choose-workspace', ...j, payload: { choiceToken: body.choiceToken, tenantId: 't1' } });
+    expect(intrus.statusCode).toBe(403);
+    await server.close();
+  });
+
+  it("un espace révoqué et un actif -> session directe dans l'actif, sans choix", async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'POST', url: '/auth/google', ...j, payload: { idToken: 'MIXTE' } });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ token?: string; choiceToken?: string; user: { tenantId: string; role: string } }>();
+    expect(body.choiceToken).toBeUndefined();
+    expect(body.token).toBeTruthy();
+    expect(body.user).toMatchObject({ tenantId: 'tB', role: 'agent' });
     await server.close();
   });
 

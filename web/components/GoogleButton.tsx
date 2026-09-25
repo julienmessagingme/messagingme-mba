@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getAuthConfig, loginWithGoogle } from '@/lib/api';
+import { getAuthConfig, loginWithGoogle, isLoginChoice, type LoginChoice } from '@/lib/api';
 import { saveSession, pageDArrivee } from '@/lib/session';
 import { useT } from '@/lib/i18n';
 
@@ -47,14 +47,20 @@ function loadGis(): Promise<void> {
  * (client_id vide côté serveur) le bouton ne s'affiche pas (pas de 500, pas de blocage). Sur credential : vérif
  * serveur du jeton (POST /auth/google) puis session + redirection (agent -> inbox, admin -> dashboard). Un nouvel
  * email crée un espace côté serveur -> toujours admin -> dashboard.
+ *
+ * Une adresse qui ouvre PLUSIEURS espaces reçoit un choix, pas une session : `onChoix` le confie à la page, qui
+ * affiche la même liste que pour le mot de passe. Sans `onChoix` (inscription, invitation), un message dit de
+ * passer par la page de connexion : mieux vaut un clic de plus qu'entrer au hasard dans l'un des espaces.
  */
-export function GoogleButton({ onError }: { onError?: (msg: string) => void }) {
+export function GoogleButton({ onError, onChoix }: { onError?: (msg: string) => void; onChoix?: (c: LoginChoice) => void }) {
   const router = useRouter();
   const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   // Ref pour garder onError stable : évite de re-déclencher l'effet (et re-render du bouton) à chaque render parent.
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
+  const onChoixRef = useRef(onChoix);
+  onChoixRef.current = onChoix;
   // null = pas encore su ; '' = Google désactivé -> pas de bouton ; sinon le client_id.
   const [clientId, setClientId] = useState<string | null>(null);
 
@@ -90,6 +96,11 @@ export function GoogleButton({ onError }: { onError?: (msg: string) => void }) {
             }
             loginWithGoogle(idToken)
               .then((res) => {
+                if (isLoginChoice(res)) {
+                  if (onChoixRef.current) onChoixRef.current(res);
+                  else onErrorRef.current?.(t('Cette adresse ouvre plusieurs espaces : connecte-toi depuis la page de connexion pour choisir le tien.', 'This address opens several workspaces: sign in from the login page to pick yours.'));
+                  return;
+                }
                 saveSession({ token: res.token, email: res.user.email, role: res.user.role, tenantId: res.user.tenantId });
                 // Nouvel espace -> onboarding (connecter le numéro), comme le signup email ; sinon inbox (agent) / accueil (admin).
                 router.replace(res.isNew ? '/accueil' : pageDArrivee(res.user.role));

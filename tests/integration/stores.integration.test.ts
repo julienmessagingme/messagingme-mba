@@ -338,6 +338,13 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
           `select password_hash from identities where lower(email) = lower($1)`, [email],
         )).rows[0]!;
         expect(hash.password_hash).toBe('scrypt$aa$bb');
+
+        // 🔴 La connexion Google voit les DEUX espaces, triés par nom comme l'écran de choix du mot de passe.
+        // C'était un `limit 1` sans tri : l'adresse entrait dans l'un des deux au hasard (2026-09-25).
+        expect(await users.getByEmail(email.toUpperCase())).toEqual([
+          { id: second.userId, tenantId: second.tenantId, tenantName: 'Deuxième espace', role: 'admin', disabled: false },
+          { id: userId, tenantId: newTenant, tenantName: 'Espace itest', role: 'admin', disabled: false },
+        ]);
       } finally {
         await pool.query('delete from tenants where id = $1', [second.tenantId]);
       }

@@ -110,15 +110,26 @@ export class PgUserStore {
     await this.pool.query(`update users set last_login_at = now() where id = $1`, [userId]);
   }
 
-  /** Un compte par email, TOUT statut (y compris pending sans mot de passe) : pour le login Google (lié par
-   *  email). Distinct de PgUserAuthStore.findByEmail qui exige un mot de passe (login classique). */
-  async getByEmail(email: string): Promise<{ id: string; tenantId: string; role: string; disabled: boolean } | null> {
-    const res = await this.pool.query<{ id: string; tenant_id: string; role: string; disabled_at: Date | null }>(
-      `select id, tenant_id, role, disabled_at from users where lower(email) = lower($1) limit 1`,
+  /**
+   * TOUS les comptes d'une adresse, TOUT statut (y compris pending sans mot de passe et révoqués) : pour le
+   * login Google (lié par email). Distinct de `PgUserAuthStore.findIdentity`, qui exige un mot de passe.
+   *
+   * 🔴 C'était un `limit 1` sans `order by` : une adresse à deux espaces entrait dans l'un des deux AU HASARD,
+   * sans jamais voir l'écran de choix (vécu le 2026-09-25). La liste complète laisse la route décider, et le
+   * tri est celui de `findIdentity`, pour que l'écran de choix soit le même quel que soit le bouton.
+   */
+  async getByEmail(email: string): Promise<Array<{ id: string; tenantId: string; tenantName: string; role: string; disabled: boolean }>> {
+    const res = await this.pool.query<{ id: string; tenant_id: string; tenant_name: string; role: string; disabled_at: Date | null }>(
+      `select u.id, u.tenant_id, t.name as tenant_name, u.role, u.disabled_at
+         from users u
+         join tenants t on t.id = u.tenant_id
+        where lower(u.email) = lower($1)
+        order by t.name, u.id`,
       [email],
     );
-    const r = res.rows[0];
-    return r ? { id: r.id, tenantId: r.tenant_id, role: r.role, disabled: r.disabled_at !== null } : null;
+    return res.rows.map((r) => ({
+      id: r.id, tenantId: r.tenant_id, tenantName: r.tenant_name, role: r.role, disabled: r.disabled_at !== null,
+    }));
   }
 
   /** {tenantId, role, email} d'un compte par id : sert à émettre une session après acceptation d'invitation. */

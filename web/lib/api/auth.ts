@@ -26,7 +26,7 @@ export interface LoginChoice {
 }
 /** Le login rend SOIT une session (un seul espace, le cas courant), SOIT un choix à faire. */
 export type LoginOutcome = LoginResult | LoginChoice;
-export function isLoginChoice(r: LoginOutcome): r is LoginChoice {
+export function isLoginChoice<T extends LoginResult>(r: T | LoginChoice): r is LoginChoice {
   return (r as LoginChoice).choiceToken !== undefined;
 }
 /** Deuxième temps : on présente le jeton de choix et l'espace retenu, et on obtient une vraie session. */
@@ -58,7 +58,10 @@ export function getAuthConfig(): Promise<{ googleClientId: string; googleEnabled
 export interface GoogleResult extends LoginResult {
   isNew: boolean;
 }
-/** Se connecter avec Google : envoie le jeton ID au serveur, renvoie une session (login OU nouvel espace). */
-export function loginWithGoogle(idToken: string): Promise<GoogleResult> {
-  return request<GoogleResult>('/auth/google', { method: 'POST', body: JSON.stringify({ idToken }) });
+/**
+ * Se connecter avec Google : envoie le jeton ID au serveur, renvoie une session (login OU nouvel espace), ou un
+ * CHOIX quand l'adresse ouvre plusieurs espaces, exactement comme `login`.
+ */
+export function loginWithGoogle(idToken: string): Promise<GoogleResult | LoginChoice> {
+  return request<GoogleResult | LoginChoice>('/auth/google', { method: 'POST', body: JSON.stringify({ idToken }) });
 }

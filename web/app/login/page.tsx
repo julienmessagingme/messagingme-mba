@@ -151,7 +151,7 @@ export default function LoginPage() {
             <Link href="/signup" className="font-medium text-brand-600 hover:underline">{t('Créer un espace', 'Create a workspace')}</Link>
           </div>
 
-          <GoogleButton onError={setError} />
+          <GoogleButton onError={setError} onChoix={setChoix} />
         </form>
         )}
       </div>

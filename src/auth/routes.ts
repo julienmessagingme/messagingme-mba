@@ -46,8 +46,8 @@ export interface AuthRouteDeps {
   googleClientId?: string;
   /** Vérifie un jeton ID Google -> identité (email vérifié), ou null si invalide. */
   verifyGoogle?(idToken: string): Promise<GoogleIdentity | null>;
-  /** Un compte par email, TOUT statut (login Google lié par email). */
-  getUserByEmail?(email: string): Promise<{ id: string; tenantId: string; role: string; disabled: boolean } | null>;
+  /** TOUS les comptes d'une adresse, TOUT statut (login Google lié par email). Vide = adresse inconnue. */
+  getUserByEmail?(email: string): Promise<Array<{ id: string; tenantId: string; tenantName: string; role: string; disabled: boolean }>>;
   /** Tokens à usage unique (reset / invite). */
   tokens?: {
     create(purpose: 'reset' | 'invite', userId: string, ttlMs: number): Promise<string>;
@@ -259,10 +259,25 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     if (!googleLimiter.take(rateKey(req, idToken))) return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
     const identity = await deps.verifyGoogle(idToken);
     if (!identity || !identity.emailVerified) return reply.code(401).send({ error: 'jeton Google invalide' });
-    const existing = await deps.getUserByEmail(identity.email);
-    if (existing) {
+    const comptes = await deps.getUserByEmail(identity.email);
+    if (comptes.length > 0) {
       // Compte existant (actif OU invitation en attente) : Google fait foi (liaison par email vérifié).
-      if (existing.disabled) return reply.code(403).send({ error: 'compte révoqué' });
+      // Un compte révoqué n'ouvre rien et n'apparaît pas dans le choix, comme pour le mot de passe.
+      const actifs = comptes.filter((c) => !c.disabled);
+      const [existing, ...autres] = actifs;
+      if (!existing) return reply.code(403).send({ error: 'compte révoqué' });
+      if (autres.length > 0) {
+        // Plusieurs espaces : on DEMANDE, exactement comme `/auth/login`. Même jeton de choix, même
+        // `/auth/choose-workspace` ensuite : Google ne prouve que l'adresse, pas l'espace voulu.
+        const choix = await signChoice(
+          { email: identity.email, comptes: actifs.map((c) => ({ userId: c.id, tenantId: c.tenantId, role: c.role })) },
+          deps.secret,
+        );
+        return reply.code(200).send({
+          choiceToken: choix,
+          workspaces: actifs.map((c) => ({ tenantId: c.tenantId, tenantName: c.tenantName, role: c.role })),
+        });
+      }
       const jwt = await signSession({ userId: existing.id, tenantId: existing.tenantId, role: existing.role }, deps.secret);
       // APRÈS le contrôle `disabled` : un compte révoqué qui présente un jeton Google valide reçoit un 403 et
       // ne doit surtout pas être crédité d'une « dernière connexion » qui n'a pas eu lieu.
