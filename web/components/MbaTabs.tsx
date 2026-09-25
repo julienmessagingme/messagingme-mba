@@ -41,7 +41,7 @@ export function MbaTabs({ tabs, active, onSelect, orientation = 'horizontale' }:
     ? 'flex gap-1 overflow-x-auto lg:flex-col lg:overflow-x-visible'
     : 'flex gap-1 overflow-x-auto border-b border-ink-200';
   const base = vertical
-    ? 'shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm transition-colors duration-150 lg:w-full'
+    ? 'shrink-0 whitespace-nowrap rounded-controle px-3 py-2 text-left text-sm transition-colors duration-150 lg:w-full'
     : '-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors duration-150';
   const actif = vertical
     ? 'bg-brand-50 font-medium text-brand-700'

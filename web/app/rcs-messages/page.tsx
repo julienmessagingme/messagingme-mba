@@ -14,6 +14,9 @@ import { RcsPhoneFrame } from '@/components/RcsPhoneFrame';
 import { useT } from '@/lib/i18n';
 import { Bouton } from '@/components/Bouton';
 import { TitrePage } from '@/components/TitrePage';
+import { BoutonConfirme } from '@/components/Confirmation';
+import { Modale } from '@/components/Modale';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * Contenu > Messages RCS : la bibliothèque des messages réutilisables du canal RCS.
@@ -86,7 +89,6 @@ function RcsMessagesInner({ session }: { session: Session }) {
   }
 
   async function supprimer(m: RcsMessage) {
-    if (!window.confirm(t(`Supprimer « ${m.name} » ?`, `Delete "${m.name}"?`))) return;
     setError(null);
     try {
       await deleteRcsMessage(session.tenantId, m.id);
@@ -103,10 +105,10 @@ function RcsMessagesInner({ session }: { session: Session }) {
   return (
     <div className="space-y-6">
       {editing ? (
-        <section className="rounded-2xl border border-brand-200 bg-brand-50/40 p-6">
+        <section className="rounded-carte border border-brand-200 bg-brand-50/40 p-6">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-base font-semibold text-ink-900">{t(`Modifier « ${editing.name} »`, `Edit “${editing.name}”`)}</h2>
-            <button onClick={fermer} className="text-xs text-ink-400 hover:text-ink-900">{t('Fermer', 'Close')}</button>
+            <button onClick={fermer} className="text-xs text-ink-500 hover:text-ink-900">{t('Fermer', 'Close')}</button>
           </div>
           {carrouselEdite ? (
             <RcsCarouselForm
@@ -127,12 +129,12 @@ function RcsMessagesInner({ session }: { session: Session }) {
           ) : null}
         </section>
       ) : creating ? (
-        <section className="rounded-2xl border border-brand-200 bg-brand-50/40 p-6">
+        <section className="rounded-carte border border-brand-200 bg-brand-50/40 p-6">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-base font-semibold text-ink-900">{t('Nouveau message RCS', 'New RCS message')}</h2>
-            <button onClick={fermer} className="text-xs text-ink-400 hover:text-ink-900">{t('Fermer', 'Close')}</button>
+            <button onClick={fermer} className="text-xs text-ink-500 hover:text-ink-900">{t('Fermer', 'Close')}</button>
           </div>
-          <div className="inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-xs" role="group" aria-label={t('Format du message', 'Message format')}>
+          <div className="inline-flex gap-1 rounded-controle bg-ink-100 p-1 text-xs" role="group" aria-label={t('Format du message', 'Message format')}>
             {(['simple', 'carrousel'] as const).map((f) => (
               <button
                 key={f}
@@ -140,7 +142,7 @@ function RcsMessagesInner({ session }: { session: Session }) {
                 onClick={() => setFormat(f)}
                 aria-pressed={format === f}
                 data-testid={`rcs-format-${f}`}
-                className={`rounded-md px-3 py-1 ${format === f ? 'bg-white font-medium text-brand-700' : 'text-ink-500 hover:text-ink-900'}`}
+                className={`rounded-controle px-3 py-1 ${format === f ? 'bg-white font-medium text-brand-700' : 'text-ink-500 hover:text-ink-900'}`}
               >
                 {f === 'simple' ? t('Message simple', 'Simple message') : t('Carrousel', 'Carousel')}
               </button>
@@ -173,15 +175,15 @@ function RcsMessagesInner({ session }: { session: Session }) {
             )}
           </div>
         </div>
-        {error && <p className="mb-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+        {error && <p className="mb-3 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
         {loading ? (
-          <p className="text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>
+          <Squelette forme="lignes" />
         ) : items.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">
-            {t('Aucun message. Clique « + Créer un message » : il part tel qu’il est écrit, sans validation.', 'No messages yet. Click “+ Create a message”: it goes out as written, with no approval.')}
+          <div className="px-4 py-10 text-center text-sm text-ink-500">
+            {t('Aucun message : un message RCS part tel qu’il est écrit, sans validation.', 'No messages yet: an RCS message goes out as written, with no approval.')}
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white" data-testid="rcs-message-list">
+          <div className="overflow-x-auto rounded-carte border border-ink-200 bg-white" data-testid="rcs-message-list">
             <table className="w-full min-w-[520px] text-sm">
               <thead className="bg-ink-50 text-left text-xs text-ink-500">
                 <tr>
@@ -220,7 +222,7 @@ function RcsMessagesInner({ session }: { session: Session }) {
                             </button>
                           ) : (
                             <span
-                              className="text-ink-400"
+                              className="text-ink-500"
                               title={m.content === null
                                 ? t('Contenu illisible : il ne peut pas être ouvert ici.', 'Unreadable content: it cannot be opened here.')
                                 : t('Une carte à titre (créée par l’API) ne s’édite pas ici.', 'A titled card (created through the API) cannot be edited here.')}
@@ -228,7 +230,7 @@ function RcsMessagesInner({ session }: { session: Session }) {
                               {t('Éditer', 'Edit')}
                             </span>
                           )}
-                          <button onClick={() => void supprimer(m)} className="font-medium text-danger hover:text-danger-700">{t('Supprimer', 'Delete')}</button>
+                          <BoutonConfirme question={t(`Supprimer « ${m.name} » ?`, `Delete "${m.name}"?`)} onConfirme={() => void supprimer(m)} libelleConfirmer={t('Supprimer', 'Delete')} className="font-medium text-danger hover:text-danger-700">{t('Supprimer', 'Delete')}</BoutonConfirme>
                         </div>
                       </td>
                     </tr>
@@ -250,25 +252,22 @@ function ApercuMessage({ message, onClose }: { message: RcsMessage; onClose: () 
   const simple = versBrouillonRcs(message.content);
   const carrousel = versBrouillonCarrousel(message.content);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-mm-lg" onClick={(e) => e.stopPropagation()} data-testid="rcs-message-apercu">
-        <div className="mb-3 flex items-start justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-ink-900">{message.name}</h3>
-            <p className="text-xs text-ink-400">{t(...libelleFormatRcs(message.content))}</p>
-          </div>
-          <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-900" aria-label={t('Fermer', 'Close')}>×</button>
-        </div>
-        <RcsPhoneFrame>
-          {carrousel ? (
-            <RcsCarouselPreview brouillon={carrousel} sansFond />
-          ) : simple ? (
-            <RcsPreview brouillon={simple} sansFond />
-          ) : (
-            <p className="text-xs text-ink-500">{t('Ce format ne se dessine pas ici (carte à titre).', 'This format cannot be drawn here (titled card).')}</p>
-          )}
-        </RcsPhoneFrame>
-      </div>
-    </div>
+    <Modale
+      titre={message.name}
+      sousTitre={t(...libelleFormatRcs(message.content))}
+      taille="petite"
+      testId="rcs-message-apercu"
+      onClose={onClose}
+    >
+      <RcsPhoneFrame>
+        {carrousel ? (
+          <RcsCarouselPreview brouillon={carrousel} sansFond />
+        ) : simple ? (
+          <RcsPreview brouillon={simple} sansFond />
+        ) : (
+          <p className="text-xs text-ink-500">{t('Ce format ne se dessine pas ici (carte à titre).', 'This format cannot be drawn here (titled card).')}</p>
+        )}
+      </RcsPhoneFrame>
+    </Modale>
   );
 }

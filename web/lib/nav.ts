@@ -9,13 +9,15 @@
  * invisible dans un menu replié, ce qui se remarque tard. D'où le calcul unique, ici, testé.
  */
 
+import type { NomIcone } from './icones';
+
 export interface NavEntree {
   key: string;
   /** Une entrée porte SOIT un lien, SOIT des enfants. Un groupe n'est pas cliquable comme destination. */
   href?: string;
   label: string;
-  /** Tracé de l'icône. Seul le premier niveau en porte une. */
-  d?: string;
+  /** L'icône (son nom dans `components/Icone.tsx`). Seul le premier niveau en porte une. */
+  icone?: NomIcone;
   children?: NavEntree[];
   badge?: number;
 }
@@ -136,7 +138,9 @@ export const ECRANS_ENCADREMENT: readonly string[] = [
  */
 export function accesAutorise(ecran: string, role: string): boolean {
   if (role === 'admin') return true;
-  if (ecran === 'inbox') return true;
+  // `compte` : son propre mot de passe, pour tous les rôles. La page est dans la coquille depuis la passe 2
+  // (2026-09-25) ; sans cette ligne, un agent y aurait été renvoyé à l'inbox.
+  if (ecran === 'inbox' || ecran === 'compte') return true;
   return role === 'manager' && ECRANS_ENCADREMENT.includes(ecran);
 }
 
@@ -186,35 +190,38 @@ export interface ListesNav {
   adminBas: NavEntree[];
 }
 
-/** Icônes de nav (tracés SVG, aucune dépendance). */
+/**
+ * L'icône de chaque entrée, par son NOM dans `components/Icone.tsx` (Phosphor). Le module reste de la donnée
+ * pure : la carte de la console se lit sans monter de composant React, et un nom inconnu ne compile pas.
+ */
 const icons = {
-  accueil: 'M3 10.5L12 3l9 7.5M5 9.5V20a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V9.5',
-  inbox: 'M4 13h4l2 3h4l2-3h4M4 13V6a2 2 0 012-2h12a2 2 0 012 2v7M4 13v5a2 2 0 002 2h12a2 2 0 002-2v-5',
-  contacts: 'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75',
-  campaign: 'M3 11l18-5v12L3 14v-3zM11.6 16.8a3 3 0 11-5.8-1.6',
-  // Chaine : une bulle de diffusion avec ses ondes. Elle ne reprend PAS l icone de Campagnes (le porte-voix)
-  // alors que les deux diffusent : une campagne parle a des contacts connus, une chaine a des abonnes
-  // anonymes, et confondre les deux a l oeil ferait chercher ses contacts dans le mauvais ecran.
-  chaine: 'M8 12h.01M12 12h.01M16 12h.01M21 12a9 9 0 01-13.2 7.9L3 21l1.1-4.8A9 9 0 1121 12z',
+  accueil: 'accueil',
+  inbox: 'inbox',
+  contacts: 'contacts',
+  campaign: 'campagnes',
+  // Chaine : une bulle de diffusion. Elle ne reprend PAS l icone de Campagnes (le porte-voix) alors que les
+  // deux diffusent : une campagne parle a des contacts connus, une chaine a des abonnes anonymes, et
+  // confondre les deux a l oeil ferait chercher ses contacts dans le mauvais ecran.
+  chaine: 'chaine',
   // Publicites : une cible. Surtout PAS le porte-voix de Campagnes : une campagne parle a des contacts
   // qu on possede deja, une publicite va en chercher qu on ne connait pas.
-  pubs: 'M12 2a10 10 0 100 20 10 10 0 000-20zM12 7a5 5 0 100 10 5 5 0 000-10zM12 11.2a.8.8 0 100 1.6.8.8 0 000-1.6z',
-  content: 'M4 4h16v4H4zM4 12h10v8H4zM18 12h2v8h-2z',
-  analytics: 'M3 3v18h18M8 17V9M13 17V5M18 17v-6',
-  flow: 'M5 4h4v4H5zM15 16h4v4h-4zM7 8v4a2 2 0 002 2h6',
-  // Automation : un éclair, le DÉCLENCHEUR. Elle partageait l'icône de « Scénario » (deux blocs reliés), donc
-  // les deux entrées du menu étaient indiscernables alors qu'elles ne font pas la même chose : le scénario est
-  // le parcours, l'automation est ce qui le déclenche.
-  automation: 'M13 2L4.5 13H11l-1 9 8.5-11H12l1-9z',
-  support: 'M12 22a10 10 0 100-20 10 10 0 000 20zM9.1 9a3 3 0 015.8 1c0 2-3 3-3 3M12 17h.01',
-  developers: 'M8 6l-5 6 5 6M16 6l5 6-5 6M13 4l-2 16',
+  pubs: 'publicites',
+  content: 'contenu',
+  analytics: 'analytics',
+  flow: 'scenario',
+  // Automation : un éclair, le DÉCLENCHEUR. Elle partageait l'icône de « Scénario », donc les deux entrées du
+  // menu étaient indiscernables alors qu'elles ne font pas la même chose : le scénario est le parcours,
+  // l'automation est ce qui le déclenche.
+  automation: 'automation',
+  support: 'aide',
+  developers: 'developpeurs',
   // Un bouclier : c'est le seul pictogramme que tout le monde lit « sécurité » sans légende.
-  securite: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
+  securite: 'securite',
   // Tools : une prise. Ce menu regroupe ce qui BRANCHE la console sur l'extérieur.
-  tools: 'M9 2v6M15 2v6M7 8h10v5a5 5 0 01-10 0V8zM12 18v4',
-  mba: 'M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3zM6 19l.7 1.9L8.6 21l-1.9.7L6 23.6l-.7-1.9L3.4 21l1.9-.1L6 19z',
-  settings: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 13a1.65 1.65 0 00.33 1.82l.05.05a2 2 0 11-2.83 2.83l-.05-.05a1.65 1.65 0 00-2.82 1.17V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.05.05a2 2 0 11-2.83-2.83l.05-.05A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.05-.05a2 2 0 112.83-2.83l.05.05A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.05-.05a2 2 0 112.83 2.83l-.05.05A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z',
-};
+  tools: 'outils',
+  mba: 'ia',
+  settings: 'reglages',
+} satisfies Record<string, NomIcone>;
 
 /**
  * LES QUATRE LISTES DE LA BARRE, structure ET libellés.
@@ -247,21 +254,21 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
     // L'accueil n'était atteignable que par le logo, ce qui ne se devine pas. Un agent ne le voit pas :
     // `pageDArrivee` l'envoie sur l'inbox, et cette page montre le statut du compte et ses réglages, qui ne
     // le concernent pas.
-    { key: 'accueil', href: '/accueil', label: t('Accueil', 'Home'), d: icons.accueil },
+    { key: 'accueil', href: '/accueil', label: t('Accueil', 'Home'), icone: icons.accueil },
     // Libellé seulement : l'URL reste `/contacts`, pour ne casser ni les liens existants ni les deep-links.
-    { key: 'contacts', href: '/contacts', label: t('mini-CRM', 'mini-CRM'), d: icons.contacts },
-    { key: 'campagnes', href: '/campaigns', label: t('Campagnes', 'Campaigns'), d: icons.campaign },
+    { key: 'contacts', href: '/contacts', label: t('mini-CRM', 'mini-CRM'), icone: icons.contacts },
+    { key: 'campagnes', href: '/campaigns', label: t('Campagnes', 'Campaigns'), icone: icons.campaign },
     // Juste apres Campagnes : les deux repondent a « comment je parle a plusieurs personnes a la fois ».
-    { key: 'chaine', href: '/chaine', label: t('Chaîne', 'Channel'), d: icons.chaine },
+    { key: 'chaine', href: '/chaine', label: t('Chaîne', 'Channel'), icone: icons.chaine },
     // Juste apres Chaine : les trois entrees repondent a « comment j'atteins des gens ». La publicite est
     // la seule des trois qui va chercher quelqu'un qui ne nous connait pas encore.
-    { key: 'publicites', href: '/publicites', label: t('Publicités', 'Ads'), d: icons.pubs },
-    { key: 'automations', href: '/automations', label: t('Automation', 'Automation'), d: icons.automation },
+    { key: 'publicites', href: '/publicites', label: t('Publicités', 'Ads'), icone: icons.pubs },
+    { key: 'automations', href: '/automations', label: t('Automation', 'Automation'), icone: icons.automation },
     // Les DEUX répondeurs que le client peut faire parler : l'agent de Meta (MBA, son guide et ses réglages,
     // qui gardent leurs URL) et le nôtre. MBA est un SOUS-GROUPE et non deux entrées voisines : ses deux
     // écrans parlent du même agent, les mettre au même rang que « Other AI agent » laissait croire à trois
     // agents. C'est ce qui a fait passer la barre à trois niveaux (cf. `lib/nav.ts`).
-    { key: 'ia', label: t('AI Agent', 'AI Agent'), d: icons.mba, children: [
+    { key: 'ia', label: t('AI Agent', 'AI Agent'), icone: icons.mba, children: [
       // Les deux enfants ne RÉPÈTENT PAS « MBA » : leur groupe le porte déjà, et la barre affiche les
       // trois niveaux. « MBA, guide » sous un groupe « MBA » disait deux fois la même chose.
       { key: 'mba', label: t('MBA', 'MBA'), children: [
@@ -289,7 +296,7 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
     // ⚠️ RCS et Email n'ont qu'un enfant chacun, et c'est VOULU : la symétrie des quatre canaux est ce qui
     // rend le menu lisible. Un groupe à un seul enfant coûte un clic ; quatre groupes dont deux à plat
     // coûteraient une relecture à chaque visite.
-    { key: 'contenu', label: t('Contenu', 'Content'), d: icons.content, children: [
+    { key: 'contenu', label: t('Contenu', 'Content'), icone: icons.content, children: [
       { key: 'contenu-whatsapp', label: t('WhatsApp', 'WhatsApp'), children: [
         { key: 'templates', href: '/templates', label: t('Templates', 'Templates') },
         { key: 'flows', href: '/flows', label: t('Formulaires', 'Forms') },
@@ -331,7 +338,7 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
     // plusieurs agents tapent dans la même bibliothèque, et le déclarer dans un agent ferait croire qu'il lui
     // appartient. Les serveurs MCP y sont depuis le 2026-09-17, à côté des connecteurs API : même place,
     // même raison, et la même bibliothèque d'outils derrière.
-    { key: 'tools', label: t('Tools', 'Tools'), d: icons.tools, children: [
+    { key: 'tools', label: t('Tools', 'Tools'), icone: icons.tools, children: [
       { key: 'webhooks', href: '/webhooks', label: t('Webhooks', 'Webhooks') },
       { key: 'connecteurs', href: '/connecteurs', label: t('Connecteurs API', 'API connectors') },
       // 🔴 « OUTILS » N'EST PLUS ICI (demande de Julien, 2026-09-18). Il y était depuis 0127, quand une
@@ -355,8 +362,8 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
     // du haut. Ils ne servent pas le travail quotidien : ils le RÈGLENT, comme Developers juste en dessous.
     // Les laisser en fin de liste haute les mettait au même rang que Campagnes ou Scénario, qu'on ouvre dix
     // fois par jour. Aucune adresse ne change.
-    { key: 'parametres', href: '/parametres', label: t('Paramètres', 'Settings'), d: icons.settings },
-    { key: 'support', href: '/support', label: t('Support', 'Support'), d: icons.support },
+    { key: 'parametres', href: '/parametres', label: t('Paramètres', 'Settings'), icone: icons.settings },
+    { key: 'support', href: '/support', label: t('Support', 'Support'), icone: icons.support },
     /**
      * LE CENTRE DE SÉCURITÉ & COMPLIANCE (2026-09-13).
      *
@@ -365,7 +372,7 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
      * EXISTAIENT déjà, dans Paramètres, où ils n'avaient rien à faire : on les consulte pour rendre des
      * comptes, pas pour régler l'espace. Consentement et IA suivront avec leurs écrans.
      */
-    { key: 'securite', label: t('Sécurité', 'Security'), d: icons.securite, children: [
+    { key: 'securite', label: t('Sécurité', 'Security'), icone: icons.securite, children: [
       // Le CONSENTEMENT en premier : c'est le seul sous-menu qui décrit ce que le produit s'interdit de
       // faire, les deux autres racontent ce qu'il a fait.
       { key: 'securite-consentement', href: '/securite/consentement', label: t('Consentement', 'Consent') },
@@ -375,7 +382,7 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
       { key: 'securite-audit', href: '/securite/audit', label: t('Audit trails', 'Audit trails') },
       { key: 'securite-erreurs', href: '/securite/erreurs', label: t('Journal des erreurs', 'Error log') },
     ] },
-    { key: 'developers', label: t('Developers', 'Developers'), d: icons.developers, children: [
+    { key: 'developers', label: t('Developers', 'Developers'), icone: icons.developers, children: [
       { key: 'api-docs', href: '/developers/api', label: t('Documentation API', 'API documentation') },
       { key: 'api-keys', href: '/developers/keys', label: t('Clés d\'API', 'API keys') },
       { key: 'mcp', href: '/developers/mcp', label: t('Serveur MCP', 'MCP server') },
@@ -386,7 +393,7 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
    * Le menu de dossiers (Tout, À traiter, Traité, Signalé, Archivé, et l'affectation) vit DANS l'écran,
    * pas dans la barre. Sa liste fait foi dans `web/components/InboxDossiers.tsx`, pas ici.
    */
-  const NAV_INBOX: NavEntree[] = [{ key: 'inbox', href: '/inbox', label: t('Inbox', 'Inbox'), d: icons.inbox, badge: badgeInbox }];
+  const NAV_INBOX: NavEntree[] = [{ key: 'inbox', href: '/inbox', label: t('Inbox', 'Inbox'), icone: icons.inbox, badge: badgeInbox }];
 
   /**
    * Les enfants de l'ancien groupe « Analytics », remontés d'un cran : dans cet onglet, ils SONT le menu.

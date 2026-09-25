@@ -7,6 +7,7 @@ import { eurosDepuisMicro, SOLDE_BAS_MICRO_EUR } from '@/lib/agent-solde';
 import type { Session } from '@/lib/session';
 import { useT } from '@/lib/i18n';
 import { TitrePage } from '@/components/TitrePage';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * Le crédit des agents IA : ce qu'il reste, et ce qui le fait descendre.
@@ -41,11 +42,11 @@ function CreditInner({ session }: { session: Session }) {
     <div className="space-y-4">
       <TitrePage>{t('Crédit des agents IA', 'AI agent credit')}</TitrePage>
 
-      <section className="rounded-2xl border border-ink-200 bg-white p-5" data-testid="credit-solde">
+      <section className="rounded-carte border border-ink-200 bg-white p-5" data-testid="credit-solde">
         <div className="text-xs font-medium text-ink-500">{t('Crédit restant', 'Credit left')}</div>
-        {!charge && <p className="mt-1 text-sm text-ink-400">{t('Chargement…', 'Loading…')}</p>}
+        {!charge && <Squelette forme="carte" className="mt-1" />}
         {charge && solde === null && (
-          <p className="mt-1 text-sm text-ink-400">
+          <p className="mt-1 text-sm text-ink-500">
             {t('Aucun crédit n’est suivi sur cet espace.', 'No credit is tracked on this workspace.')}
           </p>
         )}
@@ -69,7 +70,7 @@ function CreditInner({ session }: { session: Session }) {
         )}
       </section>
 
-      <section className="rounded-2xl border border-ink-200 bg-white p-5">
+      <section className="rounded-carte border border-ink-200 bg-white p-5">
         <h2 className="text-sm font-semibold text-ink-900">{t('Recharger', 'Top up')}</h2>
         <p className="mt-1 text-sm text-ink-500">
           {t(
@@ -77,7 +78,7 @@ function CreditInner({ session }: { session: Session }) {
             'Online top-up is not open yet. In the meantime, contact us: the credit is added to your workspace right away.',
           )}
         </p>
-        <p className="mt-3 text-xs text-ink-400">
+        <p className="mt-3 text-xs text-ink-500">
           {t(
             'Ce que le crédit paie : chaque aller-retour d’un agent avec son modèle, en production comme dans le bac à sable. Rien d’autre n’y touche.',
             'What the credit pays for: every round trip between an agent and its model, in production as in the sandbox. Nothing else draws on it.',

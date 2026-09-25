@@ -15,6 +15,7 @@ import { inputCls } from '@/lib/ui';
 import { ListeManques } from '@/components/ListeManques';
 import { Field } from '@/components/Field';
 import { Bouton } from '@/components/Bouton';
+import { Icone } from '@/components/Icone';
 
 /**
  * Formulaire de creation (et d'edition) d'un template Meta.
@@ -264,12 +265,12 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
   const canSubmit = manques.length === 0 && !busy;
 
   return (
-    <div className={isEdit ? '' : 'rounded-2xl border border-ink-200 bg-white p-6'}>
+    <div className={isEdit ? '' : 'rounded-carte border border-ink-200 bg-white p-6'}>
       {/* Duplication HONNÊTE : on dit ce qui n'a pas pu être recopié, au lieu de laisser croire à une copie
           conforme. Meta ne rend pas le fichier d'origine d'un visuel, seulement une URL de validation qu'il
           refuse de retélécharger à l'envoi : le visuel doit donc être redéposé à la main. */}
       {duplique && initial && (
-        <div className="mb-4 rounded-lg border border-alerte-300 bg-alerte-50 px-3 py-2 text-sm text-alerte-800" data-testid="template-duplication-bandeau">
+        <div className="mb-4 rounded-controle border border-alerte-300 bg-alerte-50 px-3 py-2 text-sm text-alerte-800" data-testid="template-duplication-bandeau">
           <p>
             {t('Copie de « ', 'Copy of "')}{initial.name}{t(' ». Rien n’est envoyé à Meta tant que tu n’as pas cliqué sur « Créer le template ».', '". Nothing is sent to Meta until you click "Create template".')}
           </p>
@@ -335,7 +336,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
                   <Bouton variante="secondaire" enCours={headerUploading} type="button" onClick={() => headerFileRef.current?.click()} disabled={headerUploading}>
                     {headerUploading ? 'Upload…' : headerHandle ? t('Remplacer', 'Replace') : headerType === 'IMAGE' ? t('Choisir une image', 'Choose an image') : t('Choisir une vidéo (mp4)', 'Choose a video (mp4)')}
                   </Bouton>
-                  {headerFileName && <span className="max-w-[140px] truncate text-xs text-ink-500">{headerFileName} ✓</span>}
+                  {headerFileName && <span className="inline-flex max-w-[160px] items-center gap-1 text-xs text-ink-500"><span className="truncate">{headerFileName}</span><Icone nom="valide" taille="petite" className="text-succes-700" /></span>}
                   <input ref={headerFileRef} type="file" accept={headerType === 'IMAGE' ? 'image/png,image/jpeg' : 'video/mp4'} className="hidden" onChange={(e) => onHeaderFile(e.target.files?.[0])} />
                 </>
               )}
@@ -378,10 +379,10 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
               {buttons.map((b, i) => (
                 b.type === 'FLOW' ? (
                   // Bouton FLOW = exclusif : sur sa propre ligne, libellé PLEINE LARGEUR (bien visible) + choix du formulaire dessous.
-                  <div key={i} className="space-y-1.5 rounded-lg border border-ink-100 bg-ink-50/50 p-2.5">
+                  <div key={i} className="space-y-1.5 rounded-controle border border-ink-100 bg-ink-50/50 p-2.5">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-ink-400">{t('Bouton du formulaire', 'Form button')}</span>
-                      <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="text-ink-400 hover:text-danger-600" aria-label={t('Retirer', 'Remove')}>×</button>
+                      <span className="text-xs font-medium text-ink-500">{t('Bouton du formulaire', 'Form button')}</span>
+                      <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="text-ink-400 hover:text-danger-600" aria-label={t('Retirer', 'Remove')}><Icone nom="fermer" taille="petite" /></button>
                     </div>
                     <input
                       value={b.text}
@@ -403,7 +404,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
                   </div>
                 ) : (
                   <div key={i} className="flex items-center gap-1.5">
-                    <span className="w-16 shrink-0 text-xs text-ink-400">{b.type === 'URL' ? t('lien', 'link') : t('réponse', 'reply')}</span>
+                    <span className="w-16 shrink-0 text-xs text-ink-500">{b.type === 'URL' ? t('lien', 'link') : t('réponse', 'reply')}</span>
                     <input
                       value={b.text}
                       onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
@@ -422,7 +423,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
                         placeholder={t('https://exemple.fr/page', 'https://example.com/page')}
                       />
                     )}
-                    <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="shrink-0 text-ink-400 hover:text-danger-600" aria-label={t('Retirer', 'Remove')}>×</button>
+                    <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="shrink-0 text-ink-400 hover:text-danger-600" aria-label={t('Retirer', 'Remove')}><Icone nom="fermer" taille="petite" /></button>
                   </div>
                 )
               ))}
@@ -436,10 +437,10 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
                     {t('＋ Créer un nouveau formulaire', '＋ Create a new form')}
                   </button>
                 ) : (
-                  <div className="rounded-xl border border-brand-200 bg-brand-50/40 p-4">
+                  <div className="rounded-carte border border-brand-200 bg-brand-50/40 p-4">
                     <div className="mb-3 flex items-center justify-between">
                       <span className="text-sm font-semibold text-ink-900">{t('Nouveau formulaire', 'New form')}</span>
-                      <button type="button" onClick={() => setCreatingFlow(false)} className="text-xs text-ink-400 hover:text-ink-900">{t('Annuler', 'Cancel')}</button>
+                      <button type="button" onClick={() => setCreatingFlow(false)} className="text-xs text-ink-500 hover:text-ink-900">{t('Annuler', 'Cancel')}</button>
                     </div>
                     <FlowBuilder
                       tenantId={tenantId}
@@ -457,8 +458,8 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
             )}
           </div>
 
-          {error && <p className="mt-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
-          {ok && <p className="mt-3 rounded-lg bg-succes-50 px-3 py-2 text-sm text-succes-800">{ok}</p>}
+          {error && <p className="mt-3 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+          {ok && <p className="mt-3 rounded-controle bg-succes-50 px-3 py-2 text-sm text-succes-800">{ok}</p>}
 
           <ListeManques manques={manques} testId="template-manques" busy={busy} />
           <Bouton

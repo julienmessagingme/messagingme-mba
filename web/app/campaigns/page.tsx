@@ -35,6 +35,8 @@ import {
 import { LaunchCounts } from '@/components/LaunchCounts';
 import { Bouton, classesBouton } from '@/components/Bouton';
 import { TitrePage } from '@/components/TitrePage';
+import { BoutonConfirme, useConfirmation } from '@/components/Confirmation';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * LE COUT D'UNE CAMPAGNE VIENT DU SERVEUR, IL NE SE CALCULE PLUS ICI.
@@ -107,6 +109,7 @@ function Badge({ status }: { status: string }) {
 
 function CampaignsInner({ session }: { session: Session }) {
   const t = useT();
+  const confirmer = useConfirmation();
   /**
    * 🔴 LA CREATION A SON PROPRE ECRAN DEPUIS LE 2026-09-13, ET CETTE PAGE N'EN PORTE PLUS AUCUN
    * MORCEAU. Elle hebergeait l'ancien formulaire dans un mode « create » : l'assistant, lui, vit a
@@ -279,10 +282,10 @@ function CampaignsInner({ session }: { session: Session }) {
    * reste parti, l'historique n'est pas touché.
    */
   async function stop(c: CampaignSummary) {
-    const ok = window.confirm(t(
+    const ok = await confirmer({ titre: t('Arrêter la campagne', 'Stop the campaign'), message: t(
       `Arrêter « ${c.name} » ? Elle cessera de prendre les contacts qui arrivent. Pour la rouvrir, il faudra créer une nouvelle campagne.`,
       `Stop “${c.name}”? It will stop taking incoming contacts. Reopening it means creating a new campaign.`,
-    ));
+    ), confirmer: t('Arrêter', 'Stop') });
     if (!ok) return;
     await mutateAndReload(c.id, () => stopCampaign(session.tenantId, c.id), t('Arrêt impossible', 'Stop failed'));
   }
@@ -305,10 +308,10 @@ function CampaignsInner({ session }: { session: Session }) {
     }
   }
   async function remove(c: CampaignSummary) {
-    const ok = window.confirm(t(
+    const ok = await confirmer({ titre: t('Supprimer la campagne', 'Delete the campaign'), message: t(
       `Supprimer définitivement « ${c.name} » ? Cette campagne n'a jamais rien envoyé, elle sera effacée pour de bon.`,
       `Permanently delete “${c.name}”? This campaign never sent anything, it will be erased for good.`,
-    ));
+    ), confirmer: t('Supprimer', 'Delete') });
     if (!ok) return;
     await mutateAndReload(c.id, () => deleteCampaign(session.tenantId, c.id), t('Suppression impossible', 'Deletion failed'));
   }
@@ -331,12 +334,12 @@ function CampaignsInner({ session }: { session: Session }) {
                par le serveur, donc c'est SON absence qui doit faire taire la ligne. Laisser la condition sur
                `pricing` aurait affiché un total à 0 € quand la route du coût est indisponible. */
             <p className="mt-0.5 text-xs text-ink-500">
-              {t('coût estimé des campagnes affichées', 'estimated cost of listed campaigns')} ≈ <span className="font-semibold text-ink-900" data-testid="campagnes-cout-total">{fmtCost(campaigns.reduce((acc, c) => acc + (couts?.get(c.id) ?? 0), 0), locale, deviseCout ?? pricing?.currency)}</span>{!(deviseCout ?? pricing?.currency) && <span className="text-ink-400"> ({t('devise du compte', 'account currency')})</span>}
+              {t('coût estimé des campagnes affichées', 'estimated cost of listed campaigns')} ≈ <span className="font-semibold text-ink-900" data-testid="campagnes-cout-total">{fmtCost(campaigns.reduce((acc, c) => acc + (couts?.get(c.id) ?? 0), 0), locale, deviseCout ?? pricing?.currency)}</span>{!(deviseCout ?? pricing?.currency) && <span className="text-ink-500"> ({t('devise du compte', 'account currency')})</span>}
               {/* ⚠️ IL DIT CE QU'IL NE COMPTE PAS. Une campagne dont le coût est inconnu vaut zéro dans cette
                   somme, ce qui est la seule addition possible, mais la taire ferait lire le total comme
                   complet. On nomme donc les campagnes écartées plutôt que de les fondre dedans. */}
               {couts !== null && campaigns.some((c) => (couts.get(c.id) ?? null) === null) && (
-                <span className="text-ink-400" data-testid="campagnes-cout-partiel">
+                <span className="text-ink-500" data-testid="campagnes-cout-partiel">
                   {' '}({campaigns.filter((c) => (couts.get(c.id) ?? null) === null).length} {t('sans coût connu', 'without a known cost')})
                 </span>
               )}
@@ -351,12 +354,12 @@ function CampaignsInner({ session }: { session: Session }) {
                🔴 LA PREMIÈRE VERSION DE CE COMMENTAIRE DISAIT « un getByText matche aussi les ancêtres ».
                C'ÉTAIT FAUX, et vérifié dans la source de Playwright : son moteur de texte écarte un élément
                dès qu'un de ses enfants matche aussi. Une explication commode qui serait recopiée. */
-            <p className="mt-0.5 text-xs text-ink-400" data-testid="campagnes-cout-indisponible">{t('coût estimé indisponible', 'estimated cost unavailable')}</p>
+            <p className="mt-0.5 text-xs text-ink-500" data-testid="campagnes-cout-indisponible">{t('coût estimé indisponible', 'estimated cost unavailable')}</p>
           )}
         </div>
         <div className="flex items-center gap-3">
           {polling ? (
-            <span className="flex items-center gap-1.5 text-xs text-ink-400">
+            <span className="flex items-center gap-1.5 text-xs text-ink-500">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-500" />
               {t('actualisation...', 'refreshing...')}
             </span>
@@ -378,7 +381,7 @@ function CampaignsInner({ session }: { session: Session }) {
           </Bouton>
         </div>
       </div>
-      {error && <p className="mb-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+      {error && <p className="mb-3 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
       {/* Campagnes COMMENCÉES mais pas encore créées. Volontairement au-dessus de la liste et visuellement
           distinctes : ce ne sont pas des campagnes, elles n'ont ni destinataire ni envoi possible. Masquées
@@ -388,12 +391,12 @@ function CampaignsInner({ session }: { session: Session }) {
           <h3 className="mb-2 text-xs font-medium text-ink-500">
             {t('Brouillons en cours', 'Drafts in progress')}
           </h3>
-          <ul className="space-y-2">
+          <ul className="divide-y divide-ink-100 rounded-carte border border-ink-200 bg-white">
             {brouillons.map((d) => (
-              <li key={d.id} className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-ink-300 bg-white px-4 py-2.5">
+              <li key={d.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
                 <div className="min-w-0">
                   <span className="truncate text-sm font-medium text-ink-900">{d.name}</span>
-                  <span className="ml-2 rounded bg-ink-100 px-1.5 py-0.5 text-xs text-ink-500">{t('brouillon', 'draft')}</span>
+                  <span className="ml-2 rounded-controle bg-ink-100 px-1.5 py-0.5 text-xs text-ink-500">{t('brouillon', 'draft')}</span>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
                   <button
@@ -405,15 +408,14 @@ function CampaignsInner({ session }: { session: Session }) {
                   >
                     {t('Reprendre', 'Resume')}
                   </button>
-                  <button
-                    onClick={() => {
-                      if (!window.confirm(t(`Supprimer le brouillon « ${d.name} » ?`, `Delete draft "${d.name}"?`))) return;
-                      void deleteCampaignDraft(session.tenantId, d.id).then(rechargerBrouillons).catch(() => {});
-                    }}
-                    className="text-sm text-ink-400 hover:text-danger-600"
+                  <BoutonConfirme
+                    question={t(`Supprimer le brouillon « ${d.name} » ?`, `Delete draft "${d.name}"?`)}
+                    libelleConfirmer={t('Supprimer', 'Delete')}
+                    onConfirme={() => { void deleteCampaignDraft(session.tenantId, d.id).then(rechargerBrouillons).catch(() => {}); }}
+                    className="text-sm text-ink-500 hover:text-danger-700"
                   >
                     {t('Supprimer', 'Delete')}
-                  </button>
+                  </BoutonConfirme>
                 </div>
               </li>
             ))}
@@ -422,23 +424,24 @@ function CampaignsInner({ session }: { session: Session }) {
       )}
 
       {loading ? (
-        <p className="text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>
+        <Squelette forme="lignes" />
       ) : campaigns.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">
+        <div className="px-4 py-10 text-center text-sm text-ink-500">
           {showArchived
             ? t('Aucune campagne archivée.', 'No archived campaigns.')
-            : t('Aucune campagne. Clique « + Ajouter une campagne » pour en créer une.', 'No campaigns. Click "+ Add a campaign" to create one.')}
+            : t('Aucune campagne : créez-en une avec « Ajouter une campagne ».', 'No campaigns: create one with “Add a campaign”.')}
         </div>
       ) : (
-          <ul className="space-y-2">
+          // Une liste, des filets : chaque campagne était sa propre carte, et la page devenait une pile de cadres.
+          <ul className="divide-y divide-ink-100 rounded-carte border border-ink-200 bg-white">
             {campaigns.map((c) => (
-              <li key={c.id} className="rounded-2xl border border-ink-200 bg-white p-4">
+              <li key={c.id} className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{c.name}</span>
                       <Badge status={c.status} />
-                      <span className="text-xs text-ink-400">{c.category}</span>
+                      <span className="text-xs text-ink-500">{c.category}</span>
                       {/* Une campagne au fil de l'eau se lit « en cours » comme les autres, alors qu'elle ne
                           se terminera jamais d'elle-même. Sans cette pastille, son statut mentirait par
                           omission : c'est ce marqueur qui explique pourquoi elle est encore là. */}
@@ -462,7 +465,7 @@ function CampaignsInner({ session }: { session: Session }) {
                       // au même titre qu'un coût rendu vide. Les deux s'affichent « indisponible ».
                       const cost = couts?.get(c.id) ?? null;
                       return (
-                        <p className="mt-1 text-xs text-ink-400">
+                        <p className="mt-1 text-xs text-ink-500">
                           {t('coût estimé', 'estimated cost')} {cost != null ? <>≈ <span className="font-medium text-ink-900" data-testid={`campagne-cout-${c.id}`}>{fmtCost(cost, locale, deviseCout ?? pricing?.currency)}</span>{!(deviseCout ?? pricing?.currency) && ` (${t('devise du compte', 'account currency')})`}</> : <span data-testid={`campagne-cout-${c.id}`}>{t('indisponible', 'unavailable')}</span>}
                         </p>
                       );
@@ -488,7 +491,7 @@ function CampaignsInner({ session }: { session: Session }) {
                         onClick={() => pause(c)}
                         data-testid="campaign-pause"
                         title={t('L\'envoi s\'arrête dans quelques secondes. Ce qui est déjà parti reste parti.', 'Sending stops within seconds. What has already gone out stays out.')}
-                        className="rounded-lg border border-alerte-300 bg-alerte-50 px-3 py-1 text-xs font-medium text-alerte-800 hover:bg-alerte-100"
+                        className="rounded-controle border border-alerte-300 bg-alerte-50 px-3 py-1 text-xs font-medium text-alerte-800 hover:bg-alerte-100"
                       >
                         {t('Mettre en pause', 'Pause')}
                       </button>
@@ -607,13 +610,13 @@ function DetailPanel({ detail, cout, devise, tenantId, onClose, onRetried }: {
   }
 
   return (
-    <div className="mb-4 overflow-hidden rounded-2xl border border-ink-200 bg-white">
+    <div className="mb-4 overflow-hidden rounded-carte border border-ink-200 bg-white">
       <div className="flex items-center justify-between border-b border-ink-100 px-4 py-2.5">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold">{detail.name}</span>
           <Badge status={detail.status} />
           <span className="text-xs text-ink-500">{campaignSendLabel(detail, locale)}</span>
-          <span className="text-xs text-ink-400" data-testid="detail-cout-estime">{t('coût estimé', 'estimated cost')} {cout != null ? `≈ ${fmtCost(cout, locale, devise)}${devise ? '' : ` (${t('devise du compte', 'account currency')})`}` : t('indisponible', 'unavailable')}</span>
+          <span className="text-xs text-ink-500" data-testid="detail-cout-estime">{t('coût estimé', 'estimated cost')} {cout != null ? `≈ ${fmtCost(cout, locale, devise)}${devise ? '' : ` (${t('devise du compte', 'account currency')})`}` : t('indisponible', 'unavailable')}</span>
         </div>
         <div className="flex items-center gap-3">
           {/*
@@ -632,7 +635,7 @@ function DetailPanel({ detail, cout, devise, tenantId, onClose, onRetried }: {
           >
             {t('Voir les résultats', 'See results')}
           </Link>
-          <button onClick={onClose} className="text-xs text-ink-400 hover:text-ink-900">{t('Fermer', 'Close')}</button>
+          <button onClick={onClose} className="text-xs text-ink-500 hover:text-ink-900">{t('Fermer', 'Close')}</button>
         </div>
       </div>
       {/* ⚠️ `?? []` N'EST PAS DE LA PRUDENCE DÉCORATIVE : le front part sur Vercel au push et l'API sur le
@@ -660,8 +663,8 @@ function DetailPanel({ detail, cout, devise, tenantId, onClose, onRetried }: {
                 <tr key={r.id}>
                   <td className="px-4 py-2 font-mono text-xs">{r.toE164}</td>
                   <td className="px-4 py-2"><Badge status={r.status} /></td>
-                  <td className="px-4 py-2 whitespace-nowrap text-xs text-ink-500">{r.sentAt ? stamp(r.sentAt) : <span className="text-ink-400">{t('non envoyé', 'not sent')}</span>}</td>
-                  <td className="px-4 py-2">{r.deliveryStatus ? <Badge status={r.deliveryStatus} /> : <span className="text-xs text-ink-400">-</span>}</td>
+                  <td className="px-4 py-2 whitespace-nowrap text-xs text-ink-500">{r.sentAt ? stamp(r.sentAt) : <span className="text-ink-500">{t('non envoyé', 'not sent')}</span>}</td>
+                  <td className="px-4 py-2">{r.deliveryStatus ? <Badge status={r.deliveryStatus} /> : <span className="text-xs text-ink-500">-</span>}</td>
                   <td className="px-4 py-2 text-xs text-ink-500" title={r.deliveryError ?? r.error ?? undefined}>
                     <div>{explainMetaError(r.deliveryError ?? r.error, locale) ?? r.messageId ?? '-'}</div>
                     {retryable && retryFor !== r.id && (
@@ -669,7 +672,7 @@ function DetailPanel({ detail, cout, devise, tenantId, onClose, onRetried }: {
                         type="button"
                         onClick={() => openRetry(r.id)}
                         data-testid={`retry-${r.id}`}
-                        className="mt-1 rounded-md border border-brand-200 px-2 py-0.5 text-xs font-medium text-brand-700 transition-colors duration-150 hover:bg-brand-50"
+                        className="mt-1 rounded-controle border border-brand-200 px-2 py-0.5 text-xs font-medium text-brand-700 transition-colors duration-150 hover:bg-brand-50"
                       >
                         {/* Sans variable de champ à corriger, il n'y a RIEN à corriger : promettre l'inverse
                             envoie chercher une faute de saisie qui n'existe pas (cas d'un template dont
@@ -701,7 +704,7 @@ function DetailPanel({ detail, cout, devise, tenantId, onClose, onRetried }: {
                                 onChange={(e) => setVals((v) => ({ ...v, [k]: e.target.value }))}
                                 data-testid={`retry-field-${k}`}
                                 placeholder={t('nouvelle valeur', 'new value')}
-                                className="rounded border border-ink-300 px-2 py-1 text-sm outline-none focus:border-brand-500"
+                                className="rounded-controle border border-ink-300 px-2 py-1 text-sm outline-none focus:border-brand-500"
                               />
                             </label>
                           ))}
@@ -800,7 +803,7 @@ function CeQuiAEteLance({ chaine }: { chaine: CampaignDetail['chaine'] }) {
                   <span className={e.workflowName ? 'font-medium' : 'font-mono text-xs'}>
                     {e.workflowName ? `« ${e.workflowName} »` : e.workflowId.slice(0, 8)}
                   </span>
-                  {!e.workflowName && <span className="text-ink-400">{' '}({t('supprimé', 'deleted')})</span>}
+                  {!e.workflowName && <span className="text-ink-500">{' '}({t('supprimé', 'deleted')})</span>}
                 </span>
               )}
               {/* ⚠️ Le devenir n'est affiché QUE s'il a été réglé : une campagne d'avant le câblage n'en a

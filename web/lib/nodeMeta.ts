@@ -1,34 +1,35 @@
 import type { WorkflowNodeType } from './api';
+import type { NomIcone } from './icones';
 
 // Métadonnées d'affichage des types de node (blocs). Les libellés portent les DEUX langues ([fr, en]) :
 // c'est une constante module (useT inappelable ici), résolue au rendu via t(...meta.label). Partagé par
 // le builder de scénario et la page Contenu > Blocs (source unique, pas de duplication).
-export const NODE_META: Record<WorkflowNodeType, { emoji: string; label: [string, string] }> = {
-  template: { emoji: '📩', label: ['Envoi template', 'Send template'] },
-  quick_message: { emoji: '⚡', label: ['Message rapide', 'Quick message'] },
+export const NODE_META: Record<WorkflowNodeType, { icone: NomIcone; label: [string, string] }> = {
+  template: { icone: 'envoi', label: ['Envoi template', 'Send template'] },
+  quick_message: { icone: 'automation', label: ['Message rapide', 'Quick message'] },
   // Ce bloc EST l'« assigner à un agent » : il passe le fil à un humain et le fait apparaître dans
   // « À traiter ». Il s'appelait « Inbox », un nom de destination qui ne disait pas ce qu'il FAIT.
-  inbox: { emoji: '🙋', label: ['Assigner à un agent', 'Assign to an agent'] },
-  flow: { emoji: '📋', label: ['Formulaire', 'Form'] },
-  question: { emoji: '❓', label: ['Question', 'Question'] },
-  tag: { emoji: '🏷️', label: ['Ajout de tag', 'Add tag'] }, // legacy : plus dans la palette, gardé pour le rendu des anciens blocs
-  field: { emoji: '✏️', label: ['Ajout de champ', 'Add field'] }, // legacy : idem
-  condition: { emoji: '🔀', label: ['Condition', 'Condition'] },
-  wait: { emoji: '⏳', label: ['Attente', 'Wait'] },
-  action: { emoji: '⚙️', label: ['Action', 'Action'] },
-  rcs_message: { emoji: '📱', label: ['Message RCS', 'RCS message'] },
-  email: { emoji: '✉️', label: ['Envoi de mail', 'Send email'] },
-  agent: { emoji: '🤖', label: ['Agent IA', 'AI agent'] },
+  inbox: { icone: 'humain', label: ['Assigner à un agent', 'Assign to an agent'] },
+  flow: { icone: 'formulaire', label: ['Formulaire', 'Form'] },
+  question: { icone: 'question', label: ['Question', 'Question'] },
+  tag: { icone: 'etiquette', label: ['Ajout de tag', 'Add tag'] }, // legacy : plus dans la palette, gardé pour le rendu des anciens blocs
+  field: { icone: 'modifier', label: ['Ajout de champ', 'Add field'] }, // legacy : idem
+  condition: { icone: 'condition', label: ['Condition', 'Condition'] },
+  wait: { icone: 'attente', label: ['Attente', 'Wait'] },
+  action: { icone: 'reglages', label: ['Action', 'Action'] },
+  rcs_message: { icone: 'mobile', label: ['Message RCS', 'RCS message'] },
+  email: { icone: 'email', label: ['Envoi de mail', 'Send email'] },
+  agent: { icone: 'robot', label: ['Agent IA', 'AI agent'] },
   // Il ne DÉCRIT aucun appel, il en DÉSIGNE un, mis au point dans Tools > Connecteurs API. Le nom dit donc
   // « appel », pas « HTTP » : le client a branché un système, il ne code pas une requête.
-  http: { emoji: '🔌', label: ['Appel API', 'API call'] },
+  http: { icone: 'outils', label: ['Appel API', 'API call'] },
   // « Fonction » et non « JavaScript » : ce que le client fait, c'est transformer une valeur. Le langage est
   // un détail de l'écran, pas le sujet du bloc.
-  js: { emoji: '🧮', label: ['Fonction JS', 'JS function'] },
+  js: { icone: 'fonction', label: ['Fonction JS', 'JS function'] },
   // Blocs RETIRÉS du produit. Ces entrées ne servent plus qu'à RENDRE lisiblement un ancien scénario qui en
   // contient encore : ils ne sont plus dans la palette, et le moteur les traverse sans rien faire.
-  mba_handoff: { emoji: '🗑️', label: ['Bloc MBA (retiré)', 'MBA block (removed)'] },
-  mba_disable: { emoji: '🗑️', label: ['Bloc MBA (retiré)', 'MBA block (removed)'] },
+  mba_handoff: { icone: 'supprimer', label: ['Bloc MBA (retiré)', 'MBA block (removed)'] },
+  mba_disable: { icone: 'supprimer', label: ['Bloc MBA (retiré)', 'MBA block (removed)'] },
 };
 
 // La palette ne propose plus `tag`/`field` séparés : le bloc « Action » les regroupe (ajouter/retirer tag, màj/vider champ).
@@ -99,16 +100,16 @@ export const AGENT_GATE_TITRE: [string, string] = [
  * `timeout` n'a PAS de préfixe `sortie:`, et c'est voulu : c'est le même handle que le bloc Question, pour
  * qu'il n'y ait qu'un seul vocabulaire dans le builder.
  */
-export const AGENT_SORTIES_RESERVEES: Array<{ handle: string; emoji: string; label: [string, string]; aide: [string, string] }> = [
+export const AGENT_SORTIES_RESERVEES: Array<{ handle: string; icone: NomIcone; label: [string, string]; aide: [string, string] }> = [
   {
     handle: 'timeout',
-    emoji: '⏱',
+    icone: 'chrono',
     label: ['Pas de réponse', 'No reply'],
     aide: ['Le contact ne répond plus depuis le délai réglé sur la fiche', 'The contact has gone silent for the delay set on the agent'],
   },
   {
     handle: 'sortie:sans_source',
-    emoji: '📕',
+    icone: 'connaissance',
     label: ['Aucune source', 'No source'],
     aide: [
       'L’agent n’a rien trouvé dans sa base de connaissance : brancher un humain ou vos coordonnées',
@@ -117,7 +118,7 @@ export const AGENT_SORTIES_RESERVEES: Array<{ handle: string; emoji: string; lab
   },
   {
     handle: 'sortie:humain',
-    emoji: '🙋',
+    icone: 'humain',
     label: ['Transfert à un humain', 'Handed to a human'],
     aide: [
       'L’agent a passé la main : brancher ce qui doit suivre (message d’attente, tag, fin de parcours)',
@@ -126,7 +127,7 @@ export const AGENT_SORTIES_RESERVEES: Array<{ handle: string; emoji: string; lab
   },
   {
     handle: 'sortie:plafond',
-    emoji: '🛑',
+    icone: 'refuse',
     label: ['Plafond atteint', 'Cap reached'],
     aide: ['Tours, appels d’outils ou budget épuisés', 'Turns, tool calls or budget exhausted'],
   },
@@ -134,7 +135,7 @@ export const AGENT_SORTIES_RESERVEES: Array<{ handle: string; emoji: string; lab
     // Pas de ⚠ ici : c'est déjà le glyphe de la pastille « ne mène nulle part », qui s'affiche sur la même
     // carte. Deux sens pour un même signe à trois lignes d'écart se lisent mal.
     handle: 'sortie:echec',
-    emoji: '💥',
+    icone: 'echec',
     label: ['Échec technique', 'Technical failure'],
     aide: ['Le modèle ou un envoi a échoué : prévoir un repli', 'The model or a send failed: plan a fallback'],
   },
@@ -142,12 +143,12 @@ export const AGENT_SORTIES_RESERVEES: Array<{ handle: string; emoji: string; lab
 
 
 /** Repli pour un type de node NON encore connu du front (ex. un type ajouté côté backend avant son UI, comme
- *  `condition` en attendant la Phase 3). Évite un crash de rendu (`NODE_META[type].emoji` sur `undefined`) qui
+ *  `condition` en attendant la Phase 3). Évite un crash de rendu (`NODE_META[type].icone` sur `undefined`) qui
  *  démonterait toute la page builder / « Contenu > Blocs ». */
-const UNKNOWN_NODE_META: { emoji: string; label: [string, string] } = { emoji: '🧩', label: ['Bloc', 'Block'] };
+const UNKNOWN_NODE_META: { icone: NomIcone; label: [string, string] } = { icone: 'bloc', label: ['Bloc', 'Block'] };
 
 /** Métadonnées d'un type de node, TOLÉRANT un type inconnu (renvoie un repli neutre au lieu de `undefined`). À
  *  utiliser partout où le type provient de données de graphe (potentiellement en avance sur le front). */
-export function nodeMetaOf(type: string): { emoji: string; label: [string, string] } {
-  return (NODE_META as Record<string, { emoji: string; label: [string, string] }>)[type] ?? UNKNOWN_NODE_META;
+export function nodeMetaOf(type: string): { icone: NomIcone; label: [string, string] } {
+  return (NODE_META as Record<string, { icone: NomIcone; label: [string, string] }>)[type] ?? UNKNOWN_NODE_META;
 }

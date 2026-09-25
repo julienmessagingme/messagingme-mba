@@ -19,6 +19,7 @@ import {
   numeroASurveiller, type Geste, type Ligne, type Teinte,
 } from '@/lib/canaux-services';
 import { Bouton } from '@/components/Bouton';
+import { Modale } from '@/components/Modale';
 
 /**
  * LE BLOC « CANAUX ET SERVICES » DE L'ACCUEIL (plan du 2026-09-25, design validé par Julien).
@@ -189,8 +190,8 @@ export function CanauxServices(p: {
     if (c === null) return p.compteEnEchec ? inconnu : lecture;
     if (!c.hasNumber) {
       return p.connexionNumero.cfg?.enabled === true
-        ? t('Aucun numéro relié à cet espace. L’allumer ouvre la connexion Meta.', 'No number linked to this workspace. Turning it on opens the Meta connection.')
-        : t('Aucun numéro relié. La connexion n’est pas encore disponible sur cette instance.', 'No number linked. Connection is not available on this instance yet.');
+        ? t('Aucun numéro relié : l’allumer ouvre la connexion Meta.', 'No number linked: turning it on opens the Meta connection.')
+        : t('Aucun numéro relié : la connexion n’est pas encore disponible sur cette instance.', 'No number linked: connection is not available on this instance yet.');
     }
     const numero = c.number ? (c.number.startsWith('+') ? c.number : `+${c.number}`) : t('le numéro', 'the number');
     if (typeof c.delieLe === 'string') {
@@ -304,7 +305,7 @@ export function CanauxServices(p: {
   return (
     <section data-testid="canaux-services">
       <h3 className="text-sm font-semibold text-ink-900">{t('Canaux et services', 'Channels and services')}</h3>
-      {info && <p data-testid="canaux-info" className="mt-3 rounded-lg bg-succes-50 px-3 py-2 text-xs text-succes-700">{info}</p>}
+      {info && <p data-testid="canaux-info" className="mt-3 rounded-controle bg-succes-50 px-3 py-2 text-xs text-succes-700">{info}</p>}
       {/* ⚠️ 3 colonnes à partir de `xl` et non de `lg` : la colonne latérale (240 px) apparaît à `lg`, et trois
           cartes y tomberaient sous 230 px, trop étroites pour une phrase d'état et un interrupteur. */}
       <ul className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -313,7 +314,7 @@ export function CanauxServices(p: {
           const erreur = erreurDe(service);
           const pastille = teinte(l, aTerminer);
           return (
-            <li key={service} data-testid={`canal-${service}`} className="flex flex-col rounded-2xl border border-ink-200 bg-white p-4">
+            <li key={service} data-testid={`canal-${service}`} className="flex flex-col rounded-carte border border-ink-200 bg-white p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-3">
                   {/* Le logo est DÉCORATIF ici : le titre juste à côté nomme déjà la carte, et un lecteur d'écran
@@ -368,7 +369,7 @@ export function CanauxServices(p: {
           <Link
             href="/parametres"
             data-testid="canal-autres-lien"
-            className="flex h-full min-h-[7.5rem] items-center justify-center gap-1.5 rounded-2xl border border-dashed border-ink-300 p-4 text-sm font-semibold text-brand-600 transition-colors duration-150 hover:border-brand-300 hover:bg-brand-50"
+            className="flex h-full min-h-[7.5rem] items-center justify-center gap-1.5 rounded-carte border border-dashed border-ink-300 p-4 text-sm font-semibold text-brand-600 transition-colors duration-150 hover:border-brand-300 hover:bg-brand-50"
           >
             {t('Autres intégrations', 'Other integrations')}<span aria-hidden="true">+</span>
           </Link>
@@ -441,29 +442,18 @@ function Confirmation({ geste, onAnnuler, onConfirmer }: { geste: Geste; onAnnul
   const x = textes[geste];
   if (!x) return null;
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 px-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="canaux-confirmation-titre"
-      data-testid="canaux-confirmation"
-      onClick={onAnnuler}
-      onKeyDown={(e) => { if (e.key === 'Escape') onAnnuler(); }}
-    >
-      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-mm-lg" onClick={(e) => e.stopPropagation()}>
-        <h3 id="canaux-confirmation-titre" className="text-base font-semibold text-ink-900">{x.titre}</h3>
-        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-500">
-          {x.corps.map((c) => <li key={c}>{c}</li>)}
-        </ul>
-        <div className="mt-4 flex flex-wrap justify-end gap-2">
-          <Bouton variante="secondaire" type="button" data-testid="canaux-confirmation-annuler" onClick={onAnnuler}>
-            {t('Annuler', 'Cancel')}
-          </Bouton>
-          <button type="button" data-testid="canaux-confirmation-ok" onClick={onConfirmer} className="rounded-lg bg-danger-600 px-3 py-2 text-sm font-semibold text-white transition-colors duration-150 hover:bg-danger-700">
-            {x.bouton}
-          </button>
-        </div>
+    <Modale titre={x.titre} taille="petite" testId="canaux-confirmation" onClose={onAnnuler}>
+      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-500">
+        {x.corps.map((c) => <li key={c}>{c}</li>)}
+      </ul>
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
+        <Bouton variante="secondaire" type="button" data-testid="canaux-confirmation-annuler" onClick={onAnnuler}>
+          {t('Annuler', 'Cancel')}
+        </Bouton>
+        <button type="button" data-testid="canaux-confirmation-ok" onClick={onConfirmer} className="rounded-controle bg-danger-600 px-3 py-2 text-sm font-semibold text-white transition-colors duration-150 hover:bg-danger-700">
+          {x.bouton}
+        </button>
       </div>
-    </div>
+    </Modale>
   );
 }

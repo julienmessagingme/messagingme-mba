@@ -31,6 +31,9 @@ import {
   type UserFieldKind,
 } from '@/lib/api';
 import { Bouton } from '@/components/Bouton';
+import { Icone } from '@/components/Icone';
+import { useConfirmation } from '@/components/Confirmation';
+import { Modale } from '@/components/Modale';
 
 // text porte les DEUX langues [fr, en] (résolu au rendu via t(...badge.text)) : cette const vit au niveau
 // module, où useT() est inappelable. opt-in / opt-out sont identiques dans les deux langues.
@@ -58,7 +61,7 @@ export const JOIGNABILITE_BADGE: Record<Verdict, { text: [string, string]; cls: 
 /** Input adapté au type d'un user field. */
 function FieldValueInput({ type, value, onChange }: { type: UserFieldKind; value: string; onChange: (v: string) => void }) {
   const t = useT();
-  const cls = 'flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+  const cls = 'flex-1 rounded-controle border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
   if (type === 'boolean') {
     // Valeurs stockées de façon canonique ('true'/'false'). On tolère l'affichage des valeurs héritées
     // ('oui'/'non'/'1'/'0') pour qu'une ancienne fiche reste correctement présélectionnée (pas de backfill).
@@ -108,11 +111,11 @@ function EditableField({ value, type, mono, busy, editable = true, onSave, onDel
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') void commit(); if (e.key === 'Escape') setEditing(false); }}
-            className="min-w-0 flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+            className="min-w-0 flex-1 rounded-controle border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
           />
         )}
-        <button onClick={() => void commit()} disabled={busy} className="shrink-0 text-brand-600 hover:text-brand-700 disabled:opacity-50" aria-label={t('Enregistrer', 'Save')}>✓</button>
-        <button onClick={() => setEditing(false)} className="shrink-0 text-ink-400 hover:text-ink-900" aria-label={t('Annuler', 'Cancel')}>×</button>
+        <button onClick={() => void commit()} disabled={busy} className="shrink-0 text-brand-600 hover:text-brand-700 disabled:opacity-50" aria-label={t('Enregistrer', 'Save')}><Icone nom="valide" /></button>
+        <button onClick={() => setEditing(false)} className="shrink-0 text-ink-400 hover:text-ink-900" aria-label={t('Annuler', 'Cancel')}><Icone nom="fermer" /></button>
       </span>
     );
   }
@@ -123,7 +126,7 @@ function EditableField({ value, type, mono, busy, editable = true, onSave, onDel
         <button onClick={begin} data-testid="champ-modifier" className="shrink-0 text-xs text-brand-600 underline decoration-dotted transition-colors duration-150 hover:text-brand-700" aria-label={t('Modifier', 'Edit')}>{t('modifier', 'edit')}</button>
       )}
       {onDelete && value !== '' && (
-        <button onClick={() => void onDelete()} disabled={busy} data-testid="champ-supprimer" className="shrink-0 text-xs text-ink-400 underline decoration-dotted transition-colors duration-150 hover:text-danger disabled:opacity-50" aria-label={t('Supprimer', 'Delete')}>{t('supprimer', 'delete')}</button>
+        <button onClick={() => void onDelete()} disabled={busy} data-testid="champ-supprimer" className="shrink-0 text-xs text-ink-500 underline decoration-dotted transition-colors duration-150 hover:text-danger disabled:opacity-50" aria-label={t('Supprimer', 'Delete')}>{t('supprimer', 'delete')}</button>
       )}
     </span>
   );
@@ -149,6 +152,7 @@ export function ContactDetail({
   onClose: () => void;
 }) {
   const t = useT();
+  const confirmer = useConfirmation();
   const router = useRouter();
   const { locale } = useLocale();
   const badge = OPT_IN_LABEL[contact.optInStatus] ?? OPT_IN_LABEL.unknown!;
@@ -221,10 +225,10 @@ export function ContactDetail({
    * (plus aucun envoi, conversation masquée). Débloquer ne fait que rendre les choses à leur état normal.
    */
   async function basculerBlocage(bloquer: boolean): Promise<void> {
-    if (bloquer && !window.confirm(t(
+    if (bloquer && !(await confirmer({ titre: t('Bloquer le contact', 'Block the contact'), message: t(
       'Bloquer ce contact ? Plus aucun message ne lui sera envoyé et sa conversation disparaîtra de l’inbox. Ses messages continueront d’être enregistrés, et vous pourrez le débloquer depuis les paramètres.',
       'Block this contact? No message will be sent to them and their conversation will disappear from the inbox. Their messages will still be recorded, and you can unblock them from settings.',
-    ))) return;
+    ), confirmer: t('Bloquer', 'Block') }))) return;
     setBusy(true);
     setError(null);
     try {
@@ -331,344 +335,339 @@ export function ContactDetail({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-mm-lg" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-start justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-ink-900">{contact.profileName ?? contactIdentity(contact) ?? '-'}</h3>
-            <p className="font-mono text-xs text-ink-400">{contactIdentity(contact) ?? '-'}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Bouton variante="secondaire" taille="petite" enCours={ouverture}
-              onClick={() => void ouvrirLaConversation()}
-              disabled={ouverture}
-              data-testid="fiche-ouvrir-conversation"
-            >
-              {ouverture ? t('Ouverture…', 'Opening…') : t('Ouvrir la conversation', 'Open conversation')}
-            </Bouton>
-            <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-900">×</button>
-          </div>
-        </div>
-        {erreurOuverture && (
-          <p className="mt-2 rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger" data-testid="fiche-ouvrir-erreur">{erreurOuverture}</p>
-        )}
+    <Modale
+      titre={contact.profileName ?? contactIdentity(contact) ?? '-'}
+      sousTitre={<span className="font-mono">{contactIdentity(contact) ?? '-'}</span>}
+      onClose={onClose}
+      actions={(
+          <Bouton variante="secondaire" taille="petite" enCours={ouverture}
+            onClick={() => void ouvrirLaConversation()}
+            disabled={ouverture}
+            data-testid="fiche-ouvrir-conversation"
+          >
+            {ouverture ? t('Ouverture…', 'Opening…') : t('Ouvrir la conversation', 'Open conversation')}
+          </Bouton>
+      )}
+    >
+      {erreurOuverture && (
+        <p className="mt-2 rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700" data-testid="fiche-ouvrir-erreur">{erreurOuverture}</p>
+      )}
 
-        <div className="mt-4 flex gap-1 border-b border-ink-100 text-sm">
-          {(['fiche', 'historique'] as const).map((k) => (
-            <button
-              key={k}
-              onClick={() => setTab(k)}
-              className={`-mb-px border-b-2 px-3 py-1.5 transition-colors duration-150 ${tab === k ? 'border-brand-500 font-medium text-brand-700' : 'border-transparent text-ink-500 hover:text-ink-900'}`}
-            >
-              {k === 'fiche' ? t('Fiche', 'Details') : t('Historique', 'History')}
-            </button>
-          ))}
-        </div>
+      <div className="mt-4 flex gap-1 border-b border-ink-100 text-sm">
+        {(['fiche', 'historique'] as const).map((k) => (
+          <button
+            key={k}
+            onClick={() => setTab(k)}
+            className={`-mb-px border-b-2 px-3 py-1.5 transition-colors duration-150 ${tab === k ? 'border-brand-500 font-medium text-brand-700' : 'border-transparent text-ink-500 hover:text-ink-900'}`}
+          >
+            {k === 'fiche' ? t('Fiche', 'Details') : t('Historique', 'History')}
+          </button>
+        ))}
+      </div>
 
-        {tab === 'historique' ? (
-          <ContactHistoryPanel tenantId={tenantId} contactId={contact.id} />
-        ) : (
-        <>
-        {/* Les champs de BASE de la fiche : toujours rendus, même vides. Le testid sert à les cibler sans
-            ambiguïté (« Prénom » existe aussi en en-tête de la liste des contacts). */}
-        <div data-testid="fiche-champs-base" className="mt-4 grid grid-cols-[110px_1fr] items-center gap-x-3 gap-y-2 text-sm">
-          <span className="text-ink-400">{t('Nom', 'Name')}</span>
-          <EditableField value={contact.profileName ?? ''} busy={busy} onSave={(v) => apply({ profileName: v.trim() === '' ? null : v.trim() })} />
-          <span className="text-ink-400">{t('Prénom', 'First name')}</span>
-          <EditableField value={fieldValue(contact, 'prenom') ?? ''} type="text" busy={busy} onSave={(v) => saveSocleField('prenom', v)} onDelete={() => apply({ removeFields: ['prenom'] })} />
-          {/* Email : champ SOCLE au même titre que Prénom (cf. `SOCLE_FIELDS`, src/crm/fields.ts), donc TOUJOURS
-              présent sur la fiche, même vide. Il n'apparaissait qu'une fois rempli, et il n'était même pas
-              proposé à l'ajout : la liste des champs ajoutables vient de `user_fields`, où un champ socle
-              n'existe pas tant que personne ne l'a écrit. Un contact sans email était donc impossible à
-              compléter depuis sa fiche. Signalé par Julien le 2026-08-25. */}
-          <span className="text-ink-400">{t('Email', 'Email')}</span>
-          <EditableField value={fieldValue(contact, 'email') ?? ''} type="text" busy={busy} onSave={(v) => saveSocleField('email', v)} onDelete={() => apply({ removeFields: ['email'] })} />
-          <span className="text-ink-400">{t('Téléphone', 'Phone')}</span>
-          <span className="font-mono text-ink-900" title={t("Le numéro (identité/routage WhatsApp) n'est pas modifiable", "The number (WhatsApp identity/routing) can't be changed")}>{contact.phoneE164 ?? '-'}</span>
-          {/* BSUID et identifiant WhatsApp : TOUJOURS affichés, même absents. Ils ne se remplissent pas à la
-              main (ce sont des identités de routage, pas des données de fiche), mais les masquer quand ils
-              sont vides empêchait de comprendre POURQUOI un contact ne reçoit rien, ou de les recopier pour
-              un diagnostic. Demandé par Julien le 2026-08-25. */}
-          <span className="text-ink-400">{t('Compte WhatsApp', 'WhatsApp account')}</span>
-          <span className="font-mono text-ink-900" title={t("BSUID : identifiant WhatsApp unique d'un client qui n'a pas partagé son numéro. Non modifiable, et absent tant que le client a partagé son numéro.", "BSUID: unique WhatsApp identifier for a customer who hasn't shared their number. Not editable, and absent as long as the customer shared their number.")}>
-            {contact.bsuid ?? <span className="font-sans text-ink-400">{t('aucun', 'none')}</span>}
+      {tab === 'historique' ? (
+        <ContactHistoryPanel tenantId={tenantId} contactId={contact.id} />
+      ) : (
+      <>
+      {/* Les champs de BASE de la fiche : toujours rendus, même vides. Le testid sert à les cibler sans
+          ambiguïté (« Prénom » existe aussi en en-tête de la liste des contacts). */}
+      <div data-testid="fiche-champs-base" className="mt-4 grid grid-cols-[110px_1fr] items-center gap-x-3 gap-y-2 text-sm">
+        <span className="text-ink-500">{t('Nom', 'Name')}</span>
+        <EditableField value={contact.profileName ?? ''} busy={busy} onSave={(v) => apply({ profileName: v.trim() === '' ? null : v.trim() })} />
+        <span className="text-ink-500">{t('Prénom', 'First name')}</span>
+        <EditableField value={fieldValue(contact, 'prenom') ?? ''} type="text" busy={busy} onSave={(v) => saveSocleField('prenom', v)} onDelete={() => apply({ removeFields: ['prenom'] })} />
+        {/* Email : champ SOCLE au même titre que Prénom (cf. `SOCLE_FIELDS`, src/crm/fields.ts), donc TOUJOURS
+            présent sur la fiche, même vide. Il n'apparaissait qu'une fois rempli, et il n'était même pas
+            proposé à l'ajout : la liste des champs ajoutables vient de `user_fields`, où un champ socle
+            n'existe pas tant que personne ne l'a écrit. Un contact sans email était donc impossible à
+            compléter depuis sa fiche. Signalé par Julien le 2026-08-25. */}
+        <span className="text-ink-500">{t('Email', 'Email')}</span>
+        <EditableField value={fieldValue(contact, 'email') ?? ''} type="text" busy={busy} onSave={(v) => saveSocleField('email', v)} onDelete={() => apply({ removeFields: ['email'] })} />
+        <span className="text-ink-500">{t('Téléphone', 'Phone')}</span>
+        <span className="font-mono text-ink-900" title={t("Le numéro (identité/routage WhatsApp) n'est pas modifiable", "The number (WhatsApp identity/routing) can't be changed")}>{contact.phoneE164 ?? '-'}</span>
+        {/* BSUID et identifiant WhatsApp : TOUJOURS affichés, même absents. Ils ne se remplissent pas à la
+            main (ce sont des identités de routage, pas des données de fiche), mais les masquer quand ils
+            sont vides empêchait de comprendre POURQUOI un contact ne reçoit rien, ou de les recopier pour
+            un diagnostic. Demandé par Julien le 2026-08-25. */}
+        <span className="text-ink-500">{t('Compte WhatsApp', 'WhatsApp account')}</span>
+        <span className="font-mono text-ink-900" title={t("BSUID : identifiant WhatsApp unique d'un client qui n'a pas partagé son numéro. Non modifiable, et absent tant que le client a partagé son numéro.", "BSUID: unique WhatsApp identifier for a customer who hasn't shared their number. Not editable, and absent as long as the customer shared their number.")}>
+          {contact.bsuid ?? <span className="font-sans text-ink-500">{t('aucun', 'none')}</span>}
+        </span>
+        {/* L'identifiant WhatsApp n'est PAS stocké : il est DÉRIVÉ, exactement comme le fait la résolution
+            serveur (`MATCH_BY_WAID_SQL`) : les chiffres du numéro, ou le BSUID à défaut. Le montrer évite de
+            le recalculer de tête quand on cherche une conversation ou un parcours. */}
+        <span className="text-ink-500">{t('Identifiant WhatsApp', 'WhatsApp ID')}</span>
+        <span className="font-mono text-ink-900" title={t("Dérivé du numéro (chiffres seuls) ou du BSUID. C'est la clé qui relie ce contact à sa conversation et à ses parcours. Non modifiable.", "Derived from the number (digits only) or the BSUID. It is the key linking this contact to its conversation and journeys. Not editable.")}>
+          {waIdDuContact(contact) ?? <span className="font-sans text-ink-500">{t('aucun', 'none')}</span>}
+        </span>
+        {/* L'IDENTIFIANT API : la valeur que l'API publique appelle `contactId` (spec du 2026-09-24, § 10).
+            Toujours affiché, avec un bouton Copier : c'est ce qu'un intégrateur vient chercher ici. */}
+        <span className="text-ink-500">{t('Identifiant API', 'API ID')}</span>
+        <span className="flex min-w-0 items-center gap-2">
+          {/* `break-all` et pas `truncate` : sur un écran étroit, un UUID coupé par une ellipse ne se lit plus
+              en entier, et c'est la seule issue quand la copie échoue. */}
+          <span data-testid="fiche-identifiant-api" className="min-w-0 break-all font-mono text-xs text-ink-900" title={t('La valeur que l’API appelle « contactId ».', 'The value the API calls “contactId”.')}>
+            {contact.id}
           </span>
-          {/* L'identifiant WhatsApp n'est PAS stocké : il est DÉRIVÉ, exactement comme le fait la résolution
-              serveur (`MATCH_BY_WAID_SQL`) : les chiffres du numéro, ou le BSUID à défaut. Le montrer évite de
-              le recalculer de tête quand on cherche une conversation ou un parcours. */}
-          <span className="text-ink-400">{t('Identifiant WhatsApp', 'WhatsApp ID')}</span>
-          <span className="font-mono text-ink-900" title={t("Dérivé du numéro (chiffres seuls) ou du BSUID. C'est la clé qui relie ce contact à sa conversation et à ses parcours. Non modifiable.", "Derived from the number (digits only) or the BSUID. It is the key linking this contact to its conversation and journeys. Not editable.")}>
-            {waIdDuContact(contact) ?? <span className="font-sans text-ink-400">{t('aucun', 'none')}</span>}
-          </span>
-          {/* L'IDENTIFIANT API : la valeur que l'API publique appelle `contactId` (spec du 2026-09-24, § 10).
-              Toujours affiché, avec un bouton Copier : c'est ce qu'un intégrateur vient chercher ici. */}
-          <span className="text-ink-400">{t('Identifiant API', 'API ID')}</span>
-          <span className="flex min-w-0 items-center gap-2">
-            {/* `break-all` et pas `truncate` : sur un écran étroit, un UUID coupé par une ellipse ne se lit plus
-                en entier, et c'est la seule issue quand la copie échoue. */}
-            <span data-testid="fiche-identifiant-api" className="min-w-0 break-all font-mono text-xs text-ink-900" title={t('La valeur que l’API appelle « contactId ».', 'The value the API calls “contactId”.')}>
-              {contact.id}
+          <button
+            type="button"
+            data-testid="fiche-copier-identifiant"
+            onClick={() => {
+              const signaler = (etat: 'ok' | 'echec'): void => { setIdCopie(etat); setTimeout(() => setIdCopie(null), 2000); };
+              if (!navigator.clipboard) { signaler('echec'); return; }
+              navigator.clipboard.writeText(contact.id).then(() => signaler('ok'), () => signaler('echec'));
+            }}
+            className="shrink-0 text-xs text-brand-600 underline decoration-dotted transition-colors duration-150 hover:text-brand-700"
+          >
+            {idCopie === 'ok' ? t('Copié', 'Copied') : idCopie === 'echec' ? t('Copie impossible', 'Copy failed') : t('Copier', 'Copy')}
+          </button>
+        </span>
+        {/* L'IDENTIFIANT EXTERNE n'apparaît que s'il existe : il ne se remplit que par l'API, une ligne vide
+            se lirait « à remplir ». */}
+        {contact.externalId ? (
+          <>
+            <span className="text-ink-500">{t('Identifiant externe', 'External ID')}</span>
+            <span data-testid="fiche-identifiant-externe" className="break-all font-mono text-xs text-ink-900" title={t('L’identifiant de cette personne dans l’outil qui appelle l’API.', 'This person’s identifier in the tool that calls the API.')}>
+              {contact.externalId}
             </span>
-            <button
-              type="button"
-              data-testid="fiche-copier-identifiant"
-              onClick={() => {
-                const signaler = (etat: 'ok' | 'echec'): void => { setIdCopie(etat); setTimeout(() => setIdCopie(null), 2000); };
-                if (!navigator.clipboard) { signaler('echec'); return; }
-                navigator.clipboard.writeText(contact.id).then(() => signaler('ok'), () => signaler('echec'));
-              }}
-              className="shrink-0 text-xs text-brand-600 underline decoration-dotted transition-colors duration-150 hover:text-brand-700"
-            >
-              {idCopie === 'ok' ? t('Copié', 'Copied') : idCopie === 'echec' ? t('Copie impossible', 'Copy failed') : t('Copier', 'Copy')}
+          </>
+        ) : null}
+        <span className="text-ink-500">{t('Consentement', 'Consent')}</span>
+        {/* Modifiable À LA MAIN, et ce n'est pas du confort : le garde-fou de campagne exige un opt-in
+            EXPLICITE pour le marketing, donc un contact « inconnu » est écarté des envois en silence. Sans ce
+            réglage sur la fiche, rien ne permettait de le rattraper au cas par cas.
+            Pas de retour à « inconnu » : ce statut veut dire « rien n'a jamais été enregistré ». */}
+        <span className="flex flex-wrap items-center gap-2">
+          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>{t(...badge.text)}</span>
+          {contact.optInStatus !== 'opted_in' && (
+            <button onClick={() => void apply({ optInStatus: 'opted_in' })} disabled={busy} data-testid="fiche-optin"
+              className="shrink-0 text-xs text-brand-600 underline decoration-dotted transition-colors duration-150 hover:text-brand-700 disabled:opacity-50">
+              {t('passer en opt-in', 'mark opted in')}
             </button>
-          </span>
-          {/* L'IDENTIFIANT EXTERNE n'apparaît que s'il existe : il ne se remplit que par l'API, une ligne vide
-              se lirait « à remplir ». */}
-          {contact.externalId ? (
+          )}
+          {contact.optInStatus !== 'opted_out' && (
+            <button onClick={() => void apply({ optInStatus: 'opted_out' })} disabled={busy} data-testid="fiche-optout"
+              className="shrink-0 text-xs text-ink-500 underline decoration-dotted transition-colors duration-150 hover:text-danger disabled:opacity-50">
+              {t('passer en opt-out', 'mark opted out')}
+            </button>
+          )}
+        </span>
+        {/* MODÉRATION, juste sous le consentement : même famille de question, « qu'a-t-on le droit
+            d'envoyer à ce contact ». Bloquer va plus loin qu'un opt-out : plus rien ne part, ET sa
+            conversation disparaît de l'inbox. C'est pour ça qu'on demande confirmation. */}
+        <span className="text-ink-500">{t('Modération', 'Moderation')}</span>
+        <span className="flex flex-wrap items-center gap-2">
+          {contact.blockedAt ? (
             <>
-              <span className="text-ink-400">{t('Identifiant externe', 'External ID')}</span>
-              <span data-testid="fiche-identifiant-externe" className="break-all font-mono text-xs text-ink-900" title={t('L’identifiant de cette personne dans l’outil qui appelle l’API.', 'This person’s identifier in the tool that calls the API.')}>
-                {contact.externalId}
-              </span>
-            </>
-          ) : null}
-          <span className="text-ink-400">{t('Consentement', 'Consent')}</span>
-          {/* Modifiable À LA MAIN, et ce n'est pas du confort : le garde-fou de campagne exige un opt-in
-              EXPLICITE pour le marketing, donc un contact « inconnu » est écarté des envois en silence. Sans ce
-              réglage sur la fiche, rien ne permettait de le rattraper au cas par cas.
-              Pas de retour à « inconnu » : ce statut veut dire « rien n'a jamais été enregistré ». */}
-          <span className="flex flex-wrap items-center gap-2">
-            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>{t(...badge.text)}</span>
-            {contact.optInStatus !== 'opted_in' && (
-              <button onClick={() => void apply({ optInStatus: 'opted_in' })} disabled={busy} data-testid="fiche-optin"
+              <span className="rounded-full bg-danger-50 px-2 py-0.5 text-xs font-medium text-danger-700">{t('bloqué', 'blocked')}</span>
+              <button onClick={() => void basculerBlocage(false)} disabled={busy} data-testid="fiche-debloquer"
                 className="shrink-0 text-xs text-brand-600 underline decoration-dotted transition-colors duration-150 hover:text-brand-700 disabled:opacity-50">
-                {t('passer en opt-in', 'mark opted in')}
+                {t('débloquer', 'unblock')}
               </button>
-            )}
-            {contact.optInStatus !== 'opted_out' && (
-              <button onClick={() => void apply({ optInStatus: 'opted_out' })} disabled={busy} data-testid="fiche-optout"
-                className="shrink-0 text-xs text-ink-400 underline decoration-dotted transition-colors duration-150 hover:text-danger disabled:opacity-50">
-                {t('passer en opt-out', 'mark opted out')}
-              </button>
-            )}
+            </>
+          ) : (
+            <button onClick={() => void basculerBlocage(true)} disabled={busy} data-testid="fiche-bloquer"
+              className="shrink-0 text-xs text-ink-500 underline decoration-dotted transition-colors duration-150 hover:text-danger disabled:opacity-50">
+              {t('bloquer ce contact', 'block this contact')}
+            </button>
+          )}
+        </span>
+        {/* JOIGNABILITÉ, juste après la modération : même famille de question, « ce message a-t-il une
+            chance d'arriver ». Elle vient de ce qu'on a MESURÉ (migration 0133), jamais d'une supposition. */}
+        <span className="text-ink-500">{t('Joignabilité', 'Reachability')}</span>
+        <span className="flex flex-wrap items-center gap-2" data-testid="fiche-joignabilite">
+          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${JOIGNABILITE_BADGE[verdict].cls}`}>
+            {t(...JOIGNABILITE_BADGE[verdict].text)}
           </span>
-          {/* MODÉRATION, juste sous le consentement : même famille de question, « qu'a-t-on le droit
-              d'envoyer à ce contact ». Bloquer va plus loin qu'un opt-out : plus rien ne part, ET sa
-              conversation disparaît de l'inbox. C'est pour ça qu'on demande confirmation. */}
-          <span className="text-ink-400">{t('Modération', 'Moderation')}</span>
-          <span className="flex flex-wrap items-center gap-2">
-            {contact.blockedAt ? (
-              <>
-                <span className="rounded-full bg-danger-50 px-2 py-0.5 text-xs font-medium text-danger-700">{t('bloqué', 'blocked')}</span>
-                <button onClick={() => void basculerBlocage(false)} disabled={busy} data-testid="fiche-debloquer"
-                  className="shrink-0 text-xs text-brand-600 underline decoration-dotted transition-colors duration-150 hover:text-brand-700 disabled:opacity-50">
-                  {t('débloquer', 'unblock')}
-                </button>
-              </>
-            ) : (
-              <button onClick={() => void basculerBlocage(true)} disabled={busy} data-testid="fiche-bloquer"
-                className="shrink-0 text-xs text-ink-400 underline decoration-dotted transition-colors duration-150 hover:text-danger disabled:opacity-50">
-                {t('bloquer ce contact', 'block this contact')}
-              </button>
-            )}
-          </span>
-          {/* JOIGNABILITÉ, juste après la modération : même famille de question, « ce message a-t-il une
-              chance d'arriver ». Elle vient de ce qu'on a MESURÉ (migration 0133), jamais d'une supposition. */}
-          <span className="text-ink-400">{t('Joignabilité', 'Reachability')}</span>
-          <span className="flex flex-wrap items-center gap-2" data-testid="fiche-joignabilite">
-            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${JOIGNABILITE_BADGE[verdict].cls}`}>
-              {t(...JOIGNABILITE_BADGE[verdict].text)}
+          {/* La DATE de la mesure, et seulement quand il y en a une : c'est elle qui rend le verdict
+              lisible (« injoignable » d'hier et « injoignable » d'il y a trois mois ne se valent pas), et
+              sans elle personne ne peut juger s'il faut réessayer. */}
+          {verdict !== 'inconnu' && contact.whatsappJoignableLe && (
+            <span className="text-xs text-ink-500">{t('mesuré le', 'measured on')} {formatDate(contact.whatsappJoignableLe, locale)}</span>
+          )}
+        </span>
+        {/* LE RISQUE DE DÉSENGAGEMENT (lot 7), juste après la joignabilité : même famille de question, « ce
+            contact est-il encore là ». Calculé CHAQUE NUIT par le serveur, jamais ici : l'écran ne fait que
+            le lire, par `risqueLu`, qui rend `null` pour un champ absent (API d'avant le lot 7), `null` ou
+            illisible. Les trois se lisent « pas encore calculé », jamais un niveau inventé. */}
+        <span className="text-ink-500">{t('Risque de désengagement', 'Disengagement risk')}</span>
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1" data-testid="fiche-risque">
+          {risque === null ? (
+            <span
+              className="text-xs text-ink-500"
+              data-testid="fiche-risque-absent"
+              title={t('Le calcul passe chaque nuit, pour les contacts qui ont reçu un message.', 'It is computed every night, for contacts who received a message.')}
+            >
+              {t('pas encore calculé', 'not computed yet')}
             </span>
-            {/* La DATE de la mesure, et seulement quand il y en a une : c'est elle qui rend le verdict
-                lisible (« injoignable » d'hier et « injoignable » d'il y a trois mois ne se valent pas), et
-                sans elle personne ne peut juger s'il faut réessayer. */}
-            {verdict !== 'inconnu' && contact.whatsappJoignableLe && (
-              <span className="text-xs text-ink-400">{t('mesuré le', 'measured on')} {formatDate(contact.whatsappJoignableLe, locale)}</span>
-            )}
-          </span>
-          {/* LE RISQUE DE DÉSENGAGEMENT (lot 7), juste après la joignabilité : même famille de question, « ce
-              contact est-il encore là ». Calculé CHAQUE NUIT par le serveur, jamais ici : l'écran ne fait que
-              le lire, par `risqueLu`, qui rend `null` pour un champ absent (API d'avant le lot 7), `null` ou
-              illisible. Les trois se lisent « pas encore calculé », jamais un niveau inventé. */}
-          <span className="text-ink-400">{t('Risque de désengagement', 'Disengagement risk')}</span>
-          <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1" data-testid="fiche-risque">
-            {risque === null ? (
-              <span
-                className="text-xs text-ink-400"
-                data-testid="fiche-risque-absent"
-                title={t('Le calcul passe chaque nuit, pour les contacts qui ont reçu un message.', 'It is computed every night, for contacts who received a message.')}
-              >
-                {t('pas encore calculé', 'not computed yet')}
+          ) : (
+            <>
+              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${BADGE_NIVEAU_RISQUE[risque.niveau].cls}`} data-testid="fiche-risque-niveau">
+                {t(...BADGE_NIVEAU_RISQUE[risque.niveau].text)}
               </span>
-            ) : (
-              <>
-                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${BADGE_NIVEAU_RISQUE[risque.niveau].cls}`} data-testid="fiche-risque-niveau">
-                  {t(...BADGE_NIVEAU_RISQUE[risque.niveau].text)}
+              {/* Le score n'existe pas pour « inconnu » : rien n'a été observé, il n'y a rien à noter. */}
+              {risque.score !== null && (
+                <span className="text-xs text-ink-500" data-testid="fiche-risque-score">{risque.score} / 100</span>
+              )}
+              {/* « DEPUIS LE » ET PAS « CALCULÉ LE » : la date ne bouge qu'au changement de niveau, le calcul
+                  repasse chaque nuit sans la toucher (`PgRisqueStore.ecrire`). */}
+              <span className="text-xs text-ink-500" data-testid="fiche-risque-depuis">{t('depuis le', 'since')} {formatDate(risque.calculeLe, locale)}</span>
+              {risque.niveau === 'inconnu' && (
+                <span className="basis-full text-xs text-ink-500">
+                  {t('Aucun message ne lui a été délivré sur les 90 derniers jours : rien à observer.', 'No message was delivered to them in the last 90 days: nothing to observe.')}
                 </span>
-                {/* Le score n'existe pas pour « inconnu » : rien n'a été observé, il n'y a rien à noter. */}
-                {risque.score !== null && (
-                  <span className="text-xs text-ink-500" data-testid="fiche-risque-score">{risque.score} / 100</span>
-                )}
-                {/* « DEPUIS LE » ET PAS « CALCULÉ LE » : la date ne bouge qu'au changement de niveau, le calcul
-                    repasse chaque nuit sans la toucher (`PgRisqueStore.ecrire`). */}
-                <span className="text-xs text-ink-400" data-testid="fiche-risque-depuis">{t('depuis le', 'since')} {formatDate(risque.calculeLe, locale)}</span>
-                {risque.niveau === 'inconnu' && (
-                  <span className="basis-full text-xs text-ink-500">
-                    {t('Aucun message ne lui a été délivré sur les 90 derniers jours : rien à observer.', 'No message was delivered to them in the last 90 days: nothing to observe.')}
-                  </span>
-                )}
-                {risque.raisons.length > 0 && (
-                  <ul className="basis-full list-disc space-y-0.5 pl-4 text-xs text-ink-500" data-testid="fiche-risque-raisons">
-                    {risque.raisons.map((r) => <li key={r}>{t(...libelleRaisonRisque(r))}</li>)}
-                  </ul>
-                )}
-              </>
-            )}
-          </span>
-          <span className="text-ink-400">{t('Ajouté le', 'Added on')}</span>
-          <span className="text-ink-900">{formatDate(contact.createdAt, locale)}</span>
+              )}
+              {risque.raisons.length > 0 && (
+                <ul className="basis-full list-disc space-y-0.5 pl-4 text-xs text-ink-500" data-testid="fiche-risque-raisons">
+                  {risque.raisons.map((r) => <li key={r}>{t(...libelleRaisonRisque(r))}</li>)}
+                </ul>
+              )}
+            </>
+          )}
+        </span>
+        <span className="text-ink-500">{t('Ajouté le', 'Added on')}</span>
+        <span className="text-ink-900">{formatDate(contact.createdAt, locale)}</span>
+      </div>
+
+      {/*
+        LE RÉSUMÉ DE LA CONVERSATION, EN CHAMP DE BASE DU MINI-CRM (demande de Julien : « ça serait un
+        champ de base à partir du moment où il y a une conversation »).
+
+        🔴 IL N'APPARAÎT PAS TANT QU'IL N'Y A PAS DE CONVERSATION, et c'est la demande au mot près. Un
+        bloc « Résumé : - » sur un contact importé d'un CSV qui n'a jamais rien échangé promettrait un
+        contenu à venir sur une fiche où il ne viendra jamais.
+
+        🔴 EN LECTURE SEULE, ET SANS BOUTON MODIFIER. C'est un CONSTAT posé par un modèle, recalculé à
+        chaque analyse : le rendre modifiable ferait disparaître la retouche au passage suivant, sans
+        cause visible. Même séparation que celle déjà tenue entre `conversation_analysis.abusive` (constat)
+        et `contacts.blocked_at` (décision).
+
+        ⚠️ HORS de la grille des champs de base : deux à trois phrases dans une colonne de valeur large de
+        110 px se liraient en escalier. Le bloc garde le libellé, il change de forme.
+      */}
+      {etat !== 'aucune-conversation' && (
+        <div className="mt-4 rounded-controle border border-ink-100 bg-ink-50/60 px-3 py-2" data-testid="fiche-contact-resume">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <span className="text-xs font-medium text-ink-500">
+              {t('Résumé de la conversation', 'Conversation summary')}
+            </span>
+            {/* La DATE de l'analyse, et le lien vers le fil. Sans la date, un résumé de mars et un résumé
+                d'hier se lisent pareil ; sans le lien, il faut retrouver la conversation à la main. */}
+            <span className="flex items-center gap-2 text-xs text-ink-500">
+              {resume?.analyseLe && <span>{t('analysé le', 'analyzed on')} {formatDate(resume.analyseLe, locale)}</span>}
+              {resume?.conversationId && (
+                <Link href={`/inbox?c=${resume.conversationId}`} className="text-brand-600 underline decoration-dotted hover:text-brand-700">
+                  {t('voir le fil', 'open thread')}
+                </Link>
+              )}
+            </span>
+          </div>
+          {etat === 'resume' ? (
+            <p className="mt-1 whitespace-pre-line text-sm text-ink-900" data-testid="fiche-contact-resume-texte">{resume?.texte}</p>
+          ) : (
+            <p className="mt-1 text-sm italic text-ink-500" data-testid="fiche-contact-resume-absent">{phraseAbsent}</p>
+          )}
+          {/* PÉRIMÉ : l'analyse existe, mais un message est arrivé depuis. Le dire vaut mieux que de
+              présenter un résumé partiel comme s'il couvrait tout le fil. Même mot que dans l'onglet
+              Historique, pour que les deux écrans ne décrivent pas le même état de deux façons. */}
+          {resume?.perime && (
+            <p className="mt-1 text-xs text-alerte-700" data-testid="fiche-contact-resume-perime">
+              {t('Un message est arrivé depuis : ce résumé ne couvre pas la fin de la conversation.',
+                 'A message has arrived since: this summary does not cover the end of the conversation.')}
+            </p>
+          )}
         </div>
+      )}
 
-        {/*
-          LE RÉSUMÉ DE LA CONVERSATION, EN CHAMP DE BASE DU MINI-CRM (demande de Julien : « ça serait un
-          champ de base à partir du moment où il y a une conversation »).
+      {error && <p className="mt-4 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
-          🔴 IL N'APPARAÎT PAS TANT QU'IL N'Y A PAS DE CONVERSATION, et c'est la demande au mot près. Un
-          bloc « Résumé : - » sur un contact importé d'un CSV qui n'a jamais rien échangé promettrait un
-          contenu à venir sur une fiche où il ne viendra jamais.
+      <div className="mt-5">
+        <h4 className="mb-2 text-xs font-medium text-ink-500">Tags</h4>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {(contact.tags ?? []).map((tag) => (
+            <span key={tag} className="inline-flex items-center gap-1 rounded-controle bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+              {tag}
+              <button onClick={() => void apply({ removeTags: [tag] })} disabled={busy} className="text-brand-400 hover:text-danger" aria-label={`${t('Retirer', 'Remove')} ${tag}`}><Icone nom="fermer" taille="petite" /></button>
+            </span>
+          ))}
+          {(contact.tags ?? []).length === 0 && <span className="text-sm text-ink-500">{t('Aucune étiquette.', 'No tags.')}</span>}
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            list="tag-suggestions"
+            value={newTag}
+            onChange={(e) => setNewTag(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void addTag(); }}
+            placeholder={t('Ajouter une étiquette…', 'Add a tag…')}
+            className="flex-1 rounded-controle border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+          />
+          <datalist id="tag-suggestions">{tagSuggestions.map((tag) => <option key={tag} value={tag} />)}</datalist>
+          <Bouton onClick={addTag} disabled={busy || newTag.trim() === ''}>{t('Ajouter', 'Add')}</Bouton>
+        </div>
+      </div>
 
-          🔴 EN LECTURE SEULE, ET SANS BOUTON MODIFIER. C'est un CONSTAT posé par un modèle, recalculé à
-          chaque analyse : le rendre modifiable ferait disparaître la retouche au passage suivant, sans
-          cause visible. Même séparation que celle déjà tenue entre `conversation_analysis.abusive` (constat)
-          et `contacts.blocked_at` (décision).
-
-          ⚠️ HORS de la grille des champs de base : deux à trois phrases dans une colonne de valeur large de
-          110 px se liraient en escalier. Le bloc garde le libellé, il change de forme.
-        */}
-        {etat !== 'aucune-conversation' && (
-          <div className="mt-4 rounded-lg border border-ink-100 bg-ink-50/60 px-3 py-2" data-testid="fiche-contact-resume">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <span className="text-xs font-medium text-ink-500">
-                {t('Résumé de la conversation', 'Conversation summary')}
-              </span>
-              {/* La DATE de l'analyse, et le lien vers le fil. Sans la date, un résumé de mars et un résumé
-                  d'hier se lisent pareil ; sans le lien, il faut retrouver la conversation à la main. */}
-              <span className="flex items-center gap-2 text-xs text-ink-400">
-                {resume?.analyseLe && <span>{t('analysé le', 'analyzed on')} {formatDate(resume.analyseLe, locale)}</span>}
-                {resume?.conversationId && (
-                  <Link href={`/inbox?c=${resume.conversationId}`} className="text-brand-600 underline decoration-dotted hover:text-brand-700">
-                    {t('voir le fil', 'open thread')}
-                  </Link>
-                )}
-              </span>
-            </div>
-            {etat === 'resume' ? (
-              <p className="mt-1 whitespace-pre-line text-sm text-ink-900" data-testid="fiche-contact-resume-texte">{resume?.texte}</p>
-            ) : (
-              <p className="mt-1 text-sm italic text-ink-400" data-testid="fiche-contact-resume-absent">{phraseAbsent}</p>
-            )}
-            {/* PÉRIMÉ : l'analyse existe, mais un message est arrivé depuis. Le dire vaut mieux que de
-                présenter un résumé partiel comme s'il couvrait tout le fil. Même mot que dans l'onglet
-                Historique, pour que les deux écrans ne décrivent pas le même état de deux façons. */}
-            {resume?.perime && (
-              <p className="mt-1 text-xs text-alerte-700" data-testid="fiche-contact-resume-perime">
-                {t('Un message est arrivé depuis : ce résumé ne couvre pas la fin de la conversation.',
-                   'A message has arrived since: this summary does not cover the end of the conversation.')}
-              </p>
-            )}
+      <div className="mt-5">
+        <h4 className="mb-2 text-xs font-medium text-ink-500">{t('Champs', 'Fields')}</h4>
+        {fieldEntries.length === 0 ? (
+          <p className="text-sm text-ink-500">{t('Aucun champ perso.', 'No custom fields.')}</p>
+        ) : (
+          <div className="overflow-hidden rounded-controle border border-ink-200">
+            {fieldEntries.map(([k, v], i) => (
+              <div key={k} className={`grid grid-cols-[130px_1fr] items-center gap-3 px-3 py-1.5 text-sm ${i % 2 ? 'bg-ink-50' : 'bg-white'}`}>
+                <span className="truncate text-ink-500">{defByKey.get(k)?.label ?? k}</span>
+                <EditableField
+                  value={String(v)}
+                  type={defByKey.get(k)?.type ?? 'text'}
+                  busy={busy}
+                  editable={defByKey.has(k)}
+                  onSave={(nv) => (nv.trim() === '' ? apply({ removeFields: [k] }) : apply({ fields: { [k]: nv.trim() } }))}
+                  onDelete={() => apply({ removeFields: [k] })}
+                />
+              </div>
+            ))}
           </div>
         )}
-
-        {error && <p className="mt-4 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
-
-        <div className="mt-5">
-          <h4 className="mb-2 text-xs font-medium text-ink-500">Tags</h4>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {(contact.tags ?? []).map((tag) => (
-              <span key={tag} className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
-                {tag}
-                <button onClick={() => void apply({ removeTags: [tag] })} disabled={busy} className="text-brand-400 hover:text-danger" aria-label={`${t('Retirer', 'Remove')} ${tag}`}>×</button>
-              </span>
-            ))}
-            {(contact.tags ?? []).length === 0 && <span className="text-sm text-ink-400">{t('Aucune étiquette.', 'No tags.')}</span>}
-          </div>
-          <div className="mt-2 flex items-center gap-2">
-            <input
-              list="tag-suggestions"
-              value={newTag}
-              onChange={(e) => setNewTag(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') void addTag(); }}
-              placeholder={t('Ajouter une étiquette…', 'Add a tag…')}
-              className="flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-            />
-            <datalist id="tag-suggestions">{tagSuggestions.map((tag) => <option key={tag} value={tag} />)}</datalist>
-            <Bouton onClick={addTag} disabled={busy || newTag.trim() === ''}>{t('Ajouter', 'Add')}</Bouton>
-          </div>
-        </div>
-
-        <div className="mt-5">
-          <h4 className="mb-2 text-xs font-medium text-ink-500">{t('Champs', 'Fields')}</h4>
-          {fieldEntries.length === 0 ? (
-            <p className="text-sm text-ink-400">{t('Aucun champ perso.', 'No custom fields.')}</p>
-          ) : (
-            <div className="overflow-hidden rounded-lg border border-ink-200">
-              {fieldEntries.map(([k, v], i) => (
-                <div key={k} className={`grid grid-cols-[130px_1fr] items-center gap-3 px-3 py-1.5 text-sm ${i % 2 ? 'bg-ink-50' : 'bg-white'}`}>
-                  <span className="truncate text-ink-500">{defByKey.get(k)?.label ?? k}</span>
-                  <EditableField
-                    value={String(v)}
-                    type={defByKey.get(k)?.type ?? 'text'}
-                    busy={busy}
-                    editable={defByKey.has(k)}
-                    onSave={(nv) => (nv.trim() === '' ? apply({ removeFields: [k] }) : apply({ fields: { [k]: nv.trim() } }))}
-                    onDelete={() => apply({ removeFields: [k] })}
-                  />
-                </div>
-              ))}
+        <div className="mt-2 space-y-2">
+          {addable.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <select value={newKey} onChange={(e) => { setNewKey(e.target.value); setNewVal(''); }} className="rounded-controle border border-ink-300 bg-white px-2 py-2 text-sm text-ink-900">
+                <option value="">{t('Ajouter un champ existant…', 'Add an existing field…')}</option>
+                {addable.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
+              </select>
+              {selectedDef && (
+                <>
+                  <FieldValueInput type={selectedDef.type} value={newVal} onChange={setNewVal} />
+                  <Bouton onClick={addField} disabled={busy || newVal.trim() === ''}>{t('Ajouter', 'Add')}</Bouton>
+                </>
+              )}
             </div>
           )}
-          <div className="mt-2 space-y-2">
-            {addable.length > 0 && (
+          {!creatingField ? (
+            <button onClick={() => setCreatingField(true)} className="text-sm font-medium text-brand-600 hover:text-brand-700">+ {t('Créer un nouveau champ', 'Create a new field')}</button>
+          ) : (
+            <div className="space-y-2 rounded-controle border border-brand-200 bg-brand-50/40 p-2.5">
               <div className="flex flex-wrap items-center gap-2">
-                <select value={newKey} onChange={(e) => { setNewKey(e.target.value); setNewVal(''); }} className="rounded-lg border border-ink-300 bg-white px-2 py-2 text-sm text-ink-900">
-                  <option value="">{t('Ajouter un champ existant…', 'Add an existing field…')}</option>
-                  {addable.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
+                <input value={cLabel} onChange={(e) => setCLabel(e.target.value)} placeholder={t('Nom du champ (ex. Métier)', 'Field name (e.g. Job)')} className="flex-1 rounded-controle border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
+                <select value={cType} onChange={(e) => setCType(e.target.value as UserFieldKind)} className="rounded-controle border border-ink-300 bg-white px-2 py-2 text-sm text-ink-900">
+                  <option value="text">{t('texte', 'text')}</option>
+                  <option value="number">{t('nombre', 'number')}</option>
+                  <option value="date">{t('date', 'date')}</option>
+                  <option value="datetime">{t('date et heure', 'date & time')}</option>
+                  <option value="boolean">{t('oui/non', 'yes/no')}</option>
+                  <option value="url">{t('lien', 'link')}</option>
                 </select>
-                {selectedDef && (
-                  <>
-                    <FieldValueInput type={selectedDef.type} value={newVal} onChange={setNewVal} />
-                    <Bouton onClick={addField} disabled={busy || newVal.trim() === ''}>{t('Ajouter', 'Add')}</Bouton>
-                  </>
-                )}
               </div>
-            )}
-            {!creatingField ? (
-              <button onClick={() => setCreatingField(true)} className="text-sm font-medium text-brand-600 hover:text-brand-700">+ {t('Créer un nouveau champ', 'Create a new field')}</button>
-            ) : (
-              <div className="space-y-2 rounded-lg border border-brand-200 bg-brand-50/40 p-2.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <input value={cLabel} onChange={(e) => setCLabel(e.target.value)} placeholder={t('Nom du champ (ex. Métier)', 'Field name (e.g. Job)')} className="flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
-                  <select value={cType} onChange={(e) => setCType(e.target.value as UserFieldKind)} className="rounded-lg border border-ink-300 bg-white px-2 py-2 text-sm text-ink-900">
-                    <option value="text">{t('texte', 'text')}</option>
-                    <option value="number">{t('nombre', 'number')}</option>
-                    <option value="date">{t('date', 'date')}</option>
-                    <option value="datetime">{t('date et heure', 'date & time')}</option>
-                    <option value="boolean">{t('oui/non', 'yes/no')}</option>
-                    <option value="url">{t('lien', 'link')}</option>
-                  </select>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <FieldValueInput type={cType} value={cVal} onChange={setCVal} />
-                  <Bouton onClick={createAndAddField} disabled={busy || cLabel.trim() === '' || cVal.trim() === ''}>{t('Créer et ajouter', 'Create and add')}</Bouton>
-                  <button onClick={() => { setCreatingField(false); setCLabel(''); setCVal(''); setCreatedRef(null); }} className="text-sm text-ink-400 hover:text-ink-900">{t('Annuler', 'Cancel')}</button>
-                </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <FieldValueInput type={cType} value={cVal} onChange={setCVal} />
+                <Bouton onClick={createAndAddField} disabled={busy || cLabel.trim() === '' || cVal.trim() === ''}>{t('Créer et ajouter', 'Create and add')}</Bouton>
+                <button onClick={() => { setCreatingField(false); setCLabel(''); setCVal(''); setCreatedRef(null); }} className="text-sm text-ink-500 hover:text-ink-900">{t('Annuler', 'Cancel')}</button>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
-        </>
-        )}
       </div>
-    </div>
+      </>
+      )}
+    </Modale>
   );
 }

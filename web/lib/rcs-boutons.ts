@@ -1,4 +1,5 @@
 import type { RcsSuggestion } from './rcs-types';
+import type { NomIcone } from './icones';
 
 /**
  * Les six formes de bouton RCS, côté écran : leur libellé, leur fabrication, et le test « est-il complet ? ».
@@ -46,15 +47,15 @@ export const AIDE_KIND: Record<KindBouton, [string, string]> = {
   ],
 };
 
-/** Pastille affichée devant le libellé dans un aperçu. Vide pour « Réponse » : c'est la forme par défaut,
- *  et une icône sur tous les boutons ne distinguerait plus rien. */
-export const ICONE_KIND: Record<KindBouton, string> = {
-  reply: '',
-  openUrl: '🔗 ',
-  dial: '📞 ',
-  calendar: '📅 ',
-  showLocation: '🗺️ ',
-  requestLocation: '📍 ',
+/** Icône affichée devant le libellé dans un aperçu (son nom dans `components/Icone.tsx`). Aucune pour
+ *  « Réponse » : c'est la forme par défaut, et une icône sur tous les boutons ne distinguerait plus rien. */
+export const ICONE_KIND: Record<KindBouton, NomIcone | null> = {
+  reply: null,
+  openUrl: 'lien',
+  dial: 'telephone',
+  calendar: 'calendrier',
+  showLocation: 'carte',
+  requestLocation: 'position',
 };
 
 /** Un bouton neuf de ce type, en gardant le libellé déjà saisi. Chaque forme naît COMPLÈTE en structure

@@ -27,7 +27,7 @@ function CardMedia({ card, index }: { card: CarouselPreviewCard; index: number }
   const label = card.mediaFormat === 'VIDEO' ? t('vidéo', 'video') : failed ? t('image indisponible', 'image unavailable') : t('image', 'image');
   const showImage = card.imageUrl && card.mediaFormat !== 'VIDEO' && !failed;
   return (
-    <div className="flex aspect-video w-full items-center justify-center bg-ink-100 text-center text-[11px] text-ink-400">
+    <div className="flex aspect-video w-full items-center justify-center bg-ink-100 text-center text-[11px] text-ink-500">
       {showImage ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -71,10 +71,10 @@ export function CarouselPreview({
   const t = useT();
   return (
     <PhoneFrame {...(senderName ? { senderName } : {})} contentClassName="space-y-2 px-3 py-4">
-          <div className="max-w-[88%] rounded-lg rounded-tl-none bg-white px-2.5 py-1.5 text-[13px] leading-snug text-ink-900 shadow-sm">
+          <div className="max-w-[88%] rounded-controle rounded-tl-none bg-white px-2.5 py-1.5 text-[13px] leading-snug text-ink-900 shadow-sm">
             {body.trim()
               ? <span className="whitespace-pre-wrap break-words"><TemplateBodyText body={body} examples={examples} {...(varLabels ? { varLabels } : {})} /></span>
-              : <span className="text-ink-400">{t("Message d'introduction…", 'Introduction message…')}</span>}
+              : <span className="text-ink-500">{t("Message d'introduction…", 'Introduction message…')}</span>}
           </div>
           {cards.length === 0 ? (
             <p className="text-[12px] text-ink-500">{t('Aucune carte à afficher.', 'No card to display.')}</p>
@@ -83,7 +83,7 @@ export function CarouselPreview({
               {cards.map((c, i) => {
                 const cardButtons = c.buttons ?? buttons;
                 return (
-                  <div key={i} className="w-44 shrink-0 overflow-hidden rounded-lg bg-white shadow-sm">
+                  <div key={i} className="w-44 shrink-0 overflow-hidden rounded-controle bg-white shadow-sm">
                     {/* Clé sur l'URL : changer d'image REMONTE la vignette, donc un échec précédent ne reste
                         pas collé sur une image qui, elle, est bonne. */}
                     <CardMedia key={c.imageUrl ?? `sans-image-${i}`} card={c} index={i} />

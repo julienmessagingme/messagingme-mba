@@ -87,11 +87,11 @@ function ErreursInner({ session }: { session: Session }) {
   useEffect(() => { void charger(); }, [charger]);
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-4 p-6">
+    <div className="mx-auto w-full max-w-liste space-y-4">
       {voitAgregat && (
         <>
           <RangeBar title={t('Erreurs de livraison', 'Delivery errors')} range={range} onChange={setRange} />
-          {erreur && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{erreur}</p>}
+          {erreur && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{erreur}</p>}
           {chargement ? (
             <p className="text-sm text-ink-500">{t('Chargement des statistiques...', 'Loading statistics...')}</p>
           ) : (

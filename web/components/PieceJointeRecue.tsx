@@ -7,6 +7,7 @@ import { ApiError } from '@/lib/http';
 import {
   DUREE_MEDIA_RECU_JOURS_AFFICHEE, imageAffichable, nomDeTelechargement, type NaturePieceJointe,
 } from '@/lib/piece-jointe';
+import { Icone } from '@/components/Icone';
 
 /**
  * UNE PIÈCE JOINTE REÇUE DANS LE FIL : une photo affichée, un document ou une vidéo à télécharger
@@ -124,8 +125,8 @@ export function PieceJointeRecue({ tenantId, conversationId, message, nature, le
   return (
     <div ref={cadre} className="space-y-1" data-testid={`piece-jointe-${message.id}`}>
       {expire ? (
-        <p className="text-xs italic opacity-80" data-testid={`piece-jointe-expiree-${message.id}`}>
-          {nature === 'image' ? '🖼️' : '📎'} {nomAffiche} · {direExpire}
+        <p className="flex items-center gap-1 text-xs italic opacity-80" data-testid={`piece-jointe-expiree-${message.id}`}>
+          <Icone nom={nature === 'image' ? 'image' : 'piece'} taille="petite" />{nomAffiche} · {direExpire}
         </p>
       ) : nature === 'image' && !imageRefusee ? (
         image ? (
@@ -140,7 +141,7 @@ export function PieceJointeRecue({ tenantId, conversationId, message, nature, le
               src={image}
               alt={legende ?? t('Photo reçue', 'Received photo')}
               data-testid={`piece-jointe-image-${message.id}`}
-              className={`rounded-lg object-contain ${agrandie ? 'max-h-[70vh] max-w-full' : 'max-h-56 max-w-[240px]'}`}
+              className={`rounded-controle object-contain ${agrandie ? 'max-h-[70vh] max-w-full' : 'max-h-56 max-w-[240px]'}`}
             />
           </button>
         ) : erreur === null ? (
@@ -152,9 +153,9 @@ export function PieceJointeRecue({ tenantId, conversationId, message, nature, le
           onClick={() => { void telecharger(); }}
           disabled={occupe}
           data-testid={`piece-jointe-telecharger-${message.id}`}
-          className="flex max-w-full items-center gap-1.5 rounded-lg bg-white/70 px-2 py-1 text-left text-xs font-medium text-ink-900 hover:bg-white disabled:opacity-50"
+          className="flex max-w-full items-center gap-1.5 rounded-controle bg-white/70 px-2 py-1 text-left text-xs font-medium text-ink-900 hover:bg-white disabled:opacity-50"
         >
-          <span aria-hidden="true">{nature === 'video' ? '🎬' : '📎'}</span>
+          <Icone nom={nature === 'video' ? 'video' : 'piece'} taille="petite" />
           <span className="truncate">{nomAffiche}</span>
           <span className="shrink-0 text-ink-500">{occupe ? t('Téléchargement…', 'Downloading…') : t('Télécharger', 'Download')}</span>
         </button>

@@ -6,6 +6,9 @@ import { getConversationAnalysisSummary, type ConversationAnalysisSummary, type 
 import { fmtNum } from '@/lib/format';
 import { useT, useLocale } from '@/lib/i18n';
 import { comptesParIntention, libelleIntention, type Intention } from '@/lib/intentions';
+import { Icone } from '@/components/Icone';
+import { Squelette } from '@/components/Squelette';
+import { Nd, useErreurRegroupee } from '@/components/Nd';
 
 /**
  * « COMBIEN DE CONVERSATIONS PAR INTENTION », avec leurs SUJETS empilés dessous.
@@ -31,7 +34,7 @@ import { comptesParIntention, libelleIntention, type Intention } from '@/lib/int
  * `/dashboard/funnel?campagne=<id>`.
  */
 
-const CARD = 'rounded-2xl border border-ink-200 bg-white p-5';
+const CARD = 'rounded-carte border border-ink-200 bg-white p-5';
 
 /** La liste, son ordre FIXE d'affichage et les libellés vivent dans `@/lib/intentions`, partagés avec
  *  l'Analyse des conversations. */
@@ -54,6 +57,8 @@ export function CarteIntentions({ tenantId, range }: { tenantId: string; range: 
     return () => { vivant = false; };
   }, [tenantId, range.from, range.to]);
 
+  const regroupee = useErreurRegroupee('intentions', resume === 'erreur');
+
   const versAnalyse = (i: Intention): void => {
     // La période voyage avec l'intention : arriver sur une autre fenêtre que celle qu'on regardait
     // donnerait un compte différent de celui qu'on vient de cliquer, et le chiffre passerait pour faux.
@@ -66,18 +71,19 @@ export function CarteIntentions({ tenantId, range }: { tenantId: string; range: 
         <h2 className="text-sm font-semibold text-ink-900">
           {t('Conversations par intention', 'Conversations by intent')}
         </h2>
-        <p className="mt-0.5 text-xs text-ink-400">
+        <p className="mt-0.5 text-xs text-ink-500">
           {t('Dépliez une intention pour voir ses sujets. Cliquez son nom pour ouvrir les conversations.',
             'Expand an intent to see its topics. Click its name to open the conversations.')}
         </p>
       </header>
 
-      {resume === 'erreur' && (
-        <p className="rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger" data-testid="intentions-erreur">
+      {resume === 'erreur' && regroupee && <Nd testId="intentions-erreur" className="text-sm" />}
+      {resume === 'erreur' && !regroupee && (
+        <p className="rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700" data-testid="intentions-erreur">
           {t('Les intentions n’ont pas pu être chargées.', 'Intents could not be loaded.')}
         </p>
       )}
-      {resume === null && <p className="text-xs text-ink-400">{t('Chargement…', 'Loading…')}</p>}
+      {resume === null && <Squelette forme="carte" />}
 
       {resume !== null && resume !== 'erreur' && resume.total === 0 && (
         <p className="text-xs text-ink-500" data-testid="intentions-vide">
@@ -103,22 +109,22 @@ export function CarteIntentions({ tenantId, range }: { tenantId: string; range: 
                     aria-expanded={depliee === i}
                     aria-label={t(`Voir les sujets de ${libelleIntention(i, t)}`, `Show topics for ${libelleIntention(i, t)}`)}
                     data-testid={`intention-deplier-${i}`}
-                    className="shrink-0 rounded p-0.5 text-ink-400 transition-colors duration-150 hover:bg-ink-100 disabled:invisible"
+                    className="shrink-0 rounded-controle p-0.5 text-ink-500 transition-colors duration-150 hover:bg-ink-100 disabled:invisible"
                   >
-                    <svg viewBox="0 0 24 24" className={`h-3.5 w-3.5 transition-transform ${depliee === i ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+                    <Icone nom="deplier" taille="petite" className={`transition-transform duration-150 ${depliee === i ? 'rotate-180' : ''}`} />
                   </button>
                   <button
                     type="button"
                     onClick={() => versAnalyse(i)}
                     disabled={n === 0}
                     data-testid={`intention-ouvrir-${i}`}
-                    className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-left transition-colors duration-150 hover:bg-ink-50 disabled:cursor-default disabled:hover:bg-transparent"
+                    className="flex min-w-0 flex-1 items-center gap-3 rounded-controle text-left transition-colors duration-150 hover:bg-ink-50 disabled:cursor-default disabled:hover:bg-transparent"
                   >
                     <span className="w-32 shrink-0 truncate text-xs text-ink-500">{libelleIntention(i, t)}</span>
-                    <span className="h-5 flex-1 overflow-hidden rounded-md bg-ink-50">
-                      <span className="block h-full rounded-md bg-brand-400" style={{ width: `${pct}%` }} />
+                    <span className="h-5 flex-1 overflow-hidden rounded-controle bg-ink-50">
+                      <span className="block h-full rounded-controle bg-brand-400" style={{ width: `${pct}%` }} />
                     </span>
-                    <span className={`w-8 shrink-0 text-right text-xs tabular-nums ${n > 0 ? 'font-medium text-brand-600 underline decoration-dotted underline-offset-2' : 'text-ink-400'}`}>
+                    <span className={`w-8 shrink-0 text-right text-xs tabular-nums ${n > 0 ? 'font-medium text-brand-600 underline decoration-dotted underline-offset-2' : 'text-ink-500'}`}>
                       {fmtNum(n, locale)}
                     </span>
                   </button>
@@ -129,7 +135,7 @@ export function CarteIntentions({ tenantId, range }: { tenantId: string; range: 
                     {sujets.map((s) => (
                       <li key={s.topic} className="flex items-baseline justify-between gap-2 text-xs text-ink-500">
                         <span className="truncate" title={s.topic}>{s.topic}</span>
-                        <span className="shrink-0 tabular-nums text-ink-400">{fmtNum(s.count, locale)}</span>
+                        <span className="shrink-0 tabular-nums text-ink-500">{fmtNum(s.count, locale)}</span>
                       </li>
                     ))}
                   </ul>

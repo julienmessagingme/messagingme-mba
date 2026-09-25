@@ -24,8 +24,16 @@ export type TailleBouton = 'normale' | 'petite';
 // `bouton` n'est pas une classe Tailwind : c'est la marque que `globals.css` lit pour ne pas ajouter son retour
 // de clic générique (une opacité) à celui du composant (sa couleur de fond qui fonce).
 const BASE =
-  'bouton inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors duration-150 ' +
-  'disabled:cursor-not-allowed disabled:opacity-50';
+  'bouton inline-flex items-center justify-center gap-1.5 rounded-controle font-medium transition-colors duration-150 ' +
+  'disabled:cursor-not-allowed';
+
+/**
+ * Le « désactivé » pâlit le bouton, SAUF pendant un envoi. ⚠️ Posé à part et non annulé par un
+ * `disabled:opacity-100` : deux classes de même variante se départagent par leur ordre dans le CSS compilé,
+ * pas dans l'attribut, et `disabled:opacity-100` y sortait AVANT `disabled:opacity-50`. Le bouton en cours
+ * pâlissait donc quand même (relecture de la passe 1).
+ */
+const PALE = 'disabled:opacity-50';
 
 const VARIANTES: Record<VarianteBouton, string> = {
   principal: 'bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800 disabled:hover:bg-brand-600',
@@ -38,11 +46,11 @@ const TAILLES: Record<TailleBouton, string> = {
   petite: 'px-3 py-1.5 text-xs',
 };
 
-const EN_COURS = 'cursor-progress disabled:cursor-progress disabled:opacity-100';
+const EN_COURS = 'cursor-progress disabled:cursor-progress';
 
 /** Les classes du bouton, pour un `<Link>` ou un `<label>` qui doit en avoir l'air sans en être un. */
-export function classesBouton(variante: VarianteBouton, taille: TailleBouton = 'normale', enPlus = ''): string {
-  return `${BASE} ${VARIANTES[variante]} ${TAILLES[taille]}${enPlus ? ` ${enPlus}` : ''}`;
+export function classesBouton(variante: VarianteBouton, taille: TailleBouton = 'normale', enPlus = '', enCours = false): string {
+  return `${BASE} ${enCours ? EN_COURS : PALE} ${VARIANTES[variante]} ${TAILLES[taille]}${enPlus ? ` ${enPlus}` : ''}`;
 }
 
 export function Bouton({
@@ -52,5 +60,5 @@ export function Bouton({
   className = '',
   ...props
 }: ComponentPropsWithRef<'button'> & { variante?: VarianteBouton; taille?: TailleBouton; enCours?: boolean }) {
-  return <button {...props} className={classesBouton(variante, taille, `${enCours ? EN_COURS : ''} ${className}`.trim())} />;
+  return <button {...props} className={classesBouton(variante, taille, className, enCours)} />;
 }

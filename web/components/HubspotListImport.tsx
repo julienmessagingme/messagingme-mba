@@ -69,7 +69,7 @@ export function HubspotListImport({ tenantId, onImported, onBusyChange }: {
   }
 
   return (
-    <section className="rounded-2xl border border-ink-200 bg-white p-6">
+    <section className="rounded-carte border border-ink-200 bg-white p-6">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-ink-900">{t('Importer une liste HubSpot', 'Import a HubSpot list')}</h2>
         {!loading && <button onClick={() => void load()} className="text-xs text-brand-600 hover:underline">{t('Rafraîchir', 'Refresh')}</button>}
@@ -79,11 +79,11 @@ export function HubspotListImport({ tenantId, onImported, onBusyChange }: {
       {loading ? (
         <p className="mt-4 text-sm text-ink-500">{t('Chargement des listes…', 'Loading lists…')}</p>
       ) : paused ? (
-        <div className="mt-4 rounded-lg bg-alerte-50 px-3 py-3 text-sm text-alerte-800" data-testid="hubspot-lists-paused">
+        <div className="mt-4 rounded-carte bg-alerte-50 px-3 py-3 text-sm text-alerte-800" data-testid="hubspot-lists-paused">
           <p>{t("Synchronisation HubSpot en pause. Les campagnes via listes reprennent dès que tu réactives la synchro sur l'accueil.", 'HubSpot sync is paused. List campaigns resume as soon as you re-enable sync on the home page.')}</p>
         </div>
       ) : reconsentUrl ? (
-        <div className="mt-4 rounded-lg bg-alerte-50 px-3 py-3 text-sm text-alerte-800">
+        <div className="mt-4 rounded-carte bg-alerte-50 px-3 py-3 text-sm text-alerte-800">
           <p>{t("L'accès aux listes HubSpot n'est pas encore autorisé pour ce portail.", 'Access to HubSpot lists is not yet authorized for this portal.')}</p>
           <a href={reconsentUrl} target="_blank" rel="noreferrer" className={classesBouton('principal', 'normale', 'mt-2')}>
             {t("Autoriser l'accès →", 'Authorize access →')}
@@ -95,11 +95,11 @@ export function HubspotListImport({ tenantId, onImported, onBusyChange }: {
         <>
           <div className="mt-4 space-y-1.5">
             {lists!.map((l) => (
-              <label key={l.listId} className={`flex cursor-pointer items-center gap-3 rounded-lg border p-2.5 text-sm ${selected === l.listId ? 'border-brand-500 bg-brand-50' : 'border-ink-200 hover:bg-ink-50'}`}>
+              <label key={l.listId} className={`flex cursor-pointer items-center gap-3 rounded-controle border p-2.5 text-sm ${selected === l.listId ? 'border-brand-500 bg-brand-50' : 'border-ink-200 hover:bg-ink-50'}`}>
                 <input type="radio" name="hs-list" checked={selected === l.listId} onChange={() => setSelected(l.listId)} className="h-4 w-4 accent-brand-500" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium text-ink-900">{l.name}</div>
-                  <div className="text-xs text-ink-400">
+                  <div className="text-xs text-ink-500">
                     {l.size !== null ? `${l.size} ${t('contacts', 'contacts')} · ` : ''}
                     {l.processingType === 'DYNAMIC' ? t('liste active (instantané)', 'active list (snapshot)') : t('liste statique', 'static list')}
                   </div>
@@ -108,9 +108,9 @@ export function HubspotListImport({ tenantId, onImported, onBusyChange }: {
             ))}
           </div>
 
-          {error && <p className="mt-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+          {error && <p className="mt-3 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
           {report && (
-            <div className="mt-3 rounded-lg bg-succes-50 px-3 py-2 text-sm text-succes-800">
+            <div className="mt-3 rounded-controle bg-succes-50 px-3 py-2 text-sm text-succes-800">
               <b>{report.created}</b> {t('créés,', 'created,')} <b>{report.updated}</b> {t('mis à jour,', 'updated,')} <b>{report.skipped}</b> {t('ignorés.', 'skipped.')}
               {report.skippedNoPhone > 0 && <> {report.skippedNoPhone} {t('sans numéro (écartés).', 'without a phone (skipped).')}</>}
               {report.truncated && <div className="mt-1 text-xs text-alerte-700">{t('Liste tronquée (import limité aux 5000 premiers).', 'List truncated (import limited to the first 5000).')}</div>}

@@ -111,7 +111,7 @@ export function CreationMessageRcsEnLigne({ tenantId, champs, rechargerMessagesR
 
   if (mode === 'choix') {
     return (
-      <div className="w-full rounded-xl border border-brand-200 bg-brand-50/40 p-3" data-testid="rcs-creer-choix">
+      <div className="w-full rounded-carte border border-brand-200 bg-brand-50/40 p-3" data-testid="rcs-creer-choix">
         <p className="text-xs font-medium text-ink-900">Quel genre de message ?</p>
         {/* ⚠️ LE CARROUSEL EST UN CHOIX À PART, PAS UNE CASE DANS LE FORMULAIRE SIMPLE : ce sont deux
             formulaires différents dans l'écran en service (un message a trois champs, un carrousel a de
@@ -137,7 +137,7 @@ export function CreationMessageRcsEnLigne({ tenantId, champs, rechargerMessagesR
   }
 
   return (
-    <div className="w-full rounded-xl border border-brand-200 bg-brand-50/40 p-3" data-testid={`rcs-creer-${mode}-ouvert`}>
+    <div className="w-full rounded-carte border border-brand-200 bg-brand-50/40 p-3" data-testid={`rcs-creer-${mode}-ouvert`}>
       {mode === 'simple'
         ? <RcsMessageForm tenantId={tenantId} fields={champs} onSaved={() => { void apresEnregistrement(); }} />
         : <RcsCarouselForm tenantId={tenantId} fields={champs} onSaved={() => { void apresEnregistrement(); }} />}

@@ -53,7 +53,7 @@ test.describe('Le bilan d’un contact', () => {
   test('🔴 un coût INCONNU affiche « — », jamais « 0 € »', async ({ page }) => {
     // Un zéro se lirait « ce contact ne nous a rien coûté », alors que la vérité est « on ne sait pas ».
     await ouvrir(page, { ...BILAN, cout: { ...BILAN.cout, cout: null } });
-    await expect(page.getByTestId('contact-bilan-cout')).toHaveText('—');
+    await expect(page.getByTestId('contact-bilan-cout')).toHaveText('n/d');
   });
 
   test('🔴 le bilan en PANNE ne fait pas disparaître l’historique', async ({ page }) => {

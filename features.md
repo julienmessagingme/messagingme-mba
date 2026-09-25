@@ -7,6 +7,12 @@ personne. Invisible tant que tous les comptes étaient admin ; réparé le même
 
 Statut : 🔲 pas commencé · 🚧 en cours · ✅ live
 
+✅ **Console, refonte visuelle** (2026-09-25, passes 1 et 2). Police Geist, un seul accent de couleur, une teinte
+par état, des boutons d'un seul modèle. Les suppressions et gestes lourds se confirment dans la page (sur la
+ligne, ou dans une fenêtre qui dit les conséquences), plus par la boîte grise du navigateur. Les écrans en
+attente montrent la forme de ce qui arrive. Une valeur inconnue s'affiche « n/d ». Une icône par geste, la même
+partout. Plus aucun écran principal ne déborde sur un téléphone.
+
 ✅ **La plateforme s'appelle « Engage Me »** (2026-09-03). Le nom s'affiche à l'onglet du navigateur, sur
 l'écran de connexion, dans l'en-tête à côté du logo (le logo lui-même n'a pas changé) et comme titre du
 serveur MCP. Accroche : « La plateforme conversationnelle qui comprend chaque conversation. »
@@ -1509,7 +1515,8 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 ## L'aide de la console (bouton flottant, sur tous les écrans)
 
-Un bouton rond en bas à droite de chaque écran connecté ouvre un panneau de discussion. Il répond aux
+Un bouton rond en bas à droite de chaque écran connecté (sauf l'Inbox, où il est dans la barre du haut : en bas,
+il recouvrait « Envoyer ») ouvre un panneau de discussion. Il répond aux
 questions sur **l'usage du produit** : comment lancer une campagne, la différence entre un modèle et un
 scénario, comment importer des contacts.
 

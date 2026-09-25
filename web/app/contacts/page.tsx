@@ -26,6 +26,10 @@ import { fieldValue } from '@/lib/fields';
 import { ContactDetail, OPT_IN_LABEL } from '@/components/ContactDetail';
 import { Bouton } from '@/components/Bouton';
 import { TitrePage } from '@/components/TitrePage';
+import { Icone } from '@/components/Icone';
+import { Modale } from '@/components/Modale';
+import { VoileMenu } from '@/components/Flottant';
+import { Squelette } from '@/components/Squelette';
 
 export default function ContactsPage() {
   return <AppShell active="contacts">{(session) => <ContactsInner session={session} />}</AppShell>;
@@ -156,7 +160,7 @@ function ContactsInner({ session }: { session: Session }) {
 
   if (mode === 'import') {
     return (
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto max-w-formulaire">
         <button onClick={() => setMode('list')} className="mb-4 text-sm text-brand-600 hover:underline">
           ← {t('Retour aux contacts', 'Back to contacts')}
         </button>
@@ -174,7 +178,7 @@ function ContactsInner({ session }: { session: Session }) {
         <div className="flex items-center gap-3">
           <button
             onClick={() => setShowFilters((s) => !s)}
-            className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors duration-150 ${active ? 'border-brand-300 bg-brand-50 text-brand-700' : 'border-ink-200 text-ink-500 hover:bg-ink-50'}`}
+            className={`rounded-controle border px-3 py-1.5 text-sm font-medium transition-colors duration-150 ${active ? 'border-brand-300 bg-brand-50 text-brand-700' : 'border-ink-200 text-ink-500 hover:bg-ink-50'}`}
             data-testid="contacts-toggle-filters"
           >
             {t('Filtres', 'Filters')}{active ? ' •' : ''}
@@ -193,8 +197,8 @@ function ContactsInner({ session }: { session: Session }) {
             </Bouton>
             {ajoutMenuOuvert && (
               <>
-                <div className="fixed inset-0 z-10" onClick={() => setAjoutMenuOuvert(false)} />
-                <div role="menu" className="absolute right-0 z-20 mt-1 w-56 overflow-hidden rounded-lg border border-ink-200 bg-white py-1 text-sm shadow-mm-md">
+                <VoileMenu z="z-10" onClose={() => setAjoutMenuOuvert(false)} />
+                <div role="menu" className="absolute right-0 z-20 mt-1 w-56 overflow-hidden rounded-controle border border-ink-200 bg-white py-1 text-sm shadow-mm-md">
                   {/* Ajout à l'unité : jusqu'ici il fallait fabriquer un fichier CSV pour un seul numéro. */}
                   <button
                     onClick={() => { setAjoutMenuOuvert(false); setAjoutOuvert(true); }}
@@ -218,7 +222,7 @@ function ContactsInner({ session }: { session: Session }) {
       </div>
 
       {info && (
-        <p className="mb-4 flex items-center justify-between gap-3 rounded-lg bg-succes-50 px-3 py-2 text-sm text-succes-700" data-testid="contact-info">
+        <p className="mb-4 flex items-center justify-between gap-3 rounded-controle bg-succes-50 px-3 py-2 text-sm text-succes-700" data-testid="contact-info">
           <span>{info}</span>
           <button onClick={() => setInfo(null)} className="text-xs text-succes-700 hover:underline">{t('Fermer', 'Close')}</button>
         </p>
@@ -251,7 +255,7 @@ function ContactsInner({ session }: { session: Session }) {
 
       {/* Barre de sélection + action : apparaît dès qu'un contact est coché. */}
       {selectedCount > 0 && (
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-brand-200 bg-brand-50/50 px-4 py-2.5">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-carte border border-brand-200 bg-brand-50/50 px-4 py-2.5">
           <div className="flex flex-wrap items-center gap-3 text-sm text-ink-900">
             <span className="font-medium">{t(`${selectedCount} sélectionné(s)`, `${selectedCount} selected`)}</span>
             {!allMode && moreThanLoaded && allLoadedChecked && (
@@ -266,12 +270,12 @@ function ContactsInner({ session }: { session: Session }) {
               onClick={() => setMenuOpen((o) => !o)}
               data-testid="contacts-action"
             >
-              {t('Action', 'Action')} ▾
+              {t('Action', 'Action')}<Icone nom="deplier" taille="petite" />
             </Bouton>
             {menuOpen && (
               <>
-                <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                <div className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-lg border border-ink-200 bg-white py-1 text-sm shadow-mm-md">
+                <VoileMenu z="z-10" onClose={() => setMenuOpen(false)} />
+                <div className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-controle border border-ink-200 bg-white py-1 text-sm shadow-mm-md">
                   <button onClick={() => { setAction('add_tag'); setMenuOpen(false); }} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Ajouter une étiquette', 'Add a tag')}</button>
                   <button onClick={() => { setAction('remove_tag'); setMenuOpen(false); }} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Retirer une étiquette', 'Remove a tag')}</button>
                   <button onClick={() => { setAction('set_field'); setMenuOpen(false); }} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Ajouter un champ', 'Set a field')}</button>
@@ -287,7 +291,7 @@ function ContactsInner({ session }: { session: Session }) {
         </div>
       )}
 
-      {error && <p className="mb-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+      {error && <p className="mb-3 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
       <ContactsTable
         contacts={contacts}
         loading={loading}
@@ -396,89 +400,90 @@ function AjoutContactModal({ tenantId, tagSuggestions, onDone, onClose }: {
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-mm-lg" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-semibold text-ink-900">{t('Ajouter un contact', 'Add a contact')}</h3>
-        <p className="mt-1 text-sm text-ink-500">{t('Le numéro suffit. Le reste peut se compléter ensuite sur la fiche.', 'The number is enough. The rest can be filled in later on the record.')}</p>
+    <Modale
+      titre={t('Ajouter un contact', 'Add a contact')}
+      sousTitre={t('Le numéro suffit. Le reste peut se compléter ensuite sur la fiche.', 'The number is enough. The rest can be filled in later on the record.')}
+      taille="petite"
+      onClose={onClose}
+    >
 
-        <div className="mt-4 space-y-3">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-ink-900">
-              {t('Téléphone', 'Phone')} <span className="text-danger-500">*</span>
-            </label>
-            <input
-              autoFocus value={phone} onChange={(e) => setPhone(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) void submit(); }}
-              placeholder="+33 6 12 34 56 78" data-testid="ajout-telephone" className={inputCls}
-            />
-            <p className="mt-1 text-xs text-ink-400">{t('Format libre : le numéro est normalisé comme à l’import.', 'Free format: the number is normalized as on import.')}</p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-ink-900">{t('Prénom', 'First name')}</label>
-              <input value={prenom} onChange={(e) => setPrenom(e.target.value)} data-testid="ajout-prenom" className={inputCls} />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-ink-900">{t('Nom', 'Name')}</label>
-              <input value={nom} onChange={(e) => setNom(e.target.value)} data-testid="ajout-nom" className={inputCls} />
-            </div>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-ink-900">{t('E-mail (optionnel)', 'Email (optional)')}</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} data-testid="ajout-email" className={inputCls} />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-ink-900">{t('Étiquettes (optionnel)', 'Tags (optional)')}</label>
-            {tags.length > 0 && (
-              <div className="mb-1.5 flex flex-wrap gap-1.5" data-testid="ajout-tags-retenus">
-                {tags.map((tg) => (
-                  <span key={tg} className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
-                    {tg}
-                    <button type="button" onClick={() => setTags((prev) => prev.filter((x) => x !== tg))} aria-label={t('Retirer', 'Remove')} className="text-brand-400 transition-colors duration-150 hover:text-danger">×</button>
-                  </span>
-                ))}
-              </div>
-            )}
-            {/* Entrée AJOUTE le tag au lieu de valider le formulaire : sinon saisir un 2e tag envoyait la fiche. */}
-            <div className="flex gap-2">
-              <input
-                list="ajout-tag-suggestions" value={tagBuffer} onChange={(e) => setTagBuffer(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); ajouterTag(); } }}
-                placeholder={t('Une étiquette, puis Entrée', 'A tag, then Enter')} data-testid="ajout-tag" className={inputCls}
-              />
-              <Bouton variante="secondaire" type="button" onClick={ajouterTag} disabled={tagBuffer.trim() === ''} data-testid="ajout-tag-valider"
-                className="shrink-0">
-                {t('Ajouter', 'Add')}
-              </Bouton>
-            </div>
-            <datalist id="ajout-tag-suggestions">{tagSuggestions.map((tg) => <option key={tg} value={tg} />)}</datalist>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-ink-900">{t('Compte WhatsApp / BSUID (optionnel)', 'WhatsApp account / BSUID (optional)')}</label>
-            <input value={bsuid} onChange={(e) => setBsuid(e.target.value)} data-testid="ajout-bsuid" className={`${inputCls} font-mono`} />
-            <p className="mt-1 text-xs text-ink-400">
-              {t("Identifiant WhatsApp d'un client qui n'a pas partagé son numéro. À ne renseigner que si tu l'as.", "WhatsApp identifier for a customer who hasn't shared their number. Only fill this in if you have it.")}
-            </p>
-          </div>
-          {/* Pré-cochée : voir le commentaire de `optIn`. Un contact saisi à la main sans opt-in serait ignoré
-              par toutes les campagnes, sans que rien ne l'annonce au moment de la saisie. */}
-          <label className="flex items-start gap-2 text-sm text-ink-900">
-            <input type="checkbox" checked={optIn} onChange={(e) => setOptIn(e.target.checked)} data-testid="ajout-optin" className="mt-0.5 h-4 w-4" />
-            <span>{t('Ce contact a donné son accord pour recevoir des messages marketing', 'This contact agreed to receive marketing messages')}</span>
+      <div className="mt-4 space-y-3">
+        <div>
+          <label className="mb-1 block text-sm font-medium text-ink-900">
+            {t('Téléphone', 'Phone')} <span className="text-danger-500">*</span>
           </label>
-          {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+          <input
+            autoFocus value={phone} onChange={(e) => setPhone(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) void submit(); }}
+            placeholder="+33 6 12 34 56 78" data-testid="ajout-telephone" className={inputCls}
+          />
+          <p className="mt-1 text-xs text-ink-500">{t('Format libre : le numéro est normalisé comme à l’import.', 'Free format: the number is normalized as on import.')}</p>
         </div>
-
-        <div className="mt-5 flex justify-end gap-2">
-          <button onClick={onClose} disabled={busy} className="rounded-lg px-3 py-2 text-sm text-ink-500 hover:text-ink-900 disabled:opacity-50">{t('Annuler', 'Cancel')}</button>
-          <Bouton
-            onClick={() => void submit()} disabled={!canSubmit} data-testid="ajout-valider"
-          >
-            {busy ? t('Ajout…', 'Adding…') : t('Ajouter', 'Add')}
-          </Bouton>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-ink-900">{t('Prénom', 'First name')}</label>
+            <input value={prenom} onChange={(e) => setPrenom(e.target.value)} data-testid="ajout-prenom" className={inputCls} />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-ink-900">{t('Nom', 'Name')}</label>
+            <input value={nom} onChange={(e) => setNom(e.target.value)} data-testid="ajout-nom" className={inputCls} />
+          </div>
         </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-ink-900">{t('E-mail (optionnel)', 'Email (optional)')}</label>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} data-testid="ajout-email" className={inputCls} />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-ink-900">{t('Étiquettes (optionnel)', 'Tags (optional)')}</label>
+          {tags.length > 0 && (
+            <div className="mb-1.5 flex flex-wrap gap-1.5" data-testid="ajout-tags-retenus">
+              {tags.map((tg) => (
+                <span key={tg} className="inline-flex items-center gap-1 rounded-controle bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+                  {tg}
+                  <button type="button" onClick={() => setTags((prev) => prev.filter((x) => x !== tg))} aria-label={t('Retirer', 'Remove')} className="text-brand-400 transition-colors duration-150 hover:text-danger"><Icone nom="fermer" taille="petite" /></button>
+                </span>
+              ))}
+            </div>
+          )}
+          {/* Entrée AJOUTE le tag au lieu de valider le formulaire : sinon saisir un 2e tag envoyait la fiche. */}
+          <div className="flex gap-2">
+            <input
+              list="ajout-tag-suggestions" value={tagBuffer} onChange={(e) => setTagBuffer(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); ajouterTag(); } }}
+              placeholder={t('Une étiquette, puis Entrée', 'A tag, then Enter')} data-testid="ajout-tag" className={inputCls}
+            />
+            <Bouton variante="secondaire" type="button" onClick={ajouterTag} disabled={tagBuffer.trim() === ''} data-testid="ajout-tag-valider"
+              className="shrink-0">
+              {t('Ajouter', 'Add')}
+            </Bouton>
+          </div>
+          <datalist id="ajout-tag-suggestions">{tagSuggestions.map((tg) => <option key={tg} value={tg} />)}</datalist>
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-ink-900">{t('Compte WhatsApp / BSUID (optionnel)', 'WhatsApp account / BSUID (optional)')}</label>
+          <input value={bsuid} onChange={(e) => setBsuid(e.target.value)} data-testid="ajout-bsuid" className={`${inputCls} font-mono`} />
+          <p className="mt-1 text-xs text-ink-500">
+            {t("Identifiant WhatsApp d'un client qui n'a pas partagé son numéro. À ne renseigner que si tu l'as.", "WhatsApp identifier for a customer who hasn't shared their number. Only fill this in if you have it.")}
+          </p>
+        </div>
+        {/* Pré-cochée : voir le commentaire de `optIn`. Un contact saisi à la main sans opt-in serait ignoré
+            par toutes les campagnes, sans que rien ne l'annonce au moment de la saisie. */}
+        <label className="flex items-start gap-2 text-sm text-ink-900">
+          <input type="checkbox" checked={optIn} onChange={(e) => setOptIn(e.target.checked)} data-testid="ajout-optin" className="mt-0.5 h-4 w-4" />
+          <span>{t('Ce contact a donné son accord pour recevoir des messages marketing', 'This contact agreed to receive marketing messages')}</span>
+        </label>
+        {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
       </div>
-    </div>
+
+      <div className="mt-5 flex justify-end gap-2">
+        <button onClick={onClose} disabled={busy} className="rounded-controle px-3 py-2 text-sm text-ink-500 hover:text-ink-900 disabled:opacity-50">{t('Annuler', 'Cancel')}</button>
+        <Bouton
+          onClick={() => void submit()} disabled={!canSubmit} data-testid="ajout-valider"
+        >
+          {busy ? t('Ajout…', 'Adding…') : t('Ajouter', 'Add')}
+        </Bouton>
+      </div>
+    </Modale>
   );
 }
 
@@ -560,64 +565,65 @@ function BulkActionModal({ action, tenantId, target, count, userFields, tagSugge
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-mm-lg" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-semibold text-ink-900">{titles[action]}</h3>
-        <p className="mt-1 text-sm text-ink-500">{t(`${count} contact(s) concerné(s).`, `${count} contact(s) affected.`)}</p>
+    <Modale
+      titre={titles[action]}
+      sousTitre={t(`${count} contact(s) concerné(s).`, `${count} contact(s) affected.`)}
+      taille="petite"
+      onClose={onClose}
+    >
 
-        <div className="mt-4 space-y-3">
-          {(action === 'add_tag' || action === 'remove_tag') && (
-            <>
-              <input list="bulk-tag-suggestions" autoFocus value={tag} onChange={(e) => setTag(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) void submit(); }} placeholder={t('Nom de l’étiquette', 'Tag name')} className={inputCls} />
-              <datalist id="bulk-tag-suggestions">{tagSuggestions.map((tg) => <option key={tg} value={tg} />)}</datalist>
-            </>
-          )}
-          {action === 'set_field' && (
-            <div className="flex flex-col gap-2">
-              <select value={fieldKey} onChange={(e) => setFieldKey(e.target.value)} className={`${inputCls} bg-white`}>
-                {userFields.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
-              </select>
-              <input autoFocus value={fieldVal} onChange={(e) => setFieldVal(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) void submit(); }} placeholder={t('Valeur à poser', 'Value to set')} className={inputCls} />
-              <p className="text-xs text-ink-400">{t('La valeur écrase le champ sur tous les contacts sélectionnés.', 'The value overwrites the field on all selected contacts.')}</p>
-            </div>
-          )}
-          {action === 'optin' && (
-            <p className="rounded-lg bg-succes-50 px-3 py-2 text-sm text-succes-800">
-              {t(`Les ${count} contact(s) deviennent destinataires de campagne. À n'utiliser que si vous détenez une preuve de leur consentement.`, `The ${count} contact(s) become eligible for campaigns. Only use this if you hold proof of their consent.`)}
+      <div className="mt-4 space-y-3">
+        {(action === 'add_tag' || action === 'remove_tag') && (
+          <>
+            <input list="bulk-tag-suggestions" autoFocus value={tag} onChange={(e) => setTag(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) void submit(); }} placeholder={t('Nom de l’étiquette', 'Tag name')} className={inputCls} />
+            <datalist id="bulk-tag-suggestions">{tagSuggestions.map((tg) => <option key={tg} value={tg} />)}</datalist>
+          </>
+        )}
+        {action === 'set_field' && (
+          <div className="flex flex-col gap-2">
+            <select value={fieldKey} onChange={(e) => setFieldKey(e.target.value)} className={`${inputCls} bg-white`}>
+              {userFields.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
+            </select>
+            <input autoFocus value={fieldVal} onChange={(e) => setFieldVal(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) void submit(); }} placeholder={t('Valeur à poser', 'Value to set')} className={inputCls} />
+            <p className="text-xs text-ink-500">{t('La valeur écrase le champ sur tous les contacts sélectionnés.', 'The value overwrites the field on all selected contacts.')}</p>
+          </div>
+        )}
+        {action === 'optin' && (
+          <p className="rounded-controle bg-succes-50 px-3 py-2 text-sm text-succes-800">
+            {t(`Les ${count} contact(s) deviennent destinataires de campagne. À n'utiliser que si vous détenez une preuve de leur consentement.`, `The ${count} contact(s) become eligible for campaigns. Only use this if you hold proof of their consent.`)}
+          </p>
+        )}
+        {action === 'optout' && (
+          <p className="rounded-controle bg-alerte-50 px-3 py-2 text-sm text-alerte-800">
+            {t(`Les ${count} contact(s) seront exclus de toute campagne, y compris de celles déjà programmées. Leur fiche et leur historique restent intacts.`, `The ${count} contact(s) will be excluded from every campaign, including already scheduled ones. Their record and history stay intact.`)}
+          </p>
+        )}
+        {action === 'delete' && (
+          <>
+            <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">
+              {t(`IRRÉVERSIBLE. Pour les ${count} contact(s) : la fiche, la conversation dans l'Inbox, ses messages et son analyse sont détruits. Les compteurs de campagne restent justes, mais plus personne n'est reconnaissable.`, `IRREVERSIBLE. For the ${count} contact(s): the record, the Inbox conversation, its messages and its analysis are destroyed. Campaign counters stay accurate, but nobody is identifiable any more.`)}
             </p>
-          )}
-          {action === 'optout' && (
-            <p className="rounded-lg bg-alerte-50 px-3 py-2 text-sm text-alerte-800">
-              {t(`Les ${count} contact(s) seront exclus de toute campagne, y compris de celles déjà programmées. Leur fiche et leur historique restent intacts.`, `The ${count} contact(s) will be excluded from every campaign, including already scheduled ones. Their record and history stay intact.`)}
-            </p>
-          )}
-          {action === 'delete' && (
-            <>
-              <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">
-                {t(`IRRÉVERSIBLE. Pour les ${count} contact(s) : la fiche, la conversation dans l'Inbox, ses messages et son analyse sont détruits. Les compteurs de campagne restent justes, mais plus personne n'est reconnaissable.`, `IRREVERSIBLE. For the ${count} contact(s): the record, the Inbox conversation, its messages and its analysis are destroyed. Campaign counters stay accurate, but nobody is identifiable any more.`)}
-              </p>
-              <label className="block text-sm text-ink-500">
-                {t('Tapez SUPPRIMER pour confirmer', 'Type SUPPRIMER to confirm')}
-                <input autoFocus value={confirmation} onChange={(e) => setConfirmation(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) void submit(); }} placeholder="SUPPRIMER" data-testid="suppression-confirm" className={`${inputCls} mt-1`} />
-              </label>
-            </>
-          )}
-          {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
-        </div>
-
-        <div className="mt-5 flex justify-end gap-2">
-          <button onClick={onClose} disabled={busy} className="rounded-lg px-3 py-2 text-sm text-ink-500 hover:text-ink-900 disabled:opacity-50">{t('Annuler', 'Cancel')}</button>
-          <button
-            onClick={() => void submit()}
-            disabled={busy || !canSubmit}
-            className={`rounded-lg px-3 py-2 text-sm font-semibold text-white disabled:opacity-50 ${action === 'delete' ? 'bg-danger-600 hover:bg-danger-700' : 'bg-brand-500 hover:bg-brand-600'}`}
-            data-testid="bulk-submit"
-          >
-            {busy ? t('…', '…') : action === 'delete' ? t('Supprimer', 'Delete') : t('Appliquer', 'Apply')}
-          </button>
-        </div>
+            <label className="block text-sm text-ink-500">
+              {t('Tapez SUPPRIMER pour confirmer', 'Type SUPPRIMER to confirm')}
+              <input autoFocus value={confirmation} onChange={(e) => setConfirmation(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) void submit(); }} placeholder="SUPPRIMER" data-testid="suppression-confirm" className={`${inputCls} mt-1`} />
+            </label>
+          </>
+        )}
+        {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
       </div>
-    </div>
+
+      <div className="mt-5 flex justify-end gap-2">
+        <button onClick={onClose} disabled={busy} className="rounded-controle px-3 py-2 text-sm text-ink-500 hover:text-ink-900 disabled:opacity-50">{t('Annuler', 'Cancel')}</button>
+        <button
+          onClick={() => void submit()}
+          disabled={busy || !canSubmit}
+          className={`rounded-controle px-3 py-2 text-sm font-semibold text-white disabled:opacity-50 ${action === 'delete' ? 'bg-danger-600 hover:bg-danger-700' : 'bg-brand-600 hover:bg-brand-700'}`}
+          data-testid="bulk-submit"
+        >
+          {busy ? t('…', '…') : action === 'delete' ? t('Supprimer', 'Delete') : t('Appliquer', 'Apply')}
+        </button>
+      </div>
+    </Modale>
   );
 }
 
@@ -639,20 +645,20 @@ function ContactsTable({ contacts, loading, onSelect, isRowChecked, onToggleRow,
   headerChecked: boolean;
 }) {
   const t = useT();
-  if (loading) return <p className="text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>;
+  if (loading) return <Squelette forme="lignes" />;
   if (contacts.length === 0)
     return (
-      <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">
+      <div className="px-4 py-10 text-center text-sm text-ink-500">
         {t("Aucun contact pour l'instant. Clique « + Rajouter des contacts » pour commencer.", 'No contacts yet. Click "+ Add contacts" to get started.')}
       </div>
     );
   return (
-    <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white">
+    <div className="overflow-x-auto rounded-carte border border-ink-200 bg-white">
       <table className="w-full min-w-[920px] text-sm">
         <thead className="bg-ink-50 text-left text-xs text-ink-500">
           <tr>
             <th className="w-10 px-4 py-2.5">
-              <input type="checkbox" checked={headerChecked} onChange={onToggleHeader} aria-label={t('Tout sélectionner', 'Select all')} data-testid="contacts-select-all" className="h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-400" />
+              <input type="checkbox" checked={headerChecked} onChange={onToggleHeader} aria-label={t('Tout sélectionner', 'Select all')} data-testid="contacts-select-all" className="h-4 w-4 rounded-controle border-ink-300 text-brand-600 focus:ring-brand-400" />
             </th>
             <th className="px-4 py-2.5 font-medium">{t('Nom', 'Name')}</th>
             <th className="px-4 py-2.5 font-medium">{t('Prénom', 'First name')}</th>
@@ -671,22 +677,22 @@ function ContactsTable({ contacts, loading, onSelect, isRowChecked, onToggleRow,
             return (
               <tr key={c.id} className={`transition-colors duration-150 hover:bg-brand-50 ${checked ? 'bg-brand-50/60' : ''}`}>
                 <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
-                  <input type="checkbox" checked={checked} onChange={() => onToggleRow(c.id)} aria-label={t('Sélectionner', 'Select')} className="h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-400" />
+                  <input type="checkbox" checked={checked} onChange={() => onToggleRow(c.id)} aria-label={t('Sélectionner', 'Select')} className="h-4 w-4 rounded-controle border-ink-300 text-brand-600 focus:ring-brand-400" />
                 </td>
-                <td className="cursor-pointer px-4 py-2.5 font-medium text-ink-900" onClick={() => onSelect(c)}>{c.profileName ?? <span className="font-normal text-ink-400">-</span>}</td>
-                <td className="cursor-pointer px-4 py-2.5" onClick={() => onSelect(c)}>{fieldValue(c, 'prenom') ?? <span className="text-ink-400">-</span>}</td>
-                <td className="cursor-pointer px-4 py-2.5 font-mono text-xs" onClick={() => onSelect(c)}>{c.phoneE164 ?? <span className="text-ink-400">-</span>}</td>
+                <td className="cursor-pointer px-4 py-2.5 font-medium text-ink-900" onClick={() => onSelect(c)}>{c.profileName ?? <span className="font-normal text-ink-500">-</span>}</td>
+                <td className="cursor-pointer px-4 py-2.5" onClick={() => onSelect(c)}>{fieldValue(c, 'prenom') ?? <span className="text-ink-500">-</span>}</td>
+                <td className="cursor-pointer px-4 py-2.5 font-mono text-xs" onClick={() => onSelect(c)}>{c.phoneE164 ?? <span className="text-ink-500">-</span>}</td>
                 <td className="cursor-pointer px-4 py-2.5 font-mono text-xs" onClick={() => onSelect(c)}>
                   {c.bsuid
                     ? <span className="inline-flex max-w-[160px] items-center gap-1"><span className="truncate" title={c.bsuid}>{c.bsuid}</span></span>
-                    : <span className="text-ink-400">-</span>}
+                    : <span className="text-ink-500">-</span>}
                 </td>
                 <td className="cursor-pointer px-4 py-2.5 font-mono text-xs" onClick={() => onSelect(c)}>
                   {waId
                     ? <span className="inline-flex max-w-[160px] items-center gap-1"><span className="truncate" title={waId}>{waId}</span></span>
-                    : <span className="text-ink-400">-</span>}
+                    : <span className="text-ink-500">-</span>}
                 </td>
-                <td className="cursor-pointer px-4 py-2.5 text-xs text-ink-900" onClick={() => onSelect(c)}>{fieldValue(c, 'email') ?? <span className="text-ink-400">-</span>}</td>
+                <td className="cursor-pointer px-4 py-2.5 text-xs text-ink-900" onClick={() => onSelect(c)}>{fieldValue(c, 'email') ?? <span className="text-ink-500">-</span>}</td>
                 <td className="cursor-pointer px-4 py-2.5" onClick={() => onSelect(c)}>
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>{t(...badge.text)}</span>
                 </td>

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { repondre } from './aide/confirmation';
 
 /**
  * Onglet OUTILS d'un agent IA.
@@ -309,18 +310,14 @@ test.describe('Agents IA : les outils', () => {
   test('retirer une action la retire, après confirmation : elle est supprimée avec ses réglages', async ({ page }) => {
     const appels: Appel[] = [];
     await mock(page, appels, [TAG]);
-    const dialogues: string[] = [];
-    let accepter = false;
-    page.on('dialog', (d) => { dialogues.push(d.message()); void (accepter ? d.accept() : d.dismiss()); });
     await page.goto(`/agents?id=${AG}&tab=outils`);
     // Refusée : rien ne part.
     await page.getByTestId('outil-retirer-o1').click();
-    await expect.poll(() => dialogues.length).toBe(1);
-    expect(dialogues[0]).toContain('supprimés');
+    await repondre(page, false, 'supprimés');
     expect(appels.some((a) => a.method === 'DELETE')).toBe(false);
     // Acceptée : le retrait part.
-    accepter = true;
     await page.getByTestId('outil-retirer-o1').click();
+    await repondre(page, true);
     await expect.poll(() => appels.some((a) => a.method === 'DELETE'), { timeout: 5000 }).toBe(true);
   });
 });

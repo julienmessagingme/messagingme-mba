@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useT } from '@/lib/i18n';
 import { getSession } from '@/lib/session';
 import { listRcsAgents } from '@/lib/api';
+import { Icone } from '@/components/Icone';
 
 /**
  * Chrome « téléphone » des aperçus RCS : le libellé, l'en-tête au nom de la marque, le fond de conversation.
@@ -52,15 +53,15 @@ export function RcsPhoneFrame({ children }: { children: ReactNode }) {
   return (
     <div>
       <p className="mb-2 text-xs font-medium text-ink-500">{t('Aperçu RCS', 'RCS preview')}</p>
-      <div className="overflow-hidden rounded-2xl border border-ink-200 shadow-sm">
+      <div className="overflow-hidden rounded-carte border border-ink-200 shadow-sm">
         <div className="flex items-center gap-2 border-b border-ink-100 bg-white px-3 py-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-succes-100 text-sm">🏢</div>
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-ink-100 text-ink-500"><Icone nom="entreprise" taille="petite" /></div>
           <div className="leading-tight">
             <div className="flex items-center gap-1 text-sm font-medium text-ink-900">
               <span data-testid="apercu-rcs-marque">{marque || t('Votre marque', 'Your brand')}</span>
               <span className="text-xs text-brand-600" title={t('Marque vérifiée', 'Verified brand')}>✓</span>
             </div>
-            <div className="text-[10px] text-ink-400">{t('agent de marque vérifié', 'verified brand agent')}</div>
+            <div className="text-[10px] text-ink-500">{t('agent de marque vérifié', 'verified brand agent')}</div>
           </div>
         </div>
         <div className="space-y-2 bg-ink-50 px-3 py-4">{children}</div>

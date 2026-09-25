@@ -28,6 +28,7 @@ import { MbaWebsitesPanel } from '@/components/MbaWebsitesPanel';
 import { MbaFilesPanel } from '@/components/MbaFilesPanel';
 import { MbaTestPanel } from '@/components/MbaTestPanel';
 import { OutilsMba } from '@/components/mba-outils/OutilsMba';
+import { Squelette } from '@/components/Squelette';
 
 export default function MbaSettingsPage() {
   // `useSearchParams` impose une frontière Suspense au build (règle Next 15), sinon la page bascule en rendu
@@ -219,13 +220,13 @@ function MbaSettings({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean
     />
   );
   /**
-   * ⚠️ `max-w-6xl` et non `4xl` (demandé par Julien le 2026-09-10) : la liste `ONGLETS` ci-dessus et des
+   * ⚠️ `max-w-liste` et non `4xl` (demandé par Julien le 2026-09-10) : la liste `ONGLETS` ci-dessus et des
    * panneaux qui listent des FAQ, des fichiers et des compétences n'ont rien à faire dans une colonne de
    * 896 px sur un écran de 1600. C'est l'écran le plus dense de la console, il est désormais le plus large.
    */
-  const coquille = (contenu: React.ReactNode) => <div className="mx-auto max-w-6xl space-y-6">{entete}{contenu}</div>;
+  const coquille = (contenu: React.ReactNode) => <div className="mx-auto max-w-liste space-y-6">{entete}{contenu}</div>;
 
-  if (chargement) return coquille(<p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>);
+  if (chargement) return coquille(<Squelette forme="carte" />);
   if (err !== '') return coquille(<MbaNotice kind="error" testid="mba-page-error">{err}</MbaNotice>);
   if (phoneNumberId === null) return coquille(<MbaGateBanner reason="no-number" />);
   if (status === null || !status.eligible) return coquille(<MbaGateBanner reason="not-eligible" />);

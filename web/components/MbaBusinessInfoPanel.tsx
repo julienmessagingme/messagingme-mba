@@ -6,6 +6,7 @@ import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from './MbaNotice';
 import { getMbaBusinessInfo, patchMbaBusinessInfo, type MbaBusinessInfo, type MbaBusinessInfoPatch } from '@/lib/api-mba';
 import { Bouton } from '@/components/Bouton';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * Informations générales sur l'entreprise : ce que l'agent répond quand on lui demande les horaires, la
@@ -125,7 +126,7 @@ export function MbaBusinessInfoPanel({ tenantId, phoneNumberId }: { tenantId: st
     </label>
   );
 
-  if (chargement) return <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>;
+  if (chargement) return <Squelette forme="carte" />;
 
   return (
     <div className="space-y-5">

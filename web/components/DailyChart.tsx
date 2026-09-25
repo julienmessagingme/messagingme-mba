@@ -6,6 +6,7 @@ import { fmtNum } from '@/lib/format';
 import { useT, useLocale } from '@/lib/i18n';
 import { BoutonPdf } from '@/components/BoutonPdf';
 import { ink } from '@/lib/couleurs';
+import { Icone } from '@/components/Icone';
 
 export interface ChartSeries {
   label: string;
@@ -144,7 +145,7 @@ export function DailyChart({
   const multi = series.length > 1;
 
   return (
-    <div id={zonePdf} className="rounded-2xl border border-ink-200/80 bg-white p-6">
+    <div id={zonePdf} className="rounded-carte border border-ink-200/80 bg-white p-6">
       {/* En-tête : libellé + grand chiffre + tendance / métriques */}
       <div className="mb-4 flex items-start justify-between gap-4">
         <div className="min-w-0">
@@ -157,15 +158,15 @@ export function DailyChart({
             {delta !== null && (
               <span
                 className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs font-medium ${
-                  delta > 0 ? 'bg-succes-50 text-succes-700' : delta < 0 ? 'bg-danger-50 text-danger' : 'bg-ink-100 text-ink-500'
+                  delta > 0 ? 'bg-succes-50 text-succes-700' : delta < 0 ? 'bg-danger-50 text-danger-700' : 'bg-ink-100 text-ink-500'
                 }`}
               >
-                {delta > 0 ? '↗' : delta < 0 ? '↘' : '→'} {delta > 0 ? '+' : ''}
+                <Icone nom={delta > 0 ? 'hausse' : delta < 0 ? 'baisse' : 'stable'} taille="petite" />{delta > 0 ? '+' : ''}
                 {fmtNum(delta, locale)}
               </span>
             )}
           </div>
-          {subtitle && <p className="mt-1 text-xs text-ink-400">{subtitle}</p>}
+          {subtitle && <p className="mt-1 text-xs text-ink-500">{subtitle}</p>}
         </div>
 
         {actions ? (
@@ -260,7 +261,7 @@ export function DailyChart({
 
         {hover !== null && (
           <div
-            className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg bg-ink-900 px-2.5 py-1.5 text-xs text-white shadow-mm-md"
+            className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-controle bg-ink-900 px-2.5 py-1.5 text-xs text-white shadow-mm-md"
             style={{ left: `${(x(hover) / W) * 100}%`, top: -4 }}
           >
             <div className="mb-0.5 font-semibold text-white/70">{fmtDay(dates[hover] ?? '')}</div>
@@ -280,7 +281,7 @@ export function DailyChart({
 
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg bg-ink-50 px-2.5 py-1.5 text-right">
+    <div className="rounded-controle bg-ink-50 px-2.5 py-1.5 text-right">
       <div className="text-xs font-medium text-ink-500">{label}</div>
       <div className="text-sm font-semibold text-ink-900 tabular-nums">{value}</div>
     </div>

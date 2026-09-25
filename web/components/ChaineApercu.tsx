@@ -31,14 +31,14 @@ export function ChaineApercu({ texte, imageUrl, waMeUrl, nomChaine }: ChaineAper
   const vide = morceaux.length === 0 && image === null;
 
   return (
-    <div className="rounded-2xl border border-ink-200 bg-ink-50 p-4" data-testid="chaine-apercu">
+    <div className="rounded-carte border border-ink-200 bg-ink-50 p-4" data-testid="chaine-apercu">
       <p className="mb-3 text-xs font-medium text-ink-500">
         {t('Aperçu', 'Preview')}
       </p>
 
       {/* La bulle, aux couleurs de WhatsApp plutôt qu'à celles de la console : c'est une simulation de ce que
           l'abonné voit, pas un élément de notre interface. */}
-      <div className="mx-auto max-w-sm rounded-2xl bg-[#E7FFDB] p-3">
+      <div className="mx-auto max-w-sm rounded-carte bg-[#E7FFDB] p-3">
         <p className="mb-2 text-xs font-semibold text-ink-500" data-testid="chaine-apercu-nom">
           {nomChaine ?? t('Ta chaîne', 'Your channel')}
         </p>
@@ -48,13 +48,13 @@ export function ChaineApercu({ texte, imageUrl, waMeUrl, nomChaine }: ChaineAper
           <img
             src={image}
             alt=""
-            className="mb-2 max-h-48 w-full rounded-lg object-cover"
+            className="mb-2 max-h-48 w-full rounded-controle object-cover"
             data-testid="chaine-apercu-image"
           />
         ) : null}
 
         {vide ? (
-          <p className="text-sm italic text-ink-400" data-testid="chaine-apercu-vide">
+          <p className="text-sm italic text-ink-500" data-testid="chaine-apercu-vide">
             {t('Écris ton message pour voir l’aperçu.', 'Write your message to see the preview.')}
           </p>
         ) : null}
@@ -91,14 +91,14 @@ export function ChaineApercu({ texte, imageUrl, waMeUrl, nomChaine }: ChaineAper
       </div>
 
       {waMeUrl === null ? (
-        <p className="mt-3 text-center text-xs text-ink-400" data-testid="chaine-apercu-sans-bouton">
+        <p className="mt-3 text-center text-xs text-ink-500" data-testid="chaine-apercu-sans-bouton">
           {t(
             'Sans scénario rattaché, la publication part sans bouton.',
             'Without an attached scenario, the post goes out without a button.',
           )}
         </p>
       ) : (
-        <p className="mt-3 text-center text-xs text-ink-400">
+        <p className="mt-3 text-center text-xs text-ink-500">
           {t(
             'WhatsApp dessine ce bouton lui-même à partir du lien : son libellé n’est pas modifiable.',
             'WhatsApp draws this button from the link: its label cannot be changed.',

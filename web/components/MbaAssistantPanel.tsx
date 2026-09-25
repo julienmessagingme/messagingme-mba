@@ -9,6 +9,9 @@ import {
   type OperationAssistantMba, type ResultatApplicationMba, type TourAssistantMba,
 } from '@/lib/api-mba';
 import { Bouton } from '@/components/Bouton';
+import { Icone } from '@/components/Icone';
+import { useConfirmation } from '@/components/Confirmation';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * L'ASSISTANT DU META BUSINESS AGENT : on lui parle, il propose, on accepte.
@@ -52,6 +55,7 @@ export function MbaAssistantPanel({ tenantId, etapesRestantes = null }: {
   etapesRestantes?: number | null;
 }) {
   const t = useT();
+  const confirmer = useConfirmation();
   const [messages, setMessages] = useState<TourAssistantMba[]>([]);
   const [accueil, setAccueil] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
@@ -133,14 +137,14 @@ export function MbaAssistantPanel({ tenantId, etapesRestantes = null }: {
   }
 
   async function repartir() {
-    if (!window.confirm(t('Effacer cette conversation ? Rien de ce qui a déjà été appliqué ne sera annulé.',
-      'Clear this conversation? Nothing already applied will be undone.'))) return;
+    if (!(await confirmer({ titre: t('Effacer la conversation', 'Clear the conversation'), message: t('Effacer cette conversation ? Rien de ce qui a déjà été appliqué ne sera annulé.',
+      'Clear this conversation? Nothing already applied will be undone.'), confirmer: t('Effacer', 'Clear') }))) return;
     await effacerFilAssistantMba(tenantId);
     setMessages([]); setDiff([]); setResultat(null);
     await charger();
   }
 
-  if (chargement) return <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>;
+  if (chargement) return <Squelette forme="carte" />;
 
   return (
     <div className={cardCls}>
@@ -153,8 +157,8 @@ export function MbaAssistantPanel({ tenantId, etapesRestantes = null }: {
       */}
       <div className="flex items-start justify-between gap-3 border-b border-ink-100 pb-3">
         <div className="flex min-w-0 items-start gap-2.5">
-          <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-50 text-base">
-            💬
+          <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+            <Icone nom="message" />
           </span>
           <div className="min-w-0">
             <h3 className="text-sm font-semibold text-ink-900">{t('Assistant de configuration', 'Setup assistant')}</h3>
@@ -183,7 +187,7 @@ export function MbaAssistantPanel({ tenantId, etapesRestantes = null }: {
           </div>
         </div>
         {messages.length > 0 && (
-          <button onClick={() => { void repartir(); }} className="shrink-0 text-xs text-ink-400 hover:text-ink-900">
+          <button onClick={() => { void repartir(); }} className="shrink-0 text-xs text-ink-500 hover:text-ink-900">
             {t('Repartir de zéro', 'Start over')}
           </button>
         )}
@@ -203,7 +207,7 @@ export function MbaAssistantPanel({ tenantId, etapesRestantes = null }: {
       {/* ⚠️ Le total est dit quand il dépasse ce qui est affiché : sans ça, l'écran laisserait croire que le
           reste de la conversation n'existe plus. */}
       {total > messages.length && (
-        <p className="mt-3 text-xs text-ink-400">
+        <p className="mt-3 text-xs text-ink-500">
           {t(`${total} messages au total, les ${messages.length} derniers sont affichés.`,
             `${total} messages in total, showing the last ${messages.length}.`)}
         </p>
@@ -214,7 +218,7 @@ export function MbaAssistantPanel({ tenantId, etapesRestantes = null }: {
         avec la conversation : le champ de saisie descend a chaque echange, et l'ecran n'a jamais l'air d'une
         messagerie. La hauteur fixe est ce qui fait qu'on reconnait une conversation avant de lire un mot.
       */}
-      <div className="mt-4 h-[420px] space-y-3 overflow-y-auto rounded-xl bg-ink-50/40 p-3" data-testid="mba-assistant-fil">
+      <div className="mt-4 h-[420px] space-y-3 overflow-y-auto rounded-carte bg-ink-50/40 p-3" data-testid="mba-assistant-fil">
         {messages.length === 0 && accueil && <Bulle role="assistant">{accueil}</Bulle>}
         {/*
           🔴 L'ETAT VIDE PROPOSE, IL NE SE CONTENTE PAS D'ATTENDRE. Un champ vide devant un bot ne dit pas ce
@@ -249,7 +253,7 @@ export function MbaAssistantPanel({ tenantId, etapesRestantes = null }: {
         */}
         {busy && messages.length > 0 && messages[messages.length - 1]!.role === 'user' && (
           <div className="flex justify-start" data-testid="mba-assistant-ecrit">
-            <div className="flex gap-1 rounded-2xl rounded-bl-sm bg-white px-3.5 py-2.5">
+            <div className="flex gap-1 rounded-carte rounded-bl-none bg-white px-3.5 py-2.5">
               {[0, 150, 300].map((d) => (
                 <span key={d} className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink-300"
                   style={{ animationDelay: `${d}ms` }} />
@@ -306,10 +310,10 @@ function Bulle({ role, children }: { role: 'user' | 'assistant'; children: React
   const moi = role === 'user';
   return (
     <div className={`flex ${moi ? 'justify-end' : 'justify-start'}`}>
-      {/* ⚠️ LA QUEUE (`rounded-br-sm` / `rounded-bl-sm`) EST CE QUI FAIT LIRE « MESSAGERIE », et le fond
+      {/* ⚠️ LA QUEUE (`rounded-br-none` / `rounded-bl-none`) EST CE QUI FAIT LIRE « MESSAGERIE », et le fond
           blanc des bulles de l'assistant les detache du fond teinte du fil, qui est desormais gris. */}
-      <div className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm ${
-        moi ? 'rounded-br-sm bg-brand-600 text-white' : 'rounded-bl-sm bg-white text-ink-900'
+      <div className={`max-w-[85%] whitespace-pre-wrap rounded-carte px-3.5 py-2 text-sm ${
+        moi ? 'rounded-br-none bg-brand-600 text-white' : 'rounded-bl-none bg-white text-ink-900'
       }`}>
         {children}
       </div>
@@ -331,7 +335,7 @@ function Diff({ operations, busy, onAppliquer }: {
 }) {
   const t = useT();
   return (
-    <div className="mt-4 rounded-xl border border-ink-200 p-4" data-testid="mba-assistant-diff">
+    <div className="mt-4 rounded-carte border border-ink-200 p-4" data-testid="mba-assistant-diff">
       <p className="text-sm font-medium text-ink-900">{t('Ce que je vais faire', 'What I will do')}</p>
       <ul className="mt-2 space-y-1.5">
         {operations.map((o, i) => {
@@ -370,17 +374,17 @@ function Diff({ operations, busy, onAppliquer }: {
 function Resultat({ resultat }: { resultat: ResultatApplicationMba }) {
   const t = useT();
   return (
-    <div className="mt-4 rounded-xl border border-ink-200 p-4 text-sm" data-testid="mba-assistant-resultat">
+    <div className="mt-4 rounded-carte border border-ink-200 p-4 text-sm" data-testid="mba-assistant-resultat">
       {resultat.passees.length > 0 && (
         <>
           <p className="font-medium text-ink-900">{t('Fait', 'Done')}</p>
           <ul className="mt-1 space-y-0.5 text-ink-500">
-            {resultat.passees.map((l) => <li key={l}>✓ {l}</li>)}
+            {resultat.passees.map((l) => <li key={l} className="flex items-start gap-1.5"><Icone nom="valide" taille="petite" className="mt-0.5 text-succes-700" />{l}</li>)}
           </ul>
         </>
       )}
       {resultat.echec && (
-        <div className="mt-3 rounded-lg bg-danger-50 px-3 py-2">
+        <div className="mt-3 rounded-controle bg-danger-50 px-3 py-2">
           <p className="font-medium text-danger-800">{t('Arrêté sur', 'Stopped at')} : {resultat.echec.libelle}</p>
           <p className="mt-0.5 text-danger-700">{resultat.echec.message}</p>
         </div>

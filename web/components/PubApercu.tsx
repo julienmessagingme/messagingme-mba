@@ -79,7 +79,7 @@ export function PubApercu({ titre, texte, accueil, messagePreRempli, visuel, nom
       <div className="mt-5">
         <ApercuReponse reponse={reponse} messagePreRempli={messagePreRempli} />
       </div>
-      <p className="mt-2 text-[11px] text-ink-400">
+      <p className="mt-2 text-[11px] text-ink-500">
         {t('Le rendu réel varie selon le placement (fil, Instagram, stories), qui recadre le visuel différemment.',
            'The actual rendering varies by placement (feed, Instagram, stories), each cropping the image differently.')}
       </p>
@@ -97,21 +97,21 @@ function ApercuFil({ titre, texte, visuel, nomPage }: {
   return (
     <div>
       <p className="mb-2 text-xs font-medium text-ink-500">{t('Dans le fil d’actualité', 'In the feed')}</p>
-      <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm" data-testid="pub-apercu-fil">
+      <div className="overflow-hidden rounded-carte border border-ink-200 bg-white shadow-sm" data-testid="pub-apercu-fil">
         <div className="flex items-center gap-2 px-3 py-2.5">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink-200 text-sm font-semibold text-ink-500">
             {nom.slice(0, 1).toUpperCase()}
           </div>
           <div className="min-w-0 leading-tight">
             <div className="truncate text-[13px] font-semibold text-ink-900" data-testid="pub-apercu-page">{nom}</div>
-            <div className="text-[11px] text-ink-400">{t('Sponsorisé', 'Sponsored')}</div>
+            <div className="text-[11px] text-ink-500">{t('Sponsorisé', 'Sponsored')}</div>
           </div>
         </div>
 
         <p className="whitespace-pre-wrap break-words px-3 pb-2.5 text-[13px] leading-snug text-ink-900" data-testid="pub-apercu-texte">
           {texte.trim()
             ? texte
-            : <span className="text-ink-400">{t('Votre texte principal apparaîtra ici…', 'Your primary text will appear here…')}</span>}
+            : <span className="text-ink-500">{t('Votre texte principal apparaîtra ici…', 'Your primary text will appear here…')}</span>}
         </p>
 
         {visuel !== null ? (
@@ -123,7 +123,7 @@ function ApercuFil({ titre, texte, visuel, nomPage }: {
           />
         ) : (
           <div
-            className="flex aspect-[1.91/1] w-full items-center justify-center bg-ink-100 px-4 text-center text-[11px] text-ink-400"
+            className="flex aspect-[1.91/1] w-full items-center justify-center bg-ink-100 px-4 text-center text-[11px] text-ink-500"
             data-testid="pub-apercu-visuel-absent"
           >
             {t('Choisissez un visuel pour le voir ici', 'Choose an image to see it here')}
@@ -132,16 +132,16 @@ function ApercuFil({ titre, texte, visuel, nomPage }: {
 
         <div className="flex items-center gap-3 bg-ink-50 px-3 py-2.5">
           <div className="min-w-0 flex-1">
-            <div className="text-[10px] uppercase tracking-wide text-ink-400">WhatsApp</div>
+            <div className="text-[10px] uppercase tracking-wide text-ink-500">WhatsApp</div>
             <div className="truncate text-[13px] font-semibold text-ink-900" data-testid="pub-apercu-titre">
               {titre.trim()
                 ? titre
-                : <span className="font-normal text-ink-400">{t('Votre titre apparaîtra ici…', 'Your headline will appear here…')}</span>}
+                : <span className="font-normal text-ink-500">{t('Votre titre apparaîtra ici…', 'Your headline will appear here…')}</span>}
             </div>
           </div>
           {/* Le libellé du bouton est posé par Meta (`call_to_action: WHATSAPP_MESSAGE`), pas par nous :
               il n'est donc pas saisissable dans le formulaire, et il ne doit pas en avoir l'air. */}
-          <span className="shrink-0 rounded-lg bg-ink-200 px-2.5 py-1.5 text-[12px] font-medium text-ink-900">
+          <span className="shrink-0 rounded-controle bg-ink-200 px-2.5 py-1.5 text-[12px] font-medium text-ink-900">
             {t('Envoyer un message', 'Send message')}
           </span>
         </div>
@@ -166,13 +166,13 @@ function ApercuConversation({ accueil, messagePreRempli }: { accueil: string; me
       {/* Le cadre résout lui-même le nom vérifié du numéro : c'est bien celui-là que le prospect lira. */}
       <PhoneFrame titre={t('Quand il appuie sur le bouton', 'When they tap the button')} contentClassName="min-h-[200px] px-3 py-4">
         <div className="max-w-[88%]">
-          <div className="rounded-lg rounded-tl-none bg-white px-2.5 py-1.5 shadow-sm">
+          <div className="rounded-controle rounded-tl-none bg-white px-2.5 py-1.5 shadow-sm">
             <div className="whitespace-pre-wrap break-words text-[13px] leading-snug text-ink-900" data-testid="pub-apercu-accueil">
               {accueil.trim()
                 ? accueil
-                : <span className="text-ink-400">{t('Votre phrase d’accueil apparaîtra ici…', 'Your greeting will appear here…')}</span>}
+                : <span className="text-ink-500">{t('Votre phrase d’accueil apparaîtra ici…', 'Your greeting will appear here…')}</span>}
             </div>
-            <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-ink-400">12:30</div>
+            <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-ink-500">12:30</div>
           </div>
         </div>
 
@@ -181,7 +181,7 @@ function ApercuConversation({ accueil, messagePreRempli }: { accueil: string; me
             <span className="truncate text-[13px] text-ink-900" data-testid="pub-apercu-prerempli">
               {messagePreRempli.trim()
                 ? messagePreRempli
-                : <span className="text-ink-400">{t('Message pré-rempli…', 'Pre-filled message…')}</span>}
+                : <span className="text-ink-500">{t('Message pré-rempli…', 'Pre-filled message…')}</span>}
             </span>
           </div>
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#25D366] text-white">
@@ -220,13 +220,13 @@ function ApercuReponse({ reponse, messagePreRempli }: { reponse: EtatReponse; me
         {/* Ce que le prospect vient d'envoyer : le message pré-rempli, parti tel quel. Le répéter ici est ce
             qui fait de ce panneau une SUITE du précédent et pas un écran indépendant. */}
         <div className="flex justify-end">
-          <div className="max-w-[88%] rounded-lg rounded-tr-none bg-[#d9fdd3] px-2.5 py-1.5 shadow-sm">
+          <div className="max-w-[88%] rounded-controle rounded-tr-none bg-[#d9fdd3] px-2.5 py-1.5 shadow-sm">
             <div className="whitespace-pre-wrap break-words text-[13px] leading-snug text-ink-900">
               {messagePreRempli.trim()
                 ? messagePreRempli
-                : <span className="text-ink-400">{t('Message pré-rempli…', 'Pre-filled message…')}</span>}
+                : <span className="text-ink-500">{t('Message pré-rempli…', 'Pre-filled message…')}</span>}
             </div>
-            <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-ink-400">
+            <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-ink-500">
               12:31 <span className="text-[#53bdeb]">✓✓</span>
             </div>
           </div>
@@ -338,14 +338,14 @@ function Bulle({ children, testid, badge, boutons = [] }: {
 }) {
   return (
     <div className="max-w-[88%]">
-      <div className="rounded-lg rounded-tl-none bg-white px-2.5 py-1.5 shadow-sm">
+      <div className="rounded-controle rounded-tl-none bg-white px-2.5 py-1.5 shadow-sm">
         {badge !== undefined && (
-          <div className="mb-1 inline-flex rounded bg-alerte-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-alerte-800">
+          <div className="mb-1 inline-flex rounded-controle bg-alerte-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-alerte-800">
             {badge}
           </div>
         )}
         <div className="whitespace-pre-wrap break-words text-[13px] leading-snug text-ink-900" data-testid={testid}>{children}</div>
-        <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-ink-400">12:31</div>
+        <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-ink-500">12:31</div>
         {boutons.length > 0 && (
           <div className="-mx-2.5 -mb-1.5 mt-1.5">
             {boutons.map((b, i) => (
@@ -359,13 +359,13 @@ function Bulle({ children, testid, badge, boutons = [] }: {
 }
 
 function Note({ children }: { children: React.ReactNode }) {
-  return <p className="rounded-lg bg-white/70 px-2.5 py-2 text-[12px] leading-snug text-ink-500" data-testid="pub-apercu-reponse-note-bloc">{children}</p>;
+  return <p className="rounded-controle bg-white/70 px-2.5 py-2 text-[12px] leading-snug text-ink-500" data-testid="pub-apercu-reponse-note-bloc">{children}</p>;
 }
 
 /** Un état où un clic PAYÉ recevrait le silence : il ne se dit pas du même ton qu'une information. */
 function Alerte({ children, testid }: { children: React.ReactNode; testid: string }) {
   return (
-    <p className="rounded-lg bg-danger-50 px-2.5 py-2 text-[12px] font-medium leading-snug text-danger-700" data-testid={testid}>
+    <p className="rounded-controle bg-danger-50 px-2.5 py-2 text-[12px] font-medium leading-snug text-danger-700" data-testid={testid}>
       {children}
     </p>
   );

@@ -17,6 +17,8 @@ import { PubsListe } from '@/components/PubsListe';
 import { PubFormulaire } from '@/components/PubFormulaire';
 import { Bouton } from '@/components/Bouton';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
+import { Squelette } from '@/components/Squelette';
+import { Nd } from '@/components/Nd';
 
 /**
  * PUBLICITÉS CLICK-TO-WHATSAPP : la connexion de l'espace à son compte publicitaire (lot 2 « Connecter »).
@@ -358,7 +360,7 @@ function PublicitesInner({ session }: { session: Session }) {
   // FENÊTRE, pas ce conteneur, donc l'élargir est ce qui rend les deux colonnes tenables. La liste et
   // l'entonnoir y gagnent au passage : ce sont des tableaux, et 768 px les serrait.
   return (
-    <div className="mx-auto w-full max-w-5xl p-6">
+    <div className="mx-auto w-full max-w-liste p-6">
       <TitrePage>{t('Publicités', 'Ads')}</TitrePage>
       <IntroPage>
         {t('Les publicités Meta dont le bouton ouvre une conversation WhatsApp.',
@@ -366,14 +368,14 @@ function PublicitesInner({ session }: { session: Session }) {
       </IntroPage>
 
       {erreur !== null && (
-        <p role="alert" data-testid="pubs-erreur" className="mt-4 rounded-xl bg-danger-50 px-4 py-3 text-sm text-danger-700">{erreur}</p>
+        <p role="alert" data-testid="pubs-erreur" className="mt-4 rounded-carte bg-danger-50 px-4 py-3 text-sm text-danger-700">{erreur}</p>
       )}
 
-      <section className="mt-5 rounded-2xl border border-ink-200 bg-white p-5">
+      <section className="mt-5 rounded-carte border border-ink-200 bg-white p-5">
         {absent || (etat !== null && !etat.configure) ? (
           <Eteint t={t} />
         ) : etat === null ? (
-          <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
+          <Squelette forme="lignes" />
         ) : actifs !== null ? (
           <Choix
             t={t} actifs={actifs} busy={busy}
@@ -391,12 +393,12 @@ function PublicitesInner({ session }: { session: Session }) {
       {/* LES PUBLICITÉS (lot 3). La section n'apparaît qu'une fois la connexion établie : avant, il n'y a
           rien à lister et rien à créer, et l'afficher vide donnerait l'impression d'un écran cassé. */}
       {!absent && etat !== null && etat.configure && etat.connexion !== null && (
-        <section className="mt-5 rounded-2xl border border-ink-200 bg-white p-5" data-testid="pubs-section">
+        <section className="mt-5 rounded-carte border border-ink-200 bg-white p-5" data-testid="pubs-section">
           {/* ⚠️ L'ERREUR DE LA LISTE VIT DANS SA SECTION, pas dans le bandeau de la coquille. C'est ce qui
               rend impossible qu'elle efface le message d'une déconnexion ratée, quel que soit l'ordre
               d'arrivée : elle n'écrit tout simplement plus au même endroit. */}
           {erreurListe !== null && (
-            <p role="alert" data-testid="pubs-liste-erreur" className="mb-3 rounded-xl bg-danger-50 px-4 py-3 text-sm text-danger-700">{erreurListe}</p>
+            <p role="alert" data-testid="pubs-liste-erreur" className="mb-3 rounded-carte bg-danger-50 px-4 py-3 text-sm text-danger-700">{erreurListe}</p>
           )}
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -422,7 +424,7 @@ function PublicitesInner({ session }: { session: Session }) {
           </div>
 
           {!peutCreer(etat) && (
-            <p className="mt-3 rounded-xl bg-alerte-50 px-3 py-2 text-xs text-alerte-800" data-testid="pubs-creation-bloquee">
+            <p className="mt-3 rounded-carte bg-alerte-50 px-3 py-2 text-xs text-alerte-800" data-testid="pubs-creation-bloquee">
               {raisonPasDeCreation(etat, t)}
             </p>
           )}
@@ -457,7 +459,7 @@ function PublicitesInner({ session }: { session: Session }) {
                    'This part of the console is waiting for the server update. It will be available in a few minutes.')}
               </p>
             ) : pubs === null ? (
-              <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
+              <Squelette forme="lignes" />
             ) : (
               <PubsListe
                 tenantId={session.tenantId} publicites={pubs} recharger={chargerPubs}
@@ -562,19 +564,19 @@ function Choix({ t, actifs, busy, compte, page, setCompte, setPage, valider }: {
       ) : (
         <>
           <label className="mt-3 block text-xs font-medium text-ink-500" htmlFor="compte-pub">{t('Compte publicitaire', 'Ad account')}</label>
-          <select id="compte-pub" value={compte} onChange={(e) => setCompte(e.target.value)} className="mt-1 w-full rounded-xl border border-ink-200 px-3 py-2 text-sm">
+          <select id="compte-pub" value={compte} onChange={(e) => setCompte(e.target.value)} className="mt-1 w-full rounded-carte border border-ink-200 px-3 py-2 text-sm">
             {/* Le NOM d'abord : un admin reconnaît « GMC », pas un identifiant de quinze chiffres. Et un
                 compte que Meta ne dit pas actif (`statut !== 1`) le dit ici, avant qu'on s'étonne qu'une
                 pub ne parte pas. */}
             {actifs.comptesPub.map((c) => (
               <option key={c.id} value={c.id}>
                 {(c.nom ?? c.id) + (c.devise !== null ? ` (${c.devise})` : '')}
-                {c.statut !== null && c.statut !== 1 ? t(' — compte inactif chez Meta', ' — account inactive at Meta') : ''}
+                {c.statut !== null && c.statut !== 1 ? t(', compte inactif chez Meta', ', account inactive at Meta') : ''}
               </option>
             ))}
           </select>
           <label className="mt-3 block text-xs font-medium text-ink-500" htmlFor="page-pub">{t('Page Facebook', 'Facebook Page')}</label>
-          <select id="page-pub" value={page} onChange={(e) => setPage(e.target.value)} className="mt-1 w-full rounded-xl border border-ink-200 px-3 py-2 text-sm">
+          <select id="page-pub" value={page} onChange={(e) => setPage(e.target.value)} className="mt-1 w-full rounded-carte border border-ink-200 px-3 py-2 text-sm">
             {actifs.pages.map((p) => <option key={p.id} value={p.id}>{p.nom ?? p.id}</option>)}
           </select>
           <Bouton
@@ -622,8 +624,8 @@ function messageDiffusion(compte: EtatComptePub | null, t: T): string {
     return t('Aucun moyen de paiement sur ce compte : une publicité se créerait mais ne partirait jamais.',
             'No payment method on this account: an ad would be created but would never deliver.');
   }
-  return t('✓ Prêt à diffuser : compte actif, moyen de paiement en place.',
-          '✓ Ready to deliver: account active, payment method in place.');
+  return t('Prêt à diffuser : compte actif, moyen de paiement en place.',
+          'Ready to deliver: account active, payment method in place.');
 }
 
 function Connecte({ t, etat, compte, busy, deconnecter, reconnecter }: {
@@ -646,8 +648,8 @@ function Connecte({ t, etat, compte, busy, deconnecter, reconnecter }: {
         <Ligne id="page" cle={t('Page', 'Page')}
           valeur={c.pageNom ?? c.pageId ?? t('à choisir', 'to be chosen')}
           sous={c.pageNom !== null ? c.pageId : null} />
-        <Ligne id="devise" cle={t('Devise', 'Currency')} valeur={c.devise ?? '—'} />
-        <Ligne id="fuseau" cle={t('Fuseau', 'Time zone')} valeur={c.fuseau ?? '—'} />
+        <Ligne id="devise" cle={t('Devise', 'Currency')} valeur={c.devise ?? <Nd />} />
+        <Ligne id="fuseau" cle={t('Fuseau', 'Time zone')} valeur={c.fuseau ?? <Nd />} />
       </dl>
 
       {/*
@@ -684,7 +686,7 @@ function Connecte({ t, etat, compte, busy, deconnecter, reconnecter }: {
       </p>
 
       {c.jetonRejeteLe !== null && (
-        <p role="alert" data-testid="pubs-jeton-rejete" className="mt-3 rounded-xl bg-alerte-50 px-4 py-3 text-sm text-alerte-800">
+        <p role="alert" data-testid="pubs-jeton-rejete" className="mt-3 rounded-carte bg-alerte-50 px-4 py-3 text-sm text-alerte-800">
           {t('Meta a refusé notre accès à ce compte. Reconnectez-vous pour continuer.',
              'Meta refused our access to this account. Reconnect to continue.')}
         </p>
@@ -698,7 +700,7 @@ function Connecte({ t, etat, compte, busy, deconnecter, reconnecter }: {
         </Bouton>
         <button
           type="button" disabled={busy} onClick={() => void deconnecter()}
-          className="rounded-xl border border-danger-200 px-4 py-2 text-sm font-medium text-danger-700 transition-colors duration-150 hover:bg-danger-50 disabled:opacity-40"
+          className="rounded-carte border border-danger-200 px-4 py-2 text-sm font-medium text-danger-700 transition-colors duration-150 hover:bg-danger-50 disabled:opacity-40"
         >
           {t('Déconnecter', 'Disconnect')}
         </button>
@@ -708,12 +710,12 @@ function Connecte({ t, etat, compte, busy, deconnecter, reconnecter }: {
 }
 
 /** `sous` : l'identifiant, en petit sous le nom. On le garde à vue, c'est lui qu'on donne au support. */
-function Ligne({ id, cle, valeur, sous }: { id: string; cle: string; valeur: string; sous?: string | null }) {
+function Ligne({ id, cle, valeur, sous }: { id: string; cle: string; valeur: React.ReactNode; sous?: string | null }) {
   return (
     <div>
-      <dt className="text-xs font-medium text-ink-400">{cle}</dt>
+      <dt className="text-xs font-medium text-ink-500">{cle}</dt>
       <dd data-testid={`pubs-${id}`} className="text-ink-900">{valeur}</dd>
-      {sous !== null && sous !== undefined && <div className="text-xs text-ink-400">{sous}</div>}
+      {sous !== null && sous !== undefined && <div className="text-xs text-ink-500">{sous}</div>}
     </div>
   );
 }

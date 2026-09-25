@@ -9,6 +9,8 @@ import { SYSTEM_FIELDS, customFieldsOnly, systemFieldCode } from '@/lib/fields';
 import { useT } from '@/lib/i18n';
 import { Bouton } from '@/components/Bouton';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
+import { useConfirmation } from '@/components/Confirmation';
+import { Squelette } from '@/components/Squelette';
 
 export default function FieldsPage() {
   return <AppShell active="fields">{(session) => <FieldsInner session={session} />}</AppShell>;
@@ -16,6 +18,7 @@ export default function FieldsPage() {
 
 function FieldsInner({ session }: { session: Session }) {
   const t = useT();
+  const confirmer = useConfirmation();
   // Libellés partagés avec l'écran Webhooks (mapping), qui montre la nature du champ visé. Les recopier
   // ferait diverger deux listes que l'utilisateur voit à quelques clics d'écart.
   const TYPES: { value: UserFieldKind; label: string }[] = USER_FIELD_KINDS.map((value) => ({
@@ -78,10 +81,10 @@ function FieldsInner({ session }: { session: Session }) {
   }
 
   async function remove(f: UserFieldDef) {
-    if (!window.confirm(t(
+    if (!(await confirmer({ titre: t('Supprimer le champ', 'Delete the field'), message: t(
       `Supprimer le champ « ${f.label} » (clé ${f.key}) ?\nLes valeurs déjà saisies sur les contacts sont conservées.`,
       `Delete the field "${f.label}" (key ${f.key})?\nValues already entered on contacts are kept.`,
-    ))) return;
+    ), confirmer: t('Supprimer', 'Delete') }))) return;
     setError(null);
     try {
       await deleteUserField(session.tenantId, f.key);
@@ -94,15 +97,15 @@ function FieldsInner({ session }: { session: Session }) {
   const custom = customFieldsOnly(fields);
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="max-w-formulaire space-y-6">
       <div>
         <TitrePage>{t('Champs', 'Fields')}</TitrePage>
         <IntroPage>{t('Les champs de base sont toujours là (non supprimables). Ajoute tes propres champs, ou modifie leur libellé/type. La clé technique est verrouillée (référencée par les campagnes et les valeurs des contacts).', 'The base fields are always present (they cannot be deleted). Add your own fields, or change their label/type. The technical key is locked (referenced by campaigns and contact values).')}</IntroPage>
       </div>
-      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+      {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
       {/* Champs de BASE (système) : toujours présents, non supprimables. Utilisables comme variables de template. */}
-      <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
+      <div className="overflow-hidden rounded-carte border border-ink-200 bg-white">
         <div className="flex items-center gap-2 border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">
           {t('Champs de base', 'Base fields')}
           <span className="rounded-full bg-ink-100 px-2 py-0.5 text-xs font-medium text-ink-500">{t('système', 'system')}</span>
@@ -111,9 +114,9 @@ function FieldsInner({ session }: { session: Session }) {
           <tbody>
             {SYSTEM_FIELDS.map((f) => (
               <tr key={f.key} className="border-b border-ink-50 last:border-0">
-                <td className="px-5 py-2.5"><code className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-xs text-ink-500">{f.key}</code>{tenantCode && <div className="mt-0.5 font-mono text-xs text-ink-400" title={t('Code public (API)', 'Public code (API)')}>{systemFieldCode(tenantCode, f.key)}</div>}</td>
+                <td className="px-5 py-2.5"><code className="rounded-controle bg-ink-100 px-1.5 py-0.5 font-mono text-xs text-ink-500">{f.key}</code>{tenantCode && <div className="mt-0.5 font-mono text-xs text-ink-500" title={t('Code public (API)', 'Public code (API)')}>{systemFieldCode(tenantCode, f.key)}</div>}</td>
                 <td className="px-5 py-2.5 font-medium text-ink-900">{t(...f.label)}</td>
-                <td className="px-5 py-2.5 text-right text-xs text-ink-400">{t('non supprimable', 'not deletable')}</td>
+                <td className="px-5 py-2.5 text-right text-xs text-ink-500">{t('non supprimable', 'not deletable')}</td>
               </tr>
             ))}
           </tbody>
@@ -126,18 +129,18 @@ function FieldsInner({ session }: { session: Session }) {
           onChange={(e) => setNewLabel(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') void create(); }}
           placeholder={t('Libellé du nouveau champ (ex. Code postal)…', 'New field label (e.g. Postal code)…')}
-          className="min-w-[200px] flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+          className="min-w-[200px] flex-1 rounded-controle border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
         />
-        <select value={newType} onChange={(e) => setNewType(e.target.value as UserFieldKind)} className="rounded-lg border border-ink-300 bg-white px-2 py-2 text-sm text-ink-900">
+        <select value={newType} onChange={(e) => setNewType(e.target.value as UserFieldKind)} className="rounded-controle border border-ink-300 bg-white px-2 py-2 text-sm text-ink-900">
           {TYPES.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
         </select>
         <Bouton onClick={create} disabled={newLabel.trim() === ''}>{t('Créer un champ', 'Create a field')}</Bouton>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
+      <div className="overflow-hidden rounded-carte border border-ink-200 bg-white">
         <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">{t('Mes champs', 'My fields')} ({custom.length})</div>
         {loading ? (
-          <p className="px-5 py-6 text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
+          <Squelette forme="lignes" className="px-5 py-6" />
         ) : custom.length === 0 ? (
           <p className="px-5 py-6 text-sm text-ink-500">{t("Aucun champ perso. Crée-en un ci-dessus, ou ils apparaissent à l'import CSV (colonnes personnalisées) ou via un formulaire.", 'No custom fields. Create one above, or they appear on CSV import (custom columns) or via a form.')}</p>
         ) : (
@@ -153,20 +156,20 @@ function FieldsInner({ session }: { session: Session }) {
             <tbody>
               {custom.map((f) => (
                 <tr key={f.key} className="border-b border-ink-50 last:border-0">
-                  <td className="px-5 py-3"><code className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-xs text-ink-500">{f.key}</code>{f.code && <div className="mt-0.5 font-mono text-xs text-ink-400" title={t('Code public (API)', 'Public code (API)')}>{f.code}</div>}</td>
+                  <td className="px-5 py-3"><code className="rounded-controle bg-ink-100 px-1.5 py-0.5 font-mono text-xs text-ink-500">{f.key}</code>{f.code && <div className="mt-0.5 font-mono text-xs text-ink-500" title={t('Code public (API)', 'Public code (API)')}>{f.code}</div>}</td>
                   <td className="px-5 py-3">
                     <input
                       value={f.label}
                       onChange={(e) => patchLocal(f.key, { label: e.target.value })}
                       onBlur={(e) => { const v = e.target.value.trim(); if (v) void save(f, { label: v }); }}
-                      className="w-full rounded-lg border border-ink-300 px-2 py-1 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+                      className="w-full rounded-controle border border-ink-300 px-2 py-1 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
                     />
                   </td>
                   <td className="px-5 py-3">
                     <select
                       value={f.type}
                       onChange={(e) => { const type = e.target.value as UserFieldKind; patchLocal(f.key, { type }); void save(f, { type }); }}
-                      className="rounded-lg border border-ink-300 bg-white px-2 py-1 text-sm text-ink-900"
+                      className="rounded-controle border border-ink-300 bg-white px-2 py-1 text-sm text-ink-900"
                     >
                       {TYPES.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                     </select>

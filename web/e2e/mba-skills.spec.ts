@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { mockMba, appelsMba } from './support/mba';
+import { repondreSurPlace } from './aide/confirmation';
 
 test.describe('MBA Paramètres : compétences', () => {
   test('🔴 le nom est mis en forme pendant la saisie, jamais renvoyé comme une règle à deviner', async ({ page }) => {
@@ -49,8 +50,8 @@ test.describe('MBA Paramètres : compétences', () => {
   test('suppression avec confirmation', async ({ page }) => {
     const calls = await mockMba(page, { skills: [{ id: 's1', title: 'ne-pas-inventer', description: 'Toujours.', skill: 'Ne jamais inventer.' }] });
     await page.goto('/mba/parametres?tab=competences');
-    page.once('dialog', (d) => void d.accept());
     await page.getByRole('button', { name: /Supprimer|Delete/ }).first().click();
+    await repondreSurPlace(page, true);
     await expect.poll(() => appelsMba(calls, 'DELETE', '/skills/s1').length).toBe(1);
   });
 });

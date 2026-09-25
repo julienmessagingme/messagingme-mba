@@ -65,7 +65,7 @@ export function EtapeCanal({
     <section data-testid="etape-canal" className="w-full">
       <TitrePage>Par quel canal partent les messages ?</TitrePage>
 
-      <fieldset data-testid="choix-canal" className="mt-4 w-full rounded-xl border border-ink-200 p-4">
+      <fieldset data-testid="choix-canal" className="mt-4 w-full rounded-carte border border-ink-200 p-4">
         <legend className="px-1 text-sm font-medium text-ink-900">Canal</legend>
         <div className="space-y-2">
           <Entree
@@ -100,7 +100,7 @@ export function EtapeCanal({
             n'existe pas ; une option grisée sans raison fait croire à une panne. On dit donc pourquoi,
             et où aller la régler. */}
         {rcsIndisponible && (
-          <p className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-500">
+          <p className="mt-3 rounded-controle bg-ink-50 px-3 py-2 text-xs text-ink-500">
             Aucun agent RCS n&apos;est relié à cet espace. Reliez-en un dans Paramètres pour ouvrir ce
             canal et le repli.
           </p>
@@ -118,7 +118,7 @@ export function EtapeCanal({
       )}
 
       {etat.formule === 'repli' && (
-        <fieldset data-testid="choix-ordre" className="mt-4 w-full rounded-xl border border-ink-200 p-4">
+        <fieldset data-testid="choix-ordre" className="mt-4 w-full rounded-carte border border-ink-200 p-4">
           <legend className="px-1 text-sm font-medium text-ink-900">Lequel part en premier ?</legend>
           <div className="space-y-2">
             <Entree
@@ -143,7 +143,7 @@ export function EtapeCanal({
       )}
 
       {etat.formule === 'repli' && (
-        <fieldset data-testid="choix-troisieme" className="mt-4 w-full rounded-xl border border-ink-200 p-4">
+        <fieldset data-testid="choix-troisieme" className="mt-4 w-full rounded-carte border border-ink-200 p-4">
           <legend className="px-1 text-sm font-medium text-ink-900">Un troisième niveau ?</legend>
           <div className="space-y-2">
             <Entree
@@ -178,7 +178,7 @@ export function EtapeCanal({
             />
           </div>
           {etat.troisieme === 'email' && (
-            <p className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-500">
+            <p className="mt-3 rounded-controle bg-ink-50 px-3 py-2 text-xs text-ink-500">
               L&apos;e-mail part à l&apos;adresse portée par la fiche du contact. Un contact sans adresse
               sort de la chaîne avant ce niveau.
             </p>
@@ -192,7 +192,7 @@ export function EtapeCanal({
           qu'on n'envoie pas. Deux règles écrites séparément auraient divergé le jour où une quatrième
           formule apparaît. */}
       {montreReessai && (
-        <div data-testid="bloc-reessai" className="mt-4 w-full rounded-xl border border-ink-200 p-4">
+        <div data-testid="bloc-reessai" className="mt-4 w-full rounded-carte border border-ink-200 p-4">
           {/* 🔴 « RÉESSAYER », JAMAIS « RELANCER ». En marketing, relancer quelqu'un veut dire lui
               renvoyer un message parce qu'il n'a pas répondu. Ici il s'agit de retenter un envoi qui a
               échoué techniquement, avant même que le destinataire ait vu quoi que ce soit : qui lit
@@ -232,7 +232,7 @@ export function EtapeCanal({
           case-ci, elle, ne dépend d'aucune des autres, c'est pourquoi elle ferme la marche plutôt que
           d'attendre un clic de plus. */}
       {canalChoisi && (
-        <div data-testid="bloc-horaires" className="mt-4 w-full rounded-xl border border-ink-200 p-4">
+        <div data-testid="bloc-horaires" className="mt-4 w-full rounded-carte border border-ink-200 p-4">
           <Case
             libelle="Envoyer uniquement pendant les heures ouvrées"
             description="Lancée hors créneau, la campagne attend la prochaine ouverture (onglet Paramètres) au lieu de partir. Un envoi que la fermeture interrompt reprend tout seul au créneau suivant, sans perdre un destinataire."
@@ -260,7 +260,7 @@ export function EtapeCanal({
             une limite connue, pas un oubli de câblage.
           */}
           {etat.heuresOuvrees && !horairesReglees && (
-            <p className="mt-3 rounded-lg bg-alerte-50 px-3 py-2 text-xs text-ink-900" data-testid="horaires-absentes">
+            <p className="mt-3 rounded-controle bg-alerte-50 px-3 py-2 text-xs text-ink-900" data-testid="horaires-absentes">
               Aucune heure d&apos;ouverture n&apos;est réglée pour cet espace : cochée, cette case mettrait la
               campagne en pause sans jamais la reprendre. Réglez vos horaires dans Paramètres, ou décochez.
             </p>
@@ -297,7 +297,7 @@ function Entree({
   onCheck: () => void;
 }) {
   return (
-    <div className={`w-full rounded-lg border p-3 ${coche ? 'border-brand-400 bg-brand-50/40' : 'border-ink-200'} ${desactive ? 'opacity-50' : ''}`}>
+    <div className={`w-full rounded-carte border p-3 ${coche ? 'border-brand-400 bg-brand-50/40' : 'border-ink-200'} ${desactive ? 'opacity-50' : ''}`}>
       <div className="flex items-center gap-2">
         <label className="flex min-w-0 items-center gap-2 text-sm font-medium text-ink-900">
           <input
@@ -336,7 +336,7 @@ function Case({
           type="checkbox"
           checked={coche}
           onChange={(e) => onChange(e.target.checked)}
-          className="h-4 w-4 shrink-0 rounded border-ink-300 accent-brand-500"
+          className="h-4 w-4 shrink-0 rounded-controle border-ink-300 accent-brand-500"
         />
         <span className="min-w-0 break-words">{libelle}</span>
       </label>

@@ -8,8 +8,9 @@ import {
   politiqueMentionIa, politiqueTransfertAgent, setPolitiqueMentionIa, setPolitiqueTransfertAgent,
   type FrequenceMentionIa, type ModeTransfertAgent, type PolitiqueMentionIa, type PolitiqueTransfertAgent,
 } from '@/lib/api';
-import { cardCls } from '@/lib/ui';
+import { cadreCls } from '@/lib/ui';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * L'IA, ET CE QU'ELLE DIT D'ELLE-MÊME.
@@ -95,7 +96,7 @@ function Ia({ tenantId, estAdmin }: { tenantId: string; estAdmin: boolean }) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-4 p-6" data-testid="securite-ia">
+    <div className="mx-auto w-full max-w-formulaire space-y-4" data-testid="securite-ia">
       <div className="space-y-1">
         <TitrePage>{t('IA', 'AI')}</TitrePage>
         <IntroPage>
@@ -106,20 +107,20 @@ function Ia({ tenantId, estAdmin }: { tenantId: string; estAdmin: boolean }) {
         </IntroPage>
       </div>
 
-      <section className={cardCls} data-testid="mention-ia">
+      <section className={cadreCls} data-testid="mention-ia">
         <div className="flex items-center justify-between gap-2 border-b border-ink-100 px-4 py-3">
           <span className="text-sm font-semibold text-ink-900">{t('Quand l’annoncer', 'When to disclose')}</span>
           {/* ⚠️ « Défaut appliqué » n'est PAS la même chose que « vous avez choisi ceci ». Le comportement est
               identique, la responsabilité non, et c'est précisément ce qu'un écran de conformité doit dire. */}
           {etat !== null && !etat.reglee && (
-            <span className="text-xs text-ink-400" data-testid="mention-ia-defaut">
+            <span className="text-xs text-ink-500" data-testid="mention-ia-defaut">
               {t('défaut appliqué, personne n’a encore choisi', 'default applied, nobody has chosen yet')}
             </span>
           )}
         </div>
 
         {erreur !== null && <p className="px-4 py-3 text-sm text-danger-700" data-testid="mention-ia-erreur">{erreur}</p>}
-        {etat === null && erreur === null && <p className="px-4 py-3 text-sm text-ink-500">{t('Lecture…', 'Loading…')}</p>}
+        {etat === null && erreur === null && <Squelette forme="lignes" className="px-4 py-3" />}
 
         {etat !== null && (
           <div className="divide-y divide-ink-100">
@@ -145,7 +146,7 @@ function Ia({ tenantId, estAdmin }: { tenantId: string; estAdmin: boolean }) {
           <p className="px-4 pb-3 text-xs text-succes-700" data-testid="mention-ia-ok">{t('Enregistré.', 'Saved.')}</p>
         )}
         {etat !== null && !estAdmin && (
-          <p className="px-4 pb-3 text-xs text-ink-400">
+          <p className="px-4 pb-3 text-xs text-ink-500">
             {t('Seul un administrateur peut changer ce réglage.', 'Only an administrator can change this setting.')}
           </p>
         )}
@@ -159,7 +160,7 @@ function Ia({ tenantId, estAdmin }: { tenantId: string; estAdmin: boolean }) {
         d'elles. Meta appose sa propre mention sous les messages de son agent ; ajouter la nôtre en ferait
         deux.
       */}
-      <section className={cardCls} data-testid="mention-ia-agents">
+      <section className={cadreCls} data-testid="mention-ia-agents">
         <div className="border-b border-ink-100 px-4 py-3">
           <span className="text-sm font-semibold text-ink-900">{t('Ce que chaque agent dit', 'What each agent says')}</span>
           <p className="mt-1 text-xs text-ink-500">
@@ -183,7 +184,7 @@ function Ia({ tenantId, estAdmin }: { tenantId: string; estAdmin: boolean }) {
                   <p className="text-sm text-ink-900">
                     {a.label}
                     {a.status !== 'active' && (
-                      <span className="ml-2 text-xs text-ink-400">
+                      <span className="ml-2 text-xs text-ink-500">
                         {a.status === 'draft' ? t('brouillon', 'draft') : t('désactivé', 'disabled')}
                       </span>
                     )}
@@ -279,11 +280,11 @@ function TransfertEquipe({ tenantId, estAdmin }: { tenantId: string; estAdmin: b
   ];
 
   return (
-    <section className={cardCls} data-testid="transfert-agent">
+    <section className={cadreCls} data-testid="transfert-agent">
       <div className="flex items-center justify-between gap-2 border-b border-ink-100 px-4 py-3">
         <span className="text-sm font-semibold text-ink-900">{t('Quand votre équipe est joignable', 'When your team is reachable')}</span>
         {etat !== null && !etat.reglee && (
-          <span className="text-xs text-ink-400" data-testid="transfert-agent-defaut">
+          <span className="text-xs text-ink-500" data-testid="transfert-agent-defaut">
             {t('défaut appliqué, personne n’a encore choisi', 'default applied, nobody has chosen yet')}
           </span>
         )}
@@ -299,7 +300,7 @@ function TransfertEquipe({ tenantId, estAdmin }: { tenantId: string; estAdmin: b
       </p>
 
       {erreur !== null && <p className="px-4 py-3 text-sm text-danger-700" data-testid="transfert-agent-erreur">{erreur}</p>}
-      {etat === null && erreur === null && <p className="px-4 py-3 text-sm text-ink-500">{t('Lecture…', 'Loading…')}</p>}
+      {etat === null && erreur === null && <Squelette forme="lignes" className="px-4 py-3" />}
 
       {etat !== null && (
         <div className="mt-2 divide-y divide-ink-100 border-t border-ink-100">
@@ -325,7 +326,7 @@ function TransfertEquipe({ tenantId, estAdmin }: { tenantId: string; estAdmin: b
         <p className="px-4 pb-3 pt-2 text-xs text-succes-700" data-testid="transfert-agent-ok">{t('Enregistré.', 'Saved.')}</p>
       )}
       {etat !== null && !estAdmin && (
-        <p className="px-4 pb-3 pt-2 text-xs text-ink-400">
+        <p className="px-4 pb-3 pt-2 text-xs text-ink-500">
           {t('Seul un administrateur peut changer ce réglage.', 'Only an administrator can change this setting.')}
         </p>
       )}

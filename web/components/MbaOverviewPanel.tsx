@@ -8,6 +8,7 @@ import { MbaNotice } from './MbaNotice';
 import { MbaAllowlistPanel } from './MbaAllowlistPanel';
 import { patchMbaSettings, putMbaRollout, type MbaStatus, type MbaSettings } from '@/lib/api-mba';
 import { Bouton } from '@/components/Bouton';
+import { useConfirmation } from '@/components/Confirmation';
 
 /**
  * Vue d'ensemble : l'état réel de l'agent chez Meta, son allumage, et les réglages qui décident de son
@@ -21,6 +22,7 @@ export function MbaOverviewPanel({ tenantId, phoneNumberId, status, onChange }: 
   onChange: (settings: MbaSettings) => void;
 }) {
   const t = useT();
+  const confirmer = useConfirmation();
   const s = status.settings;
   const allume = s?.rollout?.enabled === true;
   const [busy, setBusy] = useState(false);
@@ -47,7 +49,7 @@ export function MbaOverviewPanel({ tenantId, phoneNumberId, status, onChange }: 
    * conversations, y compris celles en cours ; rallumer ne le remet que sur les NOUVELLES. Les fils coupés ne
    * repartent jamais seuls. On le dit avant, pas après.
    */
-  function basculerAllumage(): void {
+  async function basculerAllumage(): Promise<void> {
     const message = allume
       ? t(
           'Éteindre l’agent arrête ses réponses sur TOUTES les conversations, y compris celles en cours. En le rallumant, il ne reprendra que les NOUVELLES conversations : les fils coupés resteront à traiter par un humain. Continuer ?',
@@ -57,7 +59,7 @@ export function MbaOverviewPanel({ tenantId, phoneNumberId, status, onChange }: 
           'Allumer l’agent : il répondra aux NOUVELLES conversations de l’audience choisie. Continuer ?',
           'Turn the agent on: it will answer NEW conversations from the selected audience. Continue?',
         );
-    if (!window.confirm(message)) return;
+    if (!(await confirmer({ titre: allume ? t('Éteindre l’agent', 'Turn the agent off') : t('Allumer l’agent', 'Turn the agent on'), message: message, confirmer: allume ? t('Éteindre', 'Turn off') : t('Allumer', 'Turn on') }))) return;
     void appliquer(() => putMbaRollout(tenantId, phoneNumberId, !allume));
   }
 
@@ -142,7 +144,7 @@ export function MbaOverviewPanel({ tenantId, phoneNumberId, status, onChange }: 
         </p>
         <ul className="mt-3 space-y-2">
           {interdits.map((phrase) => (
-            <li key={phrase} className="flex items-center justify-between gap-3 rounded-lg border border-ink-100 px-3 py-2 text-sm">
+            <li key={phrase} className="flex items-center justify-between gap-3 rounded-controle border border-ink-100 px-3 py-2 text-sm">
               <span className="text-ink-900">{phrase}</span>
               <button
                 className="shrink-0 text-xs font-medium text-danger-600 hover:text-danger-700"

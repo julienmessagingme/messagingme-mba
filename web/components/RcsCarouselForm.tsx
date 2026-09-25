@@ -83,7 +83,7 @@ export function RcsCarouselForm({ tenantId, fields, initial, onSaved }: {
   }
 
   return (
-    <div className="space-y-4 rounded-2xl border border-ink-200 bg-white p-5">
+    <div className="space-y-4 rounded-carte border border-ink-200 bg-white p-5">
       <div>
         <label className="mb-1 block text-xs font-medium text-ink-500">{t('Nom du carrousel (interne)', 'Carousel name (internal)')}</label>
         <input
@@ -103,7 +103,7 @@ export function RcsCarouselForm({ tenantId, fields, initial, onSaved }: {
         <div className="flex flex-col gap-3 sm:flex-row">
           <div className="grid flex-1 gap-3 sm:grid-cols-2">
             {cartes.map((c, i) => (
-              <div key={c.cle} data-testid={`rcs-carte-${i}`} className="min-w-0 space-y-2 rounded-xl border border-ink-200 p-3">
+              <div key={c.cle} data-testid={`rcs-carte-${i}`} className="min-w-0 space-y-2 rounded-carte border border-ink-200 p-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-ink-500">{t('Carte', 'Card')} {i + 1}</span>
                   <button
@@ -111,7 +111,7 @@ export function RcsCarouselForm({ tenantId, fields, initial, onSaved }: {
                     onClick={() => retirerCarte(c.cle)}
                     disabled={cartes.length <= MIN_CARTES}
                     data-testid={`rcs-carte-${i}-retirer`}
-                    className="text-xs text-ink-400 hover:text-danger disabled:opacity-40"
+                    className="text-xs text-ink-500 hover:text-danger disabled:opacity-40"
                   >
                     {t('Retirer', 'Remove')}
                   </button>
@@ -161,7 +161,7 @@ export function RcsCarouselForm({ tenantId, fields, initial, onSaved }: {
             onClick={ajouterCarte}
             disabled={cartes.length >= MAX_CARTES}
             data-testid="rcs-carrousel-ajouter-carte"
-            className="flex w-full shrink-0 flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-brand-200 px-4 py-6 text-brand-600 transition-colors duration-150 hover:border-brand-400 hover:bg-brand-50 disabled:opacity-40 sm:w-40"
+            className="flex w-full shrink-0 flex-col items-center justify-center gap-1 rounded-carte border-2 border-dashed border-brand-200 px-4 py-6 text-brand-600 transition-colors duration-150 hover:border-brand-400 hover:bg-brand-50 disabled:opacity-40 sm:w-40"
           >
             <span className="text-2xl leading-none">+</span>
             <span className="text-sm font-medium">{t('+ Ajouter une carte', '+ Add a card')}</span>
@@ -173,7 +173,7 @@ export function RcsCarouselForm({ tenantId, fields, initial, onSaved }: {
         <RcsCarouselPreview brouillon={brouillon} sansFond />
       </RcsPhoneFrame>
 
-      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+      {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
       <ListeManques manques={manques} testId="rcs-carrousel-manques" busy={busy} />
       <Bouton
         type="button"

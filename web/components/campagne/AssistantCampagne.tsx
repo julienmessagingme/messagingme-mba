@@ -654,11 +654,11 @@ export function AssistantCampagne({
     // latérale de 240 px et les marges de la coquille, soit environ 990 px utiles. Une colonne bornée à
     // 768 px y tient sans jamais dépendre de la largeur réelle de la fenêtre, et les blocs s'empilent :
     // rien ne peut se retrouver côte à côte sous un seuil, donc rien ne peut se chevaucher.
-    <div className="mx-auto w-full max-w-3xl" data-testid="assistant-campagne">
-      <ol className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-400" data-testid="assistant-etapes">
+    <div className="mx-auto w-full max-w-formulaire" data-testid="assistant-campagne">
+      <ol className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-500" data-testid="assistant-etapes">
         {ORDRE.map((e, i) => (
           <li key={e} className={i === rang ? 'font-semibold text-brand-600' : ''}>
-            {i > 0 && <span className="mr-2 text-ink-400">/</span>}
+            {i > 0 && <span className="mr-2 text-ink-500">/</span>}
             {TITRES[e]}
           </li>
         ))}
@@ -676,14 +676,14 @@ export function AssistantCampagne({
               value={etat.nom}
               onChange={(ev) => modifier({ nom: ev.target.value })}
               data-testid="assistant-nom"
-              className="mt-1 w-full rounded-lg border border-ink-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
+              className="mt-1 w-full rounded-controle border border-ink-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
             />
           </label>
-          <p className="mt-2 text-xs text-ink-400">Il n&apos;est visible que de votre équipe.</p>
+          <p className="mt-2 text-xs text-ink-500">Il n&apos;est visible que de votre équipe.</p>
           {/* ⚠️ LE DIRE, ET SEULEMENT UNE FOIS QUE C'EST VRAI : le bandeau n'apparaît qu'après une
               écriture réussie, sinon il promettrait une reprise que l'échec silencieux n'offrirait pas. */}
           {enregistre && (
-            <p className="mt-1 text-xs text-ink-400" data-testid="brouillon-enregistre">
+            <p className="mt-1 text-xs text-ink-500" data-testid="brouillon-enregistre">
               Brouillon enregistré : vous pouvez quitter cet écran et reprendre plus tard.
             </p>
           )}
@@ -694,7 +694,7 @@ export function AssistantCampagne({
             campagne `utility` non. Elle ne peut donc pas être devinée depuis le message, et la poser à
             l'étape du contenu la ferait passer pour un détail de rédaction.
           */}
-          <fieldset className="mt-6 w-full rounded-xl border border-ink-200 p-4" data-testid="choix-categorie">
+          <fieldset className="mt-6 w-full rounded-carte border border-ink-200 p-4" data-testid="choix-categorie">
             <legend className="px-1 text-sm font-medium text-ink-900">Nature de la campagne</legend>
             <div className="space-y-2">
               <RadioSimple

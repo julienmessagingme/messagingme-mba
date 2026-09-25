@@ -73,7 +73,7 @@ export function RcsMessageForm({ tenantId, fields, initial, onSaved }: {
   }
 
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-6">
+    <div className="rounded-carte border border-ink-200 bg-white p-6">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div>
           <Field label={t('Nom (interne)', 'Name (internal)')}>
@@ -93,7 +93,7 @@ export function RcsMessageForm({ tenantId, fields, initial, onSaved }: {
               valeur={brouillon.imageUrl}
               onChange={(imageUrl) => setBrouillon((b) => ({ ...b, imageUrl }))}
             />
-            <p className="mt-1 text-xs text-ink-400">
+            <p className="mt-1 text-xs text-ink-500">
               {t('JPEG, PNG ou GIF, 2 Mo maximum. Avec un visuel, le message devient une carte : l’image s’affiche au-dessus du texte et les boutons passent en liste.', 'JPEG, PNG or GIF, 2 MB maximum. With a visual, the message becomes a card: the image shows above the text and the buttons switch to a list.')}
             </p>
           </Field>
@@ -107,7 +107,7 @@ export function RcsMessageForm({ tenantId, fields, initial, onSaved }: {
               testId="rcs-message-text"
               max={maxTexteRcs(brouillon.imageUrl)}
             />
-            <p className="mt-1 text-xs text-ink-400">
+            <p className="mt-1 text-xs text-ink-500">
               {t('« + Variable » insère un champ du contact : il s’affiche comme une étiquette et sera remplacé à l’envoi. Sans valeur sur la fiche, il laisse un blanc.', '“+ Variable” inserts a contact field: it shows as a tag and is filled in at send time. With no value on the record, it leaves a blank.')}
             </p>
           </div>
@@ -119,17 +119,17 @@ export function RcsMessageForm({ tenantId, fields, initial, onSaved }: {
               max={avecImage ? MAX_BOUTONS_CARTE : MAX_BOUTONS_RCS}
               dateFields={fields}
             />
-            <p className="mt-1 text-xs text-ink-400">
+            <p className="mt-1 text-xs text-ink-500">
               {avecImage
                 ? t('Avec un visuel, jusqu’à 4 boutons : ils s’affichent en LISTE pleine largeur dans la carte, et y restent. 25 caractères chacun.', 'With a visual, up to 4 buttons: they show as a full-width LIST inside the card and stay there. 25 characters each.')
                 : t('Sans visuel, jusqu’à 11 boutons : ils s’affichent en petites PASTILLES sous la bulle, et disparaissent dès que la conversation avance. Ajoutez une image pour des boutons en liste. 25 caractères chacun.', 'With no visual, up to 11 buttons: they show as small CHIPS under the bubble and vanish as the conversation moves on. Add an image to get list buttons. 25 characters each.')}
             </p>
-            <p className="mt-1 text-xs text-ink-400">
+            <p className="mt-1 text-xs text-ink-500">
               {t('Les variables ne sont pas remplacées dans un libellé. Un bouton « Réponse » est le seul qui devienne une sortie à relier dans un scénario.', 'Variables are not substituted in a label. A "Reply" button is the only one that becomes an output to connect in a scenario.')}
             </p>
           </Field>
 
-          {error && <p className="mt-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+          {error && <p className="mt-3 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
           <ListeManques manques={manques} testId="rcs-message-manques" busy={busy} />
           <Bouton
             type="button"

@@ -25,6 +25,7 @@ import { appliquerIndices, exemplesDApercu, lignesParDefaut, type VarRow } from 
 import type { TemplateSummary } from '@/lib/api';
 import type { CapacitesEspace, ContenuEtage, Devenir, EtatCampagne, ReferencesContenu } from '@/components/campagne/AssistantCampagne';
 import { TitrePage } from '@/components/TitrePage';
+import { Icone } from '@/components/Icone';
 
 /**
  * ÉTAPE 3 : le contenu de chaque étage, puis le devenir de la conversation.
@@ -172,7 +173,7 @@ export function EtapeContenu({
         cadres, et rien d'autre : exactement l'allure d'une page a moitie chargee.
       */}
       {chaine.length === 0 && (
-        <p className="mt-4 rounded-lg bg-alerte-50 px-3 py-2 text-sm text-ink-900" data-testid="contenu-sans-canal">
+        <p className="mt-4 rounded-controle bg-alerte-50 px-3 py-2 text-sm text-ink-900" data-testid="contenu-sans-canal">
           Aucun canal n&apos;est choisi : revenez à l&apos;étape Canal pour dire par où partent les
           messages, et les étages à remplir apparaîtront ici.
         </p>
@@ -226,7 +227,7 @@ export function EtapeContenu({
       {/* Ce qui reste à remplir, nommé. Un bouton grisé sans sa raison est le défaut qu'on vient de
           corriger ailleurs : l'écran doit dire ce qu'il attend, au moment où il l'attend. */}
       {rangsIncomplets.length > 0 && (
-        <p className="mt-4 rounded-lg bg-alerte-50 px-3 py-2 text-sm text-ink-900" data-testid="contenu-incomplet">
+        <p className="mt-4 rounded-controle bg-alerte-50 px-3 py-2 text-sm text-ink-900" data-testid="contenu-incomplet">
           {rangsIncomplets.length === 1
             ? `Le contenu de l'étage ${rangsIncomplets[0]} n'est pas encore choisi.`
             : `Le contenu des étages ${rangsIncomplets.join(', ')} n'est pas encore choisi.`}
@@ -288,7 +289,7 @@ function CadreEtage({
       role="group"
       aria-labelledby={titreId}
       data-testid={`etage-${etage.rang}`}
-      className="mt-3 w-full overflow-hidden rounded-xl border border-ink-200"
+      className="mt-3 w-full overflow-hidden rounded-carte border border-ink-200"
     >
       <button
         type="button"
@@ -299,7 +300,7 @@ function CadreEtage({
         <span id={titreId} className="min-w-0 break-words text-sm font-medium text-ink-900">
           Étage {etage.rang} · {LIBELLE_CANAL[etage.canal]}
         </span>
-        <span aria-hidden className="shrink-0 text-ink-400">{ouvert ? '–' : '+'}</span>
+        <Icone nom="deplier" taille="petite" className={`text-ink-400 transition-transform duration-150 ${ouvert ? 'rotate-180' : ''}`} />
       </button>
 
       {ouvert && (
@@ -398,12 +399,12 @@ function BlocDevenirEtage({
       {/* ⚠️ GRISÉ AVEC SA RAISON, comme les canaux de l'étape précédente : une option absente ferait croire
           que la fonctionnalité n'existe pas. */}
       {!capacites.mbaEnabled && (
-        <p className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-500">
+        <p className="mt-3 rounded-controle bg-ink-50 px-3 py-2 text-xs text-ink-500">
           L’agent de Meta n’est pas activé sur cet espace.
         </p>
       )}
       {contenu.devenir === 'inbox' && (
-        <p className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-500">
+        <p className="mt-3 rounded-controle bg-ink-50 px-3 py-2 text-xs text-ink-500">
           L’agent de Meta ne répondra pas : la conversation revient à votre équipe.
         </p>
       )}
@@ -700,13 +701,13 @@ function EditeurVariables({
       <div className="mt-1 w-full space-y-2">
         {lignes.map((l, i) => (
           <div key={`var-${i + 1}`} className="flex w-full items-center gap-1.5">
-            <span className="w-10 shrink-0 text-xs text-ink-400">{`{{${i + 1}}}`}</span>
+            <span className="w-10 shrink-0 text-xs text-ink-500">{`{{${i + 1}}}`}</span>
             <select
               value={l.sel}
               onChange={(e) => majLigne(i, { sel: e.target.value })}
               data-testid={`variable-${rang}-${i + 1}`}
               aria-label={`Variable ${i + 1}`}
-              className="min-w-0 flex-1 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-400"
+              className="min-w-0 flex-1 rounded-controle border border-ink-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-400"
             >
               <optgroup label="Champs de base">
                 {SYSTEM_FIELDS.map((f) => <option key={f.key} value={`sys:${f.key}`}>{f.label[0]}</option>)}
@@ -728,13 +729,13 @@ function EditeurVariables({
                 data-testid={`variable-${rang}-${i + 1}-texte`}
                 aria-label={`Texte fixe de la variable ${i + 1}`}
                 placeholder="valeur"
-                className="w-28 min-w-0 shrink rounded-lg border border-ink-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
+                className="w-28 min-w-0 shrink rounded-controle border border-ink-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
               />
             )}
           </div>
         ))}
       </div>
-      <p className="mt-1.5 text-xs text-ink-400">
+      <p className="mt-1.5 text-xs text-ink-500">
         Un contact sans la valeur choisie est écarté de la campagne, et le récapitulatif le compte.
       </p>
     </div>
@@ -1004,7 +1005,7 @@ function CadreEmail({
         options={references.userFields.map((f) => ({ valeur: f.key, libelle: `${f.label} (${f.key})` }))}
         vide="Aucun champ perso sur cet espace : créez-en un dans Contacts > Champs perso."
       />
-      <p className="rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-500">
+      <p className="rounded-controle bg-ink-50 px-3 py-2 text-xs text-ink-500">
         L&apos;e-mail part à l&apos;adresse portée par ce champ. Un contact dont le champ est vide sort de
         la chaîne avant cet étage.
       </p>
@@ -1140,7 +1141,7 @@ function BlocAssignation({
   onChange: (patch: Partial<EtatCampagne>) => void;
 }) {
   return (
-    <div data-testid="bloc-assignation" className="mt-6 w-full rounded-xl border border-ink-200 p-4">
+    <div data-testid="bloc-assignation" className="mt-6 w-full rounded-carte border border-ink-200 p-4">
         <div className="mt-4 border-t border-ink-100 pt-4">
           <p className="text-sm font-medium text-ink-900">À qui va la conversation ?</p>
           <div className="mt-2 space-y-2">
@@ -1256,7 +1257,7 @@ function Selecteur({
           value={valeur}
           onChange={(e) => onChange(e.target.value)}
           {...(testId ? { 'data-testid': testId } : {})}
-          className="mt-1 w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-400"
+          className="mt-1 w-full rounded-controle border border-ink-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-400"
         >
           <option value="">Choisir...</option>
           {options.map((o) => (

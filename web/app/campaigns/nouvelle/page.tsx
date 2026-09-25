@@ -16,6 +16,7 @@ import {
   AssistantCampagne, REFERENCES_VIDES,
   type CapacitesEspace, type EtapeAssistant, type ReferencesContenu,
 } from '@/components/campagne/AssistantCampagne';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * L'ASSISTANT DE CRÉATION D'UNE CAMPAGNE, sur son propre écran, et le SEUL chemin de création.
@@ -218,7 +219,7 @@ function AssistantInner({ session }: { session: Session }) {
     return () => { vivant = false; };
   }, [session.tenantId]);
 
-  if (!capacites || brouillon === 'chargement') return <p className="text-sm text-ink-400">Chargement...</p>;
+  if (!capacites || brouillon === 'chargement') return <Squelette forme="carte" lignes={4} />;
 
   /**
    * ⚠️ L'ÉTAPE D'OUVERTURE SE LIT DANS L'ADRESSE (`?etape=canal`), et cela ne sert pas qu'aux tests : un

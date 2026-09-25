@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { mockMba, appelsMba } from './support/mba';
+import { repondre } from './aide/confirmation';
 
 const FAQS = [
   { id: '1', question: 'Les chiens sont-ils admis ?', answer: 'Oui, tenus en laisse.' },
@@ -37,12 +38,12 @@ test.describe('MBA Paramètres : FAQ une par une', () => {
     const calls = await mockMba(page, { faqs: FAQS });
     await page.goto('/mba/parametres?tab=faq');
 
-    page.once('dialog', (d) => void d.dismiss());
     await page.getByRole('button', { name: /Supprimer|Delete/ }).first().click();
+    await repondre(page, false);
     await expect.poll(() => appelsMba(calls, 'DELETE', '/faq/').length).toBe(0);
 
-    page.once('dialog', (d) => void d.accept());
     await page.getByRole('button', { name: /Supprimer|Delete/ }).first().click();
+    await repondre(page, true);
     await expect.poll(() => appelsMba(calls, 'DELETE', '/faq/1').length).toBe(1);
   });
 

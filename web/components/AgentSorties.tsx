@@ -6,6 +6,7 @@ import { inputClsAuto } from '@/lib/ui';
 import type { SortieAgent } from '@/lib/api-agent';
 import { MAX_SORTIES, normaliserCodeSortie } from '@/lib/agent-sorties';
 import { Bouton } from '@/components/Bouton';
+import { Icone } from '@/components/Icone';
 
 /**
  * L'éditeur des RÈGLES D'ARRÊT d'un agent : la liste de ses sorties.
@@ -49,18 +50,16 @@ export function CodeSortieInput({ sorties, busy, onChange }: {
         </p>
       )}
       {sorties.map((s) => (
-        <div key={s.code} data-testid={`agent-sortie-${s.code}`} className="flex items-center gap-2 rounded-lg border border-ink-200 px-3 py-2">
-          <span className="shrink-0 rounded bg-ink-100 px-1.5 py-0.5 font-mono text-xs text-ink-500">{s.code}</span>
+        <div key={s.code} data-testid={`agent-sortie-${s.code}`} className="flex items-center gap-2 rounded-controle border border-ink-200 px-3 py-2">
+          <span className="shrink-0 rounded-controle bg-ink-100 px-1.5 py-0.5 font-mono text-xs text-ink-500">{s.code}</span>
           <span className="truncate text-sm text-ink-900">{s.label}</span>
           <button
             data-testid={`agent-sortie-retirer-${s.code}`}
             disabled={busy}
             onClick={() => onChange(sorties.filter((x) => x.code !== s.code))}
             title={t('Retirer cette règle d’arrêt', 'Remove this stop rule')}
-            className="ml-auto shrink-0 rounded px-1.5 text-sm text-danger hover:bg-danger-50 disabled:opacity-40"
-          >
-            ✕
-          </button>
+            className="ml-auto shrink-0 rounded-controle px-1.5 text-sm text-danger hover:bg-danger-50 disabled:opacity-40"
+          ><Icone nom="fermer" taille="petite" /></button>
         </div>
       ))}
       {plein ? (

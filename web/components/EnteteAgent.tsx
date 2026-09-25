@@ -116,7 +116,7 @@ export function EnteteAgent({
   return (
     <header
       data-testid="entete-agent"
-      className="flex flex-col gap-4 rounded-2xl border border-ink-200 bg-white p-4 sm:flex-row sm:items-start sm:gap-5"
+      className="flex flex-col gap-4 rounded-carte border border-ink-200 bg-white p-4 sm:flex-row sm:items-start sm:gap-5"
     >
       {logo !== null ? (
         // ⚠️ LA DÉSACTIVATION VA ICI, COLLÉE À LA BALISE. Posée au-dessus du ternaire, elle couvrait la
@@ -212,7 +212,7 @@ export function EnteteAgent({
         {signalements !== undefined && signalements.length > 0 && (
           <ul data-testid="entete-agent-signalements" className="space-y-1 pt-1">
             {signalements.map((s) => (
-              <li key={s} className="text-xs text-ink-400">{s}</li>
+              <li key={s} className="text-xs text-ink-500">{s}</li>
             ))}
           </ul>
         )}

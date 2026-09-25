@@ -83,11 +83,11 @@ function Champ({ id, label, aide, valeur, onChange, suffixe, type = 'text', faut
         <input
           id={`prix-${id}`} type={type} value={valeur} onChange={(e) => onChange(e.target.value)}
           data-testid={`prix-${id}`}
-          className={`w-36 rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-100 ${fautif ? 'border-danger-400 focus:border-danger-500' : 'border-ink-300 focus:border-brand-500'}`}
+          className={`w-36 rounded-controle border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-100 ${fautif ? 'border-danger-400 focus:border-danger-500' : 'border-ink-300 focus:border-brand-500'}`}
         />
         {suffixe && <span className="text-xs text-ink-500">{suffixe}</span>}
       </div>
-      <p className="mt-1 text-xs text-ink-400">{aide}</p>
+      <p className="mt-1 text-xs text-ink-500">{aide}</p>
     </div>
   );
 }

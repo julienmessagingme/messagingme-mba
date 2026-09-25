@@ -169,7 +169,7 @@ test.describe('Assistant : la cible part en INTENTION, pas en liste d’identifi
     await poserFaux(page, { contacts: CONTACTS, total: 1200 });
     await ouvrirAssistant(page, { etape: 'audience' });
     await expect(page.getByTestId('campagne-cible-filtre')).toBeVisible({ timeout: 15_000 });
-    await page.getByRole('button', { name: '📄 Import fichier' }).click();
+    await page.getByRole('button', { name: 'Import fichier', exact: true }).click();
     await expect(page.getByTestId('campagne-cible-filtre')).toHaveCount(0);
   });
 });

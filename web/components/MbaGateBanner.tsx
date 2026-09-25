@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useT } from '@/lib/i18n';
+import { Icone } from '@/components/Icone';
 
 /**
  * Ce qui bloque la configuration, quand quelque chose la bloque. Deux motifs SÉPARÉS, là où la maquette
@@ -13,7 +14,7 @@ export function MbaGateBanner({ reason }: { reason: 'no-number' | 'not-eligible'
 
   if (reason === 'no-number') {
     return (
-      <div className="flex items-start gap-3 rounded-2xl border border-ink-200 bg-white p-4" data-testid="mba-gate-no-number">
+      <div className="flex items-start gap-3 rounded-carte border border-ink-200 bg-white p-4" data-testid="mba-gate-no-number">
         <div className="text-sm leading-relaxed text-ink-900">
           <p className="font-semibold text-ink-900">{t('Aucun numéro WhatsApp rattaché', 'No WhatsApp number connected')}</p>
           <p className="mt-1">
@@ -31,10 +32,8 @@ export function MbaGateBanner({ reason }: { reason: 'no-number' | 'not-eligible'
   }
 
   return (
-    <div className="flex items-start gap-3 rounded-2xl border border-alerte-300 bg-alerte-50 p-4" data-testid="mba-gate-not-eligible">
-      <svg viewBox="0 0 24 24" className="mt-0.5 h-5 w-5 shrink-0 text-alerte" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L14.4 3.9a2 2 0 00-3.4 0z" />
-      </svg>
+    <div className="flex items-start gap-3 rounded-carte border border-alerte-300 bg-alerte-50 p-4" data-testid="mba-gate-not-eligible">
+      <Icone nom="attention" className="mt-0.5 text-alerte-700" />
       <div className="text-sm leading-relaxed text-ink-900">
         <p className="font-semibold text-ink-900">{t('L’agent n’est pas encore ouvert sur votre numéro', 'The agent isn’t open on your number yet')}</p>
         <p className="mt-1">

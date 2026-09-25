@@ -3,6 +3,7 @@
 import { useT } from '@/lib/i18n';
 import type { UserFieldDef, UserFieldKind } from '@/lib/api';
 import { SYSTEM_FIELDS } from '@/lib/fields';
+import { Icone } from '@/components/Icone';
 
 // Types miroir (sous-ensemble v1) de src/workflow/conditions.ts. Le backend est défensif sur `data` opaque ;
 // on ne produit ici que des clauses bien formées. `valueType:'number'` force la comparaison numérique (eq inclus).
@@ -69,8 +70,8 @@ export function ConditionBuilder({ group, onChange, fields, tags }: {
   // `w-full min-w-0` : le panneau de configuration fait 280 px. Deux menus côte à côte n'y tiennent pas, et
   // les libellés (« Consentement (opt-in) », « est un jour de semaine (Lun-Ven) ») débordaient, l'un large,
   // l'autre écrasé. Chaque contrôle prend donc toute la largeur, empilé.
-  const sel = 'w-full min-w-0 rounded-lg border border-ink-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 bg-white';
-  const inp = 'w-full min-w-0 rounded-lg border border-ink-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+  const sel = 'w-full min-w-0 rounded-controle border border-ink-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 bg-white';
+  const inp = 'w-full min-w-0 rounded-controle border border-ink-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
   return (
     <div className="space-y-2">
@@ -86,10 +87,10 @@ export function ConditionBuilder({ group, onChange, fields, tags }: {
         </div>
       )}
 
-      {clauses.length === 0 && <p className="text-xs text-ink-400">{t('Aucune condition : le contact part toujours sur « Si réunie ».', 'No condition: the contact always takes “If met”.')}</p>}
+      {clauses.length === 0 && <p className="text-xs text-ink-500">{t('Aucune condition : le contact part toujours sur « Si réunie ».', 'No condition: the contact always takes “If met”.')}</p>}
 
       {clauses.map((c, i) => (
-        <div key={i} className="rounded-xl border border-ink-100 bg-ink-50/40 p-2">
+        <div key={i} className="rounded-carte border border-ink-100 bg-ink-50/40 p-2">
           <div className="flex items-start gap-1.5">
             {/* Colonne : chaque contrôle sur sa propre ligne, pleine largeur. `min-w-0` est indispensable,
                 sinon un select à long libellé impose sa largeur naturelle et pousse la ligne hors du panneau. */}
@@ -105,7 +106,7 @@ export function ConditionBuilder({ group, onChange, fields, tags }: {
               </select>
               <ClauseOperands c={c} i={i} patch={patch} allFields={allFields} changeField={changeField} tags={tags} sel={sel} inp={inp} />
             </div>
-            <button type="button" onClick={() => remove(i)} className="shrink-0 pt-1.5 text-ink-400 hover:text-danger" aria-label={t('Retirer', 'Remove')}>×</button>
+            <button type="button" onClick={() => remove(i)} className="shrink-0 pt-1.5 text-ink-400 hover:text-danger" aria-label={t('Retirer', 'Remove')}><Icone nom="fermer" taille="petite" /></button>
           </div>
         </div>
       ))}
@@ -312,7 +313,7 @@ function WeekdayPicker({ days, onChange }: { days: number[]; onChange: (d: numbe
   return (
     <div className="flex flex-wrap gap-1">
       {DAYS.map(([d, lbl]) => (
-        <button key={d} type="button" onClick={() => toggle(d)} className={`h-7 w-7 rounded-md text-xs font-semibold transition-colors duration-150 ${days.includes(d) ? 'bg-brand-500 text-white' : 'bg-ink-100 text-ink-500 hover:bg-ink-200'}`}>
+        <button key={d} type="button" onClick={() => toggle(d)} className={`h-7 w-7 rounded-controle text-xs font-semibold transition-colors duration-150 ${days.includes(d) ? 'bg-brand-600 text-white' : 'bg-ink-100 text-ink-500 hover:bg-ink-200'}`}>
           {t(...lbl)}
         </button>
       ))}

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { repondre } from './aide/confirmation';
 
 /**
  * PARAMÈTRES > INTÉGRATIONS > BATCH (lot 6 de l'API publique, spec 2026-09-24, § 8).
@@ -106,18 +107,13 @@ test.describe('Paramètres > Intégrations > Batch', () => {
     const trace = await monter(page, {
       branche: true, envoyerResume: false, sansIdentifiant: 0, sansIdentifiantLe: null, refusClesLe: null, majLe: '2026-09-24T08:00:00.000Z',
     });
-    const dialogues: string[] = [];
-    let accepter = false;
-    page.on('dialog', (d) => { dialogues.push(d.message()); void (accepter ? d.accept() : d.dismiss()); });
-
     await page.getByTestId('integration-batch-debrancher').click();
-    await expect.poll(() => dialogues.length).toBe(1);
-    expect(dialogues[0]).toMatch(/clés|keys/);
+    await repondre(page, false, /clés|keys/);
     expect(trace.suppressions).toBe(0);
     await expect(page.getByTestId('integration-batch-etat')).toContainText(/Branché|Connected/);
 
-    accepter = true;
     await page.getByTestId('integration-batch-debrancher').click();
+    await repondre(page, true);
     await expect.poll(() => trace.suppressions, { timeout: 10_000 }).toBe(1);
     await expect(page.getByTestId('integration-batch-etat')).toContainText(/Non branché|Not connected/);
   });

@@ -162,7 +162,7 @@ test.describe('Automation : déclencheur « étape de deal HubSpot »', () => {
   test('portail non relié : on le dit, sans menu et sans erreur rouge', async ({ page }) => {
     await ouvrir(page, { connected: false, pipelines: [] });
     await page.getByTestId('automation-trigger').selectOption('hubspot_deal_stage');
-    await expect(page.getByText(/Aucun portail HubSpot n’est relié/)).toBeVisible();
+    await expect(page.getByText(/Aucun portail HubSpot relié/)).toBeVisible();
     await expect(page.getByTestId('automation-deal-stage')).toHaveCount(0);
   });
 });

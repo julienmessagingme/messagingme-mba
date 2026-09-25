@@ -1,10 +1,10 @@
 ---
 source_section: L'aide de la console (bouton flottant, sur tous les écrans)
-source_empreinte: 4296fd
+source_empreinte: 9df1ed
 ---
 # Poser une question à l'aide de la console
 
-Un bouton rond, en bas à droite de chaque écran, ouvre un panneau de discussion. Il répond aux questions sur
+Un bouton rond, en bas à droite de chaque écran (dans la barre du haut sur l'Inbox), ouvre un panneau de discussion. Il répond aux questions sur
 **l'usage du produit** : comment lancer une campagne, la différence entre un modèle et un scénario, comment
 importer vos contacts.
 

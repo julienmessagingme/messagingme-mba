@@ -37,19 +37,19 @@ function SupportInner({ session }: { session: Session }) {
 
   
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="max-w-formulaire space-y-6">
       <div>
         <TitrePage>{t('Support', 'Support')}</TitrePage>
         <IntroPage>{t('Une question, un souci ? Écris-nous, on te répond par email', 'A question or an issue? Write to us and we will reply by email')} ({session.email}).</IntroPage>
       </div>
 
       {sent ? (
-        <div className="rounded-2xl border border-succes-200 bg-succes-50 p-5 text-sm text-succes-700">
+        <div className="rounded-carte border border-succes-200 bg-succes-50 p-5 text-sm text-succes-700">
           {t('Message envoyé. Nous te répondrons à', 'Message sent. We will reply to')} {session.email}.
           <button onClick={() => { setSent(false); setSubject(''); setMessage(''); }} className="ml-2 font-medium underline hover:no-underline">{t('Envoyer un autre message', 'Send another message')}</button>
         </div>
       ) : (
-        <form onSubmit={submit} className="space-y-4 rounded-2xl border border-ink-200 bg-white p-5">
+        <form onSubmit={submit} className="space-y-4 rounded-carte border border-ink-200 bg-white p-5">
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-500">{t('Sujet', 'Subject')}</label>
             <input required maxLength={200} value={subject} onChange={(e) => setSubject(e.target.value)} className={inputCls} placeholder={t("Ex. Problème d'envoi de campagne", 'E.g. Campaign sending issue')} />
@@ -58,7 +58,7 @@ function SupportInner({ session }: { session: Session }) {
             <label className="mb-1 block text-xs font-medium text-ink-500">{t('Message', 'Message')}</label>
             <textarea required maxLength={5000} rows={6} value={message} onChange={(e) => setMessage(e.target.value)} className={inputCls} placeholder={t('Décris ta demande…', 'Describe your request…')} />
           </div>
-          {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+          {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
           <Bouton enCours={busy}
             type="submit"
             disabled={busy || subject.trim() === '' || message.trim() === ''}

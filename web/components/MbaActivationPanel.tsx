@@ -9,6 +9,7 @@ import {
   getSettings, setMbaHandoffMode, setControlHandbackSeconds,
   DEFAULT_MBA_HANDOFF_MODE, type MbaHandoffMode,
 } from '@/lib/api';
+import { Squelette } from '@/components/Squelette';
 
 /** Défaut du serveur quand rien n'est réglé, en minutes. Sert uniquement au texte d'aide. */
 const DEFAUT_REPRISE_MINUTES = 120;
@@ -90,7 +91,7 @@ export function MbaActivationPanel({ tenantId }: { tenantId: string }) {
     }
   }
 
-  if (chargement) return <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>;
+  if (chargement) return <Squelette forme="carte" />;
 
   const choix: Array<{ cle: MbaHandoffMode; titre: string; detail: string }> = [
     {
@@ -125,7 +126,7 @@ export function MbaActivationPanel({ tenantId }: { tenantId: string }) {
             'The agent decides, based on what the customer writes: when they ask for a human, or when the agent declines to handle the request (a complaint asking for compensation, for instance, which it answers with nothing at all). This setting says what happens next.',
           )}
         </p>
-        <p className="mt-1 text-xs text-ink-400">
+        <p className="mt-1 text-xs text-ink-500">
           {t(
             'En revanche, quand l’agent ignore simplement la réponse, il ne passe PAS la main : il renvoie vers les coordonnées de votre base de connaissance. Mesuré le 21/08/2026.',
             'When the agent merely does not know the answer, it does NOT hand over: it points to the contact details from your knowledge base. Measured 2026-08-21.',
@@ -136,7 +137,7 @@ export function MbaActivationPanel({ tenantId }: { tenantId: string }) {
             <label
               key={c.cle}
               data-testid={`handoff-${c.cle}`}
-              className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 transition-colors duration-150 ${mode === c.cle ? 'border-brand-500 bg-brand-50' : 'border-ink-200 hover:border-ink-300'} ${busy ? 'opacity-60' : ''}`}
+              className={`flex cursor-pointer items-start gap-3 rounded-controle border px-3 py-2.5 transition-colors duration-150 ${mode === c.cle ? 'border-brand-500 bg-brand-50' : 'border-ink-200 hover:border-ink-300'} ${busy ? 'opacity-60' : ''}`}
             >
               <input
                 type="radio"
@@ -181,11 +182,11 @@ export function MbaActivationPanel({ tenantId }: { tenantId: string }) {
             onBlur={() => { void enregistrerReprise(); }}
             disabled={busy}
             placeholder={t('par défaut', 'default')}
-            className="w-28 rounded-lg border border-ink-300 px-3 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:opacity-60"
+            className="w-28 rounded-controle border border-ink-300 px-3 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:opacity-60"
           />
           <span className="text-sm text-ink-500">{t('minutes', 'minutes')}</span>
         </div>
-        <p className="mt-1.5 text-xs text-ink-400">
+        <p className="mt-1.5 text-xs text-ink-500">
           {reprise.trim() === ''
             ? t(`Vide : le défaut s’applique (${DEFAUT_REPRISE_MINUTES} minutes).`, `Empty: the default applies (${DEFAUT_REPRISE_MINUTES} minutes).`)
             : reprise.trim() === '0'

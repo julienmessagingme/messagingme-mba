@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { repondre } from './aide/confirmation';
 
 /**
  * Onglet CONSTRUIRE EN PARLANT, et le blocage d'activation qui va avec.
@@ -477,9 +478,9 @@ test.describe('Agents IA : construire en parlant', () => {
     // Julien, 2026-08-31 : « il faut pouvoir supprimer un agent (quand on appuie sur other AI agent) ».
     const appels: Appel[] = [];
     await mock(page, appels);
-    page.on('dialog', (d) => void d.accept());
     await page.goto('/agents');
     await page.getByTestId(`agent-supprimer-${AG}`).click();
+    await repondre(page, true);
     await expect.poll(() => appels.some((a) => a.method === 'DELETE')).toBe(true);
   });
 });

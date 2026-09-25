@@ -9,7 +9,7 @@ import { alerte, danger, ink, succes } from './couleurs';
  * composant (`${inputCls} w-32`), pas en recopiant la chaîne.
  */
 export const inputCls =
-  'w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+  'w-full rounded-controle border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
 /**
  * Même champ, sans `w-full` : pour les champs posés dans une rangée qui décide elle-même de leur largeur
@@ -17,13 +17,20 @@ export const inputCls =
  * une seconde constante plutôt qu'un `${inputCls}` amputé.
  */
 export const inputClsAuto =
-  'rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+  'rounded-controle border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
 /**
  * Carte de contenu : le fond blanc arrondi qui porte une section de réglages. Recopié à l'identique dans une
  * dizaine d'écrans avant d'atterrir ici, pour la même raison que `inputCls`.
  */
-export const cardCls = 'rounded-2xl border border-ink-200 bg-white p-5';
+export const cardCls = 'rounded-carte border border-ink-200 bg-white p-5';
+
+/**
+ * La même carte SANS rembourrage, pour une carte découpée en bandes par des filets (un en-tête, des lignes),
+ * où chaque bande porte son `px-4`. Posée avec `cardCls`, la bande héritait de DEUX rembourrages : ses filets
+ * s'arrêtaient à 20 px des bords de la carte, et la page perdait 40 px de large sur un téléphone.
+ */
+export const cadreCls = 'overflow-hidden rounded-carte border border-ink-200 bg-white';
 
 /**
  * Le sur-titre d'un en-tête de page (« Agent IA », « Tools »). En casse normale et en gris secondaire depuis le

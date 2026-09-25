@@ -8,18 +8,12 @@ import { countUnreadConversations, SESSION_EXPIRED_EVENT } from '@/lib/api';
 import { Logo } from './Logo';
 import { AccountMenu } from './AccountMenu';
 import { BoutonAide } from './BoutonAide';
+import { Icone } from './Icone';
 import { useT } from '@/lib/i18n';
 import { repeterAvecGigue } from '@/lib/poll';
 import { arbresNav, groupesAOuvrir, ongletDeLaPage, accesAutorise, navPourRole, type NavEntree, type Onglet } from '@/lib/nav';
 
-type Tab = 'accueil' | 'perf-synthese' | 'agents-credit' | 'quanti-messages' | 'quanti-couts' | 'quanti-funnel' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'chaine' | 'publicites' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'connecteurs-mcp' | 'parametres' | 'securite' | 'securite-consentement' | 'securite-ia' | 'securite-audit' | 'securite-erreurs';
-
-/** Le RENDU d'une icône de nav. Les TRACÉS, eux, vivent avec les listes dans `lib/nav.ts` : ils sont de la
- *  donnée, et la carte de la console doit pouvoir être lue sans monter de composant React. */
-const ICON = 'h-[18px] w-[18px] shrink-0';
-const Ico = ({ d }: { d: string }) => (
-  <svg viewBox="0 0 24 24" className={ICON} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={d} /></svg>
-);
+type Tab = 'accueil' | 'perf-synthese' | 'agents-credit' | 'quanti-messages' | 'quanti-couts' | 'quanti-funnel' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'chaine' | 'publicites' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'connecteurs-mcp' | 'parametres' | 'securite' | 'securite-consentement' | 'securite-ia' | 'securite-audit' | 'securite-erreurs' | 'compte';
 
 // Le modèle d'entrée, le calcul de la chaîne d'ancêtres ET LES QUATRE LISTES vivent dans `lib/nav.ts` : le
 // modèle est récursif depuis que la barre a trois niveaux, et les listes ont suivi le 2026-09-11 parce que
@@ -130,6 +124,8 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
 
   if (!session) return null;
   if (!autorise(session.role)) return null;
+  // L'écran dont le coin bas droit est pris par une barre d'envoi : le bouton d'aide monte dans l'entête.
+  const aideDansEntete = active === 'inbox';
 
   function logout() {
     clearSession();
@@ -152,9 +148,9 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   const navBas = navPourRole(NAV_ADMIN_BAS, session.role);
 
   const itemCls = (on: boolean) =>
-    `flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors duration-150 ${on ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100 hover:text-ink-900'}`;
+    `flex items-center gap-2.5 rounded-controle px-3 py-2 text-sm transition-colors duration-150 ${on ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100 hover:text-ink-900'}`;
   const subCls = (on: boolean) =>
-    `block rounded-md px-3 py-1.5 text-sm transition-colors duration-150 ${on ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100 hover:text-ink-900'}`;
+    `block rounded-controle px-3 py-1.5 text-sm transition-colors duration-150 ${on ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100 hover:text-ink-900'}`;
 
   /**
    * Rendu RÉCURSIF d'une liste d'entrées. Trois niveaux existent aujourd'hui (« AI Agent » > « MBA » >
@@ -177,13 +173,13 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
               data-testid={`nav-groupe-${item.key}`}
               className={
                 niveau === 1
-                  ? `flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors duration-150 hover:bg-ink-100 ${chemin.includes(item.key) ? 'font-medium text-brand-700' : 'text-ink-500'}`
-                  : `flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors duration-150 hover:bg-ink-100 ${chemin.includes(item.key) ? 'font-medium text-brand-700' : 'text-ink-500'}`
+                  ? `flex w-full items-center gap-2.5 rounded-controle px-3 py-2 text-sm transition-colors duration-150 hover:bg-ink-100 ${chemin.includes(item.key) ? 'font-medium text-brand-700' : 'text-ink-500'}`
+                  : `flex w-full items-center gap-2 rounded-controle px-3 py-1.5 text-sm transition-colors duration-150 hover:bg-ink-100 ${chemin.includes(item.key) ? 'font-medium text-brand-700' : 'text-ink-500'}`
               }
             >
-              {item.d && <Ico d={item.d} />}
+              {item.icone && <Icone nom={item.icone} taille="nav" />}
               {item.label}
-              <svg viewBox="0 0 24 24" className={`ml-auto h-4 w-4 shrink-0 text-ink-400 transition-transform ${openGroups[item.key] ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+              <Icone nom="deplier" taille="petite" className={`ml-auto text-ink-400 transition-transform duration-150 ${openGroups[item.key] ? 'rotate-180' : ''}`} />
             </button>
             {openGroups[item.key] && (
               <div className={`mt-0.5 border-l border-ink-100 pl-2 ${niveau === 1 ? 'ml-[30px]' : 'ml-2'}`}>
@@ -198,7 +194,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
             onClick={() => setDrawerOpen(false)}
             className={niveau === 1 ? itemCls(active === item.key) : subCls(active === item.key)}
           >
-            {item.d && <Ico d={item.d} />}
+            {item.icone && <Icone nom={item.icone} taille="nav" />}
             {item.label}
             {item.badge !== undefined && item.badge > 0 && (
               <span
@@ -320,8 +316,8 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
           */}
         <div className="flex h-full shrink-0 items-center gap-3 px-4 lg:w-60">
           {avecBarreLaterale && (
-            <button className="rounded-lg p-1.5 text-ink-500 hover:bg-ink-100 lg:hidden" onClick={() => setDrawerOpen(true)} aria-label={t('Ouvrir le menu', 'Open menu')}>
-              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+            <button className="rounded-controle p-1.5 text-ink-500 hover:bg-ink-100 lg:hidden" onClick={() => setDrawerOpen(true)} aria-label={t('Ouvrir le menu', 'Open menu')}>
+              <Icone nom="menu" taille="grande" />
             </button>
           )}
           <Link href={session.role === 'admin' ? '/accueil' : '/inbox'} className="flex min-w-0 shrink items-center gap-2" title={t('Accueil', 'Home')}>
@@ -345,14 +341,16 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
             du 2026-09-08 (« positionné beaucoup trop proche du logo »), qu'on réintroduirait sur toute la
             plage tablette sans le voir depuis un grand écran. */}
         <span aria-hidden="true" data-testid="entete-separateur" className="ml-4 hidden h-6 w-px shrink-0 bg-ink-200 sm:block lg:ml-0" />
-        <nav aria-label={t('Sections', 'Sections')} className="ml-2 flex items-center gap-1 overflow-x-auto" data-testid="onglets">
+        {/* `min-w-0 flex-1` : sur un téléphone, les onglets défilent DANS leur zone au lieu de pousser le menu de
+            compte hors de l'écran (mesuré le 2026-09-25 : « Performance Lab » passait sous l'avatar). */}
+        <nav aria-label={t('Sections', 'Sections')} className="ml-2 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto" data-testid="onglets">
           {ongletsVisibles.map((o) => (
             <Link
               key={o.cle}
               href={o.href}
               data-testid={`onglet-${o.cle}`}
               aria-current={onglet === o.cle ? 'page' : undefined}
-              className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors duration-150 ${
+              className={`whitespace-nowrap rounded-controle px-3 py-1.5 text-sm font-medium transition-colors duration-150 ${
                 onglet === o.cle
                   ? 'bg-brand-50 text-brand-700'
                   : 'text-ink-500 hover:bg-ink-100 hover:text-ink-900'
@@ -375,7 +373,8 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
         </nav>
         {/* `pr-4` rend au menu de compte la marge que l'entête a perdue : le `px-4` est descendu dans la
             zone de gauche, qui porte désormais une largeur propre. Sans lui, l'avatar colle au bord. */}
-        <div className="ml-auto pr-4">
+        <div className="ml-auto flex shrink-0 items-center gap-1 pr-4">
+          {aideDansEntete && <BoutonAide tenantId={session.tenantId} ecranCourant={active} role={session.role} dansEntete />}
           <AccountMenu session={session} onLogout={logout} />
         </div>
       </header>
@@ -407,13 +406,13 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
             aurait pu être coupée. `shrink-0` pour qu'elle ne se fasse pas écraser par le contenu. */}
         {sessionExpiree && (
           <div className="shrink-0 border-b border-danger-200 bg-danger-50 px-4 py-2 sm:px-6" data-testid="session-expiree">
-            <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-3 text-sm text-danger-700">
+            <div className="mx-auto flex w-full max-w-liste flex-wrap items-center gap-3 text-sm text-danger-700">
               <span>{t('Ta session a expiré. Reconnecte-toi pour continuer : rien n’est perdu, mais tes actions ne sont plus enregistrées.', 'Your session has expired. Sign in again to continue: nothing is lost, but your actions are no longer being saved.')}</span>
               <button
                 type="button"
                 onClick={logout}
                 data-testid="session-expiree-reconnecter"
-                className="ml-auto rounded-lg bg-danger-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors duration-150 hover:bg-danger-700"
+                className="ml-auto rounded-controle bg-danger-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors duration-150 hover:bg-danger-700"
               >
                 {t('Reconnecter', 'Sign in again')}
               </button>
@@ -425,7 +424,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
             La lecture seule est imposée par le SERVEUR ; ce bandeau ne protège rien, il informe. */}
         {session.observation && (
           <div className="shrink-0 border-b border-alerte-300 bg-alerte-50 px-4 py-2 sm:px-6" data-testid="bandeau-observation">
-            <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-3 text-sm text-alerte-900">
+            <div className="mx-auto flex w-full max-w-liste flex-wrap items-center gap-3 text-sm text-alerte-900">
               <span>
                 {t(
                   `Observation de l’espace « ${session.observation} ». Vous voyez ce que ce client voit. Aucune modification n’est possible.`,
@@ -436,21 +435,22 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
                 type="button"
                 onClick={logout}
                 data-testid="quitter-observation"
-                className="ml-auto rounded-lg bg-alerte-700 px-3 py-1.5 text-xs font-semibold text-white transition-colors duration-150 hover:bg-alerte-800"
+                className="ml-auto rounded-controle bg-alerte-700 px-3 py-1.5 text-xs font-semibold text-white transition-colors duration-150 hover:bg-alerte-800"
               >
                 {t('Quitter l’observation', 'Leave observation')}
               </button>
             </div>
           </div>
         )}
-        <main className={fullBleed ? 'w-full flex-1 lg:flex lg:min-h-0 lg:flex-col' : 'mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6'}>{children(session)}</main>
+        <main className={fullBleed ? 'w-full flex-1 lg:flex lg:min-h-0 lg:flex-col' : 'mx-auto w-full max-w-liste flex-1 px-4 py-8 sm:px-6'}>{children(session)}</main>
       </div>
       </div>
       {/* 🔴 POSÉ UNE SEULE FOIS, ICI. Le bouton d'aide doit être sur les 36 écrans authentifiés ; le mettre
           page par page serait 36 occasions de l'oublier, et le 37e écran ne l'aurait pas. Il n'apparaît pas
           sur les écrans de connexion, qui ne passent pas par cette coquille et où il n'aurait rien à dire.
           `active` est la clé de nav de la page : c'est ce qui rend l'aide contextuelle sans rien demander. */}
-      <BoutonAide tenantId={session.tenantId} ecranCourant={active} role={session.role} />
+      {/* Sur l'Inbox, il vit dans la barre du haut (`aideDansEntete`) : en bas à droite, il couvrait « Envoyer ». */}
+      {!aideDansEntete && <BoutonAide tenantId={session.tenantId} ecranCourant={active} role={session.role} />}
     </div>
   );
 }

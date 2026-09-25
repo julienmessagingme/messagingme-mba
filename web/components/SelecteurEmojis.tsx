@@ -38,7 +38,7 @@ export function SelecteurEmojis({ onPick, onClose, ancrage = 'bas', alignement =
             type="button"
             key={e}
             onClick={() => { onPick(e); onClose(); }}
-            className="rounded p-1 text-lg leading-none hover:bg-ink-100"
+            className="rounded-controle p-1 text-lg leading-none hover:bg-ink-100"
             aria-label={e}
           >
             {e}

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { TemplateForm, type CreatedTemplate } from '@/components/TemplateForm';
 import type { TemplateSummary } from '@/lib/api';
+import { Icone } from '@/components/Icone';
 
 /**
  * CRÉER UN MODÈLE SANS QUITTER LA CAMPAGNE EN COURS, et suivre sa revue chez Meta jusqu'au bout.
@@ -124,11 +125,11 @@ export function CreationModeleEnLigne({
 
   if (soumis) {
     return (
-      <div className="mt-2 w-full rounded-xl border border-brand-200 bg-brand-50/40 p-4" data-testid="template-soumis">
+      <div className="mt-2 w-full rounded-carte border border-brand-200 bg-brand-50/40 p-4" data-testid="template-soumis">
         {soumis.status === 'APPROVED' ? (
           <>
-            <p className="text-sm font-medium text-ink-900">
-              ✅ Modèle « {soumis.name} » approuvé par Meta.
+            <p className="flex items-center gap-1.5 text-sm font-medium text-ink-900">
+              <Icone nom="valide" className="text-succes-700" />Modèle « {soumis.name} » approuvé par Meta.
             </p>
             {/* ⚠️ LA PHRASE SUIT L'ÉTAT RÉEL, PAS LE STATUT. La sélection automatique s'abstient quand un
                 autre modèle a été choisi pendant l'attente : dire « il est sélectionné » dans ce cas
@@ -141,8 +142,8 @@ export function CreationModeleEnLigne({
           </>
         ) : soumis.status === 'REJECTED' ? (
           <>
-            <p className="text-sm font-medium text-ink-900">
-              ⛔ Modèle « {soumis.name} » refusé par Meta.
+            <p className="flex items-center gap-1.5 text-sm font-medium text-ink-900">
+              <Icone nom="refuse" className="text-danger-700" />Modèle « {soumis.name} » refusé par Meta.
             </p>
             {/* Le motif du refus n'est pas récupéré par la liste : ne pas prétendre l'expliquer ici. */}
             <p className="mt-1 text-xs text-ink-500">
@@ -182,7 +183,7 @@ export function CreationModeleEnLigne({
 
   if (ouvert) {
     return (
-      <div className="mt-2 w-full rounded-xl border border-brand-200 bg-brand-50/40 p-4">
+      <div className="mt-2 w-full rounded-carte border border-brand-200 bg-brand-50/40 p-4">
         <TemplateForm
           tenantId={tenantId}
           onCreated={(cree) => { setOuvert(false); if (cree) onSoumis(cree); }}

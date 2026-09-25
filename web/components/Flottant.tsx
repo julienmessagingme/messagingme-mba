@@ -10,6 +10,16 @@ import { useT } from '@/lib/i18n';
  * Le voile est un `<button>` plein écran et non un `<div>` : il capte le clic extérieur tout en restant
  * atteignable au clavier.
  */
+/**
+ * LE VOILE D'UN MENU : invisible, plein écran, il capte le clic extérieur qui ferme le menu. Un `<button>` et
+ * non un `<div>` : il reste atteignable au clavier. Cinq menus posaient chacun le leur (`fixed inset-0`), avec
+ * ou sans nom accessible ; ils passent tous ici. `z` place le voile sous le menu qu'il ferme.
+ */
+export function VoileMenu({ onClose, z = 'z-40' }: { onClose: () => void; z?: 'z-10' | 'z-40' }) {
+  const t = useT();
+  return <button type="button" aria-label={t('Fermer', 'Close')} className={`fixed inset-0 ${z} cursor-default`} onClick={onClose} />;
+}
+
 export function Flottant({
   children, onClose, large, ancrage = 'bas', alignement = 'droite', hauteur = 'normale',
 }: {
@@ -32,12 +42,11 @@ export function Flottant({
    */
   hauteur?: 'normale' | 'haute';
 }) {
-  const t = useT();
   return (
     <>
-      <button type="button" aria-label={t('Fermer', 'Close')} className="fixed inset-0 z-40 cursor-default" onClick={onClose} />
+      <VoileMenu onClose={onClose} />
       <div
-        className={`absolute z-50 overflow-y-auto rounded-xl border border-ink-200 bg-white p-1 shadow-mm-md ${
+        className={`absolute z-50 overflow-y-auto rounded-carte border border-ink-200 bg-white p-1 shadow-mm-md ${
           alignement === 'droite' ? 'right-0' : 'left-0'
         } ${hauteur === 'haute' ? 'max-h-80' : 'max-h-56'} ${
           ancrage === 'bas' ? 'bottom-11' : 'top-8'

@@ -11,7 +11,7 @@ import { AuditJournal } from '@/components/AuditJournal';
  */
 export default function SecuriteAuditPage() {
   return <AppShell active="securite-audit">{(session) => (
-    <div className="mx-auto w-full max-w-5xl space-y-4 p-6">
+    <div className="mx-auto w-full max-w-liste space-y-4">
       <AuditJournal tenantId={session.tenantId} />
     </div>
   )}</AppShell>;

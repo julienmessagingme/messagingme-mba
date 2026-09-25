@@ -9,6 +9,8 @@ import { explainMetaError } from '@/lib/meta-errors';
 import { phraseResumeAbsent } from '@/lib/resume-conversation';
 import { toCsv, downloadCsv } from '@/lib/csv';
 import { Bouton } from '@/components/Bouton';
+import { Squelette } from '@/components/Squelette';
+import { Nd } from '@/components/Nd';
 
 /**
  * Onglet « Historique » de la fiche contact : ce qu'on lui a envoyé, et ce qu'il nous a répondu.
@@ -77,8 +79,8 @@ export function ContactHistoryPanel({ tenantId, contactId }: { tenantId: string;
 
   const stamp = (iso: string) => `${formatDate(iso, locale, { day: '2-digit', month: '2-digit', year: '2-digit' })} ${hourMin(iso, locale)}`;
 
-  if (error) return <p className="mt-4 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>;
-  if (!history) return <p className="mt-4 text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>;
+  if (error) return <p className="mt-4 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>;
+  if (!history) return <Squelette forme="lignes" className="mt-4" />;
 
   return (
     <div className="mt-4 space-y-6">
@@ -133,7 +135,7 @@ function SendRow({ send, stamp }: { send: ContactSend; stamp: (iso: string) => s
     : send.workflowName ?? t('scénario supprimé', 'deleted scenario');
 
   return (
-    <li className="rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm">
+    <li className="rounded-carte border border-ink-200 bg-white px-3 py-2.5 text-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate font-medium text-ink-900">{send.campaignName}</p>
@@ -141,7 +143,7 @@ function SendRow({ send, stamp }: { send: ContactSend; stamp: (iso: string) => s
             {what} · {send.category}
           </p>
         </div>
-        <span className="shrink-0 text-xs text-ink-400">{send.sentAt ? stamp(send.sentAt) : t('non envoyé', 'not sent')}</span>
+        <span className="shrink-0 text-xs text-ink-500">{send.sentAt ? stamp(send.sentAt) : t('non envoyé', 'not sent')}</span>
       </div>
       <p className="mt-1 flex flex-wrap items-center gap-1 text-xs">
         <DeliveryBadge send={send} stamp={stamp} />
@@ -226,15 +228,15 @@ function DeliveryBadge({ send, stamp }: { send: ContactSend; stamp: (iso: string
 function ConversationRow({ conv, stamp }: { conv: ContactConversation; stamp: (iso: string) => string }) {
   const t = useT();
   return (
-    <li className="rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm">
+    <li className="rounded-carte border border-ink-200 bg-white px-3 py-2.5 text-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-ink-900">{conv.lastPreview ?? <span className="text-ink-400">{t('(sans aperçu)', '(no preview)')}</span>}</p>
+          <p className="truncate text-ink-900">{conv.lastPreview ?? <span className="text-ink-500">{t('(sans aperçu)', '(no preview)')}</span>}</p>
           <p className="text-xs text-ink-500">
             {conv.messagesCount} {t('message(s)', 'message(s)')} · <span className="font-mono">{conv.waId}</span>
           </p>
         </div>
-        <span className="shrink-0 text-xs text-ink-400">{stamp(conv.lastMessageAt)}</span>
+        <span className="shrink-0 text-xs text-ink-500">{stamp(conv.lastMessageAt)}</span>
       </div>
 
       {conv.analysis ? (
@@ -245,7 +247,7 @@ function ConversationRow({ conv, stamp }: { conv: ContactConversation; stamp: (i
           {/* Une analyse existe mais un message est arrivé depuis : la montrer sans le dire ferait passer une
               lecture périmée pour un état courant. */}
           {conv.analysisStale && (
-            <span className="ml-1.5 rounded bg-alerte-50 px-1.5 py-0.5 text-alerte-700">
+            <span className="ml-1.5 rounded-controle bg-alerte-50 px-1.5 py-0.5 text-alerte-700">
               {t('analyse à rafraîchir', 'analysis outdated')}
             </span>
           )}
@@ -260,13 +262,13 @@ function ConversationRow({ conv, stamp }: { conv: ContactConversation; stamp: (i
               AVANT elle (Vercel suit `main`, le VPS se déploie à la main). Pendant cette fenêtre, on n'affiche
               rien plutôt que d'accuser chaque analyse d'être antérieure à la migration 0100. */}
           {conv.analysis.summary !== undefined && (
-            <p className={conv.analysis.summary ? 'mt-1 whitespace-pre-line text-ink-900' : 'mt-1 italic text-ink-400'}>
+            <p className={conv.analysis.summary ? 'mt-1 whitespace-pre-line text-ink-900' : 'mt-1 italic text-ink-500'}>
               {conv.analysis.summary ?? phraseResumeAbsent('sans-resume', t)}
             </p>
           )}
         </div>
       ) : (
-        <p className="mt-1.5 text-xs text-ink-400">
+        <p className="mt-1.5 text-xs text-ink-500">
           {conv.analysisStatus === 'failed' ? t('analyse en échec', 'analysis failed') : t('pas encore analysée', 'not analyzed yet')}
         </p>
       )}
@@ -296,14 +298,14 @@ function Bilan({ bilan }: { bilan: BilanContact }) {
   const { locale } = useLocale();
   const { cout, entonnoir } = bilan;
   const montant = cout.cout === null
-    ? '—'
+    ? <Nd />
     : new Intl.NumberFormat(locale === 'en' ? 'en-US' : 'fr-FR', cout.currency
       ? { style: 'currency', currency: cout.currency }
       : { maximumFractionDigits: 2 }).format(cout.cout);
   const max = entonnoir.length > 0 ? entonnoir[0]!.parcours : 0;
 
   return (
-    <section data-testid="contact-bilan" className="grid gap-4 rounded-xl border border-ink-200 bg-ink-50/60 p-4 sm:grid-cols-[minmax(0,14rem)_1fr]">
+    <section data-testid="contact-bilan" className="grid gap-4 rounded-carte border border-ink-200 bg-ink-50/60 p-4 sm:grid-cols-[minmax(0,14rem)_1fr]">
       <div>
         <p className="text-xs font-medium text-ink-500">{t('Ce qu’il a coûté', 'What they cost')}</p>
         <p className="mt-1 text-2xl font-semibold tabular-nums text-ink-900" data-testid="contact-bilan-cout">{montant}</p>
@@ -348,7 +350,7 @@ function Bilan({ bilan }: { bilan: BilanContact }) {
                 <span className="w-6 shrink-0 text-right text-xs font-medium tabular-nums text-ink-900">{n.parcours}</span>
               </div>
             ))}
-            <p className="mt-1 text-xs text-ink-400">
+            <p className="mt-1 text-xs text-ink-500">
               {t('Un niveau de plus = il a encore réagi au message suivant, en répondant ou en cliquant.',
                 'One more level = they reacted to the next message again, by replying or clicking.')}
             </p>

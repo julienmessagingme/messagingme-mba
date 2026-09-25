@@ -6,6 +6,7 @@ import { createWorkflow } from '@/lib/api/scenarios';
 import { inputCls } from '@/lib/ui';
 import type { CanalEtage } from '@/lib/campagne-chaine';
 import { Bouton } from '@/components/Bouton';
+import { Modale } from '@/components/Modale';
 
 /**
  * CRÉER UN SCÉNARIO SANS QUITTER SA CAMPAGNE.
@@ -94,7 +95,7 @@ export function CreationScenarioEnLigne({
       </button>
 
       {etape === 'nom' && (
-        <div className="mt-2 space-y-2 rounded-lg border border-ink-200 bg-ink-50 p-3" data-testid="creer-scenario-nom">
+        <div className="mt-2 space-y-2 rounded-carte border border-ink-200 bg-ink-50 p-3" data-testid="creer-scenario-nom">
           <label className="block text-xs font-medium text-ink-900" htmlFor="nouveau-scenario">
             Nom du scénario
           </label>
@@ -128,41 +129,25 @@ export function CreationScenarioEnLigne({
          * ⚠️ ENVIRON TROIS QUARTS DE L'ÉCRAN, et des bornes en `min()` plutôt qu'une taille fixe : l'éditeur
          * doit respirer en 13 pouces, où la fenêtre de la campagne est déjà étroite.
          */
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 p-4" data-testid="fenetre-scenario">
-          <div className="flex h-[min(85vh,48rem)] w-[min(92vw,80rem)] flex-col overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-mm-lg">
-            <div className="flex items-center justify-between border-b border-ink-100 px-4 py-2.5">
-              <span className="truncate text-sm font-semibold text-ink-900">{cree.name}</span>
-              <button
-                type="button"
-                onClick={fermer}
-                data-testid="fenetre-scenario-fermer"
-                aria-label="Fermer"
-                className="text-ink-400 hover:text-ink-900"
-              >
-                ×
-              </button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-auto p-3">
-              <WorkflowBuilder
-                tenantId={tenantId}
-                workflowId={cree.id}
-                initialGraph={{ nodes: [], edges: [] }}
-                mbaEnabled={mbaEnabled}
-                rcsEnabled={rcsEnabled}
-                /**
-                 * 🔴 UN ÉTAGE E-MAIL N'A PAS DE SCÉNARIO (aucun canal d'ouverture n'est l'e-mail), donc ce
-                 * composant n'y est jamais monté. La conversion est là pour que le type reste honnête plutôt
-                 * que pour couvrir un cas atteignable.
-                 */
-                canalExige={canal === 'email' ? 'whatsapp' : canal}
-                onPublie={() => {
-                  onCree(cree.id);
-                  fermer();
-                }}
-              />
-            </div>
-          </div>
-        </div>
+        <Modale titre={cree.name} taille="plein" testId="fenetre-scenario" testIdFermer="fenetre-scenario-fermer" fermeture="boutons" onClose={fermer}>
+            <WorkflowBuilder
+              tenantId={tenantId}
+              workflowId={cree.id}
+              initialGraph={{ nodes: [], edges: [] }}
+              mbaEnabled={mbaEnabled}
+              rcsEnabled={rcsEnabled}
+              /**
+               * 🔴 UN ÉTAGE E-MAIL N'A PAS DE SCÉNARIO (aucun canal d'ouverture n'est l'e-mail), donc ce
+               * composant n'y est jamais monté. La conversion est là pour que le type reste honnête plutôt
+               * que pour couvrir un cas atteignable.
+               */
+              canalExige={canal === 'email' ? 'whatsapp' : canal}
+              onPublie={() => {
+                onCree(cree.id);
+                fermer();
+              }}
+            />
+        </Modale>
       )}
     </>
   );

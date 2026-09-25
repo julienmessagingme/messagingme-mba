@@ -11,6 +11,9 @@ import { listTemplates, deleteTemplate, type TemplateSummary } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { Bouton } from '@/components/Bouton';
 import { TitrePage } from '@/components/TitrePage';
+import { useConfirmation } from '@/components/Confirmation';
+import { Modale } from '@/components/Modale';
+import { Squelette } from '@/components/Squelette';
 
 export default function TemplatesPage() {
   return <AppShell active="templates">{(session) => <TemplatesInner session={session} />}</AppShell>;
@@ -25,6 +28,7 @@ const STATUS: Record<string, string> = {
 
 function TemplatesInner({ session }: { session: Session }) {
   const t = useT();
+  const confirmer = useConfirmation();
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -52,8 +56,8 @@ function TemplatesInner({ session }: { session: Session }) {
   }, [reload]);
 
   async function remove(tpl: TemplateSummary) {
-    if (!window.confirm(t(`Supprimer le template « ${tpl.name} » ?\nSuppression définitive chez Meta (toutes les langues). Bloquée si une campagne active l'utilise.`,
-      `Delete template “${tpl.name}”?\nPermanent deletion at Meta (all languages). Blocked if an active campaign uses it.`))) return;
+    if (!(await confirmer({ titre: t('Supprimer le template', 'Delete the template'), message: t(`Supprimer le template « ${tpl.name} » ?\nSuppression définitive chez Meta (toutes les langues). Bloquée si une campagne active l'utilise.`,
+      `Delete template “${tpl.name}”?\nPermanent deletion at Meta (all languages). Blocked if an active campaign uses it.`), confirmer: t('Supprimer', 'Delete') }))) return;
     setError(null);
     try {
       await deleteTemplate(session.tenantId, tpl.name);
@@ -66,10 +70,10 @@ function TemplatesInner({ session }: { session: Session }) {
   return (
     <div className="space-y-6">
       {dupliquer ? (
-        <section className="rounded-2xl border border-brand-200 bg-brand-50/40 p-6">
+        <section className="rounded-carte border border-brand-200 bg-brand-50/40 p-6">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-base font-semibold text-ink-900">{t(`Dupliquer « ${dupliquer.name} »`, `Duplicate “${dupliquer.name}”`)}</h2>
-            <button onClick={() => setDupliquer(null)} className="text-xs text-ink-400 hover:text-ink-900">{t('Fermer', 'Close')}</button>
+            <button onClick={() => setDupliquer(null)} className="text-xs text-ink-500 hover:text-ink-900">{t('Fermer', 'Close')}</button>
           </div>
           <TemplateForm
             key={`dup-${dupliquer.name}`}
@@ -80,26 +84,26 @@ function TemplatesInner({ session }: { session: Session }) {
           />
         </section>
       ) : editing ? (
-        <section className="rounded-2xl border border-brand-200 bg-brand-50/40 p-6">
+        <section className="rounded-carte border border-brand-200 bg-brand-50/40 p-6">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-base font-semibold text-ink-900">{t(`Modifier « ${editing.name} »`, `Edit “${editing.name}”`)}</h2>
-            <button onClick={() => setEditing(null)} className="text-xs text-ink-400 hover:text-ink-900">{t('Fermer', 'Close')}</button>
+            <button onClick={() => setEditing(null)} className="text-xs text-ink-500 hover:text-ink-900">{t('Fermer', 'Close')}</button>
           </div>
-          <p className="mb-4 rounded-lg bg-alerte-50 px-3 py-2 text-xs text-alerte">{t('Modifier un template le renvoie en validation Meta (statut PENDING) : il est inenvoyable le temps de la re-validation. Le nom et la langue ne sont pas modifiables.', 'Editing a template sends it back to Meta for review (PENDING status): it stays unsendable until re-approval. Name and language cannot be changed.')}</p>
+          <p className="mb-4 rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte">{t('Modifier un template le renvoie en validation Meta (statut PENDING) : il est inenvoyable le temps de la re-validation. Le nom et la langue ne sont pas modifiables.', 'Editing a template sends it back to Meta for review (PENDING status): it stays unsendable until re-approval. Name and language cannot be changed.')}</p>
           <TemplateForm key={editing.name} tenantId={session.tenantId} onCreated={() => { void reload(); setEditing(null); }} initial={editing} />
         </section>
       ) : creating ? (
-        <section className="rounded-2xl border border-brand-200 bg-brand-50/40 p-6">
+        <section className="rounded-carte border border-brand-200 bg-brand-50/40 p-6">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-base font-semibold text-ink-900">{t('Nouveau template', 'New template')}</h2>
-            <button onClick={() => setCreating(false)} className="text-xs text-ink-400 hover:text-ink-900">{t('Fermer', 'Close')}</button>
+            <button onClick={() => setCreating(false)} className="text-xs text-ink-500 hover:text-ink-900">{t('Fermer', 'Close')}</button>
           </div>
-          <div className="mb-4 inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-xs">
+          <div className="mb-4 inline-flex gap-1 rounded-controle bg-ink-100 p-1 text-xs">
             {(['simple', 'carousel'] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => setMode(m)}
-                className={`rounded-md px-3 py-1 ${mode === m ? 'bg-white font-medium text-brand-700' : 'text-ink-500 hover:text-ink-900'}`}
+                className={`rounded-controle px-3 py-1 ${mode === m ? 'bg-white font-medium text-brand-700' : 'text-ink-500 hover:text-ink-900'}`}
               >
                 {m === 'simple' ? t('Template simple', 'Simple template') : 'Carousel'}
               </button>
@@ -122,15 +126,15 @@ function TemplatesInner({ session }: { session: Session }) {
             )}
           </div>
         </div>
-        {error && <p className="mb-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+        {error && <p className="mb-3 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
         {loading ? (
-          <p className="text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>
+          <Squelette forme="lignes" />
         ) : templates.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">
+          <div className="px-4 py-10 text-center text-sm text-ink-500">
             {t("Aucun template. Clique « + Créer un template » (il passe en revue Meta avant d'être utilisable).", 'No templates yet. Click “+ Create a template” (it goes through Meta review before it can be used).')}
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white">
+          <div className="overflow-x-auto rounded-carte border border-ink-200 bg-white">
             <table className="w-full min-w-[520px] text-sm">
               <thead className="bg-ink-50 text-left text-xs text-ink-500">
                 <tr>
@@ -157,12 +161,12 @@ function TemplatesInner({ session }: { session: Session }) {
                     <td className="px-4 py-2.5 text-right">
                       <div className="flex items-center justify-end gap-3 text-xs">
                         {tpl.editable === false ? (
-                          <span className="text-ink-400" title={tpl.isCarousel ? t("Édition d'un carousel non supportée", 'Editing a carousel is not supported') : t("Édition non supportée : en-tête ou pied de page (il serait supprimé)", 'Editing not supported: header or footer (it would be removed)')}>{t('Éditer', 'Edit')}</span>
+                          <span className="text-ink-500" title={tpl.isCarousel ? t("Édition d'un carousel non supportée", 'Editing a carousel is not supported') : t("Édition non supportée : en-tête ou pied de page (il serait supprimé)", 'Editing not supported: header or footer (it would be removed)')}>{t('Éditer', 'Edit')}</span>
                         ) : (
                           <button onClick={() => setEditing(tpl)} className="font-medium text-brand-600 hover:text-brand-700">{t('Éditer', 'Edit')}</button>
                         )}
                         {tpl.isCarousel ? (
-                          <span className="text-ink-400" title={t('Duplication d’un carousel non supportée', 'Duplicating a carousel is not supported')}>{t('Dupliquer', 'Duplicate')}</span>
+                          <span className="text-ink-500" title={t('Duplication d’un carousel non supportée', 'Duplicating a carousel is not supported')}>{t('Dupliquer', 'Duplicate')}</span>
                         ) : (
                           <button onClick={() => { setDupliquer(tpl); setEditing(null); setCreating(false); }} data-testid={`template-dupliquer-${tpl.name}`} className="font-medium text-brand-600 hover:text-brand-700">{t('Dupliquer', 'Duplicate')}</button>
                         )}
@@ -186,40 +190,36 @@ function TemplatesInner({ session }: { session: Session }) {
 function TemplatePreviewModal({ template, onClose }: { template: TemplateSummary; onClose: () => void }) {
   const t = useT();
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-mm-lg" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-start justify-between">
-          <div>
-            <h3 className="font-mono text-sm font-semibold text-ink-900">{template.name}</h3>
-            <p className="text-xs text-ink-400">{template.category?.toLowerCase()} · {template.language} · {template.status?.toLowerCase()}</p>
-          </div>
-          <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-900">×</button>
-        </div>
-        {template.isCarousel ? (
-          <CarouselPreview
-            body={template.body ?? ''}
-            cards={(template.carousel?.cards ?? []).map((c) => ({
-              ...(c.mediaUrl !== undefined ? { imageUrl: c.mediaUrl } : {}),
-              ...(c.mediaFormat !== undefined ? { mediaFormat: c.mediaFormat } : {}),
-              ...(c.body !== undefined ? { body: c.body } : {}),
-              ...(c.buttons !== undefined ? { buttons: c.buttons } : {}),
-            }))}
-            buttons={template.buttons ?? []}
-          />
-        ) : (
-          <WhatsAppPreview
-            body={template.body ?? ''}
-            examples={template.example ?? []}
-            buttons={template.buttons ?? []}
-            header={template.headerFormat ? { format: template.headerFormat, text: template.headerText } : null}
-            footer={template.footer}
-            hideNote
-          />
-        )}
-        {template.headerFormat && template.headerFormat !== 'TEXT' && !template.isCarousel && (
-          <p className="mt-2 text-xs text-ink-400">{t('En-tête', 'Header')} {template.headerFormat.toLowerCase()} {t("(le média réel s'affiche à l'envoi).", '(the actual media is shown when sending).')}</p>
-        )}
-      </div>
-    </div>
+    <Modale
+      titre={template.name}
+      sousTitre={`${template.category?.toLowerCase() ?? ''} · ${template.language} · ${template.status?.toLowerCase() ?? ''}`}
+      taille="petite"
+      onClose={onClose}
+    >
+      {template.isCarousel ? (
+        <CarouselPreview
+          body={template.body ?? ''}
+          cards={(template.carousel?.cards ?? []).map((c) => ({
+            ...(c.mediaUrl !== undefined ? { imageUrl: c.mediaUrl } : {}),
+            ...(c.mediaFormat !== undefined ? { mediaFormat: c.mediaFormat } : {}),
+            ...(c.body !== undefined ? { body: c.body } : {}),
+            ...(c.buttons !== undefined ? { buttons: c.buttons } : {}),
+          }))}
+          buttons={template.buttons ?? []}
+        />
+      ) : (
+        <WhatsAppPreview
+          body={template.body ?? ''}
+          examples={template.example ?? []}
+          buttons={template.buttons ?? []}
+          header={template.headerFormat ? { format: template.headerFormat, text: template.headerText } : null}
+          footer={template.footer}
+          hideNote
+        />
+      )}
+      {template.headerFormat && template.headerFormat !== 'TEXT' && !template.isCarousel && (
+        <p className="mt-2 text-xs text-ink-500">{t('En-tête', 'Header')} {template.headerFormat.toLowerCase()} {t("(le média réel s'affiche à l'envoi).", '(the actual media is shown when sending).')}</p>
+      )}
+    </Modale>
   );
 }

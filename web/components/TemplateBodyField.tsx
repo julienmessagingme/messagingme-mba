@@ -7,6 +7,8 @@ import { SelecteurEmojis } from '@/components/SelecteurEmojis';
 import { useT } from '@/lib/i18n';
 import { SYSTEM_FIELDS, customFieldsOnly, systemFieldExample } from '@/lib/fields';
 import { inputCls } from '@/lib/ui';
+import { Icone } from '@/components/Icone';
+import { VoileMenu } from '@/components/Flottant';
 
 /**
  * Le corps d'un template avec ses VARIABLES : éditeur à chips, sélecteur de champ, emojis, exemples exigés
@@ -71,8 +73,8 @@ function FieldPicker({ options, onPick, onClose }: {
   ];
   return (
     <>
-      <button type="button" aria-label={t('Fermer', 'Close')} className="fixed inset-0 z-40 cursor-default" onClick={onClose} />
-      <div className="absolute bottom-11 right-0 z-50 max-h-56 w-56 overflow-y-auto rounded-xl border border-ink-200 bg-white p-1 shadow-mm-md">
+      <VoileMenu onClose={onClose} />
+      <div className="absolute bottom-11 right-0 z-50 max-h-56 w-56 overflow-y-auto rounded-carte border border-ink-200 bg-white p-1 shadow-mm-md">
         {groups.map((g) => {
           const items = options.filter((o) => o.group === g.id);
           if (items.length === 0) return null;
@@ -80,7 +82,7 @@ function FieldPicker({ options, onPick, onClose }: {
             <div key={g.id}>
               <div className="px-2 py-1 text-xs font-medium text-ink-500">{g.label}</div>
               {items.map((o, i) => (
-                <button type="button" key={`${g.id}-${i}`} onClick={() => onPick(o)} className="block w-full truncate rounded-md px-2 py-1.5 text-left text-sm text-ink-900 hover:bg-brand-50">{o.label}</button>
+                <button type="button" key={`${g.id}-${i}`} onClick={() => onPick(o)} className="block w-full truncate rounded-controle px-2 py-1.5 text-left text-sm text-ink-900 hover:bg-brand-50">{o.label}</button>
               ))}
             </div>
           );
@@ -234,7 +236,7 @@ export function TemplateBodyField({ state, label, placeholder, hint }: {
           <button
             type="button"
             onClick={() => { setFieldPickerOpen((o) => !o); setEmojiOpen(false); }}
-            className="rounded-md border border-ink-200 bg-white px-2 py-1 text-xs font-medium text-brand-600 hover:bg-brand-50"
+            className="rounded-controle border border-ink-200 bg-white px-2 py-1 text-xs font-medium text-brand-600 hover:bg-brand-50"
             title={t('Insérer une variable (champ du contact)', 'Insert a variable (contact field)')}
           >
             + Variable
@@ -242,16 +244,16 @@ export function TemplateBodyField({ state, label, placeholder, hint }: {
           <button
             type="button"
             onClick={() => { setEmojiOpen((o) => !o); setFieldPickerOpen(false); }}
-            className="rounded-md p-1 text-lg leading-none hover:bg-ink-100"
+            className="rounded-controle p-1 text-ink-500 hover:bg-ink-100"
             aria-label={t('Insérer un emoji', 'Insert an emoji')}
           >
-            😊
+            <Icone nom="smiley" />
           </button>
         </div>
         {emojiOpen && <SelecteurEmojis onPick={(e) => state.editorRef.current?.insertToken(e)} onClose={() => setEmojiOpen(false)} />}
         {fieldPickerOpen && <FieldPicker options={fieldOptions} onPick={insertVariable} onClose={() => setFieldPickerOpen(false)} />}
       </div>
-      <p className="mt-1 text-xs text-ink-400">
+      <p className="mt-1 text-xs text-ink-500">
         {hint ?? t("Clique « + Variable » pour insérer un champ du contact (nom, prénom, email…) : l'exemple exigé par Meta se remplit tout seul.", 'Click “+ Variable” to insert a contact field (name, first name, email…): the example required by Meta fills in automatically.')}
       </p>
     </div>
@@ -270,9 +272,9 @@ export function TemplateVariableExamples({ state }: { state: TemplateBodyState }
             d'une variable du milieu, chaque ligne reste alignée avec sa source/exemple. */}
         {state.positions.map((pos) => (
           <div key={pos} className="flex items-center gap-2">
-            <span className="flex w-28 shrink-0 items-center gap-1 text-xs text-ink-400">
+            <span className="flex w-28 shrink-0 items-center gap-1 text-xs text-ink-500">
               {`{{${pos}}}`}
-              {state.varSources[pos - 1] && <span className="truncate rounded bg-brand-50 px-1 text-brand-600">{state.varSources[pos - 1]!.label}</span>}
+              {state.varSources[pos - 1] && <span className="truncate rounded-controle bg-brand-50 px-1 text-brand-600">{state.varSources[pos - 1]!.label}</span>}
             </span>
             <input
               value={state.examples[pos - 1] ?? ''}

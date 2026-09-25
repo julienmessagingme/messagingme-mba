@@ -57,9 +57,9 @@ export function fmtNote(n: number, locale: Locale): string {
   return n.toLocaleString(locale === 'en' ? 'en-GB' : 'fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }
 
-/** Pourcentage borné (num/den) sans décimale : « 42 % » (fr, espace) / « 42% » (en) ; '—' si dénominateur nul. */
+/** Pourcentage borné (num/den) sans décimale : « 42 % » (fr, espace) / « 42% » (en) ; « n/d » si dénominateur nul. */
 export function fmtPct(num: number, den: number, locale: Locale): string {
-  if (den <= 0) return '—';
+  if (den <= 0) return locale === 'en' ? 'n/a' : 'n/d';
   const p = Math.round((num / den) * 100);
   return locale === 'en' ? `${p}%` : `${p} %`;
 }

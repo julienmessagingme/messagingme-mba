@@ -7,6 +7,8 @@ import {
   type BrouillonPub, type Entonnoir, type EtapeEntonnoir, type Publicite,
 } from '@/lib/api-pubs';
 import { Bouton } from '@/components/Bouton';
+import { useConfirmation } from '@/components/Confirmation';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * LA LISTE DES PUBLICITÉS, ET LA PAGE D'UNE PUBLICITÉ (lot 3, spec § 3.7).
@@ -254,6 +256,7 @@ function Actions({ tenantId, pub, recharger, t }: {
   tenantId: string; pub: Publicite; recharger: () => Promise<void>; t: T;
 }) {
   const [busy, setBusy] = useState(false);
+  const confirmer = useConfirmation();
   const [erreur, setErreur] = useState<string | null>(null);
 
   async function agir(quoi: () => Promise<unknown>): Promise<void> {
@@ -276,17 +279,17 @@ function Actions({ tenantId, pub, recharger, t }: {
       {pub.etat === 'prete' && (
         <Bouton taille="petite"
           type="button" disabled={busy}
-          onClick={() => {
+          onClick={async () => {
             const jusqua = pub.budgetTotal !== null ? arrondi(pub.budgetTotal) : '?';
             const bornes = pub.debut !== null && pub.fin !== null
               ? ` ${t('entre le', 'between')} ${pub.debut.slice(0, 10)} ${t('et le', 'and')} ${pub.fin.slice(0, 10)}`
               : '';
             // 🔴 LA CONFIRMATION DIT LA DÉPENSE MAXIMALE (spec § 3.2). Publier est irréversible au sens qui
             // compte : une impression payée ne se rembourse pas.
-            if (!window.confirm(t(
+            if (!(await confirmer({ titre: t('Publier la publicité', 'Publish the ad'), message: t(
               `Cette publicité peut dépenser jusqu’à ${jusqua}${bornes}. Publier ?`,
               `This ad can spend up to ${jusqua}${bornes}. Publish?`,
-            ))) return;
+            ), confirmer: t('Publier', 'Publish') }))) return;
             void agir(() => publierPub(tenantId, pub.id));
           }}
           data-testid={`pub-publier-${pub.id}`}
@@ -336,11 +339,11 @@ function Detail({ tenantId, id, t, budgetTotal }: {
   }, [tenantId, id, t]);
 
   if (erreur !== null) return <p role="alert" className="mt-2 text-xs text-danger-700">{erreur}</p>;
-  if (vue === null) return <p className="mt-2 text-xs text-ink-500">{t('Chargement…', 'Loading…')}</p>;
+  if (vue === null) return <Squelette forme="carte" className="mt-2" />;
 
   const e = vue.entonnoir;
   return (
-    <div className="mt-3 rounded-xl bg-ink-50 p-3" data-testid={`pub-entonnoir-${id}`}>
+    <div className="mt-3 rounded-carte bg-ink-50 p-3" data-testid={`pub-entonnoir-${id}`}>
       {/**
         * 🔴 LES TROIS CHIFFRES EN FACE, DEMANDÉS PAR JULIEN LE 2026-09-24 : budget initial, dépensé à date,
         * clics vers WhatsApp. C'est la seule comparaison qui répond à « est-ce que je remets du budget ? »,
@@ -369,12 +372,12 @@ function Detail({ tenantId, id, t, budgetTotal }: {
       <p className="mt-2 text-xs text-ink-500" data-testid={`pub-non-pris-${id}`}>
         {t('Prospects non pris en charge', 'Leads not handled')} : {e.nonPrisEnCharge}
         {' '}
-        <span className="text-ink-400">
+        <span className="text-ink-500">
           ({t('reprise refusée, désabonnés, bloqués, ou publicité sans scénario branché',
                'handover refused, unsubscribed, blocked, or ad with no scenario connected')})
         </span>
       </p>
-      <p className="mt-1 text-xs text-ink-400">
+      <p className="mt-1 text-xs text-ink-500">
         {vue.publicite.luLe === null
           ? t('Chiffres jamais relus chez Meta.', 'Numbers never read from Meta.')
           : `${t('Relus chez Meta le', 'Read from Meta on')} ${new Date(vue.publicite.luLe).toLocaleString()}`}
@@ -407,7 +410,7 @@ function Etape({ t, libelle, etape }: { t: T; libelle: string; etape: EtapeEnton
     <div>
       <dt className="text-ink-500">{libelle}</dt>
       <dd className="font-medium text-ink-900">{ouRien(etape.nombre, t)}</dd>
-      <dd className="text-ink-400">
+      <dd className="text-ink-500">
         {t('coût', 'cost')} {ouRien(etape.cout, t)}
         {etape.passage !== null && ` · ${pourcent(etape.passage, t)}`}
       </dd>

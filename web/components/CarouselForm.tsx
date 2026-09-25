@@ -10,6 +10,7 @@ import { useT } from '@/lib/i18n';
 import { inputClsAuto } from '@/lib/ui';
 import { ListeManques } from '@/components/ListeManques';
 import { Bouton } from '@/components/Bouton';
+import { Icone } from '@/components/Icone';
 
 /** Type d'un bouton de carte. Meta n'accepte que ces deux-là dans un carousel. */
 type CardButtonType = 'QUICK_REPLY' | 'URL';
@@ -183,7 +184,7 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
   }
 
   return (
-    <div className="space-y-4 rounded-2xl border border-ink-200 bg-white p-5">
+    <div className="space-y-4 rounded-carte border border-ink-200 bg-white p-5">
       <div>
         <label className="mb-1 block text-xs font-medium text-ink-500">{t('Nom du carousel', 'Carousel name')}</label>
         <input value={name} onChange={(e) => setName(e.target.value)} className={`${inputClsAuto} w-full max-w-sm`} placeholder="promo_selection" />
@@ -212,17 +213,17 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
           </div>
         </div>
         {layout.length === 0 ? (
-          <p className="text-xs text-ink-400">{t('Aucun bouton. Ajoute-en un : il apparaîtra sur toutes les cartes, et tu saisiras son texte et son lien carte par carte.', 'No button yet. Add one: it appears on every card, and you fill in its text and link card by card.')}</p>
+          <p className="text-xs text-ink-500">{t('Aucun bouton : un bouton ajouté apparaît sur toutes les cartes, avec son texte et son lien carte par carte.', 'No button yet: a button you add appears on every card, with its text and link card by card.')}</p>
         ) : (
           <div className="space-y-1.5">
             {layout.map((type, j) => (
-              <div key={j} className="flex items-center gap-2 rounded-lg bg-ink-50 px-3 py-1.5">
+              <div key={j} className="flex items-center gap-2 rounded-controle bg-ink-50 px-3 py-1.5">
                 <span className="text-xs font-medium text-ink-500">{t('Bouton', 'Button')} {j + 1}</span>
                 <span className="text-xs text-ink-500">{type === 'URL' ? t('lien', 'link') : t('réponse rapide', 'quick reply')}</span>
-                <button type="button" onClick={() => removeButton(j)} className="ml-auto text-ink-400 hover:text-danger-600" aria-label={t('Retirer', 'Remove')}>×</button>
+                <button type="button" onClick={() => removeButton(j)} className="ml-auto text-ink-400 hover:text-danger-600" aria-label={t('Retirer', 'Remove')}><Icone nom="fermer" taille="petite" /></button>
               </div>
             ))}
-            <p className="text-xs text-ink-400">
+            <p className="text-xs text-ink-500">
               {t('Meta exige la même disposition sur toutes les cartes (même nombre, mêmes types, même ordre). Le texte et le lien, eux, se saisissent carte par carte.', 'Meta requires the same layout on every card (same count, same types, same order). The text and link are filled in card by card.')}
             </p>
           </div>
@@ -235,16 +236,16 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
         <div className="flex flex-col gap-3 sm:flex-row">
         <div className="grid flex-1 gap-3 sm:grid-cols-2">
           {cards.map((c, i) => (
-            <div key={i} className="space-y-2 rounded-xl border border-ink-200 p-3">
+            <div key={i} className="space-y-2 rounded-carte border border-ink-200 p-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-ink-500">{t('Carte', 'Card')} {i + 1}</span>
-                <button type="button" onClick={() => removeCard(i)} disabled={cards.length <= 2} className="text-xs text-ink-400 hover:text-danger disabled:opacity-40" title={t('Retirer', 'Remove')}>{t('Retirer', 'Remove')}</button>
+                <button type="button" onClick={() => removeCard(i)} disabled={cards.length <= 2} className="text-xs text-ink-500 hover:text-danger disabled:opacity-40" title={t('Retirer', 'Remove')}>{t('Retirer', 'Remove')}</button>
               </div>
               <button
                 type="button"
                 onClick={() => fileRefs.current[i]?.click()}
                 disabled={c.uploading}
-                className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-lg border border-dashed border-ink-300 bg-ink-50 text-xs text-ink-400 hover:border-brand-400 disabled:cursor-not-allowed"
+                className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-controle border border-dashed border-ink-300 bg-ink-50 text-xs text-ink-500 hover:border-brand-400 disabled:cursor-not-allowed"
               >
                 {c.uploading ? (
                   t('Upload…', 'Uploading…')
@@ -265,7 +266,7 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
               {c.error && <p className="text-xs text-danger">{c.error}</p>}
               <input value={c.body} onChange={(e) => setCard(i, { body: e.target.value })} className={`${inputClsAuto} w-full`} placeholder={t('Texte de la carte (optionnel)', 'Card text (optional)')} />
               {layout.map((type, j) => (
-                <div key={j} className="space-y-1.5 rounded-lg bg-ink-50 p-2">
+                <div key={j} className="space-y-1.5 rounded-controle bg-ink-50 p-2">
                   <div className="text-xs font-medium text-ink-500">
                     {t('Bouton', 'Button')} {j + 1} · {type === 'URL' ? t('lien', 'link') : t('réponse rapide', 'quick reply')}
                   </div>
@@ -300,7 +301,7 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
             un test E2E le cible par son texte. */}
         <button
           type="button" onClick={addCard} disabled={cards.length >= 10} data-testid="carousel-ajouter-carte"
-          className="flex w-full shrink-0 flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-brand-200 px-4 py-6 text-brand-600 transition-colors duration-150 hover:border-brand-400 hover:bg-brand-50 disabled:opacity-40 sm:w-40"
+          className="flex w-full shrink-0 flex-col items-center justify-center gap-1 rounded-carte border-2 border-dashed border-brand-200 px-4 py-6 text-brand-600 transition-colors duration-150 hover:border-brand-400 hover:bg-brand-50 disabled:opacity-40 sm:w-40"
         >
           <span className="text-2xl leading-none">+</span>
           <span className="text-sm font-medium">{t('+ Ajouter une carte', '+ Add a card')}</span>
@@ -316,7 +317,7 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
         varLabels={bodyState.varLabels}
       />
 
-      {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-700'}`}>{msg.text}</p>}
+      {msg && <p className={`rounded-controle px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-700'}`}>{msg.text}</p>}
       <ListeManques manques={manques} testId="carousel-manques" busy={busy} />
       <Bouton onClick={submit} disabled={!canSubmit}>
         {busy ? t('Création…', 'Creating…') : t('Créer le carousel', 'Create carousel')}

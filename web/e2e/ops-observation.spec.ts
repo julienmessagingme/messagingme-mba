@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { repondre } from './aide/confirmation';
 
 /**
  * Observation d'un espace client depuis la surface d'exploitation.
@@ -37,10 +38,9 @@ test.describe('Ops : observer un espace', () => {
       return json({});
     });
     // La confirmation est volontaire : entrer chez un client remplace la session en cours.
-    page.on('dialog', (d) => { void d.accept(); });
-
     await page.goto('/ops');
     await page.getByTestId('observe-t-client').click();
+    await repondre(page, true);
     await expect.poll(() => appels.length, { timeout: 15_000 }).toBeGreaterThan(0);
     expect(appels[0]?.body).toEqual({ tenantId: 't-client' });
 

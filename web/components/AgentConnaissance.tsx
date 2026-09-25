@@ -12,6 +12,8 @@ import {
   type ApercuImport, type FicheConnaissance,
 } from '@/lib/api-agent-knowledge';
 import { Bouton } from '@/components/Bouton';
+import { Icone } from '@/components/Icone';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * L'onglet BASE DE CONNAISSANCE d'un agent IA.
@@ -125,10 +127,10 @@ export function AgentConnaissance({ tenantId, agentId, onChange, urlSuggeree }: 
       })} />
 
       <div className="flex flex-col gap-3">
-        {fiches === null && <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>}
+        {fiches === null && <Squelette forme="lignes" />}
         {fiches?.length === 0 && (
           <p data-testid="kb-vide" className="text-sm text-ink-500">
-            {t('Aucune fiche. Lisez une page de votre site, ou écrivez la première à la main.', 'No entry yet. Read a page of your site, or write the first one by hand.')}
+            {t('Aucune fiche : lisez une page de votre site, ou écrivez la première à la main.', 'No entry yet: read a page of your site, or write the first one by hand.')}
           </p>
         )}
 
@@ -159,14 +161,14 @@ export function AgentConnaissance({ tenantId, agentId, onChange, urlSuggeree }: 
                     // doit pas être annoncée comme supprimée par ce clic.
                     return t(`${r.supprimees} fiche(s) supprimée(s).`, `${r.supprimees} entry(ies) deleted.`);
                   })}
-                  className="rounded-lg bg-danger px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40"
+                  className="rounded-controle bg-danger px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40"
                 >
                   {t(`Supprimer les ${coches.size} fiches cochées`, `Delete the ${coches.size} selected entries`)}
                 </button>
               )}
             </div>
 
-            <div className="overflow-x-auto rounded-xl border border-ink-200">
+            <div className="overflow-x-auto rounded-carte border border-ink-200">
               <table className="w-full text-sm" data-testid="kb-tableau">
                 <thead className="bg-ink-50 text-left text-xs text-ink-500">
                   <tr>
@@ -263,7 +265,7 @@ function ImportSource({ tenantId, agentId, busy, onImport, onErreur, urlSuggeree
         </p>
       </div>
       {urlSuggeree && (
-        <p data-testid="kb-url-suggeree" className="rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs leading-relaxed text-ink-900">
+        <p data-testid="kb-url-suggeree" className="rounded-controle border border-brand-200 bg-brand-50 px-3 py-2 text-xs leading-relaxed text-ink-900">
           {t(
             'L’assistant de construction a noté cette adresse pendant votre entretien. Relisez-la, puis voyez ce qui sera importé : rien n’est écrit avant que vous ne l’ayez vu.',
             'The setup assistant noted this address during your interview. Check it, then see what will be imported: nothing is written before you have seen it.',
@@ -293,7 +295,7 @@ function ImportSource({ tenantId, agentId, busy, onImport, onErreur, urlSuggeree
       {/* 🔴 L'APERÇU N'ÉCRIT RIEN, et c'est tout son intérêt. Cinquante pages écrites d'un coup, ce sont
           cinquante jeux de fiches à relire ou supprimer une par une si la portée était mauvaise. */}
       {apercu !== null && (
-        <div className="rounded-xl border border-ink-200 p-3" data-testid="kb-apercu">
+        <div className="rounded-carte border border-ink-200 p-3" data-testid="kb-apercu">
           <p className="text-sm font-medium text-ink-900">
             {apercu.portee === 'page'
               ? t('Cette page seule', 'This page only')
@@ -313,14 +315,14 @@ function ImportSource({ tenantId, agentId, busy, onImport, onErreur, urlSuggeree
             {apercu.pages.map((p) => (
               <li key={p.url} className="flex justify-between gap-3">
                 <span className="truncate text-ink-500">{p.url}</span>
-                <span className="shrink-0 tabular-nums text-ink-400">
+                <span className="shrink-0 tabular-nums text-ink-500">
                   {t(`${p.fiches} fiche(s), ${p.caracteres} car.`, `${p.fiches} entry(ies), ${p.caracteres} chars`)}
                 </span>
               </li>
             ))}
           </ul>
           {apercu.ecartees.length > 0 && (
-            <p className="mt-2 text-xs text-ink-400" data-testid="kb-apercu-ecartees">
+            <p className="mt-2 text-xs text-ink-500" data-testid="kb-apercu-ecartees">
               {t(`${apercu.ecartees.length} adresse(s) écartée(s) : `, `${apercu.ecartees.length} address(es) skipped: `)}
               {apercu.ecartees.slice(0, 3).map((e) => e.raison).join(', ')}
             </p>
@@ -502,28 +504,28 @@ function LigneFiche({ fiche, busy, coche, ouverte, onCocher, onOuvrir, onSave, o
           </button>
           {!ouverte && (
             // Les deux premières lignes suffisent à reconnaître une fiche ; le reste s'ouvre.
-            <p className="mt-0.5 line-clamp-2 text-xs text-ink-400">{fiche.corps}</p>
+            <p className="mt-0.5 line-clamp-2 text-xs text-ink-500">{fiche.corps}</p>
           )}
         </td>
         <td className="p-2 align-top text-xs" data-testid={`kb-provenance-${fiche.id}`}>
           {src.type === 'page' && (
             <span className="text-ink-500" title={src.url}>
               {t('Page web', 'Web page')}
-              <span className="ml-1 block max-w-[16rem] truncate text-ink-400">{src.url}</span>
+              <span className="ml-1 block max-w-[16rem] truncate text-ink-500">{src.url}</span>
             </span>
           )}
           {src.type === 'document' && (
             <span className="text-ink-500">
               {t('Document', 'Document')}
-              <span className="ml-1 block max-w-[16rem] truncate text-ink-400">{src.nom}</span>
+              <span className="ml-1 block max-w-[16rem] truncate text-ink-500">{src.nom}</span>
             </span>
           )}
-          {src.type === 'manuel' && <span className="text-ink-400">{t('Écrite à la main', 'Written by hand')}</span>}
+          {src.type === 'manuel' && <span className="text-ink-500">{t('Écrite à la main', 'Written by hand')}</span>}
           {/* La date de LECTURE de la source, qui est de la provenance elle aussi : « lue le 3 janvier » dit
               d'où vient le contenu, là où `updatedAt` dit quand un humain y a touché. Les deux ne se
               confondent pas, et c'est la première qui a sa place ici. */}
           {fiche.derniereLectureAt !== null && (
-            <span className="block text-ink-400" data-testid={`kb-lue-${fiche.id}`}>
+            <span className="block text-ink-500" data-testid={`kb-lue-${fiche.id}`}>
               {t('lue le', 'read on')}{' '}
               {formatDate(fiche.derniereLectureAt, locale, { day: 'numeric', month: 'long', year: 'numeric' })}
             </span>
@@ -541,7 +543,7 @@ function LigneFiche({ fiche, busy, coche, ouverte, onCocher, onOuvrir, onSave, o
             </span>
           )}
         </td>
-        <td className="p-2 text-right align-top text-xs tabular-nums text-ink-400">
+        <td className="p-2 text-right align-top text-xs tabular-nums text-ink-500">
           {t(`${fiche.corps.length} car.`, `${fiche.corps.length} chars`)}
         </td>
       </tr>
@@ -585,10 +587,8 @@ function Fiche({ fiche, busy, onSave, onDelete }: {
           disabled={busy}
           onClick={onDelete}
           title={t('Supprimer cette fiche', 'Delete this entry')}
-          className="shrink-0 rounded px-2 py-1 text-sm text-danger hover:bg-danger-50 disabled:opacity-40"
-        >
-          ✕
-        </button>
+          className="shrink-0 rounded-controle px-2 py-1 text-sm text-danger hover:bg-danger-50 disabled:opacity-40"
+        ><Icone nom="fermer" taille="petite" /></button>
       </div>
       <textarea
         data-testid={`kb-corps-${fiche.id}`}

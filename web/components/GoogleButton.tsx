@@ -120,7 +120,7 @@ export function GoogleButton({ onError, onChoix }: { onError?: (msg: string) => 
 
   return (
     <div className="mt-4 space-y-3">
-      <div className="flex items-center gap-3 text-xs text-ink-400">
+      <div className="flex items-center gap-3 text-xs text-ink-500">
         <span className="h-px flex-1 bg-ink-200" />
         {t('ou', 'or')}
         <span className="h-px flex-1 bg-ink-200" />

@@ -15,7 +15,7 @@ export function CadrePublic({ children }: { children: React.ReactNode }) {
   const t = useT();
   return (
     <main className="min-h-screen px-4 py-8">
-      <header className="mx-auto mb-8 flex max-w-6xl items-center justify-between gap-4">
+      <header className="mx-auto mb-8 flex max-w-liste items-center justify-between gap-4">
         <a href="https://engageme.messagingme.fr" className="flex items-center gap-2 text-base font-semibold text-ink-900">
           <Logo className="h-7 w-7" />
           Engage Me
@@ -27,7 +27,7 @@ export function CadrePublic({ children }: { children: React.ReactNode }) {
           </Link>
         </div>
       </header>
-      <div className="mx-auto max-w-6xl">{children}</div>
+      <div className="mx-auto max-w-liste">{children}</div>
     </main>
   );
 }

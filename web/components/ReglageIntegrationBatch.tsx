@@ -6,6 +6,7 @@ import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 import { cardCls, inputCls } from '@/lib/ui';
 import { Bouton } from '@/components/Bouton';
+import { useConfirmation } from '@/components/Confirmation';
 
 /**
  * PARAMÈTRES > INTÉGRATIONS > BATCH (lot 6 de l'API publique, spec 2026-09-24, § 8) : les clés de l'outil qui
@@ -32,6 +33,7 @@ import { Bouton } from '@/components/Bouton';
  */
 export function ReglageIntegrationBatch({ tenantId }: { tenantId: string }) {
   const t = useT();
+  const confirmer = useConfirmation();
   const { locale } = useLocale();
   const [etat, setEtat] = useState<EtatIntegrationBatch | null>(null);
   const [cleRest, setCleRest] = useState('');
@@ -74,11 +76,11 @@ export function ReglageIntegrationBatch({ tenantId }: { tenantId: string }) {
       .catch((e: unknown) => { setStatut('error'); setErreur(e instanceof Error ? e.message : t('Enregistrement impossible', 'Unable to save')); });
   };
 
-  const debrancher = () => {
-    if (!window.confirm(t(
+  const debrancher = async () => {
+    if (!(await confirmer({ titre: t('Débrancher Batch', 'Disconnect Batch'), message: t(
       'Débrancher Batch ? Les deux clés enregistrées et le compte des signaux non poussés seront effacés, et plus aucun signal ne partira.',
       'Disconnect Batch? Both saved keys and the count of signals not sent will be erased, and no signal will be sent anymore.',
-    ))) return;
+    ), confirmer: t('Débrancher', 'Disconnect') }))) return;
     setStatut('saving');
     setErreur(null);
     debrancherIntegrationBatch(tenantId)
@@ -116,11 +118,11 @@ export function ReglageIntegrationBatch({ tenantId }: { tenantId: string }) {
                   : t('Non branché : aucun signal ne part.', 'Not connected: no signal is sent.')}
             </p>
           </div>
-          <span className="text-xs text-ink-400">{libelle}</span>
+          <span className="text-xs text-ink-500">{libelle}</span>
         </div>
 
         {branche && etat?.refusClesLe && (
-          <p className="mt-3 rounded-lg border border-danger-500 px-3 py-2 text-sm text-danger" data-testid="integration-batch-refus">
+          <p className="mt-3 rounded-controle border border-danger-500 px-3 py-2 text-sm text-danger" data-testid="integration-batch-refus">
             {t(
               `Batch a refusé vos clés le ${date(etat.refusClesLe)} : la remontée est suspendue jusqu’à ce que vous enregistriez des clés valides.`,
               `Batch rejected your keys on ${date(etat.refusClesLe)}: signals are paused until you save valid keys.`,
@@ -177,7 +179,7 @@ export function ReglageIntegrationBatch({ tenantId }: { tenantId: string }) {
             data-testid="integration-batch-resume"
             checked={resume}
             onChange={(e) => setResume(e.target.checked)}
-            className="mt-0.5 h-4 w-4 rounded border-ink-300"
+            className="mt-0.5 h-4 w-4 rounded-controle border-ink-300"
           />
           <span>
             {t('Envoyer le résumé des conversations', 'Send conversation summaries')}

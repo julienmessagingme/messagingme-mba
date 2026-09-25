@@ -46,15 +46,15 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
         <div className="mb-8 text-center">
           <Logo className="mx-auto mb-3 h-14 w-14" />
           <TitrePage>{t("Rejoindre l'espace", 'Join the workspace')}</TitrePage>
-          <p className="mt-1 text-sm text-ink-400">{t('Choisis ton mot de passe pour activer ton compte.', 'Choose a password to activate your account.')}</p>
+          <p className="mt-1 text-sm text-ink-500">{t('Choisis ton mot de passe pour activer ton compte.', 'Choose a password to activate your account.')}</p>
         </div>
-        <form onSubmit={onSubmit} className="space-y-4 rounded-2xl border border-ink-200 bg-white p-6">
+        <form onSubmit={onSubmit} className="space-y-4 rounded-carte border border-ink-200 bg-white p-6">
           <input type="password" required minLength={MIN_MOT_DE_PASSE} value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} placeholder={t(aideMotDePasse().fr, aideMotDePasse().en)} />
-          {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+          {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
           <Bouton enCours={loading} type="submit" disabled={loading} className="w-full">
             {loading ? t('Activation...', 'Activating...') : t('Activer mon compte', 'Activate my account')}
           </Bouton>
-          <p className="text-center text-xs text-ink-400"><Link href="/login" className="font-medium text-brand-600 hover:underline">{t('Déjà activé ? Se connecter', 'Already activated? Sign in')}</Link></p>
+          <p className="text-center text-xs text-ink-500"><Link href="/login" className="font-medium text-brand-600 hover:underline">{t('Déjà activé ? Se connecter', 'Already activated? Sign in')}</Link></p>
 
           <GoogleButton onError={setError} />
         </form>

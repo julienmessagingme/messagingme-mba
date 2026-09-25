@@ -347,11 +347,11 @@ export function PubFormulaire({
     }
   }
 
-  const champ = 'mt-1 w-full rounded-xl border border-ink-200 px-3 py-2 text-sm';
+  const champ = 'mt-1 w-full rounded-carte border border-ink-200 px-3 py-2 text-sm';
   const label = 'mt-3 block text-xs font-medium text-ink-500';
 
   return (
-    <div className="mt-4 rounded-2xl border border-ink-200 bg-white p-5" data-testid="pub-formulaire">
+    <div className="mt-4 rounded-carte border border-ink-200 bg-white p-5" data-testid="pub-formulaire">
       <h3 className="text-sm font-semibold text-ink-900">{t('Nouvelle publicité', 'New ad')}</h3>
       <p className="mt-1 text-xs text-ink-500">
         {t('Tout est créé EN PAUSE chez Meta : rien ne dépense tant que vous n’avez pas publié.',
@@ -359,7 +359,7 @@ export function PubFormulaire({
       </p>
 
       {erreur !== null && (
-        <p role="alert" data-testid="pub-form-erreur" className="mt-3 rounded-xl bg-danger-50 px-3 py-2 text-sm text-danger-700">{erreur}</p>
+        <p role="alert" data-testid="pub-form-erreur" className="mt-3 rounded-carte bg-danger-50 px-3 py-2 text-sm text-danger-700">{erreur}</p>
       )}
 
       {/* 🔴 DEUX COLONNES À PARTIR DE `lg`, ET L'APERÇU RESTE COLLÉ. Les champs seuls ne disaient rien de ce
@@ -382,7 +382,7 @@ export function PubFormulaire({
 
       <label className={label} htmlFor="pub-prerempli">{t('Message pré-rempli chez le prospect', 'Message pre-filled for the lead')}</label>
       <input id="pub-prerempli" className={champ} value={messagePreRempli} onChange={(e) => setMessagePreRempli(e.target.value)} maxLength={200} />
-      <p className="mt-1 text-xs text-ink-400">
+      <p className="mt-1 text-xs text-ink-500">
         {/* Les deux textes se confondent facilement, et les inverser produit une publicité absurde. */}
         {t('C’est ce que WhatsApp écrit dans sa zone de saisie : il n’a plus qu’à l’envoyer.',
            'This is what WhatsApp types in their input box: they just press send.')}
@@ -409,7 +409,7 @@ export function PubFormulaire({
           <input id="pub-fin" className={champ} type="datetime-local" value={fin} onChange={(e) => setFin(e.target.value)} />
         </div>
       </div>
-      <p className="mt-1 text-xs text-ink-400">
+      <p className="mt-1 text-xs text-ink-500">
         {/* 🔴 Le garde-fou de dépense, dit à l'endroit où on le saisit. */}
         {t('Le budget total et la date de fin sont obligatoires : ce sont eux qui bornent la dépense.',
            'Total budget and end date are required: they are what caps the spend.')}
@@ -442,7 +442,7 @@ export function PubFormulaire({
         {agentMetaOuvert === true && <option value="agent_meta">{t('L’agent de Meta', 'The Meta agent')}</option>}
       </select>
       {agentMetaOuvert === false && (
-        <p className="mt-1 text-xs text-ink-400" data-testid="pub-agent-indispo">
+        <p className="mt-1 text-xs text-ink-500" data-testid="pub-agent-indispo">
           {t('L’agent de Meta n’est pas ouvert à tout le monde sur ce numéro : il ne peut pas répondre à ces prospects.',
              'The Meta agent is not open to everyone on this number: it cannot answer these leads.')}
         </p>
@@ -450,7 +450,7 @@ export function PubFormulaire({
       {agentMetaOuvert === null && (
         /* ⚠️ ON DIT NOTRE IGNORANCE, PAS UN VERDICT SUR LEUR NUMÉRO. L'option reste cachée, ce qui est le
            bon sens d'erreur, mais la phrase décrit CE QUI S'EST PASSÉ CHEZ NOUS. */
-        <p className="mt-1 text-xs text-ink-400" data-testid="pub-agent-inconnu">
+        <p className="mt-1 text-xs text-ink-500" data-testid="pub-agent-inconnu">
           {t('Nous n’avons pas pu lire l’état de l’agent de Meta pour cet espace : rechargez la page pour le proposer.',
              'We could not read the Meta agent state for this space: reload the page to offer it.')}
         </p>
@@ -472,7 +472,7 @@ export function PubFormulaire({
           {/* ⚠️ `=== true` ET PAS UNE VÉRACITÉ : `null` est falsy, donc le comportement serait le même,
               mais c'est précisément la forme qui a effacé la distinction trois fois dans ce lot. */}
           {agentMetaOuvert === true && (
-            <p className="mt-1 text-xs text-ink-400" data-testid="pub-agent-ecarte">
+            <p className="mt-1 text-xs text-ink-500" data-testid="pub-agent-ecarte">
               {t('L’agent de Meta sera écarté des prospects de cette publicité : c’est le scénario qui répond.',
                  'The Meta agent will be kept away from this ad’s leads: the scenario answers.')}
             </p>
@@ -482,7 +482,7 @@ export function PubFormulaire({
 
       <label className={label} htmlFor="pub-tag">{t('Tag qui marque un prospect qualifié (facultatif)', 'Tag marking a qualified lead (optional)')}</label>
       <input id="pub-tag" className={champ} value={tagQualification} onChange={(e) => setTagQualification(e.target.value)} maxLength={64} />
-      <p className="mt-1 text-xs text-ink-400">
+      <p className="mt-1 text-xs text-ink-500">
         {/* ⚠️ LA LIMITE EST DITE ICI, pas découverte plus tard devant un entonnoir qui ne bouge pas. */}
         {t('Compté quand le tag est posé par un scénario, l’Inbox ou un agent IA, dans les 28 jours. Une pose en masse ou un import ne comptent pas.',
            'Counted when the tag is set by a scenario, the Inbox or an AI agent, within 28 days. Bulk tagging and imports do not count.')}
@@ -497,7 +497,7 @@ export function PubFormulaire({
           {t('Cette publicité ne relève d’aucune catégorie spéciale (logement, emploi, crédit, politique).',
              'This ad does not fall under any special category (housing, employment, credit, politics).')}
           {' '}
-          <span className="text-ink-400">
+          <span className="text-ink-500">
             {t('Ces catégories imposent des obligations que cet écran ne porte pas : passez par le Gestionnaire de Meta.',
                'Those categories carry obligations this screen does not handle: use Meta Ads Manager.')}
           </span>
@@ -538,7 +538,7 @@ export function PubFormulaire({
         </p>
       )}
       {brouillonId !== null && (
-        <p className="mt-2 text-xs text-ink-400" data-testid="pub-brouillon-actif">
+        <p className="mt-2 text-xs text-ink-500" data-testid="pub-brouillon-actif">
           {t('Ce brouillon est enregistré. Rien n’a été envoyé chez Meta : il disparaîtra quand la publicité sera créée.',
              'This draft is saved. Nothing was sent to Meta: it will disappear once the ad is created.')}
         </p>

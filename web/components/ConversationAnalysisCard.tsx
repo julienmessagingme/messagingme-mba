@@ -24,6 +24,9 @@ import { entetesQuali, ligneQuali } from '@/lib/quali-export';
 import { INTENTIONS, comptesParIntention, estIntention, libelleIntention } from '@/lib/intentions';
 import { Bouton } from '@/components/Bouton';
 import { danger, ink, succes } from '@/lib/couleurs';
+import { Icone } from '@/components/Icone';
+import { Squelette } from '@/components/Squelette';
+import { Nd } from '@/components/Nd';
 
 /**
  * Plafond de lignes ramenées quand on ouvre une liste pour l'exporter.
@@ -38,9 +41,9 @@ const PLAFOND_EXPORT = 1000;
 /** Traducteur au point d'appel (cf. i18n.tsx). Réutilisé par les helpers de libellé. */
 type Tr = (fr: string, en?: string) => string;
 
-const CARD = 'rounded-2xl border border-ink-200 bg-white p-5';
+const CARD = 'rounded-carte border border-ink-200 bg-white p-5';
 const SELECT =
-  'rounded-lg border border-ink-300 bg-white px-2.5 py-1 text-xs text-ink-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+  'rounded-controle border border-ink-300 bg-white px-2.5 py-1 text-xs text-ink-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 const SECTION_LABEL = 'mb-2 text-xs font-medium text-ink-500';
 
 // Clés d'énumération LLM (filtres + mapping libellé). Les VALEURS backend passent telles quelles si inconnues.
@@ -102,21 +105,21 @@ function Bar({ label, pct, value, cls, onClick, titre }: { label: string; pct: n
   const corps = (
     <>
       <div className="w-32 shrink-0 truncate text-xs text-ink-500" title={label}>{label}</div>
-      <div className="h-6 flex-1 overflow-hidden rounded-md bg-ink-50">
-        <div className={`h-full rounded-md ${cls}`} style={{ width: `${pct}%` }} />
+      <div className="h-6 flex-1 overflow-hidden rounded-controle bg-ink-50">
+        <div className={`h-full rounded-controle ${cls}`} style={{ width: `${pct}%` }} />
       </div>
       <div className={`w-10 shrink-0 text-right text-xs tabular-nums ${onClick ? 'font-medium text-brand-600 underline decoration-dotted underline-offset-2' : 'text-ink-500'}`}>{value}</div>
     </>
   );
   if (!onClick) return <div className="flex items-center gap-3">{corps}</div>;
   return (
-    <button type="button" onClick={onClick} title={titre} className="flex w-full items-center gap-3 rounded-md text-left transition-colors duration-150 hover:bg-ink-50">
+    <button type="button" onClick={onClick} title={titre} className="flex w-full items-center gap-3 rounded-controle text-left transition-colors duration-150 hover:bg-ink-50">
       {corps}
     </button>
   );
 }
 
-/** Donut sentiment en SVG pur (pathLength=100, arcs par stroke-dasharray). Positif=mint, neutre=gris, négatif=coral. */
+/** Donut sentiment en SVG pur (pathLength=100, arcs par stroke-dasharray). Positif = `succes`, neutre = `ink`, négatif = `danger` (jetons de `lib/couleurs.ts`). */
 function SentimentDonut({ summary, locale, t }: { summary: ConversationAnalysisSummary; locale: Locale; t: Tr }) {
   const { positif, neutre, negatif } = summary.sentiment;
   const total = positif + neutre + negatif;
@@ -153,7 +156,7 @@ function SentimentDonut({ summary, locale, t }: { summary: ConversationAnalysisS
             <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: s.color }} />
             <span className="text-ink-500">{s.label}</span>
             <span className="font-medium tabular-nums text-ink-900">{fmtNum(s.value, locale)}</span>
-            <span className="tabular-nums text-ink-400">{fmtPct(s.value, total, locale)}</span>
+            <span className="tabular-nums text-ink-500">{fmtPct(s.value, total, locale)}</span>
           </div>
         ))}
       </div>
@@ -238,7 +241,7 @@ function QuantiBlock({ summary, sujet, onSujet, onAction }: {
 
       <div>
         <div className={SECTION_LABEL}>{t('Qui a géré', 'Handled by')}</div>
-        <div className="flex h-6 overflow-hidden rounded-md bg-ink-50">
+        <div className="flex h-6 overflow-hidden rounded-controle bg-ink-50">
           {hb.humain > 0 && <div className="bg-brand-500" style={{ width: `${hbW(hb.humain)}%` }} title={t('Humain', 'Human')} />}
           {hb.automatise > 0 && <div className="bg-succes-400" style={{ width: `${hbW(hb.automatise)}%` }} title={t('Automatisé', 'Automated')} />}
           {hb.mba > 0 && <div className="bg-violet" style={{ width: `${hbW(hb.mba)}%` }} title="MBA" />}
@@ -268,12 +271,12 @@ function QuantiBlock({ summary, sujet, onSujet, onAction }: {
                   onClick={() => onSujet(retenu ? null : tp.topic)}
                   title={retenu ? t('Retirer ce filtre', 'Remove this filter') : t('Ne garder que ce sujet', 'Keep only this topic')}
                   className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition-colors duration-150 ${
-                    retenu ? 'bg-brand-500 text-white' : 'bg-ink-50 hover:bg-ink-100'
+                    retenu ? 'bg-brand-600 text-white' : 'bg-ink-50 hover:bg-ink-100'
                   }`}
                 >
                   <span className={retenu ? '' : 'text-ink-900'}>{tp.topic}</span>
-                  <span className={`tabular-nums ${retenu ? 'text-white/80' : 'text-ink-400'}`}>{fmtNum(tp.count, locale)}</span>
-                  {retenu && <span aria-hidden="true">×</span>}
+                  <span className={`tabular-nums ${retenu ? 'text-white/80' : 'text-ink-500'}`}>{fmtNum(tp.count, locale)}</span>
+                  {retenu && <Icone nom="fermer" taille="mini" />}
                 </button>
               );
             })}
@@ -343,7 +346,7 @@ function FicheConversation({ c, onClose }: { c: AnalyzedConversation; onClose: (
           {c.summary && c.summary.trim() !== '' ? (
             <p className="mt-0.5 whitespace-pre-line text-sm text-ink-900" data-testid="fiche-resume">{c.summary}</p>
           ) : (
-            <p className="mt-0.5 text-sm italic text-ink-400" data-testid="fiche-resume-absent">
+            <p className="mt-0.5 text-sm italic text-ink-500" data-testid="fiche-resume-absent">
               {phraseResumeAbsent('sans-resume', t)}
             </p>
           )}
@@ -372,7 +375,7 @@ function FicheConversation({ c, onClose }: { c: AnalyzedConversation; onClose: (
             <dl className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
               {entites.map(([cle, valeur]) => (
                 <div key={cle}>
-                  <dt className="text-xs text-ink-400">{cle}</dt>
+                  <dt className="text-xs text-ink-500">{cle}</dt>
                   <dd className="text-ink-900">{typeof valeur === 'object' ? JSON.stringify(valeur) : String(valeur)}</dd>
                 </div>
               ))}
@@ -436,7 +439,7 @@ function ListeParAction({ tenantId, range, action, onClose }: {
         {erreur ? (
           <p className="text-sm text-danger-700">{t('Liste indisponible pour le moment.', 'List unavailable right now.')}</p>
         ) : rows === null ? (
-          <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
+          <Squelette forme="lignes" />
         ) : rows.length === 0 ? (
           <p className="text-sm text-ink-500">{t('Aucune conversation ne correspond.', 'No conversation matches.')}</p>
         ) : (
@@ -444,14 +447,14 @@ function ListeParAction({ tenantId, range, action, onClose }: {
             {rows.length === PLAFOND_EXPORT && (
               // Dire la troncature plutôt que la subir : un export de 1000 lignes exactement est suspect,
               // et sans cette phrase personne ne saurait qu'il en manque.
-              <p className="mb-2 rounded-lg bg-alerte-50 px-3 py-2 text-xs text-alerte-800">
+              <p className="mb-2 rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte-800">
                 {t(`Liste limitée aux ${PLAFOND_EXPORT} plus récentes. Réduis la période pour tout voir.`, `List capped at the ${PLAFOND_EXPORT} most recent. Narrow the period to see them all.`)}
               </p>
             )}
             <div className="overflow-x-auto">
               <table className="w-full min-w-[520px] text-left text-xs">
                 <thead>
-                  <tr className="border-b border-ink-100 text-ink-400">
+                  <tr className="border-b border-ink-100 text-ink-500">
                     <th className="whitespace-nowrap px-2 py-2 font-medium">{t('Date', 'Date')}</th>
                     <th className="px-2 py-2 font-medium">{t('Contact', 'Contact')}</th>
                     <th className="px-2 py-2 font-medium">{t('Sujet', 'Topic')}</th>
@@ -582,22 +585,22 @@ function QualiTable({ tenantId, range, sujet, onSujet, intentionInitiale, journe
             type="button"
             data-testid="quali-sujet-retirer"
             onClick={() => onSujet(null)}
-            className="inline-flex items-center gap-1.5 rounded-full bg-brand-500 px-2.5 py-1 text-white transition-colors duration-150 hover:bg-brand-600"
+            className="inline-flex items-center gap-1.5 rounded-full bg-brand-600 px-2.5 py-1 text-white transition-colors duration-150 hover:bg-brand-700"
           >
-            {sujet}<span aria-hidden="true">×</span>
+            {sujet}<Icone nom="fermer" taille="mini" />
           </button>
         </div>
       )}
 
       {loading ? (
-        <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
+        <Squelette forme="lignes" />
       ) : rows.length === 0 ? (
         <p className="text-sm text-ink-500">{t('Aucune conversation ne correspond.', 'No conversation matches.')}</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-xs">
             <thead>
-              <tr className="border-b border-ink-100 text-ink-400">
+              <tr className="border-b border-ink-100 text-ink-500">
                 <th className={th}>{t('Date', 'Date')}</th>
                 <th className={th}>{t('Contact', 'Contact')}</th>
                 <th className={th}>{t('Sentiment', 'Sentiment')}</th>
@@ -646,7 +649,7 @@ function QualiTable({ tenantId, range, sujet, onSujet, intentionInitiale, journe
                         * tiret le dit, plutot que d inventer un repondeur par defaut.
                         */}
                       {repondeursDe(r.origines ?? []).length === 0
-                        ? <span className="text-ink-400" title={t('Aucun message sortant identifié : personne n’a répondu, ou la conversation est antérieure à la mesure.', 'No identified outbound message: nobody answered, or the conversation predates the measure.')}>—</span>
+                        ? <Nd titre={t('Aucun message sortant identifié : personne n’a répondu, ou la conversation est antérieure à la mesure.', 'No identified outbound message: nobody answered, or the conversation predates the measure.')} />
                         : (
                           <span className="flex flex-wrap gap-1">
                             {repondeursDe(r.origines ?? []).map((rep) => (
@@ -661,7 +664,7 @@ function QualiTable({ tenantId, range, sujet, onSujet, intentionInitiale, journe
                           </span>
                         )}
                     </td>
-                    <td className={td}>{r.resolved ? <span className="text-succes-600">✓</span> : <span className="text-ink-400">✗</span>}</td>
+                    <td className={td}>{r.resolved ? <Icone nom="valide" className="text-succes-700" titre={t('Résolu', 'Resolved')} /> : <Icone nom="echec" className="text-ink-400" titre={t('Non résolu', 'Not resolved')} />}</td>
                     <td className={`${td} text-ink-500`}>{actionLabel(r.actionSuggestion, t)}</td>
                     <td className={`${td} tabular-nums ${conf < 50 ? 'text-ink-400' : 'text-ink-900'}`}>{conf}%</td>
                     <td className={`${td} max-w-[16rem] truncate text-ink-500`} title={r.justification}>{r.justification}</td>
@@ -735,11 +738,11 @@ export function ConversationAnalysisCard({ tenantId, range, intentionInitiale }:
     <div className={CARD}>
       <div className="mb-3">
         <h3 className="text-sm font-semibold text-ink-900">{t('Conversations (analyse)', 'Conversations (analysis)')}</h3>
-        <p className="text-xs text-ink-400">{t('Analyse IA, indicative', 'AI analysis, indicative')}</p>
+        <p className="text-xs text-ink-500">{t('Analyse IA, indicative', 'AI analysis, indicative')}</p>
       </div>
 
       {loading ? (
-        <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
+        <Squelette forme="lignes" />
       ) : !summary || summary.total === 0 ? (
         <p className="text-sm text-ink-500">
           {summary && summary.enabled === false
@@ -760,7 +763,7 @@ export function ConversationAnalysisCard({ tenantId, range, intentionInitiale }:
               sans rien effacer). Écrire « conservées 0 jours, au-delà elles ne sont plus consultables »
               dirait exactement l'inverse de ce que fait le serveur. */}
           {summary.retentionDays !== undefined && (
-            <p className="mt-4 text-xs text-ink-400">
+            <p className="mt-4 text-xs text-ink-500">
               {summary.retentionDays > 0
                 ? t(
                   `Les conversations et leurs analyses sont conservées ${summary.retentionDays} jours. Au-delà, elles ne sont plus consultables ni exportables.`,

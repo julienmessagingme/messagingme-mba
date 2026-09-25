@@ -150,8 +150,8 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
 
       {serveurs.length === 0 ? (
         <p className="text-sm text-ink-500" data-testid="mcp-vide">
-          {t('Aucun serveur MCP déclaré. Utilisez le bouton ci-dessus pour en ajouter un : il vous faudra son adresse et son jeton.',
-            'No MCP server yet. Use the button above to add one: you will need its address and its token.')}
+          {t('Aucun serveur MCP déclaré : ajoutez-en un avec le bouton ci-dessus, muni de son adresse et de son jeton.',
+            'No MCP server yet: add one with the button above, with its address and its token.')}
         </p>
       ) : (
         <ul className="space-y-3">
@@ -187,7 +187,7 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
                     {t('Voir ce qui va changer', 'Preview changes')}
                   </Bouton>
                   <button type="button" disabled={busy} data-testid={`mcp-supprimer-${s.id}`}
-                    className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 text-xs text-danger transition-colors duration-150 hover:bg-danger-50 disabled:opacity-50"
+                    className="rounded-controle border border-ink-300 bg-white px-2 py-0.5 text-xs text-danger transition-colors duration-150 hover:bg-danger-50 disabled:opacity-50"
                     onClick={() => void agir(async () => {
                       await supprimerServeurMcp(tenantId, s.id);
                       setServeurs((await listerServeursMcp(tenantId)).serveurs);
@@ -211,11 +211,11 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
               )}
 
               {plan?.sourceId === s.id && (
-                <div className="mt-3 rounded-2xl border border-ink-200 bg-ink-50/50 p-3" data-testid={`mcp-plan-${s.id}`}>
+                <div className="mt-3 rounded-carte border border-ink-200 bg-ink-50/50 p-3" data-testid={`mcp-plan-${s.id}`}>
                   {plan.tronque && (
                     /* 🔴 UN PLAFOND SILENCIEUX SE LIT COMME UNE COUVERTURE COMPLÈTE. Et il a une conséquence
                        que le client doit connaître : sur un catalogue tronqué, rien n'est retiré. */
-                    <p className="mb-2 rounded-lg bg-alerte-50 px-2 py-1 text-xs text-ink-900" data-testid={`mcp-tronque-${s.id}`}>
+                    <p className="mb-2 rounded-controle bg-alerte-50 px-2 py-1 text-xs text-ink-900" data-testid={`mcp-tronque-${s.id}`}>
                       {t('Ce serveur annonce plus d’outils que nous n’en lisons d’un coup. Rien ne sera retiré tant que la liste est incomplète.',
                         'This server announces more tools than we read at once. Nothing will be removed while the list is incomplete.')}
                     </p>

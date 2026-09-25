@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { RangeBar } from '@/components/RangeBar';
+import { TitrePage } from '@/components/TitrePage';
 import { CostChartCard, FactureCard, TemplateBreakdownCard } from '@/components/analytics/cartes';
 import type { Session } from '@/lib/session';
 import { getTemplateStats, listCampaigns, type CampaignSummary, type StatsRange, type TemplateStats } from '@/lib/api';
@@ -89,8 +90,8 @@ function CoutsInner({ session }: { session: Session }) {
 
   return (
     <div className="space-y-4">
-      <RangeBar title={t('Coûts', 'Costs')} range={range} onChange={setRange} />
-      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+      <RangeBar title={<TitrePage>{t('Coûts', 'Costs')}</TitrePage>} range={range} onChange={setRange} />
+      {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
       {loading ? (
         <p className="text-sm text-ink-500">{t('Chargement des statistiques...', 'Loading statistics...')}</p>
       ) : (

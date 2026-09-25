@@ -1072,6 +1072,9 @@ depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui d
   2026-09-15, gardé depuis par `tests/agent-setup-evolution.test.ts`.
   ⚠️ `TRADUCTION_MODELE` vide = traduction ÉTEINTE, et l'écran le dit avec la cause `instance` (rien à
   faire côté client) plutôt qu'en parlant d'un crédit qui n'est pas en cause.
+- **La console a trois rayons, deux largeurs, une modale, une famille d'icônes** (refonte visuelle, 2026-09-25).
+  `tests/web-formes.test.ts` et `tests/web-icones.test.ts` refusent le reste. Un e2e qui confirmait par
+  `page.on('dialog')` passe par `e2e/aide/confirmation.ts`.
 - **Discipline anti-tailor-made** : inbox minimal borné, pas de multicanal/segments avancés/A-B testing.
   (Un **constructeur de Flow** riche EXISTE désormais, cf `features.md` : formulaires de collecte, pas un
   workflow builder générique.)

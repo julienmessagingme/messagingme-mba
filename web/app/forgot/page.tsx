@@ -36,18 +36,18 @@ export default function ForgotPage() {
           <TitrePage>{t('Mot de passe oublié', 'Forgot password')}</TitrePage>
         </div>
         {sent ? (
-          <div className="rounded-2xl border border-ink-200 bg-white p-6 text-center">
+          <div className="rounded-carte border border-ink-200 bg-white p-6 text-center">
             <p className="text-sm text-ink-900">{t("Si un compte existe pour cet email, un lien de réinitialisation vient d'être envoyé. Pense à vérifier tes spams.", 'If an account exists for this email, a reset link has just been sent. Remember to check your spam folder.')}</p>
             <Link href="/login" className="mt-4 inline-block text-sm font-medium text-brand-600 hover:underline">{t('Retour à la connexion', 'Back to login')}</Link>
           </div>
         ) : (
-          <form onSubmit={onSubmit} className="space-y-4 rounded-2xl border border-ink-200 bg-white p-6">
+          <form onSubmit={onSubmit} className="space-y-4 rounded-carte border border-ink-200 bg-white p-6">
             <p className="text-sm text-ink-500">{t("Entre ton email : on t'envoie un lien pour choisir un nouveau mot de passe.", 'Enter your email: we will send you a link to choose a new password.')}</p>
             <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} placeholder={t('toi@entreprise.fr', 'you@company.com')} />
             <Bouton enCours={loading} type="submit" disabled={loading} className="w-full">
               {loading ? t('Envoi...', 'Sending...') : t('Envoyer le lien', 'Send the link')}
             </Bouton>
-            <p className="text-center text-xs text-ink-400"><Link href="/login" className="font-medium text-brand-600 hover:underline">{t('Retour', 'Back')}</Link></p>
+            <p className="text-center text-xs text-ink-500"><Link href="/login" className="font-medium text-brand-600 hover:underline">{t('Retour', 'Back')}</Link></p>
           </form>
         )}
       </div>

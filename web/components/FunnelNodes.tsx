@@ -110,7 +110,7 @@ export function FunnelNodes({ etapes, titres, devise }: {
                       {fmtNum(v, locale)}
                     </span>
                     <span
-                      className={`w-full rounded-t ${n.couleur} ${n.gestesSeuls ? 'opacity-70' : ''}`}
+                      className={`w-full rounded-t-controle ${n.couleur} ${n.gestesSeuls ? 'opacity-70' : ''}`}
                       style={{ height: hauteur(e, n.cle) }}
                       aria-hidden="true"
                     />
@@ -124,7 +124,7 @@ export function FunnelNodes({ etapes, titres, devise }: {
               title={titres.get(e.nodeId) ?? e.nodeId}>
               {titres.get(e.nodeId) ?? e.nodeId}
             </p>
-            <p className="text-center text-[10px] text-ink-400" data-testid={`funnel-ratio-${e.nodeId}`}>
+            <p className="text-center text-[10px] text-ink-500" data-testid={`funnel-ratio-${e.nodeId}`}>
               {e.coutParInteraction === null
                 ? t('coût/interaction inconnu', 'cost/interaction unknown')
                 : `${fmtCost(e.coutParInteraction, locale, devise)} ${t('/ interaction', '/ interaction')}`}
@@ -138,12 +138,12 @@ export function FunnelNodes({ etapes, titres, devise }: {
       <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-500" data-testid="funnel-legende">
         {NATURES.map((n) => (
           <li key={n.cle} className="flex items-center gap-1.5">
-            <span className={`inline-block h-2.5 w-2.5 rounded-sm ${n.couleur} ${n.gestesSeuls ? 'opacity-70' : ''}`} aria-hidden="true" />
+            <span className={`inline-block h-2.5 w-2.5 rounded-controle ${n.couleur} ${n.gestesSeuls ? 'opacity-70' : ''}`} aria-hidden="true" />
             {t(n.fr, n.en)}
-            {n.gestesSeuls && <span className="text-ink-400">{t('(gestes)', '(gestures)')}</span>}
+            {n.gestesSeuls && <span className="text-ink-500">{t('(gestes)', '(gestures)')}</span>}
           </li>
         ))}
-        <li className="text-ink-400">{t('Les trois autres comptent des personnes.', 'The other three count people.')}</li>
+        <li className="text-ink-500">{t('Les trois autres comptent des personnes.', 'The other three count people.')}</li>
       </ul>
     </div>
   );

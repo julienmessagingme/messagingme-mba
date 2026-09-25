@@ -15,6 +15,9 @@ import {
   type GesteMoment, type ModeleOutil, type OutilAgent, type OutilBibliotheque, type TexteBilingue,
 } from '@/lib/api-agent-tools';
 import { Bouton } from '@/components/Bouton';
+import { Icone } from '@/components/Icone';
+import { useConfirmation } from '@/components/Confirmation';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * L'onglet OUTILS d'un agent IA.
@@ -120,10 +123,10 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
       </MbaNotice>
       {erreur && <MbaNotice kind="error" testid="outils-erreur">{erreur}</MbaNotice>}
 
-      {vue === null && <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>}
+      {vue === null && <Squelette forme="lignes" />}
       {vue?.outils.length === 0 && (
         <p data-testid="outils-vide" className="text-sm text-ink-500">
-          {t('Aucun outil. Sans outil, l’agent peut parler mais ne peut rien faire, pas même terminer.', 'No tool. Without tools, the agent can talk but cannot act, not even finish.')}
+          {t('Aucun outil : l’agent peut parler mais ne peut rien faire, pas même terminer.', 'No tool: the agent can talk but cannot act, not even finish.')}
         </p>
       )}
 
@@ -149,11 +152,11 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
         <div className={`${cardCls} flex flex-col gap-3`}>
           <p className="text-sm font-medium text-ink-900">{t('Donner un outil de plus', 'Give one more tool')}</p>
           {restants.map((m) => (
-            <div key={m.handler} data-testid={`outil-dispo-${m.handler}`} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-ink-200 px-3 py-2">
+            <div key={m.handler} data-testid={`outil-dispo-${m.handler}`} className="flex flex-wrap items-start justify-between gap-3 rounded-controle border border-ink-200 px-3 py-2">
               <div className="min-w-0 flex-1">
                 <p className="flex items-center gap-2 text-sm font-medium text-ink-900">
                   {signeDuHandler(m.handler) !== null && (
-                    <IconeOutil signe={signeDuHandler(m.handler)!} className="h-4 w-4 shrink-0 text-ink-400" />
+                    <IconeOutil signe={signeDuHandler(m.handler)!} className="text-ink-400" />
                   )}
                   <span className="min-w-0">
                     <Bilingue texte={m.titre} /> <Risque risk={m.risk} handler={m.handler} />
@@ -212,7 +215,7 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
           </p>
           <div className="flex flex-col gap-3">
             {mcpARattacher.length > 0 && (
-              <div data-testid="mcp-a-rattacher" className="rounded-lg border border-dashed border-ink-300 p-3">
+              <div data-testid="mcp-a-rattacher" className="rounded-carte bg-ink-50 p-3">
                 <p className="text-xs text-ink-500">
                   {t('Importés dans l’espace, pas encore donnés à cet agent :', 'Imported in the workspace, not yet given to this agent:')}
                 </p>
@@ -297,6 +300,7 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
   onRetirer: () => void;
 }) {
   const t = useT();
+  const confirmer = useConfirmation();
   const [ouvert, setOuvert] = useState(false);
   return (
     <div data-testid={`outil-${outil.id}`} className={`${cardCls} flex flex-col gap-3`}>
@@ -307,7 +311,7 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
                 là-bas. Un handler que cette console ne connaît pas n'en porte AUCUN, plutôt qu'un par
                 défaut : le catalogue vit côté serveur, donc une console plus ancienne que l'API en verra. */}
             {signeDuHandler(String(outil.binding.handler ?? '')) !== null && (
-              <IconeOutil signe={signeDuHandler(String(outil.binding.handler ?? ''))!} className="h-4 w-4 shrink-0 text-ink-400" />
+              <IconeOutil signe={signeDuHandler(String(outil.binding.handler ?? ''))!} className="text-ink-400" />
             )}
             {outil.title} <Risque risk={outil.risk} handler={String(outil.binding.handler ?? '')} />
             {outil.actif
@@ -317,7 +321,7 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
           <p className="mt-0.5 truncate font-mono text-xs text-ink-500">{outil.name}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Bouton variante="secondaire" enCours={outil.actif}
+          <Bouton variante="secondaire"
             data-testid={`outil-activer-${outil.id}`}
             /**
              * ⚠️ PAS CLIQUABLE SUR UN OUTIL QUE LE BANDEAU VIENT DE DÉCLARER MORT. Le serveur refuse déjà
@@ -334,12 +338,12 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
           <button
             data-testid={`outil-retirer-${outil.id}`}
             disabled={busy}
-            onClick={() => {
+            onClick={async () => {
               // Une ACTION appartient à cet agent (0157) : la retirer la SUPPRIME, réglages compris. Ça se confirme.
-              if (outil.origin === 'mba' && !window.confirm(t(
+              if (outil.origin === 'mba' && !(await confirmer({ titre: t('Retirer l’action', 'Remove the action'), message: t(
                 `Retirer « ${outil.title} » de cet agent ? L’action et ses réglages seront supprimés.`,
                 `Remove “${outil.title}” from this agent? The action and its settings will be deleted.`,
-              ))) return;
+              ), confirmer: t('Retirer', 'Remove') }))) return;
               onRetirer();
             }}
             // ⚠️ L'infobulle dit ce que fait VRAIMENT le retrait, et il dépend de l'outil : une action appartient à
@@ -350,10 +354,8 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
                 'Remove this tool from this agent (it stays available to your other agents)')
               : t('Retirer cette action de cet agent (elle est supprimée, avec ses réglages)',
                 'Remove this action from this agent (it is deleted, with its settings)')}
-            className="rounded px-2 py-1 text-sm text-danger hover:bg-danger-50 disabled:opacity-40"
-          >
-            ✕
-          </button>
+            className="rounded-controle px-2 py-1 text-sm text-danger hover:bg-danger-50 disabled:opacity-40"
+          ><Icone nom="fermer" taille="petite" /></button>
         </div>
       </div>
 
@@ -362,7 +364,7 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
           doit pouvoir la montrer à son fournisseur. */}
       {(outil.mcpIndisponibleLe || outil.mcpNonActivable) && (
         <p data-testid={`outil-mcp-mort-${outil.id}`}
-          className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-ink-900">
+          className="rounded-controle border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-ink-900">
           {outil.mcpIndisponibleLe
             ? t('Cet outil a disparu du serveur MCP : il n’est plus appelable.',
               'This tool is gone from the MCP server: it can no longer be called.')
@@ -392,7 +394,7 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
       )}
 
       {outil.risk === 'irreversible' && (
-        <label data-testid={`outil-autonomie-${outil.id}`} className="flex items-start gap-2 rounded-lg border border-alerte-300 bg-alerte-50 px-3 py-2 text-sm text-ink-900">
+        <label data-testid={`outil-autonomie-${outil.id}`} className="flex items-start gap-2 rounded-controle border border-alerte-300 bg-alerte-50 px-3 py-2 text-sm text-ink-900">
           <input
             type="checkbox"
             className="mt-0.5"
@@ -478,7 +480,7 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
           {ouvert ? t('Masquer ce que le modèle voit', 'Hide what the model sees') : t('Voir ce que le modèle voit', 'See what the model sees')}
         </button>
         {ouvert && (
-          <pre data-testid={`outil-schema-${outil.id}`} className="mt-2 max-h-64 overflow-auto rounded-lg bg-ink-50 p-3 text-xs leading-relaxed text-ink-900">
+          <pre data-testid={`outil-schema-${outil.id}`} className="mt-2 max-h-64 overflow-auto rounded-carte bg-ink-50 p-3 text-xs leading-relaxed text-ink-900">
             {outil.expose === null
               ? t('Rien : cet outil n’a aucune valeur possible.', 'Nothing: this tool has no possible value.')
               : JSON.stringify(outil.expose, null, 2)}
@@ -601,10 +603,10 @@ function ChoixDeBlocs({ tenantId, outilId, valeurs, busy, onSave }: {
           a perdu son agent, disparaîtrait de la liste : le code resterait enregistré et invisible, donc
           impossible à retirer, sur un outil qui échouerait en silence. */}
       {valeurs.filter((v) => !connus.has(v)).map((v) => (
-        <span key={v} data-testid={`outil-bloc-inconnu-${v}`} className="flex items-center gap-2 rounded-lg border border-alerte-300 bg-alerte-50 px-2 py-1 text-xs text-alerte-900">
+        <span key={v} data-testid={`outil-bloc-inconnu-${v}`} className="flex items-center gap-2 rounded-controle border border-alerte-300 bg-alerte-50 px-2 py-1 text-xs text-alerte-900">
           <span className="font-mono">{v}</span>
           <span>{t('ce bloc n’existe plus, ou son scénario n’a plus d’agent', 'this block no longer exists, or its scenario has no agent')}</span>
-          <button disabled={busy} onClick={() => bascule(v)} className="ml-auto text-danger hover:text-danger-700 hover:underline disabled:opacity-40">✕</button>
+          <button disabled={busy} onClick={() => bascule(v)} aria-label={t('Retirer', 'Remove')} className="ml-auto text-danger hover:text-danger-700 disabled:opacity-40"><Icone nom="fermer" taille="petite" /></button>
         </span>
       ))}
 
@@ -620,7 +622,7 @@ function ChoixDeBlocs({ tenantId, outilId, valeurs, busy, onSave }: {
       )}
 
       {[...parScenario.entries()].map(([scenario, liste]) => (
-        <div key={scenario} className="rounded-lg border border-ink-200 px-3 py-2">
+        <div key={scenario} className="rounded-controle border border-ink-200 px-3 py-2">
           <p className="text-xs font-semibold text-ink-900">{scenario}</p>
           <div className="mt-1.5 flex flex-col gap-1">
             {liste.map((n) => (
@@ -634,7 +636,7 @@ function ChoixDeBlocs({ tenantId, outilId, valeurs, busy, onSave }: {
                 />
                 <span>
                   {n.name.trim() === '' ? n.summary : n.name}
-                  <span className="ml-1 font-mono text-xs text-ink-400">{n.code}</span>
+                  <span className="ml-1 font-mono text-xs text-ink-500">{n.code}</span>
                 </span>
               </label>
             ))}
@@ -668,10 +670,9 @@ function ListeValeurs({ outilId, nom, aide, valeurs, busy, onSave }: {
               data-testid={`outil-valeur-retirer-${outilId}-${v}`}
               disabled={busy}
               onClick={() => onSave(valeurs.filter((x) => x !== v))}
-              className="text-danger hover:text-danger-700 hover:underline disabled:opacity-40"
-            >
-              ✕
-            </button>
+              aria-label={t('Retirer', 'Remove')}
+              className="text-danger hover:text-danger-700 disabled:opacity-40"
+            ><Icone nom="fermer" taille="petite" /></button>
           </span>
         ))}
         {valeurs.length === 0 && (
@@ -761,7 +762,7 @@ function Gestes({ outil, busy, onSave }: {
   }
 
   return (
-    <div data-testid={`outil-gestes-${outil.id}`} className="rounded-lg border border-ink-200 px-3 py-2">
+    <div data-testid={`outil-gestes-${outil.id}`} className="rounded-controle border border-ink-200 px-3 py-2">
       <p className="text-xs font-medium text-ink-900">{t('Et en plus, faire ceci', 'And also do this')}</p>
       <p className="mt-0.5 text-xs leading-relaxed text-ink-500">
         {t(

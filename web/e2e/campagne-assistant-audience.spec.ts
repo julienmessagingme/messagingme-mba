@@ -128,7 +128,7 @@ test('tout selectionner vise le total serveur, pas les lignes affichees', async 
 
 test('l import de fichier est une source de l etape', async ({ page }) => {
   await monter(page);
-  await page.getByRole('button', { name: '📄 Import fichier' }).click();
+  await page.getByRole('button', { name: 'Import fichier', exact: true }).click();
   // Le composant d'import partagé avec l'écran en service : sa zone de dépôt le désigne sans ambiguïté.
   await expect(page.getByTestId('destinataires-liste')).toHaveCount(0);
   await expect(page.getByText(/CSV/i).first()).toBeVisible();

@@ -7,6 +7,8 @@ import { formatDate } from '@/lib/day';
 import { granularite, regrouper, SEUIL_SEMAINE_JOURS, type Granularite, type LignePeriode } from '@/lib/jours-analyse';
 import { useT, useLocale } from '@/lib/i18n';
 import { Bouton } from '@/components/Bouton';
+import { Squelette } from '@/components/Squelette';
+import { Nd } from '@/components/Nd';
 
 /**
  * UNE LIGNE PAR JOUR, PAS PAR CONVERSATION.
@@ -68,7 +70,7 @@ export function TableJoursAnalyse({ tenantId, range, choisie, onChoisir }: {
   const lignes = jours === 'erreur' || jours === null ? null : regrouper(brut, mode);
 
   return (
-    <section className="rounded-2xl border border-ink-200 bg-white p-5" data-testid="jours-analyse">
+    <section className="rounded-carte border border-ink-200 bg-white p-5" data-testid="jours-analyse">
       <header className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold text-ink-900">
@@ -76,7 +78,7 @@ export function TableJoursAnalyse({ tenantId, range, choisie, onChoisir }: {
           </h3>
           {/* 🔴 LA GRANULARITE EST DITE, TOUJOURS. Sans cette phrase, deux captures de la même page en
               jours et en semaines se compareraient comme si elles disaient la même chose. */}
-          <p className="text-xs text-ink-400" data-testid="jours-granularite">
+          <p className="text-xs text-ink-500" data-testid="jours-granularite">
             {mode === 'jour'
               ? t('Une ligne par journée ayant eu au moins une conversation.', 'One row per day with at least one conversation.')
               : t(`Regroupé par semaine : la période dépasse ${SEUIL_SEMAINE_JOURS} jours.`, `Grouped by week: the period exceeds ${SEUIL_SEMAINE_JOURS} days.`)}
@@ -92,11 +94,11 @@ export function TableJoursAnalyse({ tenantId, range, choisie, onChoisir }: {
       </header>
 
       {jours === 'erreur' && (
-        <p className="rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger" data-testid="jours-erreur">
+        <p className="rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700" data-testid="jours-erreur">
           {t('Les journées n’ont pas pu être chargées.', 'Days could not be loaded.')}
         </p>
       )}
-      {jours === null && <p className="text-xs text-ink-400">{t('Chargement…', 'Loading…')}</p>}
+      {jours === null && <Squelette forme="carte" />}
 
       {lignes !== null && lignes.length === 0 && (
         <p className="text-xs text-ink-500" data-testid="jours-vide">
@@ -142,12 +144,12 @@ export function TableJoursAnalyse({ tenantId, range, choisie, onChoisir }: {
                         tout l'historique dans le coin « clients furieux ». */}
                     <td className={`${TD} text-right tabular-nums`} data-testid={`jour-satisfaction-${l.debut}`}>
                       {l.satisfaction === null
-                        ? <span className="text-ink-400" title={t('Aucune analyse de cette période ne porte cette note.', 'No analysis over this period carries this score.')}>—</span>
+                        ? <Nd titre={t('Aucune analyse de cette période ne porte cette note.', 'No analysis over this period carries this score.')} />
                         : fmtNote(l.satisfaction, locale)}
                     </td>
                     <td className={`${TD} text-right tabular-nums`} data-testid={`jour-urgence-${l.debut}`}>
                       {l.urgence === null
-                        ? <span className="text-ink-400" title={t('Aucune analyse de cette période ne porte cette note.', 'No analysis over this period carries this score.')}>—</span>
+                        ? <Nd titre={t('Aucune analyse de cette période ne porte cette note.', 'No analysis over this period carries this score.')} />
                         : fmtNote(l.urgence, locale)}
                     </td>
                   </tr>

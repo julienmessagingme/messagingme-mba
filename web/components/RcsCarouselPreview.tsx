@@ -3,6 +3,7 @@
 import { ICONE_KIND } from '@/lib/rcs-boutons';
 import type { BrouillonCarrouselRcs } from '@/lib/rcs-carrousel';
 import { useT } from '@/lib/i18n';
+import { Icone } from '@/components/Icone';
 
 /**
  * LE CARROUSEL RCS TEL QUE LE CONTACT LE VERRA : des cartes qui défilent à l'horizontale, chacune avec son
@@ -19,7 +20,7 @@ import { useT } from '@/lib/i18n';
 export function RcsCarouselPreview({ brouillon, sansFond = false }: { brouillon: BrouillonCarrouselRcs; sansFond?: boolean }) {
   const t = useT();
   return (
-    <div className={sansFond ? '' : 'rounded-xl bg-ink-50 p-3'}>
+    <div className={sansFond ? '' : 'rounded-carte bg-ink-50 p-3'}>
       <div data-testid="rcs-carrousel-apercu" className="flex gap-2 overflow-x-auto pb-1">
         {brouillon.cartes.map((c, i) => {
           const image = c.imageUrl.trim();
@@ -28,7 +29,7 @@ export function RcsCarouselPreview({ brouillon, sansFond = false }: { brouillon:
           const boutons = c.suggestions.filter((s) => s.text.trim() !== '');
           const vide = image === '' && titre === '' && texte === '' && boutons.length === 0;
           return (
-            <div key={i} data-testid={`rcs-carrousel-apercu-carte-${i}`} className="w-48 shrink-0 overflow-hidden rounded-2xl bg-succes-100">
+            <div key={i} data-testid={`rcs-carrousel-apercu-carte-${i}`} className="w-48 shrink-0 overflow-hidden rounded-carte bg-navy-50">
               {image !== '' && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={image} alt={`${t('Carte', 'Card')} ${i + 1}`} referrerPolicy="no-referrer" className="aspect-video w-full bg-ink-100 object-cover" />
@@ -41,8 +42,8 @@ export function RcsCarouselPreview({ brouillon, sansFond = false }: { brouillon:
                 </div>
               )}
               {boutons.map((s, j) => (
-                <div key={j} className="border-t border-succes-200 bg-white px-3 py-2 text-center text-sm font-medium text-ink-900">
-                  {ICONE_KIND[s.kind]}{s.text}
+                <div key={j} className="flex items-center justify-center gap-1.5 border-t border-navy-100 bg-white px-3 py-2 text-sm font-medium text-ink-900">
+                  {ICONE_KIND[s.kind] && <Icone nom={ICONE_KIND[s.kind]!} taille="petite" />}{s.text}
                 </div>
               ))}
             </div>

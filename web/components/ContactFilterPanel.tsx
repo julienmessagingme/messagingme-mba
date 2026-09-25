@@ -5,6 +5,7 @@ import { useT } from '@/lib/i18n';
 import type { ContactFilters, ContactFieldFilter, ContactFieldOp, UserFieldDef } from '@/lib/api';
 import { inputClsAuto } from '@/lib/ui';
 import { BADGE_NIVEAU_RISQUE, NIVEAUX_DU_FILTRE, apiConnaitLeRisque, estNiveauRisque } from '@/lib/risque';
+import { Icone } from '@/components/Icone';
 
 /**
  * Panneau de filtres de contacts, CONTRÔLÉ (édite un ContactFilters via onChange). Partagé par le mini-CRM
@@ -80,7 +81,7 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
   const needsValue = (op: ContactFieldOp) => op === 'contains' || op === 'not_contains' || op === 'eq';
 
   return (
-    <div className="space-y-3 rounded-2xl border border-ink-200 bg-white p-4">
+    <div className="space-y-3 rounded-carte border border-ink-200 bg-white p-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <label className="flex flex-col gap-1 text-xs text-ink-500">
           {t('Nom contient', 'Name contains')}
@@ -157,9 +158,9 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center gap-2 text-xs text-ink-500">
           {t('Possède les étiquettes', 'Has tags')}
-          <div className="inline-flex overflow-hidden rounded-md border border-ink-200">
+          <div className="inline-flex overflow-hidden rounded-controle border border-ink-200">
             {(['and', 'or'] as const).map((m) => (
-              <button key={m} type="button" onClick={() => set({ tagMode: m })} className={`px-2 py-0.5 text-xs ${(filters.tagMode ?? 'and') === m ? 'bg-brand-500 text-white' : 'bg-white text-ink-500 hover:bg-ink-50'}`}>
+              <button key={m} type="button" onClick={() => set({ tagMode: m })} className={`px-2 py-0.5 text-xs ${(filters.tagMode ?? 'and') === m ? 'bg-brand-600 text-white' : 'bg-white text-ink-500 hover:bg-ink-50'}`}>
                 {m === 'and' ? t('tous', 'all') : t('au moins un', 'any')}
               </button>
             ))}
@@ -167,8 +168,8 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           {tags.map((x) => (
-            <span key={x} className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
-              {x}<button type="button" onClick={() => rmTag(x)} className="text-brand-400 hover:text-danger">×</button>
+            <span key={x} className="inline-flex items-center gap-1 rounded-controle bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+              {x}<button type="button" onClick={() => rmTag(x)} aria-label={t('Retirer', 'Remove')} className="text-brand-600 hover:text-danger"><Icone nom="fermer" taille="petite" /></button>
             </span>
           ))}
           <input list="contact-filter-tags" value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(tagInput); } }} placeholder={t('+ étiquette', '+ tag')} className={`${inputClsAuto} w-28`} />
@@ -180,8 +181,8 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
         <span className="text-xs text-ink-500">{t('Ne possède pas les étiquettes', "Doesn't have tags")}</span>
         <div className="flex flex-wrap items-center gap-1.5">
           {tagsExclude.map((x) => (
-            <span key={x} className="inline-flex items-center gap-1 rounded-md bg-ink-100 px-2 py-0.5 text-xs font-medium text-ink-500">
-              {x}<button type="button" onClick={() => rmTagEx(x)} className="text-ink-400 hover:text-danger">×</button>
+            <span key={x} className="inline-flex items-center gap-1 rounded-controle bg-ink-100 px-2 py-0.5 text-xs font-medium text-ink-500">
+              {x}<button type="button" onClick={() => rmTagEx(x)} aria-label={t('Retirer', 'Remove')} className="text-ink-400 hover:text-danger"><Icone nom="fermer" taille="petite" /></button>
             </span>
           ))}
           <input list="contact-filter-tags" value={tagExInput} onChange={(e) => setTagExInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTagEx(tagExInput); } }} placeholder={t('+ étiquette', '+ tag')} className={`${inputClsAuto} w-28`} />
@@ -201,7 +202,7 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
               {(['contains', 'not_contains', 'eq', 'empty', 'not_empty'] as ContactFieldOp[]).map((op) => <option key={op} value={op}>{opLabels[op]}</option>)}
             </select>
             {needsValue(r.op) && <input value={r.value} onChange={(e) => updRow(i, { value: e.target.value })} className={`${inputClsAuto} flex-1`} placeholder={t('valeur', 'value')} />}
-            <button type="button" onClick={() => rmRow(i)} className="text-ink-400 hover:text-danger" aria-label={t('Retirer', 'Remove')}>×</button>
+            <button type="button" onClick={() => rmRow(i)} className="text-ink-400 hover:text-danger" aria-label={t('Retirer', 'Remove')}><Icone nom="fermer" taille="petite" /></button>
           </div>
         ))}
         {fieldRows.length < 5 && fieldKeys.length > 0 && (

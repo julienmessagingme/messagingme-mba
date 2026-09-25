@@ -13,6 +13,8 @@ import { ChoixTypeOutil } from './ChoixTypeOutil';
 import { FormulaireOutilMba } from './FormulaireOutilMba';
 import { useT } from '@/lib/i18n';
 import { Bouton } from '@/components/Bouton';
+import { Icone } from '@/components/Icone';
+import { useConfirmation } from '@/components/Confirmation';
 
 type Mode = { vue: 'liste' } | { vue: 'choix' } | { vue: 'form'; type: TypeOutilMba; outil: OutilMbaVue | null };
 type Traduire = (fr: string, en?: string) => string;
@@ -37,6 +39,7 @@ type Traduire = (fr: string, en?: string) => string;
  */
 export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean }) {
   const t = useT();
+  const confirmer = useConfirmation();
   const [outils, setOutils] = useState<OutilMbaVue[] | null>(null);
   // 🔴 Une lecture RATÉE n'est pas une liste VIDE : les confondre disait « Aucun outil » à un espace qui en a.
   const [lectureRatee, setLectureRatee] = useState<string | null>(null);
@@ -108,10 +111,10 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
       const imprevus = effacementsImprevus(plan, outilsAttendus);
       if (imprevus.length > 0) {
         const liste = imprevus.map((g) => `- ${g.nom}`).join('\n');
-        const ok = window.confirm(t(
+        const ok = await confirmer({ titre: t('Supprimer chez Meta', 'Delete at Meta'), message: t(
           `Cet envoi va aussi SUPPRIMER chez Meta :\n\n${liste}\n\nContinuer ?`,
           `This will also DELETE at Meta:\n\n${liste}\n\nContinue?`,
-        ));
+        ), confirmer: t('Continuer', 'Continue') });
         if (!ok) return false;
       }
       await publierChezMeta(tenantId);
@@ -153,7 +156,7 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
     suppressionRef.current = true;
     setSuppressionEnCours(true);
     try {
-      if (!window.confirm(t(`Supprimer « ${o.title} » ? Il sera retiré chez Meta.`, `Delete “${o.title}”? It will be removed at Meta.`))) return;
+      if (!(await confirmer({ titre: t('Supprimer l’outil', 'Delete the tool'), message: t(`Supprimer « ${o.title} » ? Il sera retiré chez Meta.`, `Delete “${o.title}”? It will be removed at Meta.`), confirmer: t('Supprimer', 'Delete') }))) return;
       setErreur(null);
       try {
         await retirerOutilMba(tenantId, o.id);
@@ -231,7 +234,7 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
       )}
 
       {sansLigne.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-alerte-200 bg-alerte-50 px-3 py-2 text-xs text-alerte-900"
+        <div className="flex flex-wrap items-center gap-2 rounded-carte border border-alerte-200 bg-alerte-50 px-3 py-2 text-xs text-alerte-900"
           data-testid="mba-outils-retraits">
           <span>
             {t('Encore chez Meta, sans outil ici : ', 'Still at Meta, with no tool here: ')}{sansLigne.join(', ')}.
@@ -241,7 +244,7 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
               title={t('Ce que vous venez de supprimer ici part sans autre question ; tout autre effacement vous est demandé en le nommant.',
                 'What you just deleted here goes without further question; any other deletion is asked first, by name.')}
               onClick={() => { void envoyer(new Set(sansLigne.filter((n) => supprimesIci.has(n)))); }}
-              className="rounded-lg border border-alerte-300 bg-white px-2 py-0.5 font-medium text-alerte-800 hover:bg-alerte-100 disabled:opacity-50">
+              className="rounded-controle border border-alerte-300 bg-white px-2 py-0.5 font-medium text-alerte-800 hover:bg-alerte-100 disabled:opacity-50">
               {envoiEnCours ? t('Envoi…', 'Sending…') : t('Envoyer à Meta', 'Send to Meta')}
             </button>
           )}
@@ -257,11 +260,11 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
         </div>
       ) : outils.length === 0 ? (
         <p className="text-sm text-ink-500" data-testid="mba-outils-vide">
-          {t('Aucun outil pour l’instant. Ajoutez-en un : l’agent de Meta saura quand s’en servir.',
-            'No tool yet. Add one: Meta’s agent will know when to use it.')}
+          {t('Aucun outil : ajoutez-en un, l’agent de Meta saura quand s’en servir.',
+            'No tool yet: add one, Meta’s agent will know when to use it.')}
         </p>
       ) : (
-        <ul className="divide-y divide-ink-100 rounded-2xl border border-ink-200 bg-white">
+        <ul className="divide-y divide-ink-100 rounded-carte border border-ink-200 bg-white">
           {outils.map((o) => (
             <LigneOutil key={o.id} o={o} t={t} isAdmin={isAdmin} etat={etats === null ? 'chargement' : (etats.get(o.id) ?? 'inconnu')}
               occupe={occupe} envoiEnCours={envoiEnCours}
@@ -306,8 +309,8 @@ function LigneOutil({ o, t, isAdmin, etat, occupe, envoiEnCours, onEnvoyer, onRe
         {/* 🔴 LE MÊME DESSIN QUE DANS « QUEL OUTIL AJOUTER ? », ET C'EST TOUT L'INTÉRÊT : on reconnaît ici
             ce qu'on a choisi là-bas. Un outil dont le type est `inconnu` n'en porte AUCUN plutôt qu'un par
             défaut, parce qu'un dessin affirmerait une nature que personne n'a lue. */}
-        <span className="flex items-center gap-1.5 rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-900" data-testid={`mba-outil-type-${o.id}`}>
-          {o.type !== 'inconnu' && <IconeOutil signe={TEXTES_PAR_TYPE[o.type].signe} className="h-3.5 w-3.5 shrink-0 text-ink-500" />}
+        <span className="flex items-center gap-1.5 rounded-controle bg-ink-100 px-2 py-0.5 text-xs text-ink-900" data-testid={`mba-outil-type-${o.id}`}>
+          {o.type !== 'inconnu' && <IconeOutil signe={TEXTES_PAR_TYPE[o.type].signe} taille="petite" className="text-ink-500" />}
           {t(badge[0], badge[1])}
         </span>
         {/*
@@ -321,7 +324,7 @@ function LigneOutil({ o, t, isAdmin, etat, occupe, envoiEnCours, onEnvoyer, onRe
           journal et la garde d'autonomie d'un agent IA lisent. Seul le MOT affiché change.
         */}
         {o.risque === 'irreversible' && (
-          <span className="rounded-md bg-alerte-50 px-2 py-0.5 text-xs text-alerte-800" data-testid={`mba-outil-irreversible-${o.id}`}
+          <span className="rounded-controle bg-alerte-50 px-2 py-0.5 text-xs text-alerte-800" data-testid={`mba-outil-irreversible-${o.id}`}
             title={t('L’agent de Meta l’appelle sans validation humaine.', 'Meta’s agent calls it without human approval.')}>
             {o.type === 'bloc' || o.type === 'scenario'
               ? t('part chez le client', 'reaches the customer')
@@ -331,12 +334,12 @@ function LigneOutil({ o, t, isAdmin, etat, occupe, envoiEnCours, onEnvoyer, onRe
       </span>
       <span data-testid={`mba-outil-etat-${o.id}`}>
         {etat === 'chargement' && <span className="text-xs text-ink-400">…</span>}
-        {etat === 'chez_meta' && <span className="text-xs text-succes-700">{t('✓ Chez Meta', '✓ At Meta')}</span>}
+        {etat === 'chez_meta' && <span className="inline-flex items-center gap-1 text-xs text-succes-700" data-testid={`mba-outil-chez-meta-${o.id}`}><Icone nom="valide" taille="petite" />{t('Chez Meta', 'At Meta')}</span>}
         {etat === 'inconnu' && (
           <span className="text-xs text-ink-400" title={t('Meta n’a pas pu être lu.', 'Meta could not be read.')}>?</span>
         )}
         {etat === 'hors_meta' && (
-          <span className="text-xs text-ink-400"
+          <span className="text-xs text-ink-500"
             title={t('Cet outil ne peut pas partir chez Meta : la ligne rouge dit pourquoi.',
               'This tool cannot be sent to Meta: the red line says why.')}>
             {t('Pas chez Meta', 'Not at Meta')}
@@ -358,7 +361,7 @@ function LigneOutil({ o, t, isAdmin, etat, occupe, envoiEnCours, onEnvoyer, onRe
               <button type="button" data-testid={`mba-outil-retirer-${o.id}`} disabled={occupe || !isAdmin} onClick={onRetirer}
                 title={t('Meta le liste encore : l’envoi l’en retire, avec tout ce qui attend.',
                   'Meta still lists it: sending removes it, along with everything pending.')}
-                className="rounded-lg border border-alerte-300 bg-alerte-50 px-2 py-0.5 font-medium text-alerte-800 hover:bg-alerte-100 disabled:opacity-50">
+                className="rounded-controle border border-alerte-300 bg-alerte-50 px-2 py-0.5 font-medium text-alerte-800 hover:bg-alerte-100 disabled:opacity-50">
                 {envoiEnCours ? t('Envoi…', 'Sending…') : t('À envoyer', 'To send')}
               </button>
             )}
@@ -368,7 +371,7 @@ function LigneOutil({ o, t, isAdmin, etat, occupe, envoiEnCours, onEnvoyer, onRe
           <button type="button" data-testid={`mba-outil-envoyer-${o.id}`} disabled={occupe || !isAdmin}
             title={t('Envoie chez Meta tout ce qui attend, pas seulement cet outil.', 'Sends everything pending to Meta, not only this tool.')}
             onClick={onEnvoyer}
-            className="rounded-lg border border-alerte-300 bg-alerte-50 px-2 py-0.5 text-xs font-medium text-alerte-800 hover:bg-alerte-100 disabled:opacity-50">
+            className="rounded-controle border border-alerte-300 bg-alerte-50 px-2 py-0.5 text-xs font-medium text-alerte-800 hover:bg-alerte-100 disabled:opacity-50">
             {envoiEnCours ? t('Envoi…', 'Sending…') : t('À envoyer', 'To send')}
           </button>
         )}

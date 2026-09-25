@@ -10,6 +10,9 @@ import {
   type Changement, type PropositionConstruction, type TourConstruction,
 } from '@/lib/api-agent-setup';
 import { Bouton } from '@/components/Bouton';
+import { Icone } from '@/components/Icone';
+import { useConfirmation } from '@/components/Confirmation';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * L'onglet CONSTRUCTION : l'assistant qui règle l'agent en discutant.
@@ -33,6 +36,7 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
   onApplique: (p: PropositionConstruction) => Promise<void>;
 }) {
   const t = useT();
+  const confirmer = useConfirmation();
   const [tours, setTours] = useState<TourConstruction[]>([]);
   /**
    * QUI a écrit chaque tour, parallèle à `tours` (migration 0147). Le fil est PARTAGÉ entre les admins d'un
@@ -156,10 +160,10 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
 
   async function recommencer() {
     if (busy) return;
-    if (!window.confirm(t(
+    if (!(await confirmer({ titre: t('Recommencer l’entretien', 'Restart the interview'), message: t(
       'Recommencer l’entretien ? La conversation est effacée et l’assistant repose ses questions depuis le début. Ce qui a déjà été enregistré dans les autres onglets n’est pas touché.',
       'Restart the interview? The conversation is erased and the assistant asks its questions again from the start. What was already saved in the other tabs is untouched.',
-    ))) return;
+    ), confirmer: t('Recommencer', 'Restart') }))) return;
     setBusy(true);
     setErreur(null);
     try {
@@ -206,7 +210,7 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
       <div className={`${cardCls} flex flex-col gap-0 p-0 overflow-hidden`}>
         <div className="flex items-center justify-between gap-3 border-b border-ink-200 px-4 py-3">
           <div className="flex items-center gap-3">
-            <span aria-hidden className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-100 text-base">💬</span>
+            <span aria-hidden className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-50 text-brand-600"><Icone nom="message" /></span>
             <div>
               <p className="text-sm font-medium text-ink-900">{t('Assistant de construction', 'Setup assistant')}</p>
               <p className="text-xs text-ink-500">
@@ -229,13 +233,13 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
         </div>
 
         <div ref={filRef} className="flex h-[420px] flex-col gap-3 overflow-y-auto bg-ink-50/40 px-4 py-4">
-          {!charge && <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>}
+          {!charge && <Squelette forme="carte" />}
 
           {charge && tours.length === 0 && (
             <div data-testid="setup-vide" className="flex flex-col gap-3">
               {/* Une première bulle DE L'ASSISTANT, pas un mode d'emploi. C'est ce qui donne envie de répondre :
                   une page qui explique se lit, une phrase qui interroge se répond. */}
-              <div className="max-w-[85%] self-start rounded-2xl rounded-bl-sm bg-white px-3.5 py-2.5 text-sm text-ink-900">
+              <div className="max-w-[85%] self-start rounded-carte rounded-bl-none bg-white px-3.5 py-2.5 text-sm text-ink-900">
                 {t(
                   'Bonjour ! On va régler votre agent en discutant. Je vous poserai une question à la fois, puis je vous montrerai ce que j’ai compris avant d’écrire quoi que ce soit. Pour commencer : à quoi sert votre agent, au-delà de répondre ?',
                   'Hello! We will set up your agent by talking. I will ask one question at a time, then show you what I understood before writing anything. To start: what is your agent for, beyond answering?',
@@ -265,8 +269,8 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
               key={`${i}-${tour.content.slice(0, 24)}`}
               data-testid={`setup-tour-${tour.role}`}
               className={tour.role === 'user'
-                ? 'max-w-[85%] self-end whitespace-pre-wrap rounded-2xl rounded-br-sm bg-brand-600 px-3.5 py-2.5 text-sm text-white'
-                : 'max-w-[85%] self-start whitespace-pre-wrap rounded-2xl rounded-bl-sm bg-white px-3.5 py-2.5 text-sm text-ink-900'}
+                ? 'max-w-[85%] self-end whitespace-pre-wrap rounded-carte rounded-br-none bg-brand-600 px-3.5 py-2.5 text-sm text-white'
+                : 'max-w-[85%] self-start whitespace-pre-wrap rounded-carte rounded-bl-none bg-white px-3.5 py-2.5 text-sm text-ink-900'}
             >
               {tour.content}
               {/* 🔴 L'AUTEUR, SUR LES TOURS DU CLIENT ET SEULEMENT QUAND ON LE CONNAIT. Le fil est PARTAGE
@@ -280,7 +284,7 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
           ))}
 
           {busy && (
-            <div className="flex max-w-[85%] items-center gap-1.5 self-start rounded-2xl rounded-bl-sm bg-white px-3.5 py-3">
+            <div className="flex max-w-[85%] items-center gap-1.5 self-start rounded-carte rounded-bl-none bg-white px-3.5 py-3">
               <span className="sr-only">{t('L’assistant réfléchit…', 'The assistant is thinking…')}</span>
               {[0, 150, 300].map((d) => (
                 <span
@@ -301,9 +305,9 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
           <label
             data-testid="setup-joindre"
             title={t('Joindre un document ou une image (il rejoint la base de connaissance)', 'Attach a document or image (it joins the knowledge base)')}
-            className={`mb-0.5 grid h-[42px] w-[42px] shrink-0 cursor-pointer place-items-center rounded-lg border border-ink-300 text-base text-ink-500 hover:bg-ink-50 ${busy || !charge ? 'pointer-events-none opacity-40' : ''}`}
+            className={`mb-0.5 grid h-[42px] w-[42px] shrink-0 cursor-pointer place-items-center rounded-controle border border-ink-300 text-base text-ink-500 hover:bg-ink-50 ${busy || !charge ? 'pointer-events-none opacity-40' : ''}`}
           >
-            <span aria-hidden>📎</span>
+            <Icone nom="piece" />
             <span className="sr-only">{t('Joindre un fichier', 'Attach a file')}</span>
             <input
               data-testid="setup-fichier"
@@ -419,7 +423,7 @@ function Diff({ changements, busy, onGarder, onJeter }: {
           <div
             key={c.champ}
             data-testid={`setup-diff-${c.champ}`}
-            className={`flex flex-col gap-1 rounded-lg border px-3 py-2 ${garde ? 'border-ink-200' : 'border-ink-200 bg-ink-50 opacity-60'}`}
+            className={`flex flex-col gap-1 rounded-controle border px-3 py-2 ${garde ? 'border-ink-200' : 'border-ink-200 bg-ink-50 opacity-60'}`}
           >
             <div className="flex items-start justify-between gap-2">
               <p className="text-xs font-medium text-ink-900">{c.label}</p>
@@ -428,7 +432,7 @@ function Diff({ changements, busy, onGarder, onJeter }: {
                 disabled={busy}
                 aria-pressed={garde}
                 onClick={() => basculer(c.champ, c.apres)}
-                className={`shrink-0 rounded-lg border px-2 py-1 text-xs disabled:opacity-40 ${garde
+                className={`shrink-0 rounded-controle border px-2 py-1 text-xs disabled:opacity-40 ${garde
                   ? 'border-brand-600 bg-brand-50 text-brand-700'
                   : 'border-ink-300 text-ink-500 hover:bg-white'}`}
               >

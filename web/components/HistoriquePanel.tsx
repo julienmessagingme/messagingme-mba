@@ -5,6 +5,7 @@ import { useT, useLocale } from '@/lib/i18n';
 import { cardCls } from '@/lib/ui';
 import { formatDate, hourMin } from '@/lib/day';
 import { request } from '@/lib/http';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * L'HISTORIQUE DES RÉGLAGES : ce qui a changé, et ce qui a été effacé.
@@ -67,7 +68,7 @@ export function HistoriquePanel({ tenantId, surface, agentId }: {
 
   const signe = (o: LigneHistoriqueVue['operation']) => (o === 'suppression' ? '−' : o === 'ajout' ? '+' : '~');
 
-  if (chargement) return <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>;
+  if (chargement) return <Squelette forme="carte" />;
 
   return (
     <div className={cardCls}>
@@ -81,17 +82,17 @@ export function HistoriquePanel({ tenantId, surface, agentId }: {
         {t('Ce que l’assistant a appliqué, et ce qui a été SUPPRIMÉ depuis les onglets, avec son contenu. Rien n’est purgé.',
           'What the assistant applied, and what was DELETED from the tabs, with its content. Nothing is purged.')}
       </p>
-      <p className="mt-1 text-xs text-ink-400">
+      <p className="mt-1 text-xs text-ink-500">
         {t('Les créations et les modifications faites à la main dans les onglets n’y figurent pas encore.',
           'Creations and edits made by hand in the tabs are not listed yet.')}
       </p>
 
-      {erreur && <p className="mt-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{erreur}</p>}
+      {erreur && <p className="mt-3 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{erreur}</p>}
 
       {/* 🔴 On le DIT quand la liste est coupée : sans cette ligne, chercher une modification ancienne et ne
           pas la voir se lirait comme « elle n'a pas eu lieu ». */}
       {tronquee && (
-        <p className="mt-3 text-xs text-ink-400">
+        <p className="mt-3 text-xs text-ink-500">
           {t(`Les ${lignes.length} modifications les plus récentes sont affichées. Les précédentes sont conservées, elles ne sont pas purgées.`,
             `Showing the ${lignes.length} most recent changes. Earlier ones are kept, they are not purged.`)}
         </p>
@@ -107,7 +108,7 @@ export function HistoriquePanel({ tenantId, surface, agentId }: {
                 <span className={`text-sm ${l.operation === 'suppression' ? 'text-danger' : 'text-ink-900'}`}>
                   {signe(l.operation)} {l.libelle}
                 </span>
-                <span className="shrink-0 text-xs text-ink-400">{stamp(l.at)}</span>
+                <span className="shrink-0 text-xs text-ink-500">{stamp(l.at)}</span>
               </div>
               <div className="mt-0.5 text-xs text-ink-500">
                 {/* ⚠️ « auteur inconnu » plutôt qu'un nom inventé : un compte supprimé laisse une ligne sans
@@ -129,7 +130,7 @@ export function HistoriquePanel({ tenantId, surface, agentId }: {
                 )}
               </div>
               {ouvert === l.id && l.avant != null && (
-                <div className="mt-2 rounded-lg bg-ink-50 p-3">
+                <div className="mt-2 rounded-carte bg-ink-50 p-3">
                   <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-ink-900">
                     {JSON.stringify(l.avant, null, 2)}
                   </pre>

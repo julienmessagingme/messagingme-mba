@@ -2,6 +2,7 @@
 
 import type { FlowFieldType, FlowTextKind, FlowElement } from '@/lib/api';
 import { useT } from '@/lib/i18n';
+import { Icone } from '@/components/Icone';
 
 /**
  * Rendu FIDÈLE d'un écran WhatsApp Flow, tel que le client le voit dans WhatsApp : cadre téléphone, en-tête
@@ -51,7 +52,7 @@ const GREEN = '#008069'; // vert bouton WhatsApp
 function OutlinedField({ label, required, children, trailing }: { label: string; required: boolean; children: React.ReactNode; trailing?: React.ReactNode }) {
   const t = useT();
   return (
-    <div className="relative rounded-lg border px-3 pb-2 pt-3" style={{ borderColor: BORDER }}>
+    <div className="relative rounded-carte border px-3 pb-2 pt-3" style={{ borderColor: BORDER }}>
       <span className="absolute -top-2 left-2.5 bg-white px-1 text-[11px]" style={{ color: MUTED }}>
         {label || t('Champ', 'Field')}{required ? ' *' : ''}
       </span>
@@ -69,7 +70,7 @@ function ScreenField({ el }: { el: Extract<FlowScreenElement, { kind: 'field' }>
   if (el.type === 'optin') {
     return (
       <label className="flex items-start gap-2.5 text-[13px]" style={{ color: '#3b4a54' }}>
-        <span className="mt-0.5 h-[18px] w-[18px] shrink-0 rounded border" style={{ borderColor: '#8696a0' }} />
+        <span className="mt-0.5 h-[18px] w-[18px] shrink-0 rounded-controle border" style={{ borderColor: '#8696a0' }} />
         <span>{el.label || t('Je consens…', 'I consent…')}{el.required ? ' *' : ''}</span>
       </label>
     );
@@ -80,11 +81,11 @@ function ScreenField({ el }: { el: Extract<FlowScreenElement, { kind: 'field' }>
     return (
       <div>
         <div className="mb-1.5 text-[13px] font-medium" style={{ color: INK }}>{el.label || t('Choix', 'Choice')}{el.required ? ' *' : ''}</div>
-        <div className="overflow-hidden rounded-lg border" style={{ borderColor: BORDER }}>
+        <div className="overflow-hidden rounded-controle border" style={{ borderColor: BORDER }}>
           {shown.map((o, i) => (
             <div key={i} className={`flex items-center justify-between px-3 py-2.5 text-[14px] ${i > 0 ? 'border-t' : ''}`} style={{ color: INK, borderColor: '#eef0f1' }}>
               <span className="truncate">{o}</span>
-              <span className={`h-[18px] w-[18px] shrink-0 border ${round ? 'rounded-full' : 'rounded'}`} style={{ borderColor: '#8696a0' }} />
+              <span className={`h-[18px] w-[18px] shrink-0 border ${round ? 'rounded-full' : 'rounded-controle'}`} style={{ borderColor: '#8696a0' }} />
             </div>
           ))}
         </div>
@@ -92,10 +93,10 @@ function ScreenField({ el }: { el: Extract<FlowScreenElement, { kind: 'field' }>
     );
   }
   if (el.type === 'dropdown') {
-    return <OutlinedField label={el.label} required={el.required} trailing="▾">{opts[0] ?? t('Sélectionner', 'Select')}</OutlinedField>;
+    return <OutlinedField label={el.label} required={el.required} trailing={<Icone nom="deplier" taille="petite" />}>{opts[0] ?? t('Sélectionner', 'Select')}</OutlinedField>;
   }
   if (el.type === 'date') {
-    return <OutlinedField label={el.label} required={el.required} trailing="📅">{t('jj / mm / aaaa', 'dd / mm / yyyy')}</OutlinedField>;
+    return <OutlinedField label={el.label} required={el.required} trailing={<Icone nom="calendrier" taille="petite" />}>{t('jj / mm / aaaa', 'dd / mm / yyyy')}</OutlinedField>;
   }
   const placeholder =
     el.type === 'passcode' ? '••••••'
@@ -121,8 +122,8 @@ function ElementBody({ el }: { el: FlowScreenElement }) {
   if (el.kind === 'image') {
     return el.src
       // eslint-disable-next-line @next/next/no-img-element
-      ? <img src={el.src} alt="" className="h-40 w-full rounded-xl object-cover" />
-      : <div className="flex h-32 items-center justify-center rounded-xl text-2xl" style={{ background: '#f0f2f5', color: '#8696a0' }}>🖼️</div>;
+      ? <img src={el.src} alt="" className="h-40 w-full rounded-carte object-cover" />
+      : <div className="flex h-32 items-center justify-center rounded-carte" style={{ background: '#f0f2f5', color: '#8696a0' }}><Icone nom="image" taille="grande" /></div>;
   }
   if (el.kind === 'field') return <ScreenField el={el} />;
   return null;
@@ -134,7 +135,7 @@ export function FlowScreen({ elements, cta, title }: { elements: FlowScreenEleme
     <div className="mx-auto w-full max-w-[300px] overflow-hidden rounded-[28px] border-[5px] bg-white shadow-lg" style={{ borderColor: '#0b141a' }}>
       {/* En-tête façon écran WhatsApp Flow */}
       <div className="flex items-center gap-2 border-b px-3 py-2.5" style={{ borderColor: '#eef0f1' }}>
-        <span className="text-[18px] leading-none" style={{ color: INK }}>✕</span>
+        <span style={{ color: INK }}><Icone nom="fermer" /></span>
         <span className="truncate text-[14px] font-semibold" style={{ color: INK }}>{title?.trim() || t('Formulaire', 'Form')}</span>
       </div>
       {/* Contenu défilant */}
@@ -144,8 +145,8 @@ export function FlowScreen({ elements, cta, title }: { elements: FlowScreenEleme
           <div key={i}>
             {e.condition && (
               <div className="mb-1">
-                <span className="inline-flex items-center gap-1 rounded bg-alerte-50 px-1.5 py-0.5 text-[9px] font-medium text-alerte-700">
-                  👁 {t('Visible si', 'Visible if')} {e.condition}
+                <span className="inline-flex items-center gap-1 rounded-controle bg-alerte-50 px-1.5 py-0.5 text-[9px] font-medium text-alerte-700">
+                  <Icone nom="voir" taille="mini" />{t('Visible si', 'Visible if')} {e.condition}
                 </span>
               </div>
             )}

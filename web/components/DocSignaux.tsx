@@ -101,7 +101,7 @@ export function DocSignaux() {
             '. A missing score (satisfaction, urgency) means “no measure”: it never overwrites the previous one.',
           )}
         </p>
-        <div className="overflow-x-auto rounded-lg border border-ink-200">
+        <div className="overflow-x-auto rounded-controle border border-ink-200">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className={theadCls}>
@@ -129,7 +129,7 @@ export function DocSignaux() {
       </Section>
 
       <Section titre={t('Les attributs de la fiche', 'Contact attributes')}>
-        <div className="overflow-x-auto rounded-lg border border-ink-200">
+        <div className="overflow-x-auto rounded-controle border border-ink-200">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className={theadCls}>

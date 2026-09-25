@@ -56,7 +56,7 @@ export function TableauHistogramme({ groupes }: TableauHistogrammeProps) {
       <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1.5" data-testid="tableau-legende">
         {legendeUnique.map((e) => (
           <span key={e.cle} className="flex items-center gap-1.5 text-xs text-ink-500">
-            <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: e.couleur }} />
+            <span className="h-2.5 w-2.5 shrink-0 rounded-controle" style={{ backgroundColor: e.couleur }} />
             {e.label}
           </span>
         ))}

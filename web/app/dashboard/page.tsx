@@ -5,6 +5,7 @@ import { AppShell } from '@/components/AppShell';
 import { OrigineServiceCard } from '@/components/analytics/cartes';
 import { DailyChart } from '@/components/DailyChart';
 import { RangeBar } from '@/components/RangeBar';
+import { TitrePage } from '@/components/TitrePage';
 import type { Session } from '@/lib/session';
 import { getStats, type DashboardStats, type StatsRange, type DailyPoint } from '@/lib/api';
 import { useT } from '@/lib/i18n';
@@ -55,9 +56,9 @@ function MessagesInner({ session }: { session: Session }) {
 
   return (
     <div className="space-y-4">
-      <RangeBar title={t('Messages & contacts', 'Messages & contacts')} range={range} onChange={setRange} />
+      <RangeBar title={<TitrePage>{t('Messages & contacts', 'Messages & contacts')}</TitrePage>} range={range} onChange={setRange} />
 
-      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+      {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
       {loading ? (
         <p className="text-sm text-ink-500">{t('Chargement des statistiques...', 'Loading statistics...')}</p>
@@ -136,7 +137,7 @@ function CarteContacts({ stats, range }: { stats: DashboardStats; range: StatsRa
         points: montreActifs ? stats.contactsActifs! : stats.contacts,
       }]}
       actions={dispo ? (
-        <div className="sans-impression inline-flex rounded-lg border border-ink-200 p-0.5 text-xs" data-testid="contacts-bascule">
+        <div className="sans-impression inline-flex rounded-controle border border-ink-200 p-0.5 text-xs" data-testid="contacts-bascule">
           {([false, true] as const).map((v) => (
             <button
               key={String(v)}
@@ -144,7 +145,7 @@ function CarteContacts({ stats, range }: { stats: DashboardStats; range: StatsRa
               onClick={() => setActifs(v)}
               aria-pressed={actifs === v}
               data-testid={v ? 'contacts-actifs' : 'contacts-cumules'}
-              className={`rounded-md px-2 py-0.5 font-medium transition-colors duration-150 ${actifs === v ? 'bg-ink-100 text-ink-900' : 'text-ink-500 hover:text-ink-900'}`}
+              className={`rounded-controle px-2 py-0.5 font-medium transition-colors duration-150 ${actifs === v ? 'bg-ink-100 text-ink-900' : 'text-ink-500 hover:text-ink-900'}`}
             >
               {v ? t('Actifs', 'Active') : t('Cumulés', 'Cumulative')}
             </button>

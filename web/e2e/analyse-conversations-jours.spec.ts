@@ -81,8 +81,8 @@ test.describe('Analyse des conversations : une ligne par jour', () => {
     // aucune : les placer a zero rangerait tout l historique dans le coin « clients furieux ».
     await mock(page);
     await page.goto('/dashboard/quali');
-    await expect(page.getByTestId('jour-satisfaction-2026-09-15')).toHaveText('—');
-    await expect(page.getByTestId('jour-urgence-2026-09-15')).toHaveText('—');
+    await expect(page.getByTestId('jour-satisfaction-2026-09-15')).toHaveText('n/d');
+    await expect(page.getByTestId('jour-urgence-2026-09-15')).toHaveText('n/d');
   });
 
   test('🔴 la GRANULARITE est dite, et elle se bascule a la main', async ({ page }) => {
@@ -151,7 +151,7 @@ test.describe('Analyse des conversations : qui a repondu', () => {
     // compris celles ou personne n a jamais repondu.
     await mock(page, { conversations: [CONV('cv1', ['campagne'])] });
     await page.goto('/dashboard/quali');
-    await expect(page.getByTestId('quali-repondeurs').first()).toHaveText('—');
+    await expect(page.getByTestId('quali-repondeurs').first()).toHaveText('n/d');
   });
 
   test('🔴 un scenario donne « Scripté », un agent IA donne « Agent IA »', async ({ page }) => {
@@ -167,6 +167,6 @@ test.describe('Analyse des conversations : qui a repondu', () => {
     delete sans.origines;
     await mock(page, { conversations: [sans] });
     await page.goto('/dashboard/quali');
-    await expect(page.getByTestId('quali-repondeurs').first()).toHaveText('—');
+    await expect(page.getByTestId('quali-repondeurs').first()).toHaveText('n/d');
   });
 });

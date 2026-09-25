@@ -17,6 +17,7 @@ import { sortiesDuBloc, type EmailRecipientData, type RFNode } from '@/lib/workf
 import { essayerFonctionJs, type EssaiJs } from '@/lib/api';
 import { useState } from 'react';
 import { Bouton } from '@/components/Bouton';
+import { Icone } from '@/components/Icone';
 
 /**
  * LA SOURCE « MAINTENANT ». ⚠️ C'est la clé QUE LE DÉPÔT EMPLOIE DÉJÀ (`sel === 'now'` dans
@@ -60,7 +61,7 @@ function nomParametreJs(cle: string | undefined): string | null {
  * rend un patch de `data` par `onPatch`. Rien de l'état du builder n'a eu à voyager en paramètre.
  */
 
-const cls = 'w-full rounded-lg border border-ink-300 px-2.5 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+const cls = 'w-full rounded-controle border border-ink-300 px-2.5 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
 /**
  * Choix d'un tag, avec suggestions. Partagé par le bloc Action et par le bloc `tag` LEGACY (retiré de la
@@ -91,7 +92,7 @@ function TagPicker({ label, value, tags, onChange, onCommit }: {
         placeholder={t('vip, prospect…', 'vip, prospect…')}
       />
       <datalist id="wf-tags">{tags.map((tg) => <option key={tg.tag} value={tg.tag} />)}</datalist>
-      {onCommit && <p className="mt-1 text-xs text-ink-400">{t('L’étiquette est ajoutée à Contenu > Bibliothèque > Étiquettes dès que tu quittes le champ.', 'The tag is added to Content > Library > Tags as soon as you leave the field.')}</p>}
+      {onCommit && <p className="mt-1 text-xs text-ink-500">{t('L’étiquette est ajoutée à Contenu > Bibliothèque > Étiquettes dès que tu quittes le champ.', 'The tag is added to Content > Library > Tags as soon as you leave the field.')}</p>}
     </div>
   );
 }
@@ -134,9 +135,9 @@ function FieldValueEditor({ d, fields, onPatch, avecValeur }: {
             <option value="derniere_saisie">{t('dernier message du contact', 'contact’s last message')}</option>
           </select>
           {d.valueKind === 'now' ? (
-            <p className="mt-1.5 text-xs text-ink-400">{t('Pose la date et l’heure du moment où le contact atteint ce bloc, dans votre fuseau, utile pour une condition « avant / après ».', 'Sets the date and time when the contact reaches this block, in your time zone, useful for a “before / after” condition.')}</p>
+            <p className="mt-1.5 text-xs text-ink-500">{t('Pose la date et l’heure du moment où le contact atteint ce bloc, dans votre fuseau, utile pour une condition « avant / après ».', 'Sets the date and time when the contact reaches this block, in your time zone, useful for a “before / after” condition.')}</p>
           ) : d.valueKind === 'derniere_saisie' ? (
-            <p className="mt-1.5 text-xs text-ink-400">{t('Recopie dans ce champ le dernier message écrit par le contact. Rien n’est écrit s’il n’a encore rien dit.', 'Copies the contact’s last written message into this field. Nothing is written if they haven’t said anything yet.')}</p>
+            <p className="mt-1.5 text-xs text-ink-500">{t('Recopie dans ce champ le dernier message écrit par le contact. Rien n’est écrit s’il n’a encore rien dit.', 'Copies the contact’s last written message into this field. Nothing is written if they haven’t said anything yet.')}</p>
           ) : (
             <input value={(d.value as string) ?? ''} onChange={(e) => onPatch({ value: e.target.value })} className={`${cls} mt-1.5`} placeholder={t('valeur à poser', 'value to set')} />
           )}
@@ -179,7 +180,7 @@ export function ConfigPanel({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold text-ink-900">{nodeMetaOf(wfType).emoji} {t(...nodeMetaOf(wfType).label)}</span>
+        <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink-900"><Icone nom={nodeMetaOf(wfType).icone} />{t(...nodeMetaOf(wfType).label)}</span>
         <button onClick={onDelete} className="text-xs text-danger hover:underline">{t('Supprimer', 'Delete')}</button>
       </div>
 
@@ -188,7 +189,7 @@ export function ConfigPanel({
           L'avertissement se pose sur la RACINE et suit la MÊME règle que le sélecteur de campagne
           (`isCampaignEligible`), donc il couvre aussi « tag -> template » et un template sans nom choisi. */}
       {isRoot && !campaignEligible && (
-        <p className="rounded-lg border border-alerte-300 bg-alerte-50 px-2.5 py-2 text-xs leading-snug text-alerte-800">
+        <p className="rounded-controle border border-alerte-300 bg-alerte-50 px-2.5 py-2 text-xs leading-snug text-alerte-800">
           {wfType === 'template'
             ? t('Choisis le template de ce bloc : tant qu’il est vide, ce scénario ne pourra pas être lancé en campagne.',
                 'Pick this block’s template: while it is empty, this scenario cannot be launched as a campaign.')
@@ -205,10 +206,10 @@ export function ConfigPanel({
           ne se change plus ici : ce panneau ne sert qu'à configurer. Changer le type d'un bloc déjà relié
           laissait derrière lui de la config d'un autre type et des sorties devenues fausses. */}
       <div className="flex items-center gap-2">
-        <span className="text-xs">{nodeMetaOf(wfType).emoji}</span>
+        <Icone nom={nodeMetaOf(wfType).icone} taille="petite" />
         <span className="text-xs font-medium text-ink-500">{t(...nodeMetaOf(wfType).label)}</span>
         {typeof d.code === 'string' && d.code !== '' && (
-          <span className="ml-auto font-mono text-xs text-ink-400" title={t('Code public (API) du bloc, posé au 1er enregistrement', 'Public code (API) of the block, set on first save')}>{d.code}</span>
+          <span className="ml-auto font-mono text-xs text-ink-500" title={t('Code public (API) du bloc, posé au 1er enregistrement', 'Public code (API) of the block, set on first save')}>{d.code}</span>
         )}
       </div>
 
@@ -241,7 +242,7 @@ export function ConfigPanel({
                   <option value="days">{t('jours', 'days')}</option>
                 </select>
               </div>
-              <p className="mt-1 text-xs text-ink-400">
+              <p className="mt-1 text-xs text-ink-500">
                 {t("Le délai est tenu à la minute près environ (le réveil des parcours se fait par balayage). Maximum 30 jours.", 'The delay is accurate to about a minute (parcours are woken by a sweep). Maximum 30 days.')}
               </p>
             </>
@@ -256,14 +257,14 @@ export function ConfigPanel({
                 onChange={(e) => onPatch({ waitDate: e.target.value })}
                 className={`${cls} mt-2 w-full bg-white`}
               />
-              <p className="mt-1 text-xs text-ink-400">
+              <p className="mt-1 text-xs text-ink-500">
                 {t("Cette date vaut pour TOUS les contacts qui passent par ce bloc, dans le fuseau de l'espace (onglet Paramètres). Une date déjà passée ne retient personne : le parcours continue tout de suite. Au-delà de 30 jours d'attente, la reprise est ramenée à 30 jours.", 'This date applies to EVERY contact going through this block, in the workspace time zone (Settings tab). A date already past holds nobody: the parcours continues right away. Beyond 30 days of waiting, the resume is capped at 30 days.')}
               </p>
             </>
           )}
 
           {mode === 'heures_ouvrees' && (
-            <p className="mt-2 text-xs text-ink-400">
+            <p className="mt-2 text-xs text-ink-500">
               {t("S'il est 1 h du matin, le parcours reprend à l'ouverture du jour, telle qu'elle est réglée dans l'onglet Paramètres. Si on est déjà dans les heures ouvertes, il continue sans attendre. Si aucun jour n'est ouvert, ce bloc ne retient personne : le parcours continue tout de suite.", 'If it is 1am, the parcours resumes at the opening time set in the Settings tab. If it is already within business hours, it continues without waiting. If no day is open at all, this block holds nobody: the parcours continues right away.')}
             </p>
           )}
@@ -292,14 +293,14 @@ export function ConfigPanel({
         const composeIci = source === 'libre';
         return (
           <div className="space-y-3">
-            <div className="flex gap-1 rounded-lg bg-ink-50 p-1" role="group">
+            <div className="flex gap-1 rounded-controle bg-ink-50 p-1" role="group">
               {([['bibliotheque', t('Message enregistré', 'Saved message')], ['libre', t('Composer ici', 'Compose here')]] as const).map(([v, libelle]) => (
                 <button
                   key={v}
                   type="button"
                   onClick={() => onPatch({ rcsSource: v })}
                   data-testid={`rcs-node-source-${v}`}
-                  className={`flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors duration-150 ${source === v ? 'bg-white text-ink-900' : 'text-ink-500 hover:text-ink-900'}`}
+                  className={`flex-1 rounded-controle px-2 py-1 text-xs font-medium transition-colors duration-150 ${source === v ? 'bg-white text-ink-900' : 'text-ink-500 hover:text-ink-900'}`}
                 >
                   {libelle}
                 </button>
@@ -328,7 +329,7 @@ export function ConfigPanel({
                   <option key={m.id} value={m.id} disabled>{m.name} {t('(carrousel : pas encore dans un scénario)', '(carousel: not yet in a scenario)')}</option>
                 ))}
               </select>
-              <p className="mt-1 text-xs text-ink-400">
+              <p className="mt-1 text-xs text-ink-500">
                 {t('Le message est COPIÉ dans ce bloc : le modifier ici ne touche pas la bibliothèque, et modifier la bibliothèque ne touche pas ce bloc.', 'The message is COPIED into this block: editing it here does not touch the library, and editing the library does not touch this block.')}
               </p>
             </div>
@@ -353,7 +354,7 @@ export function ConfigPanel({
                 testIdPrefix="rcs-node"
                 compact
               />
-              <p className="mt-1 text-xs text-ink-400">
+              <p className="mt-1 text-xs text-ink-500">
                 {t('JPEG, PNG ou GIF, 2 Mo maximum. Avec un visuel, le texte est limité à 2000 caractères et les boutons passent en liste.', 'JPEG, PNG or GIF, 2 MB maximum. With a visual, the text is capped at 2000 characters and the buttons switch to a list.')}
               </p>
             </div>
@@ -368,7 +369,7 @@ export function ConfigPanel({
                 max={maxTexteRcs(String(d.imageUrl ?? ''))}
                 compact
               />
-              <p className="mt-1 text-xs text-ink-400">
+              <p className="mt-1 text-xs text-ink-500">
                 {t('« + Variable » insère un champ du contact, remplacé à l’envoi par sa fiche.', '“+ Variable” inserts a contact field, filled in from their record at send time.')}
               </p>
             </div>
@@ -398,9 +399,9 @@ export function ConfigPanel({
             {templates.map((tpl) => <option key={tpl.id || tpl.name} value={tpl.name}>{tpl.name}</option>)}
           </select>
           {Array.isArray(d.templateCards) && (d.templateCards as unknown[]).length > 0 ? (
-            <p className="mt-1 text-xs text-ink-400">{t('Carousel : chaque réponse rapide de chaque carte devient une ', 'Carousel: each quick reply on each card becomes an ')}<b>{t('sortie', 'output')}</b>{t(' à relier (point à droite du bloc, « C1 » = carte 1). Les boutons lien ne se relient pas : ils ouvrent le navigateur et ne renvoient rien.', ' to connect (dot on the right of the block, “C1” = card 1). Link buttons cannot be connected: they open the browser and send nothing back.')}</p>
+            <p className="mt-1 text-xs text-ink-500">{t('Carousel : chaque réponse rapide de chaque carte devient une ', 'Carousel: each quick reply on each card becomes an ')}<b>{t('sortie', 'output')}</b>{t(' à relier (point à droite du bloc, « C1 » = carte 1). Les boutons lien ne se relient pas : ils ouvrent le navigateur et ne renvoient rien.', ' to connect (dot on the right of the block, “C1” = card 1). Link buttons cannot be connected: they open the browser and send nothing back.')}</p>
           ) : Array.isArray(d.templateButtons) && (d.templateButtons as unknown[]).length > 0 ? (
-            <p className="mt-1 text-xs text-ink-400">{t('Chaque bouton de réponse rapide devient une ', 'Each quick-reply button becomes an ')}<b>{t('sortie', 'output')}</b>{t(' à relier (point à droite du bloc). Les boutons lien/formulaire ne se relient pas.', ' to connect (dot on the right of the block). Link/form buttons cannot be connected.')}</p>
+            <p className="mt-1 text-xs text-ink-500">{t('Chaque bouton de réponse rapide devient une ', 'Each quick-reply button becomes an ')}<b>{t('sortie', 'output')}</b>{t(' à relier (point à droite du bloc). Les boutons lien/formulaire ne se relient pas.', ' to connect (dot on the right of the block). Link/form buttons cannot be connected.')}</p>
           ) : null}
         </div>
       )}
@@ -445,7 +446,7 @@ export function ConfigPanel({
                 placeholder={t('Choisir', 'Choose')}
               />
               {rows.length === 0 && (
-                <p className="mt-1 text-xs text-ink-400">
+                <p className="mt-1 text-xs text-ink-500">
                   {t('Ce bouton n’apparaît que si tu proposes des réponses ci-dessous.', 'This button only appears if you offer answers below.')}
                 </p>
               )}
@@ -455,7 +456,7 @@ export function ConfigPanel({
               <label className="mb-1 block text-xs font-medium text-ink-500">{t('Réponses proposées (menu)', 'Offered answers (menu)')}</label>
               <div className="space-y-1.5">
                 {rows.map((r, i) => (
-                  <div key={i} className="rounded-lg border border-ink-200 p-1.5">
+                  <div key={i} className="rounded-controle border border-ink-200 p-1.5">
                     <div className="flex items-center gap-1.5">
                       <input
                         value={r.title}
@@ -467,7 +468,7 @@ export function ConfigPanel({
                       />
                       {/* 🔴 Passe par le PARENT : retirer une ligne décale les sorties `row:<i>` suivantes,
                           donc il faut remapper les arêtes en même temps. `patchRows` ne voit pas les arêtes. */}
-                      <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('wf-row-delete', { detail: { nodeId: node.id, index: i } }))} data-testid={`question-row-del-${i}`} className="shrink-0 text-ink-400 hover:text-danger" aria-label={t('Retirer', 'Remove')}>×</button>
+                      <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('wf-row-delete', { detail: { nodeId: node.id, index: i } }))} data-testid={`question-row-del-${i}`} className="shrink-0 text-ink-400 hover:text-danger" aria-label={t('Retirer', 'Remove')}><Icone nom="fermer" taille="petite" /></button>
                     </div>
                     <input
                       value={r.description}
@@ -485,7 +486,7 @@ export function ConfigPanel({
                   {t('+ réponse', '+ answer')}
                 </button>
               )}
-              <p className="mt-1 text-xs text-ink-400">
+              <p className="mt-1 text-xs text-ink-500">
                 {t('Maximum 10 réponses, 24 caractères chacune. Chaque réponse devient une sortie à relier. Sans aucune réponse, la question part en texte simple et attend une réponse écrite.', 'Maximum 10 answers, 24 characters each. Each answer becomes an output to connect. With no answer at all, the question goes out as plain text and waits for a written reply.')}
               </p>
             </div>
@@ -507,7 +508,7 @@ export function ConfigPanel({
                   <option value="days">{t('jours', 'days')}</option>
                 </select>
               </div>
-              <p className="mt-1 text-xs text-ink-400">
+              <p className="mt-1 text-xs text-ink-500">
                 {t('0 = on attend sans limite. Au-delà de 0, une sortie « Pas de réponse » apparaît sur le bloc : relie-la pour prévoir ce cas. Maximum 30 jours.', '0 = wait with no limit. Above 0, a “No reply” output appears on the block: connect it to handle that case. Maximum 30 days.')}
               </p>
             </div>
@@ -547,7 +548,7 @@ export function ConfigPanel({
                 max={lienActif || qr.some((x) => x.trim() !== '') ? 1024 : 4096}
                 compact
               />
-              <p className="mt-1 text-xs text-ink-400">
+              <p className="mt-1 text-xs text-ink-500">
                 {t('« + Variable » insère un champ du contact, remplacé à l’envoi par sa fiche.', '“+ Variable” inserts a contact field, filled in from their record at send time.')}
               </p>
             </div>
@@ -563,7 +564,7 @@ export function ConfigPanel({
                 testIdPrefix="quick-node"
                 compact
               />
-              <p className="mt-1 text-xs text-ink-400">
+              <p className="mt-1 text-xs text-ink-500">
                 {t('JPEG, PNG ou GIF, 2 Mo maximum. Le message part alors avec le visuel en en-tête. Sans aucune réponse rapide, il part en image légendée.', 'JPEG, PNG or GIF, 2 MB maximum. The message then goes out with the visual as its header. With no quick reply at all, it goes out as a captioned image.')}
               </p>
             </div>
@@ -576,7 +577,7 @@ export function ConfigPanel({
                 dans la DONNÉE, et les trois lecteurs de `quickReplies` (le moteur, la miniature du bloc, les
                 alertes de montage) continuent de voir un simple message texte, sans qu'aucun n'ait à
                 connaître la nouvelle case. */}
-            <div className="rounded-lg border border-ink-200 bg-ink-50/50 p-2">
+            <div className="rounded-controle border border-ink-200 bg-ink-50/50 p-2">
               <label className="flex items-start gap-2 text-xs font-medium text-ink-900">
                 <input
                   type="checkbox"
@@ -609,7 +610,7 @@ export function ConfigPanel({
                       {t('L’adresse doit commencer par http:// ou https:// et ne peut pas contenir de variable : sinon WhatsApp refuse le message entier.', 'The address must start with http:// or https:// and cannot contain a variable, otherwise WhatsApp rejects the whole message.')}
                     </p>
                   )}
-                  <p className="text-xs text-ink-400">
+                  <p className="text-xs text-ink-500">
                     {t('Libellé 20 caractères max. Le contact ouvre la page dans son navigateur : rien ne revient au scénario, donc ce bloc n’a pas de sortie à relier et le parcours continue juste après.', 'Label 20 characters max. The contact opens the page in their browser: nothing comes back to the scenario, so this block has no output to connect and the journey continues right after.')}
                   </p>
                 </div>
@@ -618,7 +619,7 @@ export function ConfigPanel({
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-500">{t('Réponses rapides', 'Quick replies')}</label>
               {lienActif ? (
-                <p className="text-xs text-ink-400" data-testid="quick-node-qr-desactivees">
+                <p className="text-xs text-ink-500" data-testid="quick-node-qr-desactivees">
                   {t('Désactivées tant que ce message porte un bouton de lien : WhatsApp ne sait pas envoyer les deux dans un même message. Décochez la case au-dessus pour les retrouver.', 'Disabled while this message carries a link button: WhatsApp cannot send both in one message. Untick the box above to get them back.')}
                 </p>
               ) : (<>
@@ -626,14 +627,14 @@ export function ConfigPanel({
                 {qr.map((r, i) => (
                   <div key={i} className="flex items-center gap-1.5">
                     <input value={r} maxLength={20} onChange={(e) => { const next = [...qr]; next[i] = e.target.value; onPatch({ quickReplies: next }); }} className={cls} placeholder={`${t('Réponse', 'Reply')} ${i + 1}`} />
-                    <button type="button" onClick={() => onPatch({ quickReplies: qr.filter((_, j) => j !== i) })} className="shrink-0 text-ink-400 hover:text-danger" aria-label={t('Retirer', 'Remove')}>×</button>
+                    <button type="button" onClick={() => onPatch({ quickReplies: qr.filter((_, j) => j !== i) })} className="shrink-0 text-ink-400 hover:text-danger" aria-label={t('Retirer', 'Remove')}><Icone nom="fermer" taille="petite" /></button>
                   </div>
                 ))}
               </div>
               {qr.length < 3 && (
                 <button type="button" onClick={() => onPatch({ quickReplies: [...qr, ''] })} className="mt-1.5 text-xs text-brand-600 hover:underline">{t('+ réponse rapide', '+ quick reply')}</button>
               )}
-              <p className="mt-1 text-xs text-ink-400">{t('Max 3, 20 caractères. Chaque réponse devient une sortie à relier (point à droite du bloc).', 'Max 3, 20 characters. Each reply becomes an output to connect (dot on the right of the block).')}</p>
+              <p className="mt-1 text-xs text-ink-500">{t('Max 3, 20 caractères. Chaque réponse devient une sortie à relier (point à droite du bloc).', 'Max 3, 20 characters. Each reply becomes an output to connect (dot on the right of the block).')}</p>
               </>)}
             </div>
           </div>
@@ -648,7 +649,7 @@ export function ConfigPanel({
               <option value="">{t('Choisir…', 'Choose…')}</option>
               {flows.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
-            {flows.length === 0 && <p className="mt-1 text-xs text-ink-400">{t('Aucun formulaire publié. Crée-en un dans Contenu > Formulaires.', 'No published form. Create one in Content > Forms.')}</p>}
+            {flows.length === 0 && <p className="mt-1 text-xs text-ink-500">{t('Aucun formulaire publié : créez-en un dans Contenu > Formulaires.', 'No published form: create one in Content > Forms.')}</p>}
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-500">{t('Texte d’accroche', 'Message text')}</label>
@@ -720,7 +721,7 @@ export function ConfigPanel({
       })()}
       {wfType === 'condition' && (
         <div className="space-y-2">
-          <p className="text-xs leading-snug text-ink-400">{t('Le contact tire le fil « Si réunie » (vert) quand la condition est vraie, sinon « Sinon » (rouge). Relie chaque sortie à un bloc.', 'The contact follows “If met” (green) when the condition is true, otherwise “Otherwise” (red). Connect each output to a block.')}</p>
+          <p className="text-xs leading-snug text-ink-500">{t('Le contact tire le fil « Si réunie » (vert) quand la condition est vraie, sinon « Sinon » (rouge). Relie chaque sortie à un bloc.', 'The contact follows “If met” (green) when the condition is true, otherwise “Otherwise” (red). Connect each output to a block.')}</p>
           <ConditionBuilder
             group={{ match: (d.match as 'all' | 'any') ?? 'all', clauses: Array.isArray(d.clauses) ? (d.clauses as ConditionGroup['clauses']) : [] }}
             onChange={(g) => onPatch({ match: g.match, clauses: g.clauses })}
@@ -874,7 +875,7 @@ export function ConfigPanel({
           {/* `agents !== null` : sur une liste pas encore arrivée (ou une lecture en échec), affirmer que
               l'agent n'est plus actif serait un mensonge sur un bloc parfaitement configuré. */}
           {agents !== null && String(d.agentId ?? '') !== '' && !agents.some((a) => a.id === d.agentId) && (
-            <p data-testid="agent-node-absent" className="rounded-lg bg-alerte-50 px-2 py-1.5 text-xs leading-relaxed text-alerte-800">
+            <p data-testid="agent-node-absent" className="rounded-controle bg-alerte-50 px-2 py-1.5 text-xs leading-relaxed text-alerte-800">
               {t(
                 `L’agent « ${String(d.agentLabel ?? '')} » n’est plus actif : ce bloc ne répondra pas tant qu’il ne l’est pas de nouveau.`,
                 `The agent “${String(d.agentLabel ?? '')}” is no longer active: this block will not answer until it is again.`,
@@ -899,7 +900,7 @@ export function ConfigPanel({
             const surLaFiche = fiche.sorties.map((s) => s.code).join('|');
             if (ici === surLaFiche) return null;
             return (
-              <div data-testid="agent-node-sorties-obsoletes" className="flex flex-col gap-1.5 rounded-lg bg-brand-50 px-2 py-1.5">
+              <div data-testid="agent-node-sorties-obsoletes" className="flex flex-col gap-1.5 rounded-controle bg-brand-50 px-2 py-1.5">
                 <p className="text-xs leading-relaxed text-ink-900">
                   {t(
                     'Les règles d’arrêt de cet agent ont changé depuis que ce bloc a été configuré.',
@@ -908,7 +909,7 @@ export function ConfigPanel({
                 </p>
                 <button
                   data-testid="agent-node-sorties-maj"
-                  className="self-start rounded-md border border-brand-300 bg-white px-2 py-1 text-xs text-brand-700 hover:bg-brand-100"
+                  className="self-start rounded-controle border border-brand-300 bg-white px-2 py-1 text-xs text-brand-700 hover:bg-brand-100"
                   onClick={() => {
                     onPatch({ agentLabel: fiche.label, sorties: fiche.sorties });
                     window.dispatchEvent(new CustomEvent('wf-agent-change', {
@@ -958,7 +959,7 @@ export function ConfigPanel({
                 {emailAccounts.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
               </select>
               {emailAccounts.length === 0 && (
-                <p className="mt-1 text-xs text-ink-400">{t('Aucune boîte connectée. Connecte-en une depuis le menu Compte > Boîtes email.', 'No mailbox connected yet. Connect one from the Account menu > Email accounts.')}</p>
+                <p className="mt-1 text-xs text-ink-500">{t('Aucune boîte connectée : connectez-en une depuis le menu Compte > Boîtes email.', 'No mailbox connected yet: connect one from the Account menu > Email accounts.')}</p>
               )}
             </div>
             <div>
@@ -973,23 +974,23 @@ export function ConfigPanel({
                 {emailTemplates.map((tpl) => <option key={tpl.id} value={tpl.id}>{tpl.name}</option>)}
               </select>
               {emailTemplates.length === 0 && (
-                <p className="mt-1 text-xs text-ink-400">{t('Aucun modèle. Crée-en un dans Contenu > Modèles d’email.', 'No template yet. Create one in Content > Email templates.')}</p>
+                <p className="mt-1 text-xs text-ink-500">{t('Aucun modèle : créez-en un dans Contenu > Modèles d’email.', 'No template yet: create one in Content > Email templates.')}</p>
               )}
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-500">
-                {t('Destinataires', 'Recipients')} <span className="font-normal text-ink-400">({destinataires.length}/{MAX_DESTINATAIRES_EMAIL})</span>
+                {t('Destinataires', 'Recipients')} <span className="font-normal text-ink-500">({destinataires.length}/{MAX_DESTINATAIRES_EMAIL})</span>
               </label>
               {destinataires.map((r, i) => (
-                <div key={i} data-testid={`email-recipient-row-${i}`} className="mb-2 rounded-lg border border-ink-100 p-1.5">
+                <div key={i} data-testid={`email-recipient-row-${i}`} className="mb-2 rounded-controle border border-ink-100 p-1.5">
                   <div className="mb-1.5 flex items-center justify-between gap-2">
                     {/* Le mode est PAR LIGNE : partagé, changer celui de la 2e adresse remettrait les trois à zéro. */}
-                    <div className="inline-flex overflow-hidden rounded-lg border border-ink-200 text-xs">
+                    <div className="inline-flex overflow-hidden rounded-controle border border-ink-200 text-xs">
                       <button
                         type="button"
                         data-testid={`email-recipient-kind-literal-${i}`}
                         onClick={() => majLigne(i, { kind: 'literal', value: '' })}
-                        className={`px-2 py-1 font-medium transition-colors duration-150 ${r.kind !== 'field' ? 'bg-brand-500 text-white' : 'text-ink-500 hover:bg-ink-50'}`}
+                        className={`px-2 py-1 font-medium transition-colors duration-150 ${r.kind !== 'field' ? 'bg-brand-600 text-white' : 'text-ink-500 hover:bg-ink-50'}`}
                       >
                         {t('Adresse fixe', 'Fixed address')}
                       </button>
@@ -997,7 +998,7 @@ export function ConfigPanel({
                         type="button"
                         data-testid={`email-recipient-kind-field-${i}`}
                         onClick={() => majLigne(i, { kind: 'field', field: '' })}
-                        className={`px-2 py-1 font-medium transition-colors duration-150 ${r.kind === 'field' ? 'bg-brand-500 text-white' : 'text-ink-500 hover:bg-ink-50'}`}
+                        className={`px-2 py-1 font-medium transition-colors duration-150 ${r.kind === 'field' ? 'bg-brand-600 text-white' : 'text-ink-500 hover:bg-ink-50'}`}
                       >
                         {t('Variable', 'Variable')}
                       </button>
@@ -1009,11 +1010,9 @@ export function ConfigPanel({
                         type="button"
                         data-testid={`email-recipient-remove-${i}`}
                         onClick={() => patchDest(destinataires.filter((_, j) => j !== i))}
-                        className="rounded-md px-1.5 py-0.5 text-xs text-ink-400 hover:bg-danger-50 hover:text-danger"
+                        className="rounded-controle px-1.5 py-0.5 text-xs text-ink-500 hover:bg-danger-50 hover:text-danger"
                         aria-label={t('Retirer ce destinataire', 'Remove this recipient')}
-                      >
-                        ✕
-                      </button>
+                      ><Icone nom="fermer" taille="petite" /></button>
                     )}
                   </div>
                   {r.kind === 'field' ? (
@@ -1045,7 +1044,7 @@ export function ConfigPanel({
                     />
                   )}
                   {i === 0 && destinataires.length > 1 && (
-                    <p className="mt-1 text-xs text-ink-400">{t('En « À ». Les suivants sont en copie cachée.', 'In “To”. The others are blind-copied.')}</p>
+                    <p className="mt-1 text-xs text-ink-500">{t('En « À ». Les suivants sont en copie cachée.', 'In “To”. The others are blind-copied.')}</p>
                   )}
                 </div>
               ))}
@@ -1059,14 +1058,14 @@ export function ConfigPanel({
                   {t('+ destinataire', '+ recipient')}
                 </button>
               )}
-              <p className="mt-1 text-xs text-ink-400">
+              <p className="mt-1 text-xs text-ink-500">
                 {t(
                   'En mode variable, le champ choisi doit contenir une adresse email valide sur la fiche du contact (ex. le champ « Email »). Une adresse qui ne résout à rien est ignorée, les autres partent quand même.',
                   'In variable mode, the chosen field must hold a valid email address on the contact (e.g. the “Email” field). An address that resolves to nothing is skipped, the others are still sent.',
                 )}
               </p>
             </div>
-            <p className="text-xs leading-snug text-ink-400">
+            <p className="text-xs leading-snug text-ink-500">
               {t(
                 "L'envoi est best-effort : un échec (boîte injoignable, adresse invalide…) est journalisé mais n'arrête jamais le parcours du contact.",
                 'The send is best-effort: a failure (unreachable mailbox, invalid address…) is logged but never stops the contact’s journey.',
@@ -1109,7 +1108,7 @@ function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch, 
   /** Une création EN VOL. Sans ce verrou, deux clics rapides envoient deux `POST` : le second se fait
    *  refuser en 409 sur le nom que le premier vient de créer, et l'écran annonce un échec après un succès. */
   const [creationEnVol, setCreationEnVol] = useState(false);
-  const cls = 'w-full rounded-lg border border-ink-200 px-2 py-1.5 text-sm';
+  const cls = 'w-full rounded-controle border border-ink-200 px-2 py-1.5 text-sm';
 
   async function essayer(): Promise<void> {
     setEnCours(true);
@@ -1168,7 +1167,7 @@ function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch, 
         soit le champ, ce qui n'aidait pas à le deviner. Le moteur passe désormais la donnée sous LES DEUX
         noms, donc les blocs déjà écrits avec `valeur` continuent de marcher.
       */}
-      <div className="font-mono text-xs leading-tight text-ink-400">
+      <div className="font-mono text-xs leading-tight text-ink-500">
         function ({nomParametreJs(champSource) ?? 'valeur'}) {'{'}
       </div>
       {/* ⚠️ LE RETRAIT EST SUR L'ENVELOPPE, PAS SUR LE CHAMP. `ml-3` posé sur un élément déjà en `w-full`
@@ -1190,7 +1189,7 @@ function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch, 
           placeholder={'return JSON.parse(valeur).statut;'}
         />
       </div>
-      <div className="font-mono text-xs leading-tight text-ink-400">{'}'}</div>
+      <div className="font-mono text-xs leading-tight text-ink-500">{'}'}</div>
       <p className="text-xs text-ink-500">
         {t('Écrivez seulement l’intérieur : la valeur du champ arrive dans', 'Write only the inside: the field value comes in as')}
         {' '}<code>{nomParametreJs(champSource) ?? 'valeur'}</code>
@@ -1219,7 +1218,7 @@ function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch, 
       {resultat && (
         <p
           data-testid="js-node-resultat"
-          className={`break-all rounded-lg px-2 py-1.5 text-xs ${resultat.ok ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger'}`}
+          className={`break-all rounded-controle px-2 py-1.5 text-xs ${resultat.ok ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-700'}`}
         >
           {resultat.ok ? `→ ${resultat.valeur === '' ? t('(vide)', '(empty)') : resultat.valeur}` : resultat.erreur}
         </p>

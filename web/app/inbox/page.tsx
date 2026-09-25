@@ -63,6 +63,10 @@ import {
 } from '@/lib/api';
 import { Bouton, classesBouton } from '@/components/Bouton';
 import { TitrePage } from '@/components/TitrePage';
+import { Icone } from '@/components/Icone';
+import { useConfirmation } from '@/components/Confirmation';
+import { Modale } from '@/components/Modale';
+import { Squelette } from '@/components/Squelette';
 
 export default function InboxPage() {
   // Suspense : useSearchParams (deep-link ?c=) exige une frontière Suspense au build (Next 15).
@@ -165,10 +169,10 @@ function AgentBadge({ name }: { name: string }) {
 function InboundPayload({ body, payload }: { body: string | null; payload: string }) {
   const t = useT();
   const entries = parseFormResponse(payload);
-  if (!entries) return <span>👆 {body ?? payload}</span>;
+  if (!entries) return <span className="inline-flex items-center gap-1"><Icone nom="clic" taille="petite" />{body ?? payload}</span>;
   return (
     <div className="space-y-0.5">
-      <div className="mb-1 text-xs font-semibold opacity-70">📋 {t('Formulaire rempli', 'Form response')}</div>
+      <div className="mb-1 flex items-center gap-1 text-xs font-semibold opacity-70"><Icone nom="formulaire" taille="petite" />{t('Formulaire rempli', 'Form response')}</div>
       {entries.map(([k, v]) => (
         <div key={k} className="text-sm">
           <span className="opacity-60">{prettyKey(k)} : </span>
@@ -514,7 +518,9 @@ function InboxInner({ session }: { session: Session }) {
     // Ce trait ferme la zone du logo (`lg:w-60`, puis un séparateur `w-px`, `AppShell`) : la colonne part donc du
     // bord (`lg:pl-0` sur la grille) et fait ces MÊMES deux mesures, lues dans le thème et pas recopiées, pour
     // que sa bordure droite occupe exactement le pixel du trait. `inbox-dossiers.spec.ts` le mesure.
-    <div className={`grid gap-4 p-4 lg:h-full lg:pl-0 ${ficheWaId ? 'lg:grid-cols-[calc(theme(spacing.60)_+_theme(spacing.px))_320px_1fr_340px]' : 'lg:grid-cols-[calc(theme(spacing.60)_+_theme(spacing.px))_320px_1fr]'}`}>
+    // `grid-cols-1` sous `lg` : une colonne `minmax(0, 1fr)`. Sans elle, la piste implicite prenait la largeur
+    // de son contenu le plus large (la barre d'envoi), et la page débordait de 211 px sur un téléphone.
+    <div className={`grid grid-cols-1 gap-4 p-4 lg:h-full lg:pl-0 ${ficheWaId ? 'lg:grid-cols-[calc(theme(spacing.60)_+_theme(spacing.px))_320px_1fr_340px]' : 'lg:grid-cols-[calc(theme(spacing.60)_+_theme(spacing.px))_320px_1fr]'}`}>
       {/* 🔴 LE MENU DE DOSSIERS REMPLACE LES TROIS BOUTONS DE FILTRE, il ne s'y ajoute pas. Deux endroits
           pour le même choix, c'est deux états qui divergent : le dépôt l'a déjà payé sur le contrôle du
           fil. Modération comprise : « Signalé » est l'ancien bouton, dans ce menu comme les autres.
@@ -555,7 +561,7 @@ function InboxInner({ session }: { session: Session }) {
             deux) et retombe TOUJOURS sur son titre, comme celui de la conversation : il déclenche une
             action, il ne porte pas un état. */}
         {cochees.size > 0 && (
-          <div className="mb-2 flex items-center gap-2 rounded-lg bg-brand-50 px-2.5 py-1.5 text-xs">
+          <div className="mb-2 flex items-center gap-2 rounded-controle bg-brand-50 px-2.5 py-1.5 text-xs">
             <span className="text-brand-800">{t(`${cochees.size} sélectionnée(s)`, `${cochees.size} selected`)}</span>
             <select
               data-testid="inbox-ranger-selection"
@@ -563,7 +569,7 @@ function InboxInner({ session }: { session: Session }) {
               disabled={rangementEnCours}
               value=""
               onChange={(e) => { const v = e.target.value; if (estActionRangement(v)) void rangerLesCochees(v); }}
-              className="ml-auto rounded-md border border-brand-300 bg-white px-2 py-1 font-medium text-brand-800 disabled:opacity-40"
+              className="ml-auto rounded-controle border border-brand-300 bg-white px-2 py-1 font-medium text-brand-800 disabled:opacity-40"
             >
               <option value="">{rangementEnCours ? t('...', '...') : t('Ranger dans…', 'File in…')}</option>
               {destinationsEnLot(dossier, selectionAvecSignalementManuel, selectionAvecTraitee, selectionAvecNonTraitee).map((a) => (
@@ -572,22 +578,22 @@ function InboxInner({ session }: { session: Session }) {
             </select>
           </div>
         )}
-        {error && <p className="mb-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+        {error && <p className="mb-3 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
         {loading ? (
-          <p className="text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>
+          <Squelette forme="lignes" />
         ) : visible.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">
+          <div className="px-4 py-10 text-center text-sm text-ink-500">
             {dossier === 'aTraiter'
               ? t('Rien à traiter : toutes les conversations sont gérées par le scénario.', 'Nothing to handle: every conversation is handled by the scenario.')
               : dossier === 'traitees'
-                ? t('Aucune conversation traitée. Marquez « Traité » celles qui n’attendent plus rien : elles reviennent dans « À traiter » dès que le contact réécrit.', 'No conversation marked as done. Mark as done those that need nothing more: they come back to “To handle” as soon as the contact writes again.')
+                ? t('Aucune conversation traitée : marquez « Traité » celles qui n’attendent plus rien.', 'No conversation marked as done: mark as done those that need nothing more.')
               : dossier === 'signalees'
-                ? t('Aucune conversation signalée. L’analyse relève les injures environ 15 min après le dernier message.', 'No flagged conversation. The analysis spots abuse about 15 min after the last message.')
+                ? t('Aucune conversation signalée : l’analyse relève les injures environ 15 min après le dernier message.', 'No flagged conversation: the analysis spots abuse about 15 min after the last message.')
                 : dossier === 'archivees'
-                  ? t('Aucune conversation archivée. Cochez une conversation et rangez-la ici quand elle est finie.', 'No archived conversation. Tick one and file it here when it is done.')
+                  ? t('Aucune conversation archivée : cochez-en une et rangez-la ici quand elle est finie.', 'No archived conversation: tick one and file it here when it is done.')
                   : typeof dossier === 'object' || dossier === 'nonAffectees'
                     ? t('Aucune conversation dans ce dossier.', 'No conversation in this folder.')
-                    : t('Aucune conversation. Elles apparaissent quand un client répond à une campagne.', 'No conversations yet. They appear when a customer replies to a campaign.')}
+                    : t('Aucune conversation : elles apparaissent quand un client répond à une campagne.', 'No conversations yet: they appear when a customer replies to a campaign.')}
           </div>
         ) : (
           <ul className="space-y-1.5 lg:flex-1 lg:overflow-y-auto">
@@ -604,7 +610,7 @@ function InboxInner({ session }: { session: Session }) {
                 <div
                   data-testid={`inbox-ligne-${c.id}`}
                   data-mba={c.controlOwner === 'mba' ? 'oui' : undefined}
-                  className={`relative w-full rounded-xl border px-3 py-2 transition-colors duration-150 ${
+                  className={`relative w-full rounded-carte border px-3 py-2 transition-colors duration-150 ${
                     selected?.id === c.id
                       ? 'border-brand-500 bg-brand-50'
                       /* 🔴 UN FIL TENU PAR L'AGENT DE META SE VOIT SANS SE LIRE (demande de Julien,
@@ -624,7 +630,7 @@ function InboxInner({ session }: { session: Session }) {
                   <button
                     onClick={() => setSelected(c)}
                     aria-label={t('Ouvrir la conversation', 'Open conversation')}
-                    className="absolute inset-0 rounded-xl"
+                    className="absolute inset-0 rounded-carte"
                   />
                   {/* `pointer-events-none` sur le contenu, `auto` sur le seul bouton du nom : sans ça le
                       contenu recouvre le bouton de fond, et un clic au milieu de la vignette n'ouvrirait
@@ -663,14 +669,10 @@ function InboxInner({ session }: { session: Session }) {
                           role="img"
                           className="mr-1.5 shrink-0 text-brand-600"
                         >
-                          {/* Une baguette et ses étincelles. Dessinée plutôt qu'empruntée à une police
-                              d'emoji : un emoji change de tête selon le système, et celui-ci doit rester le
-                              même signe pour tout le monde, parce qu'il REMPLACE un mot. */}
-                          <svg viewBox="0 0 24 24" className="inline h-4 w-4 align-[-0.2em]" aria-hidden="true">
-                            <path d="M15.6 3.2l1.3 3.1 3.1 1.3-3.1 1.3-1.3 3.1-1.3-3.1-3.1-1.3 3.1-1.3 1.3-3.1z" fill="currentColor" />
-                            <path d="M6.6 11.4l.75 1.85 1.85.75-1.85.75-.75 1.85-.75-1.85L4 15.9l1.85-.75.75-1.85z" fill="currentColor" opacity=".75" />
-                            <path d="M13.6 12.1l1.9 1.9-8.1 8.1a1.34 1.34 0 01-1.9-1.9l8.1-8.1z" fill="currentColor" opacity=".55" />
-                          </svg>
+                          {/* Une baguette. Une icône plutôt qu'un emoji : un emoji change de tête selon le
+                              système, et celui-ci doit rester le même signe pour tout le monde, parce qu'il
+                              REMPLACE un mot (le nom accessible est porté par le `span`). */}
+                          <Icone nom="baguette" taille="ligne" className="inline align-[-0.2em]" />
                         </span>
                       )}
                       <button
@@ -695,7 +697,7 @@ function InboxInner({ session }: { session: Session }) {
                         </span>
                       )}
                     </span>
-                    <span className="pointer-events-none shrink-0 text-xs text-ink-400">{jourHeure(c.lastMessageAt, locale)}</span>
+                    <span className="pointer-events-none shrink-0 text-xs text-ink-500">{jourHeure(c.lastMessageAt, locale)}</span>
                   </div>
                   {/* 🔴 PLUS AUCUN BADGE DANS LA LISTE (demande de Julien, 2026-09-11 : « quand un agent a
                       la main, laisse juste le frame en blanc, pas obligé d'écrire Vous avez la main »).
@@ -715,7 +717,7 @@ function InboxInner({ session }: { session: Session }) {
                   onClick={() => { void chargerPlus(); }}
                   disabled={chargementPage}
                   data-testid="inbox-load-more"
-                  className="w-full rounded-xl border border-dashed border-ink-300 px-3 py-2 text-xs font-medium text-ink-500 transition-colors duration-150 hover:bg-ink-50 disabled:opacity-50"
+                  className="w-full rounded-controle px-3 py-2 text-xs font-medium text-brand-600 transition-colors duration-150 hover:bg-brand-50 disabled:opacity-50"
                 >
                   {chargementPage ? t('Chargement…', 'Loading…') : t('Charger plus de conversations', 'Load more conversations')}
                 </button>
@@ -729,7 +731,7 @@ function InboxInner({ session }: { session: Session }) {
         {selected ? (
           <Thread key={selected.id} session={session} conversation={selected} dossier={dossier} peutPrendre={peutPrendre} onSent={reload} />
         ) : (
-          <div className="flex h-full min-h-[300px] items-center justify-center rounded-2xl border border-dashed border-ink-300 bg-white text-sm text-ink-400">
+          <div className="flex h-full min-h-[300px] items-center justify-center rounded-carte border border-ink-200 bg-white text-sm text-ink-500">
             {t('Sélectionne une conversation', 'Select a conversation')}
           </div>
         )}
@@ -783,11 +785,11 @@ function FicheContact({ session, waId, onClose }: { session: Session; waId: stri
   }, [session.tenantId, waId]);
 
   if (etat === 'chargement') {
-    return <div className="rounded-2xl border border-ink-200 bg-white p-4 text-sm text-ink-500">{t('Chargement…', 'Loading…')}</div>;
+    return <div className="rounded-carte border border-ink-200 bg-white p-4"><Squelette forme="fil" lignes={4} /></div>;
   }
   if (etat !== 'ok' || !contact) {
     return (
-      <div className="rounded-2xl border border-ink-200 bg-white p-4 text-sm text-ink-500">
+      <div className="rounded-carte border border-ink-200 bg-white p-4 text-sm text-ink-500">
         <div className="mb-2 flex items-center justify-between">
           <span className="font-medium text-ink-900">{`+${waId}`}</span>
           <button onClick={onClose} className="text-xs text-ink-500 hover:text-ink-900">{t('Fermer', 'Close')}</button>
@@ -889,7 +891,7 @@ function RangerDans({ session, conversation, dossier, controlOwner, onFait }: {
       // Laisser l'option choisie affichée ferait croire à un réglage, et re-choisir la même ne ferait rien.
       value=""
       onChange={(e) => { const v = e.target.value; if (estActionRangement(v)) void ranger(v); }}
-      className="rounded-lg border border-ink-300 bg-white px-2 py-0.5 text-xs text-ink-900 disabled:opacity-50"
+      className="rounded-controle border border-ink-300 bg-white px-2 py-0.5 text-xs text-ink-900 disabled:opacity-50"
     >
       <option value="">{busy ? t('...', '...') : t('Ranger dans…', 'File in…')}</option>
       {/* 🔴 ICI les options se déduisent de l'ÉTAT DE CETTE conversation, pas du dossier : on en connaît le
@@ -1009,10 +1011,11 @@ function VocalMessage({ session, conversationId, message, traduire }: {
       {/* Expiré : ni « Écouter » ni « Transcrire », qui échoueraient. Une transcription faite AVANT reste
           affichée plus bas, elle est à nous. */}
       {expire && !url && (
-        <p className="text-xs italic opacity-80" data-testid={`vocal-expire-${message.id}`}>
+        <p className="flex items-center gap-1 text-xs italic opacity-80" data-testid={`vocal-expire-${message.id}`}>
+          <Icone nom="micro" taille="petite" />
           {t(
-            `🎤 Vocal expiré : WhatsApp ne garde les pièces jointes que ${DUREE_MEDIA_RECU_JOURS_AFFICHEE} jours.`,
-            `🎤 Voice note expired: WhatsApp only keeps attachments for ${DUREE_MEDIA_RECU_JOURS_AFFICHEE} days.`,
+            `Vocal expiré : WhatsApp ne garde les pièces jointes que ${DUREE_MEDIA_RECU_JOURS_AFFICHEE} jours.`,
+            `Voice note expired: WhatsApp only keeps attachments for ${DUREE_MEDIA_RECU_JOURS_AFFICHEE} days.`,
           )}
         </p>
       )}
@@ -1025,9 +1028,9 @@ function VocalMessage({ session, conversationId, message, traduire }: {
             onClick={() => { void ecouter(); }}
             disabled={occupe !== null}
             data-testid={`vocal-ecouter-${message.id}`}
-            className="rounded-full bg-white/70 px-2 py-0.5 text-xs font-medium text-ink-900 hover:bg-white disabled:opacity-50"
+            className="inline-flex items-center gap-1 rounded-full bg-white/70 px-2 py-0.5 text-xs font-medium text-ink-900 hover:bg-white disabled:opacity-50"
           >
-            {occupe === 'audio' ? t('Chargement…', 'Loading…') : t('▶ Écouter', '▶ Listen')}
+            {occupe === 'audio' ? t('Chargement…', 'Loading…') : <><Icone nom="ecouter" taille="petite" />{t('Écouter', 'Listen')}</>}
           </button>
         )}
       {texte === null && !expire && (
@@ -1042,7 +1045,7 @@ function VocalMessage({ session, conversationId, message, traduire }: {
         </button>
       )}
       {texte !== null && (
-        <p className="rounded-lg bg-white/60 px-2 py-1 text-xs text-ink-900" data-testid={`vocal-texte-${message.id}`}>
+        <p className="rounded-controle bg-white/60 px-2 py-1 text-xs text-ink-900" data-testid={`vocal-texte-${message.id}`}>
           {/* L'étiquette DIT laquelle des deux lectures on montre. « transcription » sur un texte traduit
               ferait passer notre lecture pour ce qui a été dit, et le fil sert de trace. */}
           <span className="mr-1 font-medium text-ink-500">
@@ -1160,7 +1163,7 @@ function AffectationControl({ session, conversation, peutPrendre, onChange }: {
       value={affecte ?? ''}
       disabled={busy}
       onChange={(e) => { void choisir(e.target.value); }}
-      className="rounded-lg border border-ink-300 px-2 py-0.5 text-xs text-ink-900 disabled:opacity-50"
+      className="rounded-controle border border-ink-300 px-2 py-0.5 text-xs text-ink-900 disabled:opacity-50"
       title={t('Affecter cette conversation', 'Assign this conversation')}
     >
       <option value="">{t('Non affectée', 'Unassigned')}</option>
@@ -1186,6 +1189,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
   onSent: () => void;
 }) {
   const t = useT();
+  const confirmer = useConfirmation();
   const { locale } = useLocale();
   const [messages, setMessages] = useState<InboxMessage[]>([]);
   const [windowOpen, setWindowOpen] = useState(true);
@@ -1579,7 +1583,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
       'Effacer TOUS les messages de cette conversation ?\n\nC’est irréversible.\n\nEt la fenêtre de 24 h se calcule sur le dernier message reçu : après l’effacement, elle sera fermée, donc vous ne pourrez plus répondre librement à ce contact tant qu’il n’aura pas réécrit.',
       'Erase ALL messages in this conversation?\n\nThis cannot be undone.\n\nAnd the 24h window is computed from the last received message: after erasing, it will be closed, so you will not be able to reply freely to this contact until they write again.',
     );
-    if (!window.confirm(question)) return;
+    if (!(await confirmer({ titre: t('Effacer le contenu', 'Erase the content'), message: question, confirmer: t('Effacer', 'Erase') }))) return;
     setEffacement(true);
     setError(null);
     try {
@@ -1626,7 +1630,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
   }
 
   return (
-    <div className="flex h-[540px] flex-col rounded-2xl border border-ink-200 bg-white lg:h-full">
+    <div className="flex h-[540px] flex-col rounded-carte border border-ink-200 bg-white lg:h-full">
       {/* ⚠️ `flex-wrap` sur l'en-tête et sur son groupe de droite : un 13 pouces laisse environ 700 px à
           cette colonne, et les commandes y sont déjà nombreuses. Sans lui, la dernière arrivée pousse les
           autres hors du cadre au lieu de passer à la ligne, ce qui ne se voit ni comme un débordement de
@@ -1635,7 +1639,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
       <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b border-ink-100 px-4 py-2.5">
         <div className="min-w-0">
           <span className="text-sm font-semibold">{conversation.profileName ?? `+${conversation.waId}`}</span>
-          <span className="ml-2 font-mono text-xs text-ink-400">+{conversation.waId}</span>
+          <span className="ml-2 font-mono text-xs text-ink-500">+{conversation.waId}</span>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
           {/*
@@ -1660,7 +1664,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
               role="switch"
               checked={traduireRecus}
               onChange={(e) => basculerTraduction(e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-ink-300 accent-brand-500"
+              className="h-3.5 w-3.5 rounded-controle border-ink-300 accent-brand-500"
             />
             {t('Traduire les messages reçus', 'Translate incoming messages')}
           </label>
@@ -1719,7 +1723,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
               data-testid="conversation-effacer"
               onClick={() => { void effacer(); }}
               disabled={effacement}
-              className="rounded-lg border border-ink-300 px-2 py-0.5 text-xs font-medium text-danger transition-colors duration-150 hover:bg-danger-50 disabled:opacity-50"
+              className="rounded-controle border border-ink-300 px-2 py-0.5 text-xs font-medium text-danger transition-colors duration-150 hover:bg-danger-50 disabled:opacity-50"
             >
               {effacement ? t('...', '...') : t('Effacer le contenu', 'Erase content')}
             </button>
@@ -1741,7 +1745,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
         <p
           data-testid="traduction-indisponible"
           data-cause={traductionCause ?? 'inconnue'}
-          className="mx-4 mt-2 rounded-lg bg-alerte-50 px-3 py-2 text-xs text-alerte-800"
+          className="mx-4 mt-2 rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte-800"
         >
           {traductionCause === 'credit' && t(
             'Traduction indisponible : le crédit de cet espace est épuisé. Les messages restent dans leur langue d’origine, un administrateur peut le recharger.',
@@ -1770,19 +1774,20 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
             <Fragment key={m.id}>
               {showSep && (
                 <div className="flex justify-center py-1">
-                  <span className="rounded-full bg-ink-100 px-2.5 py-0.5 text-xs font-medium text-ink-500">{dayLabel(m.createdAt, locale)}</span>
+                  <span className="text-xs font-medium text-ink-500">{dayLabel(m.createdAt, locale)}</span>
                 </div>
               )}
               <div className={`flex items-end gap-1.5 ${m.direction === 'out' ? 'justify-end' : 'justify-start'}`}>
                 {/* Couleur PAR CANAL : le fil est unique par contact, c'est la bulle qui dit par quel tuyau
-                    elle est passée. WhatsApp garde ses couleurs historiques (aucune bulle existante ne
-                    change), le RCS prend le mint. Canal absent ou inconnu (message d'avant la migration
-                    0056) -> WhatsApp, jamais une couleur muette. */}
+                    elle est passée. WhatsApp prend l'accent de la console, le RCS le bleu nuit. ⚠️ Jamais
+                    une teinte d'état (`succes`, `alerte`, `danger`) : une bulle RCS verte se lirait « réussi »
+                    à côté d'une bulle WhatsApp qui ne l'aurait pas été. Canal absent ou inconnu (message
+                    d'avant la migration 0056) -> WhatsApp, jamais une couleur muette. */}
                 <div
-                  className={`max-w-[75%] rounded-2xl px-3 py-1.5 text-sm ${
+                  className={`max-w-[75%] rounded-carte px-3 py-1.5 text-sm ${
                     m.channel === 'rcs'
-                      ? (m.direction === 'out' ? 'bg-succes-600 text-white' : 'bg-succes-100 text-ink-900')
-                      : (m.direction === 'out' ? 'bg-brand-500 text-white' : 'bg-ink-100 text-ink-900')
+                      ? (m.direction === 'out' ? 'bg-navy-600 text-white' : 'bg-navy-50 text-ink-900')
+                      : (m.direction === 'out' ? 'bg-brand-600 text-white' : 'bg-ink-100 text-ink-900')
                   }`}
                   title={m.channel === 'rcs' ? 'RCS' : undefined}
                 >
@@ -1792,7 +1797,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
                       donc l'opérateur y verrait sa propre phrase en espagnol). Sans `traduire`, le champ
                       est absent et tout retombe sur `body`, mot pour mot comme avant. */}
                   {m.type === 'template' ? (
-                    <span className="italic opacity-90">📋 {texteDeBulle(m)}</span>
+                    <span className="italic opacity-90"><Icone nom="modele" taille="petite" className="mr-1 inline align-[-0.15em]" />{texteDeBulle(m)}</span>
                   ) : m.type === 'audio' && m.aMedia === true && m.direction === 'in' ? (
                     // Le vocal remplace le libellé `[audio]`, qui ne disait rien de ce que le client a dit.
                     <VocalMessage session={session} conversationId={conversation.id} message={m} traduire={cibleLecture ?? null} />
@@ -1812,7 +1817,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
                     texteDeBulle(m) ?? <span className="italic opacity-70">[{m.type}]</span>
                   )}
                   <MarqueDeTraduction message={m} />
-                  <div className={`mt-0.5 text-right text-xs ${m.direction === 'out' ? 'text-white/70' : 'text-ink-400'}`}>{hourMin(m.createdAt, locale)}</div>
+                  <div className={`mt-0.5 text-right text-xs ${m.direction === 'out' ? 'text-white/70' : 'text-ink-500'}`}>{hourMin(m.createdAt, locale)}</div>
                 </div>
                 {/* Pastille de l'auteur (repli neutre : rien si pas d'auteur, legacy ou réponse auto). */}
                 {m.direction === 'out' && m.senderName ? <AgentBadge name={m.senderName} /> : null}
@@ -1823,7 +1828,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
         <div ref={bottomRef} />
       </div>
 
-      {error && <p className="mx-4 mb-2 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+      {error && <p className="mx-4 mb-2 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
       {/*
         Conversation confiée à QUELQU'UN D'AUTRE : on remplace la barre de réponse par une explication, au
@@ -1833,8 +1838,8 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
         Le refus réel vient du serveur : ce bloc ne protège rien, il évite une frustration.
 
         ⚠️ UNE CLÉ PAR BARRE (2026-09-25). La fenêtre part OUVERTE par défaut et bascule à la réponse du fil :
-        sans clé, React garde le même bouton DOM au même rang et le RELABELLISE, donc un clic parti sur 🧩
-        (« Lancer un scénario ») au moment de la bascule arrivait sur « Envoyer un template ». Avec une clé,
+        sans clé, React garde le même bouton DOM au même rang et le RELABELLISE, donc un clic parti sur
+        « Lancer un scénario » au moment de la bascule arrivait sur « Envoyer un template ». Avec une clé,
         la barre est remplacée, et un clic en vol tombe sur un nœud détaché au lieu du mauvais bouton.
       */}
       {fermeeCarAffectee ? (
@@ -1845,30 +1850,35 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
           )}
         </div>
       ) : windowOpen ? (
-        <div key="fenetre-ouverte" className="flex items-center gap-2 border-t border-ink-100 p-3">
+        // `flex-wrap` et le champ en tête sur un téléphone : trois icônes, le champ, « Traduire » et « Envoyer »
+        // ne tiennent pas sur 358 px, et la rangée débordait de l'écran.
+        <div key="fenetre-ouverte" className="flex flex-wrap items-center gap-2 border-t border-ink-100 p-3 sm:flex-nowrap">
           <button
             onClick={() => setShowTemplate(true)}
             title={t('Envoyer un template', 'Send a template')}
-            className="shrink-0 rounded-lg border border-ink-300 px-2.5 py-2 text-sm text-ink-500 transition-colors duration-150 hover:bg-ink-50"
+            aria-label={t('Envoyer un template', 'Send a template')}
+            className="shrink-0 rounded-controle border border-ink-300 p-2 text-ink-500 transition-colors duration-150 hover:bg-ink-50"
           >
-            📋
+            <Icone nom="modele" />
           </button>
           <button
             onClick={() => setShowScenario(true)}
             title={t('Lancer un scénario', 'Start a scenario')}
             data-testid="inbox-open-scenario"
-            className="shrink-0 rounded-lg border border-ink-300 px-2.5 py-2 text-sm text-ink-500 transition-colors duration-150 hover:bg-ink-50"
+            aria-label={t('Lancer un scénario', 'Start a scenario')}
+            className="shrink-0 rounded-controle border border-ink-300 p-2 text-ink-500 transition-colors duration-150 hover:bg-ink-50"
           >
-            🧩
+            <Icone nom="scenario" />
           </button>
           {rcsEnabled && (
             <button
               onClick={() => setShowRcs(true)}
               title={t('Envoyer un message RCS', 'Send an RCS message')}
               data-testid="inbox-open-rcs"
-              className="shrink-0 rounded-lg border border-ink-300 px-2.5 py-2 text-sm text-ink-500 transition-colors duration-150 hover:bg-ink-50"
+              aria-label={t('Envoyer un message RCS', 'Send an RCS message')}
+              className="shrink-0 rounded-controle border border-ink-300 p-2 text-ink-500 transition-colors duration-150 hover:bg-ink-50"
             >
-              📱
+              <Icone nom="mobile" />
             </button>
           )}
           <input
@@ -1877,7 +1887,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
             onKeyDown={(e) => { if (e.key === 'Enter' && !busy) void send(); }}
             placeholder={t('Répondre (fenêtre de service 24 h)...', 'Reply (24h service window)...')}
             data-testid="zone-saisie"
-            className="min-w-0 flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+            className="order-first min-w-0 flex-1 basis-full rounded-controle sm:order-none sm:basis-auto border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
           />
           {/*
             🔴 LE BOUTON NOMME SA CIBLE, jamais « Traduire » tout court. L'opérateur voit où part sa
@@ -1897,7 +1907,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
             disabled={traduisant || busy || text.trim() === ''}
             data-testid="bouton-traduire"
             title={t('Traduire avant d’envoyer, sans envoyer', 'Translate before sending, without sending')}
-            className="shrink-0 whitespace-nowrap rounded-lg border border-ink-300 px-2.5 py-2 text-sm text-ink-500 transition-colors duration-150 hover:bg-ink-50 disabled:opacity-50"
+            className="shrink-0 whitespace-nowrap rounded-controle border border-ink-300 px-2.5 py-2 text-sm text-ink-500 transition-colors duration-150 hover:bg-ink-50 disabled:opacity-50"
           >
             {traduisant
               ? t('...', '...')
@@ -1914,7 +1924,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
         </div>
       ) : (
         <div key="fenetre-fermee" className="border-t border-ink-100 p-3">
-          <p className="mb-2 rounded-lg bg-alerte-50 px-3 py-2 text-xs text-alerte-800">
+          <p className="mb-2 rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte-800">
             {t('Fenêtre de 24 h fermée : WhatsApp interdit le message libre. Pour reprendre contact, envoie un ', '24-hour window closed: WhatsApp does not allow free-form messages. To reach out again, send an ')}<b>{t('template approuvé', 'approved template')}</b>.
           </p>
           <Bouton
@@ -1927,7 +1937,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
             <button
               onClick={() => setShowRcs(true)}
               data-testid="inbox-open-rcs"
-              className="mt-2 w-full rounded-lg border border-succes-500 px-3 py-2 text-sm font-medium text-succes-700 hover:bg-succes-50"
+              className="mt-2 w-full rounded-controle border border-navy-300 px-3 py-2 text-sm font-medium text-navy-700 hover:bg-navy-50"
             >
               {t('…ou envoyer un message RCS (pas de fenêtre de 24 h)', '…or send an RCS message (no 24h window)')}
             </button>
@@ -2043,52 +2053,46 @@ function ScenarioSendPanel({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-mm-lg" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-ink-900">{t('Lancer un scénario', 'Start a scenario')}</h3>
-          <button onClick={onClose} className="text-ink-400 hover:text-ink-900">×</button>
-        </div>
-        <p className="mt-1 text-xs text-ink-500">
-          {windowOpen
-            ? t('Le contact a écrit il y a moins de 24 h : tous tes scénarios peuvent partir.', 'The contact wrote less than 24h ago: any of your scenarios can run.')
-            : t('Fenêtre de 24 h fermée : seuls les scénarios qui ouvrent par un template ou par un message RCS peuvent partir.', '24-hour window closed: only scenarios opening with a template or an RCS message can run.')}
-        </p>
+    <Modale titre={t('Lancer un scénario', 'Start a scenario')} onClose={onClose}>
+      <p className="mt-1 text-xs text-ink-500">
+        {windowOpen
+          ? t('Le contact a écrit il y a moins de 24 h : tous tes scénarios peuvent partir.', 'The contact wrote less than 24h ago: any of your scenarios can run.')
+          : t('Fenêtre de 24 h fermée : seuls les scénarios qui ouvrent par un template ou par un message RCS peuvent partir.', '24-hour window closed: only scenarios opening with a template or an RCS message can run.')}
+      </p>
 
-        <div className="mt-3">
-          <label className="mb-1 block text-sm font-medium text-ink-900">{t('Scénario', 'Scenario')}</label>
-          {workflows.length === 0 ? (
-            <p className="text-xs text-alerte-700" data-testid="scenario-none">
-              {total === 0
-                ? t('Aucun scénario. Crée-en un dans le menu « Scénario » à gauche.', 'No scenario yet. Create one from the "Scenario" menu on the left.')
-                : t("Aucun de tes scénarios ne peut partir hors de la fenêtre de 24 h : il faudrait qu'il ouvre par l'envoi d'un template, ou par un message RCS, qui lui n'a pas de fenêtre (une étiquette, une action ou une condition avant lui ne posent aucun problème).", 'None of your scenarios can run outside the 24h window: it would need to open by sending a template, or an RCS message, which has no window (a tag, an action or a condition before it is fine).')}
-            </p>
-          ) : (
-            <select value={selId} onChange={(e) => { setSelId(e.target.value); setError(null); }} className={inputCls} data-testid="scenario-select">
-              <option value="" disabled>{t('Choisir…', 'Choose…')}</option>
-              {/* « non publié » : fenêtre ouverte, la liste n'est pas filtrée et un scénario jamais mis en
-                  ligne y figure. Le lancer ne ferait rien du tout, autant le dire avant le clic. */}
-              {workflows.map((w) => (
-                <option key={w.id} value={w.id}>{estEnLigne(w) ? w.name : `${w.name} (${t('non publié', 'not published')})`}</option>
-              ))}
-            </select>
-          )}
-        </div>
-
-        {error && <p className="mt-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700" data-testid="scenario-error">{error}</p>}
-
-        <div className="mt-4 flex justify-end gap-2">
-          <Bouton variante="secondaire" onClick={onClose}>{t('Annuler', 'Cancel')}</Bouton>
-          <Bouton enCours={busy}
-            onClick={lancer}
-            disabled={!sel || busy}
-            data-testid="scenario-send"
-          >
-            {busy ? t('Lancement…', 'Starting…') : t('Lancer', 'Start')}
-          </Bouton>
-        </div>
+      <div className="mt-3">
+        <label className="mb-1 block text-sm font-medium text-ink-900">{t('Scénario', 'Scenario')}</label>
+        {workflows.length === 0 ? (
+          <p className="text-xs text-alerte-700" data-testid="scenario-none">
+            {total === 0
+              ? t('Aucun scénario : créez-en un dans le menu « Scénario ».', 'No scenario yet: create one from the “Scenario” menu.')
+              : t("Aucun de tes scénarios ne peut partir hors de la fenêtre de 24 h : il faudrait qu'il ouvre par l'envoi d'un template, ou par un message RCS, qui lui n'a pas de fenêtre (une étiquette, une action ou une condition avant lui ne posent aucun problème).", 'None of your scenarios can run outside the 24h window: it would need to open by sending a template, or an RCS message, which has no window (a tag, an action or a condition before it is fine).')}
+          </p>
+        ) : (
+          <select value={selId} onChange={(e) => { setSelId(e.target.value); setError(null); }} className={inputCls} data-testid="scenario-select">
+            <option value="" disabled>{t('Choisir…', 'Choose…')}</option>
+            {/* « non publié » : fenêtre ouverte, la liste n'est pas filtrée et un scénario jamais mis en
+                ligne y figure. Le lancer ne ferait rien du tout, autant le dire avant le clic. */}
+            {workflows.map((w) => (
+              <option key={w.id} value={w.id}>{estEnLigne(w) ? w.name : `${w.name} (${t('non publié', 'not published')})`}</option>
+            ))}
+          </select>
+        )}
       </div>
-    </div>
+
+      {error && <p className="mt-3 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700" data-testid="scenario-error">{error}</p>}
+
+      <div className="mt-4 flex justify-end gap-2">
+        <Bouton variante="secondaire" onClick={onClose}>{t('Annuler', 'Cancel')}</Bouton>
+        <Bouton enCours={busy}
+          onClick={lancer}
+          disabled={!sel || busy}
+          data-testid="scenario-send"
+        >
+          {busy ? t('Lancement…', 'Starting…') : t('Lancer', 'Start')}
+        </Bouton>
+      </div>
+    </Modale>
   );
 }
 
@@ -2184,104 +2188,98 @@ function TemplateSendPanel({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-mm-lg" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-ink-900">{t('Envoyer un template', 'Send a template')}</h3>
-          <button onClick={onClose} className="text-ink-400 hover:text-ink-900">×</button>
-        </div>
-        <p className="mt-1 text-xs text-ink-500">{t('Le seul moyen de ré-engager un contact hors fenêtre de 24 h.', 'The only way to re-engage a contact outside the 24h window.')}</p>
+    <Modale titre={t('Envoyer un template', 'Send a template')} onClose={onClose}>
+      <p className="mt-1 text-xs text-ink-500">{t('Le seul moyen de ré-engager un contact hors fenêtre de 24 h.', 'The only way to re-engage a contact outside the 24h window.')}</p>
 
-        <div className="mt-3">
-          <label className="mb-1 block text-sm font-medium text-ink-900">{t('Template approuvé', 'Approved template')}</label>
-          {templates.length === 0 ? (
-            <p className="text-xs text-alerte-700">{t('Aucun template approuvé. Crée-en un dans Campagnes → Templates.', 'No approved template. Create one in Campaigns → Templates.')}</p>
-          ) : (
-            <select value={sel ? `${sel.name}::${sel.language}` : ''} onChange={(e) => pick(e.target.value)} className={inputCls}>
-              <option value="" disabled>{t('Choisir…', 'Choose…')}</option>
-              {templates.map((tpl) => (
-                <option key={`${tpl.name}::${tpl.language}`} value={`${tpl.name}::${tpl.language}`}>
-                  {tpl.name} ({tpl.language}){tpl.isCarousel ? ` · ${t('carousel', 'carousel')}` : ''}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-
-        {sel && (
-          <>
-            {varCount > 0 && (
-              <div className="mt-3">
-                <label className="mb-1 block text-sm font-medium text-ink-900">{t('Variables', 'Variables')}</label>
-                <div className="space-y-2">
-                  {Array.from({ length: varCount }).map((_, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <span className="flex w-28 shrink-0 items-center gap-1 text-xs text-ink-400">
-                        {`{{${i + 1}}}`}
-                        {labels[i] ? <span className="truncate rounded bg-brand-50 px-1 text-brand-600">{labels[i]}</span> : null}
-                      </span>
-                      <input
-                        value={vars[i] ?? ''}
-                        onChange={(e) => setVars((x) => { const c = [...x]; c[i] = e.target.value; return c; })}
-                        className={`${inputCls} flex-1`}
-                        placeholder={t('valeur', 'value')}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {needsMedia && !mediaAFournir && (
-              <div className="mt-3 flex items-center gap-2 rounded-lg bg-ink-50 px-3 py-2">
-                {sel.headerFormat === 'IMAGE' ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={mediaDuTemplate} alt="" referrerPolicy="no-referrer" className="h-10 w-16 shrink-0 rounded border border-ink-200 object-cover" />
-                ) : (
-                  <span className="text-lg">{sel.headerFormat === 'VIDEO' ? '🎬' : '📄'}</span>
-                )}
-                <p className="text-xs text-ink-500" data-testid="template-media-repris">
-                  {t('L’en-tête défini sur le template part avec le message. Rien à fournir.', 'The header defined on the template goes out with the message. Nothing to provide.')}
-                </p>
-              </div>
-            )}
-
-            {mediaAFournir && (
-              <div className="mt-3">
-                <label className="mb-1 block text-sm font-medium text-ink-900">
-                  {t(
-                    `URL de l'${sel.headerFormat === 'IMAGE' ? 'image' : sel.headerFormat === 'VIDEO' ? 'vidéo' : 'document'} (header du template)`,
-                    `${sel.headerFormat === 'IMAGE' ? 'Image' : sel.headerFormat === 'VIDEO' ? 'Video' : 'Document'} URL (template header)`,
-                  )}
-                </label>
-                <input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://..." className={inputCls} />
-                <p className="mt-1 text-xs text-alerte-700">
-                  {t('Ce template a un en-tête média, mais son fichier n’est plus lisible chez Meta (lien expiré). Collez-en un pour cet envoi.', 'This template has a media header, but its file is no longer readable at Meta (expired link). Paste one for this send.')}
-                </p>
-              </div>
-            )}
-
-            <div className="mt-3">
-              {/* Un carousel se montre comme un carousel : le corps seul ne dit rien de ce que le contact reçoit. */}
-              <TemplatePreview template={{ body: sel.body, buttons: [], ...(sel.carousel ? { carousel: sel.carousel } : {}) }} examples={previewExamples} />
-            </div>
-          </>
+      <div className="mt-3">
+        <label className="mb-1 block text-sm font-medium text-ink-900">{t('Template approuvé', 'Approved template')}</label>
+        {templates.length === 0 ? (
+          <p className="text-xs text-alerte-700">{t('Aucun template approuvé : créez-en un dans Campagnes > Templates.', 'No approved template: create one in Campaigns > Templates.')}</p>
+        ) : (
+          <select value={sel ? `${sel.name}::${sel.language}` : ''} onChange={(e) => pick(e.target.value)} className={inputCls}>
+            <option value="" disabled>{t('Choisir…', 'Choose…')}</option>
+            {templates.map((tpl) => (
+              <option key={`${tpl.name}::${tpl.language}`} value={`${tpl.name}::${tpl.language}`}>
+                {tpl.name} ({tpl.language}){tpl.isCarousel ? ` · ${t('carousel', 'carousel')}` : ''}
+              </option>
+            ))}
+          </select>
         )}
-
-        {error && <p className="mt-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
-
-        <div className="mt-4 flex gap-2">
-          <Bouton variante="secondaire" onClick={onClose} className="flex-1">{t('Annuler', 'Cancel')}</Bouton>
-          <Bouton
-            onClick={send}
-            disabled={!canSend}
-            className="flex-1"
-          >
-            {busy ? t('Envoi...', 'Sending...') : t('Envoyer le template', 'Send the template')}
-          </Bouton>
-        </div>
       </div>
-    </div>
+
+      {sel && (
+        <>
+          {varCount > 0 && (
+            <div className="mt-3">
+              <label className="mb-1 block text-sm font-medium text-ink-900">{t('Variables', 'Variables')}</label>
+              <div className="space-y-2">
+                {Array.from({ length: varCount }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="flex w-28 shrink-0 items-center gap-1 text-xs text-ink-500">
+                      {`{{${i + 1}}}`}
+                      {labels[i] ? <span className="truncate rounded-controle bg-brand-50 px-1 text-brand-600">{labels[i]}</span> : null}
+                    </span>
+                    <input
+                      value={vars[i] ?? ''}
+                      onChange={(e) => setVars((x) => { const c = [...x]; c[i] = e.target.value; return c; })}
+                      className={`${inputCls} flex-1`}
+                      placeholder={t('valeur', 'value')}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {needsMedia && !mediaAFournir && (
+            <div className="mt-3 flex items-center gap-2 rounded-controle bg-ink-50 px-3 py-2">
+              {sel.headerFormat === 'IMAGE' ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={mediaDuTemplate} alt="" referrerPolicy="no-referrer" className="h-10 w-16 shrink-0 rounded-controle border border-ink-200 object-cover" />
+              ) : (
+                <Icone nom={sel.headerFormat === 'VIDEO' ? 'video' : 'modele'} taille="grande" className="text-ink-500" />
+              )}
+              <p className="text-xs text-ink-500" data-testid="template-media-repris">
+                {t('L’en-tête défini sur le template part avec le message. Rien à fournir.', 'The header defined on the template goes out with the message. Nothing to provide.')}
+              </p>
+            </div>
+          )}
+
+          {mediaAFournir && (
+            <div className="mt-3">
+              <label className="mb-1 block text-sm font-medium text-ink-900">
+                {t(
+                  `URL de l'${sel.headerFormat === 'IMAGE' ? 'image' : sel.headerFormat === 'VIDEO' ? 'vidéo' : 'document'} (header du template)`,
+                  `${sel.headerFormat === 'IMAGE' ? 'Image' : sel.headerFormat === 'VIDEO' ? 'Video' : 'Document'} URL (template header)`,
+                )}
+              </label>
+              <input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://..." className={inputCls} />
+              <p className="mt-1 text-xs text-alerte-700">
+                {t('Ce template a un en-tête média, mais son fichier n’est plus lisible chez Meta (lien expiré). Collez-en un pour cet envoi.', 'This template has a media header, but its file is no longer readable at Meta (expired link). Paste one for this send.')}
+              </p>
+            </div>
+          )}
+
+          <div className="mt-3">
+            {/* Un carousel se montre comme un carousel : le corps seul ne dit rien de ce que le contact reçoit. */}
+            <TemplatePreview template={{ body: sel.body, buttons: [], ...(sel.carousel ? { carousel: sel.carousel } : {}) }} examples={previewExamples} />
+          </div>
+        </>
+      )}
+
+      {error && <p className="mt-3 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+
+      <div className="mt-4 flex gap-2">
+        <Bouton variante="secondaire" onClick={onClose} className="flex-1">{t('Annuler', 'Cancel')}</Bouton>
+        <Bouton
+          onClick={send}
+          disabled={!canSend}
+          className="flex-1"
+        >
+          {busy ? t('Envoi...', 'Sending...') : t('Envoyer le template', 'Send the template')}
+        </Bouton>
+      </div>
+    </Modale>
   );
 }
 

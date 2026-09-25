@@ -8,6 +8,7 @@ import { emailVariableFields } from '@/lib/fields';
 import type { UserFieldDef } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
+import { Icone } from '@/components/Icone';
 
 /**
  * Un corps de message dont les variables s'affichent en CHIPS lisibles (`[Prénom]`) alors que la chaîne
@@ -56,7 +57,7 @@ export function ChampCorpsVariables({
       <div className="mb-1 flex items-center justify-between gap-2">
         {label ? <label className="block text-xs font-medium text-ink-500">{label}</label> : <span />}
         {max !== undefined && (
-          <span className={`text-xs ${trop ? 'font-medium text-danger' : 'text-ink-400'}`}>{valeur.length} / {max}</span>
+          <span className={`text-xs ${trop ? 'font-medium text-danger' : 'text-ink-500'}`}>{valeur.length} / {max}</span>
         )}
       </div>
 
@@ -81,10 +82,10 @@ export function ChampCorpsVariables({
             type="button"
             onClick={() => setEmojisOuverts((o) => !o)}
             data-testid={`${testId}-emoji`}
-            className="rounded-md p-1 text-lg leading-none hover:bg-ink-100"
+            className="rounded-controle p-1 text-ink-500 hover:bg-ink-100"
             aria-label={t('Insérer un emoji', 'Insert an emoji')}
           >
-            😊
+            <Icone nom="smiley" />
           </button>
         </div>
 

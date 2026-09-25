@@ -77,15 +77,15 @@ export default function LoginPage() {
         <div className="mb-8 text-center">
           <Logo className="mx-auto mb-3 h-14 w-14" />
           <TitrePage>Engage Me</TitrePage>
-          <p className="mt-1 text-balance text-sm text-ink-400">{t('La plateforme conversationnelle qui comprend chaque conversation.', 'The conversational platform that understands every conversation.')}</p>
+          <p className="mt-1 text-balance text-sm text-ink-500">{t('La plateforme conversationnelle qui comprend chaque conversation.', 'The conversational platform that understands every conversation.')}</p>
         </div>
 
         {choix ? (
-          <div className="space-y-3 rounded-2xl border border-ink-200 bg-white p-6" data-testid="choix-espace">
+          <div className="space-y-3 rounded-carte border border-ink-200 bg-white p-6" data-testid="choix-espace">
             <p className="text-sm text-ink-900">
               {t('Cette adresse donne accès à plusieurs espaces. Lequel veux-tu ouvrir ?', 'This address gives access to several workspaces. Which one do you want to open?')}
             </p>
-            {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+            {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
             <ul className="space-y-2">
               {choix.workspaces.map((w) => (
                 <li key={w.tenantId}>
@@ -94,7 +94,7 @@ export default function LoginPage() {
                     onClick={() => { void entrer(w.tenantId); }}
                     disabled={loading}
                     data-testid={`espace-${w.tenantId}`}
-                    className="flex w-full items-center justify-between rounded-xl border border-ink-200 px-4 py-3 text-left transition-colors duration-150 hover:border-brand-500 hover:bg-brand-50 disabled:opacity-50"
+                    className="flex w-full items-center justify-between rounded-carte border border-ink-200 px-4 py-3 text-left transition-colors duration-150 hover:border-brand-500 hover:bg-brand-50 disabled:opacity-50"
                   >
                     <span className="text-sm font-medium text-ink-900">{w.tenantName}</span>
                     <span className="text-xs text-ink-500">{w.role}</span>
@@ -111,7 +111,7 @@ export default function LoginPage() {
             </button>
           </div>
         ) : (
-        <form onSubmit={onSubmit} className="space-y-4 rounded-2xl border border-ink-200 bg-white p-6">
+        <form onSubmit={onSubmit} className="space-y-4 rounded-carte border border-ink-200 bg-white p-6">
           <div>
             {/* `htmlFor`/`id` : le label n'était relié à rien, donc invisible pour un lecteur d'écran et
                 sans effet au clic. Deux attributs, et le champ devient annonçable. */}
@@ -139,7 +139,7 @@ export default function LoginPage() {
             />
           </div>
 
-          {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+          {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
           <Bouton enCours={loading}
             type="submit"
@@ -148,7 +148,7 @@ export default function LoginPage() {
           >
             {loading ? t('Connexion...', 'Signing in...') : t('Se connecter', 'Sign in')}
           </Bouton>
-          <div className="flex items-center justify-between text-xs text-ink-400">
+          <div className="flex items-center justify-between text-xs text-ink-500">
             <Link href="/forgot" className="hover:text-brand-600">{t('Mot de passe oublié ?', 'Forgot password?')}</Link>
             <Link href="/signup" className="font-medium text-brand-600 hover:underline">{t('Créer un espace', 'Create a workspace')}</Link>
           </div>

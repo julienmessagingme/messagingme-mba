@@ -96,7 +96,7 @@ export function ChainePublications(props: ChainePublicationsProps) {
           voisin corrige sur le formulaire de template. Une mesure dont les limites ne sont pas lisibles
           est une mesure qu'on lira de travers. */}
       {conversations !== null && posts.length > 0 && (
-        <p className="mt-2 text-xs text-ink-400" data-testid="chaine-publications-note-mesure">
+        <p className="mt-2 text-xs text-ink-500" data-testid="chaine-publications-note-mesure">
           {t(
             'Un appui sur le bouton ne nous est pas visible : on compte les personnes qui ont ENVOYÉ le message du bouton, pour ce bouton et tous ses posts. Un message reçu pendant que le bouton était éteint, ou avant sa création, est compté sans avoir démarré de scénario.',
             'A tap on the button is invisible to us: we count the people who SENT the button message, for this button across all its posts. A message received while the button was off, or before it existed, is counted without having started any scenario.',
@@ -105,7 +105,7 @@ export function ChainePublications(props: ChainePublicationsProps) {
       )}
 
       {posts.length === 0 ? (
-        <p className="mt-4 text-sm text-ink-400" data-testid="chaine-publications-vide">
+        <p className="mt-4 text-sm text-ink-500" data-testid="chaine-publications-vide">
           {t('Aucune publication pour le moment.', 'No posts yet.')}
         </p>
       ) : (
@@ -135,7 +135,7 @@ export function ChainePublications(props: ChainePublicationsProps) {
                         ? t('(sans texte)', '(no text)')
                         : <TexteMisEnForme texte={corps} />}
                     </p>
-                    <p className="mt-0.5 text-xs text-ink-400">
+                    <p className="mt-0.5 text-xs text-ink-500">
                       {formatDate(p.createdAt, locale)}
                       {lien !== null ? ` · ${lien.phrase}` : ` · ${t('sans bouton', 'no button')}`}
                     </p>
@@ -169,7 +169,7 @@ export function ChainePublications(props: ChainePublicationsProps) {
 
                 {boutonMort ? (
                   <div
-                    className="mt-2 flex flex-wrap items-center gap-3 rounded-lg bg-danger-50 px-3 py-2"
+                    className="mt-2 flex flex-wrap items-center gap-3 rounded-controle bg-danger-50 px-3 py-2"
                     data-testid={`chaine-publication-bouton-mort-${p.id}`}
                   >
                     <span className="text-xs text-ink-900">
@@ -183,7 +183,7 @@ export function ChainePublications(props: ChainePublicationsProps) {
                         type="button"
                         onClick={() => void props.onRallumer(lien.id)}
                         disabled={rallumage === lien.id}
-                        className="rounded-md border border-danger-500 px-2.5 py-1 text-xs font-medium text-danger hover:bg-danger-50 disabled:opacity-50"
+                        className="rounded-controle border border-danger-500 px-2.5 py-1 text-xs font-medium text-danger hover:bg-danger-50 disabled:opacity-50"
                         data-testid={`chaine-publication-rallumer-${p.id}`}
                       >
                         {rallumage === lien.id ? t('Allumage…', 'Turning on…') : t('Rallumer le lien', 'Turn link back on')}

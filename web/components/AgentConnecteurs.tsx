@@ -8,6 +8,7 @@ import { listSources, type SourceAgent } from '@/lib/api-agent-sources';
 import { listRequetes, testerBrouillon, type RequeteApi } from '@/lib/api-agent-requetes';
 import { ajouterConnecteur, type NatureOutil, type OutilAgent } from '@/lib/api-agent-tools';
 import { Bouton } from '@/components/Bouton';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * CE QUE CET AGENT A LE DROIT D'APPELER dans les systèmes du workspace.
@@ -78,15 +79,15 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
     <div className="flex flex-col gap-3">
       {erreur && <MbaNotice kind="error" testid="connecteurs-erreur">{erreur}</MbaNotice>}
 
-      {sources === null && <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>}
+      {sources === null && <Squelette forme="lignes" />}
 
       {/* Rien dans la bibliothèque : on ne propose pas d'y remédier ICI, on dit où ça se passe. Mettre au
           point un appel demande de l'éprouver, ce qui est un geste de workspace, pas un geste d'agent. */}
       {sources !== null && requetes.length === 0 && (
         <p data-testid="connecteurs-aucune-requete" className="text-sm text-ink-500">
           {t(
-            'Aucun appel API n’est prêt sur ce workspace. Rendez-vous dans Tools > Connecteurs API pour en mettre un au point et l’éprouver ; il servira ensuite à tous vos agents.',
-            'No API call is ready on this workspace. Go to Tools > API connectors to set one up and test it; it will then serve all your agents.',
+            'Aucun appel API prêt : mettez-en un au point dans Tools > Connecteurs API, il servira à tous vos agents.',
+            'No API call ready: set one up in Tools > API connectors, it will serve all your agents.',
           )}{' '}
           <a href="/connecteurs" className="text-brand-600 hover:underline">{t('Ouvrir Tools > Connecteurs API', 'Open Tools > API connectors')}</a>
         </p>
@@ -99,7 +100,7 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <p className="text-sm font-medium text-ink-900">{rq.label}</p>
               <p className="text-xs text-ink-500">
-                <span className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-xs">{rq.methode}</span>{' '}
+                <span className="rounded-controle bg-ink-100 px-1.5 py-0.5 font-mono text-xs">{rq.methode}</span>{' '}
                 {libelleSource(rq.sourceId)} {rq.chemin}
               </p>
             </div>
@@ -111,7 +112,7 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
                 {siens.map((o) => (
                   <li key={o.id} className="text-xs text-ink-500">
                     <code>{o.name}</code>
-                    {!o.actif && <span className="ml-1 text-ink-400">{t('(inactif)', '(inactive)')}</span>}
+                    {!o.actif && <span className="ml-1 text-ink-500">{t('(inactif)', '(inactive)')}</span>}
                   </li>
                 ))}
               </ul>
@@ -242,14 +243,14 @@ function NouvelAppel({ tenantId, requete, busy, onCreer }: {
   const proposes = [...new Set([...trouves, ...requete.outputPaths])];
 
   return (
-    <div className="mt-1 flex flex-col gap-3 rounded-lg border border-ink-200 p-3">
+    <div className="mt-1 flex flex-col gap-3 rounded-carte border border-ink-200 p-3">
       {/**
         * 🔴 CE QUI PARTIRA, MONTRÉ SANS RIEN À COCHER (2026-09-15). La case de confirmation est partie : elle
         * demandait de valider une formalité, donc personne ne la lisait, et elle bloquait sans le dire. Le
         * RÉSUMÉ reste, parce qu'il est la seule fois où l'on voit qu'un appel enverra une donnée de ses
         * contacts, voire leur dernier message, à un système tiers.
         */}
-      <div className="rounded-lg bg-ink-50 p-3" data-testid="envoi-resume">
+      <div className="rounded-carte bg-ink-50 p-3" data-testid="envoi-resume">
         <p className="text-xs font-medium text-ink-900">
           {t('Cet appel enverra à votre système :', 'This call will send to your system:')}
         </p>
@@ -301,7 +302,7 @@ function NouvelAppel({ tenantId, requete, busy, onCreer }: {
         * 2026-09-15). Elle n'est pas un oui/non : c'est le CHOIX de ce que l'agent lira.
         */}
       {nature === 'integre' && (
-        <div className="flex flex-col gap-2 rounded-lg border border-ink-200 p-2" data-testid="outil-champs">
+        <div className="flex flex-col gap-2 rounded-controle border border-ink-200 p-2" data-testid="outil-champs">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-xs font-medium text-ink-900">
               {t('Que doit-il récupérer ?', 'What should it read?')}

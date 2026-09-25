@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { repondre } from './aide/confirmation';
 
 /**
  * Écran « Boîtes email » (menu Compte > Boîtes email, admin-only) : un admin connecte une boîte SMTP, la voit
@@ -162,10 +163,9 @@ test.describe('Réglages : boîtes email (SMTP)', () => {
   test('supprimer une boîte demande confirmation puis appelle la suppression', async ({ page }) => {
     const accounts: Account[] = [baseAccount()];
     const { deletedIds } = await mockPage(page, accounts);
-    page.on('dialog', (d) => d.accept());
-
     await page.goto('/settings/email');
     await page.getByRole('button', { name: 'Supprimer' }).click();
+    await repondre(page, true);
 
     await expect.poll(() => deletedIds.length).toBe(1);
     expect(deletedIds[0]).toBe('a1');

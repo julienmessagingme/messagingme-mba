@@ -94,7 +94,7 @@ export function ChampImageHebergee({
       type="button"
       onClick={() => { onChange(''); setErreur(null); }}
       data-testid={`${testIdPrefix}-image-clear`}
-      className="shrink-0 text-sm text-ink-400 hover:text-danger"
+      className="shrink-0 text-sm text-ink-500 hover:text-danger"
     >
       {t('Retirer', 'Remove')}
     </button>
@@ -118,7 +118,7 @@ export function ChampImageHebergee({
           onClick={() => fichierRef.current?.click()}
           disabled={busy}
           data-testid={`${testIdPrefix}-image-upload`}
-          className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-lg border border-dashed border-ink-300 bg-ink-50 text-xs text-ink-400 hover:border-brand-400 disabled:cursor-not-allowed"
+          className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-controle border border-dashed border-ink-300 bg-ink-50 text-xs text-ink-500 hover:border-brand-400 disabled:cursor-not-allowed"
         >
           {busy ? t('Envoi…', 'Uploading…') : aUneImage ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -143,7 +143,7 @@ export function ChampImageHebergee({
                 src={valeur.trim()}
                 alt=""
                 referrerPolicy="no-referrer"
-                className="h-9 w-14 shrink-0 rounded border border-ink-200 bg-ink-50 object-cover"
+                className="h-9 w-14 shrink-0 rounded-controle border border-ink-200 bg-ink-50 object-cover"
               />
               {retirer}
             </>

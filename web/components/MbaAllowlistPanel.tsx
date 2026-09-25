@@ -6,6 +6,7 @@ import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from './MbaNotice';
 import { addMbaAllowlistEntry, listMbaAllowlist, removeMbaAllowlistEntry, type MbaAllowlistEntry } from '@/lib/api-mba';
 import { Bouton } from '@/components/Bouton';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * Les numéros de TEST : ceux que l'agent a le droit de gérer quand l'audience est restreinte.
@@ -57,7 +58,7 @@ export function MbaAllowlistPanel({ tenantId, phoneNumberId, audience }: {
     }
   }
 
-  if (chargement) return <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>;
+  if (chargement) return <Squelette forme="carte" />;
 
   return (
     <section className={`${cardCls} space-y-4`}>
@@ -115,7 +116,7 @@ export function MbaAllowlistPanel({ tenantId, phoneNumberId, audience }: {
 
       <ul className="space-y-2" data-testid="mba-allowlist-list">
         {entrees.map((e) => (
-          <li key={e.id ?? e.consumer_phone_number} className="flex items-center justify-between gap-4 rounded-lg border border-ink-100 px-3 py-2">
+          <li key={e.id ?? e.consumer_phone_number} className="flex items-center justify-between gap-4 rounded-controle border border-ink-100 px-3 py-2">
             <span className="text-sm text-ink-900">{e.consumer_phone_number}</span>
             <button
               className="text-xs font-medium text-danger-600 hover:text-danger-700"

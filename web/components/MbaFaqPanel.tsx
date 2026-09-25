@@ -7,6 +7,9 @@ import { MbaNotice } from './MbaNotice';
 import { MbaFaqImportPanel } from './MbaFaqImportPanel';
 import { createMbaFaq, deleteMbaFaq, listMbaFaqs, updateMbaFaq, type MbaFaq } from '@/lib/api-mba';
 import { Bouton } from '@/components/Bouton';
+import { useConfirmation } from '@/components/Confirmation';
+import { Modale } from '@/components/Modale';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * La FAQ de l'agent : saisie une par une, plus le chargement en lot (panneau dédié).
@@ -20,6 +23,7 @@ const SEUIL_ALERTE = 200;
 
 export function MbaFaqPanel({ tenantId, phoneNumberId }: { tenantId: string; phoneNumberId: string }) {
   const t = useT();
+  const confirmer = useConfirmation();
   const [faqs, setFaqs] = useState<MbaFaq[]>([]);
   const [chargement, setChargement] = useState(true);
   const [err, setErr] = useState('');
@@ -55,13 +59,13 @@ export function MbaFaqPanel({ tenantId, phoneNumberId }: { tenantId: string; pho
     }
   }
 
-  function supprimer(faq: MbaFaq): void {
+  async function supprimer(faq: MbaFaq): Promise<void> {
     if (faq.id === undefined) return;
     // Chez Meta, un DELETE est irréversible : ni corbeille, ni archivage, ni suppression en lot.
-    const ok = window.confirm(t(
+    const ok = await confirmer({ titre: t('Supprimer la question', 'Delete the question'), message: t(
       `Supprimer définitivement « ${faq.question} » ? Meta n’a pas de corbeille : cette question sera perdue.`,
       `Permanently delete “${faq.question}”? Meta has no trash: this question will be lost.`,
-    ));
+    ), confirmer: t('Supprimer', 'Delete') });
     if (!ok) return;
     void agir(() => deleteMbaFaq(tenantId, phoneNumberId, faq.id as string));
   }
@@ -71,7 +75,7 @@ export function MbaFaqPanel({ tenantId, phoneNumberId }: { tenantId: string; pho
     ? faqs
     : faqs.filter((f) => `${f.question} ${f.answer}`.toLowerCase().includes(recherche.trim().toLowerCase()));
 
-  if (chargement) return <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>;
+  if (chargement) return <Squelette forme="lignes" />;
 
   return (
     <div className="space-y-5">
@@ -149,55 +153,54 @@ export function MbaFaqPanel({ tenantId, phoneNumberId }: { tenantId: string; pho
       </ul>
 
       {edition !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" role="dialog" aria-modal>
-          <div className="w-full max-w-xl rounded-2xl bg-white p-5 shadow-mm-lg">
-            <h3 className="text-sm font-semibold text-ink-900">
-              {edition.id === undefined ? t('Nouvelle question', 'New question') : t('Modifier la question', 'Edit question')}
-            </h3>
-            <label className="mt-4 block">
-              <span className="text-sm font-medium text-ink-900">{t('Question', 'Question')}</span>
-              <span className="mt-0.5 block text-xs text-ink-500">
-                {t('Écrivez-la comme vos clients la posent, et un seul sujet par question.', 'Write it the way your customers ask it, one topic per question.')}
-              </span>
-              <input
-                className={`${inputCls} mt-1.5`}
-                data-testid="mba-faq-question"
-                value={edition.question}
-                onChange={(e) => setEdition({ ...edition, question: e.target.value })}
-              />
-            </label>
-            <label className="mt-4 block">
-              <span className="text-sm font-medium text-ink-900">{t('Réponse', 'Answer')}</span>
-              <span className="mt-0.5 block text-xs text-ink-500">
-                {t('Complète et autoportante : l’agent la lit seule, sans les autres.', 'Complete and self-contained: the agent reads it alone, without the others.')}
-              </span>
-              <textarea
-                className={`${inputCls} mt-1.5`}
-                rows={5}
-                data-testid="mba-faq-answer"
-                value={edition.answer}
-                onChange={(e) => setEdition({ ...edition, answer: e.target.value })}
-              />
-            </label>
-            <div className="mt-5 flex justify-end gap-2">
-              <Bouton variante="secondaire" onClick={() => setEdition(null)}>
-                {t('Annuler', 'Cancel')}
-              </Bouton>
-              <Bouton
-                data-testid="mba-faq-save"
-                disabled={busy || edition.question.trim() === '' || edition.answer.trim() === ''}
-                onClick={() => {
-                  const corps = { question: edition.question.trim(), answer: edition.answer.trim() };
-                  void agir(() => (edition.id === undefined
-                    ? createMbaFaq(tenantId, phoneNumberId, corps)
-                    : updateMbaFaq(tenantId, phoneNumberId, edition.id, corps)));
-                }}
-              >
-                {t('Enregistrer', 'Save')}
-              </Bouton>
-            </div>
+        <Modale
+          titre={edition.id === undefined ? t('Nouvelle question', 'New question') : t('Modifier la question', 'Edit question')}
+          fermeture="boutons"
+          onClose={() => setEdition(null)}
+        >
+          <label className="mt-4 block">
+            <span className="text-sm font-medium text-ink-900">{t('Question', 'Question')}</span>
+            <span className="mt-0.5 block text-xs text-ink-500">
+              {t('Écrivez-la comme vos clients la posent, et un seul sujet par question.', 'Write it the way your customers ask it, one topic per question.')}
+            </span>
+            <input
+              className={`${inputCls} mt-1.5`}
+              data-testid="mba-faq-question"
+              value={edition.question}
+              onChange={(e) => setEdition({ ...edition, question: e.target.value })}
+            />
+          </label>
+          <label className="mt-4 block">
+            <span className="text-sm font-medium text-ink-900">{t('Réponse', 'Answer')}</span>
+            <span className="mt-0.5 block text-xs text-ink-500">
+              {t('Complète et autoportante : l’agent la lit seule, sans les autres.', 'Complete and self-contained: the agent reads it alone, without the others.')}
+            </span>
+            <textarea
+              className={`${inputCls} mt-1.5`}
+              rows={5}
+              data-testid="mba-faq-answer"
+              value={edition.answer}
+              onChange={(e) => setEdition({ ...edition, answer: e.target.value })}
+            />
+          </label>
+          <div className="mt-5 flex justify-end gap-2">
+            <Bouton variante="secondaire" onClick={() => setEdition(null)}>
+              {t('Annuler', 'Cancel')}
+            </Bouton>
+            <Bouton
+              data-testid="mba-faq-save"
+              disabled={busy || edition.question.trim() === '' || edition.answer.trim() === ''}
+              onClick={() => {
+                const corps = { question: edition.question.trim(), answer: edition.answer.trim() };
+                void agir(() => (edition.id === undefined
+                  ? createMbaFaq(tenantId, phoneNumberId, corps)
+                  : updateMbaFaq(tenantId, phoneNumberId, edition.id, corps)));
+              }}
+            >
+              {t('Enregistrer', 'Save')}
+            </Bouton>
           </div>
-        </div>
+        </Modale>
       )}
     </div>
   );

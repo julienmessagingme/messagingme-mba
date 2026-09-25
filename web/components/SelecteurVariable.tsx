@@ -42,7 +42,7 @@ export function SelecteurVariable({
         type="button"
         onClick={() => setOuvert((o) => !o)}
         data-testid={testId}
-        className="rounded-md border border-ink-200 bg-white px-2 py-1 text-xs font-medium text-brand-600 hover:bg-brand-50"
+        className="rounded-controle border border-ink-200 bg-white px-2 py-1 text-xs font-medium text-brand-600 hover:bg-brand-50"
         title={t('Insérer une variable (champ du contact)', 'Insert a variable (contact field)')}
       >
         + Variable
@@ -58,7 +58,7 @@ export function SelecteurVariable({
                 key={f.key}
                 data-testid={`${testId}-${f.key}`}
                 onClick={() => { onInsert(f.key, f.label); setOuvert(false); }}
-                className="block w-full truncate rounded-md px-2 py-1.5 text-left text-sm text-ink-900 hover:bg-brand-50"
+                className="block w-full truncate rounded-controle px-2 py-1.5 text-left text-sm text-ink-900 hover:bg-brand-50"
               >
                 {/* Le LIBELLÉ, jamais `{{clé}}` : c'est tout l'objet du composant. */}
                 {f.label}

@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 // La fenêtre d'observation se DÉRIVE du délai de rejeu du client HTTP, elle ne se devine pas.
 import { RETRY_DELAY_MS } from '../lib/http';
+import { repondre } from './aide/confirmation';
 
 /**
  * L'ÉCRAN « PUBLICITÉS », PARTIE LOT 3 : la liste, le bouton Créer, et l'entonnoir.
@@ -448,9 +449,8 @@ test.describe('Publicités : ce que la liste montre', () => {
     // C'est le seul geste de l'écran qui engage de l'argent, et il est irréversible au sens qui compte :
     // une impression payée ne se rembourse pas.
     await brancher(page, { publicites: [PUB_PRETE] });
-    let texte = '';
-    page.on('dialog', (d) => { texte = d.message(); void d.dismiss(); });
     await page.getByTestId('pub-publier-pub-2').click();
+    const texte = await repondre(page, false);
     expect(texte).toContain('150');
   });
 

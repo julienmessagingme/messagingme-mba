@@ -20,6 +20,7 @@ import {
 } from '@/lib/mesures-scenario';
 import { Bouton } from '@/components/Bouton';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * Analytics > Mes tableaux : construire son propre tableau de mesures sur un scénario.
@@ -176,7 +177,7 @@ function TableauxInner({ session }: { session: Session }) {
         </IntroPage>
       </header>
 
-      <RangeBar title={t('Période', 'Period')} range={range} onChange={setRange} />
+      <RangeBar title={<span className="text-sm font-medium text-ink-900">{t('Période', 'Period')}</span>} range={range} onChange={setRange} />
 
       {tableaux.length > 0 && (
         <section className={cardCls}>
@@ -206,8 +207,8 @@ function TableauxInner({ session }: { session: Session }) {
         </select>
       </section>
 
-      {erreur && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{erreur}</p>}
-      {chargement && <p className="text-sm text-ink-400">{t('Chargement…', 'Loading…')}</p>}
+      {erreur && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{erreur}</p>}
+      {chargement && <Squelette forme="lignes" />}
 
       {/* `graph` conditionne le rendu, et pas seulement `chargement` : entre le choix du scenario et le premier
           passage de l'effet, l'ecran se rend une fois avec `chargement` encore a faux et le graphe encore nul. */}
@@ -236,7 +237,7 @@ function TableauxInner({ session }: { session: Session }) {
                   bloc, régler à droite) évite de réapprendre l'écran. */}
               <aside className="w-full shrink-0 lg:w-72">
                 {blocOuvert ? (
-                  <div className="rounded-xl border border-brand-200 bg-brand-50/30 p-3" data-testid="bloc-mesures">
+                  <div className="rounded-carte border border-brand-200 bg-brand-50/30 p-3" data-testid="bloc-mesures">
                     <p className="mb-2 truncate text-sm font-semibold text-ink-900">{blocOuvert.titre}</p>
                     <div className="space-y-1.5">
                       {mesuresDisponibles(blocOuvert, locale, blocOuvert.id === premierMessage).map((m) => (
@@ -254,7 +255,7 @@ function TableauxInner({ session }: { session: Session }) {
                     </div>
                   </div>
                 ) : (
-                  <p className="rounded-xl border border-dashed border-ink-200 p-3 text-sm text-ink-400">
+                  <p className="py-3 text-sm text-ink-500">
                     {t('Choisis un bloc dans le scénario.', 'Pick a block in the scenario.')}
                   </p>
                 )}
@@ -275,7 +276,7 @@ function TableauxInner({ session }: { session: Session }) {
             ) : (
               <>
                 <TableauHistogramme groupes={groupes} />
-                <p className="mt-3 text-xs text-ink-400">
+                <p className="mt-3 text-xs text-ink-500">
                   {t(
                     'Les mesures démarrent à la mise en service du suivi : une période antérieure reste à zéro.',
                     'Measurement starts when tracking was switched on: an earlier period stays at zero.',

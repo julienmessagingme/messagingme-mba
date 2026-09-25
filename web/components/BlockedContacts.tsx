@@ -63,13 +63,13 @@ export function BlockedContacts({ tenantId }: { tenantId: string }) {
           'These contacts no longer receive any message, and their conversations no longer appear in the inbox. Their messages are still recorded.',
         )}
       </p>
-      {erreur !== '' && <p className="mt-2 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{erreur}</p>}
+      {erreur !== '' && <p className="mt-2 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{erreur}</p>}
       <ul className="mt-3 space-y-2">
         {contacts.map((c) => (
-          <li key={c.id} className="flex items-center justify-between gap-3 rounded-lg border border-ink-200 px-3 py-2">
+          <li key={c.id} className="flex items-center justify-between gap-3 rounded-controle border border-ink-200 px-3 py-2">
             <span className="min-w-0">
               <span className="block truncate text-sm text-ink-900">{c.profileName ?? c.phoneE164 ?? c.id}</span>
-              <span className="block text-xs text-ink-400">
+              <span className="block text-xs text-ink-500">
                 {t('bloqué le ', 'blocked on ')}{formatDate(c.blockedAt, locale)}
               </span>
             </span>

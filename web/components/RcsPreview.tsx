@@ -3,6 +3,7 @@
 import { ICONE_KIND } from '@/lib/rcs-boutons';
 import { MAX_BOUTONS_CARTE, type BrouillonRcs } from '@/lib/rcs';
 import { useT } from '@/lib/i18n';
+import { Icone } from '@/components/Icone';
 
 /**
  * Le message RCS tel que le contact le verra.
@@ -25,8 +26,8 @@ export function RcsPreview({ brouillon, vide, sansFond = false }: { brouillon: B
   const enPastilles = avecImage ? remplis.slice(MAX_BOUTONS_CARTE) : remplis;
 
   return (
-    <div className={sansFond ? '' : 'rounded-xl bg-ink-50 p-3'}>
-      <div className="max-w-[85%] overflow-hidden rounded-2xl bg-succes-100">
+    <div className={sansFond ? '' : 'rounded-carte bg-ink-50 p-3'}>
+      <div className="max-w-[85%] overflow-hidden rounded-carte bg-navy-50">
         {avecImage && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -38,13 +39,13 @@ export function RcsPreview({ brouillon, vide, sansFond = false }: { brouillon: B
           />
         )}
         <div data-testid="rcs-preview-text" className="whitespace-pre-wrap px-3 py-2 text-sm text-ink-900">
-          {brouillon.text.trim() || <span className="italic text-ink-400">{vide ?? t('Votre message…', 'Your message…')}</span>}
+          {brouillon.text.trim() || <span className="italic text-ink-500">{vide ?? t('Votre message…', 'Your message…')}</span>}
         </div>
         {dansLaCarte.length > 0 && (
           <div data-testid="rcs-preview-card-buttons">
             {dansLaCarte.map((s, i) => (
-              <div key={i} className="border-t border-succes-200 bg-white px-3 py-2 text-center text-sm font-medium text-ink-900">
-                {ICONE_KIND[s.kind]}{s.text}
+              <div key={i} className="flex items-center justify-center gap-1.5 border-t border-navy-100 bg-white px-3 py-2 text-sm font-medium text-ink-900">
+                {ICONE_KIND[s.kind] && <Icone nom={ICONE_KIND[s.kind]!} taille="petite" />}{s.text}
               </div>
             ))}
           </div>
@@ -52,8 +53,8 @@ export function RcsPreview({ brouillon, vide, sansFond = false }: { brouillon: B
       </div>
       <div data-testid="rcs-preview-buttons" className="mt-2 flex flex-wrap gap-1.5">
         {enPastilles.map((s, i) => (
-          <span key={i} className="rounded-full border border-succes-500 bg-white px-3 py-1 text-xs text-succes-700">
-            {ICONE_KIND[s.kind]}{s.text}
+          <span key={i} className="inline-flex items-center gap-1 rounded-full border border-navy-300 bg-white px-3 py-1 text-xs text-navy-700">
+            {ICONE_KIND[s.kind] && <Icone nom={ICONE_KIND[s.kind]!} taille="petite" />}{s.text}
           </span>
         ))}
       </div>

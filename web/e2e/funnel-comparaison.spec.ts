@@ -138,14 +138,14 @@ test.describe('Le funnel ne confond plus « zero » et « on ne sait pas »', ()
     await page.getByTestId('funnel-campagne-camp1').waitFor();
   }
 
-  test('🔴 aucun accuse : « — » et la raison, jamais un zero', async ({ page }) => {
+  test('🔴 aucun accuse : « n/d » et la raison, jamais un zero', async ({ page }) => {
     await monterAvec(page, SANS_ACCUSE);
     const carte = page.getByTestId('funnel-campagne-camp1');
     // Les envoyes et les repondus restent des MESURES : eux se lisent.
     await expect(carte).toContainText('3');
     // Les deux etapes du milieu n en sont pas, et la carte le DIT plutot que d afficher 0.
     await expect(carte.getByTestId('funnel-sans-accuse')).toBeVisible();
-    await expect(carte.getByText('—')).toHaveCount(2);
+    await expect(carte.getByText('n/d', { exact: true })).toHaveCount(2);
   });
 
   test('🔴 preuve inverse : un accuse PARTIEL garde ses chiffres', async ({ page }) => {
@@ -154,6 +154,6 @@ test.describe('Le funnel ne confond plus « zero » et « on ne sait pas »', ()
     await monterAvec(page, PARTIEL);
     const carte = page.getByTestId('funnel-campagne-camp1');
     await expect(carte.getByTestId('funnel-sans-accuse')).toHaveCount(0);
-    await expect(carte.getByText('—')).toHaveCount(0);
+    await expect(carte.getByText('n/d', { exact: true })).toHaveCount(0);
   });
 });

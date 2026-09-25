@@ -27,6 +27,10 @@ import { lireHubspotActif, affichageHubspotAccueil } from '@/lib/hubspot-actif';
 import { useInstallationHubspot } from '@/lib/hubspot-installation';
 import { Bouton } from '@/components/Bouton';
 import { TitrePage } from '@/components/TitrePage';
+import { Icone } from '@/components/Icone';
+import { Modale } from '@/components/Modale';
+import { Squelette } from '@/components/Squelette';
+import { Nd } from '@/components/Nd';
 
 export default function AccueilPage() {
   return <AppShell active="accueil">{(session) => <AccueilInner session={session} />}</AppShell>;
@@ -363,10 +367,10 @@ function AccueilInner({ session }: { session: Session }) {
   const firstName = firstNameOf(me);
   const kpiRow = useMemo(
     () => [
-      { label: t('Contacts', 'Contacts'), value: kpis ? fmtNum(kpis.contacts, locale) : '—' },
-      { label: t('Messages échangés', 'Messages exchanged'), value: kpis ? fmtNum(kpis.exchanged, locale) : '—' },
-      { label: t('Templates envoyés', 'Templates sent'), value: kpis ? fmtNum(kpis.templates, locale) : '—' },
-      { label: t('Coût estimé', 'Estimated cost'), value: kpis ? (kpis.hasRates ? fmtCost(kpis.cost, locale, kpis.currency) : '—') : '—' },
+      { label: t('Contacts', 'Contacts'), value: kpis ? fmtNum(kpis.contacts, locale) : <Nd /> },
+      { label: t('Messages échangés', 'Messages exchanged'), value: kpis ? fmtNum(kpis.exchanged, locale) : <Nd /> },
+      { label: t('Templates envoyés', 'Templates sent'), value: kpis ? fmtNum(kpis.templates, locale) : <Nd /> },
+      { label: t('Coût estimé', 'Estimated cost'), value: kpis && kpis.hasRates ? fmtCost(kpis.cost, locale, kpis.currency) : <Nd /> },
     ],
     [kpis, t, locale],
   );
@@ -379,14 +383,14 @@ function AccueilInner({ session }: { session: Session }) {
         </TitrePage>
       </div>
 
-      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+      {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
       {/* Rangée de KPIs (30 derniers jours) — mêmes chiffres que la page Analytics. */}
       <div>
         <div className="mb-2 text-xs font-medium text-ink-500">{t('30 derniers jours', 'Last 30 days')}</div>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {kpiRow.map((k) => (
-            <div key={k.label} className="rounded-2xl border border-ink-200 bg-white p-4">
+            <div key={k.label} className="rounded-carte border border-ink-200 bg-white p-4">
               <div className="text-xs font-medium text-ink-500">{k.label}</div>
               <div className="mt-1 text-2xl font-semibold tabular-nums text-ink-900">{k.value}</div>
             </div>
@@ -410,17 +414,17 @@ function AccueilInner({ session }: { session: Session }) {
       )}
 
       {loading ? (
-        <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
+        <Squelette forme="carte" />
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           {/* Carte Meta Business Agent, remontée en tête du dashboard, avec la reprise après opérateur juste
               en dessous du toggle (demande fondateur : les deux gouvernent qui répond au client).
               ⚠️ Le chiffre de l'agent est DANS le cadre depuis le 2026-09-25 (Julien), plus en dessous. */}
-          <div data-testid="settings-card" className="flex flex-col rounded-2xl border border-ink-200 bg-white p-5">
+          <div data-testid="settings-card" className="flex flex-col rounded-carte border border-ink-200 bg-white p-5">
             <div className="mb-3 flex items-start gap-3">
               {/* Logo Meta Business Agent (produit Meta), et non notre logo MM : cette carte parle du MBA de Meta. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/meta-business-agent.png" alt="Meta Business Agent" className="h-10 w-10 shrink-0 rounded-lg object-contain" />
+              <img src="/meta-business-agent.png" alt="Meta Business Agent" className="h-10 w-10 shrink-0 rounded-controle object-contain" />
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-semibold text-ink-900">Meta Business Agent</div>
                 {/* 🔴 CE QUE META DIT, PAS CE QU'ON SUPPOSE. La phrase « En attente d'ouverture Meta » etait
@@ -446,7 +450,7 @@ function AccueilInner({ session }: { session: Session }) {
               {/* ⚠️ DIRE CE QUE LE BOUTON PILOTE. Tant que Meta n'a pas ouvert, il ne commande que notre
                   cote, et se taire la-dessus est exactement ce qui a fait croire a une coupure. */}
               {mbaReel !== null && !mbaReel.eligible && (
-                <span className="text-xs text-ink-400">{t('(côté Engage Me seulement)', '(Engage Me side only)')}</span>
+                <span className="text-xs text-ink-500">{t('(côté Engage Me seulement)', '(Engage Me side only)')}</span>
               )}
             </div>
             {/* 🔴 `messagesMba !== null`, JAMAIS `?? 0` : un zéro dirait que l'agent n'a parlé à personne. */}
@@ -477,15 +481,15 @@ function AccueilInner({ session }: { session: Session }) {
               n'y en a pas. Tant qu'on ne sait pas, on le dit (chargement, puis erreur avec de quoi relancer).
               Affirmer une absence qu'on n'a pas constatée était toute la cause du symptôme rapporté. */}
           {accountLoading ? (
-            <div className="rounded-2xl border border-ink-200 bg-white p-5">
+            <div className="rounded-carte border border-ink-200 bg-white p-5">
               <h3 className="text-sm font-semibold text-ink-900">{t('Numéro WhatsApp', 'WhatsApp number')}</h3>
-              <p className="mt-2 text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
+              <Squelette forme="carte" className="mt-2" />
             </div>
           ) : accountError ? (
-            <div className="rounded-2xl border border-ink-200 bg-white p-5">
+            <div className="rounded-carte border border-ink-200 bg-white p-5">
               <h3 className="text-sm font-semibold text-ink-900">{t('Numéro WhatsApp', 'WhatsApp number')}</h3>
               <p className="mt-2 text-sm text-ink-500">{t('Statut indisponible pour le moment.', 'Status unavailable right now.')}</p>
-              <p className="mt-0.5 text-xs text-ink-400">{accountError}</p>
+              <p className="mt-0.5 text-xs text-ink-500">{accountError}</p>
               <Bouton variante="secondaire"
                 type="button"
                 onClick={() => void loadAccount()}
@@ -497,7 +501,7 @@ function AccueilInner({ session }: { session: Session }) {
           ) : account && !account.hasNumber ? (
             <ConnectNumberZone isAdmin={isAdmin} connexion={connexionNumero} />
           ) : (
-            <div data-testid="numero-card" className="rounded-2xl border border-ink-200 bg-white p-5">
+            <div data-testid="numero-card" className="rounded-carte border border-ink-200 bg-white p-5">
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-ink-900">{t('Numéro WhatsApp', 'WhatsApp number')}</h3>
                 {account && <PastilleNumero status={account.status} />}
@@ -534,7 +538,7 @@ function AccueilInner({ session }: { session: Session }) {
                   démontée au moment où ils arrivent. Sans ça, un enregistrement raté ne laisse aucune trace
                   à l'écran (2026-09-22). */}
               {avertissementsConnexion.length > 0 && (
-                <div data-testid="avertissements-connexion" className="mt-3 rounded-lg bg-alerte-50 px-3 py-2 text-xs text-alerte-700">
+                <div data-testid="avertissements-connexion" className="mt-3 rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte-700">
                   {t('Connecté, avec avertissement', 'Connected, with warning')}{avertissementsConnexion.length > 1 ? 's' : ''} : {avertissementsConnexion.join(' · ')}
                 </div>
               )}
@@ -607,7 +611,7 @@ function AccueilInner({ session }: { session: Session }) {
               la présence d'un numéro : un espace neuf doit pouvoir connecter HubSpot avant d'avoir un numéro. La
               règle, et ses trois cas, vivent dans `affichageHubspotAccueil`. */}
           {!accountLoading && !accountError && account && affichageHubspot === 'bloc' && (
-            <div data-testid="hubspot-card" className="flex flex-col rounded-2xl border border-ink-200 bg-white p-5">
+            <div data-testid="hubspot-card" className="flex flex-col rounded-carte border border-ink-200 bg-white p-5">
               <h3 className="text-sm font-semibold text-ink-900">HubSpot</h3>
               {account.hubspotPortal?.connected && (
                 // Portail relié : on affiche SUR QUEL portail, puis le toggle de synchro PAR numéro (qui gate le push).
@@ -657,7 +661,7 @@ function AccueilInner({ session }: { session: Session }) {
                             : t('La synchronisation vers HubSpot est coupée pour ce numéro.', 'Sync to HubSpot is disabled for this number.')}
                       </p>
                       {catchupNotice && (
-                        <p data-testid="hubspot-catchup-notice" className="mt-1 rounded-lg bg-brand-50 px-2.5 py-1.5 text-xs text-brand-700">
+                        <p data-testid="hubspot-catchup-notice" className="mt-1 rounded-controle bg-brand-50 px-2.5 py-1.5 text-xs text-brand-700">
                           {t('Rattrapage en cours : les analyses accumulées pendant la pause sont renvoyées vers HubSpot.', 'Catching up: analyses accumulated during the pause are being resent to HubSpot.')}
                         </p>
                       )}
@@ -674,64 +678,56 @@ function AccueilInner({ session }: { session: Session }) {
                   </div>
                   )}
 
-                  {/* Dialogue Pause vs Déconnexion complète (candidat 2), ouvert au clic « couper ». Tailwind pur, accessible
-                      (role=dialog, aria-modal, fermeture Escape + clic hors carte). Deux issues : pause réversible (F3-a) ou
+                  {/* Dialogue Pause vs Déconnexion complète (candidat 2), ouvert au clic « couper », dans la `Modale` commune
+                      (dialogue, Échap, clic hors carte). Deux issues : pause réversible (F3-a) ou
                       déconnexion complète (délie le portail + révoque le token côté connecteur). Sans numéro, la pause
                       (qui se règle par numéro) n'est pas offerte : seule reste la déconnexion. */}
                   {showDisconnect && (
-                    <div
-                      className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 px-4"
-                      role="dialog"
-                      aria-modal="true"
-                      aria-labelledby="hubspot-disconnect-title"
-                      data-testid="hubspot-disconnect-dialog"
-                      onClick={() => setShowDisconnect(false)}
-                      onKeyDown={(e) => { if (e.key === 'Escape') setShowDisconnect(false); }}
-                    >
-                      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-mm-lg" onClick={(e) => e.stopPropagation()}>
-                        <h3 id="hubspot-disconnect-title" className="text-base font-semibold text-ink-900">
-                          {account.phoneNumberId
-                            ? t('Couper la synchronisation HubSpot', 'Turn off HubSpot sync')
-                            : t('Déconnecter HubSpot', 'Disconnect HubSpot')}
-                        </h3>
-                        {account.phoneNumberId && (
-                          <p className="mt-1 text-sm text-ink-500">
-                            {t('Mettre en pause : réversible. À la reprise, les analyses produites pendant la pause sont renvoyées à HubSpot.', 'Pause: reversible. On resume, analyses produced during the pause are resent to HubSpot.')}
-                          </p>
-                        )}
-                        <p className="mt-2 text-sm text-ink-500">
-                          {t('Déconnexion complète : délie votre compte HubSpot et révoque son accès. Il faudra le reconnecter pour réactiver.', 'Full disconnect: unlinks your HubSpot account and revokes its access. You will need to reconnect it to re-enable.')}
-                        </p>
-                        {numbersCount > 1 && (
-                          <p data-testid="hubspot-disconnect-multi-warning" className="mt-2 rounded-lg bg-alerte-50 px-3 py-2 text-xs text-alerte-800">
-                            {t('Attention : la déconnexion coupe HubSpot pour TOUS vos numéros (le compte HubSpot est lié à votre espace, pas à un numéro).', 'Warning: disconnecting turns off HubSpot for ALL your numbers (the HubSpot account is linked to your workspace, not to a single number).')}
-                          </p>
-                        )}
-                        <div className="mt-4 flex flex-wrap justify-end gap-2">
-                          <Bouton variante="secondaire"
-                            onClick={() => setShowDisconnect(false)}
-                          >
+                    <Modale
+                      titre={account.phoneNumberId
+                        ? t('Couper la synchronisation HubSpot', 'Turn off HubSpot sync')
+                        : t('Déconnecter HubSpot', 'Disconnect HubSpot')}
+                      taille="petite"
+                      testId="hubspot-disconnect-dialog"
+                      onClose={() => setShowDisconnect(false)}
+                      pied={(
+                        <>
+                          <Bouton variante="secondaire" onClick={() => setShowDisconnect(false)}>
                             {t('Annuler', 'Cancel')}
                           </Bouton>
                           {account.phoneNumberId && (
-                            <button
+                            <Bouton
+                              variante="secondaire"
                               data-testid="hubspot-pause-btn"
                               onClick={() => { setShowDisconnect(false); void applyHubspotState(false); }}
-                              className="rounded-lg bg-ink-100 px-3 py-2 text-sm font-semibold text-ink-900 transition-colors duration-150 hover:bg-ink-200"
                             >
                               {t('Mettre en pause', 'Pause')}
-                            </button>
+                            </Bouton>
                           )}
                           <button
                             data-testid="hubspot-disconnect-btn"
                             onClick={() => { setShowDisconnect(false); void disconnectHubspotAction(); }}
-                            className="rounded-lg bg-danger-600 px-3 py-2 text-sm font-semibold text-white transition-colors duration-150 hover:bg-danger-700"
+                            className="rounded-controle bg-danger-600 px-4 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-danger-700"
                           >
                             {t('Déconnexion complète', 'Full disconnect')}
                           </button>
-                        </div>
-                      </div>
-                    </div>
+                        </>
+                      )}
+                    >
+                      {account.phoneNumberId && (
+                        <p className="text-sm text-ink-500">
+                          {t('Mettre en pause : réversible. À la reprise, les analyses produites pendant la pause sont renvoyées à HubSpot.', 'Pause: reversible. On resume, analyses produced during the pause are resent to HubSpot.')}
+                        </p>
+                      )}
+                      <p className="mt-2 text-sm text-ink-500">
+                        {t('Déconnexion complète : délie votre compte HubSpot et révoque son accès. Il faudra le reconnecter pour réactiver.', 'Full disconnect: unlinks your HubSpot account and revokes its access. You will need to reconnect it to re-enable.')}
+                      </p>
+                      {numbersCount > 1 && (
+                        <p data-testid="hubspot-disconnect-multi-warning" className="mt-2 rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte-800">
+                          {t('Attention : la déconnexion coupe HubSpot pour TOUS vos numéros (le compte HubSpot est lié à votre espace, pas à un numéro).', 'Warning: disconnecting turns off HubSpot for ALL your numbers (the HubSpot account is linked to your workspace, not to a single number).')}
+                        </p>
+                      )}
+                    </Modale>
                   )}
 
                   {/* Toggle « Campagnes via données HubSpot » : autorise l'import de listes HubSpot comme destinataires. */}
@@ -757,7 +753,7 @@ function AccueilInner({ session }: { session: Session }) {
                         type="button"
                         onClick={() => void openHubspotInstall('lists')}
                         disabled={installPending}
-                        className="mt-2 inline-flex items-center rounded-lg bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 transition-colors duration-150 hover:bg-brand-100 disabled:opacity-60"
+                        className="mt-2 inline-flex items-center rounded-controle bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 transition-colors duration-150 hover:bg-brand-100 disabled:opacity-60"
                       >
                         {t("Autoriser l'accès aux listes HubSpot →", 'Authorize access to HubSpot lists →')}
                       </button>
@@ -850,19 +846,17 @@ function ConnectNumberZone({ isAdmin, connexion }: { isAdmin: boolean; connexion
   const { cfg, busy, error, connect } = connexion;
   const ready = cfg?.enabled === true && isAdmin;
   return (
-    <div className="rounded-2xl border border-dashed border-ink-300 bg-ink-50 p-5">
+    <div className="rounded-carte border border-ink-200 bg-ink-50 p-5">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-ink-500">{t('Numéro WhatsApp', 'WhatsApp number')}</h3>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-ink-100 px-2.5 py-1 text-xs font-medium text-ink-500">
+        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-500">
           <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: DOT_HEX.grey }} />
           {t('Non connecté', 'Not connected')}
         </span>
       </div>
       <div className="flex items-start gap-3">
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-ink-100 text-ink-400" aria-hidden="true">
-          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
-          </svg>
+          <Icone nom="telephone" taille="grande" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-lg font-semibold text-ink-900">{t('Connecter ton compte WhatsApp', 'Connect your WhatsApp account')}</div>
@@ -871,7 +865,7 @@ function ConnectNumberZone({ isAdmin, connexion }: { isAdmin: boolean; connexion
           </p>
         </div>
       </div>
-      {error && <p className="mt-3 rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700">{error}</p>}
+      {error && <p className="mt-3 rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700">{error}</p>}
       <div className="mt-4 flex items-center gap-3 border-t border-ink-200 pt-3">
         {ready ? (
           <Bouton enCours={busy}
@@ -887,11 +881,11 @@ function ConnectNumberZone({ isAdmin, connexion }: { isAdmin: boolean; connexion
               type="button"
               disabled
               title={isAdmin ? t('Bientôt disponible', 'Coming soon') : t('Réservé aux admins', 'Admins only')}
-              className="cursor-not-allowed rounded-lg bg-ink-200 px-3 py-2 text-sm font-semibold text-ink-500"
+              className="cursor-not-allowed rounded-controle bg-ink-200 px-3 py-2 text-sm font-semibold text-ink-500"
             >
               {t('Connecter mon compte WhatsApp', 'Connect my WhatsApp account')}
             </button>
-            <span className="text-xs text-ink-400">{isAdmin ? t('Disponible prochainement', 'Available soon') : t('Réservé aux admins', 'Admins only')}</span>
+            <span className="text-xs text-ink-500">{isAdmin ? t('Disponible prochainement', 'Available soon') : t('Réservé aux admins', 'Admins only')}</span>
           </>
         )}
       </div>
@@ -956,7 +950,7 @@ function ActiverNumeroZone({ tenantId, isAdmin, verifie, onActive }: { tenantId:
   }
 
   return (
-    <div data-testid="activer-numero" className="mt-4 rounded-xl border border-alerte-200 bg-alerte-50 p-3">
+    <div data-testid="activer-numero" className="mt-4 rounded-carte border border-alerte-200 bg-alerte-50 p-3">
       <div className="text-sm font-semibold text-alerte-900">{t('Ce numéro n’est pas encore activé chez Meta', 'This number is not activated at Meta yet')}</div>
       <p className="mt-0.5 text-xs text-alerte-800">
         {verifie
@@ -975,7 +969,7 @@ function ActiverNumeroZone({ tenantId, isAdmin, verifie, onActive }: { tenantId:
                 aria-label={t('Canal du code', 'Code channel')}
                 value={canal}
                 onChange={(e) => setCanal(e.target.value === 'SMS' ? 'SMS' : 'VOICE')}
-                className="rounded-lg border border-alerte-300 bg-white px-2 py-1.5 text-sm text-ink-900"
+                className="rounded-controle border border-alerte-300 bg-white px-2 py-1.5 text-sm text-ink-900"
               >
                 <option value="VOICE">{t('Par appel', 'By phone call')}</option>
                 <option value="SMS">{t('Par SMS', 'By SMS')}</option>
@@ -985,7 +979,7 @@ function ActiverNumeroZone({ tenantId, isAdmin, verifie, onActive }: { tenantId:
                 onClick={() => { void envoyerCode(); }}
                 disabled={busy}
                 data-testid="demander-code"
-                className="rounded-lg border border-alerte-400 bg-white px-3 py-1.5 text-sm font-medium text-alerte-900 transition-colors duration-150 hover:bg-alerte-100 disabled:opacity-60"
+                className="rounded-controle border border-alerte-400 bg-white px-3 py-1.5 text-sm font-medium text-alerte-900 transition-colors duration-150 hover:bg-alerte-100 disabled:opacity-60"
               >
                 {t('Recevoir le code', 'Get the code')}
               </button>
@@ -996,7 +990,7 @@ function ActiverNumeroZone({ tenantId, isAdmin, verifie, onActive }: { tenantId:
                 placeholder={t('Code reçu', 'Code received')}
                 aria-label={t('Code reçu', 'Code received')}
                 data-testid="champ-code"
-                className="w-32 rounded-lg border border-alerte-300 px-2 py-1.5 text-sm"
+                className="w-32 rounded-controle border border-alerte-300 px-2 py-1.5 text-sm"
               />
             </div>
           )}
@@ -1006,7 +1000,7 @@ function ActiverNumeroZone({ tenantId, isAdmin, verifie, onActive }: { tenantId:
               onClick={() => { void activer(); }}
               disabled={busy || (!verifie && code.trim() === '')}
               data-testid="activer-bouton"
-              className="rounded-lg bg-alerte-700 px-3 py-2 text-sm font-semibold text-white transition-colors duration-150 hover:bg-alerte-800 disabled:opacity-60"
+              className="rounded-controle bg-alerte-700 px-3 py-2 text-sm font-semibold text-white transition-colors duration-150 hover:bg-alerte-800 disabled:opacity-60"
             >
               {busy ? t('En cours…', 'Working…') : t('Activer le numéro', 'Activate the number')}
             </button>
@@ -1016,8 +1010,8 @@ function ActiverNumeroZone({ tenantId, isAdmin, verifie, onActive }: { tenantId:
           </div>
         </>
       )}
-      {info && <p className="mt-2 rounded-lg bg-white px-3 py-2 text-xs text-alerte-900">{info}</p>}
-      {erreur && <p data-testid="activer-erreur" className="mt-2 rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700">{erreur}</p>}
+      {info && <p className="mt-2 rounded-controle bg-white px-3 py-2 text-xs text-alerte-900">{info}</p>}
+      {erreur && <p data-testid="activer-erreur" className="mt-2 rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700">{erreur}</p>}
     </div>
   );
 }

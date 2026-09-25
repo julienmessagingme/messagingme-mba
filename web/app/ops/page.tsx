@@ -13,11 +13,15 @@ import { saveSession } from '@/lib/session';
 import { Bouton } from '@/components/Bouton';
 import { TitrePage } from '@/components/TitrePage';
 import { alerte, brand, danger, ink, succes } from '@/lib/couleurs';
+import { useConfirmation } from '@/components/Confirmation';
+import { Squelette } from '@/components/Squelette';
+import { Nd } from '@/components/Nd';
 
 const KEY = 'mba.ops';
 
 export default function OpsPage() {
   const t = useT();
+  const confirmer = useConfirmation();
   const { locale } = useLocale();
   const [token, setToken] = useState<string | null>(null);
   const [input, setInput] = useState('');
@@ -61,10 +65,10 @@ export default function OpsPage() {
    */
   async function observer(tenantId: string, nom: string): Promise<void> {
     if (!token) return;
-    if (!window.confirm(t(
+    if (!(await confirmer({ titre: t('Observer l’espace', 'Observe the workspace'), message: t(
       `Observer l'espace « ${nom} » ? Vous verrez ce que ce client voit, sans pouvoir rien modifier. Votre session actuelle sera remplacée.`,
       `Observe the "${nom}" workspace? You will see what this customer sees, without being able to change anything. Your current session will be replaced.`,
-    ))) return;
+    ), confirmer: t('Observer', 'Observe') }))) return;
     try {
       const r = await observerTenant(token, tenantId);
       saveSession({ token: r.token, email: `observation:${nom}`, role: 'admin', tenantId: r.tenantId, observation: nom });
@@ -91,7 +95,7 @@ export default function OpsPage() {
   if (!token) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-surface-subtle p-4">
-        <form onSubmit={submit} className="w-full max-w-sm rounded-2xl border border-ink-200 bg-white p-6">
+        <form onSubmit={submit} className="w-full max-w-sm rounded-carte border border-ink-200 bg-white p-6">
           <TitrePage>{t("Console d'exploitation", 'Operations console')}</TitrePage>
           <p className="mt-1 text-sm text-ink-500">{t("Accès cross-tenant en lecture seule. Saisis le jeton d'exploitation.", 'Read-only cross-tenant access. Enter the operations token.')}</p>
           <input
@@ -99,7 +103,7 @@ export default function OpsPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="OPS token"
-            className="mt-4 w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+            className="mt-4 w-full rounded-controle border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
           />
           {error && <p className="mt-2 text-sm text-danger-600">{error}</p>}
           <Bouton type="submit" className="mt-4 w-full">
@@ -117,7 +121,7 @@ export default function OpsPage() {
 
   return (
     <main className="min-h-screen bg-surface-subtle px-4 py-8 sm:px-6">
-      <div className="mx-auto w-full max-w-7xl space-y-5">
+      <div className="mx-auto w-full max-w-liste space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <TitrePage>{t("Console d'exploitation", 'Operations console')}</TitrePage>
@@ -126,9 +130,9 @@ export default function OpsPage() {
           <Bouton variante="secondaire" onClick={logout}>{t('Quitter', 'Exit')}</Bouton>
         </div>
 
-        {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+        {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
         {loading && !data ? (
-          <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
+          <Squelette forme="carte" />
         ) : data ? (
           <>
             <div className="grid grid-cols-3 gap-4">
@@ -145,7 +149,7 @@ export default function OpsPage() {
             <EquiteCard groupes={data.queuesParGroupe ?? []} />
 
             {dailyFrom && dailyTo && data.daily.length > 0 && (
-              <div className="rounded-2xl border border-ink-200 bg-white p-5">
+              <div className="rounded-carte border border-ink-200 bg-white p-5">
                 <DailyChart
                   title={t('Messages échangés (tous clients)', 'Messages exchanged (all clients)')}
                   subtitle={t('par jour, 14 derniers jours', 'per day, last 14 days')}
@@ -224,9 +228,9 @@ function GrillePrixCard({ token }: { token: string }) {
 
   if (absente) {
     return (
-      <div className="rounded-2xl border border-ink-200 bg-white p-5">
+      <div className="rounded-carte border border-ink-200 bg-white p-5">
         <h2 className="text-sm font-semibold text-ink-900">{t('Grille de prix', 'Pricing grid')}</h2>
-        <p className="mt-1 text-xs text-ink-400">
+        <p className="mt-1 text-xs text-ink-500">
           {t('Indisponible sur cette instance : l’API n’a pas encore la route.', 'Unavailable on this instance: the API does not have the route yet.')}
         </p>
       </div>
@@ -235,7 +239,7 @@ function GrillePrixCard({ token }: { token: string }) {
   if (champs === null) return null;
 
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-5" data-testid="ops-prix">
+    <div className="rounded-carte border border-ink-200 bg-white p-5" data-testid="ops-prix">
       <h2 className="text-sm font-semibold text-ink-900">{t('Grille de prix', 'Pricing grid')}</h2>
       <p className="mt-1 text-xs text-ink-500">
         {t(
@@ -255,9 +259,9 @@ function GrillePrixCard({ token }: { token: string }) {
         <input
           id="prix-note" value={note} onChange={(e) => setNote(e.target.value)} data-testid="ops-prix-note"
           placeholder={t('qui décide, et pourquoi', 'who decides, and why')}
-          className="mt-1 w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+          className="mt-1 w-full rounded-controle border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
         />
-        <p className="mt-1 text-xs text-ink-400">
+        <p className="mt-1 text-xs text-ink-500">
           {t('Obligatoire : le jeton d’exploitation est partagé, c’est la seule trace.', 'Required: the ops token is shared, this is the only trace.')}
         </p>
       </div>
@@ -279,7 +283,7 @@ function GrillePrixCard({ token }: { token: string }) {
       </div>
 
       {/* ⚠️ CE QUE CES PRIX NE FONT PAS, dit plutot que laisse deviner. */}
-      <p className="mt-3 text-xs text-ink-400">
+      <p className="mt-3 text-xs text-ink-500">
         {t(
           'Ces prix chiffrent ce que les clients voient dans Performance Lab. Ils n’émettent aucune facture et ne changent rien chez Meta.',
           'These prices cost what clients see in Performance Lab. They issue no invoice and change nothing at Meta.',
@@ -291,7 +295,7 @@ function GrillePrixCard({ token }: { token: string }) {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-4">
+    <div className="rounded-carte border border-ink-200 bg-white p-4">
       <div className="text-xs font-medium text-ink-500">{label}</div>
       <div className="mt-1 text-2xl font-semibold tracking-tight tabular-nums text-ink-900">{value}</div>
     </div>
@@ -313,7 +317,7 @@ function WorkerCard({ worker }: { worker: WorkerHeartbeat | null }) {
   const age = (s: number) => (s < 60 ? t(`il y a ${s} s`, `${s} s ago`) : t(`il y a ${Math.floor(s / 60)} min`, `${Math.floor(s / 60)} min ago`));
   const fmtDate = (iso: string) => formatDate(iso, locale, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-5">
+    <div className="rounded-carte border border-ink-200 bg-white p-5">
       <h3 className="mb-3 text-sm font-semibold text-ink-900">{t('Worker (envoi des messages)', 'Worker (message sending)')}</h3>
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
         <span className="inline-flex items-center gap-2">
@@ -324,7 +328,7 @@ function WorkerCard({ worker }: { worker: WorkerHeartbeat | null }) {
           <>
             <span className="text-xs text-ink-500">{t('Dernier battement', 'Last heartbeat')} : <span className="tabular-nums text-ink-900">{age(worker.ageSeconds)}</span></span>
             {worker.bootedAt && <span className="text-xs text-ink-500">{t('Démarré', 'Booted')} : <span className="text-ink-900">{fmtDate(worker.bootedAt)}</span></span>}
-            {worker.instance && <span className="font-mono text-xs text-ink-400">{worker.instance}</span>}
+            {worker.instance && <span className="font-mono text-xs text-ink-500">{worker.instance}</span>}
           </>
         ) : (
           <span className="text-xs text-ink-500">{t('Le worker n’a jamais signalé de vie (jamais démarré, ou table absente).', 'The worker has never reported liveness (never started, or table missing).')}</span>
@@ -351,9 +355,9 @@ function EquiteCard({ groupes }: { groupes: QueueGroupLoadRow[] }) {
   if (groupes.length === 0) return null;
   const SEUIL_S = 300; // 5 min : le seuil du SLO 3, au-delà duquel un client se demande si ça marche pour lui.
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-5" data-testid="ops-equite">
+    <div className="rounded-carte border border-ink-200 bg-white p-5" data-testid="ops-equite">
       <h3 className="text-sm font-semibold text-ink-900">{t('Qui attend le plus', 'Who is waiting longest')}</h3>
-      <p className="mb-3 text-xs text-ink-400">
+      <p className="mb-3 text-xs text-ink-500">
         {t(
           'Groupe = l’espace client pour les campagnes, le contact pour les entrants. Au-delà de 5 min, l’objectif d’équité est dépassé.',
           'Group = the workspace for campaigns, the contact for inbound. Beyond 5 min, the fairness objective is breached.',
@@ -361,10 +365,10 @@ function EquiteCard({ groupes }: { groupes: QueueGroupLoadRow[] }) {
       </p>
       <div className="space-y-1.5">
         {groupes.map((g) => (
-          <div key={`${g.queue}:${g.groupe}`} className="flex items-center justify-between rounded-lg bg-ink-50 px-3 py-2 text-xs">
+          <div key={`${g.queue}:${g.groupe}`} className="flex items-center justify-between rounded-controle bg-ink-50 px-3 py-2 text-xs">
             <span className="flex min-w-0 gap-2">
               <span className="font-mono text-ink-900">{g.queue}</span>
-              <span className="truncate font-mono text-ink-400" title={g.groupe}>{g.groupe}</span>
+              <span className="truncate font-mono text-ink-500" title={g.groupe}>{g.groupe}</span>
             </span>
             <span className="flex shrink-0 gap-3 tabular-nums">
               <span className="text-ink-500">{fmtNum(g.backlog, locale)} {t('en file', 'queued')}</span>
@@ -409,9 +413,9 @@ function PoolCard({ instantane, points }: { instantane: PoolInstantane | null; p
   const maxCourbe = Math.max(1, ...points.map((p) => p.maxMs));
 
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-5" data-testid="ops-pool">
+    <div className="rounded-carte border border-ink-200 bg-white p-5" data-testid="ops-pool">
       <h3 className="text-sm font-semibold text-ink-900">{t('Pool de connexions', 'Connection pool')}</h3>
-      <p className="mb-3 text-xs text-ink-400">
+      <p className="mb-3 text-xs text-ink-500">
         {t(
           'Ce qui compte n’est pas la place restante, c’est de savoir si quelqu’un a ATTENDU une connexion, et combien de temps. Chaque acquisition est mesurée : aucun pic n’est raté.',
           'What matters is not the remaining room, it is whether anyone WAITED for a connection, and for how long. Every acquisition is measured: no spike is missed.',
@@ -419,7 +423,7 @@ function PoolCard({ instantane, points }: { instantane: PoolInstantane | null; p
       </p>
 
       {instantane && (
-        <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg bg-ink-50 px-3 py-2 text-xs tabular-nums">
+        <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-controle bg-ink-50 px-3 py-2 text-xs tabular-nums">
           <span className="font-mono text-ink-900">{instantane.process}</span>
           <span className="text-ink-500">{fmtNum(instantane.total, locale)}/{fmtNum(instantane.max, locale)} {t('connexions', 'connections')}</span>
           <span className="text-ink-500">{fmtNum(instantane.libres, locale)} {t('libres', 'idle')}</span>
@@ -427,12 +431,12 @@ function PoolCard({ instantane, points }: { instantane: PoolInstantane | null; p
           <span className={instantane.enAttente > 0 ? 'font-medium text-danger' : 'text-ink-500'}>
             {fmtNum(instantane.enAttente, locale)} {t('en attente', 'waiting')}
           </span>
-          <span className="text-ink-400">{t('pic depuis le démarrage', 'peak since start')} : {fmtNum(instantane.maxMsDepuisDemarrage, locale)} ms</span>
+          <span className="text-ink-500">{t('pic depuis le démarrage', 'peak since start')} : {fmtNum(instantane.maxMsDepuisDemarrage, locale)} ms</span>
         </div>
       )}
 
       {points.length === 0 ? (
-        <p className="text-xs text-ink-400">
+        <p className="text-xs text-ink-500">
           {t('Aucune minute enregistrée pour l’instant.', 'No minute recorded yet.')}
         </p>
       ) : (
@@ -440,7 +444,7 @@ function PoolCard({ instantane, points }: { instantane: PoolInstantane | null; p
           <div key={processus} className="mt-3">
             <div className="mb-1 flex items-baseline justify-between text-xs">
               <span className="font-mono text-ink-500">{processus}</span>
-              <span className="text-ink-400">
+              <span className="text-ink-500">
                 {t('acquisition max par minute, rouge = attente sur pool saturé', 'max acquisition per minute, red = wait on a saturated pool')} · {fmtNum(liste.reduce((n, p) => n + p.attentes, 0), locale)} {t('attente(s) sur pool saturé', 'wait(s) on a saturated pool')}
               </span>
             </div>
@@ -453,7 +457,7 @@ function PoolCard({ instantane, points }: { instantane: PoolInstantane | null; p
                      suivait `maxMs`, qui inclut l'ouverture normale d'une connexion neuve : une barre rouge
                      pouvait donc s'afficher avec ZÉRO attente. Un indicateur qui crie au loup se fait ignorer
                      le jour où il a raison. Relevé par l'audit externe. */
-                  className={`w-1 shrink-0 rounded-t ${p.maxAttenteMs >= SEUIL_ATTENTE_MS ? 'bg-danger' : 'bg-ink-300'}`}
+                  className={`w-1 shrink-0 rounded-t-controle ${p.maxAttenteMs >= SEUIL_ATTENTE_MS ? 'bg-danger' : 'bg-ink-300'}`}
                   style={{ height: `${Math.max(2, Math.round((p.maxMs / maxCourbe) * 100))}%` }}
                 />
               ))}
@@ -470,16 +474,16 @@ function QueueCard({ queues }: { queues: QueueLoadRow[] }) {
   const t = useT();
   const { locale } = useLocale();
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-5">
+    <div className="rounded-carte border border-ink-200 bg-white p-5">
       <h3 className="mb-3 text-sm font-semibold text-ink-900">{t('Files de traitement (pg-boss)', 'Processing queues (pg-boss)')}</h3>
       <div className="grid gap-2 sm:grid-cols-2">
         {queues.map((q) => (
-          <div key={q.queue} className="flex items-center justify-between rounded-lg bg-ink-50 px-3 py-2">
+          <div key={q.queue} className="flex items-center justify-between rounded-controle bg-ink-50 px-3 py-2">
             <span className="font-mono text-xs text-ink-900">{q.queue}</span>
             <span className="flex gap-3 text-xs tabular-nums">
               <span title={t('en attente', 'pending')} className="text-ink-500">{fmtNum(q.backlog, locale)} {t('en file', 'queued')}</span>
               <span title={t('actifs', 'active')} className="text-brand-600">{fmtNum(q.active, locale)} {t('actifs', 'active')}</span>
-              <span title={t('échoués', 'failed')} className={q.failed > 0 ? 'font-medium text-danger' : 'text-ink-400'}>{fmtNum(q.failed, locale)} {t('échoués', 'failed')}</span>
+              <span title={t('échoués', 'failed')} className={q.failed > 0 ? 'font-medium text-danger' : 'text-ink-500'}>{fmtNum(q.failed, locale)} {t('échoués', 'failed')}</span>
               {/* 🔴 L'AGE du plus vieux job prêt, et pas seulement leur nombre : mille jobs avalés en trois
                   secondes vont bien, dix qui attendent depuis un quart d'heure vont mal. C'est ce chiffre
                   que les objectifs de service regardent (docs/SLO-2026-09-01.md). Le seuil d'alerte est
@@ -488,7 +492,7 @@ function QueueCard({ queues }: { queues: QueueLoadRow[] }) {
                 <span
                   data-testid={`file-age-${q.queue}`}
                   title={t('âge du plus vieux job prêt', 'age of the oldest ready job')}
-                  className={q.ageMaxSecondes >= 60 ? 'font-medium text-danger' : 'text-ink-400'}
+                  className={q.ageMaxSecondes >= 60 ? 'font-medium text-danger' : 'text-ink-500'}
                 >
                   {q.ageMaxSecondes >= 60 ? `${Math.round(q.ageMaxSecondes / 60)} min` : `${q.ageMaxSecondes} s`} {t('d’attente', 'waiting')}
                 </span>
@@ -530,7 +534,7 @@ function LatenceCard({ lignes }: { lignes: QueueLatenceRow[] }) {
    */
   const SEUIL_S = 30;
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-5">
+    <div className="rounded-carte border border-ink-200 bg-white p-5">
       <h3 className="text-sm font-semibold text-ink-900">{t('Latence réelle des files (24 h)', 'Actual queue latency (24 h)')}</h3>
       <p className="mb-3 mt-1 text-xs text-ink-500">
         {t(
@@ -539,15 +543,15 @@ function LatenceCard({ lignes }: { lignes: QueueLatenceRow[] }) {
         )}
       </p>
       {utiles.length === 0 ? (
-        <p className="text-xs text-ink-400">{t('Aucun job terminé sur la fenêtre.', 'No job completed in this window.')}</p>
+        <p className="text-xs text-ink-500">{t('Aucun job terminé sur la fenêtre.', 'No job completed in this window.')}</p>
       ) : (
         <div className="grid gap-2">
           {utiles.map((l) => (
-            <div key={l.queue} className="flex items-center justify-between rounded-lg bg-ink-50 px-3 py-2">
+            <div key={l.queue} className="flex items-center justify-between rounded-controle bg-ink-50 px-3 py-2">
               <span className="font-mono text-xs text-ink-900">{l.queue}</span>
               <span className="flex gap-3 text-xs tabular-nums">
                 {/* L'effectif EN PREMIER : un p95 sur trois jobs ne veut rien dire. */}
-                <span className="text-ink-400" title={t('jobs terminés sur la fenêtre', 'jobs completed in window')}>
+                <span className="text-ink-500" title={t('jobs terminés sur la fenêtre', 'jobs completed in window')}>
                   {fmtNum(l.echantillons, locale)} {t('jobs', 'jobs')}
                 </span>
                 <span className="text-ink-500" title={t('attente médiane avant prise', 'median wait before pickup')}>
@@ -575,7 +579,7 @@ function LatenceCard({ lignes }: { lignes: QueueLatenceRow[] }) {
                 */}
                 <span
                   data-testid={`latence-max-${l.queue}`}
-                  className={l.boutEnBoutMaxSecondes >= 120 ? 'font-medium text-danger' : 'text-ink-400'}
+                  className={l.boutEnBoutMaxSecondes >= 120 ? 'font-medium text-danger' : 'text-ink-500'}
                   title={t('pire cas bout en bout sur la fenêtre', 'worst end-to-end case in window')}
                 >
                   {t('pire', 'worst')} {fmtSecondes(l.boutEnBoutMaxSecondes)}
@@ -600,9 +604,9 @@ function TenantTable({ tenants, onObserver }: { tenants: TenantOverviewRow[]; on
   const t = useT();
   const { locale } = useLocale();
   const dot = (q: string | null) => (q === 'GREEN' ? succes[400] : q === 'YELLOW' ? alerte[500] : q === 'RED' ? danger[500] : ink[300]);
-  const fmtDate = (iso: string | null) => (iso ? formatDate(iso, locale, { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—');
+  const fmtDate = (iso: string | null) => (iso ? formatDate(iso, locale, { day: '2-digit', month: '2-digit', year: '2-digit' }) : <Nd />);
   return (
-    <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white">
+    <div className="overflow-x-auto rounded-carte border border-ink-200 bg-white">
       <table className="w-full min-w-[820px] text-sm">
         <thead>
           <tr className="border-b border-ink-100 text-left text-xs text-ink-500">
@@ -621,7 +625,7 @@ function TenantTable({ tenants, onObserver }: { tenants: TenantOverviewRow[]; on
             <tr key={tn.id} className="border-b border-ink-50 last:border-0">
               <td className="px-4 py-2.5">
                 <div className="font-medium text-ink-900">{tn.name}</div>
-                <div className="text-xs text-ink-400">{t('créé le', 'created on')} {fmtDate(tn.createdAt)}</div>
+                <div className="text-xs text-ink-500">{t('créé le', 'created on')} {fmtDate(tn.createdAt)}</div>
                 {/* Entrer dans l'espace pour VOIR ce que le client voit. Session en lecture seule, d'une
                     heure : elle ne peut rien modifier et ne marque rien comme lu. */}
                 <button
@@ -644,7 +648,7 @@ function TenantTable({ tenants, onObserver }: { tenants: TenantOverviewRow[]; on
                     <span className="font-mono text-xs text-ink-900">{tn.phone}</span>
                   </span>
                 ) : (
-                  <span className="text-xs text-ink-400">—</span>
+                  <Nd className="text-xs" />
                 )}
               </td>
               <td className="px-3 py-2.5 text-right tabular-nums text-ink-900">{fmtNum(tn.users, locale)}</td>

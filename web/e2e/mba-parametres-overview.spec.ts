@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { mockMba, appelsMba } from './support/mba';
+import { repondre } from './aide/confirmation';
 
 /**
  * Vue d'ensemble : l'allumage de l'agent, l'audience, les interdits de langage.
@@ -13,12 +14,10 @@ test.describe('MBA Paramètres : vue d’ensemble', () => {
     const calls = await mockMba(page);
     await page.goto('/mba/parametres');
 
-    let vu = '';
-    page.once('dialog', (d) => { vu = d.message(); void d.dismiss(); });
     await page.getByTestId('mba-rollout-toggle').click();
 
     // Le message doit ANNONCER l'effet sur les fils en cours, pas juste demander « êtes-vous sûr ».
-    await expect.poll(() => vu).toContain('NOUVELLES');
+    await repondre(page, false, 'NOUVELLES');
     await expect.poll(() => appelsMba(calls, 'PUT', '/rollout').length).toBe(0);
   });
 
@@ -27,8 +26,8 @@ test.describe('MBA Paramètres : vue d’ensemble', () => {
     await page.goto('/mba/parametres');
     await expect(page.getByTestId('mba-rollout-toggle')).toHaveAttribute('aria-pressed', 'false');
 
-    page.once('dialog', (d) => void d.accept());
     await page.getByTestId('mba-rollout-toggle').click();
+    await repondre(page, true);
     await expect.poll(() => appelsMba(calls, 'PUT', '/rollout')[0]?.body).toEqual({ enabled: true });
     // L'assertion qui compte : sans remontée de la réponse dans l'état, l'appel partirait et l'écran
     // continuerait d'afficher « éteint ». L'opérateur ne saurait pas si son geste a pris.
@@ -49,8 +48,8 @@ test.describe('MBA Paramètres : vue d’ensemble', () => {
       },
     });
     await page.goto('/mba/parametres');
-    page.once('dialog', (d) => void d.accept());
     await page.getByTestId('mba-rollout-toggle').click();
+    await repondre(page, true);
 
     await expect(page.getByTestId('mba-overview-error')).toContainText('payment method');
     // La page reste utilisable : les onglets répondent encore.

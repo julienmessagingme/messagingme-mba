@@ -4,6 +4,7 @@ import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { RangeBar } from '@/components/RangeBar';
+import { TitrePage } from '@/components/TitrePage';
 import { ConversationAnalysisCard } from '@/components/ConversationAnalysisCard';
 import type { Session } from '@/lib/session';
 import type { StatsRange } from '@/lib/api';
@@ -61,7 +62,7 @@ function AnalyseInner({ session }: { session: Session }) {
       {/* ⚠️ « Analyse des conversations » depuis le 2026-09-17, comme l'entree de menu. Le titre a l'ecran
           et le libelle de la nav doivent dire le MEME mot : deux noms pour une page, c'est une page qu'on
           cherche deux fois. L'adresse, elle, reste `/dashboard/quali`. */}
-      <RangeBar title={t('Analyse des conversations', 'Conversation analysis')} range={range} onChange={setRange} />
+      <RangeBar title={<TitrePage>{t('Analyse des conversations', 'Conversation analysis')}</TitrePage>} range={range} onChange={setRange} />
       <ConversationAnalysisCard
         tenantId={session.tenantId}
         range={range}

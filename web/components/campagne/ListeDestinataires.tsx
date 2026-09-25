@@ -211,17 +211,17 @@ export function ListeDestinataires({
 
       {/* Compteur live (débounce) + contrôles de sélection sur gros volumes. */}
       <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-        <span className="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700" data-testid="destinataires-total">
+        <span className="font-medium text-ink-900" data-testid="destinataires-total">
           {enCours || total === null ? t('… contacts', '… contacts') : t(`${total} contact(s) correspondent`, `${total} contact(s) match`)}
         </span>
         {total !== null && total > contacts.length && (
           <>
-            <span className="text-ink-400">{t(`${contacts.length} affichés sur ${total} au total`, `${contacts.length} shown of ${total} total`)}</span>
+            <span className="text-ink-500">{t(`${contacts.length} affichés sur ${total} au total`, `${contacts.length} shown of ${total} total`)}</span>
             {/* « Tout sélectionner » retient l'INTENTION : aucun identifiant n'est rapatrié. */}
             <button
               type="button"
               onClick={() => onSelection({ toutFiltre: true, selected: new Set(), exclus: new Set() })}
-              className="rounded-lg border border-brand-300 bg-brand-50 px-2 py-0.5 font-medium text-brand-700 hover:bg-brand-100"
+              className="rounded-controle border border-brand-300 bg-brand-50 px-2 py-0.5 font-medium text-brand-700 hover:bg-brand-100"
             >
               {t(`Tout sélectionner (${total})`, `Select all (${total})`)}
             </button>
@@ -238,7 +238,7 @@ export function ListeDestinataires({
       {/* Le mode « tout ce qui correspond » doit se VOIR : sans cette ligne, l'écran montre des cases
           cochées et rien ne dit que la campagne en vise beaucoup plus. */}
       {selection.toutFiltre && (
-        <div data-testid="campagne-cible-filtre" className="mb-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs text-brand-800">
+        <div data-testid="campagne-cible-filtre" className="mb-2 rounded-controle border border-brand-200 bg-brand-50 px-3 py-2 text-xs text-brand-800">
           {t(
             `Les ${retenus} contacts qui correspondent aux filtres sont visés, y compris ceux qui ne sont pas affichés ci-dessous. Décocher une ligne l'exclut.`,
             `All ${retenus} contacts matching the filters are targeted, including those not shown below. Unticking a row excludes it.`,
@@ -247,27 +247,27 @@ export function ListeDestinataires({
       )}
 
       {/* Liste des contacts correspondants : cocher/décocher affine la sélection. */}
-      <div className="max-h-[22rem] divide-y divide-ink-100 overflow-y-auto rounded-lg border border-ink-200" data-testid="destinataires-liste">
+      <div className="max-h-[22rem] divide-y divide-ink-100 overflow-y-auto rounded-controle border border-ink-200" data-testid="destinataires-liste">
         {contacts.map((c) => (
           <label key={c.id} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 hover:bg-ink-50">
             <input type="checkbox" checked={estRetenu(selection, c.id)} onChange={() => basculer(c.id)} className="accent-brand-500" />
             <span className="truncate text-sm">{c.profileName ?? contactIdentity(c)}</span>
             {(c.tags ?? []).slice(0, 3).map((tag) => (
-              <span key={tag} className="shrink-0 rounded bg-brand-50 px-1 text-xs text-brand-700">{tag}</span>
+              <span key={tag} className="shrink-0 rounded-controle bg-brand-50 px-1 text-xs text-brand-700">{tag}</span>
             ))}
-            <span className="ml-auto shrink-0 font-mono text-xs text-ink-400">{c.phoneE164 ?? <span title={t('Compte WhatsApp (sans numéro)', 'WhatsApp account (no number)')}>{c.bsuid}</span>}</span>
-            {c.optInStatus === 'opted_out' && <span className="shrink-0 rounded bg-danger-50 px-1 text-xs text-danger-600">opt-out</span>}
+            <span className="ml-auto shrink-0 font-mono text-xs text-ink-500">{c.phoneE164 ?? <span title={t('Compte WhatsApp (sans numéro)', 'WhatsApp account (no number)')}>{c.bsuid}</span>}</span>
+            {c.optInStatus === 'opted_out' && <span className="shrink-0 rounded-controle bg-danger-50 px-1 text-xs text-danger-700">opt-out</span>}
           </label>
         ))}
         {contacts.length === 0 && (
-          <p className="px-2.5 py-3 text-xs text-ink-400">
+          <p className="px-2.5 py-3 text-xs text-ink-500">
             {enCours ? t('Chargement…', 'Loading…')
               : filtresPoses ? t('Aucun contact ne correspond aux filtres.', 'No contact matches the filters.')
               : t("Aucun contact joignable. Importe des contacts dans l'onglet Contacts.", 'No reachable contact. Import contacts in the Contacts tab.')}
           </p>
         )}
       </div>
-      <p className="mt-1 text-xs text-ink-400">{t('Les contacts opt-out sont ignorés automatiquement pour le marketing.', 'Opted-out contacts are automatically skipped for marketing.')}</p>
+      <p className="mt-1 text-xs text-ink-500">{t('Les contacts opt-out sont ignorés automatiquement pour le marketing.', 'Opted-out contacts are automatically skipped for marketing.')}</p>
     </div>
   );
 }

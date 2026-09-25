@@ -9,6 +9,8 @@ import { CarteIntentions } from '@/components/CarteIntentions';
 import type { Session } from '@/lib/session';
 import type { StatsRange } from '@/lib/api';
 import { presetRange } from '@/lib/range';
+import { useT } from '@/lib/i18n';
+import { ErreursRegroupees } from '@/components/Nd';
 
 /**
  * La page de synthèse du Performance Lab.
@@ -29,6 +31,7 @@ export default function PerformanceSynthesePage() {
 function SyntheseInner({ session }: { session: Session }) {
   // Même période par défaut que les écrans Analytics : passer de l'un à l'autre ne doit pas changer la
   // fenêtre sous les pieds de l'utilisateur.
+  const t = useT();
   const [range, setRange] = useState<StatsRange>(() => presetRange(30));
 
   return (
@@ -47,6 +50,9 @@ function SyntheseInner({ session }: { session: Session }) {
         plus courte se retrouve avec un grand vide blanc sous son contenu. En dessous de `lg`, on retombe
         sur une colonne unique, dans le même ordre.
       */}
+      {/* UNE SEULE ERREUR POUR L'ÉCRAN : une panne du serveur faisait répéter la même phrase rouge par les trois
+          cartes, ligne par ligne. Les cartes gardent leur « n/d » à l'endroit du chiffre manquant. */}
+      <ErreursRegroupees message={t('Certains chiffres n’ont pas pu être lus. Réessayez dans un instant.', 'Some figures could not be read. Try again in a moment.')}>
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <CarteCouts tenantId={session.tenantId} range={range} />
         {/* ⚠️ LA COLONNE DE DROITE PORTE DEUX CARTES DEPUIS LE 2026-09-17, et l'ordre est celui que Julien
@@ -57,6 +63,7 @@ function SyntheseInner({ session }: { session: Session }) {
           <NuageQualitatifCard tenantId={session.tenantId} range={range} />
         </div>
       </div>
+      </ErreursRegroupees>
     </div>
   );
 }

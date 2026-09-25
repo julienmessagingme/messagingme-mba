@@ -8,6 +8,7 @@ import { cardCls, inputCls } from '@/lib/ui';
 import { toCsv, downloadCsv } from '@/lib/csv';
 import { ACTIONS_JOURNAL, resumeDetail, lignesJournalCsv } from '@/lib/journal';
 import { Bouton } from '@/components/Bouton';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * Historique des actions sensibles sur les contacts : qui a ajouté, supprimé, effacé, ou basculé un
@@ -135,10 +136,10 @@ export function AuditJournal({ tenantId }: { tenantId: string }) {
         )}
       </form>
 
-      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
-      {!error && entries === null && <p className="text-sm text-ink-400">{t('Chargement…', 'Loading…')}</p>}
+      {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+      {!error && entries === null && <Squelette forme="lignes" />}
       {!error && entries?.length === 0 && (
-        <p className="text-sm text-ink-400" data-testid="journal-vide">
+        <p className="text-sm text-ink-500" data-testid="journal-vide">
           {cherche
             ? t('Aucune action ne correspond.', 'No action matches.')
             : t('Aucune action enregistrée pour le moment.', 'No action recorded yet.')}
@@ -146,7 +147,7 @@ export function AuditJournal({ tenantId }: { tenantId: string }) {
               résout d'abord vers un contact. Sans cette phrase, une recherche sur un contact effacé rendrait
               une liste vide qu'on prendrait pour « il ne s'est rien passé », alors que la trace existe. */}
           {cherche && filtre.telephone !== '' && (
-            <span className="mt-1 block text-xs text-ink-400">
+            <span className="mt-1 block text-xs text-ink-500">
               {t(
                 'Ce journal ne contient aucun numéro : la recherche par numéro passe par la fiche du contact. Un contact effacé ne s’y retrouve donc plus, même si ses actions y figurent toujours.',
                 'This log contains no phone numbers: searching by number goes through the contact record. An erased contact can no longer be found this way, even though its actions are still logged.',
@@ -160,15 +161,15 @@ export function AuditJournal({ tenantId }: { tenantId: string }) {
         <ul className="max-h-96 divide-y divide-ink-100 overflow-y-auto">
           {entries.map((e) => (
             <li key={e.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2 text-sm">
-              <span className="w-36 shrink-0 text-xs tabular-nums text-ink-400">
+              <span className="w-36 shrink-0 text-xs tabular-nums text-ink-500">
                 {formatDate(e.at, locale, { day: '2-digit', month: '2-digit', year: '2-digit' })} {hourMin(e.at, locale)}
               </span>
-              <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${TONS[e.action] ?? 'bg-ink-100 text-ink-900'}`}>
+              <span className={`rounded-controle px-1.5 py-0.5 text-xs font-medium ${TONS[e.action] ?? 'bg-ink-100 text-ink-900'}`}>
                 {libelleAction(e.action)}
               </span>
               {/* Acteur absent = le système (webhook, balayage), pas un humain : le dire plutôt que laisser un blanc. */}
               <span className="text-ink-900">{e.actorEmail ?? t('Système', 'System')}</span>
-              <span className="font-mono text-xs text-ink-400">{e.targetId}</span>
+              <span className="font-mono text-xs text-ink-500">{e.targetId}</span>
               {Object.keys(e.detail).length > 0 && (
                 <span className="text-xs text-ink-500">{resumeDetail(e.detail, t('oui', 'yes'), t('non', 'no'))}</span>
               )}

@@ -15,6 +15,7 @@ import {
   type BrouillonChaine,
 } from '@/lib/chaine-apercu';
 import { Bouton } from '@/components/Bouton';
+import { Icone } from '@/components/Icone';
 
 /** Ce que chaque style MONTRE dans la barre. Le style lui-même vit dans `MARQUEURS`, ici c'est l'habillage. */
 const HABILLAGE: Record<StyleBarre, { fr: string; en: string; lettre: string; classe: string }> = {
@@ -115,7 +116,7 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
               title={t(HABILLAGE[style].fr, HABILLAGE[style].en)}
               aria-label={t(HABILLAGE[style].fr, HABILLAGE[style].en)}
               data-testid={`chaine-format-${style}`}
-              className="rounded-md border border-ink-300 px-2 py-1 text-xs text-ink-900 transition-colors duration-150 hover:bg-ink-50"
+              className="rounded-controle border border-ink-300 px-2 py-1 text-xs text-ink-900 transition-colors duration-150 hover:bg-ink-50"
             >
               <span className={HABILLAGE[style].classe}>{HABILLAGE[style].lettre}</span>
             </button>
@@ -129,9 +130,9 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
               onClick={() => setEmojis((v) => !v)}
               aria-label={t('Smileys', 'Emojis')}
               data-testid="chaine-emojis"
-              className="rounded-md border border-ink-300 px-2 py-1 text-xs text-ink-900 transition-colors duration-150 hover:bg-ink-50"
+              className="rounded-controle border border-ink-300 p-1.5 text-ink-500 transition-colors duration-150 hover:bg-ink-50"
             >
-              😊
+              <Icone nom="smiley" />
             </button>
             {emojis && (
               <SelecteurEmojis
@@ -154,7 +155,7 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
         />
         {reste !== null ? (
           <span
-            className={`mt-1 block text-xs tabular-nums ${reste < 0 ? 'text-danger' : 'text-ink-400'}`}
+            className={`mt-1 block text-xs tabular-nums ${reste < 0 ? 'text-danger' : 'text-ink-500'}`}
             data-testid="chaine-texte-reste"
           >
             {reste < 0
@@ -194,9 +195,9 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
       </div>
 
       {/* --- Le bouton Discuter ------------------------------------------------------------------- */}
-      <div className="rounded-xl border border-ink-200 p-4">
+      <div className="rounded-carte border border-ink-200 p-4">
         <p className="text-sm font-medium text-ink-900">{t('Bouton « Discuter »', '"Chat" button')}</p>
-        <p className="mt-1 text-xs text-ink-400">
+        <p className="mt-1 text-xs text-ink-500">
           {t(
             'Rattache un scénario : la publication portera un bouton qui ouvre une conversation et le démarre.',
             'Attach a scenario: the post carries a button that opens a chat and starts it.',
@@ -204,7 +205,7 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
         </p>
 
         {phone === null ? (
-          <p className="mt-3 rounded-lg bg-alerte-50 px-3 py-2 text-xs text-ink-500" data-testid="chaine-sans-numero">
+          <p className="mt-3 rounded-controle bg-alerte-50 px-3 py-2 text-xs text-ink-500" data-testid="chaine-sans-numero">
             {t(
               'Aucun numéro WhatsApp connecté : impossible de créer un lien tant qu’il n’y en a pas.',
               'No WhatsApp number connected: links cannot be created until there is one.',
@@ -317,7 +318,7 @@ function CreationLien({
   }
 
   return (
-    <div className="mt-3 space-y-3 rounded-lg bg-ink-50 p-3">
+    <div className="mt-3 space-y-3 rounded-carte bg-ink-50 p-3">
       <label className="block">
         <span className="mb-1 block text-xs font-medium text-ink-500">{t('Scénario à démarrer', 'Scenario to start')}</span>
         <select
@@ -352,14 +353,14 @@ function CreationLien({
           placeholder={t('Je veux en savoir plus', 'I want to know more')}
           data-testid="chaine-phrase"
         />
-        <span className="mt-1 block text-xs text-ink-400">
+        <span className="mt-1 block text-xs text-ink-500">
           {t(
             'C’est le message que l’abonné enverra en appuyant sur le bouton. Court, il se lit mieux.',
             'This is the message the subscriber sends when tapping the button. Shorter reads better.',
           )}
         </span>
         {reste !== null ? (
-          <span className={`mt-1 block text-xs tabular-nums ${reste < 0 ? 'text-danger' : 'text-ink-400'}`}>
+          <span className={`mt-1 block text-xs tabular-nums ${reste < 0 ? 'text-danger' : 'text-ink-500'}`}>
             {reste < 0
               ? t(`${-reste} caractères de trop`, `${-reste} characters too many`)
               : t(`${reste} caractères restants`, `${reste} characters left`)}

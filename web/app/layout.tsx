@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { LocaleProvider } from '@/lib/i18n';
+import { ConfirmationProvider } from '@/components/Confirmation';
 
 // Polices de la console, self-hostées au build (aucun appel externe au runtime). Exposées en variables CSS,
 // consommées par Tailwind (`fontFamily.sans` et `fontFamily.mono`). La mono sert les numéros, identifiants
@@ -21,7 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     // lang="fr" = défaut SSR (1er rendu toujours FR -> pas de mismatch d'hydratation). Le LocaleProvider
     // resynchronise document.documentElement.lang après montage (choix mémorisé OU toggle).
     <html lang="fr" className={`${geist.variable} ${geistMono.variable}`}>
-      <body><LocaleProvider>{children}</LocaleProvider></body>
+      <body><LocaleProvider><ConfirmationProvider>{children}</ConfirmationProvider></LocaleProvider></body>
     </html>
   );
 }

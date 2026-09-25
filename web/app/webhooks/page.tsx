@@ -18,6 +18,10 @@ import { formatDate, hourMin } from '@/lib/day';
 import { inputCls, inputClsAuto, cardCls, kickerCls } from '@/lib/ui';
 import { Bouton } from '@/components/Bouton';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
+import { Icone } from '@/components/Icone';
+import { useConfirmation } from '@/components/Confirmation';
+import { Squelette } from '@/components/Squelette';
+import { Nd } from '@/components/Nd';
 
 /**
  * Tools > Webhooks : recevoir un JSON d'un outil tiers, en tirer des champs de contact, et déclencher un
@@ -40,6 +44,7 @@ const CIBLE_NOUVEAU = 'sys:nouveau';
 
 function WebhooksInner({ session }: { session: Session }) {
   const t = useT();
+  const confirmer = useConfirmation();
   const [hooks, setHooks] = useState<WebhookEntrant[]>([]);
   const [champs, setChamps] = useState<UserFieldDef[]>([]);
   const [scenarios, setScenarios] = useState<WorkflowSummary[]>([]);
@@ -88,10 +93,10 @@ function WebhooksInner({ session }: { session: Session }) {
   }
 
   async function supprimer(w: WebhookEntrant) {
-    const ok = window.confirm(t(
+    const ok = await confirmer({ titre: t('Supprimer l’adresse', 'Delete the address'), message: t(
       `Supprimer « ${w.name} » ? L'adresse cessera de répondre immédiatement, et tout outil qui l'utilise encore recevra une erreur.`,
       `Delete “${w.name}”? The address will stop responding immediately, and any tool still using it will get an error.`,
-    ));
+    ), confirmer: t('Supprimer', 'Delete') });
     if (!ok) return;
     try {
       await deleteWebhook(session.tenantId, w.id);
@@ -105,7 +110,7 @@ function WebhooksInner({ session }: { session: Session }) {
   const courant = hooks.find((w) => w.id === ouvert) ?? null;
 
   return (
-    <div className="max-w-4xl space-y-6">
+    <div className="max-w-liste space-y-6">
       <div>
         <p className={kickerCls}>{t('Tools', 'Tools')}</p>
         <TitrePage>{t('Webhooks', 'Webhooks')}</TitrePage>
@@ -117,7 +122,7 @@ function WebhooksInner({ session }: { session: Session }) {
         </IntroPage>
       </div>
 
-      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+      {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
       {courant ? (
         <Detail
@@ -171,11 +176,11 @@ function Liste({
   const quand = (iso: string | null) => (iso ? `${formatDate(iso, locale, { day: '2-digit', month: '2-digit' })} ${hourMin(iso, locale)}` : t('jamais', 'never'));
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
+    <div className="overflow-hidden rounded-carte border border-ink-200 bg-white">
       {loading ? (
-        <p className="px-5 py-6 text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>
+        <Squelette forme="lignes" className="px-5 py-6" />
       ) : hooks.length === 0 ? (
-        <p className="px-5 py-6 text-sm text-ink-500">{t('Aucun webhook. Créez-en un ci-dessus.', 'No webhooks yet. Create one above.')}</p>
+        <p className="px-5 py-6 text-sm text-ink-500">{t('Aucun webhook : créez-en un ci-dessus.', 'No webhooks yet: create one above.')}</p>
       ) : (
         <table className="w-full text-left text-sm">
           <thead className="border-b border-ink-100 text-xs text-ink-500">
@@ -195,8 +200,8 @@ function Liste({
                 </td>
                 <td className="px-5 py-2.5">
                   {w.enabled
-                    ? <span className="rounded bg-succes-50 px-1.5 py-0.5 text-xs text-succes-700">{t('actif', 'active')}</span>
-                    : <span className="rounded bg-ink-100 px-1.5 py-0.5 text-xs text-ink-500">{t('désactivé', 'disabled')}</span>}
+                    ? <span className="rounded-controle bg-succes-50 px-1.5 py-0.5 text-xs text-succes-700">{t('actif', 'active')}</span>
+                    : <span className="rounded-controle bg-ink-100 px-1.5 py-0.5 text-xs text-ink-500">{t('désactivé', 'disabled')}</span>}
                 </td>
                 <td className="px-5 py-2.5 text-ink-500">{quand(w.lastReceivedAt)}</td>
                 <td className="px-5 py-2.5 text-ink-500">{w.contactsCreated}</td>
@@ -344,7 +349,7 @@ function Detail({
         <button onClick={onFerme} className="text-sm text-ink-500 hover:text-ink-900">← {t('Tous les webhooks', 'All webhooks')}</button>
         <h3 className="text-sm font-semibold text-ink-900">{hook.name}</h3>
         <label className="ml-auto flex items-center gap-2 text-sm text-ink-900">
-          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="h-4 w-4 rounded border-ink-300" />
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="h-4 w-4 rounded-controle border-ink-300" />
           {t('Actif', 'Active')}
         </label>
       </div>
@@ -354,7 +359,7 @@ function Detail({
         <h4 className="text-sm font-medium text-ink-900">{t('1. L’adresse à donner à votre outil', '1. The address to give your tool')}</h4>
         <p className="mt-1 text-sm text-ink-500">{t('Méthode POST, corps JSON.', 'POST method, JSON body.')}</p>
         <div className="mt-2 flex items-center gap-2">
-          <code className="min-w-0 flex-1 overflow-x-auto rounded-lg bg-ink-50 px-3 py-2 font-mono text-xs text-ink-900" data-testid="webhook-url">{hook.url}</code>
+          <code className="min-w-0 flex-1 overflow-x-auto rounded-controle bg-ink-50 px-3 py-2 font-mono text-xs text-ink-900" data-testid="webhook-url">{hook.url}</code>
           <Bouton variante="secondaire"
             onClick={() => { void navigator.clipboard?.writeText(hook.url); }}
             className="shrink-0"
@@ -372,11 +377,11 @@ function Detail({
             )}
           </p>
           {secretClair && (
-            <div className="mt-2 rounded-lg border border-alerte-200 bg-alerte-50 p-3">
+            <div className="mt-2 rounded-carte border border-alerte-200 bg-alerte-50 p-3">
               <p className="text-sm text-alerte-800">
                 {t('Copiez-le maintenant : il ne sera plus jamais affiché.', 'Copy it now: it will never be shown again.')}
               </p>
-              <pre className="mt-2 overflow-x-auto rounded bg-white px-2 py-1 font-mono text-xs text-ink-900" data-testid="webhook-secret">{secretClair}</pre>
+              <pre className="mt-2 overflow-x-auto rounded-controle bg-white px-2 py-1 font-mono text-xs text-ink-900" data-testid="webhook-secret">{secretClair}</pre>
             </div>
           )}
           <div className="mt-2 flex gap-2">
@@ -401,7 +406,7 @@ function Detail({
           </button>
         </div>
         {hook.lastPayload === null || hook.lastPayload === undefined ? (
-          <p className="mt-2 rounded-lg border border-dashed border-ink-300 px-3 py-4 text-sm text-ink-500" data-testid="attente-premier-appel">
+          <p className="mt-2 rounded-carte bg-ink-50 px-3 py-4 text-sm text-ink-500" data-testid="attente-premier-appel">
             {t(
               'En attente d’un premier appel. Collez l’adresse ci-dessus dans votre outil et déclenchez un envoi de test : le contenu reçu s’affichera ici, et vous pourrez cliquer dedans.',
               'Waiting for a first call. Paste the address above into your tool and trigger a test send: the received content will show here, and you will be able to click into it.',
@@ -410,7 +415,7 @@ function Detail({
         ) : (
           <div className="mt-2 space-y-2">
             <p className="text-xs text-ink-500">
-              {t('Reçu le', 'Received on')} {hook.lastReceivedAt ? `${formatDate(hook.lastReceivedAt, locale, { day: '2-digit', month: '2-digit' })} ${hourMin(hook.lastReceivedAt, locale)}` : '—'}
+              {t('Reçu le', 'Received on')} {hook.lastReceivedAt ? `${formatDate(hook.lastReceivedAt, locale, { day: '2-digit', month: '2-digit' })} ${hourMin(hook.lastReceivedAt, locale)}` : <Nd />}
               {' · '}
               <button onClick={() => { void oublierPayload(); }} className="text-ink-500 underline hover:text-ink-900">
                 {t('oublier ce contenu', 'forget this content')}
@@ -427,7 +432,7 @@ function Detail({
         {!aTelephone && (
           // Signalé AVANT le premier appel, et pas au moment où rien ne se passe : sans téléphone, le webhook
           // enregistre ce qu'il reçoit mais ne peut ni retrouver ni créer de contact.
-          <p className="mt-2 rounded-lg bg-alerte-50 px-3 py-2 text-sm text-alerte-800" data-testid="alerte-telephone">
+          <p className="mt-2 rounded-controle bg-alerte-50 px-3 py-2 text-sm text-alerte-800" data-testid="alerte-telephone">
             {t(
               'Il faut au moins une valeur envoyée vers Téléphone : c’est elle qui désigne le contact. Sans elle, ce webhook enregistrera ce qu’il reçoit sans rien pouvoir en faire.',
               'At least one value must go to Phone: it is what identifies the contact. Without it, this webhook will record what it receives without being able to act on it.',
@@ -435,12 +440,12 @@ function Detail({
           </p>
         )}
         {mapping.length === 0 ? (
-          <p className="mt-2 text-sm text-ink-500">{t('Rien encore. Cliquez sur « Attacher… » dans le contenu reçu ci-dessus.', 'Nothing yet. Click “Attach…” in the received content above.')}</p>
+          <p className="mt-2 text-sm text-ink-500">{t('Rien encore : cliquez sur « Attacher… » dans le contenu reçu ci-dessus.', 'Nothing yet: click “Attach…” in the received content above.')}</p>
         ) : (
           <ul className="mt-2 space-y-2" data-testid="liste-mapping">
             {mapping.map((r, i) => (
               <li key={`${r.chemin}-${i}`} className="flex flex-wrap items-center gap-2">
-                <code className="min-w-0 flex-1 truncate rounded bg-ink-50 px-2 py-1 font-mono text-xs text-ink-900">{r.chemin}</code>
+                <code className="min-w-0 flex-1 truncate rounded-controle bg-ink-50 px-2 py-1 font-mono text-xs text-ink-900">{r.chemin}</code>
                 <span className="text-ink-400">→</span>
                 <select
                   value={r.cible}
@@ -456,13 +461,11 @@ function Detail({
                 </select>
                 <button
                   onClick={() => setMapping((m) => m.filter((_, k) => k !== i))}
-                  className="text-ink-400 hover:text-danger-600"
+                  className="text-ink-500 hover:text-danger-600"
                   aria-label={t('Retirer', 'Remove')}
-                >
-                  ✕
-                </button>
+                ><Icone nom="fermer" taille="petite" /></button>
                 {creation?.index === i && (
-                  <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-brand-200 bg-brand-50/40 p-2" data-testid="creation-champ">
+                  <div className="flex w-full flex-wrap items-center gap-2 rounded-controle border border-brand-200 bg-brand-50/40 p-2" data-testid="creation-champ">
                     <input
                       value={creation.label}
                       onChange={(e) => setCreation({ ...creation, label: e.target.value })}
@@ -500,7 +503,7 @@ function Detail({
       <div className={cardCls}>
         <h4 className="text-sm font-medium text-ink-900">{t('4. Le contact', '4. The contact')}</h4>
         <label className="mt-2 flex items-start gap-2 text-sm text-ink-900">
-          <input type="checkbox" checked={createContact} onChange={(e) => setCreateContact(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-ink-300" />
+          <input type="checkbox" checked={createContact} onChange={(e) => setCreateContact(e.target.checked)} className="mt-0.5 h-4 w-4 rounded-controle border-ink-300" />
           <span>
             {t('Créer les contacts inconnus', 'Create unknown contacts')}
             <span className="block text-ink-500">
@@ -509,7 +512,7 @@ function Detail({
                 'The contact can only come from the received content. Unchecked, a call about someone not yet in the mini-CRM will be recorded without creating anything.',
               )}
             </span>
-            <span className="block text-ink-400">{t('Créés par ce webhook jusqu’ici', 'Created by this webhook so far')} : {hook.contactsCreated}</span>
+            <span className="block text-ink-500">{t('Créés par ce webhook jusqu’ici', 'Created by this webhook so far')} : {hook.contactsCreated}</span>
           </span>
         </label>
 
@@ -518,7 +521,7 @@ function Detail({
             type="checkbox"
             checked={optIn}
             onChange={(e) => setOptIn(e.target.checked)}
-            className="mt-0.5 h-4 w-4 rounded border-ink-300"
+            className="mt-0.5 h-4 w-4 rounded-controle border-ink-300"
             data-testid="webhook-optin"
           />
           <span>
@@ -535,7 +538,7 @@ function Detail({
                 'Unchecked, contacts are created with “unknown” consent, which excludes them from marketing campaigns.',
               )}
             </span>
-            <span className="block text-ink-400">
+            <span className="block text-ink-500">
               {t(
                 'Un contact DÉJÀ opt-in ne perd jamais son consentement, même si cette case est décochée.',
                 'A contact who is ALREADY opted in never loses consent, even if this box is unticked.',

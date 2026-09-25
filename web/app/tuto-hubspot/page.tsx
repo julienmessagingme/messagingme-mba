@@ -52,7 +52,7 @@ export default function TutoHubspotPage() {
       <div className="absolute right-4 top-4">
         <LocaleToggle />
       </div>
-      <div className="w-full max-w-2xl">
+      <div className="w-full max-w-formulaire">
         <div className="mb-8 text-center">
           <Logo className="mx-auto mb-3 h-12 w-12" />
           <TitrePage>
@@ -65,9 +65,9 @@ export default function TutoHubspotPage() {
 
         <ol className="space-y-4">
           {steps.map((s) => (
-            <li key={s.n} className="rounded-2xl border border-ink-200 bg-white p-5">
+            <li key={s.n} className="rounded-carte border border-ink-200 bg-white p-5">
               <div className="flex items-start gap-3">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-500 text-sm font-semibold text-white">{s.n}</span>
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-600 text-sm font-semibold text-white">{s.n}</span>
                 <div className="min-w-0">
                   <h2 className="text-base font-semibold text-ink-900">{s.title}</h2>
                   <p className="mt-1 text-sm text-ink-500">{s.body}</p>

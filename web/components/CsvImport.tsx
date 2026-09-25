@@ -5,6 +5,7 @@ import { useT } from '@/lib/i18n';
 import { previewImport, importCsv, type ImportReport, type ImportPreview, type ColumnMapping } from '@/lib/api';
 import { inputCls } from '@/lib/ui';
 import { Bouton } from '@/components/Bouton';
+import { Icone } from '@/components/Icone';
 
 // --- Import CSV avec mapping des colonnes (composant partagé Contacts + Campagne) ---
 
@@ -175,21 +176,21 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
   // sans jamais afficher les données.
   if (!preview) {
     return (
-      <section className="rounded-2xl border border-ink-200 bg-white p-6">
+      <section className="rounded-carte border border-ink-200 bg-white p-6">
         <h2 className="text-base font-semibold text-ink-900">{t('Importer un CSV', 'Import a CSV')}</h2>
         <p className="mt-1 text-xs text-ink-500">{t("On lit la 1re ligne (les en-têtes) et tu associes chaque colonne à un champ. Tes données ne s'affichent pas ici.", 'We read the first row (the headers) and you map each column to a field. Your data is not displayed here.')}</p>
 
-        <label className="mt-4 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-ink-300 px-3 py-10 text-center hover:border-brand-500">
-          <svg viewBox="0 0 24 24" className="h-8 w-8 text-ink-400" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 20h16" /></svg>
+        <label className="mt-4 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-carte border-2 border-dashed border-ink-300 px-3 py-10 text-center hover:border-brand-500">
+          <Icone nom="televerser" taille="grande" className="text-ink-400" />
           <span className="text-sm font-medium text-ink-900">{busy ? t('Analyse en cours…', 'Analyzing…') : t('Choisir un fichier .csv', 'Choose a .csv file')}</span>
-          <span className="text-xs text-ink-400">{fileName ?? t('ou glisse-le ici', 'or drag it here')}</span>
+          <span className="text-xs text-ink-500">{fileName ?? t('ou glisse-le ici', 'or drag it here')}</span>
           <input type="file" accept=".csv,text/csv" onChange={onFile} className="hidden" disabled={busy} />
         </label>
 
-        {error && <p className="mt-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+        {error && <p className="mt-3 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
         <div className="mt-3 text-center">
-          <button onClick={() => setShowPaste((s) => !s)} className="text-xs text-ink-400 hover:text-brand-600">
+          <button onClick={() => setShowPaste((s) => !s)} className="text-xs text-ink-500 hover:text-brand-600">
             {showPaste ? t('masquer', 'hide') : t('ou coller le texte à la place', 'or paste the text instead')}
           </button>
         </div>
@@ -200,7 +201,7 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
               onChange={(e) => setCsv(e.target.value)}
               rows={4}
               placeholder={t('Prénom,Nom,Téléphone\nJulie,Dumas,+33612345678', 'First name,Name,Phone\nJulie,Dumas,+33612345678')}
-              className="w-full rounded-lg border border-ink-300 px-3 py-2 font-mono text-xs outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+              className="w-full rounded-controle border border-ink-300 px-3 py-2 font-mono text-xs outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
             />
             <Bouton enCours={busy}
               onClick={() => analyze()}
@@ -217,7 +218,7 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
 
   // Étape 2 : mapping des colonnes.
   return (
-    <section className="rounded-2xl border border-ink-200 bg-white p-6">
+    <section className="rounded-carte border border-ink-200 bg-white p-6">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-ink-900">{t('Associer les colonnes', 'Map the columns')}</h2>
         <button onClick={() => { setPreview(null); setReport(null); }} className="text-xs text-brand-600 hover:underline">
@@ -233,7 +234,7 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
           const samples = preview.sampleRows.map((r) => r[h]).filter((v) => v && v.trim()).slice(0, 2).join(' · ');
           const c = choices[h] ?? { include: false, choice: 'custom', customKey: '' };
           return (
-            <div key={h} className={`flex flex-wrap items-center gap-2 rounded-lg border p-2.5 ${c.include ? 'border-ink-200 bg-white' : 'border-ink-200 bg-ink-50 opacity-70'}`}>
+            <div key={h} className={`flex flex-wrap items-center gap-2 rounded-controle border p-2.5 ${c.include ? 'border-ink-200 bg-white' : 'border-ink-200 bg-ink-50 opacity-70'}`}>
               <input
                 type="checkbox"
                 checked={c.include}
@@ -243,7 +244,7 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
               />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium text-ink-900">{h}</div>
-                {samples && <div className="truncate text-xs text-ink-400">{samples}</div>}
+                {samples && <div className="truncate text-xs text-ink-500">{samples}</div>}
               </div>
               {c.include ? (
                 <>
@@ -251,7 +252,7 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
                   <select
                     value={c.choice}
                     onChange={(e) => setChoice(h, { choice: e.target.value })}
-                    className="shrink-0 rounded-lg border border-ink-300 px-2.5 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+                    className="shrink-0 rounded-controle border border-ink-300 px-2.5 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
                   >
                     {CATEGORIES.map((cat) => (
                       <option key={cat.value} value={cat.value}>{cat.label}</option>
@@ -262,12 +263,12 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
                       value={c.customKey}
                       onChange={(e) => setChoice(h, { customKey: e.target.value })}
                       placeholder={t('nom du champ', 'field name')}
-                      className="w-32 shrink-0 rounded-lg border border-ink-300 px-2.5 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+                      className="w-32 shrink-0 rounded-controle border border-ink-300 px-2.5 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
                     />
                   )}
                 </>
               ) : (
-                <span className="shrink-0 text-xs text-ink-400">{t('non importée', 'not imported')}</span>
+                <span className="shrink-0 text-xs text-ink-500">{t('non importée', 'not imported')}</span>
               )}
             </div>
           );
@@ -275,7 +276,7 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
       </div>
 
       {!hasPhone && (
-        <p className="mt-3 rounded-lg bg-alerte-50 px-3 py-2 text-xs text-alerte-700">
+        <p className="mt-3 rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte-700">
           {t('Associe au moins une colonne à', 'Map at least one column to')} <b>{t('Téléphone', 'Phone')}</b> {t(": c'est la clé d'un contact.", ": it's a contact's key.")}
         </p>
       )}
@@ -291,14 +292,14 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
           )}
         </div>
         <label className="flex items-end gap-2 pb-2 text-sm text-ink-900">
-          <input type="checkbox" checked={optIn} onChange={(e) => setOptIn(e.target.checked)} className="rounded" />
+          <input type="checkbox" checked={optIn} onChange={(e) => setOptIn(e.target.checked)} className="rounded-controle" />
           {t('Consentement (opt-in) donné', 'Consent (opt-in) given')}
         </label>
       </div>
 
-      {error && <p className="mt-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+      {error && <p className="mt-3 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
       {report && (
-        <div className="mt-3 rounded-lg bg-succes-50 px-3 py-2 text-sm text-succes-800">
+        <div className="mt-3 rounded-controle bg-succes-50 px-3 py-2 text-sm text-succes-800">
           <b>{report.created}</b> {t('créés,', 'created,')} <b>{report.updated}</b> {t('mis à jour,', 'updated,')} <b>{report.skipped}</b> {t('ignorés.', 'skipped.')}
           {report.errors.length > 0 && (
             <ul className="mt-1 list-inside list-disc text-xs text-succes-700">

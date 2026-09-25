@@ -7,6 +7,8 @@ import { MbaNotice } from './MbaNotice';
 import { isSendableButtonUrl } from '@/lib/button-url';
 import { createMbaWebsite, deleteMbaWebsite, listMbaWebsites, type MbaWebsite } from '@/lib/api-mba';
 import { Bouton } from '@/components/Bouton';
+import { BoutonConfirme } from '@/components/Confirmation';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * Les pages du site que Meta explore pour nourrir l'agent.
@@ -72,7 +74,7 @@ export function MbaWebsitesPanel({ tenantId, phoneNumberId }: { tenantId: string
     void agir(() => createMbaWebsite(tenantId, phoneNumberId, adresse));
   }
 
-  if (chargement) return <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>;
+  if (chargement) return <Squelette forme="lignes" />;
 
   return (
     <div className="space-y-5">
@@ -117,16 +119,17 @@ export function MbaWebsitesPanel({ tenantId, phoneNumberId }: { tenantId: string
                   {s.pages_crawled !== undefined && <span>{t(`${s.pages_crawled} page(s)`, `${s.pages_crawled} page(s)`)}</span>}
                 </p>
               </div>
-              <button
-                className="shrink-0 text-xs font-medium text-danger-600 hover:text-danger-700"
-                onClick={() => {
+              <BoutonConfirme
+                className="shrink-0 text-xs font-medium text-danger-700 hover:text-danger-800"
+                question={t('Retirer ce site de la connaissance de l’agent ?', 'Remove this site from the agent’s knowledge?')}
+                libelleConfirmer={t('Retirer', 'Remove')}
+                onConfirme={() => {
                   if (s.id === undefined) return;
-                  if (!window.confirm(t(`Retirer ${s.url} de la connaissance de l’agent ?`, `Remove ${s.url} from the agent’s knowledge?`))) return;
                   void agir(() => deleteMbaWebsite(tenantId, phoneNumberId, s.id as string));
                 }}
               >
                 {t('Retirer', 'Remove')}
-              </button>
+              </BoutonConfirme>
             </li>
           );
         })}

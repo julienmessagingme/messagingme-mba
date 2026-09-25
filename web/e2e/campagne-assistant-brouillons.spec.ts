@@ -238,7 +238,7 @@ test.describe('Assistant : la reprise d’un brouillon', () => {
       }],
     });
     await ouvrirAssistant(page, { etape: 'audience', brouillon: 'd1' });
-    await page.getByRole('button', { name: '📇 Liste de contacts' }).click();
+    await page.getByRole('button', { name: 'Liste de contacts', exact: true }).click();
     for (const nom of ['Alice', 'Bob', 'Chloe']) await expect(caseDe(page, nom)).toBeChecked({ timeout: 15_000 });
   });
 

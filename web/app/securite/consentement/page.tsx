@@ -5,8 +5,9 @@ import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import { useT } from '@/lib/i18n';
 import { listeDesabonnes, refusPossibles, pousseeOptOut, setPousseeOptOut, type ContactDesabonne, type RefusPossible } from '@/lib/api';
-import { cardCls } from '@/lib/ui';
+import { cadreCls } from '@/lib/ui';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * LE CONSENTEMENT : qui a demandé à ne plus être contacté, depuis quand, et par quel chemin.
@@ -55,7 +56,7 @@ function Consentement({ tenantId, estAdmin }: { tenantId: string; estAdmin: bool
   }, [tenantId, t]);
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-4 p-6" data-testid="securite-consentement">
+    <div className="mx-auto w-full max-w-liste space-y-4" data-testid="securite-consentement">
       <div className="space-y-1">
         <TitrePage>{t('Consentement', 'Consent')}</TitrePage>
         <IntroPage>
@@ -66,7 +67,7 @@ function Consentement({ tenantId, estAdmin }: { tenantId: string; estAdmin: bool
         </IntroPage>
       </div>
 
-      <section className={cardCls} data-testid="desabonnes">
+      <section className={cadreCls} data-testid="desabonnes">
         <div className="flex items-center justify-between gap-2 border-b border-ink-100 px-4 py-3">
           <span className="text-sm font-semibold text-ink-900">{t('Désabonnés', 'Unsubscribed')}</span>
           {contacts !== null && (
@@ -77,14 +78,17 @@ function Consentement({ tenantId, estAdmin }: { tenantId: string; estAdmin: bool
         </div>
 
         {erreur !== null && <p className="px-4 py-3 text-sm text-danger-700" data-testid="desabonnes-erreur">{erreur}</p>}
-        {erreur === null && contacts === null && <p className="px-4 py-3 text-sm text-ink-500">{t('Lecture…', 'Loading…')}</p>}
+        {erreur === null && contacts === null && <Squelette forme="lignes" className="px-4 py-3" />}
         {erreur === null && contacts !== null && contacts.length === 0 && (
           <p className="px-4 py-3 text-sm text-ink-500" data-testid="desabonnes-vide">
             {t('Personne ne s’est désabonné sur cet espace.', 'Nobody has unsubscribed in this workspace.')}
           </p>
         )}
 
+        {/* `overflow-x-auto` : sur un téléphone, les quatre colonnes défilent dans la carte au lieu de faire
+            déborder la page entière (mesuré le 2026-09-25 : 512 px pour 390). */}
         {contacts !== null && contacts.length > 0 && (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-ink-500">
@@ -99,7 +103,7 @@ function Consentement({ tenantId, estAdmin }: { tenantId: string; estAdmin: bool
                 <tr key={c.id} className="border-t border-ink-100" data-testid="desabonne-ligne">
                   <td className="px-4 py-2 text-ink-900">
                     {c.profileName ?? c.phoneE164 ?? t('sans nom', 'no name')}
-                    {c.profileName && c.phoneE164 && <span className="ml-2 text-xs text-ink-400">{c.phoneE164}</span>}
+                    {c.profileName && c.phoneE164 && <span className="ml-2 text-xs text-ink-500">{c.phoneE164}</span>}
                   </td>
                   {/**
                     * 🔴 LA DATE **ET L'HEURE** (demande de Julien, 2026-09-15). Un écran de conformité doit
@@ -116,9 +120,9 @@ function Consentement({ tenantId, estAdmin }: { tenantId: string; estAdmin: bool
                   <td className="px-4 py-2 text-ink-500" data-testid="desabonne-date">
                     {c.desabonneLe
                       ? new Date(c.desabonneLe).toLocaleString()
-                      : <span className="text-ink-400">{t('date inconnue', 'date unknown')}</span>}
+                      : <span className="text-ink-500">{t('date inconnue', 'date unknown')}</span>}
                   </td>
-                  <td className="px-4 py-2 text-ink-500">{sourceDite(c.source, t)}</td>
+                  <td className="break-words px-4 py-2 text-ink-500">{sourceDite(c.source, t)}</td>
                   <td className="px-4 py-2 text-right">
                     {/* La fiche du contact : c'est là qu'on voit son historique complet, et le seul endroit
                         d'où l'on peut lever un opt-out en sachant à qui l'on a affaire. */}
@@ -130,6 +134,7 @@ function Consentement({ tenantId, estAdmin }: { tenantId: string; estAdmin: bool
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </section>
 
@@ -149,7 +154,7 @@ function Consentement({ tenantId, estAdmin }: { tenantId: string; estAdmin: bool
         135 messages réels mesurés le 2026-09-13, ni la règle actuelle ni une règle élargie n'ont rien
         trouvé : il n'y a rien sur quoi calibrer, donc on instrumente d'abord et on décide ensuite.
       */}
-      <section className={cardCls} data-testid="refus-possibles">
+      <section className={cadreCls} data-testid="refus-possibles">
         <div className="border-b border-ink-100 px-4 py-3">
           <span className="text-sm font-semibold text-ink-900">{t('Refus possibles à confirmer', 'Possible refusals to confirm')}</span>
           <p className="mt-1 text-xs text-ink-500">
@@ -160,7 +165,7 @@ function Consentement({ tenantId, estAdmin }: { tenantId: string; estAdmin: bool
           </p>
         </div>
 
-        {aRelire === null && <p className="px-4 py-3 text-sm text-ink-500">{t('Relecture…', 'Re-reading…')}</p>}
+        {aRelire === null && <Squelette forme="lignes" lignes={2} className="px-4 py-3" />}
         {aRelire !== null && aRelire.refus.length === 0 && (
           <p className="px-4 py-3 text-sm text-ink-500" data-testid="refus-possibles-vide">
             {/* ⚠️ ON DIT SUR QUOI ON A REGARDÉ. « rien trouvé » et « rien lu » ne veulent pas dire la même
@@ -179,7 +184,7 @@ function Consentement({ tenantId, estAdmin }: { tenantId: string; estAdmin: bool
               <li key={r.messageId} className="flex items-start justify-between gap-3 px-4 py-2" data-testid="refus-possible-ligne">
                 <div className="min-w-0">
                   <p className="truncate text-sm text-ink-900">{r.body}</p>
-                  <p className="text-xs text-ink-400">
+                  <p className="text-xs text-ink-500">
                     {r.profileName ?? r.waId} · {new Date(r.recuLe).toLocaleDateString()}
                   </p>
                 </div>
@@ -230,7 +235,7 @@ function PousseeVersLeSysteme({ tenantId }: { tenantId: string }) {
   }
 
   return (
-    <section className={cardCls} data-testid="poussee-optout">
+    <section className={cadreCls} data-testid="poussee-optout">
       <div className="border-b border-ink-100 px-4 py-3">
         <span className="text-sm font-semibold text-ink-900">{t('Prévenir mon système', 'Notify my system')}</span>
         <p className="mt-1 text-xs text-ink-500">
@@ -241,7 +246,7 @@ function PousseeVersLeSysteme({ tenantId }: { tenantId: string }) {
         </p>
       </div>
       <div className="space-y-2 px-4 py-3">
-        {etat === null && erreur === null && <p className="text-sm text-ink-500">{t('Lecture…', 'Loading…')}</p>}
+        {etat === null && erreur === null && <Squelette forme="lignes" />}
         {etat !== null && etat.requetes.length === 0 && (
           <p className="text-sm text-ink-500" data-testid="poussee-optout-vide">
             {t('Aucun appel déclaré dans ', 'No request declared in ')}
@@ -253,7 +258,7 @@ function PousseeVersLeSysteme({ tenantId }: { tenantId: string }) {
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-xs font-medium text-ink-500">{t('Appel joué à chaque désabonnement', 'Request played on each unsubscribe')}</span>
             <select
-              className="w-full max-w-md rounded border border-ink-200 px-2 py-1.5 text-sm"
+              className="w-full max-w-md rounded-controle border border-ink-200 px-2 py-1.5 text-sm"
               data-testid="poussee-optout-choix"
               value={etat.requestId ?? ''}
               onChange={(e) => { void choisir(e.target.value); }}

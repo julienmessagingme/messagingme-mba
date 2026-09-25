@@ -81,13 +81,13 @@ export function MbaTestPanel({ tenantId, phoneNumberId }: { tenantId: string; ph
           )}
         </div>
 
-        <div className="mt-4 space-y-2 rounded-xl bg-ink-50 p-3" data-testid="mba-test-thread">
+        <div className="mt-4 space-y-2 rounded-carte bg-ink-50 p-3" data-testid="mba-test-thread">
           {tours.length === 0 && (
-            <p className="py-6 text-center text-sm text-ink-400">{t('Écrivez un message pour commencer.', 'Type a message to start.')}</p>
+            <p className="py-6 text-center text-sm text-ink-500">{t('Écrivez un message pour commencer.', 'Type a message to start.')}</p>
           )}
           {tours.map((tour, i) => (
             <div key={`${i}-${tour.texte.slice(0, 16)}`} className={`flex ${tour.role === 'client' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${tour.role === 'client' ? 'bg-brand-500 text-white' : 'bg-white text-ink-900'}`}>
+              <div className={`max-w-[80%] rounded-carte px-3 py-2 text-sm ${tour.role === 'client' ? 'bg-brand-600 text-white' : 'bg-white text-ink-900'}`}>
                 <p className="whitespace-pre-wrap">{tour.texte}</p>
                 {tour.note !== undefined && <p className="mt-1 text-xs opacity-70" data-testid="mba-test-note">{tour.note}</p>}
               </div>

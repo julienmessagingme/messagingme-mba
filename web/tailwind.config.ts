@@ -6,7 +6,31 @@ import { alerte, brand, danger, ink, navy, succes } from './lib/couleurs';
 const config: Config = {
   content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],
   theme: {
+    /**
+     * TROIS RAYONS, ET AUCUN AUTRE N'EST GÉNÉRÉ. Le thème est REMPLACÉ, pas étendu : `rounded-lg`, `rounded-2xl`
+     * ou `rounded` tout court ne produisent plus rien, et `tests/web-formes.test.ts` refuse qu'on les écrive.
+     * La console en portait six (4, 6, 8, 12, 16 px et la pilule), choisis à la main d'un écran à l'autre.
+     * - `controle` : ce qu'on manipule (bouton, champ, menu, onglet, étiquette).
+     * - `carte` : ce qui contient (carte, panneau, modale, bulle de message).
+     * - `full` : la pilule et le rond (pastille d'état, avatar, interrupteur).
+     * Un contrôle posé dans une carte a un rayon plus petit qu'elle : les deux courbes restent parallèles.
+     */
+    borderRadius: {
+      none: '0',
+      controle: '0.375rem',
+      carte: '0.625rem',
+      full: '9999px',
+    },
     extend: {
+      /**
+       * DEUX LARGEURS DE CONTENU. Six coexistaient (`max-w-2xl` à `max-w-7xl`) : une page sautait de largeur en
+       * changeant d'onglet. `liste` pour ce qui aligne des colonnes (tableaux, cartes en grille, écrans denses),
+       * `formulaire` pour ce qui se lit et se remplit de haut en bas (réglages, un seul formulaire).
+       */
+      maxWidth: {
+        liste: '72rem',
+        formulaire: '48rem',
+      },
       colors: {
         brand,
         navy,

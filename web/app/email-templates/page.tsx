@@ -13,6 +13,8 @@ import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { Bouton } from '@/components/Bouton';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
+import { BoutonConfirme } from '@/components/Confirmation';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * Contenu > Modeles d'email : les modeles utilises par le node « Envoi de mail » des scenarios. Deux formats
@@ -83,7 +85,6 @@ function EmailTemplatesInner({ session }: { session: Session }) {
   }
 
   async function remove(m: EmailTemplate) {
-    if (!window.confirm(t(`Supprimer le modèle « ${m.name} » ?`, `Delete template "${m.name}"?`))) return;
     setError(null);
     try {
       await deleteEmailTemplate(session.tenantId, m.id);
@@ -113,7 +114,7 @@ function EmailTemplatesInner({ session }: { session: Session }) {
   }
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="max-w-formulaire space-y-6">
       <div>
         <TitrePage>{t('Modèles d’email', 'Email templates')}</TitrePage>
         <IntroPage>
@@ -123,21 +124,21 @@ function EmailTemplatesInner({ session }: { session: Session }) {
           )}
         </IntroPage>
       </div>
-      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+      {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
       {editing ? (
-        <div className="space-y-3 rounded-2xl border border-ink-200 bg-white p-5">
+        <div className="space-y-3 rounded-carte border border-ink-200 bg-white p-5">
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-500">{t('Nom', 'Name')}</label>
             <input data-testid="email-template-name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className={inputCls} placeholder={t('Confirmation de commande', 'Order confirmation')} />
           </div>
           <div>
             <span className="mb-1 block text-xs font-medium text-ink-500">{t('Format', 'Format')}</span>
-            <div className="inline-flex overflow-hidden rounded-lg border border-ink-200 text-xs">
-              <button type="button" data-testid="email-template-format-basic" onClick={() => setForm((f) => ({ ...f, format: 'basic' }))} className={`px-3 py-1.5 font-medium transition-colors duration-150 ${form.format === 'basic' ? 'bg-brand-500 text-white' : 'text-ink-500 hover:bg-ink-50'}`}>
+            <div className="inline-flex overflow-hidden rounded-controle border border-ink-200 text-xs">
+              <button type="button" data-testid="email-template-format-basic" onClick={() => setForm((f) => ({ ...f, format: 'basic' }))} className={`px-3 py-1.5 font-medium transition-colors duration-150 ${form.format === 'basic' ? 'bg-brand-600 text-white' : 'text-ink-500 hover:bg-ink-50'}`}>
                 {t('Texte simple', 'Plain text')}
               </button>
-              <button type="button" data-testid="email-template-format-html" onClick={() => setForm((f) => ({ ...f, format: 'html' }))} className={`px-3 py-1.5 font-medium transition-colors duration-150 ${form.format === 'html' ? 'bg-brand-500 text-white' : 'text-ink-500 hover:bg-ink-50'}`}>
+              <button type="button" data-testid="email-template-format-html" onClick={() => setForm((f) => ({ ...f, format: 'html' }))} className={`px-3 py-1.5 font-medium transition-colors duration-150 ${form.format === 'html' ? 'bg-brand-600 text-white' : 'text-ink-500 hover:bg-ink-50'}`}>
                 {t('HTML', 'HTML')}
               </button>
             </div>
@@ -195,7 +196,7 @@ function EmailTemplatesInner({ session }: { session: Session }) {
             />
           )}
           <div className="flex justify-end gap-2">
-            <button onClick={cancelEdit} className="rounded-lg px-3 py-2 text-sm text-ink-500 hover:text-ink-900">{t('Annuler', 'Cancel')}</button>
+            <button onClick={cancelEdit} className="rounded-controle px-3 py-2 text-sm text-ink-500 hover:text-ink-900">{t('Annuler', 'Cancel')}</button>
             <Bouton enCours={busy}
               data-testid="email-template-save"
               onClick={() => void save()}
@@ -209,12 +210,12 @@ function EmailTemplatesInner({ session }: { session: Session }) {
         <Bouton onClick={startCreate}>{t('+ Nouveau modèle', '+ New template')}</Bouton>
       )}
 
-      <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
+      <div className="overflow-hidden rounded-carte border border-ink-200 bg-white">
         <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">{t('Modèles', 'Templates')} ({items.length})</div>
         {loading ? (
-          <p className="px-5 py-6 text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
+          <Squelette forme="lignes" className="px-5 py-6" />
         ) : items.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-ink-500">{t('Aucun modèle. Crée-en un ci-dessus.', 'No template yet. Create one above.')}</p>
+          <p className="px-5 py-6 text-sm text-ink-500">{t('Aucun modèle : créez-en un ci-dessus.', 'No template yet: create one above.')}</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -234,7 +235,7 @@ function EmailTemplatesInner({ session }: { session: Session }) {
                   <td className="px-5 py-3 text-right">
                     <div className="flex items-center justify-end gap-3">
                       <button onClick={() => startEdit(m)} className="text-ink-500 hover:text-ink-900">{t('Modifier', 'Edit')}</button>
-                      <button onClick={() => void remove(m)} className="text-danger hover:text-danger-500">{t('Supprimer', 'Delete')}</button>
+                      <BoutonConfirme question={t(`Supprimer « ${m.name} » ?`, `Delete "${m.name}"?`)} onConfirme={() => void remove(m)} libelleConfirmer={t('Supprimer', 'Delete')} className="text-danger hover:text-danger-700">{t('Supprimer', 'Delete')}</BoutonConfirme>
                     </div>
                   </td>
                 </tr>

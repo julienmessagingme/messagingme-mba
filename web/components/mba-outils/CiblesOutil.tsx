@@ -154,12 +154,12 @@ export function CibleConnecteur({ tenantId, requeteId, fixe, onChoisir }: {
       <ul className="flex flex-col gap-1" data-testid="mba-cible-appels">
         {requetes.map((r) => (
           <li key={r.id}
-            className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 ${r.id === requeteId ? 'border-brand-400 bg-brand-50' : 'border-ink-200'}`}>
+            className={`flex flex-wrap items-center justify-between gap-2 rounded-controle border px-3 py-2 ${r.id === requeteId ? 'border-brand-400 bg-brand-50' : 'border-ink-200'}`}>
             <span className="flex flex-wrap items-baseline gap-2">
               <span className="text-sm text-ink-900">{r.label}</span>
               <code className="text-xs text-ink-500">{r.methode} {r.chemin}</code>
               {METHODES_IRREVERSIBLES.includes(r.methode) && (
-                <span className="rounded bg-alerte-50 px-1.5 text-xs text-alerte-800" data-testid={`mba-cible-appel-irreversible-${r.id}`}>
+                <span className="rounded-controle bg-alerte-50 px-1.5 text-xs text-alerte-800" data-testid={`mba-cible-appel-irreversible-${r.id}`}>
                   {t('irréversible', 'irreversible')}
                 </span>
               )}
@@ -283,12 +283,12 @@ export function CibleBloc({ tenantId, workflowId, code, onChange }: {
         </p>
       )}
       {Array.isArray(blocs) && blocs.length > 0 && (
-        <fieldset className="rounded-lg border border-ink-200 p-2" data-testid="mba-cible-bloc-liste">
+        <fieldset className="rounded-controle border border-ink-200 p-2" data-testid="mba-cible-bloc-liste">
           <legend className="px-1 text-xs font-medium text-ink-900">
             {t('Bloc à envoyer : il part SEUL, sans ce qui le suit', 'Block to send: it goes ALONE, without what follows')}
           </legend>
           {blocs.map((b) => (
-            <label key={b.code} className={`flex items-start gap-2 py-1 text-xs ${b.envoyable ? 'text-ink-900' : 'text-ink-400'}`}>
+            <label key={b.code} className={`flex items-start gap-2 py-1 text-xs ${b.envoyable ? 'text-ink-900' : 'text-ink-500'}`}>
               <input type="radio" name="mba-bloc" disabled={!b.envoyable} checked={b.code === code}
                 data-testid={`mba-cible-bloc-${b.code}`} onChange={() => onChange(workflowId, b.code, b.nom)} />
               <span>

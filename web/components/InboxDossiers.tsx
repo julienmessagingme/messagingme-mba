@@ -77,12 +77,12 @@ export function InboxDossiers({ dossier, compteurs, peutVoirAffectation, onChang
       data-testid={`dossier-${cle}`}
       aria-current={memeDossier(dossier, cible) ? 'true' : undefined}
       onClick={() => onChange(cible)}
-      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors duration-150 ${
+      className={`flex w-full items-center gap-2 rounded-controle px-2.5 py-1.5 text-left text-sm transition-colors duration-150 ${
         memeDossier(dossier, cible) ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100 hover:text-ink-900'
       }`}
     >
       <span className="truncate">{label}</span>
-      <span data-testid={`dossier-n-${cle}`} className="ml-auto shrink-0 text-xs tabular-nums text-ink-400">({n})</span>
+      <span data-testid={`dossier-n-${cle}`} className="ml-auto shrink-0 text-xs tabular-nums text-ink-500">({n})</span>
     </button>
   );
 

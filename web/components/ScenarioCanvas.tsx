@@ -8,6 +8,7 @@ import { nodeMetaOf } from '@/lib/nodeMeta';
 import type { WorkflowNodeType } from '@/lib/api';
 import type { BlocMesurable } from '@/lib/mesures-scenario';
 import { ink } from '@/lib/couleurs';
+import { Icone } from '@/components/Icone';
 
 /**
  * Le scénario tel qu'il est DESSINÉ dans l'onglet Scénario, en lecture seule.
@@ -57,22 +58,22 @@ function CarteBloc({ data }: NodeProps) {
     ? d.actif
       ? 'border-brand-500 bg-white ring-2 ring-brand-200 shadow-mm-md'
       : 'border-ink-300 bg-white shadow-mm-sm hover:border-brand-300'
-    : 'border-dashed border-ink-200 bg-ink-50 shadow-none';
+    : 'border-ink-100 bg-ink-50 shadow-none';
 
   return (
     <div
       data-testid={d.mesurable ? 'bloc-mesurable' : 'bloc-grise'}
-      className={`w-44 rounded-xl border transition-colors duration-150 ${styleBloc} ${d.mesurable ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+      className={`w-44 rounded-carte border transition-colors duration-150 ${styleBloc} ${d.mesurable ? 'cursor-pointer' : 'cursor-not-allowed'}`}
       title={d.mesurable ? undefined : t('Ce bloc n’envoie pas de message : il n’y a rien à y mesurer.', 'This block sends no message: there is nothing to measure.')}
     >
       {/* Poignées présentes mais INERTES : sans elles React Flow ne saurait pas où accrocher les flèches, et
           le dessin perdrait la forme qu'il a dans l'éditeur. */}
       <Handle type="target" position={Position.Top} isConnectable={false} className="!h-2 !w-2 !border-0 !bg-ink-300" />
-      <div className={`flex items-center gap-1.5 rounded-t-xl border-b px-2 py-1 ${d.mesurable ? 'border-ink-200 bg-white' : 'border-ink-100 bg-ink-50'}`}>
-        <span className="text-xs">{meta.emoji}</span>
-        <span className={`truncate text-[11px] font-semibold ${d.mesurable ? 'text-ink-900' : 'text-ink-400'}`}>{t(...meta.label)}</span>
+      <div className={`flex items-center gap-1.5 rounded-t-carte border-b px-2 py-1 ${d.mesurable ? 'border-ink-200 bg-white' : 'border-ink-100 bg-ink-50'}`}>
+        <Icone nom={meta.icone} taille="petite" />
+        <span className={`truncate text-[11px] font-semibold ${d.mesurable ? 'text-ink-900' : 'text-ink-500'}`}>{t(...meta.label)}</span>
         {d.retenues > 0 && (
-          <span className="ml-auto shrink-0 rounded-full bg-brand-500 px-1.5 text-[10px] font-semibold text-white">{d.retenues}</span>
+          <span className="ml-auto shrink-0 rounded-full bg-brand-600 px-1.5 text-[10px] font-semibold text-white">{d.retenues}</span>
         )}
       </div>
       {/* Le resume n'est affiche que s'il APPORTE quelque chose : sur un bloc grise, `titre` vaut souvent le
@@ -82,7 +83,7 @@ function CarteBloc({ data }: NodeProps) {
           une chaîne traduite (`t(...meta.label)`) à une chaîne qui ne l'était pas, donc en anglais elle
           n'était JAMAIS égale et le doublon revenait sur tous les blocs. */}
       {d.titrePropre && (
-        <div className={`truncate px-2 py-1.5 text-[11px] ${d.mesurable ? 'text-ink-500' : 'text-ink-400'}`}>{d.titre}</div>
+        <div className={`truncate px-2 py-1.5 text-[11px] ${d.mesurable ? 'text-ink-500' : 'text-ink-500'}`}>{d.titre}</div>
       )}
       <Handle type="source" position={Position.Bottom} isConnectable={false} className="!h-2 !w-2 !border-0 !bg-ink-300" />
     </div>
@@ -152,7 +153,7 @@ export function ScenarioCanvas({ graph, blocs, selectionne, onSelect, retenuesPa
   }
 
   return (
-    <div className="h-[30rem] w-full overflow-hidden rounded-xl border border-ink-200 bg-ink-50/40" data-testid="scenario-canvas">
+    <div className="h-[30rem] w-full overflow-hidden rounded-carte border border-ink-200 bg-ink-50/40" data-testid="scenario-canvas">
       <ReactFlow
         nodes={nodes}
         edges={edges}

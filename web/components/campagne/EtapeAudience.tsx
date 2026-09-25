@@ -12,6 +12,8 @@ import { ListeDestinataires, useContactsFiltres, type RestaurationSelection } fr
 import { SourceWebhook } from '@/components/campagne/SourceWebhook';
 import type { CapacitesEspace, EtatCampagne, ReferencesContenu } from '@/components/campagne/AssistantCampagne';
 import { TitrePage } from '@/components/TitrePage';
+import { LogoHubSpot } from '@/components/LogosCanaux';
+import { Icone } from '@/components/Icone';
 
 /**
  * ÉTAPE 4 : QUI reçoit.
@@ -142,18 +144,20 @@ export function EtapeAudience({
       {/* Sélecteur de SOURCE, mêmes entrées et même geste que l'écran en service. Le webhook est rangé
           derrière les trois autres parce qu'il n'est pas une quatrième façon de constituer une liste :
           c'est l'ABSENCE de liste, et la campagne reste ouverte au lieu de partir sur un ensemble figé. */}
-      <div className="mt-4 inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-sm" data-testid="audience-sources">
+      <div className="mt-4 inline-flex gap-1 rounded-controle bg-ink-100 p-1 text-sm" data-testid="audience-sources">
         <BoutonSource
           actif={audience.source === 'crm'}
           desactive={importEnCours}
           onClick={() => choisirSource('crm')}
-          libelle="📇 Liste de contacts"
+          libelle="Liste de contacts"
+          icone={<Icone nom="carnet" taille="petite" />}
         />
         <BoutonSource
           actif={audience.source === 'fichier'}
           desactive={importEnCours}
           onClick={() => choisirSource('fichier')}
-          libelle="📄 Import fichier"
+          libelle="Import fichier"
+          icone={<Icone nom="fichier" taille="petite" />}
         />
         {/* ⚠️ HUBSPOT N'APPARAÎT PAS QUAND LE CONNECTEUR EST ÉTEINT (demande de Julien du 2026-08-26) :
             un bouton grisé pour une intégration qu'on n'a pas est du bruit, pas une information. En
@@ -163,7 +167,8 @@ export function EtapeAudience({
             actif={audience.source === 'hubspot'}
             desactive={importEnCours || capacites.hubspotEnPause}
             onClick={() => choisirSource('hubspot')}
-            libelle="🔗 HubSpot"
+            libelle="HubSpot"
+            icone={<span aria-hidden="true"><LogoHubSpot className="h-3.5 w-3.5" /></span>}
             aide={capacites.hubspotEnPause ? "Synchronisation HubSpot en pause. Réactive-la sur l'accueil." : undefined}
             testId="audience-source-hubspot"
           />
@@ -172,7 +177,8 @@ export function EtapeAudience({
           actif={fil}
           desactive={importEnCours}
           onClick={() => choisirSource('webhook')}
-          libelle="🪝 Au fil de l’eau"
+          libelle="Au fil de l’eau"
+          icone={<Icone nom="webhook" taille="petite" />}
           testId="audience-source-webhook"
         />
       </div>
@@ -211,7 +217,7 @@ export function EtapeAudience({
               /* 🔴 LA SÉLECTION REPRISE A MAIGRI DEPUIS. On le DIT : revenir sur un brouillon qui vise
                  moins de monde qu'on ne l'a laissé, sans explication, est pire que de tout recocher,
                  parce qu'on ne s'en aperçoit pas. */
-              <div data-testid="selection-reduite" className="mb-2 flex items-start justify-between gap-2 rounded-lg bg-alerte-50 px-3 py-2 text-xs text-ink-900">
+              <div data-testid="selection-reduite" className="mb-2 flex items-start justify-between gap-2 rounded-controle bg-alerte-50 px-3 py-2 text-xs text-ink-900">
                 <span>
                   {selectionReduite} contact(s) de votre sélection ne sont plus là (supprimés, ou sortis de
                   ces filtres depuis). Le reste est bien resté coché.
@@ -221,9 +227,7 @@ export function EtapeAudience({
                   onClick={() => setSelectionReduite(null)}
                   aria-label="Fermer"
                   className="shrink-0 leading-none text-ink-400 hover:text-ink-900"
-                >
-                  ×
-                </button>
+                ><Icone nom="fermer" taille="petite" /></button>
               </div>
             ) : undefined}
           />
@@ -261,9 +265,11 @@ export function EtapeAudience({
  * par rôle ne peut désigner la commande sans réciter sa phrase entière.
  */
 function BoutonSource({
-  actif, desactive, onClick, libelle, aide, testId,
+  actif, desactive, onClick, libelle, icone, aide, testId,
 }: {
   actif: boolean;
+  /** Masquée aux lecteurs d'écran : le nom accessible reste le libellé, et lui seul. */
+  icone?: React.ReactNode;
   desactive?: boolean;
   onClick: () => void;
   libelle: string;
@@ -277,8 +283,9 @@ function BoutonSource({
       onClick={onClick}
       {...(aide ? { title: aide } : {})}
       {...(testId ? { 'data-testid': testId } : {})}
-      className={`rounded-md px-2.5 py-1 disabled:cursor-not-allowed disabled:opacity-40 ${actif ? 'bg-white font-medium text-brand-700' : 'text-ink-500 hover:text-ink-900'}`}
+      className={`inline-flex items-center gap-1.5 rounded-controle px-2.5 py-1 disabled:cursor-not-allowed disabled:opacity-40 ${actif ? 'bg-white font-medium text-brand-700' : 'text-ink-500 hover:text-ink-900'}`}
     >
+      {icone}
       {libelle}
     </button>
   );

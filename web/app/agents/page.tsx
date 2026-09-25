@@ -29,6 +29,8 @@ import { fmtCost } from '@/lib/format';
 import type { Locale } from '@/lib/locale';
 import { Bouton } from '@/components/Bouton';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
+import { useConfirmation } from '@/components/Confirmation';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * Le tarif d'un modèle, entre parenthèses, tel que Julien l'a demandé : le prix par million de jetons ENVOYÉS
@@ -76,6 +78,7 @@ export default function AgentsPage() {
 
 function Ecran({ tenantId }: { tenantId: string }) {
   const t = useT();
+  const confirmer = useConfirmation();
   const [agents, setAgents] = useState<AgentResume[] | null>(null);
   const [ouvert, setOuvert] = useState<AgentComplet | null>(null);
   // L'onglet ET l'agent ouvert vivent dans l'adresse, comme l'écran MBA : la fiche est partageable, un
@@ -248,10 +251,10 @@ function Ecran({ tenantId }: { tenantId: string }) {
     if (busy) return;
     // Confirmation NATIVE : la suppression emporte les conversations, les outils et la base de connaissance
     // de cet agent, et le repo n'a pas de boîte de dialogue maison.
-    if (!window.confirm(t(
+    if (!(await confirmer({ titre: t('Supprimer l’agent', 'Delete the agent'), message: t(
       `Supprimer « ${cible.label} » ? Ses conversations, ses outils et sa base de connaissance partent avec lui, et les blocs de scénario qui l'utilisent cesseront de répondre.`,
       `Delete “${cible.label}”? Its conversations, tools and knowledge base go with it, and the scenario blocks using it will stop answering.`,
-    ))) return;
+    ), confirmer: t('Supprimer', 'Delete') }))) return;
     setBusy(true);
     setErreur(null);
     try {
@@ -305,7 +308,7 @@ function Ecran({ tenantId }: { tenantId: string }) {
 
   if (ouvert) {
     return (
-      <div className="mx-auto flex max-w-6xl flex-col gap-4">
+      <div className="mx-auto flex max-w-liste flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <button onClick={() => { setOuvert(null); aller(null, ONGLET_PAR_DEFAUT); void charger(); }} className="text-sm text-brand-600 hover:underline">
             ← {t('Retour aux agents', 'Back to agents')}
@@ -315,7 +318,7 @@ function Ecran({ tenantId }: { tenantId: string }) {
             disabled={busy}
             onClick={() => void supprimer(ouvert)}
             title={t('Supprimer cet agent', 'Delete this agent')}
-            className="rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-danger hover:bg-danger-50 disabled:opacity-40"
+            className="rounded-controle border border-ink-300 px-3 py-1.5 text-sm text-danger hover:bg-danger-50 disabled:opacity-40"
           >
             {t('Supprimer', 'Delete')}
           </button>
@@ -452,10 +455,10 @@ function Ecran({ tenantId }: { tenantId: string }) {
     );
   }
 
-  // ⚠️ `max-w-6xl` COMME LA FICHE, et c'est le seul intérêt de le changer ici : à deux largeurs différentes,
+  // ⚠️ `max-w-liste` COMME LA FICHE, et c'est le seul intérêt de le changer ici : à deux largeurs différentes,
   // la page sautait de 896 à 1152 px au moment d'ouvrir un agent, puis en sens inverse en revenant.
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-4">
+    <div className="mx-auto flex max-w-liste flex-col gap-4">
       {solde !== null && <Solde microEur={solde} />}
       <div>
         <p className={kickerCls}>{t('Agent IA', 'AI agent')}</p>
@@ -495,7 +498,7 @@ function Ecran({ tenantId }: { tenantId: string }) {
         </p>
       </div>
       <div className={`${cardCls} flex flex-col gap-2`}>
-        {agents === null && <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>}
+        {agents === null && <Squelette forme="lignes" />}
         {agents?.length === 0 && <p className="text-sm text-ink-500">{t('Aucun agent pour le moment.', 'No agent yet.')}</p>}
         {/* Une LIGNE, pas un bouton : la suppression vit ici, et un bouton dans un bouton n'est pas du HTML
             valide (le navigateur défait l'imbrication, et le clic devient imprévisible). */}
@@ -506,7 +509,7 @@ function Ecran({ tenantId }: { tenantId: string }) {
           return (
             <div
               key={a.id}
-              className="flex items-center gap-2 rounded-lg border border-ink-200 pr-2 hover:bg-ink-50"
+              className="flex items-center gap-2 rounded-controle border border-ink-200 pr-2 hover:bg-ink-50"
             >
               <button
                 data-testid={`agent-ligne-${a.id}`}
@@ -543,7 +546,7 @@ function Ecran({ tenantId }: { tenantId: string }) {
                 onClick={() => void supprimer({ id: a.id, label: a.label })}
                 title={t('Supprimer cet agent', 'Delete this agent')}
                 aria-label={t(`Supprimer ${a.label}`, `Delete ${a.label}`)}
-                className="shrink-0 rounded-lg border border-ink-300 px-2 py-1 text-xs text-danger hover:bg-danger-50 disabled:opacity-40"
+                className="shrink-0 rounded-controle border border-ink-300 px-2 py-1 text-xs text-danger hover:bg-danger-50 disabled:opacity-40"
               >
                 {t('Supprimer', 'Delete')}
               </button>
@@ -859,7 +862,7 @@ function OngletModele({ agent, tenantId, busy, onSave }: {
           plafond existe toujours et protège toujours d'une boucle qui s'emballe, il n'est simplement plus
           proposé au réglage ici. */}
       {consoLue && conso !== null && (
-        <div className="rounded-xl border border-ink-200 p-4" data-testid="agent-consommation">
+        <div className="rounded-carte border border-ink-200 p-4" data-testid="agent-consommation">
           <p className="text-sm font-medium text-ink-900">
             {t(`Consommation sur ${conso.jours} jours`, `Usage over ${conso.jours} days`)}
           </p>
@@ -876,11 +879,11 @@ function OngletModele({ agent, tenantId, busy, onSave }: {
             ].map((x) => (
               <div key={x.k} data-testid={`agent-conso-${x.k}`}>
                 <dd className="text-lg font-semibold tabular-nums text-ink-900">{x.v}</dd>
-                <dt className="text-xs text-ink-400">{x.l}</dt>
+                <dt className="text-xs text-ink-500">{x.l}</dt>
               </div>
             ))}
           </dl>
-          <p className="mt-3 text-xs text-ink-400">
+          <p className="mt-3 text-xs text-ink-500">
             {t(
               'Compté sur les conversations de cet agent. Une conversation encore en cours y figure déjà, avec ce qu’elle a consommé jusqu’ici.',
               'Counted over this agent’s conversations. An ongoing conversation already appears, with what it has used so far.',
@@ -891,7 +894,7 @@ function OngletModele({ agent, tenantId, busy, onSave }: {
               laisserait un client multiplier ses jetons par le tarif affiché et trouver un autre chiffre,
               sans savoir lequel croire. Décision de Julien du 2026-09-09 : afficher l'écart, pas le corriger,
               tant que la facturation Stripe n'existe pas. */}
-          <p className="mt-1 text-xs text-ink-400" data-testid="agent-conso-base">
+          <p className="mt-1 text-xs text-ink-500" data-testid="agent-conso-base">
             {t(
               'Ce montant est le coût réellement décompté. Les tarifs de la liste ci-dessus incluent notre commission, ils sont donc un peu plus élevés.',
               'This amount is the cost actually deducted. The rates in the list above include our commission, so they are slightly higher.',

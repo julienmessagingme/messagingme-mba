@@ -25,7 +25,7 @@ export function PastilleAgentMba({ actif }: { actif: boolean }) {
   return (
     <span
       data-testid="pastille-agent-mba"
-      className="inline-flex items-center gap-1.5 rounded-full bg-ink-50 px-2.5 py-1 text-xs font-medium text-ink-900"
+      className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-900"
     >
       <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: actif ? DOT_HEX.green : DOT_HEX.grey }} />
       {/* ⚠️ « ÉTEINT » ET NON « INACTIF » : inactif se lit comme « rien ne se passe en ce moment », éteint dit

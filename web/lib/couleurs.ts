@@ -12,8 +12,11 @@
  * - `DEFAULT` pointe la nuance qu'on lit sur fond blanc : le corail pur (500) ne tient pas 4,5:1 en texte,
  *   la 600 si.
  *
- * Le texte gris n'a que TROIS niveaux : `ink-900` (courant), `ink-500` (secondaire), `ink-400` (tertiaire).
- * Les autres nuances de `ink` restent pour les fonds, les bordures et les filets.
+ * Le texte gris n'a que DEUX niveaux : `ink-900` (courant) et `ink-500` (secondaire, 7:1 sur blanc).
+ * `ink-400` (4,22:1, sous le seuil de 4,5 d'un texte) est RÉSERVÉ à ce qui n'est pas un texte à lire : les
+ * icônes, les indications de saisie (`placeholder:`), les états désactivés et le « n/d » d'une valeur absente
+ * (relecture de la passe 1, 2026-09-25). Les autres nuances de `ink` restent pour les fonds, les bordures et
+ * les filets. Et un texte blanc se pose sur `brand-600`, jamais sur `brand-500` (4,15:1).
  */
 export const brand = {
   50: '#E0F2FF',

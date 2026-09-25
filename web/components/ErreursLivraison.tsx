@@ -4,10 +4,11 @@ import { useEffect, useState } from 'react';
 import { listErreursLivraison, listErreursSysteme, type ErreurLivraison, type EchecAppelSysteme } from '@/lib/api';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
-import { cardCls, inputCls } from '@/lib/ui';
+import { cadreCls, cardCls, inputCls } from '@/lib/ui';
 import { toCsv, downloadCsv } from '@/lib/csv';
 import { csvErreursLivraison, libelleOrigine } from '@/lib/erreurs-livraison';
 import { Bouton } from '@/components/Bouton';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * LE JOURNAL DES ERREURS DE LIVRAISON, à côté du journal des actions.
@@ -112,13 +113,13 @@ export function ErreursLivraison({ tenantId }: { tenantId: string }) {
         )}
       </form>
 
-      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
-      {!error && erreurs === null && <p className="text-sm text-ink-400">{t('Chargement…', 'Loading…')}</p>}
+      {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+      {!error && erreurs === null && <Squelette forme="lignes" />}
       {!error && erreurs?.length === 0 && (
-        <p className="text-sm text-ink-400" data-testid="erreurs-vide">
+        <p className="text-sm text-ink-500" data-testid="erreurs-vide">
           {cherche
             ? t('Aucune erreur ne correspond.', 'No error matches.')
-            : t('Aucune erreur de livraison. C’est la bonne nouvelle.', 'No delivery error. That is the good news.')}
+            : t('Aucune erreur de livraison.', 'No delivery error.')}
         </p>
       )}
 
@@ -126,8 +127,8 @@ export function ErreursLivraison({ tenantId }: { tenantId: string }) {
         <ul className="max-h-96 divide-y divide-ink-100 overflow-y-auto">
           {erreurs.map((e) => (
             <li key={e.recipientId} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2 text-sm">
-              <span className="w-36 shrink-0 text-xs tabular-nums text-ink-400">{stamp(e.at)}</span>
-              <span className="rounded px-1.5 py-0.5 text-xs font-medium bg-danger-50 text-danger-700">
+              <span className="w-36 shrink-0 text-xs tabular-nums text-ink-500">{stamp(e.at)}</span>
+              <span className="rounded-controle px-1.5 py-0.5 text-xs font-medium bg-danger-50 text-danger-700">
                 {e.code === null ? t('erreur', 'error') : e.code}
               </span>
               <span className="font-mono text-xs text-ink-500">{e.telephone}</span>
@@ -137,7 +138,7 @@ export function ErreursLivraison({ tenantId }: { tenantId: string }) {
                   des deux, c'est notre traitement du message ENTRANT qui n'a pas abouti, et un message libre
                   non délivré vient du téléphone d'en face, hors de toute campagne. Chercher au mauvais
                   endroit coûte cher. */}
-              <span className="text-xs text-ink-400">{libelleOrigine(e, t)}</span>
+              <span className="text-xs text-ink-500">{libelleOrigine(e, t)}</span>
               <span className="w-full text-xs text-ink-500">
                 {sens(e.code) || e.message || t('sans détail', 'no detail')}
               </span>
@@ -216,7 +217,7 @@ export function ErreursSysteme({ tenantId }: { tenantId: string }) {
   };
 
   return (
-    <section className={cardCls} data-testid="erreurs-systeme">
+    <section className={cadreCls} data-testid="erreurs-systeme">
       <div className="border-b border-ink-100 px-4 py-3">
         <span className="text-sm font-semibold text-ink-900">{t('Erreurs système', 'System errors')}</span>
         <p className="mt-1 text-xs text-ink-500">
@@ -228,10 +229,10 @@ export function ErreursSysteme({ tenantId }: { tenantId: string }) {
       </div>
 
       {error !== null && <p className="px-4 py-3 text-sm text-danger-700" data-testid="erreurs-systeme-erreur">{error}</p>}
-      {error === null && erreurs === null && <p className="px-4 py-3 text-sm text-ink-500">{t('Lecture…', 'Loading…')}</p>}
+      {error === null && erreurs === null && <Squelette forme="lignes" className="px-4 py-3" />}
       {error === null && erreurs !== null && erreurs.length === 0 && (
         <p className="px-4 py-3 text-sm text-ink-500" data-testid="erreurs-systeme-vide">
-          {t('Aucun appel en échec. Vos connecteurs répondent.', 'No failed call. Your connectors are answering.')}
+          {t('Aucun appel en échec.', 'No failed call.')}
         </p>
       )}
 
@@ -239,7 +240,7 @@ export function ErreursSysteme({ tenantId }: { tenantId: string }) {
         <ul className="divide-y divide-ink-100">
           {erreurs.map((e) => (
             <li key={e.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2" data-testid="erreur-systeme-ligne">
-              <span className="text-xs text-ink-400">{formatDate(e.at, locale)} {hourMin(e.at, locale)}</span>
+              <span className="text-xs text-ink-500">{formatDate(e.at, locale)} {hourMin(e.at, locale)}</span>
               <span className="text-sm text-ink-900">{e.nom}</span>
               <span className="text-xs text-ink-500">{quiAppelait(e.source)}</span>
               <span className="w-full text-xs text-ink-500">

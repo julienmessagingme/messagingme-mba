@@ -10,6 +10,7 @@ import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { RCS_TEXTE_MAX } from '@/lib/rcs-limits';
 import { Bouton } from '@/components/Bouton';
+import { Modale } from '@/components/Modale';
 
 /**
  * Envoyer un message RCS depuis une conversation.
@@ -77,101 +78,95 @@ export function InboxRcsPanel({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-mm-lg" onClick={(e) => e.stopPropagation()} data-testid="inbox-rcs-panel">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-ink-900">{t('Envoyer un message RCS', 'Send an RCS message')}</h3>
-          <button onClick={onClose} className="text-ink-400 hover:text-ink-900">×</button>
-        </div>
-        <p className="mt-1 text-xs text-ink-500">
-          {t('Sous votre agent de marque, sans template à faire approuver et sans fenêtre de 24 h.', 'Under your brand agent, with no template to get approved and no 24h window.')}
-        </p>
+    <Modale titre={t('Envoyer un message RCS', 'Send an RCS message')} testId="inbox-rcs-panel" onClose={onClose}>
+      <p className="mt-1 text-xs text-ink-500">
+        {t('Sous votre agent de marque, sans template à faire approuver et sans fenêtre de 24 h.', 'Under your brand agent, with no template to get approved and no 24h window.')}
+      </p>
 
-        <div className="mt-3 flex gap-1 rounded-lg bg-ink-50 p-1" role="group">
-          {([['bibliotheque', t('Message enregistré', 'Saved message')], ['libre', t('Réponse libre', 'Free-form reply')]] as const).map(([v, libelle]) => (
-            <button
-              key={v}
-              onClick={() => setMode(v)}
-              data-testid={`inbox-rcs-mode-${v}`}
-              className={`flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors duration-150 ${mode === v ? 'bg-white text-ink-900' : 'text-ink-500 hover:text-ink-900'}`}
-            >
-              {libelle}
-            </button>
-          ))}
-        </div>
+      <div className="mt-3 flex gap-1 rounded-controle bg-ink-50 p-1" role="group">
+        {([['bibliotheque', t('Message enregistré', 'Saved message')], ['libre', t('Réponse libre', 'Free-form reply')]] as const).map(([v, libelle]) => (
+          <button
+            key={v}
+            onClick={() => setMode(v)}
+            data-testid={`inbox-rcs-mode-${v}`}
+            className={`flex-1 rounded-controle px-2 py-1 text-xs font-medium transition-colors duration-150 ${mode === v ? 'bg-white text-ink-900' : 'text-ink-500 hover:text-ink-900'}`}
+          >
+            {libelle}
+          </button>
+        ))}
+      </div>
 
-        {libre ? (
-          <div className="mt-3">
-            <label className="mb-1 block text-sm font-medium text-ink-900">{t('Votre réponse', 'Your reply')}</label>
-            <textarea
-              value={texte}
-              onChange={(e) => setTexte(e.target.value)}
-              rows={4}
-              data-testid="inbox-rcs-texte"
-              placeholder={t('Écrivez votre réponse…', 'Write your reply…')}
-              className={inputCls}
-            />
-            <p className="mt-1 text-xs text-ink-400">
-              {t('Part tel quel sous votre agent de marque. ', 'Sent as-is under your brand agent. ')}
-              {texte.trim().length}/{RCS_TEXTE_MAX}
-            </p>
-          </div>
-        ) : (
+      {libre ? (
         <div className="mt-3">
-          <label className="mb-1 block text-sm font-medium text-ink-900">{t('Message enregistré', 'Saved message')}</label>
-          {messages.length === 0 ? (
-            <p className="text-xs text-alerte-700">
-              {t('Aucun message RCS enregistré. Créez-en un dans Contenu → Messages RCS.', 'No saved RCS message. Create one in Content → RCS messages.')}
+          <label className="mb-1 block text-sm font-medium text-ink-900">{t('Votre réponse', 'Your reply')}</label>
+          <textarea
+            value={texte}
+            onChange={(e) => setTexte(e.target.value)}
+            rows={4}
+            data-testid="inbox-rcs-texte"
+            placeholder={t('Écrivez votre réponse…', 'Write your reply…')}
+            className={inputCls}
+          />
+          <p className="mt-1 text-xs text-ink-500">
+            {t('Part tel quel sous votre agent de marque. ', 'Sent as-is under your brand agent. ')}
+            {texte.trim().length}/{RCS_TEXTE_MAX}
+          </p>
+        </div>
+      ) : (
+      <div className="mt-3">
+        <label className="mb-1 block text-sm font-medium text-ink-900">{t('Message enregistré', 'Saved message')}</label>
+        {messages.length === 0 ? (
+          <p className="text-xs text-alerte-700">
+            {t('Aucun message RCS enregistré : créez-en un dans Contenu > Messages RCS.', 'No saved RCS message: create one in Content > RCS messages.')}
+          </p>
+        ) : (
+          <select value={selId} onChange={(e) => setSelId(e.target.value)} data-testid="inbox-rcs-select" className={inputCls}>
+            <option value="" disabled>{t('Choisir…', 'Choose…')}</option>
+            {messages.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+        )}
+      </div>
+
+      )}
+
+      {sel && !libre && (
+        <div className="mt-3">
+          {brouillon || carrousel ? (
+            <>
+              {brouillon ? <RcsPreview brouillon={brouillon} /> : carrousel && <RcsCarouselPreview brouillon={carrousel} />}
+              <p className="mt-1 text-xs text-ink-500">
+                {t('Les variables {{champ}} seront remplacées par la fiche de ce contact à l’envoi.', 'The {{field}} variables will be filled in from this contact at send time.')}
+              </p>
+            </>
+          ) : sel.content === null ? (
+            // ⚠️ LE SERVEUR REFUSE CET ENVOI (« son format n'est plus reconnu ») : annoncer qu'il partira serait
+            // une promesse fausse, et c'est ce que ce panneau disait jusqu'au 2026-09-21.
+            <p className="text-xs text-alerte-700" data-testid="inbox-rcs-illisible">
+              {t('Ce message n’est plus lisible : son format n’est plus reconnu, il ne peut pas partir. Refaites-le dans Contenu > Messages RCS.', 'This message is no longer readable: its format is not recognised, it cannot be sent. Rebuild it in Content > RCS messages.')}
             </p>
           ) : (
-            <select value={selId} onChange={(e) => setSelId(e.target.value)} data-testid="inbox-rcs-select" className={inputCls}>
-              <option value="" disabled>{t('Choisir…', 'Choose…')}</option>
-              {messages.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select>
+            <p className="text-xs text-alerte-700">
+              {t('Ce message a un format que l’aperçu ne sait pas dessiner (carte à titre). Il partira tel qu’il a été enregistré.', 'This message has a format the preview cannot draw (titled card). It will go out as saved.')}
+            </p>
           )}
         </div>
+      )}
 
-        )}
+      {error && <p className="mt-3 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700" data-testid="inbox-rcs-error">{error}</p>}
 
-        {sel && !libre && (
-          <div className="mt-3">
-            {brouillon || carrousel ? (
-              <>
-                {brouillon ? <RcsPreview brouillon={brouillon} /> : carrousel && <RcsCarouselPreview brouillon={carrousel} />}
-                <p className="mt-1 text-xs text-ink-400">
-                  {t('Les variables {{champ}} seront remplacées par la fiche de ce contact à l’envoi.', 'The {{field}} variables will be filled in from this contact at send time.')}
-                </p>
-              </>
-            ) : sel.content === null ? (
-              // ⚠️ LE SERVEUR REFUSE CET ENVOI (« son format n'est plus reconnu ») : annoncer qu'il partira serait
-              // une promesse fausse, et c'est ce que ce panneau disait jusqu'au 2026-09-21.
-              <p className="text-xs text-alerte-700" data-testid="inbox-rcs-illisible">
-                {t('Ce message n’est plus lisible : son format n’est plus reconnu, il ne peut pas partir. Refaites-le dans Contenu > Messages RCS.', 'This message is no longer readable: its format is not recognised, it cannot be sent. Rebuild it in Content > RCS messages.')}
-              </p>
-            ) : (
-              <p className="text-xs text-alerte-700">
-                {t('Ce message a un format que l’aperçu ne sait pas dessiner (carte à titre). Il partira tel qu’il a été enregistré.', 'This message has a format the preview cannot draw (titled card). It will go out as saved.')}
-              </p>
-            )}
-          </div>
-        )}
-
-        {error && <p className="mt-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700" data-testid="inbox-rcs-error">{error}</p>}
-
-        <div className="mt-4 flex gap-2">
-          <Bouton variante="secondaire" onClick={onClose} className="flex-1">
-            {t('Annuler', 'Cancel')}
-          </Bouton>
-          <Bouton enCours={busy}
-            onClick={() => void envoyer()}
-            disabled={busy || !pretAEnvoyer}
-            data-testid="inbox-rcs-send"
-            className="flex-1"
-          >
-            {busy ? t('Envoi...', 'Sending...') : t('Envoyer en RCS', 'Send over RCS')}
-          </Bouton>
-        </div>
+      <div className="mt-4 flex gap-2">
+        <Bouton variante="secondaire" onClick={onClose} className="flex-1">
+          {t('Annuler', 'Cancel')}
+        </Bouton>
+        <Bouton enCours={busy}
+          onClick={() => void envoyer()}
+          disabled={busy || !pretAEnvoyer}
+          data-testid="inbox-rcs-send"
+          className="flex-1"
+        >
+          {busy ? t('Envoi...', 'Sending...') : t('Envoyer en RCS', 'Send over RCS')}
+        </Bouton>
       </div>
-    </div>
+    </Modale>
   );
 }

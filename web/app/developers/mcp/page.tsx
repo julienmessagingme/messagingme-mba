@@ -92,7 +92,7 @@ function McpInner({ session }: { session: Session | null }) {
             liste n'a pas pu être lue, on se tait : annoncer « aucune clé » à quelqu'un qui en a une l'enverrait
             en créer une seconde, et ce serait notre faute. */}
         {etatCle === 'aucune' && (
-          <div data-testid="mcp-sans-cle" className="rounded-lg border border-alerte-300 bg-alerte-50 px-3 py-2 text-sm text-alerte-900">
+          <div data-testid="mcp-sans-cle" className="rounded-controle border border-alerte-300 bg-alerte-50 px-3 py-2 text-sm text-alerte-900">
             {t(
               'Cet espace n’a aucune clé d’API avec un droit MCP : la commande ci-dessus sera refusée telle quelle.',
               'This workspace has no API key with an MCP scope: the command above will be rejected as is.',

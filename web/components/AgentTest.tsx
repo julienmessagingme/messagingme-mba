@@ -104,8 +104,8 @@ export function AgentTest({ tenantId, agentId }: { tenantId: string; agentId: st
             key={`${i}-${tour.content.slice(0, 24)}`}
             data-testid={`test-tour-${tour.role}`}
             className={tour.role === 'user'
-              ? 'self-end max-w-[85%] rounded-2xl bg-brand-600 px-3 py-2 text-sm text-white'
-              : 'self-start max-w-[85%] rounded-2xl bg-ink-100 px-3 py-2 text-sm text-ink-900'}
+              ? 'self-end max-w-[85%] rounded-carte bg-brand-600 px-3 py-2 text-sm text-white'
+              : 'self-start max-w-[85%] rounded-carte bg-ink-100 px-3 py-2 text-sm text-ink-900'}
           >
             {tour.content}
           </div>
@@ -200,7 +200,7 @@ function LigneEssai({ essai, busy, onReprendre }: { essai: EssaiArchive; busy: b
   // La DERNIÈRE question posée, pas la première : c'est elle qui a produit la réponse qu'on relit.
   const question = [...essai.messages].reverse().find((m) => m.role === 'user')?.content ?? '';
   return (
-    <div data-testid={`test-essai-${essai.id}`} className="flex flex-col gap-1 rounded-lg border border-ink-200 px-3 py-2">
+    <div data-testid={`test-essai-${essai.id}`} className="flex flex-col gap-1 rounded-controle border border-ink-200 px-3 py-2">
       <div className="flex flex-wrap items-center gap-2 text-xs text-ink-500">
         <span>{`${dayLabel(essai.createdAt, locale)} ${hourMin(essai.createdAt, locale)}`}</span>
         <span data-testid={`test-essai-cout-${essai.id}`}>
@@ -232,8 +232,8 @@ function LigneEssai({ essai, busy, onReprendre }: { essai: EssaiArchive; busy: b
             <div
               key={`${i}-${m.content.slice(0, 24)}`}
               className={m.role === 'user'
-                ? 'self-end max-w-[85%] rounded-2xl bg-brand-600 px-3 py-2 text-sm text-white'
-                : 'self-start max-w-[85%] rounded-2xl bg-ink-100 px-3 py-2 text-sm text-ink-900'}
+                ? 'self-end max-w-[85%] rounded-carte bg-brand-600 px-3 py-2 text-sm text-white'
+                : 'self-start max-w-[85%] rounded-carte bg-ink-100 px-3 py-2 text-sm text-ink-900'}
             >
               {m.content}
             </div>
@@ -245,7 +245,7 @@ function LigneEssai({ essai, busy, onReprendre }: { essai: EssaiArchive; busy: b
               </p>
             )
             : (
-              <div className="self-start max-w-[85%] rounded-2xl bg-ink-100 px-3 py-2 text-sm text-ink-900">
+              <div className="self-start max-w-[85%] rounded-carte bg-ink-100 px-3 py-2 text-sm text-ink-900">
                 {essai.reponse}
               </div>
             )}
@@ -280,7 +280,7 @@ function Appel({ appel, rang }: { appel: AppelTrace; rang: number }) {
   const [ouvert, setOuvert] = useState(false);
   const simule = estSimule(appel);
   return (
-    <div data-testid={`test-appel-${rang}`} className="flex flex-col gap-1 rounded-lg border border-ink-200 px-3 py-2">
+    <div data-testid={`test-appel-${rang}`} className="flex flex-col gap-1 rounded-controle border border-ink-200 px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-xs text-ink-900">{appel.nom}</span>
         {appel.status === 'ok'
@@ -309,7 +309,7 @@ function Appel({ appel, rang }: { appel: AppelTrace; rang: number }) {
         {ouvert ? t('Masquer ce qu’il a reçu', 'Hide what it got back') : t('Voir ce qu’il a reçu', 'See what it got back')}
       </button>
       {ouvert && (
-        <pre className="max-h-48 overflow-auto rounded-lg bg-ink-50 p-2 text-xs leading-relaxed text-ink-900">
+        <pre className="max-h-48 overflow-auto rounded-controle bg-ink-50 p-2 text-xs leading-relaxed text-ink-900">
           {JSON.stringify(appel.contenu, null, 2)}
         </pre>
       )}

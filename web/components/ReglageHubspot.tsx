@@ -114,7 +114,7 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <span className="text-xs text-ink-400">{libelle}</span>
+          <span className="text-xs text-ink-500">{libelle}</span>
           {etat !== null && actif !== undefined && (
             <Toggle
               testid="integration-hubspot-toggle"

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { mockMba, TENANT } from './support/mba';
+import { repondreAutomatiquement } from './aide/confirmation';
 
 /**
  * L'onglet OUTILS du paramétrage MBA, refait le 2026-09-21 (spec 2026-09-21-outils-maison-mba, § 9, d'après le
@@ -510,8 +511,7 @@ test.describe('MBA Paramètres : onglet Outils', () => {
   });
 
   test('🔴 supprimer : une confirmation, un DELETE, puis la publication SANS seconde confirmation pour cet outil', async ({ page }) => {
-    const dialogues: string[] = [];
-    page.on('dialog', (d) => { dialogues.push(d.message()); void d.accept(); });
+    const dialogues = await repondreAutomatiquement(page, () => true);
     const m = await monterOutils(page, {
       outils: [OUTIL],
       gestes: [{ type: 'outil_supprimer', nom: 'suivi_commande' }, { type: 'connecteur_supprimer', nom: 'EngageMe' }],
@@ -526,8 +526,7 @@ test.describe('MBA Paramètres : onglet Outils', () => {
   });
 
   test('🔴 un effacement IMPRÉVU chez Meta se fait confirmer, en le nommant', async ({ page }) => {
-    const dialogues: string[] = [];
-    page.on('dialog', (d) => { dialogues.push(d.message()); void d.accept(); });
+    const dialogues = await repondreAutomatiquement(page, () => true);
     const m = await monterOutils(page, {
       outils: [OUTIL],
       gestes: [{ type: 'outil_supprimer', nom: 'suivi_commande' }, { type: 'outil_supprimer', nom: 'main_levee' }],
@@ -556,8 +555,7 @@ test.describe('MBA Paramètres : onglet Outils', () => {
 
   test('🔴 un outil désactivé que Meta liste ENCORE propose de l’en retirer, sans confirmation', async ({ page }) => {
     const m = await monterOutils(page, { outils: [{ ...OUTIL, actif: false }], gestes: [{ type: 'outil_supprimer', nom: 'suivi_commande' }] });
-    const dialogues: string[] = [];
-    page.on('dialog', (d) => { dialogues.push(d.message()); void d.accept(); });
+    const dialogues = await repondreAutomatiquement(page, () => true);
     await page.goto('/mba/parametres?tab=outils');
     await expect(page.getByTestId('mba-outil-etat-o1')).toContainText('Désactivé');
     await expect(page.getByTestId('mba-outil-reactiver-o1')).toBeVisible();
@@ -576,7 +574,8 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     });
     await page.goto('/mba/parametres?tab=outils');
     await expect(page.getByTestId('mba-outil-etat-o1')).toContainText('Pas chez Meta');
-    await expect(page.getByTestId('mba-outil-etat-o1')).not.toContainText('✓');
+    // La coche est devenue une icône (passe 2) : on vérifie l'absence de l'ÉTAT « chez Meta », pas d'un glyphe.
+    await expect(page.getByTestId('mba-outil-chez-meta-o1')).toHaveCount(0);
   });
 
   test('🔴 un envoi raté après un enregistrement dit que l’outil EST enregistré', async ({ page }) => {
@@ -627,8 +626,7 @@ test.describe('MBA Paramètres : onglet Outils', () => {
    */
   test('🔴 un outil ajouté à la main chez Meta n’est jamais effacé sans confirmation qui le nomme', async ({ page }) => {
     const m = await monterOutils(page, { outils: [OUTIL], gestes: [{ type: 'outil_supprimer', nom: 'main_levee' }] });
-    const dialogues: string[] = [];
-    page.on('dialog', (d) => { dialogues.push(d.message()); void d.dismiss(); });
+    const dialogues = await repondreAutomatiquement(page, () => false);
     await page.goto('/mba/parametres?tab=outils');
     await expect(page.getByTestId('mba-outils-retraits')).toContainText('sans outil ici');
     await expect(page.getByTestId('mba-outils-retraits')).toContainText('main_levee');
@@ -653,11 +651,12 @@ test.describe('MBA Paramètres : onglet Outils', () => {
         ? [{ type: 'outil_supprimer', nom: 'suivi_commande' }, { type: 'outil_supprimer', nom: 'main_levee' }]
         : [{ type: 'outil_supprimer', nom: 'main_levee' }]),
     });
-    const dialogues: string[] = [];
-    page.on('dialog', (d) => {
-      dialogues.push(d.message());
+    let nombre = 0;
+    const dialogues = await repondreAutomatiquement(page, () => {
+      nombre += 1;
       // La première (« Supprimer … ? ») est acceptée, les suivantes refusées.
-      if (dialogues.length === 1) { supprime = true; void d.accept(); } else void d.dismiss();
+      if (nombre === 1) { supprime = true; return true; }
+      return false;
     });
     await page.goto('/mba/parametres?tab=outils');
     await page.getByTestId('mba-outil-supprimer-o1').click();
@@ -684,8 +683,7 @@ test.describe('MBA Paramètres : onglet Outils', () => {
       gestes: () => (supprime ? [{ type: 'outil_supprimer', nom: 'suivi_commande' }] : []),
       publicationEchoue: () => { essais += 1; return essais === 1; },
     });
-    const dialogues: string[] = [];
-    page.on('dialog', (d) => { dialogues.push(d.message()); supprime = true; void d.accept(); });
+    const dialogues = await repondreAutomatiquement(page, () => { supprime = true; return true; });
     await page.goto('/mba/parametres?tab=outils');
     await page.getByTestId('mba-outil-supprimer-o1').click();
     await expect(page.getByTestId('mba-outils-erreur')).toContainText('supprimé ici');
@@ -716,13 +714,10 @@ test.describe('MBA Paramètres : onglet Outils', () => {
         return [AUTRE, SUIVI];
       },
     });
-    const dialogues: string[] = [];
-    page.on('dialog', (d) => {
-      const texte = d.message();
-      dialogues.push(texte);
-      if (texte.includes('Suivi de commande')) { supprime1 = true; void d.accept(); }
-      else if (texte.includes('Autre outil')) { supprime2 = true; void d.accept(); }
-      else void d.dismiss();
+    const dialogues = await repondreAutomatiquement(page, (texte) => {
+      if (texte.includes('Suivi de commande')) { supprime1 = true; return true; }
+      if (texte.includes('Autre outil')) { supprime2 = true; return true; }
+      return false;
     });
     await page.goto('/mba/parametres?tab=outils');
     // 1. Suppression de suivi_commande : son retrait part.
@@ -746,7 +741,7 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     let liberer: () => void = () => {};
     const retenue = new Promise<void>((ok) => { liberer = ok; });
     await monterOutils(page, { outils: [OUTIL], tags: [{ tag: 'vip', count: 3 }], retenirSuppression: retenue });
-    page.on('dialog', (d) => { void d.accept(); });
+    await repondreAutomatiquement(page, () => true);
     await page.goto('/mba/parametres?tab=outils');
     await page.getByTestId('mba-outils-ajouter').click();
     await page.getByTestId('mba-type-tag').click();
@@ -830,13 +825,10 @@ test.describe('MBA Paramètres : onglet Outils', () => {
       // La relecture qui suit la première publication échoue, et seulement elle.
       apercuEchoue: () => supprime1 && m.publications() === 1 && !supprime2,
     });
-    const dialogues: string[] = [];
-    page.on('dialog', (d) => {
-      const texte = d.message();
-      dialogues.push(texte);
-      if (texte.includes('Suivi de commande')) { supprime1 = true; void d.accept(); }
-      else if (texte.includes('Autre outil')) { supprime2 = true; void d.accept(); }
-      else void d.dismiss();
+    const dialogues = await repondreAutomatiquement(page, (texte) => {
+      if (texte.includes('Suivi de commande')) { supprime1 = true; return true; }
+      if (texte.includes('Autre outil')) { supprime2 = true; return true; }
+      return false;
     });
     await page.goto('/mba/parametres?tab=outils');
     await page.getByTestId('mba-outil-supprimer-o1').click();
@@ -863,7 +855,7 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     const retenue = new Promise<void>((ok) => { liberer = ok; });
     const B = { ...OUTIL, id: 'o2', name: 'autre' };
     await monterOutils(page, { outils: [OUTIL, B], retenirSuppression: retenue });
-    page.on('dialog', (d) => { void d.accept(); });
+    await repondreAutomatiquement(page, () => true);
     await page.goto('/mba/parametres?tab=outils');
     await page.getByTestId('mba-outil-supprimer-o1').click();
     await expect(page.getByTestId('mba-outil-supprimer-o2')).toBeDisabled();

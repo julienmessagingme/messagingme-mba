@@ -17,7 +17,7 @@ export function MbaNotice({ kind, children, testid }: {
     success: 'border-succes-200 bg-succes-50 text-succes-800',
   }[kind];
   return (
-    <p role={kind === 'error' ? 'alert' : undefined} {...(testid ? { 'data-testid': testid } : {})} className={`rounded-lg border px-3 py-2 text-sm leading-relaxed ${styles}`}>
+    <p role={kind === 'error' ? 'alert' : undefined} {...(testid ? { 'data-testid': testid } : {})} className={`rounded-controle border px-3 py-2 text-sm leading-relaxed ${styles}`}>
       {children}
     </p>
   );

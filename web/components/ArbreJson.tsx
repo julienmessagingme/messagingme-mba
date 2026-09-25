@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useT } from '@/lib/i18n';
 import { arbreDuPayload, type NoeudJson } from '@/lib/chemin-json';
+import { Icone } from '@/components/Icone';
 
 /**
  * Affiche un payload JSON reçu d'un outil tiers, et rend chaque FEUILLE attachable à un champ de contact.
@@ -36,7 +37,7 @@ export function ArbreJson({
   }
 
   return (
-    <div className="rounded-xl border border-ink-200 bg-ink-50/50 p-2 font-mono text-xs" data-testid="arbre-json">
+    <div className="rounded-carte border border-ink-200 bg-ink-50/50 p-2 font-mono text-xs" data-testid="arbre-json">
       {racine.map((n) => (
         <Ligne key={n.cle} noeud={n} profondeur={0} cheminsUtilises={cheminsUtilises} onAttacher={onAttacher} />
       ))}
@@ -64,34 +65,34 @@ function Ligne({
   return (
     <div>
       <div
-        className="flex items-center gap-2 rounded px-1 py-0.5 hover:bg-white"
+        className="flex items-center gap-2 rounded-controle px-1 py-0.5 hover:bg-white"
         style={{ paddingLeft: `${profondeur * 14 + 4}px` }}
         data-testid="noeud-json"
         data-cle={noeud.cle}
       >
         {branche ? (
-          <button type="button" onClick={() => setOuvert((v) => !v)} className="w-3 text-ink-400 hover:text-ink-900" aria-label={ouvert ? t('Replier', 'Collapse') : t('Déplier', 'Expand')}>
-            {ouvert ? '▾' : '▸'}
+          <button type="button" onClick={() => setOuvert((v) => !v)} className="w-3.5 text-ink-400 hover:text-ink-900" aria-label={ouvert ? t('Replier', 'Collapse') : t('Déplier', 'Expand')}>
+            <Icone nom="deplier" taille="petite" className={`transition-transform duration-150 ${ouvert ? '' : '-rotate-90'}`} />
           </button>
         ) : (
-          <span className="w-3" />
+          <span className="w-3.5" />
         )}
         <span className="text-ink-900">{noeud.cle}</span>
-        <span className="truncate text-ink-400">{noeud.apercu}</span>
+        <span className="truncate text-ink-500">{noeud.apercu}</span>
         <span className="ml-auto shrink-0">
           {noeud.attachable && !deja && (
             <button
               type="button"
               onClick={() => onAttacher(noeud.chemin)}
-              className="rounded border border-brand-200 bg-white px-1.5 py-0.5 text-xs font-sans font-medium text-brand-600 hover:bg-brand-50"
+              className="rounded-controle border border-brand-200 bg-white px-1.5 py-0.5 text-xs font-sans font-medium text-brand-600 hover:bg-brand-50"
             >
               {t('Attacher…', 'Attach…')}
             </button>
           )}
-          {deja && <span className="text-xs font-sans text-ink-400">{t('déjà attaché', 'already attached')}</span>}
+          {deja && <span className="text-xs font-sans text-ink-500">{t('déjà attaché', 'already attached')}</span>}
           {/* Une clé inadressable est signalée : sans ça, l'utilisateur cherche pourquoi elle n'est pas cliquable. */}
           {!noeud.attachable && noeud.chemin === '' && noeud.type === 'valeur' && (
-            <span className="text-xs font-sans text-ink-400" title={t('Le nom de cette clé contient un point ou un crochet : elle ne peut pas être désignée.', 'This key name contains a dot or bracket: it cannot be addressed.')}>
+            <span className="text-xs font-sans text-ink-500" title={t('Le nom de cette clé contient un point ou un crochet : elle ne peut pas être désignée.', 'This key name contains a dot or bracket: it cannot be addressed.')}>
               {t('non adressable', 'not addressable')}
             </span>
           )}

@@ -131,13 +131,13 @@ export function McpOutilReglage({ tenantId, outil, champs, champsContact, onChan
   ];
 
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-3" data-testid={`mcp-outil-${outil.name}`}>
+    <div className="rounded-carte border border-ink-200 bg-white p-3" data-testid={`mcp-outil-${outil.name}`}>
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="font-medium text-ink-900">{outil.title}</span>
         <code className="text-xs text-ink-500">{outil.name}</code>
-        <span className="text-xs text-ink-400">{t('chez le serveur : ', 'on the server: ')}<code>{outil.nomDistant}</code></span>
+        <span className="text-xs text-ink-500">{t('chez le serveur : ', 'on the server: ')}<code>{outil.nomDistant}</code></span>
         {outil.risk === 'irreversible' && (
-          <span className="rounded-full bg-danger-50 px-2 py-0.5 text-xs font-medium text-danger">
+          <span className="rounded-full bg-danger-50 px-2 py-0.5 text-xs font-medium text-danger-700">
             {t('action irréversible', 'irreversible action')}
           </span>
         )}
@@ -155,7 +155,7 @@ export function McpOutilReglage({ tenantId, outil, champs, champsContact, onChan
       {outil.nonActivable ? (
         /* 🔴 LA RAISON EN CLAIR, TELLE QUE L'IMPORT L'A ÉTABLIE. Le client ne peut pas corriger un schéma
            distant, mais il doit pouvoir dire à son fournisseur ce qui bloque, et n'y revenir qu'une fois. */
-        <p className="mt-2 rounded-lg bg-alerte-50 px-3 py-2 text-xs text-ink-900" data-testid={`mcp-outil-non-activable-${outil.name}`}>
+        <p className="mt-2 rounded-controle bg-alerte-50 px-3 py-2 text-xs text-ink-900" data-testid={`mcp-outil-non-activable-${outil.name}`}>
           {t('Cet outil ne peut pas être activé : ', 'This tool cannot be enabled: ')}{outil.nonActivable}
         </p>
       ) : (
@@ -167,7 +167,7 @@ export function McpOutilReglage({ tenantId, outil, champs, champsContact, onChan
             {params.map((p) => (
               <li key={p.name} className="flex flex-wrap items-center gap-2" data-testid={`mcp-param-${p.name}`}>
                 <code className="text-xs text-ink-900">{p.name}</code>
-                <span className="text-xs text-ink-400">{p.type}</span>
+                <span className="text-xs text-ink-500">{p.type}</span>
                 {p.required && (
                   /* ⚠️ L'AVERTISSEMENT SE POSE ICI, AU CLOUAGE, ET PAS À L'APPEL. Un champ vide part vide et
                      c'est le serveur qui décide : le client doit le savoir au moment où il choisit. */
@@ -205,7 +205,7 @@ export function McpOutilReglage({ tenantId, outil, champs, champsContact, onChan
                     onChange={(e) => poser(p.name, { value: e.target.value })} />
                 )}
                 {p.cheminMcp && p.cheminMcp !== p.name && (
-                  <span className="text-xs text-ink-400">{t('chemin distant : ', 'remote path: ')}<code>{p.cheminMcp}</code></span>
+                  <span className="text-xs text-ink-500">{t('chemin distant : ', 'remote path: ')}<code>{p.cheminMcp}</code></span>
                 )}
               </li>
             ))}

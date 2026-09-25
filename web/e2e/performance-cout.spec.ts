@@ -144,7 +144,7 @@ test.describe('Performance Lab : la carte des couts', () => {
     await mock(page);
     await page.goto('/performance');
     await page.getByTestId('cout-bascule-engagement').click();
-    await expect(page.getByTestId('cout-ratio-engage-c-inconnue')).toHaveText('—');
+    await expect(page.getByTestId('cout-ratio-engage-c-inconnue')).toHaveText('n/d');
   });
 
   test('🔴 zero clic mais des engages : la colonne engagement est REMPLIE', async ({ page }) => {
@@ -154,7 +154,7 @@ test.describe('Performance Lab : la carte des couts', () => {
     await page.goto('/performance');
     await page.getByTestId('cout-bascule-engagement').click();
     await expect(page.getByTestId('cout-engages-c-parcours')).toHaveText('4');
-    await expect(page.getByTestId('cout-ratio-engage-c-parcours')).not.toHaveText('—');
+    await expect(page.getByTestId('cout-ratio-engage-c-parcours')).not.toHaveText('n/d');
   });
 
   test('⚠️ une reponse SANS les champs d engagement ne casse pas l ecran', async ({ page }) => {
@@ -164,8 +164,8 @@ test.describe('Performance Lab : la carte des couts', () => {
     await mock(page, { cout: sansChamps });
     await page.goto('/performance');
     await page.getByTestId('cout-bascule-engagement').click();
-    await expect(page.getByTestId('cout-engages-c-promo')).toHaveText('—');
-    await expect(page.getByTestId('cout-ratio-engage-c-promo')).toHaveText('—');
+    await expect(page.getByTestId('cout-engages-c-promo')).toHaveText('n/d');
+    await expect(page.getByTestId('cout-ratio-engage-c-promo')).toHaveText('n/d');
   });
 
   test('🔴 Meta ne rend aucun tarif -> la carte le DIT au lieu d afficher des zeros', async ({ page }) => {
@@ -175,7 +175,7 @@ test.describe('Performance Lab : la carte des couts', () => {
     };
     await mock(page, { cout: sansTarif });
     await page.goto('/performance');
-    await expect(page.getByTestId('cout-valeur-engagement')).toContainText('—');
+    await expect(page.getByTestId('cout-valeur-engagement')).toContainText('n/d');
     await expect(page.getByTestId('cout-bloc-engagement')).toContainText(/mesurable|measurable/);
   });
 
@@ -218,6 +218,8 @@ test.describe('Performance Lab : la carte des couts', () => {
     await page.goto('/performance');
     await expect(page.getByTestId('cout-erreur-engagement')).toBeVisible();
     await expect(page.getByTestId('cout-valeur-ia')).toBeVisible();
+    // UNE SEULE phrase d'erreur pour l'écran (passe 2) : la ligne en panne ne porte plus que « n/d ».
+    await expect(page.getByTestId('ecran-erreur')).toHaveCount(1);
   });
 
   test('🔴 ...et les deux autres gardent leur DEVISE, pas seulement leur nombre', async ({ page }) => {

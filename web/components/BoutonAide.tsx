@@ -8,6 +8,7 @@ import { inputCls } from '@/lib/ui';
 import { demanderAide, demanderRecap } from '@/lib/api-aide';
 import { lireFil, ecrireFil, MAX_ECHANGES_GARDES, type EchangeAide } from '@/lib/aide-fil';
 import { Bouton } from '@/components/Bouton';
+import { Icone } from '@/components/Icone';
 
 /**
  * LE BOUTON D'AIDE DE LA CONSOLE : posé UNE SEULE FOIS dans `AppShell`, donc présent sur les 36 écrans
@@ -41,7 +42,12 @@ function peutVoirLeRecap(role: string): boolean {
   return role === 'admin' || role === 'manager';
 }
 
-export function BoutonAide({ tenantId, ecranCourant, role }: { tenantId: string; ecranCourant: string; role: string }) {
+/**
+ * `dansEntete` : le bouton se range dans la barre du haut au lieu de flotter en bas à droite. Pour l'Inbox,
+ * où le coin bas droit est celui du bouton « Envoyer » : le bouton rond le recouvrait, sur ordinateur comme
+ * sur téléphone (mesuré le 2026-09-25).
+ */
+export function BoutonAide({ tenantId, ecranCourant, role, dansEntete = false }: { tenantId: string; ecranCourant: string; role: string; dansEntete?: boolean }) {
   const t = useT();
   const { locale } = useLocale();
   const [ouvert, setOuvert] = useState(false);
@@ -139,25 +145,26 @@ export function BoutonAide({ tenantId, ecranCourant, role }: { tenantId: string;
         onClick={() => setOuvert((o) => !o)}
         data-testid="aide-bouton"
         aria-expanded={ouvert}
-        className="fixed bottom-5 right-5 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-brand-600 text-white shadow-mm-md transition-colors duration-150 hover:bg-brand-700"
+        className={dansEntete
+          ? 'flex h-9 w-9 shrink-0 items-center justify-center rounded-controle text-ink-500 transition-colors duration-150 hover:bg-ink-100 hover:text-ink-900'
+          : 'fixed bottom-5 right-5 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-brand-600 text-white shadow-mm-md transition-colors duration-150 hover:bg-brand-700'}
         title={t('Aide', 'Help')}
+        aria-label={t('Aide', 'Help')}
       >
-        <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 22a10 10 0 100-20 10 10 0 000 20zM9.1 9a3 3 0 015.8 1c0 2-3 3-3 3M12 17h.01" />
-        </svg>
+        <Icone nom="aide" taille={dansEntete ? 'nav' : 'grande'} />
       </button>
 
       {ouvert && (
         <div
           data-testid="aide-panneau"
-          className="fixed bottom-20 right-5 z-40 flex max-h-[70vh] w-[min(24rem,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-mm-lg"
+          className={`fixed right-5 z-40 flex max-h-[70vh] w-[min(24rem,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-carte border border-ink-200 bg-white shadow-mm-lg ${dansEntete ? 'top-16' : 'bottom-20'}`}
         >
           <div className="flex items-center justify-between border-b border-ink-100 bg-white px-4 py-3">
             <span className="flex items-center gap-2 text-sm font-semibold text-ink-900">
               <Logo className="h-5 w-5 shrink-0" />
               {t('Aide', 'Help')}
             </span>
-            <button type="button" onClick={() => setOuvert(false)} className="text-ink-400 hover:text-ink-900" aria-label={t('Fermer', 'Close')}>×</button>
+            <button type="button" onClick={() => setOuvert(false)} className="text-ink-400 hover:text-ink-900" aria-label={t('Fermer', 'Close')}><Icone nom="fermer" taille="petite" /></button>
           </div>
 
           <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3" data-testid="aide-fil">
@@ -177,17 +184,6 @@ export function BoutonAide({ tenantId, ecranCourant, role }: { tenantId: string;
                   {/* Le halo : il pose la marque sur un fond, sinon le logo flotte. */}
                   <span aria-hidden="true" className="absolute inset-0 rounded-full bg-brand-50" />
                   <Logo className="relative h-8 w-8" />
-                  {/* Trois étincelles, placées autour et pas dessus : elles disent « IA » sans masquer la
-                      marque. `aria-hidden` parce qu'elles ne portent aucune information. */}
-                  <svg aria-hidden="true" viewBox="0 0 24 24" className="absolute -right-1 -top-1 h-4 w-4 text-brand-400" fill="currentColor">
-                    <path d="M12 2l1.5 3.5L17 7l-3.5 1.5L12 12l-1.5-3.5L7 7l3.5-1.5L12 2z" />
-                  </svg>
-                  <svg aria-hidden="true" viewBox="0 0 24 24" className="absolute -left-2 top-2 h-3 w-3 text-brand-300" fill="currentColor">
-                    <path d="M12 2l1.5 3.5L17 7l-3.5 1.5L12 12l-1.5-3.5L7 7l3.5-1.5L12 2z" />
-                  </svg>
-                  <svg aria-hidden="true" viewBox="0 0 24 24" className="absolute -bottom-1 right-1 h-2.5 w-2.5 text-succes-400" fill="currentColor">
-                    <path d="M12 2l1.5 3.5L17 7l-3.5 1.5L12 12l-1.5-3.5L7 7l3.5-1.5L12 2z" />
-                  </svg>
                 </span>
                 <p className="text-sm font-semibold text-ink-900">{t('Je suis là pour vous aider', 'I am here to help')}</p>
                 {/* ⚠️ LE LIBELLÉ DIT CE QU'IL FAIT. « Récap du jour » pour un récap de la veille laisserait
@@ -224,7 +220,7 @@ export function BoutonAide({ tenantId, ecranCourant, role }: { tenantId: string;
 
             {fil.map((e, i) => (
               <div key={`${i}-${e.question}`} className="space-y-1.5">
-                <p className="ml-auto w-fit max-w-[85%] rounded-2xl bg-ink-100 px-3 py-1.5 text-sm text-ink-900" data-testid="aide-question-posee">
+                <p className="ml-auto w-fit max-w-[85%] rounded-carte bg-ink-100 px-3 py-1.5 text-sm text-ink-900" data-testid="aide-question-posee">
                   {e.question}
                 </p>
                 {!e.reponse.sait ? (
@@ -245,7 +241,7 @@ export function BoutonAide({ tenantId, ecranCourant, role }: { tenantId: string;
                             href={ec.href}
                             data-testid={`aide-lien-${ec.cle}`}
                             onClick={() => setOuvert(false)}
-                            className="block rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 transition-colors duration-150 hover:bg-brand-100"
+                            className="block rounded-controle border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 transition-colors duration-150 hover:bg-brand-100"
                           >
                             {t('Ouvrir ', 'Open ')}
                             {locale === 'en' ? ec.en : ec.fr}
@@ -259,7 +255,7 @@ export function BoutonAide({ tenantId, ecranCourant, role }: { tenantId: string;
                     {/* La SOURCE est montrée, et ce n'est pas décoratif : le client voit d'où sort la réponse,
                         et peut juger si elle parle bien de ce qu'il cherche. */}
                     {e.reponse.sources.length > 0 && (
-                      <p className="mt-2 text-xs text-ink-400" data-testid="aide-sources">
+                      <p className="mt-2 text-xs text-ink-500" data-testid="aide-sources">
                         {t('D’après : ', 'Based on: ')}{e.reponse.sources.join(', ')}
                       </p>
                     )}

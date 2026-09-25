@@ -126,7 +126,7 @@ export function FormulaireOutilMba({ tenantId, type, outil, occupe, onOccupe, on
   };
 
   return (
-    <section className="flex flex-col gap-3 rounded-2xl border border-ink-200 bg-white p-4" data-testid="mba-form">
+    <section className="flex flex-col gap-3 rounded-carte border border-ink-200 bg-white p-4" data-testid="mba-form">
       <p className="text-sm font-semibold text-ink-900">{t(textes.titre[0], textes.titre[1])}</p>
       {erreur !== null && <p className="text-xs text-danger" data-testid="mba-form-erreur">{erreur}</p>}
 

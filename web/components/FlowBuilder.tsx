@@ -23,6 +23,8 @@ import { useT } from '@/lib/i18n';
 import { inputClsAuto } from '@/lib/ui';
 import { ListeManques } from '@/components/ListeManques';
 import { Bouton } from '@/components/Bouton';
+import { Icone } from '@/components/Icone';
+import { useConfirmation } from '@/components/Confirmation';
 
 // Libellés bilingues [FR, EN] résolus au rendu via t(...) (useT est inappelable hors composant).
 const TYPE_LABELS: Record<FlowFieldType, [string, string]> = {
@@ -166,6 +168,7 @@ export function FlowBuilder({
   initialCta?: string | null;
 }) {
   const t = useT();
+  const confirmer = useConfirmation();
   const seedRef = useRef<{ screens: BScreen[]; nextUid: number } | null>(null);
   if (seedRef.current === null) {
     seedRef.current = initialScreens && initialScreens.length > 0
@@ -252,9 +255,9 @@ export function FlowBuilder({
     setScreens((list) => [...list, { uid: nextUid(), title: '', cta: '', elements: [] }]);
     setActiveIdx(screens.length); // le nouvel écran (index = ancienne longueur)
   }
-  function removeScreen() {
+  async function removeScreen() {
     if (screens.length <= 1) return;
-    if (scr.elements.length > 0 && !window.confirm(t("Supprimer l'écran actif et tous ses éléments ?", 'Delete the active screen and all its elements?'))) return;
+    if (scr.elements.length > 0 && !(await confirmer({ titre: t('Supprimer l’écran', 'Delete the screen'), message: t("Supprimer l'écran actif et tous ses éléments ?", 'Delete the active screen and all its elements?'), confirmer: t('Supprimer', 'Delete') }))) return;
     setScreens((list) => list.filter((_, i) => i !== idx));
     setActiveIdx(Math.min(idx, screens.length - 2));
   }
@@ -428,23 +431,23 @@ export function FlowBuilder({
         </div>
 
         {/* Onglets d'écrans : le formulaire peut avoir 1 à 10 écrans, l'éditeur agit sur l'écran actif. */}
-        <div className="space-y-3 rounded-xl border border-ink-200 bg-ink-50/60 p-3">
+        <div className="space-y-3 rounded-carte border border-ink-200 bg-ink-50/60 p-3">
           <div className="flex flex-wrap items-center gap-1.5">
             {screens.map((s, i) => (
               <button
                 key={s.uid}
                 type="button"
                 onClick={() => setActiveIdx(i)}
-                className={`max-w-[140px] truncate rounded-lg px-2.5 py-1 text-xs ${i === idx ? 'bg-brand-500 font-medium text-white' : 'border border-ink-200 bg-white text-ink-500 hover:bg-brand-50'}`}
+                className={`max-w-[140px] truncate rounded-controle px-2.5 py-1 text-xs ${i === idx ? 'bg-brand-600 font-medium text-white' : 'border border-ink-200 bg-white text-ink-500 hover:bg-brand-50'}`}
               >
                 {s.title.trim() || `${t('Écran', 'Screen')} ${i + 1}`}
               </button>
             ))}
-            <button type="button" onClick={addScreen} disabled={screens.length >= 10} className="rounded-lg border border-dashed border-ink-300 px-2.5 py-1 text-xs font-medium text-brand-600 hover:bg-brand-50 disabled:opacity-30" title={t('10 écrans maximum', '10 screens maximum')}>{t('+ écran', '+ screen')}</button>
+            <button type="button" onClick={addScreen} disabled={screens.length >= 10} className="rounded-controle border border-dashed border-ink-300 px-2.5 py-1 text-xs font-medium text-brand-600 hover:bg-brand-50 disabled:opacity-30" title={t('10 écrans maximum', '10 screens maximum')}>{t('+ écran', '+ screen')}</button>
             <span className="mx-0.5 h-4 w-px bg-ink-200" />
-            <button type="button" onClick={() => moveScreen(-1)} disabled={idx === 0} className="rounded px-1.5 py-0.5 text-xs text-ink-400 hover:bg-ink-100 disabled:opacity-30" aria-label={t("Déplacer l'écran vers la gauche", 'Move screen left')}>◀</button>
-            <button type="button" onClick={() => moveScreen(1)} disabled={idx === screens.length - 1} className="rounded px-1.5 py-0.5 text-xs text-ink-400 hover:bg-ink-100 disabled:opacity-30" aria-label={t("Déplacer l'écran vers la droite", 'Move screen right')}>▶</button>
-            <button type="button" onClick={removeScreen} disabled={screens.length <= 1} className="rounded px-1.5 py-0.5 text-xs text-ink-400 hover:bg-ink-100 hover:text-danger disabled:opacity-30" aria-label={t("Supprimer l'écran actif", 'Delete active screen')}>✕</button>
+            <button type="button" onClick={() => moveScreen(-1)} disabled={idx === 0} className="rounded-controle px-1.5 py-0.5 text-xs text-ink-400 hover:bg-ink-100 disabled:opacity-30" aria-label={t("Déplacer l'écran vers la gauche", 'Move screen left')}><Icone nom="precedent" taille="petite" /></button>
+            <button type="button" onClick={() => moveScreen(1)} disabled={idx === screens.length - 1} className="rounded-controle px-1.5 py-0.5 text-xs text-ink-400 hover:bg-ink-100 disabled:opacity-30" aria-label={t("Déplacer l'écran vers la droite", 'Move screen right')}><Icone nom="suivant" taille="petite" /></button>
+            <button type="button" onClick={removeScreen} disabled={screens.length <= 1} className="rounded-controle px-1.5 py-0.5 text-xs text-ink-400 hover:bg-ink-100 hover:text-danger disabled:opacity-30" aria-label={t("Supprimer l'écran actif", 'Delete active screen')}><Icone nom="supprimer" taille="petite" /></button>
           </div>
           <div className="flex flex-wrap gap-3">
             <div className="min-w-[200px] flex-1">
@@ -462,15 +465,15 @@ export function FlowBuilder({
 
         <div className="space-y-2">
           {scr.elements.map((e, i) => (
-            <div key={e.uid} className="rounded-xl border border-ink-200 bg-white p-3">
+            <div key={e.uid} className="rounded-carte border border-ink-200 bg-white p-3">
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-xs font-medium text-ink-500">
                   {e.kind === 'field' ? t('Champ', 'Field') : e.kind === 'image' ? t('Image', 'Image') : t(...TEXT_LABELS[e.kind])}
                 </span>
-                <div className="flex items-center gap-1 text-ink-400">
-                  <button type="button" onClick={() => move(e.uid, -1)} disabled={i === 0} className="rounded px-1.5 py-0.5 hover:bg-ink-100 disabled:opacity-30" aria-label={t('Monter', 'Move up')}>↑</button>
-                  <button type="button" onClick={() => move(e.uid, 1)} disabled={i === scr.elements.length - 1} className="rounded px-1.5 py-0.5 hover:bg-ink-100 disabled:opacity-30" aria-label={t('Descendre', 'Move down')}>↓</button>
-                  <button type="button" onClick={() => remove(e.uid)} className="rounded px-1.5 py-0.5 hover:bg-ink-100 hover:text-danger" aria-label={t('Retirer', 'Remove')}>✕</button>
+                <div className="flex items-center gap-1 text-ink-500">
+                  <button type="button" onClick={() => move(e.uid, -1)} disabled={i === 0} className="rounded-controle px-1.5 py-0.5 hover:bg-ink-100 disabled:opacity-30" aria-label={t('Monter', 'Move up')}>↑</button>
+                  <button type="button" onClick={() => move(e.uid, 1)} disabled={i === scr.elements.length - 1} className="rounded-controle px-1.5 py-0.5 hover:bg-ink-100 disabled:opacity-30" aria-label={t('Descendre', 'Move down')}>↓</button>
+                  <button type="button" onClick={() => remove(e.uid)} className="rounded-controle px-1.5 py-0.5 hover:bg-ink-100 hover:text-danger" aria-label={t('Retirer', 'Remove')}><Icone nom="fermer" taille="petite" /></button>
                 </div>
               </div>
 
@@ -484,7 +487,7 @@ export function FlowBuilder({
                     type="button"
                     onClick={() => fileRefs.current[e.uid]?.click()}
                     disabled={e.uploading}
-                    className="flex aspect-video w-full max-w-xs items-center justify-center overflow-hidden rounded-lg border border-dashed border-ink-300 bg-ink-50 text-xs text-ink-400 hover:border-brand-400 disabled:cursor-not-allowed"
+                    className="flex aspect-video w-full max-w-xs items-center justify-center overflow-hidden rounded-controle border border-dashed border-ink-300 bg-ink-50 text-xs text-ink-500 hover:border-brand-400 disabled:cursor-not-allowed"
                   >
                     {e.uploading ? (
                       t('Upload…', 'Uploading…')
@@ -516,7 +519,7 @@ export function FlowBuilder({
                   </div>
 
                   {isChoice(e.type) && (
-                    <div className="space-y-1.5 rounded-lg bg-ink-50 p-2">
+                    <div className="space-y-1.5 rounded-controle bg-ink-50 p-2">
                       <span className="text-xs text-ink-500">{t('Options (au moins 2)', 'Options (at least 2)')}</span>
                       {e.options.map((opt, oi) => (
                         <div key={oi} className="flex items-center gap-2">
@@ -526,7 +529,7 @@ export function FlowBuilder({
                             className={`${inputClsAuto} min-w-0 flex-1 py-1`}
                             placeholder={`${t('Option', 'Option')} ${oi + 1}`}
                           />
-                          <button type="button" onClick={() => patchField(e.uid, (f) => ({ ...f, options: f.options.filter((_, k) => k !== oi) }))} className="text-ink-400 hover:text-danger" aria-label={t("Retirer l'option", 'Remove option')}>✕</button>
+                          <button type="button" onClick={() => patchField(e.uid, (f) => ({ ...f, options: f.options.filter((_, k) => k !== oi) }))} className="text-ink-400 hover:text-danger" aria-label={t("Retirer l'option", 'Remove option')}><Icone nom="fermer" taille="petite" /></button>
                         </div>
                       ))}
                       <button type="button" onClick={() => patchField(e.uid, (f) => ({ ...f, options: [...f.options, ''] }))} className="text-xs font-medium text-brand-600 hover:text-brand-700">{t('+ option', '+ option')}</button>
@@ -569,8 +572,8 @@ export function FlowBuilder({
                     {e.type !== 'optin' && e.saveTo === '' && (() => {
                       const sug = suggestBaseField(e.label);
                       return sug ? (
-                        <button type="button" onClick={() => patch(e.uid, { saveTo: sug.key } as Partial<BElem>)} className="text-xs font-medium text-brand-600 hover:text-brand-700">
-                          {t(`💡 Enregistrer sur le champ de base « ${sug.label} »`, `💡 Save to base field "${sug.label}"`)}
+                        <button type="button" onClick={() => patch(e.uid, { saveTo: sug.key } as Partial<BElem>)} className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700">
+                          <Icone nom="idee" taille="petite" />{t(`Enregistrer sur le champ de base « ${sug.label} »`, `Save to base field "${sug.label}"`)}
                         </button>
                       ) : null;
                     })()}
@@ -587,10 +590,11 @@ export function FlowBuilder({
                 const forbiddenOpts = curSrc && curSrc.type !== 'optin' && cleanOptions(curSrc.options).some(hasForbiddenChar);
                 return (
                   <div className="mt-2 border-t border-ink-100 pt-2">
-                    <button type="button" onClick={() => toggleCond(e.uid)} className="text-xs text-ink-400 hover:text-ink-500">
-                      👁 {e.visibleIf && curSrc
+                    <button type="button" onClick={() => toggleCond(e.uid)} className="inline-flex items-center gap-1 text-xs text-ink-500 hover:text-ink-900">
+                      <Icone nom="voir" taille="petite" />{e.visibleIf && curSrc
                         ? `${t('Visible si', 'Visible if')} ${conditionText(curSrc.label.trim() || '?', e.visibleIf.op, e.visibleIf.value)}`
-                        : t('Visible si… (toujours visible)', 'Visible if… (always visible)')} {open ? '▴' : '▾'}
+                        : t('Visible si… (toujours visible)', 'Visible if… (always visible)')}
+                      <Icone nom="deplier" taille="petite" className={`transition-transform duration-150 ${open ? 'rotate-180' : ''}`} />
                     </button>
                     {open && (
                       <div className="mt-1.5 space-y-1">
@@ -647,7 +651,7 @@ export function FlowBuilder({
                           )}
                         </div>
                         {forbiddenOpts && (
-                          <p className="text-xs text-ink-400">{t('Les options contenant une apostrophe ou un accent grave sont grisées : Meta les refuse dans une condition.', 'Options containing an apostrophe or a backtick are greyed out: Meta rejects them in a condition.')}</p>
+                          <p className="text-xs text-ink-500">{t('Les options contenant une apostrophe ou un accent grave sont grisées : Meta les refuse dans une condition.', 'Options containing an apostrophe or a backtick are greyed out: Meta rejects them in a condition.')}</p>
                         )}
                       </div>
                     )}
@@ -659,20 +663,20 @@ export function FlowBuilder({
         </div>
 
         <div className="flex flex-wrap gap-2 text-xs">
-          <span className="self-center text-ink-400">{t('Ajouter :', 'Add:')}</span>
-          <button type="button" onClick={() => addText('heading')} className="rounded-md border border-ink-200 px-2 py-1 text-brand-600 hover:bg-brand-50">{t('Titre', 'Heading')}</button>
-          <button type="button" onClick={() => addText('subheading')} className="rounded-md border border-ink-200 px-2 py-1 text-brand-600 hover:bg-brand-50">{t('Sous-titre', 'Subheading')}</button>
-          <button type="button" onClick={() => addText('body')} className="rounded-md border border-ink-200 px-2 py-1 text-brand-600 hover:bg-brand-50">{t('Paragraphe', 'Paragraph')}</button>
-          <button type="button" onClick={() => addText('caption')} className="rounded-md border border-ink-200 px-2 py-1 text-brand-600 hover:bg-brand-50">{t('Légende', 'Caption')}</button>
-          <button type="button" onClick={addImage} className="rounded-md border border-ink-200 px-2 py-1 text-brand-600 hover:bg-brand-50">{t('Image', 'Image')}</button>
-          <button type="button" onClick={addField} className="rounded-md border border-ink-200 px-2 py-1 font-medium text-brand-600 hover:bg-brand-50">{t('+ Champ', '+ Field')}</button>
+          <span className="self-center text-ink-500">{t('Ajouter :', 'Add:')}</span>
+          <button type="button" onClick={() => addText('heading')} className="rounded-controle border border-ink-200 px-2 py-1 text-brand-600 hover:bg-brand-50">{t('Titre', 'Heading')}</button>
+          <button type="button" onClick={() => addText('subheading')} className="rounded-controle border border-ink-200 px-2 py-1 text-brand-600 hover:bg-brand-50">{t('Sous-titre', 'Subheading')}</button>
+          <button type="button" onClick={() => addText('body')} className="rounded-controle border border-ink-200 px-2 py-1 text-brand-600 hover:bg-brand-50">{t('Paragraphe', 'Paragraph')}</button>
+          <button type="button" onClick={() => addText('caption')} className="rounded-controle border border-ink-200 px-2 py-1 text-brand-600 hover:bg-brand-50">{t('Légende', 'Caption')}</button>
+          <button type="button" onClick={addImage} className="rounded-controle border border-ink-200 px-2 py-1 text-brand-600 hover:bg-brand-50">{t('Image', 'Image')}</button>
+          <button type="button" onClick={addField} className="rounded-controle border border-ink-200 px-2 py-1 font-medium text-brand-600 hover:bg-brand-50">{t('+ Champ', '+ Field')}</button>
         </div>
 
-        {notice && <p className="rounded-lg bg-alerte-50 px-3 py-2 text-xs text-alerte-700">{notice}</p>}
+        {notice && <p className="rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte-700">{notice}</p>}
         {scr.elements.length === 0 && <p className="text-xs text-alerte">{t('Cet écran est vide : ajoute au moins un élément (le serveur le refuserait).', 'This screen is empty: add at least one element (the server would refuse it).')}</p>}
         {fieldCount === 0 && <p className="text-xs text-alerte">{t('Ajoute au moins un champ : un formulaire sans champ ne collecte rien.', 'Add at least one field: a form with no field collects nothing.')}</p>}
         {!labelsUnique && <p className="text-xs text-alerte">{t('Deux champs portent le même libellé : chaque libellé doit être unique, tous écrans confondus.', 'Two fields share the same label: each label must be unique across all screens.')}</p>}
-        {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-700'}`}>{msg.text}</p>}
+        {msg && <p className={`rounded-controle px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-700'}`}>{msg.text}</p>}
 
         <Bouton onClick={submit} disabled={!canSubmit} data-testid="flow-creer">
           {busy ? t('Enregistrement…', 'Saving…') : isEdit ? t('Enregistrer les modifications', 'Save changes') : autoPublish ? t('Créer et publier', 'Create and publish') : t('Créer le formulaire', 'Create form')}
@@ -721,9 +725,9 @@ export function FlowBuilder({
         <p className="mb-2 text-xs font-medium text-ink-500">{t('Aperçu du formulaire (vue client WhatsApp)', 'Form preview (WhatsApp client view)')}</p>
         {screens.length > 1 && (
           <div className="mb-2 flex items-center justify-center gap-2 text-xs text-ink-500">
-            <button type="button" onClick={() => setActiveIdx(Math.max(0, idx - 1))} disabled={idx === 0} className="rounded px-1.5 py-0.5 hover:bg-ink-100 disabled:opacity-30" aria-label={t('Écran précédent', 'Previous screen')}>◀</button>
+            <button type="button" onClick={() => setActiveIdx(Math.max(0, idx - 1))} disabled={idx === 0} className="rounded-controle px-1.5 py-0.5 hover:bg-ink-100 disabled:opacity-30" aria-label={t('Écran précédent', 'Previous screen')}><Icone nom="precedent" taille="petite" /></button>
             <span>{t('Écran', 'Screen')} {idx + 1}/{screens.length}</span>
-            <button type="button" onClick={() => setActiveIdx(Math.min(screens.length - 1, idx + 1))} disabled={idx === screens.length - 1} className="rounded px-1.5 py-0.5 hover:bg-ink-100 disabled:opacity-30" aria-label={t('Écran suivant', 'Next screen')}>▶</button>
+            <button type="button" onClick={() => setActiveIdx(Math.min(screens.length - 1, idx + 1))} disabled={idx === screens.length - 1} className="rounded-controle px-1.5 py-0.5 hover:bg-ink-100 disabled:opacity-30" aria-label={t('Écran suivant', 'Next screen')}><Icone nom="suivant" taille="petite" /></button>
           </div>
         )}
         <FlowScreen

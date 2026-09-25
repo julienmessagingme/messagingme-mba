@@ -9,6 +9,8 @@ import { FunnelNodes } from '@/components/FunnelNodes';
 import { phrasesNonChiffrables } from '@/lib/cout-non-chiffrable';
 import { useT, useLocale } from '@/lib/i18n';
 import type { Locale } from '@/lib/locale';
+import { Squelette } from '@/components/Squelette';
+import { Nd } from '@/components/Nd';
 
 /**
  * LA FICHE D'UNE CAMPAGNE : ce qu'elle a coûté, et ce que les gens en ont fait.
@@ -101,11 +103,11 @@ export function DetailCampagneModale({ tenantId, campaignId, nom, onClose }: {
       onClose={onClose}
     >
       {erreur && (
-        <p className="rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger" data-testid="detail-erreur">
+        <p className="rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700" data-testid="detail-erreur">
           {t('Le détail de cette campagne n’a pas pu être chargé.', 'This campaign’s detail could not be loaded.')}
         </p>
       )}
-      {!erreur && fiche === null && <p className="text-xs text-ink-400">{t('Chargement…', 'Loading…')}</p>}
+      {!erreur && fiche === null && <Squelette forme="carte" />}
       {!erreur && fiche !== null && <Contenu fiche={fiche} titres={titres} locale={locale} t={t} />}
     </Modale>
   );
@@ -125,7 +127,7 @@ function Contenu({ fiche, titres, locale, t }: {
         <h4 className="text-xs font-medium text-ink-500">
           {t('Le lancement', 'The launch')}
         </h4>
-        <p className="mt-0.5 text-xs text-ink-400">
+        <p className="mt-0.5 text-xs text-ink-500">
           {t(
             'Le premier message envoyé à chaque destinataire. C’est la base de tous les rapports de cette fiche.',
             'The first message sent to each recipient. It is the base of every ratio on this card.',
@@ -143,13 +145,13 @@ function Contenu({ fiche, titres, locale, t }: {
           />
           <Chiffre
             libelle={t('Coût du lancement', 'Launch cost')}
-            valeur={l.cout === null ? '—' : fmtCost(l.cout, locale, d)}
+            valeur={l.cout === null ? <Nd /> : fmtCost(l.cout, locale, d)}
             aide={l.cout === null ? t('Aucun de ces envois n’a pu être chiffré.', 'None of these sends could be priced.') : undefined}
             testid="detail-cout"
           />
           <Chiffre
             libelle={t('Coût par clic', 'Cost per click')}
-            valeur={l.coutParClic === null ? '—' : fmtCost(l.coutParClic, locale, d)}
+            valeur={l.coutParClic === null ? <Nd /> : fmtCost(l.coutParClic, locale, d)}
             aide={t('Coût du lancement rapporté aux clics sur les liens tracés de son template.', 'Launch cost against clicks on its template’s tracked links.')}
             testid="detail-cout-clic"
           />
@@ -173,7 +175,7 @@ function Contenu({ fiche, titres, locale, t }: {
           )}
         </dl>
         {phrasesNonChiffrables(l, 'campagne', (n) => fmtNum(n, locale)).map((ph) => (
-          <p key={ph.fr} className="mt-2 text-xs text-ink-400" data-testid="detail-non-chiffrables">{t(ph.fr, ph.en)}</p>
+          <p key={ph.fr} className="mt-2 text-xs text-ink-500" data-testid="detail-non-chiffrables">{t(ph.fr, ph.en)}</p>
         ))}
       </section>
 
@@ -182,7 +184,7 @@ function Contenu({ fiche, titres, locale, t }: {
           <h4 className="text-xs font-medium text-ink-500">
             {t('Étape par étape', 'Step by step')}
           </h4>
-          <p className="mt-0.5 text-xs text-ink-400">
+          <p className="mt-0.5 text-xs text-ink-500">
             {t(
               'Ce que les gens ont fait à chaque bloc du scénario, lu comme un entonnoir. Le coût par interaction rapporte le coût du LANCEMENT aux gestes de l’étape.',
               'What people did at each block of the scenario, read as a funnel. Cost per interaction is the LAUNCH cost against the step’s gestures.',
@@ -241,7 +243,7 @@ function Contenu({ fiche, titres, locale, t }: {
                       <td className={`${TD} text-right tabular-nums`}>{deuxUnites(e.reponses, locale, t)}</td>
                       <td className={`${TD} text-right tabular-nums`} data-testid={`detail-ratio-${e.nodeId}`}>
                         {e.coutParInteraction === null
-                          ? <span className="text-ink-400" title={t('Aucune interaction à cette étape, ou coût du lancement inconnu.', 'No interaction at this step, or unknown launch cost.')}>—</span>
+                          ? <Nd titre={t('Aucune interaction à cette étape, ou coût du lancement inconnu.', 'No interaction at this step, or unknown launch cost.')} />
                           : fmtCost(e.coutParInteraction, locale, d)}
                       </td>
                     </tr>
@@ -252,7 +254,7 @@ function Contenu({ fiche, titres, locale, t }: {
               </details>
             </>
           )}
-          <p className="mt-2 text-xs text-ink-400" data-testid="detail-liens-reserve">
+          <p className="mt-2 text-xs text-ink-500" data-testid="detail-liens-reserve">
             {t(
               'La colonne « Liens » ne compte pas les personnes : le comptage se fait par lien, pas par contact.',
               'The "Links" column does not count people: clicks are counted per link, not per contact.',
@@ -283,7 +285,7 @@ function deuxUnites(v: { gestes: number; personnes: number } | undefined, locale
   return `${fmtNum(v.gestes, locale)} (${fmtNum(v.personnes, locale)} ${t('pers.', 'ppl')})`;
 }
 
-function Chiffre({ libelle, valeur, aide, testid }: { libelle: string; valeur: string; aide?: string; testid?: string }) {
+function Chiffre({ libelle, valeur, aide, testid }: { libelle: string; valeur: React.ReactNode; aide?: string; testid?: string }) {
   return (
     <div title={aide} data-testid={testid}>
       <dt className="text-xs text-ink-500 font-medium">{libelle}</dt>

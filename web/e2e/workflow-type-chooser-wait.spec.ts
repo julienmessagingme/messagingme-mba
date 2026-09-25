@@ -46,7 +46,7 @@ test.describe('Builder : nature d’un bloc et bloc Attente', () => {
     await expect(page.getByText('Nom du bloc')).toBeVisible();
     await expect(page.getByText('Type de bloc')).toHaveCount(0);
     // Le type reste AFFICHÉ, en lecture seule : on doit savoir sur quoi on travaille.
-    await expect(page.locator('aside, [class*="rounded-2xl"]').getByText('Ajout de tag').first()).toBeVisible();
+    await expect(page.locator('aside, [class*="rounded-carte"]').getByText('Ajout de tag').first()).toBeVisible();
   });
 
   test('la palette permet toujours de créer un bloc Attente, qui se configure', async ({ page }) => {

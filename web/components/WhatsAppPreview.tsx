@@ -5,6 +5,7 @@ import type { TemplateButtonInput } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { PhoneFrame } from '@/components/PhoneFrame';
 import { TexteMisEnForme } from '@/components/TexteMisEnForme';
+import { Icone, type NomIcone } from '@/components/Icone';
 
 /**
  * Rendu du formatage WhatsApp (gras, italique, barré, monospace).
@@ -50,7 +51,7 @@ function renderBody(body: string, examples: string[], varLabels?: Array<string |
     const n = Number(m[1]);
     const label = varLabels?.[n - 1];
     if (label) {
-      nodes.push(<span key={`v${key++}`} className="mx-0.5 inline-flex items-center rounded bg-brand-100 px-1.5 py-0.5 text-[12px] font-medium text-brand-700">{label}</span>);
+      nodes.push(<span key={`v${key++}`} className="mx-0.5 inline-flex items-center rounded-controle bg-brand-100 px-1.5 py-0.5 text-[12px] font-medium text-brand-700">{label}</span>);
     } else {
       const v = examples[n - 1];
       nodes.push(<Fragment key={`e${key++}`}>{v && v.trim() ? v : `{{${n}}}`}</Fragment>);
@@ -89,7 +90,7 @@ export interface WhatsAppPreviewProps {
   hideNote?: boolean;
 }
 
-const MEDIA_ICON: Record<'IMAGE' | 'VIDEO' | 'DOCUMENT', string> = { IMAGE: '🖼️', VIDEO: '🎬', DOCUMENT: '📄' };
+const MEDIA_ICON: Record<'IMAGE' | 'VIDEO' | 'DOCUMENT', NomIcone> = { IMAGE: 'image', VIDEO: 'video', DOCUMENT: 'modele' };
 
 /** Aperçu façon fenêtre WhatsApp (message reçu = bulle blanche à gauche). Partagé Templates + Campagnes. */
 export function WhatsAppPreview({ body, examples, varLabels, buttons, header, footer, senderName, hideNote = false }: WhatsAppPreviewProps) {
@@ -102,25 +103,25 @@ export function WhatsAppPreview({ body, examples, varLabels, buttons, header, fo
     <>
       <PhoneFrame {...(senderName ? { senderName } : {})} contentClassName="min-h-[220px] px-3 py-4">
           <div className="max-w-[88%]">
-            <div className="rounded-lg rounded-tl-none bg-white px-2.5 py-1.5 shadow-sm">
+            <div className="rounded-controle rounded-tl-none bg-white px-2.5 py-1.5 shadow-sm">
               {mediaHeader && (
                 mediaUrl && mediaHeader === 'IMAGE' ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={mediaUrl} alt="" className="-mx-2.5 -mt-1.5 mb-1.5 h-28 w-[calc(100%+1.25rem)] max-w-none rounded-t-lg object-cover" />
+                  <img src={mediaUrl} alt="" className="-mx-2.5 -mt-1.5 mb-1.5 h-28 w-[calc(100%+1.25rem)] max-w-none rounded-t-controle object-cover" />
                 ) : mediaUrl && mediaHeader === 'VIDEO' ? (
-                  <video src={mediaUrl} muted className="-mx-2.5 -mt-1.5 mb-1.5 h-28 w-[calc(100%+1.25rem)] max-w-none rounded-t-lg bg-black object-cover" />
+                  <video src={mediaUrl} muted className="-mx-2.5 -mt-1.5 mb-1.5 h-28 w-[calc(100%+1.25rem)] max-w-none rounded-t-controle bg-black object-cover" />
                 ) : (
-                  <div className="-mx-2.5 -mt-1.5 mb-1.5 flex h-24 items-center justify-center rounded-t-lg bg-ink-100 text-3xl text-ink-400">
-                    {MEDIA_ICON[mediaHeader]}
+                  <div className="-mx-2.5 -mt-1.5 mb-1.5 flex h-24 items-center justify-center rounded-t-controle bg-ink-100 text-ink-400">
+                    <Icone nom={MEDIA_ICON[mediaHeader]} taille="grande" />
                   </div>
                 )
               )}
               {textHeader && <div className="mb-1 break-words text-[13px] font-semibold text-ink-900">{textHeader}</div>}
               <div className="whitespace-pre-wrap break-words text-[13px] leading-snug text-ink-900">
-                {body.trim() ? renderBody(body, examples, varLabels) : <span className="text-ink-400">{t('Le message apparaîtra ici…', 'Your message will appear here…')}</span>}
+                {body.trim() ? renderBody(body, examples, varLabels) : <span className="text-ink-500">{t('Le message apparaîtra ici…', 'Your message will appear here…')}</span>}
               </div>
-              {footer?.trim() && <div className="mt-1 break-words text-[11px] leading-snug text-ink-400">{footer}</div>}
-              <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-ink-400">
+              {footer?.trim() && <div className="mt-1 break-words text-[11px] leading-snug text-ink-500">{footer}</div>}
+              <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-ink-500">
                 12:30 <span className="text-[#53bdeb]">✓✓</span>
               </div>
               {buttons.length > 0 && (
@@ -137,7 +138,7 @@ export function WhatsAppPreview({ body, examples, varLabels, buttons, header, fo
           </div>
       </PhoneFrame>
       {!hideNote && (
-        <p className="mt-2 text-[11px] text-ink-400">{t("Le rendu réel peut varier légèrement selon l'appareil. *gras*, _italique_, ~barré~ sont supportés.", 'The actual rendering may vary slightly by device. *bold*, _italic_, ~strikethrough~ are supported.')}</p>
+        <p className="mt-2 text-[11px] text-ink-500">{t("Le rendu réel peut varier légèrement selon l'appareil. *gras*, _italique_, ~barré~ sont supportés.", 'The actual rendering may vary slightly by device. *bold*, _italic_, ~strikethrough~ are supported.')}</p>
       )}
     </>
   );

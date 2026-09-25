@@ -7,6 +7,8 @@ import { MbaNotice } from './MbaNotice';
 import { fileToDataUrl } from '@/lib/image';
 import { MBA_FILE_ACCEPT, MBA_FILE_MAX_BYTES, mbaFileExtensionOk, mbaFileFormatConditionnel, mbaFileSizeOk } from '@/lib/mba-files';
 import { deleteMbaFile, listMbaFiles, uploadMbaFile, type MbaFile } from '@/lib/api-mba';
+import { BoutonConfirme } from '@/components/Confirmation';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * Documents que l'agent peut lire : PDF, Word, images, et (sous condition) CSV et Excel.
@@ -71,7 +73,7 @@ export function MbaFilesPanel({ tenantId, phoneNumberId }: { tenantId: string; p
     }
   }
 
-  if (chargement) return <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>;
+  if (chargement) return <Squelette forme="lignes" />;
 
   return (
     <div className="space-y-5">
@@ -85,7 +87,7 @@ export function MbaFilesPanel({ tenantId, phoneNumberId }: { tenantId: string; p
             'PDF, Word, images. Your procedures, catalogue, terms. A received document is not necessarily usable: a scanned PDF with no text layer brings nothing, and Meta gives no warning.',
           )}
         </p>
-        <label className="mt-3 flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-ink-300 px-4 py-6 text-sm text-ink-500 hover:border-brand-400">
+        <label className="mt-3 flex cursor-pointer items-center justify-center rounded-carte border border-dashed border-ink-300 px-4 py-6 text-sm text-ink-500 hover:border-brand-400">
           <input
             type="file"
             accept={MBA_FILE_ACCEPT}
@@ -111,10 +113,11 @@ export function MbaFilesPanel({ tenantId, phoneNumberId }: { tenantId: string; p
                 {t('Reçu par Meta. L’indexation n’est pas vérifiable.', 'Received by Meta. Indexing cannot be verified.')}
               </p>
             </div>
-            <button
-              className="shrink-0 text-xs font-medium text-danger-600 hover:text-danger-700"
-              onClick={() => {
-                if (!window.confirm(t(`Supprimer ${f.file_name ?? f.id} ?`, `Delete ${f.file_name ?? f.id}?`))) return;
+            <BoutonConfirme
+              className="shrink-0 text-xs font-medium text-danger-700 hover:text-danger-800"
+              question={t(`Supprimer ${f.file_name ?? f.id} ?`, `Delete ${f.file_name ?? f.id}?`)}
+              libelleConfirmer={t('Supprimer', 'Delete')}
+              onConfirme={() => {
                 setErr('');
                 void deleteMbaFile(tenantId, phoneNumberId, f.id)
                   .then(recharger)
@@ -122,7 +125,7 @@ export function MbaFilesPanel({ tenantId, phoneNumberId }: { tenantId: string; p
               }}
             >
               {t('Supprimer', 'Delete')}
-            </button>
+            </BoutonConfirme>
           </li>
         ))}
         {fichiers.length === 0 && <li className="text-sm text-ink-500">{t('Aucun document pour l’instant.', 'No documents yet.')}</li>}

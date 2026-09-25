@@ -62,7 +62,7 @@ function Securite() {
   ];
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 p-6" data-testid="securite-accueil">
+    <div className="mx-auto w-full max-w-formulaire space-y-6" data-testid="securite-accueil">
       <div className="space-y-1">
         <TitrePage>
           {t('Bienvenue au centre de sécurité & compliance de Engage Me', 'Welcome to the Engage Me security & compliance centre')}
@@ -81,7 +81,7 @@ function Securite() {
             key={b.cle}
             href={b.href}
             data-testid={`securite-boite-${b.cle}`}
-            className="block rounded-xl border border-ink-200 bg-white p-4 transition-colors duration-150 hover:border-brand-300 hover:bg-brand-50"
+            className="block rounded-carte border border-ink-200 bg-white p-4 transition-colors duration-150 hover:border-brand-300 hover:bg-brand-50"
           >
             <span className="block text-sm font-semibold text-ink-900">{b.titre}</span>
             <span className="mt-1 block text-xs text-ink-500">{b.texte}</span>

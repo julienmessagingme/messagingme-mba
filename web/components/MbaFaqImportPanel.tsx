@@ -114,7 +114,7 @@ export function MbaFaqImportPanel({ tenantId, phoneNumberId, onImported }: {
       key={m}
       data-testid={`mba-import-mode-${m}`}
       onClick={() => { setMode(m); invalider(); }}
-      className={`rounded-lg border px-3 py-1.5 text-sm transition-colors duration-150 ${
+      className={`rounded-controle border px-3 py-1.5 text-sm transition-colors duration-150 ${
         mode === m ? 'border-brand-500 bg-brand-50 font-medium text-brand-700' : 'border-ink-200 text-ink-500 hover:text-ink-900'
       }`}
     >
@@ -158,7 +158,7 @@ export function MbaFaqImportPanel({ tenantId, phoneNumberId, onImported }: {
 
       {mode === 'fichier' && (
         <div>
-          <label className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-ink-300 px-4 py-6 text-sm text-ink-500 hover:border-brand-400">
+          <label className="flex cursor-pointer items-center justify-center rounded-carte border border-dashed border-ink-300 px-4 py-6 text-sm text-ink-500 hover:border-brand-400">
             <input
               type="file"
               accept=".csv,text/csv"

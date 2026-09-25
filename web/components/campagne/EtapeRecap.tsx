@@ -16,6 +16,7 @@ import type {
 } from '@/components/campagne/AssistantCampagne';
 import { Bouton } from '@/components/Bouton';
 import { TitrePage } from '@/components/TitrePage';
+import { Nd } from '@/components/Nd';
 
 /**
  * ÉTAPE 5 : LE RÉCAPITULATIF, QUI N'EST PAS UN RÉSUMÉ.
@@ -187,7 +188,7 @@ export function EtapeRecap({
 
       <div
         data-testid="repartition"
-        className="mt-4 w-full overflow-x-auto rounded-xl border border-ink-200"
+        className="mt-4 w-full overflow-x-auto rounded-carte border border-ink-200"
       >
         <table className="w-full min-w-[36rem] border-collapse text-sm">
           <thead>
@@ -207,7 +208,7 @@ export function EtapeRecap({
                     en deux lignes ni faire danser la colonne d'un rafraîchissement à l'autre. C'est la
                     cellule dont la largeur est commandée par la donnée, d'où le scroll du conteneur. */}
                 <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums text-ink-900">
-                  {l.nombre === null ? '—' : fmtNum(l.nombre, 'fr')}
+                  {l.nombre === null ? <Nd /> : fmtNum(l.nombre, 'fr')}
                 </td>
                 <td className="px-4 py-2 text-ink-500">{l.texte}</td>
               </tr>
@@ -221,25 +222,25 @@ export function EtapeRecap({
       <BlocQuand etat={etat} onChange={onChange} />
 
       {probleme && (
-        <p className="mt-4 rounded-lg bg-alerte-50 px-3 py-2 text-sm text-ink-900" data-testid="recap-probleme">{probleme}</p>
+        <p className="mt-4 rounded-controle bg-alerte-50 px-3 py-2 text-sm text-ink-900" data-testid="recap-probleme">{probleme}</p>
       )}
       {erreur && (
-        <p className="mt-4 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700" data-testid="recap-erreur">{erreur}</p>
+        <p className="mt-4 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700" data-testid="recap-erreur">{erreur}</p>
       )}
       {/* ⚠️ UN AVERTISSEMENT N'EST PAS UN REFUS : la campagne part, se met en pause au plafond et
           reprend. Il s'affiche donc à côté du succès, pas à la place. */}
       {avertissement && (
-        <p className="mt-4 rounded-lg bg-alerte-50 px-3 py-2 text-sm text-ink-900" data-testid="recap-avertissement">{avertissement}</p>
+        <p className="mt-4 rounded-controle bg-alerte-50 px-3 py-2 text-sm text-ink-900" data-testid="recap-avertissement">{avertissement}</p>
       )}
       {envoi === 'fait' && (
-        <p className="mt-4 rounded-lg bg-succes-50 px-3 py-2 text-sm text-succes-800" data-testid="recap-lancee">
+        <p className="mt-4 rounded-controle bg-succes-50 px-3 py-2 text-sm text-succes-800" data-testid="recap-lancee">
           {etat.quand === 'plus_tard'
             ? 'La campagne est programmée. Vous pouvez annuler la programmation depuis la liste des campagnes.'
             : 'La campagne est lancée. Suivez-la depuis la liste des campagnes.'}
         </p>
       )}
       {envoi === 'creee' && (
-        <p className="mt-4 rounded-lg bg-succes-50 px-3 py-2 text-sm text-succes-800" data-testid="recap-creee">
+        <p className="mt-4 rounded-controle bg-succes-50 px-3 py-2 text-sm text-succes-800" data-testid="recap-creee">
           La campagne est créée avec ses destinataires, et n&apos;a rien envoyé. Lancez-la depuis la
           liste des campagnes quand vous voulez.
           {/* ⚠️ LA DATE N'A PAS ÉTÉ POSÉE, ET IL FAUT LE DIRE. « Créer sans envoyer » s'arrête à la
@@ -308,9 +309,9 @@ function BlocQuand({
   etat, onChange,
 }: { etat: EtatCampagne; onChange: (patch: Partial<EtatCampagne>) => void }) {
   return (
-    <div className="mt-4 w-full rounded-xl border border-ink-200 p-4" data-testid="bloc-quand">
+    <div className="mt-4 w-full rounded-carte border border-ink-200 p-4" data-testid="bloc-quand">
       <h3 className="text-sm font-medium text-ink-900">Quand ?</h3>
-      <div className="mt-3 inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-sm">
+      <div className="mt-3 inline-flex gap-1 rounded-controle bg-ink-100 p-1 text-sm">
         {([
           ['maintenant', 'Maintenant'],
           ['plus_tard', 'Plus tard'],
@@ -320,7 +321,7 @@ function BlocQuand({
             type="button"
             onClick={() => onChange({ quand: valeur })}
             data-testid={`quand-${valeur}`}
-            className={`rounded-md px-3 py-1 ${etat.quand === valeur ? 'bg-white font-medium text-brand-700' : 'text-ink-500 hover:text-ink-900'}`}
+            className={`rounded-controle px-3 py-1 ${etat.quand === valeur ? 'bg-white font-medium text-brand-700' : 'text-ink-500 hover:text-ink-900'}`}
           >
             {libelle}
           </button>
@@ -335,7 +336,7 @@ function BlocQuand({
               value={etat.dateLocale}
               onChange={(e) => onChange({ dateLocale: e.target.value })}
               data-testid="campagne-date"
-              className="mt-1 w-full max-w-xs rounded-lg border border-ink-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
+              className="mt-1 w-full max-w-xs rounded-controle border border-ink-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
             />
           </label>
           <p className="mt-1 text-xs text-ink-500">
@@ -373,7 +374,7 @@ function BlocCout({
   const debit = etat.debitParMinute;
   const minutes = fil || retenus === null ? null : Math.max(1, Math.ceil(retenus / debit));
   return (
-    <div className="mt-4 w-full rounded-xl border border-ink-200 p-4" data-testid="bloc-cout">
+    <div className="mt-4 w-full rounded-carte border border-ink-200 p-4" data-testid="bloc-cout">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-medium text-ink-900">Débit d&apos;envoi</h3>
         <span className="shrink-0 text-sm font-semibold text-ink-900" data-testid="debit-valeur">
@@ -400,7 +401,7 @@ function BlocCout({
         corriger sans déploiement, et une valeur en dur dans l'écran deviendrait fausse sans que rien ne
         le signale.
       */}
-      <p className="mt-2 text-xs text-ink-400">
+      <p className="mt-2 text-xs text-ink-500">
         Défaut 60/min. Plafond 80/min (limite WhatsApp) ; baisser le débit protège la réputation du
         numéro. Sur un étage RCS, le plafond est celui de l&apos;opérateur : un débit plus élevé y est
         ramené à l&apos;envoi.
@@ -432,7 +433,7 @@ function BlocCout({
           </span>
         )}
       </p>
-      <p className="mt-2 text-xs text-ink-400">
+      <p className="mt-2 text-xs text-ink-500">
         Le prix d&apos;un message dépend du pays et de la catégorie, et n&apos;est connu qu&apos;après
         l&apos;envoi : il est visible dans Analytique.
       </p>

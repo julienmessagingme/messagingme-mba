@@ -11,6 +11,8 @@ import { estAnnulation } from '@/lib/http';
 import { routeInconnue } from '@/lib/canaux-services';
 import { Bouton } from '@/components/Bouton';
 import { TitrePage } from '@/components/TitrePage';
+import { useConfirmation } from '@/components/Confirmation';
+import { Squelette } from '@/components/Squelette';
 
 export default function AdminPage() {
   return <AppShell active="admin">{(session) => <AdminInner session={session} />}</AppShell>;
@@ -18,6 +20,7 @@ export default function AdminPage() {
 
 function AdminInner({ session }: { session: Session }) {
   const t = useT();
+  const confirmer = useConfirmation();
   const { locale } = useLocale();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,7 +89,7 @@ function AdminInner({ session }: { session: Session }) {
   }
 
   async function removeUser(u: AdminUser) {
-    if (!window.confirm(t(`Supprimer définitivement le compte ${u.email} ?\nCette action est irréversible.`, `Permanently delete account ${u.email}?\nThis action is irreversible.`))) return;
+    if (!(await confirmer({ titre: t('Supprimer le compte', 'Delete the account'), message: t(`Supprimer définitivement le compte ${u.email} ?\nCette action est irréversible.`, `Permanently delete account ${u.email}?\nThis action is irreversible.`), confirmer: t('Supprimer', 'Delete') }))) return;
     setError(null);
     const prev = users;
     setUsers((list) => list.filter((x) => x.id !== u.id)); // optimiste
@@ -101,18 +104,18 @@ function AdminInner({ session }: { session: Session }) {
   return (
     <div className="space-y-6">
       <TitrePage>{t('Compte', 'Account')}</TitrePage>
-      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+      {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
       <EspaceCard tenantId={session.tenantId} />
 
       <InviteCard tenantId={session.tenantId} onInvited={load} />
 
-      <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
+      <div className="overflow-hidden rounded-carte border border-ink-200 bg-white">
         <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">
           {t('Comptes', 'Accounts')} ({users.length})
         </div>
         {loading ? (
-          <p className="px-5 py-6 text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
+          <Squelette forme="carte" className="px-5 py-6" />
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -141,7 +144,7 @@ function AdminInner({ session }: { session: Session }) {
                         onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
                         placeholder={t('prénom', 'first name')}
                         maxLength={60}
-                        className={`w-36 rounded-lg border border-transparent px-2 py-1 text-sm hover:border-ink-200 focus:border-brand-500 focus:outline-none ${u.disabled ? 'text-ink-400' : 'text-ink-900'}`}
+                        className={`w-36 rounded-controle border border-transparent px-2 py-1 text-sm hover:border-ink-200 focus:border-brand-500 focus:outline-none ${u.disabled ? 'text-ink-400' : 'text-ink-900'}`}
                       />
                     </td>
                     <td className={`px-5 py-3 ${u.disabled ? 'text-ink-400' : 'text-ink-500'}`}>{u.email}</td>
@@ -151,7 +154,7 @@ function AdminInner({ session }: { session: Session }) {
                         disabled={isSelf}
                         onChange={(e) => changeRole(u, e.target.value as UserRole)}
                         title={isSelf ? t('Tu ne peux pas changer ton propre rôle', 'You cannot change your own role') : ''}
-                        className="rounded-lg border border-ink-300 bg-white px-2 py-1 text-sm text-ink-900 disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-ink-400"
+                        className="rounded-controle border border-ink-300 bg-white px-2 py-1 text-sm text-ink-900 disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-ink-400"
                       >
                         <option value="admin">Admin</option>
                         <option value="manager">Manager</option>
@@ -160,7 +163,7 @@ function AdminInner({ session }: { session: Session }) {
                     </td>
                     <td className="px-5 py-3">
                       {u.disabled ? (
-                        <span className="inline-flex items-center rounded-full bg-danger-50 px-2 py-0.5 text-xs font-medium text-danger">{t('Révoqué', 'Revoked')}</span>
+                        <span className="inline-flex items-center rounded-full bg-danger-50 px-2 py-0.5 text-xs font-medium text-danger-700">{t('Révoqué', 'Revoked')}</span>
                       ) : u.pending ? (
                         <span className="inline-flex items-center rounded-full bg-alerte-50 px-2 py-0.5 text-xs font-medium text-alerte" title={t("A été invité mais n'a pas encore choisi son mot de passe", "Has been invited but hasn't chosen a password yet")}>{t('Invité', 'Invited')}</span>
                       ) : (
@@ -171,10 +174,10 @@ function AdminInner({ session }: { session: Session }) {
                       {u.lastLoginAt ? (
                         <>
                           {formatDate(u.lastLoginAt, locale, { day: '2-digit', month: '2-digit', year: '2-digit' })}
-                          <span className="ml-1.5 text-ink-400">{hourMin(u.lastLoginAt, locale)}</span>
+                          <span className="ml-1.5 text-ink-500">{hourMin(u.lastLoginAt, locale)}</span>
                         </>
                       ) : (
-                        <span className="text-ink-400" title={t('Aucune connexion depuis la mise en place du suivi', 'No sign-in since tracking was introduced')}>
+                        <span className="text-ink-500" title={t('Aucune connexion depuis la mise en place du suivi', 'No sign-in since tracking was introduced')}>
                           {t('Jamais', 'Never')}
                         </span>
                       )}
@@ -237,7 +240,7 @@ function InviteCard({ tenantId, onInvited }: { tenantId: string; onInvited: () =
   }
 
   return (
-    <form onSubmit={submit} className="space-y-3 rounded-2xl border border-brand-200 bg-brand-50/40 p-5">
+    <form onSubmit={submit} className="space-y-3 rounded-carte border border-brand-200 bg-brand-50/40 p-5">
       <div className="text-sm font-semibold text-ink-900">{t('Inviter un membre', 'Invite a member')}</div>
       <p className="text-xs text-ink-500">{t("Il reçoit un email pour choisir son mot de passe et rejoindre l'espace.", 'They receive an email to choose their password and join the workspace.')}</p>
       <div className="flex flex-wrap items-end gap-3">
@@ -253,7 +256,7 @@ function InviteCard({ tenantId, onInvited }: { tenantId: string; onInvited: () =
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-ink-500">{t('Rôle', 'Role')}</label>
-          <select value={role} onChange={(e) => setRole(e.target.value as UserRole)} className="rounded-lg border border-ink-300 bg-white px-3 py-2 text-sm text-ink-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100">
+          <select value={role} onChange={(e) => setRole(e.target.value as UserRole)} className="rounded-controle border border-ink-300 bg-white px-3 py-2 text-sm text-ink-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100">
             <option value="agent">{t('Agent (inbox)', 'Agent (inbox)')}</option>
             <option value="manager">{t('Manager (inbox)', 'Manager (inbox)')}</option>
             <option value="admin">Admin</option>
@@ -265,13 +268,13 @@ function InviteCard({ tenantId, onInvited }: { tenantId: string; onInvited: () =
       </div>
       {/* Dit franchement ce que les rôles donnent AUJOURD'HUI : « manager » est un statut, ses droits propres
           restent à définir. Sans cette ligne, on invite un manager en s'attendant à ce qu'il voie tout. */}
-      <p className="text-xs leading-snug text-ink-400">
+      <p className="text-xs leading-snug text-ink-500">
         {t(
           'Manager et agent accèdent à l’inbox. Seul un admin accède au reste de la console.',
           'Managers and agents get the inbox. Only an admin reaches the rest of the console.',
         )}
       </p>
-      {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-700'}`}>{msg.text}</p>}
+      {msg && <p className={`rounded-controle px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-700'}`}>{msg.text}</p>}
     </form>
   );
 }
@@ -334,9 +337,9 @@ function EspaceCard({ tenantId }: { tenantId: string }) {
   }
 
   return (
-    <form data-testid="espace-carte" onSubmit={enregistrer} className="space-y-3 rounded-2xl border border-ink-200 bg-white p-5">
+    <form data-testid="espace-carte" onSubmit={enregistrer} className="space-y-3 rounded-carte border border-ink-200 bg-white p-5">
       <div className="text-sm font-semibold text-ink-900">{t('Espace', 'Workspace')}</div>
-      {lecture === 'en_cours' && <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>}
+      {lecture === 'en_cours' && <Squelette forme="carte" />}
       {lecture === 'ok' && (
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[220px] flex-1">
@@ -353,7 +356,7 @@ function EspaceCard({ tenantId }: { tenantId: string }) {
         </div>
       )}
       {msg && (
-        <p data-testid="espace-message" className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-700'}`}>{msg.text}</p>
+        <p data-testid="espace-message" className={`rounded-controle px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-700'}`}>{msg.text}</p>
       )}
     </form>
   );

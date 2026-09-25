@@ -28,7 +28,7 @@ describe('sorties réservées du bloc agent : front et serveur disent la même c
     // Une sortie sans explication est une sortie que personne ne câble : le client ne peut pas deviner ce que
     // « plafond » veut dire pour son parcours.
     for (const s of AGENT_SORTIES_RESERVEES) {
-      expect(s.emoji.length).toBeGreaterThan(0);
+      expect(s.icone.length).toBeGreaterThan(0);
       for (const paire of [s.label, s.aide]) {
         expect(paire).toHaveLength(2);
         expect(paire[0].trim()).not.toBe('');

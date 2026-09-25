@@ -10,6 +10,10 @@ import { messageRafraichissement } from '@/lib/flows-refresh';
 import { useT } from '@/lib/i18n';
 import { Bouton } from '@/components/Bouton';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
+import { Icone } from '@/components/Icone';
+import { useConfirmation } from '@/components/Confirmation';
+import { Modale } from '@/components/Modale';
+import { Squelette } from '@/components/Squelette';
 
 export default function FlowsPage() {
   return <AppShell active="flows">{(session) => <FlowsInner session={session} />}</AppShell>;
@@ -25,6 +29,7 @@ function FlowsInner({ session }: { session: Session }) {
   const [refreshing, setRefreshing] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const t = useT();
+  const confirmer = useConfirmation();
 
   const load = useCallback(async (): Promise<FlowSummary[]> => {
     setError(null);
@@ -63,10 +68,8 @@ function FlowsInner({ session }: { session: Session }) {
   async function publish(f: FlowSummary) {
     // Le nom est interpolé DANS la phrase traduite : la découper en morceaux concaténés laissait les
     // guillemets français et le « ? » final dans la version anglaise.
-    if (!window.confirm(
-      t(`Publier le formulaire « ${f.name} » ?\nUn formulaire publié ne peut plus être modifié (irréversible côté Meta). Pour changer les champs, il faudra « Dupliquer pour modifier ».`,
-        `Publish the form “${f.name}”?\nA published form can no longer be edited (irreversible on the Meta side). To change the fields, you will need to “Duplicate to edit”.`)
-    )) return;
+    if (!(await confirmer({ titre: t('Publier le formulaire', 'Publish the form'), message: t(`Publier le formulaire « ${f.name} » ?\nUn formulaire publié ne peut plus être modifié (irréversible côté Meta). Pour changer les champs, il faudra « Dupliquer pour modifier ».`,
+        `Publish the form “${f.name}”?\nA published form can no longer be edited (irreversible on the Meta side). To change the fields, you will need to “Duplicate to edit”.`), confirmer: t('Publier', 'Publish') }))) return;
     setError(null);
     const prev = flows;
     setFlows((list) => list.map((x) => (x.id === f.id ? { ...x, status: 'PUBLISHED' } : x))); // optimiste
@@ -95,7 +98,7 @@ function FlowsInner({ session }: { session: Session }) {
       ? t(`Supprimer le formulaire publié « ${f.name} » ?\nUn formulaire publié ne se supprime pas chez Meta : il est DÉPRÉCIÉ (retiré de l'usage). S'il est encore rattaché à un template, Meta peut refuser.`,
           `Delete the published form “${f.name}”?\nA published form cannot be deleted on Meta: it is DEPRECATED (removed from use). If it is still attached to a template, Meta may refuse.`)
       : t(`Supprimer le brouillon « ${f.name} » ?`, `Delete the draft “${f.name}”?`);
-    if (!window.confirm(msg)) return;
+    if (!(await confirmer({ titre: t('Supprimer le formulaire', 'Delete the form'), message: msg, confirmer: t('Supprimer', 'Delete') }))) return;
     setError(null);
     const prev = flows;
     setFlows((list) => list.filter((x) => x.id !== f.id)); // optimiste
@@ -115,14 +118,14 @@ function FlowsInner({ session }: { session: Session }) {
         <TitrePage>{t('Formulaires', 'Forms')}</TitrePage>
         <IntroPage>{t("Formulaires WhatsApp riches (titres, images, tous types de champs : saisie, choix, date, consentement) avec bouton final personnalisable : le client remplit dans WhatsApp, chaque champ se range dans une fiche contact, la réponse arrive dans l'inbox. Attache un formulaire publié à un template via un bouton « Flow ».", 'Rich WhatsApp forms (titles, images, all field types: text input, choice, date, consent) with a customizable final button: the customer fills it in inside WhatsApp, each field is saved to a contact record, and the response lands in the inbox. Attach a published form to a template through a “Flow” button.')}</IntroPage>
       </div>
-      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
-      {note && <p data-testid="flows-note-rafraichissement" className="rounded-lg bg-brand-50 px-3 py-2 text-sm text-ink-900">{note}</p>}
+      {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+      {note && <p data-testid="flows-note-rafraichissement" className="rounded-controle bg-brand-50 px-3 py-2 text-sm text-ink-900">{note}</p>}
 
       {editing ? (
-        <div className="rounded-2xl border border-brand-200 bg-brand-50/40 p-5">
+        <div className="rounded-carte border border-brand-200 bg-brand-50/40 p-5">
           <div className="mb-3 flex items-center justify-between">
-            <div className="text-sm font-semibold text-ink-900">{t(`Modifier « ${editing.name} »`, `Edit “${editing.name}”`)} <span className="ml-2 text-xs font-normal text-ink-400">({t('brouillon', 'draft')})</span></div>
-            <button onClick={() => setEditing(null)} className="text-xs text-ink-400 hover:text-ink-900">{t('Fermer', 'Close')}</button>
+            <div className="text-sm font-semibold text-ink-900">{t(`Modifier « ${editing.name} »`, `Edit “${editing.name}”`)} <span className="ml-2 text-xs font-normal text-ink-500">({t('brouillon', 'draft')})</span></div>
+            <button onClick={() => setEditing(null)} className="text-xs text-ink-500 hover:text-ink-900">{t('Fermer', 'Close')}</button>
           </div>
           <FlowBuilder
             key={editing.id}
@@ -137,10 +140,10 @@ function FlowsInner({ session }: { session: Session }) {
           />
         </div>
       ) : creating ? (
-        <div className="rounded-2xl border border-brand-200 bg-brand-50/40 p-5">
+        <div className="rounded-carte border border-brand-200 bg-brand-50/40 p-5">
           <div className="mb-3 flex items-center justify-between">
             <div className="text-sm font-semibold text-ink-900">{t('Nouveau formulaire', 'New form')}</div>
-            <button onClick={() => setCreating(false)} className="text-xs text-ink-400 hover:text-ink-900">{t('Fermer', 'Close')}</button>
+            <button onClick={() => setCreating(false)} className="text-xs text-ink-500 hover:text-ink-900">{t('Fermer', 'Close')}</button>
           </div>
           <FlowBuilder tenantId={session.tenantId} onCreated={() => { void load(); setCreating(false); }} />
         </div>
@@ -170,9 +173,9 @@ function FlowsInner({ session }: { session: Session }) {
             </div>
           </div>
           {loading ? (
-            <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
+            <Squelette forme="lignes" />
           ) : flows.length === 0 ? (
-            <p className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">{t("Aucun formulaire pour l'instant.", 'No forms yet.')}</p>
+            <p className="px-4 py-10 text-center text-sm text-ink-500">{t("Aucun formulaire pour l'instant.", 'No forms yet.')}</p>
           ) : (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
               {flows.map((f) => <FlowCard key={f.id} flow={f} onPreview={() => setPreview(f)} onEdit={() => { setNote(null); setEditing(f); }} onPublish={() => publish(f)} onDuplicate={() => duplicate(f)} onDelete={() => remove(f)} />)}
@@ -194,12 +197,12 @@ function FlowCard({ flow: f, onPreview, onEdit, onPublish, onDuplicate, onDelete
   // Miniature = écran 1 seulement (crop) ; pas de resolveLabel -> pas de badge de condition dans la miniature.
   const first = f.screens && f.screens.length > 0 ? f.screens[0] : undefined;
   return (
-    <div className="flex flex-col rounded-2xl border border-ink-200 bg-white p-3 transition-colors duration-150 hover:border-brand-300">
-      <button onClick={onPreview} title={t("Voir l'aperçu", 'View preview')} className="mb-2 block overflow-hidden rounded-xl border border-ink-100 bg-ink-50">
+    <div className="flex flex-col rounded-carte border border-ink-200 bg-white p-3 transition-colors duration-150 hover:border-brand-300">
+      <button onClick={onPreview} title={t("Voir l'aperçu", 'View preview')} className="mb-2 block overflow-hidden rounded-carte border border-ink-100 bg-ink-50">
         <div className="pointer-events-none h-44 overflow-hidden">
           {first
             ? <FlowScreen elements={fromFlowElements(first.elements)} cta={f.cta} title={first.title || f.name} />
-            : <div className="flex h-full items-center justify-center px-3 text-center text-xs text-ink-400">{t('Structure inconnue : aperçu indisponible', 'Unknown structure: preview unavailable')}</div>}
+            : <div className="flex h-full items-center justify-center px-3 text-center text-xs text-ink-500">{t('Structure inconnue : aperçu indisponible', 'Unknown structure: preview unavailable')}</div>}
         </div>
       </button>
       <div className="flex items-center gap-2">
@@ -213,7 +216,7 @@ function FlowCard({ flow: f, onPreview, onEdit, onPublish, onDuplicate, onDelete
           <>
             {first
               ? <button onClick={onEdit} className="font-medium text-brand-600 hover:text-brand-700">{t('Éditer', 'Edit')}</button>
-              : <span className="text-ink-400" title={t("Formulaire non construit dans la console (importé de WhatsApp Manager, ou antérieur au modèle riche) : Meta n'en renvoie pas la structure. À recréer ici pour l'éditer.", 'Form not built in the console (imported from WhatsApp Manager, or predating the rich model): Meta does not return its structure. Recreate it here to edit it.')}>{t('Éditer', 'Edit')}</span>}
+              : <span className="text-ink-500" title={t("Formulaire non construit dans la console (importé de WhatsApp Manager, ou antérieur au modèle riche) : Meta n'en renvoie pas la structure. À recréer ici pour l'éditer.", 'Form not built in the console (imported from WhatsApp Manager, or predating the rich model): Meta does not return its structure. Recreate it here to edit it.')}>{t('Éditer', 'Edit')}</span>}
             <button onClick={onPublish} className="font-medium text-brand-600 hover:text-brand-700">{t('Publier', 'Publish')}</button>
           </>
         ) : (
@@ -235,38 +238,34 @@ function FlowPreviewModal({ flow, onClose }: { flow: FlowSummary; onClose: () =>
   const cur = Math.min(idx, Math.max(0, n - 1)); // borné (filet si les données changent sous la modale)
   const scr = screens ? screens[cur] : null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-5 shadow-mm-lg" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-start justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-ink-900">{flow.name}</h3>
-            <p className="text-xs text-ink-400">{flow.status === 'PUBLISHED' ? t('Publié', 'Published') : t('Brouillon', 'Draft')} · {flow.fields.length} {t('champ', 'field')}{flow.fields.length > 1 ? 's' : ''}</p>
-          </div>
-          <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-900">×</button>
-        </div>
-        {!scr ? (
-          <p className="text-sm text-ink-500">{flow.fields.length > 0 ? flow.fields.map((f) => f.label).join(', ') : t("Formulaire non construit dans la console : Meta n'en renvoie pas la structure, l'aperçu détaillé est donc indisponible.", 'Form not built in the console: Meta does not return its structure, so the detailed preview is unavailable.')}</p>
-        ) : (
-          <>
-            {n > 1 && (
-              <div className="mb-2 flex items-center justify-center gap-3 text-xs text-ink-500">
-                <button onClick={() => setIdx(Math.max(0, cur - 1))} disabled={cur === 0} className="rounded px-1.5 py-0.5 hover:bg-ink-100 disabled:opacity-30" aria-label={t('Écran précédent', 'Previous screen')}>◀</button>
-                <span>{t('Écran', 'Screen')} {cur + 1}/{n}</span>
-                <button onClick={() => setIdx(Math.min(n - 1, cur + 1))} disabled={cur === n - 1} className="rounded px-1.5 py-0.5 hover:bg-ink-100 disabled:opacity-30" aria-label={t('Écran suivant', 'Next screen')}>▶</button>
-              </div>
-            )}
-            <FlowScreen
-              elements={fromFlowElements(scr.elements, (fieldKey) => {
-                // Le libellé du champ source se résout DANS le même écran (contrainte du modèle).
-                const src = scr.elements.find((el) => el.kind === 'field' && el.key === fieldKey);
-                return src && src.kind === 'field' ? src.label : null;
-              })}
-              cta={cur === n - 1 ? flow.cta : (scr.cta || t('Continuer', 'Continue'))}
-              title={scr.title || flow.name}
-            />
-          </>
-        )}
-      </div>
-    </div>
+    <Modale
+      titre={flow.name}
+      sousTitre={<>{flow.status === 'PUBLISHED' ? t('Publié', 'Published') : t('Brouillon', 'Draft')} · {flow.fields.length} {t('champ', 'field')}{flow.fields.length > 1 ? 's' : ''}</>}
+      taille="petite"
+      onClose={onClose}
+    >
+      {!scr ? (
+        <p className="text-sm text-ink-500">{flow.fields.length > 0 ? flow.fields.map((f) => f.label).join(', ') : t("Formulaire non construit dans la console : Meta n'en renvoie pas la structure, l'aperçu détaillé est donc indisponible.", 'Form not built in the console: Meta does not return its structure, so the detailed preview is unavailable.')}</p>
+      ) : (
+        <>
+          {n > 1 && (
+            <div className="mb-2 flex items-center justify-center gap-3 text-xs text-ink-500">
+              <button onClick={() => setIdx(Math.max(0, cur - 1))} disabled={cur === 0} className="rounded-controle px-1.5 py-0.5 hover:bg-ink-100 disabled:opacity-30" aria-label={t('Écran précédent', 'Previous screen')}><Icone nom="precedent" taille="petite" /></button>
+              <span>{t('Écran', 'Screen')} {cur + 1}/{n}</span>
+              <button onClick={() => setIdx(Math.min(n - 1, cur + 1))} disabled={cur === n - 1} className="rounded-controle px-1.5 py-0.5 hover:bg-ink-100 disabled:opacity-30" aria-label={t('Écran suivant', 'Next screen')}><Icone nom="suivant" taille="petite" /></button>
+            </div>
+          )}
+          <FlowScreen
+            elements={fromFlowElements(scr.elements, (fieldKey) => {
+              // Le libellé du champ source se résout DANS le même écran (contrainte du modèle).
+              const src = scr.elements.find((el) => el.kind === 'field' && el.key === fieldKey);
+              return src && src.kind === 'field' ? src.label : null;
+            })}
+            cta={cur === n - 1 ? flow.cta : (scr.cta || t('Continuer', 'Continue'))}
+            title={scr.title || flow.name}
+          />
+        </>
+      )}
+    </Modale>
   );
 }

@@ -9,6 +9,7 @@ import { useT } from '@/lib/i18n';
 import { getSession, type Session } from '@/lib/session';
 import { accesAutorise } from '@/lib/nav';
 import { GROUPES_DOC, LIENS_NAV, PAGES_DOC, ancreDeplacee, hrefDe, pageDoc, type CleDePage } from '@/lib/doc-api-pages';
+import { Icone } from '@/components/Icone';
 
 /**
  * LE CADRE DE CHAQUE PAGE DE LA DOCUMENTATION (API et serveur MCP) : la navigation de la doc à gauche, collante
@@ -60,11 +61,11 @@ function Colonnes({ page, children }: { page: CleDePage; children: React.ReactNo
         </div>
       </aside>
       {/* Sur mobile, dans le flux : ouverte, elle POUSSE le contenu, elle ne le recouvre pas. */}
-      <details className="group mb-6 rounded-xl border border-ink-200 bg-white lg:hidden" data-testid="nav-doc-mobile">
+      <details className="group mb-6 rounded-carte border border-ink-200 bg-white lg:hidden" data-testid="nav-doc-mobile">
         <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm [&::-webkit-details-marker]:hidden">
           <span className="font-semibold text-ink-900">{t('Documentation', 'Documentation')}</span>
           <span className="min-w-0 truncate text-ink-500">{t(...pageDoc(page).nav)}</span>
-          <svg viewBox="0 0 24 24" className="ml-auto h-4 w-4 shrink-0 text-ink-400 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+          <Icone nom="deplier" taille="petite" className="ml-auto text-ink-400 transition-transform duration-150 group-open:rotate-180" />
         </summary>
         <div className="border-t border-ink-100 px-1 py-3">
           <NavDoc page={page} />
@@ -72,7 +73,7 @@ function Colonnes({ page, children }: { page: CleDePage; children: React.ReactNo
       </details>
       {/* `doc-api` borne les vérifications de l'e2e au CONTENU : la barre latérale de la console nomme d'autres
           écrans (dont des intégrations), et ne doit pas faire échouer la règle « aucun outil tiers ». */}
-      <div className="min-w-0 max-w-3xl space-y-10" data-testid="doc-api">{children}</div>
+      <div className="min-w-0 max-w-formulaire space-y-10" data-testid="doc-api">{children}</div>
     </div>
   );
 }
@@ -83,7 +84,7 @@ function NavDoc({ page }: { page: CleDePage }) {
     <nav aria-label={t('Documentation', 'Documentation')} className="space-y-5">
       {GROUPES_DOC.map((g) => (
         <div key={g.cle}>
-          <p className="px-3 text-xs font-semibold text-ink-400">{t(g.titre[0], g.titre[1])}</p>
+          <p className="px-3 text-xs font-semibold text-ink-500">{t(g.titre[0], g.titre[1])}</p>
           <ul className="mt-1.5 space-y-0.5">
             {PAGES_DOC.filter((p) => p.groupe === g.cle).flatMap((p) => {
               const courante = p.cle === page;
@@ -92,7 +93,7 @@ function NavDoc({ page }: { page: CleDePage }) {
                   <Link
                     href={p.href}
                     aria-current={courante ? 'page' : undefined}
-                    className={`block rounded-md px-3 py-1.5 text-sm transition-colors duration-150 ${
+                    className={`block rounded-controle px-3 py-1.5 text-sm transition-colors duration-150 ${
                       courante ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100 hover:text-ink-900'
                     }`}
                   >
@@ -102,7 +103,7 @@ function NavDoc({ page }: { page: CleDePage }) {
                 // Les entrées qui ne sont pas des pages (l'index des endpoints), juste après la page qui les porte.
                 ...LIENS_NAV.filter((l) => l.apres === p.cle).map((l) => (
                   <li key={`${p.cle}-${l.libelle[1]}`}>
-                    <Link href={hrefDe(l.lien)} className="block rounded-md px-3 py-1.5 text-sm text-ink-500 transition-colors duration-150 hover:bg-ink-100 hover:text-ink-900">
+                    <Link href={hrefDe(l.lien)} className="block rounded-controle px-3 py-1.5 text-sm text-ink-500 transition-colors duration-150 hover:bg-ink-100 hover:text-ink-900">
                       {t(l.libelle[0], l.libelle[1])}
                     </Link>
                   </li>

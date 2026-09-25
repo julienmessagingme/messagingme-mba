@@ -189,9 +189,12 @@ describe('ongletDeLaPage', () => {
      *   ajouter pour faire taire ce test la rendrait visible à tous les clients.
      * - `email-accounts` : atteinte par le MENU DU COMPTE (`AccountMenu`, « Boîtes email »), en haut à
      *   droite. Elle règle un compte, pas le produit : sa place n'est pas dans la barre.
+     * - `compte` : le mot de passe de la personne, hors barre par nature. ⚠️ AUCUN LIEN N'Y MÈNE AUJOURD'HUI
+     *   (relevé le 2026-09-25, en la faisant entrer dans la coquille) : sa porte naturelle est le menu du
+     *   compte, et elle reste à poser. C'est une exception NOMMÉE, pas un rangement.
      */
     // `outils-espace` n'y est plus : `/outils` renvoie vers l'onglet du MBA et ne porte plus d'AppShell (2026-09-21).
-    const horsNav = new Set(['admin', 'email-accounts']);
+    const horsNav = new Set(['admin', 'email-accounts', 'compte']);
     for (const cle of clesTab.filter((c) => !horsNav.has(c))) {
       const dedans = ONGLETS.filter((o) => reels[o].includes(cle));
       expect(dedans, `« ${cle} » est dans ${dedans.length} onglet(s), il en faut exactement un`).toHaveLength(1);

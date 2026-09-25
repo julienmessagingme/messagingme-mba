@@ -37,7 +37,7 @@ export function MbaFaqImportPreview({ apercu }: { apercu: MbaFaqPreview }) {
   );
 
   return (
-    <div className="rounded-xl border border-ink-200 p-4" data-testid="mba-import-preview">
+    <div className="rounded-carte border border-ink-200 p-4" data-testid="mba-import-preview">
       <p className="text-sm font-medium text-ink-900" data-testid="mba-import-summary">{resumeApercu(apercu, locale)}</p>
       <p className="mt-1 text-xs text-ink-500">
         {t(`Source détectée : ${apercu.source}. ${apercu.total} question(s) lue(s).`, `Detected source: ${apercu.source}. ${apercu.total} question(s) read.`)}

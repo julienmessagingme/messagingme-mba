@@ -138,7 +138,7 @@ function ChaineInner({ session }: { session: Session }) {
   const branchee = connexion !== null && connexion.connection !== null;
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8">
+    <div className="mx-auto max-w-liste px-4 py-8">
       <header className="mb-6">
         <p className={kickerCls}>{t('Diffusion', 'Broadcast')}</p>
         <TitrePage className="mt-1">{t('Chaîne', 'Channel')}</TitrePage>
@@ -170,7 +170,7 @@ function ChaineInner({ session }: { session: Session }) {
       {branchee ? (
         <>
           {succes ? (
-            <div className="mt-6 rounded-xl bg-succes-50 px-4 py-3" data-testid="chaine-publie">
+            <div className="mt-6 rounded-carte bg-succes-50 px-4 py-3" data-testid="chaine-publie">
               <p className="text-sm font-medium text-succes-600">
                 {t('Publication envoyée à la chaîne.', 'Post sent to the channel.')}
               </p>
@@ -192,13 +192,13 @@ function ChaineInner({ session }: { session: Session }) {
           ) : null}
 
           {erreur !== null && connexion !== null ? (
-            <p className="mt-6 rounded-xl bg-danger-50 px-4 py-3 text-sm text-danger" data-testid="chaine-erreur">
+            <p className="mt-6 rounded-carte bg-danger-50 px-4 py-3 text-sm text-danger-700" data-testid="chaine-erreur">
               {erreur}
             </p>
           ) : null}
 
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
-            <div className="rounded-2xl border border-ink-200 bg-white p-5">
+            <div className="rounded-carte border border-ink-200 bg-white p-5">
               <h2 className="mb-4 text-base font-semibold text-ink-900">
                 {t('Nouvelle publication', 'New post')}
               </h2>

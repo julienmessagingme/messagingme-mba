@@ -7,6 +7,8 @@ import { useT, useLocale } from '@/lib/i18n';
 import type { Locale } from '@/lib/locale';
 import { NOTE_MIN, NOTE_MAX, MILIEU_ECHELLE, positionPct, rayonPoint, estAlerte } from '@/lib/nuage';
 import { brand, danger, ink } from '@/lib/couleurs';
+import { Squelette } from '@/components/Squelette';
+import { Nd, useErreurRegroupee } from '@/components/Nd';
 
 /**
  * Le nuage « satisfaction x urgence » de la page de synthèse (lot F du 2026-09-08).
@@ -34,7 +36,7 @@ const INNER_H = H - PAD.top - PAD.bottom;
 const cx = (satisfaction: number): number => PAD.left + (positionPct(satisfaction) / 100) * INNER_W;
 const cy = (urgence: number): number => PAD.top + INNER_H - (positionPct(urgence) / 100) * INNER_H;
 
-const CARD = 'rounded-2xl border border-ink-200 bg-white p-5';
+const CARD = 'rounded-carte border border-ink-200 bg-white p-5';
 
 export function NuageQualitatifCard({ tenantId, range }: { tenantId: string; range: StatsRange }) {
   const t = useT();
@@ -57,12 +59,13 @@ export function NuageQualitatifCard({ tenantId, range }: { tenantId: string; ran
       .catch(() => { if (vivant) setErreur(true); });
     return () => { vivant = false; };
   }, [tenantId, range.from, range.to]);
+  const regroupee = useErreurRegroupee('nuage', erreur);
 
   return (
     <section className={CARD} data-testid="nuage-quali">
       <header className="mb-4">
         <h2 className="text-sm font-semibold text-ink-900">{t('Urgence et satisfaction', 'Urgency and satisfaction')}</h2>
-        <p className="mt-0.5 text-xs text-ink-400">
+        <p className="mt-0.5 text-xs text-ink-500">
           {t(
             'Un point par couple de notes, sa taille dit combien de conversations il porte. Les deux notes sont données par l’analyse, de 0 à 10.',
             'One dot per pair of scores, its size tells how many conversations it holds. Both scores come from the analysis, from 0 to 10.',
@@ -70,13 +73,14 @@ export function NuageQualitatifCard({ tenantId, range }: { tenantId: string; ran
         </p>
       </header>
 
-      {erreur && (
-        <p className="rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger" data-testid="nuage-erreur">
+      {erreur && regroupee && <Nd testId="nuage-erreur" className="text-sm" />}
+      {erreur && !regroupee && (
+        <p className="rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700" data-testid="nuage-erreur">
           {t('Les mesures n’ont pas pu être chargées.', 'Scores could not be loaded.')}
         </p>
       )}
       {!erreur && nuage === null && (
-        <p className="text-xs text-ink-400">{t('Chargement…', 'Loading…')}</p>
+        <Squelette forme="carte" />
       )}
       {!erreur && nuage !== null && <Graphe nuage={nuage} t={t} locale={locale} />}
     </section>
@@ -176,8 +180,8 @@ function Graphe({ nuage, t, locale }: { nuage: Nuage; t: (fr: string, en?: strin
         ) : (
           <p className="text-ink-500" data-testid="nuage-vide">
             {t(
-              'Aucune conversation mesurée sur cette période. Les deux notes sont neuves : elles se remplissent au fil des analyses, une conversation à la fois.',
-              'No measured conversation over this period. Both scores are new: they fill in as conversations get analysed, one at a time.',
+              'Aucune conversation mesurée sur cette période.',
+              'No measured conversation over this period.',
             )}
           </p>
         )}

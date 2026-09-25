@@ -6,6 +6,7 @@ import { fmtNum } from '@/lib/format';
 import { cardCls, inputCls, kickerCls } from '@/lib/ui';
 import type { ReponseConnexionChaine } from '@/lib/api-chaine';
 import { Bouton } from '@/components/Bouton';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * L'état de la connexion à Channels Me : la chaîne branchée et ses chiffres, ou l'écran vide qui explique
@@ -47,7 +48,7 @@ export function ChaineConnexion(props: ChaineConnexionProps) {
   if (etat === null) {
     return (
       <div className={cardCls} data-testid="chaine-connexion-chargement">
-        <p className="text-sm text-ink-400">{t('Chargement…', 'Loading…')}</p>
+        <Squelette forme="carte" />
       </div>
     );
   }
@@ -114,11 +115,11 @@ function Connectee({
             {chaine?.name ?? etat.connection!.channelId}
           </h2>
           {etat.organisation?.name ? (
-            <p className="mt-0.5 text-sm text-ink-400">{etat.organisation.name}</p>
+            <p className="mt-0.5 text-sm text-ink-500">{etat.organisation.name}</p>
           ) : null}
         </div>
         <span
-          className={`${PASTILLE} ${muet ? 'bg-alerte-50 text-alerte' : 'bg-succes-50 text-succes-600'}`}
+          className={`${PASTILLE} ${muet ? 'bg-alerte-50 text-alerte' : 'bg-succes-50 text-succes-700'}`}
           data-testid="chaine-etat-distant"
         >
           <span className={`h-1.5 w-1.5 rounded-full ${muet ? 'bg-alerte-500' : 'bg-succes-400'}`} />
@@ -132,7 +133,7 @@ function Connectee({
           rien n'a été perdu. Sans lui, l'écran ressemble à « il n'y a rien », et le réflexe est de ressaisir
           des identifiants qui sont bons. */}
       {muet ? (
-        <p className="mt-4 rounded-lg bg-alerte-50 px-3 py-2 text-sm text-ink-500" data-testid="chaine-injoignable">
+        <p className="mt-4 rounded-controle bg-alerte-50 px-3 py-2 text-sm text-ink-500" data-testid="chaine-injoignable">
           {t(
             'Les identifiants sont bien enregistrés : c’est Channels Me qui ne répond pas. Rien à ressaisir, réessaie dans un moment.',
             'Your credentials are saved: Channels Me is not answering. Nothing to re-enter, try again shortly.',
@@ -265,12 +266,12 @@ function FormulaireIdentifiants({
   }
 
   return (
-    <div className="mt-4 grid gap-3 rounded-xl bg-ink-50 p-4 sm:grid-cols-2" data-testid="chaine-identifiants">
+    <div className="mt-4 grid gap-3 rounded-carte bg-ink-50 p-4 sm:grid-cols-2" data-testid="chaine-identifiants">
       <Champ label={t('Organisation', 'Organisation')} value={orgId} onChange={setOrgId} testid="chaine-org" />
       <Champ label={t('Chaîne', 'Channel')} value={channelId} onChange={setChannelId} testid="chaine-canal" />
       <Champ label={t('Clé d’API', 'API key')} value={apiKey} onChange={setApiKey} type="password" testid="chaine-cle" />
       <Champ label={t('Secret', 'Secret')} value={secret} onChange={setSecret} type="password" testid="chaine-secret" />
-      <p className="text-xs text-ink-400 sm:col-span-2">
+      <p className="text-xs text-ink-500 sm:col-span-2">
         {t(
           'La clé et le secret ne sont jamais réaffichés : ressaisis les quatre champs pour en changer un.',
           'The key and secret are never shown again: re-enter all four fields to change one.',
@@ -377,7 +378,7 @@ function EtatVide({
           </button>
         </div>
       ) : etat === 'envoyee' ? (
-        <p className="mt-5 rounded-lg bg-succes-50 px-3 py-2 text-sm text-succes-600" data-testid="chaine-demande-envoyee">
+        <p className="mt-5 rounded-controle bg-succes-50 px-3 py-2 text-sm text-succes-700" data-testid="chaine-demande-envoyee">
           {t('Demande envoyée. Nous revenons vers toi rapidement.', 'Request sent. We will get back to you shortly.')}
         </p>
       ) : (

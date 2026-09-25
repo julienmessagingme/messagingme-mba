@@ -142,7 +142,7 @@ test.describe('Assistant : la campagne au fil de l’eau', () => {
     await jusquALAudience(page);
     await page.getByTestId('audience-source-webhook').click();
     await page.getByTestId('campaign-webhook-select').selectOption('wh1');
-    await page.getByRole('button', { name: '📇 Liste de contacts' }).click();
+    await page.getByRole('button', { name: 'Liste de contacts', exact: true }).click();
     await page.getByRole('button', { name: 'Suivant' }).click();
     await page.getByTestId('bouton-lancer').click();
     await expect.poll(() => f.creations.length, { timeout: 15_000 }).toBe(1);

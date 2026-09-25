@@ -10,6 +10,8 @@ import {
   type AuthSource, type SourceAgent,
 } from '@/lib/api-agent-sources';
 import { Bouton } from '@/components/Bouton';
+import { Icone } from '@/components/Icone';
+import { Squelette } from '@/components/Squelette';
 
 /**
  * LA BIBLIOTHÈQUE DE SYSTÈMES du workspace (menu Tools).
@@ -88,10 +90,10 @@ export function ConnecteursBibliotheque({ tenantId }: { tenantId: string }) {
         />
       )}
 
-      {sources === null && <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>}
+      {sources === null && <Squelette forme="lignes" />}
       {sources?.length === 0 && !ajout && (
         <p data-testid="sources-vide" className="text-sm text-ink-500">
-          {t('Aucun système branché. Déclarez-en un pour que vos agents puissent aller y chercher une information.', 'No system connected. Declare one so your agents can look up information in it.')}
+          {t('Aucun système branché : déclarez-en un pour que vos agents puissent y chercher une information.', 'No system connected: declare one so your agents can look up information in it.')}
         </p>
       )}
 
@@ -104,15 +106,15 @@ export function ConnecteursBibliotheque({ tenantId }: { tenantId: string }) {
             data-testid={`source-ligne-${s.id}`}
             aria-expanded={ouvert === s.id}
             onClick={() => setOuvert((v) => (v === s.id ? null : s.id))}
-            className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors duration-150 ${
+            className={`flex w-full items-center gap-3 rounded-carte border px-4 py-3 text-left transition-colors duration-150 ${
               ouvert === s.id ? 'border-brand-500 bg-brand-50/40' : 'border-ink-200 bg-white hover:bg-ink-50'
             }`}
           >
-            <span className="text-ink-400">{ouvert === s.id ? '▾' : '▸'}</span>
+            <Icone nom="deplier" taille="petite" className={`text-ink-400 transition-transform duration-150 ${ouvert === s.id ? '' : '-rotate-90'}`} />
             <span className="min-w-0 flex-1">
               <span className="flex flex-wrap items-baseline gap-2">
                 <span className="text-sm font-medium text-ink-900">{s.label}</span>
-                <span className={`rounded px-1.5 py-0.5 text-xs ${s.status === 'active' ? 'bg-succes-100 text-succes-700' : 'bg-ink-100 text-ink-500'}`}>
+                <span className={`rounded-controle px-1.5 py-0.5 text-xs ${s.status === 'active' ? 'bg-succes-100 text-succes-700' : 'bg-ink-100 text-ink-500'}`}>
                   {s.status === 'active' ? t('Actif', 'Active') : s.status === 'draft' ? t('Brouillon', 'Draft') : t('Désactivé', 'Disabled')}
                 </span>
               </span>
@@ -124,7 +126,7 @@ export function ConnecteursBibliotheque({ tenantId }: { tenantId: string }) {
               {s.agents === 0
                 ? t('aucun agent', 'no agent')
                 : t(`${s.agents} agent(s)`, `${s.agents} agent(s)`)}
-              <span className="block text-ink-400">
+              <span className="block text-ink-500">
                 {t(`${s.outilsActifs} appel(s) actif(s)`, `${s.outilsActifs} active call(s)`)}
               </span>
             </span>
@@ -200,7 +202,7 @@ function Source({ source, busy, epreuve, onEprouver, onPatch, onSupprimer }: {
             data-testid={`source-supprimer-${source.id}`}
             disabled={busy}
             onClick={onSupprimer}
-            className="rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-danger hover:bg-danger-50 disabled:opacity-40"
+            className="rounded-controle border border-ink-300 px-3 py-1.5 text-sm text-danger hover:bg-danger-50 disabled:opacity-40"
           >
             {t('Supprimer', 'Delete')}
           </button>
@@ -227,7 +229,7 @@ function Source({ source, busy, epreuve, onEprouver, onPatch, onSupprimer }: {
 
       {/* 🔴 L'ÉPREUVE. Un jeton expiré ne produit aucune erreur applicative : l'agent dégraderait en silence
           au milieu d'une conversation. C'est le seul endroit où ça se voit avant qu'un contact ne le trouve. */}
-      <div className="flex flex-wrap items-end gap-2 rounded-lg border border-ink-200 px-3 py-2">
+      <div className="flex flex-wrap items-end gap-2 rounded-controle border border-ink-200 px-3 py-2">
         <label className="flex-1 text-xs text-ink-500">
           {t('Éprouver la connexion sur ce chemin', 'Test the connection on this path')}
           <input className={`${inputCls} mt-1`} data-testid={`source-chemin-${source.id}`} value={chemin} onChange={(e) => setChemin(e.target.value)} />
@@ -302,8 +304,8 @@ function Source({ source, busy, epreuve, onEprouver, onPatch, onSupprimer }: {
             {source.aAuthentification
               ? t('Ce champ part toujours vide : un secret ne se relit jamais, pas même par nous. Le vôtre est bien enregistré. Tapez le nouveau, puis « Remplacer ».',
                 'This field always starts empty: a secret is never read back, not even by us. Yours is stored. Type the new one, then “Replace”.')
-              : t('Aucun secret enregistré pour l’instant. Tapez-en un, puis « Remplacer ».',
-                'No secret stored yet. Type one, then “Replace”.')}
+              : t('Aucun secret enregistré : tapez-en un, puis « Remplacer ».',
+                'No secret stored yet: type one, then “Replace”.')}
           </p>
         </div>
       )}

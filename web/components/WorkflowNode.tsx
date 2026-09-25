@@ -13,6 +13,7 @@ import { SORTIE_LIBRE } from '@/lib/workflow-sorties';
 import { ouvreUneSortie } from '@/lib/rcs-boutons';
 import { sortiesDuBloc, type EmailRecipientData } from '@/lib/workflow-canevas';
 import { brand, ink } from '@/lib/couleurs';
+import { Icone, type NomIcone } from '@/components/Icone';
 
 /**
  * Ce qui est DESSINÉ sur le canevas : la carte d'un bloc et la flèche entre deux blocs.
@@ -247,7 +248,7 @@ function WFNode({ id, data, selected }: NodeProps) {
   return (
     <div
       ref={hote}
-      className={`relative ${showCarousel ? 'w-52' : 'w-44'} rounded-xl border bg-ink-50 shadow-mm-sm transition-colors duration-150 ${
+      className={`relative ${showCarousel ? 'w-52' : 'w-44'} rounded-carte border bg-ink-50 shadow-mm-sm transition-colors duration-150 ${
         selected ? 'border-brand-500 ring-2 ring-brand-100' : extremite ? 'border-brand-400 ring-2 ring-brand-100' : 'border-ink-300'
       }`}
     >
@@ -258,7 +259,7 @@ function WFNode({ id, data, selected }: NodeProps) {
           data-testid={`wf-extremite-${extremite}`}
           // `left-5` quand le bouton lecture est là : sans ce décalage, l'étiquette passerait SOUS le bouton
           // (qui déborde de 8 px à gauche et fait 20 px de large), et on ne lirait plus « départ » / « arrivée ».
-          className={`absolute -top-2 z-10 rounded-full bg-brand-500 px-1.5 py-0.5 text-[9px] font-medium leading-none text-white shadow-mm-sm ${testDepuisBloc ? 'left-5' : 'left-2'}`}
+          className={`absolute -top-2 z-10 rounded-full bg-brand-600 px-1.5 py-0.5 text-[9px] font-medium leading-none text-white shadow-mm-sm ${testDepuisBloc ? 'left-5' : 'left-2'}`}
         >
           {extremite === 'depart' ? t('départ', 'from') : t('arrivée', 'to')}
         </span>
@@ -277,7 +278,7 @@ function WFNode({ id, data, selected }: NodeProps) {
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => { e.stopPropagation(); testDepuisBloc(id); }}
         >
-          <svg viewBox="0 0 24 24" className="h-2.5 w-2.5" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+          <Icone nom="ecouter" taille="petite" />
         </button>
       )}
       <Handle type="target" position={Position.Top} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-400" />
@@ -288,9 +289,9 @@ function WFNode({ id, data, selected }: NodeProps) {
         title={t('Supprimer le bloc', 'Delete block')}
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('wf-node-delete', { detail: id })); }}
-      >✕</button>
-      <div className="flex items-center gap-1.5 rounded-t-xl border-b border-ink-200 bg-white px-2 py-1">
-        <span className="text-xs">{meta.emoji}</span>
+      ><Icone nom="fermer" taille="mini" /></button>
+      <div className="flex items-center gap-1.5 rounded-t-carte border-b border-ink-200 bg-white px-2 py-1">
+        <Icone nom={meta.icone} taille="petite" />
         <span className="truncate text-[11px] font-semibold text-ink-900">{String(data.name ?? '').trim() || t(...meta.label)}</span>
       </div>
       <div className="truncate px-2 py-1.5 text-[11px] text-ink-500">{summaryOf(data, t)}</div>
@@ -302,7 +303,7 @@ function WFNode({ id, data, selected }: NodeProps) {
           savoir d'où on regarde. */}
       {visuel !== '' && (
         <div className="border-t border-ink-200 p-1.5" style={{ backgroundColor: '#efeae2' }}>
-          <div className="flex h-16 w-full items-center justify-center overflow-hidden rounded bg-ink-100 text-[9px] text-ink-400">
+          <div className="flex h-16 w-full items-center justify-center overflow-hidden rounded-controle bg-ink-100 text-[9px] text-ink-500">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={visuel}
@@ -322,15 +323,15 @@ function WFNode({ id, data, selected }: NodeProps) {
         // côte rendrait le bloc large comme 10 cartes ; ici il garde sa taille et on fait défiler.
         <div className="border-t border-ink-200 p-1.5" style={{ backgroundColor: '#efeae2' }}>
           {String(live?.body ?? '').trim() && (
-            <div className="mb-1 rounded rounded-tl-none bg-white px-1.5 py-1 text-[9px] leading-snug text-ink-900 shadow-mm-sm">
+            <div className="mb-1 rounded-controle rounded-tl-none bg-white px-1.5 py-1 text-[9px] leading-snug text-ink-900 shadow-mm-sm">
               <span className="line-clamp-2">{live?.body}</span>
             </div>
           )}
           {/* `nowheel` : la molette fait défiler les cartes au lieu de zoomer le canevas (classe React Flow). */}
           <div className="nowheel max-h-32 space-y-1.5 overflow-y-auto pr-0.5">
             {liveCards.map((card, ci) => (
-              <div key={ci} className="overflow-hidden rounded bg-white shadow-mm-sm">
-                <div className="flex h-14 w-full items-center justify-center bg-ink-100 text-[9px] text-ink-400">
+              <div key={ci} className="overflow-hidden rounded-controle bg-white shadow-mm-sm">
+                <div className="flex h-14 w-full items-center justify-center bg-ink-100 text-[9px] text-ink-500">
                   {card.mediaUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={card.mediaUrl} alt={`${t('Carte', 'Card')} ${ci + 1}`} referrerPolicy="no-referrer" className="h-full w-full object-cover" />
@@ -346,7 +347,7 @@ function WFNode({ id, data, selected }: NodeProps) {
                     page (jusqu'à ~600 px sous le bloc, mesuré), et la flèche partirait dans le vide. */}
                 {(card.buttons ?? []).map((b, bi) => (
                   <div key={bi} className={`flex items-center gap-1 border-t border-ink-100 px-1.5 py-1 text-[9px] ${b.type === 'QUICK_REPLY' ? 'font-medium text-[#00a5f4]' : 'text-ink-400'}`}>
-                    <span className="shrink-0">{b.type === 'QUICK_REPLY' ? '↩︎' : '🔗'}</span>
+                    <Icone nom={b.type === 'QUICK_REPLY' ? 'reponse' : 'lien'} taille="mini" />
                     <span className="truncate">{b.text?.trim() || (b.type === 'QUICK_REPLY' ? t('Réponse', 'Reply') : t('Lien', 'Link'))}</span>
                   </div>
                 ))}
@@ -367,14 +368,14 @@ function WFNode({ id, data, selected }: NodeProps) {
               <div key={h} className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] text-ink-900 first:border-t-0">
                 <span className="shrink-0">➜</span>
                 <span className="truncate">{s.label}</span>
-                {orpheline(h) && <span data-testid={`sortie-orpheline-${h}`} className="shrink-0 text-danger" title={TITRE_ORPHELINE}>⚠</span>}
+                {orpheline(h) && <span data-testid={`sortie-orpheline-${h}`} className="shrink-0 text-danger" title={TITRE_ORPHELINE}><Icone nom="attention" taille="mini" /></span>}
                 <Handle type="source" id={h} position={Position.Right} className={`!h-2.5 !w-2.5 !border-2 !border-white ${orpheline(h) ? '!bg-danger' : '!bg-brand-500'}`} title={orpheline(h) ? TITRE_ORPHELINE : t(`Relier « ${s.label} »`, `Connect “${s.label}”`)} />
               </div>
             );
           })}
           {AGENT_SORTIES_RESERVEES.map((s) => (
             <div key={s.handle} className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] font-medium text-alerte-700 first:border-t-0">
-              <span className="shrink-0">{s.emoji}</span>
+              <Icone nom={s.icone} taille="petite" />
               <span className="truncate">{t(...s.label)}</span>
               <Handle type="source" id={s.handle} position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-alerte-500" title={t(...s.aide)} />
             </div>
@@ -393,7 +394,7 @@ function WFNode({ id, data, selected }: NodeProps) {
               <div key={`row${i}`} className={`relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] first:border-t-0 ${vide ? 'text-ink-400' : 'text-ink-900'}`}>
                 <span className="shrink-0">☰</span>
                 <span className="truncate">{vide ? t('réponse à écrire…', 'answer to write…') : r.title}</span>
-                {!vide && orpheline(`row:${i}`) && <span data-testid={`sortie-orpheline-row:${i}`} className="shrink-0 text-danger" title={TITRE_ORPHELINE}>⚠</span>}
+                {!vide && orpheline(`row:${i}`) && <span data-testid={`sortie-orpheline-row:${i}`} className="shrink-0 text-danger" title={TITRE_ORPHELINE}><Icone nom="attention" taille="mini" /></span>}
                 {vide ? (
                   <span className="absolute right-[-5px] top-1/2 h-2 w-2 -translate-y-1/2 rounded-full border border-white bg-ink-300" title={t('Ligne sans libellé : elle ne partira pas', 'Row without a label: it will not be sent')} />
                 ) : (
@@ -403,7 +404,7 @@ function WFNode({ id, data, selected }: NodeProps) {
             );
           })}
           <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] text-ink-900">
-            <span className="shrink-0">✎</span>
+            <Icone nom="modifier" taille="mini" />
             <span className="truncate">{t('Toute autre réponse', 'Any other reply')}</span>
             {/* 🔴 La poignée porte un NOM (`libre`), traduit en « aucune poignée » à l'enregistrement. Sans nom,
                 React Flow ancrait cette flèche sur la PREMIÈRE ligne du menu. Voir `lib/workflow-sorties.ts`. */}
@@ -411,7 +412,7 @@ function WFNode({ id, data, selected }: NodeProps) {
           </div>
           {questionDelai && (
             <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] font-medium text-alerte-700">
-              <span className="shrink-0">⏱</span>
+              <Icone nom="chrono" taille="mini" />
               <span className="truncate">{t('Pas de réponse', 'No reply')}</span>
               <Handle type="source" id="timeout" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-alerte-500" title={t('Le contact n’a pas répondu dans le délai', 'The contact did not reply within the delay')} />
             </div>
@@ -425,19 +426,19 @@ function WFNode({ id, data, selected }: NodeProps) {
         <div className="border-t border-ink-200">
           {outputRows.filter((b) => b.type === 'QUICK_REPLY').map((b, i) => (
             <div key={`qr${i}`} className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] text-ink-900 first:border-t-0">
-              <span className="shrink-0">↩︎</span>
+              <Icone nom="reponse" taille="mini" />
               <span className="truncate">{b.text || t('Réponse', 'Reply')}</span>
-              {orpheline(`btn:${i}`) && <span data-testid={`sortie-orpheline-btn:${i}`} className="shrink-0 text-danger" title={TITRE_ORPHELINE}>⚠</span>}
+              {orpheline(`btn:${i}`) && <span data-testid={`sortie-orpheline-btn:${i}`} className="shrink-0 text-danger" title={TITRE_ORPHELINE}><Icone nom="attention" taille="mini" /></span>}
               <Handle type="source" id={`btn:${i}`} position={Position.Right} className={`!h-2.5 !w-2.5 !border-2 !border-white ${orpheline(`btn:${i}`) ? '!bg-danger' : '!bg-brand-500'}`} title={orpheline(`btn:${i}`) ? TITRE_ORPHELINE : t(`Relier « ${b.text} »`, `Connect "${b.text}"`)} />
             </div>
           ))}
           <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] font-medium text-succes-700">
-            <span className="shrink-0">✓</span>
+            <Icone nom="valide" taille="mini" />
             <span className="truncate">{t('Envoyé', 'Sent')}</span>
             <Handle type="source" id="sent" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-succes-500" title={t('Le message RCS est parti', 'The RCS message was sent')} />
           </div>
           <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] font-medium text-danger">
-            <span className="shrink-0">✕</span>
+            <Icone nom="echec" taille="mini" />
             <span className="truncate">{t('Non joignable en RCS', 'Not reachable on RCS')}</span>
             <Handle type="source" id="unreachable" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-danger" title={t('Le contact n’est pas joignable en RCS : brancher un repli', 'Contact not reachable on RCS: connect a fallback')} />
           </div>
@@ -447,18 +448,18 @@ function WFNode({ id, data, selected }: NodeProps) {
         <div className="border-t border-ink-200">
           {outputRows.map((b, i) => {
             const isQR = b.type === 'QUICK_REPLY';
-            const icon = b.type === 'URL' ? '🔗' : b.type === 'FLOW' ? '📋' : '↩︎';
+            const icone: NomIcone = b.type === 'URL' ? 'lien' : b.type === 'FLOW' ? 'formulaire' : 'reponse';
             const fallback = b.type === 'URL' ? t('Lien', 'Link') : b.type === 'FLOW' ? t('Formulaire', 'Form') : t('Réponse', 'Reply');
             return (
               <div key={i} className={`relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] first:border-t-0 ${isQR ? 'text-ink-900' : 'text-ink-400'}`}>
-                <span className="shrink-0">{icon}</span>
-                {b.cardIndex !== undefined && <span className="shrink-0 rounded bg-ink-200 px-1 text-[9px] font-medium text-ink-500">C{b.cardIndex + 1}</span>}
+                <Icone nom={icone} taille="mini" />
+                {b.cardIndex !== undefined && <span className="shrink-0 rounded-controle bg-ink-200 px-1 text-[9px] font-medium text-ink-500">C{b.cardIndex + 1}</span>}
                 <span className="truncate">{b.text || fallback}</span>
                 {isQR ? (
                   // Le nom de la sortie DOIT être celui que l'envoi pose en payload, sinon le tap ne retrouve
                   // pas sa branche : `handle` vient du template (carousel), sinon l'index du bouton.
                   <>
-                    {orpheline(b.handle ?? `btn:${i}`) && <span data-testid={`sortie-orpheline-${b.handle ?? `btn:${i}`}`} className="shrink-0 text-danger" title={TITRE_ORPHELINE}>⚠</span>}
+                    {orpheline(b.handle ?? `btn:${i}`) && <span data-testid={`sortie-orpheline-${b.handle ?? `btn:${i}`}`} className="shrink-0 text-danger" title={TITRE_ORPHELINE}><Icone nom="attention" taille="mini" /></span>}
                     <Handle type="source" id={b.handle ?? `btn:${i}`} position={Position.Right} className={`!h-2.5 !w-2.5 !border-2 !border-white ${orpheline(b.handle ?? `btn:${i}`) ? '!bg-danger' : '!bg-brand-500'}`} title={orpheline(b.handle ?? `btn:${i}`) ? TITRE_ORPHELINE : t(`Relier « ${b.text || fallback} »`, `Connect “${b.text || fallback}”`)} />
                   </>
                 ) : (
@@ -471,7 +472,7 @@ function WFNode({ id, data, selected }: NodeProps) {
               quand le contact ÉCRIT au lieu de taper un bouton. Non reliée, une réponse hors boutons termine le
               parcours et rend la parole à l'agent : c'est voulu, mais il faut pouvoir choisir. */}
           <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] text-ink-900">
-            <span className="shrink-0">✎</span>
+            <Icone nom="modifier" taille="mini" />
             <span className="truncate">{t('Toute autre réponse', 'Any other reply')}</span>
             {/* 🔴 MÊME couleur que les autres sorties. Elle était grise, et Julien en a conclu le 2026-08-26
                 qu'elle n'était pas reliable : sur un bloc où tous les autres points sont bleus, un point gris
@@ -488,12 +489,12 @@ function WFNode({ id, data, selected }: NodeProps) {
         // (engine.walk). Chaque sortie se relie à un bloc différent.
         <div className="border-t border-ink-200">
           <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] font-medium text-succes-700 first:border-t-0">
-            <span className="shrink-0">✓</span>
+            <Icone nom="valide" taille="mini" />
             <span className="truncate">{t('Si réunie', 'If met')}</span>
             <Handle type="source" id="true" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-succes-500" title={t('Si la condition est réunie', 'If the condition is met')} />
           </div>
           <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] font-medium text-danger first:border-t-0">
-            <span className="shrink-0">✕</span>
+            <Icone nom="echec" taille="mini" />
             <span className="truncate">{t('Sinon', 'Otherwise')}</span>
             <Handle type="source" id="false" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-danger" title={t('Sinon (condition non réunie)', 'Otherwise (condition not met)')} />
           </div>
@@ -506,7 +507,7 @@ function WFNode({ id, data, selected }: NodeProps) {
             <div className="border-t border-ink-200">
               {buttons.map((b, i) => (
                 <div key={i} className="flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] text-ink-400 first:border-t-0">
-                  <span className="shrink-0">{b.type === 'URL' ? '🔗' : '📋'}</span>
+                  <Icone nom={b.type === 'URL' ? 'lien' : 'formulaire'} taille="mini" />
                   <span className="truncate">{b.text || (b.type === 'URL' ? t('Lien', 'Link') : t('Formulaire', 'Form'))}</span>
                 </div>
               ))}
@@ -548,8 +549,8 @@ function WFEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, target
           className="nodrag nopan pointer-events-auto absolute flex gap-1"
           style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
         >
-          <button onClick={(ev) => window.dispatchEvent(new CustomEvent('wf-edge-insert', { detail: { edgeId: id, screenX: ev.clientX, screenY: ev.clientY } }))} title={t('Insérer un bloc', 'Insert a block')} className="flex h-5 w-5 items-center justify-center rounded-full border border-ink-300 bg-white text-xs text-brand-600 shadow-mm-sm hover:bg-brand-50">+</button>
-          <button onClick={() => window.dispatchEvent(new CustomEvent('wf-edge-delete', { detail: id }))} title={t('Supprimer la flèche', 'Delete arrow')} className="flex h-5 w-5 items-center justify-center rounded-full border border-ink-300 bg-white text-[11px] text-danger shadow-mm-sm hover:bg-danger-50">✕</button>
+          <button onClick={(ev) => window.dispatchEvent(new CustomEvent('wf-edge-insert', { detail: { edgeId: id, screenX: ev.clientX, screenY: ev.clientY } }))} title={t('Insérer un bloc', 'Insert a block')} className="flex h-5 w-5 items-center justify-center rounded-full border border-ink-300 bg-white text-xs text-brand-600 shadow-mm-sm hover:bg-brand-50"><Icone nom="ajouter" taille="mini" /></button>
+          <button onClick={() => window.dispatchEvent(new CustomEvent('wf-edge-delete', { detail: id }))} title={t('Supprimer la flèche', 'Delete arrow')} className="flex h-5 w-5 items-center justify-center rounded-full border border-ink-300 bg-white text-[11px] text-danger shadow-mm-sm hover:bg-danger-50"><Icone nom="fermer" taille="mini" /></button>
         </div>
       </EdgeLabelRenderer>
     </>

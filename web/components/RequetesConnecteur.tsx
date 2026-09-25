@@ -157,7 +157,7 @@ export function RequetesConnecteur({ tenantId, sources, sourceFiltre }: {
             <div key={r.id} className={`${cardCls} flex flex-col gap-2`} data-testid={`requete-${r.id}`}>
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <p className="text-sm font-medium text-ink-900">
-                  <span className="mr-2 rounded bg-ink-100 px-1.5 py-0.5 font-mono text-xs">{r.methode}</span>
+                  <span className="mr-2 rounded-controle bg-ink-100 px-1.5 py-0.5 font-mono text-xs">{r.methode}</span>
                   {r.label}
                   {/* ⚠️ IL Y AVAIT ICI UN BADGE « à finir » (2026-09-15, matin), retiré l'après-midi même
                       avec la migration 0150. Il signalait un appel sans champ de réponse, sur l'idée que tout
@@ -327,7 +327,7 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
     `border-b-2 px-2 pb-1 text-xs ${onglet === o ? 'border-brand-500 font-medium text-brand-700' : 'border-transparent text-ink-500 hover:text-ink-900'}`;
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-ink-200 p-3">
+    <div className="flex flex-col gap-3 rounded-carte border border-ink-200 p-3">
       <div className="flex flex-wrap items-end gap-2">
         <label className="text-xs text-ink-500">
           {t('Nom de l’appel', 'Call name')}
@@ -417,7 +417,7 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
         <div className="flex flex-wrap items-center gap-1" data-testid="pastilles-variables">
           <span className="text-xs text-ink-500">{t('Insérer :', 'Insert:')}</span>
           {brouillon.variables.filter((v) => v.nom.trim() !== '').map((v) => (
-            <button key={v.nom} data-testid={`pastille-${v.nom}`} onClick={() => insererVariable(v.nom)} className="rounded bg-brand-100 px-1.5 py-0.5 text-xs font-medium text-brand-700 hover:bg-brand-200">
+            <button key={v.nom} data-testid={`pastille-${v.nom}`} onClick={() => insererVariable(v.nom)} className="rounded-controle bg-brand-100 px-1.5 py-0.5 text-xs font-medium text-brand-700 hover:bg-brand-200">
               {v.nom}
             </button>
           ))}
@@ -452,7 +452,7 @@ function Editeur({ tenantId, requeteId, sources, champs, catalogue, brouillon, s
                 maj({ variables: [...brouillon.variables.filter((v) => v.nom.trim() !== ''), { nom, type: 'string', origine: { type: 'modele' } }] });
                 setOnglet('variables');
               }}
-              className="rounded bg-alerte-100 px-1.5 py-0.5 font-medium text-alerte-800 hover:bg-alerte-200"
+              className="rounded-controle bg-alerte-100 px-1.5 py-0.5 font-medium text-alerte-800 hover:bg-alerte-200"
             >
               {t(`déclarer ${nom}`, `declare ${nom}`)}
             </button>
@@ -848,7 +848,7 @@ function OngletReponse({ brouillon, maj, resultat }: {
               {Object.entries(resultat.envoye.entetes).map(([k, v]) => <span key={k} className="block">{k}: {v}</span>)}
             </p>
           )}
-          <pre className="max-h-48 overflow-auto rounded-lg bg-ink-50 p-2 text-xs text-ink-900" data-testid="reponse-apercu">{resultat.apercu}</pre>
+          <pre className="max-h-48 overflow-auto rounded-controle bg-ink-50 p-2 text-xs text-ink-900" data-testid="reponse-apercu">{resultat.apercu}</pre>
           <div className="flex flex-col gap-1" data-testid="reponse-chemins">
             {(resultat.chemins ?? []).length === 0 ? (
               <p className="text-xs text-ink-500">{t('Aucun champ lisible dans cette réponse.', 'No readable field in this response.')}</p>

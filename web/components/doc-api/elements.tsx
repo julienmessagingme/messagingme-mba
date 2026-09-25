@@ -55,7 +55,7 @@ export function curlGet(chemin: string): string {
   return [`curl ${ADRESSE_API}${chemin} \\`, `  -H "Authorization: Bearer ${CLE_EXEMPLE}"`].join('\n');
 }
 
-const inlineCls = 'rounded bg-ink-100 px-1.5 py-0.5 font-mono text-[0.85em] text-ink-900 [overflow-wrap:anywhere]';
+const inlineCls = 'rounded-controle bg-ink-100 px-1.5 py-0.5 font-mono text-[0.85em] text-ink-900 [overflow-wrap:anywhere]';
 const lienCls = 'font-medium text-brand-600 underline decoration-brand-200 underline-offset-2 hover:text-brand-700 hover:decoration-brand-500';
 
 /** Le titre de la page, son seul `h1`, tiré de la carte de la doc ; `children` est la phrase d'introduction. */
@@ -87,7 +87,7 @@ const COULEUR_METHODE: Record<Methode, string> = {
 
 export function BadgeMethode({ methode, petit = false }: { methode: Methode; petit?: boolean }) {
   return (
-    <span className={`inline-block rounded-md font-mono font-semibold ring-1 ring-inset ${petit ? 'px-1.5 py-px text-xs' : 'px-2 py-0.5 text-sm'} ${COULEUR_METHODE[methode]}`}>
+    <span className={`inline-block rounded-controle font-mono font-semibold ring-1 ring-inset ${petit ? 'px-1.5 py-px text-xs' : 'px-2 py-0.5 text-sm'} ${COULEUR_METHODE[methode]}`}>
       {methode}
     </span>
   );
@@ -123,7 +123,7 @@ export function Route({ ep, children }: { ep: CleEndpoint; children: React.React
 function LignesEndpoints({ endpoints, droit }: { endpoints: readonly EndpointDoc[]; droit: boolean }) {
   const t = useT();
   return (
-    <div className="overflow-hidden rounded-lg border border-ink-200">
+    <div className="overflow-hidden rounded-controle border border-ink-200">
       <table className="w-full text-left text-sm">
         <tbody>
           {endpoints.map((e) => (
@@ -223,7 +223,7 @@ export function BoutonCopier({ texte, quoi, sombre = false, testid = 'copier' }:
       onClick={() => {
         void navigator.clipboard?.writeText(texte).then(() => { setCopie(true); setTimeout(() => setCopie(false), 2000); }).catch(() => {});
       }}
-      className={`shrink-0 rounded-md px-2 py-1 text-xs font-semibold transition-colors duration-150 ${
+      className={`shrink-0 rounded-controle px-2 py-1 text-xs font-semibold transition-colors duration-150 ${
         sombre ? 'text-ink-200 hover:bg-white/10 hover:text-white' : 'border border-ink-200 bg-white text-ink-500 hover:bg-ink-50'
       }`}
     >
@@ -241,9 +241,9 @@ export function Bloc({ children, legende, testid, testidCopier }: {
   children: string; legende: string; testid?: string; testidCopier?: string;
 }) {
   return (
-    <div className="min-w-0 overflow-hidden rounded-lg bg-ink-900">
+    <div className="min-w-0 overflow-hidden rounded-controle bg-ink-900">
       <div className="flex items-center justify-between gap-2 border-b border-white/10 py-1 pl-4 pr-1.5">
-        <span className="text-xs font-medium text-ink-400">{legende}</span>
+        <span className="text-xs font-medium text-ink-500">{legende}</span>
         <BoutonCopier texte={children} quoi={legende} sombre {...(testidCopier ? { testid: testidCopier } : {})} />
       </div>
       <pre className="overflow-x-auto px-4 py-3 font-mono text-xs leading-relaxed text-ink-50" data-testid={testid}>{children}</pre>
@@ -255,7 +255,7 @@ type SorteEncadre = 'note' | 'attention' | 'obligatoire';
 const STYLE_ENCADRE: Record<SorteEncadre, { boite: string; titre: string; libelle: readonly [string, string] }> = {
   note: { boite: 'border-brand-300 bg-brand-50/60', titre: 'text-brand-700', libelle: ['Note', 'Note'] },
   attention: { boite: 'border-alerte-400 bg-alerte-50', titre: 'text-alerte-800', libelle: ['Attention', 'Caution'] },
-  obligatoire: { boite: 'border-danger-500 bg-danger-50', titre: 'text-danger', libelle: ['Obligatoire', 'Required'] },
+  obligatoire: { boite: 'border-danger-500 bg-danger-50', titre: 'text-danger-700', libelle: ['Obligatoire', 'Required'] },
 };
 
 /**
@@ -266,7 +266,7 @@ export function Encadre({ sorte, children }: { sorte: SorteEncadre; children: Re
   const t = useT();
   const s = STYLE_ENCADRE[sorte];
   return (
-    <div className={`rounded-r-lg border-l-4 px-4 py-3 text-base leading-relaxed text-ink-900 ${s.boite}`} data-encadre={sorte}>
+    <div className={`rounded-r-carte border-l-4 px-4 py-3 text-base leading-relaxed text-ink-900 ${s.boite}`} data-encadre={sorte}>
       <p className={`mb-1 text-sm font-semibold ${s.titre}`}>{t(s.libelle[0], s.libelle[1])}</p>
       <div className="space-y-2">{children}</div>
     </div>
@@ -283,7 +283,7 @@ export function Champs({ table }: { table: TableDeChamps }) {
   // Sur mobile, l'obligation passe sous le nom du champ : la description garde la largeur.
   return (
     <div className="space-y-2">
-      <div className="overflow-x-auto rounded-lg border border-ink-200">
+      <div className="overflow-x-auto rounded-controle border border-ink-200">
         <table className="w-full text-left text-sm">
           <thead className="bg-ink-50">
             <tr className="border-b border-ink-200">
@@ -362,7 +362,7 @@ export function Erreurs({ lignes, clesDeFiche = false }: {
 /** Un tableau : seul lui défile en largeur sur un petit écran. */
 export function Tableau({ entetes, lignes }: { entetes: string[]; lignes: Array<{ cle: string; cellules: React.ReactNode[] }> }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-ink-200">
+    <div className="overflow-x-auto rounded-controle border border-ink-200">
       <table className="w-full text-left text-sm">
         <thead className="bg-ink-50">
           <tr className="border-b border-ink-200">

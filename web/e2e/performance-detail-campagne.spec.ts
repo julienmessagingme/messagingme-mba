@@ -175,7 +175,7 @@ test.describe('Performance Lab : la fiche d’une campagne', () => {
     await page.getByTestId('cout-ligne-c-parcours').click();
     await ouvrirChiffres(page);
     await expect(page.getByTestId('detail-etape-n3')).toContainText('5');
-    await expect(page.getByTestId('detail-ratio-n3')).toHaveText('—');
+    await expect(page.getByTestId('detail-ratio-n3')).toHaveText('n/d');
     await expect(page.getByTestId('detail-ratio-n1')).toContainText('0,2119');
   });
 

@@ -9,6 +9,10 @@ import { formatDate, hourMin } from '@/lib/day';
 import { inputCls } from '@/lib/ui';
 import { Bouton } from '@/components/Bouton';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
+import { useConfirmation } from '@/components/Confirmation';
+import { Modale } from '@/components/Modale';
+import { Squelette } from '@/components/Squelette';
+import { Nd } from '@/components/Nd';
 
 export default function ApiKeysPage() {
   return <AppShell active="api-keys">{(session) => <KeysInner session={session} />}</AppShell>;
@@ -16,6 +20,7 @@ export default function ApiKeysPage() {
 
 function KeysInner({ session }: { session: Session }) {
   const t = useT();
+  const confirmer = useConfirmation();
   const { locale } = useLocale();
   const [keys, setKeys] = useState<ApiKeyRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -85,7 +90,7 @@ function KeysInner({ session }: { session: Session }) {
      * sinon la révocation d'une clé qu'on ne se souvient pas d'avoir créée casse un agent sans explication.
      */
     const relais = k.scopes.includes(DROIT_RELAIS);
-    const ok = window.confirm(relais
+    const ok = await confirmer({ titre: t('Révoquer la clé', 'Revoke the key'), message: relais
       ? t(
         `Révoquer « ${k.name} » ? L’agent de Meta ne pourra plus appeler vos outils jusqu’au prochain « Envoyer » dans ses outils, qui posera une clé neuve.`,
         `Revoke “${k.name}”? Meta’s agent will not be able to call your tools until the next “Send” from its tools, which sets a new key.`,
@@ -93,7 +98,7 @@ function KeysInner({ session }: { session: Session }) {
       : t(
         `Révoquer « ${k.name} » ? Tout appel avec cette clé sera refusé immédiatement, et elle ne peut pas être réactivée.`,
         `Revoke “${k.name}”? Any call using this key will be refused immediately, and it cannot be reactivated.`,
-      ));
+      ), confirmer: t('Révoquer', 'Revoke') });
     if (!ok) return;
     setError(null);
     try {
@@ -104,11 +109,11 @@ function KeysInner({ session }: { session: Session }) {
     }
   }
 
-  const fmt = (iso: string | null) => (iso ? `${formatDate(iso, locale, { day: '2-digit', month: '2-digit', year: '2-digit' })} ${hourMin(iso, locale)}` : '—');
+  const fmt = (iso: string | null) => (iso ? `${formatDate(iso, locale, { day: '2-digit', month: '2-digit', year: '2-digit' })} ${hourMin(iso, locale)}` : <Nd />);
   const active = keys.filter((k) => !k.revokedAt);
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="max-w-formulaire space-y-6">
       <div>
         <TitrePage>{t('Clés d\'API', 'API keys')}</TitrePage>
         <IntroPage>
@@ -119,9 +124,9 @@ function KeysInner({ session }: { session: Session }) {
         </IntroPage>
       </div>
 
-      {error && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+      {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
-      <div className="rounded-2xl border border-ink-200 bg-white p-4">
+      <div className="rounded-carte border border-ink-200 bg-white p-4">
         <label className="mb-1 block text-sm font-medium text-ink-900">{t('Nouvelle clé', 'New key')}</label>
         <input
           value={name}
@@ -132,7 +137,7 @@ function KeysInner({ session }: { session: Session }) {
         <div className="mt-3 space-y-1.5">
           {API_SCOPES.map((s) => (
             <label key={s} className="flex items-center gap-2 text-sm text-ink-900">
-              <input type="checkbox" checked={scopes.has(s)} onChange={() => toggleScope(s)} className="h-4 w-4 rounded border-ink-300" />
+              <input type="checkbox" checked={scopes.has(s)} onChange={() => toggleScope(s)} className="h-4 w-4 rounded-controle border-ink-300" />
               <span className="font-mono text-xs text-ink-900">{s}</span>
               <span className="text-ink-500">{SCOPE_LABEL[s]}</span>
             </label>
@@ -147,14 +152,14 @@ function KeysInner({ session }: { session: Session }) {
         </Bouton>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
+      <div className="overflow-hidden rounded-carte border border-ink-200 bg-white">
         <div className="border-b border-ink-100 px-5 py-3 text-sm font-medium text-ink-900">
           {t('Clés', 'Keys')} ({active.length} {t('active(s)', 'active')}{keys.length > active.length ? `, ${keys.length - active.length} ${t('révoquée(s)', 'revoked')}` : ''})
         </div>
         {loading ? (
-          <p className="px-5 py-6 text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>
+          <Squelette forme="lignes" className="px-5 py-6" />
         ) : keys.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-ink-500">{t('Aucune clé. Crée-en une ci-dessus.', 'No keys yet. Create one above.')}</p>
+          <p className="px-5 py-6 text-sm text-ink-500">{t('Aucune clé : créez-en une ci-dessus.', 'No keys yet: create one above.')}</p>
         ) : (
           <table className="w-full text-left text-sm">
             <thead className="border-b border-ink-100 text-xs text-ink-500">
@@ -174,7 +179,7 @@ function KeysInner({ session }: { session: Session }) {
                   <td className={`px-5 py-2.5 ${k.revokedAt ? 'text-ink-400' : 'text-ink-900'}`}>
                     {k.name}
                     {k.revokedAt && (
-                      <span className="ml-2 rounded bg-ink-100 px-1.5 py-0.5 text-xs text-ink-500">{t('révoquée', 'revoked')}</span>
+                      <span className="ml-2 rounded-controle bg-ink-100 px-1.5 py-0.5 text-xs text-ink-500">{t('révoquée', 'revoked')}</span>
                     )}
                   </td>
                   <td className="px-5 py-2.5 font-mono text-xs text-ink-500">
@@ -201,30 +206,31 @@ function KeysInner({ session }: { session: Session }) {
       </div>
 
       {created && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 px-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-mm-lg">
-            <h3 className="text-sm font-semibold text-ink-900">{t('Clé créée', 'Key created')} : {created.name}</h3>
-            <p className="mt-1 text-sm text-ink-500">
-              {t(
-                'Copie-la maintenant. Elle ne sera plus jamais affichée : seule son empreinte est conservée, et une clé perdue se remplace, elle ne se retrouve pas.',
-                'Copy it now. It will never be shown again: only its fingerprint is stored, and a lost key is replaced, not recovered.',
-              )}
-            </p>
-            <pre className="mt-3 overflow-x-auto rounded-lg bg-ink-50 px-3 py-2 font-mono text-xs text-ink-900">{created.key}</pre>
-            <div className="mt-4 flex justify-end gap-2">
-              <Bouton variante="secondaire"
-                onClick={() => { void navigator.clipboard?.writeText(created.key); }}
-              >
-                {t('Copier', 'Copy')}
-              </Bouton>
-              <Bouton
-                onClick={() => setCreated(null)}
-              >
-                {t('J\'ai copié la clé', 'I copied the key')}
-              </Bouton>
-            </div>
+        <Modale
+          titre={`${t('Clé créée', 'Key created')} : ${created.name}`}
+          fermeture="boutons"
+          onClose={() => setCreated(null)}
+        >
+          <p className="mt-1 text-sm text-ink-500">
+            {t(
+              'Copie-la maintenant. Elle ne sera plus jamais affichée : seule son empreinte est conservée, et une clé perdue se remplace, elle ne se retrouve pas.',
+              'Copy it now. It will never be shown again: only its fingerprint is stored, and a lost key is replaced, not recovered.',
+            )}
+          </p>
+          <pre className="mt-3 overflow-x-auto rounded-controle bg-ink-50 px-3 py-2 font-mono text-xs text-ink-900">{created.key}</pre>
+          <div className="mt-4 flex justify-end gap-2">
+            <Bouton variante="secondaire"
+              onClick={() => { void navigator.clipboard?.writeText(created.key); }}
+            >
+              {t('Copier', 'Copy')}
+            </Bouton>
+            <Bouton
+              onClick={() => setCreated(null)}
+            >
+              {t('J\'ai copié la clé', 'I copied the key')}
+            </Bouton>
           </div>
-        </div>
+        </Modale>
       )}
     </div>
   );

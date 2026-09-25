@@ -12,6 +12,8 @@ import { eurosDepuisMicro } from '@/lib/agent-solde';
 import { coutMoyenParEngagement } from '@/lib/cout-moyen';
 import { DetailCampagneModale } from '@/components/DetailCampagneModale';
 import { useT, useLocale } from '@/lib/i18n';
+import { Icone } from '@/components/Icone';
+import { Nd, useErreurRegroupee } from '@/components/Nd';
 
 /**
  * LA CARTE « COUTS » DE LA SYNTHESE : trois chiffres, et rien d'autre tant qu'on ne déplie pas.
@@ -31,7 +33,7 @@ import { useT, useLocale } from '@/lib/i18n';
  * route unique ferait disparaître la carte entière pour une panne d'un tiers de son contenu.
  */
 
-const CARD = 'rounded-2xl border border-ink-200 bg-white p-5';
+const CARD = 'rounded-carte border border-ink-200 bg-white p-5';
 const TH = 'px-2 py-1.5 text-left text-xs font-medium text-ink-500';
 const TD = 'px-2 py-1.5 text-sm text-ink-900';
 
@@ -109,7 +111,7 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
         <h2 className="text-sm font-semibold text-ink-900">{t('Coûts', 'Costs')}</h2>
         {/* La seule phrase de la carte, et elle porte la seule réserve qui vaut pour les TROIS lignes.
             Tout le reste du texte de l'ancienne carte est descendu dans la fiche d'une campagne. */}
-        <p className="mt-0.5 text-xs text-ink-400">
+        <p className="mt-0.5 text-xs text-ink-500">
           {t('Estimé, ce n’est pas une facture.', 'Estimated, this is not an invoice.')}
         </p>
       </header>
@@ -140,7 +142,7 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
                 {t('Inclure les campagnes archivées', 'Include archived campaigns')}
               </label>
               {campagnes.lignes.length === 0 && (
-                <p className="text-xs text-ink-400" data-testid="cout-aucune-campagne">
+                <p className="text-xs text-ink-500" data-testid="cout-aucune-campagne">
                   {t('Aucune campagne n’a envoyé sur cette période.', 'No campaign sent over this period.')}
                 </p>
               )}
@@ -191,7 +193,7 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
                 </table>
               </div>
               )}
-              <p className="mt-2 text-xs text-ink-400" data-testid="cout-denominateur">
+              <p className="mt-2 text-xs text-ink-500" data-testid="cout-denominateur">
                 {/* 🔴 LE DENOMINATEUR REEL, DIT A L'ECRAN. Le chiffre du dessus n'est pas « la moyenne des
                     campagnes de la période » : les campagnes sans coût chiffrable ou sans personne engagée
                     en sortent, des DEUX termes. Sans cette phrase, un lecteur qui compte les lignes du
@@ -202,7 +204,7 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
                 )}
               </p>
               {campagnes.tronque && (
-                <p className="mt-1 text-xs text-ink-400" data-testid="cout-tronque">
+                <p className="mt-1 text-xs text-ink-500" data-testid="cout-tronque">
                   {t(
                     `Seules les ${campagnes.lignes.length} campagnes qui ont le plus envoyé sont affichées : la période en compte davantage.`,
                     `Only the ${campagnes.lignes.length} campaigns that sent the most are shown: the period holds more.`,
@@ -257,7 +259,7 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
                   la fenêtre affichée aurait produit un nombre inventé, et un client construit un budget
                   dessus. Une ligne par mois traversé, parce qu'une période à cheval en a DEUX. */}
               {messages.service.parMois.length > 0 && (
-                <div className="mt-3 rounded-lg bg-ink-50 px-3 py-2" data-testid="cout-franchise">
+                <div className="mt-3 rounded-controle bg-ink-50 px-3 py-2" data-testid="cout-franchise">
                   <p className="text-xs font-medium text-ink-500">
                     {t('Franchise mensuelle', 'Monthly allowance')}
                   </p>
@@ -270,7 +272,7 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
               )}
 
               {messages.nonChiffrables > 0 && (
-                <p className="mt-2 text-xs text-ink-400" data-testid="cout-non-chiffrables">
+                <p className="mt-2 text-xs text-ink-500" data-testid="cout-non-chiffrables">
                   {/* Les deux causes se disent SEPAREMENT : une catégorie absente est un héritage clos
                       (rien ne la retrouvera), un tarif manquant est une panne du jour (Meta le rendra
                       demain). Un seul nombre les confondrait, et l'écran ne pourrait dire ni l'un ni
@@ -318,7 +320,7 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
                   sous un libellé qui lui promettait que la traduction était dedans. Relevé en revue finale
                   le 2026-09-17. Le dire au lieu de le promettre coûte une phrase ; compter la traduction
                   pour de vrai est un lot à part, il est dans `todo.md`. */}
-              <p className="text-xs text-ink-400" data-testid="cout-ia-perimetre">
+              <p className="text-xs text-ink-500" data-testid="cout-ia-perimetre">
                 {t(
                   'Votre crédit prépayé : les tours d’agent IA. La traduction des conversations tombe sur le même crédit mais n’est pas encore chiffrée ici. Le Meta Business Agent n’y est pas non plus, il tourne chez Meta, qui le facture au message de service (ligne ci-dessus).',
                   'Your prepaid credit: AI agent turns. Conversation translation draws on the same credit but is not costed here yet. The Meta Business Agent is not here either, it runs at Meta, which bills it per service message (line above).',
@@ -357,7 +359,7 @@ export function CarteCouts({ tenantId, range }: { tenantId: string; range: Stats
                 </div>
               )}
               {ia.tronque && (
-                <p className="mt-1 text-xs text-ink-400" data-testid="cout-ia-tronque">
+                <p className="mt-1 text-xs text-ink-500" data-testid="cout-ia-tronque">
                   {t(
                     `Seuls les ${ia.tours.length} tours les plus récents sont affichés : la période en compte davantage.`,
                     `Only the ${ia.tours.length} most recent turns are shown: the period holds more.`,
@@ -409,6 +411,8 @@ function Ligne({ cle, titre, valeur, vide, etat, depliable = true, ouverte, onBa
   onBascule: () => void;
   children: React.ReactNode;
 }) {
+  // Sur un écran qui regroupe ses erreurs, la ligne ne porte plus que « n/d » : la phrase est en haut, une fois.
+  const regroupee = useErreurRegroupee(`cout-${cle}`, etat === 'erreur');
   return (
     <div className="py-3 first:pt-0 last:pb-0" data-testid={`cout-bloc-${cle}`}>
       <button
@@ -422,16 +426,16 @@ function Ligne({ cle, titre, valeur, vide, etat, depliable = true, ouverte, onBa
         <span className="flex items-center gap-1.5 text-sm text-ink-500">
           {titre}
           {etat === 'pret' && depliable && (
-            <svg viewBox="0 0 24 24" className={`h-3.5 w-3.5 shrink-0 text-ink-400 transition-transform ${ouverte ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+            <Icone nom="deplier" taille="petite" className={`text-ink-400 transition-transform duration-150 ${ouverte ? 'rotate-180' : ''}`} />
           )}
         </span>
         <span className="text-xl font-semibold tracking-tight tabular-nums text-ink-900" data-testid={`cout-valeur-${cle}`}>
           {etat === 'charge' && <span className="text-sm font-normal text-ink-400">…</span>}
-          {etat === 'erreur' && <span className="text-sm font-normal text-danger">{'—'}</span>}
-          {etat === 'pret' && (valeur ?? <span className="text-sm font-normal text-ink-400">{'—'}</span>)}
+          {etat === 'erreur' && <Nd className="text-sm" {...(regroupee ? { testId: `cout-erreur-${cle}` } : {})} />}
+          {etat === 'pret' && (valeur ?? <Nd className="text-sm" />)}
         </span>
       </button>
-      {etat === 'erreur' && (
+      {etat === 'erreur' && !regroupee && (
         <p className="mt-1 text-xs text-danger" data-testid={`cout-erreur-${cle}`}>
           {/* Une panne d'UNE ligne ne doit pas faire disparaître les deux autres : c'est la raison d'être
               des trois appels séparés, et cette phrase est ce qui le rend lisible. */}
@@ -459,7 +463,7 @@ function Poste({ libelle, valeur, detail, href }: { libelle: string; valeur: str
   const intitule = (
     <>
       {libelle}
-      {detail && <span className="ml-1.5 text-xs text-ink-400">{detail}</span>}
+      {detail && <span className="ml-1.5 text-xs text-ink-500">{detail}</span>}
     </>
   );
   return (
@@ -474,7 +478,7 @@ function Poste({ libelle, valeur, detail, href }: { libelle: string; valeur: str
   );
 }
 
-/** Une case sans réponse. Le titre porte la raison : un tiret nu se lit « zéro » à la deuxième lecture. */
+/** Une case sans réponse. Le titre porte la raison : un tiret nu se lisait « zéro » à la deuxième lecture. */
 function Vide({ titre }: { titre: string }) {
-  return <span className="text-ink-400" title={titre}>—</span>;
+  return <Nd titre={titre} />;
 }

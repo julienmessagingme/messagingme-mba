@@ -6,6 +6,7 @@ import {
 } from '@/lib/rcs-boutons';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
+import { Icone } from '@/components/Icone';
 
 /**
  * Éditeur des boutons d'un message RCS, partagé par tous les écrans qui en composent : la bibliothèque
@@ -48,7 +49,7 @@ export function RcsButtonsEditor({
     <div>
       <div className="space-y-2">
         {boutons.map((b, i) => (
-          <div key={i} className="rounded-lg border border-ink-200 p-2">
+          <div key={i} className="rounded-controle border border-ink-200 p-2">
             <div className="flex items-center gap-1.5">
               <select
                 value={b.kind}
@@ -68,11 +69,9 @@ export function RcsButtonsEditor({
               <button
                 type="button"
                 onClick={() => onChange(boutons.filter((_, j) => j !== i))}
-                className="shrink-0 text-ink-400 hover:text-danger"
+                className="shrink-0 text-ink-500 hover:text-danger"
                 aria-label={t('Retirer', 'Remove')}
-              >
-                ×
-              </button>
+              ><Icone nom="fermer" taille="petite" /></button>
             </div>
 
             {b.kind === 'openUrl' && (
@@ -141,7 +140,7 @@ export function RcsButtonsEditor({
             )}
 
             {t(...AIDE_KIND[b.kind]) !== '' && (
-              <p className="mt-1 text-xs text-ink-400">{t(...AIDE_KIND[b.kind])}</p>
+              <p className="mt-1 text-xs text-ink-500">{t(...AIDE_KIND[b.kind])}</p>
             )}
           </div>
         ))}

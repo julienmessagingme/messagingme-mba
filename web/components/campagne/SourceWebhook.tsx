@@ -76,13 +76,13 @@ export function SourceWebhook({
         arrivés avant.
       </p>
       {webhooks === null ? (
-        <p className="text-xs text-ink-400">Chargement des adresses...</p>
+        <p className="text-xs text-ink-500">Chargement des adresses...</p>
       ) : erreur ? (
-        <p className="rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700">
+        <p className="rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700">
           Impossible de charger les adresses. Réessaie dans un instant.
         </p>
       ) : webhooks.length === 0 ? (
-        <p className="rounded-lg bg-alerte-50 px-3 py-2 text-xs text-alerte-800">
+        <p className="rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte-800">
           Aucune adresse active. Crée-la dans Tools &gt; Webhooks, puis reviens ici.
         </p>
       ) : (
@@ -107,14 +107,14 @@ export function SourceWebhook({
               arrivants « consentement inconnu ». Ils seront inscrits et marqués écartés, jamais perdus,
               mais autant le dire avant de lancer. */}
           {choisi && category === 'marketing' && !choisi.optIn && (
-            <p className="rounded-lg bg-alerte-50 px-3 py-2 text-xs text-alerte-800" data-testid="campaign-webhook-optin">
+            <p className="rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte-800" data-testid="campaign-webhook-optin">
               Cette adresse n&apos;affirme pas le consentement des contacts qu&apos;elle crée. Sur une
               campagne marketing, ces contacts seront écartés. Coche le consentement dans Tools &gt;
               Webhooks, ou passe la campagne en « Service ».
             </p>
           )}
           {choisi && !choisi.createContact && (
-            <p className="rounded-lg bg-alerte-50 px-3 py-2 text-xs text-alerte-800" data-testid="campaign-webhook-creation">
+            <p className="rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte-800" data-testid="campaign-webhook-creation">
               Cette adresse ne crée pas les contacts inconnus : seuls ceux qui existent déjà dans le CRM
               seront touchés.
             </p>

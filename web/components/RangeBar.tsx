@@ -4,10 +4,9 @@ import { useState } from 'react';
 import { useT } from '@/lib/i18n';
 import { PRESETS, activePreset, presetRange, todayParis, type DateRange } from '@/lib/range';
 import { Bouton } from '@/components/Bouton';
-import { TitrePage } from '@/components/TitrePage';
 
 const inputCls =
-  'rounded-md border border-ink-300 bg-white px-2 py-1 text-xs text-ink-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+  'rounded-controle border border-ink-300 bg-white px-2 py-1 text-xs text-ink-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
 /**
  * Bandeau de periode des ecrans Analytics : titre a gauche, raccourcis 7/30/90 jours et saisie libre a droite.
@@ -27,7 +26,12 @@ const inputCls =
  * colle à gauche, et la barre de période aurait sauté d'un bord à l'autre d'un écran à l'autre.
  */
 export function RangeBar({ title, range, onChange }: {
-  title?: string;
+  /**
+   * Ce qui s'affiche à gauche, POSÉ PAR LA PAGE. ⚠️ La barre ne fabrique plus elle-même un `h1` : sur
+   * « Mes tableaux », elle en ajoutait un second sous celui de la page (relecture de la passe 1). Une page
+   * dont la barre porte le titre y passe son `<TitrePage>` ; une autre y pose un simple libellé.
+   */
+  title?: React.ReactNode;
   range: DateRange;
   onChange: (range: DateRange) => void;
 }) {
@@ -55,14 +59,14 @@ export function RangeBar({ title, range, onChange }: {
     // decoupage du Quantitatif en sous-onglets rendait la duplication facile (une copie par onglet), et deux
     // barres divergeraient des le premier ajustement.
     <div data-testid="range-bar" className="sticky top-12 z-20 flex flex-wrap items-center justify-between gap-3 bg-surface-subtle py-2">
-      {title !== undefined && <TitrePage>{title}</TitrePage>}
+      {title}
       <div className="ml-auto flex flex-wrap items-center gap-2">
-        <div className="inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-xs">
+        <div className="inline-flex gap-1 rounded-controle bg-ink-100 p-1 text-xs">
           {PRESETS.map((d) => (
             <button
               key={d}
               onClick={() => applyPreset(d)}
-              className={`rounded-md px-2.5 py-1 ${preset === d ? 'bg-white font-medium text-brand-700' : 'text-ink-500 hover:text-ink-900'}`}
+              className={`rounded-controle px-2.5 py-1 ${preset === d ? 'bg-white font-medium text-brand-700' : 'text-ink-500 hover:text-ink-900'}`}
             >
               {d} {t('j', 'd')}
             </button>
