@@ -1,7 +1,7 @@
 // tests/v1-contacts.test.ts
 import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { ContactV1, FicheApi, ServiceContactsV1 } from '../src/api/contacts-v1';

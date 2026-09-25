@@ -40,7 +40,7 @@ push, regarder le run GitHub** : un `npm test` vert en local n'a rien vérifié 
 unitaire ne pouvait voir.
 
 ⚠️ En prod l'app tourne **via tsx en conteneur** (`node dist` casse : ESM `moduleResolution:
-Bundler` sans extensions). `npm run build` (tsc) n'est pas le chemin de déploiement.
+Bundler` sans extensions). Plus de script `build` ni `start` à la racine : le contrôle est `npm run typecheck`.
 
 ## Déploiement
 

@@ -18,7 +18,7 @@ const VIDEO_MAX = 16 * 1024 * 1024; // 16 Mo (limite en-tête vidéo Meta)
  * bodyLimit élevé (le média transite en base64, +33% -> ~22 Mo pour une vidéo de 16 Mo).
  */
 export function registerMedia(app: FastifyInstance, deps: MediaRouteDeps, garde: Guard): void {
-  const opts = { ...({ preHandler: garde }), bodyLimit: 24 * 1024 * 1024 };
+  const opts = { preHandler: garde, bodyLimit: 24 * 1024 * 1024 };
 
   app.post('/tenants/:tenantId/media', opts, async (req, reply) => {
     const tenant = scopeTenant(req);

@@ -1,7 +1,7 @@
 import type { Pool, PoolClient } from 'pg';
 import type { MotifDePause } from './pause';
 import type { Campaign, CampaignStatus, CampaignCategory, Recipient, QualityRating } from './types';
-import type { CampaignStore, RecipientStore, FrequencyStore, QualityProvider, EcartALEnvoi } from './engine';
+import type { CampaignStore, RecipientStore, QualityProvider, EcartALEnvoi } from './engine';
 import type { BuildContact, BuiltRecipient, ContactEnvoi } from './build';
 import type { WorkflowGraph } from '../workflow/graph';
 import { resolveTemplateParams, type TemplateParam } from '../crm/template';
@@ -1912,37 +1912,6 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
        where id = $1`,
       [id, r.status, r.messageId ?? null, r.error ?? null, r.sentAt ?? null, r.errorCode ?? null],
     );
-  }
-}
-
-/**
- * Fréquence cross-campagne SANS table dédiée : la source est le `sent_at` déjà écrit
- * par PgRecipientStore.markResult. `record` est donc un no-op.
- */
-export class PgFrequencyStore implements FrequencyStore {
-  constructor(private readonly pool: Pool) {}
-
-  async lastSentAt(tenantId: string, toE164: string): Promise<number | null> {
-    // Seuls les envois MARKETING comptent pour la fréquence : un utility récent ne doit
-    // pas bloquer un marketing, et le moteur n'applique de toute façon la fréquence qu'au
-    // marketing (cohérence de la sémantique de catégorie).
-    const res = await this.pool.query<{ ms: string | null }>(
-      // Un envoi dont la LIVRAISON a échoué (delivery_status = 'failed', ex. 131042) n'a jamais
-      // atteint l'utilisateur : il ne doit pas bloquer un renvoi. On l'exclut du plafond.
-      `select (extract(epoch from max(r.sent_at)) * 1000)::bigint as ms
-       from campaign_recipients r
-       join campaigns c on c.id = r.campaign_id
-       where c.tenant_id = $1 and r.to_e164 = $2 and r.status = 'sent'
-         and c.category = 'marketing'
-         and (r.delivery_status is null or r.delivery_status <> 'failed')`,
-      [tenantId, toE164],
-    );
-    const ms = res.rows[0]?.ms;
-    return ms == null ? null : Number(ms);
-  }
-
-  async record(): Promise<void> {
-    // no-op : sent_at est persisté par markResult ; lastSentAt lit cette source unique.
   }
 }
 

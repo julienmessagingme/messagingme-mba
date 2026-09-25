@@ -8,7 +8,7 @@ import type { EntreeResolveur } from '../src/agent/executor';
 import { ficheVide } from '../src/agent/fiche';
 import type { RunTurnDeps, EtatRun } from '../src/agent/run-turn';
 import type { FicheAgent } from '../src/agent/agent-store';
-import { FakeAgentBrain } from '../src/agent/brain.fake';
+import { FakeAgentBrain } from './fake-agent-brain';
 import type { DecisionAgent } from '../src/agent/brain';
 import { TourInterrompu } from '../src/agent/brain';
 import type { AgentSession } from '../src/agent/session-store';

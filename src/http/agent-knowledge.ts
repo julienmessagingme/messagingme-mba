@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { Guard, PreHandler } from '../auth/middleware';
+import { gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
 import type { FicheAEcrire, FicheConnaissance, SourceFiche } from '../agent/knowledge';
 import { MAX_CORPS, MAX_FICHES_PAR_PAGE, MAX_TITRE, pageEnFiches } from '../agent/scrape';
 import { urlRecuperable, type PageDistante } from '../lib/page-distante';
@@ -102,9 +102,7 @@ export function registerAgentKnowledge(
    * ⚠️ PAS SUR LES LECTURES NI SUR L'ÉDITION D'UNE FICHE : ce plafond est par ESPACE et vaut 10 par minute
    * par défaut, il rendrait l'écran inutilisable si on le posait sur des gestes ordinaires.
    */
-  const optsLourds = limiteCouteuse
-    ? { preHandler: garde ? [...(Array.isArray(garde) ? garde : [garde]), limiteCouteuse] : [limiteCouteuse] }
-    : opts;
+  const optsLourds = gardeEtendue(garde, limiteCouteuse);
   const base = '/tenants/:tenantId/agents/:agentId/knowledge';
 
   /**

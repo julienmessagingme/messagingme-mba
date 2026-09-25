@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import type { MbaOutilsDeps } from '../src/http/mba-outils';
 import { NomOutilDejaPris, OutilNonActivable, type OutilComplet } from '../src/agent/catalog';
 import { risqueSelonMethode } from '../src/agent/http-cible';

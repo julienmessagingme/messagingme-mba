@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import '../../src/charger-env';
 import { randomUUID } from 'node:crypto';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';

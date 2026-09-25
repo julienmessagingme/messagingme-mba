@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import '../../src/charger-env';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';

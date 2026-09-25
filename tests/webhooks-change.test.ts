@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { changesDuPayload, valeurEffective } from '../src/webhooks/change';
+import { valeurEffective } from '../src/webhooks/change';
 import { extractInbound } from '../src/webhooks/inbound';
 import { parseWebhook, nAQueDesAccuses, cleDeContact } from '../src/webhooks/parse';
 import { processHandovers } from '../src/webhooks/handover';
@@ -137,21 +137,6 @@ describe('valeurEffective', () => {
     for (const saleté of [null, undefined, 42, 'texte', [], { standby: 'pas un objet' }]) {
       expect(() => valeurEffective(saleté)).not.toThrow();
     }
-  });
-});
-
-describe('changesDuPayload', () => {
-  it('rend le field TEL QUEL, sans le traduire', () => {
-    // 🔴 Les consommateurs qui doivent se TAIRE quand le MBA tient le fil (déclencheurs d'automation, avance
-    // de scénario) testent `field !== 'messages'`. Normaliser `standby` en `messages` ici les ferait répondre
-    // par-dessus l'agent de Meta, donc reprendre le fil sans que personne l'ait demandé.
-    expect(changesDuPayload(STANDBY_ENTRANT)[0]!.field).toBe('standby');
-    expect(changesDuPayload(NORMAL_ENTRANT)[0]!.field).toBe('messages');
-  });
-
-  it('rend une liste vide sur un payload vide', () => {
-    expect(changesDuPayload({})).toEqual([]);
-    expect(changesDuPayload(null)).toEqual([]);
   });
 });
 

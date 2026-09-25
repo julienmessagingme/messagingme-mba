@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import { sha256Hex } from '../src/lib/signature';
 import { config } from '../src/config';
 import { DROIT_RELAIS } from '../src/mba/cle-relais';

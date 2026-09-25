@@ -198,7 +198,7 @@ export interface BulkEdits {
   setField?: { key: string; value: string };
   /**
    * Bascule du consentement marketing depuis le mini-CRM, en masse. L'upsert d'import ne fait JAMAIS
-   * régresser un statut (unknown -> opted_in seulement, cf. `upsertByPhone`) : un refus s'écrit par une
+   * régresser un statut (unknown -> opted_in seulement, cf. `upsertByPhoneReturningId`) : un refus s'écrit par une
    * méthode dédiée, celle-ci, la fiche (`applyEdits`), le mot-clé entrant (`setOptInByWaId`) ou l'API
    * publique (`ecrireConsentementParId`). La liste qui fait foi est dérivée par `tests/optout-poussee.test.ts`.
    */
@@ -254,7 +254,7 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * Comme upsertByPhone mais renvoie AUSSI l'id du contact. Sert le webhook entrant et la création à la main
+   * Upsert d'UN contact par son numéro, qui rend son id. Sert le webhook entrant et la création à la main
    * dans la console (`upsertContactsFromApi`). L'API publique n'y passe plus : elle résout une fiche par
    * `resoudreFiche` (lot 1) et la crée par `creerFicheApi`.
    */
@@ -305,12 +305,6 @@ export class PgContactStore implements ContactStore {
     );
     const row = res.rows[0]!;
     return { id: row.id, created: row.created };
-  }
-
-  /** Forme UN contact du même upsert. Sert aux tests d'intégration, qui vérifient les règles de fusion
-   *  (merge jsonb, opt-in qui ne régresse pas, union des tags) sur un contact à la fois. */
-  async upsertByPhone(c: ContactUpsert): Promise<'created' | 'updated'> {
-    return (await this.upsertByPhoneReturningId(c)).created ? 'created' : 'updated';
   }
 
   /**

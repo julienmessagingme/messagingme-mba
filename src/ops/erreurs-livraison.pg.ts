@@ -279,8 +279,8 @@ export class PgErreursLivraisonStore {
   /**
    * Les échecs d'avance de scénario (migration 0108).
    *
-   * ⚠️ DÉGRADE PROPREMENT : si la table n'existe pas encore (migration pas passée), on rend une liste vide au
-   * lieu de faire échouer tout l'écran. Le journal des erreurs de campagne, lui, doit continuer de s'afficher.
+   * ⚠️ DÉGRADE PROPREMENT : si cette lecture échoue, on rend une liste vide au lieu de faire échouer tout
+   * l'écran. Le journal des erreurs de campagne, lui, doit continuer de s'afficher.
    */
   private async listerEchecsAvance(tenantId: string, filtre: FiltreErreurs, limit: number): Promise<ErreurLivraison[]> {
     // Un échec d'avance ne porte AUCUN code Meta : filtrer par code, c'est demander des erreurs de Meta, donc
@@ -338,7 +338,7 @@ export class PgErreursLivraisonStore {
       }));
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('erreurs-livraison: lecture des échecs d’avance impossible (migration 0108 passée ?):', err instanceof Error ? err.message : err);
+      console.error('erreurs-livraison: lecture des échecs d’avance impossible:', err instanceof Error ? err.message : err);
       return [];
     }
   }

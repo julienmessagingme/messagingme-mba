@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
-import type { DashboardStats, TemplateBreakdownRow, CampaignFunnel, ErrorBreakdownRow, CostFilter, VolumesParCanal } from '../stats/store.pg';
+import type { DashboardStats, TemplateBreakdownRow, CampaignFunnel, ErrorBreakdownRow, VolumesParCanal } from '../stats/store.pg';
 import type { ErreurLivraison } from '../ops/erreurs-livraison.pg';
 import type { FiltreCampagneOuTemplate } from '../stats/store.pg';
 import type { CostSeries, CoutParCampagne } from '../stats/cost';
@@ -73,7 +73,7 @@ export interface StatsRouteDeps {
    */
   getErrorContacts?(tenantId: string, range: DateRange, code: number, filter: FiltreCampagneOuTemplate): Promise<ErreurLivraison[]>;
   /** Série de coût estimé/jour, filtrable par campagne ou template. */
-  getCostSeries(tenantId: string, range: DateRange, filter: CostFilter): Promise<CostSeries>;
+  getCostSeries(tenantId: string, range: DateRange, filter: FiltreCampagneOuTemplate): Promise<CostSeries>;
   /**
    * Le tableau « ce que coûte un engagement » de la page de synthèse (lot E) : une ligne par campagne
    * ayant envoyé sur la période, son coût ESTIMÉ et ses clics.
@@ -324,7 +324,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
     // conversion `::uuid[]` chez Postgres), donc en page d'erreur Cloudflare côté client.
     const idsCout = idsCampagnes(q.campaignIds);
     if (idsCout === null) return reply.code(400).send({ error: 'campaignIds invalide' });
-    const filter: CostFilter = {
+    const filter: FiltreCampagneOuTemplate = {
       ...(idsCout.length > 0 ? { campaignIds: idsCout } : {}),
       ...(csvBorne(q.templateNames).length > 0 ? { templateNames: csvBorne(q.templateNames) } : {}),
     };

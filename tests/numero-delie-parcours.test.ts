@@ -165,7 +165,6 @@ describe('campagne de scénario, numéro délié puis relié, avec le vrai exéc
         sendTemplate: async () => { throw new Error('aucun modèle direct ici'); },
       },
       recipients: destinataires, campaigns: campagnes,
-      frequency: { lastSentAt: async () => null, record: async () => {} },
       quality: { getRating: async () => 'GREEN' },
       // Le câblage du worker : un démarrage de campagne reprend le fil (`ignoreHumanControl`).
       startWorkflow: (tenant, wf, waId, contactId, params) =>

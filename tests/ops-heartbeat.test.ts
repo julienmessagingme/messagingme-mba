@@ -13,17 +13,6 @@ describe('PgWorkerHeartbeatStore.get', () => {
     expect(await store.get()).toBeNull();
   });
 
-  it('table absente (42P01) -> null, pas de throw (fenêtre deploy avant migration 0044)', async () => {
-    const store = new PgWorkerHeartbeatStore(
-      fakePool(() => {
-        const e = new Error('relation "worker_heartbeat" does not exist') as Error & { code: string };
-        e.code = '42P01';
-        throw e;
-      }),
-    );
-    expect(await store.get()).toBeNull();
-  });
-
   it('ligne présente -> beatAt/bootedAt/instance/ageSeconds (âge calculé côté DB)', async () => {
     const beat = new Date('2026-07-24T10:00:00.000Z');
     const booted = new Date('2026-07-24T09:00:00.000Z');
@@ -49,7 +38,7 @@ describe('PgWorkerHeartbeatStore.get', () => {
     expect(hb?.ageSeconds).toBe(4); // arrondi
   });
 
-  it('autre erreur SQL -> propagée (pas avalée comme 42P01)', async () => {
+  it('erreur SQL -> propagée, jamais avalée', async () => {
     const store = new PgWorkerHeartbeatStore(
       fakePool(() => {
         throw new Error('boom');

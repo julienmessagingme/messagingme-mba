@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { surveillerOps, ipIndicative, SEUIL_ALERTE, FENETRE_MS, REPOS_ALERTE_MS } from '../src/ops/tentatives';
 import { buildServer } from '../src/server';
 import type { ServerDeps } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 
 /**
  * LA SURVEILLANCE DE `/ops` (décision de Julien, 2026-09-03).

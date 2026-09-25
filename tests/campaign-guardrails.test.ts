@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { optInAllows, frequencyAllows, qualityGate } from '../src/campaign/guardrails';
+import { optInAllows, qualityGate } from '../src/campaign/guardrails';
 // Le constructeur de composants du chemin campagne a été FUSIONNÉ dans meta/template-components (source
 // unique). Les deux cas plus bas sont inchangés : ils prouvent que la fusion est un no-op côté campagne.
 import { buildTemplateComponents } from '../src/meta/template-components';
@@ -7,7 +7,7 @@ import type { GuardrailThresholds } from '../src/campaign/types';
 
 const buildComponents = (params: string[]): unknown[] => buildTemplateComponents({ bodyParams: params });
 
-const T: GuardrailThresholds = { frequencyWindowMs: 1000, maxFailureRate: 0.3, minSendsForFailureCheck: 5 };
+const T: GuardrailThresholds = { maxFailureRate: 0.3, minSendsForFailureCheck: 5 };
 
 describe('optInAllows', () => {
   it('marketing exige opted_in', () => {
@@ -19,16 +19,6 @@ describe('optInAllows', () => {
     expect(optInAllows('utility', { optInStatus: 'unknown' })).toBe(true);
     expect(optInAllows('utility', { optInStatus: 'opted_in' })).toBe(true);
     expect(optInAllows('utility', { optInStatus: 'opted_out' })).toBe(false); // opt-out dur bloque tout
-  });
-});
-
-describe('frequencyAllows', () => {
-  it('jamais envoyé -> autorisé', () => {
-    expect(frequencyAllows(null, 1000, 500)).toBe(true);
-  });
-  it('bloque dans la fenêtre, autorise au-delà', () => {
-    expect(frequencyAllows(600, 1000, 500)).toBe(false); // 400 < 500
-    expect(frequencyAllows(400, 1000, 500)).toBe(true); // 600 >= 500
   });
 });
 

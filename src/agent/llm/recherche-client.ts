@@ -36,21 +36,6 @@ export interface FicheAReclasser {
   texte: string;
 }
 
-export interface ClientRecherche {
-  /**
-   * Vectorise un ou plusieurs textes EN UN SEUL appel. Le lot compte : vectoriser 200 fiches une par une
-   * ferait 200 allers-retours la ou un seul suffit.
-   */
-  vectoriser(textes: string[]): Promise<number[][]>;
-  /**
-   * Note la pertinence de chaque fiche pour CETTE question. Rend un score par fiche, dans l'ordre donne.
-   *
-   * ⚠️ L'ordre du tableau rendu suit celui des documents fournis, pas celui du classement : c'est l'appelant
-   * qui trie, parce que c'est lui qui sait ce qu'il fait des scores.
-   */
-  reclasser(question: string, fiches: FicheAReclasser[]): Promise<number[]>;
-}
-
 interface ReponseEmbeddings {
   data?: Array<{ embedding?: number[]; index?: number }>;
   error?: { message?: string };
@@ -61,7 +46,7 @@ interface ReponseRerank {
   error?: { message?: string };
 }
 
-export class GatewayRechercheClient implements ClientRecherche {
+export class GatewayRechercheClient {
   constructor(
     private readonly cle: string,
     private readonly modeleEmbedding: string,
@@ -69,6 +54,10 @@ export class GatewayRechercheClient implements ClientRecherche {
     private readonly fetch_: typeof fetch = fetch,
   ) {}
 
+  /**
+   * Vectorise un ou plusieurs textes EN UN SEUL appel. Le lot compte : vectoriser 200 fiches une par une
+   * ferait 200 allers-retours la ou un seul suffit.
+   */
   async vectoriser(textes: string[]): Promise<number[][]> {
     if (textes.length === 0) return [];
     const corps = await this.appeler<ReponseEmbeddings>(URL_EMBEDDINGS, { model: this.modeleEmbedding, input: textes });
@@ -87,6 +76,12 @@ export class GatewayRechercheClient implements ClientRecherche {
     return vecteurs as number[][];
   }
 
+  /**
+   * Note la pertinence de chaque fiche pour CETTE question. Rend un score par fiche, dans l'ordre donne.
+   *
+   * ⚠️ L'ordre du tableau rendu suit celui des documents fournis, pas celui du classement : c'est l'appelant
+   * qui trie, parce que c'est lui qui sait ce qu'il fait des scores.
+   */
   async reclasser(question: string, fiches: FicheAReclasser[]): Promise<number[]> {
     if (fiches.length === 0) return [];
     const corps = await this.appeler<ReponseRerank>(URL_RERANK, {

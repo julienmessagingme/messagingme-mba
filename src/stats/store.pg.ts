@@ -158,12 +158,6 @@ export interface FiltreCampagneOuTemplate {
   campaignIds?: string[];
   templateNames?: string[];
 }
-/**
- * Le filtre du graphe de coût. ALIAS et non copie : la liste des contacts touchés filtre sur les deux mêmes
- * axes, et deux interfaces jumelles auraient divergé au premier axe ajouté. Le nom historique reste, il est
- * importé par le câblage et par les routes.
- */
-export type CostFilter = FiltreCampagneOuTemplate;
 
 /** Ce qui est parti et ce qui est arrivé sur UN canal, sur la fenêtre (cartes de l'Accueil). */
 export interface VolumeCanal {
@@ -1444,7 +1438,7 @@ export class PgStatsStore {
    *  - `category` peut être `null` (un envoi de scénario antérieur au 2026-09-07 n'en porte pas), et
    *    `estimateCostSeries` ignore alors la ligne.
    */
-  async getCostVolume(tenantId: string, range: DateRange, filter: CostFilter): Promise<CostVolumeRow[]> {
+  async getCostVolume(tenantId: string, range: DateRange, filter: FiltreCampagneOuTemplate): Promise<CostVolumeRow[]> {
     const { from, to } = range;
     const res = await this.pool.query<{ date: string; category: string | null; count: string }>(
       `with ${BOUNDS_CTE}

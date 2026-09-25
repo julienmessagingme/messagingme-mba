@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './charger-env';
 import { config } from './config';
 import { PgBossQueue } from './queue/pgboss';
 import { pool, mesureAttentePool } from './db/pool';
@@ -16,7 +16,6 @@ import {
   PgCampaignRepo,
   PgCampaignStore,
   PgRecipientStore,
-  PgFrequencyStore,
   PgQualityProvider,
 } from './campaign/store.pg';
 import { campaignRunJob, type CapacitesMoteur } from './campaign/run-job';
@@ -109,7 +108,7 @@ import { buildTransport as buildEmailTransport } from './email/smtp';
 import { PgConversationAnalysisStore } from './analysis/store.pg';
 import { analyzeConversationJob } from './analysis/job';
 import { runAnalysisSweep } from './analysis/sweep';
-import { createLlmClient } from './analysis/llm-client';
+import { AnthropicClient } from './analysis/llm-client';
 import { getEnrichment } from './analysis/enrichment';
 import { pushAnalysisJob } from './analysis/push-job';
 import { hubspotCatchupJob } from './analysis/catchup-job';
@@ -119,7 +118,7 @@ import { PgNumeroDelieStore } from './account/numero-delie.pg';
 import { creerGardeNumeroDelie } from './meta/numero-delie';
 import { pullFromInfo, pullFromError } from './account/pull';
 import { creerNoteDeQualite } from './campaign/note-qualite';
-import { creerWabaDeLEspace } from './meta/numero-espace';
+import { creerNumeroDeLEspace } from './meta/numero-espace';
 import { runPhoneStatusSweep, type PhoneProblem } from './account/status-sweep';
 import { PgOpsStore } from './ops/store.pg';
 import { PgErreursLivraisonStore } from './ops/erreurs-livraison.pg';
@@ -226,7 +225,7 @@ async function main(): Promise<void> {
   taches.programmer('pool-attentes', 60_000, async () => {
     await viderVersLaBase(poolAttentes, mesureAttentePool, 'worker', new Date(), (err) => {
       // eslint-disable-next-line no-console
-      console.error('pool-attentes: écriture impossible (migration 0109 passée ?):', err instanceof Error ? err.message : err);
+      console.error('pool-attentes: écriture impossible:', err instanceof Error ? err.message : err);
     });
   });
 
@@ -329,7 +328,7 @@ async function main(): Promise<void> {
   // Le WABA de l'espace, UNE lecture par process au lieu d'une par construction de client Meta : le cache de
   // jeton est indexe par WABA, donc cette requete-la etait payee AVANT lui, a chaque envoi. Seules les
   // reponses positives entrent en cache (voir le module).
-  const wabaDeLEspace = creerWabaDeLEspace((t) => repo.getTenantWabaId(t));
+  const wabaDeLEspace = creerNumeroDeLEspace((t) => repo.getTenantWabaId(t));
   const qualiteStore = new PgQualityProvider(pool);
   const noteDeQualite = creerNoteDeQualite((pn) => qualiteStore.getRating(pn));
   const esStore = new PgEmbeddedSignupStore(pool);
@@ -797,7 +796,6 @@ async function main(): Promise<void> {
       senderFor,
       recipients: recipientStore,
       campaigns: new PgCampaignStore(pool),
-      frequency: new PgFrequencyStore(pool),
       // La note de qualite du numero, lue une fois par process et non par destinataire. Elle commande une mise
       // en PAUSE de la campagne : la justification du cache est dans le module, et elle tient a un chiffre
       // mesure (la colonne n'est rafraîchie que toutes les 20 minutes par le balayage `statut-numeros`).
@@ -1023,10 +1021,7 @@ async function main(): Promise<void> {
   // aucun balayage, aucun appel LLM, zéro coût. Le déclencheur (balayage d'inactivité) est REMPLAÇABLE (temps réel plus tard).
   if (config.CONVERSATION_ANALYSIS_ENABLED === 'true') {
     const analysisStore = new PgConversationAnalysisStore(pool);
-    const llmClient = createLlmClient(
-      { provider: config.LLM_PROVIDER, apiKey: config.LLM_API_KEY, model: config.LLM_MODEL, maxTokens: config.LLM_MAX_TOKENS },
-      transport,
-    );
+    const llmClient = new AnthropicClient(config.LLM_API_KEY, config.LLM_MODEL, config.LLM_MAX_TOKENS, transport);
     // Point de sortie (Pièce 2) : pousser l'analyse au connecteur mm-hubspot via un job SÉPARÉ `push-analysis`
     // (durable + DLQ). INERTE si CONNECTOR_PUSH_URL vide -> onAnalyzed = no-op, aucune file push, zéro appel réseau.
     const pushEnabled = config.CONNECTOR_PUSH_URL !== '';
@@ -1134,7 +1129,7 @@ async function main(): Promise<void> {
         store: analysisStore,
         llm: llmClient,
         onAnalyzed, // Pièce 2 : push connecteur (inerte si URL vide) ; consommé aussi par la pièce 3 plus tard
-        model: { provider: config.LLM_PROVIDER, model: config.LLM_MODEL },
+        model: { provider: 'anthropic', model: config.LLM_MODEL },
       }),
       // ⚠️ Les DEUX options vont ensemble : `groupConcurrency` est un no-op tant que `concurrency` vaut 1,
       // donc poser le groupe seul aurait donné une équité qu'on croirait active et qui ne le serait pas.

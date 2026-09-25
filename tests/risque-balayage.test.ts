@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Pool } from 'pg';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import { AUTOMATION_EVENT_QUEUE, parseAutomationEventJob } from '../src/automation/event-job';
 import {
   PLAFOND_DECLENCHEMENTS_PAR_JOUR, TAILLE_LOT_RISQUE, balayerRisque, balayerRisqueEspace, debutDuJour, departDuDeclencheur,

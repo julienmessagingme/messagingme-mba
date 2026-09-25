@@ -143,7 +143,3 @@ export const propositionMbaSchema = z.object({
   },
 );
 
-export type PropositionMba = z.infer<typeof propositionMbaSchema>;
-
-/** Le nom de l'outil que le modèle appelle, et son schéma JSON. Même forme que l'assistant d'agent IA. */
-export const OUTIL_PROPOSER_MBA = 'proposer';

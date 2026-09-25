@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import type { CreditStore, MouvementLu, RaisonMouvement } from './credits';
+import type { MouvementLu, RaisonMouvement } from './credits';
 
 /**
  * Le solde prépayé en base (migration 0087).
@@ -13,7 +13,7 @@ import type { CreditStore, MouvementLu, RaisonMouvement } from './credits';
  * ⚠️ `tenant_id` est la CLÉ, pas un filtre parmi d'autres : il n'y a qu'une ligne de solde par workspace, et
  * l'`insert ... on conflict` la crée à la première consommation comme au premier rechargement.
  */
-export class PgCreditStore implements CreditStore {
+export class PgCreditStore {
   constructor(private readonly pool: Pool) {}
 
   async solde(tenantId: string): Promise<number> {
@@ -35,6 +35,10 @@ export class PgCreditStore implements CreditStore {
     return this.bouger(tenantId, -montant, 'conso', contexte ?? {});
   }
 
+  /**
+   * `note` est OBLIGATOIRE, et c'est la seule trace de qui recharge et pourquoi : le jeton d'exploitation est
+   * partagé, il n'y a aucune identité d'opérateur à enregistrer à la place.
+   */
   async crediter(tenantId: string, montantMicroEur: number, note: string): Promise<number> {
     const montant = Math.max(0, Math.round(montantMicroEur));
     if (montant === 0) return this.solde(tenantId);

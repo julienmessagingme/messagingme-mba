@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { buildServer } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import { sansPortailHubspot, avecPortailHubspot } from './hubspot';
 import type { SettingsRouteDeps } from '../src/http/settings';

@@ -13,7 +13,7 @@ import { estPlafondAtteint } from './cles-gateway';
  * `HttpTransport`.
  *
  * Le modèle est passé PAR APPEL et non au constructeur : c'est une colonne de la fiche d'agent, lue ligne
- * par ligne, alors que `createLlmClient` le fige au boot depuis `config.LLM_MODEL`.
+ * par ligne, alors que le client d'analyse (`AnthropicClient`) le fige au boot depuis `config.LLM_MODEL`.
  */
 
 /**

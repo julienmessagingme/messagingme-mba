@@ -21,9 +21,9 @@ import { randomBytes } from 'node:crypto';
  */
 
 /**
- * Longueur du jeton, en caractères. 16 caractères d'un alphabet de 32 valent 80 bits de hasard : assez pour
- * qu'une collision soit impossible en pratique sur des millions de contacts, et assez court pour ne pas
- * gonfler une URL qui voyage dans un SMS de repli quand le RCS n'est pas disponible.
+ * Longueur du jeton, en caractères. 16 caractères d'un alphabet de 30 valent environ 78,5 bits de hasard :
+ * assez pour qu'une collision soit impossible en pratique sur des millions de contacts, et assez court pour
+ * ne pas gonfler une URL qui voyage dans un SMS de repli quand le RCS n'est pas disponible.
  */
 const LONGUEUR = 16;
 

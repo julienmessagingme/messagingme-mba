@@ -101,7 +101,7 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 /**
  * Routes d'authentification PUBLIQUES : login, inscription libre, mot de passe perdu/réinitialisé, plus le
- * changement de mot de passe (gardé par `garde` si fourni). Chaque endpoint a son propre rate-limiter
+ * changement de mot de passe (gardé par `garde`). Chaque endpoint a son propre rate-limiter
  * (ne pas partager l'instance du login). Anti-énumération : login/forgot ne révèlent jamais l'existence d'un email.
  */
 /**
@@ -397,20 +397,18 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
   });
 
   // Changement de mot de passe (compte connecté) : vérifie le mdp courant.
-  if (garde) {
-    app.post('/auth/change-password', { preHandler: garde }, async (req, reply) => {
-      if (!deps.getPasswordHash || !deps.setPassword) return reply.code(503).send({ error: 'indisponible' });
-      const userId = req.auth?.userId;
-      if (!userId) return reply.code(401).send({ error: 'authentification requise' });
-      const b = (req.body ?? {}) as { currentPassword?: unknown; newPassword?: unknown };
-      const current = str(b.currentPassword);
-      const next = str(b.newPassword);
-      if (next.length < MIN_PASSWORD) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_PASSWORD})` });
-      const hash = await deps.getPasswordHash(userId);
-      const ok = await verifyPassword(current, hash ?? DUMMY_HASH);
-      if (!hash || !ok) return reply.code(401).send({ error: 'mot de passe actuel incorrect' });
-      await deps.setPassword(userId, await hashPassword(next));
-      return reply.code(200).send({ ok: true });
-    });
-  }
+  app.post('/auth/change-password', { preHandler: garde }, async (req, reply) => {
+    if (!deps.getPasswordHash || !deps.setPassword) return reply.code(503).send({ error: 'indisponible' });
+    const userId = req.auth?.userId;
+    if (!userId) return reply.code(401).send({ error: 'authentification requise' });
+    const b = (req.body ?? {}) as { currentPassword?: unknown; newPassword?: unknown };
+    const current = str(b.currentPassword);
+    const next = str(b.newPassword);
+    if (next.length < MIN_PASSWORD) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_PASSWORD})` });
+    const hash = await deps.getPasswordHash(userId);
+    const ok = await verifyPassword(current, hash ?? DUMMY_HASH);
+    if (!hash || !ok) return reply.code(401).send({ error: 'mot de passe actuel incorrect' });
+    await deps.setPassword(userId, await hashPassword(next));
+    return reply.code(200).send({ ok: true });
+  });
 }

@@ -26,7 +26,7 @@ export interface GardesContactsV1 {
 }
 
 export const MAX_BATCH = 500;
-const conteneurDuLot = z.object({ contacts: z.array(z.unknown()) });
+export const conteneurDuLot = z.object({ contacts: z.array(z.unknown()) });
 
 /**
  * LE TRI DU LOT : ce qui est bien formé d'un côté, ce qui ne l'est pas de l'autre, AVEC SON INDEX.
@@ -48,12 +48,6 @@ function trierLeLot(bruts: unknown[]): { valides: Array<{ index: number; contact
   });
   return { valides, refus };
 }
-
-/** Les validateurs de ces routes, sous les noms que la documentation de l'API éprouve (`tests/api-exemples.test.ts`). */
-export const schemaCorpsContact = schemaContactV1;
-export const schemaCorpsLot = conteneurDuLot;
-export const schemaCorpsRecherche = schemaRechercheContactV1;
-export const schemaCorpsModification = schemaPatchContactV1;
 
 /**
  * Les routes publiques des FICHES (spec de l'API publique, § 2). L'espace vient à 100 % de `req.auth`, posé

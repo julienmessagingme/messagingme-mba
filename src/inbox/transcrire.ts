@@ -1,5 +1,4 @@
 import { transcrire, TranscriptionError } from '../agent/llm/transcription';
-import { MediaTropGros } from '../meta/media';
 import { MediaExpire, estMediaExpireChezMeta } from './media-entrant';
 import type { HttpTransport } from '../meta/http';
 import type { LangueConsole } from '../traduction/traduire';
@@ -208,5 +207,3 @@ async function lire(
   await deps.rangerTraduction?.(tenantId, msg.id, r.texte, cible).catch(() => {});
   return r.texte;
 }
-
-export { TranscriptionError, MediaTropGros };

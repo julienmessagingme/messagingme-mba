@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import { ResendClient } from '../src/support/resend';
 import type { FetchLike } from '../src/support/resend';

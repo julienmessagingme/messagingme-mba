@@ -5,8 +5,12 @@ import {
   CHAMPS, CIBLES, SOURCES_PARAM, type CibleDoc, type NomDeTable, type SourceDoc, type TableDeChamps, type TypeChamp,
 } from '../web/lib/api-champs';
 import { EXEMPLES_CORPS } from '../web/lib/api-exemples';
-import { schemaCorpsContact, schemaCorpsLot, schemaCorpsRecherche, schemaCorpsModification } from '../src/http/v1-contacts';
-import { schemaCorpsEnvoi, schemaDestinataireEnvoi } from '../src/http/v1-sends';
+import {
+  schemaContactV1 as schemaCorpsContact, schemaRechercheContactV1 as schemaCorpsRecherche,
+  schemaPatchContactV1 as schemaCorpsModification,
+} from '../src/api/contacts-v1';
+import { conteneurDuLot as schemaCorpsLot } from '../src/http/v1-contacts';
+import { schemaCorps as schemaCorpsEnvoi, schemaDestinataire as schemaDestinataireEnvoi } from '../src/http/v1-sends';
 import { schemaMessageWhatsapp } from '../src/http/v1-messages';
 import { schemaMessageRcs } from '../src/http/v1-messages-rcs';
 import { validateParamMapping, type ParamSource, type TemplateParam } from '../src/crm/template';

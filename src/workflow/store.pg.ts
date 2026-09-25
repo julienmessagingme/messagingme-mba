@@ -38,18 +38,6 @@ export function canalDOuverture(graph: WorkflowGraph): CanalOuverture {
 }
 
 /**
- * Le scénario peut-il OUVRIR une campagne ?
- *
- * 🔴 DÉRIVÉ DE `canalDOuverture`, ET PAS RECALCULÉ EN PARALLÈLE. Deux implémentations de la même règle
- * finissent par diverger, et la divergence serait muette : l'écran proposerait un scénario que la création
- * refuse, ou cacherait un scénario qu'elle accepte. `campaignEligible` est un contrat lu par TROIS écrans,
- * sa valeur ne doit pas bouger d'un pouce.
- */
-function campagneOuvrable(graph: WorkflowGraph): boolean {
-  return canalDOuverture(graph) !== null;
-}
-
-/**
  * Une ligne de la liste des scénarios, SANS les graphes. Ce que les écrans lisaient réellement du graphe est
  * devenu trois champs : combien de blocs, y a-t-il un brouillon, peut-il ouvrir une campagne.
  */
@@ -210,7 +198,7 @@ export class PgWorkflowStore {
       // MÊME fonction que la garde serveur de création de campagne : l'écran ne peut donc pas proposer un
       // scénario que la création refusera, ni cacher un scénario qu'elle accepterait. Le booléen est DÉRIVÉ
       // du canal, donc les deux ne peuvent pas se contredire.
-      campaignEligible: campagneOuvrable(r.graph),
+      campaignEligible: canalDOuverture(r.graph) !== null,
       canalOuverture: canalDOuverture(r.graph),
     }));
   }

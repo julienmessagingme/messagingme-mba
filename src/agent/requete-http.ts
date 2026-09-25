@@ -146,23 +146,6 @@ export function construireCorps(
   return { ok: true, corps: JSON.stringify(rempli) };
 }
 
-/**
- * Traduit une liste de champs en gabarit JSON, pour que l'écran puisse proposer « passer en JSON brut » sans
- * faire recommencer la saisie.
- *
- * ⚠️ SENS UNIQUE, et l'écran doit le dire. Tout JSON n'est pas représentable en liste de champs (un objet
- * imbriqué, un tableau), donc la bascule inverse ferait perdre du travail en silence. Proposer un aller sans
- * retour, en le disant, vaut mieux qu'un aller-retour qui ampute.
- */
-export function champsVersJson(champs: readonly ChampCorps[]): string {
-  const objet: Record<string, unknown> = {};
-  for (const c of champs) {
-    const cle = c.cle.trim();
-    if (cle !== '') objet[cle] = c.valeur;
-  }
-  return JSON.stringify(objet, null, 2);
-}
-
 export interface ParametreUrl {
   cle: string;
   /** Gabarit de valeur : du texte, éventuellement à variables (`{{ville}}`). */

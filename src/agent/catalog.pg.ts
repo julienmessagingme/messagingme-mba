@@ -1,7 +1,7 @@
 import type { Pool, PoolClient } from 'pg';
 import type {
   JournalAppels, NatureOutil, OutilBibliotheque, OutilComplet, OutilDefini, PatchOutil, RisqueOutil,
-  ToolAdminStore, ToolCatalog,
+  ToolCatalog,
   SourceAppel,
 } from './catalog';
 import { OutilNonActivable, NomOutilDejaPris } from './catalog';
@@ -159,8 +159,15 @@ export async function verrouillerDefinitions(client: PoolClient, tenantId: strin
  * à QUI APPARTIENT une définition (une action à son agent, un connecteur à personne) ; le consentement dit
  * QUI A LE DROIT DE S'EN SERVIR, et c'est lui seul qui garde le chemin d'exécution. Filtrer ici sur
  * `agent_id` laisserait passer un connecteur partagé auquel cet agent n'a jamais été rattaché.
+ *
+ * L'écriture (l'écran de réglage) vit dans la même classe. 🔴 L'ACTIVATION PORTE LE NOM DE QUI L'A FAITE, et ce
+ * n'est pas de la traçabilité de confort. La spec MCP exige un consentement humain avant l'invocation d'un
+ * outil ; notre agent n'a aucun humain au runtime. Le consentement est donc déplacé du runtime vers la
+ * CONFIGURATION, et la migration 0086 le rend incontournable en base (`actif = false or active_par is not
+ * null`). Même doctrine pour l'autonomie. L'identité vient du JETON, jamais du corps de la requête : sinon la
+ * trace désignerait qui l'appelant veut.
  */
-export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
+export class PgToolCatalog implements ToolCatalog {
   constructor(private readonly pool: Pool) {}
 
   async byName(tenantId: string, agentId: string, name: string): Promise<OutilDefini | null> {
@@ -190,6 +197,8 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
   // ---------- Écriture : l'écran de réglage (tranche 19c) ----------
 
   /**
+   * TOUS les outils d'un agent, actifs ou non.
+   *
    * ⚠️ JOINTURE INTERNE, ET C'EST DÉLIBÉRÉ. L'onglet Outils d'un agent montre ce que CET agent utilise, pas
    * tout le catalogue de l'espace : la bibliothèque complète est un autre écran. Passer en `left join` ferait
    * apparaître, dans chaque agent, les outils de tous les autres.
@@ -211,6 +220,10 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
     return res.rows.map(versComplet);
   }
 
+  /**
+   * Ajoute un outil MAISON à un agent, inactif. Rend `null` si l'agent n'existe pas ou appartient à un autre
+   * tenant. LÈVE `NomOutilDejaPris` si le nom exposé est déjà porté par un outil de cet agent.
+   */
   async ajouter(tenantId: string, agentId: string, outil: {
     handler: string; name: string; title: string; description: string; nePasUtiliser: string;
     params: unknown; risk: RisqueOutil;
@@ -459,6 +472,7 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
     });
   }
 
+  /** Corrige les mots d'un outil. Rend `null` s'il n'est pas de ce couple (tenant, agent). */
   async patch(tenantId: string, agentId: string, outilId: string, patch: PatchOutil): Promise<OutilComplet | null> {
     return this.patchConsommateur(tenantId, consommateurAgent(agentId), outilId, patch);
   }
@@ -517,6 +531,7 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
     return r ? this.complet(tenantId, consommateur, r.id) : null;
   }
 
+  /** Active ou désactive. `parUtilisateur` vient du jeton. Rend `null` si l'outil n'est pas de ce couple. */
   async activer(
     tenantId: string, agentId: string, outilId: string, actif: boolean, parUtilisateur: string,
   ): Promise<OutilComplet | null> {
@@ -524,6 +539,8 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
   }
 
   /**
+   * Active ou désactive pour un consommateur qui n'est pas un agent.
+   *
    * ⚠️ `update`, JAMAIS `insert ... on conflict` : activer n'est PAS un rattachement implicite. Un
    * identifiant d'agent erroné doit rendre `null`, pas fabriquer un consentement pour un consommateur qui
    * n'existe nulle part et que plus aucun écran ne montrerait.
@@ -567,6 +584,7 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
     return this.complet(tenantId, consommateur, outilId);
   }
 
+  /** Coche ou décoche l'autonomie sur une action irréversible. `parUtilisateur` vient du jeton. */
   async autonomie(
     tenantId: string, agentId: string, outilId: string, autonome: boolean, parUtilisateur: string,
   ): Promise<OutilComplet | null> {
@@ -584,11 +602,22 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
     return this.complet(tenantId, consommateur, outilId);
   }
 
+  /**
+   * Rend cet outil de l'espace disponible pour cet agent, INACTIF.
+   *
+   * ⚠️ LE RATTACHEMENT ET L'ACTIVATION SONT DEUX GESTES. Les fondre ferait qu'ajouter un outil de la
+   * bibliothèque à un agent l'exposerait au modèle dans la foulée, sans que personne ait relu ses mots :
+   * exactement ce que la migration 0086 existe pour empêcher.
+   * `false` = l'outil n'existe pas dans cet espace, il y est déjà rattaché, c'est un outil de l'agent de Meta
+   * (jamais ouvert à un agent IA, migration 0162), ou un effacement concurrent vient de l'emporter.
+   */
   async rattacher(tenantId: string, agentId: string, outilId: string): Promise<boolean> {
     return this.rattacherConsommateur(tenantId, consommateurAgent(agentId), outilId);
   }
 
   /**
+   * Même geste, pour un consommateur qui n'est pas un agent (le MBA).
+   *
    * Le `where exists` vérifie que l'outil est de CE tenant : une clé étrangère lèverait en 500, dont
    * Cloudflare remplace le corps. `do nothing` rend un rattachement répété inoffensif.
    */
@@ -616,6 +645,9 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
   }
 
   /**
+   * Retire l'outil de CET agent. La définition reste tant qu'un autre consommateur s'en sert ; une action ou un
+   * connecteur HTTP qui perd son DERNIER consommateur part avec lui, un outil MCP reste (2026-09-21).
+   *
    * 🔴 DÉTACHER LE DERNIER UTILISATEUR D'UNE ACTION OU D'UN CONNECTEUR HTTP LE SUPPRIME ; UN OUTIL MCP RESTE
    * (revue finale du 2026-09-18 pour l'action, décision de Julien du 2026-09-21 pour le connecteur).
    *
@@ -661,6 +693,11 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
   }
 
   /**
+   * Les définitions qu'un agent IA peut BRANCHER, avec qui s'en sert : les connecteurs et les outils MCP de
+   * l'espace. Ni les actions d'un agent (elles lui appartiennent, 0157), ni les outils de l'agent de Meta
+   * (0162). Lue par l'onglet Outils d'un agent, l'assistant de construction et la vue de l'onglet de l'agent
+   * de Meta (« Aussi utilisé par »).
+   *
    * La bibliothèque de l'espace : chaque définition, et qui s'en sert.
    *
    * ⚠️ UNE SEULE REQUÊTE, pas une par outil. Une bibliothèque de trente outils ferait sinon trente allers et

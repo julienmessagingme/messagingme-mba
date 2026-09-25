@@ -15,7 +15,7 @@
  * Une fiche chargée à l'instant est trouvable par les MOTS tout de suite, par le SENS au passage suivant.
  * Faire l'inverse ferait échouer un chargement entier sur une panne du fournisseur de vecteurs.
  */
-import 'dotenv/config';
+import '../src/charger-env';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';

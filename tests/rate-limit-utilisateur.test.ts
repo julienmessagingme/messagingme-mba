@@ -4,7 +4,7 @@ import { RateLimiter } from '../src/auth/rate-limit';
 import { signSession } from '../src/auth/token';
 import { readFileSync } from 'node:fs';
 import { buildServer } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { ImportRouteDeps } from '../src/http/import';
 import type { MeRouteDeps } from '../src/http/me';

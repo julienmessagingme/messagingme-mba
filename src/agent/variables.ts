@@ -36,10 +36,6 @@ import { CHAMPS_CONTACT_AUTORISES, type ChampContact } from './champs-contact';
 export const CLES_SYSTEME = ['derniere_saisie', 'maintenant'] as const;
 export type CleSysteme = (typeof CLES_SYSTEME)[number];
 
-export function estCleSysteme(v: unknown): v is CleSysteme {
-  return typeof v === 'string' && (CLES_SYSTEME as readonly string[]).includes(v);
-}
-
 export type OrigineVariable =
   | { type: 'modele' }
   | { type: 'contact'; cle: ChampContact }

@@ -4,7 +4,7 @@ import { MetaApiError } from '../src/meta/errors';
 import { deriveScreens, type FlowElementInput } from '../src/meta/flow-json';
 import type { FetchLike } from '../src/meta/templates';
 import { buildServer } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 
 /** Raccourci mono-écran des cas historiques de ce fichier : la production ne construit que du multi-écran. */

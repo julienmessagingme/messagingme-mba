@@ -1,7 +1,7 @@
 import type { Pool } from 'pg';
 import {
   CONFIG_RECHERCHE, PROXIMITE_TITRE_MIN, termesDeRecherche,
-  type FicheAEcrire, type FicheConnaissance, type FicheTrouvee, type KnowledgeAdminStore, type KnowledgeStore,
+  type FicheAEcrire, type FicheConnaissance, type FicheTrouvee, type KnowledgeStore,
   type SourceFiche,
 } from './knowledge';
 
@@ -38,7 +38,7 @@ interface Ligne {
  * tableau, parce qu'elle a besoin des termes un par un. Le sous-select ne s'exécute que sur les candidats
  * déjà filtrés.
  */
-export class PgKnowledgeStore implements KnowledgeStore, KnowledgeAdminStore {
+export class PgKnowledgeStore implements KnowledgeStore {
   constructor(private readonly pool: Pool) {}
 
   async chercher(tenantId: string, agentId: string, requete: string, limite: number): Promise<FicheTrouvee[]> {
@@ -151,6 +151,8 @@ export class PgKnowledgeStore implements KnowledgeStore, KnowledgeAdminStore {
   }
 
   // ---------- Écriture : l'écran de réglage (tranche 19b) ----------
+  // Hors de `KnowledgeStore` à dessein : le tour d'agent ne lit que `chercher`, et ses doubles de test n'ont
+  // pas à porter l'écriture.
 
   async lister(tenantId: string, agentId: string): Promise<FicheConnaissance[]> {
     const res = await this.pool.query<LigneFiche>(
@@ -162,6 +164,7 @@ export class PgKnowledgeStore implements KnowledgeStore, KnowledgeAdminStore {
     return res.rows.map(versFiche);
   }
 
+  /** Écrit une fiche. Rend `null` si l'agent n'existe pas OU appartient à un autre tenant. */
   async creer(tenantId: string, agentId: string, fiche: FicheAEcrire): Promise<FicheConnaissance | null> {
     // Le `where exists` est le contrôle d'appartenance, et il est DANS l'écriture : une fiche portant le
     // tenant de l'un et l'agent de l'autre ne serait jamais lue par personne. Zéro ligne = agent introuvable.
@@ -176,6 +179,14 @@ export class PgKnowledgeStore implements KnowledgeStore, KnowledgeAdminStore {
     return r ? versFiche(r) : null;
   }
 
+  /**
+   * Corrige une fiche. Rend `null` si elle n'existe pas, ou si elle n'est pas celle de CE couple
+   * (tenant, agent).
+   *
+   * L'agent fait partie du périmètre, comme à l'écriture : sans lui, l'adresse promet un agent que la requête
+   * ne contrôle pas, et un identifiant de fiche mal aiguillé par l'écran corrigerait en silence la fiche d'un
+   * AUTRE agent du même client.
+   */
   async modifier(
     tenantId: string, agentId: string, ficheId: string, patch: { titre?: string; corps?: string },
   ): Promise<FicheConnaissance | null> {
@@ -198,6 +209,7 @@ export class PgKnowledgeStore implements KnowledgeStore, KnowledgeAdminStore {
     return r ? versFiche(r) : null;
   }
 
+  /** Rend `false` si la fiche n'existe pas ou n'est pas celle de ce couple (tenant, agent). */
   async supprimer(tenantId: string, agentId: string, ficheId: string): Promise<boolean> {
     const res = await this.pool.query(
       'delete from agent_knowledge where tenant_id = $1 and agent_id = $2 and id = $3',
@@ -206,6 +218,15 @@ export class PgKnowledgeStore implements KnowledgeStore, KnowledgeAdminStore {
     return (res.rowCount ?? 0) > 0;
   }
 
+  /**
+   * Relit une source : retire les fiches de CETTE adresse pour CET agent, puis écrit les nouvelles, en une
+   * seule transaction.
+   *
+   * 🔴 REMPLACER ET NON AJOUTER. Une relecture qui ajouterait doublerait la base à chaque passage, et la
+   * recherche compte les mots partagés : deux copies d'une même fiche ne rendent pas la réponse plus sûre,
+   * elles la rendent deux fois plus probable qu'une autre. Le prix est dit au client dans l'écran : ses
+   * corrections sur les fiches de cette adresse partent avec.
+   */
   /**
    * Retrait puis écriture EN UNE SEULE INSTRUCTION. Les CTE modifiantes de Postgres voient toutes le même
    * instantané et s'exécutent une fois : la base ne passe jamais par un état où l'ancienne version est partie

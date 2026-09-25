@@ -378,8 +378,6 @@ export function assainirProposition(brut: unknown): unknown {
    */
   return sansCleAjoutee(p, brut);
 }
-export type OutilPropose = z.infer<typeof outilProposeSchema>;
-export type ConnecteurPropose = z.infer<typeof connecteurProposeSchema>;
 
 /** Nom de l'outil par lequel le modèle rend sa réponse. Forcé à l'appel : voir `toolChoice`. */
 export const OUTIL_PROPOSER = 'proposer';

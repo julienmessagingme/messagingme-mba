@@ -2,7 +2,7 @@
  * Seed d'un tenant de démo : tenant + WABA + numéro + compte admin (mot de passe hashé).
  * Idempotent. Usage : SEED_EMAIL=... SEED_PASSWORD=... SEED_PHONE_NUMBER_ID=... npx tsx db/seed.ts
  */
-import 'dotenv/config';
+import '../src/charger-env';
 import { Client } from 'pg';
 import { pgSsl } from '../src/db/ssl';
 import { hashPasswordSync } from '../src/auth/password';

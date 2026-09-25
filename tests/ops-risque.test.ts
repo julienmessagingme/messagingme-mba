@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import type { OpsRouteDeps } from '../src/http/ops';
 import type { BilanRisque } from '../src/engagement/balayage';
 

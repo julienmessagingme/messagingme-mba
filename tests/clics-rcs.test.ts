@@ -11,7 +11,7 @@ import type { ReachabilityStore } from '../src/rcs/reachability';
 import { FakeRcsProvider } from '../src/rcs/fake';
 import { makeCampaignSender } from '../src/campaign/sender';
 import { runCampaign } from '../src/campaign/engine';
-import type { EngineDeps, RecipientStore, CampaignStore, FrequencyStore } from '../src/campaign/engine';
+import type { EngineDeps, RecipientStore, CampaignStore } from '../src/campaign/engine';
 import type { Campaign, Recipient } from '../src/campaign/types';
 import type { RcsOutbound } from '../src/rcs/types';
 
@@ -290,10 +290,6 @@ class FakeRecipients implements RecipientStore {
 class FakeCampaigns implements CampaignStore {
   async setStatus(): Promise<void> {}
 }
-class FakeFreq implements FrequencyStore {
-  async lastSentAt() { return null; }
-  async record() { /* rien */ }
-}
 
 function deps(over: Partial<EngineDeps> & { recipients: RecipientStore }): EngineDeps {
   return {
@@ -302,7 +298,6 @@ function deps(over: Partial<EngineDeps> & { recipients: RecipientStore }): Engin
       sendTemplate: async () => { throw new Error('sender Meta interdit sur une campagne RCS'); },
     },
     campaigns: new FakeCampaigns(),
-    frequency: new FakeFreq(),
     quality: { getRating: async () => 'GREEN' as const },
     now: () => 1_000_000_000,
     ...over,

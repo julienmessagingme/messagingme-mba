@@ -51,7 +51,7 @@ import { randomBytes } from 'node:crypto';
 import Fastify from 'fastify';
 import { buildServer, modulesDeRoutes } from '../src/server';
 import type { ClasseDAcces, Gardes, ServerDeps } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from '../tests/fake-queue';
 import { RateLimiter } from '../src/auth/rate-limit';
 import { signSession } from '../src/auth/token';
 import { API_KEY_PREFIX } from '../src/auth/api-key-store.pg';

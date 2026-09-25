@@ -1,3 +1,4 @@
+import { setTimeout as dormir } from 'node:timers/promises';
 import type { Pool } from 'pg';
 import type { PorteDeDebit } from './http';
 import type { ArbitreDeDebit } from './arbitre-debit';
@@ -75,7 +76,7 @@ export function depsPorteDebitPg(pool: Pool): DepsPorteDebit {
       const res = await pool.query<{ attente_ms: string }>(SQL_RESERVER, [phoneNumberId, intervalleMs / 1000]);
       return Number(res.rows[0]?.attente_ms ?? 0);
     },
-    dormir: (ms) => new Promise((r) => { setTimeout(r, ms); }),
+    dormir: (ms) => dormir(ms),
     signaler(err, phoneNumberId) {
       // eslint-disable-next-line no-console
       console.error(

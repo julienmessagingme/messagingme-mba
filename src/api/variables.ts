@@ -24,7 +24,6 @@ export const schemaVariables = z.unknown()
     z.string().max(VALEUR_VARIABLE_MAX, `valeur de variable : ${VALEUR_VARIABLE_MAX} caractères au plus`),
   ).refine((o) => Object.keys(o).length <= VARIABLES_MAX, `${VARIABLES_MAX} variables au plus par destinataire`));
 
-export type VariablesDestinataire = z.infer<typeof schemaVariables>;
 
 export type TypeDeCible = 'template' | 'scenario' | 'node' | 'rcsMessage';
 

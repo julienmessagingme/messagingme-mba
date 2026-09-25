@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import '../../src/charger-env';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
@@ -7,7 +7,6 @@ import {
   PgCampaignRepo,
   PgCampaignStore,
   PgRecipientStore,
-  PgFrequencyStore,
   PgQualityProvider,
 } from '../../src/campaign/store.pg';
 import { creerNoteurEnvois } from '../../src/campaign/envois.pg';
@@ -88,7 +87,6 @@ describe.skipIf(!url)('le journal des tentatives (0134)', () => {
     rcsSenderFor: async () => canalSender ?? null,
     recipients: new PgRecipientStore(pool),
     campaigns: new PgCampaignStore(pool),
-    frequency: new PgFrequencyStore(pool),
     quality: new PgQualityProvider(pool),
     pauserSiNumeroDelie: async () => false,
     moteur: { noterEnvoi: creerNoteurEnvois(pool) },

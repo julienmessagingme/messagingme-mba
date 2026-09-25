@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { creerNumeroDeLEspace, creerWabaDeLEspace, NUMERO_ESPACE_TTL_MS } from '../src/meta/numero-espace';
+import { creerNumeroDeLEspace, NUMERO_ESPACE_TTL_MS } from '../src/meta/numero-espace';
 import { creerNoteDeQualite, NOTE_QUALITE_TTL_MS } from '../src/campaign/note-qualite';
 import type { QualityRating } from '../src/campaign/types';
 import { config } from '../src/config';
@@ -132,7 +132,7 @@ describe('le WABA de l’espace, mis en cache', () => {
   it('🔴 il suit la MÊME règle : positives en cache, nulles relues', async () => {
     let lectures = 0;
     const reponses: Array<string | null> = [null, 'waba-1', 'waba-1'];
-    const waba = creerWabaDeLEspace(async () => { const r = reponses[lectures] ?? null; lectures += 1; return r; });
+    const waba = creerNumeroDeLEspace(async () => { const r = reponses[lectures] ?? null; lectures += 1; return r; });
     expect(await waba('t1')).toBeNull();
     expect(await waba('t1'), 'le WABA branché juste après reste invisible').toBe('waba-1');
     expect(await waba('t1')).toBe('waba-1');

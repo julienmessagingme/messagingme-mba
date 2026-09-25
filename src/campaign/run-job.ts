@@ -3,7 +3,6 @@ import type {
   MessageSender,
   RecipientStore,
   CampaignStore,
-  FrequencyStore,
   QualityProvider,
   RateGate,
   CanalServi,
@@ -44,7 +43,7 @@ import type { CampaignSender } from './sender';
  * `satisfies Partial<CapacitesMoteur>` SUR l'objet intérieur du spread : elle est posée dans `src/worker.ts`,
  * et `tests/campagne-cablage.test.ts` la tient.
  *
- * ⚠️ Ce qui reste PLAT, et pourquoi. Les quatre stores (`recipients`, `campaigns`, `frequency`, `quality`)
+ * ⚠️ Ce qui reste PLAT, et pourquoi. Les trois stores (`recipients`, `campaigns`, `quality`)
  * sont REQUIS : les oublier est déjà une erreur de compilation, les imbriquer n'ajouterait rien. Et
  * `sender`, `channelSender`, `rateLimiter`, `renouvelerVerrou` ne viennent pas de l'appelant du tout : c'est
  * ce job qui les CALCULE. Les exclure du type est ce qui empêche un appelant de croire qu'il peut les poser.
@@ -52,7 +51,7 @@ import type { CampaignSender } from './sender';
 export type CapacitesMoteur = Omit<
   EngineDeps,
   'sender' | 'channelSender' | 'rateLimiter' | 'renouvelerVerrou' | 'canaux'
-  | 'recipients' | 'campaigns' | 'frequency' | 'quality' | 'pauserSiNumeroDelie'
+  | 'recipients' | 'campaigns' | 'quality' | 'pauserSiNumeroDelie'
 >;
 
 export interface RunJobDeps {
@@ -73,7 +72,6 @@ export interface RunJobDeps {
   senderFor(campaign: Campaign, phoneNumberId: string): Promise<MessageSender>;
   recipients: RecipientStore;
   campaigns: CampaignStore;
-  frequency: FrequencyStore;
   quality: QualityProvider;
   rateLimiter?: RateGate;
   /** Fabrique du limiteur PAR CAMPAGNE (intervalle minimal en ms). Défaut : un vrai RateLimiter.
@@ -377,7 +375,6 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
     canaux,
     recipients: deps.recipients,
     campaigns: deps.campaigns,
-    frequency: deps.frequency,
     quality: deps.quality,
     pauserSiNumeroDelie: deps.pauserSiNumeroDelie,
   };

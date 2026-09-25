@@ -1,3 +1,5 @@
+import { setTimeout as dormir } from 'node:timers/promises';
+
 export interface HttpResponse {
   status: number;
   json: unknown;
@@ -176,7 +178,7 @@ function isRetryable(err: unknown): boolean {
   return false;
 }
 
-const realSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+const realSleep = (ms: number): Promise<void> => dormir(ms);
 
 export interface RetryOpts {
   maxRetries?: number;

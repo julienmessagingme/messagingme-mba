@@ -7,8 +7,6 @@ import { ErreurPublication, CTX_OUTILS, CTX_ACTEUR } from '../mba/appliquer-publ
 import { MetaApiError } from '../meta/errors';
 import { scopeTenant } from './scope';
 
-export { corpsOutilMeta, corpsConnecteurRelais } from '../mba/publication';
-
 /**
  * Publier le catalogue d'outils de l'espace chez Meta.
  *

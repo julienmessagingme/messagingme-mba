@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import '../../src/charger-env';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool, type PoolClient } from 'pg';
 import { pgSsl } from '../../src/db/ssl';

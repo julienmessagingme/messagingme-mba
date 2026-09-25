@@ -1,6 +1,6 @@
 import { jamaisDesabonne } from '../consentement';
 import { grilleDepuisLigne } from '../../src/stats/prix';
-import 'dotenv/config';
+import '../../src/charger-env';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { ALL_QUEUES } from '../../src/queue/names';
@@ -19,7 +19,6 @@ import {
   PgCampaignRepo,
   PgCampaignStore,
   PgRecipientStore,
-  PgFrequencyStore,
   PgQualityProvider,
 } from '../../src/campaign/store.pg';
 import { PgCampaignRunLock } from '../../src/campaign/run-lock';
@@ -58,13 +57,13 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     await pool.end();
   });
 
-  it('PgContactStore.upsertByPhone : create puis update fusionne fields, opt-in ne régresse pas', async () => {
+  it('PgContactStore.upsertByPhoneReturningId : create puis update fusionne fields, opt-in ne régresse pas', async () => {
     const store = new PgContactStore(pool);
     const phone = '+33600000001';
-    const c1 = await store.upsertByPhone({ tenantId, phoneE164: phone, profileName: 'Julie', fields: { ville: 'Lyon' }, optInStatus: 'unknown' });
-    expect(c1).toBe('created');
-    const c2 = await store.upsertByPhone({ tenantId, phoneE164: phone, profileName: null, fields: { age: '30' }, optInStatus: 'opted_in', optInSource: 'csv_import' });
-    expect(c2).toBe('updated');
+    const c1 = await store.upsertByPhoneReturningId({ tenantId, phoneE164: phone, profileName: 'Julie', fields: { ville: 'Lyon' }, optInStatus: 'unknown' });
+    expect(c1.created).toBe(true);
+    const c2 = await store.upsertByPhoneReturningId({ tenantId, phoneE164: phone, profileName: null, fields: { age: '30' }, optInStatus: 'opted_in', optInSource: 'csv_import' });
+    expect(c2.created).toBe(false);
 
     const row = (await pool.query<{ fields: Record<string, unknown>; profile_name: string; opt_in_status: string }>(
       `select fields, profile_name, opt_in_status from contacts where tenant_id = $1 and phone_e164 = $2`,
@@ -75,14 +74,14 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(row.opt_in_status).toBe('opted_in'); // promu, ne régresse pas
   });
 
-  it('PgContactStore.upsertByPhone : tags fusionnés (union dédup), jamais écrasés', async () => {
+  it('PgContactStore.upsertByPhoneReturningId : tags fusionnés (union dédup), jamais écrasés', async () => {
     const store = new PgContactStore(pool);
     const phone = '+33600000009';
-    await store.upsertByPhone({ tenantId, phoneE164: phone, profileName: 'Léa', fields: {}, optInStatus: 'opted_in', tags: ['salon-2026', 'prospect'] });
+    await store.upsertByPhoneReturningId({ tenantId, phoneE164: phone, profileName: 'Léa', fields: {}, optInStatus: 'opted_in', tags: ['salon-2026', 'prospect'] });
     // Ré-import avec un tag en commun + un nouveau -> union dédupliquée.
-    await store.upsertByPhone({ tenantId, phoneE164: phone, profileName: null, fields: {}, optInStatus: 'unknown', tags: ['prospect', 'vip'] });
+    await store.upsertByPhoneReturningId({ tenantId, phoneE164: phone, profileName: null, fields: {}, optInStatus: 'unknown', tags: ['prospect', 'vip'] });
     // Ré-import SANS tags -> les tags existants sont préservés (pas d'écrasement).
-    await store.upsertByPhone({ tenantId, phoneE164: phone, profileName: null, fields: { ville: 'Nice' }, optInStatus: 'unknown' });
+    await store.upsertByPhoneReturningId({ tenantId, phoneE164: phone, profileName: null, fields: { ville: 'Nice' }, optInStatus: 'unknown' });
 
     const rows = await store.list(tenantId);
     const lea = rows.find((r) => r.phoneE164 === phone)!;
@@ -107,7 +106,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     const store = new PgContactStore(pool);
     const nouveau = '+33600000201';
     const existant = '+33600000202';
-    await store.upsertByPhone({ tenantId, phoneE164: existant, profileName: 'Léo', fields: { ville: 'Lyon' }, optInStatus: 'unknown', tags: ['ancien'] });
+    await store.upsertByPhoneReturningId({ tenantId, phoneE164: existant, profileName: 'Léo', fields: { ville: 'Lyon' }, optInStatus: 'unknown', tags: ['ancien'] });
 
     const res = await store.upsertManyByPhone({
       tenantId,
@@ -701,9 +700,9 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     // Tenant DÉDIÉ à ce test (jeu de données isolé, pas de collision avec les autres tests contacts).
     const t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-filters') returning id`)).rows[0]!.id;
     try {
-      await store.upsertByPhone({ tenantId: t, phoneE164: '+33611000001', profileName: 'Alice Martin', fields: { ville: 'Lyon' }, optInStatus: 'opted_in', tags: ['vip', 'salon'] });
-      await store.upsertByPhone({ tenantId: t, phoneE164: '+33622000002', profileName: 'Bob Durand', fields: { ville: 'Paris' }, optInStatus: 'opted_in', tags: ['vip'] });
-      await store.upsertByPhone({ tenantId: t, phoneE164: '+33611000003', profileName: 'Chloé Petit', fields: { ville: 'Lyon' }, optInStatus: 'unknown', tags: ['salon'] });
+      await store.upsertByPhoneReturningId({ tenantId: t, phoneE164: '+33611000001', profileName: 'Alice Martin', fields: { ville: 'Lyon' }, optInStatus: 'opted_in', tags: ['vip', 'salon'] });
+      await store.upsertByPhoneReturningId({ tenantId: t, phoneE164: '+33622000002', profileName: 'Bob Durand', fields: { ville: 'Paris' }, optInStatus: 'opted_in', tags: ['vip'] });
+      await store.upsertByPhoneReturningId({ tenantId: t, phoneE164: '+33611000003', profileName: 'Chloé Petit', fields: { ville: 'Lyon' }, optInStatus: 'unknown', tags: ['salon'] });
       const names = async (f: Parameters<typeof store.query>[1]) => (await store.query(t, f, 500)).map((r) => r.profileName).sort();
 
       // tags AND (défaut) = contient TOUS ; OR = au moins un.
@@ -948,11 +947,10 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     }
   });
 
-  it('PgCampaignRepo + stores : insert, listPending, markResult, setStatus, lastSentAt', async () => {
+  it('PgCampaignRepo + stores : insert, listPending, markResult, setStatus', async () => {
     const repo = new PgCampaignRepo(pool);
     const recipients = new PgRecipientStore(pool);
     const campaignsStore = new PgCampaignStore(pool);
-    const frequency = new PgFrequencyStore(pool);
 
     const contactId = (await pool.query<{ id: string }>(
       `insert into contacts (tenant_id, phone_e164, opt_in_status) values ($1, $2, 'opted_in') returning id`,
@@ -982,16 +980,11 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     )).rows[0]!;
     expect(rrow.status).toBe('sent');
     expect(rrow.message_id).toBe('m-1');
-    expect(rrow.sent_at).not.toBeNull();
+    expect(rrow.sent_at.getTime()).toBe(at); // à la milliseconde : `to_timestamp($5 / 1000.0)`
 
     await campaignsStore.setStatus(campaignId, 'completed');
     const status = (await pool.query<{ status: string }>(`select status from campaigns where id = $1`, [campaignId])).rows[0]!.status;
     expect(status).toBe('completed');
-
-    // lastSentAt cross-campagne lit max(sent_at) du numéro.
-    const last = await frequency.lastSentAt(tenantId, '+33600000002');
-    expect(last).toBe(at);
-    expect(await frequency.lastSentAt(tenantId, '+33699999999')).toBeNull();
 
     // Suivi de livraison (par message_id 'm-1'), monotone.
     expect(await recipients.updateDeliveryByMessageId('m-1', 'sent', null, null)).toBe(1);
@@ -1863,8 +1856,6 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       await es.saveCredentials(wabaId, tenantId, 'enc:TOK_LIVE', null);
       // Lecture par WABA : token chiffré + état 'active' par défaut (migration 0043).
       expect(await es.getCredentialsByWaba(wabaId)).toEqual({ businessTokenEnc: 'enc:TOK_LIVE', tokenStatus: 'active' });
-      // Lecture par tenant (jointure waba -> waba_credentials).
-      expect(await es.getCredentialsByTenant(tenantId)).toMatchObject({ wabaId, businessTokenEnc: 'enc:TOK_LIVE', tokenStatus: 'active' });
       // markTokenInvalid : bascule 'invalid' + pose token_invalid_at, idempotent (garde la 1re date).
       await es.markTokenInvalid(wabaId);
       const after = await es.getCredentialsByWaba(wabaId);

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import { DuplicateEmailError } from '../src/user/store.pg';
 import type { AuthRouteDeps } from '../src/auth/routes';
 import type { GoogleIdentity } from '../src/auth/google';

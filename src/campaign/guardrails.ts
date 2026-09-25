@@ -21,12 +21,6 @@ export function optInAllows(category: CampaignCategory, contact: OptInContact): 
  */
 export const MOTIF_DESABONNE = 'contact désabonné : il a demandé à ne plus recevoir de messages';
 
-/** Bloque si un envoi précédent au même contact date de moins de `windowMs`. */
-export function frequencyAllows(lastSentAtMs: number | null, nowMs: number, windowMs: number): boolean {
-  if (lastSentAtMs === null) return true;
-  return nowMs - lastSentAtMs >= windowMs;
-}
-
 /**
  * Décide de mettre la campagne en pause selon la santé du numéro :
  * quality rating RED, ou taux d'échec au-delà du seuil (après un minimum d'envois).

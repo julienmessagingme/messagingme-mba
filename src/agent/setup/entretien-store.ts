@@ -33,7 +33,7 @@ export interface EntretienComplet {
    * qui retomberaient sur l'entretien vierge. Le client perdrait sa conversation, en silence.
    *
    * ⚠️ PLUS COURT QUE `messages` EST NORMAL : les tours d'avant le 2026-09-14 n'ont pas d'auteur connu, et
-   * leur en inventer un serait pire que de n'en afficher aucun. `auteurDuTour` rend `null` pour ceux-là.
+   * leur en inventer un serait pire que de n'en afficher aucun.
    *
    * ⚠️ UN IDENTIFIANT, PAS UN E-MAIL, contrairement à `audit_log.actor_email` qui le DÉNORMALISE. L'écart est
    * voulu : ce journal-là doit PROUVER qui a agi, même après la suppression du compte ; ici, un fil de
@@ -128,17 +128,6 @@ export function bornerPourModele(messages: readonly TourEntretien[]): TourEntret
   return messages
     .slice(-MAX_TOURS_HISTORIQUE * 2)
     .map((m) => ({ role: m.role, content: m.content.slice(0, MAX_CARACTERES_MESSAGE) }));
-}
-
-/**
- * L'AUTEUR DU TOUR `i`, ou `null` quand on ne le sait pas.
- *
- * ⚠️ ELLE TOLÈRE UN TABLEAU PLUS COURT, et c'est le cas NORMAL : un fil commencé avant la migration 0147
- * porte des tours sans auteur. Rendre `undefined` ferait afficher « undefined » à l'écran ; rendre le
- * premier auteur venu attribuerait à quelqu'un des phrases qu'il n'a pas écrites.
- */
-export function auteurDuTour(etat: Pick<EntretienComplet, 'auteurs'>, i: number): string | null {
-  return etat.auteurs[i] ?? null;
 }
 
 export interface EntretienStore {

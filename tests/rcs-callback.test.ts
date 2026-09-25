@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { buildServer } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import {
   parseRcsDlr, parseRcsMo, estDlr, statutDepuisSmsmode, urlRappelRcs, apercuMo,
 } from '../src/rcs/callback';

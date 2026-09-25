@@ -32,34 +32,3 @@ export interface MouvementLu extends MouvementCredit {
   at: string;
 }
 
-export interface CreditStore {
-  /**
-   * Le solde d'un workspace, en micro-euros. `0` si aucune ligne n'existe encore.
-   *
-   * ⚠️ Zéro par défaut veut dire « rien à dépenser », donc les agents ne démarrent pas tant que personne n'a
-   * rechargé. C'est le bon défaut : l'inverse (un crédit implicite) ferait payer une consommation que
-   * personne n'a autorisée, sur un compte qui n'existe pas.
-   */
-  solde(tenantId: string): Promise<number>;
-
-  /**
-   * Retire du solde et laisse une trace, EN UNE SEULE INSTRUCTION. Rend le solde après opération.
-   *
-   * Atomique parce que deux tours du même workspace peuvent se jouer en parallèle sur le worker : un
-   * `lire puis écrire` perdrait une des deux consommations, et le client paierait moins que ce qu'il a
-   * consommé (ou l'inverse le jour où le sens s'inverse).
-   */
-  debiter(tenantId: string, montantMicroEur: number, contexte?: { sessionId?: string; note?: string }): Promise<number>;
-
-  /**
-   * Ajoute au solde et laisse une trace. Rend le solde après opération.
-   *
-   * `note` est OBLIGATOIRE, et c'est la seule trace de qui recharge et pourquoi : le jeton d'exploitation est
-   * partagé, il n'y a aucune identité d'opérateur à enregistrer à la place. Un mouvement d'argent sans
-   * explication est exactement ce qu'on ne saura pas justifier six mois plus tard.
-   */
-  crediter(tenantId: string, montantMicroEur: number, note: string): Promise<number>;
-
-  /** Le journal, du plus récent au plus ancien. C'est ce qui rend une baisse de solde explicable. */
-  mouvements(tenantId: string, limite: number): Promise<MouvementLu[]>;
-}

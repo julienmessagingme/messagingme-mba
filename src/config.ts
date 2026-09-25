@@ -12,9 +12,6 @@ export const schema = z.object({
   META_ACCESS_TOKEN: z.string().default(''),
   /** Version Graph API pour les appels d'envoi. */
   META_GRAPH_VERSION: z.string().default('v25.0'),
-  /** Version du schéma flow_json (indépendante de la version Graph). Vérifié live 2026-07-10 : 7.2
-   *  supportée. Une dépréciation Meta = un changement d'env, pas de code. */
-  META_FLOW_JSON_VERSION: z.string().default('7.2'),
   /** App ID Meta (public) — endpoint du resumable upload `/{appId}/uploads` (headers média carousel). */
   META_APP_ID: z.string().default('988129420727963'),
   /**
@@ -50,8 +47,6 @@ export const schema = z.object({
   AUTH_SECRET: z.string().default('dev-insecure-change-me'),
   /** Mode démo : le worker n'appelle PAS Meta, il marque les envois `sent` (message-id synthétique). */
   DRY_RUN: z.string().default('false'),
-  /** Un destinataire `sending` plus vieux que ça est ramené à `pending` par le sweeper (ms). */
-  STALE_SENDING_MS: z.coerce.number().default(15 * 60 * 1000),
   /**
    * Débit par défaut (messages/minute) d'une campagne SANS ratePerMinute explicite. Avant ce défaut, une telle
    * campagne partait à plein régime (aucun frein). 30/min lisse le burst et protège la réputation du numéro, très
@@ -104,11 +99,10 @@ export const schema = z.object({
   API_MAX_CHAMPS_PAR_ESPACE: z.coerce.number().int().min(0).default(200),
   /**
    * Provider du canal RCS. `fake` = provider factice : le canal est complet de bout en bout (campagne, bloc de
-   * scénario, joignabilité, opt-out) mais rien ne part vers un opérateur. `google` (API RBM) arrive au lot 2 et
-   * LÈVE au démarrage tant qu'il n'est pas implémenté : un serveur qui croit envoyer du vrai RCS et envoie dans
-   * le vide est pire qu'un crash au boot.
+   * scénario, joignabilité, opt-out) mais rien ne part vers un opérateur. `smsmode` = l'opérateur réel. Une
+   * valeur inconnue est refusée au boot.
    */
-  RCS_PROVIDER: z.enum(['fake', 'smsmode', 'google']).default('fake'),
+  RCS_PROVIDER: z.enum(['fake', 'smsmode']).default('fake'),
   /** Clé du CANAL RCS smsmode (pas celle du compte : une clé est rattachée à un canal, et une clé de canal
    *  SMS répond 403 « Channel type mismatch » sur l'API RCS). Secret serveur. */
   SMSMODE_RCS_API_KEY: z.string().default(''),
@@ -117,12 +111,8 @@ export const schema = z.object({
   SMSMODE_CALLBACK_STATUS_URL: z.string().default(''),
   /** URL publique qui reçoit les réponses entrantes (MO) smsmode. */
   SMSMODE_CALLBACK_MO_URL: z.string().default(''),
-  /** Intervalle du sweeper de récupération des `sending` bloqués (ms). */
-  RECLAIM_INTERVAL_MS: z.coerce.number().default(5 * 60 * 1000),
-  /** Réveil des parcours endormis (bloc « Attente »). 60 s : c'est aussi la précision réelle d'un délai. */
-  WORKFLOW_WAKE_SWEEP_INTERVAL_MS: z.coerce.number().default(60 * 1000),
   /** URL du pooler Supabase mode SESSION (port 5432). Sert à pg-boss (API + worker) ET, par défaut, au pool
-   *  applicatif si APP_DATABASE_URL est vide. Les scripts CLI (db/migrate.ts, db/seed.ts, db/backfill-codes.ts)
+   *  applicatif si APP_DATABASE_URL est vide. Les scripts CLI (db/migrate.ts, db/seed.ts)
    *  lisent CETTE var en direct (jamais APP_DATABASE_URL) -> DDL/seed toujours en session mode, c'est voulu. */
   DATABASE_URL: z.string().default(''),
   /**
@@ -235,12 +225,6 @@ export const schema = z.object({
    * pas seulement de changer la variable ; un banc isolé qui mesure l'attente du pool en est la condition.
    */
   API_MAX_LOURDES_SIMULTANEES: z.coerce.number().int().min(0).default(1),
-  /** Plafond de débit d'UN webhook entrant (menu Tools). Par webhook, pas par IP : c'est le budget d'une
-   *  intégration, et l'IP d'un Zapier n'a aucune stabilité. */
-  WEBHOOK_IN_RATE_LIMIT_MAX: z.coerce.number().default(120),
-  WEBHOOK_IN_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60_000),
-  /** Jours de conservation du dernier payload d'un webhook entrant. Voir la note RGPD de la migration 0074. */
-  WEBHOOK_PAYLOAD_RETENTION_DAYS: z.coerce.number().default(7),
   /**
    * Jours de conservation des ÉVÉNEMENTS Meta bruts (`webhook_events`), qui portent le texte des messages
    * entrants et le numéro de qui écrit. 30 jours : bien au-delà de la fenêtre d'idempotence (quelques
@@ -371,18 +355,6 @@ export const schema = z.object({
    */
   CODES_INCONNUS_PAR_MINUTE: z.coerce.number().int().min(0).default(120),
   /**
-   * Durée maximale d'un run de campagne avant qu'il rende la main et se réenfile (lot 5). 2 minutes.
-   *
-   * Le but n'est pas d'aller plus vite, c'est de rendre la file ÉQUITABLE : sans découpage, un job traitait
-   * sa campagne jusqu'à épuisement, soit 2 h 47 pour 5 000 destinataires à 30/min, pendant lesquelles les
-   * campagnes des autres clients attendaient. Une DURÉE et non un nombre de destinataires : à 1/min un lot de
-   * 100 durerait plus d'une heure, à 80/min une minute.
-   *
-   * Le prix : un aller-retour de file entre deux lots (la cadence de `campaign-run` est de 5 s), soit
-   * quelques minutes ajoutées sur une campagne de plusieurs heures. `0` retire le découpage.
-   */
-  CAMPAIGN_RUN_MAX_MS: z.coerce.number().default(2 * 60 * 1000),
-  /**
    * Plafond de destinataires d'une campagne (lot 3 du plan post-audit, 2026-09-02). Chiffre de Julien.
    *
    * Un garde-fou, pas un objectif : il empêche le serveur d'ACCEPTER PAR ACCIDENT ce qu'on a décidé de ne pas
@@ -390,33 +362,6 @@ export const schema = z.object({
    * le message de refus vivent dans `src/campaign/plafond.ts`.
    */
   CAMPAIGN_MAX_RECIPIENTS: z.coerce.number().int().min(1).default(PLAFOND_DESTINATAIRES_DEFAUT),
-  /**
-   * Nombre de runs de campagne traités EN PARALLÈLE par le worker, et plafond par ESPACE (lot 5).
-   *
-   * 🔴 La concurrence n'est sûre QUE parce que le lot 4 est en place : sans un frein partagé par numéro, deux
-   * campagnes en parallèle doubleraient le débit réel du numéro. Ne pas relever l'un sans l'autre.
-   *
-   * Le plafond par espace reste à 1 : un client n'a qu'un numéro (décision produit du 2026-08-31), donc deux
-   * de ses campagnes en parallèle ne gagneraient rien et se disputeraient le même budget. La concurrence sert
-   * à ce qu'un client n'attende pas la campagne d'un AUTRE.
-   */
-  CAMPAIGN_RUN_CONCURRENCY: z.coerce.number().int().min(1).default(4),
-  /**
-   * Concurrence de la file des messages ENTRANTS (lot 3 du programme II). Elle valait 1, donc un seul message
-   * entrant était traité à la fois, TOUS clients confondus : un envoi Meta lent, un appel HubSpot qui traîne,
-   * et la réponse d'un autre client attendait derrière. C'est le « noisy neighbour » de l'audit.
-   *
-   * 🔴 Ce plafond n'est sûr QUE parce que l'enfilement pose une clé de groupe par contact et que `work`
-   * plafonne à un job en vol par groupe : deux messages d'un même contact restent sérialisés. Relever l'un
-   * sans l'autre remettrait le désordre que le groupe supprime.
-   *
-   * Pourquoi 3, et pas plus : le worker tient déjà 4 runs de campagne en parallèle, plus les accusés, les
-   * automations et les tours d'agent. Le pool applicatif est de 8 connexions PAR PROCESS, valeur mesurée
-   * comme la capacité réelle du pooler (cf. `DB_POOL_MAX`). Monter au-delà déplacerait l'attente de notre
-   * pool vers celle de Supavisor, où elle est muette. Relever ce nombre demande donc de refaire cette
-   * arithmétique-là, pas seulement de changer la variable.
-   */
-  WEBHOOK_CONCURRENCY: z.coerce.number().int().min(1).default(3),
   /**
    * TOURS D'AGENT EN VOL, et plafond par ESPACE (lot 6 du plan post-audit, 2026-09-02).
    *
@@ -438,19 +383,6 @@ export const schema = z.object({
    */
   AGENT_TURN_CONCURRENCY: z.coerce.number().int().min(1).default(12),
   AGENT_TURN_GROUP_CONCURRENCY: z.coerce.number().int().min(1).default(4),
-  /**
-   * Analyses de conversation en vol. Le plafond par espace est de 1, posé dans le worker.
-   *
-   * 🔴 Sur cette file, le GROUPE compte bien plus que le nombre. Passer de 1 à 3 ne change presque rien au
-   * débit ; ce qui change tout, c'est qu'un client qui importe dix mille contacts déclenche dix mille analyses
-   * et ne puisse plus les faire passer AVANT la première analyse de tous les autres.
-   */
-  ANALYZE_CONVERSATION_CONCURRENCY: z.coerce.number().int().min(1).default(3),
-  /**
-   * Événements d'automation en vol. Même raison et même plafond par espace de 1 : une rafale d'un client
-   * gelait tous les autres, cette file traitant un job à la fois pour la flotte entière.
-   */
-  AUTOMATION_EVENT_CONCURRENCY: z.coerce.number().int().min(1).default(3),
   /** Clé API Resend pour le formulaire de support (phase 7). Vide -> support indisponible (503, pas de crash). */
   RESEND_API_KEY: z.string().default(''),
   /** Expéditeur des emails de support. `onboarding@resend.dev` marche sans domaine vérifié (mode test :
@@ -501,75 +433,27 @@ export const schema = z.object({
     (v) => !v.split(',').map((o) => o.trim()).includes('*'),
     { message: 'CORS_ORIGINS: `*` est refusé, il faut une liste blanche d’origines' },
   ),
-  /** Durée de validité d'un lien d'invitation (ms). Défaut 7 jours. */
-  INVITE_TOKEN_TTL_MS: z.coerce.number().default(7 * 24 * 60 * 60 * 1000),
-  /** Durée de validité d'un lien de réinitialisation de mot de passe (ms). Défaut 1 h. */
-  RESET_TOKEN_TTL_MS: z.coerce.number().default(60 * 60 * 1000),
   /** Analyse de conversation (Pièce 1) : INERTE par défaut. 'true' -> le worker analyse les conversations closes. */
   CONVERSATION_ANALYSIS_ENABLED: z.string().default('false'),
-  /** Inactivité (ms) au-delà de laquelle une conversation est considérée close et analysable. Défaut 25 min. */
-  CONVERSATION_INACTIVITY_MS: z.coerce.number().default(25 * 60 * 1000),
-  /** Une conversation bloquée en `queued` plus vieille que ça est ramenée à `pending` (worker mort). Défaut 15 min. */
-  CONVERSATION_ANALYSIS_STALE_MS: z.coerce.number().default(15 * 60 * 1000),
-  /** Intervalle du balayage d'analyse (ms). Défaut 5 min. */
-  CONVERSATION_ANALYSIS_SWEEP_INTERVAL_MS: z.coerce.number().default(5 * 60 * 1000),
-  /** Nombre max de conversations réclamées par passage de balayage. */
-  CONVERSATION_ANALYSIS_BATCH: z.coerce.number().default(20),
   /** Cadence du garde-fou qui rend la main au scénario quand plus personne ne s'occupe d'une conversation. */
   CONTROL_SWEEP_INTERVAL_MS: z.coerce.number().default(5 * 60 * 1000),
   /** Cadence du balayage de statut/qualité des numéros Meta (item 4.10). Défaut 20 min : 2 GET Graph par numéro
    *  et par passage, large assez pour ne pas peser sur le rate-limit tant que le parc reste petit. */
   PHONE_STATUS_SWEEP_INTERVAL_MS: z.coerce.number().default(20 * 60 * 1000),
-  /** Cadence du filet de sécurité du rattrapage HubSpot (F3-a) : relance le rattrapage des marques restées sur un
-   *  numéro reconnecté. Défaut 10 min : action rare, lecture légère (distinct tenant_id), pas un chemin chaud. */
-  HUBSPOT_CATCHUP_SWEEP_INTERVAL_MS: z.coerce.number().default(10 * 60 * 1000),
-  /** Cadence du sweep d'auto-relance des échecs (F6). 15 min : assez fin pour la fenêtre matinale des 131049. */
-  AUTO_RETRY_SWEEP_INTERVAL_MS: z.coerce.number().default(15 * 60 * 1000),
   /** Inactivité au bout de laquelle un fil tenu par un OPÉRATEUR lui est repris. 2 h : assez long pour
    *  qu'une pause déjeuner ne coupe pas un échange en cours, assez court pour qu'un onglet fermé ne gèle pas
    *  le contact jusqu'au lendemain. Il n'existe AUCUN release automatique côté Meta : ce délai est notre
    *  seule soupape. 0 désactive la reprise (le contrôle reste alors humain indéfiniment, à vos risques).
    *  ⚠️ IL REVIENT À L'AGENT DE META quand le client l'a allumé, au scénario sinon. Ce commentaire disait
    *  « revient au scénario » tout court, ce qui est faux depuis que le balayage choisit sa destination.
-   *  ⚠️ Réglable PAR CLIENT (`tenant_settings`), contrairement aux deux délais ci-dessous.
+   *  ⚠️ Réglable PAR CLIENT (`tenant_settings`), contrairement à `CONTROL_MBA_TIMEOUT_MS` et
+   *  `CONTROL_WORKFLOW_TIMEOUT_MS` (constantes, en fin de fichier).
    *  🔴 ET IL EST DEVENU LE FILET DE LA REMISE À L'AGENT DE META (migration 0149). Depuis que la fin d'un
    *  parcours attend l'accusé de son dernier envoi pour rendre le fil, elle laisse la conversation en
    *  `app_human` pendant cette attente (quelques minutes en temps normal). Si l'accusé n'arrive jamais, c'est
    *  CE délai qui reprend le fil et le rend pour de vrai à l'agent de Meta. Le mettre à 0 chez un client qui
    *  a l'agent allumé ne « garde pas la main », ça supprime aussi ce rattrapage. */
   CONTROL_HUMAN_TIMEOUT_MS: z.coerce.number().default(2 * 60 * 60 * 1000),
-  /** Idem pour un fil tenu par MBA. Beaucoup plus long : l'agent est censé répondre seul, on ne le préempte
-   *  qu'en cas de silence anormal. */
-  CONTROL_MBA_TIMEOUT_MS: z.coerce.number().default(24 * 60 * 60 * 1000),
-  /**
-   * Inactivité au bout de laquelle un fil tenu par un SCÉNARIO revient à l'agent de Meta. 24 h.
-   *
-   * 🔴 C'EST LA SOUPAPE DU GESTE `take`, AJOUTÉE LE 2026-09-14 AVEC LUI. Tant qu'un scénario n'écrivait que
-   * notre colonne, Meta gardait le fil et son agent reprenait la main tout seul ; c'était d'ailleurs le
-   * bug que `take` répare. Depuis qu'on prend le fil pour de vrai, un parcours abandonné (le contact ne
-   * répond jamais, le run reste `waiting`) le garderait à jamais, et l'agent de Meta ne répondrait plus
-   * jamais sur cette conversation. La fin NORMALE d'un parcours le rend déjà (`releaseToMba`) : ce délai ne
-   * couvre que les parcours qui ne finissent pas.
-   *
-   * ⚠️ « LE REND DÉJÀ » SE FAIT EN DEUX TEMPS DEPUIS LA MIGRATION 0149 : la fin de parcours marque le fil et
-   * le passe en `app_human`, et la remise part quand Meta acquitte notre dernier envoi. Un fil sorti de
-   * `app_workflow` n'est donc plus du ressort de CE délai mais du délai humain juste au-dessus.
-   *
-   * ⚠️ FIXE, JAMAIS RÉGLABLE PAR CLIENT (tranché par Julien le 2026-09-14), contrairement au délai humain.
-   * C'est un garde-fou technique et non un arbitrage métier : personne ne sait répondre à « combien de
-   * temps mon scénario doit-il garder le fil ». Et c'est ce qui permet de le filtrer EN SQL, donc de ne pas
-   * saturer le lot du balayage avec des conversations saines.
-   *
-   * ⚠️ 24 h ET PAS 2 h comme l'humain : un scénario attend légitimement longtemps (une relance le
-   * lendemain). Le couper à deux heures rendrait le fil à l'agent de Meta, qui répondrait à la place du
-   * bloc suivant. 0 désactive la reprise.
-   */
-  CONTROL_WORKFLOW_TIMEOUT_MS: z.coerce.number().default(24 * 60 * 60 * 1000),
-  /** Anti-rebond par défaut d'une automation (Lot E) : délai minimum entre deux déclenchements de la MÊME
-   *  automation pour le MÊME contact, quand le client n'a rien réglé. 1 h : assez long pour absorber un client
-   *  qui répète son mot-clé ou un scénario qui repose le tag déclencheur, assez court pour ne pas bloquer une
-   *  vraie 2e demande dans la journée. Réglable par automation (0 = aucun garde-fou, à ses risques). */
-  AUTOMATION_COOLDOWN_SECONDS: z.coerce.number().default(3600),
   /** Plafond PAR DÉFAUT de déclenchements par heure, pour une automation qui n'a pas son propre
    *  `maxFiresPerHour` : depuis ce lot, le runner lit d'abord le plafond PROPRE de l'automation
    *  (`AutomationRow.maxFiresPerHour`, `src/automation/runner.ts`) et ne retombe sur cette valeur globale que
@@ -579,15 +463,6 @@ export const schema = z.object({
    *  produire des milliers d'événements. 200/h laisse passer tout usage normal et transforme une erreur de
    *  configuration en incident borné plutôt qu'en facture. 0 = pas de plafond. */
   AUTOMATION_MAX_FIRES_PER_HOUR: z.coerce.number().default(200),
-  /** Cadence du balayage des échéances (déclencheur « X avant la date d'un champ »). */
-  AUTOMATION_DATE_SWEEP_INTERVAL_MS: z.coerce.number().default(60_000),
-  /** Fenêtre de rattrapage APRÈS le moment prévu. Elle absorbe un redémarrage du worker, PAS un vrai retard :
-   *  au-delà, on n'envoie rien (un rappel « 48 h avant » qui part 12 h avant dit quelque chose de faux). */
-  AUTOMATION_DATE_TOLERANCE_MINUTES: z.coerce.number().default(60),
-  /** Provider LLM de l'analyse. UNE seule implémentation existe. `z.enum` et non `z.string` : une valeur
-   *  inconnue était acceptée par la config et TUAIT le conteneur worker au premier appel d'analyse, avec une
-   *  erreur qui ne nommait pas la variable. Elle est maintenant refusée au boot. */
-  LLM_PROVIDER: z.enum(['anthropic']).default('anthropic'),
   /** Clé API du provider LLM. Vide -> analyse non activable (fail-fast prod si ENABLED). */
   LLM_API_KEY: z.string().default(''),
   /** Id de modèle LLM (ex. claude-haiku-4-5 pour ce classifieur haut-volume, ou claude-opus-4-8 pour la qualité).
@@ -625,7 +500,6 @@ export const schema = z.object({
    * tiers de plus.
    */
   TRANSCRIPTION_MODELE: z.string().default('openai/whisper-1'),
-  TRANSCRIPTION_TAILLE_MAX_KO: z.coerce.number().int().positive().default(2048),
   /**
    * PLAFOND D'UNE PIÈCE JOINTE REÇUE qu'on accepte de servir à la console (2026-09-19).
    *
@@ -711,19 +585,6 @@ export const schema = z.object({
    */
   AGENT_EMBED_MODEL: z.string().default('cohere/embed-v4.0'),
   /**
-   * Le modele qui JUGE la pertinence des fiches candidates.
-   *
-   * 🔴 IL N EST PAS OPTIONNEL AU SENS DU PRODUIT : c est LUI qui porte la garde anti-hallucination une fois le
-   * vectoriel branche. Mesure : aucun seuil n est posable sur un cosinus d embedding (une question hors sujet
-   * remonte a 0,361 quand une vraie question descend a 0,299), alors que ce reranker place les vraies
-   * questions au-dessus de 0,0817 et le hors-sujet en dessous de 0,0409.
-   *
-   * ⚠️ Ce n est PAS le modele le plus recent, et c est delibere : `cohere/rerank-v4-fast` laisse le hors-sujet
-   * monter AU-DESSUS des vraies questions sur le meme corpus. Prendre la derniere version par reflexe aurait
-   * reproduit le defaut qu on corrige.
-   */
-  AGENT_RERANK_MODEL: z.string().default('cohere/rerank-v3.5'),
-  /**
    * Le seuil de pertinence du reranker. En dessous, la fiche n est PAS montree au modele.
    *
    * ⚠️ MESURE, pas devine, mais sur UN corpus de six fiches et dix questions : les vraies questions vont de
@@ -731,11 +592,6 @@ export const schema = z.object({
    * de depart mesure, pas une loi, et il est en configuration pour etre re-mesure sur de vraies bases.
    */
   AGENT_RERANK_SEUIL: z.coerce.number().min(0).max(1).default(0.06),
-  /**
-   * Combien de fiches le RAPPEL remonte avant le verdict. Plus large que les 3 rendues au modele, et c est
-   * tout l interet : on donne au reranker de quoi choisir. Trop large le ferait payer pour rien.
-   */
-  AGENT_RAPPEL_CANDIDATS: z.coerce.number().int().min(1).default(12),
   /**
    * Taux euros par dollar, pour convertir ce que le Gateway facture (en DOLLARS) vers nos compteurs, qui
    * sont tous en micro-euros. C est un parametre COMMERCIAL, pas un cours en temps reel : le client charge
@@ -777,8 +633,6 @@ export const schema = z.object({
    * une valeur valide (aucune commission annoncée), d'où `nonnegative` et non `positive`.
    */
   COMMISSION_MODELE_PCT: z.coerce.number().nonnegative().default(10),
-  /** max_tokens de la réponse d'analyse (petit JSON). */
-  LLM_MAX_TOKENS: z.coerce.number().default(1024),
   /** URL du connecteur mm-hubspot (POST /ingest). Vide -> le push d'analyse est INERTE (aucun job enfilé). */
   CONNECTOR_PUSH_URL: z.string().default(''),
   /** Secret HMAC partagé avec le connecteur (== INGEST_SECRET). Signe le push. */
@@ -955,6 +809,156 @@ export const schema = z.object({
   }
 });
 
-export type Config = z.infer<typeof schema>;
 
-export const config: Config = schema.parse(process.env);
+/**
+ * RÉGLAGES FIGÉS EN CONSTANTES (2026-09-25). Ils étaient lus dans l'environnement, mais aucun déploiement ne
+ * les posait : ni le `.env.prod` du VPS, ni un gabarit (`.env.example`, `.env.prod.example`,
+ * `docker-compose.yml`, `DEPLOY.md`). Leur valeur est celle qu'avait leur défaut ; la changer demande désormais
+ * un déploiement de code. Ils restent sous `config` pour que leurs lecteurs n'aient pas bougé.
+ */
+const constantes = {
+  /** Un destinataire `sending` plus vieux que ça est ramené à `pending` par le sweeper (ms). */
+  STALE_SENDING_MS: 15 * 60 * 1000,
+  /** Intervalle du sweeper de récupération des `sending` bloqués (ms). */
+  RECLAIM_INTERVAL_MS: 5 * 60 * 1000,
+  /** Réveil des parcours endormis (bloc « Attente »). 60 s : c'est aussi la précision réelle d'un délai. */
+  WORKFLOW_WAKE_SWEEP_INTERVAL_MS: 60 * 1000,
+  /** Plafond de débit d'UN webhook entrant (menu Tools). Par webhook, pas par IP : c'est le budget d'une
+   *  intégration, et l'IP d'un Zapier n'a aucune stabilité. */
+  WEBHOOK_IN_RATE_LIMIT_MAX: 120,
+  WEBHOOK_IN_RATE_LIMIT_WINDOW_MS: 60_000,
+  /** Jours de conservation du dernier payload d'un webhook entrant. Voir la note RGPD de la migration 0074. */
+  WEBHOOK_PAYLOAD_RETENTION_DAYS: 7,
+  /**
+   * Durée maximale d'un run de campagne avant qu'il rende la main et se réenfile (lot 5). 2 minutes.
+   *
+   * Le but n'est pas d'aller plus vite, c'est de rendre la file ÉQUITABLE : sans découpage, un job traitait
+   * sa campagne jusqu'à épuisement, soit 2 h 47 pour 5 000 destinataires à 30/min, pendant lesquelles les
+   * campagnes des autres clients attendaient. Une DURÉE et non un nombre de destinataires : à 1/min un lot de
+   * 100 durerait plus d'une heure, à 80/min une minute.
+   *
+   * Le prix : un aller-retour de file entre deux lots (la cadence de `campaign-run` est de 5 s), soit
+   * quelques minutes ajoutées sur une campagne de plusieurs heures. `0` retire le découpage.
+   */
+  CAMPAIGN_RUN_MAX_MS: 2 * 60 * 1000,
+  /**
+   * Nombre de runs de campagne traités EN PARALLÈLE par le worker, et plafond par ESPACE (lot 5).
+   *
+   * 🔴 La concurrence n'est sûre QUE parce que le lot 4 est en place : sans un frein partagé par numéro, deux
+   * campagnes en parallèle doubleraient le débit réel du numéro. Ne pas relever l'un sans l'autre.
+   *
+   * Le plafond par espace reste à 1 : un client n'a qu'un numéro (décision produit du 2026-08-31), donc deux
+   * de ses campagnes en parallèle ne gagneraient rien et se disputeraient le même budget. La concurrence sert
+   * à ce qu'un client n'attende pas la campagne d'un AUTRE.
+   */
+  CAMPAIGN_RUN_CONCURRENCY: 4,
+  /**
+   * Concurrence de la file des messages ENTRANTS (lot 3 du programme II). Elle valait 1, donc un seul message
+   * entrant était traité à la fois, TOUS clients confondus : un envoi Meta lent, un appel HubSpot qui traîne,
+   * et la réponse d'un autre client attendait derrière. C'est le « noisy neighbour » de l'audit.
+   *
+   * 🔴 Ce plafond n'est sûr QUE parce que l'enfilement pose une clé de groupe par contact et que `work`
+   * plafonne à un job en vol par groupe : deux messages d'un même contact restent sérialisés. Relever l'un
+   * sans l'autre remettrait le désordre que le groupe supprime.
+   *
+   * Pourquoi 3, et pas plus : le worker tient déjà 4 runs de campagne en parallèle, plus les accusés, les
+   * automations et les tours d'agent. Le pool applicatif est de 8 connexions PAR PROCESS, valeur mesurée
+   * comme la capacité réelle du pooler (cf. `DB_POOL_MAX`). Monter au-delà déplacerait l'attente de notre
+   * pool vers celle de Supavisor, où elle est muette. Relever ce nombre demande donc de refaire cette
+   * arithmétique-là, pas seulement de changer la constante.
+   */
+  WEBHOOK_CONCURRENCY: 3,
+  /**
+   * Analyses de conversation en vol. Le plafond par espace est de 1, posé dans le worker.
+   *
+   * 🔴 Sur cette file, le GROUPE compte bien plus que le nombre. Passer de 1 à 3 ne change presque rien au
+   * débit ; ce qui change tout, c'est qu'un client qui importe dix mille contacts déclenche dix mille analyses
+   * et ne puisse plus les faire passer AVANT la première analyse de tous les autres.
+   */
+  ANALYZE_CONVERSATION_CONCURRENCY: 3,
+  /**
+   * Événements d'automation en vol. Même raison et même plafond par espace de 1 : une rafale d'un client
+   * gelait tous les autres, cette file traitant un job à la fois pour la flotte entière.
+   */
+  AUTOMATION_EVENT_CONCURRENCY: 3,
+  /** Durée de validité d'un lien d'invitation (ms). Défaut 7 jours. */
+  INVITE_TOKEN_TTL_MS: 7 * 24 * 60 * 60 * 1000,
+  /** Durée de validité d'un lien de réinitialisation de mot de passe (ms). Défaut 1 h. */
+  RESET_TOKEN_TTL_MS: 60 * 60 * 1000,
+  /** Inactivité (ms) au-delà de laquelle une conversation est considérée close et analysable. Défaut 25 min. */
+  CONVERSATION_INACTIVITY_MS: 25 * 60 * 1000,
+  /** Une conversation bloquée en `queued` plus vieille que ça est ramenée à `pending` (worker mort). Défaut 15 min. */
+  CONVERSATION_ANALYSIS_STALE_MS: 15 * 60 * 1000,
+  /** Intervalle du balayage d'analyse (ms). Défaut 5 min. */
+  CONVERSATION_ANALYSIS_SWEEP_INTERVAL_MS: 5 * 60 * 1000,
+  /** Nombre max de conversations réclamées par passage de balayage. */
+  CONVERSATION_ANALYSIS_BATCH: 20,
+  /** Cadence du filet de sécurité du rattrapage HubSpot (F3-a) : relance le rattrapage des marques restées sur un
+   *  numéro reconnecté. Défaut 10 min : action rare, lecture légère (distinct tenant_id), pas un chemin chaud. */
+  HUBSPOT_CATCHUP_SWEEP_INTERVAL_MS: 10 * 60 * 1000,
+  /** Cadence du sweep d'auto-relance des échecs (F6). 15 min : assez fin pour la fenêtre matinale des 131049. */
+  AUTO_RETRY_SWEEP_INTERVAL_MS: 15 * 60 * 1000,
+  /** Inactivité au bout de laquelle un fil tenu par MBA est repris (le pendant de `CONTROL_HUMAN_TIMEOUT_MS`).
+   *  Beaucoup plus long : l'agent est censé répondre seul, on ne le préempte qu'en cas de silence anormal. */
+  CONTROL_MBA_TIMEOUT_MS: 24 * 60 * 60 * 1000,
+  /**
+   * Inactivité au bout de laquelle un fil tenu par un SCÉNARIO revient à l'agent de Meta. 24 h.
+   *
+   * 🔴 C'EST LA SOUPAPE DU GESTE `take`, AJOUTÉE LE 2026-09-14 AVEC LUI. Tant qu'un scénario n'écrivait que
+   * notre colonne, Meta gardait le fil et son agent reprenait la main tout seul ; c'était d'ailleurs le
+   * bug que `take` répare. Depuis qu'on prend le fil pour de vrai, un parcours abandonné (le contact ne
+   * répond jamais, le run reste `waiting`) le garderait à jamais, et l'agent de Meta ne répondrait plus
+   * jamais sur cette conversation. La fin NORMALE d'un parcours le rend déjà (`releaseToMba`) : ce délai ne
+   * couvre que les parcours qui ne finissent pas.
+   *
+   * ⚠️ « LE REND DÉJÀ » SE FAIT EN DEUX TEMPS DEPUIS LA MIGRATION 0149 : la fin de parcours marque le fil et
+   * le passe en `app_human`, et la remise part quand Meta acquitte notre dernier envoi. Un fil sorti de
+   * `app_workflow` n'est donc plus du ressort de CE délai mais du délai humain (`CONTROL_HUMAN_TIMEOUT_MS`).
+   *
+   * ⚠️ FIXE, JAMAIS RÉGLABLE PAR CLIENT (tranché par Julien le 2026-09-14), contrairement au délai humain.
+   * C'est un garde-fou technique et non un arbitrage métier : personne ne sait répondre à « combien de
+   * temps mon scénario doit-il garder le fil ». Et c'est ce qui permet de le filtrer EN SQL, donc de ne pas
+   * saturer le lot du balayage avec des conversations saines.
+   *
+   * ⚠️ 24 h ET PAS 2 h comme l'humain : un scénario attend légitimement longtemps (une relance le
+   * lendemain). Le couper à deux heures rendrait le fil à l'agent de Meta, qui répondrait à la place du
+   * bloc suivant. 0 désactive la reprise.
+   */
+  CONTROL_WORKFLOW_TIMEOUT_MS: 24 * 60 * 60 * 1000,
+  /** Anti-rebond par défaut d'une automation (Lot E) : délai minimum entre deux déclenchements de la MÊME
+   *  automation pour le MÊME contact, quand le client n'a rien réglé. 1 h : assez long pour absorber un client
+   *  qui répète son mot-clé ou un scénario qui repose le tag déclencheur, assez court pour ne pas bloquer une
+   *  vraie 2e demande dans la journée. Réglable par automation (0 = aucun garde-fou, à ses risques). */
+  AUTOMATION_COOLDOWN_SECONDS: 3600,
+  /** Cadence du balayage des échéances (déclencheur « X avant la date d'un champ »). */
+  AUTOMATION_DATE_SWEEP_INTERVAL_MS: 60_000,
+  /** Fenêtre de rattrapage APRÈS le moment prévu. Elle absorbe un redémarrage du worker, PAS un vrai retard :
+   *  au-delà, on n'envoie rien (un rappel « 48 h avant » qui part 12 h avant dit quelque chose de faux). */
+  AUTOMATION_DATE_TOLERANCE_MINUTES: 60,
+  /** Plafond d'un vocal à transcrire, en Ko. Pourquoi une TAILLE et pas une durée : voir `TRANSCRIPTION_MODELE`. */
+  TRANSCRIPTION_TAILLE_MAX_KO: 2048,
+  /**
+   * Le modele qui JUGE la pertinence des fiches candidates.
+   *
+   * 🔴 IL N EST PAS OPTIONNEL AU SENS DU PRODUIT : c est LUI qui porte la garde anti-hallucination une fois le
+   * vectoriel branche. Mesure : aucun seuil n est posable sur un cosinus d embedding (une question hors sujet
+   * remonte a 0,361 quand une vraie question descend a 0,299), alors que ce reranker place les vraies
+   * questions au-dessus de 0,0817 et le hors-sujet en dessous de 0,0409.
+   *
+   * ⚠️ Ce n est PAS le modele le plus recent, et c est delibere : `cohere/rerank-v4-fast` laisse le hors-sujet
+   * monter AU-DESSUS des vraies questions sur le meme corpus. Prendre la derniere version par reflexe aurait
+   * reproduit le defaut qu on corrige.
+   */
+  AGENT_RERANK_MODEL: 'cohere/rerank-v3.5',
+  /**
+   * Combien de fiches le RAPPEL remonte avant le verdict. Plus large que les 3 rendues au modele, et c est
+   * tout l interet : on donne au reranker de quoi choisir. Trop large le ferait payer pour rien.
+   */
+  AGENT_RAPPEL_CANDIDATS: 12,
+  /** max_tokens de la réponse d'analyse (petit JSON). */
+  LLM_MAX_TOKENS: 1024,
+};
+
+export type Config = z.infer<typeof schema> & typeof constantes;
+
+export const config: Config = { ...schema.parse(process.env), ...constantes };

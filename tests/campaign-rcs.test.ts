@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { runCampaign } from '../src/campaign/engine';
-import type { EngineDeps, RecipientStore, CampaignStore, FrequencyStore, QualityProvider } from '../src/campaign/engine';
+import type { EngineDeps, RecipientStore, CampaignStore, QualityProvider } from '../src/campaign/engine';
 import { makeCampaignSender } from '../src/campaign/sender';
 import type { Campaign, Recipient, QualityRating } from '../src/campaign/types';
 import { RcsSender } from '../src/rcs/sender';
@@ -80,14 +80,6 @@ class FakeCampaigns implements CampaignStore {
     this.statuses.push(s);
   }
 }
-class FakeFreq implements FrequencyStore {
-  async lastSentAt() {
-    return null;
-  }
-  async record() {
-    /* rien */
-  }
-}
 /** Le quality rating est une notion META. Cette sonde échoue si le moteur l'interroge sur une campagne RCS. */
 class QualityInterdite implements QualityProvider {
   appels = 0;
@@ -108,7 +100,6 @@ function deps(over: Partial<EngineDeps> & { recipients: RecipientStore }): Engin
       },
     },
     campaigns: new FakeCampaigns(),
-    frequency: new FakeFreq(),
     quality: new QualityInterdite(),
     now: () => 1_000_000_000,
     ...over,

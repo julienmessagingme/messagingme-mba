@@ -8,10 +8,14 @@ import {
 } from '../web/lib/api-exemples';
 import { schemaClesFiche } from '../src/api/fiche';
 import {
-  schemaCorpsContact, schemaCorpsLot, schemaCorpsRecherche, schemaCorpsModification, MAX_BATCH,
+  schemaContactV1 as schemaCorpsContact, schemaRechercheContactV1 as schemaCorpsRecherche,
+  schemaPatchContactV1 as schemaCorpsModification,
+} from '../src/api/contacts-v1';
+import {
+  conteneurDuLot as schemaCorpsLot, MAX_BATCH,
 } from '../src/http/v1-contacts';
 import {
-  schemaCorpsEnvoi, schemaDestinataireEnvoi, lireCible, MAX_RECIPIENTS, MAX_SKIPPED_REPORT, type RapportEnvoi,
+  schemaCorps as schemaCorpsEnvoi, schemaDestinataire as schemaDestinataireEnvoi, lireCible, MAX_RECIPIENTS, MAX_SKIPPED_REPORT, type RapportEnvoi,
 } from '../src/http/v1-sends';
 import { schemaMessageWhatsapp, type ReponseMessageSimple } from '../src/http/v1-messages';
 import { schemaMessageRcs } from '../src/http/v1-messages-rcs';

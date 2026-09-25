@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { randomBytes } from 'node:crypto';
 import { buildServer } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import { signRequest } from '../src/lib/signature';
 import type { HubspotEventRouteDeps } from '../src/http/hubspot-events';
 import { parseAutomationEventJob } from '../src/automation/event-job';

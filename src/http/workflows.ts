@@ -92,7 +92,7 @@ function tagsInGraph(graph: WorkflowGraph): string[] {
  * porter plusieurs blocs avec de la config. PB1 : CRUD + graphe. Pas d'exécution (PB2).
  */
 export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps, garde: Guard): void {
-  const opts = { ...({ preHandler: garde }), bodyLimit: 2 * 1024 * 1024 };
+  const opts = { preHandler: garde, bodyLimit: 2 * 1024 * 1024 };
   const journal = makeJournal(deps.audit);
 
   /**

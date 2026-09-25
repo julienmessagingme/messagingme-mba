@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import { hashPasswordSync } from '../src/auth/password';
 import type { UserAuthStore, AuthUser, EmailIdentity } from '../src/auth/store';
 

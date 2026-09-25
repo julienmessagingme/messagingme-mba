@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { sansPortailHubspot, avecPortailHubspot } from './hubspot';
 import { buildServer } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import { decouperInstructions, veutHorsTransaction } from '../src/db/migration-directives';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';

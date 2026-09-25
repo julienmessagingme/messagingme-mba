@@ -1,4 +1,4 @@
-import type { AgentBrain, DecisionAgent } from './brain';
+import type { AgentBrain, DecisionAgent } from '../src/agent/brain';
 
 /**
  * Cerveau bouchonné : il rend une décision fixe, sans réseau ni modèle.

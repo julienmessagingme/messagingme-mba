@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import '../../src/charger-env';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
@@ -13,11 +13,9 @@ import {
   PgCampaignRepo,
   PgCampaignStore,
   PgRecipientStore,
-  PgFrequencyStore,
   PgQualityProvider,
 } from '../../src/campaign/store.pg';
 import type { MessageSender } from '../../src/campaign/engine';
-import type { GuardrailThresholds } from '../../src/campaign/types';
 import type { SendResult, MarketingParams, TemplateSpec } from '../../src/meta/types';
 
 const url = process.env.DATABASE_URL ?? '';
@@ -74,7 +72,6 @@ describe.skipIf(!url)('E2E CSV -> campagne -> envoi (Supabase, sender fake)', ()
       senderFor: async () => new FakeSender(),
       recipients: new PgRecipientStore(pool),
       campaigns: new PgCampaignStore(pool),
-      frequency: new PgFrequencyStore(pool),
       quality: new PgQualityProvider(pool),
       pauserSiNumeroDelie: async () => false,
     };
@@ -107,40 +104,5 @@ describe.skipIf(!url)('E2E CSV -> campagne -> envoi (Supabase, sender fake)', ()
     // 5) Re-run idempotent : plus aucun pending -> 0 envoi.
     const run2 = await campaignRunJob({ campaignId }, runDeps);
     expect(run2).toMatchObject({ sent: 0, skipped: 0, failed: 0 });
-  });
-
-  it('fréquence : un 2e envoi marketing au même numéro dans la fenêtre est skippé (vrai PgFrequencyStore)', async () => {
-    // Tenant dédié (isolé du 1er test qui a déjà des contacts) : 1 seul contact ici.
-    const t2 = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-freq') returning id`)).rows[0]!.id;
-    try {
-      await importContacts(
-        { rows: [{ Tel: '+33600000020', Nom: 'Freq' }], mapping: { columns: { Tel: { target: 'phone' }, Nom: { target: 'name' } } }, tenantId: t2, optIn: true },
-        { contacts: new PgContactStore(pool), userFields: new PgUserFieldStore(pool), defaultCountry: 'FR' },
-      );
-      const repo = new PgCampaignRepo(pool);
-      const runDeps = {
-        getCampaign: (id: string) => repo.getCampaign(id),
-        senderFor: async () => new FakeSender(),
-        recipients: new PgRecipientStore(pool),
-        campaigns: new PgCampaignStore(pool),
-        frequency: new PgFrequencyStore(pool),
-        quality: new PgQualityProvider(pool),
-        pauserSiNumeroDelie: async () => false,
-      };
-      const base = { tenantId: t2, phoneNumberId: 'pn-freq', category: 'marketing' as const, templateName: 't', templateLanguage: 'fr', paramMapping: [] };
-      const window: GuardrailThresholds = { frequencyWindowMs: 24 * 3600 * 1000, maxFailureRate: 0.3, minSendsForFailureCheck: 20 };
-
-      // Campagne 1 -> envoyé (sent_at récent en base).
-      const c1 = await createCampaignWithRecipients({ ...base, name: 'Freq-1' }, repo);
-      const r1 = await campaignRunJob({ campaignId: c1.campaignId }, { ...runDeps, moteur: { thresholds: window } });
-      expect(r1.sent).toBe(1);
-
-      // Campagne 2, même numéro, fenêtre 24h -> skippé par PgFrequencyStore.lastSentAt (JOIN réel).
-      const c2 = await createCampaignWithRecipients({ ...base, name: 'Freq-2' }, repo);
-      const r2 = await campaignRunJob({ campaignId: c2.campaignId }, { ...runDeps, moteur: { thresholds: window } });
-      expect(r2).toMatchObject({ sent: 0, skipped: 1 });
-    } finally {
-      await pool.query('delete from tenants where id = $1', [t2]);
-    }
   });
 });

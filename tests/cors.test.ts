@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
 import type { ServerDeps } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 
 /**
  * LE CORS DE L'API (préparation de la bascule Vercel, 2026-09-03).

@@ -8,7 +8,7 @@ import { calculerCompletion, type EntreeCompletion } from '../src/mba/completion
 import { ENTRETIEN_MBA_VIERGE, type EntretienMba } from '../src/mba/assistant/entretien-store';
 import { LlmApiError } from '../src/llm/errors';
 import { buildServer } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { EmailIdentity, UserAuthStore } from '../src/auth/store';
 

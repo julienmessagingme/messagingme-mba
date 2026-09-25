@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { runTurn, type RunTurnDeps } from '../src/agent/run-turn';
-import { FakeAgentBrain } from '../src/agent/brain.fake';
+import { FakeAgentBrain } from './fake-agent-brain';
 import type { FicheAgent } from '../src/agent/agent-store';
 import type { AgentTurnJob } from '../src/agent/turn-job';
 import { WorkflowExecutor, EST_UN_ENVOI } from '../src/workflow/executor';

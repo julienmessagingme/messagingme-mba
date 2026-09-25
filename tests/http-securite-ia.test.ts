@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { sansPortailHubspot } from './hubspot';
 import { GRILLE_DEFAUT } from '../src/stats/prix';
 import { buildServer } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { SettingsRouteDeps } from '../src/http/settings';

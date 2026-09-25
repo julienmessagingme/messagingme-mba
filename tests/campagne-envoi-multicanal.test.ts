@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { runCampaign, etageServable, contenuDeLEtage } from '../src/campaign/engine';
 import type {
-  MessageSender, RecipientStore, CampaignStore, FrequencyStore, QualityProvider,
+  MessageSender, RecipientStore, CampaignStore, QualityProvider,
   EngineDeps, TentativeEnvoi, CanalServi, RateGate,
 } from '../src/campaign/engine';
 import type { Campaign, Recipient, QualityRating } from '../src/campaign/types';
@@ -36,10 +36,6 @@ class FakeRecipients implements RecipientStore {
 class FakeCampaigns implements CampaignStore {
   readonly statuses: string[] = [];
   async setStatus(_id: string, status: string): Promise<void> { this.statuses.push(status); }
-}
-class FakeFreq implements FrequencyStore {
-  async lastSentAt(): Promise<number | null> { return null; }
-  async record(): Promise<void> { /* rien */ }
 }
 /** Compte les interrogations de la porte de qualité, et sur QUEL numéro. */
 class FakeQuality implements QualityProvider {
@@ -100,7 +96,6 @@ function deps(over: Partial<EngineDeps> & { recipients: RecipientStore }): Engin
   return {
     sender: new SenderMeta(),
     campaigns: new FakeCampaigns(),
-    frequency: new FakeFreq(),
     quality: new FakeQuality(),
     now: () => 1_000_000_000,
     ...over,

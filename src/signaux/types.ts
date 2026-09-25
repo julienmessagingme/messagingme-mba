@@ -46,7 +46,6 @@ export const NOMS_ATTRIBUTS = [
   'em_risk_score',
   'em_risk_reasons',
 ] as const;
-export type NomAttribut = (typeof NOMS_ATTRIBUTS)[number];
 
 export const CANAUX_SIGNAL = ['whatsapp', 'rcs'] as const;
 export type CanalSignal = (typeof CANAUX_SIGNAL)[number];

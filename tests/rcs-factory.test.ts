@@ -14,10 +14,6 @@ const campagne: Campaign = {
 };
 
 describe('buildRcsStack', () => {
-  it('LEVE au demarrage sur un provider non implemente, au lieu de retomber en silence sur le factice', () => {
-    expect(() => buildRcsStack(pool, 'google', false)).toThrow(/google/);
-  });
-
   it('LEVE si smsmode est demande SANS la cle du canal RCS', () => {
     expect(() => buildRcsStack(pool, 'smsmode', false)).toThrow(/SMSMODE_RCS_API_KEY/);
     expect(() => buildRcsStack(pool, 'smsmode', false, { apiKey: '' })).toThrow(/SMSMODE_RCS_API_KEY/);
@@ -30,11 +26,6 @@ describe('buildRcsStack', () => {
 
   it('DRY_RUN prime aussi sur smsmode : aucune cle exigee, aucun envoi reel', () => {
     expect(() => buildRcsStack(pool, 'smsmode', true)).not.toThrow();
-  });
-
-  it('DRY_RUN force le provider factice, meme quand google est demande', () => {
-    // Sans cette règle, un déploiement DRY_RUN=true enverrait du vrai RCS le jour où google existera.
-    expect(() => buildRcsStack(pool, 'google', true)).not.toThrow();
   });
 
   it('monte la pile sur le provider factice', () => {

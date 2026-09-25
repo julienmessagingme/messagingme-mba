@@ -43,6 +43,11 @@ export const NUMERO_ESPACE_TTL_MS = 60_000;
 /**
  * Rend l'accesseur mis en cache. UNE instance par process : deux instances auraient deux caches, donc deux
  * fois les requêtes qu'on vient d'économiser.
+ *
+ * Sert AUSSI au WABA de l'espace (`getTenantWabaId`, dans l'API et le worker), avec la même règle :
+ * `resolveForTenant` (`src/meta/credentials.ts`) le demande AVANT de consulter son cache de jeton, indexé par
+ * WABA, donc à chaque construction de client Meta. Un espace sans WABA retombe sur le jeton maison, et geler
+ * cette réponse retarderait le moment où un client fraîchement connecté devient joignable.
  */
 export function creerNumeroDeLEspace(
   lire: (tenantId: string) => Promise<string | null>,
@@ -57,25 +62,4 @@ export function creerNumeroDeLEspace(
     if (numero === null) cache.invalider(tenantId);
     return numero;
   };
-}
-
-/**
- * L'IDENTIFIANT WABA DE L'ESPACE, mis en cache pour la MÊME raison et avec la MÊME règle.
- *
- * 🔴 POURQUOI IL FALLAIT CELUI-LÀ AUSSI, alors que le cache de jeton existe déjà. `resolveForTenant`
- * (`src/meta/credentials.ts`) demande le WABA de l'espace AVANT de consulter son cache, parce que ce cache est
- * indexé par WABA et non par espace. Chaque construction de client Meta paie donc une requête, toujours, et
- * `wiring.ts` en construit un PAR ENVOI (cinq sites). Mettre le numéro en cache sans celui-ci laissait la
- * requête juste en dessous intacte : on aurait cru avoir supprimé une lecture par destinataire alors qu'il en
- * restait une.
- *
- * ⚠️ MÊME ASYMÉTRIE : seules les réponses positives entrent en cache. Un espace sans WABA retombe sur le jeton
- * maison, et geler cette réponse retarderait le moment où un client fraîchement connecté devient joignable.
- */
-export function creerWabaDeLEspace(
-  lire: (tenantId: string) => Promise<string | null>,
-  ttlMs: number = NUMERO_ESPACE_TTL_MS,
-  maintenant: () => number = Date.now,
-): (tenantId: string) => Promise<string | null> {
-  return creerNumeroDeLEspace(lire, ttlMs, maintenant);
 }

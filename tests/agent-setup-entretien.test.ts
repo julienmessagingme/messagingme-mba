@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
-  auteurDuTour, bornerPourModele, lireEtat, MAX_TOURS_CONSERVES,
+  bornerPourModele, lireEtat, MAX_TOURS_CONSERVES,
 } from '../src/agent/setup/entretien-store';
 import { MAX_TOURS_HISTORIQUE } from '../src/agent/setup/conversation';
 
@@ -83,6 +83,5 @@ describe('le fil ÉCRIT n’est pas le fil ENVOYÉ', () => {
   it('⚠️ un fil d’avant la migration se relit sans auteurs, et n’en invente pas', () => {
     const relu = lireEtat({ messages: [{ role: 'user', content: 'x' }], reponses: [], poses: [], bascules: [] });
     expect(relu.auteurs).toEqual([]);
-    expect(auteurDuTour(relu, 0)).toBeNull();
   });
 });

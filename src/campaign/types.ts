@@ -92,8 +92,6 @@ export interface Recipient {
 }
 
 export interface GuardrailThresholds {
-  /** Fenêtre de fréquence par contact (ms). */
-  frequencyWindowMs: number;
   /** Taux d'échec au-delà duquel on met la campagne en pause. */
   maxFailureRate: number;
   /** Nb d'envois minimum avant d'évaluer le taux d'échec. */

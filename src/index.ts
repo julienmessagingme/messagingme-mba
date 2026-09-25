@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './charger-env';
 import { buildServer } from './server';
 import { config } from './config';
 import { adressesPubliques } from './lib/adresses-publiques';
@@ -93,6 +93,7 @@ import { PgWorkflowStore } from './workflow/store.pg';
 import { resolveTenantCode } from './ids/tenant-code';
 import { MetaEmbeddedSignupClient } from './meta/embedded-signup';
 import { PgEmbeddedSignupStore } from './account/es-store.pg';
+import { setTimeout as dormir } from 'node:timers/promises';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { MetaCredentialsResolver } from './meta/credentials';
 import { fetchUrlBorne } from './lib/page-distante';
@@ -165,7 +166,7 @@ import { PgTestRunStore } from './agent/test-runs.pg';
 import { enTetesAuthSource } from './agent/http-cible';
 import { creerEprouverSource } from './agent/eprouver-source';
 import { GatewayChatClient } from './agent/llm/chat-client';
-import { creerWabaDeLEspace } from './meta/numero-espace';
+import { creerNumeroDeLEspace } from './meta/numero-espace';
 import { creerRendreLeFil, creerPrendreLeFil } from './inbox/controle-du-fil';
 import { consommateurAgent, consommateurMba } from './agent/consommateur';
 import { type OutilAPublier } from './mba/publication';
@@ -447,7 +448,7 @@ async function main(): Promise<void> {
   // credentials propres -> le numéro Zadarma reste sur config.META_ACCESS_TOKEN, comportement identique.
   // Le WABA de l'espace, une lecture par process : le cache de jeton etant indexe par WABA, cette requete
   // etait payee AVANT lui a chaque construction de client Meta. Reponses positives seulement.
-  const wabaDeLEspace = creerWabaDeLEspace((t) => repo.getTenantWabaId(t));
+  const wabaDeLEspace = creerNumeroDeLEspace((t) => repo.getTenantWabaId(t));
   // ⚠️ HISSÉS HORS DU CÂBLAGE DE L'ÉCRAN parce qu'ils ont DEUX consommateurs depuis le 2026-09-23 : les
   // routes de l'écran Publicités, et la route `/ops` qui dépose un jeton créé à la main (le portefeuille
   // qui possède l'app ne peut pas passer par la fenêtre Meta). Les construire deux fois donnerait deux
@@ -3183,7 +3184,7 @@ async function main(): Promise<void> {
         journaliserForme: (f) => console.info(`mba-relais: en-tete du numero ${f}`),
         // Borne l'attente d'un ENVOI avant de répondre à Meta, qui coupe un outil vers trois secondes
         // (`DELAI_REPONSE_ENVOI_MS`, `src/http/mba-relais.ts`).
-        attendre: (ms) => new Promise((r) => { setTimeout(r, ms); }),
+        attendre: (ms) => dormir(ms),
         // Un envoi qui échoue APRÈS « C'est parti » est dit à l'agent de Meta par un événement (les gardes vivent
         // dans le module, testé), comme la réponse « à côté » du lot 4.
         signalerEchecTardif: creerSignalerEchecTardif({
@@ -3217,7 +3218,7 @@ async function main(): Promise<void> {
             // Expérience du 2026-09-22 : on ne prend le fil qu'une fois le tour de l'agent de Meta fini.
             attendreFinDuTour: creerAttendreFinDuTour({
               dernierMessageDeLAgent: (t, waId) => inboxStore.dernierMessageDeLAgent(t, waId),
-              attendre: (ms) => new Promise((r) => { setTimeout(r, ms); }),
+              attendre: (ms) => dormir(ms),
               maintenant: () => Date.now(),
               // eslint-disable-next-line no-console
               journal: (ligne) => console.log(ligne),
@@ -3410,7 +3411,7 @@ async function main(): Promise<void> {
   const minuteriePoolAttentes = setInterval(() => {
     void viderVersLaBase(poolAttentesStore, mesureAttentePool, 'api', new Date(), (err) => {
       // eslint-disable-next-line no-console
-      console.error('pool-attentes: écriture impossible (migration 0109 passée ?):', err instanceof Error ? err.message : err);
+      console.error('pool-attentes: écriture impossible:', err instanceof Error ? err.message : err);
     });
   }, 60_000);
   minuteriePoolAttentes.unref?.();

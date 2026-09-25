@@ -1,3 +1,4 @@
+import { setTimeout as dormir } from 'node:timers/promises';
 import { MetaApiError } from './errors';
 import type { MetaErrorBody } from './errors';
 import type { FetchLike } from './templates';
@@ -40,7 +41,7 @@ export class MetaMediaClient {
   async uploadForSend(phoneNumberId: string, bytes: Buffer, mime: string, retries = 3): Promise<string> {
     let dernier: unknown = null;
     for (let essai = 0; essai <= retries; essai += 1) {
-      if (essai > 0) await new Promise((r) => setTimeout(r, 800 * essai));
+      if (essai > 0) await dormir(800 * essai);
       const form = new FormData();
       form.append('messaging_product', 'whatsapp');
       form.append('file', new Blob([new Uint8Array(bytes)], { type: mime }), 'media');

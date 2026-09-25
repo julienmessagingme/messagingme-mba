@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { AnthropicClient, createLlmClient, LlmApiError } from '../src/analysis/llm-client';
+import { AnthropicClient } from '../src/analysis/llm-client';
+import { LlmApiError } from '../src/llm/errors';
 import type { HttpTransport, HttpResponse } from '../src/meta/http';
 
 class FakeTransport implements HttpTransport {
@@ -43,14 +44,5 @@ describe('AnthropicClient', () => {
     const t = new FakeTransport(() => ({ status: 200, json: { content: [], stop_reason: 'refusal' } }));
     await expect(new AnthropicClient('k', 'm', 10, t).complete({ system: 's', user: 'u' })).rejects.toBeInstanceOf(LlmApiError);
     expect(t.calls).toHaveLength(1);
-  });
-});
-
-describe('createLlmClient', () => {
-  it('anthropic -> AnthropicClient', () => {
-    expect(createLlmClient({ provider: 'anthropic', apiKey: 'k', model: 'm', maxTokens: 10 })).toBeInstanceOf(AnthropicClient);
-  });
-  it('provider inconnu -> throw', () => {
-    expect(() => createLlmClient({ provider: 'zzz', apiKey: 'k', model: 'm', maxTokens: 10 })).toThrow(/provider inconnu/);
   });
 });

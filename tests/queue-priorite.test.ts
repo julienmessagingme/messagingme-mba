@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { sendOptions } from '../src/queue/pgboss';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 
 /**
  * LA PRIORITÉ D'UN JOB (lot 6 de l'API publique) : elle doit VRAIMENT atteindre `boss.send`, sinon les réponses

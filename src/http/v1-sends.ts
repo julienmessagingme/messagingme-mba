@@ -1,3 +1,4 @@
+import { setTimeout as dormir } from 'node:timers/promises';
 import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
@@ -118,7 +119,7 @@ const schemaCible = z.union([
  * doit se voir. `recipients` reste en `unknown[]` : un destinataire mal formé est ÉCARTÉ, il ne fait pas
  * tomber l'envoi.
  */
-const schemaCorps = z.strictObject({
+export const schemaCorps = z.strictObject({
   idempotencyKey: z.string().optional(),
   target: schemaCible,
   recipients: z.array(z.unknown()).min(1).max(MAX_RECIPIENTS),
@@ -139,7 +140,7 @@ const schemaCorps = z.strictObject({
  * qui remplit son corps avec les variables d'un profil envoie `""` pour une variable que le profil n'a pas.
  * Une valeur fausse (« oui ») reste refusée, donc le destinataire est écarté `invalid_recipient`.
  */
-const schemaDestinataire = schemaClesFiche.extend({
+export const schemaDestinataire = schemaClesFiche.extend({
   consent: z.preprocess(videEnAbsent, z.enum(['opted_in', 'opted_out']).optional()),
   consentSource: z.preprocess(videEnAbsent, z.string().trim().min(1).max(MAX_OPT_IN_SOURCE).optional()),
   // Lot 3 : des valeurs propres à CE destinataire, jamais écrites sur sa fiche. Mal formées, elles écartent le
@@ -386,9 +387,6 @@ async function fenetresParContact(deps: V1SendsRouteDeps, tenantId: string, cont
 const FORME_ID_ENVOI = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const schemaIdEnvoi = z.object({ sendId: z.string().regex(FORME_ID_ENVOI) });
 
-/** Les validateurs de cette route, sous les noms que la documentation de l'API éprouve (`tests/api-exemples.test.ts`). */
-export const schemaCorpsEnvoi = schemaCorps;
-export const schemaDestinataireEnvoi = schemaDestinataire;
 
 /**
  * API publique /v1 des envois (spec 2026-09-24, § 3). Tenant issu de la clé (`req.auth`), jamais du corps.
@@ -547,7 +545,7 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
     // il n'y en a aucune. Si un enfilement avait commité avant de lever, la tentative suivante empilerait un
     // SECOND run de la même campagne : aucun contact ne recevrait deux fois, mais les deux runs
     // additionneraient leurs débits. Borné à 3 tentatives, sur un chemin d'échec rare.
-    const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    const sleep = deps.sleep ?? ((ms: number) => dormir(ms));
     for (let attempt = 0; attempt < ENQUEUE_MAX_ATTEMPTS; attempt += 1) {
       try {
         await deps.enqueue(report.sendId, tenantId, report.recipientCount, corps.ratePerMinute ?? null);

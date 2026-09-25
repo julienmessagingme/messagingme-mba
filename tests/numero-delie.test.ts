@@ -5,7 +5,7 @@ import type { HttpTransport, HttpResponse } from '../src/meta/http';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE, creerGardeNumeroDelie } from '../src/meta/numero-delie';
 import { campaignRunJob, type RunJobDeps } from '../src/campaign/run-job';
 import { runCampaign, RAISON_NUMERO_RELIE_ENTRE_TEMPS } from '../src/campaign/engine';
-import type { RecipientStore, CampaignStore, FrequencyStore, QualityProvider, EngineDeps } from '../src/campaign/engine';
+import type { RecipientStore, CampaignStore, QualityProvider, EngineDeps } from '../src/campaign/engine';
 import type { Campaign, Recipient } from '../src/campaign/types';
 import type { MotifDePause } from '../src/campaign/pause';
 import { messageDePause } from '../src/campaign/pause';
@@ -14,7 +14,7 @@ import { handleWebhookJob } from '../src/webhooks/handler';
 import type { InboundMessage } from '../src/webhooks/inbound';
 import { aucuneArriveePub, aucunRoutagePub, aucunSignalReponse } from './webhook-fixtures';
 import { buildServer } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { InboxRouteDeps } from '../src/http/inbox';
@@ -118,7 +118,6 @@ class Campagnes implements CampaignStore {
     this.statuts.push({ status, ...(pause ? { pause } : {}) });
   }
 }
-const frequence: FrequencyStore = { lastSentAt: async () => null, record: async () => {} };
 const qualite: QualityProvider = { getRating: async () => 'GREEN' };
 const UN: Recipient[] = [{ id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' }];
 
@@ -142,7 +141,6 @@ function depsRun(campagne: Campaign, campagnes: Campagnes, over: Partial<RunJobD
     senderFor: async (_c, pn) => { throw new NumeroDelieError(pn); },
     recipients: new Destinataires(UN),
     campaigns: campagnes,
-    frequency: frequence,
     quality: qualite,
     pauserSiNumeroDelie: async () => true,
     ...over,
@@ -233,7 +231,7 @@ describe('campagne de scénario et numéro délié, en cours de run (le moteur)'
       throw new NumeroDelieError('pn1');
     };
     const deps: EngineDeps = {
-      sender: envoiInterdit, recipients: destinataires, campaigns: campagnes, frequency: frequence, quality: qualite,
+      sender: envoiInterdit, recipients: destinataires, campaigns: campagnes, quality: qualite,
       startWorkflow: refus,
       startWorkflowFromNode: refus,
       pauserSiNumeroDelie: enBase.pauser,
@@ -288,7 +286,7 @@ describe('campagne de scénario et numéro délié, en cours de run (le moteur)'
     };
     const enBase = base(true);
     const report = await runCampaign(campagne, {
-      sender: envoiInterdit, recipients: destinataires, campaigns: campagnes, frequency: frequence, quality: qualite,
+      sender: envoiInterdit, recipients: destinataires, campaigns: campagnes, quality: qualite,
       canaux: { rcs: { sender: { sendTo: async (r) => { envoisRcs.push(r.toE164); return { messageId: `rcs-${r.id}` }; } } } },
       startWorkflow: async () => { throw new NumeroDelieError('pn1'); },
       pauserSiNumeroDelie: enBase.pauser,
@@ -317,7 +315,7 @@ describe('campagne de scénario et numéro délié, en cours de run (le moteur)'
       ],
     };
     const report = await runCampaign(campagne, {
-      sender: envoiInterdit, recipients: destinataires, campaigns: campagnes, frequency: frequence, quality: qualite,
+      sender: envoiInterdit, recipients: destinataires, campaigns: campagnes, quality: qualite,
       canaux: { rcs: { sender: { sendTo: async (r) => ({ messageId: `rcs-${r.id}` }) } } },
       startWorkflow: async () => { throw new NumeroDelieError('pn1'); },
       pauserSiNumeroDelie: enBase.pauser,

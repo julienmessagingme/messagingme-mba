@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { runCampaign } from '../src/campaign/engine';
 import type {
-  MessageSender, RecipientStore, CampaignStore, FrequencyStore, QualityProvider,
+  MessageSender, RecipientStore, CampaignStore, QualityProvider,
   EngineDeps, CanalServi,
 } from '../src/campaign/engine';
 import type { Campaign, Recipient, QualityRating } from '../src/campaign/types';
@@ -39,10 +39,6 @@ class Recipients implements RecipientStore {
   }
 }
 class Campaigns implements CampaignStore { async setStatus(): Promise<void> { /* rien */ } }
-class Freq implements FrequencyStore {
-  async lastSentAt(): Promise<number | null> { return null; }
-  async record(): Promise<void> { /* rien */ }
-}
 class Quality implements QualityProvider { async getRating(): Promise<QualityRating> { return 'GREEN'; } }
 class SenderWa implements MessageSender {
   readonly envois: string[] = [];
@@ -92,7 +88,7 @@ function monter(o: {
     },
   };
   const deps: EngineDeps = {
-    sender: new SenderWa(), campaigns: new Campaigns(), frequency: new Freq(), quality: new Quality(),
+    sender: new SenderWa(), campaigns: new Campaigns(), quality: new Quality(),
     now: () => 1_000_000_000,
     recipients,
     canaux: { rcs },
@@ -213,7 +209,7 @@ describe('un etage RCS qui porte un scenario', () => {
       chaine: [{ rang: 1, canal: 'whatsapp', templateName: '', templateLanguage: 'fr', workflowId: 'wf-42' }],
     };
     const rapport = await runCampaign(campagne, {
-      sender: wa, campaigns: new Campaigns(), frequency: new Freq(), quality: new Quality(),
+      sender: wa, campaigns: new Campaigns(), quality: new Quality(),
       now: () => 1_000_000_000, recipients,
       startWorkflow: async () => { suivi.push('scenario'); return true; },
     });
@@ -256,7 +252,7 @@ describe('les variables heritees d un etage de repli', () => {
       chaine: [{ rang: 1, canal: 'whatsapp', templateName: '', templateLanguage: 'fr', workflowId: 'wf-42' }],
     };
     await runCampaign(campagne, {
-      sender: new SenderWa(), campaigns: new Campaigns(), frequency: new Freq(), quality: new Quality(),
+      sender: new SenderWa(), campaigns: new Campaigns(), quality: new Quality(),
       now: () => 1_000_000_000, recipients,
       startWorkflow: async (_t, _wf, _wa, _ct, params) => { suivi.push('scenario'); paramsRecus.push(params ?? null); return true; },
     });

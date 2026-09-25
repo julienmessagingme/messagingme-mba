@@ -131,8 +131,8 @@ Le worker voyage avec l'API : il lit la base et travaille.
 
 - **Runtime** : Node >= 22 (`engines` de `package.json`, images `node:22-alpine`), TypeScript ESM.
   ⚠️ **`tsx` en dev ET en production** : le conteneur lance `npx tsx`, jamais `node dist`. La configuration est
-  en `moduleResolution: Bundler` sans extensions, donc `node dist` casse. `npm run build` (tsc) n'est PAS le
-  chemin de déploiement, c'est un typecheck.
+  en `moduleResolution: Bundler` sans extensions, donc `node dist` casse. Plus de script `build` ni `start` à la
+  racine : le contrôle est `npm run typecheck`.
 - **API** : Fastify 5. **Validation** : zod, toujours `safeParse`, jamais `parse`.
 - **File** : pg-boss, sur le même Postgres que les données (schéma `pgboss`). Pas de file en mémoire : elle
   perdrait les jobs au redémarrage.
@@ -301,7 +301,7 @@ POST /campaigns/:id/run  -> job `campaign-run` (expiration DIMENSIONNÉE au volu
      pour chaque destinataire pending :
        arrêt du service ? durée max du lot atteinte ? hors heures ouvrées ?
        relecture du statut (l'opérateur a pu mettre en pause)
-       quality gate Meta, plafond de fréquence marketing
+       quality gate Meta
        claim ATOMIQUE (pending -> sending)   <- ce qui empêche le double envoi
          et relit la fiche : STOP ou blocage posés depuis -> écarté (`skipped`), rien ne part
        envoi, puis résultat persisté HORS du catch d'envoi
@@ -1029,7 +1029,7 @@ déclenchant toujours pas de passe implicite.
 ### Deux pools Postgres
 
 - **`DATABASE_URL`** = pooler en mode **SESSION** (port 5432). Sert **pg-boss** et **tous les scripts CLI**
-  (`db/migrate.ts`, `db/seed.ts`, `db/backfill-codes.ts`), qui lisent cette variable en direct.
+  (`db/migrate.ts`, `db/seed.ts`), qui lisent cette variable en direct.
   🔴 pg-boss ne peut PAS aller en mode transaction : il maintient des connexions longues et une maintenance
   qui ne survivent pas à la réassignation du backend entre transactions.
 - **`APP_DATABASE_URL`** = pooler en mode **TRANSACTION** (port 6543), pour le pool applicatif. Vide -> repli
@@ -1317,14 +1317,16 @@ Facebook, « Valid OAuth Redirect URIs » ET « Allowed Domains for the JavaScri
 gabarits `.env.example` et `.env.prod.example` n'en montrent qu'une partie : ils servent à démarrer, pas à
 inventorier.
 
-Les clés se rangent en cinq familles, et savoir laquelle on touche dit le risque :
+Les clés se rangent en cinq familles, et savoir laquelle on touche dit le risque. Les réglages que personne ne
+réglait (délais internes, concurrences, `CAMPAIGN_RUN_MAX_MS`, `WEBHOOK_PAYLOAD_RETENTION_DAYS`…) sont des
+constantes du bloc `constantes` en fin de `src/config.ts` depuis le 2026-09-25 : on les change dans le code.
 
 | Famille | Exemples | Ce qu'un mauvais réglage coûte |
 |---|---|---|
 | **Secrets obligatoires** | `AUTH_SECRET`, `META_APP_SECRET`, `DATABASE_URL`, `ENCRYPTION_KEY` | le boot échoue, ou une faille |
 | **Interrupteurs de fonctionnalité** | `META_ES_CONFIG_ID`, `AI_GATEWAY_API_KEY`, `DRY_RUN`, `CONVERSATION_ANALYSIS_ENABLED` | vide = la fonctionnalité est OFF, proprement (503 explicite, file non consommée) |
-| **Capacité** | `DB_POOL_MAX`, `PGBOSS_MAX`, `RATE_LIMIT_*`, `CAMPAIGN_RUN_MAX_MS` | latence, saturation muette, ou coupure de service |
-| **Rétention** | `WEBHOOK_EVENTS_RETENTION_DAYS`, `WEBHOOK_PAYLOAD_RETENTION_DAYS` | une réponse RGPD fausse |
+| **Capacité** | `DB_POOL_MAX`, `PGBOSS_MAX`, `RATE_LIMIT_*` | latence, saturation muette, ou coupure de service |
+| **Rétention** | `WEBHOOK_EVENTS_RETENTION_DAYS` | une réponse RGPD fausse |
 | **Paramètres commerciaux** | `EUR_PER_USD`, `COMMISSION_MODELE_PCT` | ce qu'on facture, ou ce qu'on annonce |
 | **Provisionnement des clés client** | `VERCEL_API_TOKEN` + `VERCEL_TEAM_ID` | les deux vides = éteint ; une seule moitié = refus au boot (chaque création d'agent échouerait, donc plus aucun client ne pourrait en créer) |
 

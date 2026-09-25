@@ -997,8 +997,8 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   plat à chaque relance, il ne double jamais.
 - ✅ **Garde-fous** : opt-in requis (un opt-out explicite bloque tout, marketing comme utility ; en marketing seul
   un opt-in explicite passe), coupure automatique sur quality rating rouge ou taux d'échec trop haut, claim
-  atomique anti double-envoi, idempotence. Le plafond anti-répétition par contact est **désactivé** (décision
-  pilote 2026-07-15) : c'est l'opérateur qui choisit ses destinataires, un saut silencieux laissait des contacts
+  atomique anti double-envoi, idempotence. Le plafond anti-répétition par contact est **retiré** (désactivé par
+  décision pilote le 2026-07-15, code retiré le 2026-09-25) : c'est l'opérateur qui choisit ses destinataires, un saut silencieux laissait des contacts
   « en attente » sans explication. **« Lancer »** n'apparaît que sur un brouillon ; une campagne mise en pause
   montre **« Reprendre »** (relance les destinataires restants) ; une campagne terminée ou en échec n'a pas de bouton.
 - ✅ **Un plafond WhatsApp met la campagne en pause au lieu de brûler l'audience** (2026-08-31). Quand Meta

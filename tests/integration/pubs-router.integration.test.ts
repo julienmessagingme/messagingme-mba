@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import '../../src/charger-env';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
@@ -133,10 +133,6 @@ describe.skipIf(!url)('lot 3 des pubs : router et qualifier (Postgres réel)', (
         expect(await publicites.allumerAutomation(tenantId, pubId)).toBe(true);
         expect(await publicites.pubDeLaCampagne(tenantId, 'camp-allumee'))
           .toEqual({ campagneId: 'camp-allumee', destination: 'scenario', automationId: autoId });
-
-        // Et l'aller-retour : éteindre la referme, sans quoi « Mettre en pause » ne couperait rien.
-        expect(await publicites.eteindreAutomation(tenantId, pubId)).toBe(true);
-        expect((await publicites.pubDeLaCampagne(tenantId, 'camp-allumee'))?.automationId).toBeNull();
       });
 
       it('🔴 GARDE MIROIR : une automation qui n’appartient pas à la publicité n’est JAMAIS rendue', async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatMaintenant, resoudreVariable, libelleOrigine, CLES_SYSTEME, estCleSysteme, type ContexteVariables } from '../src/agent/variables';
+import { formatMaintenant, resoudreVariable, libelleOrigine, CLES_SYSTEME, type ContexteVariables } from '../src/agent/variables';
 
 const ctx = (p: Partial<ContexteVariables> = {}): ContexteVariables => ({
   waId: '33612345678',
@@ -107,10 +107,7 @@ describe('libellés annoncés au client', () => {
 });
 
 describe('catalogue fermé des valeurs système', () => {
-  it('la liste est celle qu’on croit, et une clé inventée est refusée', () => {
+  it('la liste est celle qu’on croit', () => {
     expect([...CLES_SYSTEME]).toEqual(['derniere_saisie', 'maintenant']);
-    expect(estCleSysteme('derniere_saisie')).toBe(true);
-    expect(estCleSysteme('mot_de_passe')).toBe(false);
-    expect(estCleSysteme(42)).toBe(false);
   });
 });

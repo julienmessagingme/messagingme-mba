@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PREFIXE_JETON, motCleDepuisPhrase, nouveauJeton, estJetonChaine, textePreRempli } from '../src/channels-me/jeton';
+import { PREFIXE_JETON, MOTIF_JETON, motCleDepuisPhrase, nouveauJeton, textePreRempli } from '../src/channels-me/jeton';
 import { normalizeText, keywordsOf, matchesTrigger } from '../src/automation/match';
 import { POSSESSEUR_LIEN_CHAINE } from '../src/automation/match';
 import type { AutomationRow, AutomationEvent } from '../src/automation/match';
@@ -26,6 +26,10 @@ import type { AutomationRow, AutomationEvent } from '../src/automation/match';
  *  5. Le jeton survit AUSSI cote configuration : `keywordsOf` normalise les mots cles stockes. Les deux cotes
  *     de la comparaison doivent aboutir a la meme chaine, sinon on compare deux choses differentes.
  */
+
+/** Cette chaine est-elle EXACTEMENT un jeton ? Ancre aux deux bouts : c'est `MOTIF_JETON`, le motif que le SQL
+ *  de `PgChannelsMeLinkStore` reprend tel quel, qu'on eprouve ici (alphabet, longueur, casse). */
+const estJetonChaine = (v: string): boolean => new RegExp(`^${MOTIF_JETON}$`).test(v);
 
 const TIRAGES = 200;
 

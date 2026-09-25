@@ -1,5 +1,5 @@
 // tests/integration/v1-catalogues.integration.test.ts
-import 'dotenv/config';
+import '../../src/charger-env';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';

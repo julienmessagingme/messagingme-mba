@@ -27,7 +27,7 @@ import { newTrackingCode } from '../src/ids/code';
 import { estLienTraceAvecJeton, lienDe, lienTraceAvecJeton } from '../src/links/rewrite';
 import { MetaApiError } from '../src/meta/errors';
 import { buildServer, CORPS_OPAQUE_5XX } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import { cleApiDeTest } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 

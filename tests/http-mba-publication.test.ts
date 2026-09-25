@@ -3,7 +3,7 @@ import { buildServer } from '../src/server';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { Geste, OutilAPublier, EtatMeta, RelaisAPublier } from '../src/mba/publication';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import { ErreurPublication } from '../src/mba/appliquer-publication';
 import { MetaApiError } from '../src/meta/errors';
 

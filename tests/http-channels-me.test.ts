@@ -3,7 +3,7 @@ import { normalizeText } from '../src/automation/match';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildServer } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { ChannelsMeRouteDeps } from '../src/http/channels-me';

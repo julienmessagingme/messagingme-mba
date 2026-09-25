@@ -16,8 +16,8 @@ export interface WorkerHeartbeatRow {
 
 /**
  * Accès à la table `worker_heartbeat` (ligne unique id='worker', migration 0044). Écrite par le worker,
- * lue par la surface /ops. Read + write au même endroit pour que la tolérance 42P01 et la note de schéma
- * ci-dessous n'aient qu'UNE définition (PgOpsStore reste, lui, strictement en lecture d'agrégats).
+ * lue par la surface /ops. Read + write au même endroit pour que la note de schéma ci-dessous n'ait qu'UNE
+ * définition (PgOpsStore reste, lui, strictement en lecture d'agrégats).
  * ⚠️ Table en schéma PUBLIC, lue/écrite NON qualifiée (comme tenants/contacts) : le pool n'a pas de search_path
  * custom, la résolution nue tombe sur public. Ne PAS la préfixer du schéma pgboss (getQueueLoad, lui, lit
  * `pgboss.job` qualifié — ce sont deux schémas différents ; « corriger » un côté en le préfixant casserait tout).
@@ -45,29 +45,19 @@ export class PgWorkerHeartbeatStore {
     );
   }
 
-  /**
-   * Dernier battement, ou null si aucun worker n'a jamais battu OU si la table n'existe pas encore (42P01,
-   * fenêtre entre le deploy du code et la migration 0044) — même tolérance que getQueueLoad, sinon
-   * /ops/overview casserait pendant le déploiement.
-   */
+  /** Dernier battement, ou null si aucun worker n'a jamais battu. */
   async get(): Promise<WorkerHeartbeatRow | null> {
-    try {
-      const res = await this.pool.query<{ beat_at: Date; booted_at: Date | null; instance: string | null; age_seconds: string }>(
-        `select beat_at, booted_at, instance, extract(epoch from (now() - beat_at)) as age_seconds
-         from worker_heartbeat where id = 'worker'`,
-      );
-      const row = res.rows[0];
-      if (!row) return null;
-      return {
-        beatAt: row.beat_at.toISOString(),
-        bootedAt: row.booted_at ? row.booted_at.toISOString() : null,
-        instance: row.instance,
-        ageSeconds: Math.max(0, Math.round(Number(row.age_seconds))),
-      };
-    } catch (err) {
-      // 42P01 = undefined_table (migration 0044 pas encore appliquée) -> null plutôt que planter la route.
-      if (err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === '42P01') return null;
-      throw err;
-    }
+    const res = await this.pool.query<{ beat_at: Date; booted_at: Date | null; instance: string | null; age_seconds: string }>(
+      `select beat_at, booted_at, instance, extract(epoch from (now() - beat_at)) as age_seconds
+       from worker_heartbeat where id = 'worker'`,
+    );
+    const row = res.rows[0];
+    if (!row) return null;
+    return {
+      beatAt: row.beat_at.toISOString(),
+      bootedAt: row.booted_at ? row.booted_at.toISOString() : null,
+      instance: row.instance,
+      ageSeconds: Math.max(0, Math.round(Number(row.age_seconds))),
+    };
   }
 }

@@ -41,37 +41,30 @@ export interface SmsmodeCredentials {
   apiKeyFor?: (tenantId: string) => Promise<string | null>;
 }
 
-/**
- * Choisit le provider. `google` reste déclaré mais non implémenté : tant qu'il n'existe pas il LÈVE au
- * démarrage. Retomber en silence sur le factice ferait tourner un serveur qui croit envoyer du vrai RCS et
- * envoie dans le vide, ce qui est pire qu'un crash au boot. Seul DRY_RUN autorise ce repli, explicitement.
- */
-function providerFor(nom: 'fake' | 'smsmode' | 'google', dryRun: boolean, smsmode?: SmsmodeCredentials): RcsProvider {
+/** Choisit le provider. Seul DRY_RUN force le factice quel que soit le provider demandé, explicitement. */
+function providerFor(nom: 'fake' | 'smsmode', dryRun: boolean, smsmode?: SmsmodeCredentials): RcsProvider {
   // DRY_RUN prime sur le provider demandé, comme le `DryRunSender` du worker prime sur le client Meta. Sans
   // cette règle, un déploiement DRY_RUN=true enverrait du vrai RCS : le mode de test ne doit pas dépendre de
   // l'ordre dans lequel on pense à le brancher.
   if (dryRun || nom === 'fake') return new FakeRcsProvider();
-  if (nom === 'smsmode') {
-    // Une clé est exigée : soit celle du serveur, soit une résolution par workspace. Sans aucune des deux, le
-    // provider partirait envoyer sans authentification et se prendrait un 401 à chaque message.
-    if (!smsmode?.apiKey && !smsmode?.apiKeyFor) {
-      throw new Error("RCS_PROVIDER=smsmode exige la clé du canal RCS (SMSMODE_RCS_API_KEY) ou une clé par workspace");
-    }
-    return new SmsmodeRcsProvider({
-      transport: new FetchTransport(),
-      apiKey: smsmode.apiKey,
-      ...(smsmode.apiKeyFor ? { apiKeyFor: smsmode.apiKeyFor } : {}),
-      ...(smsmode.callbackUrlStatus ? { callbackUrlStatus: smsmode.callbackUrlStatus } : {}),
-      ...(smsmode.callbackUrlMo ? { callbackUrlMo: smsmode.callbackUrlMo } : {}),
-      ...(smsmode.callbackUrlFor ? { callbackUrlFor: smsmode.callbackUrlFor } : {}),
-    });
+  // Une clé est exigée : soit celle du serveur, soit une résolution par workspace. Sans aucune des deux, le
+  // provider partirait envoyer sans authentification et se prendrait un 401 à chaque message.
+  if (!smsmode?.apiKey && !smsmode?.apiKeyFor) {
+    throw new Error("RCS_PROVIDER=smsmode exige la clé du canal RCS (SMSMODE_RCS_API_KEY) ou une clé par workspace");
   }
-  throw new Error(`RCS_PROVIDER=${nom} n'est pas encore implémenté. Disponibles : 'fake', 'smsmode'.`);
+  return new SmsmodeRcsProvider({
+    transport: new FetchTransport(),
+    apiKey: smsmode.apiKey,
+    ...(smsmode.apiKeyFor ? { apiKeyFor: smsmode.apiKeyFor } : {}),
+    ...(smsmode.callbackUrlStatus ? { callbackUrlStatus: smsmode.callbackUrlStatus } : {}),
+    ...(smsmode.callbackUrlMo ? { callbackUrlMo: smsmode.callbackUrlMo } : {}),
+    ...(smsmode.callbackUrlFor ? { callbackUrlFor: smsmode.callbackUrlFor } : {}),
+  });
 }
 
 export function buildRcsStack(
   pool: Pool,
-  providerName: 'fake' | 'smsmode' | 'google',
+  providerName: 'fake' | 'smsmode',
   dryRun: boolean,
   smsmode?: SmsmodeCredentials,
   /** Variables `{{champ}}` d'un contact, par numéro. Absente -> les messages partent avec leurs accolades. */

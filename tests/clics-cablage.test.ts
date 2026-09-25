@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { campaignRunJob } from '../src/campaign/run-job';
 import type { RunJobDeps } from '../src/campaign/run-job';
-import type { MessageSender, RecipientStore, CampaignStore, FrequencyStore, QualityProvider } from '../src/campaign/engine';
+import type { MessageSender, RecipientStore, CampaignStore, QualityProvider } from '../src/campaign/engine';
 import type { Campaign, Recipient, QualityRating } from '../src/campaign/types';
 import type { SendResult, MarketingParams, TemplateSpec } from '../src/meta/types';
 
@@ -40,10 +40,6 @@ class FakeRecipients implements RecipientStore {
   async markResult(): Promise<void> {}
 }
 class FakeCampaigns implements CampaignStore { async setStatus(): Promise<void> {} }
-class FakeFreq implements FrequencyStore {
-  async lastSentAt(): Promise<number | null> { return null; }
-  async record(): Promise<void> {}
-}
 class FakeQuality implements QualityProvider {
   async getRating(): Promise<QualityRating> { return 'GREEN'; }
 }
@@ -72,7 +68,6 @@ function lancer(over: Partial<RunJobDeps>, sender: SenderQuiCapture): Promise<un
     senderFor: async () => sender,
     recipients: new FakeRecipients([destinataire]),
     campaigns: new FakeCampaigns(),
-    frequency: new FakeFreq(),
     quality: new FakeQuality(),
     // DÉCLARÉE, et plus couverte par un `as RunJobDeps` : le cast cachait qu'elle était devenue requise.
     pauserSiNumeroDelie: async () => false,

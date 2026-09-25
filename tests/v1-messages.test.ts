@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { buildServer } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import { sha256Hex } from '../src/lib/signature';
 import { estLourde, unitesDe } from '../src/api/usage-guard';
 import { GardeUsageMemoire } from '../src/api/usage-guard.memoire';

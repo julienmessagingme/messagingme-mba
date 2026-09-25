@@ -1,3 +1,4 @@
+import { setTimeout as dormir } from 'node:timers/promises';
 import type { Pool } from 'pg';
 import { config } from '../config';
 import { PgWorkflowRunStore } from './run-store.pg';
@@ -86,7 +87,7 @@ export interface WorkflowRuntimeDeps {
   metaFactory: MetaClientFactory;
   /** Provider du canal RCS (`config.RCS_PROVIDER`). Passé explicitement, comme `dryRun` : ce module ne lit pas
    *  la config, ses appelants la lui donnent. */
-  rcsProvider: 'fake' | 'smsmode' | 'google';
+  rcsProvider: 'fake' | 'smsmode';
   /** Modèles d'email (Contenu, Task 3) : chargés par id à l'envoi du bloc « Envoi de mail » (sujet + corps à
    *  rendre avec les variables du contact). */
   emailTemplates: PgEmailTemplateStore;
@@ -469,7 +470,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       numeroDuTenant: (t) => numeroDeLEspace(t),
       clientMba: (t) => metaFactory.mbaClientForTenant(t),
     }),
-    attendre: (ms) => new Promise((r) => { setTimeout(r, ms); }),
+    attendre: (ms) => dormir(ms),
   });
 
   /**

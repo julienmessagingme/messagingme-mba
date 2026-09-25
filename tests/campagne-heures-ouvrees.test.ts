@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { runCampaign } from '../src/campaign/engine';
-import type { MessageSender, RecipientStore, CampaignStore, FrequencyStore, QualityProvider, EngineDeps } from '../src/campaign/engine';
+import type { MessageSender, RecipientStore, CampaignStore, QualityProvider, EngineDeps } from '../src/campaign/engine';
 import { messageDePause } from '../src/campaign/pause';
 import type { MotifDePause } from '../src/campaign/pause';
 import type { Campaign, Recipient, QualityRating } from '../src/campaign/types';
@@ -62,10 +62,6 @@ class Campaigns implements CampaignStore {
     this.statuts.push(status);
   }
 }
-class Freq implements FrequencyStore {
-  async lastSentAt(): Promise<number | null> { return null; }
-  async record(): Promise<void> {}
-}
 class Qualite implements QualityProvider {
   async getRating(): Promise<QualityRating> { return 'GREEN'; }
 }
@@ -79,7 +75,7 @@ const rec = (id: string, to: string): Recipient => ({ id, contactId: `ct-${id}`,
 
 function deps(over: Partial<EngineDeps> & { recipients: RecipientStore }, maintenant: number): EngineDeps {
   return {
-    sender: new Sender(), campaigns: new Campaigns(), frequency: new Freq(), quality: new Qualite(),
+    sender: new Sender(), campaigns: new Campaigns(), quality: new Qualite(),
     now: () => maintenant,
     horairesOuvres: async () => ({ timeZone: PARIS, businessHours: SEMAINE }),
     ...over,

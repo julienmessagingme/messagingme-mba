@@ -9,7 +9,7 @@ import type { RunTurnDeps, EtatRun } from '../src/agent/run-turn';
 import type { AgentSession } from '../src/agent/session-store';
 import type { AgentTurnJob } from '../src/agent/turn-job';
 import type { FicheAgent } from '../src/agent/agent-store';
-import { FakeAgentBrain } from '../src/agent/brain.fake';
+import { FakeAgentBrain } from './fake-agent-brain';
 import type { DecisionAgent } from '../src/agent/brain';
 
 /**

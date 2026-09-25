@@ -4,7 +4,7 @@ import { runTurn, reposApresReponse } from '../src/agent/run-turn';
 import type { RunTurnDeps, EtatRun } from '../src/agent/run-turn';
 import { restToState } from '../src/workflow/executor';
 import type { RunState } from '../src/workflow/run-store.pg';
-import { FakeAgentBrain } from '../src/agent/brain.fake';
+import { FakeAgentBrain } from './fake-agent-brain';
 import type { DecisionAgent } from '../src/agent/brain';
 import type { FicheAgent } from '../src/agent/agent-store';
 import type { AgentSession } from '../src/agent/session-store';

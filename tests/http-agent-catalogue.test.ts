@@ -3,7 +3,7 @@ import { buildServer } from '../src/server';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { OutilBibliotheque } from '../src/agent/catalog';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 
 /**
  * La bibliothèque d'outils d'un espace : ce que les agents IA peuvent brancher.

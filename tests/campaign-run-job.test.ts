@@ -5,7 +5,6 @@ import type {
   MessageSender,
   RecipientStore,
   CampaignStore,
-  FrequencyStore,
   QualityProvider,
 } from '../src/campaign/engine';
 import type { Campaign, Recipient, QualityRating } from '../src/campaign/types';
@@ -51,12 +50,6 @@ class FakeRecipients implements RecipientStore {
 class FakeCampaigns implements CampaignStore {
   async setStatus(): Promise<void> {}
 }
-class FakeFreq implements FrequencyStore {
-  async lastSentAt(): Promise<number | null> {
-    return null;
-  }
-  async record(): Promise<void> {}
-}
 class FakeQuality implements QualityProvider {
   constructor(private readonly rating: QualityRating = 'GREEN') {}
   async getRating(): Promise<QualityRating> {
@@ -74,7 +67,6 @@ function deps(over: Partial<RunJobDeps> & { getCampaign: RunJobDeps['getCampaign
     senderFor: async () => new FakeSender(),
     recipients: new FakeRecipients([]),
     campaigns: new FakeCampaigns(),
-    frequency: new FakeFreq(),
     quality: new FakeQuality(),
     pauserSiNumeroDelie: async () => false,
     ...over,

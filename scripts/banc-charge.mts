@@ -22,7 +22,7 @@
  *   BANC_CONFIRME=1 DATABASE_URL=postgres://... npx tsx scripts/banc-charge.mts verdict
  *   BANC_CONFIRME=1 DATABASE_URL=postgres://... npx tsx scripts/banc-charge.mts webhooks 2000
  */
-import 'dotenv/config';
+import '../src/charger-env';
 import { Client } from 'pg';
 import { pgSsl } from '../src/db/ssl';
 import { PgBossQueue } from '../src/queue/pgboss';

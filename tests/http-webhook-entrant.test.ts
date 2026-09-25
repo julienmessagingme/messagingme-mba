@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import { RateLimiter } from '../src/auth/rate-limit';
 import { sha256Hex } from '../src/lib/signature';
 import type { WebhookEntrantRouteDeps } from '../src/http/webhook-entrant';

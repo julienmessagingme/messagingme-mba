@@ -35,11 +35,6 @@ export function resteDuBudget(depenseMicroEur: number, plafondEuros: number): nu
   return Math.max(0, Math.round(plafondEuros * 1_000_000) - Math.max(0, depenseMicroEur));
 }
 
-/** Le tour peut-il partir ? */
-export function tourAutorise(depenseMicroEur: number, plafondEuros: number): boolean {
-  return resteDuBudget(depenseMicroEur, plafondEuros) > 0;
-}
-
 export interface DepenseStore {
   lire(tenantId: string, mois: string): Promise<number>;
   ajouter(tenantId: string, mois: string, microEuros: number): Promise<void>;

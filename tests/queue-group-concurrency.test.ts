@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { workConcurrencyOptions } from '../src/queue/pgboss';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 
 /**
  * `workConcurrencyOptions` est le CÂBLAGE des plafonds de concurrence vers `boss.work` (mêmes cousins que

@@ -189,7 +189,7 @@ const INVALID_ELEMENTS = 'screens/elements invalide (1 à 10 écrans, chacun >= 
 export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: Guard): void {
   // bodyLimit relevé (défaut global = 1 Mo) : un flow riche peut embarquer plusieurs images base64
   // (~400 Ko chacune) dans le body. Aligné sur la route media. S'applique aussi à GET/publish (sans effet).
-  const opts = { ...({ preHandler: garde }), bodyLimit: 7 * 1024 * 1024 };
+  const opts = { preHandler: garde, bodyLimit: 7 * 1024 * 1024 };
 
   app.post('/tenants/:tenantId/flows', opts, async (req, reply) => {
     const tenant = scopeTenant(req);

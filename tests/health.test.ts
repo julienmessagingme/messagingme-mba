@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 
 describe('server baseline : /health (readiness) + /live (liveness)', () => {
   it('sans checkReadiness (tests DB-free) : GET /health = 200 ok:true (contrat conservé)', async () => {

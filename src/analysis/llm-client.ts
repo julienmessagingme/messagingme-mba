@@ -7,22 +7,11 @@ export interface LlmPrompt {
   user: string;
 }
 
-/** Contrat minimal d'un client LLM : une complétion texte. UNE SEULE implémentation existe (Anthropic). Le
- *  contrat est étroit exprès pour qu'en ajouter une autre reste simple, mais ce n'est pas fait : `LLM_PROVIDER`
- *  n'accepte que 'anthropic' (garde au boot). Ne pas relire ce commentaire comme « c'est déjà multi-provider ». */
+/** Contrat minimal d'un client LLM : une complétion texte. UNE SEULE implémentation existe (Anthropic), que le
+ *  worker construit directement. Ne pas relire ce contrat comme « c'est déjà multi-provider ». */
 export interface LlmClient {
   complete(prompt: LlmPrompt): Promise<string>;
 }
-
-/**
- * Erreur d'appel LLM. `retryable` (429/5xx) est reconnu par `withRetry` (duck-typing) + par le job
- * (rethrow -> pg-boss).
- *
- * ⚠️ Elle vit désormais dans `src/llm/errors.ts`, partagée avec le client de l'agent. Ré-exportée ICI pour
- * que les imports existants (et leurs tests) continuent de marcher : c'est une seule et même classe, donc
- * `instanceof` reste vrai des deux côtés.
- */
-export { LlmApiError } from '../llm/errors';
 
 /**
  * Client Anthropic (Claude) via l'API Messages en HTTP brut, sur le MÊME transport injectable + `withRetry` que les
@@ -67,20 +56,4 @@ export class AnthropicClient implements LlmClient {
       return text;
     });
   }
-}
-
-/**
- * Fabrique le client LLM d'après la config. Le throw n'est plus la vraie garde : `LLM_PROVIDER` est un
- * `z.enum(['anthropic'])`, donc une valeur inconnue est refusée AU BOOT, avec un message qui nomme la
- * variable. Avant, elle passait la config et tuait le conteneur worker au premier appel d'analyse.
- * Ce throw reste comme filet pour les appels directs (tests, futur appelant hors config).
- */
-export function createLlmClient(
-  cfg: { provider: string; apiKey: string; model: string; maxTokens: number },
-  transport?: HttpTransport,
-): LlmClient {
-  if (cfg.provider === 'anthropic') {
-    return new AnthropicClient(cfg.apiKey, cfg.model, cfg.maxTokens, transport);
-  }
-  throw new Error(`LLM provider inconnu : ${cfg.provider}`);
 }

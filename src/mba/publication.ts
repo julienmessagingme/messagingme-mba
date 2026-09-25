@@ -27,7 +27,8 @@
 import type { VariableDeclaree } from '../agent/requetes';
 import { ENTETE_CONTACT_META, cheminOutilRelais } from './relais';
 
-/** Le nom du connecteur unique d'un espace chez Meta. Il passe `NOM_CONNECTEUR_META_RE`. */
+/** Le nom du connecteur unique d'un espace chez Meta. Lettres, chiffres et tiret bas seulement : Meta refuse une
+ *  espace ou un tiret (400, mesuré le 2026-09-18), et un test le garde. */
 export const NOM_CONNECTEUR_RELAIS = 'EngageMe';
 
 /** Le relais, tel que la publication le présente à Meta. */
@@ -277,17 +278,4 @@ export function corpsConnecteurRelais(baseUrl: string, cle: string): {
     auth_type: 'API_KEY',
     auth_config: authConfigRelais(cle),
   };
-}
-
-/**
- * LE NOM D'UN CONNECTEUR, TEL QUE META L'ACCEPTE VRAIMENT.
- *
- * 🔴 SA PROPRE SPEC DONNE UN EXEMPLE QUE SON SERVEUR REFUSE : un nom contenant une ESPACE ou un TIRET rend 400.
- * Mesuré un par un le 2026-09-18. Lettres, chiffres et tiret bas passent, le reste non. Depuis le relais, un
- * seul nom part chez Meta (`NOM_CONNECTEUR_RELAIS`), et un test vérifie qu'il passe.
- */
-export const NOM_CONNECTEUR_META_RE = /^[A-Za-z0-9_]{1,64}$/;
-
-export function nomPubliableChezMeta(nom: string): boolean {
-  return NOM_CONNECTEUR_META_RE.test(nom);
 }

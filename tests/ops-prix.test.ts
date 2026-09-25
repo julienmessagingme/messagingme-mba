@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import { GRILLE_DEFAUT, type GrillePrix } from '../src/stats/prix';
 import type { OpsRouteDeps } from '../src/http/ops';
 import { capturerJournal } from './journal';

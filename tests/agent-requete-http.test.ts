@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { construireCorps, construireParametres, variablesUtilisees, champsVersJson, assemblerAppel, type GabaritCorps } from '../src/agent/requete-http';
+import { construireCorps, construireParametres, variablesUtilisees, assemblerAppel, type GabaritCorps } from '../src/agent/requete-http';
 import { construireCible } from '../src/agent/http-cible';
 
 /** Raccourci de lisibilité : la grande majorité des cas éprouve le mode JSON brut. */
@@ -113,14 +113,6 @@ describe('corps en liste de champs', () => {
     const r = construireCorps({ mode: 'champs', champs: [{ cle: 'a', valeur: '{{inconnue}}' }] }, {});
     expect(r.ok).toBe(false);
     expect((r as { raison: string }).raison).toContain('inconnue');
-  });
-
-  it('la conversion vers le JSON brut rend un gabarit qui produit le même corps', () => {
-    // C'est ce qui rend la bascule « passer en JSON brut » honnête : elle ne doit rien changer au résultat.
-    const champs = [{ cle: 'ville', valeur: '{{v}}' }, { cle: 'fixe', valeur: 'oui' }];
-    const gabarit = champsVersJson(champs);
-    expect(corpsDe(construireCorps(json(gabarit), { v: 'Nice' })))
-      .toEqual(corpsDe(construireCorps({ mode: 'champs', champs }, { v: 'Nice' })));
   });
 });
 

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { hashPassword, hashPasswordSync, verifyPassword } from '../src/auth/password';
 import { signSession, verifySession } from '../src/auth/token';
 import { buildServer } from '../src/server';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import type { UserAuthStore, AuthUser, EmailIdentity } from '../src/auth/store';
 
 const SECRET = 'test-secret-please-change';

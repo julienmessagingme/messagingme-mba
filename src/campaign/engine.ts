@@ -1,5 +1,5 @@
 import type { Campaign, CampaignStatus, Recipient, RunReport, GuardrailThresholds, QualityRating } from './types';
-import { frequencyAllows, qualityGate, MOTIF_DESABONNE } from './guardrails';
+import { qualityGate, MOTIF_DESABONNE } from './guardrails';
 import { buildTemplateComponents, carouselSendBlocker, headerMediaSendBlocker } from '../meta/template-components';
 import type { OutboundCarouselCard } from '../meta/template-components';
 import { refreshNowParams } from '../crm/template';
@@ -122,11 +122,6 @@ export interface CampaignStore {
   getStatus?(campaignId: string, tenantId: string): Promise<CampaignStatus | null>;
 }
 
-export interface FrequencyStore {
-  lastSentAt(tenantId: string, key: string): Promise<number | null>;
-  record(tenantId: string, key: string, atMs: number): Promise<void>;
-}
-
 export interface QualityProvider {
   getRating(phoneNumberId: string): Promise<QualityRating>;
 }
@@ -161,7 +156,6 @@ export interface EngineDeps {
   sender: MessageSender;
   recipients: RecipientStore;
   campaigns: CampaignStore;
-  frequency: FrequencyStore;
   quality: QualityProvider;
   rateLimiter?: RateGate;
   /**
@@ -353,23 +347,18 @@ const DEFAULT_STATUS_POLL_MS = 5_000;
 
 
 const DEFAULT_THRESHOLDS: GuardrailThresholds = {
-  // Cap anti-répétition marketing DÉSACTIVÉ par défaut (pilote, décision 2026-07-15) : l'opérateur choisit
-  // explicitement ses destinataires -> un plafond 24h silencieux laissait des contacts « en attente » sans
-  // explication (cf. bug campagne workflow). 0 = désactivé (court-circuité). Mettre >0 (ex. 24*3600*1000) le réactive.
-  frequencyWindowMs: 0,
   maxFailureRate: 0.3,
   minSendsForFailureCheck: 20,
 };
 
 /**
  * Exécute une campagne : parcourt les destinataires `pending` avec pacing + garde-fous
- * (quality gate, fréquence marketing), et pour chaque destinataire éligible le CLAIM
+ * (quality gate), et pour chaque destinataire éligible le CLAIM
  * atomiquement (pending -> sending) AVANT l'appel Meta, puis envoie et enregistre le
  * résultat. Le claim garantit qu'un destinataire n'est envoyé qu'une fois même en cas de
  * runs concurrents ou de replay pg-boss (un envoi réussi dont la persistance échoue reste
  * en `sending`, jamais re-listé donc jamais ré-envoyé). Pause et arrête si le quality gate
- * déclenche. Le skip de fréquence est TRANSITOIRE : non persisté, le destinataire reste
- * `pending` et sera ré-évalué au prochain run (fenêtre expirée -> envoyé).
+ * déclenche.
  *
  * ARRÊT DEMANDÉ PENDANT L'ENVOI : la boucle relit périodiquement le statut de la campagne et sort dès qu'il
  * n'est plus `running`. C'est ce qui rend la pause réelle : sans cette relecture, écrire `paused` en base
@@ -868,17 +857,6 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       }
     }
 
-    // Fréquence : garde-fou MARKETING uniquement, et seulement si une fenêtre > 0 est configurée (désactivé par
-    // défaut, cf. DEFAULT_THRESHOLDS). Fenêtre 0 -> court-circuit : aucune requête, aucun saut, l'envoi part.
-    // Les messages utility relèvent de la fenêtre de service et ne sont jamais soumis à ce plafond.
-    if (campaign.category === 'marketing' && t.frequencyWindowMs > 0) {
-      const last = await deps.frequency.lastSentAt(campaign.tenantId, r.toE164);
-      if (!frequencyAllows(last, now(), t.frequencyWindowMs)) {
-        report.skipped += 1;
-        continue; // transitoire : reste `pending`, ré-évalué au prochain run
-      }
-    }
-
     // Claim atomique : si un autre run/worker a déjà pris ce destinataire, on passe.
     const reserve = await deps.recipients.claim(r.id);
     if (reserve === false) continue;
@@ -1109,7 +1087,6 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       // de disparaître. Un destinataire `sent` porteur d'une raison n'entre dans aucun compte d'échec.
       ...(scenarioNonDemarre !== null ? { error: scenarioNonDemarre } : {}),
     });
-    await deps.frequency.record(campaign.tenantId, r.toE164, at);
 
     // Ce contact est joignable en WhatsApp : Meta a accepté le message et rendu un wamid.
     //

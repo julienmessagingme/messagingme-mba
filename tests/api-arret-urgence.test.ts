@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
 import { contactsV1Muets } from './aide/contacts-v1';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import { sha256Hex } from '../src/lib/signature';
 import { cleApiDeTest } from './aide/cle-api';
 import { capturerJournal } from './journal';

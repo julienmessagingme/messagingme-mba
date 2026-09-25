@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { MESSAGE_PLAFOND, moisDe, resteDuBudget, tourAutorise } from '../src/assistant/budget';
+import { MESSAGE_PLAFOND, moisDe, resteDuBudget } from '../src/assistant/budget';
 
 /**
  * LE PLAFOND DE CE QUE NOUS DÉPENSONS pour les assistants de configuration.
@@ -23,7 +23,6 @@ describe('le plafond de l’assistant', () => {
     // Un mauvais calibrage couperait l'assistant de tous les clients, et un `--force-recreate` va plus vite
     // qu'un déploiement de code. Même convention que les limiteurs de débit de ce dépôt.
     expect(resteDuBudget(9_999_999_999, 0)).toBe(Infinity);
-    expect(tourAutorise(9_999_999_999, 0)).toBe(true);
   });
 
   it('rend ce qui reste, et jamais un nombre négatif', () => {
@@ -36,8 +35,9 @@ describe('le plafond de l’assistant', () => {
   it('🔴 le dernier tour passe, le suivant non', () => {
     // ⚠️ ON AUTORISE SUR CE QUI RESTE, PAS SUR UNE ESTIMATION : le coût réel n'est connu qu'APRÈS l'appel.
     // Le dépassement est donc borné par le coût d'un tour, ce qui est assumé.
-    expect(tourAutorise(1_999_999, 2)).toBe(true);
-    expect(tourAutorise(2_000_000, 2)).toBe(false);
+    // Les routes laissent partir le tour quand ce qui reste est STRICTEMENT positif.
+    expect(resteDuBudget(1_999_999, 2)).toBeGreaterThan(0);
+    expect(resteDuBudget(2_000_000, 2)).toBe(0);
   });
 
   it('⚠️ une dépense négative ou absurde ne crédite personne', () => {

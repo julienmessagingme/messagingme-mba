@@ -1,18 +1,16 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import type { Pool } from 'pg';
+import { sha256Hex } from '../lib/signature';
 
 export type TokenPurpose = 'invite' | 'reset';
-
-/** Hash du token pour le stockage : on ne garde JAMAIS le token en clair (comme un mot de passe). sha256
- *  suffit ici (le token est déjà 256 bits aléatoires, pas un secret humain rejouable -> pas besoin de sel coûteux). */
-function hashToken(raw: string): string {
-  return createHash('sha256').update(raw).digest('hex');
-}
 
 /**
  * Tokens à usage unique (invitation d'équipe, réinitialisation de mot de passe). `create` renvoie le token EN
  * CLAIR (à mettre dans le lien email) mais ne persiste que son hash. `consume` valide + marque utilisé de façon
  * ATOMIQUE (`used_at is null` dans le UPDATE) -> pas de double-consommation même en concurrence.
+ *
+ * Seul le HASH du token est stocké, jamais le clair (comme un mot de passe). sha256 suffit ici : le token est
+ * déjà 256 bits aléatoires, pas un secret humain rejouable, donc pas besoin de sel coûteux.
  */
 export class PgAuthTokenStore {
   constructor(private readonly pool: Pool) {}
@@ -22,7 +20,7 @@ export class PgAuthTokenStore {
     const expiresAt = new Date(Date.now() + ttlMs);
     await this.pool.query(
       `insert into auth_tokens (purpose, token_hash, user_id, expires_at) values ($1, $2, $3, $4)`,
-      [purpose, hashToken(raw), userId, expiresAt],
+      [purpose, sha256Hex(raw), userId, expiresAt],
     );
     return raw;
   }
@@ -34,7 +32,7 @@ export class PgAuthTokenStore {
       `update auth_tokens set used_at = now()
        where token_hash = $1 and purpose = $2 and used_at is null and expires_at > now()
        returning user_id`,
-      [hashToken(raw), purpose],
+      [sha256Hex(raw), purpose],
     );
     return res.rows[0]?.user_id ?? null;
   }

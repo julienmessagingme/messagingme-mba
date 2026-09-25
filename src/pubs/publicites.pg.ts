@@ -291,10 +291,6 @@ export class PgPublicitesStore {
     return this.basculerAutomation(tenantId, publiciteId, true);
   }
 
-  async eteindreAutomation(tenantId: string, publiciteId: string): Promise<boolean> {
-    return this.basculerAutomation(tenantId, publiciteId, false);
-  }
-
   private async basculerAutomation(tenantId: string, publiciteId: string, allumee: boolean): Promise<boolean> {
     const res = await this.pool.query(
       `update automations set enabled = $3

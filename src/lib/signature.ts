@@ -1,9 +1,9 @@
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, hash, timingSafeEqual } from 'node:crypto';
 
 /** Hash sha256 hex d'une chaîne. Pour stocker une clé d'API par son empreinte (jamais le clair), et la
  *  retrouver par index unique (pas de comparaison mémoire -> pas de canal de timing, comme auth_tokens). */
 export function sha256Hex(raw: string): string {
-  return createHash('sha256').update(raw).digest('hex');
+  return hash('sha256', raw);
 }
 
 /**

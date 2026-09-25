@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
-  planifierPublication, descriptionPourMeta, nomPubliableChezMeta, authConfigRelais, NOM_CONNECTEUR_RELAIS,
+  planifierPublication, descriptionPourMeta, authConfigRelais, NOM_CONNECTEUR_RELAIS,
   type OutilAPublier, type EtatMeta, type RelaisAPublier,
 } from '../src/mba/publication';
-import { corpsOutilMeta, corpsConnecteurRelais } from '../src/http/mba-publication';
+import { corpsOutilMeta, corpsConnecteurRelais } from '../src/mba/publication';
 
 /**
  * Ce qui va changer chez Meta si l'on publie.
@@ -225,6 +225,15 @@ describe('le connecteur du relais', () => {
     expect(authConfigRelais('K').api_key.headers[0]!.value).toBe('K');
   });
 });
+
+/**
+ * LE NOM D'UN CONNECTEUR, TEL QUE META L'ACCEPTE VRAIMENT.
+ *
+ * 🔴 SA PROPRE SPEC DONNE UN EXEMPLE QUE SON SERVEUR REFUSE : un nom contenant une ESPACE ou un TIRET rend 400.
+ * Mesuré un par un le 2026-09-18. Lettres, chiffres et tiret bas passent, le reste non. Depuis le relais, un
+ * seul nom part chez Meta (`NOM_CONNECTEUR_RELAIS`), et ce bloc vérifie qu'il passe.
+ */
+const nomPubliableChezMeta = (nom: string): boolean => /^[A-Za-z0-9_]{1,64}$/.test(nom);
 
 describe('le nom qu’un connecteur peut porter chez Meta', () => {
   it('🔴 lettres, chiffres et tiret bas passent, et le nom du relais en fait partie', () => {

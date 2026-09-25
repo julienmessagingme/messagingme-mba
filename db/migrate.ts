@@ -3,7 +3,7 @@
  * pas encore appliqués, en les suivant dans une table schema_migrations.
  * Usage : npx tsx db/migrate.ts
  */
-import 'dotenv/config';
+import '../src/charger-env';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';

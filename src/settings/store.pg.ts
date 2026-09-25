@@ -122,9 +122,6 @@ export interface TenantSettings {
  */
 export type MbaHandoffMode = 'always' | 'business_hours' | 'never';
 
-/** Défaut usine tant que le client n'a rien choisi : l'agent passe la main. */
-export const DEFAULT_MBA_HANDOFF_MODE: MbaHandoffMode = 'always';
-
 /** Réglages par tenant (upsert). Toggle MBA on/off + toggle import de listes HubSpot. */
 export class PgTenantSettingsStore {
   constructor(private readonly pool: Pool) {}

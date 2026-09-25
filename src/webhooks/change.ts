@@ -1,4 +1,4 @@
-import { asArray, asRecord } from './json';
+import { asRecord } from './json';
 
 /**
  * Le point de passage OBLIGÉ pour lire un `change` d'un webhook Meta.
@@ -28,32 +28,6 @@ import { asArray, asRecord } from './json';
  * continuent de tester `field !== 'messages'`. Enregistrer n'est pas répondre : l'Inbox et les statuts
  * doivent tout voir, le reste doit rester muet.
  */
-export interface ChangeWebhook {
-  /** `field` du change : `'messages'`, `'standby'`, `'messaging_handovers'`... `null` si absent. */
-  field: string | null;
-  /**
-   * La valeur EFFECTIVE : `contacts`, `messages` et `statuses` s'y lisent au PREMIER niveau, que le MBA
-   * tienne le fil ou non. `metadata` y est conservé, y compris en standby où Meta le laisse à côté.
-   */
-  value: Record<string, unknown>;
-}
-
-/**
- * Les `changes` d'un payload, à plat, avec leur valeur remise à niveau.
- *
- * ⚠️ Ne lève JAMAIS : c'est de la donnée externe non fiable, une clé manquante donne un vide traversable.
- */
-export function changesDuPayload(payload: unknown): ChangeWebhook[] {
-  const out: ChangeWebhook[] = [];
-  for (const entryRaw of asArray(asRecord(payload)['entry'])) {
-    for (const changeRaw of asArray(asRecord(entryRaw)['changes'])) {
-      const change = asRecord(changeRaw);
-      const field = typeof change['field'] === 'string' ? (change['field'] as string) : null;
-      out.push({ field, value: valeurEffective(change['value']) });
-    }
-  }
-  return out;
-}
 
 /**
  * Remonte le contenu de `value.standby` au premier niveau.

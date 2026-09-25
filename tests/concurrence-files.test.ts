@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { FakeQueue } from '../src/queue/fake';
+import { FakeQueue } from './fake-queue';
 import { AUTOMATION_EVENT_QUEUE, enfilerEvenementAutomation } from '../src/automation/event-job';
-import { schema } from '../src/config';
+import { config, schema } from '../src/config';
 
 /**
  * LA CONCURRENCE ET L'ÉQUITÉ DES FILES (lot 6 du plan post-audit, 2026-09-02).
@@ -130,12 +130,12 @@ describe('les valeurs par défaut sont celles qu’on a arrêtées', () => {
   });
 
   it('les deux files de fond montent un peu, et surtout groupent', () => {
-    const c = schema.parse({});
-    expect(c.ANALYZE_CONVERSATION_CONCURRENCY).toBe(3);
-    expect(c.AUTOMATION_EVENT_CONCURRENCY).toBe(3);
+    // Des constantes depuis le 2026-09-25 (aucun déploiement ne les réglait) : elles se lisent sur `config`.
+    expect(config.ANALYZE_CONVERSATION_CONCURRENCY).toBe(3);
+    expect(config.AUTOMATION_EVENT_CONCURRENCY).toBe(3);
     // Au-dessus de 1 : c'est la condition pour que le plafond par groupe existe vraiment.
-    expect(c.ANALYZE_CONVERSATION_CONCURRENCY).toBeGreaterThan(1);
-    expect(c.AUTOMATION_EVENT_CONCURRENCY).toBeGreaterThan(1);
+    expect(config.ANALYZE_CONVERSATION_CONCURRENCY).toBeGreaterThan(1);
+    expect(config.AUTOMATION_EVENT_CONCURRENCY).toBeGreaterThan(1);
   });
 
   it('tout est ajustable par l’environnement, sans redéployer de code', () => {
@@ -157,8 +157,6 @@ describe('les réglages numériques refusent l’absurde', () => {
 
   it('🔴 une concurrence à ZÉRO est refusée : elle arrêterait la file en silence', () => {
     refuse({ AGENT_TURN_CONCURRENCY: '0' });
-    refuse({ WEBHOOK_CONCURRENCY: '0' });
-    refuse({ CAMPAIGN_RUN_CONCURRENCY: '0' });
   });
 
   it('un négatif et un décimal sont refusés aussi', () => {

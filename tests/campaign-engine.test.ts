@@ -4,7 +4,6 @@ import type {
   MessageSender,
   RecipientStore,
   CampaignStore,
-  FrequencyStore,
   QualityProvider,
   EngineDeps,
   TentativeEnvoi,
@@ -82,15 +81,6 @@ class FakeCampaigns implements CampaignStore {
     this.statuses.push(status);
   }
 }
-class FakeFreq implements FrequencyStore {
-  readonly map = new Map<string, number>();
-  async lastSentAt(_t: string, key: string): Promise<number | null> {
-    return this.map.get(key) ?? null;
-  }
-  async record(_t: string, key: string, atMs: number): Promise<void> {
-    this.map.set(key, atMs);
-  }
-}
 class FakeQuality implements QualityProvider {
   constructor(public rating: QualityRating = 'GREEN') {}
   async getRating(): Promise<QualityRating> {
@@ -122,7 +112,6 @@ function deps(over: Partial<EngineDeps> & { recipients: RecipientStore }): Engin
   return {
     sender: new FakeSender(),
     campaigns: new FakeCampaigns(),
-    frequency: new FakeFreq(),
     quality: new FakeQuality(),
     now: () => 1_000_000_000,
     ...over,
@@ -324,33 +313,6 @@ describe('runCampaign', () => {
     expect(report).toMatchObject({ sent: 0, failed: 1 });
   });
 
-  it('fréquence : un contact envoyé récemment est skippé QUAND le cap est activé (fenêtre > 0)', async () => {
-    // Le cap est désactivé par défaut (DEFAULT_THRESHOLDS.frequencyWindowMs = 0) : on l'active explicitement
-    // ici pour valider que le garde-fou saute bien un contact récent quand une fenêtre est configurée.
-    const sender = new FakeSender();
-    const frequency = new FakeFreq();
-    frequency.map.set('+33611', 1_000_000_000 - 1000); // < 24h
-    const thresholds: GuardrailThresholds = { frequencyWindowMs: 24 * 3600 * 1000, maxFailureRate: 0.3, minSendsForFailureCheck: 20 };
-    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
-    const report = await runCampaign(campaign, deps({ recipients, sender, frequency, thresholds }));
-    expect(report).toMatchObject({ sent: 1, skipped: 1 });
-    expect(sender.calls).toEqual(['+33622']);
-    // Skip fréquence TRANSITOIRE : non persisté (reste 'pending' pour un futur run).
-    expect(recipients.results.has('r1')).toBe(false);
-    expect(recipients.claimed).toEqual(['r2']); // r1 non claimé (skippé avant le claim)
-  });
-
-  it('fréquence : DÉSACTIVÉE par défaut -> un contact récent est quand même envoyé', async () => {
-    // DEFAULT_THRESHOLDS.frequencyWindowMs = 0 (pilote) : même un envoi marketing récent ne bloque plus.
-    const sender = new FakeSender();
-    const frequency = new FakeFreq();
-    frequency.map.set('+33611', 1_000_000_000 - 1000); // envoi récent, mais cap désactivé
-    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
-    const report = await runCampaign(campaign, deps({ recipients, sender, frequency }));
-    expect(report).toMatchObject({ sent: 2, skipped: 0 });
-    expect(sender.calls).toEqual(['+33611', '+33622']);
-  });
-
   it('claim échoue (run concurrent) : le destinataire est sauté, aucun envoi', async () => {
     const sender = new FakeSender();
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
@@ -360,14 +322,12 @@ describe('runCampaign', () => {
     expect(report.sent).toBe(1);
   });
 
-  it('utility : la fréquence ne s applique pas (message de service)', async () => {
+  it('utility : part par sendTemplate (message de service)', async () => {
     const sender = new FakeSender();
-    const frequency = new FakeFreq();
-    frequency.map.set('+33611', 1_000_000_000 - 1000); // envoi marketing récent
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
     const util: Campaign = { ...campaign, category: 'utility' };
-    const report = await runCampaign(util, deps({ recipients, sender, frequency }));
-    expect(report).toMatchObject({ sent: 1, skipped: 0 }); // envoyé malgré la fréquence
+    const report = await runCampaign(util, deps({ recipients, sender }));
+    expect(report).toMatchObject({ sent: 1, skipped: 0 });
     expect(sender.templateCalls).toEqual(['+33611']);
   });
 
@@ -418,7 +378,7 @@ describe('runCampaign', () => {
 
   it('taux d échec au-delà du seuil -> pause moteur + arrêt des destinataires restants', async () => {
     // seuil bas : après 3 échecs (rate 100% > 30%, total 3 >= min 3), le gate coupe.
-    const T: GuardrailThresholds = { frequencyWindowMs: 1000, maxFailureRate: 0.3, minSendsForFailureCheck: 3 };
+    const T: GuardrailThresholds = { maxFailureRate: 0.3, minSendsForFailureCheck: 3 };
     const sender = new FakeSender();
     sender.failFor = new Set(['+331', '+332', '+333']);
     const recipients = new FakeRecipients([
@@ -1191,21 +1151,6 @@ describe('runCampaign : le journal des tentatives', () => {
     }));
     expect(vues).toHaveLength(1);
     expect(vues[0]).toMatchObject({ statut: 'saute', canal: 'rcs' });
-  });
-
-  it('🔴 le saut de FRÉQUENCE ne journalise RIEN, et c est essentiel', async () => {
-    const { vues, noterEnvoi } = collecteur();
-    const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    const report = await runCampaign(campaign, deps({
-      recipients, noterEnvoi,
-      frequency: { lastSentAt: async () => 1_000_000_000 - 1, record: async () => {} },
-      thresholds: { frequencyWindowMs: 3_600_000, maxFailureRate: 1, minSendsForFailureCheck: 999 },
-    }));
-    // 🔴 CE SAUT-LÀ EST TRANSITOIRE : le destinataire reste `pending` et sera réévalué au run suivant. Le
-    // journaliser écrirait une ligne À CHAQUE RUN pour la même personne, donc gonflerait sans fin les
-    // compteurs par canal d'un envoi qui n'a jamais eu lieu. Le journal ne note QUE les résolutions.
-    expect(report).toMatchObject({ skipped: 1 });
-    expect(vues).toEqual([]);
   });
 
   it('🔴 un scénario qui ne DÉMARRE PAS est journalisé `failed` : rien n est parti', async () => {

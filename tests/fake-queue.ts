@@ -1,8 +1,7 @@
-import type { Queue } from './queue';
+import type { Queue } from '../src/queue/queue';
 
 /**
- * File en mémoire pour les tests unitaires du receiver.
- * `enqueue` enregistre les jobs ; `deliver` rejoue les jobs vers le handler.
+ * File en mémoire pour les tests : `enqueue` enregistre les jobs, `work` enregistre les abonnements.
  */
 export class FakeQueue implements Queue {
   public readonly enqueued: Array<{
@@ -12,7 +11,6 @@ export class FakeQueue implements Queue {
   }> = [];
   /** Trace des appels à `work` : rend le passthrough des options de concurrence OBSERVABLE en test. */
   public readonly workCalls: Array<{ name: string; opts?: { concurrency?: number; groupConcurrency?: number } }> = [];
-  private readonly handlers = new Map<string, (data: unknown) => Promise<void>>();
 
   async start(): Promise<void> {}
   async stop(): Promise<void> {}
@@ -35,16 +33,6 @@ export class FakeQueue implements Queue {
     handler: (data: unknown) => Promise<void>,
     opts?: { concurrency?: number; groupConcurrency?: number },
   ): Promise<void> {
-    this.handlers.set(name, handler);
     this.workCalls.push({ name, ...(opts ? { opts } : {}) });
-  }
-
-  /** Rejoue les jobs empilés pour `name` vers le handler enregistré. */
-  async deliver(name: string): Promise<void> {
-    const handler = this.handlers.get(name);
-    if (!handler) return;
-    for (const job of this.enqueued.filter((j) => j.name === name)) {
-      await handler(job.data);
-    }
   }
 }
