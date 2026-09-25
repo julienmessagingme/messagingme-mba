@@ -5,14 +5,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Engage Me · Tout WhatsApp, dans une seule console</title>
-<meta name="description" content="Campagnes push, chaîne WhatsApp, publicités Click-to-WhatsApp, RCS et service client dans une seule console. Vous choisissez qui répond, du Meta Business Agent natif à vos agents IA, et chaque conversation est qualifiée.">
+<title>Engage Me · Transformez chaque conversation en levier de performance</title>
+<meta name="description" content="WhatsApp et RCS, campagnes et service client dans une seule console. Vous choisissez qui répond, du Meta Business Agent natif à vos agents IA, et chaque conversation est qualifiée.">
 <link rel="canonical" href="https://engageme.messagingme.fr/">
 <meta property="og:type" content="website">
 <meta property="og:locale" content="fr_FR">
 <meta property="og:url" content="https://engageme.messagingme.fr/">
-<meta property="og:title" content="Engage Me · Tout WhatsApp, dans une seule console">
-<meta property="og:description" content="Push, chaîne WhatsApp, publicités Click-to-WhatsApp, RCS et service client au même endroit. Vous choisissez qui répond, et chaque conversation est qualifiée.">
+<meta property="og:title" content="Engage Me · Transformez chaque conversation en levier de performance">
+<meta property="og:description" content="WhatsApp et RCS, campagnes et service client au même endroit. Vous choisissez qui répond, et chaque conversation est qualifiée.">
 <meta name="theme-color" content="#010630">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <!-- La police est servie d'ici, pas depuis Google Fonts : aucune adresse IP de visiteur ne part chez un tiers. -->
@@ -21,8 +21,9 @@
 <style>
 @font-face{font-family:"Plus Jakarta Sans";src:url("fonts/plus-jakarta-sans-latin.woff2") format("woff2");font-weight:200 800;font-style:normal;font-display:swap}
 
-/* Rayons : boutons 10 px, panneaux 16 px, pastilles pleines. L'iPhone garde les siens : c'est un objet, pas un composant.
-   UN SEUL THÈME, celui de messagingme.fr : fond #010630, halo #101E8A, texte blanc, paragraphes à 66 %. */
+/* Rayons : boutons 10 px, panneaux 16 px, pastilles pleines. Les téléphones gardent les leurs : ce sont des objets.
+   UN SEUL THÈME, celui de messagingme.fr : fond #010630, halo #101E8A, texte blanc, paragraphes à 66 %,
+   et UNE coupure claire (le relais), comme sur le site mère. */
 :root{
   --nuit:#010630;--halo:#101E8A;
   --paper:#010630;--surface:#0B1452;--ink:#FFFFFF;--muted:rgb(255 255 255 / .66);--line:rgb(255 255 255 / .12);
@@ -31,9 +32,13 @@
   --sans:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:ui-monospace,"SF Mono","Cascadia Mono","Segoe UI Mono",Menlo,Consolas,monospace;
   --ios:-apple-system,"SF Pro Text",system-ui,"Segoe UI",Roboto,sans-serif;
+  --android:"Google Sans",Roboto,system-ui,"Segoe UI",sans-serif;
   /* WhatsApp sur iOS, en clair : c'est l'écran d'un vrai téléphone, et il ressort sur le bleu nuit. */
   --wa-tete:#F6F6F6;--wa-fond:#EFEAE2;--wa-motif:rgb(17 27 33 / .045);--wa-recu:#FFFFFF;--wa-envoye:#D9FDD3;
   --wa-texte:#111B21;--wa-meta:#667781;--wa-coche:#53BDEB;--wa-lien:#027EB5;--wa-teinte:#007AFF;--wa-champ:#FFFFFF;--wa-date:#FFFFFF;
+  /* Google Messages (RCS), thème clair de Material 3. */
+  --rcs-fond:#FFFFFF;--rcs-texte:#1F1F1F;--rcs-meta:#5F6368;--rcs-recu:#F0F4F9;--rcs-envoye:#D3E3FD;--rcs-envoye-texte:#041E49;
+  --rcs-bleu:#0B57D0;--rcs-bord:#DCE1E8;
   color-scheme:dark;
 }
 
@@ -46,8 +51,17 @@ a:focus-visible{outline:2px solid var(--action);outline-offset:3px;border-radius
 .cadre{--g:24px;max-width:1160px;margin:0 auto;padding:0 var(--g)}
 @media (max-width:640px){.cadre{--g:16px}}
 .ic{width:1em;height:1em;flex:none;fill:currentColor;vertical-align:-.125em}
+.masque{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
-/* En-tête */
+/* En-tête collant : transparent en haut de page, bleu nuit translucide dès qu'on défile. Le passage est
+   décidé par une sentinelle observée (IntersectionObserver), jamais par un écouteur de défilement. Sans
+   JavaScript, la barre garde un fond, pour que le texte qui passe dessous reste lisible. */
+.sentinelle{position:absolute;top:0;left:0;width:1px;height:8px;pointer-events:none}
+.barre{position:sticky;top:0;z-index:10;background:rgb(1 6 48 / .88);transition:background-color .25s,box-shadow .25s}
+.js .barre{background:transparent}
+.js .barre.defile{background:rgb(1 6 48 / .93);-webkit-backdrop-filter:blur(14px) saturate(140%);backdrop-filter:blur(14px) saturate(140%);box-shadow:0 1px 0 rgb(255 255 255 / .1)}
+@media (prefers-reduced-transparency:reduce){.js .barre.defile{background:var(--nuit);-webkit-backdrop-filter:none;backdrop-filter:none}}
+[id]{scroll-margin-top:88px}
 .entete{display:flex;align-items:center;justify-content:space-between;gap:12px;height:72px}
 .marque{display:flex;align-items:center;gap:10px;white-space:nowrap;text-decoration:none;font-weight:700;font-size:1.05rem;letter-spacing:-.01em}
 .marque svg{width:30px;height:30px;flex:none}
@@ -68,80 +82,124 @@ a:focus-visible{outline:2px solid var(--action);outline-offset:3px;border-radius
 .bouton-texte .ic{transition:transform .15s}
 .bouton-texte:hover .ic{transform:translateX(3px)}
 
-/* 1. La une : le message à gauche, le téléphone à droite */
-.une{display:grid;grid-template-columns:minmax(0,1fr) 480px;gap:32px;align-items:center;padding-top:40px;padding-bottom:112px}
-h1{font-size:clamp(2.3rem,4.4vw,3.5rem);line-height:1.05;letter-spacing:-.035em;font-weight:800;margin:0 0 22px;text-wrap:balance}
+/* 1. La une : le titre sur toute la largeur, puis le message à gauche et les deux téléphones à droite */
+.une{display:grid;grid-template-columns:minmax(0,1fr) 500px;grid-template-rows:auto 1fr;gap:34px 40px;padding-top:40px;padding-bottom:120px}
+h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3rem,4.3vw,3.4rem);line-height:1.05;letter-spacing:-.035em;font-weight:800;margin:0;text-wrap:balance}
+.une-gauche{grid-column:1;grid-row:2;padding-top:8px}
 .chapeau{font-size:1.15rem;color:var(--muted);max-width:30em;margin:0 0 34px;text-wrap:pretty}
 .appels{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px}
-@media (max-width:960px){.une{grid-template-columns:minmax(0,1fr);gap:48px;padding-top:24px;padding-bottom:72px}}
+.scene-cadre{grid-column:2;grid-row:1 / span 2;position:relative}
+@media (max-width:960px){
+  .une{grid-template-columns:minmax(0,1fr);grid-template-rows:none;gap:28px;padding-top:24px;padding-bottom:72px}
+  h1,.une-gauche,.scene-cadre{grid-column:1;grid-row:auto}
+  h1 br{display:none}
+}
 
-/* L'iPhone */
-.scene{position:relative;display:flex;justify-content:center;margin:0}
-.iphone{position:relative;width:292px;padding:10px;border-radius:52px;background:linear-gradient(145deg,#2A2B31,#141518);box-shadow:inset 0 0 0 1.5px #45464D,inset 0 0 0 5px #0E0F11,0 2px 4px rgb(0 0 0 / .3),0 40px 70px -28px var(--ombre)}
+/* Les deux téléphones, posés l'un devant l'autre. Sous 560 px, la scène entière est mise à l'échelle. */
+.scene{position:relative;margin:0;width:500px;height:676px;transform:scale(var(--k,1));transform-origin:top left}
+
+.iphone{position:absolute;z-index:2;left:0;top:142px;width:264px;padding:9px;border-radius:48px;background:linear-gradient(145deg,#2A2B31,#141518);box-shadow:inset 0 0 0 1.5px #45464D,inset 0 0 0 5px #0E0F11,0 2px 4px rgb(0 0 0 / .3),0 40px 70px -28px var(--ombre)}
 .iphone::before,.iphone::after{content:"";position:absolute;width:3px;border-radius:2px;background:#2A2B31}
-.iphone::before{left:-3px;top:112px;height:54px;box-shadow:0 70px 0 #2A2B31}
-.iphone::after{right:-3px;top:150px;height:78px}
-.ecran{position:relative;height:572px;border-radius:42px;overflow:hidden;display:flex;flex-direction:column;background:var(--wa-fond);font-family:var(--ios);color:var(--wa-texte)}
-.ios{position:relative;flex:none;display:flex;align-items:center;justify-content:space-between;height:46px;padding:6px 24px 0 34px;background:var(--wa-tete);font-size:.8rem;font-weight:600;letter-spacing:-.01em}
-.ilot{position:absolute;top:10px;left:50%;width:86px;height:25px;margin-left:-43px;border-radius:14px;background:#0A0A0B}
-.etat{display:flex;align-items:center;gap:4px;font-size:.95rem}
-.etat .pile{font-size:1.25rem}
+.iphone::before{left:-3px;top:104px;height:50px;box-shadow:0 64px 0 #2A2B31}
+.iphone::after{right:-3px;top:140px;height:72px}
+.ecran{position:relative;height:516px;border-radius:39px;overflow:hidden;display:flex;flex-direction:column;background:var(--wa-fond);font-family:var(--ios);color:var(--wa-texte)}
+.ios{position:relative;flex:none;display:flex;align-items:center;justify-content:space-between;height:44px;padding:6px 22px 0 30px;background:var(--wa-tete);font-size:.78rem;font-weight:600;letter-spacing:-.01em}
+.ilot{position:absolute;top:10px;left:50%;width:80px;height:23px;margin-left:-40px;border-radius:14px;background:#0A0A0B}
+.etat{display:flex;align-items:center;gap:4px;font-size:.92rem}
+.etat .pile{font-size:1.2rem}
 
 .wa-tete{flex:none;display:flex;align-items:center;gap:8px;padding:6px 12px 9px 6px;background:var(--wa-tete);border-bottom:.5px solid rgb(0 0 0 / .08)}
-.wa-tete > .ic{font-size:1.35rem;color:var(--wa-teinte)}
-.avatar{flex:none;display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:#10132E;color:#fff;font-size:.72rem;font-weight:700;letter-spacing:.02em}
+.wa-tete > .ic{font-size:1.3rem;color:var(--wa-teinte)}
+.avatar{flex:none;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#10132E;color:#fff;font-size:.68rem;font-weight:700;letter-spacing:.02em}
 .qui{display:flex;flex-direction:column;min-width:0;line-height:1.2}
-.qui strong{font-size:.86rem;font-weight:600}
-.qui small{font-size:.68rem;color:var(--wa-meta)}
+.qui strong{font-size:.84rem;font-weight:600}
+.qui small{font-size:.66rem;color:var(--wa-meta)}
 
-.wa-fil{flex:1;list-style:none;margin:0;padding:10px 10px 8px;display:flex;flex-direction:column;gap:6px;overflow:hidden;background-color:var(--wa-fond);background-image:radial-gradient(var(--wa-motif) 1.2px,transparent 1.3px);background-size:13px 13px}
-.jour{align-self:center;margin:2px 0 4px;padding:3px 9px;border-radius:7px;background:var(--wa-date);font-size:.66rem;color:var(--wa-meta);box-shadow:0 1px .5px rgb(11 20 26 / .12)}
-.bulle{position:relative;max-width:84%;padding:6px 8px 5px 9px;border-radius:8px;font-size:.8rem;line-height:1.38;box-shadow:0 1px .5px rgb(11 20 26 / .13)}
+.wa-fil > li,.a-fil > li{flex-shrink:0}
+.wa-fil{flex:1;list-style:none;margin:0;padding:10px 9px 8px;display:flex;flex-direction:column;gap:6px;overflow:hidden;background-color:var(--wa-fond);background-image:radial-gradient(var(--wa-motif) 1.2px,transparent 1.3px);background-size:13px 13px}
+.jour{align-self:center;margin:2px 0 4px;padding:3px 9px;border-radius:7px;background:var(--wa-date);font-size:.64rem;color:var(--wa-meta);box-shadow:0 1px .5px rgb(11 20 26 / .12)}
+.bulle{position:relative;max-width:85%;padding:6px 8px 5px 9px;border-radius:8px;font-size:.78rem;line-height:1.36;box-shadow:0 1px .5px rgb(11 20 26 / .13)}
 .bulle p{margin:0}
 .recu{align-self:flex-start;background:var(--wa-recu);border-top-left-radius:0}
 .envoye{align-self:flex-end;background:var(--wa-envoye);border-top-right-radius:0}
 .recu::before,.envoye::before{content:"";position:absolute;top:0;width:0;height:0;border-bottom:9px solid transparent}
 .recu::before{left:-7px;border-right:8px solid var(--wa-recu)}
 .envoye::before{right:-7px;border-left:8px solid var(--wa-envoye)}
-.heure{float:right;display:inline-flex;align-items:center;gap:3px;margin:5px 0 -3px 10px;font-size:.6rem;color:var(--wa-meta)}
-.heure .ic{font-size:.95rem;color:var(--wa-coche)}
-.bouton-modele{display:flex;align-items:center;justify-content:center;gap:5px;margin:7px -8px -5px -9px;padding:7px 0 8px;border-top:.5px solid rgb(11 20 26 / .12);font-size:.8rem;font-weight:500;color:var(--wa-lien)}
-
-.saisie{flex:none;display:flex;align-items:center;gap:10px;padding:7px 12px 22px;background:var(--wa-tete);color:var(--wa-teinte);font-size:1.3rem}
+.heure{float:right;display:inline-flex;align-items:center;gap:3px;margin:5px 0 -3px 10px;font-size:.58rem;color:var(--wa-meta)}
+.heure .ic{font-size:.92rem;color:var(--wa-coche)}
+.bouton-modele{display:flex;align-items:center;justify-content:center;gap:5px;margin:7px -8px -5px -9px;padding:7px 0 8px;border-top:.5px solid rgb(11 20 26 / .12);font-size:.78rem;font-weight:500;color:var(--wa-lien)}
+.saisie{flex:none;display:flex;align-items:center;gap:10px;padding:7px 12px 22px;background:var(--wa-tete);color:var(--wa-teinte);font-size:1.25rem}
 .champ{flex:1;height:30px;border-radius:16px;background:var(--wa-champ);border:.5px solid rgb(0 0 0 / .1)}
-.barre-accueil{position:absolute;bottom:7px;left:50%;width:108px;height:4px;margin-left:-54px;border-radius:3px;background:var(--wa-texte);opacity:.85}
+.barre-accueil{position:absolute;bottom:7px;left:50%;width:100px;height:4px;margin-left:-50px;border-radius:3px;background:var(--wa-texte);opacity:.85}
 
-/* Ce qui déborde du téléphone : d'où vient la conversation, et ce qu'Engage Me en a retenu */
-.origine{position:absolute;z-index:2;top:62px;right:0;margin:0;padding:7px 13px;border-radius:999px;background:var(--surface);border:1px solid var(--action);color:var(--action-ink);font-size:.8rem;font-weight:600;white-space:nowrap;box-shadow:0 10px 24px -12px var(--ombre)}
-.lu{position:absolute;z-index:2;left:0;bottom:-34px;width:250px;padding:16px 18px;border-radius:16px;background:var(--surface);border:1px solid var(--line);box-shadow:0 1px 2px rgb(0 0 0 / .2),0 24px 44px -20px var(--ombre)}
+/* L'Android et Google Messages (RCS) */
+.android{position:absolute;z-index:1;right:0;top:0;width:250px;padding:8px;border-radius:38px;background:linear-gradient(145deg,#3A3D42,#1C1E21);box-shadow:inset 0 0 0 1.5px #56595F,0 40px 70px -28px var(--ombre)}
+.android::after{content:"";position:absolute;right:-3px;top:120px;width:3px;height:60px;border-radius:2px;background:#3A3D42;box-shadow:0 78px 0 #3A3D42}
+.ecran-a{position:relative;height:562px;border-radius:31px;overflow:hidden;display:flex;flex-direction:column;background:var(--rcs-fond);font-family:var(--android);color:var(--rcs-texte)}
+.a-etat{flex:none;position:relative;display:flex;align-items:center;justify-content:space-between;height:30px;padding:4px 18px 0 20px;font-size:.72rem;font-weight:500}
+.a-etat .poincon{position:absolute;top:9px;left:50%;width:11px;height:11px;margin-left:-5.5px;border-radius:50%;background:#0A0A0B}
+.a-etat .etat{font-size:.85rem;gap:3px}
+.a-tete{flex:none;display:flex;align-items:center;gap:10px;padding:6px 10px 10px 12px;font-size:1.2rem}
+.a-tete .avatar{width:32px;height:32px}
+.a-qui{flex:1;display:flex;align-items:center;gap:4px;min-width:0;font-size:.88rem;font-weight:500}
+.a-qui .ic{font-size:1rem;color:var(--rcs-bleu)}
+.a-fil{flex:1;list-style:none;margin:0;padding:4px 10px 8px;display:flex;flex-direction:column;gap:7px;overflow:hidden}
+.a-jour{align-self:center;margin:0 0 4px;font-size:.64rem;color:var(--rcs-meta)}
+.carte-riche{align-self:flex-start;width:86%;border:1px solid var(--rcs-bord);border-radius:18px;overflow:hidden;background:var(--rcs-fond)}
+.visuel{display:flex;align-items:flex-end;height:74px;padding:10px 12px;background:linear-gradient(135deg,#1B2A9C 0%,#0080D6 55%,#17C74E 130%);color:#fff;font-size:1.5rem;font-weight:700;letter-spacing:-.02em}
+.carte-corps{padding:9px 12px 10px}
+.carte-corps strong{display:block;font-size:.8rem;font-weight:600}
+.carte-corps span{display:block;margin-top:2px;font-size:.7rem;line-height:1.35;color:var(--rcs-meta)}
+.action-riche{display:block;padding:8px 0;border-top:1px solid var(--rcs-bord);text-align:center;font-size:.74rem;font-weight:500;color:var(--rcs-bleu)}
+.a-bulle{max-width:82%;padding:7px 12px;border-radius:18px;font-size:.76rem;line-height:1.36}
+.a-recu{align-self:flex-start;background:var(--rcs-recu);border-bottom-left-radius:4px}
+.a-envoye{align-self:flex-end;background:var(--rcs-envoye);color:var(--rcs-envoye-texte);border-bottom-right-radius:4px}
+.a-lu{align-self:flex-end;margin:-3px 4px 0 0;font-size:.6rem;color:var(--rcs-meta)}
+.suggestions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;list-style:none;margin:0;padding:0}
+.suggestions li{padding:5px 11px;border:1px solid #C4C7C5;border-radius:999px;font-size:.7rem;font-weight:500;color:var(--rcs-bleu)}
+.a-saisie{flex:none;display:flex;align-items:center;gap:8px;padding:6px 10px 20px;font-size:1.2rem;color:#444746}
+.a-champ{flex:1;display:flex;align-items:center;justify-content:space-between;height:34px;padding:0 12px;border-radius:18px;background:var(--rcs-recu);font-size:.74rem;color:var(--rcs-meta)}
+.a-champ .ic{font-size:1.05rem}
+.a-geste{position:absolute;bottom:7px;left:50%;width:84px;height:4px;margin-left:-42px;border-radius:3px;background:var(--rcs-texte);opacity:.8}
+
+/* Ce qu'Engage Me a retenu de la conversation WhatsApp : un bandeau sous les boutons, visible sans défiler */
+.lu{margin-top:44px;max-width:600px;padding:16px 20px;border-radius:16px;background:var(--surface);border:1px solid var(--line);box-shadow:0 1px 2px rgb(0 0 0 / .2),0 24px 44px -20px var(--ombre)}
 .lu-titre{margin:0 0 12px;font-size:.86rem;font-weight:700}
-.lu dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 14px;margin:0}
-.lu .large{grid-column:1 / -1;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.lu dl{display:grid;grid-template-columns:max-content repeat(4,minmax(0,1fr));gap:12px 18px;margin:0}
+.lu .large{padding-right:18px;border-right:1px solid var(--line)}
 .lu dt{font-size:.74rem;color:var(--muted)}
 .lu dd{margin:1px 0 0;font-size:.98rem;font-weight:700;letter-spacing:-.01em}
 .lu dd small{font-size:.72rem;font-weight:600;color:var(--muted)}
-.mba{display:flex;align-items:center;gap:8px}
+.mba{display:flex;align-items:center;gap:8px;white-space:nowrap}
 .mba img{width:22px;height:22px;border-radius:6px}
 @media (max-width:960px){
-  .scene{flex-direction:column;align-items:center;gap:16px}
-  .origine{position:static;order:-1;box-shadow:none}
-  .lu{position:static;width:100%;max-width:292px}
+  .scene-cadre{--k:.9;width:calc(500px * var(--k));margin:0 auto;overflow:hidden}
+  .scene{margin-bottom:calc(676px * var(--k) - 676px)}
 }
+@media (max-width:560px){.scene-cadre{--k:.7}.lu dl{grid-template-columns:repeat(2,minmax(0,1fr))}.lu .large{grid-column:1 / -1;padding:0 0 12px;border-right:0;border-bottom:1px solid var(--line)}}
+@media (max-width:400px){.scene-cadre{--k:.64}}
 
-/* 2. Le relais : quatre entrées, Engage Me, qui répond */
-/* La coupure, comme sur messagingme.fr : un biais qui monte vers la droite, un fond clair, puis retour au bleu nuit.
-   Les jetons sont redéfinis POUR la section, et `color` y est redéclaré : sans lui, le texte hériterait du blanc déjà
-   calculé sur `body`. Le logo passe par `--logo-navy`, la seule couleur qui traverse un `<use>`. */
+/* 2. Le relais : sur fond clair, entre deux biais, comme sur messagingme.fr. Un interrupteur montre ce que
+   chaque canal ouvre : WhatsApp a quatre entrées et trois répondants, le RCS deux et deux.
+   Les jetons sont redéfinis POUR la section, et `color` y est redéclaré : sans lui, le texte hériterait du blanc
+   déjà calculé sur `body`. Le logo passe par `--logo-navy`, la seule couleur qui traverse un `<use>`. */
 .relais{--biais:clamp(36px,6vw,88px);--ink:#010630;--muted:#535866;--line:#D5D8E6;--surface:#FFFFFF;--action-ink:#0066AA;--action-wash:#E6F3FC;--logo-navy:#181C40;--ombre:rgb(1 6 48 / .18);
   color:var(--ink);background:linear-gradient(180deg,#F3F4FB 0%,#FFFFFF 100%);
   clip-path:polygon(0 var(--biais),100% 0,100% calc(100% - var(--biais)),0 100%);
   padding:calc(88px + var(--biais)) 0 calc(96px + var(--biais))}
 .relais h2,.dev h2{font-size:clamp(1.7rem,3.2vw,2.4rem);line-height:1.12;letter-spacing:-.03em;font-weight:800;margin:0 0 14px;text-wrap:balance}
-.relais > .cadre > p{margin:0 0 56px;max-width:34em;color:var(--muted);font-size:1.05rem}
-.schema{display:grid;grid-template-columns:minmax(0,1fr) 110px 76px 110px minmax(0,1fr);align-items:stretch;min-height:440px}
-.pole{list-style:none;margin:0;padding:0;display:grid}
-.pole.entrees{grid-template-rows:repeat(5,minmax(0,1fr));text-align:right}
-.pole.repondants{grid-template-rows:repeat(3,minmax(0,1fr))}
+.relais > .cadre > p{margin:0 0 32px;max-width:34em;color:var(--muted);font-size:1.05rem}
+.bascule{display:inline-flex;gap:4px;margin:0 0 40px;padding:4px;border:1px solid var(--line);border-radius:999px;background:var(--surface)}
+.bascule legend{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.bascule input{position:absolute;opacity:0;pointer-events:none}
+.bascule label{display:inline-flex;align-items:center;gap:7px;padding:8px 20px;border-radius:999px;font-weight:700;font-size:.95rem;color:var(--muted);cursor:pointer;transition:background-color .2s,color .2s}
+.bascule label:hover{color:var(--ink)}
+.bascule input:checked + label{background:var(--ink);color:#fff}
+.bascule input:focus-visible + label{outline:2px solid var(--action);outline-offset:2px}
+.canaux:has(#canal-rcs:checked) .schema-wa,.canaux:has(#canal-wa:checked) .schema-rcs{display:none}
+.schema{display:grid;grid-template-columns:minmax(0,1fr) 110px 76px 110px minmax(0,1fr);align-items:stretch;min-height:400px}
+.pole{list-style:none;margin:0;padding:0;display:grid;grid-auto-rows:minmax(0,1fr)}
+.pole.entrees{text-align:right}
 .pole li{align-self:center;padding:4px 0}
 .pole strong{display:flex;align-items:center;gap:8px;font-size:1rem;font-weight:700;letter-spacing:-.01em}
 .pole.entrees strong{justify-content:flex-end}
@@ -156,8 +214,8 @@ h1{font-size:clamp(2.3rem,4.4vw,3.5rem);line-height:1.05;letter-spacing:-.035em;
 @media (max-width:860px){
   .schema{grid-template-columns:minmax(0,1fr);justify-items:start;min-height:0}
   .fils{display:none}
-  .pole{width:100%;gap:18px}
-  .pole.entrees,.pole.repondants{grid-template-rows:none;text-align:left}
+  .pole{width:100%;gap:18px;grid-auto-rows:auto}
+  .pole.entrees{text-align:left}
   .pole.entrees strong{justify-content:flex-start}
   .noeud{margin:28px 0}
 }
@@ -196,16 +254,19 @@ h1{font-size:clamp(2.3rem,4.4vw,3.5rem);line-height:1.05;letter-spacing:-.035em;
 @media (max-width:960px){.pied-haut{grid-template-columns:repeat(2,minmax(0,1fr))}.pied-haut > :first-child{grid-column:1 / -1}}
 @media (max-width:480px){.pied-haut{grid-template-columns:minmax(0,1fr)}}
 
-/* Mouvement : la conversation se déroule, puis la lecture arrive ; le relais se trace quand il entre à l'écran.
+/* Mouvement : les conversations se déroulent, puis la lecture arrive ; le relais se trace quand il entre à l'écran,
+   et se retrace quand on change de canal (un schéma qui réapparaît rejoue son animation).
    Rien n'est caché sans JavaScript, et rien ne bouge pour qui a demandé moins de mouvement. */
 @media (prefers-reduced-motion:no-preference){
   .js .entre{opacity:0;animation:entre .6s cubic-bezier(.16,1,.3,1) forwards;animation-delay:var(--d,0s)}
   @keyframes entre{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
-  .js .revele .fils svg{clip-path:inset(0 100% 0 0);transition:clip-path .9s cubic-bezier(.16,1,.3,1) .15s}
-  .js .revele.vu .fils svg{clip-path:inset(0 0 0 0)}
-  .js .revele .fils + .noeud + .fils svg{transition-delay:.7s}
-  .js .revele .noeud{transform:scale(.85);opacity:0;transition:transform .5s cubic-bezier(.16,1,.3,1) .5s,opacity .5s .5s}
-  .js .revele.vu .noeud{transform:none;opacity:1}
+  .js .relais .fils svg{clip-path:inset(0 100% 0 0)}
+  .js .relais.vu .fils svg{animation:trace .9s cubic-bezier(.16,1,.3,1) .15s forwards}
+  .js .relais.vu .fils + .noeud + .fils svg{animation-delay:.6s}
+  .js .relais .noeud{opacity:0}
+  .js .relais.vu .noeud{animation:pose .5s cubic-bezier(.16,1,.3,1) .4s forwards}
+  @keyframes trace{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+  @keyframes pose{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:none}}
 }
 </style>
 </head>
@@ -229,8 +290,14 @@ h1{font-size:clamp(2.3rem,4.4vw,3.5rem);line-height:1.05;letter-spacing:-.035em;
   <symbol id="i-whatsapp" viewBox="0 0 256 256"><path d="M187.58,144.84l-32-16a8,8,0,0,0-8,.5l-14.69,9.8a40.55,40.55,0,0,1-16-16l9.8-14.69a8,8,0,0,0,.5-8l-16-32A8,8,0,0,0,104,64a40,40,0,0,0-40,40,88.1,88.1,0,0,0,88,88,40,40,0,0,0,40-40A8,8,0,0,0,187.58,144.84ZM152,176a72.08,72.08,0,0,1-72-72A24,24,0,0,1,99.29,80.46l11.48,23L101,118a8,8,0,0,0-.73,7.51,56.47,56.47,0,0,0,30.15,30.150A8,8,0,0,0,138,155l14.61-9.74,23,11.48A24,24,0,0,1,152,176ZM128,24A104,104,0,0,0,36.18,176.88L24.83,210.93a16,16,0,0,0,20.24,20.24l34.05-11.35A104,104,0,1,0,128,24Zm0,192a87.87,87.87,0,0,1-44.06-11.81,8,8,0,0,0-6.54-.67L40,216,52.47,178.6a8,8,0,0,0-.66-6.54A88,88,0,1,1,128,216Z"/></symbol>
   <symbol id="i-telegram" viewBox="0 0 256 256"><path d="M228.88,26.19a9,9,0,0,0-9.16-1.57L17.06,103.93a14.22,14.22,0,0,0,2.43,27.21L72,141.45V200a15.92,15.92,0,0,0,10,14.83,15.91,15.91,0,0,0,17.51-3.73l25.32-26.26L165,220a15.88,15.88,0,0,0,10.51,4,16.3,16.3,0,0,0,5-.79,15.85,15.85,0,0,0,10.67-11.63L231.77,35A9,9,0,0,0,228.88,26.19Zm-61.14,36L78.15,126.35l-49.6-9.73ZM88,200V152.52l24.79,21.74Zm87.53,8L92.85,135.5l119-85.29Z"/></symbol>
   <symbol id="i-logo" viewBox="0 0 160 160"><g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="15"><path d="M 80 14 L 80 58 Q 80 70 92 70 L 140 70" style="stroke:var(--logo-navy)"/><path d="M 80 14 L 80 58 Q 80 70 92 70 L 140 70" transform="rotate(120 80 80)" stroke="#009AFE"/><path d="M 80 14 L 80 58 Q 80 70 92 70 L 140 70" transform="rotate(240 80 80)" stroke="#17C74E"/></g></symbol>
+  <symbol id="i-arrow-left" viewBox="0 0 256 256"><path d="M224,128a8,8,0,0,1-8,8H59.31l58.35,58.34a8,8,0,0,1-11.32,11.32l-72-72a8,8,0,0,1,0-11.32l72-72a8,8,0,0,1,11.32,11.32L59.31,120H216A8,8,0,0,1,224,128Z"/></symbol>
+  <symbol id="i-verifie" viewBox="0 0 256 256"><path d="M225.86,102.82c-3.77-3.94-7.670-8-9.14-11.57-1.36-3.27-1.44-8.69-1.52-13.94-.15-9.76-.31-20.82-8-28.51s-18.75-7.85-28.51-8c-5.25-.08-10.67-.16-13.94-1.52-3.56-1.47-7.63-5.37-11.57-9.14C146.28,23.51,138.44,16,128,16s-18.27,7.51-25.18,14.14c-3.94,3.77-8,7.67-11.57,9.14C88,40.64,82.56,40.72,77.31,40.8c-9.76.15-20.82.31-28.51,8S41,67.55,40.8,77.31c-.08,5.25-.16,10.67-1.52,13.94-1.47,3.56-5.37,7.63-9.14,11.570C23.51,109.72,16,117.56,16,128s7.51,18.27,14.14,25.18c3.77,3.94,7.67,8,9.14,11.57,1.36,3.27,1.44,8.69,1.52,13.94.15,9.76.31,20.82,8,28.51s18.75,7.85,28.51,8c5.25.08,10.67.16,13.94,1.52,3.56,1.47,7.63,5.37,11.57,9.14C109.72,232.49,117.56,240,128,240s18.27-7.51,25.18-14.14c3.94-3.77,8-7.67,11.57-9.14,3.27-1.36,8.69-1.44,13.94-1.52,9.76-.15,20.82-.31,28.51-8s7.85-18.75,8-28.51c.08-5.25.16-10.67,1.52-13.94,1.47-3.56,5.37-7.63,9.14-11.57C232.49,146.28,240,138.44,240,128S232.49,109.73,225.86,102.82Zm-52.2,6.84-56,56a8,8,0,0,1-11.32,0l-24-24a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35a8,8,0,0,1,11.32,11.32Z"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 256 256"><path d="M140,128a12,12,0,1,1-12-12A12,12,0,0,1,140,128ZM128,72a12,12,0,1,0-12-12A12,12,0,0,0,128,72Zm0,112a12,12,0,1,0,12,12A12,12,0,0,0,128,184Z"/></symbol>
+  <symbol id="i-smiley" viewBox="0 0 256 256"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216ZM80,108a12,12,0,1,1,12,12A12,12,0,0,1,80,108Zm96,0a12,12,0,1,1-12-12A12,12,0,0,1,176,108Zm-1.07,48c-10.29,17.790-27.4,28-46.93,28s-36.63-10.2-46.92-28a8,8,0,1,1,13.84-8c7.47,12.91,19.21,20,33.08,20s25.61-7.1,33.07-20a8,8,0,0,1,13.86,8Z"/></symbol>
 </svg>
 
+<span class="sentinelle" aria-hidden="true"></span>
+<div class="barre">
 <header class="cadre entete">
   <a class="marque" href="/" aria-label="Engage Me, accueil"><svg aria-hidden="true"><use href="#i-logo"/></svg>Engage Me</a>
   <nav class="nav" aria-label="Principale">
@@ -238,99 +305,164 @@ h1{font-size:clamp(2.3rem,4.4vw,3.5rem);line-height:1.05;letter-spacing:-.035em;
     <a class="bouton bouton-trait" href="https://engageme.messagingme.app/login">Se connecter</a>
   </nav>
 </header>
+</div>
 
 <main>
   <section class="cadre une">
-    <div>
-      <h1>Tout WhatsApp, dans une seule console.</h1>
-      <p class="chapeau">Push, chaîne, publicités Click-to-WhatsApp, RCS et service client au même endroit. Vous choisissez qui répond, et chaque conversation est qualifiée.</p>
+    <h1>Transformez chaque conversation<br> en levier de performance.</h1>
+    <div class="une-gauche">
+      <p class="chapeau">WhatsApp et RCS, campagnes et service client au même endroit. Vous choisissez qui répond, et chaque conversation est qualifiée.</p>
       <div class="appels">
         <a class="bouton bouton-plein" href="https://engageme.messagingme.app/login">Se connecter</a>
         <a class="bouton bouton-texte" href="https://engageme.messagingme.app/developers/api">Documentation de l’API <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>
       </div>
+        <div class="lu entre" style="--d:3.1s">
+          <p class="lu-titre">Lu par Engage Me</p>
+          <dl>
+            <div class="large"><dt>Pris en charge par</dt><dd class="mba"><img src="meta-business-agent.png" alt="" width="22" height="22">Meta Business Agent</dd></div>
+            <div><dt>Intention</dt><dd>Achat</dd></div>
+            <div><dt>Urgence</dt><dd>7 <small>/ 10</small></dd></div>
+            <div><dt>Satisfaction</dt><dd>9 <small>/ 10</small></dd></div>
+            <div><dt>Risque de churn</dt><dd>Faible</dd></div>
+          </dl>
+        </div>
     </div>
 
-    <figure class="scene" aria-label="Exemple : une campagne push ouvre une conversation WhatsApp, le Meta Business Agent répond, et Engage Me qualifie l’échange">
-      <p class="origine entre" style="--d:.5s">Via une campagne push</p>
-      <div class="iphone entre" style="--d:.05s">
-        <div class="ecran">
-          <div class="ios" aria-hidden="true">
-            <span>10:42</span>
-            <span class="ilot"></span>
-            <span class="etat"><svg class="ic"><use href="#i-signal"/></svg><svg class="ic"><use href="#i-wifi"/></svg><svg class="ic pile"><use href="#i-pile"/></svg></span>
+    <div class="scene-cadre">
+      <figure class="scene" aria-label="Exemples : une campagne push ouvre une conversation WhatsApp où le Meta Business Agent répond, et une carte enrichie RCS mène à une réservation">
+        <div class="android entre" style="--d:.15s">
+          <div class="ecran-a">
+            <div class="a-etat" aria-hidden="true">
+              <span>10:42</span>
+              <span class="poincon"></span>
+              <span class="etat"><svg class="ic"><use href="#i-wifi"/></svg><svg class="ic"><use href="#i-signal"/></svg><svg class="ic pile"><use href="#i-pile"/></svg></span>
+            </div>
+            <div class="a-tete">
+              <svg class="ic" aria-hidden="true"><use href="#i-arrow-left"/></svg>
+              <span class="avatar" aria-hidden="true">VM</span>
+              <span class="a-qui">Votre marque <svg class="ic" role="img" aria-label="marque vérifiée"><use href="#i-verifie"/></svg></span>
+              <svg class="ic" aria-hidden="true"><use href="#i-menu"/></svg>
+            </div>
+            <ol class="a-fil">
+              <li class="a-jour">Aujourd’hui · 10:30</li>
+              <li class="carte-riche entre" style="--d:.9s">
+                <div class="visuel" aria-hidden="true">-20&nbsp;%</div>
+                <div class="carte-corps"><strong>Collection d’automne</strong><span>Pour nos clients, jusqu’à dimanche.</span></div>
+                <span class="action-riche">Voir la collection</span>
+                <span class="action-riche">Réserver en boutique</span>
+              </li>
+              <li class="a-bulle a-envoye entre" style="--d:1.6s">Réserver en boutique</li>
+              <li class="a-bulle a-recu entre" style="--d:2.2s">C’est noté, la veste vous attend en boutique jusqu’à samedi.</li>
+              <li class="entre" style="--d:2.6s">
+                <ul class="suggestions" aria-label="Réponses suggérées"><li>Changer de taille</li><li>Merci&nbsp;!</li></ul>
+              </li>
+            </ol>
+            <div class="a-saisie" aria-hidden="true"><svg class="ic"><use href="#i-plus"/></svg><span class="a-champ">Message RCS<svg class="ic"><use href="#i-smiley"/></svg></span><svg class="ic"><use href="#i-micro"/></svg></div>
+            <span class="a-geste" aria-hidden="true"></span>
           </div>
-          <div class="wa-tete">
-            <svg class="ic" aria-hidden="true"><use href="#i-caret-left"/></svg>
-            <span class="avatar" aria-hidden="true">VM</span>
-            <span class="qui"><strong>Votre marque</strong><small>Compte professionnel</small></span>
-          </div>
-          <ol class="wa-fil">
-            <li class="jour">Aujourd’hui</li>
-            <li class="bulle recu entre" style="--d:.7s">
-              <p>Nouvelle collection d’automne&nbsp;: -20&nbsp;% pour nos clients, jusqu’à dimanche.<span class="heure">10:30</span></p>
-              <span class="bouton-modele"><svg class="ic" aria-hidden="true"><use href="#i-lien"/></svg>Voir la collection</span>
-            </li>
-            <li class="bulle envoye entre" style="--d:1.3s">
-              <p>La veste en laine existe en M&nbsp;? Je la prends si oui.<span class="heure">10:41 <svg class="ic" aria-hidden="true"><use href="#i-coches"/></svg></span></p>
-            </li>
-            <li class="bulle recu entre" style="--d:1.9s">
-              <p>Oui, il en reste trois en M. Je vous envoie le lien de paiement&nbsp;?<span class="heure">10:41</span></p>
-            </li>
-            <li class="bulle envoye entre" style="--d:2.5s">
-              <p>Oui, merci&nbsp;!<span class="heure">10:42 <svg class="ic" aria-hidden="true"><use href="#i-coches"/></svg></span></p>
-            </li>
-          </ol>
-          <div class="saisie" aria-hidden="true"><svg class="ic"><use href="#i-plus"/></svg><span class="champ"></span><svg class="ic"><use href="#i-camera"/></svg><svg class="ic"><use href="#i-micro"/></svg></div>
-          <span class="barre-accueil" aria-hidden="true"></span>
         </div>
-      </div>
-      <div class="lu entre" style="--d:3.1s">
-        <p class="lu-titre">Lu par Engage Me</p>
-        <dl>
-          <div class="large"><dt>Pris en charge par</dt><dd class="mba"><img src="meta-business-agent.png" alt="" width="22" height="22">Meta Business Agent</dd></div>
-          <div><dt>Intention</dt><dd>Achat</dd></div>
-          <div><dt>Urgence</dt><dd>7 <small>/ 10</small></dd></div>
-          <div><dt>Satisfaction</dt><dd>9 <small>/ 10</small></dd></div>
-          <div><dt>Risque de churn</dt><dd>Faible</dd></div>
-        </dl>
-      </div>
-    </figure>
+
+        <div class="iphone entre" style="--d:.05s">
+          <div class="ecran">
+            <div class="ios" aria-hidden="true">
+              <span>10:42</span>
+              <span class="ilot"></span>
+              <span class="etat"><svg class="ic"><use href="#i-signal"/></svg><svg class="ic"><use href="#i-wifi"/></svg><svg class="ic pile"><use href="#i-pile"/></svg></span>
+            </div>
+            <div class="wa-tete">
+              <svg class="ic" aria-hidden="true"><use href="#i-caret-left"/></svg>
+              <span class="avatar" aria-hidden="true">VM</span>
+              <span class="qui"><strong>Votre marque</strong><small>Compte professionnel</small></span>
+            </div>
+            <ol class="wa-fil">
+              <li class="jour">Aujourd’hui</li>
+              <li class="bulle recu entre" style="--d:.7s">
+                <p>Nouvelle collection d’automne&nbsp;: -20&nbsp;% pour nos clients, jusqu’à dimanche.<span class="heure">10:30</span></p>
+                <span class="bouton-modele"><svg class="ic" aria-hidden="true"><use href="#i-lien"/></svg>Voir la collection</span>
+              </li>
+              <li class="bulle envoye entre" style="--d:1.3s">
+                <p>La veste en laine existe en M&nbsp;? Je la prends si oui.<span class="heure">10:41 <svg class="ic" aria-hidden="true"><use href="#i-coches"/></svg></span></p>
+              </li>
+              <li class="bulle recu entre" style="--d:1.9s">
+                <p>Oui, il en reste trois en M. Je vous envoie le lien de paiement&nbsp;?<span class="heure">10:41</span></p>
+              </li>
+              <li class="bulle envoye entre" style="--d:2.5s">
+                <p>Oui, merci&nbsp;!<span class="heure">10:42 <svg class="ic" aria-hidden="true"><use href="#i-coches"/></svg></span></p>
+              </li>
+            </ol>
+            <div class="saisie" aria-hidden="true"><svg class="ic"><use href="#i-plus"/></svg><span class="champ"></span><svg class="ic"><use href="#i-camera"/></svg><svg class="ic"><use href="#i-micro"/></svg></div>
+            <span class="barre-accueil" aria-hidden="true"></span>
+          </div>
+        </div>
+      </figure>
+
+    </div>
   </section>
 
   <section class="relais revele">
     <div class="cadre">
-      <h2>Cinq entrées, une seule conversation.</h2>
-      <p>Engage Me relie vos campagnes, vos canaux et votre service client, puis confie chaque conversation à qui vous choisissez.</p>
-      <div class="schema">
-        <ul class="pole entrees">
-          <li><strong>Campagne push</strong><span>Vos offres et relances, au bon segment</span></li>
-          <li><strong>Chaîne WhatsApp</strong><span>Un post de votre chaîne ouvre l’échange</span></li>
-          <li><strong>Publicité Click-to-WhatsApp</strong><span>Le clic sur l’annonce lance le bon scénario</span></li>
-          <li><strong>Service client</strong><span>Le widget de votre site et les messages entrants</span></li>
-          <li><strong>RCS</strong><span>Prend le relais quand WhatsApp ne passe pas</span></li>
-        </ul>
-        <div class="fils" aria-hidden="true">
-          <svg viewBox="0 0 110 100" preserveAspectRatio="none">
-            <path d="M0 10 C55 10 55 50 110 50"/>
-            <path d="M0 30 C55 30 55 50 110 50"/>
-            <path d="M0 50 L110 50"/>
-            <path d="M0 70 C55 70 55 50 110 50"/>
-            <path d="M0 90 C55 90 55 50 110 50"/>
-          </svg>
+      <h2>Deux canaux, une seule conversation.</h2>
+      <p>WhatsApp et RCS n’ouvrent pas les mêmes portes. Engage Me les réunit, puis confie chaque conversation à qui vous choisissez.</p>
+      <div class="canaux">
+        <fieldset class="bascule">
+          <legend>Canal</legend>
+          <input type="radio" name="canal" id="canal-wa" checked><label for="canal-wa">WhatsApp</label>
+          <input type="radio" name="canal" id="canal-rcs"><label for="canal-rcs">RCS</label>
+        </fieldset>
+
+        <div class="schema schema-wa">
+          <ul class="pole entrees">
+            <li><strong>Campagne push</strong><span>Vos offres et relances, au bon segment</span></li>
+            <li><strong>Chaîne WhatsApp</strong><span>Un post de votre chaîne ouvre l’échange</span></li>
+            <li><strong>Publicité Click-to-WhatsApp</strong><span>Le clic sur l’annonce lance le bon scénario</span></li>
+            <li><strong>Service client</strong><span>Le widget de votre site, ou dans votre app</span></li>
+          </ul>
+          <div class="fils" aria-hidden="true">
+            <svg viewBox="0 0 110 100" preserveAspectRatio="none">
+              <path d="M0 12.5 C55 12.5 55 50 110 50"/>
+              <path d="M0 37.5 C55 37.5 55 50 110 50"/>
+              <path d="M0 62.5 C55 62.5 55 50 110 50"/>
+              <path d="M0 87.5 C55 87.5 55 50 110 50"/>
+            </svg>
+          </div>
+          <div class="noeud" role="img" aria-label="Engage Me"><svg aria-hidden="true"><use href="#i-logo"/></svg></div>
+          <div class="fils" aria-hidden="true">
+            <svg viewBox="0 0 110 100" preserveAspectRatio="none">
+              <path class="fin" d="M0 50 C55 50 55 16.67 110 16.67"/>
+              <path class="fin" d="M0 50 C55 50 55 83.33 110 83.33"/>
+              <path d="M0 50 L110 50"/>
+            </svg>
+          </div>
+          <ul class="pole repondants">
+            <li><strong>Vos agents IA</strong><span>Vos règles, vos outils, vos connaissances</span></li>
+            <li><strong><img src="meta-business-agent.png" alt="" width="24" height="24">Meta Business Agent <span class="natif">natif</span></strong><span>L’agent de Meta, configuré depuis la console</span></li>
+            <li><strong>Votre équipe</strong><span>Dans une boîte partagée, elle reprend la main</span></li>
+          </ul>
         </div>
-        <div class="noeud" role="img" aria-label="Engage Me"><svg aria-hidden="true"><use href="#i-logo"/></svg></div>
-        <div class="fils" aria-hidden="true">
-          <svg viewBox="0 0 110 100" preserveAspectRatio="none">
-            <path class="fin" d="M0 50 C55 50 55 16.67 110 16.67"/>
-            <path class="fin" d="M0 50 C55 50 55 83.33 110 83.33"/>
-            <path d="M0 50 L110 50"/>
-          </svg>
+
+        <div class="schema schema-rcs">
+          <ul class="pole entrees">
+            <li><strong>Campagne push</strong><span>Cartes enrichies, visuels et boutons d’action</span></li>
+            <li><strong>Publicité Click-to-RCS</strong><span>Le clic sur l’annonce ouvre la conversation</span></li>
+          </ul>
+          <div class="fils" aria-hidden="true">
+            <svg viewBox="0 0 110 100" preserveAspectRatio="none">
+              <path d="M0 25 C55 25 55 50 110 50"/>
+              <path d="M0 75 C55 75 55 50 110 50"/>
+            </svg>
+          </div>
+          <div class="noeud" role="img" aria-label="Engage Me"><svg aria-hidden="true"><use href="#i-logo"/></svg></div>
+          <div class="fils" aria-hidden="true">
+            <svg viewBox="0 0 110 100" preserveAspectRatio="none">
+              <path d="M0 50 C55 50 55 25 110 25"/>
+              <path class="fin" d="M0 50 C55 50 55 75 110 75"/>
+            </svg>
+          </div>
+          <ul class="pole repondants">
+            <li><strong>Vos scénarios</strong><span>Ils répondent, relancent et qualifient seuls</span></li>
+            <li><strong>Votre équipe</strong><span>Dans la même boîte partagée que WhatsApp</span></li>
+          </ul>
         </div>
-        <ul class="pole repondants">
-          <li><strong>Vos agents IA</strong><span>Vos règles, vos outils, vos connaissances</span></li>
-          <li><strong><img src="meta-business-agent.png" alt="" width="24" height="24">Meta Business Agent <span class="natif">natif</span></strong><span>L’agent de Meta, configuré depuis la console</span></li>
-          <li><strong>Votre équipe</strong><span>Dans une boîte partagée, elle reprend la main</span></li>
-        </ul>
       </div>
     </div>
   </section>
@@ -423,13 +555,19 @@ claude mcp add --transport http mba https://api.messagingme.app/mcp \
 </footer>
 
 <script>
+  // L'en-tête prend son fond dès que la sentinelle du haut de page sort de l'écran.
+  (function () {
+    var barre = document.querySelector('.barre'), sentinelle = document.querySelector('.sentinelle');
+    if (!('IntersectionObserver' in window)) { barre.classList.add('defile'); return; }
+    new IntersectionObserver(function (e) { barre.classList.toggle('defile', !e[0].isIntersecting); }).observe(sentinelle);
+  })();
   // Trace le relais quand il entre à l'écran. Sans IntersectionObserver, il s'affiche tout de suite.
   (function () {
     var cibles = document.querySelectorAll('.revele');
     if (!('IntersectionObserver' in window)) { cibles.forEach(function (c) { c.classList.add('vu'); }); return; }
     var io = new IntersectionObserver(function (entrees) {
       entrees.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('vu'); io.unobserve(e.target); } });
-    }, { threshold: 0.35 });
+    }, { threshold: 0.2 });
     cibles.forEach(function (c) { io.observe(c); });
   })();
 </script>
