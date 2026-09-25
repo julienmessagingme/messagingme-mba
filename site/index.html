@@ -13,8 +13,7 @@
 <meta property="og:url" content="https://engageme.messagingme.fr/">
 <meta property="og:title" content="Engage Me · Tout WhatsApp, dans une seule console">
 <meta property="og:description" content="Push, chaîne WhatsApp, publicités Click-to-WhatsApp et RCS au même endroit. Vous choisissez qui répond, et chaque conversation est qualifiée.">
-<meta name="theme-color" content="#F7F8FB" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0A0C1D" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#010630">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <!-- La police est servie d'ici, pas depuis Google Fonts : aucune adresse IP de visiteur ne part chez un tiers. -->
 <link rel="preload" href="fonts/plus-jakarta-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -22,33 +21,26 @@
 <style>
 @font-face{font-family:"Plus Jakarta Sans";src:url("fonts/plus-jakarta-sans-latin.woff2") format("woff2");font-weight:200 800;font-style:normal;font-display:swap}
 
-/* Rayons : boutons 10 px, panneaux 16 px, pastilles pleines. L'iPhone garde les siens : c'est un objet, pas un composant. */
+/* Rayons : boutons 10 px, panneaux 16 px, pastilles pleines. L'iPhone garde les siens : c'est un objet, pas un composant.
+   UN SEUL THÈME, celui de messagingme.fr : fond #010630, halo #101E8A, texte blanc, paragraphes à 66 %. */
 :root{
-  --paper:#F7F8FB;--surface:#FFFFFF;--ink:#10132E;--muted:#555C86;--line:#DCDFEA;
-  --action:#0080D6;--action-hover:#0066AA;--action-ink:#0066AA;--on-action:#FFFFFF;--action-wash:#E6F3FC;
-  --logo-navy:#181C40;--code-bg:#10132E;--code-ink:#E7E9F3;--code-muted:#8E94BC;
+  --nuit:#010630;--halo:#101E8A;
+  --paper:#010630;--surface:#0B1452;--ink:#FFFFFF;--muted:rgb(255 255 255 / .66);--line:rgb(255 255 255 / .12);
+  --action:#0080D6;--action-hover:#1A95EA;--action-ink:#6FC2FE;--on-action:#FFFFFF;--action-wash:rgb(51 171 254 / .16);
+  --logo-navy:#FFFFFF;--code-bg:#000322;--code-ink:#E7E9F3;--code-muted:#8E94BC;--ombre:rgb(0 2 20 / .55);
   --sans:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:ui-monospace,"SF Mono","Cascadia Mono","Segoe UI Mono",Menlo,Consolas,monospace;
   --ios:-apple-system,"SF Pro Text",system-ui,"Segoe UI",Roboto,sans-serif;
-  /* Les couleurs de WhatsApp sur iOS, qui ne servent QUE dans l'écran du téléphone. */
+  /* WhatsApp sur iOS, en clair : c'est l'écran d'un vrai téléphone, et il ressort sur le bleu nuit. */
   --wa-tete:#F6F6F6;--wa-fond:#EFEAE2;--wa-motif:rgb(17 27 33 / .045);--wa-recu:#FFFFFF;--wa-envoye:#D9FDD3;
   --wa-texte:#111B21;--wa-meta:#667781;--wa-coche:#53BDEB;--wa-lien:#027EB5;--wa-teinte:#007AFF;--wa-champ:#FFFFFF;--wa-date:#FFFFFF;
-  color-scheme:light dark;
-}
-@media (prefers-color-scheme:dark){
-  :root{
-    --paper:#0A0C1D;--surface:#12152E;--ink:#EDEFF7;--muted:#A0A6C8;--line:#272C4E;
-    --action:#33ABFE;--action-hover:#6FC2FE;--action-ink:#6FC2FE;--on-action:#06121F;--action-wash:#0E2C47;
-    --logo-navy:#EDEFF7;--code-bg:#070918;--code-ink:#E7E9F3;--code-muted:#8E94BC;
-    --wa-tete:#1C1C1E;--wa-fond:#0B141A;--wa-motif:rgb(233 237 239 / .035);--wa-recu:#1F2C34;--wa-envoye:#005C4B;
-    --wa-texte:#E9EDEF;--wa-meta:#8696A0;--wa-coche:#53BDEB;--wa-lien:#53BDEB;--wa-teinte:#0A84FF;--wa-champ:#2C2C2E;--wa-date:#1F2C34;
-  }
+  color-scheme:dark;
 }
 
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
-body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:1rem;line-height:1.6;-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--nuit) radial-gradient(120% 1100px at 50% 0%,var(--halo) 0%,var(--nuit) 65%) no-repeat;color:var(--ink);font-family:var(--sans);font-size:1rem;line-height:1.6;-webkit-font-smoothing:antialiased}
 a{color:inherit}
 a:focus-visible{outline:2px solid var(--action);outline-offset:3px;border-radius:10px}
 .cadre{--g:24px;max-width:1160px;margin:0 auto;padding:0 var(--g)}
@@ -69,7 +61,7 @@ a:focus-visible{outline:2px solid var(--action);outline-offset:3px;border-radius
 .bouton:active{transform:translateY(1px)}
 .bouton-plein{background:var(--action);color:var(--on-action);padding:.85em 1.45em;font-size:1rem}
 .bouton-plein:hover{background:var(--action-hover)}
-.bouton-trait{background:var(--surface);border:1px solid var(--line);padding:.5em 1em;font-size:.9rem}
+.bouton-trait{background:transparent;border:1px solid rgb(255 255 255 / .28);padding:.5em 1em;font-size:.9rem}
 .bouton-trait:hover{border-color:var(--action);color:var(--action-ink)}
 .bouton-texte{padding:.85em .4em;font-size:1rem;color:var(--ink)}
 .bouton-texte:hover{color:var(--action-ink)}
@@ -85,7 +77,7 @@ h1{font-size:clamp(2.3rem,4.4vw,3.5rem);line-height:1.05;letter-spacing:-.035em;
 
 /* L'iPhone */
 .scene{position:relative;display:flex;justify-content:center;margin:0}
-.iphone{position:relative;width:292px;padding:10px;border-radius:52px;background:linear-gradient(145deg,#2A2B31,#141518);box-shadow:inset 0 0 0 1.5px #45464D,inset 0 0 0 5px #0E0F11,0 2px 4px rgb(16 19 46 / .12),0 40px 70px -28px rgb(16 19 46 / .45)}
+.iphone{position:relative;width:292px;padding:10px;border-radius:52px;background:linear-gradient(145deg,#2A2B31,#141518);box-shadow:inset 0 0 0 1.5px #45464D,inset 0 0 0 5px #0E0F11,0 2px 4px rgb(0 0 0 / .3),0 40px 70px -28px var(--ombre)}
 .iphone::before,.iphone::after{content:"";position:absolute;width:3px;border-radius:2px;background:#2A2B31}
 .iphone::before{left:-3px;top:112px;height:54px;box-shadow:0 70px 0 #2A2B31}
 .iphone::after{right:-3px;top:150px;height:78px}
@@ -120,8 +112,8 @@ h1{font-size:clamp(2.3rem,4.4vw,3.5rem);line-height:1.05;letter-spacing:-.035em;
 .barre-accueil{position:absolute;bottom:7px;left:50%;width:108px;height:4px;margin-left:-54px;border-radius:3px;background:var(--wa-texte);opacity:.85}
 
 /* Ce qui déborde du téléphone : d'où vient la conversation, et ce qu'Engage Me en a retenu */
-.origine{position:absolute;z-index:2;top:62px;right:0;margin:0;padding:7px 13px;border-radius:999px;background:var(--surface);border:1px solid var(--action);color:var(--action-ink);font-size:.8rem;font-weight:600;white-space:nowrap;box-shadow:0 10px 24px -12px rgb(16 19 46 / .35)}
-.lu{position:absolute;z-index:2;left:0;bottom:-34px;width:250px;padding:16px 18px;border-radius:16px;background:var(--surface);border:1px solid var(--line);box-shadow:0 1px 2px rgb(16 19 46 / .05),0 24px 44px -20px rgb(16 19 46 / .35)}
+.origine{position:absolute;z-index:2;top:62px;right:0;margin:0;padding:7px 13px;border-radius:999px;background:var(--surface);border:1px solid var(--action);color:var(--action-ink);font-size:.8rem;font-weight:600;white-space:nowrap;box-shadow:0 10px 24px -12px var(--ombre)}
+.lu{position:absolute;z-index:2;left:0;bottom:-34px;width:250px;padding:16px 18px;border-radius:16px;background:var(--surface);border:1px solid var(--line);box-shadow:0 1px 2px rgb(0 0 0 / .2),0 24px 44px -20px var(--ombre)}
 .lu-titre{margin:0 0 12px;font-size:.86rem;font-weight:700}
 .lu dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 14px;margin:0}
 .lu .large{grid-column:1 / -1;padding-bottom:12px;border-bottom:1px solid var(--line)}
@@ -153,7 +145,7 @@ h1{font-size:clamp(2.3rem,4.4vw,3.5rem);line-height:1.05;letter-spacing:-.035em;
 .fils svg{display:block;width:100%;height:100%;overflow:visible}
 .fils path{fill:none;stroke:var(--action);stroke-width:1.75;vector-effect:non-scaling-stroke}
 .fils path.fin{stroke:var(--line)}
-.noeud{align-self:center;display:grid;place-items:center;width:76px;height:76px;border-radius:50%;background:var(--surface);border:1px solid var(--line);box-shadow:0 18px 36px -18px rgb(16 19 46 / .35)}
+.noeud{align-self:center;display:grid;place-items:center;width:76px;height:76px;border-radius:50%;background:var(--surface);border:1px solid var(--line);box-shadow:0 18px 36px -18px var(--ombre)}
 .noeud svg{width:40px;height:40px}
 @media (max-width:860px){
   .schema{grid-template-columns:minmax(0,1fr);justify-items:start;min-height:0}
@@ -178,13 +170,13 @@ h1{font-size:clamp(2.3rem,4.4vw,3.5rem);line-height:1.05;letter-spacing:-.035em;
 @media (max-width:900px){.dev .cadre{grid-template-columns:minmax(0,1fr);gap:36px}}
 
 /* Pied de page : celui de messagingme.fr, signé Engage Me by Messaging Me */
-.pied{--logo-navy:#FFFFFF;color:#C9CEEA;background:radial-gradient(90% 140% at 55% 115%,#1B2A9C 0%,#0B1052 42%,#050829 100%)}
+.pied{color:var(--muted);border-top:1px solid var(--line);background:radial-gradient(at 50% 100%,var(--halo) 0%,var(--nuit) 60%)}
 .pied a{text-decoration:none;transition:color .15s}
 .pied a:hover{color:#fff}
-.pied-haut{display:grid;grid-template-columns:minmax(0,1.4fr) repeat(3,minmax(0,1fr)) minmax(0,1.2fr);gap:40px;padding-top:72px;padding-bottom:56px}
-.pied-marque{display:flex;align-items:center;gap:10px;color:#fff;font-weight:700;font-size:1.05rem}
+.pied-haut{display:grid;grid-template-columns:minmax(0,1.7fr) repeat(3,minmax(0,1fr)) minmax(0,1.2fr);gap:40px;padding-top:72px;padding-bottom:56px}
+.pied-marque{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;white-space:nowrap;color:#fff;font-weight:700;font-size:1.05rem}
 .pied-marque svg{width:28px;height:28px}
-.pied-marque small{font-weight:500;color:#C9CEEA}
+.pied-marque small{font-weight:500;color:var(--muted)}
 .pied-accroche{margin:14px 0 0;max-width:19em;color:#fff;font-size:.95rem;line-height:1.5}
 .pied h3{margin:0 0 18px;color:#fff;font-size:1rem;font-weight:700}
 .pied ul{list-style:none;margin:0;padding:0;display:grid;gap:12px;font-size:.93rem}
