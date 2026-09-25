@@ -1,7 +1,7 @@
 ---
 ecran: securite-audit
 source_section: Journaux et traces (menu Sécurité)
-source_empreinte: d301f5
+source_empreinte: 07f303
 ---
 # Retrouver qui a fait quoi, et pourquoi un message n'est pas parti
 
@@ -23,15 +23,27 @@ Ce journal est fait pour ne jamais être modifié, et cela dicte ce qu'il contie
 - **Les échecs de connexion ne sont enregistrés que pour des comptes qui existent.** Une tentative sur une
   adresse inventée n'appartient à aucun espace, elle ne peut donc pas y figurer.
 
-**Le journal des erreurs de livraison**, juste en dessous, répond à l'autre question : ce que Meta a répondu
-quand un message n'est pas parti, ou n'est pas arrivé. Le code, sa signification en français pour les plus
-courants, la campagne, le numéro, et surtout **d'où vient l'échec** : « jamais parti », c'est-à-dire que
-Meta a refusé notre appel, ou « parti, non délivré », c'est-à-dire le téléphone d'en face. Chercher au
-mauvais endroit coûte cher, alors cette colonne est la première à regarder.
+**Le journal des erreurs**, juste en dessous, répond à l'autre question, en deux parties.
 
-Celui-ci **porte les numéros**, contrairement au précédent : savoir quel message n'est pas arrivé sans
-savoir à qui ne répond à rien. Il n'a rien d'immuable, et il disparaît avec le contact quand vous supprimez
-celui-ci.
+**Les erreurs de livraison** disent ce que Meta, ou pour un RCS le fournisseur RCS, a répondu quand un
+message n'est pas parti, ou n'est pas arrivé. Le code, sa signification en français pour les plus courants,
+la campagne, le numéro, et surtout **d'où vient l'échec** :
+
+- « jamais parti » : notre appel a été refusé ;
+- « parti, non délivré » : le téléphone d'en face n'a pas reçu un message de campagne ;
+- « scénario bloqué sur une réponse » : c'est le traitement du message REÇU qui n'a pas abouti ;
+- « message non délivré » ou « RCS non délivré » : un message envoyé hors campagne n'est pas arrivé, et sa
+  provenance est dite entre parenthèses (réponse d'un opérateur, envoi par l'API, bloc de scénario, agent
+  IA, agent de Meta, agent branché par MCP).
+
+Chercher au mauvais endroit coûte cher, alors cette colonne est la première à regarder. Cette partie **porte
+les numéros**, contrairement au journal des actions : savoir quel message n'est pas arrivé sans savoir à qui
+ne répond à rien. Elle n'a rien d'immuable, et elle disparaît avec le contact quand vous supprimez celui-ci.
+
+**Les erreurs système** disent quels appels la console a passés vers VOS systèmes sans qu'ils aboutissent :
+qui appelait (un agent IA, le bloc « Appel HTTP » d'un scénario, la poussée d'un désabonnement, l'agent de
+Meta, ou la remontée des signaux vers l'outil branché dans Paramètres > Intégrations) et ce que votre système
+a répondu.
 
 **On cherche dans les deux** par mot-clé, par utilisateur ou par numéro de client, et les deux s'exportent
 en CSV. Une nuance dans le journal des actions : chercher par numéro passe par la fiche du contact, donc un

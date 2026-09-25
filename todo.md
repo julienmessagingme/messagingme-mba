@@ -403,6 +403,21 @@ Chantier : spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`,
 - **Relayer les outils MCP** : même route, résolveur MCP à la place de `creerAppelConnecteur` (hors du
   chantier du 2026-09-21, arbitrage de Julien).
 
+## 🟡 La facturation qui lira `agent_tool_calls` devra exclure `source = 'signaux'` (lot 6 de l'API publique, 2026-09-24)
+
+`agent_tool_calls` est AUSSI le grand livre de facturation (commentaire de la migration 0086 : « c est la meme
+table, volontairement »). Depuis le lot 6, la remontée des signaux vers l'outil d'un client y écrit ses poussées
+RATÉES (`source = 'signaux'`, une ligne par tranche refusée ou par succès partiel ; 401 et 403 suspendent la
+remontée au lieu d'écrire une ligne par signal). Ce ne sont PAS des appels d'outil facturables.
+
+- **Le geste** : le jour où une requête de facturation lit cette table, elle exclut `source = 'signaux'`, et un
+  test le garde (une ligne `signaux` écrite, relue, et absente du compte facturé).
+- ⚠️ **Piège ARMÉ, pas une fuite ouverte** : aucune facturation ne lit la table aujourd'hui, son seul lecteur est
+  le journal des erreurs (`PgErreursLivraisonStore.listerEchecsSysteme`).
+- ⚠️ **Et la table n'est jamais purgée** : si un espace branché accumule des refus (un identifiant de profil
+  refusé par l'outil, fiche après fiche), les lignes s'additionnent. À surveiller à la première mise en
+  production d'un client branché, pas à anticiper.
+
 ## 🟡 API publique : ce qui manque encore (mémo d'architecture du 2026-09-19, décision du 2026-09-21)
 
 Les trois premiers points viennent du mémo, dont le reste est fusionné dans `docs/ARCHITECTURE-CIBLE.md` : ils

@@ -7,6 +7,7 @@ import { getSettings, setTimezone as apiSetTimezone, setBusinessHours as apiSetB
 import { TIMEZONES, timezoneLabel, DEFAULT_TIMEZONE } from '@/lib/timezones';
 import { inputClsAuto } from '@/lib/ui';
 import { BlockedContacts } from '@/components/BlockedContacts';
+import { ReglageIntegrationBatch } from '@/components/ReglageIntegrationBatch';
 import { Toggle } from '@/components/Toggle';
 
 /**
@@ -257,6 +258,10 @@ function Parametres({ tenantId }: { tenantId: string }) {
 
           {/* Contacts bloqués : SEULE porte de sortie d'un blocage. Un contact bloqué n'apparaît nulle part
               ailleurs, donc sans cet écran il serait introuvable. La section se masque quand la liste est vide. */}
+          {/* INTÉGRATIONS (lot 6 de l'API publique) : l'outil qui reçoit les signaux. Admin seulement, comme
+              tout ce bloc : un manager ne voit que la section de la prise par les agents. */}
+          <ReglageIntegrationBatch tenantId={tenantId} />
+
           <BlockedContacts tenantId={tenantId} />
 
           {/*

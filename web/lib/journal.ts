@@ -16,6 +16,11 @@ export const ACTIONS_JOURNAL: Record<string, [string, string]> = {
   'contact.optout': ['Passage en opt-out', 'Marked as opted out'],
   'workflow.published': ['Scénario mis en ligne', 'Scenario published'],
   'conversation.effacee': ['Conversation effacée', 'Conversation erased'],
+  // Le branchement d'un outil qui reçoit les signaux (lot 6 de l'API publique) : le libellé ne nomme pas
+  // l'outil, le détail de la ligne le porte (`outil`).
+  'integration.branchee': ['Outil branché sur les signaux', 'Tool connected to signals'],
+  'integration.modifiee': ['Réglage d’un outil modifié', 'Tool settings changed'],
+  'integration.debranchee': ['Outil débranché', 'Tool disconnected'],
 };
 
 /** Détail compact : « created 2 · optIn oui ». Rien à interpréter, ce sont des compteurs et des drapeaux. */

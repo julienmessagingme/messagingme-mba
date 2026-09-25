@@ -54,6 +54,36 @@ export function revokeApiKey(tenantId: string, id: string): Promise<{ id: string
   return request(`/tenants/${tenantId}/api-keys/${id}`, { method: 'DELETE' });
 }
 
+// --- Intégrations : l'outil qui reçoit les signaux (Paramètres > Intégrations) ---
+
+/**
+ * L'état du branchement, tel que le serveur le rend (`src/http/integration-batch.ts`). Les clés n'y sont
+ * JAMAIS : le serveur ne les relit pas en clair pour l'écran, il dit seulement que l'outil est branché.
+ */
+export interface EtatIntegrationBatch {
+  branche: boolean;
+  envoyerResume?: boolean;
+  /** Signaux non poussés parce que leur fiche ne porte pas d'identifiant externe, cumulés depuis le branchement. */
+  sansIdentifiant?: number;
+  sansIdentifiantLe?: string | null;
+  /** L'outil a refusé les clés (401, 403) : la remontée est suspendue jusqu'à de nouvelles clés. */
+  refusClesLe?: string | null;
+  majLe?: string;
+}
+export function lireIntegrationBatch(tenantId: string): Promise<EtatIntegrationBatch> {
+  return request<EtatIntegrationBatch>(`/tenants/${tenantId}/integrations/batch`);
+}
+/** Une clé absente = garder celle qui est enregistrée. Les deux sont requises au premier branchement. */
+export function enregistrerIntegrationBatch(
+  tenantId: string,
+  corps: { cleRest?: string; cleProjet?: string; envoyerResume: boolean },
+): Promise<EtatIntegrationBatch> {
+  return request<EtatIntegrationBatch>(`/tenants/${tenantId}/integrations/batch`, { method: 'PUT', body: JSON.stringify(corps) });
+}
+export function debrancherIntegrationBatch(tenantId: string): Promise<EtatIntegrationBatch> {
+  return request<EtatIntegrationBatch>(`/tenants/${tenantId}/integrations/batch`, { method: 'DELETE' });
+}
+
 // Types de champ perso : source runtime `USER_FIELD_KINDS` + type dérivé, dans `./field-kinds` (module PUR).
 // Ré-exportés ici pour ne pas casser les imports existants (`import { UserFieldKind } from '@/lib/api'`).
 export { USER_FIELD_KINDS } from '../field-kinds';

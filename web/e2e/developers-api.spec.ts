@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { CODES_DOCUMENTES } from '../lib/api-exemples';
+import { EVENEMENTS_SIGNAUX } from '../lib/signaux-dictionnaire';
 
 /**
  * La page Documentation API, RENDUE.
@@ -29,10 +30,13 @@ test.describe('Developers : la documentation de l’API', () => {
     for (const titre of [
       'Désigner une personne', 'Contacts', 'Envoyer un message simple', 'Déclencher un envoi',
       'Ce que vous pouvez envoyer', 'Brancher un outil qui appelle par contact', 'Erreurs', 'Exemples complets',
+      // Lot 6 : la section des signaux, rendue DANS `doc-api`, donc lue aussi par le cas « aucun outil tiers ».
+      'Ce que nous remontons',
     ]) {
       await expect(doc.getByRole('heading', { name: titre, exact: true })).toBeVisible();
     }
     for (const c of CODES_DOCUMENTES) await expect(doc.getByTestId(`code-${c.code}`)).toBeVisible();
+    for (const e of EVENEMENTS_SIGNAUX) await expect(doc.getByTestId(`signal-${e.nom}`)).toBeVisible();
   });
 
   test('🔴 la page rendue ne nomme aucun outil tiers', async ({ page }) => {

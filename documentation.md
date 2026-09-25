@@ -664,7 +664,7 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   la fiche. `contacts.external_id` est unique PAR ESPACE (index partiel `contacts_tenant_external_id_uidx`), et
   la purge l'efface avec le numéro. ⚠️ Exception assumée à « rien n'est écrit » : une définition de champ a pu
   être créée (la préparation des champs passe avant la résolution), et elle compte dans le plafond de
-  l'espace. ⚠️ `/v1/sends` (mode `phone`, `jamais` pour une ouverture de session) et `/v1/messages/whatsapp` (mode `jamais`) passent par cette même résolution ; la seconde rattache une clé neuve même quand le message est ensuite refusé.
+  l'espace. ⚠️ `/v1/sends` (mode `phone`, `jamais` pour une ouverture de session), `/v1/messages/whatsapp` et `/v1/messages/rcs` (mode `jamais`) passent par cette même résolution ; les deux dernières rattachent une clé neuve même quand le message est ensuite refusé.
   ⚠️ Rattacher un numéro à une fiche qui n'avait qu'un BSUID change son adresse WhatsApp (`waIdOf` préfère
   le numéro).
 - 🔴 **L'API écrit champs, étiquettes et nom par `editerFicheApi`, jamais par `applyEdits`** : une requête
@@ -871,7 +871,7 @@ La cadence de polling se règle **par file**, sur la latence réellement utile, 
 |---|---|---|
 | conversationnelle (quelqu'un attend) | 2 s | `webhook`, `agent-turn` |
 | interactive (l'opérateur regarde l'écran) | 5 s | `campaign-run`, `automation-event` |
-| de fond (personne n'attend) | 30 s | `webhook-status`, `analyze-conversation`, `push-analysis`, `hubspot-catchup`, `optout-poussee` |
+| de fond (personne n'attend) | 30 s | `webhook-status`, `analyze-conversation`, `push-analysis`, `hubspot-catchup`, `optout-poussee`, les files d'adaptateur de signaux (`signaux-*`) |
 | dépôt inspecté, consommé par personne | 60 s | toute DLQ |
 
 🔴 **Pourquoi pas le défaut de pg-boss (2 s partout)** : mesuré, le polling à vide des quatre process (mba api
@@ -1153,7 +1153,8 @@ lirait le `.env.prod` : il borne les dégâts quel que soit le nombre de clés c
 
 **Chiffrés au repos** (AES-256-GCM, `src/crypto/secretbox.ts`, même patron partout) : les tokens business
 d'Embedded Signup (`waba_credentials`), les clés RCS par workspace (`rcs_agents.api_key_enc`), les clés AI Gateway par espace (`agent_gateway_keys.cle_chiffree`), les mots de
-passe SMTP (`email_accounts.password_enc`), les secrets de connecteur API (`agent_tool_sources`).
+passe SMTP (`email_accounts.password_enc`), les secrets de connecteur API (`agent_tool_sources`), les clés d'un
+outil qui reçoit les signaux (la table de son adaptateur, dans `src/signaux/`).
 
 **Hachés, jamais stockés en clair** : les clés d'API publiques (`api_keys`, sha256), les jetons d'invitation et
 de réinitialisation (`auth_tokens`), les secrets de webhook entrant.
@@ -1577,7 +1578,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/crm/identity.ts` -> `waIdOfTarget` | la règle wa_id pour une cible d'envoi |
 | `src/api/fiche.ts` -> `resoudreFiche` | 🔴 trouver la fiche d'une personne à partir des clés reçues par l'API publique. Une seconde résolution divergerait sur la règle multi-clés, et une personne aurait deux fiches |
 | `src/api/consentement.ts` -> `appliquerConsentement` | le consentement écrit par une machine, et sa ligne d'audit |
-| `src/api/erreurs.ts` | `STATUT_PAR_CODE` et `refuser` : la forme `{ error, code }` des erreurs de `/v1/contacts`, `/v1/sends`, `/v1/messages/whatsapp` et de la garde de clé ; tout nouveau refus de l'API publique passe par là |
+| `src/api/erreurs.ts` | `STATUT_PAR_CODE` et `refuser` : la forme `{ error, code }` des erreurs de `/v1/contacts`, `/v1/sends`, `/v1/messages/whatsapp`, `/v1/messages/rcs`, des catalogues et de la garde de clé ; tout nouveau refus de l'API publique passe par là |
 | `src/crm/date-iso.ts` | normaliser une date venue d'un tiers, et REFUSER l'ambigu en le disant |
 | `src/crm/contact-filters.ts` | les règles de filtrage des contacts (bornes, opérateurs, plafonds) |
 | `src/stats/range.ts` -> `BOUNDS_CTE` | les bornes de date, robustes au changement d'heure |
@@ -1610,6 +1611,8 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/agent/fiche.ts` | les DEUX schémas de fiche : celui qui LIT, celui qui PATCHE |
 | `src/webhooks/json.ts` | `asArray`, `asRecord` : lecture défensive d'un payload Meta |
 | `src/queue/names.ts` | les files, leur cadence, leur DLQ, leur réveil |
+| `src/signaux/types.ts` | 🔴 le DICTIONNAIRE des signaux remontés vers l'outil d'un client, indépendant de tout outil : noms d'événements et d'attributs, noms des CHAMPS de chaque événement (`CHAMPS_EVENEMENT`), borne des textes, résumé en morceaux, `idSignal` (l'`em_event_id` STABLE et opaque), libellé neutre du journal des erreurs. Un adaptateur le traduit, il ne l'étend ni ne le renomme. La documentation publique (`web/lib/signaux-dictionnaire.ts`) lui est tenue par `tests/web-signaux-parite.test.ts`, sans nommer aucun outil |
+| `src/signaux/emetteur.ts` | 🔴 le SEUL point d'émission d'un signal : il ne lève jamais, ne lit rien tant qu'aucun espace n'a branché d'outil, ne transporte que ce que le chemin chaud sait déjà, et enfile des jobs bornés (`SIGNAUX_PAR_JOB`) avec leur priorité (`PRIORITE_SIGNAL` : les accusés derrière). La fiche, l'origine et l'analyse se relisent au moment de pousser (`completer.ts`) |
 | `src/ids/code.ts` | les identifiants publics et les codes de lien |
 
 ### Front

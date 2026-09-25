@@ -5,6 +5,7 @@ import { AppShell } from '@/components/AppShell';
 import { useT } from '@/lib/i18n';
 import { BASE } from '@/lib/http';
 import { BORNES, CODES_DOCUMENTES, EXEMPLES_CORPS, EXEMPLES_REPONSES, type NomDeCode } from '@/lib/api-exemples';
+import { DocSignaux } from '@/components/DocSignaux';
 
 /**
  * L'adresse PUBLIQUE de l'API, telle qu'un intégrateur doit la taper.
@@ -756,6 +757,10 @@ function DocsInner() {
         <SousTitre>{t('Un message RCS de la bibliothèque', 'An RCS message from the library')}</SousTitre>
         <Bloc>{curl('/v1/sends', EXEMPLES_CORPS.envoiRcs.corps)}</Bloc>
       </Section>
+
+      {/* LES SIGNAUX QUE LA CONSOLE REMONTE VERS L'OUTIL DU CLIENT (lot 6), en dernier : c'est l'autre sens du
+          branchement. Sa liste est tenue au dictionnaire du serveur par `tests/web-signaux-parite.test.ts`. */}
+      <DocSignaux />
     </div>
   );
 }

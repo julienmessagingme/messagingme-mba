@@ -1740,6 +1740,35 @@ scénario, comment importer des contacts.
   des routes.
   ⚠️ Elle ne nomme aucun outil tiers : elle sert à tous les intégrateurs.
 
+### Ce que la console remonte vers l'outil du client (Paramètres > Intégrations)
+
+- ✅ **Un dictionnaire de signaux, le même pour tous les outils** : quand un message est délivré, lu ou en
+  échec, quand le contact répond, clique un lien suivi ou se désabonne, et quand sa conversation est analysée,
+  la console pousse un ÉVÉNEMENT, avec l'état courant de la fiche, vers l'outil qu'un admin a branché dans
+  **Paramètres > Intégrations** (ses clés s'y saisissent, ne se réaffichent jamais, et le branchement comme le
+  débranchement s'inscrivent au journal des actions). Les noms commencent par `em_`, et les noms des champs de
+  chaque événement sont fixés par le dictionnaire : un adaptateur par outil les TRANSPORTE, il ne les renomme
+  pas. La liste complète est dans Developers > Documentation API, section « Ce que nous remontons ».
+  🔴 **Jamais le texte d'un message.** Le résumé d'une conversation seulement si l'admin coche l'option,
+  décochée par défaut : il contient des propos du client. Il part en morceaux de 300 caractères au plus
+  (`summary_1` à `summary_3`), la borne de texte la plus stricte des outils connus.
+  ⚠️ **Les réponses, clics, désabonnements et analyses passent devant les accusés** de livraison et de
+  lecture (priorité de file) : derrière une campagne de plusieurs milliers de destinataires, ces accusés
+  peuvent arriver avec plusieurs dizaines de minutes de retard, pendant que les réponses continuent de partir
+  dans la minute. Chaque événement porte l'heure où il s'est produit, et un identifiant stable (`em_event_id`)
+  pour dédupliquer un événement reçu deux fois.
+  ⚠️ **Le canal d'un désabonnement n'est dit que s'il est prouvé** : la personne a écrit STOP sur ce canal.
+  Un désabonnement posé par l'équipe ou par l'API ne porte que sa source.
+  ⚠️ **Le profil est désigné par l'`externalId`** que l'outil nous passe par l'API. Une fiche qui n'en porte
+  pas n'est pas remontée, et l'écran du réglage COMPTE ces signaux : un intégrateur qui a oublié de nous
+  passer ses identifiants le voit, au lieu de trouver son outil vide.
+  ⚠️ **Une poussée refusée se lit dans Sécurité > Journal des erreurs**, moitié « système ». Des clés
+  refusées par l'outil suspendent la remontée jusqu'à ce qu'on en enregistre de nouvelles, et l'écran le dit.
+  Un événement resté plus de 24 heures dans la file (une panne prolongée) peut ne pas être envoyé, selon
+  l'outil ; l'état de la fiche part quand même.
+  ⚠️ « Conversation analysée » arrive environ une demi-heure après le dernier message : assez pour une
+  relance, pas pour une alerte.
+
 ## Brancher vos systèmes : les connecteurs API (menu « Tools » > Connecteurs API)
 
 - ✅ **Une bibliothèque de systèmes pour tout le workspace** (2026-08-28), dans le menu **Tools**, à côté des
@@ -2082,12 +2111,24 @@ boîte par sous-menu.
     la ligne dit qu'il a été retiré plutôt que de le taire.
   - ⚠️ **Les échecs de connexion ne sont enregistrés que pour des comptes qui existent.** Une tentative sur une
     adresse inventée n'appartient à aucun espace et ne peut donc pas y figurer.
-- ✅ **Journal des erreurs de livraison** (2026-09-02), juste en dessous : ce que Meta a répondu quand un
-  message n'est pas parti, ou n'est pas arrivé. Le code, sa signification en français pour les plus courants,
-  la campagne, le numéro, et surtout **d'où vient l'échec** : « jamais parti » (Meta a refusé notre appel) ou
-  « parti, non délivré » (le téléphone d'en face). Chercher au mauvais endroit coûte cher.
-  Celui-ci **porte les numéros**, contrairement au précédent : « quel message n'est pas arrivé » sans dire
-  « à qui » ne répond à rien. Il n'a rien d'immuable et disparaît avec le contact quand vous le supprimez.
+- ✅ **Journal des erreurs** (2026-09-02), juste en dessous, en deux moitiés qui ne répondent pas à la même
+  question.
+  - **Erreurs de livraison** : ce que Meta, ou pour un RCS le fournisseur RCS, a répondu quand un message
+    n'est pas parti ou n'est pas arrivé. Le code, sa signification en français pour les plus courants, la
+    campagne, le numéro, et surtout **d'où vient l'échec**, parmi quatre origines : « jamais parti » (notre
+    appel a été refusé), « parti, non délivré » (le téléphone d'en face, pour un envoi de campagne),
+    « scénario bloqué sur une réponse » (c'est notre traitement du message REÇU qui n'a pas abouti), et
+    « message non délivré » ou « RCS non délivré » pour un message envoyé hors campagne (réponse de l'Inbox,
+    message de l'API, bloc de scénario, agent IA, agent de Meta ou agent branché par MCP, la provenance est
+    dite entre parenthèses). Chercher au mauvais endroit coûte cher. Au-dessus de la liste, un administrateur
+    voit aussi une carte qui compte les erreurs par code Meta sur la période choisie.
+    Celle-ci **porte les numéros**, contrairement au journal des actions : « quel message n'est pas arrivé »
+    sans dire « à qui » ne répond à rien. Elle n'a rien d'immuable et disparaît avec le contact quand vous le
+    supprimez.
+  - **Erreurs système** : les appels que la console passe vers VOS systèmes et qui n'ont pas abouti, avec
+    qui appelait (un agent IA, le bloc « Appel HTTP » d'un scénario, la poussée d'un désabonnement, l'agent de
+    Meta, ou la remontée des signaux vers l'outil branché dans Paramètres > Intégrations) et ce que votre
+    système a répondu. Aucun numéro ici : personne n'attend au bout d'un téléphone.
 - ✅ **Recherche dans les deux** : par mot-clé, par utilisateur, par numéro de client. ⚠️ Dans le journal des
   actions, chercher par numéro passe par la fiche du contact, donc **un contact effacé ne s'y retrouve plus**,
   même si ses actions y figurent toujours. L'écran le dit sous le résultat vide plutôt que de laisser croire

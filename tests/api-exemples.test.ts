@@ -24,6 +24,7 @@ import type { FicheApi, ResultatFiche } from '../src/api/contacts-v1';
 import type { SuiviEnvoiApi } from '../src/api/suivi-envoi';
 import { catalogueTemplates, catalogueScenarios, catalogueMessagesRcs } from '../src/http/v1-catalogues';
 import type { MessageRcsCatalogue, ScenarioCatalogue, TemplateCatalogue } from '../src/http/v1-catalogues';
+import { OUTILS_TIERS } from './outils-tiers';
 
 /**
  * LA PAGE DOCUMENTATION API NE PEUT PLUS DÉCRIRE UN CORPS QUE LE SERVEUR REFUSE (spec § 10).
@@ -96,26 +97,6 @@ const VALIDATEURS: Record<RouteAvecCorps, (corps: unknown) => Verdict> = {
   'POST /v1/messages/whatsapp': (c) => depuis(schemaMessageWhatsapp.safeParse(c)),
   'POST /v1/messages/rcs': (c) => depuis(schemaMessageRcs.safeParse(c)),
 };
-
-/**
- * LES OUTILS TIERS QUE LA DOCUMENTATION NE NOMME PAS (décision de Julien du 2026-09-24) : elle sert à tous
- * les intégrateurs. « batch » est cherché sans égard à la casse et hors d'un chemin, pour laisser passer
- * `/v1/contacts/batch` (même règle que le test du lot 6, qui relira ces fichiers). Les deux derniers motifs
- * sont le vocabulaire propre à un outil, qui le trahirait sans le nommer.
- */
-export const OUTILS_TIERS: ReadonlyArray<readonly [string, RegExp]> = [
-  ['Batch', /(?<![/\w])batch(?!\w)/i],
-  ['Brevo', /Brevo/i],
-  ['Salesforce', /Salesforce|SFMC/],
-  ['Splio', /Splio/i],
-  ['HubSpot', /HubSpot/i],
-  ['Klaviyo', /Klaviyo/i],
-  ['Braze', /Braze/i],
-  ['Zapier', /Zapier/i],
-  ['smsmode', /smsmode/i],
-  ['custom_id', /custom_id/],
-  ['Universal Channel', /Universal Channel/i],
-];
 
 describe('🔴 chaque corps d’exemple passe le validateur de SA route', () => {
   it.each(Object.entries(EXEMPLES_CORPS))('%s', (_cle, exemple) => {
