@@ -14,15 +14,19 @@ name: CI
 # sur la tête courante (`gh workflow run ci.yml --ref main`) sans fabriquer un commit de code pour ça.
 # ⚠️ Il ne remplace PAS `paths-ignore`, qui reste la raison d'être du dispositif (un tiers du quota mensuel
 # brûlé par des commits docs, mesuré le 2026-09-04) : il en est la porte de secours, à la demande.
+# ⚠️ `site/` (la vitrine statique, 2026-09-25) est ignoré pour la même raison : aucun test ne la lit, et Vercel
+# la publie seul. Le jour où un test de la racine lira `site/`, retirer la ligne, sinon angle mort des `.md`.
 on:
   push:
     branches: [main]
     paths-ignore:
       - '**.md'
+      - 'site/**'
   workflow_dispatch:
   pull_request:
     paths-ignore:
       - '**.md'
+      - 'site/**'
 
 # Un push annule le run précédent devenu obsolète sur la même branche, au lieu de tous les jouer. Pendant un
 # cycle d'audit (66 pushs en une journée le 2026-09-02), seul le dernier compte : on ne déploie que HEAD, et

@@ -1,0 +1,237 @@
+<!doctype html>
+<!-- Vitrine publique d’Engage Me (engageme.messagingme.fr). Page statique, aucun build : un projet Vercel
+     distinct de la console, branché sur ce dépôt avec Root Directory = site. Le bouton mène à la console. -->
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Engage Me · La plateforme conversationnelle qui comprend chaque conversation</title>
+<meta name="description" content="Engage Me réunit vos campagnes, vos scénarios, vos agents et votre équipe dans une seule console WhatsApp, bâtie sur les API officielles de Meta.">
+<link rel="canonical" href="https://engageme.messagingme.fr/">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="fr_FR">
+<meta property="og:url" content="https://engageme.messagingme.fr/">
+<meta property="og:title" content="Engage Me · La plateforme conversationnelle qui comprend chaque conversation">
+<meta property="og:description" content="Campagnes, scénarios, agents et équipe dans une seule console WhatsApp, bâtie sur les API officielles de Meta.">
+<meta name="theme-color" content="#F7F8FB" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0A0C1D" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<!-- La police est servie d'ici, pas depuis Google Fonts : aucune adresse IP de visiteur ne part chez un tiers. -->
+<link rel="preload" href="fonts/plus-jakarta-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face{font-family:"Plus Jakarta Sans";src:url("fonts/plus-jakarta-sans-latin.woff2") format("woff2");font-weight:200 800;font-style:normal;font-display:swap}
+
+:root{
+  --paper:#F7F8FB;--surface:#FFFFFF;--ink:#10132E;--muted:#5A6089;--line:#DCDFEA;
+  --action:#0080D6;--action-hover:#0066AA;--action-ink:#0066AA;--on-action:#FFFFFF;
+  --signal:#17C74E;--signal-ink:#0B7A31;--logo-navy:#181C40;
+  --bubble-in:#EEF0F6;--bubble-out:#E0F2FF;
+  --sans:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono","Segoe UI Mono",Menlo,Consolas,monospace;
+  color-scheme:light dark;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --paper:#0A0C1D;--surface:#12152E;--ink:#EDEFF7;--muted:#9CA2C4;--line:#272C4E;
+    --action:#33ABFE;--action-hover:#6FC2FE;--action-ink:#6FC2FE;--on-action:#06121F;
+    --signal:#3FD970;--signal-ink:#5BE38A;--logo-navy:#EDEFF7;
+    --bubble-in:#1C2040;--bubble-out:#0E2C47;
+  }
+}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:1rem;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:inherit}
+a:focus-visible{outline:2px solid var(--action);outline-offset:3px;border-radius:10px}
+.cadre{max-width:1160px;margin:0 auto;padding:0 24px}
+@media (max-width:640px){.cadre{padding:0 16px}}
+
+/* En-tête */
+.entete{display:flex;align-items:center;justify-content:space-between;height:76px}
+.marque{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:700;font-size:1.05rem;letter-spacing:-.01em}
+.marque svg{width:30px;height:30px;flex:none}
+
+/* Boutons : une seule destination, un seul libellé */
+.bouton{display:inline-flex;align-items:center;gap:.5em;border-radius:10px;font-weight:600;text-decoration:none;transition:background-color .15s,border-color .15s,color .15s}
+.bouton-plein{background:var(--action);color:var(--on-action);padding:.85em 1.45em;font-size:1rem}
+.bouton-plein:hover{background:var(--action-hover)}
+.bouton-trait{background:var(--surface);border:1px solid var(--line);padding:.5em 1em;font-size:.9rem}
+.bouton-trait:hover{border-color:var(--action);color:var(--action-ink)}
+
+/* La une */
+.une{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:72px;align-items:center;padding-top:56px;padding-bottom:104px}
+@media (max-width:960px){.une{grid-template-columns:minmax(0,1fr);gap:56px;padding-top:32px;padding-bottom:72px}}
+h1{font-size:clamp(2.35rem,5vw,4.1rem);line-height:1.03;letter-spacing:-.035em;font-weight:800;margin:0 0 28px;text-wrap:balance}
+h1 em{font-style:normal;text-decoration:underline;text-decoration-color:var(--signal);text-decoration-thickness:.09em;text-underline-offset:.12em;text-decoration-skip-ink:none}
+.chapeau{font-size:1.15rem;color:var(--muted);max-width:33em;margin:0 0 36px;text-wrap:pretty}
+.appel{display:flex;flex-wrap:wrap;align-items:center;gap:14px 20px}
+.appel small{font-size:.88rem;color:var(--muted)}
+
+/* La conversation, et ce qui en est lu */
+.fil{margin:0;background:var(--surface);border:1px solid var(--line);border-radius:20px;overflow:hidden;box-shadow:0 1px 2px rgb(16 19 46 / .04),0 28px 56px -28px rgb(16 19 46 / .22)}
+.fil-tete{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line);font-size:.88rem;font-weight:600}
+.fil-tete span{font-family:var(--mono);font-size:.68rem;font-weight:400;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.messages{list-style:none;margin:0;padding:20px;display:flex;flex-direction:column;gap:10px}
+.messages li{display:flex;flex-direction:column}
+.msg{max-width:86%;border-radius:14px;padding:10px 14px 7px;font-size:.93rem;line-height:1.45}
+.msg p{margin:0}
+.msg time{display:block;text-align:right;font-family:var(--mono);font-size:.64rem;color:var(--muted);margin-top:3px}
+.entrant{align-self:flex-start;background:var(--bubble-in);border-bottom-left-radius:4px}
+.sortant{align-self:flex-end;background:var(--bubble-out);border-bottom-right-radius:4px}
+.auteur{display:block;font-size:.72rem;font-weight:700;color:var(--action-ink);margin-bottom:2px}
+.vocal{display:flex;align-items:center;gap:10px;min-width:210px}
+.vocal-lecture{flex:none;width:0;height:0;border-left:9px solid var(--ink);border-top:6px solid transparent;border-bottom:6px solid transparent}
+.onde{flex:1;display:flex;align-items:center;gap:2px;height:22px}
+.onde i{flex:1;max-width:3px;border-radius:2px;background:var(--muted);opacity:.65}
+.vocal-duree{font-family:var(--mono);font-size:.7rem;color:var(--muted)}
+
+/* Le signe d'une lecture : un point vert, une étiquette en chasse fixe */
+.etiquette{display:block;font-family:var(--mono);font-size:.66rem;text-transform:uppercase;letter-spacing:.07em;color:var(--signal-ink)}
+.annotation{position:relative;align-self:flex-start;max-width:86%;margin:2px 0 4px 14px;padding:1px 0 1px 16px;border-left:1.5px solid var(--signal);font-size:.86rem;line-height:1.45}
+.annotation::before{content:"";position:absolute;left:-4.5px;top:0;width:7px;height:7px;border-radius:50%;background:var(--signal)}
+.annotation .etiquette{margin-bottom:2px}
+.lu{border-top:1px dashed var(--line);padding:16px 20px 20px;background:color-mix(in srgb,var(--signal) 5%,var(--surface))}
+.lu .etiquette{display:flex;align-items:center;gap:8px;margin:0 0 14px}
+.lu .etiquette::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--signal)}
+.lu dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 24px;margin:0}
+.lu dt{font-family:var(--mono);font-size:.64rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.lu dd{margin:2px 0 0;font-size:.92rem;font-weight:600}
+.echelle{display:flex;gap:2px;margin-top:6px}
+.echelle i{flex:1;height:5px;border-radius:1px;background:var(--line)}
+.echelle i.plein{background:var(--ink)}
+.echelle.satisfaction i.plein{background:var(--signal)}
+
+/* Ce que porte la console */
+.console{border-top:1px solid var(--line);padding:64px 0 88px}
+.surtitre{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 28px}
+.modules{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:40px}
+@media (max-width:960px){.modules{grid-template-columns:repeat(2,minmax(0,1fr));gap:32px}}
+@media (max-width:560px){.modules{grid-template-columns:minmax(0,1fr);gap:28px}}
+.modules h2{font-size:1.05rem;font-weight:700;letter-spacing:-.01em;margin:0 0 8px}
+.modules p{margin:0;color:var(--muted);font-size:.95rem;line-height:1.55}
+
+.pied{border-top:1px solid var(--line)}
+.pied .cadre{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px 24px;padding-top:24px;padding-bottom:32px;font-size:.85rem;color:var(--muted)}
+
+/* La conversation se déroule une fois au chargement, puis la lecture s'écrit. Rien ne bouge sans préférence. */
+@media (prefers-reduced-motion:no-preference){
+  .apparait{opacity:0;animation:apparait .5s cubic-bezier(.2,.7,.2,1) forwards;animation-delay:var(--d,0s)}
+  .echelle i.plein{transform-origin:left;animation:remplit .4s ease-out both;animation-delay:calc(var(--d,0s) + .15s)}
+  @keyframes apparait{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  @keyframes remplit{from{transform:scaleX(0)}to{transform:none}}
+}
+</style>
+</head>
+<body>
+<header class="cadre entete">
+  <a class="marque" href="/" aria-label="Engage Me, accueil">
+    <svg viewBox="0 0 160 160" aria-hidden="true">
+      <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="15">
+        <path d="M 80 14 L 80 58 Q 80 70 92 70 L 140 70" stroke="var(--logo-navy)"/>
+        <path d="M 80 14 L 80 58 Q 80 70 92 70 L 140 70" transform="rotate(120 80 80)" stroke="#009AFE"/>
+        <path d="M 80 14 L 80 58 Q 80 70 92 70 L 140 70" transform="rotate(240 80 80)" stroke="#17C74E"/>
+      </g>
+    </svg>
+    Engage Me
+  </a>
+  <a class="bouton bouton-trait" href="https://engageme.messagingme.app/login">Se connecter</a>
+</header>
+
+<main>
+  <section class="cadre une">
+    <div>
+      <h1>La plateforme conversationnelle qui <em>comprend</em> chaque conversation.</h1>
+      <p class="chapeau">Engage Me réunit vos campagnes, vos scénarios, vos agents et votre équipe dans une seule console WhatsApp, bâtie sur les API officielles de Meta. Chaque échange y est lu, qualifié et mesuré.</p>
+      <div class="appel">
+        <a class="bouton bouton-plein" href="https://engageme.messagingme.app/login">Se connecter</a>
+        <small>La console s’ouvre sur engageme.messagingme.app</small>
+      </div>
+    </div>
+
+    <figure class="fil" aria-label="Exemple de conversation, et ce qu’Engage Me en retient">
+      <div class="fil-tete">Conversation WhatsApp <span>Exemple</span></div>
+      <ol class="messages">
+        <li class="apparait" style="--d:.2s">
+          <div class="msg entrant">
+            <p>Bonjour, ma commande n’est toujours pas arrivée et je pars lundi. Vous pouvez vérifier&nbsp;?</p>
+            <time>10:42</time>
+          </div>
+        </li>
+        <li class="apparait" style="--d:.7s">
+          <div class="msg entrant">
+            <div class="vocal" aria-label="Message vocal de 14 secondes">
+              <span class="vocal-lecture" aria-hidden="true"></span>
+              <span class="onde" aria-hidden="true"><i style="height:35%"></i><i style="height:60%"></i><i style="height:45%"></i><i style="height:80%"></i><i style="height:55%"></i><i style="height:90%"></i><i style="height:70%"></i><i style="height:40%"></i><i style="height:65%"></i><i style="height:85%"></i><i style="height:50%"></i><i style="height:75%"></i><i style="height:95%"></i><i style="height:60%"></i><i style="height:45%"></i><i style="height:70%"></i><i style="height:55%"></i><i style="height:80%"></i><i style="height:40%"></i><i style="height:60%"></i><i style="height:35%"></i><i style="height:50%"></i></span>
+              <span class="vocal-duree">0:14</span>
+            </div>
+            <time>10:43</time>
+          </div>
+        </li>
+        <li class="apparait" style="--d:1.2s">
+          <p class="annotation"><span class="etiquette">Vocal transcrit</span>« C’est la commande 4471, normalement livrée en point relais. »</p>
+        </li>
+        <li class="apparait" style="--d:1.7s">
+          <div class="msg sortant">
+            <span class="auteur">Léa, service client</span>
+            <p>Je regarde tout de suite. Votre colis 4471 est arrivé au point relais ce matin, vous pouvez le retirer dès aujourd’hui.</p>
+            <time>10:44</time>
+          </div>
+        </li>
+        <li class="apparait" style="--d:2.2s">
+          <div class="msg entrant">
+            <p>Parfait, merci&nbsp;!</p>
+            <time>10:45</time>
+          </div>
+        </li>
+      </ol>
+      <div class="lu">
+        <p class="etiquette apparait" style="--d:2.7s">Lu par Engage Me</p>
+        <dl>
+          <div class="apparait" style="--d:2.85s"><dt>Intention</dt><dd>Suivi de commande</dd></div>
+          <div class="apparait" style="--d:3s"><dt>Statut</dt><dd>Résolue</dd></div>
+          <div class="apparait" style="--d:3.15s">
+            <dt>Urgence</dt><dd>8 sur 10</dd>
+            <dd class="echelle" aria-hidden="true"><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i></i><i></i></dd>
+          </div>
+          <div class="apparait" style="--d:3.3s">
+            <dt>Satisfaction</dt><dd>9 sur 10</dd>
+            <dd class="echelle satisfaction" aria-hidden="true"><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i class="plein"></i><i></i></dd>
+          </div>
+        </dl>
+      </div>
+    </figure>
+  </section>
+
+  <section class="console">
+    <div class="cadre">
+      <p class="surtitre">Dans la console</p>
+      <ul class="modules">
+        <li>
+          <h2>Campagnes</h2>
+          <p>Envoyez vos campagnes WhatsApp, et relancez en RCS ou par e-mail ceux que WhatsApp n’atteint pas.</p>
+        </li>
+        <li>
+          <h2>Scénarios</h2>
+          <p>Dessinez les parcours qui répondent, qualifient et orientent chaque contact, sans écrire de code.</p>
+        </li>
+        <li>
+          <h2>Agents</h2>
+          <p>Configurez le Meta Business Agent ou vos propres agents IA, et reprenez la main quand il le faut.</p>
+        </li>
+        <li>
+          <h2>Inbox</h2>
+          <p>Votre équipe répond depuis une boîte partagée, traduction des messages et transcription des vocaux comprises.</p>
+        </li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<footer class="pied">
+  <div class="cadre">
+    <span>© 2026 MessagingMe</span>
+  </div>
+</footer>
+</body>
+</html>
