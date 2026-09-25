@@ -165,6 +165,12 @@ describe.skipIf(!url)('PgInboxStore : conversations non lues (Supabase)', () => 
       expect(await store.countUnread(espace, { userId: null, role: 'admin' })).toBe(3);
     });
 
+    it('🔴 l’OBSERVATION depuis /ops (un admin dont l’identifiant n’est PAS un uuid) voit tout, sans planter', async () => {
+      // `observerTenant` signe une session `userId: 'ops-observation'` : avant le correctif, la requête
+      // convertissait cet identifiant en uuid même pour un acteur qui voit tout, et rendait 22P02 (500 à l'écran).
+      expect(await store.countUnread(espace, { userId: 'ops-observation', role: 'admin' })).toBe(3);
+    });
+
     it('⚠️ une conversation NON AFFECTÉE allume la pastille de TOUT LE MONDE', async () => {
       // Sinon elle n'allumerait celle de personne et resterait invisible jusqu'à ce qu'un manager la
       // distribue, ce qui est exactement la conversation qu'il ne faut pas perdre.

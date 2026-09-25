@@ -1164,7 +1164,10 @@ export class PgInboxStore implements InboxStore {
          left join contacts ct on ct.id = c.contact_id
         where c.tenant_id = $1 and c.archived_at is null and ct.blocked_at is null
           and ${visibiliteSql('$2', '$3')} and ${UNREAD_SQL}`,
-      [tenantId, voitTout(acteur), acteur.userId],
+      // L'identifiant ne sert qu'à un acteur qui NE voit PAS tout : pour un admin ou un manager il n'est pas
+      // transmis, sinon l'identité d'observation de /ops (`ops-observation`, qui n'est pas un uuid) faisait
+      // planter la conversion `::uuid` de `visibiliteSql`.
+      [tenantId, voitTout(acteur), voitTout(acteur) ? null : acteur.userId],
     );
     return Number(res.rows[0]?.n ?? 0);
   }
