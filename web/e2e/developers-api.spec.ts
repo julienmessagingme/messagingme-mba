@@ -39,6 +39,18 @@ test.describe('Developers : la documentation de l’API', () => {
     for (const e of EVENEMENTS_SIGNAUX) await expect(doc.getByTestId(`signal-${e.nom}`)).toBeVisible();
   });
 
+  test('🔴 sans session, la doc est PUBLIQUE : elle s’affiche au lieu de renvoyer au login', async ({ page }) => {
+    // Aucune session posée : c'est l'intégrateur qui arrive de la vitrine, sans compte. Avant le 2026-09-25,
+    // la console le renvoyait sur /login.
+    await page.route('**/api/backend/**', (route) => route.fulfill({ status: 401, contentType: 'application/json', body: '{}' }));
+    await page.goto('/developers/api');
+    const doc = page.getByTestId('doc-api');
+    await expect(doc.getByRole('heading', { name: 'Documentation API', exact: true })).toBeVisible();
+    await expect(doc.getByRole('heading', { name: 'Contacts', exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/developers\/api$/);
+    await expect(page.getByRole('link', { name: 'Se connecter' })).toBeVisible();
+  });
+
   test('🔴 la page rendue ne nomme aucun outil tiers', async ({ page }) => {
     await mock(page);
     await page.goto('/developers/api');

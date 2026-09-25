@@ -1,8 +1,13 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
+import { Logo } from '@/components/Logo';
+import { LocaleToggle } from '@/components/LocaleToggle';
 import { useT } from '@/lib/i18n';
+import { getSession } from '@/lib/session';
+import { accesAutorise } from '@/lib/nav';
 import { BASE } from '@/lib/http';
 import { BORNES, CODES_DOCUMENTES, EXEMPLES_CORPS, EXEMPLES_REPONSES, type NomDeCode } from '@/lib/api-exemples';
 import { DocSignaux } from '@/components/DocSignaux';
@@ -33,9 +38,45 @@ const ADRESSE_API = BASE.startsWith('http') ? BASE : 'https://mba.messagingme.ap
  * serveur ne change pas ici toute seule. Les codes cités passent par `<Code>`, typé sur la table des codes :
  * un code inventé ne compile pas. Deux comportements qu'elle décrit attendent une décision ou un correctif
  * (`todo.md`) : le refus de Meta sans `code`, et le corps JSON illisible lu comme un objet vide.
+ *
+ * 🔴 ELLE EST PUBLIQUE (décision de Julien du 2026-09-25) : un intégrateur la lit AVANT d'avoir un compte,
+ * depuis la vitrine (`site/`). Qui peut ouvrir cet écran de la console l'a dans la console ; tout autre visiteur
+ * la lit dans un cadre public, au lieu d'être renvoyé au login. Ce qui l'autorise : elle ne lit AUCUNE donnée
+ * d'espace. ⚠️ Le jour où `DocsInner` en lirait une, la version publique devrait s'en passer.
  */
 export default function ApiDocsPage() {
-  return <AppShell active="api-docs">{() => <DocsInner />}</AppShell>;
+  // `undefined` tant que le navigateur n'a pas été lu : la session vit dans localStorage, absent au rendu serveur.
+  const [dansLaConsole, setDansLaConsole] = useState<boolean>();
+  useEffect(() => {
+    const s = getSession();
+    setDansLaConsole(s !== null && accesAutorise('api-docs', s.role));
+  }, []);
+  if (dansLaConsole === undefined) return null;
+  if (dansLaConsole) return <AppShell active="api-docs">{() => <DocsInner />}</AppShell>;
+  return <DocPublique />;
+}
+
+function DocPublique() {
+  const t = useT();
+  return (
+    <main className="min-h-screen px-4 py-8">
+      <header className="mx-auto mb-8 flex max-w-3xl items-center justify-between gap-4">
+        <a href="https://engageme.messagingme.fr" className="flex items-center gap-2 text-base font-semibold tracking-tight text-ink-900">
+          <Logo className="h-7 w-7" />
+          Engage Me
+        </a>
+        <div className="flex items-center gap-3">
+          <LocaleToggle />
+          <Link href="/login" className="rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-sm font-medium text-ink-800 transition hover:border-brand-500 hover:text-brand-600">
+            {t('Se connecter', 'Sign in')}
+          </Link>
+        </div>
+      </header>
+      <div className="mx-auto max-w-3xl">
+        <DocsInner />
+      </div>
+    </main>
+  );
 }
 
 const codeCls = 'overflow-x-auto rounded-lg bg-ink-900 px-4 py-3 font-mono text-xs leading-relaxed text-ink-50';
