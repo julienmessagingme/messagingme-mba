@@ -371,3 +371,69 @@ describe('GET /tenants/:tenantId/mba/:phoneNumberId/messages', () => {
     await server.close();
   });
 });
+
+/**
+ * Les QUATRE suppressions (FAQ, compétence, site, fichier) lisent le contenu AVANT de supprimer et le
+ * journalisent APRÈS (`supprimerAvecTrace`, audit ponytail du 2026-09-25). Chez Meta une suppression est
+ * définitive : la ligne d'historique est le seul exemplaire de ce qui a été effacé.
+ */
+describe('routes MBA : une suppression laisse sa trace', () => {
+  const cas = [
+    { chemin: '/faq/f1', liste: 'listFaqs', supprime: 'deleteFaq', element: 'faq', cible: 'f1', objet: { id: 'f1', question: 'Horaires ?', answer: '9h' }, libelle: 'FAQ : Horaires ?' },
+    { chemin: '/skills/s1', liste: 'listSkills', supprime: 'deleteSkill', element: 'competence', cible: 's1', objet: { id: 's1', name: 'Réserver' }, libelle: 'Compétence : Réserver' },
+    { chemin: '/websites/w1', liste: 'listWebsites', supprime: 'deleteWebsite', element: 'site', cible: 'w1', objet: { id: 'w1', url: 'https://bus.fr' }, libelle: 'Site : https://bus.fr' },
+    { chemin: '/files/d1', liste: 'listFiles', supprime: 'deleteFile', element: 'fichier', cible: 'd1', objet: { id: 'd1', name: 'tarifs.pdf' }, libelle: 'Document : tarifs.pdf' },
+  ] as const;
+
+  for (const c of cas) {
+    it(`${c.element} : lue AVANT, supprimée, puis journalisée avec son contenu et son auteur`, async () => {
+      const ordre: string[] = [];
+      const lignes: Array<{ tenant: string; ligne: unknown }> = [];
+      const { server, appels } = app(
+        { [c.liste]: () => [{ id: 'autre' }, c.objet] },
+        { journaliserSuppression: async (tenant, ligne) => { ordre.push('journal'); lignes.push({ tenant, ligne }); } },
+      );
+      const res = await server.inject({ method: 'DELETE', url: url(c.chemin), ...h(adminTok) });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ deleted: c.cible });
+      ordre.unshift(...appels.map((a) => a.m));
+      expect(ordre).toEqual([c.liste, c.supprime, 'journal']);
+      expect(appels.find((a) => a.m === c.supprime)?.args).toEqual([PN, c.cible]);
+      expect(lignes).toEqual([{ tenant: 't1', ligne: { element: c.element, cible: c.cible, libelle: c.libelle, avant: c.objet, acteurId: 'u1' } }]);
+      await server.close();
+    });
+
+    it(`${c.element} : une lecture en ÉCHEC n'empêche pas la suppression, et la trace garde l'identifiant`, async () => {
+      const lignes: unknown[] = [];
+      const { server, appels } = app(
+        { [c.liste]: () => Promise.reject(new Error('Meta indisponible')) },
+        { journaliserSuppression: async (_t, ligne) => { lignes.push(ligne); } },
+      );
+      const res = await server.inject({ method: 'DELETE', url: url(c.chemin), ...h(adminTok) });
+      expect(res.statusCode).toBe(200);
+      expect(appels.map((a) => a.m)).toContain(c.supprime);
+      expect(lignes).toEqual([{ element: c.element, cible: c.cible, libelle: `${c.libelle.split(' : ')[0]} : ${c.cible}`, avant: { id: c.cible }, acteurId: 'u1' }]);
+      await server.close();
+    });
+
+    it(`${c.element} : sans journal, rien n'est lu, la suppression part seule`, async () => {
+      const { server, appels } = app();
+      const res = await server.inject({ method: 'DELETE', url: url(c.chemin), ...h(adminTok) });
+      expect(res.statusCode).toBe(200);
+      expect(appels.map((a) => a.m)).toEqual([c.supprime]);
+      await server.close();
+    });
+
+    it(`${c.element} : une suppression REFUSÉE par Meta n'est pas journalisée`, async () => {
+      const lignes: unknown[] = [];
+      const { server } = app(
+        { [c.supprime]: () => Promise.reject(new Error('refus')) },
+        { journaliserSuppression: async (_t, ligne) => { lignes.push(ligne); } },
+      );
+      const res = await server.inject({ method: 'DELETE', url: url(c.chemin), ...h(adminTok) });
+      expect(res.statusCode).toBeGreaterThanOrEqual(400);
+      expect(lignes).toEqual([]);
+      await server.close();
+    });
+  }
+});

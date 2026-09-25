@@ -1,5 +1,6 @@
 import { creerAppelConnecteur, type DepsResolveurHttp } from '../agent/resolvers/http';
 import type { JournalAppels } from '../agent/catalog';
+import { texteDe } from '../lib/erreur';
 
 /**
  * POUSSER UN REFUS VERS LE SYSTÈME DU CLIENT, au moment où il est déclaré.
@@ -127,7 +128,7 @@ export function creerAnnonceOptOut(deps: DepsAnnonceOptOut) {
       } catch (err) {
         // Journalisé et rien d'autre : le refus EST enregistré, c'est sa diffusion qui est perdue. La dire
         // perdue est plus honnête que de faire échouer un geste de conformité déjà accompli.
-        deps.log?.(`poussee-optout: ${lot.length} refus non annonces pour ${tenantId}: ${err instanceof Error ? err.message : String(err)}`);
+        deps.log?.(`poussee-optout: ${lot.length} refus non annonces pour ${tenantId}: ${texteDe(err)}`);
       }
     }
   };
@@ -223,7 +224,7 @@ export function creerTravailPousseeOptOut(deps: DepsTravailPousseeOptOut) {
         });
         if (r.ok === false) echecs.push(`${waId}: ${r.erreur ?? 'sans raison'}`);
       } catch (err) {
-        echecs.push(`${waId}: ${err instanceof Error ? err.message : String(err)}`);
+        echecs.push(`${waId}: ${texteDe(err)}`);
       }
     }
 

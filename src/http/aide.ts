@@ -7,6 +7,7 @@ import { creerCacheRecap } from '../aide/recap-cache';
 import type { RecapTexte } from '../aide/recap-rendu';
 import { resoudre } from '../aide/carte';
 import { addDays, todayParis } from '../stats/range';
+import { texteDe } from '../lib/erreur';
 
 /**
  * LE BOT D'AIDE DE LA CONSOLE : une route, synchrone.
@@ -145,7 +146,7 @@ export function registerAide(app: FastifyInstance, deps: AideRouteDeps, garde: G
         lvl: 'error',
         msg: 'aide_echec',
         tenant,
-        err: err instanceof Error ? err.message : String(err),
+        err: texteDe(err),
         stack: err instanceof Error ? err.stack : undefined,
       }));
       // ⚠️ 502 GARDÉ, DÉLIBÉRÉMENT, alors qu'une raison lisible sort ailleurs en 422 (documentation.md, « Aucun
@@ -194,7 +195,7 @@ export function registerAide(app: FastifyInstance, deps: AideRouteDeps, garde: G
         msg: 'aide_recap_echec',
         tenant,
         jour,
-        err: err instanceof Error ? err.message : String(err),
+        err: texteDe(err),
         stack: err instanceof Error ? err.stack : undefined,
       }));
       // ⚠️ 502 GARDÉ, pour la même raison que la question : l'écran pose son propre texte et ne lit pas ce corps.

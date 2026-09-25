@@ -11,6 +11,7 @@ import { scopeTenant } from './scope';
 import { buildContactFilters, normalizeFieldFilters } from '../crm/contact-filters';
 import { makeJournal, type AuditSink } from '../audit/journal';
 import type { AuditEntry } from '../audit/store.pg';
+import { messageDe } from '../lib/erreur';
 
 export interface ContactsRouteDeps {
   /** Applique fields (MERGE) + suppression de fields + Nom + addTags/removeTags en une transaction. null si le
@@ -354,7 +355,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     if (updated.addedTags.length > 0 && deps.emitTagAdded) {
       await deps.emitTagAdded(tenant, contactId, updated.addedTags).catch((err: unknown) => {
         // eslint-disable-next-line no-console
-        console.error('emitTagAdded ignoré (best-effort):', err instanceof Error ? err.message : err);
+        console.error('emitTagAdded ignoré (best-effort):', messageDe(err));
       });
     }
     return reply.code(200).send({ contact: updated.contact });

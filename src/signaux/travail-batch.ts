@@ -2,6 +2,7 @@ import type { JournalAppels, StatutAppel } from '../agent/catalog';
 import { HttpTimeoutError } from '../meta/http';
 import { BATCH_FENETRE_EVENEMENT_MS, BatchApiError, versBatch, type ClesBatch, type ProfilBatch } from './batch';
 import { NOM_APPEL_SIGNAUX, schemaJobSignaux, type Signal, type SignalComplet } from './types';
+import { texteDe } from '../lib/erreur';
 
 /** Le réglage d'un espace, DÉCHIFFRÉ par le câblage. `suspendu` = l'outil a refusé les clés. */
 export interface ReglageBatchClair {
@@ -22,8 +23,6 @@ export interface DepsTravailBatch {
   maintenant?: () => number;
   log?: (message: string) => void;
 }
-
-const texte = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 /**
  * 🔴 LE TEXTE RECOPIÉ DANS LE JOURNAL DES ERREURS NE NOMME PAS L'OUTIL.
@@ -86,7 +85,7 @@ export function creerTravailSignauxBatch(deps: DepsTravailBatch): (data: unknown
         dureeMs: maintenant() - debut, erreur: neutraliserOutil(erreur).slice(0, 500),
       });
     } catch (err) {
-      deps.log?.(`signaux-batch: journal impossible pour ${tenantId}: ${texte(err)}`);
+      deps.log?.(`signaux-batch: journal impossible pour ${tenantId}: ${texteDe(err)}`);
     }
   };
 
@@ -131,14 +130,14 @@ export function creerTravailSignauxBatch(deps: DepsTravailBatch): (data: unknown
             try {
               await deps.suspendre(tenantId);
             } catch (e) {
-              deps.log?.(`signaux-batch: suspension non ecrite pour ${tenantId}: ${texte(e)}`);
+              deps.log?.(`signaux-batch: suspension non ecrite pour ${tenantId}: ${texteDe(e)}`);
             }
             break;
           }
           continue;
         }
         await journaliser(
-          tenantId, signaux, err instanceof HttpTimeoutError ? 'timeout' : 'erreur_outil', debut, texte(err),
+          tenantId, signaux, err instanceof HttpTimeoutError ? 'timeout' : 'erreur_outil', debut, texteDe(err),
           err instanceof BatchApiError ? err.status : undefined,
         );
         throw err;
@@ -151,7 +150,7 @@ export function creerTravailSignauxBatch(deps: DepsTravailBatch): (data: unknown
       try {
         await deps.noterSansIdentifiant(tenantId, sansIdentifiant);
       } catch (err) {
-        deps.log?.(`signaux-batch: compte sans identifiant non ecrit pour ${tenantId}: ${texte(err)}`);
+        deps.log?.(`signaux-batch: compte sans identifiant non ecrit pour ${tenantId}: ${texteDe(err)}`);
       }
     }
   };

@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import { horsEntreeGratuite } from '../stats/entree-gratuite';
+import { journaliser } from '../lib/journal';
 
 /**
  * Historique d'un contact : ce qu'on lui a ENVOYÉ, et ce qu'il a ÉCHANGÉ avec nous.
@@ -406,8 +407,7 @@ export class PgContactHistoryStore {
     if (!owner.rows[0]) return null;
     const sends = await this.listSends(tenantId, contactId, EXPORT_MAX_SENDS);
     if (sends.length >= EXPORT_MAX_SENDS) {
-      // eslint-disable-next-line no-console
-      console.warn(JSON.stringify({ lvl: 'warn', msg: 'contact_history_export_truncated', tenantId, contactId, limit: EXPORT_MAX_SENDS }));
+      journaliser('warn', 'contact_history_export_truncated', { tenantId, contactId, limit: EXPORT_MAX_SENDS });
     }
     return sends;
   }

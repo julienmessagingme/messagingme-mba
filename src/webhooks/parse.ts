@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { asArray, asRecord } from './json';
+import { asArray, asRecord, texteNonVide } from './json';
 import { valeurEffective } from './change';
 
 export type WebhookSource =
@@ -116,31 +116,27 @@ export function cleDeContact(payload: unknown): string | undefined {
       // `contacts`, `messages` et `statuses` sous `value.standby`. Deux jours d'entrants perdus le prouvent
       // (2026-09-08 au 2026-09-10). Voir `./change.ts`.
       const value = valeurEffective(change['value']);
-      const pnId = texte(asRecord(value['metadata'])['phone_number_id']);
+      const pnId = texteNonVide(asRecord(value['metadata'])['phone_number_id']);
       if (pnId === undefined) { inattribuable = true; continue; }
       // La forme des bascules de contrôle n'est pas documentée : on ne devine pas de qui elles parlent.
       if (change['field'] === 'messaging_handovers') { inattribuable = true; continue; }
 
-      const secours = texte(asRecord(asArray(value['contacts'])[0])['wa_id']);
+      const secours = texteNonVide(asRecord(asArray(value['contacts'])[0])['wa_id']);
       const ajouter = (waId: string | undefined): void => {
         if (waId === undefined) inattribuable = true;
         else cles.add(`${pnId}:${waId}`);
       };
       // Même règle d'identité que `extractInbound` : `from`, sinon le `wa_id` du bloc `contacts`.
-      for (const m of asArray(value['messages'])) ajouter(texte(asRecord(m)['from']) ?? secours);
-      for (const s of asArray(value['statuses'])) ajouter(texte(asRecord(s)['recipient_id']) ?? secours);
+      for (const m of asArray(value['messages'])) ajouter(texteNonVide(asRecord(m)['from']) ?? secours);
+      for (const s of asArray(value['statuses'])) ajouter(texteNonVide(asRecord(s)['recipient_id']) ?? secours);
       // Echo d'un message SORTANT : le contact est le destinataire.
-      for (const e of asArray(value['message_echoes'])) ajouter(texte(asRecord(e)['to']) ?? secours);
+      for (const e of asArray(value['message_echoes'])) ajouter(texteNonVide(asRecord(e)['to']) ?? secours);
     }
   }
 
   return inattribuable || cles.size !== 1 ? undefined : [...cles][0];
 }
 
-/** Chaîne non vide, sinon `undefined`. */
-function texte(v: unknown): string | undefined {
-  return typeof v === 'string' && v !== '' ? v : undefined;
-}
 
 export function parseWebhook(payload: unknown): WebhookEvent[] {
   const events: WebhookEvent[] = [];

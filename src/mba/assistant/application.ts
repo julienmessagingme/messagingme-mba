@@ -1,5 +1,6 @@
 import { estSuppression, type Operation } from './proposition';
 import type { LigneHistorique } from '../../reglages/historique';
+import { messageDe, texteDe } from '../../lib/erreur';
 
 /**
  * APPLIQUER UN DIFF CHEZ META, OPÉRATION PAR OPÉRATION.
@@ -120,7 +121,7 @@ export function operationDe(o: Operation): LigneHistorique['operation'] {
  * client n'a pas à le lire. Il reste dans les journaux serveur, où il sert au diagnostic.
  */
 export function raisonLisible(err: unknown): string {
-  const brut = err instanceof Error ? err.message : String(err);
+  const brut = texteDe(err);
   /**
    * 🔴 LE SEUL ÉCHEC QUI NE VIENT PAS DE META, et le confondre avec les siens ferait chercher la panne du
    * mauvais côté : le document déposé a expiré chez NOUS. Il se teste en premier, avant les motifs de Meta.
@@ -168,7 +169,7 @@ export async function appliquer(
       await journaliserOuTaire(deps, tenantId, o, avant);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.warn(`assistant MBA : « ${libelleDe(o)} » refusée par Meta (${tenantId}) :`, err instanceof Error ? err.message : err);
+      console.warn(`assistant MBA : « ${libelleDe(o)} » refusée par Meta (${tenantId}) :`, messageDe(err));
       return { passees, echec: { operation: o, message: raisonLisible(err) }, nonTentees: operations.slice(i + 1) };
     }
   }
@@ -209,7 +210,7 @@ async function journaliserOuTaire(
     });
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.warn(`assistant MBA : « ${libelleDe(o)} » appliquée mais NON journalisée (${tenantId}) :`, err instanceof Error ? err.message : err);
+    console.warn(`assistant MBA : « ${libelleDe(o)} » appliquée mais NON journalisée (${tenantId}) :`, messageDe(err));
   }
 }
 

@@ -1,5 +1,6 @@
 import { buildRecipients, type BuildContact } from './build';
 import type { Campaign } from './types';
+import { messageDe } from '../lib/erreur';
 
 /**
  * Campagne AU FIL DE L'EAU : un contact vient d'arriver par un webhook entrant, on l'ajoute aux campagnes
@@ -99,7 +100,7 @@ export async function alimenterCampagnesWebhook(
       // Une campagne en échec n'empêche pas les autres d'être servies : le lead arrive UNE fois, et le perdre
       // pour toutes les campagnes parce que l'une d'elles a un souci serait une régression bien pire.
       // eslint-disable-next-line no-console
-      console.error(`webhook-feed: campagne ${c.id} non alimentée`, err instanceof Error ? err.message : err);
+      console.error(`webhook-feed: campagne ${c.id} non alimentée`, messageDe(err));
     }
   }
   return report;

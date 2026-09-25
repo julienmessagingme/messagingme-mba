@@ -9,6 +9,8 @@ import { estDemandeArret } from '../crm/consentement';
 import type { ControlOwner } from '../inbox/store.pg';
 import { asArray, asRecord } from './json';
 import { valeurEffective } from './change';
+import { tenter } from '../lib/tenter';
+import { messageDe } from '../lib/erreur';
 
 export interface InboundMessage {
   phoneNumberId: string;
@@ -354,12 +356,7 @@ export async function processInbound(
     const tenantId = await store.phoneNumberTenant(m.phoneNumberId);
     if (!tenantId) continue;
     if (upsertContact) {
-      try {
-        await upsertContact(tenantId, m);
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error('processInbound: auto-création contact ignorée:', err instanceof Error ? err.message : err);
-      }
+      await tenter('processInbound: auto-création contact ignorée:', () => upsertContact(tenantId, m));
     }
     if (optOut && m.type === 'text' && estDemandeArret(m.body)) {
       try {
@@ -370,17 +367,12 @@ export async function processInbound(
         }
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error('processInbound: opt-out ignoré:', err instanceof Error ? err.message : err);
+        console.error('processInbound: opt-out ignoré:', messageDe(err));
       }
     }
     await store.recordInbound(tenantId, m);
     if (signalReponse) {
-      try {
-        await signalReponse(tenantId, m);
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error('processInbound: signal de réponse ignoré:', err instanceof Error ? err.message : err);
-      }
+      await tenter('processInbound: signal de réponse ignoré:', () => signalReponse(tenantId, m));
     }
     /**
      * ⚠️ ISOLÉE, comme l'auto-création de contact plus haut et pour la même raison : l'enregistrement du
@@ -388,12 +380,7 @@ export async function processInbound(
      * ici ferait rejouer, puis passer en DLQ, un job qui a déjà écrit le message.
      */
     if (assignation) {
-      try {
-        await assignation(tenantId, m.waId);
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error('processInbound: affectation de campagne ignorée:', err instanceof Error ? err.message : err);
-      }
+      await tenter('processInbound: affectation de campagne ignorée:', () => assignation(tenantId, m.waId));
     }
     await accorderLeDetenteur(store, tenantId, m);
   }
@@ -449,7 +436,7 @@ async function accorderLeDetenteur(store: InboxStore, tenantId: string, m: Inbou
     await store.setControlOwner(tenantId, m.waId, 'mba', { saufEscalade: true, ...(m.envoyeLe ? { messageEnvoyeLe: m.envoyeLe } : {}) });
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error('processInbound: détenteur du fil non corrigé:', err instanceof Error ? err.message : err);
+    console.error('processInbound: détenteur du fil non corrigé:', messageDe(err));
   }
 }
 

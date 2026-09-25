@@ -1,4 +1,4 @@
-import type { CategoryRates } from './cost';
+import { chiffrerVolume, type CategoryRates } from './cost';
 import type { NodeEventCount } from '../workflow/node-events.pg';
 import type { CompteurClic } from '../links/mesures';
 
@@ -152,37 +152,14 @@ export interface DetailCoutCampagne {
   clicsAnonymes: number;
 }
 
-const round2 = (x: number): number => Math.round(x * 100) / 100;
 const round4 = (x: number): number => Math.round(x * 10000) / 10000;
 
-/** Le tarif Meta d'une catégorie, ou `null` (catégorie inconnue, ou tarif absent). Même règle que `cost.ts`. */
-function tarifDe(category: string | null, rates: CategoryRates): number | null {
-  if (category === 'marketing') return rates.marketing;
-  if (category === 'utility') return rates.utility;
-  return null;
-}
-
-/** Chiffre un volume en séparant les deux causes de non-chiffrabilité, exactement comme `cost.ts`. */
+/**
+ * Chiffre un volume par la règle de `cost.ts` (`chiffrerVolume`). Les parts NULLES ou NÉGATIVES sont écartées
+ * AVANT : une relance se calcule `total - lancement`, et une part négative ne doit ni compter ni se chiffrer.
+ */
 function chiffrer(parts: Array<{ category: string | null; count: number }>, rates: CategoryRates): VolumeChiffre {
-  let envoyes = 0;
-  let cout = 0;
-  let chiffres = 0;
-  let sansCategorie = 0;
-  let sansTarif = 0;
-  for (const p of parts) {
-    if (p.count <= 0) continue;
-    envoyes += p.count;
-    const connue = p.category === 'marketing' || p.category === 'utility';
-    const tarif = connue ? tarifDe(p.category, rates) : null;
-    if (!connue) { sansCategorie += p.count; continue; }
-    if (tarif == null) { sansTarif += p.count; continue; }
-    chiffres += p.count;
-    cout += p.count * tarif;
-  }
-  return {
-    envoyes, cout: chiffres > 0 ? round2(cout) : null,
-    nonChiffrables: sansCategorie + sansTarif, sansCategorie, sansTarif,
-  };
+  return chiffrerVolume(parts.filter((p) => p.count > 0), rates);
 }
 
 /**

@@ -25,6 +25,7 @@ import type { RcsOutbound } from '../rcs/types';
 import { PREFIXE_ENVOI_API, resoudreCibleRcs, schemaCibleRcs, type DepsCibleRcs } from '../api/cible-rcs';
 import { destinataireAvecVariablesInterdites, schemaVariables } from '../api/variables';
 import { MESSAGE_NUMERO_DELIE } from '../meta/numero-delie';
+import { messageDe } from '../lib/erreur';
 
 export interface V1SendCreateInput {
   tenantId: string;
@@ -558,7 +559,7 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
             ? `v1/sends: enqueue échoué ${ENQUEUE_MAX_ATTEMPTS} fois après scellement idempotence (campagne NON lancée, à ré-enfiler à la main):`
             : `v1/sends: enqueue échoué (tentative ${attempt + 1}/${ENQUEUE_MAX_ATTEMPTS}), nouvelle tentative:`,
           report.sendId,
-          err instanceof Error ? err.message : err,
+          messageDe(err),
         );
         if (last) break;
         await sleep(ENQUEUE_RETRY_DELAYS_MS[attempt] ?? 300);

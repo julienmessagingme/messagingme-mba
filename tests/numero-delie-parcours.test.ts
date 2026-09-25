@@ -6,8 +6,8 @@ import type { WorkflowGraph, WorkflowNodeType } from '../src/workflow/graph';
 import type { WorkflowRunRow, RunState } from '../src/workflow/run-store.pg';
 import type { WalkStep } from '../src/workflow/engine';
 import { NumeroDelieError } from '../src/meta/numero-delie';
-import { runCampaign } from '../src/campaign/engine';
-import type { RecipientStore, CampaignStore, EngineDeps } from '../src/campaign/engine';
+import { lancerCampagne, type DepsMoteurDeTest } from './campagne-canaux';
+import type { RecipientStore, CampaignStore } from '../src/campaign/engine';
 import type { Campaign, Recipient } from '../src/campaign/types';
 import { runAutomations, type AutomationRunnerDeps } from '../src/automation/runner';
 import { runDateSweep } from '../src/automation/date-sweep';
@@ -159,7 +159,7 @@ describe('campagne de scénario, numéro délié puis relié, avec le vrai exéc
     const destinataires = new Destinataires(DEUX);
     const campagnes = new Campagnes();
     const pauses: string[] = [];
-    const deps: EngineDeps = {
+    const deps: DepsMoteurDeTest = {
       sender: {
         sendMarketing: async () => { throw new Error('aucun modèle direct ici'); },
         sendTemplate: async () => { throw new Error('aucun modèle direct ici'); },
@@ -171,7 +171,7 @@ describe('campagne de scénario, numéro délié puis relié, avec le vrai exéc
         m.executor.start(tenant, wf, EMAIL_PUIS_MODELE, { waId, contactId }, params, { ignoreHumanControl: true }),
       pauserSiNumeroDelie: async (id) => { pauses.push(id); return m.delie.vrai; },
     };
-    return { m, destinataires, campagnes, pauses, run: () => runCampaign(CAMPAGNE, deps) };
+    return { m, destinataires, campagnes, pauses, run: () => lancerCampagne(CAMPAGNE, deps) };
   }
 
   it('🔴 délié : le destinataire est rendu à la file SANS avoir reçu l’e-mail ; relié : chacun reçoit UN e-mail et son modèle', async () => {

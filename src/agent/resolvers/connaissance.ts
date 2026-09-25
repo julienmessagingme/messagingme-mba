@@ -1,5 +1,6 @@
 import { ficheEstPertinente, type FicheTrouvee, type KnowledgeStore } from '../knowledge';
 import { SORTIE_SANS_SOURCE } from '../sorties';
+import { messageDe } from '../../lib/erreur';
 
 /**
  * LA recherche de connaissance d'un agent, en un seul endroit (lot 1 du programme, 2026-08-31).
@@ -111,7 +112,7 @@ async function rappelSemantique(
     return await connaissance.chercherParVecteur(ctx.tenantId, ctx.agentId, vecteur, recherche.candidats);
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error('connaissance: rappel vectoriel indisponible, repli sur le plein texte:', err instanceof Error ? err.message : err);
+    console.error('connaissance: rappel vectoriel indisponible, repli sur le plein texte:', messageDe(err));
     return null;
   }
 }
@@ -163,7 +164,7 @@ async function verdictReranker(
     scores = await recherche.reclasser(requete, candidates.map((f) => ({ texte: `${f.titre}\n${f.corps}` })));
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error('connaissance: reranker indisponible, repli sur la regle lexicale:', err instanceof Error ? err.message : err);
+    console.error('connaissance: reranker indisponible, repli sur la regle lexicale:', messageDe(err));
     return candidates.filter(ficheEstPertinente).slice(0, FICHES_RENDUES);
   }
   return candidates

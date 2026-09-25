@@ -9,6 +9,7 @@ import { lireGestes } from './gestes';
 import { asRecord } from '../webhooks/json';
 import { agentDuConsommateur, consommateurAgent, consommateurMba } from './consommateur';
 import { RISQUE_MAISON, type CibleMaison } from '../mba/outils-maison';
+import { enTransaction } from '../db/transaction';
 
 interface Ligne {
   /** jsonb opaque, relu par `lireGestes` : un contenu corrompu rend un tableau vide. */
@@ -233,7 +234,7 @@ export class PgToolCatalog implements ToolCatalog {
     // et surtout un outil actif d'emblée serait exposé au modèle avant que quiconque ait relu ses mots.
     // 🔴 DEUX ÉCRITURES, DONC UNE TRANSACTION. Une définition créée sans son rattachement serait un outil
     // qui n'apparaît dans AUCUN écran : ni dans l'agent d'où on vient de le créer, ni ailleurs.
-    return this.enTransaction(async (client) => {
+    return enTransaction(this.pool, async (client) => {
       const res = await client.query<{ id: string }>(
         /**
          * 🔴 `agent_id` EST RENSEIGNÉ DEPUIS LA MIGRATION 0157 : une ACTION appartient à l'agent, quand un
@@ -295,7 +296,7 @@ export class PgToolCatalog implements ToolCatalog {
     sourceId: string; requestId: string; name: string; title: string; description: string; nePasUtiliser: string;
     params: unknown; risk: RisqueOutil; nature: NatureOutil; outputPaths: readonly string[];
   }): Promise<OutilComplet | null> {
-    return this.enTransaction(async (client) => {
+    return enTransaction(this.pool, async (client) => {
       if (!(await verrouillerAgentDuConsommateur(client, tenantId, consommateur))) return null;
       const res = await client.query<{ id: string }>(
         /**
@@ -396,7 +397,7 @@ export class PgToolCatalog implements ToolCatalog {
     name: string; title: string; description: string; nePasUtiliser: string; cible: CibleMaison;
   }, parUtilisateur: string): Promise<OutilComplet | null> {
     const consommateur = consommateurMba(phoneNumberId);
-    return this.enTransaction(async (client) => {
+    return enTransaction(this.pool, async (client) => {
       const res = await client.query<{ id: string }>(
         `insert into agent_tools
            (tenant_id, origin, name, title, description, ne_pas_utiliser, params, binding, risk, pour_agent_meta)
@@ -455,7 +456,7 @@ export class PgToolCatalog implements ToolCatalog {
    */
   async retirerDeMba(tenantId: string, phoneNumberId: string, outilId: string): Promise<'supprime' | 'detache' | 'introuvable'> {
     const consommateur = consommateurMba(phoneNumberId);
-    return this.enTransaction(async (client) => {
+    return enTransaction(this.pool, async (client) => {
       await verrouillerDefinitions(client, tenantId, [outilId]);
       const det = await client.query(
         'delete from agent_tool_consommateurs where tenant_id = $1 and consommateur = $2 and tool_id = $3',
@@ -629,7 +630,7 @@ export class PgToolCatalog implements ToolCatalog {
     // ensuite sur la clé étrangère de la définition effacée, et le rattachement rendait 500.
     // 🔴 Et l'AGENT d'abord (`verrouillerAgentDuConsommateur`) : un agent qu'on supprime rend `false`, jamais un
     // consentement fantôme.
-    return this.enTransaction(async (client) => {
+    return enTransaction(this.pool, async (client) => {
       if (!(await verrouillerAgentDuConsommateur(client, tenantId, consommateur))) return false;
       const res = await client.query(
         `insert into agent_tool_consommateurs (tenant_id, tool_id, consommateur)
@@ -673,7 +674,7 @@ export class PgToolCatalog implements ToolCatalog {
    * l'état orphelin qu'on veut ne jamais laisser derrière soi.
    */
   async detacher(tenantId: string, agentId: string, outilId: string): Promise<boolean> {
-    return this.enTransaction(async (client) => {
+    return enTransaction(this.pool, async (client) => {
       await verrouillerDefinitions(client, tenantId, [outilId]);
       const res = await client.query(
         'delete from agent_tool_consommateurs where tenant_id = $1 and consommateur = $2 and tool_id = $3',
@@ -758,21 +759,6 @@ export class PgToolCatalog implements ToolCatalog {
   }
 
   // ---------- Aides privées ----------
-
-  private async enTransaction<T>(travail: (client: PoolClient) => Promise<T>): Promise<T> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('begin');
-      const r = await travail(client);
-      await client.query('commit');
-      return r;
-    } catch (err) {
-      await client.query('rollback').catch(() => {});
-      throw err;
-    } finally {
-      client.release();
-    }
-  }
 
   private async complet(tenantId: string, consommateur: string, outilId: string): Promise<OutilComplet | null> {
     const client = await this.pool.connect();

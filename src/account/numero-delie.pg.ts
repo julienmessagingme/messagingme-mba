@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { enTransaction } from '../db/transaction';
 
 /**
  * DÉLIER ET RELIER LE NUMÉRO D'UN ESPACE (migration 0180, bloc « Canaux et services » de l'Accueil).
@@ -45,15 +46,13 @@ export class PgNumeroDelieStore {
    * depuis (le point de passage des envois l'aurait fait de toute façon, au premier envoi).
    */
   async delier(tenantId: string): Promise<ResultatDelier | null> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('begin');
+    return enTransaction(this.pool, async (client) => {
       const n = await client.query<{ delie_le: Date }>(
         `update phone_numbers set delie_le = coalesce(delie_le, now()) where tenant_id = $1 returning delie_le`,
         [tenantId],
       );
       const premier = n.rows[0];
-      if (!premier) { await client.query('rollback'); return null; }
+      if (!premier) return null;
       const c = await client.query(
         `update campaigns c set status = 'paused', pause_reason = 'numero_delie', paused_until = null
           where c.tenant_id = $1 and c.status in ('running', 'scheduled')
@@ -61,14 +60,8 @@ export class PgNumeroDelieStore {
                  or exists (select 1 from campaign_etages e where e.campaign_id = c.id and e.canal = 'whatsapp'))`,
         [tenantId],
       );
-      await client.query('commit');
       return { delieLe: premier.delie_le.toISOString(), campagnesEnPause: c.rowCount ?? 0 };
-    } catch (err) {
-      await client.query('rollback').catch(() => {});
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   /**
@@ -84,11 +77,9 @@ export class PgNumeroDelieStore {
    * décidée par un opérateur, ou une pause de qualité, reste une décision humaine.
    */
   async relier(tenantId: string): Promise<ResultatRelier | null> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('begin');
+    return enTransaction(this.pool, async (client) => {
       const n = await client.query(`update phone_numbers set delie_le = null where tenant_id = $1`, [tenantId]);
-      if ((n.rowCount ?? 0) === 0) { await client.query('rollback'); return null; }
+      if ((n.rowCount ?? 0) === 0) return null;
       const c = await client.query<{ programmee: boolean }>(
         `update campaigns c
             set status = case when c.scheduled_at is not null then 'scheduled' else 'running' end,
@@ -97,15 +88,9 @@ export class PgNumeroDelieStore {
           returning (c.scheduled_at is not null) as programmee`,
         [tenantId],
       );
-      await client.query('commit');
       const reprogrammees = c.rows.filter((r) => r.programmee).length;
       return { campagnesReprises: c.rows.length - reprogrammees, campagnesReprogrammees: reprogrammees };
-    } catch (err) {
-      await client.query('rollback').catch(() => {});
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   /**

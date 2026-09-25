@@ -1,4 +1,5 @@
 import type { TourBloque } from './session-store';
+import { texteDe } from '../lib/erreur';
 
 /**
  * LE BALAYAGE DES TOURS D'AGENT MORTS EN VOL (constat A1 de l'audit externe du 2026-09-02).
@@ -111,7 +112,7 @@ export async function runTourBloqueSweep(deps: TourBloqueSweepDeps): Promise<num
       sortis += 1;
     } catch (err) {
       deps.log?.(
-        `agent: sortie d'échec impossible pour la session ${tour.sessionId} (run ${tour.runId}) : ${err instanceof Error ? err.message : String(err)}`,
+        `agent: sortie d'échec impossible pour la session ${tour.sessionId} (run ${tour.runId}) : ${texteDe(err)}`,
       );
     }
   }

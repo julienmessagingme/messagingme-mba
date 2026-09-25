@@ -146,6 +146,17 @@ function isCategory(v: unknown): v is CampaignCategory {
 /** Routes de campagne : lecture (liste/détail/numéros), création et déclenchement du run. */
 export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps, garde: Guard, limiteCouteuse?: PreHandler): void {
   const opts = { preHandler: garde };
+  /**
+   * L'expiration du job d'un run, dimensionnée sur le travail réel (destinataires en attente / débit résolu) :
+   * un run throttlé long ne doit pas expirer et être rejoué en parallèle. `undefined` (campagne introuvable) =
+   * le défaut de la file.
+   */
+  const expirationDuRun = async (campaignId: string): Promise<number | undefined> => {
+    const sizing = await deps.getRunSizing(campaignId);
+    return sizing
+      ? campaignJobExpireSeconds(sizing.pendingCount, resolveRatePerMinute(sizing.ratePerMinute, deps.defaultRatePerMinute ?? 0, deps.plafondLePlusBas ?? SANS_PLAFOND))
+      : undefined;
+  };
   // Garde des routes coûteuses : la garde habituelle, PLUS le plafond par espace (chaîne APLATIE).
   const couteux = gardeEtendue(garde, limiteCouteuse);
 
@@ -662,12 +673,8 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       return reply.code(202).send({ scheduled: true, campaignId, scheduledAt: when.toISOString() });
     }
 
-    // Lancement IMMÉDIAT. Dimensionne l'expiration du job sur le travail réel (nb destinataires en attente /
-    // débit choisi) : un run throttlé long ne doit pas expirer et être rejoué en parallèle. Absent -> défaut file.
-    const sizing = await deps.getRunSizing(campaignId);
-    const expireInSeconds = sizing
-      ? campaignJobExpireSeconds(sizing.pendingCount, resolveRatePerMinute(sizing.ratePerMinute, deps.defaultRatePerMinute ?? 0, deps.plafondLePlusBas ?? SANS_PLAFOND))
-      : undefined;
+    // Lancement IMMÉDIAT, l'expiration dimensionnée sur le travail réel (`expirationDuRun`).
+    const expireInSeconds = await expirationDuRun(campaignId);
     // REPRISE d'une campagne en pause : la pause est levée AVANT l'enfilement, parce que le job refuse de
     // démarrer une campagne en pause (garde de `campaignRunJob`, qui empêche un job enfilé avant la pause de la
     // ressusciter). No-op sur un brouillon, donc l'appel est inconditionnel.
@@ -705,10 +712,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     if (r.result === 'missing_var') return reply.code(422).send({ error: 'variable de template toujours manquante', missing: r.missing });
     if (r.result === 'conflict') return reply.code(409).send({ error: 'destinataire déjà repris' });
     // queued : enfile un run (le destinataire redevenu pending est renvoyé par runCampaign avec les valeurs corrigées).
-    const sizing = await deps.getRunSizing(campaignId);
-    const expireInSeconds = sizing
-      ? campaignJobExpireSeconds(sizing.pendingCount, resolveRatePerMinute(sizing.ratePerMinute, deps.defaultRatePerMinute ?? 0, deps.plafondLePlusBas ?? SANS_PLAFOND))
-      : undefined;
+    const expireInSeconds = await expirationDuRun(campaignId);
     // Même groupe que partout ailleurs : un renvoi de destinataire ne doit pas échapper au plafond par espace.
     await deps.queue.enqueue('campaign-run', { campaignId }, { ...(expireInSeconds ? { expireInSeconds } : {}), groupId: authTenant });
     return reply.code(202).send({ enqueued: true, recipientId });

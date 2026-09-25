@@ -1,4 +1,5 @@
 import type { OutboundCarouselCard } from './template-components';
+import { texteDe } from '../lib/erreur';
 
 /**
  * Prépare les visuels d'un template POUR L'ENVOI : chaque image lue chez Meta est re-téléversée sur le numéro
@@ -62,7 +63,7 @@ export class TemplateMediaPreparer {
       return id;
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error("média de template : visuel non préparé pour l'envoi:", err instanceof Error ? err.message : String(err));
+      console.error("média de template : visuel non préparé pour l'envoi:", texteDe(err));
       return null;
     }
   }

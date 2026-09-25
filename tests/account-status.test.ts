@@ -436,3 +436,66 @@ describe('toggle HubSpot par numéro (PATCH .../hubspot)', () => {
     await server.close();
   });
 });
+
+/**
+ * Les TREIZE valeurs affichées de l'Accueil, et ce qui est écrit en base, figés champ par champ (audit ponytail
+ * du 2026-09-25 : les treize `let` recopiés sont devenus une lecture « pull frais, sinon dernier connu »).
+ */
+describe('route account-status : le pull frais prime, le dernier connu comble', () => {
+  const connu = rec({
+    displayPhoneNumber: '+33 1 00 00 00 00', status: 'FLAGGED', qualityRating: 'YELLOW', messagingLimitTier: 'TIER_250',
+    nameStatus: 'PENDING', codeVerificationStatus: 'NOT_VERIFIED', throughputLevel: 'STANDARD', verifiedName: 'Ancien',
+    wabaHealthStatus: 'LIMITED', accountReviewStatus: 'PENDING', businessVerificationStatus: 'pending',
+    marketingMessagesLiteApiStatus: 'INELIGIBLE', ownerBusinessName: 'Ancienne SA',
+  });
+  const complet = {
+    ok: true as const, status: 'CONNECTED', qualityRating: 'GREEN', messagingLimitTier: 'TIER_1K',
+    displayPhoneNumber: '+33 5 25 68 02 50', nameStatus: 'APPROVED', codeVerificationStatus: 'VERIFIED',
+    throughputLevel: 'HIGH', verifiedName: 'Engage Me', wabaHealthStatus: 'AVAILABLE', accountReviewStatus: 'APPROVED',
+    businessVerificationStatus: 'verified', marketingMessagesLiteApiStatus: 'ONBOARDED', ownerBusinessName: 'SmartLink',
+  };
+  const champs = (b: Record<string, unknown>) => ({
+    number: b.number, tier: b.tier, quality: b.quality, numberStatus: b.numberStatus, nameStatus: b.nameStatus,
+    codeVerificationStatus: b.codeVerificationStatus, throughputLevel: b.throughputLevel, verifiedName: b.verifiedName,
+    wabaHealthStatus: b.wabaHealthStatus, accountReviewStatus: b.accountReviewStatus,
+    businessVerificationStatus: b.businessVerificationStatus, marketingMessagesLiteApiStatus: b.marketingMessagesLiteApiStatus,
+    ownerBusinessName: b.ownerBusinessName,
+  });
+
+  it('pull COMPLET : tout vient du pull, et tout est enregistré SAUF le numéro d’affichage', async () => {
+    const { server, saved } = app({ getPhoneNumber: async () => connu, pullStatus: async () => complet });
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
+    const { ok: _ok, displayPhoneNumber: _affiche, ...enregistre } = complet;
+    expect(saved).toEqual([{ id: 'PN1', patch: enregistre }]);
+    expect(champs(res.json())).toEqual({
+      number: '+33 5 25 68 02 50', tier: 'TIER_1K', quality: 'GREEN', numberStatus: 'CONNECTED', nameStatus: 'APPROVED',
+      codeVerificationStatus: 'VERIFIED', throughputLevel: 'HIGH', verifiedName: 'Engage Me', wabaHealthStatus: 'AVAILABLE',
+      accountReviewStatus: 'APPROVED', businessVerificationStatus: 'verified', marketingMessagesLiteApiStatus: 'ONBOARDED',
+      ownerBusinessName: 'SmartLink',
+    });
+    await server.close();
+  });
+
+  it('pull VIDE : chaque champ retombe sur le dernier connu', async () => {
+    const { server, saved } = app({ getPhoneNumber: async () => connu, pullStatus: async () => ({ ok: true }) });
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
+    expect(saved).toEqual([{ id: 'PN1', patch: {} }]);
+    expect(champs(res.json())).toEqual({
+      number: '+33 1 00 00 00 00', tier: 'TIER_250', quality: 'YELLOW', numberStatus: 'FLAGGED', nameStatus: 'PENDING',
+      codeVerificationStatus: 'NOT_VERIFIED', throughputLevel: 'STANDARD', verifiedName: 'Ancien', wabaHealthStatus: 'LIMITED',
+      accountReviewStatus: 'PENDING', businessVerificationStatus: 'pending', marketingMessagesLiteApiStatus: 'INELIGIBLE',
+      ownerBusinessName: 'Ancienne SA',
+    });
+    await server.close();
+  });
+
+  it('pull en ÉCHEC ou absent : rien n’est enregistré, le dernier connu s’affiche, et `null` reste `null`', async () => {
+    for (const pull of [{ ok: false as const, authError: false }, null]) {
+      const { server, saved } = app({ getPhoneNumber: async () => rec({ status: 'CONNECTED' }), pullStatus: async () => pull });
+      const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
+      expect(saved).toEqual([]);
+      expect(champs(res.json())).toMatchObject({ number: '+33 5 25 68 02 50', numberStatus: 'CONNECTED', tier: null, verifiedName: null, ownerBusinessName: null });
+      await server.close();
+    }
+  });
+});

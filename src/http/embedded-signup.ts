@@ -4,6 +4,7 @@ import { gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
 import { TenantConflictError, SecondNumeroRefuseError } from '../account/es-store.pg';
 import { scopeTenant, nonEmpty } from './scope';
 import { makeJournal, type AuditSink } from '../audit/journal';
+import { texteDe } from '../lib/erreur';
 
 export interface EmbeddedSignupRouteDeps {
   /**
@@ -147,7 +148,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     try {
       businessToken = await deps.exchangeCode(code);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = texteDe(err);
       // eslint-disable-next-line no-console
       console.error(`embedded-signup: échange du code impossible (tenant ${tenant}) : ${msg}`);
       return reply.code(422).send({ error: `échange du code Meta échoué : ${msg}` });
@@ -190,7 +191,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
         // eslint-disable-next-line no-console
         console.info(`embedded-signup: identifiants retrouvés depuis le token (waba=${wabaId}, numéro=${phoneNumberId}) faute d'annonce par la popup`);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = texteDe(err);
         // eslint-disable-next-line no-console
         console.error(`embedded-signup: repêchage des identifiants impossible (tenant ${tenant}) : ${msg}`);
         return reply.code(422).send({ error: `lecture du compte WhatsApp impossible : ${msg}` });
@@ -207,7 +208,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
       await deps.verifyWaba(wabaId, businessToken);
       phone = await deps.getPhone(phoneNumberId, businessToken);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = texteDe(err);
       // eslint-disable-next-line no-console
       console.error(`embedded-signup: preuve d'appartenance refusée (tenant ${tenant}, waba ${wabaId}, numéro ${phoneNumberId}) : ${msg}`);
       return reply.code(422).send({ error: `le compte Meta connecté ne donne pas accès à ce numéro/WABA : ${msg}` });
@@ -237,7 +238,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     try {
       await deps.subscribeApp(wabaId, businessToken);
     } catch (err) {
-      warnings.push(`abonnement webhooks : ${err instanceof Error ? err.message : String(err)}`);
+      warnings.push(`abonnement webhooks : ${texteDe(err)}`);
     }
 
     // 5. Register : SEULEMENT si le numéro n'est pas déjà sur la Cloud API (numéro neuf). PIN généré et conservé
@@ -262,7 +263,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
       try {
         await deps.register(phoneNumberId, businessToken, pin);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = texteDe(err);
         // ⚠️ JOURNALISÉ, et pas seulement rendu. Le 2026-09-22 au soir, un register a échoué en silence : la
         // route ne le mettait que dans `warnings`, que l'écran effaçait en rechargeant le compte. La cause a
         // failli être perdue, et c'est ce qui a coûté la soirée.
@@ -317,7 +318,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     try {
       etat = await deps.etatNumero(tenant, phoneNumberId);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = texteDe(err);
       // eslint-disable-next-line no-console
       console.error(`numero/code: état illisible chez Meta (tenant ${tenant}, numéro ${phoneNumberId}) : ${msg}`);
       return reply.code(422).send({ error: `état du numéro illisible chez Meta : ${msg}` });
@@ -343,7 +344,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     try {
       await deps.demanderCode(tenant, phoneNumberId, methode);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = texteDe(err);
       // Journalisé AVEC le code de Meta, jamais avec le code reçu par le client : c'est ce qui manquait le
       // 2026-09-22 au soir, et la cause d'un échec a failli être perdue.
       // eslint-disable-next-line no-console
@@ -372,7 +373,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     try {
       etat = await deps.etatNumero(tenant, phoneNumberId);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = texteDe(err);
       // eslint-disable-next-line no-console
       console.error(`numero/activer: état illisible chez Meta (tenant ${tenant}, numéro ${phoneNumberId}) : ${msg}`);
       return reply.code(422).send({ error: `état du numéro illisible chez Meta : ${msg}` });
@@ -390,7 +391,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
       try {
         await deps.verifierCode(tenant, phoneNumberId, body.code.trim());
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = texteDe(err);
         // ⚠️ LE CODE REÇU N'EST JAMAIS JOURNALISÉ, ni le PIN : seuls l'identifiant du numéro et le refus de Meta.
         // eslint-disable-next-line no-console
         console.error(`numero/activer: code refusé par Meta (tenant ${tenant}, numéro ${phoneNumberId}) : ${msg}`);
@@ -405,7 +406,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     try {
       await deps.enregistrerNumero(tenant, phoneNumberId, pin);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = texteDe(err);
       // eslint-disable-next-line no-console
       console.error(`numero/activer: register refusé par Meta (tenant ${tenant}, numéro ${phoneNumberId}) : ${msg}`);
       return reply.code(422).send({ error: `Meta a refusé l’activation : ${msg}` });
@@ -418,7 +419,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
       await deps.sauverPin(tenant, pin);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error(`numero/activer: numéro activé mais PIN non conservé (tenant ${tenant}, numéro ${phoneNumberId}) : ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`numero/activer: numéro activé mais PIN non conservé (tenant ${tenant}, numéro ${phoneNumberId}) : ${texteDe(err)}`);
     }
     await journal(tenant, req, 'numero.active', { kind: 'phone_number', id: phoneNumberId }, {
       verificationFaite: etat.codeVerificationStatus !== 'VERIFIED',

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { parseRcsDlr, parseRcsMo, estDlr } from '../rcs/callback';
 import type { RcsDlr, RcsMo } from '../rcs/callback';
 import { ClesResolues, avertissementBorne, consommerAvecEntetes, consommerEnSilence, type RateLimiter } from '../auth/rate-limit';
+import { messageDe } from '../lib/erreur';
 
 /** Corps d'un rappel : quelques kilo-octets au plus (un message et son statut). Un corps plus gros n'est pas
  *  un rappel smsmode, on refuse avant de l'avoir en mémoire. */
@@ -114,7 +115,7 @@ export function registerRcsCallback(
     if (deps.noterRappel) {
       await deps.noterRappel(canal.tenantId, payload).catch((err: unknown) => {
         // eslint-disable-next-line no-console
-        console.error('trace du rappel RCS ignorée:', err instanceof Error ? err.message : err);
+        console.error('trace du rappel RCS ignorée:', messageDe(err));
       });
     }
     const estRapport = estDlr(payload);

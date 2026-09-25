@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { enqueueCampaignRun } from '../src/campaign/enqueue';
+import { enqueueCampaignRun, relanceurDeCampagnes } from '../src/campaign/enqueue';
 import type { Queue } from '../src/queue/queue';
 
 /** File espionne : retient le nom, la charge et les options de chaque enfilement. */
@@ -45,5 +45,29 @@ describe('enqueueCampaignRun', () => {
     await enqueueCampaignRun(queue, { campaignId: 'c1', tenantId: 't-a', pendingCount: 1, resolvedRatePerMinute: 30 });
     await enqueueCampaignRun(queue, { campaignId: 'c2', tenantId: 't-b', pendingCount: 1, resolvedRatePerMinute: 30 });
     expect(envois.map((e) => e.opts?.groupId)).toEqual(['t-a', 't-b']);
+  });
+});
+
+/**
+ * LE RELANCEUR D'UN PROCESS (audit ponytail du 2026-09-25) : les cinq relances du worker et l'envoi de l'API
+ * publique résolvaient chacun le débit à la main. Il doit rendre EXACTEMENT l'enfilement que chacun faisait :
+ * débit stocké, sinon défaut du serveur, borné par le plafond du canal le plus bas.
+ */
+describe('relanceurDeCampagnes', () => {
+  const config = { CAMPAIGN_DEFAULT_RATE_PER_MINUTE: 30, PHONE_RATE_PER_MINUTE_MAX: 80, RCS_RATE_PER_MINUTE_MAX: 60 };
+  const attendu = async (pendingCount: number, resolvedRatePerMinute: number) => {
+    const { queue, envois } = fileEspionne();
+    await enqueueCampaignRun(queue, { campaignId: 'c1', tenantId: 't-42', pendingCount, resolvedRatePerMinute });
+    return envois;
+  };
+
+  it.each([
+    ['débit stocké, sous le plafond', 20, 20],
+    ['débit absent -> défaut du serveur', null, 30],
+    ['débit au-dessus du plafond le plus BAS (RCS, 60) -> borné', 500, 60],
+  ] as const)('%s', async (_cas, stocke, resolu) => {
+    const { queue, envois } = fileEspionne();
+    await relanceurDeCampagnes(queue, config)({ campaignId: 'c1', tenantId: 't-42', pendingCount: 5000, ratePerMinute: stocke });
+    expect(envois).toEqual(await attendu(5000, resolu));
   });
 });

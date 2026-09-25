@@ -1,5 +1,6 @@
 // src/api/consentement.ts
 import type { AuditSink } from '../audit/journal';
+import { tenter } from '../lib/tenter';
 
 /**
  * LE CONSENTEMENT POSÉ PAR UNE MACHINE (spec de l'API publique, § 2 et § 3).
@@ -59,18 +60,13 @@ export async function appliquerConsentement(
   const issue = await deps.ecrireConsentementParId(tenantId, contactId, consent, source);
   // Rien n'a bougé (même statut, STOP à respecter, ou fiche purgée entre-temps) : rien à consigner.
   if (issue !== 'change') return issue;
-  try {
-    await deps.audit(
-      tenantId,
-      // Une clé d'API n'est pas un compte : l'acteur reste vide, la SOURCE dit d'où vient la décision.
-      { userId: null, email: null },
-      consent === 'opted_in' ? 'contact.optin' : 'contact.optout',
-      { kind: 'contact', id: contactId },
-      { source: 'api', consentSource: source },
-    );
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error('audit du consentement ignoré:', err instanceof Error ? err.message : err);
-  }
+  await tenter('audit du consentement ignoré:', () => deps.audit(
+    tenantId,
+    // Une clé d'API n'est pas un compte : l'acteur reste vide, la SOURCE dit d'où vient la décision.
+    { userId: null, email: null },
+    consent === 'opted_in' ? 'contact.optin' : 'contact.optout',
+    { kind: 'contact', id: contactId },
+    { source: 'api', consentSource: source },
+  ));
   return issue;
 }

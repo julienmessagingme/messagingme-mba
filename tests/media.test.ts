@@ -20,6 +20,48 @@ function makeFetch(responses: Array<{ ok: boolean; status: number; json: unknown
   return { fn, calls };
 }
 
+describe('MetaMediaClient.telechargerEntrant', () => {
+  function fetchAvecBinaire(meta: { ok: boolean; status: number; json: unknown }, octets = Buffer.from([1, 2, 3])) {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const fn: FetchLike = async (url, init) => {
+      calls.push({ url: String(url), init });
+      if (calls.length === 1) return { ok: meta.ok, status: meta.status, json: async () => meta.json } as Response;
+      return { ok: true, status: 200, arrayBuffer: async () => octets.buffer.slice(octets.byteOffset, octets.byteOffset + octets.byteLength) } as Response;
+    };
+    return { fn, calls };
+  }
+
+  it('deux appels, le jeton en Bearer sur les DEUX, et le type du média', async () => {
+    const { fn, calls } = fetchAvecBinaire({ ok: true, status: 200, json: { url: 'https://lookaside.fb.com/x', mime_type: 'audio/ogg', file_size: 3 } });
+    const client = new MetaMediaClient('tok', '988', 'v25.0', fn);
+    const r = await client.telechargerEntrant('MEDIA/1', 10);
+    expect([...r.bytes]).toEqual([1, 2, 3]);
+    expect(r.mime).toBe('audio/ogg');
+    expect(calls[0]!.url).toBe('https://graph.facebook.com/v25.0/MEDIA%2F1');
+    expect(calls[0]!.init).toEqual({ headers: { authorization: 'Bearer tok' } });
+    expect(calls[1]!.url).toBe('https://lookaside.fb.com/x');
+    expect((calls[1]!.init.headers as Record<string, string>).authorization).toBe('Bearer tok');
+  });
+
+  it('première lecture refusée -> MetaApiError avec le statut et le code de Meta, sans second appel', async () => {
+    const { fn, calls } = fetchAvecBinaire({ ok: false, status: 404, json: { error: { message: 'media introuvable', code: 100 } } });
+    const client = new MetaMediaClient('tok', '988', 'v25.0', fn);
+    const err = await client.telechargerEntrant('M1', 10).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(MetaApiError);
+    expect((err as MetaApiError).httpStatus).toBe(404);
+    expect((err as MetaApiError).code).toBe(100);
+    expect((err as MetaApiError).message).toBe('media introuvable');
+    expect(calls).toHaveLength(1);
+  });
+
+  it('taille annoncée au-delà du plafond -> refus AVANT de télécharger', async () => {
+    const { fn, calls } = fetchAvecBinaire({ ok: true, status: 200, json: { url: 'https://lookaside.fb.com/x', file_size: 11 } });
+    const client = new MetaMediaClient('tok', '988', 'v25.0', fn);
+    await expect(client.telechargerEntrant('M1', 10)).rejects.toThrow('media trop gros (11 octets, plafond 10)');
+    expect(calls).toHaveLength(1);
+  });
+});
+
 describe('MetaMediaClient.uploadImage', () => {
   it('2 appels (start /{appId}/uploads puis POST session) -> handle', async () => {
     const { fn, calls } = makeFetch([

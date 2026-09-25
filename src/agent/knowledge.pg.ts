@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { enTransaction } from '../db/transaction';
 import {
   CONFIG_RECHERCHE, PROXIMITE_TITRE_MIN, termesDeRecherche,
   type FicheAEcrire, type FicheConnaissance, type FicheTrouvee, type KnowledgeStore,
@@ -253,11 +254,9 @@ export class PgKnowledgeStore implements KnowledgeStore {
      * d'instruction : pendant ce temps, `PgAgentStore.remove` tenait l'agent et sa cascade attendait ces mêmes
      * fiches (40P01, donc un 500). Avec lui, l'ordre est celui de `remove` : l'agent, puis ce qui en dépend.
      */
-    const client = await this.pool.connect();
-    try {
-      await client.query('begin');
+    return enTransaction(this.pool, async (client) => {
       const agent = await client.query('select 1 from agents where tenant_id = $1 and id = $2 for key share', [tenantId, agentId]);
-      if ((agent.rowCount ?? 0) === 0) { await client.query('rollback'); return null; }
+      if ((agent.rowCount ?? 0) === 0) return null;
       const res = await client.query<{ retirees: number; ecrites: number }>(
         `with retirees as (
                 delete from agent_knowledge
@@ -279,15 +278,9 @@ export class PgKnowledgeStore implements KnowledgeStore {
         [tenantId, agentId, source.type, url, nom,
           JSON.stringify(fiches.map((f) => ({ titre: f.titre, corps: f.corps })))],
       );
-      await client.query('commit');
       const r = res.rows[0]!;
       return { retirees: r.retirees, ecrites: r.ecrites };
-    } catch (e) {
-      await client.query('rollback').catch(() => {});
-      throw e;
-    } finally {
-      client.release();
-    }
+    });
   }
 }
 

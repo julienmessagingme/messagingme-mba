@@ -1,5 +1,4 @@
-import { MetaApiError } from './errors';
-import type { MetaErrorBody } from './errors';
+import { appelGraph } from './graph';
 import { FLOW_ENTRY_SCREEN } from './flow-json';
 import type { OutboundCarouselCard } from './template-components';
 
@@ -79,74 +78,65 @@ export interface TemplateSummary {
   editable: boolean;
 }
 
-/** Texte du composant BODY parmi les components d'un template. */
-function bodyOf(components: unknown): string {
-  if (!Array.isArray(components)) return '';
+/** Un composant de template tel que Meta le rend : tout est optionnel, rien n'est garanti. */
+type Composant = {
+  type?: string; format?: string; text?: string; buttons?: unknown; cards?: unknown;
+  example?: { body_text?: unknown; header_handle?: unknown };
+} | null | undefined;
+
+/**
+ * La PREMIÈRE valeur que `lire` rend (autre que `undefined`) en parcourant les components d'un template, dans
+ * l'ordre. `lire` décide seul s'il s'arrête sur un composant (rendre une valeur, `null` compris) ou s'il passe
+ * au suivant (rendre `undefined`). `undefined` = rien trouvé, ou `components` n'est pas un tableau.
+ */
+function premier<T>(components: unknown, lire: (c: Composant) => T | undefined): T | undefined {
+  if (!Array.isArray(components)) return undefined;
   for (const c of components) {
-    const comp = c as { type?: string; text?: string };
-    if (comp?.type === 'BODY' && typeof comp.text === 'string') return comp.text;
+    const v = lire(c as Composant);
+    if (v !== undefined) return v;
   }
-  return '';
+  return undefined;
 }
 
-/** Format du composant HEADER (IMAGE/VIDEO/DOCUMENT/TEXT), null si aucun. */
+/** Texte du composant BODY parmi les components d'un template. */
+function bodyOf(components: unknown): string {
+  return premier(components, (c) => (c?.type === 'BODY' && typeof c.text === 'string' ? c.text : undefined)) ?? '';
+}
+
+/** Format du composant HEADER (IMAGE/VIDEO/DOCUMENT/TEXT), null si aucun. S'arrête au PREMIER HEADER. */
 function headerFormatOf(components: unknown): string | null {
-  if (!Array.isArray(components)) return null;
-  for (const c of components) {
-    const comp = c as { type?: string; format?: string };
-    if (comp?.type === 'HEADER') return typeof comp.format === 'string' ? comp.format : null;
-  }
-  return null;
+  return premier(components, (c) => (c?.type === 'HEADER' ? (typeof c.format === 'string' ? c.format : null) : undefined)) ?? null;
 }
 
 /** Texte d'un header TEXT (pré-remplissage édition). undefined si header média/absent. */
 function headerTextOf(components: unknown): string | undefined {
-  if (!Array.isArray(components)) return undefined;
-  for (const c of components) {
-    const comp = c as { type?: string; format?: string; text?: string };
-    if (comp?.type === 'HEADER' && comp.format === 'TEXT' && typeof comp.text === 'string') return comp.text;
-  }
-  return undefined;
+  return premier(components, (c) => (c?.type === 'HEADER' && c.format === 'TEXT' && typeof c.text === 'string' ? c.text : undefined));
 }
 
 /** Texte du composant FOOTER (pré-remplissage édition). undefined si absent. */
 function footerOf(components: unknown): string | undefined {
-  if (!Array.isArray(components)) return undefined;
-  for (const c of components) {
-    const comp = c as { type?: string; text?: string };
-    if (comp?.type === 'FOOTER' && typeof comp.text === 'string') return comp.text;
-  }
-  return undefined;
+  return premier(components, (c) => (c?.type === 'FOOTER' && typeof c.text === 'string' ? c.text : undefined));
 }
 
 /** Boutons top-level (composant BUTTONS) remappés en TemplateButton, pour pré-remplir l'édition. */
 function buttonsOf(components: unknown): TemplateButton[] | undefined {
-  if (!Array.isArray(components)) return undefined;
-  for (const c of components) {
-    const comp = c as { type?: string; buttons?: unknown };
-    if (comp?.type === 'BUTTONS' && Array.isArray(comp.buttons)) {
-      return comp.buttons.map((raw): TemplateButton => {
-        const b = raw as { type?: string; text?: string; url?: string; flow_id?: string };
-        if (b.type === 'URL') return { type: 'URL', text: b.text ?? '', url: b.url ?? '' };
-        if (b.type === 'FLOW') return { type: 'FLOW', text: b.text ?? '', flowId: b.flow_id ?? '' };
-        return { type: 'QUICK_REPLY', text: b.text ?? '' };
-      });
-    }
-  }
-  return undefined;
+  return premier(components, (c) => (c?.type === 'BUTTONS' && Array.isArray(c.buttons)
+    ? c.buttons.map((raw): TemplateButton => {
+      const b = raw as { type?: string; text?: string; url?: string; flow_id?: string };
+      if (b.type === 'URL') return { type: 'URL', text: b.text ?? '', url: b.url ?? '' };
+      if (b.type === 'FLOW') return { type: 'FLOW', text: b.text ?? '', flowId: b.flow_id ?? '' };
+      return { type: 'QUICK_REPLY', text: b.text ?? '' };
+    })
+    : undefined));
 }
 
 /** Exemples de variables du BODY (example.body_text[0]) pour pré-remplir l'édition. */
 function exampleOf(components: unknown): string[] | undefined {
-  if (!Array.isArray(components)) return undefined;
-  for (const c of components) {
-    const comp = c as { type?: string; example?: { body_text?: unknown } };
-    if (comp?.type === 'BODY' && comp.example && Array.isArray(comp.example.body_text)) {
-      const row = comp.example.body_text[0];
-      if (Array.isArray(row)) return row.map(String);
-    }
-  }
-  return undefined;
+  return premier(components, (c) => {
+    if (c?.type !== 'BODY' || !c.example || !Array.isArray(c.example.body_text)) return undefined;
+    const row = c.example.body_text[0];
+    return Array.isArray(row) ? row.map(String) : undefined;
+  });
 }
 
 /**
@@ -160,15 +150,12 @@ function exampleOf(components: unknown): string[] | undefined {
  * 131053, son téléchargeur se prenant un 403 sur son propre CDN. Cf. `meta/template-media.ts`.
  */
 function headerMediaUrlOf(components: unknown): string | undefined {
-  if (!Array.isArray(components)) return undefined;
-  for (const c of components) {
-    const comp = c as { type?: string; example?: { header_handle?: unknown } };
-    if (comp?.type !== 'HEADER') continue;
-    const handles = comp.example?.header_handle;
+  return premier(components, (c) => {
+    if (c?.type !== 'HEADER') return undefined;
+    const handles = c.example?.header_handle;
     const h = Array.isArray(handles) ? handles[0] : undefined;
-    if (typeof h === 'string' && /^https?:\/\//i.test(h)) return h;
-  }
-  return undefined;
+    return typeof h === 'string' && /^https?:\/\//i.test(h) ? h : undefined;
+  });
 }
 
 /**
@@ -291,17 +278,8 @@ export class MetaTemplateClient {
     return `${this.baseUrl}/${this.version}/${wabaId}/message_templates${suffix}`;
   }
 
-  private async call(url: string, init: RequestInit): Promise<unknown> {
-    const res = await this.fetchImpl(url, {
-      ...init,
-      headers: { authorization: `Bearer ${this.token}`, ...(init.headers ?? {}) },
-    });
-    const json = (await res.json().catch(() => null)) as unknown;
-    if (!res.ok) {
-      const errBody = (json as { error?: MetaErrorBody } | null)?.error ?? null;
-      throw new MetaApiError(res.status, errBody);
-    }
-    return json;
+  private call(url: string, init: RequestInit): Promise<unknown> {
+    return appelGraph(this.fetchImpl, this.token, url, init);
   }
 
   /** Crée (soumet à validation) un template. Retourne l'id + le statut initial. */

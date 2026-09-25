@@ -1,6 +1,7 @@
 import type { ControlOwner } from '../inbox/store.pg';
-import { asArray, asRecord } from './json';
+import { asArray, asRecord, texteNonVide } from './json';
 import { valeurEffective } from './change';
+import { journaliser } from '../lib/journal';
 
 /**
  * Changements de contrôle du fil annoncés par Meta (`messaging_handovers`), et messages que l'agent de
@@ -58,13 +59,7 @@ export interface HandoverDeps {
   recordAgentMessage?(tenantId: string, waId: string, body: string, messageId: string | null): Promise<void>;
 }
 
-const str = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
 
-/** Trace structurée : c'est elle qu'on lira pendant le premier test MBA. */
-function trace(msg: string, extra: Record<string, unknown>): void {
-  // eslint-disable-next-line no-console
-  console.log(JSON.stringify({ lvl: 'info', msg, ...extra }));
-}
 
 /**
  * À qui Meta dit-il que le fil appartient désormais ?
@@ -82,9 +77,9 @@ export function ownerFromHandover(value: Record<string, unknown>): ControlOwner 
   // Forme RÉELLE (mesurée) : `{type: 'control_passed', control_passed: {previous_owner_app_role, metadata}}`.
   // Le nom du champ dit qui détenait AVANT, jamais qui détient maintenant : le nouveau détenteur, c'est
   // celui qui REÇOIT le webhook, donc nous.
-  if (str(value['type']) !== 'control_passed') return null;
+  if (texteNonVide(value['type']) !== 'control_passed') return null;
   const passe = asRecord(value['control_passed']);
-  const precedent = str(passe['previous_owner_app_role']);
+  const precedent = texteNonVide(passe['previous_owner_app_role']);
   /**
    * On ne reconnaît QUE ce qu'on a vu : l'agent de Meta nous rend la main. Une autre app qui passerait le fil
    * à l'agent produirait le même `type` avec un rôle différent, et le nouveau détenteur ne serait alors PAS
@@ -113,8 +108,8 @@ export function ownerFromHandover(value: Record<string, unknown>): ControlOwner 
  * correctifs ci-dessus n'auraient rien changé.
  */
 export function numeroBusinessDuChange(value: Record<string, unknown>): string | undefined {
-  return str(asRecord(value['metadata'])['phone_number_id'])
-    ?? str(asRecord(value['recipient'])['phone_number_id']);
+  return texteNonVide(asRecord(value['metadata'])['phone_number_id'])
+    ?? texteNonVide(asRecord(value['recipient'])['phone_number_id']);
 }
 
 /** Le numéro du CLIENT concerné par la bascule. Mesuré : il vit dans `sender.phone_number`. */
@@ -122,9 +117,9 @@ export function waIdFromHandover(value: Record<string, unknown>): string | undef
   // ⚠️ `recipient` est un OBJET qui décrit le numéro BUSINESS (`phone_number_id`, `display_phone_number`),
   // pas le client. Le lire comme une chaîne rendait `undefined`, et la garde `if (waId && owner)` du bas de
   // ce fichier ne passait donc JAMAIS : le module tournait sans jamais rien écrire.
-  return str(asRecord(value['sender'])['phone_number'])
-    ?? str(value['to'])
-    ?? str(value['wa_id']);
+  return texteNonVide(asRecord(value['sender'])['phone_number'])
+    ?? texteNonVide(value['to'])
+    ?? texteNonVide(value['wa_id']);
 }
 
 /**
@@ -137,7 +132,7 @@ export async function processHandovers(payload: unknown, deps: HandoverDeps): Pr
   for (const entryRaw of asArray(asRecord(payload)['entry'])) {
     for (const changeRaw of asArray(asRecord(entryRaw)['changes'])) {
       const change = asRecord(changeRaw);
-      const field = str(change['field']);
+      const field = texteNonVide(change['field']);
       if (field !== 'messaging_handovers' && field !== 'standby') continue;
 
       // 🔴 `valeurEffective`, JAMAIS `asRecord` directement : voir `./change.ts`. Ce module lisait
@@ -145,12 +140,12 @@ export async function processHandovers(payload: unknown, deps: HandoverDeps): Pr
       const value = valeurEffective(change['value']);
       const phoneNumberId = numeroBusinessDuChange(value);
       if (!phoneNumberId) {
-        trace('handover_sans_numero', { field, value });
+        journaliser('info', 'handover_sans_numero', { field, value });
         continue;
       }
       const tenantId = await deps.phoneNumberTenant(phoneNumberId);
       if (!tenantId) {
-        trace('handover_numero_inconnu', { field, phoneNumberId });
+        journaliser('info', 'handover_numero_inconnu', { field, phoneNumberId });
         continue;
       }
 
@@ -160,7 +155,7 @@ export async function processHandovers(payload: unknown, deps: HandoverDeps): Pr
         // On journalise TOUJOURS, reconnu ou non : c'est cette trace qui a livré la vraie forme le
         // 2026-09-10 au soir, et c'est elle qui livrera le SENS INVERSE (une app qui rend le fil à l'agent),
         // que Meta n'a encore jamais envoyé et qu'on refuse donc d'interpréter.
-        trace('handover_recu', { tenantId, phoneNumberId, waId: waId ?? null, owner, value });
+        journaliser('info', 'handover_recu', { tenantId, phoneNumberId, waId: waId ?? null, owner, value });
         // `app_human` = l'agent de Meta nous passe la main (seul sens reconnu) : c'est une ESCALADE vers l'équipe.
         if (waId && owner === 'app_human') await deps.marquerEscalade(tenantId, waId);
         // ⚠️ L'AUTRE SENS N'EXISTE PAS ENCORE : `ownerFromHandover` ne rend que `app_human` ou `null`, donc cette
@@ -195,10 +190,10 @@ export async function processHandovers(payload: unknown, deps: HandoverDeps): Pr
          * Les formes à plat restent lues en second : elles ne coûtent rien et couvrent une variante de Meta.
          */
         const contenu = asRecord(echo['message']);
-        const waId = str(contenu['to']) ?? str(echo['to']) ?? str(echo['recipient']) ?? str(value['recipient']);
-        const body = str(asRecord(contenu['text'])['body']) ?? str(asRecord(echo['text'])['body']) ?? str(echo['body']);
-        const messageId = str(echo['id']) ?? str(contenu['id']) ?? null;
-        trace('standby_echo', { tenantId, waId: waId ?? null, messageId, aUnCorps: body !== undefined });
+        const waId = texteNonVide(contenu['to']) ?? texteNonVide(echo['to']) ?? texteNonVide(echo['recipient']) ?? texteNonVide(value['recipient']);
+        const body = texteNonVide(asRecord(contenu['text'])['body']) ?? texteNonVide(asRecord(echo['text'])['body']) ?? texteNonVide(echo['body']);
+        const messageId = texteNonVide(echo['id']) ?? texteNonVide(contenu['id']) ?? null;
+        journaliser('info', 'standby_echo', { tenantId, waId: waId ?? null, messageId, aUnCorps: body !== undefined });
         if (waId && body && deps.recordAgentMessage) {
           await deps.recordAgentMessage(tenantId, waId, body, messageId);
         }

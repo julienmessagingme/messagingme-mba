@@ -1,6 +1,7 @@
 import type { RcsDlr } from './callback';
 import type { DeliveryStatus } from '../webhooks/delivery';
 import type { EchecEcrit, EchecMessageLibre, EchecSansMessage } from '../delivery/echecs-messages.pg';
+import { messageDe } from '../lib/erreur';
 
 /**
  * LE RAPPORT DE LIVRAISON D'UN RCS (rappel smsmode), extrait de `onDlr` (`src/index.ts`) pour être testé.
@@ -55,7 +56,7 @@ export async function traiterRapportRcs(deps: DepsRapportRcs, tenantId: string, 
         await deps.mesureBloc(dlr.messageId, dlr.status);
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error('mesure de bloc RCS (statut) ignorée:', err instanceof Error ? err.message : err);
+        console.error('mesure de bloc RCS (statut) ignorée:', messageDe(err));
       }
     }
     // 1 ter. L'échec d'un message LIBRE (défaut 4) : seulement s'il n'a touché aucun destinataire de campagne.
@@ -72,7 +73,7 @@ export async function traiterRapportRcs(deps: DepsRapportRcs, tenantId: string, 
         }
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error('échec de RCS libre non journalisé:', err instanceof Error ? err.message : err);
+        console.error('échec de RCS libre non journalisé:', messageDe(err));
       }
     }
   }
@@ -85,7 +86,7 @@ export async function traiterRapportRcs(deps: DepsRapportRcs, tenantId: string, 
         await deps.joignabilite.put(dlr.channelId, `+${dlr.to}`, joignable, deps.maintenant());
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error('joignabilité RCS non enregistrée:', err instanceof Error ? err.message : err);
+        console.error('joignabilité RCS non enregistrée:', messageDe(err));
       }
     }
   }

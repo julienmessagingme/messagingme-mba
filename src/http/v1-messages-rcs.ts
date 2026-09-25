@@ -10,6 +10,7 @@ import type { DepsRepondre } from '../inbox/repondre';
 import { envoyerRcsLibre, type DepsRcsLibre, type RefusRcsLibre } from '../rcs/envoyer-libre';
 import { RCS_TEXTE_MAX } from '../rcs/schema';
 import { INCONNUE_POUR_UN_MESSAGE, type ReponseMessageSimple } from './v1-messages';
+import { messageDe } from '../lib/erreur';
 
 /**
  * `POST /v1/messages/rcs` : un TEXTE en RCS, à UNE personne qui a une fiche (spec 2026-09-24, § 4, lot 3).
@@ -125,7 +126,7 @@ export function registerV1MessagesRcs(app: FastifyInstance, deps: V1MessagesRcsR
       await deps.takeControl(tenantId, waId).catch(() => {});
       await deps.recordOutbound(conversationId, issue.apercu, issue.messageId, 'api', 'rcs', null, null, null, 'rcs').catch((err: unknown) => {
         // eslint-disable-next-line no-console
-        console.error(`v1/messages/rcs: RCS parti mais non inscrit dans l'Inbox (${tenantId}):`, err instanceof Error ? err.message : err);
+        console.error(`v1/messages/rcs: RCS parti mais non inscrit dans l'Inbox (${tenantId}):`, messageDe(err));
       });
     } else {
       // eslint-disable-next-line no-console

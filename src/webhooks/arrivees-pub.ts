@@ -1,4 +1,5 @@
 import { extractInbound, type InboundMessage } from './inbound';
+import { messageDe } from '../lib/erreur';
 
 /**
  * L'ARRIVÉE PUBLICITAIRE : une ligne par message entrant qui porte un `referral` (lot 1 des publicités
@@ -68,7 +69,7 @@ export async function processArriveesPub(payload: unknown, deps: ArriveesPubDeps
       }
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('processArriveesPub: arrivée ignorée:', err instanceof Error ? err.message : err);
+      console.error('processArriveesPub: arrivée ignorée:', messageDe(err));
     }
   }
 }

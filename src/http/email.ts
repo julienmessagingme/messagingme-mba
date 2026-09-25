@@ -6,6 +6,7 @@ import type { Guard } from '../auth/middleware';
 import { sendSmtpEmail } from '../email/smtp';
 import { estRefusAdresseInterne } from '../lib/connexion-publique';
 import { scopeTenant } from './scope';
+import { messageDe } from '../lib/erreur';
 import type {
   EmailAccount,
   EmailAccountInput,
@@ -155,7 +156,7 @@ export function registerEmailRoutes(app: FastifyInstance, deps: EmailRoutesDeps,
       // `console.error` et non `req.log` : Fastify est construit en `logger: false` (server.ts), donc
       // `req.log` est un no-op silencieux, cf. le même choix dans support.ts/embedded-signup.ts.
       // eslint-disable-next-line no-console
-      console.error(`email: test SMTP échoué (compte ${id}):`, err instanceof Error ? err.message : err);
+      console.error(`email: test SMTP échoué (compte ${id}):`, messageDe(err));
       // 🔴 L'HÔTE EST REFUSÉ À L'OUVERTURE DE LA SOCKET quand il pointe vers l'intérieur (`buildTransport`) : on
       // le DIT, sans citer l'adresse, pour que l'administrateur ne cherche pas une panne de sa messagerie.
       if (estRefusAdresseInterne(err)) {

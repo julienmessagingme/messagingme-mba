@@ -1,12 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { runCampaign, etageServable, MOTIF_ECART_A_L_ENVOI, type EcartALEnvoi } from '../src/campaign/engine';
+import { etageServable, MOTIF_ECART_A_L_ENVOI, type EcartALEnvoi } from '../src/campaign/engine';
+import { lancerCampagne, type DepsMoteurDeTest } from './campagne-canaux';
 import type {
-  MessageSender,
-  RecipientStore,
-  CampaignStore,
-  QualityProvider,
-  EngineDeps,
-  TentativeEnvoi,
+  MessageSender, RecipientStore, CampaignStore, QualityProvider, TentativeEnvoi,
 } from '../src/campaign/engine';
 import type { Campaign, Recipient, QualityRating, GuardrailThresholds } from '../src/campaign/types';
 import type { Etage } from '../src/campaign/etages';
@@ -108,7 +104,7 @@ class CapturingSender implements MessageSender {
     return { messageId: 'm1' };
   }
 }
-function deps(over: Partial<EngineDeps> & { recipients: RecipientStore }): EngineDeps {
+function deps(over: Partial<DepsMoteurDeTest> & { recipients: RecipientStore }): DepsMoteurDeTest {
   return {
     sender: new FakeSender(),
     campaigns: new FakeCampaigns(),
@@ -123,7 +119,7 @@ describe('runCampaign', () => {
     const sender = new FakeSender();
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
     const campaigns = new FakeCampaigns();
-    const report = await runCampaign(campaign, deps({ recipients, sender, campaigns }));
+    const report = await lancerCampagne(campaign, deps({ recipients, sender, campaigns }));
     expect(report).toMatchObject({ sent: 2, skipped: 0, failed: 0, paused: false });
     expect(sender.calls).toEqual(['+33611', '+33622']);
     expect(recipients.results.get('r1')).toMatchObject({ status: 'sent', messageId: 'm-+33611' });
@@ -143,7 +139,7 @@ describe('runCampaign', () => {
     recipients.ecartFor.set('r3', 'bloque');
     const campaigns = new FakeCampaigns();
     const notes: Array<{ recipientId: string; statut: string }> = [];
-    const report = await runCampaign(campaign, deps({
+    const report = await lancerCampagne(campaign, deps({
       recipients, sender, campaigns,
       noterEnvoi: async (t: TentativeEnvoi) => { notes.push({ recipientId: t.recipientId, statut: t.statut }); },
     }));
@@ -162,7 +158,7 @@ describe('runCampaign', () => {
     const started: string[] = [];
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
     recipients.ecartFor.set('r2', 'desabonne');
-    const report = await runCampaign({ ...campaign, workflowId: 'wf1' }, deps({
+    const report = await lancerCampagne({ ...campaign, workflowId: 'wf1' }, deps({
       recipients,
       startWorkflow: async (_t, _w, waId) => { started.push(waId); },
     }));
@@ -175,7 +171,7 @@ describe('runCampaign', () => {
     const sender = new FakeSender();
     // r1 = numéro E.164 -> to ; r2 = BSUID -> recipient.
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', 'BSUID_xyz')]);
-    await runCampaign(campaign, deps({ recipients, sender }));
+    await lancerCampagne(campaign, deps({ recipients, sender }));
     expect(sender.marketingParams[0]).toMatchObject({ to: '+33611' });
     expect(sender.marketingParams[0]!.recipient).toBeUndefined();
     expect(sender.marketingParams[1]).toMatchObject({ recipient: 'BSUID_xyz' });
@@ -186,7 +182,7 @@ describe('runCampaign', () => {
     const started: Array<{ waId: string }> = [];
     const wf: Campaign = { ...campaign, workflowId: 'wf1' };
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', 'BSUID_xyz')]);
-    await runCampaign(wf, deps({
+    await lancerCampagne(wf, deps({
       recipients,
       startWorkflow: async (_t, _w, waId) => { started.push({ waId }); },
     }));
@@ -198,7 +194,7 @@ describe('runCampaign', () => {
     const captured: string[][] = [];
     const wf: Campaign = { ...campaign, workflowId: 'wf1' };
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
-    await runCampaign(wf, deps({
+    await lancerCampagne(wf, deps({
       recipients,
       startWorkflow: async (_t, _w, _waId, _cid, params) => { captured.push(params); },
     }));
@@ -215,7 +211,7 @@ describe('runCampaign', () => {
   it('campagne WORKFLOW : un run NON démarré (false) -> destinataire `failed` avec raison, jamais `sent`', async () => {
     const wf: Campaign = { ...campaign, workflowId: 'wf1' };
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
-    const report = await runCampaign(wf, deps({
+    const report = await lancerCampagne(wf, deps({
       recipients,
       // r1 ne démarre pas (ex. fil repris par un opérateur), r2 démarre normalement.
       startWorkflow: async (_t, _w, waId) => waId !== '33611',
@@ -234,7 +230,7 @@ describe('runCampaign', () => {
   it('campagne WORKFLOW : la RAISON du refus atterrit sur le destinataire, pas seulement dans les logs', async () => {
     const wf: Campaign = { ...campaign, workflowId: 'wf1' };
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    const report = await runCampaign(wf, deps({
+    const report = await lancerCampagne(wf, deps({
       recipients,
       startWorkflow: async () => 'template « promo » : l’image de la carte 2 n’a pas pu être préparée pour l’envoi',
     }));
@@ -245,7 +241,7 @@ describe('runCampaign', () => {
   it('campagne NODE : un run NON démarré (false) -> `failed`, jamais `sent`', async () => {
     const node: Campaign = { ...campaign, workflowId: 'wf1', startNodeId: 'n5', templateName: '' };
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    const report = await runCampaign(node, deps({
+    const report = await lancerCampagne(node, deps({
       recipients,
       startWorkflowFromNode: async () => false, // bloc de départ disparu entre la création et l'exécution
     }));
@@ -256,7 +252,7 @@ describe('runCampaign', () => {
   it('un câblage qui renvoie void reste traité comme un démarrage réussi (rétro-compatibilité)', async () => {
     const wf: Campaign = { ...campaign, workflowId: 'wf1' };
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    const report = await runCampaign(wf, deps({
+    const report = await lancerCampagne(wf, deps({
       recipients,
       startWorkflow: async () => { /* void : ne sait pas dire s'il a démarré */ },
     }));
@@ -270,7 +266,7 @@ describe('runCampaign', () => {
     const sender = new FakeSender();
     const node: Campaign = { ...campaign, workflowId: 'wf1', startNodeId: 'n5', templateName: '' };
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', 'BSUID_xyz')]);
-    const report = await runCampaign(node, deps({
+    const report = await lancerCampagne(node, deps({
       recipients, sender,
       startWorkflow: async (_t, wf, waId) => { classic.push(`${wf}:${waId}`); },
       startWorkflowFromNode: async (_t, wf, nodeId, waId, cid) => { fromNode.push(`${wf}:${nodeId}:${waId}:${cid}`); },
@@ -286,7 +282,7 @@ describe('runCampaign', () => {
     const classic: string[] = [];
     const wf: Campaign = { ...campaign, workflowId: 'wf1' };
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    await runCampaign(wf, deps({
+    await lancerCampagne(wf, deps({
       recipients,
       startWorkflow: async (_t, w, waId) => { classic.push(`${w}:${waId}`); },
       startWorkflowFromNode: async () => { fromNode.push('NE DEVRAIT PAS ÊTRE APPELÉ'); },
@@ -298,7 +294,7 @@ describe('runCampaign', () => {
   it('campagne TEMPLATE (ni workflow ni node) : comportement INCHANGÉ (envoi direct)', async () => {
     const sender = new FakeSender();
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    await runCampaign(campaign, deps({
+    await lancerCampagne(campaign, deps({
       recipients, sender,
       startWorkflow: async () => { throw new Error('ne doit pas être appelé'); },
       startWorkflowFromNode: async () => { throw new Error('ne doit pas être appelé'); },
@@ -309,7 +305,7 @@ describe('runCampaign', () => {
   it('campagne NODE sans startWorkflowFromNode câblé -> destinataire failed (jamais d’envoi silencieux)', async () => {
     const node: Campaign = { ...campaign, workflowId: 'wf1', startNodeId: 'n5', templateName: '' };
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    const report = await runCampaign(node, deps({ recipients }));
+    const report = await lancerCampagne(node, deps({ recipients }));
     expect(report).toMatchObject({ sent: 0, failed: 1 });
   });
 
@@ -317,7 +313,7 @@ describe('runCampaign', () => {
     const sender = new FakeSender();
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
     recipients.claimFails = new Set(['r1']); // r1 déjà pris par un autre run
-    const report = await runCampaign(campaign, deps({ recipients, sender }));
+    const report = await lancerCampagne(campaign, deps({ recipients, sender }));
     expect(sender.calls).toEqual(['+33622']); // r1 jamais envoyé
     expect(report.sent).toBe(1);
   });
@@ -326,7 +322,7 @@ describe('runCampaign', () => {
     const sender = new FakeSender();
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
     const util: Campaign = { ...campaign, category: 'utility' };
-    const report = await runCampaign(util, deps({ recipients, sender }));
+    const report = await lancerCampagne(util, deps({ recipients, sender }));
     expect(report).toMatchObject({ sent: 1, skipped: 0 });
     expect(sender.templateCalls).toEqual(['+33611']);
   });
@@ -334,7 +330,7 @@ describe('runCampaign', () => {
   it('idempotent : un recipient déjà sent est sauté', async () => {
     const sender = new FakeSender();
     const recipients = new FakeRecipients([rec('r1', '+33611', 'sent'), rec('r2', '+33622')]);
-    const report = await runCampaign(campaign, deps({ recipients, sender }));
+    const report = await lancerCampagne(campaign, deps({ recipients, sender }));
     expect(report.sent).toBe(1);
     expect(sender.calls).toEqual(['+33622']);
   });
@@ -343,7 +339,7 @@ describe('runCampaign', () => {
     const sender = new FakeSender();
     const campaigns = new FakeCampaigns();
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
-    const report = await runCampaign(campaign, deps({ recipients, sender, campaigns, quality: new FakeQuality('RED') }));
+    const report = await lancerCampagne(campaign, deps({ recipients, sender, campaigns, quality: new FakeQuality('RED') }));
     expect(report.paused).toBe(true);
     expect(report.reason).toMatch(/RED/);
     expect(sender.calls).toEqual([]);
@@ -354,7 +350,7 @@ describe('runCampaign', () => {
     const sender = new FakeSender();
     sender.failFor = new Set(['+33611']);
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
-    const report = await runCampaign(campaign, deps({ recipients, sender }));
+    const report = await lancerCampagne(campaign, deps({ recipients, sender }));
     expect(report).toMatchObject({ sent: 1, failed: 1 });
     // Le code Meta (131049) est isolé et transmis à markResult -> alimente le breakdown d'erreurs.
     expect(recipients.results.get('r1')).toMatchObject({ status: 'failed', errorCode: 131049 });
@@ -366,7 +362,7 @@ describe('runCampaign', () => {
     const sender = new FakeSender();
     const started: string[] = [];
     const wfCampaign = { ...campaign, workflowId: 'wf1', templateName: '' };
-    const report = await runCampaign(wfCampaign, deps({
+    const report = await lancerCampagne(wfCampaign, deps({
       recipients, sender,
       startWorkflow: async (_t, wf, waId, cid) => { started.push(`${wf}:${waId}:${cid}`); },
     }));
@@ -385,7 +381,7 @@ describe('runCampaign', () => {
       rec('r1', '+331'), rec('r2', '+332'), rec('r3', '+333'),
       rec('r4', '+334'), rec('r5', '+335'),
     ]);
-    const report = await runCampaign(campaign, deps({ recipients, sender, thresholds: T }));
+    const report = await lancerCampagne(campaign, deps({ recipients, sender, thresholds: T }));
     expect(report.paused).toBe(true);
     expect(report.reason).toMatch(/taux d'échec/);
     expect(report).toMatchObject({ sent: 0, failed: 3 });
@@ -399,7 +395,7 @@ describe('runCampaign', () => {
     const sender = new FakeSender();
     const util: Campaign = { ...campaign, category: 'utility' };
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    const report = await runCampaign(util, deps({ recipients, sender }));
+    const report = await lancerCampagne(util, deps({ recipients, sender }));
     expect(report.sent).toBe(1);
     expect(sender.templateCalls).toEqual(['+33611']);
     expect(sender.marketingCalls).toEqual([]);
@@ -410,7 +406,7 @@ describe('runCampaign', () => {
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
     recipients.throwSentFor = new Set(['r1']); // le message part, mais l'écriture DB casse
     // L'erreur de persistance remonte (erreur dure) : on NE compte PAS r1 comme échec.
-    await expect(runCampaign(campaign, deps({ recipients, sender }))).rejects.toThrow(/db down/);
+    await expect(lancerCampagne(campaign, deps({ recipients, sender }))).rejects.toThrow(/db down/);
     expect(sender.marketingCalls).toContain('+33611'); // message réellement envoyé
     expect(recipients.results.get('r1')).toBeUndefined(); // ni 'sent' ni 'failed' persisté
   });
@@ -419,7 +415,7 @@ describe('runCampaign', () => {
 type OutboundCall = { tenantId: string; waId: string; msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null } };
 
 describe('runCampaign — journal du sortant (recordOutbound)', () => {
-  function capture(): { calls: OutboundCall[]; recordOutbound: NonNullable<EngineDeps['recordOutbound']> } {
+  function capture(): { calls: OutboundCall[]; recordOutbound: NonNullable<DepsMoteurDeTest['recordOutbound']> } {
     const calls: OutboundCall[] = [];
     return { calls, recordOutbound: async (tenantId, waId, msg) => { calls.push({ tenantId, waId, msg }); } };
   }
@@ -427,7 +423,7 @@ describe('runCampaign — journal du sortant (recordOutbound)', () => {
   it('envoi template DIRECT réussi -> logue le sortant (wa_id chiffres nus, template, messageId réel)', async () => {
     const { calls, recordOutbound } = capture();
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    await runCampaign(campaign, deps({ recipients, recordOutbound }));
+    await lancerCampagne(campaign, deps({ recipients, recordOutbound }));
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({ tenantId: 't1', waId: '33611' }); // '+33611' -> chiffres nus (aligné avec l'inbound)
     expect(calls[0]!.msg).toMatchObject({ type: 'template', templateName: 'promo', templateCategory: 'marketing', messageId: 'm-+33611' });
@@ -438,7 +434,7 @@ describe('runCampaign — journal du sortant (recordOutbound)', () => {
     const { calls, recordOutbound } = capture();
     const wf: Campaign = { ...campaign, workflowId: 'wf1' };
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    await runCampaign(wf, deps({ recipients, recordOutbound, startWorkflow: async () => {} }));
+    await lancerCampagne(wf, deps({ recipients, recordOutbound, startWorkflow: async () => {} }));
     expect(calls).toHaveLength(0);
   });
 
@@ -447,13 +443,13 @@ describe('runCampaign — journal du sortant (recordOutbound)', () => {
     const sender = new FakeSender();
     sender.failFor = new Set(['+33611']);
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    await runCampaign(campaign, deps({ recipients, sender, recordOutbound }));
+    await lancerCampagne(campaign, deps({ recipients, sender, recordOutbound }));
     expect(calls).toHaveLength(0);
   });
 
   it('log BEST-EFFORT : un recordOutbound qui throw ne casse pas l\'envoi (sent quand même)', async () => {
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    const report = await runCampaign(campaign, deps({ recipients, recordOutbound: async () => { throw new Error('log down'); } }));
+    const report = await lancerCampagne(campaign, deps({ recipients, recordOutbound: async () => { throw new Error('log down'); } }));
     expect(report.sent).toBe(1);
     expect(recipients.results.get('r1')).toMatchObject({ status: 'sent' });
   });
@@ -466,7 +462,7 @@ describe('runCampaign — template CAROUSEL', () => {
     const sender = new CapturingSender();
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
     let reads = 0;
-    const report = await runCampaign(campaign, deps({
+    const report = await lancerCampagne(campaign, deps({
       recipients, sender,
       getTemplateCarousel: async () => { reads += 1; return { cards }; },
     }));
@@ -482,7 +478,7 @@ describe('runCampaign — template CAROUSEL', () => {
   it('carousel non envoyable -> chaque destinataire en ÉCHEC avec la vraie raison, AUCUN envoi', async () => {
     const sender = new CapturingSender();
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    const report = await runCampaign(campaign, deps({
+    const report = await lancerCampagne(campaign, deps({
       recipients, sender,
       getTemplateCarousel: async () => ({ cards: [{ body: 'carte sans image' }] }),
     }));
@@ -498,7 +494,7 @@ describe('runCampaign — template CAROUSEL', () => {
     const sender = new CapturingSender();
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
     recipients.ecartFor.set('r2', 'desabonne');
-    const report = await runCampaign(campaign, deps({
+    const report = await lancerCampagne(campaign, deps({
       recipients, sender,
       getTemplateCarousel: async () => ({ cards: [{ body: 'carte sans image' }] }),
     }));
@@ -515,7 +511,7 @@ describe('runCampaign — template CAROUSEL', () => {
     const list = Array.from({ length: 25 }, (_, i) => rec(`r${i}`, `+3361100${i}`));
     const recipients = new FakeRecipients(list);
     const campaigns = new FakeCampaigns();
-    const report = await runCampaign(campaign, deps({
+    const report = await lancerCampagne(campaign, deps({
       recipients, sender, campaigns,
       getTemplateCarousel: async () => ({ cards: [{ body: 'carte sans image' }] }),
     }));
@@ -529,7 +525,7 @@ describe('runCampaign — template CAROUSEL', () => {
   it('lecture du template en erreur -> la campagne part quand même (template sans carousel non affecté)', async () => {
     const sender = new CapturingSender();
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    const report = await runCampaign(campaign, deps({
+    const report = await lancerCampagne(campaign, deps({
       recipients, sender,
       getTemplateCarousel: async () => { throw new Error('réseau'); },
     }));
@@ -541,7 +537,7 @@ describe('runCampaign — template CAROUSEL', () => {
     let reads = 0;
     const wf: Campaign = { ...campaign, workflowId: 'wf1' };
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    await runCampaign(wf, deps({
+    await lancerCampagne(wf, deps({
       recipients,
       startWorkflow: async () => true,
       getTemplateCarousel: async () => { reads += 1; return null; },
@@ -560,7 +556,7 @@ describe('runCampaign : en-tête média du template', () => {
     const sender = new CapturingSender();
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
     let reads = 0;
-    const report = await runCampaign(campaign, deps({
+    const report = await lancerCampagne(campaign, deps({
       recipients, sender,
       getTemplateHeaderMedia: async () => { reads += 1; return { headerFormat: 'IMAGE' as const, mediaId: 'MID-1' }; },
     }));
@@ -574,7 +570,7 @@ describe('runCampaign : en-tête média du template', () => {
   it('🔴 média non préparé -> AUCUN envoi, chaque destinataire en échec avec la raison lisible', async () => {
     const sender = new CapturingSender();
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
-    const report = await runCampaign(campaign, deps({
+    const report = await lancerCampagne(campaign, deps({
       recipients, sender,
       getTemplateHeaderMedia: async () => ({ headerFormat: 'IMAGE' as const, mediaId: null }),
     }));
@@ -591,7 +587,7 @@ describe('runCampaign : en-tête média du template', () => {
     const list = Array.from({ length: 25 }, (_, i) => rec(`r${i}`, `+3361100${i}`));
     const recipients = new FakeRecipients(list);
     const campaigns = new FakeCampaigns();
-    const report = await runCampaign(campaign, deps({
+    const report = await lancerCampagne(campaign, deps({
       recipients, sender, campaigns,
       getTemplateHeaderMedia: async () => ({ headerFormat: 'IMAGE' as const, mediaId: null }),
     }));
@@ -602,7 +598,7 @@ describe('runCampaign : en-tête média du template', () => {
   it('template SANS en-tête média -> envoi inchangé, aucun composant header ajouté', async () => {
     const sender = new CapturingSender();
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    const report = await runCampaign(campaign, deps({ recipients, sender, getTemplateHeaderMedia: async () => null }));
+    const report = await lancerCampagne(campaign, deps({ recipients, sender, getTemplateHeaderMedia: async () => null }));
     expect(report).toMatchObject({ sent: 1, failed: 0 });
     expect(sender.specs[0]!.components).toEqual([{ type: 'body', parameters: [{ type: 'text', text: 'X' }] }]);
   });
@@ -610,7 +606,7 @@ describe('runCampaign : en-tête média du template', () => {
   it('lecture en erreur -> la campagne part quand même (un template sans visuel ne doit pas être bloqué)', async () => {
     const sender = new CapturingSender();
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    const report = await runCampaign(campaign, deps({
+    const report = await lancerCampagne(campaign, deps({
       recipients, sender,
       getTemplateHeaderMedia: async () => { throw new Error('réseau'); },
     }));
@@ -620,14 +616,14 @@ describe('runCampaign : en-tête média du template', () => {
   it('campagne SCÉNARIO ou template à carousel -> aucune lecture d’en-tête (elle n’a pas de sens)', async () => {
     let reads = 0;
     const lecture = async () => { reads += 1; return { headerFormat: 'IMAGE' as const, mediaId: 'M' }; };
-    await runCampaign({ ...campaign, workflowId: 'wf1' }, deps({
+    await lancerCampagne({ ...campaign, workflowId: 'wf1' }, deps({
       recipients: new FakeRecipients([rec('r1', '+33611')]),
       startWorkflow: async () => true,
       getTemplateHeaderMedia: lecture,
     }));
     expect(reads).toBe(0);
     // Un carousel porte ses visuels PAR CARTE : lire un en-tête top-level en plus enverrait un composant de trop.
-    await runCampaign(campaign, deps({
+    await lancerCampagne(campaign, deps({
       recipients: new FakeRecipients([rec('r2', '+33622')]),
       sender: new CapturingSender(),
       getTemplateCarousel: async () => ({ cards: [{ mediaId: 'C1' }] }),
@@ -647,7 +643,7 @@ describe('runCampaign : campagne alimentée par un webhook', () => {
 
   it('🔴 reste RUNNING au lieu de passer completed, même après avoir tout envoyé', async () => {
     const campaigns = new FakeCampaigns();
-    const report = await runCampaign(auFilDeLEau, deps({
+    const report = await lancerCampagne(auFilDeLEau, deps({
       recipients: new FakeRecipients([rec('r1', '+33611')]),
       campaigns,
     }));
@@ -658,7 +654,7 @@ describe('runCampaign : campagne alimentée par un webhook', () => {
 
   it('🔴 reste RUNNING aussi quand un run ne trouve aucun destinataire (le cas le plus fréquent)', async () => {
     const campaigns = new FakeCampaigns();
-    await runCampaign(auFilDeLEau, deps({ recipients: new FakeRecipients([]), campaigns }));
+    await lancerCampagne(auFilDeLEau, deps({ recipients: new FakeRecipients([]), campaigns }));
     expect(campaigns.statuses).toEqual(['running', 'running']);
   });
 
@@ -666,7 +662,7 @@ describe('runCampaign : campagne alimentée par un webhook', () => {
     const campaigns = new FakeCampaigns();
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
     // Carousel non envoyable : le run écarte tout le monde AVANT la boucle, par un chemin de sortie distinct.
-    await runCampaign(auFilDeLEau, deps({
+    await lancerCampagne(auFilDeLEau, deps({
       recipients,
       campaigns,
       getTemplateCarousel: async () => ({ cards: [] }),
@@ -677,13 +673,13 @@ describe('runCampaign : campagne alimentée par un webhook', () => {
 
   it("contrôle : une campagne ORDINAIRE se termine toujours (la règle ne déborde pas)", async () => {
     const campaigns = new FakeCampaigns();
-    await runCampaign(campaign, deps({ recipients: new FakeRecipients([rec('r1', '+33611')]), campaigns }));
+    await lancerCampagne(campaign, deps({ recipients: new FakeRecipients([rec('r1', '+33611')]), campaigns }));
     expect(campaigns.statuses).toEqual(['running', 'completed']);
   });
 
   it("le quality gate garde le dernier mot : une campagne au fil de l'eau se met bien en pause", async () => {
     const campaigns = new FakeCampaigns();
-    const report = await runCampaign(auFilDeLEau, deps({
+    const report = await lancerCampagne(auFilDeLEau, deps({
       recipients: new FakeRecipients([rec('r1', '+33611')]),
       campaigns,
       quality: new FakeQuality('RED'),
@@ -721,7 +717,7 @@ describe('runCampaign : arrêt demandé pendant l’envoi', () => {
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622'), rec('r3', '+33633')]);
     // running au 1er contrôle, paused ensuite. statusPollMs: 0 -> un contrôle par destinataire (horloge figée).
     const campaigns = new FakeCampaignsRelisibles(['running', 'paused']);
-    const report = await runCampaign(campaign, deps({ recipients, sender, campaigns, statusPollMs: 0 }));
+    const report = await lancerCampagne(campaign, deps({ recipients, sender, campaigns, statusPollMs: 0 }));
     expect(report).toMatchObject({ sent: 1, paused: true });
     expect(report.reason).toContain('pause');
     expect(sender.calls).toEqual(['+33611']);
@@ -735,7 +731,7 @@ describe('runCampaign : arrêt demandé pendant l’envoi', () => {
   it('contrôle en sens inverse : statut resté `running` -> la campagne va jusqu’au bout et se termine', async () => {
     const sender = new FakeSender();
     const campaigns = new FakeCampaignsRelisibles(['running']);
-    const report = await runCampaign(campaign, deps({
+    const report = await lancerCampagne(campaign, deps({
       recipients: new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]),
       sender, campaigns, statusPollMs: 0,
     }));
@@ -746,7 +742,7 @@ describe('runCampaign : arrêt demandé pendant l’envoi', () => {
 
   it('campagne DISPARUE en cours de route (relecture null) : le run continue, on n’invente pas un arrêt', async () => {
     const campaigns = new FakeCampaignsRelisibles([null as unknown as Campaign['status']]);
-    const report = await runCampaign(campaign, deps({
+    const report = await lancerCampagne(campaign, deps({
       recipients: new FakeRecipients([rec('r1', '+33611')]),
       campaigns, statusPollMs: 0,
     }));
@@ -757,7 +753,7 @@ describe('runCampaign : arrêt demandé pendant l’envoi', () => {
     // Sans cadence, ce serait une requête par destinataire, soit 5 000 sur une grosse campagne. Avec une
     // cadence en NOMBRE de destinataires, une campagne à 1 msg/min mettrait des heures à voir la pause.
     const campaigns = new FakeCampaignsRelisibles(['paused']);
-    const report = await runCampaign(campaign, deps({
+    const report = await lancerCampagne(campaign, deps({
       recipients: new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622'), rec('r3', '+33633')]),
       campaigns, // pas de statusPollMs -> défaut 5 s, et `deps()` fige l'horloge : le pas n'est jamais atteint
     }));
@@ -780,7 +776,7 @@ describe('runCampaign : arrêt du service et bail du verrou', () => {
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622'), rec('r3', '+33633')]);
     const campaigns = new FakeCampaigns();
     let arret = false;
-    const report = await runCampaign(campaign, deps({
+    const report = await lancerCampagne(campaign, deps({
       recipients, sender, campaigns,
       // On coupe APRÈS le premier envoi, comme un SIGTERM en plein run.
       arretDemande: () => { const v = arret; arret = true; return v; },
@@ -795,7 +791,7 @@ describe('runCampaign : arrêt du service et bail du verrou', () => {
 
   it('contrôle : sans arrêt demandé, le run va jusqu’au bout (la garde ne déborde pas)', async () => {
     const sender = new FakeSender();
-    const report = await runCampaign(campaign, deps({
+    const report = await lancerCampagne(campaign, deps({
       recipients: new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]),
       sender, arretDemande: () => false,
     }));
@@ -807,7 +803,7 @@ describe('runCampaign : arrêt du service et bail du verrou', () => {
     // bloquerait la reprise pendant tout ce temps : c'est exactement le gel que R4 supprime.
     let renouvellements = 0;
     const campaigns = new FakeCampaignsRelisibles(['running']);
-    const report = await runCampaign(campaign, deps({
+    const report = await lancerCampagne(campaign, deps({
       recipients: new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]),
       campaigns, statusPollMs: 0,
       renouvelerVerrou: async () => { renouvellements += 1; return true; },
@@ -819,7 +815,7 @@ describe('runCampaign : arrêt du service et bail du verrou', () => {
   it('🔴 bail PERDU : le run s’arrête, sinon deux runs enverraient en parallèle', async () => {
     const sender = new FakeSender();
     const campaigns = new FakeCampaignsRelisibles(['running']);
-    const report = await runCampaign(campaign, deps({
+    const report = await lancerCampagne(campaign, deps({
       recipients: new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]),
       sender, campaigns, statusPollMs: 0,
       renouvelerVerrou: async () => false,
@@ -841,7 +837,7 @@ describe('runCampaign : plafond du numéro chez Meta', () => {
     sender.plafondFor.add('+33622');
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622'), rec('r3', '+33633')]);
     const campaigns = new FakeCampaigns();
-    const report = await runCampaign(campaign, deps({ recipients, sender, campaigns }));
+    const report = await lancerCampagne(campaign, deps({ recipients, sender, campaigns }));
 
     expect(report.paused).toBe(true);
     expect(report.reason).toContain('plafond Meta');
@@ -855,7 +851,7 @@ describe('runCampaign : plafond du numéro chez Meta', () => {
     const sender = new FakeSender();
     sender.plafondFor.add('+33622');
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622'), rec('r3', '+33633')]);
-    await runCampaign(campaign, deps({ recipients, sender }));
+    await lancerCampagne(campaign, deps({ recipients, sender }));
     // r1 est parti, r2 a heurté le plafond, r3 n'a même pas été tenté.
     expect(sender.calls).toEqual(['+33611']);
     expect(recipients.claimed).toEqual(['r1', 'r2']);
@@ -871,7 +867,7 @@ describe('runCampaign : plafond du numéro chez Meta', () => {
     sender.plafondFor.add('+33611');
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
     const campaigns = new FakeCampaigns();
-    const report = await runCampaign(campaign, deps({ recipients, sender, campaigns }));
+    const report = await lancerCampagne(campaign, deps({ recipients, sender, campaigns }));
     expect(report.paused).toBe(true);
     expect(recipients.relaches).toEqual(['r1']);
     expect(campaigns.statuses).toEqual(['running', 'paused']);
@@ -887,7 +883,7 @@ describe('runCampaign : plafond du numéro chez Meta', () => {
     sender.plafondFor.add('+33611');
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
     const campaigns = new FakeCampaigns();
-    const report = await runCampaign(campaign, deps({ recipients, sender, campaigns }));
+    const report = await lancerCampagne(campaign, deps({ recipients, sender, campaigns }));
     expect(campaigns.pauses).toHaveLength(1);
     expect(campaigns.pauses[0]!.raison).toBe('debit');
     expect(campaigns.pauses[0]!.reprise).toBeInstanceOf(Date);
@@ -902,7 +898,7 @@ describe('runCampaign : plafond du numéro chez Meta', () => {
     sender.plafondFor.add('+33611');
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
     const campaigns = new FakeCampaigns();
-    const report = await runCampaign(campaign, deps({ recipients, sender, campaigns }));
+    const report = await lancerCampagne(campaign, deps({ recipients, sender, campaigns }));
     expect(report.paused).toBe(false);
     expect(report.failed).toBe(1);
     expect(report.sent).toBe(1); // r2 est parti : la campagne a continué
@@ -914,7 +910,7 @@ describe('runCampaign : plafond du numéro chez Meta', () => {
     const sender = new FakeSender();
     sender.failFor.add('+33611');
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
-    const report = await runCampaign(campaign, deps({ recipients, sender }));
+    const report = await lancerCampagne(campaign, deps({ recipients, sender }));
     expect(report).toMatchObject({ sent: 1, failed: 1, paused: false });
     expect(recipients.results.get('r1')).toMatchObject({ status: 'failed', errorCode: 131049 });
     expect(recipients.relaches).toEqual([]);
@@ -940,7 +936,7 @@ describe('runCampaign : lots bornés par la durée', () => {
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622'), rec('r3', '+33633')]);
     const campaigns = new FakeCampaigns();
     // 10 s par lecture d'horloge, durée max 1 ms : la sortie tombe dès que du travail a été fait.
-    const report = await runCampaign(campaign, deps({ recipients, sender, campaigns, dureeMaxMs: 1, now: horloge(10_000) }));
+    const report = await lancerCampagne(campaign, deps({ recipients, sender, campaigns, dureeMaxMs: 1, now: horloge(10_000) }));
 
     expect(report.reste).toBe(true);
     expect(report.paused).toBe(false); // ce n'est PAS une pause : personne n'a rien décidé
@@ -955,7 +951,7 @@ describe('runCampaign : lots bornés par la durée', () => {
     // progresser : une file qui tourne à vide pour l'éternité. La garde est `traites > 0`.
     const sender = new FakeSender();
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
-    const report = await runCampaign(campaign, deps({ recipients, sender, dureeMaxMs: 1, now: horloge(10_000) }));
+    const report = await lancerCampagne(campaign, deps({ recipients, sender, dureeMaxMs: 1, now: horloge(10_000) }));
     expect(report.sent).toBe(1); // le premier destinataire part TOUJOURS
     expect(report.reste).toBe(true); // et c'est seulement APRÈS que le lot rend la main
   });
@@ -963,7 +959,7 @@ describe('runCampaign : lots bornés par la durée', () => {
   it('durée à 0 = découpage RETIRÉ (même sens que dans l’environnement), pas « couper tout de suite »', async () => {
     const sender = new FakeSender();
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
-    const report = await runCampaign(campaign, deps({ recipients, sender, dureeMaxMs: 0, now: horloge(10_000) }));
+    const report = await lancerCampagne(campaign, deps({ recipients, sender, dureeMaxMs: 0, now: horloge(10_000) }));
     expect(report.sent).toBe(2);
     expect(report.reste).toBeUndefined();
   });
@@ -972,7 +968,7 @@ describe('runCampaign : lots bornés par la durée', () => {
     const sender = new FakeSender();
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622'), rec('r3', '+33633')]);
     const campaigns = new FakeCampaigns();
-    const report = await runCampaign(campaign, deps({ recipients, sender, campaigns, now: horloge(10_000) }));
+    const report = await lancerCampagne(campaign, deps({ recipients, sender, campaigns, now: horloge(10_000) }));
     expect(report.sent).toBe(3);
     expect(report.reste).toBeUndefined();
     expect(campaigns.statuses).toEqual(['running', 'completed']);
@@ -982,7 +978,7 @@ describe('runCampaign : lots bornés par la durée', () => {
     const sender = new FakeSender();
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
     const campaigns = new FakeCampaigns();
-    const report = await runCampaign(campaign, deps({ recipients, sender, campaigns, dureeMaxMs: 10 * 60_000, now: horloge(1) }));
+    const report = await lancerCampagne(campaign, deps({ recipients, sender, campaigns, dureeMaxMs: 10 * 60_000, now: horloge(1) }));
     expect(report.sent).toBe(2);
     expect(report.reste).toBeUndefined();
     expect(campaigns.statuses).toEqual(['running', 'completed']);
@@ -1019,13 +1015,13 @@ describe('moteur : ne pas clore une campagne avec un destinataire en vol', () =>
 
   it('🔴 un destinataire encore RÉSERVÉ laisse la campagne en cours', async () => {
     const s = socle(1);
-    await runCampaign(campaign, s as never);
+    await lancerCampagne(campaign, s as never);
     expect(s.statuts[s.statuts.length - 1]).toBe('running');
   });
 
   it('aucun destinataire réservé : la campagne se termine normalement', async () => {
     const s = socle(0);
-    await runCampaign(campaign, s as never);
+    await lancerCampagne(campaign, s as never);
     expect(s.statuts[s.statuts.length - 1]).toBe('completed');
   });
 });
@@ -1043,7 +1039,7 @@ describe('runCampaign : la joignabilité WhatsApp notée à l\'envoi', () => {
   it('un envoi template DIRECT accepté note le contact joignable', async () => {
     const notes: Note[] = [];
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
-    await runCampaign(campaign, deps({
+    await lancerCampagne(campaign, deps({
       recipients,
       noterJoignabilite: async (t, c, j) => { notes.push([t, c, j]); },
     }));
@@ -1056,7 +1052,7 @@ describe('runCampaign : la joignabilité WhatsApp notée à l\'envoi', () => {
     const sender = new FakeSender();
     sender.failFor = new Set(['+33622']);
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
-    await runCampaign(campaign, deps({
+    await lancerCampagne(campaign, deps({
       recipients,
       sender,
       noterJoignabilite: async (t, c, j) => { notes.push([t, c, j]); },
@@ -1070,7 +1066,7 @@ describe('runCampaign : la joignabilité WhatsApp notée à l\'envoi', () => {
     const notes: Note[] = [];
     const wf: Campaign = { ...campaign, workflowId: 'wf1' };
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    await runCampaign(wf, deps({
+    await lancerCampagne(wf, deps({
       recipients,
       startWorkflow: async () => true,
       noterJoignabilite: async (t, c, j) => { notes.push([t, c, j]); },
@@ -1081,7 +1077,7 @@ describe('runCampaign : la joignabilité WhatsApp notée à l\'envoi', () => {
   it('une campagne RCS ne note rien : joignable en RCS ne dit RIEN de WhatsApp', async () => {
     const notes: Note[] = [];
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    await runCampaign(campaign, deps({
+    await lancerCampagne(campaign, deps({
       recipients,
       channelSender: { sendTo: async () => ({ messageId: 'rcs-r1' }) },
       noterJoignabilite: async (t, c, j) => { notes.push([t, c, j]); },
@@ -1091,7 +1087,7 @@ describe('runCampaign : la joignabilité WhatsApp notée à l\'envoi', () => {
 
   it('une note qui throw ne relabellise JAMAIS un message livré', async () => {
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    const report = await runCampaign(campaign, deps({
+    const report = await lancerCampagne(campaign, deps({
       recipients,
       noterJoignabilite: async () => { throw new Error('base down'); },
     }));
@@ -1112,7 +1108,7 @@ describe('runCampaign : la joignabilité WhatsApp notée à l\'envoi', () => {
  */
 describe('runCampaign : le journal des tentatives', () => {
   /** Ce que le moteur a voulu journaliser, dans l'ordre. */
-  const collecteur = (): { vues: TentativeEnvoi[]; noterEnvoi: EngineDeps['noterEnvoi'] } => {
+  const collecteur = (): { vues: TentativeEnvoi[]; noterEnvoi: DepsMoteurDeTest['noterEnvoi'] } => {
     const vues: TentativeEnvoi[] = [];
     return { vues, noterEnvoi: async (t) => { vues.push(t); } };
   };
@@ -1120,7 +1116,7 @@ describe('runCampaign : le journal des tentatives', () => {
   it('un envoi réussi journalise une tentative `sent`, au rang 1 et sur le canal de la campagne', async () => {
     const { vues, noterEnvoi } = collecteur();
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
-    await runCampaign(campaign, deps({ recipients, noterEnvoi }));
+    await lancerCampagne(campaign, deps({ recipients, noterEnvoi }));
     expect(vues).toEqual([
       { campaignId: 'c1', recipientId: 'r1', contactId: 'ct-r1', rang: 1, canal: 'whatsapp', statut: 'sent', messageId: 'm-+33611' },
       { campaignId: 'c1', recipientId: 'r2', contactId: 'ct-r2', rang: 1, canal: 'whatsapp', statut: 'sent', messageId: 'm-+33622' },
@@ -1132,7 +1128,7 @@ describe('runCampaign : le journal des tentatives', () => {
     const sender = new FakeSender();
     sender.failFor = new Set(['+33622']);
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
-    await runCampaign(campaign, deps({ recipients, sender, noterEnvoi }));
+    await lancerCampagne(campaign, deps({ recipients, sender, noterEnvoi }));
     // Le succès ET l'échec : c'est le couple qui fait un funnel, une seule des deux moitiés ne dit rien.
     expect(vues.map((t) => t.statut)).toEqual(['sent', 'failed']);
     expect(vues[1]).toMatchObject({ recipientId: 'r2', statut: 'failed', errorCode: 131049 });
@@ -1145,7 +1141,7 @@ describe('runCampaign : le journal des tentatives', () => {
     // Le sender de canal rend `{ skipped }` : rien n'est parti et rien n'a raté. C'est aujourd'hui le SEUL
     // producteur de `saute` du moteur, et la nuance décide d'un chiffre : compté en échec, ce canal
     // paraîtrait défaillant alors qu'il n'a rien tenté.
-    await runCampaign(rcs, deps({
+    await lancerCampagne(rcs, deps({
       recipients, noterEnvoi,
       channelSender: { sendTo: async () => ({ skipped: 'non joignable en RCS' }) },
     }));
@@ -1157,7 +1153,7 @@ describe('runCampaign : le journal des tentatives', () => {
     const { vues, noterEnvoi } = collecteur();
     const wf: Campaign = { ...campaign, workflowId: 'wf1' };
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    await runCampaign(wf, deps({ recipients, noterEnvoi, startWorkflow: async () => false }));
+    await lancerCampagne(wf, deps({ recipients, noterEnvoi, startWorkflow: async () => false }));
     expect(vues).toHaveLength(1);
     expect(vues[0]).toMatchObject({ statut: 'failed' });
   });
@@ -1168,7 +1164,7 @@ describe('runCampaign : le journal des tentatives', () => {
     // Un carousel non envoyable arrête le run avant la boucle : les destinataires sont marqués `failed`
     // en bloc. Le journal doit dire la MÊME chose que `campaign_recipients`, sans quoi les deux tables
     // se contrediraient précisément le jour où l'on cherche pourquoi une campagne n'a rien envoyé.
-    await runCampaign(campaign, deps({
+    await lancerCampagne(campaign, deps({
       recipients, noterEnvoi,
       getTemplateCarousel: async () => ({ cards: [] }),
     }));
@@ -1179,7 +1175,7 @@ describe('runCampaign : le journal des tentatives', () => {
     const { vues, noterEnvoi } = collecteur();
     const rcs: Campaign = { ...campaign, channel: 'rcs' };
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    await runCampaign(rcs, deps({
+    await lancerCampagne(rcs, deps({
       recipients, noterEnvoi,
       channelSender: { sendTo: async () => ({ messageId: 'rcs-r1' }) },
     }));
@@ -1188,7 +1184,7 @@ describe('runCampaign : le journal des tentatives', () => {
 
   it('un journal qui throw ne relabellise JAMAIS un message livré', async () => {
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    const report = await runCampaign(campaign, deps({
+    const report = await lancerCampagne(campaign, deps({
       recipients,
       noterEnvoi: async () => { throw new Error('base down'); },
     }));
@@ -1200,7 +1196,7 @@ describe('runCampaign : le journal des tentatives', () => {
 
   it('sans câblage, le moteur n écrit rien : comportement d avant, intact', async () => {
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    const report = await runCampaign(campaign, deps({ recipients }));
+    const report = await lancerCampagne(campaign, deps({ recipients }));
     expect(report).toMatchObject({ sent: 1 });
   });
 });
@@ -1220,7 +1216,7 @@ describe('runCampaign : le journal des tentatives', () => {
  * PART vraiment vit dans `tests/campagne-envoi-multicanal.test.ts`, qui câble cette table.
  */
 describe('runCampaign : l etage du destinataire', () => {
-  const collecteurEtage = (): { vues: TentativeEnvoi[]; noterEnvoi: EngineDeps['noterEnvoi'] } => {
+  const collecteurEtage = (): { vues: TentativeEnvoi[]; noterEnvoi: DepsMoteurDeTest['noterEnvoi'] } => {
     const vues: TentativeEnvoi[] = [];
     return { vues, noterEnvoi: async (t) => { vues.push(t); } };
   };
@@ -1233,7 +1229,7 @@ describe('runCampaign : l etage du destinataire', () => {
     const { vues, noterEnvoi } = collecteurEtage();
     const sender = new FakeSender();
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    const report = await runCampaign(campaign, deps({ recipients, sender, noterEnvoi }));
+    const report = await lancerCampagne(campaign, deps({ recipients, sender, noterEnvoi }));
     expect(report).toMatchObject({ sent: 1, failed: 0 });
     expect(sender.calls).toEqual(['+33611']);
     expect(vues[0]).toMatchObject({ rang: 1, canal: 'whatsapp', statut: 'sent' });
@@ -1243,7 +1239,7 @@ describe('runCampaign : l etage du destinataire', () => {
     const sender = new FakeSender();
     const seul: Campaign = { ...campaign, chaine: [CHAINE[0]!] };
     const recipients = new FakeRecipients([{ ...rec('r1', '+33611'), etageCourant: 1 }]);
-    const report = await runCampaign(seul, deps({ recipients, sender }));
+    const report = await lancerCampagne(seul, deps({ recipients, sender }));
     expect(report).toMatchObject({ sent: 1, failed: 0 });
     expect(sender.calls).toEqual(['+33611']);
   });
@@ -1253,7 +1249,7 @@ describe('runCampaign : l etage du destinataire', () => {
     const sender = new FakeSender();
     const avecRepli: Campaign = { ...campaign, chaine: CHAINE };
     const recipients = new FakeRecipients([{ ...rec('r1', '+33611'), etageCourant: 2 }]);
-    const report = await runCampaign(avecRepli, deps({ recipients, sender, noterEnvoi }));
+    const report = await lancerCampagne(avecRepli, deps({ recipients, sender, noterEnvoi }));
 
     // 🔴 LE CŒUR DE LA DETTE : aucun appel au sender. C'est ce qui distingue la bonne implémentation de
     // celle qui lit le rang pour le journaliser et envoie quand même.
@@ -1271,7 +1267,7 @@ describe('runCampaign : l etage du destinataire', () => {
     const sender = new FakeSender();
     const avecRepli: Campaign = { ...campaign, chaine: CHAINE };
     const recipients = new FakeRecipients([{ ...rec('r1', '+33611'), etageCourant: 1 }]);
-    const report = await runCampaign(avecRepli, deps({ recipients, sender }));
+    const report = await lancerCampagne(avecRepli, deps({ recipients, sender }));
     expect(report).toMatchObject({ sent: 1, failed: 0 });
     expect(sender.calls).toEqual(['+33611']);
   });
@@ -1282,7 +1278,7 @@ describe('runCampaign : l etage du destinataire', () => {
     // `rec()` ne pose pas `etageCourant` : c'est le câblage de tous les tests d'avant ce lot, et le
     // traiter comme un rang inconnu les aurait tous rendus rouges.
     const recipients = new FakeRecipients([rec('r1', '+33611')]);
-    const report = await runCampaign(avecRepli, deps({ recipients, sender }));
+    const report = await lancerCampagne(avecRepli, deps({ recipients, sender }));
     expect(report).toMatchObject({ sent: 1, failed: 0 });
   });
 
@@ -1292,7 +1288,7 @@ describe('runCampaign : l etage du destinataire', () => {
     // La chaîne ne porte plus que le rang 1, le destinataire est resté au rang 2.
     const ampute: Campaign = { ...campaign, chaine: [CHAINE[0]!] };
     const recipients = new FakeRecipients([{ ...rec('r1', '+33611'), etageCourant: 2 }]);
-    const report = await runCampaign(ampute, deps({ recipients, sender, noterEnvoi }));
+    const report = await lancerCampagne(ampute, deps({ recipients, sender, noterEnvoi }));
     expect(sender.calls).toEqual([]);
     expect(report).toMatchObject({ sent: 0, failed: 1 });
     expect(recipients.results.get('r1')!.error).toContain('absent de la chaîne');

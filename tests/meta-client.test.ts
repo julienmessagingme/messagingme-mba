@@ -326,3 +326,37 @@ describe('MetaClient.sendList', () => {
     expect((t.requests[0]!.body as { interactive: { action: { button: string } } }).interactive.action.button).toBe('Choisir');
   });
 });
+
+/**
+ * Le corps EXACT, clés dans l'ordre, des six envois qui passent par `envoyer` (audit ponytail du 2026-09-25).
+ * Comparé en TEXTE JSON : un `toMatchObject` ne verrait ni une clé en trop, ni une cible mal routée, ni un
+ * ordre changé. Les deux cibles sont exercées : un numéro (`to`) et un BSUID (`recipient`).
+ */
+describe('MetaClient : le corps exact de chaque envoi `messages`', () => {
+  const cas: Array<[string, (c: MetaClient, to: string) => Promise<unknown>, string]> = [
+    ['sendInteractive', (c, to) => c.sendInteractive(to, 'Corps', [{ text: 'Oui' }, { text: ' ' }, { text: 'Non' }], 'MEDIA_1'),
+      '"type":"interactive","interactive":{"type":"button","header":{"type":"image","image":{"id":"MEDIA_1"}},"body":{"text":"Corps"},"action":{"buttons":[{"type":"reply","reply":{"id":"btn:0","title":"Oui"}},{"type":"reply","reply":{"id":"btn:2","title":"Non"}}]}}'],
+    ['sendCtaUrl', (c, to) => c.sendCtaUrl(to, 'Corps', { texte: ' Voir le site ', url: ' https://x.fr/a ' }),
+      '"type":"interactive","interactive":{"type":"cta_url","body":{"text":"Corps"},"action":{"name":"cta_url","parameters":{"display_text":"Voir le site","url":"https://x.fr/a"}}}'],
+    ['sendList', (c, to) => c.sendList(to, 'Q', 'Voir', [{ title: 'A', description: 'd' }]),
+      '"type":"interactive","interactive":{"type":"list","body":{"text":"Q"},"action":{"button":"Voir","sections":[{"rows":[{"id":"row:0","title":"A","description":"d"}]}]}}'],
+    ['sendImage', (c, to) => c.sendImage(to, 'MEDIA_2', 'Légende'),
+      '"type":"image","image":{"id":"MEDIA_2","caption":"Légende"}'],
+    ['sendFlowMessage', (c, to) => c.sendFlowMessage(to, { body: 'B', flowId: 'F1', cta: 'Ouvrir', flowToken: 'tok' }),
+      '"type":"interactive","interactive":{"type":"flow","body":{"text":"B"},"action":{"name":"flow","parameters":{"flow_message_version":"3","flow_token":"tok","flow_id":"F1","flow_cta":"Ouvrir","flow_action":"navigate","flow_action_payload":{"screen":"FORM"}}}}'],
+    ['sendTemplate', (c, to) => c.sendTemplate(to, { name: 'welcome', language: 'fr' }),
+      '"type":"template","template":{"name":"welcome","language":{"code":"fr"}}'],
+  ];
+
+  for (const [nom, envoyer, suite] of cas) {
+    it(`${nom} : vers un numéro, puis vers un BSUID`, async () => {
+      const t = new FakeTransport([okBody('wamid.a'), okBody('wamid.b')]);
+      const c = client(t);
+      expect(await envoyer(c, '33600000000')).toEqual({ messageId: 'wamid.a' });
+      expect(await envoyer(c, 'FR.1234567890')).toEqual({ messageId: 'wamid.b' });
+      expect(t.requests.map((r) => r.url)).toEqual(['https://graph.facebook.com/v25.0/123/messages', 'https://graph.facebook.com/v25.0/123/messages']);
+      expect(JSON.stringify(t.requests[0]!.body)).toBe(`{"messaging_product":"whatsapp","to":"33600000000",${suite}}`);
+      expect(JSON.stringify(t.requests[1]!.body)).toBe(`{"messaging_product":"whatsapp","recipient":"FR.1234567890",${suite}}`);
+    });
+  }
+});

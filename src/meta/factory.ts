@@ -86,24 +86,20 @@ export class MetaClientFactory {
     return this.guard(client, wabaId);
   }
 
-  async templateClientForTenant(tenantId: string): Promise<MetaTemplateClient> {
-    const { token, wabaId } = await this.o.resolver.resolveForTenant(tenantId);
-    return this.guard(new MetaTemplateClient(token, this.o.version), wabaId);
+  templateClientForTenant(tenantId: string): Promise<MetaTemplateClient> {
+    return this.pour(tenantId, (token) => new MetaTemplateClient(token, this.o.version));
   }
 
-  async flowClientForTenant(tenantId: string): Promise<MetaFlowClient> {
-    const { token, wabaId } = await this.o.resolver.resolveForTenant(tenantId);
-    return this.guard(new MetaFlowClient(token, this.o.version), wabaId);
+  flowClientForTenant(tenantId: string): Promise<MetaFlowClient> {
+    return this.pour(tenantId, (token) => new MetaFlowClient(token, this.o.version));
   }
 
-  async pricingClientForTenant(tenantId: string): Promise<MetaPricingClient> {
-    const { token, wabaId } = await this.o.resolver.resolveForTenant(tenantId);
-    return this.guard(new MetaPricingClient(token, this.o.version), wabaId);
+  pricingClientForTenant(tenantId: string): Promise<MetaPricingClient> {
+    return this.pour(tenantId, (token) => new MetaPricingClient(token, this.o.version));
   }
 
-  async phoneClientForTenant(tenantId: string): Promise<MetaPhoneNumberClient> {
-    const { token, wabaId } = await this.o.resolver.resolveForTenant(tenantId);
-    return this.guard(new MetaPhoneNumberClient(token, this.o.version), wabaId);
+  phoneClientForTenant(tenantId: string): Promise<MetaPhoneNumberClient> {
+    return this.pour(tenantId, (token) => new MetaPhoneNumberClient(token, this.o.version));
   }
 
   /**
@@ -113,15 +109,19 @@ export class MetaClientFactory {
    * WhatsApp, que notre jeton global ne voit pas. C'est la même raison qui fait passer `getPhone` par le
    * business token pendant l'inscription.
    */
-  async phoneRegisterClientForTenant(tenantId: string): Promise<MetaPhoneRegisterClient> {
-    const { token, wabaId } = await this.o.resolver.resolveForTenant(tenantId);
-    return this.guard(new MetaPhoneRegisterClient(token, this.o.version), wabaId);
+  phoneRegisterClientForTenant(tenantId: string): Promise<MetaPhoneRegisterClient> {
+    return this.pour(tenantId, (token) => new MetaPhoneRegisterClient(token, this.o.version));
   }
 
   /** Client de configuration de l'agent MBA. Pas de `version` : cette surface la passe par en-tête, pas par chemin. */
-  async mbaClientForTenant(tenantId: string): Promise<MbaClient> {
+  mbaClientForTenant(tenantId: string): Promise<MbaClient> {
+    return this.pour(tenantId, (token) => new MbaClient(token));
+  }
+
+  /** Un client construit avec le jeton de l'espace, et enveloppé de l'intercepteur (`guard`). */
+  private async pour<T extends object>(tenantId: string, fabrique: (token: string) => T): Promise<T> {
     const { token, wabaId } = await this.o.resolver.resolveForTenant(tenantId);
-    return this.guard(new MbaClient(token), wabaId);
+    return this.guard(fabrique(token), wabaId);
   }
 
   /**

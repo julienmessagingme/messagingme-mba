@@ -19,6 +19,7 @@
  * `cleAJour` rend faux et le plan repose une clé. La route dit déjà « Relancez » sur tout échec.
  */
 import type { AuditSink } from '../audit/journal';
+import { messageDe } from '../lib/erreur';
 
 export const NOM_CLE_RELAIS = 'Agent de Meta';
 export const DROIT_RELAIS = 'mba:relais';
@@ -63,7 +64,7 @@ export function depsCleRelaisDepuis(stores: StoresCleRelais): (acteur: string | 
     const auditer = (t: string, action: 'cle_api.creee' | 'cle_api.revoquee', id: string): Promise<void> =>
       stores.audit(t, { userId: acteur, email: null }, action, { kind: 'api_key', id }, { scopes: [DROIT_RELAIS], par: 'publication chez Meta' })
         // eslint-disable-next-line no-console
-        .catch((err: unknown) => { console.error('audit ignoré:', err instanceof Error ? err.message : err); });
+        .catch((err: unknown) => { console.error('audit ignoré:', messageDe(err)); });
     return {
       creerCle: async (t) => {
         const cle = await stores.cles.create(t, NOM_CLE_RELAIS, [DROIT_RELAIS]);

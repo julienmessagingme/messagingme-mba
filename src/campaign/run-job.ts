@@ -18,6 +18,7 @@ import { NumeroDelieError } from '../meta/numero-delie';
 import { messageDePause } from './pause';
 import type { Campaign, RunReport } from './types';
 import type { CampaignSender } from './sender';
+import { messageDe } from '../lib/erreur';
 
 /**
  * 🔴 LES CAPACITÉS DU MOTEUR SONT IMBRIQUÉES, PLUS RECOPIÉES (constat C1 de l'audit externe du 2026-09-02).
@@ -45,12 +46,12 @@ import type { CampaignSender } from './sender';
  *
  * ⚠️ Ce qui reste PLAT, et pourquoi. Les trois stores (`recipients`, `campaigns`, `quality`)
  * sont REQUIS : les oublier est déjà une erreur de compilation, les imbriquer n'ajouterait rien. Et
- * `sender`, `channelSender`, `rateLimiter`, `renouvelerVerrou` ne viennent pas de l'appelant du tout : c'est
+ * `sender`, `canaux`, `renouvelerVerrou` ne viennent pas de l'appelant du tout : c'est
  * ce job qui les CALCULE. Les exclure du type est ce qui empêche un appelant de croire qu'il peut les poser.
  */
 export type CapacitesMoteur = Omit<
   EngineDeps,
-  'sender' | 'channelSender' | 'rateLimiter' | 'renouvelerVerrou' | 'canaux'
+  'sender' | 'renouvelerVerrou' | 'canaux'
   | 'recipients' | 'campaigns' | 'quality' | 'pauserSiNumeroDelie'
 >;
 
@@ -404,7 +405,7 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
       if (rerunDemande && relancerSiDemande) await serialisation.relancer(campaignId);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error(`campaign-run : libération du verrou impossible pour ${campaignId}`, err instanceof Error ? err.message : err);
+      console.error(`campaign-run : libération du verrou impossible pour ${campaignId}`, messageDe(err));
     }
   };
 

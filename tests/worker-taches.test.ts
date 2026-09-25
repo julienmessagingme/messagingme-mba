@@ -184,4 +184,52 @@ describe('registre des tâches périodiques', () => {
     spyErr.mockRestore();
     spyWarn.mockRestore();
   });
+
+  it('🔴 `immediat` : la passe de démarrage part tout de suite, SOUS la garde de ré-entrance', async () => {
+    // Quand chaque appelant lançait sa passe de démarrage à côté (`void passe()`), la garde ne la voyait pas :
+    // une passe de démarrage qui débordait sur le premier tour se superposait à lui.
+    vi.useFakeTimers();
+    const avertissements: string[] = [];
+    const spy = vi.spyOn(console, 'warn').mockImplementation((...a: unknown[]) => { avertissements.push(String(a[0])); });
+    const registre = registreDeTaches();
+    let demarrees = 0;
+    let fini: (() => void) | null = null;
+    registre.programmer('demarrage', 1000, () => {
+      demarrees += 1;
+      return new Promise<void>((r) => { fini = r; });
+    }, { immediat: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(demarrees, 'la passe de démarrage part sans attendre la minuterie').toBe(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(demarrees, 'le premier tour ne se superpose pas à la passe de démarrage').toBe(1);
+    expect(avertissements[0]).toContain('demarrage');
+    fini!();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(demarrees).toBe(2);
+    registre.arreterTout();
+    spy.mockRestore();
+  });
+
+  it('🔴 `enEchec` reçoit l’erreur d’une passe, et s’il lève à son tour le registre rattrape encore', async () => {
+    vi.useFakeTimers();
+    const journal: unknown[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => { journal.push(a[0]); });
+    const registre = registreDeTaches();
+    const recues: unknown[] = [];
+    registre.programmer('suivie', 1000, async () => { throw new Error('base indisponible'); }, {
+      enEchec: (err) => { recues.push(err); },
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.waitFor(() => expect(recues).toHaveLength(1));
+    expect((recues[0] as Error).message).toBe('base indisponible');
+    expect(journal, 'une erreur traitée par `enEchec` n’est pas « non rattrapée »').toEqual([]);
+
+    registre.programmer('alerte-cassee', 1000, async () => { throw new Error('boum'); }, {
+      enEchec: () => { throw new Error('telegram indisponible'); },
+    });
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.waitFor(() => expect(journal.some((l) => String(l).includes('alerte-cassee'))).toBe(true));
+    registre.arreterTout();
+    spy.mockRestore();
+  });
 });

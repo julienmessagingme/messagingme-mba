@@ -1,3 +1,4 @@
+import { isValidDateStr } from './range';
 /**
  * LA GRILLE DE PRIX D'UN ESPACE : ce qu'il FACTURE, la ou l'API de Meta dit ce qu'il COUTE.
  *
@@ -168,26 +169,14 @@ export const BORNES_GRILLE = {
   franchise: { min: 0, max: 1_000_000 },
 } as const;
 
-/** `YYYY-MM-DD` et rien d'autre : la date d'effet se compare a des mois, elle doit etre un jour civil. */
-const JOUR_ISO = /^\d{4}-\d{2}-\d{2}$/;
-
-/**
- * Le format NE SUFFIT PAS : la date doit EXISTER.
- *
- * 🔴 `2026-02-31` PASSE LE FORMAT ET FAIT UN 500. Le `$5::date` de l'ecriture leve alors
- * `date/time field value out of range`, non attrape, donc une page d'erreur sur un geste ordinaire :
- * c'est tres exactement le mode de panne que les bornes de ce fichier disent avoir ferme (« un 500 au lieu
- * d'un message »). L'`input type="date"` protege le navigateur, jamais la route. Releve en revue finale le
- * 2026-09-18.
- *
- * ⚠️ ON RECONSTRUIT LA DATE ET ON COMPARE : `new Date('2026-02-31')` ne leve pas, il DECALE au 3 mars.
- * C'est le decalage qu'on detecte, pas une exception.
- */
-function jourExiste(iso: string): boolean {
-  const [a, m, j] = iso.split('-').map(Number) as [number, number, number];
-  const d = new Date(Date.UTC(a, m - 1, j));
-  return d.getUTCFullYear() === a && d.getUTCMonth() === m - 1 && d.getUTCDate() === j;
-}
+// LA DATE D'EFFET : `YYYY-MM-DD` et rien d'autre (elle se compare a des mois, elle doit etre un jour civil), et
+// elle doit EXISTER : c'est `isValidDateStr` (`src/stats/range.ts`), le format ET l'aller-retour.
+//
+// 🔴 `2026-02-31` PASSE LE FORMAT ET FAIT UN 500. Le `$5::date` de l'ecriture leve alors
+// `date/time field value out of range`, non attrape, donc une page d'erreur sur un geste ordinaire :
+// c'est tres exactement le mode de panne que les bornes de ce fichier disent avoir ferme (« un 500 au lieu
+// d'un message »). L'`input type="date"` protege le navigateur, jamais la route. Releve en revue finale le
+// 2026-09-18. `new Date('2026-02-31')` ne leve pas, il DECALE au 3 mars : c'est le decalage qu'on detecte.
 
 /**
  * Valide une grille SAISIE et la rend normalisee, ou nomme le champ fautif.
@@ -229,7 +218,7 @@ export function valideGrille(entree: unknown): { ok: true; grille: GrillePrix } 
   if (!borne(e.margeTemplate, mt.min, mt.max) || !deuxDecimalesMax(e.margeTemplate)) return { ok: false, champ: 'margeTemplate' };
   if (!borne(e.serviceCentimes, c.min, c.max) || !deuxDecimalesMax(e.serviceCentimes)) return { ok: false, champ: 'serviceCentimes' };
   if (!borne(e.serviceFranchise, f.min, f.max) || !Number.isInteger(e.serviceFranchise)) return { ok: false, champ: 'serviceFranchise' };
-  if (typeof e.serviceDepuis !== 'string' || !JOUR_ISO.test(e.serviceDepuis) || !jourExiste(e.serviceDepuis)) return { ok: false, champ: 'serviceDepuis' };
+  if (!isValidDateStr(e.serviceDepuis)) return { ok: false, champ: 'serviceDepuis' };
   if (!borne(e.rcsSimpleCentimes, c.min, c.max) || !deuxDecimalesMax(e.rcsSimpleCentimes)) return { ok: false, champ: 'rcsSimpleCentimes' };
   if (!borne(e.rcsConversationnelCentimes, c.min, c.max) || !deuxDecimalesMax(e.rcsConversationnelCentimes)) return { ok: false, champ: 'rcsConversationnelCentimes' };
 

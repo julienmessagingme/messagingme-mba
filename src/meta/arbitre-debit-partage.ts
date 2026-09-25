@@ -2,6 +2,7 @@ import { setTimeout as dormir } from 'node:timers/promises';
 import type { Pool } from 'pg';
 import type { PorteDeDebit } from './http';
 import type { ArbitreDeDebit } from './arbitre-debit';
+import { messageDe } from '../lib/erreur';
 
 /**
  * ARBITRE DE DÉBIT PARTAGÉ ENTRE LES PROCESS (migration 0102).
@@ -82,7 +83,7 @@ export function depsPorteDebitPg(pool: Pool): DepsPorteDebit {
       console.error(
         `debit partage indisponible pour le numero ${phoneNumberId}, repli sur le frein LOCAL de ce process `
         + `(le plafond redevient par process, comme avant la migration 0102) :`,
-        err instanceof Error ? err.message : err,
+        messageDe(err),
       );
     },
   };

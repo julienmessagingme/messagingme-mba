@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { enTransaction } from '../db/transaction';
 import { makeCode } from '../ids/code';
 import { resolveTenantCode } from '../ids/tenant-code';
 
@@ -51,9 +52,7 @@ export class PgTagStore {
   async rename(tenantId: string, from: string, to: string): Promise<number> {
     // Code du tag cible calculé HORS transaction (lecture du code client sur le pool, indépendante du rename).
     const toCode = makeCode('tag', await resolveTenantCode(this.pool, tenantId));
-    const client = await this.pool.connect();
-    try {
-      await client.query('begin');
+    return enTransaction(this.pool, async (client) => {
       const res = await client.query(
         `update contacts
            set tags = (select coalesce(array_agg(distinct x), '{}') from unnest(array_replace(tags, $2, $3)) x)
@@ -66,33 +65,19 @@ export class PgTagStore {
         await client.query('insert into tags (tenant_id, name, code) values ($1, $2, $3) on conflict (tenant_id, name) do nothing', [tenantId, to, toCode]);
         await client.query('delete from tags where tenant_id = $1 and name = $2', [tenantId, from]);
       }
-      await client.query('commit');
       return res.rowCount ?? 0;
-    } catch (err) {
-      await client.query('rollback').catch(() => {});
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   /** Retire `tag` des contacts ET de la table des tags déclarés, en UNE transaction. Nb de contacts touchés. */
   async remove(tenantId: string, tag: string): Promise<number> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('begin');
+    return enTransaction(this.pool, async (client) => {
       const res = await client.query(
         `update contacts set tags = array_remove(tags, $2) where tenant_id = $1 and tags @> array[$2]::text[]`,
         [tenantId, tag],
       );
       await client.query('delete from tags where tenant_id = $1 and name = $2', [tenantId, tag]);
-      await client.query('commit');
       return res.rowCount ?? 0;
-    } catch (err) {
-      await client.query('rollback').catch(() => {});
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
   }
 }

@@ -8,6 +8,7 @@ import { direPanneModele } from '../llm/errors';
 import { journaliser } from '../lib/journal';
 import { scopeTenant, estUuid } from './scope';
 import { ESSAIS_AFFICHES, type TestRunStore } from '../agent/test-runs';
+import { messageDe } from '../lib/erreur';
 
 /**
  * Le BAC À SABLE : parler à son agent depuis la console, avant de l'activer.
@@ -89,7 +90,7 @@ async function debiterEssai(tenantId: string, coutMicroEur: number, deps: AgentT
     await deps.debiter(tenantId, coutMicroEur, 'essai depuis la console');
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error(`agent: SOLDE NON DÉBITÉ pour un essai du tenant ${tenantId}`, err instanceof Error ? err.message : err);
+    console.error(`agent: SOLDE NON DÉBITÉ pour un essai du tenant ${tenantId}`, messageDe(err));
   }
 }
 
@@ -202,7 +203,7 @@ export function registerAgentTest(app: FastifyInstance, deps: AgentTestRouteDeps
         });
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error(`agent: ESSAI NON ARCHIVÉ pour le tenant ${tenant}`, err instanceof Error ? err.message : err);
+        console.error(`agent: ESSAI NON ARCHIVÉ pour le tenant ${tenant}`, messageDe(err));
       }
     }
     return reply.code(200).send({

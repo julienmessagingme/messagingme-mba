@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { enTransaction } from '../db/transaction';
 import type { LiaisonPage } from '../meta/pubs';
 
 /**
@@ -128,9 +129,7 @@ export class PgPubConnexionStore {
       devise: string | null; fuseau: string | null; pageLiee: LiaisonPage;
     },
   ): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('begin');
+    await enTransaction(this.pool, async (client) => {
       await client.query('delete from pub_connexion where tenant_id = $1', [tenantId]);
       await client.query(
         `insert into pub_connexion (tenant_id, jeton_chiffre, compte_pub_id, compte_nom, page_id, page_nom,
@@ -139,13 +138,7 @@ export class PgPubConnexionStore {
         [tenantId, jetonChiffre, choix.comptePubId, choix.compteNom, choix.pageId, choix.pageNom,
          choix.devise, choix.fuseau, choix.pageLiee],
       );
-      await client.query('commit');
-    } catch (err) {
-      await client.query('rollback').catch(() => undefined);
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   /**

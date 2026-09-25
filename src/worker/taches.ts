@@ -1,3 +1,4 @@
+import { messageDe } from '../lib/erreur';
 /**
  * Registre des TÂCHES PÉRIODIQUES du worker (lot 3 du programme, 2026-08-31).
  *
@@ -10,24 +11,32 @@
  *
  * Enregistrer une tâche et l'arrêter deviennent le MÊME geste : on ne peut plus en oublier une.
  *
- * ⚠️ Ce que ce registre ne fait PAS, volontairement : il ne lance pas la première passe. Les appelants qui
- * veulent balayer au démarrage gardent leur `void passe()`, à l'endroit où ils l'écrivaient déjà. Le rendre
- * implicite ferait démarrer quinze balayages qui ne le faisaient pas, ce qui serait un changement de
- * comportement caché dans un refactor.
+ * ⚠️ Il ne lance la première passe QUE sur demande (`immediat`). La rendre implicite ferait démarrer des
+ * balayages qui ne le faisaient pas, ce qui serait un changement de comportement caché dans un refactor.
  *
- * ⚠️ CONSÉQUENCE SUR LA GARDE DE RÉ-ENTRANCE ci-dessous, et c'est pour ça qu'on l'écrit ici : elle protège les
- * passes PÉRIODIQUES entre elles, pas la passe de DÉMARRAGE lancée à côté par l'appelant. Un balayage dont la
- * première passe peut déborder sur le premier tour garde donc sa propre garde (`reveil-parcours` en a une, et
- * elle n'est pas redondante pour cette raison précise). Faire passer les passes de démarrage par le registre
- * est un travail de lot 3 du programme II, avec le regroupement des `register*Jobs`.
+ * 🔴 LA PASSE DE DÉMARRAGE PASSE PAR LA MÊME GARDE DE RÉ-ENTRANCE que les passes périodiques (audit ponytail
+ * du 2026-09-25). Quand chaque appelant lançait la sienne à côté (`void passe()`), la garde ne la voyait pas :
+ * un balayage dont la première passe débordait sur le premier tour devait porter sa propre garde, et deux en
+ * portaient une (`reveil-parcours`, `tours-agent-bloques`). Elles sont parties avec ce déplacement.
  */
+
+/** Ce qu'une tâche peut demander de plus que sa cadence. */
+export interface OptionsTache {
+  /** Une première passe TOUT DE SUITE, sous la même garde que les passes périodiques. */
+  immediat?: boolean;
+  /**
+   * Ce que fait une passe qui LÈVE : le journal et l'alerte de l'appelant. Sans lui, le registre la journalise
+   * seul. S'il lève à son tour (l'alerte qui échoue), le registre rattrape encore : rien ne tue le process.
+   */
+  enEchec?: (err: unknown) => void;
+}
 
 export interface RegistreDeTaches {
   /**
    * Programme une passe périodique. La minuterie est `unref` (elle ne retient jamais le process) et elle est
    * retenue pour l'arrêt.
    */
-  programmer(nom: string, intervalMs: number, passe: () => void | Promise<void>): void;
+  programmer(nom: string, intervalMs: number, passe: () => void | Promise<void>, options?: OptionsTache): void;
   /** Arrête TOUTES les tâches programmées. Appelé une fois, dans l'arrêt propre du worker. */
   arreterTout(): void;
   /** Noms des tâches vivantes, dans l'ordre de programmation. Sert au diagnostic et aux tests. */
@@ -95,7 +104,7 @@ export function registreDeTaches(): RegistreDeTaches {
   const enCours = new Map<string, number>();
 
   return {
-    programmer(nom, intervalMs, passe) {
+    programmer(nom, intervalMs, passe, options = {}) {
       if (taches.has(nom)) {
         // Deux tâches du même nom = un copier-coller mal fini. On refuse plutôt que de perdre la première
         // minuterie (elle deviendrait impossible à arrêter, exactement le défaut qu'on ferme ici).
@@ -125,10 +134,12 @@ export function registreDeTaches(): RegistreDeTaches {
           return;
         }
         enCours.set(nom, 0);
-        void Promise.resolve()
-          .then(passe)
+        const enEchec = options.enEchec;
+        let enVol = Promise.resolve().then(passe);
+        if (enEchec) enVol = enVol.catch(enEchec);
+        void enVol
           // eslint-disable-next-line no-console
-          .catch((err: unknown) => console.error(`tâche « ${nom} » : passe en échec non rattrapée :`, err instanceof Error ? err.message : err))
+          .catch((err: unknown) => console.error(`tâche « ${nom} » : passe en échec non rattrapée :`, messageDe(err)))
           .finally(() => { enCours.delete(nom); });
       };
 
@@ -144,9 +155,8 @@ export function registreDeTaches(): RegistreDeTaches {
       };
 
       // ⚠️ Le décalage ne lance AUCUNE passe, il ne fait que retarder le départ de la minuterie. La première
-      // passe arrive donc à `décalage + intervalle`, jamais au décalage lui-même : le registre ne déclenche
-      // toujours pas de passe implicite, propriété que les appelants supposent (ils gardent leur propre
-      // `void passe()` de démarrage) et qu'un test garde.
+      // passe PÉRIODIQUE arrive donc à `décalage + intervalle`, jamais au décalage lui-même, et sans `immediat`
+      // le registre ne déclenche toujours pas de passe implicite : un test garde cette propriété.
       const decalage = decalageDeLissage(taches.size - 1, intervalMs);
       if (decalage === 0) {
         lancer();
@@ -155,6 +165,7 @@ export function registreDeTaches(): RegistreDeTaches {
         d.unref();
         entree.demarrage = d;
       }
+      if (options.immediat) tour();
     },
 
     arreterTout() {

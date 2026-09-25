@@ -1,5 +1,6 @@
 import { decider } from './bascule';
 import type { AutoRetryRecipient, CandidatBascule } from './store.pg';
+import { messageDe } from '../lib/erreur';
 
 /**
  * Auto-relance des échecs de livraison (F6). Fonction PURE (deps injectés) -> testable sans DB ni horloge, comme
@@ -67,7 +68,7 @@ export interface RetrySweepDeps {
 
 function logErr(kind: string, id: string, err: unknown): void {
   // eslint-disable-next-line no-console
-  console.error(`retry-sweep: échec ${kind} sur le destinataire ${id}`, err instanceof Error ? err.message : err);
+  console.error(`retry-sweep: échec ${kind} sur le destinataire ${id}`, messageDe(err));
 }
 
 export async function runRetrySweep(deps: RetrySweepDeps): Promise<{ retried: number; flagged: number; bascules: number }> {

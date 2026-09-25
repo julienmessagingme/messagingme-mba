@@ -1,6 +1,7 @@
 import { buildEvent, type EnrichedAnalyzedEvent } from './connector-push';
 import type { StoredConversationAnalysis } from './events';
 import type { Enrichment } from './enrichment';
+import { messageDe } from '../lib/erreur';
 
 export interface PushJobDeps {
   /** Relit l'analyse COURANTE (fraîche) : le payload ne porte qu'une référence, jamais un snapshot figé. */
@@ -59,6 +60,6 @@ export async function pushAnalysisJob(data: unknown, deps: PushJobDeps): Promise
   try {
     await deps.clearPendingCatchup(conversationId);
   } catch (err) {
-    deps.log?.(`push-analysis: clearPendingCatchup échoué (best-effort) pour ${conversationId}: ${err instanceof Error ? err.message : err}`);
+    deps.log?.(`push-analysis: clearPendingCatchup échoué (best-effort) pour ${conversationId}: ${messageDe(err)}`);
   }
 }

@@ -18,6 +18,7 @@ import { BAIL_AVANCE_S, renouvelerLeBail, type GardeDuTour } from './bail-avance
 import { SORTIE_TIMEOUT } from '../agent/sorties';
 import type { AgentTurnJob } from '../agent/turn-job';
 import { MOTIF_DESABONNE } from '../campaign/guardrails';
+import { messageDe, texteDe } from '../lib/erreur';
 
 /**
  * Résultat d'un démarrage : `true` = parti, une CHAÎNE = pas parti, avec la raison EXACTE. Le booléen seul
@@ -664,7 +665,7 @@ export class WorkflowExecutor {
       await this.deps.rcs.recordOutbound(tenantId, waId, { body: apercuRcsSortant(msg), messageId });
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error(`journal du message RCS ignoré pour ${waId}:`, err instanceof Error ? err.message : err);
+      console.error(`journal du message RCS ignoré pour ${waId}:`, messageDe(err));
     }
   }
 
@@ -804,7 +805,7 @@ export class WorkflowExecutor {
             const dit = await this.deps.sendEmail(tenantId, waId, a);
             if (typeof dit === 'string' && dit !== '') echec = dit;
           } catch (err) {
-            echec = err instanceof Error ? err.message : String(err);
+            echec = texteDe(err);
           }
           if (echec !== null) {
             // eslint-disable-next-line no-console
@@ -903,7 +904,7 @@ export class WorkflowExecutor {
       });
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('mesure de bloc ignorée (best-effort):', err instanceof Error ? err.message : err);
+      console.error('mesure de bloc ignorée (best-effort):', messageDe(err));
     }
   }
 
@@ -1182,7 +1183,7 @@ export class WorkflowExecutor {
       }
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error(`release vers MBA ignoré pour ${waId}:`, err instanceof Error ? err.message : err);
+      console.error(`release vers MBA ignoré pour ${waId}:`, messageDe(err));
     }
   }
 

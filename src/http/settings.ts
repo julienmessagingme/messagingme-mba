@@ -10,6 +10,7 @@ import {
   estModeTransfert, MODES_TRANSFERT, MODE_TRANSFERT_DEFAUT, type ModeTransfert,
 } from '../agent/disponibilite-equipe';
 import { valideGrille, BORNES_GRILLE } from '../stats/prix';
+import { messageDe } from '../lib/erreur';
 
 export interface SettingsRouteDeps {
   getSettings(tenantId: string): Promise<TenantSettings>;
@@ -501,7 +502,7 @@ export function registerSettings(
         applique = true;
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error(`mba-handoff: application chez Meta impossible pour ${tenant}:`, err instanceof Error ? err.message : err);
+        console.error(`mba-handoff: application chez Meta impossible pour ${tenant}:`, messageDe(err));
       }
     }
     return reply.code(200).send({ mbaHandoffMode: mode, appliqueChezMeta: applique });

@@ -1,4 +1,5 @@
 import { config } from '../config';
+import { messageDe } from '../lib/erreur';
 
 /**
  * Petit client d'alerte Telegram, ENV-FIRST (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID). Extrait des crons ops
@@ -32,7 +33,7 @@ export async function sendTelegram(
   } catch (err) {
     // Réseau KO / timeout : on avale (best-effort). Ne throw JAMAIS.
     // eslint-disable-next-line no-console
-    console.error('[telegram] envoi erreur:', err instanceof Error ? err.message : err);
+    console.error('[telegram] envoi erreur:', messageDe(err));
     return false;
   }
 }

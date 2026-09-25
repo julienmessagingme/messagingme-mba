@@ -3,6 +3,7 @@ import { matchWaIdPredicat } from '../crm/contact-store.pg';
 import { RECIPIENT_FAILED_SQL, INSTANT_ECHEC_SQL } from '../campaign/echecs-sql';
 import { STATS_TZ } from '../stats/range';
 import { PgEchecsMessagesStore } from '../delivery/echecs-messages.pg';
+import { messageDe } from '../lib/erreur';
 
 /**
  * LE JOURNAL DES ERREURS DE LIVRAISON : ce que Meta nous a répondu quand un message n'est pas parti, ou n'est
@@ -338,7 +339,7 @@ export class PgErreursLivraisonStore {
       }));
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('erreurs-livraison: lecture des échecs d’avance impossible:', err instanceof Error ? err.message : err);
+      console.error('erreurs-livraison: lecture des échecs d’avance impossible:', messageDe(err));
       return [];
     }
   }

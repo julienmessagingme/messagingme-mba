@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { enTransaction } from '../db/transaction';
 import type { AgentComplet, AgentResume, AgentStore, FicheAgent, PatchAgent, SortieAgent, StatutAgent } from './agent-store';
 import { estFrequenceMention } from './agent-store';
 import { FicheAgentPerimee, LabelAgentDejaPris } from './agent-store';
@@ -168,9 +169,7 @@ export class PgAgentStore implements AgentStore {
    * Tenu par des tests d'intégration qui rejouent chacun de ces interblocages.
    */
   async remove(tenantId: string, id: string): Promise<boolean> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('begin');
+    return enTransaction(this.pool, async (client) => {
       // L'ordre de ces instructions est l'objet du JSDoc : le changer rouvre un interblocage.
       await client.query('select 1 from agents where tenant_id = $1 and id = $2 for update', [tenantId, id]);
       await client.query(
@@ -200,14 +199,8 @@ export class PgAgentStore implements AgentStore {
           [tenantId, detaches.rows.map((r) => r.tool_id)],
         );
       }
-      await client.query('commit');
       return (res.rowCount ?? 0) > 0;
-    } catch (err) {
-      await client.query('rollback').catch(() => {});
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   async patch(tenantId: string, id: string, patch: PatchAgent): Promise<AgentComplet | null> {

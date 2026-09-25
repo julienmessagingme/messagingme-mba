@@ -3,6 +3,7 @@ import { canonicalizeFieldValue } from '../crm/fields';
 import type { AuditSink } from '../audit/journal';
 import { flowFieldToUserFieldType } from '../meta/flow-json';
 import type { FlowFieldType } from '../meta/flow-json';
+import { messageDe } from '../lib/erreur';
 
 /** Retrouve le tenant + le mapping (clé champ -> clé user field) + les types de champ + les champs OptIn. */
 export interface FlowMappingLookup {
@@ -87,7 +88,7 @@ export async function processFlowCompletions(
       }
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('flow mapping: complétion ignorée:', err instanceof Error ? err.message : err);
+      console.error('flow mapping: complétion ignorée:', messageDe(err));
     }
   }
 }

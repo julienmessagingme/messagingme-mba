@@ -4,6 +4,7 @@ import { prochaineOuverture } from '../lib/heures-ouvrees';
 import { parseInstant, type BusinessHours } from '../workflow/conditions';
 import type { ContactAEvaluer, TransitionRisque } from './risque.pg';
 import { SEUILS_PAR_DEFAUT, calculerRisque, debutFenetre, passeEnEleve, type Risque, type SeuilsRisque } from './risque';
+import { texteDe } from '../lib/erreur';
 
 /**
  * LE BALAYAGE DU RISQUE DE DÉSENGAGEMENT (spec § 19, tâche 4 du plan du lot 7) : une fois par nuit et par
@@ -110,8 +111,6 @@ export interface BilanRisque {
   erreur?: string;
 }
 
-const texte = (err: unknown): string => (err instanceof Error ? err.message : String(err));
-
 const bilanVide = (tenantId: string): BilanRisque => ({
   tenantId, evalues: 0, transitions: 0, declenches: 0, dejaDeclenches: 0, departLe: null, auDelaDuPlafond: 0,
   sansDeclencheur: 0, echecsPublication: 0,
@@ -189,7 +188,7 @@ export async function balayerRisqueEspace(tenantId: string, deps: DepsBalayageRi
     try {
       await deps.emettreSignaux(tenantId, transitions.map((t) => signalRisque(t, maintenant)));
     } catch (err) {
-      deps.log?.(`risque: signaux non émis pour ${tenantId} : ${texte(err)}`);
+      deps.log?.(`risque: signaux non émis pour ${tenantId} : ${texteDe(err)}`);
     }
 
     for (const t of transitions) {
@@ -238,7 +237,7 @@ export async function balayerRisqueEspace(tenantId: string, deps: DepsBalayageRi
         bilan.departLe = depart.toISOString();
       } catch (err) {
         bilan.echecsPublication += 1;
-        deps.log?.(`risque: automation « risque élevé » non publiée pour ${tenantId} (${t.contactId}) : ${texte(err)}`);
+        deps.log?.(`risque: automation « risque élevé » non publiée pour ${tenantId} (${t.contactId}) : ${texteDe(err)}`);
       }
     }
   }
@@ -259,8 +258,8 @@ export async function balayerRisque(deps: DepsBalayageRisque): Promise<BilanRisq
     try {
       bilans.push(await balayerRisqueEspace(tenantId, deps));
     } catch (err) {
-      deps.log?.(`risque: balayage en échec pour ${tenantId} : ${texte(err)}`);
-      bilans.push({ ...bilanVide(tenantId), erreur: texte(err) });
+      deps.log?.(`risque: balayage en échec pour ${tenantId} : ${texteDe(err)}`);
+      bilans.push({ ...bilanVide(tenantId), erreur: texteDe(err) });
     }
   }
   return bilans;

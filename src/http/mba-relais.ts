@@ -7,6 +7,7 @@ import type { SortieResolveur } from '../agent/executor';
 import { consommateurMba } from '../agent/consommateur';
 import { REPONSE_EN_COURS, lireCibleMaison } from '../mba/outils-maison';
 import { erreurDePanne, executerOutilMaison, type DepsMaison, type IssueMaison } from '../mba/executer-maison';
+import { messageDe } from '../lib/erreur';
 import {
   ENTETE_CONTACT_META, CHEMIN_RELAIS, waIdDepuisEntete, formeEntete, lireValeursModele, texteErreur,
   corpsIllisible,
@@ -122,7 +123,7 @@ export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, gar
       const geste: Promise<IssueMaison> = executerOutilMaison(deps.maison, { tenantId: tenant, waId, outilId: outil.id, cible, corps: req.body })
         .then((issue) => ({ issue, panne: false }), (err: unknown) => {
           // eslint-disable-next-line no-console
-          console.error(`mba-relais: geste ${outil.name} en échec :`, err instanceof Error ? err.message : err);
+          console.error(`mba-relais: geste ${outil.name} en échec :`, messageDe(err));
           const issue: IssueMaison = { ok: false, erreur: erreurDePanne(cible) };
           return { issue, panne: true };
         })
@@ -150,7 +151,7 @@ export function registerMbaRelais(app: FastifyInstance, deps: MbaRelaisDeps, gar
           .then((issue) => (issue.ok ? undefined : deps.signalerEchecTardif(tenant, waId, issue.erreur)))
           .catch((err: unknown) => {
             // eslint-disable-next-line no-console
-            console.error(`mba-relais: l'échec tardif de ${outil.name} n'a pas pu être dit à l'agent de Meta :`, err instanceof Error ? err.message : err);
+            console.error(`mba-relais: l'échec tardif de ${outil.name} n'a pas pu être dit à l'agent de Meta :`, messageDe(err));
           });
         return reply.code(200).send({ succes: true, reponse: REPONSE_EN_COURS[cible.handler] });
       }

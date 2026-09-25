@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { lireContexteAvecReglages } from '../src/agent/contexte';
+import { ficheVide } from '../src/agent/fiche';
+import type { AgentComplet, FrequenceMentionIa } from '../src/agent/agent-store';
+import type { ModeTransfert } from '../src/agent/disponibilite-equipe';
+import type { BusinessHours } from '../src/workflow/conditions';
 
 /**
  * LE CÂBLAGE DE LA DISPONIBILITÉ DE L'ÉQUIPE, DANS LES DEUX PROCESSUS (lot 1 du 2026-09-18).
@@ -24,50 +29,89 @@ const sansCommentaires = (chemin: string): string => readFileSync(new URL(chemin
   .replace(/^\s*\/\/.*$/gm, '');
 
 const CABLAGES = [
-  { quoi: 'le tour de production', fichier: '../src/worker.ts' },
-  { quoi: 'le bac à sable de la console', fichier: '../src/index.ts' },
+  { quoi: 'le tour de production', fichier: '../src/worker.ts', tenant: 't' },
+  { quoi: 'le bac à sable de la console', fichier: '../src/index.ts', tenant: 'tenant' },
 ];
 
+/**
+ * ⚠️ DEPUIS L'AUDIT PONYTAIL DU 2026-09-25, LA LECTURE VIT DANS `lireContexteAvecReglages`
+ * (`src/agent/contexte.ts`) : les deux câblages la recopiaient à l'identique. Ce qui se vérifiait en lisant
+ * deux câblages se vérifie donc désormais EN L'EXÉCUTANT, une fois, et les câblages n'ont plus qu'une chose
+ * à prouver : qu'ils passent bien par elle, avec les réglages de l'espace.
+ */
 describe('la disponibilité de l’équipe est câblée', () => {
-  for (const { quoi, fichier } of CABLAGES) {
-    describe(quoi, () => {
-      const source = sansCommentaires(fichier);
-
-      it('🔴 passe `disponibiliteEquipe` à `lireContexteAgent`', () => {
-        expect(source).toContain('disponibiliteEquipe: async () => equipePourPrompt(');
-      });
-
-      it('🔴 lit le RÉGLAGE de l’espace, pas une valeur en dur', () => {
-        // Un câblage qui passerait `'always'` en dur compilerait, passerait le test précédent, et rendrait
-        // le réglage de l'écran parfaitement inerte.
-        expect(source).toContain('reglages.agentTransfertMode ?? MODE_TRANSFERT_DEFAUT');
-      });
-
-      it('🔴 lit les horaires ET le fuseau de l’espace', () => {
-        // Le fuseau décide du jour : sans lui, un samedi soir à Paris se lit comme un vendredi ailleurs, et
-        // la réouverture annoncée est fausse d'un jour entier.
-        expect(source).toContain('reglages.timezone');
-        expect(source).toContain('reglages.businessHours');
-      });
-
-      it('⚠️ prend l’heure AU MOMENT DU TOUR', () => {
-        // Une disponibilité calculée à l'ouverture d'une conversation serait fausse sur celle qui traverse
-        // l'heure de fermeture, c'est-à-dire précisément celles qui nous intéressent.
-        expect(source).toMatch(/disponibiliteEquipe: async \(\) => equipePourPrompt\([\s\S]{0,200}new Date\(\)/);
-      });
-
-      it('⚠️ ne lit les réglages QU’UNE FOIS pour les deux politiques d’espace', () => {
-        // Cette fonction est sur le chemin de chaque tour d'agent : deux `get` y feraient deux allers-retours
-        // pour la même ligne. La seconde politique est arrivée à côté de la première, c'est le moment exact
-        // où l'on duplique une lecture sans s'en apercevoir.
-        // Une fenetre a partir du debut du cablage : chercher sa fin par accolade se ferait pieger par la
-        // premiere accolade venue, et le test passerait alors sur une tranche vide, donc a vide.
-        const debut = source.indexOf('contexte: async');
-        const bloc = source.slice(debut, debut + 900);
-        expect(bloc.match(/settingsStore\.get\(/g) ?? []).toHaveLength(1);
-      });
+  for (const { quoi, fichier, tenant } of CABLAGES) {
+    it(`🔴 ${quoi} construit le contexte par \`lireContexteAvecReglages\`, sur les réglages de l’espace`, () => {
+      expect(sansCommentaires(fichier)).toContain(
+        `contexte: (${tenant}, agentId) => lireContexteAvecReglages({ agents: agentStore, outils: toolCatalog, reglages: settingsStore }, ${tenant}, agentId)`,
+      );
     });
   }
+
+  const contexte = sansCommentaires('../src/agent/contexte.ts');
+  const debut = contexte.indexOf('export async function lireContexteAvecReglages');
+
+  it('⚠️ prend l’heure AU MOMENT DU TOUR', () => {
+    // Une disponibilité calculée à l'ouverture d'une conversation serait fausse sur celle qui traverse
+    // l'heure de fermeture, c'est-à-dire précisément celles qui nous intéressent.
+    expect(debut).toBeGreaterThan(-1);
+    expect(contexte.slice(debut)).toMatch(/disponibiliteEquipe: async \(\) => equipePourPrompt\([\s\S]{0,200}new Date\(\)/);
+  });
+
+  const fiche = {
+    id: 'ag1', label: 'A', status: 'active' as const, mentionIa: 'Je suis une IA.', modele: 'm',
+    maxTours: 8, maxAppelsOutils: 12, budgetMicroEur: 30_000, inactiviteMinutes: 30,
+    contactInconnu: 'lecture_seule' as const, contenu: ficheVide(), ficheVersion: 1,
+  } satisfies AgentComplet;
+  const SEMAINE: BusinessHours = Object.fromEntries(['0', '1', '2', '3', '4', '5', '6'].map((j) => [j, { closed: true, open: '09:00', close: '18:00' }]));
+  const monter = (reglages: { agentTransfertMode: ModeTransfert | null; mentionIaFrequence: FrequenceMentionIa | null }) => {
+    const lectures: string[] = [];
+    const deps = {
+      agents: { complet: async () => fiche },
+      outils: { listActifs: async () => [] },
+      reglages: {
+        get: async (t: string) => {
+          lectures.push(t);
+          return { ...reglages, timezone: 'Europe/Paris', businessHours: SEMAINE };
+        },
+      },
+    };
+    return { deps, lectures };
+  };
+
+  it('🔴 passe la disponibilité au contexte, et lit le RÉGLAGE de l’espace, pas une valeur en dur', async () => {
+    // Un câblage qui passerait `'always'` en dur rendrait le réglage de l'écran parfaitement inerte.
+    const ferme = monter({ agentTransfertMode: 'never', mentionIaFrequence: null });
+    expect((await lireContexteAvecReglages(ferme.deps, 't1', 'ag1'))?.equipe).toEqual({ disponible: false, reouverture: null });
+    const ouvert = monter({ agentTransfertMode: 'always', mentionIaFrequence: null });
+    expect((await lireContexteAvecReglages(ouvert.deps, 't1', 'ag1'))?.equipe).toEqual({ disponible: true, reouverture: null });
+  });
+
+  it('🔴 lit les horaires ET le fuseau de l’espace (dans le texte : un fuseau en dur ne se verrait pas à l’exécution)', () => {
+    // Le fuseau décide du jour : sans lui, un samedi soir à Paris se lit comme un vendredi ailleurs, et la
+    // réouverture annoncée est fausse d'un jour entier.
+    const corps = contexte.slice(debut);
+    expect(corps).toContain('reglages.agentTransfertMode ?? MODE_TRANSFERT_DEFAUT');
+    expect(corps).toContain('reglages.timezone');
+    expect(corps).toContain('reglages.businessHours');
+  });
+
+  it('🔴 une semaine entièrement fermée, en mode « heures d’ouverture », rend l’équipe injoignable', async () => {
+    // Le fuseau décide du jour, les horaires décident de l'ouverture : une semaine sans aucun créneau est
+    // fermée maintenant, quel que soit le jour.
+    const m = monter({ agentTransfertMode: 'business_hours', mentionIaFrequence: null });
+    expect((await lireContexteAvecReglages(m.deps, 't1', 'ag1'))?.equipe?.disponible).toBe(false);
+  });
+
+  it('⚠️ ne lit les réglages QU’UNE FOIS pour les deux politiques d’espace, et sur le BON espace', async () => {
+    // Cette fonction est sur le chemin de chaque tour d'agent : deux `get` y feraient deux allers-retours
+    // pour la même ligne. La seconde politique est arrivée à côté de la première, c'est le moment exact
+    // où l'on duplique une lecture sans s'en apercevoir.
+    const m = monter({ agentTransfertMode: 'never', mentionIaFrequence: 'jamais' });
+    const ctx = await lireContexteAvecReglages(m.deps, 't1', 'ag1');
+    expect(ctx?.mentionIaFrequence).toBe('jamais');
+    expect(m.lectures).toEqual(['t1']);
+  });
 });
 
 /**

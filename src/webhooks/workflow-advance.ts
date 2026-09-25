@@ -1,4 +1,5 @@
 import { extractInbound } from './inbound';
+import { messageDe, texteDe } from '../lib/erreur';
 
 /** Fait avancer le run de workflow en attente d'un contact quand il envoie un message entrant. */
 export interface WorkflowAdvanceDeps {
@@ -72,7 +73,7 @@ export async function processWorkflowAdvance(payload: unknown, deps: WorkflowAdv
       tenantId = await deps.phoneNumberTenant(m.phoneNumberId);
       if (tenantId) await deps.advance(tenantId, m.waId, m.messageId, m.buttonPayload);
     } catch (err) {
-      const erreur = err instanceof Error ? err.message : String(err);
+      const erreur = texteDe(err);
       // eslint-disable-next-line no-console
       console.error('processWorkflowAdvance: message ignoré:', erreur);
       // Best-effort, et à la fin : un journal d'échec qui ferait échouer le traitement qu'il observe serait
@@ -83,7 +84,7 @@ export async function processWorkflowAdvance(payload: unknown, deps: WorkflowAdv
         const contexte = { canal: 'whatsapp', ...contexteDeLAvance(err) };
         await deps.journaliserEchec({ tenantId, waId: m.waId, messageId: m.messageId, erreur, ...contexte }).catch((e: unknown) => {
           // eslint-disable-next-line no-console
-          console.error('processWorkflowAdvance: échec NON journalisé:', e instanceof Error ? e.message : e);
+          console.error('processWorkflowAdvance: échec NON journalisé:', messageDe(e));
         });
       }
     }

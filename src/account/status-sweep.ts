@@ -1,5 +1,6 @@
 import type { PullResult, PhoneStatusPatch } from './pull';
 import type { PhoneForSweepRow } from '../ops/store.pg';
+import { messageDe } from '../lib/erreur';
 
 /**
  * Sweeper de statut/qualité des numéros Meta (item 4.10). Le pull live du statut n'était branché QUE dans la
@@ -89,7 +90,7 @@ export async function runPhoneStatusSweep(deps: PhoneStatusSweepDeps): Promise<n
     } catch (err) {
       // Best-effort ABSOLU : ni le pull, ni le save, ni l'alerte ne doivent tuer le worker (seul process d'envoi).
       // eslint-disable-next-line no-console
-      console.error(`phone-status-sweep: échec sur le numéro ${n.id}:`, err instanceof Error ? err.message : err);
+      console.error(`phone-status-sweep: échec sur le numéro ${n.id}:`, messageDe(err));
     }
   }
   return alerts;

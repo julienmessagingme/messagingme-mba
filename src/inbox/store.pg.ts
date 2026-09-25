@@ -4,6 +4,7 @@ import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
 import type { OrigineMessage } from './origine';
 import { visibiliteSql, voitTout, type ActeurConversation } from './assignment';
 import { MEDIA_EXPIRE_SQL } from './media-entrant';
+import { FENETRE_SERVICE_MS } from '../workflow/engine';
 
 /**
  * Au-delà de cet âge, notre dernier envoi n'est plus « en vol » : Meta l'a traité (il acquitte en une seconde), et
@@ -1473,7 +1474,7 @@ export class PgInboxStore implements InboxStore {
     const r = res.rows[0];
     if (!r) return null;
     const lastIn = r.last_in;
-    const windowOpen = !!lastIn && Date.now() - lastIn.getTime() < 24 * 3600 * 1000;
+    const windowOpen = !!lastIn && Date.now() - lastIn.getTime() < FENETRE_SERVICE_MS;
     /**
      * `langueContact` : la langue APPRISE du contact, `null` tant qu'on n'a rien appris.
      *
@@ -1504,7 +1505,7 @@ export class PgInboxStore implements InboxStore {
     );
     for (const r of res.rows) {
       if (!r.last_in) continue; // aucun inbound -> fenêtre jamais ouverte, on laisse absent
-      out.set(r.wa_id, Date.now() - r.last_in.getTime() < 24 * 3600 * 1000);
+      out.set(r.wa_id, Date.now() - r.last_in.getTime() < FENETRE_SERVICE_MS);
     }
     return out;
   }

@@ -3,6 +3,8 @@ import type { Geste } from './gestes';
 import type { JournalAppels, OrigineOutil, OutilDefini, StatutAppel, ToolCatalog } from './catalog';
 import { paramsOutil, type ParamOutil } from './llm/tool-schema';
 import { champDuContact } from './champs-contact';
+import { tenter } from '../lib/tenter';
+import { messageDe, texteDe } from '../lib/erreur';
 
 /**
  * Le tronc commun d'exécution d'un outil : les huit étapes du §3.3 du cadrage, dans l'ordre, chacune étant
@@ -238,7 +240,7 @@ export async function executeTool(
       });
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('journal d appel d outil ignoré (best-effort):', err instanceof Error ? err.message : err);
+      console.error('journal d appel d outil ignoré (best-effort):', messageDe(err));
       return null;
     }
   };
@@ -248,12 +250,7 @@ export async function executeTool(
     extra: { httpStatus?: number; tailleReponse?: number; erreur?: string } = {},
   ): Promise<void> => {
     if (!id) return;
-    try {
-      await deps.journal.clore({ tenantId: ctx.tenantId, id, status, dureeMs: maintenant() - debut, ...extra });
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('clôture de journal ignorée (best-effort):', err instanceof Error ? err.message : err);
-    }
+    await tenter('clôture de journal ignorée (best-effort):', () => deps.journal.clore({ tenantId: ctx.tenantId, id, status, dureeMs: maintenant() - debut, ...extra }));
   };
   /**
    * Un refus est journalisé comme tout le reste, AVEC ce que le modèle demandait : c'est exactement la trace
@@ -283,7 +280,7 @@ export async function executeTool(
     outil = await deps.catalogue.byName(ctx.tenantId, ctx.agentId, appel.name);
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error(`agent: catalogue injoignable pour l'outil ${appel.name}:`, err instanceof Error ? err.message : err);
+    console.error(`agent: catalogue injoignable pour l'outil ${appel.name}:`, messageDe(err));
     return refuser(null, 'erreur_outil', 'catalogue temporairement indisponible, reessayez');
   }
   if (!outil) {
@@ -388,12 +385,7 @@ export async function executeTool(
    * `AgentSessionStore.compterAppel`.
    */
   const compter = async (): Promise<void> => {
-    try {
-      await deps.compterAppel(ctx.tenantId, ctx.sessionId);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('compteur d appels d outils ignoré (best-effort):', err instanceof Error ? err.message : err);
-    }
+    await tenter('compteur d appels d outils ignoré (best-effort):', () => deps.compterAppel(ctx.tenantId, ctx.sessionId));
   };
   /**
    * LES GESTES DU MOMENT, exécutés ICI et pas dans le résolveur (passe 2 du lot 2, 2026-09-18).
@@ -416,7 +408,7 @@ export async function executeTool(
       await deps.executerGeste(ctx.tenantId, ctx.waId, geste);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error(`geste ${geste.type} ignoré (best-effort) sur l'outil ${outil.name}:`, err instanceof Error ? err.message : err);
+      console.error(`geste ${geste.type} ignoré (best-effort) sur l'outil ${outil.name}:`, messageDe(err));
     }
   }
 
@@ -454,7 +446,7 @@ export async function executeTool(
     //
     // `extraire` n'est PAS appliqué : `output_paths` décrit la forme d'une réponse RÉUSSIE, la chercher dans
     // une enveloppe d'erreur ne rendrait jamais rien et effacerait la raison.
-    const raison = err instanceof Error ? err.message : String(err);
+    const raison = texteDe(err);
     const { contenu: borne } = borner({ erreur: raison }, outil.maxBytes);
     await clore(journalId, 'erreur_outil', { erreur: raison.slice(0, MAX_RAISON_JOURNAL) });
     await compter();

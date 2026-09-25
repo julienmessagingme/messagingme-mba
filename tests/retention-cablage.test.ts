@@ -24,7 +24,9 @@ describe('câblage des purges de rétention', () => {
       .toMatch(/purgeConversationsOlderThan\(\s*config\.CONVERSATION_RETENTION_DAYS\s*\)/);
     expect(worker, 'le balayage doit être PROGRAMMÉ, pas seulement appelé une fois au démarrage')
       .toMatch(/taches\.programmer\('retention-conversations'/);
-    expect(worker, "un échec de purge doit ALERTER").toMatch(/alert\('sweeper:conversation-retention'/);
+    // L'alerte est portée par la tâche programmée elle-même (`enEchec`, audit ponytail du 2026-09-25) : la
+    // chercher SUR la ligne qui la programme lie la clé d'alerte à CE balayage, pas seulement au fichier.
+    expect(worker, "un échec de purge doit ALERTER").toMatch(/taches\.programmer\('retention-conversations'[^\n]*enEchec: echecDeBalayage\('[^']+', 'sweeper:conversation-retention'\)/);
   });
 
   it('et il purge toujours les payloads dormants des webhooks entrants (l’autre rétention)', () => {
@@ -33,6 +35,6 @@ describe('câblage des purges de rétention', () => {
 
   it('un échec de purge ALERTE au lieu de passer inaperçu', () => {
     // Une purge qui échoue en silence, c'est une rétention qu'on croit active et qui ne l'est pas.
-    expect(worker).toMatch(/alert\('sweeper:webhook-events'/);
+    expect(worker).toMatch(/taches\.programmer\('retention-evenements-meta'[^\n]*enEchec: echecDeBalayage\('[^']+', 'sweeper:webhook-events'\)/);
   });
 });

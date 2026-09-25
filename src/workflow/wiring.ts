@@ -51,6 +51,9 @@ import { suffixesPourDestinataire } from '../campaign/engine';
 import { creerRendreLeFil, creerPrendreLeFil, creerPrendreLeFilAvecUnRejeu } from '../inbox/controle-du-fil';
 import { creerTransmettreHorsParcours } from '../mba/transmettre-hors-parcours';
 import { creerNumeroDeLEspace } from '../meta/numero-espace';
+import { cacheCourt } from '../lib/cache-court';
+import type { MetaClient } from '../meta/client';
+import { messageDe } from '../lib/erreur';
 
 /**
  * Câblage de l'exécuteur de scénarios : la vingtaine de dépendances IO qu'il réclame (contacts, tags, envois
@@ -122,6 +125,22 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
    * dans `src/meta/numero-espace.ts`.
    */
   const numeroDeLEspace = creerNumeroDeLEspace((t) => repo.getTenantPhoneNumberId(t));
+  /**
+   * Le client Meta de l'espace pour un envoi WhatsApp, ou le REFUS (une chaîne, comme tout `SendRefusal`) quand
+   * aucun numéro n'est rattaché. La ligne de journal dit QUI refuse et CE QUI ne part pas.
+   * ⚠️ `dryRun` reste chez l'appelant, en tête : certains envois refusent un bloc vide AVANT de chercher le numéro.
+   */
+  const clientWhatsApp = async (tenant: string, qui: string, quoiNonEnvoye: string): Promise<MetaClient | string> => {
+    const pn = await numeroDeLEspace(tenant);
+    if (!pn) {
+      // eslint-disable-next-line no-console
+      console.error(`${qui}: aucun numéro pour le tenant ${tenant}, ${quoiNonEnvoye}`);
+      return 'aucun numéro WhatsApp rattaché à ce workspace';
+    }
+    return metaFactory.clientForTenant(tenant, pn); // token PAR TENANT (B1), repli global en sommeil
+  };
+  /** Les variables `{{champ}}` d'un contact désigné par son wa_id (RCS d'un scénario, message rapide, question). */
+  const varsDuContact = async (tenant: string, waId: string) => contactVars((await contactStore.getResolvableByPhone(tenant, waId)) ?? {});
 
   const nodeEvents = new PgWorkflowNodeEventStore(pool);
   const runStore = new PgWorkflowRunStore(pool);
@@ -201,14 +220,8 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   // pas 2. null = indéterminable (WABA absent / template introuvable / réseau) -> l'appelant NE PAS envoyer.
   // WABA du tenant, mémoïsé au même TTL : `templateVarInfo` est appelé PAR DESTINATAIRE sur une campagne
   // scénario, et sans ça chaque envoi payait un SELECT avant même de regarder le cache de templates.
-  const wabaCache = new Map<string, { at: number; waba: string | null }>();
-  const tenantWabaId = async (tenant: string): Promise<string | null> => {
-    const hit = wabaCache.get(tenant);
-    if (hit && Date.now() - hit.at < TPL_CACHE_MS) return hit.waba;
-    const waba = await repo.getTenantWabaId(tenant);
-    wabaCache.set(tenant, { at: Date.now(), waba });
-    return waba;
-  };
+  const wabaCache = cacheCourt<string | null>(TPL_CACHE_MS);
+  const tenantWabaId = (tenant: string): Promise<string | null> => wabaCache.lire(tenant, () => repo.getTenantWabaId(tenant));
   /**
    * Préparation des visuels d'un template (re-téléversement -> `media id`), pour les cartes d'un carousel comme
    * pour l'en-tête média. UNE seule implémentation dans le projet (`meta/template-media.ts`), partagée avec
@@ -602,7 +615,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       agentIdFor: (tenant) => rcsStack.agents.agentIdForTenant(tenant),
       // Variables `{{champ}}` d'un message RCS : MÊME table que les modèles d'email, donc mêmes noms de
       // champs et mêmes règles. Hors base -> table vide, les variables rendent du vide au lieu de bloquer.
-      varsFor: async (tenant, waId) => contactVars(await contactStore.getResolvableByPhone(tenant, waId) ?? {}),
+      varsFor: varsDuContact,
       // Le message RCS d'un scénario apparaît dans le FIL, comme un template ou un message rapide. La bulle
       // porte son canal (`channel: 'rcs'`), c'est ce que l'Inbox dessine en vert RCS.
       recordOutbound: (tenant, waId, msg) =>
@@ -739,7 +752,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
      * client qui ecrit `{{prenom}}` attend la meme chose dans les trois, et trois tables differentes
      * finiraient par ne pas connaitre les memes champs.
      */
-    varsFor: async (tenant, waId) => contactVars(await contactStore.getResolvableByPhone(tenant, waId) ?? {}),
+    varsFor: varsDuContact,
     appelHttp: creerAppelHttpScenario({
       sources: new PgSourceStore(pool),
       requetes: new PgRequeteStore(pool),
@@ -754,10 +767,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       fuseau: async (t) => (await settingsStore.get(t)).timezone,
       // 🔴 RELUE A CHAQUE APPEL, pas portee par le contexte du parcours : le bloc peut suivre un bloc qui
       // vient d ecrire un champ, et servir une photo d avant ferait envoyer l ancienne valeur.
-      projectionContact: async (t, waId) => {
-        const etat = await contactStore.getContactStateByWaId(t, waId);
-        return etat ? { nom: etat.name ?? '', tags: etat.tags, champs: etat.fields } : null;
-      },
+      projectionContact: (t, waId) => contactStore.projectionPourTiers(t, waId),
     }),
     // Retrait : même normalisation (trim + slice 64) que l'ajout, pour matcher le tag stocké. Le référentiel Tags
     // n'est PAS touché (retirer un tag d'un contact ne « dé-déclare » pas le tag du référentiel du tenant).
@@ -801,13 +811,8 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     recordNodeEvent: (e) => nodeEvents.record(e),
     sendTemplate: async (tenant, waId, name, language, buttons, explicitParams) => {
       if (dryRun) return; // DRY_RUN : aucun appel Meta
-      const pn = await numeroDeLEspace(tenant);
-      if (!pn) {
-        // eslint-disable-next-line no-console
-        console.error(`workflow sendTemplate: aucun numéro pour le tenant ${tenant}, template « ${name} » non envoyé`);
-        return 'aucun numéro WhatsApp rattaché à ce workspace';
-      }
-      const client = await metaFactory.clientForTenant(tenant, pn); // token PAR TENANT (B1), repli global en sommeil
+      const client = await clientWhatsApp(tenant, 'workflow sendTemplate', `template « ${name} » non envoyé`);
+      if (typeof client === 'string') return client;
 
       /**
        * ATTRIBUTION DES CLICS, sur le chemin des SCÉNARIOS (corrigé le 2026-09-02).
@@ -828,7 +833,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
           // Illisible : on ne sait pas si ce template porte des variables de bouton. On part comme avant, et on
           // le DIT, parce que c'est le seul cas où un 131008 resterait inexpliqué.
           // eslint-disable-next-line no-console
-          console.error(`workflow sendTemplate: liens tracés de « ${name} » illisibles:`, err instanceof Error ? err.message : err);
+          console.error(`workflow sendTemplate: liens tracés de « ${name} » illisibles:`, messageDe(err));
           return {};
         }
       })();
@@ -878,7 +883,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
         info = await templateVarInfo(tenant, name, language);
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error(`workflow sendTemplate: variables de « ${name} » indéterminables:`, err instanceof Error ? err.message : err);
+        console.error(`workflow sendTemplate: variables de « ${name} » indéterminables:`, messageDe(err));
       }
       if (info === null) {
         // eslint-disable-next-line no-console
@@ -933,13 +938,8 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       // de la saisie plutôt qu'après coup.
       const problemeLien = lien ? problemeLienBouton(lien) : null;
       if (problemeLien) return problemeLien;
-      const pn = await numeroDeLEspace(tenant);
-      if (!pn) {
-        // eslint-disable-next-line no-console
-        console.error(`workflow sendQuickMessage: aucun numéro pour le tenant ${tenant}, message rapide non envoyé à ${waId}`);
-        return 'aucun numéro WhatsApp rattaché à ce workspace';
-      }
-      const client = await metaFactory.clientForTenant(tenant, pn); // token PAR TENANT (B1), repli global en sommeil
+      const client = await clientWhatsApp(tenant, 'workflow sendQuickMessage', `message rapide non envoyé à ${waId}`);
+      if (typeof client === 'string') return client;
       // Aucune réponse rapide utilisable -> message TEXTE simple. Meta refuse un interactif sans bouton, et
       // c'est ce que l'opérateur attend quand il n'a rempli que le texte.
       //
@@ -992,13 +992,8 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     sendQuestion: async (tenant, waId, body, buttonLabel, rows) => {
       if (dryRun) return; // DRY_RUN : aucun appel Meta
       if (body.trim() === '') return 'le bloc « question » n\'a pas de texte'; // défense, actionOf filtre déjà
-      const pn = await numeroDeLEspace(tenant);
-      if (!pn) {
-        // eslint-disable-next-line no-console
-        console.error(`workflow sendQuestion: aucun numéro pour le tenant ${tenant}, question non envoyée à ${waId}`);
-        return 'aucun numéro WhatsApp rattaché à ce workspace';
-      }
-      const client = await metaFactory.clientForTenant(tenant, pn); // token PAR TENANT (B1), repli global en sommeil
+      const client = await clientWhatsApp(tenant, 'workflow sendQuestion', `question non envoyée à ${waId}`);
+      if (typeof client === 'string') return client;
       /**
        * 🔴 Variables `{{prenom}}` du contact, RÉSOLUES ICI.
        *
@@ -1013,7 +1008,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       let corps = body;
       let lignes = rows;
       if (aVariable) {
-        const vars = contactVars((await contactStore.getResolvableByPhone(tenant, waId)) ?? {});
+        const vars = await varsDuContact(tenant, waId);
         corps = renderText(body, vars, { html: false });
         lignes = rows.map((r) => ({
           title: renderText(r.title, vars, { html: false }),
@@ -1036,13 +1031,8 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     sendFlow: async (tenant, waId, flowId, body, cta) => {
       if (dryRun) return; // DRY_RUN : aucun appel Meta
       if (flowId.trim() === '') return 'le bloc « formulaire » ne désigne aucun formulaire'; // défense, actionOf filtre déjà
-      const pn = await numeroDeLEspace(tenant);
-      if (!pn) {
-        // eslint-disable-next-line no-console
-        console.error(`workflow sendFlow: aucun numéro pour le tenant ${tenant}, formulaire non envoyé à ${waId}`);
-        return 'aucun numéro WhatsApp rattaché à ce workspace';
-      }
-      const client = await metaFactory.clientForTenant(tenant, pn); // token PAR TENANT (B1), repli global en sommeil
+      const client = await clientWhatsApp(tenant, 'workflow sendFlow', `formulaire non envoyé à ${waId}`);
+      if (typeof client === 'string') return client;
       // flow_token jamais vide (exigence Meta #131009) mais jetable : la corrélation passe par le _ref du flow_json.
       const res = await client.sendFlowMessage(waId, { body, flowId, cta, flowToken: `${waId}-${Date.now()}` });
       // Journalise l'envoi dans le fil (best-effort). Le corps = l'accroche visible par le contact.
@@ -1068,13 +1058,8 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
    */
   const envoyerTexteAgent = async (tenant: string, waId: string, texte: string): Promise<string | void> => {
     if (dryRun) return; // DRY_RUN : aucun appel Meta
-    const pn = await numeroDeLEspace(tenant);
-    if (!pn) {
-      // eslint-disable-next-line no-console
-      console.error(`agent: aucun numéro pour le tenant ${tenant}, réponse non envoyée à ${waId}`);
-      return 'aucun numéro WhatsApp rattaché à ce workspace';
-    }
-    const client = await metaFactory.clientForTenant(tenant, pn);
+    const client = await clientWhatsApp(tenant, 'agent', `réponse non envoyée à ${waId}`);
+    if (typeof client === 'string') return client;
     const res = await client.sendText(waId, texte);
     try { await inboxStore.recordOutboundByWaId(tenant, waId, { body: texte, messageId: res.messageId, type: 'text', origine: 'ia' }); } catch { /* best-effort */ }
   };

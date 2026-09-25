@@ -1,6 +1,5 @@
-import { MetaApiError } from './errors';
-import type { MetaErrorBody } from './errors';
 import type { FetchLike } from './templates';
+import { appelGraph } from './graph';
 import { buildFlowScreens } from './flow-json';
 import type { FlowScreenDef } from './flow-json';
 
@@ -44,14 +43,8 @@ export class MetaFlowClient {
     private readonly baseUrl = 'https://graph.facebook.com',
   ) {}
 
-  private async call(url: string, init: RequestInit): Promise<unknown> {
-    const res = await this.fetchImpl(url, { ...init, headers: { authorization: `Bearer ${this.token}`, ...(init.headers ?? {}) } });
-    const json = (await res.json().catch(() => null)) as unknown;
-    if (!res.ok) {
-      const errBody = (json as { error?: MetaErrorBody } | null)?.error ?? null;
-      throw new MetaApiError(res.status, errBody);
-    }
-    return json;
+  private call(url: string, init: RequestInit): Promise<unknown> {
+    return appelGraph(this.fetchImpl, this.token, url, init);
   }
 
   /** POST /{waba}/flows — name + categories:['LEAD_GENERATION'] + flow_json (STRING). Statut initial DRAFT. */

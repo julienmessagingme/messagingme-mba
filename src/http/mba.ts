@@ -144,6 +144,44 @@ async function contexte(
 }
 
 /**
+ * Supprime un élément de l'agent de Meta (FAQ, compétence, site, fichier) et journalise ce qu'il contenait.
+ *
+ * 🔴 LE CONTENU EST LU AVANT DE SUPPRIMER, et c'est la seule fenêtre où il existe encore : Meta ne rend plus un
+ * objet parti, et la ligne d'historique en devient le seul exemplaire. Le lire après coup serait trop tard.
+ *
+ * ⚠️ BEST-EFFORT SUR LA LECTURE : si elle échoue, on supprime quand même et on journalise l'identifiant seul.
+ * Refuser la suppression parce qu'on n'a pas pu lire ferait dépendre un geste ordinaire d'un appel de plus,
+ * alors que c'est le client qui l'a demandé. Le `catch` porte sur la LISTE, pas sur `find` : c'est l'appel
+ * réseau qui peut échouer. Sans journal branché, rien n'est lu.
+ *
+ * ⚠️ LE JOURNAL VIENT APRÈS la suppression : journaliser un geste qui n'a pas eu lieu ferait chercher une
+ * cause inexistante. `libelle` et `champ` composent la ligne lisible (« FAQ : <question> »).
+ */
+async function supprimerAvecTrace(
+  deps: MbaRouteDeps,
+  tenant: string,
+  acteurId: string | null,
+  o: {
+    element: 'faq' | 'competence' | 'site' | 'fichier';
+    cible: string;
+    libelle: string;
+    champ: string;
+    lister: () => Promise<ReadonlyArray<{ id?: string }>>;
+    supprimer: () => Promise<unknown>;
+  },
+): Promise<void> {
+  const avant = deps.journaliserSuppression
+    ? (await o.lister().catch(() => [])).find((x) => x.id === o.cible)
+    : undefined;
+  await o.supprimer();
+  await deps.journaliserSuppression?.(tenant, {
+    element: o.element, cible: o.cible,
+    libelle: `${o.libelle} : ${String((avant as Record<string, unknown> | undefined)?.[o.champ] ?? o.cible)}`,
+    avant: avant ?? { id: o.cible }, acteurId,
+  });
+}
+
+/**
  * `agent_id` de la configuration courante, lu à chaque fois. Les skills l'exigent explicitement : sans lui,
  * Meta écrit sous « les settings les plus récemment créés », donc potentiellement sous une configuration qui
  * n'est pas celle qu'on croit piloter. null = numéro pas encore onboardé côté Meta.
@@ -430,24 +468,10 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     const ctx = await contexte(req, reply, deps);
     if (!ctx) return;
     const { faqId } = req.params as { faqId: string };
-    /**
-     * 🔴 LE CONTENU EST LU AVANT DE SUPPRIMER, et c'est la seule fenêtre où il existe encore : Meta ne rend
-     * plus un objet parti, et la ligne d'historique en devient le seul exemplaire. Le lire après coup serait
-     * trop tard.
-     *
-     * ⚠️ BEST-EFFORT SUR LA LECTURE : si elle échoue, on supprime quand même et on journalise l'identifiant
-     * seul. Refuser la suppression parce qu'on n'a pas pu lire ferait dépendre un geste ordinaire d'un appel
-     * de plus, alors que c'est le client qui l'a demandé.
-     */
-    const avant = deps.journaliserSuppression
-      // ⚠️ Le `catch` porte sur la LISTE, pas sur `find` : c'est l'appel réseau qui peut échouer.
-      ? (await ctx.client.listFaqs(ctx.pn).catch(() => [])).find((x) => x.id === faqId)
-      : undefined;
-    await ctx.client.deleteFaq(ctx.pn, faqId);
-    // ⚠️ APRÈS la suppression : journaliser un geste qui n'a pas eu lieu ferait chercher une cause inexistante.
-    await deps.journaliserSuppression?.(ctx.tenant, {
-      element: 'faq', cible: faqId, libelle: `FAQ : ${String((avant as { question?: unknown } | undefined)?.question ?? faqId)}`,
-      avant: avant ?? { id: faqId }, acteurId: req.auth?.userId ?? null,
+    await supprimerAvecTrace(deps, ctx.tenant, req.auth?.userId ?? null, {
+      element: 'faq', cible: faqId, libelle: 'FAQ', champ: 'question',
+      lister: () => ctx.client.listFaqs(ctx.pn),
+      supprimer: () => ctx.client.deleteFaq(ctx.pn, faqId),
     });
     return reply.code(200).send({ deleted: faqId });
   });
@@ -577,24 +601,10 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     const ctx = await contexte(req, reply, deps);
     if (!ctx) return;
     const { skillId } = req.params as { skillId: string };
-    /**
-     * 🔴 LE CONTENU EST LU AVANT DE SUPPRIMER, et c'est la seule fenêtre où il existe encore : Meta ne rend
-     * plus un objet parti, et la ligne d'historique en devient le seul exemplaire. Le lire après coup serait
-     * trop tard.
-     *
-     * ⚠️ BEST-EFFORT SUR LA LECTURE : si elle échoue, on supprime quand même et on journalise l'identifiant
-     * seul. Refuser la suppression parce qu'on n'a pas pu lire ferait dépendre un geste ordinaire d'un appel
-     * de plus, alors que c'est le client qui l'a demandé.
-     */
-    const avant = deps.journaliserSuppression
-      // ⚠️ Le `catch` porte sur la LISTE, pas sur `find` : c'est l'appel réseau qui peut échouer.
-      ? (await ctx.client.listSkills(ctx.pn, ctx.pn).catch(() => [])).find((x) => x.id === skillId)
-      : undefined;
-    await ctx.client.deleteSkill(ctx.pn, skillId);
-    // ⚠️ APRÈS la suppression : journaliser un geste qui n'a pas eu lieu ferait chercher une cause inexistante.
-    await deps.journaliserSuppression?.(ctx.tenant, {
-      element: 'competence', cible: skillId, libelle: `Compétence : ${String((avant as { name?: unknown } | undefined)?.name ?? skillId)}`,
-      avant: avant ?? { id: skillId }, acteurId: req.auth?.userId ?? null,
+    await supprimerAvecTrace(deps, ctx.tenant, req.auth?.userId ?? null, {
+      element: 'competence', cible: skillId, libelle: 'Compétence', champ: 'name',
+      lister: () => ctx.client.listSkills(ctx.pn, ctx.pn),
+      supprimer: () => ctx.client.deleteSkill(ctx.pn, skillId),
     });
     return reply.code(200).send({ deleted: skillId });
   });
@@ -625,24 +635,10 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     const ctx = await contexte(req, reply, deps);
     if (!ctx) return;
     const { websiteId } = req.params as { websiteId: string };
-    /**
-     * 🔴 LE CONTENU EST LU AVANT DE SUPPRIMER, et c'est la seule fenêtre où il existe encore : Meta ne rend
-     * plus un objet parti, et la ligne d'historique en devient le seul exemplaire. Le lire après coup serait
-     * trop tard.
-     *
-     * ⚠️ BEST-EFFORT SUR LA LECTURE : si elle échoue, on supprime quand même et on journalise l'identifiant
-     * seul. Refuser la suppression parce qu'on n'a pas pu lire ferait dépendre un geste ordinaire d'un appel
-     * de plus, alors que c'est le client qui l'a demandé.
-     */
-    const avant = deps.journaliserSuppression
-      // ⚠️ Le `catch` porte sur la LISTE, pas sur `find` : c'est l'appel réseau qui peut échouer.
-      ? (await ctx.client.listWebsites(ctx.pn).catch(() => [])).find((x) => x.id === websiteId)
-      : undefined;
-    await ctx.client.deleteWebsite(ctx.pn, websiteId);
-    // ⚠️ APRÈS la suppression : journaliser un geste qui n'a pas eu lieu ferait chercher une cause inexistante.
-    await deps.journaliserSuppression?.(ctx.tenant, {
-      element: 'site', cible: websiteId, libelle: `Site : ${String((avant as { url?: unknown } | undefined)?.url ?? websiteId)}`,
-      avant: avant ?? { id: websiteId }, acteurId: req.auth?.userId ?? null,
+    await supprimerAvecTrace(deps, ctx.tenant, req.auth?.userId ?? null, {
+      element: 'site', cible: websiteId, libelle: 'Site', champ: 'url',
+      lister: () => ctx.client.listWebsites(ctx.pn),
+      supprimer: () => ctx.client.deleteWebsite(ctx.pn, websiteId),
     });
     return reply.code(200).send({ deleted: websiteId });
   });
@@ -694,24 +690,10 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     const ctx = await contexte(req, reply, deps);
     if (!ctx) return;
     const { fileId } = req.params as { fileId: string };
-    /**
-     * 🔴 LE CONTENU EST LU AVANT DE SUPPRIMER, et c'est la seule fenêtre où il existe encore : Meta ne rend
-     * plus un objet parti, et la ligne d'historique en devient le seul exemplaire. Le lire après coup serait
-     * trop tard.
-     *
-     * ⚠️ BEST-EFFORT SUR LA LECTURE : si elle échoue, on supprime quand même et on journalise l'identifiant
-     * seul. Refuser la suppression parce qu'on n'a pas pu lire ferait dépendre un geste ordinaire d'un appel
-     * de plus, alors que c'est le client qui l'a demandé.
-     */
-    const avant = deps.journaliserSuppression
-      // ⚠️ Le `catch` porte sur la LISTE, pas sur `find` : c'est l'appel réseau qui peut échouer.
-      ? (await ctx.client.listFiles(ctx.pn).catch(() => [])).find((x) => x.id === fileId)
-      : undefined;
-    await ctx.client.deleteFile(ctx.pn, fileId);
-    // ⚠️ APRÈS la suppression : journaliser un geste qui n'a pas eu lieu ferait chercher une cause inexistante.
-    await deps.journaliserSuppression?.(ctx.tenant, {
-      element: 'fichier', cible: fileId, libelle: `Document : ${String((avant as { name?: unknown } | undefined)?.name ?? fileId)}`,
-      avant: avant ?? { id: fileId }, acteurId: req.auth?.userId ?? null,
+    await supprimerAvecTrace(deps, ctx.tenant, req.auth?.userId ?? null, {
+      element: 'fichier', cible: fileId, libelle: 'Document', champ: 'name',
+      lister: () => ctx.client.listFiles(ctx.pn),
+      supprimer: () => ctx.client.deleteFile(ctx.pn, fileId),
     });
     return reply.code(200).send({ deleted: fileId });
   });

@@ -10,6 +10,7 @@ import { isSendableButtonUrl } from '../meta/button-url';
 import { boutonsTracables, appliquerLiens, cleBouton, rehabillerBoutons } from '../links/rewrite';
 import type { CibleLien } from '../links/tracked-links.pg';
 import { scopeTenant, nonEmpty } from './scope';
+import { messageDe } from '../lib/erreur';
 
 export interface TemplateRouteDeps {
   /** Client templates Meta résolu PAR TENANT (B1 : token du tenant, repli global en sommeil). */
@@ -64,7 +65,7 @@ async function saveHintsSafe(deps: TemplateRouteDeps, tenant: string, name: stri
     await deps.saveParamHints(tenant, name, language, hints);
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error('saveParamHints ignoré:', err instanceof Error ? err.message : err);
+    console.error('saveParamHints ignoré:', messageDe(err));
   }
 }
 
@@ -119,7 +120,7 @@ async function preparerLiens(
     return { aSoumettre: appliquerLiens(input, liens), codes };
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error('traçage des liens ignoré (template soumis avec les liens saisis):', err instanceof Error ? err.message : err);
+    console.error('traçage des liens ignoré (template soumis avec les liens saisis):', messageDe(err));
     return { aSoumettre: input, codes: [] };
   }
 }
@@ -147,7 +148,7 @@ async function rehabillerTemplates(
     parLien = await deps.tracking.destinations(tenant, templates.map((t) => t.name));
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error('ré-habillage des liens tracés ignoré:', err instanceof Error ? err.message : err);
+    console.error('ré-habillage des liens tracés ignoré:', messageDe(err));
     return templates;
   }
   if (parLien.size === 0) return templates;
@@ -350,7 +351,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
         await deps.tracking.confirm(tenant, codes);
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error('confirmation des liens tracés ignorée:', err instanceof Error ? err.message : err);
+        console.error('confirmation des liens tracés ignorée:', messageDe(err));
       }
     }
     await saveHintsSafe(deps, tenant, b.name, b.language, b.paramHints);

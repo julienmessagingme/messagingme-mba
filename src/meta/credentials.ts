@@ -1,4 +1,5 @@
 import { MetaApiError } from './errors';
+import { messageDe } from '../lib/erreur';
 
 /**
  * Résolution du token Meta PAR TENANT (B1). Aujourd'hui tous les envois passaient par UN token global
@@ -93,7 +94,7 @@ export class MetaCredentialsResolver {
       await this.deps.markTokenInvalid(wabaId);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error(`markTokenInvalid ignoré pour ${wabaId}:`, err instanceof Error ? err.message : err);
+      console.error(`markTokenInvalid ignoré pour ${wabaId}:`, messageDe(err));
     }
   }
 

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import { RateLimiter } from '../auth/rate-limit';
 import { scopeTenant, nonEmpty } from './scope';
+import { texteDe } from '../lib/erreur';
 
 export interface SupportRouteDeps {
   /** false si le support n'est pas configuré (clé Resend ou destinataire manquant) -> 503. */
@@ -73,7 +74,7 @@ export function registerSupport(app: FastifyInstance, deps: SupportRouteDeps, ga
         msg: 'support_send_failed',
         tenant,
         userId,
-        err: err instanceof Error ? err.message : String(err),
+        err: texteDe(err),
         stack: err instanceof Error ? err.stack : undefined,
       }));
       // 🔴 422 ET PAS 502 : l'écran de support affiche ce message tel quel, et Cloudflare remplace le corps de

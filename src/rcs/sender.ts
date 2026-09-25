@@ -3,6 +3,7 @@ import type { Reachability } from './reachability';
 import type { SendResult } from '../meta/types';
 import { normaliserPostbacks } from './schema';
 import { elaguerBoutonsInvalides } from './variables';
+import { messageDe } from '../lib/erreur';
 
 export interface RcsOptoutStore {
   isOptedOut(tenantId: string, e164: string): Promise<boolean>;
@@ -76,7 +77,7 @@ export class RcsSender {
     const aEnvoyer = this.traceur
       ? await this.traceur.tracer(tenantId, normalise, jeton).catch((err: unknown) => {
         // eslint-disable-next-line no-console
-        console.error(`RCS ${tenantId}: traçage des liens ignoré:`, err instanceof Error ? err.message : err);
+        console.error(`RCS ${tenantId}: traçage des liens ignoré:`, messageDe(err));
         return normalise;
       })
       : normalise;

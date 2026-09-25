@@ -1,5 +1,6 @@
 import { coerceConfigAvantDate, minutesDuDelai, estDu } from './avant-date';
 import type { AutomationRow } from './match';
+import { texteDe } from '../lib/erreur';
 
 /**
  * Balayage du déclencheur `avant_date` : le seul qui ne répond pas à un événement mais à l'ÉCOULEMENT DU
@@ -108,7 +109,7 @@ export async function runDateSweep(deps: DateSweepDeps): Promise<number> {
           publies += 1;
         }
       } catch (err) {
-        journal(`date-sweep: automation ${a.id} ignorée : ${err instanceof Error ? err.message : String(err)}`);
+        journal(`date-sweep: automation ${a.id} ignorée : ${texteDe(err)}`);
       }
     }
   }

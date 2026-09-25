@@ -24,19 +24,28 @@ export function newUlid(now: number = Date.now()): string {
     t = Math.floor(t / 32);
   }
   // 10 octets = 80 bits -> exactement 16 caractères base32 (5 bits chacun).
-  let rand = '';
+  return time + base32(randomBytes(10), 16);
+}
+
+/**
+ * Les `n` premiers caractères base32 (Crockford, MAJUSCULES) des octets donnés, lus 5 bits par 5 bits depuis
+ * le premier octet. Les bits qui dépassent sont ignorés : l'appelant fournit au moins `ceil(5n/8)` octets.
+ */
+function base32(octets: Uint8Array, n: number): string {
+  let out = '';
   let value = 0;
   let bits = 0;
-  for (const b of randomBytes(10)) {
+  for (const b of octets) {
+    if (out.length >= n) break;
     value = (value << 8) | b;
     bits += 8;
-    while (bits >= 5) {
+    while (bits >= 5 && out.length < n) {
       bits -= 5;
-      rand += CROCKFORD[(value >> bits) & 31]!;
+      out += CROCKFORD[(value >> bits) & 31]!;
       value &= (1 << bits) - 1;
     }
   }
-  return time + rand;
+  return out;
 }
 
 /** Code public d'une entité : `<type>_<tenantCode>_<ULID>`. */
@@ -84,19 +93,7 @@ export function newMediaCode(): string {
 
 /** Chaine base32 (Crockford) minuscule de `longueur` caracteres, tiree au sort. */
 function codeAleatoire(longueur: number): string {
-  let out = '';
-  let value = 0;
-  let bits = 0;
-  for (const b of randomBytes(Math.ceil((longueur * 5) / 8))) {
-    value = (value << 8) | b;
-    bits += 8;
-    while (bits >= 5 && out.length < longueur) {
-      bits -= 5;
-      out += CROCKFORD[(value >> bits) & 31]!;
-      value &= (1 << bits) - 1;
-    }
-  }
-  return out.toLowerCase();
+  return base32(randomBytes(Math.ceil((longueur * 5) / 8)), longueur).toLowerCase();
 }
 
 // `systemFieldCode` a vécu ici sans jamais avoir d'appelant côté serveur : le seul générateur utilisé est
@@ -111,20 +108,5 @@ function codeAleatoire(longueur: number): string {
  * (32^6 ≈ 1 milliard) et de toute façon barrée par l'index unique sur `tenants.public_code`.
  */
 export function deriveTenantCode(seed: string): string {
-  const h = createHash('sha256').update(seed).digest();
-  let out = '';
-  let value = 0;
-  let bits = 0;
-  let i = 0;
-  while (out.length < 6) {
-    value = (value << 8) | h[i]!;
-    i += 1;
-    bits += 8;
-    while (bits >= 5 && out.length < 6) {
-      bits -= 5;
-      out += CROCKFORD[(value >> bits) & 31]!;
-      value &= (1 << bits) - 1;
-    }
-  }
-  return out.toLowerCase();
+  return base32(createHash('sha256').update(seed).digest(), 6).toLowerCase();
 }

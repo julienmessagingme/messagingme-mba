@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { texteDe } from '../lib/erreur';
 
 export interface PgSslConfig {
   rejectUnauthorized: boolean;
@@ -33,7 +34,7 @@ export function pgSsl(): PgSslConfig | false {
       // pgSsl() est appelé À L'IMPORT de pool.ts et pgboss.ts : un fichier CA absent/illisible ferait crasher
       // mba-api ET mba-worker au boot, pas en dégradé. On transforme l'ENOENT opaque en erreur qui NOMME la
       // variable à corriger (le chemin cible est baké dans l'image, cf. Dockerfile ; un souci = typo dans l'env).
-      throw new Error(`DB_SSL_CA_FILE illisible (${caFile}) : ${err instanceof Error ? err.message : String(err)}`);
+      throw new Error(`DB_SSL_CA_FILE illisible (${caFile}) : ${texteDe(err)}`);
     }
     return { ca, rejectUnauthorized: true };
   }

@@ -16,6 +16,7 @@ import { prochaineOuverture } from '../lib/heures-ouvrees';
 import type { CampaignSender } from './sender';
 import { waIdOfTarget } from '../crm/identity';
 import { RANG_INITIAL, etageAuRang, type CanalEtage } from './etages';
+import { messageDe, texteDe } from '../lib/erreur';
 
 /**
  * UNE TENTATIVE D'ENVOI, telle qu'on la journalise (migration 0134).
@@ -157,20 +158,6 @@ export interface EngineDeps {
   recipients: RecipientStore;
   campaigns: CampaignStore;
   quality: QualityProvider;
-  rateLimiter?: RateGate;
-  /**
-   * Sender de CANAL (RCS) POUR LE CANAL DE LA CAMPAGNE, quand `canaux` n'est pas fourni.
-   *
-   * ⚠️ C'EST LA FORME COURTE DE `canaux`, GARDÉE POUR LES CÂBLAGES QUI N'EN ONT QU'UN. Le moteur en
-   * fabrique alors une table à une entrée, celle du canal de la campagne. Présent : l'envoi passe par
-   * LUI, et les gardes propres à WhatsApp sont neutralisées (quality rating Meta, lecture du carousel et
-   * de l'en-tête média) parce qu'elles n'ont pas d'équivalent sur ce canal et qu'aucun numéro Meta
-   * n'existe pour l'interroger. Absent : comportement historique INCHANGÉ.
-   *
-   * ⚠️ IGNORÉ DÈS QUE `canaux` EST FOURNI, et c'est le bon sens de priorité : `run-job` construit la
-   * table complète, elle ne doit pas être complétée par une valeur qui ne dit qu'un canal.
-   */
-  channelSender?: CampaignSender;
   /**
    * CE QUE CE RUN SAIT SERVIR, CANAL PAR CANAL (lot 6).
    *
@@ -185,11 +172,12 @@ export interface EngineDeps {
    * Le refus vaut mieux qu'un repli sur le canal de la campagne, qui renverrait le message qui vient
    * d'échouer.
    *
-   * ⚠️ ABSENTE = LE COMPORTEMENT D'AVANT, MOT POUR MOT : le moteur fabrique alors la table à UNE entrée,
-   * celle du canal de la campagne, avec `channelSender` et `rateLimiter`. C'est ce qui laisse intacts tous
-   * les faux de test et l'e2e, qui ne la câblent pas.
+   * ⚠️ REQUISE depuis l'audit ponytail du 2026-09-25. Absente, le moteur fabriquait une table à UNE entrée
+   * (le canal de la campagne, avec un `channelSender` et un `rateLimiter` à plat) : seuls les faux de test
+   * empruntaient ce repli, `run-job` construisant toujours la table. Ils la reçoivent désormais de
+   * `tests/campagne-canaux.ts`, qui fait exactement ce que faisait le repli.
    */
-  canaux?: Partial<Record<CanalEtage, CanalServi>>;
+  canaux: Partial<Record<CanalEtage, CanalServi>>;
   /**
    * Campagne WORKFLOW : démarre le workflow pour un destinataire (au lieu d'envoyer un template).
    * `firstTemplateParams` = variables du 1er template DÉJÀ résolues par contact (buildRecipients à partir du
@@ -509,22 +497,8 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
   await deps.campaigns.setStatus(campaign.id, 'running');
   const pending = await deps.recipients.listPending(campaign.id);
 
-  /**
-   * LES CANAUX QUE CE RUN SAIT SERVIR.
-   *
-   * ⚠️ LE REPLI SUR `channelSender` / `rateLimiter` REPRODUIT EXACTEMENT L'ÉTAT D'AVANT CE LOT : une seule
-   * entrée, celle du canal de la campagne. Un faux de test qui pose `channelSender` sur une campagne
-   * WhatsApp obtient donc le même comportement qu'avant (envoi par le sender de canal, gardes Meta
-   * neutralisées), et ce n'est pas un accident : c'est ce qui garde ces tests représentatifs.
-   */
-  const canaux: Partial<Record<CanalEtage, CanalServi>> = deps.canaux ?? {};
-  if (!deps.canaux) {
-    canaux[campaign.channel ?? 'whatsapp'] = {
-      ...(deps.channelSender ? { sender: deps.channelSender } : {}),
-      ...(deps.rateLimiter ? { rateLimiter: deps.rateLimiter } : {}),
-      phoneNumberId: campaign.phoneNumberId,
-    };
-  }
+  /** LES CANAUX QUE CE RUN SAIT SERVIR (`EngineDeps.canaux`). */
+  const canaux = deps.canaux;
   const canauxServis = Object.keys(canaux) as CanalEtage[];
   /** L'étage WhatsApp de la chaîne, s'il y en a un et que ce run sait le servir. Unique par construction. */
   const etageWa = etageWhatsApp(campaign, canauxServis);
@@ -722,7 +696,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       boutonsAJeton = await deps.boutonsTraces(campaign.tenantId, etageWa.templateName, etageWa.templateLanguage);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('attribution des clics ignorée pour cette campagne:', err instanceof Error ? err.message : err);
+      console.error('attribution des clics ignorée pour cette campagne:', messageDe(err));
       boutonsAJeton = [];
     }
   }
@@ -745,7 +719,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       jetons = await deps.jetonsPourContacts(campaign.tenantId, idsDesContacts());
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('attribution des jetons de clic ignorée pour cette campagne:', err instanceof Error ? err.message : err);
+      console.error('attribution des jetons de clic ignorée pour cette campagne:', messageDe(err));
     }
   }
 
@@ -845,7 +819,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     // Quality gate : notion META (rating du numéro WABA). Sur un canal sans numéro Meta, il n'y a rien à
     // interroger, et l'interroger quand même appellerait Graph avec un phoneNumberId vide.
     // ⚠️ C'est la présence d'un SENDER DE CANAL qui la neutralise, pas le nom du canal : c'est ce qui garde
-    // le comportement d'avant pour un faux de test qui pose `channelSender` sur une campagne WhatsApp.
+    // le comportement d'avant pour un faux de test qui pose un sender de canal sur une campagne WhatsApp.
     if (servi && !servi.sender) {
       const rating = await deps.quality.getRating(servi.phoneNumberId ?? campaign.phoneNumberId);
       const gate = qualityGate({ rating, sent: report.sent, failed: report.failed }, t);
@@ -963,7 +937,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
                 else if (suite === false) scenarioNonDemarre = 'Scénario non démarré (scénario supprimé, ou fil repris par un opérateur / MBA).';
               }
             } catch (e) {
-              scenarioNonDemarre = `Scénario non démarré : ${e instanceof Error ? e.message : String(e)}`;
+              scenarioNonDemarre = `Scénario non démarré : ${texteDe(e)}`;
               if (e instanceof NumeroDelieError) scenarioSurNumeroDelie = e;
             }
           }
@@ -1091,8 +1065,8 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     // Ce contact est joignable en WhatsApp : Meta a accepté le message et rendu un wamid.
     //
     // 🔴 LA CONDITION EST CELLE DE `recordOutbound` JUSTE EN DESSOUS, ET POUR LA MÊME RAISON : c'est la
-    // seule branche où un template WhatsApp est VRAIMENT parti d'ici. `channelSender` présent veut dire
-    // RCS, qui ne dit rien de WhatsApp ; une campagne de scénario rend un `messageId` synthétique `wf-...`
+    // seule branche où un template WhatsApp est VRAIMENT parti d'ici. un sender de canal présent veut
+    // dire RCS, qui ne dit rien de WhatsApp ; une campagne de scénario rend un `messageId` synthétique `wf-...`
     // et délègue l'envoi réel ailleurs. Écrire « oui » sur l'une ou l'autre serait inventer une mesure.
     //
     // ⚠️ Best-effort, exactement comme le journal du fil : un échec d'écriture ne relabellise JAMAIS un

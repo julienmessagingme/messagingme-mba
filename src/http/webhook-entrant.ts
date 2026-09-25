@@ -5,6 +5,7 @@ import { waIdOf } from '../crm/identity';
 import { extraireDuPayload } from '../webhook-entrant/mapping';
 import type { WebhookPublic } from '../webhook-entrant/store.pg';
 import { ClesResolues, RateLimiter, avertissementBorne, consommerEnSilence } from '../auth/rate-limit';
+import { messageDe } from '../lib/erreur';
 
 /**
  * Route PUBLIQUE des webhooks entrants : `POST /w/:code`. Un outil tiers (Zapier, Make, un CRM, un formulaire
@@ -196,7 +197,7 @@ export function registerWebhookEntrant(app: FastifyInstance, deps: WebhookEntran
         await deps.recordCall(hook.tenantId, hook.id, payload, contactCreated);
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error(`webhook ${hook.id} : payload non enregistré :`, err instanceof Error ? err.message : err);
+        console.error(`webhook ${hook.id} : payload non enregistré :`, messageDe(err));
       }
       return compte;
     };

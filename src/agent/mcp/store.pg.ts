@@ -1,4 +1,5 @@
 import type { Pool, PoolClient } from 'pg';
+import { enTransaction } from '../../db/transaction';
 import type { RisqueOutil } from '../catalog';
 import { verrouillerDefinitions } from '../catalog.pg';
 import { paramsOutil, type SourceParam } from '../llm/tool-schema';
@@ -207,14 +208,12 @@ export class PgMcpStore {
    * justification fausse est pire qu'aucune, parce qu'elle sera recopiée.
    */
   async supprimerServeur(tenantId: string, id: string): Promise<'supprime' | 'introuvable' | 'outils_actifs'> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('begin');
+    return enTransaction(this.pool, async (client) => {
       const existe = await client.query(
         "select 1 from agent_tool_sources where tenant_id = $1 and id = $2 and kind = 'mcp'",
         [tenantId, id],
       );
-      if (existe.rowCount === 0) { await client.query('rollback'); return 'introuvable'; }
+      if (existe.rowCount === 0) return 'introuvable';
 
       const actifs = await client.query<{ n: string }>(
         `select count(*)::text as n
@@ -223,7 +222,7 @@ export class PgMcpStore {
           where c.tenant_id = $1 and t.source_id = $2 and t.origin = 'mcp' and c.actif`,
         [tenantId, id],
       );
-      if (Number(actifs.rows[0]!.n) > 0) { await client.query('rollback'); return 'outils_actifs'; }
+      if (Number(actifs.rows[0]!.n) > 0) return 'outils_actifs';
 
       // 🔴 SES OUTILS SONT VERROUILLÉS PAR IDENTIFIANT AVANT LA CASCADE, l'ordre de `PgAgentStore.remove`
       // (relecture du 2026-09-22). Un outil rattaché mais inactif est le cas normal, et le refus « outils actifs »
@@ -237,21 +236,13 @@ export class PgMcpStore {
         "delete from agent_tool_sources where tenant_id = $1 and id = $2 and kind = 'mcp'",
         [tenantId, id],
       );
-      await client.query('commit');
       return 'supprime';
-    } catch (e) {
-      await client.query('rollback').catch(() => {});
-      throw e;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   /** Applique un plan d'import. TOUT OU RIEN. */
   async appliquer(tenantId: string, sourceId: string, e: EcritureImportMcp): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('begin');
+    await enTransaction(this.pool, async (client) => {
 
       /**
        * 🔴 LES DÉFINITIONS EXISTANTES QUE CET IMPORT VA ÉCRIRE SONT VERROUILLÉES D'ABORD, D'UN BLOC, PAR IDENTIFIANT
@@ -338,13 +329,7 @@ export class PgMcpStore {
         );
       }
 
-      await client.query('commit');
-    } catch (err) {
-      await client.query('rollback').catch(() => {});
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   /**

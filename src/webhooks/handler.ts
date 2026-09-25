@@ -24,6 +24,8 @@ import type { EventStore } from './store';
 import type { AuditSink } from '../audit/journal';
 import type { SignalAccuse } from './delivery';
 import type { SignalReponse } from './inbound';
+import { tenter } from '../lib/tenter';
+import { messageDe } from '../lib/erreur';
 
 /** Report des valeurs d'un WhatsApp Flow rempli vers les user fields du contact (optionnel). */
 export interface FlowMappingDeps {
@@ -199,18 +201,13 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
       routage = await processRoutagePub(raw, routagePub, alreadySeen);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('handleWebhookJob: routage publicitaire ignoré:', err instanceof Error ? err.message : err);
+      console.error('handleWebhookJob: routage publicitaire ignoré:', messageDe(err));
     }
   }
   // Report Flow -> user fields. ISOLÉ : ne doit JAMAIS faire échouer le job (partagé avec les statuts de
   // livraison + l'inbox). Un throw ici rejouerait/DLQ tout le webhook, donc aussi les statuts déjà traités.
   if (flowMapping) {
-    try {
-      await processFlowCompletions(raw, flowMapping.lookup, flowMapping.writer, flowMapping.audit);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('handleWebhookJob: mapping flow ignoré:', err instanceof Error ? err.message : err);
-    }
+    await tenter('handleWebhookJob: mapping flow ignoré:', () => processFlowCompletions(raw, flowMapping.lookup, flowMapping.writer, flowMapping.audit));
   }
   // Jetons de test d'un scénario (Lot F). EN PREMIER, VOLONTAIREMENT : un jeton n'est ni une réponse à un
   // parcours en cours, ni un mot-clé ordinaire. Les messages qu'il consomme sont écartés des étapes
@@ -224,7 +221,7 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
       consumed = await processTestTokens(raw, testTokens, alreadySeen);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('handleWebhookJob: jeton de test ignoré:', err instanceof Error ? err.message : err);
+      console.error('handleWebhookJob: jeton de test ignoré:', messageDe(err));
     }
   }
   /**
@@ -267,17 +264,12 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
       if (routagePub) await rendreLesFilsSansReponse(routage, parAutomation, routagePub);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('handleWebhookJob: automations ignorées:', err instanceof Error ? err.message : err);
+      console.error('handleWebhookJob: automations ignorées:', messageDe(err));
     }
   }
   // Avance des workflows sur les réponses. ISOLÉ également (même raison : ne pas DLQ le webhook partagé).
   if (workflowAdvance) {
-    try {
-      await processWorkflowAdvance(raw, workflowAdvance, consumed);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('handleWebhookJob: avance workflow ignorée:', err instanceof Error ? err.message : err);
-    }
+    await tenter('handleWebhookJob: avance workflow ignorée:', () => processWorkflowAdvance(raw, workflowAdvance, consumed));
   }
   /**
    * UN CLIENT REVIENT ET PERSONNE NE SUIT : le fil repart chez l'agent de Meta (2026-09-15).
@@ -291,23 +283,13 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
    * ratée ne doit pas les emporter, et le balayage de contrôle reste le filet.
    */
   if (remiseMbaEntrant) {
-    try {
-      await processRemiseMbaEntrant(raw, remiseMbaEntrant, consumed);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('handleWebhookJob: remise à l’agent de Meta ignorée:', err instanceof Error ? err.message : err);
-    }
+    await tenter('handleWebhookJob: remise à l’agent de Meta ignorée:', () => processRemiseMbaEntrant(raw, remiseMbaEntrant, consumed));
   }
   // Bascules de contrôle et messages de l'agent Meta (pré-câblage MBA). INERTE tant que MBA n'est activé
   // sur aucun numéro. ISOLÉ : ces événements sont les moins bien documentés de tous, donc les plus
   // susceptibles d'avoir une forme inattendue, et ils ne doivent surtout pas emporter les statuts de
   // livraison avec eux dans la DLQ.
   if (handover) {
-    try {
-      await processHandovers(raw, handover);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('handleWebhookJob: handover ignoré:', err instanceof Error ? err.message : err);
-    }
+    await tenter('handleWebhookJob: handover ignoré:', () => processHandovers(raw, handover));
   }
 }

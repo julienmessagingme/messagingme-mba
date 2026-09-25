@@ -2,6 +2,7 @@ import { extractInbound } from './inbound';
 import { arriveeDepuisMessage } from './arrivees-pub';
 import { routerLeLead, restrictionDuRoutage } from '../pubs/routage';
 import type { IssueRoutage, PubDuLead, RoutageDuMessage } from '../pubs/routage';
+import { messageDe } from '../lib/erreur';
 
 /**
  * LE ROUTAGE D'UN LEAD PUBLICITAIRE, câblé (lot 3, spec § 3.3). La RÈGLE, elle, est pure et vit dans
@@ -183,7 +184,7 @@ export async function processRoutagePub(
       }
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('processRoutagePub: lead ignoré:', err instanceof Error ? err.message : err);
+      console.error('processRoutagePub: lead ignoré:', messageDe(err));
     }
   }
   return routes;
@@ -209,7 +210,7 @@ async function campagneDuLead(
     return await deps.resoudreChezMeta(tenantId, adId);
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.warn(`routage pub : campagne de la publicité ${adId} non résolue chez Meta :`, err instanceof Error ? err.message : err);
+    console.warn(`routage pub : campagne de la publicité ${adId} non résolue chez Meta :`, messageDe(err));
     return null;
   }
 }
@@ -243,7 +244,7 @@ export async function rendreLesFilsSansReponse(
       console.warn(`routage pub : fil repris pour le lead ${messageId} mais aucun scénario n’a démarré, il est rendu à l’agent de Meta`);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('routage pub : fil non rendu :', err instanceof Error ? err.message : err);
+      console.error('routage pub : fil non rendu :', messageDe(err));
     }
   }
 }

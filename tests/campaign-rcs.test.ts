@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { runCampaign } from '../src/campaign/engine';
-import type { EngineDeps, RecipientStore, CampaignStore, QualityProvider } from '../src/campaign/engine';
+import { lancerCampagne, type DepsMoteurDeTest } from './campagne-canaux';
+import type { RecipientStore, CampaignStore, QualityProvider } from '../src/campaign/engine';
 import { makeCampaignSender } from '../src/campaign/sender';
 import type { Campaign, Recipient, QualityRating } from '../src/campaign/types';
 import { RcsSender } from '../src/rcs/sender';
@@ -89,7 +89,7 @@ class QualityInterdite implements QualityProvider {
   }
 }
 
-function deps(over: Partial<EngineDeps> & { recipients: RecipientStore }): EngineDeps {
+function deps(over: Partial<DepsMoteurDeTest> & { recipients: RecipientStore }): DepsMoteurDeTest {
   return {
     sender: {
       sendMarketing: async () => {
@@ -129,7 +129,7 @@ describe('runCampaign sur le canal RCS', () => {
     const { provider, channelSender } = campaignSender(['+33600000001']);
     const recipients = new FakeRecipients([rec('r1', '+33600000002'), rec('r2', '+33600000001')]);
     const campaigns = new FakeCampaigns();
-    const report = await runCampaign(campagne, deps({ recipients, channelSender, campaigns }));
+    const report = await lancerCampagne(campagne, deps({ recipients, channelSender, campaigns }));
 
     expect(report).toMatchObject({ sent: 1, skipped: 1, failed: 0, paused: false });
     expect(recipients.results.get('r1')).toMatchObject({ status: 'sent', messageId: 'r1' });
@@ -141,14 +141,14 @@ describe('runCampaign sur le canal RCS', () => {
   it('n interroge JAMAIS le quality rating Meta sur une campagne RCS', async () => {
     const { channelSender } = campaignSender();
     const quality = new QualityInterdite();
-    await runCampaign(campagne, deps({ recipients: new FakeRecipients([rec('r1', '+33600000002')]), channelSender, quality }));
+    await lancerCampagne(campagne, deps({ recipients: new FakeRecipients([rec('r1', '+33600000002')]), channelSender, quality }));
     expect(quality.appels).toBe(0);
   });
 
   it('journalise l envoi dans le fil du contact, avec le canal rcs et le texte du message', async () => {
     const { channelSender } = campaignSender();
     const logs: Array<{ waId: string; body: string; type?: string; channel?: string }> = [];
-    await runCampaign(
+    await lancerCampagne(
       campagne,
       deps({
         recipients: new FakeRecipients([rec('r1', '+33600000002')]),
@@ -164,7 +164,7 @@ describe('runCampaign sur le canal RCS', () => {
   it('ne lit JAMAIS le carousel ni l en-tete media du template sur une campagne RCS', async () => {
     const { channelSender } = campaignSender();
     let lectures = 0;
-    await runCampaign(
+    await lancerCampagne(
       campagne,
       deps({
         recipients: new FakeRecipients([rec('r1', '+33600000002')]),

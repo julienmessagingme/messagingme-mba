@@ -1,6 +1,7 @@
 import { extractInbound } from './inbound';
 import { createHash } from 'node:crypto';
 import { lireJetonDeTest } from '../workflow/test-token';
+import { messageDe } from '../lib/erreur';
 
 /**
  * 🔴 UN JETON NE S ÉCRIT JAMAIS EN CLAIR DANS LES JOURNAUX, et les deux refus ci-dessous l ont fait. Le
@@ -168,7 +169,7 @@ export async function processTestTokens(
       }
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('processTestTokens: jeton ignoré:', err instanceof Error ? err.message : err);
+      console.error('processTestTokens: jeton ignoré:', messageDe(err));
     }
   }
   return consumed;

@@ -16,6 +16,7 @@ import { repondreDansLaFenetre } from '../inbox/repondre';
 import type { OrigineMessage } from '../inbox/origine';
 import { estCodeLangue, estLangueConsole, TEXTE_MAX_CARACTERES, type LangueConsole, type Traduction } from '../traduction/traduire';
 import type { FilTraduit } from '../traduction/fil';
+import { messageDe } from '../lib/erreur';
 
 /**
  * Ce que rend la route des compteurs quand la dépendance n'est pas câblée (suites de tests à deps minimales,
@@ -611,7 +612,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
         await deps.prendreLeFil(tenant, ctx.waId);
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error(`prendre: Meta a refusé de céder le fil (${tenant}/${ctx.waId}):`, err instanceof Error ? err.message : err);
+        console.error(`prendre: Meta a refusé de céder le fil (${tenant}/${ctx.waId}):`, messageDe(err));
         return reply.code(409).send({ error: 'Meta n’a pas cédé la conversation, son agent peut encore répondre. Envoyez un message : écrire prend le fil à coup sûr.' });
       }
     }
@@ -1299,7 +1300,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
       owner = await deps.releaseControl(tenant, ctx.waId);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error(`release: Meta a refusé de reprendre le fil (${tenant}/${ctx.waId}):`, err instanceof Error ? err.message : err);
+      console.error(`release: Meta a refusé de reprendre le fil (${tenant}/${ctx.waId}):`, messageDe(err));
       return reply.code(409).send({ error: 'Meta n’a pas repris la conversation. Elle reste de votre côté, réessayez dans un instant.' });
     }
     invaliderCompteurs(tenant); // le fil repart en automatique : il sort de « À traiter ».

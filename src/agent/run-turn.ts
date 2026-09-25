@@ -8,6 +8,7 @@ import { SORTIE_ECHEC, SORTIE_PLAFOND } from './sorties';
 import { restToState } from '../workflow/executor';
 import type { SendRefusal } from '../workflow/executor';
 import type { RunState } from '../workflow/run-store.pg';
+import { messageDe } from '../lib/erreur';
 
 /** Ce que `runTurn` a besoin de savoir du run, et rien de plus. */
 export interface EtatRun {
@@ -164,7 +165,7 @@ async function poserEcheance(
     await deps.majRun(job.tenantId, job.runId, job.nodeId, restToState(repos, maintenant));
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error(`agent: échéance d'inactivité non posée sur le run ${job.runId}`, err instanceof Error ? err.message : err);
+    console.error(`agent: échéance d'inactivité non posée sur le run ${job.runId}`, messageDe(err));
   }
 }
 
@@ -186,7 +187,7 @@ async function finirLeTour(job: AgentTurnJob, sessionId: string, deps: RunTurnDe
     await deps.sessions.finirLeTour(job.tenantId, sessionId);
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error(`agent: marque de tour non effacée sur la session ${sessionId}`, err instanceof Error ? err.message : err);
+    console.error(`agent: marque de tour non effacée sur la session ${sessionId}`, messageDe(err));
   }
 }
 
@@ -216,14 +217,14 @@ async function enregistrerCout(
       await deps.debiterTenant(job.tenantId, coutMicroEur, sessionId);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error(`agent: SOLDE DU WORKSPACE NON DÉBITÉ (${coutMicroEur} micro-eur, session ${sessionId})`, err instanceof Error ? err.message : err);
+      console.error(`agent: SOLDE DU WORKSPACE NON DÉBITÉ (${coutMicroEur} micro-eur, session ${sessionId})`, messageDe(err));
     }
   }
   try {
     await deps.sessions.ajouterCout(job.tenantId, sessionId, coutMicroEur);
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error(`agent: coût du tour non enregistré sur la session ${sessionId}`, err instanceof Error ? err.message : err);
+    console.error(`agent: coût du tour non enregistré sur la session ${sessionId}`, messageDe(err));
   }
 }
 
@@ -347,7 +348,7 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
         transcript = await deps.lireConversation(job.tenantId, job.waId, session.ouvertLe);
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error(`agent: conversation illisible pour la session ${session.id}, tour sans mémoire`, err instanceof Error ? err.message : err);
+        console.error(`agent: conversation illisible pour la session ${session.id}, tour sans mémoire`, messageDe(err));
       }
     }
     decision = await deps.brain.penser({
@@ -386,7 +387,7 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
       return { fait: 'plafond', sortie: SORTIE_PLAFOND };
     }
     // eslint-disable-next-line no-console
-    console.error(`agent: le tour a échoué pour la session ${session.id}`, err instanceof Error ? err.message : err);
+    console.error(`agent: le tour a échoué pour la session ${session.id}`, messageDe(err));
     await cloreEtSortir(job, session.id, 'erreur', SORTIE_ECHEC, deps);
     return { fait: 'erreur', sortie: SORTIE_ECHEC };
   }

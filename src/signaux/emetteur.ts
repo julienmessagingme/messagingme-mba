@@ -1,6 +1,7 @@
 import type { NiveauRisque, RaisonRisque } from '../engagement/risque';
 import type { AccuseDuStatut, SignalAccuse } from '../webhooks/delivery';
 import type { InboundMessage, SignalReponse } from '../webhooks/inbound';
+import { texteDe } from '../lib/erreur';
 import {
   SIGNAUX_PAR_JOB, idSignal, schemaSignal, type CanalSignal, type JobSignaux, type NomEvenement, type Signal,
 } from './types';
@@ -73,8 +74,6 @@ export interface Emetteur {
   quelquUnEcoute(): Promise<boolean>;
 }
 
-const texteErreur = (err: unknown): string => (err instanceof Error ? err.message : String(err));
-
 export function creerEmetteur(deps: DepsEmetteur): Emetteur {
   const emettreSignaux = async (tenantId: string, signaux: readonly Signal[]): Promise<void> => {
     if (signaux.length === 0) return;
@@ -101,7 +100,7 @@ export function creerEmetteur(deps: DepsEmetteur): Emetteur {
           }
         }
       } catch (err) {
-        deps.log?.(`signaux: ${signaux.length} signal(aux) non enfile(s) vers ${d.file} pour ${tenantId}: ${texteErreur(err)}`);
+        deps.log?.(`signaux: ${signaux.length} signal(aux) non enfile(s) vers ${d.file} pour ${tenantId}: ${texteDe(err)}`);
       }
     }
   };
@@ -113,7 +112,7 @@ export function creerEmetteur(deps: DepsEmetteur): Emetteur {
         try {
           if ((await d.espacesActifs()).size > 0) return true;
         } catch (err) {
-          deps.log?.(`signaux: espaces actifs illisibles pour ${d.file}: ${texteErreur(err)}`);
+          deps.log?.(`signaux: espaces actifs illisibles pour ${d.file}: ${texteDe(err)}`);
         }
       }
       return false;

@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { enTransaction } from '../db/transaction';
 
 /**
  * Un WABA / numéro / credentials appartient DÉJÀ à un autre workspace. On refuse de le réaffecter en silence.
@@ -57,9 +58,7 @@ export class PgEmbeddedSignupStore {
     displayPhoneNumber: string | null;
     verifiedName: string | null;
   }): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('begin');
+    await enTransaction(this.pool, async (client) => {
       // `where waba.tenant_id = excluded.tenant_id` : sur conflit d'id avec un AUTRE tenant, l'update ne s'exécute
       // pas -> rowCount 0 -> on refuse (pas de réaffectation silencieuse). Même tenant ou insert neuf -> rowCount 1.
       const wabaRes = await client.query(
@@ -94,13 +93,7 @@ export class PgEmbeddedSignupStore {
         [input.phoneNumberId, input.wabaId, input.tenantId, input.displayPhoneNumber, input.verifiedName],
       );
       if ((phoneRes.rowCount ?? 0) === 0) throw new TenantConflictError('phone_number', input.phoneNumberId);
-      await client.query('commit');
-    } catch (err) {
-      await client.query('rollback');
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   /** Upsert des credentials du WABA. `businessTokenEnc` et `pinEnc` = DÉJÀ chiffrés (AES-GCM) par l'appelant. */

@@ -1,4 +1,23 @@
 import { HTTP_TIMEOUT_DEFAUT_MS, HttpTimeoutError, estAbandon } from './http';
+import { MetaApiError, type MetaErrorBody } from './errors';
+import type { FetchLike } from './templates';
+
+/**
+ * L'APPEL GRAPH AUTHENTIFIÉ des clients WhatsApp (modèles, flows, lecture et inscription du numéro, média
+ * entrant) : jeton en `Bearer`, `fetch` injectable, corps JSON (`null` s'il est illisible), `MetaApiError` si
+ * la réponse n'est pas 2xx. Les en-têtes de l'appelant s'ajoutent après l'autorisation.
+ *
+ * ⚠️ CE N'EST PAS `ClientGraph.call` ci-dessous, et les réunir changerait un comportement : celui-là porte un
+ * plafond de durée et lève `ErreurGraph`, avec une autre phrase, que l'inscription et les publicités lisent.
+ * `MbaClient` (en-tête de version, erreurs de l'agent) et le transport des envois (rejeu, `Retry-After`) ont
+ * aussi leur appel à eux, pour la même raison.
+ */
+export async function appelGraph(fetchImpl: FetchLike, token: string, url: string, init: RequestInit = {}): Promise<unknown> {
+  const res = await fetchImpl(url, { ...init, headers: { authorization: `Bearer ${token}`, ...(init.headers ?? {}) } });
+  const json = (await res.json().catch(() => null)) as unknown;
+  if (!res.ok) throw new MetaApiError(res.status, (json as { error?: MetaErrorBody } | null)?.error ?? null);
+  return json;
+}
 
 /**
  * LE SOCLE COMMUN DES CLIENTS GRAPH (2026-09-23, lot 2 des publicités Click-to-WhatsApp).

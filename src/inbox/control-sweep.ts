@@ -1,4 +1,6 @@
 import type { ControlOwner } from './store.pg';
+import { messageDe } from '../lib/erreur';
+import { FENETRE_SERVICE_MS } from '../workflow/engine';
 
 /**
  * La fenetre de service client de Meta : 24 h depuis le DERNIER message ENTRANT. Au-dela, aucun echange
@@ -8,7 +10,7 @@ import type { ControlOwner } from './store.pg';
  * Une constante et pas un reglage : ce delai appartient a Meta, pas a nous, et un client ne peut pas le
  * changer. Le rendre reglable donnerait l illusion d une prise sur une regle qui nous est imposee.
  */
-const FENETRE_META_MS = 24 * 60 * 60 * 1000;
+const FENETRE_META_MS = FENETRE_SERVICE_MS;
 
 /** Ce dont le balayage a besoin (interface étroite, satisfaite par PgInboxStore). */
 export interface ControlSweepDeps {
@@ -194,7 +196,7 @@ export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
         if (!(await deps.releaseToMba(c.tenantId, c.waId))) continue;
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error(`release vers MBA REFUSÉ pour ${c.waId}, l’état local n’a pas été écrit:`, err instanceof Error ? err.message : err);
+        console.error(`release vers MBA REFUSÉ pour ${c.waId}, l’état local n’a pas été écrit:`, messageDe(err));
         continue;
       }
     }

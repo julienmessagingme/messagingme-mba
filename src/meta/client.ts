@@ -75,6 +75,16 @@ export class MetaClient {
     }, this.retry);
   }
 
+  /**
+   * Un envoi `messages` à `to`, E.164 OU BSUID (routé par `messagingTarget`) : rend l'identifiant du message.
+   * ⚠️ `sendText` n'y passe pas : il porte `recipient_type` et un `to` nu. `sendMarketing` non plus : il choisit
+   * son point d'entrée (MM Lite) et sa cible.
+   */
+  private async envoyer(to: string, corps: Record<string, unknown>): Promise<SendResult> {
+    const json = await this.call('messages', { messaging_product: 'whatsapp', ...messagingTarget(to), ...corps });
+    return { messageId: this.messageId(json) };
+  }
+
   private messageId(json: unknown): string {
     const messages = (json as { messages?: Array<{ id?: string }> } | null)?.messages;
     const id = messages?.[0]?.id;
@@ -111,9 +121,7 @@ export class MetaClient {
       .map((b, i) => ({ type: 'reply' as const, reply: { id: `btn:${i}`, title: b.text.trim().slice(0, 20) } }))
       .filter((b) => b.reply.title !== '')
       .slice(0, 3);
-    const json = await this.call('messages', {
-      messaging_product: 'whatsapp',
-      ...messagingTarget(to),
+    return this.envoyer(to, {
       type: 'interactive',
       interactive: {
         type: 'button',
@@ -122,7 +130,6 @@ export class MetaClient {
         action: { buttons: replyButtons },
       },
     });
-    return { messageId: this.messageId(json) };
   }
 
   /**
@@ -146,9 +153,7 @@ export class MetaClient {
    * tomber le visuel en silence, non.
    */
   async sendCtaUrl(to: string, body: string, lien: { texte: string; url: string }, mediaId?: string): Promise<SendResult> {
-    const json = await this.call('messages', {
-      messaging_product: 'whatsapp',
-      ...messagingTarget(to),
+    return this.envoyer(to, {
       type: 'interactive',
       interactive: {
         type: 'cta_url',
@@ -160,7 +165,6 @@ export class MetaClient {
         },
       },
     });
-    return { messageId: this.messageId(json) };
   }
 
   /**
@@ -190,9 +194,7 @@ export class MetaClient {
       }))
       .filter((r) => r.title !== '')
       .slice(0, 10);
-    const json = await this.call('messages', {
-      messaging_product: 'whatsapp',
-      ...messagingTarget(to),
+    return this.envoyer(to, {
       type: 'interactive',
       interactive: {
         type: 'list',
@@ -203,7 +205,6 @@ export class MetaClient {
         },
       },
     });
-    return { messageId: this.messageId(json) };
   }
 
   /**
@@ -212,13 +213,10 @@ export class MetaClient {
    * Sans ça, ce montage partirait en texte nu et le visuel disparaîtrait sans que personne ne le sache.
    */
   async sendImage(to: string, mediaId: string, caption?: string): Promise<SendResult> {
-    const json = await this.call('messages', {
-      messaging_product: 'whatsapp',
-      ...messagingTarget(to),
+    return this.envoyer(to, {
       type: 'image',
       image: { id: mediaId, ...(caption && caption.trim() !== '' ? { caption } : {}) },
     });
-    return { messageId: this.messageId(json) };
   }
 
   /**
@@ -229,9 +227,7 @@ export class MetaClient {
    * de tester un brouillon non publié (sondé 2026-07-17) ; nominal = published (défaut Meta, omis).
    */
   async sendFlowMessage(to: string, opts: { body: string; flowId: string; cta: string; flowToken?: string; screen?: string; mode?: 'draft' | 'published' }): Promise<SendResult> {
-    const json = await this.call('messages', {
-      messaging_product: 'whatsapp',
-      ...messagingTarget(to),
+    return this.envoyer(to, {
       type: 'interactive',
       interactive: {
         type: 'flow',
@@ -250,18 +246,14 @@ export class MetaClient {
         },
       },
     });
-    return { messageId: this.messageId(json) };
   }
 
   async sendTemplate(to: string, tpl: TemplateSpec): Promise<SendResult> {
     // `to` peut être un numéro E.164 OU un BSUID : Meta route via `to` (numéro) vs `recipient` (BSUID).
-    const json = await this.call('messages', {
-      messaging_product: 'whatsapp',
-      ...messagingTarget(to),
+    return this.envoyer(to, {
       type: 'template',
       template: templatePayload(tpl),
     });
-    return { messageId: this.messageId(json) };
   }
 
   async sendMarketing(params: MarketingParams): Promise<SendResult> {

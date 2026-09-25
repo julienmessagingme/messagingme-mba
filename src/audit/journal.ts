@@ -1,4 +1,5 @@
 import type { AuditAction } from './store.pg';
+import { tenter } from '../lib/tenter';
 
 /**
  * Écriture du journal, telle qu'une route la reçoit en dépendance. OPTIONNELLE partout : absente, l'action
@@ -34,11 +35,6 @@ export type Journal = (
 export function makeJournal(audit?: AuditSink): Journal {
   return async (tenantId, req, action, target, detail = {}) => {
     if (!audit) return;
-    try {
-      await audit(tenantId, { userId: req.auth?.userId ?? null, email: null }, action, target, detail);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('audit ignoré:', err instanceof Error ? err.message : err);
-    }
+    await tenter('audit ignoré:', () => audit(tenantId, { userId: req.auth?.userId ?? null, email: null }, action, target, detail));
   };
 }

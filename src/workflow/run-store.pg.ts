@@ -26,6 +26,21 @@ function relireGrapheFige(brut: unknown, runId: string): WorkflowGraph | null {
   return graphe;
 }
 
+/** Une ligne de `workflow_runs` telle que la lisent `findWaitingByWaId` et `byId`. */
+interface LigneRun {
+  id: string; workflow_id: string; tenant_id: string; wa_id: string;
+  current_node: string | null; status: RunStatus; last_message_id: string | null;
+  channel: RunChannel | null; graphe_fige: WorkflowGraph | null;
+}
+
+function runDeLigne(r: LigneRun): WorkflowRunRow {
+  return {
+    id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id,
+    currentNode: r.current_node, status: r.status, lastMessageId: r.last_message_id,
+    channel: r.channel ?? 'whatsapp', grapheFige: relireGrapheFige(r.graphe_fige, r.id),
+  };
+}
+
 /** `sleeping` = le run attend que le TEMPS passe (bloc Attente), `waiting` qu'un CONTACT réponde. */
 export type RunStatus = 'waiting' | 'inbox' | 'done' | 'sleeping';
 
@@ -106,22 +121,14 @@ export class PgWorkflowRunStore {
 
   /** LE run en attente d'un contact (par tenant + numéro). Un seul actif à la fois par contact (V1). */
   async findWaitingByWaId(tenantId: string, waId: string): Promise<WorkflowRunRow | null> {
-    const res = await this.pool.query<{
-      id: string; workflow_id: string; tenant_id: string; wa_id: string;
-      current_node: string | null; status: 'waiting' | 'inbox' | 'done'; last_message_id: string | null;
-      channel: RunChannel | null; graphe_fige: WorkflowGraph | null;
-    }>(
+    const res = await this.pool.query<LigneRun>(
       `select id, workflow_id, tenant_id, wa_id, current_node, status, last_message_id, channel, graphe_fige
        from workflow_runs where tenant_id = $1 and wa_id = $2 and status = 'waiting'
        order by created_at desc limit 1`,
       [tenantId, waId],
     );
     const r = res.rows[0];
-    return r ? {
-      id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id,
-      currentNode: r.current_node, status: r.status, lastMessageId: r.last_message_id,
-      channel: r.channel ?? 'whatsapp', grapheFige: relireGrapheFige(r.graphe_fige, r.id),
-    } : null;
+    return r ? runDeLigne(r) : null;
   }
 
   /**
@@ -134,21 +141,13 @@ export class PgWorkflowRunStore {
    * doit pouvoir DISTINGUER un run mort d'un run introuvable.
    */
   async byId(tenantId: string, id: string): Promise<WorkflowRunRow | null> {
-    const res = await this.pool.query<{
-      id: string; workflow_id: string; tenant_id: string; wa_id: string;
-      current_node: string | null; status: RunStatus; last_message_id: string | null;
-      channel: RunChannel | null; graphe_fige: WorkflowGraph | null;
-    }>(
+    const res = await this.pool.query<LigneRun>(
       `select id, workflow_id, tenant_id, wa_id, current_node, status, last_message_id, channel, graphe_fige
        from workflow_runs where tenant_id = $1 and id = $2`,
       [tenantId, id],
     );
     const r = res.rows[0];
-    return r ? {
-      id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id,
-      currentNode: r.current_node, status: r.status, lastMessageId: r.last_message_id,
-      channel: r.channel ?? 'whatsapp', grapheFige: relireGrapheFige(r.graphe_fige, r.id),
-    } : null;
+    return r ? runDeLigne(r) : null;
   }
 
   /**
@@ -344,42 +343,7 @@ export class PgWorkflowRunStore {
    * plein vol) il ne dort pas éternellement, il est simplement en attente comme après un envoi.
    */
   async claimDueSleeping(limit: number): Promise<WorkflowRunRow[]> {
-    const res = await this.pool.query<{
-      id: string; workflow_id: string; tenant_id: string; wa_id: string; contact_id: string | null;
-      current_node: string | null; last_message_id: string | null; channel: RunChannel | null;
-      graphe_fige: WorkflowGraph | null;
-    }>(
-      // BAIL, pas changement de statut : on repousse l'échéance en RESTANT `sleeping` (durée fixée plus bas).
-      //  - passer à `waiting` mettrait le run à portée de `findWaitingByWaId`, donc de `advance` : un message
-      //    du contact pendant la reprise rejouerait le MÊME bloc suivant et enverrait le message deux fois ;
-      //  - et un worker tué après le claim laisserait un run `waiting` figé sur le bloc Attente, indiscernable
-      //    d'un run sain, que n'importe quel message ultérieur ressusciterait (y compris après l'envoi).
-      // Avec le bail : les autres workers ne voient plus la ligne comme due, `advance` ne la voit pas du tout,
-      // et un worker tué la rend simplement due à nouveau à l'expiration du bail.
-      //
-      // `created_at` borné : deux blocs Attente qui se pointent l'un l'autre relanceraient un sommeil à chaque
-      // réveil, pour toujours. Au-delà de 90 jours on cesse de réveiller (le sweeper clôt ces runs à part).
-      // INVARIANT du bail : il doit couvrir la reprise de TOUT un lot (`batchSize`, 50 par défaut) au pire cas,
-      // relances Meta comprises (withRetry + Retry-After). À 5 minutes, un incident Meta suffisait à le faire
-      // expirer avant la fin du lot : la passe suivante re-claimait les derniers runs et DEUX reprises
-      // tournaient en parallèle sur le même parcours. 15 minutes, plus la garde de ré-entrance du sweeper.
-      `update workflow_runs r set resume_at = now() + interval '15 minutes', updated_at = now()
-       from (
-         select id from workflow_runs
-         where status = 'sleeping' and resume_at is not null and resume_at <= now()
-           and created_at > now() - interval '90 days'
-         order by resume_at
-         for update skip locked
-         limit $1
-       ) due
-       where r.id = due.id
-       returning r.id, r.workflow_id, r.tenant_id, r.wa_id, r.contact_id, r.current_node, r.last_message_id, r.channel, r.graphe_fige`,
-      [limit],
-    );
-    return res.rows.map((r) => ({
-      id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id, contactId: r.contact_id,
-      currentNode: r.current_node, status: 'sleeping' as const, lastMessageId: r.last_message_id, channel: r.channel ?? 'whatsapp', grapheFige: parseGraph(r.graphe_fige),
-    }));
+    return this.claimDue('sleeping', limit);
   }
 
   /**
@@ -404,18 +368,43 @@ export class PgWorkflowRunStore {
    * (réponse PUIS échéance) est sûr de toute façon, `advance` effaçant `resume_at` en réécrivant l'état.
    */
   async claimDueQuestions(limit: number): Promise<WorkflowRunRow[]> {
+    return this.claimDue('waiting', limit);
+  }
+
+  /**
+   * LA réclamation commune aux deux balayages ci-dessus : un BAIL de 15 minutes sur les runs dus du statut
+   * donné, pris d'un bloc et rendus en UNE requête.
+   *
+   * 🔴 BAIL, PAS CHANGEMENT DE STATUT : on repousse l'échéance en RESTANT dans son statut.
+   *  - passer un dormant à `waiting` le mettrait à portée de `findWaitingByWaId`, donc de `advance` : un message
+   *    du contact pendant la reprise rejouerait le MÊME bloc suivant et enverrait le message deux fois ;
+   *  - et un worker tué après le claim laisserait un run `waiting` figé sur le bloc Attente, indiscernable
+   *    d'un run sain, que n'importe quel message ultérieur ressusciterait (y compris après l'envoi).
+   * Avec le bail : les autres workers ne voient plus la ligne comme due, et un worker tué la rend simplement
+   * due à nouveau à l'expiration du bail.
+   *
+   * `created_at` borné : deux blocs Attente qui se pointent l'un l'autre relanceraient un sommeil à chaque
+   * réveil, pour toujours. Au-delà de 90 jours on cesse de réveiller (le sweeper clôt ces runs à part), et la
+   * fenêtre de service d'une question est de toute façon fermée depuis longtemps.
+   *
+   * INVARIANT du bail : il doit couvrir la reprise de TOUT un lot (`batchSize`, 50 par défaut) au pire cas,
+   * relances Meta comprises (withRetry + Retry-After). À 5 minutes, un incident Meta suffisait à le faire
+   * expirer avant la fin du lot : la passe suivante re-claimait les derniers runs et DEUX reprises tournaient
+   * en parallèle sur le même parcours. 15 minutes, plus la garde de ré-entrance du registre des tâches.
+   *
+   * ⚠️ LE STATUT EST ÉCRIT EN LITTÉRAL dans la requête, jamais passé en paramètre : c'est une union FERMÉE, et
+   * un paramètre priverait le planificateur des index partiels posés sur `status`.
+   */
+  private async claimDue(statut: 'sleeping' | 'waiting', limit: number): Promise<WorkflowRunRow[]> {
     const res = await this.pool.query<{
       id: string; workflow_id: string; tenant_id: string; wa_id: string; contact_id: string | null;
       current_node: string | null; last_message_id: string | null; channel: RunChannel | null;
       graphe_fige: WorkflowGraph | null;
     }>(
-      // Même borne de 90 jours que le sommeil : au-delà, un parcours n'a plus de sens métier, et la fenêtre
-      // de service est de toute façon fermée depuis longtemps. Même durée de bail, aussi : elle doit couvrir
-      // la reprise de TOUT un lot au pire cas, relances Meta comprises.
       `update workflow_runs r set resume_at = now() + interval '15 minutes', updated_at = now()
        from (
          select id from workflow_runs
-         where status = 'waiting' and resume_at is not null and resume_at <= now()
+         where status = '${statut}' and resume_at is not null and resume_at <= now()
            and created_at > now() - interval '90 days'
          order by resume_at
          for update skip locked
@@ -427,7 +416,7 @@ export class PgWorkflowRunStore {
     );
     return res.rows.map((r) => ({
       id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id, contactId: r.contact_id,
-      currentNode: r.current_node, status: 'waiting' as const, lastMessageId: r.last_message_id, channel: r.channel ?? 'whatsapp', grapheFige: parseGraph(r.graphe_fige),
+      currentNode: r.current_node, status: statut, lastMessageId: r.last_message_id, channel: r.channel ?? 'whatsapp', grapheFige: parseGraph(r.graphe_fige),
     }));
   }
 

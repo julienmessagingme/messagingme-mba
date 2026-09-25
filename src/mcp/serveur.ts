@@ -1,4 +1,5 @@
 import { outilsPourScopes, RefusOutil, type DepsMcp, type OutilMcp } from './outils';
+import { messageDe } from '../lib/erreur';
 
 /**
  * Le transport MCP : du JSON-RPC 2.0 sur un seul POST, SANS ÉTAT.
@@ -120,7 +121,7 @@ export async function traiterMessage(deps: DepsMcp, ctx: ContexteMcp, message: u
         // Panne : on journalise côté serveur et on ne renvoie PAS le message d'origine, qui peut porter un
         // fragment de requête SQL ou de réponse Meta.
         // eslint-disable-next-line no-console
-        console.error(`mcp: échec de l'outil ${nom} (tenant ${ctx.tenantId}):`, err instanceof Error ? err.message : err);
+        console.error(`mcp: échec de l'outil ${nom} (tenant ${ctx.tenantId}):`, messageDe(err));
         return ko(id, ERREUR.INTERNE, 'échec interne de l’outil');
       }
     }

@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { runCampaign, etageServable, contenuDeLEtage } from '../src/campaign/engine';
+import { etageServable, contenuDeLEtage } from '../src/campaign/engine';
+import { lancerCampagne, type DepsMoteurDeTest } from './campagne-canaux';
 import type {
-  MessageSender, RecipientStore, CampaignStore, QualityProvider,
-  EngineDeps, TentativeEnvoi, CanalServi, RateGate,
+  MessageSender, RecipientStore, CampaignStore, QualityProvider, TentativeEnvoi, CanalServi, RateGate,
 } from '../src/campaign/engine';
 import type { Campaign, Recipient, QualityRating } from '../src/campaign/types';
 import type { Etage } from '../src/campaign/etages';
@@ -92,7 +92,7 @@ const CHAINE_WA_RCS: Etage[] = [
 function rec(id: string, to: string, etageCourant?: number): Recipient {
   return { id, contactId: `ct-${id}`, toE164: to, resolvedParams: ['X'], status: 'pending', ...(etageCourant !== undefined ? { etageCourant } : {}) };
 }
-function deps(over: Partial<EngineDeps> & { recipients: RecipientStore }): EngineDeps {
+function deps(over: Partial<DepsMoteurDeTest> & { recipients: RecipientStore }): DepsMoteurDeTest {
   return {
     sender: new SenderMeta(),
     campaigns: new FakeCampaigns(),
@@ -105,7 +105,7 @@ function deps(over: Partial<EngineDeps> & { recipients: RecipientStore }): Engin
 function canaux(o: { whatsapp?: CanalServi; rcs?: CanalServi }): Partial<Record<'whatsapp' | 'rcs' | 'email', CanalServi>> {
   return { ...(o.whatsapp ? { whatsapp: o.whatsapp } : {}), ...(o.rcs ? { rcs: o.rcs } : {}) };
 }
-function journal(): { vues: TentativeEnvoi[]; noterEnvoi: EngineDeps['noterEnvoi'] } {
+function journal(): { vues: TentativeEnvoi[]; noterEnvoi: DepsMoteurDeTest['noterEnvoi'] } {
   const vues: TentativeEnvoi[] = [];
   return { vues, noterEnvoi: async (t) => { vues.push(t); } };
 }
@@ -122,7 +122,7 @@ describe('le moteur sert le canal de l etage', () => {
     const rcs = senderRcs();
     const avecRepli: Campaign = { ...CAMPAGNE_WA, chaine: CHAINE_WA_RCS };
     const recipients = new FakeRecipients([rec('r1', '+33611', 2)]);
-    const report = await runCampaign(avecRepli, deps({
+    const report = await lancerCampagne(avecRepli, deps({
       recipients,
       canaux: canaux({ whatsapp: { rateLimiter: freinWa, phoneNumberId: 'pn1' }, rcs: { sender: rcs, rateLimiter: freinRcs } }),
     }));
@@ -138,7 +138,7 @@ describe('le moteur sert le canal de l etage', () => {
     const freinRcs = frein();
     const avecRepli: Campaign = { ...CAMPAGNE_WA, chaine: CHAINE_WA_RCS };
     const recipients = new FakeRecipients([rec('r1', '+33611', 1)]);
-    await runCampaign(avecRepli, deps({
+    await lancerCampagne(avecRepli, deps({
       recipients,
       canaux: canaux({ whatsapp: { rateLimiter: freinWa, phoneNumberId: 'pn1' }, rcs: { sender: senderRcs(), rateLimiter: freinRcs } }),
     }));
@@ -157,7 +157,7 @@ describe('le moteur sert le canal de l etage', () => {
     const avecRepli: Campaign = { ...CAMPAGNE_WA, chaine: CHAINE_WA_RCS };
     const recipients = new FakeRecipients([rec('r1', '+33611', 2)]);
     const fil: Array<{ body: string; channel?: string }> = [];
-    await runCampaign(avecRepli, deps({
+    await lancerCampagne(avecRepli, deps({
       recipients,
       sender: meta,
       canaux: canaux({ whatsapp: { phoneNumberId: 'pn1' }, rcs: { sender: rcs } }),
@@ -180,7 +180,7 @@ describe('le moteur sert le canal de l etage', () => {
     const { vues, noterEnvoi } = journal();
     const avecRepli: Campaign = { ...CAMPAGNE_WA, chaine: CHAINE_WA_RCS };
     const recipients = new FakeRecipients([rec('r1', '+33611', 2), rec('r2', '+33622', 1)]);
-    await runCampaign(avecRepli, deps({
+    await lancerCampagne(avecRepli, deps({
       recipients,
       ...(noterEnvoi ? { noterEnvoi } : {}),
       canaux: canaux({ whatsapp: { phoneNumberId: 'pn1' }, rcs: { sender: senderRcs() } }),
@@ -199,7 +199,7 @@ describe('le moteur sert le canal de l etage', () => {
     const notes: Array<{ contactId: string; joignable: boolean }> = [];
     const avecRepli: Campaign = { ...CAMPAGNE_WA, chaine: CHAINE_WA_RCS };
     const recipients = new FakeRecipients([rec('r1', '+33611', 2)]);
-    await runCampaign(avecRepli, deps({
+    await lancerCampagne(avecRepli, deps({
       recipients,
       canaux: canaux({ whatsapp: { phoneNumberId: 'pn1' }, rcs: { sender: senderRcs() } }),
       noterJoignabilite: async (_t, contactId, joignable) => { notes.push({ contactId, joignable }); },
@@ -213,7 +213,7 @@ describe('le moteur sert le canal de l etage', () => {
     const notes: Array<{ contactId: string; joignable: boolean }> = [];
     const avecRepli: Campaign = { ...CAMPAGNE_WA, chaine: CHAINE_WA_RCS };
     const recipients = new FakeRecipients([rec('r1', '+33611', 1)]);
-    await runCampaign(avecRepli, deps({
+    await lancerCampagne(avecRepli, deps({
       recipients,
       canaux: canaux({ whatsapp: { phoneNumberId: 'pn1' }, rcs: { sender: senderRcs() } }),
       noterJoignabilite: async (_t, contactId, joignable) => { notes.push({ contactId, joignable }); },
@@ -229,7 +229,7 @@ describe('le moteur sert le canal de l etage', () => {
     const quality = new FakeQuality();
     const avecRepli: Campaign = { ...CAMPAGNE_WA, chaine: CHAINE_WA_RCS };
     const recipients = new FakeRecipients([rec('r1', '+33611', 2)]);
-    await runCampaign(avecRepli, deps({
+    await lancerCampagne(avecRepli, deps({
       recipients,
       quality,
       canaux: canaux({ whatsapp: { phoneNumberId: 'pn1' }, rcs: { sender: senderRcs() } }),
@@ -253,7 +253,7 @@ describe('le moteur sert le canal de l etage', () => {
       ],
     };
     const recipients = new FakeRecipients([rec('r1', '+33611', 2)]);
-    await runCampaign(rcsDAbord, deps({
+    await lancerCampagne(rcsDAbord, deps({
       recipients,
       quality,
       canaux: canaux({ whatsapp: { phoneNumberId: 'pn-espace' }, rcs: { sender: senderRcs() } }),
@@ -277,7 +277,7 @@ describe('le moteur sert le canal de l etage', () => {
       ],
     };
     const recipients = new FakeRecipients([rec('r1', '+33611', 2)]);
-    await runCampaign(rcsDAbord, deps({
+    await lancerCampagne(rcsDAbord, deps({
       recipients,
       sender: meta,
       canaux: canaux({ whatsapp: { phoneNumberId: 'pn-espace' }, rcs: { sender: senderRcs() } }),
@@ -303,7 +303,7 @@ describe('le moteur sert le canal de l etage', () => {
       ],
     };
     const recipients = new FakeRecipients([rec('r1', '+33611', 2)]);
-    await runCampaign(rcsDAbord, deps({
+    await lancerCampagne(rcsDAbord, deps({
       recipients,
       canaux: canaux({ whatsapp: { phoneNumberId: 'pn-espace' }, rcs: { sender: senderRcs() } }),
       getTemplateCarousel: async (_t, name) => { lus.push(name); return null; },
@@ -322,7 +322,7 @@ describe('le moteur sert le canal de l etage', () => {
     const rcs = senderRcs({ aBesoinDeJeton: true });
     const avecRepli: Campaign = { ...CAMPAGNE_WA, chaine: CHAINE_WA_RCS };
     const recipients = new FakeRecipients([rec('r1', '+33611', 2)]);
-    await runCampaign(avecRepli, deps({
+    await lancerCampagne(avecRepli, deps({
       recipients,
       canaux: canaux({ whatsapp: { phoneNumberId: 'pn1' }, rcs: { sender: rcs } }),
       jetonsPourContacts: async () => new Map([['ct-r1', 'jeton-r1']]),
@@ -344,7 +344,7 @@ describe('le moteur sert le canal de l etage', () => {
       chaine: [...CHAINE_WA_RCS, { rang: 3, canal: 'email', emailTemplateId: 'em-1', emailChamp: 'email' }],
     };
     const recipients = new FakeRecipients([rec('r1', '+33611', 3)]);
-    const report = await runCampaign(avecEmail, deps({
+    const report = await lancerCampagne(avecEmail, deps({
       recipients,
       sender: meta,
       ...(noterEnvoi ? { noterEnvoi } : {}),
@@ -366,7 +366,7 @@ describe('le moteur sert le canal de l etage', () => {
     const rcs = senderRcs();
     const avecRepli: Campaign = { ...CAMPAGNE_WA, chaine: CHAINE_WA_RCS };
     const recipients = new FakeRecipients([rec('r1', '+33611', 1), rec('r2', '+33622', 2)]);
-    const report = await runCampaign(avecRepli, deps({
+    const report = await lancerCampagne(avecRepli, deps({
       recipients,
       canaux: canaux({ whatsapp: { phoneNumberId: 'pn1' }, rcs: { sender: rcs } }),
       // En-tête média présent mais non préparé : `headerMediaSendBlocker` refuse l'envoi WhatsApp.

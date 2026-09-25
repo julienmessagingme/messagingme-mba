@@ -1,3 +1,4 @@
+import { escapeHtml } from '../crm/render';
 /**
  * Gabarits d'email HTML brandés « Messaging Me / Business Agent ».
  *
@@ -25,20 +26,6 @@ const FONT = "-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
 /** URL publique du logo rasterisé (PNG, servi par le front). Gmail rend le PNG ; l'alt couvre le blocage d'images. */
 const LOGO_URL = 'https://mba.messagingme.app/logo.png';
-
-/**
- * Échappe le HTML pour toute donnée non fiable injectée dans le gabarit (nom d'invitant, nom de
- * workspace, libellés). Empêche qu'un « & » ou un « < » casse le markup, ou qu'une valeur
- * contrôlée par l'utilisateur injecte des balises.
- */
-export function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
 
 export interface BrandedEmailInput {
   /** Titre affiché en gros dans le corps (déjà lisible en clair, sera échappé). */

@@ -4,8 +4,9 @@ import { MetaCredentialsResolver } from '../src/meta/credentials';
 import type { HttpTransport, HttpResponse } from '../src/meta/http';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE, creerGardeNumeroDelie } from '../src/meta/numero-delie';
 import { campaignRunJob, type RunJobDeps } from '../src/campaign/run-job';
-import { runCampaign, RAISON_NUMERO_RELIE_ENTRE_TEMPS } from '../src/campaign/engine';
-import type { RecipientStore, CampaignStore, QualityProvider, EngineDeps } from '../src/campaign/engine';
+import { RAISON_NUMERO_RELIE_ENTRE_TEMPS } from '../src/campaign/engine';
+import { lancerCampagne, type DepsMoteurDeTest } from './campagne-canaux';
+import type { RecipientStore, CampaignStore, QualityProvider } from '../src/campaign/engine';
 import type { Campaign, Recipient } from '../src/campaign/types';
 import type { MotifDePause } from '../src/campaign/pause';
 import { messageDePause } from '../src/campaign/pause';
@@ -214,7 +215,7 @@ const DEUX: Recipient[] = [
   { id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' },
   { id: 'r2', contactId: 'y', toE164: '+33622', resolvedParams: [], status: 'pending' },
 ];
-const envoiInterdit: EngineDeps['sender'] = {
+const envoiInterdit: DepsMoteurDeTest['sender'] = {
   sendMarketing: async () => { throw new Error('aucun modèle direct dans ces cas'); },
   sendTemplate: async () => { throw new Error('aucun modèle direct dans ces cas'); },
 };
@@ -230,13 +231,13 @@ describe('campagne de scénario et numéro délié, en cours de run (le moteur)'
       demarrages.push('démarrage');
       throw new NumeroDelieError('pn1');
     };
-    const deps: EngineDeps = {
+    const deps: DepsMoteurDeTest = {
       sender: envoiInterdit, recipients: destinataires, campaigns: campagnes, quality: qualite,
       startWorkflow: refus,
       startWorkflowFromNode: refus,
       pauserSiNumeroDelie: enBase.pauser,
     };
-    return { run: () => runCampaign(campagne, deps), destinataires, campagnes, demarrages, enBase };
+    return { run: () => lancerCampagne(campagne, deps), destinataires, campagnes, demarrages, enBase };
   }
 
   /**
@@ -285,7 +286,7 @@ describe('campagne de scénario et numéro délié, en cours de run (le moteur)'
       ],
     };
     const enBase = base(true);
-    const report = await runCampaign(campagne, {
+    const report = await lancerCampagne(campagne, {
       sender: envoiInterdit, recipients: destinataires, campaigns: campagnes, quality: qualite,
       canaux: { rcs: { sender: { sendTo: async (r) => { envoisRcs.push(r.toE164); return { messageId: `rcs-${r.id}` }; } } } },
       startWorkflow: async () => { throw new NumeroDelieError('pn1'); },
@@ -314,7 +315,7 @@ describe('campagne de scénario et numéro délié, en cours de run (le moteur)'
         { rang: 2, canal: 'rcs', rcsMessage: { kind: 'text', text: 'le repli' }, workflowId: 'wf-42' },
       ],
     };
-    const report = await runCampaign(campagne, {
+    const report = await lancerCampagne(campagne, {
       sender: envoiInterdit, recipients: destinataires, campaigns: campagnes, quality: qualite,
       canaux: { rcs: { sender: { sendTo: async (r) => ({ messageId: `rcs-${r.id}` }) } } },
       startWorkflow: async () => { throw new NumeroDelieError('pn1'); },

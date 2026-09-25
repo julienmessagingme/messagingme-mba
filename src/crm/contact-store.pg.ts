@@ -1,8 +1,10 @@
 import type { Pool } from 'pg';
+import { enTransaction } from '../db/transaction';
 import { PEREMPTION_WHATSAPP_MS } from '../contacts/joignabilite';
 import type { NiveauRisque, RaisonRisque } from '../engagement/risque';
 import type { ContactStore, ContactUpsert, ContactDeLot, LotContacts } from './import';
 import { classifyWaId, waIdOf } from './identity';
+import { messageDe } from '../lib/erreur';
 
 export interface ContactRow {
   id: string;
@@ -249,7 +251,7 @@ export class PgContactStore implements ContactStore {
       await this.annoncerDesabonnement(tenantId, propres, messageDuStop);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error(`contacts: annonce d opt-out impossible pour ${tenantId}:`, err instanceof Error ? err.message : err);
+      console.error(`contacts: annonce d opt-out impossible pour ${tenantId}:`, messageDe(err));
     }
   }
 
@@ -663,6 +665,22 @@ export class PgContactStore implements ContactStore {
     );
     const r = res.rows[0];
     return r ? { phone_e164: r.phone_e164, bsuid: r.bsuid, profile_name: r.profile_name, fields: r.fields ?? {} } : null;
+  }
+
+  /**
+   * La fiche d'un contact PROJETÉE pour ce qui sort de chez nous : le système d'un client (un connecteur, la
+   * poussée d'un opt-out, le relais de l'agent de Meta) ou un modèle (`mba_lire_contact`). `null` hors base.
+   *
+   * 🔴 PROJECTION, jamais la ligne brute : le numéro, le BSUID et le statut d'opt-in n'ont rien à faire dans ce
+   * qui part vers un tiers, que personne n'a décidé de leur partager. Le nom, les tags et les champs libres
+   * suffisent. Relue à chaque appel : un bloc qui vient d'écrire un champ doit être vu par le suivant.
+   */
+  async projectionPourTiers(
+    tenantId: string,
+    waId: string,
+  ): Promise<{ nom: string; tags: string[]; champs: Record<string, unknown> } | null> {
+    const etat = await this.getContactStateByWaId(tenantId, waId);
+    return etat ? { nom: etat.name ?? '', tags: etat.tags, champs: etat.fields } : null;
   }
 
   /**
@@ -1212,17 +1230,12 @@ export class PgContactStore implements ContactStore {
       optInStatus?: 'opted_in' | 'opted_out';
     },
   ): Promise<{ contact: ContactRow; addedTags: string[] } | null> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('begin');
+    const ecrit = await enTransaction(this.pool, async (client) => {
       // On lit les tags AVANT dans le verrou déjà pris : ça ne coûte rien de plus et c'est la seule façon de
       // savoir lesquels sont RÉELLEMENT nouveaux. L'ajout est une union, donc reposer un tag déjà présent ne
       // change rien en base : l'annoncer comme « tag ajouté » relancerait un scénario pour un non-événement.
       const exists = await client.query<{ tags: string[] | null }>('select tags from contacts where id = $1 and tenant_id = $2 for update', [contactId, tenantId]);
-      if ((exists.rowCount ?? 0) === 0) {
-        await client.query('rollback');
-        return null;
-      }
+      if ((exists.rowCount ?? 0) === 0) return null;
       if (Object.keys(edits.fields).length > 0) {
         // MERGE : n'écrase que les clés fournies (mise à jour en place d'une valeur = fournir la clé).
         await client.query('update contacts set fields = fields || $3::jsonb, updated_at = now() where id = $1 and tenant_id = $2', [contactId, tenantId, JSON.stringify(edits.fields)]);
@@ -1256,31 +1269,25 @@ export class PgContactStore implements ContactStore {
         await client.query(`update contacts set tags = (select coalesce(array_agg(t), '{}') from unnest(tags) t where t <> all($3::text[])), updated_at = now() where id = $1 and tenant_id = $2`, [contactId, tenantId, edits.removeTags]);
       }
       const res = await client.query(PgContactStore.SELECT_ONE, [contactId, tenantId]);
-      await client.query('commit');
-      const r = res.rows[0];
-      if (!r) return null;
-      const avant = new Set(exists.rows[0]?.tags ?? []);
-      // Le retrait s'applique APRÈS l'ajout dans cette transaction : un tag présent dans addTags ET removeTags
-      // n'est pas sur le contact à la fin. L'annoncer « ajouté » enverrait un message pour un tag inexistant.
-      // On se fie donc à l'état FINAL réellement écrit, pas seulement au snapshot d'avant.
-      const apres = new Set(PgContactStore.rowToContact(r).tags);
-      const contact = PgContactStore.rowToContact(r);
-      // APRÈS le `commit`, jamais dans la transaction : ce qui part vers le système du client ne doit décrire
-      // que ce qui est réellement enregistré chez nous. Annoncer avant, c'est risquer d'annoncer un refus
-      // qu'un `rollback` vient d'annuler.
-      if (edits.optInStatus === 'opted_out') {
-        await this.annoncer(tenantId, [waIdOf(contact.phoneE164, contact.bsuid)]);
-      }
-      return {
-        contact,
-        addedTags: edits.addTags.filter((t) => !avant.has(t) && apres.has(t)),
-      };
-    } catch (err) {
-      await client.query('rollback').catch(() => {});
-      throw err;
-    } finally {
-      client.release();
+      return { avant: exists.rows[0]?.tags ?? [], r: res.rows[0] };
+    });
+    if (ecrit === null || !ecrit.r) return null;
+    const avant = new Set(ecrit.avant);
+    // Le retrait s'applique APRÈS l'ajout dans cette transaction : un tag présent dans addTags ET removeTags
+    // n'est pas sur le contact à la fin. L'annoncer « ajouté » enverrait un message pour un tag inexistant.
+    // On se fie donc à l'état FINAL réellement écrit, pas seulement au snapshot d'avant.
+    const apres = new Set(PgContactStore.rowToContact(ecrit.r).tags);
+    const contact = PgContactStore.rowToContact(ecrit.r);
+    // APRÈS le `commit`, jamais dans la transaction : ce qui part vers le système du client ne doit décrire
+    // que ce qui est réellement enregistré chez nous. Annoncer avant, c'est risquer d'annoncer un refus
+    // qu'un `rollback` vient d'annuler.
+    if (edits.optInStatus === 'opted_out') {
+      await this.annoncer(tenantId, [waIdOf(contact.phoneE164, contact.bsuid)]);
     }
+    return {
+      contact,
+      addedTags: edits.addTags.filter((t) => !avant.has(t) && apres.has(t)),
+    };
   }
 
   /**
@@ -1518,9 +1525,7 @@ export class PgContactStore implements ContactStore {
 
   async purgeMany(tenantId: string, ids: readonly string[]): Promise<{ purges: number; conversations: number; messages: number; analyses: number }> {
     if (ids.length === 0) return { purges: 0, conversations: 0, messages: 0, analyses: 0 };
-    const client = await this.pool.connect();
-    try {
-      await client.query('begin');
+    return enTransaction(this.pool, async (client) => {
       // Numéros des contacts visés, lus AVANT l'anonymisation qui les remplace. Servent au cache RCS, indexé
       // en E.164 (`+33…`) et NON en wa_id : lui passer des chiffres nus ne supprimait rien.
       const cibles = await client.query<{ phone_e164: string | null }>(
@@ -1651,14 +1656,8 @@ export class PgContactStore implements ContactStore {
           where tenant_id = $1 and id = any($2::uuid[]) and anonymized_at is null`,
         [tenantId, ids],
       );
-      await client.query('commit');
       return { purges: res.rowCount ?? 0, conversations: convIds.length, messages, analyses };
-    } catch (err) {
-      await client.query('rollback');
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
   }
 }
 

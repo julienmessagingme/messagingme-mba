@@ -1,6 +1,8 @@
 import type { WebhookEvent } from './parse';
 import { extraireTarif, type TarifsMetaSink } from './tarif-meta';
 import { asRecord } from './json';
+import { tenter } from '../lib/tenter';
+import { messageDe } from '../lib/erreur';
 
 export type DeliveryStatus = 'sent' | 'delivered' | 'read' | 'failed';
 
@@ -174,7 +176,7 @@ export async function processStatuses(
           await tarifs.enregistrer(ev.phoneNumberId, t);
         } catch (err) {
           // eslint-disable-next-line no-console
-          console.error('tarif Meta non enregistré:', err instanceof Error ? err.message : err);
+          console.error('tarif Meta non enregistré:', messageDe(err));
         }
       }
     }
@@ -188,12 +190,7 @@ export async function processStatuses(
      * ⚠️ BEST-EFFORT : une exception ici ferait rejouer tout le job par pg-boss pour un journal.
      */
     if (d.status === 'failed' && touches === 0) {
-      try {
-        await echecsLibres.noter({ messageId: d.messageId, code: d.errorCode, motif: d.error });
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error('échec de message libre non journalisé:', err instanceof Error ? err.message : err);
-      }
+      await tenter('échec de message libre non journalisé:', () => echecsLibres.noter({ messageId: d.messageId, code: d.errorCode, motif: d.error }));
     }
     /**
      * 🔴 TOUS LES STATUTS, PAS SEULEMENT `sent`, ET PAS SEULEMENT LES SUCCÈS. Ce qu'on attend n'est pas une
@@ -207,19 +204,14 @@ export async function processStatuses(
      * re-traiterait des statuts déjà appliqués pour un motif secondaire.
      */
     if (remiseMba) {
-      try {
-        await remiseMba(d.messageId);
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error('remise du fil à l’agent de Meta ignorée:', err instanceof Error ? err.message : err);
-      }
+      await tenter('remise du fil à l’agent de Meta ignorée:', () => remiseMba(d.messageId));
     }
     if (nodeEvents && d.status !== 'sent') {
       try {
         await nodeEvents.recordStatusForMessage(d.messageId, d.status);
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error('mesure de bloc (statut) ignorée:', err instanceof Error ? err.message : err);
+        console.error('mesure de bloc (statut) ignorée:', messageDe(err));
       }
     }
     // 🔴 LES SIGNAUX (spec 2026-09-24, § 8), EN DERNIER ET ISOLÉS : ils ne décident de rien pour la livraison,
@@ -236,7 +228,7 @@ export async function processStatuses(
         });
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error('signal d’accusé ignoré:', err instanceof Error ? err.message : err);
+        console.error('signal d’accusé ignoré:', messageDe(err));
       }
     }
   }

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { ClientGraph } from './graph';
 import { sansPrefixeAct } from './pubs';
 import { STATUT_ACTIF, STATUT_PAUSE } from './pubs-payloads';
+import { messageDe } from '../lib/erreur';
 
 /**
  * CE QUI PARLE À L'API MARKETING DE META POUR PILOTER UNE PUBLICITÉ : la créer, la publier, la mettre en
@@ -354,7 +355,7 @@ export class MetaPubsCreationClient extends ClientGraph {
       return lu.success ? lu.data.access_token : null;
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.warn(`jeton de Page ${pageId} non dérivé, on garde le jeton du client :`, err instanceof Error ? err.message : err);
+      console.warn(`jeton de Page ${pageId} non dérivé, on garde le jeton du client :`, messageDe(err));
       return null;
     }
   }

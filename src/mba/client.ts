@@ -421,12 +421,7 @@ export class MbaClient {
    * @param to Identifiant du consommateur. Convention Cloud API : E.164 SANS `+` ni séparateur.
    */
   async releaseThread(phoneNumberId: string, to: string): Promise<void> {
-    await this.appel<unknown>(
-      'POST',
-      `business/whatsapp/phone_numbers/${phoneNumberId}/thread_control`,
-      { messaging_product: 'whatsapp', action: 'release', to },
-      VERSION_THREAD_CONTROL,
-    );
+    await this.controleDuFil(phoneNumberId, 'release', to);
   }
 
   /**
@@ -449,10 +444,15 @@ export class MbaClient {
    * @param to Identifiant du consommateur. Convention Cloud API : E.164 SANS `+` ni séparateur.
    */
   async takeThread(phoneNumberId: string, to: string): Promise<void> {
+    await this.controleDuFil(phoneNumberId, 'take', to);
+  }
+
+  /** L'appel commun à `releaseThread` et `takeThread` : seule l'action change. */
+  private async controleDuFil(phoneNumberId: string, action: 'release' | 'take', to: string): Promise<void> {
     await this.appel<unknown>(
       'POST',
       `business/whatsapp/phone_numbers/${phoneNumberId}/thread_control`,
-      { messaging_product: 'whatsapp', action: 'take', to },
+      { messaging_product: 'whatsapp', action, to },
       VERSION_THREAD_CONTROL,
     );
   }

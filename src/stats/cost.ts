@@ -49,7 +49,8 @@ export interface CategoryRates {
   currency?: string | null;
 }
 
-const round2 = (x: number): number => Math.round(x * 100) / 100;
+/** Arrondi au centime, le seul du dépôt pour un montant affiché (coûts, séries, bilans). */
+export const round2 = (x: number): number => Math.round(x * 100) / 100;
 
 /**
  * Ce qu'on peut faire d'une catégorie d'envoi : la chiffrer, ou dire POURQUOI on ne peut pas.
@@ -469,6 +470,18 @@ export interface CoutContact {
  * mais pas toujours. Le chiffre est donc un PLANCHER, jamais une facture.
  */
 export function estimerCoutContact(rows: VolumeContactRow[], rates: CategoryRates): CoutContact {
+  return { ...chiffrerVolume(rows, rates), currency: rates.currency ?? null };
+}
+
+/**
+ * Chiffre un VOLUME d'envois (le bilan d'un contact, le lancement et les relances d'une campagne) : combien
+ * sont partis, combien sont chiffrés, et POURQUOI les autres ne le sont pas, par la règle unique `chiffrer`.
+ * `cout` vaut `null` quand AUCUN n'a pu l'être : zéro se lirait « gratuit ».
+ */
+export function chiffrerVolume(
+  rows: ReadonlyArray<{ category: string | null; count: number }>,
+  rates: CategoryRates,
+): Omit<CoutContact, 'currency'> {
   let envoyes = 0, chiffres = 0, cout = 0, sansCategorie = 0, sansTarif = 0;
   for (const r of rows) {
     envoyes += r.count;
@@ -486,7 +499,6 @@ export function estimerCoutContact(rows: VolumeContactRow[], rates: CategoryRate
     nonChiffrables: sansCategorie + sansTarif,
     sansCategorie,
     sansTarif,
-    currency: rates.currency ?? null,
   };
 }
 

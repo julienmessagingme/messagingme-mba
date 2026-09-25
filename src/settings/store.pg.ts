@@ -122,9 +122,27 @@ export interface TenantSettings {
  */
 export type MbaHandoffMode = 'always' | 'business_hours' | 'never';
 
+/**
+ * Les colonnes de `tenant_settings` qu'un setter écrit SEULES. Union FERMÉE, et c'est ce qui rend sûr le nom
+ * de colonne interpolé dans `poser` : aucune valeur venue d'une requête ne peut y entrer.
+ */
+type ColonneReglage =
+  | 'hubspot_actif' | 'mba_relais_cle_id' | 'agents_peuvent_prendre' | 'mention_ia_frequence'
+  | 'optout_request_id' | 'mba_handoff_mode' | 'agent_transfert_mode' | 'timezone' | 'business_hours'
+  | 'mba_enabled' | 'control_handback_seconds' | 'hubspot_lists_enabled';
+
 /** Réglages par tenant (upsert). Toggle MBA on/off + toggle import de listes HubSpot. */
 export class PgTenantSettingsStore {
   constructor(private readonly pool: Pool) {}
+
+  /** Upsert CIBLÉ d'un seul réglage : crée la ligne de l'espace au besoin, n'écrase aucun autre réglage. */
+  private async poser(tenantId: string, colonne: ColonneReglage, valeur: unknown): Promise<void> {
+    await this.pool.query(
+      `insert into tenant_settings (tenant_id, ${colonne}, updated_at) values ($1, $2${colonne === 'business_hours' ? '::jsonb' : ''}, now())
+       on conflict (tenant_id) do update set ${colonne} = excluded.${colonne}, updated_at = now()`,
+      [tenantId, valeur],
+    );
+  }
 
   async get(tenantId: string): Promise<TenantSettings> {
     const res = await this.pool.query<{ mba_enabled: boolean; hubspot_lists_enabled: boolean; campaigns_paused: boolean; auto_retry_enabled: boolean; control_handback_seconds: number | null; timezone: string | null; business_hours: BusinessHours | null; mba_handoff_mode: MbaHandoffMode | null; optout_request_id: string | null; mention_ia_frequence: string | null } & Record<string, unknown>>(
@@ -186,11 +204,7 @@ export class PgTenantSettingsStore {
    * la base, et le lien du portail vit dans le schéma du connecteur.
    */
   async setHubspotActif(tenantId: string, actif: boolean): Promise<void> {
-    await this.pool.query(
-      `insert into tenant_settings (tenant_id, hubspot_actif, updated_at) values ($1, $2, now())
-       on conflict (tenant_id) do update set hubspot_actif = excluded.hubspot_actif, updated_at = now()`,
-      [tenantId, actif],
-    );
+    await this.poser(tenantId, 'hubspot_actif', actif);
   }
 
   /**
@@ -209,11 +223,7 @@ export class PgTenantSettingsStore {
 
   /** Retient la clé posée chez Meta (`null` = aucune). Upsert ciblé : n'écrase aucun autre réglage. */
   async setMbaRelaisCleId(tenantId: string, id: string | null): Promise<void> {
-    await this.pool.query(
-      `insert into tenant_settings (tenant_id, mba_relais_cle_id, updated_at) values ($1, $2, now())
-       on conflict (tenant_id) do update set mba_relais_cle_id = excluded.mba_relais_cle_id, updated_at = now()`,
-      [tenantId, id],
-    );
+    await this.poser(tenantId, 'mba_relais_cle_id', id);
   }
 
   /**
@@ -221,11 +231,7 @@ export class PgTenantSettingsStore {
    * autre réglage.
    */
   async setAgentsPeuventPrendre(tenantId: string, actif: boolean): Promise<void> {
-    await this.pool.query(
-      `insert into tenant_settings (tenant_id, agents_peuvent_prendre, updated_at) values ($1, $2, now())
-       on conflict (tenant_id) do update set agents_peuvent_prendre = excluded.agents_peuvent_prendre, updated_at = now()`,
-      [tenantId, actif],
-    );
+    await this.poser(tenantId, 'agents_peuvent_prendre', actif);
   }
 
   /**
@@ -237,11 +243,7 @@ export class PgTenantSettingsStore {
    * qu'il n'a pas choisi.
    */
   async setMentionIaFrequence(tenantId: string, frequence: FrequenceMentionIa): Promise<void> {
-    await this.pool.query(
-      `insert into tenant_settings (tenant_id, mention_ia_frequence, updated_at) values ($1, $2, now())
-       on conflict (tenant_id) do update set mention_ia_frequence = excluded.mention_ia_frequence, updated_at = now()`,
-      [tenantId, frequence],
-    );
+    await this.poser(tenantId, 'mention_ia_frequence', frequence);
   }
 
   /**
@@ -253,11 +255,7 @@ export class PgTenantSettingsStore {
    * refusée par la clé étrangère plutôt qu'écrite).
    */
   async setOptoutRequestId(tenantId: string, requestId: string | null): Promise<void> {
-    await this.pool.query(
-      `insert into tenant_settings (tenant_id, optout_request_id, updated_at) values ($1, $2, now())
-       on conflict (tenant_id) do update set optout_request_id = excluded.optout_request_id, updated_at = now()`,
-      [tenantId, requestId],
-    );
+    await this.poser(tenantId, 'optout_request_id', requestId);
   }
 
   /**
@@ -265,11 +263,7 @@ export class PgTenantSettingsStore {
    * chez Meta (`handoff.enabled`) est faite par l'appelant, pas ici : ce store ne parle qu'à la base.
    */
   async setMbaHandoffMode(tenantId: string, mode: MbaHandoffMode): Promise<void> {
-    await this.pool.query(
-      `insert into tenant_settings (tenant_id, mba_handoff_mode, updated_at) values ($1, $2, now())
-       on conflict (tenant_id) do update set mba_handoff_mode = excluded.mba_handoff_mode, updated_at = now()`,
-      [tenantId, mode],
-    );
+    await this.poser(tenantId, 'mba_handoff_mode', mode);
   }
 
   /**
@@ -278,37 +272,21 @@ export class PgTenantSettingsStore {
    * ⚠️ Rien n'est écrit chez Meta ici, contrairement à son voisin : ce réglage ne concerne QUE nos agents.
    */
   async setAgentTransfertMode(tenantId: string, mode: ModeTransfert): Promise<void> {
-    await this.pool.query(
-      `insert into tenant_settings (tenant_id, agent_transfert_mode, updated_at) values ($1, $2, now())
-       on conflict (tenant_id) do update set agent_transfert_mode = excluded.agent_transfert_mode, updated_at = now()`,
-      [tenantId, mode],
-    );
+    await this.poser(tenantId, 'agent_transfert_mode', mode);
   }
 
   /** Règle le fuseau IANA du tenant (validé en amont par la route). Upsert ciblé : n'écrase aucun autre réglage. */
   async setTimezone(tenantId: string, timezone: string): Promise<void> {
-    await this.pool.query(
-      `insert into tenant_settings (tenant_id, timezone, updated_at) values ($1, $2, now())
-       on conflict (tenant_id) do update set timezone = excluded.timezone, updated_at = now()`,
-      [tenantId, timezone],
-    );
+    await this.poser(tenantId, 'timezone', timezone);
   }
 
   /** Règle les heures d'ouverture (déjà normalisées par la route). Upsert ciblé. */
   async setBusinessHours(tenantId: string, hours: BusinessHours): Promise<void> {
-    await this.pool.query(
-      `insert into tenant_settings (tenant_id, business_hours, updated_at) values ($1, $2::jsonb, now())
-       on conflict (tenant_id) do update set business_hours = excluded.business_hours, updated_at = now()`,
-      [tenantId, JSON.stringify(hours)],
-    );
+    await this.poser(tenantId, 'business_hours', JSON.stringify(hours));
   }
 
   async setMbaEnabled(tenantId: string, enabled: boolean): Promise<void> {
-    await this.pool.query(
-      `insert into tenant_settings (tenant_id, mba_enabled, updated_at) values ($1, $2, now())
-       on conflict (tenant_id) do update set mba_enabled = excluded.mba_enabled, updated_at = now()`,
-      [tenantId, enabled],
-    );
+    await this.poser(tenantId, 'mba_enabled', enabled);
   }
 
   /**
@@ -316,11 +294,7 @@ export class PgTenantSettingsStore {
    * supprime la reprise automatique. Upsert ciblé : n'écrase aucun autre réglage.
    */
   async setControlHandbackSeconds(tenantId: string, seconds: number | null): Promise<void> {
-    await this.pool.query(
-      `insert into tenant_settings (tenant_id, control_handback_seconds, updated_at) values ($1, $2, now())
-       on conflict (tenant_id) do update set control_handback_seconds = excluded.control_handback_seconds, updated_at = now()`,
-      [tenantId, seconds],
-    );
+    await this.poser(tenantId, 'control_handback_seconds', seconds);
   }
 
   /**
@@ -415,10 +389,6 @@ export class PgTenantSettingsStore {
 
   /** Active/désactive l'import de listes HubSpot. N'ÉCRASE PAS mba_enabled (upsert ciblé sur la colonne). */
   async setHubspotListsEnabled(tenantId: string, enabled: boolean): Promise<void> {
-    await this.pool.query(
-      `insert into tenant_settings (tenant_id, hubspot_lists_enabled, updated_at) values ($1, $2, now())
-       on conflict (tenant_id) do update set hubspot_lists_enabled = excluded.hubspot_lists_enabled, updated_at = now()`,
-      [tenantId, enabled],
-    );
+    await this.poser(tenantId, 'hubspot_lists_enabled', enabled);
   }
 }

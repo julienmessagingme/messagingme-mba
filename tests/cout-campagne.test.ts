@@ -195,3 +195,13 @@ describe('assemblerDetailCampagne — les étapes du scénario', () => {
     expect(d.etapes[0]!.interactions).toBe(5);
   });
 });
+
+describe('assemblerDetailCampagne : une part nulle ou négative ne compte pas', () => {
+  it('⚠️ un lancement plus grand que le total (donnée incohérente) ne fabrique pas de relances négatives', () => {
+    // `relances = total - lancement` : une part négative n'est ni un envoi ni un coût, elle est écartée
+    // AVANT le chiffrage (audit ponytail du 2026-09-25, le chiffrage est désormais celui de `cost.ts`).
+    const d = fiche({ envois: [{ category: 'marketing', total: 3, lancement: 5 }, { category: null, total: 0, lancement: 2 }] });
+    expect(d.relances).toEqual({ envoyes: 0, cout: null, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0 });
+    expect(d.lancement).toMatchObject({ envoyes: 7, nonChiffrables: 2, sansCategorie: 2, sansTarif: 0 });
+  });
+});

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { renderBrandedEmail, renderInvitationEmail, escapeHtml } from '../src/support/email-templates';
+import { renderBrandedEmail, renderInvitationEmail } from '../src/support/email-templates';
+import { escapeHtml } from '../src/crm/render';
 
 describe('escapeHtml', () => {
   it('échappe les caractères dangereux', () => {

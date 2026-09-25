@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import { matchWaIdPredicat } from '../crm/contact-store.pg';
 import { STATS_TZ } from '../stats/range';
 import type { ErreurLivraison, FiltreErreurs } from '../ops/erreurs-livraison.pg';
+import { messageDe } from '../lib/erreur';
 
 /**
  * LES ÉCHECS DE LIVRAISON DES MESSAGES LIBRES (spec 2026-09-24, § 5, migration 0175, « défaut 4 »).
@@ -190,7 +191,7 @@ export class PgEchecsMessagesStore {
       }));
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('erreurs-livraison: lecture des échecs de messages libres impossible (migration 0175 passée ?):', err instanceof Error ? err.message : err);
+      console.error('erreurs-livraison: lecture des échecs de messages libres impossible (migration 0175 passée ?):', messageDe(err));
       return [];
     }
   }

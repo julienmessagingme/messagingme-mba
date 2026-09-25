@@ -1,5 +1,6 @@
-import { MetaApiError, type MetaErrorBody } from './errors';
+import { MetaApiError } from './errors';
 import type { FetchLike } from './templates';
+import { appelGraph } from './graph';
 
 /**
  * Ajout et vérification d'un numéro sur un WABA, DE BOUT EN BOUT PAR API, sans la popup.
@@ -30,13 +31,11 @@ export class MetaPhoneRegisterClient {
   ) {}
 
   private async post(path: string, body: Record<string, string>): Promise<Record<string, unknown>> {
-    const res = await this.fetchImpl(`${this.baseUrl}/${this.version}/${path}`, {
+    const json = (await appelGraph(this.fetchImpl, this.token, `${this.baseUrl}/${this.version}/${path}`, {
       method: 'POST',
-      headers: { authorization: `Bearer ${this.token}`, 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
-    });
-    const json = (await res.json().catch(() => null)) as ({ error?: MetaErrorBody } & Record<string, unknown>) | null;
-    if (!res.ok) throw new MetaApiError(res.status, json?.error ?? null);
+    })) as Record<string, unknown> | null;
     return json ?? {};
   }
 

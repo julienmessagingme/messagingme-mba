@@ -1,6 +1,7 @@
 import type { RcsOutbound } from '../rcs/types';
 import { destinationsTracables, appliquerLiensRcs } from './rcs-liens';
 import { lienPourContact } from './rewrite';
+import { messageDe } from '../lib/erreur';
 
 /**
  * Remplace les liens d'un message RCS par nos adresses de redirection, juste avant l'envoi.
@@ -80,7 +81,7 @@ export class TraceurLiensRcs {
       } catch (err) {
         // Nommée, jamais fatale : un lien non tracé est une mesure perdue, pas un message perdu.
         // eslint-disable-next-line no-console
-        console.error(`RCS ${tenantId}: lien non tracé (${destination}):`, err instanceof Error ? err.message : err);
+        console.error(`RCS ${tenantId}: lien non tracé (${destination}):`, messageDe(err));
       }
     }
     return appliquerLiensRcs(msg, liens);

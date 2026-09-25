@@ -1,3 +1,4 @@
+import { texteDe } from '../lib/erreur';
 /**
  * Le « cerveau » d'un tour d'agent : ce qui transforme un historique de conversation en une décision.
  *
@@ -31,7 +32,7 @@ export interface UsageTour {
  */
 export class TourInterrompu extends Error {
   constructor(readonly erreur: unknown, readonly usage: UsageTour) {
-    super(erreur instanceof Error ? erreur.message : String(erreur));
+    super(texteDe(erreur));
     this.name = 'TourInterrompu';
   }
 }

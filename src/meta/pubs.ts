@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ClientGraph } from './graph';
+import { messageDe } from '../lib/erreur';
 
 /**
  * CLIENT GRAPH DES PUBLICITÉS CLICK-TO-WHATSAPP (lot 2, « Connecter »).
@@ -202,7 +203,7 @@ export class MetaPubsClient extends ClientGraph {
       return lu.success ? lu.data.campaign_id ?? null : null;
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.warn(`campagne de la publicité ${adId} non résolue (plafond ${DELAI_RESOLUTION_PUB_MS} ms) :`, err instanceof Error ? err.message : err);
+      console.warn(`campagne de la publicité ${adId} non résolue (plafond ${DELAI_RESOLUTION_PUB_MS} ms) :`, messageDe(err));
       return null;
     }
   }

@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { enTransaction } from '../db/transaction';
 import { sha256Hex } from '../lib/signature';
 import { newWebhookCode } from '../ids/code';
 import { coerceMapping } from './mapping';
@@ -209,9 +210,7 @@ export class PgWebhookStore {
 
   /** Crée un webhook et, s'il porte un scénario, sa ligne compagnon. Renvoie le code public à coller chez le tiers. */
   async create(tenantId: string, input: WebhookInput): Promise<{ id: string; code: string }> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('begin');
+    return enTransaction(this.pool, async (client) => {
       const code = newWebhookCode();
       const res = await client.query<{ id: string }>(
         `insert into webhooks (tenant_id, name, enabled, code, mapping, create_contact, opt_in)
@@ -220,41 +219,27 @@ export class PgWebhookStore {
       );
       const id = res.rows[0]!.id;
       await this.syncAutomation(client, tenantId, id, null, input);
-      await client.query('commit');
       return { id, code };
-    } catch (err) {
-      await client.query('rollback');
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   /** Met à jour un webhook et réaligne sa ligne compagnon. false = webhook inconnu dans cet espace. */
   async update(tenantId: string, id: string, input: WebhookInput): Promise<boolean> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('begin');
+    return enTransaction(this.pool, async (client) => {
       const actuel = await client.query<{ automation_id: string | null }>(
         `select automation_id from webhooks where tenant_id = $1 and id = $2 for update`,
         [tenantId, id],
       );
       const ligne = actuel.rows[0];
-      if (!ligne) { await client.query('rollback'); return false; }
+      if (!ligne) return false;
       await client.query(
         `update webhooks set name = $3, enabled = $4, mapping = $5::jsonb, create_contact = $6, opt_in = $7, updated_at = now()
           where tenant_id = $1 and id = $2`,
         [tenantId, id, input.name, input.enabled, JSON.stringify(input.mapping), input.createContact, input.optIn],
       );
       await this.syncAutomation(client, tenantId, id, ligne.automation_id, input);
-      await client.query('commit');
       return true;
-    } catch (err) {
-      await client.query('rollback');
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   /**
@@ -305,26 +290,18 @@ export class PgWebhookStore {
 
   /** Supprime le webhook. La ligne compagnon part avec lui : sans son webhook, elle ne peut plus se déclencher. */
   async remove(tenantId: string, id: string): Promise<boolean> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('begin');
+    return enTransaction(this.pool, async (client) => {
       const res = await client.query<{ automation_id: string | null }>(
         `delete from webhooks where tenant_id = $1 and id = $2 returning automation_id`,
         [tenantId, id],
       );
       const ligne = res.rows[0];
-      if (!ligne) { await client.query('rollback'); return false; }
+      if (!ligne) return false;
       if (ligne.automation_id !== null) {
         await client.query(`delete from automations where id = $1 and tenant_id = $2`, [ligne.automation_id, tenantId]);
       }
-      await client.query('commit');
       return true;
-    } catch (err) {
-      await client.query('rollback');
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   /**

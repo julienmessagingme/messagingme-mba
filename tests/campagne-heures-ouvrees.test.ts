@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { runCampaign } from '../src/campaign/engine';
-import type { MessageSender, RecipientStore, CampaignStore, QualityProvider, EngineDeps } from '../src/campaign/engine';
+import { lancerCampagne, type DepsMoteurDeTest } from './campagne-canaux';
+import type { MessageSender, RecipientStore, CampaignStore, QualityProvider } from '../src/campaign/engine';
 import { messageDePause } from '../src/campaign/pause';
 import type { MotifDePause } from '../src/campaign/pause';
 import type { Campaign, Recipient, QualityRating } from '../src/campaign/types';
@@ -73,7 +73,7 @@ const campagne = (over: Partial<Campaign> = {}): Campaign => ({
 });
 const rec = (id: string, to: string): Recipient => ({ id, contactId: `ct-${id}`, toE164: to, resolvedParams: ['X'], status: 'pending' });
 
-function deps(over: Partial<EngineDeps> & { recipients: RecipientStore }, maintenant: number): EngineDeps {
+function deps(over: Partial<DepsMoteurDeTest> & { recipients: RecipientStore }, maintenant: number): DepsMoteurDeTest {
   return {
     sender: new Sender(), campaigns: new Campaigns(), quality: new Qualite(),
     now: () => maintenant,
@@ -89,7 +89,7 @@ describe('campagne « uniquement pendant les heures ouvrées »', () => {
     const sender = new Sender();
     const recipients = new Recipients([rec('r1', '+33611'), rec('r2', '+33622')]);
     const campaigns = new Campaigns();
-    const report = await runCampaign(campagne({ businessHoursOnly: true }), deps({ recipients, sender, campaigns }, FERME_23H));
+    const report = await lancerCampagne(campagne({ businessHoursOnly: true }), deps({ recipients, sender, campaigns }, FERME_23H));
 
     expect(sender.envoyes).toEqual([]);
     expect(recipients.claimed).toEqual([]); // aucun destinataire RÉSERVÉ : ils restent tous `pending`
@@ -116,7 +116,7 @@ describe('campagne « uniquement pendant les heures ouvrées »', () => {
     const sender = new SenderQuiFerme();
     const recipients = new Recipients([rec('r1', '+33611'), rec('r2', '+33622'), rec('r3', '+33633')]);
     const campaigns = new Campaigns();
-    const report = await runCampaign(
+    const report = await lancerCampagne(
       campagne({ businessHoursOnly: true }),
       deps({ recipients, sender, campaigns, now: () => heure }, OUVERT),
     );
@@ -133,7 +133,7 @@ describe('campagne « uniquement pendant les heures ouvrées »', () => {
     const sender = new Sender();
     const recipients = new Recipients([rec('r1', '+33611')]);
     const campaigns = new Campaigns();
-    const report = await runCampaign(campagne({ businessHoursOnly: false }), deps({ recipients, sender, campaigns }, FERME_23H));
+    const report = await lancerCampagne(campagne({ businessHoursOnly: false }), deps({ recipients, sender, campaigns }, FERME_23H));
 
     expect(sender.envoyes).toEqual(['+33611']);
     expect(report.sent).toBe(1);
@@ -145,7 +145,7 @@ describe('campagne « uniquement pendant les heures ouvrées »', () => {
     const sender = new Sender();
     const recipients = new Recipients([rec('r1', '+33611')]);
     const campaigns = new Campaigns();
-    const report = await runCampaign(campagne({ businessHoursOnly: true }), deps({ recipients, sender, campaigns }, OUVERT));
+    const report = await lancerCampagne(campagne({ businessHoursOnly: true }), deps({ recipients, sender, campaigns }, OUVERT));
 
     expect(sender.envoyes).toEqual(['+33611']);
     expect(report.sent).toBe(1);
@@ -159,7 +159,7 @@ describe('campagne « uniquement pendant les heures ouvrées »', () => {
     const sender = new Sender();
     const recipients = new Recipients([rec('r1', '+33611')]);
     const campaigns = new Campaigns();
-    const report = await runCampaign(
+    const report = await lancerCampagne(
       campagne({ businessHoursOnly: true }),
       deps({ recipients, sender, campaigns, horairesOuvres: async () => ({ timeZone: PARIS, businessHours: tousFermes }) }, OUVERT),
     );
@@ -174,7 +174,7 @@ describe('campagne « uniquement pendant les heures ouvrées »', () => {
     // retenir un envoi que le client a lancé : on ne contraint alors rien, plutôt que de tout bloquer.
     const sender = new Sender();
     const recipients = new Recipients([rec('r1', '+33611')]);
-    const report = await runCampaign(
+    const report = await lancerCampagne(
       campagne({ businessHoursOnly: true }),
       deps({ recipients, sender, horairesOuvres: async () => { throw new Error('base indisponible'); } }, FERME_23H),
     );
@@ -187,7 +187,7 @@ describe('campagne « uniquement pendant les heures ouvrées »', () => {
     const recipients = new Recipients([rec('r1', '+33611')]);
     const d = deps({ recipients, sender }, FERME_23H);
     delete d.horairesOuvres;
-    const report = await runCampaign(campagne({ businessHoursOnly: true }), d);
+    const report = await lancerCampagne(campagne({ businessHoursOnly: true }), d);
     expect(report.sent).toBe(1);
   });
 });

@@ -10,8 +10,8 @@ import { Reachability } from '../src/rcs/reachability';
 import type { ReachabilityStore } from '../src/rcs/reachability';
 import { FakeRcsProvider } from '../src/rcs/fake';
 import { makeCampaignSender } from '../src/campaign/sender';
-import { runCampaign } from '../src/campaign/engine';
-import type { EngineDeps, RecipientStore, CampaignStore } from '../src/campaign/engine';
+import { lancerCampagne, type DepsMoteurDeTest } from './campagne-canaux';
+import type { RecipientStore, CampaignStore } from '../src/campaign/engine';
 import type { Campaign, Recipient } from '../src/campaign/types';
 import type { RcsOutbound } from '../src/rcs/types';
 
@@ -291,7 +291,7 @@ class FakeCampaigns implements CampaignStore {
   async setStatus(): Promise<void> {}
 }
 
-function deps(over: Partial<EngineDeps> & { recipients: RecipientStore }): EngineDeps {
+function deps(over: Partial<DepsMoteurDeTest> & { recipients: RecipientStore }): DepsMoteurDeTest {
   return {
     sender: {
       sendMarketing: async () => { throw new Error('sender Meta interdit sur une campagne RCS'); },
@@ -319,7 +319,7 @@ describe('une campagne RCS attribue les clics de ses liens', () => {
 
   it('🔴 chaque destinataire reçoit SON jeton dans le lien', async () => {
     const { provider, channelSender } = campagneRcs(avecLien);
-    await runCampaign(campagne, deps({
+    await lancerCampagne(campagne, deps({
       recipients: new FakeRecipients([rec('r1', '+33600000001'), rec('r2', '+33600000002')]),
       channelSender,
       jetonsPourContacts: async () => new Map([['ct-r1', 'jetonPourR1xxxx'], ['ct-r2', 'jetonPourR2xxxx']]),
@@ -332,7 +332,7 @@ describe('une campagne RCS attribue les clics de ses liens', () => {
     // Une lecture par destinataire ferait de l'attribution un coût proportionnel à la taille de la campagne.
     const { channelSender } = campagneRcs(avecLien);
     let lectures = 0;
-    await runCampaign(campagne, deps({
+    await lancerCampagne(campagne, deps({
       recipients: new FakeRecipients([rec('r1', '+33600000001'), rec('r2', '+33600000002'), rec('r3', '+33600000003')]),
       channelSender,
       jetonsPourContacts: async () => { lectures++; return new Map(); },
@@ -344,7 +344,7 @@ describe('une campagne RCS attribue les clics de ses liens', () => {
     // On ne crée pas d'identifiants publics pour des gens à qui on n'envoie rien à cliquer.
     const { channelSender } = campagneRcs({ kind: 'text', text: 'Offre' });
     let lectures = 0;
-    await runCampaign(campagne, deps({
+    await lancerCampagne(campagne, deps({
       recipients: new FakeRecipients([rec('r1', '+33600000001')]),
       channelSender,
       jetonsPourContacts: async () => { lectures++; return new Map(); },
@@ -355,7 +355,7 @@ describe('une campagne RCS attribue les clics de ses liens', () => {
 
   it('un chargement de jetons EN ÉCHEC laisse partir la campagne, liens tracés mais anonymes', async () => {
     const { provider, channelSender } = campagneRcs(avecLien);
-    const report = await runCampaign(campagne, deps({
+    const report = await lancerCampagne(campagne, deps({
       recipients: new FakeRecipients([rec('r1', '+33600000001')]),
       channelSender,
       jetonsPourContacts: async () => { throw new Error('base indisponible'); },
@@ -367,7 +367,7 @@ describe('une campagne RCS attribue les clics de ses liens', () => {
 
   it('un contact inconnu part avec un lien tracé mais sans jeton', async () => {
     const { provider, channelSender } = campagneRcs(avecLien);
-    await runCampaign(campagne, deps({
+    await lancerCampagne(campagne, deps({
       recipients: new FakeRecipients([rec('r1', '+33600000001')]),
       channelSender,
       jetonsPourContacts: async () => new Map(),

@@ -1,4 +1,5 @@
 import { extractInbound } from './inbound';
+import { messageDe } from '../lib/erreur';
 
 /**
  * L'AGENT DE META REPREND LA MAIN QUAND UN CLIENT REVIENT ET QUE PERSONNE NE SUIT (2026-09-15).
@@ -59,7 +60,7 @@ export async function processRemiseMbaEntrant(
       if (tenantId) await deps.remettre(tenantId, m.waId);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('processRemiseMbaEntrant: remise ignorée:', err instanceof Error ? err.message : err);
+      console.error('processRemiseMbaEntrant: remise ignorée:', messageDe(err));
     }
   }
 }

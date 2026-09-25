@@ -60,7 +60,7 @@ import { fabriquerJeton } from './links/jeton-contact';
 import { newTrackingCode } from './ids/code';
 import type { AuditSink } from './audit/journal';
 import { resolveScenario, resolveNode } from './ids/resolve';
-import { enqueueCampaignRun } from './campaign/enqueue';
+import { relanceurDeCampagnes } from './campaign/enqueue';
 import { creerAnnonceOptOut, FILE_POUSSEE_OPTOUT } from './crm/poussee-optout';
 import { PgIntegrationBatchStore } from './signaux/integration-batch.pg';
 import {
@@ -68,7 +68,7 @@ import {
   DUREE_CACHE_ESPACES_ACTIFS_MS,
 } from './signaux/emetteur';
 import { FILE_SIGNAUX_BATCH } from './signaux/batch';
-import { plafondLePlusBas, resolveRatePerMinute } from './campaign/pacing';
+import { plafondLePlusBas } from './campaign/pacing';
 import { fetchHubspotLists, importHubspotList, disconnectHubspot, fetchHubspotDealStages } from './crm/hubspot-service';
 import { PgTemplateHintStore } from './crm/template-hints.pg';
 import { MetaMediaClient } from './meta/media';
@@ -134,12 +134,12 @@ import { PgTraductionStore } from './traduction/traduire.pg';
 import { traduireFil } from './traduction/fil';
 import { PgToolCatalog, PgJournalAppels } from './agent/catalog.pg';
 import { creerAppelConnecteur } from './agent/resolvers/http';
-import { lireContexteAgent } from './agent/contexte';
-import { equipePourPrompt, MODE_TRANSFERT_DEFAUT } from './agent/disponibilite-equipe';
+import { lireContexteAvecReglages } from './agent/contexte';
 import { PgCreditStore } from './agent/credits.pg';
 import { PgCleGatewayStore } from './agent/cles-gateway.pg';
 import { transcrireMessage } from './inbox/transcrire';
 import { lireMediaRecu } from './inbox/media-entrant';
+import type { DepsRepondre } from './inbox/repondre';
 import { assurerCleGateway, remonterPlafondApresRecharge, revoquerCleGateway, type DepsProvisionCle } from './agent/provisionner-cle';
 import { encryptSecret, decryptSecret } from './crypto/secretbox';
 import { MetaPubsClient, sansPrefixeAct, retirerAncienAcces, type EtatComptePub } from './meta/pubs';
@@ -186,6 +186,8 @@ import type { CountryCode } from 'libphonenumber-js';
 import { handlerMaison } from './agent/outils-maison';
 import type { PricingSummary } from './meta/pricing';
 import type { TemplateSummary } from './meta/templates';
+import { tenter } from './lib/tenter';
+import { messageDe } from './lib/erreur';
 
 async function main(): Promise<void> {
   /**
@@ -207,7 +209,7 @@ async function main(): Promise<void> {
   // Un event `error` de pg-boss non capté est une exception non gérée qui tue l'API. On le journalise
   // et on laisse tourner : une saturation ponctuelle du pooler ne doit pas coûter un redémarrage.
   // eslint-disable-next-line no-console
-  queue.onError((err) => console.error('[pg-boss:api]', err instanceof Error ? err.message : err));
+  queue.onError((err) => console.error('[pg-boss:api]', messageDe(err)));
   await queue.start();
 
   const repo = new PgCampaignRepo(pool);
@@ -719,6 +721,59 @@ async function main(): Promise<void> {
     maintenant: () => Date.now(),
   };
 
+  /**
+   * LES DÉPENDANCES DE `repondreDansLaFenetre`, branchées UNE fois pour ses trois appelants : la réponse de
+   * l'Inbox, `POST /v1/messages/whatsapp` et le serveur MCP (audit ponytail du 2026-09-25 : trois copies).
+   * Une garde qui change (la fenêtre de 24 h, le désabonnement, la prise du fil) change pour les trois d'un coup.
+   * `satisfies` porte le contrôle des clés en trop ICI, parce qu'il ne traverse pas les spreads qui suivent.
+   */
+  const depsRepondre = {
+    getConversationContext: (id: string, tenant: string) => inboxStore.getConversationContext(id, tenant),
+    getTenantPhoneNumberId: (tenant: string) => repo.getTenantPhoneNumberId(tenant),
+    sendReply: async (tenant: string, phoneNumberId: string, to: string, text: string) => {
+      const client = await metaFactory.clientForTenant(tenant, phoneNumberId); // token PAR TENANT (B1), repli global en sommeil
+      return (await client.sendText(to, text)).messageId;
+    },
+    /**
+     * 🔴 CE COMMENTAIRE A AFFIRME « BRANCHEE ICI ET NULLE PART AILLEURS » ET C ETAIT FAUX, avant meme le
+     * lot 7 (corrige le 2026-09-23). Il disait que l exemption de l operateur tenait a l ABSENCE de
+     * cette dependance sur le cablage de la console, « rendue structurelle ». Or elle y est branchee
+     * depuis que l envoi de MODELE depuis l Inbox en a eu besoin, et le type l exige partout depuis le
+     * 2026-09-15.
+     *
+     * Ce qui exempte l operateur est la CONDITION, dans `repondreDansLaFenetre` : la garde ne se pose
+     * que sur une origine machine. Une justification fausse est pire qu aucune parce qu elle se
+     * recopie, et celle-ci l avait deja ete dans `todo.md`.
+     */
+    estDesabonne: (tenant: string, waId: string) => contactStore.estDesabonneParWaId(tenant, waId),
+    // ⚠️ `redaction` EST TRANSMISE, et l'oublier ne casserait RIEN de visible : une fleche a neuf
+    // parametres reste assignable a un contrat qui en declare dix, et la redaction d'origine
+    // partirait simplement a la poubelle. C'est exactement le defaut que ce cablage portait deja sur
+    // le curseur du delta de l'Inbox.
+    recordOutbound: (...[id, body, msgId, origine, type, cat, name, sender, canal, redaction]: Parameters<DepsRepondre['recordOutbound']>) =>
+      inboxStore.recordOutbound(id, body, msgId, origine, type, cat, name, sender, canal, redaction),
+    /**
+     * Qui écrit prend le fil : le scénario cesse d'avancer TOUT SEUL sur ce contact et MBA cesse de répondre.
+     *
+     * 🔴 ÉCRIRE SUFFIT, ET C'EST MESURÉ (2026-09-10) : après une réponse depuis l'Inbox pendant que l'agent
+     * de Meta tenait le fil, l'entrant suivant est arrivé en `field: "messages"` et non plus en `standby`.
+     * Meta le dit aussi en toutes lettres, « Sending a message to a conversation takes control implicitly ».
+     * ⚠️ CE COMMENTAIRE A AJOUTÉ « Meta n'a AUCUNE action `take` », ET C'ÉTAIT FAUX (corrigé le 2026-09-11).
+     * L'action existe depuis le 2026-08-13 ; c'est le corpus OpenAPI TÉLÉCHARGÉ qui ne la connaît pas. Elle
+     * est câblée sur le bouton « Reprendre la main » (`prendreLeFil`, dans l'Inbox). Ici, rien à changer : sur
+     * un chemin d'ENVOI, l'appel serait une redondance payante.
+     * ⚠️ Une CAMPAGNE, elle, part quand même : elle est déclenchée par un opérateur, donc c'est un humain qui a
+     * la main, et elle REPREND la conduite du fil (`ignoreHumanControl`). Le contraire a été écrit ici pendant
+     * des semaines, cf. `tests/campagne-controle-humain.test.ts`.
+     *
+     * ⚠️ `app_human` AUSSI pour une machine (l'API publique, un agent tiers par MCP), et c'est un choix :
+     * `ControlOwner` n'a que trois valeurs, et ce qui compte est que le scénario cesse d'avancer tout seul et
+     * que l'agent de Meta cesse de répondre, ce que cette valeur produit exactement. QUI a parlé est porté par
+     * l'ORIGINE du message (`api`, 0166 ; `mcp`, 0101), là où ça ne coûte aucune migration du chemin chaud.
+     */
+    takeControl: async (tenant: string, waId: string) => { await inboxStore.setControlOwner(tenant, waId, 'app_human'); },
+  } satisfies DepsRepondre;
+
   const app = buildServer({
     /**
      * 🔴 SURVEILLANCE DE `/ops` (décision de Julien, 2026-09-03). `/ops` ouvre la lecture de toutes les
@@ -923,6 +978,8 @@ async function main(): Promise<void> {
       },
     },
     inbox: {
+      // Les six dépendances de la RÉPONSE (fenêtre, désabonnement, envoi, trace, prise du fil) : `depsRepondre`.
+      ...depsRepondre,
       listConversations: (tenant, opts) => inboxStore.listConversations(tenant, opts),
       // « Ouvrir la conversation » depuis la fiche d un contact du mini-CRM : trouve le fil, ou le cree.
       ouvrirConversationDuContact: (tenant, contactId) => inboxStore.ouvrirConversationDuContact(tenant, contactId),
@@ -992,7 +1049,6 @@ async function main(): Promise<void> {
       prendreSiLibre: (tenant, id, userId) => inboxStore.prendreSiLibre(tenant, id, userId),
       agentsPeuventPrendre: async (tenant) => (await settingsStore.get(tenant)).agentsPeuventPrendre,
       membresPourAffectation: (tenant) => inboxStore.membresPourAffectation(tenant),
-      getConversationContext: (id, tenant) => inboxStore.getConversationContext(id, tenant),
       getMessages: (id, apres) => inboxStore.getMessages(id, apres),
       /**
        * LA TRADUCTION DES CONVERSATIONS (migration 0137).
@@ -1013,11 +1069,6 @@ async function main(): Promise<void> {
         traduireSortant: (tenant: string, texte: string, cible: LangueConsole) => traducteur.traduire(tenant, texte, cible),
         traductionDisponible: (tenant: string) => traducteur.disponible(tenant),
       } : {}),
-      // ⚠️ `redaction` EST TRANSMISE, et l'oublier ne casserait RIEN de visible : une fleche a neuf
-      // parametres reste assignable a un contrat qui en declare dix, et la redaction d'origine
-      // partirait simplement a la poubelle. C'est exactement le defaut que ce cablage portait deja sur
-      // le curseur du delta, juste au-dessus.
-      recordOutbound: (id, body, msgId, origine, type, cat, name, sender, canal, redaction) => inboxStore.recordOutbound(id, body, msgId, origine, type, cat, name, sender, canal, redaction),
       /**
        * Variables d'un template résolues sur la fiche du contact ouvert, avec le libellé du champ qui les
        * alimente. MÊME résolution que l'envoi réel (`resolveHintParams` + les indices posés à la création du
@@ -1050,16 +1101,6 @@ async function main(): Promise<void> {
         const issue = await envoyerRcsLibre(depsRcsLibre, tenant, waId, contenu, 'humain');
         return 'refus' in issue ? { refus: phraseOperateur(issue.refus) } : issue;
       },
-      // Un opérateur qui écrit prend le fil : le scénario cesse d'avancer TOUT SEUL sur ce contact et MBA cesse de répondre.
-      // 🔴 ÉCRIRE SUFFIT, ET C'EST MESURÉ (2026-09-10) : après une réponse depuis l'Inbox pendant que l'agent
-      // de Meta tenait le fil, l'entrant suivant est arrivé en `field: "messages"` et non plus en `standby`.
-      // Meta le dit aussi en toutes lettres, « Sending a message to a conversation takes control implicitly ».
-      // ⚠️ CE COMMENTAIRE A AJOUTÉ « Meta n'a AUCUNE action `take` », ET C'ÉTAIT FAUX (corrigé le 2026-09-11).
-      // L'action existe depuis le 2026-08-13 ; c'est le corpus OpenAPI TÉLÉCHARGÉ qui ne la connaît pas. Elle
-      // est désormais câblée sur le bouton « Reprendre la main » (`prendreLeFil`, juste en dessous). Ici,
-      // rien à changer : sur un chemin d'ENVOI, l'appel serait une redondance payante.
-      // ⚠️ Une CAMPAGNE, elle, part quand même : elle est déclenchée par un opérateur, donc c'est un humain qui a la main, et elle REPREND la conduite du fil (`ignoreHumanControl`). Le contraire a été écrit ici pendant des semaines, cf. `tests/campagne-controle-humain.test.ts`.
-      takeControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human'); },
       /**
        * Le bouton « Reprendre la main » : il PREND le fil chez Meta avant de toucher notre état local.
        *
@@ -1146,11 +1187,6 @@ async function main(): Promise<void> {
       startWorkflow: (tenant, workflowId, waId, windowOpen) => lancerScenarioPourContact(tenant, workflowId, waId, windowOpen),
       countUnread: (tenant, acteur) => inboxStore.countUnread(tenant, acteur),
       markConversationRead: (tenant, conversationId) => inboxStore.markConversationRead(tenant, conversationId),
-      getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
-      sendReply: async (tenant, phoneNumberId, to, text) => {
-        const client = await metaFactory.clientForTenant(tenant, phoneNumberId); // token PAR TENANT (B1), repli global en sommeil
-        return (await client.sendText(to, text)).messageId;
-      },
       sendTemplateMessage: async (tenant, phoneNumberId, to, tpl) => {
         const client = await metaFactory.clientForTenant(tenant, phoneNumberId); // token PAR TENANT (B1), repli global en sommeil
         const components = buildTemplateComponents({
@@ -1174,8 +1210,9 @@ async function main(): Promise<void> {
        *
        * ⚠️ `templateVarInfo` est la MEME lecture que le worker, avec son cache court : le cas ou la
        * question se pose (un contact desabonne) ne paie donc quasiment jamais un appel a Meta.
+       *
+       * Le statut du contact, c'est `estDesabonne`, branché par `depsRepondre` (spread en tête de ce bloc).
        */
-      estDesabonne: (tenant, waId) => contactStore.estDesabonneParWaId(tenant, waId),
       categorieDuModele: async (tenant, name, language) => {
         const cat = (await workflowRuntime.templateVarInfo(tenant, name, language))?.category;
         return cat === 'utility' ? 'utility' : cat === 'marketing' ? 'marketing' : null;
@@ -1442,7 +1479,7 @@ async function main(): Promise<void> {
             }
           } catch (err) {
             // eslint-disable-next-line no-console
-            console.error('clics attribues a la campagne ignores:', err instanceof Error ? err.message : err);
+            console.error('clics attribues a la campagne ignores:', messageDe(err));
           }
         }
         return assemblerDetailCampagne({
@@ -1484,7 +1521,7 @@ async function main(): Promise<void> {
           ];
         } catch (err) {
           // eslint-disable-next-line no-console
-          console.error('mesures de clics ignorées:', err instanceof Error ? err.message : err);
+          console.error('mesures de clics ignorées:', messageDe(err));
           return evenements;
         }
       },
@@ -1902,27 +1939,7 @@ async function main(): Promise<void> {
           completer: (i) => gateway.completer(i),
           // Point de lecture PARTAGE avec le tour de production : c est ce qui garantit que le bac a sable
           // montre exactement ce que la production ferait, modele et politiques compris.
-          contexte: async (tenant, agentId) => {
-          /**
-           * ⚠️ UNE SEULE LECTURE DES RÉGLAGES POUR LES DEUX POLITIQUES D'ESPACE. Cette fonction est sur le
-           * chemin de CHAQUE tour d'agent : deux `get` y feraient deux allers-retours pour la même ligne,
-           * et la seconde politique est arrivée le 2026-09-18 à côté de la première.
-           */
-          const reglages = await settingsStore.get(tenant);
-          return lireContexteAgent({
-            agents: agentStore,
-            outils: toolCatalog,
-            politiqueMentionIa: async () => reglages.mentionIaFrequence,
-            // L'heure est prise ICI, au moment du tour : une disponibilité calculée plus tôt serait fausse
-            // sur une conversation qui traverse l'heure de fermeture.
-            disponibiliteEquipe: async () => equipePourPrompt(
-              reglages.agentTransfertMode ?? MODE_TRANSFERT_DEFAUT,
-              new Date(),
-              reglages.timezone,
-              reglages.businessHours,
-            ),
-          }, tenant, agentId);
-        },
+          contexte: (tenant, agentId) => lireContexteAvecReglages({ agents: agentStore, outils: toolCatalog, reglages: settingsStore }, tenant, agentId),
           // Meme taux qu en production : un essai doit annoncer ce que la conversation couterait vraiment.
           tauxEurParDollar: config.EUR_PER_USD,
           outils: {
@@ -2007,9 +2024,8 @@ async function main(): Promise<void> {
     // routes d agent parce qu elle ne parle pas du meme objet, et isolee par `scopeTenant` et non par un
     // agent dans l URL : une definition appartient a l espace.
     // La bibliothèque ne porte plus que la lecture : les routes de l'agent de Meta sont dans `mbaOutils`.
-    agentCatalogue: {
-      listCatalogue: (tenant) => toolCatalog.listCatalogue(tenant),
-    },
+    // Le catalogue lui-même : la route n'en appelle que `listCatalogue`, en méthode.
+    agentCatalogue: toolCatalog,
     /**
      * L'ONGLET « OUTILS » DE L'AGENT DE META (spec 2026-09-21-outils-maison-mba, § 9).
      *
@@ -2419,7 +2435,7 @@ async function main(): Promise<void> {
             pose = await connexions.poserJeton(t, encryptSecret(jeton, config.ENCRYPTION_KEY), userId);
           } catch (err) {
             // eslint-disable-next-line no-console
-            console.error(`jeton publicitaire NON enregistré pour l'espace ${t}, il reste vivant chez Meta:`, err instanceof Error ? err.message : err);
+            console.error(`jeton publicitaire NON enregistré pour l'espace ${t}, il reste vivant chez Meta:`, messageDe(err));
             throw new JetonNonEnregistre(err);
           }
           // 🔴 LA BASE A REFUSÉ D'ÉCRASER UNE CONNEXION EXISTANTE : c'est la course, et elle est rare
@@ -2488,7 +2504,7 @@ async function main(): Promise<void> {
               // prescrire n'est sans danger. Le booléen sert à MESURER si le retrait fonctionne sur un
               // jeton d'utilisateur système, et il va au journal.
               // eslint-disable-next-line no-console
-              console.warn('retrait d’accès publicitaire non confirmé par Meta:', err instanceof Error ? err.message : err);
+              console.warn('retrait d’accès publicitaire non confirmé par Meta:', messageDe(err));
             }
           }
           await connexions.supprimer(t);
@@ -2820,17 +2836,12 @@ async function main(): Promise<void> {
           } satisfies AutomationEventJob);
         } catch (err) {
           // eslint-disable-next-line no-console
-          console.error('automations RCS ignorées:', err instanceof Error ? err.message : err);
+          console.error('automations RCS ignorées:', messageDe(err));
         }
         // 3. Le parcours. Un bouton tapé porte `btn:<i>` (cf. `normaliserPostbacks`) et choisit sa branche ;
         //    une réponse écrite suit la sortie « envoyé ». Isolé : un scénario qui casse ne doit pas faire
         //    rejouer six fois un rappel dont l'inbox et l'opt-out sont déjà enregistrés.
-        try {
-          await workflowRuntime.executor.advance(tenant, mo.from, mo.messageId, mo.postbackData, 'rcs');
-        } catch (err) {
-          // eslint-disable-next-line no-console
-          console.error('avance de scénario sur réponse RCS ignorée:', err instanceof Error ? err.message : err);
-        }
+        await tenter('avance de scénario sur réponse RCS ignorée:', () => workflowRuntime.executor.advance(tenant, mo.from, mo.messageId, mo.postbackData, 'rcs'));
       },
     },
     /**
@@ -2847,12 +2858,8 @@ async function main(): Promise<void> {
       remove: (tenant, id) => rcsMediaStore.remove(tenant, id),
       getByCode: (code) => rcsMediaStore.getByCode(code),
     },
-    rcsMessages: {
-      list: (tenant) => rcsMessageStore.list(tenant),
-      create: (tenant, name, content) => rcsMessageStore.create(tenant, name, content),
-      update: (tenant, id, name, content) => rcsMessageStore.update(tenant, id, name, content),
-      remove: (tenant, id) => rcsMessageStore.remove(tenant, id),
-    },
+    // Le dépôt lui-même : la route n'en appelle que `list`, `create`, `update` et `remove`, en méthodes.
+    rcsMessages: rcsMessageStore,
     // Automations (Lot E) : déclencher un scénario sur un événement (mot-clé, nouveau contact, tag ajouté).
     automations: {
       list: (tenant) => automationStore.list(tenant),
@@ -3167,10 +3174,7 @@ async function main(): Promise<void> {
         requete: (t, id) => agentRequetes.parId(t, id),
         // 🔴 PROJECTION, jamais la ligne brute : même règle que `lireContact` du worker. Le numéro, le BSUID
         // et le statut d'opt-in n'ont rien à faire dans ce qui part vers le système du client.
-        contact: async (t, waId) => {
-          const etat = await contactStore.getContactStateByWaId(t, waId);
-          return etat ? { nom: etat.name ?? '', tags: etat.tags, champs: etat.fields } : null;
-        },
+        contact: (t, waId) => contactStore.projectionPourTiers(t, waId),
         appeler: creerAppelConnecteur({
           sources: agentSources,
           requetes: agentRequetes,
@@ -3267,7 +3271,7 @@ async function main(): Promise<void> {
           } catch (err) {
             // Journalisée : une panne DURABLE (jeton révoqué, compte déconnecté) rendrait sinon 422 pour toujours
             // sans aucune trace chez nous. Le verdict reste « illisible », jamais « utility » par défaut.
-            console.error('v1/sends: lecture du template chez Meta échouée:', err instanceof Error ? err.message : err);
+            console.error('v1/sends: lecture du template chez Meta échouée:', messageDe(err));
             return { statut: 'illisible' };
           }
         },
@@ -3284,12 +3288,7 @@ async function main(): Promise<void> {
         listContactsPourEnvoi: (tenant, ids) => repo.listContactsPourEnvoiApi(tenant, ids),
         createSend: (input, recipients) => repo.createWithRecipients(input, recipients),
         enqueue: (campaignId, tenantId, count, rate) =>
-          enqueueCampaignRun(queue, {
-            campaignId,
-            tenantId,
-            pendingCount: count,
-            resolvedRatePerMinute: resolveRatePerMinute(rate, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE, plafondLePlusBas(config)),
-          }),
+          relanceurDeCampagnes(queue, config)({ campaignId, tenantId, pendingCount: count, ratePerMinute: rate }),
         idempotencyClaim: (tenant, key, empreinte) => idempotencyStore.claim(tenant, key, empreinte),
         idempotencyComplete: (tenant, key, sendId, response) => idempotencyStore.complete(tenant, key, sendId, response),
         idempotencyRelease: (tenant, key) => idempotencyStore.release(tenant, key),
@@ -3314,22 +3313,7 @@ async function main(): Promise<void> {
        * REQUISE par le type depuis le lot 3 du plan du 2026-09-14 : l'oublier ne compile pas.
        */
       messages: {
-        repondre: {
-          getConversationContext: (id, tenant) => inboxStore.getConversationContext(id, tenant),
-          getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
-          sendReply: async (tenant, phoneNumberId, to, text) => {
-            const client = await metaFactory.clientForTenant(tenant, phoneNumberId); // token PAR TENANT (B1)
-            return (await client.sendText(to, text)).messageId;
-          },
-          estDesabonne: (tenant, waId) => contactStore.estDesabonneParWaId(tenant, waId),
-          recordOutbound: (id, body, msgId, origine, type, cat, name, sender, canal, redaction) =>
-            inboxStore.recordOutbound(id, body, msgId, origine, type, cat, name, sender, canal, redaction),
-          // ⚠️ `app_human` comme pour un agent tiers, et pour la même raison : ce qui compte est que le
-          // scénario cesse d'avancer tout seul et que l'agent de Meta cesse de répondre, ce que cette
-          // valeur produit exactement. QUI a parlé est porté par l'ORIGINE du message (`api`, 0166), là où
-          // ça ne coûte aucune migration du chemin chaud.
-          takeControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human'); },
-        },
+        repondre: depsRepondre,
         // La MÊME résolution de fiche, sur le MÊME dépôt, que `/v1/contacts` et `/v1/sends` (lot 1). La route
         // demande `jamais` : un message simple ne crée pas de fiche, le câblage n'en décide pas.
         resoudreFiche: (tenant, cles, o) => resoudreFiche(contactStore, tenant, cles, o),
@@ -3363,35 +3347,12 @@ async function main(): Promise<void> {
        * fenêtre de 24 h, la prise de fil, le scope tenant), elle change pour les deux d'un coup.
        */
       mcp: {
+        ...depsRepondre,
         listConversations: (tenant, opts) => inboxStore.listConversations(tenant, opts),
         getMessages: (id) => inboxStore.getMessages(id),
-        getConversationContext: (id, tenant) => inboxStore.getConversationContext(id, tenant),
         getControlOwner: (tenant, waId) => inboxStore.getControlOwner(tenant, waId),
         getAssignee: (tenant, id) => inboxStore.getAssignee(tenant, id),
         setAssignee: (tenant, id, assignee, par) => inboxStore.setAssignee(tenant, id, assignee, par),
-        getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
-        sendReply: async (tenant, phoneNumberId, to, text) => {
-          const client = await metaFactory.clientForTenant(tenant, phoneNumberId); // token PAR TENANT (B1)
-          return (await client.sendText(to, text)).messageId;
-        },
-        /**
-         * 🔴 CE COMMENTAIRE A AFFIRME « BRANCHEE ICI ET NULLE PART AILLEURS » ET C ETAIT FAUX, avant meme le
-         * lot 7 (corrige le 2026-09-23). Il disait que l exemption de l operateur tenait a l ABSENCE de
-         * cette dependance sur le cablage de la console, « rendue structurelle ». Or elle y est branchee
-         * depuis que l envoi de MODELE depuis l Inbox en a eu besoin, et le type l exige partout depuis le
-         * 2026-09-15 : il y a TROIS branchements dans ce fichier, pas un.
-         *
-         * Ce qui exempte l operateur est la CONDITION, dans `repondreDansLaFenetre` : la garde ne se pose
-         * que sur une origine machine. Une justification fausse est pire qu aucune parce qu elle se
-         * recopie, et celle-ci l avait deja ete dans `todo.md`.
-         */
-        estDesabonne: (tenant, waId) => contactStore.estDesabonneParWaId(tenant, waId),
-        recordOutbound: (id, body, msgId, origine, type, cat, name, sender, canal, redaction) => inboxStore.recordOutbound(id, body, msgId, origine, type, cat, name, sender, canal, redaction),
-        // ⚠️ `app_human` pour un agent TIERS, et c'est un choix : `ControlOwner` n'a que trois valeurs, et ce
-        // qui compte ici est que le scénario cesse d'avancer TOUT SEUL et que MBA cesse de répondre, ce que
-        // `app_human` produit exactement. La distinction « qui a parlé » est portée là où elle sert et où
-        // elle ne coûte pas de migration du chemin chaud : l'ORIGINE du message (`mcp`, migration 0101).
-        takeControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human'); },
         chercherContacts: (tenant, filtres, limit, offset) => contactStore.query(tenant, filtres, limit, offset),
         contactParTelephone: (tenant, phone) => contactStore.findByPhone(tenant, phone),
         ajouterTags: (tenant, waId, tags) => contactStore.addTagsByPhoneReturningNew(tenant, waId, tags),
@@ -3411,7 +3372,7 @@ async function main(): Promise<void> {
   const minuteriePoolAttentes = setInterval(() => {
     void viderVersLaBase(poolAttentesStore, mesureAttentePool, 'api', new Date(), (err) => {
       // eslint-disable-next-line no-console
-      console.error('pool-attentes: écriture impossible:', err instanceof Error ? err.message : err);
+      console.error('pool-attentes: écriture impossible:', messageDe(err));
     });
   }, 60_000);
   minuteriePoolAttentes.unref?.();

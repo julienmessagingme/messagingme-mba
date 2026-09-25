@@ -1,5 +1,6 @@
 import type { TypeParam } from '../llm/tool-schema';
 import { nomUnique } from './nommer';
+import { objetOuNull } from '../../webhooks/json';
 
 /**
  * Aplatir un `inputSchema` MCP en FEUILLES scalaires.
@@ -65,9 +66,6 @@ const TYPES: Record<string, TypeParam> = {
   boolean: 'boolean',
 };
 
-function objet(v: unknown): Record<string, unknown> | null {
-  return typeof v === 'object' && v !== null && !Array.isArray(v) ? v as Record<string, unknown> : null;
-}
 
 /** Les clés listées dans `required`, en ignorant ce qui n'est pas un tableau de chaînes. */
 function requis(noeud: Record<string, unknown>): Set<string> {
@@ -90,7 +88,7 @@ function requis(noeud: Record<string, unknown>): Set<string> {
 function sansLeNul(noeud: Record<string, unknown>): Record<string, unknown> | null {
   const alternatives = noeud.oneOf ?? noeud.anyOf;
   if (!Array.isArray(alternatives)) return noeud;
-  const branches = alternatives.map(objet).filter((b): b is Record<string, unknown> => b !== null);
+  const branches = alternatives.map(objetOuNull).filter((b): b is Record<string, unknown> => b !== null);
   const utiles = branches.filter((b) => b.type !== 'null');
   if (branches.length !== alternatives.length || utiles.length !== 1) return null;
   return utiles[0]!;
@@ -114,7 +112,7 @@ function typeScalaire(noeud: Record<string, unknown>): TypeParam | null {
 }
 
 export function aplatirSchema(inputSchema: unknown): SchemaAplati {
-  const racine = objet(inputSchema);
+  const racine = objetOuNull(inputSchema);
   if (racine === null) {
     // ⚠️ DEUX RAISONS DISTINCTES, parce que le client n'a pas la même chose à dire à son fournisseur. « Rien
     // de déclaré » est une omission ; « déclaré mais illisible » est une réponse mal formée, et confondre
@@ -161,7 +159,7 @@ export function aplatirSchema(inputSchema: unknown): SchemaAplati {
       obstacles.push(`« ${chemin} » : les paramètres imbriqués au-delà d’une profondeur de ${PROFONDEUR_MAX} ne sont pas pris en charge`);
       return;
     }
-    const props = objet(noeud.properties);
+    const props = objetOuNull(noeud.properties);
     // ⚠️ L'ASYMÉTRIE AVEC LA RACINE EST VOULUE. À la racine, l'absence de propriétés dit « cet outil ne
     // prend aucun paramètre ». Imbriquée, elle dit « le serveur attend un objet dont il n'a pas déclaré la
     // forme », ce que nous ne savons pas remplir en sûreté.
@@ -172,7 +170,7 @@ export function aplatirSchema(inputSchema: unknown): SchemaAplati {
     const obligatoires = requis(noeud);
     for (const [cle, brut] of Object.entries(props)) {
       const sousChemin = chemin === '' ? cle : `${chemin}.${cle}`;
-      const enfant = objet(brut);
+      const enfant = objetOuNull(brut);
       if (enfant === null) {
         obstacles.push(`« ${sousChemin} » : déclaration illisible`);
         continue;
@@ -188,7 +186,7 @@ export function aplatirSchema(inputSchema: unknown): SchemaAplati {
         ajouter(sousChemin, type, reduit, estRequis);
         continue;
       }
-      if (reduit.type === 'object' || (reduit.type === undefined && objet(reduit.properties) !== null)) {
+      if (reduit.type === 'object' || (reduit.type === undefined && objetOuNull(reduit.properties) !== null)) {
         descendre(reduit, sousChemin, profondeur + 1, estRequis);
         continue;
       }
@@ -200,7 +198,7 @@ export function aplatirSchema(inputSchema: unknown): SchemaAplati {
     }
   }
 
-  const propsRacine = objet(racine.properties);
+  const propsRacine = objetOuNull(racine.properties);
   if (propsRacine !== null && Object.keys(propsRacine).length > 0) {
     descendre(racine, '', 1, true);
   }

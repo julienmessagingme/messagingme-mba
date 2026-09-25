@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { runCampaign } from '../src/campaign/engine';
+import { lancerCampagne, type DepsMoteurDeTest } from './campagne-canaux';
 import type {
-  MessageSender, RecipientStore, CampaignStore, QualityProvider,
-  EngineDeps, CanalServi,
+  MessageSender, RecipientStore, CampaignStore, QualityProvider, CanalServi,
 } from '../src/campaign/engine';
 import type { Campaign, Recipient, QualityRating } from '../src/campaign/types';
 import type { Etage } from '../src/campaign/etages';
@@ -87,7 +86,7 @@ function monter(o: {
       },
     },
   };
-  const deps: EngineDeps = {
+  const deps: DepsMoteurDeTest = {
     sender: new SenderWa(), campaigns: new Campaigns(), quality: new Quality(),
     now: () => 1_000_000_000,
     recipients,
@@ -110,7 +109,7 @@ describe('un etage RCS qui porte un scenario', () => {
   it('🔴 envoie le message ET demarre le scenario, dans cet ordre', async () => {
     const suivi = gestes();
     const { campagne, deps, recipients } = monter({ suivi });
-    const rapport = await runCampaign(campagne, deps);
+    const rapport = await lancerCampagne(campagne, deps);
     expect(rapport).toMatchObject({ sent: 1, failed: 0, skipped: 0 });
     // L'ORDRE compte : démarrer le scénario avant l'envoi ferait arriver sa suite avant le message.
     expect(suivi.filter((g) => g === 'rcs' || g === 'scenario')).toEqual(['rcs', 'scenario']);
@@ -124,7 +123,7 @@ describe('un etage RCS qui porte un scenario', () => {
   it('🔴 journalise le message RCS dans le fil, meme avec un scenario', async () => {
     const suivi = gestes();
     const { campagne, deps, journalFil } = monter({ suivi });
-    await runCampaign(campagne, deps);
+    await lancerCampagne(campagne, deps);
     expect(journalFil).toHaveLength(1);
     expect(journalFil[0]).toMatchObject({ body: 'le repli', type: 'rcs' });
   });
@@ -139,7 +138,7 @@ describe('un etage RCS qui porte un scenario', () => {
       suivi,
       envoiRcs: async () => ({ skipped: 'non joignable en RCS' }),
     });
-    const rapport = await runCampaign(campagne, deps);
+    const rapport = await lancerCampagne(campagne, deps);
     expect(rapport).toMatchObject({ sent: 0, skipped: 1 });
     expect(suivi).not.toContain('scenario');
     expect(recipients.resultats.get('r1')).toMatchObject({ status: 'skipped' });
@@ -153,7 +152,7 @@ describe('un etage RCS qui porte un scenario', () => {
   it('🔴 un scenario refuse laisse le destinataire ENVOYE, avec la raison', async () => {
     const suivi = gestes();
     const { campagne, deps, recipients } = monter({ suivi, demarrage: async () => 'fil repris par un operateur' });
-    const rapport = await runCampaign(campagne, deps);
+    const rapport = await lancerCampagne(campagne, deps);
     expect(rapport).toMatchObject({ sent: 1, failed: 0 });
     const vu = recipients.resultats.get('r1');
     expect(vu?.status).toBe('sent');
@@ -166,7 +165,7 @@ describe('un etage RCS qui porte un scenario', () => {
       suivi,
       demarrage: async () => { throw new Error('postgres indisponible'); },
     });
-    const rapport = await runCampaign(campagne, deps);
+    const rapport = await lancerCampagne(campagne, deps);
     expect(rapport).toMatchObject({ sent: 1, failed: 0 });
     expect(recipients.resultats.get('r1')?.status).toBe('sent');
   });
@@ -174,7 +173,7 @@ describe('un etage RCS qui porte un scenario', () => {
   it('un scenario qui rend `false` est signale aussi', async () => {
     const suivi = gestes();
     const { campagne, deps, recipients } = monter({ suivi, demarrage: async () => false });
-    await runCampaign(campagne, deps);
+    await lancerCampagne(campagne, deps);
     expect(recipients.resultats.get('r1')?.error).toMatch(/scénario non démarré/i);
   });
 
@@ -191,7 +190,7 @@ describe('un etage RCS qui porte un scenario', () => {
         { rang: 2, canal: 'rcs', rcsMessage: { kind: 'text', text: 'le repli' } },
       ],
     });
-    const rapport = await runCampaign(campagne, deps);
+    const rapport = await lancerCampagne(campagne, deps);
     expect(rapport).toMatchObject({ sent: 1 });
     expect(suivi).not.toContain('scenario');
   });
@@ -208,7 +207,7 @@ describe('un etage RCS qui porte un scenario', () => {
       ...CAMPAGNE, workflowId: 'wf-42',
       chaine: [{ rang: 1, canal: 'whatsapp', templateName: '', templateLanguage: 'fr', workflowId: 'wf-42' }],
     };
-    const rapport = await runCampaign(campagne, {
+    const rapport = await lancerCampagne(campagne, {
       sender: wa, campaigns: new Campaigns(), quality: new Quality(),
       now: () => 1_000_000_000, recipients,
       startWorkflow: async () => { suivi.push('scenario'); return true; },
@@ -235,7 +234,7 @@ describe('les variables heritees d un etage de repli', () => {
     const { campagne, deps } = monter({ suivi, paramsRecus });
     // Le destinataire porte les variables resolues du rang 1 : c'est le cas reel.
     const recipients = new Recipients([{ id: 'r1', contactId: 'ct1', toE164: '+33611', resolvedParams: ['Jean', '42 euros'], status: 'pending', etageCourant: 2 }]);
-    await runCampaign(campagne, { ...deps, recipients });
+    await lancerCampagne(campagne, { ...deps, recipients });
     expect(paramsRecus).toEqual([[]]);
   });
 
@@ -251,7 +250,7 @@ describe('les variables heritees d un etage de repli', () => {
       ...CAMPAGNE, workflowId: 'wf-42', paramMapping: [{ source: 'field', key: 'prenom' }] as never,
       chaine: [{ rang: 1, canal: 'whatsapp', templateName: '', templateLanguage: 'fr', workflowId: 'wf-42' }],
     };
-    await runCampaign(campagne, {
+    await lancerCampagne(campagne, {
       sender: new SenderWa(), campaigns: new Campaigns(), quality: new Quality(),
       now: () => 1_000_000_000, recipients,
       startWorkflow: async (_t, _wf, _wa, _ct, params) => { suivi.push('scenario'); paramsRecus.push(params ?? null); return true; },

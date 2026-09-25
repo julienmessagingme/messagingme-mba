@@ -8,6 +8,7 @@ import type { SortAncienAcces } from '../meta/pubs';
 import type { TenantOverviewRow, QueueLoadRow, QueueGroupLoadRow, QueueLatenceRow, GlobalDailyPoint, JobMortRow } from '../ops/store.pg';
 import type { WorkerHeartbeatRow } from '../ops/heartbeat-store.pg';
 import type { BilanRisque } from '../engagement/balayage';
+import { messageDe } from '../lib/erreur';
 
 /**
  * Surface d'exploitation cross-tenant, en LECTURE SEULE À UNE EXCEPTION PRÈS.
@@ -351,7 +352,7 @@ export function registerOps(
           // On s'arrête au premier échec d'enfilement plutôt que d'insister : si la file refuse, elle
           // refusera aussi les suivants, et ce qui a déjà été enfilé doit être oublié proprement.
           // eslint-disable-next-line no-console
-          console.error(`ops dlq replay: enfilement impossible pour ${j.id}`, err instanceof Error ? err.message : err);
+          console.error(`ops dlq replay: enfilement impossible pour ${j.id}`, messageDe(err));
           break;
         }
       }

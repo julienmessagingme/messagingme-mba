@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { enTransaction } from '../db/transaction';
 import type { AnalysisContext } from './analyzer';
 import type { AnalysisMessage } from './engine';
 import type { ConversationAnalysis } from './schema';
@@ -96,9 +97,7 @@ export class PgConversationAnalysisStore {
    * `windowEnd` = chaîne texte timestamptz (précision µs préservée, cf. getContext), pas un Date JS tronqué.
    */
   async save(conversationId: string, tenantId: string, a: ConversationAnalysis, model: { provider: string; model: string }, windowEnd: string | null): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('begin');
+    await enTransaction(this.pool, async (client) => {
       // NB : ce `on conflict do update set tenant_id` a le même motif syntaxique que les upserts de l'Embedded Signup
       // (es-store.pg.ts), mais N'EST PAS un vecteur de réaffectation inter-tenant : la clé de conflit est
       // conversation_id, et une conversation appartient à un seul tenant, stable (save() reçoit le tenantId de la
@@ -140,13 +139,7 @@ export class PgConversationAnalysisStore {
          where id = $1`,
         [conversationId, windowEnd],
       );
-      await client.query('commit');
-    } catch (err) {
-      await client.query('rollback').catch(() => {});
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   /**

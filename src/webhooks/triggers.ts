@@ -1,6 +1,7 @@
 import { extractInbound } from './inbound';
 import type { AutomationEvent } from '../automation/match';
 import type { RoutageDuMessage } from '../pubs/routage';
+import { messageDe } from '../lib/erreur';
 
 /**
  * Déclenche les automations sur les messages entrants (mot-clé, 1er message d'un nouveau contact). ISOLÉ dans
@@ -95,7 +96,7 @@ export async function processTriggers(
       if (partis > 0) demarres.add(m.messageId);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('processTriggers: message ignoré:', err instanceof Error ? err.message : err);
+      console.error('processTriggers: message ignoré:', messageDe(err));
     }
   }
   return demarres;

@@ -1,6 +1,7 @@
 import { withinBusinessHours } from '../workflow/conditions';
 import type { BusinessHours } from '../workflow/conditions';
 import type { EtatHandoff } from './handoff';
+import { messageDe } from '../lib/erreur';
 
 /** Ce dont le balayage a besoin. Interface étroite, satisfaite par le store et le client MBA. */
 export interface HandoffSweepDeps {
@@ -36,7 +37,7 @@ export async function runHandoffSweep(deps: HandoffSweepDeps): Promise<number> {
       actuel = await deps.lireHandoffEnabled(t.tenantId);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error(`handoff-sweep: lecture impossible pour ${t.tenantId}:`, err instanceof Error ? err.message : err);
+      console.error(`handoff-sweep: lecture impossible pour ${t.tenantId}:`, messageDe(err));
       continue;
     }
     if (actuel === null) continue; // rien à lire : ne pas écrire à l'aveugle
@@ -50,7 +51,7 @@ export async function runHandoffSweep(deps: HandoffSweepDeps): Promise<number> {
       // Un échec est rattrapé au prochain passage : la base garde le choix du client, seule l'application
       // chez Meta a raté. Faire échouer le balayage entier priverait les autres tenants de leur bascule.
       // eslint-disable-next-line no-console
-      console.error(`handoff-sweep: bascule impossible pour ${t.tenantId}:`, err instanceof Error ? err.message : err);
+      console.error(`handoff-sweep: bascule impossible pour ${t.tenantId}:`, messageDe(err));
     }
   }
   return bascules;

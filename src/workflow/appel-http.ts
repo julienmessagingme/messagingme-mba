@@ -1,5 +1,6 @@
 import { creerAppelConnecteur, type DepsResolveurHttp } from '../agent/resolvers/http';
 import type { JournalAppels } from '../agent/catalog';
+import { messageDe } from '../lib/erreur';
 
 /**
  * Le bloc « Appel HTTP » d'un scénario : jouer un appel DÉJÀ mis au point dans Tools > Connecteurs API, et
@@ -127,7 +128,7 @@ export function creerAppelHttpScenario(deps: DepsAppelHttpScenario) {
       return { ok: true, valeur: valeurPourChamp(r.contenu) };
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error(`workflow appelHttp: ${requestId} a leve pour ${waId}:`, err instanceof Error ? err.message : err);
+      console.error(`workflow appelHttp: ${requestId} a leve pour ${waId}:`, messageDe(err));
       return { ok: false, valeur: '' };
     }
   };

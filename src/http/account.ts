@@ -5,6 +5,7 @@ import { computeAccountStatus, normalizeQuality, type AccountSignals, type Quali
 import type { PullResult, PhoneStatusPatch } from '../account/pull';
 import type { PhoneNumberRecord, HubspotPortalLink } from '../account/types';
 import { scopeTenant } from './scope';
+import { messageDe } from '../lib/erreur';
 
 // Ré-exportés : le serveur et les tests les importaient déjà par cette route avant leur déplacement.
 export type { PhoneNumberRecord, HubspotPortalLink } from '../account/types';
@@ -109,7 +110,7 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
       result = await deps.disconnectHubspot(tenant);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('disconnectHubspot (connecteur) échoué, reset local NON appliqué (anti-drift):', err instanceof Error ? err.message : err);
+      console.error('disconnectHubspot (connecteur) échoué, reset local NON appliqué (anti-drift):', messageDe(err));
       // ⚠️ 502 GARDÉ, DÉLIBÉRÉMENT : c'est NOTRE panne, pas une raison à lire. Le connecteur mm-hubspot est un
       // service à nous, joint sur le réseau interne et déjà rejoué par `withRetry` ; l'administrateur n'a rien
       // à y changer. Et l'écran d'accueil ne lit pas ce corps (il annule sa bascule optimiste), donc Cloudflare
@@ -180,50 +181,17 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
       deps.pullStatus(pn.id, tenant),
       deps.photoNumero ? deps.photoNumero(tenant, pn.id).catch(() => null) : Promise.resolve(null),
     ]);
+    // Le pull frais est ENREGISTRÉ (en coalesce), sauf le numéro d'affichage, qui ne se réécrit pas d'ici.
+    const frais = pull && pull.ok ? pull : undefined;
+    if (frais) {
+      const { ok: _ok, displayPhoneNumber: _affiche, ...patch } = frais;
+      await deps.saveStatus(pn.id, patch);
+    }
     // Valeurs affichées : le pull frais prime, sinon on retombe sur le dernier connu (persisté).
-    let quality = normalizeQuality(pn.qualityRating);
-    let numberStatus = pn.status ?? undefined;
-    let tier = pn.messagingLimitTier;
-    let display = pn.displayPhoneNumber;
-    let nameStatus = pn.nameStatus;
-    let codeVerificationStatus = pn.codeVerificationStatus;
-    let throughputLevel = pn.throughputLevel;
-    let verifiedName = pn.verifiedName;
-    let wabaHealthStatus = pn.wabaHealthStatus;
-    let accountReviewStatus = pn.accountReviewStatus;
-    let businessVerificationStatus = pn.businessVerificationStatus;
-    let marketingMessagesLiteApiStatus = pn.marketingMessagesLiteApiStatus;
-    let ownerBusinessName = pn.ownerBusinessName;
+    const quality = normalizeQuality(frais?.qualityRating ?? pn.qualityRating);
+    const numberStatus = frais?.status ?? pn.status ?? undefined;
     let signals: AccountSignals;
-
-    if (pull && pull.ok) {
-      await deps.saveStatus(pn.id, {
-        ...(pull.status !== undefined ? { status: pull.status } : {}),
-        ...(pull.qualityRating !== undefined ? { qualityRating: pull.qualityRating } : {}),
-        ...(pull.messagingLimitTier !== undefined ? { messagingLimitTier: pull.messagingLimitTier } : {}),
-        ...(pull.nameStatus !== undefined ? { nameStatus: pull.nameStatus } : {}),
-        ...(pull.codeVerificationStatus !== undefined ? { codeVerificationStatus: pull.codeVerificationStatus } : {}),
-        ...(pull.throughputLevel !== undefined ? { throughputLevel: pull.throughputLevel } : {}),
-        ...(pull.verifiedName !== undefined ? { verifiedName: pull.verifiedName } : {}),
-        ...(pull.wabaHealthStatus !== undefined ? { wabaHealthStatus: pull.wabaHealthStatus } : {}),
-        ...(pull.accountReviewStatus !== undefined ? { accountReviewStatus: pull.accountReviewStatus } : {}),
-        ...(pull.businessVerificationStatus !== undefined ? { businessVerificationStatus: pull.businessVerificationStatus } : {}),
-        ...(pull.marketingMessagesLiteApiStatus !== undefined ? { marketingMessagesLiteApiStatus: pull.marketingMessagesLiteApiStatus } : {}),
-        ...(pull.ownerBusinessName !== undefined ? { ownerBusinessName: pull.ownerBusinessName } : {}),
-      });
-      quality = normalizeQuality(pull.qualityRating ?? pn.qualityRating);
-      numberStatus = pull.status ?? numberStatus;
-      tier = pull.messagingLimitTier ?? tier;
-      display = pull.displayPhoneNumber ?? display;
-      nameStatus = pull.nameStatus ?? nameStatus;
-      codeVerificationStatus = pull.codeVerificationStatus ?? codeVerificationStatus;
-      throughputLevel = pull.throughputLevel ?? throughputLevel;
-      verifiedName = pull.verifiedName ?? verifiedName;
-      wabaHealthStatus = pull.wabaHealthStatus ?? wabaHealthStatus;
-      accountReviewStatus = pull.accountReviewStatus ?? accountReviewStatus;
-      businessVerificationStatus = pull.businessVerificationStatus ?? businessVerificationStatus;
-      marketingMessagesLiteApiStatus = pull.marketingMessagesLiteApiStatus ?? marketingMessagesLiteApiStatus;
-      ownerBusinessName = pull.ownerBusinessName ?? ownerBusinessName;
+    if (frais) {
       signals = { reachable: true, quality, numberStatus };
     } else if (pull && !pull.ok) {
       signals = { reachable: false, authError: pull.authError, quality, numberStatus };
@@ -235,19 +203,19 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
     const body: AccountStatusResponse = {
       hasNumber: true,
       phoneNumberId: pn.id,
-      number: display ?? null,
-      tier: tier ?? null,
+      number: frais?.displayPhoneNumber ?? pn.displayPhoneNumber ?? null,
+      tier: frais?.messagingLimitTier ?? pn.messagingLimitTier ?? null,
       quality,
       numberStatus: numberStatus ?? null,
-      nameStatus: nameStatus ?? null,
-      codeVerificationStatus: codeVerificationStatus ?? null,
-      throughputLevel: throughputLevel ?? null,
-      verifiedName: verifiedName ?? null,
-      wabaHealthStatus: wabaHealthStatus ?? null,
-      accountReviewStatus: accountReviewStatus ?? null,
-      businessVerificationStatus: businessVerificationStatus ?? null,
-      marketingMessagesLiteApiStatus: marketingMessagesLiteApiStatus ?? null,
-      ownerBusinessName: ownerBusinessName ?? null,
+      nameStatus: frais?.nameStatus ?? pn.nameStatus ?? null,
+      codeVerificationStatus: frais?.codeVerificationStatus ?? pn.codeVerificationStatus ?? null,
+      throughputLevel: frais?.throughputLevel ?? pn.throughputLevel ?? null,
+      verifiedName: frais?.verifiedName ?? pn.verifiedName ?? null,
+      wabaHealthStatus: frais?.wabaHealthStatus ?? pn.wabaHealthStatus ?? null,
+      accountReviewStatus: frais?.accountReviewStatus ?? pn.accountReviewStatus ?? null,
+      businessVerificationStatus: frais?.businessVerificationStatus ?? pn.businessVerificationStatus ?? null,
+      marketingMessagesLiteApiStatus: frais?.marketingMessagesLiteApiStatus ?? pn.marketingMessagesLiteApiStatus ?? null,
+      ownerBusinessName: frais?.ownerBusinessName ?? pn.ownerBusinessName ?? null,
       photoProfilUrl: photo,
       hubspotConnected: pn.hubspotConnected,
       hubspotPausedAt: pn.hubspotPausedAt,
@@ -294,7 +262,7 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
         // Journalisé (pas silencieux) : le filet de sécurité (sweep worker) rejouera les marques restées, donc pas
         // de perte même si cet enqueue immédiat échoue.
         // eslint-disable-next-line no-console
-        console.error('enqueueHubspotCatchup échoué (best-effort ; le sweep rattrapera):', err instanceof Error ? err.message : err);
+        console.error('enqueueHubspotCatchup échoué (best-effort ; le sweep rattrapera):', messageDe(err));
         return false;
       });
     }

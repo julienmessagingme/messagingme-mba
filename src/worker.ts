@@ -31,8 +31,8 @@ import { creerNoteurJoignabilite } from './contacts/joignabilite.pg';
 import { creerNoteurEnvois } from './campaign/envois.pg';
 import { alimenterCampagnesWebhook, type WebhookFeedDeps } from './campaign/webhook-feed';
 import { assignerReponse } from './inbox/assignation-campagne';
-import { enqueueCampaignRun } from './campaign/enqueue';
-import { plafondDuCanal, plafondLePlusBas, resolveRatePerMinute } from './campaign/pacing';
+import { relanceurDeCampagnes } from './campaign/enqueue';
+import { plafondDuCanal, plafondLePlusBas } from './campaign/pacing';
 import { flagContactUnreachable } from './crm/hubspot-service';
 import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
 import { DUREE_CLE_IDEMPOTENCE_MS } from './api/idempotence';
@@ -82,8 +82,7 @@ import { PgDepotAide } from './aide/fiches.pg';
 import { GatewayChatClient } from './agent/llm/chat-client';
 import { creerCerveauGateway } from './agent/brain.gateway';
 import { PgCleGatewayStore } from './agent/cles-gateway.pg';
-import { lireContexteAgent } from './agent/contexte';
-import { equipePourPrompt, MODE_TRANSFERT_DEFAUT } from './agent/disponibilite-equipe';
+import { lireContexteAvecReglages } from './agent/contexte';
 import { PgCreditStore } from './agent/credits.pg';
 import { PgSourceStore } from './agent/sources.pg';
 import { PgRequeteStore } from './agent/requetes.pg';
@@ -140,6 +139,8 @@ import { PgWorkerHeartbeatStore } from './ops/heartbeat-store.pg';
 import { sendTelegram } from './ops/telegram';
 import { installGracefulShutdown } from './shutdown';
 import { registreDeTaches } from './worker/taches';
+import { tenter } from './lib/tenter';
+import { messageDe, texteDe } from './lib/erreur';
 
 async function main(): Promise<void> {
   // Le worker est la SEULE instance qui supervise (défaut pg-boss conservé) : c'est lui qui dépile, donc lui qui
@@ -157,6 +158,8 @@ async function main(): Promise<void> {
     flowIntervalSeconds: 60,
     ecouteNotifications: true,
   });
+  // L'enfilement d'un run de campagne au débit RÉSOLU, partagé par les cinq chemins de relance du worker.
+  const relancerCampagne = relanceurDeCampagnes(queue, config);
 
   // Alerte Telegram throttlée (mémoire process) sur les signaux d'erreur d'un worker VIVANT. Le cas « worker
   // MORT » (crash-loop au boot) n'est VOLONTAIREMENT pas auto-alerté ici : un process qui meurt ne peut pas
@@ -176,7 +179,7 @@ async function main(): Promise<void> {
   // Idem côté worker, et c'est ici que ça comptait le plus : le worker est le SEUL composant qui envoie les
   // messages, et un event `error` non capté le tuait pendant que l'API continuait de répondre 200 sur /health.
   queue.onError((err) => {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = texteDe(err);
     // eslint-disable-next-line no-console
     console.error('[pg-boss:worker]', msg);
     alert('pgboss', `erreur pg-boss : ${msg}`);
@@ -205,7 +208,7 @@ async function main(): Promise<void> {
     } catch (err) {
       // best-effort ABSOLU : une écriture heartbeat qui throw tuerait le worker. On log, on continue.
       // eslint-disable-next-line no-console
-      console.error('heartbeat erreur (best-effort):', err instanceof Error ? err.message : err);
+      console.error('heartbeat erreur (best-effort):', messageDe(err));
     }
   };
   await beat(true);
@@ -213,6 +216,15 @@ async function main(): Promise<void> {
   // minuteries étaient arrêtées une par une dans l'arrêt propre, et trois y avaient déjà échappé.
   const taches = registreDeTaches();
   taches.programmer('heartbeat', config.HEARTBEAT_INTERVAL_MS, () => beat(false));
+  /**
+   * L'échec d'un balayage, au format de TOUS les balayages : `<journal> erreur: <message>` dans les journaux,
+   * puis l'alerte throttlée `<texte> en échec : <message>` sous sa clé. Passé à `programmer` (`enEchec`).
+   */
+  const echecDeBalayage = (journal: string, cle: string, texte = journal) => (err: unknown): void => {
+    // eslint-disable-next-line no-console
+    console.error(`${journal} erreur:`, messageDe(err));
+    alert(cle, `${texte} en échec : ${messageDe(err)}`);
+  };
 
   /**
    * L'attente du pool, versée en base une fois par minute (lot 7 du plan post-audit, migration 0109).
@@ -225,7 +237,7 @@ async function main(): Promise<void> {
   taches.programmer('pool-attentes', 60_000, async () => {
     await viderVersLaBase(poolAttentes, mesureAttentePool, 'worker', new Date(), (err) => {
       // eslint-disable-next-line no-console
-      console.error('pool-attentes: écriture impossible:', err instanceof Error ? err.message : err);
+      console.error('pool-attentes: écriture impossible:', messageDe(err));
     });
   });
 
@@ -413,7 +425,7 @@ async function main(): Promise<void> {
     insertRecipient: (campaignId, r) => repo.insertWebhookRecipient(campaignId, r),
     // Un seul arrivant enfilé : `pendingCount` à 1 suffit à dimensionner l'expiration du job, et le débit
     // résolu est le MÊME que celui du run réel (sinon pg-boss rejouerait le job en parallèle).
-    enqueueRun: (c) => enqueueCampaignRun(queue, { campaignId: c.id, tenantId: c.tenantId, pendingCount: 1, resolvedRatePerMinute: resolveRatePerMinute(c.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE, plafondLePlusBas(config)) }),
+    enqueueRun: (c) => relancerCampagne({ campaignId: c.id, tenantId: c.tenantId, pendingCount: 1, ratePerMinute: c.ratePerMinute }),
   };
 
   // Automations (Lot E) : un événement (message entrant) démarre un scénario. Réutilise TEL QUEL l'exécuteur
@@ -501,7 +513,7 @@ async function main(): Promise<void> {
         if (campagne !== null) console.log(`qualification pub : lead qualifié sur la campagne ${campagne}`);
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error('qualification pub : échec', err instanceof Error ? err.message : err);
+        console.error('qualification pub : échec', messageDe(err));
       }
     }
 
@@ -512,8 +524,8 @@ async function main(): Promise<void> {
         if (r.inscrits > 0 || r.ecartes > 0) console.log(`webhook-feed: ${r.inscrits} inscrit(s), ${r.ecartes} écarté(s), ${r.deja} déjà destinataire(s)`);
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error('webhook-feed: échec', err instanceof Error ? err.message : err);
-        alert('webhook-feed', `alimentation d'une campagne au fil de l'eau en échec : ${err instanceof Error ? err.message : err}`);
+        console.error('webhook-feed: échec', messageDe(err));
+        alert('webhook-feed', `alimentation d'une campagne au fil de l'eau en échec : ${messageDe(err)}`);
       }
     }
     // Groupe = l'ESPACE (lot 6 du plan post-audit). Une rafale d'automations d'un client gelait tous les
@@ -627,7 +639,7 @@ async function main(): Promise<void> {
             });
           } catch (err) {
             // eslint-disable-next-line no-console
-            console.error('origine publicitaire non posée sur la fiche:', err instanceof Error ? err.message : err);
+            console.error('origine publicitaire non posée sur la fiche:', messageDe(err));
           }
         }
         return issue;
@@ -831,7 +843,7 @@ async function main(): Promise<void> {
         relancer: async (id) => {
           const sizing = await repo.getRunSizing(id);
           if (!sizing || sizing.pendingCount === 0) return;
-          await enqueueCampaignRun(queue, { campaignId: id, tenantId: sizing.tenantId, pendingCount: sizing.pendingCount, resolvedRatePerMinute: resolveRatePerMinute(sizing.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE, plafondLePlusBas(config)) });
+          await relancerCampagne({ campaignId: id, ...sizing });
         },
       },
       /**
@@ -970,10 +982,7 @@ async function main(): Promise<void> {
     fuseau: async (t) => (await settingsStore.get(t)).timezone,
     // Relue a chaque appel, comme pour le bloc « Appel HTTP » d un scenario : la fiche a pu bouger entre le
     // refus et la reprise du job.
-    projectionContact: async (t, waId) => {
-      const etat = await contactStore.getContactStateByWaId(t, waId);
-      return etat ? { nom: etat.name ?? '', tags: etat.tags, champs: etat.fields } : null;
-    },
+    projectionContact: (t, waId) => contactStore.projectionPourTiers(t, waId),
     // eslint-disable-next-line no-console
     log: (m) => console.warn(m),
   }));
@@ -1056,29 +1065,22 @@ async function main(): Promise<void> {
       // échoué, ou marque posée juste après que le catch-up de reprise ait déjà listé). Rend le rattrapage
       // éventuellement complet SANS dépendre d'un futur clic de reprise. best-effort + unref : ne tue pas le worker.
       const catchupSweep = async (): Promise<void> => {
-        try {
-          const tenants = await analysisStore.listTenantsReadyForCatchup();
-          // ⚠️ Aucune dédup de file (cf. `Queue.enqueue`) : ce balayage peut enfiler un rattrapage pour un
-          // tenant qui en a déjà un en vol. Sans dommage ici, le job relit l'état frais et re-pousse ce qui
-          // reste marqué, mais ce n'est pas gratuit (appels connecteur redondants).
-          for (const tenantId of tenants) await queue.enqueue('hubspot-catchup', { tenantId });
-          // eslint-disable-next-line no-console
-          if (tenants.length > 0) console.log(`hubspot-catchup-sweep: ${tenants.length} tenant(s) relancé(s)`);
-        } catch (err) {
-          // eslint-disable-next-line no-console
-          console.error('hubspot-catchup-sweep erreur:', err instanceof Error ? err.message : err);
-          alert('sweeper:hubspot-catchup', `hubspot-catchup-sweep en échec : ${err instanceof Error ? err.message : err}`);
-        }
+        const tenants = await analysisStore.listTenantsReadyForCatchup();
+        // ⚠️ Aucune dédup de file (cf. `Queue.enqueue`) : ce balayage peut enfiler un rattrapage pour un
+        // tenant qui en a déjà un en vol. Sans dommage ici, le job relit l'état frais et re-pousse ce qui
+        // reste marqué, mais ce n'est pas gratuit (appels connecteur redondants).
+        for (const tenantId of tenants) await queue.enqueue('hubspot-catchup', { tenantId });
+        // eslint-disable-next-line no-console
+        if (tenants.length > 0) console.log(`hubspot-catchup-sweep: ${tenants.length} tenant(s) relancé(s)`);
       };
-      void catchupSweep();
-      taches.programmer('hubspot-rattrapage', config.HUBSPOT_CATCHUP_SWEEP_INTERVAL_MS, catchupSweep);
+      taches.programmer('hubspot-rattrapage', config.HUBSPOT_CATCHUP_SWEEP_INTERVAL_MS, catchupSweep, { immediat: true, enEchec: echecDeBalayage('hubspot-catchup-sweep', 'sweeper:hubspot-catchup') });
     }
     const pushAnalyzed = makeOnAnalyzed({
       enabled: pushEnabled,
       // Enfile une RÉFÉRENCE (pas le snapshot) : le handler push-analysis refetch l'état frais (F3-a).
       enqueue: (stored) => queue.enqueue('push-analysis', { conversationId: stored.conversationId, tenantId: stored.tenantId }),
       // eslint-disable-next-line no-console
-      onError: (err) => console.error('push-analysis enqueue échoué (best-effort):', err instanceof Error ? err.message : err),
+      onError: (err) => console.error('push-analysis enqueue échoué (best-effort):', messageDe(err)),
     });
 
     // TROIS consommateurs du même point de sortie : le push connecteur (Pièce 2), les signaux (lot 6 de l'API
@@ -1089,12 +1091,7 @@ async function main(): Promise<void> {
       // Chaque consommateur a SON try/catch ici : l'isolation devient une propriété de cette composition, et
       // non un pari sur le fait que l'appelé avale ses erreurs. Sans ça, un push qui lèverait sauterait
       // l'automation ET ferait rejouer le job d'analyse, donc re-facturerait l'appel LLM.
-      try {
-        await pushAnalyzed(stored);
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error('push connecteur ignoré (best-effort):', err instanceof Error ? err.message : err);
-      }
+      await tenter('push connecteur ignoré (best-effort):', () => pushAnalyzed(stored));
       try {
         // 🔴 AVANT L'AUTOMATION, qui SORT de la fonction (`if (!ctx) return;`) quand la conversation n'a pas de
         // contexte : placé après, le signal disparaîtrait dans ce cas-là, en silence. Il ne relit rien ici,
@@ -1102,7 +1099,7 @@ async function main(): Promise<void> {
         await emetteur.emettreSignal(stored.tenantId, signalAnalyse(stored.conversationId));
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error('signal « conversation analysée » ignoré (best-effort):', err instanceof Error ? err.message : err);
+        console.error('signal « conversation analysée » ignoré (best-effort):', messageDe(err));
       }
       try {
         // L'analyse identifie une CONVERSATION ; le moteur de scénario raisonne par wa_id.
@@ -1115,7 +1112,7 @@ async function main(): Promise<void> {
         );
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error('automation « conversation analysée » ignorée (best-effort):', err instanceof Error ? err.message : err);
+        console.error('automation « conversation analysée » ignorée (best-effort):', messageDe(err));
       }
     };
 
@@ -1146,31 +1143,23 @@ async function main(): Promise<void> {
         log: (m) => console.log(m),
         onError: (m, err) => {
           // eslint-disable-next-line no-console
-          console.error(`${m}:`, err instanceof Error ? err.message : err);
+          console.error(`${m}:`, messageDe(err));
           // Comme tous les autres balayages : un echec qui ne vit que dans les logs est un echec que
           // personne ne lira. L'alerte est throttlee a cinq minutes par cle, donc une panne persistante
           // n'inonde rien.
-          alert('sweeper:analyse-conversations', `analyse de conversations en echec : ${err instanceof Error ? err.message : err}`);
+          alert('sweeper:analyse-conversations', `analyse de conversations en echec : ${messageDe(err)}`);
         },
       });
-    void analysisSweep();
-    taches.programmer('analyse-conversations', config.CONVERSATION_ANALYSIS_SWEEP_INTERVAL_MS, analysisSweep);
+    taches.programmer('analyse-conversations', config.CONVERSATION_ANALYSIS_SWEEP_INTERVAL_MS, analysisSweep, { immediat: true });
   }
 
   // Sweeper : récupère périodiquement les destinataires bloqués en 'sending'.
   const sweep = async (): Promise<void> => {
-    try {
-      const n = await recipientStore.reclaimStale(config.STALE_SENDING_MS);
-      // eslint-disable-next-line no-console
-      if (n > 0) console.log(`sweeper: ${n} destinataire(s) 'sending' bloqué(s) -> 'pending'`);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('sweeper erreur:', err instanceof Error ? err.message : err);
-      alert('sweeper:reclaim', `sweeper reclaim en échec : ${err instanceof Error ? err.message : err}`);
-    }
+    const n = await recipientStore.reclaimStale(config.STALE_SENDING_MS);
+    // eslint-disable-next-line no-console
+    if (n > 0) console.log(`sweeper: ${n} destinataire(s) 'sending' bloqué(s) -> 'pending'`);
   };
-  void sweep();
-  taches.programmer('reclaim', config.RECLAIM_INTERVAL_MS, sweep);
+  taches.programmer('reclaim', config.RECLAIM_INTERVAL_MS, sweep, { immediat: true, enEchec: echecDeBalayage('sweeper', 'sweeper:reclaim', 'sweeper reclaim') });
 
   // Sweeper de PLANIFICATION : enfile les campagnes programmées dues (scheduled_at <= maintenant). Miroir du
   // sweeper d'analyse. Toutes les 60 s (granularité suffisante pour un lancement programmé). C'est `markRunning`
@@ -1178,31 +1167,24 @@ async function main(): Promise<void> {
   // déduplique rien (cf. `Queue.enqueue`). Entre l'enqueue et le markRunning, une seconde instance worker
   // enfilerait donc un second run. Sans objet aujourd'hui (le compose fige une instance), à revoir avec R11.
   const scheduleSweep = async (): Promise<void> => {
-    try {
-      const n = await runCampaignScheduleSweep({
-        listDue: () => repo.listDueScheduled(),
-        enqueueRun: (id, tenantId, expireInSeconds) => queue.enqueue('campaign-run', { campaignId: id }, { expireInSeconds, groupId: tenantId }),
-        markRunning: (id) => repo.markScheduledRunning(id),
-        defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
-        plafondLePlusBas: plafondLePlusBas(config),
-        onError: (m, err) => {
-          // eslint-disable-next-line no-console
-          console.error(`${m}:`, err instanceof Error ? err.message : err);
-          // MÊME clé que l'échec global ci-dessous : le throttle de 5 min est alors partagé, donc dix
-          // campagnes qui échouent d'un coup font UNE alerte, pas dix. Le détail par campagne reste au log.
-          alert('sweeper:schedule', `${m} : ${err instanceof Error ? err.message : err}`);
-        },
-      });
-      // eslint-disable-next-line no-console
-      if (n > 0) console.log(`schedule-sweep: ${n} campagne(s) programmée(s) lancée(s)`);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('schedule-sweep erreur:', err instanceof Error ? err.message : err);
-      alert('sweeper:schedule', `schedule-sweep en échec : ${err instanceof Error ? err.message : err}`);
-    }
+    const n = await runCampaignScheduleSweep({
+      listDue: () => repo.listDueScheduled(),
+      enqueueRun: (id, tenantId, expireInSeconds) => queue.enqueue('campaign-run', { campaignId: id }, { expireInSeconds, groupId: tenantId }),
+      markRunning: (id) => repo.markScheduledRunning(id),
+      defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
+      plafondLePlusBas: plafondLePlusBas(config),
+      onError: (m, err) => {
+        // eslint-disable-next-line no-console
+        console.error(`${m}:`, messageDe(err));
+        // MÊME clé que l'échec global ci-dessous : le throttle de 5 min est alors partagé, donc dix
+        // campagnes qui échouent d'un coup font UNE alerte, pas dix. Le détail par campagne reste au log.
+        alert('sweeper:schedule', `${m} : ${messageDe(err)}`);
+      },
+    });
+    // eslint-disable-next-line no-console
+    if (n > 0) console.log(`schedule-sweep: ${n} campagne(s) programmée(s) lancée(s)`);
   };
-  void scheduleSweep();
-  taches.programmer('campagnes-programmees', 60_000, scheduleSweep);
+  taches.programmer('campagnes-programmees', 60_000, scheduleSweep, { immediat: true, enEchec: echecDeBalayage('schedule-sweep', 'sweeper:schedule') });
 
   /**
    * 🔴 BALAYAGE DE REPRISE APRÈS UN PLAFOND DE DÉBIT (migration 0103).
@@ -1215,29 +1197,22 @@ async function main(): Promise<void> {
    * par une machine : Meta juge alors le numéro, et relancer sans rien changer peut coûter le numéro.
    */
   const plafondSweep = async (): Promise<void> => {
-    try {
-      const n = await runCampaignRepriseSweep({
-        reprendreDues: () => repo.reprendreCampagnesDues(),
-        getRunSizing: (id) => repo.getRunSizing(id),
-        enqueueRun: (id, tenantId, expireInSeconds) => queue.enqueue('campaign-run', { campaignId: id }, { expireInSeconds, groupId: tenantId }),
-        defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
-        plafondLePlusBas: plafondLePlusBas(config),
-        onError: (m, err) => {
-          // eslint-disable-next-line no-console
-          console.error(`${m}:`, err instanceof Error ? err.message : err);
-          alert('sweeper:reprise', `${m} : ${err instanceof Error ? err.message : err}`);
-        },
-      });
-      // eslint-disable-next-line no-console
-      if (n > 0) console.log(`reprise-sweep: ${n} campagne(s) reprise(s) apres un plafond de debit`);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('reprise-sweep erreur:', err instanceof Error ? err.message : err);
-      alert('sweeper:reprise', `reprise-sweep en échec : ${err instanceof Error ? err.message : err}`);
-    }
+    const n = await runCampaignRepriseSweep({
+      reprendreDues: () => repo.reprendreCampagnesDues(),
+      getRunSizing: (id) => repo.getRunSizing(id),
+      enqueueRun: (id, tenantId, expireInSeconds) => queue.enqueue('campaign-run', { campaignId: id }, { expireInSeconds, groupId: tenantId }),
+      defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
+      plafondLePlusBas: plafondLePlusBas(config),
+      onError: (m, err) => {
+        // eslint-disable-next-line no-console
+        console.error(`${m}:`, messageDe(err));
+        alert('sweeper:reprise', `${m} : ${messageDe(err)}`);
+      },
+    });
+    // eslint-disable-next-line no-console
+    if (n > 0) console.log(`reprise-sweep: ${n} campagne(s) reprise(s) apres un plafond de debit`);
   };
-  void plafondSweep();
-  taches.programmer('campagnes-reprise-plafond', 60_000, plafondSweep);
+  taches.programmer('campagnes-reprise-plafond', 60_000, plafondSweep, { immediat: true, enEchec: echecDeBalayage('reprise-sweep', 'sweeper:reprise') });
 
   /**
    * 🔴 BALAYAGE DE REPRISE : relance toute campagne GELÉE (R4).
@@ -1258,58 +1233,40 @@ async function main(): Promise<void> {
    * Coût : une requête indexée par minute, et zéro enfilement quand rien n'est gelé.
    */
   const repriseSweep = async (): Promise<void> => {
-    try {
-      const gelees = await repo.listCampagnesGelees();
-      for (const c of gelees) {
-        try {
-          await enqueueCampaignRun(queue, { campaignId: c.id, tenantId: c.tenantId, pendingCount: c.pendingCount, resolvedRatePerMinute: resolveRatePerMinute(c.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE, plafondLePlusBas(config)) });
-        } catch (err) {
-          // Par campagne : une file qui refuse un job ne doit pas empêcher les autres de repartir.
-          // eslint-disable-next-line no-console
-          console.error(`reprise: enfilement impossible pour ${c.id}`, err instanceof Error ? err.message : err);
-        }
+    const gelees = await repo.listCampagnesGelees();
+    for (const c of gelees) {
+      try {
+        await relancerCampagne({ campaignId: c.id, tenantId: c.tenantId, pendingCount: c.pendingCount, ratePerMinute: c.ratePerMinute });
+      } catch (err) {
+        // Par campagne : une file qui refuse un job ne doit pas empêcher les autres de repartir.
+        // eslint-disable-next-line no-console
+        console.error(`reprise: enfilement impossible pour ${c.id}`, messageDe(err));
       }
-      // eslint-disable-next-line no-console
-      if (gelees.length > 0) console.log(`reprise: ${gelees.length} campagne(s) relancée(s) après interruption`);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('reprise erreur:', err instanceof Error ? err.message : err);
-      alert('sweeper:reprise', `balayage de reprise des campagnes en échec : ${err instanceof Error ? err.message : err}`);
     }
+    // eslint-disable-next-line no-console
+    if (gelees.length > 0) console.log(`reprise: ${gelees.length} campagne(s) relancée(s) après interruption`);
   };
-  void repriseSweep();
-  taches.programmer('campagnes-gelees', 60_000, repriseSweep);
+  taches.programmer('campagnes-gelees', 60_000, repriseSweep, { immediat: true, enEchec: echecDeBalayage('reprise', 'sweeper:reprise', 'balayage de reprise des campagnes') });
 
   // Sweeper de RÉVEIL : reprend les parcours endormis sur un bloc « Attente » arrivé à échéance. Même patron
   // que le sweeper de planification. La granularité du délai vaut cet intervalle : une attente de 5 min repart
   // entre 5 et 6 min, ce que l'UI annonce comme « environ ».
-  // Garde de RÉ-ENTRANCE : `setInterval` n'attend pas la passe précédente. Sans elle, une passe lente (lot de
-  // 50 reprises + relances Meta) verrait la suivante démarrer et re-claimer des runs dont le bail a expiré.
-  let wakeEnCours = false;
+  // Garde de RÉ-ENTRANCE : celle du registre, qui couvre aussi la passe de démarrage (`immediat`). Sans elle,
+  // une passe lente (lot de 50 reprises + relances Meta) verrait la suivante re-claimer des runs dont le bail
+  // a expiré.
   const wakeSweep = async (): Promise<void> => {
-    if (wakeEnCours) return;
-    wakeEnCours = true;
-    try {
-      const n = await runWorkflowWakeSweep({
-        claimDue: (limit) => runStore.claimDueSleeping(limit),
-        // Bloc QUESTION resté sans réponse : son échéance vit sur un run `waiting`, invisible du claim
-        // ci-dessus. Sans cette ligne, la sortie « pas de réponse » ne partirait JAMAIS, en silence.
-        claimDueQuestions: (limit) => runStore.claimDueQuestions(limit),
-        resume: (run) => workflowExecutor.resume(run),
-        closeStale: () => runStore.closeStaleSleeping(),
-      });
-      // eslint-disable-next-line no-console
-      if (n > 0) console.log(`wake-sweep: ${n} parcours repris après attente`);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('wake-sweep erreur:', err instanceof Error ? err.message : err);
-      alert('sweeper:wake', `wake-sweep en échec : ${err instanceof Error ? err.message : err}`);
-    } finally {
-      wakeEnCours = false;
-    }
+    const n = await runWorkflowWakeSweep({
+      claimDue: (limit) => runStore.claimDueSleeping(limit),
+      // Bloc QUESTION resté sans réponse : son échéance vit sur un run `waiting`, invisible du claim
+      // ci-dessus. Sans cette ligne, la sortie « pas de réponse » ne partirait JAMAIS, en silence.
+      claimDueQuestions: (limit) => runStore.claimDueQuestions(limit),
+      resume: (run) => workflowExecutor.resume(run),
+      closeStale: () => runStore.closeStaleSleeping(),
+    });
+    // eslint-disable-next-line no-console
+    if (n > 0) console.log(`wake-sweep: ${n} parcours repris après attente`);
   };
-  void wakeSweep();
-  taches.programmer('reveil-parcours', config.WORKFLOW_WAKE_SWEEP_INTERVAL_MS, wakeSweep);
+  taches.programmer('reveil-parcours', config.WORKFLOW_WAKE_SWEEP_INTERVAL_MS, wakeSweep, { immediat: true, enEchec: echecDeBalayage('wake-sweep', 'sweeper:wake') });
 
   /**
    * BALAYAGE DES TOURS D'AGENT MORTS EN VOL (constat A1 de l'audit externe du 2026-09-02).
@@ -1319,37 +1276,25 @@ async function main(): Promise<void> {
    * à éteindre le filet le jour d'une rotation de clé ratée, c'est-à-dire exactement quand des tours meurent
    * en vol. Il est de toute façon INERTE sans agent : aucune session ne porte alors de tour en vol.
    *
-   * Garde de ré-entrance comme les autres balayages : `setInterval` n'attend pas la passe précédente.
+   * Garde de ré-entrance : celle du registre, comme les autres balayages.
    */
-  let toursBloquesEnCours = false;
   const toursBloquesSweep = async (): Promise<void> => {
-    if (toursBloquesEnCours) return;
-    toursBloquesEnCours = true;
-    try {
-      await runTourBloqueSweep({
-        reclamer: (age, limite) => agentSessions.reclamerToursBloques(age, limite, SORTIE_ECHEC),
-        // Le parcours reprend par la branche RÉELLEMENT DUE, portée par la ligne réclamée : `sortie:echec`
-        // pour une session encore `en_cours` (elle n'en a pas d'autre), la sortie déjà décidée pour une
-        // session close dont l'application a échoué. La session est DÉJÀ close à ce stade, donc
-        // `sortirDuBlocAgent` ne fait plus que faire avancer le run, et ne fait rien s'il a déjà avancé.
-        sortir: (t) => workflowExecutor.sortirDuBlocAgent(t.tenantId, t.waId, t.sessionId, t.sortie).then(() => {}),
-        // La sortie est passée : la marque tombe, et la ligne cesse d'être réclamable. Sans ce câblage, la
-        // même session reviendrait à chaque passage, la sortie n'y ferait rien de plus, mais le balayage
-        // travaillerait pour rien et son compte annoncerait des parcours remis en route qui l'étaient déjà.
-        sortieAppliquee: (t) => agentSessions.sortieAppliquee(t.tenantId, t.sessionId),
-        // eslint-disable-next-line no-console
-        log: (m) => console.warn(m),
-      });
-    } catch (err) {
+    await runTourBloqueSweep({
+      reclamer: (age, limite) => agentSessions.reclamerToursBloques(age, limite, SORTIE_ECHEC),
+      // Le parcours reprend par la branche RÉELLEMENT DUE, portée par la ligne réclamée : `sortie:echec`
+      // pour une session encore `en_cours` (elle n'en a pas d'autre), la sortie déjà décidée pour une
+      // session close dont l'application a échoué. La session est DÉJÀ close à ce stade, donc
+      // `sortirDuBlocAgent` ne fait plus que faire avancer le run, et ne fait rien s'il a déjà avancé.
+      sortir: (t) => workflowExecutor.sortirDuBlocAgent(t.tenantId, t.waId, t.sessionId, t.sortie).then(() => {}),
+      // La sortie est passée : la marque tombe, et la ligne cesse d'être réclamable. Sans ce câblage, la
+      // même session reviendrait à chaque passage, la sortie n'y ferait rien de plus, mais le balayage
+      // travaillerait pour rien et son compte annoncerait des parcours remis en route qui l'étaient déjà.
+      sortieAppliquee: (t) => agentSessions.sortieAppliquee(t.tenantId, t.sessionId),
       // eslint-disable-next-line no-console
-      console.error('tours-bloques-sweep erreur:', err instanceof Error ? err.message : err);
-      alert('sweeper:tours-bloques', `tours-bloques-sweep en échec : ${err instanceof Error ? err.message : err}`);
-    } finally {
-      toursBloquesEnCours = false;
-    }
+      log: (m) => console.warn(m),
+    });
   };
-  void toursBloquesSweep();
-  taches.programmer('tours-agent-bloques', 60_000, toursBloquesSweep);
+  taches.programmer('tours-agent-bloques', 60_000, toursBloquesSweep, { immediat: true, enEchec: echecDeBalayage('tours-bloques-sweep', 'sweeper:tours-bloques') });
 
   // Auto-relance des échecs (F6) : 131049 (fenêtre matinale Europe/Paris, 1 relance) + 131026 (1 relance puis
   // injoignable au 2e échec). Le sweep lui-même ne touche QUE ce que la campagne autorise depuis la migration
@@ -1375,57 +1320,45 @@ async function main(): Promise<void> {
         }
       : async (): Promise<void> => {};
     const retrySweep = async (): Promise<void> => {
-      try {
-        const res = await runRetrySweep({
-          isMorningWindow: () => isMorningParis(Date.now()),
-          list131049: () => repo.listRetry131049(Date.now()),
-          list131026: () => repo.listRetry131026(),
-          list131026SecondFail: () => repo.listRetry131026SecondFail(),
-          resetForRetry: (id) => repo.resetForRetry(id),
-          markUnreachableDone: (id) => repo.markUnreachableDone(id),
-          // 🔴 DIMENSIONNER l'expiration, comme les trois autres enfileurs de cette file. Cet appel était le
-          // SEUL à passer par `queue.enqueue` nu : il retombait donc sur le défaut de 15 minutes, alors qu'une
-          // relance de plus de ~450 destinataires (à 30/min) dure plus longtemps que ça. Le job expirait en
-          // plein envoi, pg-boss le rejouait, et le run reparti en parallèle appliquait SON propre limiteur de
-          // débit : le débit réel doublait. Le plafond de 23 h posé par le lot « journée 1 » ne protégeait pas
-          // ce chemin, qui n'en passait simplement pas.
-          enqueueRun: async (id) => {
-            const sizing = await repo.getRunSizing(id);
-            // Campagne introuvable (supprimée entre la liste et la relance) : rien à réenfiler.
-            if (!sizing) return;
-            await enqueueCampaignRun(queue, {
-              campaignId: id,
-              tenantId: sizing.tenantId,
-              pendingCount: sizing.pendingCount,
-              resolvedRatePerMinute: resolveRatePerMinute(sizing.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE, plafondLePlusBas(config)),
-            });
-          },
-          flagUnreachable,
-          noterJoignabilite: noterJoignabiliteContact,
-          // La bascule d'étage : seules les campagnes à repli y passent, et il n'y en a aucune tant
-          // qu'une chaîne à plus d'un étage n'est pas créable. Le câblage est posé maintenant pour que
-          // le jour où elle le sera, il n'y ait plus qu'à lui apprendre à envoyer le bon contenu.
-          listCandidatsBascule: () => repo.listCandidatsBascule(),
-          basculerEtage: (id, rang) => repo.basculerEtage(id, rang),
-          // L'horaire du RATTRAPAGE, distinct de celui de l'envoi initial (`business_hours_only`, lu
-          // par le moteur). Ici c'est l'espace qui parle, pas la campagne : la campagne dit seulement
-          // si elle s'en affranchit (`rattrapage_hors_horaires`), et cette réponse-là voyage avec le
-          // destinataire.
-          fenetreOuverte: async (tenant: string) => {
-            const s = await settingsStore.get(tenant);
-            return fenetreDeRattrapageOuverte(new Date(), s.timezone, s.businessHours);
-          },
-        });
-        // eslint-disable-next-line no-console
-        if (res.retried > 0 || res.flagged > 0 || res.bascules > 0) console.log(`retry-sweep: ${res.retried} relancé(s), ${res.flagged} injoignable(s), ${res.bascules} bascule(s) d'étage`);
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error('retry-sweep erreur:', err instanceof Error ? err.message : err);
-        alert('sweeper:retry', `retry-sweep en échec : ${err instanceof Error ? err.message : err}`);
-      }
+      const res = await runRetrySweep({
+        isMorningWindow: () => isMorningParis(Date.now()),
+        list131049: () => repo.listRetry131049(Date.now()),
+        list131026: () => repo.listRetry131026(),
+        list131026SecondFail: () => repo.listRetry131026SecondFail(),
+        resetForRetry: (id) => repo.resetForRetry(id),
+        markUnreachableDone: (id) => repo.markUnreachableDone(id),
+        // 🔴 DIMENSIONNER l'expiration, comme les trois autres enfileurs de cette file. Cet appel était le
+        // SEUL à passer par `queue.enqueue` nu : il retombait donc sur le défaut de 15 minutes, alors qu'une
+        // relance de plus de ~450 destinataires (à 30/min) dure plus longtemps que ça. Le job expirait en
+        // plein envoi, pg-boss le rejouait, et le run reparti en parallèle appliquait SON propre limiteur de
+        // débit : le débit réel doublait. Le plafond de 23 h posé par le lot « journée 1 » ne protégeait pas
+        // ce chemin, qui n'en passait simplement pas.
+        enqueueRun: async (id) => {
+          const sizing = await repo.getRunSizing(id);
+          // Campagne introuvable (supprimée entre la liste et la relance) : rien à réenfiler.
+          if (!sizing) return;
+          await relancerCampagne({ campaignId: id, ...sizing });
+        },
+        flagUnreachable,
+        noterJoignabilite: noterJoignabiliteContact,
+        // La bascule d'étage : seules les campagnes à repli y passent, et il n'y en a aucune tant
+        // qu'une chaîne à plus d'un étage n'est pas créable. Le câblage est posé maintenant pour que
+        // le jour où elle le sera, il n'y ait plus qu'à lui apprendre à envoyer le bon contenu.
+        listCandidatsBascule: () => repo.listCandidatsBascule(),
+        basculerEtage: (id, rang) => repo.basculerEtage(id, rang),
+        // L'horaire du RATTRAPAGE, distinct de celui de l'envoi initial (`business_hours_only`, lu
+        // par le moteur). Ici c'est l'espace qui parle, pas la campagne : la campagne dit seulement
+        // si elle s'en affranchit (`rattrapage_hors_horaires`), et cette réponse-là voyage avec le
+        // destinataire.
+        fenetreOuverte: async (tenant: string) => {
+          const s = await settingsStore.get(tenant);
+          return fenetreDeRattrapageOuverte(new Date(), s.timezone, s.businessHours);
+        },
+      });
+      // eslint-disable-next-line no-console
+      if (res.retried > 0 || res.flagged > 0 || res.bascules > 0) console.log(`retry-sweep: ${res.retried} relancé(s), ${res.flagged} injoignable(s), ${res.bascules} bascule(s) d'étage`);
     };
-    void retrySweep();
-    taches.programmer('auto-relance-echecs', config.AUTO_RETRY_SWEEP_INTERVAL_MS, retrySweep);
+    taches.programmer('auto-relance-echecs', config.AUTO_RETRY_SWEEP_INTERVAL_MS, retrySweep, { immediat: true, enEchec: echecDeBalayage('retry-sweep', 'sweeper:retry') });
   }
 
   // Sweeper de CONTRÔLE : rend la main au scénario quand plus personne ne s'occupe d'une conversation.
@@ -1433,65 +1366,58 @@ async function main(): Promise<void> {
   // (ou un worker qui meurt) gèlerait la conversation indéfiniment, scénario muet et client sans réponse.
   // C'est la soupape de la capacité de gel, elle part donc dans le même déploiement qu'elle.
   const controlSweep = async (): Promise<void> => {
-    try {
-      const rendues = await runControlSweep({
-        /**
-         * 🔴 LES DEUX ARGUMENTS, ET LE SECOND MANQUAIT (mesuré en production le 2026-09-15).
-         *
-         * Cette flèche n'en déclarait qu'UN. Le balayage appelle pourtant
-         * `listHeldControl(undefined, timeouts.app_workflow)` : TypeScript accepte une flèche à un
-         * paramètre là où le contrat en déclare deux, et le second était AVALÉ EN SILENCE. Le magasin
-         * retombait donc sur son défaut `ageScenarioMs = 0`, or son SQL teste `$2::bigint > 0` : la
-         * branche qui ramasse les fils tenus par un scénario ne se déclenchait JAMAIS.
-         *
-         * 🔴 CONSÉQUENCE MESURÉE : la soupape des 24 h sur `app_workflow`, écrite le 2026-09-14, n'a
-         * jamais rien ramassé. Avec 0 elle rendait 0 conversation ; avec la valeur prévue, 10, toutes
-         * gelées depuis. Un parcours terminé gardait le fil INDÉFINIMENT, pas 24 h.
-         *
-         * ⚠️ C'est exactement le piège écrit dans le CLAUDE.md du dépôt (« une flèche à deux paramètres
-         * est assignable à un contrat qui en déclare trois, et le troisième est avalé en silence »), et
-         * il s'est reproduit ici. Aucun test ne pouvait le voir : ils montent tous un faux `listHeldControl`
-         * dont ils contrôlent la signature.
-         */
-        listHeldControl: (limit, ageScenarioMs) => inboxStore.listHeldControl(limit, ageScenarioMs),
-        setControlOwner: (t, w, o, opts) => inboxStore.setControlOwner(t, w, o, opts),
-        // Défauts du serveur, appliqués aux clients qui n'ont rien réglé.
-        timeouts: { app_human: config.CONTROL_HUMAN_TIMEOUT_MS, mba: config.CONTROL_MBA_TIMEOUT_MS, app_workflow: config.CONTROL_WORKFLOW_TIMEOUT_MS },
-        // Réglage par client du gel humain : c'est lui qui décide combien de temps on laisse un
-        // opérateur travailler tranquille avant que la conversation reparte.
-        handbackMsByTenant: (ids) => settingsStore.handbackMsByTenant(ids),
-        // Destination : l'agent de Meta chez les clients qui l'ont allumé, le scénario chez les autres. Plus
-        // rien à arbitrer, la règle se déduit de l'état du compte.
-        mbaActifParTenant: (ids) => settingsStore.mbaActifParTenant(ids),
-        /**
-         * 🔴 LE VERDICT DE `rendreLeFil` EST RELAYÉ DEPUIS LE 2026-09-15, il était JETÉ ICI.
-         *
-         * Le commentaire d'avant l'assumait : « le verdict est IGNORÉ ici, et seulement ici : le balayage est
-         * best-effort, un fil ne doit pas rester gelé pour toujours à cause d'un hoquet réseau. » C'est
-         * précisément ce best-effort qui a produit l'incident : neuf conversations annonçant `mba` alors que
-         * Meta pensait le contraire, donc deux systèmes qui se croyaient chacun déchargés du client.
-         *
-         * ⚠️ Et la crainte ne se réalisait pas : refuser d'écrire ne GÈLE rien. La conversation reste dans
-         * l'état où elle est, donc VISIBLE dans « À traiter », et ce balayage repasse toutes les cinq minutes.
-         */
-        /**
-         * ⚠️ LE BALAYAGE VEUT SAVOIR SI META A CONFIRMÉ, et rien d'autre : « aucun numéro » comme
-         * « conversation de test » veulent dire « ne compte pas celle-là comme rendue ». C'est bien un
-         * booléen ici, DÉRIVÉ du verdict à trois états plutôt que confondu avec lui : c'est cette confusion
-         * qui a fait annoncer comme rendus des fils que l'application détenait encore.
-         */
-        releaseToMba: async (tenant, waId) => (await releaseThreadChezMeta(tenant, waId)) === 'rendu',
-      });
-      // eslint-disable-next-line no-console
-      if (rendues > 0) console.log(`control-sweep: ${rendues} conversation(s) rendue(s) au scénario`);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('control-sweep erreur:', err instanceof Error ? err.message : err);
-      alert('sweeper:control', `control-sweep en échec : ${err instanceof Error ? err.message : err}`);
-    }
+    const rendues = await runControlSweep({
+      /**
+       * 🔴 LES DEUX ARGUMENTS, ET LE SECOND MANQUAIT (mesuré en production le 2026-09-15).
+       *
+       * Cette flèche n'en déclarait qu'UN. Le balayage appelle pourtant
+       * `listHeldControl(undefined, timeouts.app_workflow)` : TypeScript accepte une flèche à un
+       * paramètre là où le contrat en déclare deux, et le second était AVALÉ EN SILENCE. Le magasin
+       * retombait donc sur son défaut `ageScenarioMs = 0`, or son SQL teste `$2::bigint > 0` : la
+       * branche qui ramasse les fils tenus par un scénario ne se déclenchait JAMAIS.
+       *
+       * 🔴 CONSÉQUENCE MESURÉE : la soupape des 24 h sur `app_workflow`, écrite le 2026-09-14, n'a
+       * jamais rien ramassé. Avec 0 elle rendait 0 conversation ; avec la valeur prévue, 10, toutes
+       * gelées depuis. Un parcours terminé gardait le fil INDÉFINIMENT, pas 24 h.
+       *
+       * ⚠️ C'est exactement le piège écrit dans le CLAUDE.md du dépôt (« une flèche à deux paramètres
+       * est assignable à un contrat qui en déclare trois, et le troisième est avalé en silence »), et
+       * il s'est reproduit ici. Aucun test ne pouvait le voir : ils montent tous un faux `listHeldControl`
+       * dont ils contrôlent la signature.
+       */
+      listHeldControl: (limit, ageScenarioMs) => inboxStore.listHeldControl(limit, ageScenarioMs),
+      setControlOwner: (t, w, o, opts) => inboxStore.setControlOwner(t, w, o, opts),
+      // Défauts du serveur, appliqués aux clients qui n'ont rien réglé.
+      timeouts: { app_human: config.CONTROL_HUMAN_TIMEOUT_MS, mba: config.CONTROL_MBA_TIMEOUT_MS, app_workflow: config.CONTROL_WORKFLOW_TIMEOUT_MS },
+      // Réglage par client du gel humain : c'est lui qui décide combien de temps on laisse un
+      // opérateur travailler tranquille avant que la conversation reparte.
+      handbackMsByTenant: (ids) => settingsStore.handbackMsByTenant(ids),
+      // Destination : l'agent de Meta chez les clients qui l'ont allumé, le scénario chez les autres. Plus
+      // rien à arbitrer, la règle se déduit de l'état du compte.
+      mbaActifParTenant: (ids) => settingsStore.mbaActifParTenant(ids),
+      /**
+       * 🔴 LE VERDICT DE `rendreLeFil` EST RELAYÉ DEPUIS LE 2026-09-15, il était JETÉ ICI.
+       *
+       * Le commentaire d'avant l'assumait : « le verdict est IGNORÉ ici, et seulement ici : le balayage est
+       * best-effort, un fil ne doit pas rester gelé pour toujours à cause d'un hoquet réseau. » C'est
+       * précisément ce best-effort qui a produit l'incident : neuf conversations annonçant `mba` alors que
+       * Meta pensait le contraire, donc deux systèmes qui se croyaient chacun déchargés du client.
+       *
+       * ⚠️ Et la crainte ne se réalisait pas : refuser d'écrire ne GÈLE rien. La conversation reste dans
+       * l'état où elle est, donc VISIBLE dans « À traiter », et ce balayage repasse toutes les cinq minutes.
+       */
+      /**
+       * ⚠️ LE BALAYAGE VEUT SAVOIR SI META A CONFIRMÉ, et rien d'autre : « aucun numéro » comme
+       * « conversation de test » veulent dire « ne compte pas celle-là comme rendue ». C'est bien un
+       * booléen ici, DÉRIVÉ du verdict à trois états plutôt que confondu avec lui : c'est cette confusion
+       * qui a fait annoncer comme rendus des fils que l'application détenait encore.
+       */
+      releaseToMba: async (tenant, waId) => (await releaseThreadChezMeta(tenant, waId)) === 'rendu',
+    });
+    // eslint-disable-next-line no-console
+    if (rendues > 0) console.log(`control-sweep: ${rendues} conversation(s) rendue(s) au scénario`);
   };
-  void controlSweep();
-  taches.programmer('reprise-controle', config.CONTROL_SWEEP_INTERVAL_MS, controlSweep);
+  taches.programmer('reprise-controle', config.CONTROL_SWEEP_INTERVAL_MS, controlSweep, { immediat: true, enEchec: echecDeBalayage('control-sweep', 'sweeper:control') });
 
   // Passage de main de l'agent selon les heures d'ouverture. Meta n'a AUCUNE notion d'horaires : sans ce
   // balayage, un agent qui passe la main la passe aussi à 3 h du matin, et le client lit « un conseiller
@@ -1502,57 +1428,36 @@ async function main(): Promise<void> {
     phoneNumberFor: (tenant: string) => repo.getTenantPhoneNumberId(tenant),
   };
   const handoffSweep = async (): Promise<void> => {
-    try {
-      const bascules = await runHandoffSweep({
-        tenantsHandoffSurHoraires: () => settingsStore.tenantsHandoffSurHoraires(),
-        lireHandoffEnabled: (tenant) => lireHandoffEnabled(cibleHandoff, tenant),
-        ecrireHandoffEnabled: (tenant, enabled) => ecrireHandoffEnabled(cibleHandoff, tenant, enabled),
-      });
-      // eslint-disable-next-line no-console
-      if (bascules > 0) console.log(`handoff-sweep: ${bascules} tenant(s) basculé(s) sur les heures d'ouverture`);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('handoff-sweep erreur:', err instanceof Error ? err.message : err);
-      alert('sweeper:handoff', `handoff-sweep en échec : ${err instanceof Error ? err.message : err}`);
-    }
+    const bascules = await runHandoffSweep({
+      tenantsHandoffSurHoraires: () => settingsStore.tenantsHandoffSurHoraires(),
+      lireHandoffEnabled: (tenant) => lireHandoffEnabled(cibleHandoff, tenant),
+      ecrireHandoffEnabled: (tenant, enabled) => ecrireHandoffEnabled(cibleHandoff, tenant, enabled),
+    });
+    // eslint-disable-next-line no-console
+    if (bascules > 0) console.log(`handoff-sweep: ${bascules} tenant(s) basculé(s) sur les heures d'ouverture`);
   };
-  void handoffSweep();
-  taches.programmer('handoff-mba', config.CONTROL_SWEEP_INTERVAL_MS, handoffSweep);
+  taches.programmer('handoff-mba', config.CONTROL_SWEEP_INTERVAL_MS, handoffSweep, { immediat: true, enEchec: echecDeBalayage('handoff-sweep', 'sweeper:handoff') });
 
   // Sweeper d'idempotence API : purge les clés plus vieilles que leur durée de vie (`DUREE_CLE_IDEMPOTENCE_MS`),
   // la MÊME que celle du claim. Le store la prend pour plancher : une purge plus courte ferait envoyer deux fois.
   const idempotencyStore = new PgApiIdempotencyStore(pool);
   const webhookStore = new PgWebhookStore(pool);
   const idempotencySweep = async (): Promise<void> => {
-    try {
-      const n = await idempotencyStore.sweepOlderThan(DUREE_CLE_IDEMPOTENCE_MS);
-      // eslint-disable-next-line no-console
-      if (n > 0) console.log(`idempotency-sweep: ${n} clé(s) d'idempotence purgée(s)`);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('idempotency-sweep erreur:', err instanceof Error ? err.message : err);
-      alert('sweeper:idempotency', `idempotency-sweep en échec : ${err instanceof Error ? err.message : err}`);
-    }
+    const n = await idempotencyStore.sweepOlderThan(DUREE_CLE_IDEMPOTENCE_MS);
+    // eslint-disable-next-line no-console
+    if (n > 0) console.log(`idempotency-sweep: ${n} clé(s) d'idempotence purgée(s)`);
   };
-  void idempotencySweep();
-  taches.programmer('idempotence-api', 60 * 60 * 1000, idempotencySweep);
+  taches.programmer('idempotence-api', 60 * 60 * 1000, idempotencySweep, { immediat: true, enEchec: echecDeBalayage('idempotency-sweep', 'sweeper:idempotency') });
 
   // RGPD : le dernier payload d'un webhook entrant est du JSON TIERS, donc potentiellement des données
   // personnelles qu'on n'a pas demandées. Il n'existe que pour construire le mapping dans l'écran et pour
   // déboguer ; passé une semaine sans appel, il n'a plus d'utilité et il est effacé.
   const webhookPayloadSweep = async (): Promise<void> => {
-    try {
-      const n = await webhookStore.purgeStalePayloads(config.WEBHOOK_PAYLOAD_RETENTION_DAYS);
-      // eslint-disable-next-line no-console
-      if (n > 0) console.log(`webhook-payload-sweep: ${n} payload(s) dormant(s) effacé(s)`);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('webhook-payload-sweep erreur:', err instanceof Error ? err.message : err);
-      alert('sweeper:webhook-payload', `webhook-payload-sweep en échec : ${err instanceof Error ? err.message : err}`);
-    }
+    const n = await webhookStore.purgeStalePayloads(config.WEBHOOK_PAYLOAD_RETENTION_DAYS);
+    // eslint-disable-next-line no-console
+    if (n > 0) console.log(`webhook-payload-sweep: ${n} payload(s) dormant(s) effacé(s)`);
   };
-  void webhookPayloadSweep();
-  taches.programmer('retention-payloads-webhooks', 6 * 60 * 60 * 1000, webhookPayloadSweep);
+  taches.programmer('retention-payloads-webhooks', 6 * 60 * 60 * 1000, webhookPayloadSweep, { immediat: true, enEchec: echecDeBalayage('webhook-payload-sweep', 'sweeper:webhook-payload') });
 
   // RGPD, et croissance non bornée (PLAN.md 5.2) : `webhook_events` garde le payload COMPLET de chaque
   // événement Meta reçu depuis le premier jour, donc le texte des messages entrants et le numéro de qui
@@ -1562,18 +1467,11 @@ async function main(): Promise<void> {
   // Toutes les heures et non toutes les six : la première purge d'une table qui n'en a jamais eu s'étale sur
   // plusieurs passages (l'effacement est borné pour ne pas tenir un verrou ni gonfler le WAL d'un coup).
   const webhookEventsSweep = async (): Promise<void> => {
-    try {
-      const n = await eventStore.purgeOlderThan(config.WEBHOOK_EVENTS_RETENTION_DAYS);
-      // eslint-disable-next-line no-console
-      if (n > 0) console.log(`webhook-events-sweep: ${n} événement(s) Meta effacé(s) (rétention ${config.WEBHOOK_EVENTS_RETENTION_DAYS} j)`);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('webhook-events-sweep erreur:', err instanceof Error ? err.message : err);
-      alert('sweeper:webhook-events', `webhook-events-sweep en échec : ${err instanceof Error ? err.message : err}`);
-    }
+    const n = await eventStore.purgeOlderThan(config.WEBHOOK_EVENTS_RETENTION_DAYS);
+    // eslint-disable-next-line no-console
+    if (n > 0) console.log(`webhook-events-sweep: ${n} événement(s) Meta effacé(s) (rétention ${config.WEBHOOK_EVENTS_RETENTION_DAYS} j)`);
   };
-  void webhookEventsSweep();
-  taches.programmer('retention-evenements-meta', 60 * 60 * 1000, webhookEventsSweep);
+  taches.programmer('retention-evenements-meta', 60 * 60 * 1000, webhookEventsSweep, { immediat: true, enEchec: echecDeBalayage('webhook-events-sweep', 'sweeper:webhook-events') });
 
   /**
    * LES AGREGATS JOURNALIERS, ECRITS AVANT QUE LA PURGE N EFFACE CE QUI LES PRODUIT.
@@ -1634,8 +1532,8 @@ async function main(): Promise<void> {
     if (n > 0) console.log(`agregats-analyse: ${n} journee(s) ecrite(s) ou mise(s) a jour`);
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error('agregats-analyse erreur:', err instanceof Error ? err.message : err);
-    alert('sweeper:agregats-analyse', `agregats-analyse en echec, la purge des conversations est SUSPENDUE pour ce demarrage : ${err instanceof Error ? err.message : err}`);
+    console.error('agregats-analyse erreur:', messageDe(err));
+    alert('sweeper:agregats-analyse', `agregats-analyse en echec, la purge des conversations est SUSPENDUE pour ce demarrage : ${messageDe(err)}`);
   }
   taches.programmer('agregats-analyse', 6 * 60 * 60 * 1000, async () => {
     try {
@@ -1648,8 +1546,8 @@ async function main(): Promise<void> {
       // demarrage. Sans cela, une panne qui dure verrait la purge continuer a effacer sans trace.
       agregatsAJour = false;
       // eslint-disable-next-line no-console
-      console.error('agregats-analyse erreur:', err instanceof Error ? err.message : err);
-      alert('sweeper:agregats-analyse', `agregats-analyse en echec, la purge des conversations est SUSPENDUE : ${err instanceof Error ? err.message : err}`);
+      console.error('agregats-analyse erreur:', messageDe(err));
+      alert('sweeper:agregats-analyse', `agregats-analyse en echec, la purge des conversations est SUSPENDUE : ${messageDe(err)}`);
     }
   });
   // RGPD (PLAN.md 5.2, lot 2) : les CONVERSATIONS et, par cascade, leurs messages et leur analyse
@@ -1671,18 +1569,11 @@ async function main(): Promise<void> {
       console.warn('conversation-retention-sweep: SAUTE, les agregats journaliers ne sont pas a jour.');
       return;
     }
-    try {
-      const n = await inboxStore.purgeConversationsOlderThan(config.CONVERSATION_RETENTION_DAYS);
-      // eslint-disable-next-line no-console
-      if (n > 0) console.log(`conversation-retention-sweep: ${n} conversation(s) effacée(s) (rétention ${config.CONVERSATION_RETENTION_DAYS} j)`);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('conversation-retention-sweep erreur:', err instanceof Error ? err.message : err);
-      alert('sweeper:conversation-retention', `conversation-retention-sweep en échec : ${err instanceof Error ? err.message : err}`);
-    }
+    const n = await inboxStore.purgeConversationsOlderThan(config.CONVERSATION_RETENTION_DAYS);
+    // eslint-disable-next-line no-console
+    if (n > 0) console.log(`conversation-retention-sweep: ${n} conversation(s) effacée(s) (rétention ${config.CONVERSATION_RETENTION_DAYS} j)`);
   };
-  void conversationSweep();
-  taches.programmer('retention-conversations', 6 * 60 * 60 * 1000, conversationSweep);
+  taches.programmer('retention-conversations', 6 * 60 * 60 * 1000, conversationSweep, { immediat: true, enEchec: echecDeBalayage('conversation-retention-sweep', 'sweeper:conversation-retention') });
 
   /**
    * Les QUATRE dernières tables qui grossissaient sans fin (lot 4 du programme II).
@@ -1704,8 +1595,8 @@ async function main(): Promise<void> {
         if (n > 0) console.log(`retention-sweep: ${n} ${quoi}`);
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error(`retention-sweep (${nom}) erreur:`, err instanceof Error ? err.message : err);
-        alert(`sweeper:retention:${nom}`, `retention-sweep ${nom} en échec : ${err instanceof Error ? err.message : err}`);
+        console.error(`retention-sweep (${nom}) erreur:`, messageDe(err));
+        alert(`sweeper:retention:${nom}`, `retention-sweep ${nom} en échec : ${messageDe(err)}`);
       }
     };
     await etape('blocs', `événement(s) de bloc anonymisé(s) (au-delà de ${config.NODE_EVENTS_ANONYMISATION_DAYS} j)`,
@@ -1730,34 +1621,26 @@ async function main(): Promise<void> {
     await etape('essais', `essai(s) d’agent effacé(s) (au-delà de ${RETENTION_ESSAIS_JOURS} j)`,
       () => essaisStore.purger(RETENTION_ESSAIS_JOURS));
   };
-  void retentionSweep();
-  taches.programmer('retention-generale', 6 * 60 * 60 * 1000, retentionSweep);
+  taches.programmer('retention-generale', 6 * 60 * 60 * 1000, retentionSweep, { immediat: true });
 
   // Déclencheur « X avant la date d'un champ » : le seul qui ne répond pas à un événement mais à
   // l'écoulement du temps. Il PUBLIE dans la file, il ne démarre rien : le scénario part par le chemin
   // commun, donc avec les mêmes garde-fous que les autres déclencheurs.
   const dateSweep = async (): Promise<void> => {
-    try {
-      const n = await runDateSweep({
-        tenants: () => automationStore.tenantsAvecDeclencheurDate(),
-        automations: (tenant) => automationStore.listEnabled(tenant, ['avant_date']),
-        timeZone: async (tenant) => (await settingsStore.get(tenant)).timezone,
-        candidats: (tenant, autoId, cle, basse, haute) => automationStore.contactsDusPourDate(tenant, autoId, cle, basse, haute),
-        publish: async (tenantId, event) => { await enfilerEvenementAutomation(queue, { tenantId, event } satisfies AutomationEventJob); },
-        toleranceMinutes: config.AUTOMATION_DATE_TOLERANCE_MINUTES,
-        // eslint-disable-next-line no-console
-        log: (m) => console.log(m),
-      });
+    const n = await runDateSweep({
+      tenants: () => automationStore.tenantsAvecDeclencheurDate(),
+      automations: (tenant) => automationStore.listEnabled(tenant, ['avant_date']),
+      timeZone: async (tenant) => (await settingsStore.get(tenant)).timezone,
+      candidats: (tenant, autoId, cle, basse, haute) => automationStore.contactsDusPourDate(tenant, autoId, cle, basse, haute),
+      publish: async (tenantId, event) => { await enfilerEvenementAutomation(queue, { tenantId, event } satisfies AutomationEventJob); },
+      toleranceMinutes: config.AUTOMATION_DATE_TOLERANCE_MINUTES,
       // eslint-disable-next-line no-console
-      if (n > 0) console.log(`date-sweep: ${n} échéance(s) publiée(s)`);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('date-sweep erreur:', err instanceof Error ? err.message : err);
-      alert('sweeper:date', `date-sweep en échec : ${err instanceof Error ? err.message : err}`);
-    }
+      log: (m) => console.log(m),
+    });
+    // eslint-disable-next-line no-console
+    if (n > 0) console.log(`date-sweep: ${n} échéance(s) publiée(s)`);
   };
-  void dateSweep();
-  taches.programmer('automations-avant-date', config.AUTOMATION_DATE_SWEEP_INTERVAL_MS, dateSweep);
+  taches.programmer('automations-avant-date', config.AUTOMATION_DATE_SWEEP_INTERVAL_MS, dateSweep, { immediat: true, enEchec: echecDeBalayage('date-sweep', 'sweeper:date') });
 
   /**
    * LE RISQUE DE DÉSENGAGEMENT, UNE FOIS PAR NUIT ET PAR ESPACE (lot 7 de l'API publique, spec § 19).
@@ -1781,30 +1664,24 @@ async function main(): Promise<void> {
   const risqueSweep = async (): Promise<void> => {
     const jour = jourABalayer(new Date(), dernierJourRisque);
     if (jour === null) return;
-    try {
-      const bilans = await balayerRisque(depsRisque);
-      // APRÈS le tour des espaces : une liste d'espaces illisible (base indisponible) sera retentée au quart
-      // d'heure suivant, tant que la fenêtre de nuit est ouverte.
-      dernierJourRisque = jour;
-      const enEchec = bilans.filter((b) => b.erreur !== undefined);
-      const total = bilans.reduce((s, b) => ({
-        evalues: s.evalues + b.evalues, transitions: s.transitions + b.transitions,
-        declenches: s.declenches + b.declenches, auDelaDuPlafond: s.auDelaDuPlafond + b.auDelaDuPlafond,
-      }), { evalues: 0, transitions: 0, declenches: 0, auDelaDuPlafond: 0 });
+    const bilans = await balayerRisque(depsRisque);
+    // APRÈS le tour des espaces : une liste d'espaces illisible (base indisponible) sera retentée au quart
+    // d'heure suivant, tant que la fenêtre de nuit est ouverte.
+    dernierJourRisque = jour;
+    const enEchec = bilans.filter((b) => b.erreur !== undefined);
+    const total = bilans.reduce((s, b) => ({
+      evalues: s.evalues + b.evalues, transitions: s.transitions + b.transitions,
+      declenches: s.declenches + b.declenches, auDelaDuPlafond: s.auDelaDuPlafond + b.auDelaDuPlafond,
+    }), { evalues: 0, transitions: 0, declenches: 0, auDelaDuPlafond: 0 });
+    // eslint-disable-next-line no-console
+    console.log(`risque-sweep ${jour}: ${bilans.length} espace(s), ${total.evalues} fiche(s), ${total.transitions} changement(s) de niveau, ${total.declenches} automation(s) « risque élevé », ${total.auDelaDuPlafond} au-delà du plafond, ${enEchec.length} espace(s) en échec`);
+    for (const b of bilans) {
       // eslint-disable-next-line no-console
-      console.log(`risque-sweep ${jour}: ${bilans.length} espace(s), ${total.evalues} fiche(s), ${total.transitions} changement(s) de niveau, ${total.declenches} automation(s) « risque élevé », ${total.auDelaDuPlafond} au-delà du plafond, ${enEchec.length} espace(s) en échec`);
-      for (const b of bilans) {
-        // eslint-disable-next-line no-console
-        if (b.transitions > 0 || b.erreur !== undefined) console.log(`risque-sweep ${jour}: ${JSON.stringify(b)}`);
-      }
-      if (enEchec.length > 0) alert('sweeper:risque', `risque-sweep : ${enEchec.length} espace(s) en échec, dont ${enEchec[0]!.tenantId} : ${enEchec[0]!.erreur}`);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('risque-sweep erreur:', err instanceof Error ? err.message : err);
-      alert('sweeper:risque', `risque-sweep en échec : ${err instanceof Error ? err.message : err}`);
+      if (b.transitions > 0 || b.erreur !== undefined) console.log(`risque-sweep ${jour}: ${JSON.stringify(b)}`);
     }
+    if (enEchec.length > 0) alert('sweeper:risque', `risque-sweep : ${enEchec.length} espace(s) en échec, dont ${enEchec[0]!.tenantId} : ${enEchec[0]!.erreur}`);
   };
-  taches.programmer('risque-desengagement', 15 * 60_000, risqueSweep);
+  taches.programmer('risque-desengagement', 15 * 60_000, risqueSweep, { enEchec: echecDeBalayage('risque-sweep', 'sweeper:risque') });
 
   // Sorti de la garde META_ACCESS_TOKEN ci-dessous : la surveillance des files ne touche pas Meta, et un
   // déploiement sans token Meta ne doit pas devenir aveugle aux messages perdus.
@@ -1821,24 +1698,17 @@ async function main(): Promise<void> {
     // le throttle de 5 min en masquerait une. La dédup sur la répétition est faite par le balayage lui-même.
     alert: (queue, m) => alert(`dlq:${queue}`, m),
   });
-  // La garde de RÉ-ENTRANCE est portée par `creerDlqSweep` lui-même (elle est indissociable du compteur
-  // qu'elle protège, et testable là-bas), contrairement à `wakeSweep` qui la porte dans son câblage.
+  // `creerDlqSweep` porte AUSSI sa propre garde de RÉ-ENTRANCE, en plus de celle du registre : elle est
+  // indissociable du compteur qu'elle protège, et testable là-bas.
   const dlqSweepGarde = async (): Promise<void> => {
-    try {
-      const n = await dlqSweep();
-      // Une alerte qui part sans laisser de trace est indiagnosticable : si le Telegram n'arrive pas, rien ne
-      // dit si elle a été émise. C'est précisément le défaut que ce lot corrige ailleurs (le balayage des
-      // campagnes programmées était muet). Même forme que les autres sweepers : on ne logue que l'effet.
-      // eslint-disable-next-line no-console
-      if (n > 0) console.log(`dlq-sweep: ${n} file(s) d'échec en hausse, alerte émise`);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('dlq-sweep erreur:', err instanceof Error ? err.message : err);
-      alert('sweeper:dlq', `dlq-sweep en échec : ${err instanceof Error ? err.message : err}`);
-    }
+    const n = await dlqSweep();
+    // Une alerte qui part sans laisser de trace est indiagnosticable : si le Telegram n'arrive pas, rien ne
+    // dit si elle a été émise. C'est précisément le défaut que ce lot corrige ailleurs (le balayage des
+    // campagnes programmées était muet). Même forme que les autres sweepers : on ne logue que l'effet.
+    // eslint-disable-next-line no-console
+    if (n > 0) console.log(`dlq-sweep: ${n} file(s) d'échec en hausse, alerte émise`);
   };
-  void dlqSweepGarde();
-  taches.programmer('files-echec', 5 * 60_000, dlqSweepGarde);
+  taches.programmer('files-echec', 5 * 60_000, dlqSweepGarde, { immediat: true, enEchec: echecDeBalayage('dlq-sweep', 'sweeper:dlq') });
 
   /**
    * « Les webhooks arrivent, mais plus rien ne s'écrit. »
@@ -1856,16 +1726,11 @@ async function main(): Promise<void> {
     enregistres: (min) => opsStore.evenementsWebhookDepuis(min),
     alert: (msg) => alert('webhooks-muets', msg),
   });
-  const webhooksMuetsGarde = async (): Promise<void> => {
-    try {
-      await webhooksMuets();
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('webhooks-muets-sweep erreur:', err instanceof Error ? err.message : err);
-    }
-  };
-  void webhooksMuetsGarde();
-  taches.programmer('webhooks-muets', 5 * 60_000, webhooksMuetsGarde);
+  taches.programmer('webhooks-muets', 5 * 60_000, async () => { await webhooksMuets(); }, {
+    immediat: true,
+    // eslint-disable-next-line no-console
+    enEchec: (err) => console.error('webhooks-muets-sweep erreur:', messageDe(err)),
+  });
 
   // Sweeper de STATUT/QUALITÉ des numéros (item 4.10). Le pull live n'était branché QUE dans la route Accueil :
   // quality_rating/status ne se rafraîchissaient qu'à l'ouverture de la page par un admin. Ce balayage les
@@ -1876,35 +1741,28 @@ async function main(): Promise<void> {
   if (config.META_ACCESS_TOKEN) {
     const alertedPhones = new Map<string, PhoneProblem>();
     const statusSweep = async (): Promise<void> => {
-      try {
-        const n = await runPhoneStatusSweep({
-          listNumbers: () => opsStore.listNumbersForStatusSweep(),
-          // Pull PAR TENANT (B1, repli global en sommeil) + waba_id DE LA LIGNE (bon WABA en multi-WABA). Un échec
-          // devient un PullResult (pullFromError -> authError), jamais un throw : la garde d'auth reste dérivable.
-          pull: async (num) => {
-            try {
-              const client = await metaFactory.phoneClientForTenant(num.tenantId);
-              const info = await client.get(num.id);
-              const waba = num.wabaId ? await client.getWabaHealth(num.wabaId).catch(() => undefined) : undefined;
-              return pullFromInfo(info, waba);
-            } catch (err) {
-              return pullFromError(err);
-            }
-          },
-          save: (id, patch) => phoneStatusStore.saveStatus(id, patch),
-          alert: (msg) => { void sendTelegram(`[mba-worker] ${msg}`); },
-          alertedState: alertedPhones,
-        });
-        // eslint-disable-next-line no-console
-        if (n > 0) console.log(`phone-status-sweep: ${n} alerte(s) de statut numéro`);
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error('phone-status-sweep erreur:', err instanceof Error ? err.message : err);
-        alert('sweeper:phone-status', `phone-status-sweep en échec : ${err instanceof Error ? err.message : err}`);
-      }
+      const n = await runPhoneStatusSweep({
+        listNumbers: () => opsStore.listNumbersForStatusSweep(),
+        // Pull PAR TENANT (B1, repli global en sommeil) + waba_id DE LA LIGNE (bon WABA en multi-WABA). Un échec
+        // devient un PullResult (pullFromError -> authError), jamais un throw : la garde d'auth reste dérivable.
+        pull: async (num) => {
+          try {
+            const client = await metaFactory.phoneClientForTenant(num.tenantId);
+            const info = await client.get(num.id);
+            const waba = num.wabaId ? await client.getWabaHealth(num.wabaId).catch(() => undefined) : undefined;
+            return pullFromInfo(info, waba);
+          } catch (err) {
+            return pullFromError(err);
+          }
+        },
+        save: (id, patch) => phoneStatusStore.saveStatus(id, patch),
+        alert: (msg) => { void sendTelegram(`[mba-worker] ${msg}`); },
+        alertedState: alertedPhones,
+      });
+      // eslint-disable-next-line no-console
+      if (n > 0) console.log(`phone-status-sweep: ${n} alerte(s) de statut numéro`);
     };
-    void statusSweep();
-    taches.programmer('statut-numeros', config.PHONE_STATUS_SWEEP_INTERVAL_MS, statusSweep);
+    taches.programmer('statut-numeros', config.PHONE_STATUS_SWEEP_INTERVAL_MS, statusSweep, { immediat: true, enEchec: echecDeBalayage('phone-status-sweep', 'sweeper:phone-status') });
   }
 
   /**
@@ -1951,8 +1809,7 @@ async function main(): Promise<void> {
         console.log(`suivi-pubs: ${bilan.campagnes} campagne(s) relue(s) sur ${bilan.espaces} espace(s), ${bilan.jetonsRejetes} jeton(s) rejeté(s)`);
       }
     };
-    void suivrePubs();
-    taches.programmer('suivi-pubs', SUIVI_PUBS_INTERVALLE_MS, suivrePubs);
+    taches.programmer('suivi-pubs', SUIVI_PUBS_INTERVALLE_MS, suivrePubs, { immediat: true });
   }
 
 
@@ -2016,18 +1873,17 @@ async function main(): Promise<void> {
           if (na > 0) console.log(`vectorisation: ${na} fiche(s) d aide vectorisee(s)`);
         } catch (err) {
           // eslint-disable-next-line no-console
-          console.error('vectorisation: lot ignore :', err instanceof Error ? err.message : err);
+          console.error('vectorisation: lot ignore :', messageDe(err));
           // 🔴 ALERTE, comme les dix-neuf autres balayages. Ce catch etait le SEUL a ne journaliser que dans
           // les logs, parce qu'il a ete ecrit alors que la migration 0110 n'etait pas encore passee : un
           // echec etait ALORS attendu, et alerter aurait fait du bruit. Elle est passee le 2026-09-02, donc
           // un echec veut desormais dire que la base de connaissance CESSE d'etre vectorisee : l'agent
           // retombe sur la recherche par mots, en silence, et personne ne l'apprend. L'alerte est throttlee
           // a cinq minutes, un echec persistant n'inonde donc rien.
-          alert('sweeper:vectorisation', `vectorisation en echec : ${err instanceof Error ? err.message : err}`);
+          alert('sweeper:vectorisation', `vectorisation en echec : ${messageDe(err)}`);
         }
       };
-      void vectoriser();
-      taches.programmer('vectorisation', 60_000, vectoriser);
+      taches.programmer('vectorisation', 60_000, vectoriser, { immediat: true });
     }
     const credits = new PgCreditStore(pool);
     const agentSources = new PgSourceStore(pool);
@@ -2083,27 +1939,7 @@ async function main(): Promise<void> {
       completer: (i) => gatewayAgent.completer(i),
       // Point de lecture PARTAGÉ avec le bac à sable de la console : un champ ajouté d'un seul côté ferait
       // diverger ce que le modèle voit selon qu'on teste ou qu'on est en production.
-      contexte: async (t, agentId) => {
-          /**
-           * ⚠️ UNE SEULE LECTURE DES RÉGLAGES POUR LES DEUX POLITIQUES D'ESPACE. Cette fonction est sur le
-           * chemin de CHAQUE tour d'agent : deux `get` y feraient deux allers-retours pour la même ligne,
-           * et la seconde politique est arrivée le 2026-09-18 à côté de la première.
-           */
-          const reglages = await settingsStore.get(t);
-          return lireContexteAgent({
-            agents: agentStore,
-            outils: toolCatalog,
-            politiqueMentionIa: async () => reglages.mentionIaFrequence,
-            // L'heure est prise ICI, au moment du tour : une disponibilité calculée plus tôt serait fausse
-            // sur une conversation qui traverse l'heure de fermeture.
-            disponibiliteEquipe: async () => equipePourPrompt(
-              reglages.agentTransfertMode ?? MODE_TRANSFERT_DEFAUT,
-              new Date(),
-              reglages.timezone,
-              reglages.businessHours,
-            ),
-          }, t, agentId);
-        },
+      contexte: (t, agentId) => lireContexteAvecReglages({ agents: agentStore, outils: toolCatalog, reglages: settingsStore }, t, agentId),
       // Le Gateway facture en dollars, tous nos compteurs sont en micro-euros : la conversion se fait a l
       // entree, une seule fois, avec le taux commercial de la configuration.
       tauxEurParDollar: config.EUR_PER_USD,
@@ -2149,14 +1985,9 @@ async function main(): Promise<void> {
         },
         compterAppel: (t, sessionId) => agentSessions.compterAppel(t, sessionId),
       },
-      lireContact: async (t, waId) => {
-        const etat = await contactStore.getContactStateByWaId(t, waId);
-        if (!etat) return null;
-        // 🔴 PROJECTION, jamais la ligne brute. `mba_lire_contact` la rend TELLE QUELLE au modèle, donc au
-        // fournisseur : y verser la ligne enverrait chez lui le numéro, le BSUID et le statut d'opt-in, que
-        // personne n'a décidé de partager. Le nom, les tags et les champs libres suffisent à l'agent.
-        return { nom: etat.name ?? '', tags: etat.tags, champs: etat.fields };
-      },
+      // 🔴 PROJECTION, jamais la ligne brute : `mba_lire_contact` la rend TELLE QUELLE au modèle, donc au
+      // fournisseur (`projectionPourTiers`).
+      lireContact: (t, waId) => contactStore.projectionPourTiers(t, waId),
       alerter: (m) => { alert('agent', m); },
     });
 

@@ -1,5 +1,6 @@
 import { lireCorpsBorne } from '../lib/corps-borne';
 import { fetchPublic, estRefusAdresseInterne, estRedirectionRefusee } from '../lib/connexion-publique';
+import { objetOuNull } from '../webhooks/json';
 // ⚠️ LES DEUX VIENNENT DU SERVEUR, ET C'EST DÉLIBÉRÉ : c'est le MÊME produit, qui parle la MÊME révision du
 // protocole des deux côtés. Les recopier ici créerait deux vérités, et le jour où l'une des deux bouge,
 // on parlerait une révision en serveur et une autre en client sans que rien ne le signale. L'alias dit
@@ -144,9 +145,6 @@ const MENTION: Record<string, string> = {
   resource_link: '[lien vers une ressource]',
 };
 
-function objet(v: unknown): Record<string, unknown> | null {
-  return typeof v === 'object' && v !== null && !Array.isArray(v) ? v as Record<string, unknown> : null;
-}
 
 /**
  * Lit une réponse et en extrait le message JSON-RPC portant `id`.
@@ -174,7 +172,7 @@ async function lireReponse(
     // lecture ratée (c'est la raison d'être du drapeau `casse`).
     if (corps.casse) return { echec: { genre: 'protocole', message: 'la réponse a été coupée en cours de lecture' } };
     try {
-      const m = objet(JSON.parse(corps.texte));
+      const m = objetOuNull(JSON.parse(corps.texte));
       if (m === null) return { echec: { genre: 'protocole', message: 'réponse JSON-RPC attendue' } };
       // ⚠️ L'IDENTIFIANT SE VÉRIFIE ICI AUSSI. Le chemin en flux le fait déjà, parce qu'il doit choisir
       // parmi plusieurs messages ; celui-ci ne le faisait pas, et l'asymétrie n'avait aucune raison d'être.
@@ -222,7 +220,7 @@ async function lireReponse(
           .join('\n');
         if (donnees !== '') {
           try {
-            const m = objet(JSON.parse(donnees));
+            const m = objetOuNull(JSON.parse(donnees));
             // On s'arrête au message qui répond À NOTRE requête : tout ce qui précède est une notification
             // ou une requête du serveur, dont un consommateur d'outils n'a rien à faire.
             if (m && m.id === id) {
@@ -392,11 +390,9 @@ async function ouvrir(
 
   const init = await lireReponse(premiereReponse, idInit, cible.maxOctets);
   if ('echec' in init) return init as { echec: EchecMcp };
-  if (objet(init.error) !== null) {
-    const e = objet(init.error)!;
-    return { echec: { genre: 'refus', code: typeof e.code === 'number' ? e.code : 0, message: String(e.message ?? 'initialisation refusée') } };
-  }
-  const resultat = objet(init.result);
+  const refusInit = objetOuNull(init.error);
+  if (refusInit !== null) return refusRpc(refusInit, 'initialisation refusée');
+  const resultat = objetOuNull(init.result);
   if (resultat === null) return { echec: { genre: 'protocole', message: 'initialisation sans résultat' } };
   if (typeof resultat.protocolVersion === 'string' && resultat.protocolVersion !== '') {
     // On ÉCHO la version que le serveur a retenue : c'est ce que la négociation demande, et c'est elle
@@ -419,11 +415,9 @@ async function ouvrir(
         // 🔴 ON PROPAGE, ON NE REND PAS CE QU'ON A. Rendre une liste partielle ferait prendre la page 1
         // pour le catalogue entier, et le rafraîchissement déclarerait « disparu » tout le reste.
         if ('echec' in rep) return rep as { echec: EchecMcp };
-        const err = objet(rep.error);
-        if (err !== null) {
-          return { echec: { genre: 'refus', code: typeof err.code === 'number' ? err.code : 0, message: String(err.message ?? 'liste refusée') } };
-        }
-        const r = objet(rep.result);
+        const err = objetOuNull(rep.error);
+        if (err !== null) return refusRpc(err, 'liste refusée');
+        const r = objetOuNull(rep.result);
         if (r === null) return { echec: { genre: 'protocole', message: 'tools/list sans résultat' } };
         for (const brut of Array.isArray(r.tools) ? r.tools : []) {
           const o = lireOutil(brut);
@@ -443,17 +437,9 @@ async function ouvrir(
     async appeler(nom, args) {
       const rep = await envoyer('tools/call', { name: nom, arguments: args }, true);
       if ('echec' in rep) return rep as { echec: EchecMcp };
-      const err = objet(rep.error);
-      if (err !== null) {
-        return {
-          echec: {
-            genre: 'refus',
-            code: typeof err.code === 'number' ? err.code : 0,
-            message: String(err.message ?? 'appel refusé'),
-          },
-        };
-      }
-      const r = objet(rep.result);
+      const err = objetOuNull(rep.error);
+      if (err !== null) return refusRpc(err, 'appel refusé');
+      const r = objetOuNull(rep.result);
       if (r === null) return { echec: { genre: 'protocole', message: 'appel sans résultat' } };
       return { texte: texteDeContenu(r.content), estErreur: r.isError === true };
     },
@@ -475,7 +461,7 @@ async function ouvrir(
 
 /** Vérifie une annonce d'outil champ par champ. Rend `null` sur une entrée inutilisable. */
 function lireOutil(brut: unknown): OutilAnnonce | null {
-  const o = objet(brut);
+  const o = objetOuNull(brut);
   if (o === null) return null;
   if (typeof o.name !== 'string' || o.name.trim() === '') return null;
   return {
@@ -487,8 +473,8 @@ function lireOutil(brut: unknown): OutilAnnonce | null {
     // affichera au client. Un objet vide posé ici rendait ce refus inatteignable sur le chemin réel, alors
     // que six tests l'exerçaient sur la fonction pure.
     inputSchema: o.inputSchema,
-    ...(objet(o.outputSchema) !== null ? { outputSchema: objet(o.outputSchema)! } : {}),
-    ...(objet(o.annotations) !== null ? { annotations: objet(o.annotations)! } : {}),
+    ...(objetOuNull(o.outputSchema) !== null ? { outputSchema: objetOuNull(o.outputSchema)! } : {}),
+    ...(objetOuNull(o.annotations) !== null ? { annotations: objetOuNull(o.annotations)! } : {}),
   };
 }
 
@@ -504,10 +490,15 @@ function texteDeContenu(contenu: unknown): string {
   if (!Array.isArray(contenu)) return '';
   const morceaux: string[] = [];
   for (const brut of contenu) {
-    const b = objet(brut);
+    const b = objetOuNull(brut);
     if (b === null) continue;
     if (b.type === 'text' && typeof b.text === 'string') morceaux.push(b.text);
     else if (typeof b.type === 'string') morceaux.push(MENTION[b.type] ?? `[${b.type}]`);
   }
   return morceaux.join('\n');
+}
+
+/** Le REFUS d'un serveur MCP (une erreur JSON-RPC), avec son code et son message, ou le message par défaut. */
+function refusRpc(e: Record<string, unknown>, parDefaut: string): { echec: EchecMcp } {
+  return { echec: { genre: 'refus', code: typeof e.code === 'number' ? e.code : 0, message: String(e.message ?? parDefaut) } };
 }

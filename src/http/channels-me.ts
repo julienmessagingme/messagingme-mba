@@ -13,6 +13,7 @@ import type { LienRow } from '../channels-me/link-store.pg';
 import type { ConversationsDunLien } from '../channels-me/conversions';
 import type { PostRow } from '../channels-me/post-store.pg';
 import { scopeTenant, estUuid } from './scope';
+import { texteDe } from '../lib/erreur';
 
 /**
  * Chaine WhatsApp (Channels Me) : publier un post dont le bouton (un lien wa.me pre-rempli) demarre un
@@ -162,7 +163,7 @@ function journaliserDistant(tenant: string, etape: string, err: unknown): void {
   // eslint-disable-next-line no-console
   console.error(JSON.stringify({
     lvl: 'error', msg: 'channelsme_distant_ko', tenant, etape,
-    err: err instanceof Error ? err.message : String(err),
+    err: texteDe(err),
   }));
 }
 

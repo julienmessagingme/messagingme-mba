@@ -2,6 +2,7 @@ import { setTimeout as dormir } from 'node:timers/promises';
 import { MetaApiError } from './errors';
 import type { MetaErrorBody } from './errors';
 import type { FetchLike } from './templates';
+import { appelGraph } from './graph';
 
 /** Média refusé par l'upload (réponse sans handle). */
 export class MediaUploadError extends Error {
@@ -97,11 +98,8 @@ export class MetaMediaClient {
    * disant.
    */
   async telechargerEntrant(mediaId: string, tailleMaxOctets: number): Promise<{ bytes: Buffer; mime: string | null }> {
-    const meta = await this.fetchImpl(`${this.baseUrl}/${this.version}/${encodeURIComponent(mediaId)}`, {
-      headers: { authorization: `Bearer ${this.token}` },
-    });
-    const mj = (await meta.json().catch(() => null)) as { url?: string; mime_type?: string; file_size?: number; error?: MetaErrorBody } | null;
-    if (!meta.ok) throw new MetaApiError(meta.status, mj?.error ?? null);
+    const mj = (await appelGraph(this.fetchImpl, this.token, `${this.baseUrl}/${this.version}/${encodeURIComponent(mediaId)}`)) as
+      { url?: string; mime_type?: string; file_size?: number } | null;
     if (!mj?.url) throw new MediaUploadError('media sans url de telechargement');
     // La taille annoncée AVANT de télécharger : refuser ici évite de tirer 16 Mo pour les jeter ensuite.
     if (typeof mj.file_size === 'number' && mj.file_size > tailleMaxOctets) {

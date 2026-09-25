@@ -1,3 +1,4 @@
+import { texteDe } from '../lib/erreur';
 /**
  * Allumer ou éteindre l'agent de Meta, en UNE décision prise côté serveur.
  *
@@ -49,7 +50,7 @@ export interface ResultatActivation {
  */
 export class EtatMetaIllisible extends Error {
   constructor(cause: unknown) {
-    super(`l’état de l’agent chez Meta n’a pas pu être lu : ${cause instanceof Error ? cause.message : String(cause)}`);
+    super(`l’état de l’agent chez Meta n’a pas pu être lu : ${texteDe(cause)}`);
     this.name = 'EtatMetaIllisible';
   }
 }
@@ -57,7 +58,7 @@ export class EtatMetaIllisible extends Error {
 /** Meta a refusé l'écriture. Notre drapeau n'a PAS bougé : l'écran continue de dire la vérité. */
 export class MetaARefuse extends Error {
   constructor(cause: unknown) {
-    super(`Meta a refusé de changer l’état de l’agent : ${cause instanceof Error ? cause.message : String(cause)}`);
+    super(`Meta a refusé de changer l’état de l’agent : ${texteDe(cause)}`);
     this.name = 'MetaARefuse';
   }
 }

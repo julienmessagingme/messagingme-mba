@@ -1,4 +1,5 @@
 import type { Pool, PoolClient } from 'pg';
+import { enTransaction } from '../db/transaction';
 import type { PhoneNumberRecord, HubspotPortalLink } from './types';
 
 /** Accès en lecture/écriture au statut d'un numéro (page Accueil : numéro + pastille de statut). */
@@ -107,9 +108,7 @@ export class PgPhoneStatusStore {
     tenantId: string,
     connected: boolean,
   ): Promise<{ updated: boolean; resumedFrom: string | null }> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('begin');
+    return enTransaction(this.pool, async (client) => {
       // Verrou consultatif PAR TENANT (relâché en fin de transaction) : sérialise tous les toggles HubSpot d'un même
       // tenant, y compris sur des numéros DIFFÉRENTS. Sans lui, deux toggles simultanés sur deux numéros du tenant
       // calculeraient chacun l'agrégat campaigns_paused ci-dessous avant de voir le commit de l'autre -> valeur figée
@@ -122,7 +121,7 @@ export class PgPhoneStatusStore {
         [phoneNumberId, tenantId],
       );
       const row = cur.rows[0];
-      if (!row) { await client.query('rollback'); return { updated: false, resumedFrom: null }; }
+      if (!row) return { updated: false, resumedFrom: null };
       const startingPause = !connected && row.hubspot_connected; // transition ACTIF -> OFF : c'est le DÉBUT d'une pause
       // resumedFrom : l'instant de pause capturé AVANT écrasement, non-null seulement si on REPREND depuis une pause.
       const resumedFrom = connected ? row.hubspot_paused_at : null;
@@ -133,14 +132,8 @@ export class PgPhoneStatusStore {
         [phoneNumberId, tenantId, connected, startingPause],
       );
       await this.recomputeCampaignsPaused(client, tenantId);
-      await client.query('commit');
       return { updated: true, resumedFrom };
-    } catch (err) {
-      await client.query('rollback').catch(() => {});
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   /**
@@ -153,23 +146,15 @@ export class PgPhoneStatusStore {
    * numéro affecté.
    */
   async disconnectHubspotTenant(tenantId: string): Promise<{ updated: boolean }> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('begin');
+    return enTransaction(this.pool, async (client) => {
       await client.query('select pg_advisory_xact_lock(hashtext($1))', [tenantId]);
       const r = await client.query(
         `update phone_numbers set hubspot_connected = false, hubspot_paused_at = null where tenant_id = $1`,
         [tenantId],
       );
       await this.recomputeCampaignsPaused(client, tenantId);
-      await client.query('commit');
       return { updated: (r.rowCount ?? 0) > 0 };
-    } catch (err) {
-      await client.query('rollback').catch(() => {});
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   /**

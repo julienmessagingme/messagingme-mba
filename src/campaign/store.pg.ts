@@ -1,4 +1,5 @@
 import type { Pool, PoolClient } from 'pg';
+import { enTransaction } from '../db/transaction';
 import type { MotifDePause } from './pause';
 import type { Campaign, CampaignStatus, CampaignCategory, Recipient, QualityRating } from './types';
 import type { CampaignStore, RecipientStore, QualityProvider, EcartALEnvoi } from './engine';
@@ -355,18 +356,7 @@ export class PgCampaignRepo {
    * aucune campagne qu'une campagne que personne ne peut servir.
    */
   async insertCampaign(input: CreateCampaignInput): Promise<string> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('begin');
-      const id = await insertCampaignRow(client, input);
-      await client.query('commit');
-      return id;
-    } catch (err) {
-      await client.query('rollback');
-      throw err;
-    } finally {
-      client.release();
-    }
+    return enTransaction(this.pool, (client) => insertCampaignRow(client, input));
   }
 
   async getCampaign(id: string): Promise<Campaign | null> {
@@ -1486,19 +1476,11 @@ export class PgCampaignRepo {
     input: CreateCampaignInput,
     recipients: BuiltRecipient[],
   ): Promise<{ campaignId: string; recipientCount: number }> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('begin');
+    return enTransaction(this.pool, async (client) => {
       const campaignId = await insertCampaignRow(client, input);
       const inserted = await bulkInsertRecipients(client, campaignId, recipients);
-      await client.query('commit');
       return { campaignId, recipientCount: inserted };
-    } catch (err) {
-      await client.query('rollback');
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   /** Insère les destinataires (idempotent par (campaign_id, contact_id)). Retourne le nb inséré. */

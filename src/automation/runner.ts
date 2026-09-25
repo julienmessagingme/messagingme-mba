@@ -3,6 +3,7 @@ import type { EvalContext } from '../workflow/conditions';
 import { matchesTrigger, isInCooldown, reprendLaMain, antiRebondParDefaut } from './match';
 import type { AutomationRow, AutomationEvent, AutomationTriggerKind } from './match';
 import { NumeroDelieError } from '../meta/numero-delie';
+import { messageDe } from '../lib/erreur';
 
 /**
  * Déclenche les scénarios abonnés à un événement. IO INJECTÉE (aucun import pg) -> testable sans base, comme
@@ -293,7 +294,7 @@ export async function runAutomations(
       }
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error(`automation ${a.id} ignorée:`, err instanceof Error ? err.message : err);
+      console.error(`automation ${a.id} ignorée:`, messageDe(err));
       /**
        * 🔴 LE NUMÉRO DÉLIÉ EFFACE LE TIR, contrairement aux autres exceptions. Une exception ordinaire garde le
        * tir parce qu'on ne sait pas si un message est parti. Celle-ci arrive, dans le cas courant, AVANT tout

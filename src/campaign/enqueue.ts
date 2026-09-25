@@ -1,4 +1,4 @@
-import { campaignJobExpireSeconds } from './pacing';
+import { campaignJobExpireSeconds, plafondLePlusBas, resolveRatePerMinute } from './pacing';
 import type { Queue } from '../queue/queue';
 
 /**
@@ -23,4 +23,22 @@ export async function enqueueCampaignRun(
   // n'affame personne. Un objet plutôt que quatre paramètres positionnels : à ce nombre, on finit par en
   // inverser deux, et une inversion entre `pendingCount` et le débit ne se voit que sur une campagne longue.
   await queue.enqueue('campaign-run', { campaignId: lancement.campaignId }, { expireInSeconds, groupId: lancement.tenantId });
+}
+
+/**
+ * Le RELANCEUR d'un process (worker ou API) : il enfile le run d'une campagne à partir de son débit STOCKÉ
+ * (`null` = défaut du serveur), résolu sur la configuration (défaut et plafond du canal le plus bas), donc au
+ * débit exact qu'appliquera le run. Chaque appelant dit combien de destinataires attendent : c'est ce qui
+ * dimensionne l'expiration du job.
+ */
+export function relanceurDeCampagnes(
+  queue: Queue,
+  cfg: { CAMPAIGN_DEFAULT_RATE_PER_MINUTE: number; PHONE_RATE_PER_MINUTE_MAX: number; RCS_RATE_PER_MINUTE_MAX: number },
+): (c: { campaignId: string; tenantId: string; pendingCount: number; ratePerMinute: number | null }) => Promise<void> {
+  return (c) => enqueueCampaignRun(queue, {
+    campaignId: c.campaignId,
+    tenantId: c.tenantId,
+    pendingCount: c.pendingCount,
+    resolvedRatePerMinute: resolveRatePerMinute(c.ratePerMinute, cfg.CAMPAIGN_DEFAULT_RATE_PER_MINUTE, plafondLePlusBas(cfg)),
+  });
 }

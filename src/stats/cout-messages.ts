@@ -1,4 +1,4 @@
-import { chiffrer, type CategoryRates } from './cost';
+import { chiffrer, round2, type CategoryRates } from './cost';
 import { coutRcsEuros, type GrillePrix } from './prix';
 
 /**
@@ -87,7 +87,6 @@ export interface CoutMessages {
   sansTarif: number;
 }
 
-const round2 = (x: number): number => Math.round(x * 100) / 100;
 
 /**
  * Le mois d'une date d'effet 'YYYY-MM-DD', pour le comparer a un mois 'YYYY-MM'.

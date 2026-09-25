@@ -6,6 +6,7 @@ import {
 import { ErreurPublication, CTX_OUTILS, CTX_ACTEUR } from '../mba/appliquer-publication';
 import { MetaApiError } from '../meta/errors';
 import { scopeTenant } from './scope';
+import { messageDe } from '../lib/erreur';
 
 /**
  * Publier le catalogue d'outils de l'espace chez Meta.
@@ -117,7 +118,7 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
         faits.push(g);
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error(`mba-publication: ${g.type} « ${g.nom} » a échoué (${tenant}):`, err instanceof Error ? err.message : err);
+        console.error(`mba-publication: ${g.type} « ${g.nom} » a échoué (${tenant}):`, messageDe(err));
         // « Meta a refusé » seulement quand c'est Meta qui a répondu non ; un refus de notre part se dit tel
         // quel. Le reste est ambigu (Meta injoignable, délai dépassé, ou panne de chez nous) et se dit comme tel.
         const cause = err instanceof ErreurPublication

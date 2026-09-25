@@ -1026,6 +1026,11 @@ signal allumé en permanence par une cause structurelle ne signale plus rien (m�
 0111). ⚠️ Le décalage ne lance AUCUNE passe : la première arrive à `décalage + cadence`, le registre ne
 déclenchant toujours pas de passe implicite.
 
+🔴 **LA PASSE DE DÉMARRAGE PASSE PAR LE REGISTRE** (`immediat`), donc sous la même garde de ré-entrance : un
+premier tour qui arrive pendant qu'elle tourne encore est sauté et journalisé. Les gardes locales de
+`reveil-parcours` et `tours-agent-bloques` sont parties ; celles de `creerDlqSweep` et
+`creerWebhooksMuetsSweep` restent, liées à leur compteur.
+
 ### Deux pools Postgres
 
 - **`DATABASE_URL`** = pooler en mode **SESSION** (port 5432). Sert **pg-boss** et **tous les scripts CLI**
@@ -1785,14 +1790,25 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/agent/llm/tool-schema.ts` -> `paramsOutil` | 🔴 la séparation des sources d'un paramètre (`modele` vs `contact` ou `fixe`). Deux lectures divergentes rendraient la cible au modèle, donc un IDOR |
 | `src/agent/setup/proposition.ts` | ce que l'IA de construction a le DROIT de proposer. 🔴 La FRONTIÈRE est la liste des CLÉS et les énumérations FERMÉES, jamais une longueur : les bornes sont de l'hygiène, et `assainirProposition` les RAMÈNE avant que Zod ne juge, au lieu de perdre le tour. ⚠️ Toute borne appliquée est annoncée dans le schéma envoyé au modèle, et un test le dérive plutôt que de le relire |
 | `src/agent/poser-tag.ts` | les TROIS effets de « poser un tag » depuis un agent |
-| `src/agent/contexte.ts` | ce que le cerveau doit savoir d'un agent (production ET bac à sable) |
+| `src/agent/contexte.ts` | ce que le cerveau doit savoir d'un agent (production ET bac à sable), et `lireContexteAvecReglages`, la lecture UNIQUE des réglages de l'espace pour ses deux politiques, branchée par le worker ET par l'API |
 | `src/agent/fiche.ts` | les DEUX schémas de fiche : celui qui LIT, celui qui PATCHE |
-| `src/webhooks/json.ts` | `asArray`, `asRecord` : lecture défensive d'un payload Meta |
+| `src/webhooks/json.ts` | `asArray`, `asRecord`, `texteNonVide`, `objetOuNull` : lecture défensive d'un JSON tiers (payload Meta, réponse MCP, schéma d'outil) |
 | `src/queue/names.ts` | les files, leur cadence, leur DLQ, leur réveil |
 | `src/signaux/types.ts` | 🔴 le DICTIONNAIRE des signaux remontés vers l'outil d'un client, indépendant de tout outil : noms d'événements et d'attributs, noms des CHAMPS de chaque événement (`CHAMPS_EVENEMENT`), borne des textes, résumé en morceaux, `idSignal` (l'`em_event_id` STABLE et opaque), `identifiantPoussable` (la fiche se pousse-t-elle, et sous quel identifiant : une règle pour le complément et pour l'adaptateur), libellé neutre du journal des erreurs. Un adaptateur le traduit, il ne l'étend ni ne le renomme. La documentation publique (`web/lib/signaux-dictionnaire.ts`) lui est tenue par `tests/web-signaux-parite.test.ts`, sans nommer aucun outil |
 | `src/signaux/emetteur.ts` | 🔴 le SEUL point d'émission d'un signal : il ne lève jamais, ne lit rien tant qu'aucun espace n'a branché d'outil, ne transporte que ce que le chemin chaud sait déjà, et enfile des jobs bornés (`SIGNAUX_PAR_JOB`) avec leur priorité (`PRIORITE_SIGNAL` : les accusés derrière). La fiche, l'origine et l'analyse se relisent au moment de pousser (`completer.ts`) |
 | `src/signaux/completer.ts` | relit, au moment de pousser, ce qu'un signal ne transporte pas (fiche et consentement courants, contexte d'un message, lien, analyse). 🔴 CONTRAT : il porte la règle d'identité de l'adaptateur actuel (`identifiantPoussable`, une fiche ne se pousse que sous son `externalId`, sinon ni contexte ni lien ne sont relus). Un adaptateur qui désignerait un profil autrement devra lui passer SON critère, sinon il recevrait des signaux amputés sans erreur |
 | `src/ids/code.ts` | les identifiants publics et les codes de lien |
+| `src/db/transaction.ts` -> `enTransaction` | LA transaction du dépôt : `begin`, `commit` si le travail rend, `rollback` s'il lève, connexion relâchée dans tous les cas (y compris un `rollback` qui échoue), et c'est l'erreur D'ORIGINE qui remonte. ⚠️ Rendre sans lever VALIDE : un travail qui a écrit et ne doit rien laisser doit lever (`PgUserStore.deleteUser` garde donc sa transaction à la main) |
+| `src/worker/taches.ts` -> `programmer(nom, cadence, passe, { immediat, enEchec })` | les tâches périodiques du worker. `immediat` lance la passe de démarrage SOUS la même garde de ré-entrance que les autres ; `enEchec` porte le journal et l'alerte (`echecDeBalayage`, `src/worker.ts`). Une passe lancée à côté (`void passe()`) échappe à la garde |
+| `src/lib/tenter.ts` -> `tenter` | une étape ISOLÉE : son échec est journalisé (`console.error(echec, message)`) puis avalé |
+| `src/lib/erreur.ts` -> `messageDe`, `texteDe` | le message d'une valeur levée : `messageDe` rend la valeur elle-même si ce n'est pas une `Error`, `texteDe` la convertit en texte. Un repli différent (« erreur inconnue ») reste sur place |
+| `src/meta/graph.ts` -> `appelGraph` | l'appel Graph authentifié des clients WhatsApp (modèles, flows, numéro, inscription, média entrant) : `Bearer`, `fetch` injectable, `MetaApiError` si non-2xx. ⚠️ Ni `ClientGraph.call` (plafond de durée, `ErreurGraph`), ni `MbaClient`, ni le transport des envois |
+| `src/campaign/enqueue.ts` -> `relanceurDeCampagnes` | l'enfilement d'un run au débit RÉSOLU sur la configuration du process : les relances du worker et l'envoi de l'API publique |
+| `src/stats/cost.ts` -> `chiffrer`, `chiffrerVolume`, `round2` | « chiffrable ou pourquoi pas », pour une catégorie ou un volume ; le seul arrondi au centime |
+| `src/crm/contact-store.pg.ts` -> `projectionPourTiers` | 🔴 la fiche projetée pour tout ce qui sort vers un tiers (connecteur, opt-out poussé, relais de l'agent de Meta, `mba_lire_contact`) : nom, tags, champs, JAMAIS le numéro, le BSUID ni l'opt-in |
+| `src/workflow/engine.ts` -> `FENETRE_SERVICE_MS` | la fenêtre de service de Meta (24 h), pour le balayage de contrôle et la fenêtre ouverte de l'Inbox |
+| `src/crm/render.ts` -> `escapeHtml` | le seul échappement HTML, gabarits d'e-mail compris |
+| `src/stats/range.ts` -> `isValidDateStr` | une date `YYYY-MM-DD` qui EXISTE (aller-retour strict), lue aussi par la grille de prix |
 
 ### Front
 

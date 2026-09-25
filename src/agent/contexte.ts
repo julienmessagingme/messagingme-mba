@@ -1,7 +1,8 @@
 import type { AgentStore, FrequenceMentionIa } from './agent-store';
 import type { ToolCatalog } from './catalog';
 import type { ContexteAgentComplet } from './brain.gateway';
-import type { EquipePourPrompt } from './disponibilite-equipe';
+import { equipePourPrompt, MODE_TRANSFERT_DEFAUT, type EquipePourPrompt, type ModeTransfert } from './disponibilite-equipe';
+import type { BusinessHours } from '../workflow/conditions';
 
 /**
  * Tout ce que le cerveau doit savoir d'un agent : sa fiche, ses règles d'arrêt, ses outils ACTIFS.
@@ -66,4 +67,44 @@ export async function lireContexteAgent(
     // deux façons d'écrire la même chose finiraient par diverger.
     equipe: (deps.disponibiliteEquipe ? await deps.disponibiliteEquipe(tenantId) : null) ?? undefined,
   };
+}
+
+/**
+ * Le contexte d'un tour avec les DEUX politiques de l'espace lues dans ses réglages, pour le tour de production
+ * (`src/worker.ts`) comme pour le bac à sable (`src/index.ts`) : leurs deux câblages étaient recopiés à
+ * l'identique (audit ponytail du 2026-09-25).
+ *
+ * ⚠️ UNE SEULE LECTURE DES RÉGLAGES POUR LES DEUX POLITIQUES D'ESPACE. Cette fonction est sur le chemin de
+ * CHAQUE tour d'agent : deux `get` y feraient deux allers-retours pour la même ligne, et la seconde politique
+ * est arrivée le 2026-09-18 à côté de la première.
+ *
+ * ⚠️ L'heure est prise AU MOMENT DU TOUR : une disponibilité calculée plus tôt serait fausse sur une
+ * conversation qui traverse l'heure de fermeture.
+ */
+export async function lireContexteAvecReglages(
+  deps: Pick<DepsContexteAgent, 'agents' | 'outils'> & {
+    reglages: {
+      get(tenantId: string): Promise<{
+        mentionIaFrequence: FrequenceMentionIa | null;
+        agentTransfertMode: ModeTransfert | null;
+        timezone: string;
+        businessHours: BusinessHours;
+      }>;
+    };
+  },
+  tenantId: string,
+  agentId: string,
+): Promise<ContexteAgentComplet | null> {
+  const reglages = await deps.reglages.get(tenantId);
+  return lireContexteAgent({
+    agents: deps.agents,
+    outils: deps.outils,
+    politiqueMentionIa: async () => reglages.mentionIaFrequence,
+    disponibiliteEquipe: async () => equipePourPrompt(
+      reglages.agentTransfertMode ?? MODE_TRANSFERT_DEFAUT,
+      new Date(),
+      reglages.timezone,
+      reglages.businessHours,
+    ),
+  }, tenantId, agentId);
 }

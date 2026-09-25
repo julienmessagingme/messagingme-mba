@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { enTransaction } from '../db/transaction';
 import { makeCode, deriveTenantCode } from '../ids/code';
 import { resolveTenantCode } from '../ids/tenant-code';
 
@@ -208,25 +209,17 @@ export class PgUserStore {
    * n'est pas appliquée, revenir en arrière ne doit priver personne de son mot de passe.
    */
   async setPassword(userId: string, passwordHash: string): Promise<boolean> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('begin');
+    return enTransaction(this.pool, async (client) => {
       const res = await client.query(
         `update identities set password_hash = $2
           where id = (select identity_id from users where id = $1)`,
         [userId, passwordHash],
       );
       const miroir = await client.query(`update users set password_hash = $2 where id = $1`, [userId, passwordHash]);
-      await client.query('commit');
       // Le compte existe si l'une OU l'autre écriture a porté : un compte sans identité (donnée antérieure à
       // 0072 et non reprise) doit continuer à pouvoir poser son mot de passe.
       return (res.rowCount ?? 0) > 0 || (miroir.rowCount ?? 0) > 0;
-    } catch (err) {
-      await client.query('rollback');
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   /**
@@ -235,29 +228,25 @@ export class PgUserStore {
    * est déjà pris (rollback -> pas de tenant créé pour rien).
    */
   async createTenantWithAdmin(workspaceName: string, admin: { email: string; name: string | null; passwordHash: string | null }): Promise<{ tenantId: string; userId: string }> {
-    const client = await this.pool.connect();
     try {
-      await client.query('begin');
-      const t = await client.query<{ id: string }>(`insert into tenants (name) values ($1) returning id`, [workspaceName]);
-      const tenantId = t.rows[0]!.id;
-      // Racine « code client » posée à la création (déterministe depuis l'uuid, immuable) + code du 1er admin.
-      const tcode = deriveTenantCode(tenantId);
-      await client.query(`update tenants set public_code = $2 where id = $1`, [tenantId, tcode]);
-      // Même adresse qu'un espace existant -> on RÉUTILISE son identité, donc son mot de passe. C'est le
-      // cœur du multi-espaces : « une adresse, un mot de passe, plusieurs espaces ».
-      const identityId = await this.ensureIdentity(client, admin.email, admin.passwordHash);
-      const u = await client.query<{ id: string }>(
-        `insert into users (tenant_id, email, name, role, password_hash, code, identity_id) values ($1, $2, $3, 'admin', $4, $5, $6) returning id`,
-        [tenantId, admin.email, admin.name, admin.passwordHash, makeCode('usr', tcode), identityId],
-      );
-      await client.query('commit');
-      return { tenantId, userId: u.rows[0]!.id };
+      return await enTransaction(this.pool, async (client) => {
+        const t = await client.query<{ id: string }>(`insert into tenants (name) values ($1) returning id`, [workspaceName]);
+        const tenantId = t.rows[0]!.id;
+        // Racine « code client » posée à la création (déterministe depuis l'uuid, immuable) + code du 1er admin.
+        const tcode = deriveTenantCode(tenantId);
+        await client.query(`update tenants set public_code = $2 where id = $1`, [tenantId, tcode]);
+        // Même adresse qu'un espace existant -> on RÉUTILISE son identité, donc son mot de passe. C'est le
+        // cœur du multi-espaces : « une adresse, un mot de passe, plusieurs espaces ».
+        const identityId = await this.ensureIdentity(client, admin.email, admin.passwordHash);
+        const u = await client.query<{ id: string }>(
+          `insert into users (tenant_id, email, name, role, password_hash, code, identity_id) values ($1, $2, $3, 'admin', $4, $5, $6) returning id`,
+          [tenantId, admin.email, admin.name, admin.passwordHash, makeCode('usr', tcode), identityId],
+        );
+        return { tenantId, userId: u.rows[0]!.id };
+      });
     } catch (err) {
-      await client.query('rollback').catch(() => {});
       if (err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === '23505') throw new DuplicateEmailError();
       throw err;
-    } finally {
-      client.release();
     }
   }
 

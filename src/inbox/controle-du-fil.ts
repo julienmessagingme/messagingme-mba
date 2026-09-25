@@ -1,4 +1,5 @@
 import { MetaApiError } from '../meta/errors';
+import { messageDe } from '../lib/erreur';
 
 /**
  * LES GESTES DE CONTRÔLE DU FIL chez Meta (`thread_control`) : le PRENDRE, le RENDRE, et depuis le
@@ -67,13 +68,7 @@ export function creerRendreLeFil(deps: ControleDuFilDeps) {
    * Meta n'a pas fait. Le balayage automatique, lui, est best-effort et attrape de son côté (un fil ne doit
    * pas rester gelé pour toujours à cause d'un hoquet réseau).
    */
-  return async function rendreLeFil(tenantId: string, waId: string): Promise<boolean> {
-    const phoneNumberId = await deps.numeroDuTenant(tenantId);
-    if (!phoneNumberId) return false;
-    const client = await deps.clientMba(tenantId);
-    await client.releaseThread(phoneNumberId, waId);
-    return true;
-  };
+  return gesteSurLeFil(deps, 'releaseThread');
 }
 
 export function creerPrendreLeFil(deps: ControleDuFilDeps) {
@@ -85,11 +80,16 @@ export function creerPrendreLeFil(deps: ControleDuFilDeps) {
    * qui croit avoir éteint l'agent de Meta ne surveille plus la conversation. Le silence serait le pire des
    * retours.
    */
-  return async function prendreLeFil(tenantId: string, waId: string): Promise<boolean> {
+  return gesteSurLeFil(deps, 'takeThread');
+}
+
+/** Le geste commun aux deux jumeaux : le numéro de l'espace (aucun : `false`), puis l'acte chez Meta. */
+function gesteSurLeFil(deps: ControleDuFilDeps, acte: 'releaseThread' | 'takeThread') {
+  return async (tenantId: string, waId: string): Promise<boolean> => {
     const phoneNumberId = await deps.numeroDuTenant(tenantId);
     if (!phoneNumberId) return false;
     const client = await deps.clientMba(tenantId);
-    await client.takeThread(phoneNumberId, waId);
+    await client[acte](phoneNumberId, waId);
     return true;
   };
 }
@@ -171,7 +171,7 @@ export function creerPrendreLeFilAvecUnRejeu(deps: PriseAvecRejeuDeps) {
         const rejouable = err instanceof MetaApiError && err.retryable;
         if (!rejouable || derniere) {
           // eslint-disable-next-line no-console
-          console.warn(`reclaimControl: Meta a REFUSÉ de nous rendre le fil pour ${waId} (${tenantId}) après ${tentative + 1} tentative(s), le détenteur ne change pas :`, err instanceof Error ? err.message : err);
+          console.warn(`reclaimControl: Meta a REFUSÉ de nous rendre le fil pour ${waId} (${tenantId}) après ${tentative + 1} tentative(s), le détenteur ne change pas :`, messageDe(err));
           return false;
         }
         await deps.attendre(Math.min(err.retryAfterMs ?? REJEU_ATTENTE_DEFAUT_MS, REJEU_ATTENTE_MAX_MS));
