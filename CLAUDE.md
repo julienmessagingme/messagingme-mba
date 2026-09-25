@@ -44,7 +44,7 @@ Bundler` sans extensions). `npm run build` (tsc) n'est pas le chemin de déploie
 
 ## Déploiement
 
-🔴 **TROIS NOMS DEPUIS LE 2026-09-03, et ils n'ont pas le même hébergeur.** Détail et journal d'exécution :
+🔴 **TROIS NOMS DEPUIS LE 2026-09-03 (QUATRE avec la vitrine du 2026-09-25), et ils n'ont pas le même hébergeur.** Détail et journal d'exécution :
 [docs/PLAN-BASCULE-VERCEL-2026-09-03.md](docs/PLAN-BASCULE-VERCEL-2026-09-03.md).
 
 | Nom | Sert | Où | Comment on déploie |
@@ -52,6 +52,15 @@ Bundler` sans extensions). `npm run build` (tsc) n'est pas le chemin de déploie
 | `engageme.messagingme.app` | la console | **Vercel** (projet `messagingme-mba`, Root Directory `web`) | automatique à chaque `git push` |
 | `api.messagingme.app` | l'API et le worker | VPS Docker (`mba-api`, `mba-worker`) | `git pull` + `compose up -d --build` |
 | `mba.messagingme.app` | l'ANCIENNE console, plus toutes les adresses historiques | VPS (`mba-web` + routage NPM) | idem |
+| `engageme.messagingme.fr` | la VITRINE publique (`site/`, HTML statique) | **Vercel** (projet `engageme-site`, Root Directory `site`, CNAME chez OVH) | automatique au `git push` qui touche `site/` (Ignored Build Step sur `VERCEL_GIT_PREVIOUS_SHA`) |
+
+⚠️ **La vitrine n'a AUCUNE variable d'environnement, et elle ne doit pas en avoir.** À l'import, Vercel
+propose les 31 variables du `.env.example` RACINE (le backend), même avec `site` pour Root Directory : on les
+supprime toutes. `ci.yml` ignore `site/**` (aucun test ne la lit) ; les docs API et MCP de la console, vers
+lesquelles elle pointe, sont PUBLIQUES depuis le 2026-09-25.
+
+🔴 **`/mcp` REND 404 SUR `engageme.messagingme.app`** (mesuré le 2026-09-25 ; `api.` et `mba.` rendent 401) :
+toute adresse MCP donnée à un intégrateur se dérive de `BASE` (l'API), jamais du domaine de la console.
 
 ⚠️ **`mba.messagingme.app` porte un routage par CHEMIN dans NPM** (`advanced_config` du proxy host 21), et
 c'est ce qui rend la migration sans risque : `/api/backend/*` va à `mba-api` **avec le préfixe retiré par
