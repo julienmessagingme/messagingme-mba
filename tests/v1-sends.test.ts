@@ -19,6 +19,7 @@ import { lienTraceAvecJeton } from '../src/links/rewrite';
 import type { WorkflowGraph, WorkflowNode } from '../src/workflow/graph';
 import { cleApiDeTest } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
+import { MESSAGE_NUMERO_DELIE } from '../src/meta/numero-delie';
 
 /**
  * `POST /v1/sends` ET `GET /v1/sends/{sendId}` (spec 2026-09-24, § 3 et § 9).
@@ -149,6 +150,7 @@ function app(over: Partial<Omit<V1SendsRouteDeps, 'usage'>> = {}, monde: Partial
     getWindowOpenByWaIds: async (_t, waIds) => { cap.fenetresDemandees.push(waIds); return new Map(waIds.map((w) => [w, m.fenetre.get(w) === true])); },
     getTenantPhoneNumberId: async () => 'pn-default',
     phoneNumberBelongsToTenant: async (pn) => pn === 'pn-mine',
+    numeroEstDelie: async () => false,
     /** Double de la résolution du lot 1 : par contactId, numéro ou BSUID ; crée sur un numéro si on le demande. */
     resoudreFiche: async (tenant, cles, o) => {
       cap.resolutions.push({ cles, creer: o.creer });
@@ -948,6 +950,37 @@ describe('POST /v1/sends : forme, numéro, débit, droits', () => {
     expect(res.statusCode).toBe(409);
     expect(res.json()).toMatchObject({ code: 'no_whatsapp_number' });
     await sans.server.close();
+  });
+
+  /**
+   * 🔴 NUMÉRO DÉLIÉ : REFUSÉ AVANT DE CRÉER L'ENVOI (relecture du 2026-09-25). Rien ne l'arrêtait : l'envoi était
+   * accepté en 201, sa campagne butait ensuite sur le point de passage des envois et restait en pause, sans raison
+   * lisible par l'API, et ses messages partaient au premier « Relier », parfois des jours plus tard.
+   */
+  it.each([
+    ['template', TPL],
+    ['scénario qui ouvre par un template', SCN('scn_template')],
+    ['bloc qui fait partir un message de session', NODE('nod_qm')],
+  ])('🔴 numéro délié, cible %s -> 409 number_unlinked, rien n’est créé, la clé est LIBÉRÉE', async (_nom, cible) => {
+    const lus: string[] = [];
+    const { server, cap, idem } = app({ numeroEstDelie: async (pn) => { lus.push(pn); return true; } });
+    const res = await envoyer(server, { ...cible, recipients: [{ contactId: C1 }] }, 'i-delie');
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: MESSAGE_NUMERO_DELIE, code: 'number_unlinked' });
+    expect(lus).toEqual(['pn-default']);
+    expect(cap.sends).toEqual([]);
+    expect(cap.enqueued).toEqual([]);
+    expect(cap.resolutions, 'aucune fiche ne doit être créée pour un envoi refusé').toEqual([]);
+    expect(idem.has('i-delie'), 'la clé doit être rendue : le même appel repartira une fois le numéro relié').toBe(false);
+    await server.close();
+  });
+
+  it('numéro délié, mais la cible OUVRE EN RCS : acceptée, comme les campagnes uniquement RCS que « Délier » laisse tourner', async () => {
+    const { server, cap } = app({ numeroEstDelie: async () => true });
+    const res = await envoyer(server, { ...SCN('scn_rcs'), recipients: [{ contactId: C1 }] }, 'i-delie-rcs');
+    expect(res.statusCode).toBe(201);
+    expect(cap.sends).toHaveLength(1);
+    await server.close();
   });
 
   it('sans clé -> 401 unauthorized ; sans le droit sends:create -> 403 missing_scope', async () => {

@@ -6,6 +6,7 @@ import type { Guard } from '../auth/middleware';
 import { renderInvitationEmail } from '../support/email-templates';
 import { scopeTenant } from './scope';
 import { makeJournal, type AuditSink } from '../audit/journal';
+import { nomEspace, MESSAGE_NOM_ESPACE_INVALIDE } from '../user/nom-espace';
 
 export interface UsersRouteDeps {
   /**
@@ -74,17 +75,10 @@ const MAX_NOM = 60;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
- * Le NOM D'UN ESPACE, tel qu'il se choisit dans Compte & équipe : rogné, de 1 à 80 caractères, sans caractère de
- * contrôle (`\p{Cc}`, C0, DEL et C1). Il s'affiche dans la liste des espaces à la connexion, dans /ops et dans
- * l'email d'invitation : un retour à la ligne ou un octet nul y casserait trois écrans à la fois.
- *
- * ⚠️ `trim()` passe AVANT les bornes (Zod 4 applique ses vérifications dans l'ordre) : « 81 espaces » est vide,
- * pas trop long, et un nom entouré d'espaces se compte sans eux.
+ * Le NOM D'UN ESPACE, tel qu'il se choisit dans Compte & équipe. La règle est celle de `src/user/nom-espace.ts`,
+ * partagée avec l'inscription : les deux écrivains publics de `tenants.name` refusent la même chose.
  */
-export const NOM_ESPACE_MAX = 80;
-const nomEspaceSchema = z.object({
-  nom: z.string().trim().min(1).max(NOM_ESPACE_MAX).refine((s) => !/\p{Cc}/u.test(s)),
-});
+const nomEspaceSchema = z.object({ nom: nomEspace });
 
 /**
  * Gestion des comptes (onglet Admin). Le GROUPE est réservé aux admins via `garde`
@@ -268,17 +262,22 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (!deps.getWorkspaceName || !deps.renommerEspace) return reply.code(503).send({ error: 'renommage de l\'espace indisponible' });
     const corps = nomEspaceSchema.safeParse(req.body ?? {});
-    if (!corps.success) {
-      return reply.code(400).send({ error: `nom invalide (1 à ${NOM_ESPACE_MAX} caractères, sans caractère de contrôle)` });
-    }
+    if (!corps.success) return reply.code(400).send({ error: MESSAGE_NOM_ESPACE_INVALIDE });
     const nom = corps.data.nom;
-    // L'ancien nom est lu AVANT l'écriture : c'est lui que le journal garde, et il dit aussi si l'espace existe.
+    // L'ancien nom est lu AVANT l'écriture : il dit si l'espace existe, et si le nom change vraiment.
     const ancien = await deps.getWorkspaceName(tenant);
     if (ancien === null) return reply.code(404).send({ error: 'espace inconnu' });
     // Rien n'a changé : ni écriture ni ligne de journal, qui est un registre de CHANGEMENTS.
     if (ancien === nom) return reply.code(200).send({ nom });
     if (!(await deps.renommerEspace(tenant, nom))) return reply.code(404).send({ error: 'espace inconnu' });
-    await journal(tenant, req, 'espace.renomme', { kind: 'tenant', id: tenant }, { ancien, nouveau: nom });
+    /**
+     * 🔴 LE JOURNAL DIT QUI A RENOMMÉ ET QUAND, JAMAIS LES DEUX NOMS (relecture du 2026-09-25). Un nom d'espace
+     * n'est pas toujours un libellé d'entreprise : l'inscription par Google le construit avec le NOM COMPLET de la
+     * personne (« Espace de Jean Dupont », `src/auth/routes.ts`), et un espace s'est déjà appelé d'après son numéro
+     * (« Demo +33 5 25 68 02 50 »). `audit_log` est gardé deux ans et ne suit pas le départ de la personne : y
+     * écrire ces noms les rendrait ineffaçables. Le nom courant se lit dans Compte & équipe ; le détail reste vide.
+     */
+    await journal(tenant, req, 'espace.renomme', { kind: 'tenant', id: tenant });
     return reply.code(200).send({ nom });
   });
 }

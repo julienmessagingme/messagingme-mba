@@ -789,10 +789,18 @@ export class PgStatsStore {
    * 🔴 `cv.tenant_id = $1` EST LE SEUL CONTRÔLE D'ISOLATION : `conversation_messages` ne porte pas l'espace,
    * il l'hérite de son fil, et la RLS est contournée en production.
    *
-   * INDEX : le même chemin que « Messages échangés » et que `messagesTenusParMba`. Les fils de l'espace se
-   * trouvent par `conversations_tenant_wa_idx (tenant_id, wa_id)` (0058), puis leurs messages de la fenêtre par
-   * `conversation_messages_conv_idx (conversation_id, created_at)` (0009). `conversation_messages_created_idx
-   * (created_at)` (0042) reste l'autre plan possible si la fenêtre est plus sélective que l'espace.
+   * INDEX : les fils de l'espace ACTIFS sur la fenêtre se trouvent par `conversations_tenant_recent_idx
+   * (tenant_id, last_message_at desc, id desc)` (0069), puis leurs messages de la fenêtre par
+   * `conversation_messages_conv_idx (conversation_id, created_at)` (0009).
+   *
+   * 🔴 LA BORNE SUR `cv.last_message_at` EST UN PRÉFILTRE, PAS LE CRITÈRE (relecture du 2026-09-25). Sans elle, la
+   * requête parcourait TOUS les fils de l'espace, depuis toujours, pour n'en garder que les messages récents. Elle
+   * est exacte parce que les TROIS chemins qui écrivent un message (`recordInbound`, `recordOutboundByWaId`,
+   * `recordOutbound`, `src/inbox/store.pg.ts`) avancent `last_message_at` à `now()` dans l'instruction qui précède
+   * leur `insert` : un fil qui porte un message de la fenêtre a donc un `last_message_at` au moins aussi récent, à
+   * l'écart près entre ces deux instructions. La marge d'une heure absorbe cet écart ; le critère exact reste
+   * `m.created_at`. ⚠️ Un quatrième chemin d'écriture qui insérerait sans avancer `last_message_at` ferait
+   * disparaître ses messages de ce compte : il doit l'avancer lui aussi.
    */
   async volumesParCanal(tenantId: string, jours: number): Promise<VolumesParCanal> {
     const { rows } = await this.pool.query<{ canal: string; envoyes: string; recus: string }>(
@@ -803,6 +811,7 @@ export class PgStatsStore {
          join conversations cv on cv.id = m.conversation_id
         where cv.tenant_id = $1
           and not cv.is_test
+          and cv.last_message_at > now() - make_interval(days => $2) - interval '1 hour'
           and m.created_at > now() - make_interval(days => $2)
         group by m.channel`,
       [tenantId, jours],

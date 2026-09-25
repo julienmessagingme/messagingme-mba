@@ -17,8 +17,14 @@ import { inputCls } from '@/lib/ui';
  * 2026-09-25) : deux portes pour le même geste auraient eu deux confirmations à tenir alignées.
  */
 export interface CanalRcs {
-  /** `null` = pas encore lu. Une lecture en échec vaut `{ active: false }`, comme avant ce lot. */
-  etat: RcsChannelState | null;
+  /**
+   * `null` = pas encore lu ; `'echec'` = la lecture a échoué, donc on ne SAIT PAS.
+   *
+   * 🔴 L'ÉCHEC N'EST PLUS `{ active: false }` (relecture du 2026-09-25) : l'interrupteur de l'Accueil le lisait
+   * « éteint », sa pastille passait au gris et sa phrase disait « Inactif », alors que rien de tel n'avait été lu.
+   * L'Accueil en fait désormais une carte sans interrupteur ni pastille, qui dit « État inconnu ».
+   */
+  etat: RcsChannelState | 'echec' | null;
   /** Le formulaire de la clé est-il ouvert ? */
   ouvert: boolean;
   /** Ouvre l'activation actuelle (la clé du canal) et amène la carte à l'écran. */
@@ -40,7 +46,7 @@ export const ANCRE_CANAL_RCS = 'canal-rcs';
 
 export function useCanalRcs(tenantId: string): CanalRcs {
   const t = useT();
-  const [etat, setEtat] = useState<RcsChannelState | null>(null);
+  const [etat, setEtat] = useState<RcsChannelState | 'echec' | null>(null);
   const [ouvert, setOuvert] = useState(false);
   const [cle, setCle] = useState('');
   const [busy, setBusy] = useState(false);
@@ -51,7 +57,7 @@ export function useCanalRcs(tenantId: string): CanalRcs {
     try {
       setEtat(await getRcsChannel(tenantId));
     } catch {
-      setEtat({ active: false });
+      setEtat('echec');
     }
   }, [tenantId]);
 
@@ -111,7 +117,10 @@ export function useCanalRcs(tenantId: string): CanalRcs {
  */
 export function RcsChannelCard({ rcs, isAdmin }: { rcs: CanalRcs; isAdmin: boolean }) {
   const t = useT();
-  const { etat, ouvert, cle, busy, erreur, droits } = rcs;
+  const { ouvert, cle, busy, erreur, droits } = rcs;
+  // Lecture en échec : la carte le DIT, et ne propose pas d'activer un canal peut-être déjà actif.
+  const inconnu = rcs.etat === 'echec';
+  const etat = rcs.etat === 'echec' ? null : rcs.etat;
   const actif = etat?.active === true;
 
   return (
@@ -125,7 +134,7 @@ export function RcsChannelCard({ rcs, isAdmin }: { rcs: CanalRcs; isAdmin: boole
           </p>
         </div>
         <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${actif ? 'bg-mint-100 text-mint-700' : 'bg-ink-100 text-ink-500'}`}>
-          {actif ? t('actif', 'active') : t('inactif', 'inactive')}
+          {inconnu ? t('état inconnu', 'state unknown') : actif ? t('actif', 'active') : t('inactif', 'inactive')}
         </span>
       </div>
 
@@ -155,7 +164,7 @@ export function RcsChannelCard({ rcs, isAdmin }: { rcs: CanalRcs; isAdmin: boole
 
       {erreur && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700" data-testid="rcs-channel-error">{erreur}</p>}
 
-      {isAdmin && (
+      {isAdmin && !inconnu && (
         <div className="mt-3">
           {!actif && !ouvert && (
             <button

@@ -16,7 +16,7 @@ import type { CanalRcs } from '@/components/RcsChannelCard';
 import type { ConnexionNumero } from '@/lib/connexion-numero';
 import {
   demandeConfirmation, ligneNumero, ligneRcs, ligneChaine, lignePublicites, ligneHubspot, nombreDePublications, routeInconnue, teinte,
-  type Geste, type Ligne, type Teinte,
+  numeroASurveiller, type Geste, type Ligne, type Teinte,
 } from '@/lib/canaux-services';
 
 /**
@@ -24,7 +24,8 @@ import {
  *
  * Une GRILLE DE CARTES depuis le 2026-09-25 après-midi (3 colonnes, 2, puis 1 selon la largeur) : le logo du
  * canal, l'interrupteur, une pastille d'état (`teinte`), la phrase, puis au bas de la carte sa ligne de chiffre
- * (`lib/chiffres-canaux.ts`, depuis le 2026-09-25) et son lien. Les gestes n'ont pas bougé.
+ * (`lib/chiffres-canaux.ts`, depuis le 2026-09-25) et, pour la chaîne, les publicités et HubSpot, le lien vers leur
+ * écran (WhatsApp et RCS n'en ont plus : leur détail est plus bas sur l'Accueil). Les gestes n'ont pas bougé.
  *
  * Cinq lignes, cinq interrupteurs, chacun branché sur un geste qui existe (ou sur l'un des deux neufs : délier le
  * numéro, débrancher la chaîne). Les décisions vivent dans `lib/canaux-services.ts`, testées sans navigateur ;
@@ -38,6 +39,8 @@ import {
 
 type Service = 'numero' | 'rcs' | 'chaine' | 'publicites' | 'hubspot';
 type Lecture<T> = T | 'echec' | null;
+/** La ligne de chiffre d'une carte : le chiffre, ce qu'il compte (au survol), et sa précision VISIBLE, s'il en a une. */
+interface Chiffre { texte: string; aide: string; mention?: string }
 
 const COULEUR: Record<Teinte, string> = { vert: DOT_HEX.green, gris: DOT_HEX.grey, ambre: DOT_HEX.amber };
 
@@ -67,10 +70,12 @@ export function CanauxServices(p: {
 
   /** Chaîne : l'état, puis le nombre de publications, seulement si elle est branchée (plan : `/connection`, `/posts`). */
   const chargerChaine = useCallback(async () => {
+    // Le compte d'avant est oublié AVANT de relire : une lecture qui échoue ne doit pas laisser « 3 publications au
+    // total » sous « État inconnu » (relecture du 2026-09-25).
+    setPublications(null);
     try {
       const c = await getConnexionChaine(p.tenantId);
       setChaine(c);
-      setPublications(null);
       if (c?.connection) setPublications(nombreDePublications(await listerPostsChaine(p.tenantId).catch(() => null)));
     } catch (err) {
       if (!estAnnulation(err)) setChaine('echec');
@@ -193,12 +198,16 @@ export function CanauxServices(p: {
         `${numero} unlinked on ${date(c.delieLe)}: no WhatsApp message goes out, and incoming messages are not recorded.`,
       );
     }
+    // Relié, mais Meta signale un problème : la phrase le dit, comme la pastille (ambre), plutôt qu'un « Relié »
+    // tout court qui contredirait la carte du numéro, juste en dessous (`numeroASurveiller`).
+    if (numeroASurveiller(c)) return t(`Relié : ${numero}. Chez Meta : ${c.status.label}.`, `Linked: ${numero}. At Meta: ${c.status.label}.`);
     return t(`Relié : ${numero}.`, `Linked: ${numero}.`);
   };
 
   const phraseRcs = (): string => {
     const e = p.rcs.etat;
     if (e === null) return lecture;
+    if (e === 'echec') return inconnu;
     if (e.active !== true) return t('Inactif. L’allumer demande la clé du canal.', 'Inactive. Turning it on asks for the channel key.');
     const nom = e.channel?.displayName || e.channel?.brandName;
     return nom ? t(`Actif, sous l’agent « ${nom} ».`, `Active, under the “${nom}” agent.`) : t('Actif.', 'Active.');
@@ -242,14 +251,19 @@ export function CanauxServices(p: {
    * La LIGNE DE CHIFFRE d'une carte (Julien, 2026-09-25) : envoyés et reçus pour WhatsApp et RCS, publications pour
    * la chaîne. `null` = on ne sait pas, et la carte n'affiche rien à cet endroit. L'`aide` (au survol) dit ce
    * qui est compté, parce que ce n'est PAS le périmètre de « Messages échangés », juste au-dessus.
+   *
+   * 🔴 ET LA `mention`, SOUS LE CHIFFRE, LE DIT SANS SURVOL (relecture du 2026-09-25) : l'écart avec « Messages
+   * échangés » (les envois de campagne sont comptés ici) n'était lisible qu'au survol, donc jamais sur un
+   * téléphone. Sur la carte du numéro, elle dit aussi que c'est TOUT le canal WhatsApp de l'espace qui est compté :
+   * la carte montre un numéro, mais les fils ne portent pas le numéro par lequel ils sont passés.
    */
-  const aideVolume = t(
-    'Messages partis et arrivés sur ce canal ces 30 derniers jours, modèles de campagne compris, hors conversations de test.',
-    'Messages sent and received on this channel over the last 30 days, campaign templates included, test conversations excluded.',
+  const aideVolume = (jours: number): string => t(
+    `Messages partis et arrivés sur ce canal ces ${jours} derniers jours, modèles de campagne compris, hors conversations de test.`,
+    `Messages sent and received on this channel over the last ${jours} days, campaign templates included, test conversations excluded.`,
   );
-  const chiffreVolume = (v: Volume | null | undefined): { texte: string; aide: string } | null => {
+  const chiffreVolume = (v: Volume | null | undefined, mention: string): Chiffre | null => {
     const texte = volumes === null ? null : phraseVolume(v ?? null, volumes.jours, locale);
-    return texte === null ? null : { texte, aide: aideVolume };
+    return texte === null || volumes === null ? null : { texte, aide: aideVolume(volumes.jours), mention };
   };
   // `publications` ne se lit que sur une chaîne branchée (`chargerChaine`) : `null` partout ailleurs.
   const textePublications = phrasePublications(publications, locale);
@@ -258,11 +272,21 @@ export function CanauxServices(p: {
   // dessous, sur l'Accueil même. Leurs cartes portent désormais leur chiffre à la place.
   const rangees: Array<{
     service: Service; titre: string; phrase: string; lien?: { href: string; texte: string };
-    chiffre: { texte: string; aide: string } | null;
+    chiffre: Chiffre | null;
     Logo: (x: { className?: string }) => React.ReactElement; aTerminer?: boolean;
   }> = [
-    { service: 'numero', titre: t('Numéro WhatsApp', 'WhatsApp number'), phrase: phraseNumero(), chiffre: chiffreVolume(volumes?.whatsapp), Logo: LogoWhatsApp },
-    { service: 'rcs', titre: t('Canal RCS', 'RCS channel'), phrase: phraseRcs(), chiffre: chiffreVolume(volumes?.rcs), Logo: LogoGoogleMessages },
+    {
+      service: 'numero', titre: t('Numéro WhatsApp', 'WhatsApp number'), phrase: phraseNumero(),
+      chiffre: chiffreVolume(volumes?.whatsapp, t('Tout le canal WhatsApp de l’espace, envois de campagne compris.', 'The workspace’s whole WhatsApp channel, campaign sends included.')),
+      Logo: LogoWhatsApp,
+      // Relié mais signalé par Meta : ambre, comme la santé du compte plus bas (`numeroASurveiller`).
+      aTerminer: numeroASurveiller(p.compte),
+    },
+    {
+      service: 'rcs', titre: t('Canal RCS', 'RCS channel'), phrase: phraseRcs(),
+      chiffre: chiffreVolume(volumes?.rcs, t('Envois de campagne compris.', 'Campaign sends included.')),
+      Logo: LogoGoogleMessages,
+    },
     {
       service: 'chaine', titre: t('Chaîne', 'Channel'), phrase: phraseChaine(), lien: { href: '/chaine', texte: t('Ouvrir l’écran Chaîne', 'Open the Channel screen') },
       chiffre: textePublications === null ? null : { texte: textePublications, aide: t('Toutes les publications faites depuis la console.', 'Every post published from the console.') },
@@ -293,8 +317,13 @@ export function CanauxServices(p: {
             <li key={service} data-testid={`canal-${service}`} className="flex flex-col rounded-2xl border border-ink-200 bg-white p-4 shadow-sm">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-3">
-                  <Logo className="h-8 w-8 shrink-0" />
-                  <div className="text-sm font-semibold text-ink-900">{titre}</div>
+                  {/* Le logo est DÉCORATIF ici : le titre juste à côté nomme déjà la carte, et un lecteur d'écran
+                      lisait « WhatsApp, image, Numéro WhatsApp » (relecture du 2026-09-25). Le titre est un `h4`,
+                      sous le `h3` du bloc, pour que la carte se trouve par les titres. */}
+                  <span data-testid={`canal-${service}-logo`} aria-hidden="true" className="shrink-0">
+                    <Logo className="h-8 w-8" />
+                  </span>
+                  <h4 className="text-sm font-semibold text-ink-900">{titre}</h4>
                 </div>
                 {l.allume !== null && (
                   <Toggle
@@ -327,6 +356,9 @@ export function CanauxServices(p: {
                   <p data-testid={`canal-${service}-chiffre`} title={chiffre.aide} className="text-sm font-semibold tabular-nums text-ink-900">
                     {chiffre.texte}
                   </p>
+                )}
+                {chiffre?.mention && (
+                  <p data-testid={`canal-${service}-chiffre-mention`} className="text-[11px] text-ink-500">{chiffre.mention}</p>
                 )}
                 {lien && <Link href={lien.href} data-testid={`canal-${service}-lien`} className="text-xs text-brand-600 hover:underline">{lien.texte}</Link>}
               </div>
@@ -368,8 +400,12 @@ function Confirmation({ geste, onAnnuler, onConfirmer }: { geste: Geste; onAnnul
     delier_numero: {
       titre: t('Délier le numéro WhatsApp ?', 'Unlink the WhatsApp number?'),
       corps: [
-        t('Plus aucun message WhatsApp ne part de cet espace : campagnes, scénarios, Inbox et API. Le RCS et les e-mails continuent.', 'No WhatsApp message goes out of this workspace anymore: campaigns, scenarios, Inbox and API. RCS and emails keep going.'),
-        t('Les campagnes en cours ou programmées passent en pause.', 'Running or scheduled campaigns are paused.'),
+        // 🔴 « Le RCS et les e-mails continuent » était inexact des deux côtés (relecture du 2026-09-25) : une
+        // campagne RCS dont le repli est WhatsApp passe ENTIÈRE en pause (`PgNumeroDelieStore.delier`), et un
+        // scénario ne démarre pas s'il doit envoyer par WhatsApp, e-mails compris (`runFrom`).
+        t('Plus aucun message WhatsApp ne part de cet espace : campagnes, scénarios, Inbox et API.', 'No WhatsApp message goes out of this workspace anymore: campaigns, scenarios, Inbox and API.'),
+        t('Les campagnes en cours ou programmées qui ont un étage WhatsApp, repli compris, passent en pause. Les campagnes uniquement RCS continuent.', 'Running or scheduled campaigns with a WhatsApp stage, fallback included, are paused. RCS-only campaigns keep going.'),
+        t('Un scénario s’arrête à son premier envoi WhatsApp ; un scénario sans WhatsApp (e-mail ou RCS seuls) continue.', 'A scenario stops at its first WhatsApp send; a scenario without WhatsApp (email or RCS only) keeps going.'),
         t('Une campagne « Au fil de l’eau » n’inscrit personne pendant ce temps : les contacts arrivés entre-temps ne seront pas repris au retour.', 'An “Au fil de l’eau” (live feed) campaign enrolls no one in the meantime: contacts who arrive then will not be picked up when the number is relinked.'),
         t('Les messages reçus sur ce numéro ne sont plus enregistrés.', 'Messages received on this number are no longer recorded.'),
         t('Rien ne change chez Meta : si l’agent de Meta est allumé, il continue de répondre. L’historique reste, et le numéro se relie d’un clic.', 'Nothing changes at Meta: if Meta’s agent is on, it keeps answering. History stays, and the number relinks in one click.'),

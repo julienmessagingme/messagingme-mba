@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  demandeConfirmation, ligneNumero, ligneRcs, ligneChaine, lignePublicites, ligneHubspot, nombreDePublications, routeInconnue, teinte, type Geste,
+  demandeConfirmation, ligneNumero, ligneRcs, ligneChaine, lignePublicites, ligneHubspot, nombreDePublications, routeInconnue, teinte, numeroASurveiller, type Geste,
 } from './canaux-services';
 
 describe('ligneNumero', () => {
@@ -34,6 +34,24 @@ describe('ligneRcs', () => {
   });
   it('pas encore lu : pas d’interrupteur', () => {
     expect(ligneRcs(null)).toEqual({ allume: null, geste: null });
+  });
+  it('🔴 lecture en échec : pas d’interrupteur ni de pastille, jamais un « inactif » qu’on n’a pas lu', () => {
+    expect(ligneRcs('echec')).toEqual({ allume: null, geste: null });
+    expect(teinte(ligneRcs('echec'))).toBeNull();
+  });
+});
+
+describe('numeroASurveiller (la pastille du numéro ne contredit plus la santé du compte)', () => {
+  it('🔴 rouge ou ambre chez Meta : à surveiller, donc une pastille AMBRE sur un numéro relié', () => {
+    for (const dot of ['red', 'amber']) {
+      expect(numeroASurveiller({ status: { dot } }), dot).toBe(true);
+      expect(teinte({ allume: true, geste: 'delier_numero' }, numeroASurveiller({ status: { dot } })), dot).toBe('ambre');
+    }
+  });
+  it('vert, gris, absent ou compte non lu : rien à signaler', () => {
+    for (const compte of [{ status: { dot: 'green' } }, { status: { dot: 'grey' } }, { status: null }, {}, null]) {
+      expect(numeroASurveiller(compte), JSON.stringify(compte)).toBe(false);
+    }
   });
 });
 

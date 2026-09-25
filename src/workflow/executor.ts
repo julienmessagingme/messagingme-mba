@@ -62,6 +62,24 @@ export const EST_UN_ENVOI: ReadonlySet<string> = new Set([
   'sendTemplate', 'sendQuickMessage', 'sendQuestion', 'sendFlow', 'sendEmail',
 ]);
 
+/** Les envois qui partent TOUJOURS par WhatsApp, quel que soit le canal du parcours (cf. `apply`). */
+const TOUJOURS_WHATSAPP: ReadonlySet<string> = new Set(['sendTemplate', 'sendFlow', 'sendQuestion']);
+
+/**
+ * CE PARCOURS FERA-T-IL PARTIR UN MESSAGE PAR WHATSAPP ? La question que `runFrom` pose avant tout effet, pour
+ * refuser un numéro délié AVANT l'e-mail ou l'appel API qui précéderaient l'envoi refusé.
+ *
+ * ⚠️ LA MÊME RÈGLE QUE `apply`, qui décide du tuyau : un modèle, un formulaire et une question partent toujours
+ * par WhatsApp ; un message rapide suit le canal du parcours. Ce canal ne peut changer en cours de liste que par
+ * un envoi WhatsApp, qui a déjà répondu « oui » ici : le canal d'entrée suffit donc.
+ *
+ * ⚠️ UN E-MAIL SEUL, UN RCS SEUL, DES ACTIONS SEULES : « non ». Un scénario sans WhatsApp continue de tourner sur
+ * un numéro délié, comme les campagnes uniquement RCS.
+ */
+export function envoieParWhatsApp(steps: readonly WalkStep[], canalEntrant: RunChannel): boolean {
+  return steps.some(({ action: a }) => TOUJOURS_WHATSAPP.has(a.kind) || (a.kind === 'sendQuickMessage' && canalEntrant === 'whatsapp'));
+}
+
 /**
  * LE GRAPHE QUE CE PARCOURS JOUE : le sien s'il en porte un, le publié sinon.
  *
@@ -192,6 +210,21 @@ export interface WorkflowExecutorDeps {
    * Les tests passent désormais `jamaisDesabonne` (`tests/consentement.ts`), qui DIT leur hypothèse.
    */
   estDesabonne(tenantId: string, waId: string): Promise<boolean>;
+  /**
+   * Lève `NumeroDelieError` si le numéro WhatsApp de l'espace est DÉLIÉ (migration 0180). Rend sans rien faire
+   * sinon, y compris pour un espace sans numéro (c'est alors l'envoi lui-même qui dira pourquoi il ne part pas).
+   *
+   * 🔴 ELLE N'EST PAS LA GARDE, ELLE LA PRÉCÈDE (relecture du 2026-09-25). La garde vit au point de passage des
+   * envois (`MetaClientFactory.clientForTenant`), et elle y reste. Mais elle ne s'y pose qu'AU MOMENT de l'envoi
+   * WhatsApp, donc APRÈS ce que le parcours fait avant lui : un scénario « e-mail, puis modèle » envoyait l'e-mail,
+   * butait sur le modèle, et la campagne rendait le destinataire à la file. À la reprise, après « Relier », le
+   * scénario repartait de zéro et l'e-mail partait une seconde fois. `runFrom` l'appelle donc AVANT tout effet,
+   * dès que le parcours calculé contient un envoi WhatsApp (`envoieParWhatsApp`).
+   *
+   * OPTIONNELLE, et c'est sûr : absente, rien ne part pour autant (la garde du point de passage tient), seul le
+   * rejeu décrit ci-dessus redevient possible. Les fixtures de test n'ont rien à câbler.
+   */
+  verifierNumeroWhatsApp?(tenantId: string): Promise<void>;
   /** Envoie un message hors template : interactif (texte + 2-3 réponses rapides, OU un bouton de lien),
    *  image légendée, ou simple texte, selon ce que porte le bloc. Atteint via `advance` (après réponse du
    *  contact) ou `startFromNode` (fenêtre vérifiée par l'appelant) : toujours EN fenêtre 24 h. */
@@ -1332,6 +1365,24 @@ export class WorkflowExecutor {
       return ouvreParUnAgent
         ? "le scénario ouvre par un agent IA, qui écrit du texte libre : impossible hors de la fenêtre de 24 h"
         : "le scénario ouvre par un message rapide, une question ou un formulaire, impossible hors de la fenêtre de 24 h";
+    }
+    /**
+     * 🔴 LE NUMÉRO DÉLIÉ SE VÉRIFIE ICI, AVANT TOUT EFFET, dès que le parcours doit envoyer par WhatsApp
+     * (relecture du 2026-09-25). Sans ce point, l'e-mail et l'appel API placés avant le premier envoi WhatsApp
+     * partaient, puis l'envoi butait sur le point de passage : une campagne rendait le destinataire à la file, et
+     * au « Relier » le parcours repartait de zéro, e-mail compris. L'exception remonte telle quelle, comme celle
+     * du point de passage : chaque appelant sait déjà la traiter (campagne, automation).
+     *
+     * ⚠️ CE QUI RESTE POSSIBLE AVANT CE POINT, et c'est borné : un bloc RCS envoyé par `walkResolved` (il met le
+     * parcours en attente, donc aucun envoi WhatsApp ne le suit dans cette liste, et la question rend « non ») ;
+     * la reprise du fil par une campagne (`reclaimControl`), qui n'écrit rien au contact et se rejoue sans effet.
+     *
+     * ⚠️ ET UNE FENÊTRE ÉTROITE DEMEURE : la garde est en cache 5 s par process. Si « Délier » tombe ENTRE cette
+     * vérification et un envoi WhatsApp plus loin dans la même liste, les envois d'avant sont partis et le suivant
+     * est refusé. Quelques secondes, une fois, pour les parcours qui démarrent à cet instant.
+     */
+    if (this.deps.verifierNumeroWhatsApp && envoieParWhatsApp(actions, apresWalk)) {
+      await this.deps.verifierNumeroWhatsApp(tenantId);
     }
     const { refus, partis, canal } = await this.apply(tenantId, contact.waId, actions, opts.firstTemplateParams, opts.emitEvents === true, workflowId, apresWalk);
     // Refus alors que RIEN n'est parti : le contact n'a rien reçu. On ne persiste PAS de run en attente, pour

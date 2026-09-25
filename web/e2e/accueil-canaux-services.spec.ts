@@ -78,8 +78,14 @@ test.describe('Accueil : Canaux et services', () => {
     });
     // Ancre positive : le bloc a lu ses cinq services avant qu'on regarde ce qui n'y est plus.
     await expect(ligne(page, 'publicites').etat).toHaveText('Connecté : GMC.');
-    for (const [s, logo] of [['numero', 'WhatsApp'], ['rcs', 'Google Messages'], ['chaine', 'Chaîne WhatsApp'], ['publicites', 'Meta'], ['hubspot', 'HubSpot']] as const) {
-      await expect(page.getByTestId(`canal-${s}`).getByRole('img', { name: logo, exact: true }), s).toBeVisible();
+    // 🔴 Le logo est DÉCORATIF (le titre nomme la carte) : visible, mais caché des lecteurs d'écran, qui lisaient
+    // « WhatsApp, image, Numéro WhatsApp ». Le titre est un `h4`, sous le `h3` du bloc (relecture du 2026-09-25).
+    for (const [s, titre] of [['numero', 'Numéro WhatsApp'], ['rcs', 'Canal RCS'], ['chaine', 'Chaîne'], ['publicites', 'Compte publicitaire'], ['hubspot', 'HubSpot']] as const) {
+      const carte = page.getByTestId(`canal-${s}`);
+      await expect(carte.getByTestId(`canal-${s}-logo`).locator('svg'), s).toBeVisible();
+      await expect(carte.getByTestId(`canal-${s}-logo`), s).toHaveAttribute('aria-hidden', 'true');
+      await expect(carte.getByRole('img'), s).toHaveCount(0);
+      await expect(carte.getByRole('heading', { level: 4, name: titre, exact: true }), s).toBeVisible();
     }
     for (const [s, t] of [['numero', 'vert'], ['rcs', 'vert'], ['chaine', 'vert'], ['publicites', 'vert'], ['hubspot', 'gris']] as const) {
       await expect(ligne(page, s).pastille, s).toHaveAttribute('data-teinte', t);
@@ -108,6 +114,55 @@ test.describe('Accueil : Canaux et services', () => {
     await expect(ligne(page, 'numero').toggle).toHaveAttribute('aria-pressed', 'true');
   });
 
+  test('🔴 la précision du chiffre est VISIBLE, sans survol : tout le canal WhatsApp, envois de campagne compris', async ({ page }) => {
+    await mockAccueil(page, {
+      canaux: { rcs: { active: true, channel: { agentId: 'a', brandName: 'Marque', displayName: 'Mon agent', status: 'launched', checkedAt: null } } },
+      volumes: VOLUMES,
+    });
+    await expect(ligne(page, 'numero').chiffre).toHaveText('1 234 envoyés · 567 reçus (30 j)');
+    await expect(page.getByTestId('canal-numero-chiffre-mention')).toHaveText('Tout le canal WhatsApp de l’espace, envois de campagne compris.');
+    await expect(page.getByTestId('canal-rcs-chiffre-mention')).toHaveText('Envois de campagne compris.');
+  });
+
+  /**
+   * 🔴 LECTURE DU CANAL RCS EN ÉCHEC : ni interrupteur ni pastille, et la phrase dit qu'on ne sait pas (relecture du
+   * 2026-09-25). L'échec était lu `{ active: false }` : pastille grise, interrupteur éteint et « Inactif », sur un
+   * canal peut-être actif.
+   */
+  test('🔴 canal RCS illisible (500) : « État inconnu », sans interrupteur ni pastille, et la carte ne propose pas d’activer', async ({ page }) => {
+    await mockAccueil(page, { canaux: { rcs: 'panne', chaine: CHAINE } });
+    // Ancre positive : le bloc a lu les autres services.
+    await expect(ligne(page, 'chaine').etat).toContainText('Branchée');
+    await expect(ligne(page, 'rcs').etat).toHaveText('État inconnu pour le moment.');
+    await expect(ligne(page, 'rcs').toggle).toHaveCount(0);
+    await expect(ligne(page, 'rcs').pastille).toHaveCount(0);
+    await expect(page.getByTestId('rcs-channel-card')).toContainText('état inconnu');
+    await expect(page.getByTestId('rcs-channel-activate')).toHaveCount(0);
+  });
+
+  /**
+   * 🔴 LA PASTILLE DU NUMÉRO NE CONTREDIT PLUS LA SANTÉ DU COMPTE (relecture du 2026-09-25) : relié mais rouge chez
+   * Meta, la carte le peignait en VERT juste au-dessus de la carte du numéro, rouge.
+   */
+  test('🔴 numéro relié mais signalé par Meta : pastille AMBRE, et la phrase dit ce que Meta signale', async ({ page }) => {
+    await mockAccueil(page, { account: { status: { dot: 'red', label: 'Jeton révoqué', reason: 'Reconnectez le numéro.' } }, canaux: {} });
+    const numero = ligne(page, 'numero');
+    await expect(numero.etat).toHaveText('Relié : +33 5 25 68 02 50. Chez Meta : Jeton révoqué.');
+    await expect(numero.pastille).toHaveAttribute('data-teinte', 'ambre');
+    await expect(numero.toggle).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('🔴 chaîne débranchée puis relecture en échec : « État inconnu », et plus aucun compte de publications', async ({ page }) => {
+    await mockAccueil(page, { canaux: { chaine: CHAINE, posts: [{}, {}, {}], chainePanneApresGeste: true } });
+    const chaine = ligne(page, 'chaine');
+    await expect(chaine.chiffre).toHaveText('3 publications au total');
+    await chaine.toggle.click();
+    await page.getByTestId('canaux-confirmation-ok').click();
+    await expect(chaine.etat).toHaveText('État inconnu pour le moment.');
+    // Le compte d'avant la panne ne reste pas sous « État inconnu ».
+    await expect(chaine.chiffre).toHaveCount(0);
+  });
+
   test('compte publicitaire connecté mais pas choisi : pastille AMBRE, « à terminer »', async ({ page }) => {
     await mockAccueil(page, { canaux: { pubs: { ...PUBS, connexion: { ...PUBS.connexion, comptePubId: null, compteNom: null } } } });
     const pubs = ligne(page, 'publicites');
@@ -126,9 +181,13 @@ test.describe('Accueil : Canaux et services', () => {
     const dialogue = page.getByTestId('canaux-confirmation');
     await expect(dialogue).toBeVisible();
     await expect(dialogue).toContainText('Plus aucun message WhatsApp ne part de cet espace');
-    await expect(dialogue).toContainText('Le RCS et les e-mails continuent');
+    // 🔴 « Le RCS et les e-mails continuent » était inexact des deux côtés (relecture du 2026-09-25) : une campagne
+    // RCS à repli WhatsApp passe en pause, et un scénario s'arrête à son premier envoi WhatsApp.
+    await expect(dialogue).not.toContainText('Le RCS et les e-mails continuent');
+    await expect(dialogue).toContainText('qui ont un étage WhatsApp, repli compris, passent en pause');
+    await expect(dialogue).toContainText('Les campagnes uniquement RCS continuent');
+    await expect(dialogue).toContainText('Un scénario s’arrête à son premier envoi WhatsApp');
     await expect(dialogue).toContainText('ne seront pas repris au retour');
-    await expect(dialogue).toContainText('campagnes en cours ou programmées passent en pause');
     await expect(dialogue).toContainText('ne sont plus enregistrés');
     await expect(dialogue).toContainText('Rien ne change chez Meta');
     await page.getByTestId('canaux-confirmation-annuler').click();

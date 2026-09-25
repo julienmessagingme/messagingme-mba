@@ -7,6 +7,7 @@ import type { UserAuthStore } from './store';
 import type { UserStateLoader, Guard } from './middleware';
 import type { GoogleIdentity } from './google';
 import { DuplicateEmailError } from '../user/store.pg';
+import { nomEspace, MESSAGE_NOM_ESPACE_INVALIDE } from '../user/nom-espace';
 
 export interface AuthRouteDeps {
   /**
@@ -286,8 +287,11 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     }
     // Email inconnu -> inscription libre via Google : nouvel espace + admin, SANS mot de passe (Google-only).
     // `name` borné : évite qu'un nom Google délirant remplisse le champ workspace (défense de surface, la base tronque de toute façon).
+    // Le nom construit passe par la MÊME règle que l'inscription et le renommage (`nomEspace`) : un nom Google
+    // qu'elle refuse (caractère invisible, de contrôle) donne « Mon espace », jamais un refus de connexion.
     const gname = (identity.name ?? '').slice(0, 60).trim();
-    const workspaceName = gname !== '' ? `Espace de ${gname}` : 'Mon espace';
+    const construit = nomEspace.safeParse(gname !== '' ? `Espace de ${gname}` : '');
+    const workspaceName = construit.success ? construit.data : 'Mon espace';
     const { tenantId, userId } = await deps.createTenantWithAdmin(workspaceName, { email: identity.email, name: identity.name, passwordHash: null });
     const jwt = await signSession({ userId, tenantId, role: 'admin' }, deps.secret);
     // Une inscription EST une connexion : sans ça un compte tout neuf, en train d'utiliser l'app, s'afficherait
@@ -301,11 +305,15 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
   app.post('/auth/signup', async (req, reply) => {
     if (!deps.createTenantWithAdmin) return reply.code(503).send({ error: 'inscription indisponible' });
     const b = (req.body ?? {}) as { workspaceName?: unknown; email?: unknown; password?: unknown; name?: unknown };
-    const workspaceName = str(b.workspaceName).trim();
     const email = str(b.email).trim().toLowerCase();
     const password = str(b.password);
     const name = str(b.name).trim() || null;
-    if (workspaceName === '') return reply.code(400).send({ error: 'nom de l\'espace requis' });
+    if (str(b.workspaceName).trim() === '') return reply.code(400).send({ error: 'nom de l\'espace requis' });
+    // La MÊME règle que le renommage depuis Compte & équipe (`src/user/nom-espace.ts`) : sans elle, un nom de
+    // 500 Ko ou un saut de ligne entrait par ici, et l'écran de choix d'espace l'affichait tel quel.
+    const nomLu = nomEspace.safeParse(str(b.workspaceName));
+    if (!nomLu.success) return reply.code(400).send({ error: MESSAGE_NOM_ESPACE_INVALIDE });
+    const workspaceName = nomLu.data;
     if (!EMAIL_RE.test(email)) return reply.code(400).send({ error: 'email invalide' });
     if (!signupLimiter.take(rateKey(req, email))) return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
     if (password.length < MIN_PASSWORD) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_PASSWORD})` });

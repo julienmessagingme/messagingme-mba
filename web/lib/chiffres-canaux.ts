@@ -80,9 +80,22 @@ export function agentMetaRepond(s: { eligible?: unknown; settings?: { rollout?: 
   return s !== null && s.eligible === true && s.settings?.rollout?.enabled === true;
 }
 
-/** La réponse de `GET /mba/:pn/messages`, ou `null` : la route peut rendre `messages: null`, ou manquer. */
-export function lireMessagesMba(r: unknown): number | null {
+/** Les messages des conversations qu'un agent a tenues, et la fenêtre sur laquelle le SERVEUR les a comptés. */
+export interface MessagesTenus {
+  messages: number;
+  jours: number;
+}
+
+/**
+ * La réponse de `GET /mba/:pn/messages` (l'agent de Meta) ou de `GET /agents/:id/messages` (un agent IA), ou
+ * `null` : la route peut rendre `messages: null`, ou manquer.
+ *
+ * 🔴 LA FENÊTRE EST LUE AVEC LE CHIFFRE, et sans fenêtre lisible rien n'est lu (relecture du 2026-09-25). La
+ * légende (`ChiffreMessagesTenus`) écrivait « sur 30 jours » en dur alors que la réponse porte `jours` : changer
+ * la fenêtre au serveur aurait laissé l'écran annoncer 30 jours sur un chiffre compté autrement.
+ */
+export function lireMessagesTenus(r: unknown): MessagesTenus | null {
   if (r === null || typeof r !== 'object') return null;
-  const { messages } = r as { messages?: unknown };
-  return entierPositif(messages) ? messages : null;
+  const { messages, jours } = r as { messages?: unknown; jours?: unknown };
+  return entierPositif(messages) && entierPositif(jours) && jours > 0 ? { messages, jours } : null;
 }

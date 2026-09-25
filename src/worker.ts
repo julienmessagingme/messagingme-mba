@@ -818,9 +818,10 @@ async function main(): Promise<void> {
       // Le numéro de l'espace, pour un étage WhatsApp de REPLI sur une campagne qui n'en porte pas (une
       // campagne RCS). Le MÊME que l'écran de création aurait choisi : le premier par `created_at`.
       numeroDuTenant: (tenant) => repo.getTenantPhoneNumberId(tenant),
-      // 🔴 LE STORE, PAS LA GARDE : relu avant d'écrire une pause `numero_delie`, justement parce que la garde met
-      // sa réponse en cache 5 s et peut dire « délié » juste après « Relier » (cf. `RunJobDeps.numeroDelieEnBase`).
-      numeroDelieEnBase: (pn) => numeroDelieStore.estDelie(pn),
+      // 🔴 LE STORE, PAS LA GARDE : la pause `numero_delie` s'écrit en une instruction qui relit la base, justement
+      // parce que la garde met sa réponse en cache 5 s et peut dire « délié » juste après « Relier » (cf.
+      // `RunJobDeps.pauserSiNumeroDelie`).
+      pauserSiNumeroDelie: (id, tenant, pn) => numeroDelieStore.pauserCampagne(id, tenant, pn),
       // SÉRIALISATION des runs (R1-bis) : un seul run vivant par campagne. Injectée ICI seulement, comme les
       // gardes voisines : absente en test/e2e, le comportement historique est conservé mot pour mot.
       serialisation: {

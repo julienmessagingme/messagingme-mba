@@ -430,16 +430,22 @@ describe('users route : le nom de l’espace', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ nom: 'Maison Dupont' });
     expect(trace.ecrits).toEqual([{ tenant: 't1', nom: 'Maison Dupont' }]);
-    expect(trace.audit).toEqual([{
-      action: 'espace.renomme',
-      target: { kind: 'tenant', id: 't1' },
-      detail: { ancien: 'Demo +33 5 25 68 02 50', nouveau: 'Maison Dupont' },
-    }]);
+    expect(trace.audit).toEqual([{ action: 'espace.renomme', target: { kind: 'tenant', id: 't1' }, detail: {} }]);
   });
 
-  it('🔴 le détail du journal SURVIT au filtre des données personnelles (`nom` y est une clé interdite)', async () => {
-    const { server, trace } = appEspace();
-    await server.inject(renommer(adminTok, 'Maison Dupont'));
+  /**
+   * 🔴 LE JOURNAL NE GARDE NI L'ANCIEN NOM NI LE NOUVEAU (relecture du 2026-09-25). Il les portait sous `ancien` et
+   * `nouveau`, deux clés choisies pour échapper au filtre des données personnelles, alors qu'un nom d'espace peut
+   * être celui d'une personne (« Espace de Jean Dupont », construit par l'inscription Google) ou porter un numéro
+   * (celui de ce test). `audit_log` est gardé deux ans et ne suit pas le départ de la personne.
+   */
+  it('🔴 aucun des deux noms n’entre dans le journal, sous aucune clé', async () => {
+    const { server, trace } = appEspace('Espace de Jean Dupont');
+    await server.inject(renommer(adminTok, 'Demo +33 5 25 68 02 50'));
+    expect(trace.audit).toHaveLength(1);
+    const brut = JSON.stringify(trace.audit[0]!.detail);
+    expect(brut).not.toContain('Jean Dupont');
+    expect(brut).not.toContain('+33');
     expect(detailSansDonneesPersonnelles(trace.audit[0]!.detail).refuses).toEqual([]);
   });
 
@@ -472,6 +478,30 @@ describe('users route : le nom de l’espace', () => {
     expect((await server.inject({ method: 'PATCH', url: '/tenants/t1/nom', ...h(adminTok), payload: {} })).statusCode).toBe(400);
     expect(trace.ecrits).toEqual([]);
     expect(trace.audit).toEqual([]);
+  });
+
+  /**
+   * 🔴 LES INVISIBLES ET LES INVERSIONS DE SENS D'ÉCRITURE (relecture du 2026-09-25). Le nom est le seul repère de
+   * l'écran de choix d'espace : un admin qui y invite quelqu'un pouvait renommer son espace en un nom invisible,
+   * inversé, ou fait de caractères de remplissage, et la sonde de la relecture les a tous vus passer en 200.
+   */
+  it('🔴 400 : espace de largeur nulle, inversion du sens (RLO), isolat bidirectionnel, séparateur de ligne, remplissage hangul, ponctuation seule', async () => {
+    const { server, trace } = appEspace();
+    for (const nom of ['\u200B', 'Acme\u202Eevil', '\u2066x', 'A\u2028B', 'A\u2029B', '\u3164', 'Acme\u115F', '---', '\u00A0\u00A0']) {
+      const res = await server.inject(renommer(adminTok, nom));
+      expect(res.statusCode, JSON.stringify(nom)).toBe(400);
+      expect(res.json().error, JSON.stringify(nom)).toMatch(/80/);
+    }
+    expect(trace.ecrits).toEqual([]);
+    expect(trace.audit).toEqual([]);
+  });
+
+  it('un nom accentué, avec un chiffre, une apostrophe, une esperluette ou un émoji simple passe', async () => {
+    const { server, trace } = appEspace();
+    for (const nom of ['Hôtel d’Été & Cie', 'Garage 2000', 'Café ☕', '東京']) {
+      expect((await server.inject(renommer(adminTok, nom))).statusCode, nom).toBe(200);
+    }
+    expect(trace.ecrits.map((e) => e.nom)).toEqual(['Hôtel d’Été & Cie', 'Garage 2000', 'Café ☕', '東京']);
   });
 
   it('la borne est incluse : 80 caractères passent, et les espaces autour ne comptent pas', async () => {

@@ -300,14 +300,17 @@ describe('runAutomations', () => {
     });
 
     /**
-     * 🔴 SAUF LE NUMÉRO DÉLIÉ (migration 0180) : le point de passage des envois refuse AVANT tout appel à Meta,
-     * donc on SAIT que rien n'est parti par WhatsApp. Garder le tir taisait le contact pendant tout l'anti-rebond,
-     * soit 30 jours pour « risque élevé ».
+     * 🔴 SAUF LE NUMÉRO DÉLIÉ (migration 0180) : l'exécuteur le vérifie AVANT les effets d'un parcours qui enverra
+     * par WhatsApp, donc on SAIT que rien n'est parti. Garder le tir taisait le contact pendant tout l'anti-rebond :
+     * le prochain tag posé, une fois le numéro relié, ne relançait rien. (L'exemple était « risque élevé », et
+     * c'était le mauvais : ce déclencheur ne se publie qu'au PASSAGE en élevé, aucun événement ne suit tant que le
+     * contact y reste. Relecture du 2026-09-25.) Le même chemin avec le vrai exécuteur :
+     * `tests/numero-delie-parcours.test.ts`.
      */
-    it('🔴 scénario refusé par le NUMÉRO DÉLIÉ -> le tir est EFFACÉ, même en « risque élevé »', async () => {
-      const risque = auto({ triggerKind: 'risque_eleve', triggerConfig: {} });
-      const { deps, trace } = make([risque], { startWorkflow: async () => { throw new NumeroDelieError('pn1'); } });
-      expect(await runAutomations('t1', { kind: 'risque_eleve', waId: '33611' }, deps)).toBe(0);
+    it('🔴 scénario refusé par le NUMÉRO DÉLIÉ -> le tir est EFFACÉ, le prochain tag posé redéclenchera', async () => {
+      const tag = auto({ triggerKind: 'tag_added', triggerConfig: { tag: 'vip' } });
+      const { deps, trace } = make([tag], { startWorkflow: async () => { throw new NumeroDelieError('pn1'); } });
+      expect(await runAutomations('t1', { kind: 'tag_added', waId: '33611', tag: 'vip' }, deps)).toBe(0);
       expect(trace.fired).toEqual(['a1']);
       expect(trace.cleared).toEqual(['a1']);
     });

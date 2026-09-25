@@ -108,6 +108,40 @@ export class PgNumeroDelieStore {
     }
   }
 
+  /**
+   * Met UNE campagne en pause `numero_delie`, depuis un run qui a buté sur la garde du point de passage des envois.
+   * `true` = la pause est écrite ; `false` = rien n'a bougé, parce que le numéro est relié en base ou que la
+   * campagne ne tourne plus.
+   *
+   * 🔴 UNE SEULE INSTRUCTION, ET C'EST TOUT LE CORRECTIF (relecture du 2026-09-25). Le run relisait la base puis
+   * écrivait la pause sans condition : un « Relier » validé entre les deux laissait une pause `numero_delie` sur un
+   * numéro relié, que plus rien ne levait (le balayage de reprise ignore ce motif, et « Relier » était passé). Et
+   * l'écriture sans condition écrasait une pause posée par un opérateur, que « Relier » relançait ensuite.
+   *
+   * 🔴 `for share` SUR LE NUMÉRO, ET C'EST LE VERROU COHÉRENT AVEC `relier` ET `delier`. Tous deux écrivent la ligne
+   * du numéro (`update phone_numbers`) avant de toucher aux campagnes : si « Relier » est en cours, cette instruction
+   * ATTEND sa fin, puis relit la ligne à jour et n'écrit rien ; si elle passe la première, « Relier » attend la fin
+   * de cette instruction, et son `update campaigns`, qui prend un nouvel instantané, voit la pause et la lève.
+   * Aucun interblocage : cette instruction ne tient aucune ligne de `campaigns` pendant qu'elle attend.
+   *
+   * ⚠️ `status in ('running', 'scheduled')` : les deux états que `delier` met lui-même en pause. Une campagne en
+   * pause pour une autre raison (un opérateur, la qualité) garde sa raison.
+   *
+   * 🔴 `tenant_id = $2` SUR LES DEUX TABLES : l'identifiant de campagne et le numéro viennent du run, mais le pool
+   * contourne la RLS, et c'est ce filtre qui fait qu'un numéro d'un espace ne décide jamais pour un autre.
+   */
+  async pauserCampagne(campaignId: string, tenantId: string, phoneNumberId: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `update campaigns c set status = 'paused', pause_reason = 'numero_delie', paused_until = null
+        where c.id = $1 and c.tenant_id = $2 and c.status in ('running', 'scheduled')
+          and exists (select 1 from phone_numbers p
+                       where p.id = $3 and p.tenant_id = $2 and p.delie_le is not null
+                       for share)`,
+      [campaignId, tenantId, phoneNumberId],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
   /** Le numéro est-il délié ? Lecture par clé primaire. Numéro inconnu -> `false` (le comportement d'avant). */
   async estDelie(phoneNumberId: string): Promise<boolean> {
     const res = await this.pool.query(

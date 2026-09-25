@@ -1,7 +1,7 @@
 /**
  * LE BLOC « CANAUX ET SERVICES » DE L'ACCUEIL, en décisions pures (plan du 2026-09-25, design validé par Julien).
  *
- * Une ligne par canal ou service : un interrupteur, son état en une phrase, le lien vers son écran. Éteindre
+ * Une ligne par canal ou service : un interrupteur, son état en une phrase, et parfois le lien vers son écran. Éteindre
  * demande une confirmation qui dit ce qui s'arrête ; rallumer ne demande rien. Chaque interrupteur est branché
  * sur un geste qui EXISTE déjà (ou sur l'un des deux neufs, délier le numéro et débrancher la chaîne) : ce module
  * ne décide que QUEL geste, jamais comment il se fait.
@@ -53,9 +53,15 @@ export function ligneNumero(p: {
   return { allume: true, geste: 'delier_numero' };
 }
 
-/** CANAL RCS. Actif : l'éteindre le coupe. Inactif : le rallumer ouvre l'activation actuelle (la clé du canal). */
-export function ligneRcs(etat: { active?: unknown } | null): Ligne {
-  if (etat === null) return SANS_INTERRUPTEUR;
+/**
+ * CANAL RCS. Actif : l'éteindre le coupe. Inactif : le rallumer ouvre l'activation actuelle (la clé du canal).
+ *
+ * 🔴 `'echec'` (la lecture a échoué) ne dit RIEN, comme `null` : pas d'interrupteur, donc pas de pastille. Il était
+ * lu `{ active: false }`, et la carte peignait en gris, sous un interrupteur éteint, un canal peut-être actif
+ * (relecture du 2026-09-25).
+ */
+export function ligneRcs(etat: { active?: unknown } | 'echec' | null): Ligne {
+  if (etat === null || etat === 'echec') return SANS_INTERRUPTEUR;
   return etat.active === true ? { allume: true, geste: 'couper_rcs' } : { allume: false, geste: 'activer_rcs' };
 }
 
@@ -113,13 +119,28 @@ export function nombreDePublications(r: { posts?: unknown } | null): number | nu
   return r !== null && Array.isArray(r.posts) ? r.posts.length : null;
 }
 
-/** La pastille d'une carte : vert = allumé ou relié, gris = éteint, ambre = à terminer. */
+/** La pastille d'une carte : vert = allumé ou relié, gris = éteint, ambre = allumé mais à terminer ou à regarder. */
 export type Teinte = 'vert' | 'gris' | 'ambre';
+
+/**
+ * LE NUMÉRO EST RELIÉ, MAIS META SIGNALE UN PROBLÈME : la pastille de santé du compte (`status.dot`, celle de la
+ * carte « Numéro WhatsApp » plus bas sur l'Accueil) est ROUGE (jeton révoqué, numéro restreint) ou AMBRE.
+ *
+ * 🔴 SANS ELLE, LE MÊME ÉCRAN SE CONTREDISAIT (relecture du 2026-09-25) : la carte de « Canaux et services »
+ * peignait le numéro en VERT parce qu'il est relié à l'espace, pendant que la carte du numéro, juste en dessous, le
+ * peignait en rouge. Le vert voulait dire « relié », le rouge « malade chez Meta ». La pastille passe donc à
+ * l'ambre, et la phrase dit ce que Meta signale.
+ */
+export function numeroASurveiller(compte: { status?: { dot?: unknown } | null } | null): boolean {
+  const dot = compte?.status?.dot;
+  return dot === 'red' || dot === 'amber';
+}
 
 /**
  * La pastille se DÉDUIT de l'interrupteur, jamais d'une seconde lecture : elle ne peut donc pas dire « allumé » à
  * côté d'un interrupteur éteint. `aTerminer` ne teinte qu'un service ALLUMÉ (une connexion commencée et pas
- * finie). 🔴 `null` quand l'état est inconnu : un gris dirait « éteint », ce qu'on n'a pas constaté.
+ * finie, un numéro relié que Meta signale : `numeroASurveiller`). 🔴 `null` quand l'état est inconnu : un gris
+ * dirait « éteint », ce qu'on n'a pas constaté.
  */
 export function teinte(l: Ligne, aTerminer = false): Teinte | null {
   if (l.allume === null) return null;

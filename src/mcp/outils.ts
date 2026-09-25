@@ -1,6 +1,7 @@
 import type { ConversationSummary, ConversationMessage, ListConversationsOptions, ControlOwner } from '../inbox/store.pg';
 import type { ContactRow, ContactFilters } from '../crm/contact-store.pg';
 import { repondreDansLaFenetre, type DepsRepondre } from '../inbox/repondre';
+import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../meta/numero-delie';
 
 /**
  * Le CATALOGUE d'outils exposé aux agents tiers par le serveur MCP.
@@ -303,7 +304,19 @@ export const OUTILS: OutilMcp[] = [
       // pastille d'auteur dans l'inbox. `origine = 'mcp'` : ce qui l'a écrit est un agent tiers, ni un
       // humain ni un scénario. Les déduire l'un de l'autre est précisément le bug que la revue a trouvé,
       // et il était INVISIBLE parce que la valeur fausse était écrite explicitement en base.
-      const res = await repondreDansLaFenetre(deps, tenantId, id, texte, null, 'mcp');
+      /**
+       * 🔴 LE NUMÉRO DÉLIÉ (migration 0180) sort du point de passage des envois en EXCEPTION, pas en refus typé.
+       * Non traduite, elle tombait dans la branche « panne » du serveur (`-32603`, « échec interne de l’outil ») :
+       * l'agent tiers lisait « l'outil est cassé », sans la raison, et réessayait, chaque essai consommant le
+       * plafond de l'espace. C'est un REFUS, que seul un administrateur lève, et l'agent doit le lire.
+       */
+      let res: Awaited<ReturnType<typeof repondreDansLaFenetre>>;
+      try {
+        res = await repondreDansLaFenetre(deps, tenantId, id, texte, null, 'mcp');
+      } catch (err) {
+        if (err instanceof NumeroDelieError) throw new RefusOutil(MESSAGE_NUMERO_DELIE);
+        throw err;
+      }
       if ('refus' in res) {
         if (res.refus.motif === 'conversation_inconnue') throw new RefusOutil('conversation inconnue dans cet espace');
         if (res.refus.motif === 'aucun_numero') throw new RefusOutil('aucun numéro WhatsApp rattaché à cet espace');

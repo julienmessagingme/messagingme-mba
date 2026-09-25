@@ -37,6 +37,17 @@ describe('PgStatsStore.volumesParCanal', () => {
     expect(appels[0]!.params).toEqual(['espace-a', 30]);
   });
 
+  it('🔴 les fils sont préfiltrés par leur dernier message, avec une marge, et le critère exact reste la date du message', async () => {
+    // Sans ce préfiltre, la requête parcourait tous les fils de l'espace depuis toujours ; c'est lui qui laisse
+    // `conversations_tenant_recent_idx` (0069) servir. La marge absorbe l'écart entre la mise à jour du fil et
+    // l'insertion du message, qui sont deux instructions.
+    const { pool, appels } = fauxPool([]);
+    await new PgStatsStore(pool).volumesParCanal('espace-a', 30);
+    const sql = plat(appels[0]!.sql);
+    expect(sql).toContain("cv.last_message_at > now() - make_interval(days => $2) - interval '1 hour'");
+    expect(sql).toContain('m.created_at > now() - make_interval(days => $2)');
+  });
+
   it('🔴 les modèles ne sont PAS écartés : la carte dit ce qui est passé par le numéro', async () => {
     const { pool, appels } = fauxPool([]);
     await new PgStatsStore(pool).volumesParCanal('espace-a', 30);

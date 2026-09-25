@@ -90,7 +90,7 @@ describe.skipIf(!url)('le journal des tentatives (0134)', () => {
     campaigns: new PgCampaignStore(pool),
     frequency: new PgFrequencyStore(pool),
     quality: new PgQualityProvider(pool),
-    numeroDelieEnBase: async () => false,
+    pauserSiNumeroDelie: async () => false,
     moteur: { noterEnvoi: creerNoteurEnvois(pool) },
   });
 

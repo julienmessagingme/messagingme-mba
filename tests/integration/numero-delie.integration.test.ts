@@ -127,6 +127,61 @@ describe.skipIf(!url)('Numéro délié (Postgres réel)', () => {
     await pool.query(`update campaigns set status = 'completed' where tenant_id = $1`, [tenant]);
   });
 
+  /**
+   * 🔴 LA PAUSE ÉCRITE PAR UN RUN (`pauserCampagne`, relecture du 2026-09-25) : UNE instruction, qui n'écrit que si
+   * le numéro est délié EN BASE et que la campagne tourne encore. Avant, le run relisait puis écrivait sans
+   * condition : un « Relier » validé entre les deux laissait une pause que plus rien ne levait, et une pause
+   * posée par un opérateur était écrasée.
+   */
+  it('🔴 la pause d’un run : seulement numéro délié en base ET campagne qui tourne, jamais chez un autre espace', async () => {
+    const enCours = await campagne(tenant, { status: 'running' });
+    const pauseOperateur = await campagne(tenant, { status: 'paused' });
+    const chezLAutre = await campagne(autre, { status: 'running' });
+
+    // Numéro RELIÉ en base (la garde du run, en cache, disait encore « délié ») : rien n'est écrit.
+    expect(await store.pauserCampagne(enCours, tenant, PN)).toBe(false);
+    expect((await etat(enCours)).status).toBe('running');
+
+    // Numéro délié, SANS toucher aux campagnes : c'est l'état que voit un run lancé juste après « Délier ».
+    await pool.query(`update phone_numbers set delie_le = now() where id = $1`, [PN]);
+    expect(await store.pauserCampagne(enCours, tenant, PN)).toBe(true);
+    expect(await etat(enCours)).toMatchObject({ status: 'paused', pause_reason: 'numero_delie', paused_until: null });
+
+    // La pause d'un opérateur garde SA raison : « Relier » ne la relancera pas.
+    expect(await store.pauserCampagne(pauseOperateur, tenant, PN)).toBe(false);
+    expect(await etat(pauseOperateur)).toMatchObject({ status: 'paused', pause_reason: null });
+
+    // 🔴 L'isolation, dans les deux sens : la campagne d'un autre espace, ou le numéro d'un autre espace.
+    expect(await store.pauserCampagne(chezLAutre, tenant, PN)).toBe(false);
+    expect(await store.pauserCampagne(chezLAutre, autre, PN)).toBe(false);
+    expect((await etat(chezLAutre)).status).toBe('running');
+
+    // « Relier » lève la pause écrite par le run, comme celle de « Délier ».
+    await store.relier(tenant);
+    expect(await etat(enCours)).toMatchObject({ status: 'running', pause_reason: null });
+    await pool.query(`update campaigns set status = 'completed' where tenant_id = any($1::uuid[])`, [[tenant, autre]]);
+  });
+
+  it('🔴 un « Relier » EN COURS fait attendre la pause, qui relit alors le numéro relié et n’écrit rien', async () => {
+    await pool.query(`update phone_numbers set delie_le = now() where id = $1`, [PN]);
+    const enCours = await campagne(tenant, { status: 'running' });
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      // La première écriture de `relier`, validée plus tard : elle tient la ligne du numéro.
+      await client.query(`update phone_numbers set delie_le = null where tenant_id = $1`, [tenant]);
+      const pause = store.pauserCampagne(enCours, tenant, PN);
+      const tot = await Promise.race([pause.then(() => 'fini'), new Promise<string>((r) => { setTimeout(() => r('attend'), 500); })]);
+      expect(tot, 'la pause n’a pas attendu la fin de « Relier » : elle a lu l’ancien état').toBe('attend');
+      await client.query('commit');
+      expect(await pause).toBe(false);
+    } finally {
+      client.release();
+    }
+    expect(await etat(enCours)).toMatchObject({ status: 'running', pause_reason: null });
+    await pool.query(`update campaigns set status = 'completed' where tenant_id = $1`, [tenant]);
+  });
+
   it('un espace sans numéro : `null` des deux côtés, rien n’est écrit', async () => {
     expect(await store.delier(sansNumero)).toBeNull();
     expect(await store.relier(sansNumero)).toBeNull();

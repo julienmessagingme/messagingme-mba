@@ -41,7 +41,8 @@ export interface AutomationRunnerDeps {
    * Annule le déclenchement enregistré. Appelé quand le scénario n'a PAS démarré (`false` ou une raison) : dans
    * ce cas rien n'a été envoyé (les gardes de l'exécuteur agissent AVANT tout envoi), donc consommer l'anti-rebond
    * avalerait la prochaine vraie demande du client pendant toute la durée du délai. Appelé aussi sur un refus
-   * du numéro délié (`NumeroDelieError`), pour la même raison.
+   * du numéro délié (`NumeroDelieError`, vérifié par l'exécuteur avant les effets du parcours), pour la même
+   * raison, sauf pour un rappel `avant_date` (voir le `catch` de `runAutomations`).
    */
   clearFired(automationId: string, waId: string): Promise<void>;
   /**
@@ -295,19 +296,20 @@ export async function runAutomations(
       console.error(`automation ${a.id} ignorée:`, err instanceof Error ? err.message : err);
       /**
        * 🔴 LE NUMÉRO DÉLIÉ EFFACE LE TIR, contrairement aux autres exceptions. Une exception ordinaire garde le
-       * tir parce qu'on ne sait pas si un message est parti ; celle-ci dit que l'envoi WhatsApp refusé n'est pas
-       * parti (`NumeroDelieError`, levée avant tout appel à Meta). Garder le tir ferait taire la prochaine vraie
-       * demande du contact pendant tout l'anti-rebond. Best-effort : un effacement raté ne doit pas masquer le
-       * refus journalisé juste au-dessus.
+       * tir parce qu'on ne sait pas si un message est parti. Celle-ci arrive, dans le cas courant, AVANT tout
+       * effet du parcours : `runFrom` vérifie le numéro dès que le parcours calculé enverra par WhatsApp
+       * (`verifierNumeroWhatsApp`), donc ni l'e-mail, ni l'appel API, ni aucun message ne sont partis. Garder le
+       * tir ferait taire la prochaine vraie demande du contact pendant tout l'anti-rebond (un tag reposé, un
+       * webhook, un mot-clé). Best-effort : un effacement raté ne doit pas masquer le refus journalisé au-dessus.
+       *
+       * ⚠️ LE CAS QUI RESTE, ET IL EST ÉTROIT : la garde est en cache 5 s par process. « Délier » tombé ENTRE la
+       * vérification et un envoi WhatsApp plus loin dans la même liste laisse partir ce qui le précède (e-mail,
+       * appel API, envoi WhatsApp antérieur), et le prochain tir le rejouera. Quelques secondes, une fois.
        *
        * 🔴 SAUF `avant_date`, qui GARDE son tir. Son balayage republie tout rappel dont le marqueur d'occurrence a
        * disparu, chaque minute tant qu'on est dans la tolérance : effacer ici relancerait le scénario à chaque
-       * passage, et rejouerait à chaque fois ce que le parcours a déjà fait avant l'envoi refusé (un e-mail, un
-       * appel au système du client), soit jusqu'à soixante e-mails identiques par contact. Relevé en relecture
-       * le 2026-09-25, gardé par `tests/automation-runner.test.ts`.
-       *
-       * ⚠️ Limite connue, pour les autres déclencheurs : ce que le parcours a fait avant l'envoi refusé (e-mail,
-       * appel au système du client, envoi WhatsApp antérieur) repartira au prochain tir.
+       * passage. Relevé en relecture le 2026-09-25, gardé par `tests/automation-runner.test.ts` et, avec le vrai
+       * exécuteur et le vrai balayage, par `tests/numero-delie-parcours.test.ts`.
        */
       if (err instanceof NumeroDelieError && ev.kind !== 'avant_date') await deps.clearFired(a.id, ev.waId).catch(() => {});
     }

@@ -132,9 +132,10 @@ export type AuditAction =
   | 'integration.modifiee'
   | 'integration.debranchee'
   /**
-   * L'ESPACE RENOMMÉ depuis Compte & équipe (2026-09-25). La cible est l'espace ; le détail porte l'ancien et le
-   * nouveau nom sous `ancien` et `nouveau`, jamais sous `nom` : c'est une clé INTERDITE (`CLES_INTERDITES`), qui
-   * aurait été retirée du détail. Le nom d'un espace est un libellé d'entreprise, pas l'identité d'une personne.
+   * L'ESPACE RENOMMÉ depuis Compte & équipe (2026-09-25). La cible est l'espace, et le détail est VIDE : ni
+   * l'ancien nom ni le nouveau. 🔴 Un nom d'espace peut être l'identité d'une personne : l'inscription par Google
+   * le construit avec son nom complet (« Espace de Jean Dupont »), et un nom peut porter un numéro. Les écrire ici
+   * sous une autre clé que `nom` contournerait `CLES_INTERDITES` au lieu de le respecter.
    */
   | 'espace.renomme';
 

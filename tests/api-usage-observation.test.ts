@@ -44,6 +44,7 @@ const sendsMuets: Omit<V1SendsRouteDeps, 'usage'> = {
   getWindowOpenByWaIds: async () => new Map(),
   getTenantPhoneNumberId: async () => 'pn-1',
   phoneNumberBelongsToTenant: async () => true,
+  numeroEstDelie: async () => false,
   resoudreFiche: async () => ({ ok: false, code: 'unknown_contact' }),
   appliquerConsentement: async () => 'inchange',
   listContactsPourEnvoi: async () => [],

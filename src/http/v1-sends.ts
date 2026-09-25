@@ -23,6 +23,7 @@ import { formaterSuiviEnvoi } from '../api/suivi-envoi';
 import type { RcsOutbound } from '../rcs/types';
 import { PREFIXE_ENVOI_API, resoudreCibleRcs, schemaCibleRcs, type DepsCibleRcs } from '../api/cible-rcs';
 import { destinataireAvecVariablesInterdites, schemaVariables } from '../api/variables';
+import { MESSAGE_NUMERO_DELIE } from '../meta/numero-delie';
 
 export interface V1SendCreateInput {
   tenantId: string;
@@ -57,6 +58,15 @@ export interface V1SendsRouteDeps {
   getWindowOpenByWaIds(tenantId: string, waIds: string[]): Promise<Map<string, boolean>>;
   getTenantPhoneNumberId(tenantId: string): Promise<string | null>;
   phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
+  /**
+   * Le numéro est-il DÉLIÉ de son espace (migration 0180) ? La garde du point de passage des envois, celle du
+   * process de l'API, dont « Délier » et « Relier » vident le cache : aucune fenêtre ici.
+   *
+   * 🔴 REQUISE : absente, un envoi WhatsApp sur un numéro délié serait accepté en 201, puis sa campagne resterait
+   * en pause, sans aucune raison lisible par l'API, jusqu'au jour où quelqu'un relierait le numéro. Les messages
+   * partiraient alors, parfois des jours plus tard (un code ou un rappel périmé).
+   */
+  numeroEstDelie(phoneNumberId: string): Promise<boolean>;
   /** La résolution de fiche du lot 1 (`resoudreFiche`), liée à ses dépendances par le câblage. */
   resoudreFiche(tenantId: string, cles: ClesFiche, opts: { creer: ModeCreation }): Promise<ResolutionFiche>;
   /**
@@ -452,6 +462,21 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
       if ('refus' in numero) return await libererEtRefuser(numero.refus);
       const cible = await resoudreCible(deps, tenantId, demandee, params);
       if ('refus' in cible) return await libererEtRefuser(cible.refus);
+      /**
+       * 🔴 NUMÉRO DÉLIÉ : REFUSÉ ICI, EN 409 `number_unlinked`, comme `POST /v1/messages/whatsapp` (relecture du
+       * 2026-09-25). Rien d'autre ne l'arrêtait avant la création : la lecture du template ne passe pas par la
+       * garde, donc l'envoi était accepté en 201, sa campagne butait ensuite sur le point de passage des envois
+       * et restait `paused`, sans que `GET /v1/sends/{id}` dise pourquoi, et ses messages partaient au premier
+       * « Relier », parfois des jours plus tard.
+       *
+       * ⚠️ SEULEMENT QUAND CE QUI PART EN PREMIER EST WHATSAPP. Une cible qui ouvre en RCS (message RCS, scénario
+       * qui ouvre par un bloc RCS) ne demande rien au numéro WhatsApp au lancement : l'accepter est cohérent avec
+       * « Délier », qui laisse tourner les campagnes uniquement RCS. Son repli WhatsApp, s'il en a un, bute plus
+       * tard sur la garde comme toute campagne, et la met en pause.
+       */
+      if (cible.ouverture !== 'rcs' && await deps.numeroEstDelie(numero.phoneNumberId)) {
+        return await libererEtRefuser({ statut: 409, code: 'number_unlinked', message: MESSAGE_NUMERO_DELIE });
+      }
       const { resolus, created, matched } = await resoudreDestinataires(
         deps, tenantId, corps.recipients, cible.ouverture === 'whatsapp_session' ? 'jamais' : 'phone',
       );

@@ -198,11 +198,11 @@ export interface OpsRouteDeps {
  *  n'existe aucune route de débit pour la rattraper. */
 const MAX_RECHARGE_MICRO_EUR = 1_000_000_000;
 
-/** Longueur minimale de la note d'une écriture d'exploitation : rechargement de crédit ET verrou d'espace.
- *  Trois caractères ne prouvent rien, mais ils empêchent le champ d'être rempli par un espace pour passer
- *  la garde. ⚠️ Elle sert désormais à DEUX routes : la nommer « note d'un rechargement » était vrai le jour
- *  où elle a été écrite, et faux dès la seconde. */
-const MIN_NOTE = 3;
+/** Longueur minimale de la note d'une écriture d'exploitation. Trois caractères ne prouvent rien, mais ils
+ *  empêchent le champ d'être rempli par un espace pour passer la garde. ⚠️ Elle sert à TOUTES les écritures de
+ *  `/ops`, et le réglage du plafond de l'API l'IMPORTE (`ops-plafond-api.ts`) : une copie aurait fini par
+ *  diverger. Le compte des routes n'est pas écrit ici, il dérivait. */
+export const MIN_NOTE = 3;
 
 /** Plafond d'un rejeu en une fois. Rejouer mille traitements d'un coup sur une cause non corrigée, c'est
  *  refaire mille fois la même erreur : on borne pour forcer à regarder entre deux lots. */

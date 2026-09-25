@@ -101,6 +101,18 @@ describe('POST /auth/google', () => {
     await server.close();
   });
 
+  it('🔴 un nom Google que la règle du nom d’espace refuse (saut de ligne, inversion du sens) donne « Mon espace », jamais un refus', async () => {
+    // Le nom construit passe par `nomEspace`, comme l'inscription et le renommage : sans elle, ce nom entrait tel
+    // quel dans `tenants.name`, et l'écran de choix d'espace l'affichait.
+    for (const name of ['Alice\nMartin', 'Alice\u202Eevil']) {
+      const { server, cap } = app({ verifyGoogle: async () => ({ email: 'new@x.fr', name, emailVerified: true, sub: 'g9' }) });
+      const res = await server.inject({ method: 'POST', url: '/auth/google', ...j, payload: { idToken: 'X' } });
+      expect(res.statusCode, JSON.stringify(name)).toBe(201);
+      expect(cap.created.map((c) => c.name), JSON.stringify(name)).toEqual(['Mon espace']);
+      await server.close();
+    }
+  });
+
   it('jeton invalide -> 401, aucun espace créé', async () => {
     const { server, cap } = app();
     const res = await server.inject({ method: 'POST', url: '/auth/google', ...j, payload: { idToken: 'BAD' } });

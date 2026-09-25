@@ -3273,6 +3273,7 @@ async function main(): Promise<void> {
         getWindowOpenByWaIds: (tenant, waIds) => inboxStore.getWindowOpenByWaIds(tenant, waIds),
         getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
         phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
+        numeroEstDelie: (pn) => gardeNumeroDelie.estDelie(pn),
         // La résolution de fiche et l'écriture du consentement du lot 1, sur les MÊMES dépendances que
         // `/v1/contacts` : le dépôt des contacts lui-même, et `depsConsentementDe`. Les quatre paramètres de
         // chaque flèche sont gardés par `tests/v1-cablage.test.ts`.

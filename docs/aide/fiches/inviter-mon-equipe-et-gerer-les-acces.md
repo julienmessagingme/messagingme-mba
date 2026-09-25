@@ -1,6 +1,6 @@
 ---
 source_section: Comptes & authentification
-source_empreinte: ab1475
+source_empreinte: 506128
 ---
 # Inviter mon équipe, et gérer les accès
 
@@ -39,5 +39,5 @@ bouton « Se reconnecter ». Rien de ce que vous tentez d'enregistrer ne part en
 
 **Renommer l'espace** : en tête de Compte & équipe, la carte « Espace » montre le nom de l'espace dans un champ
 modifiable ; Enregistrer le change tout de suite. C'est ce nom qui s'affiche quand une adresse ouvre plusieurs
-espaces et doit choisir le sien à la connexion. Réservé aux administrateurs, de 1 à 80 caractères, et chaque
-renommage apparaît dans le journal des actions.
+espaces et doit choisir le sien à la connexion. Réservé aux administrateurs, de 1 à 80 caractères avec au moins une lettre ou un
+chiffre, et chaque renommage apparaît dans le journal des actions (sans l'ancien ni le nouveau nom).

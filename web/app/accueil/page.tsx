@@ -21,7 +21,7 @@ import { DOT_HEX } from '@/lib/ui';
 import { PastilleNumero } from '@/components/PastilleNumero';
 import { getMbaStatus, getMbaMessages, putMbaActivation, type MbaStatus } from '@/lib/api-mba';
 import { ChiffreMessagesTenus } from '@/components/EnteteAgent';
-import { agentMetaRepond, lireMessagesMba } from '@/lib/chiffres-canaux';
+import { agentMetaRepond, lireMessagesTenus, type MessagesTenus } from '@/lib/chiffres-canaux';
 import { useConnexionNumero, type ConnexionNumero } from '@/lib/connexion-numero';
 import { lireHubspotActif, affichageHubspotAccueil } from '@/lib/hubspot-actif';
 import { useInstallationHubspot } from '@/lib/hubspot-installation';
@@ -209,13 +209,13 @@ function AccueilInner({ session }: { session: Session }) {
    * non câblée côté serveur) : rien ne s'affiche, jamais un zéro.
    */
   const mbaRepond = agentMetaRepond(mbaReel);
-  const [messagesMba, setMessagesMba] = useState<number | null>(null);
+  const [messagesMba, setMessagesMba] = useState<MessagesTenus | null>(null);
   useEffect(() => {
     const pn = account?.phoneNumberId;
     if (!pn || !mbaRepond) { setMessagesMba(null); return; }
     let vivant = true;
     getMbaMessages(session.tenantId, pn)
-      .then((r) => { if (vivant) setMessagesMba(lireMessagesMba(r)); })
+      .then((r) => { if (vivant) setMessagesMba(lireMessagesTenus(r)); })
       .catch(() => { if (vivant) setMessagesMba(null); });
     return () => { vivant = false; };
   }, [session.tenantId, account?.phoneNumberId, mbaRepond]);
@@ -467,7 +467,7 @@ function AccueilInner({ session }: { session: Session }) {
             {/* 🔴 `messagesMba !== null`, JAMAIS `?? 0` : un zéro dirait que l'agent n'a parlé à personne. */}
             {messagesMba !== null && (
               <div data-testid="mba-messages" className="rounded-2xl border border-ink-200 bg-white p-4 shadow-sm">
-                <ChiffreMessagesTenus messages={messagesMba} />
+                <ChiffreMessagesTenus {...messagesMba} />
               </div>
             )}
           </div>

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { fmtNum } from './format';
-import { lireVolumesCanaux, phraseVolume, phrasePublications, agentMetaRepond, lireMessagesMba } from './chiffres-canaux';
+import { lireVolumesCanaux, phraseVolume, phrasePublications, agentMetaRepond, lireMessagesTenus } from './chiffres-canaux';
 
 const REPONSE = { jours: 30, whatsapp: { envoyes: 1234, recus: 567 }, rcs: { envoyes: 12, recus: 0 } };
 
@@ -90,15 +90,21 @@ describe('agentMetaRepond', () => {
   });
 });
 
-describe('lireMessagesMba', () => {
-  it('lit le compte', () => {
-    expect(lireMessagesMba({ messages: 412, jours: 30 })).toBe(412);
-    expect(lireMessagesMba({ messages: 0, jours: 30 })).toBe(0);
+describe('lireMessagesTenus', () => {
+  it('lit le compte ET la fenêtre que le serveur a appliquée', () => {
+    expect(lireMessagesTenus({ messages: 412, jours: 30 })).toEqual({ messages: 412, jours: 30 });
+    expect(lireMessagesTenus({ messages: 0, jours: 7 })).toEqual({ messages: 0, jours: 7 });
   });
 
   it('🔴 `messages: null` (le serveur ne sait pas), réponse vide ou absente : `null`, jamais 0', () => {
-    for (const r of [{ messages: null, jours: 30 }, {}, null, undefined, { messages: '12' }, { messages: -1 }]) {
-      expect(lireMessagesMba(r), JSON.stringify(r)).toBeNull();
+    for (const r of [{ messages: null, jours: 30 }, {}, null, undefined, { messages: '12', jours: 30 }, { messages: -1, jours: 30 }]) {
+      expect(lireMessagesTenus(r), JSON.stringify(r)).toBeNull();
+    }
+  });
+
+  it('🔴 sans fenêtre lisible, rien n’est lu : la légende la cite, elle ne l’invente plus', () => {
+    for (const r of [{ messages: 12 }, { messages: 12, jours: 0 }, { messages: 12, jours: '30' }, { messages: 12, jours: 1.5 }]) {
+      expect(lireMessagesTenus(r), JSON.stringify(r)).toBeNull();
     }
   });
 });

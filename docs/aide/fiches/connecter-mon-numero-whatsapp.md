@@ -1,7 +1,7 @@
 ---
 ecran: accueil
 source_section: Accueil (1re entrée du menu)
-source_empreinte: 04869c
+source_empreinte: c0ff52
 ---
 # Connecter mon numéro WhatsApp, et lire son état
 
@@ -52,11 +52,15 @@ qu'une ligne qui vous y renvoie. Tant qu'un portail est relié, il ne s'éteint 
 déconnexion complète depuis le bloc HubSpot (sans numéro, c'est un bouton du bloc, sans l'option de pause).
 
 **Le bloc « Canaux et services »** rassemble une carte par canal ou service (numéro WhatsApp, canal RCS, chaîne,
-compte publicitaire, HubSpot), chacune avec son logo, son interrupteur, une pastille d'état et le lien vers son écran. Les
-cartes WhatsApp et RCS montrent aussi les messages envoyés et reçus ces 30 derniers jours, et la carte Chaîne le
-nombre de publications. Rallumer ne
-demande rien ; éteindre demande une confirmation qui dit ce qui s'arrête. Éteindre le numéro le **délie** de
-l'espace : plus aucun message WhatsApp ne part (le RCS et les e-mails continuent), les campagnes passent en pause
-et les messages reçus ne sont plus enregistrés, et il se relie d'un clic. Rien ne change chez Meta : si l'agent de
-Meta est allumé, il continue de répondre à vos clients. Éteindre la chaîne oublie ses identifiants, mais les
-publications déjà parues restent en ligne. Ces interrupteurs sont réservés aux administrateurs.
+compte publicitaire, HubSpot), chacune avec son logo, son interrupteur et une pastille d'état ; les cartes Chaîne,
+Compte publicitaire et HubSpot portent aussi le lien vers leur écran (le détail du numéro et du canal RCS est plus
+bas sur l'Accueil). Les cartes WhatsApp et RCS montrent les messages envoyés et reçus ces 30 derniers jours, envois
+de campagne compris ; celle du numéro compte tout le canal WhatsApp de l'espace. La carte Chaîne montre le nombre de
+publications. La pastille du numéro est verte quand il est relié, ambre quand Meta signale un problème sur le compte
+(la même alerte que la carte du numéro, plus bas). Rallumer ne demande rien ; éteindre demande une confirmation qui
+dit ce qui s'arrête. Éteindre le numéro le **délie** de l'espace : plus aucun message WhatsApp ne part, les campagnes
+qui ont un étage WhatsApp (repli compris) passent en pause, un scénario s'arrête à son premier envoi WhatsApp, et
+les messages reçus ne sont plus enregistrés ; les campagnes uniquement RCS et les scénarios sans WhatsApp (e-mail ou
+RCS seuls) continuent. Le numéro se relie d'un clic. Rien ne change chez Meta : si l'agent de Meta est allumé, il
+continue de répondre à vos clients. Éteindre la chaîne oublie ses identifiants, mais les publications déjà parues
+restent en ligne. Ces interrupteurs sont réservés aux administrateurs.

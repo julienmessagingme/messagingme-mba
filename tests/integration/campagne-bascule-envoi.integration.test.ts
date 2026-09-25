@@ -107,7 +107,7 @@ describe.skipIf(!url)('la bascule mene a un envoi sur le canal de l etage', () =
     campaigns: new PgCampaignStore(pool),
     frequency: new PgFrequencyStore(pool),
     quality: new PgQualityProvider(pool),
-    numeroDelieEnBase: async () => false,
+    pauserSiNumeroDelie: async () => false,
     moteur: { noterEnvoi: creerNoteurEnvois(pool) },
   });
 

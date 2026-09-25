@@ -12,6 +12,7 @@ import {
 import { LIBELLES } from '@/lib/libelles-mba';
 import { MbaTabs } from '@/components/MbaTabs';
 import { EnteteAgent } from '@/components/EnteteAgent';
+import { lireMessagesTenus, type MessagesTenus } from '@/lib/chiffres-canaux';
 import { PastilleNumero } from '@/components/PastilleNumero';
 import { PastilleAgentMba } from '@/components/PastilleAgentMba';
 import { MbaAssistantPanel } from '@/components/MbaAssistantPanel';
@@ -117,12 +118,13 @@ function MbaSettings({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean
    */
   const eligible = status?.eligible === true;
 
-  const [messages, setMessages] = useState<number | null>(null);
+  // Le chiffre ET la fenêtre du serveur : la légende cite `jours`, elle ne l'écrit plus en dur.
+  const [messages, setMessages] = useState<MessagesTenus | null>(null);
   useEffect(() => {
     if (phoneNumberId === null || !eligible) return;
     let vivant = true;
     void getMbaMessages(tenantId, phoneNumberId)
-      .then((r) => { if (vivant) setMessages(r.messages); })
+      .then((r) => { if (vivant) setMessages(lireMessagesTenus(r)); })
       .catch(() => { if (vivant) setMessages(null); });
     return () => { vivant = false; };
   }, [tenantId, phoneNumberId, eligible]);
@@ -212,7 +214,7 @@ function MbaSettings({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean
         .filter((x) => x.etat === 'inconnue' && x.requise)
         .map((x) => x.raison ?? t(LIBELLES[x.cle].fr, LIBELLES[x.cle].en))}
       ratio={completion ? { faites: completion.faites, total: completion.total } : undefined}
-      messages30j={messages}
+      messagesTenus={messages}
       onOnglet={choisirOnglet}
     />
   );

@@ -1118,7 +1118,8 @@ vite qu'un déploiement de code. ⚠️ Ils sont LOCAUX AU PROCESS : le plafond 
   et `_heure`, migration 0181, `null` = défaut, CHECK > 0), lu à travers un cache de 30 s (une lecture partagée par
   rafale ; en cas d'échec, le dernier réglage connu, sinon le défaut) et réglé par `GET`/`PUT
   /ops/plafond-api/:tenantId` (jeton d'exploitation, note obligatoire, ligne `ops_plafond_api` avec l'état d'avant,
-  cache vidé après l'écriture). Refus : 429 `rate_limited`, `Retry-After` = la fenêtre pleine qui se libère le
+  la route pose dans le cache le réglage écrit (`poser`), qui reste le dernier réglage connu si une relecture
+  échoue). Refus : 429 `rate_limited`, `Retry-After` = la fenêtre pleine qui se libère le
   plus tard, message qui la nomme avec son plafond ; les `x-ratelimit-*` décrivent la fenêtre la plus proche de
   son plafond. `0` en configuration éteint la fenêtre pour les espaces sans réglage (levier d'urgence) ; un
   réglage d'espace reste appliqué. Local au process : le plafond est celui d'UNE instance.
@@ -1594,11 +1595,17 @@ Ajouté par le lot 4 de l'API publique :
    ⚠️ Elle est mise en cache 5 s par process (`NUMERO_DELIE_TTL_MS`) : un envoi peut encore partir du worker 5 s
    après « Délier » ; le process de l'API vide son cache au geste. Dans l'autre sens, le worker peut refuser à tort
    pendant 5 s après « Relier » : aucune pause `numero_delie` ne s'écrit sans relecture en base hors cache
-   (`numeroDelieEnBase`, requise dans `RunJobDeps`, transmise au moteur), et une automation refusée efface son tir,
+   (`pauserSiNumeroDelie`, `PgNumeroDelieStore.pauserCampagne` : une seule instruction, `status in
+   ('running','scheduled')` et `exists` sur `phone_numbers.delie_le` avec `for share`, sérialisée avec `relier` ; elle
+   n'écrase jamais une pause d'opérateur ; requise dans `RunJobDeps`, transmise au moteur), et une automation refusée efface son tir,
    SAUF un rappel « avant la date » : son balayage republie tout rappel sans marqueur, donc l'effacer le relancerait
    chaque minute et rejouerait ce que le parcours a fait avant l'envoi refusé.
-   `POST /v1/messages/whatsapp` rend ce refus en 409 `number_unlinked` dans l'enveloppe `{ error, code }` ; les
-   autres routes le rendent en 409 `{ error }`.
+   `POST /v1/messages/whatsapp` rend ce refus en 409 `number_unlinked` dans l'enveloppe `{ error, code }` ;
+   `POST /v1/sends` refuse avant de créer l'envoi, en 409 `number_unlinked`, quand le premier envoi est WhatsApp ; le
+   MCP le traduit en `RefusOutil` ; les routes de la console le rendent en 409 `{ error }`. Un parcours qui démarre
+   (`runFrom`) vérifie le numéro avant tout effet dès qu'il enverra par WhatsApp (`verifierNumeroWhatsApp`,
+   `envoieParWhatsApp`, câblé sur `MetaClientFactory.verifierNumero`) : l'e-mail et l'appel API qui précèdent ne
+   partent pas et ne se rejouent pas. Limite : le cache de 5 s.
 39. **Délier met en pause `numero_delie` les campagnes `running` et `scheduled` de l'espace dont un étage est
    WhatsApp** (repli compris), `paused_until` à nul, `scheduled_at` gardé. Le balayage de reprise ne les voit
    jamais (motif hors du `where` de `reprendreCampagnesDues` et du prédicat de `campaigns_reprise_idx`, tenu par
@@ -1608,7 +1615,8 @@ Ajouté par le lot 4 de l'API publique :
    passage, même quand WhatsApp n'est qu'un repli. En cours de run, un scénario démarré par destinataire
    (campagne de scénario, cible `node`) qui bute sur ce refus rend son destinataire à la file (`relacher`, jamais
    `failed`) et arrête le run ; sur un étage « message et scénario », le destinataire reste `sent` (message parti,
-   scénario non démarré) et le run s'arrête après lui. Une campagne « Au fil de l'eau » en pause n'inscrit aucun
+   scénario non démarré) et le run s'arrête après lui, sauf s'il était le dernier : la campagne sort alors par son
+   statut normal. Une campagne « Au fil de l'eau » en pause n'inscrit aucun
    arrivant (`listRunningByWebhook` ne lit que `running`).
 40. **Les entrants d'un numéro délié sont écartés en TÊTE du job `webhook`** (`ecarterLesEntrantsDelies`), avant
    le journal brut et chaque étape : messages, échos de l'agent de Meta et bascules de contrôle. Les ACCUSÉS de
@@ -1619,25 +1627,31 @@ Ajouté par le lot 4 de l'API publique :
    seule ligne `channelsme_connections` : liens et publications n'ont aucune clé étrangère vers elle, les posts
    déjà parus et leurs boutons continuent de démarrer leur scénario. Sur l'Accueil, la pastille d'une carte se
    déduit de son interrupteur par `teinte(ligne, aTerminer)` (`web/lib/canaux-services.ts`) : `null` quand l'état est
-   inconnu, jamais un gris (un gris dirait « éteint », ce qu'on n'a pas lu). Les logos vivent dans
+   inconnu, jamais un gris (un gris dirait « éteint », ce qu'on n'a pas lu) ; `ligneRcs('echec')` ne donne ni
+   interrupteur ni pastille ; la pastille du numéro passe à l'ambre quand `status.dot` est rouge ou ambre
+   (`numeroASurveiller`). Les logos vivent dans
    `web/components/LogosCanaux.tsx` (SVG inline, tracés Simple Icons ; icône de la Chaîne WhatsApp dessinée maison) ;
    `LogoHubSpot` y sert aussi le bloc HubSpot de l'Accueil.
    Les chiffres des cartes : `GET /tenants/:tenantId/accueil/volumes` (module stats, garde admin) rend `{ jours,
    whatsapp: { envoyes, recus }, rcs: { envoyes, recus } }` sur une fenêtre glissante de `JOURS_VOLUMES` (30) jours,
    calculé par `PgStatsStore.volumesParCanal` depuis `conversation_messages` (par `channel` et `direction`, fils de
-   test exclus, modèles INCLUS, isolation par `cv.tenant_id = $1`). Ce périmètre diffère volontairement de
+   test exclus, modèles INCLUS, isolation par `cv.tenant_id = $1`, préfiltre `cv.last_message_at > now() - jours - 1 h`
+   servi par `conversations_tenant_recent_idx`, exact parce que les trois écritures de message avancent
+   `last_message_at`). Ce périmètre diffère volontairement de
    « Messages échangés », qui exclut les modèles sortants : sans eux, un espace qui ne fait que des campagnes lirait
    « 3 envoyés » après 5 000 messages. La console ne lit la réponse que par `lireVolumesCanaux`
    (`web/lib/chiffres-canaux.ts`), qui rend `null` sur toute forme inattendue : la carte n'affiche alors rien,
    jamais un zéro inventé. La légende du chiffre des conversations de l'agent de Meta vit dans un seul composant,
-   `ChiffreMessagesTenus` (`web/components/EnteteAgent.tsx`), partagé par MBA > Paramètres et l'Accueil.
+   `ChiffreMessagesTenus` (`web/components/EnteteAgent.tsx`), partagé par MBA > Paramètres, l'Accueil et Agents IA ;
+   il reçoit `{ messages, jours }` (`lireMessagesTenus`) et la légende cite `jours`.
 41. **Le nom de l'espace** : `GET /tenants/:tenantId/nom` rend `{ nom }`, `PATCH` avec `{ nom }` le change. Les deux
    vivent dans le module `admin` (`src/http/users.ts`, monté avec `g.admin`) : `scopeTenant` et la garde admin du
-   groupe, un agent ou un manager reçoit 403. Validation `safeParse` : nom rogné, 1 à 80 caractères
-   (`NOM_ESPACE_MAX`), aucun caractère `\p{Cc}`. Écriture par `PgUserStore.setTenantName`, sans migration
+   groupe, un agent ou un manager reçoit 403. Validation par `nomEspace` (`src/user/nom-espace.ts`), partagée avec
+   `/auth/signup` et le nom construit par l'inscription Google : rogné, 1 à 80 caractères, sans `\p{Cc}`, `\p{Cf}`,
+   `\p{Zl}`, `\p{Zp}` ni remplissage hangul, au moins une lettre ou un chiffre. Écriture par `PgUserStore.setTenantName`, sans migration
    (`tenants.name` existe depuis 0001). Un nom inchangé n'écrit rien. Audit `espace.renomme`, cible
-   `{ kind: 'tenant', id }`, détail `{ ancien, nouveau }` : jamais sous `nom`, clé de `CLES_INTERDITES` que le
-   filtre retirerait. La carte « Espace » de Compte & équipe traduit le 404 d'une API pas encore déployée par un
+   `{ kind: 'tenant', id }`, détail VIDE : un nom d'espace peut être celui d'une personne
+   (« Espace de <nom complet> » à l'inscription Google), et `audit_log` est gardé deux ans. La carte « Espace » de Compte & équipe traduit le 404 d'une API pas encore déployée par un
    message au lieu d'une panne.
 
 ### Sur les contrats externes

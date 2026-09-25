@@ -195,17 +195,34 @@ describe('le cache du réglage', () => {
     expect(s.lectures).toEqual(['t1']);
   });
 
-  it('🔴 `invalider` fait relire l’espace réglé, et lui seul', async () => {
+  it('🔴 `poser` applique le réglage écrit TOUT DE SUITE, à cet espace seul, sans relire la base', async () => {
     const valeurs = new Map<string, ReglagePlafondApi | null | Error>([['t1', { minute: 5, heure: null }], ['t2', SANS_REGLAGE]]);
     const s = source(valeurs);
     const cache = new ReglagesPlafondEnCache(s.lire);
     await cache.reglage('t1');
     await cache.reglage('t2');
-    valeurs.set('t1', { minute: 50, heure: 500 });
-    cache.invalider('t1');
+    cache.poser('t1', { minute: 50, heure: 500 });
     expect(await cache.reglage('t1')).toEqual({ minute: 50, heure: 500 });
-    await cache.reglage('t2');
-    expect(s.lectures).toEqual(['t1', 't2', 't1']);
+    expect(await cache.reglage('t2')).toEqual(SANS_REGLAGE);
+    expect(s.lectures).toEqual(['t1', 't2']);
+  });
+
+  /**
+   * 🔴 LE RÉGLAGE QU'UN OPÉRATEUR VIENT D'ÉCRIRE SURVIT À UNE LECTURE EN ÉCHEC (relecture du 2026-09-25). La route
+   * VIDAIT l'entrée : la relecture suivante, si elle échouait sur un incident de base passager, n'avait plus de
+   * « dernier réglage connu », et l'espace qu'on venait de relever à 600 retombait au défaut pendant 30 s.
+   */
+  it('🔴 après `poser`, une relecture qui échoue garde le réglage POSÉ, pas le défaut', async () => {
+    const h = horloge();
+    const valeurs = new Map<string, ReglagePlafondApi | null | Error>([['t1', SANS_REGLAGE]]);
+    const s = source(valeurs);
+    const cache = new ReglagesPlafondEnCache(s.lire, 30_000, h.now);
+    expect(await cache.reglage('t1')).toEqual(SANS_REGLAGE);
+    cache.poser('t1', { minute: 600, heure: null });
+    valeurs.set('t1', new Error('connexion perdue'));
+    h.avancer(30_000);
+    const { resultat } = await capturerJournal(async () => cache.reglage('t1'));
+    expect(resultat).toEqual({ minute: 600, heure: null });
   });
 
   it('🔴 une lecture qui échoue garde le dernier réglage connu, sinon le défaut, et le dit une fois par minute', async () => {

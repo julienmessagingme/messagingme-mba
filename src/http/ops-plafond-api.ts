@@ -5,6 +5,8 @@ import type { SurveillanceOps } from '../ops/tentatives';
 import { estUuid } from './scope';
 import { journaliser } from '../lib/journal';
 import type { PlafondApiStore, PlafondsParDefaut, ReglagePlafondApi } from '../auth/plafond-espace';
+// Le MÊME seuil que les autres écritures de `/ops` : importé, pas recopié.
+import { MIN_NOTE } from './ops';
 
 /**
  * LE RÉGLAGE DU PLAFOND DE L'API D'UN ESPACE (décision de Julien du 2026-09-25, migration 0181).
@@ -20,14 +22,16 @@ import type { PlafondApiStore, PlafondsParDefaut, ReglagePlafondApi } from '../a
  */
 export interface OpsPlafondApiDeps {
   store: PlafondApiStore;
-  /** Le cache du limiteur : vidé pour l'espace réglé, sans quoi le nouveau plafond attendrait l'expiration. */
-  reglages: { invalider(tenantId: string): void };
+  /**
+   * Le cache du limiteur : la route y POSE le réglage qu'elle vient d'écrire, sans quoi le nouveau plafond
+   * attendrait l'expiration. Le poser plutôt que le vider garde ce réglage comme « dernier connu » si la
+   * relecture suivante échoue (`ReglagesPlafondEnCache.poser`).
+   */
+  reglages: { poser(tenantId: string, reglage: ReglagePlafondApi): void };
   /** Les défauts de la configuration, pour dire ce qui s'applique réellement quand un réglage vaut `null`. */
   defauts: PlafondsParDefaut;
 }
 
-/** Même seuil que les autres écritures de `/ops` (`MIN_NOTE` de `ops.ts`, non exporté). */
-const MIN_NOTE = 3;
 
 /** La borne haute d'un réglage : celle de la colonne `integer`. Au-delà, l'écriture lèverait, donc un 500. */
 export const MAX_PLAFOND_REGLABLE = 2_147_483_647;
@@ -83,8 +87,8 @@ export function registerOpsPlafondApi(
     if (avant === null) return reply.code(404).send({ error: 'espace inconnu' });
     const apres: ReglagePlafondApi = { minute: lu.data.minute, heure: lu.data.heure };
     if (!(await deps.store.ecrire(tenantId, apres))) return reply.code(404).send({ error: 'espace inconnu' });
-    // APRÈS l'écriture : vidé avant, le cache pourrait être rempli de l'ancienne valeur par un appel concurrent.
-    deps.reglages.invalider(tenantId);
+    // APRÈS l'écriture : posé avant, un échec d'écriture laisserait le limiteur appliquer un réglage qui n'existe pas.
+    deps.reglages.poser(tenantId, apres);
     journaliser('warn', 'ops_plafond_api', { tenantId, avant, apres, note, at: new Date().toISOString() });
     return reply.code(200).send(etat(tenantId, apres, deps.defauts));
   });

@@ -67,9 +67,12 @@ export async function mockAccueil(
      * lecture retombe sur `{}`, c'est-à-dire le comportement de ce support avant le bloc.
      */
     canaux?: {
-      rcs?: { active: boolean; channel?: Record<string, unknown> };
+      /** Réponse de `GET /rcs/channel`, ou `'panne'` : la lecture rend un 500. */
+      rcs?: { active: boolean; channel?: Record<string, unknown> } | 'panne';
       /** Réponse de `GET /channels-me/connection`. */
       chaine?: Record<string, unknown>;
+      /** Après le geste « débrancher », la relecture de la chaîne rend un 500 (et non l'état débranché). */
+      chainePanneApresGeste?: boolean;
       posts?: unknown[];
       /** Réponse de `GET /pubs/connexion`, ou `'absent'` : la route rend le 404 du routeur. */
       pubs?: Record<string, unknown> | 'absent';
@@ -90,7 +93,11 @@ export async function mockAccueil(
   const phoneNumbers = Array.from({ length: over.numbersCount ?? 1 }, (_v, i) => ({ id: `PN${i + 1}`, displayPhoneNumber: '+33 5 25 68 02 50' }));
   // L'état VIVANT des services du bloc « Canaux et services », que leurs gestes font changer.
   const canaux = over.canaux;
-  const vivant = { rcs: canaux?.rcs, chaine: canaux?.chaine, pubs: canaux?.pubs };
+  const vivant: {
+    rcs: { active: boolean; channel?: Record<string, unknown> } | 'panne' | undefined;
+    chaine: Record<string, unknown> | 'panne' | undefined;
+    pubs: Record<string, unknown> | 'absent' | undefined;
+  } = { rcs: canaux?.rcs, chaine: canaux?.chaine, pubs: canaux?.pubs };
 
   await page.route('**/api/backend/**', async (route) => {
     const url = route.request().url();
@@ -104,6 +111,7 @@ export async function mockAccueil(
         body: JSON.stringify({ message: `Route ${methode}:${chemin} not found`, error: 'Not Found', statusCode: 404 }),
       });
       const geste = (): void => { canaux.gestes?.push(`${methode} ${chemin}`); };
+      const panne = (): Promise<void> => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'panne' }) });
       if (methode === 'POST' && chemin.endsWith('/numero/delier')) {
         geste();
         if (canaux.routesAbsentes) return routeur404();
@@ -118,15 +126,17 @@ export async function mockAccueil(
       }
       if (chemin.endsWith('/rcs/channel')) {
         if (methode === 'DELETE') { geste(); vivant.rcs = { active: false }; return json({ active: false }); }
+        if (methode === 'GET' && vivant.rcs === 'panne') return panne();
         if (methode === 'GET' && vivant.rcs) return json(vivant.rcs);
       }
       if (chemin.endsWith('/channels-me/connection')) {
         if (methode === 'DELETE') {
           geste();
           if (canaux.routesAbsentes) return routeur404();
-          vivant.chaine = { ...vivant.chaine, connection: null };
+          vivant.chaine = canaux.chainePanneApresGeste ? 'panne' : { ...(vivant.chaine === 'panne' ? {} : vivant.chaine), connection: null };
           return json({ ok: true, supprimee: true });
         }
+        if (methode === 'GET' && vivant.chaine === 'panne') return panne();
         if (methode === 'GET' && vivant.chaine) return json(vivant.chaine);
       }
       if (methode === 'GET' && chemin.endsWith('/channels-me/posts') && canaux.posts) return json({ posts: canaux.posts, distant: 'ok' });

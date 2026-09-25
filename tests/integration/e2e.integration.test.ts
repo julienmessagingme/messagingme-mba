@@ -76,7 +76,7 @@ describe.skipIf(!url)('E2E CSV -> campagne -> envoi (Supabase, sender fake)', ()
       campaigns: new PgCampaignStore(pool),
       frequency: new PgFrequencyStore(pool),
       quality: new PgQualityProvider(pool),
-      numeroDelieEnBase: async () => false,
+      pauserSiNumeroDelie: async () => false,
     };
     const run1 = await campaignRunJob({ campaignId }, runDeps);
     expect(run1).toMatchObject({ sent: 2, failed: 0, skipped: 0, paused: false });
@@ -125,7 +125,7 @@ describe.skipIf(!url)('E2E CSV -> campagne -> envoi (Supabase, sender fake)', ()
         campaigns: new PgCampaignStore(pool),
         frequency: new PgFrequencyStore(pool),
         quality: new PgQualityProvider(pool),
-        numeroDelieEnBase: async () => false,
+        pauserSiNumeroDelie: async () => false,
       };
       const base = { tenantId: t2, phoneNumberId: 'pn-freq', category: 'marketing' as const, templateName: 't', templateLanguage: 'fr', paramMapping: [] };
       const window: GuardrailThresholds = { frequencyWindowMs: 24 * 3600 * 1000, maxFailureRate: 0.3, minSendsForFailureCheck: 20 };

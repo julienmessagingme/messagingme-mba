@@ -76,7 +76,7 @@ function deps(over: Partial<RunJobDeps> & { getCampaign: RunJobDeps['getCampaign
     campaigns: new FakeCampaigns(),
     frequency: new FakeFreq(),
     quality: new FakeQuality(),
-    numeroDelieEnBase: async () => false,
+    pauserSiNumeroDelie: async () => false,
     ...over,
   };
 }

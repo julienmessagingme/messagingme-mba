@@ -81,8 +81,11 @@ function deps(over: Partial<RunJobDeps> & { recipients: RecipientStore }): RunJo
     campaigns: new FakeCampaigns(),
     frequency: new FakeFreq(),
     quality: new FakeQuality(),
+    // DÉCLARÉE, et plus couverte par un `as RunJobDeps` : le cast cachait qu'elle était devenue requise, et un
+    // cas qui ferait lever `NumeroDelieError` tomberait en « is not a function » au lieu d'une erreur de type.
+    pauserSiNumeroDelie: async () => false,
     ...over,
-  } as RunJobDeps;
+  };
 }
 
 function rec(id: string, toE164: string): Recipient {

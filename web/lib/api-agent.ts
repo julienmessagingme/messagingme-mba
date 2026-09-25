@@ -1,4 +1,5 @@
 import { request } from './http';
+import { lireMessagesTenus, type MessagesTenus } from './chiffres-canaux';
 
 /** Une règle d'arrêt déclarée sur la fiche d'un agent. Son `code` devient le handle `sortie:<code>` du bloc. */
 export interface SortieAgent {
@@ -150,16 +151,12 @@ export async function consommationAgent(tenantId: string, agentId: string): Prom
  * ⚠️ Et ce n'est PAS le périmètre du « messages échangés » de l'Accueil et du Performance Lab, qui eux
  * écartent les modèles sortants. Le même mot, deux mesures : seule la légende peut lever l'ambiguïté.
  *
- * ⚠️ `jours` est RENDU par la route et volontairement pas remonté : la légende de l'en-tête écrit « 30
- * jours » en toutes lettres, et deux porteurs du même nombre finiraient par diverger. Ce n'est plus une
- * consigne à se rappeler depuis la revue finale du 2026-09-23 :
- * `tests/web-entete-agent-parite.test.ts` DÉRIVE le nombre attendu de `JOURS_CONSOMMATION`
- * (`src/http/agents.ts`) et exige que la légende le porte, dans les deux langues. Changer la fenêtre
- * serveur rend donc le test rouge tant que la légende n'a pas suivi.
+ * 🔴 `jours`, RENDU par la route, EST REMONTÉ avec le chiffre (relecture du 2026-09-25) : la légende de l'en-tête
+ * le cite (`ChiffreMessagesTenus`) au lieu d'écrire « 30 jours » en dur. Changer la fenêtre du serveur change
+ * donc la légende avec lui, au lieu de la faire mentir. Même lecture que l'agent de Meta : `lireMessagesTenus`.
  */
-export async function messagesAgent(tenantId: string, agentId: string): Promise<number | null> {
-  const r = await request<{ messages?: number | null }>(`/tenants/${tenantId}/agents/${agentId}/messages`);
-  return r.messages ?? null;
+export async function messagesAgent(tenantId: string, agentId: string): Promise<MessagesTenus | null> {
+  return lireMessagesTenus(await request<unknown>(`/tenants/${tenantId}/agents/${agentId}/messages`));
 }
 
 /**

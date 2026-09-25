@@ -24,6 +24,7 @@ import { HistoriquePanel } from '@/components/HistoriquePanel';
 import { appliquerProposition, lireBandeaux, lireSuggestions, manquesDe, type ManqueFiche } from '@/lib/api-agent-setup';
 import { ApiError } from '@/lib/http';
 import { consommationAgent, listerModeles, messagesAgent, type ConsommationAgent, type ModeleProposable } from '@/lib/api-agent';
+import type { MessagesTenus } from '@/lib/chiffres-canaux';
 import { fmtCost } from '@/lib/format';
 import type { Locale } from '@/lib/locale';
 
@@ -100,8 +101,8 @@ function Ecran({ tenantId }: { tenantId: string }) {
   /** ⚠️ `[]` SUFFIT ICI, contrairement aux manques : ce bandeau ne se rend QUE si la liste n'est pas vide, il
    *  n'a donc aucun état « tout va bien » à affirmer quand on ne sait pas. */
   const [avertissements, setAvertissements] = useState<ManqueFiche[]>([]);
-  /** Les messages échangés sur 30 jours. `null` = on ne sait pas, l'en-tête n'affiche alors aucun chiffre. */
-  const [messages, setMessages] = useState<number | null>(null);
+  /** Les messages échangés, et la fenêtre du serveur. `null` = on ne sait pas, l'en-tête n'affiche alors aucun chiffre. */
+  const [messages, setMessages] = useState<MessagesTenus | null>(null);
   // Le solde prépayé du workspace. `null` = aucun solde sur cette instance, on n'affiche rien plutôt que
   // d'annoncer « 0 € » à un client dont le compte n'est simplement pas branché.
   const [solde, setSolde] = useState<number | null>(null);
@@ -336,7 +337,7 @@ function Ecran({ tenantId }: { tenantId: string }) {
           precision={ouvert.modele}
           etat={<Activation agent={ouvert} busy={busy} onChange={(status) => void enregistrer({ status })} />}
           etapes={manques}
-          messages30j={messages}
+          messagesTenus={messages}
           onOnglet={(cle) => aller(ouvert.id, lireOnglet(cle))}
         />
         {erreur && <MbaNotice kind="error" testid="agent-erreur">{erreur}</MbaNotice>}

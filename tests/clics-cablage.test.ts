@@ -74,8 +74,10 @@ function lancer(over: Partial<RunJobDeps>, sender: SenderQuiCapture): Promise<un
     campaigns: new FakeCampaigns(),
     frequency: new FakeFreq(),
     quality: new FakeQuality(),
+    // DÉCLARÉE, et plus couverte par un `as RunJobDeps` : le cast cachait qu'elle était devenue requise.
+    pauserSiNumeroDelie: async () => false,
     ...over,
-  } as RunJobDeps);
+  });
 }
 
 describe('attribution des clics : du worker jusqu’à l’appel Meta', () => {

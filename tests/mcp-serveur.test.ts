@@ -9,6 +9,7 @@ import type { DepsMcp } from '../src/mcp/outils';
 import { OUTILS } from '../src/mcp/outils';
 import { VALID_API_SCOPES } from '../src/http/api-keys';
 import { cleApiDeTest } from './aide/cle-api';
+import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../src/meta/numero-delie';
 
 /**
  * Le serveur MCP : `POST /mcp`, du JSON-RPC 2.0 sans état, autorisé par une clé d'API.
@@ -299,6 +300,23 @@ describe('serveur MCP : les outils', () => {
     expect(c.texte, 'l’agent doit lire la VRAIE raison').toMatch(/ne plus recevoir/i);
     expect(c.texte, 'le refus ne doit PAS se déguiser en fenêtre fermée : l’agent réessaierait plus tard').not.toMatch(/fenêtre/i);
     expect(traces.envois, 'un message est parti à un contact qui a dit STOP').toHaveLength(0);
+    await server.close();
+  });
+
+  /**
+   * 🔴 LE NUMÉRO DÉLIÉ EST UN REFUS, PAS UNE PANNE (relecture du 2026-09-25). `NumeroDelieError` n'étant pas un
+   * `RefusOutil`, le serveur la rendait en `-32603` « échec interne de l’outil » et la journalisait comme une
+   * panne : l'agent tiers ne lisait pas la raison, et réessayait sur le plafond de l'espace.
+   */
+  it('🔴 numéro délié : un RÉSULTAT `isError` avec la phrase, jamais une erreur JSON-RPC, et rien n’est journalisé comme parti', async () => {
+    const { server, traces } = app({ sendReply: async (_t, pn) => { throw new NumeroDelieError(pn); } });
+    const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('reply_in_open_window', { conversation_id: 'cv1', text: 'coucou' }) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ error?: unknown }>().error, 'le refus ne doit pas sortir en erreur de protocole').toBeUndefined();
+    const c = contenu(res);
+    expect(c.isError).toBe(true);
+    expect(c.texte).toBe(MESSAGE_NUMERO_DELIE);
+    expect(traces.journal).toEqual([]);
     await server.close();
   });
 

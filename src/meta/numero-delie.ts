@@ -19,11 +19,17 @@ export const MESSAGE_NUMERO_DELIE =
 /**
  * Un envoi refusé parce que le numéro est délié.
  *
- * 🔴 `statusCode = 409`, ET C'EST CE QUI REND LE REFUS LISIBLE PARTOUT D'UN COUP. Le gestionnaire d'erreurs de
- * `src/server.ts` rend `err.message` pour tout code sous 500 : une route d'envoi qui laisse remonter cette
- * erreur (réponse d'Inbox, envoi de modèle, API publique, MCP) répond donc 409 avec la phrase ci-dessus, sans
- * qu'aucune n'ait à la connaître. Sans ce code, elle sortirait en 500 opaque, que Cloudflare remplace par sa
- * propre page.
+ * 🔴 `statusCode = 409`, ET C'EST CE QUI REND LE REFUS LISIBLE SUR LES ROUTES DE LA CONSOLE D'UN COUP. Le
+ * gestionnaire d'erreurs de `src/server.ts` rend `err.message` pour tout code sous 500 : une route qui laisse
+ * remonter cette erreur (réponse d'Inbox, envoi de modèle) répond donc 409 `{ error }` avec la phrase ci-dessus,
+ * sans avoir à la connaître. Sans ce code, elle sortirait en 500 opaque, que Cloudflare remplace par sa page.
+ *
+ * ⚠️ TROIS SURFACES NE S'EN REMETTENT PAS À CE GESTIONNAIRE, parce que leur enveloppe n'est pas `{ error }` :
+ * - `POST /v1/messages/whatsapp` l'attrape pour rendre `{ error, code: 'number_unlinked' }` (`v1-messages.ts`) ;
+ * - `POST /v1/sends` refuse AVANT de créer l'envoi, par une lecture de la garde (`v1-sends.ts`), en 409
+ *   `number_unlinked` : sans ce refus, l'envoi était accepté en 201 puis restait en pause sans raison visible ;
+ * - le serveur MCP la traduit en `RefusOutil` (`reply_in_open_window`, `src/mcp/outils.ts`) : sans quoi elle
+ *   sortait en `-32603` « échec interne », et l'agent tiers réessayait au lieu de lire la raison.
  */
 export class NumeroDelieError extends Error {
   readonly statusCode = 409;
@@ -52,11 +58,16 @@ export class NumeroDelieError extends Error {
  *   même pas cette garde en cours de run : son client est construit une fois, au démarrage. Elle s'arrête quand
  *   le run relit son statut, que « Délier » a passé en pause (au plus `DEFAULT_STATUS_POLL_MS`, cinq secondes).
  * - APRÈS « RELIER », UN ENVOI PEUT ÊTRE REFUSÉ à tort pendant ce délai. Une campagne n'écrit pas de pause pour
- *   autant : elle relit la base SANS ce cache avant (`numeroDelieEnBase`, `run-job.ts` et `engine.ts`) et, reliée,
- *   rend le destinataire en vol à la file et laisse le balayage de reprise la relancer. Seul le destinataire d'un
- *   étage « message et scénario » reste `sent`, son message parti et son scénario non démarré. Une automation
- *   efface son tir (`runner.ts`), donc le prochain événement la redéclenche. La suite d'un parcours qu'une réponse
- *   fait avancer échoue comme tout envoi refusé, et se lit dans le journal des échecs d'avance.
+ *   autant : sa pause s'écrit en une instruction qui relit la base SANS ce cache (`pauserSiNumeroDelie`,
+ *   `run-job.ts` et `engine.ts`) et, reliée, rien n'est écrit : le destinataire en vol est rendu à la file et le
+ *   balayage de reprise relance la campagne. Seul le destinataire d'un étage « message et scénario » reste `sent`,
+ *   son message parti et son scénario non démarré. Une automation efface son tir (`runner.ts`, sauf `avant_date`),
+ *   donc le prochain événement la redéclenche. La suite d'un parcours qu'une réponse fait avancer échoue comme tout
+ *   envoi refusé, et se lit dans le journal des échecs d'avance.
+ *
+ * ⚠️ UN PARCOURS QUI DÉMARRE est vérifié AVANT ses effets (`WorkflowExecutorDeps.verifierNumeroWhatsApp`, appelée
+ * par `runFrom` dès que le parcours enverra par WhatsApp) : l'e-mail ou l'appel API placés avant le premier envoi
+ * WhatsApp ne partent donc pas, et ne se rejouent pas au « Relier ». Cette vérification lit ce même cache.
  *
  * L'Inbox et l'API publique envoient depuis le process qui porte la route : le geste y vide le cache, sans fenêtre.
  */

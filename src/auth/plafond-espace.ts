@@ -31,7 +31,7 @@ export const FENETRE_HEURE_MS = 3_600_000;
 /**
  * Combien de temps le réglage d'un espace est gardé en mémoire avant d'être relu.
  *
- * ⚠️ COURT, ET INVALIDÉ À L'ÉCRITURE : la route d'exploitation qui règle un espace vide son entrée, donc ce délai
+ * ⚠️ COURT, ET REMPLACÉ À L'ÉCRITURE : la route d'exploitation qui règle un espace y pose la valeur écrite, donc ce délai
  * ne compte que pour une écriture faite AILLEURS (à la main en base). Il existe parce que le limiteur est sur le
  * chemin de CHAQUE appel : sans lui, chaque appel paierait une requête de plus.
  */
@@ -64,7 +64,7 @@ export interface LecteurReglagePlafond {
 }
 
 /**
- * Le réglage d'un espace, gardé `DUREE_CACHE_REGLAGE_MS` et vidé par `invalider`.
+ * Le réglage d'un espace, gardé `DUREE_CACHE_REGLAGE_MS` et remplacé par `poser` quand la route d'exploitation l'écrit.
  *
  * ⚠️ UNE LECTURE EN VOL EST PARTAGÉE : la promesse elle-même est gardée, donc une rafale d'appels simultanés d'un
  * même espace ne produit qu'UNE requête.
@@ -106,9 +106,21 @@ export class ReglagesPlafondEnCache implements LecteurReglagePlafond {
     return valeur;
   }
 
-  /** Oublie le réglage d'un espace : le prochain appel le relit. Appelé par la route qui l'écrit. */
-  invalider(tenantId: string): void {
-    this.entrees.delete(tenantId);
+  /**
+   * Pose le réglage qu'on VIENT D'ÉCRIRE en base, pour une durée de cache neuve. Appelé par la route d'exploitation,
+   * après son écriture.
+   *
+   * 🔴 IL REMPLACE `invalider`, QUI SUPPRIMAIT L'ENTRÉE (relecture du 2026-09-25). Supprimée, elle emportait le
+   * « dernier réglage connu » : si la relecture suivante échouait sur un incident de base passager, l'espace qu'un
+   * opérateur venait de relever à 600 appels par minute retombait au défaut de 60 pendant toute la durée du cache.
+   * Poser la valeur écrite est plus juste que la relire : c'est exactement ce que la base contient, et c'est elle
+   * qu'une lecture en échec gardera ensuite.
+   *
+   * ⚠️ APRÈS l'écriture, jamais avant : une lecture partie avant l'écriture peut encore se résoudre, mais elle ne
+   * touche plus la table (l'entrée qu'elle avait posée est remplacée ici), donc elle ne peut pas y remettre l'ancien.
+   */
+  poser(tenantId: string, reglage: ReglagePlafondApi): void {
+    this.entrees.set(tenantId, { valeur: Promise.resolve(reglage), expire: this.now() + this.dureeMs });
   }
 }
 

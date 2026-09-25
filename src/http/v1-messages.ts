@@ -136,9 +136,10 @@ export function registerV1Messages(app: FastifyInstance, deps: V1MessagesRouteDe
      */
     /**
      * 🔴 LE NUMÉRO DÉLIÉ (migration 0180) sort du point de passage des envois en EXCEPTION, pas en refus typé :
-     * c'est ce qui le rend lisible sur toutes les routes d'un coup, par le gestionnaire d'erreurs du serveur.
-     * Mais celui-ci rend `{ error }` sans `code`, et l'enveloppe de l'API publique est `{ error, code }` : un
-     * programme doit pouvoir traiter ce cas sans lire la phrase. On l'attrape donc ICI, et seulement lui.
+     * c'est ce qui le rend lisible sur les routes de la CONSOLE, par le gestionnaire d'erreurs du serveur. Mais
+     * celui-ci rend `{ error }` sans `code`, et l'enveloppe de l'API publique est `{ error, code }` : un programme
+     * doit pouvoir traiter ce cas sans lire la phrase. On l'attrape donc ICI, et seulement lui. (`POST /v1/sends`
+     * refuse avant de créer l'envoi, et le MCP le traduit en refus d'outil : voir `src/meta/numero-delie.ts`.)
      */
     let res: Awaited<ReturnType<typeof repondreDansLaFenetre>>;
     try {

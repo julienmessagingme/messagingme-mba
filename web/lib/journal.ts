@@ -25,7 +25,8 @@ export const ACTIONS_JOURNAL: Record<string, [string, string]> = {
   // L'interrupteur du numéro sur l'Accueil (migration 0180). La cible est l'ESPACE, jamais le numéro affiché.
   'numero.delie': ['Numéro WhatsApp délié', 'WhatsApp number unlinked'],
   'numero.relie': ['Numéro WhatsApp relié', 'WhatsApp number relinked'],
-  // Compte & équipe : le détail porte `ancien` et `nouveau`, le nom de l'espace avant et après.
+  // Compte & équipe : le détail est VIDE. Un nom d'espace peut porter le nom d'une personne (inscription par
+  // Google) ou un numéro, et ce journal n'en garde aucun (`src/audit/store.pg.ts`).
   'espace.renomme': ['Espace renommé', 'Workspace renamed'],
 };
 

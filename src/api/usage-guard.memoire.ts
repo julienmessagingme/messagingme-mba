@@ -99,7 +99,9 @@ export class GardeUsageMemoire implements ApiUsageGuard {
   /**
    * ⚠️ LE PLAFOND SE LIT SUR L'ESPACE, PAS SUR LA CLÉ, et ce serait le premier piège d'un seuil posé à la
    * légère : un espace à dix clés disposerait sinon de dix fois le quota, et le plafond ne voudrait plus
-   * rien dire. Le quota par clé existe déjà, c'est le limiteur de débit.
+   * rien dire. Le limiteur d'APPELS compte lui aussi par espace depuis le 2026-09-25 (`src/auth/plafond-espace.ts`,
+   * une minute et une heure, `/v1` et `/mcp` confondus) ; celui-ci compte les UNITÉS de travail. Seule la clé du
+   * relais du Meta Business Agent garde un compteur par clé, hors de ces deux plafonds.
    */
   private verdict(minute: number, demande: DemandeUsage): VerdictUsage {
     if (this.plafondUnitesParEspace <= 0) return { accepte: true };

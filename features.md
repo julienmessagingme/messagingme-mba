@@ -98,9 +98,10 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 - ✅ **Renommer l'espace** (2026-09-25) : une carte « Espace » en tête de **Compte & équipe** montre le nom de
   l'espace dans un champ modifiable, avec un bouton Enregistrer. C'est le nom affiché au choix de l'espace à la
-  connexion et dans l'exploitation. Réservé aux administrateurs. Le nom fait de 1 à 80 caractères, sans caractère
-  de contrôle. Chaque renommage apparaît dans le journal des actions (« Espace renommé », avec l'ancien et le
-  nouveau nom).
+  connexion et dans l'exploitation. Réservé aux administrateurs. Le nom fait de 1 à 80 caractères, avec au moins
+  une lettre ou un chiffre, sans caractère de contrôle ni caractère invisible ; la même règle vaut à l'inscription.
+  Chaque renommage apparaît dans le journal des actions (« Espace renommé »), sans l'ancien ni le nouveau nom : un
+  nom d'espace peut être celui d'une personne.
 - ✅ **Une adresse mail, plusieurs espaces** (2026-08-21) : la même adresse peut désormais ouvrir plusieurs
   espaces de travail. Un seul mot de passe pour tous, comme chez Slack ou Notion. À la connexion, si l'adresse
   n'en dessert qu'un (le cas courant), **rien ne change** : on entre directement. Si elle en dessert plusieurs,
@@ -1572,20 +1573,26 @@ scénario, comment importer des contacts.
 - ✅ **Canaux et services** (2026-09-25) : sur l'Accueil, une grille de cartes, une par canal ou service
   (numéro WhatsApp, canal RCS, chaîne WhatsApp, compte publicitaire, HubSpot), sur 3 colonnes en grand écran, 2 en
   moyen, 1 sur mobile. Chaque carte montre le logo du canal, son interrupteur, une pastille d'état (vert : allumé
-  ou relié ; gris : éteint ; ambre : à terminer, par exemple un compte publicitaire connecté dont le compte et la
-  Page restent à choisir), la phrase d'état et le lien vers son écran. Les cartes « Numéro WhatsApp » et « Canal RCS » affichent
-  les messages envoyés et reçus sur ce canal ces 30 derniers jours (modèles de campagne compris, conversations de
-  test exclues) ; la carte « Chaîne » affiche le nombre total de publications faites depuis la console. Quand
+  ou relié ; gris : éteint ; ambre : à terminer ou à regarder, par exemple un compte publicitaire connecté dont le
+  compte et la Page restent à choisir, ou un numéro relié que Meta signale), la phrase d'état et, pour la chaîne,
+  les publicités et HubSpot, le lien vers leur écran. Les cartes « Numéro WhatsApp » et « Canal RCS » affichent
+  les messages envoyés et reçus sur ce canal ces 30 derniers jours (envois de campagne compris, précisé sous le
+  chiffre ; la carte du numéro compte tout le canal WhatsApp de l'espace ; conversations de test exclues) ; la carte « Chaîne » affiche le nombre total de publications faites depuis la console. Quand
   l'agent de Meta répond, l'Accueil affiche sous son cadre le nombre de messages échangés dans ses conversations
   sur 30 jours, avec la même légende que MBA > Paramètres. Un chiffre qu'on n'a pas pu lire ne s'affiche pas, il
   n'est jamais remplacé par zéro. Éteindre demande une confirmation qui dit ce qui
   s'arrête ; rallumer ne demande rien. Éteindre le numéro le **délie** de l'espace (plus aucun message WhatsApp ne
-  part, le RCS et les e-mails continuent ; campagnes en pause ; messages reçus non enregistrés), sans rien toucher
+  part ; les campagnes qui ont un étage WhatsApp, repli compris, passent en pause, les campagnes uniquement RCS
+  continuent ; un scénario s'arrête à son premier envoi WhatsApp, un scénario sans WhatsApp continue ; messages
+  reçus non enregistrés), sans rien toucher
   chez Meta : l'agent de Meta, s'il est allumé, continue de répondre, et le numéro se relie d'un clic. Une campagne
   « Au fil de l'eau » n'inscrit personne pendant la déliaison, et les contacts arrivés entre-temps ne sont pas
   repris au retour. Éteindre la chaîne
   oublie ses identifiants, les publications déjà parues restent. Le lien « Couper le canal RCS » de la carte RCS
-  est devenu l'interrupteur. Réservé aux administrateurs.
+  est devenu l'interrupteur. Un canal RCS dont l'état n'a pas pu être lu est dit « État inconnu », sans
+  interrupteur ni pastille. Réservé aux administrateurs. Côté API : `POST /v1/sends` sur un numéro délié refuse en
+  409 `number_unlinked` si le premier envoi part par WhatsApp (rien n'est créé, la clé d'idempotence est rendue ;
+  une cible qui ouvre en RCS est acceptée), et l'outil MCP `reply_in_open_window` rend un refus lisible.
 - ✅ **Interrupteur HubSpot de l'espace** (2026-09-25, **Paramètres > Intégrations**, admin) : c'est lui, et non
   plus la présence d'un numéro WhatsApp, qui fait apparaître le bloc HubSpot de l'Accueil. Un **espace neuf, sans
   numéro**, peut donc connecter HubSpot : il allume l'interrupteur, et le bouton « Connecter HubSpot » apparaît

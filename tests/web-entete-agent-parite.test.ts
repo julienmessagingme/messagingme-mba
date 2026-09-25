@@ -8,16 +8,16 @@ import { JOURS_CONSOMMATION } from '../src/http/agents';
  * L'EN-TÊTE NE DOIT JAMAIS AFFICHER UN ZÉRO QU'IL N'A PAS MESURÉ.
  *
  * C'est la seule propriété de ce composant qui, si elle se perd, produit un mensonge à l'écran plutôt qu'un
- * défaut visible. Elle tient dans une garde `messages30j !== null` : ce test vérifie qu'elle est là, et que
- * personne ne l'a remplacée par un `?? 0` au premier avertissement de typage.
+ * défaut visible. Elle tient dans une garde `messagesTenus !== null` : ce test vérifie qu'elle est là, et que
+ * personne ne l'a remplacée par un `??` au premier avertissement de typage.
  */
 const SRC = readFileSync(join(resolve(__dirname, '..'), 'web', 'components', 'EnteteAgent.tsx'), 'utf8');
 
 describe('EnteteAgent', () => {
   it('🔴 n affiche le chiffre QUE s il est connu', () => {
-    expect(SRC).toContain('messages30j !== null');
-    expect(SRC, 'un `?? 0` transformerait « on ne sait pas » en « personne n a parlé »')
-      .not.toMatch(/messages30j\s*\?\?\s*0/);
+    expect(SRC).toContain('messagesTenus !== null');
+    expect(SRC, 'un `??` transformerait « on ne sait pas » en un chiffre inventé')
+      .not.toMatch(/messagesTenus\s*\?\?/);
   });
 
   it('🔴 le ratio n est rendu que s il existe vraiment', () => {
@@ -65,30 +65,24 @@ describe('EnteteAgent', () => {
  * de son compte de messages. « La même que » était écrit en prose dans les deux fichiers, donc vérifié par
  * personne.
  *
- * ⚠️ LE TEXTE DE L'EN-TÊTE EST LA TROISIÈME COPIE, et c'est celle que le client lit. La spec dit que la
- * fenêtre est RENDUE par le serveur (`{ messages, jours }`) et que l'écran ne l'invente pas : tant qu'elle
- * reste écrite en dur dans la légende, la seule parade honnête est de DÉRIVER le nombre attendu de la
- * constante plutôt que de le réécrire ici. Le passage en prop reste le correctif propre, et il n'est pas
- * fait : ce test est ce qui empêche la divergence en attendant.
+ * ✅ LE TEXTE DE L'EN-TÊTE N'EST PLUS UNE TROISIÈME COPIE (relecture du 2026-09-25). La fenêtre est RENDUE par
+ * le serveur (`{ messages, jours }`), lue avec le chiffre (`lireMessagesTenus`) et CITÉE par la légende : le
+ * « passage en prop » que ce test attendait est fait. Il vérifie désormais que la légende la cite, et qu'aucun
+ * nombre de jours écrit en dur ne revient.
  */
-describe('la fenêtre de 30 jours', () => {
+describe('la fenêtre du chiffre', () => {
   it('🔴 les deux constantes serveur sont ÉGALES', () => {
     expect(JOURS_MESSAGES).toBe(JOURS_CONSOMMATION);
   });
 
-  it('🔴 et le texte de l en-tête porte CE nombre, dans les deux langues', () => {
-    expect(SRC, `la légende française doit dire « sur ${JOURS_MESSAGES} jours »`)
-      .toContain(`sur ${JOURS_MESSAGES} jours`);
-    expect(SRC, `la légende anglaise doit dire « over ${JOURS_MESSAGES} days »`)
-      .toContain(`over ${JOURS_MESSAGES} days`);
+  it('🔴 la légende CITE la fenêtre rendue par le serveur, dans les deux langues', () => {
+    expect(SRC).toContain('sur ${jours} jours');
+    expect(SRC).toContain('over ${jours} days');
   });
 
-  it('⚠️ et aucun AUTRE nombre de jours ne traîne dans le composant', () => {
-    // Sans ce sens-là, changer la fenêtre à 60 laisserait le test précédent passer sur une légende qui
-    // porterait les DEUX (« sur 60 jours » ajouté à côté d'un « sur 30 jours » oublié).
-    const autres = [...SRC.matchAll(/(?:sur|over) (\d+) (?:jours|days)/g)]
-      .map((m) => Number(m[1]))
-      .filter((n) => n !== JOURS_MESSAGES);
-    expect(autres, `fenêtre(s) étrangère(s) dans la légende : ${autres.join(', ')}`).toEqual([]);
+  it('⚠️ et aucun nombre de jours écrit en DUR ne traîne dans le composant', () => {
+    // Un « sur 30 jours » oublié à côté de la légende citée ferait dire deux fenêtres au même écran.
+    const enDur = [...SRC.matchAll(/(?:sur|over) (\d+) (?:jours|days)/g)].map((m) => m[0]);
+    expect(enDur, `fenêtre(s) écrite(s) en dur dans la légende : ${enDur.join(', ')}`).toEqual([]);
   });
 });

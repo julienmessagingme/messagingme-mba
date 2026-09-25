@@ -787,6 +787,14 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
      * l'agent IA était bloqué.
      */
     estDesabonne: (tenant, waId) => contactStore.estDesabonneParWaId(tenant, waId),
+    // Le numéro délié, vérifié AVANT les effets d'un parcours qui enverra par WhatsApp (cf. `runFrom`). La MÊME
+    // garde que le point de passage des envois, sur le MÊME numéro que les envois de ce fichier. DRY_RUN : rien
+    // ne part, rien à refuser.
+    verifierNumeroWhatsApp: async (tenant) => {
+      if (dryRun) return;
+      const pn = await numeroDeLEspace(tenant);
+      if (pn) await metaFactory.verifierNumero(pn);
+    },
     // Mesure par bloc (Analytics > Mes tableaux). L'executeur l'appelle en best-effort : une panne ici ne doit
     // jamais arreter un parcours.
     recordNodeEvent: (e) => nodeEvents.record(e),

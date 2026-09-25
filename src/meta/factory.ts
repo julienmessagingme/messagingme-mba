@@ -58,10 +58,19 @@ export class MetaClientFactory {
     return this.clientForTenant(tenantId, phoneNumberId);
   }
 
+  /**
+   * Lève `NumeroDelieError` si ce numéro est délié, sans rien construire. C'est LA garde de `clientForTenant`,
+   * exposée pour qu'un appelant puisse la poser AVANT un effet qui précède l'envoi (le parcours d'un scénario
+   * qui envoie un e-mail puis un modèle, `WorkflowExecutorDeps.verifierNumeroWhatsApp`). Même lecture, même cache.
+   */
+  async verifierNumero(phoneNumberId: string): Promise<void> {
+    if (await this.o.numeroDelie(phoneNumberId)) throw new NumeroDelieError(phoneNumberId);
+  }
+
   /** MetaClient complet pour un tenant (envois workflow : template/interactif/flow), enveloppé de l'intercepteur. */
   async clientForTenant(tenantId: string, phoneNumberId: string): Promise<MetaClient> {
     // AVANT le jeton : un numéro délié ne coûte ni la résolution du jeton ni, surtout, un appel à Meta.
-    if (await this.o.numeroDelie(phoneNumberId)) throw new NumeroDelieError(phoneNumberId);
+    await this.verifierNumero(phoneNumberId);
     const { token, wabaId } = await this.o.resolver.resolveForTenant(tenantId);
     const client = new MetaClient({
       transport: this.o.transport,

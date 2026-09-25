@@ -447,7 +447,7 @@ function entree<D>(
 export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): readonly ModuleMonte[] {
   /**
    * 🔴 LE RÉGLAGE DU PLAFOND DE L'API, UN SEUL CACHE POUR SES DEUX CONSOMMATEURS : le limiteur de `/v1` le lit, la
-   * route d'exploitation le vide après avoir écrit. Deux instances, et un plafond relevé n'aurait pris effet
+   * route d'exploitation y pose ce qu'elle vient d'écrire. Deux instances, et un plafond relevé n'aurait pris effet
    * qu'à l'expiration du cache, sans que rien ne le dise.
    *
    * ⚠️ `deps.plafondApi` EST LU ICI, et c'est la clé même de son entrée : le script d'auto-attaque déduit les

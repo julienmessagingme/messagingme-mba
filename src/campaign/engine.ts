@@ -330,21 +330,23 @@ export interface EngineDeps {
    */
   horairesOuvres?: (tenantId: string) => Promise<{ timeZone: string; businessHours: BusinessHours } | null>;
   /**
-   * Le numéro est-il délié, lu EN BASE, sans le cache de la garde du point de passage des envois
-   * (`PgNumeroDelieStore.estDelie`) ? Relue avant d'écrire une pause `numero_delie` (cf. `arreterSurNumeroDelie`).
+   * Écrit la pause `numero_delie` de CETTE campagne, en UNE instruction, SEULEMENT si le numéro est encore délié EN
+   * BASE (sans le cache de la garde du point de passage des envois) et que la campagne tourne encore
+   * (`PgNumeroDelieStore.pauserCampagne`). `true` = écrite. Cf. `arreterSurNumeroDelie`.
    *
-   * ⚠️ Absente (faux de test qui ne la câblent pas) : la pause est écrite sur la foi du refus. `run-job` la passe
-   * toujours, `RunJobDeps` l'exigeant.
+   * ⚠️ Absente (faux de test qui ne la câblent pas) : la pause est écrite par `setStatus`, sur la foi du refus.
+   * `run-job` la passe toujours, `RunJobDeps` l'exigeant.
    */
-  numeroDelieEnBase?: (phoneNumberId: string) => Promise<boolean>;
+  pauserSiNumeroDelie?: (campaignId: string, tenantId: string, phoneNumberId: string) => Promise<boolean>;
 }
 
 /**
- * La raison d'un run arrêté sur un refus « numéro délié » que la base dément : le numéro a été relié pendant que la
- * garde, mise en cache, répondait encore « délié ». Aucune pause n'est écrite.
+ * La raison d'un run arrêté sur un refus « numéro délié » dont la pause n'a PAS été écrite : le numéro a été relié
+ * pendant que la garde, mise en cache, répondait encore « délié », ou la campagne ne tournait plus (un opérateur
+ * l'a mise en pause, ou « Délier » l'a déjà fait).
  */
 export const RAISON_NUMERO_RELIE_ENTRE_TEMPS =
-  'numéro WhatsApp relié entre-temps : run arrêté sans pause, la campagne reste en cours et le balayage de reprise la relance dans la minute';
+  'numéro WhatsApp relié entre-temps, ou campagne qui ne tourne plus : run arrêté sans écrire de pause ; en cours, le balayage de reprise la relance dans la minute';
 
 /** Défaut du pas de relecture du statut : au pire une requête indexée toutes les 5 s par run en cours. */
 const DEFAULT_STATUS_POLL_MS = 5_000;
@@ -647,23 +649,29 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
    * Même geste que le plafond de numéro de Meta, avec deux différences voulues :
    * - la pause n'a JAMAIS d'échéance : seul « Relier » la lève (`PgNumeroDelieStore.relier`), le balayage de
    *   reprise ne la voit pas ;
-   * - 🔴 elle n'est écrite qu'après une relecture EN BASE, sans cache (`numeroDelieEnBase`). Le refus vient d'une
-   *   garde mise en cache 5 s par process (`NUMERO_DELIE_TTL_MS`), qui peut encore répondre « délié » juste après
-   *   « Relier ». Écrire la pause sur cette réponse périmée la rendrait éternelle, puisque le geste qui la lève a
-   *   déjà eu lieu. Relié en base : on sort SANS pause, la campagne reste `running`, et le balayage des campagnes
-   *   gelées la relance dans la minute, cache expiré.
+   * - 🔴 elle n'est écrite que si la BASE dit encore « délié », et dans la MÊME instruction que cette lecture
+   *   (`pauserSiNumeroDelie`). Le refus vient d'une garde mise en cache 5 s par process (`NUMERO_DELIE_TTL_MS`), qui
+   *   peut encore répondre « délié » juste après « Relier ». Écrire la pause sur cette réponse périmée la rendrait
+   *   éternelle, puisque le geste qui la lève a déjà eu lieu ; et une relecture SUIVIE d'une écriture laissait
+   *   passer un « Relier » validé entre les deux (relecture du 2026-09-25). Pas de pause écrite : on sort, la
+   *   campagne reste `running`, et le balayage des campagnes gelées la relance dans la minute, cache expiré.
+   * - la même instruction n'écrit que sur une campagne `running` ou `scheduled` : une pause posée par un opérateur
+   *   pendant le run garde sa raison, et « Relier » ne la relancera pas.
    *
    * ⚠️ L'appelant a déjà rendu à la file le destinataire en vol, s'il y en avait un : ce geste ne dépend pas de la
-   * relecture, rien n'étant parti vers lui par WhatsApp.
+   * pause, rien n'étant parti vers lui par WhatsApp (`runFrom` vérifie le numéro avant tout effet du parcours).
    */
   const arreterSurNumeroDelie = async (err: NumeroDelieError): Promise<RunReport> => {
-    if (deps.numeroDelieEnBase && !(await deps.numeroDelieEnBase(err.phoneNumberId))) {
-      report.reason = RAISON_NUMERO_RELIE_ENTRE_TEMPS;
-      return report;
+    if (deps.pauserSiNumeroDelie) {
+      if (!(await deps.pauserSiNumeroDelie(campaign.id, campaign.tenantId, err.phoneNumberId))) {
+        report.reason = RAISON_NUMERO_RELIE_ENTRE_TEMPS;
+        return report;
+      }
+    } else {
+      await deps.campaigns.setStatus(campaign.id, 'paused', { raison: 'numero_delie', reprise: null });
     }
     report.paused = true;
     report.reason = messageDePause('numero_delie', null, undefined);
-    await deps.campaigns.setStatus(campaign.id, 'paused', { raison: 'numero_delie', reprise: null });
     return report;
   };
 
@@ -1033,6 +1041,12 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       // destinataire (campagne de scénario, cible `node`) construit un client par message. Comme le plafond
       // juste en dessous, le refus vise le NUMÉRO, pas ce contact : le marquer `failed` le perdrait (« Relier » ne
       // reprend pas un `failed`), et le suivant échouerait pour la même raison. Rendu à la file, puis on s'arrête.
+      //
+      // ⚠️ LE RENDRE À LA FILE EST SÛR PARCE QUE RIEN NE LUI EST PARTI : `runFrom` vérifie le numéro AVANT tout
+      // effet du parcours dès qu'il enverra par WhatsApp, donc ni l'e-mail ni l'appel API qui précèdent le premier
+      // envoi WhatsApp ne sont partis, et la reprise ne les rejouera pas. Limite, étroite : la garde est en cache
+      // 5 s par process ; un « Délier » tombé entre cette vérification et un envoi WhatsApp plus loin dans le même
+      // parcours laisse partir ce qui précède, que la reprise renverra.
       if (err instanceof NumeroDelieError) {
         await deps.recipients.relacher(r.id);
         return arreterSurNumeroDelie(err);
@@ -1155,8 +1169,15 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
      * le point de passage des envois WhatsApp. Ce destinataire reste `sent` avec sa raison, et il n'est PAS rendu
      * à la file : il recevrait le message une seconde fois. Mais on s'arrête APRÈS lui, sans quoi chaque suivant
      * recevrait son message sans jamais sa suite, et « Relier » n'y pourrait plus rien.
+     *
+     * 🔴 SAUF S'IL ÉTAIT LE DERNIER (relecture du 2026-09-25). Il ne reste alors personne à protéger, et s'arrêter
+     * ici sautait le statut de sortie : la campagne restait `running` sans destinataire en attente, que le balayage
+     * des campagnes gelées ne relance jamais (il exige un `pending`), et l'écran la disait « en cours » à vie. Elle
+     * sort donc par le chemin normal, juste en dessous.
      */
-    if (scenarioSurNumeroDelie !== null) return arreterSurNumeroDelie(scenarioSurNumeroDelie);
+    if (scenarioSurNumeroDelie !== null && aTraiter.slice(aTraiter.indexOf(r) + 1).some((x) => x.status !== 'sent')) {
+      return arreterSurNumeroDelie(scenarioSurNumeroDelie);
+    }
   }
 
   await deps.campaigns.setStatus(campaign.id, await statutDeSortie());

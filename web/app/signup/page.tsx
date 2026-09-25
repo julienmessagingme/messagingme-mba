@@ -52,7 +52,7 @@ export default function SignupPage() {
         <form onSubmit={onSubmit} className="space-y-4 rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
           <div>
             <label className="mb-1 block text-sm font-medium text-ink-700">{t("Nom de l'espace / entreprise", 'Workspace / company name')}</label>
-            <input required value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} className={inputCls} placeholder={t('Mon entreprise', 'My company')} />
+            <input required maxLength={80} value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} className={inputCls} placeholder={t('Mon entreprise', 'My company')} />
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-ink-700">{t('Ton nom', 'Your name')}</label>

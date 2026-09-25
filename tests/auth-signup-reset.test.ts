@@ -79,6 +79,26 @@ describe('POST /auth/signup', () => {
     expect(ws.json().error).not.toMatch(/trop court/);
     await server.close();
   });
+
+  /**
+   * 🔴 LA MÊME RÈGLE QUE LE RENOMMAGE (relecture du 2026-09-25). L'inscription ne faisait que rogner et refuser le
+   * vide : un nom de 500 Ko ou un saut de ligne entrait par ici dans `tenants.name`, que l'écran de choix
+   * d'espace affiche tel quel. La règle vit dans `src/user/nom-espace.ts`, partagée avec `PATCH /nom`.
+   */
+  it('🔴 un nom d’espace trop long, avec un saut de ligne ou un caractère invisible -> 400, et aucun espace créé', async () => {
+    const { server, cap } = app();
+    for (const workspaceName of ['a'.repeat(81), 'Mon\nEspace', 'Acme\u202Eevil', '\u200B', '---']) {
+      const res = await server.inject({ method: 'POST', url: '/auth/signup', ...j, payload: { workspaceName, email: 'a@x.fr', password: 'motdepasse-longue' } });
+      expect(res.statusCode, JSON.stringify(workspaceName)).toBe(400);
+      expect(res.json().error, JSON.stringify(workspaceName)).toMatch(/80/);
+    }
+    expect(cap.created).toEqual([]);
+    // Et le nom ROGNÉ est celui qui est écrit, 80 caractères inclus.
+    const ok = await server.inject({ method: 'POST', url: '/auth/signup', ...j, payload: { workspaceName: ` ${'b'.repeat(80)} `, email: 'b@x.fr', password: 'motdepasse-longue' } });
+    expect(ok.statusCode).toBe(201);
+    expect(cap.created).toEqual([{ name: 'b'.repeat(80), email: 'b@x.fr' }]);
+    await server.close();
+  });
 });
 
 describe('POST /auth/forgot-password (anti-énumération)', () => {

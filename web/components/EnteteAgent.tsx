@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { useLocale, useT } from '@/lib/i18n';
 import { fmtNum } from '@/lib/format';
+import type { MessagesTenus } from '@/lib/chiffres-canaux';
 
 /**
  * L'EN-TÊTE D'UN ÉCRAN D'AGENT : qui est cet agent, ce qui lui manque, ce qu'il a produit.
@@ -61,7 +62,7 @@ export interface EnteteAgentProps {
    * n'avoir pas encore abouti, avoir échoué, ou ne pas s'appliquer (l'écran de l'agent de Meta rend son
    * en-tête AVANT de savoir s'il a un numéro). Y passer `[]` dans ces cas afficherait « Tout est réglé » à
    * côté d'un bandeau qui dit « aucun numéro rattaché », c'est-à-dire une affirmation que personne n'a
-   * mesurée. Même règle que `messages30j`, et pour la même raison.
+   * mesurée. Même règle que `messagesTenus`, et pour la même raison.
    */
   etapes: EtapeEntete[] | null;
   /**
@@ -75,13 +76,16 @@ export interface EnteteAgentProps {
    *
    * ⚠️ `undefined` = rien à signaler, ou on n'a rien lu. Cette liste n'a aucun état « tout va bien » à
    * affirmer (elle ne se rend que si elle porte quelque chose), donc elle n'a pas besoin du `null` que
-   * `etapes` et `messages30j` portent.
+   * `etapes` et `messagesTenus` portent.
    */
   signalements?: string[];
   /** Rendu en plus du compte, et SEULEMENT quand il existe un ratio vrai (l'agent de Meta en a un). */
   ratio?: { faites: number; total: number };
-  /** `null` = on ne sait pas. On n'affiche alors AUCUN chiffre. Voir le commentaire plus bas. */
-  messages30j: number | null;
+  /**
+   * Le chiffre et la fenêtre que le serveur a appliquée (`lireMessagesTenus`). `null` = on ne sait pas : on
+   * n'affiche alors AUCUN chiffre. Voir le commentaire plus bas.
+   */
+  messagesTenus: MessagesTenus | null;
   onOnglet(cle: string): void;
 }
 
@@ -104,7 +108,7 @@ export function libelleEtapes(n: number, t: (fr: string, en: string) => string):
 }
 
 export function EnteteAgent({
-  logo, pastille, surTitre, nom, precision, etat, etapes, signalements, ratio, messages30j, onOnglet,
+  logo, pastille, surTitre, nom, precision, etat, etapes, signalements, ratio, messagesTenus, onOnglet,
 }: EnteteAgentProps) {
   const t = useT();
   return (
@@ -218,7 +222,7 @@ export function EnteteAgent({
           donc un manager reçoit 403). Un « 0 » se lirait « cet agent n'a parlé à personne ». */}
       {/* 🔴 LE CHIFFRE COMPTE TOUT LE FIL, Y COMPRIS CE QUE L'ÉQUIPE A ÉCRIT APRÈS AVOIR REPRIS LA MAIN, et
           l'écran le DIT (décision du 2026-09-23, à la relecture du lot serveur). La légende courte d'avant,
-          « messages échangés sur 30 jours », laissait lire ce nombre comme une mesure du travail de l'agent :
+          « messages échangés » sur la fenêtre, laissait lire ce nombre comme une mesure du travail de l'agent :
           un client aurait comparé deux agents sur un chiffre qui mesure le VOLUME de la conversation. Le
           « y compris » est le mot qui porte l'aveu, il ne s'abrège pas.
           🔴 ET LES ENVOIS DE CAMPAGNE EN FONT PARTIE, ce qu'il a fallu ajouter à la revue finale du même
@@ -226,9 +230,9 @@ export function EnteteAgent({
           Lab EXCLUENT les modèles sortants du leur. Le périmètre plus large est celui que Julien a arbitré
           (tous les messages des conversations que l'agent a tenues), donc c'est la LÉGENDE qui doit lever
           l'ambiguïté, pas la requête. */}
-      {messages30j !== null && (
+      {messagesTenus !== null && (
         <div data-testid="entete-agent-messages" className="shrink-0 sm:max-w-[15rem] sm:text-right">
-          <ChiffreMessagesTenus messages={messages30j} />
+          <ChiffreMessagesTenus {...messagesTenus} />
         </div>
       )}
     </header>
@@ -240,8 +244,11 @@ export function EnteteAgent({
  * l'Accueil l'affiche sous le cadre de l'agent de Meta sans recopier le texte : deux copies d'une légende qui
  * porte un aveu (« y compris ») finiraient par dire deux choses. Les raisons de chaque mot sont juste au-dessus.
  * ⚠️ Il reçoit un NOMBRE : c'est à l'appelant de ne pas le rendre quand il ne sait pas, jamais à lui d'y mettre 0.
+ *
+ * 🔴 ET LA FENÊTRE QUE LE SERVEUR A APPLIQUÉE (`jours`, lue par `lireMessagesTenus`), plus un « 30 » écrit en dur
+ * (relecture du 2026-09-25) : la légende disait la fenêtre de l'écran, pas celle du chiffre.
  */
-export function ChiffreMessagesTenus({ messages }: { messages: number }) {
+export function ChiffreMessagesTenus({ messages, jours }: MessagesTenus) {
   const t = useT();
   const { locale } = useLocale();
   return (
@@ -252,8 +259,8 @@ export function ChiffreMessagesTenus({ messages }: { messages: number }) {
            'Messages exchanged in the conversations this agent handled')}
       </p>
       <p className="pt-0.5 text-xs text-ink-500">
-        {t('Tous les messages de ces conversations sur 30 jours, y compris les envois de campagne et ce que votre équipe a écrit après une reprise.',
-           'All messages in those conversations over 30 days, including campaign sends and what your team wrote after a takeover.')}
+        {t(`Tous les messages de ces conversations sur ${jours} jours, y compris les envois de campagne et ce que votre équipe a écrit après une reprise.`,
+           `All messages in those conversations over ${jours} days, including campaign sends and what your team wrote after a takeover.`)}
       </p>
     </>
   );

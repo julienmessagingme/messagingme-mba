@@ -127,10 +127,13 @@ const whatsapp: Campaign = {
   templateName: 'promo', templateLanguage: 'fr', paramMapping: [], status: 'running', workflowId: null, ratePerMinute: null, startNodeId: null,
 };
 
-/** Les relectures EN BASE, sans cache, que le run a faites avant d'écrire une pause. */
-function base(delie: boolean): { lectures: string[]; lire: (pn: string) => Promise<boolean> } {
-  const lectures: string[] = [];
-  return { lectures, lire: async (pn) => { lectures.push(pn); return delie; } };
+/**
+ * La pause conditionnelle (`PgNumeroDelieStore.pauserCampagne`) : ce que le run lui a demandé, et ce que la base
+ * aurait répondu (`ecrite` = le numéro est encore délié en base ET la campagne tournait encore).
+ */
+function base(ecrite: boolean): { appels: Array<[string, string, string]>; pauser: RunJobDeps['pauserSiNumeroDelie'] } {
+  const appels: Array<[string, string, string]> = [];
+  return { appels, pauser: async (id, tenant, pn) => { appels.push([id, tenant, pn]); return ecrite; } };
 }
 
 function depsRun(campagne: Campaign, campagnes: Campagnes, over: Partial<RunJobDeps> = {}): RunJobDeps {
@@ -141,22 +144,22 @@ function depsRun(campagne: Campaign, campagnes: Campagnes, over: Partial<RunJobD
     campaigns: campagnes,
     frequency: frequence,
     quality: qualite,
-    numeroDelieEnBase: async () => true,
+    pauserSiNumeroDelie: async () => true,
     ...over,
   };
 }
 
 describe('campagne et numéro délié', () => {
-  it('🔴 le point de passage refuse : la campagne passe en pause `numero_delie`, ÉCRITE, sans échéance', async () => {
+  it('🔴 le point de passage refuse : la pause `numero_delie` est ÉCRITE, par l’écriture conditionnelle, sans échéance', async () => {
     const campagnes = new Campagnes();
     const enBase = base(true);
-    const report = await campaignRunJob({ campaignId: 'c1' }, depsRun(whatsapp, campagnes, { numeroDelieEnBase: enBase.lire }));
+    const report = await campaignRunJob({ campaignId: 'c1' }, depsRun(whatsapp, campagnes, { pauserSiNumeroDelie: enBase.pauser }));
     expect(report).toMatchObject({ sent: 0, failed: 0, paused: true });
     expect(report.reason).toBe(messageDePause('numero_delie', null, undefined));
-    // `reprise: null` : jamais d'échéance, donc jamais reprise par le balayage de reprise.
-    expect(campagnes.statuts).toEqual([{ status: 'paused', pause: { raison: 'numero_delie', reprise: null } }]);
-    // Écrite après une relecture en base, sur le numéro que le refus nomme.
-    expect(enBase.lectures).toEqual(['pn1']);
+    // 🔴 UNE instruction, sur la campagne, son espace et le numéro que le refus nomme : jamais une relecture
+    // suivie d'un `setStatus` sans condition, qu'un « Relier » pouvait croiser (relecture du 2026-09-25).
+    expect(enBase.appels).toEqual([['c1', 't1', 'pn1']]);
+    expect(campagnes.statuts).toEqual([]);
   });
 
   /**
@@ -165,7 +168,7 @@ describe('campagne et numéro délié', () => {
    */
   it('🔴 refus d’une garde périmée, numéro RELIÉ en base : AUCUNE pause écrite, la campagne reste en cours', async () => {
     const campagnes = new Campagnes();
-    const report = await campaignRunJob({ campaignId: 'c1' }, depsRun(whatsapp, campagnes, { numeroDelieEnBase: base(false).lire }));
+    const report = await campaignRunJob({ campaignId: 'c1' }, depsRun(whatsapp, campagnes, { pauserSiNumeroDelie: base(false).pauser }));
     expect(campagnes.statuts).toEqual([]);
     expect(report).toEqual({ sent: 0, skipped: 0, failed: 0, paused: false, reason: RAISON_NUMERO_RELIE_ENTRE_TEMPS });
   });
@@ -179,12 +182,14 @@ describe('campagne et numéro délié', () => {
         { rang: 2, canal: 'whatsapp', templateName: 'promo', templateLanguage: 'fr' },
       ],
     };
+    const enBase = base(true);
     const report = await campaignRunJob({ campaignId: 'c1' }, depsRun(rcsAvecRepli, campagnes, {
       numeroDuTenant: async () => 'pn1',
       rcsSenderFor: async () => ({ send: async () => ({ messageId: 'rcs-1' }) }) as never,
+      pauserSiNumeroDelie: enBase.pauser,
     }));
     expect(report).toMatchObject({ paused: true, sent: 0, failed: 0 });
-    expect(campagnes.statuts).toEqual([{ status: 'paused', pause: { raison: 'numero_delie', reprise: null } }]);
+    expect(enBase.appels).toEqual([['c1', 't1', 'pn1']]);
   });
 
   it('le message dit QUI peut la relancer', () => {
@@ -231,7 +236,7 @@ describe('campagne de scénario et numéro délié, en cours de run (le moteur)'
       sender: envoiInterdit, recipients: destinataires, campaigns: campagnes, frequency: frequence, quality: qualite,
       startWorkflow: refus,
       startWorkflowFromNode: refus,
-      numeroDelieEnBase: enBase.lire,
+      pauserSiNumeroDelie: enBase.pauser,
     };
     return { run: () => runCampaign(campagne, deps), destinataires, campagnes, demarrages, enBase };
   }
@@ -249,8 +254,9 @@ describe('campagne de scénario et numéro délié, en cours de run (le moteur)'
     expect(m.destinataires.gestes).toEqual(['claim r1', 'relacher r1']);
     expect(m.demarrages).toEqual(['démarrage']); // UN seul : r2 n'est pas tenté
     expect(report).toMatchObject({ sent: 0, failed: 0, paused: true, reason: messageDePause('numero_delie', null, undefined) });
-    expect(pausesDe(m.campagnes)).toEqual([{ status: 'paused', pause: { raison: 'numero_delie', reprise: null } }]);
-    expect(m.enBase.lectures).toEqual(['pn1']);
+    // La pause part par l'écriture conditionnelle, jamais par un `setStatus` sans condition.
+    expect(m.enBase.appels).toEqual([['c1', 't1', 'pn1']]);
+    expect(pausesDe(m.campagnes)).toEqual([]);
   });
 
   it('🔴 garde périmée, numéro RELIÉ en base : destinataire rendu à la file, AUCUNE pause, run arrêté', async () => {
@@ -280,16 +286,47 @@ describe('campagne de scénario et numéro délié, en cours de run (le moteur)'
         { rang: 2, canal: 'rcs', rcsMessage: { kind: 'text', text: 'le repli' }, workflowId: 'wf-42' },
       ],
     };
+    const enBase = base(true);
     const report = await runCampaign(campagne, {
       sender: envoiInterdit, recipients: destinataires, campaigns: campagnes, frequency: frequence, quality: qualite,
       canaux: { rcs: { sender: { sendTo: async (r) => { envoisRcs.push(r.toE164); return { messageId: `rcs-${r.id}` }; } } } },
       startWorkflow: async () => { throw new NumeroDelieError('pn1'); },
-      numeroDelieEnBase: async () => true,
+      pauserSiNumeroDelie: enBase.pauser,
     });
     expect(envoisRcs).toEqual(['+33611']);
     expect(destinataires.gestes).toEqual(['claim r1', `sent r1 (Scénario non démarré : ${MESSAGE_NUMERO_DELIE})`]);
     expect(report).toMatchObject({ sent: 1, failed: 0, paused: true });
-    expect(pausesDe(campagnes)).toEqual([{ status: 'paused', pause: { raison: 'numero_delie', reprise: null } }]);
+    expect(enBase.appels).toEqual([['c1', 't1', 'pn1']]);
+  });
+
+  /**
+   * 🔴 LE DERNIER DESTINATAIRE NE MET PAS LA CAMPAGNE EN PAUSE (relecture du 2026-09-25). Il ne reste personne à
+   * protéger : s'arrêter là sautait le statut de sortie, et la campagne restait `running` sans destinataire en
+   * attente, que le balayage des campagnes gelées ne relance jamais. L'écran la disait « en cours » à vie.
+   */
+  it('🔴 message et scénario, DERNIER destinataire : pas de pause, la campagne sort `completed`', async () => {
+    const destinataires = new DestinatairesTraces([{ ...DEUX[0]!, etageCourant: 2 }]);
+    const campagnes = new Campagnes();
+    const enBase = base(true);
+    const campagne: Campaign = {
+      ...whatsapp,
+      channel: 'whatsapp',
+      chaine: [
+        { rang: 1, canal: 'whatsapp', templateName: 'promo', templateLanguage: 'fr' },
+        { rang: 2, canal: 'rcs', rcsMessage: { kind: 'text', text: 'le repli' }, workflowId: 'wf-42' },
+      ],
+    };
+    const report = await runCampaign(campagne, {
+      sender: envoiInterdit, recipients: destinataires, campaigns: campagnes, frequency: frequence, quality: qualite,
+      canaux: { rcs: { sender: { sendTo: async (r) => ({ messageId: `rcs-${r.id}` }) } } },
+      startWorkflow: async () => { throw new NumeroDelieError('pn1'); },
+      pauserSiNumeroDelie: enBase.pauser,
+    });
+    expect(destinataires.gestes).toEqual(['claim r1', `sent r1 (Scénario non démarré : ${MESSAGE_NUMERO_DELIE})`]);
+    expect(report).toMatchObject({ sent: 1, failed: 0, paused: false });
+    expect(enBase.appels).toEqual([]);
+    // `running` à l'entrée du run, puis le statut de SORTIE : c'est lui que l'arrêt anticipé sautait.
+    expect(campagnes.statuts).toEqual([{ status: 'running' }, { status: 'completed' }]);
   });
 });
 

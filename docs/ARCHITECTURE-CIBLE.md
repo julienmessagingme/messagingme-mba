@@ -215,13 +215,15 @@ successeur), un **drapeau de relance** (sinon le travail arrivé pendant la pass
 
 ### 3.3 Les plafonds de débit doivent quitter la mémoire (avant de relever le plafond de copies)
 
-**Le problème.** `RATE_LIMIT_USER_PAR_MINUTE`, `RATE_LIMIT_COUTEUX_PAR_MINUTE`, le plafond par clé de l'API
-publique, son préfiltre, ses opérations lourdes simultanées et le compteur d'usage de `/ops/usage` comptent en
-mémoire, par processus. N copies servent N fois le plafond annoncé, et `/ops` ne voit que la copie qu'il
-interroge.
+**Le problème.** `RATE_LIMIT_USER_PAR_MINUTE`, `RATE_LIMIT_COUTEUX_PAR_MINUTE`, le plafond par ESPACE de l'API
+publique (une minute et une heure, `/v1` et `/mcp` confondus, `src/auth/plafond-espace.ts`, depuis le 2026-09-25),
+le compteur par clé du relais du Meta Business Agent, le préfiltre, les opérations lourdes simultanées et le
+compteur d'usage de `/ops/usage` comptent en mémoire, par processus. N copies servent N fois le plafond annoncé,
+et `/ops` ne voit que la copie qu'il interroge.
 
-⚠️ **Avec deux copies au plus, le pire cas est un plafond DOUBLÉ, connu et borné** (120 appels par minute par
-clé au lieu de 60). C'est acceptable à condition d'être écrit ; ce ne l'est plus au-delà de deux.
+⚠️ **Avec deux copies au plus, le pire cas est un plafond DOUBLÉ, connu et borné** (par défaut, 120 appels par
+minute et 2 000 par heure pour un espace, au lieu de 60 et 1 000). C'est acceptable à condition d'être écrit ; ce
+ne l'est plus au-delà de deux.
 
 **La solution : Postgres d'abord, Redis quand la mesure le demande.** Voir §9.
 

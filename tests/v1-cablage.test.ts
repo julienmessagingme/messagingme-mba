@@ -36,6 +36,13 @@ describe('câblage de /v1/sends', () => {
     expect(source).toMatch(/verdictModele\(await workflowRuntime\.templateVarInfo\(tenant, name, language\), language\)/);
   });
 
+  it('🔴 le numéro délié est lu par la garde de CE process, celle dont « Délier » et « Relier » vident le cache', () => {
+    // Une autre instance (ou une lecture sans cache recopiée ici) ne serait pas vidée par le geste : l'API
+    // refuserait encore quelques secondes après « Relier », ou accepterait après « Délier ».
+    expect(source).toMatch(/numeroEstDelie: \(pn\) => gardeNumeroDelie\.estDelie\(pn\)/);
+    expect(source).toMatch(/const gardeNumeroDelie = creerGardeNumeroDelie\(/);
+  });
+
   it('les contacts de l’API sont lus par la lecture qui garde les bloqués', () => {
     expect(source).toMatch(/listContactsPourEnvoi: \(tenant, ids\) => repo\.listContactsPourEnvoiApi\(tenant, ids\)/);
   });
