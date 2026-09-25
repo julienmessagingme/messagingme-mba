@@ -6,6 +6,7 @@ import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 import { cardCls, inputCls } from '@/lib/ui';
 import { toCsv, downloadCsv } from '@/lib/csv';
+import { csvErreursLivraison, libelleOrigine } from '@/lib/erreurs-livraison';
 
 /**
  * LE JOURNAL DES ERREURS DE LIVRAISON, à côté du journal des actions.
@@ -18,7 +19,8 @@ import { toCsv, downloadCsv } from '@/lib/csv';
  * incohérence. Les deux répondent à des questions opposées : l'autre est une preuve immuable de qui a fait
  * quoi, où écrire un numéro annulerait la purge d'un contact ; celui-ci est de l'exploitation, et « quel
  * message n'est pas arrivé » sans dire « à qui » ne répond à rien. Il n'a rien d'immuable, il se lit depuis
- * les destinataires de campagne, et il disparaît avec le contact quand on le purge.
+ * les destinataires de campagne, les échecs d'avance de scénario et les échecs de messages libres, et il
+ * disparaît avec le contact quand on le purge.
  */
 
 /** Ce que les codes Meta les plus fréquents veulent dire, en français. Les autres s'affichent bruts. */
@@ -30,16 +32,6 @@ const CODES: Record<number, [string, string]> = {
   131048: ['qualité du numéro trop basse : Meta a bloqué l’envoi', 'number quality too low: Meta blocked the send'],
   132000: ['le template ne correspond pas aux variables envoyées', 'the template does not match the variables sent'],
   470: ['fenêtre de service expirée', 'service window expired'],
-};
-
-/** D'où venait un message libre non délivré : la colonne `origin` du message, en mots. */
-const ORIGINES_MESSAGE: Record<string, [string, string]> = {
-  humain: ['réponse d’un opérateur', 'operator reply'],
-  api: ['envoi par l’API', 'API send'],
-  mcp: ['agent branché par MCP', 'MCP agent'],
-  scenario: ['bloc de scénario', 'scenario block'],
-  ia: ['agent IA', 'AI agent'],
-  mba: ['agent de Meta', 'Meta agent'],
 };
 
 export function ErreursLivraison({ tenantId }: { tenantId: string }) {
@@ -66,16 +58,9 @@ export function ErreursLivraison({ tenantId }: { tenantId: string }) {
     const l = CODES[code];
     return l ? t(...l) : '';
   };
-  /** Le libellé d'une ligne `message` : son canal, et d'où venait le message quand on le sait. */
-  const libelleMessage = (e: ErreurLivraison): string => {
-    const base = e.canal === 'rcs' ? t('RCS non délivré', 'RCS not delivered') : t('message non délivré', 'message not delivered');
-    const origine = e.origineMessage ? ORIGINES_MESSAGE[e.origineMessage] : undefined;
-    return origine ? `${base} (${t(...origine)})` : base;
-  };
-
+  // L'origine s'écrit avec les MÊMES mots à l'écran et dans l'export (`libelleOrigine`).
   function exporter(): void {
-    const entetes = [t('Date (ISO)', 'Date (ISO)'), t('Campagne', 'Campaign'), t('Numéro', 'Number'), t('Code', 'Code'), t('Message', 'Message'), t('Origine', 'Source')];
-    const lignes = (erreurs ?? []).map((e) => [e.at ?? '', e.campaignName ?? '', e.telephone, e.code === null ? '' : String(e.code), e.message ?? '', e.origine]);
+    const { entetes, lignes } = csvErreursLivraison(erreurs ?? [], t);
     downloadCsv(t('erreurs-de-livraison.csv', 'delivery-errors.csv'), toCsv(entetes, lignes));
   }
 
@@ -86,8 +71,8 @@ export function ErreursLivraison({ tenantId }: { tenantId: string }) {
           <h3 className="text-sm font-semibold text-ink-900">{t('Erreurs de livraison', 'Delivery errors')}</h3>
           <p className="text-xs text-ink-500">
             {t(
-              'Ce que Meta a répondu quand un message n’est pas parti, ou n’est pas arrivé. Contrairement au journal des actions, celui-ci porte les numéros : sans eux, il ne dirait pas à qui.',
-              'What Meta answered when a message did not go out, or did not arrive. Unlike the action log, this one carries phone numbers: without them, it would not say to whom.',
+              'Ce que Meta (ou, pour un RCS, le fournisseur RCS) a répondu quand un message n’est pas parti, ou n’est pas arrivé. Contrairement au journal des actions, celui-ci porte les numéros : sans eux, il ne dirait pas à qui.',
+              'What Meta (or, for an RCS, the RCS provider) answered when a message did not go out, or did not arrive. Unlike the action log, this one carries phone numbers: without them, it would not say to whom.',
             )}
           </p>
         </div>
@@ -151,12 +136,7 @@ export function ErreursLivraison({ tenantId }: { tenantId: string }) {
                   des deux, c'est notre traitement du message ENTRANT qui n'a pas abouti, et un message libre
                   non délivré vient du téléphone d'en face, hors de toute campagne. Chercher au mauvais
                   endroit coûte cher. */}
-              <span className="text-[11px] text-ink-400">
-                {e.origine === 'envoi' && t('jamais parti', 'never sent')}
-                {e.origine === 'livraison' && t('parti, non délivré', 'sent, not delivered')}
-                {e.origine === 'scenario' && t('scénario bloqué sur une réponse', 'scenario stuck on a reply')}
-                {e.origine === 'message' && libelleMessage(e)}
-              </span>
+              <span className="text-[11px] text-ink-400">{libelleOrigine(e, t)}</span>
               <span className="w-full text-xs text-ink-600">
                 {sens(e.code) || e.message || t('sans détail', 'no detail')}
               </span>

@@ -30,6 +30,8 @@ import { PgEchecsMessagesStore } from '../delivery/echecs-messages.pg';
  * source-là a bien une table (migration 0108). Ce n'est pas une entorse à la règle du dessus : ces échecs
  * n'étaient écrits NULLE PART, la table est leur seul domicile et ne double aucune ligne existante. Une avance
  * qui échouait était acquittée en silence, le contact restait bloqué à son bloc, et personne ne l'apprenait.
+ * Même raison pour les échecs de messages LIBRES (migration 0175, lot 3 de l'API publique) : ils n'avaient
+ * aucun domicile.
  */
 
 export interface ErreurLivraison {

@@ -4227,7 +4227,7 @@ Ce que le lot change, et qui le lit ailleurs (§ 17 de la spec, complété par l
 
 1. **Prérequis** : les lots 1 et 2 sont en production (ce lot appelle `resoudreFiche`, `refuser`, la route `/v1/sends` refondue et `formaterSuiviEnvoi`).
 2. **CI** : `gh run list` puis `gh run view <id> --json jobs` sur le dernier commit de CODE du lot, chaque job en `success`, `integration` compris ; `git log <déployé>..origin/main --oneline` relu pour savoir ce qui part.
-3. **`/revue-finale`** : son attestation est exigée par la garde de déploiement avant tout `migrate` ou `up` par `ssh`.
+3. **`/revue-finale`** : son attestation est celle que la garde de déploiement exigerait avant tout `migrate` ou `up` par `ssh`, mais cette garde n'est branchée dans aucun `settings.json` (décision de Julien du 2026-09-24 de la laisser débranchée, cf. `.claude/deploy.json`) : rien ne bloque, la revue se fait par discipline.
 4. **Sur le VPS, dans cet ordre** : `git pull` ; `sudo docker compose build mba-api mba-worker` (les migrations vivent DANS l'image) ; `sudo docker compose run --rm --no-deps mba-api npm run migrate` (applique <N> et <N+1>, toutes deux additives et BLOQUANTES pour le code neuf : la création et le run de campagne nomment la première, la purge RGPD les deux ; l'ancien code y survit, d'où l'ordre) ; relecture en base IMMÉDIATE :
 
 ```sql

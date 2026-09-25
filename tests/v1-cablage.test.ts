@@ -51,3 +51,12 @@ describe('câblage de /v1/templates', () => {
     expect(source).toMatch(/templates: async \(tenant\) => \{\s*const waba = await repo\.getTenantWabaId\(tenant\);\s*if \(!waba\) return \[\];\s*return catalogueTemplatesCache\.lire\(`\$\{tenant\}:\$\{waba\}`, async \(\) => \(await metaFactory\.templateClientForTenant\(tenant\)\)\.list\(waba\)\);/);
   });
 });
+
+describe('câblage de l’envoi RCS libre (bouton de l’Inbox et /v1/messages/rcs)', () => {
+  it('🔴 le bouton RCS de l’Inbox passe l’origine `humain`, jamais `api`', () => {
+    // `envoyerRcsLibre` décide des gardes sur son dernier argument : `api` soumettrait l'OPÉRATEUR au
+    // consentement, au STOP général et au cache de joignabilité, à rebours de la spec (§ 17, le bouton reste
+    // identique). Les deux valeurs compilent, et aucun test de l'Inbox ne passe par ce câblage.
+    expect(source).toMatch(/sendRcsFromInbox: async \(tenant, waId, contenu\) => \{\s*const issue = await envoyerRcsLibre\(depsRcsLibre, tenant, waId, contenu, 'humain'\);/);
+  });
+});

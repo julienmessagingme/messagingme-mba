@@ -576,7 +576,9 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    *
    * ⚠️ Il porte les NUMÉROS, contrairement au journal des actions, et c'est délibéré : « quel message n'est pas
    * arrivé » sans dire « à qui » ne répond à rien. Il n'a rien d'immuable, il se lit depuis les destinataires
-   * de campagne, et il disparaît avec le contact quand on le purge.
+   * de campagne, les échecs d'avance de scénario (0108) et les échecs de messages libres (0175), et il disparaît
+   * avec le contact quand on le purge. Les appels en échec vers les systèmes du client ont leur propre route,
+   * `/erreurs-systeme`.
    */
   app.get('/tenants/:tenantId/erreurs-livraison', optsEncadrement, async (req, reply) => {
     const tenant = scopeTenant(req);

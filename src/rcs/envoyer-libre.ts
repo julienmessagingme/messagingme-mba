@@ -1,6 +1,6 @@
 import { classifyWaId } from '../crm/identity';
 import { aDesLiensTracables } from '../links/rcs-liens';
-import { TTL_MS } from './reachability';
+import { joignabiliteRcsToutesFormes } from './reachability';
 import { apercuRcsSortant } from './schema';
 import type { RcsSendOutcome } from './sender';
 import type { RcsOutbound } from './types';
@@ -25,8 +25,10 @@ import { aDesVariables, appliquerVariables } from './variables';
  *
  * 🔴 LA JOIGNABILITÉ SE LIT DANS LE CACHE, DIRECTEMENT, ET POUR UNE MACHINE SEULEMENT. `RcsSender` saute ce
  * contrôle quand le fournisseur ne sait pas vérifier avant l'envoi (smsmode) : le cache n'est alors nourri que
- * par les rapports de livraison (`traiterRapportRcs`, qui écrit la clé en E.164). Un « injoignable » plus vieux
- * que `TTL_MS` ne refuse plus rien : un parc mobile bascule. L'OPÉRATEUR n'y est pas soumis : la spec (§ 17)
+ * par les rapports de livraison (`traiterRapportRcs`, qui écrit la clé en E.164). ⚠️ Le cache porte pourtant un
+ * même numéro sous DEUX formes (`+33…` et chiffres seuls, selon l'appelant qui l'a vérifié) : la lecture passe
+ * donc par `joignabiliteRcsToutesFormes`, comme la fiche de l'API, et la plus récente gagne. Un « injoignable »
+ * plus vieux que `TTL_MS` ne refuse plus rien : un parc mobile bascule. L'OPÉRATEUR n'y est pas soumis : la spec (§ 17)
  * veut le bouton RCS de l'Inbox IDENTIQUE, et smsmode range en échec définitif un téléphone simplement éteint
  * (UNDELIVERED), qui aurait refusé l'opérateur sept jours durant sur un numéro redevenu joignable.
  */
@@ -41,7 +43,10 @@ export interface DepsRcsLibre {
   estDesabonneRcs(tenantId: string, e164: string): Promise<boolean>;
   /** A consenti (`opted_in`) OU nous a déjà écrit (un entrant, tout canal). Lue seulement pour une machine. */
   aConsentiOuEcrit(tenantId: string, waId: string): Promise<boolean>;
-  /** Le cache de joignabilité, clé (agent, E.164). Lu seulement pour une origine machine. */
+  /**
+   * Le cache de joignabilité, lu clé par clé (agent, numéro) : `envoyerRcsLibre` le lit sous les DEUX formes
+   * du numéro (`joignabiliteRcsToutesFormes`). Lu seulement pour une origine machine.
+   */
   lireJoignabilite(agentId: string, e164: string): Promise<{ reachable: boolean; checkedAt: number } | null>;
   lireMessageRcs(tenantId: string, id: string): Promise<{ content: RcsOutbound | null } | null>;
   variablesDeLaFiche(tenantId: string, waId: string): Promise<Record<string, string | null>>;
@@ -72,8 +77,8 @@ export async function envoyerRcsLibre(
 
   // Machine seulement : le bouton RCS de l'Inbox reste identique (spec § 17, cf. le docblock).
   if (origine !== 'humain') {
-    const connu = await deps.lireJoignabilite(agentId, phoneE164);
-    if (connu && !connu.reachable && deps.maintenant() - connu.checkedAt <= TTL_MS) return { refus: 'rcs_unreachable' };
+    const joignable = await joignabiliteRcsToutesFormes({ get: deps.lireJoignabilite }, agentId, phoneE164, deps.maintenant());
+    if (joignable === false) return { refus: 'rcs_unreachable' };
   }
 
   // Réponse LIBRE : rien à relire, rien à substituer. Une accolade tapée par erreur n'est pas un trou.

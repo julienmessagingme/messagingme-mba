@@ -14,6 +14,8 @@ interface Monde {
   consentiOuEcrit: boolean;
   agent: string | null;
   joignabilite: { reachable: boolean; checkedAt: number } | null;
+  /** Le cache CLÉ PAR CLÉ : présent, il remplace `joignabilite` (qui répond la même entrée pour toute clé). */
+  joignabiliteParCle?: Record<string, { reachable: boolean; checkedAt: number }>;
   message: { content: RcsOutbound | null } | null;
   issue: RcsSendOutcome;
 }
@@ -34,7 +36,10 @@ function monde(over: Partial<Monde> = {}) {
     estDesabonne: async (_t, waId) => { lectures.push(`desabonne:${waId}`); return m.desabonne; },
     estDesabonneRcs: async (_t, e164) => { lectures.push(`desabonneRcs:${e164}`); return m.desabonneRcs; },
     aConsentiOuEcrit: async (_t, waId) => { lectures.push(`consentement:${waId}`); return m.consentiOuEcrit; },
-    lireJoignabilite: async (agentId, e164) => { lectures.push(`joignabilite:${agentId}:${e164}`); return m.joignabilite; },
+    lireJoignabilite: async (agentId, e164) => {
+      lectures.push(`joignabilite:${agentId}:${e164}`);
+      return m.joignabiliteParCle ? (m.joignabiliteParCle[e164] ?? null) : m.joignabilite;
+    },
     lireMessageRcs: async () => m.message,
     variablesDeLaFiche: async () => ({ prenom: 'Camille' }),
     jetonDuContact: async () => 'jeton-1',
@@ -117,6 +122,25 @@ describe('envoyerRcsLibre : les conditions communes', () => {
 
   it('injoignable PÉRIMÉ (au-delà de TTL_MS) : on retente', async () => {
     const { deps, envois } = monde({ joignabilite: { reachable: false, checkedAt: MAINTENANT - TTL_MS - 1 } });
+    expect(await envoyerRcsLibre(deps, 't1', NUMERO, { text: 'Bonjour' }, 'api')).toEqual({ messageId: 'rcs-1', apercu: 'Bonjour' });
+    expect(envois).toHaveLength(1);
+  });
+
+  it('🔴 injoignable connu sous la forme CHIFFRES SEULS (celle d’un scénario ou de l’Inbox) : la MACHINE est refusée aussi', async () => {
+    // Le cache porte un même numéro sous deux formes (`joignabiliteRcsToutesFormes`) : lire la seule forme
+    // `+33…` laissait partir la machine vers un numéro qu'un scénario venait de trouver injoignable.
+    const { deps, envois } = monde({ joignabiliteParCle: { [NUMERO]: { reachable: false, checkedAt: MAINTENANT - 1000 } } });
+    expect(await envoyerRcsLibre(deps, 't1', NUMERO, { text: 'Bonjour' }, 'api')).toEqual({ refus: 'rcs_unreachable' });
+    expect(envois).toEqual([]);
+  });
+
+  it('🔴 les deux formes connues : la PLUS RÉCENTE gagne, un « joignable » plus frais lève l’ancien refus', async () => {
+    const { deps, envois } = monde({
+      joignabiliteParCle: {
+        '+33612345678': { reachable: false, checkedAt: MAINTENANT - 5000 },
+        [NUMERO]: { reachable: true, checkedAt: MAINTENANT - 1000 },
+      },
+    });
     expect(await envoyerRcsLibre(deps, 't1', NUMERO, { text: 'Bonjour' }, 'api')).toEqual({ messageId: 'rcs-1', apercu: 'Bonjour' });
     expect(envois).toHaveLength(1);
   });
