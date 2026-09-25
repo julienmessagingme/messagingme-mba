@@ -3,10 +3,13 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
+import { CadrePublic } from '@/components/CadrePublic';
 import { useT } from '@/lib/i18n';
 import { OUTILS_MCP } from '@/lib/mcp-outils';
 import { listApiKeys } from '@/lib/api';
-import type { Session } from '@/lib/session';
+import { BASE } from '@/lib/http';
+import { accesAutorise } from '@/lib/nav';
+import { getSession, type Session } from '@/lib/session';
 
 /**
  * L'espace a-t-il une clé UTILISABLE pour MCP ?
@@ -25,23 +28,38 @@ type EtatCle = null | 'aucune' | 'ok';
  * c'est une documentation, et la lire exigerait déjà une clé, que cette page sert justement à créer. Un
  * test du serveur (`tests/mcp-doc-parite.test.ts`) garde cette liste alignée sur le catalogue réel, sinon
  * elle promettrait un jour un outil retiré, ou tairait un outil ajouté.
+ *
+ * 🔴 ELLE EST PUBLIQUE (décision de Julien du 2026-09-25), comme la documentation de l'API : qui peut ouvrir
+ * cet écran de la console l'a dans la console, tout autre visiteur la lit dans `CadrePublic`. Sans session,
+ * la vérification des clés ne tourne pas : elle lit une donnée d'espace, et il n'y a pas d'espace.
  */
 export default function McpPage() {
-  return <AppShell active="mcp">{(session) => <McpInner session={session} />}</AppShell>;
+  // `undefined` tant que le navigateur n'a pas été lu : la session vit dans localStorage, absent au rendu serveur.
+  const [dansLaConsole, setDansLaConsole] = useState<boolean>();
+  useEffect(() => {
+    const s = getSession();
+    setDansLaConsole(s !== null && accesAutorise('mcp', s.role));
+  }, []);
+  if (dansLaConsole === undefined) return null;
+  if (dansLaConsole) return <AppShell active="mcp">{(session) => <McpInner session={session} />}</AppShell>;
+  return <CadrePublic><McpInner session={null} /></CadrePublic>;
 }
 
 const CARTE = 'rounded-2xl border border-ink-200 bg-white p-5 shadow-sm';
 
-function McpInner({ session }: { session: Session }) {
+function McpInner({ session }: { session: Session | null }) {
   const t = useT();
   const [copie, setCopie] = useState(false);
   const [etatCle, setEtatCle] = useState<EtatCle>(null);
+  const tenantId = session?.tenantId;
 
   // La commande affichée ne peut pas marcher sans une clé portant un droit `mcp:*`. La copier puis se
   // heurter à un 401 est un aller-retour de support garanti, alors que la réponse tient en une phrase.
+  // Sans espace (lecture publique), on se tait : cf. EtatCle.
   useEffect(() => {
+    if (!tenantId) return;
     let vivant = true;
-    listApiKeys(session.tenantId)
+    listApiKeys(tenantId)
       .then(({ keys }) => {
         if (!vivant) return;
         // Une clé RÉVOQUÉE reste dans la liste : elle ne compte pas. Sans ce filtre, l'avertissement se
@@ -51,11 +69,13 @@ function McpInner({ session }: { session: Session }) {
       })
       .catch(() => { /* on ne sait pas : on se tait, cf. EtatCle */ });
     return () => { vivant = false; };
-  }, [session.tenantId]);
-  // L'adresse suit le domaine SUR LEQUEL la console est ouverte : en local c'est localhost, en production
-  // c'est mba.messagingme.app. L'écrire en dur aurait donné à un intégrateur, depuis un environnement de
-  // test, une commande qui vise la production.
-  const origine = typeof window !== 'undefined' ? window.location.origin : 'https://mba.messagingme.app';
+  }, [tenantId]);
+  // 🔴 L'ADRESSE EST CELLE DE L'API PUBLIQUE (`BASE`, la même source que la documentation de l'API), parce
+  // que c'est l'API qui sert `/mcp`, pas la console. Elle suivait le domaine de la console : sur la console
+  // hébergée chez Vercel, `/mcp` rend 404 (mesuré le 2026-09-25, quand `api.` et `mba.` rendent 401), donc
+  // la commande copiée depuis `engageme.` était morte. Repli sur le domaine de la page quand `BASE` est
+  // relative : l'ancienne console du VPS, dont le proxy sert `/mcp`, et le serveur local des tests.
+  const origine = BASE.startsWith('http') ? BASE : typeof window !== 'undefined' ? window.location.origin : 'https://mba.messagingme.app';
   const commande = `claude mcp add --transport http mba ${origine}/mcp --header "Authorization: Bearer VOTRE_CLE"`;
 
   return (

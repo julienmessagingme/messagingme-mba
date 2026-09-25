@@ -40,4 +40,12 @@ describe('adresse de l’API vue du navigateur', () => {
     const enDur = sansComm.match(/https:\/\/mba\.messagingme\.app\/api\/backend\/v1/g) ?? [];
     expect(enDur, 'plus aucune adresse d’API écrite en dur dans le corps de la page').toEqual([]);
   });
+
+  it('🔴 la page MCP en dérive AUSSI : c’est l’API qui sert /mcp, pas la console', () => {
+    // Elle prenait le domaine de la page. Sur la console hébergée chez Vercel, `/mcp` rend 404 (mesuré le
+    // 2026-09-25) : la commande copiée depuis engageme.messagingme.app visait une adresse morte.
+    const mcp = readFileSync(new URL('../app/developers/mcp/page.tsx', import.meta.url), 'utf8');
+    const sansComm = mcp.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(sansComm, 'l’adresse du serveur MCP doit venir de BASE quand elle est absolue').toMatch(/const origine = BASE\.startsWith\('http'\) \? BASE :/);
+  });
 });

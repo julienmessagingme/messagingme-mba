@@ -41,6 +41,19 @@ test.describe('Developers : le serveur MCP', () => {
     await expect(page.getByTestId('mcp-copier')).toBeVisible();
   });
 
+  test('🔴 sans session, la doc MCP est PUBLIQUE : elle s’affiche au lieu de renvoyer au login', async ({ page }) => {
+    // Aucune session : l'intégrateur arrive de la vitrine, sans compte. La vérification des clés ne tourne
+    // pas (il n'y a pas d'espace), donc aucun avertissement, et aucun appel ne doit être nécessaire.
+    await page.route('**/api/backend/**', (route) => route.fulfill({ status: 401, contentType: 'application/json', body: '{}' }));
+    await page.goto('/developers/mcp');
+    await expect(page.getByRole('heading', { name: 'Serveur MCP', exact: true })).toBeVisible();
+    await expect(page.getByTestId('mcp-adresse')).toContainText('/mcp');
+    await expect(page.getByText(/claude mcp add --transport http/)).toBeVisible();
+    await expect(page.getByTestId('mcp-sans-cle')).toHaveCount(0);
+    await expect(page).toHaveURL(/\/developers\/mcp$/);
+    await expect(page.getByRole('link', { name: 'Se connecter' })).toBeVisible();
+  });
+
   test('🔴 chaque outil du catalogue est annoncé, avec son droit', async ({ page }) => {
     // La liste vient du même module que la page : si un outil est ajouté côté serveur sans être documenté,
     // c'est le test de parité de la racine qui tombe ; ici on vérifie que ce qui est documenté S AFFICHE.
