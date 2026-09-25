@@ -4,6 +4,7 @@ import { NIVEAUX_RISQUE, RAISONS_RISQUE } from '../src/engagement/risque';
 import {
   BADGE_NIVEAU_RISQUE, LIBELLES_RAISON_RISQUE, NIVEAUX_DU_FILTRE, NIVEAUX_RISQUE as NIVEAUX_CONSOLE,
 } from '../web/lib/risque';
+import { FICHIERS_DOC } from '../web/lib/doc-api-pages';
 
 /**
  * LE RISQUE DE DÉSENGAGEMENT, DES DEUX CÔTÉS (lot 7 de l'API publique, spec § 19).
@@ -26,10 +27,15 @@ describe('le risque : parité serveur et console', () => {
     expect(trie(NIVEAUX_DU_FILTRE)).toEqual(trie(NIVEAUX_RISQUE));
   });
 
-  it('la page Documentation API cite chaque niveau et chaque code de raison', () => {
-    const page = readFileSync(new URL('../web/app/developers/api/page.tsx', import.meta.url), 'utf8');
+  it('la documentation API cite chaque niveau et chaque code de raison', () => {
+    // La section vit dans UNE page de la doc (liste fermée, `web/lib/doc-api-pages.ts`) : exactement une, sinon
+    // ce test passerait à vide (aucune) ou n'en vérifierait qu'une moitié (deux).
+    const pages = FICHIERS_DOC
+      .map((f) => readFileSync(new URL(`../${f}`, import.meta.url), 'utf8'))
+      .filter((texte) => texte.includes('data-testid="doc-engagement-risk"'));
+    expect(pages, 'la section engagementRisk doit vivre dans exactement une page de la doc').toHaveLength(1);
+    const page = pages[0]!;
     const debut = page.indexOf('data-testid="doc-engagement-risk"');
-    expect(debut, 'la section engagementRisk a disparu de la page').toBeGreaterThanOrEqual(0);
     const section = page.slice(debut, page.indexOf('</p>', debut));
     for (const code of [...NIVEAUX_RISQUE, ...RAISONS_RISQUE]) expect(section, code).toContain(`<C>${code}</C>`);
   });

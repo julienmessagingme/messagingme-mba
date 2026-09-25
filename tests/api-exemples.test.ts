@@ -1,6 +1,6 @@
 // tests/api-exemples.test.ts
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { z } from 'zod';
 import {
   BORNES, CODES_DOCUMENTES, EXEMPLES_CORPS, EXEMPLES_REPONSES,
@@ -26,6 +26,7 @@ import type { SuiviEnvoiApi } from '../src/api/suivi-envoi';
 import { catalogueTemplates, catalogueScenarios, catalogueMessagesRcs } from '../src/http/v1-catalogues';
 import type { MessageRcsCatalogue, ScenarioCatalogue, TemplateCatalogue } from '../src/http/v1-catalogues';
 import { OUTILS_TIERS } from './outils-tiers';
+import { FICHIERS_DOC, PAGES_DOC } from '../web/lib/doc-api-pages';
 
 /**
  * LA PAGE DOCUMENTATION API NE PEUT PLUS DÉCRIRE UN CORPS QUE LE SERVEUR REFUSE (spec § 10).
@@ -327,25 +328,51 @@ describe('🔴 le module d’exemples ne nomme aucun outil tiers', () => {
   });
 });
 
-describe('la page Documentation API', () => {
-  const page = readFileSync(new URL('../web/app/developers/api/page.tsx', import.meta.url), 'utf8');
-  const code = page.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+/**
+ * LA DOCUMENTATION, PAGE PAR PAGE (refonte du 2026-09-25). Elle vivait dans UN fichier ; elle en compte désormais
+ * plusieurs, déclarés dans UNE liste fermée (`FICHIERS_DOC`, `web/lib/doc-api-pages.ts`), et ce sont eux que ces
+ * gardes lisent, jamais tout `web/`.
+ *
+ * 🔴 AUCUNE GARDE NE PASSE À VIDE : une liste de fichiers où l'on ne trouve plus ce qu'on cherchait rendrait un
+ * vert qui ne prouve rien. Chaque garde exige donc d'avoir TROUVÉ l'élément attendu (chaque exemple affiché au
+ * moins une fois, l'adresse dérivée exactement une fois), et la liste elle-même est comparée au dossier.
+ */
+describe('la documentation API (liste fermée de ses fichiers)', () => {
+  const lire = (f: string): string => readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
+  const sansCommentaires = (texte: string): string => texte.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const sources = FICHIERS_DOC.map((f) => ({ f, code: sansCommentaires(lire(f)) }));
+  const tout = sources.map((s) => s.code).join('\n');
 
-  it('🔴 elle n’écrit aucun objet JSON à la main : tout corps et toute réponse viennent du module', () => {
-    // Un `{ "clé": …` dans la page est un exemple que la suite ne verrait pas, donc un exemple qui peut mentir.
-    expect(code).not.toMatch(/\{\s*\\?"[A-Za-z_]+\\?"\s*:/);
+  /** Les pages réellement posées sous `web/app/developers/api/`, plus la page MCP, qui prend le même cadre. */
+  function pagesDuDossier(dossier: string): string[] {
+    return readdirSync(new URL(`../${dossier}`, import.meta.url), { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory() ? pagesDuDossier(`${dossier}/${e.name}`) : e.name === 'page.tsx' ? [`${dossier}/${e.name}`] : []);
+  }
+
+  it('🔴 la liste est FERMÉE : chaque page du dossier y figure, et rien de plus', () => {
+    const posees = [...pagesDuDossier('web/app/developers/api'), 'web/app/developers/mcp/page.tsx'].sort();
+    expect(posees.length).toBeGreaterThanOrEqual(8);
+    expect(PAGES_DOC.map((p) => p.fichier).sort()).toEqual(posees);
+    for (const p of PAGES_DOC) expect(FICHIERS_DOC, p.fichier).toContain(p.fichier);
   });
 
-  it('🔴 elle affiche CHAQUE exemple du module', () => {
-    for (const cle of Object.keys(EXEMPLES_CORPS)) expect(code, `EXEMPLES_CORPS.${cle} n’est affiché nulle part`).toContain(`EXEMPLES_CORPS.${cle}`);
-    for (const cle of Object.keys(EXEMPLES_REPONSES)) expect(code, `EXEMPLES_REPONSES.${cle} n’est affiché nulle part`).toContain(`EXEMPLES_REPONSES.${cle}`);
+  it('🔴 aucun fichier n’écrit d’objet JSON à la main : tout corps et toute réponse viennent du module', () => {
+    // Un `{ "clé": …` dans la doc est un exemple que la suite ne verrait pas, donc un exemple qui peut mentir.
+    for (const s of sources) expect(s.code, s.f).not.toMatch(/\{\s*\\?"[A-Za-z_]+\\?"\s*:/);
   });
 
-  it('elle dérive toujours son adresse de BASE (la règle de web/lib/api-base.test.ts)', () => {
-    expect(code).toMatch(/const ADRESSE_API = BASE\./);
+  it('🔴 CHAQUE exemple du module est affiché par au moins une page', () => {
+    for (const cle of Object.keys(EXEMPLES_CORPS)) expect(tout, `EXEMPLES_CORPS.${cle} n’est affiché nulle part`).toContain(`EXEMPLES_CORPS.${cle}`);
+    for (const cle of Object.keys(EXEMPLES_REPONSES)) expect(tout, `EXEMPLES_REPONSES.${cle} n’est affiché nulle part`).toContain(`EXEMPLES_REPONSES.${cle}`);
   });
 
-  it.each(OUTILS_TIERS.map(([nom, motif]) => ({ nom, motif })))('🔴 elle ne nomme pas $nom', ({ motif }) => {
-    expect(page).not.toMatch(motif);
+  it('elle dérive son adresse de BASE, en UN seul endroit (la règle de web/lib/api-base.test.ts)', () => {
+    const definitions = sources.filter((s) => /const ADRESSE_API\b/.test(s.code));
+    expect(definitions.map((s) => s.f)).toHaveLength(1);
+    expect(definitions[0]!.code).toMatch(/const ADRESSE_API = BASE\./);
+  });
+
+  it.each(FICHIERS_DOC.flatMap((f) => OUTILS_TIERS.map(([nom, motif]) => ({ f, nom, motif }))))('🔴 $f ne nomme pas $nom', ({ f, motif }) => {
+    expect(lire(f)).not.toMatch(motif);
   });
 });

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { EVENEMENTS_SIGNAUX, ATTRIBUTS_SIGNAUX, CHAMP_ID_DOC } from '../web/lib/signaux-dictionnaire';
 import { NOMS_EVENEMENTS, NOMS_ATTRIBUTS, CHAMPS_EVENEMENT, CHAMP_ID_EVENEMENT, type NomEvenement } from '../src/signaux/types';
 import { OUTILS_TIERS } from './outils-tiers';
+import { FICHIERS_DOC, pageDoc } from '../web/lib/doc-api-pages';
 
 /**
  * LA DOCUMENTATION DES SIGNAUX (lot 6 de l'API publique).
@@ -14,8 +15,8 @@ import { OUTILS_TIERS } from './outils-tiers';
  * quel que soit l'outil », et c'est parce qu'ils vivent dans le dictionnaire (et pas dans un adaptateur) que la
  * promesse peut être tenue.
  *
- * ⚠️ La page qui monte la section et ses exemples sont gardés par `tests/api-exemples.test.ts`, avec la MÊME
- * liste d'outils (`./outils-tiers`) ; ce fichier-ci garde les deux fichiers de la section.
+ * ⚠️ Les pages de la doc et leurs exemples sont gardés par `tests/api-exemples.test.ts`, avec la MÊME liste
+ * d'outils (`./outils-tiers`) ; ce fichier-ci garde les deux fichiers de la section, et la page qui la monte.
  */
 const lire = (chemin: string): string => readFileSync(new URL(`../${chemin}`, import.meta.url), 'utf8');
 
@@ -47,7 +48,9 @@ describe('la documentation des signaux', () => {
     });
   });
 
-  it('la section est bien rendue par la page', () => {
-    expect(lire('web/app/developers/api/page.tsx')).toMatch(/<DocSignaux \/>/);
+  it('la section est rendue par la page Événements, et par elle seule', () => {
+    // Parmi les fichiers de la doc (liste fermée) : au moins un doit la monter, sinon ce test passerait à vide.
+    const montent = FICHIERS_DOC.filter((f) => /<DocSignaux \/>/.test(lire(f)));
+    expect(montent).toEqual([pageDoc('events').fichier]);
   });
 });

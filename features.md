@@ -1807,6 +1807,14 @@ scénario, comment importer des contacts.
   peuvent plus mentir** : ils vivent dans un module que la page affiche et qu'un test passe aux validateurs
   des routes.
   ⚠️ Elle ne nomme aucun outil tiers : elle sert à tous les intégrateurs.
+  🔴 **Depuis la refonte du 2026-09-25, elle tient en huit pages publiques** : Accueil (`/developers/api` :
+  l'adresse, la clé, un premier appel complet avec sa réponse), Contacts, Messages et envois (un tableau distingue le
+  message simple de l'envoi), Catalogues, Concepts (désigner une personne, consentement et STOP, fenêtre de 24 h,
+  idempotence : chaque règle à un seul endroit, les pages de routes y renvoient), un guide « Un appel par contact »
+  en six étapes, Événements et Référence (droits, débit, catalogue des codes). Navigation latérale sur ordinateur,
+  bouton « Documentation » sur mobile, bouton Copier sur chaque bloc, encadrés Note, Attention, Obligatoire.
+  Toujours lisibles sans compte, et dans la console pour un admin, en français et en anglais. La page Serveur MCP
+  prend le même cadre.
 
 ### Ce que la console remonte vers l'outil du client (Paramètres > Intégrations)
 
@@ -1816,7 +1824,7 @@ scénario, comment importer des contacts.
   **Paramètres > Intégrations** (ses clés s'y saisissent, ne se réaffichent jamais, et le branchement comme le
   débranchement s'inscrivent au journal des actions). Les noms commencent par `em_`, et les noms des champs de
   chaque événement sont fixés par le dictionnaire : un adaptateur par outil les TRANSPORTE, il ne les renomme
-  pas. La liste complète est dans Developers > Documentation API, section « Ce que nous remontons ».
+  pas. La liste complète est dans Developers > Documentation API, page Événements (`/developers/api/events`).
   🔴 **Jamais le texte d'un message.** Le résumé d'une conversation seulement si l'admin coche l'option,
   décochée par défaut : il contient des propos du client. Il part en morceaux de 300 caractères au plus
   (`summary_1` à `summary_3`), la borne de texte la plus stricte des outils connus.

@@ -2,14 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AppShell } from '@/components/AppShell';
-import { CadrePublic } from '@/components/CadrePublic';
+import { CadreDoc } from '@/components/doc-api/CadreDoc';
 import { useT } from '@/lib/i18n';
 import { OUTILS_MCP } from '@/lib/mcp-outils';
 import { listApiKeys } from '@/lib/api';
 import { BASE } from '@/lib/http';
-import { accesAutorise } from '@/lib/nav';
-import { getSession, type Session } from '@/lib/session';
+import type { Session } from '@/lib/session';
 
 /**
  * L'espace a-t-il une clé UTILISABLE pour MCP ?
@@ -29,20 +27,13 @@ type EtatCle = null | 'aucune' | 'ok';
  * test du serveur (`tests/mcp-doc-parite.test.ts`) garde cette liste alignée sur le catalogue réel, sinon
  * elle promettrait un jour un outil retiré, ou tairait un outil ajouté.
  *
- * 🔴 ELLE EST PUBLIQUE (décision de Julien du 2026-09-25), comme la documentation de l'API : qui peut ouvrir
- * cet écran de la console l'a dans la console, tout autre visiteur la lit dans `CadrePublic`. Sans session,
- * la vérification des clés ne tourne pas : elle lit une donnée d'espace, et il n'y a pas d'espace.
+ * 🔴 ELLE EST PUBLIQUE (décision de Julien du 2026-09-25), comme la documentation de l'API, et elle en prend le
+ * cadre (`CadreDoc`, refonte du 2026-09-25) : qui peut ouvrir cet écran de la console l'a dans la console, tout
+ * autre visiteur la lit dans `CadrePublic`. Sans session, la vérification des clés ne tourne pas : elle lit une
+ * donnée d'espace, et il n'y a pas d'espace. Son adresse est publiée sur la vitrine : elle ne bouge pas.
  */
 export default function McpPage() {
-  // `undefined` tant que le navigateur n'a pas été lu : la session vit dans localStorage, absent au rendu serveur.
-  const [dansLaConsole, setDansLaConsole] = useState<boolean>();
-  useEffect(() => {
-    const s = getSession();
-    setDansLaConsole(s !== null && accesAutorise('mcp', s.role));
-  }, []);
-  if (dansLaConsole === undefined) return null;
-  if (dansLaConsole) return <AppShell active="mcp">{(session) => <McpInner session={session} />}</AppShell>;
-  return <CadrePublic><McpInner session={null} /></CadrePublic>;
+  return <CadreDoc page="mcp">{(session) => <McpInner session={session} />}</CadreDoc>;
 }
 
 const CARTE = 'rounded-2xl border border-ink-200 bg-white p-5 shadow-sm';

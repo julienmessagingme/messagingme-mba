@@ -2,16 +2,13 @@
 
 import { useT } from '@/lib/i18n';
 import { EVENEMENTS_SIGNAUX, ATTRIBUTS_SIGNAUX, CHAMP_ID_DOC } from '@/lib/signaux-dictionnaire';
+import { C, Encadre, Section } from '@/components/doc-api/elements';
 
-const inlineCls = 'rounded bg-ink-100 px-1.5 py-0.5 font-mono text-[0.8em] text-ink-800';
-
-function C({ children }: { children: React.ReactNode }) {
-  return <code className={inlineCls}>{children}</code>;
-}
+const theadCls = 'border-b border-ink-200 bg-ink-50 text-ink-600';
 
 /**
  * « CE QUE NOUS REMONTONS » (spec 2026-09-24, § 8 et § 10) : le dictionnaire des signaux, pour l'intégrateur.
- * Dernière section de la page Documentation API (`web/app/developers/api/page.tsx`).
+ * Contenu de la page Événements de la documentation (`web/app/developers/api/events/page.tsx`).
  *
  * 🔴 AUCUN OUTIL TIERS N'EST NOMMÉ ICI, NI DANS LE MODULE QUI LE NOURRIT (demande de Julien du 2026-09-24 : la
  * documentation sert à tous les intégrateurs). Le nom de l'outil branché n'apparaît que sur son écran de
@@ -21,9 +18,8 @@ function C({ children }: { children: React.ReactNode }) {
 export function DocSignaux() {
   const t = useT();
   return (
-    <section id="signaux" className="scroll-mt-4 rounded-2xl border border-ink-200 bg-white p-5 shadow-sm" data-testid="doc-signaux">
-      <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Ce que nous remontons', 'What we send back')}</h3>
-      <div className="mt-3 space-y-3 text-sm text-ink-700">
+    <div className="space-y-10" data-testid="doc-signaux">
+      <Section id="signaux" titre={t('Ce que nous remontons', 'What we send back')}>
         <p>
           {t(
             'Quand il se passe quelque chose sur une fiche, la console pousse un événement, avec l’état courant de la fiche, vers l’outil que votre administrateur a branché dans Paramètres > Intégrations. Les noms commencent par ',
@@ -54,16 +50,21 @@ export function DocSignaux() {
           <C>{CHAMP_ID_DOC}</C>
           {t(' stable : un même événement peut arriver deux fois, dédupliquez sur cet identifiant.', ': the same event can arrive twice, deduplicate on it.')}
         </p>
+        <Encadre sorte="attention">
+          <p>
+            {t(
+              'Le texte d’un message n’est jamais remonté. Le résumé d’une conversation ne l’est que si l’option est activée dans le réglage : il contient des propos du client.',
+              'A message’s text is never sent back. A conversation summary is sent only when the option is on in the settings: it contains the customer’s words.',
+            )}
+          </p>
+        </Encadre>
+      </Section>
+
+      <Section titre={t('Délais', 'Timing')}>
         <p>
           {t(
-            'Les signaux partent par une file : comptez moins d’une minute en temps normal. Les réponses, les clics, les désabonnements et les conversations analysées passent DEVANT les accusés de livraison et de lecture ; derrière une campagne de plusieurs milliers de destinataires, ces accusés peuvent arriver avec plusieurs dizaines de minutes de retard. Chaque événement porte l’heure où il s’est produit, pas celle où il arrive. Selon l’outil, un événement resté plus de 24 heures dans la file (une panne prolongée) peut ne pas être envoyé ; partent alors seulement l’identifiant de la fiche et ses désabonnements, relus au moment de l’envoi, jamais ce que l’événement seul apprenait (dernière réponse, joignabilité RCS, dernière analyse), qui écraserait un état plus récent.',
-            'Signals go through a queue: expect less than a minute in normal conditions. Replies, clicks, unsubscribes and analysed conversations go AHEAD of delivery and read receipts; behind a campaign of several thousand recipients, those receipts can arrive tens of minutes late. Every event carries the time it happened, not the time it arrives. Depending on the tool, an event that stayed more than 24 hours in the queue (a prolonged outage) may not be sent; only the contact’s id and unsubscribes then go out, read at sending time, never what the event alone told (last reply, RCS reachability, last analysis), which would overwrite a more recent state.',
-          )}
-        </p>
-        <p>
-          {t(
-            'Le texte d’un message n’est JAMAIS remonté. Le résumé d’une conversation ne l’est que si l’option est activée dans le réglage : il contient des propos du client.',
-            'A message’s text is NEVER sent back. A conversation summary is sent only when the option is on in the settings: it contains the customer’s words.',
+            'Les signaux partent par une file : comptez moins d’une minute en temps normal. Les réponses, les clics, les désabonnements et les conversations analysées passent devant les accusés de livraison et de lecture ; derrière une campagne de plusieurs milliers de destinataires, ces accusés peuvent arriver avec plusieurs dizaines de minutes de retard. Chaque événement porte l’heure où il s’est produit, pas celle où il arrive. Selon l’outil, un événement resté plus de 24 heures dans la file (une panne prolongée) peut ne pas être envoyé ; partent alors seulement l’identifiant de la fiche et ses désabonnements, relus au moment de l’envoi, jamais ce que l’événement seul apprenait (dernière réponse, joignabilité RCS, dernière analyse), qui écraserait un état plus récent.',
+            'Signals go through a queue: expect less than a minute in normal conditions. Replies, clicks, unsubscribes and analysed conversations go ahead of delivery and read receipts; behind a campaign of several thousand recipients, those receipts can arrive tens of minutes late. Every event carries the time it happened, not the time it arrives. Depending on the tool, an event that stayed more than 24 hours in the queue (a prolonged outage) may not be sent; only the contact’s id and unsubscribes then go out, read at sending time, never what the event alone told (last reply, RCS reachability, last analysis), which would overwrite a more recent state.',
           )}
         </p>
         <p>
@@ -72,6 +73,9 @@ export function DocSignaux() {
             '“At the end of a conversation” means: 25 minutes without a message, then the analysis pass, every 5 minutes. Expect about half an hour after the last message: enough for a follow-up, not for an immediate alert.',
           )}
         </p>
+      </Section>
+
+      <Section titre={t('Les événements', 'The events')}>
         <p>
           {t('Valeurs de ', 'Values of ')}<C>origine</C>{' : '}
           <C>humain</C>, <C>scenario</C>, <C>ia</C>, <C>mba</C>, <C>campagne</C>, <C>mcp</C>, <C>api</C>
@@ -81,22 +85,21 @@ export function DocSignaux() {
             '. A missing score (satisfaction, urgency) means “no measure”: it never overwrites the previous one.',
           )}
         </p>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+        <div className="overflow-x-auto rounded-lg border border-ink-200">
+          <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-ink-100 text-ink-500">
-                <th className="py-1.5 pr-3 font-medium">{t('Événement', 'Event')}</th>
-                <th className="py-1.5 pr-3 font-medium">{t('Quand', 'When')}</th>
-                <th className="py-1.5 font-medium">{t('Champs', 'Fields')}</th>
+              <tr className={theadCls}>
+                <th className="px-3 py-2 text-xs font-semibold">{t('Événement', 'Event')}</th>
+                <th className="px-3 py-2 text-xs font-semibold">{t('Quand', 'When')}</th>
+                <th className="px-3 py-2 text-xs font-semibold">{t('Champs', 'Fields')}</th>
               </tr>
             </thead>
             <tbody>
               {EVENEMENTS_SIGNAUX.map((e) => (
-                <tr key={e.nom} className="border-b border-ink-50 align-top" data-testid={`signal-${e.nom}`}>
-                  <td className="py-1.5 pr-3"><C>{e.nom}</C></td>
-                  <td className="py-1.5 pr-3 text-ink-600">{t(...e.quand)}</td>
-                  <td className="py-1.5 text-ink-600">
+                <tr key={e.nom} className="border-b border-ink-100 align-top last:border-0" data-testid={`signal-${e.nom}`}>
+                  <td className="px-3 py-2"><C>{e.nom}</C></td>
+                  <td className="px-3 py-2 text-ink-600">{t(...e.quand)}</td>
+                  <td className="px-3 py-2 text-ink-600">
                     <span className="flex flex-wrap gap-1">
                       {e.champs.map((c) => <C key={c}>{c}</C>)}
                     </span>
@@ -107,26 +110,28 @@ export function DocSignaux() {
             </tbody>
           </table>
         </div>
+      </Section>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+      <Section titre={t('Les attributs de la fiche', 'Contact attributes')}>
+        <div className="overflow-x-auto rounded-lg border border-ink-200">
+          <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-ink-100 text-ink-500">
-                <th className="py-1.5 pr-3 font-medium">{t('Attribut de la fiche', 'Contact attribute')}</th>
-                <th className="py-1.5 font-medium">{t('Sens', 'Meaning')}</th>
+              <tr className={theadCls}>
+                <th className="px-3 py-2 text-xs font-semibold">{t('Attribut de la fiche', 'Contact attribute')}</th>
+                <th className="px-3 py-2 text-xs font-semibold">{t('Sens', 'Meaning')}</th>
               </tr>
             </thead>
             <tbody>
               {ATTRIBUTS_SIGNAUX.map((a) => (
-                <tr key={a.nom} className="border-b border-ink-50 align-top">
-                  <td className="py-1.5 pr-3"><C>{a.nom}</C></td>
-                  <td className="py-1.5 text-ink-600">{t(...a.sens)}</td>
+                <tr key={a.nom} className="border-b border-ink-100 align-top last:border-0">
+                  <td className="px-3 py-2"><C>{a.nom}</C></td>
+                  <td className="px-3 py-2 text-ink-600">{t(...a.sens)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </div>
-    </section>
+      </Section>
+    </div>
   );
 }

@@ -68,8 +68,8 @@ export const EVENEMENTS_SIGNAUX: readonly EntreeEvenement[] = [
   {
     nom: 'em_opted_out', quand: PRIORITAIRE, champs: ['canal', 'source'],
     note: [
-      'canal : SEULEMENT quand la personne a écrit STOP sur ce canal ; absent pour un désabonnement posé par votre équipe ou par l’API. source : d’où vient le refus (whatsapp_stop, rcs_stop, crm, api…).',
-      'canal: ONLY when the person wrote STOP on that channel; absent for an unsubscribe set by your team or through the API. source: where the refusal comes from (whatsapp_stop, rcs_stop, crm, api…).',
+      'canal : seulement quand la personne a écrit STOP sur ce canal ; absent pour un désabonnement posé par votre équipe ou par l’API. source : d’où vient le refus (whatsapp_stop, rcs_stop, crm, api…).',
+      'canal: only when the person wrote STOP on that channel; absent for an unsubscribe set by your team or through the API. source: where the refusal comes from (whatsapp_stop, rcs_stop, crm, api…).',
     ],
   },
   {
@@ -80,8 +80,8 @@ export const EVENEMENTS_SIGNAUX: readonly EntreeEvenement[] = [
       'exchanges_count', 'summary_1', 'summary_2', 'summary_3',
     ],
     note: [
-      'summary_1 à summary_3 : le résumé, SEULEMENT si l’option est activée, en morceaux de 300 caractères au plus, à recoller bout à bout sans séparateur (les derniers sont absents quand il est court).',
-      'summary_1 to summary_3: the summary, ONLY when the option is on, in chunks of at most 300 characters, to join end to end with no separator (the last ones are absent when it is short).',
+      'summary_1 à summary_3 : le résumé, seulement si l’option est activée, en morceaux de 300 caractères au plus, à recoller bout à bout sans séparateur (les derniers sont absents quand il est court).',
+      'summary_1 to summary_3: the summary, only when the option is on, in chunks of at most 300 characters, to join end to end with no separator (the last ones are absent when it is short).',
     ],
   },
   {
