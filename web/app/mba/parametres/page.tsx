@@ -12,7 +12,7 @@ import {
 import { LIBELLES } from '@/lib/libelles-mba';
 import { MbaTabs } from '@/components/MbaTabs';
 import { EnteteAgent } from '@/components/EnteteAgent';
-import { lireMessagesTenus, type MessagesTenus } from '@/lib/chiffres-canaux';
+import { lireMessagesMba, type MessagesEcritsMba } from '@/lib/chiffres-canaux';
 import { PastilleNumero } from '@/components/PastilleNumero';
 import { PastilleAgentMba } from '@/components/PastilleAgentMba';
 import { MbaAssistantPanel } from '@/components/MbaAssistantPanel';
@@ -118,13 +118,13 @@ function MbaSettings({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean
    */
   const eligible = status?.eligible === true;
 
-  // Le chiffre ET la fenêtre du serveur : la légende cite `jours`, elle ne l'écrit plus en dur.
-  const [messages, setMessages] = useState<MessagesTenus | null>(null);
+  // Les messages ÉCRITS par l'agent de Meta, depuis toujours : un nombre et son libellé, sans légende.
+  const [messages, setMessages] = useState<MessagesEcritsMba | null>(null);
   useEffect(() => {
     if (phoneNumberId === null || !eligible) return;
     let vivant = true;
     void getMbaMessages(tenantId, phoneNumberId)
-      .then((r) => { if (vivant) setMessages(lireMessagesTenus(r)); })
+      .then((r) => { if (vivant) setMessages(lireMessagesMba(r)); })
       .catch(() => { if (vivant) setMessages(null); });
     return () => { vivant = false; };
   }, [tenantId, phoneNumberId, eligible]);

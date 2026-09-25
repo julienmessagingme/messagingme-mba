@@ -114,14 +114,17 @@ test.describe('Accueil : Canaux et services', () => {
     await expect(ligne(page, 'numero').toggle).toHaveAttribute('aria-pressed', 'true');
   });
 
-  test('🔴 la précision du chiffre est VISIBLE, sans survol : tout le canal WhatsApp, envois de campagne compris', async ({ page }) => {
+  test('🔴 le chiffre reste SEUL, sans précision dessous (Julien, 2026-09-25 : on retire)', async ({ page }) => {
     await mockAccueil(page, {
       canaux: { rcs: { active: true, channel: { agentId: 'a', brandName: 'Marque', displayName: 'Mon agent', status: 'launched', checkedAt: null } } },
       volumes: VOLUMES,
     });
+    // Ancres positives : les deux chiffres sont là.
     await expect(ligne(page, 'numero').chiffre).toHaveText('1 234 envoyés · 567 reçus (30 j)');
-    await expect(page.getByTestId('canal-numero-chiffre-mention')).toHaveText('Tout le canal WhatsApp de l’espace, envois de campagne compris.');
-    await expect(page.getByTestId('canal-rcs-chiffre-mention')).toHaveText('Envois de campagne compris.');
+    await expect(ligne(page, 'rcs').chiffre).toHaveText('12 envoyés · 0 reçu (30 j)');
+    await expect(page.getByTestId('canal-numero-chiffre-mention')).toHaveCount(0);
+    await expect(page.getByTestId('canal-rcs-chiffre-mention')).toHaveCount(0);
+    await expect(page.getByTestId('canaux-services')).not.toContainText(/envois de campagne compris/i);
   });
 
   /**
@@ -311,6 +314,6 @@ test.describe('Accueil : Canaux et services', () => {
       canaux: {},
     });
     await expect(ligne(page, 'hubspot').toggle).toBeDisabled();
-    await expect(ligne(page, 'hubspot').etat).toContainText('un portail est relié');
+    await expect(ligne(page, 'hubspot').etat).toHaveText('Pour l’éteindre, déconnectez d’abord le portail dans le bloc HubSpot.');
   });
 });

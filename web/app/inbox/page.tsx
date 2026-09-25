@@ -507,12 +507,17 @@ function InboxInner({ session }: { session: Session }) {
     //
     // ⚠️ Rien de tout ça en dessous de `lg` : le menu revient AU-DESSUS de la liste, empilé. Trois colonnes
     // sur un téléphone ne laisseraient rien de lisible à aucune des trois.
-    <div className={`grid gap-4 p-4 lg:h-full ${ficheWaId ? 'lg:grid-cols-[190px_320px_1fr_340px]' : 'lg:grid-cols-[190px_320px_1fr]'}`}>
+    //
+    // 🔴 LA BORDURE DE LA COLONNE DES DOSSIERS TOMBE SOUS LE TRAIT VERTICAL DE L'ENTÊTE (Julien, 2026-09-25).
+    // Ce trait ferme la zone du logo (`lg:w-60`, puis un séparateur `w-px`, `AppShell`) : la colonne part donc du
+    // bord (`lg:pl-0` sur la grille) et fait ces MÊMES deux mesures, lues dans le thème et pas recopiées, pour
+    // que sa bordure droite occupe exactement le pixel du trait. `inbox-dossiers.spec.ts` le mesure.
+    <div className={`grid gap-4 p-4 lg:h-full lg:pl-0 ${ficheWaId ? 'lg:grid-cols-[calc(theme(spacing.60)_+_theme(spacing.px))_320px_1fr_340px]' : 'lg:grid-cols-[calc(theme(spacing.60)_+_theme(spacing.px))_320px_1fr]'}`}>
       {/* 🔴 LE MENU DE DOSSIERS REMPLACE LES TROIS BOUTONS DE FILTRE, il ne s'y ajoute pas. Deux endroits
           pour le même choix, c'est deux états qui divergent : le dépôt l'a déjà payé sur le contrôle du
           fil. Modération comprise : « Signalé » est l'ancien bouton, dans ce menu comme les autres.
           Il défile SÉPARÉMENT : un espace à vingt collaborateurs a un menu plus long que l'écran. */}
-      <div className="lg:min-h-0 lg:overflow-y-auto lg:border-r lg:border-ink-200 lg:pr-3">
+      <div data-testid="inbox-colonne-dossiers" className="lg:min-h-0 lg:overflow-y-auto lg:border-r lg:border-ink-200 lg:pl-4 lg:pr-3">
         <InboxDossiers
           dossier={dossier}
           compteurs={compteurs}

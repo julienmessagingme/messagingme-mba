@@ -184,7 +184,7 @@ export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]>
           budgetEpuise: a.budgetEpuise ?? false,
         });
       }
-      if (url.includes('/messages')) return json({ messages: 412, jours: 30 });
+      if (url.includes('/messages')) return json({ messages: 412 });
       if (url.includes('/completion')) {
         if (f.completion !== undefined) return json(f.completion);
         // 🔴 UNE OBLIGATOIRE EN `inconnue` EST DANS LA FIXTURE EXPRÈS : sans elle, aucun test ne voit la

@@ -49,6 +49,26 @@ async function mock(page: import('@playwright/test').Page, session: typeof ADMIN
 }
 
 test.describe('Inbox : le menu de dossiers', () => {
+  test('🔴 la bordure de la colonne des dossiers tombe sous le trait vertical de l’entête, et le mobile ne déborde pas', async ({ page }) => {
+    // Julien, 2026-09-25 : la bordure était nettement à gauche du trait qui ferme la zone du logo.
+    await mock(page, ADMIN);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/inbox');
+    await expect(page.getByTestId('dossier-n-toutes')).toHaveText('(2)');
+    const droite = (id: string) => page.getByTestId(id).evaluate((e) => e.getBoundingClientRect().right);
+    const trait = await droite('entete-separateur');
+    const colonne = await droite('inbox-colonne-dossiers');
+    // Ancre : le trait existe bien à cette largeur (il est masqué sous `sm`), sans quoi on comparerait à 0.
+    expect(trait).toBeGreaterThan(100);
+    expect(Math.abs(colonne - trait), `colonne ${colonne} px, trait ${trait} px`).toBeLessThanOrEqual(1);
+
+    // Sous `lg`, la colonne s'empile au-dessus de la liste : rien ne doit déborder sur un téléphone.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByTestId('dossier-n-toutes')).toBeVisible();
+    const debordement = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(debordement, 'la page déborde horizontalement').toBe(0);
+  });
+
   test('🔴 les quatre dossiers portent leur compteur, Y COMPRIS à zéro', async ({ page }) => {
     await mock(page, ADMIN);
     await page.goto('/inbox');

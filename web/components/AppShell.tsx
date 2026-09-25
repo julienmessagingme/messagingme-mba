@@ -313,6 +313,10 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
           * n'occupe aucune place, donc réserver 240 px pousserait les onglets hors de l'écran sur un
           * téléphone. Les trois valeurs `w-60` (ici et sur l'`aside`) doivent rester d'accord, comme
           * `h-14` / `top-14` / `3.5rem` juste au-dessus.
+          *
+          * ⚠️ LA COLONNE DES DOSSIERS DE L'INBOX S'ALIGNE AUSSI SUR CE TRAIT (2026-09-25) : elle lit `spacing.60` et
+          * `spacing.px` dans le thème (`app/inbox/page.tsx`). Changer cette largeur ici, c'est la changer là-bas ;
+          * `inbox-dossiers.spec.ts` mesure les deux.
           */}
         <div className="flex h-full shrink-0 items-center gap-3 px-4 lg:w-60">
           {avecBarreLaterale && (
@@ -337,7 +341,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
             marge nulle collerait le trait au mot « Engage Me » : c'est précisément le reproche de Julien
             du 2026-09-08 (« positionné beaucoup trop proche du logo »), qu'on réintroduirait sur toute la
             plage tablette sans le voir depuis un grand écran. */}
-        <span aria-hidden="true" className="ml-4 hidden h-6 w-px shrink-0 bg-ink-200 sm:block lg:ml-0" />
+        <span aria-hidden="true" data-testid="entete-separateur" className="ml-4 hidden h-6 w-px shrink-0 bg-ink-200 sm:block lg:ml-0" />
         <nav aria-label={t('Sections', 'Sections')} className="ml-2 flex items-center gap-1 overflow-x-auto" data-testid="onglets">
           {ongletsVisibles.map((o) => (
             <Link

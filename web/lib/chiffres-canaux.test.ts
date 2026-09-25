@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { fmtNum } from './format';
-import { lireVolumesCanaux, phraseVolume, phrasePublications, agentMetaRepond, lireMessagesTenus } from './chiffres-canaux';
+import { lireVolumesCanaux, phraseVolume, phrasePublications, agentMetaRepond, lireMessagesTenus, lireMessagesMba } from './chiffres-canaux';
 
 const REPONSE = { jours: 30, whatsapp: { envoyes: 1234, recus: 567 }, rcs: { envoyes: 12, recus: 0 } };
 
@@ -87,6 +87,20 @@ describe('agentMetaRepond', () => {
   it('statut pas encore lu, ou illisible : faux', () => {
     expect(agentMetaRepond(null)).toBe(false);
     expect(agentMetaRepond(statut('true'))).toBe(false);
+  });
+});
+
+describe('lireMessagesMba', () => {
+  it('lit le compte des messages écrits par l’agent de Meta, sans fenêtre', () => {
+    expect(lireMessagesMba({ messages: 412 })).toEqual({ mba: true, messages: 412 });
+    // Un zéro RENDU par le serveur est une mesure : il s'affiche.
+    expect(lireMessagesMba({ messages: 0 })).toEqual({ mba: true, messages: 0 });
+  });
+
+  it('🔴 `messages: null` (le serveur ne sait pas), réponse vide ou absente : `null`, jamais 0', () => {
+    for (const r of [{ messages: null }, {}, null, undefined, { messages: '12' }, { messages: -1 }, { messages: 1.5 }]) {
+      expect(lireMessagesMba(r), JSON.stringify(r)).toBeNull();
+    }
   });
 });
 

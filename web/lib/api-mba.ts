@@ -79,20 +79,15 @@ export function getMbaCompletion(tenantId: string, phoneNumberId: string): Promi
 }
 
 /**
- * Combien de messages ont ete echanges dans les conversations que l agent de Meta a tenues.
+ * Combien de messages l agent de Meta a ECRITS, depuis toujours (Julien, 2026-09-25) : ni les reponses du
+ * client, ni l equipe, ni les campagnes, et aucune fenetre. Lue par `lireMessagesMba`.
  *
  * 🔴 `messages: null` = ON NE SAIT PAS, jamais zero. Trois cas reels le produisent : la route n est pas
  * encore deployee (Vercel publie l ecran au push, l API attend son `up`), le compte n est pas administrateur
  * (le module est monte en `g.admin`, donc un manager recoit 403), et le serveur lui-meme rend `null` quand sa
  * dependance de comptage n est pas cablee. Un zero affirmerait que l agent n a parle a personne.
- *
- * ⚠️ LE COMPTE EMBRASSE TOUT LE FIL, y compris les envois de campagne et ce que l equipe a ecrit apres avoir
- * repris la main : c est le volume de la conversation, pas le travail de l agent. `EnteteAgent` le DIT a
- * l ecran, et ce n est pas facultatif (sans quoi le chiffre se lit comme une mesure de performance).
- * ⚠️ Et ce n est PAS le perimetre du « messages echanges » de l Accueil et du Performance Lab, qui eux
- * ecartent les modeles sortants. Le meme mot, deux mesures : seule la legende peut lever l ambiguite.
  */
-export interface MessagesMba { messages: number | null; jours: number }
+export interface MessagesMba { messages: number | null }
 
 export function getMbaMessages(tenantId: string, phoneNumberId: string): Promise<MessagesMba> {
   return request<MessagesMba>(`${base(tenantId, phoneNumberId)}/messages`);

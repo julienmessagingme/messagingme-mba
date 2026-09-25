@@ -39,8 +39,8 @@ import {
 
 type Service = 'numero' | 'rcs' | 'chaine' | 'publicites' | 'hubspot';
 type Lecture<T> = T | 'echec' | null;
-/** La ligne de chiffre d'une carte : le chiffre, ce qu'il compte (au survol), et sa précision VISIBLE, s'il en a une. */
-interface Chiffre { texte: string; aide: string; mention?: string }
+/** La ligne de chiffre d'une carte : le chiffre, et ce qu'il compte (au survol). */
+interface Chiffre { texte: string; aide: string }
 
 const COULEUR: Record<Teinte, string> = { vert: DOT_HEX.green, gris: DOT_HEX.grey, ambre: DOT_HEX.amber };
 
@@ -237,8 +237,8 @@ export function CanauxServices(p: {
     if (!p.hubspotActif) return t('Éteint : HubSpot n’apparaît pas sur l’Accueil.', 'Off: HubSpot does not show on the Home page.');
     if (lignes.hubspot.geste === null) {
       return t(
-        'Allumé, et un portail est relié : pour l’éteindre, faites d’abord la déconnexion du portail dans le bloc HubSpot.',
-        'On, and a portal is linked: to turn it off, first disconnect the portal in the HubSpot block.',
+        'Pour l’éteindre, déconnectez d’abord le portail dans le bloc HubSpot.',
+        'To turn it off, first disconnect the portal in the HubSpot block.',
       );
     }
     return t('Allumé : le bloc HubSpot s’affiche sur l’Accueil.', 'On: the HubSpot block shows on the Home page.');
@@ -252,18 +252,16 @@ export function CanauxServices(p: {
    * la chaîne. `null` = on ne sait pas, et la carte n'affiche rien à cet endroit. L'`aide` (au survol) dit ce
    * qui est compté, parce que ce n'est PAS le périmètre de « Messages échangés », juste au-dessus.
    *
-   * 🔴 ET LA `mention`, SOUS LE CHIFFRE, LE DIT SANS SURVOL (relecture du 2026-09-25) : l'écart avec « Messages
-   * échangés » (les envois de campagne sont comptés ici) n'était lisible qu'au survol, donc jamais sur un
-   * téléphone. Sur la carte du numéro, elle dit aussi que c'est TOUT le canal WhatsApp de l'espace qui est compté :
-   * la carte montre un numéro, mais les fils ne portent pas le numéro par lequel ils sont passés.
+   * ⚠️ LA PRÉCISION VISIBLE SOUS LE CHIFFRE EST PARTIE (Julien, 2026-09-25 : « on retire, on n'ajoute rien ») :
+   * « tout le canal, envois de campagne compris » ne se lit plus qu'au survol.
    */
   const aideVolume = (jours: number): string => t(
     `Messages partis et arrivés sur ce canal ces ${jours} derniers jours, modèles de campagne compris, hors conversations de test.`,
     `Messages sent and received on this channel over the last ${jours} days, campaign templates included, test conversations excluded.`,
   );
-  const chiffreVolume = (v: Volume | null | undefined, mention: string): Chiffre | null => {
+  const chiffreVolume = (v: Volume | null | undefined): Chiffre | null => {
     const texte = volumes === null ? null : phraseVolume(v ?? null, volumes.jours, locale);
-    return texte === null || volumes === null ? null : { texte, aide: aideVolume(volumes.jours), mention };
+    return texte === null || volumes === null ? null : { texte, aide: aideVolume(volumes.jours) };
   };
   // `publications` ne se lit que sur une chaîne branchée (`chargerChaine`) : `null` partout ailleurs.
   const textePublications = phrasePublications(publications, locale);
@@ -277,14 +275,14 @@ export function CanauxServices(p: {
   }> = [
     {
       service: 'numero', titre: t('Numéro WhatsApp', 'WhatsApp number'), phrase: phraseNumero(),
-      chiffre: chiffreVolume(volumes?.whatsapp, t('Tout le canal WhatsApp de l’espace, envois de campagne compris.', 'The workspace’s whole WhatsApp channel, campaign sends included.')),
+      chiffre: chiffreVolume(volumes?.whatsapp),
       Logo: LogoWhatsApp,
       // Relié mais signalé par Meta : ambre, comme la santé du compte plus bas (`numeroASurveiller`).
       aTerminer: numeroASurveiller(p.compte),
     },
     {
       service: 'rcs', titre: t('Canal RCS', 'RCS channel'), phrase: phraseRcs(),
-      chiffre: chiffreVolume(volumes?.rcs, t('Envois de campagne compris.', 'Campaign sends included.')),
+      chiffre: chiffreVolume(volumes?.rcs),
       Logo: LogoGoogleMessages,
     },
     {
@@ -356,9 +354,6 @@ export function CanauxServices(p: {
                   <p data-testid={`canal-${service}-chiffre`} title={chiffre.aide} className="text-sm font-semibold tabular-nums text-ink-900">
                     {chiffre.texte}
                   </p>
-                )}
-                {chiffre?.mention && (
-                  <p data-testid={`canal-${service}-chiffre-mention`} className="text-[11px] text-ink-500">{chiffre.mention}</p>
                 )}
                 {lien && <Link href={lien.href} data-testid={`canal-${service}-lien`} className="text-xs text-brand-600 hover:underline">{lien.texte}</Link>}
               </div>

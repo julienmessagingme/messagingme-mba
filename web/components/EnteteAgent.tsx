@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react';
 import { useLocale, useT } from '@/lib/i18n';
 import { fmtNum } from '@/lib/format';
-import type { MessagesTenus } from '@/lib/chiffres-canaux';
+import type { MessagesTenus, MessagesEcritsMba } from '@/lib/chiffres-canaux';
 
 /**
  * L'EN-TÊTE D'UN ÉCRAN D'AGENT : qui est cet agent, ce qui lui manque, ce qu'il a produit.
@@ -82,10 +82,11 @@ export interface EnteteAgentProps {
   /** Rendu en plus du compte, et SEULEMENT quand il existe un ratio vrai (l'agent de Meta en a un). */
   ratio?: { faites: number; total: number };
   /**
-   * Le chiffre et la fenêtre que le serveur a appliquée (`lireMessagesTenus`). `null` = on ne sait pas : on
-   * n'affiche alors AUCUN chiffre. Voir le commentaire plus bas.
+   * Agent IA : le chiffre et la fenêtre que le serveur a appliquée (`lireMessagesTenus`). Agent de Meta : les
+   * messages qu'il a écrits, sans fenêtre (`lireMessagesMba`). `null` = on ne sait pas : on n'affiche alors
+   * AUCUN chiffre. Voir le commentaire plus bas.
    */
-  messagesTenus: MessagesTenus | null;
+  messagesTenus: MessagesTenus | MessagesEcritsMba | null;
   onOnglet(cle: string): void;
 }
 
@@ -229,7 +230,9 @@ export function EnteteAgent({
           jour. « Messages échangés » veut dire autre chose à DEUX écrans d'ici : l'Accueil et le Performance
           Lab EXCLUENT les modèles sortants du leur. Le périmètre plus large est celui que Julien a arbitré
           (tous les messages des conversations que l'agent a tenues), donc c'est la LÉGENDE qui doit lever
-          l'ambiguïté, pas la requête. */}
+          l'ambiguïté, pas la requête.
+          ⚠️ CECI NE VAUT PLUS QUE POUR UN AGENT IA. L'agent de Meta compte depuis le 2026-09-25 les seuls
+          messages qu'il a ÉCRITS, depuis toujours (Julien) : un compte sans ambiguïté, donc sans légende. */}
       {messagesTenus !== null && (
         <div data-testid="entete-agent-messages" className="shrink-0 sm:max-w-[15rem] sm:text-right">
           <ChiffreMessagesTenus {...messagesTenus} />
@@ -240,17 +243,29 @@ export function EnteteAgent({
 }
 
 /**
- * Le chiffre des messages tenus par un agent, AVEC SA LÉGENDE, sorti de l'en-tête le 2026-09-25 pour que
- * l'Accueil l'affiche sous le cadre de l'agent de Meta sans recopier le texte : deux copies d'une légende qui
- * porte un aveu (« y compris ») finiraient par dire deux choses. Les raisons de chaque mot sont juste au-dessus.
+ * Le chiffre d'un agent, AVEC SON LIBELLÉ, sorti de l'en-tête le 2026-09-25 pour que l'Accueil l'affiche dans le
+ * cadre de l'agent de Meta sans recopier le texte : deux copies d'un libellé finiraient par dire deux choses. Les
+ * raisons de chaque mot de la légende d'un agent IA sont juste au-dessus.
  * ⚠️ Il reçoit un NOMBRE : c'est à l'appelant de ne pas le rendre quand il ne sait pas, jamais à lui d'y mettre 0.
  *
  * 🔴 ET LA FENÊTRE QUE LE SERVEUR A APPLIQUÉE (`jours`, lue par `lireMessagesTenus`), plus un « 30 » écrit en dur
  * (relecture du 2026-09-25) : la légende disait la fenêtre de l'écran, pas celle du chiffre.
+ *
+ * ⚠️ MODE « MBA » (`mba: true`, Julien, 2026-09-25) : les messages ÉCRITS par l'agent de Meta, depuis toujours.
+ * Le nombre et son libellé, AUCUNE légende. L'agent IA garde sa mesure et sa légende, inchangées.
  */
-export function ChiffreMessagesTenus({ messages, jours }: MessagesTenus) {
+export function ChiffreMessagesTenus(chiffre: MessagesTenus | MessagesEcritsMba) {
   const t = useT();
   const { locale } = useLocale();
+  if ('mba' in chiffre) {
+    return (
+      <>
+        <p className="text-2xl font-semibold tabular-nums text-ink-900">{fmtNum(chiffre.messages, locale)}</p>
+        <p className="text-xs font-medium text-ink-700">{t('Messages écrits par le MBA', 'Messages written by the MBA')}</p>
+      </>
+    );
+  }
+  const { messages, jours } = chiffre;
   return (
     <>
       <p className="text-2xl font-semibold tabular-nums text-ink-900">{fmtNum(messages, locale)}</p>

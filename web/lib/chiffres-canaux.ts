@@ -5,8 +5,8 @@ import { fmtNum } from './format';
  * LES CHIFFRES DES CARTES DE L'ACCUEIL (demande de Julien du 2026-09-25), en décisions pures.
  *
  * Trois chiffres : envoyés et reçus sur WhatsApp, les mêmes en RCS (route `GET /accueil/volumes`), le nombre de
- * publications de la chaîne ; plus un quatrième sous le cadre de l'agent de Meta, les messages de ses
- * conversations (route `GET /mba/:pn/messages`, déjà affichée dans MBA > Paramètres).
+ * publications de la chaîne ; plus un quatrième dans le cadre de l'agent de Meta, les messages qu'il a écrits
+ * (route `GET /mba/:pn/messages`, déjà affichée dans MBA > Paramètres).
  *
  * 🔴 PAS DE CHIFFRE PLUTÔT QU'UN ZÉRO INVENTÉ, partout ici. Vercel publie la console au `git push`, l'API attend
  * son déploiement : pendant cette fenêtre la route rend un 404, et le support e2e rend `{}` à tout ce qu'il ne
@@ -80,15 +80,32 @@ export function agentMetaRepond(s: { eligible?: unknown; settings?: { rollout?: 
   return s !== null && s.eligible === true && s.settings?.rollout?.enabled === true;
 }
 
-/** Les messages des conversations qu'un agent a tenues, et la fenêtre sur laquelle le SERVEUR les a comptés. */
+/** Les messages des conversations qu'un agent IA a tenues, et la fenêtre sur laquelle le SERVEUR les a comptés. */
 export interface MessagesTenus {
   messages: number;
   jours: number;
 }
 
 /**
- * La réponse de `GET /mba/:pn/messages` (l'agent de Meta) ou de `GET /agents/:id/messages` (un agent IA), ou
- * `null` : la route peut rendre `messages: null`, ou manquer.
+ * Les messages ÉCRITS par l'agent de Meta, depuis toujours (Julien, 2026-09-25) : ni les réponses du client, ni
+ * l'équipe, ni les campagnes, et aucune fenêtre. `mba: true` le distingue de `MessagesTenus` pour
+ * `ChiffreMessagesTenus`, qui affiche les deux sous des libellés différents.
+ */
+export interface MessagesEcritsMba {
+  mba: true;
+  messages: number;
+}
+
+/** La réponse de `GET /mba/:pn/messages`, ou `null` : la route peut rendre `messages: null`, ou manquer. Jamais 0 inventé. */
+export function lireMessagesMba(r: unknown): MessagesEcritsMba | null {
+  if (r === null || typeof r !== 'object') return null;
+  const { messages } = r as { messages?: unknown };
+  return entierPositif(messages) ? { mba: true, messages } : null;
+}
+
+/**
+ * La réponse de `GET /agents/:id/messages` (un agent IA), ou `null` : la route peut rendre `messages: null`, ou
+ * manquer.
  *
  * 🔴 LA FENÊTRE EST LUE AVEC LE CHIFFRE, et sans fenêtre lisible rien n'est lu (relecture du 2026-09-25). La
  * légende (`ChiffreMessagesTenus`) écrivait « sur 30 jours » en dur alors que la réponse porte `jours` : changer

@@ -125,13 +125,10 @@ export function RcsChannelCard({ rcs, isAdmin }: { rcs: CanalRcs; isAdmin: boole
 
   return (
     <div id={ANCRE_CANAL_RCS} data-testid="rcs-channel-card" className="flex flex-col rounded-2xl border border-ink-200 bg-gradient-to-br from-white to-mint-50 p-5 shadow-sm">
-      <div className="mb-3 flex items-start gap-3">
+      <div className="mb-3 flex items-center gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-mint-100 text-lg">📱</div>
         <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold tracking-tight text-ink-900">{t('Canal RCS', 'RCS channel')}</div>
-          <p className="mt-0.5 text-xs text-ink-500">
-            {t('Vos messages partent sous votre agent de marque, avec votre nom et votre logo. Pas de numéro, pas de template à faire valider.', 'Your messages go out under your brand agent, with your name and logo. No number, no template to get approved.')}
-          </p>
         </div>
         <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${actif ? 'bg-mint-100 text-mint-700' : 'bg-ink-100 text-ink-500'}`}>
           {inconnu ? t('état inconnu', 'state unknown') : actif ? t('actif', 'active') : t('inactif', 'inactive')}

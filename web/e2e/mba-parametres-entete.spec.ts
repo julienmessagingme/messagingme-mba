@@ -36,15 +36,11 @@ test.describe('MBA Paramètres : en-tête et menu en colonne', () => {
     await expect(page.getByTestId('entete-agent-etapes')).toContainText('1 étape à finir');
     await expect(page.getByTestId('entete-agent-ratio')).toContainText('1 sur 2');
 
-    // 🔴 CE QUE LE CHIFFRE MESURE DOIT ÊTRE ÉCRIT À CÔTÉ DE LUI. Sans l'aveu, un client lit 412 comme le
-    // travail de l'agent, alors que le compte embrasse tout le fil.
-    // 🔴 LES DEUX MOITIÉS DE L'AVEU SONT ASSERTÉES SÉPARÉMENT, et la première est celle que la revue finale
-    // a réclamée : « messages échangés » EXCLUT les modèles sortants à deux écrans d'ici (Accueil,
-    // Performance Lab), et ici il les inclut. Une légende qui ne dirait que la reprise laisserait le même
-    // mot désigner deux périmètres dans la même console.
-    await expect(page.getByTestId('entete-agent-messages')).toContainText('les envois de campagne');
-    await expect(page.getByTestId('entete-agent-messages'))
-      .toContainText('ce que votre équipe a écrit après une reprise');
+    // 🔴 LE CHIFFRE COMPTE LES MESSAGES ÉCRITS PAR L'AGENT DE META, DEPUIS TOUJOURS (Julien, 2026-09-25), et son
+    // libellé le dit. Plus de légende : l'aveu du « fil entier » et la fenêtre n'ont plus d'objet, ce compte EST
+    // le travail de l'agent. L'agent IA, lui, garde sa mesure et sa légende (`agents-entete.spec.ts`).
+    await expect(page.getByTestId('entete-agent-messages')).toContainText('Messages écrits par le MBA');
+    await expect(page.getByTestId('entete-agent-messages')).not.toContainText(/y compris|envois de campagne|jours|days/);
 
     // L'étape mène à l'onglet où elle se règle : une liste de manques sans le geste se lit comme un reproche.
     await page.getByTestId('entete-etape-faq').click();
