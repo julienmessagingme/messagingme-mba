@@ -329,4 +329,11 @@ export const BORNES = {
   debitParMinute: 80,
   dureeIdempotenceHeures: 24,
   debitParCle: 60,
+  /**
+   * Le plafond de l'API PAR ESPACE (2026-09-25), tenus égaux à `PLAFOND_API_DEFAUT` par `tests/api-exemples.test.ts`.
+   * ⚠️ Ils remplacent `debitParCle` dans la page : ce dernier ne décrit plus que le relais du Meta Business Agent,
+   * que la page ne documente pas, et part avec l'ancien texte.
+   */
+  plafondEspaceMinute: 60,
+  plafondEspaceHeure: 1000,
 } as const;

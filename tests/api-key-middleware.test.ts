@@ -5,6 +5,7 @@ import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { cleApiDeTest } from './aide/cle-api';
+import { plafondsDeTest } from './aide/plafonds';
 
 class FakeKeys implements ApiKeyLookup {
   touched = 0;
@@ -34,15 +35,15 @@ const REC = { id: 'k1', tenantId: 't1', scopes: ['contacts:write'] };
  * regardait que le préfixe, ça ne se voyait pas. Depuis qu'elle contrôle le FORMAT, un tel jeton est
  * refusé, et c'est le bon comportement.
  *
- * ⚠️ LE PRÉ-FILTRE EST LARGE ICI (1 000/minute) : ces cas éprouvent le plafond MÉTIER, et un pré-filtre
- * serré le masquerait en refusant avant lui.
+ * ⚠️ LE PRÉ-FILTRE EST LARGE ICI (1 000/minute) : ces cas éprouvent le plafond de l'ESPACE (2026-09-25), et
+ * un pré-filtre serré le masquerait en refusant avant lui.
  */
 const CLE = cleApiDeTest('ok');
 const prefiltreLarge = (): RateLimiter => new RateLimiter(1000, 60_000);
 
 describe('makeRequireApiKey', () => {
   it('clé valide -> pose req.auth synthétique role=api + apiScopes, touchLastUsed, headers', async () => {
-    const guard = makeRequireApiKey(new FakeKeys(CLE, REC), new RateLimiter(5, 60_000), prefiltreLarge());
+    const guard = makeRequireApiKey(new FakeKeys(CLE, REC), plafondsDeTest({ minute: 5 }), prefiltreLarge());
     const req = fakeReq(`Bearer ${CLE}`);
     const { reply, state } = fakeReply();
     await guard(req, reply);
@@ -53,7 +54,7 @@ describe('makeRequireApiKey', () => {
   });
 
   it('absente / mauvais préfixe / inconnue -> 401', async () => {
-    const guard = makeRequireApiKey(new FakeKeys(CLE, REC), new RateLimiter(5, 60_000), prefiltreLarge());
+    const guard = makeRequireApiKey(new FakeKeys(CLE, REC), plafondsDeTest({ minute: 5 }), prefiltreLarge());
     for (const h of [undefined, 'Bearer jwtish', `Bearer ${cleApiDeTest('inconnue')}`, 'Bearer mba_trop_court']) {
       const { reply, state } = fakeReply();
       await guard(fakeReq(h), reply);
@@ -61,8 +62,8 @@ describe('makeRequireApiKey', () => {
     }
   });
 
-  it('rate limit dépassé -> 429 + retry-after', async () => {
-    const guard = makeRequireApiKey(new FakeKeys(CLE, REC), new RateLimiter(1, 60_000), prefiltreLarge());
+  it('plafond de l’espace dépassé -> 429 + retry-after', async () => {
+    const guard = makeRequireApiKey(new FakeKeys(CLE, REC), plafondsDeTest({ minute: 1 }), prefiltreLarge());
     const first = fakeReply();
     await guard(fakeReq(`Bearer ${CLE}`), first.reply);
     expect(first.state.statusCode).toBeNull(); // 1re passe

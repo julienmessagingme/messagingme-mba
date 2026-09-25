@@ -4,6 +4,8 @@ import { makeRequireApiKey } from '../src/auth/api-key';
 import { RateLimiter } from '../src/auth/rate-limit';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
+import { DROIT_RELAIS } from '../src/mba/cle-relais';
+import { plafondsDeTest } from './aide/plafonds';
 
 /**
  * CE QU'UNE FAUSSE CLÉ COÛTE AVANT D'ÊTRE REFUSÉE.
@@ -26,10 +28,10 @@ class FauxStore implements ApiKeyLookup {
   touches: string[] = [];
   /** Révoquer en cours de route, comme un admin le ferait depuis la console. */
   revoquee = false;
-  constructor(private valide: string | null = null) {}
+  constructor(private valide: string | null = null, private readonly scopes: string[] = ['contacts:write']) {}
   async findActiveByHash(hash: string) {
     this.appels += 1;
-    if (!this.revoquee && this.valide && hash === sha256Hex(this.valide)) return { id: 'k1', tenantId: 't1', scopes: ['contacts:write'] };
+    if (!this.revoquee && this.valide && hash === sha256Hex(this.valide)) return { id: 'k1', tenantId: 't1', scopes: this.scopes };
     return null;
   }
   async touchLastUsed(id: string) { this.touches.push(id); }
@@ -52,13 +54,19 @@ function fausseReponse(): { reply: FastifyReply; code: () => number | null; ente
 const requete = (bearer?: string): FastifyRequest =>
   ({ headers: bearer === undefined ? {} : { authorization: `Bearer ${bearer}` } } as FastifyRequest);
 
-/** Monte le préhandler avec ses deux limiteurs, et rend de quoi observer les deux. */
-function monter(valide: string | null, opts: { maxPreAuth?: number; maxMetier?: number; maxClesMetier?: number } = {}) {
-  const store = new FauxStore(valide);
-  const metier = new RateLimiter(opts.maxMetier ?? 100, 60_000, () => Date.now(), opts.maxClesMetier ?? 0);
+/**
+ * Monte le préhandler avec ses limiteurs, et rend de quoi observer le budget spéculatif.
+ *
+ * ⚠️ `maxMetier` est le plafond d'une clé RÉSOLUE : celui de son ESPACE par minute depuis le 2026-09-25, ou celui
+ * de la clé elle-même quand `scopes` en fait la clé du relais du Meta Business Agent. `maxClesMetier` borne la
+ * table du relais, la seule encore indexée sur l'empreinte.
+ */
+function monter(valide: string | null, opts: { maxPreAuth?: number; maxMetier?: number; maxClesMetier?: number; scopes?: string[] } = {}) {
+  const store = new FauxStore(valide, opts.scopes);
+  const plafonds = plafondsDeTest({ minute: opts.maxMetier ?? 100, relais: opts.maxMetier ?? 100, relaisMaxCles: opts.maxClesMetier ?? 0 });
   // ⚠️ AUCUN PLAFOND DE CLÉS ICI : la clé du budget spéculatif est FIXE, donc la table ne grossit pas.
   const preAuth = new RateLimiter(opts.maxPreAuth ?? 100, 60_000);
-  return { store, metier, preAuth, garde: makeRequireApiKey(store, metier, preAuth) };
+  return { store, preAuth, garde: makeRequireApiKey(store, plafonds, preAuth) };
 }
 
 describe('le pré-filtre des clés d’API', () => {
@@ -114,7 +122,7 @@ describe('le pré-filtre des clés d’API', () => {
     const vraiTake = espion.take.bind(espion);
     espion.take = (cle: string) => { vues.push(cle); return vraiTake(cle); };
     const store = new FauxStore(null);
-    const garde = makeRequireApiKey(store, new RateLimiter(100, 60_000), espion);
+    const garde = makeRequireApiKey(store, plafondsDeTest(), espion);
 
     const bearer = cleBienFormee('secret_a_ne_pas_ecrire');
     await garde(requete(bearer), fausseReponse().reply);
@@ -186,7 +194,7 @@ describe('ce que le pré-filtre ne doit PAS casser', () => {
     expect(store.appels - avant, 'elle ne doit plus pouvoir marteler le lookup').toBeLessThanOrEqual(3);
   });
 
-  it('🔴 le plafond MÉTIER par clé reste actif EN PLUS du pré-filtre', async () => {
+  it('🔴 le plafond de l’ESPACE reste actif EN PLUS du pré-filtre', async () => {
     // Les deux se complètent et ne se remplacent pas : le pré-filtre protège la BASE d'appels anonymes,
     // celui-ci borne le travail qu'une clé RÉSOLUE peut demander. Retirer l'un en gardant l'autre laisse
     // l'une des deux portes ouverte.
@@ -232,8 +240,10 @@ describe('ce que le pré-filtre ne doit PAS casser', () => {
    * ⚠️ LES CODES DES BEARERS INVENTÉS SE VÉRIFIENT APRÈS LA VRAIE CLÉ : vérifiés dans la boucle, le code fautif
    * échouerait sur le troisième bearer inventé (429 au lieu de 401), sans montrer le symptôme qui compte.
    */
-  it('🔴 préfiltre coupé, des bearers inventés en masse n’évincent pas une vraie clé du plafond par clé', async () => {
-    const { garde } = monter(VRAIE, { maxPreAuth: 0, maxClesMetier: 2 });
+  // ⚠️ POUR LES DEUX PLAFONDS (2026-09-25) : celui de l'espace, indexé sur l'espace d'une clé résolue, et celui
+  // du relais, le seul encore indexé sur l'empreinte, donc le seul dont la table pourrait se remplir.
+  for (const [nom, scopes] of [['d’un client', ['contacts:write']], ['du relais', [DROIT_RELAIS]]] as const) it(`🔴 préfiltre coupé, des bearers inventés en masse n’évincent pas la vraie clé ${nom}`, async () => {
+    const { garde } = monter(VRAIE, { maxPreAuth: 0, maxClesMetier: 2, scopes: [...scopes] });
     const codes: Array<number | null> = [];
     for (let i = 0; i < 50; i += 1) {
       const r = fausseReponse();
@@ -250,16 +260,29 @@ describe('ce que le pré-filtre ne doit PAS casser', () => {
     expect(codes.filter((c) => c !== 401), 'les bearers inventés').toEqual([]);
   });
 
-  it('🔴 ce que retient le plafond par clé ne contient pas non plus la valeur du bearer', async () => {
+  it('🔴 ce que retiennent les plafonds ne contient pas non plus la valeur du bearer', async () => {
+    // Le relais est compté sur l'EMPREINTE de sa clé, un client sur son ESPACE : aucun des deux sur le bearer.
     const vues: string[] = [];
-    const espion = new RateLimiter(100, 60_000);
-    const vraiTake = espion.take.bind(espion);
-    espion.take = (cle: string) => { vues.push(cle); return vraiTake(cle); };
-    const bearer = cleBienFormee('secret_de_production');
-    const garde = makeRequireApiKey(new FauxStore(bearer), espion, new RateLimiter(100, 60_000));
-    await garde(requete(bearer), fausseReponse().reply);
-    expect(vues).toHaveLength(1);
-    expect(vues.join('|')).not.toContain('secret_de_production');
+    const plafonds = plafondsDeTest();
+    const vraiTake = plafonds.relais.take.bind(plafonds.relais);
+    plafonds.relais.take = (cle: string, max?: number) => { vues.push(cle); return vraiTake(cle, max); };
+    const vraiConsommer = plafonds.espace.consommer.bind(plafonds.espace);
+    plafonds.espace.consommer = (cle, reply) => { vues.push(cle); return vraiConsommer(cle, reply); };
+    const relais = cleBienFormee('secret_du_relais');
+    const client = cleBienFormee('secret_de_production');
+    const store: ApiKeyLookup = {
+      async findActiveByHash(hash: string) {
+        if (hash === sha256Hex(relais)) return { id: 'kr', tenantId: 't1', scopes: [DROIT_RELAIS] };
+        if (hash === sha256Hex(client)) return { id: 'k1', tenantId: 't1', scopes: ['contacts:write'] };
+        return null;
+      },
+      async touchLastUsed() {},
+    };
+    const garde = makeRequireApiKey(store, plafonds, new RateLimiter(100, 60_000));
+    await garde(requete(relais), fausseReponse().reply);
+    await garde(requete(client), fausseReponse().reply);
+    expect(vues).toEqual([sha256Hex(relais), 't1']);
+    expect(vues.join('|')).not.toContain('secret_d');
   });
 
   it('🔴 la révocation reste IMMÉDIATE sous le plafond : le lookup a lieu à chaque appel accepté', async () => {
@@ -329,19 +352,20 @@ describe('ce que les en-têtes de plafond disent, et à qui', () => {
       const r = fausseReponse();
       await garde(requete(VRAIE), r.reply);
       expect(r.code(), `appel ${rang}`).toBeNull();
-      expect(r.entetes['x-ratelimit-limit'], `appel ${rang} : le plafond de la clé, pas celui du budget`).toBe('11');
+      expect(r.entetes['x-ratelimit-limit'], `appel ${rang} : le plafond de l’espace, pas celui du budget`).toBe('11');
       expect(r.entetes['x-ratelimit-remaining'], `appel ${rang}`).toBe(restant);
     }
   });
 });
 
-describe('le plafond par clé est PAR clé', () => {
+describe('le plafond est PAR espace', () => {
   /**
    * 🔴 CE CAS MANQUAIT, ET SANS LUI LA CLÉ DU LIMITEUR POUVAIT DEVENIR UNE CONSTANTE SANS QU'AUCUN TEST NE
-   * TOMBE (relevé par la relecture finale du 2026-09-21). Deux clés réelles : la première au-delà de son
-   * plafond ne doit rien retirer à la seconde. Un intégrateur trop pressé ne coupe pas l'API de ses voisins.
+   * TOMBE (relevé par la relecture finale du 2026-09-21). Deux clés réelles de DEUX espaces : la première
+   * au-delà du plafond de son espace ne doit rien retirer à la seconde. Un intégrateur trop pressé ne coupe
+   * pas l'API de ses voisins. (Compté par clé jusqu'au 2026-09-25, par espace depuis.)
    */
-  it('🔴 une clé au-delà de son plafond ne freine pas une autre clé', async () => {
+  it('🔴 un espace au-delà de son plafond ne freine pas un autre espace', async () => {
     const A = cleBienFormee('cle_du_client_a');
     const B = cleBienFormee('cle_du_client_b');
     const store: ApiKeyLookup = {
@@ -352,18 +376,18 @@ describe('le plafond par clé est PAR clé', () => {
       },
       async touchLastUsed() {},
     };
-    const garde = makeRequireApiKey(store, new RateLimiter(2, 60_000), new RateLimiter(100, 60_000));
+    const garde = makeRequireApiKey(store, plafondsDeTest({ minute: 2 }), new RateLimiter(100, 60_000));
     const codesA: Array<number | null> = [];
     for (let i = 0; i < 4; i += 1) {
       const r = fausseReponse();
       await garde(requete(A), r.reply);
       codesA.push(r.code());
     }
-    expect(codesA, 'la clé A épuise son propre plafond').toEqual([null, null, 429, 429]);
+    expect(codesA, 'la clé A épuise le plafond de son espace').toEqual([null, null, 429, 429]);
     const r = fausseReponse();
     const req = requete(B);
     await garde(req, r.reply);
-    expect(r.code(), 'la clé B ne doit rien payer pour A').toBeNull();
+    expect(r.code(), 'l’espace de B ne doit rien payer pour A').toBeNull();
     expect(req.auth?.tenantId).toBe('tb');
   });
 });

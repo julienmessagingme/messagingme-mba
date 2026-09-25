@@ -1107,11 +1107,24 @@ vite qu'un déploiement de code. ⚠️ Ils sont LOCAUX AU PROCESS : le plafond 
 à lever avant le multi-replica.
 
 🔴 **Les portes publiques ont leurs propres plafonds, et un plafond ne compte que des clés qui EXISTENT.**
-- `/v1` (avec `/mcp` et le relais du Meta Business Agent) : un budget GLOBAL (`API_KEY_PREFILTRE_MAX`, clé
-  constante) freine les empreintes jamais résolues par ce process AVANT la requête en base ; une empreinte
-  résolue en est exemptée, sinon une attaque qui l'épuise couperait tous les clients. Puis le plafond par clé,
-  compté sur l'EMPREINTE d'une clé résolue : avant la base dès qu'elle est connue, après la lecture la première
-  fois. Une fausse clé n'entre donc jamais dans sa table.
+- `/v1` et `/mcp` : un budget GLOBAL (`API_KEY_PREFILTRE_MAX`, clé constante) freine les empreintes jamais
+  résolues par ce process AVANT la requête en base ; une empreinte résolue en est exemptée, sinon une attaque qui
+  l'épuise couperait tous les clients. Puis le plafond de l'ESPACE (`src/auth/plafond-espace.ts`, 2026-09-25),
+  commun à toutes ses clés : deux fenêtres fixes qui s'appliquent ensemble (`API_PLAFOND_MINUTE`, défaut 60,
+  `API_PLAFOND_HEURE`, défaut 1 000), vérifiées avant qu'aucune ne consomme, comptées sur l'ESPACE d'une clé
+  résolue (avant la base dès que la clé est connue, l'espace étant retenu avec l'empreinte dans `ClesResolues` ;
+  après la lecture la première fois). Une fausse clé n'entre donc jamais dans sa table. Il compte des APPELS : le
+  travail reste mesuré par le garde d'usage. Un espace peut porter son réglage (`tenant_settings.api_plafond_minute`
+  et `_heure`, migration 0181, `null` = défaut, CHECK > 0), lu à travers un cache de 30 s (une lecture partagée par
+  rafale ; en cas d'échec, le dernier réglage connu, sinon le défaut) et réglé par `GET`/`PUT
+  /ops/plafond-api/:tenantId` (jeton d'exploitation, note obligatoire, ligne `ops_plafond_api` avec l'état d'avant,
+  cache vidé après l'écriture). Refus : 429 `rate_limited`, `Retry-After` = la fenêtre pleine qui se libère le
+  plus tard, message qui la nomme avec son plafond ; les `x-ratelimit-*` décrivent la fenêtre la plus proche de
+  son plafond. `0` en configuration éteint la fenêtre pour les espaces sans réglage (levier d'urgence) ; un
+  réglage d'espace reste appliqué. Local au process : le plafond est celui d'UNE instance.
+- La clé du relais du Meta Business Agent (droit `mba:relais`, attribué par la seule publication) n'entre PAS
+  dans ce plafond : elle garde un compteur PAR CLÉ (`API_KEY_RATE_LIMIT_MAX`, sur l'empreinte), pour qu'un
+  intégrateur qui charge l'API ne coupe pas les outils de l'agent de Meta en pleine conversation.
 - `/w/:code` et `/rcs/callback/:code` : AVANT la base, un budget COMMUN (`CODES_INCONNUS_PAR_MINUTE`, clé
   constante, en silence) freine les codes jamais résolus par ce process, et un code résolu en est exempté, comme
   une clé sur `/v1`. APRÈS la lecture, le plafond par code EXISTANT (`WEBHOOK_IN_RATE_LIMIT_*`,

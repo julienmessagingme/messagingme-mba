@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { PLAFOND_DESTINATAIRES_DEFAUT } from './campaign/plafond';
+import { PLAFOND_API_DEFAUT } from './auth/plafond-espace';
 
 /** Exporté pour les tests : `config` est parsé À L'IMPORT, donc inutilisable pour vérifier les fail-fast
  *  (il faudrait réimporter le module avec un autre environnement). Le schéma, lui, se parse à la demande. */
@@ -172,9 +173,26 @@ export const schema = z.object({
   /** Cadence du heartbeat worker (ms). Défaut 20 s : écriture négligeable pour le pooler, assez fine pour
    *  qu'un worker mort dépasse vite le seuil d'âge côté /ops. */
   HEARTBEAT_INTERVAL_MS: z.coerce.number().default(20_000),
-  /** Rate limit de l'API publique /v1 : requêtes par clé et par fenêtre (en mémoire, par process). */
+  /**
+   * LE COMPTEUR PAR CLÉ, qui ne sert plus qu'au RELAIS DU META BUSINESS AGENT (2026-09-25) : requêtes par clé et
+   * par fenêtre (en mémoire, par process). Les autres clés sont comptées PAR ESPACE (`API_PLAFOND_*` ci-dessous).
+   * ⚠️ La fenêtre sert aussi au budget spéculatif (`API_KEY_PREFILTRE_MAX`).
+   */
   API_KEY_RATE_LIMIT_MAX: z.coerce.number().default(60),
   API_KEY_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60_000),
+  /**
+   * LE PLAFOND DE L'API PUBLIQUE PAR ESPACE, commun à toutes ses clés, `/v1` et `/mcp` confondus (décision de
+   * Julien du 2026-09-25) : appels par minute ET par heure, les deux s'appliquent. Un espace peut porter son
+   * propre réglage (`tenant_settings.api_plafond_*`, migration 0181, route `/ops/plafond-api/:tenantId`) ; ces
+   * deux valeurs sont celles des espaces qui n'en ont pas.
+   *
+   * ⚠️ 0 DÉSACTIVE la fenêtre concernée pour les espaces SANS réglage, comme les autres plafonds : c'est le levier
+   * d'urgence. Un réglage d'espace, lui, reste appliqué (il est toujours > 0, CHECK de 0181).
+   * ⚠️ Local au process (`src/auth/plafond-espace.ts`) : le plafond annoncé est celui d'UNE instance.
+   * ⚠️ Il compte des APPELS : le travail (fiches d'un lot, destinataires) est mesuré à part (`usage-guard.ts`).
+   */
+  API_PLAFOND_MINUTE: z.coerce.number().int().min(0).default(PLAFOND_API_DEFAUT.minute),
+  API_PLAFOND_HEURE: z.coerce.number().int().min(0).default(PLAFOND_API_DEFAUT.heure),
   /**
    * LE PRÉ-FILTRE DES CLÉS D'API : ce qu'un porteur NON RÉSOLU peut coûter, par minute.
    *

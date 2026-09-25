@@ -17,8 +17,9 @@ import type { CodeApi } from '../api/erreurs';
  *
  * ⚠️ Il ne sert plus seulement `/auth/login`, et la CLÉ change avec l'appelant, ce qui est tout le sujet :
  * `ip::discriminant` pour les routes d'authentification (`req.ip` seul désignerait le proxy), le CODE pour
- * `/w/:code` et `/rcs/callback/:code` (comptés seulement pour un code résolu), l'EMPREINTE de la clé pour `/v1`
- * (comptée seulement pour une clé résolue), l'`userId` pour le plafond général des routes authentifiées et le
+ * `/w/:code` et `/rcs/callback/:code` (comptés seulement pour un code résolu), l'ESPACE d'une clé résolue pour
+ * `/v1` et `/mcp` (`plafond-espace.ts`), l'EMPREINTE de la clé du relais du Meta Business Agent (comptée
+ * seulement pour une clé résolue), l'`userId` pour le plafond général des routes authentifiées et le
  * `tenantId` pour celui des routes coûteuses. Une clé ou un code INVENTÉ n'entre dans aucune de ces tables : ce
  * sont les budgets COMMUNS, à clé constante (`consommerEnSilence`), qui les freinent avant la base. Le choix de
  * clé décide de QUI partage un quota avec qui, et c'est la seule décision qui compte à l'usage.
@@ -72,10 +73,16 @@ export class RateLimiter {
     return this.max <= 0;
   }
 
-  /** Enregistre une tentative pour `key`. Retourne true si elle est autorisée, false si bloquée. */
-  take(key: string): boolean {
+  /**
+   * Enregistre une tentative pour `key`. Retourne true si elle est autorisée, false si bloquée.
+   *
+   * ⚠️ `max` REMPLACE le plafond du constructeur pour CET appel : c'est ce qui permet au plafond de l'API par
+   * espace (`src/auth/plafond-espace.ts`) de régler un espace sans toucher les autres. Omis, rien ne change.
+   * Il doit être le même à `remaining()` et à `take()` pour une même clé, sinon l'état annoncé ment.
+   */
+  take(key: string, max = this.max): boolean {
     // Désactivé : rien n'est compté, donc la table ne grossit pas non plus.
-    if (this.desactive) return true;
+    if (max <= 0) return true;
     const t = this.now();
     const entry = this.hits.get(key);
     if (!entry || t >= entry.resetAt) {
@@ -89,7 +96,7 @@ export class RateLimiter {
       this.hits.set(key, { count: 1, resetAt: t + this.windowMs });
       return true;
     }
-    if (entry.count >= this.max) return false;
+    if (entry.count >= max) return false;
     entry.count += 1;
     return true;
   }
@@ -109,15 +116,15 @@ export class RateLimiter {
    *  diffèrent, et donne un nombre très négatif que le plancher à 1 seconde masque. L'appelant annonce alors
    *  « réessayez dans 1 seconde » pour une fenêtre d'une minute. La durée d'attente se lit donc sur la même
    *  horloge que la date de reset, et il n'y a qu'un endroit où elle se calcule. */
-  remaining(key: string): { limit: number; remaining: number; resetAt: number; attenteMs: number } {
+  remaining(key: string, max = this.max): { limit: number; remaining: number; resetAt: number; attenteMs: number } {
     const t = this.now();
     const entry = this.hits.get(key);
     if (!entry || t >= entry.resetAt) {
-      return { limit: this.max, remaining: this.max, resetAt: t + this.windowMs, attenteMs: this.windowMs };
+      return { limit: max, remaining: max, resetAt: t + this.windowMs, attenteMs: this.windowMs };
     }
     return {
-      limit: this.max,
-      remaining: Math.max(0, this.max - entry.count),
+      limit: max,
+      remaining: Math.max(0, max - entry.count),
       resetAt: entry.resetAt,
       attenteMs: Math.max(0, entry.resetAt - t),
     };
@@ -185,7 +192,8 @@ export async function consommerEnSilence(
   return false;
 }
 
-async function refuserTropDeRequetes(reply: FastifyReply, attenteMs: number, message: string, code?: CodeApi): Promise<void> {
+/** Le refus de débit, partagé par tous les plafonds (celui de l'API par espace compris) : même `retry-after`, même 429. */
+export async function refuserTropDeRequetes(reply: FastifyReply, attenteMs: number, message: string, code?: CodeApi): Promise<void> {
   reply.header('retry-after', String(Math.max(1, Math.ceil(attenteMs / 1000))));
   await reply.code(429).send(code ? { error: message, code } : { error: message });
 }
@@ -208,19 +216,24 @@ async function refuserTropDeRequetes(reply: FastifyReply, attenteMs: number, mes
  * ⚠️ BORNÉE : au plafond, on oublie la plus ancienne. Les vrais appelants reviennent régulièrement, donc ils se
  * réinscrivent. Ce n'est pas une table indexée sur une valeur que l'appelant choisit : on n'y entre qu'après
  * une résolution réussie.
+ *
+ * ⚠️ ELLE PEUT GARDER CE QUE LA RÉSOLUTION A DIT D'IMMUABLE (`V`) : l'ESPACE d'une clé d'API et son droit de
+ * relais, pour que le plafond de l'espace se prenne AVANT la base sur une clé déjà résolue. Ce n'est toujours pas
+ * un cache de validité : une clé ne change jamais d'espace ni de droits, et la lecture en base a lieu quand même.
  */
-export class ClesResolues {
-  private readonly vues = new Set<string>();
+export class ClesResolues<V = never> {
+  private readonly vues = new Map<string, V | undefined>();
   constructor(private readonly max: number) {}
   connait(cle: string): boolean { return this.vues.has(cle); }
+  /** Ce qui a été retenu avec la clé, `undefined` si elle n'a jamais été résolue (ou rien n'a été retenu). */
+  valeur(cle: string): V | undefined { return this.vues.get(cle); }
   oublier(cle: string): void { this.vues.delete(cle); }
-  retenir(cle: string): void {
-    if (this.vues.has(cle)) return;
-    if (this.vues.size >= this.max) {
-      const plusAncienne = this.vues.values().next().value;
+  retenir(cle: string, valeur?: V): void {
+    if (!this.vues.has(cle) && this.vues.size >= this.max) {
+      const plusAncienne = this.vues.keys().next().value;
       if (plusAncienne !== undefined) this.vues.delete(plusAncienne);
     }
-    this.vues.add(cle);
+    this.vues.set(cle, valeur);
   }
 }
 

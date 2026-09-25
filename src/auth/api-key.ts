@@ -4,7 +4,29 @@ import type { ApiKeyLookup } from './api-key-store.pg';
 import { API_KEY_PREFIX } from './api-key-store.pg';
 import { sha256Hex } from '../lib/signature';
 import { ClesResolues, consommerAvecEntetes, consommerEnSilence, type RateLimiter } from './rate-limit';
+import type { PlafondEspace } from './plafond-espace';
 import { refuser } from '../api/erreurs';
+import { DROIT_RELAIS } from '../mba/cle-relais';
+
+/**
+ * Les deux plafonds d'une clé RÉSOLUE, et une clé n'est comptée que par l'un des deux.
+ *
+ * 🔴 DEUX CHAMPS REQUIS, ET PAS UN LIMITEUR OPTIONNEL POUR LE RELAIS : absent, le relais retomberait dans le
+ * plafond de l'espace sans que rien ne le dise, et l'agent de Meta perdrait ses outils dès qu'un intégrateur
+ * charge l'API. C'est le motif « une capacité câblée sur un consommateur sur deux ».
+ */
+export interface PlafondsCle {
+  /** Le plafond de l'ESPACE, commun à toutes ses clés, `/v1` et `/mcp` confondus (minute ET heure). */
+  readonly espace: PlafondEspace;
+  /** Le compteur PAR CLÉ, réservé à la clé du relais du Meta Business Agent (droit `DROIT_RELAIS`). */
+  readonly relais: RateLimiter;
+}
+
+/** Ce qu'une résolution a dit d'une clé, et qui ne change jamais : son espace, et si c'est la clé du relais. */
+interface CleResolue {
+  readonly tenantId: string;
+  readonly relais: boolean;
+}
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -52,26 +74,38 @@ const CLE_BUDGET_SPECULATIF = 'lookups-speculatifs';
  * tenant (montée indépendamment, comme /ops). Sur succès, pose un `req.auth` SYNTHÉTIQUE avec le rôle
  * dédié `'api'` (JAMAIS 'admin' : les routes /v1 gate par SCOPE via requireScope, pas par rôle) et
  * `req.apiScopes`. Le tenant vient à 100% de la clé résolue (pas d'`:tenantId` dans l'URL /v1).
- * En-têtes x-ratelimit-* sur les réponses COMPTÉES SUR LA CLÉ (succès, et 429 du plafond par clé). Le 401 d'une
- * clé INCONNUE de ce process et le 429 du budget spéculatif commun n'en portent aucun : ce budget n'appartient à
- * personne (`consommerEnSilence`). ⚠️ Une clé déjà résolue puis révoquée prend encore ses en-têtes sur son 401,
- * posés avant la lecture qui la découvre révoquée : ce sont ceux de SA clé, rien d'un autre appelant.
+ * En-têtes x-ratelimit-* sur les réponses COMPTÉES (succès, et 429 du plafond) : ceux de l'ESPACE de la clé, ou
+ * ceux de sa clé pour le relais du Meta Business Agent. Le 401 d'une clé INCONNUE de ce process et le 429 du
+ * budget spéculatif commun n'en portent aucun : ce budget n'appartient à personne (`consommerEnSilence`).
+ * ⚠️ Une clé déjà résolue puis révoquée prend encore ses en-têtes sur son 401, posés avant la lecture qui la
+ * découvre révoquée : ce sont ceux de SON espace, qu'elle connaissait déjà, rien d'un autre espace.
  *
- * 🔴 DEUX PLAFONDS, ET ILS NE SE REMPLACENT PAS. `limiteurMetier` est indexé sur l'EMPREINTE de la clé et ne
- * compte que des clés qui EXISTENT : il borne le travail qu'un porteur demande, et ce qu'il coûte une fois
+ * 🔴 DEUX PLAFONDS, ET ILS NE SE REMPLACENT PAS. `plafonds` ne compte que des clés qui EXISTENT : il borne ce
+ * qu'un ESPACE demande, toutes ses clés confondues (`plafonds.espace`, 2026-09-25), et ce qu'il coûte une fois
  * au-delà. Il ne voit donc PAS une rafale de fausses clés toutes différentes. `prefiltre` borne les LOOKUPS
  * SPÉCULATIFS, c'est-à-dire précisément ce que l'autre ne peut pas voir. Avant le lot du 2026-09-14, une
  * rafale de fausses clés n'était comptée par aucun des deux, et chacune coûtait un SHA-256 et une requête
  * Postgres, sur un budget de 8 connexions partagé avec la console et le worker.
+ *
+ * 🔴 LA CLÉ DU RELAIS DU META BUSINESS AGENT N'ENTRE PAS DANS LE PLAFOND DE L'ESPACE (décision de Julien du
+ * 2026-09-25). Elle garde son compteur PAR CLÉ (`plafonds.relais`, le plafond d'avant) : un intégrateur qui
+ * épuise l'API de l'espace ne doit jamais priver l'agent de Meta de ses outils en pleine conversation. Elle se
+ * reconnaît à son droit `DROIT_RELAIS`, que seule la publication attribue (absent de `VALID_API_SCOPES`) et qui
+ * ne donne accès qu'aux routes du relais : c'est exactement la clé retenue dans `mba_relais_cle_id`, sans lecture
+ * de plus, y compris pendant la publication, quand la clé neuve sert avant d'être retenue.
  *
  * 🔴 `prefiltre` EST OBLIGATOIRE, ET C'EST DÉLIBÉRÉ. Optionnel, il aurait fini par manquer à un
  * appelant, et la protection aurait disparu sans bruit : c'est le motif « une capacité câblée sur un
  * consommateur sur deux », déjà payé plusieurs fois ici. Le désactiver se fait par la CONFIGURATION
  * (`API_KEY_PREFILTRE_MAX=0`), pas en oubliant un argument.
  */
-export function makeRequireApiKey(store: ApiKeyLookup, limiteurMetier: RateLimiter, prefiltre: RateLimiter): PreHandler {
-  // Les empreintes déjà résolues par ce process : elles échappent au budget spéculatif (`ClesResolues`).
-  const connues = new ClesResolues(1000);
+export function makeRequireApiKey(store: ApiKeyLookup, plafonds: PlafondsCle, prefiltre: RateLimiter): PreHandler {
+  // Les empreintes déjà résolues par ce process : elles échappent au budget spéculatif (`ClesResolues`), et
+  // portent l'espace et le droit de relais de leur clé, pour que le plafond se prenne AVANT la base.
+  const connues = new ClesResolues<CleResolue>(1000);
+  const plafonner = (cle: CleResolue, empreinte: string, reply: FastifyReply): Promise<boolean> => (cle.relais
+    ? consommerAvecEntetes(plafonds.relais, empreinte, reply, 'trop de requêtes', 'rate_limited')
+    : plafonds.espace.consommer(cle.tenantId, reply));
   return async function requireApiKey(req: FastifyRequest, reply: FastifyReply): Promise<void> {
     const header = req.headers.authorization;
     const raw = header?.startsWith('Bearer ') ? header.slice(7).trim() : '';
@@ -93,8 +127,9 @@ export function makeRequireApiKey(store: ApiKeyLookup, limiteurMetier: RateLimit
      * coût que ce lot existe pour réduire.
      */
     const empreinte = sha256Hex(raw);
-    // Lue UNE fois : elle décide à la fois du budget spéculatif et du moment où se prend le plafond par clé.
-    const connue = connues.connait(empreinte);
+    // Lue UNE fois : elle décide à la fois du budget spéculatif et du moment où se prend le plafond.
+    const vue = connues.valeur(empreinte);
+    const connue = vue !== undefined;
     /**
      * 🔴 LE BUDGET NE S'APPLIQUE QU'AUX EMPREINTES JAMAIS RÉSOLUES. Un porteur légitime le traverse une
      * seule fois, au premier appel après un démarrage ; ensuite il n'y est plus soumis. Sans cette
@@ -106,13 +141,14 @@ export function makeRequireApiKey(store: ApiKeyLookup, limiteurMetier: RateLimit
      * milliers de requêtes Postgres épargnées.
      *
      * 🔴 EN SILENCE : ce budget est PARTAGÉ par tous les appelants, ses en-têtes n'appartiennent à personne
-     * (`consommerEnSilence`). Les `x-ratelimit-*` qu'un client lit sont ceux de SA clé, posés plus bas.
+     * (`consommerEnSilence`). Les `x-ratelimit-*` qu'un client lit sont ceux de SON espace, posés plus bas.
      */
     if (!connue && !(await consommerEnSilence(prefiltre, CLE_BUDGET_SPECULATIF, reply, 'trop de requêtes', 'rate_limited'))) return;
     /**
-     * 🔴 LE PLAFOND PAR CLÉ NE COMPTE QUE DES CLÉS QUI EXISTENT (2026-09-21, même défaut que sur `/w/:code`
-     * et les rappels RCS). Il se prend donc AVANT la base pour une empreinte déjà résolue, APRÈS pour les
-     * autres, et une seule fois par appel.
+     * 🔴 LE PLAFOND NE COMPTE QUE DES CLÉS QUI EXISTENT (2026-09-21, même défaut que sur `/w/:code` et les
+     * rappels RCS). Il se prend donc AVANT la base pour une empreinte déjà résolue, APRÈS pour les autres, et
+     * une seule fois par appel. Ce qui suit a été écrit quand il était compté par clé ; le raisonnement vaut
+     * tel quel pour le plafond de l'espace, dont l'espace vient de la résolution retenue dans `connues`.
      *
      * Le contre-audit du 2026-09-14 l'avait remonté AVANT la base pour TOUTES les empreintes : compté sur
      * l'identifiant de la clé résolue, chaque 429 d'une clé valide trop pressée payait une requête Postgres.
@@ -130,16 +166,18 @@ export function makeRequireApiKey(store: ApiKeyLookup, limiteurMetier: RateLimit
      * plus une fausse clé RÉPÉTÉE avant la base : ce n'est que ce qu'il faisait déjà pour des fausses clés
      * toutes différentes, chacune ouvrant son propre compteur.
      *
-     * ⚠️ L'EMPREINTE, PAS LA VALEUR, pour la même raison que le budget spéculatif. Seules les empreintes
-     * RÉSOLUES entrent dans `connues`, donc la table de ce limiteur est bornée par le nombre de clés qui
-     * existent, sans plafond de clés (`server.ts`) : un tel plafond y rouvrirait l'éviction.
+     * ⚠️ L'ESPACE D'UNE CLÉ RÉSOLUE, OU L'EMPREINTE DE CELLE DU RELAIS, JAMAIS LA VALEUR, pour la même raison
+     * que le budget spéculatif. Seules les empreintes RÉSOLUES entrent dans `connues`, donc les tables de ces
+     * limiteurs sont bornées par le nombre d'espaces et de clés du relais qui existent, sans plafond de clés
+     * (`server.ts`) : un tel plafond y rouvrirait l'éviction.
      *
-     * ⚠️ CONSÉQUENCE ASSUMÉE : un espace suspendu dont la clé dépasse son plafond reçoit 429 avant de
-     * recevoir 403. Les deux refusent, et le 403 revient dès la fenêtre suivante.
+     * ⚠️ CONSÉQUENCE ASSUMÉE : un espace suspendu au-delà de son plafond reçoit 429 avant de recevoir 403. Les
+     * deux refusent, et le 403 revient dès la fenêtre suivante. Idem pour une clé révoquée déjà connue : son
+     * dernier appel est compté à l'espace avant que la lecture ne la découvre révoquée, puis elle est oubliée.
      *
      * Le lookup reste fait à CHAQUE appel accepté : une révocation prend effet tout de suite.
      */
-    if (connue && !(await consommerAvecEntetes(limiteurMetier, empreinte, reply, 'trop de requêtes', 'rate_limited'))) return;
+    if (vue !== undefined && !(await plafonner(vue, empreinte, reply))) return;
     const found = await store.findActiveByHash(empreinte);
     if (!found) {
       // Elle ne se résout plus (révoquée, ou jamais valide) : elle perd son laissez-passer et repasse
@@ -150,9 +188,10 @@ export function makeRequireApiKey(store: ApiKeyLookup, limiteurMetier: RateLimit
     }
     // Elle a été résolue : elle ne sert pas à sonder. Le lookup reste fait à chaque appel, donc une
     // révocation prend effet tout de suite.
-    connues.retenir(empreinte);
-    // Première résolution dans ce process : le plafond par clé se prend ici, sur une clé qui existe.
-    if (!connue && !(await consommerAvecEntetes(limiteurMetier, empreinte, reply, 'trop de requêtes', 'rate_limited'))) return;
+    const resolue: CleResolue = { tenantId: found.tenantId, relais: found.scopes.includes(DROIT_RELAIS) };
+    connues.retenir(empreinte, resolue);
+    // Première résolution dans ce process : le plafond se prend ici, sur une clé qui existe.
+    if (!connue && !(await plafonner(resolue, empreinte, reply))) return;
     /**
      * 🔴 L'ARRÊT D'URGENCE D'UN ESPACE, ÉTENDU À LA SURFACE PUBLIQUE (tranché par Julien le 2026-09-14).
      * `tenants.status = 'locked'` était lu par la garde de SESSION et par elle seule : un espace suspendu

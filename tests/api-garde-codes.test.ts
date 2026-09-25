@@ -6,6 +6,7 @@ import { compterOuRefuser, type ApiUsageGuard } from '../src/api/usage-guard';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import { cleApiDeTest } from './aide/cle-api';
+import { plafondsDeTest } from './aide/plafonds';
 
 /**
  * LES REFUS DE LA GARDE COMMUNE PORTENT UN CODE (spec du 2026-09-24, § 9).
@@ -36,7 +37,7 @@ const requete = (h?: string): FastifyRequest => ({ headers: h ? { authorization:
 
 describe('la garde de clé', () => {
   it('🔴 clé absente, mal formée ou inconnue : 401 `unauthorized`', async () => {
-    const garde = makeRequireApiKey(new FauxCles(CLE), large(), large());
+    const garde = makeRequireApiKey(new FauxCles(CLE), plafondsDeTest(), large());
     for (const h of [undefined, 'Bearer jwt', `Bearer ${cleApiDeTest('inconnue')}`]) {
       const { reply, state } = fauxReply();
       await garde(requete(h), reply);
@@ -52,8 +53,8 @@ describe('la garde de clé', () => {
     expect(state.body).toEqual({ error: 'scope requis : contacts:read', code: 'missing_scope' });
   });
 
-  it('🔴 plafond par clé : 429 `rate_limited`, avec les MÊMES en-têtes qu’avant', async () => {
-    const garde = makeRequireApiKey(new FauxCles(CLE), new RateLimiter(1, 60_000), large());
+  it('🔴 plafond de l’espace : 429 `rate_limited`, avec les MÊMES en-têtes qu’avant', async () => {
+    const garde = makeRequireApiKey(new FauxCles(CLE), plafondsDeTest({ minute: 1 }), large());
     await garde(requete(`Bearer ${CLE}`), fauxReply().reply);
     const { reply, state } = fauxReply();
     await garde(requete(`Bearer ${CLE}`), reply);
@@ -63,12 +64,13 @@ describe('la garde de clé', () => {
     expect(state.headers['x-ratelimit-remaining']).toBe('0');
   });
 
-  it('🔴 plafond par clé à la PREMIÈRE résolution (clé encore inconnue du process) : 429 `rate_limited` aussi', async () => {
+  it('🔴 plafond de l’espace à la PREMIÈRE résolution (clé encore inconnue de la garde) : 429 `rate_limited` aussi', async () => {
     // Le cas précédent ne passe que par le refus d'une clé DÉJÀ connue ; celui-ci prend l'autre branche,
-    // celle d'une clé résolue pour la première fois, dont le seau est déjà vide.
-    const limiteur = new RateLimiter(1, 60_000);
-    limiteur.take(sha256Hex(CLE));
-    const garde = makeRequireApiKey(new FauxCles(CLE), limiteur, large());
+    // celle d'une clé résolue pour la première fois, dont l'espace a déjà épuisé son plafond. Le plafond est
+    // partagé avec une première garde qui l'a vidé ; la seconde ne connaît pas encore la clé.
+    const plafonds = plafondsDeTest({ minute: 1 });
+    await makeRequireApiKey(new FauxCles(CLE), plafonds, large())(requete(`Bearer ${CLE}`), fauxReply().reply);
+    const garde = makeRequireApiKey(new FauxCles(CLE), plafonds, large());
     const { reply, state } = fauxReply();
     await garde(requete(`Bearer ${CLE}`), reply);
     expect(state.statusCode).toBe(429);
@@ -77,7 +79,7 @@ describe('la garde de clé', () => {
   });
 
   it('budget spéculatif épuisé : 429 `rate_limited`, et toujours AUCUN en-tête x-ratelimit', async () => {
-    const garde = makeRequireApiKey(new FauxCles(CLE), large(), new RateLimiter(1, 60_000));
+    const garde = makeRequireApiKey(new FauxCles(CLE), plafondsDeTest(), new RateLimiter(1, 60_000));
     await garde(requete(`Bearer ${cleApiDeTest('sonde_a')}`), fauxReply().reply);
     const { reply, state } = fauxReply();
     await garde(requete(`Bearer ${cleApiDeTest('sonde_b')}`), reply);

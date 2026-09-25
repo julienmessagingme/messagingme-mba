@@ -184,6 +184,8 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
   receiver: new FakeQueue(),
   // Jeton d'exploitation : l'autorité est `opsToken`, vérifiée avant toute dépendance.
   ops: inconnu('ops'),
+  // Le réglage du plafond de l'API d'un espace : même jeton, module à part (migration 0181). Aucun espace n'existe.
+  plafondApi: inconnu('plafondApi'),
   // Code dans l'adresse : aucun code ne se résout.
   links: inconnu('links'),
   webhookEntrant: inconnuSaufLimiteurs('webhookEntrant', ['limiter', 'budgetInconnus']),

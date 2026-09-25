@@ -4,6 +4,7 @@ import Fastify from 'fastify';
 import { sha256Hex } from '../src/lib/signature';
 import { makeRequireApiKey, requireScope } from '../src/auth/api-key';
 import { RateLimiter } from '../src/auth/rate-limit';
+import { plafondsDeTest } from './aide/plafonds';
 import { GardeUsageMemoire } from '../src/api/usage-guard.memoire';
 import { unitesDe, estLourde } from '../src/api/usage-guard';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
@@ -375,13 +376,13 @@ const CLE_VERROUILLEE = cleApiDeTest('catalogues_verrouillee');
 const LES_TROIS = ['/v1/templates', '/v1/scenarios', '/v1/rcs-messages'] as const;
 
 /**
- * `debitParCle` : le plafond du limiteur par clé (défaut de production : 60 par minute).
+ * `debitParEspace` : le plafond de l'espace par minute (défaut de production : 60, et 1 000 par heure).
  *
  * ⚠️ Chaque espace a SES données (l'espace `t1` celles des cas historiques, les autres des noms qui portent leur
  * espace) : une lecture qui recevrait le mauvais espace rendrait donc des lignes étrangères, pas seulement un
  * appel mal étiqueté.
  */
-function monter(debitParCle = 60) {
+function monter(debitParEspace = 60) {
   const appels: string[] = [];
   const usage = new GardeUsageMemoire();
   const cles = new FaussesCles()
@@ -411,7 +412,7 @@ function monter(debitParCle = 60) {
   const app = Fastify({ logger: false });
   // La VRAIE garde de l'entrée /v1 : la clé, puis le droit. C'est elle, pas un faux, qui pose `req.auth`.
   registerV1Catalogues(app, deps, [
-    makeRequireApiKey(cles, new RateLimiter(debitParCle, 60_000), new RateLimiter(1000, 60_000)),
+    makeRequireApiKey(cles, plafondsDeTest({ minute: debitParEspace }), new RateLimiter(1000, 60_000)),
     requireScope('sends:create'),
   ]);
   return { app, appels, usage };
@@ -505,7 +506,7 @@ describe('les trois routes des catalogues', () => {
     await app.close();
   });
 
-  it('au-delà du débit de la clé : 429 `rate_limited`, et la seconde lecture n’a pas lieu', async () => {
+  it('au-delà du débit de l’espace : 429 `rate_limited`, et la seconde lecture n’a pas lieu', async () => {
     const { app, appels } = monter(1);
     const premier = await app.inject({ method: 'GET', url: '/v1/scenarios', headers: avec(CLE_ENVOIS) });
     const second = await app.inject({ method: 'GET', url: '/v1/scenarios', headers: avec(CLE_ENVOIS) });

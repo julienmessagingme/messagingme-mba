@@ -81,6 +81,8 @@ import { makeRequireAuth, makeRequireRole, makeLimiteParTenant } from './auth/mi
 import type { Guard, PreHandler } from './auth/middleware';
 import { makeRequireApiKey, requireScope } from './auth/api-key';
 import { RateLimiter } from './auth/rate-limit';
+import { PlafondEspace, ReglagesPlafondEnCache, SANS_REGLAGE, type PlafondApiStore } from './auth/plafond-espace';
+import { registerOpsPlafondApi } from './http/ops-plafond-api';
 import { MetaApiError } from './meta/errors';
 import { FlowJsonInvalidError } from './meta/flows';
 import type { AuthRouteDeps } from './auth/routes';
@@ -154,8 +156,16 @@ export interface ServerDeps {
    * Plafonds de débit des routes authentifiées, en appels par minute. Absents -> les valeurs de `config`
    * (`RATE_LIMIT_USER_PAR_MINUTE`, `RATE_LIMIT_COUTEUX_PAR_MINUTE`). 0 désactive le plafond concerné.
    * Injectables pour que les tests puissent viser un plafond bas sans dépendre de l'environnement.
+   * `apiParMinute` et `apiParHeure` : les défauts du plafond de l'API PAR ESPACE (`API_PLAFOND_*`).
    */
-  plafonds?: { utilisateurParMinute?: number; couteuxParMinute?: number };
+  plafonds?: { utilisateurParMinute?: number; couteuxParMinute?: number; apiParMinute?: number; apiParHeure?: number };
+  /**
+   * Le réglage du plafond de l'API par espace (migration 0181). Il sert DEUX consommateurs, et c'est pour ça qu'il
+   * est ici plutôt que dans `v1` ou `ops` : le limiteur de `/v1` et `/mcp` le lit (à travers un cache court), la
+   * route `/ops/plafond-api/:tenantId` l'écrit et vide ce même cache. Absent -> tous les espaces au défaut de la
+   * configuration, et la route n'est pas montée : rien d'offert qui ne ferait rien.
+   */
+  plafondApi?: PlafondApiStore;
   /** Routes CRM/import (enregistrées seulement si fournies -> tests DB-free du receiver). */
   import?: ImportRouteDeps;
   /** Routes campagnes (enregistrées seulement si fournies). */
@@ -435,6 +445,21 @@ function entree<D>(
  * RCS), puis les modules gardés. La table de routes produite est identique au caractère, vérifié.
  */
 export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): readonly ModuleMonte[] {
+  /**
+   * 🔴 LE RÉGLAGE DU PLAFOND DE L'API, UN SEUL CACHE POUR SES DEUX CONSOMMATEURS : le limiteur de `/v1` le lit, la
+   * route d'exploitation le vide après avoir écrit. Deux instances, et un plafond relevé n'aurait pris effet
+   * qu'à l'expiration du cache, sans que rien ne le dise.
+   *
+   * ⚠️ `deps.plafondApi` EST LU ICI, et c'est la clé même de son entrée : le script d'auto-attaque déduit les
+   * modules des clés que ce registre lit en construisant sa liste. Les défauts (`deps.plafonds`), eux, se lisent
+   * dans les closures, au montage.
+   */
+  const sourcePlafond = deps.plafondApi;
+  const reglagesPlafond = new ReglagesPlafondEnCache(sourcePlafond ? (t) => sourcePlafond.lire(t) : async () => SANS_REGLAGE);
+  const defautsPlafond = () => ({
+    minute: deps.plafonds?.apiParMinute ?? config.API_PLAFOND_MINUTE,
+    heure: deps.plafonds?.apiParHeure ?? config.API_PLAFOND_HEURE,
+  });
   return [
     // La réception des webhooks Meta : autorité = la signature du corps, vérifiée dans le module.
     entree('receiver', 'signature-meta', deps.queue, (app, queue) => registerReceiver(app, queue, {
@@ -446,6 +471,10 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
     // ⚠️ LE GARDE D'USAGE EST INJECTÉ DANS `/ops` COMME DANS LES ROUTES `/v1` : c'est la même instance, donc
     // l'écran d'exploitation montre exactement ce que les routes ont compté, sans second exemplaire.
     entree('ops', 'jeton-ops', deps.ops, (app, d) => registerOps(app, { ...d, usage: usageApi }, deps.opsToken ?? config.OPS_TOKEN, deps.surveillanceOps)),
+    // Le réglage du plafond de l'API d'un espace : même autorité que `/ops`, un module à part (migration 0181).
+    entree('plafondApi', 'jeton-ops', deps.plafondApi, (app, d) => registerOpsPlafondApi(
+      app, { store: d, reglages: reglagesPlafond, defauts: defautsPlafond() }, deps.opsToken ?? config.OPS_TOKEN, deps.surveillanceOps,
+    )),
     // Redirection des liens tracés : PUBLIQUE, montée ici avec le webhook et /ops, avant les gardes d'auth.
     // Aucune session n'est possible sur cette route (un destinataire clique depuis WhatsApp).
     entree('links', 'code-url', deps.links, (app, d) => registerLinks(app, d)),
@@ -535,14 +564,19 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
      * API publique /v1 et serveur MCP : UNE SEULE entrée pour tous leurs montages, et c'est délibéré.
      *
      * 🔴 LES TROIS PARTAGENT UNE AUTORITÉ ET UN LIMITEUR, et c'est un invariant, pas une commodité : une
-     * seconde instance de limiteur aurait doublé le quota d'une clé selon la porte empruntée, ce qui
+     * seconde instance de limiteur aurait doublé le quota d'un espace selon la porte empruntée, ce qui
      * n'aurait été visible de personne. Les séparer en trois entrées aurait permis de les monter
      * indépendamment, donc de casser ça sans le voir.
      */
     entree('v1', 'cle-api', deps.v1, (app, v1) => {
-      // Indexé sur l'EMPREINTE de la clé, mais consulté seulement sur des clés RÉSOLUES (`api-key.ts`) : sa
-      // table est bornée par le nombre de clés qui existent. AUCUN plafond de clés, délibérément : des bearers
-      // inventés ne peuvent pas la remplir, et un plafond y rouvrirait l'éviction d'un vrai client.
+      /**
+       * 🔴 LE PLAFOND DE L'ESPACE (2026-09-25) : commun à toutes les clés d'un espace, `/v1` et `/mcp` confondus,
+       * minute ET heure. Indexé sur l'ESPACE d'une clé RÉSOLUE (`api-key.ts`), donc sans plafond de clés.
+       * Le compteur PAR CLÉ ne sert plus qu'au relais du Meta Business Agent, qui n'entre pas dans celui de
+       * l'espace : un intégrateur qui charge l'API ne doit pas couper les outils de l'agent de Meta. Indexé sur
+       * l'EMPREINTE, consulté seulement sur une clé résolue, sans plafond de clés non plus.
+       */
+      const plafondEspace = new PlafondEspace(defautsPlafond(), reglagesPlafond);
       const apiLimiter = new RateLimiter(config.API_KEY_RATE_LIMIT_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS);
       /**
        * 🔴 LE PRÉ-FILTRE : le budget GLOBAL des lookups spéculatifs. Sa clé est une CONSTANTE
@@ -551,7 +585,7 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
        * limiteur portait un plafond de 10 000 clés qui ne pouvait jamais servir.
        */
       const apiPrefiltre = new RateLimiter(config.API_KEY_PREFILTRE_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS);
-      const requireApiKey = makeRequireApiKey(v1.apiKeys, apiLimiter, apiPrefiltre);
+      const requireApiKey = makeRequireApiKey(v1.apiKeys, { espace: plafondEspace, relais: apiLimiter }, apiPrefiltre);
       // DEUX droits, et une clé ne porte que ceux qu'on lui a donnés : lire une fiche (numéro, consentement,
       // joignabilité) n'est pas le droit d'en écrire une, ni l'inverse.
       registerV1Contacts(app, { ...v1.contacts, usage: usageApi }, {
@@ -560,7 +594,7 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
       });
       if (v1.sends) registerV1Sends(app, { ...v1.sends, usage: usageApi }, [requireApiKey, requireScope('sends:create')]);
       // Les catalogues : MÊME droit que les envois, qu'ils servent à construire, et MÊME `requireApiKey`, donc
-      // le même limiteur par clé. Un droit neuf aurait obligé chaque intégrateur à refabriquer sa clé pour
+      // le même plafond d'espace. Un droit neuf aurait obligé chaque intégrateur à refabriquer sa clé pour
       // LIRE ce qu'il a déjà le droit d'envoyer.
       if (v1.catalogues) registerV1Catalogues(app, { ...v1.catalogues, usage: usageApi }, [requireApiKey, requireScope('sends:create')]);
       // MEME droit que les envois, et c'est un elargissement assume : les droits d'une cle se fixent a sa
@@ -570,14 +604,15 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
       // MÊME droit, même limiteur et même garde que le message WhatsApp : c'est le même geste sur un autre canal.
       if (v1.messagesRcs) registerV1MessagesRcs(app, { ...v1.messagesRcs, usage: usageApi }, [requireApiKey, requireScope('sends:create')]);
       // Serveur MCP : MÊME autorité et MÊME limiteur de débit que /v1. Il partage volontairement le
-      // `requireApiKey` déjà construit.
+      // `requireApiKey` déjà construit : ses appels comptent dans le plafond de l'espace, comme ceux de `/v1`.
       //
       // Pas de `requireScope` ici : le serveur MCP a DEUX scopes (lecture, écriture) et c'est l'outil appelé
       // qui décide duquel il a besoin. Un `requireScope` à la porte aurait forcé à en choisir un des deux, et
       // donc soit fermé l'écriture, soit ouvert la lecture aux seules clés qui écrivent.
       if (v1.mcp) registerMcp(app, v1.mcp, [requireApiKey], usageApi);
-      // Le relais du Meta Business Agent : le MÊME `requireApiKey`, donc le même limiteur par clé, et un droit
-      // que seule la publication attribue (`DROIT_RELAIS`, absent de `VALID_API_SCOPES`). La MÊME constante
+      // Le relais du Meta Business Agent : le MÊME `requireApiKey`, qui reconnaît sa clé à son droit et la
+      // compte PAR CLÉ, hors du plafond de l'espace (`api-key.ts`). Ce droit, seule la publication l'attribue
+      // (`DROIT_RELAIS`, absent de `VALID_API_SCOPES`). La MÊME constante
       // que celle qui crée la clé : un littéral recopié ici enverrait tous les appels en 403 le jour où l'un
       // des deux change. Monté ici et pas à part, pour ne pas ouvrir une seconde autorité.
       if (v1.mbaRelais) registerMbaRelais(app, v1.mbaRelais, [requireApiKey, requireScope(DROIT_RELAIS)]);

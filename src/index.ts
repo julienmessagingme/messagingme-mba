@@ -35,6 +35,7 @@ import { PgAuthTokenStore } from './auth/token-store.pg';
 import { verifyGoogleIdToken } from './auth/google';
 import { PgFlowStore } from './flow/store.pg';
 import { PgApiKeyStore } from './auth/api-key-store.pg';
+import { PgPlafondEspaceStore } from './auth/plafond-espace.pg';
 import { upsertContactsFromApi } from './api/contacts-upsert';
 import { creerServiceContactsV1 } from './api/contacts-v1';
 import { PgReachabilityStore } from './rcs/reachability.pg';
@@ -3098,6 +3099,8 @@ async function main(): Promise<void> {
       }),
     },
     opsToken: config.OPS_TOKEN,
+    // Le réglage du plafond de l'API par espace (migration 0181) : lu par le limiteur de `/v1` et `/mcp`, écrit par `/ops`.
+    plafondApi: new PgPlafondEspaceStore(pool),
     support: {
       enabled: !!config.RESEND_API_KEY && !!config.SUPPORT_TO,
       getUserEmail: async (userId) => (await userStore.getById(userId))?.email ?? null,

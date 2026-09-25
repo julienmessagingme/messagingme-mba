@@ -19,6 +19,7 @@ import { validateParamMapping } from '../src/crm/template';
 import { destinataireAvecVariablesInterdites } from '../src/api/variables';
 import { cleIdempotence, DUREE_CLE_IDEMPOTENCE_MS } from '../src/api/idempotence';
 import { STATUT_PAR_CODE, type CodeApi } from '../src/api/erreurs';
+import { PLAFOND_API_DEFAUT } from '../src/auth/plafond-espace';
 import { CODES_ECART } from '../src/api/sends-build';
 import type { FicheApi, ResultatFiche } from '../src/api/contacts-v1';
 import type { SuiviEnvoiApi } from '../src/api/suivi-envoi';
@@ -177,6 +178,10 @@ describe('les bornes affichées sont celles des routes', () => {
     expect(BORNES.destinatairesParEnvoi).toBe(MAX_RECIPIENTS);
     expect(BORNES.ecartsDetailles).toBe(MAX_SKIPPED_REPORT);
     expect(BORNES.dureeIdempotenceHeures * 3_600_000).toBe(DUREE_CLE_IDEMPOTENCE_MS);
+  });
+
+  it('le plafond de l’espace affiché est le défaut de la configuration (minute ET heure)', () => {
+    expect({ minute: BORNES.plafondEspaceMinute, heure: BORNES.plafondEspaceHeure }).toEqual(PLAFOND_API_DEFAUT);
   });
 
   it('longueurs de texte et d’identifiant externe : ce que les validateurs acceptent, pas un caractère de plus', () => {
