@@ -196,7 +196,7 @@ function DocsInner() {
         <p>
           {t(
             `Par défaut ${BORNES.plafondEspaceMinute} requêtes par minute et ${BORNES.plafondEspaceHeure} par heure, par ESPACE : le plafond est commun à toutes les clés de votre espace et au serveur MCP. Un appel compte pour un, quel que soit son volume (un lot de ${BORNES.contactsParLot} fiches est un appel). Chaque réponse comptée porte l’état du compteur le plus proche de son plafond :`,
-            `By default ${BORNES.plafondEspaceMinute} requests per minute and ${BORNES.plafondEspaceHeure} per hour, per WORKSPACE: the limit is shared by all the keys of your workspace and by the MCP server. A call counts as one whatever its size (a batch of ${BORNES.contactsParLot} records is one call). Every counted response carries the state of the counter closest to its limit:`,
+            `By default ${BORNES.plafondEspaceMinute} requests per minute and ${BORNES.plafondEspaceHeure} per hour, per WORKSPACE: the limit is shared by all the keys of your workspace and by the MCP server. A call counts as one whatever its size (sending ${BORNES.contactsParLot} records at once is one call). Every counted response carries the state of the counter closest to its limit:`,
           )}
         </p>
         <Bloc>{`x-ratelimit-limit: ${BORNES.plafondEspaceMinute}\nx-ratelimit-remaining: 57\nx-ratelimit-reset: 1790000000`}</Bloc>
