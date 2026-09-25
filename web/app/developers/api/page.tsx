@@ -195,16 +195,16 @@ function DocsInner() {
       <Section id="debit" titre={t('Débit', 'Rate limit')}>
         <p>
           {t(
-            `Par défaut ${BORNES.debitParCle} requêtes par minute et par clé. Chaque réponse comptée sur votre clé porte l’état de son compteur :`,
-            `By default ${BORNES.debitParCle} requests per minute per key. Every response counted against your key carries its counter state:`,
+            `Par défaut ${BORNES.plafondEspaceMinute} requêtes par minute et ${BORNES.plafondEspaceHeure} par heure, par ESPACE : le plafond est commun à toutes les clés de votre espace et au serveur MCP. Un appel compte pour un, quel que soit son volume (un lot de ${BORNES.contactsParLot} fiches est un appel). Chaque réponse comptée porte l’état du compteur le plus proche de son plafond :`,
+            `By default ${BORNES.plafondEspaceMinute} requests per minute and ${BORNES.plafondEspaceHeure} per hour, per WORKSPACE: the limit is shared by all the keys of your workspace and by the MCP server. A call counts as one whatever its size (a batch of ${BORNES.contactsParLot} records is one call). Every counted response carries the state of the counter closest to its limit:`,
           )}
         </p>
-        <Bloc>{`x-ratelimit-limit: ${BORNES.debitParCle}\nx-ratelimit-remaining: 57\nx-ratelimit-reset: 1790000000`}</Bloc>
+        <Bloc>{`x-ratelimit-limit: ${BORNES.plafondEspaceMinute}\nx-ratelimit-remaining: 57\nx-ratelimit-reset: 1790000000`}</Bloc>
         <p>
           {t('Au dépassement : 429', 'On overflow: 429')} <Code c="rate_limited" />{' '}
           {t(
-            'avec un en-tête retry-after (en secondes). x-ratelimit-reset est l’heure de remise à zéro, en secondes depuis 1970. Une clé inconnue (401) ne porte aucun de ces en-têtes. Le compteur est tenu en mémoire du serveur : il repart à zéro à chaque redéploiement.',
-            'with a retry-after header (seconds). x-ratelimit-reset is the reset time, in seconds since 1970. An unknown key (401) carries none of these headers. The counter is held in server memory: it resets on every redeploy.',
+            'avec un en-tête retry-after (en secondes) : le temps jusqu’à la remise à zéro de la fenêtre pleine, minute ou heure, et le message dit laquelle. Un appel refusé ne compte pas. x-ratelimit-reset est l’heure de remise à zéro, en secondes depuis 1970. Une clé inconnue (401) ne porte aucun de ces en-têtes. Sur demande, un espace peut recevoir un plafond différent. Le compteur est tenu en mémoire du serveur : il repart à zéro à chaque redéploiement.',
+            'with a retry-after header (seconds): the time until the full window, minute or hour, resets, and the message says which. A refused call does not count. x-ratelimit-reset is the reset time, in seconds since 1970. An unknown key (401) carries none of these headers. On request, a workspace can get a different limit. The counter is held in server memory: it resets on every redeploy.',
           )}
         </p>
       </Section>

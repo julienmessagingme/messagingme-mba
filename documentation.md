@@ -1239,17 +1239,19 @@ dès un changement d'IP. Le jeton reste la garde ; au 5e refus dans une fenêtre
 Telegram part, throttlée. 🔴 **Le jeton présenté n'est JAMAIS journalisé** : une tentative est presque toujours
 un secret voisin du vrai.
 
-⚠️ **`/ops` n'est plus en lecture seule, et il porte HUIT écritures.** `POST /ops/observe` (ouvrir une
+⚠️ **`/ops` n'est plus en lecture seule, et il porte NEUF écritures.** `POST /ops/observe` (ouvrir une
 observation), `POST /ops/credits/:tenantId` (recharger le solde prépayé, **la seule écriture d'argent du
 produit**, là précisément pour qu'un client ne puisse pas créditer son propre compte),
 `POST /ops/verrou/:tenantId`, `PATCH /ops/prix`, `DELETE /ops/cle-modele/:tenantId`,
 `POST /ops/pubs/connexion/:tenantId`, `POST /ops/dlq/replay` et `POST /ops/risque/:tenantId` (le balayage
 du risque de désengagement d'un espace, lancé tout de suite : il écrit les fiches, émet les signaux et peut
-déclencher des automations, sous le plafond du JOUR qu'il partage avec la nuit). Compté dans `src/http/ops.ts` le 2026-09-25.
+déclencher des automations, sous le plafond du JOUR qu'il partage avec la nuit), plus
+`PUT /ops/plafond-api/:tenantId` (le plafond de l'API d'un espace), qui vit dans `src/http/ops-plafond-api.ts`.
+Compté dans ces deux fichiers le 2026-09-25.
 
-🔴 **LA NOTE OBLIGATOIRE N'EST PAS UN INVARIANT DE `/ops` : CINQ SUR HUIT L'EXIGENT.** Mesuré route
-par route le 2026-09-23 : `credits`, `verrou`, `prix` et `pubs/connexion` refusent sans note (et `risque`,
-ajoutée le 2026-09-25, aussi) ; `observe`,
+🔴 **LA NOTE OBLIGATOIRE N'EST PAS UN INVARIANT DE `/ops` : SIX SUR NEUF L'EXIGENT.** Mesuré route
+par route le 2026-09-23 : `credits`, `verrou`, `prix` et `pubs/connexion` refusent sans note (et `risque`
+puis `plafond-api`, ajoutées le 2026-09-25, aussi) ; `observe`,
 `cle-modele` et `dlq/replay` acceptent sans. ⚠️ **Cette page a affirmé le contraire le jour même**, en
 corrigeant une liste qui ne citait que deux écritures sur six : la correction a énoncé un invariant
 général à partir des quatre routes qu'elle venait de lire, et elle a en plus oublié la septième

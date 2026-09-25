@@ -1769,7 +1769,7 @@ scénario, comment importer des contacts.
   ⚠️ Trois cas n'ont pas de code, et la documentation les dit : un refus de Meta lui-même (lecture des
   templates, message simple WhatsApp) sort en 422 avec une phrase « Meta: … », une panne sort en 500, et un
   corps qui n'est pas du JSON lisible est refusé avant les règles ou lu comme vide.
-- 🚧 **Plafond de l'API publique, par espace** (codé le 2026-09-25, pas encore déployé) : 60 appels par minute
+- ✅ **Plafond de l'API publique, par espace** (2026-09-25) : 60 appels par minute
   et 1 000 par heure par défaut, communs à toutes les clés de l'espace et au serveur MCP. Un lot de 500 fiches
   compte pour un appel. Au-delà : 429 `rate_limited`, avec `Retry-After` et un message qui dit si c'est la
   minute ou l'heure qui est pleine. L'exploitation peut régler le plafond d'un espace précis sans toucher les
@@ -1786,7 +1786,7 @@ scénario, comment importer des contacts.
   Il est désormais absent de la liste, comme la source de campagne l'était déjà.
 
 - L'espace client est **toujours déduit de la clé** (jamais de l'URL) : une clé ne peut voir ou toucher que les
-  données de son espace. Débit borné par ESPACE, commun à toutes ses clés (ci-dessous).
+  données de son espace. Débit borné par ESPACE, commun à toutes ses clés (ci-dessus).
 - ✅ **Menu « Developers »** (2026-07-20), en bas de la barre latérale de l'onglet **Console**, réservé aux
   admins : **Documentation API** et **Clés d'API** (créer avec un nom et des droits, lister avec date de
   création et dernier appel, révoquer ; la clé en clair ne s'affiche qu'une fois, avec un bouton Copier ; une
