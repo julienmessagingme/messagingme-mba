@@ -29,6 +29,7 @@ function app(over: Partial<AuthRouteDeps> = {}) {
     createTenantWithAdmin: async (name, admin) => { if (admin.email === 'taken@x.fr') throw new DuplicateEmailError(); cap.created.push({ name, email: admin.email }); return { tenantId: 'tNew', userId: 'uNew' }; },
     setPassword: async (userId) => { cap.setPass.push(userId); return true; },
     getPasswordHash: async () => KNOWN_HASH,
+    motDePasseDeLAdresse: async (email) => (email === 'deja@x.fr' ? KNOWN_HASH : email === 'sansmdp@x.fr' ? null : undefined),
     sessionUser: async (uid) => (uid === 'u1' ? { tenantId: 't1', role: 'agent', email: 'invited@x.fr' } : null),
     tokens: { create: async (p, uid) => { cap.tokens.push({ p, uid }); return 'RAWTOKEN'; }, consume: async (_p, raw) => (raw === 'GOOD' ? 'u1' : null) },
     sendEmail: async (e) => { cap.emails.push({ to: e.to, text: e.text }); },
@@ -195,6 +196,42 @@ describe('POST /auth/change-password (connecté)', () => {
     const { server } = app();
     const res = await server.inject({ method: 'POST', url: '/auth/change-password', ...j, payload: { currentPassword: 'x', newPassword: 'nouveaupass1' } });
     expect(res.statusCode).toBe(401);
+    await server.close();
+  });
+});
+
+describe('🔴 POST /auth/signup avec une adresse DÉJÀ connue', () => {
+  // L'inscription réutilise l'identité d'une adresse existante (un deuxième espace, même mot de passe). Sans
+  // vérifier ce mot de passe, n'importe qui s'inscrivait avec l'adresse d'un autre, se rattachait à SON
+  // identité, et le changement de mot de passe écrivait ensuite sur celle-ci : tous ses espaces s'ouvraient.
+  const inscrire = (email: string, password: string) => ({ method: 'POST' as const, url: '/auth/signup', ...j, payload: { workspaceName: 'Espace', email, password } });
+
+  it('refuse sans le bon mot de passe, et ne crée RIEN', async () => {
+    const { server, cap } = app();
+    const res = await server.inject(inscrire('deja@x.fr', 'pas-le-bon-mot-de-passe'));
+    expect(res.statusCode).toBe(409);
+    expect(cap.created).toEqual([]);
+    await server.close();
+  });
+  it('refuse une identité SANS mot de passe (invitation en attente, compte Google)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject(inscrire('sansmdp@x.fr', 'motdepasse-longue'));
+    expect(res.statusCode).toBe(409);
+    expect(cap.created).toEqual([]);
+    await server.close();
+  });
+  it('accepte le propriétaire, qui connaît le mot de passe : un deuxième espace', async () => {
+    const { server, cap } = app();
+    const res = await server.inject(inscrire('deja@x.fr', 'current-pass-123'));
+    expect(res.statusCode).toBe(201);
+    expect(cap.created).toEqual([{ name: 'Espace', email: 'deja@x.fr' }]);
+    await server.close();
+  });
+  it('échoue FERMÉ sans la lecture du mot de passe existant (503, rien de créé)', async () => {
+    const { server, cap } = app({ motDePasseDeLAdresse: undefined });
+    const res = await server.inject(inscrire('nouvelle@x.fr', 'motdepasse-longue'));
+    expect(res.statusCode).toBe(503);
+    expect(cap.created).toEqual([]);
     await server.close();
   });
 });

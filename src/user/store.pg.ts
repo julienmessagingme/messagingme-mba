@@ -54,10 +54,34 @@ export class PgUserStore {
     return r ? { role: r.role, disabled: r.disabled_at !== null, tenantStatus: r.tenant_status } : null;
   }
 
-  /** Hash de mot de passe courant d'un compte (vérification au changement). null si absent/sans mot de passe. */
+  /**
+   * Hash de mot de passe courant d'un compte (vérification au changement). null si absent/sans mot de passe.
+   *
+   * 🔴 LU SUR L'IDENTITÉ, comme la connexion (`PgUserAuthStore.findIdentity`), jamais sur la copie du compte :
+   * `setPassword` écrit sur l'identité, donc vérifier l'ancien mot de passe sur une copie qui divergeait
+   * laissait ce compte changer le mot de passe de TOUTE l'adresse. La copie ne sert qu'aux comptes sans
+   * identité (donnée antérieure à 0072).
+   */
   async getPasswordHash(userId: string): Promise<string | null> {
-    const res = await this.pool.query<{ password_hash: string | null }>(`select password_hash from users where id = $1`, [userId]);
+    const res = await this.pool.query<{ password_hash: string | null }>(
+      `select case when u.identity_id is null then u.password_hash else i.password_hash end as password_hash
+         from users u left join identities i on i.id = u.identity_id
+        where u.id = $1`,
+      [userId],
+    );
     return res.rows[0]?.password_hash ?? null;
+  }
+
+  /**
+   * Le mot de passe de l'IDENTITÉ d'une adresse, pour l'inscription : `undefined` si l'adresse n'a pas
+   * d'identité, `null` si elle en a une sans mot de passe (invitation en attente, compte Google).
+   */
+  async motDePasseDeLAdresse(email: string): Promise<string | null | undefined> {
+    const res = await this.pool.query<{ password_hash: string | null }>(
+      `select password_hash from identities where lower(email) = lower($1)`,
+      [email],
+    );
+    return res.rows.length === 0 ? undefined : res.rows[0]!.password_hash;
   }
 
   /** Profil de l'utilisateur courant (route /me) : email + nom + rôle. null = compte inconnu. */

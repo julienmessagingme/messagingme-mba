@@ -41,6 +41,8 @@ export interface AuthRouteDeps {
   setPassword?(userId: string, hash: string): Promise<boolean>;
   /** Hash de mot de passe courant d'un compte (vérification au changement). null si absent/sans mdp. */
   getPasswordHash?(userId: string): Promise<string | null>;
+  /** Le mot de passe de l'identité d'une adresse : `undefined` = adresse inconnue, `null` = identité sans mot de passe. */
+  motDePasseDeLAdresse?(email: string): Promise<string | null | undefined>;
   /** {tenantId, role, email} d'un compte par id : émettre une session après acceptation d'invitation. */
   sessionUser?(userId: string): Promise<{ tenantId: string; role: string; email: string } | null>;
   /** Client OAuth Google (public) : exposé via GET /auth/config, sert au front pour le bouton. */
@@ -303,7 +305,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
 
   // Inscription LIBRE : crée un nouvel espace + admin, connecte directement.
   app.post('/auth/signup', async (req, reply) => {
-    if (!deps.createTenantWithAdmin) return reply.code(503).send({ error: 'inscription indisponible' });
+    if (!deps.createTenantWithAdmin || !deps.motDePasseDeLAdresse) return reply.code(503).send({ error: 'inscription indisponible' });
     const b = (req.body ?? {}) as { workspaceName?: unknown; email?: unknown; password?: unknown; name?: unknown };
     const email = str(b.email).trim().toLowerCase();
     const password = str(b.password);
@@ -317,6 +319,15 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     if (!EMAIL_RE.test(email)) return reply.code(400).send({ error: 'email invalide' });
     if (!signupLimiter.take(rateKey(req, email))) return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
     if (password.length < MIN_PASSWORD) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_PASSWORD})` });
+    // 🔴 UNE ADRESSE DÉJÀ CONNUE NE S'INSCRIT QU'AVEC SON MOT DE PASSE. L'inscription RÉUTILISE l'identité d'une
+    // adresse existante (un deuxième espace, même mot de passe) : sans cette vérification, n'importe qui
+    // s'inscrivait avec l'adresse d'un autre, se rattachait à SON identité, et le changement de mot de passe
+    // écrivait ensuite sur celle-ci, donc ouvrait tous ses espaces. Une identité sans mot de passe (invitation
+    // en attente, compte Google) ne s'étend pas par ici.
+    const existant = await deps.motDePasseDeLAdresse(email);
+    if (existant !== undefined && (existant === null || !(await verifyPassword(password, existant)))) {
+      return reply.code(409).send({ error: 'un compte existe déjà avec cet email' });
+    }
     try {
       const { tenantId, userId } = await deps.createTenantWithAdmin(workspaceName, { email, name, passwordHash: await hashPassword(password) });
       const token = await signSession({ userId, tenantId, role: 'admin' }, deps.secret);

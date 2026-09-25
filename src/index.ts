@@ -813,6 +813,7 @@ async function main(): Promise<void> {
       setPassword: (userId, hash) => userStore.setPassword(userId, hash),
       touchLastLogin: (userId) => userStore.touchLastLogin(userId),
       getPasswordHash: (userId) => userStore.getPasswordHash(userId),
+      motDePasseDeLAdresse: (email) => userStore.motDePasseDeLAdresse(email),
       sessionUser: (userId) => userStore.getSessionUser(userId),
       tokens: authTokenStore,
       appUrl: config.APP_URL,
