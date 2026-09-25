@@ -93,6 +93,7 @@ export function Modale({
     pile.push(id);
     if (avant.current === undefined) avant.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const retour = avant.current;
+    const noeud = panneau;
     // Un champ `autoFocus` du contenu a déjà pris le focus : on ne le lui vole pas.
     if (panneau.current && !panneau.current.contains(document.activeElement)) panneau.current.focus();
     const auClavier = (e: KeyboardEvent): void => {
@@ -105,6 +106,11 @@ export function Modale({
       window.removeEventListener('keydown', auClavier);
       const i = pile.lastIndexOf(id);
       if (i >= 0) pile.splice(i, 1);
+      // Le panneau encore en place et le focus DEDANS : ce n'est pas une fermeture, c'est le démontage simulé du
+      // mode strict de React en développement. Rendre le focus au déclencheur ferait perdre au « oui » d'une
+      // confirmation, ou à un champ `autoFocus`, le focus qu'il venait de prendre. À la vraie fermeture, le
+      // panneau est déjà retiré du document.
+      if (noeud.current?.contains(document.activeElement)) return;
       if (retour && document.contains(retour)) retour.focus();
     };
   }, [id]);

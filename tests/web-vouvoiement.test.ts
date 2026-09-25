@@ -20,7 +20,13 @@ import ts from 'typescript';
  */
 
 const RACINE = join(__dirname, '..', 'web');
-const EXCEPTIONS = new Set(['lib/mba-outils.ts']);
+/**
+ * Les consignes que `lib/mba-outils.ts` écrit à l'agent de Meta (`quand`, `pasQuand`) s'adressent au MODÈLE, pas au
+ * client : elles restent à l'impératif. Le reste du fichier (titre, aide) est affiché et vouvoie.
+ */
+const CONSIGNES_AU_MODELE = { fichier: 'lib/mba-outils.ts', proprietes: /^(quand|pasQuand)$/ };
+/** `value` n'est technique que sur un champ natif ; sur un composant (`<Field value>`), il est affiché. */
+const CHAMPS_NATIFS = new Set(['option', 'input', 'select', 'textarea']);
 
 function fichiers(dossier: string): string[] {
   const out: string[] = [];
@@ -34,7 +40,7 @@ function fichiers(dossier: string): string[] {
 const rel = (f: string): string => f.slice(RACINE.length + 1).split('\\').join('/');
 
 /** Attributs techniques : leur valeur n'est jamais lue par une personne. */
-const ATTRIBUT_TECHNIQUE = /^(className|key|href|src|type|name|id|role|htmlFor|rel|target|value|defaultValue|testId|variante|taille|nom)$|^data-/;
+const ATTRIBUT_TECHNIQUE = /^(className|key|href|src|type|name|id|role|htmlFor|rel|target|defaultValue|testId|variante|taille|nom)$|^data-/;
 
 /** Le texte français d'un fichier : tout littéral qui n'est ni l'anglais de `t()`, ni une classe, ni un import. */
 function textesFrancais(fichier: string): { ligne: number; texte: string }[] {
@@ -52,7 +58,13 @@ function textesFrancais(fichier: string): { ligne: number; texte: string }[] {
       let technique = false;
       for (let p: ts.Node | undefined = n.parent; p; p = p.parent) {
         if (ts.isImportDeclaration(p) || ts.isExportDeclaration(p)) { technique = true; break; }
-        if (ts.isJsxAttribute(p)) { technique = ATTRIBUT_TECHNIQUE.test(p.name.getText(sf)); break; }
+        if (ts.isPropertyAssignment(p) && rel(fichier) === CONSIGNES_AU_MODELE.fichier && CONSIGNES_AU_MODELE.proprietes.test(p.name.getText(sf))) { technique = true; break; }
+        if (ts.isJsxAttribute(p)) {
+          const nom = p.name.getText(sf);
+          const balise = (p.parent.parent as ts.JsxOpeningLikeElement).tagName.getText(sf);
+          technique = nom === 'value' ? CHAMPS_NATIFS.has(balise) : ATTRIBUT_TECHNIQUE.test(nom);
+          break;
+        }
       }
       if (!anglais && !technique) texte = (n as ts.LiteralLikeNode).text;
     }
@@ -89,7 +101,6 @@ describe('La console vouvoie', () => {
   it('🔴 aucune marque du tutoiement dans le texte français affiché', () => {
     const fautifs: string[] = [];
     for (const f of ['app', 'components', 'lib'].flatMap((d) => fichiers(join(RACINE, d)))) {
-      if (EXCEPTIONS.has(rel(f))) continue;
       for (const { ligne, texte } of textesFrancais(f)) {
         const m = MARQUES.map((r) => texte.match(r)).find((x) => x !== null);
         if (m) fautifs.push(`${rel(f)}:${ligne} « ${m[0].trim()} » dans : ${texte.trim().slice(0, 90)}`);
