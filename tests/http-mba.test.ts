@@ -342,18 +342,22 @@ describe('routes MBA : sites, fichiers, allowlist, bac à sable', () => {
 });
 
 describe('GET /tenants/:tenantId/mba/:phoneNumberId/messages', () => {
-  it('rend le compte et la fenêtre', async () => {
-    const { server } = app({}, { messagesTenus: async () => 87 });
+  it('rend le compte des messages écrits par l’agent, pour CET espace, sans fenêtre', async () => {
+    const appels: unknown[][] = [];
+    const { server } = app({}, { messagesEcrits: async (...args: unknown[]) => { appels.push(args); return 87; } });
     const res = await server.inject({ method: 'GET', url: url('/messages'), ...h(adminTok) });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ messages: 87, jours: 30 });
+    // Plus de `jours` : le compte court depuis toujours, une fenêtre annoncée mentirait.
+    expect(res.json()).toEqual({ messages: 87 });
+    // L'espace vient de la session, jamais de l'URL, et rien d'autre n'est passé (aucune borne de date).
+    expect(appels).toEqual([['t1']]);
     await server.close();
   });
 
   it('🔴 rend null, PAS zéro, quand la dépendance est absente', async () => {
     const { server } = app();
     const res = await server.inject({ method: 'GET', url: url('/messages'), ...h(adminTok) });
-    expect(res.json()).toEqual({ messages: null, jours: 30 });
+    expect(res.json()).toEqual({ messages: null });
     await server.close();
   });
 
@@ -361,7 +365,7 @@ describe('GET /tenants/:tenantId/mba/:phoneNumberId/messages', () => {
     // Le `:phoneNumberId` ne filtre PAS le comptage (`conversations` ne porte aucun numéro) : il ne sert
     // qu'à ce contrôle d'isolation, hérité de `contexte()`. Ce test est là pour qu'on ne le retire pas en
     // croyant qu'il ne sert à rien.
-    const { server } = app({}, { messagesTenus: async () => 87, phoneNumberBelongsToTenant: async () => false });
+    const { server } = app({}, { messagesEcrits: async () => 87, phoneNumberBelongsToTenant: async () => false });
     const res = await server.inject({ method: 'GET', url: url('/messages'), ...h(adminTok) });
     expect(res.statusCode).toBe(404);
     await server.close();

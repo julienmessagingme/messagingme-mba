@@ -1576,10 +1576,10 @@ scénario, comment importer des contacts.
   ou relié ; gris : éteint ; ambre : à terminer ou à regarder, par exemple un compte publicitaire connecté dont le
   compte et la Page restent à choisir, ou un numéro relié que Meta signale), la phrase d'état et, pour la chaîne,
   les publicités et HubSpot, le lien vers leur écran. Les cartes « Numéro WhatsApp » et « Canal RCS » affichent
-  les messages envoyés et reçus sur ce canal ces 30 derniers jours (envois de campagne compris, précisé sous le
-  chiffre ; la carte du numéro compte tout le canal WhatsApp de l'espace ; conversations de test exclues) ; la carte « Chaîne » affiche le nombre total de publications faites depuis la console. Quand
-  l'agent de Meta répond, l'Accueil affiche sous son cadre le nombre de messages échangés dans ses conversations
-  sur 30 jours, avec la même légende que MBA > Paramètres. Un chiffre qu'on n'a pas pu lire ne s'affiche pas, il
+  les messages envoyés et reçus sur ce canal ces 30 derniers jours (envois de campagne compris ; la carte du
+  numéro compte tout le canal WhatsApp de l'espace ; conversations de test exclues) ; la carte « Chaîne » affiche le nombre total de publications faites depuis la console. Quand
+  l'agent de Meta répond, son cadre affiche « Messages écrits par le MBA » : les messages écrits par l'agent de Meta
+  depuis sa mise en service, ni réponses des clients, ni équipe, ni campagnes ; même chiffre dans MBA > Paramètres. Un chiffre qu'on n'a pas pu lire ne s'affiche pas, il
   n'est jamais remplacé par zéro. Éteindre demande une confirmation qui dit ce qui
   s'arrête ; rallumer ne demande rien. Éteindre le numéro le **délie** de l'espace (plus aucun message WhatsApp ne
   part ; les campagnes qui ont un étage WhatsApp, repli compris, passent en pause, les campagnes uniquement RCS

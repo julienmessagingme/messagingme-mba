@@ -1678,7 +1678,7 @@ async function main(): Promise<void> {
       // compte n'était pas encore arrivé au moment du clic.
       numeroDuTenant: (tenant) => repo.getTenantPhoneNumberId(tenant),
       ecrireDrapeauMba: (tenant, enabled) => settingsStore.setMbaEnabled(tenant, enabled),
-      messagesTenus: (tenant, jours) => statsStore.messagesTenusParMba(tenant, jours),
+      messagesEcrits: (tenant) => statsStore.messagesEcritsParMba(tenant),
     },
     // Agents IA, en lecture : la palette du builder a besoin de la liste pour proposer le bloc.
     agents: {

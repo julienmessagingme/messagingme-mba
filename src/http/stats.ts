@@ -148,9 +148,9 @@ export interface StatsRouteDeps {
 
 /**
  * La fenêtre des volumes par canal : la même que la rangée « 30 derniers jours » de l'Accueil, qu'elles
- * côtoient. ⚠️ GLISSANTE (maintenant moins 30 fois 24 h), comme le chiffre de l'agent de Meta posé sur la
- * même page (`JOURS_MESSAGES`), et non en jours civils de Paris comme la rangée : l'écart tient en quelques
- * heures, et la carte ne se lit pas contre elle (les modèles y sont comptés, pas dans « Messages échangés »).
+ * côtoient. ⚠️ GLISSANTE (maintenant moins 30 fois 24 h), et non en jours civils de Paris comme la rangée :
+ * l'écart tient en quelques heures, et la carte ne se lit pas contre elle (les modèles y sont comptés, pas dans
+ * « Messages échangés »).
  */
 export const JOURS_VOLUMES = 30;
 

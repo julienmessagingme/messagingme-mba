@@ -1641,9 +1641,16 @@ Ajouté par le lot 4 de l'API publique :
    « Messages échangés », qui exclut les modèles sortants : sans eux, un espace qui ne fait que des campagnes lirait
    « 3 envoyés » après 5 000 messages. La console ne lit la réponse que par `lireVolumesCanaux`
    (`web/lib/chiffres-canaux.ts`), qui rend `null` sur toute forme inattendue : la carte n'affiche alors rien,
-   jamais un zéro inventé. La légende du chiffre des conversations de l'agent de Meta vit dans un seul composant,
-   `ChiffreMessagesTenus` (`web/components/EnteteAgent.tsx`), partagé par MBA > Paramètres, l'Accueil et Agents IA ;
-   il reçoit `{ messages, jours }` (`lireMessagesTenus`) et la légende cite `jours`.
+   jamais un zéro inventé. Le chiffre de l'agent de Meta : `GET /tenants/:tenantId/mba/:phoneNumberId/messages` rend
+   `{ messages }`, le nombre de messages `direction = 'out'` dont l'origine effective (`ORIGINE_EFFECTIVE_SQL`) vaut
+   `mba`, sur les fils non test de l'espace (`c.tenant_id = $1`), sans borne de date
+   (`PgStatsStore.messagesEcritsParMba`) ; `messages: null` quand la dépendance n'est pas câblée, jamais 0 ;
+   `direction = 'out'` tient le prédicat de l'index partiel `conversation_messages_origin_idx` (0099). Il s'affiche
+   par `ChiffreMessagesTenus` (`web/components/EnteteAgent.tsx`) en mode MBA (`mba: true`, libellé seul), dans le
+   cadre de l'agent de Meta de l'Accueil et dans MBA > Paramètres ; l'agent IA garde `{ messages, jours }` et sa
+   légende. La colonne des dossiers de l'Inbox mesure `calc(theme(spacing.60) + theme(spacing.px))` et part du bord,
+   pour que sa bordure tombe sous le séparateur de l'entête (`lg:w-60` puis `w-px`, `AppShell`) ;
+   `inbox-dossiers.spec.ts` le mesure.
 41. **Le nom de l'espace** : `GET /tenants/:tenantId/nom` rend `{ nom }`, `PATCH` avec `{ nom }` le change. Les deux
    vivent dans le module `admin` (`src/http/users.ts`, monté avec `g.admin`) : `scopeTenant` et la garde admin du
    groupe, un agent ou un manager reçoit 403. Validation par `nomEspace` (`src/user/nom-espace.ts`), partagée avec

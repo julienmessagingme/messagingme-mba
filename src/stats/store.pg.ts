@@ -708,56 +708,37 @@ export class PgStatsStore {
   }
 
   /**
-   * Les messages échangés dans les conversations que l'agent de Meta a tenues sur la fenêtre.
+   * Les messages ÉCRITS par l'agent de Meta, depuis toujours (Julien, 2026-09-25) : ni les réponses du client,
+   * ni l'équipe, ni les campagnes, et aucune borne de date. Il remplace le compte de TOUT le fil des
+   * conversations que l'agent avait tenues sur 30 jours, qu'il fallait flanquer d'une légende pour ne pas être
+   * lu comme le travail de l'agent : ce chiffre-ci EST ce travail, et se passe de légende.
    *
    * 🔴 LE FRAGMENT D'ORIGINE S'IMPORTE, IL NE SE RECOPIE PAS (règle « Modules partagés » du CLAUDE.md).
-   * `ORIGINE_EFFECTIVE_SQL` attend l'alias `m` pour `conversation_messages` : c'est pour ça que le
-   * sous-select nomme sa table `m` et que la requête extérieure nomme la sienne `msg`. Inverser les deux
-   * produit un SQL invalide, et recopier le fragment ferait diverger ce chiffre de la ventilation du
-   * Performance Lab au premier changement de règle d'origine.
+   * `ORIGINE_EFFECTIVE_SQL` attend l'alias `m` pour `conversation_messages`. Le recopier ferait diverger ce
+   * chiffre de la ventilation du Performance Lab au premier changement de règle d'origine.
    *
    * 🔴 DEUX FAÇONS DE POSER L'ORIGINE `mba`, et le fragment couvre les deux : la colonne `origin = 'mba'`
    * écrite depuis la migration 0099, et la dérivation `when m.type = 'mba'` pour l'historique d'avant.
    * C'est exactement pourquoi on ne teste pas `m.origin = 'mba'` à la main.
    *
-   * ⚠️ `not c.is_test` (et `tenant_id = $1`) DES DEUX CÔTÉS, ET C'EST UNE REDONDANCE, PAS UNE NÉCESSITÉ
-   * DOUBLE. Le sous-select et la requête extérieure filtrent la MÊME ligne de `conversations` (le sous-select
-   * désigne un `conversation_id`, l'extérieur le rejoint sur `c.id = msg.conversation_id`) : retirer l'un des
-   * deux filtres ne changerait RIEN au résultat, l'autre exclut déjà la conversation. Gardée quand même en
-   * ceinture et bretelles : si le sous-select est réécrit demain (jointure ajoutée, condition déplacée), la
-   * garde extérieure continue de protéger le compte sans qu'on ait à s'en souvenir. Aucun test ne peut
-   * prouver qu'un côté est indépendamment nécessaire ici, ni ne le pourra jamais (les deux filtrent la même
-   * ligne) : c'est précisément pour ça que cette propriété est écrite en commentaire plutôt que confiée à un
-   * test.
+   * 🔴 `c.tenant_id = $1` EST LE SEUL CONTRÔLE D'ISOLATION : `conversation_messages` ne porte pas l'espace, il
+   * l'hérite de son fil, et la RLS est contournée en production. `not c.is_test` écarte le bac à sable.
    *
-   * 🔴 `m.direction = 'out'` DANS LE SOUS-SELECT, ET IL NE CHANGE AUCUN RÉSULTAT : le fragment ne rend `mba`
-   * que sur un sortant (la colonne `origin` n'est écrite que par les chemins d'ENVOI, et la dérivation
-   * `m.type = 'mba'` désigne un message de l'agent). Ce qu'il achète est le CONTRAT DE L'INDEX PARTIEL :
-   * `conversation_messages_origin_idx` (migration 0099) est posé `where direction = 'out'`, et une requête
-   * qui ne le dit pas sort de son prédicat, donc du plan qu'il sert, sans qu'aucune erreur ne le signale.
-   * C'est la règle « un index partiel est un contrat avec une requête précise » du CLAUDE.md, appliquée à
-   * l'endroit où l'agrégat voisin (`serviceParOrigine`) l'appliquait déjà. La requête EXTÉRIEURE, elle, ne
-   * le porte pas et ne doit pas le porter : elle compte les DEUX sens, c'est tout l'objet de la mesure.
+   * 🔴 `m.direction = 'out'` NE CHANGE AUCUN RÉSULTAT (le fragment ne rend `mba` que sur un sortant), mais il
+   * achète le CONTRAT DE L'INDEX PARTIEL : `conversation_messages_origin_idx` (migration 0099) est posé
+   * `where direction = 'out'`, et une requête qui ne le dit pas sort de son prédicat, donc du plan qu'il sert,
+   * sans qu'aucune erreur ne le signale (règle « un index partiel est un contrat avec une requête précise »).
    */
-  async messagesTenusParMba(tenantId: string, jours: number): Promise<number> {
+  async messagesEcritsParMba(tenantId: string): Promise<number> {
     const { rows } = await this.pool.query<{ n: string }>(
       `select count(*)::text as n
-         from conversation_messages msg
-         join conversations c on c.id = msg.conversation_id
+         from conversation_messages m
+         join conversations c on c.id = m.conversation_id
         where c.tenant_id = $1
           and not c.is_test
-          and msg.created_at > now() - make_interval(days => $2)
-          and msg.conversation_id in (
-            select m.conversation_id
-              from conversation_messages m
-              join conversations cv on cv.id = m.conversation_id
-             where cv.tenant_id = $1
-               and not cv.is_test
-               and m.direction = 'out'
-               and m.created_at > now() - make_interval(days => $2)
-               and ${ORIGINE_EFFECTIVE_SQL} = 'mba'
-          )`,
-      [tenantId, jours],
+          and m.direction = 'out'
+          and ${ORIGINE_EFFECTIVE_SQL} = 'mba'`,
+      [tenantId],
     );
     return Number(rows[0]?.n ?? 0);
   }

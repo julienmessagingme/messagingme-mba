@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { JOURS_MESSAGES } from '../src/http/mba';
-import { JOURS_CONSOMMATION } from '../src/http/agents';
 
 /**
  * L'EN-TÊTE NE DOIT JAMAIS AFFICHER UN ZÉRO QU'IL N'A PAS MESURÉ.
@@ -57,24 +55,14 @@ describe('EnteteAgent', () => {
 });
 
 /**
- * 🔴 LE NOMBRE 30 EST ÉCRIT À PLUSIEURS ENDROITS, ET RIEN NE LES TENAIT ENSEMBLE.
+ * LA FENÊTRE DU CHIFFRE D'UN AGENT IA (`{ messages, jours }`), lue avec le chiffre (`lireMessagesTenus`) et
+ * CITÉE par la légende : ce test vérifie que la légende la cite, et qu'aucun nombre de jours écrit en dur ne
+ * revient.
  *
- * Deux constantes serveur portent la fenêtre du chiffre de l'en-tête : `JOURS_MESSAGES` pour l'agent de Meta,
- * `JOURS_CONSOMMATION` pour un agent IA. Elles doivent rester ÉGALES, parce que les deux nombres se lisent
- * dans le même dessin sous le même mot, et parce que la consommation d'un agent IA s'affiche à deux onglets
- * de son compte de messages. « La même que » était écrit en prose dans les deux fichiers, donc vérifié par
- * personne.
- *
- * ✅ LE TEXTE DE L'EN-TÊTE N'EST PLUS UNE TROISIÈME COPIE (relecture du 2026-09-25). La fenêtre est RENDUE par
- * le serveur (`{ messages, jours }`), lue avec le chiffre (`lireMessagesTenus`) et CITÉE par la légende : le
- * « passage en prop » que ce test attendait est fait. Il vérifie désormais que la légende la cite, et qu'aucun
- * nombre de jours écrit en dur ne revient.
+ * ⚠️ L'agent de Meta n'a plus de fenêtre depuis le 2026-09-25 (les messages qu'il a ÉCRITS, depuis toujours) :
+ * `JOURS_MESSAGES` a disparu, et avec lui l'égalité qu'il fallait tenir avec `JOURS_CONSOMMATION`.
  */
 describe('la fenêtre du chiffre', () => {
-  it('🔴 les deux constantes serveur sont ÉGALES', () => {
-    expect(JOURS_MESSAGES).toBe(JOURS_CONSOMMATION);
-  });
-
   it('🔴 la légende CITE la fenêtre rendue par le serveur, dans les deux langues', () => {
     expect(SRC).toContain('sur ${jours} jours');
     expect(SRC).toContain('over ${jours} days');

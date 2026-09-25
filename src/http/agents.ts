@@ -15,12 +15,8 @@ import type { ConsommationAgent } from '../agent/session-store';
  * La fenetre du suivi de consommation. Trente jours : assez pour voir une tendance, assez court pour que
  * l'index `(tenant_id, created_at desc)` serve la requete.
  *
- * ⚠️ EXPORTÉE POUR ÊTRE COMPARÉE, pas pour être importée par un appelant. Elle doit rester ÉGALE à
- * `JOURS_MESSAGES` (`src/http/mba.ts`) : les deux chiffres se lisent dans le même en-tête, sous le même mot
- * « 30 jours », et deux fenêtres différentes y raconteraient deux durées. Les fondre en une constante
- * partagée ferait dépendre le module des agents IA de celui de l'agent de Meta, qui n'ont rien à voir ;
- * `tests/web-entete-agent-parite.test.ts` exige donc leur égalité, et que le texte de l'en-tête porte ce
- * nombre-là.
+ * ⚠️ Elle n'a plus de jumelle côté agent de Meta : son chiffre compte, depuis le 2026-09-25, les messages
+ * ÉCRITS par l'agent depuis toujours, sans fenêtre.
  */
 export const JOURS_CONSOMMATION = 30;
 

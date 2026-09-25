@@ -59,7 +59,7 @@ export interface MbaRouteDeps {
   /** Récupère une page pour l'import de FAQ depuis une URL. Injecté pour rester testable sans réseau. */
   fetchUrl?(url: string): Promise<PageDistante>;
   /**
-   * Les messages échangés dans les conversations que l'agent de Meta a tenues, sur une fenêtre de N jours.
+   * Les messages ÉCRITS par l'agent de Meta, depuis toujours (`PgStatsStore.messagesEcritsParMba`).
    *
    * ⚠️ PAR ESPACE, PAS PAR NUMÉRO, et ce n'est pas un raccourci : `conversations` ne porte aucun
    * `phone_number_id` (migration 0009), sa clé métier est `(tenant_id, wa_id)`. Le produit refusant par
@@ -69,19 +69,8 @@ export interface MbaRouteDeps {
    * ⚠️ OPTIONNELLE : `MbaRouteDeps` ne donne aujourd'hui AUCUN accès à la base, et les fixtures de test
    * bouchonnent l'objet entier. L'écran sait ne rien afficher quand le chiffre manque.
    */
-  messagesTenus?(tenantId: string, jours: number): Promise<number>;
+  messagesEcrits?(tenantId: string): Promise<number>;
 }
-
-/**
- * La fenêtre du chiffre de l'en-tête. La même que celle de la consommation d'un agent IA, pour que les deux
- * écrans ne racontent pas deux durées différentes sous le même mot.
- *
- * ⚠️ EXPORTÉE POUR ÊTRE COMPARÉE, pas pour être importée : elle doit rester ÉGALE à `JOURS_CONSOMMATION`
- * (`src/http/agents.ts`), et c'est `tests/web-entete-agent-parite.test.ts` qui l'exige, avec le nombre écrit
- * dans le texte de `EnteteAgent.tsx`. Rien ne le vérifiait : « la même que » était une phrase, et ce dépôt a
- * une longue liste de nombres recopiés qui ont dérivé.
- */
-export const JOURS_MESSAGES = 30;
 
 /** Au-delà, ce n'est plus un import de FAQ : Meta prévient qu'« a few hundred » dégrade déjà les réponses. */
 const MAX_IMPORT = 500;
@@ -249,7 +238,7 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
   });
 
   /**
-   * Combien de messages ont été échangés dans les conversations que l'agent de Meta a tenues.
+   * Combien de messages l'agent de Meta a ÉCRITS, depuis toujours. Pas de fenêtre, donc pas de `jours`.
    *
    * ⚠️ `messages: null` QUAND ON NE SAIT PAS, jamais 0. Un zéro affirmerait que l'agent n'a parlé à
    * personne, ce qui est une information FAUSSE présentée comme une mesure.
@@ -257,11 +246,8 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
   app.get(`${base}/messages`, g, async (req, reply) => {
     const ctx = await contexte(req, reply, deps);
     if (!ctx) return;
-    if (!deps.messagesTenus) return reply.code(200).send({ messages: null, jours: JOURS_MESSAGES });
-    return reply.code(200).send({
-      messages: await deps.messagesTenus(ctx.tenant, JOURS_MESSAGES),
-      jours: JOURS_MESSAGES,
-    });
+    if (!deps.messagesEcrits) return reply.code(200).send({ messages: null });
+    return reply.code(200).send({ messages: await deps.messagesEcrits(ctx.tenant) });
   });
 
   /**
