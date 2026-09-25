@@ -13,6 +13,8 @@ import {
 import { lireGabarit, pastillesDe } from '@/lib/gabarit-pastilles';
 import { lireChemin } from '@/lib/chemin-relatif';
 import { Bouton } from '@/components/Bouton';
+import { erreurDeChargement } from '@/lib/http';
+import { Icone } from '@/components/Icone';
 
 /**
  * METTRE AU POINT UN APPEL vers le système du client, et l'ÉPROUVER avant de l'ouvrir aux agents.
@@ -91,7 +93,7 @@ export function RequetesConnecteur({ tenantId, sources, sourceFiltre }: {
       setChamps(Array.isArray(r?.champs) ? r.champs : []);
       setCatalogue(r?.catalogue ?? { contact: [], systeme: [], entetesReserves: [] });
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
+      setErreur(erreurDeChargement(err, t));
     }
   }, [tenantId, t]);
   useEffect(() => { void charger(); }, [charger]);
@@ -131,8 +133,8 @@ export function RequetesConnecteur({ tenantId, sources, sourceFiltre }: {
         <h2 className="text-base font-semibold text-ink-900">{t('Appels API', 'API calls')}</h2>
         <p className="mt-1 text-sm text-ink-500">
           {t(
-            'Mettez un appel au point une fois, éprouvez-le avec le bouton Essayer, puis ouvrez-le à vos agents dans leur onglet Outils. Un même appel sert à plusieurs agents.',
-            'Set up a call once, test it with the Try button, then open it to your agents in their Tools tab. The same call serves several agents.',
+            'Un appel se règle une fois, s’éprouve avec « Essayer », puis se donne à un ou plusieurs agents dans leur onglet Outils.',
+            'A call is set up once, tested with “Try”, then given to one or more agents in their Tools tab.',
           )}
         </p>
       </div>
@@ -231,8 +233,8 @@ function NouvelleRequete({ tenantId, sources, champs, catalogue, busy, sourcePar
 
   if (!ouvert) {
     return (
-      <button data-testid="requete-nouvelle" onClick={() => { setBrouillon(vide(defaut)); setOuvert(true); }} className="self-start text-sm text-brand-600 hover:underline">
-        {t('+ un appel', '+ a call')}
+      <button data-testid="requete-nouvelle" onClick={() => { setBrouillon(vide(defaut)); setOuvert(true); }} className="inline-flex items-center gap-1 self-start text-sm text-brand-600 hover:underline">
+        <Icone nom="ajouter" />{t('Ajouter un appel', 'Add a call')}
       </button>
     );
   }
@@ -615,9 +617,9 @@ function OngletVariables({ brouillon, maj, champs, catalogue }: {
       <button
         data-testid="var-ajouter"
         onClick={() => maj({ variables: [...brouillon.variables, { nom: '', type: 'string', origine: { type: 'modele' } }] })}
-        className="self-start text-xs text-brand-600 hover:underline"
+        className="inline-flex items-center gap-1 self-start text-xs text-brand-600 hover:underline"
       >
-        {t('+ une donnée', '+ a piece of data')}
+        <Icone nom="ajouter" taille="petite" />{t('Ajouter une donnée', 'Add a piece of data')}
       </button>
     </div>
   );
@@ -782,8 +784,8 @@ function Paires({ lignes, onChange, libelles, testidPrefixe, cible }: {
       ))}
       </div>
       </div>
-      <button data-testid={`${testidPrefixe}-ajouter`} onClick={() => onChange([...lignes, { cle: '', valeur: '' }])} className="self-start text-xs text-brand-600 hover:underline">
-        {t('+ une ligne', '+ a line')}
+      <button data-testid={`${testidPrefixe}-ajouter`} onClick={() => onChange([...lignes, { cle: '', valeur: '' }])} className="inline-flex items-center gap-1 self-start text-xs text-brand-600 hover:underline">
+        <Icone nom="ajouter" taille="petite" />{t('Ajouter une ligne', 'Add a line')}
       </button>
     </div>
   );
@@ -816,8 +818,8 @@ function OngletReponse({ brouillon, maj, resultat }: {
         */}
       <MbaNotice kind="warning">
         {t(
-          'Ce que vous cochez ici est le DÉFAUT proposé quand vous donnerez cet appel à un agent : chacun recoche pour lui, et seuls ses champs à lui partent chez le fournisseur du modèle. Changer ce défaut ne touche aucun agent déjà en service.',
-          'What you tick here is the DEFAULT offered when you give this call to an agent: each one ticks its own, and only its own fields reach the model provider. Changing this default does not affect any agent already in service.',
+          'Ce que vous cochez ici est le défaut proposé quand vous donnerez cet appel à un agent : chacun recoche pour lui, et seuls ses champs à lui partent chez le fournisseur du modèle. Changer ce défaut ne touche aucun agent déjà en service.',
+          'What you tick here is the default offered when you give this call to an agent: each one ticks its own, and only its own fields reach the model provider. Changing this default does not affect any agent already in service.',
         )}
       </MbaNotice>
 

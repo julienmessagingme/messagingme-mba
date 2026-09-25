@@ -132,7 +132,7 @@ test.describe('Connecteurs : mettre au point un appel', () => {
     // Et l'onglet dit qu'il ne pose qu'un DÉFAUT, pas ce que l'agent verra.
     await page.getByTestId('onglet-reponse').click();
     await expect(page.getByTestId('requete-nouvelle-form').or(page.locator('body')))
-      .toContainText(/DÉFAUT proposé|DEFAULT offered/);
+      .toContainText(/défaut proposé|default offered/);
   });
 
   test('🔴 les pastilles se voient AVANT d’avoir déclaré la moindre donnée', async ({ page }) => {

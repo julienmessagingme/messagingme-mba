@@ -128,8 +128,8 @@ export function MbaFaqImportPanel({ tenantId, phoneNumberId, onImported }: {
         <h3 className="text-sm font-semibold text-ink-900">{t('Charger des questions en lot', 'Bulk load questions')}</h3>
         <p className="mt-1 text-xs leading-relaxed text-ink-500">
           {t(
-            'Vos questions existent déjà quelque part : un tableur, une page de site. Chargez-les ici. Rien n’est écrit avant que vous ayez vu ce qui va l’être, et relancer la même source ne crée pas de doublon.',
-            'Your questions already exist somewhere: a spreadsheet, a page on your site. Load them here. Nothing is written before you have seen what will be, and re-running the same source creates no duplicates.',
+            'Depuis un tableur ou une page de site. Rien n’est écrit avant que vous l’ayez vu, et relancer la même source ne crée pas de doublon.',
+            'From a spreadsheet or a web page. Nothing is written before you have seen it, and re-running the same source creates no duplicates.',
           )}
         </p>
       </div>

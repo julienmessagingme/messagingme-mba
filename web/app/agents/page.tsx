@@ -22,10 +22,10 @@ import { AgentConstruction } from '@/components/AgentConstruction';
 import { AgentTest } from '@/components/AgentTest';
 import { HistoriquePanel } from '@/components/HistoriquePanel';
 import { appliquerProposition, lireBandeaux, lireSuggestions, manquesDe, type ManqueFiche } from '@/lib/api-agent-setup';
-import { ApiError } from '@/lib/http';
+import { ApiError, erreurDeChargement } from '@/lib/http';
 import { consommationAgent, listerModeles, messagesAgent, type ConsommationAgent, type ModeleProposable } from '@/lib/api-agent';
 import type { MessagesTenus } from '@/lib/chiffres-canaux';
-import { fmtCost } from '@/lib/format';
+import { fmtCost, fmtNum } from '@/lib/format';
 import type { Locale } from '@/lib/locale';
 import { Bouton } from '@/components/Bouton';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
@@ -119,7 +119,7 @@ function Ecran({ tenantId }: { tenantId: string }) {
       setAgents(await listAgents(tenantId, { tous: true }));
       setSolde(await getSoldeAgent(tenantId));
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
+      setErreur(erreurDeChargement(err, t));
     }
   }, [tenantId, t]);
   useEffect(() => { void charger(); }, [charger]);
@@ -249,10 +249,10 @@ function Ecran({ tenantId }: { tenantId: string }) {
    */
   async function supprimer(cible: { id: string; label: string }) {
     if (busy) return;
-    // Confirmation NATIVE : la suppression emporte les conversations, les outils et la base de connaissance
-    // de cet agent, et le repo n'a pas de boîte de dialogue maison.
+    // Confirmation en FENÊTRE (`useConfirmation`), pas sur place : la suppression emporte les conversations,
+    // les outils et la base de connaissance de cet agent, une conséquence à lire avant de décider.
     if (!(await confirmer({ titre: t('Supprimer l’agent', 'Delete the agent'), message: t(
-      `Supprimer « ${cible.label} » ? Ses conversations, ses outils et sa base de connaissance partent avec lui, et les blocs de scénario qui l'utilisent cesseront de répondre.`,
+      `Supprimer « ${cible.label} » ? Ses conversations, ses outils et sa base de connaissance partent avec lui, et les blocs de scénario qui l’utilisent cesseront de répondre.`,
       `Delete “${cible.label}”? Its conversations, tools and knowledge base go with it, and the scenario blocks using it will stop answering.`,
     ), confirmer: t('Supprimer', 'Delete') }))) return;
     setBusy(true);
@@ -465,8 +465,8 @@ function Ecran({ tenantId }: { tenantId: string }) {
         <TitrePage>{t('Vos agents', 'Your agents')}</TitrePage>
         <IntroPage>
           {t(
-            'Un agent tient une conversation sur plusieurs tours, là où vous posez un bloc « Agent IA » dans un scénario. Il ne répond nulle part ailleurs.',
-            'An agent holds a conversation over several turns, wherever you place an “AI agent” block in a scenario. It answers nowhere else.',
+            'Un agent ne répond que là où vous posez un bloc « Agent IA » dans un scénario.',
+            'An agent only answers where you place an “AI agent” block in a scenario.',
           )}
         </IntroPage>
       </div>
@@ -652,7 +652,7 @@ function OngletIdentite({ agent, busy, onSave }: { agent: AgentComplet; busy: bo
     <div className={`${cardCls} flex flex-col gap-4`}>
       <Champ
         testId="agent-label" busy={busy} label={t('Nom interne', 'Internal name')}
-        aide={t('Ce que VOUS voyez dans la liste et dans le builder. Le contact ne le voit jamais.', 'What YOU see in the list and in the builder. The contact never sees it.')}
+        aide={t('Ce que vous voyez dans la liste et dans le builder. Le contact ne le voit jamais.', 'What you see in the list and in the builder. The contact never sees it.')}
         valeur={agent.label} onSave={(v) => onSave({ label: v })}
       />
       <Champ
@@ -672,8 +672,8 @@ function OngletIdentite({ agent, busy, onSave }: { agent: AgentComplet; busy: bo
       <Champ
         testId="agent-mention" busy={busy} multi label={t('Mention d’IA', 'AI disclosure')}
         aide={t(
-          'La phrase qui annonce que l’interlocuteur parle à une IA. Elle ne peut pas être vide ; c’est le réglage ci-dessous qui décide QUAND elle est dite.',
-          'The sentence telling the contact they are talking to an AI. It cannot be empty; the setting below decides WHEN it is said.',
+          'La phrase qui annonce que l’interlocuteur parle à une IA. Elle ne peut pas être vide ; c’est le réglage ci-dessous qui décide quand elle est dite.',
+          'The sentence telling the contact they are talking to an AI. It cannot be empty; the setting below decides when it is said.',
         )}
         valeur={agent.mentionIa} onSave={(v) => onSave({ mentionIa: v })}
       />
@@ -729,8 +729,8 @@ function OngletObjectif({ agent, busy, onSave }: { agent: AgentComplet; busy: bo
           <p className="text-sm font-medium text-ink-900">{t('Règles d’arrêt', 'Stop rules')}</p>
           <p className="mt-1 text-xs leading-relaxed text-ink-500">
             {t(
-              'Chacune devient une SORTIE du bloc agent dans le builder : c’est là que vous branchez la suite du parcours. L’agent choisit celle qui correspond à ce qu’il vient de faire.',
-              'Each becomes an OUTPUT of the agent block in the builder: that is where you connect what happens next. The agent picks the one matching what it just did.',
+              'Chacune devient une sortie du bloc agent dans le builder : c’est là que vous branchez la suite du parcours. L’agent choisit celle qui correspond à ce qu’il vient de faire.',
+              'Each becomes an output of the agent block in the builder: that is where you connect what happens next. The agent picks the one matching what it just did.',
             )}
           </p>
         </div>
@@ -814,7 +814,7 @@ function OngletModele({ agent, tenantId, busy, onSave }: {
     return () => { vivant = false; };
   }, [tenantId, agent.id]);
 
-  const nb = (n: number): string => n.toLocaleString(locale === 'en' ? 'en-US' : 'fr-FR');
+  const nb = (n: number): string => fmtNum(n, locale);
 
   return (
     <div className={`${cardCls} flex flex-col gap-4`}>

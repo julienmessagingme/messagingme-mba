@@ -218,15 +218,15 @@ export function McpOutilReglage({ tenantId, outil, champs, champsContact, onChan
                 désarmerait sinon la garde d'autonomie sur une action irréversible. */}
             <select className={inputCls} value={risk} data-testid={`mcp-risque-${outil.name}`}
               onChange={(e) => { setEnregistre(false); setRisk(e.target.value as OutilMcp['risk']); }}>
-              <option value="read">{t('il LIT seulement', 'it only READS')}</option>
-              <option value="write">{t('il ÉCRIT quelque chose', 'it WRITES something')}</option>
-              <option value="irreversible">{t('une action IRRÉVERSIBLE', 'an IRREVERSIBLE action')}</option>
+              <option value="read">{t('il lit seulement', 'it only reads')}</option>
+              <option value="write">{t('il écrit quelque chose', 'it writes something')}</option>
+              <option value="irreversible">{t('une action irréversible', 'an irreversible action')}</option>
             </select>
           </div>
 
           <div className="mt-2">
             <label className="block text-xs text-ink-500" htmlFor={`mcp-nepasutiliser-${outil.id}`}>
-              {t('Quand NE PAS l’appeler (facultatif)', 'When NOT to call it (optional)')}
+              {t('Quand ne pas l’appeler (facultatif)', 'When not to call it (optional)')}
             </label>
             {/* 🔴 LE SEUL LEVIER QUI DÉCIDE QUAND UN OUTIL SE DÉCLENCHE, et le serveur distant n'en sait
                 rien : sa description dit ce que l'outil FAIT, jamais quand s'en abstenir. */}

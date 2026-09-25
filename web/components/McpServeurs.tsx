@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useT } from '@/lib/i18n';
+import { useLocale, useT } from '@/lib/i18n';
+import { dateHeure } from '@/lib/day';
 import { cardCls, inputCls } from '@/lib/ui';
 import { McpOutilReglage } from '@/components/McpOutilReglage';
 import {
@@ -11,6 +12,7 @@ import {
 } from '@/lib/api-mcp-connecteurs';
 import { Bouton } from '@/components/Bouton';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
+import { Icone } from '@/components/Icone';
 
 /**
  * Les serveurs MCP de l'espace, et ce qu'on a importé de chacun.
@@ -28,6 +30,7 @@ import { IntroPage, TitrePage } from '@/components/TitrePage';
  */
 export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean }) {
   const t = useT();
+  const { locale } = useLocale();
   const [serveurs, setServeurs] = useState<ServeurMcp[] | null>(null);
   const [ouvert, setOuvert] = useState<string | null>(null);
   const [outils, setOutils] = useState<Record<string, OutilMcp[]>>({});
@@ -70,7 +73,7 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
     nouveau: t('nouvel outil', 'new tool'),
     inchange: t('inchangé', 'unchanged'),
     schema_change: t('schéma changé, autorisation à redonner', 'schema changed, needs re-authorising'),
-    disparu: t('DISPARU du serveur', 'GONE from the server'),
+    disparu: t('disparu du serveur', 'gone from the server'),
   };
 
   if (serveurs === null) return null;
@@ -80,8 +83,8 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
       <header>
         <TitrePage>{t('Connecteurs MCP', 'MCP connectors')}</TitrePage>
         <IntroPage>
-          {t('Les serveurs MCP que vos agents IA peuvent interroger. Déclarés une fois ici, leur catalogue d’outils est importé puis proposé à chaque agent dans son onglet Outils.',
-            'The MCP servers your AI agents can query. Declared once here, their tool catalogue is imported and then offered to each agent in its Tools tab.')}
+          {t('Déclaré une fois ici, un serveur voit ses outils proposés à chaque agent dans son onglet Outils.',
+            'Declared once here, a server has its tools offered to each agent in its Tools tab.')}
         </IntroPage>
         {/* ⚠️ ON LE DIT, ON NE GRISE PAS : une case désactivée sans explication enverrait le client ouvrir
             un ticket. Et on dit que la limite est LA NÔTRE, parce qu'elle l'est. */}
@@ -96,9 +99,9 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
       {isAdmin && (
         <div className={cardCls} data-testid="mcp-declarer">
           {neuf === null ? (
-            <button type="button" className="text-sm text-brand-700 underline hover:text-brand-800" data-testid="mcp-declarer-ouvrir"
+            <button type="button" className="inline-flex items-center gap-1 text-sm text-brand-700 underline hover:text-brand-800" data-testid="mcp-declarer-ouvrir"
               onClick={() => setNeuf({ label: '', baseUrl: '', authKind: 'bearer', authSecret: '', authHeaderName: '' })}>
-              {t('+ déclarer un serveur MCP', '+ declare an MCP server')}
+              <Icone nom="ajouter" />{t('Déclarer un serveur MCP', 'Declare an MCP server')}
             </button>
           ) : (
             <div className="space-y-2">
@@ -172,7 +175,7 @@ export function McpServeurs({ tenantId, isAdmin }: { tenantId: string; isAdmin: 
                 {s.lastError
                   ? <span className="text-danger">{t('Dernière erreur : ', 'Last error: ')}{s.lastError}</span>
                   : s.lastOkAt
-                    ? `${t('A répondu le ', 'Answered on ')}${new Date(s.lastOkAt).toLocaleString()}`
+                    ? `${t('A répondu le ', 'Answered on ')}${dateHeure(s.lastOkAt, locale)}`
                     : t('Jamais éprouvé.', 'Never tested.')}
               </p>
 

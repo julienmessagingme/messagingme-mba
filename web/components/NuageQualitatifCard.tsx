@@ -67,8 +67,8 @@ export function NuageQualitatifCard({ tenantId, range }: { tenantId: string; ran
         <h2 className="text-sm font-semibold text-ink-900">{t('Urgence et satisfaction', 'Urgency and satisfaction')}</h2>
         <p className="mt-0.5 text-xs text-ink-500">
           {t(
-            'Un point par couple de notes, sa taille dit combien de conversations il porte. Les deux notes sont données par l’analyse, de 0 à 10.',
-            'One dot per pair of scores, its size tells how many conversations it holds. Both scores come from the analysis, from 0 to 10.',
+            'Notes de 0 à 10 données par l’analyse ; la taille d’un point dit combien de conversations il porte.',
+            'Scores from 0 to 10 given by the analysis; a dot’s size tells how many conversations it holds.',
           )}
         </p>
       </header>

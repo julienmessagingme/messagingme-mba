@@ -191,11 +191,11 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
       </div>
       <TemplateBodyField
         state={bodyState}
-        label={t("Message d'introduction (commun)", 'Introduction message (shared)')}
+        label={t("Message d’introduction (commun)", 'Introduction message (shared)')}
         placeholder={t('Bonjour [Prénom], découvrez notre sélection 🎉', 'Hello [First name], discover our selection 🎉')}
         hint={t(
-          "« + Variable » insère un champ du contact dans l'introduction, exactement comme sur un template classique. Le texte des CARTES, lui, est le même pour tout le monde.",
-          '“+ Variable” inserts a contact field into the introduction, exactly like on a regular template. Card text, however, is the same for everyone.',
+          '« Variable » insère un champ du contact dans l’introduction ; le texte des cartes, lui, est le même pour tout le monde.',
+          '“Variable” inserts a contact field into the introduction; card text, however, is the same for everyone.',
         )}
       />
       <TemplateVariableExamples state={bodyState} />
@@ -208,8 +208,8 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
               sous les cartes ferait apparaître les champs ajoutés hors du champ de vision. */}
           <label className="text-xs font-medium text-ink-500">{t('Boutons, identiques sur toutes les cartes', 'Buttons, the same on every card')}</label>
           <div className="flex gap-2 text-xs">
-            <button type="button" onClick={() => addButton('QUICK_REPLY')} disabled={layout.length >= 2} className="text-brand-600 hover:underline disabled:opacity-40 disabled:no-underline">{t('+ réponse rapide', '+ quick reply')}</button>
-            <button type="button" onClick={() => addButton('URL')} disabled={layout.length >= 2} className="text-brand-600 hover:underline disabled:opacity-40 disabled:no-underline">{t('+ lien', '+ link')}</button>
+            <button type="button" onClick={() => addButton('QUICK_REPLY')} disabled={layout.length >= 2} className="inline-flex items-center gap-1 text-brand-600 hover:underline disabled:opacity-40 disabled:no-underline"><Icone nom="ajouter" taille="petite" />{t('Réponse rapide', 'Quick reply')}</button>
+            <button type="button" onClick={() => addButton('URL')} disabled={layout.length >= 2} className="inline-flex items-center gap-1 text-brand-600 hover:underline disabled:opacity-40 disabled:no-underline"><Icone nom="ajouter" taille="petite" />{t('Lien', 'Link')}</button>
           </div>
         </div>
         {layout.length === 0 ? (
@@ -286,7 +286,7 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
                         placeholder={t('https://exemple.fr/cette-carte', 'https://example.com/this-card')}
                       />
                       {urlKo(c, j) && (
-                        <p className="text-xs text-danger">{t('Adresse incomplète : commence par https://', 'Incomplete address: start with https://')}</p>
+                        <p className="text-xs text-danger">{t('Adresse incomplète : elle doit commencer par https://', 'Incomplete address: it must start with https://')}</p>
                       )}
                     </>
                   )}
@@ -297,14 +297,14 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
         </div>
         {/* Tuile d'ajout à DROITE des cartes, pleine hauteur : le lien discret en bas de bloc se voyait mal.
             Convention « ajouter » du dépôt (pointillé brand), pas un second bouton plein qui se disputerait
-            l'action principale avec « Créer le carousel ». Le libellé reste EXACTEMENT « + Ajouter une carte » :
+            l'action principale avec « Créer le carousel ». Le libellé reste EXACTEMENT « Ajouter une carte » :
             un test E2E le cible par son texte. */}
         <button
           type="button" onClick={addCard} disabled={cards.length >= 10} data-testid="carousel-ajouter-carte"
           className="flex w-full shrink-0 flex-col items-center justify-center gap-1 rounded-carte border-2 border-dashed border-brand-200 px-4 py-6 text-brand-600 transition-colors duration-150 hover:border-brand-400 hover:bg-brand-50 disabled:opacity-40 sm:w-40"
         >
-          <span className="text-2xl leading-none">+</span>
-          <span className="text-sm font-medium">{t('+ Ajouter une carte', '+ Add a card')}</span>
+          <Icone nom="ajouter" taille="grande" />
+          <span className="text-sm font-medium">{t('Ajouter une carte', 'Add a card')}</span>
         </button>
         </div>
       </div>

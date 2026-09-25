@@ -113,15 +113,15 @@ export function repartitionPrevue(
           texte: m.motifNonPrevisible === 'selection'
             ? "Les fiches sans adresse e-mail ne se comptent que sur une audience décrite par des filtres, pas sur une sélection."
             : m.motifNonPrevisible === 'fil_de_l_eau'
-              ? "Les fiches sans adresse e-mail ne se comptent pas au fil de l'eau : les contacts n'existent pas encore."
-              : "Choisissez le champ qui porte l'adresse e-mail pour savoir combien de fiches en ont une.",
+              ? "Les fiches sans adresse e-mail ne se comptent pas au fil de l’eau : les contacts n’existent pas encore."
+              : "Choisissez le champ qui porte l’adresse e-mail pour savoir combien de fiches en ont une.",
         };
       }
       return {
         rang: etage.rang, canal: etage.canal, nombre: m.sansAdresse,
         texte: m.sansAdresse === 0
           ? 'Toutes les fiches retenues portent une adresse e-mail.'
-          : `${formater(m.sansAdresse)} n'ont pas d'adresse e-mail et sortiront de la chaîne avant cet étage.`,
+          : `${formater(m.sansAdresse)} n’ont pas d’adresse e-mail et sortiront de la chaîne avant cet étage.`,
       };
     }
     if (m.connusInjoignables === null) {
@@ -132,7 +132,7 @@ export function repartitionPrevue(
           // retenu, il y a des arrivants. La phrase par défaut serait lue comme « la campagne part à tout
           // l'espace », c'est-à-dire l'inverse de ce qui va se passer.
           ? (m.motifNonPrevisible === 'fil_de_l_eau'
-            ? `Chaque contact qui arrive par l'adresse choisie recevra le message en ${libelle}.`
+            ? `Chaque contact qui arrive par l’adresse choisie recevra le message en ${libelle}.`
             : `Tous les contacts retenus partiront en ${libelle}.`)
           : `Ceux qui échouent en ${LIBELLE_CANAL[tries[0]?.canal ?? 'whatsapp']} basculeront en ${libelle}. ${raisonDuSilence(m.motifNonPrevisible)}`,
       };
@@ -179,10 +179,10 @@ export function champEmailSuggere(champs: Array<{ key: string; label: string }>)
  * enverrait chercher un problème de configuration là où il y a eu un hoquet réseau.
  */
 function raisonDuSilence(motif: MesuresAudience['motifNonPrevisible']): string {
-  if (motif === 'canal') return "Ce nombre n'est pas prévisible : la joignabilité n'est mémorisée que sur WhatsApp.";
-  if (motif === 'selection') return "Ce nombre n'est pas prévisible : l'audience est une sélection de contacts, et la joignabilité ne se compte que par filtre.";
-  if (motif === 'fil_de_l_eau') return "Ce nombre n'est pas prévisible : les contacts arrivent au fil de l'eau, ils n'existent pas encore.";
-  return "Ce nombre n'a pas pu être lu.";
+  if (motif === 'canal') return "Ce nombre n’est pas prévisible : la joignabilité n’est mémorisée que sur WhatsApp.";
+  if (motif === 'selection') return "Ce nombre n’est pas prévisible : l’audience est une sélection de contacts, et la joignabilité ne se compte que par filtre.";
+  if (motif === 'fil_de_l_eau') return "Ce nombre n’est pas prévisible : les contacts arrivent au fil de l’eau, ils n’existent pas encore.";
+  return "Ce nombre n’a pas pu être lu.";
 }
 
 /**

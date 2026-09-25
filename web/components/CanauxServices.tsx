@@ -7,6 +7,7 @@ import { Toggle } from '@/components/Toggle';
 import { LogoWhatsApp, LogoGoogleMessages, LogoChaineWhatsApp, LogoMeta, LogoHubSpot } from '@/components/LogosCanaux';
 import { DOT_HEX } from '@/lib/ui';
 import { useT, useLocale } from '@/lib/i18n';
+import { dateHeure } from '@/lib/day';
 import { estAnnulation } from '@/lib/http';
 import { delierNumero, relierNumero, setHubspotActif, getVolumesCanaux, type AccountStatusResponse } from '@/lib/api';
 import { lireVolumesCanaux, phraseVolume, phrasePublications, type Volume, type VolumesCanaux } from '@/lib/chiffres-canaux';
@@ -20,6 +21,7 @@ import {
 } from '@/lib/canaux-services';
 import { Bouton } from '@/components/Bouton';
 import { Modale } from '@/components/Modale';
+import { Icone } from '@/components/Icone';
 
 /**
  * LE BLOC « CANAUX ET SERVICES » DE L'ACCUEIL (plan du 2026-09-25, design validé par Julien).
@@ -180,8 +182,7 @@ export function CanauxServices(p: {
     else void executer(g);
   }
 
-  const date = (iso: string): string =>
-    new Date(iso).toLocaleString(locale === 'en' ? 'en-GB' : 'fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+  const date = (iso: string): string => dateHeure(iso, locale);
   const lecture = t('Lecture…', 'Loading…');
   const inconnu = t('État inconnu pour le moment.', 'State unknown right now.');
 
@@ -371,7 +372,7 @@ export function CanauxServices(p: {
             data-testid="canal-autres-lien"
             className="flex h-full min-h-[7.5rem] items-center justify-center gap-1.5 rounded-carte border border-dashed border-ink-300 p-4 text-sm font-semibold text-brand-600 transition-colors duration-150 hover:border-brand-300 hover:bg-brand-50"
           >
-            {t('Autres intégrations', 'Other integrations')}<span aria-hidden="true">+</span>
+            {t('Autres intégrations', 'Other integrations')}<Icone nom="ajouter" />
           </Link>
         </li>
       </ul>

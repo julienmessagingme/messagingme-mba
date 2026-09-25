@@ -95,8 +95,8 @@ test.describe('mini-CRM : suppression', () => {
     await expect(page.getByRole('button', { name: /effacer|purge/i })).toHaveCount(0);
 
     await page.getByTestId('contacts-action-delete').click();
-    await expect(page.getByText(/IRRÉVERSIBLE/)).toBeVisible();
-    await expect(page.getByText(/conversation dans l'Inbox/)).toBeVisible();
+    await expect(page.getByText(/Irréversible/)).toBeVisible();
+    await expect(page.getByText(/conversation dans l’Inbox/)).toBeVisible();
   });
 });
 

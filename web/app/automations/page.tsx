@@ -13,6 +13,8 @@ import { Bouton } from '@/components/Bouton';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
 import { BoutonConfirme } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
+import { erreurDeChargement } from '@/lib/http';
+import { Icone } from '@/components/Icone';
 
 export default function AutomationsPage() {
   return <AppShell active="automations">{(session) => <AutomationsInner session={session} />}</AppShell>;
@@ -72,7 +74,7 @@ function AutomationsInner({ session }: { session: Session }) {
       // typé tableau, et le premier `.map` démonterait l'écran entier.
       setChampsDate((Array.isArray(f?.fields) ? f.fields : []).filter((x) => x.type === 'datetime'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
+      setError(erreurDeChargement(err, t));
     } finally {
       setLoading(false);
     }
@@ -251,8 +253,8 @@ function AutomationsInner({ session }: { session: Session }) {
         <TitrePage>{t('Automation', 'Automation')}</TitrePage>
         <IntroPage>
           {t(
-            'Lance un scénario automatiquement quand un événement se produit, sans campagne. Un scénario ne part jamais si un opérateur a pris la main sur la conversation.',
-            'Start a scenario automatically when an event happens, without a campaign. A scenario never runs if an operator has taken over the conversation.',
+            'Lancez un scénario sur un événement, sans campagne. Jamais sur une conversation qu’un opérateur a prise en main.',
+            'Start a scenario on an event, without a campaign. Never on a conversation an operator has taken over.',
           )}
         </IntroPage>
         {/* Deux familles de déclencheurs, et la différence change ce que le scénario a le droit d'envoyer.
@@ -260,8 +262,8 @@ function AutomationsInner({ session }: { session: Session }) {
             tant que seuls le mot-clé et le nouveau contact existaient. */}
         <p className="mt-2 max-w-prose text-xs text-ink-500">
           {t(
-            'Mot-clé et nouveau contact partent d’un message reçu : la fenêtre de 24 h est ouverte, le scénario peut donc commencer par un message rapide ou un formulaire. Tag posé, conversation analysée, étape de deal et risque élevé arrivent à froid : le scénario doit commencer par un envoi de template, sinon rien ne part.',
-            'Keyword and new contact come from an incoming message: the 24 h window is open, so the scenario may start with a quick message or a form. Tag added, conversation analyzed, deal stage and high risk happen cold: the scenario must start with a template send, otherwise nothing goes out.',
+            'Mot-clé et nouveau contact suivent un message reçu : le scénario peut commencer par un message rapide ou un formulaire. Les autres déclencheurs arrivent à froid : il doit commencer par un template, sinon rien ne part.',
+            'Keyword and new contact follow an incoming message: the scenario may start with a quick message or a form. The other triggers happen cold: it must start with a template, otherwise nothing goes out.',
           )}
         </p>
       </div>
@@ -270,7 +272,7 @@ function AutomationsInner({ session }: { session: Session }) {
 
       {!creating ? (
         <Bouton onClick={() => setCreating(true)} data-testid="automation-add">
-          + {t('Ajouter une automation', 'Add an automation')}
+          <Icone nom="ajouter" />{t('Ajouter une automation', 'Add an automation')}
         </Bouton>
       ) : (
         <div data-testid="automation-form" className="max-w-formulaire space-y-3 rounded-carte border border-ink-200 bg-white p-4">
@@ -310,8 +312,8 @@ function AutomationsInner({ session }: { session: Session }) {
           {triggerKind === 'risque_eleve' && (
             <div data-testid="config-risque-eleve" className="space-y-1 text-xs text-ink-500">
               <p>
-                {t('Chaque nuit, le risque de désengagement de chaque contact est recalculé (absence de réponse, de clic et de lecture, dernière conversation, joignabilité). Le scénario part quand un contact PASSE en risque élevé : une fois par passage, pas à chaque nuit où il y reste.',
-                    'Every night, each contact’s disengagement risk is recomputed (no reply, click or read, last conversation, reachability). The scenario runs when a contact MOVES to high risk: once per move, not every night they stay there.')}
+                {t('Chaque nuit, le risque de désengagement de chaque contact est recalculé (absence de réponse, de clic et de lecture, dernière conversation, joignabilité). Le scénario part quand un contact passe en risque élevé : une fois par passage, pas à chaque nuit où il y reste.',
+                    'Every night, each contact’s disengagement risk is recomputed (no reply, click or read, last conversation, reachability). The scenario runs when a contact moves to high risk: once per move, not every night they stay there.')}
               </p>
               <p data-testid="config-risque-eleve-depart">
                 {t('Le scénario ne part jamais la nuit : il attend l’ouverture de votre espace (Paramètres, Fuseau & heures d’ouverture ; du lundi au vendredi de 9 h à 18 h tant que rien n’est réglé). Un espace fermé tous les jours part à 9 h, heure de Paris.',
@@ -409,7 +411,7 @@ function AutomationsInner({ session }: { session: Session }) {
                 </p>
               ) : etatEtapes === 'erreur' ? (
                 <p className="text-xs text-danger-700">
-                  {t('Les étapes n’ont pas pu être lues. Réessaie dans un instant.', 'Stages could not be read. Try again shortly.')}
+                  {t('Les étapes n’ont pas pu être lues. Réessayez dans un instant.', 'Stages could not be read. Try again shortly.')}
                 </p>
               ) : etapes.length === 0 ? (
                 <p className="text-xs text-alerte-700">{t('Ce portail n’a aucune étape de deal.', 'This portal has no deal stage.')}</p>
@@ -431,8 +433,8 @@ function AutomationsInner({ session }: { session: Session }) {
               )}
               <p className="mt-1 text-xs text-ink-500">
                 {t(
-                  'Le scénario part quand un deal ARRIVE sur cette étape, pour le contact rattaché au deal, à condition qu’il ait un numéro. L’étape est retenue par son identifiant : la renommer dans HubSpot ne cassera rien. Le client n’écrivant pas à ce moment-là, le scénario doit commencer par un envoi de template.',
-                  'The scenario runs when a deal REACHES this stage, for the contact linked to the deal, provided they have a phone number. The stage is kept by its id: renaming it in HubSpot breaks nothing. As the customer is not writing at that moment, the scenario must start with a template send.',
+                  'Le scénario part quand un deal arrive sur cette étape, pour le contact rattaché au deal, à condition qu’il ait un numéro. L’étape est retenue par son identifiant : la renommer dans HubSpot ne cassera rien. Le client n’écrivant pas à ce moment-là, le scénario doit commencer par un envoi de template.',
+                  'The scenario runs when a deal reaches this stage, for the contact linked to the deal, provided they have a phone number. The stage is kept by its id: renaming it in HubSpot breaks nothing. As the customer is not writing at that moment, the scenario must start with a template send.',
                 )}
               </p>
             </div>
@@ -443,8 +445,8 @@ function AutomationsInner({ session }: { session: Session }) {
               <input value={tag} onChange={(e) => setTag(e.target.value)} data-testid="automation-tag" className={inputCls} placeholder={t('rappeler', 'callback')} />
               <p className="mt-1 text-xs text-ink-500">
                 {t(
-                  'Vaut pour un tag posé sur une FICHE contact, ou par un bloc Action d’un scénario lancé pour UN contact (réponse à un message, autre automation, test). Un tag posé en masse, par import, ou par un scénario lancé en CAMPAGNE ne déclenche rien : cela lancerait autant de scénarios que de contacts. Pour toucher une liste, utilise une campagne.',
-                  'Applies to a tag added on a contact RECORD, or by an Action block of a scenario started for ONE contact (reply to a message, another automation, a test). A tag added in bulk, by import, or by a scenario started as a CAMPAIGN triggers nothing: it would start as many scenarios as contacts. To reach a list, use a campaign.',
+                  'Vaut pour un tag posé sur une fiche contact, ou par un bloc Action d’un scénario lancé pour un seul contact (réponse, autre automation, test). Un tag posé en masse, par import ou par une campagne ne déclenche rien : pour toucher une liste, utilisez une campagne.',
+                  'Applies to a tag added on a contact record, or by an Action block of a scenario started for a single contact (reply, another automation, test). A tag added in bulk, by import or by a campaign triggers nothing: to reach a list, use a campaign.',
                 )}
               </p>
             </div>
@@ -474,7 +476,7 @@ function AutomationsInner({ session }: { session: Session }) {
               </p>
               <p className="rounded-controle border border-alerte-300 bg-alerte-50 px-2.5 py-2 text-xs text-alerte-800 sm:col-span-2">
                 {t(
-                  'Ce déclencheur repose sur l’analyse de conversation. Si elle n’est pas activée sur ton compte, l’automation s’affichera « active » mais ne partira jamais : vérifie-le dans Performance Lab > Analyse des conversations avant de compter dessus.',
+                  'Ce déclencheur repose sur l’analyse de conversation. Si elle n’est pas activée sur votre compte, l’automation s’affichera « active » mais ne partira jamais : vérifiez-le dans Performance Lab > Analyse des conversations avant de compter dessus.',
                   'This trigger relies on conversation analysis. If it is not enabled on your account, the automation will show as "enabled" but will never run: check Performance Lab > Conversation analysis before relying on it.',
                 )}
               </p>

@@ -88,8 +88,8 @@ function SectionPriseAgents({ tenantId }: { tenantId: string }) {
           <h3 className="text-sm font-semibold text-ink-900">{t('Les agents peuvent prendre une conversation non affectée', 'Agents can take an unassigned conversation')}</h3>
           <p className="mt-1 text-sm text-ink-500">
             {t(
-              'Activé, un agent voit « Je m’en occupe » sur une conversation que personne n’a, et se l’affecte. Il ne peut jamais la passer à un collègue ni la rendre : seuls les managers et les admins distribuent les conversations.',
-              'When on, an agent sees “I’ll take it” on a conversation nobody has, and assigns it to themselves. They can never hand it to a colleague or give it back: only managers and admins distribute conversations.',
+              'Un agent voit alors « Je m’en occupe » sur une conversation sans responsable. Seuls les managers et les admins peuvent ensuite la réaffecter.',
+              'An agent then sees “I’ll take it” on an unowned conversation. Only managers and admins can reassign it afterwards.',
             )}
           </p>
         </div>

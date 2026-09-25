@@ -241,14 +241,14 @@ export function EtapeRecap({
       )}
       {envoi === 'creee' && (
         <p className="mt-4 rounded-controle bg-succes-50 px-3 py-2 text-sm text-succes-800" data-testid="recap-creee">
-          La campagne est créée avec ses destinataires, et n&apos;a rien envoyé. Lancez-la depuis la
+          La campagne est créée avec ses destinataires, et n’a rien envoyé. Lancez-la depuis la
           liste des campagnes quand vous voulez.
           {/* ⚠️ LA DATE N'A PAS ÉTÉ POSÉE, ET IL FAUT LE DIRE. « Créer sans envoyer » s'arrête à la
               création : la programmation, elle, se fait AU LANCEMENT. Se taire laisserait l'opérateur
               croire que sa campagne partira à la date qu'il vient de saisir, et elle ne partirait jamais. */}
           {etat.quand === 'plus_tard' && (
             <span className="mt-0.5 block text-xs text-ink-500">
-              La date que vous avez choisie n&apos;a pas été posée : reprenez-la au lancement, depuis la
+              La date que vous avez choisie n’a pas été posée : reprenez-la au lancement, depuis la
               liste des campagnes.
             </span>
           )}
@@ -376,7 +376,7 @@ function BlocCout({
   return (
     <div className="mt-4 w-full rounded-carte border border-ink-200 p-4" data-testid="bloc-cout">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-medium text-ink-900">Débit d&apos;envoi</h3>
+        <h3 className="text-sm font-medium text-ink-900">Débit d’envoi</h3>
         <span className="shrink-0 text-sm font-semibold text-ink-900" data-testid="debit-valeur">
           {debit} messages / min
         </span>
@@ -389,7 +389,7 @@ function BlocCout({
         value={debit}
         onChange={(e) => onChange({ debitParMinute: Number(e.target.value) })}
         data-testid="campagne-debit"
-        aria-label="Débit d'envoi en messages par minute"
+        aria-label="Débit d’envoi en messages par minute"
         className="mt-3 w-full accent-brand-500"
       />
       {/*
@@ -403,8 +403,8 @@ function BlocCout({
       */}
       <p className="mt-2 text-xs text-ink-500">
         Défaut 60/min. Plafond 80/min (limite WhatsApp) ; baisser le débit protège la réputation du
-        numéro. Sur un étage RCS, le plafond est celui de l&apos;opérateur : un débit plus élevé y est
-        ramené à l&apos;envoi.
+        numéro. Sur un étage RCS, le plafond est celui de l’opérateur : un débit plus élevé y est
+        ramené à l’envoi.
       </p>
 
       <p className="mt-3 border-t border-ink-100 pt-3 text-sm text-ink-500">
@@ -415,27 +415,27 @@ function BlocCout({
           ? <>Un message facturable par contact qui arrive, tant que la campagne reste ouverte. Arrêtez-la depuis la liste des campagnes.</>
           : retenus === null
             ? 'Le nombre de contacts retenus n’a pas pu être lu : le volume et la durée restent inconnus.'
-            : <>Jusqu&apos;à <b>{fmtNum(retenus, 'fr')}</b> messages facturables au premier étage, plus un message par bascule.</>}
+            : <>Jusqu’à <b>{fmtNum(retenus, 'fr')}</b> messages facturables au premier étage, plus un message par bascule.</>}
       </p>
       <p className="mt-1 text-sm text-ink-500" data-testid="recap-duree">
         {fil
           ? 'Aucune durée : la campagne reste ouverte jusqu’à ce que vous l’arrêtiez.'
           : minutes === null
             ? 'Durée inconnue.'
-            : <>Environ <b>{fmtNum(minutes, 'fr')}</b> min d&apos;envoi à {fmtNum(debit, 'fr')} messages/min.</>}
+            : <>Environ <b>{fmtNum(minutes, 'fr')}</b> min d’envoi à {fmtNum(debit, 'fr')} messages/min.</>}
         {/* ⚠️ LA CONTRAINTE D'HORAIRE S'AJOUTE À LA DURÉE, elle ne la remplace pas : la campagne enverra
             bien ce nombre de minutes, mais réparties sur les créneaux ouverts. Annoncer « la durée dépend
             de vos créneaux » SEULE effaçait le seul chiffre que l'écran sait donner. */}
         {etat.heuresOuvrees && (
           <span className="mt-0.5 block text-xs text-ink-500">
-            Envoi limité aux heures d&apos;ouverture de l&apos;espace : ces minutes se répartissent sur vos
+            Envoi limité aux heures d’ouverture de l’espace : ces minutes se répartissent sur vos
             créneaux, la campagne se clôt donc plus tard.
           </span>
         )}
       </p>
       <p className="mt-2 text-xs text-ink-500">
-        Le prix d&apos;un message dépend du pays et de la catégorie, et n&apos;est connu qu&apos;après
-        l&apos;envoi : il est visible dans Analytique.
+        Le prix d’un message dépend du pays et de la catégorie, et n’est connu qu’après
+        l’envoi : il est visible dans Analytique.
       </p>
     </div>
   );

@@ -1,7 +1,7 @@
 ---
 ecran: email-templates
 source_section: E-mail (menu Compte > Boîtes email, menu Contenu > Modèles d'email)
-source_empreinte: 4f8ef9
+source_empreinte: 3e0a73
 ---
 # Envoyer un e-mail depuis un scénario
 
@@ -18,7 +18,7 @@ est bon avant qu'un client n'en fasse les frais.
 
 **Écrire vos modèles**, ensuite, dans Contenu > Modèles d'email : un nom, un sujet, un corps, au choix en
 **texte simple** ou en **HTML brut** si vous collez un message préparé ailleurs. Le sujet et le corps
-acceptent des variables, insérées par le même bouton « + Variable » que les modèles WhatsApp et les messages
+acceptent des variables, insérées par le même bouton « Variable » que les modèles WhatsApp et les messages
 RCS, avec la même liste de champs de base et de champs à vous. Vous ne recopiez jamais un nom de variable à
 la main.
 

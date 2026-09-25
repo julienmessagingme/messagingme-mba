@@ -129,8 +129,8 @@ function Contenu({ fiche, titres, locale, t }: {
         </h4>
         <p className="mt-0.5 text-xs text-ink-500">
           {t(
-            'Le premier message envoyé à chaque destinataire. C’est la base de tous les rapports de cette fiche.',
-            'The first message sent to each recipient. It is the base of every ratio on this card.',
+            'Le premier message envoyé à chaque destinataire, base de tous les rapports de cette fiche.',
+            'The first message sent to each recipient, base of every ratio on this card.',
           )}
         </p>
         <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
@@ -167,8 +167,8 @@ function Contenu({ fiche, titres, locale, t }: {
               libelle={t('Relances du scénario', 'Scenario follow-ups')}
               valeur={`${fmtNum(fiche.relances.envoyes, locale)}${fiche.relances.cout === null ? '' : ` · ${fmtCost(fiche.relances.cout, locale, d)}`}`}
               aide={t(
-                'Templates renvoyés plus tard par le scénario. Facturés en plus, et volontairement HORS des rapports ci-dessus.',
-                'Templates re-sent later by the scenario. Billed on top, and deliberately OUTSIDE the ratios above.',
+                'Templates renvoyés plus tard par le scénario. Facturés en plus, et volontairement hors des rapports ci-dessus.',
+                'Templates re-sent later by the scenario. Billed on top, and deliberately outside the ratios above.',
               )}
               testid="detail-relances"
             />
@@ -186,8 +186,8 @@ function Contenu({ fiche, titres, locale, t }: {
           </h4>
           <p className="mt-0.5 text-xs text-ink-500">
             {t(
-              'Ce que les gens ont fait à chaque bloc du scénario, lu comme un entonnoir. Le coût par interaction rapporte le coût du LANCEMENT aux gestes de l’étape.',
-              'What people did at each block of the scenario, read as a funnel. Cost per interaction is the LAUNCH cost against the step’s gestures.',
+              'Le coût par interaction rapporte le coût du lancement aux gestes de chaque étape.',
+              'Cost per interaction is the launch cost against each step’s gestures.',
             )}
           </p>
           {fiche.etapes.length === 0 ? (

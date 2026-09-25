@@ -181,7 +181,7 @@ function WFNode({ id, data, selected }: NodeProps) {
   // un choix documenté (le parcours s'arrête et l'agent reprend), pas un oubli.
   const orpheline = (h: string): boolean => !reliees.has(h);
   const TITRE_ORPHELINE = t(
-    'Ce bouton ne mène nulle part : le contact peut le taper et ne rien recevoir. Tire une flèche depuis ce point.',
+    'Ce bouton ne mène nulle part : le contact peut le taper et ne rien recevoir. Tirez une flèche depuis ce point.',
     'This button leads nowhere: the contact can tap it and get nothing back. Drag an arrow from this dot.',
   );
   const isCondition = wfType === 'condition';
@@ -481,7 +481,7 @@ function WFNode({ id, data, selected }: NodeProps) {
                 React Flow ancrait la flèche de cette sortie sur la ligne de la PREMIÈRE réponse rapide. On la
                 reliait, et elle s'affichait ailleurs, là où une flèche partait déjà. Voir
                 `lib/workflow-sorties.ts`. */}
-            <Handle type="source" id={SORTIE_LIBRE} position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={t('Le contact écrit au lieu de taper un bouton : relie ce point pour prévoir ce cas', 'The contact writes instead of tapping a button: connect this dot to handle that case')} />
+            <Handle type="source" id={SORTIE_LIBRE} position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={t('Le contact écrit au lieu de taper un bouton : reliez ce point pour prévoir ce cas', 'The contact writes instead of tapping a button: connect this dot to handle that case')} />
           </div>
         </div>
       ) : isCondition ? (

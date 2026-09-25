@@ -122,14 +122,14 @@ export function MbaActivationPanel({ tenantId }: { tenantId: string }) {
         </h3>
         <p className="mt-1 text-xs text-ink-500">
           {t(
-            'C’est l’agent qui décide, à partir de ce que le client écrit : quand celui-ci réclame un humain, ou quand l’agent refuse de traiter la demande (une réclamation avec demande de dédommagement, par exemple, à laquelle il ne répond rien). Ce réglage dit ce qui se passe ensuite.',
-            'The agent decides, based on what the customer writes: when they ask for a human, or when the agent declines to handle the request (a complaint asking for compensation, for instance, which it answers with nothing at all). This setting says what happens next.',
+            'L’agent passe la main quand le client réclame un humain, ou quand il refuse une demande (une réclamation avec dédommagement, par exemple). Ce réglage dit ce qui se passe ensuite.',
+            'The agent hands over when the customer asks for a human, or when it declines a request (a complaint asking for compensation, for instance). This setting says what happens next.',
           )}
         </p>
         <p className="mt-1 text-xs text-ink-500">
           {t(
-            'En revanche, quand l’agent ignore simplement la réponse, il ne passe PAS la main : il renvoie vers les coordonnées de votre base de connaissance. Mesuré le 21/08/2026.',
-            'When the agent merely does not know the answer, it does NOT hand over: it points to the contact details from your knowledge base. Measured 2026-08-21.',
+            'S’il ne connaît pas la réponse, il ne passe pas la main : il renvoie vers les coordonnées de votre base de connaissance.',
+            'If it does not know the answer, it does not hand over: it points to the contact details from your knowledge base.',
           )}
         </p>
         <div className="mt-3 space-y-2" role="radiogroup" aria-label={t('Passage de main', 'Handover')}>
@@ -167,8 +167,8 @@ export function MbaActivationPanel({ tenantId }: { tenantId: string }) {
         </h3>
         <p className="mt-1 text-xs text-ink-500">
           {t(
-            'Le décompte part de sa PREMIÈRE réponse dans la conversation : répondre à nouveau ne le repousse pas.',
-            'The countdown starts at their FIRST reply in the conversation: replying again does not push it back.',
+            'Le décompte part de sa première réponse dans la conversation : répondre à nouveau ne le repousse pas.',
+            'The countdown starts at their first reply in the conversation: replying again does not push it back.',
           )}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">

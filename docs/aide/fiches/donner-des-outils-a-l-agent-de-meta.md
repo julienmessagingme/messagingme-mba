@@ -1,7 +1,7 @@
 ---
 ecran: mba-settings
 source_section: L'onglet « Outils » de l'agent de Meta (Meta Business Agent > Paramètres > Outils)
-source_empreinte: 9623a6
+source_empreinte: 59179a
 ---
 # Donner des outils à l'agent de Meta
 
@@ -10,7 +10,7 @@ Par défaut, l'agent de Meta parle. Un outil lui donne le droit de **faire** que
 appeler votre système. L'onglet Outils de ses paramètres les liste, et eux seuls. Réservé aux
 administrateurs.
 
-**Cinq types**, derrière le bouton « + Ajouter un outil » :
+**Cinq types**, derrière le bouton « Ajouter un outil » :
 
 - **Poser un tag.** L'étiquette est fixée par vous, l'agent ne décide que du moment. Elle arrive sur la fiche
   du mini-CRM. Attention : ne comptez pas sur vos automations « tag ajouté » pour prendre le relais. L'agent

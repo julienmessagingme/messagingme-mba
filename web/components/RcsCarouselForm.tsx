@@ -16,6 +16,7 @@ import { ListeManques } from '@/components/ListeManques';
 import { useT } from '@/lib/i18n';
 import { inputClsAuto } from '@/lib/ui';
 import { Bouton } from '@/components/Bouton';
+import { Icone } from '@/components/Icone';
 
 /** Un carrousel qu'on modifie : son identifiant, son nom, et son contenu déjà relu en brouillon. */
 export interface CarrouselInitial {
@@ -29,7 +30,7 @@ type CarteEdition = CarteBrouillon & { cle: number };
 
 /**
  * L'ÉDITEUR D'UN CARROUSEL RCS, sur le dessin de `CarouselForm` (le carousel des templates WhatsApp) : le nom,
- * les cartes en grille avec la tuile « + Ajouter une carte », l'aperçu en dessous, ce qui manque, le bouton.
+ * les cartes en grille avec la tuile « Ajouter une carte », l'aperçu en dessous, ce qui manque, le bouton.
  *
  * ⚠️ UNE DIFFÉRENCE AVEC WHATSAPP, ET ELLE EST VOULUE : les boutons se règlent CARTE PAR CARTE. Meta exige la
  * même disposition sur toutes les cartes d'un carousel ; le RCS, non. Recopier la disposition commune de
@@ -163,8 +164,8 @@ export function RcsCarouselForm({ tenantId, fields, initial, onSaved }: {
             data-testid="rcs-carrousel-ajouter-carte"
             className="flex w-full shrink-0 flex-col items-center justify-center gap-1 rounded-carte border-2 border-dashed border-brand-200 px-4 py-6 text-brand-600 transition-colors duration-150 hover:border-brand-400 hover:bg-brand-50 disabled:opacity-40 sm:w-40"
           >
-            <span className="text-2xl leading-none">+</span>
-            <span className="text-sm font-medium">{t('+ Ajouter une carte', '+ Add a card')}</span>
+            <Icone nom="ajouter" taille="grande" />
+            <span className="text-sm font-medium">{t('Ajouter une carte', 'Add a card')}</span>
           </button>
         </div>
       </div>

@@ -169,7 +169,7 @@ export function EtapeAudience({
             onClick={() => choisirSource('hubspot')}
             libelle="HubSpot"
             icone={<span aria-hidden="true"><LogoHubSpot className="h-3.5 w-3.5" /></span>}
-            aide={capacites.hubspotEnPause ? "Synchronisation HubSpot en pause. Réactive-la sur l'accueil." : undefined}
+            aide={capacites.hubspotEnPause ? 'Synchronisation HubSpot en pause. Réactivez-la sur l’accueil.' : undefined}
             testId="audience-source-hubspot"
           />
         )}
@@ -244,14 +244,14 @@ export function EtapeAudience({
         {fil
           ? <span className="text-ink-500">Aucune liste : chaque contact qui arrivera par cette adresse recevra le message.</span>
           : audience.source !== 'crm'
-          ? <span className="text-ink-500">L&apos;import choisira les contacts : ils seront visés par leur étiquette.</span>
+          ? <span className="text-ink-500">L’import choisira les contacts : ils seront visés par leur étiquette.</span>
           : page.enCours
             ? 'Comptage...'
             : page.total === null
               // ⚠️ UNE LECTURE EN ÉCHEC N'AFFICHE PAS ZÉRO. Zéro est une réponse (« personne ne
               // correspond ») ; la confondre avec une panne ferait croire à une audience vide alors que
               // l'écran n'a simplement pas pu compter.
-              ? <span className="text-alerte">Le nombre de contacts n&apos;a pas pu être lu.</span>
+              ? <span className="text-alerte">Le nombre de contacts n’a pas pu être lu.</span>
               : <><b>{fmtNum(retenus, 'fr')}</b> contacts retenus</>}
       </p>
     </section>

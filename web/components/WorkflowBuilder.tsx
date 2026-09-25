@@ -11,7 +11,8 @@ import {
   type WorkflowGraph, type WorkflowNodeType, type TemplateSummary, type FlowSummary, type TagCount, type UserFieldDef,
   type EmailAccount, type EmailTemplate, type RcsMessage,
 } from '@/lib/api';
-import { useT } from '@/lib/i18n';
+import { useLocale, useT } from '@/lib/i18n';
+import { formatDate, hourMin } from '@/lib/day';
 import type { AgentResume } from '@/lib/api-agent';
 import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, EMAIL_NODE_ORDER, AGENT_NODE_ORDER, HTTP_NODE_ORDER, RCS_GATE_TITRE, EMAIL_GATE_TITRE, AGENT_GATE_TITRE, HTTP_GATE_TITRE, nodeMetaOf } from '@/lib/nodeMeta';
 import { isCampaignEligible, waitBeforeSessionMessage, sessionMessageAfterRcs, entryNodeOf, canalDOuvertureDuGraphe } from '@/lib/campaign-eligibility';
@@ -92,6 +93,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
    */
   onTesterBloc?: (nodeId: string) => void }) {
   const t = useT();
+  const { locale } = useLocale();
   const seed = useMemo(() => toRF(initialGraph), [initialGraph]);
   const [nodes, setNodes, onNodesChange] = useNodesState<RFNode>(seed.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<RFEdge>(seed.edges);
@@ -474,11 +476,11 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
     return mode === 'date' || mode === 'heures_ouvrees'
       ? {
         quoi: t('retient le parcours pour une durée qu’on ne connaît pas d’avance', 'holds the parcours for a length not known in advance'),
-        remede: t('Remplace ce bloc par un envoi de template, ou repasse l’attente en délai court.', 'Replace that block with a template, or switch the wait back to a short delay.'),
+        remede: t('Remplacez ce bloc par un envoi de template, ou repassez l’attente en délai court.', 'Replace that block with a template, or switch the wait back to a short delay.'),
       }
       : {
         quoi: t('attend 24 h ou plus', 'waits 24h or more'),
-        remede: t('Remplace ce bloc par un envoi de template, ou raccourcis l’attente.', 'Replace that block with a template, or shorten the wait.'),
+        remede: t('Remplacez ce bloc par un envoi de template, ou raccourcissez l’attente.', 'Replace that block with a template, or shorten the wait.'),
       };
   };
 
@@ -511,7 +513,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
   return (
     <div className="flex flex-col gap-3 lg:h-full">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-ink-500">{t('+ Créer un bloc :', '+ Create a block:')}</span>
+        <span className="text-xs text-ink-500">{t('Créer un bloc :', 'Create a block:')}</span>
         {NODE_ORDER.map((nt) => (
           <button key={nt} data-testid={`add-node-${nt}`} onClick={() => addNode(nt)} className="inline-flex items-center gap-1 rounded-controle border border-ink-200 px-2 py-1 text-xs text-brand-600 hover:bg-brand-50">
             <Icone nom={NODE_META[nt].icone} taille="petite" />{t(...NODE_META[nt].label)}
@@ -596,7 +598,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
           ) : enregistrement.enCours ? (
             <span className="text-ink-500">{t('Enregistrement…', 'Saving…')}</span>
           ) : enregistrement.enregistreA ? (
-            <span className="inline-flex items-center gap-1 text-succes-700"><Icone nom="valide" taille="petite" />{t('Brouillon enregistré à', 'Draft saved at')} {enregistrement.enregistreA.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            <span className="inline-flex items-center gap-1 text-succes-700"><Icone nom="valide" taille="petite" />{t('Brouillon enregistré à', 'Draft saved at')} {hourMin(enregistrement.enregistreA.toISOString(), locale)}</span>
           ) : (
             // ⚠️ Ce message DISAIT « aucun bouton à cliquer ». Depuis le lot 7 il y en a un, juste à côté, et
             // c'est lui qui met en ligne : promettre le contraire ferait croire qu'éditer suffit.
@@ -619,7 +621,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
         ) : (
           <span className="shrink-0 rounded-controle border border-ink-200 bg-white px-2.5 py-1 text-xs text-ink-500" data-testid="workflow-publie">
             {publieA
-              ? `${t('En ligne depuis le', 'Live since')} ${new Date(publieA).toLocaleDateString()}`
+              ? `${t('En ligne depuis le', 'Live since')} ${formatDate(publieA, locale)}`
               : t('En ligne', 'Live')}
           </span>
         )}
@@ -650,7 +652,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
         <div className="rounded-carte border border-alerte-300 bg-alerte-50 px-3 py-2 text-xs text-alerte-900">
           <b>{t('Ce montage ne partira pas.', 'This setup will not be sent.')}</b>{' '}
           {t(
-            `Le bloc « ${nomDuBloc(montageImpossible.waitNodeId)} » ${attente.quoi}, puis « ${nomDuBloc(montageImpossible.messageNodeId)} » envoie un message hors template. Passé 24 h sans nouveau message du contact, WhatsApp n'accepte plus qu'un template. ${attente.remede}`,
+            `Le bloc « ${nomDuBloc(montageImpossible.waitNodeId)} » ${attente.quoi}, puis « ${nomDuBloc(montageImpossible.messageNodeId)} » envoie un message hors template. Passé 24 h sans nouveau message du contact, WhatsApp n’accepte plus qu’un template. ${attente.remede}`,
             `Block “${nomDuBloc(montageImpossible.waitNodeId)}” ${attente.quoi}, then “${nomDuBloc(montageImpossible.messageNodeId)}” sends a non-template message. After 24h without a new message from the contact, WhatsApp only accepts templates. ${attente.remede}`,
           )}
         </div>
@@ -661,8 +663,8 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
         <div className="rounded-carte border border-alerte-300 bg-alerte-50 px-3 py-2 text-xs text-alerte-900" data-testid="alerte-session-apres-rcs">
           <b>{t('Ce montage ne partira pas toujours.', 'This setup will not always be sent.')}</b>{' '}
           {t(
-            `« ${nomDuBloc(sessionApresRcs.messageNodeId)} » n'existe QUE sur WhatsApp (formulaire ou question), et il est branché derrière le bloc RCS « ${nomDuBloc(sessionApresRcs.rcsNodeId)} ». Il part donc forcément par WhatsApp, qui ne l'accepte que si le contact y a écrit dans les 24 h. Répondre en RCS ne rouvre pas cette fenêtre. Un message rapide, lui, suivrait le canal du parcours.`,
-            `“${nomDuBloc(sessionApresRcs.messageNodeId)}” only exists on WhatsApp (form or question), and it is wired after the RCS block “${nomDuBloc(sessionApresRcs.rcsNodeId)}”. It can only go out over WhatsApp, which accepts it only if the contact wrote there within 24h. Replying on RCS does not reopen that window. A quick message would follow the run channel.`,
+            `« ${nomDuBloc(sessionApresRcs.messageNodeId)} » n’existe que sur WhatsApp (formulaire ou question) et suit le bloc RCS « ${nomDuBloc(sessionApresRcs.rcsNodeId)} » : il ne part que si le contact a écrit sur WhatsApp dans les 24 h, et une réponse en RCS ne rouvre pas cette fenêtre. Un message rapide, lui, suivrait le canal du parcours.`,
+            `“${nomDuBloc(sessionApresRcs.messageNodeId)}” only exists on WhatsApp (form or question) and follows the RCS block “${nomDuBloc(sessionApresRcs.rcsNodeId)}”: it only goes out if the contact wrote on WhatsApp within 24h, and a reply on RCS does not reopen that window. A quick message would follow the run channel.`,
           )}
         </div>
       )}
@@ -738,7 +740,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
 
         <div className="rounded-carte border border-ink-200 bg-white p-4 lg:w-[280px] lg:shrink-0 lg:overflow-y-auto">
           {!selected ? (
-            <p className="text-sm text-ink-500">{t("Clique un bloc pour le configurer. Tire une flèche depuis le point d'un bloc : lâche sur un autre bloc pour relier, ou dans le vide pour créer un nouveau bloc. Le ✕ en coin d'un bloc le supprime.", "Click a block to configure it. Drag an arrow from a block's dot: drop it on another block to connect, or in empty space to create a new block. The ✕ in a block's corner deletes it.")}</p>
+            <p className="text-sm text-ink-500">{t('Cliquez sur un bloc pour le configurer. Tirez une flèche depuis le point d’un bloc : lâchez-la sur un autre bloc pour les relier, ou dans le vide pour créer un bloc. Le ✕ en coin d’un bloc le supprime.', "Click a block to configure it. Drag an arrow from a block's dot: drop it on another block to connect, or in empty space to create a new block. The ✕ in a block's corner deletes it.")}</p>
           ) : (
             <ConfigPanel node={selected} tenantId={tenantId} isRoot={selected.id === rootNodeId} campaignEligible={campaignEligible} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} usageChamps={usageChamps} emailAccounts={emailAccounts} emailTemplates={emailTemplates} rcsMessages={rcsMessages} agents={agents} membres={membres} requetes={requetes} onCommitTag={commitTag} onCreerChamp={creerChamp} />
           )}

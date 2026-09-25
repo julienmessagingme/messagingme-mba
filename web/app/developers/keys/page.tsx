@@ -13,6 +13,7 @@ import { useConfirmation } from '@/components/Confirmation';
 import { Modale } from '@/components/Modale';
 import { Squelette } from '@/components/Squelette';
 import { Nd } from '@/components/Nd';
+import { erreurDeChargement } from '@/lib/http';
 
 export default function ApiKeysPage() {
   return <AppShell active="api-keys">{(session) => <KeysInner session={session} />}</AppShell>;
@@ -38,7 +39,7 @@ function KeysInner({ session }: { session: Session }) {
     try {
       setKeys((await listApiKeys(session.tenantId)).keys);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Loading failed'));
+      setError(erreurDeChargement(err, t));
     } finally {
       setLoading(false);
     }
@@ -115,11 +116,11 @@ function KeysInner({ session }: { session: Session }) {
   return (
     <div className="max-w-formulaire space-y-6">
       <div>
-        <TitrePage>{t('Clés d\'API', 'API keys')}</TitrePage>
+        <TitrePage>{t('Clés d’API', 'API keys')}</TitrePage>
         <IntroPage>
           {t(
-            'Une clé authentifie les appels à l\'API publique. Elle porte le compte : ne la mets jamais dans du code côté navigateur.',
-            'A key authenticates calls to the public API. It carries the account: never put it in browser-side code.',
+            'Une clé donne accès au compte : ne la mettez jamais dans du code côté navigateur.',
+            'A key grants access to the account: never put it in browser-side code.',
           )}
         </IntroPage>
       </div>
@@ -148,7 +149,7 @@ function KeysInner({ session }: { session: Session }) {
           disabled={busy || !name.trim() || scopes.size === 0}
           className="mt-3"
         >
-          {busy ? t('Création...', 'Creating...') : t('Créer la clé', 'Create key')}
+          {busy ? t('Création…', 'Creating…') : t('Créer la clé', 'Create key')}
         </Bouton>
       </div>
 
@@ -213,8 +214,8 @@ function KeysInner({ session }: { session: Session }) {
         >
           <p className="mt-1 text-sm text-ink-500">
             {t(
-              'Copie-la maintenant. Elle ne sera plus jamais affichée : seule son empreinte est conservée, et une clé perdue se remplace, elle ne se retrouve pas.',
-              'Copy it now. It will never be shown again: only its fingerprint is stored, and a lost key is replaced, not recovered.',
+              'Copiez-la maintenant : elle ne sera plus jamais affichée, et une clé perdue se remplace, elle ne se retrouve pas.',
+              'Copy it now: it will never be shown again, and a lost key is replaced, not recovered.',
             )}
           </p>
           <pre className="mt-3 overflow-x-auto rounded-controle bg-ink-50 px-3 py-2 font-mono text-xs text-ink-900">{created.key}</pre>
@@ -227,7 +228,7 @@ function KeysInner({ session }: { session: Session }) {
             <Bouton
               onClick={() => setCreated(null)}
             >
-              {t('J\'ai copié la clé', 'I copied the key')}
+              {t('J’ai copié la clé', 'I copied the key')}
             </Bouton>
           </div>
         </Modale>

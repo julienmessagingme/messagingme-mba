@@ -40,31 +40,31 @@ export function GrillePrixChamps({ valeurs, onChange, champFautif }: {
       />
       <Champ
         id="service" label={t('Message de service', 'Service message')}
-        aide={t('Prix d un message hors template, en centimes.', 'Price of one non-template message, in cents.')}
+        aide={t('Prix d’un message hors template, en centimes.', 'Price of one non-template message, in cents.')}
         valeur={valeurs.serviceCentimes ?? ''} onChange={(v) => onChange('serviceCentimes', v)}
         suffixe={t('cts', 'cts')} fautif={champFautif === 'serviceCentimes'}
       />
       <Champ
         id="franchise" label={t('Messages de service offerts', 'Free service messages')}
-        aide={t('Par mois et par espace. Au-dela, chaque message est facture.', 'Per month and per workspace. Beyond that, every message is charged.')}
+        aide={t('Par mois et par espace. Au-delà, chaque message est facturé.', 'Per month and per workspace. Beyond that, every message is charged.')}
         valeur={valeurs.serviceFranchise ?? ''} onChange={(v) => onChange('serviceFranchise', v)}
         suffixe={t('/ mois', '/ month')} fautif={champFautif === 'serviceFranchise'}
       />
       <Champ
-        id="depuis" label={t('Facture a partir du', 'Charged from')}
+        id="depuis" label={t('Facturé à partir du', 'Charged from')}
         aide={t('Avant cette date, les messages de service ne comptent pas.', 'Before this date, service messages are not counted.')}
         valeur={valeurs.serviceDepuis ?? ''} onChange={(v) => onChange('serviceDepuis', v)}
         type="date" fautif={champFautif === 'serviceDepuis'}
       />
       <Champ
         id="rcs" label={t('RCS simple', 'Plain RCS')}
-        aide={t('Un envoi RCS sans echange, en centimes.', 'One RCS send with no exchange, in cents.')}
+        aide={t('Un envoi RCS sans échange, en centimes.', 'One RCS send with no exchange, in cents.')}
         valeur={valeurs.rcsSimpleCentimes ?? ''} onChange={(v) => onChange('rcsSimpleCentimes', v)}
         suffixe={t('cts', 'cts')} fautif={champFautif === 'rcsSimpleCentimes'}
       />
       <Champ
         id="rcsconv" label={t('RCS conversationnel', 'Conversational RCS')}
-        aide={t('Des qu une personne repond, TOUT l echange passe a ce prix.', 'As soon as someone replies, the WHOLE exchange moves to this price.')}
+        aide={t('Dès qu’une personne répond, tout l’échange passe à ce prix.', 'As soon as someone replies, the whole exchange moves to this price.')}
         valeur={valeurs.rcsConversationnelCentimes ?? ''} onChange={(v) => onChange('rcsConversationnelCentimes', v)}
         suffixe={t('cts', 'cts')} fautif={champFautif === 'rcsConversationnelCentimes'}
       />

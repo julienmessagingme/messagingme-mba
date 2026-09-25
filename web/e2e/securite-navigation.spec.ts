@@ -122,11 +122,11 @@ test.describe('Centre de sécurité & compliance', () => {
     await expect(bas.getByRole('link', { name: 'Journal des erreurs' })).toBeVisible();
   });
 
-  test('la page d accueil porte le message d accueil demande', async ({ page }) => {
+  test('la page d accueil porte le titre du centre', async ({ page }) => {
     await monter(page);
     await page.goto('/securite');
     await expect(page.getByRole('heading', { level: 1 }))
-      .toHaveText(/Bienvenue au centre de sécurité & compliance de Engage Me/);
+      .toHaveText('Sécurité & compliance');
   });
 
   /**

@@ -98,8 +98,8 @@ export function ChainePublications(props: ChainePublicationsProps) {
       {conversations !== null && posts.length > 0 && (
         <p className="mt-2 text-xs text-ink-500" data-testid="chaine-publications-note-mesure">
           {t(
-            'Un appui sur le bouton ne nous est pas visible : on compte les personnes qui ont ENVOYÉ le message du bouton, pour ce bouton et tous ses posts. Un message reçu pendant que le bouton était éteint, ou avant sa création, est compté sans avoir démarré de scénario.',
-            'A tap on the button is invisible to us: we count the people who SENT the button message, for this button across all its posts. A message received while the button was off, or before it existed, is counted without having started any scenario.',
+            'Un appui sur le bouton ne nous est pas visible : on compte les personnes qui ont envoyé son message sur tous ses posts, même quand il n’a démarré aucun scénario (bouton éteint, ou pas encore créé).',
+            'A tap on the button is invisible to us: we count the people who sent its message across all its posts, even when it started no scenario (button off, or not created yet).',
           )}
         </p>
       )}

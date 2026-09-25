@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
 import { useT } from '@/lib/i18n';
-import { ApiError, estAnnulation } from '@/lib/http';
+import { ApiError, estAnnulation, erreurDeChargement } from '@/lib/http';
 import { loadFbSdk } from '@/lib/fb-sdk';
 import {
   choisirActifsPub, deconnecterPubs, echangerCodePub, getEtatPubs, listerPubs,
@@ -125,7 +125,7 @@ function PublicitesInner({ session }: { session: Session }) {
       // Route absente : l'API qui la porte n'est pas encore déployée. On le dit comme une fonctionnalité
       // éteinte, jamais comme une panne, parce que pour le client c'est exactement la même chose.
       if (err instanceof ApiError && err.status === 404) { setAbsent(true); return; }
-      setErreur(err instanceof Error ? err.message : t('Chargement impossible', 'Loading failed'));
+      setErreur(erreurDeChargement(err, t));
     }
   }, [session.tenantId, t]);
 
@@ -181,7 +181,7 @@ function PublicitesInner({ session }: { session: Session }) {
       // ⚠️ ET S'IL ARRIVE APRÈS UN SUCCÈS, IL TOMBE DANS L'ERREUR ORDINAIRE plutôt que d'être MUET : une
       // liste qui a cessé de se rafraîchir sans le dire est « un chiffre périmé qui a l'air frais ».
       if (err instanceof ApiError && err.status === 404 && !listeDejaServie.current) { setRouteAbsente(true); return; }
-      setErreurListe(err instanceof Error ? err.message : t('Chargement impossible', 'Loading failed'));
+      setErreurListe(erreurDeChargement(err, t));
     }
   }, [session.tenantId, t]);
 

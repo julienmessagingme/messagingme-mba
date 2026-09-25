@@ -79,8 +79,8 @@ export function HistoriquePanel({ tenantId, surface, agentId }: {
           promet plus qu'elle ne montre fait conclure « ça n'a pas eu lieu » là où il faudrait lire « ce
           n'est pas encore journalisé », et c'est le pire malentendu possible sur un journal. */}
       <p className="mt-1 text-sm text-ink-500">
-        {t('Ce que l’assistant a appliqué, et ce qui a été SUPPRIMÉ depuis les onglets, avec son contenu. Rien n’est purgé.',
-          'What the assistant applied, and what was DELETED from the tabs, with its content. Nothing is purged.')}
+        {t('Ce que l’assistant a appliqué, et ce qui a été supprimé depuis les onglets, avec son contenu. Rien n’est purgé.',
+          'What the assistant applied, and what was deleted from the tabs, with its content. Nothing is purged.')}
       </p>
       <p className="mt-1 text-xs text-ink-500">
         {t('Les créations et les modifications faites à la main dans les onglets n’y figurent pas encore.',

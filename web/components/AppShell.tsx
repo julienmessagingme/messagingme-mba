@@ -407,7 +407,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
         {sessionExpiree && (
           <div className="shrink-0 border-b border-danger-200 bg-danger-50 px-4 py-2 sm:px-6" data-testid="session-expiree">
             <div className="mx-auto flex w-full max-w-liste flex-wrap items-center gap-3 text-sm text-danger-700">
-              <span>{t('Ta session a expiré. Reconnecte-toi pour continuer : rien n’est perdu, mais tes actions ne sont plus enregistrées.', 'Your session has expired. Sign in again to continue: nothing is lost, but your actions are no longer being saved.')}</span>
+              <span>{t('Votre session a expiré. Reconnectez-vous pour continuer : rien n’est perdu, mais vos actions ne sont plus enregistrées.', 'Your session has expired. Sign in again to continue: nothing is lost, but your actions are no longer being saved.')}</span>
               <button
                 type="button"
                 onClick={logout}

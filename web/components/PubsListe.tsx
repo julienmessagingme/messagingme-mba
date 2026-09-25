@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useT } from '@/lib/i18n';
+import { useLocale, useT } from '@/lib/i18n';
+import { dateHeure } from '@/lib/day';
 import {
   basculerPub, enPauseChezMeta, lienGestionnaireMeta, lirePub, publierPub,
   type BrouillonPub, type Entonnoir, type EtapeEntonnoir, type Publicite,
@@ -316,6 +317,7 @@ function Detail({ tenantId, id, t, budgetTotal }: {
   /** Le budget TOTAL saisi a la creation, deja porte par la ligne de liste : on ne le rappelle pas. */
   budgetTotal: number | null;
 }) {
+  const { locale } = useLocale();
   const [vue, setVue] = useState<{ publicite: Publicite; entonnoir: Entonnoir } | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
 
@@ -380,7 +382,7 @@ function Detail({ tenantId, id, t, budgetTotal }: {
       <p className="mt-1 text-xs text-ink-500">
         {vue.publicite.luLe === null
           ? t('Chiffres jamais relus chez Meta.', 'Numbers never read from Meta.')
-          : `${t('Relus chez Meta le', 'Read from Meta on')} ${new Date(vue.publicite.luLe).toLocaleString()}`}
+          : `${t('Relus chez Meta le', 'Read from Meta on')} ${dateHeure(vue.publicite.luLe, locale)}`}
       </p>
     </div>
   );

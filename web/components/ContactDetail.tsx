@@ -102,7 +102,12 @@ function EditableField({ value, type, mono, busy, editable = true, onSave, onDel
   const commit = async () => { if (await onSave(draft)) setEditing(false); };
   if (editing) {
     return (
-      <span className="flex items-center gap-1.5">
+      // Échap annule L'ÉDITION, et seulement elle : `preventDefault` marque la touche comme traitée, et la
+      // `Modale` qui porte la fiche ignore un Échap déjà traité (sinon elle fermait toute la fiche).
+      <span
+        className="flex items-center gap-1.5"
+        onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); setEditing(false); } }}
+      >
         {type ? (
           <FieldValueInput type={type} value={draft} onChange={setDraft} />
         ) : (
@@ -110,7 +115,7 @@ function EditableField({ value, type, mono, busy, editable = true, onSave, onDel
             autoFocus
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') void commit(); if (e.key === 'Escape') setEditing(false); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') void commit(); }}
             className="min-w-0 flex-1 rounded-controle border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
           />
         )}
@@ -384,20 +389,20 @@ export function ContactDetail({
         <span className="text-ink-500">{t('Email', 'Email')}</span>
         <EditableField value={fieldValue(contact, 'email') ?? ''} type="text" busy={busy} onSave={(v) => saveSocleField('email', v)} onDelete={() => apply({ removeFields: ['email'] })} />
         <span className="text-ink-500">{t('Téléphone', 'Phone')}</span>
-        <span className="font-mono text-ink-900" title={t("Le numéro (identité/routage WhatsApp) n'est pas modifiable", "The number (WhatsApp identity/routing) can't be changed")}>{contact.phoneE164 ?? '-'}</span>
+        <span className="font-mono text-ink-900" title={t("Le numéro (identité/routage WhatsApp) n’est pas modifiable", "The number (WhatsApp identity/routing) can't be changed")}>{contact.phoneE164 ?? '-'}</span>
         {/* BSUID et identifiant WhatsApp : TOUJOURS affichés, même absents. Ils ne se remplissent pas à la
             main (ce sont des identités de routage, pas des données de fiche), mais les masquer quand ils
             sont vides empêchait de comprendre POURQUOI un contact ne reçoit rien, ou de les recopier pour
             un diagnostic. Demandé par Julien le 2026-08-25. */}
         <span className="text-ink-500">{t('Compte WhatsApp', 'WhatsApp account')}</span>
-        <span className="font-mono text-ink-900" title={t("BSUID : identifiant WhatsApp unique d'un client qui n'a pas partagé son numéro. Non modifiable, et absent tant que le client a partagé son numéro.", "BSUID: unique WhatsApp identifier for a customer who hasn't shared their number. Not editable, and absent as long as the customer shared their number.")}>
+        <span className="font-mono text-ink-900" title={t("BSUID : identifiant WhatsApp unique d’un client qui n’a pas partagé son numéro. Non modifiable, et absent tant que le client a partagé son numéro.", "BSUID: unique WhatsApp identifier for a customer who hasn't shared their number. Not editable, and absent as long as the customer shared their number.")}>
           {contact.bsuid ?? <span className="font-sans text-ink-500">{t('aucun', 'none')}</span>}
         </span>
         {/* L'identifiant WhatsApp n'est PAS stocké : il est DÉRIVÉ, exactement comme le fait la résolution
             serveur (`MATCH_BY_WAID_SQL`) : les chiffres du numéro, ou le BSUID à défaut. Le montrer évite de
             le recalculer de tête quand on cherche une conversation ou un parcours. */}
         <span className="text-ink-500">{t('Identifiant WhatsApp', 'WhatsApp ID')}</span>
-        <span className="font-mono text-ink-900" title={t("Dérivé du numéro (chiffres seuls) ou du BSUID. C'est la clé qui relie ce contact à sa conversation et à ses parcours. Non modifiable.", "Derived from the number (digits only) or the BSUID. It is the key linking this contact to its conversation and journeys. Not editable.")}>
+        <span className="font-mono text-ink-900" title={t("Dérivé du numéro (chiffres seuls) ou du BSUID. C’est la clé qui relie ce contact à sa conversation et à ses parcours. Non modifiable.", "Derived from the number (digits only) or the BSUID. It is the key linking this contact to its conversation and journeys. Not editable.")}>
           {waIdDuContact(contact) ?? <span className="font-sans text-ink-500">{t('aucun', 'none')}</span>}
         </span>
         {/* L'IDENTIFIANT API : la valeur que l'API publique appelle `contactId` (spec du 2026-09-24, § 10).
@@ -643,7 +648,7 @@ export function ContactDetail({
             </div>
           )}
           {!creatingField ? (
-            <button onClick={() => setCreatingField(true)} className="text-sm font-medium text-brand-600 hover:text-brand-700">+ {t('Créer un nouveau champ', 'Create a new field')}</button>
+            <button onClick={() => setCreatingField(true)} className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700"><Icone nom="ajouter" />{t('Créer un nouveau champ', 'Create a new field')}</button>
           ) : (
             <div className="space-y-2 rounded-controle border border-brand-200 bg-brand-50/40 p-2.5">
               <div className="flex flex-wrap items-center gap-2">

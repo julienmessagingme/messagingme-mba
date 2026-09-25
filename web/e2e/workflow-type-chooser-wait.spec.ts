@@ -163,7 +163,7 @@ test.describe('Builder : nature d’un bloc et bloc Attente', () => {
     const bandeau = page.locator('div').filter({ hasText: /Ce montage ne partira pas/ }).last();
     await expect(bandeau).toContainText(/durée qu’on ne connaît pas d’avance/);
     await expect(bandeau).not.toContainText(/attend 24 h ou plus/);
-    await expect(bandeau).not.toContainText(/raccourcis l’attente/);
+    await expect(bandeau).not.toContainText(/raccourcissez l’attente/);
   });
 
   test('une attente en DÉLAI garde le texte historique, au caractère près', async ({ page }) => {
@@ -181,7 +181,7 @@ test.describe('Builder : nature d’un bloc et bloc Attente', () => {
 
     const bandeau = page.locator('div').filter({ hasText: /Ce montage ne partira pas/ }).last();
     await expect(bandeau).toContainText(/attend 24 h ou plus/, { timeout: 15_000 });
-    await expect(bandeau).toContainText(/raccourcis l’attente/);
+    await expect(bandeau).toContainText(/raccourcissez l’attente/);
   });
 
   test('tirer une flèche dans le vide DEMANDE la nature du bloc', async ({ page }) => {

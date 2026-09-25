@@ -8,6 +8,7 @@ import type { Session } from '@/lib/session';
 import { listCampaigns, type CampaignSummary } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
+import { erreurDeChargement } from '@/lib/http';
 
 /**
  * Analytics > Quantitatif > **Funnel** : ce que devient une campagne, de l'envoi à la réponse.
@@ -51,7 +52,7 @@ function FunnelInner({ session }: { session: Session }) {
       const cp = await listCampaigns(session.tenantId);
       setCampaigns(Array.isArray(cp?.campaigns) ? cp.campaigns : []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
+      setError(erreurDeChargement(err, t));
     } finally {
       setLoading(false);
     }
@@ -80,7 +81,7 @@ function FunnelInner({ session }: { session: Session }) {
       </div>
       {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
       {loading ? (
-        <p className="text-sm text-ink-500">{t('Chargement des statistiques...', 'Loading statistics...')}</p>
+        <p className="text-sm text-ink-500">{t('Chargement des statistiques…', 'Loading statistics…')}</p>
       ) : (
         <CampaignFunnelCard tenantId={session.tenantId} campaigns={campaigns} initiale={demandee ? [demandee] : undefined} />
       )}

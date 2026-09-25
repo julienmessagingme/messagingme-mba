@@ -14,6 +14,7 @@ import { Icone } from '@/components/Icone';
 import { useConfirmation } from '@/components/Confirmation';
 import { Modale } from '@/components/Modale';
 import { Squelette } from '@/components/Squelette';
+import { erreurDeChargement } from '@/lib/http';
 
 export default function FlowsPage() {
   return <AppShell active="flows">{(session) => <FlowsInner session={session} />}</AppShell>;
@@ -38,7 +39,7 @@ function FlowsInner({ session }: { session: Session }) {
       setFlows(flows);
       return flows;
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
+      setError(erreurDeChargement(err, t));
       return [];
     } finally {
       setLoading(false);
@@ -95,8 +96,8 @@ function FlowsInner({ session }: { session: Session }) {
 
   async function remove(f: FlowSummary) {
     const msg = f.status === 'PUBLISHED'
-      ? t(`Supprimer le formulaire publié « ${f.name} » ?\nUn formulaire publié ne se supprime pas chez Meta : il est DÉPRÉCIÉ (retiré de l'usage). S'il est encore rattaché à un template, Meta peut refuser.`,
-          `Delete the published form “${f.name}”?\nA published form cannot be deleted on Meta: it is DEPRECATED (removed from use). If it is still attached to a template, Meta may refuse.`)
+      ? t(`Supprimer le formulaire publié « ${f.name} » ?\nUn formulaire publié ne se supprime pas chez Meta : il est déprécié (retiré de l’usage). S’il est encore rattaché à un template, Meta peut refuser.`,
+          `Delete the published form “${f.name}”?\nA published form cannot be deleted on Meta: it is deprecated (removed from use). If it is still attached to a template, Meta may refuse.`)
       : t(`Supprimer le brouillon « ${f.name} » ?`, `Delete the draft “${f.name}”?`);
     if (!(await confirmer({ titre: t('Supprimer le formulaire', 'Delete the form'), message: msg, confirmer: t('Supprimer', 'Delete') }))) return;
     setError(null);
@@ -116,7 +117,7 @@ function FlowsInner({ session }: { session: Session }) {
     <div className="space-y-6">
       <div>
         <TitrePage>{t('Formulaires', 'Forms')}</TitrePage>
-        <IntroPage>{t("Formulaires WhatsApp riches (titres, images, tous types de champs : saisie, choix, date, consentement) avec bouton final personnalisable : le client remplit dans WhatsApp, chaque champ se range dans une fiche contact, la réponse arrive dans l'inbox. Attache un formulaire publié à un template via un bouton « Flow ».", 'Rich WhatsApp forms (titles, images, all field types: text input, choice, date, consent) with a customizable final button: the customer fills it in inside WhatsApp, each field is saved to a contact record, and the response lands in the inbox. Attach a published form to a template through a “Flow” button.')}</IntroPage>
+        <IntroPage>{t('Le client remplit le formulaire dans WhatsApp et chaque réponse se range dans sa fiche ; publié, un formulaire s’attache à un template par un bouton « Flow ».', 'The customer fills in the form inside WhatsApp and each answer lands in their record; once published, a form is attached to a template through a “Flow” button.')}</IntroPage>
       </div>
       {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
       {note && <p data-testid="flows-note-rafraichissement" className="rounded-controle bg-brand-50 px-3 py-2 text-sm text-ink-900">{note}</p>}
@@ -151,7 +152,7 @@ function FlowsInner({ session }: { session: Session }) {
 
       {/* La liste des formuaires existants n'a rien à faire SOUS le formulaire de création : elle répète ce que
           l'écran d'entrée montre déjà, et elle noie le travail en cours. On la masque donc pendant la création
-          comme pendant l'édition, exactement comme le bouton « + Créer un formulaire » juste en dessous. Le
+          comme pendant l'édition, exactement comme le bouton « Créer un formulaire » juste en dessous. Le
           compteur disparaît avec elle : il n'a de sens qu'en face de la liste. */}
       {!creating && !editing && (
         <div>
@@ -163,19 +164,19 @@ function FlowsInner({ session }: { session: Session }) {
               <Bouton variante="secondaire" enCours={refreshing}
                 onClick={() => void refresh()}
                 disabled={refreshing}
-                title={t('Va chercher les formulaires du compte WhatsApp Manager et met la liste à jour', 'Fetches the forms from the WhatsApp Manager account and updates the list')}
+                title={t('Relit les formulaires du compte WhatsApp Manager et met la liste à jour', 'Fetches the forms from the WhatsApp Manager account and updates the list')}
               >
                 {refreshing ? t('Rafraîchissement…', 'Refreshing…') : t('Rafraîchir', 'Refresh')}
               </Bouton>
               {/* Le compte-rendu du rafraîchissement parle de la LISTE : le laisser au-dessus du constructeur
                   en ferait un message sans objet. */}
-              <Bouton onClick={() => { setNote(null); setCreating(true); }}>{t('+ Créer un formulaire', '+ Create a form')}</Bouton>
+              <Bouton onClick={() => { setNote(null); setCreating(true); }}><Icone nom="ajouter" />{t('Créer un formulaire', 'Create a form')}</Bouton>
             </div>
           </div>
           {loading ? (
             <Squelette forme="lignes" />
           ) : flows.length === 0 ? (
-            <p className="px-4 py-10 text-center text-sm text-ink-500">{t("Aucun formulaire pour l'instant.", 'No forms yet.')}</p>
+            <p className="px-4 py-10 text-center text-sm text-ink-500">{t("Aucun formulaire pour l’instant.", 'No forms yet.')}</p>
           ) : (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
               {flows.map((f) => <FlowCard key={f.id} flow={f} onPreview={() => setPreview(f)} onEdit={() => { setNote(null); setEditing(f); }} onPublish={() => publish(f)} onDuplicate={() => duplicate(f)} onDelete={() => remove(f)} />)}
@@ -198,7 +199,7 @@ function FlowCard({ flow: f, onPreview, onEdit, onPublish, onDuplicate, onDelete
   const first = f.screens && f.screens.length > 0 ? f.screens[0] : undefined;
   return (
     <div className="flex flex-col rounded-carte border border-ink-200 bg-white p-3 transition-colors duration-150 hover:border-brand-300">
-      <button onClick={onPreview} title={t("Voir l'aperçu", 'View preview')} className="mb-2 block overflow-hidden rounded-carte border border-ink-100 bg-ink-50">
+      <button onClick={onPreview} title={t("Voir l’aperçu", 'View preview')} className="mb-2 block overflow-hidden rounded-carte border border-ink-100 bg-ink-50">
         <div className="pointer-events-none h-44 overflow-hidden">
           {first
             ? <FlowScreen elements={fromFlowElements(first.elements)} cta={f.cta} title={first.title || f.name} />
@@ -215,8 +216,8 @@ function FlowCard({ flow: f, onPreview, onEdit, onPublish, onDuplicate, onDelete
         {f.status === 'DRAFT' ? (
           <>
             {first
-              ? <button onClick={onEdit} className="font-medium text-brand-600 hover:text-brand-700">{t('Éditer', 'Edit')}</button>
-              : <span className="text-ink-500" title={t("Formulaire non construit dans la console (importé de WhatsApp Manager, ou antérieur au modèle riche) : Meta n'en renvoie pas la structure. À recréer ici pour l'éditer.", 'Form not built in the console (imported from WhatsApp Manager, or predating the rich model): Meta does not return its structure. Recreate it here to edit it.')}>{t('Éditer', 'Edit')}</span>}
+              ? <button onClick={onEdit} className="font-medium text-brand-600 hover:text-brand-700">{t('Modifier', 'Edit')}</button>
+              : <span className="text-ink-500" title={t("Formulaire non construit dans la console (importé de WhatsApp Manager, ou antérieur au modèle riche) : Meta n’en renvoie pas la structure. À recréer ici pour le modifier.", 'Form not built in the console (imported from WhatsApp Manager, or predating the rich model): Meta does not return its structure. Recreate it here to edit it.')}>{t('Modifier', 'Edit')}</span>}
             <button onClick={onPublish} className="font-medium text-brand-600 hover:text-brand-700">{t('Publier', 'Publish')}</button>
           </>
         ) : (
@@ -245,7 +246,7 @@ function FlowPreviewModal({ flow, onClose }: { flow: FlowSummary; onClose: () =>
       onClose={onClose}
     >
       {!scr ? (
-        <p className="text-sm text-ink-500">{flow.fields.length > 0 ? flow.fields.map((f) => f.label).join(', ') : t("Formulaire non construit dans la console : Meta n'en renvoie pas la structure, l'aperçu détaillé est donc indisponible.", 'Form not built in the console: Meta does not return its structure, so the detailed preview is unavailable.')}</p>
+        <p className="text-sm text-ink-500">{flow.fields.length > 0 ? flow.fields.map((f) => f.label).join(', ') : t("Formulaire non construit dans la console : Meta n’en renvoie pas la structure, l’aperçu détaillé est donc indisponible.", 'Form not built in the console: Meta does not return its structure, so the detailed preview is unavailable.')}</p>
       ) : (
         <>
           {n > 1 && (

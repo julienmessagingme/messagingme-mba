@@ -11,6 +11,7 @@ import { Bouton } from '@/components/Bouton';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
 import { useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
+import { erreurDeChargement } from '@/lib/http';
 
 export default function FieldsPage() {
   return <AppShell active="fields">{(session) => <FieldsInner session={session} />}</AppShell>;
@@ -40,7 +41,7 @@ function FieldsInner({ session }: { session: Session }) {
       setFields(res.fields);
       setTenantCode(res.tenantCode ?? '');
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Failed to load'));
+      setError(erreurDeChargement(err, t));
     } finally {
       setLoading(false);
     }
@@ -100,7 +101,7 @@ function FieldsInner({ session }: { session: Session }) {
     <div className="max-w-formulaire space-y-6">
       <div>
         <TitrePage>{t('Champs', 'Fields')}</TitrePage>
-        <IntroPage>{t('Les champs de base sont toujours là (non supprimables). Ajoute tes propres champs, ou modifie leur libellé/type. La clé technique est verrouillée (référencée par les campagnes et les valeurs des contacts).', 'The base fields are always present (they cannot be deleted). Add your own fields, or change their label/type. The technical key is locked (referenced by campaigns and contact values).')}</IntroPage>
+        <IntroPage>{t('Les champs de base ne se suppriment pas, et la clé technique d’un champ ne change plus une fois créée.', 'Base fields cannot be deleted, and a field’s technical key cannot change once created.')}</IntroPage>
       </div>
       {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
@@ -142,7 +143,7 @@ function FieldsInner({ session }: { session: Session }) {
         {loading ? (
           <Squelette forme="lignes" className="px-5 py-6" />
         ) : custom.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-ink-500">{t("Aucun champ perso. Crée-en un ci-dessus, ou ils apparaissent à l'import CSV (colonnes personnalisées) ou via un formulaire.", 'No custom fields. Create one above, or they appear on CSV import (custom columns) or via a form.')}</p>
+          <p className="px-5 py-6 text-sm text-ink-500">{t('Aucun champ personnalisé. Créez-en un ci-dessus : ils naissent aussi d’un import CSV ou d’un formulaire.', 'No custom fields. Create one above: they also come from a CSV import or a form.')}</p>
         ) : (
           <table className="w-full text-sm">
             <thead>

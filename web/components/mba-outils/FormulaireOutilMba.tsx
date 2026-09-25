@@ -91,7 +91,7 @@ export function FormulaireOutilMba({ tenantId, type, outil, occupe, onOccupe, on
       : title.trim() === '' ? t('Donnez un titre lisible.', 'Give it a readable title.')
         : !/^[a-z0-9_]{1,64}$/.test(name) ? t('Un nom technique en minuscules, chiffres et tirets bas.', 'A technical name in lowercase, digits and underscores.')
           : description.trim() === '' || consigneIncomplete(description) ? t('Complétez « Quand l’appeler ».', 'Complete “When to call it”.')
-            : nePasUtiliser.trim() === '' ? t('Dites quand NE PAS l’appeler.', 'Say when NOT to call it.')
+            : nePasUtiliser.trim() === '' ? t('Dites quand ne pas l’appeler.', 'Say when not to call it.')
               : busy ? t('Enregistrement en cours…', 'Saving…')
                 : occupe ? t('Une suppression ou un envoi vers Meta est en cours : attendez qu’il se termine.', 'A deletion or a send to Meta is running: wait for it to end.')
                   : null;
@@ -175,7 +175,7 @@ export function FormulaireOutilMba({ tenantId, type, outil, occupe, onOccupe, on
           onChange={(e) => setDescription(e.target.value)} />
       </label>
       <label className="text-xs text-ink-500">
-        {t('Quand NE PAS l’appeler', 'When NOT to call it')}
+        {t('Quand ne pas l’appeler', 'When not to call it')}
         <textarea className={`${inputCls} mt-1`} rows={2} data-testid="mba-form-pasquand" value={nePasUtiliser} maxLength={BORNES_OUTIL.texte}
           onChange={(e) => setNePasUtiliser(e.target.value)} />
       </label>

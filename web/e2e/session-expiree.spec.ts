@@ -74,7 +74,7 @@ test.describe('session expirée', () => {
     await page.goto('/accueil');
     await expect(page.getByTestId('session-expiree')).toBeVisible();
     // La bannière est traduite par le composant ; ce qui compte ici est que rien de français ne subsiste.
-    await expect(page.locator('body')).not.toContainText('Session expirée, reconnecte-toi.');
+    await expect(page.locator('body')).not.toContainText('Session expirée, reconnectez-vous.');
   });
 
   test('le bouton Reconnecter ramène à l’écran de connexion', async ({ page }) => {

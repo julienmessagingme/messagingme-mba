@@ -362,7 +362,7 @@ En haut de l'onglet **Historique** d'une fiche contact, deux chiffres face à fa
   langue hors liste est aussi refusée côté serveur. Une langue existante hors liste (ancien champ libre) reste
   affichée à l'édition. Un **carousel** ne propose ni langue ni catégorie : il est toujours créé en
   **français**, catégorie **marketing**.
-- ✅ **Sélecteur de variable + chips dans le corps** : bouton « + Variable » → on choisit une source dans **deux
+- ✅ **Sélecteur de variable + chips dans le corps** : bouton « Variable » → on choisit une source dans **deux
   groupes (« Champs de base » : Date du jour (auto), Nom, Prénom, Téléphone, BSUID, WhatsApp ID, Email ·
   « Mes champs » : les champs perso), exactement la même liste que la campagne** au lieu de taper `{{n}}`.
   La variable s'affiche **directement dans la zone d'édition comme une puce lisible `[Prénom]`** (plus de `{{1}}`),
@@ -448,7 +448,7 @@ En haut de l'onglet **Historique** d'une fiche contact, deux chiffres face à fa
   la galerie) et n'est utilisable qu'une fois **publié** (bouton « Publier », avec confirmation : la publication
   est irréversible, un formulaire publié ne se modifie plus). Seuls les formulaires publiés sont proposés à
   l'attache d'un bouton Flow de template.
-- ✅ **Depuis un template** : le bouton « + Flow » crée un formulaire inline (publié aussitôt) OU en choisit un
+- ✅ **Depuis un template** : le bouton « Flow » crée un formulaire inline (publié aussitôt) OU en choisit un
   déjà publié, puis l'attache au template (bouton FLOW exclusif).
 - ✅ **Édition / duplication** : un brouillon s'édite ; un formulaire publié est immuable, l'action
   **« Dupliquer »** en crée une copie modifiable (« … (copie) », « … (copie 2) » si le nom est pris) qui s'ouvre
@@ -479,7 +479,7 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   n'en fasse les frais.
 - ✅ **Écrire ses modèles** (menu **Contenu > Modèles d'email**) : un nom, un sujet, un corps,
   au choix en **texte simple** ou en **HTML brut** (pour coller un mail préparé ailleurs). Le
-  sujet et le corps acceptent des **variables**, insérées par le **même bouton « + Variable »**
+  sujet et le corps acceptent des **variables**, insérées par le **même bouton « Variable »**
   que les templates WhatsApp et les messages RCS, avec la même liste de champs de base et de
   champs perso. On ne recopie jamais `{{prenom}}` à la main.
 - ✅ **Le bloc « Envoi de mail » dans un scénario** : il est présenté **à part dans la palette
@@ -1704,7 +1704,7 @@ scénario, comment importer des contacts.
 - ✅ **On voit la NATURE de chaque champ, et on peut en créer un sans quitter l'écran** (2026-08-23). Le menu
   des destinations affiche le type entre parenthèses (« Rendez-vous (Date et heure) ») : sans lui, on ne sait
   pas si la valeur qu'on attache sera stockée comme une date ou comme du texte, alors que ça décide de tout
-  ce qu'on pourra en faire ensuite. Une entrée « + Créer un champ… » ouvre un mini-formulaire sur place, avec
+  ce qu'on pourra en faire ensuite. Une entrée « Créer un champ… » ouvre un mini-formulaire sur place, avec
   le nom prérempli d'après la clé reçue et **le type deviné d'après la valeur** : une valeur comme
   `2026-08-23T15:40:00Z` propose « Date et heure » toute seule. Le champ créé est aussitôt sélectionné.
 - ✅ **Les dates sont stockées au format international**, quelle que soit la forme reçue (2026-08-23). Un outil
@@ -2037,7 +2037,7 @@ côté » s'y ajoutent le 2026-09-22** (lots 3 et 4) ; leur essai réel en conve
 - ✅ **Une liste claire des outils de l'agent de Meta, et d'eux seuls** : pour chacun, son titre, ce qu'il vise
   (« Tag : vip », « Champ : ville », « Appel : … »), son type (Tag, Information, Connecteur API) et son état
   chez Meta, avec « Modifier » et « Supprimer ». Les connecteurs d'un agent IA se gèrent depuis sa fiche.
-- ✅ **Un gros bouton « + Ajouter un outil »**, qui propose : **Poser un tag**, **Enregistrer une
+- ✅ **Un gros bouton « Ajouter un outil »**, qui propose : **Poser un tag**, **Enregistrer une
   information**, **Envoyer un bloc**, **Lancer un scénario**, **Appeler un connecteur API**. Un type est grisé, avec le lien qui y mène, tant que l'espace
   n'a rien à y mettre : aucun appel déclaré (Tools > Connecteurs API), aucun champ déclaré (Contenu >
   Bibliothèque > Champs). Une lecture ratée ne passe pas pour « aucun » : elle le dit, avec « Réessayer ».
@@ -2859,7 +2859,7 @@ a pas de numéro d'expéditeur, et **aucun modèle à faire approuver** : on éc
   limité à 2000 caractères au lieu de 3072.
 - ✅ **Le même écran que les templates WhatsApp** (2026-09-21, demande de Julien : « la même gueule que les
   écrans WhatsApp template ») : la liste est un **tableau** (nom, format, début du texte, actions), cliquer sur
-  un nom ouvre son **aperçu**, « + Créer un message » ouvre un encadré avec le choix **« Message simple |
+  un nom ouvre son **aperçu**, « Créer un message » ouvre un encadré avec le choix **« Message simple |
   Carrousel »**, l'aperçu vit dans un **cadre de téléphone** au nom de la marque, et le formulaire dit **ce qui
   manque** au lieu de griser son bouton sans explication. Basculer de format ne perd rien de ce qui est saisi.
 - ✅ **Carrousel RCS** : de **2 à 10 cartes** qui défilent à l'horizontale, chacune avec un **visuel** (ou au
@@ -2916,7 +2916,7 @@ a pas de numéro d'expéditeur, et **aucun modèle à faire approuver** : on éc
   un message rapide WhatsApp : répondre en RCS ne rouvre pas la fenêtre de 24 h de Meta.
 - ✅ **Un bloc RCS affiche enfin « délivré » et « lu »** (2026-08-25) dans Analytics > Mes tableaux. Les
   rapports de livraison du fournisseur alimentaient les résultats de campagne mais pas la mesure par bloc.
-- ✅ **Les variables s'insèrent comme dans un template WhatsApp** : bouton « + Variable », on choisit le champ,
+- ✅ **Les variables s'insèrent comme dans un template WhatsApp** : bouton « Variable », on choisit le champ,
   et il apparaît comme une étiquette lisible dans le texte, pas comme des accolades.
 - ✅ **Le canal suit la conversation, pas le bloc.** Un scénario qui commence en RCS continue en RCS : si le
   contact tape un bouton, le « message rapide » suivant part en RCS avec ses propres boutons. Pour basculer

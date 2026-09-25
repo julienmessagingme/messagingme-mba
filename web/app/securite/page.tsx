@@ -65,12 +65,12 @@ function Securite() {
     <div className="mx-auto w-full max-w-formulaire space-y-6" data-testid="securite-accueil">
       <div className="space-y-1">
         <TitrePage>
-          {t('Bienvenue au centre de sécurité & compliance de Engage Me', 'Welcome to the Engage Me security & compliance centre')}
+          {t('Sécurité & compliance', 'Security & compliance')}
         </TitrePage>
         <IntroPage>
           {t(
-            'Tout ce qui sert à rendre des comptes : ce qui a été fait, ce qui a échoué, et ce que les gens ont accepté.',
-            'Everything you need to account for what happened: what was done, what failed, and what people agreed to.',
+            'Ce qui a été fait, ce qui a échoué, et ce que les gens ont accepté.',
+            'What was done, what failed, and what people agreed to.',
           )}
         </IntroPage>
       </div>

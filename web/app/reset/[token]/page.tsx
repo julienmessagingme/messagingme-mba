@@ -55,7 +55,7 @@ export default function ResetPage({ params }: { params: Promise<{ token: string 
             <input type="password" required minLength={MIN_MOT_DE_PASSE} value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} placeholder={t(aideMotDePasse().fr, aideMotDePasse().en)} />
             {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
             <Bouton enCours={loading} type="submit" disabled={loading} className="w-full">
-              {loading ? t('Mise à jour...', 'Updating...') : t('Définir le mot de passe', 'Set password')}
+              {loading ? t('Mise à jour…', 'Updating…') : t('Définir le mot de passe', 'Set password')}
             </Bouton>
             <p className="text-center text-xs text-ink-500"><Link href="/login" className="font-medium text-brand-600 hover:underline">{t('Retour à la connexion', 'Back to sign-in')}</Link></p>
           </form>

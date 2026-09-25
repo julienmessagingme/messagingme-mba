@@ -100,8 +100,8 @@ export function FunnelNodes({ etapes, titres, devise }: {
                 const v = valeur(e, n.cle);
                 const g = gestes(e, n.cle);
                 const titre = n.gestesSeuls
-                  ? t(`${fmtNum(v, locale)} clic(s) sur un lien. Le comptage se fait par LIEN, pas par contact : cette barre ne compte pas des personnes.`,
-                    `${fmtNum(v, locale)} link click(s). Counted per LINK, not per contact: this bar does not count people.`)
+                  ? t(`${fmtNum(v, locale)} clic(s) sur un lien. Le comptage se fait par lien, pas par contact : cette barre ne compte pas des personnes.`,
+                    `${fmtNum(v, locale)} link click(s). Counted per link, not per contact: this bar does not count people.`)
                   : t(`${fmtNum(v, locale)} personne(s), ${fmtNum(g ?? 0, locale)} geste(s).`,
                     `${fmtNum(v, locale)} person(s), ${fmtNum(g ?? 0, locale)} gesture(s).`);
                 return (

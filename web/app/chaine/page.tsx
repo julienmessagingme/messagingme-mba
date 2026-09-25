@@ -8,7 +8,7 @@ import { ChaineApercu } from '@/components/ChaineApercu';
 import { ChainePublications } from '@/components/ChainePublications';
 import type { Session } from '@/lib/session';
 import { listWorkflows, type WorkflowSummary } from '@/lib/api';
-import { estAnnulation } from '@/lib/http';
+import { estAnnulation, erreurDeChargement } from '@/lib/http';
 import { useT, useLocale } from '@/lib/i18n';
 import { kickerCls } from '@/lib/ui';
 import { texteAvertissement } from '@/lib/chaine-statut';
@@ -87,7 +87,7 @@ function ChaineInner({ session }: { session: Session }) {
       // Quitter l'écran annule ses requêtes : ce n'est pas une panne, et l'afficher en rouge serait un
       // bandeau d'erreur à chaque navigation.
       if (estAnnulation(err)) return;
-      setErreur(err instanceof Error ? err.message : t('Chargement impossible', 'Loading failed'));
+      setErreur(erreurDeChargement(err, t));
     }
   }, [session.tenantId, t]);
 
@@ -144,8 +144,8 @@ function ChaineInner({ session }: { session: Session }) {
         <TitrePage className="mt-1">{t('Chaîne', 'Channel')}</TitrePage>
         <IntroPage>
           {t(
-            'Publie à tous tes abonnés, gratuitement, et laisse ceux qui veulent parler ouvrir une conversation d’un geste.',
-            'Post to all your subscribers, for free, and let those who want to talk open a conversation in one tap.',
+            'Publiez pour tous vos abonnés, gratuitement : ceux qui veulent parler ouvrent une conversation d’un geste.',
+            'Post to all your subscribers, for free: those who want to talk open a conversation in one tap.',
           )}
         </IntroPage>
       </header>

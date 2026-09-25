@@ -90,7 +90,7 @@ export function EtapeCanal({
           <Entree
             groupe="formule"
             libelle="WhatsApp et RCS, avec repli"
-            description="Un envoi qui échoue repart aussitôt sur l'autre canal, sans double envoi."
+            description="Un envoi qui échoue repart aussitôt sur l’autre canal, sans double envoi."
             coche={etat.formule === 'repli'}
             desactive={rcsIndisponible}
             onCheck={() => onChange({ formule: 'repli' })}
@@ -101,7 +101,7 @@ export function EtapeCanal({
             et où aller la régler. */}
         {rcsIndisponible && (
           <p className="mt-3 rounded-controle bg-ink-50 px-3 py-2 text-xs text-ink-500">
-            Aucun agent RCS n&apos;est relié à cet espace. Reliez-en un dans Paramètres pour ouvrir ce
+            Aucun agent RCS n’est relié à cet espace. Reliez-en un dans Paramètres pour ouvrir ce
             canal et le repli.
           </p>
         )}
@@ -137,7 +137,7 @@ export function EtapeCanal({
           {/* ⚠️ LE SECOND S'AFFICHE, IL NE SE CHOISIT PAS : le proposer ouvrirait « WhatsApp puis
               WhatsApp », qui n'est pas un repli mais un réessai déguisé. */}
           <p className="mt-3 text-xs text-ink-500">
-            En cas d&apos;échec, le repli part en {second === 'rcs' ? 'RCS' : 'WhatsApp'}.
+            En cas d’échec, le repli part en {second === 'rcs' ? 'RCS' : 'WhatsApp'}.
           </p>
         </fieldset>
       )}
@@ -179,7 +179,7 @@ export function EtapeCanal({
           </div>
           {etat.troisieme === 'email' && (
             <p className="mt-3 rounded-controle bg-ink-50 px-3 py-2 text-xs text-ink-500">
-              L&apos;e-mail part à l&apos;adresse portée par la fiche du contact. Un contact sans adresse
+              L’e-mail part à l’adresse portée par la fiche du contact. Un contact sans adresse
               sort de la chaîne avant ce niveau.
             </p>
           )}
@@ -199,7 +199,7 @@ export function EtapeCanal({
               « relancer » coche pour une raison qui n'est pas la bonne. */}
           <Case
             libelle="Réessayer les envois qui échouent"
-            description="Un envoi bloqué par une limite de Meta est retenté le lendemain matin ; un numéro non délivrable est retenté une fois, puis marqué injoignable. Sans chaîne de repli, c'est le seul rattrapage disponible."
+            description="Un envoi bloqué par une limite de Meta est retenté le lendemain matin ; un numéro non délivrable est retenté une fois, puis marqué injoignable. Sans chaîne de repli, c’est le seul rattrapage disponible."
             coche={etat.reessayer}
             onChange={(v) => onChange({ reessayer: v })}
           />
@@ -261,7 +261,7 @@ export function EtapeCanal({
           */}
           {etat.heuresOuvrees && !horairesReglees && (
             <p className="mt-3 rounded-controle bg-alerte-50 px-3 py-2 text-xs text-ink-900" data-testid="horaires-absentes">
-              Aucune heure d&apos;ouverture n&apos;est réglée pour cet espace : cochée, cette case mettrait la
+              Aucune heure d’ouverture n’est réglée pour cet espace : cochée, cette case mettrait la
               campagne en pause sans jamais la reprendre. Réglez vos horaires dans Paramètres, ou décochez.
             </p>
           )}

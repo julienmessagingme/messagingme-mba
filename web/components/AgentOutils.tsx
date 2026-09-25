@@ -18,6 +18,7 @@ import { Bouton } from '@/components/Bouton';
 import { Icone } from '@/components/Icone';
 import { useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
+import { erreurDeChargement } from '@/lib/http';
 
 /**
  * L'onglet OUTILS d'un agent IA.
@@ -69,7 +70,7 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
       setVue(v);
       setBibliotheque(bib);
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
+      setErreur(erreurDeChargement(err, t));
     }
   }, [tenantId, agentId, t]);
   useEffect(() => { void charger(); }, [charger]);
@@ -106,7 +107,7 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
    */
   /**
    * Les outils MCP de l'ESPACE que cet agent n'a pas encore. Le jumeau exact de `restants` pour les outils
-   * maison, et de « + donner cet appel à l'agent » pour les connecteurs API.
+   * maison, et de « Donner cet appel à l'agent » pour les connecteurs API.
    *
    * ⚠️ ON RAPPROCHE PAR IDENTIFIANT, jamais par nom : le nom exposé est réécrit par le client.
    */
@@ -117,8 +118,8 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
     <div className="flex flex-col gap-4">
       <MbaNotice kind="warning">
         {t(
-          'Un outil n’est utilisable par l’agent qu’une fois ACTIVÉ ici. Tant qu’il ne l’est pas, l’agent ne sait même pas qu’il existe.',
-          'A tool is only usable by the agent once ACTIVATED here. Until then, the agent does not even know it exists.',
+          'Un outil n’existe pour l’agent qu’une fois activé ici.',
+          'A tool only exists for the agent once activated here.',
         )}
       </MbaNotice>
       {erreur && <MbaNotice kind="error" testid="outils-erreur">{erreur}</MbaNotice>}
@@ -227,9 +228,9 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
                         data-testid={`mcp-rattacher-${o.id}`}
                         disabled={busy}
                         onClick={() => agir(async () => { await rattacherOutil(tenantId, agentId, o.id, true); })}
-                        className="shrink-0 text-xs text-brand-600 hover:underline disabled:opacity-40"
+                        className="inline-flex shrink-0 items-center gap-1 text-xs text-brand-600 hover:underline disabled:opacity-40"
                       >
-                        {t('+ donner cet outil à l’agent', '+ give this tool to the agent')}
+                        <Icone nom="ajouter" taille="petite" />{t('Donner cet outil à l’agent', 'Give this tool to the agent')}
                       </button>
                     </li>
                   ))}
@@ -404,8 +405,8 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
           />
           <span>
             {t(
-              'Autoriser l’agent à faire ça SEUL. Non cochée, l’action est refusée à chaque appel : ce qui part, part vraiment chez le contact et ne se rappelle pas.',
-              'Allow the agent to do this ON ITS OWN. Unchecked, the action is refused on every call: it is irreversible, and the contact really receives it.',
+              'Autoriser l’agent à faire ça seul. Non cochée, l’action est refusée à chaque appel : ce qui part, part vraiment chez le contact et ne se rappelle pas.',
+              'Allow the agent to do this on its own. Unchecked, the action is refused on every call: it is irreversible, and the contact really receives it.',
             )}
           </span>
         </label>
@@ -414,8 +415,8 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
       {outil.actif && outil.expose === null && (
         <MbaNotice kind="warning">
           {t(
-            'Cet outil est actif mais le modèle n’en voit RIEN : il n’a aucune valeur possible. Déclarez au moins une règle d’arrêt dans l’onglet « Objectif et transferts ».',
-            'This tool is active but the model sees NOTHING of it: it has no possible value. Declare at least one stop rule in the “Objective and handovers” tab.',
+            'Cet outil est actif mais le modèle n’en voit rien : il n’a aucune valeur possible. Déclarez au moins une règle d’arrêt dans l’onglet « Objectif et transferts ».',
+            'This tool is active but the model sees nothing of it: it has no possible value. Declare at least one stop rule in the “Objective and handovers” tab.',
           )}
         </MbaNotice>
       )}
@@ -429,7 +430,7 @@ function Outil({ tenantId, outil, modele, busy, onSave, onActiver, onAutonomie, 
       />
       <Champ
         testId={`outil-nepasutiliser-${outil.id}`} busy={busy} multi
-        label={t('Quand NE PAS l’appeler', 'When NOT to call it')}
+        label={t('Quand ne pas l’appeler', 'When not to call it')}
         valeur={outil.nePasUtiliser} onSave={(v) => onSave({ nePasUtiliser: v })}
       />
 
@@ -766,8 +767,8 @@ function Gestes({ outil, busy, onSave }: {
       <p className="text-xs font-medium text-ink-900">{t('Et en plus, faire ceci', 'And also do this')}</p>
       <p className="mt-0.5 text-xs leading-relaxed text-ink-500">
         {t(
-          'Ce que nous faisons nous-mêmes quand ce moment se produit, sans le demander au modèle. Ces gestes partent MÊME SI l’appel ci-dessus échoue : ils marquent que la situation s’est produite, pas qu’elle a abouti. Écrivez donc « rendez-vous demandé » plutôt que « rendez-vous pris ».',
-          'What we do ourselves when this moment happens, without asking the model. These fire EVEN IF the call above fails: they record that the situation happened, not that it succeeded. So write “appointment requested” rather than “appointment booked”.',
+          'Ce que nous faisons nous-mêmes quand ce moment se produit, sans le demander au modèle. Ces gestes partent même si l’appel ci-dessus échoue : ils marquent que la situation s’est produite, pas qu’elle a abouti. Écrivez donc « rendez-vous demandé » plutôt que « rendez-vous pris ».',
+          'What we do ourselves when this moment happens, without asking the model. These fire even if the call above fails: they record that the situation happened, not that it succeeded. So write “appointment requested” rather than “appointment booked”.',
         )}
       </p>
 

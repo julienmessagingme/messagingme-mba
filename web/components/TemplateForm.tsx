@@ -9,7 +9,8 @@ import {
 import { listFlows, createTemplate, updateTemplate, uploadMedia, getTemplateHints, type TemplateSummary, type TemplateButtonInput, type TemplateHeaderInput, type FlowSummary, type TemplateParamHint } from '@/lib/api';
 import { resizeToDataUrl, fileToDataUrl } from '@/lib/image';
 import { isSendableButtonUrl } from '@/lib/button-url';
-import { useT } from '@/lib/i18n';
+import { useLocale, useT } from '@/lib/i18n';
+import { categorieTemplate } from '@/lib/format';
 import { META_TEMPLATE_LANGUAGES } from '@/lib/languages';
 import { inputCls } from '@/lib/ui';
 import { ListeManques } from '@/components/ListeManques';
@@ -61,6 +62,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
   colonneEtroite?: boolean;
 }) {
   const t = useT();
+  const { locale } = useLocale();
   const isEdit = !!initial && !duplique;
   const [name, setName] = useState(duplique && initial ? `${initial.name}_copie` : initial?.name ?? '');
   const [category, setCategory] = useState<'MARKETING' | 'UTILITY'>((initial?.category?.toUpperCase() as 'MARKETING' | 'UTILITY') ?? 'MARKETING');
@@ -161,7 +163,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
       // Canonicalisation des variables (renumérotation 1..N contiguë, exemples et indices réalignés) : même
       // fonction que le carousel, donc mêmes règles chez Meta.
       const canon = bodyState.canonicalize();
-      // Toute variable {{n}} doit être rattachée à un champ via « + Variable » : tapée à la main, elle
+      // Toute variable {{n}} doit être rattachée à un champ via « Variable » : tapée à la main, elle
       // partirait vide à l'envoi et se ferait rejeter par Meta.
       if (canon.unmapped.length > 0) {
         setError(unmappedVariablesMessage(canon.unmapped, t));
@@ -272,11 +274,11 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
       {duplique && initial && (
         <div className="mb-4 rounded-controle border border-alerte-300 bg-alerte-50 px-3 py-2 text-sm text-alerte-800" data-testid="template-duplication-bandeau">
           <p>
-            {t('Copie de « ', 'Copy of "')}{initial.name}{t(' ». Rien n’est envoyé à Meta tant que tu n’as pas cliqué sur « Créer le template ».', '". Nothing is sent to Meta until you click "Create template".')}
+            {t('Copie de « ', 'Copy of "')}{initial.name}{t(' ». Rien n’est envoyé à Meta tant que vous n’avez pas cliqué sur « Créer le template ».', '". Nothing is sent to Meta until you click "Create template".')}
           </p>
           {(initial.headerFormat === 'IMAGE' || initial.headerFormat === 'VIDEO' || initial.headerFormat === 'DOCUMENT') && (
             <p className="mt-1 font-medium">
-              {t('Le visuel d’en-tête n’a PAS pu être recopié : Meta ne rend pas le fichier d’origine. Redépose-le ci-dessous.', 'The header media could NOT be copied: Meta does not return the original file. Upload it again below.')}
+              {t('Le visuel d’en-tête n’a pas pu être recopié : Meta ne rend pas le fichier d’origine. Redéposez-le ci-dessous.', 'The header media could not be copied: Meta does not return the original file. Upload it again below.')}
             </p>
           )}
         </div>
@@ -297,8 +299,8 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
           <div className="grid grid-cols-2 gap-3">
             <Field label={t('Catégorie', 'Category')}>
               <select value={category} onChange={(e) => setCategory(e.target.value as 'MARKETING' | 'UTILITY')} className={inputCls}>
-                <option value="MARKETING">marketing</option>
-                <option value="UTILITY">utility</option>
+                <option value="MARKETING">{categorieTemplate('MARKETING', locale)}</option>
+                <option value="UTILITY">{categorieTemplate('UTILITY', locale)}</option>
               </select>
             </Field>
             <Field label={isEdit ? t('Langue (non modifiable)', 'Language (not editable)') : t('Langue', 'Language')}>
@@ -365,12 +367,12 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
               <label className="text-sm font-medium text-ink-900">{t('Boutons', 'Buttons')}</label>
               <div className="flex gap-2 text-xs">
                 {/* Un bouton FLOW est EXCLUSIF (contrainte Meta) : on masque les autres si un FLOW est là,
-                    et « + Flow » remplace tous les boutons par un unique bouton FLOW. */}
+                    et « Flow » remplace tous les boutons par un unique bouton FLOW. */}
                 {!hasFlow && (
                   <>
-                    <button type="button" onClick={() => setButtons([...buttons, { type: 'QUICK_REPLY', text: '' }])} className="text-brand-600 hover:underline">{t('+ réponse rapide', '+ quick reply')}</button>
-                    <button type="button" onClick={() => setButtons([...buttons, { type: 'URL', text: '', url: '' }])} data-testid="template-ajouter-lien" className="text-brand-600 hover:underline">{t('+ lien', '+ link')}</button>
-                    <button type="button" onClick={() => setButtons([{ type: 'FLOW', text: '', flowId: '' }])} className="text-brand-600 hover:underline" title={t('Un bouton formulaire : créer un formulaire inline ou en choisir un déjà publié', 'A form button: create an inline form or choose an already published one')}>+ Flow</button>
+                    <button type="button" onClick={() => setButtons([...buttons, { type: 'QUICK_REPLY', text: '' }])} className="inline-flex items-center gap-1 text-brand-600 hover:underline"><Icone nom="ajouter" taille="petite" />{t('Réponse rapide', 'Quick reply')}</button>
+                    <button type="button" onClick={() => setButtons([...buttons, { type: 'URL', text: '', url: '' }])} data-testid="template-ajouter-lien" className="inline-flex items-center gap-1 text-brand-600 hover:underline"><Icone nom="ajouter" taille="petite" />{t('Lien', 'Link')}</button>
+                    <button type="button" onClick={() => setButtons([{ type: 'FLOW', text: '', flowId: '' }])} className="inline-flex items-center gap-1 text-brand-600 hover:underline" title={t('Un bouton formulaire : créer un formulaire inline ou en choisir un déjà publié', 'A form button: create an inline form or choose an already published one')}><Icone nom="ajouter" taille="petite" />Flow</button>
                   </>
                 )}
               </div>
@@ -419,7 +421,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
                         onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)))}
                         data-testid={`template-bouton-url-${i}`}
                         className={`${inputCls} min-w-0 flex-[2] ${urlKo(b) ? 'border-danger-500 focus:border-danger-500 focus:ring-danger-100' : ''}`}
-                        title={urlKo(b) ? t('Adresse incomplète : commence par https://', 'Incomplete address: start with https://') : undefined}
+                        title={urlKo(b) ? t('Adresse incomplète : elle doit commencer par https://', 'Incomplete address: it must start with https://') : undefined}
                         placeholder={t('https://exemple.fr/page', 'https://example.com/page')}
                       />
                     )}
@@ -433,8 +435,8 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
             {hasFlow && (
               <div className="mt-2">
                 {!creatingFlow ? (
-                  <button type="button" onClick={() => setCreatingFlow(true)} className="text-xs font-medium text-brand-600 hover:underline">
-                    {t('＋ Créer un nouveau formulaire', '＋ Create a new form')}
+                  <button type="button" onClick={() => setCreatingFlow(true)} className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:underline">
+                    <Icone nom="ajouter" taille="petite" />{t('Créer un nouveau formulaire', 'Create a new form')}
                   </button>
                 ) : (
                   <div className="rounded-carte border border-brand-200 bg-brand-50/40 p-4">
@@ -468,7 +470,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
             disabled={!canSubmit}
             className="mt-4 w-full"
           >
-            {busy ? t('Envoi...', 'Sending...') : isEdit ? t('Enregistrer les modifications', 'Save changes') : t('Créer le template', 'Create template')}
+            {busy ? t('Envoi…', 'Sending…') : isEdit ? t('Enregistrer les modifications', 'Save changes') : t('Créer le template', 'Create template')}
           </Bouton>
         </div>
 

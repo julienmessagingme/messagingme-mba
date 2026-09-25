@@ -115,7 +115,7 @@ test.describe('Erreurs : les contacts touchés', () => {
     // ou l'autre ferait lire cet écran comme un inventaire complet.
     await monter(page);
     const carte = page.locator('#quanti-erreurs');
-    await expect(carte).toContainText(/CAMPAGNE|CAMPAIGN/);
+    await expect(carte).toContainText(/envois de campagne|campaign sends/);
     await expect(carte).toContainText(/sans code Meta|without a Meta code/);
     // Et il DIT où est le journal complet : signaler un trou sans dire où regarder n'aide personne.
     await expect(carte).toContainText(/Erreurs de livraison|Delivery errors/);

@@ -9,6 +9,7 @@ import { getErrorBreakdown, type ErrorBreakdownRow, type StatsRange } from '@/li
 import type { Session } from '@/lib/session';
 import { useT } from '@/lib/i18n';
 import { presetRange } from '@/lib/range';
+import { erreurDeChargement } from '@/lib/http';
 
 /**
  * LE JOURNAL DES ERREURS, ET IL EN A TROIS MOITIÉS (tranché par Julien le 2026-09-13 : « on a déjà un log
@@ -78,7 +79,7 @@ function ErreursInner({ session }: { session: Session }) {
       const eb = await getErrorBreakdown(session.tenantId, range);
       setErrors(Array.isArray(eb?.errors) ? eb.errors : []);
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
+      setErreur(erreurDeChargement(err, t));
     } finally {
       setChargement(false);
     }
@@ -93,7 +94,7 @@ function ErreursInner({ session }: { session: Session }) {
           <RangeBar title={t('Erreurs de livraison', 'Delivery errors')} range={range} onChange={setRange} />
           {erreur && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{erreur}</p>}
           {chargement ? (
-            <p className="text-sm text-ink-500">{t('Chargement des statistiques...', 'Loading statistics...')}</p>
+            <p className="text-sm text-ink-500">{t('Chargement des statistiques…', 'Loading statistics…')}</p>
           ) : (
             <ErrorBreakdownCard errors={errors} tenantId={session.tenantId} range={range} />
           )}

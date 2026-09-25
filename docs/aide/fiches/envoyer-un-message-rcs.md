@@ -1,7 +1,7 @@
 ---
 ecran: rcs-messages
 source_section: Canal RCS (menu Contenu > Messages RCS, et canal de campagne)
-source_empreinte: fe1ee9
+source_empreinte: 464234
 ---
 # Envoyer un message RCS
 

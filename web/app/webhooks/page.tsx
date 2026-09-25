@@ -22,6 +22,7 @@ import { Icone } from '@/components/Icone';
 import { useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
 import { Nd } from '@/components/Nd';
+import { erreurDeChargement } from '@/lib/http';
 
 /**
  * Tools > Webhooks : recevoir un JSON d'un outil tiers, en tirer des champs de contact, et déclencher un
@@ -68,7 +69,7 @@ function WebhooksInner({ session }: { session: Session }) {
       setChamps(Array.isArray(f?.fields) ? f.fields : []);
       setScenarios(Array.isArray(s?.workflows) ? s.workflows : []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Loading failed'));
+      setError(erreurDeChargement(err, t));
     } finally {
       setLoading(false);
     }
@@ -94,7 +95,7 @@ function WebhooksInner({ session }: { session: Session }) {
 
   async function supprimer(w: WebhookEntrant) {
     const ok = await confirmer({ titre: t('Supprimer l’adresse', 'Delete the address'), message: t(
-      `Supprimer « ${w.name} » ? L'adresse cessera de répondre immédiatement, et tout outil qui l'utilise encore recevra une erreur.`,
+      `Supprimer « ${w.name} » ? L’adresse cessera de répondre immédiatement, et tout outil qui l’utilise encore recevra une erreur.`,
       `Delete “${w.name}”? The address will stop responding immediately, and any tool still using it will get an error.`,
     ), confirmer: t('Supprimer', 'Delete') });
     if (!ok) return;
@@ -116,8 +117,8 @@ function WebhooksInner({ session }: { session: Session }) {
         <TitrePage>{t('Webhooks', 'Webhooks')}</TitrePage>
         <IntroPage>
           {t(
-            'Donnez une adresse à un outil tiers (Zapier, Make, un CRM, le formulaire de votre site). Il y envoie du JSON, vous choisissez où va chaque valeur, et vous pouvez déclencher un scénario.',
-            'Give an address to a third-party tool (Zapier, Make, a CRM, your website form). It posts JSON, you choose where each value goes, and you can trigger a scenario.',
+            'Un outil tiers (Zapier, Make, un CRM, votre site) envoie du JSON à l’adresse : vous rangez chaque valeur, et pouvez déclencher un scénario.',
+            'A third-party tool (Zapier, Make, a CRM, your site) posts JSON to the address: you map each value, and can trigger a scenario.',
           )}
         </IntroPage>
       </div>
@@ -152,7 +153,7 @@ function WebhooksInner({ session }: { session: Session }) {
                 disabled={busy || !nouveau.trim()}
                 className="shrink-0"
               >
-                {busy ? t('Création...', 'Creating...') : t('Créer', 'Create')}
+                {busy ? t('Création…', 'Creating…') : t('Créer', 'Create')}
               </Bouton>
             </div>
           </div>
@@ -457,7 +458,7 @@ function Detail({
                   data-testid={`cible-${i}`}
                 >
                   {cibles.map((c) => <option key={c.valeur} value={c.valeur}>{c.label}</option>)}
-                  <option value={CIBLE_NOUVEAU}>{t('+ Créer un champ…', '+ Create a field…')}</option>
+                  <option value={CIBLE_NOUVEAU}>{t('Créer un champ…', 'Create a field…')}</option>
                 </select>
                 <button
                   onClick={() => setMapping((m) => m.filter((_, k) => k !== i))}
@@ -540,8 +541,8 @@ function Detail({
             </span>
             <span className="block text-ink-500">
               {t(
-                'Un contact DÉJÀ opt-in ne perd jamais son consentement, même si cette case est décochée.',
-                'A contact who is ALREADY opted in never loses consent, even if this box is unticked.',
+                'Un contact déjà opt-in ne perd jamais son consentement, même si cette case est décochée.',
+                'A contact who is already opted in never loses consent, even if this box is unticked.',
               )}
             </span>
           </span>
@@ -577,7 +578,7 @@ function Detail({
           disabled={busy}
           data-testid="enregistrer-webhook"
         >
-          {busy ? t('Enregistrement...', 'Saving...') : t('Enregistrer', 'Save')}
+          {busy ? t('Enregistrement…', 'Saving…') : t('Enregistrer', 'Save')}
         </Bouton>
       </div>
     </div>

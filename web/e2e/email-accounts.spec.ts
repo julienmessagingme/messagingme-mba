@@ -131,7 +131,7 @@ test.describe('Réglages : boîtes email (SMTP)', () => {
 
     await page.goto('/settings/email');
     await page.getByRole('button', { name: 'Tester' }).click();
-    await page.getByPlaceholder('toi@exemple.fr').fill('julien@exemple.fr');
+    await page.getByPlaceholder('vous@exemple.fr').fill('julien@exemple.fr');
     await page.getByRole('button', { name: 'Envoyer' }).click();
 
     await expect.poll(() => tested.length).toBe(1);
@@ -154,7 +154,7 @@ test.describe('Réglages : boîtes email (SMTP)', () => {
 
     await page.goto('/settings/email');
     await page.getByRole('button', { name: 'Tester' }).click();
-    await page.getByPlaceholder('toi@exemple.fr').fill('julien@exemple.fr');
+    await page.getByPlaceholder('vous@exemple.fr').fill('julien@exemple.fr');
     await page.getByRole('button', { name: 'Envoyer' }).click();
 
     await expect(page.getByText('envoi de test échoué')).toBeVisible();

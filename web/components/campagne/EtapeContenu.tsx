@@ -20,6 +20,7 @@ import { CreationScenarioEnLigne } from '@/components/campagne/CreationScenarioE
 import { modeleDeLEtage } from '@/lib/campagne-creation';
 import type { WorkflowSummary } from '@/lib/api';
 import { SYSTEM_FIELDS, customFieldsOnly, varCountOf } from '@/lib/fields';
+import { fmtNum } from '@/lib/format';
 import { firstTemplateOf } from '@/lib/campaign-eligibility';
 import { appliquerIndices, exemplesDApercu, lignesParDefaut, type VarRow } from '@/lib/variables-template';
 import type { TemplateSummary } from '@/lib/api';
@@ -161,8 +162,7 @@ export function EtapeContenu({
     <section data-testid="etape-contenu" className="w-full">
       <TitrePage>Que reçoivent les contacts ?</TitrePage>
       <p className="mt-1 text-sm text-ink-500">
-        Un cadre par étage de la chaîne, dans l&apos;ordre d&apos;envoi. Ouvrez celui que vous voulez
-        remplir.
+        Un cadre par étage de la chaîne, dans l’ordre d’envoi.
       </p>
 
       {/*
@@ -174,7 +174,7 @@ export function EtapeContenu({
       */}
       {chaine.length === 0 && (
         <p className="mt-4 rounded-controle bg-alerte-50 px-3 py-2 text-sm text-ink-900" data-testid="contenu-sans-canal">
-          Aucun canal n&apos;est choisi : revenez à l&apos;étape Canal pour dire par où partent les
+          Aucun canal n’est choisi : revenez à l’étape Canal pour dire par où partent les
           messages, et les étages à remplir apparaîtront ici.
         </p>
       )}
@@ -229,8 +229,8 @@ export function EtapeContenu({
       {rangsIncomplets.length > 0 && (
         <p className="mt-4 rounded-controle bg-alerte-50 px-3 py-2 text-sm text-ink-900" data-testid="contenu-incomplet">
           {rangsIncomplets.length === 1
-            ? `Le contenu de l'étage ${rangsIncomplets[0]} n'est pas encore choisi.`
-            : `Le contenu des étages ${rangsIncomplets.join(', ')} n'est pas encore choisi.`}
+            ? `Le contenu de l’étage ${rangsIncomplets[0]} n’est pas encore choisi.`
+            : `Le contenu des étages ${rangsIncomplets.join(', ')} n’est pas encore choisi.`}
           {' '}Remplissez-le pour passer à la suite.
         </p>
       )}
@@ -384,14 +384,14 @@ function BlocDevenirEtage({
       <div className="mt-3 space-y-2">
         <Radio
           groupe={`devenir-${rang}`}
-          libelle="L'agent de Meta prend la main"
+          libelle="L’agent de Meta prend la main"
           coche={contenu.devenir === 'mba'}
           desactive={!capacites.mbaEnabled}
           onCheck={() => onChange({ devenir: 'mba' })}
         />
         <Radio
           groupe={`devenir-${rang}`}
-          libelle="La conversation arrive dans l'Inbox"
+          libelle="La conversation arrive dans l’Inbox"
           coche={contenu.devenir === 'inbox'}
           onCheck={() => onChange({ devenir: 'inbox' })}
         />
@@ -939,7 +939,7 @@ function CadreRcs({
       </>
       )}
       <p className="text-xs text-alerte-700">
-        Les contacts non joignables en RCS ne reçoivent RIEN et sont comptés « ignorés » dans le rapport.
+        Les contacts non joignables en RCS ne reçoivent rien et sont comptés « ignorés » dans le rapport.
       </p>
       {/* ⚠️ Un scénario RCS n'a pas de modèle WhatsApp à paramétrer : on ne pose que son identifiant.
           ⚠️ SON `testId` MANQUAIT (ajouté le 2026-09-14) : l'étage WhatsApp le posait, pas celui-ci, donc
@@ -978,11 +978,11 @@ function CadreEmail({
           fois, donc il n'y a jamais deux de ces champs à l'écran. Désigner celui-ci par son libellé
           buterait sur « Modèle » et « Modèle d'e-mail », que les requêtes par étiquette confondent. */}
       <Selecteur
-        libelle="Modèle d'e-mail"
+        libelle="Modèle d’e-mail"
         valeur={contenu.emailTemplateId ?? ''}
         onChange={(v) => onChange({ emailTemplateId: v })}
         options={references.emailTemplates.map((t) => ({ valeur: t.id, libelle: t.name }))}
-        vide="Aucun modèle d'e-mail sur cet espace."
+        vide="Aucun modèle d’e-mail sur cet espace."
         testId="email-modele"
       />
       {/*
@@ -999,14 +999,14 @@ function CadreEmail({
         le récapitulatif le dit au lieu d'inventer un compte.
       */}
       <Selecteur
-        libelle="Champ qui porte l'adresse e-mail"
+        libelle="Champ qui porte l’adresse e-mail"
         valeur={champEmailEffectif(contenu.emailChamp, references.userFields) ?? ''}
         onChange={(v) => onChange({ emailChamp: v })}
         options={references.userFields.map((f) => ({ valeur: f.key, libelle: `${f.label} (${f.key})` }))}
         vide="Aucun champ perso sur cet espace : créez-en un dans Contacts > Champs perso."
       />
       <p className="rounded-controle bg-ink-50 px-3 py-2 text-xs text-ink-500">
-        L&apos;e-mail part à l&apos;adresse portée par ce champ. Un contact dont le champ est vide sort de
+        L’e-mail part à l’adresse portée par ce champ. Un contact dont le champ est vide sort de
         la chaîne avant cet étage.
       </p>
     </div>
@@ -1194,8 +1194,8 @@ function BlocAssignation({
               />
               {references.membres.some((m) => m.enAttente) && (
                 <p className="text-xs text-ink-500" data-testid="membres-en-attente">
-                  Les membres dont l&apos;invitation est en attente ne peuvent pas encore recevoir de
-                  conversation : ils apparaissent ici dès qu&apos;ils ont accepté.
+                  Les membres dont l’invitation est en attente ne peuvent pas encore recevoir de
+                  conversation : ils apparaissent ici dès qu’ils ont accepté.
                 </p>
               )}
               {/* 🔴 LE NOMBRE AVANT DE VALIDER. Assigner cinq mille conversations à quelqu'un doit se voir
@@ -1206,7 +1206,7 @@ function BlocAssignation({
               <p className="text-xs text-ink-500">
                 {nbDestinataires === null
                   ? 'Toutes les conversations lui seront attribuées ; leur nombre s’affiche au récapitulatif, une fois l’audience choisie.'
-                  : `${nbDestinataires.toLocaleString('fr-FR')} conversations lui seront attribuées.`}
+                  : `${fmtNum(nbDestinataires, 'fr')} conversations lui seront attribuées.`}
               </p>
             </div>
           )}
@@ -1216,8 +1216,8 @@ function BlocAssignation({
             // conversations d'avance attribuerait des conversations qui n'existeront jamais (la plupart
             // des destinataires ne répondront pas) et fausserait tous les compteurs de charge.
             <p className="mt-3 text-xs text-ink-500">
-              Chaque conversation est attribuée au suivant de l&apos;équipe au moment où elle arrive, jamais
-              d&apos;avance.
+              Chaque conversation est attribuée au suivant de l’équipe au moment où elle arrive, jamais
+              d’avance.
             </p>
           )}
         </div>
@@ -1259,7 +1259,7 @@ function Selecteur({
           {...(testId ? { 'data-testid': testId } : {})}
           className="mt-1 w-full rounded-controle border border-ink-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-400"
         >
-          <option value="">Choisir...</option>
+          <option value="">Choisir…</option>
           {options.map((o) => (
             <option key={o.valeur} value={o.valeur} disabled={o.desactive === true}>{o.libelle}</option>
           ))}

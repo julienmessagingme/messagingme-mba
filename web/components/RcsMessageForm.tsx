@@ -108,7 +108,7 @@ export function RcsMessageForm({ tenantId, fields, initial, onSaved }: {
               max={maxTexteRcs(brouillon.imageUrl)}
             />
             <p className="mt-1 text-xs text-ink-500">
-              {t('« + Variable » insère un champ du contact : il s’affiche comme une étiquette et sera remplacé à l’envoi. Sans valeur sur la fiche, il laisse un blanc.', '“+ Variable” inserts a contact field: it shows as a tag and is filled in at send time. With no value on the record, it leaves a blank.')}
+              {t('« Variable » insère un champ du contact : il s’affiche comme une étiquette et sera remplacé à l’envoi. Sans valeur sur la fiche, il laisse un blanc.', '“Variable” inserts a contact field: it shows as a tag and is filled in at send time. With no value on the record, it leaves a blank.')}
             </p>
           </div>
 
@@ -121,8 +121,8 @@ export function RcsMessageForm({ tenantId, fields, initial, onSaved }: {
             />
             <p className="mt-1 text-xs text-ink-500">
               {avecImage
-                ? t('Avec un visuel, jusqu’à 4 boutons : ils s’affichent en LISTE pleine largeur dans la carte, et y restent. 25 caractères chacun.', 'With a visual, up to 4 buttons: they show as a full-width LIST inside the card and stay there. 25 characters each.')
-                : t('Sans visuel, jusqu’à 11 boutons : ils s’affichent en petites PASTILLES sous la bulle, et disparaissent dès que la conversation avance. Ajoutez une image pour des boutons en liste. 25 caractères chacun.', 'With no visual, up to 11 buttons: they show as small CHIPS under the bubble and vanish as the conversation moves on. Add an image to get list buttons. 25 characters each.')}
+                ? t('Avec un visuel, jusqu’à 4 boutons : ils s’affichent en liste pleine largeur dans la carte, et y restent. 25 caractères chacun.', 'With a visual, up to 4 buttons: they show as a full-width list inside the card and stay there. 25 characters each.')
+                : t('Sans visuel, jusqu’à 11 boutons : ils s’affichent en petites pastilles sous la bulle, et disparaissent dès que la conversation avance. Ajoutez une image pour des boutons en liste. 25 caractères chacun.', 'With no visual, up to 11 buttons: they show as small chips under the bubble and vanish as the conversation moves on. Add an image to get list buttons. 25 characters each.')}
             </p>
             <p className="mt-1 text-xs text-ink-500">
               {t('Les variables ne sont pas remplacées dans un libellé. Un bouton « Réponse » est le seul qui devienne une sortie à relier dans un scénario.', 'Variables are not substituted in a label. A "Reply" button is the only one that becomes an output to connect in a scenario.')}

@@ -65,7 +65,7 @@ test.describe('Accueil : Canaux et services', () => {
     await expect(page.getByText('Voir le numéro', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Voir le canal', { exact: true })).toHaveCount(0);
     await expect(page.getByTestId('canal-autres-lien')).toHaveAttribute('href', '/parametres');
-    await expect(page.getByTestId('canal-autres-lien')).toHaveText('Autres intégrations+');
+    await expect(page.getByTestId('canal-autres-lien')).toHaveText('Autres intégrations');
     // 🔴 « Couper le canal RCS » est DEVENU l'interrupteur : la carte ne le porte plus.
     await expect(page.getByTestId('rcs-channel-card')).toBeVisible();
     await expect(page.getByText('Couper le canal RCS', { exact: true })).toHaveCount(0);

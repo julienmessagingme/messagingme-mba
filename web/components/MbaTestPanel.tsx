@@ -99,7 +99,7 @@ export function MbaTestPanel({ tenantId, phoneNumberId }: { tenantId: string; ph
           <input
             className={inputCls}
             data-testid="mba-test-input"
-            placeholder={t('Écris un message de test…', 'Type a test message…')}
+            placeholder={t('Écrivez un message de test…', 'Type a test message…')}
             value={message}
             disabled={busy}
             onChange={(e) => setMessage(e.target.value)}

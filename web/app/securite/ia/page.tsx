@@ -101,8 +101,8 @@ function Ia({ tenantId, estAdmin }: { tenantId: string; estAdmin: boolean }) {
         <TitrePage>{t('IA', 'AI')}</TitrePage>
         <IntroPage>
           {t(
-            'Vos agents annoncent-ils qu’ils sont des IA, et avec quelle phrase. Ce choix vaut pour tout l’espace : l’obligation d’information pèse sur votre marque, pas sur chacun de vos robots.',
-            'Do your agents announce that they are AI, and with which sentence. This choice applies to the whole workspace: the duty to inform lies with your brand, not with each of your bots.',
+            'Ce choix vaut pour tout l’espace : l’obligation d’informer pèse sur votre marque, pas sur chaque agent.',
+            'This choice applies to the whole workspace: the duty to inform lies with your brand, not with each agent.',
           )}
         </IntroPage>
       </div>
@@ -294,8 +294,8 @@ function TransfertEquipe({ tenantId, estAdmin }: { tenantId: string; estAdmin: b
         {/* 🔴 LA PHRASE QUI EMPÊCHE LE CONTRESENS. Sans elle, un client lit « jamais » et croit avoir coupé
             le transfert, alors que la conversation remonte toujours. */}
         {t(
-          'Ce réglage ne coupe jamais le transfert : la conversation arrive dans « À traiter » dans tous les cas. Il décide de ce que votre agent a le droit de PROMETTRE au contact.',
-          'This setting never disables handover: the conversation always lands in “To handle”. It decides what your agent may PROMISE to the contact.',
+          'Ce réglage ne coupe jamais le transfert : la conversation arrive dans « À traiter » dans tous les cas. Il décide de ce que votre agent a le droit de promettre au contact.',
+          'This setting never disables handover: the conversation always lands in “To handle”. It decides what your agent may promise to the contact.',
         )}
       </p>
 

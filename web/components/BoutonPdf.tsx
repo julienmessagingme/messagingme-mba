@@ -17,7 +17,7 @@ export function BoutonPdf({ zone }: { zone: string }) {
       type="button"
       onClick={() => imprimerZone(zone)}
       data-testid={`pdf-${zone}`}
-      title={t('Ouvre la boîte d’impression : choisis « Enregistrer au format PDF ».', 'Opens the print dialog: pick "Save as PDF".')}
+      title={t('Ouvre la boîte d’impression : choisissez « Enregistrer au format PDF ».', 'Opens the print dialog: pick "Save as PDF".')}
       aria-label={t('Exporter en PDF', 'Export to PDF')}
       className="sans-impression shrink-0"
     >

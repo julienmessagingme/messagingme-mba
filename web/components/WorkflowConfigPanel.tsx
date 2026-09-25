@@ -92,7 +92,7 @@ function TagPicker({ label, value, tags, onChange, onCommit }: {
         placeholder={t('vip, prospect…', 'vip, prospect…')}
       />
       <datalist id="wf-tags">{tags.map((tg) => <option key={tg.tag} value={tg.tag} />)}</datalist>
-      {onCommit && <p className="mt-1 text-xs text-ink-500">{t('L’étiquette est ajoutée à Contenu > Bibliothèque > Étiquettes dès que tu quittes le champ.', 'The tag is added to Content > Library > Tags as soon as you leave the field.')}</p>}
+      {onCommit && <p className="mt-1 text-xs text-ink-500">{t('L’étiquette est ajoutée à Contenu > Bibliothèque > Étiquettes dès que vous quittez le champ.', 'The tag is added to Content > Library > Tags as soon as you leave the field.')}</p>}
     </div>
   );
 }
@@ -191,9 +191,9 @@ export function ConfigPanel({
       {isRoot && !campaignEligible && (
         <p className="rounded-controle border border-alerte-300 bg-alerte-50 px-2.5 py-2 text-xs leading-snug text-alerte-800">
           {wfType === 'template'
-            ? t('Choisis le template de ce bloc : tant qu’il est vide, ce scénario ne pourra pas être lancé en campagne.',
+            ? t('Choisissez le template de ce bloc : tant qu’il est vide, ce scénario ne pourra pas être lancé en campagne.',
                 'Pick this block’s template: while it is empty, this scenario cannot be launched as a campaign.')
-            : t('Ce scénario ne pourra pas être lancé en campagne : une campagne part sur une audience froide, donc le PREMIER message envoyé doit être un template. Une étiquette, une action ou une condition avant lui ne posent aucun problème. Il reste utilisable quand le contact vient d’écrire.', 'This scenario cannot be launched as a campaign: a campaign targets a cold audience, so the FIRST message sent must be a template. A tag, an action or a condition before it is fine. It stays usable when the contact has just written.')}
+            : t('Ce scénario ne pourra pas être lancé en campagne : une campagne part sur une audience froide, donc le premier message envoyé doit être un template. Une étiquette, une action ou une condition avant lui ne posent aucun problème. Il reste utilisable quand le contact vient d’écrire.', 'This scenario cannot be launched as a campaign: a campaign targets a cold audience, so the first message sent must be a template. A tag, an action or a condition before it is fine. It stays usable when the contact has just written.')}
         </p>
       )}
 
@@ -258,21 +258,21 @@ export function ConfigPanel({
                 className={`${cls} mt-2 w-full bg-white`}
               />
               <p className="mt-1 text-xs text-ink-500">
-                {t("Cette date vaut pour TOUS les contacts qui passent par ce bloc, dans le fuseau de l'espace (onglet Paramètres). Une date déjà passée ne retient personne : le parcours continue tout de suite. Au-delà de 30 jours d'attente, la reprise est ramenée à 30 jours.", 'This date applies to EVERY contact going through this block, in the workspace time zone (Settings tab). A date already past holds nobody: the parcours continues right away. Beyond 30 days of waiting, the resume is capped at 30 days.')}
+                {t("Cette date vaut pour tous les contacts qui passent par ce bloc, dans le fuseau de l’espace (onglet Paramètres). Une date déjà passée ne retient personne : le parcours continue tout de suite. Au-delà de 30 jours d’attente, la reprise est ramenée à 30 jours.", 'This date applies to every contact going through this block, in the workspace time zone (Settings tab). A date already past holds nobody: the parcours continues right away. Beyond 30 days of waiting, the resume is capped at 30 days.')}
               </p>
             </>
           )}
 
           {mode === 'heures_ouvrees' && (
             <p className="mt-2 text-xs text-ink-500">
-              {t("S'il est 1 h du matin, le parcours reprend à l'ouverture du jour, telle qu'elle est réglée dans l'onglet Paramètres. Si on est déjà dans les heures ouvertes, il continue sans attendre. Si aucun jour n'est ouvert, ce bloc ne retient personne : le parcours continue tout de suite.", 'If it is 1am, the parcours resumes at the opening time set in the Settings tab. If it is already within business hours, it continues without waiting. If no day is open at all, this block holds nobody: the parcours continues right away.')}
+              {t("S’il est 1 h du matin, le parcours reprend à l’ouverture du jour, telle qu’elle est réglée dans l’onglet Paramètres. Si on est déjà dans les heures ouvertes, il continue sans attendre. Si aucun jour n’est ouvert, ce bloc ne retient personne : le parcours continue tout de suite.", 'If it is 1am, the parcours resumes at the opening time set in the Settings tab. If it is already within business hours, it continues without waiting. If no day is open at all, this block holds nobody: the parcours continues right away.')}
             </p>
           )}
 
           <p className="mt-1 text-xs text-alerte-700">
             {mode === 'delai'
-              ? t("Après une attente, seul un envoi de TEMPLATE peut encore partir : la fenêtre de 24 h aura le plus souvent expiré. Un message rapide ou un formulaire placé après ne partira pas.", 'After a wait, only a TEMPLATE can still be sent: the 24h window will usually have expired. A quick message or a form placed after will not be sent.')
-              : t("La durée de cette attente n'est pas connue d'avance : elle est donc comptée pour une attente LONGUE. Seul un envoi de TEMPLATE peut encore partir derrière ; un message rapide ou un formulaire placé après sera refusé à la publication.", 'The length of this wait is not known in advance, so it counts as a LONG wait. Only a TEMPLATE can still be sent after it; a quick message or a form placed after will be refused at publication.')}
+              ? t("Après une attente, seul un envoi de template peut encore partir : la fenêtre de 24 h aura le plus souvent expiré. Un message rapide ou un formulaire placé après ne partira pas.", 'After a wait, only a template can still be sent: the 24h window will usually have expired. A quick message or a form placed after will not be sent.')
+              : t("La durée de cette attente n’est pas connue d’avance : elle est donc comptée pour une attente longue. Seul un envoi de template peut encore partir derrière ; un message rapide ou un formulaire placé après sera refusé à la publication.", 'The length of this wait is not known in advance, so it counts as a long wait. Only a template can still be sent after it; a quick message or a form placed after will be refused at publication.')}
           </p>
         </div>
         );
@@ -330,7 +330,7 @@ export function ConfigPanel({
                 ))}
               </select>
               <p className="mt-1 text-xs text-ink-500">
-                {t('Le message est COPIÉ dans ce bloc : le modifier ici ne touche pas la bibliothèque, et modifier la bibliothèque ne touche pas ce bloc.', 'The message is COPIED into this block: editing it here does not touch the library, and editing the library does not touch this block.')}
+                {t('Le message est copié dans ce bloc : le modifier ici ne touche pas la bibliothèque, et modifier la bibliothèque ne touche pas ce bloc.', 'The message is copied into this block: editing it here does not touch the library, and editing the library does not touch this block.')}
               </p>
             </div>
 
@@ -340,7 +340,7 @@ export function ConfigPanel({
               <div data-testid="rcs-node-apercu">
                 <RcsPreview
                   brouillon={{ text: (d.text as string) ?? '', imageUrl: (d.imageUrl as string) ?? '', suggestions: boutons }}
-                  vide={t('Choisis un message enregistré ci-dessus.', 'Pick a saved message above.')}
+                  vide={t('Choisissez un message enregistré ci-dessus.', 'Pick a saved message above.')}
                 />
               </div>
             )}
@@ -370,7 +370,7 @@ export function ConfigPanel({
                 compact
               />
               <p className="mt-1 text-xs text-ink-500">
-                {t('« + Variable » insère un champ du contact, remplacé à l’envoi par sa fiche.', '“+ Variable” inserts a contact field, filled in from their record at send time.')}
+                {t('« Variable » insère un champ du contact, remplacé à l’envoi par sa fiche.', '“Variable” inserts a contact field, filled in from their record at send time.')}
               </p>
             </div>
 
@@ -447,7 +447,7 @@ export function ConfigPanel({
               />
               {rows.length === 0 && (
                 <p className="mt-1 text-xs text-ink-500">
-                  {t('Ce bouton n’apparaît que si tu proposes des réponses ci-dessous.', 'This button only appears if you offer answers below.')}
+                  {t('Ce bouton n’apparaît que si vous proposez des réponses ci-dessous.', 'This button only appears if you offer answers below.')}
                 </p>
               )}
             </div>
@@ -482,8 +482,8 @@ export function ConfigPanel({
                 ))}
               </div>
               {rows.length < 10 && (
-                <button type="button" onClick={() => patchRows([...rows, { title: '', description: '' }])} data-testid="question-add-row" className="mt-1.5 text-xs text-brand-600 hover:underline">
-                  {t('+ réponse', '+ answer')}
+                <button type="button" onClick={() => patchRows([...rows, { title: '', description: '' }])} data-testid="question-add-row" className="mt-1.5 inline-flex items-center gap-1 text-xs text-brand-600 hover:underline">
+                  <Icone nom="ajouter" taille="petite" />{t('Réponse', 'Answer')}
                 </button>
               )}
               <p className="mt-1 text-xs text-ink-500">
@@ -509,7 +509,7 @@ export function ConfigPanel({
                 </select>
               </div>
               <p className="mt-1 text-xs text-ink-500">
-                {t('0 = on attend sans limite. Au-delà de 0, une sortie « Pas de réponse » apparaît sur le bloc : relie-la pour prévoir ce cas. Maximum 30 jours.', '0 = wait with no limit. Above 0, a “No reply” output appears on the block: connect it to handle that case. Maximum 30 days.')}
+                {t('0 = on attend sans limite. Au-delà de 0, une sortie « Pas de réponse » apparaît sur le bloc : reliez-la pour prévoir ce cas. Maximum 30 jours.', '0 = wait with no limit. Above 0, a “No reply” output appears on the block: connect it to handle that case. Maximum 30 days.')}
               </p>
             </div>
 
@@ -530,7 +530,7 @@ export function ConfigPanel({
           && (lienUrl.includes('{{') || !(lienUrl.startsWith('http://') || lienUrl.startsWith('https://')));
         return (
           <div className="space-y-2">
-            {/* MÊME composant d'insertion que le bloc RCS et le bloc Question : « + Variable » pose un champ
+            {/* MÊME composant d'insertion que le bloc RCS et le bloc Question : « Variable » pose un champ
                 du contact, et le sélecteur d'émojis évite d'aller en chercher un ailleurs. C'était le DERNIER
                 corps de message resté un champ nu, où il fallait recopier les accolades de mémoire. */}
             <div>
@@ -539,7 +539,7 @@ export function ConfigPanel({
                 onChange={(body) => onPatch({ body })}
                 fields={fields}
                 label={t('Message', 'Message')}
-                placeholder={t('Ton message…', 'Your message…')}
+                placeholder={t('Votre message…', 'Your message…')}
                 testId="quick-node-body"
                 // ⚠️ LE PLAFOND DÉPEND DES BOUTONS, et ce n'est pas un détail d'affichage : avec des réponses
                 // rapides OU un bouton de lien, le message part en INTERACTIF, que Meta borne à 1024
@@ -549,7 +549,7 @@ export function ConfigPanel({
                 compact
               />
               <p className="mt-1 text-xs text-ink-500">
-                {t('« + Variable » insère un champ du contact, remplacé à l’envoi par sa fiche.', '“+ Variable” inserts a contact field, filled in from their record at send time.')}
+                {t('« Variable » insère un champ du contact, remplacé à l’envoi par sa fiche.', '“Variable” inserts a contact field, filled in from their record at send time.')}
               </p>
             </div>
             {/* MÊME composant et MÊME champ (`imageUrl`) que le bloc RCS : un seul téléversement, un seul
@@ -632,7 +632,7 @@ export function ConfigPanel({
                 ))}
               </div>
               {qr.length < 3 && (
-                <button type="button" onClick={() => onPatch({ quickReplies: [...qr, ''] })} className="mt-1.5 text-xs text-brand-600 hover:underline">{t('+ réponse rapide', '+ quick reply')}</button>
+                <button type="button" onClick={() => onPatch({ quickReplies: [...qr, ''] })} className="mt-1.5 inline-flex items-center gap-1 text-xs text-brand-600 hover:underline"><Icone nom="ajouter" taille="petite" />{t('Réponse rapide', 'Quick reply')}</button>
               )}
               <p className="mt-1 text-xs text-ink-500">{t('Max 3, 20 caractères. Chaque réponse devient une sortie à relier (point à droite du bloc).', 'Max 3, 20 characters. Each reply becomes an output to connect (dot on the right of the block).')}</p>
               </>)}
@@ -697,11 +697,11 @@ export function ConfigPanel({
               <p className="text-xs leading-snug text-ink-500">
                 {kind === 'set_optin'
                   ? t(
-                    "Le contact devient destinataire des campagnes marketing. À placer après une étape où il a donné son accord, pas au hasard d'un parcours.",
+                    "Le contact devient destinataire des campagnes marketing. À placer après une étape où il a donné son accord, pas au hasard d’un parcours.",
                     'The contact becomes eligible for marketing campaigns. Place it after a step where they agreed, not anywhere in a flow.',
                   )
                   : t(
-                    "Le contact est exclu de toute campagne, y compris de celles déjà programmées. C'est ce qu'il faut derrière un mot-clé de désinscription.",
+                    "Le contact est exclu de toute campagne, y compris de celles déjà programmées. C’est ce qu’il faut derrière un mot-clé de désinscription.",
                     'The contact is excluded from every campaign, including already scheduled ones. This is what belongs behind an unsubscribe keyword.',
                   )}
               </p>
@@ -721,7 +721,7 @@ export function ConfigPanel({
       })()}
       {wfType === 'condition' && (
         <div className="space-y-2">
-          <p className="text-xs leading-snug text-ink-500">{t('Le contact tire le fil « Si réunie » (vert) quand la condition est vraie, sinon « Sinon » (rouge). Relie chaque sortie à un bloc.', 'The contact follows “If met” (green) when the condition is true, otherwise “Otherwise” (red). Connect each output to a block.')}</p>
+          <p className="text-xs leading-snug text-ink-500">{t('Le contact tire le fil « Si réunie » (vert) quand la condition est vraie, sinon « Sinon » (rouge). Reliez chaque sortie à un bloc.', 'The contact follows “If met” (green) when the condition is true, otherwise “Otherwise” (red). Connect each output to a block.')}</p>
           <ConditionBuilder
             group={{ match: (d.match as 'all' | 'any') ?? 'all', clauses: Array.isArray(d.clauses) ? (d.clauses as ConditionGroup['clauses']) : [] }}
             onChange={(g) => onPatch({ match: g.match, clauses: g.clauses })}
@@ -734,8 +734,8 @@ export function ConfigPanel({
         <div className="flex flex-col gap-2">
           <p className="text-xs leading-relaxed text-ink-500">
             {t(
-              "Le fil passe à un humain : le scénario s'arrête ici et la conversation apparaît dans « À traiter » dans l'Inbox. À placer APRÈS le message qui annonce le conseiller, c'est lui qui fait taire l'agent automatique.",
-              "The thread goes to a human: the scenario stops here and the conversation shows up under “To handle” in the Inbox. Place it AFTER the message announcing the advisor, that message is what silences the automatic agent.",
+              "Le fil passe à un humain : le scénario s’arrête ici et la conversation apparaît dans « À traiter » dans l’Inbox. À placer après le message qui annonce le conseiller, c’est lui qui fait taire l’agent automatique.",
+              "The thread goes to a human: the scenario stops here and the conversation shows up under “To handle” in the Inbox. Place it after the message announcing the advisor, that message is what silences the automatic agent.",
             )}
           </p>
           <label className="text-xs font-medium text-ink-900">{t('Affecter à', 'Assign to')}</label>
@@ -762,14 +762,14 @@ export function ConfigPanel({
           {membres != null && String(d.assigneA ?? '') !== '' && !membres.some((m) => m.id === d.assigneA) && (
             <p className="text-xs text-danger" data-testid="inbox-node-assignee-parti">
               {t(
-                `« ${String(d.assigneNom ?? d.assigneA)} » n'est plus un membre actif : la conversation ira au pot commun.`,
+                `« ${String(d.assigneNom ?? d.assigneA)} » n’est plus un membre actif : la conversation ira au pot commun.`,
                 `“${String(d.assigneNom ?? d.assigneA)}” is no longer an active member: the conversation will go to the shared pool.`,
               )}
             </p>
           )}
           <p className="text-xs text-ink-500">
             {t(
-              'Au pot commun, tout le monde la voit et peut répondre. Affectée, elle n\'allume la pastille que de cette personne, et d\'un manager ou d\'un administrateur.',
+              'Au pot commun, tout le monde la voit et peut répondre. Affectée, elle n’allume la pastille que de cette personne, et d’un manager ou d’un administrateur.',
               'In the shared pool, everyone sees it and can reply. Assigned, it only lights up that person\'s badge, plus a manager\'s or an admin\'s.',
             )}
           </p>
@@ -819,7 +819,7 @@ export function ConfigPanel({
           {requetes != null && String(d.requestId ?? '') !== '' && !requetes.some((r) => r.id === d.requestId) && (
             <p className="text-xs text-danger" data-testid="http-node-requete-partie">
               {t(
-                `L'appel « ${String(d.requeteLabel ?? d.requestId)} » n'existe plus : ce bloc ne fera rien.`,
+                `L’appel « ${String(d.requeteLabel ?? d.requestId)} » n’existe plus : ce bloc ne fera rien.`,
                 `The call “${String(d.requeteLabel ?? d.requestId)}” no longer exists: this block will do nothing.`,
               )}
             </p>
@@ -839,8 +839,8 @@ export function ConfigPanel({
           {/* 🔴 CE QUE PERSONNE NE DEVINE, ET QUI DÉCIDE DE LA SUITE DU SCÉNARIO. */}
           <p className="text-xs text-ink-500">
             {t(
-              'Si l’appel échoue (système injoignable, information manquante), le champ est VIDÉ. Branchez une condition « ce champ est vide » pour traiter ce cas : une valeur de la veille ferait prendre la bonne branche pour de mauvaises raisons.',
-              'If the call fails (unreachable system, missing information), the field is EMPTIED. Add a condition “this field is empty” to handle that case: a value from yesterday would send the journey down the right branch for the wrong reasons.',
+              'Si l’appel échoue (système injoignable, information manquante), le champ est vidé. Branchez une condition « ce champ est vide » pour traiter ce cas : une valeur de la veille ferait prendre la bonne branche pour de mauvaises raisons.',
+              'If the call fails (unreachable system, missing information), the field is emptied. Add a condition “this field is empty” to handle that case: a value from yesterday would send the journey down the right branch for the wrong reasons.',
             )}
           </p>
         </div>
@@ -1053,9 +1053,9 @@ export function ConfigPanel({
                   type="button"
                   data-testid="email-recipient-add"
                   onClick={() => patchDest([...destinataires, { kind: 'literal', value: '' }])}
-                  className="text-xs text-brand-600 hover:underline"
+                  className="inline-flex items-center gap-1 text-xs text-brand-600 hover:underline"
                 >
-                  {t('+ destinataire', '+ recipient')}
+                  <Icone nom="ajouter" taille="petite" />{t('Destinataire', 'Recipient')}
                 </button>
               )}
               <p className="mt-1 text-xs text-ink-500">
@@ -1067,7 +1067,7 @@ export function ConfigPanel({
             </div>
             <p className="text-xs leading-snug text-ink-500">
               {t(
-                "L'envoi est best-effort : un échec (boîte injoignable, adresse invalide…) est journalisé mais n'arrête jamais le parcours du contact.",
+                "L’envoi est best-effort : un échec (boîte injoignable, adresse invalide…) est journalisé mais n’arrête jamais le parcours du contact.",
                 'The send is best-effort: a failure (unreachable mailbox, invalid address…) is logged but never stops the contact’s journey.',
               )}
             </p>
@@ -1248,7 +1248,7 @@ function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch, 
             onClick={() => { setNouveauChamp(''); setRefusChamp(null); }}
             className="shrink-0"
           >
-            {t('+ Nouveau champ', '+ New field')}
+            <Icone nom="ajouter" taille="petite" />{t('Nouveau champ', 'New field')}
           </Bouton>
         )}
       </div>
@@ -1284,8 +1284,8 @@ function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch, 
               panne, et le client réessaierait le même nom. */}
           {refusChamp !== null && <p className="text-xs text-danger" data-testid="js-node-cible-refus">{refusChamp}</p>}
           <p className="text-xs text-ink-500">
-            {t('Il sera créé en TEXTE et apparaîtra aussitôt dans le mini-CRM. Son type se change dans Contenu > Champs.',
-              'It will be created as TEXT and will appear at once in the mini-CRM. Its type can be changed in Content > Fields.')}
+            {t('Il sera créé en texte et apparaîtra aussitôt dans le mini-CRM. Son type se change dans Contenu > Champs.',
+              'It will be created as text and will appear at once in the mini-CRM. Its type can be changed in Content > Fields.')}
           </p>
         </div>
       )}
@@ -1294,8 +1294,8 @@ function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch, 
           d'échec décide de la suite du scénario, et personne ne le devine. */}
       <p className="text-xs text-ink-500">
         {t(
-          'Si la fonction échoue (erreur, ou plus de 200 ms), le champ de sortie est VIDÉ. Branchez une condition « ce champ est vide » pour traiter ce cas.',
-          'If the function fails (error, or over 200 ms), the output field is EMPTIED. Add a condition “this field is empty” to handle that case.',
+          'Si la fonction échoue (erreur, ou plus de 200 ms), le champ de sortie est vidé. Branchez une condition « ce champ est vide » pour traiter ce cas.',
+          'If the function fails (error, or over 200 ms), the output field is emptied. Add a condition “this field is empty” to handle that case.',
         )}
       </p>
     </div>

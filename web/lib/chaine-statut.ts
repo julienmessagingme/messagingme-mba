@@ -93,7 +93,7 @@ export function texteAvertissement(a: AvertissementPost, locale: Locale): { text
       return {
         texte: en
           ? 'The post went out, but its button starts nothing: the link could not be switched on. Turn it on below.'
-          : 'La publication est partie, mais son bouton ne démarre rien : le lien n’a pas pu être allumé. Allume-le ci-dessous.',
+          : 'La publication est partie, mais son bouton ne démarre rien : le lien n’a pas pu être allumé. Allumez-le ci-dessous.',
         reparable: true,
       };
     case 'trace_manquante':
@@ -107,7 +107,7 @@ export function texteAvertissement(a: AvertissementPost, locale: Locale): { text
       return {
         texte: en
           ? 'The post went out. Channels Me answered something unexpected, so its status cannot be followed here. Do not publish again.'
-          : 'La publication est partie. Channels Me a répondu quelque chose d’inattendu, son statut ne peut pas être suivi ici. Ne republie pas.',
+          : 'La publication est partie. Channels Me a répondu quelque chose d’inattendu, son statut ne peut pas être suivi ici. Ne republiez pas.',
         reparable: false,
       };
   }

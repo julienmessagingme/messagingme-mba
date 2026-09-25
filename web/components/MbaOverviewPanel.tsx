@@ -52,12 +52,12 @@ export function MbaOverviewPanel({ tenantId, phoneNumberId, status, onChange }: 
   async function basculerAllumage(): Promise<void> {
     const message = allume
       ? t(
-          'Éteindre l’agent arrête ses réponses sur TOUTES les conversations, y compris celles en cours. En le rallumant, il ne reprendra que les NOUVELLES conversations : les fils coupés resteront à traiter par un humain. Continuer ?',
-          'Turning the agent off stops its replies on ALL conversations, including ongoing ones. When you turn it back on, it only picks up NEW conversations: the interrupted threads will need a human. Continue?',
+          'Éteindre l’agent arrête ses réponses sur toutes les conversations, y compris celles en cours. En le rallumant, il ne reprendra que les nouvelles conversations : les fils coupés resteront à traiter par un humain. Continuer ?',
+          'Turning the agent off stops its replies on all conversations, including ongoing ones. When you turn it back on, it only picks up new conversations: the interrupted threads will need a human. Continue?',
         )
       : t(
-          'Allumer l’agent : il répondra aux NOUVELLES conversations de l’audience choisie. Continuer ?',
-          'Turn the agent on: it will answer NEW conversations from the selected audience. Continue?',
+          'Allumer l’agent : il répondra aux nouvelles conversations de l’audience choisie. Continuer ?',
+          'Turn the agent on: it will answer new conversations from the selected audience. Continue?',
         );
     if (!(await confirmer({ titre: allume ? t('Éteindre l’agent', 'Turn the agent off') : t('Allumer l’agent', 'Turn the agent on'), message: message, confirmer: allume ? t('Éteindre', 'Turn off') : t('Allumer', 'Turn on') }))) return;
     void appliquer(() => putMbaRollout(tenantId, phoneNumberId, !allume));
@@ -101,8 +101,8 @@ export function MbaOverviewPanel({ tenantId, phoneNumberId, status, onChange }: 
             <h3 className="text-sm font-semibold text-ink-900">{t('Agent actif', 'Agent on')}</h3>
             <p className="mt-1 text-xs leading-relaxed text-ink-500">
               {t(
-                'Éteindre agit tout de suite sur toutes les conversations. Rallumer ne reprend que les nouvelles : ce n’est pas un interrupteur symétrique.',
-                'Turning off acts immediately on all conversations. Turning back on only resumes new ones: this is not a symmetric switch.',
+                'Éteindre agit tout de suite sur toutes les conversations ; rallumer ne reprend que les nouvelles.',
+                'Turning off acts immediately on all conversations; turning back on only resumes new ones.',
               )}
             </p>
           </div>

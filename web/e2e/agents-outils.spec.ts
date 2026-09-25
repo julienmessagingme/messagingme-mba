@@ -177,7 +177,7 @@ test.describe('Agents IA : les outils', () => {
     await mock(page, appels, [TAG]);
     await page.goto(`/agents?id=${AG}&tab=outils`);
 
-    await expect(page.getByTestId(`outil-gestes-${TAG.id}`)).toContainText('MÊME SI');
+    await expect(page.getByTestId(`outil-gestes-${TAG.id}`)).toContainText('même si l’appel ci-dessus échoue');
     await expect(page.getByTestId(`outil-gestes-${TAG.id}`)).toContainText('rendez-vous demandé');
 
     await page.getByTestId(`outil-geste-valeur-${TAG.id}`).fill('rendez_vous_demande');
@@ -269,7 +269,7 @@ test.describe('Agents IA : les outils', () => {
     // croit son agent réglé et ne comprend pas pourquoi il ne termine jamais.
     await mock(page, [], [MUET]);
     await page.goto(`/agents?id=${AG}&tab=outils`);
-    await expect(page.getByText('le modèle n’en voit RIEN')).toBeVisible();
+    await expect(page.getByText('le modèle n’en voit rien')).toBeVisible();
     await page.getByTestId('outil-schema-bouton-o3').click();
     await expect(page.getByTestId('outil-schema-o3')).toContainText('aucune valeur possible');
   });

@@ -107,7 +107,7 @@ test.describe('Constructeur : tester à partir d’un bloc', () => {
     // Sans `stopPropagation`, React Flow sélectionne aussi le bloc : le panneau de configuration remplace
     // l'invite de droite, et le testeur se retrouve avec deux panneaux ouverts sur le même geste.
     await ouvrirBuilder(page);
-    const invite = page.getByText('Clique un bloc pour le configurer', { exact: false });
+    const invite = page.getByText('Cliquez sur un bloc pour le configurer', { exact: false });
     await expect(invite).toBeVisible();
 
     await page.getByTestId(`node-test-${N2}`).click();

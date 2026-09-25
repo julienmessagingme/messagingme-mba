@@ -73,8 +73,8 @@ export function ErreursLivraison({ tenantId }: { tenantId: string }) {
           <h3 className="text-sm font-semibold text-ink-900">{t('Erreurs de livraison', 'Delivery errors')}</h3>
           <p className="text-xs text-ink-500">
             {t(
-              'Ce que Meta (ou, pour un RCS, le fournisseur RCS) a répondu quand un message n’est pas parti, ou n’est pas arrivé. Contrairement au journal des actions, celui-ci porte les numéros : sans eux, il ne dirait pas à qui.',
-              'What Meta (or, for an RCS, the RCS provider) answered when a message did not go out, or did not arrive. Unlike the action log, this one carries phone numbers: without them, it would not say to whom.',
+              'La réponse de Meta (ou du fournisseur RCS) quand un message n’est pas parti ou pas arrivé. Ce journal porte les numéros, contrairement au journal des actions.',
+              'Meta’s answer (or the RCS provider’s) when a message did not go out or did not arrive. This log carries phone numbers, unlike the action log.',
             )}
           </p>
         </div>
@@ -222,8 +222,8 @@ export function ErreursSysteme({ tenantId }: { tenantId: string }) {
         <span className="text-sm font-semibold text-ink-900">{t('Erreurs système', 'System errors')}</span>
         <p className="mt-1 text-xs text-ink-500">
           {t(
-            'Les appels que Engage Me passe vers VOS systèmes (CRM, ERP, back-office) et qui n’ont pas abouti. Rien à voir avec les messages ci-dessus : ici, personne n’attend au bout d’un téléphone.',
-            'Calls Engage Me makes to YOUR systems (CRM, ERP, back-office) that did not succeed. Nothing to do with the messages above: nobody is waiting at the end of a phone here.',
+            'Les appels d’Engage Me vers vos systèmes (CRM, ERP, back-office) qui n’ont pas abouti. Aucun message de contact n’est en cause ici.',
+            'Calls from Engage Me to your systems (CRM, ERP, back-office) that did not succeed. No contact message is involved here.',
           )}
         </p>
       </div>

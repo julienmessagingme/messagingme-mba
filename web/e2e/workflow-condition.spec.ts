@@ -50,7 +50,7 @@ test.describe('Builder : node Condition', () => {
     await expect(page.getByText('Sinon').first()).toBeVisible();
 
     // Le ConfigPanel du node condition (sélectionné à la création) propose le constructeur de clauses.
-    const addClause = page.getByRole('button', { name: /ajouter une condition/ });
+    const addClause = page.getByRole('button', { name: /Ajouter une condition/ });
     await expect(addClause).toBeVisible();
     await addClause.click();
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { hourMin, jourHeure } from './day';
+import { dateHeure, hourMin, jourHeure } from './day';
 
 /**
  * Le jour ET l'heure dans la liste des conversations de l'Inbox (demande de Julien du 2026-09-23) : l'heure seule
@@ -19,5 +19,13 @@ describe('jourHeure', () => {
 
   it('garde l’heure de hourMin, qui reste celle des bulles du fil', () => {
     expect(jourHeure('2026-09-22T15:42:12Z', 'fr').endsWith(hourMin('2026-09-22T15:42:12Z', 'fr'))).toBe(true);
+  });
+});
+
+describe('dateHeure', () => {
+  it('rend la date complète et l’heure sur 24 h, en heure de Paris, dans les deux langues', () => {
+    expect(dateHeure('2026-09-22T16:49:00Z', 'fr')).toBe('22/09/2026 18:49');
+    // Jamais « 06:49 PM » : l'anglais de la console est britannique, sur 24 h.
+    expect(dateHeure('2026-09-22T16:49:00Z', 'en')).toBe('22/09/2026 18:49');
   });
 });

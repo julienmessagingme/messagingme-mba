@@ -29,9 +29,9 @@ import { Squelette } from '@/components/Squelette';
  */
 /** Les exemples proposés quand le fil est vide. Trois gestes que l'assistant sait vraiment faire. */
 const EXEMPLES: readonly (readonly [string, string])[] = [
-  ['Ajoute mes horaires du samedi', 'Add my Saturday hours'],
-  ['Ajoute une question fréquente sur les délais de livraison', 'Add an FAQ about delivery times'],
-  ['Dis-lui de ne jamais promettre de remise', 'Tell it to never promise a discount'],
+  ['Ajoutez mes horaires du samedi', 'Add my Saturday hours'],
+  ['Ajoutez une question fréquente sur les délais de livraison', 'Add an FAQ about delivery times'],
+  ['Dites-lui de ne jamais promettre de remise', 'Tell it to never promise a discount'],
 ];
 
 export function MbaAssistantPanel({ tenantId, etapesRestantes = null }: {
@@ -181,7 +181,7 @@ export function MbaAssistantPanel({ tenantId, etapesRestantes = null }: {
                      même écran, ce qui est pire que le mot faux. Le même compte, le même registre que
                      l'en-tête (« n étapes à finir »), et la contradiction ne peut pas exister.
                   */
-                  : t(`Il reste ${etapesRestantes} étape(s) à finir. Dites-lui de s'en occuper, ou réglez-les dans les onglets.`,
+                  : t(`Il reste ${etapesRestantes} étape(s) à finir. Dites-lui de s’en occuper, ou réglez-les dans les onglets.`,
                     `${etapesRestantes} step(s) left to finish. Ask it to handle them, or do it in the tabs.`)}
             </p>
           </div>
@@ -288,7 +288,7 @@ export function MbaAssistantPanel({ tenantId, etapesRestantes = null }: {
           data-testid="mba-assistant-saisie"
           value={saisie}
           disabled={busy || budgetEpuise}
-          placeholder={t('Par exemple : ajoute mes horaires du samedi. Entrée pour envoyer, Maj+Entrée pour aller à la ligne.',
+          placeholder={t('Par exemple : ajoutez mes horaires du samedi. Entrée pour envoyer, Maj+Entrée pour aller à la ligne.',
             'For example: add my Saturday hours. Enter to send, Shift+Enter for a new line.')}
           onChange={(e) => setSaisie(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void envoyer(); } }}

@@ -241,8 +241,8 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
                   une page qui explique se lit, une phrase qui interroge se répond. */}
               <div className="max-w-[85%] self-start rounded-carte rounded-bl-none bg-white px-3.5 py-2.5 text-sm text-ink-900">
                 {t(
-                  'Bonjour ! On va régler votre agent en discutant. Je vous poserai une question à la fois, puis je vous montrerai ce que j’ai compris avant d’écrire quoi que ce soit. Pour commencer : à quoi sert votre agent, au-delà de répondre ?',
-                  'Hello! We will set up your agent by talking. I will ask one question at a time, then show you what I understood before writing anything. To start: what is your agent for, beyond answering?',
+                  'Réglons votre agent en discutant : une question à la fois, et je vous montre ce que j’ai compris avant d’écrire quoi que ce soit. Pour commencer, à quoi sert votre agent, au-delà de répondre ?',
+                  'Let’s set up your agent by talking: one question at a time, and I show you what I understood before writing anything. To start, what is your agent for, beyond answering?',
                 )}
               </div>
               <div className="flex flex-wrap gap-2 self-end">

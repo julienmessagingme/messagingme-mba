@@ -240,7 +240,7 @@ export function ListeDestinataires({
       {selection.toutFiltre && (
         <div data-testid="campagne-cible-filtre" className="mb-2 rounded-controle border border-brand-200 bg-brand-50 px-3 py-2 text-xs text-brand-800">
           {t(
-            `Les ${retenus} contacts qui correspondent aux filtres sont visés, y compris ceux qui ne sont pas affichés ci-dessous. Décocher une ligne l'exclut.`,
+            `Les ${retenus} contacts qui correspondent aux filtres sont visés, y compris ceux qui ne sont pas affichés ci-dessous. Décocher une ligne l’exclut.`,
             `All ${retenus} contacts matching the filters are targeted, including those not shown below. Unticking a row excludes it.`,
           )}
         </div>
@@ -263,7 +263,7 @@ export function ListeDestinataires({
           <p className="px-2.5 py-3 text-xs text-ink-500">
             {enCours ? t('Chargement…', 'Loading…')
               : filtresPoses ? t('Aucun contact ne correspond aux filtres.', 'No contact matches the filters.')
-              : t("Aucun contact joignable. Importe des contacts dans l'onglet Contacts.", 'No reachable contact. Import contacts in the Contacts tab.')}
+              : t('Aucun contact joignable. Importez des contacts dans l’onglet Contacts.', 'No reachable contact. Import contacts in the Contacts tab.')}
           </p>
         )}
       </div>

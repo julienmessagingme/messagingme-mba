@@ -91,14 +91,14 @@ export function GoogleButton({ onError, onChoix }: { onError?: (msg: string) => 
           callback: (resp) => {
             const idToken = resp.credential;
             if (!idToken) {
-              onErrorRef.current?.(t('Réponse Google vide, réessaie.', 'Empty Google response, please try again.'));
+              onErrorRef.current?.(t('Réponse Google vide, réessayez.', 'Empty Google response, please try again.'));
               return;
             }
             loginWithGoogle(idToken)
               .then((res) => {
                 if (isLoginChoice(res)) {
                   if (onChoixRef.current) onChoixRef.current(res);
-                  else onErrorRef.current?.(t('Cette adresse ouvre plusieurs espaces : connecte-toi depuis la page de connexion pour choisir le tien.', 'This address opens several workspaces: sign in from the login page to pick yours.'));
+                  else onErrorRef.current?.(t('Cette adresse ouvre plusieurs espaces : connectez-vous depuis la page de connexion pour choisir le vôtre.', 'This address opens several workspaces: sign in from the login page to pick yours.'));
                   return;
                 }
                 saveSession({ token: res.token, email: res.user.email, role: res.user.role, tenantId: res.user.tenantId });

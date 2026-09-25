@@ -27,7 +27,7 @@ export function dayLabel(iso: string, locale: Locale): string {
   // civil Paris, puis arithmétique UTC pure, robuste au passage à l'heure d'été) et les teste.
   const todayKey = todayParis();
   const yestKey = addDays(todayKey, -1);
-  if (key === todayKey) return locale === 'en' ? 'Today' : "Aujourd'hui";
+  if (key === todayKey) return locale === 'en' ? 'Today' : "Aujourd’hui";
   if (key === yestKey) return locale === 'en' ? 'Yesterday' : 'Hier';
   return new Date(iso).toLocaleDateString(tag(locale), { timeZone: TZ, day: 'numeric', month: 'long', year: 'numeric' });
 }
@@ -44,6 +44,15 @@ export function hourMin(iso: string, locale: Locale): string {
  */
 export function jourHeure(iso: string, locale: Locale): string {
   return `${formatDate(iso, locale, { day: '2-digit', month: '2-digit' })} ${hourMin(iso, locale)}`;
+}
+
+/**
+ * Date et heure (fuseau Paris) : « 22/09/2026 17:42 ». Pour un instant isolé (une planification, une dernière
+ * réponse, un désabonnement) : `toLocaleString()` sans langue rendait « 9/22/2026, 5:42:12 PM » sur un poste
+ * réglé en anglais, et l'heure de la machine plutôt que celle de Paris.
+ */
+export function dateHeure(iso: string, locale: Locale): string {
+  return `${formatDate(iso, locale)} ${hourMin(iso, locale)}`;
 }
 
 /** Date courte localisée (fuseau Paris), options Intl optionnelles (ex. { day:'2-digit', month:'2-digit', year:'2-digit' }). */

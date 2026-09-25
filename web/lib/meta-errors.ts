@@ -10,7 +10,7 @@ import type { Locale } from './locale';
 
 const CODES: Record<string, [string, string]> = {
   '131042': [
-    "Éligibilité / facturation Meta. Le marketing via MM Lite exige un onboarding au niveau Business Manager. On envoie désormais par l'endpoint standard ; si ça persiste, vérifie le moyen de paiement du WABA.",
+    "Éligibilité / facturation Meta. Le marketing via MM Lite exige un onboarding au niveau Business Manager. On envoie désormais par l’endpoint standard ; si ça persiste, vérifiez le moyen de paiement du WABA.",
     'Meta eligibility / billing. Marketing through MM Lite requires Business Manager onboarding. We now send through the standard endpoint; if it persists, check the payment method on the WABA.',
   ],
   '131047': [
@@ -18,7 +18,7 @@ const CODES: Record<string, [string, string]> = {
     'The 24-hour service window is closed: you must use a template (not a free-form message).',
   ],
   '131026': [
-    "Message non délivrable : le numéro n'a pas WhatsApp, ou ne peut pas recevoir ce message.",
+    "Message non délivrable : le numéro n’a pas WhatsApp, ou ne peut pas recevoir ce message.",
     'Message not deliverable: the number has no WhatsApp, or cannot receive this message.',
   ],
   '131049': [
@@ -34,7 +34,7 @@ const CODES: Record<string, [string, string]> = {
     'Sender number not registered / certificate problem on Meta side.',
   ],
   '131009': [
-    "Meta a refusé une valeur envoyée avec le template (variable, image d'en-tête ou de carte, jeton de formulaire). Vérifie la valeur puis renvoie.",
+    "Meta a refusé une valeur envoyée avec le template (variable, image d’en-tête ou de carte, jeton de formulaire). Vérifiez la valeur puis renvoyez.",
     'Meta rejected a value sent with the template (variable, header or card image, form token). Check the value then send again.',
   ],
   '132000': [
@@ -57,7 +57,7 @@ const CODES: Record<string, [string, string]> = {
   // « une variable » : ce code tombe aussi sur un carousel, une image d'en-tête ou un bouton mal formé, et un
   // libellé trop étroit envoie chercher une variable sur un template qui n'en a aucune.
   '132012': [
-    "Template : ce qui a été envoyé ne correspond pas à sa structure (variables, image d'en-tête, carousel ou boutons). Vérifie le template côté Meta.",
+    "Template : ce qui a été envoyé ne correspond pas à sa structure (variables, image d’en-tête, carousel ou boutons). Vérifiez le template côté Meta.",
     'Template: what was sent does not match its structure (variables, header image, carousel or buttons). Check the template on Meta.',
   ],
   '132015': [
@@ -73,11 +73,11 @@ const CODES: Record<string, [string, string]> = {
     'Number not registered on the platform.',
   ],
   '190': [
-    "Token d'accès Meta expiré ou invalide.",
+    "Token d’accès Meta expiré ou invalide.",
     'Meta access token expired or invalid.',
   ],
   '100': [
-    "Paramètre invalide dans l'appel Meta.",
+    "Paramètre invalide dans l’appel Meta.",
     'Invalid parameter in the Meta call.',
   ],
   '368': [
@@ -85,15 +85,15 @@ const CODES: Record<string, [string, string]> = {
     'Account temporarily restricted by Meta (policy violation).',
   ],
   '80007': [
-    "Limite de débit atteinte : réessaie un peu plus tard.",
+    "Limite de débit atteinte : réessayez un peu plus tard.",
     'Rate limit reached: try again a little later.',
   ],
   '131000': [
-    "Erreur temporaire côté Meta : réessaie.",
+    "Erreur temporaire côté Meta : réessayez.",
     'Temporary error on Meta side: try again.',
   ],
   '131016': [
-    "Service Meta momentanément indisponible : réessaie.",
+    "Service Meta momentanément indisponible : réessayez.",
     'Meta service momentarily unavailable: try again.',
   ],
 };

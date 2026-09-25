@@ -62,8 +62,8 @@ function MbaGuide() {
         <TitrePage>{t('L’agent MBA, votre répondeur intelligent WhatsApp', 'The MBA agent, your smart WhatsApp responder')}</TitrePage>
         <p className="max-w-prose text-sm leading-relaxed text-ink-500">
           {t(
-            'Le Meta Business Agent (MBA) est un agent conversationnel qui répond automatiquement aux messages WhatsApp de vos clients, à partir de la connaissance que vous lui donnez. Il est hébergé par Meta : vous n’avez rien à installer. Quand une demande le dépasse, il passe la main à un humain, puis reprend le relais.',
-            'The Meta Business Agent (MBA) is a conversational agent that automatically answers your customers’ WhatsApp messages, from the knowledge you give it. It is hosted by Meta: you have nothing to install. When a request is beyond it, it hands over to a human, then takes over again.',
+            'Hébergé par Meta, il répond à partir de la connaissance que vous lui donnez : rien à installer.',
+            'Hosted by Meta, it answers from the knowledge you give it: nothing to install.',
           )}
         </p>
       </header>
@@ -106,7 +106,6 @@ function MbaGuide() {
         <div>
           <span className={kicker}>{t('Connecteurs', 'Connectors')}</span>
           <h3 className="mt-1 text-lg font-semibold text-ink-900">{t('Brancher l’agent à vos outils', 'Connecting the agent to your tools')}</h3>
-          <p className="mt-1 text-sm text-ink-500">{t('Il existe deux façons de relier l’agent à vos systèmes. Elles ne servent pas au même besoin.', 'There are two ways to link the agent to your systems. They serve different needs.')}</p>
         </div>
         <div className="grid grid-cols-1 divide-y divide-ink-100 rounded-carte border border-ink-200 bg-white sm:grid-cols-2 sm:divide-x sm:divide-y-0">
           <div className="p-5">
@@ -121,8 +120,8 @@ function MbaGuide() {
             */}
             <p className="mt-1 text-sm leading-relaxed text-ink-500">
               {t(
-                'L’agent consulte un de vos systèmes en direct pour aider le client : vérifier une commande, proposer un créneau, mettre à jour une fiche. Vous déclarez l’appel vous-même dans Tools > Connecteurs API, puis vous dites dans l’onglet Outils de l’agent ce qu’il a le droit d’appeler. Nous vous accompagnons si vous le souhaitez, mais vous n’attendez personne.',
-                'The agent checks one of your systems live to help the customer: look up an order, offer a slot, update a record. You declare the call yourself in Tools > API connectors, then the agent’s Tools tab says what it may call. We help if you want, but you are not waiting on anyone.',
+                'L’agent interroge un de vos systèmes en direct (une commande, un créneau, une fiche). Vous déclarez l’appel dans Tools > Connecteurs API, puis l’autorisez dans l’onglet Outils de l’agent.',
+                'The agent queries one of your systems live (an order, a slot, a record). You declare the call in Tools > API connectors, then allow it in the agent’s Tools tab.',
               )}
             </p>
           </div>
@@ -130,8 +129,8 @@ function MbaGuide() {
             <h4 className="text-sm font-semibold text-ink-900">{t('Vers votre CRM', 'Into your CRM')}</h4>
             <p className="mt-1 text-sm leading-relaxed text-ink-500">
               {t(
-                'Les conversations et leur analyse remontent dans votre CRM pour garder vos fiches clients à jour, sans double saisie. Le connecteur HubSpot est déjà disponible ; d’autres suivront.',
-                'Conversations and their analysis flow into your CRM to keep your customer records up to date, with no double entry. The HubSpot connector is already available; others will follow.',
+                'Les conversations et leur analyse remontent dans votre CRM, sans double saisie. HubSpot est disponible ; d’autres suivront.',
+                'Conversations and their analysis flow into your CRM, with no double entry. HubSpot is available; others will follow.',
               )}
             </p>
             <Link href="/tuto-hubspot" className="mt-3 inline-block text-sm font-medium text-brand-600 hover:text-brand-700">{t('Voir le guide HubSpot', 'See the HubSpot guide')} →</Link>
@@ -161,7 +160,7 @@ function MbaGuide() {
               critères d'éligibilité, NI tarif. Les conditions restent listées ci-dessous parce que NOTRE
               mesure les a rencontrées (un 403 de conditions non signées), pas parce que Meta les documente.
             */
-            t('Un secteur d’activité accepté : Meta prend tous les secteurs SAUF la finance, le secteur public, la santé, l’alcool, les jeux d’argent, les médicaments sans ordonnance et les services matrimoniaux.', 'An accepted business sector: Meta supports all verticals EXCEPT finance, government, health, alcohol, gambling, over-the-counter drugs and matrimony services.'),
+            t('Un secteur d’activité accepté : Meta prend tous les secteurs sauf la finance, le secteur public, la santé, l’alcool, les jeux d’argent, les médicaments sans ordonnance et les services matrimoniaux.', 'An accepted business sector: Meta supports all verticals except finance, government, health, alcohol, gambling, over-the-counter drugs and matrimony services.'),
             t('Un pays autorisé, et un compte WhatsApp Business Platform d’entreprise en règle, ni restreint ni banni.', 'An authorized country, and an enterprise WhatsApp Business Platform account in good standing, neither restricted nor banned.'),
             t('Aucun autre agent conversationnel déjà en service sur ce numéro.', 'No other AI agent already running on that number.'),
           ].map((li) => (
@@ -175,8 +174,8 @@ function MbaGuide() {
           <p className="font-medium text-ink-900">{t('Coûts', 'Costs')}</p>
           <p className="mt-1">
             {t(
-              'L’agent est facturé par Meta à l’usage (selon les échanges), et payé directement à Meta. Nous affichons ces coûts en toute transparence pour éviter les mauvaises surprises.',
-              'The agent is billed by Meta based on usage (per exchange), and paid directly to Meta. We show these costs transparently to avoid surprises.',
+              'L’agent est facturé par Meta à l’usage (selon les échanges), et payé directement à Meta.',
+              'The agent is billed by Meta based on usage (per exchange), and paid directly to Meta.',
             )}
           </p>
         </div>
@@ -190,8 +189,8 @@ function MbaGuide() {
           <p className="font-medium text-brand-700">{t('C’est configurable ici', 'Configure it here')}</p>
           <p className="mt-1">
             {t(
-              'La configuration en direct de l’agent se fait dans Paramètres : sa connaissance, son ton, ce qu’il a le droit de faire, et sa mise en service. Ce guide reste là pour comprendre à quoi il sert et ce qu’il faut préparer.',
-              'Live configuration happens in Settings: its knowledge, its tone, what it may do, and putting it into service. This guide stays here to explain what it is for and what to prepare.',
+              'Sa connaissance, son ton, ses droits et sa mise en service se règlent dans Paramètres.',
+              'Its knowledge, tone, permissions and go-live are set in Settings.',
             )}
           </p>
           {/* ⚠️ UN LIEN, PAS UNE INVITATION À CHERCHER : les deux écrans sont voisins dans le menu, mais

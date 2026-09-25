@@ -15,6 +15,8 @@ import { Bouton } from '@/components/Bouton';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
 import { BoutonConfirme } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
+import { erreurDeChargement } from '@/lib/http';
+import { Icone } from '@/components/Icone';
 
 /**
  * Contenu > Modeles d'email : les modeles utilises par le node « Envoi de mail » des scenarios. Deux formats
@@ -54,7 +56,7 @@ function EmailTemplatesInner({ session }: { session: Session }) {
     try {
       setItems((await listEmailTemplates(session.tenantId)).templates);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
+      setError(erreurDeChargement(err, t));
     } finally {
       setLoading(false);
     }
@@ -119,8 +121,8 @@ function EmailTemplatesInner({ session }: { session: Session }) {
         <TitrePage>{t('Modèles d’email', 'Email templates')}</TitrePage>
         <IntroPage>
           {t(
-            'Le node « Envoi de mail » d’un scénario choisit un de ces modèles. Sujet et corps acceptent des variables {{champ}}, remplacées par la fiche du contact à l’envoi.',
-            'The "Send email" scenario block picks one of these templates. Subject and body accept {{field}} variables, filled in from the contact at send time.',
+            'Utilisés par le bloc « Envoi de mail » des scénarios ; les variables {{champ}} prennent la valeur de la fiche du contact.',
+            'Used by the "Send email" scenario block; {{field}} variables take the value from the contact record.',
           )}
         </IntroPage>
       </div>
@@ -207,7 +209,7 @@ function EmailTemplatesInner({ session }: { session: Session }) {
           </div>
         </div>
       ) : (
-        <Bouton onClick={startCreate}>{t('+ Nouveau modèle', '+ New template')}</Bouton>
+        <Bouton onClick={startCreate}><Icone nom="ajouter" />{t('Nouveau modèle', 'New template')}</Bouton>
       )}
 
       <div className="overflow-hidden rounded-carte border border-ink-200 bg-white">

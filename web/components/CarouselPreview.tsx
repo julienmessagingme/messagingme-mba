@@ -74,7 +74,7 @@ export function CarouselPreview({
           <div className="max-w-[88%] rounded-controle rounded-tl-none bg-white px-2.5 py-1.5 text-[13px] leading-snug text-ink-900 shadow-sm">
             {body.trim()
               ? <span className="whitespace-pre-wrap break-words"><TemplateBodyText body={body} examples={examples} {...(varLabels ? { varLabels } : {})} /></span>
-              : <span className="text-ink-500">{t("Message d'introduction…", 'Introduction message…')}</span>}
+              : <span className="text-ink-500">{t("Message d’introduction…", 'Introduction message…')}</span>}
           </div>
           {cards.length === 0 ? (
             <p className="text-[12px] text-ink-500">{t('Aucune carte à afficher.', 'No card to display.')}</p>

@@ -127,6 +127,35 @@ export function accountReviewBadge(status: string | null | undefined, locale: Lo
   return { label: status, tone: 'warn' };
 }
 
+/**
+ * Le STATUT D'UN TEMPLATE tel que Meta le rend (APPROVED, PENDING, REJECTED…), en clair. L'écran des
+ * templates affichait la valeur brute en minuscules (« approved », « pending ») : de l'anglais technique au
+ * milieu d'une console en français. Un statut que Meta ajouterait demain s'affiche tel quel, en minuscules,
+ * plutôt que de disparaître.
+ */
+export function statutTemplate(status: string | null | undefined, locale: Locale): string {
+  if (!status) return locale === 'en' ? 'Unknown' : 'Inconnu';
+  const fr: Record<string, string> = {
+    APPROVED: 'Approuvé', PENDING: 'En revue', REJECTED: 'Refusé', PAUSED: 'En pause', DISABLED: 'Désactivé',
+    IN_APPEAL: 'En appel', PENDING_DELETION: 'Suppression en cours', DELETED: 'Supprimé', LIMIT_EXCEEDED: 'Limite atteinte',
+    ARCHIVED: 'Archivé',
+  };
+  const en: Record<string, string> = {
+    APPROVED: 'Approved', PENDING: 'In review', REJECTED: 'Rejected', PAUSED: 'Paused', DISABLED: 'Disabled',
+    IN_APPEAL: 'In appeal', PENDING_DELETION: 'Pending deletion', DELETED: 'Deleted', LIMIT_EXCEEDED: 'Limit exceeded',
+    ARCHIVED: 'Archived',
+  };
+  return (locale === 'en' ? en : fr)[status.toUpperCase()] ?? status.toLowerCase();
+}
+
+/** La CATÉGORIE d'un template (MARKETING, UTILITY, AUTHENTICATION), en clair. Même raison que `statutTemplate`. */
+export function categorieTemplate(categorie: string | null | undefined, locale: Locale): string {
+  if (!categorie) return '';
+  const fr: Record<string, string> = { MARKETING: 'Marketing', UTILITY: 'Utilitaire', AUTHENTICATION: 'Authentification' };
+  const en: Record<string, string> = { MARKETING: 'Marketing', UTILITY: 'Utility', AUTHENTICATION: 'Authentication' };
+  return (locale === 'en' ? en : fr)[categorie.toUpperCase()] ?? categorie.toLowerCase();
+}
+
 /** Vérification d'entreprise (business_verification_status : verified / not_verified / pending). Fonction pure. */
 export function businessVerificationBadge(status: string | null | undefined, locale: Locale): StatusBadge {
   if (!status) return { label: locale === 'en' ? 'Not reported' : 'Non communiqué', tone: 'unknown' };

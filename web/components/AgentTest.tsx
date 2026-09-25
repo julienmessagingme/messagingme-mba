@@ -87,8 +87,8 @@ export function AgentTest({ tenantId, agentId }: { tenantId: string; agentId: st
     <div className="flex flex-col gap-4">
       <MbaNotice kind="warning">
         {t(
-          'Vous parlez au VRAI agent : son prompt, ses outils, sa base de connaissance. Seules les actions qui touchent le monde réel (poser un tag, envoyer un bloc, passer la main) sont simulées, et c’est dit à chaque fois.',
-          'You are talking to the REAL agent: its prompt, its tools, its knowledge base. Only actions that touch the real world (tagging, sending a block, handing over) are simulated, and it is stated each time.',
+          'Vous parlez au vrai agent. Seules les actions qui touchent le monde réel (poser un tag, envoyer un bloc, passer la main) sont simulées, et c’est dit à chaque fois.',
+          'You are talking to the real agent. Only actions that touch the real world (tagging, sending a block, handing over) are simulated, and it is stated each time.',
         )}
       </MbaNotice>
       {erreur && <MbaNotice kind="error" testid="test-erreur">{erreur}</MbaNotice>}
@@ -143,12 +143,12 @@ export function AgentTest({ tenantId, agentId }: { tenantId: string; agentId: st
         <MbaNotice kind={motif === 'reponse_non_conforme' ? 'warning' : 'success'} testid="test-sortie">
           {motif === 'reponse_non_conforme'
             ? t(
-              'Le modèle a rendu une réponse NON CONFORME : il a imité un résultat d’outil au lieu d’en appeler un, et le garde-fou l’a refusée (son contenu était inventé). Ce n’est pas un plafond à monter. Vérifiez que les outils de cet agent sont ACTIFS, et si le problème persiste, changez son modèle.',
-              'The model returned a NON-COMPLIANT answer: it imitated a tool result instead of calling one, and the guard refused it (its content was made up). This is not a cap to raise. Check that this agent’s tools are ACTIVE, and if it persists, change its model.',
+              'Réponse refusée : le modèle a imité un résultat d’outil au lieu d’en appeler un. Ce n’est pas un plafond à monter : vérifiez que les outils de l’agent sont actifs, sinon changez de modèle.',
+              'Answer refused: the model imitated a tool result instead of calling one. This is not a cap to raise: check that the agent’s tools are active, otherwise change the model.',
             )
             : t(
-              `L’agent est SORTI par « ${sortie} ». Dans un scénario, c’est cette branche du bloc qui prendrait la suite.`,
-              `The agent LEFT through “${sortie}”. In a scenario, that branch of the block would take over.`,
+              `L’agent est sorti par « ${sortie} ». Dans un scénario, c’est cette branche du bloc qui prendrait la suite.`,
+              `The agent left through “${sortie}”. In a scenario, that branch of the block would take over.`,
             )}
         </MbaNotice>
       )}

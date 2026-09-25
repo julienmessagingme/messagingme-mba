@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useT, useLocale } from '@/lib/i18n';
+import { formatDate } from '@/lib/day';
 import { fmtNum } from '@/lib/format';
 import { cardCls, inputCls, kickerCls } from '@/lib/ui';
 import type { ReponseConnexionChaine } from '@/lib/api-chaine';
@@ -135,7 +136,7 @@ function Connectee({
       {muet ? (
         <p className="mt-4 rounded-controle bg-alerte-50 px-3 py-2 text-sm text-ink-500" data-testid="chaine-injoignable">
           {t(
-            'Les identifiants sont bien enregistrés : c’est Channels Me qui ne répond pas. Rien à ressaisir, réessaie dans un moment.',
+            'Les identifiants sont bien enregistrés : c’est Channels Me qui ne répond pas. Rien à ressaisir, réessayez dans un moment.',
             'Your credentials are saved: Channels Me is not answering. Nothing to re-enter, try again shortly.',
           )}
         </p>
@@ -170,7 +171,7 @@ function Connectee({
           valeur={
             etat.connection!.verifiedAt === null
               ? t('Jamais', 'Never')
-              : new Date(etat.connection!.verifiedAt).toLocaleDateString(locale === 'en' ? 'en-GB' : 'fr-FR')
+              : formatDate(etat.connection!.verifiedAt, locale)
           }
           testid="chaine-mesure-verifiee"
         />
@@ -360,8 +361,8 @@ function EtatVide({
       </h2>
       <p className="mx-auto mt-2 max-w-xl text-sm text-ink-500">
         {t(
-          'Une chaîne WhatsApp diffuse un message à tous ses abonnés, gratuitement. Chaque publication peut porter un bouton « Discuter » qui démarre un de tes scénarios. La chaîne se crée à la main : demande-nous son activation et nous la branchons.',
-          'A WhatsApp channel broadcasts to all its subscribers, for free. Each post can carry a "Chat" button that starts one of your scenarios. Channels are created manually: ask us to activate yours and we will connect it.',
+          'Une chaîne diffuse gratuitement à tous ses abonnés, et chaque publication peut porter un bouton « Discuter » qui démarre un scénario. Demandez-nous son activation.',
+          'A channel broadcasts to all its subscribers for free, and each post can carry a "Chat" button that starts a scenario. Ask us to activate yours.',
         )}
       </p>
 
@@ -379,13 +380,13 @@ function EtatVide({
         </div>
       ) : etat === 'envoyee' ? (
         <p className="mt-5 rounded-controle bg-succes-50 px-3 py-2 text-sm text-succes-700" data-testid="chaine-demande-envoyee">
-          {t('Demande envoyée. Nous revenons vers toi rapidement.', 'Request sent. We will get back to you shortly.')}
+          {t('Demande envoyée. Nous revenons vers vous rapidement.', 'Request sent. We will get back to you shortly.')}
         </p>
       ) : (
         <div className="mx-auto mt-5 max-w-xl text-left">
           <textarea
             className={`${inputCls} min-h-[80px]`}
-            placeholder={t('Un mot sur ton projet (facultatif)', 'A word about your project (optional)')}
+            placeholder={t('Un mot sur votre projet (facultatif)', 'A word about your project (optional)')}
             value={message}
             maxLength={2000}
             onChange={(e) => setMessage(e.target.value)}
@@ -402,14 +403,14 @@ function EtatVide({
             {etat === 'envoi' ? t('Envoi…', 'Sending…') : t('Demander l’activation', 'Request activation')}
           </Bouton>
           <p className="mt-4 border-t border-ink-100 pt-4 text-sm text-ink-500">
-            {t('Ta chaîne existe déjà ?', 'Already have a channel?')}{' '}
+            {t('Votre chaîne existe déjà ?', 'Already have a channel?')}{' '}
             <button
               type="button"
               onClick={() => setSaisie(true)}
               className="font-medium text-brand-600 hover:text-brand-700"
               data-testid="chaine-saisir-identifiants"
             >
-              {t('Saisis ses identifiants', 'Enter its credentials')}
+              {t('Saisissez ses identifiants', 'Enter its credentials')}
             </button>
           </p>
         </div>

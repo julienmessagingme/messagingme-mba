@@ -171,7 +171,7 @@ function TableauxInner({ session }: { session: Session }) {
         <TitrePage>{t('Mes tableaux', 'My reports')}</TitrePage>
         <IntroPage>
           {t(
-            'Choisis un scénario, puis les mesures que tu veux suivre bloc par bloc.',
+            'Choisissez un scénario, puis les mesures à suivre bloc par bloc.',
             'Pick a scenario, then the measures you want to follow block by block.',
           )}
         </IntroPage>
@@ -218,8 +218,8 @@ function TableauxInner({ session }: { session: Session }) {
             <h3 className="mb-1 text-sm font-semibold text-ink-900">{t('Le scénario', 'The scenario')}</h3>
             <p className="mb-3 text-xs text-ink-500">
               {t(
-                'Clique un bloc de message pour choisir ce que tu veux compter. Les blocs grisés n’envoient rien, il n’y a rien à y mesurer.',
-                'Click a message block to choose what to count. Greyed blocks send nothing, there is nothing to measure there.',
+                'Cliquez sur un bloc de message pour choisir ses mesures. Les blocs grisés n’envoient rien.',
+                'Click a message block to choose its measures. Greyed blocks send nothing.',
               )}
             </p>
             <div className="flex flex-col gap-4 lg:flex-row">
@@ -256,7 +256,7 @@ function TableauxInner({ session }: { session: Session }) {
                   </div>
                 ) : (
                   <p className="py-3 text-sm text-ink-500">
-                    {t('Choisis un bloc dans le scénario.', 'Pick a block in the scenario.')}
+                    {t('Choisissez un bloc dans le scénario.', 'Pick a block in the scenario.')}
                   </p>
                 )}
               </aside>
@@ -271,7 +271,7 @@ function TableauxInner({ session }: { session: Session }) {
             </div>
             {retenues.length === 0 ? (
               <p className="text-sm text-ink-500">
-                {t('Clique un bloc du scénario pour choisir ce que tu veux compter.', 'Click a block in the scenario to choose what to count.')}
+                {t('Cliquez sur un bloc du scénario pour choisir ses mesures.', 'Click a block in the scenario to choose its measures.')}
               </p>
             ) : (
               <>

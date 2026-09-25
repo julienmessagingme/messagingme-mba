@@ -163,7 +163,7 @@ test.describe('Agents IA : la base de connaissance', () => {
     const appels: Appel[] = [];
     await mock(page, appels, [IMPORTEE]);
     await page.goto(`/agents?id=${AG}&tab=connaissance`);
-    await expect(page.getByText('REMPLACE les fiches qu’elle avait déjà produites')).toBeVisible();
+    await expect(page.getByText('remplace les fiches qu’elle avait déjà produites')).toBeVisible();
 
     await page.getByTestId('kb-url').fill('https://exemple.fr/residence');
     // 🔴 VOIR AVANT D'ECRIRE. Ce bouton ne lit plus la page pour l'ecrire : il montre ce qui serait

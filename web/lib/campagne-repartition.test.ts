@@ -30,7 +30,7 @@ describe('repartitionPrevue', () => {
    */
   it('l etage e-mail annonce ceux qui n ont PAS d adresse', () => {
     const lignes = repartitionPrevue(CHAINE, MESURES, brut);
-    expect(lignes[2]?.texte).toContain("12 n'ont pas d'adresse e-mail");
+    expect(lignes[2]?.texte).toContain('12 n’ont pas d’adresse e-mail');
     expect(lignes[2]?.texte).not.toContain('recevront');
   });
 
@@ -85,7 +85,7 @@ describe('repartitionPrevue', () => {
 
   it('sans motif, le silence est un ECHEC DE LECTURE, pas une explication empruntee', () => {
     const lignes = repartitionPrevue(CHAINE, { retenus: 1000, connusInjoignables: null, sansAdresse: 12 }, brut);
-    expect(lignes[1]?.texte).toMatch(/n'a pas pu être lu/);
+    expect(lignes[1]?.texte).toMatch(/n’a pas pu être lu/);
     expect(lignes[1]?.texte).not.toMatch(/mémorisée que sur WhatsApp/);
     expect(lignes[1]?.texte).not.toMatch(/sélection de contacts/);
   });
@@ -94,7 +94,7 @@ describe('repartitionPrevue', () => {
   it('sans champ d adresse choisi, l etage e-mail demande le choix', () => {
     const lignes = repartitionPrevue(CHAINE, { ...MESURES, sansAdresse: null }, brut);
     expect(lignes[2]?.nombre).toBeNull();
-    expect(lignes[2]?.texte).toMatch(/champ qui porte l'adresse/);
+    expect(lignes[2]?.texte).toMatch(/champ qui porte l’adresse/);
   });
 
   /**

@@ -42,8 +42,8 @@ export const AIDE_KIND: Record<KindBouton, [string, string]> = {
   ],
   showLocation: ['Ouvre un lieu sur la carte du contact.', 'Opens a place on the contact’s map.'],
   requestLocation: [
-    'Demande sa position au contact. Sa réponse arrive dans l’Inbox avec ses coordonnées, elle n’ouvre PAS de branche de scénario.',
-    'Asks the contact for their location. The answer lands in the Inbox with its coordinates; it does NOT open a scenario branch.',
+    'Demande sa position au contact. Sa réponse arrive dans l’Inbox avec ses coordonnées, elle n’ouvre pas de branche de scénario.',
+    'Asks the contact for their location. The answer lands in the Inbox with its coordinates; it does not open a scenario branch.',
   ],
 };
 

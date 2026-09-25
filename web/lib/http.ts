@@ -165,7 +165,7 @@ async function attempt<T>(path: string, init: RequestInit): Promise<T> {
     // un message rouge dans un coin, le reste de l'interface restait actif, et l'utilisateur n'avait AUCUN
     // chemin visible vers la reconnexion. Même canal d'événement que la pastille de non-lus.
     if (typeof window !== 'undefined') window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
-    throw new ApiError(401, langue() === 'en' ? 'Session expired, sign in again.' : 'Session expirée, reconnecte-toi.');
+    throw new ApiError(401, langue() === 'en' ? 'Session expired, sign in again.' : 'Session expirée, reconnectez-vous.');
   }
   const body = (await res.json().catch(() => null)) as unknown;
   if (!res.ok) throw new ApiError(res.status, messageDErreur(res.status, body, langue()), body);
@@ -178,6 +178,15 @@ async function attempt<T>(path: string, init: RequestInit): Promise<T> {
  * par `tests/corps-opaque-parite.test.ts`.
  */
 export const OPAQUE_DU_SERVEUR = 'Internal Server Error';
+
+/**
+ * LE MESSAGE D'UN CHARGEMENT QUI A ÉCHOUÉ, pour l'écran : celui de l'erreur quand elle en porte un, sinon
+ * « Chargement impossible ». La phrase de repli était recopiée à trente et un endroits, en trois anglais
+ * différents ; elle vit ici. `t` est celui de l'écran appelant (`useT()` est un hook, inappelable ici).
+ */
+export function erreurDeChargement(err: unknown, t: (fr: string, en?: string) => string): string {
+  return err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load');
+}
 
 /**
  * LE TEXTE D'UNE RÉPONSE EN ÉCHEC, tel que l'écran l'affichera.
@@ -197,7 +206,7 @@ export function messageDErreur(status: number, corps: unknown, lang: Locale): st
   if (status >= 500) {
     return lang === 'en'
       ? `Something went wrong on our side (error ${status}). Try again in a moment.`
-      : `Incident de notre côté (erreur ${status}). Réessaie dans un instant.`;
+      : `Incident de notre côté (erreur ${status}). Réessayez dans un instant.`;
   }
   return lang === 'en' ? `Error ${status}` : `Erreur ${status}`;
 }

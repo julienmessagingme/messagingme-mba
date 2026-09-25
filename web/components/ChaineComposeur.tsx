@@ -150,7 +150,7 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
           className={`${inputCls} min-h-[130px]`}
           value={brouillon.texte}
           onChange={(e) => onChange({ ...brouillon, texte: e.target.value })}
-          placeholder={t('Ce que tes abonnés vont lire…', 'What your subscribers will read…')}
+          placeholder={t('Ce que vos abonnés vont lire…', 'What your subscribers will read…')}
           data-testid="chaine-texte"
         />
         {reste !== null ? (
@@ -335,7 +335,7 @@ function CreationLien({
         {horsLigne ? (
           <span className="mt-1 block text-xs text-danger" data-testid="chaine-scenario-hors-ligne">
             {t(
-              'Ce scénario n’a aucune version publiée : publie-le d’abord, sinon le bouton ne démarrera rien.',
+              'Ce scénario n’a aucune version publiée : publiez-le d’abord, sinon le bouton ne démarrera rien.',
               'This scenario has no published version: publish it first, or the button will start nothing.',
             )}
           </span>

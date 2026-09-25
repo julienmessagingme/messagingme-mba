@@ -257,7 +257,7 @@ export function FlowBuilder({
   }
   async function removeScreen() {
     if (screens.length <= 1) return;
-    if (scr.elements.length > 0 && !(await confirmer({ titre: t('Supprimer l’écran', 'Delete the screen'), message: t("Supprimer l'écran actif et tous ses éléments ?", 'Delete the active screen and all its elements?'), confirmer: t('Supprimer', 'Delete') }))) return;
+    if (scr.elements.length > 0 && !(await confirmer({ titre: t('Supprimer l’écran', 'Delete the screen'), message: t("Supprimer l’écran actif et tous ses éléments ?", 'Delete the active screen and all its elements?'), confirmer: t('Supprimer', 'Delete') }))) return;
     setScreens((list) => list.filter((_, i) => i !== idx));
     setActiveIdx(Math.min(idx, screens.length - 2));
   }
@@ -297,7 +297,7 @@ export function FlowBuilder({
     try {
       const src = await resizeToDataUrl(file, 800, 0.8);
       if (dataUrlBase64Length(src) > IMG_MAX_B64) {
-        patch(uid, { uploading: false, error: t('Image trop lourde même après compression. Choisis-en une plus petite.', 'Image too heavy even after compression. Choose a smaller one.') } as Partial<BElem>);
+        patch(uid, { uploading: false, error: t('Image trop lourde même après compression. Choisissez-en une plus petite.', 'Image too heavy even after compression. Choose a smaller one.') } as Partial<BElem>);
         return;
       }
       patch(uid, { src, uploading: false } as Partial<BElem>);
@@ -387,7 +387,7 @@ export function FlowBuilder({
         await publishFlow(tenantId, res.id);
         status = 'PUBLISHED';
       }
-      setMsg({ kind: 'ok', text: autoPublish ? t(`Formulaire « ${res.name} » créé et publié.`, `Form "${res.name}" created and published.`) : t(`Formulaire « ${res.name} » créé (brouillon). Publie-le pour l'utiliser.`, `Form "${res.name}" created (draft). Publish it to use it.`) });
+      setMsg({ kind: 'ok', text: autoPublish ? t(`Formulaire « ${res.name} » créé et publié.`, `Form "${res.name}" created and published.`) : t(`Formulaire « ${res.name} » créé (brouillon). Publiez-le pour l’utiliser.`, `Form "${res.name}" created (draft). Publish it to use it.`) });
       setName('');
       setCta('');
       setScreens([{ uid: nextUid(), title: '', cta: '', elements: [{ uid: nextUid(), kind: 'field', label: '', type: 'text', required: true, saveTo: '', options: [] }] }]);
@@ -443,15 +443,15 @@ export function FlowBuilder({
                 {s.title.trim() || `${t('Écran', 'Screen')} ${i + 1}`}
               </button>
             ))}
-            <button type="button" onClick={addScreen} disabled={screens.length >= 10} className="rounded-controle border border-dashed border-ink-300 px-2.5 py-1 text-xs font-medium text-brand-600 hover:bg-brand-50 disabled:opacity-30" title={t('10 écrans maximum', '10 screens maximum')}>{t('+ écran', '+ screen')}</button>
+            <button type="button" onClick={addScreen} disabled={screens.length >= 10} className="inline-flex items-center gap-1 rounded-controle border border-dashed border-ink-300 px-2.5 py-1 text-xs font-medium text-brand-600 hover:bg-brand-50 disabled:opacity-30" title={t('10 écrans maximum', '10 screens maximum')}><Icone nom="ajouter" taille="petite" />{t('Écran', 'Screen')}</button>
             <span className="mx-0.5 h-4 w-px bg-ink-200" />
-            <button type="button" onClick={() => moveScreen(-1)} disabled={idx === 0} className="rounded-controle px-1.5 py-0.5 text-xs text-ink-400 hover:bg-ink-100 disabled:opacity-30" aria-label={t("Déplacer l'écran vers la gauche", 'Move screen left')}><Icone nom="precedent" taille="petite" /></button>
-            <button type="button" onClick={() => moveScreen(1)} disabled={idx === screens.length - 1} className="rounded-controle px-1.5 py-0.5 text-xs text-ink-400 hover:bg-ink-100 disabled:opacity-30" aria-label={t("Déplacer l'écran vers la droite", 'Move screen right')}><Icone nom="suivant" taille="petite" /></button>
-            <button type="button" onClick={removeScreen} disabled={screens.length <= 1} className="rounded-controle px-1.5 py-0.5 text-xs text-ink-400 hover:bg-ink-100 hover:text-danger disabled:opacity-30" aria-label={t("Supprimer l'écran actif", 'Delete active screen')}><Icone nom="supprimer" taille="petite" /></button>
+            <button type="button" onClick={() => moveScreen(-1)} disabled={idx === 0} className="rounded-controle px-1.5 py-0.5 text-xs text-ink-400 hover:bg-ink-100 disabled:opacity-30" aria-label={t("Déplacer l’écran vers la gauche", 'Move screen left')}><Icone nom="precedent" taille="petite" /></button>
+            <button type="button" onClick={() => moveScreen(1)} disabled={idx === screens.length - 1} className="rounded-controle px-1.5 py-0.5 text-xs text-ink-400 hover:bg-ink-100 disabled:opacity-30" aria-label={t("Déplacer l’écran vers la droite", 'Move screen right')}><Icone nom="suivant" taille="petite" /></button>
+            <button type="button" onClick={removeScreen} disabled={screens.length <= 1} className="rounded-controle px-1.5 py-0.5 text-xs text-ink-400 hover:bg-ink-100 hover:text-danger disabled:opacity-30" aria-label={t("Supprimer l’écran actif", 'Delete active screen')}><Icone nom="supprimer" taille="petite" /></button>
           </div>
           <div className="flex flex-wrap gap-3">
             <div className="min-w-[200px] flex-1">
-              <label className="mb-1 block text-xs font-medium text-ink-500">{t("Titre de l'écran (en-tête WhatsApp)", 'Screen title (WhatsApp header)')}</label>
+              <label className="mb-1 block text-xs font-medium text-ink-500">{t("Titre de l’écran (en-tête WhatsApp)", 'Screen title (WhatsApp header)')}</label>
               <input value={scr.title} onChange={(e) => patchScreenMeta({ title: e.target.value })} maxLength={30} className={`${inputClsAuto} w-full`} placeholder={t('Vos coordonnées', 'Your details')} />
             </div>
             {idx < screens.length - 1 && (
@@ -529,10 +529,10 @@ export function FlowBuilder({
                             className={`${inputClsAuto} min-w-0 flex-1 py-1`}
                             placeholder={`${t('Option', 'Option')} ${oi + 1}`}
                           />
-                          <button type="button" onClick={() => patchField(e.uid, (f) => ({ ...f, options: f.options.filter((_, k) => k !== oi) }))} className="text-ink-400 hover:text-danger" aria-label={t("Retirer l'option", 'Remove option')}><Icone nom="fermer" taille="petite" /></button>
+                          <button type="button" onClick={() => patchField(e.uid, (f) => ({ ...f, options: f.options.filter((_, k) => k !== oi) }))} className="text-ink-400 hover:text-danger" aria-label={t("Retirer l’option", 'Remove option')}><Icone nom="fermer" taille="petite" /></button>
                         </div>
                       ))}
-                      <button type="button" onClick={() => patchField(e.uid, (f) => ({ ...f, options: [...f.options, ''] }))} className="text-xs font-medium text-brand-600 hover:text-brand-700">{t('+ option', '+ option')}</button>
+                      <button type="button" onClick={() => patchField(e.uid, (f) => ({ ...f, options: [...f.options, ''] }))} className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700"><Icone nom="ajouter" taille="petite" />{t('Option', 'Option')}</button>
                     </div>
                   )}
 
@@ -552,7 +552,7 @@ export function FlowBuilder({
                         // Champs de BASE (Nom/Prénom/Email) toujours proposés, PUIS les champs perso (hors clés de
                         // base pour éviter le doublon). Sans cible = nouveau champ dérivé du libellé (défaut serveur).
                         <select value={e.saveTo} onChange={(ev) => patch(e.uid, { saveTo: ev.target.value } as Partial<BElem>)} className={`${inputClsAuto} bg-white`}>
-                          <option value="">{t("Nouveau champ (d'après le libellé)", 'New field (from label)')}</option>
+                          <option value="">{t("Nouveau champ (d’après le libellé)", 'New field (from label)')}</option>
                           <optgroup label={t('Champs de base', 'Base fields')}>
                             {BASE_SAVE_FIELDS.map((bf) => (
                               <option key={bf.key} value={bf.key}>{bf.label}</option>
@@ -624,7 +624,7 @@ export function FlowBuilder({
                                 className={`${inputClsAuto} bg-white py-1 text-xs`}
                               >
                                 <option value="eq">{t('est', 'is')}</option>
-                                <option value="neq">{t("n'est pas", 'is not')}</option>
+                                <option value="neq">{t("n’est pas", 'is not')}</option>
                               </select>
                               {curSrc.type === 'optin' ? (
                                 <select
@@ -669,12 +669,12 @@ export function FlowBuilder({
           <button type="button" onClick={() => addText('body')} className="rounded-controle border border-ink-200 px-2 py-1 text-brand-600 hover:bg-brand-50">{t('Paragraphe', 'Paragraph')}</button>
           <button type="button" onClick={() => addText('caption')} className="rounded-controle border border-ink-200 px-2 py-1 text-brand-600 hover:bg-brand-50">{t('Légende', 'Caption')}</button>
           <button type="button" onClick={addImage} className="rounded-controle border border-ink-200 px-2 py-1 text-brand-600 hover:bg-brand-50">{t('Image', 'Image')}</button>
-          <button type="button" onClick={addField} className="rounded-controle border border-ink-200 px-2 py-1 font-medium text-brand-600 hover:bg-brand-50">{t('+ Champ', '+ Field')}</button>
+          <button type="button" onClick={addField} className="inline-flex items-center gap-1 rounded-controle border border-ink-200 px-2 py-1 font-medium text-brand-600 hover:bg-brand-50"><Icone nom="ajouter" taille="petite" />{t('Champ', 'Field')}</button>
         </div>
 
         {notice && <p className="rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte-700">{notice}</p>}
-        {scr.elements.length === 0 && <p className="text-xs text-alerte">{t('Cet écran est vide : ajoute au moins un élément (le serveur le refuserait).', 'This screen is empty: add at least one element (the server would refuse it).')}</p>}
-        {fieldCount === 0 && <p className="text-xs text-alerte">{t('Ajoute au moins un champ : un formulaire sans champ ne collecte rien.', 'Add at least one field: a form with no field collects nothing.')}</p>}
+        {scr.elements.length === 0 && <p className="text-xs text-alerte">{t('Cet écran est vide : ajoutez au moins un élément (le serveur le refuserait).', 'This screen is empty: add at least one element (the server would refuse it).')}</p>}
+        {fieldCount === 0 && <p className="text-xs text-alerte">{t('Ajoutez au moins un champ : un formulaire sans champ ne collecte rien.', 'Add at least one field: a form with no field collects nothing.')}</p>}
         {!labelsUnique && <p className="text-xs text-alerte">{t('Deux champs portent le même libellé : chaque libellé doit être unique, tous écrans confondus.', 'Two fields share the same label: each label must be unique across all screens.')}</p>}
         {msg && <p className={`rounded-controle px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-700'}`}>{msg.text}</p>}
 
@@ -695,7 +695,7 @@ export function FlowBuilder({
           busy={busy}
           manques={[
             ...(name.trim() === '' ? [t('le nom du formulaire', 'the form name')] : []),
-            ...(screens.length > 10 ? [t('au plus 10 écrans (retires-en)', 'at most 10 screens (remove some)')] : []),
+            ...(screens.length > 10 ? [t('au plus 10 écrans (retirez-en)', 'at most 10 screens (remove some)')] : []),
             ...(screens.length < 1 ? [t('au moins un écran', 'at least one screen')] : []),
             ...(!everyScreenFilled ? [t('au moins un élément par écran', 'at least one element per screen')] : []),
             ...(fieldCount === 0 ? [t('au moins un champ à remplir', 'at least one field to fill in')] : []),

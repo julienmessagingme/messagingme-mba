@@ -354,8 +354,8 @@ export function PubFormulaire({
     <div className="mt-4 rounded-carte border border-ink-200 bg-white p-5" data-testid="pub-formulaire">
       <h3 className="text-sm font-semibold text-ink-900">{t('Nouvelle publicité', 'New ad')}</h3>
       <p className="mt-1 text-xs text-ink-500">
-        {t('Tout est créé EN PAUSE chez Meta : rien ne dépense tant que vous n’avez pas publié.',
-           'Everything is created PAUSED at Meta: nothing spends until you publish.')}
+        {t('Tout est créé en pause chez Meta : rien ne dépense tant que vous n’avez pas publié.',
+           'Everything is created paused at Meta: nothing spends until you publish.')}
       </p>
 
       {erreur !== null && (

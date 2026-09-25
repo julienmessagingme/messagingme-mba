@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { TemplateForm, type CreatedTemplate } from '@/components/TemplateForm';
 import type { TemplateSummary } from '@/lib/api';
 import { Icone } from '@/components/Icone';
+import { statutTemplate } from '@/lib/format';
 
 /**
  * CRÉER UN MODÈLE SANS QUITTER LA CAMPAGNE EN COURS, et suivre sa revue chez Meta jusqu'au bout.
@@ -153,7 +154,7 @@ export function CreationModeleEnLigne({
         ) : (
           <>
             <p className="text-sm font-medium text-ink-900">
-              Modèle « {soumis.name} » soumis (statut : {soumis.status}).
+              Modèle « {soumis.name} » soumis (statut : {statutTemplate(soumis.status, 'fr').toLowerCase()}).
             </p>
             <p className="mt-1 text-xs text-ink-500">
               Il passe en revue chez Meta. On vérifie automatiquement et il sera sélectionné dès qu’il est
@@ -201,9 +202,9 @@ export function CreationModeleEnLigne({
       type="button"
       onClick={() => setOuvert(true)}
       data-testid="creer-modele"
-      className="mt-2 text-xs text-brand-600 hover:underline"
+      className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:underline"
     >
-      ＋ Créer un nouveau modèle
+      <Icone nom="ajouter" taille="petite" />Créer un nouveau modèle
     </button>
   );
 }

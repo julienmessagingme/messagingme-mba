@@ -12,6 +12,7 @@ import { inputCls } from '@/lib/ui';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
 import { Icone } from '@/components/Icone';
 import { Squelette } from '@/components/Squelette';
+import { erreurDeChargement } from '@/lib/http';
 
 export default function NodesPage() {
   return <AppShell active="nodes">{(session) => <NodesInner session={session} />}</AppShell>;
@@ -34,7 +35,7 @@ function NodesInner({ session }: { session: Session }) {
       const res = await listNodes(session.tenantId);
       setNodes(res.nodes);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Failed to load'));
+      setError(erreurDeChargement(err, t));
     } finally {
       setLoading(false);
     }
@@ -55,8 +56,8 @@ function NodesInner({ session }: { session: Session }) {
       <div>
         <TitrePage>{t('Blocs', 'Blocks')}</TitrePage>
         <IntroPage>{t(
-          'Tous les blocs de tes scénarios, réunis et filtrables par type. Chaque bloc porte son code public (API) : c’est cette référence que tu passes pour cibler un bloc précis.',
-          'Every block from your scenarios, gathered and filterable by type. Each block carries its public code (API): that reference is what you pass to target a specific block.',
+          'Le code de chaque bloc est la référence à passer à l’API pour cibler ce bloc.',
+          'Each block’s code is the reference to pass to the API to target that block.',
         )}</IntroPage>
       </div>
       {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
@@ -96,7 +97,7 @@ function NodesInner({ session }: { session: Session }) {
           <p className="px-5 py-6 text-sm text-ink-500">{nodes.length === 0 ? t(
             'Aucun bloc : ils se créent dans l’éditeur de scénario.',
             'No block yet: blocks are created in the scenario editor.',
-          ) : t('Aucun bloc ne correspond à ta recherche.', 'No block matches your search.')}</p>
+          ) : t('Aucun bloc ne correspond à votre recherche.', 'No block matches your search.')}</p>
         ) : (
           <table className="w-full text-sm">
             <thead>

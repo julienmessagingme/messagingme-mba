@@ -66,8 +66,8 @@ export function MbaAllowlistPanel({ tenantId, phoneNumberId, audience }: {
         <h3 className="text-sm font-semibold text-ink-900">{t('Numéros de test', 'Test numbers')}</h3>
         <p className="mt-1 text-xs leading-relaxed text-ink-500">
           {t(
-            'Quand l’audience est restreinte, l’agent ne répond QU’À ces numéros. Sert à l’essayer sur votre vrai numéro avant de l’ouvrir à vos clients, pas à autoriser les clients un par un.',
-            'When the audience is restricted, the agent answers ONLY these numbers. Use it to try the agent on your own number before opening it to your customers, not to allow customers one by one.',
+            'Quand l’audience est restreinte, l’agent ne répond qu’à ces numéros : de quoi l’essayer sur votre numéro avant de l’ouvrir à vos clients.',
+            'When the audience is restricted, the agent answers only these numbers: a way to try it on your own number before opening it to your customers.',
           )}
         </p>
       </div>

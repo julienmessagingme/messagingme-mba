@@ -11,6 +11,7 @@ import { IntroPage, TitrePage } from '@/components/TitrePage';
 import { useConfirmation } from '@/components/Confirmation';
 import { Modale } from '@/components/Modale';
 import { Squelette } from '@/components/Squelette';
+import { erreurDeChargement } from '@/lib/http';
 
 export default function TagsPage() {
   return <AppShell active="tags">{(session) => <TagsInner session={session} />}</AppShell>;
@@ -32,7 +33,7 @@ function TagsInner({ session }: { session: Session }) {
     try {
       setTags((await listTags(session.tenantId)).tags);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
+      setError(erreurDeChargement(err, t));
     } finally {
       setLoading(false);
     }
@@ -83,7 +84,7 @@ function TagsInner({ session }: { session: Session }) {
     <div className="max-w-formulaire space-y-6">
       <div>
         <TitrePage>{t('Étiquettes', 'Tags')}</TitrePage>
-        <IntroPage>{t('Crée une étiquette réutilisable, ou renomme/supprime (répercuté sur tous les contacts qui la portent).', 'Create a reusable tag, or rename/delete it (applied to every contact that carries it).')}</IntroPage>
+        <IntroPage>{t('Renommer ou supprimer une étiquette s’applique à tous les contacts qui la portent.', 'Renaming or deleting a tag applies to every contact that carries it.')}</IntroPage>
       </div>
       {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
@@ -103,7 +104,7 @@ function TagsInner({ session }: { session: Session }) {
         {loading ? (
           <Squelette forme="lignes" className="px-5 py-6" />
         ) : tags.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-ink-500">{t("Aucune étiquette. Crée-en une ci-dessus, ou elles apparaissent automatiquement via l'import CSV ou la fiche d'un contact.", "No tags yet. Create one above, or they appear automatically through CSV import or a contact's profile.")}</p>
+          <p className="px-5 py-6 text-sm text-ink-500">{t('Aucune étiquette. Créez-en une ci-dessus : elles naissent aussi d’un import CSV ou d’une fiche contact.', 'No tags yet. Create one above: they also come from a CSV import or a contact record.')}</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -174,7 +175,7 @@ function TagContactsModal({ tenantId, tag, onClose }: { tenantId: string; tag: s
     let alive = true;
     listContacts(tenantId, { tag, limit: 500 })
       .then((r) => { if (alive) setContacts(r.contacts); })
-      .catch((e) => { if (alive) setError(e instanceof Error ? e.message : t('Chargement impossible', 'Unable to load')); });
+      .catch((e) => { if (alive) setError(erreurDeChargement(e, t)); });
     return () => { alive = false; };
   }, [tenantId, tag, t]);
 

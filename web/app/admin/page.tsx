@@ -7,7 +7,7 @@ import { listUsers, inviteMember, setUserRole, setUserDisabled, deleteUser, reno
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 import { inputCls } from '@/lib/ui';
-import { estAnnulation } from '@/lib/http';
+import { estAnnulation, erreurDeChargement } from '@/lib/http';
 import { routeInconnue } from '@/lib/canaux-services';
 import { Bouton } from '@/components/Bouton';
 import { TitrePage } from '@/components/TitrePage';
@@ -32,7 +32,7 @@ function AdminInner({ session }: { session: Session }) {
       const { users } = await listUsers(session.tenantId);
       setUsers(users);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
+      setError(erreurDeChargement(err, t));
     } finally {
       setLoading(false);
     }
@@ -153,7 +153,7 @@ function AdminInner({ session }: { session: Session }) {
                         value={u.role}
                         disabled={isSelf}
                         onChange={(e) => changeRole(u, e.target.value as UserRole)}
-                        title={isSelf ? t('Tu ne peux pas changer ton propre rôle', 'You cannot change your own role') : ''}
+                        title={isSelf ? t('Vous ne pouvez pas changer votre propre rôle', 'You cannot change your own role') : ''}
                         className="rounded-controle border border-ink-300 bg-white px-2 py-1 text-sm text-ink-900 disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-ink-400"
                       >
                         <option value="admin">Admin</option>
@@ -165,7 +165,7 @@ function AdminInner({ session }: { session: Session }) {
                       {u.disabled ? (
                         <span className="inline-flex items-center rounded-full bg-danger-50 px-2 py-0.5 text-xs font-medium text-danger-700">{t('Révoqué', 'Revoked')}</span>
                       ) : u.pending ? (
-                        <span className="inline-flex items-center rounded-full bg-alerte-50 px-2 py-0.5 text-xs font-medium text-alerte" title={t("A été invité mais n'a pas encore choisi son mot de passe", "Has been invited but hasn't chosen a password yet")}>{t('Invité', 'Invited')}</span>
+                        <span className="inline-flex items-center rounded-full bg-alerte-50 px-2 py-0.5 text-xs font-medium text-alerte" title={t("A été invité mais n’a pas encore choisi son mot de passe", "Has been invited but hasn't chosen a password yet")}>{t('Invité', 'Invited')}</span>
                       ) : (
                         <span className="inline-flex items-center rounded-full bg-succes-50 px-2 py-0.5 text-xs font-medium text-succes-700">{t('Actif', 'Active')}</span>
                       )}
@@ -187,7 +187,7 @@ function AdminInner({ session }: { session: Session }) {
                         <button
                           onClick={() => toggleDisabled(u)}
                           disabled={isSelf}
-                          title={isSelf ? t('Tu ne peux pas révoquer ton propre compte', 'You cannot revoke your own account') : ''}
+                          title={isSelf ? t('Vous ne pouvez pas révoquer votre propre compte', 'You cannot revoke your own account') : ''}
                           className="text-ink-500 hover:text-ink-900 disabled:cursor-not-allowed disabled:text-ink-400"
                         >
                           {u.disabled ? t('Réactiver', 'Reactivate') : t('Révoquer', 'Revoke')}
@@ -195,7 +195,7 @@ function AdminInner({ session }: { session: Session }) {
                         <button
                           onClick={() => removeUser(u)}
                           disabled={isSelf}
-                          title={isSelf ? t('Tu ne peux pas supprimer ton propre compte', 'You cannot delete your own account') : t('Suppression définitive', 'Permanent deletion')}
+                          title={isSelf ? t('Vous ne pouvez pas supprimer votre propre compte', 'You cannot delete your own account') : t('Suppression définitive', 'Permanent deletion')}
                           className="text-danger hover:text-danger-500 disabled:cursor-not-allowed disabled:text-ink-400"
                         >
                           {t('Supprimer', 'Delete')}
@@ -227,7 +227,7 @@ function InviteCard({ tenantId, onInvited }: { tenantId: string; onInvited: () =
     setBusy(true);
     try {
       const res = await inviteMember(tenantId, email.trim(), role, nom.trim());
-      setMsg({ kind: 'ok', text: res.emailSent ? t(`Invitation envoyée à ${email.trim()}.`, `Invitation sent to ${email.trim()}.`) : t(`Invitation créée pour ${email.trim()} (email non envoyé, vérifie la config).`, `Invitation created for ${email.trim()} (email not sent, check the config).`) });
+      setMsg({ kind: 'ok', text: res.emailSent ? t(`Invitation envoyée à ${email.trim()}.`, `Invitation sent to ${email.trim()}.`) : t(`Invitation créée pour ${email.trim()} (email non envoyé, vérifiez la configuration).`, `Invitation created for ${email.trim()} (email not sent, check the config).`) });
       setEmail('');
       setNom('');
       setRole('agent');
@@ -242,7 +242,7 @@ function InviteCard({ tenantId, onInvited }: { tenantId: string; onInvited: () =
   return (
     <form onSubmit={submit} className="space-y-3 rounded-carte border border-brand-200 bg-brand-50/40 p-5">
       <div className="text-sm font-semibold text-ink-900">{t('Inviter un membre', 'Invite a member')}</div>
-      <p className="text-xs text-ink-500">{t("Il reçoit un email pour choisir son mot de passe et rejoindre l'espace.", 'They receive an email to choose their password and join the workspace.')}</p>
+      <p className="text-xs text-ink-500">{t("Il reçoit un email pour choisir son mot de passe et rejoindre l’espace.", 'They receive an email to choose their password and join the workspace.')}</p>
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-[200px] flex-1">
           <label className="mb-1 block text-xs font-medium text-ink-500">{t('Email', 'Email')}</label>

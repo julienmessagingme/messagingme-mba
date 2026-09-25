@@ -55,6 +55,6 @@ test.describe('MBA : écran Activation', () => {
     // pas `control_changed_at`. L'ancien texte de l'Accueil disait « dernière », ce qui était faux.
     await mockMba(page);
     await page.goto('/mba/parametres?tab=activation');
-    await expect(page.getByText(/PREMIÈRE réponse|FIRST reply/)).toBeVisible();
+    await expect(page.getByText(/première réponse|first reply/)).toBeVisible();
   });
 });

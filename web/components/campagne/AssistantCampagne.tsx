@@ -679,7 +679,7 @@ export function AssistantCampagne({
               className="mt-1 w-full rounded-controle border border-ink-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
             />
           </label>
-          <p className="mt-2 text-xs text-ink-500">Il n&apos;est visible que de votre équipe.</p>
+          <p className="mt-2 text-xs text-ink-500">Il n’est visible que de votre équipe.</p>
           {/* ⚠️ LE DIRE, ET SEULEMENT UNE FOIS QUE C'EST VRAI : le bandeau n'apparaît qu'après une
               écriture réussie, sinon il promettrait une reprise que l'échec silencieux n'offrirait pas. */}
           {enregistre && (

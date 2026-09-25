@@ -412,7 +412,7 @@ test.describe('Automation : déclencheur « risque élevé »', () => {
     await page.getByTestId('automation-name').fill('Relance des partants');
     await page.getByTestId('automation-trigger').selectOption('risque_eleve');
     const explication = page.getByTestId('config-risque-eleve');
-    await expect(explication).toContainText('PASSE en risque élevé');
+    await expect(explication).toContainText('passe en risque élevé');
     await expect(page.getByTestId('config-risque-eleve-depart')).toContainText('ne part jamais la nuit');
     await expect(page.getByTestId('config-risque-eleve-depart')).toContainText('l’ouverture de votre espace');
     await expect(explication).toContainText('Au plus 200 contacts par jour et par espace');

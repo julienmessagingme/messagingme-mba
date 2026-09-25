@@ -59,7 +59,7 @@ function Compte({ session }: { session: Session }) {
         </div>
         {msg && <p className={`rounded-controle px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-succes-50 text-succes-800' : 'bg-danger-50 text-danger-700'}`}>{msg.text}</p>}
         <Bouton enCours={loading} type="submit" disabled={loading} className="w-full">
-          {loading ? t('Mise à jour...', 'Updating...') : t('Mettre à jour', 'Update')}
+          {loading ? t('Mise à jour…', 'Updating…') : t('Mettre à jour', 'Update')}
         </Bouton>
       </form>
     </div>

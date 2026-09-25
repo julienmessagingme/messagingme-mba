@@ -627,8 +627,8 @@ export function ErrorBreakdownCard({ errors, tenantId, range }: {
           Sans ces deux phrases, un écran vide se lirait « aucune erreur ». */}
       <p className="pt-3 text-xs leading-relaxed text-ink-500">
         {t(
-          'Ce décompte porte sur les envois de CAMPAGNE, et il est classé par code Meta. Un échec sur un envoi de scénario ou depuis l’inbox n’est pas enregistré, et un échec sans code Meta (template inenvoyable, panne réseau) n’a pas de ligne ici : le journal complet est dans Paramètres, « Erreurs de livraison ».',
-          'This count covers CAMPAIGN sends, grouped by Meta code. A failure on a scenario or inbox send is not recorded, and a failure without a Meta code (unsendable template, network outage) has no row here: the full log lives in Settings, "Delivery errors".',
+          'Ce décompte porte sur les envois de campagne, et il est classé par code Meta. Un échec sur un envoi de scénario ou depuis l’inbox n’est pas enregistré, et un échec sans code Meta (template inenvoyable, panne réseau) n’a pas de ligne ici : le journal complet est dans Paramètres, « Erreurs de livraison ».',
+          'This count covers campaign sends, grouped by Meta code. A failure on a scenario or inbox send is not recorded, and a failure without a Meta code (unsendable template, network outage) has no row here: the full log lives in Settings, "Delivery errors".',
         )}
       </p>
     </div>
@@ -792,7 +792,7 @@ export function CostChartCard({
       {loading ? (
         <Squelette forme="carte" />
       ) : !cost || !cost.hasRates ? (
-        <p className="text-sm text-ink-500">{t("Tarif Meta indisponible : coût non estimable pour l'instant.", 'Meta rate unavailable: cost cannot be estimated right now.')}</p>
+        <p className="text-sm text-ink-500">{t("Tarif Meta indisponible : coût non estimable pour l’instant.", 'Meta rate unavailable: cost cannot be estimated right now.')}</p>
       ) : (
         <DailyChart
           title=""
@@ -934,7 +934,7 @@ export function TemplateBreakdownCard({ data }: { data: TemplateStats | null }) 
           seul, avec ce qu il faut pour le lire. Vecu le 2026-09-07 : 2,42 EUR pris pour le cout d un
           template qui en avait genere 7 envois. */}
       {data && !pricing && (
-        <p className="mt-4 border-t border-ink-100 pt-3 text-xs text-ink-500">{t("Prix Meta indisponible pour l'instant : volumes affichés seuls.", 'Meta price unavailable right now: volumes shown only.')}</p>
+        <p className="mt-4 border-t border-ink-100 pt-3 text-xs text-ink-500">{t("Prix Meta indisponible pour l’instant : volumes affichés seuls.", 'Meta price unavailable right now: volumes shown only.')}</p>
       )}
     </div>
   );

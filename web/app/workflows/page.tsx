@@ -17,6 +17,7 @@ import { useConfirmation } from '@/components/Confirmation';
 import { Modale } from '@/components/Modale';
 import { VoileMenu } from '@/components/Flottant';
 import { Squelette } from '@/components/Squelette';
+import { erreurDeChargement } from '@/lib/http';
 
 export default function WorkflowsPage() {
   // Suspense : useSearchParams (deep-link ?open=) exige une frontière Suspense au build (Next 15).
@@ -100,7 +101,7 @@ function WorkflowsInner({ session }: { session: Session }) {
     try {
       setWorkflows((await listWorkflows(session.tenantId)).workflows);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
+      setError(erreurDeChargement(err, t));
     } finally {
       setLoading(false);
     }
@@ -305,8 +306,8 @@ function WorkflowsInner({ session }: { session: Session }) {
         >
           <p className="mt-1 text-sm text-ink-500">
             {t(
-              'Scanne ce QR code avec ton téléphone, ou ouvre le lien. WhatsApp s’ouvre avec le mot déjà écrit : appuie sur Envoyer et le scénario démarre sur ton propre numéro.',
-              'Scan this QR code with your phone, or open the link. WhatsApp opens with the word already typed: press Send and the scenario starts on your own number.',
+              'Scannez ce QR code avec votre téléphone, ou ouvrez le lien : WhatsApp s’ouvre avec le mot déjà écrit, appuyez sur Envoyer et le scénario démarre sur votre numéro.',
+              'Scan this QR code with your phone, or open the link: WhatsApp opens with the word already typed, press Send and the scenario starts on your number.',
             )}
           </p>
           {/* ⚠️ AUCUN AVERTISSEMENT SUR LES ÉTAPES SAUTÉES, et c'est une DÉCISION, pas un oubli. Julien, le
@@ -333,7 +334,7 @@ function WorkflowsInner({ session }: { session: Session }) {
           ) : (
             <p className="my-4 rounded-controle border border-alerte-300 bg-alerte-50 px-3 py-2 text-xs text-alerte-800">
               {t(
-                'Aucun numéro WhatsApp connecté : envoie le mot ci-dessous à ton numéro professionnel pour lancer le test.',
+                'Aucun numéro WhatsApp connecté : envoyez le mot ci-dessous à votre numéro professionnel pour lancer le test.',
                 'No WhatsApp number connected: send the word below to your business number to start the test.',
               )}
             </p>
@@ -394,7 +395,7 @@ function WorkflowsInner({ session }: { session: Session }) {
     <div className="mx-auto w-full max-w-liste space-y-6 p-4 sm:p-6 lg:h-full lg:overflow-y-auto">
       <div>
         <TitrePage>{t('Scénarios', 'Scenarios')}</TitrePage>
-        <IntroPage>{t("Construis des automatisations en blocs : ajout d’étiquette, envoi d'un template, formulaire, arrivée en inbox. Un scénario s'attache à une campagne et s'exécute pour chaque contact.", 'Build automations in blocks: add a tag, send a template, form, arrival in the inbox. A scenario attaches to a campaign and runs for each contact.')}</IntroPage>
+        <IntroPage>{t('Des blocs enchaînés (étiquette, template, formulaire, inbox), joués pour chaque contact d’une campagne ou d’une automation.', 'Chained blocks (tag, template, form, inbox), played for each contact of a campaign or an automation.')}</IntroPage>
       </div>
       {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
@@ -506,7 +507,7 @@ function WorkflowsInner({ session }: { session: Session }) {
                           onClick={() => setMenuFor((m) => (m === w.id ? null : w.id))}
                           disabled={busy}
                           className="rounded-controle px-1.5 py-0.5 text-lg leading-none text-ink-500 hover:bg-ink-100 hover:text-ink-900 disabled:opacity-50"
-                          aria-label={t('Plus d\'actions', 'More actions')}
+                          aria-label={t('Plus d’actions', 'More actions')}
                           data-testid={`workflow-menu-${w.id}`}
                         >
                           ⋯

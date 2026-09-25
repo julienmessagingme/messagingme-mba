@@ -14,6 +14,8 @@ import { IntroPage, TitrePage } from '@/components/TitrePage';
 import { useConfirmation } from '@/components/Confirmation';
 import { Modale } from '@/components/Modale';
 import { Squelette } from '@/components/Squelette';
+import { erreurDeChargement } from '@/lib/http';
+import { Icone } from '@/components/Icone';
 
 /**
  * Écran « Boîtes email » (menu Compte, admin-only) : connecte une ou plusieurs boîtes SMTP, utilisées par le
@@ -45,7 +47,7 @@ function EmailAccountsInner({ session }: { session: Session }) {
     try {
       setAccounts((await listEmailAccounts(session.tenantId)).accounts);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
+      setError(erreurDeChargement(err, t));
     } finally {
       setLoading(false);
     }
@@ -92,7 +94,7 @@ function EmailAccountsInner({ session }: { session: Session }) {
 
   async function remove(a: EmailAccount) {
     if (!(await confirmer({ titre: t('Supprimer la boîte', 'Delete the mailbox'), message: t(
-      `Supprimer la boîte « ${a.label} » ? Les scénarios qui l'utilisent resteront enregistrés mais n'enverront plus rien tant qu'une autre boîte n'est pas choisie.`,
+      `Supprimer la boîte « ${a.label} » ? Les scénarios qui l’utilisent resteront enregistrés mais n’enverront plus rien tant qu’une autre boîte n’est pas choisie.`,
       `Delete mailbox "${a.label}"? Scenarios using it stay saved but will stop sending until another mailbox is picked.`,
     ), confirmer: t('Supprimer', 'Delete') }))) return;
     setError(null);
@@ -132,8 +134,8 @@ function EmailAccountsInner({ session }: { session: Session }) {
         <TitrePage>{t('Boîtes email (SMTP)', 'Email accounts (SMTP)')}</TitrePage>
         <IntroPage>
           {t(
-            "Connecte une ou plusieurs boîtes SMTP : elles alimentent le node « Envoi de mail » des scénarios. Le mot de passe est chiffré et n'est plus jamais réaffiché une fois enregistré.",
-            'Connect one or more SMTP mailboxes: they power the "Send email" scenario block. The password is encrypted and is never shown again once saved.',
+            'Elles envoient les mails du bloc « Envoi de mail » des scénarios. Le mot de passe est chiffré et ne se réaffiche plus une fois enregistré.',
+            'They send the emails of the "Send email" scenario block. The password is encrypted and is never shown again once saved.',
           )}
         </IntroPage>
       </div>
@@ -143,7 +145,7 @@ function EmailAccountsInner({ session }: { session: Session }) {
         <AccountForm form={form} setForm={setForm} isNew={isNew} busy={busy} onSave={() => void save()} onCancel={cancelEdit} />
       ) : (
         <Bouton onClick={startCreate}>
-          {t('+ Connecter une boîte', '+ Connect a mailbox')}
+          <Icone nom="ajouter" />{t('Connecter une boîte', 'Connect a mailbox')}
         </Bouton>
       )}
 
@@ -200,7 +202,7 @@ function EmailAccountsInner({ session }: { session: Session }) {
             value={testTo}
             onChange={(e) => setTestTo(e.target.value)}
             className={inputCls}
-            placeholder={t('toi@exemple.fr', 'you@example.com')}
+            placeholder={t('vous@exemple.fr', 'you@example.com')}
           />
           {testMsg && (
             <p className={`mt-3 rounded-controle px-3 py-2 text-sm ${testMsg.kind === 'ok' ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-700'}`}>{testMsg.text}</p>

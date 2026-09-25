@@ -8,12 +8,15 @@ import { CarouselForm } from '@/components/CarouselForm';
 import { TemplateForm } from '@/components/TemplateForm';
 import type { Session } from '@/lib/session';
 import { listTemplates, deleteTemplate, type TemplateSummary } from '@/lib/api';
-import { useT } from '@/lib/i18n';
+import { useLocale, useT } from '@/lib/i18n';
+import { categorieTemplate, statutTemplate } from '@/lib/format';
+import { Icone } from '@/components/Icone';
 import { Bouton } from '@/components/Bouton';
 import { TitrePage } from '@/components/TitrePage';
 import { useConfirmation } from '@/components/Confirmation';
 import { Modale } from '@/components/Modale';
 import { Squelette } from '@/components/Squelette';
+import { erreurDeChargement } from '@/lib/http';
 
 export default function TemplatesPage() {
   return <AppShell active="templates">{(session) => <TemplatesInner session={session} />}</AppShell>;
@@ -28,6 +31,7 @@ const STATUS: Record<string, string> = {
 
 function TemplatesInner({ session }: { session: Session }) {
   const t = useT();
+  const { locale } = useLocale();
   const confirmer = useConfirmation();
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,7 +49,7 @@ function TemplatesInner({ session }: { session: Session }) {
     try {
       setTemplates((await listTemplates(session.tenantId)).templates);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
+      setError(erreurDeChargement(err, t));
     } finally {
       setLoading(false);
     }
@@ -56,7 +60,7 @@ function TemplatesInner({ session }: { session: Session }) {
   }, [reload]);
 
   async function remove(tpl: TemplateSummary) {
-    if (!(await confirmer({ titre: t('Supprimer le template', 'Delete the template'), message: t(`Supprimer le template « ${tpl.name} » ?\nSuppression définitive chez Meta (toutes les langues). Bloquée si une campagne active l'utilise.`,
+    if (!(await confirmer({ titre: t('Supprimer le template', 'Delete the template'), message: t(`Supprimer le template « ${tpl.name} » ?\nSuppression définitive chez Meta (toutes les langues). Bloquée si une campagne active l’utilise.`,
       `Delete template “${tpl.name}”?\nPermanent deletion at Meta (all languages). Blocked if an active campaign uses it.`), confirmer: t('Supprimer', 'Delete') }))) return;
     setError(null);
     try {
@@ -89,7 +93,7 @@ function TemplatesInner({ session }: { session: Session }) {
             <h2 className="text-base font-semibold text-ink-900">{t(`Modifier « ${editing.name} »`, `Edit “${editing.name}”`)}</h2>
             <button onClick={() => setEditing(null)} className="text-xs text-ink-500 hover:text-ink-900">{t('Fermer', 'Close')}</button>
           </div>
-          <p className="mb-4 rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte">{t('Modifier un template le renvoie en validation Meta (statut PENDING) : il est inenvoyable le temps de la re-validation. Le nom et la langue ne sont pas modifiables.', 'Editing a template sends it back to Meta for review (PENDING status): it stays unsendable until re-approval. Name and language cannot be changed.')}</p>
+          <p className="mb-4 rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte">{t('Modifier un template le renvoie en revue chez Meta : il ne peut plus partir avant sa nouvelle validation. Le nom et la langue ne changent pas.', 'Editing a template sends it back to Meta for review: it cannot be sent until re-approved. Name and language cannot change.')}</p>
           <TemplateForm key={editing.name} tenantId={session.tenantId} onCreated={() => { void reload(); setEditing(null); }} initial={editing} />
         </section>
       ) : creating ? (
@@ -122,7 +126,7 @@ function TemplatesInner({ session }: { session: Session }) {
           <div className="flex items-center gap-3">
             <button onClick={reload} className="text-xs text-brand-600 hover:underline">{t('Rafraîchir', 'Refresh')}</button>
             {!creating && !editing && (
-              <Bouton onClick={() => setCreating(true)}>{t('+ Créer un template', '+ Create a template')}</Bouton>
+              <Bouton onClick={() => setCreating(true)}><Icone nom="ajouter" />{t('Créer un template', 'Create a template')}</Bouton>
             )}
           </div>
         </div>
@@ -131,7 +135,7 @@ function TemplatesInner({ session }: { session: Session }) {
           <Squelette forme="lignes" />
         ) : templates.length === 0 ? (
           <div className="px-4 py-10 text-center text-sm text-ink-500">
-            {t("Aucun template. Clique « + Créer un template » (il passe en revue Meta avant d'être utilisable).", 'No templates yet. Click “+ Create a template” (it goes through Meta review before it can be used).')}
+            {t('Aucun template. Cliquez sur « Créer un template » : il passe en revue chez Meta avant d’être utilisable.', 'No templates yet. Click “Create a template”: it goes through Meta review before it can be used.')}
           </div>
         ) : (
           <div className="overflow-x-auto rounded-carte border border-ink-200 bg-white">
@@ -149,21 +153,21 @@ function TemplatesInner({ session }: { session: Session }) {
                 {templates.map((tpl) => (
                   <tr key={`${tpl.name}-${tpl.language}`} className="hover:bg-ink-50">
                     <td className="px-4 py-2.5">
-                      <button onClick={() => setPreview(tpl)} className="font-mono text-xs font-medium text-brand-600 hover:underline" title={t("Voir l'aperçu", 'View preview')}>{tpl.name}</button>
+                      <button onClick={() => setPreview(tpl)} className="font-mono text-xs font-medium text-brand-600 hover:underline" title={t("Voir l’aperçu", 'View preview')}>{tpl.name}</button>
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-ink-500">{tpl.category?.toLowerCase()}</td>
+                    <td className="px-4 py-2.5 text-xs text-ink-500">{categorieTemplate(tpl.category, locale)}</td>
                     <td className="px-4 py-2.5 text-xs">{tpl.language}</td>
                     <td className="px-4 py-2.5">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS[tpl.status] ?? 'bg-ink-100 text-ink-500'}`}>
-                        {tpl.status?.toLowerCase()}
+                        {statutTemplate(tpl.status, locale)}
                       </span>
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       <div className="flex items-center justify-end gap-3 text-xs">
                         {tpl.editable === false ? (
-                          <span className="text-ink-500" title={tpl.isCarousel ? t("Édition d'un carousel non supportée", 'Editing a carousel is not supported') : t("Édition non supportée : en-tête ou pied de page (il serait supprimé)", 'Editing not supported: header or footer (it would be removed)')}>{t('Éditer', 'Edit')}</span>
+                          <span className="text-ink-500" title={tpl.isCarousel ? t('Un carousel ne se modifie pas ici.', 'A carousel cannot be edited here.') : t('Modification impossible ici : l’en-tête ou le pied de page serait supprimé.', 'Cannot be edited here: the header or footer would be removed.')}>{t('Modifier', 'Edit')}</span>
                         ) : (
-                          <button onClick={() => setEditing(tpl)} className="font-medium text-brand-600 hover:text-brand-700">{t('Éditer', 'Edit')}</button>
+                          <button onClick={() => setEditing(tpl)} className="font-medium text-brand-600 hover:text-brand-700">{t('Modifier', 'Edit')}</button>
                         )}
                         {tpl.isCarousel ? (
                           <span className="text-ink-500" title={t('Duplication d’un carousel non supportée', 'Duplicating a carousel is not supported')}>{t('Dupliquer', 'Duplicate')}</span>
@@ -189,10 +193,11 @@ function TemplatesInner({ session }: { session: Session }) {
  *  (image, texte, boutons) ; un en-tête média simple reste une note (son média n'est pas relu). */
 function TemplatePreviewModal({ template, onClose }: { template: TemplateSummary; onClose: () => void }) {
   const t = useT();
+  const { locale } = useLocale();
   return (
     <Modale
       titre={template.name}
-      sousTitre={`${template.category?.toLowerCase() ?? ''} · ${template.language} · ${template.status?.toLowerCase() ?? ''}`}
+      sousTitre={`${categorieTemplate(template.category, locale)} · ${template.language} · ${statutTemplate(template.status, locale)}`}
       taille="petite"
       onClose={onClose}
     >
@@ -218,7 +223,7 @@ function TemplatePreviewModal({ template, onClose }: { template: TemplateSummary
         />
       )}
       {template.headerFormat && template.headerFormat !== 'TEXT' && !template.isCarousel && (
-        <p className="mt-2 text-xs text-ink-500">{t('En-tête', 'Header')} {template.headerFormat.toLowerCase()} {t("(le média réel s'affiche à l'envoi).", '(the actual media is shown when sending).')}</p>
+        <p className="mt-2 text-xs text-ink-500">{t('En-tête', 'Header')} {template.headerFormat.toLowerCase()} {t("(le média réel s’affiche à l’envoi).", '(the actual media is shown when sending).')}</p>
       )}
     </Modale>
   );

@@ -27,7 +27,7 @@ test.describe('Templates : boutons d’un carousel, carte par carte', () => {
   });
 
   test('un bouton ajouté apparaît sur CHAQUE carte, avec son propre texte et son propre lien', async ({ page }) => {
-    await page.getByRole('button', { name: '+ lien' }).click();
+    await page.getByRole('button', { name: 'Lien', exact: true }).click();
 
     // Un champ texte + un champ URL par carte (2 cartes par défaut), pas un jeu unique en haut.
     const urlFields = page.getByPlaceholder('https://exemple.fr/cette-carte');
@@ -46,27 +46,27 @@ test.describe('Templates : boutons d’un carousel, carte par carte', () => {
   });
 
   test('le champ du lien occupe toute la largeur de la carte (il était trop étroit pour être lu)', async ({ page }) => {
-    await page.getByRole('button', { name: '+ lien' }).click();
+    await page.getByRole('button', { name: 'Lien', exact: true }).click();
     const field = page.getByPlaceholder('https://exemple.fr/cette-carte').first();
     const box = await field.boundingBox();
     expect(box!.width).toBeGreaterThan(200); // l'ancien w-28 faisait 112 px
   });
 
   test('une nouvelle carte hérite de la disposition, et 2 boutons est le maximum', async ({ page }) => {
-    await page.getByRole('button', { name: '+ lien' }).click();
-    await page.getByRole('button', { name: '+ réponse rapide' }).click();
+    await page.getByRole('button', { name: 'Lien', exact: true }).click();
+    await page.getByRole('button', { name: 'Réponse rapide', exact: true }).click();
 
     // Meta refuse au-delà de 2 boutons par carte (mesuré en live) : on n'en propose pas un 3e.
-    await expect(page.getByRole('button', { name: '+ lien' })).toBeDisabled();
-    await expect(page.getByRole('button', { name: '+ réponse rapide' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Lien', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Réponse rapide', exact: true })).toBeDisabled();
 
-    await page.getByRole('button', { name: '+ Ajouter une carte' }).click();
+    await page.getByRole('button', { name: 'Ajouter une carte' }).click();
     // 3 cartes x 1 lien : la carte ajoutée porte la même disposition, sinon Meta refuserait le template.
     await expect(page.getByPlaceholder('https://exemple.fr/cette-carte')).toHaveCount(3);
   });
 
   test('URL sans https:// -> signalée sous le champ, avant tout appel à Meta', async ({ page }) => {
-    await page.getByRole('button', { name: '+ lien' }).click();
+    await page.getByRole('button', { name: 'Lien', exact: true }).click();
     const url = page.getByPlaceholder('https://exemple.fr/cette-carte').first();
     await url.fill('exemple.fr/ma-page');
     await expect(page.getByText(/Adresse incomplète/).first()).toBeVisible();
@@ -75,7 +75,7 @@ test.describe('Templates : boutons d’un carousel, carte par carte', () => {
   });
 
   test('retirer un bouton le retire de toutes les cartes', async ({ page }) => {
-    await page.getByRole('button', { name: '+ lien' }).click();
+    await page.getByRole('button', { name: 'Lien', exact: true }).click();
     await expect(page.getByPlaceholder('https://exemple.fr/cette-carte')).toHaveCount(2);
     await page.getByRole('button', { name: 'Retirer' }).first().click();
     await expect(page.getByPlaceholder('https://exemple.fr/cette-carte')).toHaveCount(0);

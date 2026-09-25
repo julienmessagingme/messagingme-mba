@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sendingLimitLabel, tierLabel, mmLiteBadge, accountReviewBadge, businessVerificationBadge, campaignSendLabel, fmtCost } from './format';
+import { sendingLimitLabel, tierLabel, mmLiteBadge, accountReviewBadge, businessVerificationBadge, campaignSendLabel, fmtCost, statutTemplate, categorieTemplate } from './format';
 
 /** Anti-tiret : règle projet, aucun libellé produit ne doit contenir de tiret cadratin/demi-cadratin. */
 const NO_EM_DASH = /[—–]/;
@@ -81,6 +81,24 @@ describe('anti-tiret cadratin sur tous les libellés produits', () => {
       campaignSendLabel({ templateName: null, templateLanguage: null, workflowName: null }, 'fr'),
     ];
     for (const s of samples) expect(NO_EM_DASH.test(s), `libellé « ${s} » contient un tiret interdit`).toBe(false);
+  });
+});
+
+describe('statutTemplate et categorieTemplate (plus de valeur brute de Meta à l’écran)', () => {
+  it('traduit les statuts connus, dans les deux langues', () => {
+    expect(statutTemplate('APPROVED', 'fr')).toBe('Approuvé');
+    expect(statutTemplate('PENDING', 'fr')).toBe('En revue');
+    expect(statutTemplate('REJECTED', 'en')).toBe('Rejected');
+    expect(statutTemplate('paused', 'fr')).toBe('En pause');
+  });
+  it('un statut inconnu reste lisible (minuscules), une absence le dit', () => {
+    expect(statutTemplate('SOMETHING_NEW', 'fr')).toBe('something_new');
+    expect(statutTemplate(null, 'fr')).toBe('Inconnu');
+  });
+  it('traduit la catégorie', () => {
+    expect(categorieTemplate('UTILITY', 'fr')).toBe('Utilitaire');
+    expect(categorieTemplate('marketing', 'en')).toBe('Marketing');
+    expect(categorieTemplate(undefined, 'fr')).toBe('');
   });
 });
 

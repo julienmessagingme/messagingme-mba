@@ -353,7 +353,7 @@ test.describe('Chaîne : publier', () => {
     const avert = page.getByTestId('chaine-avertissement-automation_non_allumee');
     await expect(avert).toBeVisible();
     await expect(avert).toContainText('ne démarre rien');
-    await expect(avert).not.toContainText(/republie[rz]|réessaie/i);
+    await expect(avert).not.toContainText(/republie[rz]|réessa/i);
 
     // La publication porte la marque, et le bouton de réparation est à côté.
     await expect(page.getByTestId('chaine-publication-bouton-mort-p1')).toBeVisible();

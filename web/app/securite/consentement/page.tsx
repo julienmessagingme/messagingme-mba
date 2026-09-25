@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
-import { useT } from '@/lib/i18n';
+import { useLocale, useT } from '@/lib/i18n';
+import { dateHeure, formatDate } from '@/lib/day';
 import { listeDesabonnes, refusPossibles, pousseeOptOut, setPousseeOptOut, type ContactDesabonne, type RefusPossible } from '@/lib/api';
 import { cadreCls } from '@/lib/ui';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
@@ -37,6 +38,7 @@ function sourceDite(source: string | null, t: (fr: string, en: string) => string
 
 function Consentement({ tenantId, estAdmin }: { tenantId: string; estAdmin: boolean }) {
   const t = useT();
+  const { locale } = useLocale();
   const [contacts, setContacts] = useState<ContactDesabonne[] | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [aRelire, setARelire] = useState<{ scannes: number; refus: RefusPossible[] } | null>(null);
@@ -61,8 +63,8 @@ function Consentement({ tenantId, estAdmin }: { tenantId: string; estAdmin: bool
         <TitrePage>{t('Consentement', 'Consent')}</TitrePage>
         <IntroPage>
           {t(
-            'Les personnes qui ont demandé à ne plus être contactées. Aucun envoi automatique ne leur est adressé : ni campagne, ni scénario, ni automation, ni agent IA. Un opérateur peut encore leur répondre à la main.',
-            'People who asked not to be contacted again. No automatic message is sent to them: no campaign, scenario, automation or AI agent. An operator can still reply to them by hand.',
+            'Les personnes désabonnées ne reçoivent aucun envoi automatique (campagne, scénario, automation, agent IA) ; un opérateur peut encore leur répondre à la main.',
+            'Unsubscribed people receive no automatic message (campaign, scenario, automation, AI agent); an operator can still reply by hand.',
           )}
         </IntroPage>
       </div>
@@ -119,7 +121,7 @@ function Consentement({ tenantId, estAdmin }: { tenantId: string; estAdmin: bool
                     */}
                   <td className="px-4 py-2 text-ink-500" data-testid="desabonne-date">
                     {c.desabonneLe
-                      ? new Date(c.desabonneLe).toLocaleString()
+                      ? dateHeure(c.desabonneLe, locale)
                       : <span className="text-ink-500">{t('date inconnue', 'date unknown')}</span>}
                   </td>
                   <td className="break-words px-4 py-2 text-ink-500">{sourceDite(c.source, t)}</td>
@@ -185,7 +187,7 @@ function Consentement({ tenantId, estAdmin }: { tenantId: string; estAdmin: bool
                 <div className="min-w-0">
                   <p className="truncate text-sm text-ink-900">{r.body}</p>
                   <p className="text-xs text-ink-500">
-                    {r.profileName ?? r.waId} · {new Date(r.recuLe).toLocaleDateString()}
+                    {r.profileName ?? r.waId} · {formatDate(r.recuLe, locale)}
                   </p>
                 </div>
                 <Link href={`/inbox?c=${r.conversationId}`} className="shrink-0 text-xs font-medium text-brand-600 hover:underline">

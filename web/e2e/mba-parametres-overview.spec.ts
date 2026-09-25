@@ -17,7 +17,7 @@ test.describe('MBA Paramètres : vue d’ensemble', () => {
     await page.getByTestId('mba-rollout-toggle').click();
 
     // Le message doit ANNONCER l'effet sur les fils en cours, pas juste demander « êtes-vous sûr ».
-    await repondre(page, false, 'NOUVELLES');
+    await repondre(page, false, 'nouvelles conversations');
     await expect.poll(() => appelsMba(calls, 'PUT', '/rollout').length).toBe(0);
   });
 

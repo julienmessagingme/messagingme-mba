@@ -5,6 +5,7 @@ import { RcsMessageForm } from '@/components/RcsMessageForm';
 import { RcsCarouselForm } from '@/components/RcsCarouselForm';
 import type { RcsMessage, UserFieldDef } from '@/lib/api';
 import { Bouton } from '@/components/Bouton';
+import { Icone } from '@/components/Icone';
 
 /**
  * ÉCRIRE UN MESSAGE RCS SANS QUITTER LA CAMPAGNE EN COURS, simple ou carrousel.
@@ -98,9 +99,9 @@ export function CreationMessageRcsEnLigne({ tenantId, champs, rechargerMessagesR
           type="button"
           onClick={() => { void ouvrir(); }}
           data-testid="rcs-creer-message"
-          className="self-start text-xs text-brand-600 hover:underline"
+          className="inline-flex items-center gap-1 self-start text-xs font-medium text-brand-600 hover:underline"
         >
-          ＋ Créer un nouveau message
+          <Icone nom="ajouter" taille="petite" />Créer un nouveau message
         </button>
         {souci !== null && (
           <p className="text-xs text-alerte-700" data-testid="rcs-creer-souci">{souci}</p>

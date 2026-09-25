@@ -21,7 +21,7 @@ describe('messageRafraichissement', () => {
   it('un import AVERTIT que les réponses n\'alimenteront pas les fiches contact', () => {
     const msg = messageRafraichissement(rapport({ importes: 1 }), t);
     expect(msg).toContain('1 formulaire importé');
-    expect(msg).toContain("n'alimentent pas les fiches contact");
+    expect(msg).toContain('n’alimentent pas les fiches contact');
   });
 
   it('sans import, pas de mise en garde (elle ne concernerait aucun formulaire de la liste)', () => {

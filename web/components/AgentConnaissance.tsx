@@ -14,6 +14,7 @@ import {
 import { Bouton } from '@/components/Bouton';
 import { Icone } from '@/components/Icone';
 import { Squelette } from '@/components/Squelette';
+import { erreurDeChargement } from '@/lib/http';
 
 /**
  * L'onglet BASE DE CONNAISSANCE d'un agent IA.
@@ -53,7 +54,7 @@ export function AgentConnaissance({ tenantId, agentId, onChange, urlSuggeree }: 
     try {
       setFiches(await listFiches(tenantId, agentId));
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
+      setErreur(erreurDeChargement(err, t));
     }
   }, [tenantId, agentId, t]);
   useEffect(() => { void charger(); }, [charger]);
@@ -80,8 +81,8 @@ export function AgentConnaissance({ tenantId, agentId, onChange, urlSuggeree }: 
     <div className="flex flex-col gap-4">
       <MbaNotice kind="warning">
         {t(
-          'L’agent ne répond QUE d’après ces fiches. Sur une question qu’aucune ne couvre, il n’invente pas : il sort du bloc par « Aucune source ». Une base vide fait donc un agent qui transfère tout.',
-          'The agent only answers from these entries. On a question none of them covers, it does not make things up: it leaves the block through “No source”. So an empty base makes an agent that hands everything over.',
+          'L’agent ne répond que d’après ces fiches. Sur une question qu’aucune ne couvre, il sort du bloc par « Aucune source » : une base vide fait donc un agent qui transfère tout.',
+          'The agent only answers from these entries. On a question none of them covers, it leaves the block through “No source”: an empty base makes an agent that hands everything over.',
         )}
       </MbaNotice>
       {erreur && <MbaNotice kind="error" testid="kb-erreur">{erreur}</MbaNotice>}
@@ -105,8 +106,8 @@ export function AgentConnaissance({ tenantId, agentId, onChange, urlSuggeree }: 
         // contenu est devenu une source, et l'agent transférerait sur des questions que la page couvrait.
         return r.ecrites >= r.plafond
           ? `${ecrites} ${t(
-            `Le plafond de ${r.plafond} fiches par page est atteint : la suite de la page n’a PAS été lue. Découpez-la, ou complétez à la main.`,
-            `The cap of ${r.plafond} entries per page was reached: the rest of the page was NOT read. Split it, or fill in by hand.`,
+            `Le plafond de ${r.plafond} fiches par page est atteint : la suite de la page n’a pas été lue. Découpez-la, ou complétez à la main.`,
+            `The cap of ${r.plafond} entries per page was reached: the rest of the page was not read. Split it, or fill in by hand.`,
           )}`
           : ecrites;
       })} />
@@ -339,8 +340,8 @@ function ImportSource({ tenantId, agentId, busy, onImport, onErreur, urlSuggeree
       )}
       <p className="text-xs leading-relaxed text-alerte-800">
         {t(
-          'Relire la même adresse REMPLACE les fiches qu’elle avait déjà produites : vos corrections sur celles-là seront perdues. Les fiches venues d’ailleurs, et celles que vous avez écrites à la main, ne bougent pas.',
-          'Re-reading the same address REPLACES the entries it had already produced: your fixes on those will be lost. Entries from other sources, and the ones you wrote by hand, are untouched.',
+          'Relire la même adresse remplace les fiches qu’elle avait déjà produites : vos corrections sur celles-là seront perdues. Les fiches venues d’ailleurs, et celles que vous avez écrites à la main, ne bougent pas.',
+          'Re-reading the same address replaces the entries it had already produced: your fixes on those will be lost. Entries from other sources, and the ones you wrote by hand, are untouched.',
         )}
       </p>
     </div>
@@ -368,8 +369,8 @@ function ImportDocument({ busy, onDeposer }: { busy: boolean; onDeposer: (nom: s
         <p className="text-sm font-medium text-ink-900">{t('Déposer un document', 'Upload a document')}</p>
         <p className="mt-1 text-xs leading-relaxed text-ink-500">
           {t(
-            'Un PDF, un Word, un fichier texte ou CSV de questions-réponses. On en fait des fiches, découpées sur ses titres. Le type est reconnu au CONTENU du fichier, pas à son extension.',
-            'A PDF, a Word file, a text or CSV of questions and answers. We turn it into entries, split on its headings. The type is recognised from the file CONTENT, not its extension.',
+            'Un PDF, un Word, un fichier texte ou CSV de questions-réponses, découpé en fiches sur ses titres. Le type se reconnaît au contenu du fichier, pas à son extension.',
+            'A PDF, a Word file, a text or CSV of questions and answers, split into entries on its headings. The type is recognised from the file content, not its extension.',
           )}
         </p>
       </div>
@@ -401,8 +402,8 @@ function ImportDocument({ busy, onDeposer }: { busy: boolean; onDeposer: (nom: s
       </div>
       <p className="text-xs leading-relaxed text-alerte-800">
         {t(
-          'Redéposer le MÊME fichier remplace les fiches qu’il avait déjà produites : vos corrections sur celles-là seront perdues. Les autres ne bougent pas.',
-          'Re-uploading the SAME file replaces the entries it had already produced: your fixes on those will be lost. The others are untouched.',
+          'Redéposer le même fichier remplace les fiches qu’il avait déjà produites : vos corrections sur celles-là seront perdues. Les autres ne bougent pas.',
+          'Re-uploading the same file replaces the entries it had already produced: your fixes on those will be lost. The others are untouched.',
         )}
       </p>
     </div>

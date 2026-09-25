@@ -47,22 +47,22 @@ export default function SignupPage() {
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <Logo className="mx-auto mb-3 h-14 w-14" />
-          <TitrePage>{t('Créer ton espace', 'Create your workspace')}</TitrePage>
-          <p className="mt-1 text-sm text-ink-500">{t('Ton espace WhatsApp Business en quelques secondes.', 'Your WhatsApp Business space in seconds.')}</p>
+          <TitrePage>{t('Créer votre espace', 'Create your workspace')}</TitrePage>
+          <p className="mt-1 text-sm text-ink-500">{t('Votre espace WhatsApp Business en quelques secondes.', 'Your WhatsApp Business workspace in seconds.')}</p>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4 rounded-carte border border-ink-200 bg-white p-6">
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink-900">{t("Nom de l'espace / entreprise", 'Workspace / company name')}</label>
+            <label className="mb-1 block text-sm font-medium text-ink-900">{t("Nom de l’espace / entreprise", 'Workspace / company name')}</label>
             <input required maxLength={80} value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} className={inputCls} placeholder={t('Mon entreprise', 'My company')} />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink-900">{t('Ton nom', 'Your name')}</label>
+            <label className="mb-1 block text-sm font-medium text-ink-900">{t('Votre nom', 'Your name')}</label>
             <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder={t('Prénom Nom', 'First Last')} />
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-ink-900">{t('Email', 'Email')}</label>
-            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} placeholder={t('toi@entreprise.fr', 'you@company.com')} />
+            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} placeholder={t('vous@entreprise.fr', 'you@company.com')} />
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-ink-900">{t('Mot de passe', 'Password')}</label>
@@ -72,7 +72,7 @@ export default function SignupPage() {
           {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
           <Bouton enCours={loading} type="submit" disabled={loading} className="w-full">
-            {loading ? t('Création...', 'Creating...') : t('Créer mon espace', 'Create my workspace')}
+            {loading ? t('Création…', 'Creating…') : t('Créer mon espace', 'Create my workspace')}
           </Bouton>
           <p className="text-center text-xs text-ink-500">{t('Déjà un compte ?', 'Already have an account?')} <Link href="/login" className="font-medium text-brand-600 hover:underline">{t('Se connecter', 'Log in')}</Link></p>
 

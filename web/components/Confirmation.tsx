@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { useT } from '@/lib/i18n';
 import { Bouton } from '@/components/Bouton';
 import { Modale } from '@/components/Modale';
@@ -118,6 +119,14 @@ export function ConfirmationProvider({ children }: { children: React.ReactNode }
     enAttente.current = repondre;
     setEnCours({ ...d, repondre });
   }), []);
+
+  /**
+   * 🔴 UNE QUESTION NE SURVIT PAS À UN CHANGEMENT D'ADRESSE. Le fournisseur vit à la racine, donc la fenêtre
+   * restait ouverte après un retour arrière du navigateur, et « oui » exécutait alors le geste de la page
+   * QUITTÉE (supprimer un agent qu'on ne voit plus). Changer d'adresse répond « non ».
+   */
+  const chemin = usePathname();
+  useEffect(() => { enAttente.current?.(false); }, [chemin]);
 
   return (
     <ContexteConfirmation.Provider value={demander}>

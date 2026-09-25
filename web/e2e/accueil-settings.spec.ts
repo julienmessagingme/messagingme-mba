@@ -57,7 +57,7 @@ test.describe('Accueil : carte MBA + reprise opérateur (F1)', () => {
   test('🔴 « en attente d’ouverture Meta » ne s’affiche QUE si Meta le dit', async ({ page }) => {
     await mockAccueil(page, { mbaStatus: { phoneNumberId: 'PN1', eligible: false, onboarded: false, agentId: null, settings: null } });
     const etat = page.getByTestId('mba-etat-reel');
-    await expect(etat).toContainText(/n'a pas encore ouvert|has not opened/);
+    await expect(etat).toContainText(/n’a pas encore ouvert|has not opened/);
     // Et le bouton DIT qu'il ne pilote que notre côté, ce que son silence laissait croire l'inverse.
     await expect(page.getByTestId('settings-card')).toContainText(/côté Engage Me seulement|Engage Me side only/);
   });

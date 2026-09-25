@@ -138,7 +138,7 @@ export function WhatsAppPreview({ body, examples, varLabels, buttons, header, fo
           </div>
       </PhoneFrame>
       {!hideNote && (
-        <p className="mt-2 text-[11px] text-ink-500">{t("Le rendu réel peut varier légèrement selon l'appareil. *gras*, _italique_, ~barré~ sont supportés.", 'The actual rendering may vary slightly by device. *bold*, _italic_, ~strikethrough~ are supported.')}</p>
+        <p className="mt-2 text-[11px] text-ink-500">{t("Le rendu réel peut varier légèrement selon l’appareil. *gras*, _italique_, ~barré~ sont supportés.", 'The actual rendering may vary slightly by device. *bold*, _italic_, ~strikethrough~ are supported.')}</p>
       )}
     </>
   );

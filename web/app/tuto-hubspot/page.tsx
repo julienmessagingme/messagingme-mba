@@ -19,7 +19,7 @@ export default function TutoHubspotPage() {
       n: 1,
       title: t('Connecter votre compte HubSpot', 'Connect your HubSpot account'),
       body: t(
-        "Sur l'accueil, cliquez sur « Connecter HubSpot » et autorisez l'accès. Messaging Me se lie à votre portail HubSpot. Vous pouvez ensuite activer la synchronisation par numéro.",
+        "Sur l’accueil, cliquez sur « Connecter HubSpot » et autorisez l’accès. Messaging Me se lie à votre portail HubSpot. Vous pouvez ensuite activer la synchronisation par numéro.",
         'On the home page, click "Connect HubSpot" and authorize access. Messaging Me links to your HubSpot portal. You can then enable sync per number.',
       ),
     },
@@ -27,7 +27,7 @@ export default function TutoHubspotPage() {
       n: 2,
       title: t('Ajouter la carte Messaging Me à la fiche contact', 'Add the Messaging Me card to the contact record'),
       body: t(
-        "C'est l'étape qui affiche l'analyse des conversations directement dans HubSpot, sur chaque contact.",
+        "C’est l’étape qui affiche l’analyse des conversations directement dans HubSpot, sur chaque contact.",
         'This is the step that shows conversation analysis directly in HubSpot, on each contact.',
       ),
       sub: [
@@ -89,7 +89,7 @@ export default function TutoHubspotPage() {
 
         <div className="mt-6 text-center">
           <Link href="/accueil" className="text-sm font-medium text-brand-600 hover:underline">
-            {t("Retour à l'accueil", 'Back to home')}
+            {t("Retour à l’accueil", 'Back to home')}
           </Link>
         </div>
       </div>

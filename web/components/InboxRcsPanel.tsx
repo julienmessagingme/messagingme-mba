@@ -164,7 +164,7 @@ export function InboxRcsPanel({
           data-testid="inbox-rcs-send"
           className="flex-1"
         >
-          {busy ? t('Envoi...', 'Sending...') : t('Envoyer en RCS', 'Send over RCS')}
+          {busy ? t('Envoi…', 'Sending…') : t('Envoyer en RCS', 'Send over RCS')}
         </Bouton>
       </div>
     </Modale>

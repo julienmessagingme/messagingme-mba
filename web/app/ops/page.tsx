@@ -66,7 +66,7 @@ export default function OpsPage() {
   async function observer(tenantId: string, nom: string): Promise<void> {
     if (!token) return;
     if (!(await confirmer({ titre: t('Observer l’espace', 'Observe the workspace'), message: t(
-      `Observer l'espace « ${nom} » ? Vous verrez ce que ce client voit, sans pouvoir rien modifier. Votre session actuelle sera remplacée.`,
+      `Observer l’espace « ${nom} » ? Vous verrez ce que ce client voit, sans pouvoir rien modifier. Votre session actuelle sera remplacée.`,
       `Observe the "${nom}" workspace? You will see what this customer sees, without being able to change anything. Your current session will be replaced.`,
     ), confirmer: t('Observer', 'Observe') }))) return;
     try {
@@ -96,8 +96,8 @@ export default function OpsPage() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-surface-subtle p-4">
         <form onSubmit={submit} className="w-full max-w-sm rounded-carte border border-ink-200 bg-white p-6">
-          <TitrePage>{t("Console d'exploitation", 'Operations console')}</TitrePage>
-          <p className="mt-1 text-sm text-ink-500">{t("Accès cross-tenant en lecture seule. Saisis le jeton d'exploitation.", 'Read-only cross-tenant access. Enter the operations token.')}</p>
+          <TitrePage>{t("Console d’exploitation", 'Operations console')}</TitrePage>
+          <p className="mt-1 text-sm text-ink-500">{t('Accès cross-tenant en lecture seule. Saisissez le jeton d’exploitation.', 'Read-only cross-tenant access. Enter the operations token.')}</p>
           <input
             type="password"
             value={input}
@@ -124,7 +124,7 @@ export default function OpsPage() {
       <div className="mx-auto w-full max-w-liste space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <TitrePage>{t("Console d'exploitation", 'Operations console')}</TitrePage>
+            <TitrePage>{t("Console d’exploitation", 'Operations console')}</TitrePage>
             <p className="text-sm text-ink-500">{t('Vue cross-tenant, lecture seule.', 'Cross-tenant view, read-only.')}</p>
           </div>
           <Bouton variante="secondaire" onClick={logout}>{t('Quitter', 'Exit')}</Bouton>
@@ -243,8 +243,8 @@ function GrillePrixCard({ token }: { token: string }) {
       <h2 className="text-sm font-semibold text-ink-900">{t('Grille de prix', 'Pricing grid')}</h2>
       <p className="mt-1 text-xs text-ink-500">
         {t(
-          'UNE grille pour tous les espaces. Le tarif des templates vient de Meta : on pose une marge dessus. Les autres prix se saisissent.',
-          'ONE grid for every workspace. Template rates come from Meta: you set a margin on top. The other prices are entered.',
+          'Une seule grille pour tous les espaces. Le tarif des templates vient de Meta, avec une marge ; les autres prix se saisissent.',
+          'A single grid for every workspace. Template rates come from Meta, with a margin; the other prices are entered.',
         )}
       </p>
 
@@ -270,7 +270,7 @@ function GrillePrixCard({ token }: { token: string }) {
         <Bouton
           type="button" onClick={enregistrer} disabled={statut === 'saving'} data-testid="ops-prix-enregistrer"
         >
-          {statut === 'saving' ? t('Enregistrement...', 'Saving...') : t('Enregistrer', 'Save')}
+          {statut === 'saving' ? t('Enregistrement…', 'Saving…') : t('Enregistrer', 'Save')}
         </Bouton>
         {statut === 'saved' && <span className="text-xs text-succes-700" data-testid="ops-prix-ok">{t('Enregistré', 'Saved')}</span>}
         {statut === 'error' && (
@@ -417,8 +417,8 @@ function PoolCard({ instantane, points }: { instantane: PoolInstantane | null; p
       <h3 className="text-sm font-semibold text-ink-900">{t('Pool de connexions', 'Connection pool')}</h3>
       <p className="mb-3 text-xs text-ink-500">
         {t(
-          'Ce qui compte n’est pas la place restante, c’est de savoir si quelqu’un a ATTENDU une connexion, et combien de temps. Chaque acquisition est mesurée : aucun pic n’est raté.',
-          'What matters is not the remaining room, it is whether anyone WAITED for a connection, and for how long. Every acquisition is measured: no spike is missed.',
+          'Ce qui compte : quelqu’un a-t-il attendu une connexion, et combien de temps. Chaque acquisition est mesurée.',
+          'What matters: did anyone wait for a connection, and for how long. Every acquisition is measured.',
         )}
       </p>
 
@@ -538,8 +538,8 @@ function LatenceCard({ lignes }: { lignes: QueueLatenceRow[] }) {
       <h3 className="text-sm font-semibold text-ink-900">{t('Latence réelle des files (24 h)', 'Actual queue latency (24 h)')}</h3>
       <p className="mb-3 mt-1 text-xs text-ink-500">
         {t(
-          'Calculée sur les jobs terminés : les jobs échoués n’y figurent pas, ils se lisent sur la carte ci-dessus. À ne pas confondre avec l’âge, qui est une photo de l’instant.',
-          'Computed over completed jobs: failed jobs are absent here, read them on the card above. Not to be confused with the age, which is a snapshot.',
+          'Sur les jobs terminés : les jobs échoués n’y figurent pas, ils se lisent sur la carte ci-dessus.',
+          'Over completed jobs: failed jobs are absent here, read them on the card above.',
         )}
       </p>
       {utiles.length === 0 ? (

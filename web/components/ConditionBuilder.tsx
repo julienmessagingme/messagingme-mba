@@ -111,7 +111,7 @@ export function ConditionBuilder({ group, onChange, fields, tags }: {
         </div>
       ))}
 
-      <button type="button" onClick={add} className="text-xs text-brand-600 hover:underline">{t('+ ajouter une condition', '+ add a condition')}</button>
+      <button type="button" onClick={add} className="inline-flex items-center gap-1 text-xs text-brand-600 hover:underline"><Icone nom="ajouter" taille="petite" />{t('Ajouter une condition', 'Add a condition')}</button>
     </div>
   );
 }

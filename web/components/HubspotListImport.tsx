@@ -74,19 +74,19 @@ export function HubspotListImport({ tenantId, onImported, onBusyChange }: {
         <h2 className="text-base font-semibold text-ink-900">{t('Importer une liste HubSpot', 'Import a HubSpot list')}</h2>
         {!loading && <button onClick={() => void load()} className="text-xs text-brand-600 hover:underline">{t('Rafraîchir', 'Refresh')}</button>}
       </div>
-      <p className="mt-1 text-xs text-ink-500">{t("Les contacts de la liste choisie sont importés dans ton mini-CRM (import ponctuel), taggés, puis ciblables comme destinataires. L'opt-in n'est jamais présumé.", 'The chosen list contacts are imported into your mini-CRM (one-off), tagged, then targetable as recipients. Opt-in is never assumed.')}</p>
+      <p className="mt-1 text-xs text-ink-500">{t('Les contacts de la liste choisie sont importés une fois dans votre mini-CRM, étiquetés, puis ciblables. L’opt-in n’est jamais présumé.', 'The chosen list contacts are imported into your mini-CRM (one-off), tagged, then targetable as recipients. Opt-in is never assumed.')}</p>
 
       {loading ? (
         <p className="mt-4 text-sm text-ink-500">{t('Chargement des listes…', 'Loading lists…')}</p>
       ) : paused ? (
         <div className="mt-4 rounded-carte bg-alerte-50 px-3 py-3 text-sm text-alerte-800" data-testid="hubspot-lists-paused">
-          <p>{t("Synchronisation HubSpot en pause. Les campagnes via listes reprennent dès que tu réactives la synchro sur l'accueil.", 'HubSpot sync is paused. List campaigns resume as soon as you re-enable sync on the home page.')}</p>
+          <p>{t('Synchronisation HubSpot en pause. Les campagnes via listes reprennent dès que vous réactivez la synchro sur l’accueil.', 'HubSpot sync is paused. List campaigns resume as soon as you re-enable sync on the home page.')}</p>
         </div>
       ) : reconsentUrl ? (
         <div className="mt-4 rounded-carte bg-alerte-50 px-3 py-3 text-sm text-alerte-800">
-          <p>{t("L'accès aux listes HubSpot n'est pas encore autorisé pour ce portail.", 'Access to HubSpot lists is not yet authorized for this portal.')}</p>
+          <p>{t("L’accès aux listes HubSpot n’est pas encore autorisé pour ce portail.", 'Access to HubSpot lists is not yet authorized for this portal.')}</p>
           <a href={reconsentUrl} target="_blank" rel="noreferrer" className={classesBouton('principal', 'normale', 'mt-2')}>
-            {t("Autoriser l'accès →", 'Authorize access →')}
+            {t("Autoriser l’accès →", 'Authorize access →')}
           </a>
         </div>
       ) : (lists?.length ?? 0) === 0 ? (

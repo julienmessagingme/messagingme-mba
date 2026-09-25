@@ -98,7 +98,7 @@ test.describe('Assistant : un modèle créé à la volée', () => {
   test('🔴 « Vérifier maintenant » RAPPORTE l’approbation à l’écran', async ({ page }) => {
     await faux(page);
     await soumettreUnModele(page);
-    await expect(page.getByTestId('template-soumis')).toContainText('PENDING');
+    await expect(page.getByTestId('template-soumis')).toContainText('statut : en revue');
     await page.getByTestId('verifier-statut').click();
     await expect(page.getByTestId('template-soumis')).toContainText(/approuvé par Meta/);
   });
@@ -117,7 +117,7 @@ test.describe('Assistant : un modèle créé à la volée', () => {
     test.setTimeout(90_000);
     await faux(page);
     await soumettreUnModele(page);
-    await expect(page.getByTestId('template-soumis')).toContainText('PENDING');
+    await expect(page.getByTestId('template-soumis')).toContainText('statut : en revue');
     await expect(page.getByTestId('template-soumis')).toContainText(/approuvé par Meta/, { timeout: 45_000 });
   });
 

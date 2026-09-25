@@ -74,8 +74,8 @@ function CreditInner({ session }: { session: Session }) {
         <h2 className="text-sm font-semibold text-ink-900">{t('Recharger', 'Top up')}</h2>
         <p className="mt-1 text-sm text-ink-500">
           {t(
-            'Le rechargement en ligne n’est pas encore ouvert. En attendant, contactez-nous : le crédit est ajouté à votre espace dans la foulée.',
-            'Online top-up is not open yet. In the meantime, contact us: the credit is added to your workspace right away.',
+            'Pas encore en ligne : contactez-nous, le crédit est ajouté à votre espace dans la foulée.',
+            'Not online yet: contact us, the credit is added to your workspace right away.',
           )}
         </p>
         <p className="mt-3 text-xs text-ink-500">

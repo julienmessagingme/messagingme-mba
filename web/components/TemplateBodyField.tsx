@@ -185,15 +185,15 @@ export function useTemplateBody(tenantId: string, initial?: { body?: string; exa
  * à l'envoi et se ferait rejeter par Meta -> on refuse ici, avec la MÊME phrase partout.
  */
 export function unmappedVariablesMessage(unmapped: number[], t: (fr: string, en?: string) => string): string {
-  return `${t('Chaque variable doit être rattachée à un champ via « + Variable ». Non rattachée(s) :', 'Each variable must be linked to a field via “+ Variable”. Not linked:')} ${unmapped.map((p) => `{{${p}}}`).join(', ')}. ${t('Supprime-les puis réinsère-les avec le sélecteur.', 'Delete them then reinsert them with the picker.')}`;
+  return `${t('Chaque variable doit être rattachée à un champ via « Variable ». Non rattachée(s) :', 'Each variable must be linked to a field via “Variable”. Not linked:')} ${unmapped.map((p) => `{{${p}}}`).join(', ')}. ${t('Supprimez-les puis réinsérez-les avec le sélecteur.', 'Delete them then reinsert them with the picker.')}`;
 }
 
-/** Éditeur du corps : chips de variables, « + Variable » (rattache un champ + remplit l'exemple), emojis. */
+/** Éditeur du corps : chips de variables, « Variable » (rattache un champ + remplit l'exemple), emojis. */
 export function TemplateBodyField({ state, label, placeholder, hint }: {
   state: TemplateBodyState;
   label: string;
   placeholder: string;
-  /** Ligne d'aide sous l'éditeur. Absente -> la phrase standard sur « + Variable ». */
+  /** Ligne d'aide sous l'éditeur. Absente -> la phrase standard sur « Variable ». */
   hint?: string;
 }) {
   const t = useT();
@@ -236,10 +236,10 @@ export function TemplateBodyField({ state, label, placeholder, hint }: {
           <button
             type="button"
             onClick={() => { setFieldPickerOpen((o) => !o); setEmojiOpen(false); }}
-            className="rounded-controle border border-ink-200 bg-white px-2 py-1 text-xs font-medium text-brand-600 hover:bg-brand-50"
+            className="inline-flex items-center gap-1 rounded-controle border border-ink-200 bg-white px-2 py-1 text-xs font-medium text-brand-600 hover:bg-brand-50"
             title={t('Insérer une variable (champ du contact)', 'Insert a variable (contact field)')}
           >
-            + Variable
+            <Icone nom="ajouter" taille="petite" />Variable
           </button>
           <button
             type="button"
@@ -254,7 +254,7 @@ export function TemplateBodyField({ state, label, placeholder, hint }: {
         {fieldPickerOpen && <FieldPicker options={fieldOptions} onPick={insertVariable} onClose={() => setFieldPickerOpen(false)} />}
       </div>
       <p className="mt-1 text-xs text-ink-500">
-        {hint ?? t("Clique « + Variable » pour insérer un champ du contact (nom, prénom, email…) : l'exemple exigé par Meta se remplit tout seul.", 'Click “+ Variable” to insert a contact field (name, first name, email…): the example required by Meta fills in automatically.')}
+        {hint ?? t('« Variable » insère un champ du contact (nom, prénom, email…) : l’exemple exigé par Meta se remplit tout seul.', '“Variable” inserts a contact field (name, first name, email…): the example required by Meta fills in automatically.')}
       </p>
     </div>
   );

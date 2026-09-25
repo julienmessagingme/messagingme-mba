@@ -10,7 +10,7 @@ import { fmtCost, campaignSendLabel } from '@/lib/format';
 import { getCoutParCampagne } from '@/lib/api/stats';
 import { presetRange } from '@/lib/range';
 import { useT, useLocale } from '@/lib/i18n';
-import { formatDate, hourMin } from '@/lib/day';
+import { dateHeure, formatDate, hourMin } from '@/lib/day';
 import {
   listCampaigns,
   listCampaignDrafts,
@@ -37,6 +37,8 @@ import { Bouton, classesBouton } from '@/components/Bouton';
 import { TitrePage } from '@/components/TitrePage';
 import { BoutonConfirme, useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
+import { erreurDeChargement } from '@/lib/http';
+import { Icone } from '@/components/Icone';
 
 /**
  * LE COUT D'UNE CAMPAGNE VIENT DU SERVEUR, IL NE SE CALCULE PLUS ICI.
@@ -206,7 +208,7 @@ function CampaignsInner({ session }: { session: Session }) {
       const c = await listCampaigns(session.tenantId, { archived: showArchived });
       setCampaigns(c.campaigns);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Loading failed'));
+      setError(erreurDeChargement(err, t));
     } finally {
       setLoading(false);
     }
@@ -309,7 +311,7 @@ function CampaignsInner({ session }: { session: Session }) {
   }
   async function remove(c: CampaignSummary) {
     const ok = await confirmer({ titre: t('Supprimer la campagne', 'Delete the campaign'), message: t(
-      `Supprimer définitivement « ${c.name} » ? Cette campagne n'a jamais rien envoyé, elle sera effacée pour de bon.`,
+      `Supprimer définitivement « ${c.name} » ? Cette campagne n’a jamais rien envoyé, elle sera effacée pour de bon.`,
       `Permanently delete “${c.name}”? This campaign never sent anything, it will be erased for good.`,
     ), confirmer: t('Supprimer', 'Delete') });
     if (!ok) return;
@@ -361,7 +363,7 @@ function CampaignsInner({ session }: { session: Session }) {
           {polling ? (
             <span className="flex items-center gap-1.5 text-xs text-ink-500">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-500" />
-              {t('actualisation...', 'refreshing...')}
+              {t('actualisation…', 'refreshing…')}
             </span>
           ) : (
             <button onClick={reload} className="text-xs text-brand-600 hover:underline">{t('Rafraîchir', 'Refresh')}</button>
@@ -377,7 +379,7 @@ function CampaignsInner({ session }: { session: Session }) {
           <Bouton
             onClick={() => router.push('/campaigns/nouvelle')}
           >
-            + {t('Ajouter une campagne', 'Add a campaign')}
+            <Icone nom="ajouter" />{t('Ajouter une campagne', 'Add a campaign')}
           </Bouton>
         </div>
       </div>
@@ -447,13 +449,13 @@ function CampaignsInner({ session }: { session: Session }) {
                           omission : c'est ce marqueur qui explique pourquoi elle est encore là. */}
                       {c.webhookId && (
                         <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-600" data-testid="campaign-badge-fil">
-                          {t('au fil de l\'eau', 'continuous')}{c.webhookName ? ` · ${c.webhookName}` : ''}
+                          {t('au fil de l’eau', 'continuous')}{c.webhookName ? ` · ${c.webhookName}` : ''}
                         </span>
                       )}
                     </div>
                     {c.status === 'scheduled' && c.scheduledAt && (
                       <p className="mt-0.5 text-xs font-medium text-ink-500">
-                        {t('Planifiée le', 'Scheduled for')} {new Date(c.scheduledAt).toLocaleString()}
+                        {t('Planifiée le', 'Scheduled for')} {dateHeure(c.scheduledAt, locale)}
                       </p>
                     )}
                     <p className="mt-0.5 text-xs text-ink-500">
@@ -490,7 +492,7 @@ function CampaignsInner({ session }: { session: Session }) {
                       <button
                         onClick={() => pause(c)}
                         data-testid="campaign-pause"
-                        title={t('L\'envoi s\'arrête dans quelques secondes. Ce qui est déjà parti reste parti.', 'Sending stops within seconds. What has already gone out stays out.')}
+                        title={t('L’envoi s’arrête dans quelques secondes. Ce qui est déjà parti reste parti.', 'Sending stops within seconds. What has already gone out stays out.')}
                         className="rounded-controle border border-alerte-300 bg-alerte-50 px-3 py-1 text-xs font-medium text-alerte-800 hover:bg-alerte-100"
                       >
                         {t('Mettre en pause', 'Pause')}
@@ -690,7 +692,7 @@ function DetailPanel({ detail, cout, devise, tenantId, onClose, onRetried }: {
                   <tr key={`${r.id}-form`} className="bg-ink-50/60">
                     <td colSpan={5} className="px-4 py-3">
                       <p className="mb-2 text-xs text-ink-500">
-                        {t("Corrige la ou les variables de template, puis renvoie ce message. La valeur est enregistrée sur le contact.", 'Fix the template variable(s), then resend this message. The value is saved on the contact.')}
+                        {t('Corrigez la ou les variables de template, puis renvoyez ce message. La valeur est enregistrée sur le contact.', 'Fix the template variable(s), then resend this message. The value is saved on the contact.')}
                       </p>
                       {fieldKeys.length === 0 ? (
                         <p className="mb-2 text-xs text-ink-500">{t('Aucune variable de champ à corriger : renvoi tel quel (le contact a peut-être été mis à jour ailleurs).', 'No field variable to fix: resend as-is (the contact may have been updated elsewhere).')}</p>
@@ -717,7 +719,7 @@ function DetailPanel({ detail, cout, devise, tenantId, onClose, onRetried }: {
                           disabled={busy}
                           data-testid={`retry-submit-${r.id}`}
                         >
-                          {busy ? t('Renvoi...', 'Resending...') : t('Renvoyer', 'Resend')}
+                          {busy ? t('Renvoi…', 'Resending…') : t('Renvoyer', 'Resend')}
                         </Bouton>
                         <Bouton variante="secondaire" taille="petite"
                           type="button"

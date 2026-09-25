@@ -33,8 +33,8 @@ test.describe('Templates : variables d’un carousel', () => {
     await page.getByRole('button', { name: 'Carousel', exact: true }).click();
   });
 
-  test('« + Variable » insère un champ du contact dans l’introduction, avec son exemple Meta', async ({ page }) => {
-    await page.getByRole('button', { name: '+ Variable' }).click();
+  test('« Variable » insère un champ du contact dans l’introduction, avec son exemple Meta', async ({ page }) => {
+    await page.getByRole('button', { name: 'Variable', exact: true }).click();
     await page.getByRole('button', { name: 'Prénom', exact: true }).click();
 
     // Le chip porte le libellé lisible du champ, pas le littéral {{1}}.
@@ -49,7 +49,7 @@ test.describe('Templates : variables d’un carousel', () => {
     // Texte AVANT la variable : c'est l'usage réel (« Bonjour [Prénom] »), et ça vérifie au passage que
     // l'éditeur sérialise correctement le mélange texte + chip.
     await page.getByRole('textbox', { name: /Corps du message/i }).fill('Bonjour ');
-    await page.getByRole('button', { name: '+ Variable' }).click();
+    await page.getByRole('button', { name: 'Variable', exact: true }).click();
     await page.getByRole('button', { name: 'Prénom', exact: true }).click();
 
     // Les 2 cartes exigent chacune une image. PNG 1x1 RÉEL : le formulaire passe par un canvas, un fichier

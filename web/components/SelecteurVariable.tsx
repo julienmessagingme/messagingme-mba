@@ -5,9 +5,10 @@ import { Flottant } from '@/components/Flottant';
 import { emailVariableFields } from '@/lib/fields';
 import type { UserFieldDef } from '@/lib/api';
 import { useT } from '@/lib/i18n';
+import { Icone } from '@/components/Icone';
 
 /**
- * LE sélecteur de variables. Un bouton « + Variable », un panneau qui liste les champs du contact par leur
+ * LE sélecteur de variables. Un bouton « Variable », un panneau qui liste les champs du contact par leur
  * LIBELLÉ, et l'insertion du jeton `{{clé}}` chez l'appelant.
  *
  * 🔴 Il existe pour qu'aucun écran ne re-propose à l'utilisateur de TAPER `{{prenom}}` à la main. Julien a dû
@@ -42,10 +43,10 @@ export function SelecteurVariable({
         type="button"
         onClick={() => setOuvert((o) => !o)}
         data-testid={testId}
-        className="rounded-controle border border-ink-200 bg-white px-2 py-1 text-xs font-medium text-brand-600 hover:bg-brand-50"
+        className="inline-flex items-center gap-1 rounded-controle border border-ink-200 bg-white px-2 py-1 text-xs font-medium text-brand-600 hover:bg-brand-50"
         title={t('Insérer une variable (champ du contact)', 'Insert a variable (contact field)')}
       >
-        + Variable
+        <Icone nom="ajouter" taille="petite" />Variable
       </button>
       {ouvert && (
         <Flottant onClose={() => setOuvert(false)} ancrage={ancrage}>

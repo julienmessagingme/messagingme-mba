@@ -84,8 +84,8 @@ export function MbaWebsitesPanel({ tenantId, phoneNumberId }: { tenantId: string
         <h3 className="text-sm font-semibold text-ink-900">{t('Ajouter une page', 'Add a page')}</h3>
         <p className="mt-1 text-xs leading-relaxed text-ink-500">
           {t(
-            'Meta explore l’adresse indiquée. Le périmètre ne se règle pas : on ne peut pas exclure une section, donc choisissez une adresse précise plutôt que la racine du site.',
-            'Meta crawls the given address. The scope cannot be tuned: no section can be excluded, so pick a precise address rather than the site root.',
+            'Meta explore l’adresse sans pouvoir en exclure une section : choisissez une adresse précise plutôt que la racine du site.',
+            'Meta crawls the address and no section can be excluded: pick a precise address rather than the site root.',
           )}
         </p>
         <div className="mt-3 flex gap-2">

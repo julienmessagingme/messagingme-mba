@@ -9,6 +9,8 @@ import { listRequetes, testerBrouillon, type RequeteApi } from '@/lib/api-agent-
 import { ajouterConnecteur, type NatureOutil, type OutilAgent } from '@/lib/api-agent-tools';
 import { Bouton } from '@/components/Bouton';
 import { Squelette } from '@/components/Squelette';
+import { erreurDeChargement } from '@/lib/http';
+import { Icone } from '@/components/Icone';
 
 /**
  * CE QUE CET AGENT A LE DROIT D'APPELER dans les systèmes du workspace.
@@ -49,7 +51,7 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
       setSources(Array.isArray(s) ? s : []);
       setRequetes(Array.isArray(r?.requetes) ? r.requetes : []);
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
+      setErreur(erreurDeChargement(err, t));
     }
   }, [tenantId, t]);
   useEffect(() => { void charger(); }, [charger]);
@@ -121,9 +123,9 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
             <button
               data-testid={`requete-nouvel-outil-${rq.id}`}
               onClick={() => setOuvert((v) => (v === rq.id ? null : rq.id))}
-              className="self-start text-xs text-brand-600 hover:underline"
+              className="inline-flex items-center gap-1 self-start text-xs text-brand-600 hover:underline"
             >
-              {ouvert === rq.id ? t('Annuler', 'Cancel') : t('+ donner cet appel à l’agent', '+ give this call to the agent')}
+              {ouvert === rq.id ? t('Annuler', 'Cancel') : <><Icone nom="ajouter" taille="petite" />{t('Donner cet appel à l’agent', 'Give this call to the agent')}</>}
             </button>
             {ouvert === rq.id && (
               <NouvelAppel
@@ -232,7 +234,7 @@ function NouvelAppel({ tenantId, requete, busy, onCreer }: {
     name.trim() === '' ? t('Donnez un nom technique.', 'Give it a technical name.')
       : title.trim() === '' ? t('Donnez un titre lisible.', 'Give it a readable title.')
         : description.trim() === '' ? t('Dites à quoi ça sert.', 'Say what it does.')
-          : nePasUtiliser.trim() === '' ? t('Dites quand NE PAS l’appeler.', 'Say when NOT to call it.')
+          : nePasUtiliser.trim() === '' ? t('Dites quand ne pas l’appeler.', 'Say when not to call it.')
             : nature === 'integre' && champs.length === 0
               ? t('Choisissez au moins une information à récupérer, ou dites que cet appel pousse seulement.',
                 'Pick at least one piece of information to read, or say this call only pushes.')
@@ -278,7 +280,7 @@ function NouvelAppel({ tenantId, requete, busy, onCreer }: {
             checked={nature === 'pousse'} onChange={() => { setNature('pousse'); setChamps([]); }}
           />
           <span>
-            {t('Il POUSSE de l’information vers votre système', 'It PUSHES information to your system')}
+            {t('Il pousse de l’information vers votre système', 'It pushes information to your system')}
             <span className="ml-1 text-ink-500">
               {t('(poser une étiquette, créer une fiche). L’agent saura seulement si c’est passé.',
                 '(add a tag, create a record). The agent will only know whether it worked.')}
@@ -291,8 +293,8 @@ function NouvelAppel({ tenantId, requete, busy, onCreer }: {
             checked={nature === 'integre'} onChange={() => { setNature('integre'); setChamps(requete.outputPaths); }}
           />
           <span>
-            {t('Il RÉCUPÈRE de l’information, que l’agent intègre à la conversation',
-              'It FETCHES information, which the agent brings into the conversation')}
+            {t('Il récupère de l’information, que l’agent intègre à la conversation',
+              'It fetches information, which the agent brings into the conversation')}
           </span>
         </label>
       </div>
@@ -355,7 +357,7 @@ function NouvelAppel({ tenantId, requete, busy, onCreer }: {
         <textarea className={`${inputCls} mt-1`} rows={2} data-testid="outil-description" value={description} onChange={(e) => setDescription(e.target.value)} />
       </label>
       <label className="text-xs text-ink-500">
-        {t('Quand NE PAS l’appeler', 'When NOT to call it')}
+        {t('Quand ne pas l’appeler', 'When not to call it')}
         <textarea className={`${inputCls} mt-1`} rows={2} data-testid="outil-nepasutiliser" value={nePasUtiliser} onChange={(e) => setNePasUtiliser(e.target.value)} />
       </label>
 

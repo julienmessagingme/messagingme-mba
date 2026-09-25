@@ -10,6 +10,7 @@ import type { Session } from '@/lib/session';
 import { getStats, type DashboardStats, type StatsRange, type DailyPoint } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { presetRange } from '@/lib/range';
+import { erreurDeChargement } from '@/lib/http';
 
 export default function DashboardPage() {
   return <AppShell active="quanti-messages">{(session) => <MessagesInner session={session} />}</AppShell>;
@@ -44,7 +45,7 @@ function MessagesInner({ session }: { session: Session }) {
         ...(s?.serviceIaDetail ? { serviceIaDetail: s.serviceIaDetail } : {}),
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
+      setError(erreurDeChargement(err, t));
     } finally {
       setLoading(false);
     }
@@ -61,7 +62,7 @@ function MessagesInner({ session }: { session: Session }) {
       {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
       {loading ? (
-        <p className="text-sm text-ink-500">{t('Chargement des statistiques...', 'Loading statistics...')}</p>
+        <p className="text-sm text-ink-500">{t('Chargement des statistiques…', 'Loading statistics…')}</p>
       ) : stats ? (
         <div className="grid gap-4 lg:grid-cols-2">
           <CarteContacts stats={stats} range={range} />

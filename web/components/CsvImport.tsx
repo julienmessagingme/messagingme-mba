@@ -178,12 +178,12 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
     return (
       <section className="rounded-carte border border-ink-200 bg-white p-6">
         <h2 className="text-base font-semibold text-ink-900">{t('Importer un CSV', 'Import a CSV')}</h2>
-        <p className="mt-1 text-xs text-ink-500">{t("On lit la 1re ligne (les en-têtes) et tu associes chaque colonne à un champ. Tes données ne s'affichent pas ici.", 'We read the first row (the headers) and you map each column to a field. Your data is not displayed here.')}</p>
+        <p className="mt-1 text-xs text-ink-500">{t('Vous associez chaque colonne à un champ ; vos données ne s’affichent pas ici.', 'You map each column to a field; your data is not displayed here.')}</p>
 
         <label className="mt-4 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-carte border-2 border-dashed border-ink-300 px-3 py-10 text-center hover:border-brand-500">
           <Icone nom="televerser" taille="grande" className="text-ink-400" />
           <span className="text-sm font-medium text-ink-900">{busy ? t('Analyse en cours…', 'Analyzing…') : t('Choisir un fichier .csv', 'Choose a .csv file')}</span>
-          <span className="text-xs text-ink-500">{fileName ?? t('ou glisse-le ici', 'or drag it here')}</span>
+          <span className="text-xs text-ink-500">{fileName ?? t('ou glissez-le ici', 'or drag it here')}</span>
           <input type="file" accept=".csv,text/csv" onChange={onFile} className="hidden" disabled={busy} />
         </label>
 
@@ -208,7 +208,7 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
               disabled={busy || csv.trim() === ''}
               className="mt-2 w-full"
             >
-              {busy ? t('Analyse...', 'Analyzing...') : t('Analyser →', 'Analyze →')}
+              {busy ? t('Analyse…', 'Analyzing…') : t('Analyser →', 'Analyze →')}
             </Bouton>
           </div>
         )}
@@ -226,7 +226,7 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
         </button>
       </div>
       <p className="mt-1 text-xs text-ink-500">
-        {preview.headers.length} {t('colonnes', 'columns')} · {preview.estime ? '≈ ' : ''}{preview.rowCount} {t('lignes.', 'rows.')} <b>{t('Coche les colonnes à importer', 'Check the columns to import')}</b> {t('et associe chacune à un champ.', 'and map each one to a field.')} <b>{includedCount}</b> {t(`cochée${includedCount > 1 ? 's' : ''}`, 'checked')}.
+        {preview.headers.length} {t('colonnes', 'columns')} · {preview.estime ? '≈ ' : ''}{preview.rowCount} {t('lignes.', 'rows.')} <b>{t('Cochez les colonnes à importer', 'Check the columns to import')}</b> {t('et associez chacune à un champ.', 'and map each one to a field.')} <b>{includedCount}</b> {t(`cochée${includedCount > 1 ? 's' : ''}`, 'checked')}.
       </p>
 
       <div className="mt-4 space-y-2">
@@ -277,7 +277,7 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
 
       {!hasPhone && (
         <p className="mt-3 rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte-700">
-          {t('Associe au moins une colonne à', 'Map at least one column to')} <b>{t('Téléphone', 'Phone')}</b> {t(": c'est la clé d'un contact.", ": it's a contact's key.")}
+          {t('Associez au moins une colonne à', 'Map at least one column to')} <b>{t('Téléphone', 'Phone')}</b> {t(": c’est la clé d’un contact.", ": it's a contact's key.")}
         </p>
       )}
 
@@ -288,7 +288,7 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
           </label>
           <input value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} placeholder={t('salon-2026, prospect', 'expo-2026, prospect')} className={inputCls} />
           {requireTag && tagsMissing && (
-            <p className="mt-1 text-xs text-alerte-600">{t('Ajoute au moins une étiquette pour retrouver ces contacts dans ta campagne.', 'Add at least one tag to find these contacts in your campaign.')}</p>
+            <p className="mt-1 text-xs text-alerte-600">{t('Ajoutez au moins une étiquette pour retrouver ces contacts dans votre campagne.', 'Add at least one tag to find these contacts in your campaign.')}</p>
           )}
         </div>
         <label className="flex items-end gap-2 pb-2 text-sm text-ink-900">
@@ -317,7 +317,7 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
         className="mt-4 w-full"
       >
         {busy
-          ? t('Import en cours...', 'Importing...')
+          ? t('Import en cours…', 'Importing…')
           : t(
               `Importer ${includedCount} colonne${includedCount > 1 ? 's' : ''} et ${preview.estime ? '≈ ' : ''}${preview.rowCount} ligne${preview.rowCount > 1 ? 's' : ''}`,
               `Import ${includedCount} column${includedCount > 1 ? 's' : ''} and ${preview.estime ? '≈ ' : ''}${preview.rowCount} row${preview.rowCount > 1 ? 's' : ''}`,

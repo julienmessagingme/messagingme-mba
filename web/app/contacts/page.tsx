@@ -30,6 +30,7 @@ import { Icone } from '@/components/Icone';
 import { Modale } from '@/components/Modale';
 import { VoileMenu } from '@/components/Flottant';
 import { Squelette } from '@/components/Squelette';
+import { erreurDeChargement } from '@/lib/http';
 
 export default function ContactsPage() {
   return <AppShell active="contacts">{(session) => <ContactsInner session={session} />}</AppShell>;
@@ -95,7 +96,7 @@ function ContactsInner({ session }: { session: Session }) {
       }
     } catch (err) {
       if (seq !== reqSeq.current) return;
-      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
+      setError(erreurDeChargement(err, t));
     } finally {
       if (seq === reqSeq.current) setLoading(false);
     }
@@ -193,7 +194,7 @@ function ContactsInner({ session }: { session: Session }) {
               aria-haspopup="menu"
               aria-expanded={ajoutMenuOuvert}
             >
-              + {t('Rajouter des contacts', 'Add contacts')}
+              <Icone nom="ajouter" />{t('Rajouter des contacts', 'Add contacts')}
             </Bouton>
             {ajoutMenuOuvert && (
               <>
@@ -463,7 +464,7 @@ function AjoutContactModal({ tenantId, tagSuggestions, onDone, onClose }: {
           <label className="mb-1 block text-sm font-medium text-ink-900">{t('Compte WhatsApp / BSUID (optionnel)', 'WhatsApp account / BSUID (optional)')}</label>
           <input value={bsuid} onChange={(e) => setBsuid(e.target.value)} data-testid="ajout-bsuid" className={`${inputCls} font-mono`} />
           <p className="mt-1 text-xs text-ink-500">
-            {t("Identifiant WhatsApp d'un client qui n'a pas partagé son numéro. À ne renseigner que si tu l'as.", "WhatsApp identifier for a customer who hasn't shared their number. Only fill this in if you have it.")}
+            {t("Identifiant WhatsApp d’un client qui n’a pas partagé son numéro. À ne renseigner que si vous l’avez.", "WhatsApp identifier for a customer who hasn't shared their number. Only fill this in if you have it.")}
           </p>
         </div>
         {/* Pré-cochée : voir le commentaire de `optIn`. Un contact saisi à la main sans opt-in serait ignoré
@@ -590,7 +591,7 @@ function BulkActionModal({ action, tenantId, target, count, userFields, tagSugge
         )}
         {action === 'optin' && (
           <p className="rounded-controle bg-succes-50 px-3 py-2 text-sm text-succes-800">
-            {t(`Les ${count} contact(s) deviennent destinataires de campagne. À n'utiliser que si vous détenez une preuve de leur consentement.`, `The ${count} contact(s) become eligible for campaigns. Only use this if you hold proof of their consent.`)}
+            {t(`Les ${count} contact(s) deviennent destinataires de campagne. À n’utiliser que si vous détenez une preuve de leur consentement.`, `The ${count} contact(s) become eligible for campaigns. Only use this if you hold proof of their consent.`)}
           </p>
         )}
         {action === 'optout' && (
@@ -601,7 +602,7 @@ function BulkActionModal({ action, tenantId, target, count, userFields, tagSugge
         {action === 'delete' && (
           <>
             <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">
-              {t(`IRRÉVERSIBLE. Pour les ${count} contact(s) : la fiche, la conversation dans l'Inbox, ses messages et son analyse sont détruits. Les compteurs de campagne restent justes, mais plus personne n'est reconnaissable.`, `IRREVERSIBLE. For the ${count} contact(s): the record, the Inbox conversation, its messages and its analysis are destroyed. Campaign counters stay accurate, but nobody is identifiable any more.`)}
+              {t(`Irréversible. Pour les ${count} contact(s) : la fiche, la conversation dans l’Inbox, ses messages et son analyse sont détruits. Les compteurs de campagne restent justes, mais plus personne n’est reconnaissable.`, `Irreversible. For the ${count} contact(s): the record, the Inbox conversation, its messages and its analysis are destroyed. Campaign counters stay accurate, but nobody is identifiable any more.`)}
             </p>
             <label className="block text-sm text-ink-500">
               {t('Tapez SUPPRIMER pour confirmer', 'Type SUPPRIMER to confirm')}
@@ -649,7 +650,7 @@ function ContactsTable({ contacts, loading, onSelect, isRowChecked, onToggleRow,
   if (contacts.length === 0)
     return (
       <div className="px-4 py-10 text-center text-sm text-ink-500">
-        {t("Aucun contact pour l'instant. Clique « + Rajouter des contacts » pour commencer.", 'No contacts yet. Click "+ Add contacts" to get started.')}
+        {t('Aucun contact pour l’instant. Cliquez sur « Rajouter des contacts » pour commencer.', 'No contacts yet. Click "Add contacts" to get started.')}
       </div>
     );
   return (

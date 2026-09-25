@@ -17,6 +17,8 @@ import { TitrePage } from '@/components/TitrePage';
 import { BoutonConfirme } from '@/components/Confirmation';
 import { Modale } from '@/components/Modale';
 import { Squelette } from '@/components/Squelette';
+import { erreurDeChargement } from '@/lib/http';
+import { Icone } from '@/components/Icone';
 
 /**
  * Contenu > Messages RCS : la bibliothèque des messages réutilisables du canal RCS.
@@ -62,7 +64,7 @@ function RcsMessagesInner({ session }: { session: Session }) {
       const r = await listRcsMessages(session.tenantId);
       setItems(r.messages);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t('Chargement impossible', 'Loading failed'));
+      setError(erreurDeChargement(e, t));
     } finally {
       setLoading(false);
     }
@@ -170,7 +172,7 @@ function RcsMessagesInner({ session }: { session: Session }) {
                 onClick={ouvrirCreation}
                 data-testid="rcs-message-new"
               >
-                {t('+ Créer un message', '+ Create a message')}
+                <Icone nom="ajouter" />{t('Créer un message', 'Create a message')}
               </Bouton>
             )}
           </div>
@@ -203,7 +205,7 @@ function RcsMessagesInner({ session }: { session: Session }) {
                           onClick={() => setPreview(m)}
                           disabled={m.content === null}
                           className="text-left text-sm font-medium text-brand-600 hover:underline disabled:text-ink-500 disabled:no-underline"
-                          title={t("Voir l'aperçu", 'View preview')}
+                          title={t("Voir l’aperçu", 'View preview')}
                         >
                           {m.name}
                         </button>
@@ -218,16 +220,16 @@ function RcsMessagesInner({ session }: { session: Session }) {
                               data-testid={`rcs-message-editer-${m.id}`}
                               className="font-medium text-brand-600 hover:text-brand-700"
                             >
-                              {t('Éditer', 'Edit')}
+                              {t('Modifier', 'Edit')}
                             </button>
                           ) : (
                             <span
                               className="text-ink-500"
                               title={m.content === null
                                 ? t('Contenu illisible : il ne peut pas être ouvert ici.', 'Unreadable content: it cannot be opened here.')
-                                : t('Une carte à titre (créée par l’API) ne s’édite pas ici.', 'A titled card (created through the API) cannot be edited here.')}
+                                : t('Une carte à titre (créée par l’API) ne se modifie pas ici.', 'A titled card (created through the API) cannot be edited here.')}
                             >
-                              {t('Éditer', 'Edit')}
+                              {t('Modifier', 'Edit')}
                             </span>
                           )}
                           <BoutonConfirme question={t(`Supprimer « ${m.name} » ?`, `Delete "${m.name}"?`)} onConfirme={() => void supprimer(m)} libelleConfirmer={t('Supprimer', 'Delete')} className="font-medium text-danger hover:text-danger-700">{t('Supprimer', 'Delete')}</BoutonConfirme>

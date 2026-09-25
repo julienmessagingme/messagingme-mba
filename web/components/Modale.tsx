@@ -78,13 +78,26 @@ export function Modale({
   fermer.current = onClose;
   const fermetureRef = useRef(fermeture);
   fermetureRef.current = fermeture;
+  /**
+   * L'élément qui avait le focus AVANT l'ouverture, lu AU PREMIER RENDU. L'effet ci-dessous passe APRÈS
+   * l'`autoFocus` d'un enfant (le bouton « oui » d'une confirmation) : lu là, il désignait cet enfant, qui
+   * disparaît avec la fenêtre, et le focus tombait sur `body` à la fermeture. `undefined` = pas encore lu
+   * (rendu serveur, où `document` n'existe pas) ; l'effet le lit alors, faute de mieux.
+   */
+  const avant = useRef<HTMLElement | null | undefined>(undefined);
+  if (avant.current === undefined && typeof document !== 'undefined') {
+    avant.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  }
 
   useEffect(() => {
     pile.push(id);
-    const avant = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (avant.current === undefined) avant.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const retour = avant.current;
     // Un champ `autoFocus` du contenu a déjà pris le focus : on ne le lui vole pas.
     if (panneau.current && !panneau.current.contains(document.activeElement)) panneau.current.focus();
     const auClavier = (e: KeyboardEvent): void => {
+      // Un Échap déjà TRAITÉ plus bas (une édition en ligne qui s'annule, `preventDefault`) ne ferme rien.
+      if (e.defaultPrevented) return;
       if (e.key === 'Escape' && pile[pile.length - 1] === id && fermetureRef.current === 'partout') { e.stopPropagation(); fermer.current(); }
     };
     window.addEventListener('keydown', auClavier);
@@ -92,7 +105,7 @@ export function Modale({
       window.removeEventListener('keydown', auClavier);
       const i = pile.lastIndexOf(id);
       if (i >= 0) pile.splice(i, 1);
-      if (avant && document.contains(avant)) avant.focus();
+      if (retour && document.contains(retour)) retour.focus();
     };
   }, [id]);
 

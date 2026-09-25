@@ -172,7 +172,7 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
               {x}<button type="button" onClick={() => rmTag(x)} aria-label={t('Retirer', 'Remove')} className="text-brand-600 hover:text-danger"><Icone nom="fermer" taille="petite" /></button>
             </span>
           ))}
-          <input list="contact-filter-tags" value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(tagInput); } }} placeholder={t('+ étiquette', '+ tag')} className={`${inputClsAuto} w-28`} />
+          <input list="contact-filter-tags" value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(tagInput); } }} placeholder={t('Étiquette…', 'Tag…')} className={`${inputClsAuto} w-28`} />
         </div>
       </div>
 
@@ -185,7 +185,7 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
               {x}<button type="button" onClick={() => rmTagEx(x)} aria-label={t('Retirer', 'Remove')} className="text-ink-400 hover:text-danger"><Icone nom="fermer" taille="petite" /></button>
             </span>
           ))}
-          <input list="contact-filter-tags" value={tagExInput} onChange={(e) => setTagExInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTagEx(tagExInput); } }} placeholder={t('+ étiquette', '+ tag')} className={`${inputClsAuto} w-28`} />
+          <input list="contact-filter-tags" value={tagExInput} onChange={(e) => setTagExInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTagEx(tagExInput); } }} placeholder={t('Étiquette…', 'Tag…')} className={`${inputClsAuto} w-28`} />
         </div>
       </div>
       <datalist id="contact-filter-tags">{tagSuggestions.map((tg) => <option key={tg} value={tg} />)}</datalist>
@@ -206,7 +206,7 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
           </div>
         ))}
         {fieldRows.length < 5 && fieldKeys.length > 0 && (
-          <button type="button" onClick={addRow} className="self-start text-sm font-medium text-brand-600 hover:text-brand-700">+ {t('Filtre de champ', 'Field filter')}</button>
+          <button type="button" onClick={addRow} className="inline-flex items-center gap-1 self-start text-sm font-medium text-brand-600 hover:text-brand-700"><Icone nom="ajouter" />{t('Filtre de champ', 'Field filter')}</button>
         )}
       </div>
 

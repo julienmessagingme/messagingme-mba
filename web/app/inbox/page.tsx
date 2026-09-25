@@ -13,7 +13,7 @@ import { inputCls } from '@/lib/ui';
 import { varCountOf } from '@/lib/fields';
 import { repeterAvecGigue } from '@/lib/poll';
 import { doitDescendre, estEnBas } from '@/lib/defilement-fil';
-import { ApiError, estAnnulation } from '@/lib/http';
+import { ApiError, estAnnulation, erreurDeChargement } from '@/lib/http';
 import { langueSortanteParDefaut, nomDeLangue } from '@/lib/langue-nom';
 import {
   cibleDeLecture, ecrireTraductionActive, lireTraductionActive, marqueTraduction, texteDeBulle, texteDuVocal,
@@ -284,7 +284,7 @@ function InboxInner({ session }: { session: Session }) {
       // pour dire ce que la longueur dit déjà.
       setPeutCharger(liste.length === TAILLE_PAGE);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Failed to load'));
+      setError(erreurDeChargement(err, t));
     } finally {
       setLoading(false);
     }
@@ -571,7 +571,7 @@ function InboxInner({ session }: { session: Session }) {
               onChange={(e) => { const v = e.target.value; if (estActionRangement(v)) void rangerLesCochees(v); }}
               className="ml-auto rounded-controle border border-brand-300 bg-white px-2 py-1 font-medium text-brand-800 disabled:opacity-40"
             >
-              <option value="">{rangementEnCours ? t('...', '...') : t('Ranger dans…', 'File in…')}</option>
+              <option value="">{rangementEnCours ? t('…', '…') : t('Ranger dans…', 'File in…')}</option>
               {destinationsEnLot(dossier, selectionAvecSignalementManuel, selectionAvecTraitee, selectionAvecNonTraitee).map((a) => (
                 <option key={a} value={a}>{libelleRangement(a, t)}</option>
               ))}
@@ -732,7 +732,7 @@ function InboxInner({ session }: { session: Session }) {
           <Thread key={selected.id} session={session} conversation={selected} dossier={dossier} peutPrendre={peutPrendre} onSent={reload} />
         ) : (
           <div className="flex h-full min-h-[300px] items-center justify-center rounded-carte border border-ink-200 bg-white text-sm text-ink-500">
-            {t('Sélectionne une conversation', 'Select a conversation')}
+            {t('Sélectionnez une conversation', 'Select a conversation')}
           </div>
         )}
       </section>
@@ -893,7 +893,7 @@ function RangerDans({ session, conversation, dossier, controlOwner, onFait }: {
       onChange={(e) => { const v = e.target.value; if (estActionRangement(v)) void ranger(v); }}
       className="rounded-controle border border-ink-300 bg-white px-2 py-0.5 text-xs text-ink-900 disabled:opacity-50"
     >
-      <option value="">{busy ? t('...', '...') : t('Ranger dans…', 'File in…')}</option>
+      <option value="">{busy ? t('…', '…') : t('Ranger dans…', 'File in…')}</option>
       {/* 🔴 ICI les options se déduisent de l'ÉTAT DE CETTE conversation, pas du dossier : on en connaît le
           détenteur et la nature du signalement. Le menu de la SÉLECTION ne le peut pas (elle est hétérogène)
           et se déduit du dossier, cf. `destinationsEnLot`. Les libellés, eux, sont les mêmes des deux côtés.
@@ -1416,7 +1416,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
       // Une requête ANNULÉE n'est pas une panne : changer de conversation annule la précédente, et afficher
       // un bandeau rouge à chaque clic serait absurde.
       if (estAnnulation(err)) return;
-      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Failed to load'));
+      setError(erreurDeChargement(err, t));
     } finally {
       // ⚠️ SEULEMENT SI C'EST ENCORE NOTRE REQUÊTE. Une requête annulée par une suivante ne doit pas
       // déclarer la voie libre : la suivante, elle, est bien en vol, et le tick doit continuer de la
@@ -1580,8 +1580,8 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
    */
   async function effacer() {
     const question = t(
-      'Effacer TOUS les messages de cette conversation ?\n\nC’est irréversible.\n\nEt la fenêtre de 24 h se calcule sur le dernier message reçu : après l’effacement, elle sera fermée, donc vous ne pourrez plus répondre librement à ce contact tant qu’il n’aura pas réécrit.',
-      'Erase ALL messages in this conversation?\n\nThis cannot be undone.\n\nAnd the 24h window is computed from the last received message: after erasing, it will be closed, so you will not be able to reply freely to this contact until they write again.',
+      'Effacer tous les messages de cette conversation ?\n\nC’est irréversible.\n\nEt la fenêtre de 24 h se calcule sur le dernier message reçu : après l’effacement, elle sera fermée, donc vous ne pourrez plus répondre librement à ce contact tant qu’il n’aura pas réécrit.',
+      'Erase all messages in this conversation?\n\nThis cannot be undone.\n\nAnd the 24h window is computed from the last received message: after erasing, it will be closed, so you will not be able to reply freely to this contact until they write again.',
     );
     if (!(await confirmer({ titre: t('Effacer le contenu', 'Erase the content'), message: question, confirmer: t('Effacer', 'Erase') }))) return;
     setEffacement(true);
@@ -1705,7 +1705,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
               data-testid="inbox-rendre-la-main"
             >
               {releasing
-                ? t('...', '...')
+                ? t('…', '…')
                 : controlOwner === 'mba'
                   ? t('Reprendre la main', 'Take back')
                   : controlOwner === 'app_human'
@@ -1725,7 +1725,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
               disabled={effacement}
               className="rounded-controle border border-ink-300 px-2 py-0.5 text-xs font-medium text-danger transition-colors duration-150 hover:bg-danger-50 disabled:opacity-50"
             >
-              {effacement ? t('...', '...') : t('Effacer le contenu', 'Erase content')}
+              {effacement ? t('…', '…') : t('Effacer le contenu', 'Erase content')}
             </button>
           )}
         </div>
@@ -1885,7 +1885,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
             value={text}
             onChange={(e) => ecrire(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !busy) void send(); }}
-            placeholder={t('Répondre (fenêtre de service 24 h)...', 'Reply (24h service window)...')}
+            placeholder={t('Répondre (fenêtre de service 24 h)…', 'Reply (24h service window)…')}
             data-testid="zone-saisie"
             className="order-first min-w-0 flex-1 basis-full rounded-controle sm:order-none sm:basis-auto border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
           />
@@ -1910,7 +1910,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
             className="shrink-0 whitespace-nowrap rounded-controle border border-ink-300 px-2.5 py-2 text-sm text-ink-500 transition-colors duration-150 hover:bg-ink-50 disabled:opacity-50"
           >
             {traduisant
-              ? t('...', '...')
+              ? t('…', '…')
               : t(`Traduire en ${nomDeLangue(cibleSortante, locale)}`, `Translate to ${nomDeLangue(cibleSortante, locale)}`)}
           </button>
           <Bouton enCours={busy}
@@ -1925,7 +1925,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
       ) : (
         <div key="fenetre-fermee" className="border-t border-ink-100 p-3">
           <p className="mb-2 rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte-800">
-            {t('Fenêtre de 24 h fermée : WhatsApp interdit le message libre. Pour reprendre contact, envoie un ', '24-hour window closed: WhatsApp does not allow free-form messages. To reach out again, send an ')}<b>{t('template approuvé', 'approved template')}</b>.
+            {t('Fenêtre de 24 h fermée : WhatsApp interdit le message libre. Pour reprendre contact, envoyez un ', '24-hour window closed: WhatsApp does not allow free-form messages. To reach out again, send an ')}<b>{t('template approuvé', 'approved template')}</b>.
           </p>
           <Bouton
             onClick={() => setShowTemplate(true)}
@@ -2056,7 +2056,7 @@ function ScenarioSendPanel({
     <Modale titre={t('Lancer un scénario', 'Start a scenario')} onClose={onClose}>
       <p className="mt-1 text-xs text-ink-500">
         {windowOpen
-          ? t('Le contact a écrit il y a moins de 24 h : tous tes scénarios peuvent partir.', 'The contact wrote less than 24h ago: any of your scenarios can run.')
+          ? t('Le contact a écrit il y a moins de 24 h : tous vos scénarios peuvent partir.', 'The contact wrote less than 24h ago: any of your scenarios can run.')
           : t('Fenêtre de 24 h fermée : seuls les scénarios qui ouvrent par un template ou par un message RCS peuvent partir.', '24-hour window closed: only scenarios opening with a template or an RCS message can run.')}
       </p>
 
@@ -2066,7 +2066,7 @@ function ScenarioSendPanel({
           <p className="text-xs text-alerte-700" data-testid="scenario-none">
             {total === 0
               ? t('Aucun scénario : créez-en un dans le menu « Scénario ».', 'No scenario yet: create one from the “Scenario” menu.')
-              : t("Aucun de tes scénarios ne peut partir hors de la fenêtre de 24 h : il faudrait qu'il ouvre par l'envoi d'un template, ou par un message RCS, qui lui n'a pas de fenêtre (une étiquette, une action ou une condition avant lui ne posent aucun problème).", 'None of your scenarios can run outside the 24h window: it would need to open by sending a template, or an RCS message, which has no window (a tag, an action or a condition before it is fine).')}
+              : t('Aucun de vos scénarios ne peut partir hors de la fenêtre de 24 h : il doit ouvrir par un template ou par un message RCS (une étiquette, une action ou une condition avant restent possibles).', 'None of your scenarios can run outside the 24h window: it must open with a template or an RCS message (a tag, an action or a condition before it is fine).')}
           </p>
         ) : (
           <select value={selId} onChange={(e) => { setSelId(e.target.value); setError(null); }} className={inputCls} data-testid="scenario-select">
@@ -2253,7 +2253,7 @@ function TemplateSendPanel({
                   `${sel.headerFormat === 'IMAGE' ? 'Image' : sel.headerFormat === 'VIDEO' ? 'Video' : 'Document'} URL (template header)`,
                 )}
               </label>
-              <input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://..." className={inputCls} />
+              <input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://…" className={inputCls} />
               <p className="mt-1 text-xs text-alerte-700">
                 {t('Ce template a un en-tête média, mais son fichier n’est plus lisible chez Meta (lien expiré). Collez-en un pour cet envoi.', 'This template has a media header, but its file is no longer readable at Meta (expired link). Paste one for this send.')}
               </p>
@@ -2276,7 +2276,7 @@ function TemplateSendPanel({
           disabled={!canSend}
           className="flex-1"
         >
-          {busy ? t('Envoi...', 'Sending...') : t('Envoyer le template', 'Send the template')}
+          {busy ? t('Envoi…', 'Sending…') : t('Envoyer le template', 'Send the template')}
         </Bouton>
       </div>
     </Modale>
@@ -2317,7 +2317,7 @@ function ControlBadge({ owner }: { owner: ControlOwner }) {
     mba: {
       label: t('agent Meta', 'Meta agent'),
       cls: 'bg-brand-100 text-brand-800',
-      title: t("L'agent de Meta répond directement au client.", 'Meta’s agent is answering the customer directly.'),
+      title: t("L’agent de Meta répond directement au client.", 'Meta’s agent is answering the customer directly.'),
     },
   };
   const look = LOOK[owner];

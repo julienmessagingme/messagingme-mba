@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useT } from '@/lib/i18n';
+import { useLocale, useT } from '@/lib/i18n';
+import { dateHeure } from '@/lib/day';
 import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from '@/components/MbaNotice';
 import { RequetesConnecteur } from '@/components/RequetesConnecteur';
@@ -12,6 +13,7 @@ import {
 import { Bouton } from '@/components/Bouton';
 import { Icone } from '@/components/Icone';
 import { Squelette } from '@/components/Squelette';
+import { erreurDeChargement } from '@/lib/http';
 
 /**
  * LA BIBLIOTHÈQUE DE SYSTÈMES du workspace (menu Tools).
@@ -46,7 +48,7 @@ export function ConnecteursBibliotheque({ tenantId }: { tenantId: string }) {
     try {
       setSources(await listSources(tenantId));
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
+      setErreur(erreurDeChargement(err, t));
     }
   }, [tenantId, t]);
   useEffect(() => { void charger(); }, [charger]);
@@ -76,7 +78,7 @@ export function ConnecteursBibliotheque({ tenantId }: { tenantId: string }) {
           data-testid="source-ajouter"
           onClick={() => { setAjout((v) => !v); setOuvert(null); }}
         >
-          {ajout ? t('Annuler', 'Cancel') : t('+ Brancher un système', '+ Connect a system')}
+          {ajout ? t('Annuler', 'Cancel') : <><Icone nom="ajouter" />{t('Brancher un système', 'Connect a system')}</>}
         </Bouton>
       </div>
 
@@ -173,6 +175,7 @@ function Source({ source, busy, epreuve, onEprouver, onPatch, onSupprimer }: {
   onSupprimer: () => void;
 }) {
   const t = useT();
+  const { locale } = useLocale();
   const [chemin, setChemin] = useState('/');
   const [secret, setSecret] = useState('');
 
@@ -258,7 +261,7 @@ function Source({ source, busy, epreuve, onEprouver, onPatch, onSupprimer }: {
           {epreuve ?? (source.lastError
             ? t(`Dernière erreur : ${source.lastError}`, `Last error: ${source.lastError}`)
             : source.lastOkAt
-              ? t(`Dernière réussite : ${new Date(source.lastOkAt).toLocaleString()}`, `Last success: ${new Date(source.lastOkAt).toLocaleString()}`)
+              ? t(`Dernière réussite : ${dateHeure(source.lastOkAt, locale)}`, `Last success: ${dateHeure(source.lastOkAt, locale)}`)
               : t('Jamais éprouvée', 'Never tested'))}
         </p>
       </div>
@@ -335,7 +338,7 @@ function NouvelleSource({ busy, onCreer }: {
         {t('Adresse de base (HTTPS, publique)', 'Base address (HTTPS, public)')}
         <input className={`${inputCls} mt-1`} data-testid="source-url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.mon-systeme.fr/v1" />
         <span className="mt-1 block text-xs text-ink-500">
-          {t('Vos agents ne pourront JAMAIS appeler ailleurs que sous cette adresse.', 'Your agents will NEVER be able to call outside this address.')}
+          {t('Vos agents ne pourront jamais appeler ailleurs que sous cette adresse.', 'Your agents will never be able to call outside this address.')}
         </span>
       </label>
       <label className="text-xs text-ink-500">

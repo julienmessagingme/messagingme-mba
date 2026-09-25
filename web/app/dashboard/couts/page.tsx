@@ -10,6 +10,7 @@ import type { Session } from '@/lib/session';
 import { getTemplateStats, listCampaigns, type CampaignSummary, type StatsRange, type TemplateStats } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { presetRange } from '@/lib/range';
+import { erreurDeChargement } from '@/lib/http';
 
 /**
  * Analytics > Quantitatif > **Coûts** : ce qui a été estimé, ce que Meta a facturé, et le détail par template.
@@ -80,7 +81,7 @@ function CoutsInner({ session }: { session: Session }) {
       setTemplateStats(ts ?? null);
       setCampaigns(Array.isArray(cp?.campaigns) ? cp.campaigns : []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
+      setError(erreurDeChargement(err, t));
     } finally {
       setLoading(false);
     }
@@ -93,7 +94,7 @@ function CoutsInner({ session }: { session: Session }) {
       <RangeBar title={<TitrePage>{t('Coûts', 'Costs')}</TitrePage>} range={range} onChange={setRange} />
       {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
       {loading ? (
-        <p className="text-sm text-ink-500">{t('Chargement des statistiques...', 'Loading statistics...')}</p>
+        <p className="text-sm text-ink-500">{t('Chargement des statistiques…', 'Loading statistics…')}</p>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="lg:col-span-2">

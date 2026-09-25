@@ -72,8 +72,8 @@ function McpInner({ session }: { session: Session | null }) {
       <EnTetePage page="mcp">
         <p>
           {t(
-            'Branche un assistant (Claude, ou tout client compatible MCP) sur l’espace, sans intégration à développer.',
-            'Connects an assistant (Claude, or any MCP-compatible client) to the workspace, with no integration to build.',
+            'Brancher un assistant (Claude, ou tout client compatible MCP) sur l’espace, sans intégration à développer.',
+            'Connect an assistant (Claude, or any MCP-compatible client) to the workspace, with no integration to build.',
           )}
         </p>
       </EnTetePage>

@@ -83,7 +83,7 @@ export default function LoginPage() {
         {choix ? (
           <div className="space-y-3 rounded-carte border border-ink-200 bg-white p-6" data-testid="choix-espace">
             <p className="text-sm text-ink-900">
-              {t('Cette adresse donne accès à plusieurs espaces. Lequel veux-tu ouvrir ?', 'This address gives access to several workspaces. Which one do you want to open?')}
+              {t('Cette adresse donne accès à plusieurs espaces. Lequel voulez-vous ouvrir ?', 'This address gives access to several workspaces. Which one do you want to open?')}
             </p>
             {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
             <ul className="space-y-2">
@@ -146,7 +146,7 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full"
           >
-            {loading ? t('Connexion...', 'Signing in...') : t('Se connecter', 'Sign in')}
+            {loading ? t('Connexion…', 'Signing in…') : t('Se connecter', 'Sign in')}
           </Bouton>
           <div className="flex items-center justify-between text-xs text-ink-500">
             <Link href="/forgot" className="hover:text-brand-600">{t('Mot de passe oublié ?', 'Forgot password?')}</Link>

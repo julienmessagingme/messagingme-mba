@@ -16,12 +16,12 @@ describe('messageDErreur', () => {
   });
 
   it('🔴 la panne opaque du serveur devient une phrase, qui garde le statut', () => {
-    expect(messageDErreur(500, { error: 'Internal Server Error' }, 'fr')).toBe('Incident de notre côté (erreur 500). Réessaie dans un instant.');
+    expect(messageDErreur(500, { error: 'Internal Server Error' }, 'fr')).toBe('Incident de notre côté (erreur 500). Réessayez dans un instant.');
     expect(messageDErreur(500, { error: 'Internal Server Error' }, 'en')).toBe('Something went wrong on our side (error 500). Try again in a moment.');
   });
 
   it('🔴 la page HTML de Cloudflare (corps illisible) aussi', () => {
-    expect(messageDErreur(502, null, 'fr')).toBe('Incident de notre côté (erreur 502). Réessaie dans un instant.');
+    expect(messageDErreur(502, null, 'fr')).toBe('Incident de notre côté (erreur 502). Réessayez dans un instant.');
   });
 
   it('un 4xx sans raison garde son repli court, et un `error` qui n’est pas un texte n’est pas affiché', () => {
@@ -43,6 +43,6 @@ describe('request', () => {
     const err = await request('/tenants/t1/support', { method: 'POST', body: '{}' }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(500);
-    expect((err as ApiError).message).toBe('Incident de notre côté (erreur 500). Réessaie dans un instant.');
+    expect((err as ApiError).message).toBe('Incident de notre côté (erreur 500). Réessayez dans un instant.');
   });
 });

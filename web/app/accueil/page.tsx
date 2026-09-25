@@ -359,7 +359,7 @@ function AccueilInner({ session }: { session: Session }) {
   const etatMbaReel: string | null = mbaReel === null
     ? t('État chez Meta : non lu pour l’instant.', 'State at Meta: not read yet.')
     : !mbaReel.eligible
-      ? t("Meta n'a pas encore ouvert l'agent sur ce numéro. Le bouton prépare le bloc MBA des scénarios en attendant.", 'Meta has not opened the agent on this number yet. The switch prepares the MBA block in scenarios meanwhile.')
+      ? t("Meta n’a pas encore ouvert l’agent sur ce numéro. Le bouton prépare le bloc MBA des scénarios en attendant.", 'Meta has not opened the agent on this number yet. The switch prepares the MBA block in scenarios meanwhile.')
       : !mbaReel.settings?.rollout?.enabled
         ? t("Éligible, agent éteint chez Meta. Personne ne répond automatiquement.", 'Eligible, agent off at Meta. Nobody answers automatically.')
         : null;
@@ -564,7 +564,7 @@ function AccueilInner({ session }: { session: Session }) {
                   </div>
                   {/* Cap d'envoi 24 h TOUJOURS affiché (le vrai plafond métier). Le débit brut 80 msg/s, identique
                       pour tous, a été retiré. Repli honnête si Meta n'a pas encore évalué le palier. */}
-                  <Field label={t("Cap d'envoi 24 h", 'Sending limit /24h')} value={sendingLimitLabel(account.tier, locale)} />
+                  <Field label={t("Cap d’envoi 24 h", 'Sending limit /24h')} value={sendingLimitLabel(account.tier, locale)} />
                   {account.nameStatus && <Field label={t('Nom', 'Name')} value={nameStatusLabel(account.nameStatus, t)} />}
                   {account.wabaHealthStatus && <Field label={t('Santé du compte', 'Account health')} value={wabaHealthLabel(account.wabaHealthStatus, t)} />}
                 </div>
@@ -578,7 +578,7 @@ function AccueilInner({ session }: { session: Session }) {
                   <div className="flex flex-wrap gap-x-8 gap-y-3 text-xs">
                     <BadgeField label={t('API MM Lite', 'MM Lite API')} badge={mmLiteBadge(account.marketingMessagesLiteApiStatus, locale)} />
                     <BadgeField label={t('Revue du compte', 'Account review')} badge={accountReviewBadge(account.accountReviewStatus, locale)} />
-                    <BadgeField label={t("Vérification d'entreprise", 'Business verification')} badge={businessVerificationBadge(account.businessVerificationStatus, locale)} />
+                    <BadgeField label={t("Vérification d’entreprise", 'Business verification')} badge={businessVerificationBadge(account.businessVerificationStatus, locale)} />
                     {account.ownerBusinessName && <Field label={t('Business', 'Business')} value={account.ownerBusinessName} />}
                   </div>
                   <p className="mt-3 text-xs text-ink-500">
@@ -591,7 +591,7 @@ function AccueilInner({ session }: { session: Session }) {
                     >
                       {t('Business Manager Meta', 'Meta Business Manager')}
                     </a>
-                    {t(" (non exposé par l'API WhatsApp).", ' (not exposed by the WhatsApp API).')}
+                    {t(" (non exposé par l’API WhatsApp).", ' (not exposed by the WhatsApp API).')}
                   </p>
                 </div>
               )}
@@ -724,7 +724,7 @@ function AccueilInner({ session }: { session: Session }) {
                       </p>
                       {numbersCount > 1 && (
                         <p data-testid="hubspot-disconnect-multi-warning" className="mt-2 rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte-800">
-                          {t('Attention : la déconnexion coupe HubSpot pour TOUS vos numéros (le compte HubSpot est lié à votre espace, pas à un numéro).', 'Warning: disconnecting turns off HubSpot for ALL your numbers (the HubSpot account is linked to your workspace, not to a single number).')}
+                          {t('Attention : la déconnexion coupe HubSpot pour tous vos numéros (le compte HubSpot est lié à votre espace, pas à un numéro).', 'Warning: disconnecting turns off HubSpot for all your numbers (the HubSpot account is linked to your workspace, not to a single number).')}
                         </p>
                       )}
                     </Modale>
@@ -735,14 +735,14 @@ function AccueilInner({ session }: { session: Session }) {
                     <div className="flex items-center justify-between">
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-ink-900">{t('Campagnes via données HubSpot', 'Campaigns from HubSpot data')}</div>
-                        <p className="mt-0.5 text-xs text-ink-500">{t('Importe une liste HubSpot comme destinataires de campagne.', 'Import a HubSpot list as campaign recipients.')}</p>
+                        <p className="mt-0.5 text-xs text-ink-500">{t('Importez une liste HubSpot comme destinataires de campagne.', 'Import a HubSpot list as campaign recipients.')}</p>
                       </div>
                       {isAdmin && (
                         <Toggle
                           checked={hubspotListsEnabled}
                           onChange={toggleHubspotLists}
                           disabled={savingLists}
-                          title={t("Activer/désactiver l'import de listes HubSpot", 'Enable/disable HubSpot list import')}
+                          title={t("Activer/désactiver l’import de listes HubSpot", 'Enable/disable HubSpot list import')}
                         />
                       )}
                     </div>
@@ -755,7 +755,7 @@ function AccueilInner({ session }: { session: Session }) {
                         disabled={installPending}
                         className="mt-2 inline-flex items-center rounded-controle bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 transition-colors duration-150 hover:bg-brand-100 disabled:opacity-60"
                       >
-                        {t("Autoriser l'accès aux listes HubSpot →", 'Authorize access to HubSpot lists →')}
+                        {t("Autoriser l’accès aux listes HubSpot →", 'Authorize access to HubSpot lists →')}
                       </button>
                     )}
                   </div>
@@ -771,7 +771,7 @@ function AccueilInner({ session }: { session: Session }) {
                       {t('HubSpot non connecté', 'HubSpot not connected')}
                     </div>
                     <p className="mt-0.5 text-xs text-ink-500">
-                      {t("Aucun portail HubSpot n'est relié à ce compte. Connecte-le pour synchroniser les analyses de conversation.", 'No HubSpot portal is linked to this account. Connect it to sync conversation analyses.')}
+                      {t("Aucun portail HubSpot n’est relié à ce compte. Connectez-le pour synchroniser les analyses de conversation.", 'No HubSpot portal is linked to this account. Connect it to sync conversation analyses.')}
                     </p>
                     <a href="/tuto-hubspot" target="_blank" rel="noopener noreferrer" data-testid="hubspot-tuto-link-cta" className="mt-1 inline-block text-xs text-brand-600 hover:underline">
                       {t('Quoi faire dans HubSpot après la connexion ? (tuto)', 'What to do in HubSpot after connecting? (guide)')}
@@ -859,9 +859,9 @@ function ConnectNumberZone({ isAdmin, connexion }: { isAdmin: boolean; connexion
           <Icone nom="telephone" taille="grande" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-lg font-semibold text-ink-900">{t('Connecter ton compte WhatsApp', 'Connect your WhatsApp account')}</div>
+          <div className="text-lg font-semibold text-ink-900">{t('Connecter votre compte WhatsApp', 'Connect your WhatsApp account')}</div>
           <p className="mt-0.5 text-xs text-ink-500">
-            {t("Rattache ton compte WhatsApp Business (Meta) pour activer l'envoi de messages et de campagnes. Tu choisis le business et le numéro dans la fenêtre Meta, on s'occupe du reste.", 'Link your WhatsApp Business account (Meta) to enable sending messages and campaigns. You choose the business and number in the Meta window, we handle the rest.')}
+            {t('Vous choisissez l’entreprise et le numéro dans la fenêtre de Meta, nous faisons le reste.', 'You pick the business and the number in the Meta window, we handle the rest.')}
           </p>
         </div>
       </div>
@@ -922,8 +922,8 @@ function ActiverNumeroZone({ tenantId, isAdmin, verifie, onActive }: { tenantId:
     try {
       await demanderCodeNumero(tenantId, canal);
       setInfo(canal === 'VOICE'
-        ? t('Meta appelle le numéro et dicte le code. Saisis-le ci-dessous.', 'Meta is calling the number and will read out the code. Enter it below.')
-        : t('Meta envoie le code par SMS. Saisis-le ci-dessous.', 'Meta is sending the code by SMS. Enter it below.'));
+        ? t('Meta appelle le numéro et dicte le code. Saisissez-le ci-dessous.', 'Meta is calling the number and will read out the code. Enter it below.')
+        : t('Meta envoie le code par SMS. Saisissez-le ci-dessous.', 'Meta is sending the code by SMS. Enter it below.'));
     } catch (err) {
       setErreur(err instanceof Error ? err.message : t('Envoi du code impossible', 'Could not send the code'));
     } finally {
@@ -958,7 +958,7 @@ function ActiverNumeroZone({ tenantId, isAdmin, verifie, onActive }: { tenantId:
           : t('Meta n’a pas encore vérifié ce numéro par code. Tant qu’il ne l’est pas, il ne peut pas envoyer.', 'Meta has not verified this number by code yet. Until then, it cannot send.')}
       </p>
       {!isAdmin ? (
-        <p className="mt-2 text-xs text-alerte-800">{t('Demande à un admin de l’espace de terminer l’activation.', 'Ask a workspace admin to finish the activation.')}</p>
+        <p className="mt-2 text-xs text-alerte-800">{t('Demandez à un admin de l’espace de terminer l’activation.', 'Ask a workspace admin to finish the activation.')}</p>
       ) : (
         <>
           {!verifie && (

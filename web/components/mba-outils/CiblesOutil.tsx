@@ -285,7 +285,7 @@ export function CibleBloc({ tenantId, workflowId, code, onChange }: {
       {Array.isArray(blocs) && blocs.length > 0 && (
         <fieldset className="rounded-controle border border-ink-200 p-2" data-testid="mba-cible-bloc-liste">
           <legend className="px-1 text-xs font-medium text-ink-900">
-            {t('Bloc à envoyer : il part SEUL, sans ce qui le suit', 'Block to send: it goes ALONE, without what follows')}
+            {t('Bloc à envoyer : il part seul, sans ce qui le suit', 'Block to send: it goes alone, without what follows')}
           </legend>
           {blocs.map((b) => (
             <label key={b.code} className={`flex items-start gap-2 py-1 text-xs ${b.envoyable ? 'text-ink-900' : 'text-ink-500'}`}>

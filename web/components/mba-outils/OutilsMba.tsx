@@ -112,8 +112,8 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
       if (imprevus.length > 0) {
         const liste = imprevus.map((g) => `- ${g.nom}`).join('\n');
         const ok = await confirmer({ titre: t('Supprimer chez Meta', 'Delete at Meta'), message: t(
-          `Cet envoi va aussi SUPPRIMER chez Meta :\n\n${liste}\n\nContinuer ?`,
-          `This will also DELETE at Meta:\n\n${liste}\n\nContinue?`,
+          `Cet envoi va aussi supprimer chez Meta :\n\n${liste}\n\nContinuer ?`,
+          `This will also delete at Meta:\n\n${liste}\n\nContinue?`,
         ), confirmer: t('Continuer', 'Continue') });
         if (!ok) return false;
       }
@@ -204,13 +204,10 @@ export function OutilsMba({ tenantId, isAdmin }: { tenantId: string; isAdmin: bo
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold text-ink-900">{t('Outils de l’agent de Meta', 'Meta’s agent tools')}</h2>
-          <p className="text-sm text-ink-500">
-            {t('Ce que l’agent de Meta peut faire pendant une conversation.', 'What Meta’s agent can do during a conversation.')}
-          </p>
         </div>
         {isAdmin && mode.vue === 'liste' && (
           <Bouton type="button" data-testid="mba-outils-ajouter" onClick={() => setMode({ vue: 'choix' })}>
-            {t('+ Ajouter un outil', '+ Add a tool')}
+            <Icone nom="ajouter" />{t('Ajouter un outil', 'Add a tool')}
           </Bouton>
         )}
       </div>

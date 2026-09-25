@@ -48,7 +48,7 @@ export function ContactHistoryPanel({ tenantId, contactId }: { tenantId: string;
       const headers = [
         t('Campagne', 'Campaign'), t('Statut', 'Status'), t('Livraison', 'Delivery'), t('Type', 'Type'),
         t('Template / Scénario', 'Template / Scenario'), t('Envoyé le', 'Sent at'),
-        t("Type d'erreur", 'Error type'), t("Explication de l'erreur", 'Error explanation'),
+        t("Type d’erreur", 'Error type'), t("Explication de l’erreur", 'Error explanation'),
       ];
       const rows = sends.map((s) => [
         s.campaignName, s.status, s.deliveryStatus ?? '', s.category,
@@ -98,7 +98,7 @@ export function ContactHistoryPanel({ tenantId, contactId }: { tenantId: string;
               data-testid="contact-history-export"
               className="shrink-0"
             >
-              {exporting ? t('Export...', 'Exporting...') : t('Exporter en CSV', 'Export to CSV')}
+              {exporting ? t('Export…', 'Exporting…') : t('Exporter en CSV', 'Export to CSV')}
             </Bouton>
           )}
         </div>
@@ -274,7 +274,7 @@ function ConversationRow({ conv, stamp }: { conv: ContactConversation; stamp: (i
       )}
 
       <Link href={conv.inboxHref} className="mt-1.5 inline-block text-xs text-brand-600 hover:underline">
-        {t('Ouvrir dans l\'inbox', 'Open in inbox')}
+        {t('Ouvrir dans l’inbox', 'Open in inbox')}
       </Link>
     </li>
   );

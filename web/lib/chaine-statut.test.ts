@@ -77,11 +77,12 @@ describe('texteAvertissement : un post parti, et ce qu’il reste à faire', () 
     for (const a of ['automation_non_allumee', 'trace_manquante', 'reponse_inattendue'] as const) {
       for (const l of ['fr', 'en'] as const) {
         const texte = texteAvertissement(a, l).texte.toLowerCase();
-        // On retire d’abord les MISES EN GARDE (« ne republie pas », « do not publish again »), puis on
+        // On retire d’abord les MISES EN GARDE (« ne republiez pas », « do not publish again »), puis on
         // cherche une invitation dans ce qui reste. Sans ce retrait, la garde refusait la phrase qui dit
         // exactement le contraire de ce qu’elle interdit, dans les deux langues.
-        const sansMiseEnGarde = texte.replace(/ne republie pas|do not publish again/g, '');
-        expect(sansMiseEnGarde).not.toMatch(/republie|réessaie|reessaie|try again|publish again|renvoie le message/);
+        const sansMiseEnGarde = texte.replace(/ne republiez pas|do not publish again/g, '');
+        // Les deux personnes de chaque verbe : le texte est au « vous » depuis la passe 3 de la refonte.
+        expect(sansMiseEnGarde).not.toMatch(/republi|réessa|reessa|try again|publish again|renvoie le message|renvoyez le message/);
       }
     }
   });
@@ -89,7 +90,7 @@ describe('texteAvertissement : un post parti, et ce qu’il reste à faire', () 
   it('🔴 le cas « réponse inattendue » dit EXPLICITEMENT de ne pas republier', () => {
     // C’est le plus dangereux des trois : le message est parti, on n’a aucun identifiant pour le prouver, et
     // l’écran n’en gardera aucune trace. Sans cette phrase, le réflexe naturel est de recommencer.
-    expect(texteAvertissement('reponse_inattendue', 'fr').texte).toContain('Ne republie pas');
+    expect(texteAvertissement('reponse_inattendue', 'fr').texte).toContain('Ne republiez pas');
     expect(texteAvertissement('reponse_inattendue', 'en').texte).toContain('Do not publish again');
   });
 

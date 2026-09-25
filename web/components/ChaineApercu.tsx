@@ -40,7 +40,7 @@ export function ChaineApercu({ texte, imageUrl, waMeUrl, nomChaine }: ChaineAper
           l'abonné voit, pas un élément de notre interface. */}
       <div className="mx-auto max-w-sm rounded-carte bg-[#E7FFDB] p-3">
         <p className="mb-2 text-xs font-semibold text-ink-500" data-testid="chaine-apercu-nom">
-          {nomChaine ?? t('Ta chaîne', 'Your channel')}
+          {nomChaine ?? t('Votre chaîne', 'Your channel')}
         </p>
 
         {image !== null ? (
@@ -55,7 +55,7 @@ export function ChaineApercu({ texte, imageUrl, waMeUrl, nomChaine }: ChaineAper
 
         {vide ? (
           <p className="text-sm italic text-ink-500" data-testid="chaine-apercu-vide">
-            {t('Écris ton message pour voir l’aperçu.', 'Write your message to see the preview.')}
+            {t('Écrivez votre message pour voir l’aperçu.', 'Write your message to see the preview.')}
           </p>
         ) : null}
 

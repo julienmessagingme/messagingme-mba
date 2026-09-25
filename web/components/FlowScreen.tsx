@@ -140,7 +140,7 @@ export function FlowScreen({ elements, cta, title }: { elements: FlowScreenEleme
       </div>
       {/* Contenu défilant */}
       <div className="max-h-[440px] space-y-3.5 overflow-y-auto bg-white px-4 py-4">
-        {elements.length === 0 && <p className="text-[13px]" style={{ color: MUTED }}>{t('Ajoute des éléments à gauche…', 'Add elements on the left…')}</p>}
+        {elements.length === 0 && <p className="text-[13px]" style={{ color: MUTED }}>{t('Ajoutez des éléments à gauche…', 'Add elements on the left…')}</p>}
         {elements.map((e, i) => (
           <div key={i}>
             {e.condition && (

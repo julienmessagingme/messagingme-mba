@@ -26,7 +26,7 @@ export function messageRafraichissement(r: FlowRefreshReport, t: (fr: string, en
   const phrase = `${parties.join(', ')}.`;
   if (r.importes === 0) return phrase;
   return `${phrase} ${t(
-    "Un formulaire importé s'envoie normalement, mais ses réponses n'alimentent pas les fiches contact : Meta ne renvoie pas sa structure.",
+    "Un formulaire importé s’envoie normalement, mais ses réponses n’alimentent pas les fiches contact : Meta ne renvoie pas sa structure.",
     'An imported form sends normally, but its answers do not fill in contact records: Meta does not return its structure.',
   )}`;
 }

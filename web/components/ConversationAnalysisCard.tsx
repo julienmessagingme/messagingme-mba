@@ -746,7 +746,7 @@ export function ConversationAnalysisCard({ tenantId, range, intentionInitiale }:
       ) : !summary || summary.total === 0 ? (
         <p className="text-sm text-ink-500">
           {summary && summary.enabled === false
-            ? t("L'analyse de conversation n'est pas activée.", 'Conversation analysis is not enabled.')
+            ? t("L’analyse de conversation n’est pas activée.", 'Conversation analysis is not enabled.')
             : t('Aucune conversation analysée sur cette période.', 'No conversation analyzed over this period.')}
         </p>
       ) : (
