@@ -108,6 +108,19 @@ export class PgChannelsMeConnectionStore {
     );
   }
 
+  /**
+   * DEBRANCHE la chaine : oublie les identifiants (bloc « Canaux et services » de l Accueil, 2026-09-25).
+   *
+   * 🔴 SEULE CETTE TABLE EST TOUCHEE. Les liens et les publications n ont aucune cle etrangere vers elle, et
+   * c est voulu : un post publie circule pour toujours, son bouton doit continuer de demarrer son scenario
+   * (l automation compagnon du lien reste allumee). Rebrancher, c est ressaisir les quatre identifiants.
+   * `true` = une connexion existait.
+   */
+  async supprimer(tenantId: string): Promise<boolean> {
+    const res = await this.pool.query(`delete from channelsme_connections where tenant_id=$1`, [tenantId]);
+    return (res.rowCount ?? 0) > 0;
+  }
+
   /** Les creds viennent d etre essayes contre Channels Me et ils marchent. */
   async markVerified(tenantId: string): Promise<void> {
     await this.pool.query(

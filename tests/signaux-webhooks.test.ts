@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { handleWebhookJob } from '../src/webhooks/handler';
 import { destinataireDuStatut, instantDuStatut, type AccuseDuStatut } from '../src/webhooks/delivery';
 import { processInbound, type InboundMessage } from '../src/webhooks/inbound';
-import { aucunTarif, aucunEchecLibre, aucuneArriveePub, aucunRoutagePub } from './webhook-fixtures';
+import { aucunTarif, aucunEchecLibre, aucuneArriveePub, aucunRoutagePub, aucunNumeroDelie } from './webhook-fixtures';
 
 /**
  * LES POINTS D'ACCROCHE DES SIGNAUX sur les webhooks Meta (spec 2026-09-24, § 8). Ce test ne dit rien du coût
@@ -120,6 +120,7 @@ describe('les entrants Meta passent au puits des signaux', () => {
       arriveesPub: aucuneArriveePub,
       routagePub: aucunRoutagePub,
       signalReponse: async (_t, m) => { vus.push(`${m.type}:${m.body}`); },
+      numerosDelies: aucunNumeroDelie,
     });
     expect(vus).toEqual(['button:Oui']);
   });

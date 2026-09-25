@@ -30,11 +30,17 @@ interface Cap {
   verifies: Array<{ phoneNumberId: string; code: string }>;
   registres: Array<{ phoneNumberId: string; pin: string }>;
   pins: string[];
+  /** Espaces passés à `delierNumero` / `relierNumero` (migration 0180). */
+  delies: string[];
+  relies: string[];
+  /** Actions écrites au journal d'audit. */
+  audit: string[];
 }
 
 function app(over: Partial<EmbeddedSignupRouteDeps> = {}) {
-  const cap: Cap = { codes: [], verifies: [], registres: [], pins: [] };
+  const cap: Cap = { codes: [], verifies: [], registres: [], pins: [], delies: [], relies: [], audit: [] };
   const deps: EmbeddedSignupRouteDeps = {
+    audit: async (_t, _acteur, action) => { cap.audit.push(action); },
     configId: 'cfg-123',
     appId: 'app-1',
     graphVersion: 'v25.0',
@@ -51,6 +57,8 @@ function app(over: Partial<EmbeddedSignupRouteDeps> = {}) {
     verifierCode: async (_t, phoneNumberId, code) => { cap.verifies.push({ phoneNumberId, code }); },
     enregistrerNumero: async (_t, phoneNumberId, pin) => { cap.registres.push({ phoneNumberId, pin }); },
     sauverPin: async (_t, pin) => { cap.pins.push(pin); },
+    delierNumero: async (t) => { cap.delies.push(t); return { delieLe: '2026-09-25T10:00:00.000Z', campagnesEnPause: 2 }; },
+    relierNumero: async (t) => { cap.relies.push(t); return { campagnesReprises: 1, campagnesReprogrammees: 1 }; },
     ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, embeddedSignup: deps }), cap };
@@ -232,6 +240,71 @@ describe('ce que la revue a corrigé', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ actif: true });
     expect(cap.registres).toHaveLength(1);
+    await server.close();
+  });
+});
+
+/**
+ * « DÉLIER » ET « RELIER » LE NUMÉRO (migration 0180, bloc « Canaux et services » de l'Accueil).
+ *
+ * 🔴 CE QUE CES TESTS PROTÈGENT : les deux gestes ne parlent JAMAIS à Meta (le numéro reste relié à son compte
+ * WhatsApp, c'est ce qui rend la reconnexion d'un clic possible), ils sont réservés aux admins, et ils ne
+ * portent que sur l'espace du jeton. Ce qu'ils font en base est tenu par
+ * `tests/integration/numero-delie.integration.test.ts`.
+ */
+describe('POST /tenants/:tenantId/numero/delier et /relier', () => {
+  const DELIER_URL = '/tenants/t1/numero/delier';
+  const RELIER_URL = '/tenants/t1/numero/relier';
+
+  it('🔴 délier : 200, l’espace du jeton, le compte de campagnes en pause, et AUCUN appel à Meta', async () => {
+    let meta = 0;
+    const { server, cap } = app({
+      etatNumero: async () => { meta += 1; return { status: 'CONNECTED', codeVerificationStatus: 'VERIFIED' }; },
+      demanderCode: async () => { meta += 1; },
+      enregistrerNumero: async () => { meta += 1; },
+    });
+    const res = await server.inject({ method: 'POST', url: DELIER_URL, ...h(adminTok), payload: {} });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ delie: true, delieLe: '2026-09-25T10:00:00.000Z', campagnesEnPause: 2 });
+    expect(cap.delies).toEqual(['t1']);
+    expect(cap.audit).toEqual(['numero.delie']);
+    expect(meta).toBe(0);
+    await server.close();
+  });
+
+  it('relier : 200 sans confirmation, et ce qui repart', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: RELIER_URL, ...h(adminTok), payload: {} });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ relie: true, campagnesReprises: 1, campagnesReprogrammees: 1 });
+    expect(cap.relies).toEqual(['t1']);
+    expect(cap.audit).toEqual(['numero.relie']);
+    await server.close();
+  });
+
+  it('aucun numéro : 404 des deux côtés, et rien au journal', async () => {
+    const { server, cap } = app({ delierNumero: async () => null, relierNumero: async () => null });
+    expect((await server.inject({ method: 'POST', url: DELIER_URL, ...h(adminTok), payload: {} })).statusCode).toBe(404);
+    expect((await server.inject({ method: 'POST', url: RELIER_URL, ...h(adminTok), payload: {} })).statusCode).toBe(404);
+    expect(cap.audit).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 un agent est refusé (403) et rien n’est délié', async () => {
+    const { server, cap } = app();
+    expect((await server.inject({ method: 'POST', url: DELIER_URL, ...h(agentTok), payload: {} })).statusCode).toBe(403);
+    expect((await server.inject({ method: 'POST', url: RELIER_URL, ...h(agentTok), payload: {} })).statusCode).toBe(403);
+    expect(cap.delies).toEqual([]);
+    expect(cap.relies).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 isolation : un admin ne délie pas le numéro d’un AUTRE espace', async () => {
+    const { server, cap } = app();
+    expect((await server.inject({ method: 'POST', url: '/tenants/t2/numero/delier', ...h(adminTok), payload: {} })).statusCode).toBe(403);
+    expect((await server.inject({ method: 'POST', url: '/tenants/t2/numero/relier', ...h(adminTok), payload: {} })).statusCode).toBe(403);
+    expect(cap.delies).toEqual([]);
+    expect(cap.relies).toEqual([]);
     await server.close();
   });
 });

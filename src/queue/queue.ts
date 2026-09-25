@@ -34,8 +34,13 @@ export interface Queue {
      * `priority` (lot 6 de l'API publique, 2026-09-24) : pg-boss prend les jobs par `priority desc`, puis par
      * date de création. Absente = 0, le comportement de toutes les files d'avant. Sert à faire passer les
      * signaux qui répondent à un geste du contact devant un arriéré d'accusés (`PRIORITE_SIGNAL`).
+     *
+     * `startAfter` (2026-09-25) : le job n'est pas pris avant cet instant (pg-boss `startAfter`). Absent = tout de
+     * suite, le comportement de toutes les files d'avant. Premier usage : l'automation « risque élevé », qui part
+     * à l'ouverture de l'espace et non pendant le balayage de nuit (`src/engagement/balayage.ts`). ⚠️ Un job
+     * différé reste soumis à la rétention de pg-boss (14 jours dans l'état « créé ») : ce n'est pas un agenda.
      */
-    opts?: { expireInSeconds?: number; groupId?: string; priority?: number },
+    opts?: { expireInSeconds?: number; groupId?: string; priority?: number; startAfter?: Date },
   ): Promise<void>;
   /**
    * Enregistre un worker qui traite les jobs de la file `name`.

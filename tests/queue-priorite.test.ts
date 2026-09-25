@@ -21,6 +21,12 @@ describe('sendOptions (options passées à boss.send)', () => {
     expect(sendOptions({ priority: 0 })).toEqual({ priority: 0 });
     expect(sendOptions({ groupId: 't', priority: 1 })).toEqual({ group: { id: 't' }, priority: 1 });
   });
+
+  it('🔴 startAfter atteint boss.send tel quel : sans lui, l’automation « risque élevé » partirait pendant le balayage de nuit', () => {
+    const neufHeures = new Date('2026-09-25T07:00:00.000Z');
+    expect(sendOptions({ groupId: 't', startAfter: neufHeures })).toEqual({ group: { id: 't' }, startAfter: neufHeures });
+    expect(sendOptions({ groupId: 't' })).toEqual({ group: { id: 't' } });
+  });
 });
 
 describe('FakeQueue : la priorité traverse l’abstraction', () => {

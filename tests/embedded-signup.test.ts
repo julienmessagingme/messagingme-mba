@@ -47,6 +47,9 @@ function app(over: Partial<EmbeddedSignupRouteDeps> = {}) {
     verifierCode: async () => { throw new Error('non attendu dans ce test'); },
     enregistrerNumero: async () => { throw new Error('non attendu dans ce test'); },
     sauverPin: async () => { throw new Error('non attendu dans ce test'); },
+    // Délier et relier (migration 0180) ont leurs tests dans `tests/numero-activation.test.ts`.
+    delierNumero: async () => { throw new Error('non attendu dans ce test'); },
+    relierNumero: async () => { throw new Error('non attendu dans ce test'); },
     ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, embeddedSignup: deps }), cap };

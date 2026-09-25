@@ -671,6 +671,17 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   dans la spec (`docs/superpowers/specs/2026-09-24-api-publique-coherente-design.md` § 19) : elle n'est pas
   recopiée ici. Trois lecteurs : la fiche de l'API publique (`engagementRisk`), la ligne de la console
   (`ContactRow.risque`, dont chaque `select` nomme `COLONNES_RISQUE`) et le filtre de la liste.
+- 🔴 **`risque_calcule_le` veut dire « à ce niveau DEPUIS le », pas « calculé le »** (2026-09-25). Le balayage
+  ne réécrit QUE les fiches dont la valeur change (garde `is distinct from` sur le niveau, le score et les
+  raisons, dans `PgRisqueStore.ecrire`) : réécrire chaque nuit toutes les fiches évaluées produisait une version
+  morte par fiche et par nuit dans la table du chemin chaud. La date ne bouge qu'au changement de NIVEAU ; un
+  score ou des raisons qui changent au même niveau sont réécrits sans elle. La console dit « depuis le », l'API
+  le dit de `computedAt`. C'est aussi la trace que lit le plafond du jour du déclencheur « risque élevé » (§ 6).
+- ⚠️ **L'index du risque `contacts_tenant_risque_idx` ne sert PAS la lecture des fiches à réévaluer**, contrairement
+  à ce que dit le commentaire de la migration 0178 : `risque_niveau is not null` n'y est qu'une branche d'un OU
+  dont une autre est un `exists`, et aucun index ne sert la condition entière (la requête parcourt les fiches de
+  l'espace). Il sert le filtre par niveau et le compte du plafond du jour, deux égalités nues. Une migration
+  appliquée ne se réécrit pas : la correction vit dans `PgRisqueStore.contactsAEvaluer` et ici.
 - 🔴 **Le filtre par niveau de risque est le SEUL filtre de contacts qui se REFUSE au lieu de s'ignorer.** Une
   valeur hors des quatre niveaux lève `FiltreContactInvalide` dans `buildContactFilters`, et son `statusCode`
   la fait rendre en 400 par le gestionnaire d'erreurs, sur toute route qui lit des filtres, sans que la route
@@ -679,6 +690,9 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   is null` : c'est le contrat de l'index partiel `contacts_tenant_risque_idx (tenant_id, risque_niveau) where
   deleted_at is null`, et `tests/contact-where.test.ts` relit la migration pour le tenir. Une fiche jamais
   calculée n'est dans aucun niveau, `inconnu` compris : `inconnu` est un calcul qui n'a rien pu observer.
+  ⚠️ La console ne PROPOSE ce filtre que si l'API a montré qu'elle le connaît (une ligne de `/contacts` porte la
+  clé `risque`, `apiConnaitLeRisque`) : une API qui ne le connaît pas l'ignorerait, et « élevé » rendrait tout
+  l'espace. Un filtre déjà posé reste affiché.
 - 🔴 **`/v1/contacts` désigne une personne par sa FICHE, et UNE fonction la trouve** : `resoudreFiche`
   (`src/api/fiche.ts`). Quatre clés, `contactId`, `externalId`, `phone`, `bsuid` : toutes celles qu'on donne
   doivent désigner la même fiche (sinon `identity_conflict`, et la fiche n'est pas modifiée) ; une clé que la
@@ -844,7 +858,7 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 |---|---|
 | `mba_enabled` | l'agent Meta Business Agent est actif sur cet espace |
 | `hubspot_lists_enabled` | l'import de contacts HubSpot (pas les étapes de deal) |
-| `hubspot_actif` | l'interrupteur HubSpot de l'espace (0179, Paramètres > Intégrations) : allumé, le bloc HubSpot de l'Accueil s'affiche, numéro ou pas. `false` par défaut ; la reprise de 0179 l'a allumé pour les espaces reliés à un portail (`mmhs.tenant_portals` joint à `mmhs.portals`, la lecture de `getHubspotPortal`), gardée par `to_regclass` parce qu'une base sans connecteur n'a pas ce schéma. 🔴 **On ne l'éteint pas tant qu'un portail est relié** : `PATCH /settings/hubspot-actif` rend 409, sinon les analyses continueraient de partir vers HubSpot depuis un espace où il paraît éteint. On délie d'abord (« Déconnexion complète »), et un espace SANS numéro le fait par `POST /hubspot/deconnexion`, la même fonction que la porte d'un numéro. ⚠️ Il ne gouverne PAS le masquage des fonctions HubSpot des campagnes et des automations, qui suit le portail relié (`hubspotPortalConnecte`). ⚠️ Côté console, `undefined` (API plus ancienne) n'est pas `false` : `affichageHubspotAccueil` (`web/lib/hubspot-actif.ts`) garde alors l'ancien comportement |
+| `hubspot_actif` | l'interrupteur HubSpot de l'espace (0179, Paramètres > Intégrations) : allumé, le bloc HubSpot de l'Accueil s'affiche, numéro ou pas. `false` par défaut ; la reprise de 0179 l'a allumé pour les espaces reliés à un portail (`mmhs.tenant_portals` joint à `mmhs.portals`, la lecture de `getHubspotPortal`), gardée par `to_regclass` parce qu'une base sans connecteur n'a pas ce schéma. 🔴 **On ne l'éteint pas tant qu'un portail est relié** : `PATCH /settings/hubspot-actif` rend 409, sinon les analyses continueraient de partir vers HubSpot depuis un espace où il paraît éteint. 🔴 Et une lecture du portail en ÉCHEC refuse l'extinction (503, « réessayez »), elle ne vaut jamais « pas relié » ici : seul un schéma du connecteur absent (`42P01`) rend `false` dans le câblage (`src/index.ts`), toute autre erreur remonte, et seul l'affichage (`GET /settings`) la rattrape en « pas relié ». On délie d'abord (« Déconnexion complète »), et un espace SANS numéro le fait par `POST /hubspot/deconnexion`, la même fonction que la porte d'un numéro. ⚠️ Il ne gouverne PAS le masquage des fonctions HubSpot des campagnes et des automations, qui suit le portail relié (`hubspotPortalConnecte`). ⚠️ Côté console, `undefined` (API plus ancienne) n'est pas `false` : `affichageHubspotAccueil` (`web/lib/hubspot-actif.ts`) garde alors l'ancien comportement |
 | `campaigns_paused` | coupe-circuit d'envoi pour tout l'espace |
 | `auto_retry_enabled` | auto-relance des échecs des campagnes d'AVANT la migration 0165 ; ce réglage n'a plus d'écran et ne s'écrit plus. Une campagne créée depuis obéit à SA case `campaigns.reessayer` (`campaigns.reessai_par_campagne`) |
 | `timezone` et `business_hours` | le fuseau (une heure murale sans fuseau est interprétée là) et les horaires |
@@ -975,11 +989,23 @@ Tous en `unref()`, chacun avec sa variable de cadence (les valeurs sont dans `sr
 | heartbeat | écrit `worker_heartbeat`, lu par `/ops` pour voir un worker mort |
 
 🔴 **LE BALAYAGE DU RISQUE EST LE SEUL CHEMIN DE MASSE QUI ÉMET UN ÉVÉNEMENT D'AUTOMATION** (exception décidée,
-spec § 19, invariant 8). Trois bornes en sont la condition, et elles vivent au point d'émission
+spec § 19, invariant 8). Ses bornes en sont la condition, et elles vivent au point d'émission
 (`src/engagement/balayage.ts`) : il n'émet que sur un PASSAGE en élevé, jamais chaque nuit où le contact y
-reste ; au plus `PLAFOND_DECLENCHEMENTS_PAR_NUIT` par nuit et par espace (au-delà, le niveau est écrit, rien ne
-part, et le bilan le compte) ; puis le plafond horaire de chaque automation. Un STOP ou un blocage donne
-« élevé » SANS déclencher. Il ÉCRIT avant de déclencher : un arrêt entre les deux perd un déclenchement, l'ordre
+reste ; au plus `PLAFOND_DECLENCHEMENTS_PAR_JOUR` (200) par JOUR (Paris) et par espace, `/ops` compris (au-delà,
+le niveau est écrit, rien ne part, et le bilan le compte) ; puis le plafond horaire de chaque automation, et un
+anti-rebond de 30 jours par contact pour une automation « risque élevé » qui n'en règle pas (`antiRebondParDefaut`,
+`src/automation/match.ts`) : la grille n'a pas d'hystérésis, un contact qui oscille autour d'un seuil repasserait
+en élevé. Un STOP ou un blocage donne « élevé » SANS déclencher.
+🔴 **Le plafond se compte depuis minuit (Paris), pas par exécution** : chaque passage commence par compter les
+passages en élevé déclenchables déjà écrits aujourd'hui (`PgRisqueStore.declenchablesDepuis`, lu sur la fiche :
+un niveau `eleve` daté d'aujourd'hui, hors STOP, blocage et fiche sans adresse) et ne garde que le reste. Compté
+par exécution, un lancement `/ops` à 10 h s'ajoutait aux 200 de la nuit. ⚠️ Ce compte peut sur-compter (automation
+éteinte, publication en échec), ce qui ne fait que restreindre, et deux passages SIMULTANÉS sur un même espace
+comptent chacun avant d'écrire.
+🔴 **Et l'automation ne part pas la nuit** : l'événement est enfilé avec un départ différé (`startAfter` de
+pg-boss, `enfilerEvenementAutomation(..., depart)`) jusqu'à la prochaine ouverture de l'espace
+(`departDuDeclencheur`, par `prochaineOuverture`, la brique des campagnes « heures ouvrées ») ; un espace sans
+ouverture exploitable part à 9 h, heure de Paris. Le NIVEAU, lui, est écrit tout de suite. Il ÉCRIT avant de déclencher : un arrêt entre les deux perd un déclenchement, l'ordre
 inverse en doublerait un, facturé. Chaque espace est isolé (une panne est dans son bilan, le suivant passe). Le
 « déjà balayé aujourd'hui » vit en mémoire du worker : un redémarrage dans la fenêtre relance un passage sans
 effet, puisqu'aucun niveau ne change.
@@ -1206,7 +1232,7 @@ produit**, là précisément pour qu'un client ne puisse pas créditer son propr
 `POST /ops/verrou/:tenantId`, `PATCH /ops/prix`, `DELETE /ops/cle-modele/:tenantId`,
 `POST /ops/pubs/connexion/:tenantId`, `POST /ops/dlq/replay` et `POST /ops/risque/:tenantId` (le balayage
 du risque de désengagement d'un espace, lancé tout de suite : il écrit les fiches, émet les signaux et peut
-déclencher des automations, sous le même plafond que la nuit). Compté dans `src/http/ops.ts` le 2026-09-25.
+déclencher des automations, sous le plafond du JOUR qu'il partage avec la nuit). Compté dans `src/http/ops.ts` le 2026-09-25.
 
 🔴 **LA NOTE OBLIGATOIRE N'EST PAS UN INVARIANT DE `/ops` : CINQ SUR HUIT L'EXIGENT.** Mesuré route
 par route le 2026-09-23 : `credits`, `verrou`, `prix` et `pubs/connexion` refusent sans note (et `risque`,
@@ -1435,7 +1461,10 @@ lister les campagnes en cours, les mettre en pause) est dans le runbook de `DEPL
 risque de désengagement d'un espace, pour l'essai réel et le dépannage, et rend son bilan (fiches évaluées,
 changements de niveau, automations déclenchées, passages au-delà du plafond, échecs). Il tourne DANS la
 requête. Rejoué, il ne redéclenche rien : un passage en élevé déjà écrit n'en est plus un. Un espace
-verrouillé n'est pas sauté (c'est un geste explicite).
+verrouillé n'est pas sauté (c'est un geste explicite). Son plafond est celui du JOUR, partagé avec la nuit : ce
+que la nuit a déjà déclenché compte (`dejaDeclenches` dans le bilan). Les automations qu'il publie partent à
+l'ouverture de l'espace (`departLe` dans le bilan) : tout de suite pendant les heures d'ouverture, sinon à la
+suivante.
 
 `/ops/usage` (jeton d'exploitation) : l'usage de l'API publique agrégé PAR MINUTE, par espace, par clé et
 par opération, avec le TRAVAIL demandé (un lot de 500 contacts y compte 500, pas 1). En mémoire du process
@@ -1542,6 +1571,28 @@ Ajouté par le lot 4 de l'API publique :
    fragment de `wa_id` que `ouvrirConversationDuContact`) : sans fil, pas d'entrant, donc fenêtre fermée par
    construction, 422 sans rien écrire. `POST /v1/messages/rcs`, lui, ouvre le fil APRÈS l'envoi, et rend
    `conversationId: null` si ce fil est devenu introuvable entre-temps (le message, lui, est parti).
+38. **Un numéro DÉLIÉ n'envoie rien, et c'est `MetaClientFactory.clientForTenant` qui le refuse** (migration
+   0180, bloc « Canaux et services » de l'Accueil). Délier ne touche à rien chez Meta : `phone_numbers.delie_le`
+   est posé sur tous les numéros de l'espace, le jeton chiffré reste, et « Relier » le remet à nul. Le refus
+   (`NumeroDelieError`, `statusCode = 409`) sort en 409 lisible de toute route d'envoi par le gestionnaire
+   d'erreurs, sans qu'aucune ne le connaisse. La garde est REQUISE dans `MetaClientFactoryOpts` (`numeroDelie`).
+   ⚠️ Elle est mise en cache 5 s par process (`NUMERO_DELIE_TTL_MS`) : un envoi peut encore partir du worker 5 s
+   après « Délier » ; le process de l'API vide son cache au geste.
+39. **Délier met en pause `numero_delie` les campagnes `running` et `scheduled` de l'espace dont un étage est
+   WhatsApp** (repli compris), `paused_until` à nul, `scheduled_at` gardé. Le balayage de reprise ne les voit
+   jamais (motif hors du `where` de `reprendreCampagnesDues` et du prédicat de `campaigns_reprise_idx`, tenu par
+   `tests/numero-delie-migration.test.ts`). « Relier » les rend `scheduled` si `scheduled_at` est posé, `running`
+   sinon, et c'est le balayage des campagnes gelées qui les relance dans la minute : aucun enfilement depuis
+   l'API. Une campagne lancée ou reprise PENDANT la déliaison est mise en pause au premier refus du point de
+   passage, même quand WhatsApp n'est qu'un repli.
+40. **Les entrants d'un numéro délié sont écartés en TÊTE du job `webhook`** (`ecarterLesEntrantsDelies`), avant
+   le journal brut et chaque étape : messages, échos de l'agent de Meta et bascules de contrôle. Les ACCUSÉS de
+   livraison sont gardés. Coût : une lecture par clé primaire de `phone_numbers` par lot, zéro pour un lot
+   d'accusés purs. Une lecture en échec rend le lot tel quel (comportement d'avant), jamais un job en échec.
+   Routes : `POST /tenants/:tenantId/numero/delier` et `/numero/relier` (admin), journalisées `numero.delie` et
+   `numero.relie`. **Débrancher la chaîne** (`DELETE /tenants/:tenantId/channels-me/connection`, admin) supprime la
+   seule ligne `channelsme_connections` : liens et publications n'ont aucune clé étrangère vers elle, les posts
+   déjà parus et leurs boutons continuent de démarrer leur scénario.
 
 ### Sur les contrats externes
 

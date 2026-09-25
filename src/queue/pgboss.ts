@@ -124,16 +124,20 @@ export function workConcurrencyOptions(opts: {
  *
  * ⚠️ `priority` est transmise dès qu'elle est DÉFINIE, 0 compris : une valeur explicite n'est pas une absence
  * (même piège que `concurrency: 0`). `expireInSeconds` et `groupId` gardent EXACTEMENT leur règle d'avant.
+ * `startAfter` passe tel quel quand il est défini : pg-boss accepte une `Date`, et un instant passé veut dire
+ * « tout de suite ».
  */
-export function sendOptions(opts: { expireInSeconds?: number; groupId?: string; priority?: number } = {}): {
+export function sendOptions(opts: { expireInSeconds?: number; groupId?: string; priority?: number; startAfter?: Date } = {}): {
   expireInSeconds?: number;
   group?: { id: string };
   priority?: number;
+  startAfter?: Date;
 } {
   return {
     ...(opts.expireInSeconds ? { expireInSeconds: opts.expireInSeconds } : {}),
     ...(opts.groupId ? { group: { id: opts.groupId } } : {}),
     ...(opts.priority !== undefined ? { priority: opts.priority } : {}),
+    ...(opts.startAfter !== undefined ? { startAfter: opts.startAfter } : {}),
   };
 }
 
@@ -231,7 +235,7 @@ export class PgBossQueue implements Queue {
   async enqueue(
     name: string,
     data: unknown,
-    opts?: { expireInSeconds?: number; groupId?: string; priority?: number },
+    opts?: { expireInSeconds?: number; groupId?: string; priority?: number; startAfter?: Date },
   ): Promise<void> {
     await this.ensure(name);
     // `expireInSeconds` PAR JOB (prime sur la policy de file) : dimensionne la durée max d'un run de campagne

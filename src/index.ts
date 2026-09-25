@@ -72,6 +72,8 @@ import { fetchHubspotLists, importHubspotList, disconnectHubspot, fetchHubspotDe
 import { PgTemplateHintStore } from './crm/template-hints.pg';
 import { MetaMediaClient } from './meta/media';
 import { PgPhoneStatusStore } from './account/store.pg';
+import { PgNumeroDelieStore } from './account/numero-delie.pg';
+import { creerGardeNumeroDelie } from './meta/numero-delie';
 import { pullFromInfo, pullFromError } from './account/pull';
 import { PgOpsStore } from './ops/store.pg';
 import { PgWorkerHeartbeatStore } from './ops/heartbeat-store.pg';
@@ -278,6 +280,10 @@ async function main(): Promise<void> {
     await auditStore.record(tenant, { userId: actor.userId, email }, action, target, detail);
   };
   const phoneStatusStore = new PgPhoneStatusStore(pool);
+  // Le numéro délié (migration 0180) : UNE garde par process, partagée par la fabrique Meta (le refus des
+  // envois) et par les routes Délier/Relier (qui la vident, pour que ce process-ci n'ait aucune fenêtre).
+  const numeroDelieStore = new PgNumeroDelieStore(pool);
+  const gardeNumeroDelie = creerGardeNumeroDelie((pn) => numeroDelieStore.estDelie(pn));
   const opsStore = new PgOpsStore(pool, config.PGBOSS_SCHEMA);
   const heartbeatStore = new PgWorkerHeartbeatStore(pool);
   const workflowStore = new PgWorkflowStore(pool);
@@ -477,6 +483,7 @@ async function main(): Promise<void> {
       config.PHONE_RATE_PER_MINUTE_MAX,
       depsPorteDebitPg(pool),
     ),
+    numeroDelie: (pn) => gardeNumeroDelie.estDelie(pn),
   });
 
   /**
@@ -1516,12 +1523,16 @@ async function main(): Promise<void> {
        * sur `tenant_id`, pas un aller-retour vers le connecteur. C'est ce qui rend acceptable de la poser
        * sur une route que plusieurs ecrans appellent a l'ouverture.
        *
-       * 🔴 `catch -> false` ET C'EST LE BON SENS DU REPLI, a la difference de la plupart des gardes de ce
-       * depot. Le cas d'erreur reel n'est pas un hoquet reseau, c'est une base ou le schema `mmhs` N'EXISTE
-       * PAS (instance sans connecteur HubSpot, base de CI) : `42P01`. Repondre « connecte » y offrirait une
-       * source qui ne peut pas fonctionner. La route du statut de compte fait deja exactement ce repli.
+       * 🔴 `42P01 -> false`, ET SEULEMENT LUI. Le cas attendu n'est pas un hoquet reseau, c'est une base ou le
+       * schema `mmhs` N'EXISTE PAS (instance sans connecteur HubSpot, base de CI) : aucun portail ne peut y
+       * etre relie. Toute AUTRE erreur remonte (relecture du lot 7, 2026-09-25) : l'affichage la rattrape en
+       * « pas relie » (`GET /settings`), l'extinction de l'interrupteur la refuse en 503. Un `catch -> false`
+       * global laissait eteindre HubSpot par-dessus un portail relie des que la lecture echouait.
        */
-      hubspotPortalConnecte: (tenant) => phoneStatusStore.getHubspotPortal(tenant).then((p) => p.connected).catch(() => false),
+      hubspotPortalConnecte: (tenant) => phoneStatusStore.getHubspotPortal(tenant).then((p) => p.connected).catch((err: unknown) => {
+        if (typeof err === 'object' && err !== null && 'code' in err && err.code === '42P01') return false;
+        throw err;
+      }),
       setControlHandbackSeconds: (tenant, seconds) => settingsStore.setControlHandbackSeconds(tenant, seconds),
       setMbaHandoffMode: (tenant, mode) => settingsStore.setMbaHandoffMode(tenant, mode),
       // Applique le choix chez Meta immédiatement. Mêmes helpers que le balayage horaire, pour que « je viens
@@ -2322,6 +2333,20 @@ async function main(): Promise<void> {
           }
           await esCredentialsStore.enregistrerPin(waba, tenant, encryptSecret(pin, config.ENCRYPTION_KEY));
         },
+
+        // ----- « Délier » et « Relier » (migration 0180) : aucun appel à Meta -----
+        // La garde de CE process est vidée après chaque geste : l'API n'a donc aucune fenêtre, seul le worker
+        // garde au plus `NUMERO_DELIE_TTL_MS` de retard.
+        delierNumero: async (tenant: string) => {
+          const r = await numeroDelieStore.delier(tenant);
+          gardeNumeroDelie.invaliderTout();
+          return r;
+        },
+        relierNumero: async (tenant: string) => {
+          const r = await numeroDelieStore.relier(tenant);
+          gardeNumeroDelie.invaliderTout();
+          return r;
+        },
       };
     })(),
     /**
@@ -2840,6 +2865,7 @@ async function main(): Promise<void> {
       getSecrets: (tenant) => channelsMeConnections.getSecrets(tenant),
       upsertConnection: (tenant, c) => channelsMeConnections.upsert(tenant, c),
       markVerified: (tenant) => channelsMeConnections.markVerified(tenant),
+      supprimerConnection: (tenant) => channelsMeConnections.supprimer(tenant),
       getOrganisation: (cx) => channelsMeClient.getOrganisation(cx),
       listChannels: (cx) => channelsMeClient.listChannels(cx),
       getMessages: (cx) => channelsMeClient.getMessages(cx),

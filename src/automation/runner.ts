@@ -1,6 +1,6 @@
 import { evaluateConditionGroup } from '../workflow/conditions';
 import type { EvalContext } from '../workflow/conditions';
-import { matchesTrigger, isInCooldown, reprendLaMain } from './match';
+import { matchesTrigger, isInCooldown, reprendLaMain, antiRebondParDefaut } from './match';
 import type { AutomationRow, AutomationEvent, AutomationTriggerKind } from './match';
 
 /**
@@ -179,7 +179,8 @@ export async function runAutomations(
       // redonner son rappel, ce qui est exactement ce qu'on veut permettre.
       if (ev.kind !== 'avant_date') {
         const last = await deps.lastFiredAt(a.id, ev.waId);
-        if (isInCooldown(last, a.cooldownSeconds, deps.defaultCooldownSeconds, now())) continue;
+        // Le défaut dépend du déclencheur : 30 jours pour « risque élevé » (`antiRebondParDefaut`).
+        if (isInCooldown(last, a.cooldownSeconds, antiRebondParDefaut(a.triggerKind, deps.defaultCooldownSeconds), now())) continue;
       }
 
       if (a.conditionGroup) {

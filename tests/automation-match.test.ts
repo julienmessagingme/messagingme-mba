@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { matchesTrigger, isInCooldown, keywordsOf, keywordModeOf, normalizeText, isAutomationTriggerKind } from '../src/automation/match';
+import {
+  matchesTrigger, isInCooldown, keywordsOf, keywordModeOf, normalizeText, isAutomationTriggerKind, antiRebondParDefaut,
+  ANTI_REBOND_RISQUE_ELEVE_SECONDES, AUTOMATION_TRIGGER_KINDS,
+} from '../src/automation/match';
 import type { AutomationRow, AutomationEvent } from '../src/automation/match';
 
 /**
@@ -151,6 +154,14 @@ describe('déclencheur « risque élevé » (lot 7, balayage de nuit)', () => {
     for (const a of [auto(), auto({ triggerKind: 'new_contact' }), auto({ triggerKind: 'conversation_analyzed', triggerConfig: {} })]) {
       expect(matchesTrigger(a, passage), a.triggerKind).toBe(false);
     }
+  });
+});
+
+describe('anti-rebond par défaut, selon le déclencheur', () => {
+  it('🔴 30 jours pour « risque élevé », le défaut de l’instance pour tous les autres', () => {
+    expect(ANTI_REBOND_RISQUE_ELEVE_SECONDES).toBe(30 * 24 * 3600);
+    expect(antiRebondParDefaut('risque_eleve', 3600)).toBe(ANTI_REBOND_RISQUE_ELEVE_SECONDES);
+    for (const k of AUTOMATION_TRIGGER_KINDS.filter((x) => x !== 'risque_eleve')) expect(antiRebondParDefaut(k, 3600), k).toBe(3600);
   });
 });
 

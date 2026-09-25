@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
-import { isAutomationTriggerKind, keywordsOf } from '../automation/match';
+import { AUTOMATION_TRIGGER_KINDS, isAutomationTriggerKind, keywordsOf } from '../automation/match';
 import { coerceConfigAvantDate, UNITES_DELAI, DELAI_MAX_MINUTES } from '../automation/avant-date';
 import type { AutomationRow, AutomationTriggerKind } from '../automation/match';
 import type { AutomationInput } from '../automation/store.pg';
@@ -18,7 +18,18 @@ export interface AutomationRouteDeps {
   getById(id: string, tenantId: string): Promise<AutomationRow | null>;
 }
 
-/** Borne haute de l'anti-rebond : 7 jours, comme le gel de contrôle. Au-delà ce n'est plus un anti-rebond. */
+/**
+ * Les types qu'on crée DEPUIS CET ÉCRAN : tous ceux du chemin chaud, moins `webhook`, que son propre écran possède
+ * (cf. `validateTriggerConfig`). DÉRIVÉ de `AUTOMATION_TRIGGER_KINDS` : le message d'erreur écrit à la main avait
+ * cessé de citer la moitié des types, dont `risque_eleve`.
+ */
+const TYPES_CREABLES_ICI = AUTOMATION_TRIGGER_KINDS.filter((k) => k !== 'webhook');
+
+/**
+ * Borne haute de l'anti-rebond RÉGLÉ : 7 jours, comme le gel de contrôle. Au-delà ce n'est plus un anti-rebond.
+ * ⚠️ Le DÉFAUT d'une automation « risque élevé » sans réglage est de 30 jours (`antiRebondParDefaut`) : il
+ * s'applique au déclenchement, sans passer par cette borne.
+ */
 const MAX_COOLDOWN = 7 * 24 * 3600;
 /** Plancher pour « conversation analysée » : doit rester au-dessus du délai d'inactivité qui déclenche une
  *  analyse (25 min par défaut), sinon le scénario et l'analyse se relancent mutuellement. Voir `refuseIfLoopy`. */
@@ -100,7 +111,9 @@ function validateTriggerConfig(kind: AutomationTriggerKind, cfg: Record<string, 
     // une automation active que son propre écran ne montre pas, et qu'aucun webhook ne détient.
     return 'un déclencheur « webhook » se configure depuis l’écran Tools > Webhooks';
   }
-  return null; // new_contact : aucune config
+  // new_contact et risque_eleve : aucune config, elle est ignorée. ⚠️ Tout type ajouté à
+  // `AUTOMATION_TRIGGER_KINDS` arrive ICI s'il n'a pas sa branche : il faut alors se demander ce qu'il exige.
+  return null;
 }
 
 /** Corps commun création/modification. Renvoie l'erreur (400) ou l'input normalisé. */
@@ -114,7 +127,7 @@ function parseBody(body: unknown, partial: boolean): { error: string } | { input
   }
   if (b.triggerKind !== undefined || !partial) {
     if (!isAutomationTriggerKind(b.triggerKind)) {
-      return { error: "triggerKind invalide ('keyword' | 'new_contact' | 'tag_added' | 'conversation_analyzed')" };
+      return { error: `triggerKind invalide (${TYPES_CREABLES_ICI.map((k) => `'${k}'`).join(' | ')})` };
     }
     out.triggerKind = b.triggerKind;
   }

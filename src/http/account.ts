@@ -78,6 +78,11 @@ export interface AccountStatusResponse {
   hubspotPausedAt: string | null;
   /** Portail HubSpot lié au tenant (mmhs.tenant_portals). Sert à afficher le portail branché ou le CTA « Connecter HubSpot ». */
   hubspotPortal: HubspotPortalLink;
+  /**
+   * Instant où le numéro a été DÉLIÉ de l'espace (migration 0180, ISO). `null` = relié, ou aucun numéro.
+   * Délié, le numéro reste affiché : c'est ce qui permet de le relier d'un clic depuis l'Accueil.
+   */
+  delieLe: string | null;
   status: ReturnType<typeof computeAccountStatus>;
 }
 
@@ -163,6 +168,7 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
         hubspotConnected: false,
         hubspotPausedAt: null,
         hubspotPortal,
+        delieLe: null,
         status: { dot: 'grey', label: 'Aucun numéro', reason: "Aucun numéro WhatsApp n'est rattaché à ce compte." },
       };
       return reply.code(200).send(body);
@@ -246,7 +252,12 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
       hubspotConnected: pn.hubspotConnected,
       hubspotPausedAt: pn.hubspotPausedAt,
       hubspotPortal,
-      status: computeAccountStatus(signals),
+      delieLe: pn.delieLe,
+      // ⚠️ Délié, la pastille le DIT, au lieu d'un « opérationnel » vrai chez Meta et faux chez nous : le numéro
+      // marche, mais cet espace n'envoie ni ne reçoit plus rien par lui.
+      status: pn.delieLe
+        ? { dot: 'grey', label: 'Numéro délié', reason: 'Numéro délié de cet espace : aucun message ne part, et les messages reçus ne sont pas enregistrés.' }
+        : computeAccountStatus(signals),
     };
     return reply.code(200).send(body);
   });

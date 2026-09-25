@@ -493,9 +493,13 @@ export function registerOps(
    *
    * 🔴 UNE ÉCRITURE MÉTIER DE PLUS SUR CETTE SURFACE, ET ELLE PORTE SA JUSTIFICATION : c'est le balayage de nuit,
    * lancé maintenant, pour l'essai réel du lot et le dépannage. Il écrit le risque des fiches, émet les signaux et
-   * peut DÉCLENCHER les automations « risque élevé » (avec le même plafond de 200 par passage et par espace que la
-   * nuit) : un geste d'exploitation, qu'aucun compte de la console ne doit pouvoir faire. Rejoué, il ne redéclenche
-   * rien : un passage en élevé déjà écrit n'en est plus un.
+   * peut DÉCLENCHER les automations « risque élevé » : un geste d'exploitation, qu'aucun compte de la console ne
+   * doit pouvoir faire. Rejoué, il ne redéclenche rien : un passage en élevé déjà écrit n'en est plus un.
+   *
+   * 🔴 LE PLAFOND EST CELUI DE LA JOURNÉE, PARTAGÉ AVEC LA NUIT : 200 par jour (Paris) et par espace, et ce que la
+   * nuit a déjà déclenché compte (`dejaDeclenches` dans le bilan). Il s'ajoutait auparavant aux 200 de la nuit.
+   * Et l'automation part à l'OUVERTURE de l'espace (`departLe` dans le bilan) : tout de suite pendant les heures
+   * d'ouverture, sinon à la suivante, jamais pendant la nuit.
    *
    * ⚠️ LA NOTE EST EXIGÉE, comme sur les autres écritures : le jeton est partagé, c'est la seule trace de qui a
    * lancé le balayage et pourquoi. ⚠️ Il tourne DANS la requête : sur un gros espace, compter en dizaines de

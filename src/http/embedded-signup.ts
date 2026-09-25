@@ -69,6 +69,21 @@ export interface EmbeddedSignupRouteDeps {
   enregistrerNumero(tenantId: string, phoneNumberId: string, pin: string): Promise<void>;
   /** Conserve le PIN, chiffré par le câblage, SEULEMENT après que Meta l'a accepté. */
   sauverPin(tenantId: string, pin: string): Promise<void>;
+
+  // ----- « Délier » et « Relier » : l'interrupteur du numéro sur l'Accueil (migration 0180) -----
+  //
+  // 🔴 REQUISES, pour la même raison que les précédentes. Et AUCUNE NE PARLE À META : délier est un état de
+  // CET espace, le numéro reste relié à son compte WhatsApp et son jeton reste chiffré chez nous.
+
+  /**
+   * Délie le numéro de l'espace et met en pause ses campagnes WhatsApp en cours ou programmées
+   * (`PgNumeroDelieStore.delier`). `null` = l'espace n'a aucun numéro.
+   */
+  delierNumero(tenantId: string): Promise<{ delieLe: string; campagnesEnPause: number } | null>;
+  /**
+   * Relie le numéro et lève les pauses `numero_delie` (`PgNumeroDelieStore.relier`). `null` = aucun numéro.
+   */
+  relierNumero(tenantId: string): Promise<{ campagnesReprises: number; campagnesReprogrammees: number } | null>;
 }
 
 /**
@@ -409,5 +424,42 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
       verificationFaite: etat.codeVerificationStatus !== 'VERIFIED',
     });
     return reply.code(200).send({ actif: true });
+  });
+
+  /**
+   * DÉLIE le numéro de l'espace : l'interrupteur « Numéro WhatsApp » de l'Accueil, éteint (migration 0180).
+   *
+   * Ce que ça arrête, et c'est ce que dit la confirmation de l'écran : aucun envoi ne part (le point de passage
+   * des envois le refuse, `NumeroDelieError`), les campagnes WhatsApp en cours ou programmées passent en pause
+   * `numero_delie`, et les messages reçus sur ce numéro ne sont plus enregistrés (le webhook les écarte).
+   *
+   * 🔴 RIEN N'EST TOUCHÉ CHEZ META, ni supprimé chez nous : le numéro, son compte, son jeton chiffré et
+   * l'historique restent. C'est ce qui rend « Relier » possible d'un clic, sans refaire la fenêtre Meta.
+   *
+   * ⚠️ ADMIN SEULEMENT : le module est monté derrière `g.admin` (`src/server.ts`), comme `/numero/activer`.
+   */
+  app.post('/tenants/:tenantId/numero/delier', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const r = await deps.delierNumero(tenant);
+    if (r === null) return reply.code(404).send({ error: 'aucun numéro rattaché à cet espace' });
+    // L'identifiant de l'ESPACE en cible : délier porte sur tous ses numéros, et le numéro affiché est une donnée
+    // personnelle que ce journal, jamais purgé, n'a pas à porter.
+    await journal(tenant, req, 'numero.delie', { kind: 'tenant', id: tenant }, { campagnesEnPause: r.campagnesEnPause });
+    return reply.code(200).send({ delie: true, delieLe: r.delieLe, campagnesEnPause: r.campagnesEnPause });
+  });
+
+  /**
+   * RELIE le numéro : l'interrupteur rallumé, SANS confirmation (plan du 2026-09-25 : éteindre se confirme,
+   * rallumer non). Les campagnes mises en pause par « Délier » repartent : `running` pour celles qui tournaient,
+   * reprises dans la minute par le balayage des campagnes gelées, `scheduled` pour celles qui étaient programmées.
+   */
+  app.post('/tenants/:tenantId/numero/relier', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const r = await deps.relierNumero(tenant);
+    if (r === null) return reply.code(404).send({ error: 'aucun numéro rattaché à cet espace' });
+    await journal(tenant, req, 'numero.relie', { kind: 'tenant', id: tenant }, { ...r });
+    return reply.code(200).send({ relie: true, ...r });
   });
 }

@@ -4,6 +4,7 @@ import type { ArriveesPubDeps } from '../src/webhooks/arrivees-pub';
 import type { RoutagePubDeps } from '../src/webhooks/routage-pub';
 import type { SignalAccuse } from '../src/webhooks/delivery';
 import type { SignalReponse } from '../src/webhooks/inbound';
+import type { NumerosDelies } from '../src/webhooks/numeros-delies';
 
 /**
  * Les dépendances que `WebhookJobDeps` rend obligatoires (lot 1 des publicités Click-to-WhatsApp, puis le
@@ -19,6 +20,9 @@ export const aucunEchecLibre: EchecsLibresSink = { noter: async () => null };
 export const aucunSignalAccuse: SignalAccuse = async () => {};
 export const aucunSignalReponse: SignalReponse = async () => {};
 export const aucuneArriveePub: ArriveesPubDeps = { phoneNumberTenant: async () => null, enregistrer: async () => 'ecrite' };
+
+/** Aucun numéro délié (migration 0180) : le test ne porte pas sur le geste de l'Accueil, et le DIT. */
+export const aucunNumeroDelie: NumerosDelies = async () => new Set();
 
 /**
  * Aucun routage publicitaire : `phoneNumberTenant` rend `null`, donc la boucle s'arrête au premier message

@@ -1,7 +1,7 @@
 ---
 ecran: automations
 source_section: Automation (menu « Automation ») | Rappels avant ou après une date (menu Automation) | Automatisations (menu « Scénario », ex-« Flow »)
-source_empreinte: 8ee8bd | 08adbf | 650781
+source_empreinte: 424049 | 08adbf | 650781
 ---
 # Lancer un scénario tout seul, sans campagne
 
@@ -29,7 +29,8 @@ clair, le scénario visé, et si c'est allumé ou non.
   l'écran Publicités** : ces campagnes-là disent elles-mêmes qui répond à leurs prospects.
 - **Le risque de désengagement d'un contact devient élevé** : rien à régler. Le calcul de nuit fait passer un
   contact en risque élevé, et le scénario part pour lui, une seule fois : un contact qui reste en risque élevé
-  ne relance rien la nuit suivante.
+  ne relance rien la nuit suivante, et un même contact ne relance pas le scénario avant 30 jours, même s'il
+  ressort puis repasse en risque élevé.
 
 Trois de ces déclencheurs demandent une précision, parce qu'ils surprennent :
 
@@ -51,9 +52,11 @@ continuez de gérer dans le Gestionnaire de Meta, elles, ne changent pas : leurs
 automations de cet écran, comme avant.
 
 **Sur le risque élevé**, le scénario part vers des contacts qui ne vous ont pas écrit : il doit commencer
-par un envoi de modèle. Comme le calcul porte sur toute votre base en une nuit, il est plafonné à 200
-contacts par nuit ; au-delà, le niveau est bien noté sur leur fiche, mais le scénario ne part pas pour eux.
-Un contact désabonné ou bloqué ne déclenche jamais rien.
+par un envoi de modèle. Il ne part jamais la nuit : le calcul se fait vers 3 heures, et le scénario attend
+l'ouverture de votre espace (vos heures d'ouverture dans Paramètres, du lundi au vendredi de 9 heures à
+18 heures tant que vous n'avez rien réglé). Comme le calcul porte sur toute votre base, il est plafonné à
+200 contacts par jour ; au-delà, le niveau est bien noté sur leur fiche, mais le scénario ne part pas pour
+eux. Un contact désabonné ou bloqué ne déclenche jamais rien.
 
 **Une automation neuve est toujours créée éteinte.** Vous la relisez, puis vous l'allumez d'un clic sur son
 badge. Pour changer son déclencheur ou son scénario, vous la supprimez et vous la recréez : c'est

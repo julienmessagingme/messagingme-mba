@@ -326,3 +326,24 @@ export function isInCooldown(
   if (seconds <= 0) return false;
   return now - lastFiredAt.getTime() < seconds * 1000;
 }
+
+/**
+ * 🔴 30 JOURS PAR CONTACT, L'ANTI-REBOND PAR DÉFAUT DU DÉCLENCHEUR « RISQUE ÉLEVÉ » (relecture du lot 7, 2026-09-25).
+ *
+ * La grille du risque n'a pas d'hystérésis : un contact qui oscille autour d'un seuil (59, 61, 58, 62) PASSE en
+ * élevé à chaque remontée, et chaque passage relançait le scénario de relance, c'est-à-dire un template facturé
+ * de plus, parfois deux fois la même semaine. Le défaut de l'instance (une heure) est fait pour un client qui
+ * répète un mot-clé ; ici, l'événement ne peut revenir qu'une fois par nuit, donc il ne protégeait de rien.
+ *
+ * ⚠️ UN DÉFAUT, PAS UN PLANCHER : il remplace le défaut de l'instance quand l'automation n'a rien réglé
+ * (`cooldownSeconds` null, ce que l'écran Automation crée toujours). Un anti-rebond posé EXPLICITEMENT par l'API
+ * (7 jours au plus, 0 pour aucun) reste le choix du client et l'emporte, comme partout ailleurs. Appliqué au
+ * DÉCLENCHEMENT et pas écrit à la création : il vaut ainsi pour les automations déjà créées, sans migration, et
+ * ne se heurte pas à la borne de 7 jours de la route.
+ */
+export const ANTI_REBOND_RISQUE_ELEVE_SECONDES = 30 * 24 * 3600;
+
+/** L'anti-rebond qu'une automation SANS réglage propre reçoit, selon son déclencheur. */
+export function antiRebondParDefaut(kind: AutomationTriggerKind, defautInstanceSecondes: number): number {
+  return kind === 'risque_eleve' ? ANTI_REBOND_RISQUE_ELEVE_SECONDES : defautInstanceSecondes;
+}

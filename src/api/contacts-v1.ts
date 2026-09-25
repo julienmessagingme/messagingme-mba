@@ -93,7 +93,9 @@ export interface FicheApi {
    * Le risque de désengagement (lot 7, spec § 19), calculé chaque nuit. `null` = jamais calculé (la fiche n'a
    * jamais été sollicitée, ou le balayage n'est pas encore passé). `level: 'inconnu'` va toujours avec
    * `score: null` : aucun message ne lui a été délivré sur 90 jours. `reasons` : les trois raisons les plus
-   * lourdes, en codes. `computedAt` : la dernière fois que le calcul a été fait, qu'il ait changé ou non.
+   * lourdes, en codes. `computedAt` : quand la fiche est passée à CE niveau. Le calcul repasse chaque nuit, mais
+   * cette date ne bouge qu'au changement de niveau ; le score et les raisons, eux, sont toujours à jour (relecture
+   * du lot 7 : réécrire chaque fiche chaque nuit pour dater une vérification coûtait une version morte par fiche).
    */
   engagementRisk: EngagementRisk | null;
   createdAt: string;

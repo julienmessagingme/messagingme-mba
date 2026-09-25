@@ -22,8 +22,9 @@ describe('isolation du risque de désengagement', () => {
   const rs = requetes();
 
   it('le balayage trouve toutes les requêtes du dépôt', () => {
-    // espaces, espaceExiste, contactsAEvaluer, faits, ecrire. Moins : une requête échappe au balayage.
-    expect(rs).toHaveLength(5);
+    // espaces, espaceExiste, contactsAEvaluer, faits, ecrire, declenchablesDepuis. Moins : une requête échappe au
+    // balayage.
+    expect(rs).toHaveLength(6);
   });
 
   it('🔴 chaque table à `tenant_id` est filtrée SUR SON ALIAS par `= $1`', () => {
@@ -36,8 +37,8 @@ describe('isolation du risque de désengagement', () => {
         expect(r, `${table} ${alias} sans son filtre d’espace`).toContain(`${alias}.tenant_id = $1`);
       }
     }
-    // contacts x3, conversations x2, campaigns x2, tracked_link_clicks, conversation_analysis, rcs_agents.
-    expect(vues).toBe(10);
+    // contacts x4, conversations x2, campaigns x2, tracked_link_clicks, conversation_analysis, rcs_agents.
+    expect(vues).toBe(11);
   });
 
   it('🔴 les tables SANS `tenant_id` n’entrent que par une jointure qui filtre', () => {
@@ -53,7 +54,7 @@ describe('isolation du risque de désengagement', () => {
 
   it('🔴 l’écriture ne touche que des fiches de l’espace, et relit leur niveau sous verrou', () => {
     const ecriture = rs.find((r) => /update contacts c/.test(r))!;
-    expect(ecriture).toMatch(/where c\.tenant_id = \$1 and c\.deleted_at is null\s+for update of c/);
+    expect(ecriture).toMatch(/where c\.tenant_id = \$1 and c\.deleted_at is null\s+and \([^)]*\) is distinct from \([^)]*\)\s+for update of c/);
     expect(ecriture).toMatch(/where c\.tenant_id = \$1 and c\.id = v\.id/);
   });
 

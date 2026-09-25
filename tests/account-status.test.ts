@@ -17,6 +17,7 @@ function rec(over: Partial<PhoneNumberRecord> = {}): PhoneNumberRecord {
     nameStatus: null, codeVerificationStatus: null, throughputLevel: null, verifiedName: null,
     wabaHealthStatus: null, accountReviewStatus: null, businessVerificationStatus: null,
     marketingMessagesLiteApiStatus: null, ownerBusinessName: null, hubspotConnected: true, hubspotPausedAt: null,
+    delieLe: null,
     ...over,
   };
 }
@@ -212,6 +213,25 @@ describe('route account-status', () => {
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
     expect(res.json<{ status: { dot: string } }>().status.dot).toBe('red');
     expect(saved).toHaveLength(0);
+    await server.close();
+  });
+
+  it('🔴 numéro DÉLIÉ (migration 0180) : il reste affiché, avec sa date, et la pastille le dit malgré un pull vert', async () => {
+    const { server } = app({ getPhoneNumber: async () => rec({ delieLe: '2026-09-25T10:00:00.000Z' }) });
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
+    const body = res.json<{ hasNumber: boolean; delieLe: string | null; status: { dot: string; label: string } }>();
+    // Toujours là : c'est ce qui permet de le relier d'un clic.
+    expect(body.hasNumber).toBe(true);
+    expect(body.delieLe).toBe('2026-09-25T10:00:00.000Z');
+    expect(body.status).toMatchObject({ dot: 'grey', label: 'Numéro délié' });
+    await server.close();
+  });
+
+  it('numéro relié : `delieLe` à null, la pastille de Meta', async () => {
+    const { server } = app();
+    const body = (await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) })).json<{ delieLe: string | null; status: { dot: string } }>();
+    expect(body.delieLe).toBeNull();
+    expect(body.status.dot).toBe('green');
     await server.close();
   });
 

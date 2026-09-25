@@ -4,7 +4,7 @@ import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgRisqueStore } from '../../src/engagement/risque.pg';
 import { calculerRisque, debutFenetre } from '../../src/engagement/risque';
-import { balayerRisqueEspace, type DepsBalayageRisque } from '../../src/engagement/balayage';
+import { balayerRisqueEspace, debutDuJour, type DepsBalayageRisque } from '../../src/engagement/balayage';
 import { PgContactStore } from '../../src/crm/contact-store.pg';
 import type { Signal } from '../../src/signaux/types';
 
@@ -145,7 +145,9 @@ describe.skipIf(!url)('risque de désengagement (Postgres)', () => {
       contactsAEvaluer: (t, d) => store.contactsAEvaluer(t, d),
       faits: (t, i, d, m) => store.faits(t, i, d, m),
       ecrire: (t, l, c) => store.ecrire(t, l, c),
+      declenchablesDepuis: (t, d) => store.declenchablesDepuis(t, d),
       automationRisqueActive: async () => true,
+      horairesOuvres: async () => null,
       publierRisqueEleve: async (_t, waId) => { publies.push(waId); },
       emettreSignaux: async (_t, s) => { signaux.push(...s); },
       maintenant: () => maintenant,
@@ -160,11 +162,17 @@ describe.skipIf(!url)('risque de désengagement (Postgres)', () => {
     expect(fiche).toMatchObject({ risqueNiveau: 'eleve', risqueScore: 70, risqueRaisons: ['silence_60j', 'sans_reponse', 'non_lu'] });
     expect(fiche?.risqueCalculeLe).toBe(maintenant.toISOString());
 
+    // 🔴 LE PLAFOND DU JOUR relit ce passage : le décrocheur compte, le désabonné non (STOP), l'autre espace non plus.
+    expect(await store.declenchablesDepuis(A, debutDuJour(maintenant))).toBe(1);
+    expect(await store.declenchablesDepuis(A, new Date(maintenant.getTime() + 1))).toBe(0);
+    expect(await store.declenchablesDepuis(B, debutDuJour(maintenant))).toBe(0);
+
     const b2 = await balayerRisqueEspace(A, { ...deps, maintenant: () => new Date(maintenant.getTime() + 1000) });
-    expect(b2).toMatchObject({ evalues: 6, transitions: 0, declenches: 0 });
+    // Le second passage du jour sait que le premier a déjà déclenché.
+    expect(b2).toMatchObject({ evalues: 6, transitions: 0, declenches: 0, dejaDeclenches: 1 });
     expect(publies).toHaveLength(1);
-    // Réécrite même inchangée : la date dit quand la valeur a été vérifiée.
-    expect((await new PgContactStore(pool).lireFicheApi(A, ids.decroche!))?.risqueCalculeLe).toBe(new Date(maintenant.getTime() + 1000).toISOString());
+    // 🔴 INCHANGÉE, ELLE N'EST PAS RÉÉCRITE : la date reste celle du passage à ce niveau (« depuis le »).
+    expect((await new PgContactStore(pool).lireFicheApi(A, ids.decroche!))?.risqueCalculeLe).toBe(maintenant.toISOString());
   });
 
   it('🔴 un espace ne lit ni n’écrit la fiche d’un autre', async () => {
@@ -203,6 +211,37 @@ describe.skipIf(!url)('risque de désengagement (Postgres)', () => {
       .rejects.toMatchObject({ code: '23514' });
     await expect(pool.query(`update contacts set risque_niveau = 'eleve', risque_score = 101, risque_calcule_le = now() where id = $1`, [ids.jamais]))
       .rejects.toMatchObject({ code: '23514' });
+  });
+
+  /**
+   * 🔴 LA GARDE DE L'ÉCRITURE (relecture du lot 7) : seule une fiche dont la VALEUR change est réécrite, et la date
+   * ne bouge qu'avec le NIVEAU. Joué sur une fiche que rien ne relit ensuite (`repond`, en faible depuis le
+   * balayage), pour ne pas changer l'état dont dépendent les cas précédents.
+   */
+  it('🔴 un score qui change au même niveau est réécrit SANS toucher la date ; un changement de niveau la déplace et reste une transition', async () => {
+    const lire = async () => (await pool.query<{ risque_niveau: string; risque_score: number; risque_raisons: string[]; risque_calcule_le: Date; xmin: string }>(
+      'select risque_niveau, risque_score, risque_raisons, risque_calcule_le, xmin::text as xmin from contacts where id = $1', [ids.repond],
+    )).rows[0]!;
+    const avant = await lire();
+    // L'état laissé par le balayage (cf. la lecture groupée plus haut).
+    expect([avant.risque_niveau, avant.risque_score, avant.risque_raisons]).toEqual(['faible', 15, ['non_lu']]);
+    const t1 = new Date(maintenant.getTime() + 60_000);
+    const t2 = new Date(maintenant.getTime() + 120_000);
+    const t3 = new Date(maintenant.getTime() + 180_000);
+
+    // Même valeur : pas réécrite (`xmin`, la transaction qui a écrit la version courante de la ligne, ne bouge pas).
+    expect(await store.ecrire(A, [{ contactId: ids.repond!, risque: { niveau: 'faible', score: 15, raisons: ['non_lu'] } }], t1)).toEqual([]);
+    expect((await lire()).xmin).toBe(avant.xmin);
+
+    // Même niveau, score et raisons différents : réécrite, date inchangée, aucune transition.
+    expect(await store.ecrire(A, [{ contactId: ids.repond!, risque: { niveau: 'faible', score: 25, raisons: ['sans_reponse'] } }], t2)).toEqual([]);
+    const apres = await lire();
+    expect([apres.risque_score, apres.risque_raisons, apres.risque_calcule_le.toISOString()]).toEqual([25, ['sans_reponse'], avant.risque_calcule_le.toISOString()]);
+
+    // Changement de niveau : la transition est rendue, et la date devient celle de ce passage.
+    expect(await store.ecrire(A, [{ contactId: ids.repond!, risque: { niveau: 'moyen', score: 40, raisons: ['silence_30j', 'sans_reponse'] } }], t3))
+      .toEqual([{ contactId: ids.repond, waId: '33600000904', ancien: 'faible', nouveau: 'moyen', score: 40, raisons: ['silence_30j', 'sans_reponse'] }]);
+    expect((await lire()).risque_calcule_le.toISOString()).toBe(t3.toISOString());
   });
 
   it('l’index du filtre existe, valide, avec son prédicat', async () => {

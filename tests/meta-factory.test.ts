@@ -3,6 +3,9 @@ import { MetaClientFactory } from '../src/meta/factory';
 import { MetaCredentialsResolver, type CredentialsResolverDeps } from '../src/meta/credentials';
 import type { HttpTransport, HttpResponse } from '../src/meta/http';
 
+/** Aucun numéro délié (migration 0180) : ces tests ne portent pas sur le geste de l'Accueil, et le DISENT. */
+const jamaisDelie = async (): Promise<boolean> => false;
+
 // Transport factice : capture le header Authorization de chaque envoi, réponse programmable (pour simuler une 401).
 class FakeTransport implements HttpTransport {
   readonly bearers: string[] = [];
@@ -31,7 +34,7 @@ function resolver(over: {
 }
 
 function factory(r: MetaCredentialsResolver, transport: HttpTransport) {
-  return new MetaClientFactory({ resolver: r, transport, version: 'v25.0', marketingViaLite: false });
+  return new MetaClientFactory({ resolver: r, transport, version: 'v25.0', marketingViaLite: false, numeroDelie: jamaisDelie });
 }
 
 describe('MetaClientFactory (B1 : câblage par tenant)', () => {
@@ -120,7 +123,7 @@ describe('MetaClientFactory : le frein par numéro est réellement câblé', () 
     const t = new FakeTransport();
     const { resolver: r } = resolver({ tenants: { t1: 'w1' }, creds: { w1: { businessTokenEnc: 'enc:TOK', tokenStatus: 'active' } } });
     const espion = arbitreEspion();
-    const f = new MetaClientFactory({ resolver: r, transport: t, version: 'v25.0', marketingViaLite: false, arbitreDebit: espion.arbitre });
+    const f = new MetaClientFactory({ resolver: r, transport: t, version: 'v25.0', marketingViaLite: false, arbitreDebit: espion.arbitre, numeroDelie: jamaisDelie });
 
     const client = await f.clientForTenant('t1', 'pn-42');
     await client.sendText('33600000001', 'bonjour');
@@ -134,7 +137,7 @@ describe('MetaClientFactory : le frein par numéro est réellement câblé', () 
     const t = new FakeTransport();
     const { resolver: r } = resolver({ tenants: { t1: 'w1' }, creds: { w1: { businessTokenEnc: 'enc:TOK', tokenStatus: 'active' } } });
     const espion = arbitreEspion();
-    const f = new MetaClientFactory({ resolver: r, transport: t, version: 'v25.0', marketingViaLite: false, arbitreDebit: espion.arbitre });
+    const f = new MetaClientFactory({ resolver: r, transport: t, version: 'v25.0', marketingViaLite: false, arbitreDebit: espion.arbitre, numeroDelie: jamaisDelie });
 
     // Deux constructions distinctes, comme le font le moteur de campagne et la route d'inbox.
     const campagne = await f.senderForTenant('t1', 'pn-42');

@@ -85,6 +85,13 @@ export type AuditAction =
   | 'numero.connecte'
   /** Le numéro a été ACTIVÉ depuis la console (vérification par code si besoin, puis register Cloud API). */
   | 'numero.active'
+  /**
+   * Le numéro a été DÉLIÉ puis RELIÉ depuis l'Accueil (migration 0180). Ce n'est pas `numero.deconnecte` : rien
+   * n'est détaché chez Meta ni supprimé chez nous, l'espace cesse seulement d'envoyer et d'enregistrer. La cible
+   * est l'ESPACE (le geste porte sur tous ses numéros), le détail ne porte que des COMPTES de campagnes.
+   */
+  | 'numero.delie'
+  | 'numero.relie'
   | 'contact.exporte'
   /**
    * LA CONNEXION PUBLICITAIRE (2026-09-23, lot 2 des publicités Click-to-WhatsApp).

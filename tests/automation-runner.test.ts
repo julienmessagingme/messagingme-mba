@@ -62,6 +62,28 @@ describe('runAutomations', () => {
     expect(trace.started).toEqual([{ workflowId: 'wf1', startNodeId: null, windowOpen: false, reprendLaMain: false }]);
   });
 
+  /**
+   * 🔴 L'ANTI-REBOND DU RISQUE ÉLEVÉ EST DE 30 JOURS PAR DÉFAUT (relecture du lot 7). La grille n'a pas
+   * d'hystérésis : un contact qui oscille autour du seuil repasse en élevé, et relançait le scénario à chaque fois.
+   */
+  it('🔴 risque élevé sans réglage : 30 jours d’anti-rebond par contact, pas l’heure de l’instance', async () => {
+    const risque = auto({ triggerKind: 'risque_eleve', triggerConfig: {} });
+    const JOUR = 86_400_000;
+    const il10Jours = make([risque], { lastFiredAt: async () => new Date(T - 10 * JOUR) });
+    expect(await runAutomations('t1', { kind: 'risque_eleve', waId: '33611' }, il10Jours.deps)).toBe(0);
+    expect(il10Jours.trace.started).toEqual([]);
+    const il31Jours = make([risque], { lastFiredAt: async () => new Date(T - 31 * JOUR) });
+    expect(await runAutomations('t1', { kind: 'risque_eleve', waId: '33611' }, il31Jours.deps)).toBe(1);
+  });
+
+  it('un anti-rebond RÉGLÉ sur l’automation l’emporte sur ces 30 jours ; les autres déclencheurs gardent le défaut de l’instance', async () => {
+    const DEUX_HEURES = 2 * 3600_000;
+    const regle = make([auto({ triggerKind: 'risque_eleve', triggerConfig: {}, cooldownSeconds: 3600 })], { lastFiredAt: async () => new Date(T - DEUX_HEURES) });
+    expect(await runAutomations('t1', { kind: 'risque_eleve', waId: '33611' }, regle.deps)).toBe(1);
+    const motCle = make([auto()], { lastFiredAt: async () => new Date(T - DEUX_HEURES) });
+    expect(await runAutomations('t1', MSG, motCle.deps)).toBe(1);
+  });
+
   it('🔴 le plafond horaire de l’automation s’applique aussi au risque élevé', async () => {
     const { deps, trace } = make([auto({ triggerKind: 'risque_eleve', triggerConfig: {}, maxFiresPerHour: 3 })], {
       firedSince: async () => 3,

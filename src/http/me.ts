@@ -15,6 +15,14 @@ export function registerMe(app: FastifyInstance, deps: MeRouteDeps, garde: Guard
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const userId = req.auth?.userId;
     if (!userId) return reply.code(401).send({ error: 'authentification requise' });
+    /**
+     * 🔴 LA SESSION D'OBSERVATION DE `/ops` N'A PAS DE COMPTE DANS L'ESPACE, et on ne la cherche pas en base.
+     * Son identité est `ops-observation`, qui n'est pas un uuid : lue dans `users`, elle faisait lever la
+     * comparaison `where id = $1` sur une colonne uuid (`22P02`), donc un 500 sur l'Accueil de chaque
+     * observation. Même défaut que la pastille de non-lus, corrigé le matin même dans `PgInboxStore`. La réponse
+     * garde la forme de toutes les autres : pas de nom (l'Accueil dit « Bonjour »), et le rôle de la session.
+     */
+    if (req.auth?.impersonated === true) return reply.code(200).send({ email: '', name: null, role: req.auth.role });
     const u = await deps.getUser(userId);
     if (!u) return reply.code(404).send({ error: 'utilisateur inconnu' });
     return reply.code(200).send({ email: u.email, name: u.name, role: u.role });

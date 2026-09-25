@@ -26,6 +26,11 @@ export interface ChannelsMeRouteDeps {
   getSecrets(tenantId: string): Promise<Connexion | null>;
   upsertConnection(tenantId: string, c: Connexion): Promise<void>;
   markVerified(tenantId: string): Promise<void>;
+  /**
+   * DEBRANCHE la chaine : oublie les identifiants, rien d autre (`PgChannelsMeConnectionStore.supprimer`).
+   * `true` = une connexion existait. Requise : le cablage qui l oublierait ne compile pas.
+   */
+  supprimerConnection(tenantId: string): Promise<boolean>;
 
   getOrganisation(cx: Connexion): Promise<Organisation>;
   listChannels(cx: Connexion): Promise<MessageChannel[]>;
@@ -208,6 +213,24 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     await deps.upsertConnection(tenant, { orgId, channelId, apiKey, secret });
     // On relit la projection PUBLIQUE : la reponse ne porte donc jamais les secrets qu'on vient d'ecrire.
     return reply.code(200).send({ connection: await deps.getConnection(tenant) });
+  });
+
+  /**
+   * DEBRANCHER la chaine : l interrupteur « Chaine » de l Accueil, eteint (plan du 2026-09-25).
+   *
+   * 🔴 LES LIENS ET LES PUBLICATIONS DEJA PARUES RESTENT, ET LEURS BOUTONS AUSSI. Un post publie circule pour
+   * toujours : son bouton `wa.me` ne passe pas par la chaine mais par notre numero, et c est l automation
+   * compagnon du lien qui demarre le scenario. Debrancher ne fait qu oublier les identifiants : plus de
+   * publication ni de lecture de la chaine tant qu on ne les a pas ressaisis.
+   *
+   * Rejouable : debrancher une chaine deja debranchee rend 200 avec `supprimee: false`, jamais une erreur.
+   */
+  app.delete(`${base}/connection`, opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    const supprimee = await deps.supprimerConnection(tenant);
+    return reply.code(200).send({ ok: true, supprimee });
   });
 
   app.post(`${base}/connection/test`, opts, async (req, reply) => {

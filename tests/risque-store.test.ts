@@ -46,6 +46,49 @@ describe('PgRisqueStore.ecrire', () => {
     expect(await new PgRisqueStore(p).faits(T, [], MAINTENANT, MAINTENANT)).toEqual([]);
     expect(appels).toEqual([]);
   });
+
+  /**
+   * 🔴 SEULES LES FICHES QUI CHANGENT SONT RÉÉCRITES, et la date ne bouge qu'avec le niveau (relecture du lot 7).
+   * Ce qu'une base seule prouve (une fiche inchangée n'est pas touchée) est dans le test d'intégration ; ici, la
+   * FORME de l'instruction, qui se mute : sans la garde, chaque fiche évaluée est réécrite chaque nuit.
+   */
+  it('🔴 la garde porte sur les TROIS colonnes de la valeur, avant le verrou ; la date suit le NIVEAU seul', async () => {
+    const { p, appels } = pool([]);
+    await new PgRisqueStore(p).ecrire(T, [{ contactId: 'c1', risque: { niveau: 'moyen', score: 40, raisons: ['silence_30j'] } }], MAINTENANT);
+    const sql = appels[0]!.sql.replace(/\s+/g, ' ');
+    // Dans `avant`, donc une fiche inchangée n'est ni verrouillée ni réécrite.
+    expect(sql).toMatch(/and \(c\.risque_niveau, c\.risque_score, c\.risque_raisons\) is distinct from \(v\.niveau, v\.score, v\.raisons\) for update of c/);
+    expect(sql).toContain('risque_calcule_le = case when a.risque_niveau is distinct from v.niveau then $3 else c.risque_calcule_le end');
+  });
+
+  it('🔴 une fiche réécrite pour son score ou ses raisons, au même niveau, n’est PAS une transition ; un changement de niveau en est toujours une', async () => {
+    const { p } = pool([
+      { id: 'c1', ancien: 'eleve', phone_e164: '+33612345678', bsuid: null },
+      { id: 'c2', ancien: 'faible', phone_e164: '+33612345679', bsuid: null },
+      { id: 'c3', ancien: 'inconnu', phone_e164: '+33612345670', bsuid: null },
+    ]);
+    const t = await new PgRisqueStore(p).ecrire(T, [
+      { contactId: 'c1', risque: { niveau: 'eleve', score: 90, raisons: ['silence_60j', 'reclamation'] } },
+      { contactId: 'c2', risque: { niveau: 'faible', score: 15, raisons: ['non_lu'] } },
+      { contactId: 'c3', risque: { niveau: 'faible', score: 0, raisons: [] } },
+    ], MAINTENANT);
+    expect(t).toEqual([{ contactId: 'c3', waId: '33612345670', ancien: 'inconnu', nouveau: 'faible', score: 0, raisons: [] }]);
+  });
+});
+
+describe('PgRisqueStore.declenchablesDepuis (le plafond du jour)', () => {
+  it('🔴 compte les passages en élevé de l’espace depuis minuit, hors STOP, blocage et fiche sans adresse', async () => {
+    const { p, appels } = pool([{ n: 37 }]);
+    const minuit = new Date('2026-09-24T22:00:00.000Z');
+    expect(await new PgRisqueStore(p).declenchablesDepuis(T, minuit)).toBe(37);
+    expect(appels[0]!.params).toEqual([T, minuit]);
+    const sql = appels[0]!.sql.replace(/\s+/g, ' ');
+    // L'égalité NUE derrière l'espace et `deleted_at is null` : le contrat de l'index partiel du niveau.
+    expect(sql).toContain(`where c.tenant_id = $1 and c.deleted_at is null and c.risque_niveau = 'eleve'`);
+    expect(sql).toContain('c.risque_calcule_le >= $2');
+    expect(sql).toContain(`not (c.risque_raisons && array['stop', 'bloque']::text[])`);
+    expect(sql).toContain(`(coalesce(c.phone_e164, '') <> '' or c.bsuid is not null)`);
+  });
 });
 
 describe('faitsDeLaLigne', () => {

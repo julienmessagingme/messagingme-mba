@@ -48,7 +48,11 @@ export interface RisqueContact {
   score: number | null;
   /** Les trois raisons les plus lourdes, en codes (`RAISONS_RISQUE`) : la console les traduit. */
   raisons: RaisonRisque[];
-  /** La date du dernier calcul, qu'il ait changé le niveau ou non. */
+  /**
+   * La date à laquelle la fiche est passée à CE niveau (« depuis le »). Le calcul repasse chaque nuit, mais une
+   * fiche dont le niveau ne change pas garde sa date ; son score et ses raisons, eux, sont à jour
+   * (`PgRisqueStore.ecrire`).
+   */
   calculeLe: string;
 }
 

@@ -92,6 +92,26 @@ describe('l’interrupteur HubSpot : lecture et écriture', () => {
     await srv.close();
   });
 
+  /**
+   * 🔴 UNE LECTURE DU PORTAIL EN ÉCHEC REFUSE L'EXTINCTION (relecture du lot 7). Lue comme « pas relié », une panne
+   * de la base laissait éteindre HubSpot par-dessus un portail relié, c'est-à-dire ce que la règle interdit.
+   */
+  it('🔴 ÉTEINDRE QUAND LA LECTURE DU PORTAIL ÉCHOUE : 503, un message qui dit de réessayer, et RIEN n’est écrit', async () => {
+    const { srv, ecrits } = reglages({ initial: true, portail: async () => { throw new Error('connexion perdue'); } });
+    const res = await srv.inject({ method: 'PATCH', url: URL_ACTIF, ...h(tok.admin), payload: { actif: false } });
+    expect(res.statusCode).toBe(503);
+    expect(res.json<{ error: string }>().error).toMatch(/n’a pas été éteint.*Réessayez/);
+    expect(ecrits).toEqual([]);
+    await srv.close();
+  });
+
+  it('allumer ne lit pas le portail : une panne de lecture ne l’empêche pas', async () => {
+    const { srv, ecrits } = reglages({ portail: async () => { throw new Error('connexion perdue'); } });
+    expect((await srv.inject({ method: 'PATCH', url: URL_ACTIF, ...h(tok.admin), payload: { actif: true } })).statusCode).toBe(200);
+    expect(ecrits).toEqual([{ tenant: 't1', actif: true }]);
+    await srv.close();
+  });
+
   it('allumer n’est jamais refusé, portail relié ou pas', async () => {
     const { srv, ecrits } = reglages({ portail: avecPortailHubspot });
     expect((await srv.inject({ method: 'PATCH', url: URL_ACTIF, ...h(tok.admin), payload: { actif: true } })).statusCode).toBe(200);

@@ -43,11 +43,15 @@ export const AUTOMATION_EVENT_QUEUE = 'automation-event';
  * appelant qui aurait passé un groupe l'aurait vu disparaître sans un mot.
  */
 export interface FileDEvenements {
-  enqueue(name: string, data: unknown, opts?: { groupId?: string }): Promise<void>;
+  enqueue(name: string, data: unknown, opts?: { groupId?: string; startAfter?: Date }): Promise<void>;
 }
 
-export async function enfilerEvenementAutomation(queue: FileDEvenements, job: AutomationEventJob): Promise<void> {
-  await queue.enqueue(AUTOMATION_EVENT_QUEUE, job, { groupId: job.tenantId });
+/**
+ * `depart` (2026-09-25) : l'événement n'est pas traité avant cet instant. Un seul appelant le pose, le balayage
+ * du risque, pour que le scénario parte à l'ouverture de l'espace et non à 3 h du matin. Absent = tout de suite.
+ */
+export async function enfilerEvenementAutomation(queue: FileDEvenements, job: AutomationEventJob, depart?: Date): Promise<void> {
+  await queue.enqueue(AUTOMATION_EVENT_QUEUE, job, { groupId: job.tenantId, ...(depart !== undefined ? { startAfter: depart } : {}) });
 }
 
 /**

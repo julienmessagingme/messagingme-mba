@@ -15,6 +15,8 @@ import { RateLimiter } from '../meta/http';
 import { resolveRatePerMinute, SANS_PLAFOND } from './pacing';
 import { BAIL_SECONDES, type CampaignRunLock } from './run-lock';
 import { TokenInvalidError } from '../meta/credentials';
+import { NumeroDelieError } from '../meta/numero-delie';
+import { messageDePause } from './pause';
 import type { Campaign, RunReport } from './types';
 import type { CampaignSender } from './sender';
 
@@ -298,6 +300,21 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
         // Un token révoqué/expiré met la campagne en PAUSE proprement au lieu de laisser le throw remonter,
         // ce qui ferait rejouer le job en boucle par pg-boss. Sur un canal de repli, il le retire seulement.
         if (err instanceof TokenInvalidError) { refuser(canal, 'token WhatsApp révoqué/expiré, reconnectez le numéro'); continue; }
+        /**
+         * 🔴 NUMÉRO DÉLIÉ (migration 0180) : la campagne ENTIÈRE passe en pause `numero_delie`, ÉCRITE en base,
+         * même quand WhatsApp n'est qu'un étage de REPLI. Deux différences voulues avec le jeton mort juste
+         * au-dessus :
+         * - retirer l'étage le ferait échouer, destinataire par destinataire, pour un état qu'un clic défait :
+         *   ce serait perdre du monde pour rien ;
+         * - le statut est écrit, sinon la campagne resterait `running` sans run, et « Relier » ne saurait pas
+         *   qu'elle attend (il ne relance que les pauses `numero_delie`).
+         * On arrive ici quand la campagne a été lancée, reprise ou programmée APRÈS le geste « Délier », qui
+         * met lui-même en pause celles qui tournaient.
+         */
+        if (err instanceof NumeroDelieError) {
+          await deps.campaigns.setStatus(campaign.id, 'paused', { raison: 'numero_delie', reprise: null });
+          return { sent: 0, skipped: 0, failed: 0, paused: true, reason: messageDePause('numero_delie', null, undefined) };
+        }
         throw err;
       }
       continue;

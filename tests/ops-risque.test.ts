@@ -13,7 +13,10 @@ import type { BilanRisque } from '../src/engagement/balayage';
 const OPS = 'ops-secret-token-of-at-least-32-bytes!!';
 const T = '0b8f5c1e-3d2a-4c6b-9e7f-1a2b3c4d5e6f';
 const avecJeton = (t: string) => ({ headers: { 'content-type': 'application/json', 'x-ops-token': t } });
-const BILAN: BilanRisque = { tenantId: T, evalues: 12, transitions: 3, declenches: 1, auDelaDuPlafond: 0, sansDeclencheur: 2, echecsPublication: 0 };
+const BILAN: BilanRisque = {
+  tenantId: T, evalues: 12, transitions: 3, declenches: 1, dejaDeclenches: 0, departLe: '2026-09-25T07:00:00.000Z',
+  auDelaDuPlafond: 0, sansDeclencheur: 2, echecsPublication: 0,
+};
 
 function app(over: Partial<OpsRouteDeps> = {}) {
   const deps: OpsRouteDeps = { getTenantOverview: async () => [], getGlobalDaily: async () => [], getQueueLoad: async () => [], ...over };

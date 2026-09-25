@@ -5,6 +5,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { AutomationRouteDeps } from '../src/http/automations';
 import type { AutomationInput } from '../src/automation/store.pg';
+import { AUTOMATION_TRIGGER_KINDS } from '../src/automation/match';
 
 /**
  * Routes Automation. Une automation ACTIVE écrit à des clients réels sans qu'un humain relise : ces routes
@@ -62,6 +63,25 @@ describe('routes automations', () => {
     const { server, cap } = app();
     await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload: { ...VALID, enabled: true } });
     expect(cap.created[0]?.input.enabled).toBe(true);
+    await server.close();
+  });
+
+  it('un type inconnu : le refus CITE les types qu’on crée ici, « risque élevé » compris, et pas `webhook`', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload: { ...VALID, triggerKind: 'nope' } });
+    expect(res.statusCode).toBe(400);
+    const { error } = res.json<{ error: string }>();
+    for (const k of AUTOMATION_TRIGGER_KINDS.filter((x) => x !== 'webhook')) expect(error, k).toContain(`'${k}'`);
+    expect(error).not.toContain(`'webhook'`);
+    expect(cap.created).toEqual([]);
+    await server.close();
+  });
+
+  it('« risque élevé » se crée sans configuration, et SANS anti-rebond écrit : son défaut de 30 jours s’applique au déclenchement', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload: { ...VALID, triggerKind: 'risque_eleve', triggerConfig: {} } });
+    expect(res.statusCode).toBe(201);
+    expect(cap.created[0]?.input).toMatchObject({ triggerKind: 'risque_eleve', triggerConfig: {}, cooldownSeconds: null, enabled: false });
     await server.close();
   });
 

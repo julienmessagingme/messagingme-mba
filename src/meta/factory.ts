@@ -9,6 +9,7 @@ import type { HttpTransport } from './http';
 import type { MessageSender } from '../campaign/engine';
 import type { MetaCredentialsResolver } from './credentials';
 import type { ArbitreDeDebit } from './arbitre-debit';
+import { NumeroDelieError } from './numero-delie';
 
 /**
  * Fabrique de clients Meta PAR TENANT (B1). Elle résout le token du tenant (résolveur, avec repli sur le token
@@ -35,6 +36,18 @@ export interface MetaClientFactoryOpts {
    * OPTIONNEL : absent -> aucun frein par numéro, comportement d'avant (fixtures de test).
    */
   arbitreDebit?: ArbitreDeDebit;
+  /**
+   * Ce numéro est-il DÉLIÉ de son espace (migration 0180) ? Oui : aucun client d'envoi n'est construit, et
+   * `clientForTenant` lève `NumeroDelieError`, dont le message dit quoi faire.
+   *
+   * 🔴 REQUISE, et c'est la leçon du dépôt : une garde optionnelle absente ne tourne pas, et le câblage qui
+   * l'oublie compile, se déploie et envoie depuis un numéro que l'administrateur croit éteint. Les fixtures
+   * DISENT leur hypothèse (`jamaisDelie`).
+   *
+   * Posée ICI pour la même raison que l'arbitre de débit : c'est le point où tous les chemins d'envoi se
+   * rejoignent, donc un chemin futur en hérite sans que personne y pense.
+   */
+  numeroDelie: (phoneNumberId: string) => Promise<boolean>;
 }
 
 export class MetaClientFactory {
@@ -47,6 +60,8 @@ export class MetaClientFactory {
 
   /** MetaClient complet pour un tenant (envois workflow : template/interactif/flow), enveloppé de l'intercepteur. */
   async clientForTenant(tenantId: string, phoneNumberId: string): Promise<MetaClient> {
+    // AVANT le jeton : un numéro délié ne coûte ni la résolution du jeton ni, surtout, un appel à Meta.
+    if (await this.o.numeroDelie(phoneNumberId)) throw new NumeroDelieError(phoneNumberId);
     const { token, wabaId } = await this.o.resolver.resolveForTenant(tenantId);
     const client = new MetaClient({
       transport: this.o.transport,

@@ -9,8 +9,20 @@ import type { RaisonDePause } from '../meta/errors';
  * ⚠️ Il n'entre PAS dans `RaisonDePause`, et c'est voulu : ce type-là répond à « quel plafond Meta avons-nous
  * touché ? », il est dérivé d'une erreur Meta (`raisonDePause(err)`). Y glisser un motif qu'aucune erreur ne
  * produit rendrait cette dérivation fausse pour tout lecteur.
+ *
+ * Le quatrième, `numero_delie` (migration 0180), est NÔTRE aussi : un administrateur a délié le numéro de
+ * l'espace depuis l'Accueil. Il n'a JAMAIS d'échéance, et seul le geste « Relier » le lève : le balayage de
+ * reprise ne le voit pas (cf. `reprendreCampagnesDues` et l'index `campaigns_reprise_idx`).
  */
-export type MotifDePause = RaisonDePause | 'hors_horaires';
+export type MotifDePause = RaisonDePause | 'hors_horaires' | 'numero_delie';
+
+/**
+ * Tous les motifs, tenus par le COMPILATEUR : un motif ajouté au type sans être ajouté ici ne compile pas.
+ * `tests/numero-delie-migration.test.ts` exige que le CHECK `campaigns_pause_reason_check` les porte tous :
+ * un motif que la base refuse ferait échouer la mise en pause à l'écriture, en pleine campagne.
+ */
+const MOTIFS: Record<MotifDePause, true> = { debit: true, qualite: true, hors_horaires: true, numero_delie: true };
+export const MOTIFS_DE_PAUSE = Object.keys(MOTIFS) as MotifDePause[];
 
 /**
  * QUAND une campagne mise en pause par un plafond Meta peut être reprise.
@@ -52,6 +64,12 @@ export function instantDeReprise(
 /** Ce que l'opérateur lit à l'écran. Le message DIT si la reprise est automatique, parce que c'est la seule
  *  chose qu'il ait besoin de savoir pour décider s'il doit revenir. */
 export function messageDePause(raison: MotifDePause, reprise: Date | null, code: number | undefined): string {
+  if (raison === 'numero_delie') {
+    // Ni Meta ni un incident : un administrateur a délié le numéro. Dire QUI peut la relancer, sinon on clique
+    // « Reprendre » et elle se remet en pause aussitôt, sans comprendre pourquoi.
+    return 'Numéro WhatsApp délié de cet espace : campagne mise en pause, aucun destinataire perdu. '
+      + 'Elle reprendra quand un administrateur reliera le numéro depuis l’Accueil.';
+  }
   if (raison === 'hors_horaires') {
     // Ni Meta ni un incident : le client l'a demandé. Le message doit le DIRE, sinon une campagne en pause
     // ressemble à une panne et l'opérateur va cliquer « Reprendre » contre sa propre consigne.

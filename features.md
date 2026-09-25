@@ -224,18 +224,21 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   possible. La raison inverse existait et était écrite (« un grand compte ne se facture pas comme un
   petit ») ; elle a été pesée contre celle-ci et elle a perdu. Le jour où un grand compte demandera son
   prix, ce sera une surcharge par espace à rouvrir.
-- 🚧 **Le risque de désengagement de chaque contact** (lot 7, 2026-09-25 ; livré avec la migration 0178, puis
+- ✅ **Le risque de désengagement de chaque contact** (lot 7, déployé le 2026-09-25 : la migration 0178, puis
   l'API, puis la console). Chaque nuit, la console estime pour chaque fiche le risque que la personne se
   désengage, à partir de ses 90 derniers jours : réponses et clics, lecture des messages, dernière conversation
   analysée (réclamation non résolue, ressenti négatif, satisfaction basse), joignabilité, désabonnement et
   blocage. Ce sont des **règles écrites, pas un modèle appris**, et la fiche dit POURQUOI.
   - **Sur la fiche** : le niveau (**faible**, **moyen**, **élevé**, ou **inconnu**), le score sur 100, les
-    trois raisons principales en clair (« Ni réponse ni clic aux trois derniers messages »…) et la date du
-    calcul. **Inconnu** veut dire qu'aucun message ne lui a été délivré sur 90 jours : on ne dit pas qu'un
-    contact est fidèle ou perdu sans l'avoir observé, et il n'a pas de score. Une fiche que le calcul n'a
-    jamais vue affiche « pas encore calculé ». Un désabonné ou un contact bloqué est « élevé » à 100 d'office.
+    trois raisons principales en clair (« Ni réponse ni clic aux trois derniers messages »…) et **depuis quand**
+    le contact est à ce niveau (le calcul repasse chaque nuit, mais cette date ne bouge que si le niveau change ;
+    le score et les raisons, eux, sont toujours à jour). **Inconnu** veut dire qu'aucun message ne lui a été
+    délivré sur 90 jours : on ne dit pas qu'un contact est fidèle ou perdu sans l'avoir observé, et il n'a pas de
+    score. Une fiche que le calcul n'a jamais vue affiche « pas encore calculé ». Un désabonné ou un contact
+    bloqué est « élevé » à 100 d'office.
   - **Dans les filtres de la liste des contacts**, donc aussi pour **cibler une campagne** : « Risque de
-    désengagement » élevé, moyen, faible ou inconnu. Une fiche jamais calculée n'est dans aucun niveau.
+    désengagement » élevé, moyen, faible ou inconnu. Une fiche jamais calculée n'est dans aucun niveau. Le filtre
+    n'est proposé que lorsque le serveur sait l'appliquer : sinon « élevé » viserait tous les contacts.
   - ⚠️ **Limite assumée** : la livraison et la lecture ne se mesurent que sur les envois de **campagne**, seuls
     à porter un statut par destinataire ; un message libre ou un bloc de scénario ne compte que par la réponse
     qu'il reçoit. Et un contact qui répond sans jamais renvoyer d'accusé de lecture n'est pas pénalisé pour
@@ -733,13 +736,17 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   moment-là, le scénario doit commencer par un envoi de template. L'étape est retenue par son IDENTIFIANT,
   jamais par son libellé : la renommer dans HubSpot ne casse rien. Si aucun portail n'est relié à l'espace,
   l'écran le dit et invite à connecter HubSpot dans Paramètres.
-- 🚧 **Un déclencheur « le risque de désengagement d'un contact devient élevé »** (lot 7, 2026-09-25), sans
-  réglage : le scénario part quand le calcul de nuit fait PASSER un contact en risque élevé, une fois par
-  passage (un contact qui y reste ne relance rien la nuit suivante). 🔴 C'est le seul déclencheur qui vient
-  d'un calcul portant sur toute la base, donc il est borné : **200 contacts au plus par nuit et par espace**
-  (au-delà, le niveau est bien enregistré sur la fiche, mais le scénario ne part pas pour eux), en plus du
-  plafond horaire de chaque automation. Un contact désabonné ou bloqué ne déclenche rien. Le contact n'a pas
-  écrit : le scénario doit commencer par un envoi de template. L'écran le dit avant la création.
+- ✅ **Un déclencheur « le risque de désengagement d'un contact devient élevé »** (lot 7, déployé le
+  2026-09-25), sans réglage : le scénario part quand le calcul de nuit fait PASSER un contact en risque élevé,
+  une fois par passage (un contact qui y reste ne relance rien la nuit suivante). 🔴 **Il ne part jamais la
+  nuit** : le calcul se fait vers 3 h, et le scénario attend l'ouverture de l'espace (ses heures d'ouverture,
+  du lundi au vendredi de 9 h à 18 h tant que rien n'est réglé ; un espace fermé tous les jours part à 9 h,
+  heure de Paris). 🔴 C'est le seul déclencheur qui vient d'un calcul portant sur toute la base, donc il est
+  borné : **200 contacts au plus par jour et par espace** (au-delà, le niveau est bien enregistré sur la fiche,
+  mais le scénario ne part pas pour eux), en plus du plafond horaire de chaque automation, et **un même contact
+  ne relance pas le scénario avant 30 jours**, même s'il ressort puis repasse en risque élevé. Un contact
+  désabonné ou bloqué ne déclenche rien. Le contact n'a pas écrit : le scénario doit commencer par un envoi de
+  template. L'écran le dit avant la création.
 - ✅ **Ce qui ne déclenche RIEN** (annoncé à l'écran, pas seulement en coulisse) : un tag posé **en masse**, par
   **import de fichier** ou par un scénario lancé en **campagne** (poser un tag sur 5 000 contacts enverrait
   sinon 5 000 messages : pour toucher une liste, l'outil reste la campagne) ; une conversation quand
@@ -1557,6 +1564,13 @@ scénario, comment importer des contacts.
   (délie le compte HubSpot et révoque son accès ; un avertissement prévient que cela coupe **tous** les numéros de
   l'espace, le compte HubSpot étant lié à l'espace et non à un numéro). Si aucun portail -> un bouton
   **« Connecter HubSpot »** qui lance l'installation OAuth et relie ce numéro.
+- 🚧 **Canaux et services** (codé le 2026-09-25, pas encore déployé) : sur l'Accueil, un bloc avec une ligne par
+  canal ou service (numéro WhatsApp, canal RCS, chaîne, compte publicitaire, HubSpot), chacune avec son
+  interrupteur, son état en une phrase et le lien vers son écran. Éteindre demande une confirmation qui dit ce qui
+  s'arrête ; rallumer ne demande rien. Éteindre le numéro le **délie** de l'espace (plus aucun envoi, campagnes en
+  pause, messages reçus non enregistrés), sans rien toucher chez Meta : il se relie d'un clic. Éteindre la chaîne
+  oublie ses identifiants, les publications déjà parues restent. Le lien « Couper le canal RCS » de la carte RCS
+  est devenu l'interrupteur. Réservé aux administrateurs.
 - ✅ **Interrupteur HubSpot de l'espace** (2026-09-25, **Paramètres > Intégrations**, admin) : c'est lui, et non
   plus la présence d'un numéro WhatsApp, qui fait apparaître le bloc HubSpot de l'Accueil. Un **espace neuf, sans
   numéro**, peut donc connecter HubSpot : il allume l'interrupteur, et le bouton « Connecter HubSpot » apparaît
@@ -1708,8 +1722,9 @@ scénario, comment importer des contacts.
   `consent: "opted_in"` ou `"opted_out"`, et un `opted_out` est un vrai désabonnement (statut, date, trace dans
   le journal d'audit). 🔴 L'API ne réabonne jamais : un `opted_in` sur une fiche désabonnée est refusé
   (`opted_out`) et rien n'est écrit. La lecture rend aussi la joignabilité WhatsApp et RCS quand elle est
-  connue, et 🚧 le **risque de désengagement** (`engagementRisk` : niveau, score, codes des raisons, date du
-  calcul ; `null` tant qu'il n'a jamais été calculé), décrit dans la Documentation API.
+  connue, et ✅ le **risque de désengagement** (déployé le 2026-09-25 ; `engagementRisk` : niveau, score, codes
+  des raisons, et la date à laquelle le contact est passé à ce niveau ; `null` tant qu'il n'a jamais été
+  calculé), décrit dans la Documentation API.
   🔴 Un contact mal formé dans un lot est refusé À SA LIGNE, les autres passent, et la réponse nomme le champ
   fautif.
 - ✅ **Envoyer un message simple** : un texte, à une personne, tout de suite, visible dans l'Inbox. Deux routes,
@@ -1807,7 +1822,7 @@ scénario, comment importer des contacts.
   plus récent.
   ⚠️ « Conversation analysée » arrive environ une demi-heure après le dernier message : assez pour une
   relance, pas pour une alerte.
-  🚧 **Le risque de désengagement remonte aussi** (lot 7, 2026-09-25) : trois attributs de fiche (le niveau,
+  ✅ **Le risque de désengagement remonte aussi** (lot 7, déployé le 2026-09-25) : trois attributs de fiche (le niveau,
   le score, les raisons en codes) et un événement `em_risk_changed` (ancien et nouveau niveau, score, raisons),
   émis la nuit, et SEULEMENT quand le niveau change (le premier calcul d'une fiche compris). Sans outil
   branché, rien ne part.

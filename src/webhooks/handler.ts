@@ -11,6 +11,7 @@ import { processTestTokens } from './test-token';
 import { processArriveesPub, type ArriveesPubDeps } from './arrivees-pub';
 import { processRoutagePub, rendreLesFilsSansReponse, type RoutagePubDeps } from './routage-pub';
 import type { RoutageDuMessage } from '../pubs/routage';
+import { ecarterLesEntrantsDelies, type NumerosDelies } from './numeros-delies';
 import type { TarifsMetaSink } from './tarif-meta';
 import type { DeliveryStore } from './delivery';
 import type { InboxStore, InboundAssignation, InboundContactUpsert, InboundOptOut } from './inbound';
@@ -109,6 +110,10 @@ interface WebhookJobDepsCommunes {
  * (`webhook` et `webhook-status`), et un câblage qui oublierait le puits sur l'une perdrait les accusés d'un
  * découpage de lots qui appartient à Meta, sans aucune erreur. Les tests qui n'en parlent pas passent
  * `aucunSignalAccuse` et `aucunSignalReponse` (`tests/webhook-fixtures.ts`).
+ *
+ * 🔴 `numerosDelies` ENTRE DANS LE COUPLE DES ENTRANTS (migration 0180) : une file qui enregistre des entrants
+ * doit écarter ceux d'un numéro délié, sinon le geste « Délier » de l'Accueil promet que rien n'est enregistré
+ * et ne tient pas. Les tests qui n'en parlent pas passent `aucunNumeroDelie`.
  */
 export type WebhookJobDeps = WebhookJobDepsCommunes
   & (
@@ -118,16 +123,23 @@ export type WebhookJobDeps = WebhookJobDepsCommunes
     | { delivery?: undefined; tarifsMeta?: undefined; echecsLibres?: undefined; signauxAccuse?: undefined }
   )
   & (
-    { inbox: InboxStore; arriveesPub: ArriveesPubDeps; routagePub: RoutagePubDeps; signalReponse: SignalReponse }
-    | { inbox?: undefined; arriveesPub?: undefined; routagePub?: undefined; signalReponse?: undefined }
+    { inbox: InboxStore; arriveesPub: ArriveesPubDeps; routagePub: RoutagePubDeps; signalReponse: SignalReponse; numerosDelies: NumerosDelies }
+    | { inbox?: undefined; arriveesPub?: undefined; routagePub?: undefined; signalReponse?: undefined; numerosDelies?: undefined }
   );
 
-export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Promise<void> {
+export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Promise<void> {
   const {
     store, delivery, inbox, flowMapping, workflowAdvance, remiseMbaEntrant, inboundContactUpsert,
     handover, triggers, testTokens, nodeEvents, inboundOptOut, inboundAssignation, remiseMba,
-    tarifsMeta, echecsLibres, arriveesPub, routagePub, signauxAccuse, signalReponse,
+    tarifsMeta, echecsLibres, arriveesPub, routagePub, signauxAccuse, signalReponse, numerosDelies,
   } = deps;
+  /**
+   * 🔴 EN TOUT PREMIER : l'écart des entrants d'un numéro délié (migration 0180). Placé avant le journal brut
+   * et avant chaque étape, parce que chacune relit le payload de son côté : écarter plus bas laisserait passer
+   * ce qu'une étape antérieure aurait déjà enregistré. Il garde les accusés et ne lève jamais (voir
+   * `./numeros-delies.ts`, qui dit aussi ce que ça coûte).
+   */
+  const raw = numerosDelies ? await ecarterLesEntrantsDelies(recu, numerosDelies) : recu;
   const events = parseWebhook(raw);
   // `insertEvent` renvoie false quand l'événement était DÉJÀ enregistré : c'est le signal « ce webhook est un
   // rejeu » (Meta redélivre quand l'ACK se perd, pg-boss réessaie un job interrompu). On le retient pour les

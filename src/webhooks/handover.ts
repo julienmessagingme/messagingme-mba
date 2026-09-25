@@ -112,7 +112,7 @@ export function ownerFromHandover(value: Record<string, unknown>): ControlOwner 
  * contrôle il sortait donc en `handover_sans_numero` avant même d'avoir regardé le reste, et les deux
  * correctifs ci-dessus n'auraient rien changé.
  */
-function numeroBusinessDuChange(value: Record<string, unknown>): string | undefined {
+export function numeroBusinessDuChange(value: Record<string, unknown>): string | undefined {
   return str(asRecord(value['metadata'])['phone_number_id'])
     ?? str(asRecord(value['recipient'])['phone_number_id']);
 }

@@ -115,6 +115,8 @@ import { pushAnalysisJob } from './analysis/push-job';
 import { hubspotCatchupJob } from './analysis/catchup-job';
 import { makeOnAnalyzed, postAnalysis } from './analysis/connector-push';
 import { PgPhoneStatusStore } from './account/store.pg';
+import { PgNumeroDelieStore } from './account/numero-delie.pg';
+import { creerGardeNumeroDelie } from './meta/numero-delie';
 import { pullFromInfo, pullFromError } from './account/pull';
 import { creerNoteDeQualite } from './campaign/note-qualite';
 import { creerWabaDeLEspace } from './meta/numero-espace';
@@ -332,6 +334,10 @@ async function main(): Promise<void> {
   const noteDeQualite = creerNoteDeQualite((pn) => qualiteStore.getRating(pn));
   const esStore = new PgEmbeddedSignupStore(pool);
   const phoneStatusStore = new PgPhoneStatusStore(pool);
+  // Le numéro délié (migration 0180) : la garde des envois (mise en cache, `NUMERO_DELIE_TTL_MS`) et l'écart
+  // des entrants du webhook (lu à chaque lot, sans cache : une lecture par clé primaire).
+  const numeroDelieStore = new PgNumeroDelieStore(pool);
+  const gardeNumeroDelie = creerGardeNumeroDelie((pn) => numeroDelieStore.estDelie(pn));
   const metaCredentials = new MetaCredentialsResolver({
     getWabaIdForTenant: wabaDeLEspace,
     getCredentialsByWaba: (w) => esStore.getCredentialsByWaba(w),
@@ -355,6 +361,7 @@ async function main(): Promise<void> {
       config.PHONE_RATE_PER_MINUTE_MAX,
       depsPorteDebitPg(pool),
     ),
+    numeroDelie: (pn) => gardeNumeroDelie.estDelie(pn),
   });
 
   // Exécuteur de workflows : quand un contact répond, on avance son run (blocs tag/field/template -> inbox).
@@ -546,6 +553,10 @@ async function main(): Promise<void> {
         remettre: (t, waId) => remiseMbaSiPersonneNeSuit(t, waId),
       },
       inbox: inboxStore,
+      // Les entrants d'un numéro délié (migration 0180) sont écartés AVANT tout, sur cette file seulement : la
+      // file des accusés n'en reçoit jamais, et les accusés, eux, sont gardés. SANS cache, délibérément : une
+      // lecture par clé primaire par lot, et « Relier » prend effet au message suivant.
+      numerosDelies: (ids) => numeroDelieStore.numerosDelies(ids),
       // L'arrivée publicitaire (`ctwa_clid` compris) : un message ENTRANT n'arrive que par cette file.
       arriveesPub: {
         phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),

@@ -112,6 +112,14 @@ export class PgRisqueStore {
    * le niveau stocké n'est pas null (pour qu'un contact qu'on n'écrit plus retombe en `inconnu` au lieu de
    * garder un niveau d'il y a trois mois), les désabonnées et les bloquées. Des identifiants seulement : les
    * faits se lisent ensuite par lots.
+   *
+   * ⚠️ L'INDEX DU RISQUE NE SERT PAS CETTE REQUÊTE, et le commentaire de la migration 0178 le dit à tort (« il sert
+   * aussi la lecture des fiches à réévaluer »). `risque_niveau is not null` n'y est qu'une branche d'un OU dont une
+   * autre est un `exists` : aucun index ne peut servir la condition entière, donc la requête parcourt les fiches
+   * de l'espace et sonde `campaign_recipients_contact_idx` pour chacune (cf. l'en-tête du fichier).
+   * `contacts_tenant_risque_idx (tenant_id, risque_niveau)` sert le filtre de la liste, qui pose une égalité nue,
+   * et le compte du plafond du jour (`declenchablesDepuis`). Une migration appliquée ne se réécrit pas : la
+   * correction vit ici et dans `documentation.md`.
    */
   async contactsAEvaluer(tenantId: string, depuis: Date): Promise<string[]> {
     const res = await this.pool.query<{ id: string }>(
@@ -218,10 +226,20 @@ export class PgRisqueStore {
    * le premier, relit « élevé », et ne voit aucun passage.
    *
    * ⚠️ `updated_at` NE BOUGE PAS : un calcul n'est pas une modification de la fiche par quelqu'un.
-   * ⚠️ Chaque fiche évaluée est réécrite, même inchangée : `risque_calcule_le` dit à l'intégrateur QUAND la valeur
-   * a été vérifiée pour la dernière fois. Le seul index qui porte une colonne du risque est celui du niveau : une
-   * fiche dont le niveau ne bouge pas se met à jour sans toucher aux index (mise à jour HOT, quand la page a de
-   * la place).
+   *
+   * 🔴 SEULES LES FICHES QUI CHANGENT SONT RÉÉCRITES (relecture du lot 7, 2026-09-25). `contacts` est la table du
+   * chemin chaud (chaque message entrant la lit et l'écrit) : réécrire chaque nuit toutes les fiches évaluées,
+   * même inchangées, y produisait une version morte par fiche et par nuit. La garde `is distinct from` porte sur
+   * les TROIS colonnes de la valeur (niveau, score, raisons), dans `avant`, donc une fiche inchangée n'est ni
+   * verrouillée ni réécrite. Un changement de niveau change forcément la valeur : aucune transition ne peut être
+   * perdue par la garde. Si un passage concurrent a écrit entre-temps, le verrou relit la nouvelle version et la
+   * garde la réévalue sur elle.
+   *
+   * 🔴 ET `risque_calcule_le` NE BOUGE QU'AVEC LE NIVEAU : c'est désormais « à ce niveau DEPUIS le », et la console
+   * comme l'API le disent ainsi (`computedAt`). Un score ou des raisons qui changent sans changer le niveau sont
+   * réécrits, pas la date. La faire bouger chaque nuit pour dire « vérifié le » aurait exigé de réécrire chaque
+   * fiche chaque nuit, c'est-à-dire exactement ce que la garde retire. C'est aussi la date que lit le plafond du
+   * jour (`declenchablesDepuis`) : un passage en élevé est un changement de niveau, donc il porte sa date.
    */
   async ecrire(tenantId: string, lignes: ReadonlyArray<{ contactId: string; risque: Risque }>, calculeLe: Date): Promise<TransitionRisque[]> {
     if (lignes.length === 0) return [];
@@ -235,10 +253,12 @@ export class PgRisqueStore {
          select c.id, c.risque_niveau
            from contacts c join v on v.id = c.id
           where c.tenant_id = $1 and c.deleted_at is null
+            and (c.risque_niveau, c.risque_score, c.risque_raisons) is distinct from (v.niveau, v.score, v.raisons)
           for update of c
        )
        update contacts c
-          set risque_niveau = v.niveau, risque_score = v.score, risque_raisons = v.raisons, risque_calcule_le = $3
+          set risque_niveau = v.niveau, risque_score = v.score, risque_raisons = v.raisons,
+              risque_calcule_le = case when a.risque_niveau is distinct from v.niveau then $3 else c.risque_calcule_le end
          from v join avant a on a.id = v.id
         where c.tenant_id = $1 and c.id = v.id
        returning c.id, a.risque_niveau as ancien, c.phone_e164, c.bsuid`,
@@ -254,5 +274,30 @@ export class PgRisqueStore {
       });
     }
     return transitions;
+  }
+
+  /**
+   * Les passages en élevé DÉCLENCHABLES écrits pour cet espace depuis `depuis` (minuit, Paris) : le plafond du
+   * jour (`PLAFOND_DECLENCHEMENTS_PAR_JOUR`, `balayage.ts`) s'en sert pour qu'un lancement `/ops` ne s'ajoute pas
+   * à la nuit.
+   *
+   * La trace est la fiche elle-même : `risque_calcule_le` ne bouge qu'au changement de niveau (`ecrire`), donc un
+   * `eleve` daté d'aujourd'hui est un passage d'aujourd'hui. Mêmes exclusions que le point d'émission : STOP et
+   * blocage (ils ne déclenchent rien, et la première nuit en ferait passer beaucoup), fiche sans adresse (`waIdOf`
+   * ne rend rien : un téléphone vide et aucun BSUID).
+   *
+   * ⚠️ L'égalité NUE `risque_niveau = 'eleve'` derrière `tenant_id = $1 and deleted_at is null` est le contrat de
+   * l'index partiel `contacts_tenant_risque_idx` : la requête ne lit que les fiches en élevé de l'espace.
+   */
+  async declenchablesDepuis(tenantId: string, depuis: Date): Promise<number> {
+    const res = await this.pool.query<{ n: number }>(
+      `select count(*)::int as n from contacts c
+        where c.tenant_id = $1 and c.deleted_at is null and c.risque_niveau = 'eleve'
+          and c.risque_calcule_le >= $2
+          and not (c.risque_raisons && array['stop', 'bloque']::text[])
+          and (coalesce(c.phone_e164, '') <> '' or c.bsuid is not null)`,
+      [tenantId, depuis],
+    );
+    return res.rows[0]?.n ?? 0;
   }
 }

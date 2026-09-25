@@ -12,13 +12,13 @@ export class PgPhoneStatusStore {
       name_status: string | null; code_verification_status: string | null; throughput_level: string | null; verified_name: string | null;
       waba_health_status: string | null; account_review_status: string | null; business_verification_status: string | null;
       marketing_messages_lite_api_status: string | null; owner_business_name: string | null; hubspot_connected: boolean;
-      hubspot_paused_at: string | null;
+      hubspot_paused_at: string | null; delie_le: Date | null;
     }>(
       `select id, display_phone_number, status, quality_rating, messaging_limit_tier,
               name_status, code_verification_status, throughput_level, verified_name,
               waba_health_status, account_review_status, business_verification_status,
               marketing_messages_lite_api_status, owner_business_name, hubspot_connected,
-              hubspot_paused_at::text as hubspot_paused_at
+              hubspot_paused_at::text as hubspot_paused_at, delie_le
          from phone_numbers where tenant_id = $1 order by created_at limit 1`,
       [tenantId],
     );
@@ -41,6 +41,7 @@ export class PgPhoneStatusStore {
           ownerBusinessName: r.owner_business_name,
           hubspotConnected: r.hubspot_connected,
           hubspotPausedAt: r.hubspot_paused_at,
+          delieLe: r.delie_le ? r.delie_le.toISOString() : null,
         }
       : null;
   }

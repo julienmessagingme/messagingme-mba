@@ -57,6 +57,12 @@ export interface SettingsRouteDeps {
    * 🔴 REQUISE, PAS OPTIONNELLE : une dependance optionnelle vaudrait `undefined`, donc « pas connecte »,
    * donc la source disparaitrait pour un client qui l'a, sur une instance qui a juste oublie de la cabler.
    * C'est la regle du lot 2 du plan du 2026-09-14, appliquee a la lettre.
+   *
+   * 🔴 ELLE LÈVE SUR UNE VRAIE PANNE DE LECTURE, et chaque lecteur choisit son repli (relecture du lot 7,
+   * 2026-09-25). Le câblage ne rend `false` que pour un schéma du connecteur ABSENT (`42P01`, instance sans
+   * connecteur, où aucun portail ne peut être relié). L'affichage (`GET /settings`) lit une panne comme « pas
+   * relié », comme avant ; ÉTEINDRE l'interrupteur la REFUSE (503), parce qu'un `false` inventé laissait éteindre
+   * HubSpot par-dessus un portail relié, exactement ce que la route interdit.
    */
   hubspotPortalConnecte(tenantId: string): Promise<boolean>;
   /** Fuseau IANA du tenant. */
@@ -168,7 +174,9 @@ export function registerSettings(
     const rcsEnabled = deps.rcsEnabledFor ? await deps.rcsEnabledFor(tenant) : false;
     // ⚠️ EN PARALLELE, pas en cascade : cette route est sur le chemin d'ouverture de plusieurs ecrans, et
     // les deux lectures sont independantes.
-    const hubspotPortalConnecte = await deps.hubspotPortalConnecte(tenant);
+    // ⚠️ Une panne de lecture vaut « pas relié » ICI, et seulement ici : c'est un drapeau d'AFFICHAGE, et
+    // l'écran ne doit pas tomber pour lui. L'extinction de l'interrupteur, elle, refuse (cf. plus bas).
+    const hubspotPortalConnecte = await deps.hubspotPortalConnecte(tenant).catch(() => false);
     return reply.code(200).send({ ...settings, rcsEnabled, hubspotPortalConnecte });
   });
 
@@ -206,6 +214,12 @@ export function registerSettings(
    * ⚠️ LE LIEN SE LIT PAR `hubspotPortalConnecte`, la même lecture que le masquage du lot 9, dont le câblage
    * rend `false` quand le schéma du connecteur n'existe pas (instance sans connecteur, où aucun portail ne
    * peut être relié). Allumer n'est jamais refusé.
+   *
+   * 🔴 UNE LECTURE EN ÉCHEC REFUSE L'EXTINCTION (503), elle ne vaut jamais « pas relié » ici (relecture du lot 7,
+   * 2026-09-25). Lue comme `false`, une panne de la base laissait éteindre HubSpot par-dessus un portail relié.
+   * 503 et pas 409 : ce n'est pas un état de l'espace qu'il faudrait corriger, c'est une vérification impossible
+   * à cet instant, qu'on retente. Si le corps est remplacé en route, l'écran dit quand même de réessayer
+   * (`messageDErreur`, `web/lib/http.ts`), et RIEN n'a été écrit.
    */
   app.patch('/tenants/:tenantId/settings/hubspot-actif', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
@@ -215,10 +229,20 @@ export function registerSettings(
     const actif = (req.body as { actif?: unknown } | null)?.actif;
     // Un booléen, rien d'autre : une valeur bancale ne doit pas se lire « allumé » ni « éteint » par accident.
     if (typeof actif !== 'boolean') return reply.code(400).send({ error: 'actif (booléen) requis' });
-    if (!actif && await deps.hubspotPortalConnecte(tenant)) {
-      return reply.code(409).send({
-        error: 'Un portail HubSpot est relié à cet espace : faites d’abord la « Déconnexion complète » depuis l’Accueil, puis éteignez HubSpot.',
-      });
+    if (!actif) {
+      let relie: boolean;
+      try {
+        relie = await deps.hubspotPortalConnecte(tenant);
+      } catch {
+        return reply.code(503).send({
+          error: 'Impossible de vérifier pour l’instant si un portail HubSpot est relié à cet espace : HubSpot n’a pas été éteint. Réessayez dans un instant.',
+        });
+      }
+      if (relie) {
+        return reply.code(409).send({
+          error: 'Un portail HubSpot est relié à cet espace : faites d’abord la « Déconnexion complète » depuis l’Accueil, puis éteignez HubSpot.',
+        });
+      }
     }
     await deps.setHubspotActif(tenant, actif);
     return reply.code(200).send({ hubspotActif: actif });

@@ -1,7 +1,7 @@
 ---
 ecran: accueil
 source_section: Accueil (1re entrée du menu)
-source_empreinte: 4e776f
+source_empreinte: 401cac
 ---
 # Connecter mon numéro WhatsApp, et lire son état
 
@@ -50,3 +50,10 @@ comme destinataires de campagne.
 pas : un espace tout neuf peut donc connecter HubSpot avant d'avoir un numéro. Éteint, l'Accueil n'affiche
 qu'une ligne qui vous y renvoie. Tant qu'un portail est relié, il ne s'éteint pas : faites d'abord la
 déconnexion complète depuis le bloc HubSpot (sans numéro, c'est un bouton du bloc, sans l'option de pause).
+
+**Le bloc « Canaux et services »** rassemble une ligne par canal ou service (numéro WhatsApp, canal RCS, chaîne,
+compte publicitaire, HubSpot), chacune avec son interrupteur, son état et le lien vers son écran. Rallumer ne
+demande rien ; éteindre demande une confirmation qui dit ce qui s'arrête. Éteindre le numéro le **délie** de
+l'espace : plus aucun envoi, les campagnes passent en pause et les messages reçus ne sont plus enregistrés, sans
+rien toucher chez Meta, et il se relie d'un clic. Éteindre la chaîne oublie ses identifiants, mais les
+publications déjà parues restent en ligne. Ces interrupteurs sont réservés aux administrateurs.

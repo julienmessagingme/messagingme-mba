@@ -98,8 +98,10 @@ export function buildContactFilters(e: EntreesFiltres): ContactFilters {
     ...(texteFiltre(e.phonePrefix) ? { phonePrefix: texteFiltre(e.phonePrefix) } : {}),
     ...(texteFiltre(e.phoneContains) ? { phoneContains: texteFiltre(e.phoneContains) } : {}),
     ...(texteFiltre(e.nameSearch) ? { nameSearch: texteFiltre(e.nameSearch) } : {}),
-    // ⚠️ UNE SEULE VALEUR RECONNUE, le reste est JETÉ. C'est la règle de tout ce module : une donnée
-    // cliente à moitié comprise viserait la mauvaise population, ce qui est pire que pas de filtre du tout.
+    // ⚠️ UNE SEULE VALEUR RECONNUE, le reste est JETÉ. C'est la règle de ce module, sauf pour UN filtre : une
+    // donnée cliente à moitié comprise viserait la mauvaise population, ce qui est pire que pas de filtre du tout.
+    // L'exception est le niveau de risque, juste en dessous, qui REFUSE (400) au lieu de jeter : jeté, « élevé »
+    // mal orthographié rendrait tout l'espace (cf. `risqueFiltre`).
     ...(e.joignabilite === 'connu_injoignable' ? { joignabiliteWhatsApp: 'connu_injoignable' as const } : {}),
     ...(risque !== undefined ? { risque } : {}),
     ...(e.fieldFilters.length > 0 ? { fieldFilters: e.fieldFilters } : {}),

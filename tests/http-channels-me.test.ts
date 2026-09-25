@@ -93,12 +93,14 @@ function app(over: Partial<ChannelsMeRouteDeps> = {}) {
     demandes: [] as Array<{ message: string }>,
     ordre: [] as string[],
     automationsSupprimees: [] as string[],
+    debranches: [] as string[],
   };
   const deps: ChannelsMeRouteDeps = {
     getConnection: async () => ({ orgId: 'org-1', channelId: 'chan-1', hasApiKey: true, hasSecret: true, verifiedAt: null }),
     getSecrets: async () => CX,
     upsertConnection: async (_t, c) => { cap.upserts.push(c); },
     markVerified: async (t) => { cap.verifies.push(t); },
+    supprimerConnection: async (t) => { cap.debranches.push(t); return true; },
     getOrganisation: async () => ORGA,
     listChannels: async () => [CANAL],
     getMessages: async () => [MESSAGE],
@@ -217,6 +219,37 @@ describe('Channels Me : provisionner et verifier les identifiants', () => {
     const { server } = app({ getSecrets: async () => null });
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/channels-me/connection/test', ...h(adminTok) });
     expect(res.statusCode).toBe(409);
+    await server.close();
+  });
+});
+
+describe('Channels Me : debrancher la chaine (Accueil, « Canaux et services »)', () => {
+  it('🔴 DELETE oublie les identifiants de CET espace, et ne touche ni aux liens ni aux automations', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/channels-me/connection', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, supprimee: true });
+    expect(cap.debranches).toEqual(['t1']);
+    // Les posts deja publies circulent pour toujours : leurs boutons doivent continuer de demarrer leur
+    // scenario. Aucune extinction, aucune suppression d'automation ne part avec le debranchement.
+    expect(cap.eteintes).toEqual([]);
+    expect(cap.automationsSupprimees).toEqual([]);
+    await server.close();
+  });
+
+  it('rejouable : une chaine deja debranchee rend 200 avec `supprimee: false`', async () => {
+    const { server } = app({ supprimerConnection: async () => false });
+    const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/channels-me/connection', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, supprimee: false });
+    await server.close();
+  });
+
+  it('🔴 un AGENT est refuse, et un admin ne debranche pas la chaine d un autre espace', async () => {
+    const { server, cap } = app();
+    expect((await server.inject({ method: 'DELETE', url: '/tenants/t1/channels-me/connection', ...h(agentTok) })).statusCode).toBe(403);
+    expect((await server.inject({ method: 'DELETE', url: '/tenants/t2/channels-me/connection', ...h(adminTok) })).statusCode).toBe(403);
+    expect(cap.debranches).toEqual([]);
     await server.close();
   });
 });

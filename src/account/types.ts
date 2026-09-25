@@ -23,6 +23,8 @@ export interface PhoneNumberRecord {
   hubspotConnected: boolean;
   /** Instant de mise en PAUSE (timestamptz texte). null = jamais activé OU actif ; non-null + connected=false = en pause (F3-a). */
   hubspotPausedAt: string | null;
+  /** Instant où le numéro a été DÉLIÉ de l'espace (migration 0180, ISO). null = relié. */
+  delieLe: string | null;
 }
 
 /**

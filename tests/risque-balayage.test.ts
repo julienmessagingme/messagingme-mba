@@ -3,9 +3,10 @@ import type { Pool } from 'pg';
 import { FakeQueue } from '../src/queue/fake';
 import { AUTOMATION_EVENT_QUEUE, parseAutomationEventJob } from '../src/automation/event-job';
 import {
-  PLAFOND_DECLENCHEMENTS_PAR_NUIT, TAILLE_LOT_RISQUE, balayerRisque, balayerRisqueEspace, jourABalayer,
-  type DepsBalayageRisque,
+  PLAFOND_DECLENCHEMENTS_PAR_JOUR, TAILLE_LOT_RISQUE, balayerRisque, balayerRisqueEspace, debutDuJour, departDuDeclencheur,
+  jourABalayer, type DepsBalayageRisque, type HorairesEspace,
 } from '../src/engagement/balayage';
+import { DEFAULT_BUSINESS_HOURS } from '../src/settings/store.pg';
 import { depsBalayageRisque } from '../src/engagement/cablage';
 import type { ContactAEvaluer, TransitionRisque } from '../src/engagement/risque.pg';
 import type { FaitsRisque, NiveauRisque, Risque } from '../src/engagement/risque';
@@ -19,7 +20,11 @@ import { schemaSignal, type Signal } from '../src/signaux/types';
 
 const T = '0b8f5c1e-3d2a-4c6b-9e7f-1a2b3c4d5e6f';
 const T2 = '1c9f6d2f-4e3b-4d7c-8f80-2b3c4d5e6f70';
+/** Vendredi 25 septembre 2026, 5 h à Paris (UTC+2) : dans la fenêtre du balayage de nuit. */
 const MAINTENANT = new Date('2026-09-25T03:00:00.000Z');
+/** 9 h à Paris le même vendredi : l'ouverture des horaires par défaut (lundi au vendredi, 9 h à 18 h). */
+const NEUF_HEURES = new Date('2026-09-25T07:00:00.000Z');
+const HORAIRES_PAR_DEFAUT: HorairesEspace = { timeZone: 'Europe/Paris', businessHours: DEFAULT_BUSINESS_HOURS };
 const JOUR = 86_400_000;
 const ilYa = (jours: number): Date => new Date(MAINTENANT.getTime() - jours * JOUR);
 const uuid = (i: number): string => `00000000-0000-4000-8000-${i.toString(16).padStart(12, '0')}`;
@@ -61,19 +66,22 @@ function depot(fiches: Map<string, FicheMemoire>) {
 function monter(fiches: Map<string, FicheMemoire>, over: Partial<DepsBalayageRisque> = {}) {
   const { deps: stock, appels } = depot(fiches);
   const publies: Array<{ tenantId: string; waId: string }> = [];
+  const departs: Date[] = [];
   const signaux: Signal[] = [];
   const journal: string[] = [];
   const deps: DepsBalayageRisque = {
     espaces: async () => [T],
     ...stock,
+    declenchablesDepuis: async () => 0,
     automationRisqueActive: async () => true,
-    publierRisqueEleve: async (tenantId, waId) => { publies.push({ tenantId, waId }); },
+    horairesOuvres: async () => HORAIRES_PAR_DEFAUT,
+    publierRisqueEleve: async (tenantId, waId, depart) => { publies.push({ tenantId, waId }); departs.push(depart); },
     emettreSignaux: async (_t, s) => { signaux.push(...s); },
     maintenant: () => MAINTENANT,
     log: (m) => journal.push(m),
     ...over,
   };
-  return { deps, publies, signaux, journal, appels };
+  return { deps, publies, departs, signaux, journal, appels };
 }
 
 const fichesDe = (n: number, faits: FaitsRisque, niveau: NiveauRisque | null = null): Map<string, FicheMemoire> =>
@@ -119,18 +127,53 @@ describe('les transitions et les signaux', () => {
 });
 
 describe('🔴 le déclencheur de MASSE et ses bornes (exception décidée par Julien, spec § 19)', () => {
-  it(`au plus ${PLAFOND_DECLENCHEMENTS_PAR_NUIT} déclenchements par nuit et par espace : le reste est ÉCRIT sans déclencher, et journalisé`, async () => {
-    const fiches = fichesDe(PLAFOND_DECLENCHEMENTS_PAR_NUIT + 50, DECROCHE, 'moyen');
+  it(`au plus ${PLAFOND_DECLENCHEMENTS_PAR_JOUR} déclenchements par jour et par espace : le reste est ÉCRIT sans déclencher, et journalisé`, async () => {
+    const fiches = fichesDe(PLAFOND_DECLENCHEMENTS_PAR_JOUR + 50, DECROCHE, 'moyen');
     const { deps, publies, signaux, journal } = monter(fiches);
     const b = await balayerRisqueEspace(T, deps);
-    expect(b).toMatchObject({ transitions: 250, declenches: PLAFOND_DECLENCHEMENTS_PAR_NUIT, auDelaDuPlafond: 50 });
-    expect(publies).toHaveLength(PLAFOND_DECLENCHEMENTS_PAR_NUIT);
+    expect(b).toMatchObject({ transitions: 250, declenches: PLAFOND_DECLENCHEMENTS_PAR_JOUR, auDelaDuPlafond: 50, dejaDeclenches: 0 });
+    expect(publies).toHaveLength(PLAFOND_DECLENCHEMENTS_PAR_JOUR);
     // Tous écrits, tous signalés : le plafond ne borne que les automations.
     expect([...fiches.values()].every((f) => f.niveau === 'eleve')).toBe(true);
     expect(signaux).toHaveLength(250);
-    expect(journal.some((m) => m.includes(`plafond de ${PLAFOND_DECLENCHEMENTS_PAR_NUIT}`) && m.includes('50'))).toBe(true);
+    expect(journal.some((m) => m.includes(`plafond de ${PLAFOND_DECLENCHEMENTS_PAR_JOUR}`) && m.includes('50'))).toBe(true);
     // Et la nuit suivante, ceux qui n'ont pas déclenché ne déclenchent pas non plus : ils sont déjà en élevé.
     expect((await balayerRisqueEspace(T, deps)).declenches).toBe(0);
+  });
+
+  /**
+   * 🔴 LE PLAFOND EST CELUI DE LA JOURNÉE, PAS DE L'EXÉCUTION (relecture du lot 7). Compté par exécution, un
+   * lancement `/ops` à 10 h s'ajoutait aux 200 de la nuit.
+   */
+  it('🔴 le plafond compte ce que la journée a DÉJÀ déclenché : un second passage ne garde que le reste', async () => {
+    const demandes: Array<{ tenantId: string; depuis: Date; ecrituresAvant: number }> = [];
+    const fiches = fichesDe(80, DECROCHE, 'moyen');
+    const { deps, publies, journal, appels } = monter(fiches, {
+      declenchablesDepuis: async (tenantId, depuis) => { demandes.push({ tenantId, depuis, ecrituresAvant: appels.ecritures }); return 150; },
+    });
+    const b = await balayerRisqueEspace(T, deps);
+    expect(b).toMatchObject({ transitions: 80, dejaDeclenches: 150, declenches: 50, auDelaDuPlafond: 30 });
+    expect(publies).toHaveLength(50);
+    // Depuis MINUIT À PARIS (22 h UTC la veille, en heure d'été), et lu AVANT la première écriture : après, ce
+    // passage-ci se compterait lui-même.
+    expect(demandes).toEqual([{ tenantId: T, depuis: new Date('2026-09-24T22:00:00.000Z'), ecrituresAvant: 0 }]);
+    expect(journal.some((m) => m.includes('150 avant ce passage'))).toBe(true);
+  });
+
+  it('🔴 un plafond du jour déjà atteint : tout est écrit et signalé, RIEN ne part', async () => {
+    const fiches = fichesDe(5, DECROCHE, 'moyen');
+    const { deps, publies, signaux } = monter(fiches, { declenchablesDepuis: async () => PLAFOND_DECLENCHEMENTS_PAR_JOUR + 12 });
+    const b = await balayerRisqueEspace(T, deps);
+    expect(b).toMatchObject({ transitions: 5, declenches: 0, auDelaDuPlafond: 5, departLe: null });
+    expect(publies).toEqual([]);
+    expect(signaux).toHaveLength(5);
+  });
+
+  it('un espace sans fiche à évaluer ne pose même pas la question du plafond', async () => {
+    let questions = 0;
+    const { deps } = monter(new Map(), { declenchablesDepuis: async () => { questions += 1; return 0; } });
+    expect(await balayerRisqueEspace(T, deps)).toMatchObject({ evalues: 0, dejaDeclenches: 0 });
+    expect(questions).toBe(0);
   });
 
   it('le plafond est PAR ESPACE : un espace qui l’atteint n’en prive pas le suivant', async () => {
@@ -189,6 +232,70 @@ describe('🔴 le déclencheur de MASSE et ses bornes (exception décidée par J
   });
 });
 
+/**
+ * 🔴 L'AUTOMATION « RISQUE ÉLEVÉ » NE PART PAS LA NUIT (relecture du lot 7). Le scénario commence par un template :
+ * publié pendant le balayage, il partait vers 3 h du matin. L'événement attend l'ouverture de l'espace.
+ */
+describe('🔴 le départ de l’automation : à l’ouverture de l’espace, jamais pendant le balayage de nuit', () => {
+  it('le balayage de 5 h (Paris) publie un événement qui attend 9 h, l’ouverture de l’espace, et le bilan le dit', async () => {
+    const { deps, departs } = monter(fichesDe(3, DECROCHE, 'moyen'));
+    const b = await balayerRisqueEspace(T, deps);
+    expect(departs).toEqual([NEUF_HEURES, NEUF_HEURES, NEUF_HEURES]);
+    expect(b.departLe).toBe(NEUF_HEURES.toISOString());
+  });
+
+  it('les horaires ne sont lus qu’une fois par espace, et seulement s’il y a quelque chose à publier', async () => {
+    let lectures = 0;
+    const horairesOuvres = async (): Promise<HorairesEspace> => { lectures += 1; return HORAIRES_PAR_DEFAUT; };
+    await balayerRisqueEspace(T, monter(fichesDe(4, DECROCHE, 'moyen'), { horairesOuvres }).deps);
+    expect(lectures).toBe(1);
+    await balayerRisqueEspace(T, monter(fichesDe(4, VIVANT, 'moyen'), { horairesOuvres }).deps);
+    expect(lectures).toBe(1);
+  });
+
+  it('🔴 des horaires illisibles (lecture en échec) : 9 h (Paris), jamais « tout de suite », qui serait la nuit', async () => {
+    const { deps, departs } = monter(fichesDe(1, DECROCHE, 'moyen'), { horairesOuvres: async () => { throw new Error('base indisponible'); } });
+    expect(await balayerRisqueEspace(T, deps)).toMatchObject({ declenches: 1 });
+    expect(departs).toEqual([NEUF_HEURES]);
+  });
+});
+
+describe('departDuDeclencheur', () => {
+  const paris = HORAIRES_PAR_DEFAUT;
+  it('la nuit d’un jour ouvré : l’ouverture du matin même', () => {
+    expect(departDuDeclencheur(MAINTENANT, paris)).toEqual(NEUF_HEURES);
+  });
+  it('la nuit du samedi : le lundi à l’ouverture, le week-end est franchi', () => {
+    expect(departDuDeclencheur(new Date('2026-09-26T03:00:00.000Z'), paris)).toEqual(new Date('2026-09-28T07:00:00.000Z'));
+  });
+  it('un lancement `/ops` pendant les heures d’ouverture : tout de suite', () => {
+    const midi = new Date('2026-09-25T10:00:00.000Z');
+    expect(departDuDeclencheur(midi, paris)).toEqual(midi);
+  });
+  it('les horaires sont ceux de l’espace, dans SON fuseau', () => {
+    expect(departDuDeclencheur(MAINTENANT, { timeZone: 'America/New_York', businessHours: DEFAULT_BUSINESS_HOURS }))
+      .toEqual(new Date('2026-09-25T13:00:00.000Z'));
+  });
+  it('🔴 un espace sans heures d’ouverture (tout fermé, ou rien de lisible) : 9 h à Paris le matin même, sinon le lendemain', () => {
+    const fermeTousLesJours = Object.fromEntries(['0', '1', '2', '3', '4', '5', '6'].map((j) => [j, { closed: true, open: '', close: '' }]));
+    expect(departDuDeclencheur(MAINTENANT, null)).toEqual(NEUF_HEURES);
+    expect(departDuDeclencheur(MAINTENANT, { timeZone: 'Europe/Paris', businessHours: fermeTousLesJours })).toEqual(NEUF_HEURES);
+    // Un samedi aussi : le repli ne connaît pas de jour fermé.
+    expect(departDuDeclencheur(new Date('2026-09-26T03:00:00.000Z'), null)).toEqual(new Date('2026-09-26T07:00:00.000Z'));
+    // Après 18 h (Paris) : le lendemain à 9 h, jamais le soir même.
+    expect(departDuDeclencheur(new Date('2026-09-25T19:00:00.000Z'), null)).toEqual(new Date('2026-09-26T07:00:00.000Z'));
+  });
+});
+
+describe('debutDuJour : minuit à Paris', () => {
+  it('en heure d’été comme en heure d’hiver', () => {
+    expect(debutDuJour(MAINTENANT)).toEqual(new Date('2026-09-24T22:00:00.000Z'));
+    expect(debutDuJour(new Date('2026-12-15T10:00:00.000Z'))).toEqual(new Date('2026-12-14T23:00:00.000Z'));
+    // 23 h 30 UTC le 24 septembre, c'est déjà le 25 à Paris.
+    expect(debutDuJour(new Date('2026-09-24T23:30:00.000Z'))).toEqual(new Date('2026-09-24T22:00:00.000Z'));
+  });
+});
+
 describe('🔴 une panne d’un espace n’arrête pas le suivant', () => {
   it('l’espace en panne est dans son bilan, le suivant est balayé', async () => {
     const fiches = fichesDe(1, DECROCHE, 'moyen');
@@ -210,9 +317,10 @@ describe('le câblage partagé (worker et /ops)', () => {
   it('🔴 il ne publie QUE `risque_eleve`, par le seul chemin d’enfilement, avec l’espace comme groupe', async () => {
     const file = new FakeQueue();
     const deps = depsBalayageRisque({ pool, file, emetteur: { emettreSignaux: async () => {} }, automationsActives: async () => [] });
-    await deps.publierRisqueEleve(T, '33612345678');
+    // 🔴 Avec son DÉPART DIFFÉRÉ (`startAfter`) : sans lui, l'événement serait traité pendant le balayage de nuit.
+    await deps.publierRisqueEleve(T, '33612345678', NEUF_HEURES);
     expect(file.enqueued).toEqual([
-      { name: AUTOMATION_EVENT_QUEUE, data: { tenantId: T, event: { kind: 'risque_eleve', waId: '33612345678' } }, opts: { groupId: T } },
+      { name: AUTOMATION_EVENT_QUEUE, data: { tenantId: T, event: { kind: 'risque_eleve', waId: '33612345678' } }, opts: { groupId: T, startAfter: NEUF_HEURES } },
     ]);
     // Et le travail de la file le relit tel quel.
     expect(parseAutomationEventJob(file.enqueued[0]!.data)).toEqual({ tenantId: T, event: { kind: 'risque_eleve', waId: '33612345678' } });

@@ -8,9 +8,12 @@ import type { MeRouteDeps } from '../src/http/me';
 const SECRET = 'test-secret';
 let agentTok = '';
 let otherTenantTok = '';
+let observationTok = '';
 beforeAll(async () => {
   agentTok = await signSession({ userId: 'u1', tenantId: 't1', role: 'agent' }, SECRET);
   otherTenantTok = await signSession({ userId: 'u9', tenantId: 't2', role: 'admin' }, SECRET);
+  // Le jeton que `/ops/observe` émet (`src/index.ts`) : une identité qui n'est PAS un uuid, et aucun compte.
+  observationTok = await signSession({ userId: 'ops-observation', tenantId: 't1', role: 'admin', impersonated: true }, SECRET);
 });
 const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const h = (t: string) => ({ headers: { authorization: `Bearer ${t}` } });
@@ -43,6 +46,17 @@ describe('route me', () => {
     const server = app({ getUser: async () => null });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/me', ...h(agentTok) });
     expect(res.statusCode).toBe(404);
+    await server.close();
+  });
+
+  it('🔴 la session d’observation de /ops : une réponse propre, SANS lecture en base (son identité n’est pas un uuid)', async () => {
+    const lus: string[] = [];
+    // Lue en base, `ops-observation` fait lever Postgres (22P02) : le faux dépôt fait de même.
+    const server = app({ getUser: async (userId) => { lus.push(userId); throw new Error('invalid input syntax for type uuid: "ops-observation"'); } });
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/me', ...h(observationTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ email: '', name: null, role: 'admin' });
+    expect(lus).toEqual([]);
     await server.close();
   });
 

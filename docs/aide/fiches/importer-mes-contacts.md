@@ -1,7 +1,7 @@
 ---
 ecran: contacts
 source_section: Contacts & CRM
-source_empreinte: f93199
+source_empreinte: 43955f
 ---
 # Ajouter ou importer mes contacts
 
@@ -19,9 +19,10 @@ atteint votre durée de conservation. L'onglet « Historique » de la fiche mont
 de ses conversations.
 
 La fiche montre aussi le **risque de désengagement** de la personne : faible, moyen, élevé, ou inconnu, avec
-un score sur 100, les raisons principales écrites en clair et la date du calcul. Il est recalculé chaque nuit
-à partir des 90 derniers jours : réponses, clics, lectures, dernière conversation analysée, joignabilité,
-désabonnement. « Inconnu » veut dire qu'aucun message ne lui a été délivré sur cette période, donc qu'il n'y
+un score sur 100, les raisons principales écrites en clair et depuis quand elle est à ce niveau. Il est
+recalculé chaque nuit à partir des 90 derniers jours : réponses, clics, lectures, dernière conversation
+analysée, joignabilité, désabonnement. La date ne bouge que si le niveau change ; le score et les raisons,
+eux, sont toujours à jour. « Inconnu » veut dire qu'aucun message ne lui a été délivré sur cette période, donc qu'il n'y
 avait rien à observer. Une fiche que le calcul n'a encore jamais vue affiche « pas encore calculé ».
 
 Une fois vos contacts en place, l'écran sert de moteur de recherche. Vous filtrez par tag, par consentement
