@@ -22,6 +22,9 @@ export const ACTIONS_JOURNAL: Record<string, [string, string]> = {
   'integration.branchee': ['Outil branché sur les signaux', 'Tool connected to signals'],
   'integration.modifiee': ['Réglage d’un outil modifié', 'Tool settings changed'],
   'integration.debranchee': ['Outil débranché', 'Tool disconnected'],
+  // L'interrupteur du numéro sur l'Accueil (migration 0180). La cible est l'ESPACE, jamais le numéro affiché.
+  'numero.delie': ['Numéro WhatsApp délié', 'WhatsApp number unlinked'],
+  'numero.relie': ['Numéro WhatsApp relié', 'WhatsApp number relinked'],
 };
 
 /** Détail compact : « created 2 · optIn oui ». Rien à interpréter, ce sont des compteurs et des drapeaux. */

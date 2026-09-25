@@ -300,18 +300,23 @@ function AutomationsInner({ session }: { session: Session }) {
             </select>
           </div>
           {/* « RISQUE ÉLEVÉ » NE SE RÈGLE PAS, il se constate : aucune configuration, seulement ce qu'il faut savoir
-              AVANT de le brancher sur un scénario facturé. Les trois bornes sont celles du serveur
-              (`src/engagement/balayage.ts`) : un PASSAGE et pas un état, 200 par nuit et par espace, et rien
-              pour un désabonné ou un contact bloqué. */}
+              AVANT de le brancher sur un scénario facturé. Les bornes sont celles du serveur
+              (`src/engagement/balayage.ts` et `antiRebondParDefaut`) : un PASSAGE et pas un état, jamais la nuit
+              (départ à l'ouverture de l'espace), 200 par jour et par espace, 30 jours entre deux relances d'un
+              même contact, et rien pour un désabonné ou un contact bloqué. */}
           {triggerKind === 'risque_eleve' && (
             <div data-testid="config-risque-eleve" className="space-y-1 text-xs text-ink-500">
               <p>
                 {t('Chaque nuit, le risque de désengagement de chaque contact est recalculé (absence de réponse, de clic et de lecture, dernière conversation, joignabilité). Le scénario part quand un contact PASSE en risque élevé : une fois par passage, pas à chaque nuit où il y reste.',
                     'Every night, each contact’s disengagement risk is recomputed (no reply, click or read, last conversation, reachability). The scenario runs when a contact MOVES to high risk: once per move, not every night they stay there.')}
               </p>
+              <p data-testid="config-risque-eleve-depart">
+                {t('Le scénario ne part jamais la nuit : il attend l’ouverture de votre espace (Paramètres, Fuseau & heures d’ouverture ; du lundi au vendredi de 9 h à 18 h tant que rien n’est réglé). Un espace fermé tous les jours part à 9 h, heure de Paris.',
+                    'The scenario never runs at night: it waits for your workspace to open (Settings, Time zone & business hours; Monday to Friday, 9 am to 6 pm until you set them). A workspace closed every day runs at 9 am, Paris time.')}
+              </p>
               <p>
-                {t('Au plus 200 contacts par nuit et par espace. Au-delà, le niveau est bien enregistré sur la fiche, mais le scénario ne part pas pour eux. Un contact désabonné ou bloqué ne déclenche rien.',
-                    'At most 200 contacts per night and per workspace. Beyond that, the level is still recorded on the contact, but the scenario does not run for them. An unsubscribed or blocked contact triggers nothing.')}
+                {t('Au plus 200 contacts par jour et par espace. Au-delà, le niveau est bien enregistré sur la fiche, mais le scénario ne part pas pour eux. Un même contact ne relance pas le scénario avant 30 jours, même s’il ressort puis repasse en risque élevé. Un contact désabonné ou bloqué ne déclenche rien.',
+                    'At most 200 contacts per day and per workspace. Beyond that, the level is still recorded on the contact, but the scenario does not run for them. The same contact does not run the scenario again within 30 days, even if they leave and re-enter high risk. An unsubscribed or blocked contact triggers nothing.')}
               </p>
               <p>
                 {t('Le contact n’a pas écrit : le scénario doit commencer par un envoi de template.',

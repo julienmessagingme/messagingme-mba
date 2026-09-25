@@ -344,8 +344,8 @@ function DocsInner() {
           <C>stop</C>, <C>bloque</C>, <C>silence_60j</C>, <C>silence_30j</C>, <C>sans_reponse</C>,{' '}
           <C>non_lu</C>, <C>reclamation</C>, <C>negatif</C>, <C>insatisfait</C>, <C>injoignable</C>
           {t(
-            '. Un désabonnement ou un blocage donne eleve à 100. computedAt est la date du dernier calcul, qu’il ait changé le niveau ou non.',
-            '. An unsubscribe or a block gives eleve at 100. computedAt is the date of the last computation, whether it changed the level or not.',
+            '. Un désabonnement ou un blocage donne eleve à 100. computedAt est la date à laquelle le contact est passé à ce niveau : le calcul repasse chaque nuit, mais cette date ne bouge que si le niveau change (le score et les raisons, eux, sont toujours à jour).',
+            '. An unsubscribe or a block gives eleve at 100. computedAt is when the contact reached this level: the computation runs every night, but this date only moves when the level changes (score and reasons are always current).',
           )}
         </p>
 

@@ -15,7 +15,7 @@ import { texteAvertissement } from '@/lib/chaine-statut';
 import type { BrouillonChaine } from '@/lib/chaine-apercu';
 import {
   allumerLienChaine, creerLienChaine, demanderActivationChaine, enregistrerConnexionChaine,
-  getConnexionChaine, listerConversationsChaine, listerLiensChaine, listerPostsChaine, publierPostChaine,
+  getConnexionChaine, listerConversationsChaine, listerLiensChaine, listerPostsChaine, nomDeLaChaine, publierPostChaine,
   testerConnexionChaine,
   type AvertissementPost, type ConversationsDunLien, type EtatDistant, type LienChaine, type PostChaine,
   type ReponseConnexionChaine,
@@ -223,11 +223,7 @@ function ChaineInner({ session }: { session: Session }) {
               texte={brouillon.texte}
               imageUrl={brouillon.imageUrl}
               waMeUrl={lienChoisi?.waMeUrl ?? null}
-              nomChaine={
-                connexion?.channels.find((c) => c.id === connexion.connection?.channelId)?.name
-                ?? connexion?.channels[0]?.name
-                ?? null
-              }
+              nomChaine={nomDeLaChaine(connexion)}
             />
           </div>
 

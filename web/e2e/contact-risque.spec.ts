@@ -24,7 +24,7 @@ const SANS_CHAMP = { ...BASE, id: 'ct4', profileName: 'Diane Ancienne', phoneE16
 
 const CONTACTS = [ELEVE, INCONNU, JAMAIS, SANS_CHAMP];
 
-async function mock(page: import('@playwright/test').Page, requetes: string[] = []): Promise<void> {
+async function mock(page: import('@playwright/test').Page, requetes: string[] = [], contacts: readonly unknown[] = CONTACTS): Promise<void> {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const url = route.request().url();
@@ -33,7 +33,7 @@ async function mock(page: import('@playwright/test').Page, requetes: string[] = 
     if (chemin.endsWith('/conversations/todo-count')) return json({ count: 0 });
     if (chemin.endsWith('/contacts')) {
       requetes.push(url);
-      return json({ contacts: CONTACTS, total: CONTACTS.length });
+      return json({ contacts, total: contacts.length });
     }
     if (chemin.endsWith('/user-fields')) return json({ fields: [] });
     if (chemin.endsWith('/tags')) return json({ tags: [] });
@@ -50,13 +50,15 @@ async function ficheDe(page: import('@playwright/test').Page, nom: string) {
 test.describe('Fiche contact : risque de désengagement', () => {
   test.use({ viewport: TREIZE_POUCES });
 
-  test('🔴 un risque élevé montre le niveau, le score, les raisons EN FRANÇAIS et la date du calcul', async ({ page }) => {
+  test('🔴 un risque élevé montre le niveau, le score, les raisons EN FRANÇAIS et depuis quand il est à ce niveau', async ({ page }) => {
     await mock(page);
     await page.goto('/contacts');
     const bloc = await ficheDe(page, 'Anna Eleve');
     await expect(bloc.getByTestId('fiche-risque-niveau')).toHaveText('élevé');
     await expect(bloc.getByTestId('fiche-risque-score')).toHaveText('75 / 100');
-    await expect(bloc).toContainText('calculé le');
+    // « depuis le » : la date ne bouge qu'au changement de niveau, ce n'est pas celle du dernier calcul.
+    await expect(bloc.getByTestId('fiche-risque-depuis')).toContainText('depuis le');
+    await expect(bloc).not.toContainText('calculé le');
     const raisons = bloc.getByTestId('fiche-risque-raisons').locator('li');
     await expect(raisons).toHaveCount(3);
     await expect(raisons.nth(0)).toHaveText('Aucune réponse, aucun clic ni aucune lecture depuis plus de 60 jours');
@@ -101,6 +103,19 @@ test.describe('Fiche contact : risque de désengagement', () => {
     await expect(filtre.locator('option')).toHaveCount(5);
     await filtre.selectOption('eleve');
     await expect.poll(() => requetes.some((u) => new URL(u).searchParams.get('risque') === 'eleve')).toBe(true);
+  });
+
+  /**
+   * 🔴 UNE API QUI NE CONNAÎT PAS LE FILTRE L'IGNORERAIT, et « élevé » rendrait tout l'espace (relecture du lot 7).
+   * Aucune ligne ne porte la clé `risque` : le sélecteur n'est pas offert.
+   */
+  test('🔴 une API qui ne rend pas le champ ne se voit PAS proposer le filtre du risque', async ({ page }) => {
+    await mock(page, [], [SANS_CHAMP]);
+    await page.goto('/contacts');
+    await page.getByTestId('contacts-toggle-filters').click();
+    // Le panneau est bien ouvert (le filtre voisin est là) : l'absence n'est pas celle d'un panneau replié.
+    await expect(page.getByTestId('filtre-joignabilite')).toBeVisible();
+    await expect(page.getByTestId('filtre-risque')).toHaveCount(0);
   });
 
   test('sur un 13 pouces, trois raisons ne font déborder ni la fiche ni la grille', async ({ page }) => {

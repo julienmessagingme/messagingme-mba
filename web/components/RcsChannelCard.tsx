@@ -6,16 +6,39 @@ import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 
 /**
- * Carte d'activation du canal RCS, sur l'accueil, sous le numéro WhatsApp.
+ * L'état du canal RCS et ses deux gestes, partagés par la carte ci-dessous et par l'interrupteur « Canal RCS »
+ * du bloc « Canaux et services » de l'Accueil.
  *
- * Le RCS n'a pas de numéro : ce qui signe les messages est un AGENT de marque, déposé chez un fournisseur et
- * approuvé par Google et les opérateurs. Activer revient donc à donner la clé du canal RCS de ce fournisseur.
+ * 🔴 UNE SEULE INSTANCE PAR PAGE, créée par l'Accueil et passée aux deux. Deux instances liraient deux états :
+ * couper le canal depuis l'interrupteur laisserait la carte annoncer « actif » jusqu'au prochain chargement.
  *
- * La clé n'est jamais relue ni réaffichée. Ce que la carte montre, c'est ce que la clé OUVRE : le nom de
- * l'agent tel que le destinataire le verra, le type de trafic, et les quotas restants. C'est l'information
- * dont un opérateur a besoin ; le secret, lui, ne lui sert à rien une fois posé.
+ * ⚠️ `couper` NE DEMANDE PLUS DE CONFIRMATION ici : c'est l'interrupteur qui la pose, avec le texte de ce que
+ * l'extinction arrête. L'ancien lien « Couper le canal RCS » de la carte est devenu cet interrupteur (plan du
+ * 2026-09-25) : deux portes pour le même geste auraient eu deux confirmations à tenir alignées.
  */
-export function RcsChannelCard({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean }) {
+export interface CanalRcs {
+  /** `null` = pas encore lu. Une lecture en échec vaut `{ active: false }`, comme avant ce lot. */
+  etat: RcsChannelState | null;
+  /** Le formulaire de la clé est-il ouvert ? */
+  ouvert: boolean;
+  /** Ouvre l'activation actuelle (la clé du canal) et amène la carte à l'écran. */
+  ouvrirActivation(): void;
+  fermerActivation(): void;
+  cle: string;
+  setCle(v: string): void;
+  busy: boolean;
+  erreur: string | null;
+  /** Quotas lus à l'activation. */
+  droits: RcsChannelInfo | null;
+  activer(): Promise<void>;
+  /** Coupe le canal, SANS confirmation : l'appelant l'a déjà demandée. Lève en cas d'échec. */
+  couper(): Promise<void>;
+}
+
+/** Identifiant de la carte : l'interrupteur y amène l'écran quand il ouvre l'activation. */
+export const ANCRE_CANAL_RCS = 'canal-rcs';
+
+export function useCanalRcs(tenantId: string): CanalRcs {
   const t = useT();
   const [etat, setEtat] = useState<RcsChannelState | null>(null);
   const [ouvert, setOuvert] = useState(false);
@@ -54,24 +77,45 @@ export function RcsChannelCard({ tenantId, isAdmin }: { tenantId: string; isAdmi
   }
 
   async function couper() {
-    if (!window.confirm(t('Couper le canal RCS ? Les blocs et campagnes RCS redeviendront inactifs.', 'Turn off the RCS channel? RCS blocks and campaigns will become inactive again.'))) return;
     setBusy(true);
     setErreur(null);
     try {
       await deactivateRcsChannel(tenantId);
       setDroits(null);
       await recharger();
-    } catch (e) {
-      setErreur(e instanceof Error ? e.message : t('Coupure impossible', 'Turn off failed'));
     } finally {
       setBusy(false);
     }
   }
 
+  return {
+    etat, ouvert, cle, setCle, busy, erreur, droits, activer, couper,
+    ouvrirActivation: () => {
+      setOuvert(true);
+      setErreur(null);
+      if (typeof document !== 'undefined') document.getElementById(ANCRE_CANAL_RCS)?.scrollIntoView({ block: 'center' });
+    },
+    fermerActivation: () => { setOuvert(false); setCle(''); setErreur(null); },
+  };
+}
+
+/**
+ * Carte d'activation du canal RCS, sur l'accueil, sous le numéro WhatsApp.
+ *
+ * Le RCS n'a pas de numéro : ce qui signe les messages est un AGENT de marque, déposé chez un fournisseur et
+ * approuvé par Google et les opérateurs. Activer revient donc à donner la clé du canal RCS de ce fournisseur.
+ *
+ * La clé n'est jamais relue ni réaffichée. Ce que la carte montre, c'est ce que la clé OUVRE : le nom de
+ * l'agent tel que le destinataire le verra, le type de trafic, et les quotas restants. C'est l'information
+ * dont un opérateur a besoin ; le secret, lui, ne lui sert à rien une fois posé.
+ */
+export function RcsChannelCard({ rcs, isAdmin }: { rcs: CanalRcs; isAdmin: boolean }) {
+  const t = useT();
+  const { etat, ouvert, cle, busy, erreur, droits } = rcs;
   const actif = etat?.active === true;
 
   return (
-    <div data-testid="rcs-channel-card" className="flex flex-col rounded-2xl border border-ink-200 bg-gradient-to-br from-white to-mint-50 p-5 shadow-sm">
+    <div id={ANCRE_CANAL_RCS} data-testid="rcs-channel-card" className="flex flex-col rounded-2xl border border-ink-200 bg-gradient-to-br from-white to-mint-50 p-5 shadow-sm">
       <div className="mb-3 flex items-start gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-mint-100 text-lg">📱</div>
         <div className="min-w-0 flex-1">
@@ -115,7 +159,7 @@ export function RcsChannelCard({ tenantId, isAdmin }: { tenantId: string; isAdmi
         <div className="mt-3">
           {!actif && !ouvert && (
             <button
-              onClick={() => { setOuvert(true); setErreur(null); }}
+              onClick={() => rcs.ouvrirActivation()}
               data-testid="rcs-channel-activate"
               className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600"
             >
@@ -128,7 +172,7 @@ export function RcsChannelCard({ tenantId, isAdmin }: { tenantId: string; isAdmi
               <label className="block text-xs font-medium text-ink-600">{t('Clé d’API du canal RCS', 'RCS channel API key')}</label>
               <input
                 value={cle}
-                onChange={(e) => setCle(e.target.value)}
+                onChange={(e) => rcs.setCle(e.target.value)}
                 type="password"
                 autoComplete="off"
                 data-testid="rcs-channel-key"
@@ -140,25 +184,22 @@ export function RcsChannelCard({ tenantId, isAdmin }: { tenantId: string; isAdmi
               </p>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => void activer()}
+                  onClick={() => void rcs.activer()}
                   disabled={busy || cle.trim() === ''}
                   data-testid="rcs-channel-submit"
                   className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-40"
                 >
                   {busy ? t('Vérification…', 'Checking…') : t('Vérifier et activer', 'Check and enable')}
                 </button>
-                <button onClick={() => { setOuvert(false); setCle(''); setErreur(null); }} className="text-sm text-ink-500 hover:underline">
+                <button onClick={() => rcs.fermerActivation()} className="text-sm text-ink-500 hover:underline">
                   {t('Annuler', 'Cancel')}
                 </button>
               </div>
             </div>
           )}
 
-          {actif && (
-            <button onClick={() => void couper()} disabled={busy} className="text-sm text-ink-500 hover:text-coral hover:underline disabled:opacity-40">
-              {t('Couper le canal RCS', 'Turn off the RCS channel')}
-            </button>
-          )}
+          {/* Le lien « Couper le canal RCS » est devenu l'interrupteur « Canal RCS » du bloc « Canaux et
+              services », juste au-dessus (plan du 2026-09-25) : une seule porte, une seule confirmation. */}
         </div>
       )}
     </div>

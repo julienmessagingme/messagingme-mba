@@ -509,7 +509,9 @@ export function ContactDetail({
                 {risque.score !== null && (
                   <span className="text-xs text-ink-600" data-testid="fiche-risque-score">{risque.score} / 100</span>
                 )}
-                <span className="text-xs text-ink-400">{t('calculé le', 'computed on')} {formatDate(risque.calculeLe, locale)}</span>
+                {/* « DEPUIS LE » ET PAS « CALCULÉ LE » : la date ne bouge qu'au changement de niveau, le calcul
+                    repasse chaque nuit sans la toucher (`PgRisqueStore.ecrire`). */}
+                <span className="text-xs text-ink-400" data-testid="fiche-risque-depuis">{t('depuis le', 'since')} {formatDate(risque.calculeLe, locale)}</span>
                 {risque.niveau === 'inconnu' && (
                   <span className="basis-full text-xs text-ink-500">
                     {t('Aucun message ne lui a été délivré sur les 90 derniers jours : rien à observer.', 'No message was delivered to them in the last 90 days: nothing to observe.')}

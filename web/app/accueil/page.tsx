@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
-import { RcsChannelCard } from '@/components/RcsChannelCard';
+import { RcsChannelCard, useCanalRcs } from '@/components/RcsChannelCard';
+import { CanauxServices } from '@/components/CanauxServices';
 import { Toggle } from '@/components/Toggle';
 import type { Session } from '@/lib/session';
 import { useT, useLocale } from '@/lib/i18n';
@@ -11,14 +12,14 @@ import { fmtNum, fmtCost, sendingLimitLabel, mmLiteBadge, accountReviewBadge, bu
 import {
   getMe, getSettings, getAccountStatus, setHubspotConnected, disconnectHubspot, deconnecterHubspotEspace, listPhoneNumbers,
   setHubspotListsEnabled as saveHubspotListsEnabled,
-  getStats, getTemplateStats, getCostSeries, getEsConfig, completeEmbeddedSignup,
+  getStats, getTemplateStats, getCostSeries,
   demanderCodeNumero, activerNumero,
-  type MeResponse, type AccountStatusResponse, type EsConfig, type CanalCodeNumero,
+  type MeResponse, type AccountStatusResponse, type CanalCodeNumero,
 } from '@/lib/api';
 import { DOT_HEX } from '@/lib/ui';
 import { PastilleNumero } from '@/components/PastilleNumero';
 import { getMbaStatus, putMbaActivation, type MbaStatus } from '@/lib/api-mba';
-import { loadFbSdk, type FbLoginResponse } from '@/lib/fb-sdk';
+import { useConnexionNumero, type ConnexionNumero } from '@/lib/connexion-numero';
 import { lireHubspotActif, affichageHubspotAccueil } from '@/lib/hubspot-actif';
 import { useInstallationHubspot } from '@/lib/hubspot-installation';
 
@@ -315,6 +316,19 @@ function AccueilInner({ session }: { session: Session }) {
 
   // Ouvre le lien d'install/re-consentement HubSpot : le MÊME geste que la carte de Paramètres > Intégrations.
   const { ouvrir: openHubspotInstall, enCours: installPending } = useInstallationHubspot(session.tenantId, isAdmin);
+
+  /**
+   * La connexion d'un numéro et le canal RCS, créés UNE fois ici et partagés par leur carte ET par
+   * l'interrupteur du bloc « Canaux et services » : deux instances liraient deux états, et couper depuis
+   * l'interrupteur laisserait la carte annoncer l'inverse.
+   */
+  const connexionNumero = useConnexionNumero(session.tenantId, (avertissements) => {
+    setAvertissementsConnexion(avertissements);
+    setLoading(true);
+    void load();
+    void loadAccount();
+  });
+  const rcs = useCanalRcs(session.tenantId);
   const affichageHubspot = account
     ? affichageHubspotAccueil({ actif: hubspotActif, aUnNumero: account.hasNumber, portailRelie: account.hubspotPortal?.connected === true })
     : 'rien';
@@ -353,6 +367,21 @@ function AccueilInner({ session }: { session: Session }) {
           ))}
         </div>
       </div>
+
+      {/* 🔴 CANAUX ET SERVICES (plan du 2026-09-25) : un interrupteur par canal ou service, au même endroit.
+          Admin seulement : tous ses gestes le sont côté serveur, et deux de ses lectures aussi. */}
+      {isAdmin && (
+        <CanauxServices
+          tenantId={session.tenantId}
+          compte={accountLoading ? null : account}
+          compteEnEchec={!accountLoading && accountError !== null}
+          onNumeroChange={() => { void loadAccount(); }}
+          connexionNumero={connexionNumero}
+          rcs={rcs}
+          hubspotActif={hubspotActif}
+          onHubspotActif={setHubspotActif}
+        />
+      )}
 
       {loading ? (
         <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
@@ -441,13 +470,9 @@ function AccueilInner({ session }: { session: Session }) {
               </button>
             </div>
           ) : account && !account.hasNumber ? (
-            <ConnectNumberZone
-              tenantId={session.tenantId}
-              isAdmin={isAdmin}
-              onConnected={(avertissements) => { setAvertissementsConnexion(avertissements); setLoading(true); void load(); void loadAccount(); }}
-            />
+            <ConnectNumberZone isAdmin={isAdmin} connexion={connexionNumero} />
           ) : (
-            <div data-testid="numero-card" className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+            <div id="numero-whatsapp" data-testid="numero-card" className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Numéro WhatsApp', 'WhatsApp number')}</h3>
                 {account && <PastilleNumero status={account.status} />}
@@ -548,7 +573,7 @@ function AccueilInner({ session }: { session: Session }) {
           {/* Canal RCS : juste sous la carte du numéro WhatsApp, parce que c'est la même question posée à
               l'opérateur (« par où je parle à mes clients ? »). Le RCS n'a pas de numéro, il a un AGENT :
               l'activation demande donc la clé du canal, pas un raccordement de ligne. */}
-          <RcsChannelCard tenantId={session.tenantId} isAdmin={isAdmin} />
+          <RcsChannelCard rcs={rcs} isAdmin={isAdmin} />
 
           {/* HubSpot : carte SÉPARÉE, sous le bloc MBA. Elle vivait imbriquée dans la carte du numéro, où
               elle passait inaperçue alors qu'elle gouverne une intégration entière. La grille fait 2 colonnes :
@@ -791,128 +816,20 @@ function BadgeField({ label, badge }: { label: string; badge: StatusBadge }) {
 // Le SDK Facebook vit dans `@/lib/fb-sdk` depuis le 2026-09-23 : l'écran des publicités ouvre lui aussi
 // une fenêtre Meta, et `fbSdkLoading` est un singleton de module qu'on ne peut pas dupliquer.
 
-/** Attend qu'une valeur apparaisse (session info postMessage), sinon null au timeout. */
-function waitFor<T>(get: () => T | undefined, timeoutMs: number): Promise<T | null> {
-  return new Promise((resolve) => {
-    const start = Date.now();
-    const t = setInterval(() => {
-      const v = get();
-      if (v !== undefined) { clearInterval(t); resolve(v); }
-      else if (Date.now() - start > timeoutMs) { clearInterval(t); resolve(null); }
-    }, 200);
-  });
-}
-
 /**
- * Onboarding d'un espace SANS numéro : point d'entrée de l'**Embedded Signup Meta** (Tech Provider).
- * Le bouton ouvre la popup Meta (SDK FB + config_id) ; la popup renvoie (1) un `code` échangeable (TTL 30 s,
- * via le callback FB.login) et (2) `waba_id` + `phone_number_id` (via postMessage `WA_EMBEDDED_SIGNUP`).
- * On poste les trois au backend qui échange, rattache et abonne. Si META_ES_CONFIG_ID n'est pas posé côté
- * serveur, le bouton reste le placeholder « bientôt disponible ».
+ * Onboarding d'un espace SANS numéro : le bouton ouvre la fenêtre Meta (Embedded Signup).
+ *
+ * ⚠️ LA MÉCANIQUE A QUITTÉ CE COMPOSANT (2026-09-25) pour `useConnexionNumero` (`@/lib/connexion-numero`),
+ * créé une fois par l'Accueil : l'interrupteur « Numéro WhatsApp » du bloc « Canaux et services » lance la même
+ * connexion, et deux copies auraient été deux fenêtres Meta à tenir alignées. Si META_ES_CONFIG_ID n'est pas posé
+ * côté serveur, le bouton reste le placeholder « bientôt disponible ».
  */
-function ConnectNumberZone({ tenantId, isAdmin, onConnected }: { tenantId: string; isAdmin: boolean; onConnected: (avertissements: string[]) => void }) {
+function ConnectNumberZone({ isAdmin, connexion }: { isAdmin: boolean; connexion: ConnexionNumero }) {
   const t = useT();
-  const [cfg, setCfg] = useState<EsConfig | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // waba_id / phone_number_id arrivent par postMessage, PAS par le callback FB.login -> stash dans une ref.
-  const idsRef = useRef<{ wabaId: string; phoneNumberId: string } | undefined>(undefined);
-
-  useEffect(() => {
-    getEsConfig(tenantId).then(setCfg).catch(() => setCfg({ enabled: false, appId: '', configId: '', graphVersion: '' }));
-  }, [tenantId]);
-
-  useEffect(() => {
-    // Origine ANCRÉE sur la frontière de point : accepte www./business.facebook.com, REJETTE evilfacebook.com
-    // (endsWith('facebook.com') l'aurait laissé passer -> injection d'ids forgés via postMessage).
-    const FB_ORIGIN = /^https:\/\/([a-z0-9-]+\.)*facebook\.com$/;
-    const asStr = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : typeof v === 'number' ? String(v) : undefined);
-    /** Contenu d'un message, en texte, pour la trace de diagnostic. Ne throw jamais (données arbitraires). */
-    const brut = (v: unknown): string => {
-      if (typeof v === 'string') return v;
-      try { return JSON.stringify(v) ?? String(v); } catch { return '[non sérialisable]'; }
-    };
-    function onMsg(e: MessageEvent) {
-      // ⚠️ Trace AVANT les trois filtres ci-dessous. Ils retournent en SILENCE (origine, JSON illisible,
-      // étiquette inattendue), ce qui rendait impossible de distinguer « Meta n'a rien envoyé » de « Meta a
-      // envoyé quelque chose qu'on a jeté ». Cette confusion a coûté un aller-retour de diagnostic sur un
-      // embarquement bloqué (2026-08-17) : sans cette trace, on cherche du côté de Meta un défaut qui est chez
-      // nous, ou l'inverse. On ne journalise QUE ce qui vient de Facebook ou parle d'Embedded Signup, pour ne
-      // pas noyer la console dans les messages des extensions du navigateur.
-      const texte = brut(e.data);
-      if (FB_ORIGIN.test(e.origin) || texte.includes('WA_EMBEDDED')) {
-        // eslint-disable-next-line no-console
-        console.info('[ES] message reçu | origine =', e.origin, '| contenu =', texte.slice(0, 400));
-      }
-      if (typeof e.origin !== 'string' || !FB_ORIGIN.test(e.origin)) return;
-      // `e.data` peut être une CHAÎNE JSON (SDK) OU déjà un objet selon le canal -> on gère les deux.
-      let d: { type?: string; event?: string; data?: Record<string, unknown> } & Record<string, unknown>;
-      try {
-        d = typeof e.data === 'string' ? JSON.parse(e.data) : (e.data as typeof d);
-      } catch { return; /* message non-JSON du SDK */ }
-      if (!d || d.type !== 'WA_EMBEDDED_SIGNUP') return;
-      // eslint-disable-next-line no-console
-      console.info('[ES] message', d.event, d.data ?? d);
-      // On capture les ids dès qu'ils sont présents, QUEL QUE SOIT l'event (FINISH, etc.), et qu'ils soient
-      // envoyés en string OU en number (Meta n'est pas constant) -> plus de « popup n'a rien renvoyé » à tort.
-      const p = (d.data ?? d) as { waba_id?: unknown; phone_number_id?: unknown };
-      const wabaId = asStr(p.waba_id);
-      const phoneNumberId = asStr(p.phone_number_id);
-      if (wabaId && phoneNumberId) {
-        idsRef.current = { wabaId, phoneNumberId };
-        // eslint-disable-next-line no-console
-        console.info('[ES] ids capturés', wabaId, phoneNumberId);
-      }
-    }
-    window.addEventListener('message', onMsg);
-    return () => window.removeEventListener('message', onMsg);
-  }, []);
-
-  async function connect() {
-    if (!cfg?.enabled || busy) return;
-    setBusy(true);
-    setError(null);
-    idsRef.current = undefined;
-    try {
-      await loadFbSdk(cfg.appId, cfg.graphVersion, t);
-      window.FB!.login(
-        (resp) => {
-          void (async () => {
-            try {
-              const code = resp?.authResponse?.code;
-              if (typeof code !== 'string' || code === '') {
-                setError(t('Connexion Meta annulée ou refusée.', 'Meta connection cancelled or denied.'));
-                return;
-              }
-              // La session info (waba/numéro) peut arriver juste après le callback : on lui laisse 6 s.
-              //
-              // Son ABSENCE n'est plus une erreur. Meta ne l'émet que lorsque la popup exécute vraiment les
-              // étapes de configuration : un client qui rouvre un parcours DÉJÀ abouti n'obtient qu'un code, et
-              // se retrouvait alors bloqué définitivement, sans aucun recours (mesuré le 2026-08-17). On envoie
-              // donc le code seul, et le serveur retrouve le compte et le numéro à partir du token.
-              const ids = await waitFor(() => idsRef.current, 6000);
-              const res = await completeEmbeddedSignup(tenantId, { code, ...(ids ?? {}) });
-              // Les avertissements REMONTENT : cette zone est démontée par `onConnected` (l'espace a désormais
-              // un numéro), donc les garder ici reviendrait à les effacer au moment de les afficher.
-              onConnected(res.warnings ?? []);
-            } catch (err) {
-              setError(err instanceof Error ? err.message : t('Connexion impossible', 'Connection failed'));
-            } finally {
-              setBusy(false);
-            }
-          })();
-        },
-        { config_id: cfg.configId, response_type: 'code', override_default_response_type: true, extras: { setup: {} } },
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('Connexion impossible', 'Connection failed'));
-      setBusy(false);
-    }
-  }
-
+  const { cfg, busy, error, connect } = connexion;
   const ready = cfg?.enabled === true && isAdmin;
   return (
-    <div className="rounded-2xl border border-dashed border-ink-300 bg-ink-50 p-5 shadow-sm">
+    <div id="numero-whatsapp" className="rounded-2xl border border-dashed border-ink-300 bg-ink-50 p-5 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold tracking-tight text-ink-500">{t('Numéro WhatsApp', 'WhatsApp number')}</h3>
         <span className="inline-flex items-center gap-1.5 rounded-full bg-ink-100 px-2.5 py-1 text-xs font-medium text-ink-500">

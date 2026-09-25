@@ -160,6 +160,18 @@ export function activerNumero(tenantId: string, code?: string): Promise<{ actif:
   return request(`/tenants/${tenantId}/numero/activer`, { method: 'POST', body: JSON.stringify(code === undefined ? {} : { code }) });
 }
 
+/**
+ * DÉLIE le numéro de l'espace (Accueil, « Canaux et services », migration 0180) : plus aucun envoi, campagnes en
+ * pause, messages reçus non enregistrés. Rien ne change chez Meta, et `relierNumero` le rétablit d'un clic.
+ */
+export function delierNumero(tenantId: string): Promise<{ delie: true; delieLe: string; campagnesEnPause: number }> {
+  return request(`/tenants/${tenantId}/numero/delier`, { method: 'POST', body: JSON.stringify({}) });
+}
+/** RELIE le numéro : les campagnes mises en pause par le geste repartent (dans la minute). */
+export function relierNumero(tenantId: string): Promise<{ relie: true; campagnesReprises: number; campagnesReprogrammees: number }> {
+  return request(`/tenants/${tenantId}/numero/relier`, { method: 'POST', body: JSON.stringify({}) });
+}
+
 // --- Automations (Lot E : déclencher un scénario sur un événement) ---
 
 /**

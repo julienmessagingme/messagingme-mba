@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  BADGE_NIVEAU_RISQUE, LIBELLES_RAISON_RISQUE, NIVEAUX_DU_FILTRE, NIVEAUX_RISQUE, libelleRaisonRisque, risqueLu,
+  BADGE_NIVEAU_RISQUE, LIBELLES_RAISON_RISQUE, NIVEAUX_DU_FILTRE, NIVEAUX_RISQUE, apiConnaitLeRisque, libelleRaisonRisque,
+  risqueLu,
 } from './risque';
 
 /**
@@ -63,5 +64,24 @@ describe('risqueLu : le risque d’une fiche venue du réseau', () => {
   it('des raisons mal formées sont écartées une à une, sans faire tomber le reste', () => {
     expect(risqueLu({ niveau: 'moyen', score: 40, raisons: ['silence_30j', 3, null, ''], calculeLe: CALCULE })?.raisons).toEqual(['silence_30j']);
     expect(risqueLu({ niveau: 'moyen', score: 40, raisons: 'silence_30j', calculeLe: CALCULE })?.raisons).toEqual([]);
+  });
+});
+
+describe('apiConnaitLeRisque : le filtre du risque n’est offert qu’à une API qui le connaît', () => {
+  it('🔴 une ligne qui porte la clé, même à null (jamais calculée), suffit', () => {
+    expect(apiConnaitLeRisque([{ id: 'a' }, { id: 'b', risque: null }])).toBe(true);
+    expect(apiConnaitLeRisque([{ id: 'a', risque: { niveau: 'eleve', score: 70, raisons: [], calculeLe: '2026-09-25T03:05:00.000Z' } }])).toBe(true);
+  });
+
+  it('🔴 une API d’avant le lot 7 (aucune ligne ne porte la clé) : non, sinon « élevé » viserait tout l’espace', () => {
+    expect(apiConnaitLeRisque([{ id: 'a' }, { id: 'b', profileName: 'X' }])).toBe(false);
+  });
+
+  it('aucune ligne ne prouve rien : non', () => {
+    expect(apiConnaitLeRisque([])).toBe(false);
+  });
+
+  it('une clé héritée ou une ligne qui n’est pas un objet ne compte pas', () => {
+    expect(apiConnaitLeRisque([Object.create({ risque: null }), null, 'risque', ['risque']])).toBe(false);
   });
 });

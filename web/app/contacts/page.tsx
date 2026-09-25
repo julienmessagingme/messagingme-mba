@@ -244,6 +244,7 @@ function ContactsInner({ session }: { session: Session }) {
           userFields={userFields}
           tagSuggestions={tagSuggestions}
           onClear={() => setFilters({})}
+          lignes={contacts}
         />
       )}
 

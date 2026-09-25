@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useT } from '@/lib/i18n';
 import type { ContactFilters, ContactFieldFilter, ContactFieldOp, UserFieldDef } from '@/lib/api';
 import { inputClsAuto } from '@/lib/ui';
-import { BADGE_NIVEAU_RISQUE, NIVEAUX_DU_FILTRE, estNiveauRisque } from '@/lib/risque';
+import { BADGE_NIVEAU_RISQUE, NIVEAUX_DU_FILTRE, apiConnaitLeRisque, estNiveauRisque } from '@/lib/risque';
 
 /**
  * Panneau de filtres de contacts, CONTRÔLÉ (édite un ContactFilters via onChange). Partagé par le mini-CRM
@@ -16,14 +16,31 @@ import { BADGE_NIVEAU_RISQUE, NIVEAUX_DU_FILTRE, estNiveauRisque } from '@/lib/r
  * tags (possède ET/OU + ne possède pas), champs perso répétables (contient / ne contient pas / égal / vide /
  * rempli), et un contrôle Email dédié.
  */
-export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestions, onClear }: {
+export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestions, onClear, lignes }: {
   filters: ContactFilters;
   onChange: (f: ContactFilters) => void;
   userFields: UserFieldDef[];
   tagSuggestions: string[];
   onClear: () => void;
+  /**
+   * Les lignes que l'écran vient de recevoir de `/contacts`. REQUISES : elles seules disent si l'API connaît le
+   * filtre du risque (`apiConnaitLeRisque`), et un écran qui oublierait de les passer ne le proposerait jamais,
+   * plutôt que de le proposer à une API qui l'ignorerait.
+   */
+  lignes: readonly unknown[];
 }) {
   const t = useT();
+  /**
+   * 🔴 LE FILTRE DU RISQUE N'EST OFFERT QUE SI L'API A MONTRÉ QU'ELLE LE CONNAÎT (relecture du lot 7). Une API qui
+   * l'ignore rendrait tout l'espace à qui demande « élevé ». ACQUIS, jamais perdu : une recherche qui ne rend
+   * aucune ligne ne doit pas faire disparaître le sélecteur. Et un filtre déjà POSÉ (brouillon de campagne repris)
+   * reste toujours visible, pour qu'on le voie et qu'on puisse le retirer.
+   */
+  const [risqueConnu, setRisqueConnu] = useState(() => apiConnaitLeRisque(lignes));
+  useEffect(() => {
+    if (!risqueConnu && apiConnaitLeRisque(lignes)) setRisqueConnu(true);
+  }, [lignes, risqueConnu]);
+  const montrerRisque = risqueConnu || filters.risque !== undefined;
   const [tagInput, setTagInput] = useState('');
   const [tagExInput, setTagExInput] = useState('');
   const set = (patch: Partial<ContactFilters>) => onChange({ ...filters, ...patch });
@@ -107,7 +124,7 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
             <option value="connu_injoignable">{t('sauf les injoignables connus', 'except known unreachable')}</option>
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-xs text-ink-500">
+        {montrerRisque && <label className="flex flex-col gap-1 text-xs text-ink-500">
           {t('Risque de désengagement', 'Disengagement risk')}
           {/* Le niveau CALCULÉ chaque nuit. ⚠️ Une fiche jamais calculée n'est dans aucun niveau, « inconnu »
               compris : « inconnu » est un calcul qui n'a rien pu observer (rien de délivré sur 90 jours). Le
@@ -125,7 +142,7 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
               </option>
             ))}
           </select>
-        </label>
+        </label>}
         <label className="flex flex-col gap-1 text-xs text-ink-500">
           {t('Téléphone commence par', 'Phone starts with')}
           <input value={filters.phonePrefix ?? ''} onChange={(e) => set({ phonePrefix: e.target.value || undefined })} className={inputClsAuto} placeholder="+336" />

@@ -204,6 +204,7 @@ export function ListeDestinataires({
           userFields={userFields}
           tagSuggestions={tagSuggestions}
           onClear={() => onFiltres({})}
+          lignes={contacts}
         />
       </div>
 

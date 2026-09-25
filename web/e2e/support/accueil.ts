@@ -52,6 +52,23 @@ export async function mockAccueil(
     codeNumeroRefus?: string;
     /** Fait échouer `POST /numero/activer` en 422 avec ce message (code faux, register refusé). */
     activerNumeroRefus?: string;
+    /**
+     * Le bloc « Canaux et services » (2026-09-25). Chaque service garde un ÉTAT que ses gestes changent : délier
+     * pose `delieLe` sur le statut du compte relu ensuite, couper le RCS le rend inactif, etc. Absent, chaque
+     * lecture retombe sur `{}`, c'est-à-dire le comportement de ce support avant le bloc.
+     */
+    canaux?: {
+      rcs?: { active: boolean; channel?: Record<string, unknown> };
+      /** Réponse de `GET /channels-me/connection`. */
+      chaine?: Record<string, unknown>;
+      posts?: unknown[];
+      /** Réponse de `GET /pubs/connexion`, ou `'absent'` : la route rend le 404 du routeur. */
+      pubs?: Record<string, unknown> | 'absent';
+      /** Les routes NEUVES (délier, relier, débrancher la chaîne) rendent le 404 du routeur : l'API plus ancienne. */
+      routesAbsentes?: boolean;
+      /** Rempli par le mock : « VERBE chemin » de chaque geste reçu. */
+      gestes?: string[];
+    };
   } = {},
 ): Promise<void> {
   await page.addInitScript((s) => {
@@ -62,11 +79,63 @@ export async function mockAccueil(
   const settings = over.settings ?? defaultSettings;
   // Liste des numéros (pour l'avertissement multi-numéros du dialogue de déconnexion). Défaut : 1 numéro.
   const phoneNumbers = Array.from({ length: over.numbersCount ?? 1 }, (_v, i) => ({ id: `PN${i + 1}`, displayPhoneNumber: '+33 5 25 68 02 50' }));
+  // L'état VIVANT des services du bloc « Canaux et services », que leurs gestes font changer.
+  const canaux = over.canaux;
+  const vivant = { rcs: canaux?.rcs, chaine: canaux?.chaine, pubs: canaux?.pubs };
 
   await page.route('**/api/backend/**', async (route) => {
     const url = route.request().url();
     const json = (body: unknown): Promise<void> =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    if (canaux) {
+      const methode = route.request().method();
+      const chemin = new URL(url).pathname.replace('/api/backend', '');
+      const routeur404 = (): Promise<void> => route.fulfill({
+        status: 404, contentType: 'application/json',
+        body: JSON.stringify({ message: `Route ${methode}:${chemin} not found`, error: 'Not Found', statusCode: 404 }),
+      });
+      const geste = (): void => { canaux.gestes?.push(`${methode} ${chemin}`); };
+      if (methode === 'POST' && chemin.endsWith('/numero/delier')) {
+        geste();
+        if (canaux.routesAbsentes) return routeur404();
+        account.delieLe = '2026-09-25T10:00:00.000Z';
+        return json({ delie: true, delieLe: account.delieLe, campagnesEnPause: 2 });
+      }
+      if (methode === 'POST' && chemin.endsWith('/numero/relier')) {
+        geste();
+        if (canaux.routesAbsentes) return routeur404();
+        account.delieLe = null;
+        return json({ relie: true, campagnesReprises: 1, campagnesReprogrammees: 1 });
+      }
+      if (chemin.endsWith('/rcs/channel')) {
+        if (methode === 'DELETE') { geste(); vivant.rcs = { active: false }; return json({ active: false }); }
+        if (methode === 'GET' && vivant.rcs) return json(vivant.rcs);
+      }
+      if (chemin.endsWith('/channels-me/connection')) {
+        if (methode === 'DELETE') {
+          geste();
+          if (canaux.routesAbsentes) return routeur404();
+          vivant.chaine = { ...vivant.chaine, connection: null };
+          return json({ ok: true, supprimee: true });
+        }
+        if (methode === 'GET' && vivant.chaine) return json(vivant.chaine);
+      }
+      if (methode === 'GET' && chemin.endsWith('/channels-me/posts') && canaux.posts) return json({ posts: canaux.posts, distant: 'ok' });
+      if (chemin.endsWith('/pubs/connexion')) {
+        if (methode === 'DELETE') {
+          geste();
+          if (vivant.pubs && vivant.pubs !== 'absent') vivant.pubs = { ...vivant.pubs, connexion: null };
+          return json({ ok: true, revoqueChezMeta: true });
+        }
+        if (methode === 'GET' && vivant.pubs === 'absent') return routeur404();
+        if (methode === 'GET' && vivant.pubs) return json(vivant.pubs);
+      }
+      if (methode === 'PATCH' && chemin.endsWith('/settings/hubspot-actif')) {
+        geste();
+        const b = (route.request().postDataJSON() ?? {}) as { actif?: boolean };
+        return json({ hubspotActif: b.actif === true });
+      }
+    }
     // Toggle synchro par numéro (PATCH .../phone-numbers/:id/hubspot). action:'disconnect' -> réponse de déconnexion ;
     // sinon écho de `connected` + catchupTriggered mocké (pause/reprise).
     if (route.request().method() === 'PATCH' && url.endsWith('/hubspot')) {

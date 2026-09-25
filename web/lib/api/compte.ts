@@ -59,6 +59,11 @@ export interface AccountStatusResponse {
   /** Portail HubSpot lié au tenant (mmhs.tenant_portals). connected=false -> proposer « Connecter HubSpot ».
    *  listsScopeGranted -> le portail a accordé crm.lists.read (import de listes sans re-consentement). */
   hubspotPortal: { connected: boolean; hubId?: string; hubDomain?: string | null; listsScopeGranted?: boolean };
+  /**
+   * Instant où le numéro a été DÉLIÉ de l'espace (migration 0180, ISO). `null` = relié. OPTIONNEL à la lecture :
+   * une API plus ancienne ne l'envoie pas, et l'absence veut dire « relié », ce qu'il était forcément.
+   */
+  delieLe?: string | null;
   status: { dot: AccountDot; label: string; reason: string };
 }
 export function getAccountStatus(tenantId: string): Promise<AccountStatusResponse> {

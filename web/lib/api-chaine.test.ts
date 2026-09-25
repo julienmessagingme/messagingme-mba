@@ -34,10 +34,11 @@ vi.mock('./http', () => ({
 
 import {
   MAX_MEDIA_URL, MAX_PHRASE, MAX_TEXTE_POST,
-  allumerLienChaine, creerLienChaine, demanderActivationChaine, enregistrerConnexionChaine,
+  allumerLienChaine, creerLienChaine, debrancherChaine, demanderActivationChaine, enregistrerConnexionChaine,
   eteindreLienChaine, getConnexionChaine, listerConversationsChaine, listerLiensChaine, listerPostsChaine,
-  publierPostChaine,
+  nomDeLaChaine, publierPostChaine,
   testerConnexionChaine,
+  type ReponseConnexionChaine,
 } from './api-chaine';
 
 const T = 'tenant-1';
@@ -55,10 +56,10 @@ afterEach(() => {
 /** La méthode telle que `request` la verra : absente veut dire GET, comme dans `web/lib/http.ts`. */
 const methode = (init?: RequestInit): string => (init?.method ?? 'GET').toUpperCase();
 
-describe('api-chaine : les onze chemins gelés', () => {
+describe('api-chaine : les douze chemins gelés', () => {
   /**
    * 🔴 LE TEST CENTRAL. Chaque ligne est recopiée de `src/http/channels-me.ts` : la base y vaut
-   * `/tenants/:tenantId/channels-me`, et les onze `app.<verbe>` suivent. Si une route bouge côté serveur,
+   * `/tenants/:tenantId/channels-me`, et les douze `app.<verbe>` suivent. Si une route bouge côté serveur,
    * c'est ici que ça casse, pas devant un client.
    */
   const CONTRAT: Array<{ nom: string; appel: () => Promise<unknown>; verbe: string; chemin: string }> = [
@@ -66,6 +67,9 @@ describe('api-chaine : les onze chemins gelés', () => {
       appel: () => getConnexionChaine(T) },
     { nom: 'PUT /connection', verbe: 'PUT', chemin: `/tenants/${T}/channels-me/connection`,
       appel: () => enregistrerConnexionChaine(T, { orgId: 'o', channelId: 'c', apiKey: 'k', secret: 's' }) },
+    // La douzième (2026-09-25) : débrancher la chaîne depuis l'Accueil, « Canaux et services ».
+    { nom: 'DELETE /connection', verbe: 'DELETE', chemin: `/tenants/${T}/channels-me/connection`,
+      appel: () => debrancherChaine(T) },
     { nom: 'POST /connection/test', verbe: 'POST', chemin: `/tenants/${T}/channels-me/connection/test`,
       appel: () => testerConnexionChaine(T) },
     { nom: 'GET /links', verbe: 'GET', chemin: `/tenants/${T}/channels-me/links`,
@@ -93,13 +97,25 @@ describe('api-chaine : les onze chemins gelés', () => {
     expect(methode(appels[0]!.init)).toBe(verbe);
   });
 
-  it('🔴 il y a ONZE routes : `enable` repare un bouton mort, `conversations` mesure ce qu il a produit', () => {
+  it('🔴 il y a DOUZE routes : `enable` repare un bouton mort, `conversations` mesure, DELETE debranche', () => {
     // ⚠️ CE COMPTE EST LE MECANISME, pas une decoration : une route ajoutee cote serveur sans sa ligne ici
     // sort du gel. Le lot du 2026-09-07 a justement ajoute `GET /links/conversations` sans l y inscrire, et
     // rien n a cassé : le contrat gelait alors dix routes sur onze.
-    expect(CONTRAT).toHaveLength(11);
+    expect(CONTRAT).toHaveLength(12);
     expect(CONTRAT.map((c) => c.nom)).toContain('POST /links/:id/enable');
     expect(CONTRAT.map((c) => c.nom)).toContain('GET /links/conversations');
+    expect(CONTRAT.map((c) => c.nom)).toContain('DELETE /connection');
+  });
+
+  it('le nom de la chaîne : celle des identifiants, sinon la première listée, sinon rien', () => {
+    const base = { organisation: null, distant: 'ok' as const };
+    const cx = { orgId: 'o', channelId: 'c2', hasApiKey: true, hasSecret: true, verifiedAt: null };
+    const r = (connection: ReponseConnexionChaine['connection'], channels: ReponseConnexionChaine['channels']): ReponseConnexionChaine =>
+      ({ ...base, connection, channels });
+    expect(nomDeLaChaine(r(cx, [{ id: 'c1', name: 'Première' }, { id: 'c2', name: 'La bonne' }]))).toBe('La bonne');
+    expect(nomDeLaChaine(r(cx, [{ id: 'c9', name: 'Seule' }]))).toBe('Seule');
+    expect(nomDeLaChaine(r(cx, []))).toBeNull();
+    expect(nomDeLaChaine(null)).toBeNull();
   });
 
   it('tout part sous /tenants/<tenantId>/channels-me : l isolation tenant est dans CHAQUE chemin', () => {

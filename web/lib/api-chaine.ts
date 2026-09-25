@@ -169,6 +169,25 @@ export function enregistrerConnexionChaine(
 }
 
 /**
+ * DÉBRANCHE la chaîne (Accueil, « Canaux et services ») : oublie les identifiants, rien d'autre. Les liens et
+ * les publications déjà parues restent, et leurs boutons continuent de démarrer leur scénario. `supprimee` est
+ * faux quand la chaîne l'était déjà : ce n'est pas une erreur.
+ */
+export function debrancherChaine(tenantId: string): Promise<{ ok: true; supprimee: boolean }> {
+  return request(`${base(tenantId)}/connection`, { method: 'DELETE' });
+}
+
+/**
+ * Le NOM de la chaîne branchée : celle que désignent les identifiants, sinon la première que le fournisseur
+ * liste, sinon `null` (fournisseur muet, ou chaîne sans nom). Partagé par l'aperçu de l'écran Chaîne et par
+ * l'Accueil : deux calculs du même nom finiraient par ne plus désigner la même chaîne.
+ */
+export function nomDeLaChaine(c: ReponseConnexionChaine | null): string | null {
+  if (c === null || !Array.isArray(c.channels)) return null;
+  return c.channels.find((x) => x.id === c.connection?.channelId)?.name ?? c.channels[0]?.name ?? null;
+}
+
+/**
  * Deux lectures chez le fournisseur, jamais une écriture : ce bouton ne publie rien.
  *
  * 🔴 Ne rend JAMAIS un échec. Des identifiants refusés sortent en 422, donc en `ApiError` : l'appelant

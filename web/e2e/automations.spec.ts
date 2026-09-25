@@ -382,8 +382,9 @@ test.describe('Automation : déclencheur publicité (CTWA)', () => {
  *
  * Il ne se règle pas, il se constate : la config part VIDE. Ce que l'écran doit dire AVANT la création, parce
  * que ce déclencheur vient d'un chemin de MASSE (le balayage de nuit) et peut lancer des scénarios facturés :
- * un passage et pas un état, 200 contacts au plus par nuit et par espace, rien pour un désabonné ou un bloqué,
- * et un scénario qui commence par un template.
+ * un passage et pas un état, jamais la nuit (départ à l'ouverture de l'espace), 200 contacts au plus par jour et
+ * par espace, 30 jours entre deux relances d'un même contact, rien pour un désabonné ou un bloqué, et un scénario
+ * qui commence par un template.
  */
 test.describe('Automation : déclencheur « risque élevé »', () => {
   async function monter(page: import('@playwright/test').Page, posted: Array<Record<string, unknown>>, listees: unknown[] = []) {
@@ -412,7 +413,10 @@ test.describe('Automation : déclencheur « risque élevé »', () => {
     await page.getByTestId('automation-trigger').selectOption('risque_eleve');
     const explication = page.getByTestId('config-risque-eleve');
     await expect(explication).toContainText('PASSE en risque élevé');
-    await expect(explication).toContainText('Au plus 200 contacts par nuit et par espace');
+    await expect(page.getByTestId('config-risque-eleve-depart')).toContainText('ne part jamais la nuit');
+    await expect(page.getByTestId('config-risque-eleve-depart')).toContainText('l’ouverture de votre espace');
+    await expect(explication).toContainText('Au plus 200 contacts par jour et par espace');
+    await expect(explication).toContainText('pas le scénario avant 30 jours');
     await expect(explication).toContainText('désabonné ou bloqué ne déclenche rien');
     await expect(explication).toContainText('commencer par un envoi de template');
     await page.getByTestId('automation-workflow').selectOption('wf1');

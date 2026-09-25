@@ -64,7 +64,10 @@ export interface RisqueContact {
   score: number | null;
   /** Les codes tels que le serveur les rend (trois au plus), dans l'ordre de leur poids. */
   raisons: string[];
-  /** La date du dernier calcul (ISO). */
+  /**
+   * Depuis quand la fiche est à ce niveau (ISO). Le calcul repasse chaque nuit, mais cette date ne bouge qu'au
+   * changement de niveau : l'écran dit « depuis le », jamais « calculé le ».
+   */
   calculeLe: string;
 }
 
@@ -82,4 +85,17 @@ export function risqueLu(v: unknown): RisqueContact | null {
   const score = o.niveau !== 'inconnu' && typeof o.score === 'number' && Number.isFinite(o.score) ? o.score : null;
   const raisons = Array.isArray(o.raisons) ? o.raisons.filter((r): r is string => typeof r === 'string' && r !== '') : [];
   return { niveau: o.niveau, score, raisons, calculeLe: o.calculeLe };
+}
+
+/**
+ * L'API connaît-elle le risque ? Oui dès qu'UNE ligne de `/contacts` porte la clé `risque`, même à `null` (fiche
+ * jamais calculée) : une API d'avant le lot 7 ne la rend sur aucune.
+ *
+ * 🔴 C'EST CE QUI DÉCIDE D'OFFRIR LE FILTRE DU RISQUE (relecture du lot 7). Une API qui ne connaît pas le filtre
+ * l'IGNORE : « risque élevé » y rendrait tout l'espace, et une campagne construite dessus partirait à tout le monde.
+ * La console publiée avant l'API (Vercel part au `git push`, l'API à son déploiement), ou une API revenue en
+ * arrière, ne doit donc pas le proposer. ⚠️ Aucune ligne ne prouve rien : on ne propose pas.
+ */
+export function apiConnaitLeRisque(lignes: readonly unknown[]): boolean {
+  return lignes.some((l) => !!l && typeof l === 'object' && !Array.isArray(l) && Object.prototype.hasOwnProperty.call(l, 'risque'));
 }
