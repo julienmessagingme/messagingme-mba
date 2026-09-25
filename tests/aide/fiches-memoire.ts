@@ -152,6 +152,7 @@ export class FichesMemoire {
       id: f.id, externalId: f.externalId, phoneE164: f.phoneE164, bsuid: f.bsuid, profileName: f.profileName,
       fields: { ...f.fields }, tags: [...f.tags], optInStatus: f.optInStatus, optInSource: f.optInSource,
       optOutAt: f.optOutAt, rcsOptoutAt: null, blockedAt: null, whatsappJoignable: null, whatsappJoignableLe: null,
+      risqueNiveau: null, risqueScore: null, risqueRaisons: [], risqueCalculeLe: null,
       createdAt: '2026-09-01T00:00:00.000Z',
     };
   }

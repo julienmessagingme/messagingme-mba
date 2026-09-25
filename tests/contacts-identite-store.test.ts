@@ -168,6 +168,23 @@ describe('lireFicheApi', () => {
     const f = await new PgContactStore(p).lireFicheApi(T, ID);
     expect(appels[0]!.sql).toMatch(/where tenant_id = \$1 and id = \$2 and deleted_at is null/);
     expect(f).toMatchObject({ id: ID, externalId: 'crm-7781', optInStatus: 'opted_out', optOutAt: '2026-09-24T10:00:00.000Z', createdAt: '2026-09-01T00:00:00.000Z', blockedAt: null });
+    // Jamais calculé : rien d'inventé.
+    expect(f).toMatchObject({ risqueNiveau: null, risqueScore: null, risqueRaisons: [], risqueCalculeLe: null });
+  });
+
+  it('lit le risque de désengagement (migration 0178), date en ISO', async () => {
+    const { p, appels } = pool(() => ({
+      rows: [{
+        id: ID, external_id: null, phone_e164: '+33612345678', bsuid: null, profile_name: null, fields: {}, tags: [],
+        opt_in_status: 'opted_in', opt_in_source: null, opt_out_at: null, rcs_optout_at: null, blocked_at: null,
+        whatsapp_joignable: null, whatsapp_joignable_le: null, created_at: new Date('2026-09-01T00:00:00.000Z'),
+        risque_niveau: 'moyen', risque_score: 40, risque_raisons: ['silence_60j'], risque_calcule_le: new Date('2026-09-25T03:05:00.000Z'),
+      }],
+      rowCount: 1,
+    }));
+    const f = await new PgContactStore(p).lireFicheApi(T, ID);
+    expect(appels[0]!.sql).toMatch(/risque_niveau, risque_score, risque_raisons, risque_calcule_le/);
+    expect(f).toMatchObject({ risqueNiveau: 'moyen', risqueScore: 40, risqueRaisons: ['silence_60j'], risqueCalculeLe: '2026-09-25T03:05:00.000Z' });
   });
 });
 

@@ -126,8 +126,20 @@ describe('schemaJobSignaux : le job se relit comme une entrée externe', () => {
       { nom: 'em_link_clicked', id: idSignal('em_link_clicked'), le: LE, contactId: C, lien: 'ab12cd34ef56' },
       { nom: 'em_opted_out', id: idSignal('em_opted_out'), le: LE, waId: '336', canal: 'whatsapp' },
       { nom: 'em_conversation_analyzed', id: idSignal('em_conversation_analyzed'), le: LE, conversationId: C },
+      { nom: 'em_risk_changed', id: idSignal('em_risk_changed', `${C}:${LE}`), le: LE, contactId: C, niveau: 'eleve', ancienNiveau: 'moyen', score: 70, raisons: ['silence_60j', 'sans_reponse', 'non_lu'] },
     ];
     for (const s of signaux) expect(schemaSignal.safeParse(s).success, s.nom).toBe(true);
     expect(signaux.map((s) => s.nom).sort()).toEqual([...NOMS_EVENEMENTS].sort());
+  });
+
+  it('🔴 un changement de risque : niveaux et codes FERMÉS, score de 0 à 100 ou absent, trois raisons au plus', () => {
+    const risque = { nom: 'em_risk_changed', id: idSignal('em_risk_changed', 'x'), le: LE, contactId: C, niveau: 'inconnu', ancienNiveau: null, score: null, raisons: [] };
+    expect(schemaSignal.safeParse(risque).success, 'premier calcul, inconnu sans score').toBe(true);
+    expect(schemaSignal.safeParse({ ...risque, niveau: 'critique' }).success).toBe(false);
+    expect(schemaSignal.safeParse({ ...risque, raisons: ['fatigue'] }).success).toBe(false);
+    expect(schemaSignal.safeParse({ ...risque, niveau: 'eleve', score: 101 }).success).toBe(false);
+    expect(schemaSignal.safeParse({ ...risque, niveau: 'eleve', score: 100, raisons: ['stop', 'bloque', 'negatif', 'injoignable'] }).success).toBe(false);
+    // Aucune donnée de la personne n'a sa place dans ce signal.
+    expect(schemaSignal.safeParse({ ...risque, waId: '33612345678' }).success).toBe(false);
   });
 });

@@ -12,6 +12,10 @@ import type { AutomationEvent } from './match';
  * Un import CSV ou une action en masse n'émettent PAS : poser un tag sur 5 000 contacts déclencherait 5 000
  * scénarios, donc 5 000 messages facturés, sans que personne l'ait demandé. Pour toucher une liste, l'outil
  * prévu est la campagne, qui a ses propres garde-fous (cadence, fenêtre, quality gate).
+ *
+ * 🔴 UNE EXCEPTION, DÉCIDÉE : le balayage du risque de désengagement (`src/engagement/balayage.ts`) publie
+ * `risque_eleve`, seulement sur un PASSAGE en élevé et au plus 200 par nuit et par espace. Ses bornes sont
+ * écrites au point d'émission.
  */
 
 /** Ce qui transite dans la file. `tenantId` porté explicitement : le worker ne le déduit de rien d'autre. */
@@ -95,6 +99,10 @@ export function parseAutomationEventJob(raw: unknown): AutomationEventJob | null
     const valeur = typeof e.valeur === 'string' ? e.valeur.trim() : '';
     if (automationId === '' || valeur === '') return null;
     return { tenantId: j.tenantId, event: { kind: 'avant_date', waId, automationId, valeur } };
+  }
+  if (e.kind === 'risque_eleve') {
+    // Le contact suffit : le passage a déjà été constaté (et plafonné) par le balayage qui publie.
+    return { tenantId: j.tenantId, event: { kind: 'risque_eleve', waId } };
   }
   if (e.kind === 'message') {
     // 🔴 `message` transitait AUTREFOIS uniquement en direct dans le webhook Meta, et cet analyseur le

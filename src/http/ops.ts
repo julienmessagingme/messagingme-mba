@@ -7,6 +7,7 @@ import { journaliser } from '../lib/journal';
 import type { SortAncienAcces } from '../meta/pubs';
 import type { TenantOverviewRow, QueueLoadRow, QueueGroupLoadRow, QueueLatenceRow, GlobalDailyPoint, JobMortRow } from '../ops/store.pg';
 import type { WorkerHeartbeatRow } from '../ops/heartbeat-store.pg';
+import type { BilanRisque } from '../engagement/balayage';
 
 /**
  * Surface d'exploitation cross-tenant, en LECTURE SEULE À UNE EXCEPTION PRÈS.
@@ -178,6 +179,11 @@ export interface OpsRouteDeps {
    */
   etatPoolInstantane?(): { process: string; total: number; libres: number; enAttente: number; max: number; maxMsDepuisDemarrage: number };
   lireAttentesPool?(minutes: number): Promise<unknown[]>;
+  /**
+   * LANCE LE BALAYAGE DU RISQUE DE DÉSENGAGEMENT d'un espace, tout de suite (lot 7 de l'API publique). Rend son
+   * bilan, ou `null` si l'espace est inconnu. Absent -> la route répond 503.
+   */
+  balayerRisque?(tenantId: string): Promise<BilanRisque | null>;
 }
 
 /**
@@ -480,6 +486,32 @@ export function registerOps(
       ancienRevoque: depose.ancienRevoque, note, at: new Date().toISOString(),
     });
     return reply.code(200).send({ tenantId, connexion: depose });
+  });
+
+  /**
+   * LE BALAYAGE DU RISQUE DE DÉSENGAGEMENT, À LA DEMANDE, POUR UN ESPACE (lot 7 de l'API publique, spec § 19).
+   *
+   * 🔴 UNE ÉCRITURE MÉTIER DE PLUS SUR CETTE SURFACE, ET ELLE PORTE SA JUSTIFICATION : c'est le balayage de nuit,
+   * lancé maintenant, pour l'essai réel du lot et le dépannage. Il écrit le risque des fiches, émet les signaux et
+   * peut DÉCLENCHER les automations « risque élevé » (avec le même plafond de 200 par passage et par espace que la
+   * nuit) : un geste d'exploitation, qu'aucun compte de la console ne doit pouvoir faire. Rejoué, il ne redéclenche
+   * rien : un passage en élevé déjà écrit n'en est plus un.
+   *
+   * ⚠️ LA NOTE EST EXIGÉE, comme sur les autres écritures : le jeton est partagé, c'est la seule trace de qui a
+   * lancé le balayage et pourquoi. ⚠️ Il tourne DANS la requête : sur un gros espace, compter en dizaines de
+   * secondes. Un espace verrouillé n'est pas sauté ici (c'est un geste explicite), contrairement à la nuit.
+   */
+  app.post('/ops/risque/:tenantId', opts, async (req, reply) => {
+    if (!deps.balayerRisque) return reply.code(503).send({ error: 'balayage du risque non disponible sur cette instance' });
+    const { tenantId } = req.params as { tenantId: string };
+    if (!estUuid(tenantId)) return reply.code(404).send({ error: 'espace inconnu' });
+    const corps = (req.body ?? {}) as { note?: unknown };
+    const note = typeof corps.note === 'string' ? corps.note.trim().slice(0, 500) : '';
+    if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : qui lance le balayage, et pourquoi' });
+    const bilan = await deps.balayerRisque(tenantId);
+    if (bilan === null) return reply.code(404).send({ error: 'espace inconnu' });
+    journaliser('warn', 'ops_balayage_risque', { ...bilan, note, at: new Date().toISOString() });
+    return reply.code(200).send({ bilan });
   });
 
   /**

@@ -1,3 +1,4 @@
+import type { NiveauRisque, RaisonRisque } from '../engagement/risque';
 import type { AccuseDuStatut, SignalAccuse } from '../webhooks/delivery';
 import type { InboundMessage, SignalReponse } from '../webhooks/inbound';
 import {
@@ -36,6 +37,9 @@ export const PRIORITE_SIGNAL: Readonly<Record<NomEvenement, number>> = {
   em_link_clicked: 1,
   em_opted_out: 1,
   em_conversation_analyzed: 1,
+  // Le balayage de NUIT en émet autant qu'il y a de changements de niveau : c'est un arriéré, comme les accusés,
+  // et il ne doit pas passer devant une réponse ou un désabonnement du jour.
+  em_risk_changed: 0,
 };
 
 /**
@@ -181,6 +185,23 @@ export function signalDesabonnement(waId: string, canal: CanalSignal, messageDuS
 /** La conversation analysée : une RÉFÉRENCE. L'analyse se relit au moment de pousser, jamais dans la file. */
 export function signalAnalyse(conversationId: string): Signal {
   return { nom: 'em_conversation_analyzed', id: idSignal('em_conversation_analyzed'), le: maintenant(), conversationId };
+}
+
+/**
+ * Un changement de NIVEAU du risque de désengagement (balayage de nuit, spec § 19).
+ *
+ * ⚠️ LE CALCUL VOYAGE DANS LE JOB, contrairement à l'analyse : c'est ce que le balayage a constaté à `calculeLe`,
+ * et le relire au moment de pousser rendrait peut-être le calcul d'une nuit suivante sous l'identifiant de
+ * celle-ci. La clé naturelle (fiche, instant du calcul) rend l'identifiant stable et opaque.
+ */
+export function signalRisque(r: {
+  contactId: string; ancien: NiveauRisque | null; nouveau: NiveauRisque; score: number | null; raisons: RaisonRisque[];
+}, calculeLe: Date): Signal {
+  const le = calculeLe.toISOString();
+  return {
+    nom: 'em_risk_changed', id: idSignal('em_risk_changed', `${r.contactId}:${le}`), le, contactId: r.contactId,
+    niveau: r.nouveau, ancienNiveau: r.ancien, score: r.score, raisons: [...r.raisons],
+  };
 }
 
 /**

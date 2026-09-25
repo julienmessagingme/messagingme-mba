@@ -33,10 +33,30 @@ describe('l’enfilement pose le CLIENT comme clé de groupe', () => {
     // La raison d'être du helper. Six sites recopiaient `queue.enqueue(AUTOMATION_EVENT_QUEUE, ...)` : six
     // occasions d'oublier le groupe, et un oubli produit un job SANS groupe, donc un job qui échappe au
     // plafond par espace, sans que rien ne le signale. Le dépôt a déjà payé ce prix le 2026-09-02 (131008).
-    for (const f of ['../src/index.ts', '../src/worker.ts', '../src/workflow/wiring.ts']) {
+    for (const f of ['../src/index.ts', '../src/worker.ts', '../src/workflow/wiring.ts', '../src/engagement/cablage.ts']) {
       const src = sansCommentaires(readFileSync(new URL(f, import.meta.url), 'utf8'));
       expect(src, `${f} enfile encore cette file en direct : le groupe peut y être oublié`)
         .not.toMatch(/enqueue\(\s*AUTOMATION_EVENT_QUEUE/);
+    }
+  });
+
+  /**
+   * 🔴 LES POINTS D'ENFILEMENT D'UN ÉVÉNEMENT D'AUTOMATION SONT RECENSÉS, parce que la règle « aucun chemin de
+   * MASSE n'émet » se tient à ces endroits-là. Les chemins unitaires (fiche, bloc de scénario, réponse, webhook
+   * entrant, échéance d'une date) y sont ; UN seul chemin de masse aussi, par exception décidée (Julien, spec du
+   * 2026-09-24 § 19) : le balayage du risque de désengagement, qui ne publie QUE `risque_eleve`. Un point
+   * d'enfilement neuf fait échouer ce test : il faut alors se demander s'il est de masse, pas seulement l'ajouter.
+   */
+  it('🔴 chaque point d’enfilement est connu, et le seul chemin de masse ne publie que `risque_eleve`', () => {
+    const lire = (f: string): string => sansCommentaires(readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8'));
+    const sites = Object.fromEntries(['index.ts', 'worker.ts', 'workflow/wiring.ts', 'engagement/cablage.ts']
+      .map((f) => [f, (lire(f).match(/enfilerEvenementAutomation\(/g) ?? []).length]));
+    expect(sites).toEqual({ 'index.ts': 4, 'worker.ts': 1, 'workflow/wiring.ts': 2, 'engagement/cablage.ts': 1 });
+    const masse = lire('engagement/cablage.ts');
+    expect(masse).toMatch(/enfilerEvenementAutomation\(o\.file, \{ tenantId: t, event: \{ kind: 'risque_eleve', waId \} \}/);
+    // Ni l'action en masse, ni l'import, ni l'API publique, ni le moteur de campagne n'enfilent.
+    for (const f of ['http/contacts.ts', 'http/import.ts', 'crm/import.ts', 'campaign/engine.ts', 'http/v1-contacts.ts', 'http/v1-sends.ts']) {
+      expect(lire(f), f).not.toMatch(/enfilerEvenementAutomation|AUTOMATION_EVENT_QUEUE/);
     }
   });
 

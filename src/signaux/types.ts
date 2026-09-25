@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { MAX_RAISONS, NIVEAUX_RISQUE, RAISONS_RISQUE, SCORE_MAX, type NiveauRisque, type RaisonRisque } from '../engagement/risque';
 
 /**
  * LE DICTIONNAIRE DES SIGNAUX (spec 2026-09-24, § 8) : ce que la console remonte vers l'outil d'un client
@@ -25,6 +26,7 @@ export const NOMS_EVENEMENTS = [
   'em_link_clicked',
   'em_opted_out',
   'em_conversation_analyzed',
+  'em_risk_changed',
 ] as const;
 export type NomEvenement = (typeof NOMS_EVENEMENTS)[number];
 
@@ -40,6 +42,9 @@ export const NOMS_ATTRIBUTS = [
   'em_whatsapp_optout',
   'em_rcs_optout',
   'em_rcs_reachable',
+  'em_risk_level',
+  'em_risk_score',
+  'em_risk_reasons',
 ] as const;
 export type NomAttribut = (typeof NOMS_ATTRIBUTS)[number];
 
@@ -86,6 +91,7 @@ export const CHAMPS_EVENEMENT = {
     'intent', 'sentiment', 'satisfaction', 'urgence', 'resolved', 'topic', 'action_suggestion', 'handled_by',
     'exchanges_count', ...MORCEAUX_RESUME,
   ],
+  em_risk_changed: ['niveau', 'ancien_niveau', 'score', 'raisons'],
 } as const satisfies Record<NomEvenement, readonly string[]>;
 export type ChampEvenement<N extends NomEvenement> = (typeof CHAMPS_EVENEMENT)[N][number];
 
@@ -168,6 +174,17 @@ export const schemaSignal = z.discriminatedUnion('nom', [
    */
   z.object({ nom: z.literal('em_opted_out'), id, le, waId, canal }).strict(),
   z.object({ nom: z.literal('em_conversation_analyzed'), id, le, conversationId: z.string().uuid() }).strict(),
+  /**
+   * Le risque de désengagement a CHANGÉ DE NIVEAU (balayage de nuit, spec § 19). Le calcul voyage dans le job :
+   * c'est ce que le balayage a constaté à SA date, comme une analyse. `ancienNiveau` à `null` = premier calcul.
+   */
+  z.object({
+    nom: z.literal('em_risk_changed'), id, le, contactId: z.string().uuid(),
+    niveau: z.enum(NIVEAUX_RISQUE),
+    ancienNiveau: z.enum(NIVEAUX_RISQUE).nullable(),
+    score: z.number().int().min(0).max(SCORE_MAX).nullable(),
+    raisons: z.array(z.enum(RAISONS_RISQUE)).max(MAX_RAISONS),
+  }).strict(),
 ]);
 export type Signal = z.infer<typeof schemaSignal>;
 
@@ -225,7 +242,9 @@ export type ContenuSignal =
    * que le contact a écrit STOP. `source` dit toujours d'où vient le refus (`opt_in_source`, ou `rcs_stop`).
    */
   | { nom: 'em_opted_out'; canal: CanalSignal | null; source: string | null }
-  | { nom: 'em_conversation_analyzed'; analyse: AnalyseDuSignal };
+  | { nom: 'em_conversation_analyzed'; analyse: AnalyseDuSignal }
+  /** `score` à `null` et `raisons` vides veulent dire « aucun » : l'adaptateur EFFACE alors l'attribut chez l'outil. */
+  | { nom: 'em_risk_changed'; niveau: NiveauRisque; ancienNiveau: NiveauRisque | null; score: number | null; raisons: RaisonRisque[] };
 
 /** Ce qu'un adaptateur reçoit : le signal émis, complété de ce que le chemin chaud ne savait pas. */
 export interface SignalComplet {

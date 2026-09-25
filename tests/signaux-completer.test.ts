@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { completerSignal, type FicheDuSignal, type LecturesSignal } from '../src/signaux/completer';
-import { signalAnalyse, signalDeLAccuse, signalDeLaReponse, signalDesabonnement, signalDuClic } from '../src/signaux/emetteur';
+import { signalAnalyse, signalDeLAccuse, signalDeLaReponse, signalDesabonnement, signalDuClic, signalRisque } from '../src/signaux/emetteur';
 import { SOURCE_STOP_RCS, type AnalyseDuSignal, type Signal } from '../src/signaux/types';
 
 const T = '0b8f5c1e-3d2a-4c6b-9e7f-1a2b3c4d5e6f';
@@ -73,6 +73,21 @@ describe('completerSignal : relire ce que le chemin chaud ne portait pas', () =>
   it('une conversation analysée : la fiche par la conversation, et l’analyse relue', async () => {
     const r = await completerSignal(lectures().l, T, signalAnalyse(CONV));
     expect(r?.contenu).toEqual({ nom: 'em_conversation_analyzed', analyse: ANALYSE });
+  });
+
+  it('un changement de risque : la fiche par son identifiant, et le calcul du balayage TEL QU’IL VOYAGE dans le job', async () => {
+    const lus: string[] = [];
+    const { l } = lectures({ ficheParId: async () => { lus.push('fiche'); return FICHE; } });
+    const s = signalRisque({ contactId: C, ancien: 'moyen', nouveau: 'eleve', score: 70, raisons: ['silence_60j', 'non_lu'] }, new Date('2026-09-25T03:00:00.000Z'));
+    const r = await completerSignal(l, T, s);
+    expect(lus).toEqual(['fiche']);
+    expect(r?.le).toBe('2026-09-25T03:00:00.000Z');
+    expect(r?.contenu).toEqual({ nom: 'em_risk_changed', niveau: 'eleve', ancienNiveau: 'moyen', score: 70, raisons: ['silence_60j', 'non_lu'] });
+    // Fiche supprimée depuis : plus rien à pousser.
+    expect(await completerSignal(lectures({ ficheParId: async () => null }).l, T, s)).toBeNull();
+    // L'identifiant est stable pour un même calcul, et opaque.
+    expect(signalRisque({ contactId: C, ancien: 'moyen', nouveau: 'eleve', score: 70, raisons: [] }, new Date('2026-09-25T03:00:00.000Z')).id).toBe(s.id);
+    expect(s.id).toMatch(/^[0-9a-f]{32}$/);
   });
 
   it('plus rien à pousser : fiche supprimée, conversation inconnue, analyse disparue', async () => {

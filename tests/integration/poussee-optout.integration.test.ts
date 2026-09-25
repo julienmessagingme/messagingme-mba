@@ -119,7 +119,8 @@ describe.skipIf(!url)('poussée d’opt-out (Postgres)', () => {
    * 🔴 UN SEUL STOP, UNE SEULE ANNONCE. Avec l'ancien contournement (une automation sur le mot STOP vers un bloc
    * « Action »), le mot-clé natif ET le bloc écrivaient `opted_out` : deux annonces, dont une à identifiant
    * aléatoire, que l'outil du client ne peut pas dédoublonner. L'ancien statut est lu DANS l'instruction
-   * (`for update`) : le second passage trouve la fiche déjà désabonnée et se tait. Les deux écritures ont lieu.
+   * (`for update`) : le second passage trouve la fiche déjà désabonnée et se tait, et depuis le lot 7 il n'ÉCRIT
+   * plus rien non plus (cas suivant).
    */
   it('🔴 le mot-clé STOP puis le bloc « Action » : un seul désabonnement annoncé, par le premier', async () => {
     const annonces: Array<{ waIds: string[]; message?: string }> = [];
@@ -134,6 +135,37 @@ describe.skipIf(!url)('poussée d’opt-out (Postgres)', () => {
     await contacts.setOptInByWaId(tenantId, '33600000104', 'opted_in', 'flow');
     await contacts.setOptInByWaId(tenantId, '33600000104', 'opted_out', 'whatsapp_stop', 'wamid.stop-2');
     expect(annonces.map((a) => a.message)).toEqual(['wamid.stop-1', 'wamid.stop-2']);
+  });
+
+  /**
+   * 🔴 UN STATUT DÉJÀ EN PLACE GARDE SA SOURCE ET SA DATE (lot 7 de l'API publique). La source est relue au moment
+   * de pousser le signal (`completerSignal`) : réécrite en `scenario` par le bloc « Action » du contournement,
+   * elle faisait annoncer à l'outil du client un désabonnement sans canal, alors que la personne avait écrit STOP.
+   */
+  it('🔴 le mot-clé STOP puis le bloc « Action » : la source `whatsapp_stop` et la date du premier refus restent', async () => {
+    const contacts = new PgContactStore(pool);
+    const { id } = await contacts.upsertByPhoneReturningId({ tenantId, phoneE164: '+33600000105', profileName: 'E', fields: {}, optInStatus: 'opted_in' });
+    const lire = async () => (await pool.query<{ opt_in_status: string; opt_in_source: string | null; opt_out_at: Date | null; updated_at: Date }>(
+      'select opt_in_status, opt_in_source, opt_out_at, updated_at from contacts where tenant_id = $1 and id = $2', [tenantId, id],
+    )).rows[0]!;
+
+    expect(await contacts.setOptInByWaId(tenantId, '33600000105', 'opted_out', 'whatsapp_stop', 'wamid.stop-3')).toBe(id);
+    const premier = await lire();
+    expect(premier.opt_in_source).toBe('whatsapp_stop');
+    expect(premier.opt_out_at).not.toBeNull();
+
+    // Le second passage rend la fiche (elle existe), mais n'écrit RIEN : ni la source, ni la date, ni `updated_at`.
+    expect(await contacts.setOptInByWaId(tenantId, '33600000105', 'opted_out', 'scenario')).toBe(id);
+    const second = await lire();
+    expect(second.opt_in_status).toBe('opted_out');
+    expect(second.opt_in_source).toBe('whatsapp_stop');
+    expect(second.opt_out_at?.toISOString()).toBe(premier.opt_out_at?.toISOString());
+    expect(second.updated_at.toISOString()).toBe(premier.updated_at.toISOString());
+
+    // Le témoin dans l'autre sens : un statut qui CHANGE s'écrit, source et date comprises.
+    expect(await contacts.setOptInByWaId(tenantId, '33600000105', 'opted_in', 'flow')).toBe(id);
+    const reabonne = await lire();
+    expect(reabonne).toMatchObject({ opt_in_status: 'opted_in', opt_in_source: 'flow', opt_out_at: null });
   });
 
   /**

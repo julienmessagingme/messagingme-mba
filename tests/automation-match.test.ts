@@ -135,6 +135,25 @@ describe('les types d’événement ne se croisent pas', () => {
   });
 });
 
+describe('déclencheur « risque élevé » (lot 7, balayage de nuit)', () => {
+  const risque = auto({ triggerKind: 'risque_eleve', triggerConfig: {} });
+  const passage: AutomationEvent = { kind: 'risque_eleve', waId: '33611' };
+
+  it('le type existe, sans configuration, et correspond à un passage en élevé', () => {
+    expect(isAutomationTriggerKind('risque_eleve')).toBe(true);
+    expect(matchesTrigger(risque, passage)).toBe(true);
+  });
+
+  it('🔴 il ne répond à RIEN d’autre, et rien d’autre ne lui répond', () => {
+    for (const ev of [msg('risque'), { kind: 'tag_added', waId: '33611', tag: 'risque_eleve' }, { kind: 'analysis', waId: '33611', sentiment: 'negatif', resolved: false }] as AutomationEvent[]) {
+      expect(matchesTrigger(risque, ev), ev.kind).toBe(false);
+    }
+    for (const a of [auto(), auto({ triggerKind: 'new_contact' }), auto({ triggerKind: 'conversation_analyzed', triggerConfig: {} })]) {
+      expect(matchesTrigger(a, passage), a.triggerKind).toBe(false);
+    }
+  });
+});
+
 describe('anti-rebond', () => {
   const T = new Date('2026-08-03T12:00:00Z').getTime();
   const ago = (ms: number) => new Date(T - ms);

@@ -11,6 +11,15 @@ import { parseAutomationEventJob, AUTOMATION_EVENT_QUEUE } from '../src/automati
  */
 
 describe('parseAutomationEventJob', () => {
+  it('accepte un passage en risque élevé ; sans contact, il est écarté', () => {
+    expect(parseAutomationEventJob({ tenantId: 't1', event: { kind: 'risque_eleve', waId: '33611' } }))
+      .toEqual({ tenantId: 't1', event: { kind: 'risque_eleve', waId: '33611' } });
+    expect(parseAutomationEventJob({ tenantId: 't1', event: { kind: 'risque_eleve', waId: '' } })).toBeNull();
+    // Rien d'autre ne voyage avec lui : une clé en trop est ignorée, jamais transmise.
+    expect(parseAutomationEventJob({ tenantId: 't1', event: { kind: 'risque_eleve', waId: '33611', tag: 'x' } }))
+      .toEqual({ tenantId: 't1', event: { kind: 'risque_eleve', waId: '33611' } });
+  });
+
   it('accepte un tag posé', () => {
     expect(parseAutomationEventJob({ tenantId: 't1', event: { kind: 'tag_added', waId: '33611', tag: 'vip' } }))
       .toEqual({ tenantId: 't1', event: { kind: 'tag_added', waId: '33611', tag: 'vip' } });

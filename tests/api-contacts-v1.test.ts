@@ -266,6 +266,7 @@ describe('lire et chercher', () => {
     profileName: 'Camille Roy', fields: { ville: 'Lyon' }, tags: ['prospect'], optInStatus: 'opted_in',
     optInSource: 'formulaire-site', optOutAt: null, rcsOptoutAt: null, blockedAt: null,
     whatsappJoignable: true, whatsappJoignableLe: '2026-09-20T10:00:00.000Z', createdAt: '2026-09-01T10:00:00.000Z',
+    risqueNiveau: null, risqueScore: null, risqueRaisons: [], risqueCalculeLe: null,
   };
 
   it('🔴 le contrat de lecture du § 2, champ pour champ', () => {
@@ -274,8 +275,26 @@ describe('lire et chercher', () => {
       fields: { ville: 'Lyon' }, tags: ['prospect'],
       consent: { status: 'opted_in', source: 'formulaire-site', optedOutAt: null },
       rcsOptedOutAt: null, blocked: false, reachability: { whatsapp: true, rcs: null },
+      engagementRisk: null,
       createdAt: '2026-09-01T10:00:00.000Z',
     });
+  });
+
+  it('🔴 le risque de désengagement : `null` tant qu’il n’a jamais été calculé, sinon niveau, score, raisons et date', () => {
+    // Jamais calculé : `null`, et surtout pas un « faible » inventé.
+    expect(formaterFicheApi(LIGNE, null, MAINTENANT).engagementRisk).toBeNull();
+    expect(formaterFicheApi({
+      ...LIGNE, risqueNiveau: 'eleve', risqueScore: 70, risqueRaisons: ['silence_60j', 'sans_reponse', 'non_lu'],
+      risqueCalculeLe: '2026-09-25T03:05:00.000Z',
+    }, null, MAINTENANT).engagementRisk).toEqual({
+      level: 'eleve', score: 70, reasons: ['silence_60j', 'sans_reponse', 'non_lu'], computedAt: '2026-09-25T03:05:00.000Z',
+    });
+    // `inconnu` va sans score : aucun message délivré sur la fenêtre.
+    expect(formaterFicheApi({
+      ...LIGNE, risqueNiveau: 'inconnu', risqueScore: null, risqueRaisons: [], risqueCalculeLe: '2026-09-25T03:05:00.000Z',
+    }, null, MAINTENANT).engagementRisk).toEqual({ level: 'inconnu', score: null, reasons: [], computedAt: '2026-09-25T03:05:00.000Z' });
+    // Un niveau sans date ne se présente pas (CHECK de 0178) : on ne rend pas une date inventée.
+    expect(formaterFicheApi({ ...LIGNE, risqueNiveau: 'faible', risqueScore: 10 }, null, MAINTENANT).engagementRisk).toBeNull();
   });
 
   it('⚠️ une mesure WhatsApp PÉRIMÉE redevient inconnue (`null`, jamais `false`) ; un statut illisible vaut `unknown`', () => {

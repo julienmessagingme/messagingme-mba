@@ -25,7 +25,9 @@ const ID = '00000000-0000-4000-8000-000000000001';
 const FICHE: FicheApi = {
   contactId: ID, externalId: 'crm-7781', phone: '+33612345678', bsuid: null, name: 'Camille Roy',
   fields: { ville: 'Lyon' }, tags: ['prospect'], consent: { status: 'opted_in', source: 'formulaire-site', optedOutAt: null },
-  rcsOptedOutAt: null, blocked: false, reachability: { whatsapp: true, rcs: null }, createdAt: '2026-09-24T10:00:00.000Z',
+  rcsOptedOutAt: null, blocked: false, reachability: { whatsapp: true, rcs: null },
+  engagementRisk: { level: 'moyen', score: 40, reasons: ['silence_60j'], computedAt: '2026-09-25T03:05:00.000Z' },
+  createdAt: '2026-09-24T10:00:00.000Z',
 };
 
 function app(over: Partial<ServiceContactsV1> = {}) {

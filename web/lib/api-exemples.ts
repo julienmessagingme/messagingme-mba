@@ -173,6 +173,7 @@ const CONTACT_LU = {
   rcsOptedOutAt: null,
   blocked: false,
   reachability: { whatsapp: true, rcs: null },
+  engagementRisk: { level: 'moyen', score: 40, reasons: ['silence_60j'], computedAt: '2026-09-25T03:05:00.000Z' },
   createdAt: '2026-09-24T10:00:00.000Z',
 } as const;
 

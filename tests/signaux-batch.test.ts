@@ -119,6 +119,7 @@ describe('versBatch : la traduction du dictionnaire (fonction PURE)', () => {
       { nom: 'em_link_clicked', lien: 'ab12cd34ef56', template: 'promo', destination: 'https://client.fr/promo' },
       { nom: 'em_opted_out', canal: 'whatsapp', source: 'whatsapp_stop' },
       analyse({ summary: 'x'.repeat(700) }),
+      { nom: 'em_risk_changed', niveau: 'eleve', ancienNiveau: 'moyen', score: 70, raisons: ['silence_60j', 'sans_reponse', 'non_lu'] },
     ];
     expect(pleins.map((c) => c.nom).sort()).toEqual(Object.keys(CHAMPS_EVENEMENT).sort());
     for (const c of pleins) {
@@ -232,6 +233,46 @@ describe('versBatch : la traduction du dictionnaire (fonction PURE)', () => {
       expect(p, p.identifiers.custom_id).not.toHaveProperty('events');
     }
     expect(r.requetes.flat()).toHaveLength(4);
+  });
+
+  it('un changement de risque met à jour les trois attributs de la fiche et porte l’ancien niveau dans l’événement', () => {
+    const p = seul(versBatch([signal({ nom: 'em_risk_changed', niveau: 'eleve', ancienNiveau: 'moyen', score: 70, raisons: ['silence_60j', 'non_lu'] })], { resume: false }));
+    expect(p.attributes).toMatchObject({ em_risk_level: 'eleve', em_risk_score: 70, em_risk_reasons: 'silence_60j,non_lu' });
+    expect(p.events?.[0]).toEqual({
+      name: 'em_risk_changed', time: LE,
+      attributes: { em_event_id: ID, niveau: 'eleve', ancien_niveau: 'moyen', score: 70, raisons: 'silence_60j,non_lu' },
+    });
+  });
+
+  it('🔴 un score ABSENT et des raisons VIDES EFFACENT l’attribut chez l’outil (null), jamais ne le laissent en place', () => {
+    // Le contact passe d'« élevé, 70, silence_60j » à « inconnu » : garder le score et les raisons d'avant à côté du
+    // niveau neuf serait un état faux. C'est la SEULE famille qui efface : une analyse sans note n'efface rien.
+    const inconnu = seul(versBatch([signal({ nom: 'em_risk_changed', niveau: 'inconnu', ancienNiveau: 'eleve', score: null, raisons: [] })], { resume: false }));
+    expect(inconnu.attributes).toMatchObject({ em_risk_level: 'inconnu', em_risk_score: null, em_risk_reasons: null });
+    // Dans l'événement, une absence ne s'écrit pas (un attribut d'événement n'est jamais null).
+    expect(inconnu.events?.[0]?.attributes).toEqual({ em_event_id: ID, niveau: 'inconnu', ancien_niveau: 'eleve' });
+    const faible = seul(versBatch([signal({ nom: 'em_risk_changed', niveau: 'faible', ancienNiveau: null, score: 0, raisons: [] })], { resume: false }));
+    expect(faible.attributes).toMatchObject({ em_risk_level: 'faible', em_risk_score: 0, em_risk_reasons: null });
+    // Le témoin dans l'autre sens : les autres signaux n'effacent rien.
+    for (const c of [livre(), analyse({ satisfaction: null, urgence: null })]) {
+      const attrs = seul(versBatch([signal(c)], { resume: false })).attributes ?? {};
+      expect(Object.values(attrs), c.nom).not.toContain(null);
+    }
+  });
+
+  it('🔴 deux changements de risque d’une même fiche dans un job : le DERNIER gagne, qu’il écrive ou qu’il efface', () => {
+    const eleve: ContenuSignal = { nom: 'em_risk_changed', niveau: 'eleve', ancienNiveau: 'moyen', score: 70, raisons: ['silence_60j'] };
+    const inconnu: ContenuSignal = { nom: 'em_risk_changed', niveau: 'inconnu', ancienNiveau: 'eleve', score: null, raisons: [] };
+    const puisEfface = seul(versBatch([signal(eleve, { id: '1'.repeat(32) }), signal(inconnu, { id: '2'.repeat(32) })], { resume: false }));
+    expect(puisEfface.attributes).toMatchObject({ em_risk_level: 'inconnu', em_risk_score: null, em_risk_reasons: null });
+    const puisEcrit = seul(versBatch([signal(inconnu, { id: '1'.repeat(32) }), signal(eleve, { id: '2'.repeat(32) })], { resume: false }));
+    expect(puisEcrit.attributes).toMatchObject({ em_risk_level: 'eleve', em_risk_score: 70, em_risk_reasons: 'silence_60j' });
+  });
+
+  it('🔴 un changement de risque TROP VIEUX n’écrit ni n’efface rien : un calcul plus récent a pu passer', () => {
+    const vieux = { ...signal({ nom: 'em_risk_changed', niveau: 'inconnu', ancienNiveau: 'eleve', score: null, raisons: [] }), le: '2026-09-23T09:00:00.000Z' };
+    const r = versBatch([vieux], { resume: false, evenementsDepuis: '2026-09-24T09:00:00.000Z' });
+    expect(seul(r).attributes).toEqual({ em_contact_id: C, em_whatsapp_optout: false, em_rcs_optout: false });
   });
 
   it('🔴 une `destination` trop longue est OMISE, jamais coupée : une adresse coupée est une adresse fausse', () => {

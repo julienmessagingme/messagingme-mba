@@ -84,6 +84,15 @@ export const EVENEMENTS_SIGNAUX: readonly EntreeEvenement[] = [
       'summary_1 to summary_3: the summary, ONLY when the option is on, in chunks of at most 300 characters, to join end to end with no separator (the last ones are absent when it is short).',
     ],
   },
+  {
+    nom: 'em_risk_changed',
+    quand: ['Chaque nuit, quand le niveau change', 'Every night, when the level changes'],
+    champs: ['niveau', 'ancien_niveau', 'score', 'raisons'],
+    note: [
+      'niveau et ancien_niveau : inconnu, faible, moyen ou eleve. raisons : jusqu’à trois codes séparés par des virgules (silence_60j, silence_30j, sans_reponse, non_lu, reclamation, negatif, insatisfait, injoignable, stop, bloque).',
+      'niveau and ancien_niveau: inconnu, faible, moyen or eleve. raisons: up to three codes separated by commas (silence_60j, silence_30j, sans_reponse, non_lu, reclamation, negatif, insatisfait, injoignable, stop, bloque).',
+    ],
+  },
 ];
 
 export const ATTRIBUTS_SIGNAUX: readonly EntreeAttribut[] = [
@@ -97,4 +106,7 @@ export const ATTRIBUTS_SIGNAUX: readonly EntreeAttribut[] = [
   { nom: 'em_whatsapp_optout', sens: ['Le contact est-il désabonné ?', 'Has the contact unsubscribed?'] },
   { nom: 'em_rcs_optout', sens: ['A-t-il dit STOP sur le canal RCS ?', 'Did they say STOP on the RCS channel?'] },
   { nom: 'em_rcs_reachable', sens: ['Le dernier message RCS lui a-t-il été délivré ?', 'Was the last RCS message delivered to them?'] },
+  { nom: 'em_risk_level', sens: ['Le risque de désengagement : inconnu, faible, moyen ou eleve, recalculé chaque nuit', 'The disengagement risk: inconnu, faible, moyen or eleve, recomputed every night'] },
+  { nom: 'em_risk_score', sens: ['Le score de risque, de 0 à 100 (absent quand le niveau est inconnu)', 'The risk score, from 0 to 100 (absent when the level is inconnu)'] },
+  { nom: 'em_risk_reasons', sens: ['Les raisons principales du niveau, jusqu’à trois codes séparés par des virgules', 'The main reasons for the level, up to three codes separated by commas'] },
 ];

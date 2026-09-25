@@ -64,6 +64,8 @@ import { PgAutomationStore } from './automation/store.pg';
 import { runAutomations } from './automation/runner';
 import { PgWebhookStore } from './webhook-entrant/store.pg';
 import { runDateSweep } from './automation/date-sweep';
+import { balayerRisque, jourABalayer } from './engagement/balayage';
+import { depsBalayageRisque } from './engagement/cablage';
 import { AUTOMATION_EVENT_QUEUE, enfilerEvenementAutomation, parseAutomationEventJob, type AutomationEventJob } from './automation/event-job';
 import type { AutomationTriggerKind } from './automation/match';
 import { buildWorkflowRuntime } from './workflow/wiring';
@@ -1746,6 +1748,53 @@ async function main(): Promise<void> {
   };
   void dateSweep();
   taches.programmer('automations-avant-date', config.AUTOMATION_DATE_SWEEP_INTERVAL_MS, dateSweep);
+
+  /**
+   * LE RISQUE DE DÉSENGAGEMENT, UNE FOIS PAR NUIT ET PAR ESPACE (lot 7 de l'API publique, spec § 19).
+   *
+   * La tâche passe tous les quarts d'heure, et ne balaye qu'entre 3 h et 6 h (Paris), une fois par jour
+   * (`jourABalayer`). Chaque espace est isolé (`balayerRisque`) : une panne d'un espace est dans son bilan et
+   * dans ce journal, le suivant passe. Le câblage est PARTAGÉ avec `/ops` (`src/engagement/cablage.ts`).
+   *
+   * 🔴 C'EST LE SEUL CHEMIN DE MASSE QUI ÉMET UN ÉVÉNEMENT D'AUTOMATION (`risque_eleve`), par exception décidée :
+   * ses trois bornes sont écrites au point d'émission (`src/engagement/balayage.ts`).
+   */
+  const depsRisque = depsBalayageRisque({
+    pool,
+    file: queue,
+    emetteur,
+    automationsActives: (t, kinds) => automationStore.listEnabled(t, kinds),
+    // eslint-disable-next-line no-console
+    journal: (m) => console.warn(m),
+  });
+  let dernierJourRisque: string | null = null;
+  const risqueSweep = async (): Promise<void> => {
+    const jour = jourABalayer(new Date(), dernierJourRisque);
+    if (jour === null) return;
+    try {
+      const bilans = await balayerRisque(depsRisque);
+      // APRÈS le tour des espaces : une liste d'espaces illisible (base indisponible) sera retentée au quart
+      // d'heure suivant, tant que la fenêtre de nuit est ouverte.
+      dernierJourRisque = jour;
+      const enEchec = bilans.filter((b) => b.erreur !== undefined);
+      const total = bilans.reduce((s, b) => ({
+        evalues: s.evalues + b.evalues, transitions: s.transitions + b.transitions,
+        declenches: s.declenches + b.declenches, auDelaDuPlafond: s.auDelaDuPlafond + b.auDelaDuPlafond,
+      }), { evalues: 0, transitions: 0, declenches: 0, auDelaDuPlafond: 0 });
+      // eslint-disable-next-line no-console
+      console.log(`risque-sweep ${jour}: ${bilans.length} espace(s), ${total.evalues} fiche(s), ${total.transitions} changement(s) de niveau, ${total.declenches} automation(s) « risque élevé », ${total.auDelaDuPlafond} au-delà du plafond, ${enEchec.length} espace(s) en échec`);
+      for (const b of bilans) {
+        // eslint-disable-next-line no-console
+        if (b.transitions > 0 || b.erreur !== undefined) console.log(`risque-sweep ${jour}: ${JSON.stringify(b)}`);
+      }
+      if (enEchec.length > 0) alert('sweeper:risque', `risque-sweep : ${enEchec.length} espace(s) en échec, dont ${enEchec[0]!.tenantId} : ${enEchec[0]!.erreur}`);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('risque-sweep erreur:', err instanceof Error ? err.message : err);
+      alert('sweeper:risque', `risque-sweep en échec : ${err instanceof Error ? err.message : err}`);
+    }
+  };
+  taches.programmer('risque-desengagement', 15 * 60_000, risqueSweep);
 
   // Sorti de la garde META_ACCESS_TOKEN ci-dessous : la surveillance des files ne touche pas Meta, et un
   // déploiement sans token Meta ne doit pas devenir aveugle aux messages perdus.

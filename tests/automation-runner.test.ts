@@ -51,6 +51,25 @@ function make(rows: AutomationRow[], over: Partial<AutomationRunnerDeps> = {}): 
 }
 
 describe('runAutomations', () => {
+  it('🔴 un passage en risque élevé ne charge QUE les automations « risque élevé », et démarre hors fenêtre', async () => {
+    const demandes: Array<readonly string[]> = [];
+    const { deps, trace } = make([auto({ triggerKind: 'risque_eleve', triggerConfig: {} })], {
+      listEnabled: async (_t, kinds) => { demandes.push(kinds); return [auto({ triggerKind: 'risque_eleve', triggerConfig: {} })]; },
+    });
+    expect(await runAutomations('t1', { kind: 'risque_eleve', waId: '33611' }, deps)).toBe(1);
+    expect(demandes).toEqual([['risque_eleve']]);
+    // Le balayage ne prouve AUCUNE fenêtre de service : le scénario garde la garde d'ouverture.
+    expect(trace.started).toEqual([{ workflowId: 'wf1', startNodeId: null, windowOpen: false, reprendLaMain: false }]);
+  });
+
+  it('🔴 le plafond horaire de l’automation s’applique aussi au risque élevé', async () => {
+    const { deps, trace } = make([auto({ triggerKind: 'risque_eleve', triggerConfig: {}, maxFiresPerHour: 3 })], {
+      firedSince: async () => 3,
+    });
+    expect(await runAutomations('t1', { kind: 'risque_eleve', waId: '33611' }, deps)).toBe(0);
+    expect(trace.started).toEqual([]);
+  });
+
   it('déclencheur qui correspond -> démarre le scénario et enregistre le tir', async () => {
     const { deps, trace } = make([auto()]);
     expect(await runAutomations('t1', MSG, deps)).toBe(1);

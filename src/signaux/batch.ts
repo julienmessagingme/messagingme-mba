@@ -48,9 +48,16 @@ export interface EvenementBatch {
   time: string;
   attributes: Record<string, ValeurBatch>;
 }
+/**
+ * Un attribut de fiche à `null` est EFFACÉ chez l'outil (« To delete an attribute, set its value to null », page
+ * de l'API Profils, relue le 2026-09-25). Seul le risque de désengagement s'en sert (`attributsEffaces`) : partout
+ * ailleurs, une absence ne s'écrit pas (`propre`), et c'est voulu (une analyse sans note n'efface pas la
+ * précédente). Un attribut d'ÉVÉNEMENT n'est jamais `null`.
+ */
+export type AttributsProfil = Record<string, ValeurBatch | null>;
 export interface ProfilBatch {
   identifiers: { custom_id: string };
-  attributes?: Record<string, ValeurBatch>;
+  attributes?: AttributsProfil;
   events?: EvenementBatch[];
 }
 export interface OptionsBatch {
@@ -134,7 +141,29 @@ function attributsDuSignal(s: SignalComplet): Brut {
     a.em_satisfaction = c.analyse.satisfaction;
     a.em_urgency = c.analyse.urgence;
   }
+  if (c.nom === 'em_risk_changed') {
+    a.em_risk_level = c.niveau;
+    a.em_risk_score = c.score;
+    // Des codes courts, séparés par des virgules : trois au plus, donc loin des 300 caractères.
+    a.em_risk_reasons = c.raisons.join(',');
+  }
   return a;
+}
+
+/**
+ * 🔴 CE QUE LE SIGNAL EFFACE CHEZ L'OUTIL, et seul le risque le demande. Ses attributs décrivent l'état COURANT :
+ * un contact passé d'« élevé, score 70, silence_60j » à « inconnu » n'a plus de score, et un contact « faible »
+ * peut n'avoir aucune raison. Ne rien écrire (`propre`) laisserait chez l'outil le score et les raisons d'avant à
+ * côté du niveau neuf, donc un état faux. Même règle d'âge que `attributsDuSignal` : un signal trop vieux n'efface
+ * rien.
+ */
+function attributsEffaces(s: SignalComplet): Record<string, null> {
+  const c = s.contenu;
+  if (c.nom !== 'em_risk_changed') return {};
+  const out: Record<string, null> = {};
+  if (c.score === null) out.em_risk_score = null;
+  if (c.raisons.length === 0) out.em_risk_reasons = null;
+  return out;
 }
 
 /**
@@ -168,6 +197,13 @@ function attributsDEvenement(c: ContenuSignal): Brut {
         handled_by: c.analyse.handledBy,
         exchanges_count: c.analyse.exchangesCount,
       } satisfies Champs<'em_conversation_analyzed'>;
+    case 'em_risk_changed':
+      return {
+        niveau: c.niveau,
+        ancien_niveau: c.ancienNiveau,
+        score: c.score,
+        raisons: c.raisons.join(','),
+      } satisfies Champs<'em_risk_changed'>;
   }
 }
 
@@ -212,7 +248,7 @@ export function versBatch(
   let sansIdentifiant = 0;
   let tropVieux = 0;
   const depuis = options.evenementsDepuis === undefined ? Number.NEGATIVE_INFINITY : Date.parse(options.evenementsDepuis);
-  const parProfil = new Map<string, { attributes: Record<string, ValeurBatch>; events: EvenementBatch[] }>();
+  const parProfil = new Map<string, { attributes: AttributsProfil; events: EvenementBatch[] }>();
   for (const s of signaux) {
     const customId = identifiantPoussable(s.contact);
     if (customId === null) {
@@ -221,7 +257,8 @@ export function versBatch(
     }
     const p = parProfil.get(customId) ?? { attributes: {}, events: [] };
     const vieux = Date.parse(s.le) < depuis;
-    Object.assign(p.attributes, propre({ ...attributsRelus(s), ...(vieux ? {} : attributsDuSignal(s)) }));
+    // Dans l'ordre des signaux : le dernier état d'une fiche gagne, qu'il écrive une valeur ou qu'il l'efface.
+    Object.assign(p.attributes, propre({ ...attributsRelus(s), ...(vieux ? {} : attributsDuSignal(s)) }), vieux ? {} : attributsEffaces(s));
     if (vieux) tropVieux += 1;
     else p.events.push(evenement(s, options));
     parProfil.set(customId, p);

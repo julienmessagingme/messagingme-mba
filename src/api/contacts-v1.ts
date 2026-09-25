@@ -4,6 +4,7 @@ import type { AuditSink } from '../audit/journal';
 import type { ClesNormalisees, FicheApiLigne, PgContactStore } from '../crm/contact-store.pg';
 import type { UserFieldStore } from '../crm/fields';
 import { verdictWhatsApp } from '../contacts/joignabilite';
+import type { NiveauRisque, RaisonRisque } from '../engagement/risque';
 import { estUuid } from '../http/scope';
 import { resolveFieldKey } from '../ids/resolve';
 import {
@@ -88,7 +89,30 @@ export interface FicheApi {
   rcsOptedOutAt: string | null;
   blocked: boolean;
   reachability: { whatsapp: boolean | null; rcs: boolean | null };
+  /**
+   * Le risque de désengagement (lot 7, spec § 19), calculé chaque nuit. `null` = jamais calculé (la fiche n'a
+   * jamais été sollicitée, ou le balayage n'est pas encore passé). `level: 'inconnu'` va toujours avec
+   * `score: null` : aucun message ne lui a été délivré sur 90 jours. `reasons` : les trois raisons les plus
+   * lourdes, en codes. `computedAt` : la dernière fois que le calcul a été fait, qu'il ait changé ou non.
+   */
+  engagementRisk: EngagementRisk | null;
   createdAt: string;
+}
+
+export interface EngagementRisk {
+  level: NiveauRisque;
+  score: number | null;
+  reasons: RaisonRisque[];
+  computedAt: string;
+}
+
+/**
+ * Le risque tel que l'API le rend. ⚠️ Un niveau sans date de calcul ne peut pas exister (CHECK de 0178) : s'il se
+ * présentait quand même, on rend `null` plutôt qu'un `computedAt` inventé.
+ */
+function risqueDeLaFiche(l: FicheApiLigne): EngagementRisk | null {
+  if (l.risqueNiveau === null || l.risqueCalculeLe === null) return null;
+  return { level: l.risqueNiveau, score: l.risqueScore, reasons: [...l.risqueRaisons], computedAt: l.risqueCalculeLe };
 }
 
 export function formaterFicheApi(l: FicheApiLigne, rcs: boolean | null, maintenant: Date): FicheApi {
@@ -107,6 +131,7 @@ export function formaterFicheApi(l: FicheApiLigne, rcs: boolean | null, maintena
     rcsOptedOutAt: l.rcsOptoutAt,
     blocked: l.blockedAt !== null,
     reachability: { whatsapp: whatsapp === 'inconnu' ? null : whatsapp === 'oui', rcs },
+    engagementRisk: risqueDeLaFiche(l),
     createdAt: l.createdAt,
   };
 }

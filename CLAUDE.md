@@ -103,7 +103,10 @@ valeurs, répartition des analyses inchangée). Avant elle, **0175** et **0174**
 `echecs_messages` avec ses neuf colonnes, l'index unique sur `message_id`, l'index `(tenant_id, at desc)` et la
 cascade sur l'espace ; les deux vides). Puis **0173** à 21 h 33 UTC (`idempotence_empreinte`, lot 2), relue en
 base (`text` nullable SANS défaut, table vide). Toutes sont passées AVANT le `up` de leur code.
-**Prochaine libre = 0178**, et le dossier `db/migrations/` s'arrête à 0177. Avant 0173, **0172** le même jour à
+**0178 est ÉCRITE et PAS ENCORE APPLIQUÉE** (`risque_desengagement`, lot 7 : quatre colonnes du risque sur
+`contacts`, leurs CHECK, et l'index `contacts_tenant_risque_idx` construit `CONCURRENTLY` hors transaction ;
+additive et BLOQUANTE, la fiche de l'API et le balayage de nuit nomment ces colonnes, donc AVANT le `up`, puis
+`indisvalid` relu en base). **Prochaine libre = 0179**, et le dossier `db/migrations/` s'arrête à 0178. Avant 0173, **0172** le même jour à
 20 h 01 UTC (`contacts_external_id`), puis **0171** à 13 h 46 UTC (`pubs_brouillons`).
 
 🔴 **0172 RELUE EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT** : `schema_migrations` la rend en tête à

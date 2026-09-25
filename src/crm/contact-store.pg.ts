@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import { PEREMPTION_WHATSAPP_MS } from '../contacts/joignabilite';
+import type { NiveauRisque, RaisonRisque } from '../engagement/risque';
 import type { ContactStore, ContactUpsert, ContactDeLot, LotContacts } from './import';
 import { classifyWaId, waIdOf } from './identity';
 
@@ -66,6 +67,11 @@ export interface FicheApiLigne {
   blockedAt: string | null;
   whatsappJoignable: boolean | null;
   whatsappJoignableLe: string | null;
+  /** Le risque de désengagement (migration 0178), écrit par le seul balayage. `null` = jamais calculé. */
+  risqueNiveau: NiveauRisque | null;
+  risqueScore: number | null;
+  risqueRaisons: RaisonRisque[];
+  risqueCalculeLe: string | null;
   createdAt: string;
 }
 
@@ -416,8 +422,14 @@ export class PgContactStore implements ContactStore {
    * 🔴 LE REFUS N'EST ANNONCÉ QUE SI LE STATUT CHANGE. Il l'était à chaque écriture : avec l'ancien contournement
    * (une automation sur le mot STOP vers un bloc « Action »), un seul STOP était annoncé DEUX fois, dont une avec
    * un identifiant aléatoire que l'outil du client ne peut pas dédoublonner. Le premier chemin qui écrit annonce,
-   * le second trouve la fiche déjà désabonnée et se tait. L'ÉCRITURE, elle, ne change pas (source et date suivent
-   * le dernier geste, comme avant) : seule l'annonce est conditionnée.
+   * le second trouve la fiche déjà désabonnée et se tait.
+   *
+   * 🔴 ET RIEN N'EST ÉCRIT QUAND LE STATUT NE CHANGE PAS (lot 7 de l'API publique). Le même contournement faisait
+   * écrire le second passage : la source `whatsapp_stop` devenait `scenario`, et la date du refus celle du second
+   * geste. Or la source est RELUE au moment de pousser le signal (`completerSignal`, qui en déduit le canal du
+   * STOP) : l'outil du client apprenait qu'on avait désabonné la personne par un scénario, sans canal, alors
+   * qu'elle avait écrit STOP. Le premier geste qui pose un statut garde sa source et sa date ; un réabonnement,
+   * qui CHANGE le statut, écrit comme avant. L'identifiant reste rendu dans les deux cas : la fiche existe.
    */
   async setOptInByWaId(
     tenantId: string,
@@ -433,15 +445,20 @@ export class PgContactStore implements ContactStore {
       // ⚠️ L'ANCIEN STATUT EST LU DANS LA MÊME INSTRUCTION, SOUS VERROU (`for update`) : deux STOP simultanés (une
       // redélivrance, le mot-clé et l'automation) liraient sinon tous deux « abonné », et annonceraient deux fois.
       // Le second attend le premier, puis relit la fiche déjà désabonnée.
+      // 🔴 L'ÉCRITURE EST GARDÉE PAR `is distinct from` : un statut déjà en place n'est pas réécrit (sa source et sa
+      // date restent celles du premier geste). La fiche est rendue par `avant`, écrite ou non.
       `with avant as (
          select id, opt_in_status from contacts where tenant_id = $1
          ${MATCH_BY_WAID_SQL}
          for update
+       ),
+       ecrit as (
+         update contacts set opt_in_status = $4, opt_in_source = $3, updated_at = now(),
+                opt_out_at = case when $4 = 'opted_out' then now() else null end
+         where id = (select id from avant) and opt_in_status is distinct from $4
+         returning id
        )
-       update contacts set opt_in_status = $4, opt_in_source = $3, updated_at = now(),
-              opt_out_at = case when $4 = 'opted_out' then now() else null end
-       where id = (select id from avant)
-       returning id, (select opt_in_status from avant) as avant`,
+       select id, opt_in_status as avant from avant`,
       [tenantId, waId, source, statut],
     );
     const id = res.rows[0]?.id ?? null;
@@ -1064,9 +1081,12 @@ export class PgContactStore implements ContactStore {
       fields: Record<string, unknown> | null; tags: string[] | null; opt_in_status: string; opt_in_source: string | null;
       opt_out_at: Date | null; rcs_optout_at: Date | null; blocked_at: Date | null;
       whatsapp_joignable: boolean | null; whatsapp_joignable_le: Date | null; created_at: Date;
+      risque_niveau: NiveauRisque | null; risque_score: number | null; risque_raisons: RaisonRisque[] | null; risque_calcule_le: Date | null;
     }>(
+      // Les colonnes du risque (0178) sont NOMMÉES : la migration passe avant ce code, sinon 42703 sur chaque lecture.
       `select id, external_id, phone_e164, bsuid, profile_name, fields, tags, opt_in_status, opt_in_source,
-              opt_out_at, rcs_optout_at, blocked_at, whatsapp_joignable, whatsapp_joignable_le, created_at
+              opt_out_at, rcs_optout_at, blocked_at, whatsapp_joignable, whatsapp_joignable_le, created_at,
+              risque_niveau, risque_score, risque_raisons, risque_calcule_le
          from contacts
         where tenant_id = $1 and id = $2 and deleted_at is null`,
       [tenantId, contactId],
@@ -1079,6 +1099,8 @@ export class PgContactStore implements ContactStore {
       fields: r.fields ?? {}, tags: r.tags ?? [], optInStatus: r.opt_in_status, optInSource: r.opt_in_source,
       optOutAt: iso(r.opt_out_at), rcsOptoutAt: iso(r.rcs_optout_at), blockedAt: iso(r.blocked_at),
       whatsappJoignable: r.whatsapp_joignable, whatsappJoignableLe: iso(r.whatsapp_joignable_le),
+      risqueNiveau: r.risque_niveau ?? null, risqueScore: r.risque_score ?? null, risqueRaisons: r.risque_raisons ?? [],
+      risqueCalculeLe: iso(r.risque_calcule_le ?? null),
       createdAt: r.created_at.toISOString(),
     };
   }

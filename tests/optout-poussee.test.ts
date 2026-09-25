@@ -138,8 +138,10 @@ describe('le dépôt ANNONCE le refus, après l’avoir écrit', () => {
    * « Action »), le même refus était écrit deux fois et annoncé deux fois, dont une à identifiant aléatoire. Le
    * dépôt lit l'ancien statut dans la même instruction (le SQL est tenu en intégration) et n'annonce que s'il
    * CHANGE. Le premier cas de ce bloc (ancien statut `opted_in`, le défaut du faux) est le témoin dans l'autre sens.
+   * ⚠️ Depuis le lot 7, l'instruction ne RÉÉCRIT pas non plus un statut déjà en place (cas suivant, et
+   * `tests/integration/poussee-optout.integration.test.ts`) : elle part, lit sous verrou, et rend la fiche.
    */
-  it('🔴 une fiche DÉJÀ désabonnée : l’écriture a lieu, l’annonce non', async () => {
+  it('🔴 une fiche DÉJÀ désabonnée : la fiche est rendue, l’annonce ne part pas', async () => {
     const j = journal();
     const recu: Array<{ tenantId: string; waIds: string[] }> = [];
     const store = new PgContactStore(fauxPool(j, { avant: 'opted_out' }), annonceQuiNote(j, recu));
@@ -160,7 +162,28 @@ describe('le dépôt ANNONCE le refus, après l’avoir écrit', () => {
     const corps = source.slice(debut, source.indexOf('async ecrireConsentementParId(', debut));
     expect(corps).toMatch(/with avant as \(/);
     expect(corps).toMatch(/for update/);
-    expect(corps).toMatch(/returning id, \(select opt_in_status from avant\) as avant/);
+    expect(corps).toMatch(/select id, opt_in_status as avant from avant/);
+  });
+
+  /**
+   * 🔴 UN STATUT DÉJÀ EN PLACE N'EST PAS RÉÉCRIT (lot 7 de l'API publique). Avec l'ancien contournement (une
+   * automation sur le mot STOP vers un bloc « Action »), le second passage remplaçait la source `whatsapp_stop` par
+   * `scenario` et repoussait la date du refus. Or la source est relue au moment de pousser le signal : l'outil du
+   * client apprenait un désabonnement par scénario, sans canal, alors que la personne avait écrit STOP.
+   *
+   * ⚠️ LU DANS LE CODE, faute de base en local : c'est la garde elle-même (`is distinct from $4` sur l'écriture)
+   * qu'on tient ici, et elle se mute. Le comportement (source et date gardées, puis un réabonnement qui écrit) est
+   * joué contre une vraie base par `tests/integration/poussee-optout.integration.test.ts`, en CI.
+   */
+  it('🔴 l’écriture est GARDÉE : un statut déjà en place ne remplace ni sa source ni sa date', () => {
+    const source = readFileSync(new URL('../src/crm/contact-store.pg.ts', import.meta.url), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    const debut = source.indexOf('async setOptInByWaId(');
+    const corps = source.slice(debut, source.indexOf('async ecrireConsentementParId(', debut));
+    const ecriture = /update contacts set opt_in_status = \$4, opt_in_source = \$3[\s\S]*?returning id/.exec(corps)?.[0] ?? '';
+    expect(ecriture, 'l’écriture du consentement est introuvable : le test ne mesure plus rien').not.toBe('');
+    expect(ecriture).toMatch(/where id = \(select id from avant\) and opt_in_status is distinct from \$4/);
   });
 
   it('⚠️ un numéro INCONNU n’annonce rien : il n’y a personne à pousser chez le client', async () => {

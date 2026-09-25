@@ -35,7 +35,13 @@ import type { ConditionGroup } from '../workflow/conditions';
  * pas a un evenement mais a l'ECOULEMENT DU TEMPS : c'est un balayage qui le leve (`automation/date-sweep`),
  * et c'est lui qui a deja tranche l'echeance. Voir `automation/avant-date.ts`.
  */
-export const AUTOMATION_TRIGGER_KINDS = ['keyword', 'new_contact', 'tag_added', 'conversation_analyzed', 'hubspot_deal_stage', 'webhook', 'avant_date', 'ctwa_ad'] as const;
+/**
+ * `risque_eleve` (lot 7 de l'API publique) : un contact vient de PASSER en risque de désengagement élevé. Émis
+ * par le balayage de nuit (`src/engagement/balayage.ts`), seulement sur un passage, au plus 200 par nuit et par
+ * espace : c'est le seul chemin de MASSE qui émet, par exception décidée (voir le balayage). Aucune config :
+ * « risque élevé » ne se règle pas, il se constate.
+ */
+export const AUTOMATION_TRIGGER_KINDS = ['keyword', 'new_contact', 'tag_added', 'conversation_analyzed', 'hubspot_deal_stage', 'webhook', 'avant_date', 'ctwa_ad', 'risque_eleve'] as const;
 export type AutomationTriggerKind = (typeof AUTOMATION_TRIGGER_KINDS)[number];
 export function isAutomationTriggerKind(v: unknown): v is AutomationTriggerKind {
   return typeof v === 'string' && (AUTOMATION_TRIGGER_KINDS as readonly string[]).includes(v);
@@ -177,7 +183,9 @@ export type AutomationEvent =
    * L'echeance d'une date de champ est arrivee. `valeur` est la date TELLE QU'ELLE EST STOCKEE : elle sert
    * de marqueur d'occurrence, pour qu'un rendez-vous reporte redonne un rappel.
    */
-  | { kind: 'avant_date'; waId: string; automationId: string; valeur: string };
+  | { kind: 'avant_date'; waId: string; automationId: string; valeur: string }
+  /** Le contact vient de PASSER en risque de désengagement élevé (balayage de nuit). */
+  | { kind: 'risque_eleve'; waId: string };
 
 /** Minuscules, sans accents, espaces resserrés : même esprit que la recherche de blocs (web/lib/node-search). */
 export function normalizeText(v: string): string {
@@ -282,6 +290,10 @@ export function matchesTrigger(a: AutomationRow, ev: AutomationEvent): boolean {
     // L'echeance a deja ete calculee par le balayage, qui connaissait le fuseau de l'espace et l'etat des
     // tirs precedents. La recalculer ici la ferait diverger : l'evenement designe donc SON automation.
     return a.id === ev.automationId;
+  }
+  if (a.triggerKind === 'risque_eleve') {
+    // Aucune config : c'est le balayage qui a constaté le passage, et il ne l'émet qu'une fois par passage.
+    return ev.kind === 'risque_eleve';
   }
   if (a.triggerKind === 'conversation_analyzed') {
     if (ev.kind !== 'analysis') return false;

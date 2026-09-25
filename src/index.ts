@@ -77,6 +77,7 @@ import { PgOpsStore } from './ops/store.pg';
 import { PgWorkerHeartbeatStore } from './ops/heartbeat-store.pg';
 import { makeDbReadinessCheck } from './db/readiness';
 import { PgAutomationStore } from './automation/store.pg';
+import { lanceurBalayageRisque } from './engagement/cablage';
 import { PgChannelsMeConnectionStore } from './channels-me/connection-store.pg';
 import { PgChannelsMeLinkStore } from './channels-me/link-store.pg';
 import { normalizeText } from './automation/match';
@@ -3055,6 +3056,18 @@ async function main(): Promise<void> {
         );
         return { token, tenantName: nom };
       },
+      /**
+       * LE BALAYAGE DU RISQUE D'UN ESPACE, À LA DEMANDE (lot 7). Le câblage est CELUI du worker
+       * (`src/engagement/cablage.ts`) : même plafond, même émetteur, même file d'automations.
+       */
+      balayerRisque: lanceurBalayageRisque({
+        pool,
+        file: queue,
+        emetteur,
+        automationsActives: (t, kinds) => automationStore.listEnabled(t, kinds),
+        // eslint-disable-next-line no-console
+        journal: (m) => console.warn(m),
+      }),
     },
     opsToken: config.OPS_TOKEN,
     support: {

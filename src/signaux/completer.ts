@@ -46,7 +46,7 @@ function canalDuStop(s: Extract<Signal, { nom: 'em_opted_out' }>, fiche: FicheDu
 }
 
 async function ficheDu(l: LecturesSignal, tenantId: string, s: Signal): Promise<FicheDuSignal | null> {
-  if (s.nom === 'em_link_clicked') return l.ficheParId(tenantId, s.contactId);
+  if (s.nom === 'em_link_clicked' || s.nom === 'em_risk_changed') return l.ficheParId(tenantId, s.contactId);
   if (s.nom === 'em_conversation_analyzed') {
     const waId = await l.waIdDeLaConversation(tenantId, s.conversationId);
     return waId === null ? null : l.ficheParWaId(tenantId, waId);
@@ -97,5 +97,8 @@ export async function completerSignal(l: LecturesSignal, tenantId: string, s: Si
       const analyse = await l.analyse(tenantId, s.conversationId);
       return analyse === null ? null : { ...base, contenu: { nom: s.nom, analyse } };
     }
+    case 'em_risk_changed':
+      // Rien à relire : le calcul du balayage voyage dans le job (`signalRisque`).
+      return { ...base, contenu: { nom: s.nom, niveau: s.niveau, ancienNiveau: s.ancienNiveau, score: s.score, raisons: s.raisons } };
   }
 }
