@@ -289,6 +289,18 @@ export function CanauxServices(p: {
             </li>
           );
         })}
+        {/* La sixième case : les intégrations qui n'ont pas de carte ici. Pas un service, donc ni interrupteur ni
+            pastille. Elle mène à Paramètres « pour l'instant » (Julien, 2026-09-25) : sa cible changera le jour
+            où les intégrations auront leur propre écran. */}
+        <li data-testid="canal-autres">
+          <Link
+            href="/parametres"
+            data-testid="canal-autres-lien"
+            className="flex h-full min-h-[7.5rem] items-center justify-center gap-1.5 rounded-2xl border border-dashed border-ink-300 p-4 text-sm font-semibold text-brand-600 transition hover:border-brand-300 hover:bg-brand-50"
+          >
+            {t('Autres intégrations', 'Other integrations')}<span aria-hidden="true">+</span>
+          </Link>
+        </li>
       </ul>
 
       {confirmation !== null && (

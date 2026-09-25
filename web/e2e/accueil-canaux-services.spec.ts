@@ -51,6 +51,8 @@ test.describe('Accueil : Canaux et services', () => {
     await expect(page.getByTestId('canal-publicites-lien')).toHaveAttribute('href', '/publicites');
     await expect(page.getByTestId('canal-hubspot-lien')).toHaveAttribute('href', '/parametres#integration-hubspot');
     await expect(page.getByTestId('canal-numero-lien')).toHaveAttribute('href', '#numero-whatsapp');
+    await expect(page.getByTestId('canal-autres-lien')).toHaveAttribute('href', '/parametres');
+    await expect(page.getByTestId('canal-autres-lien')).toHaveText('Autres intégrations+');
     // 🔴 « Couper le canal RCS » est DEVENU l'interrupteur : la carte ne le porte plus.
     await expect(page.getByTestId('rcs-channel-card')).toBeVisible();
     await expect(page.getByText('Couper le canal RCS', { exact: true })).toHaveCount(0);
