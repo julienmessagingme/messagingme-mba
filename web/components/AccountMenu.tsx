@@ -53,6 +53,7 @@ export function AccountMenu({ session, onLogout }: { session: Session; onLogout:
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((o) => !o)}
+        data-testid="menu-compte"
         className="flex items-center gap-2 rounded-controle border border-ink-200 py-1 pl-1 pr-2 text-sm text-ink-900 transition-colors duration-150 hover:bg-ink-50"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -84,6 +85,11 @@ export function AccountMenu({ session, onLogout }: { session: Session; onLogout:
               ))}
             </div>
           </div>
+          {/* La page personnelle (mot de passe, double authentification), pour tous les rôles. Absente en
+              observation : cette session n'a pas d'identité à elle. */}
+          {!session.observation && (
+            <Link href="/compte" onClick={() => setOpen(false)} data-testid="menu-mon-compte" className="block px-3 py-2 text-sm text-ink-900 hover:bg-ink-50">{t('Mon compte', 'My account')}</Link>
+          )}
           {isAdmin && (
             <>
               <Link href="/admin" onClick={() => setOpen(false)} className="block px-3 py-2 text-sm text-ink-900 hover:bg-ink-50">{t('Compte & équipe', 'Account & team')}</Link>

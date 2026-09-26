@@ -380,6 +380,15 @@ test.describe('Mon compte : la double authentification', () => {
     await expect(page.getByTestId('mfa-obligatoire')).toHaveText(/Obligatoire pour les administrateurs|Required for administrators/);
   });
 
+  test('« Mon compte » est dans le menu du compte, pour un agent aussi, et mène à la double authentification', async ({ page }) => {
+    await monter(page, (chemin, methode) => (chemin === '/auth/mfa/moi' && methode === 'GET' ? { body: { ...ACTIF_ADMIN, obligatoire: false } } : undefined), { ...SESSION_E2E, role: 'agent' });
+    await page.goto('/securite');
+    await page.getByTestId('menu-compte').click();
+    await page.getByTestId('menu-mon-compte').click();
+    await expect(page).toHaveURL(/\/compte$/);
+    await expect(page.getByTestId('mfa-etat')).toBeVisible();
+  });
+
   test('un agent la désactive avec un code', async ({ page }) => {
     let actif = true;
     const appels = await monter(page, (chemin, methode) => {

@@ -5,7 +5,8 @@ Paramètres, Support et Developers, avec sa page d'accueil et quatre sous-menus.
 
 ## Ce qu'on construit
 
-Une page d'accueil : « Bienvenue au centre de sécurité & compliance de Engage Me », puis autant de
+Une page d'accueil titrée « Sécurité & compliance » (d'abord « Bienvenue au centre de sécurité & compliance de
+Engage Me », raccourci par la passe 3 anti-slop et validé par Julien le 2026-09-26), puis autant de
 boîtes que de sous-menus. La barre latérale reste à gauche et déplie les sous-menus sous « Sécurité ».
 
 | Sous-menu | Ce qu'il porte | État de départ |
