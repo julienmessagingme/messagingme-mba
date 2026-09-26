@@ -22,8 +22,11 @@ class FakeContacts implements ContactStore {
   readonly upserts: ContactUpsert[] = [];
   /** Nombre de lots recus : un import ne doit plus faire une requete par ligne (R9). */
   lots = 0;
+  /** `peutLeverStop` de chaque lot reçu. */
+  readonly leveStop: Array<boolean | undefined> = [];
   async upsertManyByPhone(lot: LotContacts): Promise<Array<'created' | 'updated'>> {
     this.lots += 1;
+    this.leveStop.push(lot.peutLeverStop);
     for (const c of lot.contacts) {
       this.upserts.push({
         tenantId: lot.tenantId,
@@ -287,6 +290,24 @@ describe('POST /tenants/:tenantId/contacts/import', () => {
     expect(res.statusCode).toBe(200);
     expect(contacts.upserts[0]?.optInStatus).toBe('unknown');
     await app.close();
+  });
+
+  /**
+   * 🔴 LA CASE COCHÉE D'UN IMPORT CSV EST LE SEUL IMPORT QUI PEUT RÉABONNER QUELQU'UN QUI A DIT STOP (décision de
+   * Julien du 2026-09-26) : c'est l'opérateur qui le demande. L'import HubSpot, le webhook entrant et la
+   * création à la main ne le peuvent pas.
+   */
+  it('🔴 case cochée : le lot peut lever un STOP ; décochée, non', async () => {
+    const coche = new FakeContacts();
+    const decoche = new FakeContacts();
+    for (const [contacts, optIn] of [[coche, true], [decoche, false]] as const) {
+      const app = inject(contacts, new FakeFields());
+      const res = await app.inject({ method: 'POST', url: '/tenants/t1/contacts/import', ...auth(), payload: { csv: 'Téléphone\n+33611111111', optIn } });
+      expect(res.statusCode).toBe(200);
+      await app.close();
+    }
+    expect(coche.leveStop).toEqual([true]);
+    expect(decoche.leveStop).not.toContain(true);
   });
 
   // RBAC (Feature 2) : les contacts (PII : téléphones E164, opt-in) sont réservés aux admins.

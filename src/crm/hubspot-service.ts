@@ -115,6 +115,10 @@ export async function fetchHubspotLists(deps: ConnectorDeps, tenantId: string, q
  * HubSpot rendait donc ZÉRO destinataire, sans que rien ne le dise (l'écart n'était même pas compté).
  * mba re-décidait du consentement à partir d'une donnée qu'il n'a pas.
  *
+ * 🔴 SAUF À QUI A DIT STOP (2026-09-26) : il reste désabonné, avec la source et la date de son refus. L'import
+ * demande l'opt-in, et c'est la base qui refuse de lever le STOP (`upsertManyByPhone` : ce lot ne porte pas
+ * `peutLeverStop`, que seule la case cochée d'un import CSV pose). Une liste HubSpot périmée ne réabonne personne.
+ *
  * La fonction n'expose toujours pas de paramètre : la source du consentement est la liste, point.
  * Renvoie le rapport d'import (forme CSV) + `truncated`/`skippedNoPhone` (liste géante / contacts sans numéro).
  */

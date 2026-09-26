@@ -39,6 +39,12 @@ export interface LotContacts {
   optInSource?: string;
   /** Tags appliqués à TOUS les contacts du lot (union avec l'existant, jamais d'écrasement). */
   tags?: string[];
+  /**
+   * 🔴 Ce lot peut-il réabonner quelqu'un qui a dit STOP ? Seul l'import CSV case cochée le peut (décision de
+   * Julien du 2026-09-26) : c'est l'opérateur qui le demande. Absent = non, et c'est le défaut SÛR : un appelant
+   * qui l'oublie garde le STOP, il ne le lève pas. L'import HubSpot ne le pose jamais.
+   */
+  peutLeverStop?: boolean;
   contacts: ContactDeLot[];
 }
 
@@ -77,6 +83,8 @@ export interface ImportInput {
   optInSource?: string;
   /** Tags appliqués à TOUS les contacts de cet import (union avec l'existant). */
   tags?: string[];
+  /** Cet import peut-il réabonner quelqu'un qui a dit STOP ? Seule la route CSV, case cochée. Cf. `LotContacts`. */
+  peutLeverStop?: boolean;
 }
 
 export interface ImportDeps {
@@ -179,6 +187,7 @@ export async function importContacts(input: ImportInput, deps: ImportDeps): Prom
     optInStatus: (input.optIn ? 'opted_in' : 'unknown') as 'opted_in' | 'unknown',
     ...(input.optIn ? { optInSource: input.optInSource ?? 'csv_import' } : {}),
     ...(input.tags && input.tags.length > 0 ? { tags: input.tags } : {}),
+    ...(input.peutLeverStop ? { peutLeverStop: true } : {}),
   };
   for (let d = 0; d < aEcrire.length; d += TAILLE_LOT) {
     const res = await deps.contacts.upsertManyByPhone({ ...commun, contacts: aEcrire.slice(d, d + TAILLE_LOT) });

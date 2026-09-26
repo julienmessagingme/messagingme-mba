@@ -226,6 +226,9 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   téléphone est normalisé en E.164 et **une colonne Téléphone est obligatoire** (c'est la clé du contact). On pose
   l'opt-in et des tags pour tout le lot, et l'import rend un compte rendu (créés / mis à jour / ignorés, avec le
   motif des lignes en erreur).
+  **Case opt-in cochée, l'import réabonne aussi un contact qui avait répondu STOP** (2026-09-26) : c'est
+  l'opérateur qui l'affirme, pour tout le fichier. C'est le seul ajout qui le peut : l'ajout à la main d'un
+  numéro déjà connu, une liste HubSpot et un webhook entrant ne réabonnent jamais un contact qui a dit STOP.
   **Gros fichiers (2026-08-31)** : un CSV allant jusqu'à environ 150 000 contacts passe désormais en un seul
   import, là où le choix du fichier échouait déjà vers 14 000 lignes. Au-delà d'environ 8 000 lignes, le nombre
   de lignes annoncé avant l'import devient une **estimation**, affichée avec un « ≈ » (l'écran n'analyse plus
@@ -943,7 +946,8 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
     si le toggle « Campagnes via données HubSpot » est activé (sur l'Accueil) **et** que la synchronisation HubSpot
     n'est pas en pause : pendant une pause, la source est **grisée** avec l'explication au survol, au lieu d'ouvrir
     un panneau vide. On choisit une liste du portail (nom, nombre de contacts, active/statique), on importe ses
-    contacts (taggés `HubSpot: <nom>`, opt-in JAMAIS présumé), et la campagne cible aussitôt ce tag. Si le portail
+    contacts (taggés `HubSpot: <nom>`, opt-in accordé : la liste HubSpot en porte la preuve ; sauf à qui a répondu
+    STOP, qui reste désabonné), et la campagne cible aussitôt ce tag. Si le portail
     n'a pas encore autorisé l'accès aux listes, une CTA de re-consentement s'affiche (ajoute la permission
     « Lists » à ce portail uniquement).
 - ✅ **Débit d'envoi réglable** : une **jauge par défaut à 60 messages/min** (toujours visible depuis 2026-07-28,
@@ -1709,7 +1713,9 @@ scénario, comment importer des contacts.
   donné ou « inconnu ». C'est vous qui l'affirmez : nous ne pouvons pas déduire un consentement du contenu
   reçu, exactement comme pour l'import CSV. Décochée, les contacts restent « inconnus », ce qui les exclut
   des campagnes marketing. La trace conserve **par quel webhook** le consentement est entré, ce qui permet
-  de le justifier. Et un contact déjà opt-in ne perd jamais son consentement, même case décochée.
+  de le justifier. Et un contact déjà opt-in ne perd jamais son consentement, même case décochée. À
+  l'inverse, un contact qui a répondu STOP reste désabonné, même case cochée (2026-09-26) : un outil tiers ne
+  réabonne personne.
 - ✅ **Le contact vient du CONTENU, pas de l'appelant.** L'outil qui appelle n'est pas le contact : c'est le
   JSON qu'il envoie qui porte le téléphone et le nom. Une case **« créer les contacts inconnus »**, cochée par
   défaut, décide si un appel concernant quelqu'un d'absent du mini-CRM crée sa fiche (avec un consentement

@@ -80,3 +80,51 @@ describe('ecrireConsentementParId', () => {
     expect(sqls[0]).toMatch(/opt_out_at = case when \$3 = 'opted_out' then now\(\) else null end/);
   });
 });
+
+/**
+ * 🔴 UN STOP NE SE LÈVE PAS PAR UPSERT (2026-09-26). Les deux upserts servent l'import HubSpot, l'import CSV, le
+ * webhook entrant et la création à la main : un `opted_in` y réabonnait quelqu'un qui avait dit STOP, et
+ * effaçait la source et la date de son refus. Seul l'import CSV case cochée le peut encore (décision de Julien
+ * du 2026-09-26), et il le dit par `peutLeverStop`.
+ *
+ * ⚠️ Ces tests lisent le SQL ENVOYÉ : ils prouvent que la garde part, pas qu'elle est juste. Sa sémantique est
+ * tenue par `tests/integration/stores.integration.test.ts`, sur une vraie base, en CI.
+ */
+describe('les upserts ne lèvent pas un STOP', () => {
+  function capturer() {
+    const appels: Array<{ sql: string; params: unknown[] }> = [];
+    const pool = {
+      query: async (sql: string, params: unknown[] = []) => {
+        appels.push({ sql: sql.replace(/\s+/g, ' '), params });
+        return { rows: [{ id: ID, created: false, phone_e164: '+33600000001' }], rowCount: 1 };
+      },
+    } as unknown as Pool;
+    return { store: new PgContactStore(pool), appels };
+  }
+  /** L'expression affectée à une colonne dans le `do update set`, entre `case` et son `end`. */
+  const affectation = (sql: string, colonne: string): string => sql.match(new RegExp(` ${colonne} = case (.*?) end`))?.[1] ?? '';
+
+  it('🔴 l’upsert unitaire (webhook entrant, création à la main) garde le statut, la date ET la source d’un STOP', async () => {
+    const { store, appels } = capturer();
+    await store.upsertByPhoneReturningId({ tenantId: T, phoneE164: '+33600000001', profileName: null, fields: {}, optInStatus: 'opted_in', optInSource: 'webhook:crm' });
+    const sql = appels[0]!.sql;
+    expect(affectation(sql, 'opt_in_status')).toMatch(/and contacts\.opt_in_status <> 'opted_out' then 'opted_in'/);
+    expect(affectation(sql, 'opt_out_at')).toMatch(/and contacts\.opt_in_status <> 'opted_out' then null/);
+    // La source dit le canal du STOP au signal (`completerSignal`) : l'écraser ferait mentir l'outil du client.
+    expect(affectation(sql, 'opt_in_source')).toMatch(/when contacts\.opt_in_status = 'opted_out' then contacts\.opt_in_source/);
+  });
+
+  it('🔴 l’upsert en lot ne lève un STOP que si le lot le dit (`peutLeverStop`, l’import CSV case cochée)', async () => {
+    const { store, appels } = capturer();
+    const lot = { tenantId: T, optInStatus: 'opted_in' as const, optInSource: 'hubspot_list', contacts: [{ phoneE164: '+33600000001', profileName: null, fields: {} }] };
+    await store.upsertManyByPhone(lot);
+    await store.upsertManyByPhone({ ...lot, optInSource: 'csv_import', peutLeverStop: true });
+    const [hubspot, csv] = appels;
+    expect(affectation(hubspot!.sql, 'opt_in_status')).toMatch(/and \(contacts\.opt_in_status <> 'opted_out' or \$6::boolean\) then 'opted_in'/);
+    expect(affectation(hubspot!.sql, 'opt_out_at')).toMatch(/and \(contacts\.opt_in_status <> 'opted_out' or \$6::boolean\) then null/);
+    expect(affectation(hubspot!.sql, 'opt_in_source')).toMatch(/when contacts\.opt_in_status = 'opted_out' and not \$6::boolean then contacts\.opt_in_source/);
+    // $6 : absent vaut NON, c'est le défaut sûr (un appelant qui l'oublie garde le STOP).
+    expect(hubspot!.params[5]).toBe(false);
+    expect(csv!.params[5]).toBe(true);
+  });
+});

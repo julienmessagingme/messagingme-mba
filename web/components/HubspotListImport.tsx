@@ -7,7 +7,8 @@ import { Bouton, classesBouton } from '@/components/Bouton';
 
 /**
  * Source de campagne « HubSpot » : liste les listes du portail (via le connecteur), en sélectionne une, importe
- * ses contacts (opt-in JAMAIS activé côté serveur, tag « HubSpot: <nom> »). `onImported` reçoit `{report, tags}`
+ * ses contacts (opt-in accordé côté serveur, sauf à qui a dit STOP, qui reste désabonné ; tag « HubSpot: <nom> »).
+ * `onImported` reçoit `{report, tags}`
  * comme CsvImport : l'appelant campagne pivote alors la source vers la liste de contacts filtrée par ce tag.
  * Gère les états : chargement, re-consentement requis (scope pas accordé), liste vide.
  */

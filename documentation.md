@@ -724,16 +724,23 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   pendant l'appel est refusé par le dépôt lui-même (`ecrireConsentementParId` rend `refuse`). Sur `/v1/sends`, le
   destinataire est écarté `opted_out` et la fiche reste désabonnée. Lever un STOP est un geste d'opérateur,
   depuis la fiche de la console, ou de la personne elle-même.
+- 🔴 **Les upserts par numéro ne lèvent pas un STOP non plus** (2026-09-26), sauf l'import CSV case cochée.
+  `upsertByPhoneReturningId` (webhook entrant, création à la main) et `upsertManyByPhone` (import HubSpot, import
+  CSV) gardent, sur une fiche `opted_out`, le statut, `opt_out_at` ET `opt_in_source` (la source dit le canal du
+  STOP au signal) ; le nom, les champs et les tags se mettent à jour quand même. La seule exception est un lot
+  `peutLeverStop`, que pose la route CSV quand la case opt-in est cochée (décision de Julien du 2026-09-26 : c'est
+  l'opérateur qui le demande, pour tout le fichier). Absent vaut non : un nouvel appelant garde le STOP.
+  ⚠️ Le bloc « Action » d'un scénario (`setOptInByWaId`) lève encore un STOP : non tranché.
 - **Dans `/v1/contacts/batch`, les éléments d'une même personne s'écrivent DANS L'ORDRE** : deux éléments qui
   partagent une clé normalisée forment une chaîne séquentielle (`enChaines`, `src/api/contacts-v1.ts`), les
   chaînes partant par vagues bornées. En parallèle, le second pouvait se résoudre avant que le premier ait
   créé la fiche.
 - 🔴 **`opted_out` et `unknown` ne veulent pas dire la même chose.** `optInAllows` exige un opt-in EXPLICITE
   pour une campagne **marketing** : un contact `unknown` est donc écarté **en silence**, seul `utility` passe.
-  La saisie manuelle et l'import CSV créent en opt-in par défaut ; l'import HubSpot garde l'exigence inverse,
-  son appelant chargeant une liste dont il ne connaît pas chaque ligne. L'API publique crée en `unknown`, sauf
-  `consent` explicite, et sait écrire `opted_out` comme `opted_in` (jamais lever un STOP, cf. plus haut). ⚠️ Conséquence :
-  les contacts venus de HubSpot arrivent `unknown`, donc hors marketing tant qu'on ne les bascule pas.
+  La saisie manuelle et l'import CSV créent en opt-in par défaut ; l'import HubSpot aussi, depuis le
+  2026-08-15 (source `hubspot_list` : le consentement est géré dans HubSpot, qui en porte la preuve), sauf sur
+  une fiche qui a dit STOP (cf. plus haut). L'API publique crée en `unknown`, sauf `consent` explicite, et sait
+  écrire `opted_out` comme `opted_in` (jamais lever un STOP, cf. plus haut).
 - 🔴 **Un seul geste de destruction.** `POST /contacts/purge` exige `confirm: 'SUPPRIMER'`. Il EFFACE ce qui
   identifie (conversation, messages, analyse, parcours, déclenchements, cache RCS) et ANONYMISE ce qui porte
   le quantitatif : le numéro devient `anon:<uuid>` ALÉATOIRE, pas une empreinte, qui serait réversible sur un

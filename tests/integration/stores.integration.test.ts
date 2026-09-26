@@ -169,6 +169,44 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
   });
 
   /**
+   * 🔴 UN STOP NE SE LÈVE PAS PAR UPSERT (2026-09-26). Une liste HubSpot, un webhook entrant ou une création à la
+   * main qui portaient `opted_in` réabonnaient quelqu'un qui avait dit STOP, et effaçaient la source et la date de
+   * son refus. Seul l'import CSV case cochée le peut encore (`peutLeverStop`, décision de Julien du 2026-09-26).
+   */
+  it('🔴 PgContactStore : un upsert opted_in ne lève pas un STOP, sauf le lot CSV case cochée', async () => {
+    const store = new PgContactStore(pool);
+    const refus = new Date('2026-09-01T10:00:00.000Z');
+    const [unitaire, hubspot, csv] = ['+33600000211', '+33600000212', '+33600000213'] as const;
+    await pool.query(
+      `insert into contacts (tenant_id, phone_e164, opt_in_status, opt_in_source, opt_out_at)
+       select $1, p, 'opted_out', 'whatsapp_stop', $3 from unnest($2::text[]) p`,
+      [tenantId, [unitaire, hubspot, csv], refus],
+    );
+    const lu = async (phone: string) => (await pool.query<{ opt_in_status: string; opt_in_source: string | null; opt_out_at: Date | null; tags: string[]; fields: Record<string, unknown> }>(
+      'select opt_in_status, opt_in_source, opt_out_at, tags, fields from contacts where tenant_id = $1 and phone_e164 = $2',
+      [tenantId, phone],
+    )).rows[0]!;
+
+    // Le webhook entrant et la création à la main (upsert unitaire) : jamais.
+    await store.upsertByPhoneReturningId({ tenantId, phoneE164: unitaire, profileName: null, fields: { ville: 'Lyon' }, optInStatus: 'opted_in', optInSource: 'webhook:crm', tags: ['entrant'] });
+    // Une liste HubSpot (lot sans `peutLeverStop`) : jamais.
+    await store.upsertManyByPhone({ tenantId, optInStatus: 'opted_in', optInSource: 'hubspot_list', tags: ['HubSpot: Salon'], contacts: [{ phoneE164: hubspot, profileName: null, fields: { ville: 'Nice' } }] });
+    // L'import CSV case cochée : oui, c'est l'opérateur qui le demande.
+    await store.upsertManyByPhone({ tenantId, optInStatus: 'opted_in', optInSource: 'csv_import', peutLeverStop: true, contacts: [{ phoneE164: csv, profileName: null, fields: {} }] });
+
+    for (const [phone, tag, ville] of [[unitaire, 'entrant', 'Lyon'], [hubspot, 'HubSpot: Salon', 'Nice']] as const) {
+      const fiche = await lu(phone);
+      // Le refus reste entier : le statut, la source (elle dit le canal du STOP au signal) et la date.
+      expect(fiche).toMatchObject({ opt_in_status: 'opted_out', opt_in_source: 'whatsapp_stop' });
+      expect(fiche.opt_out_at?.toISOString()).toBe(refus.toISOString());
+      // Le reste de la fiche se met à jour quand même : seul le consentement est gardé.
+      expect(fiche.tags).toContain(tag);
+      expect(fiche.fields).toMatchObject({ ville });
+    }
+    expect(await lu(csv)).toMatchObject({ opt_in_status: 'opted_in', opt_in_source: 'csv_import', opt_out_at: null });
+  });
+
+  /**
    * Rétention de `webhook_events` (PLAN.md 5.2). La table gardait le payload complet de chaque événement Meta
    * depuis le premier jour, sans aucune purge : le texte des messages entrants et le numéro de qui écrit,
    * pour toujours.

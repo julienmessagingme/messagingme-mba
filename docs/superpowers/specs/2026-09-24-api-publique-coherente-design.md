@@ -777,6 +777,9 @@ rappelle pas. `/revue` après chaque lot, `/revue-finale` avant chaque déploiem
   tiers, par l'upsert partagé) et le bloc « Action » d'un scénario réabonnent encore un contact qui a dit STOP,
   alors que l'API ne le peut plus (§ 2, décision du 2026-09-24). Relevé par la revue finale du 2026-09-24 ;
   aligner ces trois chemins est à trancher par Julien à part.
+  **Tranché le 2026-09-26 pour les upserts** : le webhook entrant, la création à la main et l'import HubSpot
+  (qui passait lui aussi par l'upsert de l'import CSV) ne lèvent plus un STOP ; l'import CSV case cochée le
+  peut, c'est l'opérateur qui le demande (`peutLeverStop`). Reste le bloc « Action » d'un scénario.
 - **Statut de livraison sur la bulle de l'Inbox** : le § 5 écrit l'échec et le journal le montre ; l'afficher
   sur la bulle demanderait une jointure sur la lecture du fil, rafraîchie toutes les 4 secondes. À cadrer à
   part.

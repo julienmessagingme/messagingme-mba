@@ -194,8 +194,11 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, gard
 
     const parsed = parseCsv(body.csv);
     const mapping = body.mapping ?? mappingFromHeaders(parsed.headers);
+    // 🔴 La case cochée RÉABONNE aussi qui a dit STOP : c'est le seul import qui le peut (décision de Julien du
+    // 2026-09-26), parce que c'est l'opérateur qui le demande. HubSpot, le webhook entrant et la création à la
+    // main gardent le STOP (`upsertManyByPhone`, `upsertByPhoneReturningId`).
     const report = await importContacts(
-      { rows: parsed.rows, mapping, tenantId: effectiveTenant, optIn, tags },
+      { rows: parsed.rows, mapping, tenantId: effectiveTenant, optIn, tags, peutLeverStop: optIn },
       deps,
     );
     // Une ligne par LOT, pas par contact : un import de 50 000 lignes écrirait autant d'entrées, et noierait

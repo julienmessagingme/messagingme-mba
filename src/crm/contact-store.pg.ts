@@ -273,20 +273,26 @@ export class PgContactStore implements ContactStore {
          -- coalesce, et pas une affectation seche : un upsert SANS bsuid (webhook entrant, création à la main dans la console) ne doit pas
          -- effacer l'identifiant d'un contact arrivé par l'inbound sans numéro partagé.
          bsuid = coalesce(excluded.bsuid, contacts.bsuid),
+         -- UN STOP NE SE LEVE PAS ICI (2026-09-26). Le webhook entrant (un outil tiers) et la creation a la
+         -- main dans la console passent par cet upsert ; avec un opted_in, ils reabonnaient quelqu un qui avait
+         -- dit STOP. Sur une fiche opted_out, le statut, la date ET la source restent ceux du refus : la source
+         -- dit le canal du STOP au signal (completerSignal). Le nom, les champs et les tags se mettent a jour
+         -- quand meme. Seuls la fiche de la console, la personne elle-meme et l import CSV case cochee levent
+         -- un STOP. Les trois affectations lisent contacts.* AVANT la mise a jour : leur ordre est indifferent.
          opt_in_status = case
-           when excluded.opt_in_status = 'opted_in' then 'opted_in'
+           when excluded.opt_in_status = 'opted_in' and contacts.opt_in_status <> 'opted_out' then 'opted_in'
            else contacts.opt_in_status
          end,
-         -- LA DATE DE DESABONNEMENT SUIT LE STATUT, ICI AUSSI (releve en revue le 2026-09-13). Cet upsert
-         -- est un des chemins capables de faire repasser un contact en opted_in (le webhook entrant et la
-         -- creation a la main dans la console, par upsertContactsFromApi ; l import CSV passe par son pendant
-         -- en lot, upsertManyByPhone, qui tient la meme regle ; l API publique ne passe plus par ici depuis
-         -- le lot 1, elle ecrit par ecrireConsentementParId), et il ne touchait pas opt_out_at : la colonne
-         -- gardait la date d un refus leve depuis. Elle ne mentait a personne aujourd hui (la liste filtre
-         -- sur le statut), et elle aurait menti au premier lecteur qui ne filtrerait pas. La migration 0138
-         -- enonce l invariant ; c est ici qu il se tient.
-         opt_out_at = case when excluded.opt_in_status = 'opted_in' then null else contacts.opt_out_at end,
-         opt_in_source = coalesce(excluded.opt_in_source, contacts.opt_in_source),
+         -- La date de desabonnement suit le statut (migration 0138) : remise a null seulement quand le
+         -- statut passe a opted_in.
+         opt_out_at = case
+           when excluded.opt_in_status = 'opted_in' and contacts.opt_in_status <> 'opted_out' then null
+           else contacts.opt_out_at
+         end,
+         opt_in_source = case
+           when contacts.opt_in_status = 'opted_out' then contacts.opt_in_source
+           else coalesce(excluded.opt_in_source, contacts.opt_in_source)
+         end,
          -- Union dédupliquée : les nouveaux tags s'ajoutent, jamais d'écrasement.
          tags = (select coalesce(array_agg(distinct t), '{}') from unnest(contacts.tags || excluded.tags) t),
          -- Ré-ajouter un contact (webhook entrant, création à la main dans la console) le RESSUSCITE : re-poser le numéro
@@ -312,7 +318,8 @@ export class PgContactStore implements ContactStore {
   /**
    * Upsert d'un LOT en UNE requête (AUDIT-SCALE-2026-08-25.md, R9). Mêmes règles d'écriture que
    * `upsertByPhoneReturningId`, ligne pour ligne : fusion jsonb des champs, nom conservé s'il n'en arrive pas
-   * de nouveau, opt-in qui ne régresse jamais, union des tags, résurrection d'un contact supprimé.
+   * de nouveau, opt-in qui ne régresse jamais, STOP gardé, union des tags, résurrection d'un contact supprimé.
+   * Une seule différence : un lot `peutLeverStop` (l'import CSV case cochée) lève un STOP.
    *
    * Le lot voyage en UN seul paramètre JSON (`jsonb_to_recordset`) plutôt qu'en trois tableaux parallèles :
    * un tableau de fragments JSON devrait être échappé comme littéral de tableau Postgres, et la moindre
@@ -356,19 +363,24 @@ export class PgContactStore implements ContactStore {
        do update set
          fields = contacts.fields || excluded.fields,
          profile_name = coalesce(excluded.profile_name, contacts.profile_name),
+         -- UN STOP NE SE LEVE PAS PAR IMPORT, SAUF LA CASE COCHEE D UN CSV ($6, decision de Julien du
+         -- 2026-09-26). Une liste HubSpot qui contenait quelqu un qui avait dit STOP le reabonnait. Sans $6,
+         -- une fiche opted_out garde le statut, la date ET la source de son refus (la source dit le canal du
+         -- STOP au signal, completerSignal) ; le nom, les champs et les tags se mettent a jour quand meme.
          opt_in_status = case
-           when excluded.opt_in_status = 'opted_in' then 'opted_in'
+           when excluded.opt_in_status = 'opted_in' and (contacts.opt_in_status <> 'opted_out' or $6::boolean) then 'opted_in'
            else contacts.opt_in_status
          end,
-         -- LA DATE DE DESABONNEMENT SUIT LE STATUT, ICI AUSSI (releve en revue le 2026-09-13). Cet upsert
-         -- en lot sert l import CSV, un des chemins capables de faire repasser un contact en opted_in (son
-         -- pendant unitaire, upsertByPhoneReturningId, sert le webhook entrant et la creation a la main ;
-         -- l API publique ecrit le consentement par ecrireConsentementParId), et il ne touchait pas
-         -- opt_out_at : la colonne gardait la date d un refus leve depuis. Elle ne mentait a personne
-         -- aujourd hui (la liste filtre sur le statut), et elle aurait menti au premier lecteur qui ne
-         -- filtrerait pas. La migration 0138 enonce l invariant ; c est ici qu il se tient.
-         opt_out_at = case when excluded.opt_in_status = 'opted_in' then null else contacts.opt_out_at end,
-         opt_in_source = coalesce(excluded.opt_in_source, contacts.opt_in_source),
+         -- La date de desabonnement suit le statut (migration 0138) : remise a null seulement quand le
+         -- statut passe a opted_in, y compris quand la case cochee leve un STOP.
+         opt_out_at = case
+           when excluded.opt_in_status = 'opted_in' and (contacts.opt_in_status <> 'opted_out' or $6::boolean) then null
+           else contacts.opt_out_at
+         end,
+         opt_in_source = case
+           when contacts.opt_in_status = 'opted_out' and not $6::boolean then contacts.opt_in_source
+           else coalesce(excluded.opt_in_source, contacts.opt_in_source)
+         end,
          tags = (select coalesce(array_agg(distinct t), '{}') from unnest(contacts.tags || excluded.tags) t),
          deleted_at = null,
          updated_at = now()
@@ -376,7 +388,8 @@ export class PgContactStore implements ContactStore {
       // `bsuid` n'est PAS dans les colonnes écrites : un import n'en porte jamais, et ne pas y toucher
       // préserve l'identifiant d'un contact arrivé par l'inbound sans numéro partagé (même intention que le
       // `coalesce` de l'upsert unitaire, obtenue ici en n'écrivant pas la colonne du tout).
-      [lot.tenantId, lot.optInStatus, lot.optInSource ?? null, lot.tags ?? [], JSON.stringify(lignes)],
+      // $6 : `=== true`, jamais une coercition. Absent vaut NON, le défaut qui garde le STOP.
+      [lot.tenantId, lot.optInStatus, lot.optInSource ?? null, lot.tags ?? [], JSON.stringify(lignes), lot.peutLeverStop === true],
     );
 
     const creePar = new Map(res.rows.map((r) => [r.phone_e164, r.created] as const));

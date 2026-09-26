@@ -1,7 +1,7 @@
 ---
 ecran: contacts
 source_section: Contacts & CRM
-source_empreinte: 43955f
+source_empreinte: 459d01
 ---
 # Ajouter ou importer mes contacts
 
@@ -10,6 +10,10 @@ personne à la main, ou importer un fichier CSV.
 
 L'import vous fait associer chaque colonne de votre fichier à un champ de la fiche. Les contacts arrivent
 alors dans votre liste, prêts à être ciblés.
+
+La case du consentement vaut pour tout le fichier, y compris pour les personnes qui vous avaient répondu
+STOP : cochée, elle les réabonne. Ne la cochez que si vous détenez la preuve de leur consentement. Ajouter à la
+main un numéro déjà connu, en revanche, ne réabonne jamais quelqu'un qui a dit STOP.
 
 Un clic sur une ligne ouvre la fiche de la personne. Vous y modifiez ses champs, ses tags et son
 consentement, et vous y lisez le résumé de sa dernière conversation analysée dès qu'elle en a tenu une :

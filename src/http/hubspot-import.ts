@@ -16,7 +16,7 @@ export interface HubspotImportRouteDeps {
   listsAccess(tenantId: string): Promise<{ enabled: boolean; paused: boolean }>;
   /** Liste les listes HubSpot du portail (peut lever ReconsentRequiredError). */
   fetchLists(tenantId: string, query?: string): Promise<HubspotList[]>;
-  /** Importe une liste (opt-in TOUJOURS false, tag HubSpot). `tags` = tag(s) réellement posé(s). Peut lever ReconsentRequiredError. */
+  /** Importe une liste (opt-in accordé, source `hubspot_list`, mais un STOP reste un STOP ; tag HubSpot). `tags` = tag(s) réellement posé(s). Peut lever ReconsentRequiredError. */
   importList(tenantId: string, listId: string, listName: string): Promise<{ report: ImportReport; truncated: boolean; skippedNoPhone: number; tags: string[] }>;
 }
 
