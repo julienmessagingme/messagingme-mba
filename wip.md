@@ -73,6 +73,18 @@ Envois, le numéro d'essai) :
 - un événement trop vieux pour l'outil est écarté sans compteur visible, et un refus partiel répété de l'outil
   écrit une ligne par job dans le journal (plafond à décider).
 
+## BORNES DE `/v1/contacts` (DÉPLOYÉ LE 2026-09-26, ESSAI RÉEL DÛ)
+
+Lot de 50 fiches au plus, 10 champs et 10 étiquettes par fiche dans un lot, 20 à l'unité et en `PATCH`, et
+l'API ne crée plus ni champ ni étiquette. Relecture unique sans rouge, CI verte job par job, contrôle public
+vert. Le récit : journal technique, 2026-09-26.
+
+🔴 **L'ESSAI RÉEL, TROIS APPELS QUI N'ÉCRIVENT RIEN** (une clé de test sur l'espace démo, droit Écrire les
+contacts) : un lot de 51 fiches rend 400 ; dans un lot, une fiche à 11 champs est refusée à son index ; un
+champ inconnu est refusé et n'apparaît pas dans Bibliothèque > Champs.
+⚠️ **Et les essais du lot 1 ci-dessus en dépendent désormais** : un `fields` ou un `tags` de l'essai doit
+exister dans l'espace AVANT l'appel, sinon la fiche est refusée, et c'est le comportement voulu.
+
 ## HUBSPOT MASQUÉ SANS PORTAIL (LOT 9, DÉPLOYÉ LE 2026-09-23, ESSAI RÉEL DÛ)
 
 Lot 9 du plan `docs/superpowers/plans/2026-09-23-liste-julien.md`, RÉDUIT à ses deux écarts réels après

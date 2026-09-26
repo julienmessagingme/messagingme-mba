@@ -5,6 +5,36 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-09-26 : `/v1/contacts` borne ses appels, et ne crée plus ni champ ni étiquette
+
+Demande de Julien : « protéger mieux notre API ». Le lot de `POST /v1/contacts/batch` acceptait 500 fiches,
+chacune jusqu'à 50 champs (variable `API_MAX_CHAMPS_PAR_CONTACT`) et 200 étiquettes dans le corps (50 gardées,
+le reste coupé sans rien dire), et un champ inconnu était créé en texte (200 par espace au plus).
+
+Décisions, prises en cadrage (quatre questions) : **50 fiches par lot**, **10 champs et 10 étiquettes par fiche
+dans un lot, 20 à l'unité et en `PATCH`** (Julien a gardé l'asymétrie, contre ma recommandation d'une borne
+unique : elle pousse une fiche de 11 à 20 champs vers l'appel unitaire, plus cher), **plus aucun champ créé par
+l'API**, **une étiquette doit être déclarée ou déjà portée par une fiche**, et coupe nette (aucun intégrateur
+branché). Ce qui a pesé dans l'analyse : seule la taille du lot charge la base, parce qu'un lot tient
+l'UNIQUE place d'opération lourde du process ; le nombre de champs ne coûte presque rien (une fiche = une
+écriture jsonb). Contrepartie mesurée : 50 000 fiches par heure au plus pour un espace au lieu de 500 000.
+
+Livré en direct, tests d'abord (10 nouveaux, vus ROUGES avant le code), relecture unique sans rouge (trois
+jaunes, des commentaires encore en « 500 », corrigés dans le même commit), `0033d541`. Le webhook entrant et la
+création à la main gardent l'auto-création : `preparateurDeChamps` prend une option REQUISE `champInconnu`.
+La recherche des étiquettes inconnues est UNE requête par lot (`etiquettesInconnues`, servie par
+`contacts_tags_gin`), et son isolation par espace est tenue par un test d'intégration.
+
+⚠️ **Le commit a failli défaire le correctif STOP d'un pair.** Poussé depuis un worktree (738a7c3d), il était
+absent de l'arbre partagé : `features.md` et `contact-store.pg.ts` y étaient EN RETARD sur origin. Le commit a
+donc été construit en appliquant MON patch sur origin (`git apply --cached --3way` dans un index temporaire),
+et non en recopiant les fichiers de l'arbre. La règle est dans `CLAUDE.md` (plomberie).
+
+Déployé le jour même : pas de migration, pas de fiche d'aide à recharger, `.env.prod` ne portait pas la
+variable retirée. La connexion SSH a coupé pendant le `up -d --build` ; les conteneurs avaient pourtant été
+recréés sur le bon code (vérifié par `.Created` et un `grep` dans le conteneur), le `nginx -s reload` a été
+refait à la main, et le contrôle de fumée a rendu les six chemins publics justes. Essai réel dû (`wip.md`).
+
 ## 2026-09-24 et 25 (nuit) : l'API publique cohérente, lots 1 à 6 d'un seul trait
 
 Six lots de la spec `docs/superpowers/specs/2026-09-24-api-publique-coherente-design.md`, codés par des

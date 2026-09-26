@@ -181,6 +181,11 @@ sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload
 
 C'est aussi pourquoi le contrôle ci-dessous n'est pas facultatif : il a attrapé ce cas exact, du premier coup.
 
+⚠️ **La connexion SSH peut couper pendant le build** (vécu le 2026-09-26, « Connection reset by peer »). Ne rien
+relancer à l'aveugle : lire `sudo docker inspect -f '{{.Created}}' mba-api mba-worker mba-web` (recréés après le
+`pull` ?), puis un `grep` du changement DANS le conteneur, et refaire le `nginx -s reload`, que la coupure a
+empêché. Ce jour-là, les trois conteneurs avaient été recréés sur le bon code malgré la coupure.
+
 ## 🔴 Dernière étape OBLIGATOIRE : le contrôle de fumée public
 
 ```bash
