@@ -105,8 +105,8 @@ describe('POST /v1/contacts/batch : les formes hostiles', () => {
     expect(recus).toHaveLength(0);
   });
 
-  it('⚠️ mais une liste un peu bavarde passe : on refuse le démesuré, pas le verbeux', async () => {
-    const { corps, recus } = await envoyer([{ phone: '+33611', tags: Array.from({ length: 60 }, (_, i) => `t${i}`) }]);
+  it('⚠️ mais une liste pile à la borne d’un lot passe : 10 étiquettes (décision du 2026-09-26)', async () => {
+    const { corps, recus } = await envoyer([{ phone: '+33611', tags: Array.from({ length: 10 }, (_, i) => `t${i}`) }]);
     expect(corps!.errors).toBe(0);
     expect(recus).toHaveLength(1);
   });

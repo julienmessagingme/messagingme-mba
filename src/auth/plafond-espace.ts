@@ -10,7 +10,7 @@ import { journaliser } from '../lib/journal';
  * Il est désormais COMMUN à toutes les clés d'un espace, `/v1` et `/mcp` confondus, sur DEUX fenêtres qui
  * s'appliquent ensemble : une minute ET une heure.
  *
- * ⚠️ IL COMPTE DES APPELS, PAS DU TRAVAIL : un lot de 500 fiches vaut un appel. Le travail est mesuré à part par
+ * ⚠️ IL COMPTE DES APPELS, PAS DU TRAVAIL : un lot de 50 fiches vaut un appel. Le travail est mesuré à part par
  * le garde d'usage (`src/api/usage-guard.ts`), qui n'a pas bougé.
  *
  * 🔴 UNE EXCEPTION, ET ELLE N'EST PAS ICI : la clé du relais du Meta Business Agent garde son propre compteur par

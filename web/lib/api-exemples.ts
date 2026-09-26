@@ -331,7 +331,10 @@ export function statutDe(code: NomDeCode): number | null {
  * relais du Meta Business Agent, que la doc ne documente pas, et plus aucune page ne l'affichait.
  */
 export const BORNES = {
-  contactsParLot: 500,
+  contactsParLot: 50,
+  /** Champs ET étiquettes d'une fiche : à l'unité (`POST /v1/contacts`, `PATCH`), et dans un lot. */
+  parFiche: 20,
+  parFicheEnLot: 10,
   destinatairesParEnvoi: 50,
   ecartsDetailles: 200,
   texteWhatsapp: 4096,

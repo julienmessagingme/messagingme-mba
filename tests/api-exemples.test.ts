@@ -9,7 +9,7 @@ import {
 import { schemaClesFiche } from '../src/api/fiche';
 import {
   schemaContactV1 as schemaCorpsContact, schemaRechercheContactV1 as schemaCorpsRecherche,
-  schemaPatchContactV1 as schemaCorpsModification,
+  schemaPatchContactV1 as schemaCorpsModification, schemaContactLotV1 as schemaCorpsElementDuLot,
 } from '../src/api/contacts-v1';
 import {
   conteneurDuLot as schemaCorpsLot, MAX_BATCH,
@@ -22,7 +22,7 @@ import { schemaMessageRcs } from '../src/http/v1-messages-rcs';
 import { validateParamMapping } from '../src/crm/template';
 import { destinataireAvecVariablesInterdites } from '../src/api/variables';
 import { cleIdempotence, CLE_IDEMPOTENCE_MAX, DUREE_CLE_IDEMPOTENCE_MS } from '../src/api/idempotence';
-import { MAX_OPT_IN_SOURCE } from '../src/api/contacts-upsert';
+import { MAX_OPT_IN_SOURCE, MAX_PAR_FICHE, MAX_PAR_FICHE_EN_LOT } from '../src/api/contacts-upsert';
 import { VALEUR_VARIABLE_MAX, VARIABLES_MAX } from '../src/api/variables';
 import { STATUT_PAR_CODE, type CodeApi } from '../src/api/erreurs';
 import { PLAFOND_API_DEFAUT } from '../src/auth/plafond-espace';
@@ -77,7 +77,7 @@ const VALIDATEURS: Record<RouteAvecCorps, (corps: unknown) => Verdict> = {
     const { contacts } = lot.data;
     if (contacts.length === 0 || contacts.length > MAX_BATCH) return { ok: false, raison: `contacts : de 1 à ${MAX_BATCH} éléments` };
     for (const [i, el] of contacts.entries()) {
-      const v = depuis(schemaCorpsContact.safeParse(el));
+      const v = depuis(schemaCorpsElementDuLot.safeParse(el));
       if (!v.ok) return { ok: false, raison: `contacts.${i} : ${v.raison}` };
     }
     return { ok: true };
@@ -182,6 +182,8 @@ describe('les codes documentés sont ceux du serveur', () => {
 describe('les bornes affichées sont celles des routes', () => {
   it('lot, destinataires, écarts détaillés, durée de la clé d’idempotence : les constantes des routes', () => {
     expect(BORNES.contactsParLot).toBe(MAX_BATCH);
+    expect(BORNES.parFiche).toBe(MAX_PAR_FICHE);
+    expect(BORNES.parFicheEnLot).toBe(MAX_PAR_FICHE_EN_LOT);
     expect(BORNES.destinatairesParEnvoi).toBe(MAX_RECIPIENTS);
     expect(BORNES.ecartsDetailles).toBe(MAX_SKIPPED_REPORT);
     expect(BORNES.dureeIdempotenceHeures * 3_600_000).toBe(DUREE_CLE_IDEMPOTENCE_MS);

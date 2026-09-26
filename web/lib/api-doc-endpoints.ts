@@ -44,7 +44,7 @@ export const ENDPOINTS = [
   },
   {
     methode: 'POST', chemin: '/v1/contacts/batch', droit: 'contacts:write', groupe: 'contacts', lien: { page: 'contacts', ancre: 'lot' },
-    resume: ['Crée ou met à jour jusqu’à 500 fiches en un appel.', 'Creates or updates up to 500 records in one call.'],
+    resume: ['Crée ou met à jour jusqu’à 50 fiches en un appel.', 'Creates or updates up to 50 records in one call.'],
   },
   {
     methode: 'GET', chemin: '/v1/contacts/{contactId}', droit: 'contacts:read', groupe: 'contacts', lien: { page: 'contacts', ancre: 'lire' },

@@ -44,6 +44,8 @@ function app(over: Partial<ServiceContactsV1> = {}) {
   return { server: buildServer({ queue: new FakeQueue(), v1: { apiKeys: keys, contacts } }), cap, keys };
 }
 const auth = (key: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` } });
+const champs = (n: number): Record<string, string> => Object.fromEntries(Array.from({ length: n }, (_, i) => [`c${i}`, 'v']));
+const etiquettes = (n: number): string[] => Array.from({ length: n }, (_, i) => `t${i}`);
 
 describe('POST /v1/contacts', () => {
   it('clé valide + droit : 200, espace issu de la clé, touchLastUsed', async () => {
@@ -118,13 +120,71 @@ describe('POST /v1/contacts/batch', () => {
     await server.close();
   });
 
-  it('conteneur absent, vide, ou au-delà de 500 : 400 `invalid_body`', async () => {
-    const { server } = app();
-    for (const payload of [{}, { contacts: [] }, { contacts: 'x' }, { contacts: Array.from({ length: 501 }, () => ({ phone: '+33611' })) }]) {
+  it('🔴 conteneur absent, vide, ou au-delà de 50 : 400 `invalid_body`, et rien n’est écrit ; 50 passe', async () => {
+    const { server, cap } = app();
+    for (const payload of [{}, { contacts: [] }, { contacts: 'x' }, { contacts: Array.from({ length: 51 }, () => ({ phone: '+33611' })) }]) {
       const res = await server.inject({ method: 'POST', url: '/v1/contacts/batch', ...auth(ECRITURE), payload });
       expect(res.statusCode).toBe(400);
       expect(res.json()).toMatchObject({ code: 'invalid_body' });
     }
+    expect(cap.ecrits).toHaveLength(0);
+    const plein = await server.inject({ method: 'POST', url: '/v1/contacts/batch', ...auth(ECRITURE), payload: { contacts: Array.from({ length: 50 }, () => ({ phone: '+33611' })) } });
+    expect(plein.statusCode).toBe(200);
+    expect(cap.ecrits[0]!.items).toHaveLength(50);
+    await server.close();
+  });
+
+  it('🔴 en lot, une fiche de plus de 10 champs ou 10 étiquettes est refusée à SON index, les autres s’écrivent', async () => {
+    const { server, cap } = app();
+    const contacts = [
+      { phone: '+33611', fields: champs(10), tags: etiquettes(10) },
+      { phone: '+33612', fields: champs(11) },
+      { phone: '+33613', tags: etiquettes(11) },
+    ];
+    const res = await server.inject({ method: 'POST', url: '/v1/contacts/batch', ...auth(ECRITURE), payload: { contacts } });
+    expect(res.statusCode).toBe(200);
+    const { results } = res.json<{ results: Array<{ index: number; status: string; reason?: string }> }>();
+    expect(results.map((r) => r.status)).toEqual(['created', 'error', 'error']);
+    expect(results[1]!.reason).toBe('« fields » : 10 champs au plus par fiche');
+    expect(results[2]!.reason).toBe('« tags » : 10 étiquettes au plus par fiche');
+    expect(cap.ecrits[0]!.items).toHaveLength(1);
+    await server.close();
+  });
+});
+
+describe('les bornes d’une fiche seule : 20 champs, 20 étiquettes', () => {
+  it('🔴 POST /v1/contacts : 20 passent, 21 sont refusés en 400 qui le dit', async () => {
+    const { server, cap } = app();
+    const ok = await server.inject({ method: 'POST', url: '/v1/contacts', ...auth(ECRITURE), payload: { phone: '+33612345678', fields: champs(20), tags: etiquettes(20) } });
+    expect(ok.statusCode).toBe(200);
+    for (const [payload, raison] of [
+      [{ phone: '+33612345678', fields: champs(21) }, '« fields » : 20 champs au plus par fiche'],
+      [{ phone: '+33612345678', tags: etiquettes(21) }, '« tags » : 20 étiquettes au plus par fiche'],
+    ] as const) {
+      const res = await server.inject({ method: 'POST', url: '/v1/contacts', ...auth(ECRITURE), payload });
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: raison, code: 'invalid_body' });
+    }
+    expect(cap.ecrits).toHaveLength(1);
+    await server.close();
+  });
+
+  it('🔴 PATCH : 20 champs et 20 étiquettes ajoutées ou retirées passent, 21 sont refusés', async () => {
+    const vus: unknown[] = [];
+    const { server } = app({ modifierFiche: async (_t, id, patch) => { vus.push(patch); return { ok: true, contactId: id }; } });
+    const url = `/v1/contacts/${ID}`;
+    const ok = await server.inject({ method: 'PATCH', url, ...auth(ECRITURE), payload: { fields: champs(20), addTags: etiquettes(20), removeTags: etiquettes(20) } });
+    expect(ok.statusCode).toBe(200);
+    for (const [payload, raison] of [
+      [{ fields: champs(21) }, '« fields » : 20 champs au plus par fiche'],
+      [{ addTags: etiquettes(21) }, '« addTags » : 20 étiquettes au plus par fiche'],
+      [{ removeTags: etiquettes(21) }, '« removeTags » : 20 étiquettes au plus par fiche'],
+    ] as const) {
+      const res = await server.inject({ method: 'PATCH', url, ...auth(ECRITURE), payload });
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: raison, code: 'invalid_body' });
+    }
+    expect(vus).toHaveLength(1);
     await server.close();
   });
 });

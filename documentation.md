@@ -702,9 +702,9 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   `where` de `rattacherCles` et celui du `do update` de `creerFicheApi` gardent chaque clé demandée) ;
   `contactId` ne crée jamais rien. Elle rend une fiche, jamais une adresse : l'adresse d'envoi se calcule sur
   la fiche. `contacts.external_id` est unique PAR ESPACE (index partiel `contacts_tenant_external_id_uidx`), et
-  la purge l'efface avec le numéro. ⚠️ Exception assumée à « rien n'est écrit » : une définition de champ a pu
-  être créée (la préparation des champs passe avant la résolution), et elle compte dans le plafond de
-  l'espace. ⚠️ `/v1/sends` (mode `phone`, `jamais` pour une ouverture de session), `/v1/messages/whatsapp` et `/v1/messages/rcs` (mode `jamais`) passent par cette même résolution ; les deux dernières rattachent une clé neuve même quand le message est ensuite refusé.
+  la purge l'efface avec le numéro. 🔴 L'API ne fait naître ni champ ni étiquette (2026-09-26) : une clé de
+  champ ou une étiquette inconnue de l'espace refuse la fiche AVANT la résolution (`champInconnu: 'refuser'`,
+  `etiquettesInconnues`), donc « rien n'est écrit » n'a plus d'exception. ⚠️ `/v1/sends` (mode `phone`, `jamais` pour une ouverture de session), `/v1/messages/whatsapp` et `/v1/messages/rcs` (mode `jamais`) passent par cette même résolution ; les deux dernières rattachent une clé neuve même quand le message est ensuite refusé.
   ⚠️ Rattacher un numéro à une fiche qui n'avait qu'un BSUID change son adresse WhatsApp (`waIdOf` préfère
   le numéro).
 - 🔴 **L'API écrit champs, étiquettes et nom par `editerFicheApi`, jamais par `applyEdits`** : une requête
@@ -735,6 +735,12 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   partagent une clé normalisée forment une chaîne séquentielle (`enChaines`, `src/api/contacts-v1.ts`), les
   chaînes partant par vagues bornées. En parallèle, le second pouvait se résoudre avant que le premier ait
   créé la fiche.
+- 🔴 **Un appel de `/v1/contacts` est borné** (décision de Julien du 2026-09-26) : `MAX_BATCH` fiches par lot
+  (`src/http/v1-contacts.ts`), `MAX_PAR_FICHE_EN_LOT` champs et étiquettes par fiche dans un lot, `MAX_PAR_FICHE`
+  à l'unité et en `PATCH` (`src/api/contacts-upsert.ts`). Seule la taille du lot pèse sur la base : un lot tient
+  l'UNIQUE place d'opération lourde du process. Le nombre de champs ne coûte rien (une fiche = une écriture), il
+  borne un corps et le vocabulaire touché. Ces constantes sont les chiffres de la doc publique (`BORNES`, tenues
+  égales par `tests/api-exemples.test.ts`), et c'est pourquoi aucune variable d'environnement ne les règle.
 - 🔴 **`opted_out` et `unknown` ne veulent pas dire la même chose.** `optInAllows` exige un opt-in EXPLICITE
   pour une campagne **marketing** : un contact `unknown` est donc écarté **en silence**, seul `utility` passe.
   La saisie manuelle et l'import CSV créent en opt-in par défaut ; l'import HubSpot aussi, depuis le
@@ -1533,7 +1539,7 @@ l'ouverture de l'espace (`departLe` dans le bilan) : tout de suite pendant les h
 suivante.
 
 `/ops/usage` (jeton d'exploitation) : l'usage de l'API publique agrégé PAR MINUTE, par espace, par clé et
-par opération, avec le TRAVAIL demandé (un lot de 500 contacts y compte 500, pas 1). En mémoire du process
+par opération, avec le TRAVAIL demandé (un lot de 50 contacts y compte 50, pas 1). En mémoire du process
 qui sert la requête, jamais en base : une ligne SQL par appel ferait amplifier par la journalisation la
 charge qu'elle observe. Aucun seuil n'est posé à ce jour, ces compteurs OBSERVENT.
 

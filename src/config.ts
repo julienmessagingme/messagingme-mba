@@ -77,25 +77,21 @@ export const schema = z.object({
    */
   RATE_LIMIT_COUTEUX_PAR_MINUTE: z.coerce.number().int().min(0).default(10),
   /**
-   * LES TROIS BORNES DES CHAMPS PERSONNALISÉS POUSSÉS PAR L'API PUBLIQUE.
+   * LES DEUX BORNES RÉGLABLES DES CHAMPS PERSONNALISÉS.
    *
    * 🔴 LEURS VALEURS VIENNENT D'UNE MESURE, PAS D'UNE INTUITION (base de production, 2026-09-14) :
    * 10 définitions de champs sur l'ensemble des espaces, l'espace le plus fourni en porte 9, la clé la
-   * plus longue fait 11 caractères, et aucun contact ne porte plus de 6 champs. Chaque défaut ci-dessous
-   * est donc entre 5 et 20 fois au-dessus de l'usage réel : un intégrateur normal ne peut pas les
-   * rencontrer, une boucle d'appels à clés aléatoires s'y heurte tout de suite.
+   * plus longue fait 11 caractères. Chaque défaut ci-dessous est donc largement au-dessus de l'usage réel.
    *
-   * 🔴 ELLES SONT CONFIGURABLES POUR LA MÊME RAISON QUE LES PLAFONDS DE DÉBIT : elles s'appliquent à
-   * une API qu'utilisent de vrais intégrateurs, un calibrage trop serré casserait leur production, et
-   * changer une variable d'environnement (`compose up -d --force-recreate`) va nettement plus vite qu'un
-   * déploiement de code.
+   * ⚠️ `API_MAX_CHAMPS_PAR_ESPACE` NE BORNE PLUS QUE LE WEBHOOK ENTRANT ET LA CRÉATION À LA MAIN : l'API publique
+   * ne crée plus aucun champ (2026-09-26). À 0, il est DÉSACTIVÉ, exactement comme les plafonds de débit.
+   * `API_MAX_CLE_CHAMP` borne la FORME d'un corps de requête : pas de sens à 0 (`min(1)`).
    *
-   * ⚠️ `API_MAX_CHAMPS_PAR_ESPACE` À 0 DÉSACTIVE le plafond, exactement comme les plafonds de débit. Les
-   * deux autres bornent la FORME d'un corps de requête : elles n'ont pas de sens à 0, et le schéma les
-   * refuserait (`min(1)`).
+   * ⚠️ LE NOMBRE DE CHAMPS PAR FICHE N'EST PLUS ICI (`API_MAX_CHAMPS_PAR_CONTACT`, parti le 2026-09-26) : il vaut
+   * 20 à l'unité et 10 dans un lot, deux chiffres que la doc publique affiche, donc des constantes du code
+   * (`MAX_PAR_FICHE*`, `src/api/contacts-upsert.ts`). Une variable les ferait mentir en silence.
    */
   API_MAX_CLE_CHAMP: z.coerce.number().int().min(1).default(64),
-  API_MAX_CHAMPS_PAR_CONTACT: z.coerce.number().int().min(1).default(50),
   API_MAX_CHAMPS_PAR_ESPACE: z.coerce.number().int().min(0).default(200),
   /**
    * Provider du canal RCS. `fake` = provider factice : le canal est complet de bout en bout (campagne, bloc de

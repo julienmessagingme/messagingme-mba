@@ -98,13 +98,16 @@ const CONTACT: TableDeChamps = {
     {
       nom: 'fields', type: 'object', obligatoire: 'non',
       quoi: [
-        'Les champs de la fiche, par clé technique ou code fld_. Valeur texte, nombre ou booléen, enregistrée en texte. Un champ inconnu est créé en texte.',
-        'The record fields, by technical key or fld_ code. Text, number or boolean value, stored as text. An unknown field is created as text.',
+        `Les champs de la fiche, par clé technique ou code fld_, ${BORNES.parFiche} au plus. Valeur texte, nombre ou booléen, enregistrée en texte. Un champ inconnu de l’espace est refusé : créez-le d’abord dans la console (Bibliothèque > Champs).`,
+        `The record fields, by technical key or fld_ code, ${BORNES.parFiche} at most. Text, number or boolean value, stored as text. A field unknown to the workspace is refused: create it first in the console (Library > Fields).`,
       ],
     },
     {
       nom: 'tags', type: 'string[]', obligatoire: 'non',
-      quoi: ['Des tags à ajouter. Aucun n’est retiré : PATCH le fait.', 'Tags to add. None is removed: PATCH does that.'],
+      quoi: [
+        `Des tags à ajouter, ${BORNES.parFiche} au plus. Aucun n’est retiré : PATCH le fait. Un tag inconnu de l’espace est refusé : déclarez-le d’abord dans la console (Bibliothèque > Étiquettes).`,
+        `Tags to add, ${BORNES.parFiche} at most. None is removed: PATCH does that. A tag unknown to the workspace is refused: declare it first in the console (Library > Tags).`,
+      ],
     },
     CONSENT(['Absent : inchangé.', 'Missing: unchanged.']),
     CONSENT_SOURCE,
@@ -119,8 +122,8 @@ export const CHAMPS = {
     champs: [{
       nom: 'contacts', type: 'object[]', obligatoire: 'oui',
       quoi: [
-        `De 1 à ${BORNES.contactsParLot} fiches, chacune avec les champs de POST /v1/contacts.`,
-        `From 1 to ${BORNES.contactsParLot} records, each with the fields of POST /v1/contacts.`,
+        `De 1 à ${BORNES.contactsParLot} fiches, chacune avec les champs de POST /v1/contacts, mais ${BORNES.parFicheEnLot} champs et ${BORNES.parFicheEnLot} tags au plus par fiche.`,
+        `From 1 to ${BORNES.contactsParLot} records, each with the fields of POST /v1/contacts, but ${BORNES.parFicheEnLot} fields and ${BORNES.parFicheEnLot} tags at most per record.`,
       ],
     }],
     inconnues: 'ignorees',
@@ -135,12 +138,21 @@ export const CHAMPS = {
       {
         nom: 'fields', type: 'object', obligatoire: 'non',
         quoi: [
-          'Fusionnés avec les champs de la fiche. Une valeur null vide le champ.',
-          'Merged with the record fields. A null value clears the field.',
+          `Fusionnés avec les champs de la fiche, ${BORNES.parFiche} au plus. Une valeur null vide le champ. Un champ inconnu de l’espace est refusé.`,
+          `Merged with the record fields, ${BORNES.parFiche} at most. A null value clears the field. A field unknown to the workspace is refused.`,
         ],
       },
-      { nom: 'addTags', type: 'string[]', obligatoire: 'non', quoi: ['Des tags à ajouter.', 'Tags to add.'] },
-      { nom: 'removeTags', type: 'string[]', obligatoire: 'non', quoi: ['Des tags à retirer.', 'Tags to remove.'] },
+      {
+        nom: 'addTags', type: 'string[]', obligatoire: 'non',
+        quoi: [
+          `Des tags à ajouter, ${BORNES.parFiche} au plus. Un tag inconnu de l’espace est refusé.`,
+          `Tags to add, ${BORNES.parFiche} at most. A tag unknown to the workspace is refused.`,
+        ],
+      },
+      {
+        nom: 'removeTags', type: 'string[]', obligatoire: 'non',
+        quoi: [`Des tags à retirer, ${BORNES.parFiche} au plus.`, `Tags to remove, ${BORNES.parFiche} at most.`],
+      },
       CONSENT(['Absent : inchangé.', 'Missing: unchanged.']),
       CONSENT_SOURCE,
       {

@@ -14,30 +14,23 @@ import { MAX_EXTERNAL_ID } from './fiche';
 /**
  * LES BORNES DE FORME D'UN CONTACT POUSSÉ PAR L'API.
  *
- * 🔴 ELLES SONT LARGES, ET LEUR VALEUR VIENT D'UNE MESURE, pas d'une intuition (base de production,
- * le 2026-09-14) : 10 définitions de champs en tout sur l'ensemble des espaces, l'espace le plus fourni
- * en porte 9, la clé la plus longue fait 11 caractères, aucun contact ne porte plus de 6 champs, et
- * `opt_in_source` ne dépasse pas 12 caractères. Chacune de ces bornes est donc entre 5 et 8 fois
- * au-dessus de l'usage réel : un intégrateur normal ne peut pas les rencontrer, une boucle d'appels s'y
- * heurte tout de suite.
+ * 🔴 CHAMPS ET ÉTIQUETTES PAR FICHE : 20 à l'unité (`POST /v1/contacts`, `PATCH`), 10 dans un lot (décision de
+ * Julien du 2026-09-26). Mesure du 2026-09-14 : aucun contact ne portait plus de 6 champs. Une fiche coûte UNE
+ * écriture quel que soit son nombre de champs : ces bornes tiennent la taille d'un corps et le vocabulaire qu'un
+ * appel touche, pas la charge de la base (c'est la taille du lot qui la tient, `MAX_BATCH`).
  *
  * ⚠️ CE N'EST PAS LE PLAFOND PAR ESPACE, qui est un autre sujet (le nombre total de définitions qu'une
  * série d'appels peut faire naître). Ici on borne UN contact, dans le corps d'UNE requête.
  */
 export const MAX_CLE_CHAMP = config.API_MAX_CLE_CHAMP;
-export const MAX_CHAMPS_PAR_CONTACT = config.API_MAX_CHAMPS_PAR_CONTACT;
+export const MAX_PAR_FICHE = 20;
+export const MAX_PAR_FICHE_EN_LOT = 10;
 /**
  * ⚠️ CELLE-CI N'EST PAS CONFIGURABLE, et c'est un choix : `optInSource` JUSTIFIE un consentement
  * (`crm`, `csv_import`, `webhook:<nom>`, 12 caractères au plus en production). Aucun réglage d'exploitation
  * n'a de raison de la desserrer, là où les deux autres peuvent gêner un intégrateur légitime.
  */
 export const MAX_OPT_IN_SOURCE = 100;
-/**
- * ⚠️ LE SERVICE EN GARDE 50 APRÈS DÉDUPLICATION : cette borne-ci est celle du CORPS REÇU, volontairement
- * plus haute (une liste de 60 tags dont 15 doublons reste légitime). Ce qu'elle refuse, c'est le tableau
- * démesuré, pas l'appel un peu bavard.
- */
-export const MAX_TAGS_PAR_CONTACT = 200;
 
 /**
  * ⚠️ UN NOMBRE ET UN BOOLÉEN RESTENT ACCEPTÉS, convertis en texte. Le service faisait déjà `String(...)`
@@ -47,12 +40,15 @@ export const MAX_TAGS_PAR_CONTACT = 200;
  */
 export const valeurDeChamp = z.union([z.string(), z.number(), z.boolean()]).transform(String);
 
-/** Les champs d'un contact : clé bornée, valeur texte, et pas plus de `MAX_CHAMPS_PAR_CONTACT` par contact. */
-export const schemaChamps = z.record(z.string().max(MAX_CLE_CHAMP), valeurDeChamp)
-  .refine((r) => Object.keys(r).length <= MAX_CHAMPS_PAR_CONTACT);
+/** Le refus d'un `fields` trop long, rendu tel quel par `raisonDeValidation`. */
+export const champsAuPlus = (max: number): string => `« fields » : ${max} champs au plus par fiche`;
 
-/** Des étiquettes : le tableau démesuré est refusé, pas tronqué (cf. la note de `schemaContactApi`). */
-export const schemaTags = z.array(z.union([z.string(), z.number()]).transform(String)).max(MAX_TAGS_PAR_CONTACT);
+/** Les champs d'un contact : clé bornée, valeur texte, et pas plus de `max` par contact. */
+export const schemaChamps = (max: number) => z.record(z.string().max(MAX_CLE_CHAMP), valeurDeChamp)
+  .refine((r) => Object.keys(r).length <= max, { message: champsAuPlus(max) });
+
+/** Des étiquettes : au-delà de `max`, le tableau est refusé, pas tronqué (cf. la note de `schemaContactApi`). */
+export const schemaTags = (max: number) => z.array(z.union([z.string(), z.number()]).transform(String)).max(max);
 
 /**
  * LA FORME D'UN CONTACT QU'ÉCRIT `upsertContactsFromApi`, dont dérive le type `ApiContactInput`.
@@ -69,13 +65,13 @@ export const schemaTags = z.array(z.union([z.string(), z.number()]).transform(St
 export const schemaContactApi = z.object({
   phone: z.string().trim().min(1),
   name: z.string().optional(),
-  fields: schemaChamps.optional(),
+  fields: schemaChamps(MAX_PAR_FICHE).optional(),
   /**
    * ⚠️ BORNÉE ICI AUSSI (relevé en revue) : le service coupe déjà à 50 tags, mais il coupe APRÈS avoir
    * reçu la liste. Un tableau de 100 000 entrées traversait donc la validation entière pour finir
    * tronqué. On refuse au lieu de tronquer, comme partout ailleurs dans ce schéma.
    */
-  tags: schemaTags.optional(),
+  tags: schemaTags(MAX_PAR_FICHE).optional(),
   optIn: z.boolean().optional(),
   optInSource: z.string().max(MAX_OPT_IN_SOURCE).optional(),
   bsuid: z.string().optional(),
@@ -131,15 +127,16 @@ export function raisonDeValidation(err: z.ZodError): string {
   // un élément fautif retombait sur le message anglais de zod.
   const liste = chemin.split('.')[0];
   if (liste === 'tags' || liste === 'addTags' || liste === 'removeTags') {
-    return chemin === liste
-      ? `« ${chemin} » : une liste de ${MAX_TAGS_PAR_CONTACT} étiquettes au plus, en texte`
-      : `« ${chemin} » : une étiquette est un texte ou un nombre`;
+    if (chemin !== liste) return `« ${chemin} » : une étiquette est un texte ou un nombre`;
+    // La borne vient de l'issue : trois schémas la posent (10 en lot, 20 ailleurs), aucune constante ne la connaît.
+    return i.code === 'too_big'
+      ? `« ${chemin} » : ${String(i.maximum)} étiquettes au plus par fiche`
+      : `« ${chemin} » : une liste d’étiquettes en texte est attendue`;
   }
   if (i.code === 'invalid_key') return `« ${chemin} » : clé de champ invalide (texte, ${MAX_CLE_CHAMP} caractères au plus)`;
   if (chemin === 'fields') {
-    return i.code === 'custom'
-      ? `« fields » : un contact ne peut pas porter plus de ${MAX_CHAMPS_PAR_CONTACT} champs`
-      : '« fields » : un objet { clé: valeur } est attendu';
+    // Le message du `refine` porte la borne de SON schéma (`champsAuPlus`).
+    return i.code === 'custom' ? i.message : '« fields » : un objet { clé: valeur } est attendu';
   }
   if (chemin.startsWith('fields.')) return `« ${chemin} » : texte, nombre ou booléen attendu`;
   if (chemin === 'phone') return '« phone » : un numéro de téléphone (texte non vide) est attendu';
@@ -188,13 +185,15 @@ export type ChampsPrepares = { ok: true; valeurs: Record<string, string> } | { o
  * contact est connu du suivant sans relire la base.
  *
  * 🔴 LE PLAFOND SE COMPTE SUR `defs`, QUI GROSSIT AU FIL DU LOT, et c'est ce qui en fait une borne.
- * Compté sur la seule photo d'avant, un unique appel de 500 contacts portant 500 clés distinctes
- * passerait entièrement : le plafond ne serait qu'un compteur d'historique.
+ * Compté sur la seule photo d'avant, un unique lot portant une clé distincte par contact passerait
+ * entièrement : le plafond ne serait qu'un compteur d'historique.
  *
- * ⚠️ IL VAUT POUR TOUS LES CHEMINS QUI PRÉPARENT DES CHAMPS PAR ICI : l'API publique, le webhook entrant
- * (`src/webhook-entrant/chemin.ts`) et la création à la main de la console. C'est voulu, l'amplification
- * est la même ; et le webhook y est le moins exposé, puisque ses clés de champs viennent d'un mapping qu'un
- * ADMIN de l'espace a configuré, pas du payload d'un tiers.
+ * ⚠️ IL NE SERT QU'AUX CHEMINS QUI CRÉENT : le webhook entrant (`src/webhook-entrant/chemin.ts`), dont les clés
+ * viennent d'un mapping qu'un ADMIN de l'espace a configuré, et la création à la main de la console.
+ *
+ * 🔴 L'API PUBLIQUE NE CRÉE AUCUN CHAMP (`champInconnu: 'refuser'`, décision de Julien du 2026-09-26) : un champ
+ * se crée dans la console, et une clé inconnue refuse la fiche en disant où le faire. L'option est REQUISE : un
+ * appelant de plus doit choisir, pas hériter en silence de la création.
  *
  * ⚠️ ET IL NE REFUSE QUE LA CRÉATION. Un contact qui n'utilise que des champs DÉJÀ déclarés passe, même
  * au plafond, y compris dans le lot où un autre contact vient d'être refusé. Un plafond qui bloquerait
@@ -202,7 +201,7 @@ export type ChampsPrepares = { ok: true; valeurs: Record<string, string> } | { o
  */
 export async function preparateurDeChamps(
   tenantId: string,
-  deps: { fields: UserFieldStore; maxChampsParEspace?: number },
+  deps: { fields: UserFieldStore; maxChampsParEspace?: number; champInconnu: 'creer' | 'refuser' },
 ): Promise<(champs: Record<string, string> | undefined) => Promise<ChampsPrepares>> {
   const defs = await deps.fields.list(tenantId);
   const cache: FieldLister = { list: async () => defs };
@@ -215,6 +214,9 @@ export async function preparateurDeChamps(
       const resolved = await resolveFieldKey(tenantId, ref, cache);
       if (!resolved.ok) return { ok: false, raison: `champ inconnu : ${ref}` };
       if (!resolved.known && !ensured.has(resolved.key)) {
+        if (deps.champInconnu === 'refuser') {
+          return { ok: false, raison: `« ${ref} » : champ inconnu de cet espace. Créez-le dans la console (Bibliothèque > Champs), puis relancez.` };
+        }
         if (plafondAtteint()) {
           // La raison NOMME le geste qui débloque : l'intégrateur ne peut pas deviner qu'un champ se crée
           // aussi depuis la console, et un refus sans issue se transforme en ticket de support.
@@ -256,8 +258,8 @@ export async function upsertContactsFromApi(
   },
 ): Promise<ApiUpsertOutcome[]> {
   // La préparation des champs est PARTAGÉE avec l'API publique (`preparateurDeChamps`) : mêmes règles de
-  // résolution, d'auto-création et de plafond, un seul cache par appel.
-  const preparer = await preparateurDeChamps(tenantId, deps);
+  // résolution, un seul cache par appel. Ici on CRÉE (webhook entrant, console) ; l'API, elle, refuse.
+  const preparer = await preparateurDeChamps(tenantId, { ...deps, champInconnu: 'creer' });
 
   // DEUX TEMPS (lot 6 du programme II), et l'ordre n'est pas indifférent.
   //

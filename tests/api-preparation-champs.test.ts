@@ -1,7 +1,7 @@
 // tests/api-preparation-champs.test.ts
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
-import { MAX_TAGS_PAR_CONTACT, preparateurDeChamps, raisonDeValidation, schemaTags } from '../src/api/contacts-upsert';
+import { preparateurDeChamps, raisonDeValidation, schemaTags } from '../src/api/contacts-upsert';
 import type { UserFieldDef } from '../src/crm/types';
 
 /**
@@ -25,7 +25,7 @@ function fields(defs: UserFieldDef[]) {
 describe('preparateurDeChamps', () => {
   it('🔴 un champ créé par un appel est CONNU du suivant : il n’est pas recréé', async () => {
     const { store, etat } = fields([champ('prenom')]);
-    const preparer = await preparateurDeChamps('t1', { fields: store, maxChampsParEspace: 0 });
+    const preparer = await preparateurDeChamps('t1', { fields: store, maxChampsParEspace: 0, champInconnu: 'creer' });
     expect(await preparer({ prenom: 'Marc', ville: 'Lyon' })).toEqual({ ok: true, valeurs: { prenom: 'Marc', ville: 'Lyon' } });
     expect(await preparer({ ville: 'Paris' })).toEqual({ ok: true, valeurs: { ville: 'Paris' } });
     expect(etat.crees).toEqual(['ville']);
@@ -33,7 +33,7 @@ describe('preparateurDeChamps', () => {
 
   it('au plafond, un champ INCONNU est refusé en le disant, et rien n’est créé', async () => {
     const { store, etat } = fields([champ('prenom')]);
-    const preparer = await preparateurDeChamps('t1', { fields: store, maxChampsParEspace: 1 });
+    const preparer = await preparateurDeChamps('t1', { fields: store, maxChampsParEspace: 1, champInconnu: 'creer' });
     const r = await preparer({ nouveau: 'x' });
     expect(r.ok).toBe(false);
     expect(!r.ok && r.raison).toMatch(/plafond de 1 champs personnalisés/);
@@ -42,13 +42,23 @@ describe('preparateurDeChamps', () => {
 
   it('un code `fld_` inconnu est refusé : un code ne se devine pas', async () => {
     const { store } = fields([]);
-    const preparer = await preparateurDeChamps('t1', { fields: store, maxChampsParEspace: 0 });
+    const preparer = await preparateurDeChamps('t1', { fields: store, maxChampsParEspace: 0, champInconnu: 'creer' });
     expect(await preparer({ fld_inexistant: 'x' })).toEqual({ ok: false, raison: 'champ inconnu : fld_inexistant' });
+  });
+
+  it('🔴 `refuser` (l’API publique) : un champ inconnu est refusé en disant où le créer, et rien n’est créé', async () => {
+    const { store, etat } = fields([champ('prenom')]);
+    const preparer = await preparateurDeChamps('t1', { fields: store, maxChampsParEspace: 0, champInconnu: 'refuser' });
+    expect(await preparer({ prenom: 'Marc' })).toEqual({ ok: true, valeurs: { prenom: 'Marc' } });
+    expect(await preparer({ prenom: 'Marc', ville: 'Lyon' })).toEqual({
+      ok: false, raison: '« ville » : champ inconnu de cet espace. Créez-le dans la console (Bibliothèque > Champs), puis relancez.',
+    });
+    expect(etat.crees).toEqual([]);
   });
 
   it('aucun champ : aucune valeur, et c’est un succès', async () => {
     const { store } = fields([]);
-    expect(await (await preparateurDeChamps('t1', { fields: store }))(undefined)).toEqual({ ok: true, valeurs: {} });
+    expect(await (await preparateurDeChamps('t1', { fields: store, champInconnu: 'refuser' }))(undefined)).toEqual({ ok: true, valeurs: {} });
   });
 });
 
@@ -80,9 +90,9 @@ describe('raisonDeValidation : les clés de l’API des fiches', () => {
   });
 
   it('🔴 les listes d’étiquettes, ET chacun de leurs éléments, répondent en français en nommant le chemin exact', () => {
-    const s = z.object({ addTags: schemaTags.optional(), removeTags: schemaTags.optional(), tags: schemaTags.optional() });
-    const trop = Array.from({ length: MAX_TAGS_PAR_CONTACT + 1 }, (_, i) => `t${i}`);
-    expect(echec(s, { addTags: trop })).toBe(`« addTags » : une liste de ${MAX_TAGS_PAR_CONTACT} étiquettes au plus, en texte`);
+    const s = z.object({ addTags: schemaTags(3).optional(), removeTags: schemaTags(3).optional(), tags: schemaTags(3).optional() });
+    expect(echec(s, { addTags: ['a', 'b', 'c', 'd'] })).toBe('« addTags » : 3 étiquettes au plus par fiche');
+    expect(echec(s, { tags: 'vip' })).toBe('« tags » : une liste d’étiquettes en texte est attendue');
     expect(echec(s, { addTags: ['ok', 'ok', 'ok', {}] })).toBe('« addTags.3 » : une étiquette est un texte ou un nombre');
     expect(echec(s, { removeTags: [[]] })).toBe('« removeTags.0 » : une étiquette est un texte ou un nombre');
     expect(echec(s, { tags: [null] })).toBe('« tags.0 » : une étiquette est un texte ou un nombre');

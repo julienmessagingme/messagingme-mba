@@ -6,7 +6,7 @@ import { GardeUsageMemoire } from '../src/api/usage-guard.memoire';
  * LE CONTRAT DU GARDE D'USAGE, éprouvé SANS RIEN SAVOIR DU STOCKAGE.
  *
  * 🔴 UNE REQUÊTE N'EST PAS UNE UNITÉ DE COÛT, et c'est ce que ces cas gardent. Avec les 60 requêtes par
- * minute d'une clé, un intégrateur fait accepter 30 000 contacts (60 lots de 500) ou 3 000 destinataires
+ * minute d'une clé, un intégrateur fait accepter 3 000 contacts (60 lots de 50) ou 3 000 destinataires
  * (60 envois de 50) : le plafond de débit ne borne pas le travail, il borne la politesse.
  *
  * ⚠️ CES CAS PARLENT AU CONTRAT (`ApiUsageGuard`), PAS À LA CLASSE. C'est ce qui rend le remplacement du
@@ -24,8 +24,8 @@ function horloge(depart = 1_700_000_000_000) {
 }
 
 describe('le calcul des unités', () => {
-  it('🔴 un lot de 500 contacts coûte 500, pas 1', () => {
-    expect(unitesDe('contacts.batch', 500)).toBe(500);
+  it('🔴 un lot de 50 contacts coûte 50, pas 1', () => {
+    expect(unitesDe('contacts.batch', 50)).toBe(50);
     expect(unitesDe('sends.create', 50)).toBe(50);
   });
 

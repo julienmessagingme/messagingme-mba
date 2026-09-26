@@ -437,7 +437,7 @@ vient d'une décision de Julien.
 
 - **Le quota par espace est OBSERVÉ, jamais appliqué** (`plafondUnitesParEspace = 0`,
   `src/api/usage-guard.memoire.ts`). Le plafond par clé ne le remplace pas : plusieurs clés multiplient la
-  capacité, et une requête peut porter 500 contacts ou 50 destinataires. ⚠️ **Les valeurs sont une décision
+  capacité, et une requête peut porter 50 contacts ou 50 destinataires. ⚠️ **Les valeurs sont une décision
   de Julien** (`ARCHITECTURE-CIBLE.md` § 13.1) : observer l'usage réel, fixer des budgets par nature
   (destinataires, contacts écrits), puis activer un plafond généreux, refusé en `429` lisible, AVANT de
   distribuer largement des clés.

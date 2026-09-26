@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { Guard } from '../auth/middleware';
 import { raisonDeValidation } from '../api/contacts-upsert';
 import {
-  schemaContactV1, schemaPatchContactV1, schemaRechercheContactV1,
+  schemaContactLotV1, schemaContactV1, schemaPatchContactV1, schemaRechercheContactV1,
   type ContactV1, type ResultatFiche, type ServiceContactsV1,
 } from '../api/contacts-v1';
 import { refuser, STATUT_PAR_CODE } from '../api/erreurs';
@@ -25,7 +25,13 @@ export interface GardesContactsV1 {
   lire: Guard;
 }
 
-export const MAX_BATCH = 500;
+/**
+ * 🔴 50, ET PLUS 500 (décision de Julien du 2026-09-26). Un lot occupe l'UNIQUE place d'opération lourde du process
+ * (`API_MAX_LOURDES_SIMULTANEES`), partagée par tous les espaces et par `/v1/sends` : sa taille décide combien de
+ * temps il la garde. Contrepartie : 50 000 fiches par heure au plus pour un espace (le plafond d'appels) ; les gros
+ * volumes passent par l'import CSV de la console.
+ */
+export const MAX_BATCH = 50;
 export const conteneurDuLot = z.object({ contacts: z.array(z.unknown()) });
 
 /**
@@ -35,14 +41,17 @@ export const conteneurDuLot = z.object({ contacts: z.array(z.unknown()) });
  * qu'IL reçoit, et sans ce report l'erreur de la ligne 3 serait rendue sur la ligne 1, et l'intégrateur
  * corrigerait un contact parfaitement valide.
  *
- * 🔴 ET UN ÉLÉMENT REFUSÉ NE FAIT PAS TOMBER LE LOT : c'est le contrat du lot depuis toujours (un lot de 500
- * dont la ligne 37 est fausse écrit 499 fiches). Seul un CONTENEUR malformé rend 400.
+ * 🔴 ET UN ÉLÉMENT REFUSÉ NE FAIT PAS TOMBER LE LOT : c'est le contrat du lot depuis toujours (un lot de 50
+ * dont la ligne 37 est fausse écrit 49 fiches). Seul un CONTENEUR malformé rend 400.
+ *
+ * ⚠️ LES BORNES D'UNE FICHE DE LOT SONT PLUS SERRÉES QU'À L'UNITÉ (10 champs et 10 étiquettes, contre 20) :
+ * `schemaContactLotV1`, jamais `schemaContactV1`.
  */
 function trierLeLot(bruts: unknown[]): { valides: Array<{ index: number; contact: ContactV1 }>; refus: ResultatFiche[] } {
   const valides: Array<{ index: number; contact: ContactV1 }> = [];
   const refus: ResultatFiche[] = [];
   bruts.forEach((brut, index) => {
-    const r = schemaContactV1.safeParse(brut);
+    const r = schemaContactLotV1.safeParse(brut);
     if (r.success) valides.push({ index, contact: r.data });
     else refus.push({ index, status: 'error', code: 'invalid_body', reason: raisonDeValidation(r.error) });
   });
@@ -85,7 +94,7 @@ export function registerV1Contacts(app: FastifyInstance, deps: V1ContactsRouteDe
     if (bruts.length > MAX_BATCH) return refuser(reply, 400, 'invalid_body', `« contacts » : ${MAX_BATCH} éléments au plus par lot`);
     /**
      * ⚠️ LE TRAVAIL EST COMPTÉ SUR CE QUE L'APPELANT DEMANDE, pas sur ce qui survit à la validation. Un lot
-     * de 500 lignes dont 400 sont malformées a bel et bien coûté 500 validations : compter 100 laisserait
+     * de 50 lignes dont 40 sont malformées a bel et bien coûté 50 validations : compter 10 laisserait
      * une boucle de corps invalides invisible des compteurs, c'est-à-dire exactement le cas qu'on surveille.
      */
     if (!await compterOuRefuser(deps.usage, req, reply, 'contacts.batch', bruts.length)) return reply;

@@ -47,7 +47,7 @@ function Contacts() {
         <Erreurs
           clesDeFiche
           lignes={[
-            ['invalid_body', t('Champ mal formé ou refusé ; le message le nomme.', 'Malformed or refused field; the message names it.')],
+            ['invalid_body', t('Champ mal formé ou refusé, trop de champs ou de tags, champ ou tag inconnu de l’espace ; le message le nomme.', 'Malformed or refused field, too many fields or tags, field or tag unknown to the workspace; the message names it.')],
             ['unknown_contact', t('Aucune fiche trouvée, et ni phone ni bsuid pour en créer une (un externalId seul, par exemple).', 'No record found, and neither phone nor bsuid to create one (an externalId alone, for instance).')],
             ['opted_out', t('consent opted_in sur une fiche désabonnée. Rien n’est modifié.', 'consent opted_in on an opted-out record. Nothing is changed.')],
           ]}
@@ -71,7 +71,7 @@ function Contacts() {
         <Erreurs lignes={[['invalid_body', t('contacts absent, vide, ou trop long.', 'contacts missing, empty, or too long.')]]} />
         <Sous>{notes}</Sous>
         <Liste>
-          <li>{t('Un élément refusé n’arrête pas les autres.', 'A refused item does not stop the others.')}</li>
+          <li>{t('Un élément refusé (mal formé, trop de champs ou de tags, champ ou tag inconnu) n’arrête pas les autres.', 'A refused item (malformed, too many fields or tags, unknown field or tag) does not stop the others.')}</li>
           <li>{t('Les éléments qui désignent la même personne s’écrivent dans l’ordre du lot.', 'Items that designate the same person are written in the order of the list.')}</li>
         </Liste>
       </Route>
@@ -150,7 +150,7 @@ function Contacts() {
         <Sous>{erreurs}</Sous>
         <Erreurs
           lignes={[
-            ['invalid_body', t('Rien à modifier, champ inconnu à vider, ou valeur refusée.', 'Nothing to change, unknown field to clear, or refused value.')],
+            ['invalid_body', t('Rien à modifier, trop de champs ou de tags, champ ou tag à ajouter inconnu de l’espace, ou valeur refusée.', 'Nothing to change, too many fields or tags, field or tag to add unknown to the workspace, or refused value.')],
             ['unknown_contact', t('Fiche inconnue.', 'Unknown record.')],
             ['identity_conflict', t('externalId déjà porté par une autre fiche.', 'externalId already carried by another record.')],
             ['opted_out', t('consent opted_in sur une fiche désabonnée.', 'consent opted_in on an opted-out record.')],

@@ -41,7 +41,17 @@ type Cle = 'externalId' | 'phoneE164' | 'bsuid';
 export class FichesMemoire {
   readonly fiches: FicheMemoire[] = [];
   readonly ecritures: string[] = [];
+  /** Les étiquettes DÉCLARÉES (la table `tags`), par espace. */
+  readonly declarees: Array<{ tenantId: string; nom: string }> = [];
   appelsChercher = 0;
+  appelsEtiquettes = 0;
+
+  /** Comme la base : connue = déclarée dans l'espace, ou portée par une fiche de l'espace (la liste de la console). */
+  async etiquettesInconnues(tenantId: string, noms: string[]): Promise<string[]> {
+    this.appelsEtiquettes += 1;
+    return noms.filter((n) => !this.declarees.some((d) => d.tenantId === tenantId && d.nom === n)
+      && !this.fiches.some((f) => f.tenantId === tenantId && f.tags.includes(n)));
+  }
 
   ajouter(tenantId: string, f: Partial<Omit<FicheMemoire, 'tenantId'>> = {}): FicheMemoire {
     const fiche: FicheMemoire = {

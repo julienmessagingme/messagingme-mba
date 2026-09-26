@@ -71,7 +71,8 @@ export type FieldResolve =
  *  - `fld_<tenant>_sys_<key>` (key système) -> résolu SANS DB (déterministe), type 'text'.
  *  - `fld_...` (autre code) -> lookup par code en base ; introuvable -> not_found (un code ne se devine pas).
  *  - sinon -> traité comme la clé technique : présente dans les defs -> connue ; absente -> `known:false`
- *    (l'appelant /v1/contacts auto-crée un champ texte, comme l'import CSV ; /v1/sends n'en a pas l'usage).
+ *    (le webhook entrant et la création à la main auto-créent un champ texte, comme l'import CSV ; l'API
+ *    publique le refuse, `preparateurDeChamps`).
  */
 export async function resolveFieldKey(tenantId: string, ref: string, fields: FieldLister): Promise<FieldResolve> {
   const sys = SYS_RE.exec(ref);

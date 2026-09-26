@@ -8,7 +8,7 @@ import type { NiveauRisque, RaisonRisque } from '../engagement/risque';
 import { estUuid } from '../http/scope';
 import { resolveFieldKey } from '../ids/resolve';
 import {
-  ECRITURES_EN_VOL, MAX_CHAMPS_PAR_CONTACT, MAX_CLE_CHAMP, MAX_OPT_IN_SOURCE,
+  champsAuPlus, ECRITURES_EN_VOL, MAX_CLE_CHAMP, MAX_OPT_IN_SOURCE, MAX_PAR_FICHE, MAX_PAR_FICHE_EN_LOT,
   normalizeTags, preparateurDeChamps, schemaChamps, schemaTags, valeurDeChamp,
 } from './contacts-upsert';
 import { appliquerConsentement, depsConsentementDe } from './consentement';
@@ -32,10 +32,11 @@ import { MAX_EXTERNAL_ID, MESSAGE_RESOLUTION, normaliserCles, resoudreFiche, sch
 const consent = z.preprocess(videEnAbsent, z.enum(['opted_in', 'opted_out']).optional());
 const consentSource = z.preprocess(videEnAbsent, z.string().trim().min(1).max(MAX_OPT_IN_SOURCE).optional());
 
-export const schemaContactV1 = schemaClesFiche.extend({
+/** Une fiche, avec au plus `max` champs et `max` étiquettes : 20 à l'unité, 10 dans un lot (`MAX_PAR_FICHE*`). */
+const schemaFicheV1 = (max: number) => schemaClesFiche.extend({
   name: z.preprocess(videEnAbsent, z.string().optional()),
-  fields: schemaChamps.optional(),
-  tags: schemaTags.optional(),
+  fields: schemaChamps(max).optional(),
+  tags: schemaTags(max).optional(),
   consent,
   consentSource,
   // REFUSÉES, pas ignorées : elles décrivaient le consentement avant `consent`, et un intégrateur qui les
@@ -43,16 +44,18 @@ export const schemaContactV1 = schemaClesFiche.extend({
   optIn: z.never().optional(),
   optInSource: z.never().optional(),
 });
+export const schemaContactV1 = schemaFicheV1(MAX_PAR_FICHE);
+export const schemaContactLotV1 = schemaFicheV1(MAX_PAR_FICHE_EN_LOT);
 export type ContactV1 = z.infer<typeof schemaContactV1>;
 
 export const schemaPatchContactV1 = z.object({
   // Seul `null` VIDE le nom : une chaîne blanche est une variable absente, pas une demande d'effacement.
   name: z.preprocess(videEnAbsent, z.union([z.string(), z.null()]).optional()),
   fields: z.record(z.string().max(MAX_CLE_CHAMP), z.union([valeurDeChamp, z.null()]))
-    .refine((r) => Object.keys(r).length <= MAX_CHAMPS_PAR_CONTACT)
+    .refine((r) => Object.keys(r).length <= MAX_PAR_FICHE, { message: champsAuPlus(MAX_PAR_FICHE) })
     .optional(),
-  addTags: schemaTags.optional(),
-  removeTags: schemaTags.optional(),
+  addTags: schemaTags(MAX_PAR_FICHE).optional(),
+  removeTags: schemaTags(MAX_PAR_FICHE).optional(),
   consent,
   consentSource,
   externalId: z.preprocess(videEnAbsent, z.string().trim().max(MAX_EXTERNAL_ID).optional()),
@@ -148,17 +151,26 @@ export interface ServiceContactsV1 {
 export interface DepsServiceContactsV1 {
   // `editerFicheApi` et pas `applyEdits` : une requête filtrée par `deleted_at is null`, pas une transaction
   // par élément qui verrouille sans ce filtre (cf. son docblock dans `src/crm/contact-store.pg.ts`).
-  contacts: Pick<PgContactStore, 'chercherParCles' | 'creerFicheApi' | 'rattacherCles' | 'editerFicheApi' | 'poserExternalId' | 'lireFicheApi' | 'ecrireConsentementParId'>;
+  contacts: Pick<PgContactStore, 'chercherParCles' | 'creerFicheApi' | 'rattacherCles' | 'editerFicheApi' | 'poserExternalId' | 'lireFicheApi' | 'ecrireConsentementParId' | 'etiquettesInconnues'>;
   fields: UserFieldStore;
   /** REQUIS : le consentement posé par l'API se journalise (`appliquerConsentement`). */
   audit: AuditSink;
   /** La joignabilité RCS CONNUE d'un numéro pour l'agent de l'espace. `null` = inconnue, ou pas de canal RCS. */
   joignabiliteRcs(tenantId: string, phoneE164: string): Promise<boolean | null>;
-  maxChampsParEspace?: number;
   maintenant?: () => Date;
 }
 
-const INCONNUE_POUR_ECRIRE = 'aucune fiche ne correspond, et il faut un « phone » ou un « bsuid » pour en créer une (un « contactId » ne crée jamais de fiche)';
+/**
+ * 🔴 L'API NE FAIT NAÎTRE AUCUNE ÉTIQUETTE (décision de Julien du 2026-09-26), comme aucun champ : une étiquette
+ * inconnue de l'espace refuse la fiche, AVANT toute écriture. Retirer une étiquette inconnue reste permis : ça ne
+ * crée rien.
+ */
+function raisonEtiquettes(noms: string[]): string {
+  const [s, la] = noms.length > 1 ? ['s', 'les'] : ['', 'la'];
+  return `étiquette${s} inconnue${s} de cet espace : ${noms.map((n) => `« ${n} »`).join(', ')}. Déclarez-${la} dans la console (Bibliothèque > Étiquettes), puis relancez.`;
+}
+
+const INCONNUE_POUR_ECRIRE ='aucune fiche ne correspond, et il faut un « phone » ou un « bsuid » pour en créer une (un « contactId » ne crée jamais de fiche)';
 
 /**
  * 🔴 UN STOP NE SE LÈVE PAS PAR MACHINE (décision de Julien du 2026-09-24). L'API fait passer une fiche de
@@ -179,10 +191,7 @@ export function creerServiceContactsV1(deps: DepsServiceContactsV1): ServiceCont
   const maintenant = deps.maintenant ?? ((): Date => new Date());
   // UNE construction, partagée avec `/v1/sends` (`src/index.ts`) : `depsConsentementDe`.
   const consentement = depsConsentementDe(deps.contacts, deps.audit);
-  const optsChamps = {
-    fields: deps.fields,
-    ...(deps.maxChampsParEspace === undefined ? {} : { maxChampsParEspace: deps.maxChampsParEspace }),
-  };
+  const optsChamps = { fields: deps.fields, champInconnu: 'refuser' } as const;
 
   /** Vrai si le corps demande `opted_in` pour une fiche désabonnée. Une lecture, et seulement dans ce cas. */
   async function leveraitUnStop(tenantId: string, contactId: string, voulu: 'opted_in' | 'opted_out' | undefined): Promise<boolean> {
@@ -281,23 +290,26 @@ export function creerServiceContactsV1(deps: DepsServiceContactsV1): ServiceCont
       // DEUX TEMPS, comme l'upsert d'import : la préparation des champs est SÉQUENTIELLE (elle partage un
       // cache et peut créer une définition), les écritures partent par vagues bornées (le pool n'est pas à nous).
       //
-      // 🔴 LES CLÉS D'ABORD, LES CHAMPS ENSUITE, comme l'upsert d'avant (le numéro, puis les champs) : un élément
-      // sans clé ou au numéro illisible sort à son index sans avoir fait naître la moindre définition de champ.
-      // Une définition est durable et compte dans le plafond de l'espace.
-      // ⚠️ CE QUI RESTE, ET QUI EST ASSUMÉ : un élément aux clés LISIBLES qui finit en `unknown_contact` ou en
-      // `identity_conflict` a pu créer une définition, parce que la préparation passe avant la résolution
-      // (c'est ce qui garantit qu'un champ refusé ne crée jamais de fiche). Une définition est un nom de champ,
-      // sans valeur ni personne.
+      // 🔴 LES CLÉS, LES CHAMPS, PUIS LES ÉTIQUETTES, TOUT AVANT LA RÉSOLUTION (qui écrit) : un élément refusé
+      // sort à son index sans avoir rien laissé, ni fiche, ni clé rattachée. Aucune définition de champ ne naît
+      // ici (`champInconnu: 'refuser'`).
       const preparer = await preparateurDeChamps(tenantId, optsChamps);
       const out: ResultatFiche[] = [];
-      const aEcrire: Array<{ index: number; item: ContactV1; valeurs: Record<string, string>; cles: ClesNormalisees }> = [];
+      const prepares: Array<{ index: number; item: ContactV1; valeurs: Record<string, string>; cles: ClesNormalisees }> = [];
       for (const [index, item] of items.entries()) {
         const cles = normaliserCles(item);
         if (!cles.ok) { out.push({ index, status: 'error', code: cles.code, reason: MESSAGE_RESOLUTION[cles.code] }); continue; }
         const prep = await preparer(item.fields);
         if (!prep.ok) { out.push({ index, status: 'error', code: 'invalid_body', reason: prep.raison }); continue; }
-        aEcrire.push({ index, item, valeurs: prep.valeurs, cles: cles.cles });
+        prepares.push({ index, item, valeurs: prep.valeurs, cles: cles.cles });
       }
+      // UNE lecture pour les étiquettes de tout le lot, pas une par fiche.
+      const inconnues = new Set(await deps.contacts.etiquettesInconnues(tenantId, [...new Set(prepares.flatMap((e) => normalizeTags(e.item.tags)))]));
+      const aEcrire = prepares.filter((e) => {
+        const manquantes = normalizeTags(e.item.tags).filter((t) => inconnues.has(t));
+        if (manquantes.length > 0) out.push({ index: e.index, status: 'error', code: 'invalid_body', reason: raisonEtiquettes(manquantes) });
+        return manquantes.length === 0;
+      });
       // Au plus `ECRITURES_EN_VOL` chaînes à la fois, chacune SÉQUENTIELLE : jamais plus d'écritures en vol
       // qu'avant, et jamais deux en même temps pour des éléments qui partagent une clé. ⚠️ Un `contactId` et le
       // numéro de la même fiche, portés par deux éléments DIFFÉRENTS, ne se relient pas avant la résolution :
@@ -338,9 +350,8 @@ export function creerServiceContactsV1(deps: DepsServiceContactsV1): ServiceCont
       if (!r.ok) return { ok: false, code: r.code, reason: r.code === 'unknown_contact' ? 'fiche inconnue' : MESSAGE_RESOLUTION[r.code] };
       if (await leveraitUnStop(tenantId, r.contactId, patch.consent)) return { ok: false, code: 'opted_out', reason: STOP_NON_LEVABLE };
 
-      // Les champs d'abord : un refus ici ne doit rien laisser d'écrit, pas même l'identifiant externe.
-      // ⚠️ La contrepartie, assumée : une définition de champ née ici survit si `poserExternalId` finit en
-      // conflit juste après. C'est un nom de champ, sans valeur ni personne.
+      // Les champs et les étiquettes d'abord : un refus ici ne doit rien laisser d'écrit, pas même l'identifiant
+      // externe. Aucune définition de champ ne naît ici (`champInconnu: 'refuser'`).
       const aVider: string[] = [];
       const aPoser: Record<string, string> = {};
       // Les définitions sont lues UNE fois pour tous les champs à vider, pas une requête par champ `null`.
@@ -358,6 +369,8 @@ export function creerServiceContactsV1(deps: DepsServiceContactsV1): ServiceCont
         if (!prep.ok) return { ok: false, code: 'invalid_body', reason: prep.raison };
         valeurs = prep.valeurs;
       }
+      const inconnues = addTags.length === 0 ? [] : await deps.contacts.etiquettesInconnues(tenantId, addTags);
+      if (inconnues.length > 0) return { ok: false, code: 'invalid_body', reason: raisonEtiquettes(inconnues) };
 
       if (patch.externalId !== undefined) {
         const e = await deps.contacts.poserExternalId(tenantId, r.contactId, patch.externalId);

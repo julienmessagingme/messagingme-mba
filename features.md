@@ -1780,6 +1780,11 @@ scénario, comment importer des contacts.
   calculé), décrit dans la Documentation API.
   🔴 Un contact mal formé dans un lot est refusé À SA LIGNE, les autres passent, et la réponse nomme le champ
   fautif.
+  🔴 **Des appels bornés, et l'API ne crée plus rien** (2026-09-26) : un lot porte 50 fiches au plus (500
+  avant), une fiche 10 champs et 10 étiquettes dans un lot, 20 à l'unité ou en `PATCH`. Un champ ou une
+  étiquette inconnus de l'espace refusent la fiche en disant où les créer : un champ se crée dans Bibliothèque >
+  Champs, une étiquette se déclare dans Bibliothèque > Étiquettes (ou existe déjà sur une fiche). Retirer une
+  étiquette inconnue reste permis. Les gros chargements passent par l'import CSV de la console.
 - ✅ **Envoyer un message simple** : un texte, à une personne, tout de suite, visible dans l'Inbox. Deux routes,
   parce que leurs règles n'ont presque rien en commun : `POST /v1/messages/whatsapp` (dans la fenêtre de 24 h)
   et `POST /v1/messages/rcs` (sans fenêtre, mais seulement vers quelqu'un qui a consenti ou qui vous a déjà
@@ -1823,7 +1828,7 @@ scénario, comment importer des contacts.
   templates, message simple WhatsApp) sort en 422 avec une phrase « Meta: … », une panne sort en 500, et un
   corps qui n'est pas du JSON lisible est refusé avant les règles ou lu comme vide.
 - ✅ **Plafond de l'API publique, par espace** (2026-09-25) : 60 appels par minute
-  et 1 000 par heure par défaut, communs à toutes les clés de l'espace et au serveur MCP. Un lot de 500 fiches
+  et 1 000 par heure par défaut, communs à toutes les clés de l'espace et au serveur MCP. Un lot de 50 fiches
   compte pour un appel. Au-delà : 429 `rate_limited`, avec `Retry-After` et un message qui dit si c'est la
   minute ou l'heure qui est pleine. L'exploitation peut régler le plafond d'un espace précis sans toucher les
   autres. L'agent de Meta n'est jamais privé de ses outils par un intégrateur qui charge l'API : sa clé a son

@@ -5,7 +5,7 @@ import type { CodeApi } from './erreurs';
  * LE GARDE D'USAGE DE L'API PUBLIQUE : ce que le produit compte, et ce qu'il déciderait d'en faire.
  *
  * 🔴 UNE REQUÊTE N'EST PAS UNE UNITÉ DE COÛT, ET C'EST TOUTE LA RAISON DE CE FICHIER. Avec les 60
- * requêtes par minute d'une clé, un intégrateur fait accepter 30 000 contacts (60 lots de 500) ou 3 000
+ * requêtes par minute d'une clé, un intégrateur fait accepter 3 000 contacts (60 lots de 50) ou 3 000
  * destinataires (60 envois de 50) : le plafond de débit ne borne donc pas le travail, il borne la
  * politesse. Ce qui se compte ici est le TRAVAIL demandé.
  *
@@ -41,7 +41,7 @@ export type OperationApi =
 /**
  * CE QU'UNE ROUTE DEMANDE AU GARDE.
  *
- * ⚠️ `unites` EST CALCULÉ PAR LA ROUTE, parce qu'elle seule connaît le corps (500 contacts, 50
+ * ⚠️ `unites` EST CALCULÉ PAR LA ROUTE, parce qu'elle seule connaît le corps (50 contacts, 50
  * destinataires). Le garde, lui, ne lit jamais de corps de requête : il compte et il décide.
  */
 export interface DemandeUsage {
@@ -134,8 +134,8 @@ export interface ApiUsageGuard {
 /**
  * LE TRAVAIL QUE COÛTE UNE OPÉRATION, en fonction PURE.
  *
- * 🔴 ELLE VIT AVEC LE CONTRAT, PAS AVEC LE STOCKAGE. C'est une règle de PRODUIT (« un lot de 500 contacts
- * coûte 500 »), et la mettre dans l'implémentation mémoire la ferait réécrire le jour où le stockage
+ * 🔴 ELLE VIT AVEC LE CONTRAT, PAS AVEC LE STOCKAGE. C'est une règle de PRODUIT (« un lot de 50 contacts
+ * coûte 50 »), et la mettre dans l'implémentation mémoire la ferait réécrire le jour où le stockage
  * change, c'est-à-dire au pire moment.
  *
  * ⚠️ LE PLANCHER EST 1, y compris pour un lot vide ou une lecture : un appel qui ne coûterait rien

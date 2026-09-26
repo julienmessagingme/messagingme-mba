@@ -1130,6 +1130,23 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
+   * Parmi `noms`, les étiquettes que l'espace NE CONNAÎT PAS : ni déclarées (`tags`), ni portées par une fiche.
+   * C'est la définition de la liste Bibliothèque > Étiquettes (`PgTagStore.listDistinct`), fiches supprimées
+   * comprises comme elle : l'API refuse ce que la console ne montre pas, et accepte ce qu'elle montre.
+   * ⚠️ `tags @> array[n]` est servi par `contacts_tags_gin` (0011).
+   */
+  async etiquettesInconnues(tenantId: string, noms: string[]): Promise<string[]> {
+    if (noms.length === 0) return [];
+    const res = await this.pool.query<{ nom: string }>(
+      `select n as nom from unnest($2::text[]) n
+        where not exists (select 1 from tags where tenant_id = $1 and name = n)
+          and not exists (select 1 from contacts where tenant_id = $1 and tags @> array[n])`,
+      [tenantId, noms],
+    );
+    return res.rows.map((r) => r.nom);
+  }
+
+  /**
    * TOUT CE QUE L'API REND D'UNE FICHE, en une requête. Une fiche supprimée n'existe plus : `null`, donc 404.
    * ⚠️ `contactId` doit avoir la forme d'un UUID : l'appelant le vérifie avant (`estUuid`).
    */

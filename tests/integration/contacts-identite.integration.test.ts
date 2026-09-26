@@ -7,6 +7,8 @@ import { PgContactStore } from '../../src/crm/contact-store.pg';
 import { resoudreFiche } from '../../src/api/fiche';
 import { creerServiceContactsV1 } from '../../src/api/contacts-v1';
 import { PgUserFieldStore } from '../../src/crm/field-store.pg';
+import { PgTagStore } from '../../src/crm/tag-store.pg';
+import { ensureFieldByKey } from '../../src/crm/fields';
 
 /**
  * L'IDENTITÉ D'UNE FICHE CONTRE UNE VRAIE BASE (API publique, lot 1). Espaces jetables, créés et détruits ici.
@@ -244,11 +246,27 @@ describe.skipIf(!url)('identité des fiches : external_id et les clés de l’AP
       .toEqual({ ok: true, contactId: a.id, cree: false });
   });
 
+  it('🔴 etiquettesInconnues : déclarée ou portée par une fiche de l’espace, connue ; celle d’un VOISIN, inconnue', async () => {
+    const tags = new PgTagStore(pool);
+    await tags.create(tenantId, 'itest-declaree');
+    await tags.create(autreTenantId, 'itest-declaree-voisin');
+    const porteuse = await creer(tenantId, { phoneE164: '+33600000730' });
+    await store.editerFicheApi(tenantId, porteuse.id, { fields: {}, removeFields: [], addTags: ['itest-portee'], removeTags: [] });
+    const voisine = await creer(autreTenantId, { phoneE164: '+33600000731' });
+    await store.editerFicheApi(autreTenantId, voisine.id, { fields: {}, removeFields: [], addTags: ['itest-portee-voisin'], removeTags: [] });
+    const inconnues = await store.etiquettesInconnues(tenantId, ['itest-declaree', 'itest-portee', 'itest-declaree-voisin', 'itest-portee-voisin', 'itest-inventee']);
+    expect(inconnues.sort()).toEqual(['itest-declaree-voisin', 'itest-inventee', 'itest-portee-voisin']);
+    expect(await store.etiquettesInconnues(tenantId, [])).toEqual([]);
+  });
+
   it('🔴 service contre la base : écrire, chercher, modifier (null vide un champ, externalId se remplace)', async () => {
     const actions: string[] = [];
+    const fields = new PgUserFieldStore(pool);
+    // L'API ne crée plus de champ (2026-09-26) : ceux qu'elle écrit existent dans l'espace, comme chez un client.
+    for (const cle of ['ville', 'age']) await ensureFieldByKey(fields, tenantId, cle, cle, 'text');
     const service = creerServiceContactsV1({
       contacts: store,
-      fields: new PgUserFieldStore(pool),
+      fields,
       audit: async (_t, _a, action) => { actions.push(action); },
       joignabiliteRcs: async () => null,
     });

@@ -79,7 +79,8 @@ const entetes = { 'content-type': 'application/json', authorization: `Bearer ${C
  * Les compteurs d'une opération, TOUTES MINUTES CONFONDUES.
  *
  * ⚠️ LE GARDE AGRÈGE PAR MINUTE, et une suite complète sous charge fait chevaucher une limite de minute à une
- * rafale d'appels : lire la seule ligne la plus récente rendait 13 500 unités au lieu de 15 000. Ce n'est pas
+ * rafale d'appels : lire la seule ligne la plus récente rendait 13 500 unités au lieu de 15 000 (au temps des lots
+ * de 500). Ce n'est pas
  * affaiblir l'assertion, c'est vérifier ce qu'elle a toujours voulu dire : le TOTAL compté.
  */
 function totaux(usage: GardeUsageMemoire): Record<string, { appels: number; unites: number; refusees: number }> {
@@ -145,13 +146,13 @@ describe('l’usage de l’API publique est COMPTÉ', () => {
     for (let i = 0; i < 30; i += 1) {
       const res = await server.inject({
         method: 'POST', url: '/v1/contacts/batch', headers: entetes,
-        payload: { contacts: Array.from({ length: 500 }, () => ({ phone: '+33612345678' })) },
+        payload: { contacts: Array.from({ length: 50 }, () => ({ phone: '+33612345678' })) },
       });
       codes.push(res.statusCode);
     }
-    // 15 000 contacts acceptés en trente appels : c'est précisément ce que le plafond de débit ne voit pas.
+    // 1 500 contacts acceptés en trente appels : c'est précisément ce que le plafond de débit ne voit pas.
     expect(codes.every((c) => c === 200)).toBe(true);
-    expect(totaux(usage)['contacts.batch']).toMatchObject({ unites: 15_000, refusees: 0 });
+    expect(totaux(usage)['contacts.batch']).toMatchObject({ unites: 1_500, refusees: 0 });
     await server.close();
   });
 
@@ -177,19 +178,19 @@ describe('l’usage de l’API publique est COMPTÉ', () => {
   /**
    * 🔴 LE BATCH COMPTE CE QUE L'APPELANT DEMANDE, MÊME QUAND TOUT EST INVALIDE, et l'écart avec la route
    * unitaire est VOULU (relevé en revue, qui l'a d'abord pris pour une incohérence). Valider un objet est
-   * négligeable ; valider 500 lignes est un travail réel, que l'appelant a bel et bien fait faire. Sans
+   * négligeable ; valider 50 lignes est un travail réel, que l'appelant a bel et bien fait faire. Sans
    * ce cas, une boucle de lots malformés resterait invisible des compteurs, c'est-à-dire exactement le
    * comportement qu'on surveille.
    */
-  it('🔴 un lot ENTIÈREMENT invalide compte quand même : la validation de 500 lignes est du travail', async () => {
+  it('🔴 un lot ENTIÈREMENT invalide compte quand même : la validation de 50 lignes est du travail', async () => {
     const { server, usage } = monter();
     const res = await server.inject({
       method: 'POST', url: '/v1/contacts/batch', headers: entetes,
-      payload: { contacts: Array.from({ length: 200 }, () => null) },
+      payload: { contacts: Array.from({ length: 50 }, () => null) },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json<{ errors: number }>().errors).toBe(200);
-    expect(usage.compteurs().find((c) => c.operation === 'contacts.batch')).toMatchObject({ appels: 1, unites: 200 });
+    expect(res.json<{ errors: number }>().errors).toBe(50);
+    expect(usage.compteurs().find((c) => c.operation === 'contacts.batch')).toMatchObject({ appels: 1, unites: 50 });
     await server.close();
   });
 

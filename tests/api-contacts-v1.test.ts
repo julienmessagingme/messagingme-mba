@@ -18,11 +18,19 @@ import { FichesMemoire } from './aide/fiches-memoire';
 const T = 't1';
 const MAINTENANT = new Date('2026-09-24T12:00:00.000Z');
 
-function monter(opts: { defs?: UserFieldDef[]; max?: number; rcs?: boolean | null } = {}) {
+const champ = (key: string): UserFieldDef => ({ key, label: key, type: 'text' } as UserFieldDef);
+
+/**
+ * ⚠️ L'ESPACE A UN VOCABULAIRE DÉCLARÉ PAR DÉFAUT (champs `ville`, `prenom`, `age` ; étiquettes `prospect`, `vip`) :
+ * l'API ne crée plus ni champ ni étiquette (décision de Julien du 2026-09-26), donc un test qui écrit une fiche
+ * doit écrire dans un vocabulaire qui existe, comme un vrai intégrateur.
+ */
+function monter(opts: { defs?: UserFieldDef[]; etiquettes?: string[]; rcs?: boolean | null } = {}) {
   const repertoire = new FichesMemoire();
+  for (const nom of opts.etiquettes ?? ['prospect', 'vip']) repertoire.declarees.push({ tenantId: T, nom });
   const audits: Array<{ action: string; id: string; detail: unknown }> = [];
   const audit: AuditSink = async (_t, _a, action, cible, detail) => { audits.push({ action, id: cible.id, detail }); };
-  const defs = [...(opts.defs ?? [])];
+  const defs = [...(opts.defs ?? ['ville', 'prenom', 'age'].map(champ))];
   const creees: string[] = [];
   const rcsDemandes: string[] = [];
   const lectures = { definitions: 0 };
@@ -31,7 +39,6 @@ function monter(opts: { defs?: UserFieldDef[]; max?: number; rcs?: boolean | nul
     fields: { list: async () => { lectures.definitions += 1; return defs; }, upsert: async (_t, d) => { creees.push(d.key); } },
     audit,
     joignabiliteRcs: async (_t, e164) => { rcsDemandes.push(e164); return opts.rcs ?? null; },
-    maxChampsParEspace: opts.max ?? 0,
     maintenant: () => MAINTENANT,
   });
   return { service, repertoire, audits, creees, rcsDemandes, lectures };
@@ -75,12 +82,36 @@ describe('ecrireFiches : créer ou compléter', () => {
     expect(a.profileName).toBeNull();
   });
 
-  it('🔴 un champ refusé ne crée PAS de fiche : les champs sont validés avant toute création', async () => {
-    const { service, repertoire, creees } = monter({ defs: [{ key: 'prenom', label: 'prenom', type: 'text' } as UserFieldDef], max: 1 });
-    const [r] = await service.ecrireFiches(T, [{ phone: '+33612345678', fields: { nouveau: 'x' } }]);
-    expect(r).toMatchObject({ status: 'error', code: 'invalid_body' });
+  it('🔴 un champ INCONNU est refusé : ni définition, ni fiche (l’API ne crée plus de champ)', async () => {
+    const { service, repertoire, creees } = monter();
+    const [r] = await service.ecrireFiches(T, [{ phone: '+33612345678', fields: { ville: 'Lyon', nouveau: 'x' } }]);
+    expect(r).toEqual({
+      index: 0, status: 'error', code: 'invalid_body',
+      reason: '« nouveau » : champ inconnu de cet espace. Créez-le dans la console (Bibliothèque > Champs), puis relancez.',
+    });
     expect(repertoire.fiches).toHaveLength(0);
     expect(creees).toEqual([]);
+  });
+
+  it('🔴 une étiquette INCONNUE refuse la fiche AVANT toute écriture ; déclarée ou déjà portée par une fiche, elle passe', async () => {
+    const { service, repertoire } = monter();
+    // `ancienne` n'est pas déclarée, mais une fiche de l'espace la porte : la console la montre, elle existe.
+    repertoire.ajouter(T, { phoneE164: '+33600000001', tags: ['ancienne'] });
+    // Portée par une fiche d'un AUTRE espace : elle n'existe pas ici.
+    repertoire.ajouter('t2', { phoneE164: '+33600000002', tags: ['voisine'] });
+    const res = await service.ecrireFiches(T, [
+      { phone: '+33612345678', tags: ['vip', 'ancienne'] },
+      { phone: '+33698765432', externalId: 'crm-1', tags: ['vip', 'inventee', 'voisine'] },
+    ]);
+    expect(res[0]).toMatchObject({ status: 'created' });
+    expect(res[1]).toEqual({
+      index: 1, status: 'error', code: 'invalid_body',
+      reason: 'étiquettes inconnues de cet espace : « inventee », « voisine ». Déclarez-les dans la console (Bibliothèque > Étiquettes), puis relancez.',
+    });
+    // Refusée AVANT la résolution, qui écrit : ni fiche créée, ni identifiant externe rattaché.
+    expect(repertoire.fiches.filter((f) => f.tenantId === T && f.phoneE164 === '+33698765432')).toHaveLength(0);
+    // UNE lecture des étiquettes pour tout le lot, pas une par fiche.
+    expect(repertoire.appelsEtiquettes).toBe(1);
   });
 
   it('deux éléments du même numéro dans un lot : UNE seule fiche', async () => {
@@ -387,9 +418,30 @@ describe('modifierFiche', () => {
   it('étiquettes ajoutées et retirées, nom vidé par `null`, consentement', async () => {
     const { service, repertoire, audits } = monter();
     const f = repertoire.ajouter(T, { phoneE164: '+33612345678', profileName: 'Marc', tags: ['a', 'b'] });
-    await service.modifierFiche(T, f.id, { addTags: ['c'], removeTags: ['a'], name: null, consent: 'opted_out' });
-    expect(f).toMatchObject({ tags: ['b', 'c'], profileName: null, optInStatus: 'opted_out' });
+    await service.modifierFiche(T, f.id, { addTags: ['vip'], removeTags: ['a'], name: null, consent: 'opted_out' });
+    expect(f).toMatchObject({ tags: ['b', 'vip'], profileName: null, optInStatus: 'opted_out' });
     expect(audits.map((a) => a.action)).toEqual(['contact.optout']);
+  });
+
+  it('🔴 une étiquette INCONNUE à ajouter n’écrit RIEN, pas même l’identifiant externe ; en retirer une inconnue est permis', async () => {
+    const { service, repertoire } = monter();
+    const f = repertoire.ajouter(T, { phoneE164: '+33612345678', externalId: 'crm-1' });
+    expect(await service.modifierFiche(T, f.id, { externalId: 'crm-9', addTags: ['vip', 'inventee'] })).toEqual({
+      ok: false, code: 'invalid_body',
+      reason: 'étiquette inconnue de cet espace : « inventee ». Déclarez-la dans la console (Bibliothèque > Étiquettes), puis relancez.',
+    });
+    expect(f.externalId).toBe('crm-1');
+    expect(repertoire.ecritures).toEqual([]);
+    // Retirer ne fait naître aucun vocabulaire : une étiquette inconnue à retirer n'est pas une faute.
+    expect(await service.modifierFiche(T, f.id, { removeTags: ['inventee'], name: 'Marc' })).toEqual({ ok: true, contactId: f.id });
+  });
+
+  it('🔴 un champ INCONNU à poser est refusé et n’est pas créé', async () => {
+    const { service, repertoire, creees } = monter();
+    const f = repertoire.ajouter(T, { phoneE164: '+33612345678' });
+    expect(await service.modifierFiche(T, f.id, { fields: { ville: 'Lyon', nouveau: 'x' } })).toMatchObject({ ok: false, code: 'invalid_body' });
+    expect(creees).toEqual([]);
+    expect(repertoire.ecritures).toEqual([]);
   });
 
   it('🔴 `consent` seul sur une fiche PURGÉE depuis la résolution : `unknown_contact`, jamais `ok`', async () => {
@@ -403,7 +455,7 @@ describe('modifierFiche', () => {
   });
 
   it('les définitions de champs sont lues UNE fois pour tous les champs à vider, pas une fois par champ', async () => {
-    const { service, repertoire, lectures } = monter({ defs: ['a', 'b', 'c'].map((k) => ({ key: k, label: k, type: 'text' }) as UserFieldDef) });
+    const { service, repertoire, lectures } = monter({ defs: ['a', 'b', 'c'].map(champ) });
     const f = repertoire.ajouter(T, { phoneE164: '+33612345678', fields: { a: '1', b: '2', c: '3' } });
     expect(await service.modifierFiche(T, f.id, { fields: { a: null, b: null, c: null } })).toEqual({ ok: true, contactId: f.id });
     expect(f.fields).toEqual({});
