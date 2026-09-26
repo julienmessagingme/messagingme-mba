@@ -52,12 +52,21 @@ Bundler` sans extensions). Plus de script `build` ni `start` à la racine : le c
 | `engageme.messagingme.app` | la console | **Vercel** (projet `messagingme-mba`, Root Directory `web`) | automatique à chaque `git push` |
 | `api.messagingme.app` | l'API et le worker | VPS Docker (`mba-api`, `mba-worker`) | `git pull` + `compose up -d --build` |
 | `mba.messagingme.app` | l'ANCIENNE console, plus toutes les adresses historiques | VPS (`mba-web` + routage NPM) | idem |
-| `engageme.messagingme.fr` | la VITRINE publique (`site/`, HTML statique) | **Vercel** (projet `engageme-site`, Root Directory `site`, CNAME chez OVH) | automatique au `git push` qui touche `site/` (Ignored Build Step sur `VERCEL_GIT_PREVIOUS_SHA`) |
+| `engageme.messagingme.fr` | la VITRINE publique (`site/`, HTML statique) | **Vercel** (projet `engageme-site`, Root Directory `site`, CNAME chez OVH) | automatique au `git push` qui touche `site/` (Ignored Build Step dans `site/vercel.json`, sur `VERCEL_GIT_PREVIOUS_SHA`) |
 
 ⚠️ **La vitrine n'a AUCUNE variable d'environnement, et elle ne doit pas en avoir.** À l'import, Vercel
 propose les 31 variables du `.env.example` RACINE (le backend), même avec `site` pour Root Directory : on les
 supprime toutes. `ci.yml` ignore `site/**` (aucun test ne la lit) ; les docs API et MCP de la console, vers
 lesquelles elle pointe, sont PUBLIQUES depuis le 2026-09-25.
+
+🔴 **L'IGNORED BUILD STEP DE LA VITRINE NE DOIT JAMAIS FINIR EN ERROR, et il vit dans `site/vercel.json`**
+(2026-09-26). `VERCEL_GIT_PREVIOUS_SHA` est le SHA du dernier déploiement READY (un CANCELED ne l'avance pas),
+et Vercel clone en profondeur 10 SANS aucun remote, mesuré. Dès dix commits sans changement dans `site/`, ce SHA
+sort du clone : l'ancienne commande (`git diff` nu) rendait 128 et chaque push finissait en ERROR, sept de suite.
+La commande va chercher ce commit sur l'URL PUBLIQUE du dépôt (pas `origin`, qui n'existe pas) et construit sur
+toute autre issue qu'un diff vide. ⚠️ Le réglage du tableau de bord garde l'ancienne commande : `vercel.json`
+prime, il est sans effet (le connecteur Vercel n'a pas le droit d'écrire ce réglage, 403). ⚠️ Si le dépôt
+redevient privé, le fetch échoue et la vitrine se redéploie à l'identique une fois tous les dix commits.
 
 🔴 **`/mcp` REND 404 SUR `engageme.messagingme.app`** (mesuré le 2026-09-25 ; `api.` et `mba.` rendent 401) :
 toute adresse MCP donnée à un intégrateur se dérive de `BASE` (l'API), jamais du domaine de la console.
