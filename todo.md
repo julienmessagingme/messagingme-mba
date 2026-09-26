@@ -1,5 +1,16 @@
 # todo.md : backlog
 
+## 🟠 App Salesforce core : cadrage validé le 2026-09-26, pas commencée
+
+Le pendant de HubSpot pour le Salesforce « core » (Leads, Contacts, Opportunités, Campaigns), en offre de
+prospection. **Tout est dans la spec** : `docs/superpowers/specs/2026-09-26-app-salesforce-design.md`
+(décisions de Julien, architecture, données, flux, lots L0 à L5, méthode de livraison, essai réel qui clôt).
+
+**Prochain pas : L0, des mesures sans code de production.** Il attend deux orgs Salesforce Developer Edition
+gratuites, **à créer par Julien** (une pour le Dev Hub et le namespace `engageme`, une qui joue le client).
+Le point le plus risqué à mesurer : retrouver une fiche par téléphone sur des formats libres, là où naîtraient
+les doublons. Le plan (writing-plans) s'écrit après la relecture de la spec par Julien.
+
 ## 🟠 `features.md` se contredit à TROIS endroits, trouvé en écrivant les fiches d'aide (2026-09-23)
 
 Écrire les quinze fiches a obligé à lire `features.md` section par section, et trois affirmations y sont
