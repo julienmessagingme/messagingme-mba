@@ -1,7 +1,9 @@
 # L'app Salesforce d'Engage Me : le pendant de HubSpot pour le CRM « core »
 
 **Date** : 2026-09-26. **Statut** : design validé par Julien le 2026-09-26 (cinq rondes de questions, trois
-sections validées une à une). Spec à relire avant le plan.
+sections validées une à une), puis AMENDÉ le même jour après la cartographie du code qui a précédé le plan
+(sept lecteurs, lecture seule) : dix arbitrages de plus (§ « Les amendements du 2026-09-26 ») et deux
+affirmations corrigées. Plan : `docs/superpowers/plans/2026-09-26-app-salesforce.md`.
 
 ## Le problème
 
@@ -56,7 +58,7 @@ Sources : [création des Connected Apps en Spring '26](https://help.salesforce.c
 | Historique dans Salesforce | Une activité (tâche terminée) par conversation analysée. L'état courant vit dans des champs. |
 | Actions de la carte | Voir la conversation, créer une opportunité, planifier un rappel, envoyer un WhatsApp. |
 | Sources de segment | Campaign, vue de liste, rapport (plafonné à 2 000 lignes). |
-| Consentement d'un segment | Lu dans un champ Salesforce désigné par le client ; sans champ, jamais présumé. Un STOP chez nous gagne toujours. |
+| Consentement d'un segment | Lu dans un champ Salesforce désigné par le client ; sans champ, jamais présumé. Un STOP chez nous gagne toujours. ⚠️ C'est une règle NEUVE : HubSpot, lui, présume l'opt-in (`importHubspotList` pose `optIn: true`), contrairement à ce que disait la première version de cette ligne. |
 | Déclencheurs | Étape d'opportunité, statut de Lead, statut de membre de Campaign. |
 | Identité dans l'org | **Un utilisateur d'intégration dédié**, en client credentials. Jamais l'admin qui clique. |
 | Envoi depuis la fiche | Une liste autorisée par l'admin Engage Me (templates et scénarios). |
@@ -69,6 +71,43 @@ Sources : [création des Connected Apps en Spring '26](https://help.salesforce.c
 | Sens Salesforce vers Engage Me | **Salesforce appelle notre API** (voir ci-dessous). |
 | Emplacement | **Dans Engage Me**, données dans un schéma à part, extractible. |
 | Namespace | `engageme` (repli `engagemeapp` s'il est pris). |
+
+### Les amendements du 2026-09-26
+
+La cartographie du code a montré des endroits où la première version contredisait le dépôt. Julien a tranché
+ceux qui changent le produit ; les autres sont des décisions techniques, écrites ici pour qu'on ne les
+retrouve pas en revue.
+
+| Question | Décision |
+|---|---|
+| Moment de lecture d'un segment | **À la création**, comme HubSpot (étape Audience), et non plus au lancement : tout le moteur fige les destinataires à la création, lire au lancement aurait été un mécanisme neuf. Une campagne planifiée part avec les membres du jour de sa création. |
+| Envoi depuis la fiche | **Une file dédiée** aux envois un par un, hors de `campaign-run` (sérialisée par espace) : sans elle, le message du commercial attendrait la fin d'une campagne en cours. |
+| « Non » dans le champ de consentement | **N'écrit rien chez nous** : le contact reste sans consentement, donc exclu du marketing. Aucun nouveau chemin d'opt-out, aucun écho. |
+| Résumé de conversation dans l'activité | **Une option décochée par défaut**, comme Batch (propos du client). |
+| Consentement et déclencheurs | **Comme les autres déclencheurs** : seul un STOP bloque un scénario démarré par une transition. |
+| Purge RGPD d'un contact | **Notre côté seulement** : on oublie le lien et nos journaux ; rien n'est touché dans le Salesforce du client. |
+| Journal des erreurs | **Il nomme l'outil**, pour Salesforce ET pour Batch (Julien : « et pour Batch pareil alors »). La documentation publique des signaux, elle, continue de ne nommer aucun outil. |
+| Campagnes nées d'un envoi depuis la fiche | **Visibles**, préfixées « [Salesforce] », comme « [API] ». |
+| Plafond des appels entrants | **60 par minute et par org**, compté à part pour les notifications et pour les envois ; 0 le désactive. |
+| Statuts de membres de Campaign | **« Engage Me : envoyé » et « Engage Me : a répondu »** (ce dernier compté comme réponse). |
+
+Décisions techniques prises sans arbitrage :
+
+- **L'interrupteur d'espace** vit dans `tenant_settings.salesforce_actif`, comme `hubspot_actif` (0179) : c'est un
+  réglage de l'espace, et `salesforce.orgs` n'a pas de ligne avant la connexion.
+- **Les déclencheurs Apex ignorent les modifications faites par l'utilisateur d'intégration.** Sans ça, nos propres
+  statuts de membres relanceraient une automation par destinataire : un chemin de masse qui émet, interdit.
+- **Une opportunité CRÉÉE à une étape surveillée ne déclenche rien** : seul un changement d'étape compte.
+- **La signature réutilise `verifyRequest`** (`src/lib/signature.ts`), sans troisième format ; le plafond par org se
+  prend APRÈS une signature valide (l'identifiant d'org n'est pas un secret, il se voit partout dans Salesforce).
+- **Un envoi depuis la fiche porte une clé d'idempotence par clic** : une requête signée rejouée dans la fenêtre de
+  5 minutes n'envoie pas deux fois.
+- **« A répondu »** (membre de Campaign comme envoi depuis la fiche) suit la règle du funnel : 7 jours, le dernier
+  envoi gagne (`FENETRE_IMPUTATION`, `src/stats/store.pg.ts`).
+- **Un STOP RCS n'écrit pas** le champ de consentement WhatsApp du client (seulement notre champ RCS).
+- **Le statut délivré / lu / échec** d'une activité n'est suivi que pour un template ; pour un scénario, l'activité
+  dit « scénario démarré » (un scénario parti par campagne n'a pas de wamid rattachable).
+- **Un déclencheur sur un membre de Campaign vise UNE Campaign** : les statuts de membres sont définis par Campaign.
 
 ### Salesforce appelle notre API : ce que le choix achète et ce qu'il coûte
 
@@ -93,9 +132,12 @@ construction.
 aujourd'hui :
 
 1. **Les données** vivent dans un schéma `salesforce`, lues et écrites SEULEMENT par le store du connecteur :
-   aucune jointure depuis le cœur, aucune lecture croisée. Le connecteur ouvre ses requêtes sur un pool qu'il
-   reçoit ; le jour où des clients réels le justifient (règle du §8), une variable d'environnement le pointe
-   sur sa propre base, sans changer une ligne de code.
+   aucune jointure depuis le cœur, aucune lecture croisée, aucune clé étrangère vers `public`. Le store reçoit
+   son pool par constructeur : c'est la COUTURE, posée dès le V1. ⚠️ **La première version promettait qu'une
+   variable suffirait, « sans changer une ligne de code » : c'est faux.** Le runner de migrations n'applique
+   que `DATABASE_URL`, et la connexion chiffrée à la base est globale : le jour de l'extraction (règle du §8,
+   quand des clients réels le justifient), il faudra un `pg_dump --schema=salesforce`, un moyen de migrer
+   l'autre base et une variable de pool. On ne pose donc PAS cette variable maintenant.
 2. **Le travail** passe par des files à lui, à concurrence bornée : ce qui remonte vers Salesforce appartient
    au futur worker d'analyse (personne ne l'attend), ce qui envoie un message au worker principal (§5 du même
    document).
@@ -142,8 +184,9 @@ aujourd'hui :
 - **Un type de déclencheur d'automation** `salesforce_transition` (objet, champ, valeur visée), à côté de
   `hubspot_deal_stage` dans `AUTOMATION_TRIGGER_KINDS`, alimenté par la file `automation-event`.
 - **Les routes appelées par Salesforce** (`/salesforce/v1/notifications`, `/salesforce/v1/envois`) : elles
-  vérifient la signature, valident, mettent en file (notifications) ou décident et mettent en file (envoi), et
-  rien de plus.
+  vérifient la signature, valident, puis créent ou retrouvent le contact et publient l'événement d'automation
+  (notifications, sur le modèle du webhook entrant) ou décident et mettent en file (envoi). Aucune ne parle à
+  Meta pendant la requête.
 
 ### 3. Les écrans
 
@@ -160,11 +203,20 @@ aujourd'hui :
 
 Chaque requête porte `tenant_id = $1` : la connexion est superuser, le filtrage en code est le seul contrôle.
 
-- **`orgs`** : `tenant_id` (unique), `org_id` (unique), `my_domain`, `sandbox`, `etat` (`connectee`, `en_pause`,
-  `coupee`), `secret_entrant` (chiffré par `ENCRYPTION_KEY`), `version_package`, `quota_utilise`,
-  `quota_max`, `quota_releve_le`, `champ_consentement_lead`, `champ_consentement_contact` (et la valeur qui vaut
-  « oui » quand le champ est une liste de sélection), `proprietaire_repli`, `connectee_le`, `connectee_par`.
-  **Une org, un espace, dans les deux sens** au V1 ; une sandbox est une autre org.
+- **`orgs`** : `tenant_id` (unique), `org_id` (unique, 18 caractères), `my_domain`, `sandbox`, `etat`
+  (`connexion`, `connectee`, `en_pause`, `coupee`), le motif d'une coupure, `secret_entrant` (chiffré par
+  `ENCRYPTION_KEY` : le HMAC exige le secret en clair, donc un chiffrement et pas une empreinte),
+  `utilisateur_integration` (pour que les déclencheurs ignorent ses modifications), `version_package`,
+  `quota_utilise`, `quota_max`, `quota_releve_le`, `champ_consentement_lead`, `champ_consentement_contact` (et,
+  pour une liste de sélection, la valeur « oui » ET la valeur « non », que le STOP écrit), `envoyer_resume`
+  (faux par défaut), `proprietaire_repli`, `connectee_le`, `connectee_par`. **Une org, un espace, dans les deux
+  sens** au V1 ; une sandbox est une autre org. La déconnexion SUPPRIME la ligne, ce qui libère l'org pour un
+  autre espace.
+- **`campagnes`** et **`membres`** : la Campaign Salesforce d'où vient une campagne, et pour chaque membre la date
+  d'envoi, la date de réponse et ce qui a déjà été poussé (L3).
+- **`envois`** : chaque envoi depuis la fiche (campagne d'un destinataire, fiche, commercial, clé d'idempotence,
+  identifiant de la tâche Salesforce, statut monotone, date de réponse) : c'est lui qui relie un accusé et une
+  réponse à l'activité (L5).
 - **`fiches`** : `tenant_id`, `contact_id` (Engage Me), `sf_type` (`Lead` ou `Contact`), `sf_id`, `lie_le`.
   Un Lead converti fait basculer la ligne sur le Contact créé (`ConvertedContactId`).
 - **`modeles_autorises`** : `tenant_id`, le template ou le scénario, son libellé, ses variables.
@@ -189,13 +241,13 @@ nom de la personne. L'origine du Lead n'est écrite que si la valeur existe dans
 
 | Signal | Écriture Salesforce |
 |---|---|
-| `em_conversation_analyzed` | Les champs d'état courant ; une tâche TERMINÉE (résumé, intention, satisfaction, lien vers le fil) ; une tâche OUVERTE pour le propriétaire quand une action est suggérée. |
-| `em_opted_out` | Notre champ, et le champ de consentement désigné du client mis à « non ». |
+| `em_conversation_analyzed` | Les champs d'état courant ; une tâche TERMINÉE (intention, satisfaction, lien vers le fil, et le résumé seulement si l'espace a coché l'option) ; une tâche OUVERTE pour le propriétaire quand une action est suggérée. |
+| `em_opted_out` | Notre champ, et, pour un STOP WhatsApp seulement, le champ de consentement désigné du client mis à « non ». |
 | `em_risk_changed` | Les champs de risque. |
 | Injoignable (deux échecs, mécanisme existant) | Le champ de joignabilité. |
 | Accusé d'un envoi DEPUIS LA FICHE | Le statut de l'activité « WhatsApp envoyé » (délivré, lu, échec). |
 | `em_replied` après un envoi depuis la fiche | Une tâche « a répondu » pour le commercial ; le fil est affecté dans l'Inbox au membre qui a son e-mail, s'il existe. |
-| Campagne partie vers une Campaign Salesforce | Les statuts de membres « WhatsApp envoyé », puis « A répondu ». |
+| Campagne partie vers une Campaign Salesforce | Les statuts de membres « Engage Me : envoyé », puis « Engage Me : a répondu ». |
 
 **Ne remontent pas** : les accusés et les clics des campagnes, message par message. Une activité par message
 noierait la timeline et brûlerait le quota du client.
@@ -209,13 +261,15 @@ noierait la timeline et brûlerait le quota du client.
   (anti-rebond, plafond horaire, opt-out).
 - **Envoi depuis la carte** : appel synchrone `POST /salesforce/v1/envois` (fiche, téléphone, consentement,
   template ou scénario, variables, e-mail et identifiant du commercial). Engage Me vérifie la liste autorisée,
-  le consentement, la fenêtre de 24 h pour ce qui n'est pas un template, et la qualité du numéro, puis répond
-  « parti » ou le motif du refus. Il écrit ensuite lui-même l'activité « WhatsApp envoyé », au nom du
-  commercial : un seul écrivain pour ce qu'Engage Me pose dans Salesforce.
+  le consentement, la fenêtre de 24 h pour ce qui n'est pas un template, et la qualité du numéro (refus sur une
+  note rouge), exactement par le même code que l'API publique (`/v1/sends`, dont le pipeline est extrait pour
+  être partagé), puis répond « accepté » ou le motif du refus, jamais en 5xx ni en 401. L'envoi part par une
+  file dédiée. Engage Me écrit ensuite lui-même l'activité « WhatsApp envoyé », au nom du commercial : un seul
+  écrivain pour ce qu'Engage Me pose dans Salesforce.
 
 ### Les segments
 
-Lus **au lancement** de la campagne (une campagne planifiée les lit à son départ), jamais au brouillon :
+Lus **à la création**, à l'étape Audience, comme une liste HubSpot (amendement du 2026-09-26) :
 
 - **Campaign** : les membres (Leads et Contacts) en SOQL, page par page ;
 - **Vue de liste** : sa requête, obtenue par l'API de description de la vue, rejouée page par page ;
@@ -223,14 +277,18 @@ Lus **au lancement** de la campagne (une campagne planifiée les lit à son dép
   téléphone, avec le motif à l'écran.
 
 Chaque personne devient un contact Engage Me taggé `Salesforce: <nom>`, lié à sa fiche, avec l'opt-in lu dans
-le champ désigné. Sans champ désigné, l'opt-in n'est jamais présumé, comme pour HubSpot.
+le champ désigné : « oui » pose `opted_in` (source `salesforce`), « non » ou l'absence de champ ne pose rien.
+**Un `opted_out` n'est jamais relevé** par un import. La campagne vise les identifiants EXACTS rendus par la
+lecture, pas le filtre de tag : les tags ne se retirent jamais, et viser le tag enverrait aussi aux anciens
+membres d'une Campaign relue. Le plafond de 20 000 destinataires s'applique tel quel.
 
 ### Les erreurs
 
 - **Passagères** (verrou de ligne, quota momentané, 5xx) : rejouées avec un délai croissant.
 - **Définitives** (champ obligatoire, règle de validation, doublon bloqué par une règle du client, droit
-  manquant) : aucun rejeu, une ligne dans `echecs` avec le message de Salesforce, visible dans l'écran des
-  erreurs.
+  manquant) : aucun rejeu, une ligne dans `echecs` avec le message de Salesforce, borné et nettoyé (il peut
+  citer une valeur de fiche, et le journal est ouvert aux managers), visible dans l'écran des erreurs, qui
+  nomme Salesforce.
 - **Jeton refusé** (utilisateur désactivé, package désinstallé, app bloquée) : l'org passe `coupee`, l'Accueil
   le dit, plus rien ne part jusqu'à reconnexion.
 - **Quota proche de l'épuisement** : la remontée ralentit, puis s'arrête avant la limite, et reprend quand le
@@ -250,7 +308,9 @@ le champ désigné. Sans champ désigné, l'opt-in n'est jamais présumé, comme
    la configuration. L'état passe à `connectee`.
 4. Réglages : champ de consentement par objet (choisi dans une liste lue dans l'org : case à cocher ou liste de
    sélection), propriétaire de repli.
-5. Déconnexion : le secret est effacé dans l'org, puis chez nous, et l'état passe à `coupee`.
+5. Déconnexion : le secret est effacé dans l'org, puis la ligne chez nous. Si l'org est injoignable (package
+   désinstallé, jeton refusé), on oublie quand même chez nous et l'écran le dit : l'org ne peut plus rien
+   signer d'utile, et refuser d'oublier bloquerait l'espace.
 
 ## La sécurité
 
@@ -260,7 +320,9 @@ le champ désigné. Sans champ désigné, l'opt-in n'est jamais présumé, comme
   temps constant ; horodatage refusé au-delà de 5 minutes ; l'identifiant d'org de l'en-tête doit être celui de
   l'espace ; `safeParse` sur chaque corps, jamais de `as`. Une nouvelle classe d'accès `signature-salesforce`
   entre dans le registre `modulesDeRoutes` de `src/server.ts`, que `tests/scope-tenant.test.ts` tient.
-- **Plafond de débit** propre à ces routes, par org, distinct du plafond par utilisateur.
+- **Plafond de débit** propre à ces routes : 60 appels par minute et par org, compté à part pour les notifications
+  et pour les envois, pris APRÈS une signature valide ; un budget commun et silencieux pour les orgs inconnues ;
+  0 le désactive. Distinct du plafond par utilisateur.
 - **Le package est écrit pour la security review** : aucun secret hors du paramètre protégé ; les actions de la
   carte en mode utilisateur (droits du commercial, champs inaccessibles retirés) ; l'utilisateur d'intégration
   ne reçoit que ce que le jeu de permissions liste ; appel sortant uniquement vers `api.messagingme.app`, par
@@ -281,17 +343,24 @@ Chaque point est une hypothèse de cette spec, à confirmer sur de vraies orgs :
 6. L'appel sortant Apex vers `api.messagingme.app` par une Named Credential packagée.
 7. L'ajout de statuts de membres à une Campaign par l'API.
 8. La disponibilité du namespace `engageme`, et ce qu'exige la promotion d'une version 2GP (couverture Apex).
+9. L'idempotence sous rejeu : un champ Engage Me marqué External ID sur Lead et Contact permet-il un upsert (pas
+   de Lead en double si un job est rejoué), et un champ personnalisé d'activité peut-il l'être (pas de tâche en
+   double) ?
+10. Les métadonnées de l'External Client App récupérées par l'outillage Salesforce ne portent pas le secret de
+    l'app (le dépôt est public), et une sandbox rafraîchie copie-t-elle le paramètre protégé ?
+11. La longueur des noms de champs (préfixe du namespace compris) pour les noms du dictionnaire, et la liste des
+    suffixes d'adresse My Domain à accepter.
 
 ## Les lots
 
 | Lot | Contenu |
 |---|---|
-| **L0 Mesures** | Deux orgs Developer Edition gratuites, créées par Julien (une pour le Dev Hub et le namespace, une qui joue le client). Les huit mesures ci-dessus, consignées. Aucun code de production. |
+| **L0 Mesures** | Deux orgs Developer Edition gratuites, créées par Julien (une pour le Dev Hub et le namespace, une qui joue le client). Les mesures ci-dessus, consignées. Aucun code de production. |
 | **L1 Socle** | Package v0.1 (app, jeu de permissions, champs, objet de configuration, paramètre protégé et sa ressource REST). Migration du schéma `salesforce`. Client REST, connexion, guide, déconnexion, interrupteur d'espace. |
 | **L2 Remonter** | L'adaptateur de signaux : fiche retrouvée ou Lead créé, champs, activités, tâches, STOP vers le champ du client, joignabilité, écran des erreurs, compteur de quota. |
 | **L3 Segments** | La source « Salesforce » d'une campagne (Campaign, vue de liste, rapport), le consentement lu, les statuts de membres. |
 | **L4 Déclencheurs** | Déclencheurs Apex et boîte d'envoi, route de notifications, le type `salesforce_transition` et son écran. |
-| **L5 Carte** | La carte, la liste autorisée, la route d'envoi synchrone, les accusés, les réponses et l'affectation dans l'Inbox. |
+| **L5 Carte** | La carte, la liste autorisée, la route d'envoi synchrone et sa file dédiée, les accusés, les réponses et l'affectation dans l'Inbox. |
 | **Hors V1** | Listing AppExchange et security review. |
 
 ## Méthode de livraison
