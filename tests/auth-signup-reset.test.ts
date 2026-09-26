@@ -6,6 +6,7 @@ import { hashPasswordSync } from '../src/auth/password';
 import { DuplicateEmailError } from '../src/user/store.pg';
 import type { AuthRouteDeps } from '../src/auth/routes';
 import type { AuthUser, EmailIdentity } from '../src/auth/store';
+import { MfaEnMemoire, identiteDe, passerLeSecondFacteur } from './mfa';
 
 const SECRET = 'test-secret';
 const KNOWN_HASH = hashPasswordSync('current-pass-123');
@@ -14,19 +15,28 @@ beforeAll(async () => { tok = await signSession({ userId: 'u1', tenantId: 't1', 
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 const j = { headers: { 'content-type': 'application/json' } };
 
-interface Cap { created: Array<{ name: string; email: string }>; setPass: string[]; emails: Array<{ to: string; text: string }>; tokens: Array<{ p: string; uid: string }> }
+interface Cap { created: Array<{ name: string; email: string }>; setPass: string[]; emails: Array<{ to: string; text: string }>; tokens: Array<{ p: string; uid: string }>; mfa: MfaEnMemoire }
 
 function app(over: Partial<AuthRouteDeps> = {}) {
-  const cap: Cap = { created: [], setPass: [], emails: [], tokens: [] };
+  // Le second facteur : l'invité `u1` est un agent (cf. `sessionUser`), les admins créés par l'inscription s'y
+  // ajoutent à leur création, comme `createTenantWithAdmin` crée leur identité en production.
+  const mfa = new MfaEnMemoire([{ userId: 'u1', tenantId: 't1', role: 'agent', email: 'invited@x.fr' }]);
+  const cap: Cap = { created: [], setPass: [], emails: [], tokens: [], mfa };
   const deps: AuthRouteDeps = {
     users: {
       findIdentity: async (email: string): Promise<EmailIdentity | null> => (email === 'known@x.fr'
-        ? { passwordHash: KNOWN_HASH, comptes: [{ id: 'u1', tenantId: 't1', tenantName: 'Espace 1', email, role: 'admin' }] }
+        ? { identityId: identiteDe(email), passwordHash: KNOWN_HASH, mfaActif: false, comptes: [{ id: 'u1', tenantId: 't1', tenantName: 'Espace 1', email, role: 'admin' }] }
         : null),
     },
     secret: SECRET,
+    mfa,
     getUserState: async () => ({ role: 'admin', disabled: false, tenantStatus: 'active' }),
-    createTenantWithAdmin: async (name, admin) => { if (admin.email === 'taken@x.fr') throw new DuplicateEmailError(); cap.created.push({ name, email: admin.email }); return { tenantId: 'tNew', userId: 'uNew' }; },
+    createTenantWithAdmin: async (name, admin) => {
+      if (admin.email === 'taken@x.fr') throw new DuplicateEmailError();
+      cap.created.push({ name, email: admin.email });
+      mfa.ajouterCompte({ userId: 'uNew', tenantId: 'tNew', role: 'admin', email: admin.email });
+      return { tenantId: 'tNew', userId: 'uNew' };
+    },
     setPassword: async (userId) => { cap.setPass.push(userId); return true; },
     getPasswordHash: async () => KNOWN_HASH,
     motDePasseDeLAdresse: async (email) => (email === 'deja@x.fr' ? KNOWN_HASH : email === 'sansmdp@x.fr' ? null : undefined),
@@ -41,14 +51,19 @@ function app(over: Partial<AuthRouteDeps> = {}) {
 }
 
 describe('POST /auth/signup', () => {
-  it('crée un espace + admin, connecte (201 + token)', async () => {
+  it('🔴 crée un espace + admin, et n’ouvre la session qu’APRÈS l’enrôlement (201 + enrolToken, puis token)', async () => {
     const { server, cap } = app();
     const res = await server.inject({ method: 'POST', url: '/auth/signup', ...j, payload: { workspaceName: 'Mon Espace', email: 'A@X.fr', password: 'motdepasse-longue', name: 'Jean' } });
     expect(res.statusCode).toBe(201);
-    const body = res.json<{ token: string; user: { role: string; tenantId: string } }>();
+    // L'inscription crée un ADMIN : aucune session tant que le second facteur n'est pas posé.
+    expect(Object.keys(res.json())).toEqual(['enrolToken']);
+    expect(cap.created).toEqual([{ name: 'Mon Espace', email: 'a@x.fr' }]); // email normalisé
+    const suite = await passerLeSecondFacteur(server, res, cap.mfa, 'a@x.fr');
+    expect(suite.statusCode).toBe(200);
+    const body = suite.json<{ token: string; user: { role: string; tenantId: string }; codesSecours: string[] }>();
     expect(body.token).toBeTruthy();
     expect(body.user).toMatchObject({ role: 'admin', tenantId: 'tNew' });
-    expect(cap.created).toEqual([{ name: 'Mon Espace', email: 'a@x.fr' }]); // email normalisé
+    expect(body.codesSecours).toHaveLength(10);
     await server.close();
   });
   it('email déjà pris -> 409', async () => {

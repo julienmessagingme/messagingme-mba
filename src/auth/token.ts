@@ -39,6 +39,10 @@ export async function verifySession(token: string, secret: string): Promise<Sess
     if (typeof payload.sub !== 'string' || typeof payload.tenantId !== 'string' || typeof payload.role !== 'string') {
       return null;
     }
+    // 🔴 UN JETON QUI PORTE UN `kind` N'EST JAMAIS UNE SESSION (choix d'espace, second facteur, enrôlement). Aucun
+    // d'eux ne porte `tenantId` ni `role` à la racine, donc le test ci-dessus les refuse déjà ; celui-ci tient le
+    // jour où quelqu'un les y ajouterait pour « simplifier » la suite de la connexion.
+    if (payload.kind !== undefined) return null;
     return {
       userId: payload.sub,
       tenantId: payload.tenantId,
@@ -94,4 +98,69 @@ export async function verifyChoice(token: string, secret: string): Promise<Choic
   } catch {
     return null;
   }
+}
+
+/**
+ * Les deux ÉTAPES d'une connexion qui attend encore le second facteur (plan du 2026-09-25) : `mfa` (l'identité a
+ * un facteur actif, il faut son code) et `enrolement` (l'identité est admin quelque part et n'a pas de facteur,
+ * elle doit en poser un avant d'entrer).
+ *
+ * 🔴 CE NE SONT PAS DES SESSIONS, sur le modèle exact du jeton de choix : ni `tenantId` ni `role` à la racine, et
+ * un `kind` que `verifySession` refuse. Ils portent la liste SIGNÉE des comptes, c'est-à-dire la suite prévue de la
+ * connexion : une session si un seul espace, un jeton de choix sinon. Rien ne s'ouvre avant le code.
+ *
+ * ⚠️ Un `kind` par étape, et chaque vérification refuse l'autre : un jeton d'enrôlement présenté au lieu d'un jeton
+ * de code permettrait de REMPLACER un facteur actif par un facteur neuf, c'est-à-dire de le contourner.
+ */
+export interface EtapeConnexion {
+  identityId: string;
+  email: string;
+  comptes: Array<{ userId: string; tenantId: string; role: string; tenantName: string }>;
+}
+
+type KindEtape = 'mfa' | 'enrolement';
+
+async function signEtape(kind: KindEtape, e: EtapeConnexion, secret: string, expiresIn: string): Promise<string> {
+  return new SignJWT({ kind, identityId: e.identityId, email: e.email, comptes: e.comptes })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime(expiresIn)
+    .sign(key(secret));
+}
+
+async function verifyEtape(kind: KindEtape, token: string, secret: string): Promise<EtapeConnexion | null> {
+  try {
+    const { payload } = await jwtVerify(token, key(secret), { algorithms: ['HS256'] });
+    if (payload.kind !== kind || typeof payload.identityId !== 'string' || typeof payload.email !== 'string' || !Array.isArray(payload.comptes)) {
+      return null;
+    }
+    const comptes = payload.comptes.filter(
+      (c): c is EtapeConnexion['comptes'][number] =>
+        !!c && typeof c === 'object'
+        && typeof (c as { userId?: unknown }).userId === 'string'
+        && typeof (c as { tenantId?: unknown }).tenantId === 'string'
+        && typeof (c as { role?: unknown }).role === 'string'
+        && typeof (c as { tenantName?: unknown }).tenantName === 'string',
+    );
+    if (comptes.length === 0) return null;
+    return { identityId: payload.identityId, email: payload.email, comptes };
+  } catch {
+    return null;
+  }
+}
+
+/** Le jeton de l'étape « code » : 5 minutes, le temps d'ouvrir l'application. */
+export function signMfa(e: EtapeConnexion, secret: string): Promise<string> {
+  return signEtape('mfa', e, secret, '5m');
+}
+export function verifyMfa(token: string, secret: string): Promise<EtapeConnexion | null> {
+  return verifyEtape('mfa', token, secret);
+}
+
+/** Le jeton de l'étape « enrôlement » : 10 minutes, le temps d'installer une application et de scanner. */
+export function signEnrolement(e: EtapeConnexion, secret: string): Promise<string> {
+  return signEtape('enrolement', e, secret, '10m');
+}
+export function verifyEnrolement(token: string, secret: string): Promise<EtapeConnexion | null> {
+  return verifyEtape('enrolement', token, secret);
 }

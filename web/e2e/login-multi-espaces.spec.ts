@@ -66,10 +66,13 @@ test.describe('Connexion : plusieurs espaces', () => {
   test('🔴 UN seul espace : aucun écran de plus', async ({ page }) => {
     // Le cas de tout le monde aujourd'hui. Ajouter un clic pour un seul choix possible serait une régression
     // pour l'immense majorité des connexions.
-    await mock(page, { token: 'jeton', user: { email: 'a@b.co', role: 'admin', tenantId: 't1' } });
+    // ⚠️ Un AGENT depuis la double authentification (2026-09-26) : le serveur ne rend plus jamais de session
+    // directe à un administrateur, qui passe par un code (`second-facteur.spec.ts`). Un agent sans facteur, si.
+    await mock(page, { token: 'jeton', user: { email: 'a@b.co', role: 'agent', tenantId: 't1' } });
     await seConnecter(page);
     await expect(page.getByTestId('choix-espace')).toHaveCount(0);
-    await page.waitForURL('**/accueil', { timeout: 15_000 });
+    await expect(page.getByTestId('second-facteur')).toHaveCount(0);
+    await page.waitForURL('**/inbox', { timeout: 15_000 });
   });
 
   test('on peut repartir vers une autre adresse depuis le choix', async ({ page }) => {

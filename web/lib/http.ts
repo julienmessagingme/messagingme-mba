@@ -10,6 +10,7 @@
 
 import { getSession, clearSession } from './session';
 import { LOCALE_STORAGE_KEY, type Locale } from './locale';
+import { estCorpsCodeRefuse } from './second-facteur';
 
 /**
  * OÙ VIT L'API, VUE DU NAVIGATEUR. Exporté pour `/ops`, qui appelle sans session (autorité séparée).
@@ -101,11 +102,24 @@ export function estAnnulation(err: unknown): boolean {
   return err instanceof Error && err.name === 'AbortError';
 }
 
-export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+/**
+ * CE QU'UN 401 VEUT DIRE POUR CET APPEL (double authentification, 2026-09-26).
+ *
+ * - `session` (défaut) : la session est tombée. On la vide et la coquille propose de se reconnecter.
+ * - `etape` : une étape de connexion AVANT toute session (code, enrôlement). Il n'y a rien à vider, et le 401
+ *   porte la raison du serveur (code refusé, étape expirée), qui remonte telle quelle avec son corps.
+ * - `code` : un geste AVEC session qui soumet un code (page Compte). Un code refusé remonte tel quel ; tout
+ *   autre 401 reste une session tombée.
+ *
+ * 🔴 SANS CE PARAMÈTRE, un code mal tapé sur la page Compte déconnectait : le serveur répond 401 aux deux.
+ */
+export type Refus401 = 'session' | 'etape' | 'code';
+
+export async function request<T>(path: string, init: RequestInit = {}, refus401: Refus401 = 'session'): Promise<T> {
   const method = (init.method ?? 'GET').toUpperCase();
   const canRetry = RETRYABLE_METHODS.has(method);
   try {
-    return await attempt<T>(path, init);
+    return await attempt<T>(path, init, refus401);
   } catch (err) {
     // ⚠️ Une requête ANNULÉE ne se rejoue pas. Sans cette ligne, le retry repartait avec le MÊME signal, déjà
     // avorté : il échouait aussitôt, après avoir attendu la pause pour rien, et l'appelant recevait son
@@ -114,7 +128,7 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
     const transient = err instanceof ApiError ? err.status >= 500 : true; // panne réseau -> pas d'ApiError
     if (!canRetry || !transient) throw err;
     await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
-    return attempt<T>(path, init);
+    return attempt<T>(path, init, refus401);
   }
 }
 
@@ -152,7 +166,7 @@ export async function requestBlob(path: string): Promise<Blob> {
   return res.blob();
 }
 
-async function attempt<T>(path: string, init: RequestInit): Promise<T> {
+async function attempt<T>(path: string, init: RequestInit, refus401: Refus401): Promise<T> {
   const session = getSession();
   const headers = new Headers(init.headers);
   headers.set('content-type', 'application/json');
@@ -160,6 +174,10 @@ async function attempt<T>(path: string, init: RequestInit): Promise<T> {
 
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
   if (res.status === 401) {
+    const corps = refus401 === 'session' ? null : ((await res.json().catch(() => null)) as unknown);
+    if (refus401 === 'etape' || (refus401 === 'code' && estCorpsCodeRefuse(corps))) {
+      throw new ApiError(401, messageDErreur(401, corps, langue()), corps);
+    }
     clearSession();
     // Prévient la coquille (AppShell) pour qu'elle propose un bouton « Reconnecter ». Sans ça, l'écran affichait
     // un message rouge dans un coin, le reste de l'interface restait actif, et l'utilisateur n'avait AUCUN

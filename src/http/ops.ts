@@ -185,6 +185,15 @@ export interface OpsRouteDeps {
    * bilan, ou `null` si l'espace est inconnu. Absent -> la route répond 503.
    */
   balayerRisque?(tenantId: string): Promise<BilanRisque | null>;
+  /**
+   * RÉINITIALISE LE SECOND FACTEUR d'une personne, par son adresse (plan du 2026-09-25, tâche 6). Rend son identité
+   * et le nombre d'espaces où elle a un compte, ou `null` si l'adresse est inconnue. Absent -> 503.
+   *
+   * 🔴 C'EST LE SEUL CHEMIN pour une personne qui a des comptes dans PLUSIEURS espaces : un admin d'espace n'a pas à
+   * affaiblir un compte chez un autre client (`DELETE /tenants/:tenantId/users/:userId/mfa` rend 409). Le câblage
+   * écrit `mfa.reinitialise` dans chacun de ses espaces, sans acteur : le jeton d'exploitation est partagé.
+   */
+  reinitialiserMfa?(email: string): Promise<{ identityId: string; espaces: number } | null>;
 }
 
 /**
@@ -557,5 +566,25 @@ export function registerOps(
     // eslint-disable-next-line no-console
     console.log(JSON.stringify({ lvl: 'warn', msg: 'ops_grille_prix', prix: v.grille, note, at: new Date().toISOString() }));
     return reply.code(200).send({ prix: v.grille });
+  });
+
+  /**
+   * RÉINITIALISER LE SECOND FACTEUR d'une personne qui a perdu son téléphone et ses codes. L'adresse voyage dans le
+   * CORPS, jamais dans l'adresse de la route : une adresse électronique n'a rien à faire dans un journal d'accès.
+   *
+   * ⚠️ LA NOTE EST OBLIGATOIRE, comme sur les autres écritures : c'est la seule trace de qui a retiré un facteur, et
+   * pourquoi. La ligne de journal porte l'identité, pas l'adresse.
+   */
+  app.post('/ops/mfa/reinitialiser', opts, async (req, reply) => {
+    if (!deps.reinitialiserMfa) return reply.code(503).send({ error: 'réinitialisation non disponible sur cette instance' });
+    const corps = (req.body ?? {}) as { email?: unknown; note?: unknown };
+    const email = typeof corps.email === 'string' ? corps.email.trim().toLowerCase() : '';
+    if (!/^[^\s@]+@[^\s@]+$/.test(email)) return reply.code(400).send({ error: 'email requis' });
+    const note = typeof corps.note === 'string' ? corps.note.trim().slice(0, 500) : '';
+    if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : qui réinitialise, et pourquoi' });
+    const fait = await deps.reinitialiserMfa(email);
+    if (!fait) return reply.code(404).send({ error: 'adresse inconnue' });
+    journaliser('warn', 'ops_mfa_reinitialise', { identityId: fait.identityId, espaces: fait.espaces, note, at: new Date().toISOString() });
+    return reply.code(200).send({ reinitialise: true, espaces: fait.espaces });
   });
 }

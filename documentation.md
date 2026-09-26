@@ -637,8 +637,10 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 
 - `tenants` (`status` ∈ trial | active | locked, `public_code`), `users` (`role` ∈ **admin | manager |
   agent**), `identities` (le mot de passe vit sur l'ADRESSE, pas sur le compte : « une adresse = UN mot de
-  passe » est exprimé par la structure), `auth_tokens` (invite | reset, `token_hash` sha256, consommation
-  atomique dans le `update ... returning`).
+  passe » est exprimé par la structure ; le SECOND FACTEUR y vit aussi, migration 0182 : `mfa_secret_enc`,
+  `mfa_active_le`, `mfa_dernier_pas`, `mfa_secret_attente_enc`), `mfa_codes_secours` (empreintes SHA-256 des
+  codes de secours d'une identité, `utilise_le`, cascade sur l'identité), `auth_tokens` (invite | reset,
+  `token_hash` sha256, consommation atomique dans le `update ... returning`).
 - ⚠️ **Trois rôles, et DEUX niveaux de droits.** Un `agent` n'a que l'Inbox. Un `manager` y ajoute les écrans
   de CONFORMITÉ (Sécurité : accueil, Consentement, IA, Audit trails, Journal des erreurs), qu'il CONSULTE, et
   il affecte les conversations. Il RÈGLE une seule chose : `tenant_settings.agents_peuvent_prendre`, la seule
@@ -1065,6 +1067,7 @@ par défaut, `mmhs` TOUJOURS qualifié) et que toutes ses transactions passent p
 | `requireAdmin` / `forbidNonAdmin` | écritures | un opérateur d'inbox qui modifierait la configuration |
 | Plafonds de débit | routes authentifiées | l'épuisement par un client, volontaire ou non |
 | `OPS_TOKEN` | `/ops` | l'exploitation cross-tenant |
+| Second facteur (`apresLeMotDePasse`, `src/auth/routes.ts`) | connexion par mot de passe, inscription, invitation acceptée | une session d'admin ouverte avec le seul mot de passe |
 | `urlRecuperable` + `resolutionPublique` | toute URL saisie par un client | le SSRF vers le réseau interne |
 | `lireCorpsBorne` | toute réponse distante | l'épuisement mémoire par un corps géant |
 | En-têtes de sécurité | toute réponse de l'API et de la console | ce qu'une faille future pourrait faire depuis le navigateur |
@@ -1090,6 +1093,37 @@ volume. Le jour où un chemin écrira quelque chose, il lui faudra un répertoir
 conteneur le dira en refusant de démarrer plutôt qu'en silence. La CI le vérifie à chaque exécution, et
 c'est le SEUL de ses contrôles de sécurité qui bloque : il ne dépend d'aucune base de vulnérabilités
 extérieure, seulement d'une propriété que nous choisissons.
+
+🔴 **AUCUNE SESSION D'ADMIN SANS SECOND FACTEUR, SAUF PAR GOOGLE** (plan
+`docs/superpowers/plans/2026-09-25-mfa-admins.md`). Après le mot de passe, `apresLeMotDePasse`
+(`src/auth/routes.ts`) décide avant tout accès : une identité qui a un facteur actif reçoit `{ mfaToken }`, quel
+que soit son rôle ; une identité qui a au moins un compte `admin` actif et aucun facteur reçoit `{ enrolToken }` ;
+les autres reçoivent la suite d'avant (session si un espace, jeton de choix sinon). La connexion, l'inscription
+(elle crée un admin) et l'invitation acceptée passent toutes par là ; `/auth/google` non, par décision de Julien.
+Les deux jetons d'étape suivent le modèle du jeton de choix : un `kind` à eux, la liste SIGNÉE des comptes, ni
+`tenantId` ni `role` à la racine, et `verifySession` refuse tout jeton qui porte un `kind`. ⚠️ **AUCUN
+INTERRUPTEUR** : ni drapeau ni variable ne saute l'étape, et un magasin du second facteur absent FERME (503 sur
+l'étape, donc aucune session d'admin), il n'ouvre jamais. Les tests passent par le vrai parcours (`tests/mfa.ts`).
+
+🔴 **LE MOT DE PASSE SE LIT LÀ OÙ IL S'ÉCRIT : SUR L'IDENTITÉ.** `getPasswordHash` (l'ancien mot de passe vérifié
+au changement) lit `identities`, comme la connexion ; `users.password_hash` n'est qu'une copie de transition. Et
+l'inscription d'une adresse déjà connue exige son mot de passe (`motDePasseDeLAdresse`, 409 sinon, et pour une
+identité sans mot de passe). Sans ces deux gardes, s'inscrire avec l'adresse d'un autre puis changer « son » mot de
+passe ouvrait tous ses espaces (fermé le 2026-09-26).
+
+⚠️ **LE FACTEUR EST SUR L'IDENTITÉ, PAS SUR LE COMPTE** (`identities`, comme le mot de passe) : une personne
+admin dans deux espaces s'enrôle une fois. D'où la réinitialisation en deux portes : un admin d'espace
+(`DELETE /tenants/:tenantId/users/:userId/mfa`) ne peut pas toucher une identité qui a un compte ailleurs (409),
+ce cas passe par l'exploitation (`POST /ops/mfa/reinitialiser`, note obligatoire).
+
+🔴 **LE SECRET EST CHIFFRÉ, LES CODES DE SECOURS SONT HACHÉS, ET LES DEUX CONSOMMATIONS SONT ATOMIQUES.** Le
+secret TOTP (et celui d'un enrôlement en cours) passe par `encryptSecret` avec `ENCRYPTION_KEY`. Les dix codes de
+secours (80 bits chacun) ne sont stockés qu'en SHA-256 : un hachage lent n'ajoute rien à 80 bits tirés au hasard,
+et un hachage déterministe permet de consommer un code par UN `update ... where utilise_le is null returning`.
+L'anti-rejeu TOTP tient de la même façon : le pas accepté s'écrit par un `update` conditionnel
+(`mfa_dernier_pas < $2`), et seul ce qui a écrit est accepté. Un code faux, rejoué ou hors fenêtre rend le MÊME
+401 ; au-delà de cinq essais par minute et par identité, 429. `mfa.echec` s'écrit au journal sans le code, et
+sans être attendu sur le chemin de réponse.
 
 🔴 **LE MINIMUM DU MOT DE PASSE EST DE 12 CARACTÈRES, SANS RÈGLE DE COMPOSITION** (2026-09-10), et il ne
 mord que sur les quatre chemins qui en CHOISISSENT un. `/auth/login` compare un hash et ne regarde jamais
@@ -1235,10 +1269,12 @@ lirait le `.env.prod` : il borne les dégâts quel que soit le nombre de clés c
 **Chiffrés au repos** (AES-256-GCM, `src/crypto/secretbox.ts`, même patron partout) : les tokens business
 d'Embedded Signup (`waba_credentials`), les clés RCS par workspace (`rcs_agents.api_key_enc`), les clés AI Gateway par espace (`agent_gateway_keys.cle_chiffree`), les mots de
 passe SMTP (`email_accounts.password_enc`), les secrets de connecteur API (`agent_tool_sources`), les clés d'un
-outil qui reçoit les signaux (la table de son adaptateur, dans `src/signaux/`).
+outil qui reçoit les signaux (la table de son adaptateur, dans `src/signaux/`), le secret TOTP d'une identité
+(`identities.mfa_secret_enc`, et `mfa_secret_attente_enc` pendant l'enrôlement).
 
 **Hachés, jamais stockés en clair** : les clés d'API publiques (`api_keys`, sha256), les jetons d'invitation et
-de réinitialisation (`auth_tokens`), les secrets de webhook entrant.
+de réinitialisation (`auth_tokens`), les secrets de webhook entrant, les codes de secours du second facteur
+(`mfa_codes_secours`, sha256).
 
 ⚠️ **`/ops` n'est pas durci, il est SURVEILLÉ** (choix produit). Une liste blanche d'IP aurait coupé l'accès
 dès un changement d'IP. Le jeton reste la garde ; au 5e refus dans une fenêtre de 5 minutes, une alerte
@@ -1774,6 +1810,9 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/meta/template-components.ts` | le SEUL constructeur de composants d'envoi (en-tête média, carousel, boutons tracés) |
 | `src/meta/template-media.ts` | préparer un visuel, pour les cartes comme pour l'en-tête |
 | `src/crypto/secretbox.ts` | AES-256-GCM, le seul chiffrement au repos du dépôt |
+| `src/auth/totp.ts` | 🔴 le second facteur sur `node:crypto` seul : base32 RFC 4648 (PAS l'alphabet Crockford de `src/ids/code.ts`, qu'une application d'authentification décoderait autrement), `codeAuPas`, `verifierCode` (fenêtre de plus ou moins un pas, anti-rejeu par le dernier pas, comparaison en temps constant), `uriOtpauth`, et les codes de secours (`genererCodesSecours`, `empreinteCodeSecours`) |
+| `src/auth/mfa-store.pg.ts` -> `PgMfaStore` | l'état du second facteur d'une IDENTITÉ : chiffrement du secret, activation qui ne remplace jamais un facteur actif, pas et code de secours consommés par un `update` conditionnel, réinitialisation (refusée à un admin d'espace pour une identité multi-espace). `tests/mfa.ts` en porte le double en mémoire, aux mêmes conditions |
+| `src/auth/routes.ts` -> `apresLeMotDePasse`, `suiteDeConnexion` | 🔴 la porte du second facteur, et la suite d'une connexion (session si un espace, jeton de choix sinon). UNE fonction pour la connexion, `/auth/mfa/verifier` et `/auth/mfa/activer` : trois copies divergeraient sur « ouvrir ou demander » |
 | `src/lib/adresse-privee.ts` | `resolutionPublique` : ce qu'un texte d'URL ne peut pas voir |
 | `src/lib/page-distante.ts` | `urlRecuperable` (garde SSRF) et `fetchUrlBorne` (redirections revalidées saut par saut) |
 | `src/lib/corps-borne.ts` | lire un corps distant EN FLUX, avec ses trois verdicts |

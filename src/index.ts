@@ -30,6 +30,8 @@ import { journaliser } from './lib/journal';
 import { ResendClient } from './support/resend';
 import { PgTenantSettingsStore } from './settings/store.pg';
 import { PgUserAuthStore } from './auth/store';
+import { PgMfaStore } from './auth/mfa-store.pg';
+import type { ActionMfa } from './auth/mfa-routes';
 import { PgUserStore } from './user/store.pg';
 import { PgAuthTokenStore } from './auth/token-store.pg';
 import { verifyGoogleIdToken } from './auth/google';
@@ -282,6 +284,32 @@ async function main(): Promise<void> {
   const auditSink: AuditSink = async (tenant, actor, action, target, detail) => {
     const email = actor.userId ? (await userStore.getSessionUser(actor.userId))?.email ?? null : null;
     await auditStore.record(tenant, { userId: actor.userId, email }, action, target, detail);
+  };
+  /**
+   * Le second facteur des administrateurs (migration 0182). Ses secrets sont chiffrés avec `ENCRYPTION_KEY`, comme
+   * les jetons Meta que cette même API chiffre déjà : la clé est donc présente partout où cette ligne s'exécute.
+   */
+  const mfaStore = new PgMfaStore(pool, config.ENCRYPTION_KEY);
+  /**
+   * 🔴 UNE LIGNE PAR ESPACE DE L'IDENTITÉ : le facteur est celui de la PERSONNE, et chacun de ses espaces doit
+   * pouvoir lire qu'il a été posé, utilisé ou retiré. L'acteur est son compte DANS cet espace ; `null` quand c'est
+   * l'exploitation qui agit (le jeton y est partagé, il n'y a personne à nommer).
+   */
+  const auditParIdentite = async (
+    identityId: string,
+    action: ActionMfa | 'mfa.reinitialise',
+    detail: Record<string, unknown> = {},
+    parLaPersonne = true,
+  ): Promise<void> => {
+    for (const c of await mfaStore.comptes(identityId)) {
+      await auditStore.record(
+        c.tenantId,
+        parLaPersonne ? { userId: c.userId, email: c.email } : { userId: null, email: null },
+        action,
+        { kind: 'user', id: c.userId },
+        detail,
+      );
+    }
   };
   const phoneStatusStore = new PgPhoneStatusStore(pool);
   // Le numéro délié (migration 0180) : UNE garde par process, partagée par la fabrique Meta (le refus des
@@ -823,6 +851,9 @@ async function main(): Promise<void> {
       verifyGoogle: (idToken) => verifyGoogleIdToken(idToken, config.GOOGLE_CLIENT_ID),
       getUserByEmail: (email) => userStore.getByEmail(email),
       ...(sendAuthEmail ? { sendEmail: sendAuthEmail } : {}),
+      // Le second facteur : obligatoire pour les admins, à la connexion, à l'inscription et à l'invitation.
+      mfa: mfaStore,
+      auditMfa: async (identityId, action, detail) => { await auditParIdentite(identityId, action, detail); },
     },
     import: {
       contacts: contactStore,
@@ -1648,6 +1679,7 @@ async function main(): Promise<void> {
       },
       getWorkspaceName: (tenantId) => userStore.getTenantName(tenantId),
       renommerEspace: (tenantId, nom) => userStore.setTenantName(tenantId, nom),
+      reinitialiserMfa: (tenantId, userId) => mfaStore.reinitialiserDansEspace(tenantId, userId),
       appUrl: config.APP_URL,
       ...(sendAuthEmail ? { sendEmail: sendAuthEmail } : {}),
     },
@@ -3108,6 +3140,18 @@ async function main(): Promise<void> {
         // eslint-disable-next-line no-console
         journal: (m) => console.warn(m),
       }),
+      /**
+       * Le second facteur d'une personne, depuis l'exploitation (le cas multi-espace, que l'admin d'un espace ne
+       * peut pas trancher). Journalisé dans CHACUN de ses espaces, sans acteur.
+       */
+      reinitialiserMfa: async (email) => {
+        const identityId = await mfaStore.reinitialiserParEmail(email);
+        if (identityId === null) return null;
+        const espaces = new Set((await mfaStore.comptes(identityId)).map((c) => c.tenantId)).size;
+        // Le facteur est DÉJÀ retiré : un journal en échec ne doit pas faire croire à l'opérateur que rien n'a eu lieu.
+        await tenter('audit ignoré:', () => auditParIdentite(identityId, 'mfa.reinitialise', { par: 'exploitation' }, false));
+        return { identityId, espaces };
+      },
     },
     opsToken: config.OPS_TOKEN,
     // Le réglage du plafond de l'API par espace (migration 0181) : lu par le limiteur de `/v1` et `/mcp`, écrit par `/ops`.

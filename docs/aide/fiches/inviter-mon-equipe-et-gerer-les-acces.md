@@ -1,6 +1,6 @@
 ---
 source_section: Comptes & authentification
-source_empreinte: 506128
+source_empreinte: fd4c06
 ---
 # Inviter mon équipe, et gérer les accès
 
@@ -29,6 +29,15 @@ ailleurs.
 passe, et vous en êtes l'administrateur. Vous pouvez aussi passer par Google, à l'inscription comme à la
 connexion : le rapprochement se fait sur l'adresse e-mail, donc un compte qui existe déjà est simplement
 reconnu.
+
+**La double authentification** ajoute un code au mot de passe. Elle est obligatoire pour les administrateurs :
+à la première connexion (ou à l'inscription), vous scannez un QR code avec une application d'authentification
+(Google Authenticator, Microsoft Authenticator…), vous saisissez le premier code, puis vous recevez **dix codes
+de secours** à conserver. Ils ne seront plus affichés, et chacun ne sert qu'une fois. Ensuite, chaque connexion
+par mot de passe demande le code de l'application, ou un code de secours dans le même champ ; une connexion
+Google n'en demande pas. Les agents et managers peuvent l'activer depuis « Mon compte », où chacun régénère
+aussi ses codes de secours. **Téléphone perdu** : un autre administrateur la réinitialise depuis Compte &
+équipe ; si la personne a aussi accès à un autre espace, c'est le support qui s'en charge.
 
 **Mot de passe oublié** : un lien de réinitialisation part par e-mail. La réponse affichée est toujours la
 même, que l'adresse existe ou non, pour qu'on ne puisse pas deviner qui a un compte chez vous. Pour changer

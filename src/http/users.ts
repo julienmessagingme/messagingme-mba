@@ -4,7 +4,8 @@ import { DuplicateEmailError } from '../user/store.pg';
 import type { UserRow, UserMutation } from '../user/store.pg';
 import type { Guard } from '../auth/middleware';
 import { renderInvitationEmail } from '../support/email-templates';
-import { scopeTenant } from './scope';
+import { scopeTenant, estUuid } from './scope';
+import type { IssueReinitialisation } from '../auth/mfa-store.pg';
 import { makeJournal, type AuditSink } from '../audit/journal';
 import { nomEspace, MESSAGE_NOM_ESPACE_INVALIDE } from '../user/nom-espace';
 
@@ -49,6 +50,11 @@ export interface UsersRouteDeps {
   getWorkspaceName?(tenantId: string): Promise<string | null>;
   /** Renomme l'espace (`tenants.name`). `false` = espace inconnu. Absent -> renommage indisponible (503). */
   renommerEspace?(tenantId: string, nom: string): Promise<boolean>;
+  /**
+   * Réinitialise le second facteur d'un membre (téléphone perdu, codes de secours épuisés). `autres_espaces` = la
+   * personne a un compte dans un AUTRE espace : refusé ici, ce cas passe par l'exploitation. Absent -> 503.
+   */
+  reinitialiserMfa?(tenantId: string, userId: string): Promise<IssueReinitialisation>;
   /** Base URL du front pour le lien d'invitation. */
   appUrl?: string;
 }
@@ -239,6 +245,38 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
     if (result === 'last_admin') return reply.code(409).send({ error: 'au moins un administrateur actif est requis' });
     await journal(tenant, req, 'utilisateur.retire', { kind: 'user', id: userId });
     return reply.code(200).send({ id: userId, deleted: true });
+  });
+
+  /**
+   * RÉINITIALISER LE SECOND FACTEUR d'un membre (plan du 2026-09-25, tâche 6) : téléphone perdu, codes épuisés.
+   * Le membre repassera par l'enrôlement à sa prochaine connexion s'il est admin, et se connectera sans code sinon.
+   *
+   * 🔴 REFUSÉ SI LA PERSONNE A UN COMPTE DANS UN AUTRE ESPACE (409). Le facteur appartient à l'IDENTITÉ, pas au
+   * compte : le retirer d'ici l'affaiblirait aussi chez un autre client, dont l'admin d'ici n'a aucune raison de
+   * décider. Ce cas passe par l'exploitation (`POST /ops/mfa/reinitialiser`).
+   *
+   * ⚠️ PAS SUR SOI-MÊME, comme le rôle et la révocation : une session volée ne doit pas pouvoir retirer le facteur
+   * de son porteur, et un admin qui a perdu son téléphone n'a de toute façon plus de session.
+   */
+  app.delete('/tenants/:tenantId/users/:userId/mfa', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.reinitialiserMfa) return reply.code(503).send({ error: 'Réinitialisation indisponible.' });
+    const { userId } = req.params as { userId: string };
+    if (req.auth?.userId === userId) {
+      return reply.code(400).send({ error: 'Vous ne pouvez pas réinitialiser votre propre double authentification.' });
+    }
+    // Un identifiant mal formé partirait dans un `where id = $1` sur une colonne `uuid` : 22P02, donc un 500.
+    if (!estUuid(userId)) return reply.code(404).send({ error: 'Utilisateur inconnu.' });
+    const issue = await deps.reinitialiserMfa(tenant, userId);
+    if (issue === 'not_found') return reply.code(404).send({ error: 'Utilisateur inconnu.' });
+    if (issue === 'autres_espaces') {
+      return reply.code(409).send({
+        error: 'Ce membre a aussi un compte dans un autre espace : sa double authentification se réinitialise par le support.',
+      });
+    }
+    await journal(tenant, req, 'mfa.reinitialise', { kind: 'user', id: userId });
+    return reply.code(200).send({ id: userId, mfaReinitialise: true });
   });
 
   /**

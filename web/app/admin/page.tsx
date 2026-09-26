@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
-import { listUsers, inviteMember, setUserRole, setUserDisabled, deleteUser, renommerMembre, lireNomEspace, renommerEspace, type AdminUser, type UserRole } from '@/lib/api';
+import { listUsers, inviteMember, setUserRole, setUserDisabled, deleteUser, renommerMembre, lireNomEspace, renommerEspace, reinitialiserSecondFacteur, type AdminUser, type UserRole } from '@/lib/api';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 import { inputCls } from '@/lib/ui';
-import { estAnnulation, erreurDeChargement } from '@/lib/http';
+import { estAnnulation, erreurDeChargement, ApiError } from '@/lib/http';
 import { routeInconnue } from '@/lib/canaux-services';
 import { Bouton } from '@/components/Bouton';
 import { TitrePage } from '@/components/TitrePage';
@@ -25,6 +25,7 @@ function AdminInner({ session }: { session: Session }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -101,10 +102,36 @@ function AdminInner({ session }: { session: Session }) {
     }
   }
 
+  /**
+   * Retire le second facteur d'un membre (téléphone perdu, codes épuisés). Un administrateur le reposera à sa
+   * prochaine connexion ; un agent ou un manager se connectera sans code.
+   *
+   * ⚠️ Le 409 n'est pas une panne : la personne a aussi un compte dans un AUTRE espace, et son facteur vaut
+   * là-bas aussi. L'admin d'ici n'en décide pas, le support si.
+   */
+  async function reinitialiserMfa(u: AdminUser) {
+    if (!(await confirmer({
+      titre: t('Réinitialiser la double authentification', 'Reset two-factor authentication'),
+      message: t(`Retirer la double authentification de ${u.email} ?\nUn administrateur devra la configurer de nouveau à sa prochaine connexion.`, `Remove two-factor authentication from ${u.email}?\nAn administrator will have to set it up again at their next sign-in.`),
+      confirmer: t('Réinitialiser', 'Reset'),
+    }))) return;
+    setError(null);
+    setInfo(null);
+    try {
+      await reinitialiserSecondFacteur(session.tenantId, u.id);
+      setInfo(t(`Double authentification réinitialisée pour ${u.email}.`, `Two-factor authentication reset for ${u.email}.`));
+    } catch (err) {
+      setError(err instanceof ApiError && err.status === 409
+        ? t('Cette personne a un accès à un autre espace : la réinitialisation passe par le support.', 'This person has access to another workspace: the reset goes through support.')
+        : err instanceof Error ? err.message : t('Réinitialisation impossible', 'Unable to reset'));
+    }
+  }
+
   return (
     <div className="space-y-6">
       <TitrePage>{t('Compte', 'Account')}</TitrePage>
-      {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+      {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700" data-testid="admin-erreur">{error}</p>}
+      {info && <p className="rounded-controle bg-succes-50 px-3 py-2 text-sm text-succes-800" data-testid="admin-info">{info}</p>}
 
       <EspaceCard tenantId={session.tenantId} />
 
@@ -183,7 +210,18 @@ function AdminInner({ session }: { session: Session }) {
                       )}
                     </td>
                     <td className="px-5 py-3">
-                      <div className="flex items-center justify-end gap-3">
+                      <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+                        {/* Pas sur soi (le serveur refuse, et une session volée ne doit pas retirer le facteur de
+                            son porteur), ni sur une invitation en attente, qui n'a pas encore de facteur. */}
+                        {!isSelf && !u.pending && (
+                          <button
+                            onClick={() => { void reinitialiserMfa(u); }}
+                            data-testid={`membre-mfa-${u.id}`}
+                            className="text-ink-500 hover:text-ink-900"
+                          >
+                            {t('Réinitialiser la double authentification', 'Reset two-factor authentication')}
+                          </button>
+                        )}
                         <button
                           onClick={() => toggleDisabled(u)}
                           disabled={isSelf}

@@ -24,8 +24,17 @@ export interface CompteAccessible {
  * directement ce compte ; désormais l'adresse porte l'authentification, et les espaces en découlent.
  */
 export interface EmailIdentity {
+  /** L'identité (migration 0072) : c'est elle qui porte le mot de passe ET le second facteur (0182). */
+  identityId: string;
   /** Hash à vérifier. Une adresse sans mot de passe (invitation en attente) ne peut pas se connecter. */
   passwordHash: string;
+  /**
+   * L'identité a-t-elle un second facteur ACTIF ? Si oui, la connexion demande son code, quel que soit le rôle.
+   *
+   * 🔴 REQUIS, et c'est délibéré : un faux magasin de test doit DIRE s'il a un facteur, plutôt que de laisser un
+   * champ absent valoir « non » en silence.
+   */
+  mfaActif: boolean;
   /** Espaces accessibles. JAMAIS vide : une identité sans compte actif n'est pas rendue. */
   comptes: CompteAccessible[];
 }
@@ -45,7 +54,9 @@ export class PgUserAuthStore implements UserAuthStore {
 
   async findIdentity(email: string): Promise<EmailIdentity | null> {
     const res = await this.pool.query<{
+      identity_id: string;
       password_hash: string | null;
+      mfa_actif: boolean;
       user_id: string;
       tenant_id: string;
       tenant_name: string;
@@ -61,7 +72,8 @@ export class PgUserAuthStore implements UserAuthStore {
       //
       // Trié par nom d'espace : l'ordre de l'écran de choix doit être stable d'une connexion à l'autre,
       // sinon on finit par cliquer au mauvais endroit par habitude.
-      `select i.password_hash, u.id as user_id, u.tenant_id, t.name as tenant_name, u.email, u.role
+      `select i.id as identity_id, i.password_hash, (i.mfa_active_le is not null) as mfa_actif,
+              u.id as user_id, u.tenant_id, t.name as tenant_name, u.email, u.role
          from identities i
          join users u on u.identity_id = i.id
          join tenants t on t.id = u.tenant_id
@@ -69,10 +81,13 @@ export class PgUserAuthStore implements UserAuthStore {
         order by t.name, u.id`,
       [email],
     );
-    const hash = res.rows[0]?.password_hash;
-    if (!hash) return null;
+    const premiere = res.rows[0];
+    const hash = premiere?.password_hash;
+    if (!premiere || !hash) return null;
     return {
+      identityId: premiere.identity_id,
       passwordHash: hash,
+      mfaActif: premiere.mfa_actif,
       comptes: res.rows.map((r) => ({
         id: r.user_id, tenantId: r.tenant_id, tenantName: r.tenant_name, email: r.email, role: r.role,
       })),

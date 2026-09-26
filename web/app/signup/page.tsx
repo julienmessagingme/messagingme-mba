@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { signup } from '@/lib/api';
+import { signup, isLoginChoice, type EtapeSecondFacteur, type SuiteConnexion } from '@/lib/api';
 import { saveSession } from '@/lib/session';
 import { Logo } from '@/components/Logo';
 import { GoogleButton } from '@/components/GoogleButton';
@@ -13,6 +13,7 @@ import { inputCls } from '@/lib/ui';
 import { MIN_MOT_DE_PASSE, aideMotDePasse } from '@/lib/mot-de-passe';
 import { Bouton } from '@/components/Bouton';
 import { TitrePage } from '@/components/TitrePage';
+import { EtapesSecondFacteur, EtapeInterrompue } from '@/components/SecondFacteur';
 
 export default function SignupPage() {
   const router = useRouter();
@@ -23,6 +24,26 @@ export default function SignupPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  /**
+   * L'espace est créé, son administrateur pose son second facteur (ou donne son code si l'adresse en a déjà
+   * un). Aucune session avant.
+   */
+  const [etape, setEtape] = useState<EtapeSecondFacteur | null>(null);
+  /**
+   * L'étape n'a pas abouti (expirée). L'espace EXISTE : renvoyer au formulaire en créerait un second, on
+   * renvoie donc à la connexion, qui reprendra l'enrôlement.
+   */
+  const [interrompu, setInterrompu] = useState<string | null>(null);
+
+  function entrer(res: SuiteConnexion): void {
+    // Impossible par construction (l'inscription porte un seul espace) : la connexion saura demander.
+    if (isLoginChoice(res)) {
+      router.replace('/login');
+      return;
+    }
+    saveSession({ token: res.token, email: res.user.email, role: res.user.role, tenantId: res.user.tenantId });
+    router.replace('/accueil');
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -30,8 +51,8 @@ export default function SignupPage() {
     setLoading(true);
     try {
       const res = await signup({ workspaceName: workspaceName.trim(), email: email.trim(), password, name: name.trim() || undefined });
-      saveSession({ token: res.token, email: res.user.email, role: res.user.role, tenantId: res.user.tenantId });
-      router.replace('/accueil');
+      setPassword('');
+      setEtape(res);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Inscription impossible', 'Sign-up failed'));
     } finally {
@@ -51,6 +72,11 @@ export default function SignupPage() {
           <p className="mt-1 text-sm text-ink-500">{t('Votre espace WhatsApp Business en quelques secondes.', 'Your WhatsApp Business workspace in seconds.')}</p>
         </div>
 
+        {etape ? (
+          <EtapesSecondFacteur etape={etape} onSuite={entrer} onRetour={(message) => { setEtape(null); setInterrompu(message); }} />
+        ) : interrompu ? (
+          <EtapeInterrompue message={interrompu} />
+        ) : (
         <form onSubmit={onSubmit} className="space-y-4 rounded-carte border border-ink-200 bg-white p-6">
           <div>
             <label className="mb-1 block text-sm font-medium text-ink-900">{t("Nom de l’espace / entreprise", 'Workspace / company name')}</label>
@@ -78,6 +104,7 @@ export default function SignupPage() {
 
           <GoogleButton onError={setError} />
         </form>
+        )}
       </div>
     </main>
   );

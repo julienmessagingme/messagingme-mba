@@ -22,8 +22,9 @@ décrite en dernière section.
   passé.
 - **TOTP écrit sur `node:crypto`** (RFC 6238 : HMAC-SHA1, pas de 30 s, 6 chiffres, fenêtre de plus ou moins un
   pas), sans dépendance. Le QR code se dessine avec `qrcode`, déjà dans `web/package.json`.
-- **Secret chiffré** par `encryptSecret` (`src/crypto/secretbox.ts`, `ENCRYPTION_KEY`). **Codes de secours
-  hachés** (scrypt, comme le mot de passe), montrés UNE fois.
+- **Secret chiffré** par `encryptSecret` (`src/crypto/secretbox.ts`, `ENCRYPTION_KEY`). **Codes de secours**
+  de 80 bits tirés au hasard, stockés en SHA-256 (un hachage lent n'ajoute rien à un secret de cette
+  entropie, et le hachage déterministe permet de consommer un code en UNE requête atomique), montrés UNE fois.
 - **Anti-rejeu** : on retient le dernier pas accepté, un code du même pas ou d'un pas antérieur est refusé.
 - **Aucune session d'admin sans second facteur**, sauf Google : connexion par mot de passe, inscription
   (elle crée un admin) et acceptation d'une invitation d'admin passent par l'enrôlement avant tout jeton de
@@ -70,9 +71,12 @@ décrite en dernière section.
 
 ## Ordre de déploiement
 
-Migration 0182 AVANT le `up` (la connexion lit les colonnes). L'API avant la console : la console ne connaît
-pas encore `mfaToken` et `enrolToken`, et une API neuve devant l'ancienne console bloquerait la connexion des
-admins, donc les deux partent dans la même fenêtre, l'API d'abord, la console poussée juste après.
+🔴 **LA CONSOLE D'ABORD, JAMAIS L'API SEULE.** Une API neuve devant l'ancienne console bloque TOUS les admins
+(l'ancienne page lit `res.user.email` sur un `{ mfaToken }`). L'inverse tient : la nouvelle console accepte les
+réponses de l'ancienne API. Donc : pousser le commit unique, attendre que le déploiement Vercel soit prêt, lire la
+CI (job `integration` compris), appliquer 0182 (la connexion lit ses colonnes, donc AVANT le `up`), puis le `up`.
+Pendant la fenêtre, l'inscription et le bloc Compte de la nouvelle console appellent des routes absentes :
+la réduire, pas l'ignorer.
 
 ## Essai réel qui clôt le lot
 

@@ -102,6 +102,24 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 ## Comptes & authentification
 
+- ✅ **Double authentification** (2026-09-26) : un code d'application d'authentification (six chiffres, renouvelés
+  toutes les 30 secondes) en plus du mot de passe. **Obligatoire pour les administrateurs**, facultative pour les
+  agents et managers. **Une connexion Google suffit**, sans code.
+  - **À la connexion**, après le mot de passe, une étape « code » : le code de l'application, ou un code de
+    secours dans le même champ. Aucune session ni aucune liste d'espaces n'existe avant : le choix de l'espace
+    vient après le code. Un code faux laisse sur l'étape ; une étape expirée (5 minutes) ramène au formulaire.
+  - **Un administrateur sans second facteur le pose avant d'entrer**, à la connexion, à l'inscription comme à
+    l'acceptation d'une invitation d'administrateur : un QR code à scanner (dessiné dans le navigateur), la clé à
+    saisir à la main, le premier code, puis **dix codes de secours** montrés une seule fois (Copier, Télécharger en
+    `.txt`, et une case « J'ai conservé ces codes » avant de continuer). Chaque code de secours ne sert qu'une
+    fois ; quand l'un a servi, l'écran dit combien il en reste.
+  - **Mon compte** montre l'état (date d'activation, codes de secours restants) et permet d'activer, de régénérer
+    les codes et de désactiver, ces deux derniers gestes contre un code. La désactivation n'est pas proposée à un
+    administrateur.
+  - **Compte & équipe** : un administrateur réinitialise le second facteur d'un autre membre (téléphone perdu),
+    après confirmation. Refusé si la personne a aussi un compte dans un autre espace : ce cas passe par le support.
+  - **Journal des actions** : activation, désactivation, réinitialisation, codes régénérés, code de secours utilisé
+    et code refusé. Jamais de code ni de secret dans le détail.
 - ✅ **Renommer l'espace** (2026-09-25) : une carte « Espace » en tête de **Compte & équipe** montre le nom de
   l'espace dans un champ modifiable, avec un bouton Enregistrer. C'est le nom affiché au choix de l'espace à la
   connexion et dans l'exploitation. Réservé aux administrateurs. Le nom fait de 1 à 80 caractères, avec au moins

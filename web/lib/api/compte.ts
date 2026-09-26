@@ -9,7 +9,7 @@
  */
 
 import { request, ApiError, BASE } from '../http';
-import type { LoginResult } from './auth';
+import type { LoginResult, EtapeSecondFacteur } from './auth';
 import type { ImportReport } from './contacts';
 // La grille de prix : le TYPE vit avec les autres types de stats, les deux appels d'exploitation ici.
 import type { DailyPoint, GrillePrix } from './stats';
@@ -385,9 +385,12 @@ export function lireNomEspace(tenantId: string): Promise<{ nom: string }> {
 export function renommerEspace(tenantId: string, nom: string): Promise<{ nom: string }> {
   return request(`/tenants/${tenantId}/nom`, { method: 'PATCH', body: JSON.stringify({ nom }) });
 }
-/** Accepte une invitation : pose le mot de passe et connecte (renvoie une session comme le login). */
-export function acceptInvitation(token: string, password: string): Promise<LoginResult> {
-  return request<LoginResult>('/auth/invitations/accept', { method: 'POST', body: JSON.stringify({ token, password }) });
+/**
+ * Accepte une invitation : pose le mot de passe, puis la même porte que la connexion. Une session directe pour un
+ * membre sans second facteur, une étape (code ou enrôlement) sinon.
+ */
+export function acceptInvitation(token: string, password: string): Promise<LoginResult | EtapeSecondFacteur> {
+  return request('/auth/invitations/accept', { method: 'POST', body: JSON.stringify({ token, password }) });
 }
 export function setUserRole(tenantId: string, userId: string, role: UserRole): Promise<{ id: string; role: UserRole }> {
   return request(`/tenants/${tenantId}/users/${userId}/role`, { method: 'PATCH', body: JSON.stringify({ role }) });
@@ -397,4 +400,11 @@ export function setUserDisabled(tenantId: string, userId: string, disabled: bool
 }
 export function deleteUser(tenantId: string, userId: string): Promise<{ id: string; deleted: boolean }> {
   return request(`/tenants/${tenantId}/users/${userId}`, { method: 'DELETE' });
+}
+/**
+ * Retire le second facteur d'un membre (téléphone perdu, codes épuisés). 409 si la personne a un compte dans un
+ * autre espace : ce cas passe par le support.
+ */
+export function reinitialiserSecondFacteur(tenantId: string, userId: string): Promise<{ id: string; mfaReinitialise: boolean }> {
+  return request(`/tenants/${tenantId}/users/${userId}/mfa`, { method: 'DELETE' });
 }

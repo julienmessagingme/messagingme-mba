@@ -137,7 +137,24 @@ export type AuditAction =
    * le construit avec son nom complet (« Espace de Jean Dupont »), et un nom peut porter un numéro. Les écrire ici
    * sous une autre clé que `nom` contournerait `CLES_INTERDITES` au lieu de le respecter.
    */
-  | 'espace.renomme';
+  | 'espace.renomme'
+  /**
+   * LE SECOND FACTEUR (migration 0182). Il appartient à l'IDENTITÉ : chaque ligne est écrite dans CHAQUE espace
+   * de la personne, sous son compte de cet espace, puisque la même personne y est administratrice ou membre.
+   *
+   * 🔴 LE DÉTAIL NE PORTE JAMAIS NI LE CODE NI LE SECRET, seulement l'étape (`connexion`, `activation`...). Un code
+   * faux est presque toujours voisin du vrai, et un secret journalisé serait un facteur publié.
+   *
+   * ⚠️ `mfa.echec` s'écrit sans être ATTENDU, comme `connexion.echouee` : sur le chemin non authentifié, attendre
+   * l'écriture ferait durer la réponse selon l'existence d'une ligne. `mfa.reinitialise` porte l'admin qui a agi
+   * (ou aucun acteur, depuis l'exploitation), et la cible est le membre réinitialisé.
+   */
+  | 'mfa.active'
+  | 'mfa.code_secours_utilise'
+  | 'mfa.echec'
+  | 'mfa.reinitialise'
+  | 'mfa.codes_regeneres'
+  | 'mfa.desactive';
 
 export interface AuditEntry {
   id: string;

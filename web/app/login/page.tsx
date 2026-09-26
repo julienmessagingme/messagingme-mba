@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { login, chooseWorkspace, isLoginChoice, type LoginChoice } from '@/lib/api';
+import { login, chooseWorkspace, isLoginChoice, estEtapeSecondFacteur, type LoginChoice, type EtapeSecondFacteur, type SuiteConnexion } from '@/lib/api';
 import { saveSession, pageDArrivee } from '@/lib/session';
 import { Logo } from '@/components/Logo';
 import { GoogleButton } from '@/components/GoogleButton';
@@ -12,6 +12,7 @@ import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { Bouton } from '@/components/Bouton';
 import { TitrePage } from '@/components/TitrePage';
+import { EtapesSecondFacteur } from '@/components/SecondFacteur';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -27,6 +28,23 @@ export default function LoginPage() {
    * l'ancienne règle « un email = un compte » évitait en interdisant le cas.
    */
   const [choix, setChoix] = useState<LoginChoice | null>(null);
+  /**
+   * Le second facteur en attente (code, ou enrôlement d'un administrateur). Le mot de passe est vérifié, mais
+   * aucune session ni aucune liste d'espaces n'existe tant que cette étape n'est pas passée.
+   */
+  const [etape, setEtape] = useState<EtapeSecondFacteur | null>(null);
+
+  /** Ce qui suit le mot de passe (ou le second facteur) : une session, ou le choix d'un espace. */
+  function continuer(res: SuiteConnexion): void {
+    // Adresse donnant accès à PLUSIEURS espaces : on ne choisit pas à la place de l'utilisateur, on
+    // affiche la liste. Aucune session n'existe à ce stade, seulement un jeton de choix.
+    if (isLoginChoice(res)) {
+      setChoix({ choiceToken: res.choiceToken, workspaces: res.workspaces });
+      return;
+    }
+    saveSession({ token: res.token, email: res.user.email, role: res.user.role, tenantId: res.user.tenantId });
+    router.replace(pageDArrivee(res.user.role));
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -34,14 +52,12 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const res = await login(email.trim(), password);
-      // Adresse donnant accès à PLUSIEURS espaces : on ne choisit pas à la place de l'utilisateur, on
-      // affiche la liste. Aucune session n'existe à ce stade, seulement un jeton de choix.
-      if (isLoginChoice(res)) {
-        setChoix(res);
+      if (estEtapeSecondFacteur(res)) {
+        setPassword('');
+        setEtape(res);
         return;
       }
-      saveSession({ token: res.token, email: res.user.email, role: res.user.role, tenantId: res.user.tenantId });
-      router.replace(pageDArrivee(res.user.role));
+      continuer(res);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Connexion impossible', 'Unable to sign in'));
     } finally {
@@ -80,7 +96,15 @@ export default function LoginPage() {
           <p className="mt-1 text-balance text-sm text-ink-500">{t('La plateforme conversationnelle qui comprend chaque conversation.', 'The conversational platform that understands every conversation.')}</p>
         </div>
 
-        {choix ? (
+        {etape ? (
+          <EtapesSecondFacteur
+            etape={etape}
+            // Une session : l'étape reste affichée jusqu'au changement de page, sans repasser par le formulaire.
+            onSuite={(suite) => { if (isLoginChoice(suite)) setEtape(null); continuer(suite); }}
+            onRetour={(message) => { setEtape(null); setError(message); }}
+            abandon={{ libelle: t('Revenir à la connexion', 'Back to sign in'), action: () => { setEtape(null); setError(null); } }}
+          />
+        ) : choix ? (
           <div className="space-y-3 rounded-carte border border-ink-200 bg-white p-6" data-testid="choix-espace">
             <p className="text-sm text-ink-900">
               {t('Cette adresse donne accès à plusieurs espaces. Lequel voulez-vous ouvrir ?', 'This address gives access to several workspaces. Which one do you want to open?')}

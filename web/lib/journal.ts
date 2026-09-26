@@ -28,6 +28,14 @@ export const ACTIONS_JOURNAL: Record<string, [string, string]> = {
   // Compte & équipe : le détail est VIDE. Un nom d'espace peut porter le nom d'une personne (inscription par
   // Google) ou un numéro, et ce journal n'en garde aucun (`src/audit/store.pg.ts`).
   'espace.renomme': ['Espace renommé', 'Workspace renamed'],
+  // La double authentification (plan du 2026-09-25). Le détail ne porte ni code ni secret, seulement l'étape
+  // d'un refus (`connexion`, `activation`, `codes`, `desactivation`).
+  'mfa.active': ['Double authentification activée', 'Two-factor authentication enabled'],
+  'mfa.code_secours_utilise': ['Code de secours utilisé', 'Backup code used'],
+  'mfa.echec': ['Code de double authentification refusé', 'Two-factor code rejected'],
+  'mfa.reinitialise': ['Double authentification réinitialisée', 'Two-factor authentication reset'],
+  'mfa.codes_regeneres': ['Codes de secours régénérés', 'Backup codes regenerated'],
+  'mfa.desactive': ['Double authentification désactivée', 'Two-factor authentication disabled'],
 };
 
 /** Détail compact : « created 2 · optIn oui ». Rien à interpréter, ce sont des compteurs et des drapeaux. */

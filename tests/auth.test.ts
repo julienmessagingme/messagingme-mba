@@ -3,7 +3,8 @@ import { hashPassword, hashPasswordSync, verifyPassword } from '../src/auth/pass
 import { signSession, verifySession } from '../src/auth/token';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
-import type { UserAuthStore, AuthUser, EmailIdentity } from '../src/auth/store';
+import type { AuthUser } from '../src/auth/store';
+import { MfaEnMemoire, UtilisateursFaux, comptesDe, connecter } from './mfa';
 
 const SECRET = 'test-secret-please-change';
 
@@ -38,32 +39,25 @@ describe('token', () => {
   });
 });
 
-class FakeUsers implements UserAuthStore {
-  constructor(private readonly users: AuthUser[]) {}
-  /**
-   * Adapte les `AuthUser` du test à la nouvelle forme : une adresse porte UN mot de passe et un ou plusieurs
-   * espaces. Les tests existants décrivent une adresse par compte, ce qui reste le cas courant.
-   */
-  async findIdentity(email: string): Promise<EmailIdentity | null> {
-    const trouves = this.users.filter((u) => u.email.toLowerCase() === email.toLowerCase());
-    const hash = trouves[0]?.passwordHash;
-    if (!hash) return null;
-    return {
-      passwordHash: hash,
-      comptes: trouves.map((u) => ({ id: u.id, tenantId: u.tenantId, tenantName: `Espace ${u.tenantId}`, email: u.email, role: u.role })),
-    };
-  }
+/**
+ * Les faux d'une adresse : `UtilisateursFaux` (le `findIdentity`) et `MfaEnMemoire` (le second facteur). Un admin
+ * y passe par l'enrôlement comme en production (`connecter`, `tests/mfa.ts`) : aucun raccourci dans `src/`.
+ */
+function serveur(users: AuthUser[], extra: Record<string, unknown> = {}) {
+  const mfa = new MfaEnMemoire(comptesDe(users));
+  const app = buildServer({ queue: new FakeQueue(), auth: { users: new UtilisateursFaux(users, mfa), secret: SECRET, mfa, ...extra } });
+  return { app, mfa };
 }
 
 describe('POST /auth/login', () => {
   function appWith(users: AuthUser[]) {
-    return buildServer({ queue: new FakeQueue(), auth: { users: new FakeUsers(users), secret: SECRET } });
+    return serveur(users).app;
   }
   const admin: AuthUser = { id: 'u1', tenantId: 't1', email: 'a@b.co', role: 'admin', passwordHash: hashPasswordSync('pw') };
 
-  it('identifiants valides -> 200 + token exploitable', async () => {
-    const app = appWith([admin]);
-    const res = await app.inject({ method: 'POST', url: '/auth/login', headers: { 'content-type': 'application/json' }, payload: { email: 'a@b.co', password: 'pw' } });
+  it('identifiants valides -> 200 + token exploitable (après l’enrôlement obligatoire de l’admin)', async () => {
+    const { app, mfa } = serveur([admin]);
+    const res = await connecter(app, mfa, 'a@b.co', 'pw');
     expect(res.statusCode).toBe(200);
     const body = res.json<{ token: string; user: { tenantId: string } }>();
     expect(body.user.tenantId).toBe('t1');
@@ -93,10 +87,7 @@ describe('POST /auth/login', () => {
   });
 
   it('rate-limit : trop de tentatives sur le MÊME email -> 429', async () => {
-    const app = buildServer({
-      queue: new FakeQueue(),
-      auth: { users: new FakeUsers([admin]), secret: SECRET, loginRateLimit: { max: 3, windowMs: 60_000 } },
-    });
+    const { app } = serveur([admin], { loginRateLimit: { max: 3, windowMs: 60_000 } });
     const attempt = () =>
       app.inject({ method: 'POST', url: '/auth/login', headers: { 'content-type': 'application/json' }, payload: { email: 'a@b.co', password: 'nope' } });
     expect((await attempt()).statusCode).toBe(401);
@@ -107,10 +98,7 @@ describe('POST /auth/login', () => {
   });
 
   it('rate-limit : la clé porte l\'email -> un email saturé NE bloque PAS un autre (fin du plafond global)', async () => {
-    const app = buildServer({
-      queue: new FakeQueue(),
-      auth: { users: new FakeUsers([admin]), secret: SECRET, loginRateLimit: { max: 3, windowMs: 60_000 } },
-    });
+    const { app } = serveur([admin], { loginRateLimit: { max: 3, windowMs: 60_000 } });
     const attempt = (email: string) =>
       app.inject({ method: 'POST', url: '/auth/login', headers: { 'content-type': 'application/json' }, payload: { email, password: 'nope' } });
     // On sature victime@b.co (req.ip constant en test -> l'ancien code aurait bloqué TOUT le monde ici).
@@ -140,9 +128,11 @@ describe('POST /auth/login — plusieurs espaces pour une adresse', () => {
   ];
   // L'inbox est montée pour éprouver le refus BOUT EN BOUT sur une vraie route gardée : sans elle, le
   // serveur répondrait 404 et le test ne prouverait rien de l'authentification.
-  const appDeux = () => buildServer({
+  // Un magasin NEUF par serveur : chaque test repart d'une adresse sans facteur, donc d'un enrôlement.
+  let mfaDeux = new MfaEnMemoire(comptesDe(deuxEspaces));
+  const appDeux = () => (mfaDeux = new MfaEnMemoire(comptesDe(deuxEspaces)), buildServer({
     queue: new FakeQueue(),
-    auth: { users: new FakeUsers(deuxEspaces), secret: SECRET },
+    auth: { users: new UtilisateursFaux(deuxEspaces, mfaDeux), secret: SECRET, mfa: mfaDeux },
     inbox: {
       listConversations: async () => [],
       getConversationContext: async () => null,
@@ -152,15 +142,27 @@ describe('POST /auth/login — plusieurs espaces pour une adresse', () => {
       sendReply: async () => 'wamid.1',
       sendTemplateMessage: async () => 'wamid.2',
     },
-  } as never);
+  } as never));
   const login = (app: ReturnType<typeof buildServer>, password = 'pw') =>
     app.inject({ method: 'POST', url: '/auth/login', headers: { 'content-type': 'application/json' }, payload: { email: 'a@b.co', password } });
+  /**
+   * La connexion ENTIÈRE, second facteur compris : l'adresse est admin de `t-alpha`, donc elle s'enrôle avant
+   * d'entrer où que ce soit, y compris dans `t-beta` où elle n'est qu'agent. Le jeton de choix ne sort qu'APRÈS.
+   */
+  const choisir = (app: ReturnType<typeof buildServer>) => connecter(app, mfaDeux, 'a@b.co', 'pw');
+
+  it('🔴 le mot de passe seul ne rend NI session NI liste d’espaces quand l’adresse est admin quelque part', async () => {
+    const a = appDeux();
+    const b = (await login(a)).json<Record<string, unknown>>();
+    expect(Object.keys(b)).toEqual(['enrolToken']);
+    await a.close();
+  });
 
   it('🔴 ne choisit PAS à la place de l’utilisateur : aucune session n’est émise', async () => {
     // C'est exactement ce que 0010 reprochait au cas multi-comptes : départager au hasard. Ici on rend la
     // liste, et rien qui permette d'entrer quelque part sans avoir choisi.
     const a = appDeux();
-    const res = await login(a);
+    const res = await choisir(a);
     expect(res.statusCode).toBe(200);
     const b = res.json<{ token?: string; choiceToken?: string; workspaces?: Array<{ tenantId: string; tenantName: string }> }>();
     expect(b.token).toBeUndefined();
@@ -173,7 +175,7 @@ describe('POST /auth/login — plusieurs espaces pour une adresse', () => {
     // S'il pouvait servir de jeton d'API, il donnerait un accès sans avoir choisi d'espace, donc sans
     // `tenantId` : la porte ouverte sur tout ou sur n'importe quoi.
     const a = appDeux();
-    const { choiceToken } = (await login(a)).json<{ choiceToken: string }>();
+    const { choiceToken } = (await choisir(a)).json<{ choiceToken: string }>();
     expect(await verifySession(choiceToken, SECRET)).toBeNull();
     const res = await a.inject({
       method: 'GET', url: '/tenants/t-alpha/conversations',
@@ -185,7 +187,7 @@ describe('POST /auth/login — plusieurs espaces pour une adresse', () => {
 
   it('choisir un espace rend une VRAIE session, sur le bon compte', async () => {
     const a = appDeux();
-    const { choiceToken } = (await login(a)).json<{ choiceToken: string }>();
+    const { choiceToken } = (await choisir(a)).json<{ choiceToken: string }>();
     const res = await a.inject({
       method: 'POST', url: '/auth/choose-workspace',
       headers: { 'content-type': 'application/json' },
@@ -203,7 +205,7 @@ describe('POST /auth/login — plusieurs espaces pour une adresse', () => {
     // Sans cette vérification, il suffirait de présenter un jeton de choix légitime avec l'identifiant d'un
     // espace quelconque pour y entrer.
     const a = appDeux();
-    const { choiceToken } = (await login(a)).json<{ choiceToken: string }>();
+    const { choiceToken } = (await choisir(a)).json<{ choiceToken: string }>();
     const res = await a.inject({
       method: 'POST', url: '/auth/choose-workspace',
       headers: { 'content-type': 'application/json' },
@@ -221,13 +223,10 @@ describe('POST /auth/login — plusieurs espaces pour une adresse', () => {
     await a.close();
   });
 
-  it('🔴 UN seul espace : rien ne change, on entre directement', async () => {
-    // Le cas de tout le monde aujourd'hui. Il ne doit surtout pas gagner un écran de plus.
-    const a = buildServer({
-      queue: new FakeQueue(),
-      auth: { users: new FakeUsers([{ id: 'u1', tenantId: 't1', email: 'a@b.co', role: 'admin', passwordHash: HASH }]), secret: SECRET },
-    });
-    const res = await login(a);
+  it('🔴 UN seul espace : rien ne change, on entre directement (après le second facteur de l’admin)', async () => {
+    // Le cas de tout le monde aujourd'hui. Il ne doit surtout pas gagner un écran de plus que le code.
+    const { app: a, mfa } = serveur([{ id: 'u1', tenantId: 't1', email: 'a@b.co', role: 'admin', passwordHash: HASH }]);
+    const res = await connecter(a, mfa, 'a@b.co', 'pw');
     const b = res.json<{ token?: string; choiceToken?: string }>();
     expect(b.token).toBeTruthy();
     expect(b.choiceToken).toBeUndefined();

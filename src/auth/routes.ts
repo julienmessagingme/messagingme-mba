@@ -1,15 +1,16 @@
 import { randomBytes, createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { verifyPassword, hashPassword, hashPasswordSync } from './password';
-import { signSession, signChoice, verifyChoice } from './token';
+import { signSession, signChoice, verifyChoice, signMfa, signEnrolement, type EtapeConnexion } from './token';
 import { RateLimiter } from './rate-limit';
+import { registerMfa, type MfaRouteDeps } from './mfa-routes';
 import type { UserAuthStore } from './store';
 import type { UserStateLoader, Guard } from './middleware';
 import type { GoogleIdentity } from './google';
 import { DuplicateEmailError } from '../user/store.pg';
 import { nomEspace, MESSAGE_NOM_ESPACE_INVALIDE } from '../user/nom-espace';
 
-export interface AuthRouteDeps {
+export interface AuthRouteDeps extends MfaRouteDeps {
   /**
    * Journal d'audit des CONNEXIONS ÉCHOUÉES (2026-09-15). Optionnel : absent -> aucune trace.
    *
@@ -79,6 +80,69 @@ export interface AuthRouteDeps {
  */
 function markLogin(deps: AuthRouteDeps, userId: string): void {
   void deps.touchLastLogin?.(userId)?.catch(() => {});
+}
+
+/**
+ * LA SUITE D'UNE CONNEXION RÉUSSIE, une fois le second facteur passé ou non dû : une session si l'identité n'a
+ * qu'un espace, un jeton de choix sinon.
+ *
+ * 🔴 UNE SEULE FONCTION POUR TROIS APPELANTS (`/auth/login`, `/auth/mfa/verifier`, `/auth/mfa/activer`). Trois
+ * copies de ce choix auraient divergé, et la première divergence aurait ouvert un espace sans passer par l'écran
+ * de choix, ou ouvert une session là où il fallait demander.
+ *
+ * ⚠️ `markLogin` n'est appelé qu'ICI, à l'ouverture effective d'une session : une étape du mot de passe qui attend
+ * encore un code n'est pas une connexion, et la page Équipe ne doit pas la compter comme telle.
+ */
+async function suiteDeConnexion(deps: AuthRouteDeps, etape: EtapeConnexion): Promise<Record<string, unknown>> {
+  const [premier, ...autres] = etape.comptes;
+  // Impossible par construction (les appelants refusent une liste vide, et `verifyMfa` aussi) : lever plutôt que
+  // d'ouvrir quoi que ce soit sur une étape sans compte.
+  if (!premier) throw new Error('suite de connexion sans compte');
+  // Un seul espace : on y va, exactement comme avant. C'est le cas de tout le monde, et il ne doit surtout pas
+  // gagner un écran de plus.
+  if (autres.length === 0) {
+    const token = await signSession({ userId: premier.userId, tenantId: premier.tenantId, role: premier.role }, deps.secret);
+    markLogin(deps, premier.userId);
+    return { token, user: { email: etape.email, role: premier.role, tenantId: premier.tenantId } };
+  }
+  // Plusieurs espaces : on DEMANDE. C'est la question que la migration 0010 avait esquivée en interdisant le cas,
+  // et y répondre au hasard (le premier trouvé) ferait entrer chez le mauvais client.
+  //
+  // 🔴 Aucun jeton de session n'est émis ici : un jeton par espace serait une distribution d'accès pour une seule
+  // demande. On rend un jeton de CHOIX, court, qui ne vaut que pour `/auth/choose-workspace`.
+  const choix = await signChoice(
+    { email: etape.email, comptes: etape.comptes.map((c) => ({ userId: c.userId, tenantId: c.tenantId, role: c.role })) },
+    deps.secret,
+  );
+  return {
+    choiceToken: choix,
+    workspaces: etape.comptes.map((c) => ({ tenantId: c.tenantId, tenantName: c.tenantName, role: c.role })),
+  };
+}
+
+/**
+ * LE SECOND FACTEUR, APRÈS LE MOT DE PASSE ET AVANT TOUT ACCÈS (plan du 2026-09-25) : connexion, inscription et
+ * invitation acceptée passent toutes par ici.
+ *
+ *  - l'identité a un facteur actif : `{ mfaToken }`, quel que soit son rôle ;
+ *  - elle est admin quelque part et n'en a pas : `{ enrolToken }`, elle doit en poser un avant d'entrer ;
+ *  - sinon : la suite d'avant, inchangée.
+ *
+ * 🔴 AUCUNE SESSION, AUCUNE LISTE D'ESPACES tant que le code n'est pas passé : le jeton d'étape porte la suite
+ * prévue, signée, et rien d'autre ne sort. `/auth/google` ne passe PAS par ici, par décision de Julien (plan du
+ * 2026-09-25) : une connexion Google suffit.
+ *
+ * ⚠️ AUCUN INTERRUPTEUR, et il ne doit jamais y en avoir : un drapeau ou une variable qui sauterait cette étape
+ * serait une porte en production. Les tests passent par le vrai parcours (`tests/mfa.ts`).
+ */
+async function apresLeMotDePasse(
+  deps: AuthRouteDeps,
+  etape: EtapeConnexion,
+  facteur: { actif: boolean; obligatoire: boolean },
+): Promise<Record<string, unknown>> {
+  if (facteur.actif) return { mfaToken: await signMfa(etape, deps.secret) };
+  if (facteur.obligatoire) return { enrolToken: await signEnrolement(etape, deps.secret) };
+  return suiteDeConnexion(deps, etape);
 }
 
 // Hash leurre (format scrypt valide) pour égaliser le temps CPU quand l'email est inconnu :
@@ -197,31 +261,18 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     }
 
     // Une adresse peut donner accès à PLUSIEURS espaces (migration 0072). Le mot de passe est vérifié une
-    // fois, il vaut pour l'adresse ; reste à savoir dans lequel on entre.
-    //
-    // Un seul espace : on y va, exactement comme avant. C'est le cas de tout le monde aujourd'hui, et il ne
-    // doit surtout pas gagner un écran de plus.
-    const [premier, ...autres] = identite.comptes;
-    if (!premier) return reply.code(401).send({ error: 'identifiants invalides' });
-    if (autres.length === 0) {
-      const token = await signSession({ userId: premier.id, tenantId: premier.tenantId, role: premier.role }, deps.secret);
-      markLogin(deps, premier.id);
-      return reply.code(200).send({ token, user: { email: premier.email, role: premier.role, tenantId: premier.tenantId } });
-    }
-
-    // Plusieurs espaces : on DEMANDE. C'est la question que la migration 0010 avait esquivée en interdisant
-    // le cas, et y répondre au hasard (le premier trouvé) ferait entrer chez le mauvais client.
-    //
-    // 🔴 Aucun jeton n'est émis ici : un jeton par espace serait une distribution d'accès pour une seule
-    // demande. On rend un jeton de CHOIX, court, qui ne vaut que pour `/auth/choose-workspace`.
-    const choix = await signChoice(
-      { email, comptes: identite.comptes.map((c) => ({ userId: c.id, tenantId: c.tenantId, role: c.role })) },
-      deps.secret,
-    );
-    return reply.code(200).send({
-      choiceToken: choix,
-      workspaces: identite.comptes.map((c) => ({ tenantId: c.tenantId, tenantName: c.tenantName, role: c.role })),
-    });
+    // fois, il vaut pour l'adresse ; reste le second facteur, puis de savoir dans lequel on entre.
+    if (identite.comptes.length === 0) return reply.code(401).send({ error: 'identifiants invalides' });
+    const etape: EtapeConnexion = {
+      identityId: identite.identityId,
+      email,
+      comptes: identite.comptes.map((c) => ({ userId: c.id, tenantId: c.tenantId, role: c.role, tenantName: c.tenantName })),
+    };
+    // `comptes` ne porte que les comptes ACTIFS (`findIdentity`) : un admin révoqué n'oblige plus à rien.
+    return reply.code(200).send(await apresLeMotDePasse(deps, etape, {
+      actif: identite.mfaActif,
+      obligatoire: identite.comptes.some((c) => c.role === 'admin'),
+    }));
   });
 
   /**
@@ -299,13 +350,15 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     // Une inscription EST une connexion : sans ça un compte tout neuf, en train d'utiliser l'app, s'afficherait
     // « jamais connecté » sur la page Équipe jusqu'à sa première reconnexion.
     markLogin(deps, userId);
-    // isNew:true -> le front envoie vers /accueil (onboarding « connecter ton numéro »), comme le signup email.
+    // isNew:true -> le front envoie vers /accueil (onboarding « connecter ton numéro »).
     return reply.code(201).send({ token: jwt, user: { email: identity.email, role: 'admin', tenantId }, isNew: true });
   });
 
-  // Inscription LIBRE : crée un nouvel espace + admin, connecte directement.
+  // Inscription LIBRE : crée un nouvel espace + admin, puis passe par le second facteur (enrôlement) avant la session.
   app.post('/auth/signup', async (req, reply) => {
-    if (!deps.createTenantWithAdmin || !deps.motDePasseDeLAdresse) return reply.code(503).send({ error: 'inscription indisponible' });
+    // Sans magasin du second facteur, l'inscription ne pourrait pas enrôler l'admin qu'elle crée : elle refuse
+    // AVANT de créer quoi que ce soit, plutôt que de laisser un espace dont l'admin ne pourrait pas entrer.
+    if (!deps.createTenantWithAdmin || !deps.mfa || !deps.motDePasseDeLAdresse) return reply.code(503).send({ error: 'inscription indisponible' });
     const b = (req.body ?? {}) as { workspaceName?: unknown; email?: unknown; password?: unknown; name?: unknown };
     const email = str(b.email).trim().toLowerCase();
     const password = str(b.password);
@@ -330,9 +383,12 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     }
     try {
       const { tenantId, userId } = await deps.createTenantWithAdmin(workspaceName, { email, name, passwordHash: await hashPassword(password) });
-      const token = await signSession({ userId, tenantId, role: 'admin' }, deps.secret);
-      markLogin(deps, userId);
-      return reply.code(201).send({ token, user: { email, role: 'admin', tenantId } });
+      // L'inscription crée un ADMIN : elle rend un jeton d'enrôlement, jamais une session. Et si l'adresse avait
+      // déjà une identité avec un facteur actif, c'est son code qu'on demande.
+      const facteur = await deps.mfa.lireParCompte(userId);
+      if (!facteur) throw new Error('inscription : le compte créé n’a pas d’identité');
+      const etape: EtapeConnexion = { identityId: facteur.identityId, email, comptes: [{ userId, tenantId, role: 'admin', tenantName: workspaceName }] };
+      return reply.code(201).send(await apresLeMotDePasse(deps, etape, { actif: facteur.secret !== null, obligatoire: true }));
     } catch (err) {
       if (err instanceof DuplicateEmailError) return reply.code(409).send({ error: 'un compte existe déjà avec cet email' });
       throw err;
@@ -387,9 +443,10 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     return reply.code(200).send({ ok: true });
   });
 
-  // Acceptation d'invitation : consomme le token (usage unique), pose le mot de passe, connecte directement.
+  // Acceptation d'invitation : consomme le token (usage unique), pose le mot de passe, puis la même porte que la
+  // connexion (second facteur si dû, session sinon).
   app.post('/auth/invitations/accept', async (req, reply) => {
-    if (!deps.tokens || !deps.setPassword || !deps.sessionUser) return reply.code(503).send({ error: 'invitations indisponibles' });
+    if (!deps.tokens || !deps.setPassword || !deps.sessionUser || !deps.mfa) return reply.code(503).send({ error: 'invitations indisponibles' });
     const b = (req.body ?? {}) as { token?: unknown; password?: unknown };
     const token = str(b.token);
     const password = str(b.password);
@@ -401,10 +458,21 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     if (!userId) return reply.code(400).send({ error: 'invitation invalide ou expirée' });
     const su = await deps.sessionUser(userId);
     if (!su) return reply.code(400).send({ error: 'invitation invalide ou expirée' });
+    const facteur = await deps.mfa.lireParCompte(userId);
+    if (!facteur) return reply.code(400).send({ error: 'invitation invalide ou expirée' });
     await deps.setPassword(userId, await hashPassword(password));
-    const jwt = await signSession({ userId, tenantId: su.tenantId, role: su.role }, deps.secret);
-    markLogin(deps, userId); // accepter une invitation, c'est se connecter pour la première fois
-    return reply.code(200).send({ token: jwt, user: { email: su.email, role: su.role, tenantId: su.tenantId } });
+    // Accepter une invitation, c'est se connecter pour la première fois : même porte que la connexion. Une
+    // invitation d'ADMIN (ou une identité déjà admin ailleurs) enrôle d'abord ; une identité qui a déjà un facteur
+    // donne son code. La suite ouvre l'espace de l'invitation, comme avant.
+    const etape: EtapeConnexion = {
+      identityId: facteur.identityId,
+      email: su.email,
+      comptes: [{ userId, tenantId: su.tenantId, role: su.role, tenantName: '' }],
+    };
+    return reply.code(200).send(await apresLeMotDePasse(deps, etape, {
+      actif: facteur.secret !== null,
+      obligatoire: facteur.obligatoire || su.role === 'admin',
+    }));
   });
 
   // Changement de mot de passe (compte connecté) : vérifie le mdp courant.
@@ -422,4 +490,8 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     await deps.setPassword(userId, await hashPassword(next));
     return reply.code(200).send({ ok: true });
   });
+
+  // Le second facteur : ses routes d'étape (avant session) et celles de la page Compte (avec session). La suite
+  // leur est PASSÉE, pas recopiée : c'est la même fonction que celle de `/auth/login`.
+  registerMfa(app, deps, garde, (etape) => suiteDeConnexion(deps, etape));
 }

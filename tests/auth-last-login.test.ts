@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { hashPasswordSync } from '../src/auth/password';
-import type { UserAuthStore, AuthUser, EmailIdentity } from '../src/auth/store';
+import type { AuthUser } from '../src/auth/store';
+import { MfaEnMemoire, UtilisateursFaux, comptesDe, connecter, passerLeSecondFacteur } from './mfa';
 
 /**
  * Horodatage de la dernière connexion (colonne « Dernière connexion » de la page Équipe).
@@ -17,34 +18,41 @@ import type { UserAuthStore, AuthUser, EmailIdentity } from '../src/auth/store';
 const SECRET = 'test-secret-please-change';
 const ADMIN: AuthUser = { id: 'u1', tenantId: 't1', email: 'a@b.co', role: 'admin', passwordHash: hashPasswordSync('pw') };
 
-class FakeUsers implements UserAuthStore {
-  constructor(private readonly rows: AuthUser[]) {}
-  /**
-   * Adapte les `AuthUser` du test à la nouvelle forme : une adresse porte UN mot de passe et un ou plusieurs
-   * espaces. Les tests existants décrivent une adresse par compte, ce qui reste le cas courant.
-   */
-  async findIdentity(email: string): Promise<EmailIdentity | null> {
-    const trouves = this.rows.filter((u) => u.email.toLowerCase() === email.toLowerCase());
-    const hash = trouves[0]?.passwordHash;
-    if (!hash) return null;
-    return {
-      passwordHash: hash,
-      comptes: trouves.map((u) => ({ id: u.id, tenantId: u.tenantId, tenantName: `Espace ${u.tenantId}`, email: u.email, role: u.role })),
-    };
-  }
+/**
+ * ADMIN passe par le second facteur comme en production (`tests/mfa.ts`) : la « connexion » de ces tests est donc
+ * le parcours ENTIER, mot de passe puis enrôlement, et c'est à son terme que la dernière connexion s'horodate.
+ */
+let mfa = new MfaEnMemoire();
+/** Les faux de l'adresse, avec un magasin du second facteur NEUF à chaque serveur. */
+function faux(): { users: UtilisateursFaux; mfa: MfaEnMemoire } {
+  mfa = new MfaEnMemoire(comptesDe([ADMIN]));
+  return { users: new UtilisateursFaux([ADMIN], mfa), mfa };
 }
 
-const login = (app: ReturnType<typeof buildServer>, password = 'pw') =>
-  app.inject({ method: 'POST', url: '/auth/login', headers: { 'content-type': 'application/json' }, payload: { email: 'a@b.co', password } });
+const login = (app: ReturnType<typeof buildServer>, password = 'pw') => connecter(app, mfa, 'a@b.co', password);
 
 describe('dernière connexion', () => {
   it('login réussi -> horodate le BON compte', async () => {
     const touched: string[] = [];
     const app = buildServer({
       queue: new FakeQueue(),
-      auth: { users: new FakeUsers([ADMIN]), secret: SECRET, touchLastLogin: async (id) => { touched.push(id); } },
+      auth: { ...faux(), secret: SECRET, touchLastLogin: async (id) => { touched.push(id); } },
     });
     expect((await login(app)).statusCode).toBe(200);
+    expect(touched).toEqual(['u1']);
+    await app.close();
+  });
+
+  it('🔴 l’étape du mot de passe n’horodate RIEN tant qu’un code est dû : seule la session ouverte compte', async () => {
+    const touched: string[] = [];
+    const app = buildServer({
+      queue: new FakeQueue(),
+      auth: { ...faux(), secret: SECRET, touchLastLogin: async (id) => { touched.push(id); } },
+    });
+    const etape = await app.inject({ method: 'POST', url: '/auth/login', headers: { 'content-type': 'application/json' }, payload: { email: 'a@b.co', password: 'pw' } });
+    expect(Object.keys(etape.json())).toEqual(['enrolToken']);
+    expect(touched).toEqual([]);
+    expect((await passerLeSecondFacteur(app, etape, mfa, 'a@b.co')).statusCode).toBe(200);
     expect(touched).toEqual(['u1']);
     await app.close();
   });
@@ -53,7 +61,7 @@ describe('dernière connexion', () => {
     const touched: string[] = [];
     const app = buildServer({
       queue: new FakeQueue(),
-      auth: { users: new FakeUsers([ADMIN]), secret: SECRET, touchLastLogin: async (id) => { touched.push(id); } },
+      auth: { ...faux(), secret: SECRET, touchLastLogin: async (id) => { touched.push(id); } },
     });
     expect((await login(app, 'mauvais')).statusCode).toBe(401);
     expect(touched).toEqual([]);
@@ -63,7 +71,7 @@ describe('dernière connexion', () => {
   it('l’écriture ÉCHOUE -> le login réussit quand même (fire-and-forget, pas sur le chemin critique)', async () => {
     const app = buildServer({
       queue: new FakeQueue(),
-      auth: { users: new FakeUsers([ADMIN]), secret: SECRET, touchLastLogin: async () => { throw new Error('pool saturé'); } },
+      auth: { ...faux(), secret: SECRET, touchLastLogin: async () => { throw new Error('pool saturé'); } },
     });
     const res = await login(app);
     expect(res.statusCode).toBe(200);
@@ -73,7 +81,7 @@ describe('dernière connexion', () => {
 
   it('dep ABSENT -> le login réussit (le `?.` sur le retour évite le TypeError)', async () => {
     // C'est exactement la forme utilisée par les autres suites de tests : `auth: { users, secret }` seuls.
-    const app = buildServer({ queue: new FakeQueue(), auth: { users: new FakeUsers([ADMIN]), secret: SECRET } });
+    const app = buildServer({ queue: new FakeQueue(), auth: { ...faux(), secret: SECRET } });
     expect((await login(app)).statusCode).toBe(200);
     await app.close();
   });
@@ -87,7 +95,7 @@ describe('dernière connexion', () => {
     const app = buildServer({
       queue: new FakeQueue(),
       auth: {
-        users: new FakeUsers([ADMIN]),
+        ...faux(),
         secret: SECRET,
         // Écriture qui ne se termine QUE lorsqu'on la débloque : si la route l'attendait, le login pendrait.
         touchLastLogin: async () => { await started; finished = true; },
