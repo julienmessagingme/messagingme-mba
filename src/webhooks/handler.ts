@@ -14,7 +14,7 @@ import type { RoutageDuMessage } from '../pubs/routage';
 import { ecarterLesEntrantsDelies, type NumerosDelies } from './numeros-delies';
 import type { TarifsMetaSink } from './tarif-meta';
 import type { DeliveryStore } from './delivery';
-import type { InboxStore, InboundAssignation, InboundContactUpsert, InboundOptOut } from './inbound';
+import type { DetenteurDuFil, InboxStore, InboundAssignation, InboundContactUpsert, InboundOptOut } from './inbound';
 import type { FlowMappingLookup, ContactFieldWriter } from './flow-mapping';
 import type { WorkflowAdvanceDeps } from './workflow-advance';
 import type { HandoverDeps } from './handover';
@@ -88,10 +88,12 @@ interface EtapesRattachees {
  *    qu'une fois), route les leads (`routagePub`, sans quoi un clic payé irait aux automations ordinaires), émet
  *    les signaux de réponse, écarte les entrants d'un numéro délié et enregistre le STOP (`inboundOptOut`) : une
  *    dépendance de consentement n'est jamais optionnelle, un câblage qui l'oublierait laisserait `opted_in` un
- *    contact qui a répondu STOP. Le numéro vers l'espace se lit dans `inbox` (`NumeroVersEspace`).
+ *    contact qui a répondu STOP. Elle corrige aussi le détenteur du fil (`detenteur`) : un `standby` rend le fil à
+ *    l'agent de Meta (`ControleDuFil.entrantEnStandby`, `src/inbox/fil.ts`), et un câblage qui l'oublierait
+ *    laisserait notre colonne contredire Meta. Le numéro vers l'espace se lit dans `inbox` (`NumeroVersEspace`).
  * Les tests qui n'en parlent pas passent les fixtures de `tests/webhook-fixtures.ts` (`aucunTarif`,
  * `aucuneArriveePub`, `aucunRoutagePub`, `aucunSignalAccuse`, `aucunSignalReponse`, `aucunNumeroDelie`,
- * `aucunStop`), qui disent leur hypothèse.
+ * `aucuneCorrectionDuDetenteur`, `aucunStop`), qui disent leur hypothèse.
  */
 export type WebhookJobDeps = WebhookJobDepsCommunes
   & (
@@ -103,11 +105,11 @@ export type WebhookJobDeps = WebhookJobDepsCommunes
   & (
     ({
       inbox: InboxStore & NumeroVersEspace; arriveesPub: ArriveesPubDeps; routagePub: RoutagePubDeps; signalReponse: SignalReponse;
-      numerosDelies: NumerosDelies; inboundOptOut: InboundOptOut;
+      numerosDelies: NumerosDelies; inboundOptOut: InboundOptOut; detenteur: DetenteurDuFil;
     } & EtapesRattachees)
     | ({
       inbox?: undefined; arriveesPub?: undefined; routagePub?: undefined; signalReponse?: undefined;
-      numerosDelies?: undefined; inboundOptOut?: undefined;
+      numerosDelies?: undefined; inboundOptOut?: undefined; detenteur?: undefined;
     } & { [K in keyof EtapesRattachees]?: undefined })
   );
 
@@ -161,7 +163,7 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
   if (deps.inbox && espaceDe) {
     entrants = await rattacherLesEntrants(extractInbound(raw), espaceDe);
     await processInbound(entrants, deps.inbox, {
-      upsertContact: upsert, optOut: deps.inboundOptOut, assignation: inboundAssignation, signalReponse,
+      upsertContact: upsert, optOut: deps.inboundOptOut, assignation: inboundAssignation, signalReponse, detenteur: deps.detenteur,
     });
   }
   // L'arrivée publicitaire, après l'upsert du contact qu'elle retrouve par son wa_id. Isolée par message : elle
@@ -170,7 +172,7 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
   /**
    * Le routage d'un lead publicitaire, entre l'arrivée (dont il annote la ligne) et les déclencheurs (qu'il
    * restreint) : placé après, il regarderait partir les automations qu'il devait écarter. Il reprend le fil chez
-   * Meta pour un lead `standby` : appel borné (un essai et un rejeu, `creerPrendreLeFilAvecUnRejeu`) et isolé. Une
+   * Meta pour un lead `standby` : appel borné (un essai et un rejeu, `ControleDuFil.reprendrePourLApp`) et isolé. Une
    * panne rend la carte vide, donc le chemin ordinaire : mieux vaut un lead ramassé qu'un lead qui ne va nulle part.
    */
   let routage: ReadonlyMap<string, RoutageDuMessage> = new Map();

@@ -1,6 +1,6 @@
 import { evaluateConditionGroup } from '../workflow/conditions';
 import type { EvalContext } from '../workflow/conditions';
-import { matchesTrigger, isInCooldown, reprendLaMain, antiRebondParDefaut } from './match';
+import { matchesTrigger, isInCooldown, reprendLaMain, epargneLOperateur, antiRebondParDefaut } from './match';
 import type { AutomationRow, AutomationEvent, AutomationTriggerKind } from './match';
 import { NumeroDelieError } from '../meta/numero-delie';
 import { messageDe } from '../lib/erreur';
@@ -63,6 +63,11 @@ export interface AutomationRunnerDeps {
      * une publicité) ; une automation ordinaire reste bloquée par un fil tenu.
      */
     reprendLaMain: boolean;
+    /**
+     * La reprise laisse la main à un opérateur qui la tient (`epargneLOperateur` : la publicité). Présent seulement
+     * quand c'est vrai : une automation ordinaire ou de chaîne ne le porte pas.
+     */
+    saufOperateur?: true;
   }): Promise<boolean | string>;
   /** Anti-rebond appliqué aux automations qui n'ont rien réglé (`cooldownSeconds` null). */
   defaultCooldownSeconds: number;
@@ -184,6 +189,8 @@ export async function runAutomations(
         // Seules la chaîne et la publicité reprennent la main : l'agent de Meta tenant souvent le fil, un clic ne
         // lancerait sinon rien, en silence.
         reprendLaMain: reprendLaMain(a),
+        // Le clic sur une publicité ne prend pas la main à un opérateur qui la tient.
+        ...(epargneLOperateur(a) ? { saufOperateur: true as const } : {}),
       });
       // `false` ou une chaîne = pas parti ; tester la simple vérité JS compterait une chaîne comme un succès, et
       // l'anti-rebond avalerait la prochaine vraie demande. Tout le reste = parti, comme le moteur de campagne.

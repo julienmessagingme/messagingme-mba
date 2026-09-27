@@ -105,6 +105,15 @@ describe('gel du scénario quand le fil ne nous appartient pas', () => {
 
 import { runControlSweep } from '../src/inbox/control-sweep';
 import type { ControlSweepDeps } from '../src/inbox/control-sweep';
+import { bancDuFil } from './banc-du-fil';
+import type { DepsControleDuFil, EcritureDuFil } from '../src/inbox/fil';
+
+/**
+ * Le geste qui rend un fil, le VRAI (`src/inbox/fil.ts`), sur un dépôt dont l'écriture est celle du test : le
+ * balayage décide QUOI rendre et OÙ, le module écrit.
+ */
+const filQuiEcrit = (setControlOwner: DepsControleDuFil['depot']['setControlOwner']): ControlSweepDeps['fil'] =>
+  bancDuFil({ depot: { setControlOwner } }).fil;
 
 const T0 = new Date('2026-07-21T12:00:00.000Z').getTime();
 const ago = (ms: number) => new Date(T0 - ms);
@@ -121,8 +130,8 @@ function sweepDeps(
     deps: {
       inbox: {
         listHeldControl: async () => { lu.push(new Date(T0)); return stale.map((c) => ({ escaladee: false, ...c, lastMessageAt: new Date(T0 - 1 * H) })); },
-        setControlOwner: async (_t, waId) => { rendues.push(waId); return true; },
       },
+      fil: filQuiEcrit(async (_t, waId) => { rendues.push(waId); return true; }),
       timeouts,
       now: () => T0,
     },
@@ -188,8 +197,8 @@ describe('garde-fou d’inactivité', () => {
     const deps: ControlSweepDeps = {
       inbox: {
         listHeldControl: async () => [{ tenantId: 't1', waId: 'x', owner: 'app_human', changedAt: ago(5 * H), lastMessageAt: ago(1 * H), escaladee: false }],
-        setControlOwner: async () => false,
       },
+      fil: filQuiEcrit(async () => false),
       timeouts: { app_human: 2 * H },
       now: () => T0,
     };
@@ -214,8 +223,8 @@ describe('durée du gel réglable PAR CLIENT', () => {
           // Un dernier message RECENT : ces tests ne portent pas sur la fenetre de Meta, et aucun de leurs
           // clients n a l agent allume (pas de mbaActifParTenant), donc la garde de fenetre ne s y applique pas.
           listHeldControl: async () => stale.map((c) => ({ escaladee: false, ...c, lastMessageAt: new Date(T0 - 1 * H) })),
-          setControlOwner: async (_t, waId) => { rendues.push(waId); return true; },
         },
+        fil: filQuiEcrit(async (_t, waId) => { rendues.push(waId); return true; }),
         reglages: {
           handbackMsByTenant: async (ids) => { demandes.push([...ids]); return new Map(Object.entries(reglages)); },
         },
@@ -305,8 +314,8 @@ describe('reprise après un gel humain : une seule règle, sans exception', () =
     const deps: ControlSweepDeps = {
       inbox: {
         listHeldControl: async () => held.map((c) => ({ escaladee: false, ...c, lastMessageAt: new Date(T0 - 1 * H) })),
-        setControlOwner: async (_t, waId) => { rendues.push(waId); return true; },
       },
+      fil: filQuiEcrit(async (_t, waId) => { rendues.push(waId); return true; }),
       reglages: {
         handbackMsByTenant: async () => new Map(Object.entries(reglages)),
       },
@@ -354,9 +363,9 @@ describe('balayage : le drapeau d’escalade périmé part avec le fil qu’on d
   it('🔴 la reprise passe `effacerEscalade` : sinon le drapeau attendrait le jour où le fil redevient humain', async () => {
     // Une escalade EN COURS est sautée plus haut (`c.escaladee`), donc ce qui reste ici est périmé. Le laisser
     // armerait le balayage contre lui-même : il ne rendrait plus jamais cette conversation.
-    const opts: Array<Record<string, unknown> | undefined> = [];
+    const opts: Array<EcritureDuFil | undefined> = [];
     const { deps } = sweepDeps([{ tenantId: 't1', waId: 'x', owner: 'app_human', changedAt: ago(100 * H), escaladee: false }], { app_human: 2 * H });
-    await runControlSweep({ ...deps, inbox: { ...deps.inbox, setControlOwner: async (_t, _w, _o, o) => { opts.push(o); return true; } } });
+    await runControlSweep({ ...deps, fil: filQuiEcrit(async (_t, _w, _o, o) => { opts.push(o); return true; }) });
     expect(opts).toEqual([{ only: ['app_human'], effacerEscalade: true }]);
   });
 });

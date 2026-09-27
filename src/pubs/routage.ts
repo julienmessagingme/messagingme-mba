@@ -22,7 +22,10 @@ export const ISSUES_ROUTAGE = [
   'agent_meta',
   /** Le fil a été repris à l'agent de Meta, le scénario a la main. */
   'reprise_reussie',
-  /** Meta a refusé de rendre le fil : son agent garde le lead, et le scénario ne part pas. */
+  /**
+   * La reprise n'a pas eu lieu et le scénario ne part pas : Meta a refusé de rendre le fil (son agent garde le
+   * lead), ou un opérateur tient la conversation (il la garde, le message l'attend dans l'Inbox).
+   */
   'reprise_refusee',
   /** Le contact a dit STOP. Rien ne part, et l'arrivée le dit plutôt que de disparaître. */
   'desabonne',

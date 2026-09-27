@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 import { WorkflowExecutor } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import type { WorkflowGraph } from '../src/workflow/graph';
+import { bancDuFil } from './banc-du-fil';
 
 /**
  * UN SCÉNARIO NE DÉMARRE PAS SUR UN FIL QU'ON N'A PAS PU REPRENDRE.
@@ -99,65 +100,46 @@ describe('un scénario ne démarre pas sur un fil que Meta a refusé de rendre',
 
 /**
  * 🔴 LA GARDE QUE LE FAUX CÂBLAGE NE PEUT PAS DONNER. Les trois cas ci-dessus montent un `reclaimControl`
- * de test : ils prouvent que l'exécuteur RÉAGIT au verdict, jamais que le vrai câblage prend réellement le
- * fil chez Meta. Or c'est exactement ce qui manquait, et un test unitaire ne l'aurait jamais vu, « parce
- * qu'un faux câblage bouge avec le code ». On lit donc le câblage réel.
+ * de test : ils prouvent que l'exécuteur RÉAGIT au verdict, jamais que le vrai geste prend réellement le fil
+ * chez Meta. Ces cas lisaient le texte du câblage ; le geste vit désormais dans `src/inbox/fil.ts`
+ * (`reprendrePourLApp`), et ils l'EXÉCUTENT sur un faux Meta et un dépôt en mémoire.
  */
-describe('le vrai câblage prend le fil CHEZ META avant d’écrire chez nous', () => {
+describe('le vrai geste prend le fil CHEZ META avant d’écrire chez nous', () => {
   const wiring = readFileSync(resolve(__dirname, '../src/workflow/wiring.ts'), 'utf8');
-  /**
-   * ⚠️ LE GESTE A ÉTÉ EXTRAIT le 2026-09-14 : il a désormais DEUX consommateurs (le démarrage d'un
-   * parcours, et le devenir « la conversation arrive dans l'Inbox » d'un étage de campagne). Ces gardes
-   * lisent donc le geste lui-même, plus le bloc `reclaimControl` qui s'y délègue. Le cas exercé est
-   * inchangé : Meta d'abord, notre colonne ensuite, et rien d'écrit chez nous si Meta refuse.
-   */
-  const bloc = wiring.slice(wiring.indexOf('const reprendreLeFilPourLApp'), wiring.indexOf('Envoi réel du bloc'));
-  /**
-   * ⚠️ LA PRISE DU FIL EST PASSÉE DANS UNE FONCTION D'AIDE le 2026-09-14 (le rejeu unique sur un échec
-   * transitoire, relevé en revue). Ces gardes lisaient `takeThreadChezMeta` DANS le bloc `reclaimControl` ;
-   * elles suivent maintenant l'indirection au lieu d'être affaiblies, sinon elles ne vérifieraient plus
-   * rien tout en restant vertes. Le cas exercé est inchangé : Meta d'abord, notre colonne ensuite, et rien
-   * d'écrit chez nous si Meta refuse.
-   */
-  const aide = wiring.slice(wiring.indexOf('const prendreLeFilAvecUnRejeu'), wiring.indexOf('const reprendreLeFilPourLApp'));
 
-  it('appelle bien Meta', () => {
-    expect(bloc).toContain('prendreLeFilAvecUnRejeu');
-    // ⚠️ Le REJEU a été extrait dans `src/inbox/controle-du-fil.ts` le 2026-09-15 : le câblage ne nomme donc
-    // plus une prise intermédiaire, il passe la VRAIE prise du fil au module qui rejoue. Cette garde suit
-    // l'indirection au lieu d'être affaiblie, sinon elle ne vérifierait plus rien tout en restant verte.
-    expect(aide).toContain('creerPrendreLeFilAvecUnRejeu');
-    expect(aide, 'le rejeu doit recevoir la VRAIE prise du fil chez Meta').toContain('creerPrendreLeFil({');
+  it('appelle bien Meta', async () => {
+    const b = bancDuFil({ conversations: { '33600000000': { owner: 'mba' } } });
+    expect(await b.fil.reprendrePourLApp('t1', '33600000000')).toBe(true);
+    expect(b.appels).toEqual(['take:33600000000']);
   });
 
-  it('🔴 appelle Meta AVANT d’écrire notre colonne', () => {
+  it('🔴 appelle Meta AVANT d’écrire notre colonne', async () => {
     // L'ordre inverse produirait le pire des deux mondes : le scénario se croirait maître et répondrait
     // PAR-DESSUS l'agent de Meta, donc deux messages au contact.
-    expect(bloc.indexOf('prendreLeFilAvecUnRejeu')).toBeLessThan(bloc.indexOf('setControlOwner'));
+    const ordre: string[] = [];
+    const b = bancDuFil({
+      appels: ordre,
+      depot: { getControlOwner: async () => 'mba', setControlOwner: async (_t, _w, owner) => { ordre.push(`colonne:${owner}`); return true; } },
+    });
+    await b.fil.reprendrePourLApp('t1', '33600000000');
+    expect(ordre).toEqual(['take:33600000000', 'colonne:app_workflow']);
   });
 
-  it('🔴 n’écrit PAS notre colonne quand Meta refuse', () => {
-    // Le `return false` doit précéder l'écriture locale : c'est la doctrine de `controle-du-fil.ts`,
-    // « un état local qui annonce ce que Meta n'a pas fait ».
-    expect(bloc.indexOf('return false')).toBeLessThan(bloc.indexOf('setControlOwner'));
+  it('🔴 n’écrit PAS notre colonne quand Meta refuse', async () => {
+    // C'est la doctrine du module, « un état local qui annonce ce que Meta n'a pas fait ».
+    const b = bancDuFil({ take: ['refuse'], conversations: { '33600000000': { owner: 'mba' } } });
+    expect(await b.fil.reprendrePourLApp('t1', '33600000000')).toBe(false);
+    expect(b.etat('33600000000')?.owner).toBe('mba');
   });
 
   it('🔴 le démarrage de parcours DÉLÈGUE au geste partagé, il ne le réimplémente pas', () => {
     // Deux exemplaires de cette prise de fil divergeraient : c'est le motif qui a cassé la production le
     // 2026-08-15 (constructeur de composants Meta, préparation des visuels de carousel).
-    expect(wiring).toContain('reclaimControl: reprendreLeFilPourLApp,');
+    expect(wiring).toContain('reclaimControl: fil.reprendrePourLApp,');
   });
 
   /**
-   * ⚠️ UN CAS A ÉTÉ RETIRÉ ICI, ET SON REMPLAÇANT EST NOMMÉ (lot du 2026-09-15).
-   *
-   * Il s'appelait « rejoue UNE fois un échec transitoire, et jamais un refus définitif » et il cherchait les
-   * chaînes `err.retryable` et `tentative < 2` dans le TEXTE de `wiring.ts`. Il prouvait donc qu'un motif
-   * était ÉCRIT : ni qu'on rejoue une fois, ni qu'on ne rejoue pas un refus définitif, ni combien on attend.
-   *
-   * Le rejeu vit désormais dans `src/inbox/controle-du-fil.ts`, avec ses vraies dépendances injectées, et
-   * `tests/controle-du-fil-cablage.test.ts` l'EXERCE : un seul appel du premier coup, un rejeu qui réussit au
-   * second, deux appels au maximum, aucun rejeu sur un refus définitif, l'attente qui vaut le `Retry-After`
-   * de Meta plafonné à 2 s, et le contrat « aucun numéro connecté » qui était implicite.
+   * ⚠️ LE REJEU (un rejeu sur un échec transitoire, jamais sur un refus définitif, l'attente plafonnée) s'exerce
+   * dans `tests/controle-du-fil-cablage.test.ts`, par ce même geste.
    */
 });

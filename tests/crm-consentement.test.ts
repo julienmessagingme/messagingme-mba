@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { estDemandeArret, SOURCE_STOP_WHATSAPP } from '../src/crm/consentement';
 import { processInbound, type DepsEntrants, type InboxStore, type InboundMessage } from '../src/webhooks/inbound';
-import { entrantsDe } from './webhook-fixtures';
+import { aucuneCorrectionDuDetenteur, entrantsDe } from './webhook-fixtures';
 
 /**
  * L'OPT-OUT PAR MOT-CLÉ, SUR LES DEUX CANAUX.
@@ -74,7 +74,7 @@ describe('le prédicat de demande d’arrêt', () => {
 describe('WhatsApp entrant : STOP désabonne, comme en RCS', () => {
   it('🔴 un message « STOP » écrit le refus, avec sa source', async () => {
     const h = harnais();
-    await processInbound(await entrantsDe(payload([texte('STOP')])), h.store, { upsertContact: h.upsert, optOut: h.optOut });
+    await processInbound(await entrantsDe(payload([texte('STOP')])), h.store, { upsertContact: h.upsert, optOut: h.optOut, detenteur: aucuneCorrectionDuDetenteur });
     expect(h.optOuts).toEqual([{ tenant: 't1', waId: '33600000001' }]);
     // La source distingue ce refus de ceux posés à la main : c'est ce qui permet de dire D'OÙ il vient.
     expect(SOURCE_STOP_WHATSAPP).toBe('whatsapp_stop');
@@ -84,7 +84,7 @@ describe('WhatsApp entrant : STOP désabonne, comme en RCS', () => {
     // Sans lui, l'`em_event_id` du désabonnement est tiré au hasard : un STOP redélivré (ou un job de webhook
     // rejoué) produit un second événement que l'outil du client ne peut pas dédupliquer (spec § 8).
     const h = harnais();
-    await processInbound(await entrantsDe(payload([texte('STOP')])), h.store, { upsertContact: h.upsert, optOut: h.optOut });
+    await processInbound(await entrantsDe(payload([texte('STOP')])), h.store, { upsertContact: h.upsert, optOut: h.optOut, detenteur: aucuneCorrectionDuDetenteur });
     expect(h.messagesDuStop).toEqual(['wamid.STOP.33600000001']);
   });
 
@@ -94,7 +94,7 @@ describe('WhatsApp entrant : STOP désabonne, comme en RCS', () => {
     // rien, et la fiche serait créée juste après, `opted_in`. C'est exactement le cas d'un numéro acheté qui
     // reçoit une campagne et répond STOP.
     const h = harnais();
-    await processInbound(await entrantsDe(payload([texte('STOP')])), h.store, { upsertContact: h.upsert, optOut: h.optOut });
+    await processInbound(await entrantsDe(payload([texte('STOP')])), h.store, { upsertContact: h.upsert, optOut: h.optOut, detenteur: aucuneCorrectionDuDetenteur });
     expect(h.gestes).toEqual(['upsert', 'optout', 'inbox']);
   });
 
@@ -102,13 +102,13 @@ describe('WhatsApp entrant : STOP désabonne, comme en RCS', () => {
     // Le handler appelle `processInbound` avant l'avance de scénario et avant les automations : le refus est
     // enregistré avant qu'une seule réponse ne parte.
     const h = harnais();
-    await processInbound(await entrantsDe(payload([texte('stop')])), h.store, { upsertContact: h.upsert, optOut: h.optOut });
+    await processInbound(await entrantsDe(payload([texte('stop')])), h.store, { upsertContact: h.upsert, optOut: h.optOut, detenteur: aucuneCorrectionDuDetenteur });
     expect(h.gestes.indexOf('optout')).toBeLessThan(h.gestes.indexOf('inbox'));
   });
 
   it('un message ordinaire ne désabonne personne', async () => {
     const h = harnais();
-    await processInbound(await entrantsDe(payload([texte('bonjour, je voudrais un devis')])), h.store, { upsertContact: h.upsert, optOut: h.optOut });
+    await processInbound(await entrantsDe(payload([texte('bonjour, je voudrais un devis')])), h.store, { upsertContact: h.upsert, optOut: h.optOut, detenteur: aucuneCorrectionDuDetenteur });
     expect(h.optOuts).toEqual([]);
     expect(h.gestes).toEqual(['upsert', 'inbox']);
   });
@@ -119,13 +119,13 @@ describe('WhatsApp entrant : STOP désabonne, comme en RCS', () => {
     const h = harnais();
     await processInbound(await entrantsDe(payload([
       { id: 'wamid.b1', from: '33600000001', type: 'button', button: { text: 'Stopper la simulation', payload: 'stop_sim' } },
-    ])), h.store, { upsertContact: h.upsert, optOut: h.optOut });
+    ])), h.store, { upsertContact: h.upsert, optOut: h.optOut, detenteur: aucuneCorrectionDuDetenteur });
     expect(h.optOuts).toEqual([]);
   });
 
   it('un STOP d’un numéro SANS fiche est journalisé, et n’interrompt rien', async () => {
     const h = harnais({ contactExiste: false });
-    await processInbound(await entrantsDe(payload([texte('STOP')])), h.store, { upsertContact: h.upsert, optOut: h.optOut });
+    await processInbound(await entrantsDe(payload([texte('STOP')])), h.store, { upsertContact: h.upsert, optOut: h.optOut, detenteur: aucuneCorrectionDuDetenteur });
     expect(h.gestes).toEqual(['upsert', 'optout', 'inbox']); // l'inbox enregistre quand même le message
   });
 
@@ -138,7 +138,7 @@ describe('WhatsApp entrant : STOP désabonne, comme en RCS', () => {
     };
     await expect(processInbound(
       await entrantsDe(payload([texte('STOP')])), store,
-      { upsertContact: async () => 'created', optOut: async () => { throw new Error('pooler injoignable'); } },
+      { upsertContact: async () => 'created', optOut: async () => { throw new Error('pooler injoignable'); }, detenteur: aucuneCorrectionDuDetenteur },
     )).resolves.toBeUndefined();
     expect(gestes).toEqual(['inbox']);
   });
@@ -148,7 +148,7 @@ describe('WhatsApp entrant : STOP désabonne, comme en RCS', () => {
     // `npm run typecheck` tient ce refus ; le reste du fichier câble toujours une écriture.
     const h = harnais();
     // @ts-expect-error `optOut` manque, et c'est ce que le type refuse.
-    const sansOptOut: DepsEntrants = { upsertContact: h.upsert };
+    const sansOptOut: DepsEntrants = { upsertContact: h.upsert, detenteur: aucuneCorrectionDuDetenteur };
     expect(sansOptOut.upsertContact).toBe(h.upsert);
   });
 
@@ -157,7 +157,7 @@ describe('WhatsApp entrant : STOP désabonne, comme en RCS', () => {
     await processInbound(await entrantsDe(payload([
       texte('bonjour', '33600000001'),
       texte('STOP', '33600000002'),
-    ])), h.store, { upsertContact: h.upsert, optOut: h.optOut });
+    ])), h.store, { upsertContact: h.upsert, optOut: h.optOut, detenteur: aucuneCorrectionDuDetenteur });
     expect(h.optOuts).toEqual([{ tenant: 't1', waId: '33600000002' }]);
   });
 });
@@ -168,7 +168,7 @@ describe('le message entrant reste intact', () => {
     const store: InboxStore = {
       recordInbound: async (_t, m) => { vus.push(m); },
     };
-    await processInbound(await entrantsDe(payload([texte('STOP')])), store, { optOut: async () => 'c1' });
+    await processInbound(await entrantsDe(payload([texte('STOP')])), store, { optOut: async () => 'c1', detenteur: aucuneCorrectionDuDetenteur });
     expect(vus).toHaveLength(1);
     expect(vus[0]!.body).toBe('STOP');
   });

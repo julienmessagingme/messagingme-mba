@@ -107,9 +107,10 @@ describe.skipIf(!url)('PgInboxStore : l’escalade de l’agent de Meta (Supabas
     expect((await lire(b))?.escaladee_le).toBeNull();
   });
 
-  it('🔴 la fin d’un parcours ne clôt PAS l’escalade ; le geste « Rendre la main », si', async () => {
-    // Elle s'effaçait dès qu'une écriture posait `mba`, donc aussi quand un parcours finissait : la conversation
-    // sortait d'« À traiter » sans que personne ait répondu, ce que l'arbitrage de Julien interdit.
+  it('🔴 une écriture ne clôt l’escalade que si on le lui DEMANDE (`effacerEscalade`)', async () => {
+    // Elle s'effaçait dès qu'une écriture posait `mba`, quel que soit le geste. C'est l'appelant qui décide : les
+    // gestes qui l'effacent (un robot reprend le fil, un opérateur le rend) sont choisis dans `src/inbox/fil.ts`,
+    // et `tests/fil.test.ts` les exécute.
     const waId = '33600000212';
     await conversationMenéeParLAgent(waId);
     await store.marquerEscalade(tenantId, waId);
@@ -135,8 +136,24 @@ describe.skipIf(!url)('PgInboxStore : l’escalade de l’agent de Meta (Supabas
     // Celui d'APRÈS : il écrit pour de bon, le fil repart à l'agent.
     expect(await store.setControlOwner(tenantId, waId, 'mba', { saufEscalade: true, messageEnvoyeLe: apres })).toBe(true);
     expect((await lire(waId))?.control_owner).toBe('mba');
-    // ⚠️ L'escalade, elle, RESTE posée : personne n'a répondu, la conversation reste « À traiter ».
+    // ⚠️ Sans `effacerEscalade`, l'escalade RESTE posée : la garde et l'effacement sont deux options distinctes.
     expect((await lire(waId))?.escaladee_le).not.toBeNull();
+  });
+
+  it('🔴 le geste du module (`saufEscalade` ET `effacerEscalade`) : un retardataire ne touche à rien, un standby postérieur rend le fil ET clôt l’escalade', async () => {
+    // `ControleDuFil.entrantEnStandby` passe les deux options dans le même `update` : l'effacement n'agit que si la
+    // garde laisse passer l'écriture. Un retardataire ne doit donc effacer AUCUNE escalade.
+    const waId = '33600000217';
+    await conversationMenéeParLAgent(waId);
+    await store.marquerEscalade(tenantId, waId);
+    const escalade = (await lire(waId))!.escaladee_le!;
+    const avant = new Date(escalade.getTime() - 60_000);
+    const apres = new Date(escalade.getTime() + 60_000);
+    expect(await store.setControlOwner(tenantId, waId, 'mba', { saufEscalade: true, effacerEscalade: true, messageEnvoyeLe: avant })).toBe(false);
+    expect((await lire(waId))?.escaladee_le).not.toBeNull();
+    expect(await store.setControlOwner(tenantId, waId, 'mba', { saufEscalade: true, effacerEscalade: true, messageEnvoyeLe: apres })).toBe(true);
+    expect((await lire(waId))?.control_owner).toBe('mba');
+    expect((await lire(waId))?.escaladee_le).toBeNull();
   });
 
   it('🔴 l’effacement ne dépend PAS de la valeur écrite : le bouton « Rendre la main » pose souvent `app_workflow`', async () => {

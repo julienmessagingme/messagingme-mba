@@ -214,7 +214,7 @@ tenait le fil, ce que prouve sa réponse sept secondes plus tard. **Un entrant a
 MBA tient le fil (déclencheurs d'automation, avance de scénario, jeton de test) teste `field !== 'messages'`.
 Puisqu'un entrant est toujours `messages`, **cette garde ne fait rien taire du tout**. Le risque est
 aujourd'hui borné par le fait qu'un scénario qui démarre PREND le fil explicitement
-(`reprendreLeFilPourLApp`), donc il ne parle plus par-dessus l'agent : c'est un garde-fou de ceinture qui
+(`ControleDuFil.reprendrePourLApp`, `src/inbox/fil.ts`), donc il ne parle plus par-dessus l'agent : c'est un garde-fou de ceinture qui
 s'est révélé inerte, pas un trou vivant. À retrancher sur un signal vrai, cf. `todo.md`.
 
 ⚠️ **ET ON N'EN DÉDUIT PLUS LE DÉTENTEUR** (2026-09-15). `accorderLeDetenteur` écrivait `app_workflow` sur
@@ -243,7 +243,7 @@ Meta -> POST /webhooks/meta (mba-api)
         arrivée publicitaire (`arrivees_pub`, ctwa_clid et standby compris), isolée
         routage du lead publicitaire (lot 3), isolé : il ANNOTE l'arrivée ci-dessus et
           RESTREINT les déclencheurs ci-dessous, et il reprend le fil à l'agent de Meta
-          quand la publicité confie ses prospects à un scénario
+          quand la publicité confie ses prospects à un scénario (jamais à un opérateur)
         puis, DANS CET ORDRE et chacun isolé en try/catch :
           1. mapping de formulaire  (nfm_reply -> champs de la fiche)
           2. jeton de test          (CONSOMME le message, personne d'autre ne le voit)
@@ -512,8 +512,8 @@ API, sans écran pour s'en défaire. Un outil MCP reste parce qu'il vient d'un i
 - 🔴 **TOUT ÉCHEC APRÈS LA REPRISE DU FIL LE REND, EXCEPTION COMPRISE** (`src/mba/gestes-envoi.ts`, testé) :
   `runFrom` reprend le fil puis peut refuser (désabonné, envoi refusé), et rend alors une raison SANS rendre la
   main, parce que ses autres appelants ont un opérateur ; il peut aussi LEVER (Meta refuse un modèle en pause,
-  coupure réseau), et l'exception traverse tout. Dans les deux cas le relais appelle `rendreLaMainApresParcours`
-  (le geste de fin de parcours, nommé dans `wiring.ts` et rendu par `buildWorkflowRuntime`). Si la reprise
+  coupure réseau), et l'exception traverse tout. Dans les deux cas le relais appelle
+  `ControleDuFil.rendreApresParcours` (le geste de fin de parcours, `src/inbox/fil.ts`). Si la reprise
   elle-même a échoué, ce geste ne touche à rien (`only: ['app_workflow']`). Une PANNE d'envoi ne s'invite pas à
   réessayer (`erreurDePanne`) : le message a pu partir avant l'exception.
   Un contact bloqué ne reçoit ni bloc ni scénario (`DepsMaison.estBloque`, lu AVANT tout envoi).
@@ -821,7 +821,12 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   d'un opérateur, « Traité », « Archiver » ou le bouton « Rendre la main » la clôt, et le balayage de reprise
   ne rend JAMAIS un fil escaladé à l'agent (arbitrage de Julien : on ne le lui rend qu'après une réponse
   humaine, puis les 2 h habituelles).
-  ⚠️ Un `standby` de Meta postérieur à l'escalade fait exception : il prouve que l'agent a repris le fil.
+  🔴 **Tout geste où un ROBOT reprend le fil la clôt aussi** (arbitrage de Julien du 2026-09-27) : l'agent de
+  Meta à qui on rend le fil (accusé du dernier envoi, client que personne ne suit, fin de parcours dès son état
+  d'attente) et un scénario lancé délibérément. Sans ça, la conversation restait dans « À traiter » pendant que
+  l'agent répondait, ou collée pour toujours quand Meta refusait la remise (le balayage l'excluait).
+  ⚠️ Un `standby` de Meta postérieur à l'escalade fait exception : il prouve que l'agent a repris le fil, et la
+  clôt.
   🔴 CE QUI N'EST PAS UNE ESCALADE, et la nuance décide du sort du fil : un ÉCHEC (fenêtre de 24 h fermée à la
   reprise d'un parcours, envoi refusé, bouton qui ne mène nulle part) remonte bien la conversation à l'équipe,
   mais SANS le drapeau. Le contact vient d'écrire dans la plupart de ces cas, donc « À traiter » la porte déjà
@@ -867,6 +872,41 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   scénario. La règle d'accès vit dans `src/inbox/assignment.ts`, PURE, et ne reçoit même pas `control_owner` :
   si quelqu'un le lui passait, le code ne compilerait plus. Griser un bouton ne protège rien, le refus vient
   du serveur.
+- 🔴 **`control_owner` NE S'ÉCRIT QUE DANS `src/inbox/fil.ts`** (`creerControleDuFil`, construit une fois par
+  processus dans le socle). Chaque geste y a son nom (un humain écrit, « Reprendre la main », « Rendre la main »,
+  fin de parcours, remise sur accusé, client que personne ne suit, reprise pour un scénario, réponse de campagne
+  « Inbox », passage à un humain, passation de l'agent de Meta, entrant `standby`, balayage), et le module porte
+  seul ce que chacun faisait à sa façon : **Meta d'abord, la colonne ensuite, rien d'écrit sur un refus** (deux
+  exceptions : l'état d'attente `app_human` d'une fin de parcours, posé avant la remise ; la marque d'accusé,
+  consommée avant l'appel), un **rejeu** pour toute prise (`take`, bouton compris), jamais pour une remise, et
+  la **marque d'escalade**. `tests/fil.test.ts` exécute la table contre un faux Meta et un dépôt en mémoire, et
+  refuse tout autre appelant de l'écriture ou des actes `take` / `release`. Trois règles qui y vivent :
+  - **agent de Meta allumé, aucun numéro connecté : la colonne ne bouge pas vers l'agent**, quelle que soit la
+    porte (balayage, fin de parcours, client qui revient, bouton, qui répond alors 409) ;
+  - **un démarrage que le CLIENT déclenche ne prend pas le fil à un opérateur** (`saufOperateur` : l'automation
+    d'une publicité, le routage d'un lead ; la réponse de campagne « Inbox » laisse un fil d'opérateur tel quel) ;
+    les lancements EXPLICITES (campagne, Inbox, lien de chaîne, `/v1/sends`, jeton de test, relais de l'agent de
+    Meta) le prennent, opérateur compris.
+    ⚠️ La garde lit NOTRE colonne, que `processInbound` corrige d'abord. Un lead arrivé en `standby` y fait écrire
+    `mba` (`entrantEnStandby` : Meta fait autorité) dès que la conversation n'est pas escaladée, ou que le
+    `standby` est daté après l'escalade ; le routage voit alors un fil de l'agent de Meta et le reprend pour le
+    scénario de la publicité. Elle ne protège donc un opérateur que là où notre colonne le dit encore maître du
+    fil : un entrant `messages` (le cas mesuré de tous les entrants), ou un `standby` antérieur à une escalade ou
+    non daté ;
+  - **la réponse à une campagne « Inbox » prend le fil pour l'ÉQUIPE** (`app_human`) : la remise « personne ne
+    suit » du même job le voit et s'abstient, aucune automation ne démarre (`app_workflow` seul le permet).
+    🔴 **À la PREMIÈRE réponse seulement, et à la campagne la PLUS RÉCENTE** (relecture du lot 4,
+    `PgCampaignRepo.campagneAssignanteDuContact`). La requête choisit d'abord la dernière campagne servie au
+    contact, puis regarde si elle porte un devenir ou une affectation : une campagne plus récente qui ne décide
+    de rien masque une ancienne campagne « Inbox ». Et elle rend `premiereReponse` (au plus un entrant depuis
+    `sent_at`, celui qu'on traite), sans lequel `assignerReponse` ne prend pas le fil. Sans ces deux règles, une
+    campagne « Inbox » SANS affectation, qui ne pose jamais `assigned_to`, reprenait le fil à chaque message du
+    contact, pour toujours : elle défaisait un « Rendre la main » et figeait le scénario d'une campagne envoyée
+    depuis. L'affectation, elle, garde sa seule borne `assigned_to is null`.
+  ⚠️ Un entrant `standby` est corrigé AVANT l'affectation dans `processInbound` (relecture du lot 4) : dans l'ordre
+  inverse, une première réponse de campagne « Inbox » arrivée en `standby` était prise pour l'équipe, puis réécrite
+  `mba` par ce même `standby`, alors que Meta venait de nous céder le fil ; la prise n'ayant lieu qu'une fois, rien
+  ne la refaisait.
 - ⚠️ `on delete set null` sur l'affectataire : supprimer un membre LIBÈRE ses conversations. Une conversation
   que plus personne ne peut prendre serait invisible et sans réponse.
 - ⚠️ `control_changed_at` ne se rafraîchit PAS quand un opérateur répond une seconde fois : le compte à
@@ -1924,7 +1964,8 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/campaign/enqueue.ts` -> `relanceurDeCampagnes` | l'enfilement d'un run au débit RÉSOLU sur la configuration du process : les relances du worker (hors planification et reprise après plafond, qui résolvent le débit dans leur balayage) et l'envoi de l'API publique |
 | `src/stats/chiffrage.ts` -> `creerChiffrage` | 🔴 toutes les lectures de COÛT de la console (statistiques, fiche de campagne, bilan contact) : le tarif Meta et son cache (60 s, un par process, `null` jamais mémorisé), la marge, la classification RCS simple ou conversationnel (`repartirRcs`) et la lecture des liens tracés d'un scénario (`liensDesTemplates`), écrites une fois. La racine le construit et passe ses membres aux routes ; `tests/chiffrage.test.ts` l'exécute contre de faux dépôts |
 | `src/pubs/connexion.ts` -> `creerConnexionPub` | la connexion publicitaire d'un espace : jeton chiffré au repos et déchiffré à la demande, connexion concurrente, révocation (Meta d'abord, puis la base), état du compte en cache 2 min, dépôt de jeton par `/ops` |
-| `src/socle.ts` -> `construireSocle` | 🔴 ce que l'API et le worker doivent construire À L'IDENTIQUE : les dépôts communs, le dépôt de contacts décoré (un opt-out écrit par l'un ou l'autre processus est annoncé et signalé), la pile d'envoi Meta et ses freins, la clé de modèle par espace (avec son signalement d'échec de déchiffrement), le résolveur e-mail, le runtime de scénario. Il reçoit le pool, la file et la configuration : chaque processus garde son pool, sa file et ses caches. `tests/socle.test.ts` le construit contre un faux pool et une fausse file |
+| `src/inbox/fil.ts` -> `creerControleDuFil` | 🔴 le contrôle du fil : les gestes qui prennent, rendent ou passent une conversation (agent de Meta, scénario, équipe), l'ordre « Meta d'abord, la colonne ensuite », les gardes (agent allumé, `only`, fil de test, parcours en attente, détenteur relu avant Meta, opérateur épargné par un démarrage du client), le rejeu d'une prise et la marque d'escalade. Seul appelant de `setControlOwner`, `demanderReleaseMba`, `consommerReleaseMba` et des actes `take` / `release` de Meta ; `tests/fil.test.ts` exécute sa table |
+| `src/socle.ts` -> `construireSocle` | 🔴 ce que l'API et le worker doivent construire À L'IDENTIQUE : les dépôts communs, le dépôt de contacts décoré (un opt-out écrit par l'un ou l'autre processus est annoncé et signalé), la pile d'envoi Meta et ses freins, la clé de modèle par espace (avec son signalement d'échec de déchiffrement), le résolveur e-mail, le numéro de l'espace en cache, le contrôle du fil, le runtime de scénario. Il reçoit le pool, la file et la configuration : chaque processus garde son pool, sa file et ses caches. `tests/socle.test.ts` le construit contre un faux pool et une fausse file |
 | `src/stats/cost.ts` -> `chiffrer`, `chiffrerVolume`, `round2` | « chiffrable ou pourquoi pas », pour une catégorie ou un volume ; `round2`, l'arrondi au centime des coûts |
 | `src/crm/contact-store.pg.ts` -> `projectionPourTiers` | 🔴 la fiche projetée pour tout ce qui sort vers un tiers (connecteur, opt-out poussé, relais de l'agent de Meta, `mba_lire_contact`) : nom, tags, champs, JAMAIS le numéro, le BSUID ni l'opt-in |
 | `src/workflow/engine.ts` -> `FENETRE_SERVICE_MS` | la fenêtre de service de Meta (24 h), pour le balayage de contrôle et la fenêtre ouverte de l'Inbox |

@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { runControlSweep } from '../src/inbox/control-sweep';
 import type { ControlSweepDeps } from '../src/inbox/control-sweep';
 import type { ControlOwner } from '../src/inbox/store.pg';
+import { bancDuFil } from './banc-du-fil';
 
 /**
  * L'AGENT DE META REPREND LA MAIN, MÊME SUR UN FIL PRIS PAR UN SCÉNARIO.
@@ -33,34 +34,45 @@ const MAINTENANT = new Date('2026-09-14T12:00:00Z').getTime();
  */
 function deps(
   held: Array<{ owner: ControlOwner; changedAt: Date | null; lastMessageAt?: Date | null }>,
-  over: Partial<ControlSweepDeps> = {},
+  over: Partial<ControlSweepDeps> & {
+    /** Ce que Meta fait du `release` : il accepte, il refuse, ou aucun numéro n'est connecté (rien à rendre). */
+    meta?: 'accepte' | 'refuse' | 'aucun_numero';
+  } = {},
 ): ControlSweepDeps & { ecrits: Array<{ owner: ControlOwner }>; rendus: string[]; vu: { age?: number } } {
   const ecrits: Array<{ owner: ControlOwner }> = [];
   const rendus: string[] = [];
   // ⚠️ UN OBJET MUTABLE, PAS UN GETTER : `Object.assign` plus bas INVOQUE un getter au lieu de le copier,
   // donc la valeur serait figée à `undefined` au moment du montage. Vu en écrivant ce test.
   const vu: { age?: number } = {};
+  const { meta = 'accepte', ...reste } = over;
   const d = {
     inbox: {
       listHeldControl: async (_limit?: number, ageScenarioMs?: number) => {
         vu.age = ageScenarioMs;
         return held.map((h, i) => ({ tenantId: 't1', waId: `3360000000${i}`, owner: h.owner, changedAt: h.changedAt, lastMessageAt: h.lastMessageAt === undefined ? new Date(MAINTENANT - 1 * HEURE) : h.lastMessageAt }));
       },
-      setControlOwner: async (_t: string, _w: string, owner: ControlOwner, opts?: { only?: readonly ControlOwner[] }) => {
-        // Reproduit la garde du SQL : une écriture qui ne change rien ne prend pas.
-        if (opts?.only && !opts.only.includes(owner) && owner === 'app_workflow' && opts.only[0] === 'app_workflow') return false;
-        if (opts?.only?.[0] === owner) return false;
-        ecrits.push({ owner });
-        return true;
-      },
     },
+    // Le vrai geste de remise (`src/inbox/fil.ts`) : Meta d'abord, puis l'écriture, ici notée.
+    fil: bancDuFil({
+      numero: meta === 'aucun_numero' ? null : 'pn1',
+      release: [meta === 'refuse' ? 'refuse' : 'accepte'],
+      auMeta: (acte, waId) => { if (acte === 'release') rendus.push(waId); },
+      depot: {
+        setControlOwner: async (_t: string, _w: string, owner: ControlOwner, opts?: { only?: readonly ControlOwner[] }) => {
+          // Reproduit la garde du SQL : une écriture qui ne change rien ne prend pas.
+          if (opts?.only && !opts.only.includes(owner) && owner === 'app_workflow' && opts.only[0] === 'app_workflow') return false;
+          if (opts?.only?.[0] === owner) return false;
+          ecrits.push({ owner });
+          return true;
+        },
+      },
+    }).fil,
     timeouts: { app_human: 2 * HEURE, mba: 24 * HEURE, app_workflow: 24 * HEURE },
     reglages: {
       mbaActifParTenant: async () => new Set(['t1']),
     },
-    releaseToMba: async (_t: string, waId: string) => { rendus.push(waId); return true; },
     now: () => MAINTENANT,
-    ...over,
+    ...reste,
   };
   return Object.assign(d, { ecrits, rendus, vu }) as never;
 }
@@ -87,9 +99,7 @@ describe('un fil pris par un SCÉNARIO revient à l’agent de Meta', () => {
      * ⚠️ LE COUT ASSUME EST UN REEXAMEN, PAS UNE FUITE : la conversation reste candidate a la passe
      * suivante et coute une lecture. Entre les deux erreurs possibles, une seule se rattrape.
      */
-    const d = deps([{ owner: 'app_human', changedAt: new Date(MAINTENANT - 3 * HEURE) }], {
-      releaseToMba: async () => false,
-    });
+    const d = deps([{ owner: 'app_human', changedAt: new Date(MAINTENANT - 3 * HEURE) }], { meta: 'aucun_numero' });
     expect(await runControlSweep(d)).toBe(0);
     expect(d.ecrits, 'rien n est ecrit : la conversation reste visible dans « À traiter »').toEqual([]);
   });
@@ -98,9 +108,7 @@ describe('un fil pris par un SCÉNARIO revient à l’agent de Meta', () => {
     // La distinction compte pour la SUITE : `rendreLeFil` LEVE sur un refus de Meta et ne rend `false` que
     // sur une absence de numero. Ecrire `mba` sur un refus ferait croire que Meta tient un fil qu il a
     // refuse de prendre, ce qui est le defaut de fond que ce balayage existe pour eviter.
-    const d = deps([{ owner: 'app_human', changedAt: new Date(MAINTENANT - 3 * HEURE) }], {
-      releaseToMba: async () => { throw new Error('Meta a refusé'); },
-    });
+    const d = deps([{ owner: 'app_human', changedAt: new Date(MAINTENANT - 3 * HEURE) }], { meta: 'refuse' });
     expect(await runControlSweep(d)).toBe(0);
     expect(d.ecrits, 'rien n est ecrit : on reessaiera').toEqual([]);
   });

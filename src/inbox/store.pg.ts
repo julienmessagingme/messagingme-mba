@@ -15,8 +15,8 @@ export const ENVOI_EN_VOL = '10 minutes';
 
 /**
  * Qui détient la conversation, et donc qui répond au client. `app_workflow` est le seul état qui autorise un
- * scénario à avancer ou à démarrer. `mba` n'est jamais déduit d'une de nos actions : il vient exclusivement d'un
- * webhook `messaging_handovers`.
+ * scénario à avancer ou à démarrer. `mba` ne s'écrit que sur la parole de Meta : un `release` qu'il a accepté, ou
+ * un entrant `standby`. Qui écrit cette colonne, et dans quel ordre : `src/inbox/fil.ts`, seul.
  */
 export type ControlOwner = 'app_workflow' | 'app_human' | 'mba';
 
@@ -367,9 +367,10 @@ export class PgInboxStore implements InboxStore {
     },
   ): Promise<boolean> {
     const only = opts?.only;
-    // `effacerEscalade` : seuls les gestes qui disent « l'agent reprend » effacent l'escalade, pas la fin d'un
-    // parcours. `saufEscalade` : un `standby` traité après l'escalade est un retardataire, sauf s'il est plus
-    // récent qu'elle (`messageEnvoyeLe`, preuve que l'agent a repris le fil) ; sans date, la garde reste stricte.
+    // `effacerEscalade` : l'appelant décide, et la règle vit dans `src/inbox/fil.ts` (un robot qui reprend le fil,
+    // ou un opérateur qui le rend, efface l'escalade ; le fil qui va à l'équipe la garde). `saufEscalade` : un
+    // `standby` traité après l'escalade est un retardataire, sauf s'il est plus récent qu'elle (`messageEnvoyeLe`,
+    // preuve que l'agent a repris le fil) ; sans date, la garde reste stricte.
     const res = await this.pool.query(
       `update conversations set control_owner = $3, control_changed_at = now(),
               escaladee_le = case when $6::boolean then null

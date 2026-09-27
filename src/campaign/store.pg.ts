@@ -789,18 +789,38 @@ export class PgCampaignRepo {
   }
 
   /**
-   * La campagne assignante dont ce contact est un destinataire déjà servi, ou `null` (le cas très majoritaire,
-   * ce qui la rend acceptable sur le chemin de chaque message entrant). Elle lit le devenir de l'étage où se
-   * trouvait le destinataire (`etage_courant`), pas de la campagne.
+   * La campagne à laquelle ce contact répond, quand elle décide de quelque chose (un devenir d'étage ou une
+   * affectation), ou `null` (le cas très majoritaire, ce qui la rend acceptable sur le chemin de chaque message
+   * entrant). Elle lit le devenir de l'étage où se trouvait le destinataire (`etage_courant`), pas de la campagne.
    *
-   * `cv.assigned_to is null` est dans le `where` et doit y rester : le rang du tour de rôle est pris avant
-   * `assigner`, donc sans ce filtre chaque message d'un contact déjà assigné consommerait un rang et décalerait
-   * la répartition de toute l'équipe.
+   * 🔴 LA CAMPAGNE À LAQUELLE ON RÉPOND EST LA PLUS RÉCENTE SERVIE À CE CONTACT, et c'est seulement ensuite qu'on
+   * regarde si elle décide de quelque chose : la sous-requête choisit la ligne (`order by ... limit 1`), le `where`
+   * extérieur la filtre. Filtrer avant le `limit` ferait passer une vieille campagne « Inbox » devant la campagne à
+   * scénario d'hier, à laquelle le contact répond vraiment : le fil serait pris pour l'équipe, et ce scénario ne
+   * pourrait plus jamais avancer pour lui.
+   *
+   * 🔴 `premiere_reponse` : la conversation compte au plus UN message entrant depuis l'envoi, celui qu'on traite
+   * (`recordInbound` l'enregistre avant l'appel d'affectation, `processInbound`). Seule cette réponse-là prend le
+   * fil (`assignerReponse`) : sinon chaque message du contact le reprendrait pour l'équipe, pour toujours, et
+   * défairait un « Rendre la main ». `created_at` (horloge de la base) et `sent_at` (horloge du worker, posée quand
+   * Meta a accepté l'envoi) sont comparables à la seconde, bien en deçà du délai d'une réponse humaine. Le compte
+   * s'arrête à deux (`limit 2`) : on veut savoir « un ou plus », pas combien, sur un fil qui peut être long.
+   * ⚠️ Deux messages du même contact traités EN MÊME TEMPS se compteraient l'un l'autre, et aucun ne prendrait le
+   * fil : c'est la sérialisation par contact de la file `webhook` (`groupConcurrency: 1`, `src/worker.ts`) qui
+   * l'exclut, et elle est locale au process.
+   *
+   * `cv.assigned_to is null` est dans le `where` de la sous-requête et doit y rester : le rang du tour de rôle est
+   * pris avant `assigner`, donc sans ce filtre chaque message d'un contact déjà assigné consommerait un rang et
+   * décalerait la répartition de toute l'équipe. `c.tenant_id = $1` y reste aussi : un filtre d'isolation se pose
+   * avant de choisir la ligne, pas après.
    *
    * Index : l'unique `(tenant_id, wa_id)` rend la conversation, puis `campaign_recipients_contact_idx`
-   * (`contact_id, sent_at desc`) ses destinataires triés ; une clause sur `to_e164` ne serait servie par aucun
-   * index. La plus récente gagne. Aucune fenêtre de temps : la garde `assigned_to is null` borne déjà le dégât
-   * à une affectation par conversation.
+   * (`contact_id, sent_at desc`) ses destinataires triés, la clé primaire de `campaigns` et celle de
+   * `campaign_etages` (`campaign_id, rang`) pour la seule ligne retenue ; une clause sur `to_e164` ne serait servie
+   * par aucun index. Le compte des entrants est servi par l'index partiel `conversation_messages_unread_idx`
+   * (`conversation_id, created_at`, `where direction = 'in'`, migration 0092), dont le prédicat est celui de la
+   * sous-requête. Aucune fenêtre de temps : `assigned_to is null` borne l'affectation à une par conversation, et
+   * `premiere_reponse` la prise du fil à une par envoi.
    */
   async campagneAssignanteDuContact(
     tenantId: string,
@@ -811,17 +831,26 @@ export class PgCampaignRepo {
       assignation: 'personne' | 'tour_de_role' | null;
       assignation_user_id: string | null;
       devenir: 'mba' | 'inbox' | null;
+      premiere_reponse: boolean;
     }>(
-      `select c.id, c.assignation, c.assignation_user_id, e.devenir
-         from conversations cv
-         join campaign_recipients r on r.contact_id = cv.contact_id
-         join campaigns c on c.id = r.campaign_id
-         left join campaign_etages e on e.campaign_id = c.id and e.rang = r.etage_courant
-        where cv.tenant_id = $1 and cv.wa_id = $2 and cv.assigned_to is null
-          and c.tenant_id = $1 and r.sent_at is not null
-          and (c.assignation is not null or e.devenir is not null)
-        order by r.sent_at desc
-        limit 1`,
+      `select d.id, d.assignation, d.assignation_user_id, e.devenir,
+              (select count(*) from (
+                 select 1 from conversation_messages m
+                  where m.conversation_id = d.conversation_id and m.direction = 'in' and m.created_at > d.sent_at
+                  limit 2
+               ) entrants) <= 1 as premiere_reponse
+         from (
+           select c.id, c.assignation, c.assignation_user_id, r.etage_courant, r.sent_at, cv.id as conversation_id
+             from conversations cv
+             join campaign_recipients r on r.contact_id = cv.contact_id
+             join campaigns c on c.id = r.campaign_id
+            where cv.tenant_id = $1 and cv.wa_id = $2 and cv.assigned_to is null
+              and c.tenant_id = $1 and r.sent_at is not null
+            order by r.sent_at desc
+            limit 1
+         ) d
+         left join campaign_etages e on e.campaign_id = d.id and e.rang = d.etage_courant
+        where d.assignation is not null or e.devenir is not null`,
       [tenantId, waId],
     );
     const row = res.rows[0];
@@ -831,6 +860,7 @@ export class PgCampaignRepo {
         devenir: row.devenir,
         assignation: row.assignation,
         assignationUserId: row.assignation_user_id,
+        premiereReponse: row.premiere_reponse,
       }
       : null;
   }

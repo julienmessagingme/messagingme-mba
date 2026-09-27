@@ -84,7 +84,7 @@ function sources(): Array<{ fichier: string; texte: string }> {
       const complet = join(dossier, nom);
       if (statSync(complet).isDirectory()) { visiter(complet); continue; }
       if (!nom.endsWith('.ts')) continue;
-      const texte = readFileSync(complet, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+      const texte = readFileSync(complet, 'utf8').replace(/^\s*\/\*[\s\S]*?\*\//gm, '').replace(/^\s*\/\/.*$/gm, '');
       out.push({ fichier: `src/${relative(racine, complet).split('\\').join('/')}`, texte });
     }
   };
@@ -98,7 +98,7 @@ describe('le socle est le seul à construire ce qu il garantit', () => {
     expect(sites).toEqual(['src/socle.ts']);
   });
 
-  it('🔴 chaque racine appelle le socle une fois : deux appels doubleraient ses caches et leurs invalidations', () => {
+  it('🔴 chaque racine n a qu UN site d appel au socle : deux appels doubleraient ses caches et leurs invalidations', () => {
     const sites = sources().flatMap(({ fichier, texte }) => [...texte.matchAll(/(?<!function )\bconstruireSocle\(/g)].map(() => fichier));
     expect(sites.sort()).toEqual(['src/index.ts', 'src/worker.ts']);
   });

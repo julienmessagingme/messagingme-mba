@@ -116,7 +116,6 @@ import { magasinPiecesJointes } from './mba/assistant/pieces-jointes';
 import { enTetesAuthSource } from './agent/http-cible';
 import { creerEprouverSource } from './agent/eprouver-source';
 import { GatewayChatClient } from './agent/llm/chat-client';
-import { creerRendreLeFil, creerPrendreLeFil } from './inbox/controle-du-fil';
 import { consommateurAgent, consommateurMba } from './agent/consommateur';
 import { type OutilAPublier } from './mba/publication';
 import { outilsAPublier } from './mba/outils-a-publier';
@@ -171,7 +170,7 @@ async function main(): Promise<void> {
     automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels, credits,
     agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver, wabaDeLEspace,
     numeroDelieStore, gardeNumeroDelie, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, publicites,
-    clientPubs, clientCreationPubs, workflowRuntime, clesGateway,
+    clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil,
   } = construireSocle({ pool, queue, config });
 
   const campaignDraftStore = new PgCampaignDraftStore(pool);
@@ -333,18 +332,6 @@ async function main(): Promise<void> {
   const brouillonsPub = new PgBrouillonsPubStore(pool);
 
   /**
-   * Rendre le fil à l'agent de Meta. Même module que le balayage du worker (`src/inbox/controle-du-fil.ts`),
-   * pour que le bouton « rendre la main » de l'Inbox le rende aussi chez Meta, pas seulement dans notre état.
-   */
-  const controleDuFil = { numeros: repo, meta: metaFactory };
-  const rendreLeFilAuMba = creerRendreLeFil(controleDuFil);
-  /**
-   * Prendre le fil à l'agent de Meta, sans écrire au client : sans ce geste, Meta continuerait de router les
-   * entrants vers son agent, qui répondrait au message suivant.
-   */
-  const prendreLeFilAuMba = creerPrendreLeFil(controleDuFil);
-
-  /**
    * Lancer un scénario pour un contact, comme le bouton de l'Inbox. Deux appelants : l'Inbox et l'outil
    * « Lancer un scénario » de l'agent de Meta. La fermeture du parcours en cours, la reprise du fil et la
    * garde de fenêtre vivent dans `runFrom`.
@@ -456,12 +443,12 @@ async function main(): Promise<void> {
      * Qui écrit prend le fil : le scénario cesse d'avancer tout seul et l'agent de Meta cesse de répondre.
      * Écrire suffit côté Meta (« Sending a message to a conversation takes control implicitly », et mesuré) :
      * appeler `take` sur un chemin d'envoi serait une redondance payante ; il est câblé sur « Reprendre la
-     * main » (`prendreLeFil`). Une campagne part quand même : un opérateur l'a déclenchée, et elle reprend la
+     * main » (`reprendreLaMain`). Une campagne part quand même : un opérateur l'a déclenchée, et elle reprend la
      * conduite du fil (`ignoreHumanControl`, cf. `tests/campagne-controle-humain.test.ts`).
      * `app_human` aussi pour une machine (API publique, agent tiers par MCP) : `ControlOwner` n'a que trois
      * valeurs et celle-ci produit l'effet voulu. Qui a parlé est porté par l'origine du message (`api`, `mcp`).
      */
-    takeControl: async (tenant: string, waId: string) => { await inboxStore.setControlOwner(tenant, waId, 'app_human'); },
+    takeControl: fil.prisEnEcrivant,
   } satisfies DepsRepondre;
 
   const app = buildServer({
@@ -702,55 +689,12 @@ async function main(): Promise<void> {
         return 'refus' in issue ? { refus: phraseOperateur(issue.refus) } : issue;
       },
       /**
-       * Le bouton « Reprendre la main » : il prend le fil chez Meta avant de toucher notre état local, sinon
-       * Meta continuerait de router les entrants vers son agent, qui répondrait au message suivant.
-       * On n'appelle Meta que si Meta tient le fil : `take` sur un fil déjà détenu serait au mieux inutile,
-       * au pire une erreur lue comme une panne. Lève quand Meta refuse (réservé au « configured escalation
-       * partner », un cas normal) : la route en fait un 409 lisible.
+       * Les deux boutons de contrôle du fil de l'Inbox, « Reprendre la main » (action `take`) et « Rendre la main »
+       * (action `release`) : Meta d'abord, notre état ensuite, dans le module (`src/inbox/fil.ts`). Un refus de
+       * Meta devient un 409 lisible dans la route (Cloudflare mange le corps des 5xx).
        */
-      prendreLeFil: async (tenant, waId) => {
-        if ((await inboxStore.getControlOwner(tenant, waId)) !== 'mba') return;
-        const reglages = await settingsStore.get(tenant);
-        if (!reglages.mbaEnabled) return;
-        await prendreLeFilAuMba(tenant, waId);
-      },
-      /**
-       * L'opérateur rend la main : au scénario, ou à l'agent de Meta quand le client l'a allumé.
-       * Meta d'abord, notre état ensuite, et seulement s'il a confirmé : un état local qui annonce ce que Meta
-       * n'a pas fait rend le problème invisible. Un échec remonte à l'appelant, qui le traduit en 4xx lisible
-       * (Cloudflare mange le corps des 5xx).
-       * `mbaEnabled` peut avoir dérivé de l'état réel chez Meta : acceptable ici, la dérive est réparée à
-       * chaque message entrant à partir du `field` du webhook (`processInbound`).
-       */
-      releaseControl: async (tenant, waId) => {
-        /**
-         * Si Meta tient déjà le fil, on ne fait que rouvrir notre côté : releaser sans détenir le fil est
-         * hors contrat (« you must currently hold thread control »). Le bouton « Reprendre la main » passe,
-         * lui, par `/prendre` (action `take`).
-         */
-        // Les quatre branches clôturent l'escalade : c'est le même geste délibéré quelle que soit la valeur
-        // écrite. Sans ça, `app_workflow` (que « À traiter » exclut) ferait disparaître la conversation avec
-        // son drapeau intact.
-        if ((await inboxStore.getControlOwner(tenant, waId)) === 'mba') {
-          await inboxStore.setControlOwner(tenant, waId, 'app_workflow', { effacerEscalade: true });
-          return 'app_workflow';
-        }
-        const reglages = await settingsStore.get(tenant);
-        if (!reglages.mbaEnabled) {
-          await inboxStore.setControlOwner(tenant, waId, 'app_workflow', { effacerEscalade: true });
-          return 'app_workflow';
-        }
-        const rendu = await rendreLeFilAuMba(tenant, waId);
-        if (!rendu) {
-          // Aucun numéro connecté : il n'y a pas de fil à rendre chez Meta, et notre état local reste la
-          // seule vérité. Ce n'est pas un échec, c'est un espace sans WhatsApp.
-          await inboxStore.setControlOwner(tenant, waId, 'app_workflow', { effacerEscalade: true });
-          return 'app_workflow';
-        }
-        // Geste délibéré d'un opérateur (« Rendre la main ») : il clôt l'escalade, elle n'attend plus personne.
-        await inboxStore.setControlOwner(tenant, waId, 'mba', { effacerEscalade: true });
-        return 'mba';
-      },
+      reprendreLaMain: fil.reprendreLaMain,
+      releaseControl: fil.rendreLaMain,
       /** Lancement d'un scénario depuis l'Inbox, par le chemin partagé avec l'agent de Meta. */
       startWorkflow: lancerScenarioPourContact,
       sendTemplateMessage: async (tenant, phoneNumberId, to, tpl) => {
@@ -2050,7 +1994,7 @@ async function main(): Promise<void> {
               t, workflowId, graphe, contact, noeudId, { ignoreHumanControl: true, emitEvents: false },
             ),
             lancerScenario: (t, workflowId, waId, ouverte) => lancerScenarioPourContact(t, workflowId, waId, ouverte),
-            runtime: workflowRuntime,
+            fil,
             // On ne prend le fil qu'une fois le tour de l'agent de Meta fini.
             attendreFinDuTour: creerAttendreFinDuTour({
               inbox: inboxStore,
@@ -2152,7 +2096,7 @@ async function main(): Promise<void> {
         inbox: inboxStore,
         // `app_human`, comme les autres machines : le scénario cesse d'avancer seul. Qui a parlé est porté par
         // l'origine du message (`api`).
-        takeControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human'); },
+        takeControl: fil.prisEnEcrivant,
       },
       /**
        * Serveur MCP (`POST /mcp`) : les mêmes fonctions que la console, jamais des variantes. Un outil MCP

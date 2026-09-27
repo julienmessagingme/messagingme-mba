@@ -209,15 +209,15 @@ export const priseDeFilSansEffet = async (): Promise<void> => {};
 export const COMPTEURS_VIDES = { tout: 0, aTraiter: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] };
 
 export const inboxInerte: Pick<InboxRouteDeps,
-  'audit' | 'lireMediaMessage' | 'agentsPeuventPrendre' | 'takeControl' | 'prendreLeFil' | 'releaseControl'
+  'audit' | 'lireMediaMessage' | 'agentsPeuventPrendre' | 'takeControl' | 'reprendreLaMain' | 'releaseControl'
   | 'resolveTemplateParams' | 'sendRcsFromInbox' | 'categorieDuModele' | 'prepareCarousel' | 'startWorkflow'> = {
   audit: journalMuet,
   lireMediaMessage: async () => null,
   // Absente : `false`, le comportement d'avant le réglage.
   agentsPeuventPrendre: async () => false,
-  // Absentes : l'état local du fil ne bougeait pas.
+  // Absentes : l'état local du fil ne bougeait pas, et « Reprendre la main » réussissait sans rien écrire.
   takeControl: priseDeFilSansEffet,
-  prendreLeFil: async () => {},
+  reprendreLaMain: async () => 'pris',
   releaseControl: neDevraitPasEtreAppelee('releaseControl'),
   // Absente : des champs vides à remplir à la main.
   resolveTemplateParams: async () => ({ values: [], labels: [] }),

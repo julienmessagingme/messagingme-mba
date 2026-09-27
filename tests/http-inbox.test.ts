@@ -9,6 +9,7 @@ import { MediaExpire } from '../src/inbox/media-entrant';
 import { MediaTropGros } from '../src/meta/media';
 import { capturerJournal } from './journal';
 import { inboxDepInerte, inboxInerte } from './routes-inertes';
+import { bancDuFil } from './banc-du-fil';
 
 const SECRET = 'test-secret';
 const CONV = '11111111-1111-4111-8111-111111111111';
@@ -903,12 +904,17 @@ describe('signaler à la main, et prendre le fil', () => {
     expect((await a.inject({ method: 'POST', url: `/tenants/AUTRE/conversations/c1/signaler`, ...auth() })).statusCode).toBe(403);
   });
 
+  /**
+   * Ces cas montent le VRAI geste (`src/inbox/fil.ts`) sur un faux dépôt et un faux Meta : la route n'appelle plus
+   * qu'un geste, et l'ordre « Meta d'abord » vit dans le module. L'écriture locale est celle du dépôt.
+   */
   it('🔴 « prendre » bascule le fil sur l’humain, sans envoyer le moindre message', async () => {
     // Le point de la route : avant elle, entrer dans « À traiter » demandait d'écrire au client.
     const pris: string[] = [];
     const envois: string[] = [];
+    const { fil } = bancDuFil({ depot: { setControlOwner: async (_t, waId) => { pris.push(waId); return true; } } });
     const a = app({
-      takeControl: async (_t, waId) => { pris.push(waId); },
+      reprendreLaMain: fil.reprendreLaMain,
       sendReply: async () => { envois.push('envoi'); return 'wamid.X'; },
     });
     const res = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/prendre`, ...auth() });
@@ -921,13 +927,14 @@ describe('signaler à la main, et prendre le fil', () => {
   it('🔴 un échec de bascule n’est PAS avalé, contrairement aux chemins d’envoi', async () => {
     // Sur un envoi, `takeControl` est best-effort : le message est déjà parti. Ici la bascule EST le geste,
     // l'avaler afficherait un rangement qui n'a pas eu lieu.
-    const a = app({ takeControl: async () => { throw new Error('base indisponible'); } });
+    const { fil } = bancDuFil({ depot: { setControlOwner: async () => { throw new Error('base indisponible'); } } });
+    const a = app({ reprendreLaMain: fil.reprendreLaMain });
     const res = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/prendre`, ...auth() });
     expect(res.statusCode).toBeGreaterThanOrEqual(500);
   });
 
   it('« prendre » : conversation inconnue -> 404', async () => {
-    const a = app({ takeControl: async () => {} });
+    const a = app({ reprendreLaMain: bancDuFil().fil.reprendreLaMain });
     expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/${CONV}/prendre`, ...auth() })).statusCode).toBe(404);
   });
 
@@ -936,13 +943,14 @@ describe('signaler à la main, et prendre le fil', () => {
     // router les entrants vers son agent. Un état local qui annonce ce que Meta n'a pas fait est pire
     // qu'une erreur, parce qu'il rend le problème invisible jusqu'au message suivant du client.
     const ordre: string[] = [];
-    const a = app({
-      prendreLeFil: async (_t, waId) => { ordre.push(`meta:${waId}`); },
-      takeControl: async () => { ordre.push('local'); },
+    const { fil } = bancDuFil({
+      appels: ordre,
+      depot: { getControlOwner: async () => 'mba', setControlOwner: async () => { ordre.push('local'); return true; } },
     });
+    const a = app({ reprendreLaMain: fil.reprendreLaMain });
     const res = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/prendre`, ...auth() });
     expect(res.statusCode).toBe(200);
-    expect(ordre).toEqual(['meta:33611', 'local']);
+    expect(ordre).toEqual(['take:33611', 'local']);
   });
 
   it('🔴 Meta refuse -> 409 qui donne la porte de secours, et AUCUNE écriture locale', async () => {
@@ -950,10 +958,11 @@ describe('signaler à la main, et prendre le fil', () => {
     // message destiné à l'opérateur n'arriverait jamais à l'écran. Et le refus est un cas NORMAL, Meta
     // réservant `take` au « configured escalation partner ».
     let localEcrit = false;
-    const a = app({
-      prendreLeFil: async () => { throw new Error('not the configured escalation partner'); },
-      takeControl: async () => { localEcrit = true; },
+    const { fil } = bancDuFil({
+      take: ['refuse'],
+      depot: { getControlOwner: async () => 'mba', setControlOwner: async () => { localEcrit = true; return true; } },
     });
+    const a = app({ reprendreLaMain: fil.reprendreLaMain });
     const res = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/prendre`, ...auth() });
     expect(res.statusCode).toBe(409);
     // La porte de secours est DITE, parce qu'elle est vraie quoi qu'il arrive : écrire prend le fil.
@@ -961,13 +970,29 @@ describe('signaler à la main, et prendre le fil', () => {
     expect(localEcrit).toBe(false);
   });
 
-  it('sans câblage Meta, le bouton garde son ancien comportement purement local', async () => {
-    // Le bon repli pour une instance sans MBA : `prendreLeFil` est optionnelle, son absence ne doit pas
-    // faire disparaître un geste de rangement qui n'a rien à voir avec Meta.
+  it('sans agent de Meta, le bouton garde son ancien comportement purement local', async () => {
+    // Le bon repli pour un espace sans MBA : aucun appel à Meta ne doit faire disparaître un geste de rangement
+    // qui n'a rien à voir avec lui.
     const pris: string[] = [];
-    const a = app({ takeControl: async (_t, waId) => { pris.push(waId); } });
+    const { fil } = bancDuFil({ mbaEnabled: false, depot: { getControlOwner: async () => 'mba', setControlOwner: async (_t, waId) => { pris.push(waId); return true; } } });
+    const a = app({ reprendreLaMain: fil.reprendreLaMain });
     expect((await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/prendre`, ...auth() })).statusCode).toBe(200);
     expect(pris).toEqual(['33611']);
+  });
+});
+
+describe('rendre la main : un agent sans numéro ne s’annonce pas', () => {
+  it('🔴 agent allumé, aucun numéro connecté : 409 qui le dit, et RIEN n’est écrit', async () => {
+    // Même règle que le balayage et la fin de parcours : un agent de Meta qui ne peut pas répondre ne s'annonce
+    // pas, et « Automatique » sortirait la conversation d'« À traiter ». L'opérateur garde la main, et le sait.
+    const b = bancDuFil({ numero: null, conversations: { '33611': { owner: 'app_human' } } });
+    const a = app({ releaseControl: b.fil.rendreLaMain });
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/release', ...auth() });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toContain('Aucun numéro WhatsApp');
+    expect(b.etat('33611')?.owner).toBe('app_human');
+    expect(b.appels).toEqual([]);
+    await a.close();
   });
 });
 

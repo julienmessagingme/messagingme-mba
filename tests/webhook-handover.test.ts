@@ -33,8 +33,7 @@ function deps(over: Partial<HandoverDeps> = {}): {
     poses,
     messages,
     deps: {
-      setControlOwner: async (t, w, o) => { poses.push([t, w, o]); return true; },
-      // Une escalade est un détenteur `app_human` posé par une autre méthode : même trace, pour ces tests.
+      // La seule pose de détenteur de ce module : une escalade, donc `app_human`.
       marquerEscalade: async (t, w) => { poses.push([t, w, 'app_human']); },
       recordAgentMessage: async (t, w, body) => { messages.push([t, w, body]); return undefined; },
       ...over,

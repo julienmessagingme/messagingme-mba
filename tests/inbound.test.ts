@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { extractInbound, processInbound } from '../src/webhooks/inbound';
 import type { InboxStore, InboundMessage } from '../src/webhooks/inbound';
-import { entrantsDe } from './webhook-fixtures';
+import { aucuneCorrectionDuDetenteur, entrantsDe } from './webhook-fixtures';
 import { aucunStop } from './consentement';
 
 function payload(messages: unknown[], phoneNumberId = 'pn1', contacts?: unknown[]) {
@@ -182,14 +182,14 @@ class FakeInbox implements InboxStore {
 describe('processInbound', () => {
   it('mappe au tenant et enregistre', async () => {
     const store = new FakeInbox('t1');
-    await processInbound(await entrantsDe(payload([{ id: 'wamid.1', from: '33611', type: 'text', text: { body: 'hi' } }]), store.tenant), store, { optOut: aucunStop });
+    await processInbound(await entrantsDe(payload([{ id: 'wamid.1', from: '33611', type: 'text', text: { body: 'hi' } }]), store.tenant), store, { optOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur });
     expect(store.recorded).toHaveLength(1);
     expect(store.recorded[0]).toMatchObject({ tenantId: 't1', m: { waId: '33611' } });
   });
 
   it('numéro inconnu (pas de tenant) -> rien enregistré', async () => {
     const store = new FakeInbox(null);
-    await processInbound(await entrantsDe(payload([{ id: 'wamid.1', from: '33611', type: 'text', text: { body: 'hi' } }]), store.tenant), store, { optOut: aucunStop });
+    await processInbound(await entrantsDe(payload([{ id: 'wamid.1', from: '33611', type: 'text', text: { body: 'hi' } }]), store.tenant), store, { optOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur });
     expect(store.recorded).toHaveLength(0);
   });
 });

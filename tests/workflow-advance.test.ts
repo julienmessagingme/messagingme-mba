@@ -149,7 +149,7 @@ describe('processWorkflowAdvance : l’échec est journalisé', () => {
     expect(done).toEqual(['m2']);
   });
 
-  it('sans numéro rattaché à un espace, on ne journalise PAS : la ligne n’aurait nulle part où aller', async () => {
+  it('numéro inconnu : ni avance ni journal, la ligne n’aurait nulle part où aller', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const journal: unknown[] = [];
     await processWorkflowAdvance(await entrantsDe(payload, null), {

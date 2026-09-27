@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { handleWebhookJob } from '../src/webhooks/handler';
 import { destinataireDuStatut, instantDuStatut, type AccuseDuStatut } from '../src/webhooks/delivery';
 import { processInbound, type InboundMessage } from '../src/webhooks/inbound';
-import { aucunTarif, aucunEchecLibre, aucuneArriveePub, aucunRoutagePub, aucunNumeroDelie, entrantsDe } from './webhook-fixtures';
+import { aucunTarif, aucunEchecLibre, aucuneArriveePub, aucunRoutagePub, aucunNumeroDelie, aucuneCorrectionDuDetenteur, entrantsDe } from './webhook-fixtures';
 import { aucunStop } from './consentement';
 
 /**
@@ -74,7 +74,7 @@ describe('les entrants Meta passent au puits des signaux', () => {
     await processInbound(
       await entrantsDe(entrant('text', { text: { body: 'bonjour' } }), T),
       { recordInbound: async () => { ordre.push('enregistre'); } },
-      { optOut: aucunStop, signalReponse: async (t, m: InboundMessage) => { ordre.push(`signal:${t}:${m.messageId}`); } },
+      { optOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur, signalReponse: async (t, m: InboundMessage) => { ordre.push(`signal:${t}:${m.messageId}`); } },
     );
     expect(ordre).toEqual(['enregistre', `signal:${T}:wamid.in1`]);
   });
@@ -84,7 +84,7 @@ describe('les entrants Meta passent au puits des signaux', () => {
     await expect(processInbound(
       await entrantsDe(entrant('text', { text: { body: 'bonjour' } }), T),
       { recordInbound: async () => { enregistres += 1; } },
-      { optOut: aucunStop, signalReponse: async () => { throw new Error('file indisponible'); } },
+      { optOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur, signalReponse: async () => { throw new Error('file indisponible'); } },
     )).resolves.toBeUndefined();
     expect(enregistres).toBe(1);
   });
@@ -96,7 +96,7 @@ describe('les entrants Meta passent au puits des signaux', () => {
     await processInbound(await entrantsDe({ entry: [{ changes: [{ field: 'standby', value: {
       metadata: { phone_number_id: 'PN1' },
       standby: { message_echoes: [{ id: 'wamid.echo', message: { to: '33612345678', type: 'text', text: { body: 'Réponse de l’agent' } }, timestamp: '1790000000' }] },
-    } }] }] }, T), inbox, { optOut: aucunStop, signalReponse: async (_t, m) => { vus.push(m.messageId); } });
+    } }] }] }, T), inbox, { optOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur, signalReponse: async (_t, m) => { vus.push(m.messageId); } });
     expect(vus).toEqual([]);
   });
 
@@ -109,7 +109,7 @@ describe('les entrants Meta passent au puits des signaux', () => {
         contacts: [{ wa_id: '33612345678' }],
         messages: [{ id: 'wamid.sb', from: '33612345678', type: 'text', text: { body: 'je veux un conseiller' }, timestamp: '1790000000' }],
       },
-    } }] }] }, T), inbox, { optOut: aucunStop, signalReponse: async (_t, m) => { vus.push(`${m.field}:${m.messageId}`); } });
+    } }] }] }, T), inbox, { optOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur, signalReponse: async (_t, m) => { vus.push(`${m.field}:${m.messageId}`); } });
     expect(vus).toEqual(['standby:wamid.sb']);
   });
 
@@ -122,7 +122,7 @@ describe('les entrants Meta passent au puits des signaux', () => {
       routagePub: aucunRoutagePub,
       signalReponse: async (_t, m) => { vus.push(`${m.type}:${m.body}`); },
       numerosDelies: aucunNumeroDelie,
-      inboundOptOut: aucunStop,
+      inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur,
     });
     expect(vus).toEqual(['button:Oui']);
   });

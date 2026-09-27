@@ -1,7 +1,7 @@
 ---
 ecran: publicites
 source_section: Publicités Click-to-WhatsApp (menu Publicités)
-source_empreinte: 28fa53
+source_empreinte: 53eacf
 ---
 # Lancer une publicité qui ouvre une conversation WhatsApp
 
@@ -46,7 +46,8 @@ passez par le Gestionnaire de Meta.
 Chaque publicité le choisit, et c'est l'un ou l'autre :
 
 - **un scénario** : c'est lui qui parle, seul. Si l'agent de Meta répond d'habitude sur ce numéro, il sera
-  écarté des personnes venues de cette publicité ;
+  écarté des personnes venues de cette publicité. Seule exception : si quelqu'un de votre équipe parle déjà à
+  cette personne, elle reste à lui, son message arrive dans son Inbox et le scénario ne part pas ;
 - **l'agent de Meta** : proposé seulement s'il répond déjà à tout le monde sur votre numéro. Ses messages
   restent facturés au jeton, même pendant les 72 heures gratuites qui suivent un clic.
 

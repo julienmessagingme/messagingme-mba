@@ -1,7 +1,7 @@
 ---
 ecran: inbox
 source_section: Inbox
-source_empreinte: bde81b
+source_empreinte: 675f60
 ---
 # Répondre à un client dans l'Inbox
 
@@ -48,13 +48,14 @@ C'est voulu : rien n'est plus déroutant pour un client qu'un robot qui reprend 
 **Quand un scénario arrive au bout**, si l'agent de Meta est allumé chez vous, la conversation lui revient et
 il répond de nouveau tout seul. Comptez une à deux minutes après le dernier message du scénario : la remise
 n'est demandée à Meta qu'une fois son dernier envoi acquitté. Pendant cette courte attente, la conversation
-est à vous, donc une réponse du client s'y affiche bien dans « À traiter ».
+est à vous, donc une réponse du client s'y affiche bien dans « À traiter ». Si aucun numéro WhatsApp n'est
+connecté, elle reste à vous : un agent sans numéro ne pourrait pas répondre.
 
 **Sur un fil tenu par l'agent de Meta**, le même bouton le lui prend pour de bon, sans qu'aucun message ne
 parte chez le client : l'agent se tait jusqu'à la reprise prévue, même si vous n'écrivez rien. Ces
 conversations-là se repèrent dans la liste à leur fond bleu dégradé et à la petite baguette devant le nom.
-Il arrive que Meta refuse de céder le fil ; l'écran vous le dit alors, et écrire au client le prend à coup
-sûr.
+Il arrive que Meta refuse de céder le fil : l'écran réessaie une fois, puis vous le dit, et écrire au client
+le prend à coup sûr.
 
 **Si votre client n'écrit pas dans votre langue**, l'interrupteur « Traduire les messages reçus », en haut
 de la conversation, affiche ses messages dans la langue de votre console. Le réglage vaut pour votre

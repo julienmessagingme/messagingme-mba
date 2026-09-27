@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { creerPrendreLeFilAvecUnRejeu, REJEU_ATTENTE_DEFAUT_MS, REJEU_ATTENTE_MAX_MS } from '../src/inbox/controle-du-fil';
+import { REJEU_ATTENTE_DEFAUT_MS, REJEU_ATTENTE_MAX_MS } from '../src/inbox/fil';
 import { MetaApiError } from '../src/meta/errors';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { runControlSweep } from '../src/inbox/control-sweep';
+import { bancDuFil, type ReponseMeta } from './banc-du-fil';
 
 /**
  * LE CÂBLAGE DE LA SOUPAPE DE CONTRÔLE DU FIL.
@@ -30,8 +31,8 @@ describe('le balayage réclame l’âge, et le câblage le transmet', () => {
     await runControlSweep({
       inbox: {
         listHeldControl: async (limit, age) => { recus.push({ limit, age }); return []; },
-        setControlOwner: async () => true,
       },
+      fil: bancDuFil().fil,
       timeouts: { app_human: 7_200_000, mba: 86_400_000, app_workflow: 86_400_000 },
     });
     // 🔴 C'est ce chiffre, et pas `undefined` ni 0, qui décide si la branche SQL se déclenche.
@@ -45,7 +46,7 @@ describe('le balayage réclame l’âge, et le câblage le transmet', () => {
      */
     const worker = readFileSync(resolve(__dirname, '../src/worker.ts'), 'utf8');
     const debut = worker.indexOf('runControlSweep({');
-    const bloc = worker.slice(debut, worker.indexOf('releaseToMba:', debut));
+    const bloc = worker.slice(debut, worker.indexOf('});', debut));
     expect(bloc).toContain('inbox: inboxStore,');
     expect(worker).not.toMatch(/listHeldControl: \(/);
   });
@@ -56,22 +57,14 @@ describe('le balayage réclame l’âge, et le câblage le transmet', () => {
     await runControlSweep({
       inbox: {
         listHeldControl: async (_l, age) => { recus.push(age); return []; },
-        setControlOwner: async () => true,
       },
+      fil: bancDuFil().fil,
       timeouts: { app_human: 7_200_000, mba: 86_400_000, app_workflow: 0 },
     });
     expect(recus[0]).toBe(0);
   });
 });
 
-/**
- * 🔴 LA FIN D'UN PARCOURS NE RELÂCHE PLUS LE FIL DANS LA FOULÉE DE SON DERNIER ENVOI (migration 0149).
- *
- * Mesuré en production le 2026-09-15 : la documentation de Meta dit qu'envoyer un message PREND le fil
- * implicitement. Le release partait donc avant que Meta ne traite l'envoi, et l'envoi reprenait le fil juste
- * derrière. Trois releases émis deux secondes après un envoi ont échoué, celui émis quatorze minutes après a
- * marché. (Ce texte attribuait à Meta un retard d'accusé de deux minutes : c'était notre file d'accusés.)
- */
 /**
  * 🔴 LES TROIS CHEMINS D'ESCALADE POSENT LE MÊME DRAPEAU (arbitrage de Julien du 2026-09-23, migration 0164).
  *
@@ -80,9 +73,9 @@ describe('le balayage réclame l’âge, et le câblage le transmet', () => {
  * la conversation n'entrait dans « À traiter » qu'au message suivant du client, et le balayage rendait le fil à
  * l'agent au bout de 2 h sans que personne ait répondu.
  *
- * ⚠️ UN CÂBLAGE N'A AUCUN DÉPENDANT : ce test lit la SOURCE, parce qu'un faux magasin accepterait n'importe
- * quelles options sans rien dire (une flèche à trois paramètres est assignable à un contrat qui en déclare
- * quatre). Sans lui, retirer `escalade: true` ne faisait rougir aucun test.
+ * ⚠️ UN CÂBLAGE N'A AUCUN DÉPENDANT : ces cas lisent la SOURCE, parce qu'un faux accepterait n'importe quelles
+ * options sans rien dire (une flèche à trois paramètres est assignable à un contrat qui en déclare quatre). Ce que
+ * le geste écrit, lui, s'exécute : `tests/fil.test.ts` (`passerAUnHumain`).
  */
 describe('l’escalade est posée par les DEUX câblages, pas seulement par l’agent de Meta', () => {
   const wiring = readFileSync(resolve(__dirname, '../src/workflow/wiring.ts'), 'utf8');
@@ -93,58 +86,81 @@ describe('l’escalade est posée par les DEUX câblages, pas seulement par l’
     // fermée, envoi refusé à la reprise) ne le pose pas, parce que personne n'attend à cet instant. Écrire
     // `escalade: true` ici rendrait tous les fils collants, y compris ceux que personne n'attend.
     expect(wiring).toContain('escalateToHuman: async (tenant, waId, assigneA, escalade) => {');
-    expect(wiring).toContain("setControlOwner(tenant, waId, 'app_human', { only: ['app_workflow'], escalade })");
+    expect(wiring).toContain('fil.passerAUnHumain(tenant, waId, { escalade })');
   });
 
   it('🔴 l’escalade d’un agent IA aussi, et elle REND toujours son verdict', () => {
-    expect(worker).toContain("escalateToHuman: (t, waId) => inboxStore.setControlOwner(t, waId, 'app_human', { only: ['app_workflow'], escalade: true })");
+    expect(worker).toContain('escalateToHuman: (t, waId) => fil.passerAUnHumain(t, waId, { escalade: true })');
   });
 
   it('🔴 et la passation de l’agent de Meta passe, elle, par `marquerEscalade`', () => {
     // Elle doit CRÉER la conversation si la passation arrive avant l'écho de l'agent : c'est un upsert, pas
-    // une prise de fil conditionnelle.
-    expect(worker).toContain('marquerEscalade: (t, w) => inboxStore.marquerEscalade(t, w),');
+    // une prise de fil conditionnelle (`ControleDuFil.agentDeMetaPasseLaMain`).
+    expect(worker).toContain('marquerEscalade: fil.agentDeMetaPasseLaMain,');
   });
 });
 
+/**
+ * 🔴 LA FIN D'UN PARCOURS NE RELÂCHE PLUS LE FIL DANS LA FOULÉE DE SON DERNIER ENVOI (migration 0149).
+ *
+ * Mesuré en production le 2026-09-15 : la documentation de Meta dit qu'envoyer un message PREND le fil
+ * implicitement. Le release partait donc avant que Meta ne traite l'envoi, et l'envoi reprenait le fil juste
+ * derrière. Trois releases émis deux secondes après un envoi ont échoué, celui émis quatorze minutes après a
+ * marché. (Ce texte attribuait à Meta un retard d'accusé de deux minutes : c'était notre file d'accusés.)
+ *
+ * Ces cas lisaient le TEXTE du câblage ; le geste vit désormais dans `src/inbox/fil.ts`, et ils l'EXÉCUTENT.
+ */
 describe('le fil est rendu sur ACCUSÉ, pas sur horloge', () => {
   const wiring = readFileSync(resolve(__dirname, '../src/workflow/wiring.ts'), 'utf8');
-  // Le geste est une constante NOMMÉE depuis le lot 3 des outils maison : le relais de l'agent de Meta la réutilise.
-  const bloc = wiring.slice(wiring.indexOf('const rendreLaMainApresParcours'), wiring.indexOf('const workflowExecutor = new WorkflowExecutor'));
+  const index = readFileSync(resolve(__dirname, '../src/index.ts'), 'utf8');
 
-  it('🔴 l’exécuteur rend le fil par CE geste, et le câblage le rend au relais', () => {
-    expect(bloc.length).toBeGreaterThan(0);
-    expect(wiring).toContain('releaseToMba: rendreLaMainApresParcours,');
-    expect(wiring.slice(wiring.lastIndexOf('return {'))).toContain('rendreLaMainApresParcours');
+  it('🔴 l’exécuteur rend le fil par CE geste, et le relais de l’agent de Meta aussi', () => {
+    expect(wiring).toContain('releaseToMba: fil.rendreApresParcours,');
+    const gestes = index.slice(index.indexOf('...creerGestesEnvoi({'));
+    expect(gestes.slice(0, gestes.indexOf('attendreFinDuTour'))).toMatch(/\n\s+fil,\r?\n/);
   });
 
-  it('🔴 la fin de parcours MARQUE, elle n’appelle pas Meta', () => {
-    expect(bloc).toContain('demanderReleaseMba(tenant, waId)');
-    // C'est l'assertion qui porte tout le correctif : plus aucun appel à Meta sur ce chemin.
-    expect(bloc).not.toContain('releaseThreadChezMeta');
+  it('🔴 la fin de parcours MARQUE, elle n’appelle pas Meta', async () => {
+    // C'est l'assertion qui porte tout le correctif : aucun appel à Meta tant que notre dernier envoi est en vol.
+    const b = bancDuFil({ conversations: { w: { owner: 'app_workflow', enVol: 'wamid.DERNIER' } } });
+    await b.fil.rendreApresParcours('t1', 'w');
+    expect(b.appels).toEqual([]);
+    expect(b.etat('w')?.marque).toBe('wamid.DERNIER');
   });
 
-  it('🔴 l’état d’attente est `app_human`, la SEULE valeur qui garde le fil dans « À traiter »', () => {
+  it('🔴 l’état d’attente est `app_human`, la SEULE valeur qui garde le fil dans « À traiter »', async () => {
     // `app_workflow` l'en sortirait (c'est le défaut réparé la veille), et `mba` afficherait la marque du
     // robot sur un fil que nous tenons encore.
-    expect(bloc).toContain("setControlOwner(tenant, waId, 'app_human', { only: ['app_workflow'] })");
+    const b = bancDuFil({ conversations: { w: { owner: 'app_workflow', enVol: 'wamid.DERNIER' } } });
+    await b.fil.rendreApresParcours('t1', 'w');
+    expect(b.etat('w')?.owner).toBe('app_human');
     const dansATraiter = (owner: string) => owner !== 'app_workflow';
     expect(dansATraiter('app_human')).toBe(true);
     expect(dansATraiter('app_workflow')).toBe(false);
   });
 
-  it('🔴 rien n’a été envoyé -> on relâche TOUT DE SUITE, sinon le fil attend un accusé qui ne viendra pas', () => {
-    const compact = bloc.replace(/\s+/g, ' ');
-    expect(compact).toContain('if (attendu) return; await rendreLeFilMaintenant(tenant, waId);');
+  it('🔴 rien n’a été envoyé -> on relâche TOUT DE SUITE, sinon le fil attend un accusé qui ne viendra pas', async () => {
+    const b = bancDuFil({ conversations: { w: { owner: 'app_workflow' } } });
+    await b.fil.rendreApresParcours('t1', 'w');
+    expect(b.appels).toEqual(['release:w']);
+    expect(b.etat('w')?.owner).toBe('mba');
   });
 
-  it('🔴 la remise écrit `mba` APRÈS l’accord de Meta, jamais avant', () => {
+  it('🔴 la remise écrit `mba` APRÈS l’accord de Meta, jamais avant', async () => {
     // L'ordre inverse est celui qui mentait : la colonne restait à `mba` sur un refus, et la seule trace
     // était une ligne de console. Ici l'état d'attente est déjà honnête, donc il n'y a rien à anticiper.
-    const geste = wiring.slice(wiring.indexOf('const rendreLeFilMaintenant'), wiring.indexOf('const remiseMbaSurAccuse'));
-    expect(geste.indexOf('releaseThreadChezMeta(tenant, waId)')).toBeGreaterThan(-1);
-    expect(geste.indexOf('releaseThreadChezMeta(tenant, waId)'))
-      .toBeLessThan(geste.indexOf("setControlOwner(tenant, waId, 'mba', { only: ['app_human'] })"));
+    const ordre: string[] = [];
+    const accepte = bancDuFil({
+      appels: ordre,
+      conversations: { w: { owner: 'app_human', marque: 'wamid.A' } },
+    });
+    await accepte.fil.remettreSurAccuse('wamid.A');
+    ordre.push(`colonne:${accepte.etat('w')?.owner}`);
+    expect(ordre).toEqual(['release:w', 'colonne:mba']);
+
+    const refuse = bancDuFil({ release: ['refuse'], conversations: { w: { owner: 'app_human', marque: 'wamid.A' } } });
+    await expect(refuse.fil.remettreSurAccuse('wamid.A')).rejects.toThrow();
+    expect(refuse.etat('w')?.owner, 'un refus de Meta n’écrit pas `mba`').toBe('app_human');
   });
 
   it('🔴 les DEUX files qui voient des statuts reçoivent la remise', () => {
@@ -154,15 +170,16 @@ describe('le fil est rendu sur ACCUSÉ, pas sur horloge', () => {
     const worker = readFileSync(resolve(__dirname, '../src/worker.ts'), 'utf8');
     const lignes = worker.split('\n').filter((l) => l.includes('remiseMba:'));
     expect(lignes).toHaveLength(2);
-    expect(lignes.every((l) => l.includes('remiseMbaSurAccuse'))).toBe(true);
+    expect(lignes.every((l) => l.includes('fil.remettreSurAccuse'))).toBe(true);
   });
 
-  it('⚠️ le BALAYAGE, lui, appelle Meta directement, et c’est correct', () => {
+  it('⚠️ le BALAYAGE, lui, appelle Meta directement, et c’est correct', async () => {
     // Il tourne loin de tout envoi : il n'y a aucune course à éviter, et passer par le marqueur ferait
     // attendre un accusé qui n'arrivera jamais sur une conversation sans envoi récent.
-    const worker = readFileSync(resolve(__dirname, '../src/worker.ts'), 'utf8');
-    const ligne = worker.split('\n').find((l) => l.includes('releaseToMba:')) ?? '';
-    expect(ligne).toContain('releaseThreadChezMeta(tenant, waId)');
+    const b = bancDuFil({ conversations: { w: { owner: 'app_human', enVol: 'wamid.VIEUX' } } });
+    expect(await b.fil.rendreApresInactivite('t1', 'w', 'app_human', 'mba')).toBe(true);
+    expect(b.appels).toEqual(['release:w']);
+    expect(b.etat('w')?.marque).toBeNull();
   });
 });
 
@@ -174,6 +191,7 @@ describe('le fil est rendu sur ACCUSÉ, pas sur horloge', () => {
  * règles étaient gardées par `tests/scenario-fil-non-repris.test.ts` qui cherchait les chaînes
  * `err.retryable` et `tentative < 2` dans le TEXTE de `wiring.ts`. Ce grep prouvait qu'un motif était écrit ;
  * il ne prouvait ni qu'on rejoue UNE fois, ni qu'on ne rejoue pas un refus définitif, ni combien on attend.
+ * Il s'exerce désormais par le geste qui l'emprunte (`reprendrePourLApp`, `src/inbox/fil.ts`).
  */
 describe('prendre le fil chez Meta : un rejeu, et jamais deux', () => {
   const rejouable = (retryAfterMs?: number) => new MetaApiError(429, null, retryAfterMs);
@@ -181,18 +199,11 @@ describe('prendre le fil chez Meta : un rejeu, et jamais deux', () => {
 
   /** Un banc qui compte les appels et les attentes, sans jamais dormir. */
   function banc(resultats: Array<'ok' | Error>) {
-    const attentes: number[] = [];
-    let appels = 0;
-    const prendre = creerPrendreLeFilAvecUnRejeu({
-      prendre: async () => {
-        const r = resultats[appels] ?? 'ok';
-        appels += 1;
-        if (r !== 'ok') throw r;
-        return true;
-      },
-      attendre: async (ms) => { attentes.push(ms); },
+    const b = bancDuFil({
+      conversations: { '33600000001': { owner: 'mba' }, w: { owner: 'mba' } },
+      take: resultats.map((r): ReponseMeta => (r === 'ok' ? 'accepte' : r)),
     });
-    return { prendre, attentes, appels: () => appels };
+    return { prendre: (t: string, w: string) => b.fil.reprendrePourLApp(t, w), attentes: b.attentes, appels: () => b.appels.length };
   }
 
   it('du premier coup : un seul appel, aucune attente', async () => {
@@ -238,15 +249,11 @@ describe('prendre le fil chez Meta : un rejeu, et jamais deux', () => {
   });
 
   it('🔴 AUCUN NUMÉRO CONNECTÉ rend `true`, et ce contrat était implicite', async () => {
-    // `prendre` rend `false` quand aucun numéro n'est connecté. La boucle d'origine jetait ce booléen et
-    // rendait `true` : le résultat est juste (sans numéro il n'y a aucun agent Meta à qui prendre le fil,
-    // donc écrire notre état local est correct) mais il l'était par accident. `true` signifie « Meta n'a pas
-    // protesté », ce qui couvre les deux cas. L'appelant garde exactement le comportement qu'il avait.
-    const prendre = creerPrendreLeFilAvecUnRejeu({
-      prendre: async () => false,
-      attendre: async () => { throw new Error('ne doit pas attendre'); },
-    });
-    expect(await prendre('t1', '33600000001')).toBe(true);
+    // Sans numéro, il n'y a aucun agent Meta à qui prendre le fil, donc écrire notre état local est correct.
+    // `true` signifie « Meta n'a pas protesté », ce qui couvre les deux cas.
+    const b = bancDuFil({ numero: null, conversations: { '33600000001': { owner: 'mba' } } });
+    expect(await b.fil.reprendrePourLApp('t1', '33600000001')).toBe(true);
+    expect(b.attentes).toEqual([]);
   });
 
   it('⚠️ il ne LÈVE jamais : l’appelant décide d’écrire ou non son état local', async () => {

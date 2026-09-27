@@ -1293,6 +1293,28 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   dedans**. Concrètement : un abonné qui cliquait un bouton de chaîne ne lançait aucun scénario, sans que rien
   ne l'explique. Le libellé change de sens (on REND une main qu'on a prise, on la REPREND à l'agent de Meta),
   l'effet est le même : le fil repart au scénario.
+- ✅ **Qui répond, une seule règle partout** (2026-09-27). Cinq comportements visibles ont été alignés :
+  - **Une réponse à une campagne réglée « la conversation arrive dans l'Inbox » arrive vraiment chez vous** :
+    elle entre dans « À traiter », affectée selon la campagne, et ni l'agent de Meta ni une automation par
+    mot-clé n'y répond. Avant, dans le même instant, le fil repartait chez l'agent de Meta et la conversation
+    sortait d'« À traiter ». Le délai de reprise habituel (deux heures par défaut) s'applique ensuite.
+    Seule la PREMIÈRE réponse du client à la campagne prend la conversation : ses messages suivants ne la
+    reprennent pas, donc un « Rendre la main » ou le délai de reprise tiennent. Et si une campagne plus récente
+    lui a été envoyée depuis, c'est à celle-là qu'il répond : l'ancienne campagne « Inbox » ne décide plus rien.
+  - **Un client qui clique une publicité pendant qu'un opérateur lui parle reste à l'opérateur** : son message
+    arrive dans l'Inbox, le scénario de la publicité ne démarre pas. Sur une conversation que l'agent de Meta
+    tient, la publicité reprend toujours la main. Une campagne, un lancement depuis l'Inbox, un bouton de
+    chaîne, l'API d'envoi ou un lien de test reprennent la main comme avant, opérateur compris.
+  - **Une conversation escaladée quitte « À traiter » dès qu'un robot reprend le fil** : l'agent de Meta qui
+    la reprend, ou un scénario lancé dessus. Avant, elle pouvait y rester pendant que l'agent répondait, ou y
+    rester collée pour toujours si Meta refusait de reprendre le fil.
+  - **« Reprendre la main » réessaie une fois** quand Meta hésite, comme les automates : moins de refus
+    affichés, pour un clic qui peut durer jusqu'à deux secondes de plus.
+  - **Agent de Meta allumé mais aucun numéro connecté** : la conversation n'est plus jamais annoncée « Agent de
+    Meta », un agent qui ne peut pas répondre. « Rendre la main » le dit (« Aucun numéro WhatsApp n'est
+    connecté ») et laisse la conversation telle quelle, au lieu de la passer en automatique. La fin d'un
+    scénario la passe « à vous », en attente d'une remise à l'agent qui ne peut pas avoir lieu : elle y reste
+    jusqu'à ce qu'un opérateur agisse, le délai de reprise ne la rend pas.
 - ✅ **Délai de reprise réglable** (menu **AI Agent > MBA, paramètres > Activation**, en minutes). Passé ce
   délai sans que personne ne rende la main, la conversation repart toute seule : un onglet fermé ou un
   opérateur parti ne bloquent jamais un client indéfiniment. Vide = 2 heures. `0` = jamais de reprise
@@ -3059,7 +3081,9 @@ trompeur : la publicité se créerait, se publierait, et ne partirait jamais.
 **Qui répond aux prospects** : chaque publicité choisit, **un scénario** ou **l'agent de Meta**. Le choix
 « agent de Meta » n'est proposé que s'il répond vraiment à tout le monde sur ce numéro, et l'écran rappelle
 que ses messages restent facturés au jeton même pendant les 72 heures gratuites. Sur un scénario, Engage Me
-**reprend la conversation à l'agent de Meta** à l'arrivée du prospect, pour que le scénario parle seul.
+**reprend la conversation à l'agent de Meta** à l'arrivée du prospect, pour que le scénario parle seul. Jamais
+à un opérateur (depuis le 2026-09-27) : si quelqu'un de l'équipe parle déjà à ce client, il garde la
+conversation, le message arrive dans son Inbox et le scénario de la publicité ne part pas.
 
 **Suivre** : statut chez Meta et motif de refus, relus toutes les quinze minutes, avec l'heure de la
 dernière lecture. Et un **entonnoir** : dépense, clics, prospects, qualifiés, avec le coût de chaque étape

@@ -34,14 +34,15 @@ export interface RoutagePubDeps {
    */
   estDesabonne(tenantId: string, waId: string): Promise<boolean>;
   /**
-   * Reprend le fil à l'agent de Meta et pose le contrôle local à `app_workflow` ; `false` = Meta a refusé. C'est
-   * `reprendreLeFilPourLApp` (`src/workflow/wiring.ts`), câblé et non réécrit.
+   * Reprend le fil à l'agent de Meta et pose le contrôle local à `app_workflow` ; `false` = Meta a refusé,
+   * `'operateur'` = un opérateur tient la conversation et un lead ne la lui prend pas. C'est
+   * `ControleDuFil.reprendrePourLApp` avec `saufOperateur` (`src/inbox/fil.ts`), câblé et non réécrit.
    */
-  reprendreLeFil(tenantId: string, waId: string): Promise<boolean>;
+  reprendreLeFil(tenantId: string, waId: string): Promise<boolean | 'operateur'>;
   /**
    * Rend le fil à l'agent de Meta, quand on l'a pris et que personne n'a finalement parlé. C'est
-   * `remiseMbaSiPersonneNeSuit` (`src/workflow/wiring.ts`), qui porte déjà ses gardes (agent éteint, parcours en
-   * attente) : câblé, non réécrit.
+   * `ControleDuFil.remettreSiPersonneNeSuit` (`src/inbox/fil.ts`), qui porte déjà ses gardes (agent éteint,
+   * parcours en attente, opérateur) : câblé, non réécrit.
    */
   rendreLeFil(tenantId: string, waId: string): Promise<void>;
   /**
@@ -98,6 +99,7 @@ export async function processRoutagePub(
       const decision = routerLeLead({ pub, bloque, desabonne, enStandby: a.enStandby });
 
       let repriseReussie = false;
+      let operateur = false;
       let repriseLe: Date | null = null;
       /**
        * Un rejeu ne refait rien et ne prétend rien : `repriseReussie` reste faux (« rien pris maintenant »). Le
@@ -106,7 +108,9 @@ export async function processRoutagePub(
        * le lead n'est perdu que si la première livraison a échoué après l'écriture de l'événement.
        */
       if (decision.sorte === 'reprendre_puis_pub' && dejaVus?.has(m.messageId) !== true) {
-        repriseReussie = await deps.reprendreLeFil(tenantId, m.waId);
+        const reprise = await deps.reprendreLeFil(tenantId, m.waId);
+        repriseReussie = reprise === true;
+        operateur = reprise === 'operateur';
         if (repriseReussie) repriseLe = new Date();
       }
 
@@ -124,9 +128,12 @@ export async function processRoutagePub(
 
       if (issue === 'reprise_refusee') {
         // La reprise refusée doit rester visible dans le journal : une seule pendant le pilote suffit à basculer sur
-        // l'aiguillage par liste autorisée.
+        // l'aiguillage par liste autorisée. Un opérateur qui tient la conversation la garde : même issue (rien ne
+        // part), cause différente, et le journal la dit.
         // eslint-disable-next-line no-console
-        console.warn(`routage pub : Meta a refusé de rendre le fil pour le lead ${m.messageId} (campagne ${campagneId ?? 'inconnue'}), son agent garde ce lead`);
+        console.warn(operateur
+          ? `routage pub : un opérateur tient la conversation du lead ${m.messageId} (campagne ${campagneId ?? 'inconnue'}), le scénario de la pub ne la lui prend pas`
+          : `routage pub : Meta a refusé de rendre le fil pour le lead ${m.messageId} (campagne ${campagneId ?? 'inconnue'}), son agent garde ce lead`);
       }
     } catch (err) {
       // eslint-disable-next-line no-console

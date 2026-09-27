@@ -19,10 +19,8 @@ import type { EspaceDuNumero } from './rattachement';
  */
 
 export interface HandoverDeps {
-  /** Pose le détenteur du fil (sans condition : Meta fait autorité sur qui détient quoi). */
-  setControlOwner(tenantId: string, waId: string, owner: ControlOwner): Promise<boolean>;
   /**
-   * L'agent de Meta vient de passer la main à l'équipe (`PgInboxStore.marquerEscalade`) : le fil devient le nôtre
+   * L'agent de Meta vient de passer la main à l'équipe (`ControleDuFil.agentDeMetaPasseLaMain`) : le fil devient le nôtre
    * et la conversation entre tout de suite dans « À traiter », sans attendre le message suivant du client.
    */
   marquerEscalade(tenantId: string, waId: string): Promise<void>;
@@ -88,7 +86,8 @@ export interface Bascule {
 
 /**
  * Les bascules d'un payload, dans l'ordre, rattachées à leur espace par `espaceDe` (la lecture unique du job, qui
- * ne relit pas un numéro déjà lu pour les entrants). Une lecture en échec lève, et l'appelant isole l'étape.
+ * ne relit pas un numéro déjà lu pour les entrants). Une lecture en échec écarte la seule bascule concernée, et
+ * elle est journalisée : les autres bascules du payload s'appliquent encore, puisque l'étape n'est pas rejouée.
  */
 export async function lireLesBascules(payload: unknown, espaceDe: EspaceDuNumero): Promise<Bascule[]> {
   const bascules: Bascule[] = [];
@@ -100,7 +99,16 @@ export async function lireLesBascules(payload: unknown, espaceDe: EspaceDuNumero
       // `valeurEffective`, jamais `asRecord` directement : voir `./change.ts`.
       const value = valeurEffective(change['value']);
       const phoneNumberId = numeroBusinessDuChange(value);
-      bascules.push({ field, value, phoneNumberId, tenantId: phoneNumberId ? await espaceDe(phoneNumberId) : null });
+      let tenantId: string | null = null;
+      if (phoneNumberId) {
+        try {
+          tenantId = await espaceDe(phoneNumberId);
+        } catch (err) {
+          journaliser('error', 'handover_espace_illisible', { err, field, phoneNumberId });
+          continue;
+        }
+      }
+      bascules.push({ field, value, phoneNumberId, tenantId });
     }
   }
   return bascules;
@@ -127,12 +135,10 @@ export async function processHandovers(bascules: readonly Bascule[], deps: Hando
       // Journalisé toujours, reconnu ou non : c'est cette trace qui livrera le sens inverse (une app qui rend le fil
       // à l'agent), que Meta n'a jamais envoyé et qu'on refuse donc d'interpréter.
       journaliser('info', 'handover_recu', { tenantId, phoneNumberId, waId: waId ?? null, owner, value });
-      // `app_human` = l'agent de Meta nous passe la main (seul sens reconnu) : une escalade vers l'équipe.
+      // `app_human` = l'agent de Meta nous passe la main (seul sens reconnu) : une escalade vers l'équipe. L'autre
+      // sens n'existe pas (`ownerFromHandover` ne rend que `app_human` ou `null`) : il est journalisé ci-dessus, jamais
+      // interprété. Une escalade se lève par un `standby` postérieur (`ControleDuFil.entrantEnStandby`).
       if (waId && owner === 'app_human') await deps.marquerEscalade(tenantId, waId);
-      // L'autre sens n'existe pas encore (`ownerFromHandover` ne rend que `app_human` ou `null`) : branche
-      // inatteignable. Une escalade se lève aujourd'hui par un `standby` postérieur (`messageEnvoyeLe`,
-      // `accorderLeDetenteur`).
-      else if (waId && owner) await deps.setControlOwner(tenantId, waId, owner);
       continue;
     }
 

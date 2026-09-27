@@ -194,7 +194,6 @@ describe('les extracteurs voient enfin le standby', () => {
     // invisible dans l'Inbox, même une fois le standby remonté.
     const vus: Array<{ waId: string; body: string }> = [];
     await processHandovers(await lireLesBascules(STANDBY_ECHO, async () => 'tenant-1'), {
-      setControlOwner: async () => true,
       marquerEscalade: async () => {},
       recordAgentMessage: async (_t, waId, body) => { vus.push({ waId, body }); },
     });

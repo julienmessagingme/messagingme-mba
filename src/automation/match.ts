@@ -64,6 +64,15 @@ export function reprendLaMain(a: AutomationRow): boolean {
   return vientDuneChaine(a) || a.possedePar === POSSESSEUR_PUBLICITE;
 }
 
+/**
+ * Cette reprise laisse-t-elle la main à un opérateur qui la tient ? Oui pour la publicité : c'est le client qui
+ * déclenche (un clic payé), et un opérateur en train de lui répondre garde la conversation, son message arrivant
+ * dans l'Inbox. Non pour le bouton de chaîne, lancement explicite au même titre qu'une campagne.
+ */
+export function epargneLOperateur(a: AutomationRow): boolean {
+  return a.possedePar === POSSESSEUR_PUBLICITE;
+}
+
 export interface AutomationRow {
   id: string;
   tenantId: string;

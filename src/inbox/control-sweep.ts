@@ -1,5 +1,5 @@
 import type { ControlOwner } from './store.pg';
-import { messageDe } from '../lib/erreur';
+import type { ControleDuFil } from './fil';
 import { FENETRE_SERVICE_MS } from '../workflow/engine';
 
 /**
@@ -9,9 +9,9 @@ import { FENETRE_SERVICE_MS } from '../workflow/engine';
  */
 const FENETRE_META_MS = FENETRE_SERVICE_MS;
 
-/** Ce dont le balayage a besoin (interface étroite, satisfaite par PgInboxStore). */
+/** Ce dont le balayage a besoin : la liste des fils détenus, ses délais, et le geste qui rend un fil. */
 export interface ControlSweepDeps {
-  /** Les conversations et leur détenteur. */
+  /** Les conversations et leur détenteur (interface étroite, satisfaite par PgInboxStore). */
   inbox: {
     /**
      * Les conversations dont le fil est détenu. `ageScenarioMs` ne ramène que les fils de scénario plus vieux que
@@ -21,13 +21,6 @@ export interface ControlSweepDeps {
       limit?: number,
       ageScenarioMs?: number,
     ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null; lastMessageAt: Date | null; escaladee: boolean }>>;
-    setControlOwner(
-      tenantId: string,
-      waId: string,
-      owner: ControlOwner,
-      /** `effacerEscalade` : le drapeau d'escalade, périmé dès qu'on déplace ce fil (cf. plus bas). */
-      opts?: { only?: readonly ControlOwner[]; effacerEscalade?: boolean },
-    ): Promise<boolean>;
   };
   /**
    * Délai d'inactivité par détenteur, en ms : le défaut du serveur pour les clients qui n'ont rien réglé. 0 ou
@@ -48,11 +41,12 @@ export interface ControlSweepDeps {
     mbaActifParTenant?(tenantIds: readonly string[]): Promise<Set<string>>;
   };
   /**
-   * Rend le fil à Meta (`thread_control` action `release`), seulement vers `mba` et sur une fenêtre ouverte.
-   * Son verdict gouverne l'écriture locale : `false` (aucun numéro) comme une exception (refus de Meta)
-   * empêchent la bascule, sinon notre colonne annoncerait `mba` quand Meta pense le contraire.
+   * Le geste qui rend un fil (`src/inbox/fil.ts`) : vers `mba`, Meta d'abord (`thread_control` action `release`),
+   * et un refus, une absence de numéro ou un fil de test empêchent la bascule, sinon notre colonne annoncerait
+   * `mba` quand Meta pense le contraire. Il efface le drapeau d'escalade : une escalade en cours est sautée avant,
+   * donc un drapeau qui subsiste est périmé, et le laisser l'armerait pour le jour où le fil redeviendrait humain.
    */
-  releaseToMba?(tenantId: string, waId: string): Promise<boolean>;
+  fil: Pick<ControleDuFil, 'rendreApresInactivite'>;
   now?: () => number;
 }
 
@@ -99,28 +93,12 @@ export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
     // La garde ne porte que sur `versMba` : une transition qui ne parle pas à Meta n'a rien à faire d'une fenêtre.
     if (versMba && !fenetreOuverte) continue;
     /**
-     * Meta d'abord, l'écriture ensuite : écrire un état que Meta n'a pas confirmé laisse deux systèmes se croire
-     * chacun déchargés du client. Refuser d'écrire ne gèle rien, la conversation reste visible et ce balayage
-     * repasse. `rendreLeFil` lève sur un refus (tracé) et rend `false` sans numéro (configuration) : les deux
-     * font sauter la ligne, sans repli sur `app_workflow` qui la sortirait de « À traiter ». Le coût est un
-     * réexamen à chaque passe.
-     *
-     * Résidu assumé : la garde `only` ne protège plus d'un « Reprendre la main » cliqué pendant l'appel Meta
-     * (course fugace, réparée par un second clic).
+     * Refuser d'écrire ne gèle rien, la conversation reste visible et ce balayage repasse : un refus de Meta, une
+     * absence de numéro ou un fil de test font sauter la ligne, sans repli sur `app_workflow` qui la sortirait de
+     * « À traiter ». Le coût est un réexamen à chaque passe. Résidu assumé : la garde `only` ne protège pas d'un
+     * « Reprendre la main » cliqué pendant l'appel Meta (course fugace, réparée par un second clic).
      */
-    if (versMba && deps.releaseToMba) {
-      try {
-        if (!(await deps.releaseToMba(c.tenantId, c.waId))) continue;
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error(`release vers MBA REFUSÉ pour ${c.waId}, l’état local n’a pas été écrit:`, messageDe(err));
-        continue;
-      }
-    }
-    const dest: ControlOwner = versMba ? 'mba' : 'app_workflow';
-    // Une escalade en cours a déjà été sautée plus haut : un drapeau qui subsiste est périmé, et le laisser
-    // l'armerait pour le jour où la conversation redeviendrait `app_human`.
-    if (!(await deps.inbox.setControlOwner(c.tenantId, c.waId, dest, { only: [c.owner], effacerEscalade: true }))) continue;
+    if (!(await deps.fil.rendreApresInactivite(c.tenantId, c.waId, c.owner, versMba ? 'mba' : 'app_workflow'))) continue;
     rendues += 1;
   }
   return rendues;

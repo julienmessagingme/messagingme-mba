@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { handleWebhookJob, type WebhookJobDeps } from '../src/webhooks/handler';
 import type { InboundMessage } from '../src/webhooks/inbound';
-import { aucunNumeroDelie, aucuneArriveePub, aucunRoutagePub, aucunSignalReponse } from './webhook-fixtures';
+import { aucunNumeroDelie, aucuneArriveePub, aucunRoutagePub, aucunSignalReponse, aucuneCorrectionDuDetenteur } from './webhook-fixtures';
 import { aucunStop, jamaisDesabonne } from './consentement';
 
 /**
@@ -63,7 +63,7 @@ function toutesLesEtapes(inbox: ReturnType<typeof inboxQuiCompte>['inbox'], vus:
     store: { insertEvent: async () => true },
     inbox,
     numerosDelies: aucunNumeroDelie,
-    inboundOptOut: aucunStop,
+    inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur,
     inboundContactUpsert: async (t) => { vus.push(`upsert:${t}`); return 'updated'; },
     signalReponse: async (t) => { vus.push(`signal:${t}`); },
     arriveesPub: { enregistrer: async (t) => { vus.push(`arrivee:${t}`); return 'ecrite'; } },
@@ -86,7 +86,6 @@ function toutesLesEtapes(inbox: ReturnType<typeof inboxQuiCompte>['inbox'], vus:
     workflowAdvance: { advance: async (t) => { vus.push(`avance:${t}`); } },
     remiseMbaEntrant: { remettre: async (t) => { vus.push(`remise:${t}`); } },
     handover: {
-      setControlOwner: async () => true,
       marquerEscalade: async (t) => { vus.push(`escalade:${t}`); },
       recordAgentMessage: async (t) => { vus.push(`echo:${t}`); },
     },
@@ -167,18 +166,21 @@ describe('une lecture en échec garde son sort d’avant', () => {
     expect(i.enregistres).toEqual([]);
   });
 
-  it('⚠️ un numéro que seul un passage de main nomme, illisible, ignore l’étape sans faire rejouer le job', async () => {
+  it('⚠️ un numéro que seul un passage de main nomme, illisible, écarte CETTE bascule sans faire rejouer le job', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    const i = inboxQuiCompte({ pn1: 't1' });
+    const i = inboxQuiCompte({ pn1: 't1', pn2: 't2' });
     const lire = i.inbox.phoneNumberTenant;
     i.inbox.phoneNumberTenant = async (pnid) => { if (pnid === 'pn3') throw new Error('base indisponible'); return lire(pnid); };
     const vus: string[] = [];
     await expect(handleWebhookJob(payload(
       messages('pn1', [texte('wamid.1', '33600000001', 'a')]),
+      echo('pn2'),
       passageDeMain('pn3'),
     ), toutesLesEtapes(i.inbox, vus))).resolves.toBeUndefined();
     expect(i.enregistres).toEqual(['wamid.1']);
     expect(vus).not.toContain('escalade:t3');
+    // L'étape n'est pas rejouée : une bascule illisible ne doit pas emporter ses voisines du même payload.
+    expect(vus).toContain('echo:t2');
   });
 });
 
@@ -187,9 +189,11 @@ describe('le type tient ce que le rattachement suppose', () => {
     const base = { store: { insertEvent: async () => true } };
     const inbox = { phoneNumberTenant: async () => 't1', recordInbound: async () => {} };
     // @ts-expect-error `inboundOptOut` manque : une dépendance de consentement n'est jamais optionnelle.
-    const sansStop: WebhookJobDeps = { ...base, inbox, arriveesPub: aucuneArriveePub, routagePub: aucunRoutagePub, signalReponse: aucunSignalReponse, numerosDelies: aucunNumeroDelie };
+    const sansStop: WebhookJobDeps = { ...base, inbox, arriveesPub: aucuneArriveePub, routagePub: aucunRoutagePub, signalReponse: aucunSignalReponse, numerosDelies: aucunNumeroDelie, detenteur: aucuneCorrectionDuDetenteur };
+    // @ts-expect-error `detenteur` manque : sans lui, un `standby` ne corrigerait plus notre colonne (relecture du lot 4).
+    const sansDetenteur: WebhookJobDeps = { ...base, inbox, arriveesPub: aucuneArriveePub, routagePub: aucunRoutagePub, signalReponse: aucunSignalReponse, numerosDelies: aucunNumeroDelie, inboundOptOut: aucunStop };
     // @ts-expect-error une étape qui lit l'espace d'un entrant sans l'Inbox qui le rattache.
     const sansInbox: WebhookJobDeps = { ...base, triggers: { run: async () => 0 } };
-    expect([sansStop, sansInbox]).toHaveLength(2);
+    expect([sansStop, sansDetenteur, sansInbox]).toHaveLength(3);
   });
 });

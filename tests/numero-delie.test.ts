@@ -13,7 +13,7 @@ import { messageDePause } from '../src/campaign/pause';
 import { ecarterLesNumerosDelies, ecarterLesEntrantsDelies, numerosAInterroger } from '../src/webhooks/numeros-delies';
 import { handleWebhookJob } from '../src/webhooks/handler';
 import type { InboundMessage } from '../src/webhooks/inbound';
-import { aucuneArriveePub, aucunRoutagePub, aucunSignalReponse } from './webhook-fixtures';
+import { aucuneArriveePub, aucunRoutagePub, aucunSignalReponse, aucuneCorrectionDuDetenteur } from './webhook-fixtures';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
@@ -411,7 +411,7 @@ describe('l’écart des entrants dans le job webhook', () => {
       payloadDe(change('pn-delie', { messages: [message('w-delie')] }), change('pn-relie', { messages: [message('w-relie', '33622')] })),
       {
         store, inbox: i.store, arriveesPub: aucuneArriveePub, routagePub: aucunRoutagePub, signalReponse: aucunSignalReponse,
-        inboundOptOut: aucunStop,
+        inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur,
         numerosDelies: async (ids) => { lectures.push(ids); return new Set(['pn-delie']); },
       },
     );
@@ -425,7 +425,7 @@ describe('l’écart des entrants dans le job webhook', () => {
     const i = inbox();
     await expect(handleWebhookJob(payloadDe(change('pn-x', { messages: [message('w-x')] })), {
       store, inbox: i.store, arriveesPub: aucuneArriveePub, routagePub: aucunRoutagePub, signalReponse: aucunSignalReponse,
-      inboundOptOut: aucunStop,
+      inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur,
       numerosDelies: async () => { throw new Error('base indisponible'); },
     })).resolves.toBeUndefined();
     expect(i.enregistres).toEqual(['w-x']);

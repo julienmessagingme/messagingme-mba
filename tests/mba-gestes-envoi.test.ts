@@ -43,8 +43,8 @@ function faux(o: {
       gestes.push(`scenario ${id} ${waId} ${ouverte}`);
       return o.scenario ? o.scenario() : true;
     },
-    runtime: {
-      rendreLaMainApresParcours: async (_t, waId) => {
+    fil: {
+      rendreApresParcours: async (_t, waId) => {
         gestes.push(`rendu ${waId}`);
         if (o.rendreKo) throw new Error('base indisponible');
       },

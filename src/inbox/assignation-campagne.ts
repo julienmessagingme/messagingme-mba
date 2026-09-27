@@ -46,6 +46,13 @@ export interface CampagneAssignante {
   assignation: 'personne' | 'tour_de_role' | null;
   /** La personne, quand `assignation` vaut `personne`. `null` = elle a quitté l'espace depuis. */
   assignationUserId: string | null;
+  /**
+   * Ce message est-il la PREMIÈRE réponse du contact depuis l'envoi de cette campagne (au plus un entrant depuis
+   * `sent_at`, lui-même) ? Seule celle-là prend le fil. Requis : sans lui, chaque message du contact reprendrait le
+   * fil pour l'équipe, pour toujours, défaisant un « Rendre la main » ou figeant un scénario lancé depuis.
+   * L'affectation, elle, n'en dépend pas : `assigned_to is null` la borne déjà à une par conversation.
+   */
+  premiereReponse: boolean;
 }
 
 /** Ce qu'il faut faire de cette réponse, une fois la campagne trouvée. */
@@ -70,7 +77,11 @@ export function devenirEffectif(c: CampagneAssignante): DecisionDevenir {
 }
 
 export interface AssignationDeps {
-  /** La campagne assignante dont ce contact attend une réponse, ou `null` (le cas courant, à garder bon marché). */
+  /**
+   * La campagne à laquelle ce contact répond (la PLUS RÉCENTE qu'on lui a servie), si elle décide de quelque chose,
+   * ou `null` (le cas courant, à garder bon marché). Une campagne plus récente qui ne décide de rien masque les
+   * précédentes : c'est à elle que le contact répond.
+   */
   campagneDeLaReponse(tenantId: string, waId: string): Promise<CampagneAssignante | null>;
   /** Les membres de l'espace qui peuvent recevoir une conversation, dans un ordre stable. */
   membres(tenantId: string): Promise<string[]>;
@@ -79,8 +90,10 @@ export interface AssignationDeps {
   /** Écrit l'affectation. `false` = elle n'a pas été posée (déjà assignée, membre hors espace). */
   assigner(tenantId: string, waId: string, userId: string): Promise<boolean>;
   /**
-   * Prend le fil à l'agent de Meta. `false` = Meta a refusé, ou rien à prendre. Optionnelle : absente, aucun
-   * fil n'est pris (câblages de test de l'assignation seule).
+   * Prend le fil pour l'équipe (`ControleDuFil.prendrePourLEquipe`, `src/inbox/fil.ts`) : à l'agent de Meta chez
+   * Meta, puis `app_human` chez nous, pour qu'aucun robot ne réponde et que la conversation entre dans « À
+   * traiter ». Un opérateur qui la tient déjà la garde. `false` = Meta a refusé. Optionnelle : absente, aucun fil
+   * n'est pris (câblages de test de l'assignation seule).
    */
   prendreLeFil?(tenantId: string, waId: string): Promise<boolean>;
 }
@@ -107,8 +120,13 @@ export async function assignerReponse(
   /**
    * Le fil se prend avant tout le reste, et son échec arrête tout : si Meta refuse, son agent répondra quoi
    * qu'on fasse, et assigner la conversation ferait hériter à un humain d'un échange qu'un robot a commencé.
+   *
+   * 🔴 À la PREMIÈRE réponse seulement (`premiereReponse`). Les suivantes laissent le fil à qui le tient : un
+   * opérateur qui l'a rendu à l'agent de Meta, ou le délai de reprise qui l'a rendu, ne se font pas défaire par le
+   * message suivant du client.
    */
-  if (decision.prendreLeFil && deps.prendreLeFil && !(await deps.prendreLeFil(tenantId, waId))) {
+  if (decision.prendreLeFil && campagne.premiereReponse && deps.prendreLeFil
+    && !(await deps.prendreLeFil(tenantId, waId))) {
     // eslint-disable-next-line no-console
     console.warn(`devenir de campagne ${campagne.campaignId} non appliqué pour ${waId} : Meta n’a pas cédé le fil, son agent répond`);
     return null;

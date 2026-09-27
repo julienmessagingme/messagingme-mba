@@ -9,7 +9,7 @@ import type { StartOutcome } from '../workflow/executor';
  * un scénario ». Toute issue ratée rend le fil, exception comprise : `runFrom` reprend le fil à l'agent avant
  * d'envoyer, puis sur un refus rend une raison sans rendre la main (l'Inbox a un opérateur), et une exception
  * traverse tout. Ici personne n'est là : sans ce rendu, le fil resterait à nous, hors de « À traiter », et
- * l'agent muet. Si la reprise a échoué, `rendreLaMain` ne touche à rien (garde `only: ['app_workflow']`).
+ * l'agent muet. Si la reprise a échoué, `rendreApresParcours` ne touche à rien (garde `only: ['app_workflow']`).
  */
 export interface DepsGestesEnvoi {
   /** Le graphe publié du scénario, celui que les contacts parcourent, ou `null`. Jamais le brouillon. */
@@ -26,8 +26,8 @@ export interface DepsGestesEnvoi {
   ): Promise<StartOutcome>;
   /** `lancerScenarioPourContact`, le chemin du bouton de l'Inbox. `null` = scénario inconnu. */
   lancerScenario(tenantId: string, workflowId: string, waId: string, fenetreOuverte: boolean): Promise<StartOutcome | null>;
-  /** Le runtime des scénarios (`wiring.ts`). */
-  runtime: { rendreLaMainApresParcours(tenantId: string, waId: string): Promise<void> };
+  /** Le contrôle du fil (`src/inbox/fil.ts`) : la fin de parcours rend le fil à l'agent de Meta. */
+  fil: { rendreApresParcours(tenantId: string, waId: string): Promise<void> };
   /**
    * Attend que l'agent de Meta ait fini son tour, juste avant de lui prendre le fil (`src/mba/fin-de-tour.ts`).
    * Placé après les refus qui ne demandent rien à Meta (bloc disparu, fenêtre fermée), qui partent tout de suite.
@@ -69,11 +69,11 @@ export function creerGestesEnvoi(deps: DepsGestesEnvoi): {
     try {
       issue = await geste();
     } catch (err) {
-      await deps.runtime.rendreLaMainApresParcours(tenantId, waId).catch(() => {});
+      await deps.fil.rendreApresParcours(tenantId, waId).catch(() => {});
       throw err;
     }
     if (issue === true) return true;
-    await deps.runtime.rendreLaMainApresParcours(tenantId, waId);
+    await deps.fil.rendreApresParcours(tenantId, waId);
     return issue ?? siInconnu;
   };
 

@@ -1,3 +1,4 @@
+import { setTimeout as dormir } from 'node:timers/promises';
 import type { Pool } from 'pg';
 import type { Config } from './config';
 import type { Queue } from './queue/queue';
@@ -55,6 +56,8 @@ import { PgPublicitesStore } from './pubs/publicites.pg';
 import { MetaPubsClient } from './meta/pubs';
 import { MetaPubsCreationClient } from './meta/pubs-creation';
 import { buildWorkflowRuntime } from './workflow/wiring';
+import { PgWorkflowRunStore } from './workflow/run-store.pg';
+import { creerControleDuFil } from './inbox/fil';
 
 /**
  * Ce que le socle lit de la configuration qu'on lui passe. Les autres réglages restent aux racines qui les consomment ;
@@ -85,8 +88,8 @@ export interface DepsSocle {
  * diverge c'est un invariant qui tombe d'un seul côté (un opt-out écrit par le worker qui ne serait plus annoncé,
  * un envoi de l'API qui échapperait au frein du numéro).
  *
- * 🔴 Appelé UNE fois par racine. Chaque cache qu'il porte (WABA de l'espace, garde du numéro délié, jetons Meta,
- * transports SMTP, espaces branchés sur un outil, caches du runtime de scénario) est donc PAR PROCESSUS, jamais
+ * 🔴 Appelé UNE fois par racine. Chaque cache qu'il porte (WABA et numéro de l'espace, garde du numéro délié, jetons
+ * Meta, transports SMTP, espaces branchés sur un outil, caches du runtime de scénario) est donc PAR PROCESSUS, jamais
  * partagé entre l'API et le worker, et borné par un délai court. L'appeler deux fois dans un processus doublerait
  * ces caches et rendrait leurs invalidations inopérantes pour l'autre exemplaire (« Délier » ne viderait pas la
  * garde qui refuse les envois).
@@ -251,13 +254,35 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   const clientCreationPubs = new MetaPubsCreationClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
 
   /**
+   * Le numéro Meta de l'espace, mis en cache pour le processus : le runtime de scénario le demande à chaque envoi,
+   * le contrôle du fil à chaque geste chez Meta. Une instance, un cache.
+   */
+  const numeroDeLEspace = creerNumeroDeLEspace((t) => repo.getTenantPhoneNumberId(t));
+  const runStore = new PgWorkflowRunStore(pool);
+
+  /**
+   * Le contrôle du fil (`src/inbox/fil.ts`) : le seul endroit qui parle à Meta (`thread_control`) et écrit qui
+   * détient une conversation. Ici parce que les deux processus s'en servent : l'Inbox de l'API (« Reprendre la
+   * main », « Rendre la main », un opérateur qui écrit), le worker (réception, accusés, balayage) et le runtime de
+   * scénario, dans l'un comme dans l'autre.
+   */
+  const fil = creerControleDuFil({
+    depot: inboxStore,
+    reglages: settingsStore,
+    parcours: runStore,
+    numeros: { getTenantPhoneNumberId: numeroDeLEspace },
+    meta: metaFactory,
+    attendre: (ms) => dormir(ms),
+  });
+
+  /**
    * Exécuteur de scénarios et ce qui l'accompagne (`workflow/wiring.ts`) : le worker le fait avancer (réponse d'un
    * contact, campagne, réveil), l'API le lance depuis l'Inbox et doit savoir tout de suite si c'est parti.
    */
   const workflowRuntime = buildWorkflowRuntime({
     pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory,
     rcsProvider: config.RCS_PROVIDER,
-    emailTemplates, emailResolver,
+    emailTemplates, emailResolver, numeroDeLEspace, runStore, fil,
   });
 
   /**
@@ -279,7 +304,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels,
     credits, agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver,
     wabaDeLEspace, numeroDelieStore, gardeNumeroDelie, esCredentialsStore, metaCredentials, metaFactory,
-    connexionsPub, publicites, clientPubs, clientCreationPubs, workflowRuntime,
+    connexionsPub, publicites, clientPubs, clientCreationPubs, workflowRuntime, fil,
   };
 }
 

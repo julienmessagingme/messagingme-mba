@@ -255,4 +255,108 @@ describe.skipIf(!url)('l assignation d une reponse de campagne', () => {
     );
     expect(await assignerReponse(tenantId, '33600000141', deps)).toBeNull();
   });
+
+  /**
+   * RELECTURE DU LOT 4. Une campagne « Inbox » sans affectation (le défaut de l'assistant) ne pose jamais
+   * `assigned_to` : rien n'arrêtait donc la requête, et la prise du fil rejouait à chaque message du contact, sur
+   * n'importe quelle campagne ultérieure. Deux règles, une par cas ci-dessous.
+   */
+  describe('la campagne à laquelle on répond, et la première réponse', () => {
+    const creees: string[] = [];
+
+    /** Une campagne de l'espace, avec le devenir donné à son étage 1, et SANS affectation. */
+    const campagne = async (nom: string, devenir?: 'inbox' | 'mba'): Promise<string> => {
+      const id = await repo.insertCampaign({
+        tenantId, phoneNumberId: 'pn-assignation', name: nom, category: 'marketing',
+        templateName: 't', templateLanguage: 'fr', paramMapping: [],
+        ...(devenir ? { devenir } : {}),
+      });
+      creees.push(id);
+      return id;
+    };
+
+    /** Le contact et sa conversation, sans aucun envoi. */
+    const contactEtConversation = async (numero: string): Promise<{ contactId: string; conversationId: string }> => {
+      const contactId = (await pool.query<{ id: string }>(
+        `insert into contacts (tenant_id, phone_e164, opt_in_status) values ($1, $2, 'opted_in') returning id`,
+        [tenantId, `+${numero}`],
+      )).rows[0]!.id;
+      const conversationId = (await pool.query<{ id: string }>(
+        `insert into conversations (tenant_id, wa_id, contact_id, last_message_at, last_preview, last_direction)
+         values ($1, $2, $3, now(), 'coucou', 'in') returning id`,
+        [tenantId, numero, contactId],
+      )).rows[0]!.id;
+      return { contactId, conversationId };
+    };
+
+    /** Ce contact a été SERVI par cette campagne, à cet instant. */
+    const servi = async (id: string, contactId: string, numero: string, sentAt: string): Promise<void> => {
+      await pool.query(
+        `insert into campaign_recipients (campaign_id, contact_id, to_e164, resolved_params, status, sent_at)
+         values ($1, $2, $3, '[]'::jsonb, 'sent', $4::timestamptz)`,
+        [id, contactId, `+${numero}`, sentAt],
+      );
+    };
+
+    afterAll(async () => {
+      if (creees.length > 0) await pool.query('delete from campaigns where id = any($1::uuid[])', [creees]);
+    });
+
+    /**
+     * 🔴 RÈGLE 1 : LA PLUS RÉCENTE CAMPAGNE SERVIE GAGNE, MÊME SI ELLE NE DÉCIDE DE RIEN. Le filtre « porte un devenir
+     * ou une affectation » était AVANT le `limit 1` : une vieille campagne « Inbox » passait devant la campagne à
+     * scénario d'hier, le fil était pris pour l'équipe, et le scénario ne pouvait plus avancer.
+     * Il porte ses deux sens : la vieille campagne est d'abord retenue seule, puis masquée. Il ne tourne qu'en CI (la
+     * base du poste est la production).
+     */
+    it('une campagne plus récente sans devenir ni affectation masque une ancienne campagne « Inbox »', async () => {
+      const numero = '33600000151';
+      const { contactId } = await contactEtConversation(numero);
+      const ancienne = await campagne('ancienne inbox', 'inbox');
+      await servi(ancienne, contactId, numero, '2026-08-01T10:00:00Z');
+      // ⚠️ L'AUTRE SENS D'ABORD : seule, l'ancienne est bien retenue. Sans cette ligne, un `null` ci-dessous pourrait
+      // venir d'une fixture qui ne décrit aucune campagne « Inbox ».
+      expect((await repo.campagneAssignanteDuContact(tenantId, numero))?.campaignId).toBe(ancienne);
+
+      const recente = await campagne('scenario recent');
+      await servi(recente, contactId, numero, '2026-09-01T10:00:00Z');
+      expect(await repo.campagneAssignanteDuContact(tenantId, numero)).toBeNull();
+    });
+
+    /**
+     * 🔴 RÈGLE 2 : `premiereReponse` DIT SI LE MESSAGE TRAITÉ EST LA PREMIÈRE RÉPONSE DEPUIS L'ENVOI. La requête
+     * compte les entrants postérieurs à `sent_at` ; celui qu'on traite est déjà enregistré (`recordInbound` passe
+     * avant l'affectation), d'où « au plus un ». Les entrants sont écrits par le VRAI `recordInbound`, qui date à
+     * `now()` : c'est la comparaison entre son `created_at` et `sent_at` qui est éprouvée. Un entrant d'AVANT l'envoi
+     * ne compte pas.
+     * Il porte ses deux sens (vrai puis faux sur la même conversation) et ne tourne qu'en CI.
+     */
+    it('premiereReponse vaut vrai avec un seul entrant depuis l’envoi, faux avec deux', async () => {
+      const numero = '33600000161';
+      const { contactId, conversationId } = await contactEtConversation(numero);
+      const inboxCampagne = await campagne('inbox premiere reponse', 'inbox');
+      // Envoyée il y a une heure ; un message du contact d'avant l'envoi, qui ne compte pas.
+      await servi(inboxCampagne, contactId, numero, new Date(Date.now() - 60 * 60 * 1000).toISOString());
+      await pool.query(
+        `insert into conversation_messages (conversation_id, direction, type, body, created_at)
+         values ($1, 'in', 'text', 'avant l envoi', now() - interval '2 hours')`,
+        [conversationId],
+      );
+      const entrant = (id: string, texte: string) => inbox.recordInbound(tenantId, {
+        phoneNumberId: 'pn-assignation', waId: numero, messageId: `wamid.itest-assignation-${id}-${Date.now()}`,
+        type: 'text', body: texte, buttonPayload: null, profileName: null, field: 'messages',
+      });
+
+      await entrant('r1', 'Oui');
+      const premiere = await repo.campagneAssignanteDuContact(tenantId, numero);
+      expect(premiere?.campaignId).toBe(inboxCampagne);
+      expect(premiere?.devenir).toBe('inbox');
+      expect(premiere?.premiereReponse).toBe(true);
+
+      await entrant('r2', 'Vous êtes là ?');
+      const seconde = await repo.campagneAssignanteDuContact(tenantId, numero);
+      expect(seconde?.campaignId, 'la campagne reste celle à laquelle il répond').toBe(inboxCampagne);
+      expect(seconde?.premiereReponse, 'le second message a repris le fil').toBe(false);
+    });
+  });
 });

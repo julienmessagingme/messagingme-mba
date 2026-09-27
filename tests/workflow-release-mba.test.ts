@@ -6,6 +6,7 @@ import type { RunState, WorkflowRunRow } from '../src/workflow/run-store.pg';
 import { runControlSweep } from '../src/inbox/control-sweep';
 import type { ControlSweepDeps } from '../src/inbox/control-sweep';
 import type { WorkflowGraph } from '../src/workflow/graph';
+import { bancDuFil } from './banc-du-fil';
 
 /**
  * Le RELÂCHEMENT du fil vers l'agent de Meta : quand il part, et surtout quand il ne part PAS.
@@ -111,16 +112,17 @@ describe('release : la minuterie de reprise après un humain', () => {
           { tenantId: 'avec', waId: 'a', owner: 'app_human', changedAt: ago(100 * H), lastMessageAt: dernierMessage, escaladee: false },
           { tenantId: 'sans', waId: 'b', owner: 'app_human', changedAt: ago(100 * H), lastMessageAt: dernierMessage, escaladee: false },
         ],
-        setControlOwner: async (_t, waId, owner) => { rendues.push({ waId, dest: owner }); return true; },
       },
       reglages: {
         mbaActifParTenant: async () => new Set(avecMba),
       },
-      releaseToMba: async (_t, waId) => {
-        releases.push(waId);
-        if (releaseKo) throw new Error('529 chez Meta');
-        return true;
-      },
+      // Le vrai geste de remise (`src/inbox/fil.ts`), sur un dépôt qui note ce qu'on écrit et un Meta qui accepte
+      // ou refuse (un 5xx, rejouable ailleurs, n'est jamais rejoué par une remise).
+      fil: bancDuFil({
+        release: [releaseKo ? 'refuse' : 'accepte'],
+        auMeta: (acte, waId) => { if (acte === 'release') releases.push(waId); },
+        depot: { setControlOwner: async (_t, waId, owner) => { rendues.push({ waId, dest: owner }); return true; } },
+      }).fil,
       timeouts: { app_human: 2 * H, mba: 24 * H },
       now: () => T0,
     };

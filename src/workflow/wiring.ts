@@ -1,7 +1,6 @@
-import { setTimeout as dormir } from 'node:timers/promises';
 import type { Pool } from 'pg';
 import { config } from '../config';
-import { PgWorkflowRunStore } from './run-store.pg';
+import type { PgWorkflowRunStore } from './run-store.pg';
 import { creerAppelHttpScenario } from './appel-http';
 import { executerFonctionJs } from './fonction-js';
 import { PgSourceStore } from '../agent/sources.pg';
@@ -48,9 +47,8 @@ import { adressesDestinataires, type SendEmailAction } from './engine';
 // La même décision que sur le chemin des campagnes : un template tracé exige ses composants de bouton, quel
 // que soit le chemin d'envoi. On importe la règle plutôt que d'en écrire une seconde.
 import { suffixesPourDestinataire } from '../campaign/engine';
-import { creerRendreLeFil, creerPrendreLeFil, creerPrendreLeFilAvecUnRejeu } from '../inbox/controle-du-fil';
+import type { ControleDuFil } from '../inbox/fil';
 import { creerTransmettreHorsParcours } from '../mba/transmettre-hors-parcours';
-import { creerNumeroDeLEspace } from '../meta/numero-espace';
 import { cacheCourt } from '../lib/cache-court';
 import type { MetaClient } from '../meta/client';
 import { messageDe } from '../lib/erreur';
@@ -93,23 +91,24 @@ export interface WorkflowRuntimeDeps {
   /** Résolveur de transport SMTP par boîte. Reçu (comme `metaCredentials`) : les routes email l'invalident à
    *  chaque écriture d'un compte, l'exécuteur doit voir la même instance. */
   emailResolver: EmailAccountResolver;
+  /**
+   * Le numéro de l'espace, mis en cache pour le processus par le socle, qui le partage avec le contrôle du fil :
+   * sinon une campagne de 5 000 destinataires ferait 5 000 requêtes sur le pool partagé. Pourquoi ce cache est
+   * sûr : `src/meta/numero-espace.ts`.
+   */
+  numeroDeLEspace(tenantId: string): Promise<string | null>;
+  /** Les parcours, construits par le socle : le contrôle du fil lit aussi « un parcours attend-il ce contact ? ». */
+  runStore: PgWorkflowRunStore;
+  /**
+   * Le contrôle du fil (`src/inbox/fil.ts`) : l'exécuteur y prend le fil, le rend, le passe à l'équipe et lit s'il
+   * a le droit d'écrire. Aucune de ces transitions ne s'écrit ici.
+   */
+  fil: ControleDuFil;
 }
 
 /** `buildWorkflowRuntime` construit l'exécuteur et ce qui l'accompagne, une fois par process (les caches vivent dedans). */
-/**
- * Ce qu'une remise du fil à l'agent de Meta a donné. Trois états, pas un booléen : « rendu » et « aucun
- * numéro » appellent la même suite locale (on écrit `mba`), « conversation de test » non.
- */
-export type IssueRemise = 'rendu' | 'aucun_numero' | 'conversation_de_test';
-
 export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
-  const { pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory, rcsProvider, emailTemplates, emailResolver } = deps;
-  /**
-   * Une seule lecture du numéro de l'espace, mise en cache pour le process : sinon une campagne de 5 000
-   * destinataires ferait 5 000 requêtes sur le pool partagé. C'est le seul endroit de ce fichier qui appelle
-   * `repo.getTenantPhoneNumberId` ; pourquoi ce cache est sûr : `src/meta/numero-espace.ts`.
-   */
-  const numeroDeLEspace = creerNumeroDeLEspace((t) => repo.getTenantPhoneNumberId(t));
+  const { pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory, rcsProvider, emailTemplates, emailResolver, numeroDeLEspace, runStore, fil } = deps;
   /**
    * Le client Meta de l'espace pour un envoi WhatsApp, ou le refus (une chaîne, comme tout `SendRefusal`)
    * quand aucun numéro n'est rattaché. `dryRun` reste chez l'appelant : certains envois refusent un bloc vide
@@ -128,7 +127,6 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   const varsDuContact = async (tenant: string, waId: string) => contactVars((await contactStore.getResolvableByPhone(tenant, waId)) ?? {});
 
   const nodeEvents = new PgWorkflowNodeEventStore(pool);
-  const runStore = new PgWorkflowRunStore(pool);
   // Pile RCS montée ici, une seule fois : l'exécuteur et le worker (campagnes) partagent le même sender, donc
   // le même cache de joignabilité et le même provider.
   const agentsRcs = new PgRcsAgentStore(pool);
@@ -275,110 +273,6 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     return { ...state, now: new Date(), timeZone: settings.timezone, businessHours: settings.businessHours, derniereSaisie };
   };
 
-  // L'appel Meta, sans la bascule locale (le geste vit dans `src/inbox/controle-du-fil.ts`, partagé avec le
-  // bouton de l'Inbox servi par l'API). Séparés parce que chaque appelant connaît l'état qu'il attendait avant
-  // de basculer (`only: ['app_workflow']` ou `['app_human']`) : un `only` figé échouerait en silence chez l'autre.
-  const rendreLeFilChezMeta = creerRendreLeFil({
-    numeros: { getTenantPhoneNumberId: numeroDeLEspace },
-    meta: metaFactory,
-  });
-
-  /**
-   * Rend le fil à l'agent de Meta, sauf sur une conversation de test (celui qui teste enchaîne les essais, et
-   * l'agent répondrait au scan suivant). Point de passage unique entre le geste et tous les chemins qui
-   * rendent le fil (fin de parcours, accusé du dernier envoi, client que personne ne suit, balayage). Seul le
-   * bouton de l'Inbox (`src/index.ts`) le contourne, exprès : un geste humain explicite peut rendre un fil de
-   * test. `is_test` ne se lève jamais.
-   *
-   * Trois issues et pas un booléen : sur « conversation de test », les appelants ne doivent pas écrire `mba`
-   * dans notre colonne (la console affirmerait que l'agent tient un fil que l'application détient). « Aucun
-   * numéro » garde son écriture : laisser la conversation en `app_workflow` la sortirait de « À traiter ».
-   */
-  const releaseThreadChezMeta = async (tenantId: string, waId: string): Promise<IssueRemise> => {
-    if (await inboxStore.estConversationDeTest(tenantId, waId)) {
-      // eslint-disable-next-line no-console
-      console.log(`release vers MBA ignoré pour ${waId} : conversation de TEST, le fil reste à l'app`);
-      return 'conversation_de_test';
-    }
-    return (await rendreLeFilChezMeta(tenantId, waId)) ? 'rendu' : 'aucun_numero';
-  };
-
-  /**
-   * La prise du fil chez Meta n'existe ici que dans sa version qui rejoue (`prendreLeFilAvecUnRejeu`, plus
-   * bas) : pas de prise nue appelable sans rejeu par inadvertance. `reclaimControl` doit prendre le fil chez
-   * Meta et pas seulement dans notre colonne, sinon Meta continue de router les entrants vers son agent.
-   */
-
-  /**
-   * Relâche le fil chez Meta maintenant, et n'écrit `mba` chez nous qu'ensuite : sur un refus, la colonne ne
-   * doit pas affirmer que le robot tient un fil que Meta nous laisse. L'état d'attente (`app_human`) est déjà
-   * visible, donc en cas de refus on ne bouge pas. La réponse de Meta ne dit rien
-   * (`{"messaging_product":"whatsapp"}`) : le balayage reste le filet.
-   */
-  const rendreLeFilMaintenant = async (tenant: string, waId: string): Promise<void> => {
-    // Sur un fil de test, on n'écrit pas `mba` : le fil est resté à l'application.
-    if (await releaseThreadChezMeta(tenant, waId) === 'conversation_de_test') return;
-    await inboxStore.setControlOwner(tenant, waId, 'mba', { only: ['app_human'] });
-  };
-
-  /**
-   * L'accusé d'un de nos envois est arrivé : si un fil l'attendait, on le rend maintenant. Appelée pour
-   * chaque statut reçu (chemin très chaud) : sans fil en attente, l'`update` ne touche aucune ligne.
-   *
-   * Le marqueur est consommé avant l'appel à Meta : sur un refus, le fil reste `app_human` (visible dans « À
-   * traiter ») et le balayage le reprendra, plutôt que de retenter à chaque statut suivant du même message.
-   */
-  const remiseMbaSurAccuse = async (messageId: string): Promise<void> => {
-    const cible = await inboxStore.consommerReleaseMba(messageId);
-    if (!cible) return;
-    await rendreLeFilMaintenant(cible.tenantId, cible.waId);
-  };
-
-  /**
-   * Un client revient et personne ne suit : le fil repart chez l'agent de Meta. Trois gardes :
-   * 1. l'agent doit être allumé, sinon on écrirait `mba` sur une conversation que personne ne prendrait ;
-   * 2. aucun parcours ne doit attendre la réponse de ce contact (la donner à l'agent serait bien pire que le
-   *    silence qu'on répare) ;
-   * 3. un opérateur (`app_human`) ne se fait pas doubler au milieu d'un échange.
-   *
-   * `app_workflow` est dans `only` : c'est le défaut de la colonne, sur une conversation née d'un envoi
-   * sortant, qui resterait sinon invisible (hors « À traiter ») et muette ; la garde 2 rend son inclusion
-   * sûre. `mba` aussi : notre colonne peut dire `mba` quand Meta pense l'inverse, et c'est l'appel à Meta qui
-   * répare. Best-effort : un refus laisse le fil visible, le balayage reste le filet.
-   */
-  const remiseMbaSiPersonneNeSuit = async (tenant: string, waId: string): Promise<void> => {
-    if (!(await settingsStore.get(tenant)).mbaEnabled) return;
-    if (await runStore.findWaitingByWaId(tenant, waId)) return;
-    /**
-     * Le détenteur se lit avant d'appeler Meta, pas seulement dans `only` : `only` ne protège que notre
-     * colonne, alors que l'appel transfère le fil pour de vrai, et l'agent répondrait par-dessus l'opérateur.
-     */
-    const detenteur = await inboxStore.getControlOwner(tenant, waId);
-    if (detenteur === 'app_human') return;
-    // Même raison que son voisin : un fil de test n'a pas été rendu, donc il ne s'annonce pas rendu.
-    if (await releaseThreadChezMeta(tenant, waId) === 'conversation_de_test') return;
-    await inboxStore.setControlOwner(tenant, waId, 'mba', { only: ['app_workflow', 'mba'] });
-  };
-
-  const prendreLeFilAvecUnRejeu = creerPrendreLeFilAvecUnRejeu({
-    prendre: creerPrendreLeFil({
-      numeros: { getTenantPhoneNumberId: numeroDeLEspace },
-      meta: metaFactory,
-    }),
-    attendre: (ms) => dormir(ms),
-  });
-
-  /**
-   * Reprendre le fil pour l'app, geste partagé par tout ce qui démarre délibérément une prise de parole
-   * (`reclaimControl`, le devenir « Inbox » d'un étage de campagne, la reprise à l'arrivée d'un lead
-   * publicitaire). Exposé plutôt que recopié.
-   */
-  const reprendreLeFilPourLApp = async (tenant: string, waId: string): Promise<boolean> => {
-    if ((await settingsStore.get(tenant)).mbaEnabled && !(await prendreLeFilAvecUnRejeu(tenant, waId))) return false;
-    await inboxStore.setControlOwner(tenant, waId, 'app_workflow');
-    return true;
-  };
-
   /**
    * Envoi réel du bloc « Envoi de mail » : modèle, boîte SMTP, destinataires, variables `{{champ}}` (sujet en
    * texte, corps en HTML seulement si le modèle est 'html'). `apply` garantit le best-effort : ici on rend la
@@ -426,27 +320,6 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   // second exemplaire (deux points de construction finissent par diverger sur une option).
   const agentSessions = new PgAgentSessionStore(pool);
 
-  /**
-   * Fin de parcours : demande que le fil soit rendu à l'agent de Meta, et le rend quand notre dernier envoi
-   * est acquitté. Envoyer un message prend le fil implicitement chez Meta : un release émis juste après
-   * l'envoi serait annulé par l'envoi lui-même. On attend donc une preuve (l'accusé), pas un délai (détail :
-   * `PgInboxStore.demanderReleaseMba`). Rien d'envoyé : on relâche tout de suite.
-   *
-   * L'état d'attente est `app_human` : `mba` mentirait tant que Meta n'a pas confirmé, et `app_workflow` est
-   * la seule valeur que « À traiter » exclut (un client qui écrit pendant la fenêtre ne produirait aucune
-   * ligne de travail). C'est aussi ce qui arme le filet : le balayage de contrôle rend les fils `app_human`
-   * immobiles.
-   *
-   * Rendu aussi par `buildWorkflowRuntime` : le relais de l'agent de Meta l'appelle quand un bloc ou un
-   * scénario n'a pas pu partir après la reprise du fil.
-   */
-  const rendreLaMainApresParcours = async (tenant: string, waId: string): Promise<void> => {
-    if (!(await inboxStore.setControlOwner(tenant, waId, 'app_human', { only: ['app_workflow'] }))) return;
-    const attendu = await inboxStore.demanderReleaseMba(tenant, waId);
-    if (attendu) return;
-    await rendreLeFilMaintenant(tenant, waId);
-  };
-
   // La réponse « à côté » : les gardes vivent dans le module, testé.
   const transmettreHorsParcours = creerTransmettreHorsParcours({
     detenteur: (t, w) => inboxStore.getControlOwner(t, w),
@@ -477,13 +350,12 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     },
     // Un scénario n'écrit jamais dans un fil détenu par un opérateur ou par MBA. Vaut pour l'avance
     // (réponse du contact) comme pour le démarrage (campagne workflow, cible node).
-    mayAct: async (tenant, waId) => (await inboxStore.getControlOwner(tenant, waId)) === 'app_workflow',
-    // Un run qui atteint un bloc `inbox` remonte la conversation à un humain (`app_human`), seulement si le
-    // fil était encore à nous (`only: ['app_workflow']`), puis pose l'affectataire désigné par le bloc. Jumeau
-    // du câblage de `src/worker.ts` : l'un sans l'autre, un chemin marcherait et pas l'autre. `escalade` est
-    // relayé, jamais décidé ici : c'est l'exécuteur qui sait si quelqu'un attend une réponse.
+    mayAct: fil.peutAgir,
+    // Un run qui atteint un bloc `inbox` remonte la conversation à un humain, seulement si le fil était encore aux
+    // robots, puis pose l'affectataire désigné par le bloc. `escalade` est relayé, jamais décidé ici : c'est
+    // l'exécuteur qui sait si quelqu'un attend une réponse.
     escalateToHuman: async (tenant, waId, assigneA, escalade) => {
-      await inboxStore.setControlOwner(tenant, waId, 'app_human', { only: ['app_workflow'], escalade });
+      await fil.passerAUnHumain(tenant, waId, { escalade });
       if (assigneA) await inboxStore.setAssigneeByWaId(tenant, waId, assigneA);
     },
     // Le bloc agent : sans ces deux dépendances, il est traversé comme un passe-plat, sans que l'agent parle.
@@ -494,22 +366,19 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // conversations des autres attendent derrière les siennes.
     enqueueAgentTurn: (job: AgentTurnJob) => queue.enqueue(AGENT_TURN_QUEUE, job, { groupId: job.tenantId }),
     /**
-     * Reprise de main par l'app quand un parcours est lancé délibérément (sans `only` : on reprend même un fil
-     * tenu par un humain ou par l'agent de Meta). Empruntée par tous les chemins qui posent
-     * `ignoreHumanControl` (campagne, Inbox, automation qui reprend la main, `/v1/sends`).
-     *
-     * Le fil se prend chez Meta d'abord, dans notre colonne ensuite. Le Meta Business Agent est le répondeur
-     * primaire du numéro : tant qu'on ne lui a pas pris le fil par `thread_control`, il répond au contact quoi
-     * que dise notre base. Dans l'ordre inverse, le scénario répondrait par-dessus l'agent. Un refus de Meta
-     * est normal (`take` est réservé au « configured escalation partner ») : le démarrage échoue proprement.
-     * Rien n'est tenté si l'agent de Meta est éteint chez ce client.
+     * Reprise de main par l'app quand un parcours est lancé délibérément, empruntée par tous les chemins qui posent
+     * `ignoreHumanControl` (campagne, Inbox, automation qui reprend la main, `/v1/sends`). Meta d'abord, notre
+     * colonne ensuite, un rejeu : le geste est `ControleDuFil.reprendrePourLApp`.
      */
-    reclaimControl: reprendreLeFilPourLApp,
+    reclaimControl: fil.reprendrePourLApp,
     // L'agent de Meta est-il allumé chez ce client ? Décide qu'une étape sans choix cesse de bloquer le
-    // parcours, qu'on rende le fil à Meta en fin de chaîne, et qu'on le lui prenne au démarrage
-    // (`reclaimControl`).
+    // parcours, et qu'on rende le fil à Meta en fin de chaîne.
     mbaActifPour: async (tenant) => (await settingsStore.get(tenant)).mbaEnabled,
-    releaseToMba: rendreLaMainApresParcours,
+    /**
+     * Fin de parcours : le fil est rendu à l'agent de Meta à l'accusé de notre dernier envoi (envoyer prend le fil
+     * chez Meta, un release émis juste après serait annulé), ou tout de suite si rien n'est en vol.
+     */
+    releaseToMba: fil.rendreApresParcours,
     transmettreHorsParcours,
     // Contexte d'évaluation des conditions et des valeurs dynamiques. Contact introuvable -> null -> le
     // moteur prend la branche 'false'.
@@ -815,5 +684,5 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     },
   });
 
-  return { executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack, releaseThreadChezMeta, remiseMbaSurAccuse, remiseMbaSiPersonneNeSuit, reprendreLeFilPourLApp, rendreLaMainApresParcours, agentSessions, envoyerTexteAgent, poserTagDepuisAgent };
+  return { executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack, agentSessions, envoyerTexteAgent, poserTagDepuisAgent };
 }

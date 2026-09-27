@@ -129,10 +129,11 @@ describe('la disponibilité de l’équipe est câblée', () => {
 describe('la bascule vers un humain rend son verdict', () => {
   const source = sansCommentaires('../src/worker.ts');
 
-  it('🔴 `escalateToHuman` REND ce que `setControlOwner` a répondu, il ne l’avale pas', () => {
+  it('🔴 `escalateToHuman` REND le verdict de la bascule, il ne l’avale pas', () => {
     // ⚠️ `escalade: true` depuis le 2026-09-23 : la prise de fil d'un agent IA est une ESCALADE (migration 0164).
+    // Le geste (`ControleDuFil.passerAUnHumain`) rend lui-même le verdict du dépôt : `tests/fil.test.ts`.
     expect(source).toContain(
-      "escalateToHuman: (t, waId) => inboxStore.setControlOwner(t, waId, 'app_human', { only: ['app_workflow'], escalade: true })",
+      'escalateToHuman: (t, waId) => fil.passerAUnHumain(t, waId, { escalade: true })',
     );
   });
 

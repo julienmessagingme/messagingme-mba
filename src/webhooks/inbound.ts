@@ -6,7 +6,6 @@
 
 import { FLOW_REF_KEY } from '../meta/flow-json';
 import { estDemandeArret } from '../crm/consentement';
-import type { ControlOwner } from '../inbox/store.pg';
 import { asArray, asRecord } from './json';
 import { valeurEffective } from './change';
 import { tenter } from '../lib/tenter';
@@ -92,17 +91,15 @@ export interface FlowCompletion {
 export interface InboxStore {
   /** Upsert la conversation (par tenant+wa_id) et insère le message (idempotent par wamid). */
   recordInbound(tenantId: string, m: InboundMessage): Promise<void>;
-  /**
-   * Corrige qui détient le fil, d'après ce que Meta vient de dire. Optionnel (deps de test minimales). Le `field`
-   * de chaque message entrant est le signal de bascule le plus fréquent : `messaging_handovers` n'arrive que si
-   * `handoff` est configuré chez Meta.
-   */
-  setControlOwner?(
-    tenantId: string,
-    waId: string,
-    owner: ControlOwner,
-    opts?: { only?: readonly ControlOwner[]; saufEscalade?: boolean; messageEnvoyeLe?: Date },
-  ): Promise<boolean>;
+}
+
+/**
+ * Corrige qui détient le fil d'après ce que Meta vient de dire (`ControleDuFil.entrantEnStandby`,
+ * `src/inbox/fil.ts`). Le `field` de chaque message entrant est le signal de bascule le plus fréquent :
+ * `messaging_handovers` n'arrive que si `handoff` est configuré chez Meta.
+ */
+export interface DetenteurDuFil {
+  entrantEnStandby(tenantId: string, waId: string, envoyeLe?: Date): Promise<void>;
 }
 
 function str(v: unknown): string | null {
@@ -268,8 +265,8 @@ export type SignalReponse = (tenantId: string, m: InboundMessage) => Promise<voi
 
 /**
  * Les dépendances secondaires de `processInbound`, nommées plutôt qu'en queue de paramètres optionnels (un rang
- * inversé passerait le compilateur). Toutes optionnelles sauf l'opt-out ; `WebhookJobDeps` exige aussi le puits
- * des signaux avec `inbox`.
+ * inversé passerait le compilateur). Toutes optionnelles sauf l'opt-out et le détenteur ; `WebhookJobDeps` exige
+ * aussi le puits des signaux avec `inbox`.
  */
 export interface DepsEntrants {
   upsertContact?: InboundContactUpsert;
@@ -287,6 +284,13 @@ export interface DepsEntrants {
   assignation?: InboundAssignation;
   /** Les signaux, après `recordInbound` : on ne remonte pas un message non enregistré. */
   signalReponse?: SignalReponse;
+  /**
+   * La correction du détenteur d'après le `field` de l'entrant. Requise, comme l'opt-out : optionnelle, un câblage
+   * qui l'oublierait compilerait et laisserait notre colonne croire qu'un opérateur tient un fil que l'agent de
+   * Meta a repris. Les fixtures qui n'en parlent pas le disent avec `aucuneCorrectionDuDetenteur`
+   * (`tests/webhook-fixtures.ts`).
+   */
+  detenteur: DetenteurDuFil;
 }
 
 /**
@@ -306,7 +310,7 @@ export async function processInbound(
   store: InboxStore,
   deps: DepsEntrants,
 ): Promise<void> {
-  const { upsertContact, optOut, assignation, signalReponse } = deps;
+  const { upsertContact, optOut, assignation, signalReponse, detenteur } = deps;
   for (const { message: m, tenantId } of entrants) {
     if (!tenantId) continue;
     if (upsertContact) {
@@ -329,13 +333,19 @@ export async function processInbound(
       await tenter('processInbound: signal de réponse ignoré:', () => signalReponse(tenantId, m));
     }
     /**
+     * 🔴 Le détenteur se corrige AVANT l'affectation : on met notre colonne d'accord avec Meta, puis on agit. Dans
+     * l'ordre inverse, une réponse de campagne « Inbox » arrivée en `standby` prenait le fil pour l'équipe (`take`
+     * accepté, `app_human`), puis ce `standby` réécrivait `mba` : Meta nous donnait le fil, notre colonne le donnait
+     * à l'agent, et la prise n'ayant lieu qu'à la première réponse, rien ne la refaisait ensuite.
+     */
+    await accorderLeDetenteur(detenteur, tenantId, m);
+    /**
      * Isolée comme l'auto-création : l'enregistrement du message est le cœur du webhook, et un throw ferait rejouer
      * un job qui a déjà écrit le message.
      */
     if (assignation) {
       await tenter('processInbound: affectation de campagne ignorée:', () => assignation(tenantId, m.waId));
     }
-    await accorderLeDetenteur(store, tenantId, m);
   }
 }
 
@@ -346,16 +356,14 @@ export async function processInbound(
  *    l'agent tient le fil, que seul `src/webhooks/test-token.ts` traite) ;
  *  - un `messaging_handovers` / `control_passed` : il nous passe la main (`src/webhooks/handover.ts`).
  * Filet : le balayage de reprise (`src/inbox/control-sweep.ts`).
- * `standby` écrase un `app_human` (Meta a tranché), sauf après une escalade vers l'équipe. Best-effort : un
- * échec ne fait pas échouer l'enregistrement du message.
+ * `standby` écrase un `app_human` (Meta a tranché), sauf après une escalade vers l'équipe, que seul un standby plus
+ * récent qu'elle lève (`ControleDuFil.entrantEnStandby`). Best-effort : un échec ne fait pas échouer
+ * l'enregistrement du message.
  */
-async function accorderLeDetenteur(store: InboxStore, tenantId: string, m: InboundMessage): Promise<void> {
-  if (!store.setControlOwner || m.field !== 'standby') return;
+async function accorderLeDetenteur(detenteur: DetenteurDuFil, tenantId: string, m: InboundMessage): Promise<void> {
+  if (m.field !== 'standby') return;
   try {
-    // Sauf escalade, et la date du message tranche : un standby antérieur à l'escalade est un retardataire (il
-    // rendrait la conversation à l'agent sous le nez de l'équipe) ; postérieur, il prouve que Meta a redonné le fil
-    // à l'agent. Sans date, la garde reste stricte.
-    await store.setControlOwner(tenantId, m.waId, 'mba', { saufEscalade: true, ...(m.envoyeLe ? { messageEnvoyeLe: m.envoyeLe } : {}) });
+    await detenteur.entrantEnStandby(tenantId, m.waId, m.envoyeLe);
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('processInbound: détenteur du fil non corrigé:', messageDe(err));

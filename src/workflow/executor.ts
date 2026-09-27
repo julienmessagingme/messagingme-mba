@@ -237,8 +237,10 @@ export interface WorkflowExecutorDeps {
    * ça, le scénario se bloquerait à la première réponse du contact. Rend `false` quand Meta a refusé de nous
    * rendre le fil : un démarrage condamné doit échouer tout de suite, avec sa raison, au lieu d'un parcours
    * gelé pendant que l'agent de Meta répond. `void` (tests) vaut succès ; fixtures : `repriseSansObjection`.
+   * `saufOperateur` : un démarrage que le client déclenche (clic sur une publicité) ne prend pas le fil à un
+   * opérateur qui le tient, et `'operateur'` le dit (`src/inbox/fil.ts`).
    */
-  reclaimControl: (tenantId: string, waId: string) => Promise<boolean | void>;
+  reclaimControl: (tenantId: string, waId: string, opts?: { saufOperateur?: boolean }) => Promise<boolean | void | 'operateur'>;
   /**
    * Le scénario a-t-il le droit d'écrire dans ce fil ? false dès qu'un opérateur (`app_human`) ou l'agent de
    * Meta (`mba`) le détient. Requis ; fixtures : `filToujoursANous`.
@@ -1013,18 +1015,26 @@ export class WorkflowExecutor {
     graph: WorkflowGraph,
     contact: { waId: string; contactId: string | null },
     startNodeId: string,
-    opts: { allowSessionOpen?: boolean; firstTemplateParams?: string[]; emitEvents?: boolean; ignoreHumanControl?: boolean; figerLeGraphe?: boolean } = {},
+    opts: { allowSessionOpen?: boolean; firstTemplateParams?: string[]; emitEvents?: boolean; ignoreHumanControl?: boolean; saufOperateur?: boolean; figerLeGraphe?: boolean } = {},
   ): Promise<StartOutcome> {
     // Un scénario n'écrit jamais dans un fil détenu par un opérateur ou par MBA, sinon les deux écriraient au
     // client. `ignoreHumanControl` : le déclencheur est lui-même le geste explicite (un opérateur qui lance une
     // campagne ou un scénario depuis l'Inbox, un contact qui clique un bouton de chaîne), et on reprend la main
     // pour l'app, sinon le scénario se bloquerait à la première réponse. Réservé aux automations nées d'un lien
-    // de chaîne : une automation par mot-clé ordinaire écraserait l'opérateur qui répond. Gardé dans les deux
-    // sens par `tests/automation-chaine-reprend-la-main.test.ts`.
+    // de chaîne ou d'une publicité : une automation par mot-clé ordinaire écraserait l'opérateur qui répond. Gardé
+    // dans les deux sens par `tests/automation-chaine-reprend-la-main.test.ts`. `saufOperateur` (la publicité) :
+    // un clic payé reprend le fil à l'agent de Meta, jamais à un opérateur qui le tient ; c'est le client qui
+    // déclenche, pas l'équipe.
     if (opts.ignoreHumanControl) {
+      const reprise = await this.deps.reclaimControl(tenantId, contact.waId, { saufOperateur: opts.saufOperateur === true });
+      if (reprise === 'operateur') {
+        // eslint-disable-next-line no-console
+        console.log(`workflow ${workflowId}: fil tenu par un opérateur, run non démarré pour ${contact.waId}`);
+        return "la conversation est tenue par un opérateur : ce démarrage, déclenché par le contact, ne lui prend pas la main. Le message l'attend dans l'Inbox.";
+      }
       // Une reprise qui échoue arrête le démarrage : sinon le parcours partirait sur un fil que l'agent de Meta
       // tient, gelé à la première réponse. La raison remonte jusqu'au destinataire (`campaign_recipients.error`).
-      if ((await this.deps.reclaimControl(tenantId, contact.waId)) === false) {
+      if (reprise === false) {
         // eslint-disable-next-line no-console
         console.warn(`workflow ${workflowId}: fil NON repris pour ${contact.waId}, run non démarré (l'agent de Meta le tient et Meta a refusé de le rendre)`);
         return "le fil est tenu par l'agent de Meta et Meta a refusé de le rendre : le scénario n'a pas démarré, il aurait été bloqué dès la première réponse du contact.";
@@ -1138,7 +1148,7 @@ export class WorkflowExecutor {
     tenantId: string, workflowId: string, graph: WorkflowGraph,
     contact: { waId: string; contactId: string | null },
     firstTemplateParams?: string[],
-    opts: { emitEvents?: boolean; ignoreHumanControl?: boolean } = {},
+    opts: { emitEvents?: boolean; ignoreHumanControl?: boolean; saufOperateur?: boolean } = {},
   ): Promise<StartOutcome> {
     const entry = entryNode(graph);
     if (!entry) return 'le scénario est vide';
@@ -1157,7 +1167,7 @@ export class WorkflowExecutor {
   async startInWindow(
     tenantId: string, workflowId: string, graph: WorkflowGraph,
     contact: { waId: string; contactId: string | null },
-    opts: { emitEvents?: boolean; ignoreHumanControl?: boolean; figerLeGraphe?: boolean } = {},
+    opts: { emitEvents?: boolean; ignoreHumanControl?: boolean; saufOperateur?: boolean; figerLeGraphe?: boolean } = {},
   ): Promise<StartOutcome> {
     const entry = entryNode(graph);
     if (!entry) return 'le scénario est vide';
@@ -1173,7 +1183,7 @@ export class WorkflowExecutor {
   async startFromNode(
     tenantId: string, workflowId: string, graph: WorkflowGraph,
     contact: { waId: string; contactId: string | null }, startNodeId: string,
-    opts: { emitEvents?: boolean; ignoreHumanControl?: boolean; figerLeGraphe?: boolean } = {},
+    opts: { emitEvents?: boolean; ignoreHumanControl?: boolean; saufOperateur?: boolean; figerLeGraphe?: boolean } = {},
   ): Promise<StartOutcome> {
     return this.runFrom(tenantId, workflowId, graph, contact, startNodeId, { allowSessionOpen: true, ...opts });
   }

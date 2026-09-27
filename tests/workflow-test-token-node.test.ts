@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { blocDesigne, lireJetonDeTest } from '../src/workflow/test-token';
 import { processTestTokens } from '../src/webhooks/test-token';
 import { entrantsDe } from './webhook-fixtures';
+import { bancDuFil } from './banc-du-fil';
 
 /**
  * UN JETON DE TEST QUI DÉSIGNE UN BLOC (2026-09-16).
@@ -241,21 +242,24 @@ describe('un jeton de test désenclenche l’agent de Meta', () => {
       .not.toContain('mayStart');
   });
 
-  it('🔴 et RIEN ne rend le fil à l’agent de Meta sur une conversation de TEST', () => {
-    // Quatre chemins rendent le fil (fin de parcours, accusé du dernier envoi, retour d'un client que personne
-    // ne suit, balayage de contrôle). La garde est posée entre le geste et TOUS ses appelants, dans le câblage :
-    // la poser dans chacun serait quatre endroits où l'oublier. Sans elle, le fil repart entre deux essais et
-    // c'est l'agent de Meta qui répond au scan suivant.
-    const wiring = readFileSync(join(process.cwd(), 'src', 'workflow', 'wiring.ts'), 'utf8');
-    const debut = wiring.indexOf('const releaseThreadChezMeta = async');
-    expect(debut, 'le point de passage unique de la remise du fil a disparu').toBeGreaterThan(-1);
-    expect(wiring.slice(debut, debut + 500)).toContain('estConversationDeTest');
-    // Et le geste NU n'est appelé que par lui : un second appelant contournerait la garde.
-    expect(wiring.split('rendreLeFilChezMeta(').length - 1,
-      'un second appelant du geste nu contournerait la garde des conversations de test').toBe(1);
+  it('🔴 et RIEN ne rend le fil à l’agent de Meta sur une conversation de TEST', async () => {
+    // Quatre chemins rendent le fil tout seuls (fin de parcours, accusé du dernier envoi, retour d'un client que
+    // personne ne suit, balayage de contrôle). La garde est posée une fois, dans le module du fil
+    // (`src/inbox/fil.ts`), entre le geste chez Meta et tous ses appelants : la poser dans chacun serait quatre
+    // endroits où l'oublier. Sans elle, le fil repart entre deux essais et l'agent de Meta répond au scan suivant.
+    const test = { test: true } as const;
+    const fin = bancDuFil({ conversations: { w: { owner: 'app_workflow', ...test } } });
+    await fin.fil.rendreApresParcours('t1', 'w');
+    const accuse = bancDuFil({ conversations: { w: { owner: 'app_human', marque: 'wamid.A', ...test } } });
+    await accuse.fil.remettreSurAccuse('wamid.A');
+    const retour = bancDuFil({ conversations: { w: { owner: 'app_workflow', ...test } } });
+    await retour.fil.remettreSiPersonneNeSuit('t1', 'w');
+    const balayage = bancDuFil({ conversations: { w: { owner: 'app_human', ...test } } });
+    expect(await balayage.fil.rendreApresInactivite('t1', 'w', 'app_human', 'mba')).toBe(false);
+    for (const b of [fin, accuse, retour, balayage]) expect(b.appels, 'un fil de test a été rendu chez Meta').toEqual([]);
   });
 
-  it('🔴 AUCUN appelant n écrit `mba` dans NOTRE colonne sans avoir lu le verdict', () => {
+  it('🔴 AUCUN appelant n écrit `mba` dans NOTRE colonne sans avoir lu le verdict', async () => {
     /**
      * 🔴 CE QUE CE CAS FERME, ET IL ETAIT VIVANT (revue a froid du 2026-09-17). Deux appelants sur quatre
      * appelaient la remise puis ecrivaient `setControlOwner(..., 'mba', ...)` QUOI QU IL ARRIVE. Sur un fil
@@ -263,29 +267,22 @@ describe('un jeton de test désenclenche l’agent de Meta', () => {
      * Meta tenait un fil que l application detenait reellement. Le bouton « rendre la main » de l Inbox
      * lisait alors `mba` et ne rappelait pas Meta : l echappatoire promise a Julien demandait deux clics.
      *
-     * ⚠️ Et le commentaire du point de passage affirmait exactement le contraire : « aucun n ecrit son etat
-     * local dessus ». Une justification fausse est pire qu aucune, parce qu elle sera recopiee.
-     *
-     * ⚠️ CE TEST EST STRUCTUREL, PAS UNE PRESENCE DE CHAINE : il suit CHAQUE appel a la remise et verifie
-     * que le verdict est lu AVANT la premiere ecriture qui suit. Un troisieme appelant ajoute demain sans
-     * la lire le ferait tomber.
+     * ⚠️ Ce cas lisait le texte du câblage ; il exécute désormais les quatre remises du module sur un fil de
+     * test, et regarde la colonne. Seul « Rendre la main », geste humain explicite, rend un fil de test.
      */
-    const wiring = readFileSync(join(process.cwd(), 'src', 'workflow', 'wiring.ts'), 'utf8');
-    const corps = wiring.slice(wiring.indexOf('export function buildWorkflowRuntime'));
-    const appels: number[] = [];
-    for (let i = corps.indexOf('await releaseThreadChezMeta('); i !== -1; i = corps.indexOf('await releaseThreadChezMeta(', i + 1)) {
-      appels.push(i);
-    }
-    expect(appels.length, 'plus aucun appelant de la remise : la garde ne garde plus rien').toBeGreaterThan(0);
+    const test = { test: true } as const;
+    const fin = bancDuFil({ conversations: { w: { owner: 'app_workflow', ...test } } });
+    await fin.fil.rendreApresParcours('t1', 'w');
+    const accuse = bancDuFil({ conversations: { w: { owner: 'app_human', marque: 'wamid.A', ...test } } });
+    await accuse.fil.remettreSurAccuse('wamid.A');
+    const retour = bancDuFil({ conversations: { w: { owner: 'app_workflow', ...test } } });
+    await retour.fil.remettreSiPersonneNeSuit('t1', 'w');
+    const balayage = bancDuFil({ conversations: { w: { owner: 'app_human', ...test } } });
+    await balayage.fil.rendreApresInactivite('t1', 'w', 'app_human', 'mba');
+    for (const b of [fin, accuse, retour, balayage]) expect(b.etat('w')?.owner, 'la colonne annonce l’agent sur un fil de test').not.toBe('mba');
 
-    for (const i of appels) {
-      const suite = corps.slice(i, i + 400);
-      const ecriture = suite.indexOf("setControlOwner");
-      if (ecriture === -1) continue; // cet appelant n ecrit pas notre colonne : rien a verifier
-      const verdict = suite.indexOf('conversation_de_test');
-      expect(verdict, `un appelant ecrit 'mba' sans lire le verdict de la remise (offset ${i})`).toBeGreaterThan(-1);
-      expect(verdict, 'le verdict est lu APRES l ecriture : une garde posee apres l effet ne garde rien')
-        .toBeLessThan(ecriture);
-    }
+    const bouton = bancDuFil({ conversations: { w: { owner: 'app_human', ...test } } });
+    expect(await bouton.fil.rendreLaMain('t1', 'w')).toBe('mba');
+    expect(bouton.appels).toEqual(['release:w']);
   });
 });

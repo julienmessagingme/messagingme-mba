@@ -152,7 +152,7 @@ async function main(): Promise<void> {
     poolAttentesStore, nodeEventStore, trackedLinkStore, webhookStore, phoneStatusStore, numeroDelieStore, opsStore,
     heartbeatStore, workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog,
     journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub,
-    publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway,
+    publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil,
   } = construireSocle({ pool, queue, config });
 
   // Heartbeat : le worker écrit un signal de vie best-effort, dont /ops/overview lit l'âge. Il prouve que le
@@ -228,7 +228,7 @@ async function main(): Promise<void> {
   // l'Inbox avec la même sémantique.
   const {
     executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack,
-    releaseThreadChezMeta, remiseMbaSurAccuse, remiseMbaSiPersonneNeSuit, reprendreLeFilPourLApp, agentSessions, envoyerTexteAgent, poserTagDepuisAgent,
+    agentSessions, envoyerTexteAgent, poserTagDepuisAgent,
   } = workflowRuntime;
 
   /**
@@ -260,7 +260,7 @@ async function main(): Promise<void> {
     maxFiresPerHour: config.AUTOMATION_MAX_FIRES_PER_HOUR,
     evalContext: buildEvalContext,
     startWorkflow: async (tenant: string, workflowId: string, waId: string, opts: {
-      startNodeId: string | null; windowOpen: boolean; reprendLaMain: boolean;
+      startNodeId: string | null; windowOpen: boolean; reprendLaMain: boolean; saufOperateur?: boolean;
     }) => {
       const wf = await workflowStore.getById(workflowId, tenant);
       if (!wf) return false;
@@ -271,8 +271,9 @@ async function main(): Promise<void> {
       // l'enchaînement). `ignoreHumanControl` seulement pour les automations nées d'un geste explicite du contact
       // (bouton de chaîne, clic sur une publicité), déjà tranché par le runner (`reprendLaMain`) : partout
       // ailleurs, un mot-clé écrirait dans le fil pendant qu'un opérateur répond. Gardé dans les deux sens par
-      // `tests/campagne-controle-humain.test.ts`.
-      const unitaire = { emitEvents: true, ignoreHumanControl: opts.reprendLaMain };
+      // `tests/campagne-controle-humain.test.ts`. `saufOperateur` (clic sur une publicité) : la reprise prend le fil
+      // à l'agent de Meta, jamais à un opérateur qui le tient.
+      const unitaire = { emitEvents: true, ignoreHumanControl: opts.reprendLaMain, saufOperateur: opts.saufOperateur === true };
       if (opts.startNodeId) return workflowExecutor.startFromNode(tenant, workflowId, wf.graph, contact, opts.startNodeId, unitaire);
       // Fenêtre prouvée ouverte (le contact vient d'écrire) : le scénario peut ouvrir par un message rapide ou
       // un formulaire. Sinon, garde normale.
@@ -341,7 +342,7 @@ async function main(): Promise<void> {
        * Les deux files qui voient des statuts reçoivent la remise du fil, celle-ci et `webhook-status` : un
        * accusé arrive par l'une ou l'autre selon le découpage des lots par Meta, qui ne nous appartient pas.
        */
-      remiseMba: remiseMbaSurAccuse,
+      remiseMba: fil.remettreSurAccuse,
       // Sur les deux files qui voient des accusés, même raison : le tarif est la seule source de « Meta ne
       // facture pas ce message ».
       tarifsMeta: tarifsMetaStore,
@@ -355,7 +356,7 @@ async function main(): Promise<void> {
        * route que les lots d'accusés purs.
        */
       remiseMbaEntrant: {
-        remettre: (t, waId) => remiseMbaSiPersonneNeSuit(t, waId),
+        remettre: fil.remettreSiPersonneNeSuit,
       },
       inbox: inboxStore,
       // Les entrants d'un numéro délié sont écartés avant tout, sur cette file seulement (celle des accusés n'en
@@ -388,11 +389,12 @@ async function main(): Promise<void> {
         contactBloque: (t, waId) => contactStore.isBlockedByWaId(t, waId),
         // La même lecture que l'exécuteur de scénario et que l'agent, sur le même dépôt.
         estDesabonne: (t, waId) => contactStore.estDesabonneParWaId(t, waId),
-        // Le geste existant, câblé et pas recopié : `take` avec un seul rejeu, puis l'état local à `app_workflow`.
-        reprendreLeFil: (t, waId) => reprendreLeFilPourLApp(t, waId),
+        // `take` avec un seul rejeu, puis `app_workflow` ; jamais sur un fil qu'un opérateur tient : c'est le client
+        // qui déclenche, pas l'équipe (`saufOperateur`).
+        reprendreLeFil: (t, waId) => fil.reprendrePourLApp(t, waId, { saufOperateur: true }),
         // Filet du fil pris pour rien : on prend le fil avant de savoir si l'automation démarre ; si elle ne démarre
-        // pas, ce geste le rend. `remiseMbaSiPersonneNeSuit` porte déjà les gardes (agent éteint, parcours en attente).
-        rendreLeFil: (t, waId) => remiseMbaSiPersonneNeSuit(t, waId),
+        // pas, ce geste le rend, avec ses gardes (agent éteint, parcours en attente, opérateur).
+        rendreLeFil: fil.remettreSiPersonneNeSuit,
         noterIssue: (t, messageId, v) => arriveesPubStore.noterIssue(t, messageId, v),
       },
       // Acteur `null` : c'est le contact lui-même qui a coché, via WhatsApp. Aucun humain de l'équipe n'a agi, et
@@ -426,11 +428,11 @@ async function main(): Promise<void> {
         }
         return issue;
       },
+      // Ce que Meta dit du détenteur à travers le `field` d'un entrant : un `standby` rend le fil à l'agent de Meta.
+      detenteur: fil,
       // Bascules de contrôle et messages de l'agent de Meta.
       handover: {
-        // Sans `only` : Meta fait autorité sur qui détient le fil, notre état ne fait que refléter le sien.
-        setControlOwner: (t, w, o) => inboxStore.setControlOwner(t, w, o),
-        marquerEscalade: (t, w) => inboxStore.marquerEscalade(t, w),
+        marquerEscalade: fil.agentDeMetaPasseLaMain,
         // `origine: 'mba'` et pas `'ia'` : les deux valeurs restent distinctes en base pour dire laquelle a parlé ;
         // le regroupement en un thème « IA » se fait à l'affichage (`THEME_DE_ORIGINE`).
         recordAgentMessage: (t, w, body, messageId) =>
@@ -494,10 +496,10 @@ async function main(): Promise<void> {
         assigner: (t, w, userId) => inboxStore.assignerSiLibre(t, w, userId),
         /**
          * Ce qui rend « la conversation arrive dans l'Inbox » vrai : l'agent de Meta, répondeur primaire du
-         * numéro, répondrait sinon avant que l'équipe ne voie quoi que ce soit. On réutilise le geste du scénario
-         * (prise chez Meta, rejeu unique, écriture de notre colonne dans le bon ordre).
+         * numéro, répondrait sinon avant que l'équipe ne voie quoi que ce soit. Le fil va à l'équipe (`app_human`) :
+         * ni l'agent, ni une automation ne répondent, et la remise « personne ne suit » du même job le respecte.
          */
-        prendreLeFil: (t, w) => reprendreLeFilPourLApp(t, w),
+        prendreLeFil: fil.prendrePourLEquipe,
       }),
     });
     // Concurrence des entrants : les deux options vont ensemble. `concurrency` seul remettrait le désordre entre
@@ -518,7 +520,7 @@ async function main(): Promise<void> {
   await queue.work('webhook-status', async (data) => {
     // Trois dépendances nommées : ce qui est absent l'est volontairement (aucune conversation, aucune
     // automation, aucun scénario ne se déclenche sur un accusé).
-    await handleWebhookJob(data, { store: eventStore, delivery: recipientStore, nodeEvents: nodeEventStore, remiseMba: remiseMbaSurAccuse, tarifsMeta: tarifsMetaStore, echecsLibres: echecsMessages, signauxAccuse: puitsSignaux.accuse });
+    await handleWebhookJob(data, { store: eventStore, delivery: recipientStore, nodeEvents: nodeEventStore, remiseMba: fil.remettreSurAccuse, tarifsMeta: tarifsMetaStore, echecsLibres: echecsMessages, signauxAccuse: puitsSignaux.accuse });
   });
 
   // File campaign-run. DRY_RUN=true : sender de démo (aucun appel Meta). Sinon : token résolu par tenant,
@@ -1010,13 +1012,9 @@ async function main(): Promise<void> {
       // Le réglage par client du gel humain (combien de temps on laisse un opérateur travailler tranquille), et
       // la destination : l'agent de Meta chez les clients qui l'ont allumé, le scénario chez les autres.
       reglages: settingsStore,
-      /**
-       * Le verdict de la remise est relayé, pas jeté : sinon des conversations annonceraient `mba` alors que
-       * Meta pense le contraire. Refuser d'écrire ne gèle rien (la conversation reste visible dans « À
-       * traiter », et le balayage repasse). Un booléen dérivé du verdict à trois états : « aucun numéro » comme
-       * « conversation de test » veulent dire « ne compte pas celle-là comme rendue ».
-       */
-      releaseToMba: async (tenant, waId) => (await releaseThreadChezMeta(tenant, waId)) === 'rendu',
+      // Le geste qui rend le fil : Meta d'abord, et un refus, une absence de numéro ou un fil de test n'écrivent
+      // rien (la conversation reste visible dans « À traiter », et le balayage repasse).
+      fil,
     });
     // eslint-disable-next-line no-console
     if (rendues > 0) console.log(`control-sweep: ${rendues} conversation(s) rendue(s) au scénario`);
@@ -1399,11 +1397,11 @@ async function main(): Promise<void> {
       parcours: workflowExecutor,
       // Escalade de l'agent IA (`src/agent/escalade.ts`) : aucun affectataire, personne n'a désigné de membre
       // (le bloc « passer à un humain » d'un scénario, lui, affecte via `src/workflow/wiring.ts`).
-      // Le booléen de `setControlOwner` est rendu, pas avalé : `true` seulement si le fil a vraiment basculé de
+      // Le booléen de la bascule est rendu, pas avalé : `true` seulement si le fil a vraiment basculé de
       // `app_workflow` à `app_human`, ce qui dit au tour que sa garde de détenteur est fausse à cause de lui
       // (sinon la dernière phrase de l'agent serait muette quand l'équipe est fermée). `escalade: true` : un agent
       // IA qui passe la main promet une réponse, la conversation entre dans « À traiter » tout de suite.
-      escalateToHuman: (t, waId) => inboxStore.setControlOwner(t, waId, 'app_human', { only: ['app_workflow'], escalade: true }),
+      escalateToHuman: (t, waId) => fil.passerAUnHumain(t, waId, { escalade: true }),
     });
 
     // Les vrais outils maison, à comparer à `resolvers/simulation.ts` (bac à sable) : ici chaque dépendance
@@ -1496,7 +1494,7 @@ async function main(): Promise<void> {
       // avec une échéance, et le balayeur déclencherait la branche « pas de réponse » d'un parcours fermé exprès.
       majRun: async (t, runId, nodeId, state) => { await runStore.setStateSiEncoreSur(t, runId, nodeId, state); },
       // Le fil est-il encore à nous ? Relu par le tour juste avant l'envoi, pas seulement à son entrée.
-      mayAct: async (t, waId) => (await inboxStore.getControlOwner(t, waId)) === 'app_workflow',
+      mayAct: fil.peutAgir,
       /**
        * 🔴 La garde d'opt-out de l'agent IA : sa réponse part par `envoyerTexteAgent`, qui appelle
        * `client.sendText` directement, sans passer par `WorkflowExecutor.apply`. Même dépendance que l'exécuteur

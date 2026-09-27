@@ -157,17 +157,20 @@ export interface InboxRouteDeps extends DepsRepondre {
    */
   takeControl(tenantId: string, waId: string): Promise<void>;
   /**
-   * Prend le fil à l'agent de Meta sans écrire au client (`thread_control`, action `take`). Distincte de
-   * `takeControl`, qui n'écrit que notre état local (sur un envoi, le message prend déjà le fil chez Meta) : ici
-   * il n'y a pas de message, il faut le dire à Meta. Lève si Meta refuse ; la route en fait un 4xx lisible.
+   * « Reprendre la main » sans écrire au client : prend le fil à l'agent de Meta (`thread_control`, action `take`),
+   * puis écrit notre état. Distincte de `takeControl`, qui n'écrit que notre état local (sur un envoi, le message
+   * prend déjà le fil chez Meta) : ici il n'y a pas de message, il faut le dire à Meta. `'refuse'` : Meta n'a pas
+   * cédé le fil, rien n'est écrit, la route en fait un 409 lisible.
    */
-  prendreLeFil(tenantId: string, waId: string): Promise<void>;
+  reprendreLaMain(tenantId: string, waId: string): Promise<'pris' | 'refuse'>;
   /**
    * L'opérateur rend la main : la conversation repart en automatique ; rend qui la détient désormais. Elle appelle
    * Meta (`thread_control`, action `release`) pour que l'agent de Meta redevienne le répondeur principal. Un échec
    * remonte (409 lisible) et notre état local ne bouge pas : il ne doit pas annoncer ce que Meta n'a pas fait.
+   * `'aucun_numero'` : l'agent de Meta est allumé mais aucun numéro n'est connecté, il ne peut rien reprendre, et
+   * rien n'est écrit.
    */
-  releaseControl(tenantId: string, waId: string): Promise<'app_workflow' | 'mba'>;
+  releaseControl(tenantId: string, waId: string): Promise<'app_workflow' | 'mba' | 'aucun_numero'>;
   /**
    * Variables d'un template déjà résolues sur la fiche de ce contact, avec le libellé du champ qui les
    * alimente. C'est ce que l'écran d'envoi affiche : l'opérateur voit les vraies valeurs, pas `{{1}}`.
@@ -419,18 +422,14 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     if (!ctx) return reply.code(404).send({ error: 'conversation inconnue' });
     /**
      * Prendre le fil sans rien écrire au client (le miroir de `release`) : la bascule est le geste, son échec doit se
-     * voir. Meta d'abord, notre état ensuite : un état local qui annonce ce que Meta n'a pas fait rend le problème
-     * invisible. Un refus sort en 409 (Meta réserve `take` au partenaire d'escalade configuré), et l'écran rappelle
-     * qu'écrire prend le fil à coup sûr.
+     * voir (une panne de base sort en erreur, jamais en 200). Un refus de Meta, après un rejeu, sort en 409 (Meta
+     * réserve `take` au partenaire d'escalade configuré), et l'écran rappelle qu'écrire prend le fil à coup sûr.
      */
-    try {
-      await deps.prendreLeFil(tenant, ctx.waId);
-    } catch (err) {
+    if ((await deps.reprendreLaMain(tenant, ctx.waId)) === 'refuse') {
       // eslint-disable-next-line no-console
-      console.error(`prendre: Meta a refusé de céder le fil (${tenant}/${ctx.waId}):`, messageDe(err));
+      console.error(`prendre: Meta a refusé de céder le fil (${tenant}/${ctx.waId})`);
       return reply.code(409).send({ error: 'Meta n’a pas cédé la conversation, son agent peut encore répondre. Envoyez un message : écrire prend le fil à coup sûr.' });
     }
-    await deps.takeControl(tenant, ctx.waId);
     invaliderCompteurs(tenant); // le fil entre dans « À traiter ».
     return reply.code(200).send({ controlOwner: 'app_human' });
   });
@@ -942,13 +941,18 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
      * d'écrire notre état, et l'opérateur doit le savoir. Notre état local n'a alors pas bougé (`releaseControl`
      * écrit après Meta) : l'écran continue d'annoncer que l'opérateur tient le fil, ce qui est vrai.
      */
-    let owner: 'app_workflow' | 'mba';
+    let owner: 'app_workflow' | 'mba' | 'aucun_numero';
     try {
       owner = await deps.releaseControl(tenant, ctx.waId);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(`release: Meta a refusé de reprendre le fil (${tenant}/${ctx.waId}):`, messageDe(err));
       return reply.code(409).send({ error: 'Meta n’a pas repris la conversation. Elle reste de votre côté, réessayez dans un instant.' });
+    }
+    // Même règle que le balayage : un agent qui ne peut pas répondre ne s'annonce pas, et « Automatique » sortirait
+    // la conversation d'« À traiter ». Rien n'a été écrit.
+    if (owner === 'aucun_numero') {
+      return reply.code(409).send({ error: 'Aucun numéro WhatsApp n’est connecté : l’agent de Meta ne peut pas reprendre la conversation. Elle reste de votre côté.' });
     }
     invaliderCompteurs(tenant); // le fil repart en automatique : il sort de « À traiter ».
     return reply.code(200).send({ controlOwner: owner });

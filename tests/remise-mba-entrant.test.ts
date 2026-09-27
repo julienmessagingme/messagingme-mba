@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { processRemiseMbaEntrant } from '../src/webhooks/remise-mba-entrant';
 import { entrantsDe } from './webhook-fixtures';
+import { bancDuFil } from './banc-du-fil';
 
 /**
  * L'AGENT DE META REPREND LA MAIN QUAND UN CLIENT REVIENT ET QUE PERSONNE NE SUIT (2026-09-15).
@@ -124,7 +125,7 @@ describe('remise du fil à l’agent de Meta sur un message entrant', () => {
   });
 });
 
-describe('le câblage, qui porte les gardes que ce module ne peut pas porter', () => {
+describe('ce que ce module ne porte pas : l’ordre du job, et les gardes du geste du fil', () => {
   const lire = (p: string): string => readFileSync(new URL(p, import.meta.url), 'utf8');
   /** Sans les commentaires : un test qui passerait grâce à une PHRASE ne prouverait rien. */
   const sansCommentaires = (s: string): string =>
@@ -145,17 +146,26 @@ describe('le câblage, qui porte les gardes que ce module ne peut pas porter', (
     expect(remise, 'la remise doit venir APRÈS l’avance').toBeGreaterThan(avance);
   });
 
-  it('🔴 les trois gardes du câblage sont là : agent allumé, aucun parcours en attente, et `only`', () => {
-    const w = sansCommentaires(lire('../src/workflow/wiring.ts'));
-    const debut = w.indexOf('const remiseMbaSiPersonneNeSuit');
-    expect(debut, 'le geste doit exister').toBeGreaterThan(-1);
-    const bloc = w.slice(debut, debut + 700);
-    expect(bloc, 'l’agent doit être allumé').toMatch(/mbaEnabled\)\s*return;/);
-    expect(bloc, 'un parcours en attente doit REFUSER la remise').toMatch(/findWaitingByWaId\([^)]*\)\)\s*return;/);
-    expect(bloc, 'la remise doit appeler Meta, pas seulement écrire').toMatch(/releaseThreadChezMeta\(/);
+  /**
+   * Les trois cas suivants lisaient le texte du câblage ; les gardes vivent désormais dans le geste
+   * (`ControleDuFil.remettreSiPersonneNeSuit`, `src/inbox/fil.ts`), et ils l'EXÉCUTENT.
+   */
+  it('🔴 les trois gardes du geste sont là : agent allumé, aucun parcours en attente, et `only`', async () => {
+    const eteint = bancDuFil({ mbaEnabled: false, conversations: { w: { owner: 'app_workflow' } } });
+    await eteint.fil.remettreSiPersonneNeSuit('t1', 'w');
+    expect(eteint.appels, 'l’agent doit être allumé').toEqual([]);
+
+    const attendu = bancDuFil({ enAttente: true, conversations: { w: { owner: 'app_workflow' } } });
+    await attendu.fil.remettreSiPersonneNeSuit('t1', 'w');
+    expect(attendu.appels, 'un parcours en attente doit REFUSER la remise').toEqual([]);
+
+    const libre = bancDuFil({ conversations: { w: { owner: 'app_workflow' } } });
+    await libre.fil.remettreSiPersonneNeSuit('t1', 'w');
+    expect(libre.appels, 'la remise doit appeler Meta, pas seulement écrire').toEqual(['release:w']);
+    expect(libre.etat('w')?.owner).toBe('mba');
   });
 
-  it('🔴 un humain sur la conversation est lu AVANT l’appel Meta, pas seulement dans `only`', () => {
+  it('🔴 un humain sur la conversation est lu AVANT l’appel Meta, pas seulement dans `only`', async () => {
     /**
      * 🔴 DÉFAUT GRAVE TROUVÉ EN REVUE LE 2026-09-15, quelques heures après la livraison de ce geste.
      *
@@ -164,19 +174,15 @@ describe('le câblage, qui porte les gardes que ce module ne peut pas porter', (
      * suivant du client : l'écriture locale était bien refusée, mais Meta avait déjà basculé et l'agent
      * répondait par-dessus lui. Exactement ce que ce geste annonçait empêcher.
      *
-     * ⚠️ CE TEST VÉRIFIE L'ORDRE, pas la présence : une garde posée APRÈS l'effet de bord ne garde rien.
+     * ⚠️ CE CAS VÉRIFIE L'EFFET, pas la présence : aucun appel à Meta, et la colonne intacte.
      */
-    const w = sansCommentaires(lire('../src/workflow/wiring.ts'));
-    const debut = w.indexOf('const remiseMbaSiPersonneNeSuit');
-    const bloc = w.slice(debut, debut + 900);
-    const lecture = bloc.indexOf('getControlOwner');
-    const appelMeta = bloc.indexOf('releaseThreadChezMeta');
-    expect(lecture, 'le détenteur doit être lu').toBeGreaterThan(-1);
-    expect(bloc, 'un humain doit faire SORTIR, pas seulement bloquer l’écriture').toMatch(/=== 'app_human'\)\s*return;/);
-    expect(lecture, 'la lecture doit précéder l’appel Meta').toBeLessThan(appelMeta);
+    const b = bancDuFil({ conversations: { w: { owner: 'app_human' } } });
+    await b.fil.remettreSiPersonneNeSuit('t1', 'w');
+    expect(b.appels, 'un humain doit faire SORTIR avant l’appel Meta').toEqual([]);
+    expect(b.etat('w')?.owner).toBe('app_human');
   });
 
-  it('🔴 `only` contient app_workflow et mba, et surtout PAS app_human', () => {
+  it('🔴 `only` contient app_workflow et mba, et surtout PAS app_human', async () => {
     /**
      * Les trois valeurs comptent, chacune pour une raison différente, et se tromper sur une seule rouvre un
      * des deux incidents ou en crée un troisième :
@@ -185,13 +191,12 @@ describe('le câblage, qui porte les gardes que ce module ne peut pas porter', (
      *  - `mba` : notre colonne peut dire `mba` quand Meta pense l'inverse. C'est l'incident 1.
      *  - `app_human` doit rester DEHORS : un opérateur qui travaille dans l'Inbox ne se fait pas doubler.
      */
-    const w = sansCommentaires(lire('../src/workflow/wiring.ts'));
-    const debut = w.indexOf('const remiseMbaSiPersonneNeSuit');
-    const bloc = w.slice(debut, debut + 700);
-    const seulement = /only:\s*\[([^\]]*)\]/.exec(bloc);
-    expect(seulement, 'la remise doit borner les états qu’elle écrase').not.toBeNull();
-    expect(seulement![1]).toContain('app_workflow');
-    expect(seulement![1]).toContain('mba');
-    expect(seulement![1], 'un humain sur la conversation ne doit JAMAIS être doublé').not.toContain('app_human');
+    const b = bancDuFil({ conversations: { w: { owner: 'app_workflow' } } });
+    await b.fil.remettreSiPersonneNeSuit('t1', 'w');
+    const seulement = b.ecritures[0]?.opts?.only;
+    expect(seulement, 'la remise doit borner les états qu’elle écrase').toBeDefined();
+    expect(seulement).toContain('app_workflow');
+    expect(seulement).toContain('mba');
+    expect(seulement, 'un humain sur la conversation ne doit JAMAIS être doublé').not.toContain('app_human');
   });
 });
