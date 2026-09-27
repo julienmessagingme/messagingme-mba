@@ -114,6 +114,13 @@ plein texte de Salesforce (`FIND ... IN PHONE FIELDS`) sous quatre formes :
   `em_last_inbound_whatsapp_at__c`).
 - Adresses d'org constatées : `*.develop.my.salesforce.com` (Developer Edition) et `*.scratch.my.salesforce.com`
   (scratch) ; toutes finissent par `.my.salesforce.com`.
+- **Ce que l'admin colle vraiment** : l'adresse de sa barre de navigation, pas son adresse My Domain. Constaté sur
+  les deux orgs Developer Edition. Sur la première, l'interface Lightning montrait
+  `orgfarm-83beb5a359-dev-ed.develop.lightning.force.com` pour une adresse My Domain
+  `orgfarm-83beb5a359-dev-ed.develop.my.salesforce.com` ; sur la seconde, la Configuration montrait
+  `orgfarm-274a3a52c9-dev-ed.develop.my.salesforce-setup.com` pour `orgfarm-274a3a52c9-dev-ed.develop.my.salesforce.com`.
+  Même préfixe, même qualificatif, seul le domaine change : c'est la traduction que fait `lireMyDomain`
+  (`src/salesforce/my-domain.ts`). Non mesuré : une org de production (sans qualificatif) et une sandbox.
 
 ## Ce qui reste ouvert
 
