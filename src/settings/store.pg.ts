@@ -127,7 +127,7 @@ export type MbaHandoffMode = 'always' | 'business_hours' | 'never';
  * de colonne interpolé dans `poser` : aucune valeur venue d'une requête ne peut y entrer.
  */
 type ColonneReglage =
-  | 'hubspot_actif' | 'mba_relais_cle_id' | 'agents_peuvent_prendre' | 'mention_ia_frequence'
+  | 'hubspot_actif' | 'salesforce_actif' | 'mba_relais_cle_id' | 'agents_peuvent_prendre' | 'mention_ia_frequence'
   | 'optout_request_id' | 'mba_handoff_mode' | 'agent_transfert_mode' | 'timezone' | 'business_hours'
   | 'mba_enabled' | 'control_handback_seconds' | 'hubspot_lists_enabled';
 
@@ -205,6 +205,23 @@ export class PgTenantSettingsStore {
    */
   async setHubspotActif(tenantId: string, actif: boolean): Promise<void> {
     await this.poser(tenantId, 'hubspot_actif', actif);
+  }
+
+  /**
+   * L'interrupteur Salesforce de l'espace (migration 0183). Lu À PART, et non ajouté au type des réglages : seule
+   * la route de l'intégration le lit (`src/http/salesforce.ts`), et un champ de plus dans ce type imposerait de le
+   * déclarer dans chaque fixture qui le construit, pour rien. Un espace sans ligne de réglages est éteint.
+   */
+  async salesforceActif(tenantId: string): Promise<boolean> {
+    const r = await this.pool.query<{ salesforce_actif: boolean }>(
+      'select salesforce_actif from tenant_settings where tenant_id = $1',
+      [tenantId],
+    );
+    return r.rows[0]?.salesforce_actif === true;
+  }
+
+  async setSalesforceActif(tenantId: string, actif: boolean): Promise<void> {
+    await this.poser(tenantId, 'salesforce_actif', actif);
   }
 
   /**

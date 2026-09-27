@@ -9,6 +9,7 @@ import { inputClsAuto } from '@/lib/ui';
 import { BlockedContacts } from '@/components/BlockedContacts';
 import { ReglageIntegrationBatch } from '@/components/ReglageIntegrationBatch';
 import { ReglageHubspot } from '@/components/ReglageHubspot';
+import { ReglageSalesforce } from '@/components/ReglageSalesforce';
 import { Toggle } from '@/components/Toggle';
 import { Bouton } from '@/components/Bouton';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
@@ -267,6 +268,7 @@ function Parametres({ tenantId }: { tenantId: string }) {
           {/* ...et l'interrupteur HubSpot (migration 0179) : c'est lui qui fait apparaître le bloc HubSpot de
               l'Accueil, numéro ou pas. L'Accueil renvoie ici (`#integration-hubspot`) quand il est éteint. */}
           <ReglageHubspot tenantId={tenantId} />
+      <ReglageSalesforce tenantId={tenantId} />
 
           {/* Contacts bloqués : SEULE porte de sortie d'un blocage. Un contact bloqué n'apparaît nulle part
               ailleurs, donc sans cet écran il serait introuvable. La section se masque quand la liste est vide. */}

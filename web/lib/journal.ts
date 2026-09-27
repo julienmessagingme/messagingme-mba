@@ -22,6 +22,12 @@ export const ACTIONS_JOURNAL: Record<string, [string, string]> = {
   'integration.branchee': ['Outil branché sur les signaux', 'Tool connected to signals'],
   'integration.modifiee': ['Réglage d’un outil modifié', 'Tool settings changed'],
   'integration.debranchee': ['Outil débranché', 'Tool disconnected'],
+  // L'app Salesforce (plan du 2026-09-26) : ces libellés NOMMENT l'outil, décision de Julien du 2026-09-26.
+  'salesforce.allumee': ['Salesforce allumé pour l’espace', 'Salesforce turned on for the workspace'],
+  'salesforce.eteinte': ['Salesforce éteint pour l’espace', 'Salesforce turned off for the workspace'],
+  'salesforce.connectee': ['Org Salesforce reliée', 'Salesforce org connected'],
+  'salesforce.modifiee': ['Réglages Salesforce modifiés', 'Salesforce settings changed'],
+  'salesforce.deconnectee': ['Org Salesforce déconnectée', 'Salesforce org disconnected'],
   // L'interrupteur du numéro sur l'Accueil (migration 0180). La cible est l'ESPACE, jamais le numéro affiché.
   'numero.delie': ['Numéro WhatsApp délié', 'WhatsApp number unlinked'],
   'numero.relie': ['Numéro WhatsApp relié', 'WhatsApp number relinked'],

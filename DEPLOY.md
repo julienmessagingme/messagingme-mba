@@ -259,12 +259,14 @@ prolonge la contention). Ce n'est pas lié au code déployé.
 l'état vit dans le projet Supabase `npdqnrirxhqsyyvtvtjz`. La reprise = restaurer la base + repointer l'app.
 
 ### Ce qu'il faut sauvegarder (deux choses distinctes)
-1. **La base** (Supabase) : porte les 3 schémas d'UN SEUL projet — `public` (tables mba + schema_migrations),
-   `pgboss` (files), `mmhs` (connecteur mm-hubspot, lu en cross-schéma par mba). Un restore physique/PITR restaure
-   **les 3 ENSEMBLE** à l'instant T (on ne PITR pas un schéma seul).
+1. **La base** (Supabase) : porte les 4 schémas d'UN SEUL projet : `public` (tables mba + schema_migrations),
+   `pgboss` (files), `mmhs` (connecteur mm-hubspot, lu en cross-schéma par mba) et, depuis la migration 0183,
+   `salesforce` (l'app Salesforce, lu et écrit par son seul store, sans clé étrangère vers `public`). Un restore
+   physique/PITR restaure **les 4 ENSEMBLE** à l'instant T (on ne PITR pas un schéma seul).
 2. **Les secrets, HORS base et HORS git** : `.env.prod` sur le VPS (`AUTH_SECRET`, `META_ACCESS_TOKEN`,
    `ENCRYPTION_KEY`…) + celui de mm-hubspot. 🔴 **Sans `ENCRYPTION_KEY`, `waba_credentials` (tokens/PIN business ES,
-   AES-256-GCM) est INDÉCHIFFRABLE même après un restore parfait de la base.** Sauvegarder cette clé SÉPARÉMENT de
+   AES-256-GCM) est INDÉCHIFFRABLE même après un restore parfait de la base**, et `salesforce.orgs.secret_entrant_chiffre`
+   aussi : chaque org Salesforce reliée devrait alors être reconnectée. Sauvegarder cette clé SÉPARÉMENT de
    la base (un backup DB seul ne suffit pas). `AUTH_SECRET` perdu = toutes les sessions JWT invalidées (re-login).
 
 ### RPO (perte max) — dépend du plan Supabase, À RELEVER au dashboard (Database > Backups)
@@ -274,7 +276,7 @@ l'état vit dans le projet Supabase `npdqnrirxhqsyyvtvtjz`. La reprise = restaur
 
 ### Deux chemins de restauration
 - **(a) Sinistre total** : restore Supabase natif, vers un **NOUVEAU projet** (JAMAIS in-place sur la prod : le
-  restore Supabase est destructif). Ramène les 3 schémas à l'instant T.
+  restore Supabase est destructif). Ramène les 4 schémas à l'instant T.
 - **(b) Dégât localisé** (une table écrasée) : `pg_dump`/`pg_restore` d'un schéma via le **pooler session mode**
   `aws-1-eu-west-2.pooler.supabase.com:5432` (le host direct `db.<ref>.supabase.co` est IPv6-only, injoignable).
   Non fourni par le plan : dump à lancer soi-même, read-only, hors pic (consomme une session du budget 15).

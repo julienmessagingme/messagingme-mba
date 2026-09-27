@@ -132,6 +132,17 @@ export type AuditAction =
   | 'integration.modifiee'
   | 'integration.debranchee'
   /**
+   * L'APP SALESFORCE (plan 2026-09-26, lot L1). Ces actions NOMMENT l'outil (décision de Julien du 2026-09-26 : le
+   * journal nomme l'outil) : relier une org fait sortir des données de contacts vers le système du client, et
+   * l'admin doit pouvoir lire lequel. Le détail ne porte jamais le secret de l'org : l'org et le genre (sandbox),
+   * les noms des champs de consentement, l'option du résumé.
+   */
+  | 'salesforce.allumee'
+  | 'salesforce.eteinte'
+  | 'salesforce.connectee'
+  | 'salesforce.modifiee'
+  | 'salesforce.deconnectee'
+  /**
    * L'ESPACE RENOMMÉ depuis Compte & équipe (2026-09-25). La cible est l'espace, et le détail est VIDE : ni
    * l'ancien nom ni le nouveau. 🔴 Un nom d'espace peut être l'identité d'une personne : l'inscription par Google
    * le construit avec son nom complet (« Espace de Jean Dupont »), et un nom peut porter un numéro. Les écrire ici

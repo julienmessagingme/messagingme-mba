@@ -65,6 +65,10 @@ import { resolveScenario, resolveNode } from './ids/resolve';
 import { relanceurDeCampagnes } from './campaign/enqueue';
 import { creerAnnonceOptOut, FILE_POUSSEE_OPTOUT } from './crm/poussee-optout';
 import { PgIntegrationBatchStore } from './signaux/integration-batch.pg';
+import { PgSalesforceStore, type ReglagesSalesforce } from './salesforce/store.pg';
+import { creerClientSalesforce } from './salesforce/client';
+import { connecter as connecterSalesforce, deconnecter as deconnecterSalesforce } from './salesforce/connexion';
+import type { SalesforceRouteDeps } from './http/salesforce';
 import {
   creerEmetteur, annoncerAussiAuxSignaux, signalDeLAccuse, signalDeLaReponse, signalDesabonnement, signalDuClic,
   DUREE_CACHE_ESPACES_ACTIFS_MS,
@@ -2764,6 +2768,38 @@ async function main(): Promise<void> {
       },
       audit: auditSink,
     },
+    // Paramètres > Intégrations > Salesforce (plan 2026-09-26, lot L1). Monté SEULEMENT quand la clé d'app est
+    // posée : sans elle, la route rend 404 et la carte de la console ne s'affiche pas. Le secret de chaque org est
+    // tiré par la connexion, chiffré DANS le store, et posé dans l'org : aucune route n'en voit la couleur.
+    // 🔴 `satisfies` sur l'objet INTÉRIEUR : le contrôle des propriétés ne traverse pas un spread (CLAUDE.md).
+    ...(config.SALESFORCE_CLIENT_ID !== '' ? { salesforce: (() => {
+      const store = new PgSalesforceStore(pool, config.ENCRYPTION_KEY);
+      const client = creerClientSalesforce({ clientId: config.SALESFORCE_CLIENT_ID, clientSecret: config.SALESFORCE_CLIENT_SECRET });
+      const depsConnexion = { client, store, genererSecret: () => randomBytes(32).toString('hex') };
+      const version = config.SALESFORCE_PACKAGE_VERSION;
+      return {
+        lire: (tenant: string) => store.lire(tenant),
+        actif: (tenant: string) => settingsStore.salesforceActif(tenant),
+        poserActif: (tenant: string, actif: boolean) => settingsStore.setSalesforceActif(tenant, actif),
+        connecter: (tenant: string, adresse: string, auteur: string | null) => connecterSalesforce(depsConnexion, tenant, adresse, auteur),
+        deconnecter: (tenant: string) => deconnecterSalesforce(depsConnexion, tenant),
+        enregistrerReglages: (tenant: string, r: ReglagesSalesforce) => store.enregistrerReglages(tenant, r),
+        cleAppPosee: true,
+        chiffrementPret: (() => {
+          try {
+            encryptSecret('sonde', config.ENCRYPTION_KEY);
+            return true;
+          } catch {
+            return false;
+          }
+        })(),
+        liensInstallation: version === '' ? null : {
+          production: `https://login.salesforce.com/packaging/installPackage.apexp?p0=${version}`,
+          sandbox: `https://test.salesforce.com/packaging/installPackage.apexp?p0=${version}`,
+        },
+        audit: auditSink,
+      } satisfies SalesforceRouteDeps;
+    })() } : {}),
     rcsChannel: {
       etat: (tenant) => workflowRuntime.rcsStack.agents.etatPour(tenant),
       verifier: (apiKey) => verifierCleRcs(fetchGet, apiKey),

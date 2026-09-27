@@ -642,6 +642,20 @@ export const schema = z.object({
    *  l'install/re-consentement HubSpot. DISTINCTE de HUBSPOT_SERVICE_URL (URL interne Docker, injoignable du navigateur).
    *  Vide -> la route de lien d'install répond 503 (le front garde son bouton mais l'action indique l'indisponibilité). */
   HUBSPOT_CONNECTOR_PUBLIC_URL: z.string().default(''),
+  /**
+   * L'APP SALESFORCE (plan 2026-09-26) : l'identifiant et le secret de NOTRE External Client App (Consumer Key et
+   * Consumer Secret, lus dans le Dev Hub). Avec eux, Engage Me demande un jeton à l'org d'un client, au nom de
+   * l'utilisateur d'intégration que son admin a désigné. Vides : l'intégration n'est pas montée, aucune carte ne
+   * s'affiche. Les deux se posent ensemble, et exigent `ENCRYPTION_KEY` (le secret de chaque org est chiffré).
+   * 🔴 Jamais en `NEXT_PUBLIC_`, jamais dans le dépôt (public) ni dans le package.
+   */
+  SALESFORCE_CLIENT_ID: z.string().default(''),
+  SALESFORCE_CLIENT_SECRET: z.string().default(''),
+  /**
+   * L'identifiant de la version publiée du package (`04t...`), qui fait les liens d'installation que la console
+   * montre. Vide tant qu'aucune version n'est promue : la console le dit au lieu d'inventer un lien.
+   */
+  SALESFORCE_PACKAGE_VERSION: z.string().regex(/^(04t[0-9A-Za-z]{12}([0-9A-Za-z]{3})?)?$/, 'identifiant de version de package (04t...) attendu').default(''),
 }).superRefine((c, ctx) => {
   /**
    * 🔴 UN PLAFOND PAR GROUPE PLUS GRAND QUE LE TOTAL NE PLAFONNE RIEN, et se relit comme une garantie.
@@ -801,6 +815,15 @@ export const schema = z.object({
     // planterait au premier client. Fail-fast au boot, comme pour l'inscription.
     if (c.META_ADS_CONFIG_ID !== '' && !/^[0-9a-fA-F]{64}$/.test(c.ENCRYPTION_KEY)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['ENCRYPTION_KEY'], message: 'ENCRYPTION_KEY (64 hex) requise quand META_ADS_CONFIG_ID est défini' });
+    }
+    // SALESFORCE : la clé d'app se pose entière (une moitié demanderait des jetons refusés, mis sur le dos des
+    // orgs des clients), et elle exige la clé de chiffrement : le secret qui signe les appels de chaque org est
+    // gardé chiffré, et sans clé la connexion planterait au premier client.
+    if ((c.SALESFORCE_CLIENT_ID === '') !== (c.SALESFORCE_CLIENT_SECRET === '')) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['SALESFORCE_CLIENT_SECRET'], message: 'SALESFORCE_CLIENT_ID et SALESFORCE_CLIENT_SECRET se posent ensemble (ou aucun des deux)' });
+    }
+    if (c.SALESFORCE_CLIENT_ID !== '' && !/^[0-9a-fA-F]{64}$/.test(c.ENCRYPTION_KEY)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['ENCRYPTION_KEY'], message: 'ENCRYPTION_KEY (64 hex) requise quand SALESFORCE_CLIENT_ID est défini' });
     }
   }
 });

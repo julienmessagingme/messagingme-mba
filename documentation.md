@@ -932,6 +932,26 @@ même tenant est préservé par référence, tout le reste est re-minté.
 caractères base32, soit 130 bits : c'est elle qui tient l'accès à elle seule. Un code de lien tracé se
 contente de 60 bits parce qu'il doit tenir dans l'URL d'un bouton WhatsApp.
 
+### Le schéma `salesforce` (l'app Salesforce)
+
+L'app Salesforce (spec et plan du 2026-09-26) range ses données dans un schéma À PART, `salesforce` (migration
+0183), le premier que ce dépôt crée. Trois règles le rendent extractible vers sa propre base le jour où des
+clients réels le justifient :
+
+- 🔴 **un seul fichier le lit et l'écrit**, `src/salesforce/store.pg.ts`, et ce fichier ne nomme aucune table de
+  `public` ; aucun autre fichier ne nomme une table `salesforce.*`. Tenu par `tests/salesforce-isolation.test.ts` ;
+- **aucune clé étrangère vers `public`**, aucun `search_path` (tables toujours qualifiées) : tenu par
+  `tests/salesforce-migration.test.ts`. Conséquence : supprimer un espace n'emporte pas sa ligne ;
+- **le store reçoit son pool par le constructeur** : c'est la couture. Le jour de l'extraction, il faudra en plus
+  un `pg_dump --schema=salesforce`, un moyen de migrer l'autre base (le runner n'applique que `DATABASE_URL`) et
+  une connexion chiffrée propre : ce n'est PAS une simple variable.
+
+`tenant_id = $1` sur chaque requête, sauf DEUX lectures transverses comptées par le test : `orgParIdentifiant`
+(l'org qui signe un appel entrant DONNE l'espace) et `espacesConnectes` (le cache de l'émetteur de signaux).
+Le secret qui signe les appels d'une org est chiffré DANS le store (`ENCRYPTION_KEY`) ; `lire` ne le
+sélectionne pas. L'interrupteur de l'espace, lui, vit dans le coeur (`tenant_settings.salesforce_actif`), parce
+que `salesforce.orgs` n'a pas de ligne avant la connexion.
+
 ---
 
 ## 6. Asynchrone, concurrence, idempotence
@@ -1888,6 +1908,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/signaux/types.ts` | 🔴 le DICTIONNAIRE des signaux remontés vers l'outil d'un client, indépendant de tout outil : noms d'événements et d'attributs, noms des CHAMPS de chaque événement (`CHAMPS_EVENEMENT`), borne des textes, résumé en morceaux, `idSignal` (l'`em_event_id` STABLE et opaque), `identifiantPoussable` (la fiche se pousse-t-elle, et sous quel identifiant : une règle pour le complément et pour l'adaptateur), libellé neutre du journal des erreurs. Un adaptateur le traduit, il ne l'étend ni ne le renomme. La documentation publique (`web/lib/signaux-dictionnaire.ts`) lui est tenue par `tests/web-signaux-parite.test.ts`, sans nommer aucun outil |
 | `src/signaux/emetteur.ts` | 🔴 le SEUL point d'émission d'un signal : il ne lève jamais, ne lit rien tant qu'aucun espace n'a branché d'outil, ne transporte que ce que le chemin chaud sait déjà, et enfile des jobs bornés (`SIGNAUX_PAR_JOB`) avec leur priorité (`PRIORITE_SIGNAL` : les accusés derrière). La fiche, l'origine et l'analyse se relisent au moment de pousser (`completer.ts`) |
 | `src/signaux/completer.ts` | relit, au moment de pousser, ce qu'un signal ne transporte pas (fiche et consentement courants, contexte d'un message, lien, analyse). 🔴 CONTRAT : il porte la règle d'identité de l'adaptateur actuel (`identifiantPoussable`, une fiche ne se pousse que sous son `externalId`, sinon ni contexte ni lien ne sont relus). Un adaptateur qui désignerait un profil autrement devra lui passer SON critère, sinon il recevrait des signaux amputés sans erreur |
+| `src/salesforce/client.ts` | 🔴 le SEUL client de l'API d'une org Salesforce : jeton client credentials par org (cache par process, un seul renouvellement sur `INVALID_SESSION_ID`), `fetchPublic` et lecture bornée (l'adresse est saisie par un client), classement des erreurs sur le CODE de Salesforce et non sur le statut, refus d'adresse et redirection définitifs AVANT tout rejeu, quota du client relevé à chaque réponse. L'adresse passe d'abord par `lireMyDomain` (`src/salesforce/my-domain.ts`), et la connexion d'une org par `src/salesforce/connexion.ts` (contrat avec le package figé là) |
 | `src/ids/code.ts` | les identifiants publics et les codes de lien |
 | `src/db/transaction.ts` -> `enTransaction` | LA transaction du dépôt : `begin`, `commit` si le travail rend, `rollback` s'il lève, connexion relâchée dans tous les cas (y compris un `rollback` qui échoue), et c'est l'erreur D'ORIGINE qui remonte. ⚠️ Rendre sans lever VALIDE : un travail qui a écrit et ne doit rien laisser doit lever (`PgUserStore.deleteUser` garde donc sa transaction à la main) |
 | `src/worker/taches.ts` -> `programmer(nom, cadence, passe, { immediat, enEchec })` | les tâches périodiques du worker. `immediat` lance la passe de démarrage SOUS la même garde de ré-entrance que les autres ; `enEchec` porte le journal et l'alerte (`echecDeBalayage`, `src/worker.ts`). Une passe lancée à côté (`void passe()`) échappe à la garde |

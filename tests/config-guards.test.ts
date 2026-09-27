@@ -89,6 +89,24 @@ describe('gardes de config en production', () => {
     expect(schema.safeParse(prodEnv).success).toBe(true); // aucune des deux : la capture est simplement inerte
   });
 
+  it('Salesforce : une seule moitié de la clé d’app -> refusé ; la paire exige ENCRYPTION_KEY ; rien -> inerte', () => {
+    // Une moitié demanderait des jetons refusés, mis sur le dos des orgs des clients ; sans clé de chiffrement, le
+    // secret de chaque org ne pourrait pas être gardé et la connexion planterait au premier client.
+    asProd();
+    const cle = { ENCRYPTION_KEY: 'a'.repeat(64) };
+    expect(errPaths(schema.safeParse({ ...prodEnv, ...cle, SALESFORCE_CLIENT_ID: 'id' }))).toContain('SALESFORCE_CLIENT_SECRET');
+    expect(errPaths(schema.safeParse({ ...prodEnv, ...cle, SALESFORCE_CLIENT_SECRET: 's' }))).toContain('SALESFORCE_CLIENT_SECRET');
+    expect(errPaths(schema.safeParse({ ...prodEnv, SALESFORCE_CLIENT_ID: 'id', SALESFORCE_CLIENT_SECRET: 's' }))).toContain('ENCRYPTION_KEY');
+    expect(schema.safeParse({ ...prodEnv, ...cle, SALESFORCE_CLIENT_ID: 'id', SALESFORCE_CLIENT_SECRET: 's' }).success).toBe(true);
+    expect(schema.safeParse(prodEnv).success).toBe(true);
+  });
+
+  it('Salesforce : la version du package est un identifiant 04t, ou rien', () => {
+    expect(schema.safeParse({ SALESFORCE_PACKAGE_VERSION: '04tQL00000abcdeYAB' }).success).toBe(true);
+    expect(schema.safeParse({ SALESFORCE_PACKAGE_VERSION: '' }).success).toBe(true);
+    expect(schema.safeParse({ SALESFORCE_PACKAGE_VERSION: 'https://login.salesforce.com/packaging/installPackage.apexp?p0=04t' }).success).toBe(false);
+  });
+
   it('🔴 la clé du Gateway SANS modèle d’agent -> refusée, en nommant les deux variables', () => {
     // Le piège exact qu'on ferait au déploiement : poser la clé, oublier les modèles. Le code retombe alors
     // sur `LLM_MODEL`, qui est l'identifiant de l'ANALYSE de conversation servie EN DIRECT par Anthropic

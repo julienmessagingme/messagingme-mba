@@ -4,7 +4,7 @@ import { PgTenantSettingsStore } from '../src/settings/store.pg';
 import { DEFAULT_BUSINESS_HOURS } from '../src/settings/store.pg';
 
 /**
- * Les douze setters de `PgTenantSettingsStore` passent par `poser` (audit ponytail du 2026-09-25). Ce test
+ * Les setters de `PgTenantSettingsStore` passent tous par `poser` (audit ponytail du 2026-09-25). Ce test
  * fige, setter par setter, l'upsert CIBLÉ qu'ils envoyaient chacun à la main : même colonne, même paramètre,
  * et la conversion `::jsonb` des heures d'ouverture. Un upsert qui écrirait une autre colonne, ou qui en
  * écraserait une voisine, changerait le texte comparé ici.
@@ -28,6 +28,7 @@ describe('PgTenantSettingsStore : un setter écrit SA colonne, et seulement elle
   const T = '11111111-1111-1111-1111-111111111111';
   const cas: Array<[string, (s: PgTenantSettingsStore) => Promise<void>, string, unknown]> = [
     ['hubspot_actif', (s) => s.setHubspotActif(T, true), upsert('hubspot_actif'), true],
+    ['salesforce_actif', (s) => s.setSalesforceActif(T, true), upsert('salesforce_actif'), true],
     ['mba_relais_cle_id', (s) => s.setMbaRelaisCleId(T, 'cle-1'), upsert('mba_relais_cle_id'), 'cle-1'],
     ['agents_peuvent_prendre', (s) => s.setAgentsPeuventPrendre(T, false), upsert('agents_peuvent_prendre'), false],
     ['mention_ia_frequence', (s) => s.setMentionIaFrequence(T, 'jamais'), upsert('mention_ia_frequence'), 'jamais'],

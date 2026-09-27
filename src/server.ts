@@ -9,6 +9,7 @@ import { registerCampaigns } from './http/campaigns';
 import { registerRcsMessages } from './http/rcs-messages';
 import { registerRcsChannel } from './http/rcs-channel';
 import { registerIntegrationBatch } from './http/integration-batch';
+import { registerSalesforce } from './http/salesforce';
 import { registerRcsCallback } from './http/rcs-callback';
 import { registerRcsMedia } from './http/rcs-media';
 import { registerTemplates } from './http/templates';
@@ -92,6 +93,7 @@ import type { CampaignRouteDeps } from './http/campaigns';
 import type { RcsMessageRouteDeps } from './http/rcs-messages';
 import type { RcsChannelRouteDeps } from './http/rcs-channel';
 import type { IntegrationBatchRouteDeps } from './http/integration-batch';
+import type { SalesforceRouteDeps } from './http/salesforce';
 import type { RcsCallbackRouteDeps } from './http/rcs-callback';
 import type { RcsMediaRouteDeps } from './http/rcs-media';
 import type { TemplateRouteDeps } from './http/templates';
@@ -177,6 +179,11 @@ export interface ServerDeps {
   rcsChannel?: RcsChannelRouteDeps;
   /** Paramètres > Intégrations > Batch : l'outil qui reçoit les signaux (lot 6 de l'API publique). Admin, lecture comprise. */
   integrationBatch?: IntegrationBatchRouteDeps;
+  /**
+   * Paramètres > Intégrations > Salesforce : l'interrupteur, la connexion de l'org, ses réglages (plan 2026-09-26,
+   * lot L1). Admin, lecture comprise. Monté seulement quand la clé d'app Salesforce est posée sur l'instance.
+   */
+  salesforce?: SalesforceRouteDeps;
   /** Rappels smsmode du canal RCS (livraison + réponses). PUBLIQUE : le code d'URL porte le workspace. */
   rcsCallback?: RcsCallbackRouteDeps;
   /** Visuels des messages RCS : téléversement admin, et service PUBLIC du fichier (`/m/<code>.jpg`). */
@@ -511,6 +518,7 @@ export function modulesDeRoutes(deps: ServerDeps, usageApi: ApiUsageGuard): read
     entree('rcsMessages', 'tenant', deps.rcsMessages, (app, d, g) => registerRcsMessages(app, d, g.auth)),
     entree('rcsChannel', 'tenant', deps.rcsChannel, (app, d, g) => registerRcsChannel(app, d, g.auth)),
     entree('integrationBatch', 'tenant', deps.integrationBatch, (app, d, g) => registerIntegrationBatch(app, d, g.admin)),
+    entree('salesforce', 'tenant', deps.salesforce, (app, d, g) => registerSalesforce(app, d, g.admin, g.limiteCouteuse)),
     // Visuels RCS. Monté avec `auth` alors qu'il porte AUSSI une route publique `/m/<code>.<ext>` : les
     // gardes de ce projet sont posées par route (`preHandler`), pas par groupe, donc la route de lecture
     // reste ouverte comme elle doit l'être. C'est l'opérateur télécom qui télécharge l'image, sans session.
