@@ -45,7 +45,12 @@ describe('câblage de /v1/sends', () => {
     // Une autre instance (ou une lecture sans cache recopiée ici) ne serait pas vidée par le geste : l'API
     // refuserait encore quelques secondes après « Relier », ou accepterait après « Délier ».
     expect(envois).toMatch(/\bnumerosDelies: gardeNumeroDelie,/);
-    expect(source).toMatch(/const gardeNumeroDelie = creerGardeNumeroDelie\(/);
+    // La garde est celle du socle de ce process : la même instance que la fabrique Meta, et que les routes
+    // Délier et Relier vident. Aucune seconde construction dans l'API.
+    expect(source).toMatch(/\bgardeNumeroDelie,[\s\S]*?\} = construireSocle\(\{ pool, queue, config \}\)/);
+    expect(source).not.toMatch(/creerGardeNumeroDelie\(/);
+    expect(sansCommentaires('../src/socle.ts')).toMatch(/const gardeNumeroDelie = creerGardeNumeroDelie\(/);
+    expect(sansCommentaires('../src/socle.ts')).toMatch(/\bnumerosDelies: gardeNumeroDelie,/);
   });
 
   it('les contacts de l’API sont lus par la lecture qui garde les bloqués', () => {

@@ -50,7 +50,7 @@ rechargement NPM, fumée. Commits construits en plomberie depuis `origin/main` (
 
 - Un module dans `src/stats/` construit à partir du dépôt de statistiques, de la grille et du tarif Meta, et
   rend les lectures de coût lues par les statistiques, `/ops` et la fiche contact. La classification RCS
-  (simple ou conversationnel) et l'attribution des clics s'y écrivent une fois.
+  (simple ou conversationnel) et la lecture des liens tracés d'un scénario s'y écrivent une fois.
 - La connexion publicitaire (jeton, connexion concurrente, révocation) rejoint `src/pubs/connexion.ts`, à côté
   de son dépôt (`connexion.pg.ts`) et de la création (`creation.ts`) ; `src/meta/pubs.ts` reste le client Graph.
 - Tests : `cout-campagne-rcs-cablage` et `prix-cablage`, qui lisent la source, sont remplacés par des tests qui

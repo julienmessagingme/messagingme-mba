@@ -2,22 +2,14 @@ import './charger-env';
 import { config } from './config';
 import { PgBossQueue } from './queue/pgboss';
 import { pool, mesureAttentePool } from './db/pool';
-import { PgTrackedLinkStore } from './links/tracked-links.pg';
+import { construireSocle } from './socle';
 import { fabriquerJeton } from './links/jeton-contact';
-import { PgAuditStore } from './audit/store.pg';
-import { PgTestRunStore } from './agent/test-runs.pg';
 import { RETENTION_ESSAIS_JOURS } from './agent/test-runs';
-import { PgWorkflowNodeEventStore } from './workflow/node-events.pg';
 import { PgConversationStatsStore } from './stats/conversation-stats.pg';
 import { todayParis, addDays } from './stats/range';
 import { handleWebhookJob } from './webhooks/handler';
 import { PgEventStore } from './webhooks/store';
-import {
-  PgCampaignRepo,
-  PgCampaignStore,
-  PgRecipientStore,
-  PgQualityProvider,
-} from './campaign/store.pg';
+import { PgCampaignStore, PgQualityProvider } from './campaign/store.pg';
 import { campaignRunJob, type CapacitesMoteur } from './campaign/run-job';
 import { PgCampaignRunLock } from './campaign/run-lock';
 import { runCampaignScheduleSweep } from './campaign/schedule-sweep';
@@ -34,75 +26,47 @@ import { assignerReponse } from './inbox/assignation-campagne';
 import { relanceurDeCampagnes } from './campaign/enqueue';
 import { plafondDuCanal, plafondLePlusBas } from './campaign/pacing';
 import { flagContactUnreachable } from './crm/hubspot-service';
-import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
 import { DUREE_CLE_IDEMPOTENCE_MS } from './api/idempotence';
-import { PgInboxStore } from './inbox/store.pg';
 import { PgArriveesPubStore } from './pubs/arrivees.pg';
 import { PgTarifsMetaStore } from './pubs/tarifs-meta.pg';
-import { PgPublicitesStore } from './pubs/publicites.pg';
-import { PgPubConnexionStore } from './pubs/connexion.pg';
-import { MetaPubsClient } from './meta/pubs';
-import { MetaPubsCreationClient } from './meta/pubs-creation';
 import { balayerLesPubs } from './pubs/suivi';
 import { estJetonRefuse } from './meta/graph';
-import { PgTenantSettingsStore } from './settings/store.pg';
 import { runControlSweep } from './inbox/control-sweep';
 import { runHandoffSweep } from './mba/handoff-sweep';
 import { lireHandoffEnabled, ecrireHandoffEnabled } from './mba/handoff';
-import { PgFlowStore } from './flow/store.pg';
-import { PgContactStore } from './crm/contact-store.pg';
 import { SOURCE_STOP_WHATSAPP } from './crm/consentement';
-import { PgUserFieldStore } from './crm/field-store.pg';
 import {
   ensureFieldByKey,
   CTWA_AD_ID_FIELD_KEY, CTWA_AD_ID_FIELD_LABEL, CTWA_AD_TITLE_FIELD_KEY, CTWA_AD_TITLE_FIELD_LABEL,
 } from './crm/fields';
-import { PgWorkflowStore, grapheEditable } from './workflow/store.pg';
+import { grapheEditable } from './workflow/store.pg';
 import { blocDesigne } from './workflow/test-token';
-import { PgAutomationStore } from './automation/store.pg';
 import { runAutomations } from './automation/runner';
-import { PgWebhookStore } from './webhook-entrant/store.pg';
 import { runDateSweep } from './automation/date-sweep';
 import { balayerRisque, jourABalayer } from './engagement/balayage';
 import { depsBalayageRisque } from './engagement/cablage';
 import { AUTOMATION_EVENT_QUEUE, enfilerEvenementAutomation, parseAutomationEventJob, type AutomationEventJob } from './automation/event-job';
-import { buildWorkflowRuntime } from './workflow/wiring';
 import { AGENT_TURN_QUEUE, parseAgentTurnJob } from './agent/turn-job';
 
 /** Messages de conversation donnés au cerveau à chaque tour. Borné : le contexte se paie à chaque appel de
  *  modèle, et un fil bavard ferait payer au client une conversation qu'il a déjà réglée. */
 const MESSAGES_DE_CONTEXTE = 30;
 import { runTurn, type RunTurnDeps } from './agent/run-turn';
-import { PgAgentStore } from './agent/agent-store.pg';
-import { PgToolCatalog, PgJournalAppels } from './agent/catalog.pg';
-import { PgKnowledgeStore } from './agent/knowledge.pg';
-import { balayerVectorisation, creerRechercheSemantique } from './agent/recherche';
-import { PgDepotAide } from './aide/fiches.pg';
+import { balayerVectorisation } from './agent/recherche';
 import { GatewayChatClient } from './agent/llm/chat-client';
 import { creerCerveauGateway } from './agent/brain.gateway';
-import { PgCleGatewayStore } from './agent/cles-gateway.pg';
 import { lireContexteAvecReglages } from './agent/contexte';
-import { PgCreditStore } from './agent/credits.pg';
-import { PgSourceStore } from './agent/sources.pg';
-import { PgRequeteStore } from './agent/requetes.pg';
-import { creerAnnonceOptOut, creerTravailPousseeOptOut, FILE_POUSSEE_OPTOUT } from './crm/poussee-optout';
+import { creerTravailPousseeOptOut, FILE_POUSSEE_OPTOUT } from './crm/poussee-optout';
 import { cacheCourt } from './lib/cache-court';
-import { PgIntegrationBatchStore } from './signaux/integration-batch.pg';
 import { PgSignauxStore } from './signaux/store.pg';
 import { completerSignal } from './signaux/completer';
-import {
-  creerEmetteur, creerPuitsSignauxMeta, annoncerAussiAuxSignaux, signalAnalyse, DUREE_CACHE_ESPACES_ACTIFS_MS,
-} from './signaux/emetteur';
+import { creerPuitsSignauxMeta, signalAnalyse } from './signaux/emetteur';
 import { FILE_SIGNAUX_BATCH, pousserVersBatch } from './signaux/batch';
 import { creerTravailSignauxBatch } from './signaux/travail-batch';
 import { creerResolveurHttp } from './agent/resolvers/http';
 import { creerResolveurMcp } from './agent/resolvers/mcp';
 import { creerResolveurMba } from './agent/resolvers/mba';
 import { creerEscaladeVersHumain } from './agent/escalade';
-import { PgEmailAccountStore } from './email/account-store.pg';
-import { PgEmailTemplateStore } from './email/template-store.pg';
-import { EmailAccountResolver } from './email/resolver';
-import { buildTransport as buildEmailTransport } from './email/smtp';
 import { PgConversationAnalysisStore } from './analysis/store.pg';
 import { analyzeConversationJob } from './analysis/job';
 import { runAnalysisSweep } from './analysis/sweep';
@@ -111,30 +75,16 @@ import { getEnrichment } from './analysis/enrichment';
 import { pushAnalysisJob } from './analysis/push-job';
 import { hubspotCatchupJob } from './analysis/catchup-job';
 import { makeOnAnalyzed, postAnalysis } from './analysis/connector-push';
-import { PgPhoneStatusStore } from './account/store.pg';
-import { PgNumeroDelieStore } from './account/numero-delie.pg';
-import { creerGardeNumeroDelie } from './meta/numero-delie';
 import { pullFromInfo, pullFromError } from './account/pull';
 import { creerNoteDeQualite } from './campaign/note-qualite';
-import { creerNumeroDeLEspace } from './meta/numero-espace';
 import { runPhoneStatusSweep, type PhoneProblem } from './account/status-sweep';
-import { PgOpsStore } from './ops/store.pg';
-import { PgErreursLivraisonStore } from './ops/erreurs-livraison.pg';
-import { PgEchecsMessagesStore } from './delivery/echecs-messages.pg';
-import { PgPoolAttentesStore, viderVersLaBase } from './ops/pool-attentes.pg';
+import { viderVersLaBase } from './ops/pool-attentes.pg';
 import { creerDlqSweep } from './ops/dlq-sweep';
 import { creerWebhooksMuetsSweep } from './ops/webhooks-muets-sweep';
-import { MetaClientFactory } from './meta/factory';
-import { arbitreDeDebit } from './meta/arbitre-debit';
-import { arbitreDeDebitPartage, depsPorteDebitPg } from './meta/arbitre-debit-partage';
-import { MetaCredentialsResolver } from './meta/credentials';
-import { PgEmbeddedSignupStore } from './account/es-store.pg';
-import { decryptSecret, encryptSecret } from './crypto/secretbox';
-import { FetchTransport } from './meta/http';
+import { decryptSecret } from './crypto/secretbox';
 import { DryRunSender } from './campaign/dry-run-sender';
 import type { MessageSender } from './campaign/engine';
 import type { Campaign } from './campaign/types';
-import { PgWorkerHeartbeatStore } from './ops/heartbeat-store.pg';
 import { sendTelegram } from './ops/telegram';
 import { installGracefulShutdown } from './shutdown';
 import { registreDeTaches } from './worker/taches';
@@ -190,10 +140,24 @@ async function main(): Promise<void> {
   });
   await queue.start();
 
+  /**
+   * Le socle commun avec l'API (`src/socle.ts`) : les dépôts, le dépôt de contacts qui annonce chaque opt-out (le
+   * STOP d'un message entrant est écrit ici), l'émetteur de signaux, la pile d'envoi Meta et ses freins, le
+   * résolveur e-mail et le runtime de scénario. Appelé une fois : ses caches sont ceux de ce processus. Tout ce
+   * qui suit ne vit que dans le worker : ses files, ses balayages et ce qu'ils sont seuls à lire.
+   */
+  const {
+    dryRun, transport, repo, recipientStore, integrationBatch, espacesBatch, emetteur, contactStore, fieldStore,
+    inboxStore, settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages,
+    poolAttentesStore, nodeEventStore, trackedLinkStore, webhookStore, phoneStatusStore, numeroDelieStore, opsStore,
+    heartbeatStore, workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog,
+    journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub,
+    publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway,
+  } = construireSocle({ pool, queue, config });
+
   // Heartbeat : le worker écrit un signal de vie best-effort, dont /ops/overview lit l'âge. Il prouve que le
   // process tourne (event loop non bloquée), pas que pg-boss dépile : pour des files gelées, c'est le backlog
   // de /ops qui sert.
-  const heartbeatStore = new PgWorkerHeartbeatStore(pool);
   const instanceId = `${process.env.HOSTNAME ?? 'host'}:${process.pid}`;
   const beat = async (boot: boolean): Promise<void> => {
     try {
@@ -223,9 +187,8 @@ async function main(): Promise<void> {
    * montre : `/ops` est servi par l'API, qui ne voit que son propre pool. Best-effort : une mesure ne doit
    * jamais faire tomber ce qu'elle mesure.
    */
-  const poolAttentes = new PgPoolAttentesStore(pool);
   taches.programmer('pool-attentes', 60_000, async () => {
-    await viderVersLaBase(poolAttentes, mesureAttentePool, 'worker', new Date(), (err) => {
+    await viderVersLaBase(poolAttentesStore, mesureAttentePool, 'worker', new Date(), (err) => {
       // eslint-disable-next-line no-console
       console.error('pool-attentes: écriture impossible:', messageDe(err));
     });
@@ -235,46 +198,15 @@ async function main(): Promise<void> {
   // entrants en conversations ; le report Flow -> champs du contact est isolé dans handleWebhookJob (il ne
   // fait jamais échouer le job partagé avec les statuts).
   const eventStore = new PgEventStore(pool);
-  const recipientStore = new PgRecipientStore(pool);
-  const inboxStore = new PgInboxStore(pool);
   // Publicités Click-to-WhatsApp : ce qui se perd si on ne le garde pas à la réception.
   const arriveesPubStore = new PgArriveesPubStore(pool);
   const tarifsMetaStore = new PgTarifsMetaStore(pool);
-  // Où va le lead. Les deux dépôts se lisent sur le chemin chaud d'un entrant (deux requêtes sur clé) ; le
-  // client Meta ne sert qu'à résoudre une publicité jamais vue, une fois, puis on mémorise.
-  const publicitesStore = new PgPublicitesStore(pool);
-  const connexionsPubStore = new PgPubConnexionStore(pool);
-  const clientPubs = new MetaPubsClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
-  // Le client qui pilote les publicités : il lit leurs statuts et leur dépense pour le balayage du suivi.
-  const clientPubsCreation = new MetaPubsCreationClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
   /**
    * La cadence du suivi des publicités : quinze minutes, la cadence à laquelle Meta rafraîchit lui-même la
    * dépense d'une campagne. Interroger plus souvent relirait le même chiffre en consommant du quota sur un
    * compte en niveau « Limited ». Pas de variable d'environnement : elle décrit le comportement d'un tiers.
    */
   const SUIVI_PUBS_INTERVALLE_MS = 15 * 60 * 1000;
-  // Le journal des erreurs. Le worker n'en lit jamais : il y écrit les échecs d'avance de scénario, qui
-  // sinon disparaîtraient dans un `console.error`.
-  const erreursLivraison = new PgErreursLivraisonStore(pool);
-  // Les échecs de livraison des messages libres : écrits par les deux files qui voient des accusés, purgés
-  // par le balayage de rétention.
-  const echecsMessages = new PgEchecsMessagesStore(pool);
-  const settingsStore = new PgTenantSettingsStore(pool);
-  const flowStore = new PgFlowStore(pool);
-  /**
-   * Les signaux : ce que la console remonte vers l'outil d'un client. L'émetteur est construit avant le dépôt
-   * des contacts, qui l'appelle à chaque désabonnement. Il ne connaît aucun outil : chaque adaptateur est une
-   * destination (sa file, ses espaces actifs lus à travers un cache court, qui rattrape un branchement fait
-   * depuis l'écran en une minute au plus).
-   */
-  const integrationBatch = new PgIntegrationBatchStore(pool);
-  const espacesBatch = cacheCourt<ReadonlySet<string>>(DUREE_CACHE_ESPACES_ACTIFS_MS);
-  const emetteur = creerEmetteur({
-    destinations: [{ file: FILE_SIGNAUX_BATCH, espacesActifs: () => espacesBatch.lire('actifs', () => integrationBatch.espacesActifs()) }],
-    queue,
-    // eslint-disable-next-line no-console
-    log: (m) => console.warn(m),
-  });
   /**
    * Le numéro Meta -> son espace, pour les accusés, qui ne portent que le numéro. Consulté seulement quand un
    * espace au moins a branché un outil. Seules les réponses positives restent en cache : une réponse nulle
@@ -289,92 +221,15 @@ async function main(): Promise<void> {
       return t;
     },
   });
-  /**
-   * 🔴 La même annonce d'opt-out que côté API : le mot-clé « stop » d'un message entrant est traité ici, dans
-   * le worker. Sans elle, le chemin le plus important, celui où la personne elle-même refuse, serait muet.
-   */
-  const contactStore = new PgContactStore(
-    pool,
-    annoncerAussiAuxSignaux(
-      creerAnnonceOptOut({
-        enfiler: (job, opts) => queue.enqueue(FILE_POUSSEE_OPTOUT, job, opts),
-        // eslint-disable-next-line no-console
-        log: (m) => console.warn(m),
-      }),
-      emetteur,
-    ),
-  );
-  // Déclare les champs « Pub » la première fois qu'un contact arrive par une publicité : sans définition, la
-  // valeur serait écrite mais invisible dans le CRM, impossible à filtrer ou à segmenter.
-  const fieldStore = new PgUserFieldStore(pool);
-  const auditStore = new PgAuditStore(pool);
-  const essaisStore = new PgTestRunStore(pool);
-  const nodeEventStore = new PgWorkflowNodeEventStore(pool);
-  // Instancié ici pour le seul balayage de rétention des clics : l'API a le sien, et ces stores ne sont que
-  // des enveloppes autour du pool partagé.
-  const trackedLinkStore = new PgTrackedLinkStore(pool);
-  const repo = new PgCampaignRepo(pool);
-  const transport = new FetchTransport();
-  const dryRun = config.DRY_RUN === 'true';
-
-  // Résolution du token Meta par tenant, repli sur config.META_ACCESS_TOKEN tant qu'un WABA n'a pas de
-  // credentials propres. Le WABA de l'espace est lu une fois par process (le cache de jeton est indexé par
-  // WABA, cette requête passait avant lui à chaque envoi) ; seules les réponses positives entrent en cache.
-  const wabaDeLEspace = creerNumeroDeLEspace((t) => repo.getTenantWabaId(t));
   const qualiteStore = new PgQualityProvider(pool);
   const noteDeQualite = creerNoteDeQualite((pn) => qualiteStore.getRating(pn));
-  const esStore = new PgEmbeddedSignupStore(pool);
-  const phoneStatusStore = new PgPhoneStatusStore(pool);
-  // Le numéro délié : la garde des envois (en cache, `NUMERO_DELIE_TTL_MS`) et l'écart des entrants du
-  // webhook (lu à chaque lot, sans cache : une lecture par clé primaire).
-  const numeroDelieStore = new PgNumeroDelieStore(pool);
-  const gardeNumeroDelie = creerGardeNumeroDelie((pn) => numeroDelieStore.estDelie(pn));
-  const metaCredentials = new MetaCredentialsResolver({
-    getWabaIdForTenant: wabaDeLEspace,
-    credentials: esStore,
-    decrypt: (enc) => decryptSecret(enc, config.ENCRYPTION_KEY),
-    fallbackToken: config.META_ACCESS_TOKEN,
-  });
-  const metaFactory = new MetaClientFactory({
-    resolver: metaCredentials,
-    transport,
-    version: config.META_GRAPH_VERSION,
-    marketingViaLite: config.META_MM_LITE === 'true',
-    // Frein par numéro, partagé par tout ce qui envoie depuis lui. Le budget du numéro est partagé entre l'API
-    // et le worker en base ; l'arbitre local reste dessous comme repli si la base de débit ne répond pas, donc
-    // le pire cas est un frein local, jamais une absence de frein.
-    arbitreDebit: arbitreDeDebitPartage(
-      arbitreDeDebit(config.PHONE_RATE_PER_MINUTE_MAX),
-      config.PHONE_RATE_PER_MINUTE_MAX,
-      depsPorteDebitPg(pool),
-    ),
-    numerosDelies: gardeNumeroDelie,
-  });
 
-  // Exécuteur de workflows : quand un contact répond, on avance son run.
-  const workflowStore = new PgWorkflowStore(pool);
-  const automationStore = new PgAutomationStore(pool);
-
-  // Node « Envoi de mail » : boîtes SMTP + modèles (scopés tenant), résolveur de transport à cache par
-  // process (l'API a le sien dans index.ts). L'invalidation posée par les routes email ne traverse pas jusqu'ici :
-  // un compte modifié garde son ancien transport jusqu'au redémarrage du worker.
-  const emailAccounts = new PgEmailAccountStore(pool);
-  const emailTemplates = new PgEmailTemplateStore(pool);
-  const emailResolver = new EmailAccountResolver({
-    comptes: emailAccounts,
-    buildTransport: buildEmailTransport,
-  });
-
-  // Exécuteur de scénarios et ce qui l'accompagne : câblage partagé avec l'API (`workflow/wiring.ts`), qui
-  // lance un scénario depuis l'Inbox avec la même sémantique.
+  // Exécuteur de scénarios et ce qui l'accompagne, construit par le socle : l'API lance un scénario depuis
+  // l'Inbox avec la même sémantique.
   const {
     executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack,
     releaseThreadChezMeta, remiseMbaSurAccuse, remiseMbaSiPersonneNeSuit, reprendreLeFilPourLApp, agentSessions, envoyerTexteAgent, poserTagDepuisAgent,
-  } = buildWorkflowRuntime({
-    pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory,
-    rcsProvider: config.RCS_PROVIDER,
-    emailTemplates, emailResolver,
-  });
+  } = workflowRuntime;
 
   /**
    * La mémoire de joignabilité WhatsApp d'un contact, écrite par ses deux sources avec un seul noteur : le
@@ -520,19 +375,19 @@ async function main(): Promise<void> {
        */
       routagePub: {
         phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
-        campagneConnue: (t, adId) => publicitesStore.campagneConnue(t, adId),
+        campagneConnue: (t, adId) => publicites.campagneConnue(t, adId),
         resoudreChezMeta: async (t, adId) => {
           // Sans connexion publicitaire, rien à demander (pas de jeton, un appel anonyme serait refusé) : la
           // campagne reste inconnue, donc le chemin ordinaire.
-          const chiffre = await connexionsPubStore.lireJetonChiffre(t);
+          const chiffre = await connexionsPub.lireJetonChiffre(t);
           if (chiffre === null) return null;
           const campagneId = await clientPubs.campagneDeLaPub(adId, decryptSecret(chiffre, config.ENCRYPTION_KEY));
           // On ne mémorise que les succès : écrire un échec figerait une panne réseau en verdict permanent pour tous
           // les leads suivants de la même publicité.
-          if (campagneId !== null) await publicitesStore.memoriserPub(t, adId, campagneId);
+          if (campagneId !== null) await publicites.memoriserPub(t, adId, campagneId);
           return campagneId;
         },
-        publiciteDeLaCampagne: (t, campagneId) => publicitesStore.pubDeLaCampagne(t, campagneId),
+        publiciteDeLaCampagne: (t, campagneId) => publicites.pubDeLaCampagne(t, campagneId),
         contactBloque: (t, waId) => contactStore.isBlockedByWaId(t, waId),
         // La même lecture que l'exécuteur de scénario et que l'agent, sur le même dépôt.
         estDesabonne: (t, waId) => contactStore.estDesabonneParWaId(t, waId),
@@ -817,15 +672,15 @@ async function main(): Promise<void> {
    * 1 : un client peut désabonner des milliers de personnes d'un geste, sans frapper son système en parallèle.
    */
   await queue.work(FILE_POUSSEE_OPTOUT, creerTravailPousseeOptOut({
-    sources: new PgSourceStore(pool),
-    requetes: new PgRequeteStore(pool),
+    sources: agentSources,
+    requetes: agentRequetes,
     requeteConfiguree: async (tenant) => (await settingsStore.get(tenant)).optoutRequestId,
     /**
      * 🔴 Le journal : un refus non poussé est invisible du client, qui croit son CRM prévenu. Les réessais de
      * pg-boss puis la DLQ sont notre filet, pas le sien.
      */
-    journalAppels: new PgJournalAppels(pool),
-    libelleRequete: async (t, id) => (await new PgRequeteStore(pool).parId(t, id))?.label ?? null,
+    journalAppels,
+    libelleRequete: async (t, id) => (await agentRequetes.parId(t, id))?.label ?? null,
     inbox: inboxStore,
     fuseau: async (t) => (await settingsStore.get(t)).timezone,
     // Relue à chaque appel : la fiche a pu bouger entre le refus et la reprise du job.
@@ -863,7 +718,7 @@ async function main(): Promise<void> {
       await integrationBatch.suspendre(t);
       espacesBatch.invalider('actifs');
     },
-    journal: new PgJournalAppels(pool),
+    journal: journalAppels,
     // eslint-disable-next-line no-console
     log: (m) => console.warn(m),
   }), { concurrency: 2, groupConcurrency: 1 });
@@ -1192,8 +1047,6 @@ async function main(): Promise<void> {
 
   // Purge des clés d'idempotence API plus vieilles que leur durée de vie (`DUREE_CLE_IDEMPOTENCE_MS`), la
   // même que celle du claim : une purge plus courte ferait envoyer deux fois.
-  const idempotencyStore = new PgApiIdempotencyStore(pool);
-  const webhookStore = new PgWebhookStore(pool);
   const idempotencySweep = async (): Promise<void> => {
     const n = await idempotencyStore.sweepOlderThan(DUREE_CLE_IDEMPOTENCE_MS);
     // eslint-disable-next-line no-console
@@ -1329,7 +1182,7 @@ async function main(): Promise<void> {
     await etape('messages', `échec(s) de message libre effacé(s) (au-delà de ${config.AVANCE_ECHECS_RETENTION_DAYS} j)`,
       () => echecsMessages.purgerAvant(config.AVANCE_ECHECS_RETENTION_DAYS));
     await etape('pool', `minute(s) d’attente du pool effacée(s) (au-delà de ${config.POOL_ATTENTES_RETENTION_DAYS} j)`,
-      () => poolAttentes.purgeOlderThan(config.POOL_ATTENTES_RETENTION_DAYS));
+      () => poolAttentesStore.purgeOlderThan(config.POOL_ATTENTES_RETENTION_DAYS));
     // Les essais du bac à sable : rétention courte et en dur (14 j), ce ne sont pas des conversations de
     // clients (ni contact ni `wa_id`, seulement ce que l'administrateur a tapé).
     await etape('essais', `essai(s) d’agent effacé(s) (au-delà de ${RETENTION_ESSAIS_JOURS} j)`,
@@ -1393,9 +1246,8 @@ async function main(): Promise<void> {
   };
   taches.programmer('risque-desengagement', 15 * 60_000, risqueSweep, { enEchec: echecDeBalayage('risque-sweep', 'sweeper:risque') });
 
-  // Hors de la garde META_ACCESS_TOKEN ci-dessous : la surveillance des files ne touche pas Meta, et un
-  // déploiement sans token Meta ne doit pas devenir aveugle aux messages perdus.
-  const opsStore = new PgOpsStore(pool, config.PGBOSS_SCHEMA);
+  // Les deux sondes qui suivent restent hors de la garde META_ACCESS_TOKEN ci-dessous : la surveillance des
+  // files ne touche pas Meta, et un déploiement sans token Meta ne doit pas devenir aveugle aux messages perdus.
 
   // Surveillance des dead letter queues : un job qui épuise ses rejeux y atterrit et rien ne les consomme,
   // donc sans alerte la perte est silencieuse. Cadence 5 min, alignée sur le throttle ; alerte seulement sur
@@ -1473,13 +1325,13 @@ async function main(): Promise<void> {
   if (config.META_ADS_CONFIG_ID) {
     const suivrePubs = async (): Promise<void> => {
       const bilan = await balayerLesPubs({
-        publicites: publicitesStore,
+        publicites,
         jeton: async (t) => {
-          const chiffre = await connexionsPubStore.lireJetonChiffre(t);
+          const chiffre = await connexionsPub.lireJetonChiffre(t);
           return chiffre === null ? null : decryptSecret(chiffre, config.ENCRYPTION_KEY);
         },
-        meta: clientPubsCreation,
-        noterSuivi: (t, campagneId, v) => publicitesStore.noterSuivi(t, campagneId, {
+        meta: clientCreationPubs,
+        noterSuivi: (t, campagneId, v) => publicites.noterSuivi(t, campagneId, {
           statutMeta: v.etat?.statut ?? null,
           motifRefus: v.etat?.motifRefus ?? null,
           debut: v.etat?.debut ?? null,
@@ -1488,7 +1340,7 @@ async function main(): Promise<void> {
           depense: v.depense?.depense ?? null,
           clics: v.depense?.clics ?? null,
         }),
-        connexions: connexionsPubStore,
+        connexions: connexionsPub,
         // Sur le code de Meta, jamais sur la phrase : une garde qui lit une phrase casse en silence le jour où
         // Meta la réécrit.
         estJetonRefuse,
@@ -1509,29 +1361,18 @@ async function main(): Promise<void> {
   // bloc part vraiment chez le contact. Sans clé de Gateway, la file n'est pas consommée : un consommateur qui
   // échouerait enverrait les tours en DLQ, alors qu'un job qui attend repart dès que la clé est posée.
   //
-  // 🔴 Même résolveur de clé par espace que dans l'API : les tours des vrais clients (l'essentiel de la
-  // dépense) passent ici, et le câbler d'un seul côté laisserait la production dans le pot commun.
-  const clesGatewayWorker = new PgCleGatewayStore(
-    pool,
-    (clair) => encryptSecret(clair, config.ENCRYPTION_KEY),
-    (chiffre) => decryptSecret(chiffre, config.ENCRYPTION_KEY),
-  );
+  // 🔴 Même résolveur de clé par espace que dans l'API (`clesGateway`, construit par le socle) : les tours des
+  // vrais clients (l'essentiel de la dépense) passent ici, et le câbler d'un seul côté laisserait la production
+  // dans le pot commun.
   const gatewayAgent = config.AI_GATEWAY_API_KEY
-    ? new GatewayChatClient(config.AI_GATEWAY_API_KEY, undefined, async (tenant) => (await clesGatewayWorker.lire(tenant))?.cle ?? null)
+    ? new GatewayChatClient(config.AI_GATEWAY_API_KEY, undefined, async (tenant) => (await clesGateway.lire(tenant))?.cle ?? null)
     : null;
   if (gatewayAgent) {
-    const agentStore = new PgAgentStore(pool);
-    const toolCatalog = new PgToolCatalog(pool);
-    const journalAppels = new PgJournalAppels(pool);
-    const knowledgeStore = new PgKnowledgeStore(pool);
-    // Les fiches du mode d'emploi de la console, vectorisées par le même balayage que la connaissance des
-    // agents, juste en dessous.
-    const depotAide = new PgDepotAide(pool);
-    const rechercheSemantique = creerRechercheSemantique();
     /**
      * Le balayage qui vectorise, seul endroit du dépôt qui calcule un vecteur de fiche : fiches neuves, texte
      * modifié (vecteur effacé à l'édition), ancien modèle. Cadence courte : une fiche créée est trouvable par
-     * les mots tout de suite, par le sens au passage suivant.
+     * les mots tout de suite, par le sens au passage suivant. Il vectorise aussi les fiches du mode d'emploi de
+     * la console (`depotAide`).
      */
     if (rechercheSemantique) {
       const vectoriser = async (): Promise<void> => {
@@ -1558,11 +1399,6 @@ async function main(): Promise<void> {
       };
       taches.programmer('vectorisation', 60_000, vectoriser, { immediat: true });
     }
-    const credits = new PgCreditStore(pool);
-    const agentSources = new PgSourceStore(pool);
-    // Les requêtes de connecteur : un appel mis au point une fois dans la bibliothèque de l'espace, que l'outil
-    // d'un agent désigne au lieu de le redécrire.
-    const agentRequetes = new PgRequeteStore(pool);
 
     // L'escalade vers un humain : trois effets dans un ordre contre-intuitif, que `escalade.ts` explique.
     const escaladerVersHumain = creerEscaladeVersHumain({

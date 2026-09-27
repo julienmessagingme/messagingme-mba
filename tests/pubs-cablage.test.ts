@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * LE CÂBLAGE DES PUBLICITÉS, LU DANS LA SOURCE (revue du lot 2, 2026-09-23).
@@ -24,7 +25,7 @@ const sansCommentaires = (s: string): string => s.replace(/\/\*[\s\S]*?\*\//g, '
 
 /** Tous les fichiers de `src/`, sans leurs commentaires. */
 function sources(): Array<{ fichier: string; texte: string }> {
-  const racine = new URL('../src', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+  const racine = fileURLToPath(new URL('../src', import.meta.url));
   const out: Array<{ fichier: string; texte: string }> = [];
   const visiter = (dossier: string): void => {
     for (const nom of readdirSync(dossier)) {

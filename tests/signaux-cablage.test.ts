@@ -6,8 +6,9 @@ import { readFileSync } from 'node:fs';
  *
  * Le typage impose déjà une partie des branchements (le puits des accusés et celui des réponses sont requis
  * par `handleWebhookJob`, le signal du clic par `LinksRouteDeps`). Ce test garde ce que le typage ne voit pas :
- * les dépendances optionnelles (l'annonce d'opt-out du dépôt des contacts) et les fermetures écrites en ligne
- * (les rappels RCS, la sortie de l'analyse).
+ * les fermetures écrites en ligne (les rappels RCS, la sortie de l'analyse). L'annonce d'opt-out du dépôt des
+ * contacts, dépendance optionnelle, est construite une fois pour les deux processus par le socle, et
+ * `tests/socle.test.ts` l'exécute : un STOP écrit par ce dépôt doit partir vers le connecteur et les signaux.
  */
 function sansCommentaires(source: string): string {
   return source.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
@@ -15,10 +16,6 @@ function sansCommentaires(source: string): string {
 const api = sansCommentaires(readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8'));
 
 describe('le câblage des signaux dans l’API', () => {
-  it('🔴 les désabonnements écrits par l’API (fiche, action en masse, API publique) deviennent des signaux', () => {
-    expect(api).toMatch(/new PgContactStore\(\s*pool,\s*annoncerAussiAuxSignaux\(/);
-  });
-
   it('🔴 le rapport de livraison RCS remonte ses accusés', () => {
     expect(api).toMatch(/signalDeLAccuse\(\{ messageId: dlr\.messageId/);
   });
@@ -41,10 +38,6 @@ describe('le câblage des signaux dans l’API', () => {
 const worker = sansCommentaires(readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8'));
 
 describe('le câblage des signaux dans le worker', () => {
-  it('🔴 les désabonnements écrits par le worker (le STOP WhatsApp) deviennent des signaux', () => {
-    expect(worker).toMatch(/new PgContactStore\(\s*pool,\s*annoncerAussiAuxSignaux\(/);
-  });
-
   it('🔴 le wamid du STOP suit jusqu’au dépôt : une flèche qui l’oublierait compilerait quand même', () => {
     // `InboundOptOut` déclare trois paramètres, et une flèche à deux lui reste assignable : le typage ne voit pas
     // l'oubli, et l'`em_event_id` du désabonnement redeviendrait un aléa.

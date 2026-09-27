@@ -206,7 +206,9 @@ describe('un jeton refusé se retient, une panne non', () => {
     const sain = monter({ chiffreEnBase: encryptSecret('ANCIEN', CLE) });
     await sain.gestes.etatCompte('t1');
     await sain.gestes.etatCompte('t1');
-    expect(sain.journal.filter((l) => l.startsWith('meta.etatCompte'))).toEqual(['meta.etatCompte(111,ANCIEN)']);
+    // Un autre espace sur le même compte publicitaire ne lit pas l'état mis en cache pour le premier.
+    await sain.gestes.etatCompte('t2');
+    expect(sain.journal.filter((l) => l.startsWith('meta.etatCompte'))).toEqual(['meta.etatCompte(111,ANCIEN)', 'meta.etatCompte(111,ANCIEN)']);
     expect(lectures).toBe(1);
   });
 });

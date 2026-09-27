@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * LE TARIF DE META PASSE SOUS MICRO-CACHE : L'INVENTAIRE DE SES APPELANTS.
@@ -23,7 +24,7 @@ const sansCommentaires = (s: string): string => s.replace(/\/\*[\s\S]*?\*\//g, '
 
 /** Tous les fichiers de `src/` sauf le client de tarif lui-même, qui DÉFINIT la méthode. */
 function sources(): Array<{ fichier: string; texte: string }> {
-  const racine = new URL('../src', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+  const racine = fileURLToPath(new URL('../src', import.meta.url));
   const out: Array<{ fichier: string; texte: string }> = [];
   const visiter = (dossier: string): void => {
     for (const nom of readdirSync(dossier)) {
@@ -57,5 +58,14 @@ describe('le tarif de Meta est mis en cache court', () => {
     const constructions = sources().flatMap(({ fichier, texte }) =>
       [...texte.matchAll(/cacheCourt<PricingSummary \| null>\(/g)].map(() => fichier));
     expect(constructions).toEqual(['src/stats/chiffrage.ts']);
+  });
+
+  it('🔴 le chiffrage et la connexion publicitaire sont construits UNE fois par process, jamais par requête', () => {
+    // Le cache vit dans la fabrique : un second appel (dans une route, par exemple) ouvrirait un second cache,
+    // et le compte des constructions de cache ci-dessus resterait à un.
+    const appels = (nom: string) => sources().flatMap(({ fichier, texte }) =>
+      [...texte.matchAll(new RegExp(`(?<!function )\\b${nom}\\(`, 'g'))].map(() => fichier));
+    expect(appels('creerChiffrage')).toEqual(['src/index.ts']);
+    expect(appels('creerConnexionPub')).toEqual(['src/index.ts']);
   });
 });

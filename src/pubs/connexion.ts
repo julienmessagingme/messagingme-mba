@@ -12,7 +12,8 @@ import type { ConnexionPub } from './connexion.pg';
 /**
  * LA CONNEXION PUBLICITAIRE D'UN ESPACE : le jeton du client, de l'échange du code à la révocation.
  *
- * 🔴 Le jeton est chiffré et déchiffré ICI, nulle part ailleurs : les routes ne reçoivent qu'un `tenantId`,
+ * 🔴 Le jeton est chiffré ICI, et déchiffré ici pour les gestes de l'écran et de `/ops` (le balayage du worker le
+ * déchiffre aussi, pour suivre les publicités) : les routes ne reçoivent qu'un `tenantId`,
  * comme pour l'inscription WhatsApp, donc le jeton ne peut fuiter ni dans un journal, ni dans une réponse, ni
  * dans une trace de pile. Il n'en sort en clair que par `jetonClair`, vers le client de création de la racine.
  * Construit une fois, pour ses deux consommateurs : les routes de l'écran Publicités, et `/ops`, qui dépose un

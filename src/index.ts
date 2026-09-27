@@ -6,14 +6,12 @@ import { surveillerOps } from './ops/tentatives';
 import { sendTelegram } from './ops/telegram';
 import { PgBossQueue } from './queue/pgboss';
 import { pool, mesureAttentePool } from './db/pool';
-import { PgContactStore } from './crm/contact-store.pg';
+import { construireSocle } from './socle';
 import { PgContactHistoryStore } from './crm/contact-history.pg';
-import { PgUserFieldStore } from './crm/field-store.pg';
 import { PgTagStore } from './crm/tag-store.pg';
 import { ensureField, ensureFieldByKey, WHATSAPP_OPTIN_FIELD_KEY, WHATSAPP_OPTIN_FIELD_LABEL } from './crm/fields';
-import { PgCampaignRepo, PgRecipientStore } from './campaign/store.pg';
 import { PgCampaignDraftStore } from './campaign/draft-store.pg';
-import { PgInboxStore, type ConversationMessage } from './inbox/store.pg';
+import type { ConversationMessage } from './inbox/store.pg';
 import { PgStatsStore } from './stats/store.pg';
 import { PgConversationStatsStore } from './stats/conversation-stats.pg';
 import { creerChiffrage } from './stats/chiffrage';
@@ -21,63 +19,43 @@ import { creerChiffrage } from './stats/chiffrage';
 import { cacheCourt } from './lib/cache-court';
 import { journaliser } from './lib/journal';
 import { ResendClient } from './support/resend';
-import { PgTenantSettingsStore } from './settings/store.pg';
 import { PgUserAuthStore } from './auth/store';
 import { PgMfaStore } from './auth/mfa-store.pg';
 import type { ActionMfa } from './auth/mfa-routes';
 import { PgUserStore } from './user/store.pg';
 import { PgAuthTokenStore } from './auth/token-store.pg';
 import { verifyGoogleIdToken } from './auth/google';
-import { PgFlowStore } from './flow/store.pg';
 import { PgApiKeyStore } from './auth/api-key-store.pg';
 import { PgPlafondEspaceStore } from './auth/plafond-espace.pg';
 import { upsertContactsFromApi } from './api/contacts-upsert';
 import { creerServiceContactsV1 } from './api/contacts-v1';
 import { PgReachabilityStore } from './rcs/reachability.pg';
 import { joignabiliteRcsToutesFormes } from './rcs/reachability';
-import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
 import { verdictModele } from './api/modele-envoi';
 import { resoudreFiche } from './api/fiche';
 import { appliquerConsentement, depsConsentementDe } from './api/consentement';
-import { PgAuditStore } from './audit/store.pg';
-import { PgErreursLivraisonStore } from './ops/erreurs-livraison.pg';
-import { PgEchecsMessagesStore } from './delivery/echecs-messages.pg';
 import { traiterRapportRcs } from './rcs/rapport-livraison';
 import { envoyerRcsLibre, phraseOperateur, type DepsRcsLibre } from './rcs/envoyer-libre';
 import { PLAFOND_CONTACTS_ERREUR } from './http/stats';
-import { PgPoolAttentesStore, viderVersLaBase } from './ops/pool-attentes.pg';
-import { PgWorkflowNodeEventStore } from './workflow/node-events.pg';
+import { viderVersLaBase } from './ops/pool-attentes.pg';
 import { PgWorkflowReportStore } from './workflow/reports.pg';
-import { PgTrackedLinkStore } from './links/tracked-links.pg';
 import { lienDe, lienTraceAvecJeton } from './links/rewrite';
 import { fabriquerJeton } from './links/jeton-contact';
 import { newTrackingCode } from './ids/code';
 import type { AuditSink } from './audit/journal';
 import { resolveScenario, resolveNode } from './ids/resolve';
 import { relanceurDeCampagnes } from './campaign/enqueue';
-import { creerAnnonceOptOut, FILE_POUSSEE_OPTOUT } from './crm/poussee-optout';
-import { PgIntegrationBatchStore } from './signaux/integration-batch.pg';
 import { PgSalesforceStore } from './salesforce/store.pg';
 import { creerClientSalesforce } from './salesforce/client';
 import { connecter as connecterSalesforce, deconnecter as deconnecterSalesforce } from './salesforce/connexion';
 import type { SalesforceRouteDeps } from './http/salesforce';
-import {
-  creerEmetteur, annoncerAussiAuxSignaux, signalDeLAccuse, signalDeLaReponse, signalDesabonnement, signalDuClic,
-  DUREE_CACHE_ESPACES_ACTIFS_MS,
-} from './signaux/emetteur';
-import { FILE_SIGNAUX_BATCH } from './signaux/batch';
+import { signalDeLAccuse, signalDeLaReponse, signalDesabonnement, signalDuClic } from './signaux/emetteur';
 import { plafondLePlusBas } from './campaign/pacing';
 import { fetchHubspotLists, importHubspotList, disconnectHubspot, fetchHubspotDealStages } from './crm/hubspot-service';
 import { PgTemplateHintStore } from './crm/template-hints.pg';
 import { MetaMediaClient } from './meta/media';
-import { PgPhoneStatusStore } from './account/store.pg';
-import { PgNumeroDelieStore } from './account/numero-delie.pg';
-import { creerGardeNumeroDelie } from './meta/numero-delie';
 import { pullFromInfo, pullFromError } from './account/pull';
-import { PgOpsStore } from './ops/store.pg';
-import { PgWorkerHeartbeatStore } from './ops/heartbeat-store.pg';
 import { makeDbReadinessCheck } from './db/readiness';
-import { PgAutomationStore } from './automation/store.pg';
 import { lanceurBalayageRisque } from './engagement/cablage';
 import { PgChannelsMeConnectionStore } from './channels-me/connection-store.pg';
 import { PgChannelsMeLinkStore } from './channels-me/link-store.pg';
@@ -85,26 +63,16 @@ import { normalizeText } from './automation/match';
 import { PgChannelsMePostStore } from './channels-me/post-store.pg';
 import { ChannelsMeClient } from './channels-me/client';
 import { enfilerEvenementAutomation, type AutomationEventJob } from './automation/event-job';
-import { PgWebhookStore } from './webhook-entrant/store.pg';
 import { RateLimiter } from './auth/rate-limit';
-import { PgWorkflowStore } from './workflow/store.pg';
 import { resolveTenantCode } from './ids/tenant-code';
 import { MetaEmbeddedSignupClient } from './meta/embedded-signup';
-import { PgEmbeddedSignupStore } from './account/es-store.pg';
 import { setTimeout as dormir } from 'node:timers/promises';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { MetaCredentialsResolver } from './meta/credentials';
 import { fetchUrlBorne } from './lib/page-distante';
 import { signSession } from './auth/token';
 import { ecrireHandoffEnabled } from './mba/handoff';
-import { MetaClientFactory } from './meta/factory';
-import { arbitreDeDebit } from './meta/arbitre-debit';
-import { arbitreDeDebitPartage, depsPorteDebitPg } from './meta/arbitre-debit-partage';
 import { buildTemplateComponents, carouselSendBlocker } from './meta/template-components';
-import { buildWorkflowRuntime } from './workflow/wiring';
 import type { StartOutcome } from './workflow/executor';
-import { PgEmailAccountStore } from './email/account-store.pg';
-import { PgEmailTemplateStore } from './email/template-store.pg';
 import { PgRcsMessageStore } from './rcs/message-store.pg';
 import { PgRcsMediaStore } from './rcs/media-store.pg';
 import { urlImageRcs } from './rcs/image';
@@ -117,53 +85,37 @@ import { apercuMo } from './rcs/callback';
 import { estDemandeArret } from './crm/consentement';
 import { contactVars } from './crm/render';
 import { resolveHintParams } from './crm/template';
-import { EmailAccountResolver } from './email/resolver';
-import { buildTransport as buildEmailTransport } from './email/smtp';
 import { FetchTransport, HTTP_TIMEOUT_MODELE_MS } from './meta/http';
-import { PgAgentStore } from './agent/agent-store.pg';
-import { PgKnowledgeStore } from './agent/knowledge.pg';
 import { creerRechercheSemantique } from './agent/recherche';
-import { PgDepotAide } from './aide/fiches.pg';
 import { creerRepondeur } from './aide/repondre';
 import { creerRecap } from './aide/recap.pg';
 import { creerRecapRedige, creerRedacteurRecap, gabarit } from './aide/recap-rendu';
 import { creerTraducteur, type LangueConsole } from './traduction/traduire';
 import { PgTraductionStore } from './traduction/traduire.pg';
 import { traduireFil } from './traduction/fil';
-import { PgToolCatalog, PgJournalAppels } from './agent/catalog.pg';
 import { creerAppelConnecteur } from './agent/resolvers/http';
 import { lireContexteAvecReglages } from './agent/contexte';
-import { PgCreditStore } from './agent/credits.pg';
-import { PgCleGatewayStore } from './agent/cles-gateway.pg';
 import { transcrireMessage } from './inbox/transcrire';
 import { lireMediaRecu } from './inbox/media-entrant';
 import type { DepsRepondre } from './inbox/repondre';
 import { assurerCleGateway, remonterPlafondApresRecharge, revoquerCleGateway, type DepsProvisionCle } from './agent/provisionner-cle';
-import { encryptSecret, decryptSecret } from './crypto/secretbox';
-import { MetaPubsClient } from './meta/pubs';
+import { encryptSecret } from './crypto/secretbox';
 import { PasDeConnexionPub, ConnexionPubIncomplete } from './http/pubs';
 import { creerConnexionPub } from './pubs/connexion';
-import { MetaPubsCreationClient } from './meta/pubs-creation';
-import { PgPublicitesStore } from './pubs/publicites.pg';
 import { PgBrouillonsPubStore } from './pubs/brouillons.pg';
 import { creerLaPublicite, publierLaPublicite, type DemandeCreation } from './pubs/creation';
 import { entonnoir, ISSUES_NON_PRISES_EN_CHARGE } from './pubs/entonnoir';
-import { PgPubConnexionStore } from './pubs/connexion.pg';
 import { PgAgentSessionStore } from './agent/session-store.pg';
-import { PgSourceStore } from './agent/sources.pg';
 import { PgMcpStore } from './agent/mcp/store.pg';
-import { PgRequeteStore } from './agent/requetes.pg';
 import { PgEntretienStore } from './agent/setup/entretien-store.pg';
 import { PgEntretienMbaStore } from './mba/assistant/entretien-store';
 import { lireInventaireMba } from './mba/assistant/inventaire';
 import { PgDepenseStore } from './assistant/budget';
 import { PgHistoriqueStore } from './reglages/historique.pg';
 import { magasinPiecesJointes } from './mba/assistant/pieces-jointes';
-import { PgTestRunStore } from './agent/test-runs.pg';
 import { enTetesAuthSource } from './agent/http-cible';
 import { creerEprouverSource } from './agent/eprouver-source';
 import { GatewayChatClient } from './agent/llm/chat-client';
-import { creerNumeroDeLEspace } from './meta/numero-espace';
 import { creerRendreLeFil, creerPrendreLeFil } from './inbox/controle-du-fil';
 import { consommateurAgent, consommateurMba } from './agent/consommateur';
 import { type OutilAPublier } from './mba/publication';
@@ -205,64 +157,36 @@ async function main(): Promise<void> {
   queue.onError((err) => console.error('[pg-boss:api]', messageDe(err)));
   await queue.start();
 
-  const repo = new PgCampaignRepo(pool);
-  // Statuts de livraison des destinataires : l'API en a besoin parce que les rappels du fournisseur RCS
-  // arrivent sur l'API (le worker n'expose aucune route publique).
-  const recipientStore = new PgRecipientStore(pool);
+  /**
+   * Le socle commun avec le worker (`src/socle.ts`) : les dépôts, le dépôt de contacts qui annonce chaque opt-out
+   * (au connecteur du client et aux signaux), l'émetteur de signaux, la pile d'envoi Meta et ses freins, le
+   * résolveur e-mail et le runtime de scénario. Appelé une fois : ses caches sont ceux de ce processus, et les
+   * routes qui les invalident (numéro délié, comptes e-mail, réglage des signaux) visent ces instances-là.
+   * Tout ce qui suit ne vit que dans l'API.
+   */
+  const {
+    transport, repo, recipientStore, integrationBatch, espacesBatch, emetteur, contactStore, fieldStore, inboxStore,
+    settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages, poolAttentesStore,
+    nodeEventStore, trackedLinkStore, webhookStore, phoneStatusStore, opsStore, heartbeatStore, workflowStore,
+    automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels, credits,
+    agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver, wabaDeLEspace,
+    numeroDelieStore, gardeNumeroDelie, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, publicites,
+    clientPubs, clientCreationPubs, workflowRuntime, clesGateway,
+  } = construireSocle({ pool, queue, config });
+
   const campaignDraftStore = new PgCampaignDraftStore(pool);
-  /**
-   * Les signaux : l'API en émet aussi (rappels RCS, clics sur un lien suivi, désabonnements écrits depuis la
-   * console ou l'API publique). Construit avant le dépôt des contacts, qui l'appelle à chaque désabonnement.
-   * Le cache des espaces actifs est invalidé par l'écran du réglage.
-   */
-  const integrationBatch = new PgIntegrationBatchStore(pool);
-  const espacesBatch = cacheCourt<ReadonlySet<string>>(DUREE_CACHE_ESPACES_ACTIFS_MS);
-  const emetteur = creerEmetteur({
-    destinations: [{ file: FILE_SIGNAUX_BATCH, espacesActifs: () => espacesBatch.lire('actifs', () => integrationBatch.espacesActifs()) }],
-    queue,
-    // eslint-disable-next-line no-console
-    log: (m) => console.warn(m),
-  });
-  /**
-   * 🔴 L'annonce d'un opt-out, posée sur le dépôt lui-même : elle couvre par construction toutes ses méthodes
-   * capables d'écrire `opted_out` (liste dérivée par `tests/optout-poussee.test.ts`), au lieu d'être recopiée
-   * sur chaque appelant. Elle n'appelle rien, elle enfile ; l'appel au connecteur vit dans le worker.
-   */
-  const contactStore = new PgContactStore(
-    pool,
-    annoncerAussiAuxSignaux(
-      creerAnnonceOptOut({
-        enfiler: (job, opts) => queue.enqueue(FILE_POUSSEE_OPTOUT, job, opts),
-        // eslint-disable-next-line no-console
-        log: (m) => console.warn(m),
-      }),
-      emetteur,
-    ),
-  );
   const contactHistoryStore = new PgContactHistoryStore(pool);
   const templateHintStore = new PgTemplateHintStore(pool);
-  const fieldStore = new PgUserFieldStore(pool);
   const tagStore = new PgTagStore(pool);
-  const inboxStore = new PgInboxStore(pool);
   const statsStore = new PgStatsStore(pool);
   // Agrégats d'analyse de conversation. `enabled` = état de la feature côté serveur (empty-state différencié).
   // La rétention vient de la même variable que la purge du worker (`CONVERSATION_RETENTION_DAYS`) : l'écran
-  // annonce le nombre réellement appliqué.
+  // annonce le nombre réellement appliqué. Hors du socle : le worker construit le sien pour écrire les agrégats,
+  // avec `enabled` à `true`, que seul l'affichage lit.
   const conversationStatsStore = new PgConversationStatsStore(pool, config.CONVERSATION_ANALYSIS_ENABLED === 'true', config.CONVERSATION_RETENTION_DAYS);
-  const settingsStore = new PgTenantSettingsStore(pool);
   const userStore = new PgUserStore(pool);
   const authTokenStore = new PgAuthTokenStore(pool);
-  const flowStore = new PgFlowStore(pool);
   const apiKeyStore = new PgApiKeyStore(pool);
-  const idempotencyStore = new PgApiIdempotencyStore(pool);
-  const auditStore = new PgAuditStore(pool);
-  const erreursLivraison = new PgErreursLivraisonStore(pool);
-  // Les échecs des messages libres, alimentés par le rapport de smsmode (qui alimente aussi `rcsJoignabilite`).
-  const echecsMessages = new PgEchecsMessagesStore(pool);
-  const poolAttentesStore = new PgPoolAttentesStore(pool);
-  const nodeEventStore = new PgWorkflowNodeEventStore(pool);
-  const trackedLinkStore = new PgTrackedLinkStore(pool);
-  const webhookStore = new PgWebhookStore(pool);
   const reportStore = new PgWorkflowReportStore(pool);
   // L'email de l'acteur est résolu ICI, une fois, et écrit en clair dans le journal : une jointure sur `users`
   // rendrait l'historique illisible au premier départ d'un collaborateur.
@@ -296,27 +220,10 @@ async function main(): Promise<void> {
       );
     }
   };
-  const phoneStatusStore = new PgPhoneStatusStore(pool);
-  // Le numéro délié : une garde par process, partagée par la fabrique Meta (refus des envois) et par les
-  // routes Délier/Relier, qui la vident pour que ce process n'ait aucune fenêtre.
-  const numeroDelieStore = new PgNumeroDelieStore(pool);
-  const gardeNumeroDelie = creerGardeNumeroDelie((pn) => numeroDelieStore.estDelie(pn));
-  const opsStore = new PgOpsStore(pool, config.PGBOSS_SCHEMA);
-  const heartbeatStore = new PgWorkerHeartbeatStore(pool);
-  const workflowStore = new PgWorkflowStore(pool);
-  const agentStore = new PgAgentStore(pool);
-  const knowledgeStore = new PgKnowledgeStore(pool);
-  // Une seule fabrique pour les trois usages (agent, bac a sable, balayage) : trois constructions seraient
-  // trois occasions de cabler un modele ou un seuil different.
-  const rechercheSemantique = creerRechercheSemantique();
-  const toolCatalog = new PgToolCatalog(pool);
-  const credits = new PgCreditStore(pool);
   // Lecture seule, pour le suivi de consommation d'un agent. Le store d'écriture des sessions vit dans le
   // câblage du worker (`src/workflow/wiring.ts`) : l'API ne fait qu'agréger.
   const agentSessions = new PgAgentSessionStore(pool);
-  const agentSources = new PgSourceStore(pool);
   const mcpStore = new PgMcpStore(pool);
-  const agentRequetes = new PgRequeteStore(pool);
 
   /**
    * Le relais du Meta Business Agent. `adresseDuRelais` est `null` quand `PUBLIC_API_URL` est vide : la
@@ -334,18 +241,6 @@ async function main(): Promise<void> {
     );
   /** La clé « Agent de Meta », par acteur : la fabrique et son audit vivent dans `src/mba/cle-relais.ts`. */
   const depsCleRelaisPour = depsCleRelaisDepuis({ cles: apiKeyStore, reglages: settingsStore, audit: auditSink });
-  /**
-   * La clé de modèle propre à chaque espace. Le chiffrement est injecté, pas relu dans le store : un second
-   * endroit où lire la clé de chiffrement serait un second endroit où l'oublier.
-   */
-  const clesGateway = new PgCleGatewayStore(
-    pool,
-    (clair) => encryptSecret(clair, config.ENCRYPTION_KEY),
-    (chiffre) => decryptSecret(chiffre, config.ENCRYPTION_KEY),
-    // Le repli sur la clé maison est silencieux par nature (les agents répondent, mais la dépense de cet
-    // espace cesse d'être attribuée) : sans cette ligne, personne ne l'apprend.
-    (tenantId, err) => { journaliser('error', 'cle_gateway_indechiffrable', { err, tenantId }); },
-  );
   /**
    * `null` quand le jeton Vercel n'est pas configuré : le provisionnement est éteint et la création d'agent
    * se passe de clé propre.
@@ -411,7 +306,6 @@ async function main(): Promise<void> {
       cleDisponible: async (tenantId) => (await clesGateway.lire(tenantId)) !== null,
     })
     : null;
-  const automationStore = new PgAutomationStore(pool);
   // Chaîne WhatsApp (Channels Me). La clé de chiffrement est injectée au store (contrat du sous-système), pas
   // relue depuis la config à l'intérieur : les deux secrets sont chiffrés là, jamais plus haut.
   const channelsMeConnections = new PgChannelsMeConnectionStore(pool, config.ENCRYPTION_KEY);
@@ -419,65 +313,24 @@ async function main(): Promise<void> {
   const channelsMePosts = new PgChannelsMePostStore(pool);
   // Hôte fixe et de confiance : aucune vérification d'adresse privée, même traitement que Meta et Zadarma.
   const channelsMeClient = new ChannelsMeClient();
-  // Node « Envoi de mail » : boîtes SMTP + modèles (scopés tenant), résolveur de transport à cache par
-  // tenant+compte (invalidé par les routes email à chaque écriture d'un compte).
-  const emailAccounts = new PgEmailAccountStore(pool);
-  const emailTemplates = new PgEmailTemplateStore(pool);
   const rcsMessageStore = new PgRcsMessageStore(pool);
   const rcsMediaStore = new PgRcsMediaStore(pool);
   // Le cache de joignabilité RCS : lu par la fiche de l'API publique, écrit par le rapport de livraison
   // smsmode (`traiterRapportRcs`). L'envoi a le sien dans `rcsStack`.
   const rcsJoignabilite = new PgReachabilityStore(pool);
-  const emailResolver = new EmailAccountResolver({
-    comptes: emailAccounts,
-    buildTransport: buildEmailTransport,
-  });
-  const transport = new FetchTransport();
   // Clients Meta phone/pricing/templates/flows : résolus par tenant via metaFactory. `media` reste global :
   // endpoint /{appId}/uploads app-scoped.
   const mediaClient = new MetaMediaClient(config.META_ACCESS_TOKEN, config.META_APP_ID, config.META_GRAPH_VERSION);
 
-  // Résolution du token Meta par tenant, avec repli sur le token global tant qu'un WABA n'a pas de
-  // credentials propres (le numéro Zadarma reste sur config.META_ACCESS_TOKEN).
-  // Le WABA de l'espace, une lecture par process : le cache de jeton est indexé par WABA, donc cette requête
-  // était payée avant lui à chaque construction de client Meta. Réponses positives seulement.
-  const wabaDeLEspace = creerNumeroDeLEspace((t) => repo.getTenantWabaId(t));
   // Hors du câblage de l'écran parce qu'ils ont deux consommateurs : les routes de l'écran Publicités, et la
   // route `/ops` qui dépose un jeton créé à la main. Les construire deux fois donnerait deux chemins de
   // chiffrement à tenir alignés. Le jeton se chiffre et se déchiffre dans `src/pubs/connexion.ts`, seul.
-  const connexionsPub = new PgPubConnexionStore(pool);
   const connexionPub = creerConnexionPub({
-    client: new MetaPubsClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION),
+    client: clientPubs,
     connexions: connexionsPub,
     cleChiffrement: config.ENCRYPTION_KEY,
   });
-  // 🔴 Ce qui crée une publicité sur le compte du client, donc dépense son argent : un client séparé de celui
-  // de la connexion, qui ne fait que lire. Une route de lecture ne doit pas avoir de quoi créer une campagne.
-  const clientCreationPubs = new MetaPubsCreationClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
-  const publicites = new PgPublicitesStore(pool);
   const brouillonsPub = new PgBrouillonsPubStore(pool);
-  const esCredentialsStore = new PgEmbeddedSignupStore(pool);
-  const metaCredentials = new MetaCredentialsResolver({
-    getWabaIdForTenant: wabaDeLEspace,
-    credentials: esCredentialsStore,
-    decrypt: (enc) => decryptSecret(enc, config.ENCRYPTION_KEY),
-    fallbackToken: config.META_ACCESS_TOKEN,
-  });
-  const metaFactory = new MetaClientFactory({
-    resolver: metaCredentials,
-    transport,
-    version: config.META_GRAPH_VERSION,
-    marketingViaLite: config.META_MM_LITE === 'true',
-    // Frein par numéro, partagé par tout ce qui envoie depuis lui. Le budget est partagé en base entre l'API
-    // et le worker ; l'arbitre local reste dessous comme repli si la base de débit ne répond pas, donc le
-    // pire cas est un frein local, jamais une absence de frein.
-    arbitreDebit: arbitreDeDebitPartage(
-      arbitreDeDebit(config.PHONE_RATE_PER_MINUTE_MAX),
-      config.PHONE_RATE_PER_MINUTE_MAX,
-      depsPorteDebitPg(pool),
-    ),
-    numerosDelies: gardeNumeroDelie,
-  });
 
   /**
    * Rendre le fil à l'agent de Meta. Même module que le balayage du worker (`src/inbox/controle-du-fil.ts`),
@@ -490,24 +343,6 @@ async function main(): Promise<void> {
    * entrants vers son agent, qui répondrait au message suivant.
    */
   const prendreLeFilAuMba = creerPrendreLeFil(controleDuFil);
-
-  /**
-   * DRY_RUN : aucun appel Meta. Indispensable avant de donner à l'API le droit d'exécuter un scénario : sans
-   * lui, un déploiement déclaré DRY_RUN enverrait pour de vrai depuis l'Inbox.
-   */
-  const dryRun = config.DRY_RUN === 'true';
-
-  /**
-   * Exécuteur de scénarios, câblage partagé avec le worker (`workflow/wiring.ts`), avec la préparation des
-   * visuels de carousel et la lecture mémoïsée du corps d'un template.
-   */
-  const workflowRuntime = buildWorkflowRuntime({
-    pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory,
-    rcsProvider: config.RCS_PROVIDER,
-    // Node « Envoi de mail » : mêmes instances que celles passées aux routes email, pour que l'invalidation
-    // du résolveur à une écriture de compte vaille aussi pour l'exécuteur.
-    emailTemplates, emailResolver,
-  });
 
   /**
    * Lancer un scénario pour un contact, comme le bouton de l'Inbox. Deux appelants : l'Inbox et l'outil
@@ -1183,7 +1018,7 @@ async function main(): Promise<void> {
       },
       ...(gatewayAide && config.AGENT_AIDE_MODEL ? {
         repondre: creerRepondeur({
-          depot: new PgDepotAide(pool),
+          depot: depotAide,
           recherche: creerRechercheSemantique(),
           // Aucun espace ne paie cet appel : `gatewayAide` n'a pas de résolveur de clé par espace, donc cette
           // valeur n'est jamais lue. La nommer évite qu'on y mette le tenant, ce qui facturerait le client.
@@ -1283,7 +1118,7 @@ async function main(): Promise<void> {
     agentTest: {
       // L'historique des essais (14 j). Il ne conditionne rien : sans lui, l'essai marche et l'écran
       // n'affiche aucune trace.
-      essais: new PgTestRunStore(pool),
+      essais: essaisStore,
       // Le modèle du bac à sable est celui de la fiche de l'agent : le seul prérequis est la clé du Gateway,
       // sans lien avec LLM_MODEL (désactiver l'analyse de conversation ne doit pas couper /test).
       disponible: gateway !== null,
@@ -1609,7 +1444,7 @@ async function main(): Promise<void> {
     })(),
     /**
      * Les publicités Click-to-WhatsApp.
-     * 🔴 Le jeton est chiffré et déchiffré dans `src/pubs/connexion.ts`, nulle part ailleurs : la route ne
+     * 🔴 Le jeton est chiffré dans `src/pubs/connexion.ts`, et déchiffré là ou par le balayage du worker : la route ne
      * reçoit qu'un `tenantId`, comme pour l'inscription WhatsApp, donc le jeton ne peut fuiter ni dans un
      * journal, ni dans une réponse, ni dans une trace de pile.
      * `META_ADS_CONFIG_ID` vide : routes montées, l'échange répond 503 et l'écran l'annonce. La configuration
@@ -2178,7 +2013,7 @@ async function main(): Promise<void> {
           inbox: inboxStore,
           fuseau: async (t) => (await settingsStore.get(t)).timezone,
         }),
-        journal: new PgJournalAppels(pool),
+        journal: journalAppels,
         // La forme de l'en-tête du numéro, jamais sa valeur : sans ce journal, une macro que Meta cesserait de
         // remplir serait invisible.
         // eslint-disable-next-line no-console
