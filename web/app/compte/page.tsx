@@ -4,9 +4,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import {
   changePassword, lireSecondFacteur, enrolerMoi, activerMoi, regenererCodesSecours, desactiverSecondFacteur, estCodeRefuse,
-  type EtatSecondFacteur,
+  type EtatSecondFacteur, type CleTotp,
 } from '@/lib/api';
-import type { Session } from '@/lib/session';
+import { getSession, type Session } from '@/lib/session';
 import { useT, useLocale } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { erreurDeChargement } from '@/lib/http';
@@ -70,7 +70,8 @@ function Compte({ session }: { session: Session }) {
         </Bouton>
       </form>
 
-      <DoubleAuthentification />
+      {/* En observation, la session n'a pas d'identité à elle : rien à montrer. */}
+      {!getSession()?.observation && <DoubleAuthentification />}
     </div>
   );
 }
@@ -94,6 +95,9 @@ function DoubleAuthentification() {
   const [code, setCode] = useState('');
   const [envoi, setEnvoi] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  /** La clé tirée APRÈS la vérification du mot de passe : l'enrôlement la reçoit telle quelle. */
+  const [cle, setCle] = useState<CleTotp | null>(null);
+  const [motDePasse, setMotDePasse] = useState('');
 
   const charger = useCallback(async () => {
     try {
@@ -109,7 +113,23 @@ function DoubleAuthentification() {
   function ouvrir(g: 'activer' | 'regenerer' | 'desactiver'): void {
     setGeste(g);
     setCode('');
+    setCle(null);
+    setMotDePasse('');
     setMsg(null);
+  }
+
+  async function verifierMotDePasse(e: React.FormEvent): Promise<void> {
+    e.preventDefault();
+    setMsg(null);
+    setEnvoi(true);
+    try {
+      setCle(await enrolerMoi(motDePasse));
+    } catch (err) {
+      setMsg({ kind: 'err', text: err instanceof Error ? err.message : t('Action impossible', 'Action failed') });
+    } finally {
+      setMotDePasse('');
+      setEnvoi(false);
+    }
   }
 
   function terminer(texte: string | null): void {
@@ -148,11 +168,26 @@ function DoubleAuthentification() {
     if (erreurChargement) return <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{erreurChargement}</p>;
     if (etat === null) return <Squelette lignes={2} />;
     if (codes) return <CodesSecours codes={codes} onContinuer={() => { setCodes(null); terminer(t('Nouveaux codes de secours enregistrés.', 'New backup codes saved.')); }} />;
-    if (geste === 'activer') {
+    if (geste === 'activer' && cle === null) {
+      return (
+        <form onSubmit={verifierMotDePasse} className="space-y-3" data-testid="mfa-demande-mot-de-passe">
+          <div>
+            <label htmlFor="mfa-mot-de-passe" className="mb-1 block text-sm font-medium text-ink-900">{t('Votre mot de passe', 'Your password')}</label>
+            <input id="mfa-mot-de-passe" data-testid="mfa-mot-de-passe" type="password" required autoComplete="current-password" value={motDePasse} onChange={(e) => setMotDePasse(e.target.value)} className={inputCls} />
+          </div>
+          {msg && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700" data-testid="mfa-message">{msg.text}</p>}
+          <div className="flex gap-2">
+            <Bouton type="submit" enCours={envoi} disabled={envoi || motDePasse === ''}>{t('Continuer', 'Continue')}</Bouton>
+            <Bouton type="button" variante="secondaire" onClick={() => setGeste(null)}>{t('Annuler', 'Cancel')}</Bouton>
+          </div>
+        </form>
+      );
+    }
+    if (geste === 'activer' && cle !== null) {
       return (
         <Enrolement
           intro={t('Scannez ce code avec votre application d’authentification.', 'Scan this code with your authenticator app.')}
-          demarrer={enrolerMoi}
+          demarrer={() => Promise.resolve(cle)}
           activer={activerMoi}
           onActive={() => terminer(t('Double authentification activée.', 'Two-factor authentication enabled.'))}
           abandon={{ libelle: t('Annuler', 'Cancel'), action: () => setGeste(null) }}

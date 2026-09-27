@@ -29,11 +29,15 @@ interface EtatFaux {
   attente: string | null;
   /** empreinte -> date d'utilisation */
   codes: Map<string, Date | null>;
+  echecs: number;
+  bloqueJusqua: Date | null;
 }
 
 /** Un magasin du second facteur en mémoire, fidèle aux CONDITIONS du vrai (activation unique, pas croissant). */
 export class MfaEnMemoire implements MfaStore {
   private readonly etats = new Map<string, EtatFaux>();
+  /** Le hash du mot de passe de chaque identité, pour l'enrôlement depuis Mon compte. */
+  readonly motsDePasse = new Map<string, string>();
   constructor(private readonly liste: CompteFaux[] = []) {}
 
   ajouterCompte(c: CompteFaux): void {
@@ -43,7 +47,7 @@ export class MfaEnMemoire implements MfaStore {
   private etatDe(identityId: string): EtatFaux {
     let e = this.etats.get(identityId);
     if (!e) {
-      e = { secret: null, activeLe: null, dernierPas: null, attente: null, codes: new Map() };
+      e = { secret: null, activeLe: null, dernierPas: null, attente: null, codes: new Map(), echecs: 0, bloqueJusqua: null };
       this.etats.set(identityId, e);
     }
     return e;
@@ -66,6 +70,7 @@ export class MfaEnMemoire implements MfaStore {
       secretEnAttente: e.attente,
       codesSecoursRestants: [...e.codes.values()].filter((d) => d === null).length,
       obligatoire: comptes.some((c) => c.role === 'admin' && !c.disabled),
+      bloqueJusqua: e.bloqueJusqua,
     };
   }
 
@@ -128,6 +133,24 @@ export class MfaEnMemoire implements MfaStore {
 
   async comptes(identityId: string): Promise<Array<{ userId: string; tenantId: string; email: string }>> {
     return this.comptesDe(identityId).map((c) => ({ userId: c.userId, tenantId: c.tenantId, email: c.email }));
+  }
+
+  async noterEchec(identityId: string): Promise<Date | null> {
+    // Même règle que le vrai : chaque série de 5 échecs bloque 15 min, puis le double, 24 h au plus.
+    const e = this.etatDe(identityId);
+    e.echecs += 1;
+    if (e.echecs % 5 === 0) e.bloqueJusqua = new Date(Date.now() + Math.min(24 * 60, 15 * 2 ** (e.echecs / 5 - 1)) * 60_000);
+    return e.bloqueJusqua && e.bloqueJusqua.getTime() > Date.now() ? e.bloqueJusqua : null;
+  }
+
+  async noterReussite(identityId: string): Promise<void> {
+    const e = this.etatDe(identityId);
+    e.echecs = 0;
+    e.bloqueJusqua = null;
+  }
+
+  async motDePasse(identityId: string): Promise<string | null> {
+    return this.motsDePasse.get(identityId) ?? null;
   }
 
   // --- Aides de test, hors contrat ------------------------------------------------------------------------

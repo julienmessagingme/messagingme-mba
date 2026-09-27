@@ -75,7 +75,7 @@ function markLogin(deps: AuthRouteDeps, userId: string): void {
  * `/auth/mfa/activer` : une copie qui divergerait ouvrirait un espace sans passer par le choix. `markLogin`
  * n'est appelé qu'ici, à l'ouverture effective d'une session.
  */
-async function suiteDeConnexion(deps: AuthRouteDeps, etape: EtapeConnexion): Promise<Record<string, unknown>> {
+async function suiteDeConnexion(deps: AuthRouteDeps, etape: EtapeConnexion, ttlChoix?: string): Promise<Record<string, unknown>> {
   const [premier, ...autres] = etape.comptes;
   // Impossible par construction : lever plutôt que d'ouvrir quoi que ce soit sur une étape sans compte.
   if (!premier) throw new Error('suite de connexion sans compte');
@@ -90,10 +90,14 @@ async function suiteDeConnexion(deps: AuthRouteDeps, etape: EtapeConnexion): Pro
   const choix = await signChoice(
     { email: etape.email, comptes: etape.comptes.map((c) => ({ userId: c.userId, tenantId: c.tenantId, role: c.role })) },
     deps.secret,
+    ttlChoix,
   );
+  // Les noms d'espaces se relisent ici, après le second facteur : le jeton d'étape ne les porte pas.
+  const identite = await deps.users.findIdentity(etape.email);
+  const noms = new Map((identite?.comptes ?? []).map((c) => [c.tenantId, c.tenantName]));
   return {
     choiceToken: choix,
-    workspaces: etape.comptes.map((c) => ({ tenantId: c.tenantId, tenantName: c.tenantName, role: c.role })),
+    workspaces: etape.comptes.map((c) => ({ tenantId: c.tenantId, tenantName: noms.get(c.tenantId) ?? '', role: c.role })),
   };
 }
 
@@ -200,7 +204,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     const etape: EtapeConnexion = {
       identityId: identite.identityId,
       email,
-      comptes: identite.comptes.map((c) => ({ userId: c.id, tenantId: c.tenantId, role: c.role, tenantName: c.tenantName })),
+      comptes: identite.comptes.map((c) => ({ userId: c.id, tenantId: c.tenantId, role: c.role })),
     };
     // `comptes` ne porte que les comptes actifs (`findIdentity`) : un admin révoqué n'oblige plus à rien.
     return reply.code(200).send(await apresLeMotDePasse(deps, etape, {
@@ -316,7 +320,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
       // déjà un facteur actif donne son code.
       const facteur = await deps.mfa.lireParCompte(userId);
       if (!facteur) throw new Error('inscription : le compte créé n’a pas d’identité');
-      const etape: EtapeConnexion = { identityId: facteur.identityId, email, comptes: [{ userId, tenantId, role: 'admin', tenantName: workspaceName }] };
+      const etape: EtapeConnexion = { identityId: facteur.identityId, email, comptes: [{ userId, tenantId, role: 'admin' }] };
       return reply.code(201).send(await apresLeMotDePasse(deps, etape, { actif: facteur.secret !== null, obligatoire: true }));
     } catch (err) {
       if (err instanceof DuplicateEmailError) return reply.code(409).send({ error: 'un compte existe déjà avec cet email' });
@@ -393,7 +397,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     const etape: EtapeConnexion = {
       identityId: facteur.identityId,
       email: su.email,
-      comptes: [{ userId, tenantId: su.tenantId, role: su.role, tenantName: '' }],
+      comptes: [{ userId, tenantId: su.tenantId, role: su.role }],
     };
     return reply.code(200).send(await apresLeMotDePasse(deps, etape, {
       actif: facteur.secret !== null,
@@ -419,5 +423,5 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
 
   // Le second facteur : routes d'étape (avant session) et de la page Compte. La suite leur est passée, pas
   // recopiée : la même fonction que pour `/auth/login`.
-  registerMfa(app, deps, garde, (etape) => suiteDeConnexion(deps, etape));
+  registerMfa(app, deps, garde, (etape, ttlChoix) => suiteDeConnexion(deps, etape, ttlChoix));
 }

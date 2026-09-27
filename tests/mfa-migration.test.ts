@@ -36,6 +36,7 @@ describe('migration 0182', () => {
     const magasin = lire('../src/auth/mfa-store.pg.ts') + lire('../src/auth/store.ts');
     // La table et l'alias de `findIdentity` (`mfa_actif`) ne sont pas des colonnes d'identities.
     const colonnes = [...new Set(magasin.match(/\bmfa_[a-z_]+/g) ?? [])].filter((c) => c !== 'mfa_codes_secours' && c !== 'mfa_actif').sort();
-    expect(colonnes).toEqual(['mfa_active_le', 'mfa_dernier_pas', 'mfa_secret_attente_enc', 'mfa_secret_enc']);
+    // 0182 pose le facteur, 0184 le compteur d'échecs et la fin du blocage.
+    expect(colonnes).toEqual(['mfa_active_le', 'mfa_bloque_jusqua', 'mfa_dernier_pas', 'mfa_echecs', 'mfa_secret_attente_enc', 'mfa_secret_enc']);
   });
 });

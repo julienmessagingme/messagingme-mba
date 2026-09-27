@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Guard } from './middleware';
 import type { EtatMfa, MfaStore } from './mfa-store.pg';
 import { RateLimiter } from './rate-limit';
+import { verifyPassword } from './password';
 import { verifyMfa, verifyEnrolement, type EtapeConnexion } from './token';
 import {
   verifierCode, genererSecret, uriOtpauth, EMETTEUR_TOTP, genererCodesSecours, empreinteCodeSecours,
@@ -25,8 +26,11 @@ export interface MfaRouteDeps {
   auditMfa?: (identityId: string, action: ActionMfa, detail?: Record<string, unknown>) => Promise<void>;
 }
 
-/** Ce que la connexion fait une fois le second facteur passé : session (un espace) ou jeton de choix (plusieurs). */
-export type SuiteDeConnexion = (etape: EtapeConnexion) => Promise<Record<string, unknown>>;
+/**
+ * Ce que la connexion fait une fois le second facteur passé : session (un espace) ou jeton de choix (plusieurs).
+ * `ttlChoix` allonge le jeton de choix quand l'écran des codes de secours s'intercale avant le choix.
+ */
+export type SuiteDeConnexion = (etape: EtapeConnexion, ttlChoix?: string) => Promise<Record<string, unknown>>;
 
 /** 🔴 Un seul message pour un code faux, rejoué ou hors fenêtre : les distinguer dirait lequel a été juste. */
 export const MESSAGE_CODE_INVALIDE = 'Code invalide ou expiré.';
@@ -41,14 +45,25 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '');
  * Le code présenté correspond-il au facteur ? TOTP d'abord, code de secours ensuite ; rend le moyen, ou
  * `null`. Le TOTP n'est accepté qu'après l'écriture conditionnelle du pas (`marquerPas`) : deux
  * présentations simultanées du même code passent toutes deux la vérification en mémoire.
+ * 🔴 Pendant un blocage (`bloqueJusqua`), seul un code de secours est lu : 80 bits ne se devinent pas.
  */
 async function verifierFacteur(mfa: MfaStore, etat: EtatMfa, code: string): Promise<'totp' | 'secours' | null> {
   if (etat.secret === null) return null;
-  const pas = verifierCode(etat.secret, code, Date.now(), etat.dernierPas);
-  if (pas !== null) return (await mfa.marquerPas(etat.identityId, pas)) ? 'totp' : null;
+  if (!estBloque(etat)) {
+    const pas = verifierCode(etat.secret, code, Date.now(), etat.dernierPas);
+    if (pas !== null) return (await mfa.marquerPas(etat.identityId, pas)) ? 'totp' : null;
+  }
   const empreinte = empreinteCodeSecours(code);
   if (empreinte !== null && (await mfa.consommerCodeSecours(etat.identityId, empreinte))) return 'secours';
   return null;
+}
+
+const estBloque = (etat: EtatMfa): boolean => etat.bloqueJusqua !== null && etat.bloqueJusqua.getTime() > Date.now();
+
+/** Le refus d'un code pendant un blocage : il dit combien de temps, et que le code de secours reste une porte. */
+function messageBloque(fin: Date): string {
+  const minutes = Math.max(1, Math.ceil((fin.getTime() - Date.now()) / 60_000));
+  return `Trop de codes faux : le code de l’application est bloqué pendant ${minutes} min. Un code de secours reste accepté.`;
 }
 
 /**
@@ -94,6 +109,25 @@ export function registerMfa(app: FastifyInstance, deps: MfaRouteDeps, garde: Gua
     return { etape, mfa: deps.mfa };
   }
 
+  /**
+   * Vérifie `code` et tient le compteur d'échecs en base. Rend le moyen, ou répond lui-même (401, ou 429 pendant
+   * un blocage) et rend `null`.
+   */
+  async function controler(
+    reply: FastifyReply, mfa: MfaStore, etat: EtatMfa, code: string, etape: string,
+  ): Promise<'totp' | 'secours' | null> {
+    const moyen = await verifierFacteur(mfa, etat, code);
+    if (moyen) {
+      await mfa.noterReussite(etat.identityId);
+      return moyen;
+    }
+    const bloque = await mfa.noterEchec(etat.identityId);
+    journal(etat.identityId, 'mfa.echec', { etape, ...(bloque ? { bloque: true } : {}) });
+    if (bloque) await reply.code(429).send({ error: messageBloque(bloque) });
+    else await reply.code(401).send({ error: MESSAGE_CODE_INVALIDE });
+    return null;
+  }
+
   /** L'état du facteur de la personne connectée. Répond lui-même (503, 404) et rend `null` sinon. */
   async function etatDeLaSession(req: FastifyRequest, reply: FastifyReply): Promise<{ etat: EtatMfa; mfa: MfaStore } | null> {
     if (!deps.mfa) {
@@ -116,11 +150,9 @@ export function registerMfa(app: FastifyInstance, deps: MfaRouteDeps, garde: Gua
     const ok = await etapeDe(reply, b.mfaToken, verifyMfa, essais);
     if (!ok) return reply;
     const etat = await ok.mfa.lire(ok.etape.identityId);
-    const moyen = etat ? await verifierFacteur(ok.mfa, etat, str(b.code)) : null;
-    if (!etat || !moyen) {
-      journal(ok.etape.identityId, 'mfa.echec', { etape: 'connexion' });
-      return reply.code(401).send({ error: MESSAGE_CODE_INVALIDE });
-    }
+    if (!etat) return reply.code(401).send({ error: MESSAGE_ETAPE_EXPIREE });
+    const moyen = await controler(reply, ok.mfa, etat, str(b.code), 'connexion');
+    if (!moyen) return reply;
     if (moyen === 'secours') {
       journal(ok.etape.identityId, 'mfa.code_secours_utilise');
       // Lu avant la consommation, d'où le -1 : la console prévient quand il n'en reste plus beaucoup.
@@ -153,7 +185,8 @@ export function registerMfa(app: FastifyInstance, deps: MfaRouteDeps, garde: Gua
     const codes = await activer(ok.mfa, etat, str(b.code), 'connexion');
     if (codes === 'invalide') return reply.code(401).send({ error: MESSAGE_CODE_INVALIDE });
     if (codes === 'deja_active') return reply.code(409).send({ error: `${MESSAGE_DEJA_ACTIVE} Reconnectez-vous.` });
-    return reply.code(200).send({ codesSecours: codes, ...(await suite(ok.etape)) });
+    // 15 minutes : l'écran des dix codes s'intercale avant le choix de l'espace.
+    return reply.code(200).send({ codesSecours: codes, ...(await suite(ok.etape, '15m')) });
   });
 
   /**
@@ -190,12 +223,22 @@ export function registerMfa(app: FastifyInstance, deps: MfaRouteDeps, garde: Gua
     });
   });
 
-  /** Enrôlement volontaire (agent, manager), ou d'un admin après une réinitialisation, depuis la page Compte. */
+  /**
+   * Enrôlement volontaire (agent, manager), ou d'un admin après une réinitialisation, depuis la page Compte.
+   * 🔴 Le mot de passe est exigé : une session volée ne doit pas pouvoir poser SON facteur sur le compte.
+   * 403 et non 401 sur un mot de passe faux : un 401 ferait perdre la session à la console.
+   */
   app.post('/auth/mfa/moi/enroler', opts, async (req, reply) => {
     const ok = await etatDeLaSession(req, reply);
     if (!ok) return reply;
     if (!enrolements.take(ok.etat.identityId)) return reply.code(429).send({ error: MESSAGE_TROP });
     if (ok.etat.secret !== null) return reply.code(409).send({ error: MESSAGE_DEJA_ACTIVE });
+    const hash = await ok.mfa.motDePasse(ok.etat.identityId);
+    if (hash === null) return reply.code(409).send({ error: 'Posez d’abord un mot de passe sur ce compte.' });
+    if (!(await verifyPassword(str((req.body as { motDePasse?: unknown } | undefined)?.motDePasse), hash))) {
+      journal(ok.etat.identityId, 'mfa.echec', { etape: 'enrolement' });
+      return reply.code(403).send({ error: 'Mot de passe incorrect.' });
+    }
     const secret = genererSecret();
     await ok.mfa.poserSecretEnAttente(ok.etat.identityId, secret);
     return reply.code(200).send({ secret, uri: uriOtpauth(EMETTEUR_TOTP, ok.etat.email, secret) });
@@ -221,10 +264,7 @@ export function registerMfa(app: FastifyInstance, deps: MfaRouteDeps, garde: Gua
     if (!ok) return reply;
     if (!essais.take(ok.etat.identityId)) return reply.code(429).send({ error: MESSAGE_TROP });
     if (ok.etat.secret === null) return reply.code(409).send({ error: 'La double authentification n’est pas active.' });
-    if (!(await verifierFacteur(ok.mfa, ok.etat, str((req.body as { code?: unknown } | undefined)?.code)))) {
-      journal(ok.etat.identityId, 'mfa.echec', { etape: 'codes' });
-      return reply.code(401).send({ error: MESSAGE_CODE_INVALIDE });
-    }
+    if (!(await controler(reply, ok.mfa, ok.etat, str((req.body as { code?: unknown } | undefined)?.code), 'codes'))) return reply;
     const { clairs, empreintes } = genererCodesSecours();
     if (!(await ok.mfa.remplacerCodesSecours(ok.etat.identityId, empreintes))) {
       return reply.code(409).send({ error: 'La double authentification n’est pas active.' });
@@ -245,10 +285,7 @@ export function registerMfa(app: FastifyInstance, deps: MfaRouteDeps, garde: Gua
     }
     if (!essais.take(ok.etat.identityId)) return reply.code(429).send({ error: MESSAGE_TROP });
     if (ok.etat.secret === null) return reply.code(409).send({ error: 'La double authentification n’est pas active.' });
-    if (!(await verifierFacteur(ok.mfa, ok.etat, str((req.body as { code?: unknown } | undefined)?.code)))) {
-      journal(ok.etat.identityId, 'mfa.echec', { etape: 'desactivation' });
-      return reply.code(401).send({ error: MESSAGE_CODE_INVALIDE });
-    }
+    if (!(await controler(reply, ok.mfa, ok.etat, str((req.body as { code?: unknown } | undefined)?.code), 'desactivation'))) return reply;
     // Le journal après l'effacement : il dit ce qui a eu lieu.
     await ok.mfa.desactiver(ok.etat.identityId);
     journal(ok.etat.identityId, 'mfa.desactive');

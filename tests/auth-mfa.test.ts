@@ -7,7 +7,7 @@ import {
   signSession, verifySession, signChoice, verifyChoice, signMfa, verifyMfa, signEnrolement, verifyEnrolement,
   type EtapeConnexion,
 } from '../src/auth/token';
-import { codeAuPas, pasDe } from '../src/auth/totp';
+import { codeAuPas, pasDe, empreinteCodeSecours } from '../src/auth/totp';
 import type { AuthUser } from '../src/auth/store';
 import type { AuthRouteDeps } from '../src/auth/routes';
 import type { ActionMfa } from '../src/auth/mfa-routes';
@@ -68,7 +68,7 @@ async function ouvreUneSession(app: ReturnType<typeof buildServer>, jeton: strin
 const ETAPE: EtapeConnexion = {
   identityId: identiteDe('admin@x.fr'),
   email: 'admin@x.fr',
-  comptes: [{ userId: 'u-admin', tenantId: 't1', role: 'admin', tenantName: 'Espace 1' }],
+  comptes: [{ userId: 'u-admin', tenantId: 't1', role: 'admin' }],
 };
 
 describe('les jetons d’étape ne sont pas des sessions', () => {
@@ -249,10 +249,33 @@ describe('POST /auth/mfa/verifier', () => {
 
   it('🔴 au-delà de 5 essais par minute pour une identité : 429, même avec le bon code', async () => {
     const { app, mfaToken, secret } = await etapeCode();
-    for (let i = 0; i < 5; i += 1) expect((await post(app, '/auth/mfa/verifier', { mfaToken, code: '000000' })).statusCode).toBe(401);
+    for (let i = 0; i < 4; i += 1) expect((await post(app, '/auth/mfa/verifier', { mfaToken, code: '000000' })).statusCode).toBe(401);
+    // Le 5e échec pose le blocage en base : 429 aussi, avec la durée.
+    expect((await post(app, '/auth/mfa/verifier', { mfaToken, code: '000000' })).statusCode).toBe(429);
     const res = await post(app, '/auth/mfa/verifier', { mfaToken, code: codeAuPas(secret, pasDe(Date.now())) });
     expect(res.statusCode).toBe(429);
     await app.close();
+  });
+
+  it('🔴 le blocage vit en BASE : il survit au redémarrage, refuse le bon code de l’application, laisse passer un code de secours', async () => {
+    const premier = serveur();
+    const secret = premier.mfa.poserFacteur('admin@x.fr');
+    const SECOURS = 'ABCDEFGH-IJKLMNOP';
+    await premier.mfa.remplacerCodesSecours(identiteDe('admin@x.fr'), [empreinteCodeSecours(SECOURS)!]);
+    const { mfaToken } = (await login(premier.app, 'admin@x.fr')).json<{ mfaToken: string }>();
+    for (let i = 0; i < 5; i += 1) await post(premier.app, '/auth/mfa/verifier', { mfaToken, code: '000000' });
+    await premier.app.close();
+    // Un serveur neuf (le plafond en mémoire repart à zéro) sur le MÊME magasin : le blocage tient.
+    const second = serveur([ADMIN, AGENT], { mfa: premier.mfa, users: new UtilisateursFaux([ADMIN, AGENT], premier.mfa) });
+    const jeton = (await login(second.app, 'admin@x.fr')).json<{ mfaToken: string }>().mfaToken;
+    const bon = await post(second.app, '/auth/mfa/verifier', { mfaToken: jeton, code: codeAuPas(secret, pasDe(Date.now())) });
+    expect(bon.statusCode).toBe(429);
+    expect(bon.json<{ error: string }>().error).toMatch(/bloqué pendant \d+ min\. Un code de secours reste accepté/);
+    const parSecours = await post(second.app, '/auth/mfa/verifier', { mfaToken: jeton, code: SECOURS });
+    expect(parSecours.statusCode).toBe(200);
+    // Le succès remet le compteur à zéro : le code de l'application refonctionne.
+    expect((await premier.mfa.lire(identiteDe('admin@x.fr')))!.bloqueJusqua).toBeNull();
+    await second.app.close();
   });
 
   it('⚠️ l’écriture du journal d’échec n’est pas ATTENDUE sur le chemin de réponse', async () => {
@@ -407,7 +430,12 @@ describe('/auth/mfa/moi (avec une session)', () => {
     const { app, mfa, jeton, journal } = await sessionDe('agent@x.fr');
     const etat = (await app.inject({ method: 'GET', url: '/auth/mfa/moi', headers: bearer(jeton) })).json();
     expect(etat).toEqual({ actif: false, activeLe: null, codesSecoursRestants: 0, obligatoire: false });
-    const { secret } = (await post(app, '/auth/mfa/moi/enroler', {}, bearer(jeton))).json<{ secret: string }>();
+    // Le mot de passe est exigé : faux, 403 et aucun secret posé ; juste, le secret.
+    mfa.motsDePasse.set(identiteDe('agent@x.fr'), HASH);
+    const faux = await post(app, '/auth/mfa/moi/enroler', { motDePasse: 'pas-le-bon' }, bearer(jeton));
+    expect(faux.statusCode).toBe(403);
+    expect((await mfa.lire(identiteDe('agent@x.fr')))!.secretEnAttente).toBeNull();
+    const { secret } = (await post(app, '/auth/mfa/moi/enroler', { motDePasse: 'pw' }, bearer(jeton))).json<{ secret: string }>();
     const act = await post(app, '/auth/mfa/moi/activer', { code: codeAuPas(secret, pasDe(Date.now())) }, bearer(jeton));
     expect(act.json<{ codesSecours: string[] }>().codesSecours).toHaveLength(10);
     expect(mfa.estActif('agent@x.fr')).toBe(true);
@@ -417,7 +445,7 @@ describe('/auth/mfa/moi (avec une session)', () => {
     expect((await post(app, '/auth/mfa/moi/desactiver', { code: mfa.codeSuivant('agent@x.fr') }, bearer(jeton))).statusCode).toBe(200);
     expect(mfa.estActif('agent@x.fr')).toBe(false);
     await new Promise((r) => setImmediate(r));
-    expect(journal.map((j) => j.action)).toEqual(['mfa.active', 'mfa.echec', 'mfa.desactive']);
+    expect(journal.map((j) => j.action)).toEqual(['mfa.echec', 'mfa.active', 'mfa.echec', 'mfa.desactive']);
     await app.close();
   });
 

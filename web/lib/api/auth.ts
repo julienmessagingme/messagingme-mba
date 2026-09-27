@@ -87,8 +87,9 @@ export interface EtatSecondFacteur {
 export function lireSecondFacteur(): Promise<EtatSecondFacteur> {
   return request('/auth/mfa/moi');
 }
-export function enrolerMoi(): Promise<CleTotp> {
-  return request('/auth/mfa/moi/enroler', { method: 'POST', body: '{}' });
+/** Le mot de passe est exigé : une session volée ne doit pas poser son facteur sur le compte (403 s'il est faux). */
+export function enrolerMoi(motDePasse: string): Promise<CleTotp> {
+  return request('/auth/mfa/moi/enroler', { method: 'POST', body: JSON.stringify({ motDePasse }) });
 }
 export function activerMoi(code: string): Promise<{ codesSecours: string[] }> {
   return request('/auth/mfa/moi/activer', { method: 'POST', body: JSON.stringify({ code }) }, 'code');

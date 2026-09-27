@@ -22,6 +22,8 @@ export interface EtatMfa {
   codesSecoursRestants: number;
   /** L'identité a-t-elle un compte `admin` actif quelque part ? C'est ce qui rend le facteur obligatoire. */
   obligatoire: boolean;
+  /** Fin du blocage du code de l'application après une série d'échecs ; les codes de secours restent acceptés. */
+  bloqueJusqua: Date | null;
 }
 
 /** `autres_espaces` : l'identité a un compte dans un autre espace, un admin d'ici n'a pas à y toucher. */
@@ -53,6 +55,15 @@ export interface MfaStore {
   reinitialiserParEmail(email: string): Promise<string | null>;
   /** Les comptes d'une identité, tout statut : le journal s'écrit dans chacun de ses espaces. */
   comptes(identityId: string): Promise<Array<{ userId: string; tenantId: string; email: string }>>;
+  /**
+   * Compte un échec. Chaque série de 5 échecs consécutifs bloque le code de l'application pour une durée qui
+   * double (15 min, 30 min, ... 24 h au plus). Rend la fin du blocage en cours, ou `null`.
+   */
+  noterEchec(identityId: string): Promise<Date | null>;
+  /** Un code juste remet le compteur à zéro. */
+  noterReussite(identityId: string): Promise<void>;
+  /** Le hash du mot de passe de l'identité, `null` si elle n'en a pas (compte Google, invitation en attente). */
+  motDePasse(identityId: string): Promise<string | null>;
 }
 
 interface LigneEtat {
@@ -64,10 +75,11 @@ interface LigneEtat {
   mfa_secret_attente_enc: string | null;
   codes_restants: number;
   obligatoire: boolean;
+  mfa_bloque_jusqua: Date | null;
 }
 
 const SELECT_ETAT = `
-  select i.id, i.email, i.mfa_secret_enc, i.mfa_active_le, i.mfa_dernier_pas, i.mfa_secret_attente_enc,
+  select i.id, i.email, i.mfa_secret_enc, i.mfa_active_le, i.mfa_dernier_pas, i.mfa_secret_attente_enc, i.mfa_bloque_jusqua,
          (select count(*) from mfa_codes_secours c where c.identity_id = i.id and c.utilise_le is null)::int as codes_restants,
          exists (select 1 from users a where a.identity_id = i.id and a.role = 'admin' and a.disabled_at is null) as obligatoire
     from identities i`;
@@ -88,6 +100,7 @@ export class PgMfaStore implements MfaStore {
       secretEnAttente: r.mfa_secret_attente_enc === null ? null : decryptSecret(r.mfa_secret_attente_enc, this.cle),
       codesSecoursRestants: r.codes_restants,
       obligatoire: r.obligatoire,
+      bloqueJusqua: r.mfa_bloque_jusqua,
     };
   }
 
@@ -203,6 +216,35 @@ export class PgMfaStore implements MfaStore {
     return res.rows.map((r) => ({ userId: r.id, tenantId: r.tenant_id, email: r.email }));
   }
 
+  async noterEchec(identityId: string): Promise<Date | null> {
+    // Un seul `update` : deux échecs simultanés ne peuvent pas lire le même compteur et en perdre un.
+    const res = await this.pool.query<{ bloque: Date | null }>(
+      `update identities
+          set mfa_echecs = mfa_echecs + 1,
+              mfa_bloque_jusqua = case when (mfa_echecs + 1) % 5 = 0
+                then now() + least(interval '24 hours', interval '15 minutes' * power(2, (mfa_echecs + 1) / 5 - 1))
+                else mfa_bloque_jusqua end
+        where id = $1
+        returning case when mfa_bloque_jusqua > now() then mfa_bloque_jusqua end as bloque`,
+      [identityId],
+    );
+    return res.rows[0]?.bloque ?? null;
+  }
+
+  async noterReussite(identityId: string): Promise<void> {
+    await this.pool.query(
+      `update identities set mfa_echecs = 0, mfa_bloque_jusqua = null
+        where id = $1 and (mfa_echecs <> 0 or mfa_bloque_jusqua is not null)`,
+      [identityId],
+    );
+  }
+
+  async motDePasse(identityId: string): Promise<string | null> {
+    if (!estUuid(identityId)) return null;
+    const res = await this.pool.query<{ password_hash: string | null }>(`select password_hash from identities where id = $1`, [identityId]);
+    return res.rows[0]?.password_hash ?? null;
+  }
+
   /** Remplace les codes : les anciens partent, les dix neufs arrivent, dans la transaction de l'appelant. */
   private async poserCodes(client: PoolClient, identityId: string, empreintes: string[]): Promise<void> {
     await client.query(`delete from mfa_codes_secours where identity_id = $1`, [identityId]);
@@ -216,7 +258,8 @@ export class PgMfaStore implements MfaStore {
   private async effacer(client: PoolClient, identityId: string): Promise<void> {
     await client.query(
       `update identities
-          set mfa_secret_enc = null, mfa_active_le = null, mfa_dernier_pas = null, mfa_secret_attente_enc = null
+          set mfa_secret_enc = null, mfa_active_le = null, mfa_dernier_pas = null, mfa_secret_attente_enc = null,
+              mfa_echecs = 0, mfa_bloque_jusqua = null
         where id = $1`,
       [identityId],
     );

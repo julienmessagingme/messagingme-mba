@@ -1188,6 +1188,13 @@ admin dans deux espaces s'enrôle une fois. D'où la réinitialisation en deux p
 (`DELETE /tenants/:tenantId/users/:userId/mfa`) ne peut pas toucher une identité qui a un compte ailleurs (409),
 ce cas passe par l'exploitation (`POST /ops/mfa/reinitialiser`, note obligatoire).
 
+🔴 **LES ÉCHECS SE COMPTENT EN BASE** (`identities.mfa_echecs`, 0184). Chaque série de 5 codes faux consécutifs bloque le
+code de l'application pour une durée qui double (15 min, 30 min, ... 24 h au plus) ; un succès remet le compteur à zéro.
+Pendant un blocage, un code de secours reste accepté (80 bits ne se devinent pas) : c'est la porte du vrai titulaire. Le
+plafond de 5 essais par minute, en mémoire, reste en plus. L'enrôlement volontaire depuis Mon compte exige le mot de passe
+(403 s'il est faux, jamais 401, qui ferait perdre la session à la console), et les jetons d'étape ne portent pas les noms
+d'espaces, relus après le code.
+
 🔴 **LE SECRET EST CHIFFRÉ, LES CODES DE SECOURS SONT HACHÉS, ET LES DEUX CONSOMMATIONS SONT ATOMIQUES.** Le
 secret TOTP (et celui d'un enrôlement en cours) passe par `encryptSecret` avec `ENCRYPTION_KEY`. Les dix codes de
 secours (80 bits chacun) ne sont stockés qu'en SHA-256 : un hachage lent n'ajoute rien à 80 bits tirés au hasard,

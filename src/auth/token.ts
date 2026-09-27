@@ -97,7 +97,11 @@ export async function verifyChoice(token: string, secret: string): Promise<Choic
 export interface EtapeConnexion {
   identityId: string;
   email: string;
-  comptes: Array<{ userId: string; tenantId: string; role: string; tenantName: string }>;
+  /**
+   * Les comptes que le mot de passe ouvre. Pas les noms d'espaces : le jeton se lit en base64, et le seul mot de
+   * passe ne doit pas révéler chez qui il ouvre avant le second facteur. Les noms se relisent après le code.
+   */
+  comptes: Array<{ userId: string; tenantId: string; role: string }>;
 }
 
 type KindEtape = 'mfa' | 'enrolement';
@@ -121,9 +125,8 @@ async function verifyEtape(kind: KindEtape, token: string, secret: string): Prom
         !!c && typeof c === 'object'
         && typeof (c as { userId?: unknown }).userId === 'string'
         && typeof (c as { tenantId?: unknown }).tenantId === 'string'
-        && typeof (c as { role?: unknown }).role === 'string'
-        && typeof (c as { tenantName?: unknown }).tenantName === 'string',
-    );
+        && typeof (c as { role?: unknown }).role === 'string',
+    ).map((c) => ({ userId: c.userId, tenantId: c.tenantId, role: c.role }));
     if (comptes.length === 0) return null;
     return { identityId: payload.identityId, email: payload.email, comptes };
   } catch {

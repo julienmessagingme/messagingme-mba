@@ -335,6 +335,9 @@ test.describe('Mon compte : la double authentification', () => {
     await page.goto('/compte');
     await expect(page.getByTestId('mfa-etat')).toHaveText(/Désactivée|Disabled/);
     await page.getByTestId('mfa-activer').click();
+    // Le mot de passe d'abord : une session volée ne pose pas son facteur.
+    await page.getByTestId('mfa-mot-de-passe').fill('mon-mot-de-passe');
+    await page.getByRole('button', { name: /^(Continuer|Continue)$/ }).click();
     await expect(page.getByTestId('enrolement-cle')).toHaveText('JBSW Y3DP EHPK 3PXP JBSW Y3DP EHPK 3PXP');
     await page.getByTestId('code-enrolement').fill('123456');
     await page.getByRole('button', { name: /^(Activer|Activate)$/ }).click();
@@ -344,6 +347,22 @@ test.describe('Mon compte : la double authentification', () => {
     await expect(page.getByTestId('mfa-etat')).toContainText(/restants : 10|left: 10/);
     await expect(page.getByTestId('mfa-message')).toHaveText(/Double authentification activée\.|enabled/);
     expect(appelsVers(appels, '/auth/mfa/moi/activer').map((a) => a.corps)).toEqual([{ code: '123456' }]);
+    expect(appelsVers(appels, '/auth/mfa/moi/enroler').map((a) => a.corps)).toEqual([{ motDePasse: 'mon-mot-de-passe' }]);
+  });
+
+  test('un mot de passe faux reste sur l’étape du mot de passe, sans QR ni déconnexion', async ({ page }) => {
+    await monter(page, (chemin, methode) => {
+      if (chemin === '/auth/mfa/moi' && methode === 'GET') return { body: { actif: false, activeLe: null, codesSecoursRestants: 0, obligatoire: false } };
+      if (chemin === '/auth/mfa/moi/enroler') return { status: 403, body: { error: 'Mot de passe incorrect.' } };
+      return undefined;
+    }, { ...SESSION_E2E, role: 'agent' });
+    await page.goto('/compte');
+    await page.getByTestId('mfa-activer').click();
+    await page.getByTestId('mfa-mot-de-passe').fill('faux');
+    await page.getByRole('button', { name: /^(Continuer|Continue)$/ }).click();
+    await expect(page.getByTestId('mfa-message')).toHaveText('Mot de passe incorrect.');
+    await expect(page.getByTestId('enrolement-cle')).toHaveCount(0);
+    expect(await sessionEnregistree(page)).not.toBeNull();
   });
 
   test('🔴 un code faux ne déconnecte pas ; le bon rend dix codes neufs', async ({ page }) => {
