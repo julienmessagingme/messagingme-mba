@@ -4,23 +4,17 @@ import type { ArriveePub, IssueArrivee } from '../webhooks/arrivees-pub';
 import type { IssueRoutage } from './routage';
 
 /**
- * LA FENÊTRE D'ATTRIBUTION D'UN LEAD QUALIFIÉ, en jours (spec § 3.4, décision de Julien du 2026-09-22).
- *
- * 🔴 ELLE EST ICI ET NULLE PART AILLEURS. C'est le chiffre qui décide si un tag posé aujourd'hui compte pour
- * une publicité cliquée il y a un mois : le recopier dans l'écran de l'entonnoir ferait deux vérités, et
- * c'est le motif qui a déjà coûté à ce dépôt (un compteur affiché à côté d'un compteur calculé autrement).
+ * La fenêtre d'attribution d'un lead qualifié, en jours : elle décide si un tag posé aujourd'hui compte pour
+ * une publicité cliquée il y a un mois. Écrite ici et nulle part ailleurs, pour que l'écran de l'entonnoir ne
+ * compte pas autrement.
  */
 export const ATTRIBUTION_JOURS = 28;
 
 /**
- * L'écriture des arrivées publicitaires (`arrivees_pub`, migration 0163).
- *
- * 🔴 LA FICHE SE RETROUVE PAR LA RÈGLE PARTAGÉE `MATCH_BY_WAID_SQL`, JAMAIS PAR UNE COPIE. C'est la règle de
- * routage des messages entrants ; une égalité recopiée (`phone_e164 = wa_id`) ne peut jamais être vraie, le
- * fil portant `33612345678` et la fiche `+33612345678`, et c'est exactement le bug de purge du 2026-08-18.
- *
- * Une seule requête rend les deux constats dont l'appelant a besoin : y avait-il une fiche, et la ligne
- * a-t-elle été écrite. Un `on conflict do nothing` seul ne distingue pas « déjà vue » de « aucune fiche ».
+ * L'écriture des arrivées publicitaires (`arrivees_pub`). La fiche se retrouve par la règle partagée
+ * `MATCH_BY_WAID_SQL`, jamais par une copie : une égalité `phone_e164 = wa_id` n'est jamais vraie (le fil
+ * porte `33612345678`, la fiche `+33612345678`). Une seule requête dit s'il y avait une fiche et si la ligne
+ * a été écrite, ce qu'un `on conflict do nothing` seul ne distingue pas.
  */
 export class PgArriveesPubStore {
   constructor(private readonly pool: Pool) {}
@@ -45,15 +39,10 @@ export class PgArriveesPubStore {
   }
 
   /**
-   * Inscrit sur l'arrivée ce que le routage a décidé (lot 3).
-   *
-   * 🔴 `issue is null` DANS LE `where` : LE PREMIER ROUTAGE GAGNE. Meta redélivre ses webhooks quand notre
-   * accusé se perd, et pg-boss rejoue un job interrompu. Sans cette condition, un rejeu réécrirait l'histoire
-   * d'un lead déjà routé et surtout DÉPLACERAIT l'heure de reprise, qui est la seule mesure du délai entre
-   * l'arrivée et la prise du fil, celle que l'essai réel du pilote doit lire.
-   *
-   * ⚠️ Aucune ligne touchée est un cas NORMAL, pas une erreur : l'arrivée n'a pas pu être écrite (aucune
-   * fiche pour ce `wa_id`), ou elle l'a déjà été et routée. L'appelant n'en tire rien, il route quand même.
+   * Inscrit sur l'arrivée ce que le routage a décidé. `issue is null` dans le `where` : le premier routage
+   * gagne. Meta redélivre ses webhooks et pg-boss rejoue un job interrompu ; sans cette condition, un rejeu
+   * réécrirait l'histoire d'un lead et déplacerait l'heure de reprise, seule mesure du délai entre l'arrivée et
+   * la prise du fil. Aucune ligne touchée est un cas normal (pas de fiche, ou déjà routée).
    */
   async noterIssue(
     tenantId: string,
@@ -68,31 +57,18 @@ export class PgArriveesPubStore {
   }
 
   /**
-   * CE CONTACT VIENT DE RECEVOIR CE TAG : son arrivée publicitaire la plus récente devient QUALIFIÉE.
+   * Ce contact vient de recevoir ce tag : son arrivée publicitaire la plus récente devient qualifiée. Rend la
+   * campagne qualifiée, ou `null`.
    *
-   * 🔴 UNE SEULE REQUÊTE, DONC IDEMPOTENTE PAR CONSTRUCTION. Lire puis écrire laisserait deux événements
-   * `tag_added` simultanés qualifier la même arrivée deux fois, ou pire, deux arrivées différentes pour un
-   * seul tag. Le `qualifie_le is null` du sous-select et l'unicité du `limit 1` font le travail en un tour.
-   *
-   * 🔴 LA PLUS RÉCENTE, ET UNE SEULE (spec § 3.4). Un contact peut être arrivé par trois publicités : c'est
-   * la dernière qui a produit la conversation dans laquelle le tag a été posé. Les compter toutes gonflerait
-   * l'entonnoir de chaque campagne avec le travail d'une autre.
-   *
-   * ⚠️ LA COMPARAISON DU TAG EST EXACTE, pas normalisée, et c'est cohérent avec le reste du dépôt : un tag
-   * est choisi dans la liste de l'espace (`tags`, migration 0018) et stocké tel quel dans `contacts.tags`.
-   * Normaliser ici ferait qualifier sur « Rappel » un contact tagué « rappelé ».
-   *
-   * ⚠️ `tag_added` N'EST ÉMIS QUE PAR LES CHEMINS UNITAIRES (bloc d'un scénario, fiche, Inbox, agent IA).
-   * L'action en masse, l'import CSV, l'API publique et l'outil MCP n'émettent pas, donc ils ne qualifient
-   * personne. C'est un invariant du dépôt (un chemin de masse n'émet jamais), et l'écran de la pub le dit.
-   *
-   * Rend la campagne qualifiée, ou `null` si aucune arrivée ne correspondait.
+   * Une seule requête, donc idempotente : lire puis écrire laisserait deux `tag_added` simultanés qualifier
+   * deux fois. La plus récente et une seule : c'est la dernière pub qui a produit la conversation où le tag est
+   * posé. Comparaison du tag exacte, comme partout (un tag est choisi dans la liste de l'espace). `tag_added`
+   * n'est émis que par les chemins unitaires : un chemin de masse ne qualifie personne.
    */
   async qualifier(tenantId: string, waId: string, tag: string, fenetreJours = ATTRIBUTION_JOURS): Promise<string | null> {
     const { rows } = await this.pool.query<{ campagne_id: string | null }>(
-      // ⚠️ `tenant_id = $1` EST POSÉ DEUX FOIS, dehors et dans le sous-select, et la redite est voulue : la
-      // règle du dépôt est « sur CHAQUE requête », pas « quelque part dans la requête ». Un jour où le
-      // sous-select changerait de forme, l'isolation ne doit pas partir avec lui.
+      // 🔴 `tenant_id = $1` posé deux fois, dehors et dans le sous-select : la règle est « sur chaque requête »,
+      // et l'isolation ne doit pas partir le jour où le sous-select change de forme.
       `update arrivees_pub set qualifie_le = now()
          where tenant_id = $1 and id = (
            select a.id from arrivees_pub a

@@ -3,17 +3,9 @@ import { SORTIE_SANS_SOURCE } from '../sorties';
 import { messageDe } from '../../lib/erreur';
 
 /**
- * LA recherche de connaissance d'un agent, en un seul endroit (lot 1 du programme, 2026-08-31).
- *
- * 🔴 Pourquoi ça ne se recopie pas. C'est le garde-fou ANTI-HALLUCINATION : aucune fiche pertinente rend
- * `aucune_source` et une SORTIE imposée, ce qui empêche le modèle de répondre de mémoire. Cette règle vivait
- * en double, à l'identique, dans le résolveur de production et dans celui du bac à sable, alors que le bac à
- * sable n'a de valeur que s'il rend EXACTEMENT ce que la production rendrait. Leurs deux copies avaient déjà
- * commencé à diverger sur la forme de l'erreur.
- *
- * Ce qui reste chez l'appelant, et c'est voulu : le message d'erreur d'une requête vide. Les deux surfaces ne
- * l'expriment pas dans la même forme (l'une a un `echec()`, l'autre un objet `{ ok: false }`), et ce n'est pas
- * une règle métier. Seul ce qui doit être IDENTIQUE est partagé.
+ * La recherche de connaissance d'un agent, en un seul endroit, pour la production et le bac à sable : aucune
+ * fiche pertinente rend `aucune_source` et une sortie imposée, et le bac à sable n'a de valeur que s'il rend
+ * exactement ce que la production rendrait. Le message d'une requête vide reste chez chaque appelant.
  */
 
 /** Nombre de fiches rendues au modèle. Au-delà, on paie du contexte à chaque tour pour des sources que le
@@ -21,10 +13,8 @@ import { messageDe } from '../../lib/erreur';
 export const FICHES_RENDUES = 3;
 
 /**
- * Bornes de ce qui repart au modèle. Le tronc commun borne DÉJÀ la réponse entière à `max_bytes`, mais sa
- * troncature remplace toute la structure par un aperçu : trois fiches entières la déclencheraient, et le
- * modèle recevrait une source mutilée au lieu de sources listées. Le pire des deux mondes pour un mécanisme
- * anti-hallucination, donc on borne fiche par fiche, en le disant.
+ * Bornes de ce qui repart au modèle, fiche par fiche. Le tronc commun borne déjà la réponse entière, mais
+ * remplace alors toute la structure par un aperçu : trois fiches entières rendraient une source mutilée.
  */
 export const CORPS_MAX = 2_000;
 
@@ -33,16 +23,14 @@ export const CORPS_MAX = 2_000;
  *  paierait en base. */
 export const REQUETE_MAX = 512;
 
-/** Ce que la recherche rend au tronc commun : soit l'aveu d'absence AVEC sa sortie, soit les sources. */
+/** Ce que la recherche rend au tronc commun : soit l'aveu d'absence avec sa sortie, soit les sources. */
 export type ResultatConnaissance =
   | { contenu: { aucune_source: true }; sortie: string }
   | { contenu: { sources: Array<{ titre: string; contenu: string; url: string | null }> } };
 
 /**
- * Cherche, filtre sur la pertinence, borne, et rend le verdict.
- *
- * Les MESURES viennent de la base, la RÈGLE est appliquée ici (`ficheEstPertinente`), et le modèle ne voit ni
- * l'une ni les autres : lui montrer un score reviendrait à lui rendre la décision qu'on lui retire.
+ * Cherche, filtre sur la pertinence, borne, et rend le verdict. Le modèle ne voit aucune mesure : un score
+ * montré lui rendrait la décision qu'on lui retire.
  */
 export async function chercherConnaissance(
   connaissance: KnowledgeStore,
@@ -52,9 +40,8 @@ export async function chercherConnaissance(
 ): Promise<ResultatConnaissance> {
   const requete = requeteBrute.slice(0, REQUETE_MAX);
   /**
-   * RAPPEL puis VERDICT. Sans `recherche` câblée, les deux se confondent dans le comportement d'avant : le
-   * plein texte remonte trois fiches et la règle lexicale tranche. C'est ce qui rend la migration 0110 non
-   * bloquante, et c'est aussi le repli quand un appel au Gateway échoue.
+   * Rappel puis verdict. Sans `recherche`, ou si le Gateway échoue, le plein texte remonte trois fiches et la
+   * règle lexicale tranche.
    */
   const semantique = recherche ? await rappelSemantique(connaissance, ctx, requete, recherche) : null;
   const large = semantique !== null;
@@ -77,27 +64,21 @@ export async function chercherConnaissance(
 }
 
 /**
- * LA RECHERCHE SÉMANTIQUE, telle que le résolveur en a besoin (chantier vectorisation, 2026-09-02).
- *
- * Deux modèles, et il en faut DEUX : cf. `src/agent/llm/recherche-client.ts` pour la raison, mesurée.
+ * La recherche sémantique telle que le résolveur en a besoin. Deux modèles, pourquoi :
+ * `src/agent/llm/recherche-client.ts`.
  */
 export interface RechercheSemantique {
   vectoriser(textes: string[]): Promise<number[][]>;
   reclasser(question: string, fiches: Array<{ texte: string }>): Promise<number[]>;
-  /** Combien de candidats le rappel remonte AVANT le verdict. Plus large que les 3 rendues au modèle. */
+  /** Combien de candidats le rappel remonte avant le verdict. Plus large que les 3 rendues au modèle. */
   candidats: number;
-  /** Le seuil du reranker. Mesuré, pas deviné, et re-mesurable : cf. `AGENT_RERANK_SEUIL`. */
+  /** Le seuil du reranker, mesuré et re-mesurable : cf. `AGENT_RERANK_SEUIL`. */
   seuil: number;
 }
 
 /**
- * Le RAPPEL vectoriel. Rend `null` dès que quoi que ce soit manque ou échoue, ce qui fait retomber tout le
- * chemin sur le comportement d'avant.
- *
- * 🔴 Un échec ici ne doit JAMAIS priver le client de sa base de connaissance : sans le Gateway, le plein
- * texte cherche toujours. C'est la même doctrine que partout ce soir, un enrichissement ne casse pas ce qu'il
- * enrichit. Et c'est le repli SÛR : il rend l'agent moins bon, jamais menteur, puisque la règle lexicale
- * reprend alors son rôle de juge.
+ * Le rappel vectoriel. Rend `null` dès que quoi que ce soit manque ou échoue : le plein texte cherche
+ * toujours, et la règle lexicale reprend son rôle de juge. L'agent est moins bon, jamais menteur.
  */
 async function rappelSemantique(
   connaissance: KnowledgeStore,
@@ -118,10 +99,8 @@ async function rappelSemantique(
 }
 
 /**
- * Fusionne les deux rappels PAR IDENTIFIANT, en gardant la meilleure mesure de chaque famille.
- *
- * Une fiche trouvée par les deux chemins ne doit apparaître qu'une fois : la présenter deux fois au reranker
- * la ferait payer double et pourrait occuper deux des trois places rendues au modèle.
+ * Fusionne les deux rappels par identifiant, en gardant la meilleure mesure de chaque famille : une fiche
+ * présentée deux fois au reranker coûterait double et pourrait occuper deux des trois places.
  */
 function fusionner(lexicales: FicheTrouvee[], semantiques: FicheTrouvee[]): FicheTrouvee[] {
   const par = new Map<string, FicheTrouvee>();
@@ -142,16 +121,11 @@ function fusionner(lexicales: FicheTrouvee[], semantiques: FicheTrouvee[]): Fich
 }
 
 /**
- * 🔴 LE VERDICT, ET C'EST LUI QUI PORTE LA GARDE ANTI-HALLUCINATION une fois le vectoriel branché.
+ * Le verdict, qui porte la garde anti-hallucination une fois le vectoriel branché : la similarité ne peut pas
+ * décider (hors sujet et vraies questions se chevauchent), le reranker, calibré, le peut.
  *
- * Pourquoi ce n'est pas la similarité qui décide : mesuré le 2026-09-02, une question HORS SUJET remonte une
- * fiche à 0,361 quand une vraie question descend à 0,299. Les deux populations se chevauchent, donc aucun
- * seuil n'est posable sur un cosinus. Le reranker, lui, place les vraies questions au-dessus de 0,0817 et le
- * hors-sujet en dessous de 0,0409.
- *
- * ⚠️ En cas d'échec du reranker, on RETOMBE SUR LA RÈGLE LEXICALE, jamais sur « on laisse passer ». Une fiche
- * venue du seul rappel vectoriel a une couverture de zéro : elle est donc écartée par ce repli, ce qui est
- * exactement le bon sens de la dégradation. On perd le gain, on ne perd pas la garde.
+ * En cas d'échec du reranker, retour à la règle lexicale, jamais « on laisse passer » : une fiche venue du
+ * seul rappel vectoriel a une couverture nulle et est écartée. On perd le gain, pas la garde.
  */
 async function verdictReranker(
   candidates: FicheTrouvee[],

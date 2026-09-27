@@ -7,50 +7,30 @@ import { journaliser } from '../lib/journal';
 import { escapeHtml as echappe } from '../crm/render';
 
 /**
- * Redirection publique des liens tracés : `GET /r/:code` -> 302 vers la destination d'origine, après avoir
- * compté le clic.
- *
- * ⚠️ Route PUBLIQUE et non authentifiée : c'est un destinataire WhatsApp qui l'ouvre, il n'a pas de session.
- * Trois conséquences qui commandent tout ce fichier :
- *
- *  1. `scopeTenant` est INUTILISABLE ici. Sans `req.auth`, elle rend le tenant de l'URL sans le vérifier. Le
- *     tenant vient donc du CODE lui-même, retrouvé en base : c'est la seule preuve disponible.
- *  2. C'est une surface d'OPEN REDIRECT. La destination a été validée à l'écriture, mais on la REVALIDE à la
- *     lecture : une ligne modifiée hors console, ou une règle durcie depuis, ne doit pas transformer notre
- *     domaine en tremplin. Précédent maison : `src/http/mba.ts` revalide chaque saut.
- *  3. Jamais de 5xx pour un humain : Cloudflare remplace le corps de toute réponse 5xx par sa propre page
- *     d'erreur, et le destinataire verrait une erreur de plateforme au lieu d'un message compréhensible.
+ * Redirection publique des liens tracés : `GET /r/:code` -> 302 vers la destination, après avoir compté le clic.
+ * Route non authentifiée (un destinataire WhatsApp l'ouvre), d'où trois règles :
+ *  1. 🔴 `scopeTenant` est inutilisable (pas de `req.auth`) : l'espace vient du code lui-même, retrouvé en base.
+ *  2. Surface d'open redirect : la destination, validée à l'écriture, est revalidée à la lecture.
+ *  3. Jamais de 5xx pour un humain : Cloudflare remplacerait le corps par sa page d'erreur.
  */
 
 export interface LinksRouteDeps {
   /** Destination d'un code, ou null si le code n'existe pas. */
   getByCode(code: string): Promise<DestinationLien | null>;
   /**
-   * Enregistre le clic. Best-effort : son échec ne doit JAMAIS empêcher la redirection.
-   *
-   * `contactId` = QUI a cliqué, quand l'URL portait un jeton. `null` quand elle n'en portait pas : c'est le
-   * cas de tous les templates approuvés avant le 2026-09-02, dont l'adresse est figée chez Meta et ne pourra
-   * jamais en porter. Compter ces clics-là sans savoir qui vaut mieux que ne pas les compter.
+   * Enregistre le clic, au mieux : son échec ne doit jamais empêcher la redirection. `contactId` = qui a cliqué,
+   * quand l'URL portait un jeton ; `null` sinon (les templates anciens ont une adresse figée chez Meta, sans jeton).
    */
   recordClick(code: string, tenantId: string, contactId?: string | null): Promise<void>;
   /**
    * Résout un jeton public en identifiant de contact, dans l'espace du lien. `null` = jeton inconnu.
-   *
-   * ⚠️ `tenantId` vient du LIEN, pas de l'URL : un jeton qui désignerait un contact d'un autre espace ne doit
-   * pas se voir attribuer ce clic-ci.
+   * 🔴 `tenantId` vient du lien, pas de l'URL : le contact d'un autre espace ne s'attribue pas ce clic.
    */
   contactParJeton(tenantId: string, jeton: string): Promise<string | null>;
   /**
-   * Remonte le clic comme SIGNAL (spec 2026-09-24, § 8), seulement quand on sait QUI a cliqué : un clic
-   * anonyme n'a pas de fiche, donc pas de profil à mettre à jour chez l'outil du client.
-   *
-   * REQUISE : la redirection est le seul endroit où le clic se sait, un câblage qui l'oublierait perdrait tous
-   * les clics sans erreur.
-   *
-   * 🔴 LA REDIRECTION NE L'ATTEND PAS, contrairement à `recordClick`. Au premier clic après l'expiration du cache
-   * des espaces actifs, l'émetteur lit la base puis enfile un job : l'attendre ajouterait ces deux allers-retours
-   * au chemin de CHAQUE lien déjà envoyé, pour une donnée que personne ne regarde à la seconde. Lancée sans être
-   * attendue, sa panne se journalise et ne touche pas au 302.
+   * Remonte le clic comme signal, seulement quand on sait qui a cliqué (un clic anonyme n'a pas de fiche). Requise :
+   * la redirection est le seul endroit où le clic se sait. Elle n'est pas attendue (contrairement à `recordClick`) :
+   * lecture en base et enfilement s'ajouteraient au chemin de chaque lien ; sa panne se journalise.
    */
   signalerClic(tenantId: string, contactId: string, code: string): Promise<void>;
 }
@@ -72,25 +52,15 @@ function pageErreur(titre: string, message: string): string {
 
 export function registerLinks(app: FastifyInstance, deps: LinksRouteDeps): void {
   /**
-   * 🔴 DEUX FORMES, ET LA PREMIÈRE NE DISPARAÎTRA JAMAIS.
-   *
-   * `/r/:code` circule dans des messages DÉJÀ LIVRÉS, portés par des templates approuvés dont Meta a figé
-   * l'URL. La retirer casserait tous ces liens, sans recours (cf. la porte à sens unique du CLAUDE.md). Elle
-   * reste donc, et ses clics restent anonymes : c'est physique, pas un choix.
-   *
-   * `/r/:code/:jeton` est la forme ATTRIBUÉE, celle des templates soumis après le 2026-09-02 et de tous les
-   * messages RCS, qui n'ont eux rien à resoumettre puisqu'ils sont composés à l'envoi.
-   *
-   * Un seul traitement pour les deux : le jeton n'ajoute qu'une résolution, tout le reste (garde de forme,
-   * revalidation de la destination, filtre des clics automatiques, 302) est identique. Deux gestionnaires
-   * séparés finiraient par ne plus rediriger pareil.
+   * 🔴 Deux formes, et la première ne disparaîtra jamais : `/r/:code` circule dans des messages déjà livrés (URL
+   * figée chez Meta), la retirer casserait ces liens sans recours ; leurs clics restent anonymes. `/r/:code/:jeton`
+   * est la forme attribuée (templates récents, messages RCS). Un seul traitement : deux finiraient par diverger.
    */
   const traiter = async (req: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
     const { code, jeton } = req.params as { code: string; jeton?: string };
     const normalise = typeof code === 'string' ? code.trim().toLowerCase() : '';
 
-    // Forme du code vérifiée AVANT la base : un lien public reçoit aussi des robots et des scans, et il n'y a
-    // aucune raison de leur offrir une requête SQL par essai.
+    // Forme du code vérifiée avant la base : un lien public reçoit robots et scans, pas de requête SQL par essai.
     if (!CODE_RE.test(normalise)) {
       return reply.code(404).type('text/html; charset=utf-8').send(pageErreur('Lien introuvable', "Ce lien n'existe pas ou n'est plus actif."));
     }
@@ -100,29 +70,23 @@ export function registerLinks(app: FastifyInstance, deps: LinksRouteDeps): void 
       return reply.code(404).type('text/html; charset=utf-8').send(pageErreur('Lien introuvable', "Ce lien n'existe pas ou n'est plus actif."));
     }
 
-    // Revalidation À LA LECTURE : c'est elle qui empêche notre domaine de servir de tremplin si une
-    // destination a été écrite avant un durcissement de la règle, ou modifiée hors de la console.
+    // Revalidation à la lecture : notre domaine ne sert pas de tremplin si une destination a été écrite avant un
+    // durcissement de la règle, ou modifiée hors de la console.
     if (!isSendableButtonUrl(lien.destination)) {
       return reply.code(422).type('text/html; charset=utf-8').send(pageErreur('Lien invalide', "La destination de ce lien n'est pas une adresse valide."));
     }
 
-    // Le clic est compté AVANT la redirection mais son échec ne la bloque pas : mieux vaut un clic non
-    // compté qu'un destinataire bloqué sur une erreur.
-    //
-    // ⚠️ On ne COMPTE que les clics crédibles, mais on REDIRIGE toujours. Meta explore puis fait cliquer
-    // chaque bouton URL pendant la revue du template, donc avant le moindre envoi : 70 faux clics mesurés
-    // sur le premier lien de la production le 2026-08-21. Voir `estClicAutomatique`.
+    // Le clic est compté avant la redirection, sans la bloquer en cas d'échec. On ne compte que les clics crédibles
+    // mais on redirige toujours : Meta clique chaque bouton URL pendant la revue du template (`estClicAutomatique`).
     if (!estClicAutomatique({
       userAgent: req.headers['user-agent'],
       referer: req.headers.referer,
       parametres: req.query as Record<string, unknown> | null,
     })) {
-      // QUI a cliqué. Résolu seulement si l'URL portait un jeton BIEN FORMÉ : un jeton mal formé ne vaut pas
-      // un aller-retour en base, cette route recevant aussi des robots et des scans.
+      // Qui a cliqué : résolu seulement si l'URL portait un jeton bien formé (cette route reçoit aussi des robots).
       let contactId: string | null = null;
       if (estJeton(jeton)) {
-        // ⚠️ L'espace vient du LIEN, jamais de l'URL : un jeton d'un autre client ne doit pas s'attribuer ce
-        // clic-ci. Et l'échec de la résolution ne bloque rien : on compte le clic sans savoir qui.
+        // L'espace vient du lien, jamais de l'URL. Un échec de résolution ne bloque rien : le clic compte sans auteur.
         contactId = await deps.contactParJeton(lien.tenantId, jeton).catch(() => null);
       }
       try {
@@ -132,7 +96,7 @@ export function registerLinks(app: FastifyInstance, deps: LinksRouteDeps): void 
       }
       if (contactId !== null) {
         const attribue = contactId;
-        // Lancé, JAMAIS attendu (voir `signalerClic`). La fonction `async` enveloppe aussi une levée SYNCHRONE du
+        // Lancé, jamais attendu (voir `signalerClic`). La fonction `async` enveloppe aussi une levée synchrone du
         // câblage : aucune promesse rejetée ne reste sans gestionnaire.
         void (async () => {
           try {

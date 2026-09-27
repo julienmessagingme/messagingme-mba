@@ -13,42 +13,37 @@ import { makeCampaignSender } from '../campaign/sender';
 import type { CampaignSender } from '../campaign/sender';
 import type { Campaign } from '../campaign/types';
 
-/** Pile RCS assemblée UNE fois et partagée par le worker (campagnes) et l'exécuteur de scénarios. */
+/** Pile RCS assemblée une fois et partagée par le worker (campagnes) et l'exécuteur de scénarios. */
 export interface RcsStack {
   sender: RcsSender;
   agents: PgRcsAgentStore;
-  /** Opt-out du canal. Exposé parce que le webhook de réponses doit ÉCRIRE dedans quand un contact dit STOP. */
+  /** Opt-out du canal. Exposé parce que le webhook de réponses doit écrire dedans quand un contact dit STOP. */
   optout: PgRcsOptoutStore;
   /**
-   * Sender de canal pour une campagne. null = campagne inexploitable (agent absent, message manquant).
-   *
-   * ⚠️ `message` EST CELUI DE L'ÉTAGE, PAS TOUJOURS CELUI DE LA CAMPAGNE. Un repli RCS sur une campagne
-   * WhatsApp a son message sur SA ligne d'étage, et `campaign.rcsMessage` y vaut `null` : construire le
-   * sender sur la campagne enverrait un message vide, ou rien. Absent -> celui de la campagne, qui est le
-   * contenu du rang 1 (invariant de la migration 0134).
+   * Sender de canal pour une campagne ; null = campagne inexploitable (agent absent, message manquant).
+   * `message` est celui de l'étage : un repli RCS sur une campagne WhatsApp a son message sur sa ligne d'étage
+   * et `campaign.rcsMessage` y vaut `null`. Absent : celui de la campagne, le contenu du rang 1.
    */
   senderForCampaign(campaign: Campaign, message?: unknown): Promise<CampaignSender | null>;
 }
 
 export interface SmsmodeCredentials {
-  /** Clé du serveur, utilisée en REPLI quand le tenant n'a pas la sienne. */
+  /** Clé du serveur, utilisée en repli quand le tenant n'a pas la sienne. */
   apiKey: string;
   callbackUrlStatus?: string;
   callbackUrlMo?: string;
   /** Adresse de rappel propre au workspace (livraison + réponses). Prime sur les deux URLs globales. */
   callbackUrlFor?: (tenantId: string) => Promise<string | null>;
-  /** Clé PROPRE au tenant (déchiffrée à la demande). C'est le cas normal dès la deuxième marque. */
+  /** Clé propre au tenant (déchiffrée à la demande). C'est le cas normal dès la deuxième marque. */
   apiKeyFor?: (tenantId: string) => Promise<string | null>;
 }
 
-/** Choisit le provider. Seul DRY_RUN force le factice quel que soit le provider demandé, explicitement. */
+/** Choisit le provider. DRY_RUN force le factice quel que soit le provider demandé. */
 function providerFor(nom: 'fake' | 'smsmode', dryRun: boolean, smsmode?: SmsmodeCredentials): RcsProvider {
-  // DRY_RUN prime sur le provider demandé, comme le `DryRunSender` du worker prime sur le client Meta. Sans
-  // cette règle, un déploiement DRY_RUN=true enverrait du vrai RCS : le mode de test ne doit pas dépendre de
-  // l'ordre dans lequel on pense à le brancher.
+  // DRY_RUN prime sur le provider demandé, comme le `DryRunSender` du worker prime sur le client Meta : sinon
+  // un déploiement DRY_RUN=true enverrait du vrai RCS.
   if (dryRun || nom === 'fake') return new FakeRcsProvider();
-  // Une clé est exigée : soit celle du serveur, soit une résolution par workspace. Sans aucune des deux, le
-  // provider partirait envoyer sans authentification et se prendrait un 401 à chaque message.
+  // Une clé est exigée (celle du serveur ou une par workspace) : sans elle, chaque message prendrait un 401.
   if (!smsmode?.apiKey && !smsmode?.apiKeyFor) {
     throw new Error("RCS_PROVIDER=smsmode exige la clé du canal RCS (SMSMODE_RCS_API_KEY) ou une clé par workspace");
   }
@@ -70,9 +65,8 @@ export function buildRcsStack(
   /** Variables `{{champ}}` d'un contact, par numéro. Absente -> les messages partent avec leurs accolades. */
   varsFor?: (tenantId: string, e164: string) => Promise<Record<string, string | null>>,
   /**
-   * Traçage des liens du message (migration 0107). Absent -> les messages partent avec les adresses saisies
-   * et aucun clic n'est mesuré, ce qui est le comportement d'avant. Injecté plutôt que construit ici : ce
-   * module ne lit pas la config, et l'adresse publique de la console y est nécessaire.
+   * Traçage des liens du message. Absent : adresses saisies, aucun clic mesuré. Injecté parce que ce module ne
+   * lit pas la config, dont il faudrait l'adresse publique de la console.
    */
   traceur?: TraceurLiens,
 ): RcsStack {
@@ -86,10 +80,8 @@ export function buildRcsStack(
     agents,
     optout,
     async senderForCampaign(campaign: Campaign, messageDeLEtage?: unknown): Promise<CampaignSender | null> {
-      // L'agent est figé SUR la campagne à sa création (et validé là-bas), y compris quand le RCS n'est
-      // qu'un étage de repli d'une campagne WhatsApp (`src/http/campaigns.ts` l'exige alors). On ne va pas
-      // rechercher l'agent du tenant ici : une campagne doit partir avec l'agent sous lequel elle a été
-      // écrite, même si le tenant en a changé depuis.
+      // L'agent est figé sur la campagne à sa création : une campagne part avec l'agent sous lequel elle a été
+      // écrite, même si l'espace en a changé depuis.
       const agentId = campaign.rcsAgentId;
       const message = (messageDeLEtage ?? campaign.rcsMessage) as RcsOutbound | null | undefined;
       if (!agentId || !message) return null;
@@ -99,8 +91,8 @@ export function buildRcsStack(
         agentId,
         message,
         rcs: sender,
-        // Résolution par destinataire UNIQUEMENT si le message porte des variables : une campagne de 5 000
-        // numéros sur un message figé ne doit pas déclencher 5 000 lectures de fiche pour rien.
+        // Résolution par destinataire seulement si le message porte des variables : pas 5 000 lectures de fiche pour
+        // un message figé.
         ...(varsFor && aDesVariables(message) ? { varsFor } : {}),
       });
     },

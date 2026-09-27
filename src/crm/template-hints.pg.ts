@@ -8,7 +8,7 @@ export interface ParamHint {
   source: ParamSource;
 }
 
-/** Un indice de l'espace, avec le template qui le porte : ce que le catalogue de l'API publique lit en UNE fois. */
+/** Un indice de l'espace, avec le template qui le porte : ce que le catalogue de l'API publique lit en une fois. */
 export interface IndiceDuTemplate extends ParamHint {
   name: string;
   language: string;
@@ -16,7 +16,7 @@ export interface IndiceDuTemplate extends ParamHint {
 
 /**
  * Store Postgres des indices de mapping variable -> champ d'un template (table `template_param_hints`).
- * `save` REMPLACE tous les indices d'un (template, langue) en une transaction (le corps a pu changer).
+ * `save` remplace tous les indices d'un (template, langue) en une transaction (le corps a pu changer).
  */
 export class PgTemplateHintStore {
   constructor(private readonly pool: Pool) {}
@@ -47,12 +47,9 @@ export class PgTemplateHintStore {
   }
 
   /**
-   * TOUS les indices de l'espace, en UNE requête, pour `GET /v1/templates`.
-   *
-   * ⚠️ UNE requête et pas une par template : le catalogue liste tous les templates approuvés du WABA, et
-   * `get` appelé en boucle ferait autant d'allers-retours. La clé primaire commence par `tenant_id`, elle
-   * sert donc ce filtre. La source sort telle que stockée : c'est la ROUTE qui la revalide avant de la
-   * rendre à un tiers.
+   * Tous les indices de l'espace en une requête, pour `GET /v1/templates` (pas une par template : le catalogue
+   * liste tous les templates du WABA). La clé primaire commence par `tenant_id` et sert ce filtre. La source sort
+   * telle que stockée : c'est la route qui la revalide avant de la rendre à un tiers.
    */
   async listerParEspace(tenantId: string): Promise<IndiceDuTemplate[]> {
     const res = await this.pool.query<{ template_name: string; template_language: string; position: number; source: ParamSource }>(
@@ -63,7 +60,7 @@ export class PgTemplateHintStore {
     return res.rows.map((r) => ({ name: r.template_name, language: r.template_language, position: r.position, source: r.source }));
   }
 
-  /** Retire les indices d'un template (toutes langues) — appelé à la suppression du template. */
+  /** Retire les indices d'un template (toutes langues), à la suppression du template. */
   async removeByName(tenantId: string, name: string): Promise<void> {
     await this.pool.query('delete from template_param_hints where tenant_id = $1 and template_name = $2', [tenantId, name]);
   }

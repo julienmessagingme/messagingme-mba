@@ -1,16 +1,10 @@
 /**
- * Une page HTML transformée en fiches de connaissance. PURE : pas de réseau ici, la lecture est faite par
- * `src/lib/page-distante.ts` et la garde SSRF avec elle.
+ * Une page HTML transformée en fiches de connaissance. Pure : la lecture et la garde SSRF sont dans
+ * `src/lib/page-distante.ts`.
  *
- * 🔴 POURQUOI DÉCOUPER PLUTÔT QUE TOUT AVALER. La recherche de la tâche 16bis mesure « combien de termes de
- * la question se retrouvent dans la fiche ». Une page entière stockée en une fiche unique contient à peu près
- * tous les mots du site : elle deviendrait pertinente pour n'importe quelle question, et rendrait la garde
- * anti-hallucination inopérante sans qu'aucun test ne le voie. Le découpage par titre est donc une décision
- * de justesse, pas de confort de lecture.
- *
- * On ne cherche pas à faire un lecteur HTML : pas de dépendance nouvelle, pas d'arbre DOM. Une page mal
- * découpée se corrige à la main dans l'écran, ce qui est précisément la promesse faite au client (cadrage
- * §5.3 : « vous les voyez, vous les corrigez »).
+ * Découpée par titre plutôt qu'avalée : une page entière en une fiche contient presque tous les mots du site,
+ * serait pertinente pour n'importe quelle question, et rendrait la garde anti-hallucination inopérante. Pas
+ * de lecteur HTML (ni dépendance ni DOM) : une page mal découpée se corrige à la main dans l'écran.
  */
 
 export interface FicheExtraite {
@@ -24,53 +18,36 @@ export const MAX_FICHES_PAR_PAGE = 40;
 /** Un corps plus long qu'un article n'est plus une réponse : il sature le contexte du modèle au moment où il
  *  répond. Coupé, jamais rejeté, sinon la fiche entière serait perdue pour un paragraphe de trop. */
 export const MAX_CORPS = 4000;
-/** Un titre de fiche tient sur une ligne de l'écran ; au-delà c'est une phrase mal balisée. Exporté, et
- *  importé par le schéma de la route : deux plafonds différents feraient qu'un titre produit par l'import ne
- *  serait plus modifiable tel quel, exactement le piège déjà fermé pour le corps. */
+/** Un titre de fiche tient sur une ligne de l'écran. Exporté pour le schéma de la route : deux plafonds
+ *  différents rendraient un titre importé impossible à modifier tel quel. */
 export const MAX_TITRE = 200;
 /** Sous ce seuil, la section n'a que son titre et une bribe : elle ferait du bruit dans la recherche sans
  *  jamais répondre à quoi que ce soit. */
 const MIN_CORPS = 40;
 
-/** Balises dont le CONTENU n'est pas du texte de page. Retirées avec leur contenu, pas seulement démarquées :
- *  un `<script>` laissé nu injecterait du JavaScript dans la base de connaissance, donc dans le prompt. */
+/** Balises dont le contenu n'est pas du texte de page, retirées avec leur contenu : un `<script>` laissé nu
+ *  injecterait du JavaScript dans la base de connaissance, donc dans le prompt. */
 const BLOCS_A_JETER = /<(script|style|noscript|template|svg|iframe)\b[^>]*>[\s\S]*?<\/\1>/gi;
 /**
- * Chrome de page : présent sur CHAQUE page d'un site, donc mot commun à toutes les fiches, donc bruit pur
- * pour une recherche qui compte les mots partagés.
- *
- * 🔴 `form` EN A ÉTÉ RETIRÉ LE 2026-09-08, APRÈS AVOIR AVALÉ UN SITE ENTIER. Julien importe
- * `ganprevoyance.fr` : une seule fiche en sort, 71 caractères, le titre de la page. Mesuré sur le HTML réel,
- * étape par étape : 12 113 caractères bruts, 7 387 après retrait des scripts, et 71 après retrait du chrome.
- * Le coupable est `<form>`, présent UNE fois et enveloppant tout le corps de page (motif classique
- * d'ASP.NET WebForms, et de tout site dont une section vit dans un formulaire). `nav` et `header` en
- * retiraient 2 464 à eux deux, ce qui est exactement leur rôle.
- *
- * Un formulaire n'est pas du chrome : c'est un CONTENEUR, et rien ne dit ce qu'il contient.
+ * Chrome de page : présent sur chaque page d'un site, donc bruit pur pour une recherche qui compte les mots
+ * partagés. Pas `form` : un formulaire est un conteneur, et certains sites (ASP.NET WebForms) y enveloppent
+ * tout le corps de page.
  */
 const CHROME = /<(nav|header|footer|aside)\b[^>]*>[\s\S]*?<\/\1>/gi;
 
 /**
- * Part du texte qu'il faut au MINIMUM conserver après retrait du chrome.
- *
- * 🔴 LA GARDE GÉNÉRALE, celle qui vaut mieux que le cas particulier de `form`. Retirer `form` répare CE
- * site ; rien n'empêche un autre d'envelopper sa page dans un `<header>`, et on perdrait tout de la même
- * façon, en silence, avec pour seul symptôme un agent qui ne sait rien. Quand le retrait du chrome emporte
- * l'essentiel de la page, c'est que ce n'en était pas : on garde alors la page entière, quitte à ce qu'elle
- * porte du bruit. Une fiche bruyante se corrige à l'écran ; une page perdue ne se voit pas.
- *
- * ⚠️ Une page qui EST vraiment un sommaire (que de la navigation) tombera sous ce seuil et gardera son
- * chrome. C'est le bon compromis : un peu de bruit sur une page qui n'avait rien d'autre à offrir.
+ * Part du texte qu'il faut au minimum conserver après retrait du chrome. Si le retrait emporte l'essentiel
+ * de la page, ce n'était pas du chrome : on garde la page entière. Une fiche bruyante se corrige à l'écran,
+ * une page perdue ne se voit pas.
  */
 const PART_MIN_APRES_CHROME = 0.2;
 
-/** Longueur du texte NU, pour comparer deux états du même document. */
+/** Longueur du texte nu, pour comparer deux états du même document. */
 function longueurTexte(html: string): number {
   return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().length;
 }
 
-/** Retire le chrome, SAUF quand ce retrait emporte l'essentiel de la page. Interne : `pageEnFiches` est
- *  le seul chemin, et un export sans lecteur serait une API morte. */
+/** Retire le chrome, sauf quand ce retrait emporte l'essentiel de la page. */
 function retirerChrome(html: string): string {
   const avant = longueurTexte(html);
   const apres = html.replace(CHROME, ' ');
@@ -90,18 +67,15 @@ const NOMMEES: Record<string, string> = {
 };
 
 /**
- * Décodage des entités HTML, EN UNE SEULE PASSE.
- *
- * ⚠️ Une passe, et c'est la seule chose qui compte ici : une suite de `replace` traiterait `&amp;` avant ou
- * après les autres, et `&amp;lt;` finirait par rendre `<`. Le site aurait alors écrit du texte, et la base de
- * connaissance contiendrait une balise.
+ * Décodage des entités HTML, en une seule passe : une suite de `replace` finirait par rendre `<` à partir
+ * de `&amp;lt;`, et la base de connaissance contiendrait une balise.
  */
 function decoder(s: string): string {
   return s.replace(/&(#\d{1,6}|#x[0-9a-f]{1,5}|[a-z]{2,8});/gi, (_brut, corps: string) => {
     const c = corps.toLowerCase();
     if (c.startsWith('#')) {
       const point = c[1] === 'x' ? Number.parseInt(c.slice(2), 16) : Number(c.slice(1));
-      // Les points de code de substitution feraient LEVER `fromCodePoint` : une page mal encodée ne doit pas
+      // Les points de code de substitution feraient lever `fromCodePoint` : une page mal encodée ne doit pas
       // faire échouer tout un import.
       if (!Number.isFinite(point) || point <= 0 || point > 0x10ffff || (point >= 0xd800 && point <= 0xdfff)) return ' ';
       return String.fromCodePoint(point);
@@ -137,10 +111,8 @@ function titreDuDocument(html: string, url: string): string {
 }
 
 /**
- * Découpe une page en fiches, une par titre de niveau 1 à 3.
- *
- * Le texte qui PRÉCÈDE le premier titre (chapeau, introduction) n'est pas jeté : il devient une fiche portant
- * le titre du document. Sans ça, une page dont la réponse est dans son chapeau n'aurait aucune source.
+ * Découpe une page en fiches, une par titre de niveau 1 à 3. Le texte qui précède le premier titre devient
+ * une fiche au titre du document : la réponse est parfois dans le chapeau.
  */
 export function pageEnFiches(html: string, url: string): FicheExtraite[] {
   const propre = retirerChrome(html.replace(COMMENTAIRES, ' ').replace(BLOCS_A_JETER, ' '));

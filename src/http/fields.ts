@@ -6,8 +6,8 @@ import { espaceVerifie, nonEmpty } from './scope';
 
 export interface FieldsRouteDeps {
   listFields(tenantId: string): Promise<UserFieldDef[]>;
-  /** Code client racine : renvoyé au GET pour que le front calcule les codes des champs SYSTÈME
-   *  (`fld_<client>_sys_<key>`, déterministes, pas de ligne DB). Vide -> réponse sans tenantCode. */
+  /** Code client racine : renvoyé au GET pour que le front calcule les codes des champs système
+  *  (`fld_<client>_sys_<key>`, déterministes, pas de ligne DB). Vide -> réponse sans tenantCode. */
   tenantCode(tenantId: string): Promise<string>;
   createField(tenantId: string, def: UserFieldDef): Promise<'created' | 'exists'>;
   updateField(tenantId: string, key: string, patch: { label?: string; type?: UserFieldType }): Promise<boolean>;
@@ -17,17 +17,15 @@ export interface FieldsRouteDeps {
 }
 
 /**
- * Gestion des user fields (menu Contenu), admin-only. On édite libellé + type ; la CLÉ est immuable
- * (la renommer casserait les paramMapping de campagnes et les valeurs `contacts.fields` indexées par clé).
+ * Gestion des user fields (menu Contenu), admin. On édite libellé et type ; la clé est immuable (la renommer
+ * casserait les paramMapping de campagnes et les valeurs `contacts.fields` indexées par clé).
  */
 export function registerFields(app: FastifyInstance, deps: FieldsRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
 
   /**
-   * Combien de fiches ont chaque champ rempli. Sert au sélecteur de destinataire du bloc « Envoi de mail » :
-   * choisir un champ vide sur toutes les fiches, c'est n'envoyer aucun mail, et rien ne le disait.
-   *
-   * DÉCLARÉE AVANT `/user-fields/:key` : « usage » n'est pas une clé de champ.
+   * Combien de fiches ont chaque champ rempli, pour le sélecteur de destinataire du bloc « Envoi de mail » (un champ
+   * vide partout n'enverrait aucun mail). Déclarée avant `/user-fields/:key` : « usage » n'est pas une clé.
    */
   app.get('/tenants/:tenantId/user-fields/usage', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -48,7 +46,7 @@ export function registerFields(app: FastifyInstance, deps: FieldsRouteDeps, gard
     if (!nonEmpty(b.label)) return reply.code(400).send({ error: 'label requis' });
     if (typeof b.type !== 'string' || !isUserFieldType(b.type)) return reply.code(400).send({ error: 'type invalide (text|number|date|datetime|boolean|url)' });
     const def: UserFieldDef = { key: slugify(b.label.trim()), label: b.label.trim(), type: b.type };
-    // Le libellé ne doit pas fantômiser un champ de base, ni par sa CLÉ dérivée (« BSUID » -> 'bsuid') ni
+    // Le libellé ne doit pas fantômiser un champ de base, ni par sa clé dérivée (« BSUID » -> 'bsuid') ni
     // par le libellé lui-même (« Nom », « Téléphone »), qui sont français là où les clés sont anglaises.
     if (isReservedFieldLabel(def.label)) return reply.code(409).send({ error: `« ${def.label} » correspond à un champ de base déjà présent` });
     const res = await deps.createField(tenant, def);

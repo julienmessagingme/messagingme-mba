@@ -6,43 +6,25 @@ import { originesQuiRepondent } from '../inbox/origine';
 import type { Intent } from '../analysis/schema';
 
 /**
- * LECTURE des agrégats d'analyse de conversation (Pièce 1, table `conversation_analysis`). Séparé du store
- * d'ÉCRITURE `src/analysis/store.pg.ts` (comme stats vs inbox). AUCUN appel LLM : pur SQL sur des colonnes
- * déjà remplies. `tenant_id = $1` sur CHAQUE requête (double barrière avec scopeTenant côté route : IDOR).
+ * Lecture des agrégats d'analyse de conversation (`conversation_analysis`), séparée du store d'écriture
+ * `src/analysis/store.pg.ts`. Aucun appel LLM : du SQL sur des colonnes déjà remplies. 🔴 `tenant_id = $1` sur
+ * chaque requête, en plus de `scopeTenant` côté route.
  *
- * ⚠️ Sémantique temporelle : `conversation_analysis.created_at` est réécrit à now() à chaque ré-analyse
- * (upsert), donc c'est la date de DERNIÈRE analyse, pas de la conversation. L'agrégat est un INSTANTANÉ
- * « à date de dernière analyse » fenêtré, pas un registre historique. Index `(tenant_id, created_at)` exploité.
+ * `conversation_analysis.created_at` est réécrit à chaque ré-analyse : c'est la date de dernière analyse, pas
+ * de la conversation. L'agrégat est un instantané fenêtré, pas un registre historique.
  */
 
 const TZ = STATS_TZ;
 
 /**
- * CE QU UNE JOURNEE D ANALYSE VAUT, EN UNE SEULE EXPRESSION SQL, PARTAGEE PAR SES DEUX LECTEURS.
+ * Ce qu'une journée d'analyse vaut, en une seule expression SQL partagée par ses deux lecteurs : la lecture en
+ * direct et l'écriture de l'agrégat (les vraies données font foi tant qu'elles existent, les agrégats au-delà).
+ * Deux rédactions feraient une marche à la frontière de la rétention, indiscernable d'un creux d'activité ; un
+ * test vérifie que les deux requêtes la citent.
  *
- * 🔴 C EST LA CONTREPARTIE DU CHOIX DE JULIEN (2026-09-17) : « les vraies donnees font foi tant qu elles
- * existent », les agregats au-dela. Deux sources repondent donc a la MEME question sur deux portions de
- * l axe du temps, et le jour ou elles divergent d une unite, la frontiere des 90 jours fait une MARCHE
- * dans le graphe, indiscernable d un vrai creux d activite. Personne ne la verrait, et personne ne saurait
- * laquelle des deux a raison.
- *
- * La parade n est pas la vigilance, c est qu il n y ait qu UNE expression : la lecture en direct et
- * l ecriture de l agregat l importent toutes les deux, elles ne peuvent donc pas se contredire. Meme
- * mecanique que `ORIGINE_EFFECTIVE_SQL` (`src/inbox/origine.ts`), pour la meme raison, et un test
- * structurel verifie que les deux requetes la citent au lieu de la recopier.
- *
- * ⚠️ DES SOMMES ET DES COMPTES, JAMAIS UNE MOYENNE. Une moyenne stockee ne se re-agrege pas : regrouper
- * sept journees moyennes sans leur poids donne une moyenne de moyennes, fausse des que les journees n ont
- * pas le meme nombre de mesures. La moyenne se recalcule a l affichage, a n importe quelle maille.
- *
- * ⚠️ LES INTENTIONS SONT COMPTEES UNE PAR UNE, et pas par un `jsonb_object_agg` : celui-ci echouerait sur
- * des cles dupliquees. L enumeration est FERMEE (`INTENTS`, `src/analysis/schema.ts`), mais une valeur
- * ajoutee la-bas PASSE la validation de l analyse : oubliee ici, elle disparaitrait en silence de la
- * repartition agregee, qui ne retomberait plus sur le total du jour. `tests/agregats-jour.test.ts` derive
- * la liste de `INTENTS` et les exige toutes.
- *
- * ⚠️ `ca` EST L ALIAS ATTENDU de `conversation_analysis`, et `$4` le fuseau : les deux requetes qui
- * l utilisent doivent les fournir.
+ * Des sommes et des comptes, jamais une moyenne : une moyenne stockée ne se ré-agrège pas. Les intentions sont
+ * comptées une par une (`jsonb_object_agg` échouerait sur des clés dupliquées) ; une valeur ajoutée à `INTENTS`
+ * doit l'être ici aussi, un test l'exige. `ca` = alias de `conversation_analysis`, `$4` = le fuseau.
  */
 export const AGREGAT_JOUR_SQL = `
          to_char(date_trunc('day', ca.created_at at time zone $4), 'YYYY-MM-DD') as jour,
@@ -67,16 +49,9 @@ export interface ConversationAnalysisSummary {
   /** Feature d'analyse active côté serveur (config). Distingue « inactif » de « aucune donnée ». */
   enabled: boolean;
   /**
-   * Combien de jours une conversation reste consultable DANS CET ESPACE, purge du worker comprise. `0` veut
-   * dire « jamais purgée ».
-   *
-   * Remonté avec les agrégats, comme `enabled`, et pour la même raison : l'écran doit pouvoir DIRE pourquoi
-   * une plage ancienne rend moins de lignes que prévu. Sans cette phrase, un export plus court que la
-   * période demandée passe pour un bug, et c'est le genre de doute qui coûte un aller-retour de support.
-   *
-   * 🔴 CE N'EST PLUS `CONVERSATION_RETENTION_DAYS` TEL QUEL, et cette ligne l'a affirmé à tort jusqu'au
-   * 2026-09-17 : depuis la migration 0155, un espace peut poser SA durée, et c'est la sienne qui décide.
-   * La règle à deux niveaux vit dans `retentionEffective` (`src/inbox/retention.ts`), partagée avec la purge.
+   * Combien de jours une conversation reste consultable dans cet espace, purge comprise (`0` = jamais purgée),
+   * pour que l'écran dise pourquoi une plage ancienne rend moins de lignes. C'est la durée de l'espace quand il
+   * en a une, via `retentionEffective`.
    */
   retentionDays: number;
   total: number;
@@ -90,40 +65,27 @@ export interface ConversationAnalysisSummary {
   actions: { creer_devis: number; rappeler: number; relancer: number; escalader: number; aucune: number };
   topTopics: Array<{ topic: string; count: number }>;
   /**
-   * Les sujets les plus frequents DE CHAQUE INTENTION, cinq au plus (2026-09-17).
-   *
-   * ⚠️ CE N'EST PAS UNE DÉCOUPE DE `topTopics` : celui-là classe les dix premiers TOUTES intentions
-   * confondues, celui-ci en garde cinq PAR intention, donc il en montre que l'autre n'aurait jamais.
-   * Un sujet fréquent dans une intention rare n'entre pas dans les dix premiers, et c'est justement
-   * celui qu'on veut voir quand on déplie cette intention.
+   * Les sujets les plus fréquents de chaque intention, cinq au plus. Pas une découpe de `topTopics` (les dix
+   * premiers toutes intentions confondues) : un sujet fréquent dans une intention rare n'y entrerait pas.
    */
   topicsParIntention: Record<string, Array<{ topic: string; count: number }>>;
   confidence: { lt50: number; from50to70: number; from70to90: number; gte90: number };
 }
 
 /**
- * Le nuage « satisfaction x urgence » de la page de synthèse (lot F, migration 0121).
- *
- * 🔴 CE N'EST PAS UNE LISTE DE CONVERSATIONS, c'est un DAMIER. Les deux notes sont des entiers de 0 à 10 :
- * il n'existe donc que 121 positions possibles, et une conversation de plus ne fait que grossir un point
- * existant. On agrège en base plutôt que de descendre une ligne par conversation, ce qui borne la réponse
- * quoi qu'il arrive (144 lignes au pire, cases incomplètes comprises) au lieu de la faire croître avec le
- * trafic du client.
+ * Le nuage « satisfaction x urgence » de la page de synthèse. Un damier, pas une liste : les deux notes sont des
+ * entiers de 0 à 10, on agrège en base, et la réponse reste bornée quel que soit le trafic.
  */
 export interface NuageQualitatif {
   /** Une case occupée du damier : `n` conversations portent ce couple de notes. */
   points: Array<{ satisfaction: number; urgence: number; n: number }>;
-  /** Moyenne des deux notes sur les conversations MESURÉES uniquement. `null` si aucune. */
+  /** Moyenne des deux notes sur les conversations mesurées uniquement. `null` si aucune. */
   moyenne: { satisfaction: number; urgence: number } | null;
-  /** Combien de conversations analysées de la plage portent les DEUX mesures. */
+  /** Combien de conversations analysées de la plage portent les deux mesures. */
   mesurees: number;
   /**
-   * ...et combien n'en portent pas.
-   *
-   * 🔴 Ce compte est la raison d'être du reste. Les analyses d'avant la migration 0121 n'ont pas de mesure,
-   * et il n'y en aura jamais (on ne réanalyse pas). Un nuage qui les tairait laisserait croire que la
-   * période ne contient que ce qu'il montre ; un nuage qui les placerait en (0,0) affirmerait que ces
-   * clients étaient furieux et sans urgence. Il les compte à part, et l'écran le dit.
+   * ...et combien n'en portent pas (les anciennes analyses n'ont pas de mesure). Les taire laisserait croire que
+   * la période ne contient que le nuage ; les placer en (0,0) les dirait furieuses et sans urgence.
    */
   sansMesure: number;
 }
@@ -133,35 +95,26 @@ export interface AnalyzedConversationsFilter {
   intent?: string;
   action?: string;
   /**
-   * Sujet, en texte libre : c'est le LLM qui l'écrit, il n'y a donc pas d'énumération à valider. La
-   * comparaison se fait sur `lower(btrim(...))` DES DEUX CÔTÉS, exactement comme le regroupement des sujets
-   * fréquents : sans ça, cliquer une pastille « retard de livraison » ne ramènerait pas les lignes écrites
-   * « Retard de livraison ». La valeur part en paramètre lié, jamais dans le texte de la requête.
+   * Sujet, en texte libre écrit par le LLM. Comparé sur `lower(btrim(...))` des deux côtés, comme le
+   * regroupement des sujets fréquents ; la valeur part en paramètre lié.
    */
   topic?: string;
   limit?: number;
 }
 
 /**
- * UNE JOURNEE D ANALYSE, telle que l ecran « Analyse des conversations » la rend (2026-09-17).
- *
- * 🔴 UNE LIGNE PAR JOUR, PAS PAR CONVERSATION, ET C EST LA DEMANDE DE JULIEN. « Si un moment il y a 1000
- * conversations en stock, tu vas pas afficher 1000 conversations dans le tableau. » La table reste bornee
- * par la duree de la periode au lieu de croitre avec le trafic du client, et le detail d une journee se
- * demande en la cliquant.
- *
- * ⚠️ LES DEUX MOYENNES SONT NULLABLES, ET `null` N EST PAS `0`. Une journee dont aucune analyse ne porte
- * les notes (elles sont neuves depuis la migration 0121) n a pas une satisfaction de zero, elle n en a
- * pas. Les compter comme zero rangerait ces journees dans le coin « clients furieux ».
+ * Une journée d'analyse, telle que l'écran la rend : une ligne par jour, pas par conversation, pour que la
+ * table reste bornée par la durée de la période. Les deux moyennes sont nullables : `null` n'est pas `0`, une
+ * journée sans note n'a pas une satisfaction de zéro.
  */
 export interface JourAnalyse {
-  /** Le jour, en ISO court, dans le fuseau de l espace. */
+  /** Le jour, en ISO court, dans le fuseau de l'espace. */
   jour: string;
   conversations: number;
-  /** Moyenne des analyses de la journee QUI PORTENT la note. `null` si aucune. */
+  /** Moyenne des analyses de la journée qui portent la note. `null` si aucune. */
   satisfaction: number | null;
   urgence: number | null;
-  /** Combien d analyses de la journee portent les deux notes : c est le denominateur des moyennes. */
+  /** Combien d'analyses de la journée portent les deux notes : le dénominateur des moyennes. */
   mesurees: number;
 }
 export interface AnalyzedConversationRow {
@@ -179,27 +132,20 @@ export interface AnalyzedConversationRow {
   exchangesCount: number;
   analyzedAt: string; // ISO (conversation_analysis.created_at)
   inboxHref: string; // /inbox?c=<conversationId>
-  /** Ce qui s'est DIT (migration 0100). `null` pour les analyses d'avant : l'écran l'annonce au lieu de
-   *  laisser un blanc, et ne le remplace jamais par `justification`, qui répond à une autre question. */
+  /** Ce qui s'est dit. `null` pour les analyses anciennes : l'écran l'annonce, sans le remplacer par
+   *  `justification`, qui répond à une autre question. */
   summary: string | null;
-  /** Infos extraites par l'analyse (produit, budget, quantité...). Déjà stockées, jamais montrées avant :
-   *  c'est la fiche de conversation qui leur donne enfin un endroit où servir. */
+  /** Infos extraites par l'analyse (produit, budget, quantité...), montrées par la fiche de conversation. */
   entities: Record<string, unknown>;
   /**
-   * LES ORIGINES DES MESSAGES SORTANTS de la conversation, dedoublonnees (migration 0099).
-   *
-   * 🔴 C'EST DE LA QUE SE DERIVENT LES BADGES « qui a repondu », ET SURTOUT PAS DE `handledBy`, qui ne rend
-   * que 'humain' ou 'automatise' et dont la valeur 'mba' n'est JAMAIS produite. Une conversation menee par
-   * l'agent de Meta y serait indiscernable d'un scenario, ce qui est exactement la distinction demandee.
-   *
-   * ⚠️ UNE LISTE VIDE EST UN CAS NORMAL : une conversation dont tous les sortants sont anterieurs a la
-   * migration 0099 n'a aucune origine. L'ecran n'affiche alors aucun badge, plutot que d'en inventer un.
-   * ⚠️ `api` n'y figure que si l'un de ses messages SUIT un entrant du fil (`originesQuiRepondent`).
+   * Les origines des messages sortants de la conversation, dédoublonnées : les badges « qui a répondu » s'en
+   * dérivent, pas de `handledBy` (qui ne produit jamais `mba`). Liste vide = cas normal (sortants anciens),
+   * aucun badge inventé. `api` n'y figure que si l'un de ses messages suit un entrant (`originesQuiRepondent`).
    */
   origines: string[];
 }
 
-/** La forme brute que rend `AGREGAT_JOUR_SQL`, et celle que rend la table d agregats : la MEME. */
+/** La forme brute que rend `AGREGAT_JOUR_SQL`, et celle de la table d'agrégats : la même. */
 interface LigneAgregat {
   jour: string;
   n: number;
@@ -210,15 +156,9 @@ interface LigneAgregat {
 }
 
 /**
- * D une ligne brute a une journee affichable.
- *
- * 🔴 LA MOYENNE SE CALCULE ICI, A PARTIR DE LA SOMME ET DU COMPTE, et jamais en base. C est ce qui permet
- * de regrouper par semaine sans faire une moyenne de moyennes, qui serait fausse des que deux journees
- * n ont pas le meme nombre de mesures.
- *
- * ⚠️ `null` QUAND AUCUNE MESURE, jamais zero : zero est une note VALIDE et la pire de toutes. Les analyses
- * d avant la migration 0121 n en portent aucune, et les compter comme zero rangerait tout l historique
- * dans le coin « clients furieux ».
+ * D'une ligne brute à une journée affichable. La moyenne se calcule ici, à partir de la somme et du compte,
+ * pour regrouper par semaine sans moyenne de moyennes. `null` quand aucune mesure, jamais zéro (zéro est une
+ * note valide, la pire).
  */
 function depuisAgregat(r: LigneAgregat): JourAnalyse {
   const mesurees = Number(r.mes);
@@ -239,7 +179,7 @@ export class PgConversationStatsStore {
 
   async getSummary(tenantId: string, range: DateRange): Promise<ConversationAnalysisSummary> {
     const { from, to } = range;
-    // UNE passe : tous les compteurs par count(*) FILTER + avg + médiane (un seul scan de l'index).
+    // Une passe : tous les compteurs par count(*) FILTER + avg + médiane (un seul scan de l'index).
     const agg = await this.pool.query<{
       total: string;
       s_pos: string; s_neu: string; s_neg: string;
@@ -308,23 +248,10 @@ export class PgConversationStatsStore {
     );
 
     /**
-     * LES SUJETS, RANGES SOUS LEUR INTENTION (demande de Julien du 2026-09-17).
-     *
-     * 🔴 CE QUE CE REGROUPEMENT REND VISIBLE, ET QUI EST LE VRAI SUJET. Les intentions sont une
-     * énumération FERMÉE (`INTENTS`) : le modèle ne peut pas en inventer d'autres. Le `topic`, lui, est du texte
-     * LIBRE, et c'est là que vit l'inflation que Julien redoutait. Mesuré en production le 2026-09-17 :
-     * 13 sujets distincts pour 14 analyses, dont QUATRE variantes de « consultation tarifs ». Rangés à plat
-     * dans une liste, ces quatre-là sont dispersés et personne ne voit qu'ils sont parents ; sous
-     * « Information », ils se retrouvent côte à côte et le problème se voit tout seul.
-     *
-     * ⚠️ `lower(btrim(...))` COMME `topTopics` JUSTE AU-DESSUS, et surtout pas une autre normalisation :
-     * deux regroupements différents donneraient deux comptes pour le même sujet sur le même écran. Ce
-     * n'est PAS un rapprochement sémantique pour autant : « tarifs et offres » et « tarifs cinéma »
-     * resteront deux lignes, et c'est exactement ce qu'on veut montrer.
-     *
-     * ⚠️ CINQ PAR INTENTION, borné EN SQL par une fenêtre. Le nombre de sujets distincts n'a aucune borne
-     * naturelle : une année d'échanges en produirait des centaines, dans un accordéon qu'on déplie pour se
-     * faire une idée.
+     * Les sujets rangés sous leur intention : les intentions sont une énumération fermée, le `topic` du texte
+     * libre qui s'enfle de variantes proches ; rangées sous leur intention, elles se voient côte à côte. Même
+     * normalisation `lower(btrim(...))` que `topTopics` (sinon deux comptes pour un sujet), pas de
+     * rapprochement sémantique. Cinq par intention, bornés en SQL.
      */
     const parIntention = await this.pool.query<{ intent: string; topic: string; n: string }>(
       `with ${BOUNDS_CTE},
@@ -355,10 +282,8 @@ export class PgConversationStatsStore {
     return {
       enabled: this.enabled,
       /**
-       * 🔴 CELLE DE L'ESPACE QUAND IL EN A UNE, PAS CELLE DE L'INSTANCE. `this.retentionDays` est fige au
-       * demarrage du process et vaut pour tout le monde : l'annoncer tel quel ferait dire « conservees 90
-       * jours » a un espace regle sur 30, pendant que ses donnees disparaissent a 30. La regle a deux
-       * niveaux vit dans `retentionEffective`, partagee avec la purge, pour qu'il n'y en ait pas deux.
+       * La durée de l'espace quand il en a une, pas celle de l'instance (figée au démarrage et valable pour
+       * tous) : la règle à deux niveaux vit dans `retentionEffective`, partagée avec la purge.
        */
       retentionDays: retentionEffective(this.retentionDays, r.retention_espace ?? null),
       total,
@@ -382,15 +307,9 @@ export class PgConversationStatsStore {
   }
 
   /**
-   * Le damier « satisfaction x urgence » de la plage, plus ce qu'il ne peut pas montrer.
-   *
-   * ⚠️ UNE SEULE REQUÊTE, et la moyenne se calcule ICI à partir de ses lignes, pas dans un second `avg()`.
-   * Deux requêtes verraient deux instants différents (une analyse peut s'écrire entre les deux) et
-   * afficheraient une moyenne qui ne tombe pas dans son propre nuage, ce qui se remarque à l'œil et ne
-   * s'explique pas. Le regroupement rend au plus 144 lignes, la somme pondérée est donc exacte et gratuite.
-   *
-   * Les fils de TEST sont écartés comme dans `getSummary` : même population, sinon les deux écrans du même
-   * onglet compteraient des choses différentes sous le même mot.
+   * Le damier « satisfaction x urgence » de la plage, plus ce qu'il ne peut pas montrer. Une seule requête, la
+   * moyenne se calcule ici depuis ses lignes : un second `avg()` verrait un autre instant, et la moyenne ne
+   * tomberait pas dans son propre nuage. Fils de test écartés comme dans `getSummary`.
    */
   async getNuageQualitatif(tenantId: string, range: DateRange): Promise<NuageQualitatif> {
     const { from, to } = range;
@@ -411,9 +330,7 @@ export class PgConversationStatsStore {
     let sommeUrg = 0;
     for (const r of res.rows) {
       const n = Number(r.n);
-      // 🔴 Le test porte sur `null`, pas sur la fausseté : `0` est une mesure PARFAITEMENT valide (client
-      // très mécontent, ou aucune urgence). Un `if (!r.satisfaction)` rangerait ces conversations parmi les
-      // non mesurées, c'est-à-dire ferait disparaître du nuage exactement les points qui alarment.
+      // Le test porte sur `null`, pas sur la fausseté : `0` est une mesure valide, justement celle qui alarme.
       if (r.satisfaction === null || r.urgence === null) {
         sansMesure += n;
         continue;
@@ -434,28 +351,18 @@ export class PgConversationStatsStore {
     };
   }
 
-  /** N dernières conversations analysées de la plage, filtrables. Join conversations (wa_id) + contacts
-   *  (profile_name), lien inbox `/inbox?c=<id>`. Filtres validés côté route (enum), passés en $ nullable. */
   /**
-   * 🔴 LES ORIGINES DES SORTANTS VOYAGENT AVEC CHAQUE LIGNE, ET C'EST DE LÀ QUE SE DÉRIVENT LES BADGES
-   * « qui a répondu » (2026-09-17).
+   * Les N dernières conversations analysées de la plage, filtrables (filtres validés côté route), avec le lien
+   * inbox `/inbox?c=<id>`.
    *
-   * SURTOUT PAS depuis `handled_by` : `deduceHandledBy` (`src/analysis/engine.ts`) ne rend que `humain` ou
-   * `automatise`, et sa valeur `mba` est déclarée dans l'énumération mais n'est JAMAIS produite. Mesuré en
-   * production le 2026-09-17 : sur 14 analyses, 8 `automatise` et 6 `humain`, zéro `mba`. Une conversation
-   * menée par l'agent de Meta y est donc indiscernable d'un scénario, ce qui est exactement la distinction
-   * demandée. `conversation_messages.origin` (migration 0099), lui, porte les cinq valeurs pour de vrai.
-   *
-   * ⚠️ SOUS-REQUÊTE CORRÉLÉE plutôt qu'une jointure : une jointure multiplierait la ligne d'analyse par son
-   * nombre de messages, et il faudrait la dégrouper ensuite. Elle sert l'index partiel
-   * `conversation_messages_origin_idx`, dont le prédicat est exactement `(conversation_id, created_at)
-   * where direction = 'out'`.
+   * Les origines des sortants voyagent avec chaque ligne : les badges « qui a répondu » s'en dérivent, jamais
+   * de `handled_by` (`deduceHandledBy` ne produit jamais `mba`). Sous-requête corrélée plutôt que jointure (pas
+   * de multiplication des lignes), servie par l'index partiel `conversation_messages_origin_idx`.
    */
   async listAnalyzed(tenantId: string, range: DateRange, filters: AnalyzedConversationsFilter): Promise<AnalyzedConversationRow[]> {
     const { from, to } = range;
-    // Plafond relevé à 1000 (il était de 200) : c'est cette liste que l'écran exporte en CSV, et un export
-    // silencieusement tronqué à 200 lignes est pire qu'un export refusé, parce que rien ne le signale. Le
-    // plafond reste, lui, parce qu'une plage d'un an sans borne rendrait tout l'historique d'un coup.
+    // Plafond à 1000 : cette liste est exportée en CSV, et un export tronqué en silence est pire qu'un refus.
+    // Il reste un plafond, sinon une plage d'un an rendrait tout l'historique.
     const limit = Math.min(Math.max(filters.limit ?? 50, 1), 1000);
     const res = await this.pool.query<{
       conversation_id: string; wa_id: string; profile_name: string | null;
@@ -519,16 +426,9 @@ export class PgConversationStatsStore {
   }
 
   /**
-   * LES JOURNEES DE LA PERIODE, LUES SUR LE CONTENU ENCORE PRESENT.
-   *
-   * 🔴 ELLE CITE `AGREGAT_JOUR_SQL`, ELLE NE LE RECOPIE PAS, et c est tout ce qui empeche la marche a la
-   * frontiere des 90 jours : le balayage qui remplit `analyse_jour` cite EXACTEMENT la meme expression.
-   * Deux redactions de la meme somme divergeraient au premier changement, et l ecart serait pris pour un
-   * vrai creux d activite.
-   *
-   * ⚠️ LES JOURNEES SANS AUCUNE CONVERSATION N APPARAISSENT PAS, et ce n est pas un oubli : un `group by`
-   * ne rend que ce qui existe. C est ce que l ecran veut (une ligne a zero n apprend rien et noie les
-   * autres), et c est dit ici pour que personne ne « repare » en densifiant la serie.
+   * Les journées de la période, lues sur le contenu encore présent. Elle cite `AGREGAT_JOUR_SQL`, comme le
+   * balayage qui remplit `analyse_jour`. Les journées sans conversation n'apparaissent pas (un `group by` ne
+   * rend que ce qui existe) : c'est voulu, ne pas densifier la série.
    */
   async parJour(tenantId: string, range: DateRange): Promise<JourAnalyse[]> {
     const { from, to } = range;
@@ -546,10 +446,8 @@ export class PgConversationStatsStore {
   }
 
   /**
-   * LES JOURNEES DEJA AGREGEES, celles dont le contenu a ete efface par la retention.
-   *
-   * ⚠️ AUCUN CALCUL ICI : les sommes et les comptes sont stockes tels quels, et la moyenne se refait a
-   * l affichage. Stocker une moyenne aurait interdit de regrouper par semaine sans la fausser.
+   * Les journées déjà agrégées, celles dont le contenu a été effacé par la rétention. Aucun calcul ici : sommes
+   * et comptes stockés tels quels, la moyenne se refait à l'affichage.
    */
   async parJourAgrege(tenantId: string, range: DateRange): Promise<JourAnalyse[]> {
     const { from, to } = range;
@@ -565,15 +463,9 @@ export class PgConversationStatsStore {
   }
 
   /**
-   * LES JOURNEES DE LA PERIODE, D OU QU ELLES VIENNENT.
-   *
-   * 🔴 LES VRAIES DONNEES FONT FOI TANT QU ELLES EXISTENT (choix de Julien du 2026-09-17), les agregats
-   * comblent le reste. Une journee presente des DEUX cotes prend la version vivante : c est la seule
-   * regle qui rende le resultat previsible, et les deux ne peuvent pas se contredire puisqu elles sortent
-   * de la meme expression SQL.
-   *
-   * ⚠️ DEUX LECTURES EN PARALLELE et pas l une puis l autre : elles sont independantes, et cet ecran est
-   * le premier que le client ouvre en arrivant sur l analyse.
+   * Les journées de la période, d'où qu'elles viennent : les vraies données font foi tant qu'elles existent,
+   * les agrégats comblent le reste (une journée présente des deux côtés prend la version vivante). Deux
+   * lectures en parallèle.
    */
   async joursAnalyse(tenantId: string, range: DateRange): Promise<JourAnalyse[]> {
     const [vivants, agreges] = await Promise.all([
@@ -586,40 +478,10 @@ export class PgConversationStatsStore {
   }
 
   /**
-   * ECRIT LES AGREGATS DE TOUTES LES JOURNEES ENCORE PRESENTES, de TOUS les espaces.
-   *
-   * ⚠️ UN tenantId A NULL VEUT DIRE « TOUS », et c est le cas courant : le balayage n a alors AUCUNE liste
-   * d espaces a tenir, donc aucun espace cree entre deux passages ne peut lui echapper. Le passer sert aux
-   * tests et a un rattrapage cible.
-   *
-   * 🔴 UNE SEULE INSTRUCTION POUR TOUTES LES JOURNEES, ET C EST CE QUI SUPPRIME L ORDRE DE DEPLOIEMENT.
-   * Un balayage qui traiterait « la veille » a chaque passage laisserait, au premier demarrage apres le
-   * passage a 90 jours, neuf mois d historique sans agregat, que la purge effacerait AVANT qu on ait eu le
-   * temps de le calculer. Irrecuperable. Ici, un seul passage couvre tout ce qui existe.
-   *
-   * 🔴 IDEMPOTENTE PAR CONSTRUCTION (`on conflict do update` sur `(tenant_id, jour)`) : elle peut etre
-   * rejouee, interrompue, relancee, sans jamais produire de doublon ni d etat partiel. C est ce qui permet
-   * de l attendre AVANT la purge au demarrage du worker.
-   *
-   * ⚠️ ELLE CITE LE MEME `AGREGAT_JOUR_SQL` que la lecture en direct. Si un jour quelqu un recopie
-   * l expression au lieu de la citer, `tests/agregats-jour.test.ts` le fait echouer.
-   *
-   * Rend le nombre de journees ecrites.
-   */
-  /**
-   * LE PLUS ANCIEN JOUR D'ANALYSE ENCORE PRESENT EN BASE, au fuseau des statistiques. `null` si la table est
-   * vide. Format `AAAA-MM-JJ`, celui que `DateRange` attend.
-   *
-   * 🔴 ELLE EXISTE POUR BORNER LE BALAYAGE PAR LA DONNEE, ET PAS PAR UN NOMBRE DEVINE. Le balayage remontait
-   * 400 jours en dur, un peu plus que la plage maximale d'un ecran. Or un espace peut regler sa retention
-   * jusqu'a 3650 jours, et le levier d'urgence (`CONVERSATION_RETENTION_DAYS = 0`) peut suspendre la purge
-   * aussi longtemps qu'on veut : dans ces deux cas, des analyses de plus de 400 jours SURVIVENT, sortent de
-   * la fenetre du balayage, et seraient effacees le jour ou la purge reprend sans avoir jamais ete agregees.
-   * Perdues pour toujours, sans une erreur. Releve en revue le 2026-09-17, non atteignable ce jour-la (la
-   * production envoie depuis le 2026-07-06, donc rien n'a 400 jours), mais ARME.
-   *
-   * ⚠️ ET LA FENETRE NE GROSSIT QUE QUAND LE RISQUE EXISTE : tant que rien ne depasse 400 jours, elle reste
-   * a 400 jours. Elle s'etend exactement de ce qui pourrait etre perdu, jamais plus.
+   * Le plus ancien jour d'analyse encore présent en base, au fuseau des stats (`AAAA-MM-JJ`), ou `null`.
+   * 🔴 Borne le balayage d'agrégats par la donnée et non par un nombre deviné : une rétention longue ou une
+   * purge suspendue laisserait sinon survivre des analyses hors de la fenêtre, effacées ensuite sans avoir été
+   * agrégées. La fenêtre ne s'étend au-delà de 400 jours que si le risque existe.
    */
   async plusAncienJourAnalyse(): Promise<string | null> {
     const res = await this.pool.query<{ jour: string | null }>(
@@ -629,6 +491,15 @@ export class PgConversationStatsStore {
     return res.rows[0]?.jour ?? null;
   }
 
+  /**
+   * Écrit les agrégats de toutes les journées encore présentes, de tous les espaces (`tenantId` null, le cas
+   * courant : aucun espace ne peut échapper au balayage), et rend le nombre de journées écrites.
+   *
+   * 🔴 Une seule instruction pour toutes les journées : un balayage « de la veille » laisserait de l'historique
+   * sans agrégat, que la purge effacerait. Idempotente (`on conflict do update` sur `(tenant_id, jour)`), elle
+   * peut être rejouée ou interrompue sans doublon, et le worker l'attend avant la purge. Elle cite le même
+   * `AGREGAT_JOUR_SQL` que la lecture en direct.
+   */
   async ecrireAgregats(range: DateRange, tenantId: string | null = null): Promise<number> {
     const { from, to } = range;
     const res = await this.pool.query(
@@ -662,9 +533,8 @@ export class PgConversationStatsStore {
        -- perdre est irreversible. Et analyse_jour ne porte aucune donnee personnelle, donc garder le
        -- compte d une conversation effacee n est pas une conservation deguisee, c est un nombre.
        where excluded.conversations >= analyse_jour.conversations`,
-      // ⚠️ LES QUATRE MEMES PARAMETRES QUE LA LECTURE, dans le meme ordre, et TOUS references. Une premiere
-      // version passait un intervalle et laissait $3 sans reference : Postgres refuse un parametre dont il
-      // ne peut pas deduire le type, et aucun typecheck ne le voit.
+      // Les quatre mêmes paramètres que la lecture, dans le même ordre, et tous référencés : Postgres refuse un
+      // paramètre dont il ne peut pas déduire le type, et aucun typecheck ne le voit.
       [tenantId, from, to, TZ],
     );
     return res.rowCount ?? 0;

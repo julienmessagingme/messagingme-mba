@@ -7,16 +7,9 @@ import type { OutilExistantMcp } from './import';
 import type { EcritureImportMcp, OutilMcpVue, ServeurMcpVue } from '../../http/agent-mcp';
 
 /**
- * Le stockage des outils importés d'un serveur MCP.
- *
- * 🔴 IL EST SÉPARÉ DE `catalog.pg.ts`, ET C'EST DÉLIBÉRÉ. Ce dernier sert le chemin CHAUD (les outils actifs
- * d'un agent, lus à chaque tour) et l'écran de réglage d'un agent. Ce module-ci ne sert qu'un import, geste
- * rare, déclenché par un administrateur. Les mêler ferait grossir la projection du chemin chaud de colonnes
- * que personne n'y lit.
- *
- * 🔴 L'ÉCRITURE EST UNE TRANSACTION, ET ELLE EST TOUT OU RIEN. Un import à moitié appliqué laisserait des
- * outils neufs à côté d'anciens qu'on vient de déclarer disparus, sans que le plan montré au client
- * corresponde à quoi que ce soit.
+ * Le stockage des outils importés d'un serveur MCP. À part de `catalog.pg.ts`, qui sert le chemin chaud (les
+ * outils actifs lus à chaque tour) : l'import est un geste rare d'administrateur, ses colonnes n'ont rien à
+ * faire dans cette projection. L'écriture d'un import est une transaction, tout ou rien.
  */
 
 const COLS_SERVEUR = `s.id, s.label, s.base_url, s.auth_kind, s.auth_header_name, s.status,
@@ -37,13 +30,8 @@ interface LigneOutil {
 export class PgMcpStore {
   constructor(private readonly pool: Pool) {}
 
-  /**
-   * Les serveurs MCP de l'espace.
-   *
-   * ⚠️ `kind = 'mcp'` EST DANS LA REQUÊTE, pas dans un filtre d'écran. Cette liste alimente l'écran des
-   * connecteurs MCP : y laisser entrer les connecteurs HTTP ferait proposer un import de catalogue à un
-   * système qui n'en a pas.
-   */
+  /** Les serveurs MCP de l'espace. `kind = 'mcp'` est dans la requête : un connecteur HTTP n'a pas de
+   *  catalogue à importer. */
   async listerServeurs(tenantId: string): Promise<ServeurMcpVue[]> {
     const res = await this.pool.query<LigneServeur>(
       `select ${COLS_SERVEUR} from agent_tool_sources s
@@ -63,12 +51,8 @@ export class PgMcpStore {
     }));
   }
 
-  /**
-   * Les outils déjà importés de ce serveur, avec ce qu'un changement ferait tomber.
-   *
-   * 🔴 LE COMPTE DES CONSOMMATEURS ACTIFS EST LU ICI, dans la même requête. Le calculer ailleurs ferait
-   * annoncer au client un nombre qui n'est pas celui que l'application va faire tomber.
-   */
+  /** Les outils déjà importés de ce serveur, avec le nombre de consommateurs actifs lu dans la même requête :
+   *  c'est ce qu'un changement fera tomber. */
   async outilsDuServeur(tenantId: string, sourceId: string): Promise<OutilExistantMcp[]> {
     const res = await this.pool.query<LigneOutil>(
       `select t.id, t.name, t.binding, t.params, t.mcp_annonce, t.mcp_indisponible_le,
@@ -82,30 +66,21 @@ export class PgMcpStore {
     return res.rows.map((r) => ({
       id: r.id,
       name: r.name,
-      // ⚠️ Le nom distant vit dans `binding`, pas dans une colonne : c'est ce qui APPARIE au
-      // rafraîchissement, et une ligne qui n'en aurait pas ne s'apparierait avec rien. Le repli sur notre
-      // nom local est le moins mauvais : il fera voir un « disparu » plutôt qu'un doublon silencieux.
+      // Le nom distant vit dans `binding` : c'est lui qui apparie au rafraîchissement. Le repli sur notre nom
+      // local fera voir un « disparu » plutôt qu'un doublon silencieux.
       nomDistant: typeof r.binding?.outilDistant === 'string' ? r.binding.outilDistant : r.name,
       mcpAnnonce: r.mcp_annonce,
       mcpIndisponibleLe: r.mcp_indisponible_le,
-      // 🔴 LU PAR LE CHEMIN OFFICIEL. `params` est du jsonb, donc opaque : `paramsOutil` est la SEULE
-      // lecture autorisée, et c'est elle qui porte la séparation des sources.
+      // `params` est du jsonb opaque : `paramsOutil` est la seule lecture autorisée (séparation des sources).
       params: paramsOutil(r.params),
       consommateursActifs: Number(r.actifs),
     }));
   }
 
   /**
-   * Les outils importés, TELS QUE L'ÉCRAN LES MONTRE.
-   *
-   * 🔴 SÉPARÉE DE `outilsDuServeur`, ET CE N'EST PAS UN DOUBLON. Celle-là ne lit que ce qu'on COMPARE au
-   * rafraîchissement (le nom distant, l'annonce, ce qu'un changement fait tomber) : lui faire porter le
-   * titre, les paramètres et le risque ferait grossir le chemin de l'import de colonnes qu'il n'utilise
-   * pas, et surtout ferait croire que le planificateur s'en sert.
-   *
-   * ⚠️ `mcp_annonce` EST RENDUE AU CLIENT, et c'est voulu : c'est le schéma QUE LE SERVEUR ANNONCE, donc la
-   * seule chose qu'il puisse montrer à son fournisseur quand un outil est refusé. Elle ne porte aucun
-   * secret : elle vient d'en face.
+   * Les outils importés, tels que l'écran les montre. À part de `outilsDuServeur`, qui ne lit que ce que le
+   * rafraîchissement compare. `mcp_annonce` est rendue au client : c'est le schéma que le serveur annonce, ce
+   * qu'il peut montrer à son fournisseur, sans aucun secret.
    */
   async outilsPourEcran(tenantId: string, sourceId: string): Promise<OutilMcpVue[]> {
     const res = await this.pool.query<{
@@ -139,13 +114,8 @@ export class PgMcpStore {
     }));
   }
 
-  /**
-   * Les noms d'outils DÉJÀ pris dans l'espace.
-   *
-   * 🔴 PAR ESPACE, PAS PAR SERVEUR NI PAR AGENT. L'unicité de `agent_tools.name` est par espace depuis
-   * 0127 : ne regarder que les outils du serveur en cours ferait choisir un nom qu'un connecteur HTTP
-   * occupe déjà, et l'import échouerait sur une contrainte de base, ce qui est illisible pour le client.
-   */
+  /** Les noms d'outils déjà pris dans l'espace, pas seulement chez ce serveur : un nom occupé par un
+   *  connecteur HTTP ferait échouer l'import sur une contrainte de base. */
   async nomsPris(tenantId: string): Promise<string[]> {
     const res = await this.pool.query<{ name: string }>(
       'select name from agent_tools where tenant_id = $1',
@@ -155,16 +125,9 @@ export class PgMcpStore {
   }
 
   /**
-   * LES OUTILS MCP QU'UN RAFRAÎCHISSEMENT A DÉBRANCHÉS CHEZ CE CONSOMMATEUR, par leur nom.
-   *
-   * 🔴 LA MARQUE EST `actif = false` AVEC `active_par` RENSEIGNÉ, et rien d'autre ne la porte. C'est
-   * exactement ce que `appliquer` écrit quand un schéma change ou qu'un outil disparaît : on éteint le
-   * consentement SANS effacer qui l'avait donné, et c'est ce couple qui distingue « quelqu'un avait dit oui
-   * et ce n'est plus vrai » de « personne n'a jamais dit oui ». Un outil jamais autorisé porte
-   * `active_par is null` et n'apparaît donc pas ici : l'annoncer comme une perte serait faux.
-   *
-   * ⚠️ RESTREINTE À `origin = 'mcp'`. Un outil maison ou de connecteur HTTP n'est jamais débranché par un
-   * tiers ; l'y inclure ferait remonter, comme une panne, un outil que le client a simplement décoché.
+   * Les outils MCP qu'un rafraîchissement a débranchés chez ce consommateur, par leur nom. La marque est
+   * `actif = false` avec `active_par` renseigné : quelqu'un avait dit oui et ce n'est plus vrai (un outil
+   * jamais autorisé n'y figure pas). Restreint à `origin = 'mcp'` : un outil décoché n'est pas une panne.
    */
   async debranchesParRafraichissement(tenantId: string, consommateur: string): Promise<string[]> {
     const res = await this.pool.query<{ name: string }>(
@@ -181,31 +144,16 @@ export class PgMcpStore {
   }
 
   /**
-   * SUPPRIMER UN SERVEUR MCP.
+   * Supprimer un serveur MCP : trois issues, pas un booléen.
    *
-   * 🔴 TROIS ÉTATS, PAS UN BOOLÉEN, ET C'EST LE BOOLÉEN QUI A RENDU LE REFUS MENTEUR. Ce chemin était câblé
-   * sur `PgSourceStore.supprimer`, un `delete` nu qui rend `true` dès qu'une ligne part et `false`
-   * seulement quand l'identifiant n'existe pas. Donc : supprimer un serveur PORTANT DES OUTILS ACTIFS
-   * réussissait (204) et la cascade emportait SANS UN MOT tous ses outils importés et tous les
-   * consentements (`agent_tools.source_id` en `on delete cascade` depuis 0088,
-   * `agent_tool_consommateurs.tool_id` de même depuis 0127) ; et le 409 « porte encore des outils
-   * actifs » ne sortait QUE sur un identifiant inexistant, c'est-à-dire exactement à l'envers. Trois
-   * textes affirmaient le contraire, dont `features.md`.
+   * 🔴 Refus tant qu'un outil est actif : la cascade (`agent_tools.source_id`, puis les consentements)
+   * emporterait sans un mot tous les outils importés et leurs consentements. Et seulement du `kind = 'mcp'` :
+   * sinon cette route supprimerait un connecteur API en contournant sa propre garde.
    *
-   * 🔴 ET IL NE SUPPRIME QUE DU `kind = 'mcp'`. Sans ce filtre, `DELETE /tenants/:t/mcp/<id-d-un-connecteur-HTTP>`
-   * supprimait un connecteur API EN CONTOURNANT la garde `outilsActifs > 0` que sa propre route applique.
-   *
-   * ⚠️ LA TRANSACTION ACHÈTE L'ATOMICITÉ DE L'ÉCRITURE, PAS LA FERMETURE DE LA COURSE, et ce texte a
-   * d'abord affirmé l'inverse. Elle est en `READ COMMITTED` (aucun verrou sur les consentements, aucun
-   * changement d'isolation ; le verrou des outils, plus bas, ne sert qu'à l'ordre des verrous et ne gêne pas une
-   * activation, qui n'écrit que le consentement) : le `count(*)` prend son instantané au moment de l'instruction, une activation
-   * concurrente peut commiter juste après, et le `delete` emporterait alors un outil devenu actif. La
-   * fermer demanderait de COMPTER APRÈS le verrou des outils (il est posé après le `count(*)`, pour l'ordre
-   * des verrous et pas pour cette course) ET que le chemin d'activation prenne un verrou incompatible avec lui
-   * sur l'outil (`PgToolCatalog` n'en prend aucun), c'est-à-dire un verrou de plus à chaque activation d'outil,
-   * pour une course qui exige deux gestes d'administrateur à la seconde près.
-   * Le résidu est donc ASSUMÉ, et il est nommé ici plutôt que caché derrière une phrase rassurante : une
-   * justification fausse est pire qu'aucune, parce qu'elle sera recopiée.
+   * La transaction rend l'écriture atomique mais ne ferme pas la course : en `READ COMMITTED`, une activation
+   * concurrente peut commiter après le `count(*)`, et le `delete` l'emporterait. La fermer demanderait un
+   * verrou de plus à chaque activation d'outil, pour deux gestes d'administrateur à la seconde près : résidu
+   * assumé.
    */
   async supprimerServeur(tenantId: string, id: string): Promise<'supprime' | 'introuvable' | 'outils_actifs'> {
     return enTransaction(this.pool, async (client) => {
@@ -224,10 +172,8 @@ export class PgMcpStore {
       );
       if (Number(actifs.rows[0]!.n) > 0) return 'outils_actifs';
 
-      // 🔴 SES OUTILS SONT VERROUILLÉS PAR IDENTIFIANT AVANT LA CASCADE, l'ordre de `PgAgentStore.remove`
-      // (relecture du 2026-09-22). Un outil rattaché mais inactif est le cas normal, et le refus « outils actifs »
-      // ne le protège pas : sans ce verrou, la cascade les prenait dans l'ordre du parcours de table, et deux
-      // outils consentis par un agent qu'on supprime suffisaient à interbloquer avec `remove`.
+      // Ses outils sont verrouillés par identifiant avant la cascade, l'ordre de `PgAgentStore.remove` : sinon
+      // la cascade les prendrait dans l'ordre du parcours de table et interbloquerait avec une suppression d'agent.
       await client.query(
         'select 1 from agent_tools where tenant_id = $1 and source_id = $2 order by id for update',
         [tenantId, id],
@@ -240,20 +186,15 @@ export class PgMcpStore {
     });
   }
 
-  /** Applique un plan d'import. TOUT OU RIEN. */
+  /** Applique un plan d'import, tout ou rien. */
   async appliquer(tenantId: string, sourceId: string, e: EcritureImportMcp): Promise<void> {
     await enTransaction(this.pool, async (client) => {
 
       /**
-       * 🔴 LES DÉFINITIONS EXISTANTES QUE CET IMPORT VA ÉCRIRE SONT VERROUILLÉES D'ABORD, D'UN BLOC, PAR IDENTIFIANT
-       * (`verrouillerDefinitions`, l'ordre de `PgAgentStore.remove`), AVANT MÊME LES INSERTIONS. Trier la seule
-       * boucle des `changes` ne suffisait pas (relecture du 2026-09-22) : les `disparus` et les `vus` étaient
-       * verrouillés ensuite, en masse et dans l'ordre du parcours de table, donc un outil modifié d'identifiant
-       * haut et un outil vu d'identifiant bas, consentis par un agent qu'on supprime, interbloquaient avec
-       * `remove`. Et AVANT les insertions, parce que chacune prend le serveur (`key share`, par sa clé
-       * étrangère) : verrouiller les outils après, c'était l'ordre inverse de `supprimerServeur` (ses outils,
-       * puis le serveur), donc un interblocage entre l'import et la suppression d'un même serveur.
-       * ⚠️ Ce verrou est exclusif : pendant l'import, un appel journalisé ou un rattachement sur ces outils attend.
+       * Les définitions existantes que cet import va écrire sont verrouillées d'abord, d'un bloc et par
+       * identifiant (`verrouillerDefinitions`, l'ordre de `PgAgentStore.remove`), avant même les insertions,
+       * qui prennent le serveur par leur clé étrangère : l'ordre inverse de `supprimerServeur` interbloquerait.
+       * Verrou exclusif : pendant l'import, un appel journalisé ou un rattachement sur ces outils attend.
        */
       await verrouillerDefinitions(client, tenantId, [...e.changes.map((c) => c.id), ...e.disparus, ...e.vus]);
 
@@ -288,13 +229,9 @@ export class PgMcpStore {
           ],
         );
         /**
-         * 🔴 LE CONSENTEMENT TOMBE, ET C'EST LA MOITIÉ QUI COMPTE. Un outil dont le schéma a changé n'est
-         * plus l'outil qui a été autorisé : c'est la lecture stricte de 0127, où le consentement porte sur
-         * un outil PRÉCIS, et la seule qui empêche un serveur distant d'élargir en silence ce qu'un outil
-         * autorisé sait faire.
-         *
-         * ⚠️ `actif = false` SANS EFFACER `active_par` : la contrainte de 0086 n'exige un auteur que sur un
-         * consentement ACTIF, et garder le nom de qui avait dit oui est ce qui rend l'incident instruisable.
+         * 🔴 Le consentement tombe : un outil dont le schéma a changé n'est plus celui qui a été autorisé, et un
+         * serveur distant ne doit pas élargir en silence ce qu'un outil autorisé sait faire. `actif = false` sans
+         * effacer `active_par` : garder qui avait dit oui rend l'incident instruisable.
          */
         await client.query(
           `update agent_tool_consommateurs
@@ -305,11 +242,7 @@ export class PgMcpStore {
       }
 
       if (e.disparus.length > 0) {
-        /**
-         * ⚠️ MARQUÉS, JAMAIS SUPPRIMÉS. La ligne est la trace de ce qui a tourné, et le journal des appels
-         * y renvoie. Un `delete` ferait disparaître l'outil ET son histoire, au moment précis où le client
-         * se demande pourquoi son agent ne sait plus faire quelque chose.
-         */
+        /** Marqués, jamais supprimés : la ligne trace ce qui a tourné, et le journal des appels y renvoie. */
         await client.query(
           `update agent_tools set mcp_indisponible_le = now(), updated_at = now()
             where tenant_id = $1 and id = any($2::uuid[]) and mcp_indisponible_le is null`,
@@ -332,13 +265,8 @@ export class PgMcpStore {
     });
   }
 
-  /**
-   * Le réglage d'un outil importé.
-   *
-   * ⚠️ `origin = 'mcp'` EST DANS LE `where`, et ce n'est pas une précaution de style : sans lui, cette
-   * route réglerait aussi les paramètres d'un connecteur HTTP, dont les paramètres sont DÉRIVÉS des
-   * variables de sa requête et seraient donc écrasés par une forme que personne n'a validée là-bas.
-   */
+  /** Le réglage d'un outil importé. `origin = 'mcp'` dans le `where` : les paramètres d'un connecteur HTTP
+   *  dérivent de sa requête, et seraient écrasés par une forme que personne n'a validée. */
   async reglerOutil(tenantId: string, outilId: string, patch: {
     params?: Array<{ name: string; source: SourceParam; cle?: string; contactPath?: string; value?: string | number | boolean }>;
     risk?: RisqueOutil;
@@ -359,10 +287,8 @@ export class PgMcpStore {
     patch: Parameters<PgMcpStore['reglerOutil']>[2],
   ): Promise<boolean> {
     /**
-     * 🔴 LES PARAMÈTRES SE FUSIONNENT SUR LE NOM, ILS NE SE REMPLACENT PAS EN BLOC. Le client règle la
-     * SOURCE de chaque paramètre ; le type, la description et l'énumération viennent du serveur distant et
-     * ne lui appartiennent pas. Accepter un tableau complet laisserait l'écran réécrire un type, donc
-     * envoyer au serveur une valeur qu'il refuse, pour une raison invisible.
+     * Les paramètres se fusionnent sur le nom, sans remplacement en bloc : le client règle la source de chaque
+     * paramètre, le type, la description et l'énumération viennent du serveur distant.
      */
     const lu = await client.query<{ params: unknown }>(
       `select params from agent_tools where tenant_id = $1 and id = $2 and origin = 'mcp'`,
@@ -375,9 +301,8 @@ export class PgMcpStore {
     const apres = avant.map((p) => {
       const r = reglages.get(String(p.name));
       if (!r) return p;
-      // On retire les marqueurs de l'ancienne source avant de poser la nouvelle : un paramètre qui
-      // garderait une `cle` en passant en `modele` porterait une intention morte, que le prochain lecteur
-      // croirait vivante.
+      // On retire les marqueurs de l'ancienne source avant de poser la nouvelle : une `cle` restée sur un
+      // paramètre passé en `modele` porterait une intention morte.
       const { cle: _cle, contactPath: _cp, value: _v, ...reste } = p;
       return {
         ...reste,

@@ -2,14 +2,9 @@ import type { Pool } from 'pg';
 import type { MesureAttentePool, SeauAttente } from '../db/attente-pool';
 
 /**
- * L'ATTENTE DU POOL, ÉCRITE ET RELUE (lot 7 du plan post-audit, migration 0109).
- *
- * 🔴 Cette table est le SEUL canal par lequel le worker peut se montrer : `/ops` est servi par l'API, qui voit
- * son propre pool en mémoire et jamais celui du worker. Sans elle, la moitié de la mesure serait invisible.
- *
- * ⚠️ Tout est best-effort ici, dans les deux sens. Une mesure ne doit JAMAIS faire tomber ce qu'elle mesure :
- * ni l'écriture (qui tourne dans un process en train de servir des clients), ni la lecture (qui alimente un
- * écran d'exploitation dont le reste doit continuer de s'afficher).
+ * L'attente du pool, écrite et relue. Cette table est le seul canal par lequel le worker se montre : `/ops` est
+ * servi par l'API, qui ne voit que son propre pool. Tout est best-effort, dans les deux sens : une mesure ne
+ * doit jamais faire tomber ce qu'elle mesure.
  */
 
 export interface PointAttente {
@@ -18,7 +13,7 @@ export interface PointAttente {
   echantillons: number;
   attentes: number;
   maxMs: number;
-  /** 🔴 Le maximum des seules acquisitions faites sur un pool SATURE. C'est LUI qui alarme, jamais `maxMs`. */
+  /** Le maximum des seules acquisitions faites sur un pool saturé : c'est lui qui alarme, jamais `maxMs`. */
   maxAttenteMs: number;
   /** Moyenne dérivée de la somme : la garder en base serait une seconde vérité à recalculer. */
   moyenneMs: number;
@@ -28,9 +23,8 @@ export class PgPoolAttentesStore {
   constructor(private readonly pool: Pool) {}
 
   /**
-   * Écrit le seau d'une minute. `on conflict` en ADDITION et non en remplacement : deux vidages dans la même
-   * minute (un redémarrage, un balayage qui se chevauche) doivent s'ajouter, sinon le premier disparaîtrait.
-   * Le maximum, lui, se combine par `greatest` : c'est la seule façon correcte de fusionner deux pics.
+   * Écrit le seau d'une minute. `on conflict` additionne au lieu de remplacer : deux vidages dans la même minute
+   * (redémarrage, chevauchement) doivent s'ajouter. Les maxima se fusionnent par `greatest`.
    */
   async enregistrer(processus: string, minute: Date, seau: SeauAttente): Promise<void> {
     await this.pool.query(
@@ -82,11 +76,9 @@ export class PgPoolAttentesStore {
 }
 
 /**
- * Le vidage périodique : prend le seau du process et l'écrit. Renvoie `false` quand rien n'a été écrit (seau
- * vide), ce qui évite une ligne par minute sur un process au repos.
- *
- * ⚠️ Best-effort : une écriture en échec ne doit jamais remonter. Le seau est REPRIS dans ce cas, sinon une
- * panne de base ferait perdre la minute, c'est-à-dire précisément la minute où quelque chose n'allait pas.
+ * Le vidage périodique : prend le seau du process et l'écrit ; `false` si le seau était vide (pas de ligne par
+ * minute au repos). Une écriture en échec ne remonte pas, et le seau est repris : la minute perdue serait
+ * justement celle où ça allait mal.
  */
 export async function viderVersLaBase(
   store: { enregistrer(processus: string, minute: Date, seau: SeauAttente): Promise<void> },
@@ -100,14 +92,13 @@ export async function viderVersLaBase(
   const minute = new Date(maintenant);
   minute.setSeconds(0, 0);
   try {
-    // 🔴 SANS SE MESURER : cette ecriture passe par le pool instrumente, elle deviendrait sinon le premier
-    // echantillon de la minute suivante et la telemetrie s'auto-alimenterait.
+    // Sans se mesurer : cette écriture passe par le pool instrumenté, elle deviendrait sinon le premier
+    // échantillon de la minute suivante.
     await mesure.sansSeMesurer(() => store.enregistrer(processus, minute, seau));
     return true;
   } catch (err) {
     onErreur?.(err);
-    // On REMET le seau entier : la minute perdue serait justement celle où ça allait mal. Fusionné, jamais
-    // réinjecté comme une acquisition unique, ce qui perdrait tout sauf le pic.
+    // Fusionné, jamais réinjecté comme une acquisition unique, ce qui perdrait tout sauf le pic.
     mesure.reinjecter(seau);
     return false;
   }

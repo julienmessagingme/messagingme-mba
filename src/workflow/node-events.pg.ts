@@ -1,14 +1,11 @@
 import type { Pool } from 'pg';
 
 /**
- * Journal des ÉVÉNEMENTS PAR BLOC d'un scénario (socle de « Analytics > Mes tableaux »).
+ * Journal des événements par bloc d'un scénario (socle de « Analytics > Mes tableaux »).
  *
- * En AJOUT SEUL : ni update ni delete ici. Un compteur qui se réécrit ne compte plus rien, et l'agrégation se
- * fait à la lecture, pas en entretenant des totaux qu'il faudrait garder justes.
- *
- * ⚠️ La seule écriture qui touche ces lignes après coup vit dans la PURGE d'un contact, qui remplace le `wa_id`
- * par « anonyme » sans supprimer la ligne : les compteurs d'un tableau restent justes après un effacement, et
- * plus personne n'y est reconnaissable. C'est la décision « on anonymise pour garder le quanti ».
+ * En ajout seul : ni update ni delete ici, l'agrégation se fait à la lecture. La seule écriture après coup est
+ * l'anonymisation (purge d'un contact, rétention), qui remplace le `wa_id` par « anonyme » sans supprimer la
+ * ligne : les compteurs restent justes et plus personne n'y est reconnaissable.
  */
 export type NodeEventKind = 'sent' | 'failed' | 'delivered' | 'read' | 'reply_button' | 'reply_text';
 
@@ -32,11 +29,9 @@ export interface NodeEventCount {
   handle: string | null;
   count: number;
   /**
-   * Contacts DISTINCTS, qui diffère de `count` dès qu'une personne clique deux fois.
-   *
-   * `null` quand la mesure ne sait pas distinguer les personnes : c'est le cas des clics sur un lien de
-   * template, qui arrivent sans identité (le lien est le même pour tous les destinataires). Mettre 0 aurait
-   * dit « personne n'a cliqué » à côté de 40 clics.
+   * Contacts distincts, qui diffère de `count` dès qu'une personne clique deux fois. `null` quand la mesure ne
+   * distingue pas les personnes (clics sur un lien de template, sans identité) : 0 dirait « personne n'a
+   * cliqué » à côté de 40 clics.
    */
   contacts: number | null;
 }
@@ -53,17 +48,12 @@ export class PgWorkflowNodeEventStore {
   }
 
   /**
-   * Rattache un ACCUSÉ Meta (délivré / lu / échec) au bloc qui a envoyé ce message.
+   * Rattache un accusé Meta (délivré / lu / échec) au bloc qui a envoyé ce message, en recopiant l'espace, le
+   * scénario, le bloc et le destinataire depuis la ligne d'envoi (les statuts Meta ne connaissent que l'id).
    *
-   * Tout est dérivé de la ligne d'envoi : l'espace, le scénario, le bloc et le destinataire sont recopiés
-   * depuis elle. C'est ce qui rend « combien lus » mesurable par bloc alors que les statuts Meta ne parlent
-   * que d'un identifiant de message, sans rien savoir des scénarios.
-   *
-   * IDEMPOTENT par (message, nature) : Meta répète volontiers ses statuts, et un accusé rejoué gonflerait le
-   * compteur. Un identifiant qui n'appartient à aucun envoi de scénario (message d'inbox, campagne) ne crée
-   * rien : cette méthode est appelée sur TOUS les statuts, et ne doit parler que des siens.
-   *
-   * Renvoie le nombre de lignes créées (0 ou 1).
+   * Idempotent par (message, nature) : Meta répète ses statuts. Un id qui n'appartient à aucun envoi de
+   * scénario ne crée rien, puisque la méthode est appelée sur tous les statuts. Renvoie le nombre de lignes
+   * créées (0 ou 1).
    */
   async recordStatusForMessage(metaMessageId: string, kind: 'delivered' | 'read' | 'failed'): Promise<number> {
     const res = await this.pool.query(
@@ -81,14 +71,10 @@ export class PgWorkflowNodeEventStore {
   }
 
   /**
-   * Agrégat d'un scénario sur une période : par bloc, par nature, et par choix pour les clics.
-   *
-   * Rend AUSSI le nombre de contacts distincts. Les deux chiffres répondent à des questions différentes :
-   * « combien de clics » n'est pas « combien de personnes », et un tableau qui les confond ment dès qu'un
-   * contact clique deux fois. Les lignes anonymisées par une purge comptent comme UN contact, ce qui est le
-   * moins faux : on ne sait plus les distinguer, et les exclure fausserait le total vers le bas.
-   *
-   * Bornes de période INCLUSIVE à gauche, EXCLUSIVE à droite, comme partout ailleurs dans les stats.
+   * Agrégat d'un scénario sur une période : par bloc, par nature, et par choix pour les clics, avec le nombre
+   * de contacts distincts (« combien de clics » n'est pas « combien de personnes »). Les lignes anonymisées
+   * comptent comme un contact : on ne sait plus les distinguer, et les exclure fausserait le total vers le bas.
+   * Bornes inclusive à gauche, exclusive à droite, comme partout dans les stats.
    */
   async countByNode(
     tenantId: string,
@@ -114,20 +100,14 @@ export class PgWorkflowNodeEventStore {
   }
 
   /**
-   * ANONYMISE les événements de blocs plus vieux que la rétention. Ne supprime RIEN.
+   * Anonymise les événements de blocs plus vieux que la rétention, sans rien supprimer.
    *
-   * 🔴 Pourquoi anonymiser et non purger, contrairement aux trois autres tables du lot. Ces lignes SONT la
-   * mesure : « combien de contacts ont cliqué le choix 2 du bloc 3 » se lit ici et nulle part ailleurs, et il
-   * n'existe aucune statistique rétroactive (cf. migration 0063). Les supprimer effacerait l'historique des
-   * tableaux du client pour retirer un numéro de téléphone. On retire donc le numéro et on garde le compteur,
-   * exactement la décision déjà prise pour la purge d'un contact (`wa_id = 'anonyme'`) et pour
-   * `campaign_recipients.to_e164`.
+   * 🔴 Ces lignes sont la mesure (aucune statistique rétroactive n'existe ailleurs) : les supprimer effacerait
+   * l'historique des tableaux du client pour retirer un numéro. On retire le numéro et on garde le compteur,
+   * comme pour la purge d'un contact et `campaign_recipients.to_e164`. Ce balayage ferme le risque RGPD, il ne
+   * borne pas la croissance de la table (le jour venu : un pré-agrégat, pas une purge).
    *
-   * ⚠️ CE BALAYAGE NE BORNE DONC PAS LA CROISSANCE de cette table, et c'est assumé : il ferme le risque RGPD,
-   * pas le volume. Le jour où le volume gênera, ce sera un pré-agrégat, pas une purge.
-   *
-   * Borné par passage, même raison que `purgeOlderThan` des événements Meta : la première passe sur une table
-   * qui n'a jamais été balayée peut viser des millions de lignes.
+   * Borné par passage : la première passe sur une table jamais balayée peut viser des millions de lignes.
    */
   async anonymiserAnciens(days: number, maxParPassage = 50_000): Promise<number> {
     if (days <= 0) return 0;

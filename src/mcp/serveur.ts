@@ -2,27 +2,19 @@ import { outilsPourScopes, RefusOutil, type DepsMcp, type OutilMcp } from './out
 import { messageDe } from '../lib/erreur';
 
 /**
- * Le transport MCP : du JSON-RPC 2.0 sur un seul POST, SANS ÉTAT.
+ * Le transport MCP : du JSON-RPC 2.0 sur un seul POST, sans état.
  *
- * Pourquoi écrit ici plutôt qu'avec le SDK officiel : la surface dont ce serveur a besoin tient en cinq
- * méthodes (`initialize`, `notifications/initialized`, `tools/list`, `tools/call`, `ping`), et le SDK
- * apporte avec lui une gestion de session et un canal SSE dont un serveur d'outils sans état n'a aucun
- * usage. Le dépôt est tenu léger en dépendances, et une dépendance qu'on n'utilise qu'à 10 % est une
- * dépendance qu'on subira à 100 % le jour où elle changera de contrat.
- *
- * SANS ÉTAT est un choix, pas une facilité : il n'y a ni `Mcp-Session-Id` ni reprise de flux, donc deux
- * requêtes du même client peuvent tomber sur deux process différents sans que rien ne casse. C'est ce qui
- * permet de mettre l'API derrière un proxy et, un jour, d'en lancer une seconde instance.
- *
- * 🔴 L'AUTORISATION N'EST PAS ICI. Elle est posée par le preHandler de la route (clé d'API, comme `/v1`),
- * et ce module ne reçoit que le tenant déjà résolu et les scopes de la clé. Un module de transport qui
- * déciderait aussi des droits finirait par en décider différemment de `/v1`.
+ * Écrit à la main plutôt qu'avec le SDK : la surface utile tient en cinq méthodes, et le SDK apporte une gestion de
+ * session et un canal SSE inutiles à un serveur d'outils sans état.
+ * Sans état : ni `Mcp-Session-Id` ni reprise de flux, deux requêtes d'un même client peuvent tomber sur deux process.
+ * 🔴 L'autorisation n'est pas ici : le preHandler de la route la pose (clé d'API, comme `/v1`), et ce module ne
+ * reçoit que l'espace résolu et les scopes. Il ne doit pas décider des droits autrement que `/v1`.
  */
 
 /** Version du protocole que ce serveur parle. Un client qui en demande une autre reçoit celle-ci et décide. */
 export const VERSION_PROTOCOLE = '2025-06-18';
 
-/** Versions connues : on ÉCHO celle du client si on la connaît, c'est ce que la négociation demande. */
+/** Versions connues : on reprend celle du client si on la connaît, c'est ce que la négociation demande. */
 const VERSIONS_CONNUES = new Set(['2024-11-05', '2025-03-26', '2025-06-18']);
 
 export const SERVEUR_INFO = { name: 'messagingme-mba', title: 'Engage Me', version: '1.0.0' } as const;
@@ -32,7 +24,7 @@ const ERREUR = { PARSE: -32700, REQUETE_INVALIDE: -32600, METHODE_INCONNUE: -326
 
 interface RequeteRpc { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown }
 
-/** Une réponse à renvoyer, ou `null` quand l'entrée était une NOTIFICATION (pas d'`id` : rien à répondre). */
+/** Une réponse à renvoyer, ou `null` quand l'entrée était une notification (pas d'`id` : rien à répondre). */
 export type ReponseRpc = { jsonrpc: '2.0'; id: string | number; result: unknown }
   | { jsonrpc: '2.0'; id: string | number; error: { code: number; message: string } }
   | null;
@@ -55,12 +47,9 @@ function descriptionOutil(o: OutilMcp): Record<string, unknown> {
 }
 
 /**
- * Traite UN message JSON-RPC. Rend `null` pour une notification (le HTTP répondra 202 sans corps).
- *
- * Aucune exception ne sort d'ici : une panne devient une erreur JSON-RPC `-32603`, et un refus métier
- * devient un RÉSULTAT avec `isError: true`. La distinction compte pour l'agent en face : une erreur de
- * protocole veut dire « l'outil est cassé », un résultat en erreur veut dire « ta demande n'était pas
- * recevable, lis pourquoi et change de plan ».
+ * Traite un message JSON-RPC. Rend `null` pour une notification (le HTTP répondra 202 sans corps).
+ * Aucune exception ne sort : une panne devient une erreur `-32603` (« l'outil est cassé »), un refus métier un
+ * résultat avec `isError: true` (« lis pourquoi et change de plan »).
  */
 export async function traiterMessage(deps: DepsMcp, ctx: ContexteMcp, message: unknown): Promise<ReponseRpc> {
   if (typeof message !== 'object' || message === null || Array.isArray(message)) {
@@ -71,8 +60,7 @@ export async function traiterMessage(deps: DepsMcp, ctx: ContexteMcp, message: u
   const estNotification = m.id === undefined || m.id === null;
   const id = (typeof m.id === 'string' || typeof m.id === 'number') ? m.id : 0;
 
-  // Notifications : le client ne veut pas de réponse. `notifications/initialized` est la seule qu'un client
-  // MCP envoie à un serveur d'outils ; les autres sont ignorées sans bruit, comme le protocole le demande.
+  // Notifications : pas de réponse. `notifications/initialized` est la seule attendue, les autres sont ignorées.
   if (estNotification) return null;
 
   if (m.jsonrpc !== '2.0') return ko(id, ERREUR.REQUETE_INVALIDE, 'jsonrpc doit valoir "2.0"');
@@ -83,8 +71,7 @@ export async function traiterMessage(deps: DepsMcp, ctx: ContexteMcp, message: u
       const version = typeof demandee === 'string' && VERSIONS_CONNUES.has(demandee) ? demandee : VERSION_PROTOCOLE;
       return ok(id, {
         protocolVersion: version,
-        // `listChanged: false` est la vérité : le catalogue est figé dans le code, il ne bouge pas en
-        // cours de session. Annoncer `true` inviterait le client à s'abonner à une notification qui ne
+        // `listChanged: false` : le catalogue est figé dans le code, `true` ferait attendre une notification qui ne
         // viendra jamais.
         capabilities: { tools: { listChanged: false } },
         serverInfo: SERVEUR_INFO,
@@ -96,16 +83,14 @@ export async function traiterMessage(deps: DepsMcp, ctx: ContexteMcp, message: u
     case 'ping':
       return ok(id, {});
     case 'tools/list':
-      // Un outil hors des scopes de la clé n'est même pas LISTÉ : un agent ne doit pas passer son tour à
-      // essayer des outils qu'on lui refusera, et la liste dit exactement ce que cette clé permet.
+      // Un outil hors des scopes de la clé n'est même pas listé : la liste dit exactement ce que cette clé permet.
       return ok(id, { tools: outilsPourScopes(ctx.scopes).map(descriptionOutil) });
     case 'tools/call': {
       const params = (m.params ?? {}) as { name?: unknown; arguments?: unknown };
       const nom = typeof params.name === 'string' ? params.name : '';
       const outil = outilsPourScopes(ctx.scopes).find((o) => o.nom === nom);
       if (!outil) {
-        // Message DÉLIBÉRÉMENT identique pour « n'existe pas » et « pas autorisé » : dire lequel des deux
-        // renseignerait un porteur de clé sur des capacités qu'on lui refuse.
+        // Même message pour « n'existe pas » et « pas autorisé » : ne pas renseigner sur des capacités refusées.
         return ko(id, ERREUR.PARAMS_INVALIDES, `outil inconnu ou non autorisé par cette clé : ${nom || '(sans nom)'}`);
       }
       const args = (typeof params.arguments === 'object' && params.arguments !== null && !Array.isArray(params.arguments))
@@ -118,8 +103,7 @@ export async function traiterMessage(deps: DepsMcp, ctx: ContexteMcp, message: u
         if (err instanceof RefusOutil) {
           return ok(id, { content: [{ type: 'text', text: err.message }], isError: true });
         }
-        // Panne : on journalise côté serveur et on ne renvoie PAS le message d'origine, qui peut porter un
-        // fragment de requête SQL ou de réponse Meta.
+        // Panne : journalisée côté serveur, sans renvoyer le message d'origine (fragment SQL ou réponse Meta possible).
         // eslint-disable-next-line no-console
         console.error(`mcp: échec de l'outil ${nom} (tenant ${ctx.tenantId}):`, messageDe(err));
         return ko(id, ERREUR.INTERNE, 'échec interne de l’outil');
@@ -136,11 +120,8 @@ export function erreurDeParsing(): ReponseRpc {
 }
 
 /**
- * Refus d'un LOT (tableau de messages JSON-RPC).
- *
- * Le message dit la RAISON de protocole, parce que c'est celle qu'un intégrateur peut corriger. Il tait la
- * raison de sécurité, qui est la vraie : le plafond de débit se compte par requête HTTP, donc un lot serait
- * un moyen d'envoyer des milliers de messages pour une unité de quota.
+ * Refus d'un lot (tableau de messages JSON-RPC). Le message dit la raison de protocole ; la vraie est de sécurité :
+ * le plafond de débit se compte par requête HTTP, un lot enverrait des milliers de messages pour une unité de quota.
  */
 export function lotRefuse(): ReponseRpc {
   return ko(0, ERREUR.REQUETE_INVALIDE, 'un seul message JSON-RPC par requête : le lot a été retiré de MCP en 2025-06-18');

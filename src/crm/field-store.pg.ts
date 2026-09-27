@@ -37,8 +37,8 @@ export class PgUserFieldStore implements UserFieldStore {
   }
 
   /**
-   * Met à jour le libellé et/ou le type d'un champ. La CLÉ est immuable (la renommer casserait les
-   * paramMapping de campagnes + les valeurs `contacts.fields` indexées par clé). true si une ligne a bougé.
+   * Met à jour le libellé et/ou le type d'un champ. La clé est immuable : la renommer casserait les paramMapping
+   * de campagnes et les valeurs `contacts.fields` indexées par clé. true si une ligne a bougé.
    */
   async updateField(tenantId: string, key: string, patch: { label?: string; type?: UserFieldType }): Promise<boolean> {
     const sets: string[] = [];
@@ -56,8 +56,8 @@ export class PgUserFieldStore implements UserFieldStore {
     return (res.rowCount ?? 0) > 0;
   }
 
-  /** Supprime la DÉFINITION du champ. NE purge PAS les valeurs déjà stockées dans `contacts.fields`
-   *  (orphelines mais inoffensives, réversibles en recréant la clé). true si la définition existait. */
+  /** Supprime la définition du champ, sans purger les valeurs de `contacts.fields` (orphelines mais inoffensives,
+   *  réversibles en recréant la clé). true si la définition existait. */
   async deleteField(tenantId: string, key: string): Promise<boolean> {
     const res = await this.pool.query(`delete from user_fields where tenant_id = $1 and key = $2`, [tenantId, key]);
     return (res.rowCount ?? 0) > 0;

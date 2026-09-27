@@ -2,21 +2,15 @@ import type { Pool } from 'pg';
 import type { DestinationPub } from './routage';
 
 /**
- * LES BROUILLONS DE PUBLICITÉ (migration 0171).
+ * Les brouillons de publicité : un formulaire mémorisé, sans identifiant Meta, dépense ni automation, dans sa
+ * propre table. `publicites.campagne_id` est `not null` et porte l'unique par laquelle le routage retrouve la
+ * publicité d'un lead payé : on n'y fait pas entrer de lignes sans campagne.
  *
- * 🔴 UN BROUILLON N'EST PAS UNE PUBLICITÉ DÉGRADÉE, C'EST UN FORMULAIRE MÉMORISÉ. Il n'a ni identifiant
- * Meta, ni dépense, ni entonnoir, ni automation, et il vit donc dans sa propre table. La raison est dans
- * la migration : `publicites.campagne_id` est `not null` et porte l'unique par laquelle le routage
- * retrouve la publicité d'un lead PAYÉ. Y faire entrer des lignes sans campagne fragiliserait ce
- * chemin-là pour un confort d'écran.
- *
- * 🔴 TOUT EST DU TEXTE, Y COMPRIS LE BUDGET ET LES DATES, et c'est le cœur du choix. Un brouillon sert à
- * garder un travail INCOMPLET : exiger un nombre ou une date valide pour enregistrer refuserait
- * précisément les brouillons qu'on veut pouvoir poser (« je reviendrai mettre le budget »). La validation
- * reste au seul endroit où elle protège quelque chose, la création réelle chez Meta.
+ * Tout est du texte, budget et dates compris : un brouillon garde un travail incomplet. La validation reste
+ * à la création réelle chez Meta.
  */
 
-/** Ce que la LISTE rend : tout le formulaire SAUF les octets du visuel. */
+/** Ce que la liste rend : tout le formulaire sauf les octets du visuel. */
 export interface BrouillonPub {
   id: string;
   nom: string;
@@ -33,19 +27,14 @@ export interface BrouillonPub {
   tagQualification: string;
   destination: DestinationPub;
   workflowId: string | null;
-  /**
-   * Y a-t-il un visuel, sans le transporter.
-   *
-   * 🔴 C'EST CE BOOLÉEN QUI TIENT LA GARDE DE LA LISTE. Rendre le visuel ici obligerait la requête à le
-   * SÉLECTIONNER, donc à transporter plusieurs mégaoctets par brouillon à chaque ouverture de l'écran.
-   * L'écran n'a besoin que de savoir s'il y en a un.
-   */
+  /** Y a-t-il un visuel, sans le transporter : la liste ne sélectionne pas les octets, plusieurs mégaoctets
+   *  par brouillon à chaque ouverture de l'écran. */
   aUnVisuel: boolean;
   creeLe: string;
   modifieLe: string;
 }
 
-/** Ce que la lecture d'UN brouillon rend en plus : les octets, pour repeupler le formulaire. */
+/** Ce que la lecture d'un brouillon rend en plus : les octets, pour repeupler le formulaire. */
 export interface BrouillonPubComplet extends BrouillonPub {
   visuel: { type: 'image/jpeg' | 'image/png'; base64: string } | null;
 }
@@ -67,17 +56,14 @@ export interface ChampsBrouillon {
   destination: DestinationPub;
   workflowId: string | null;
   /**
-   * `undefined` = NE PAS TOUCHER au visuel déjà enregistré, `null` = l'effacer, un objet = le remplacer.
-   *
-   * 🔴 LES TROIS CAS SONT DISTINCTS ET IL EN FAUT TROIS. L'écran renvoie le formulaire entier à chaque
-   * enregistrement, mais il ne relit pas les octets déjà en base : sans le cas « ne pas toucher », chaque
-   * ré-enregistrement d'un brouillon effacerait son image, c'est-à-dire exactement ce que la décision de
-   * garder le visuel voulait éviter.
+   * `undefined` = ne pas toucher au visuel enregistré, `null` = l'effacer, un objet = le remplacer. L'écran
+   * renvoie le formulaire entier sans relire les octets : sans le cas « ne pas toucher », chaque
+   * ré-enregistrement effacerait l'image.
    */
   visuel?: { type: 'image/jpeg' | 'image/png'; base64: string } | null;
 }
 
-/** ⚠️ `visuel_octets` est ABSENTE de cette liste, et c'est la garde. Voir `BrouillonPub.aUnVisuel`. */
+/** `visuel_octets` est absente de cette liste : c'est la garde (voir `BrouillonPub.aUnVisuel`). */
 const COLS = `id, nom, titre, texte, accueil, message_prerempli, budget_total, debut, fin, pays,
               age_min, age_max, tag_qualification, destination, workflow_id,
               (visuel_octets is not null) as a_un_visuel, visuel_type, cree_le, modifie_le`;
@@ -119,7 +105,7 @@ export class PgBrouillonsPubStore {
     return rows.map(versBrouillon);
   }
 
-  /** Un brouillon AVEC son visuel : c'est la seule requête qui a le droit de lire les octets. */
+  /** Un brouillon avec son visuel : c'est la seule requête qui a le droit de lire les octets. */
   async lire(tenantId: string, id: string): Promise<BrouillonPubComplet | null> {
     const { rows } = await this.pool.query<Brut & { visuel_octets: Buffer | null }>(
       `select ${COLS}, visuel_octets from pubs_brouillons where tenant_id = $1 and id = $2`,
@@ -150,7 +136,7 @@ export class PgBrouillonsPubStore {
         tenantId, c.nom, c.titre, c.texte, c.accueil, c.messagePreRempli,
         c.budgetTotal, c.debut, c.fin, c.pays, c.ageMin, c.ageMax,
         c.tagQualification, c.destination, c.workflowId,
-        // À la CRÉATION, `undefined` et `null` disent la même chose : il n'y a rien à conserver.
+        // À la création, `undefined` et `null` disent la même chose : il n'y a rien à conserver.
         c.visuel ? Buffer.from(c.visuel.base64, 'base64') : null,
         c.visuel ? c.visuel.type : null,
       ],
@@ -161,10 +147,8 @@ export class PgBrouillonsPubStore {
   }
 
   /**
-   * Met à jour un brouillon. Rend `false` si l'identifiant n'existe pas dans cet espace.
-   *
-   * 🔴 LE VISUEL NE SE MET À JOUR QUE S'IL EST FOURNI. `c.visuel === undefined` laisse la colonne
-   * intacte : sans cette branche, enregistrer une modification de texte effacerait l'image.
+   * Met à jour un brouillon ; `false` si l'identifiant n'existe pas dans cet espace. Le visuel ne se met à jour
+   * que s'il est fourni (`c.visuel !== undefined`) : sinon modifier le texte effacerait l'image.
    */
   async mettreAJour(tenantId: string, id: string, c: ChampsBrouillon): Promise<boolean> {
     const octets = c.visuel === undefined ? null : c.visuel === null ? null : Buffer.from(c.visuel.base64, 'base64');

@@ -1,20 +1,14 @@
 /**
- * RÉPONDRE dans la fenêtre de service de 24 h. Une seule implémentation, deux appelants.
+ * Répondre dans la fenêtre de service de 24 h. Une seule implémentation pour la console et le serveur MCP :
+ * un outil MCP n'a jamais de logique métier à lui, sinon un agent tiers enverrait des WhatsApp avec d'autres
+ * garde-fous que l'interface.
  *
- * 🔴 C'est LE point de cette extraction, et il vaut plus que le code qu'elle déplace. La console appelait
- * cette séquence depuis sa route d'inbox ; le serveur MCP doit faire exactement la même chose, et la
- * recopier aurait été la faute que ce dépôt paie déjà (l'audit du 2026-08-18 a retiré une centaine de
- * copies). Une copie qui dérive ici ne produit pas un affichage bancal : elle produit un agent tiers qui
- * envoie des WhatsApp avec des garde-fous différents de ceux de l'interface. La règle du lot MCP est
- * celle-ci, écrite une fois : un outil MCP n'a JAMAIS de logique métier à lui, il appelle la fonction que
- * la route de console appelle.
- *
- * L'ordre des quatre gestes n'est pas indifférent, et il est repris tel quel de la route :
- *   1. la conversation existe et appartient à cet espace (sinon on ne dit rien de plus, cf. IDOR) ;
- *   2. la fenêtre est ouverte (Meta refuse le texte libre en dehors, autant refuser AVANT d'appeler) ;
+ * L'ordre des gestes compte :
+ *   1. la conversation existe et appartient à cet espace (sinon rien de plus, IDOR) ;
+ *   2. la fenêtre est ouverte (Meta refuse le texte libre en dehors : on refuse avant d'appeler) ;
  *   3. l'envoi ;
- *   4. la prise du fil et le journal, APRÈS l'envoi réussi et en best-effort : un échec d'état ne doit
- *      jamais faire croire à un message perdu alors qu'il est parti.
+ *   4. la prise du fil et le journal, après l'envoi et en best-effort : un échec d'état ne doit jamais faire
+ *      croire à un message perdu.
  */
 import type { OrigineMessage } from './origine';
 
@@ -36,31 +30,22 @@ export interface DepsRepondre {
     senderUserId?: string | null,
     channel?: 'whatsapp' | 'rcs',
     /**
-     * Ce que l'opérateur avait ÉCRIT avant de faire traduire (migration 0137).
-     *
-     * ⚠️ EN DERNIÈRE POSITION ET OPTIONNELLE, donc un câblage qui l'oublie compile toujours : c'est
-     * le piège connu de ce dépôt (une flèche à moins de paramètres est assignable à un contrat qui
-     * en déclare plus, et le reste est avalé en silence). Les deux câblages de `src/index.ts` la
-     * transmettent, et l'intégration le vérifie sur la vraie base plutôt que sur un faux.
+     * Ce que l'opérateur avait écrit avant de faire traduire. En dernière position et optionnel : un câblage
+     * qui l'oublie compile quand même, l'intégration vérifie qu'il est transmis.
      */
     redactionOrigine?: string | null,
   ): Promise<void>;
   takeControl(tenantId: string, waId: string): Promise<void>;
   /**
-   * Ce contact a-t-il demandé à ne plus être contacté ?
-   *
-   * ⚠️ LU SEULEMENT POUR UNE ORIGINE MACHINE, donc la réponse d'un opérateur ne paie aucune requête.
-   *
-   * 🔴 REQUISE depuis le lot 3 du plan 2026-09-14 : elle valait « aucun blocage » quand elle manquait, et un
-   * test qui relisait le source en tenait lieu de garantie.
+   * 🔴 Ce contact a-t-il demandé à ne plus être contacté ? Requise, lue seulement pour une origine machine :
+   * la réponse d'un opérateur ne paie aucune requête.
    */
   estDesabonne(tenantId: string, waId: string): Promise<boolean>;
 }
 
 /**
- * Le refus est TYPÉ, pas une chaîne libre : la route HTTP doit en faire un code de statut (404 / 422 / 400)
- * et l'outil MCP un message d'erreur lisible par un agent. Une chaîne unique aurait obligé l'un des deux à
- * deviner, et c'est ainsi qu'une fenêtre fermée finit en 500.
+ * Le refus est typé : la route HTTP en fait un code de statut (404 / 422 / 400), l'outil MCP un message
+ * lisible par un agent. Une chaîne unique obligerait l'un des deux à deviner.
  */
 export type RefusReponse =
   | { motif: 'conversation_inconnue' }
@@ -71,14 +56,9 @@ export type RefusReponse =
 export type ResultatReponse = { messageId: string } | { refus: RefusReponse };
 
 /**
- * `auteur` = l'identifiant de l'humain qui écrit, ou `null` quand ce n'est pas un humain (un agent tiers via
- * MCP). Il finit dans `sender_user_id`, qui décide de la pastille d'auteur dans l'inbox.
- *
- * 🔴 `origine` est SÉPARÉE d'`auteur` et obligatoire, et cette séparation est le correctif d'un vrai bug.
- * On la déduisait d'`auteur` (« pas d'auteur, donc un scénario »), ce qui a fait enregistrer les réponses
- * de l'agent MCP comme du scripté. Les deux champs répondent à deux questions différentes : QUI signe le
- * message dans l'inbox, et QU'EST-CE QUI l'a écrit. Un agent tiers ne signe personne, et n'est pas un
- * scénario pour autant.
+ * `auteur` = l'humain qui écrit, ou `null` (agent tiers via MCP) : il finit dans `sender_user_id` et signe le
+ * message dans l'inbox. `origine` est séparée et obligatoire : elle dit ce qui l'a écrit, et un agent tiers
+ * qui ne signe personne n'est pas un scénario pour autant.
  */
 export async function repondreDansLaFenetre(
   deps: DepsRepondre,
@@ -88,12 +68,8 @@ export async function repondreDansLaFenetre(
   auteur: string | null,
   origine: OrigineMessage,
   /**
-   * 🔴 `texte` EST CE QUI PART, y compris quand il a été traduit : c'est ce que le client recevra, et
-   * notre trace doit y correspondre le jour d'un litige. `redactionOrigine` garde ce que l'opérateur
-   * avait écrit avant de faire traduire, sans quoi il ne peut plus se relire.
-   *
-   * `null` (le cas de tous les appelants d'avant ce lot, et de tout envoi non traduit) : rien de plus
-   * n'est enregistré, `body` est à la fois ce qui est parti et ce qui a été écrit.
+   * `texte` est ce qui part, traduit ou non : c'est ce que le client recevra, notre trace doit y correspondre.
+   * `redactionOrigine` garde ce que l'opérateur avait écrit avant traduction ; `null` pour un envoi non traduit.
    */
   redactionOrigine: string | null = null,
 ): Promise<ResultatReponse> {
@@ -102,23 +78,10 @@ export async function repondreDansLaFenetre(
   if (!ctx.windowOpen) return { refus: { motif: 'fenetre_fermee' } };
 
   /**
-   * 🔴 UNE MACHINE NE PARLE PAS À QUELQU'UN QUI A DIT STOP, UN OPÉRATEUR SI (décision de Julien du
-   * 2026-09-13). C'est la SEULE divergence voulue entre les appelants de cette fonction, et elle est
-   * écrite ici plutôt que chez l'un d'eux : la recopier côté MCP aurait rendu possible qu'elle dérive, et
-   * ce fichier existe précisément pour que les chemins ne divergent jamais par accident.
-   *
-   * La raison de l'exception humaine doit survivre à ce commentaire : sans elle, un opérateur ne pourrait
-   * même plus accuser réception d'un opt-out, ni répondre à une réclamation posée juste après. La machine
-   * se tait ; la personne peut encore répondre à la personne.
-   *
-   * 🔴 ELLE NOMMAIT `mcp`, DONC UN SEUL APPELANT, ET C'ÉTAIT LA MAUVAISE FORME (lot 7, 2026-09-23). La règle
-   * énoncée est « une MACHINE », pas « MCP » : écrite en liste d'appelants, elle s'ouvre en grand dès qu'on
-   * en ajoute un, et l'API publique du client serait passée à travers sans qu'aucun test ne tombe. On
-   * demande donc l'INVERSE, qui est ce que la règle dit : tout ce qui n'est pas un opérateur humain.
-   * L'exception se nomme une fois, les machines n'ont plus à se déclarer.
-   *
-   * ⚠️ LA REQUÊTE N'EST TOUJOURS PAYÉE QUE PAR L'ORIGINE MACHINE : le chemin de la console, le plus
-   * fréquent de loin, ne lit rien de plus qu'avant.
+   * 🔴 Une machine ne parle pas à quelqu'un qui a dit STOP, un opérateur si : sans cette exception, il ne
+   * pourrait même plus accuser réception d'un opt-out. La règle vise tout ce qui n'est pas un humain, pas une
+   * liste d'appelants, pour qu'une nouvelle machine ne passe pas à travers. La requête n'est payée que par
+   * l'origine machine.
    */
   if (origine !== 'humain' && await deps.estDesabonne(tenantId, ctx.waId)) {
     return { refus: { motif: 'contact_desabonne' } };
@@ -128,19 +91,10 @@ export async function repondreDansLaFenetre(
   if (!phoneNumberId) return { refus: { motif: 'aucun_numero' } };
 
   const messageId = await deps.sendReply(tenantId, phoneNumberId, ctx.waId, texte);
-  // Le fil est PRIS : le scénario cesse d'avancer tout seul sur ce contact, et MBA cesse de répondre. Vrai
-  // aussi quand c'est un agent tiers qui écrit : ce qui compte est qu'un tiers parle, pas lequel.
-  //
-  // ⚠️ Ce que ça n'arrête PAS, et ce commentaire a affirmé le contraire jusqu'au 2026-09-02 : une CAMPAGNE
-  // part quand même. C'est délibéré et écrit dans `executor.ts` (`ignoreHumanControl`) : la campagne est
-  // déclenchée par un opérateur, donc c'est un humain qui a la main, et elle REPREND la conduite du fil pour
-  // pouvoir avancer ensuite. Deux règles écrites en sens contraire valent moins qu'une seule, même imparfaite.
-  // Le câblage réel est gardé par `tests/campagne-controle-humain.test.ts`.
-  //
-  // ⚠️ ET DEPUIS LE 2026-09-08, un CLIC SUR UN BOUTON DE CHAÎNE non plus : l'abonné a fait un geste explicite
-  // vers ce scénario, et sans ça son clic ne lançait rien dès que le fil était tenu. Gardé par
-  // `tests/automation-chaine-reprend-la-main.test.ts`. Une automation ordinaire par mot-clé, elle, reste bien
-  // arrêtée par la prise de main.
+  // Le fil est pris : le scénario cesse d'avancer tout seul sur ce contact et MBA cesse de répondre, quel que
+  // soit le tiers qui écrit. Ce que ça n'arrête pas : une campagne (`ignoreHumanControl` dans `executor.ts`,
+  // déclenchée par un opérateur) et un clic sur un bouton de chaîne (geste explicite de l'abonné). Une
+  // automation ordinaire par mot-clé reste arrêtée.
   await deps.takeControl(tenantId, ctx.waId).catch(() => {});
   await deps.recordOutbound(conversationId, texte, messageId, origine, 'text', null, null, auteur, 'whatsapp', redactionOrigine);
   return { messageId };

@@ -10,35 +10,23 @@ import { assemblerAppel } from '../requete-http';
 import { resoudreVariable, type ValeurResolue } from '../variables';
 
 /**
- * Le résolveur des outils de CONNECTEUR : un appel HTTP vers le système du client (lot L2).
+ * Le résolveur des outils de connecteur : un appel HTTP vers le système du client.
  *
- * 🔴 CE QU'IL PROTÈGE. Deux champs de sa sortie, `contenu` et `erreur`, repartent au MODÈLE, donc chez le
- * fournisseur. Trois choses ne doivent donc jamais s'y trouver : le secret d'authentification, le corps brut
- * d'une erreur du client (une trace de 500 porte des chemins internes et parfois des identifiants), et un
- * champ que le client n'a pas listé dans `outputPaths`.
- *
- * 🔴 IL NE LÈVE PAS sur un cas métier. Une source inactive, un gabarit cassé, un 500 du client : tout cela
- * rend `ok: false` avec une raison lisible, que le modèle peut dire au contact. Lever ferait une
- * `erreur_protocole`, qui ARRÊTE le tour, alors que le client peut corriger son outil dans sa console.
- *
- * ⚠️ `redirect: 'error'`, et ce n'est pas le choix du scraper de connaissance. Une page publique redirige
- * légitimement ; une API de connecteur qui redirige est une anomalie, et la suivre rouvrirait la porte que
- * `http-cible.ts` vient de fermer (le premier saut est validé, le second ne l'est plus).
+ * 🔴 `contenu` et `erreur` repartent au modèle, donc chez le fournisseur : jamais le secret, jamais le corps
+ * brut d'une erreur du client (chemins internes, identifiants), jamais un champ absent de `outputPaths`.
+ * Pas d'exception sur un cas métier : `ok: false` avec une raison lisible (une `erreur_protocole` arrêterait
+ * le tour). `redirect: 'error'` : une API qui redirige est une anomalie, et suivre le second saut
+ * contournerait les gardes de `http-cible.ts`.
  */
 
 export interface DepsResolveurHttp {
   sources: Pick<SourceStore, 'pourAppel' | 'marquerEpreuve'>;
-  /** La requête DÉSIGNÉE par l'outil (migration 0105) : méthode, chemin, corps, variables. */
+  /** La requête désignée par l'outil : méthode, chemin, corps, variables. */
   requetes: Pick<RequeteStore, 'parId'>;
   /**
-   * Les valeurs que seule la base connaît, chargées PARESSEUSEMENT : ces fonctions ne sont appelées que si la
-   * requête déclare une variable qui en dépend. Un connecteur qui n'envoie qu'un numéro ne doit pas coûter
-   * deux requêtes de plus par appel, sur un chemin déjà chaud. Même raisonnement que `buildCtx` dans
-   * l'exécuteur de scénario, qui ne construit son contexte que si le graphe s'en sert.
-   *
-   * ⚠️ Les CHAMPS PERSONNALISÉS ne sont pas dans cette liste, et ce n'est pas un oubli : la projection du
-   * contact les porte déjà (`lireContact` rend `{nom, tags, champs}`), donc les recharger serait une requête
-   * pour une donnée qu'on a sous la main.
+   * Les valeurs que seule la base connaît, chargées paresseusement, seulement si une variable en dépend : un
+   * connecteur qui n'envoie qu'un numéro ne paie pas deux requêtes de plus sur un chemin chaud. Pas les champs
+   * personnalisés : la projection du contact les porte déjà.
    */
   derniereSaisie?: (tenantId: string, waId: string) => Promise<string | null>;
   fuseau?: (tenantId: string) => Promise<string>;
@@ -50,8 +38,8 @@ export interface DepsResolveurHttp {
   verifierResolution?: (url: string) => Promise<VerdictResolution>;
 }
 
-/** Ce qu'on dit au modèle quand ça ne va pas. Volontairement pauvre : il n'a pas à savoir POURQUOI le système
- *  du client refuse, il a à savoir qu'il ne peut pas répondre depuis cette source. */
+/** Ce qu'on dit au modèle quand ça ne va pas. Volontairement pauvre : il n'a pas à savoir pourquoi le
+ *  système du client refuse, seulement qu'il ne peut pas répondre depuis cette source. */
 const MESSAGES: Record<string, string> = {
   auth: 'le système du client a refusé l’authentification de ce connecteur',
   indispo: 'le système du client n’a pas répondu',
@@ -62,12 +50,8 @@ const MESSAGES: Record<string, string> = {
   interne: 'l’adresse de ce connecteur n’est pas joignable depuis notre infrastructure',
 };
 
-/**
- * Extrait UN chemin pointé (`livraison.date`) d'une réponse JSON.
- *
- * Pas de joker, pas d'index de tableau : le besoin est de nommer des champs, et une syntaxe riche ici
- * deviendrait une seconde grammaire à valider, à documenter et à tester pour personne.
- */
+/** Extrait un chemin pointé (`livraison.date`) d'une réponse JSON. Ni joker ni index de tableau : nommer
+ *  des champs suffit. */
 function extraire(source: unknown, chemin: string): unknown {
   let courant: unknown = source;
   for (const cle of chemin.split('.')) {
@@ -78,89 +62,51 @@ function extraire(source: unknown, chemin: string): unknown {
 }
 
 /**
- * CE QU'IL FAUT SAVOIR POUR APPELER UN CONNECTEUR, quel que soit l'appelant.
- *
- * 🔴 CE TYPE EXISTE PARCE QU'IL Y A PLUSIEURS APPELANTS DEPUIS LE 2026-09-11 : l'agent IA (qui a un outil et
- * un modèle qui fournit des arguments), le bloc « appel HTTP » d'un scénario, et depuis le 2026-09-13 la
- * poussée d'un opt-out vers le système du client (`src/crm/poussee-optout.ts`), et depuis le 2026-09-21 le
- * relais du Meta Business Agent (`src/http/mba-relais.ts`), qui a un modèle mais pas le nôtre. La poussée et
- * le scénario n'ont ni outil ni modèle. Réécrire l'appel pour chacun aurait dupliqué SEPT gardes (source active, filtre de sortie,
- * variables requises, adresse interne, redirection, échéance, corps borné), et les copies auraient divergé au
- * premier correctif. La leçon est celle d'`enTetesAuthSource`, payée deux fois dans ce dépôt.
- *
- * ⚠️ LE COMPTE N'EST PLUS ÉCRIT ICI, et il a justement dit « DEUX » pendant qu'il y en avait trois : un
- * nombre à la main devient faux au premier ajout, sans que rien ne le signale.
+ * Ce qu'il faut pour appeler un connecteur, quel que soit l'appelant (agent, scénario, poussée d'opt-out,
+ * relais du MBA). Un seul chemin pour les sept gardes (source active, filtre de sortie, variables requises,
+ * adresse interne, redirection, échéance, corps borné), sinon les copies divergeraient.
  */
 export interface AppelConnecteur {
   tenantId: string;
   waId: string;
-  /**
-   * Projection du contact (`{nom, tags, champs}`), source des variables `champ` et `contact`.
-   *
-   * ⚠️ MÊME TYPE QUE `ContexteAppel.contact` : `null` quand l'appelant n'a pas chargé la fiche, et l'appel
-   * est alors REFUSÉ si une variable la réclame, jamais envoyé avec une valeur inventée.
-   */
+  /** Projection du contact (`{nom, tags, champs}`), source des variables `champ` et `contact`. `null` : un
+   *  appel dont une variable la réclame est refusé, jamais envoyé avec une valeur inventée. */
   contact: Record<string, unknown> | null;
   /** La requête à jouer (`connector_requests`). */
   requestId: string;
   /** Plafond de lecture du corps, en octets. */
   maxBytes: number;
-  /**
-   * Valeurs des variables d'origine `modele`.
-   *
-   * ⚠️ VIDE POUR UN SCÉNARIO, et ce n'est pas un manque : un scénario n'a pas de modèle qui décide. Une
-   * requête qui déclare une variable `modele` REQUISE sera donc refusée avec sa raison, ce qui est le bon
-   * comportement (l'appel partirait sinon sans l'identifiant qui le rend juste).
-   */
+  /** Valeurs des variables d'origine `modele`. Vide pour un scénario : une variable `modele` requise y est
+   *  refusée avec sa raison. */
   args: Record<string, unknown>;
   signal: AbortSignal;
   /**
-   * Où journaliser CET appel, ou `null` quand l'appelant le fait déjà lui-même.
-   *
-   * 🔴 OBLIGATOIRE, ET C'EST TOUT L'INTÉRÊT. Un champ OPTIONNEL se serait oublié au prochain appelant, et
-   * c'est exactement ce qui s'est passé : jusqu'au 2026-09-14, l'agent IA journalisait ses échecs (depuis
-   * son exécuteur, au-dessus) pendant que le bloc « Appel HTTP » d'un scénario et la poussée d'un opt-out
-   * n'écrivaient qu'un `console.warn`. Un connecteur qui refusait l'appel d'un scénario, ou qui ne recevait
-   * jamais le refus d'un contact, ne laissait AUCUNE trace consultable par le client.
-   *
-   * ⚠️ `null` EST UNE DÉCISION, pas un oubli : l'appelant doit l'écrire, donc se demander pourquoi. Le
-   * résolveur d'agent le passe parce que son exécuteur journalise déjà, et le double compte serait pire que
-   * l'absence.
+   * Où journaliser cet appel, ou `null` quand l'appelant le fait déjà. Obligatoire : un champ optionnel
+   * s'oublierait au prochain appelant, dont les échecs ne laisseraient aucune trace consultable. `null` est
+   * une décision : le résolveur d'agent le passe parce que son exécuteur journalise déjà.
    */
   journal: JournalDAppel | null;
   /**
-   * CE QUE L'APPELANT FAIT DE LA RÉPONSE (migration 0150).
-   *
-   * 🔴 OBLIGATOIRE, POUR LA MÊME RAISON QUE `journal` JUSTE AU-DESSUS. Un champ optionnel se serait oublié
-   * au prochain appelant, et ce module en a PLUSIEURS : l'outil d'un agent, le bloc « Appel HTTP » d'un
-   * scénario, la poussée d'un opt-out, et le relais de l'agent de Meta (qui a ajouté `entier`). Le suivant
-   * devra écrire ce qu'il lit, donc se demander s'il lit quelque chose. C'est exactement ce que le champ
-   * `journal` a coûté d'apprendre le 2026-09-14.
-   *
-   * ⚠️ `champs: null` VEUT DIRE « CEUX DE LA REQUÊTE », et c'est le cas d'un scénario : il n'a pas d'outil,
-   * donc pas de liste à lui, et la requête reste sa seule source. Un outil d'agent, lui, porte la sienne
-   * depuis 0150, et c'est tout l'objet du changement : un appel est partagé, ce qu'un agent en lit ne l'est
-   * pas.
+   * Ce que l'appelant fait de la réponse, obligatoire pour la même raison que `journal`. `champs: null` veut
+   * dire « ceux de la requête » (un scénario n'a pas d'outil) ; un outil d'agent porte sa propre liste, car un
+   * appel est partagé et ce qu'un agent en lit ne l'est pas.
    */
   lecture:
     | { nature: 'pousse' }
     | { nature: 'integre'; champs: readonly string[] | null }
     /**
-     * LA RÉPONSE ENTIÈRE, bornée à `maxBytes` : le mode du relais du Meta Business Agent (migration 0161).
-     *
-     * ⚠️ ARBITRAGE DE JULIEN DU 2026-09-21 : l'agent de Meta reçoit tout ce que le système du client rend. Un
-     * modèle qui ne voit rien risque de conclure à un échec et de transférer à un humain. Les ÉCHECS, eux,
-     * gardent le message sûr de l'étape 8 : le corps brut d'une erreur ne part jamais.
+     * La réponse entière, bornée à `maxBytes` : le mode du relais du Meta Business Agent, pour qu'un modèle qui
+     * ne voit rien ne conclue pas à un échec. Les échecs gardent le message sûr de l'étape 8.
      */
     | { nature: 'entier' };
 }
 
-/** De quoi ouvrir et clore UNE ligne de journal pour un appel de connecteur (migration 0142). */
+/** De quoi ouvrir et clore une ligne de journal pour un appel de connecteur. */
 export interface JournalDAppel {
   journal: JournalAppels;
   source: SourceAppel;
-  /** Le nom lisible de l'appel. Pour un scénario ou une poussée, le LIBELLÉ de la requête : c'est ce qu'un
-   *  humain reconnaît, là où un uuid ne dit rien. */
+  /** Le nom lisible de l'appel. Pour un scénario ou une poussée, le libellé de la requête : un humain le
+   *  reconnaît, un uuid ne dit rien. */
   nom: string;
   /** La session d'agent, ou `null` : un scénario et une poussée d'opt-out n'en ouvrent pas. */
   sessionId: string | null;
@@ -168,20 +114,15 @@ export interface JournalDAppel {
 }
 
 /**
- * L'appel lui-même, partagé par tous les appelants listés sur `AppelConnecteur`.
- *
- * Tout ce qui suit était le corps de `creerResolveurHttp`, déplacé tel quel : tous les appelants passent
- * donc par les mêmes gardes, dans le même ordre, avec les mêmes messages.
+ * L'appel lui-même, partagé par tous les appelants : les mêmes gardes, dans le même ordre, avec les mêmes
+ * messages.
  */
 export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecteur) => Promise<SortieResolveur> {
-  // Le `fetch` VÉRIFIÉ À LA CONNEXION (DNS rebinding) : `src/lib/connexion-publique.ts`.
+  // Le `fetch` vérifié à la connexion (DNS rebinding) : `src/lib/connexion-publique.ts`.
   const appeler = deps.fetchImpl ?? fetchPublic;
   const estPublique = deps.verifierResolution ?? ((url: string) => resolutionPublique(url));
 
-  /**
-   * L'enveloppe de journal, BEST-EFFORT DANS LES DEUX SENS : un journal muet est un désagrément, un appel qui
-   * meurt parce qu'une insertion a trébuché est un incident. Même doctrine que l'exécuteur d'agent.
-   */
+  /** L'enveloppe de journal, best-effort dans les deux sens : un appel ne meurt pas d'une insertion ratée. */
   const journaliser = async (p: AppelConnecteur, faire: () => Promise<SortieResolveur>): Promise<SortieResolveur> => {
     if (p.journal === null) return faire();
     const j = p.journal;
@@ -197,8 +138,8 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
     }
     const sortie = await faire();
     if (ligne !== null) {
-      // ⚠️ `timeout` SE DISTINGUE d'une panne du client, et c'est le signal le plus utile du journal : « votre
-      // système n'a pas répondu à temps » et « votre système a refusé » appellent des corrections opposées.
+      // `timeout` se distingue d'une panne : « votre système n'a pas répondu à temps » et « votre système a
+      // refusé » appellent des corrections opposées.
       const statut: StatutAppel = sortie.ok === false
         ? (p.signal.aborted ? 'timeout' : 'erreur_outil')
         : 'ok';
@@ -213,27 +154,18 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
 
   return async (p: AppelConnecteur): Promise<SortieResolveur> => journaliser(p, async () => {
     const { args, signal } = p;
-    // Les deux locales gardent leur nom d'avant l'extraction : le corps ci-dessous n'a pas changé d'une ligne,
-    // et c'est ce qui rend ce déplacement relisable.
     const ctx = { tenantId: p.tenantId, waId: p.waId, contact: p.contact };
     const outil = { requestId: p.requestId, maxBytes: p.maxBytes };
 
-    // 1. LA REQUÊTE. Un outil de connecteur en DÉSIGNE une (migration 0105) : sans elle, il n'y a rien à
-    // appeler. Un outil orphelin (requête supprimée malgré la contrainte) refuse au lieu d'inventer un appel.
+    // 1. La requête. Un outil orphelin (requête supprimée) refuse au lieu d'inventer un appel.
     const requestId = typeof outil.requestId === 'string' ? outil.requestId : '';
     const requete = requestId === '' ? null : await deps.requetes.parId(ctx.tenantId, requestId);
     if (!requete) return { ok: false, contenu: { erreur: 'ce connecteur n’est pas configuré' }, erreur: 'requête introuvable' };
 
     /**
-     * 2. LE FILTRE DE SORTIE, AVANT TOUT LE RESTE, et il vient désormais de L'APPELANT (migration 0150).
-     *
-     * 🔴 CE QUI A CHANGÉ : il était lu sur la REQUÊTE, qui est PARTAGÉE entre agents. Restreindre ce qu'un
-     * agent lisait restreignait donc pour tous, et l'élargir élargissait pour tous. Un outil porte sa propre
-     * liste depuis 0150 ; un scénario, qui n'a pas d'outil, passe `null` et retombe sur celle de la requête.
-     *
-     * ⚠️ UN `integre` SANS AUCUN CHAMP RESTE UN REFUS : c'est une déclaration incomplète, et ne rien
-     * divulguer vaut mieux que tout divulguer. Un `pousse`, lui, n'a rien à déclarer, et c'est le cas que
-     * cette garde rendait impossible à brancher jusqu'ici.
+     * 2. Le filtre de sortie, avant tout le reste, fourni par l'appelant : la requête est partagée entre agents.
+     * Un scénario passe `null` et retombe sur celui de la requête. Un `integre` sans aucun champ est un refus :
+     * ne rien divulguer vaut mieux que tout. Un `pousse` n'a rien à déclarer.
      */
     const champsLus = p.lecture.nature === 'integre'
       ? (p.lecture.champs ?? requete.outputPaths)
@@ -242,16 +174,13 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
       return { ok: false, contenu: { erreur: 'ce connecteur ne déclare aucun champ à lire' }, erreur: 'outputPaths vide' };
     }
 
-    // 3. LA SOURCE. Absente, d'un autre tenant, ou pas active : aucun appel réseau ne part.
+    // 3. La source. Absente, d'un autre tenant, ou pas active : aucun appel réseau ne part.
     const source = await deps.sources.pourAppel(ctx.tenantId, requete.sourceId);
     if (!source) return { ok: false, contenu: { erreur: 'ce connecteur n’est pas configuré' }, erreur: 'source introuvable' };
     /**
-     * 🔴 LA MÊME GARDE QUE SON JUMEAU MCP, ET LA POSER D'UN SEUL CÔTÉ N'EN AURAIT PAS ÉTÉ UNE. Le
-     * croisement `origin`/`kind` est fermé en base par la clé étrangère composite de 0152, mais en
-     * `MATCH SIMPLE` : une ligne d'avant le déploiement porte `source_kind` à null et lui échappe. Sans
-     * cette ligne, une requête de connecteur rattachée à un serveur MCP partirait en HTTP brut sur son
-     * point MCP, avec le secret du client dans l'en-tête, et sur un gabarit de chemin que
-     * `construireCible` validerait contre la MAUVAISE adresse de base.
+     * 🔴 Même garde que le résolveur MCP : la clé étrangère de `source_kind` ne couvre pas les lignes anciennes
+     * (MATCH SIMPLE). Sans elle, une requête rattachée à un serveur MCP partirait en HTTP brut sur son point MCP,
+     * avec le secret du client.
      */
     if (source.kind !== 'http') {
       return { ok: false, contenu: { erreur: 'ce connecteur n’est pas un système HTTP' }, erreur: `source kind=${source.kind}` };
@@ -260,21 +189,18 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
       return { ok: false, contenu: { erreur: 'ce connecteur n’est pas actif' }, erreur: `source ${source.status}` };
     }
 
-    // 4. LES VALEURS. Celles du MODÈLE viennent de `args`, déjà validées par l'exécuteur ; les autres sont
-    // calculées ici. Le chargement est paresseux : on ne va chercher les champs du contact, sa dernière
-    // saisie ou le fuseau que si une variable les réclame vraiment.
+    // 4. Les valeurs. Celles du modèle viennent de `args`, déjà validées ; les autres sont calculées ici,
+    // paresseusement (dernière saisie et fuseau seulement si une variable les réclame).
     const besoin = (t: string, c?: string): boolean =>
       requete.variables.some((v) => v.origine.type === t && (c === undefined || (v.origine as { cle?: string }).cle === c));
-    // Les champs personnalisés viennent de la projection, lue défensivement : elle est construite par
-    // l'appelant, et un harnais de test peut légitimement l'abréger. Absents -> les variables `champ` valent
-    // `null`, donc l'appel est REFUSÉ avec une raison lisible, jamais envoyé avec une valeur inventée.
+    // Champs personnalisés lus défensivement dans la projection : absents, les variables `champ` valent
+    // `null` (refus si elles sont requises), jamais une valeur inventée.
     const brutChamps = ctx.contact ? (ctx.contact as { champs?: unknown }).champs : null;
     const champs = brutChamps !== null && typeof brutChamps === 'object' && !Array.isArray(brutChamps)
       ? (brutChamps as Record<string, unknown>) : null;
     const derniereSaisie = besoin('systeme', 'derniere_saisie') && deps.derniereSaisie
       ? await deps.derniereSaisie(ctx.tenantId, ctx.waId) : null;
-    // Le fuseau ne sert qu'à « maintenant ». Sans dépendance fournie, on retombe sur UTC en le DISANT dans la
-    // valeur (`+00:00`), plutôt que d'afficher une heure locale fausse.
+    // Le fuseau ne sert qu'à « maintenant ». Sans dépendance, UTC, dit dans la valeur (`+00:00`).
     const fuseau = besoin('systeme', 'maintenant') && deps.fuseau ? await deps.fuseau(ctx.tenantId) : 'UTC';
 
     const contexte = {
@@ -288,25 +214,21 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
         : resoudreVariable(v.origine, contexte);
     }
 
-    // 4bis. LES VARIABLES OBLIGATOIRES. Une valeur inconnue vaut `null`, ce qui est honnête, mais toutes les
-    // absences ne se valent pas : « chercher les commandes de ce contact » sans son identifiant n'interroge
-    // pas la bonne ressource, ou les interroge TOUTES. C'est `requis` qui tranche, et c'est au client de le
-    // dire, requête par requête, parce que lui seul sait ce que son API fait d'un champ vide.
+    // 4bis. Les variables obligatoires. Sans l'identifiant, « les commandes de ce contact » interroge la
+    // mauvaise ressource, ou toutes. C'est `requis` qui tranche, réglé par le client requête par requête.
     const absentes = requete.variables.filter((v) => v.requis === true && (valeurs[v.nom] === null || valeurs[v.nom] === undefined));
     if (absentes.length > 0) {
       const noms = absentes.map((v) => v.nom).sort().join(', ');
       return {
         ok: false,
-        // Le modèle doit pouvoir le DIRE au contact, donc le message lui parle de l'information manquante,
-        // jamais de la configuration du connecteur, qu'il ne peut pas corriger.
+        // Le message parle de l'information manquante, que le modèle peut dire au contact, pas de la
+        // configuration.
         contenu: { erreur: `information manquante pour interroger le système du client : ${noms}` },
         erreur: `variables requises absentes : ${noms}`,
       };
     }
 
-    // 5. L'ASSEMBLAGE. Adresse (avec ses gardes), paramètres d'URL, corps, en-têtes : un seul point de
-    // passage, partagé avec le bouton « Test » de la console, pour que le test n'annonce jamais un appel que
-    // l'exécution ne sait pas faire.
+    // 5. L'assemblage, point de passage partagé avec le bouton « Test » de la console.
     const appel = assemblerAppel({
       baseUrl: source.baseUrl, methode: requete.methode, chemin: requete.chemin,
       parametres: requete.parametres, entetes: requete.entetes, corps: requete.corps,
@@ -314,21 +236,17 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
     });
     if (!appel.ok) return { ok: false, contenu: { erreur: 'ce connecteur est mal configuré' }, erreur: appel.raison };
 
-    // 5bis. OÙ CE NOM MÈNE-T-IL VRAIMENT ? `construireCible` a déjà refusé les hôtes internes et tous les
-    // littéraux d'adresse, y compris leurs formes exotiques. Elle lit le TEXTE, donc elle ne peut rien contre
-    // `crm.exemple.fr` dont l'enregistrement A pointe sur `169.254.169.254` (les métadonnées du fournisseur)
-    // ou sur `172.18.x.x` (le réseau Docker du VPS, où vivent l'admin NPM et tous les autres conteneurs).
-    // Placée ICI, après l'assemblage et avant l'appel : c'est l'URL FINALE qu'il faut vérifier, pas l'adresse
-    // de base, puisque le gabarit peut en changer l'hôte si une garde d'assemblage venait à tomber.
+    // 5bis. 🔴 Où ce nom mène-t-il vraiment ? `construireCible` lit le texte de l'hôte, et ne peut rien contre
+    // un nom public qui résout vers les métadonnées du fournisseur ou le réseau Docker du VPS. Vérifié sur
+    // l'URL finale, après l'assemblage.
     const resolution = await estPublique(appel.url);
     if (!resolution.ok) {
       await deps.sources.marquerEpreuve(ctx.tenantId, source.id, false, 'adresse interne').catch(() => {});
       return { ok: false, contenu: { erreur: MESSAGES.interne }, erreur: `resolution_interne: ${resolution.raison ?? '?'}` };
     }
 
-    // 6. L'APPEL. Le secret n'existe que dans cet objet d'en-têtes, et n'en sort pas. ⚠️ L'authentification
-    // est superposée EN DERNIER : aucun en-tête saisi dans la requête ne peut la recouvrir, même si la garde
-    // de saisie venait à tomber.
+    // 6. L'appel. Le secret n'existe que dans cet objet d'en-têtes. 🔴 L'authentification est superposée en
+    // dernier : aucun en-tête saisi ne peut la recouvrir.
     const headers = { ...appel.entetes, ...enTetesAuthSource(source) };
 
     let res: Response;
@@ -341,13 +259,9 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
         signal,
       });
     } catch (err) {
-      // Panne réseau, DNS, échéance, ou redirection refusée par `redirect: 'error'`. On note l'échec SUR LA
-      // SOURCE : c'est ce qui rend un connecteur mort visible dans la console avant qu'un contact ne le
-      // découvre. Best-effort : une écriture qui trébuche ne doit pas transformer un échec d'outil en panne
-      // de tour.
-      // Refus À LA CONNEXION (le nom a résolu vers l'intérieur entre la vérification ci-dessus et l'appel :
-      // le « DNS rebinding » que `fetchPublic` ferme). Même verdict et même message que la vérification
-      // préalable : pour l'opérateur, c'est la même cause.
+      // Panne réseau, DNS, échéance ou redirection refusée : l'échec est noté sur la source, pour qu'un
+      // connecteur mort se voie dans la console. Un refus à la connexion (DNS rebinding, fermé par `fetchPublic`)
+      // rend le même verdict que la vérification préalable : même cause.
       if (estRefusAdresseInterne(err)) {
         await deps.sources.marquerEpreuve(ctx.tenantId, source.id, false, 'adresse interne').catch(() => {});
         return { ok: false, contenu: { erreur: MESSAGES.interne }, erreur: 'connexion_interne' };
@@ -364,48 +278,30 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
       return { ok: false, contenu: { erreur: MESSAGES.redirige }, erreur: 'redirige', httpStatus: res.status };
     }
 
-    // 7. LE CORPS, BORNÉ. Le plafond est vérifié sur ce qu'on a LU, pas sur `content-length` : un serveur peut
-    // mentir. Au-delà, on refuse plutôt que de tronquer : un JSON tronqué est illisible de toute façon, et
-    // remplirait le contexte du modèle pour rien.
-    // ⚠️ Le plafond était vérifié APRÈS `res.text()`, donc après avoir tout chargé en mémoire, et il comptait
-    // des unités UTF-16 et non des octets (un corps d'idéogrammes passait à deux ou trois fois sa taille
-    // réelle). La lecture est désormais bornée EN FLUX : on coupe à l'octet qui dépasse.
+    // 7. Le corps, lu en flux et borné sur ce qu'on a lu (pas `content-length`, qui peut mentir), en octets.
+    // Au-delà, refus plutôt que troncature : un JSON tronqué est illisible.
     const corps = await lireCorpsBorne(res, outil.maxBytes);
     if (corps.trop_gros) {
       return { ok: false, contenu: { erreur: MESSAGES.trop_gros }, erreur: 'trop_gros', httpStatus: res.status };
     }
     /**
-     * 🔴 UN FLUX COUPÉ MARQUAIT LA SOURCE COMME SAINE (2026-09-04), et ce n'est PAS le défaut que ce correctif
-     * a d'abord prétendu fermer. La première version de ce commentaire affirmait que le modèle recevait un
-     * faux succès : c'est faux sur CE chemin, et il a fallu le mesurer pour s'en apercevoir. Un corps vide
-     * fait lever `JSON.parse('')`, donc l'étape 9 attrapait déjà le cas et rendait `ok: false / illisible`.
-     * Le modèle n'a jamais rien conclu de travers ici.
-     *
-     * Ce qui était réellement cassé est plus discret et plus durable : ce même `catch` appelle
-     * `marquerEpreuve(..., true)`, donc une source dont la connexion LÂCHE à chaque appel était marquée SAINE
-     * dans la console, et sa dernière erreur effacée. Le connecteur mourait sans que rien ne devienne rouge,
-     * ce qui est exactement ce que `marquerEpreuve` existe pour empêcher.
-     *
-     * ⚠️ La leçon vaut plus que la ligne : **un correctif juste peut porter une justification fausse**, et une
-     * justification fausse est pire qu'aucune, parce qu'elle sera recopiée. Celle-ci a été trouvée par une
-     * relecture adverse qui a EXÉCUTÉ le chemin, pas par une relecture qui l'a lu.
+     * Un flux coupé n'est pas un corps vide : sans ce cas, le `catch` de l'étape 9 marquerait saine une source
+     * dont la connexion lâche à chaque appel.
      */
     if (corps.casse) {
-      // Marquée en ÉCHEC, comme ses voisines « injoignable » et « redirection refusée » : c'est ce qui rend un
-      // connecteur mort visible dans la console avant qu'un contact ne le découvre.
+      // Marquée en échec, comme « injoignable » et « redirection refusée ».
       await deps.sources.marquerEpreuve(ctx.tenantId, source.id, false, 'réponse interrompue').catch(() => {});
-      // Clé de journal DISTINCTE d'`illisible` : sans elle, la seule trace persistante ne séparait toujours
-      // pas une coupure de connexion d'un JSON invalide, qui est pourtant l'objet même de ce drapeau.
+      // Clé de journal distincte d'`illisible` : une coupure de connexion n'est pas un JSON invalide.
       return { ok: false, contenu: { erreur: MESSAGES.coupe }, erreur: 'coupe', httpStatus: res.status };
     }
     const brut = corps.texte;
 
-    // 8. LE STATUT. Un 4xx/5xx est un échec MÉTIER : le modèle doit le savoir, sans le corps brut de l'erreur
-    // (une trace de 500 porte des chemins internes, parfois des identifiants).
+    // 8. Le statut. Un 4xx ou 5xx est un échec métier : le modèle le sait, sans le corps brut de l'erreur
+    // (chemins internes, parfois des identifiants).
     if (!res.ok) {
       const authentification = res.status === 401 || res.status === 403;
-      // Un 4xx est une RÉPONSE du système du client, pas une panne : la source reste réputée saine, sauf si
-      // c'est l'authentification qui est refusée, ce qui est exactement le symptôme d'un jeton mort.
+      // Un 4xx est une réponse du système du client : la source reste saine, sauf refus d'authentification, le
+      // symptôme d'un jeton mort.
       const sourceSaine = res.status >= 400 && res.status < 500 && !authentification;
       await deps.sources.marquerEpreuve(ctx.tenantId, source.id, sourceSaine, authentification ? 'authentification refusée' : `HTTP ${res.status}`).catch(() => {});
       return {
@@ -417,26 +313,17 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
     }
 
     /**
-     * 9bis. UN APPEL QUI POUSSE NE LIT PAS LE CORPS DU TOUT (migration 0150).
-     *
-     * 🔴 ET C'EST UNE GARANTIE, PAS UNE ÉCONOMIE. La réponse d'un `POST` de succès porte très souvent la
-     * ressource entière qu'on vient de créer ou de modifier : la fiche du client, son e-mail, ses
-     * identifiants internes. Un agent qui n'a rien à en faire n'a aucune raison de l'envoyer au fournisseur
-     * du modèle, et personne ne l'aurait décidé. On rend donc le VERDICT, et lui seul.
-     *
-     * ⚠️ L'ÉCHEC EST DÉJÀ TRAITÉ À L'ÉTAPE 8, avec son message sûr : un `pousse` qui rate y passe comme les
-     * autres. Le plan de ce lot prévoyait de renvoyer en plus le message d'erreur DU SYSTÈME DU CLIENT ;
-     * l'étape 8 s'y refuse délibérément (« une trace de 500 porte des chemins internes, parfois des
-     * identifiants »), et ce refus l'emporte : élargir ce qui fuit vers le fournisseur du modèle mérite sa
-     * propre décision, pas un effet de bord d'un lot sur les connecteurs.
+     * 9bis. 🔴 Un appel qui pousse ne lit pas le corps : la réponse d'un succès porte souvent la ressource
+     * entière (fiche, e-mail, identifiants), qu'aucune raison n'autorise à partir chez le fournisseur du
+     * modèle. On rend le verdict seul ; un échec est déjà traité à l'étape 8, avec son message sûr.
      */
     if (p.lecture.nature === 'pousse') {
       await deps.sources.marquerEpreuve(ctx.tenantId, source.id, true).catch(() => {});
       return { contenu: { ok: true, statut: res.status }, httpStatus: res.status };
     }
 
-    // 9ter. LA RÉPONSE ENTIÈRE (relais du MBA), déjà bornée à `maxBytes` par la lecture en flux. Un corps vide
-    // (un 204) vaut `null`, un corps qui n'est pas du JSON est rendu en texte : ni l'un ni l'autre n'est un échec.
+    // 9ter. La réponse entière (relais du MBA), déjà bornée par la lecture en flux. Un corps vide vaut `null`,
+    // un corps non JSON est rendu en texte : ni l'un ni l'autre n'est un échec.
     if (p.lecture.nature === 'entier') {
       await deps.sources.marquerEpreuve(ctx.tenantId, source.id, true).catch(() => {});
       let reponse: unknown = null;
@@ -446,7 +333,7 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
       return { contenu: { reponse }, httpStatus: res.status };
     }
 
-    // 9. LE FILTRE. Ce qui repart au modèle est EXACTEMENT ce que le client a listé, et rien d'autre.
+    // 9. Le filtre. Ce qui repart au modèle est exactement ce que le client a listé, et rien d'autre.
     let json: unknown;
     try {
       json = JSON.parse(brut) as unknown;
@@ -464,12 +351,8 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
   });
 }
 
-/**
- * Le résolveur d'OUTIL D'AGENT : un adaptateur au-dessus de `creerAppelConnecteur`.
- *
- * ⚠️ Il ne reste ici que la TRADUCTION d'un appel d'outil en appel de connecteur. Tout ce qui décide vit dans
- * la fonction partagée, donc un correctif de garde profite à TOUS les appelants sans qu'on ait à y penser.
- */
+/** Le résolveur d'outil d'agent : un adaptateur au-dessus de `creerAppelConnecteur`, qui porte toutes les
+ *  gardes. */
 export function creerResolveurHttp(deps: DepsResolveurHttp): ResolveurOutil {
   const appel = creerAppelConnecteur(deps);
   return async (entree: EntreeResolveur): Promise<SortieResolveur> => appel({
@@ -478,20 +361,14 @@ export function creerResolveurHttp(deps: DepsResolveurHttp): ResolveurOutil {
     contact: entree.ctx.contact,
     requestId: typeof entree.outil.requestId === 'string' ? entree.outil.requestId : '',
     maxBytes: entree.outil.maxBytes,
-    /**
-     * 🔴 L'OUTIL, PAS LA REQUÊTE (migration 0150). C'est la traduction du changement : ce que CET agent a le
-     * droit de lire est une propriété de son outil. Deux agents peuvent piocher dans le même appel et lire
-     * des choses différentes, ce qui était impossible tant que la liste vivait sur l'appel partagé.
-     */
+    /** Ce que cet agent a le droit de lire est une propriété de son outil, pas de l'appel partagé. */
     lecture: entree.outil.nature === 'pousse'
       ? { nature: 'pousse' }
       : { nature: 'integre', champs: entree.outil.outputPaths },
     args: entree.args,
     signal: entree.signal,
-    // 🔴 `null` EST UNE DÉCISION : l'exécuteur d'agent ouvre et clôt DÉJÀ sa ligne autour de ce résolveur
-    // (`src/agent/executor.ts`), avec le nom d'outil exposé au modèle et la session. Journaliser ici aussi
-    // écrirait DEUX lignes pour un seul appel, et fausserait le compte du jour où la facturation lira cette
-    // table.
+    // `null` : l'exécuteur d'agent journalise déjà autour de ce résolveur, une seconde ligne compterait deux
+    // fois le même appel.
     journal: null,
   });
 }

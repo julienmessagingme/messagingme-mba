@@ -6,9 +6,8 @@ import type { OuvertureApi } from '../workflow/ouverture-api';
 import type { CodeApi } from './erreurs';
 
 /**
- * LES MOTIFS D'ÉCART D'UN ENVOI PAR L'API (spec 2026-09-24, § 9). Les MÊMES codes que les erreurs des autres
- * routes : un même refus porte le même code partout. `satisfies` fait refuser au compilateur un motif qui ne
- * serait pas un code de l'API.
+ * Les motifs d'écart d'un envoi par l'API : les mêmes codes que les erreurs des autres routes. `satisfies`
+ * fait refuser un motif qui ne serait pas un code de l'API.
  */
 export const CODES_ECART = [
   'invalid_recipient', 'invalid_phone', 'unknown_contact', 'duplicate', 'identity_conflict', 'blocked_contact',
@@ -16,20 +15,20 @@ export const CODES_ECART = [
 ] as const satisfies readonly CodeApi[];
 export type CodeEcart = (typeof CODES_ECART)[number];
 
-/** Un destinataire écarté : son INDEX dans `recipients`, qui le retrouve quelle que soit la clé utilisée. */
+/** Un destinataire écarté : son index dans `recipients`, qui le retrouve quelle que soit la clé utilisée. */
 export interface Ecart { index: number; reason: CodeEcart }
 
 /** Un destinataire après résolution de sa fiche, ou le motif qui l'a écarté avant même de la lire. */
 export type DestinataireResolu =
   | {
     index: number; contactId: string; consent?: 'opted_in' | 'opted_out'; consentSource?: string;
-    /** Les variables propres à ce destinataire (lot 3), portées jusqu'à la construction, jamais sur la fiche. */
+    /** Les variables propres à ce destinataire, portées jusqu'à la construction, jamais sur la fiche. */
     variables?: Readonly<Record<string, string>>;
   }
   | { index: number; ecart: CodeEcart };
 
 /**
- * La seconde désignation d'une MÊME fiche est un doublon : écarté `duplicate`, jamais fusionné en silence.
+ * La seconde désignation d'une même fiche est un doublon : écarté `duplicate`, jamais fusionné en silence.
  * Idempotente : la route l'appelle avant d'écrire les consentements, le tri la rappelle par sûreté.
  */
 export function marquerDoublons(resolus: readonly DestinataireResolu[]): DestinataireResolu[] {
@@ -46,7 +45,7 @@ export interface EntreeTri {
   category: CampaignCategory;
   ouverture: OuvertureApi;
   resolus: readonly DestinataireResolu[];
-  /** Les fiches, relues APRÈS l'écriture des consentements : le tri voit l'état que l'appelant a demandé. */
+  /** Les fiches, relues après l'écriture des consentements : le tri voit l'état que l'appelant a demandé. */
   contacts: readonly ContactEnvoi[];
   /** Fenêtre de 24 h par contact, lue pour une ouverture `whatsapp_session` seulement. Absente = fermée. */
   fenetreOuverteParContact?: ReadonlyMap<string, boolean>;
@@ -54,15 +53,15 @@ export interface EntreeTri {
 
 export interface ResultatTri {
   /**
-   * `variables` (lot 3) : celles du DESTINATAIRE, gardées À CÔTÉ de la fiche chargée et jamais dessus. Seule la
-   * copie que `construireDestinataires` passe à la construction les porte.
+   * `variables` : celles du destinataire, gardées à côté de la fiche chargée et jamais dessus ; seule la copie
+   * passée à la construction les porte.
    */
   eligibles: Array<{ index: number; contact: ContactEnvoi; variables?: Readonly<Record<string, string>> }>;
   ecarts: Ecart[];
 }
 
 /**
- * Le motif qui écarte ce contact, ou null. L'ORDRE est celui de la gravité : un contact bloqué l'est avant
+ * Le motif qui écarte ce contact, ou null. L'ordre est celui de la gravité : un contact bloqué l'est avant
  * d'être désabonné, un désabonné l'est avant de manquer de consentement.
  */
 function motifDEcart(c: ContactEnvoi, e: EntreeTri): CodeEcart | null {
@@ -70,22 +69,20 @@ function motifDEcart(c: ContactEnvoi, e: EntreeTri): CodeEcart | null {
   if (c.optInStatus === 'opted_out') return 'opted_out';
   if (e.ouverture === 'rcs' && c.rcsDesabonne) return 'opted_out';
   if (e.ouverture === 'rcs' && !c.phone_e164) return 'no_phone';
-  // Aucune adresse du tout : la base l'interdit, mais `buildRecipients` l'écarterait SANS motif.
+  // Aucune adresse du tout : la base l'interdit, mais `buildRecipients` l'écarterait sans motif.
   if (!c.phone_e164 && !c.bsuid) return 'no_phone';
-  // 🔴 LA RÈGLE DU CONSENTEMENT EST CELLE DE LA CONSOLE (`optInAllows`), jamais une seconde écriture :
-  // `tests/optout-chemins.test.ts` exige que la voie API l'appelle. Le désabonné est écarté plus haut avec
-  // son propre motif, donc ce qu'elle refuse encore ici est un consentement manquant.
+  // 🔴 La règle du consentement est celle de la console (`optInAllows`), jamais une seconde écriture :
+  // `tests/optout-chemins.test.ts` exige que la voie API l'appelle. Le désabonné est écarté plus haut.
   if (!optInAllows(e.category, c)) return 'no_consent';
-  // Fermée ou INCONNUE : une fenêtre qu'on n'a pas lue n'est pas ouverte.
+  // Fermée ou inconnue : une fenêtre qu'on n'a pas lue n'est pas ouverte.
   if (e.ouverture === 'whatsapp_session' && e.fenetreOuverteParContact?.get(c.id) !== true) return 'window_closed';
   return null;
 }
 
 /**
- * LE TRI DES DESTINATAIRES D'UN ENVOI PAR L'API : chacun finit éligible ou écarté avec son motif et son index.
- *
- * 🔴 AUCUNE PERTE SILENCIEUSE (spec 2026-09-24, § 3). Une fiche désignée mais absente de la lecture (supprimée
- * entre la résolution et la lecture) est `unknown_contact`, jamais oubliée.
+ * Le tri des destinataires d'un envoi par l'API : chacun finit éligible ou écarté avec son motif et son
+ * index, aucune perte silencieuse. Une fiche désignée mais absente de la lecture (supprimée entre-temps) est
+ * `unknown_contact`.
  */
 export function trierDestinataires(e: EntreeTri): ResultatTri {
   const parId = new Map(e.contacts.map((c) => [c.id, c]));
@@ -110,25 +107,21 @@ const MOTIF_DE_CONSTRUCTION: Record<SkippedRecipient['reason'], CodeEcart> = {
 };
 
 /**
- * Les destinataires construits (variables de template résolues) et TOUS les écarts, triés par index.
- * `buildRecipients` reste la construction partagée avec la console : on ne la modifie pas, on traduit ses motifs.
- *
- * ⚠️ `buildRecipients` dédoublonne par ADRESSE, en silence. Deux fiches distinctes à la même adresse sont
- * interdites par la base (index uniques sur le numéro et sur le BSUID), mais un éligible qui ne ressort ni
- * construit ni écarté est rendu `duplicate` : aucune perte silencieuse ne dépend de cet index.
+ * Les destinataires construits (variables de template résolues) et tous les écarts, triés par index.
+ * `buildRecipients`, partagée avec la console, reste telle quelle : on traduit ses motifs. Elle dédoublonne
+ * par adresse en silence : un éligible qui ne ressort ni construit ni écarté est rendu `duplicate`.
  */
 export function construireDestinataires(
   category: CampaignCategory,
   params: TemplateParam[],
   tri: ResultatTri,
   now: Date,
-  /** Le canal de la campagne (lot 3) : `rcs` pour une cible `rcsMessage`. Absent = WhatsApp, comme au lot 2. */
+  /** Le canal de la campagne : `rcs` pour une cible `rcsMessage`. Absent = WhatsApp. */
   canal: 'whatsapp' | 'rcs' = 'whatsapp',
 ): { recipients: BuiltRecipient[]; ecarts: Ecart[] } {
-  // Une adresse VIDE vaut absence, comme dans le tri (`!c.phone_e164`). `buildRecipients` prend
-  // `phone_e164 ?? bsuid` : sans ceci, un numéro `''` masquait le BSUID et la fiche sortait sans motif.
-  // Les variables du DESTINATAIRE (lot 3) sont posées sur cette COPIE, jamais sur la fiche chargée : elles
-  // résolvent la source « variable » et partent avec le destinataire construit.
+  // Une adresse vide vaut absence, comme dans le tri : `buildRecipients` prend `phone_e164 ?? bsuid`, et un
+  // numéro `''` masquerait le BSUID. Les variables du destinataire sont posées sur cette copie, jamais sur la
+  // fiche chargée.
   const contacts = tri.eligibles.map((x) => ({
     ...x.contact, phone_e164: x.contact.phone_e164 || null, bsuid: x.contact.bsuid || null,
     ...(x.variables ? { variables: x.variables } : {}),

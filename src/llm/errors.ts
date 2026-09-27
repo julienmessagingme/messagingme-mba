@@ -1,14 +1,9 @@
 import { estAbandon, HttpTimeoutError } from '../meta/http';
 
 /**
- * Erreur d'appel à un modèle de langage, partagée par TOUS les clients LLM du repo.
- *
- * Extraite de `src/analysis/llm-client.ts` quand un second client est arrivé (l'agent) : la garder là-bas
- * aurait obligé le client de l'agent à importer depuis le module d'analyse de conversation, qui n'a rien à
- * voir. `analysis/llm-client.ts` la RÉ-EXPORTE, donc aucun import existant ne casse.
- *
- * `retryable` est reconnu par `withRetry` en duck-typing (`src/meta/http.ts`), et par les jobs qui laissent
- * remonter l'erreur jusqu'à pg-boss quand les tentatives sont épuisées.
+ * Erreur d'appel à un modèle de langage, partagée par tous les clients LLM (ré-exportée par
+ * `analysis/llm-client.ts`). `retryable` est reconnu par `withRetry` (duck-typing) et par les jobs qui laissent
+ * remonter l'erreur jusqu'à pg-boss.
  */
 export class LlmApiError extends Error {
   constructor(
@@ -23,15 +18,10 @@ export class LlmApiError extends Error {
 }
 
 /**
- * Le fournisseur a refuse l'appel PARCE QUE le plafond de la cle est atteint (2026-09-09).
- *
- * 🔴 CE N'EST PAS UNE PANNE, C'EST UN FAIT COMMERCIAL : le client a consomme ce qu'il a achete. La
- * distinction n'est pas cosmetique, elle change DEUX comportements :
- *   - `retryable: false`, toujours. Vercel repond 429 sur un plafond atteint, et 429 est rejouable dans la
- *     regle generale : sans cette classe, chaque tour d'agent d'un client a sec repartait pour trois
- *     tentatives, toutes vouees a echouer, sur chaque message recu ;
- *   - le parcours sort par « Plafond atteint » et non par « Echec », donc le client cable UNE seule sortie
- *     quelle que soit la raison, ce que la garde du solde fait deja pour la meme situation vue de chez nous.
+ * Le fournisseur a refusé l'appel parce que le plafond de la clé est atteint : un fait commercial, pas une panne.
+ *  - `retryable: false`, toujours : Vercel répond 429, rejouable en règle générale, et chaque tour d'un client à sec
+ *    repartirait pour des tentatives vouées à échouer ;
+ *  - le parcours sort par « Plafond atteint » et non par « Échec », comme la garde du solde.
  */
 export class PlafondModeleAtteint extends LlmApiError {
   constructor(status: number, message: string) {
@@ -41,26 +31,16 @@ export class PlafondModeleAtteint extends LlmApiError {
 }
 
 /**
- * CE QUE L'ÉCHEC D'UN APPEL AU MODÈLE A LE DROIT DE DIRE AU CLIENT, ou `null` quand ce n'est PAS une panne du
- * fournisseur (2026-09-22).
+ * Ce que l'échec d'un appel au modèle a le droit de dire au client, ou `null` quand ce n'est pas une panne du
+ * fournisseur.
  *
- * 🔴 `null` VEUT DIRE « C'EST LA NÔTRE », et l'appelant doit alors RELANCER l'erreur : le gestionnaire global
- * (`src/server.ts`) rend un 500 opaque et la journalise. Le bac à sable rendait `err.message` dans un 422
- * pour TOUT ce que son `catch` attrapait, alors que le même `try` couvre des lectures en base : une panne de
- * notre base (« password authentication failed for user … ») serait partie telle quelle au navigateur.
- *
- * ⚠️ LA RAISON EST RÉDIGÉE, JAMAIS RECOPIÉE : le texte du fournisseur est en anglais, écrit pour un
- * développeur, et il reste dans le journal de l'appelant. Elle ne dit pas non plus QUI paie : les assistants
- * de configuration tournent sur NOTRE clé, le bac à sable sur celle de l'espace, et « votre crédit » serait
- * faux pour l'un des deux.
- *
- * ⚠️ UNE COUPURE RÉSEAU N'EST RECONNUE QUE SOUS LA FORME QUE LUI DONNE `fetch`, et c'est ce qui la rend
- * attribuable. `fetch` (undici) lève un `TypeError` au message exact « fetch failed », la cause réseau rangée
- * dessous ; une base injoignable lève une `Error` qui porte `code: 'ECONNREFUSED'`, jamais ce `TypeError`.
- * Dans les quatre `try` qui appellent cette fonction, le seul `fetch` est l'appel au modèle : l'agent et la
- * clé de l'espace se lisent par `pg`, et l'exécuteur rattrape lui-même l'erreur ou l'échéance d'un outil
- * (`src/agent/executor.ts`, qui les rend au modèle). Un abandon qui arrive ici est donc aussi l'échéance de
- * l'appel au modèle. ⚠️ Un appelant dont le `try` couvrirait un AUTRE `fetch` doit relire ce paragraphe.
+ * 🔴 `null` veut dire « c'est la nôtre » : l'appelant relance l'erreur, que le gestionnaire global rend en 500
+ * opaque et journalise. Sinon une panne de notre base (message avec identifiants) partirait au navigateur.
+ * La raison est rédigée, jamais recopiée (le texte du fournisseur reste au journal), et ne dit pas qui paie :
+ * les assistants tournent sur notre clé, le bac à sable sur celle de l'espace.
+ * Une coupure réseau n'est reconnue que sous la forme de `fetch` (undici) : un `TypeError` au message exact
+ * « fetch failed » ; une base injoignable lève une `Error` avec `code: 'ECONNREFUSED'`. Dans les `try` appelants,
+ * le seul `fetch` est l'appel au modèle : un appelant dont le `try` couvrirait un autre `fetch` doit relire ceci.
  */
 export function direPanneModele(err: unknown): string | null {
   if (err instanceof PlafondModeleAtteint) return 'le crédit du modèle est épuisé';

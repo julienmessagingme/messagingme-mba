@@ -3,7 +3,7 @@ import type { MessageSender } from './engine';
 import type { SendResult, MarketingParams, TemplateSpec } from '../meta/types';
 
 /**
- * Sender de DÉMO : n'appelle jamais Meta, renvoie un message-id synthétique. Permet de faire
+ * Sender de démo : n'appelle jamais Meta, renvoie un message-id synthétique. Permet de faire
  * tourner une campagne de bout en bout (statuts pending -> sent) sans numéro réel ni token.
  * En prod réelle, remplacé par MetaClient (DRY_RUN=false).
  */

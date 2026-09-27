@@ -1,11 +1,8 @@
 /**
- * Sonde de READINESS de l'API : la base est-elle joignable ? Un `select 1` avec un timeout COURT (défaut 2 s),
- * INDÉPENDANT du connectionTimeoutMillis (8 s) du pool. Sans ce plafond propre, un pool saturé ferait pendre la
- * sonde 8 s. Fonction fabrique (pool + timeout injectés) -> unit-testable sans DB.
- *
- * ⚠️ La query timeoutée continue en arrière-plan et consomme une acquisition du pool (borné par `DB_POOL_MAX`,
- * cf. `src/config.ts`) : ne pas sonder trop souvent (>= 10-30 s). Distinct de /live (liveness), qui ne touche
- * jamais la DB.
+ * Sonde de readiness de l'API : la base est-elle joignable ? Un `select 1` avec un timeout court (2 s), distinct du
+ * connectionTimeoutMillis du pool, pour qu'un pool saturé ne fasse pas pendre la sonde. Distinct de /live, qui ne
+ * touche jamais la base.
+ * La requête expirée continue en arrière-plan et occupe une connexion : ne pas sonder trop souvent (10 à 30 s).
  */
 export function makeDbReadinessCheck(
   pool: { query: (text: string) => Promise<unknown> },
@@ -19,7 +16,7 @@ export function makeDbReadinessCheck(
     try {
       await Promise.race([pool.query('select 1'), timeout]);
     } finally {
-      if (timer) clearTimeout(timer); // libère le timer quand la query gagne (sinon il pend jusqu'au timeout)
+      if (timer) clearTimeout(timer); // libère le timer quand la requête gagne
     }
   };
 }

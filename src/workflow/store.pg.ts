@@ -5,27 +5,17 @@ import { resolveTenantCode } from '../ids/tenant-code';
 import { scanOpening } from './engine';
 
 /**
- * PAR QUOI ce scénario ouvre, quand il peut ouvrir une campagne. `null` = il ne le peut pas.
+ * Par quoi ce scénario ouvre, quand il peut ouvrir une campagne. `null` = il ne le peut pas.
  *
- * 🔴 IL SE CALCULE DEPUIS LE GRAPHE, IL NE SE STOCKE PAS. Une colonne serait une seconde vérité à tenir
- * d'accord avec le graphe, et c'est le graphe qui fait foi : à la première divergence, c'est la colonne,
- * périmée, qu'on lirait.
+ * Calculé depuis le graphe, jamais stocké : une colonne serait une seconde vérité qui finirait périmée.
+ * Miroir de la règle de l'écran (`web/lib/campaign-eligibility.ts`), sur le même `scanOpening` (parité gardée
+ * par `tests/web-campaign-eligibility.test.ts`), calculé côté serveur pour ne pas envoyer les graphes au
+ * navigateur.
  *
- * Miroir exact de la règle de l'écran (`web/lib/campaign-eligibility.ts`), calculé côté serveur pour que la
- * liste n'ait plus à envoyer les graphes au navigateur. Les deux s'appuient sur le même `scanOpening`, dont
- * la parité est déjà gardée par `tests/web-campaign-eligibility.test.ts`.
- *
- * Une campagne part sur une audience FROIDE : hors fenêtre de 24 h, seul un template (ou un bloc RCS, qui ne
- * passe pas par WhatsApp) peut ouvrir.
- *
- * ⚠️ L'ORDRE COMPTE : `rcsOpen` est examiné AVANT `firstTemplate`, comme dans la règle d'origine. Un
- * scénario qui ouvre par un bloc RCS ouvre en RCS, même s'il porte un template plus loin.
- *
- * ⚠️ LE MODÈLE SANS NOM EST REFUSÉ DEUX FOIS, et c'est REDONDANT PAR CONSTRUCTION (mesuré en mutant) :
- * `scanOpening` pose `unnamedOpeningTemplate` dans la même itération où il pose `firstTemplate`, donc la
- * garde du haut suffit et le contrôle du nom, en bas, n'est jamais le seul à décider. Les deux sont gardés
- * parce qu'ils viennent de la règle d'origine et qu'il s'agit d'un contrat lu par trois écrans : on ne
- * retire pas une ceinture sur ce chemin-là. Retirer les DEUX fait tomber `tests/workflow-ouverture.test.ts`.
+ * Une campagne part sur une audience froide : hors fenêtre de 24 h, seul un template (ou un bloc RCS) peut
+ * ouvrir. `rcsOpen` est examiné avant `firstTemplate` : un scénario qui ouvre par un bloc RCS ouvre en RCS,
+ * même s'il porte un template plus loin. Le modèle sans nom est refusé deux fois (redondant, gardé comme
+ * ceinture sur un contrat lu par trois écrans).
  */
 export type CanalOuverture = 'whatsapp' | 'rcs' | null;
 
@@ -38,8 +28,8 @@ export function canalDOuverture(graph: WorkflowGraph): CanalOuverture {
 }
 
 /**
- * Une ligne de la liste des scénarios, SANS les graphes. Ce que les écrans lisaient réellement du graphe est
- * devenu trois champs : combien de blocs, y a-t-il un brouillon, peut-il ouvrir une campagne.
+ * Une ligne de la liste des scénarios, sans les graphes : ce que les écrans en lisaient est devenu trois
+ * champs (nombre de blocs, brouillon, ouverture de campagne).
  */
 export interface WorkflowResumeRow {
   id: string;
@@ -53,20 +43,18 @@ export interface WorkflowResumeRow {
   hasDraft: boolean;
   campaignEligible: boolean;
   /**
-   * Par quoi il ouvre, quand il le peut. `null` = il ne peut pas ouvrir de campagne.
-   *
-   * ⚠️ À CÔTÉ de `campaignEligible`, jamais à sa place : les trois écrans qui lisent le booléen continuent
-   * de le lire. Le canal ne sert qu'à ne proposer, sur un étage donné, que des scénarios capables de
-   * l'ouvrir.
+   * Par quoi il ouvre, quand il le peut. `null` = il ne peut pas ouvrir de campagne. À côté de
+   * `campaignEligible`, jamais à sa place : il sert à ne proposer, sur un étage, que des scénarios capables
+   * de l'ouvrir.
    */
   canalOuverture: CanalOuverture;
 }
 
-/** Un scénario EN LIGNE tel que le catalogue de l'API publique le lit : le graphe PUBLIÉ, jamais le brouillon. */
+/** Un scénario en ligne tel que le catalogue de l'API publique le lit : le graphe publié, jamais le brouillon. */
 export interface ScenarioPublie {
   code: string | null;
   name: string;
-  /** null = mis en ligne avant que la date soit suivie (0095), pas « jamais publié ». */
+  /** null = mis en ligne avant que la date soit suivie, pas « jamais publié ». */
   publishedAt: string | null;
   graph: WorkflowGraph;
 }
@@ -75,15 +63,14 @@ export interface WorkflowRow {
   id: string;
   tenantId: string;
   name: string;
-  /** Code public « scn_<client>_<ulid> » (schéma A). null tant que le backfill n'a pas tourné (lignes anciennes). */
+  /** Code public « scn_<client>_<ulid> ». null tant que le backfill n'a pas tourné (lignes anciennes). */
   code?: string | null;
   /**
-   * Le graphe PUBLIÉ : celui que l'exécuteur, les campagnes, les automations et l'API publique lisent. Il ne
-   * change QUE par `publish`. Toutes les lectures d'exécution du dépôt passent par ce champ, et c'est
-   * volontaire (cf. migration 0095).
+   * Le graphe publié : celui que l'exécuteur, les campagnes, les automations et l'API publique lisent. Il ne
+   * change que par `publish`.
    */
   graph: WorkflowGraph;
-  /** Le BROUILLON en attente de publication. null = aucun, le publié fait foi. Seul l'éditeur le lit. */
+  /** Le brouillon en attente de publication. null = aucun, le publié fait foi. Seul l'éditeur le lit. */
   draftGraph?: WorkflowGraph | null;
   /** Dernière mise en ligne. null = jamais publié depuis l'arrivée du bouton (lignes antérieures comprises). */
   publishedAt?: string | null;
@@ -93,16 +80,13 @@ export interface WorkflowRow {
 
 const EMPTY_GRAPH: WorkflowGraph = { nodes: [], edges: [] };
 
-/** Les colonnes lues partout : une seule liste, sinon un champ ajouté ici manque à une des quatre requêtes. */
+/** Les colonnes lues partout : une seule liste, sinon un champ ajouté manque à l'une des requêtes. */
 const COLS = 'id, tenant_id, name, code, graph, draft_graph, published_at, created_at, updated_at';
 
 /**
- * Résultat d'un enregistrement de l'éditeur.
- *
- * `brouillon` est l'état APRÈS écriture, tel que la base le voit : c'est lui, et pas « un PATCH a réussi »,
- * qui dit s'il reste quelque chose à publier. La nuance compte, parce qu'un enregistrement dont le contenu
- * est identique au publié ne laisse AUCUN brouillon derrière lui (cf. `update`), et l'éditeur ne doit alors
- * pas proposer de publier le vide.
+ * Résultat d'un enregistrement de l'éditeur. `brouillon` est l'état après écriture : un enregistrement
+ * identique au publié ne laisse aucun brouillon (cf. `update`), et l'éditeur ne doit pas proposer de publier
+ * le vide.
  */
 export interface MajScenario {
   /** Une ligne du tenant a-t-elle bougé ? false = scénario inconnu (ou d'un autre espace) -> 404. */
@@ -113,10 +97,8 @@ export interface MajScenario {
 
 /**
  * Suppression refusée par la base : un lien de chaîne WhatsApp (Channels Me) référence encore ce scénario
- * (`channelsme_links.workflow_id ... on delete restrict`, posée par la migration 0114 : la PREMIÈRE clé
- * étrangère `restrict` de ce dépôt vers `workflows`, les cinq autres étant `cascade` ou `set null`). Sans
- * cette traduction, la violation Postgres 23503 remonterait telle quelle au gestionnaire d'erreur global, donc
- * en 500, page d'erreur Cloudflare comprise, sans que l'utilisateur puisse deviner qu'un lien de chaîne bloque.
+ * (`channelsme_links.workflow_id ... on delete restrict`). Traduite en 409, sinon la violation 23503
+ * remonterait en 500 sans dire qu'un lien de chaîne bloque.
  */
 export class WorkflowUtiliseParLienChaine extends Error {
   constructor() { super('ce scénario est utilisé par un lien de chaîne WhatsApp'); this.name = 'WorkflowUtiliseParLienChaine'; }
@@ -125,17 +107,16 @@ export class WorkflowUtiliseParLienChaine extends Error {
 /**
  * Store Postgres des workflows (bot builder). Scopé tenant.
  *
- * 🔴 DEUX GRAPHES DEPUIS LE LOT 7 : `graph` est le PUBLIÉ (ce qui tourne), `draft_graph` le brouillon (ce qui
- * s'édite). Toute écriture de l'éditeur va au brouillon ; `graph` ne bouge que par `publish`. Écrire `graph`
- * ailleurs qu'ici remettrait l'édition en direct sur la production, ce que le bouton « Publier » est censé
- * empêcher.
+ * Deux graphes : `graph` est le publié (ce qui tourne), `draft_graph` le brouillon (ce qui s'édite). Toute
+ * écriture de l'éditeur va au brouillon ; `graph` ne bouge que par `publish`. L'écrire ailleurs remettrait
+ * l'édition en direct sur la production.
  */
 export class PgWorkflowStore {
   constructor(private readonly pool: Pool) {}
 
   /**
-   * Crée un scénario. Le graphe fourni part en BROUILLON, jamais en publié : rien n'est en ligne tant que
-   * personne n'a cliqué « Publier ». Une seule règle à retenir, valable aussi pour la duplication.
+   * Crée un scénario. Le graphe fourni part en brouillon, jamais en publié : rien n'est en ligne tant que
+   * personne n'a cliqué « Publier » (vaut aussi pour la duplication).
    */
   async insert(tenantId: string, name: string, graph: WorkflowGraph): Promise<{ id: string }> {
     const code = makeCode('scn', await resolveTenantCode(this.pool, tenantId));
@@ -147,27 +128,13 @@ export class PgWorkflowStore {
   }
 
   /**
-   * La liste RÉSUMÉE, pour les écrans : jamais les graphes.
+   * La liste résumée, pour les écrans : jamais les graphes, qui pèseraient sur chaque écran qui n'affiche
+   * qu'un nom.
    *
-   * 🔴 `list()` renvoie DEUX graphes complets par ligne (le publié et le brouillon), pour des écrans qui
-   * n'affichent qu'un nom. Constat du contre-audit du 2026-09-01. Avec quelques dizaines de scénarios c'est
-   * indolore ; avec des centaines de graphes riches, chaque écran paie le transfert et l'analyse de tous les
-   * JSON pour rendre une colonne de libellés.
-   *
-   * Ce que les écrans faisaient RÉELLEMENT du graphe, et qui devient un champ : compter les blocs, savoir
-   * s'il existe un brouillon, savoir si le scénario peut ouvrir une campagne. Les deux premiers se calculent
-   * en SQL, sans transporter le graphe. L'éligibilité, elle, demande un parcours du graphe : elle est donc
-   * calculée ICI, avec `scanOpening`, la MÊME fonction que la garde de création de campagne. La lire côté
-   * navigateur obligeait à lui envoyer le graphe entier.
-   *
-   * ⚠️ Ce que ça ne fait PAS : la base envoie toujours le graphe à l'application (l'éligibilité en a besoin).
-   * Ce qui disparaît est le trajet application -> navigateur et l'analyse JSON côté client, c'est-à-dire ce
-   * que les écrans paient vraiment. Supprimer aussi la lecture en base demanderait de dénormaliser le nombre
-   * de blocs et l'éligibilité en colonnes tenues à l'écriture, avec le risque de péremption que ça implique :
-   * à faire le jour où la lecture pèse, pas avant.
-   *
-   * `list()` reste inchangée : la résolution d'un scénario ou d'un bloc par code (`/v1/sends`) a réellement
-   * besoin des graphes.
+   * Nombre de blocs et présence d'un brouillon se calculent en SQL ; l'éligibilité demande un parcours du
+   * graphe et se calcule ici, avec `scanOpening`, la même fonction que la garde de création de campagne. La
+   * base envoie donc toujours le graphe à l'application : seul le trajet vers le navigateur disparaît. `list()`
+   * reste pour ce qui a réellement besoin des graphes (résolution par code de `/v1/sends`).
    */
   async listResume(tenantId: string): Promise<WorkflowResumeRow[]> {
     const res = await this.pool.query<{
@@ -175,9 +142,8 @@ export class PgWorkflowStore {
       created_at: Date; updated_at: Date; published_at: Date | null;
       node_count: number; has_draft: boolean; graph: WorkflowGraph;
     }>(
-      // `jsonb_array_length` et `is not null` se calculent DANS Postgres : ces deux-là ne transportent rien.
-      // `coalesce(...,'[]')` : un graphe sans `nodes` (ligne ancienne) ne doit pas faire échouer la requête
-      // entière pour tous les scénarios de l'espace.
+      // `jsonb_array_length` et `is not null` se calculent dans Postgres. `coalesce(...,'[]')` : un graphe sans
+      // `nodes` (ligne ancienne) ne doit pas faire échouer la requête pour tout l'espace.
       `select id, tenant_id, name, code, created_at, updated_at, published_at,
               jsonb_array_length(coalesce(graph->'nodes', '[]'::jsonb)) as node_count,
               (draft_graph is not null) as has_draft,
@@ -195,25 +161,20 @@ export class PgWorkflowStore {
       publishedAt: r.published_at ? r.published_at.toISOString() : null,
       nodeCount: r.node_count,
       hasDraft: r.has_draft,
-      // MÊME fonction que la garde serveur de création de campagne : l'écran ne peut donc pas proposer un
-      // scénario que la création refusera, ni cacher un scénario qu'elle accepterait. Le booléen est DÉRIVÉ
-      // du canal, donc les deux ne peuvent pas se contredire.
+      // Même fonction que la garde serveur de création de campagne : l'écran ne peut ni proposer un scénario
+      // qu'elle refusera, ni cacher un scénario qu'elle accepterait. Le booléen est dérivé du canal.
       campaignEligible: canalDOuverture(r.graph) !== null,
       canalOuverture: canalDOuverture(r.graph),
     }));
   }
 
   /**
-   * Les scénarios EN LIGNE, pour le catalogue de l'API publique (`GET /v1/scenarios`).
+   * Les scénarios en ligne, pour le catalogue de l'API publique (`GET /v1/scenarios`).
    *
-   * 🔴 « EN LIGNE » VEUT DIRE : LE GRAPHE PUBLIÉ PORTE AU MOINS UN BLOC. Un scénario neuf part en brouillon
-   * avec un publié VIDE (`insert`), et un envoi joue le publié : l'annoncer ferait construire à un
-   * intégrateur un appel qui ne peut rien jouer. `published_at` ne décide PAS : il vaut null sur les
-   * scénarios mis en ligne avant 0095, qui tournent pourtant.
-   *
-   * ⚠️ Le graphe est transporté parce que l'ouverture se calcule dessus (`ouvertureApi`, lot 2), comme
-   * `listResume` le fait pour la console. Il ne sort pas vers l'intégrateur : la route n'en rend que
-   * l'ouverture.
+   * « En ligne » = le graphe publié porte au moins un bloc. Un scénario neuf a un publié vide (`insert`) et un
+   * envoi joue le publié : l'annoncer ferait construire un appel qui ne joue rien. `published_at` ne décide
+   * pas : il vaut null sur des scénarios anciens qui tournent. Le graphe est transporté pour calculer
+   * l'ouverture (`ouvertureApi`), il ne sort pas vers l'intégrateur.
    */
   async listPublies(tenantId: string): Promise<ScenarioPublie[]> {
     const res = await this.pool.query<{ code: string | null; name: string; published_at: Date | null; graph: WorkflowGraph }>(
@@ -249,17 +210,15 @@ export class PgWorkflowStore {
     return r ? toRow(r) : null;
   }
 
-  /** MAJ partielle (name/graph). true si une ligne du tenant a bougé. `coalesce` : un champ absent
-   *  ne l'écrase pas. Le graphe passé est DÉJÀ validé/sanitisé par la route (parseGraph).
+  /** MAJ partielle (name/graph). `coalesce` : un champ absent ne l'écrase pas. Le graphe passé est déjà
+   *  validé/sanitisé par la route (parseGraph).
    *
-   *  ⚠️ Le graphe atterrit dans le BROUILLON. C'est ici que se joue la promesse du bouton « Publier » :
-   *  l'éditeur enregistre en continu (auto-save toutes les 1,2 s), et aucune de ces écritures ne doit
-   *  atteindre les contacts en cours de parcours. */
+   *  Le graphe atterrit dans le brouillon : l'éditeur enregistre en continu (auto-save), et aucune de ces
+   *  écritures ne doit atteindre les contacts en cours de parcours. */
   async update(id: string, tenantId: string, patch: { name?: string; graph?: WorkflowGraph }): Promise<MajScenario> {
     const res = await this.pool.query<{ brouillon: boolean }>(
-      // `forme` : le graphe débarrassé de ce qui ne change RIEN pour un contact, c'est-à-dire la POSITION des
-      // blocs sur le canevas. Le moteur ne lit jamais `position` (seul `parseGraph` la valide) : déplacer un
-      // bloc est du rangement, pas une modification à publier.
+      // `forme` : le graphe sans la position des blocs, que le moteur ne lit jamais : déplacer un bloc est du
+      // rangement, pas une modification à publier.
       `with sans_positions as (
          select jsonb_build_object(
            'edges', w.graph->'edges',
@@ -304,16 +263,14 @@ export class PgWorkflowStore {
   }
 
   /**
-   * MET EN LIGNE le brouillon : il devient le graphe publié, et il n'y a pas de retour arrière (décision de
-   * Julien le 2026-09-01 : on ne garde pas la version précédente).
+   * Met en ligne le brouillon : il devient le graphe publié, sans retour arrière (la version précédente n'est
+   * pas gardée).
    *
-   * Idempotent et sans effet quand il n'y a rien à publier : `draft_graph` null laisse `graph` intact grâce au
-   * `coalesce`. Sans lui, republier deux fois d'affilée écraserait le publié par NULL, donc effacerait le
-   * scénario en production.
+   * Sans effet quand il n'y a rien à publier : `draft_graph` null laisse `graph` intact grâce au `coalesce`.
+   * Sans lui, republier deux fois écraserait le publié par NULL, donc effacerait le scénario en production.
    *
-   * Renvoie la ligne à jour (null si le scénario n'est pas au tenant) : l'appelant a besoin du graphe publié
-   * et de la date pour répondre, et un second aller-retour pourrait déjà avoir été doublé par une autre
-   * publication.
+   * Renvoie la ligne à jour (null si le scénario n'est pas au tenant), en un seul aller-retour qu'une autre
+   * publication ne peut pas doubler.
    */
   async publish(id: string, tenantId: string): Promise<WorkflowRow | null> {
     const res = await this.pool.query<Row>(
@@ -349,12 +306,9 @@ export class PgWorkflowStore {
   }
 
   /**
-   * Jeton de test du scénario, créé À LA DEMANDE et STABLE ensuite : le lien wa.me et son QR restent valables,
-   * on ne les régénère pas à chaque essai. Renvoie le jeton existant s'il y en a déjà un (idempotent), sinon
-   * en pose un neuf. null si le scénario n'appartient pas au tenant.
-   *
-   * `coalesce` dans l'UPDATE + `returning` : un seul aller-retour, et deux clics simultanés sur « Tester » ne
-   * peuvent pas produire deux jetons (le second lit celui que le premier vient d'écrire).
+   * Jeton de test du scénario, créé à la demande puis stable (le lien wa.me et son QR restent valables).
+   * Renvoie le jeton existant, sinon en pose un neuf ; null si le scénario n'appartient pas au tenant.
+   * `coalesce` dans l'UPDATE : deux clics simultanés sur « Tester » ne peuvent pas produire deux jetons.
    */
   async ensureTestToken(id: string, tenantId: string, token: string): Promise<string | null> {
     const res = await this.pool.query<{ test_token: string }>(
@@ -366,9 +320,9 @@ export class PgWorkflowStore {
   }
 
   /**
-   * Scénario associé à un jeton de test. CHEMIN CHAUD (un message entrant qui ressemble à un jeton) : sert
-   * l'index unique partiel `workflows_test_token_key`. Pas de scope tenant en entrée, justement parce que le
-   * jeton est ce qui DÉSIGNE le tenant : c'est l'appelant qui vérifie ensuite que le numéro correspond.
+   * Scénario associé à un jeton de test. Chemin chaud (un message entrant qui ressemble à un jeton), servi
+   * par l'index unique partiel `workflows_test_token_key`. 🔴 Pas de scope tenant en entrée : le jeton désigne
+   * le tenant, et c'est l'appelant qui vérifie ensuite que le numéro correspond.
    */
   async findByTestToken(token: string): Promise<WorkflowRow | null> {
     const res = await this.pool.query<Row>(
@@ -381,12 +335,9 @@ export class PgWorkflowStore {
 }
 
 /**
- * Ce que l'ÉDITEUR ouvre, et ce que le lien de TEST joue : le brouillon s'il existe, sinon le publié.
- *
- * Un point de passage unique, parce que c'est la seule question à laquelle il ne faut pas répondre deux fois
- * de deux façons. Tout le reste du dépôt lit `row.graph`, c'est-à-dire le publié : essayer son scénario avant
- * de le mettre en ligne est précisément à quoi sert un brouillon, mais un contact réel, lui, ne doit jamais
- * tomber dedans.
+ * Ce que l'éditeur ouvre, et ce que le lien de test joue : le brouillon s'il existe, sinon le publié. Point
+ * de passage unique : tout le reste du dépôt lit `row.graph` (le publié), et un contact réel ne doit jamais
+ * tomber dans un brouillon.
  */
 export function grapheEditable(row: WorkflowRow): WorkflowGraph {
   return row.draftGraph ?? row.graph;

@@ -3,7 +3,8 @@ import { coerceConditionGroup } from '../workflow/conditions';
 import { isAutomationTriggerKind } from './match';
 import type { AutomationRow, AutomationTriggerKind } from './match';
 
-/** Ce qu'une route peut créer/modifier. `enabled` par défaut false : une automation ne part jamais sans un OUI explicite. */
+/** Ce qu'une route peut créer ou modifier. `enabled` par défaut false : une automation ne part jamais sans un
+ *  oui explicite. */
 export interface AutomationInput {
   name: string;
   triggerKind: AutomationTriggerKind;
@@ -14,18 +15,15 @@ export interface AutomationInput {
   cooldownSeconds: number | null;
   enabled: boolean;
   /**
-   * Proprietaire de cette automation quand elle en a un ('channelsme_link' pour un lien de chaine).
-   * Absent ou null = automation ordinaire, pilotee depuis l'ecran Automation.
-   *
-   * ⚠️ N'est JAMAIS lu du corps d'une requete HTTP : `parseBody` (`src/http/automations.ts`) recopie une
-   * liste FERMEE de champs. Un client qui pourrait le poser se fabriquerait une automation que son propre
-   * ecran ne liste plus, ne modifie plus et ne supprime plus.
+   * Propriétaire de cette automation quand elle en a un ('channelsme_link' pour un lien de chaîne) ; null =
+   * automation ordinaire. Jamais lu du corps d'une requête HTTP (`parseBody` recopie une liste fermée) : un
+   * client qui le poserait se fabriquerait une automation que son propre écran ne liste plus.
    */
   possedePar?: string | null;
   /**
-   * Plafond horaire de declenchements propre a cette automation. Absent ou null = plafond global de
-   * l'instance (`AUTOMATION_MAX_FIRES_PER_HOUR`). Meme remarque que ci-dessus : il ne se regle pas depuis
-   * l'ecran, il desserrerait la garde qui borne des envois factures.
+   * Plafond horaire de déclenchements propre à cette automation ; null = plafond global
+   * (`AUTOMATION_MAX_FIRES_PER_HOUR`). Pas réglable depuis l'écran : il desserrerait la garde qui borne des
+   * envois facturés.
    */
   maxFiresPerHour?: number | null;
 }
@@ -38,18 +36,15 @@ interface Raw {
 }
 
 /**
- * Ligne d'automation depuis la base. `trigger_config`/`condition_group` sont du jsonb OPAQUE (édité par une
- * route, potentiellement ancien) : tout est coercé défensivement, jamais casté. Un `trigger_kind` inconnu
- * (valeur écrite par une version future, ou à la main) renvoie null -> l'automation est simplement ignorée
- * plutôt que de faire planter le chemin chaud du webhook.
+ * Ligne d'automation depuis la base. Les jsonb sont coercés défensivement, jamais castés ; un `trigger_kind`
+ * inconnu rend null et l'automation est ignorée plutôt que de faire planter le chemin chaud du webhook.
  */
 function toRow(r: Raw): AutomationRow | null {
   if (!isAutomationTriggerKind(r.trigger_kind)) return null;
   const cfg = r.trigger_config && typeof r.trigger_config === 'object' && !Array.isArray(r.trigger_config)
     ? (r.trigger_config as Record<string, unknown>)
     : {};
-  // `condition_group` absent = aucune condition. Présent = coercé par le MÊME code que le node « Si » du
-  // builder, donc une clause malformée devient inoffensive au lieu de casser l'évaluation.
+  // `condition_group` coercé par le même code que le bloc « Si » : une clause malformée devient inoffensive.
   const group = r.condition_group === null || r.condition_group === undefined
     ? null
     : coerceConditionGroup(r.condition_group);
@@ -65,61 +60,36 @@ function toRow(r: Raw): AutomationRow | null {
     startNodeId: r.start_node_id,
     cooldownSeconds: r.cooldown_seconds,
     maxFiresPerHour: r.max_fires_per_hour,
-    // Lu par le CHEMIN CHAUD depuis le 2026-09-08 : c'est lui qui dit si le declenchement vient d'un geste
-    // EXPLICITE du contact (un bouton de chaine, ou depuis le lot 3 un clic sur une publicite), donc s'il
-    // reprend la main sur le fil (`reprendLaMain`).
+    // Lu par le chemin chaud : un déclenchement né d'un geste explicite du contact (bouton de chaîne, clic sur
+    // une publicité) reprend la main sur le fil (`reprendLaMain`).
     possedePar: r.possede_par,
   };
 }
 
-// ⚠️ Liste tenue A LA MAIN : ajouter une colonne ici oblige a toucher `Raw` ET `toRow`, sinon la valeur
-// arrive de la base et se perd en silence dans le mapping.
+// Liste tenue à la main : une colonne ajoutée ici doit l'être aussi dans `Raw` et `toRow`, sinon elle se
+// perd en silence dans le mapping.
 const COLS = 'id, tenant_id, name, enabled, trigger_kind, trigger_config, condition_group, workflow_id, start_node_id, cooldown_seconds, max_fires_per_hour, possede_par';
 
 /**
- * DEUX familles d'automations sont possedees par autre chose que l'ecran Automation, et ce predicat les met
- * hors de portee de CE store, donc de cet ecran.
+ * Met hors de portée de ce store (donc de l'écran Automation) les automations possédées par autre chose :
+ * `trigger_kind = 'webhook'` (gérées par `PgWebhookStore`) et `possede_par is not null` (lien de chaîne,
+ * publicité). Sans le second terme, un PATCH ou un DELETE ici ferait cesser en silence le bouton d'un post
+ * déjà publié, qui circule pour toujours.
  *
- * 1. `trigger_kind = 'webhook'` (migration 0074) : creees, modifiees et supprimees depuis l'ecran
- *    Tools > Webhooks, via `PgWebhookStore`, qui ecrit ses propres requetes.
- * 2. `possede_par is not null` (migration 0114) : le proprietaire se nomme dans la colonne,
- *    'channelsme_link' pour un lien de chaine WhatsApp, 'publicite' pour une publicite Click-to-WhatsApp
- *    (lot 3). Sans ce second terme, une automation `keyword`
- *    posee par un lien resterait listable, modifiable et supprimable ici : un PATCH la reaffecterait a un
- *    autre declencheur, un DELETE la retirerait, et le bouton d'un post DEJA PUBLIE cesserait de declencher
- *    en silence. Un post publie circule pour toujours, il n'y a pas de retour arriere.
- *
- * Sans ce predicat, l'invariant ne tiendrait qu'au fait que l'identifiant de ces lignes n'est expose nulle
- * part : vrai aujourd'hui, faux le jour ou une route le rend pour une raison quelconque.
- *
- * ⚠️ `listEnabled` (chemin chaud) ne le porte PAS et ne doit jamais le porter : l'y ajouter rendrait muets
- * le webhook, le lien de chaine ET la publicite. `create` non plus, evidemment : c'est par la qu'une
- * automation possedee naît.
- *
- * ⚠️ Et depuis le 2026-09-08, `possede_par` n'est plus seulement un PREDICAT de portee : sa VALEUR est lue
- * par le chemin chaud (elle est dans `COLS`), parce qu'une automation nee d'un lien de chaine, et depuis le
- * lot 3 d'une publicite, reprend la main sur le fil quand une automation ordinaire ne le fait pas. La
- * retirer de `COLS` ne casserait aucun type, elle rendrait seulement `possedePar` nul partout : les boutons
- * de chaine cesseraient de demarrer des qu'un fil est tenu, et les leads d'une publicite avec eux, sur un
- * numero ou l'agent de Meta tient justement tous les fils.
- *
- * Le NOM de la constante reste `HORS_WEBHOOK` alors qu'elle couvre desormais deux familles : la renommer
- * dans le meme commit melerait un renommage a un changement de comportement, et rendrait la relecture du
- * second impossible.
+ * `listEnabled` (chemin chaud) ne le porte pas et ne doit jamais le porter, `create` non plus. La valeur de
+ * `possede_par` est lue par le chemin chaud (dans `COLS`) : la retirer rendrait `possedePar` nul partout, et
+ * les boutons de chaîne ne démarreraient plus dès qu'un fil est tenu.
  */
 const HORS_WEBHOOK = "and trigger_kind <> 'webhook' and possede_par is null";
 
-/** Automations d'un tenant + garde-fou anti-rebond. Tout est scopé `tenant_id` sur CHAQUE requête. */
+/** Automations d'un tenant et garde-fou anti-rebond. 🔴 Toute requête sur un espace filtre par `tenant_id`. */
 export class PgAutomationStore {
   constructor(private readonly pool: Pool) {}
 
   /**
-   * Automations du tenant (écran Automation), les plus récentes d'abord.
-   *
-   * ⚠️ Les automations de type `webhook` sont EXCLUES : elles sont possédées par leur webhook (migration
-   * 0074), créées et supprimées depuis l'écran Tools > Webhooks, et n'ont aucun sens hors de lui. Les
-   * afficher ici donnerait à l'utilisateur une ligne qu'il n'a pas créée, et un second endroit pour la
-   * modifier, donc une désynchronisation garantie. Seule `listEnabled` (chemin chaud) les voit.
+   * Automations du tenant (écran Automation), les plus récentes d'abord. Celles possédées par un webhook, un
+   * lien ou une publicité sont exclues (`HORS_WEBHOOK`) : les montrer offrirait un second endroit pour les
+   * modifier.
    */
   async list(tenantId: string): Promise<AutomationRow[]> {
     const res = await this.pool.query<Raw>(
@@ -131,8 +101,8 @@ export class PgAutomationStore {
   }
 
   /**
-   * CHEMIN CHAUD (chaque message entrant) : uniquement les automations ACTIVES du tenant pour ces types de
-   * déclencheur. Sert l'index partiel `automations_tenant_kind_enabled_idx`. Liste de types vide -> aucune requête.
+   * Chemin chaud (chaque message entrant) : les automations actives du tenant pour ces types. Sert l'index
+   * partiel `automations_tenant_kind_enabled_idx`. Liste de types vide : aucune requête.
    */
   async listEnabled(tenantId: string, kinds: readonly AutomationTriggerKind[]): Promise<AutomationRow[]> {
     if (kinds.length === 0) return [];
@@ -144,7 +114,7 @@ export class PgAutomationStore {
     return res.rows.map(toRow).filter((a): a is AutomationRow => a !== null);
   }
 
-  /** UNE automation par id, scopée tenant. Lecture ciblée, contrairement à `list` qui est capée. */
+  /** Une automation par id, scopée tenant. */
   async getById(id: string, tenantId: string): Promise<AutomationRow | null> {
     const res = await this.pool.query<Raw>(
       `select ${COLS} from automations where id = $1 and tenant_id = $2 ${HORS_WEBHOOK}`,
@@ -169,7 +139,7 @@ export class PgAutomationStore {
     return { id: res.rows[0]!.id };
   }
 
-  /** Mise à jour PARTIELLE (l'écran ne bascule souvent que `enabled`). Renvoie false si l'id n'est pas au tenant. */
+  /** Mise à jour partielle (l'écran ne bascule souvent que `enabled`). false si l'id n'est pas au tenant. */
   async update(id: string, tenantId: string, patch: Partial<AutomationInput>): Promise<boolean> {
     const sets: string[] = [];
     const vals: unknown[] = [id, tenantId];
@@ -208,25 +178,10 @@ export class PgAutomationStore {
   /**
    * Enregistre le déclenchement (une ligne par couple automation/contact, écrasée à chaque tir).
    *
-   * `marqueur` (migration 0075) retient POUR QUELLE VALEUR on a tiré. Il ne sert qu'au déclencheur
-   * `avant_date` : une date qui change est une occurrence NEUVE, et un simple « déjà tiré » laisserait un
-   * rendez-vous reporté sans rappel, en silence. Absent -> la colonne est remise à null, ce qui est le
-   * comportement de tous les autres déclencheurs.
-   */
-  /**
-   * 🔴 CLAIM CONDITIONNEL QUAND UN MARQUEUR EST DONNÉ (R10). Rend `false` si le marqueur stocké est DÉJÀ
-   * celui-ci : un autre tour a tiré pour cette même occurrence, il ne faut pas tirer une seconde fois.
-   *
-   * Ce qu'il répare : la déduplication du rappel « avant date » vivait UNIQUEMENT dans le balayage, qui lit
-   * `fired_for` avant de publier. Tant que l'événement publié n'était pas consommé, le balayage suivant
-   * revoyait le contact comme dû et republiait. Un client avec quinze rendez-vous à la même heure fabrique
-   * assez d'événements pour que la file prenne du retard : deux, parfois trois rappels WhatsApp IDENTIQUES,
-   * facturés, visibles du client, avec le risque de note de qualité Meta. La garantie descend donc du
-   * balayage au RUNNER, c'est-à-dire au seul endroit qui soit atomique.
-   *
-   * ⚠️ SANS marqueur (tous les déclencheurs sauf `avant_date`), l'écriture reste INCONDITIONNELLE et rend
-   * toujours `true`. La rendre conditionnelle là aussi casserait l'anti-boucle : `fired_for` y vaut toujours
-   * `null`, `null is distinct from null` est faux, et plus AUCUN déclenchement répété ne passerait.
+   * 🔴 Avec un `marqueur` (seul `avant_date` : la valeur pour laquelle on tire), l'écriture est un claim
+   * conditionnel : `false` si ce marqueur est déjà stocké, pour qu'un événement republié avant d'être consommé
+   * ne donne pas deux rappels facturés. Sans marqueur, elle reste inconditionnelle et rend `true` :
+   * conditionnelle, `null is distinct from null` étant faux, plus aucun déclenchement répété ne passerait.
    */
   async markFired(automationId: string, waId: string, marqueur?: string): Promise<boolean> {
     const res = await this.pool.query(
@@ -239,14 +194,9 @@ export class PgAutomationStore {
   }
 
   /**
-   * Contacts d'une automation `avant_date` dont la date de champ tombe dans une fenêtre GROSSIÈRE autour de
-   * l'échéance, avec la valeur pour laquelle on a déjà tiré.
-   *
-   * ⚠️ Le tri se fait sur du TEXTE. Les dates sont stockées en ISO (canonicalisées à l'écriture), donc
-   * l'ordre lexicographique suit l'ordre chronologique... à fuseau égal. Une base qui mélange `Z`, `+02:00`
-   * et des heures murales peut décaler de quelques heures : d'où une fenêtre élargie d'un JOUR de chaque
-   * côté, et la décision fine laissée à `estDu`, qui sait lire un fuseau. Filtrer serré ici ferait manquer
-   * des rappels, et ça ne se verrait pas.
+   * Contacts d'une automation `avant_date` dont la date tombe dans une fenêtre grossière autour de l'échéance,
+   * avec la valeur pour laquelle on a déjà tiré. Le tri se fait sur du texte ISO, chronologique seulement à
+   * fuseau égal : la fenêtre est élargie d'un jour, et la décision fine revient à `estDu`.
    */
   async contactsDusPourDate(
     tenantId: string,
@@ -279,7 +229,7 @@ export class PgAutomationStore {
       .map((r) => ({ waId: r.wa_id, valeur: r.valeur, dejaTirePour: r.fired_for }));
   }
 
-  /** Espaces ayant au moins une automation `avant_date` ACTIVE. Évite de balayer tout le monde pour rien. */
+  /** Espaces ayant au moins une automation `avant_date` active, pour ne pas balayer tout le monde. */
   async tenantsAvecDeclencheurDate(): Promise<string[]> {
     const res = await this.pool.query<{ tenant_id: string }>(
       `select distinct tenant_id from automations where enabled and trigger_kind = 'avant_date'`,
@@ -288,11 +238,9 @@ export class PgAutomationStore {
   }
 
   /**
-   * Nombre de déclenchements de CETTE automation depuis `since`. Sert le plafond horaire : l'anti-rebond est
-   * par (automation, contact) et ne borne donc RIEN à l'échelle d'une population. Or un seul acte d'exploitation
-   * peut produire des milliers d'événements d'un coup (une campagne directe rouvre l'analyse de tous ses
-   * destinataires, qui repartent ensuite en « conversation analysée »). Sans plafond, une automation sans filtre
-   * enverrait un message facturé par contact touché.
+   * Déclenchements de cette automation depuis `since`, pour le plafond horaire. L'anti-rebond est par
+   * (automation, contact) et ne borne rien à l'échelle d'une population : un seul acte d'exploitation peut
+   * produire des milliers d'événements, donc autant de messages facturés.
    */
   async firedSince(automationId: string, since: Date): Promise<number> {
     const res = await this.pool.query<{ n: string }>(

@@ -1,53 +1,22 @@
 import { cacheCourt } from '../lib/cache-court';
 
 /**
- * LE NUMÉRO META DE L'ESPACE, DEMANDÉ UNE FOIS ET PAS UNE FOIS PAR DESTINATAIRE.
+ * Le numéro Meta de l'espace, mis en cache pour ne pas coûter une requête par destinataire (le runtime de
+ * scénario le demande à chaque envoi, sur un pool partagé par tout le process).
  *
- * 🔴 CE QUE ÇA COÛTAIT. `getTenantPhoneNumberId` est un `select ... limit 1` sur `phone_numbers`, et le
- * câblage du runtime de scénario l'appelait à CHAQUE envoi : cinq sites le faisaient dans la boucle. Sur une
- * campagne de 5 000 destinataires, cela fait 5 000 requêtes pour une réponse qui ne bouge pas. Le pool
- * applicatif porte 8 connexions pour TOUT le process, partagées par les campagnes (4 en vol), les tours
- * d'agent (12) et les webhooks (3) : ces requêtes-là ne tombent pas dans le vide, elles prennent la place
- * d'autre chose.
- *
- * 🔴 ON NE MET EN CACHE QUE LES RÉPONSES POSITIVES, ET C'EST LA DÉCISION QUI REND CE CACHE SÛR.
- *
- * `cache-court.ts` prévient que son cache « convient à ce qui tolère d'être en retard de quelques secondes,
- * jamais à une décision ». Le numéro d'envoi EST une décision. Ce qui lève l'objection n'est pas la durée de
- * vie, c'est l'asymétrie des deux réponses :
- *
- * - une réponse POSITIVE ne devient fausse que si le numéro change d'espace. Vérifié : le seul écrit qui
- *   puisse changer la réponse est l'`insert` de l'Embedded Signup (`src/account/es-store.pg.ts`), les autres
- *   `update` de `phone_numbers` ne touchent aucune colonne lue ici. Et si elle devenait fausse, l'envoi
- *   échouerait VISIBLEMENT chez Meta, il ne partirait pas au mauvais endroit en silence ;
- * - une réponse NULLE, elle, devient fausse au moment exact où un client branche son premier numéro. La
- *   mettre en cache gèlerait « aucun numéro » pendant toute sa durée de vie, dans le WORKER, alors que
- *   l'écriture a lieu dans l'API : les deux process ont chacun leur cache et rien ne les synchronise, donc
- *   aucune invalidation ne peut rattraper ça. Un client qui vient de connecter son numéro et lance une
- *   campagne la verrait échouer sans comprendre.
- *
- * D'où la règle : `null` est relu à chaque fois. Un espace sans numéro paie une requête par appel, ce qui est
- * sans conséquence puisqu'il ne peut de toute façon rien envoyer.
- *
- * ⚠️ PAR PROCESS, comme tout `cacheCourt`. L'API et le worker ont chacun le leur.
+ * Seules les réponses positives sont mises en cache. Une réponse positive ne devient fausse que si le numéro
+ * change d'espace (geste d'embarquement, et l'envoi échouerait alors visiblement chez Meta). Une réponse nulle
+ * devient fausse dès qu'un client branche son premier numéro, dans l'API, alors que le worker a son propre
+ * cache : aucune invalidation ne la rattraperait, donc `null` est relu à chaque fois. Cache par process.
  */
 
-/**
- * Durée de vie du cache.
- *
- * ⚠️ Elle borne la seule fenêtre de risque qui reste (un numéro déplacé d'un espace à l'autre pendant qu'il
- * est en cache), qui n'est pas un geste de production mais d'embarquement.
- */
+/** Durée de vie du cache : elle borne la seule fenêtre de risque, un numéro déplacé d'un espace à l'autre. */
 export const NUMERO_ESPACE_TTL_MS = 60_000;
 
 /**
- * Rend l'accesseur mis en cache. UNE instance par process : deux instances auraient deux caches, donc deux
- * fois les requêtes qu'on vient d'économiser.
- *
- * Sert AUSSI au WABA de l'espace (`getTenantWabaId`, dans l'API et le worker), avec la même règle :
- * `resolveForTenant` (`src/meta/credentials.ts`) le demande AVANT de consulter son cache de jeton, indexé par
- * WABA, donc à chaque construction de client Meta. Un espace sans WABA retombe sur le jeton maison, et geler
- * cette réponse retarderait le moment où un client fraîchement connecté devient joignable.
+ * Rend l'accesseur mis en cache ; une seule instance par process (deux instances, deux caches).
+ * Sert aussi au WABA de l'espace (`getTenantWabaId`) avec la même règle : `resolveForTenant` le demande à chaque
+ * construction de client Meta, et geler une réponse nulle retarderait un client fraîchement connecté.
  */
 export function creerNumeroDeLEspace(
   lire: (tenantId: string) => Promise<string | null>,
@@ -57,8 +26,7 @@ export function creerNumeroDeLEspace(
   const cache = cacheCourt<string | null>(ttlMs, maintenant);
   return async function numeroDeLEspace(tenantId: string): Promise<string | null> {
     const numero = await cache.lire(tenantId, () => lire(tenantId));
-    // La mutualisation des appels en vol a déjà joué pour les appels simultanés ; on retire seulement la
-    // valeur nulle de la DURÉE DE VIE, pour qu'elle ne soit pas resservie plus tard.
+    // La mutualisation des appels en vol a déjà joué ; on retire seulement `null` de la durée de vie.
     if (numero === null) cache.invalider(tenantId);
     return numero;
   };

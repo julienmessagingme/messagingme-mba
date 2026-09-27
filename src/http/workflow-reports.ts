@@ -5,10 +5,8 @@ import { NomDeTableauDejaPris } from '../workflow/reports.pg';
 import type { WorkflowReport, MesureRetenue } from '../workflow/reports.pg';
 
 /**
- * Les TABLEAUX enregistrés d'Analytics > Mes tableaux : lister, enregistrer, supprimer.
- *
- * Un tableau ne contient que la SÉLECTION (scénario + mesures retenues), jamais des chiffres : les compteurs
- * se recalculent à la lecture, sur la période qu'on regarde.
+ * Les tableaux enregistrés d'Analytics > Mes tableaux. Un tableau ne contient que la sélection (scénario et
+ * mesures retenues), jamais des chiffres : les compteurs se recalculent à la lecture.
  */
 export interface WorkflowReportsRouteDeps {
   listReports(tenantId: string): Promise<WorkflowReport[]>;
@@ -31,7 +29,7 @@ function normaliserMesures(v: unknown): MesureRetenue[] {
       handle: typeof m.handle === 'string' && m.handle !== '' ? m.handle.slice(0, 200) : null,
     }))
     .filter((m) => m.cle !== '' && m.kind !== '')
-    // Un tableau de dix mille mesures n'est pas un tableau : le plafond protège autant la base que la lisibilité.
+    // Plafond : il protège la base autant que la lisibilité.
     .slice(0, 100);
 }
 
@@ -43,10 +41,7 @@ export function registerWorkflowReports(app: FastifyInstance, deps: WorkflowRepo
     return reply.code(200).send({ reports: await deps.listReports(tenant) });
   });
 
-  /**
-   * Enregistre un tableau. `id` fourni -> mise à jour, sinon création. Un seul verbe pour les deux : côté
-   * écran c'est le MÊME bouton, et deux routes auraient fini par diverger sur la validation.
-   */
+  /** Enregistre un tableau : `id` fourni -> mise à jour, sinon création (un seul bouton, une seule validation). */
   app.post('/tenants/:tenantId/workflow-reports', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const b = (req.body ?? {}) as { id?: unknown; workflowId?: unknown; name?: unknown; mesures?: unknown };
@@ -63,13 +58,11 @@ export function registerWorkflowReports(app: FastifyInstance, deps: WorkflowRepo
         ...(typeof b.id === 'string' && b.id !== '' ? { id: b.id } : {}),
         workflowId, name, mesures,
       });
-      // `null` = l'identifiant fourni n'existe pas dans CET espace. 404 plutôt qu'une création sous un id
-      // imposé par l'appelant, qui laisserait deviner l'existence d'un tableau d'un autre espace.
+      // `null` = identifiant inconnu dans cet espace. 404 plutôt qu'une création sous un id imposé, qui laisserait
+      // deviner l'existence d'un tableau d'un autre espace.
       if (!saved) return reply.code(404).send({ error: 'tableau inconnu' });
       return reply.code(200).send({ report: saved });
     } catch (err) {
-      // Nom déjà pris : erreur de saisie, donc 4xx avec son motif. Un 5xx verrait son corps remplacé par la
-      // page d'erreur de Cloudflare, et l'opérateur ne saurait pas ce qu'on lui reproche.
       if (err instanceof NomDeTableauDejaPris) return reply.code(409).send({ error: err.message });
       throw err;
     }

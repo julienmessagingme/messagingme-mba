@@ -1,35 +1,20 @@
 /**
- * Le CORPS, les PARAMÈTRES D'URL et les EN-TÊTES d'un appel de connecteur, construits à partir de gabarits à
- * variables (le CHEMIN, lui, se remplit dans `http-cible.ts`).
+ * Le corps, les paramètres d'URL et les en-têtes d'un appel de connecteur, construits à partir de gabarits à
+ * variables (le chemin se remplit dans `http-cible.ts`).
  *
- * 🔴 CE QUI MANQUAIT, ET POURQUOI C'ÉTAIT BLOQUANT. Jusqu'ici un connecteur ne savait remplir qu'un gabarit
- * de CHEMIN (`/commandes/{numero}`). Un `POST` partait donc avec un corps VIDE, ce qui ne sert à rien : un
- * connecteur existe pour envoyer une donnée variable (une ville, la dernière phrase du contact, un champ de
- * sa fiche) et recevoir une réponse en échange. Sans corps ni paramètres d'URL, il n'y avait rien à envoyer.
- *
- * 🔴 LA DÉCISION QUI PORTE TOUTE LA SÛRETÉ DU MODULE : le gabarit de corps est du JSON VALIDE, et la
- * substitution est STRUCTURELLE, jamais textuelle.
- *
- * Le réflexe naturel serait de traiter le gabarit comme du texte et d'y remplacer `{{ville}}` par la valeur.
- * Ce serait une injection ouverte, et pas théorique : une valeur peut venir du MODÈLE, ou de la dernière
- * phrase écrite par le CONTACT, donc d'un inconnu. Il lui suffirait d'écrire `Paris", "admin": true` pour
- * ajouter un champ au corps envoyé au système du client. Un guillemet suffirait même à casser le JSON.
- *
- * Ici on PARSE le gabarit d'abord, on remplace les valeurs dans l'arbre, puis on ré-encode. Une valeur ne
- * peut donc jamais devenir de la STRUCTURE : au pire c'est une chaîne bizarre dans le champ prévu pour elle.
- *
- * ⚠️ Conséquence assumée : on ne sait pas fabriquer une clé dynamique ni un tableau de longueur variable. Ce
- * n'est pas un manque, c'est le prix de la garantie ci-dessus, et le besoin est d'envoyer des champs, pas
- * d'écrire un langage de gabarit.
+ * 🔴 Le gabarit de corps est du JSON valide, et la substitution est structurelle, jamais textuelle : on parse,
+ * on remplace dans l'arbre, on ré-encode. Une valeur peut venir du modèle ou de la dernière phrase du contact
+ * (`Paris", "admin": true`) : en substitution textuelle, elle ajouterait des champs au corps. Ici elle ne
+ * devient jamais de la structure. Le prix : ni clé dynamique ni tableau de longueur variable.
  */
 
 import { VARIABLE_DE_CHEMIN } from './http-cible';
 
-/** Variables nommées `{{ville}}`. MÊME motif que l'éditeur de la console (`web/components/VariableBodyEditor`),
+/** Variables nommées `{{ville}}`. Même motif que l'éditeur de la console (`web/components/VariableBodyEditor`),
  *  pour que ce qui s'écrit à l'écran soit exactement ce qui se substitue ici. */
 const VARIABLE = /\{\{\s*([\w.-]+)\s*\}\}/g;
 
-/** Une chaîne qui n'est QUE `{{ville}}`, sans rien autour : c'est elle qui prend la valeur TYPÉE. */
+/** Une chaîne qui n'est que `{{ville}}`, sans rien autour : c'est elle qui prend la valeur typée. */
 const VARIABLE_SEULE = /^\{\{\s*([\w.-]+)\s*\}\}$/;
 
 export type ValeurVariable = string | number | boolean | null;
@@ -41,20 +26,14 @@ export interface CorpsConstruit {
 }
 export interface CorpsRefuse {
   ok: false;
-  /** Lisible par le CLIENT (elle remonte dans la console). Ne cite jamais un secret. */
+  /** Lisible par le client (elle remonte dans la console). Ne cite jamais un secret. */
   raison: string;
 }
 
 /**
- * Remplace les variables dans une valeur de l'arbre JSON.
- *
- * Deux cas, et la distinction est ce qui rend les types utiles :
- *  - la chaîne vaut EXACTEMENT `{{ville}}` : elle prend la valeur avec SON TYPE. Un paramètre déclaré
- *    « nombre » part donc en nombre (`{"n": 42}`), pas en chaîne (`{"n": "42"}`), ce qui est la différence
- *    entre une API qui répond et une API qui renvoie 400 ;
- *  - la chaîne CONTIENT une variable parmi du texte (`"Bonjour {{prenom}}"`) : on interpole, donc le résultat
- *    est forcément une chaîne. Une valeur absente y devient vide plutôt que le littéral `{{prenom}}`, qui
- *    partirait tel quel chez le client.
+ * Remplace les variables dans une valeur de l'arbre JSON. Une chaîne qui vaut exactement `{{ville}}` prend
+ * la valeur avec son type (`{"n": 42}` et non `"42"`, la différence entre une API qui répond et un 400).
+ * Une variable parmi du texte est interpolée ; absente, elle y devient vide plutôt que le littéral.
  */
 function substituer(noeud: unknown, valeurs: Readonly<Record<string, ValeurVariable>>, manquantes: Set<string>): unknown {
   if (typeof noeud === 'string') {
@@ -74,9 +53,8 @@ function substituer(noeud: unknown, valeurs: Readonly<Record<string, ValeurVaria
   if (Array.isArray(noeud)) return noeud.map((n) => substituer(n, valeurs, manquantes));
   if (noeud !== null && typeof noeud === 'object') {
     const out: Record<string, unknown> = {};
-    // ⚠️ Les CLÉS ne sont pas substituées, volontairement : une clé variable ferait dépendre la FORME du
-    // corps d'une valeur d'exécution, donc d'un texte que le contact influence. C'est exactement ce que la
-    // substitution structurelle sert à empêcher.
+    // Les clés ne sont pas substituées : une clé variable ferait dépendre la forme du corps d'un texte que
+    // le contact influence.
     for (const [cle, v] of Object.entries(noeud as Record<string, unknown>)) out[cle] = substituer(v, valeurs, manquantes);
     return out;
   }
@@ -91,14 +69,9 @@ export interface ChampCorps {
 }
 
 /**
- * COMMENT le corps est saisi. Deux façons, et c'est une demande explicite de Julien le 2026-09-02 : « du json
- * brut pour les mecs habitués et une liste de champs ».
- *
- * 🔴 DEUX SAISIES, UN SEUL MOTEUR. Le mode `champs` est COMPILÉ vers le même arbre que le mode `json`, puis
- * les deux passent par `substituer`. C'est ce qui garantit qu'ils ne divergeront pas : deux chemins de
- * substitution tenus en parallèle finiraient par ne plus produire la même chose au premier ajustement, et
- * personne ne le verrait avant qu'un client ne s'en plaigne. La liste de champs n'est donc pas un second
- * moteur, c'est une autre porte d'entrée du même.
+ * Comment le corps est saisi : JSON brut, ou liste de champs. Deux saisies, un seul moteur : le mode `champs`
+ * est compilé vers le même arbre que le mode `json`, puis les deux passent par `substituer`, pour qu'ils ne
+ * divergent jamais.
  */
 export type GabaritCorps =
   | { mode: 'aucun' }
@@ -106,10 +79,8 @@ export type GabaritCorps =
   | { mode: 'champs'; champs: readonly ChampCorps[] };
 
 /**
- * Construit le corps d'un appel.
- *
- * Un gabarit ILLISIBLE est un refus, jamais un corps vide envoyé quand même : partir avec un corps que
- * personne n'a voulu est pire que ne pas partir, et le client peut corriger son gabarit dans sa console.
+ * Construit le corps d'un appel. Un gabarit illisible est un refus, jamais un corps vide envoyé quand même :
+ * le client peut corriger son gabarit dans sa console.
  */
 export function construireCorps(
   gabarit: GabaritCorps,
@@ -139,8 +110,7 @@ export function construireCorps(
   const manquantes = new Set<string>();
   const rempli = substituer(arbre, valeurs, manquantes);
   if (manquantes.size > 0) {
-    // Nommer TOUTES les manquantes d'un coup : les donner une par une ferait corriger le connecteur autant
-    // de fois qu'il manque de variables.
+    // Toutes les manquantes d'un coup, pour ne pas faire corriger le connecteur une variable à la fois.
     return { ok: false, raison: `variable(s) sans valeur dans le corps : ${[...manquantes].sort().join(', ')}` };
   }
   return { ok: true, corps: JSON.stringify(rempli) };
@@ -152,25 +122,19 @@ export interface ParametreUrl {
   valeur: string;
 }
 
-/** Un en-tête SUPPLÉMENTAIRE de la requête. Voir `EN_TETES_RESERVES` pour ce qui n'a rien à faire ici. */
+/** Un en-tête supplémentaire de la requête. Voir `EN_TETES_RESERVES` pour ce qui n'a rien à faire ici. */
 export interface EnTete {
   nom: string;
   valeur: string;
 }
 
 /**
- * Les en-têtes que le client NE PEUT PAS poser lui-même sur une requête.
+ * Les en-têtes que le client ne peut pas poser lui-même sur une requête.
  *
- * 🔴 `authorization` d'abord, et ce n'est pas du zèle. L'authentification d'un connecteur vit sur la SOURCE,
- * chiffrée, et `enTetesAuthSource` en est l'unique point de passage. Laisser saisir un `authorization` ici
- * ferait deux chemins d'authentification, dont un qui stocke le secret EN CLAIR dans la configuration de la
- * requête, visible de tout écran qui l'affiche et de tout export qui la copie. Le champ existerait « parce
- * que Postman l'a », et il deviendrait la façon la plus naturelle de s'authentifier, donc la plus utilisée.
- *
- * `content-type` ensuite, pour une raison plus terre à terre : il est posé par la construction du corps, en
- * accord avec ce qui part réellement. Le laisser saisir permettrait d'annoncer du XML en envoyant du JSON.
- *
- * `host` et `content-length` enfin : ils décrivent le transport, les fixer à la main casse l'appel.
+ * 🔴 `authorization` : l'authentification vit sur la source, chiffrée, et `enTetesAuthSource` en est l'unique
+ * point de passage. La laisser saisir ici ferait un second chemin qui stocke le secret en clair dans la
+ * configuration de la requête. `content-type` : posé d'après ce qui part réellement. `host` et
+ * `content-length` décrivent le transport.
  */
 export const EN_TETES_RESERVES = ['authorization', 'content-type', 'content-length', 'host'] as const;
 
@@ -179,14 +143,9 @@ export function estEnTeteReserve(nom: string): boolean {
 }
 
 /**
- * Construit la chaîne de requête (`?ville=Paris&depuis=2026-01-01`).
- *
- * ⚠️ `URLSearchParams` encode chaque valeur : une valeur contenant `&` ou `=` ne peut donc pas ajouter de
- * paramètre. C'est la même garantie que la substitution structurelle du corps, appliquée à l'URL.
- *
- * Un paramètre dont la valeur est VIDE après substitution est OMIS plutôt qu'envoyé vide. Beaucoup d'API
- * traitent `?ville=` comme un filtre sur la chaîne vide, donc comme zéro résultat, ce qui ferait dire à
- * l'agent « je n'ai rien trouvé » là où la bonne réponse est « je n'ai pas cette information ».
+ * Construit la chaîne de requête (`?ville=Paris&depuis=2026-01-01`). `URLSearchParams` encode chaque valeur :
+ * un `&` ou un `=` ne peut pas ajouter de paramètre. Une valeur vide après substitution est omise : beaucoup
+ * d'API lisent `?ville=` comme un filtre sur la chaîne vide, donc zéro résultat.
  */
 export function construireParametres(
   parametres: readonly ParametreUrl[] | null | undefined,
@@ -216,17 +175,11 @@ export function construireParametres(
 }
 
 /**
- * L'APPEL COMPLET : l'adresse finale, la méthode, les en-têtes et le corps, à partir de la requête déclarée
- * et des valeurs résolues. C'est le point de passage obligé, partagé par l'exécution réelle et par le bouton
- * « Test » de la console.
+ * L'appel complet (adresse, méthode, en-têtes, corps), point de passage unique de l'exécution réelle et du
+ * bouton « Test », pour que le test ne dise jamais « ça marche » d'un appel que l'exécution ne sait pas faire.
  *
- * 🔴 PARTAGÉ EXPRÈS, et c'est la leçon que `enTetesAuthSource` porte déjà : le jour où le test et l'exécution
- * construisent leur requête séparément, le test dit « ça marche » d'un appel que l'exécution ne sait pas
- * faire. C'est exactement la divergence que l'audit du 2026-08-18 a payée une centaine de fois.
- *
- * ⚠️ L'AUTHENTIFICATION N'EST PAS ICI. Les en-têtes rendus sont ceux de la requête ; l'appelant y superpose
- * ceux de la source EN DERNIER, pour qu'aucun en-tête saisi ne puisse la recouvrir. La saisie d'un en-tête
- * réservé est refusée en amont par la route, mais cet ordre-là tient même si cette garde-là tombe.
+ * L'authentification n'est pas ici : l'appelant superpose les en-têtes de la source en dernier, pour
+ * qu'aucun en-tête saisi ne puisse la recouvrir, même si la garde de la route tombe.
  */
 export function assemblerAppel(input: {
   baseUrl: string;
@@ -240,8 +193,7 @@ export function assemblerAppel(input: {
   construireCible: (i: { baseUrl: string; binding: { methode: string; chemin: string }; args: Record<string, unknown> })
   => { ok: true; url: string; methode: string } | { ok: false; raison: string };
 }): { ok: true; url: string; methode: string; entetes: Record<string, string>; corps: string | null } | CorpsRefuse {
-  // 1. L'ADRESSE, avec toutes ses gardes (HTTPS, hôte public, cible sous la base). Elle passe AVANT le reste :
-  // inutile de construire un corps pour une adresse qu'on refusera.
+  // 1. L'adresse, avec toutes ses gardes (HTTPS, hôte public, cible sous la base), avant le reste.
   const cible = input.construireCible({
     baseUrl: input.baseUrl,
     binding: { methode: input.methode, chemin: input.chemin },
@@ -249,20 +201,18 @@ export function assemblerAppel(input: {
   });
   if (!cible.ok) return { ok: false, raison: cible.raison };
 
-  // 2. LES PARAMÈTRES D'URL.
+  // 2. Les paramètres d'URL.
   const q = construireParametres(input.parametres, input.valeurs);
   if (!q.ok) return q;
   const url = q.query === '' ? cible.url : `${cible.url}${cible.url.includes('?') ? '&' : '?'}${q.query}`;
 
-  // 3. LE CORPS.
+  // 3. Le corps.
   const c = construireCorps(input.corps, input.valeurs);
   if (!c.ok) return c;
 
-  // 4. LES EN-TÊTES. Un en-tête réservé saisi malgré tout est IGNORÉ plutôt que transmis : la route le refuse
-  // déjà, et deux gardes qui se recouvrent valent mieux qu'une seule sur un chemin qui porte un secret.
-  // 🔴 SUBSTITUÉS COMME LES PARAMÈTRES D'URL (2026-09-23) : l'écran propose d'y insérer une variable, et
-  // `{{client_id}}` partait tel quel chez le client. Une valeur à retour à la ligne est REFUSÉE : glissée dans
-  // un en-tête, elle en fabriquerait un second (injection d'en-tête), et elle peut venir du modèle.
+  // 4. Les en-têtes. Un en-tête réservé est ignoré (la route le refuse déjà : deux gardes sur un chemin qui
+  // porte un secret). Substitués comme les paramètres d'URL. 🔴 Une valeur à retour à la ligne est refusée :
+  // elle fabriquerait un second en-tête (injection), et elle peut venir du modèle.
   const entetes: Record<string, string> = { accept: 'application/json' };
   const manquantes = new Set<string>();
   for (const e of input.entetes ?? []) {
@@ -275,52 +225,41 @@ export function assemblerAppel(input: {
       return x === null || x === undefined ? '' : String(x);
     });
     if (/[\r\n]/.test(valeur)) return { ok: false, raison: `l’en-tête « ${e.nom.trim()} » contiendrait un retour à la ligne : il n’est pas envoyé` };
-    // 🔴 ET TOUT CE QU'UN EN-TÊTE NE PEUT PAS PORTER (revue du 2026-09-23) : `fetch` lève sur un caractère au-delà
-    // de 0xFF (l'apostrophe ’, « œ », un emoji de nom de profil) ou de contrôle. Levée à l'appel, l'erreur passait
-    // pour une panne réseau : la SOURCE notée « injoignable », et le modèle disant que le système est indisponible.
+    // Et tout ce qu'un en-tête ne peut pas porter (au-delà de 0xFF, ou de contrôle) : `fetch` lèverait à
+    // l'appel, et l'erreur passerait pour une panne réseau de la source.
     if (/[^\t\x20-\x7e\x80-\xff]/.test(valeur)) {
       return { ok: false, raison: `l’en-tête « ${e.nom.trim()} » contiendrait un caractère qu’un en-tête ne peut pas porter (apostrophe typographique, emoji…) : il n’est pas envoyé` };
     }
-    // Vide après substitution : omis, comme un paramètre d'URL. Un en-tête vide fait répondre 400 à certaines API.
+    // Vide après substitution : omis, comme un paramètre d'URL (un en-tête vide fait répondre 400 à
+    // certaines API).
     if (valeur !== '') entetes[nom] = valeur;
   }
   if (manquantes.size > 0) {
     return { ok: false, raison: `variable(s) sans valeur dans les en-têtes : ${[...manquantes].sort().join(', ')}` };
   }
-  // Posé d'après ce qui part RÉELLEMENT, jamais d'après une déclaration : annoncer un corps qu'on n'envoie
-  // pas fait répondre 400 à certaines API.
+  // Posé d'après ce qui part réellement : annoncer un corps qu'on n'envoie pas fait répondre 400 à certaines
+  // API.
   if (c.corps !== null) entetes['content-type'] = 'application/json';
 
   return { ok: true, url, methode: cible.methode, entetes, corps: c.corps };
 }
 
 /**
- * Les chemins LISIBLES d'une réponse, pour que l'écran les propose à cocher après un test au lieu de demander
- * au client d'écrire `livraison.date` de tête.
- *
- * 🔴 C'est ce qui rend l'écran utilisable par quelqu'un qui ne connaît pas les API : il lance le test, il voit
- * la réponse, il coche ce qu'il veut. Écrire un chemin à la main suppose de savoir lire du JSON, et une faute
- * de frappe ne se voit qu'à l'exécution, en pleine conversation.
- *
- * ⚠️ N'offre QUE ce que l'extracteur sait résoudre. Il ne descend pas dans les tableaux (pas d'index, décision
- * assumée du résolveur), donc un tableau est proposé ENTIER, comme une feuille. Proposer `commandes.0.total`
- * fabriquerait un chemin cochable qui ne rendrait jamais rien : une case qui ment est pire qu'une case
- * absente, parce qu'on ne la soupçonne pas.
- *
- * Bornée en PROFONDEUR et en NOMBRE : une réponse profonde ou large produirait une liste illisible, et
- * l'écran doit rester utilisable sur la réponse d'une API qu'on découvre.
+ * Les chemins lisibles d'une réponse, que l'écran propose à cocher après un test au lieu de faire écrire
+ * `livraison.date` de tête. N'offre que ce que l'extracteur sait résoudre : il ne descend pas dans les
+ * tableaux, donc un tableau est proposé entier (un `commandes.0.total` cochable ne rendrait jamais rien).
+ * Borné en profondeur et en nombre.
  */
 export function cheminsDeLaReponse(valeur: unknown, max = 200, profondeurMax = 5): string[] {
   const out: string[] = [];
   const marcher = (n: unknown, prefixe: string, profondeur: number): void => {
     if (out.length >= max) return;
-    // Un tableau est une FEUILLE : voir le commentaire ci-dessus.
+    // Un tableau est une feuille : voir ci-dessus.
     if (n !== null && typeof n === 'object' && !Array.isArray(n) && profondeur < profondeurMax) {
       const entrees = Object.entries(n as Record<string, unknown>);
       if (entrees.length === 0 && prefixe !== '') out.push(prefixe);
       for (const [cle, v] of entrees) {
-        // Une clé contenant un point casserait la notation : le chemin `a.b` désignerait deux niveaux alors
-        // qu'il n'y en a qu'un. On l'omet plutôt que d'offrir un chemin ambigu.
+        // Une clé contenant un point casserait la notation (`a.b` désignerait deux niveaux) : omise.
         if (cle.includes('.')) continue;
         marcher(v, prefixe === '' ? cle : `${prefixe}.${cle}`, profondeur + 1);
       }
@@ -333,12 +272,9 @@ export function cheminsDeLaReponse(valeur: unknown, max = 200, profondeurMax = 5
 }
 
 /**
- * Les noms de variables qu'un gabarit RÉCLAME, pour que l'écran puisse dire « tu utilises `{{ville}}` mais tu
- * ne l'as pas déclarée » AVANT l'envoi, et pour que la fenêtre de création d'un agent puisse annoncer au
- * client ce qui partira réellement dans la requête.
- *
- * Balaye le corps, les paramètres d'URL, le chemin ET les en-têtes : tous portent des variables, et en oublier
- * un ferait mentir la liste (les en-têtes l'ont été jusqu'au 2026-09-23).
+ * Les noms de variables qu'un gabarit réclame : pour signaler une variable non déclarée avant l'envoi, et
+ * pour annoncer au client ce qui partira. Balaye le corps (les deux modes), les paramètres d'URL, le chemin
+ * et les en-têtes : en oublier un ferait mentir la liste.
  */
 export function variablesUtilisees(
   corps: GabaritCorps,
@@ -352,14 +288,11 @@ export function variablesUtilisees(
     let m: RegExpExecArray | null;
     while ((m = VARIABLE.exec(s)) !== null) vues.add(m[1]!);
   };
-  // Les DEUX modes de saisie portent des variables : n'en lire qu'un ferait mentir la liste selon la façon
-  // dont le client a rempli son corps, ce qui est exactement le genre d'écart que personne ne soupçonne.
   if (corps.mode === 'json') balayer(corps.gabarit);
   if (corps.mode === 'champs') for (const c of corps.champs) balayer(c.valeur);
   for (const p of parametres ?? []) balayer(p.valeur);
   for (const e of entetes ?? []) balayer(e.valeur);
-  // Le CHEMIN admet `{{nom}}` ET `{nom}` : la même expression que la substitution (`http-cible.ts`), pour que la
-  // liste annoncée ne diverge jamais de ce qui est réellement remplacé.
+  // Le chemin admet `{{nom}}` et `{nom}` : la même expression que la substitution (`http-cible.ts`).
   VARIABLE_DE_CHEMIN.lastIndex = 0; // `matchAll` recopie le `lastIndex` de l'expression partagée
   for (const m of (chemin ?? '').matchAll(VARIABLE_DE_CHEMIN)) vues.add((m[1] ?? m[2])!);
   return [...vues].sort();

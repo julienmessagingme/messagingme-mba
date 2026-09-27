@@ -1,26 +1,20 @@
 /**
- * LE RISQUE DE DÉSENGAGEMENT D'UN CONTACT (spec du 2026-09-24, § 19, cadrée avec Julien le 2026-09-25).
+ * Le risque de désengagement d'un contact : pour une fiche, un risque de partir tiré des signaux conversationnels
+ * (pas un taux de churn sur une base). Des règles transparentes, pas un modèle appris : aucune issue réelle ne
+ * permettrait de le calibrer.
  *
- * Ce n'est pas un « churn rate » (un taux sur une base entière, que seul le CRM du client connaît) : c'est, pour
- * UNE fiche, un risque de partir, tiré des signaux conversationnels qui précèdent le départ. Des RÈGLES
- * TRANSPARENTES, pas un modèle appris : aucune issue réelle ne permet de calibrer un modèle (mesuré le
- * 2026-09-25, la production porte 18 contacts dont 4 sollicités sur 90 jours).
- *
- * 🔴 MODULE PUR : aucune lecture, aucune horloge. Les faits arrivent tout faits (`src/engagement/risque.pg.ts`),
- * la date du calcul aussi, et les seuils se passent en paramètre POUR LES TESTS (l'essai réel ne peut pas
- * attendre 30 jours de silence). La production n'en passe jamais : `SEUILS_PAR_DEFAUT`.
- *
- * ⚠️ LIMITE ASSUMÉE DE LA V1 (spec § 19) : la livraison et la lecture ne se mesurent que sur les envois de
- * CAMPAGNE, seuls à porter un statut par destinataire. Un message libre ou un bloc de scénario ne compte que par
- * la réponse qu'il reçoit.
+ * Module pur : aucune lecture, aucune horloge. Les faits arrivent tout faits (`risque.pg.ts`), la date du calcul
+ * aussi ; les seuils ne se passent qu'en test, la production utilise `SEUILS_PAR_DEFAUT`.
+ * Limite assumée : livraison et lecture ne se mesurent que sur les envois de campagne, seuls à porter un statut
+ * par destinataire.
  */
 
 export const NIVEAUX_RISQUE = ['inconnu', 'faible', 'moyen', 'eleve'] as const;
 export type NiveauRisque = (typeof NIVEAUX_RISQUE)[number];
 
 /**
- * Les codes des raisons, courts et stables : ils partent tels quels chez l'outil du client (`em_risk_reasons`) et
- * dans l'API publique (`engagementRisk.reasons`), et la console les traduit. Ce sont des IDENTIFIANTS.
+ * Les codes des raisons, courts et stables : ce sont des identifiants, qui partent tels quels chez l'outil du
+ * client (`em_risk_reasons`) et dans l'API publique (`engagementRisk.reasons`).
  */
 export const RAISONS_RISQUE = [
   'stop', 'bloque', 'silence_60j', 'silence_30j', 'sans_reponse', 'non_lu', 'reclamation', 'negatif', 'insatisfait', 'injoignable',
@@ -28,9 +22,7 @@ export const RAISONS_RISQUE = [
 export type RaisonRisque = (typeof RAISONS_RISQUE)[number];
 
 /**
- * LA GRILLE, validée telle quelle par Julien le 2026-09-25. L'ORDRE DES CLÉS EST CELUI DE LA SPEC, et il sert :
- * à points égaux, une raison plus haute dans la grille passe devant (`raisonsLesPlusLourdes`).
- *
+ * La grille. L'ordre des clés sert : à points égaux, une raison plus haute passe devant (`raisonsLesPlusLourdes`).
  * `stop` et `bloque` n'y sont pas : ils ne s'ajoutent pas, ils donnent 100 d'office.
  */
 export const GRILLE_RISQUE = {
@@ -44,7 +36,7 @@ export const GRILLE_RISQUE = {
   injoignable: 10,
 } as const satisfies Record<Exclude<RaisonRisque, 'stop' | 'bloque'>, number>;
 
-/** A répondu ou cliqué récemment : ces points se RETIRENT, plancher 0. */
+/** A répondu ou cliqué récemment : ces points se retirent, plancher 0. */
 export const ALLEGEMENT_POINTS = 25;
 export const SCORE_MAX = 100;
 /** `faible` de 0 à 29, `moyen` de 30 à 59, `eleve` de 60 à 100. */
@@ -79,12 +71,12 @@ export const SEUILS_PAR_DEFAUT: Readonly<SeuilsRisque> = Object.freeze({
 
 const JOUR_MS = 86_400_000;
 
-/** Le début de la fenêtre d'observation : la lecture en base et les règles bornent au MÊME instant. */
+/** Le début de la fenêtre d'observation : la lecture en base et les règles bornent au même instant. */
 export function debutFenetre(maintenant: Date, seuils: SeuilsRisque = SEUILS_PAR_DEFAUT): Date {
   return new Date(maintenant.getTime() - seuils.fenetreJours * JOUR_MS);
 }
 
-/** Un message de campagne DÉLIVRÉ au contact (statut `delivered` ou `read`). */
+/** Un message de campagne délivré au contact (statut `delivered` ou `read`). */
 export interface MessageDelivre {
   envoyeLe: Date;
   /** Meta (ou le fournisseur RCS) a renvoyé « lu ». */
@@ -109,10 +101,10 @@ export interface FaitsRisque {
   bloque: boolean;
   /** Les messages de campagne délivrés (dans n'importe quel ordre : les règles trient). */
   delivres: readonly MessageDelivre[];
-  /** La dernière RÉPONSE (tout message entrant) ou le dernier CLIC attribué. La lecture n'en est pas une. */
+  /** La dernière réponse (tout message entrant) ou le dernier clic attribué. La lecture n'en est pas une. */
   derniereReactionLe: Date | null;
   derniereAnalyse: AnalyseRisque | null;
-  /** La joignabilité CONNUE sur chaque canal : `null` = inconnue, jamais « injoignable ». */
+  /** La joignabilité connue sur chaque canal : `null` = inconnue, jamais « injoignable ». */
   joignableWhatsapp: boolean | null;
   joignableRcs: boolean | null;
 }
@@ -124,7 +116,7 @@ export interface Risque {
   raisons: RaisonRisque[];
 }
 
-/** Le niveau d'un score MESURÉ. */
+/** Le niveau d'un score mesuré. */
 export function niveauDuScore(score: number): Exclude<NiveauRisque, 'inconnu'> {
   if (score >= SEUIL_ELEVE) return 'eleve';
   if (score >= SEUIL_MOYEN) return 'moyen';
@@ -143,32 +135,26 @@ function raisonsLesPlusLourdes(presentes: ReadonlyArray<keyof typeof GRILLE_RISQ
 const plusTard = (a: Date | null, b: Date | null): Date | null => (a === null ? b : b === null ? a : a > b ? a : b);
 
 /**
- * Le risque d'un contact, à l'instant `maintenant`.
+ * Le risque d'un contact, à l'instant `maintenant`. Les règles, dans l'ordre :
  *
- * Les règles, dans l'ordre où elles s'appliquent :
- *
- * 1. 🔴 STOP ou blocage : `eleve` à 100, MÊME SANS HISTORIQUE. Ils ne s'additionnent pas, ils décident.
- * 2. 🔴 Aucun message délivré sur la fenêtre : `inconnu`, SANS score. On ne dit pas qu'un contact est fidèle ou
- *    perdu sans l'avoir observé ; un contact qu'on n'a jamais sollicité n'est pas « faible ».
- * 3. Le SIGNE DE VIE est la plus récente d'une réponse, d'un clic ou d'une lecture, sur la fenêtre.
- *    - Le SILENCE se compte depuis ce signe, ou, s'il n'y en a pas, depuis le premier message délivré de la
- *      fenêtre : c'est là que l'observation commence. Deux messages délivrés cette semaine sans réponse ne
- *      font pas « 60 jours de silence ».
- *    - Il ne compte qu'avec au moins deux messages délivrés APRÈS ce signe : un contact à qui l'on n'écrit plus
- *      depuis sa dernière réponse n'est pas silencieux, c'est nous qui le sommes.
- *    - `silence_60j` et `silence_30j` sont EXCLUSIFS : le plus fort s'applique.
+ * 1. 🔴 STOP ou blocage : `eleve` à 100, même sans historique. Ils décident, ils ne s'additionnent pas.
+ * 2. Aucun message délivré sur la fenêtre : `inconnu`, sans score. Un contact jamais sollicité n'est pas « faible ».
+ * 3. Le signe de vie est la plus récente d'une réponse, d'un clic ou d'une lecture, sur la fenêtre.
+ *    - Le silence se compte depuis ce signe, ou à défaut depuis le premier délivré de la fenêtre (là où
+ *      l'observation commence).
+ *    - Il ne compte qu'avec au moins deux délivrés après ce signe : si l'on n'écrit plus au contact, c'est nous
+ *      qui sommes silencieux.
+ *    - `silence_60j` et `silence_30j` sont exclusifs : le plus fort s'applique.
  * 4. `sans_reponse` : les trois derniers délivrés, et ni réponse ni clic depuis le plus ancien des trois.
- * 5. 🔴 `non_lu` : les trois derniers délivrés, aucun lu, et SEULEMENT si le contact lit d'habitude (au moins
- *    un « lu » sur la fenêtre). Un contact qui répond sans jamais renvoyer « lu » a coupé ses accusés de
- *    lecture : la lecture ne dit rien de lui, et le pénaliser pour ça serait faux.
- * 6. La dernière analyse de la fenêtre : `reclamation` (réclamation NON résolue), `negatif`, `insatisfait`
- *    (3 sur 10 ou moins ; une note absente n'est pas une note basse).
- * 7. `injoignable` : un canal connu injoignable, et AUCUN canal connu joignable. Un contact joint en RCS après
- *    l'échec de son WhatsApp (chaîne de repli) a bien reçu le dernier envoi.
+ * 5. `non_lu` : les trois derniers délivrés, aucun lu, et seulement si le contact lit d'habitude (un « lu » au
+ *    moins sur la fenêtre) : sinon il a coupé ses accusés de lecture, et la lecture ne dit rien de lui.
+ * 6. La dernière analyse de la fenêtre : `reclamation` non résolue, `negatif`, `insatisfait` (3 sur 10 ou moins ;
+ *    une note absente n'est pas une note basse).
+ * 7. `injoignable` : un canal connu injoignable et aucun canal connu joignable (un contact joint en RCS après
+ *    l'échec de son WhatsApp a bien reçu le dernier envoi).
  * 8. L'allègement : une réponse ou un clic dans les derniers jours retire 25 points, plancher 0.
- * 9. Le total est plafonné à 100 ; les raisons sont les trois contributions les plus lourdes (l'allègement n'en
- *    est pas une). ⚠️ Plafond et plancher commutent : avec une réaction récente, aucun silence n'est possible,
- *    et le reste de la grille ne dépasse pas 80.
+ * 9. Total plafonné à 100 ; les raisons sont les trois contributions les plus lourdes (l'allègement n'en est pas
+ *    une). Plafond et plancher commutent : avec une réaction récente, aucun silence n'est possible.
  */
 export function calculerRisque(faits: FaitsRisque, maintenant: Date, seuils: SeuilsRisque = SEUILS_PAR_DEFAUT): Risque {
   if (faits.desabonne || faits.bloque) {
@@ -233,10 +219,8 @@ export function calculerRisque(faits: FaitsRisque, maintenant: Date, seuils: Seu
 }
 
 /**
- * Un contact PASSE-t-il en élevé ? C'est la seule transition qui déclenche une automation.
- *
- * ⚠️ `ancien` à `null` (jamais calculé) compte comme un passage : c'est le cas d'une fiche calculée pour la
- * première fois. Rester en élevé n'en est pas un, et c'est ce qui borne le déclencheur à UNE fois par passage.
+ * Un contact passe-t-il en élevé ? Seule transition qui déclenche une automation. `ancien` à `null` (premier
+ * calcul) compte comme un passage ; rester en élevé n'en est pas un, ce qui borne le déclencheur à une fois.
  */
 export function passeEnEleve(ancien: NiveauRisque | null, nouveau: NiveauRisque): boolean {
   return nouveau === 'eleve' && ancien !== 'eleve';

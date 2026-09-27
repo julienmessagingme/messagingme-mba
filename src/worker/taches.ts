@@ -1,31 +1,19 @@
 import { messageDe } from '../lib/erreur';
 /**
- * Registre des TÂCHES PÉRIODIQUES du worker (lot 3 du programme, 2026-08-31).
+ * Registre des tâches périodiques du worker. Enregistrer une tâche et l'arrêter sont le même geste : on ne
+ * peut plus en oublier une dans l'arrêt propre (une passe qui part pendant qu'on ferme le pool laisse une
+ * erreur à chaque déploiement).
  *
- * 🔴 Le problème qu'il supprime, et ce n'est pas une préférence de style. Le worker programmait dix-sept
- * `setInterval` et devait les arrêter un par un, à la main, dans son arrêt propre. Deux étaient déjà passés
- * à travers historiquement, et **les deux balayages de rétention ajoutés le 2026-08-31 y sont passés aussi** :
- * ils n'étaient dans aucune liste d'arrêt, découverts en écrivant ce registre. Un oubli ne casse rien tout de
- * suite (les minuteries sont `unref`, elles ne retiennent pas le process) : il se voit à l'arrêt, quand une
- * passe part pendant qu'on ferme le pool, et laisse une erreur à chaque déploiement.
- *
- * Enregistrer une tâche et l'arrêter deviennent le MÊME geste : on ne peut plus en oublier une.
- *
- * ⚠️ Il ne lance la première passe QUE sur demande (`immediat`). La rendre implicite ferait démarrer des
- * balayages qui ne le faisaient pas, ce qui serait un changement de comportement caché dans un refactor.
- *
- * 🔴 LA PASSE DE DÉMARRAGE PASSE PAR LA MÊME GARDE DE RÉ-ENTRANCE que les passes périodiques (audit ponytail
- * du 2026-09-25). Quand chaque appelant lançait la sienne à côté (`void passe()`), la garde ne la voyait pas :
- * un balayage dont la première passe débordait sur le premier tour devait porter sa propre garde, et deux en
- * portaient une (`reveil-parcours`, `tours-agent-bloques`). Elles sont parties avec ce déplacement.
+ * La première passe n'est lancée que sur demande (`immediat`), et passe par la même garde de ré-entrance que
+ * les passes périodiques.
  */
 
 /** Ce qu'une tâche peut demander de plus que sa cadence. */
 export interface OptionsTache {
-  /** Une première passe TOUT DE SUITE, sous la même garde que les passes périodiques. */
+  /** Une première passe tout de suite, sous la même garde que les passes périodiques. */
   immediat?: boolean;
   /**
-   * Ce que fait une passe qui LÈVE : le journal et l'alerte de l'appelant. Sans lui, le registre la journalise
+   * Ce que fait une passe qui lève : le journal et l'alerte de l'appelant. Sans lui, le registre la journalise
    * seul. S'il lève à son tour (l'alerte qui échoue), le registre rattrape encore : rien ne tue le process.
    */
   enEchec?: (err: unknown) => void;
@@ -37,51 +25,31 @@ export interface RegistreDeTaches {
    * retenue pour l'arrêt.
    */
   programmer(nom: string, intervalMs: number, passe: () => void | Promise<void>, options?: OptionsTache): void;
-  /** Arrête TOUTES les tâches programmées. Appelé une fois, dans l'arrêt propre du worker. */
+  /** Arrête toutes les tâches programmées. Appelé une fois, dans l'arrêt propre du worker. */
   arreterTout(): void;
   /** Noms des tâches vivantes, dans l'ordre de programmation. Sert au diagnostic et aux tests. */
   noms(): readonly string[];
 }
 
 /**
- * LISSAGE : de combien on retarde le PREMIER tour d'une tâche, pour qu'elles ne sonnent pas toutes ensemble.
+ * Lissage : de combien on retarde le premier tour d'une tâche, pour qu'elles ne sonnent pas toutes ensemble.
+ * Toutes partent de t=0 avec des cadences multiples les unes des autres (20 s, 60 s, 5 min...) et se
+ * rejoignent périodiquement, ce qui sature le pool de connexions. L'enjeu n'est pas la latence (personne
+ * n'attend ces balayages) mais l'indicateur : la saturation du pool est le seul signal qu'on ait, et il ne
+ * doit pas être allumé en permanence par une cause connue.
  *
- * 🔴 LE DÉFAUT QU'IL SUPPRIME EST UN DÉFAUT D'INDICATEUR, PAS DE PERFORMANCE. Les vingt-trois tâches sont
- * programmées au démarrage, donc elles partent toutes de t=0, et leurs cadences sont des multiples les unes
- * des autres (20 s, 60 s, 5 min, 20 min...). Elles se REJOIGNENT donc périodiquement. Mesuré en production le
- * 2026-09-15 sur 24 h : une minute ordinaire coûte **13 requêtes et zéro attente**, une minute de
- * rendez-vous **26 requêtes et 5 à 10 attentes** sur un pool de huit. Sur 1 763 attentes de la journée,
- * 1 393 viennent de ces minutes-là.
- *
- * ⚠️ **CE N'EST PAS LA LATENCE QU'ON RÉPARE**, et il faut le dire pour que personne ne recalibre ce réglage
- * sur le mauvais chiffre : 240 ms d'attente sur des balayages que PERSONNE n'attend ne coûtent rien. Ce qu'on
- * répare, c'est que la saturation du pool est le seul signal qu'on ait, et qu'il est allumé 272 minutes par
- * jour pour une cause permanente. La migration 0111 a déjà payé exactement cette leçon (« un indicateur qui
- * crie au loup se fait ignorer, et il aurait été ignoré le jour où il aurait eu raison »). Après lissage,
- * rouge redevient un ÉVÉNEMENT.
- *
- * ⚠️ LE DÉCALAGE NE DÉPASSE JAMAIS L'INTERVALLE de la tâche : une tâche ne peut donc pas tourner MOINS
- * souvent qu'on l'a demandée, seulement plus tard la première fois. Et il est plafonné à une minute, parce
- * que la fenêtre de collision mesurée est la minute : décaler un balayage de rétention de six heures de
- * plusieurs heures serait un changement de comportement, pas un lissage.
- *
- * ⚠️ LE PAS N'EST PAS UN NOMBRE ROND, DÉLIBÉRÉMENT : 2 300 ms n'est un diviseur d'aucune des cadences en
- * place (20 s, 60 s, 5 min), donc aucune tâche ne retombe sur le battement de cœur. Un pas de 2 000 aurait
- * remis une tâche sur 20 s exactement en face de lui.
- *
- * ⚠️ DÉTERMINISTE, PAS ALÉATOIRE : deux démarrages du worker produisent le même étalement, donc un
- * comportement reproductible en test comme en production. Un décalage tiré au hasard rendrait une minute de
- * pointe impossible à expliquer après coup.
+ * Le décalage ne dépasse jamais l'intervalle de la tâche (elle ne tourne jamais moins souvent, seulement plus
+ * tard la première fois) et reste sous une minute, la largeur de la collision. Le pas de 2 300 ms ne divise
+ * aucune cadence en place, pour qu'aucune tâche ne retombe en face du battement de cœur. Déterministe, pour
+ * qu'un démarrage soit reproductible et qu'une minute de pointe s'explique après coup.
  */
 const DECALAGE_PAS_MS = 2_300;
-/** Le décalage reste dans cette fenêtre : c'est la largeur de la collision mesurée. */
+/** Le décalage reste dans cette fenêtre : la largeur de la collision. */
 const FENETRE_LISSAGE_MS = 60_000;
 
 /**
- * Le décalage de démarrage d'une tâche, depuis son RANG d'enregistrement et sa cadence.
- *
- * Exporté pour être testé seul : c'est une fonction pure, et la tester à travers des minuteries factices
- * cacherait le seul cas qui compte vraiment, celui où le décalage dépasserait l'intervalle.
+ * Le décalage de démarrage d'une tâche, depuis son rang d'enregistrement et sa cadence. Fonction pure,
+ * exportée pour tester directement le cas où le décalage dépasserait l'intervalle.
  */
 export function decalageDeLissage(indice: number, intervalMs: number): number {
   const fenetre = Math.max(1, Math.min(intervalMs, FENETRE_LISSAGE_MS));
@@ -90,42 +58,28 @@ export function decalageDeLissage(indice: number, intervalMs: number): number {
 
 export function registreDeTaches(): RegistreDeTaches {
   /**
-   * Une tâche vit en DEUX temps : son décalage de démarrage, puis sa minuterie périodique. Les deux sont
-   * retenus ensemble, dans une seule entrée.
-   *
-   * 🔴 L'ENTRÉE EST POSÉE AVANT LE DÉCALAGE, ET C'EST CE QUI REND LE LISSAGE SÛR. Pendant l'attente, la tâche
-   * n'a pas encore de minuterie : un registre indexé sur les seules minuteries la croirait absente, donc
-   * `noms()` la raterait et le refus de doublon laisserait passer un second enregistrement du même nom,
-   * dont la minuterie deviendrait impossible à arrêter. C'est précisément le défaut que ce registre existe
-   * pour supprimer, et le lissage l'aurait rouvert par la petite porte.
+   * Une tâche vit en deux temps (décalage de démarrage, puis minuterie périodique), retenus dans une seule
+   * entrée posée avant le décalage : sinon, pendant l'attente, `noms()` la raterait et le refus de doublon
+   * laisserait passer un second enregistrement du même nom, dont la minuterie deviendrait impossible à arrêter.
    */
   const taches = new Map<string, { demarrage: ReturnType<typeof setTimeout> | null; intervalle: ReturnType<typeof setInterval> | null }>();
-  /** Les passes EN COURS, par nom, avec le nombre de tours sautés d'affilée. */
+  /** Les passes en cours, par nom, avec le nombre de tours sautés d'affilée. */
   const enCours = new Map<string, number>();
 
   return {
     programmer(nom, intervalMs, passe, options = {}) {
       if (taches.has(nom)) {
         // Deux tâches du même nom = un copier-coller mal fini. On refuse plutôt que de perdre la première
-        // minuterie (elle deviendrait impossible à arrêter, exactement le défaut qu'on ferme ici).
+        // minuterie, qui deviendrait impossible à arrêter.
         throw new Error(`tâche périodique « ${nom} » déjà programmée`);
       }
-      // 🔴 La passe est enveloppée, et ce n'est pas de la prudence décorative. `setInterval(() => void f())`
-      // laisse un rejet NON RATTRAPÉ si `f` rejette, et depuis Node 15 un rejet non rattrapé **tue le
-      // process**. Chaque balayage du worker attrape déjà ses erreurs, mais rien ne le garantissait : il
-      // suffisait que le `catch` lui-même échoue (l'alerte Telegram qui lève, par exemple) pour que le worker
-      // meure en silence, à trois heures du matin, sans autre trace qu'un redémarrage.
-      //
-      // On journalise et on continue : une tâche périodique qui rate une passe la refera à la suivante.
+      // La passe est enveloppée : `setInterval(() => void f())` laisse un rejet non rattrapé si `f` rejette, et
+      // un rejet non rattrapé tue le process (Node 15+), par exemple si le `catch` lui-même échoue (alerte qui
+      // lève). On journalise et on continue : la passe suivante refera le travail.
       const tour = () => {
-        // 🔴 GARDE DE RÉ-ENTRANCE (lot 2 du programme II). `setInterval` ne saute pas un tour parce que le
-        // précédent n'est pas fini : une passe plus lente que sa cadence se superpose à elle-même, et deux
-        // exemplaires du même balayage lisent puis écrivent les mêmes lignes. Un seul des dix-sept balayages
-        // se protégeait. Posée ICI, elle couvre les dix-sept d'un coup, et les suivants sans qu'on y pense.
-        //
-        // ⚠️ Le saut est JOURNALISÉ, avec le nombre de tours sautés d'affilée. Une garde muette échangerait
-        // une contention contre une invisibilité : un balayage qui déborde systématiquement ne tournerait
-        // plus qu'une fois sur deux, et rien ne le dirait. Le compteur donne la gravité d'un coup d'œil.
+        // Garde de ré-entrance : `setInterval` ne saute pas un tour parce que le précédent n'est pas fini, et deux
+        // exemplaires du même balayage liraient puis écriraient les mêmes lignes. Le saut est journalisé avec le
+        // nombre de tours sautés d'affilée : un balayage qui déborde systématiquement ne doit pas passer inaperçu.
         const sautes = enCours.get(nom);
         if (sautes !== undefined) {
           enCours.set(nom, sautes + 1);
@@ -143,7 +97,7 @@ export function registreDeTaches(): RegistreDeTaches {
           .finally(() => { enCours.delete(nom); });
       };
 
-      // L'entrée existe DÈS MAINTENANT, minuterie ou pas : voir le commentaire de `taches`.
+      // L'entrée existe dès maintenant, minuterie ou pas : voir le commentaire de `taches`.
       const entree: { demarrage: ReturnType<typeof setTimeout> | null; intervalle: ReturnType<typeof setInterval> | null } = { demarrage: null, intervalle: null };
       taches.set(nom, entree);
 
@@ -154,9 +108,8 @@ export function registreDeTaches(): RegistreDeTaches {
         entree.intervalle = t;
       };
 
-      // ⚠️ Le décalage ne lance AUCUNE passe, il ne fait que retarder le départ de la minuterie. La première
-      // passe PÉRIODIQUE arrive donc à `décalage + intervalle`, jamais au décalage lui-même, et sans `immediat`
-      // le registre ne déclenche toujours pas de passe implicite : un test garde cette propriété.
+      // Le décalage ne lance aucune passe, il retarde seulement la minuterie : la première passe périodique
+      // arrive à `décalage + intervalle`, et sans `immediat` aucune passe implicite n'est déclenchée.
       const decalage = decalageDeLissage(taches.size - 1, intervalMs);
       if (decalage === 0) {
         lancer();
@@ -170,17 +123,14 @@ export function registreDeTaches(): RegistreDeTaches {
 
     arreterTout() {
       for (const t of taches.values()) {
-        // 🔴 LES DEUX, et l'oubli du premier serait invisible en test rapide : une tâche encore dans son
-        // décalage n'a pas de minuterie, donc n'arrêter que les minuteries la laisserait démarrer APRÈS la
-        // fermeture, c'est-à-dire une passe qui part pendant qu'on ferme le pool. Exactement l'erreur que ce
-        // registre a été écrit pour rendre impossible.
+        // Les deux : une tâche encore dans son décalage n'a pas de minuterie, et n'arrêter que les minuteries la
+        // laisserait démarrer après la fermeture, pendant qu'on ferme le pool.
         if (t.demarrage !== null) clearTimeout(t.demarrage);
         if (t.intervalle !== null) clearInterval(t.intervalle);
       }
       taches.clear();
-      // Les passes EN VOL ne sont pas interrompues (on ne sait pas les annuler), mais leur marque doit partir :
-      // un registre réutilisé après un arrêt reprogrammerait des tâches que la garde croirait déjà en cours,
-      // donc muettes à vie. Le cas n'existe qu'en test aujourd'hui, et c'est justement là qu'il piégerait.
+      // Les passes en vol ne sont pas interrompues (on ne sait pas les annuler), mais leur marque part : un
+      // registre réutilisé après un arrêt croirait ses tâches déjà en cours, donc muettes à vie.
       enCours.clear();
     },
 

@@ -8,33 +8,26 @@ export interface ReceiverOptions {
   verifyToken: string;
   appSecret: string;
   queueName?: string;
-  /** File des ACCUSÉS de livraison. Défaut `webhook-status`. Injectable pour les tests. */
+  /** File des accusés de livraison. Défaut `webhook-status`. Injectable pour les tests. */
   queueNameStatuts?: string;
 }
 
 type WithRawBody = FastifyRequest & { rawBody?: Buffer };
 
-/** Pourquoi un POST a été rejeté. La distinction est TOUT l'intérêt du journal, cf. `journalDeRejets`. */
+/** Pourquoi un POST a été rejeté : la distinction fait tout l'intérêt du journal (`journalDeRejets`). */
 type CauseDeRejet = 'signature_invalide' | 'signature_absente' | 'corps_absent';
 
 /** Au plus une ligne par cause et par minute : un scanner ne doit pas noyer le journal. */
 const REJET_THROTTLE_MS = 60_000;
 
 /**
- * Le journal des POST refusés du webhook Meta.
- *
- * 🔴 POURQUOI IL EXISTE (lot 2 du programme II). Le rejet renvoyait 403 sans écrire une ligne. Or ces trois
- * causes ne disent pas du tout la même chose :
- *  - `signature_absente` : quelqu'un qui n'est pas Meta frappe à la porte. Du bruit, sauf en rafale.
- *  - `signature_invalide` : Meta nous appelle et notre `META_APP_SECRET` ne correspond pas. **100 % des
- *    entrants sont jetés**, et rien ne le dit : c'est exactement la panne indiagnosticable du 2026-08-17.
- *  - `corps_absent` : un POST vide, donc un problème de transport ou de proxy.
- *
- * Le compteur accompagne chaque ligne : « 1 rejet » et « 4 000 rejets » demandent deux réactions différentes,
- * et sans lui le throttle cacherait l'ampleur qu'il est censé rendre lisible.
- *
- * ⚠️ N'écrit JAMAIS le corps ni la signature reçue : un journal ne doit pas devenir la copie du secret qu'il
- * observe, ni du message d'un client.
+ * Le journal des POST refusés du webhook Meta, par cause :
+ *  - `signature_absente` : quelqu'un qui n'est pas Meta frappe à la porte, du bruit sauf en rafale ;
+ *  - `signature_invalide` : Meta nous appelle et `META_APP_SECRET` ne correspond pas, donc 100 % des entrants
+ *    sont jetés ;
+ *  - `corps_absent` : un POST vide, problème de transport ou de proxy.
+ * Le compteur accompagne chaque ligne (« 1 rejet » et « 4 000 rejets » n'appellent pas la même réaction).
+ * N'écrit jamais le corps ni la signature reçue.
  */
 function journalDeRejets(): (cause: CauseDeRejet) => void {
   const dernier = new Map<CauseDeRejet, { a: number; depuis: number }>();
@@ -47,9 +40,8 @@ function journalDeRejets(): (cause: CauseDeRejet) => void {
       console.warn(`webhook Meta REFUSÉ (${cause}) : 1 rejet`);
       return;
     }
-    // `depuis` compte CE rejet-ci compris : il est incrémenté avant le test de throttle, donc il vaut
-    // exactement le nombre de rejets survenus depuis la dernière ligne. Un `+ 1` de plus recompterait
-    // celui-ci deux fois (le test de rafale l'a attrapé : il annonçait 51 pour 50 rejets).
+    // `depuis` compte ce rejet-ci compris (incrémenté avant le test de throttle) : c'est exactement le nombre de
+    // rejets depuis la dernière ligne, sans `+ 1`.
     etat.depuis += 1;
     if (maintenant - etat.a < REJET_THROTTLE_MS) return;
     // eslint-disable-next-line no-console
@@ -59,8 +51,7 @@ function journalDeRejets(): (cause: CauseDeRejet) => void {
 }
 
 /**
- * Enregistre les routes du webhook Meta sur `app`.
- * Le bouclier : signature validée, ACK immédiat, enqueue du brut. Zéro métier ici.
+ * Enregistre les routes du webhook Meta : signature validée, ACK immédiat, mise en file du brut. Aucun métier ici.
  */
 export function registerReceiver(app: FastifyInstance, queue: Queue, opts: ReceiverOptions): void {
   const queueName = opts.queueName ?? 'webhook';
@@ -84,9 +75,8 @@ export function registerReceiver(app: FastifyInstance, queue: Queue, opts: Recei
             : {},
         );
       } catch {
-        // JSON invalide : ne PAS renvoyer 500 (Meta retenterait). On garde rawBody ;
-        // la validation de signature (sur rawBody) rejette tout corps forgé en 403.
-        // Un webhook Meta authentique est toujours du JSON valide.
+        // JSON invalide : pas de 500 (Meta retenterait). On garde rawBody, et la validation de signature rejette tout
+        // corps forgé en 403 ; un webhook Meta authentique est toujours du JSON valide.
         done(null, {});
       }
     },
@@ -113,25 +103,17 @@ export function registerReceiver(app: FastifyInstance, queue: Queue, opts: Recei
     const sig = req.headers['x-hub-signature-256'];
     const sigHeader = Array.isArray(sig) ? sig[0] : sig;
     if (!raw || !verifyMetaSignature(raw, sigHeader, opts.appSecret)) {
-      // La CAUSE est déterminée ici, où on l'a encore : `signature_invalide` est la seule des trois qui
-      // signifie « Meta nous parle et on jette tout ». La réponse au client, elle, ne change pas (403 nu) :
-      // on ne renseigne pas un appelant non authentifié sur la raison de son échec.
+      // La cause se détermine ici : `signature_invalide` est la seule qui veut dire « Meta nous parle et on jette
+      // tout ». La réponse reste un 403 nu : on ne renseigne pas un appelant non authentifié.
       signalerRejet(!raw ? 'corps_absent' : sigHeader === undefined ? 'signature_absente' : 'signature_invalide');
       return reply.code(403).send({ error: 'invalid signature' });
     }
-    // 🔴 AIGUILLAGE (lot 6) : un payload qui ne contient QUE des accusés de livraison part sur sa propre file.
-    // Une campagne de 5 000 messages produit trois accusés par destinataire ; sur une file unique, cette
-    // rafale passait DEVANT la réponse d'un vrai client, qui attendait derrière quinze mille jobs. Le test
-    // est un parcours d'objet, quelques microsecondes : l'accusé de réception à Meta reste immédiat, ce qui
-    // était la raison de ne rien parser ici.
-    //
-    // Tout ce qui n'est pas un accusé PUR (message, echo, handover, payload mixte) reste sur la file des
-    // entrants, qui sait aussi traiter les accusés : on ne perd donc jamais un événement, au pire on renonce
-    // à l'optimisation.
-    // 🔴 CLÉ DE GROUPE = le contact (lot 3 du programme II). La file des entrants traite désormais plusieurs
-    // jobs à la fois ; sans groupe, deux messages du même contact partiraient en parallèle et pourraient
-    // s'appliquer dans le désordre. pg-boss plafonne à un job en vol par groupe, ce qui restaure l'ordre là
-    // où il compte sans sérialiser les contacts entre eux. `undefined` -> aucun groupe (cf. `cleDeContact`).
+    // Aiguillage : un payload qui ne contient que des accusés de livraison part sur sa propre file, pour qu'une
+    // rafale de campagne ne passe pas devant la réponse d'un vrai client. Le test est un parcours d'objet, l'ACK à
+    // Meta reste immédiat. Tout le reste (message, echo, handover, mixte) va sur la file des entrants, qui sait
+    // aussi traiter les accusés : aucun événement perdu.
+    // Clé de groupe = le contact : pg-boss plafonne à un job en vol par groupe, ce qui garde l'ordre des messages
+    // d'un même contact sans sérialiser les contacts entre eux. `undefined` -> aucun groupe (cf. `cleDeContact`).
     const groupId = cleDeContact(req.body);
     await queue.enqueue(
       nAQueDesAccuses(req.body) ? queueNameStatuts : queueName,

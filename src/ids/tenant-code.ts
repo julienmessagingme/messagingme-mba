@@ -2,10 +2,8 @@ import type { Pool } from 'pg';
 import { deriveTenantCode } from './code';
 
 /**
- * Code client STABLE d'un tenant (racine des codes d'entités). Lu depuis `tenants.public_code`. S'il est absent
- * (tenant créé avant le backfill), on le dérive de l'uuid (déterministe -> immuable) et on le PERSISTE (self-heal
- * idempotent) : ainsi une entité créée avant que le backfill n'ait tourné obtient quand même une racine stable.
- * Une pose concurrente est absorbée (l'update ne pose que si toujours null, puis on relit la valeur retenue).
+ * Code client stable d'un espace, lu dans `tenants.public_code`. Absent : dérivé de l'uuid et persisté (idempotent) ;
+ * une pose concurrente est absorbée (update seulement si null, puis relecture).
  */
 export async function resolveTenantCode(pool: Pool, tenantId: string): Promise<string> {
   const r = await pool.query<{ public_code: string | null }>('select public_code from tenants where id = $1', [tenantId]);

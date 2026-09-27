@@ -15,11 +15,9 @@ export interface MetaClientOpts {
   rateLimiter?: PorteDeDebit;
   retry?: RetryOpts;
   /**
-   * Router les envois marketing par l'endpoint MM Lite `/marketing_messages` (true) ou par
-   * l'endpoint standard `/messages` (false, défaut). MM Lite exige un onboarding au niveau
-   * Business Manager (ToS dédiée) ; sans lui, `/marketing_messages` échoue en 131042
-   * (« business eligibility payment issue »). Un template marketing s'envoie très bien par
-   * `/messages`, facturé au tarif marketing. Activer une fois le BM onboardé MM Lite.
+   * Envois marketing par l'endpoint MM Lite `/marketing_messages` (true) ou par `/messages` (false, défaut).
+   * MM Lite exige un onboarding du Business Manager, sans lequel il échoue en 131042 ; un template marketing
+   * s'envoie très bien par `/messages`, au tarif marketing.
    */
   marketingViaLite?: boolean;
 }
@@ -33,8 +31,8 @@ function templatePayload(tpl: TemplateSpec): Record<string, unknown> {
 }
 
 /**
- * Client typé des API de messagerie Meta pour UN numéro (phone_number_id).
- * Throttle + retries appliqués à chaque appel. Transport injecté (testable sans réseau).
+ * Client typé des API de messagerie Meta pour un numéro (phone_number_id). Débit et rejeux appliqués à chaque
+ * appel ; transport injecté.
  */
 export class MetaClient {
   private readonly transport: HttpTransport;
@@ -76,9 +74,8 @@ export class MetaClient {
   }
 
   /**
-   * Un envoi `messages` à `to`, E.164 OU BSUID (routé par `messagingTarget`) : rend l'identifiant du message.
-   * ⚠️ `sendText` n'y passe pas : il porte `recipient_type` et un `to` nu. `sendMarketing` non plus : il choisit
-   * son point d'entrée (MM Lite) et sa cible.
+   * Un envoi `messages` à `to`, E.164 ou BSUID (routé par `messagingTarget`), qui rend l'identifiant du message.
+   * `sendText` n'y passe pas (`recipient_type` et `to` nu), ni `sendMarketing` (qui choisit son point d'entrée).
    */
   private async envoyer(to: string, corps: Record<string, unknown>): Promise<SendResult> {
     const json = await this.call('messages', { messaging_product: 'whatsapp', ...messagingTarget(to), ...corps });
@@ -104,17 +101,11 @@ export class MetaClient {
   }
 
   /**
-   * Message interactif à boutons de réponse (hors template). `to` = E.164 OU BSUID (routé par messagingTarget).
-   * Les titres vides sont filtrés en PRÉSERVANT l'index d'origine dans `reply.id` (`btn:<i>`), pour que la branche
-   * par bouton (sourceHandle) reste stable même si une réponse du milieu est vide. Cap Meta : 3 boutons, titre 20 car.
-   *
-   * `mediaId` = visuel d'EN-TÊTE (identifiant Meta, pas une URL). Un message interactif accepte un en-tête
-   * image/vidéo/document ; on n'expose que l'image, seul format que l'éditeur sait téléverser.
-   *
-   * ⚠️ Un identifiant, et pas un lien, alors que Meta accepte les deux : c'est le chemin déjà éprouvé en
-   * production par l'en-tête des templates (`TemplateMedia.prepareOne`, qui téléverse et met en cache).
-   * Passer un lien ferait dépendre la livraison de l'accessibilité de notre hébergement au moment où Meta
-   * va le chercher.
+   * Message interactif à boutons de réponse (hors template), `to` en E.164 ou BSUID. Les titres vides sont filtrés
+   * en préservant l'index d'origine dans `reply.id` (`btn:<i>`), pour que la branche par bouton reste stable.
+   * Limites Meta : 3 boutons, titre de 20 caractères.
+   * `mediaId` = visuel d'en-tête, un identifiant Meta et non un lien : la livraison ne dépend alors pas de
+   * l'accessibilité de notre hébergement au moment où Meta va le chercher.
    */
   async sendInteractive(to: string, body: string, buttons: { text: string }[], mediaId?: string): Promise<SendResult> {
     const replyButtons = buttons
@@ -133,24 +124,10 @@ export class MetaClient {
   }
 
   /**
-   * Message à BOUTON DE LIEN (`cta_url`) : un corps de texte et UN bouton qui ouvre le navigateur du contact.
-   *
-   * 🔴 EXCLUSIF DES RÉPONSES RAPIDES, et ce n'est pas notre choix : chez Meta, `button` (jusqu'à trois
-   * réponses rapides, qui REVIENNENT dans le scénario) et `cta_url` (un bouton, qui OUVRE une page) sont deux
-   * types de messages interactifs DIFFÉRENTS. Un bouton de réponse rapide ne peut donc pas porter d'adresse,
-   * quelle que soit la façon dont on l'écrit dans la console. L'écran le dit au moment où la case se coche,
-   * plutôt que de laisser le client le découvrir à l'envoi.
-   *
-   * ⚠️ RIEN NE REVIENT quand le contact clique : Meta n'envoie aucun webhook pour ce bouton. Le bloc ne
-   * porte donc aucune sortie à relier, et le parcours continue tout de suite après, comme après un simple
-   * texte.
-   *
-   * ⚠️ Le libellé est borné à 20 caractères, la même limite que les réponses rapides. La dépasser fait
-   * refuser le message ENTIER par Meta.
-   *
-   * ⚠️ L'en-tête image vient de la référence Cloud API, PAS d'une mesure : on ne mesure jamais contre le
-   * Meta de production (le numéro est live). Un refus de Meta serait visible et remonté tel quel ; laisser
-   * tomber le visuel en silence, non.
+   * Message à bouton de lien (`cta_url`) : un corps de texte et un bouton qui ouvre le navigateur du contact.
+   * Chez Meta, c'est un type distinct des réponses rapides (qui reviennent dans le scénario) : un bouton de réponse
+   * rapide ne peut pas porter d'adresse. Meta n'envoie aucun webhook au clic : le bloc n'a pas de sortie et le
+   * parcours continue tout de suite. Libellé borné à 20 caractères, sinon Meta refuse le message entier.
    */
   async sendCtaUrl(to: string, body: string, lien: { texte: string; url: string }, mediaId?: string): Promise<SendResult> {
     return this.envoyer(to, {
@@ -168,17 +145,10 @@ export class MetaClient {
   }
 
   /**
-   * LISTE interactive (menu déroulant) : un corps de texte, un bouton qui ouvre le menu, et jusqu'à 10 lignes
-   * sélectionnables. C'est ce qu'envoie un bloc Question quand il porte un menu.
-   *
-   * MÊME règle d'index que `sendInteractive`, et pour la même raison : les lignes au libellé vide sont
-   * filtrées APRÈS numérotation, donc `row:<i>` reste stable même si une ligne du milieu est vide. Filtrer
-   * avant renumérote les lignes et envoie le contact dans la mauvaise branche du scénario.
-   *
-   * Limites relevées sur la référence Cloud API le 2026-08-26, et appliquées ICI plutôt que laissées à Meta :
-   * 10 lignes toutes sections confondues, bouton 20 caractères, titre de ligne 24, description 72, corps 4096.
-   * UNE seule section : Meta en accepte 10, mais le titre de section est un habillage que l'éditeur n'expose
-   * pas, et une section unique rend exactement le menu attendu.
+   * Liste interactive (menu déroulant) : un corps, un bouton qui ouvre le menu et jusqu'à 10 lignes. Même règle
+   * d'index que `sendInteractive` : les lignes vides sont filtrées après numérotation, pour que `row:<i>` reste
+   * stable (renuméroter enverrait le contact dans la mauvaise branche). Limites Meta appliquées ici : 10 lignes,
+   * bouton 20 caractères, titre de ligne 24, description 72, corps 4096. Une seule section.
    */
   async sendList(
     to: string,
@@ -208,9 +178,8 @@ export class MetaClient {
   }
 
   /**
-   * Image seule, légende facultative. Nécessaire parce qu'un message INTERACTIF exige au moins un bouton :
-   * un bloc « message rapide » qui porte un visuel mais aucune réponse rapide n'a donc pas d'autre chemin.
-   * Sans ça, ce montage partirait en texte nu et le visuel disparaîtrait sans que personne ne le sache.
+   * Image seule, légende facultative : un message interactif exige au moins un bouton, donc un bloc qui porte un
+   * visuel sans réponse rapide n'a pas d'autre chemin (sinon le visuel disparaîtrait en silence).
    */
   async sendImage(to: string, mediaId: string, caption?: string): Promise<SendResult> {
     return this.envoyer(to, {
@@ -220,11 +189,10 @@ export class MetaClient {
   }
 
   /**
-   * Message interactif de type FLOW (formulaire) hors template — fenêtre de service 24 h requise.
-   * Params requis Meta : flow_message_version '3', flow_cta, flow_id. `flow_token` jamais vide (#131009)
-   * mais la corrélation au retour passe par le `_ref` baké dans le flow_json, PAS par le token (jetable).
-   * `screen` = id de l'écran d'ENTRÉE (défaut FORM, celui des flows du générateur). `mode: 'draft'` permet
-   * de tester un brouillon non publié (sondé 2026-07-17) ; nominal = published (défaut Meta, omis).
+   * Message interactif FLOW (formulaire) hors template, dans la fenêtre de service de 24 h. Requis par Meta :
+   * flow_message_version '3', flow_cta, flow_id, et un `flow_token` non vide (#131009) ; la corrélation au retour
+   * passe par le `_ref` du flow_json, pas par ce jeton. `screen` = écran d'entrée (défaut FORM). `mode: 'draft'`
+   * permet de tester un brouillon non publié.
    */
   async sendFlowMessage(to: string, opts: { body: string; flowId: string; cta: string; flowToken?: string; screen?: string; mode?: 'draft' | 'published' }): Promise<SendResult> {
     return this.envoyer(to, {

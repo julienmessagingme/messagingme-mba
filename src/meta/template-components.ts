@@ -1,57 +1,50 @@
 /**
  * Construit le tableau `components` d'un envoi de template (header média, variables du corps, cartes de
- * carousel), au format attendu par l'API Cloud. Extrait pour être testable (l'ancien inline dans index.ts
- * codait le header en dur en `image`, cassant les headers VIDEO/DOCUMENT). SEUL constructeur de composants
- * d'envoi du projet : le chemin campagne et le chemin scénario passent tous les deux par ici (il en existait
- * un second dans campaign/guardrails.ts, c'est ce doublon qui a laissé le carousel non branché côté campagne).
+ * carousel), au format de l'API Cloud. Seul constructeur de composants d'envoi du projet : campagnes et
+ * scénarios passent tous par ici.
  */
 
 /**
- * Une carte de carousel telle que RELUE dans le template (GET message_templates?fields=components), prête
- * pour l'envoi. Les cartes ne sont jamais saisies : elles viennent du template approuvé.
+ * Une carte de carousel relue dans le template (GET message_templates?fields=components), prête pour l'envoi.
+ * Les cartes ne sont jamais saisies : elles viennent du template approuvé.
  */
 export interface OutboundCarouselCard {
   /**
-   * `media id` Meta du visuel de la carte, obtenu en RE-TÉLÉVERSANT l'image sur le numéro d'envoi.
-   * C'est LUI qu'on envoie, pas l'URL : Meta refuse de télécharger ses propres URL de CDN au moment de livrer
-   * (403 sur `example.header_handle[0]`, échec asynchrone 131053). Absent = carte non envoyable.
+   * `media id` Meta du visuel, obtenu en re-téléversant l'image sur le numéro d'envoi. C'est lui qu'on envoie, pas
+   * l'URL : Meta refuse de télécharger ses propres URL de CDN au moment de livrer (échec asynchrone 131053).
+   * Absent = carte non envoyable.
    */
   mediaId?: string;
-  /** URL du visuel telle que lue chez Meta. Sert à OBTENIR le `mediaId`, jamais à l'envoi. */
+  /** URL du visuel telle que lue chez Meta : sert à obtenir le `mediaId`, jamais à l'envoi. */
   mediaUrl?: string;
   /** Format du média de la carte (défaut IMAGE). */
   mediaFormat?: 'IMAGE' | 'VIDEO';
-  /** Corps de la carte TEL QUE DÉFINI dans le template : sert à détecter une variable non résolvable. */
+  /** Corps de la carte tel que défini dans le template : sert à détecter une variable non résolvable. */
   body?: string;
-  /** Boutons de la carte, dans l'ordre du template. Seul `type` sert à l'envoi ; `text`/`url` sont relus pour
-   *  que l'aperçu du template puisse les afficher (le libellé vient du template, jamais de l'opérateur). */
+  /**
+   * Boutons de la carte, dans l'ordre du template. Seul `type` sert à l'envoi ; `text` et `url` servent à
+   * l'aperçu (le libellé vient du template, jamais de l'opérateur).
+   */
   buttons?: Array<{ type: 'QUICK_REPLY' | 'URL' | 'FLOW'; text?: string; url?: string }>;
 }
 
 export interface OutboundTemplateParts {
   bodyParams: string[];
   /**
-   * `media id` du visuel d'en-tête, obtenu en le RE-TÉLÉVERSANT sur le numéro d'envoi. Prioritaire sur
-   * `headerMediaUrl` : c'est le seul des deux que Meta livre vraiment quand l'URL vient de son propre CDN
-   * (cf. `OutboundCarouselCard.mediaId`, même mesure, même piège 131053).
+   * `media id` du visuel d'en-tête, re-téléversé sur le numéro d'envoi. Prioritaire sur `headerMediaUrl` : seul
+   * des deux que Meta livre quand l'URL vient de son propre CDN (cf. `OutboundCarouselCard.mediaId`).
    */
   headerMediaId?: string;
   /** URL publique du média de header, si le template a un header média. */
   headerMediaUrl?: string;
   /** Format du header média (défaut IMAGE si absent mais URL fournie). */
   headerFormat?: 'IMAGE' | 'VIDEO' | 'DOCUMENT';
-  /** Cartes du composant CAROUSEL du template. Absent = template sans carousel (sortie inchangée). */
+  /** Cartes du composant CAROUSEL du template. Absent = template sans carousel. */
   carousel?: { cards: OutboundCarouselCard[] };
   /**
-   * Le SUFFIXE VARIABLE des boutons URL tracés, par index de bouton (migration 0106).
-   *
-   * 🔴 CE QUE ÇA RÉSOUT. Un lien tracé est le même pour tous les destinataires : au clic, l'information
-   * « qui » n'existe nulle part. Un template soumis avec une URL en `.../r/<code>/{{1}}` la fait voyager, à
-   * condition qu'un composant de bouton remplisse ce `{{1}}` À CHAQUE ENVOI. C'est ce que porte cette map.
-   *
-   * ⚠️ Absente ou vide = aucun composant de bouton URL n'est produit, donc exactement le comportement d'avant.
-   * C'est ce qui rend les templates DÉJÀ APPROUVÉS (dont l'URL n'a pas de suffixe) parfaitement intacts : leur
-   * envoyer un composant pour une variable qui n'existe pas ferait échouer l'appel avec un 132000.
+   * Le suffixe variable des boutons URL tracés, par index de bouton. Un lien tracé est le même pour tous : le
+   * `{{1}}` d'une URL en `.../r/<code>/{{1}}`, rempli à chaque envoi, porte l'identité du destinataire.
+   * Absente ou vide = aucun composant de bouton URL : un template approuvé sans suffixe échouerait en 132000.
    */
   suffixesBoutons?: Record<number, string>;
 }
@@ -59,12 +52,9 @@ export interface OutboundTemplateParts {
 const HAS_VAR = /\{\{\s*\d+\s*\}\}/;
 
 /**
- * Identifiant d'un bouton de carte : c'est À LA FOIS le `payload` envoyé à Meta et le nom de la sortie du
- * bloc dans le builder. Les deux DOIVENT être la même chaîne, sinon un tap ne retrouve pas sa branche.
- * `buttonIndex` est la position dans TOUS les boutons de la carte (les boutons URL comptent), pas parmi les
- * seules réponses rapides.
- *
- * ⚠️ Dupliqué dans `web/lib/carousel-handle.ts` (les deux builds ne partagent aucun module) et verrouillé par
+ * Identifiant d'un bouton de carte : à la fois le `payload` envoyé à Meta et le nom de la sortie du bloc dans le
+ * builder, qui doivent être la même chaîne pour qu'un tap retrouve sa branche. `buttonIndex` compte tous les
+ * boutons de la carte (URL compris). Dupliqué dans `web/lib/carousel-handle.ts`, parité tenue par
  * `tests/web-carousel-handle-parity.test.ts`.
  */
 export function carouselButtonHandle(cardIndex: number, buttonIndex: number): string {
@@ -72,12 +62,9 @@ export function carouselButtonHandle(cardIndex: number, buttonIndex: number): st
 }
 
 /**
- * Pourquoi ce carousel n'est PAS envoyable en l'état, ou null si tout est bon. À appeler AVANT l'envoi :
- * on refuse avec une raison lisible plutôt que de laisser Meta répondre 132012 à chaque destinataire.
- *
- * Les variables de corps de carte ne sont pas supportées : il n'existe aucun endroit où stocker le mapping
- * « variable de la carte N -> champ CRM » (template_param_hints n'a pas de notion de carte). On refuse au
- * lieu de deviner une valeur.
+ * Pourquoi ce carousel n'est pas envoyable, ou null. À appeler avant l'envoi : une raison lisible plutôt qu'un
+ * 132012 par destinataire. Les variables de corps de carte ne sont pas supportées : rien ne stocke le mapping
+ * « variable de la carte N -> champ CRM », et on refuse au lieu de deviner.
  */
 export function carouselSendBlocker(cards: OutboundCarouselCard[]): string | null {
   if (cards.length === 0) return 'ce carousel ne contient aucune carte';
@@ -95,13 +82,9 @@ export function carouselSendBlocker(cards: OutboundCarouselCard[]): string | nul
 }
 
 /**
- * Pourquoi l'EN-TÊTE MÉDIA de ce template n'est PAS envoyable, ou null si tout est bon. Même doctrine que
- * `carouselSendBlocker`, et volontairement une fonction SÉPARÉE : y greffer l'en-tête rendrait ses messages
- * faux dans les deux sens (un carousel n'a pas d'en-tête top-level, et un template à en-tête n'a pas de carte).
- *
- * Un template dont Meta a approuvé un en-tête média EXIGE ce média à chaque envoi ; l'image déposée à la
- * création ne sert qu'à la validation. Sans elle, Meta refuse TOUS les destinataires en 132012. On refuse donc
- * avant d'envoyer, avec une raison lisible, plutôt que de collectionner les échecs un par un.
+ * Pourquoi l'en-tête média de ce template n'est pas envoyable, ou null. Fonction séparée de
+ * `carouselSendBlocker`, dont les messages seraient faux ici. Un en-tête média approuvé exige ce média à chaque
+ * envoi (l'image de création ne sert qu'à la validation) : sans lui, Meta refuse tous les destinataires en 132012.
  */
 export function headerMediaSendBlocker(headerFormat: string | undefined, mediaId: string | undefined): string | null {
   const media = headerFormat === 'IMAGE' || headerFormat === 'VIDEO' || headerFormat === 'DOCUMENT';
@@ -112,20 +95,18 @@ export function headerMediaSendBlocker(headerFormat: string | undefined, mediaId
 }
 
 /**
- * Composants d'UNE carte : le média (que Meta exige à chaque envoi, il n'est jamais dans le template) puis
- * un composant par bouton quick-reply. Pas de composant `body` : la carte n'a pas de variable (garanti par
- * carouselSendBlocker) et un `parameters: []` vide est précisément ce qui déclenche 132012.
- * URL / FLOW statiques -> aucun composant (même règle que les boutons top-level).
+ * Composants d'une carte : le média (exigé à chaque envoi, jamais dans le template), puis un composant par
+ * bouton quick-reply. Pas de composant `body` : un `parameters: []` vide déclenche 132012. Boutons URL et FLOW
+ * statiques : aucun composant.
  */
 function cardComponents(card: OutboundCarouselCard, cardIndex: number): unknown[] {
   const key = card.mediaFormat === 'VIDEO' ? 'video' : 'image';
-  // `id` et NON `link` : cf. OutboundCarouselCard.mediaId.
+  // `id` et non `link` : cf. OutboundCarouselCard.mediaId.
   const out: unknown[] = [{ type: 'header', parameters: [{ type: key, [key]: { id: card.mediaId } }] }];
   (card.buttons ?? []).forEach((b, i) => {
     if (b.type !== 'QUICK_REPLY') return;
-    // Payload portant la carte ET le bouton. Un `btn:<i>` nu serait pire qu'ambigu : chaque carte a un bouton
-    // d'index 0, donc 10 cartes suivraient TOUTES la branche `btn:0` d'un scénario, présentée comme juste.
-    // Aucune branche ne matche `card:i:btn:j` : le run suit son arête par défaut (comme une réponse texte).
+    // Le payload porte la carte et le bouton : un `btn:<i>` nu ferait suivre à toutes les cartes la même branche.
+    // `card:i:btn:j` sans branche correspondante : le run suit son arête par défaut, comme une réponse texte.
     out.push({ type: 'button', sub_type: 'quick_reply', index: String(i), parameters: [{ type: 'payload', payload: carouselButtonHandle(cardIndex, i) }] });
   });
   return out;
@@ -133,8 +114,7 @@ function cardComponents(card: OutboundCarouselCard, cardIndex: number): unknown[
 
 export function buildTemplateComponents(tpl: OutboundTemplateParts): unknown[] {
   const components: unknown[] = [];
-  // Un carousel porte ses médias PAR CARTE : le header top-level ne s'applique pas (même règle qu'à la
-  // création, cf. meta/templates.ts buildComponents).
+  // Un carousel porte ses médias par carte : le header top-level ne s'applique pas (cf. templates.ts buildComponents).
   if ((tpl.headerMediaId || tpl.headerMediaUrl) && !tpl.carousel) {
     const key = tpl.headerFormat === 'VIDEO' ? 'video' : tpl.headerFormat === 'DOCUMENT' ? 'document' : 'image';
     // `id` dès qu'on l'a, `link` en repli (une URL fournie à la main par un opérateur, elle, se télécharge).
@@ -150,9 +130,8 @@ export function buildTemplateComponents(tpl: OutboundTemplateParts): unknown[] {
       cards: tpl.carousel.cards.map((c, i) => ({ card_index: i, components: cardComponents(c, i) })),
     });
   }
-  // Les SUFFIXES des boutons URL tracés. `sub_type: 'url'` avec UN paramètre texte : Meta l'ajoute à la fin
-  // de l'URL du bouton, ce qui est la seule forme de variable qu'il accepte dans une adresse. L'index est
-  // celui du bouton dans TOUS les boutons du template, la numérotation de Meta, la même que `tracked_links`.
+  // Suffixes des boutons URL tracés : `sub_type: 'url'` avec un paramètre texte, que Meta ajoute à la fin de
+  // l'URL du bouton. L'index compte tous les boutons du template (numérotation de Meta, celle de `tracked_links`).
   for (const [index, suffixe] of Object.entries(tpl.suffixesBoutons ?? {})) {
     components.push({ type: 'button', sub_type: 'url', index: String(index), parameters: [{ type: 'text', text: suffixe }] });
   }

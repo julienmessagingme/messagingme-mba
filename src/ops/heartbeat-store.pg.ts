@@ -1,33 +1,29 @@
 import type { Pool } from 'pg';
 
 /**
- * Signal de vie du worker (item 4.9). Prouve que le PROCESS worker tourne (event loop non bloqué), PAS que
- * pg-boss dépile : un worker vivant dont les files sont gelées écrirait quand même son heartbeat. Pour « files
- * gelées », c'est le backlog/failed de getQueueLoad qui sert — deux signaux distincts, exposés côté /ops.
+ * Signal de vie du worker : prouve que le process tourne (event loop non bloquée), pas que pg-boss dépile.
+ * Pour des files gelées, c'est le backlog de `getQueueLoad` qui sert.
  */
 export interface WorkerHeartbeatRow {
   beatAt: string;
   bootedAt: string | null;
   instance: string | null;
-  /** Âge du dernier battement en secondes (calculé côté DB : now() - beat_at, insensible au décalage d'horloge
-   *  entre l'API et le worker). Un âge qui dépasse largement HEARTBEAT_INTERVAL_MS = worker probablement mort. */
+  /** Âge du dernier battement en secondes, calculé côté base (`now() - beat_at`) pour ne pas dépendre de l'écart
+   *  d'horloge entre l'API et le worker. */
   ageSeconds: number;
 }
 
 /**
- * Accès à la table `worker_heartbeat` (ligne unique id='worker', migration 0044). Écrite par le worker,
- * lue par la surface /ops. Read + write au même endroit pour que la note de schéma ci-dessous n'ait qu'UNE
- * définition (PgOpsStore reste, lui, strictement en lecture d'agrégats).
- * ⚠️ Table en schéma PUBLIC, lue/écrite NON qualifiée (comme tenants/contacts) : le pool n'a pas de search_path
- * custom, la résolution nue tombe sur public. Ne PAS la préfixer du schéma pgboss (getQueueLoad, lui, lit
- * `pgboss.job` qualifié — ce sont deux schémas différents ; « corriger » un côté en le préfixant casserait tout).
+ * Accès à `worker_heartbeat` (ligne unique id='worker'), écrite par le worker, lue par /ops.
+ * Table du schéma public, non qualifiée comme les autres ; `getQueueLoad` lit `pgboss.job`, un autre schéma :
+ * ne pas aligner l'un sur l'autre.
  */
 export class PgWorkerHeartbeatStore {
   constructor(private readonly pool: Pool) {}
 
   /**
-   * Upsert best-effort du battement. `boot=true` (démarrage du worker) rafraîchit AUSSI booted_at. L'APPELANT
-   * doit envelopper l'appel en best-effort (try/catch) : une écriture qui throw ne doit JAMAIS tuer le worker.
+   * Upsert du battement ; `boot=true` rafraîchit aussi booted_at. L'appelant l'enveloppe en best-effort : une
+   * écriture qui lève ne doit pas tuer le worker.
    */
   async beat(instance: string, boot: boolean): Promise<void> {
     if (boot) {

@@ -6,32 +6,20 @@ import { resolutionPublique, type VerdictResolution } from '../../lib/adresse-pr
 import { ouvrirSessionMcp, type CibleMcp, type EchecMcp, type SessionMcp } from '../../mcp/client';
 
 /**
- * Le résolveur des outils venus d'un SERVEUR MCP tiers.
+ * Le résolveur des outils venus d'un serveur MCP tiers. Sans lui, un outil `origin = 'mcp'` arrête le tour
+ * (`erreur_protocole`, `fatal: true`).
  *
- * 🔴 SANS LUI, UN OUTIL `origin = 'mcp'` ARRÊTE LE TOUR. L'exécuteur dispatche sur
- * `deps.resolveurs[outil.origin]` et, faute de résolveur, rend `erreur_protocole` avec `fatal: true`. Le
- * câbler dans le même lot que l'import n'est donc pas une commodité de rangement, c'est une condition.
+ * Il ne passe pas par `creerAppelConnecteur` : ce point de passage construit une cible HTTP depuis une
+ * requête de connecteur, et ses gardes en dépendent ; un outil MCP n'a pas de requête, et son transport
+ * (`src/mcp/client.ts`) porte déjà la lecture bornée et le cycle de vie du protocole.
  *
- * 🔴 IL NE PASSE PAS PAR `creerAppelConnecteur`, ET C'EST DÉLIBÉRÉ. Ce point de passage-là construit une
- * cible HTTP depuis une ligne de `connector_requests` et applique sept gardes qui en dépendent ; un outil
- * MCP n'a pas de requête, ses paramètres viennent du schéma distant, et son transport a son propre module
- * (`src/mcp/client.ts`), qui porte déjà la lecture bornée et le cycle de vie du protocole. Les forcer dans
- * le même moule ferait deux moitiés de fonction qui ne s'appliquent chacune qu'à la moitié des appels, ce
- * qui est la façon dont on finit par sauter une garde sans s'en apercevoir.
- *
- * 🔴 CE QU'IL PROTÈGE, comme son voisin HTTP : `contenu` et `erreur` repartent au MODÈLE, donc chez le
- * fournisseur. Le secret d'authentification n'y entre jamais.
- *
- * 🔴 IL NE LÈVE PAS sur un cas métier. Une source inactive, un serveur qui refuse, un `isError` : tout cela
- * rend `ok: false` avec une raison lisible, que le modèle peut dire au contact. Lever ferait une
- * `erreur_protocole`, qui ARRÊTE le tour, alors que le client peut corriger son branchement dans sa console.
+ * 🔴 `contenu` et `erreur` repartent au modèle, donc chez le fournisseur : le secret n'y entre jamais. Pas
+ * d'exception sur un cas métier (source inactive, refus, `isError`) : `ok: false` avec une raison lisible,
+ * puisqu'une `erreur_protocole` arrêterait le tour.
  */
 
 export interface DepsResolveurMcp {
-  /**
-   * 🔴 RELUE À CHAQUE APPEL, jamais figée. Une source que le client vient de désactiver doit cesser d'être
-   * appelée tout de suite : la figer la laisserait tourner jusqu'au prochain redémarrage.
-   */
+  /** Relue à chaque appel, jamais figée : une source désactivée doit cesser d'être appelée tout de suite. */
   sources: Pick<SourceStore, 'pourAppel' | 'marquerEpreuve'>;
   /** Injectée pour tester sans réseau, comme partout dans ce dépôt. */
   ouvrirSession?: typeof ouvrirSessionMcp;
@@ -39,7 +27,7 @@ export interface DepsResolveurMcp {
   verifierResolution?: (url: string) => Promise<VerdictResolution>;
 }
 
-/** Un refus MÉTIER : lisible par le modèle, sans rien divulguer du secret ni de l'interne. */
+/** Un refus métier : lisible par le modèle, sans rien divulguer du secret ni de l'interne. */
 function refus(raison: string): SortieResolveur {
   return { ok: false, contenu: { erreur: raison }, erreur: raison };
 }
@@ -48,8 +36,8 @@ function refus(raison: string): SortieResolveur {
 function direEchec(e: EchecMcp): string {
   switch (e.genre) {
     case 'budget':
-      // ⚠️ LE DÉLAI EST LE NÔTRE, on le dit. Le client peut l'augmenter sur la fiche de l'outil ; l'envoyer
-      // enquêter chez son fournisseur sur une réponse « illisible » lui ferait perdre sa journée.
+      // Le délai est le nôtre, on le dit : le client peut l'augmenter sur la fiche de l'outil, au lieu
+      // d'enquêter chez son fournisseur.
       return 'l’appel a dépassé le délai fixé pour cet outil';
     case 'transport_ancien':
       return 'ce serveur MCP parle un transport que nous ne prenons pas en charge';
@@ -64,24 +52,18 @@ function direEchec(e: EchecMcp): string {
       return 'l’adresse de ce serveur MCP ne résout pas vers une adresse publique';
     default:
       /**
-       * ⚠️ LE MESSAGE PART AVEC, il ne se jette pas. Ce genre couvre aussi bien « corps JSON illisible »
-       * (le serveur) que « réponse trop grosse » (NOTRE plafond, `max_bytes`, 16 Ko par défaut depuis
-       * 0086). Les fondre dans une phrase unique attribuait au serveur du client une coupure que nous
-       * avions décidée, c'est-à-dire la mis-attribution que le genre `budget` vient d'éviter trois lignes
-       * plus haut. Aucun de ces messages ne porte de secret : ils sont écrits par nous, dans
-       * `src/mcp/client.ts`.
+       * Le message part avec : ce genre couvre aussi bien un corps illisible (le serveur) qu'une réponse trop
+       * grosse (notre plafond `max_bytes`), et une phrase unique attribuerait au serveur une coupure décidée par
+       * nous. Ces messages sont écrits dans `src/mcp/client.ts`, sans secret.
        */
       return `le serveur MCP a répondu quelque chose d’illisible (${e.message})`;
   }
 }
 
 /**
- * Pose une valeur au bout d'un chemin, en créant les objets intermédiaires.
- *
- * ⚠️ UN MAILLON DÉJÀ OCCUPÉ PAR UN SCALAIRE ARRÊTE LA POSE plutôt que de l'écraser. Le cas vient d'un
- * schéma distant qui déclarerait à la fois `a` et `a.b` : écraser ferait dépendre le résultat de l'ordre des
- * paramètres, donc rendrait l'appel non reproductible. On préfère ne pas poser, et le serveur dira ce qui
- * lui manque.
+ * Pose une valeur au bout d'un chemin, en créant les objets intermédiaires. Un maillon déjà occupé par un
+ * scalaire (schéma qui déclare `a` et `a.b`) arrête la pose plutôt que de l'écraser, pour un appel
+ * reproductible quel que soit l'ordre des paramètres.
  */
 function poser(cible: Record<string, unknown>, chemin: string[], valeur: unknown): void {
   let courant = cible;
@@ -96,14 +78,9 @@ function poser(cible: Record<string, unknown>, chemin: string[], valeur: unknown
 }
 
 /**
- * Les arguments tels que le SERVEUR DISTANT les attend.
- *
- * 🔴 NOTRE `name` EST UNE ÉTIQUETTE LOCALE, le `cheminMcp` est la donnée de protocole. Sans cette
- * recomposition, un paramètre imbriqué partirait à plat, sous une clé que le serveur ne connaît pas, et
- * l'appel échouerait pour une raison que personne ne saurait lire.
- *
- * ⚠️ UNE VALEUR `null` EST TRANSMISE, une valeur ABSENTE ne l'est pas. La distinction porte la décision du
- * 2026-09-16 : un champ du mini-CRM vide part vide, et c'est le serveur qui décide quoi en faire.
+ * Les arguments tels que le serveur distant les attend, recomposés par `cheminMcp` (sinon un paramètre
+ * imbriqué partirait à plat, sous une clé inconnue du serveur). Une valeur `null` est transmise, une valeur
+ * absente ne l'est pas : un champ vide part vide, et le serveur décide.
  */
 export function argumentsDistants(params: ParamOutil[], args: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -122,43 +99,36 @@ export function creerResolveurMcp(deps: DepsResolveurMcp): ResolveurOutil {
   return async (entree: EntreeResolveur): Promise<SortieResolveur> => {
     const { outil, ctx } = entree;
 
-    // 1. LA SOURCE. Un outil non maison en a forcément une (contrainte `agent_tools_origin_src_chk`), mais
-    //    on ne le SUPPOSE pas : un `null` ici produirait un appel dans le vide.
+    // 1. La source. Un outil non maison en a forcément une (`agent_tools_origin_src_chk`), mais on ne le
+    //    suppose pas : un `null` ici produirait un appel dans le vide.
     if (typeof outil.sourceId !== 'string' || outil.sourceId === '') {
       return refus('cet outil n’est rattaché à aucun serveur MCP');
     }
     /**
-     * 🔴 LA CEINTURE. L'activation est déjà refusée en base, mais une ligne activée AVANT que le
-     * rafraîchissement ne la déclare non activable ou disparue resterait là : le consentement tombe au
-     * rafraîchissement, oui, mais entre les deux un appel peut passer. Un outil non activable partirait
-     * alors au modèle avec ZÉRO paramètre et appellerait le serveur avec `{}` à chaque tour.
+     * La ceinture : une ligne activée avant qu'un rafraîchissement ne la déclare non activable ou disparue peut
+     * encore être appelée, et partirait avec zéro paramètre, donc `{}` à chaque tour.
      */
     if (outil.mcpNonActivable) return refus(`cet outil n’est pas appelable : ${outil.mcpNonActivable}`);
     if (outil.mcpIndisponibleLe) return refus('cet outil a disparu du serveur MCP');
 
     const source = await deps.sources.pourAppel(ctx.tenantId, outil.sourceId);
     if (!source) return refus('le serveur MCP de cet outil est introuvable');
-    // 🔴 LA SOURCE EST-ELLE BIEN UN SERVEUR MCP ? La clé étrangère composite de 0152 le garantit en base,
-    // mais seulement pour les lignes qui portent `source_kind` : celles d'avant le déploiement le portent à
-    // null et lui échappent (MATCH SIMPLE, délibéré). Sans cette ligne, on parlerait le protocole MCP à un
-    // connecteur HTTP, donc on POSTerait une enveloppe JSON-RPC sur l'API d'un client.
+    // 🔴 La source est-elle bien un serveur MCP ? La clé étrangère de `source_kind` ne couvre pas les lignes
+    // anciennes (MATCH SIMPLE) : sans cette ligne, on posterait une enveloppe JSON-RPC sur l'API d'un client,
+    // avec son secret.
     if (source.kind !== 'mcp') return refus('le connecteur de cet outil n’est pas un serveur MCP');
     if (source.status !== 'active') return refus('le serveur MCP de cet outil n’est pas actif');
 
-    // 2. L'ADRESSE, AVANT TOUTE CONNEXION. 🔴 L'ORDRE EST LA GARDE : une vérification posée après l'ouverture
-    //    serait décorative, la connexion aurait déjà eu lieu, donc le dégât aussi. Le texte de l'hôte a été
-    //    validé à l'écriture ; ce qui se vérifie ici est ce vers quoi il RÉSOUT, qu'un texte ne peut pas dire.
+    // 2. 🔴 L'adresse, avant toute connexion (après, la vérification serait décorative) : le texte de l'hôte a
+    //    été validé à l'écriture, on vérifie ici ce vers quoi il résout.
     const verdict = await verifier(source.baseUrl);
     if (!verdict.ok) {
       return refus('l’adresse de ce serveur MCP ne résout pas vers une adresse publique');
     }
 
-    // 3. LA SESSION. Le budget TOTAL vaut l'échéance de l'outil : l'initialisation, la notification et
-    //    l'appel y puisent ensemble, sinon trois allers-retours vaudraient trois fois l'échéance.
-    //    ⚠️ CONSÉQUENCE ASSUMÉE : un serveur lent peut consommer le budget dès l'initialisation, et l'appel
-    //    n'a alors plus rien. C'est le comportement voulu (l'échéance de l'outil borne l'OPÉRATION, pas
-    //    chaque requête), et c'est pourquoi `budget` porte un genre à lui : ce cas-là se dit au client
-    //    comme un délai à augmenter, jamais comme une faute du serveur.
+    // 3. La session. Le budget total vaut l'échéance de l'outil : initialisation, notification et appel y
+    //    puisent ensemble. Un serveur lent peut l'épuiser dès l'initialisation : `budget` le dit au client
+    //    comme un délai à augmenter, pas comme une faute du serveur.
     const cible: CibleMcp = {
       url: source.baseUrl,
       enTetes: enTetesAuthSource(source),
@@ -168,8 +138,8 @@ export function creerResolveurMcp(deps: DepsResolveurMcp): ResolveurOutil {
     };
     const ouverte = await ouvrir(cible);
     if ('echec' in ouverte) {
-      // Une source qu'on n'a pas su joindre est MARQUÉE : c'est ce qui rend un connecteur mort visible dans
-      // la console avant qu'un contact ne le découvre.
+      // Une source injoignable est marquée : un connecteur mort se voit dans la console avant qu'un contact ne
+      // le découvre.
       await deps.sources.marquerEpreuve(ctx.tenantId, source.id, false, direEchec(ouverte.echec)).catch(() => {});
       return refus(direEchec(ouverte.echec));
     }
@@ -177,11 +147,8 @@ export function creerResolveurMcp(deps: DepsResolveurMcp): ResolveurOutil {
 
     try {
       /**
-       * 🔴 PAS DE REPLI SUR `outil.name`, ET LE REPLI ÉTAIT PIRE QUE L'ABSENCE. Notre nom local est
-       * PRÉFIXÉ par le libellé du serveur (`notion_search`) précisément pour éviter les collisions entre
-       * deux serveurs : c'est donc un nom que le serveur distant ne connaît PAR CONSTRUCTION pas. L'appel
-       * partait, échouait chez le tiers, et le client lisait un refus du serveur pour une donnée manquante
-       * chez nous. On refuse ici, avec la raison.
+       * Pas de repli sur `outil.name` : notre nom local est préfixé par le libellé du serveur (`notion_search`),
+       * donc inconnu du serveur par construction. On refuse ici, avec la raison.
        */
       const nomDistant = outil.binding.outilDistant;
       if (typeof nomDistant !== 'string' || nomDistant === '') {
@@ -194,22 +161,20 @@ export function creerResolveurMcp(deps: DepsResolveurMcp): ResolveurOutil {
         return refus(direEchec(resultat.echec));
       }
 
-      // ⚠️ LE SERVEUR A RÉPONDU, MÊME S'IL A RÉPONDU NON : la source est SAINE. La marquer morte sur un
-      // refus métier enverrait le client chercher une panne qui n'existe pas.
+      // Le serveur a répondu, même non : la source est saine. La marquer morte sur un refus métier enverrait
+      // chercher une panne qui n'existe pas.
       await deps.sources.marquerEpreuve(ctx.tenantId, source.id, true).catch(() => {});
 
       if (resultat.estErreur) {
         return { ok: false, contenu: { erreur: resultat.texte }, erreur: resultat.texte };
       }
 
-      // 🔴 UN OUTIL QUI POUSSE REND LE VERDICT SEUL. La réponse d'un outil qui AGIT porte très souvent la
-      // ressource entière qu'on vient de modifier ; l'agent n'a aucune raison de l'envoyer au fournisseur
-      // du modèle. Même doctrine que le résolveur HTTP depuis 0150.
+      // 🔴 Un outil qui pousse rend le verdict seul : la réponse d'un outil qui agit porte souvent la ressource
+      // entière, l'agent n'a aucune raison de l'envoyer au fournisseur du modèle.
       if (outil.nature === 'pousse') return { ok: true, contenu: { ok: true } };
 
-      // 🔴 LE TEXTE PART ENTIER, et le filtre par chemins ne s'applique pas ici : voir la garde posée dans
-      // `src/agent/executor.ts`, qui saute `extraire` pour cette origine. Un filtre sur un retour textuel
-      // rendrait `{}`, c'est-à-dire exactement le défaut que la migration 0150 a corrigé ailleurs.
+      // Le texte part entier : le filtre par chemins ne s'applique pas à un retour textuel (voir
+      // `src/agent/executor.ts`), il rendrait `{}`.
       return { ok: true, contenu: { texte: resultat.texte } };
     } finally {
       // Fermer est un geste de politesse envers le serveur, jamais une étape dont dépend le résultat.

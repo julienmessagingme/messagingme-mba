@@ -1,30 +1,22 @@
 /**
- * Chemins dans un JSON reçu d'un tiers : `client.tel`, `lignes[0].prix`, `[0].nom`.
+ * Chemins dans un JSON reçu d'un tiers : `client.tel`, `lignes[0].prix`, `[0].nom`. Module pur.
  *
- * Module PUR (aucune IO, aucun import qui tire pg) -> testable sans base, comme `automation/match.ts`.
- *
- * ⚠️ GRAMMAIRE DUPLIQUÉE dans `web/lib/chemin-json.ts`, qui FABRIQUE les chemins depuis l'arbre affiché
- * pendant que ce module les LIT. Les deux ne partagent aucun paquet (le front a son propre tsconfig). Un
- * même jeu de chemins d'or est figé dans les tests des DEUX côtés : c'est lui qui garde l'invariant.
- * Filet supplémentaire : la route de configuration REFUSE un chemin qu'elle ne sait pas lire, donc une
- * divergence se voit tout de suite en 4xx au lieu de produire un mapping muet.
+ * Grammaire dupliquée dans `web/lib/chemin-json.ts`, qui fabrique les chemins que ce module lit : un même jeu de
+ * chemins d'or est figé dans les tests des deux côtés. La route de configuration refuse un chemin illisible, donc
+ * une divergence se voit en 4xx au lieu d'un mapping muet.
  */
 
 /** Un segment : une clé d'objet, ou un index de tableau. */
 export type SegmentChemin = { cle: string } | { index: number };
 
 /**
- * Chemin bien formé : un premier jeton (clé ou index), puis une suite de `.cle` ou `[n]`.
- *
- * Une clé ne peut donc contenir ni `.` ni `[` ni `]`. C'est une VRAIE limite : un tiers a le droit
- * d'émettre `{"a.b": 1}`, et cette clé-là est inadressable. Plutôt que d'inventer une syntaxe
- * d'échappement que personne ne saurait relire dans l'écran, on refuse le chemin ; l'arbre côté front ne
- * propose pas ces feuilles.
+ * Chemin bien formé : un premier jeton (clé ou index), puis une suite de `.cle` ou `[n]`. Une clé ne peut contenir
+ * ni `.` ni `[` ni `]` : `{"a.b": 1}` est inadressable, et on refuse plutôt que d'inventer une syntaxe d'échappement.
  */
 const CHEMIN_RE = /^(?:[^.[\]]+|\[\d{1,6}\])(?:\.[^.[\]]+|\[\d{1,6}\])*$/;
 const JETON_RE = /\[(\d{1,6})\]|\.?([^.[\]]+)/g;
 
-/** Longueur maximale d'un chemin. Un chemin plus long qu'un tweet n'est pas un chemin, c'est une erreur. */
+/** Longueur maximale d'un chemin : au-delà, c'est une erreur. */
 const LONGUEUR_MAX = 300;
 
 /** Découpe un chemin en segments, ou null s'il est mal formé. Ne touche à aucune donnée. */
@@ -50,8 +42,8 @@ export function cheminValide(chemin: string): boolean {
 }
 
 /**
- * Valeur pointée par un chemin, ou `undefined` si le chemin ne résout pas (clé absente, index hors bornes,
- * traversée d'un scalaire, chemin mal formé). Ne lève JAMAIS : le payload vient d'un tiers.
+ * Valeur pointée par un chemin, ou `undefined` si le chemin ne résout pas (clé absente, index hors bornes, traversée
+ * d'un scalaire, chemin mal formé). Ne lève jamais : le payload vient d'un tiers.
  */
 export function litChemin(racine: unknown, chemin: string): unknown {
   const segments = parseChemin(chemin);
@@ -66,8 +58,7 @@ export function litChemin(racine: unknown, chemin: string): unknown {
       continue;
     }
     if (typeof courant !== 'object' || Array.isArray(courant)) return undefined;
-    // Propriétés PROPRES uniquement. Sans cette garde, `a.constructor` ou `a.__proto__.x` remonteraient des
-    // valeurs du prototype : un chemin configuré par un utilisateur lirait du code au lieu de sa donnée.
+    // Propriétés propres uniquement : sinon `a.constructor` ou `a.__proto__.x` liraient le prototype.
     if (!Object.prototype.hasOwnProperty.call(courant, s.cle)) return undefined;
     courant = (courant as Record<string, unknown>)[s.cle];
   }
@@ -75,37 +66,26 @@ export function litChemin(racine: unknown, chemin: string): unknown {
 }
 
 /**
- * Une valeur est-elle STOCKABLE dans un champ de contact ?
- *
- * 🔴 Seuls les scalaires. Les valeurs de `contacts.fields` sont stockées en chaîne, et `contactVars`
- * transforme en `null` toute valeur non primitive : un objet ou un tableau écrit dans un champ rendrait la
- * variable VIDE dans un template, sans la moindre erreur. `null` n'est pas non plus une valeur (c'est une
- * absence), et un nombre non fini ne se relit pas.
+ * Une valeur est-elle stockable dans un champ de contact ? Seuls les scalaires finis : `contactVars` rend `null` pour
+ * toute valeur non primitive, un objet écrit dans un champ donnerait une variable vide dans un template, en silence.
+ * `null` est une absence, pas une valeur.
  */
 export function estScalaire(v: unknown): v is string | number | boolean {
   if (typeof v === 'string' || typeof v === 'boolean') return true;
   return typeof v === 'number' && Number.isFinite(v);
 }
 
-/**
- * Plafond de longueur d'une valeur de champ. MÊME valeur que `validateFieldValue` : la dépasser ferait
- * refuser l'écriture en aval.
- */
+/** Plafond de longueur d'une valeur de champ, le même que `validateFieldValue`, sinon l'écriture serait refusée en aval. */
 export const LONGUEUR_VALEUR_MAX = 1000;
 
 /**
- * Forme de STOCKAGE d'une valeur pointée : une chaîne trimée, ou null si la valeur n'est pas stockable
- * (non scalaire, vide une fois trimée, ou trop longue).
+ * Forme de stockage d'une valeur pointée : une chaîne trimée, ou null si elle n'est pas stockable (non scalaire,
+ * vide, trop longue).
  *
- * 🔴 Pourquoi la LONGUEUR est filtrée ici, alors que la validation par TYPE reste au chemin d'écriture
- * partagé. `upsertContactsFromApi` refuse l'enregistrement ENTIER dès qu'une valeur est invalide : un
- * téléphone parfaitement bon serait perdu parce qu'un tiers a envoyé une description de 3000 caractères
- * dans un champ voisin. Ce cas-là n'est pas une erreur de mapping, c'est une inadéquation de forme que
- * personne n'ira corriger chez le tiers, donc on écarte la seule valeur fautive et on la RAPPORTE.
- *
- * Une valeur invalide pour le TYPE du champ (du texte dans un champ nombre) reste, elle, un refus complet
- * avec sa raison : c'est une erreur de configuration, et la faire disparaître en silence empêcherait
- * l'opérateur de la corriger.
+ * La longueur est filtrée ici parce que `upsertContactsFromApi` refuse l'enregistrement entier sur une valeur
+ * invalide : un téléphone bon serait perdu pour une description trop longue dans un champ voisin. On écarte la
+ * seule valeur fautive et on la rapporte. Une valeur invalide pour le type du champ reste un refus complet : c'est
+ * une erreur de configuration que l'opérateur doit voir.
  */
 export function valeurTexte(v: unknown): string | null {
   if (!estScalaire(v)) return null;

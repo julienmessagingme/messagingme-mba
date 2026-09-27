@@ -8,8 +8,8 @@ export interface FlowRow {
   name: string;
   status: 'DRAFT' | 'PUBLISHED';
   fields: FlowField[];
-  /** Écrans du modèle riche, NORMALISÉS à la lecture (colonne jsonb polymorphe : tableau plat historique
-   *  = 1 écran, { screens } = multi ; null pour les vieux flows simples pré-phase-3). */
+  /** Écrans du modèle riche, normalisés à la lecture (jsonb polymorphe : tableau plat = un écran, { screens } =
+   *  plusieurs ; null pour les anciens flows simples). */
   screens: FlowScreenDef[] | null;
   ref: string | null;
   /** Mapping champ -> user field du contact (clé champ -> clé user field). */
@@ -24,17 +24,12 @@ export interface FlowRow {
 export interface FlowMappingRow {
   tenantId: string;
   mapping: Record<string, string>;
-  /** Type Flow déclaré de chaque champ (clé -> type) : pour canonicaliser la valeur AVANT écriture. */
+  /** Type Flow déclaré de chaque champ (clé -> type), pour canonicaliser la valeur avant écriture. */
   fieldTypes: Record<string, FlowFieldType>;
   /** Clés des champs de type `optin` (consentement) : leur passage à `true` ouvre le gate marketing. */
   optinFieldKeys: string[];
 }
 
-/**
- * Suivi local des Flows (table `flows`). Source de vérité pour l'UI (Meta ne renvoie pas la structure).
- * On stocke `elements` (modèle riche) + `ref` (discriminant au retour) + `mapping` (champ -> user field),
- * ET `fields` DÉRIVÉ (fieldsOf) pour ne pas casser les consommateurs de FlowRow.fields.
- */
 /** Forme brute d'une ligne `flows` telle que Postgres la rend. */
 interface FlowDbRow {
   id: string; tenant_id: string; name: string; status: 'DRAFT' | 'PUBLISHED';
@@ -42,8 +37,7 @@ interface FlowDbRow {
   created_at: Date; updated_at: Date;
 }
 
-/** Ligne brute -> FlowRow. Partagé par la liste et la lecture unitaire, qui en portaient chacune une copie :
- *  un champ ajouté à FlowRow devait sinon être reporté à quatre endroits. */
+/** Ligne brute -> FlowRow, partagé par la liste et la lecture unitaire. */
 function toFlowRow(r: FlowDbRow): FlowRow {
   return {
     id: r.id,
@@ -59,12 +53,16 @@ function toFlowRow(r: FlowDbRow): FlowRow {
     updatedAt: r.updated_at.toISOString(),
   };
 }
+/**
+ * Suivi local des Flows (table `flows`), source de vérité pour l'UI : Meta ne renvoie pas leur structure. On stocke
+ * `elements` (modèle riche), `ref` (discriminant au retour), `mapping`, et `fields` dérivé pour les consommateurs de
+ * FlowRow.fields.
+ */
 export class PgFlowStore {
   constructor(private readonly pool: Pool) {}
 
   async insert(input: { id: string; tenantId: string; name: string; screens: FlowScreenDef[]; ref: string; mapping: Record<string, string>; cta?: string }): Promise<void> {
-    // La colonne `elements` (jsonb) porte désormais la forme { screens } ; les lignes historiques restent
-    // en tableau plat (normalisées à la lecture par screensOf, AUCUNE migration).
+    // `elements` porte la forme { screens } ; les lignes anciennes restent en tableau plat, normalisées à la lecture.
     await this.pool.query(
       `insert into flows (id, tenant_id, name, fields, elements, ref, mapping, cta)
        values ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7::jsonb, $8)`,
@@ -81,7 +79,7 @@ export class PgFlowStore {
     return res.rows.map(toFlowRow);
   }
 
-  /** Un flow par id, scopé tenant (pour l'édition : lire le status/screens). null si absent/autre tenant. */
+  /** Un flow par id, filtré sur l'espace. null si absent ou d'un autre espace. */
   async getById(id: string, tenantId: string): Promise<FlowRow | null> {
     const res = await this.pool.query<FlowDbRow>(
       `select id, tenant_id, name, status, fields, elements, ref, mapping, cta, created_at, updated_at from flows
@@ -94,9 +92,8 @@ export class PgFlowStore {
   }
 
   /**
-   * Met à jour un flow DRAFT (name/screens/ref/mapping). `fields` est RE-DÉRIVÉ (fieldsOfScreens) pour ne
-   * jamais diverger des écrans. WHERE status='DRAFT' : 2e barrière SQL contre l'écriture d'un PUBLISHED
-   * (immuable chez Meta). Renvoie true si une ligne DRAFT du tenant a été mise à jour.
+   * Met à jour un flow DRAFT. `fields` est re-dérivé des écrans pour ne jamais diverger. `status='DRAFT'` dans le
+   * WHERE : seconde barrière contre l'écriture d'un flow publié, immuable chez Meta.
    */
   async update(id: string, tenantId: string, patch: { name: string; screens: FlowScreenDef[]; ref: string; mapping: Record<string, string>; cta?: string }): Promise<boolean> {
     const res = await this.pool.query(
@@ -108,15 +105,11 @@ export class PgFlowStore {
   }
 
   /**
-   * Insère un flow VU CHEZ META mais absent de notre base (créé directement dans WhatsApp Manager).
-   * On ne connaît que id/nom/statut : `elements`, `ref` et `mapping` restent NULS, Meta ne renvoie pas la
-   * structure d'un flow (cf. 0015). Conséquence assumée : le formulaire devient utilisable (bouton de
-   * template, bloc de scénario) mais ses réponses n'alimentent aucune fiche contact, faute de `ref` pour les
-   * rattacher au retour (findByRef).
-   *
-   * `on conflict do nothing` : l'id est la clé primaire GLOBALE. Deux tenants qui partagent un WABA voient le
-   * même flow chez Meta, et le second ne doit ni provoquer une 500 ni voler la ligne du premier.
-   * true si une ligne a bien été créée.
+   * Insère un flow vu chez Meta mais absent de notre base (créé dans WhatsApp Manager). `elements`, `ref` et `mapping`
+   * restent nuls, Meta ne renvoyant pas la structure : le formulaire est utilisable mais ses réponses n'alimentent
+   * aucune fiche, faute de `ref`.
+   * `on conflict do nothing` : l'id est une clé primaire globale, et deux espaces qui partagent un WABA voient le même
+   * flow ; le second ne doit ni provoquer un 500 ni voler la ligne du premier.
    */
   async insertExternal(input: { id: string; tenantId: string; name: string; status: 'DRAFT' | 'PUBLISHED' }): Promise<boolean> {
     const res = await this.pool.query(
@@ -127,11 +120,9 @@ export class PgFlowStore {
   }
 
   /**
-   * Aligne un flow local sur ce que Meta annonce : renommage effectué dans WhatsApp Manager, publication
-   * effectuée hors de la console. Le statut ne redescend JAMAIS de PUBLISHED à DRAFT : Meta ne le permet pas,
-   * et le faire rouvrirait chez nous l'édition d'un flow devenu immuable chez eux.
-   * Le `where` ne retient que les lignes qui CHANGENT vraiment, pour que le compteur de la réconciliation
-   * compte des mises à jour réelles et non des écritures à blanc.
+   * Aligne un flow local sur ce que Meta annonce (renommage, publication hors console). Le statut ne redescend jamais
+   * de PUBLISHED à DRAFT, ce qui rouvrirait l'édition d'un flow immuable chez Meta. Le `where` ne retient que les
+   * lignes qui changent, pour un compteur de réconciliation honnête.
    */
   async alignFromMeta(id: string, tenantId: string, patch: { name: string; status: 'DRAFT' | 'PUBLISHED' }): Promise<boolean> {
     const res = await this.pool.query(
@@ -143,9 +134,8 @@ export class PgFlowStore {
     return (res.rowCount ?? 0) > 0;
   }
 
-  /** Retrouve le tenant + le mapping + les types de champ d'un flow par son `ref` (retour nfm_reply). null si
-   *  inconnu. `fields` (déjà stocké, dérivé) donne le type de chaque champ (canonicalisation) et repère les
-   *  champs OptIn (gate marketing). Un `select` de plus sur une requête déjà indexée par `ref` unique. */
+  /** L'espace, le mapping et les types de champ d'un flow par son `ref` (retour nfm_reply), null si inconnu. Les
+   *  types servent à canonicaliser, et repèrent les champs OptIn (gate marketing). */
   async findByRef(ref: string): Promise<FlowMappingRow | null> {
     const res = await this.pool.query<{ tenant_id: string; mapping: Record<string, string> | null; fields: FlowField[] | null }>(
       `select tenant_id, mapping, fields from flows where ref = $1 limit 1`,
@@ -162,19 +152,19 @@ export class PgFlowStore {
     };
   }
 
-  /** Le flow appartient-il au tenant ? (garde-fou AVANT tout appel Meta sur publish.) */
+  /** Le flow appartient-il à l'espace ? Garde-fou avant tout appel Meta de publication. */
   async belongsTo(flowId: string, tenantId: string): Promise<boolean> {
     const res = await this.pool.query(`select 1 from flows where id = $1 and tenant_id = $2`, [flowId, tenantId]);
     return (res.rowCount ?? 0) > 0;
   }
 
-  /** Le flow est-il PUBLISHED pour ce tenant ? (pré-check côté route templates.) */
+  /** Le flow est-il publié pour cet espace ? (vérification préalable de la route des templates) */
   async isPublished(flowId: string, tenantId: string): Promise<boolean> {
     const res = await this.pool.query(`select 1 from flows where id = $1 and tenant_id = $2 and status = 'PUBLISHED'`, [flowId, tenantId]);
     return (res.rowCount ?? 0) > 0;
   }
 
-  /** Passe le flow en PUBLISHED (scopé tenant). true si une ligne a été mise à jour. */
+  /** Passe le flow en PUBLISHED, filtré sur l'espace. true si une ligne a été mise à jour. */
   async markPublished(flowId: string, tenantId: string): Promise<boolean> {
     const res = await this.pool.query(
       `update flows set status = 'PUBLISHED', updated_at = now() where id = $1 and tenant_id = $2`,
@@ -183,7 +173,7 @@ export class PgFlowStore {
     return (res.rowCount ?? 0) > 0;
   }
 
-  /** Retire le flow du store local (scopé tenant), après suppression/dépréciation côté Meta. true si supprimé. */
+  /** Retire le flow du store local (filtré sur l'espace), après suppression chez Meta. true si supprimé. */
   async remove(flowId: string, tenantId: string): Promise<boolean> {
     const res = await this.pool.query(`delete from flows where id = $1 and tenant_id = $2`, [flowId, tenantId]);
     return (res.rowCount ?? 0) > 0;

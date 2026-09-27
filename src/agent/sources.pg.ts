@@ -8,17 +8,15 @@ import {
 } from './sources';
 
 /**
- * Les sources externes en base (migration 0088).
+ * Les sources externes en base.
  *
- * ⚠️ `tenant_id` sur CHAQUE requête : le pooler est superuser, la RLS est bypassée, et ici le filtrage protège
- * une adresse réseau et un secret. Une source lue sans ce filtre ferait appeler le système d'un autre client.
- *
- * 🔴 LE SECRET N'EST JAMAIS SÉLECTIONNÉ AILLEURS QUE DANS `pourAppel`. Les autres méthodes rendent
- * `auth_secret_enc is not null` (donc un booléen), et rien d'autre : c'est ce qui garantit qu'aucune route ne
- * peut le laisser fuiter par inadvertance, même en ajoutant un champ à la projection.
+ * 🔴 `tenant_id` sur chaque requête : la RLS est contournée par le pooler, et une source lue sans ce filtre
+ * ferait appeler le système d'un autre client avec son secret. Le secret n'est sélectionné que dans
+ * `pourAppel` ; les autres méthodes n'en rendent que l'existence, pour qu'aucune route ne puisse le laisser
+ * fuiter en ajoutant un champ.
  */
 
-/** Colonnes de la projection PUBLIQUE. Le secret n'y est pas, seulement son EXISTENCE. */
+/** Colonnes de la projection publique : le secret n'y est pas, seulement son existence. */
 const COLS = `s.id, s.tenant_id, s.kind, s.label, s.base_url, s.auth_kind, s.auth_header_name,
   (s.auth_secret_enc is not null) as a_auth, (s.secret_publie_le is not null) as secret_publie,
   s.status, s.last_ok_at, s.last_error,
@@ -63,8 +61,8 @@ function versVue(r: LigneVue): SourceVue {
   };
 }
 
-/** `23505` = violation d'unicité sur `(tenant_id, lower(label))`. Traduite en erreur typée, pour que la route
- *  rende 409 : un 500 sur un libellé en double afficherait la page d'erreur de Cloudflare. */
+/** `23505` = violation d'unicité sur `(tenant_id, lower(label))`, traduite en erreur typée pour que la
+ *  route rende 409 plutôt qu'un 500. */
 function surLabelDejaPris(label: string) {
   return (err: unknown): never => {
     if ((err as { code?: string })?.code === '23505') throw new LabelSourceDejaPris(label);
@@ -93,8 +91,7 @@ export class PgSourceStore implements SourceStore {
   }
 
   async creer(tenantId: string, input: CreationSource): Promise<SourceVue> {
-    // Le secret est chiffré ICI, jamais plus haut : la couche HTTP ne doit pas manipuler de forme chiffrée,
-    // et la couche de stockage est le seul endroit qui connaît la clé.
+    // Le secret est chiffré ici, jamais plus haut : la couche de stockage est la seule qui connaît la clé.
     const secret = input.authSecret && input.authSecret !== '' ? encryptSecret(input.authSecret, config.ENCRYPTION_KEY) : null;
     const res = await this.pool.query<LigneVue>(
       `with nouvelle as (
@@ -117,24 +114,16 @@ export class PgSourceStore implements SourceStore {
     if (patch.authKind !== undefined) push('auth_kind', patch.authKind);
     if (patch.authHeaderName !== undefined) push('auth_header_name', patch.authHeaderName);
     if (patch.status !== undefined) push('status', patch.status);
-    // 🔴 LES DEUX BRANCHES SONT EXCLUSIVES, ET C'EST STRUCTUREL. Écrites en deux `if` indépendants, un corps
-    // portant `{ authKind: 'none', authSecret: 'x' }` poussait DEUX fois `auth_secret_enc` dans le même
-    // `update ... set` : Postgres refuse une double affectation de colonne, l'erreur n'est pas un `23505`,
-    // elle remontait donc jusqu'au 500 dont Cloudflare remplace le corps. Sur une route de configuration,
-    // c'est un client qui voit une page d'incident au lieu d'un message.
-    //
-    // Passer en `none` RETIRE le secret (la contrainte de la migration l'exige, et garder un secret que plus
-    // rien n'utilise n'a aucun intérêt) ; sinon, un secret ABSENT vaut INCHANGÉ, parce que l'écran ne peut
-    // pas le renvoyer : il ne l'a jamais eu.
+    // Branches exclusives : deux `if` indépendants pousseraient deux fois `auth_secret_enc` dans le même
+    // `update`, que Postgres refuse (500). Passer en `none` retire le secret ; sinon un secret absent vaut
+    // inchangé, l'écran ne l'ayant jamais eu.
     if (patch.authKind === 'none') {
       push('auth_secret_enc', null);
     } else if (patch.authSecret !== undefined && patch.authSecret !== '') {
       push('auth_secret_enc', encryptSecret(patch.authSecret, config.ENCRYPTION_KEY));
     }
-    // 🔴 TOUCHER À L'AUTHENTIFICATION DÉPUBLIE LE SECRET, et les TROIS champs comptent : le secret bien sûr,
-    // mais aussi le MODE (`bearer` -> `header`) et le NOM D'EN-TÊTE, qui décident du corps envoyé à Meta
-    // (`corpsApiKey`). N'écouter que `authSecret` laisserait Meta présenter le bon secret dans le mauvais
-    // en-tête, ce qui ressemble à un jeton refusé et s'en diagnostique très mal.
+    // Toucher à l'authentification dépublie le secret : le secret, mais aussi le mode et le nom d'en-tête,
+    // qui décident du corps envoyé à Meta (`corpsApiKey`).
     if (patch.authKind !== undefined || patch.authHeaderName !== undefined
         || (patch.authSecret !== undefined && patch.authSecret !== '')) {
       sets.push('secret_publie_le = null');
@@ -182,10 +171,8 @@ export class PgSourceStore implements SourceStore {
   }
 
   /**
-   * Le secret courant est désormais posé chez Meta.
-   *
-   * ⚠️ `tenant_id = $1` comme partout : sans lui, une publication marquerait la source d'un autre client, qui
-   * cesserait alors de reposer SON secret.
+   * Le secret courant est désormais posé chez Meta. `tenant_id = $1` comme partout : sans lui, une
+   * publication marquerait la source d'un autre client, qui cesserait de reposer son secret.
    */
   async marquerSecretPublie(tenantId: string, id: string): Promise<void> {
     await this.pool.query(
@@ -195,8 +182,7 @@ export class PgSourceStore implements SourceStore {
   }
 
   async marquerEpreuve(tenantId: string, id: string, ok: boolean, erreur?: string): Promise<void> {
-    // Une réussite EFFACE la dernière erreur : sinon l'écran afficherait indéfiniment un incident réglé, et
-    // le client cesserait de regarder ce champ, qui est justement le seul signal d'un jeton mort.
+    // Une réussite efface la dernière erreur : sinon l'écran afficherait indéfiniment un incident réglé.
     await this.pool.query(
       `update agent_tool_sources
           set last_ok_at = case when $3 then now() else last_ok_at end,

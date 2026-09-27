@@ -1,9 +1,6 @@
 /**
  * Client du canal service vers le connecteur mm-hubspot : appel signé (`callService`), import de listes,
  * déconnexion d'un portail, signalement d'un contact injoignable, lecture des étapes de deal.
- *
- * Nommé `hubspot-import` jusqu'au 2026-08-18, alors qu'il ne portait plus qu'en partie l'import, et que les
- * ROUTES de l'import s'appellent déjà `src/http/hubspot-import.ts` : deux fichiers de même nom pour deux rôles.
  */
 import { randomBytes } from 'node:crypto';
 import { signRequest } from '../lib/signature';
@@ -45,7 +42,7 @@ async function callService<T>(deps: ConnectorDeps, path: string, body: unknown):
   const signedPath = new URL(fullUrl).pathname;
   return withRetry(async () => {
     const raw = JSON.stringify(body);
-    // ts + nonce FRAIS par tentative (voir postAnalysis) : le vérificateur mm-hubspot rejette un ts hors fenêtre.
+    // ts + nonce frais à chaque tentative : le vérificateur mm-hubspot rejette un ts hors fenêtre.
     const sig = signRequest(deps.secret, { ts: Date.now(), nonce: randomBytes(8).toString('hex'), method: 'POST', path: signedPath, body: raw });
     const res = await deps.transport.post(fullUrl, body, { 'x-mm-service-signature': sig });
     if (res.status >= 200 && res.status < 300) return res.json as T;
@@ -56,10 +53,9 @@ async function callService<T>(deps: ConnectorDeps, path: string, body: unknown):
 }
 
 /**
- * Déconnexion complète (candidat 2) : délie le tenant de son portail HubSpot côté connecteur (mm-hubspot révoque le
- * refresh token si c'était le dernier tenant). Idempotent : `{disconnected:false}` = déjà délié = SUCCÈS (2xx). Un
- * échec terminal (4xx/5xx après retries) lève HubspotServiceError -> l'appelant NE coupe PAS l'état local (pas de
- * drift : on ne veut jamais que mba affiche « coupé » alors que le connecteur pousse encore vers HubSpot).
+ * Délie le tenant de son portail HubSpot côté connecteur (qui révoque le refresh token si c'était le dernier
+ * tenant). Idempotent : `{disconnected:false}` = déjà délié = succès. Un échec terminal lève HubspotServiceError, et
+ * l'appelant ne coupe pas l'état local : mba ne doit jamais afficher « coupé » pendant que le connecteur pousse encore.
  */
 export async function disconnectHubspot(deps: ConnectorDeps, tenantId: string): Promise<{ disconnected: boolean; revoked: boolean }> {
   const res = await callService<{ disconnected?: boolean; revoked?: boolean }>(deps, '/service/unlink', { tenantId });
@@ -67,9 +63,9 @@ export async function disconnectHubspot(deps: ConnectorDeps, tenantId: string): 
 }
 
 /**
- * Marque un contact « injoignable en WhatsApp » dans HubSpot (F6, appelé au 2e échec de livraison 131026). Résout le
- * contact par téléphone côté connecteur et pose la propriété. `tenant_not_connected` (404) = pas de portail lié -> on
- * ignore proprement (rien à marquer), pas une erreur. Un échec réseau/5xx est rejoué (withRetry) ; un autre 4xx lève.
+ * Marque un contact « injoignable en WhatsApp » dans HubSpot (au 2e échec de livraison 131026), résolu par
+ * téléphone côté connecteur. `tenant_not_connected` (404) = pas de portail lié, rien à marquer ; un échec
+ * réseau ou 5xx est rejoué, un autre 4xx lève.
  */
 export async function flagContactUnreachable(deps: ConnectorDeps, tenantId: string, e164: string): Promise<{ flagged: boolean }> {
   try {
@@ -85,12 +81,9 @@ export interface HubspotDealStage { id: string; label: string; closed: boolean }
 export interface HubspotDealPipeline { id: string; label: string; stages: HubspotDealStage[] }
 
 /**
- * Pipelines de deals du portail, avec les libellés de leurs étapes : de quoi peupler le menu « étape de deal »
- * de l'écran Automation, au lieu de faire recopier un identifiant opaque depuis HubSpot.
- *
- * Ne lève PAS ReconsentRequiredError : les deals sont dans les scopes obligatoires de l'app, contrairement aux
- * listes. Un tenant sans portail lié remonte en HubspotServiceError 404 (`tenant_not_connected`), que la route
- * HTTP traduit en « pas connecté » plutôt qu'en erreur.
+ * Pipelines de deals du portail, avec les libellés de leurs étapes, pour le menu « étape de deal » de l'écran
+ * Automation. Ne lève pas ReconsentRequiredError (les deals sont dans les scopes obligatoires) ; un tenant sans
+ * portail remonte en HubspotServiceError 404, que la route traduit en « pas connecté ».
  */
 export async function fetchHubspotDealStages(deps: ConnectorDeps, tenantId: string): Promise<HubspotDealPipeline[]> {
   const res = await callService<{ pipelines?: HubspotDealPipeline[] }>(deps, '/service/deal-stages', { tenantId });
@@ -104,23 +97,10 @@ export async function fetchHubspotLists(deps: ConnectorDeps, tenantId: string, q
 }
 
 /**
- * Importe les contacts d'une liste HubSpot comme contacts du tenant, taggés « HubSpot: <nom> ».
- *
- * OPT-IN : les contacts arrivent `opted_in`, source `hubspot_list`. Le consentement est géré DANS HubSpot,
- * c'est lui qui en porte la preuve, et une liste qu'un opérateur choisit pour une campagne est par
- * construction une liste de gens à qui il a le droit d'écrire.
- *
- * Ce n'est pas un assouplissement, c'est la correction d'un contresens : la fonction posait `unknown`, or
- * `optInAllows` exige un opt-in EXPLICITE pour le marketing. Une campagne marketing montée sur une liste
- * HubSpot rendait donc ZÉRO destinataire, sans que rien ne le dise (l'écart n'était même pas compté).
- * mba re-décidait du consentement à partir d'une donnée qu'il n'a pas.
- *
- * 🔴 SAUF À QUI A DIT STOP (2026-09-26) : il reste désabonné, avec la source et la date de son refus. L'import
- * demande l'opt-in, et c'est la base qui refuse de lever le STOP (`upsertManyByPhone` : ce lot ne porte pas
- * `peutLeverStop`, que seule la case cochée d'un import CSV pose). Une liste HubSpot périmée ne réabonne personne.
- *
- * La fonction n'expose toujours pas de paramètre : la source du consentement est la liste, point.
- * Renvoie le rapport d'import (forme CSV) + `truncated`/`skippedNoPhone` (liste géante / contacts sans numéro).
+ * Importe les contacts d'une liste HubSpot, taggés « HubSpot: <nom> ». Ils arrivent `opted_in`, source
+ * `hubspot_list` : le consentement est géré et prouvé dans HubSpot, et `optInAllows` exige un opt-in explicite
+ * pour le marketing. 🔴 Sauf qui a dit STOP : il reste désabonné, la base refusant de lever le STOP
+ * (`upsertManyByPhone` sans `peutLeverStop`). Rend le rapport d'import, plus `truncated` et `skippedNoPhone`.
  */
 export async function importHubspotList(
   connector: ConnectorDeps,
@@ -136,9 +116,8 @@ export async function importHubspotList(
   );
   const rows = data.contacts.map((c) => ({ phone: c.phone, name: c.name ?? '' }));
   const mapping: ColumnMapping = { columns: { phone: { target: 'phone' }, name: { target: 'name' } } };
-  // `tags` = source de vérité UNIQUE du tag réellement posé (le front s'en sert pour filtrer -> doit matcher
-  // EXACTEMENT ce qui est stocké, y compris toute normalisation). On le renvoie plutôt que de laisser le front
-  // reconstruire « HubSpot: <nom> » de son côté (risque de divergence sur un nom long/espacé).
+  // `tags` = source de vérité unique du tag posé : le front s'en sert pour filtrer, il doit correspondre exactement
+  // à ce qui est stocké plutôt que d'être reconstruit côté front.
   const tags = [`HubSpot: ${listName}`];
   const report = await importContacts({ rows, mapping, tenantId, optIn: true, optInSource: 'hubspot_list', tags }, importDeps);
   return { report, truncated: data.truncated, skippedNoPhone: data.skippedNoPhone, tags };

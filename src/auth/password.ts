@@ -7,10 +7,9 @@ const KEYLEN = 64;
 const PREFIX = 'scrypt';
 
 /**
- * Hash un mot de passe (scrypt + sel aléatoire), Format : `scrypt$<sel hex>$<hash hex>`. ASYNCHRONE
- * (threadpool libuv) comme verifyPassword : `scryptSync` gèlerait l'event loop mono-thread, et le hachage est
- * désormais sur des routes PUBLIQUES (signup/reset) -> un flux de requêtes saturerait le CPU (DoS, impacte aussi
- * la réception webhook Meta dans le même process). À utiliser sur tout chemin de requête.
+ * Hache un mot de passe (scrypt, sel aléatoire), au format `scrypt$<sel hex>$<hash hex>`. Asynchrone
+ * (threadpool libuv) : `scryptSync` gèlerait l'event loop, et le hachage est sur des routes publiques
+ * (signup, reset) ; un flux de requêtes saturerait le CPU du process qui reçoit aussi les webhooks Meta.
  */
 export async function hashPassword(plain: string): Promise<string> {
   const salt = randomBytes(16);
@@ -18,17 +17,16 @@ export async function hashPassword(plain: string): Promise<string> {
   return `${PREFIX}$${salt.toString('hex')}$${hash.toString('hex')}`;
 }
 
-/** Version SYNCHRONE (bloque l'event loop) : réservée aux usages HORS chemin de requête, ex. le hash leurre
- *  calculé UNE fois au chargement du module. NE PAS utiliser par requête. */
+/** Version synchrone, qui bloque l'event loop : hors chemin de requête seulement (le hash leurre calculé une
+ *  fois au chargement du module). */
 export function hashPasswordSync(plain: string): string {
   const salt = randomBytes(16);
   return `${PREFIX}$${salt.toString('hex')}$${scryptSync(plain, salt, KEYLEN).toString('hex')}`;
 }
 
 /**
- * Vérifie un mot de passe contre un hash stocké (comparaison à temps constant). Le scrypt
- * est ASYNCHRONE (threadpool libuv) pour ne pas geler l'event loop mono-thread : un flux de
- * logins ne peut pas provoquer un DoS par saturation CPU du serveur.
+ * Vérifie un mot de passe contre un hash stocké, comparaison à temps constant. Asynchrone, pour la même
+ * raison que `hashPassword`.
  */
 export async function verifyPassword(plain: string, stored: string): Promise<boolean> {
   const parts = stored.split('$');

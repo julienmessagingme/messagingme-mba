@@ -16,23 +16,19 @@ import type { NodeEventCount } from '../workflow/node-events.pg';
 import type { CompteurClic } from '../links/mesures';
 import { INTENTS as INTENTS_ANALYSE } from '../analysis/schema';
 
-// Valeurs d'enum admises pour les filtres de la liste quali. On ne passe au store QUE des valeurs valides ->
-// pas d'injection de filtre arbitraire, et le NULL = « pas de filtre ».
-// 🔴 LES INTENTIONS DÉRIVENT DU SCHÉMA DE L'ANALYSE : une copie en dur aurait ignoré `?intent=achat` et rendu
-// TOUTES les conversations sous un filtre « Achat » affiché (lot 5 de l'API publique). Sentiments et actions
-// restent des miroirs de `src/analysis/schema.ts`.
+// Valeurs d'enum admises pour les filtres de la liste quali : on ne passe au store que des valeurs valides (pas
+// d'injection de filtre), NULL = « pas de filtre ». Les intentions dérivent du schéma de l'analyse (une copie en
+// dur ignorerait des valeurs et rendrait tout sous un filtre affiché) ; sentiments et actions restent des
+// miroirs de `src/analysis/schema.ts`.
 const SENTIMENTS = new Set(['positif', 'neutre', 'negatif']);
 const INTENTS = new Set<string>(INTENTS_ANALYSE);
 const ACTIONS = new Set(['creer_devis', 'rappeler', 'relancer', 'escalader', 'aucune']);
 const inSet = (s: Set<string>, v: unknown): string | undefined => (typeof v === 'string' && s.has(v) ? v : undefined);
 
 /**
- * Le filtre par SUJET. Contrairement aux trois autres, il n'a pas d'énumération : le sujet est écrit par le
- * LLM en texte libre (`topic` est un `text` en base, borné à 120 caractères par le schéma de sortie).
- *
- * On borne donc la longueur à cette même limite, plutôt que de laisser passer une chaîne de n'importe quelle
- * taille jusqu'à la base : un filtre plus long que ce qu'une colonne peut contenir ne peut de toute façon
- * rien ramener. `undefined` (pas de filtre) pour tout le reste, y compris la chaîne vide.
+ * Le filtre par sujet, sans énumération : le sujet est écrit par le LLM en texte libre (`topic`, borné à 120
+ * caractères par le schéma de sortie). On borne la longueur à cette limite ; `undefined` pour tout le reste, y
+ * compris la chaîne vide.
  */
 const topicValide = (v: unknown): string | undefined =>
   (typeof v === 'string' && v.trim() !== '' && v.trim().length <= 120 ? v.trim() : undefined);
@@ -44,107 +40,72 @@ export interface StatsRouteDeps {
   /** Prix Meta (pricing_analytics) par catégorie ; null si indisponible (le front affiche le volume seul). */
   getPricing(tenantId: string, range: DateRange): Promise<PricingSummary | null>;
   /**
-   * La marge de l espace, en pourcent, pour que l ecran puisse NOMMER la cause de l ecart entre le cout
-   * estime et la facture Meta.
-   *
-   * 🔴 REQUISE, ET LA PREMIERE VERSION L AVAIT ECRITE `margeTemplate?`. Le `CLAUDE.md` de ce depot porte
-   * DEUX rouges du 2026-09-15 sur ce mot precis (`estDesabonne?`, `guard?`), avec la formule qui s applique
-   * ici sans changer un terme : la difference entre « personne ne s en sert » et « quelqu un s en sert et
-   * elle ne fait rien ». Optionnelle, un cablage qui l oublierait compilait, et l ecran continuait
-   * d attribuer a un arrondi un ecart de 50 %, sans erreur et sans test rouge. Le comble : le commit qui
-   * l a introduite est celui qui pose une garde mecanique contre « ecrit mais pas branche ».
+   * La marge de l'espace, en pourcent, pour que l'écran puisse nommer la cause de l'écart entre le coût estimé et
+   * la facture Meta. Requise : optionnelle, un câblage qui l'oublierait ferait attribuer à un arrondi un écart de
+   * 50 %.
    */
   margeTemplate(tenantId: string): Promise<number>;
-  /** Funnel d'UNE campagne : envoyés -> délivrés -> lus -> répondus + échecs. */
+  /** Funnel d'une campagne : envoyés -> délivrés -> lus -> répondus + échecs. */
   getCampaignFunnel(tenantId: string, campaignId: string): Promise<CampaignFunnel>;
   /** Breakdown des codes d'erreur Meta sur la plage (campagnes du tenant), filtrable par template. */
   getErrorBreakdown(tenantId: string, range: DateRange, templateName?: string): Promise<ErrorBreakdownRow[]>;
   /**
-   * Les contacts touchés par UN code d'erreur, filtrables par campagnes OU templates.
-   *
-   * 🔴 C'EST LE JOURNAL DES ERREURS DE LIVRAISON QUI RÉPOND (`PgErreursLivraisonStore.lister`), pas une
-   * requête propre à Analytics. Une seconde requête a été écrite puis SUPPRIMÉE le 2026-09-07 : elle
-   * comptait une population voisine mais différente, et les deux écrans (Analytics et Paramètres) portent
-   * le même titre. Un client aurait comparé, et l'un des deux serait passé pour faux.
-   *
-   * REQUISE depuis le lot 3 de l'audit ponytail : elle rendait 503 quand elle manquait, jamais une liste vide
-   * qui se lirait « personne n'a été touché ». C'est désormais le compilateur qui interdit le câblage muet.
+   * Les contacts touchés par un code d'erreur, filtrables par campagnes ou templates. C'est le journal des erreurs
+   * de livraison qui répond (`PgErreursLivraisonStore.lister`), pas une requête propre à Analytics : deux requêtes
+   * voisines sous le même titre dans deux écrans feraient passer l'une pour fausse.
    */
   getErrorContacts(tenantId: string, range: DateRange, code: number, filter: FiltreCampagneOuTemplate): Promise<ErreurLivraison[]>;
   /** Série de coût estimé/jour, filtrable par campagne ou template. */
   getCostSeries(tenantId: string, range: DateRange, filter: FiltreCampagneOuTemplate): Promise<CostSeries>;
   /**
-   * Le tableau « ce que coûte un engagement » de la page de synthèse (lot E) : une ligne par campagne
-   * ayant envoyé sur la période, son coût ESTIMÉ et ses clics.
+   * Le tableau « ce que coûte un engagement » : une ligne par campagne ayant envoyé sur la période, son coût
+   * estimé et ses clics. `inclureArchivees` : la bascule de la carte (absente = exclues).
    */
-  /** `inclureArchivees` : la bascule de la carte (lot 4 de la liste du 2026-09-23). Absente = exclues. */
   getCoutParCampagne(tenantId: string, range: DateRange, opts: { inclureArchivees: boolean }): Promise<CoutParCampagne>;
-  /**
-   * Le COUT TOTAL DES MESSAGES de la période (ligne 2 de la carte « Coûts »).
-   */
+  /** Le coût total des messages de la période (ligne 2 de la carte « Coûts »). */
   getCoutMessages(tenantId: string, range: DateRange): Promise<CoutMessages>;
   /**
-   * Ce que le client a dépensé en IA sur SON crédit (ligne 3 de la carte « Coûts »), et le détail des tours.
-   *
-   * ⚠️ Un total à zéro est ici un état NORMAL et non une panne : aucun tour
-   * d'agent n'a jamais tourné en production (mesuré le 2026-09-17). L'écran doit dire « aucune
-   * consommation », pas afficher un tiret qui se lirait comme une mesure manquante.
+   * Ce que le client a dépensé en IA sur son crédit (ligne 3 de la carte « Coûts »), et le détail des tours. Un
+   * total à zéro est un état normal : l'écran dit « aucune consommation », pas un tiret qui se lirait comme une
+   * mesure manquante.
    */
   getCoutIa(tenantId: string, range: DateRange): Promise<CoutIa>;
   /**
-   * La fiche d'UNE campagne : ce qu'elle a coûté et ce que les gens en ont fait (demande de Julien du
-   * 2026-09-09, ouverte en cliquant une ligne du tableau ci-dessus).
-   *
-   * ⚠️ AUCUNE PLAGE, et c'est la décision de Julien : la fiche couvre toute la VIE de la campagne. Un
-   * scénario reçoit des réponses pendant des jours ; bornée à la fenêtre du tableau, elle montrerait le
-   * coût d'un lancement sans les interactions qu'il a produites ensuite. Le tableau, lui, reste sur la
-   * période : ce n'est pas une incohérence, ce sont deux questions différentes, et la fiche le DIT.
-   *
-   * `null` quand la campagne n'existe pas ou n'appartient pas à cet espace -> 404, jamais une fiche vide.
+   * La fiche d'une campagne : ce qu'elle a coûté et ce que les gens en ont fait. Aucune plage : elle couvre toute
+   * la vie de la campagne (un scénario reçoit des réponses pendant des jours), quand le tableau reste sur la
+   * période ; la fiche le dit. `null` = inconnue ou d'un autre espace -> 404, jamais une fiche vide.
    */
   getDetailCoutCampagne(tenantId: string, campaignId: string): Promise<DetailCoutCampagne | null>;
-  /** Agrégats d'analyse de conversation (Pièce 1) sur la plage. */
+  /** Agrégats d'analyse de conversation sur la plage. */
   getConversationSummary(tenantId: string, range: DateRange): Promise<ConversationAnalysisSummary>;
   /** Liste des dernières conversations analysées (quali), filtrable. */
   listAnalyzedConversations(tenantId: string, range: DateRange, filters: AnalyzedConversationsFilter): Promise<AnalyzedConversationRow[]>;
   /**
-   * Le damier « satisfaction x urgence » de la page de synthèse (lot F).
-   *
-   * L'écran distingue « vide » de « pas encore de mesures ».
+   * Le damier « satisfaction x urgence » de la page de synthèse. L'écran distingue « vide » de « pas encore de
+   * mesures ».
    */
   getNuageQualitatif(tenantId: string, range: DateRange): Promise<NuageQualitatif>;
-  /**
-   * Une ligne par JOUR pour l ecran « Analyse des conversations » (2026-09-17).
-   */
+  /** Une ligne par jour pour l'écran « Analyse des conversations ». */
   getJoursAnalyse(tenantId: string, range: DateRange): Promise<JourAnalyse[]>;
-  /**
-   * Mesures d'un SCÉNARIO, bloc par bloc (« Mes tableaux »).
-   */
+  /** Mesures d'un scénario, bloc par bloc (« Mes tableaux »). */
   getWorkflowNodeCounts(tenantId: string, workflowId: string, range: DateRange): Promise<Array<NodeEventCount | CompteurClic>>;
   /**
    * Les messages envoyés et reçus par canal, pour les cartes « Numéro WhatsApp » et « Canal RCS » de l'Accueil.
-   * Ce qui est compté et ce qui est écarté : `PgStatsStore.volumesParCanal`.
-   *
-   * 🔴 REQUISE, PAS `volumesParCanal?` : une dépendance optionnelle qu'un câblage oublie compile, se déploie
-   * et rend 503 en silence (la leçon de `margeTemplate`, juste au-dessus). L'écran, lui, tolère déjà l'absence
-   * de la route pendant la fenêtre où Vercel a publié la console et pas encore l'API.
+   * Ce qui est compté et écarté : `PgStatsStore.volumesParCanal`. Requise ; l'écran tolère l'absence de la route
+   * pendant la fenêtre où la console est publiée avant l'API.
    */
   volumesParCanal(tenantId: string, jours: number): Promise<VolumesParCanal>;
 }
 
 /**
- * La fenêtre des volumes par canal : la même que la rangée « 30 derniers jours » de l'Accueil, qu'elles
- * côtoient. ⚠️ GLISSANTE (maintenant moins 30 fois 24 h), et non en jours civils de Paris comme la rangée :
- * l'écart tient en quelques heures, et la carte ne se lit pas contre elle (les modèles y sont comptés, pas dans
- * « Messages échangés »).
+ * La fenêtre des volumes par canal, la même que la rangée « 30 derniers jours » de l'Accueil, mais glissante
+ * (maintenant moins 30 fois 24 h) et non en jours civils de Paris : l'écart tient en quelques heures.
  */
 export const JOURS_VOLUMES = 30;
 
-/** Stats du dashboard (séries 1 pt/jour). Groupe admin-only (garde passé par server.ts). Plage de dates
- *  via ?from&?to (YYYY-MM-DD, Europe/Paris) ou repli ?days= ; invalide/futur/span>366 -> 400. */
 /**
- * Liste CSV d'un query param : découpée, nettoyée, dédupliquée et PLAFONNÉE. Le plafond n'est pas décoratif :
- * ces valeurs partent dans un `= any($n)`, et rien n'empêche un appelant d'en envoyer dix mille.
+ * Liste CSV d'un query param : découpée, nettoyée, dédupliquée et plafonnée. Ces valeurs partent dans un
+ * `= any($n)`, et rien n'empêche un appelant d'en envoyer dix mille.
  */
 function csvBorne(v: unknown): string[] {
   if (typeof v !== 'string' || v.trim() === '') return [];
@@ -152,20 +113,10 @@ function csvBorne(v: unknown): string[] {
 }
 
 /**
- * Les identifiants de campagne d'un filtre, ou `null` si l'un d'eux n'en est pas un.
- *
- * 🔴 CES VALEURS PARTENT DANS UN `$n::uuid[]`, et Postgres refuse la conversion À L'EXÉCUTION : un
- * identifiant mal formé sortait donc en 500, dont Cloudflare remplace le corps par sa propre page. Le client
- * ne voyait même pas ce qu'on lui reprochait. On répond 400.
- *
- * ⚠️ Et on REFUSE plutôt que de filtrer les mauvaises valeurs : les jeter rendrait la liste vide, or une
- * liste vide vaut « tout » ici. Un filtre fautif afficherait alors PLUS que ce qui était demandé, en
- * silence, ce qui est pire qu'une erreur.
- */
-/**
- * Plafond de la liste des contacts touches. Un code d'erreur peut frapper une campagne entiere (5 000
- * destinataires) : sans borne, un clic sur une ligne ramenerait tout, et l'ecran ne sait de toute facon pas
- * afficher utilement davantage. On demande UNE LIGNE DE PLUS au journal pour savoir qu'on tronque, et le dire.
+ * Plafond de la liste des contacts touchés : un code d'erreur peut frapper une campagne entière. On demande une
+ * ligne de plus au journal pour savoir qu'on tronque, et le dire.
+ * `idsCampagnes`, juste après : un identifiant mal formé rend `null` (donc 400) plutôt que d'être écarté, car une
+ * liste vide vaut « tout » ici, et un filtre fautif afficherait plus que ce qui était demandé.
  */
 export const PLAFOND_CONTACTS_ERREUR = 200;
 
@@ -186,9 +137,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
 
   /**
    * Les cartes « Numéro WhatsApp » et « Canal RCS » de l'Accueil : envoyés et reçus par canal, sur 30 jours.
-   * Dans CE module parce que c'est celui des chiffres de l'Accueil : même garde (admin), même isolation.
-   * Aucune plage en paramètre : la carte ne porte pas de sélecteur, et la fenêtre est RENDUE (`jours`) pour que
-   * l'écran ne l'invente pas.
+   * Aucune plage en paramètre ; la fenêtre est rendue (`jours`) pour que l'écran ne l'invente pas.
    */
   app.get('/tenants/:tenantId/accueil/volumes', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -205,18 +154,15 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
     const [breakdown, pricing, marge] = await Promise.all([
       deps.getTemplateBreakdown(tenant, r.range),
       deps.getPricing(tenant, r.range),
-      // 🔴 LA MARGE VOYAGE AVEC CE QU ELLE EXPLIQUE. Cette page pose cote a cote un cout ESTIME (prix de
-      // vente, marge comprise) et le total FACTURE par Meta ; la phrase qui reconcilie les deux designait
-      // le tarif moyen par categorie, ce qui etait vrai tant que personne ne posait de marge. Sans ce
-      // chiffre, l ecran ne pourrait pas nommer la cause dominante de l ecart, et le client chercherait un
-      // arrondi la ou il y a 50 %. Un second appel aux reglages pour un seul nombre serait pire.
+      // La marge voyage avec ce qu'elle explique : la page pose côte à côte un coût estimé (marge comprise) et le
+      // total facturé par Meta, et sans ce chiffre l'écran ne saurait pas nommer la cause dominante de l'écart.
       deps.margeTemplate(tenant),
     ]);
     return reply.code(200).send({ breakdown, pricing, margeTemplate: marge });
   });
 
-  // Funnel d'UNE campagne (envoyés/délivrés/lus/répondus). ?campaignId=... requis. Pas de plage
-  // (le funnel porte sur toute la campagne). Le scope tenant est aussi appliqué en SQL (pas de fuite).
+  // Funnel d'une campagne (envoyés/délivrés/lus/répondus). ?campaignId=... requis. Pas de plage (le funnel
+  // porte sur toute la campagne). Le scope tenant est aussi appliqué en SQL.
   app.get('/tenants/:tenantId/stats/campaign-funnel', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const campaignId = (req.query as Record<string, unknown>).campaignId;
@@ -235,22 +181,15 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
   });
 
   /**
-   * QUI a été touché par un code d'erreur, sur la plage, filtrable ?campaignIds= / ?templateNames=.
-   *
-   * ⚠️ Le code arrive dans le CHEMIN, donc en texte : il est converti et VALIDÉ ici. Sans ça, un `NaN`
-   * partirait en paramètre de requête et Postgres refuserait la conversion en `int` au moment de
-   * l'exécution, c'est-à-dire en 500 plutôt qu'en 400. Cloudflare remplace le corps d'un 5xx par sa propre
-   * page : l'appelant n'aurait même pas vu le message.
-   *
-   * `tronque` dit que la liste est plafonnée. Le store rend une ligne de plus que le plafond pour qu'on
-   * puisse le savoir ; on la retire avant d'envoyer, sans quoi l'écran afficherait 201 lignes en annonçant
-   * un plafond de 200.
+   * Qui a été touché par un code d'erreur, sur la plage, filtrable ?campaignIds= / ?templateNames=. Le code arrive
+   * dans le chemin : converti et validé ici (un `NaN` ferait refuser la conversion en `int` par Postgres, donc
+   * 500). `tronque` dit que la liste est plafonnée ; la ligne de plus rendue par le store est retirée avant l'envoi.
    */
   app.get('/tenants/:tenantId/stats/errors/:code/contacts', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { code } = req.params as { code: string };
-    // `Number.parseInt` s'arrete au premier caractere non chiffre : « 131049abc » passerait. On exige donc
-    // que le segment soit ENTIEREMENT numerique, sinon deux adresses differentes designeraient la meme chose.
+    // `Number.parseInt` s'arrête au premier caractère non chiffre : « 131049abc » passerait. On exige donc
+    // que le segment soit entièrement numérique, sinon deux adresses différentes désigneraient la même chose.
     if (!/^\d{1,9}$/.test(code)) return reply.code(400).send({ error: 'code invalide' });
     const codeNum = Number.parseInt(code, 10);
     const q = req.query as Record<string, unknown>;
@@ -273,14 +212,9 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
   });
 
   /**
-   * Mesures d'un scénario BLOC PAR BLOC, sur une plage. C'est la source des tableaux d'Analytics.
-   *
-   * Rend les compteurs BRUTS (par bloc, par nature, par choix), pas un tableau tout fait : c'est l'écran qui
-   * décide lesquels il affiche, et deux tableaux différents lisent les mêmes lignes. Agréger côté serveur
-   * obligerait à rejouer la requête à chaque changement de sélection.
-   *
-   * ⚠️ Ces mesures n'existent QUE depuis la mise en place de l'instrumentation : une plage antérieure rend
-   * une liste vide, et c'est le comportement juste, pas un bug.
+   * Mesures d'un scénario bloc par bloc, sur une plage : la source des tableaux d'Analytics. Rend les compteurs
+   * bruts (par bloc, par nature, par choix) ; l'écran choisit ce qu'il affiche. Une plage antérieure à
+   * l'instrumentation rend une liste vide, et c'est juste.
    */
   app.get('/tenants/:tenantId/stats/workflow/:workflowId', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -296,8 +230,8 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
     const q = req.query as Record<string, unknown>;
     const r = parseRange(q);
     if ('error' in r) return reply.code(400).send({ error: r.error });
-    // Même garde que la liste des contacts touchés : un identifiant mal formé sortait en 500 (refus de
-    // conversion `::uuid[]` chez Postgres), donc en page d'erreur Cloudflare côté client.
+    // Même garde que la liste des contacts touchés : un identifiant mal formé ferait refuser la conversion
+    // `::uuid[]` par Postgres (500).
     const idsCout = idsCampagnes(q.campaignIds);
     if (idsCout === null) return reply.code(400).send({ error: 'campaignIds invalide' });
     const filter: FiltreCampagneOuTemplate = {
@@ -307,13 +241,9 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
     return reply.code(200).send(await deps.getCostSeries(tenant, r.range, filter));
   });
 
-  // Analyse de conversation (Pièce 1) : agrégats quanti sur la plage. Scope tenant AUSSI en SQL (pas de fuite).
   /**
-   * Coût par campagne rapporté aux engagements (page de synthèse).
-   *
-   * ⚠️ Adresse SOUS `/stats/cost`, parce que c'est la même matière que le graphe : mêmes tarifs Meta, même
-   * population d'envois facturables. Un client qui compare les deux totaux doit pouvoir se dire qu'ils
-   * viennent du même endroit, et ils en viennent.
+   * Coût par campagne rapporté aux engagements (page de synthèse), sous `/stats/cost` : mêmes tarifs Meta, même
+   * population d'envois facturables que le graphe, pour que les deux totaux viennent du même endroit.
    */
   app.get('/tenants/:tenantId/stats/cost/campaigns', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -324,12 +254,9 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
   });
 
   /**
-   * Le COUT TOTAL DES MESSAGES ENVOYES sur la période : templates margés, messages de service franchise
-   * déduite, RCS à deux tarifs.
-   *
-   * ⚠️ Route SÉPARÉE de `/stats/cost`, alors qu'elle lit la même matière pour les templates, et ce n'est
-   * pas un doublon : le graphe répond « comment ça s'est réparti dans le temps », celle-ci « ce que la
-   * période a coûté, tous canaux ». Elles partagent le calcul (`chiffrer`, et la marge appliquee EN AMONT par `tarifsFactures`), pas la forme.
+   * Le coût total des messages envoyés sur la période : templates margés, messages de service franchise déduite,
+   * RCS à deux tarifs. Route séparée de `/stats/cost` (le graphe dit comment ça s'est réparti, celle-ci ce que la
+   * période a coûté) ; elles partagent le calcul (`chiffrer`, marge appliquée en amont par `tarifsFactures`).
    */
   app.get('/tenants/:tenantId/stats/cost/messages', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -339,12 +266,9 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
   });
 
   /**
-   * CE QUE LE CLIENT A DEPENSE EN IA sur la période, sur SON crédit prépayé, et le détail de ses tours.
-   *
-   * ⚠️ Rien de ce qui est sur NOTRE clé n'apparaît ici (transcription, bot d'aide, assistants de
-   * configuration) : montrer une dépense qu'on ne facture pas ouvrirait une discussion sur un coût interne.
-   * Et le Meta Business Agent n'y est pas non plus, parce qu'il tourne CHEZ Meta et se facture au message
-   * de service : son coût est dans la route au-dessus, pas dans celle-ci.
+   * Ce que le client a dépensé en IA sur la période, sur son crédit prépayé, et le détail de ses tours. Rien de
+   * ce qui est sur notre clé n'apparaît ici (transcription, bot d'aide, assistants) ; le Meta Business Agent non
+   * plus : il se facture chez Meta au message de service, donc dans la route au-dessus.
    */
   app.get('/tenants/:tenantId/stats/cost/ia', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -354,12 +278,8 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
   });
 
   /**
-   * LES JOURNEES de l'écran « Analyse des conversations » : une ligne par jour, pas par conversation.
-   *
-   * 🔴 ROUTE A PART DE `/stats/conversations`, ET C'EST CE QUI REND L'ECRAN TENABLE. Julien, le
-   * 2026-09-17 : « si un moment il y a 1000 conversations en stock, tu vas pas afficher 1000
-   * conversations dans le tableau ». La réponse est bornée par le nombre de JOURS de la période, jamais
-   * par le trafic du client.
+   * Les journées de l'écran « Analyse des conversations » : une ligne par jour, pas par conversation. Route à part
+   * de `/stats/conversations` : la réponse est bornée par le nombre de jours de la période, jamais par le trafic.
    */
   app.get('/tenants/:tenantId/stats/conversations/jours', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -376,11 +296,8 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
   });
 
   /**
-   * Le damier « satisfaction x urgence » de la page de synthèse (lot F).
-   *
-   * ⚠️ Route À PART de `/stats/conversations`, alors qu'elle lit la même table sur la même plage : la page
-   * de synthèse n'a besoin QUE de ce damier, et le résumé quali transporte une vingtaine de compteurs plus
-   * les dix sujets fréquents. Les fondre ferait payer à chaque écran ce dont l'autre a besoin.
+   * Le damier « satisfaction x urgence » de la page de synthèse. Route à part de `/stats/conversations` : la page
+   * n'a besoin que du damier, pas des compteurs et des sujets du résumé.
    */
   app.get('/tenants/:tenantId/stats/conversations/nuage', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -390,14 +307,9 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
   });
 
   /**
-   * La fiche d'une campagne, ouverte depuis une ligne du tableau du coût.
-   *
-   * ⚠️ SANS `parseRange`, seule route de ce fichier dans ce cas : elle couvre toute la vie de la campagne.
-   * Accepter une plage ici laisserait croire qu'elle en tient compte.
-   *
-   * 🔴 L'identifiant est VALIDÉ avant d'atteindre la base : `campaignId` vient de l'URL, il part en
-   * paramètre lié dans une requête `uuid`, et un texte quelconque y ferait lever Postgres (donc un 500 dont
-   * Cloudflare mangerait le corps) au lieu du 400 que mérite une adresse mal formée.
+   * La fiche d'une campagne, ouverte depuis une ligne du tableau du coût. Sans `parseRange`, seule route de ce
+   * fichier dans ce cas : elle couvre toute la vie de la campagne. L'identifiant est validé avant la base (400 au
+   * lieu d'une levée Postgres sur `uuid`).
    */
   app.get('/tenants/:tenantId/stats/cost/campaigns/:campaignId', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -408,8 +320,8 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
       return reply.code(400).send({ error: 'campaignId invalide' });
     }
     const fiche = await deps.getDetailCoutCampagne(tenant, campaignId);
-    // 404 et non une fiche a zero : « cette campagne n'existe pas ici » et « elle n'a rien coute » sont
-    // deux reponses differentes, et la seconde serait une affirmation fausse.
+    // 404 et non une fiche à zéro : « cette campagne n'existe pas ici » et « elle n'a rien coûté » sont deux
+    // réponses différentes, et la seconde serait une affirmation fausse.
     if (fiche === null) return reply.code(404).send({ error: 'campagne introuvable' });
     return reply.code(200).send(fiche);
   });
@@ -425,9 +337,8 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
       ...(inSet(SENTIMENTS, q.sentiment) ? { sentiment: inSet(SENTIMENTS, q.sentiment) } : {}),
       ...(inSet(INTENTS, q.intent) ? { intent: inSet(INTENTS, q.intent) } : {}),
       ...(inSet(ACTIONS, q.action) ? { action: inSet(ACTIONS, q.action) } : {}),
-      // Le sujet est du TEXTE LIBRE (le LLM l'écrit) : il n'y a pas d'énumération à valider, donc on borne
-      // ce qu'on peut borner, la longueur, et on laisse le paramètre lié faire le reste. Une chaîne vide
-      // vaut « pas de filtre » et n'est pas transmise, sinon elle ne ramènerait jamais rien.
+      // Le sujet est du texte libre (le LLM l'écrit) : pas d'énumération à valider, on borne la longueur et le
+      // paramètre lié fait le reste. Une chaîne vide vaut « pas de filtre » et n'est pas transmise.
       ...(topicValide(q.topic) ? { topic: topicValide(q.topic) } : {}),
       ...(limit !== undefined ? { limit } : {}),
     };

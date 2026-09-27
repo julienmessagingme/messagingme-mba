@@ -13,99 +13,71 @@ import { SORTIE_PLAFOND } from './sorties';
 import { microEurosDepuisDollars } from './devise';
 
 /**
- * Le CERVEAU réel : la boucle qui transforme un historique en une décision.
+ * Le cerveau réel : la boucle qui transforme un historique en une décision, partagée par le bac à sable et
+ * le tour de production (un bac à sable qui n'exercerait pas le vrai chemin ne testerait rien).
  *
- * 🔴 C'EST L'APPELANT QUI MANQUAIT à `executeTool` (dette D3), et les trois responsabilités que sa JSDoc lui
- * assignait sont ici, chacune commentée là où elle se joue : alerter sur une erreur de protocole, calculer
- * les plafonds restants, et encadrer le résultat d'outil en bloc délimité avant de le remettre au modèle.
+ * Elle alerte sur une erreur de protocole, calcule les plafonds restants à chaque appel, encadre le résultat
+ * d'outil en bloc délimité, et garde la sortie (un texte qui imite nos délimiteurs n'est pas une réponse).
  *
- * 🔴 UNE QUATRIÈME S'Y EST AJOUTÉE LE 2026-09-08, et elle regarde dans l'autre sens : GARDER LA SORTIE. Le
- * modèle a rendu un faux bloc de résultat d'outil comme réponse, contenu inventé compris, et un client l'a
- * lu. Encadrer ce qui ENTRE ne suffit pas quand la consigne apprend au modèle à écrire ce format.
- *
- * 🔴 CE QUI ARRÊTE LA BOUCLE, et il n'y a que trois façons. Le modèle rend du TEXTE (il a fini de parler,
- * c'est le cas nominal) ; un outil demande une SORTIE (`mba_terminer`, ou la recherche de connaissance qui
- * ne trouve rien) ou a déjà rendu la main (escalade) ; ou on atteint le plafond d'ALLERS-RETOURS. Sans ce
- * dernier, un modèle qui rappelle indéfiniment le même outil brûlerait le compte prépayé du tenant en
- * quelques secondes, et c'est exactement ce qu'une injection dans un message de contact chercherait à faire.
- *
- * Le même cerveau sert le bac à sable de la console et, plus tard, le tour de production : c'est délibéré.
- * Un bac à sable qui n'exercerait pas le vrai chemin ne testerait rien.
+ * 🔴 Trois façons d'arrêter la boucle : le modèle rend du texte ; un outil demande une sortie ou a rendu la
+ * main ; le plafond d'allers-retours. Sans ce dernier, un modèle qui rappelle le même outil (ce qu'une
+ * injection chercherait) brûlerait le compte prépayé du tenant.
  */
 
 /**
- * L'agent n'existe pas, ou appartient à un autre tenant.
- *
- * Une ERREUR TYPÉE et non un message à reconnaître : c'est l'idiome du dépôt (`FicheAgentPerimee`,
- * `LabelAgentDejaPris`, `NomOutilDejaPris`), et il évite deux choses d'un coup. Un appelant qui devrait
- * relire l'agent juste pour rendre un 404 plutôt qu'un 500 ferait une requête de plus par essai, et un appelant
- * qui reconnaîtrait le message verrait sa distinction cassée en silence au premier refactor de ce texte.
+ * L'agent n'existe pas, ou appartient à un autre tenant. Erreur typée : l'appelant rend un 404 sans relire
+ * l'agent ni reconnaître un message.
  */
 export class AgentIntrouvable extends Error {
   constructor(agentId: string) { super(`agent ${agentId} introuvable`); this.name = 'AgentIntrouvable'; }
 }
 
-/** Allers-retours de modèle dans UN tour. Au-delà, on sort par le plafond plutôt que de continuer à payer.
- *  À ne pas confondre avec `max_tours` de la fiche, qui compte les tours de CONVERSATION. */
+/** Allers-retours de modèle dans un tour ; au-delà, on sort par le plafond. À ne pas confondre avec
+ *  `max_tours` de la fiche, qui compte les tours de conversation. */
 export const MAX_ALLERS_RETOURS = 6;
 
 export interface GatewayBrainDeps {
-  /** L'appel de modèle. Injecté : le cerveau se teste sans réseau. */
-  /** ⚠️ `tenantId` decide QUELLE CLE paie l'appel (2026-09-09) : celle de l'espace, sinon la maison. */
+  /** L'appel de modèle, injecté. `tenantId` décide quelle clé paie l'appel : celle de l'espace, sinon la maison. */
   completer(input: { tenantId: string; modele: string; messages: ChatMessage[]; outils?: OutilExpose[]; signal?: AbortSignal }): Promise<ReponseChat>;
   /** Tout ce que l'agent est : sa fiche, ses outils actifs, ses règles d'arrêt. `null` = agent introuvable. */
   contexte(tenantId: string, agentId: string): Promise<ContexteAgentComplet | null>;
   /** L'exécution d'outil, avec ses deps. La boucle ne les connaît pas, elle les passe. */
   outils: ToolExecutorDeps;
   /**
-   * La fiche du contact, bornée par l'appelant. Absente -> contact INCONNU, ce qui est la vérité d'un bac à
-   * sable et le cas le plus fréquent d'un premier message.
-   *
-   * ⚠️ C'est une PROJECTION, pas la ligne de base : `mba_lire_contact` la rend telle quelle au modèle, donc
-   * au fournisseur. Y verser une ligne brute enverrait chez lui des champs que personne n'a décidé de
-   * partager.
+   * La fiche du contact, bornée par l'appelant. Absente : contact inconnu. Une projection, pas la ligne de
+   * base : `mba_lire_contact` la rend au modèle, donc au fournisseur.
    */
   lireContact?(tenantId: string, waId: string): Promise<Record<string, unknown> | null>;
   /**
-   * Taux de conversion dollars vers euros. Le Gateway facture en DOLLARS, tous nos compteurs sont en
-   * micro-euros. Absent -> facteur 1, jamais zéro : mieux vaut facturer un dollar pour un euro que de ne
-   * rien facturer du tout, ce qui désarmerait les plafonds en silence.
+   * Taux dollars vers euros (le Gateway facture en dollars, nos compteurs sont en micro-euros). Absent :
+   * facteur 1, jamais zéro, qui désarmerait les plafonds.
    */
   tauxEurParDollar?: number;
-  /** Signale une erreur de PROTOCOLE (bug de notre client). Best-effort : jamais bloquant. */
+  /** Signale une erreur de protocole (bug de notre client). Best-effort : jamais bloquant. */
   alerter?(message: string): void;
   now?: () => number;
 }
 
 export interface ContexteAgentComplet {
   modele: string;
-  /** Le régime d'annonce d'IA (migration 0126). C'est le tour qui en tire un booléen, pas le modèle. */
+  /** Le régime d'annonce d'IA. C'est le tour qui en tire un booléen, pas le modèle. */
   mentionIaFrequence: FrequenceMentionIa;
   mentionIa: string;
   sorties: SortieAgent[];
   contenu: ContexteAgent['contenu'];
-  /** Les outils ACTIFS, tels que le catalogue les rend. Vide = l'agent peut parler mais rien faire. */
+  /** Les outils actifs, tels que le catalogue les rend. Vide = l'agent peut parler mais rien faire. */
   outilsActifs: OutilDefini[];
   plafonds: { maxAppelsOutils: number; budgetMicroEur: number };
   /** Ce que l'agent a le droit de faire face à un contact inconnu. Vient de sa fiche, jamais de l'appelant. */
   contactInconnu: ContexteAppel['contactInconnu'];
-  /**
-   * L'équipe est-elle joignable, et sinon quand reprend-elle ? (lot 1 du 2026-09-18)
-   *
-   * ⚠️ ABSENTE = DISPONIBLE, donc exactement le comportement d'avant. C'est ce qui rend ce champ sûr sur un
-   * chemin que chaque message de contact emprunte, et c'est aussi pourquoi le bac à sable n'a rien à faire
-   * pour continuer de fonctionner.
-   */
+  /** L'équipe est-elle joignable, et sinon quand reprend-elle ? Absente = disponible. */
   equipe?: EquipePourPrompt;
 }
 
 /**
- * Ce que l'appelant fournit pour situer le tour.
- *
- * ⚠️ Il ne porte NI le contact NI la politique de contact inconnu, et c'est délibéré : le premier se lit
- * (`lireContact`), la seconde vit sur la fiche de l'agent. Les faire remonter jusqu'ici obligerait chaque
- * appelant à les résoudre, et le bac à sable l'avait fait en les forçant à des valeurs de son cru, ce qui
- * lui faisait montrer un comportement que la production n'aurait pas eu.
+ * Ce que l'appelant fournit pour situer le tour. Ni le contact (il se lit par `lireContact`) ni la politique
+ * de contact inconnu (elle vit sur la fiche) : chaque appelant les résoudrait à sa façon, et le bac à sable
+ * divergerait de la production.
  */
 export type ContexteTour = ContexteTourAgent;
 
@@ -118,16 +90,9 @@ export interface TraceAppel {
 }
 
 /**
- * Pourquoi le tour s'est arrêté, quand la SORTIE seule ne suffit pas à le dire.
- *
- * 🔴 CE N'EST PAS UNE SORTIE DE PLUS, ET C'EST TOUT L'INTÉRÊT. La sortie `plafond` est CÂBLÉE dans les
- * scénarios des clients : en inventer une seconde obligerait chacun à la relier, et un handle que personne
- * n'a câblé fait partir le parcours par la première arête venue. Le motif voyage donc À COTÉ, il ne
- * remplace rien, et seul le bac à sable le lit.
- *
- * Julien, le 2026-09-08 : « pas une sortie plafond, je ne comprends pas ». Il avait raison de ne pas
- * comprendre : aucun plafond n'était atteint. Le modèle avait imité un bloc de résultat d'outil, et le
- * garde-fou l'avait refusé, ce qui est juste ; c'est le MOT qui l'a envoyé chercher un réglage inexistant.
+ * Pourquoi le tour s'est arrêté, quand la sortie seule ne suffit pas à le dire. Pas une sortie de plus : la
+ * sortie `plafond` est câblée dans les scénarios, et un handle que personne n'a câblé ferait partir le
+ * parcours par la première arête venue. Le motif voyage à côté, seul le bac à sable le lit.
  */
 export type MotifArret = 'plafond_allers_retours' | 'reponse_non_conforme';
 
@@ -137,14 +102,9 @@ export interface DecisionTracee extends DecisionAgent {
   motif?: MotifArret;
 }
 
-/** Le transcript, tel que la session le porte : un rôle et un texte. Lu défensivement, c'est du jsonb. */
 /**
- * L'agent a-t-il DÉJÀ pris la parole dans cette session ?
- *
- * ⚠️ Lu sur le transcript de la SESSION, pas sur l'historique de la conversation : deux notions différentes.
- * Un contact qui revient trois jours plus tard ouvre une nouvelle session, et l'annonce se refait, ce qui est
- * le sens de « une fois par session ». Compter sur l'historique complet ne l'aurait dite qu'une seule fois
- * dans la vie du contact, ce qui n'est pas le réglage proposé au client.
+ * L'agent a-t-il déjà pris la parole dans cette session ? Lu sur le transcript de la session, pas sur
+ * l'historique : un contact qui revient ouvre une nouvelle session, et l'annonce se refait.
  */
 function dejaParle(transcript: unknown[]): boolean {
   return transcript.some((t) => (t as { role?: unknown } | null)?.role === 'agent');
@@ -163,22 +123,16 @@ function versMessages(transcript: unknown[]): ChatMessage[] {
 }
 
 /**
- * Un tour de raisonnement complet.
- *
- * Rendu séparément de `creerCerveauGateway` parce que le bac à sable a besoin de la TRACE des appels
- * d'outils (c'est tout l'intérêt du panneau de test : voir ce que l'agent a choisi de faire), alors que le
- * tour de production n'en a que faire. Une seule boucle, deux façons de la regarder.
+ * Un tour de raisonnement complet, avec la trace des appels d'outils que le bac à sable affiche. Une seule
+ * boucle, deux façons de la regarder (`creerCerveauGateway` jette la trace).
  */
 export async function penserTrace(
   input: { agentId: string; tenantId: string; transcript: unknown[]; deadline: number },
   tour: ContexteTour,
   deps: GatewayBrainDeps,
 ): Promise<DecisionTracee> {
-  // 🔴 LE COMPTEUR VIT ICI, EN DEHORS DE LA BOUCLE, POUR SURVIVRE À SON ÉCHEC. Un tour fait plusieurs
-  // allers-retours et le fournisseur facture chacun séparément : si le deuxième lève (panne, 4xx terminal,
-  // échéance dépassée), une exception nue emporterait avec elle ce que le premier a DÉJÀ coûté. Ni le
-  // compteur de la session ni le solde prépayé du workspace ne bougeraient, alors que la facture, elle, est
-  // partie. On repasse donc la consommation à l'appelant dans l'erreur, à charge pour lui de l'enregistrer.
+  // Le compteur vit hors de la boucle, pour survivre à son échec : chaque aller-retour est facturé, et
+  // une exception nue emporterait ce que les précédents ont coûté. On le repasse à l'appelant dans l'erreur.
   const usage = { tokensIn: 0, tokensOut: 0, coutMicroEur: 0 };
   try {
     return await boucler(input, tour, deps, usage);
@@ -188,7 +142,7 @@ export async function penserTrace(
   }
 }
 
-/** La boucle elle-même. `usage` est MUTÉ : c'est ce qui permet à `penserTrace` de le rattraper quand la
+/** La boucle elle-même. `usage` est muté : c'est ce qui permet à `penserTrace` de le rattraper quand la
  *  boucle lève. */
 async function boucler(
   input: { agentId: string; tenantId: string; transcript: unknown[]; deadline: number },
@@ -198,20 +152,17 @@ async function boucler(
 ): Promise<DecisionTracee> {
   const agent = await deps.contexte(input.tenantId, input.agentId);
   if (!agent) throw new AgentIntrouvable(input.agentId);
-  // Le contact est lu UNE FOIS par tour, pas une fois par appel d'outil : il sert au prompt (l'agent doit
-  // savoir s'il connaît son interlocuteur) et à l'autorisation de chaque outil.
+  // Le contact est lu une fois par tour : il sert au prompt et à l'autorisation de chaque outil.
   const contact = deps.lireContact ? await deps.lireContact(input.tenantId, tour.waId) : null;
 
   const messages: ChatMessage[] = [
     {
       role: 'system',
       /**
-       * 🔴 C'EST ICI QUE LE RÉGIME D'ANNONCE DEVIENT UNE DÉCISION, et c'est le seul endroit qui puisse la
-       * prendre : `input.transcript` est celui de la SESSION en cours, donc « l'agent a-t-il déjà parlé »
-       * s'y lit sans requête. Le modèle, lui, ne sait pas où commence une session.
-       *   - `jamais`        : on n'en parle pas ;
-       *   - `chaque_message`: à tous les tours ;
-       *   - `session`       : au premier tour où l'agent prend la parole, et à celui-là seulement.
+       * Le régime d'annonce devient ici une décision, sur le transcript de la session en cours :
+       *   - `jamais`         : on n'en parle pas ;
+       *   - `chaque_message` : à tous les tours ;
+       *   - `session`        : au premier tour où l'agent prend la parole, et à celui-là seulement.
        */
       content: promptSysteme({
         mentionIa: agent.mentionIa,
@@ -230,19 +181,10 @@ async function boucler(
 
   for (let allerRetour = 0; allerRetour < MAX_ALLERS_RETOURS; allerRetour += 1) {
     /**
-     * 🔴 LE BUDGET ARRÊTE AUSSI LES ALLERS-RETOURS, pas seulement les outils (revue du 2026-09-09).
-     *
-     * Il était contrôlé dans `executor.ts` à chaque appel d'outil, et NULLE PART ici : une conversation à
-     * court de budget refusait ses outils puis continuait de payer des appels de modèle jusqu'aux six
-     * allers-retours. Le plafond est annoncé comme un garde-fou de conversation, et il débordait d'un tour
-     * entier, en silence.
-     *
-     * 🔴 `allerRetour > 0`, ET C'EST TOUT L'ÉQUILIBRE DE CETTE GARDE. Contrôler dès le premier tour la
-     * rendrait plus stricte et CASSERAIT une garantie voisine : les outils du tour en cours ne seraient
-     * jamais exécutés, donc le refus « budget epuise » que l'executor rend au modèle deviendrait
-     * inatteignable, et le modèle n'aurait plus aucun moyen de savoir pourquoi il s'arrête. La première
-     * version de ce correctif faisait exactement ça, et un test existant l'a dit. `run-turn` garde déjà
-     * l'ENTRÉE du tour (`session.coutMicroEur >= budget`) : ce contrôle-ci ne doit borner que la SUITE.
+     * 🔴 Le budget arrête aussi les allers-retours, pas seulement les outils : sinon une conversation à court de
+     * budget continuerait de payer des appels de modèle. `allerRetour > 0` : dès le premier, les outils du tour
+     * ne seraient jamais exécutés et le refus « budget épuisé » de l'exécuteur n'atteindrait jamais le modèle.
+     * `run-turn` garde déjà l'entrée du tour ; ce contrôle borne la suite.
      */
     if (allerRetour > 0 && tour.coutDejaMicroEur + usage.coutMicroEur >= agent.plafonds.budgetMicroEur) {
       return { texte: null, sortie: SORTIE_PLAFOND, usage, appels, motif: 'plafond_allers_retours' };
@@ -252,44 +194,29 @@ async function boucler(
       modele: agent.modele,
       messages,
       ...(exposes.length > 0 ? { outils: exposes } : {}),
-      // `Math.max(0, ...)` et non un plancher d'une seconde : l'échéance du tour est DURE, et une grâce
-      // rejouée à chaque aller-retour la rendrait molle.
+      // `Math.max(0, ...)` et non un plancher d'une seconde : l'échéance du tour est dure, une grâce rejouée à
+      // chaque aller-retour la rendrait molle.
       signal: AbortSignal.timeout(Math.max(0, input.deadline - (deps.now ? deps.now() : Date.now()))),
     });
     usage.tokensIn += reponse.usage.tokensIn;
     usage.tokensOut += reponse.usage.tokensOut;
     /**
-     * 🔴 LA TRACE QUI RÉPOND À « EST-CE QU'ON CACHE DÉJÀ ? » (2026-09-02). Le champ arrivait dans la réponse
-     * et personne ne le lisait, donc on ne SAVAIT pas. C'est la mesure la moins chère du chantier IA et elle
-     * décide de la suite : la partie constante de chaque appel (prompt système + définitions d'outils) est
-     * renvoyée à CHAQUE aller-retour, jusqu'à six par tour. Si elle est servie depuis un cache, il n'y a rien
-     * à construire ; sinon, c'est le plus gros levier sur le coût ET sur le débit tenable.
-     *
-     * Une ligne PAR ALLER-RETOUR et non par tour, délibérément : ce qu'on cherche à voir, c'est justement si
-     * la part cachée grimpe au deuxième, le préfixe étant alors déjà connu du fournisseur. Un total par tour
-     * moyennerait exactement l'information utile. La file n'ayant jamais tourné en production, le volume de
-     * ces lignes est nul aujourd'hui ; à revoir le jour où elle tourne pour de bon.
+     * Une ligne par aller-retour : la part du prompt servie depuis un cache, pour voir si elle grimpe au
+     * deuxième (préfixe déjà connu du fournisseur). La partie constante (prompt système, outils) repart à chaque
+     * aller-retour : c'est le plus gros levier sur le coût si elle n'est pas cachée.
      */
     // eslint-disable-next-line no-console
     console.log(`agent-cache: agent=${input.agentId} ar=${allerRetour} in=${reponse.usage.tokensIn} caches=${reponse.usage.tokensCaches} part=${reponse.usage.tokensIn > 0 ? Math.round((reponse.usage.tokensCaches / reponse.usage.tokensIn) * 100) : 0}%`);
-    // 🔴 LA CONVERSION SE FAIT ICI, ET UNE SEULE FOIS (ancienne dette D1). Le Gateway facture en DOLLARS,
-    // tous nos compteurs et tous nos plafonds sont en micro-euros : on additionnait donc des dollars dans
-    // une colonne d'euros, et le plafond réglé par le client était comparé à une autre monnaie que la
-    // sienne. Le taux est un paramètre COMMERCIAL de la configuration, pas un cours en temps réel.
+    // La conversion dollars vers micro-euros se fait ici, une seule fois : tous nos compteurs et plafonds
+    // sont en micro-euros.
     usage.coutMicroEur += microEurosDepuisDollars(reponse.usage.coutDollars, deps.tauxEurParDollar ?? 1);
 
     if (reponse.appelsOutils.length === 0) {
       const texte = reponse.texte ?? '';
       /**
-       * 🔴 UN TEXTE QUI PORTE NOS DÉLIMITEURS N'EST PAS UNE RÉPONSE, et il ne sort pas d'ici. Vu en
-       * production le 2026-09-08 : le modèle a rendu un faux bloc de résultat d'outil, contenu inventé
-       * compris, et le client l'a lu à la place d'une réponse. On ne le renvoie donc pas ; on le signale
-       * comme une erreur de protocole, exactement comme les autres, et l'appelant décide (le tour de
-       * production escalade, le bac à sable l'affiche).
-       *
-       * ⚠️ On ne « nettoie » PAS le texte pour le rendre quand même : ce qui reste après retrait des
-       * délimiteurs est du JSON inventé, donc une réponse fausse présentée comme une vraie. Mieux vaut
-       * passer la main que répondre n'importe quoi sur un contrat d'assurance.
+       * Un texte qui porte nos délimiteurs n'est pas une réponse (le modèle a imité un bloc de résultat d'outil,
+       * contenu inventé compris) : il est signalé comme une erreur de protocole, l'appelant décide. On ne le
+       * « nettoie » pas : ce qui reste est une réponse inventée présentée comme vraie.
        */
       if (ressembleAUnBlocOutil(texte)) {
         deps.alerter?.(`agent ${input.agentId} : le modèle a rendu un faux bloc de résultat d’outil au lieu d’une réponse`);
@@ -298,11 +225,8 @@ async function boucler(
       return { texte, sortie: null, usage, appels };
     }
 
-    // 🔴 LE MESSAGE `assistant` QUI PORTE `tool_calls` EST OBLIGATOIRE, et il porte TOUS les appels de CETTE
-    // réponse, pas un par appel. L'API refuse en 400 un message `tool` qui ne répond pas à un `assistant`
-    // portant `tool_calls`, et un 400 est TERMINAL (jamais rejoué) : la conversation s'arrêterait au deuxième
-    // aller-retour, c'est-à-dire exactement là où l'agent reformule à partir de ses sources. On renvoie donc
-    // les appels TELS QUE le modèle les a produits.
+    // Le message `assistant` qui porte `tool_calls` est obligatoire, avec tous les appels de cette réponse tels
+    // que le modèle les a produits : sinon le message `tool` est refusé en 400, terminal.
     messages.push({
       role: 'assistant',
       content: reponse.texte,
@@ -310,8 +234,7 @@ async function boucler(
     });
 
     for (const appel of reponse.appelsOutils) {
-      // Les plafonds sont calculés à CHAQUE appel, pas une fois par tour : c'est la dette D3(b). Un modèle
-      // qui demande six outils d'un coup ne doit pas pouvoir dépasser en une seule salve.
+      // Les plafonds sont recalculés à chaque appel : six outils demandés d'un coup ne dépassent pas en une salve.
       const ctx: ContexteAppel = {
         tenantId: input.tenantId,
         agentId: input.agentId,
@@ -330,28 +253,18 @@ async function boucler(
       appels.push({ nom: appel.nom, arguments: appel.argumentsJson, status: res.status, contenu: res.contenu });
 
       if (res.fatal) {
-        // Dette D3(a) : une erreur de PROTOCOLE est un bug de NOTRE client, pas du modèle. On alerte et on
-        // arrête le tour : le lui repasser lui ferait réessayer indéfiniment une chose qu'il ne peut pas
-        // corriger.
+        // Une erreur de protocole est un bug de notre client, pas du modèle : on alerte et on arrête le tour, il
+        // ne peut rien y corriger.
         deps.alerter?.(`agent ${input.agentId} : erreur de protocole sur l'outil ${appel.nom}`);
         return { texte: null, sortie: null, usage, appels };
       }
-      // L'escalade a déjà rendu la main : plus rien à dire, et surtout pas un message de plus au contact.
+      // L'escalade a déjà rendu la main : le tour s'arrête ici.
       if (res.rendu) {
         /**
-         * 🔴 ON GARDE LA DERNIÈRE PHRASE, MAIS SEULEMENT SI L'ÉQUIPE EST INDISPONIBLE (2026-09-18).
-         *
-         * Le jet systématique du texte avait une raison, écrite ici depuis l'origine : après une escalade
-         * c'est la branche `humain` du scénario qui parle, et une seule voix bien placée vaut mieux que deux
-         * coup sur coup. Cette raison tient toujours QUAND L'ÉQUIPE RÉPOND : rien ne change alors.
-         *
-         * Elle cesse de tenir quand l'équipe ne répond pas. La branche câblée est un bloc STATIQUE : elle ne
-         * peut dire ni « c'est fermé » ni « nous reprenons lundi 9 h », puisqu'elle dit la même chose à
-         * toute heure. Seul l'agent peut le dire, et il vient précisément de recevoir la date dans sa
-         * consigne. Demande de Julien, 2026-09-18.
-         *
-         * ⚠️ LE RAYON DE SOUFFLE EST BORNÉ AU CAS NEUF, délibérément : un espace qui n'a rien réglé est en
-         * `always`, donc toujours disponible, donc ce `if` ne change rien pour lui.
+         * La dernière phrase est gardée seulement si l'équipe est indisponible. Équipe joignable : c'est la branche
+         * `humain` du scénario qui parle, une seule voix. Équipe fermée : cette branche est un bloc statique, qui ne
+         * peut pas dire « nous reprenons lundi 9 h » ; l'agent, qui a reçu la date dans sa consigne, le peut. Un
+         * espace sans réglage est en `always`, donc inchangé.
          */
         const equipeMuette = agent.equipe !== undefined && !agent.equipe.disponible;
         return {
@@ -360,35 +273,28 @@ async function boucler(
           usage,
           appels,
           /**
-           * 🔴 SANS CETTE MARQUE, LE TEXTE CI-DESSUS N'ARRIVE JAMAIS AU CONTACT (revue du 2026-09-18).
-           * L'escalade a basculé le fil vers `app_human` juste avant de revenir ici, et `run-turn` relit
-           * le détenteur avant d'envoyer : il concluait « un opérateur a pris la main » et rendait
-           * `main_perdue` sans un mot. Le bac à sable, lui, n'a pas cette garde et AFFICHAIT la phrase,
-           * donc l'essai montrait une fonctionnalité que la production n'avait pas.
+           * Sans cette marque, le texte ci-dessus n'arriverait jamais : l'escalade vient de basculer le fil vers
+           * `app_human`, et `run-turn` conclurait qu'un opérateur a pris la main.
            */
           ...(res.mainPrise ? { mainPriseParCeTour: true } : {}),
         };
       }
       if (res.sortie) return { texte: reponse.texte ?? null, sortie: res.sortie, usage, appels };
 
-      // Dette D3(c) : le résultat repart au modèle DANS UN BLOC DÉLIMITÉ. Il vient d'une base de
-      // connaissance qu'un site tiers a remplie, ou demain d'un connecteur dont personne ne contrôle la
-      // réponse : c'est de la donnée, jamais un ordre.
+      // Le résultat repart au modèle dans un bloc délimité : il vient d'une base remplie depuis un site
+      // tiers, ou d'un connecteur, c'est de la donnée, jamais un ordre.
       messages.push({ role: 'tool', content: blocResultatOutil(res.contenu), tool_call_id: appel.id });
     }
   }
 
-  // Plafond d'allers-retours atteint : on sort proprement plutôt que de continuer à payer un modèle qui
-  // tourne en rond. C'est la même sortie que le plafond de tours, et le client la câble une seule fois.
+  // Plafond d'allers-retours atteint : même sortie que le plafond de tours, câblée une seule fois.
   return { texte: null, sortie: SORTIE_PLAFOND, usage, appels, motif: 'plafond_allers_retours' };
 }
 
 /**
- * Le cerveau, pour le tour de production : la même boucle, sans la trace.
- *
- * 🔴 LE TOUR EST PRIS SUR L'APPEL, jamais figé ici. Un worker sert toutes les conversations de tous les
- * clients avec UN seul cerveau : un contexte figé au câblage ferait exécuter les outils du contact A dans la
- * conversation de B, et les compteurs de plafond d'une session dans une autre.
+ * Le cerveau du tour de production : la même boucle, sans la trace. Le tour est pris sur l'appel, jamais
+ * figé ici : un worker sert tous les clients avec un seul cerveau, et un contexte figé exécuterait les
+ * outils du contact A dans la conversation de B.
  */
 export function creerCerveauGateway(deps: GatewayBrainDeps): AgentBrain {
   return {

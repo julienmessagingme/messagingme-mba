@@ -11,41 +11,30 @@ import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
 
 export interface V1ContactsRouteDeps extends ServiceContactsV1 {
   /**
-   * Le garde d'usage, injecté au bootstrap.
-   *
-   * 🔴 OBLIGATOIRE, comme le pré-filtre des clés : optionnel, il manquerait un jour à une route et le
-   * compteur de cette route disparaîtrait sans bruit. Ce qu'on veut voir est précisément ce qu'on oublie.
+   * Le garde d'usage. Requis : optionnel, il manquerait un jour à une route et son compteur disparaîtrait sans bruit.
    */
   usage: ApiUsageGuard;
 }
 
-/** Les DEUX gardes : lire une fiche n'est pas écrire, et une clé ne porte que ce qu'on lui a donné. */
+/** Les deux gardes : lire une fiche n'est pas écrire, et une clé ne porte que ce qu'on lui a donné. */
 export interface GardesContactsV1 {
   ecrire: Guard;
   lire: Guard;
 }
 
 /**
- * 🔴 50, ET PLUS 500 (décision de Julien du 2026-09-26). Un lot occupe l'UNIQUE place d'opération lourde du process
- * (`API_MAX_LOURDES_SIMULTANEES`), partagée par tous les espaces et par `/v1/sends` : sa taille décide combien de
- * temps il la garde. Contrepartie : 50 000 fiches par heure au plus pour un espace (le plafond d'appels) ; les gros
- * volumes passent par l'import CSV de la console.
+ * 50 fiches par lot : un lot occupe l'unique place d'opération lourde du process (`API_MAX_LOURDES_SIMULTANEES`),
+ * partagée par tous les espaces et `/v1/sends`, et sa taille décide combien de temps il la garde. Les gros volumes
+ * passent par l'import CSV de la console.
  */
 export const MAX_BATCH = 50;
 export const conteneurDuLot = z.object({ contacts: z.array(z.unknown()) });
 
 /**
- * LE TRI DU LOT : ce qui est bien formé d'un côté, ce qui ne l'est pas de l'autre, AVEC SON INDEX.
- *
- * 🔴 L'INDEX RENDU EST CELUI DU CORPS ENVOYÉ, jamais celui de la liste filtrée : le service numérote ce
- * qu'IL reçoit, et sans ce report l'erreur de la ligne 3 serait rendue sur la ligne 1, et l'intégrateur
- * corrigerait un contact parfaitement valide.
- *
- * 🔴 ET UN ÉLÉMENT REFUSÉ NE FAIT PAS TOMBER LE LOT : c'est le contrat du lot depuis toujours (un lot de 50
- * dont la ligne 37 est fausse écrit 49 fiches). Seul un CONTENEUR malformé rend 400.
- *
- * ⚠️ LES BORNES D'UNE FICHE DE LOT SONT PLUS SERRÉES QU'À L'UNITÉ (10 champs et 10 étiquettes, contre 20) :
- * `schemaContactLotV1`, jamais `schemaContactV1`.
+ * Le tri du lot : les éléments bien formés d'un côté, les refus de l'autre, avec leur index.
+ * L'index rendu est celui du corps envoyé, jamais celui de la liste filtrée : sinon l'erreur de la ligne 3
+ * serait rendue sur la ligne 1. Un élément refusé ne fait pas tomber le lot ; seul un conteneur malformé rend 400.
+ * Les bornes d'une fiche de lot sont plus serrées qu'à l'unité : `schemaContactLotV1`, jamais `schemaContactV1`.
  */
 function trierLeLot(bruts: unknown[]): { valides: Array<{ index: number; contact: ContactV1 }>; refus: ResultatFiche[] } {
   const valides: Array<{ index: number; contact: ContactV1 }> = [];
@@ -59,10 +48,8 @@ function trierLeLot(bruts: unknown[]): { valides: Array<{ index: number; contact
 }
 
 /**
- * Les routes publiques des FICHES (spec de l'API publique, § 2). L'espace vient à 100 % de `req.auth`, posé
- * par la garde de clé : aucun `:tenantId` dans l'adresse. Toute erreur a la forme `{ error, code }`.
- *
- * ⚠️ `PATCH` compte sous `contacts.upsert` : c'est une écriture d'UNE fiche, du même poids.
+ * Les routes publiques des fiches. L'espace vient de `req.auth`, posé par la garde de clé : aucun `:tenantId`
+ * dans l'adresse. Toute erreur a la forme `{ error, code }`. `PATCH` compte sous `contacts.upsert` (une fiche).
  */
 export function registerV1Contacts(app: FastifyInstance, deps: V1ContactsRouteDeps, gardes: GardesContactsV1): void {
   const ecrire = { preHandler: gardes.ecrire };
@@ -70,10 +57,7 @@ export function registerV1Contacts(app: FastifyInstance, deps: V1ContactsRouteDe
 
   app.post('/v1/contacts', ecrire, async (req, reply) => {
     if (!req.auth) return refuser(reply, 401, 'unauthorized', 'clé d’API requise');
-    /**
-     * ⚠️ LA MÊME VALIDATION QUE LE LOT, ET PAS UNE VARIANTE. Fermer une porte en laissant l'autre ouverte est
-     * le motif « une capacité câblée sur un consommateur sur deux », déjà payé plusieurs fois dans ce dépôt.
-     */
+    /** La même validation que le lot, pas une variante. */
     const valide = schemaContactV1.safeParse(req.body);
     if (!valide.success) return refuser(reply, 400, 'invalid_body', raisonDeValidation(valide.error));
     if (!await compterOuRefuser(deps.usage, req, reply, 'contacts.upsert')) return reply;
@@ -93,9 +77,8 @@ export function registerV1Contacts(app: FastifyInstance, deps: V1ContactsRouteDe
     const bruts = conteneur.data.contacts;
     if (bruts.length > MAX_BATCH) return refuser(reply, 400, 'invalid_body', `« contacts » : ${MAX_BATCH} éléments au plus par lot`);
     /**
-     * ⚠️ LE TRAVAIL EST COMPTÉ SUR CE QUE L'APPELANT DEMANDE, pas sur ce qui survit à la validation. Un lot
-     * de 50 lignes dont 40 sont malformées a bel et bien coûté 50 validations : compter 10 laisserait
-     * une boucle de corps invalides invisible des compteurs, c'est-à-dire exactement le cas qu'on surveille.
+     * Le travail est compté sur ce que l'appelant demande, pas sur ce qui survit à la validation : sinon une boucle
+     * de corps invalides serait invisible des compteurs.
      */
     if (!await compterOuRefuser(deps.usage, req, reply, 'contacts.batch', bruts.length)) return reply;
 
@@ -103,20 +86,19 @@ export function registerV1Contacts(app: FastifyInstance, deps: V1ContactsRouteDe
     const ecrits = valides.length === 0
       ? []
       : (await deps.ecrireFiches(req.auth.tenantId, valides.map((v) => v.contact)))
-        // Le service numérote SA liste : on reporte chaque résultat sur l'index d'origine.
+        // Le service numérote sa liste : on reporte chaque résultat sur l'index d'origine.
         .map((r) => ({ ...r, index: valides[r.index]?.index ?? r.index }));
     const results = [...refus, ...ecrits].sort((a, b) => a.index - b.index);
     const created = results.filter((r) => r.status === 'created').length;
     const updated = results.filter((r) => r.status === 'updated').length;
-    // ⚠️ LES REFUS DE VALIDATION COMPTENT DANS `errors`, comme les refus du service : un seul compteur pour
-    // l'intégrateur, qui n'a pas à savoir où le refus a été décidé.
+    // Les refus de validation comptent dans `errors`, comme ceux du service : un seul compteur pour l'intégrateur.
     const errors = results.filter((r) => r.status === 'error').length;
     return reply.code(200).send({ results, created, updated, errors });
   });
 
   /**
-   * 🔴 LE NUMÉRO VOYAGE DANS LE CORPS, JAMAIS DANS L'ADRESSE : `/v1/contacts/+33…` l'inscrirait dans les
-   * journaux d'accès du proxy et de Cloudflare.
+   * 🔴 Le numéro voyage dans le corps, jamais dans l'adresse : `/v1/contacts/+33…` finirait dans les journaux
+   * d'accès du proxy et de Cloudflare.
    */
   app.post('/v1/contacts/search', lire, async (req, reply) => {
     if (!req.auth) return refuser(reply, 401, 'unauthorized', 'clé d’API requise');

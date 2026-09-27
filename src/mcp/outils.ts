@@ -4,23 +4,15 @@ import { repondreDansLaFenetre, type DepsRepondre } from '../inbox/repondre';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE } from '../meta/numero-delie';
 
 /**
- * Le CATALOGUE d'outils exposé aux agents tiers par le serveur MCP.
+ * Le catalogue d'outils exposé aux agents tiers par le serveur MCP.
  *
- * 🔴 La règle du lot, et la seule qui compte sur la durée : un outil n'a JAMAIS de logique métier à lui. Il
- * appelle la fonction que la console appelle. C'est pour ça que `reply_in_open_window` passe par
- * `repondreDansLaFenetre`, extrait de la route d'inbox et partagé avec elle : une seconde implémentation
- * dériverait, et une dérive sur une surface d'ÉCRITURE veut dire un agent qui envoie des WhatsApp avec des
- * garde-fous différents de ceux de l'interface (fenêtre de 24 h, prise du fil, journal). C'est la leçon du
- * connecteur HubSpot, en plus dangereux.
- *
- * 🔴 LECTURE D'ABORD, écriture ÉTROITE. Il n'y a volontairement PAS de `send_template` ni rien qui touche
- * aux campagnes : ouvrir l'envoi de template à un modèle, c'est lui donner un mégaphone facturé sur un
- * numéro dont Meta note la qualité. Le jour où on l'ajoutera, ce sera une décision, pas un oubli.
- *
- * 🔴 AUCUN outil n'ÉMET d'événement d'automation. Le CLAUDE.md range l'API publique parmi les chemins qui
- * n'émettent pas, et un serveur MCP en est une : un agent qui boucle sur 500 conversations déclencherait
- * 500 automations, donc des envois facturés que personne n'a demandés. Poser un tag depuis MCP écrit donc
- * le tag SANS réveiller les automations qui l'écoutent, et la description de l'outil le dit à l'intégrateur.
+ * 🔴 Un outil n'a jamais de logique métier à lui : il appelle la fonction que la console appelle
+ * (`reply_in_open_window` passe par `repondreDansLaFenetre`). Une seconde implémentation dériverait, et sur une
+ * surface d'écriture ce serait un agent qui envoie avec d'autres garde-fous (fenêtre de 24 h, prise du fil, journal).
+ * Lecture d'abord, écriture étroite : pas d'envoi de template ni de campagne, un mégaphone facturé sur un numéro
+ * dont Meta note la qualité.
+ * 🔴 Aucun outil n'émet d'événement d'automation : un agent qui boucle sur 500 conversations déclencherait 500
+ * automations facturées. Un tag posé ici ne réveille rien, et la description le dit.
  */
 
 /** Le scope de clé d'API qu'un outil exige. Deux seulement : lire, et écrire. */
@@ -40,7 +32,7 @@ export interface DepsMcp extends DepsRepondre {
   listerMembres(tenantId: string): Promise<Array<{ id: string; name: string | null; email: string; role: string }>>;
 }
 
-/** Un schéma JSON d'entrée, tel que MCP l'attend (sous-ensemble volontairement pauvre : objet + propriétés). */
+/** Un schéma JSON d'entrée, tel que MCP l'attend (sous-ensemble volontairement pauvre : objet et propriétés). */
 interface SchemaEntree {
   type: 'object';
   properties: Record<string, { type: string; description: string; enum?: string[] }>;
@@ -57,11 +49,8 @@ export interface OutilMcp {
 }
 
 /**
- * Refus MÉTIER d'un outil (fenêtre fermée, conversation inconnue), par opposition à une panne.
- *
- * MCP veut que ce genre d'échec revienne dans le RÉSULTAT avec `isError: true`, et non comme une erreur de
- * protocole : c'est ce qui permet au modèle de lire la raison et de changer de stratégie, au lieu de croire
- * que l'outil est cassé.
+ * Refus métier d'un outil (fenêtre fermée, conversation inconnue), par opposition à une panne. MCP le veut dans le
+ * résultat avec `isError: true` : le modèle lit la raison et change de stratégie au lieu de croire l'outil cassé.
  */
 export class RefusOutil extends Error {
   constructor(message: string) {
@@ -70,7 +59,7 @@ export class RefusOutil extends Error {
   }
 }
 
-/** Lit une chaîne obligatoire. Les entrées viennent d'un MODÈLE : on ne suppose rien de leur forme. */
+/** Lit une chaîne obligatoire. Les entrées viennent d'un modèle : on ne suppose rien de leur forme. */
 function texteObligatoire(args: Record<string, unknown>, cle: string, maxi = 4096): string {
   const v = args[cle];
   if (typeof v !== 'string' || v.trim() === '') throw new RefusOutil(`paramètre « ${cle} » requis (texte non vide)`);
@@ -78,7 +67,7 @@ function texteObligatoire(args: Record<string, unknown>, cle: string, maxi = 409
   return v.trim();
 }
 
-/** Lit un entier borné. Absent -> défaut. Hors bornes -> ramené dedans, jamais refusé (c'est du confort). */
+/** Lit un entier borné. Absent : défaut. Hors bornes : ramené dedans, jamais refusé. */
 function entierBorne(args: Record<string, unknown>, cle: string, defaut: number, mini: number, maxi: number): number {
   const v = args[cle];
   if (v === undefined || v === null) return defaut;
@@ -87,15 +76,15 @@ function entierBorne(args: Record<string, unknown>, cle: string, defaut: number,
   return Math.min(Math.max(Math.trunc(n), mini), maxi);
 }
 
-/** La conversation, ou un refus. Sert de garde tenant PARTAGÉE : `getConversationContext` rend `null` pour
- *  une conversation d'un autre espace, donc un identifiant deviné ne dit rien de plus qu'un inexistant. */
+/** 🔴 La conversation, ou un refus : garde d'espace partagée. `getConversationContext` rend `null` pour une
+ *  conversation d'un autre espace, donc un identifiant deviné ne dit rien de plus qu'un inexistant. */
 async function contexteOuRefus(deps: DepsMcp, tenantId: string, conversationId: string) {
   const ctx = await deps.getConversationContext(conversationId, tenantId);
   if (ctx === null) throw new RefusOutil('conversation inconnue dans cet espace');
   return ctx;
 }
 
-/** Un contact rendu à l'agent : on ne sort PAS tout `ContactRow` (champs internes), on choisit. */
+/** Un contact rendu à l'agent : on choisit les champs, jamais tout `ContactRow`. */
 function contactPublic(c: ContactRow): Record<string, unknown> {
   return {
     id: c.id,
@@ -112,12 +101,8 @@ export const OUTILS: OutilMcp[] = [
   {
     nom: 'list_conversations',
     /**
-     * ⚠️ LES CONVERSATIONS ARCHIVÉES SONT EXCLUES, et la description le DIT (2026-09-08).
-     *
-     * L'archivage est arrivé côté console, et `listConversations` l'applique par défaut : cet outil s'est
-     * donc mis à rendre moins de lignes qu'avant, sans que rien ne le signale. Un assistant qui ne lit que
-     * le schéma conclurait que la conversation n'existe pas, au lieu de comprendre qu'elle est rangée. La
-     * cohérence avec l'Inbox est le bon comportement ; le taire ne l'était pas.
+     * Les conversations archivées sont exclues, comme dans l'Inbox, et la description le dit : sinon un agent
+     * conclurait qu'une conversation rangée n'existe pas.
      */
     description:
       'Liste les conversations WhatsApp de l’espace, la plus récemment active en premier. Utilise `a_traiter` '
@@ -195,11 +180,10 @@ export const OUTILS: OutilMcp[] = [
     },
     async executer(deps, tenantId, args) {
       const id = texteObligatoire(args, 'conversation_id', 100);
-      await contexteOuRefus(deps, tenantId, id); // garde tenant AVANT de lire les messages
+      await contexteOuRefus(deps, tenantId, id); // garde d'espace avant de lire les messages
       const limit = entierBorne(args, 'limit', 50, 1, 200);
       const tous = await deps.getMessages(id);
-      // La coupe se fait sur les plus RÉCENTS : un agent qui demande 20 messages veut la fin de l'échange,
-      // pas son début. L'ordre chronologique est conservé dans ce qu'on rend.
+      // La coupe garde les plus récents (la fin de l'échange), dans l'ordre chronologique.
       return {
         conversation_id: id,
         messages: tous.slice(-limit).map((m) => ({
@@ -228,8 +212,7 @@ export const OUTILS: OutilMcp[] = [
     },
     async executer(deps, tenantId, args) {
       const q = texteObligatoire(args, 'query', 120);
-      // Un modèle écrit « 06 12 34 56 78 » aussi bien que « Martin ». On tranche sur ce que la requête
-      // CONTIENT plutôt que d'exiger un paramètre de plus, qu'il oublierait.
+      // On tranche sur ce que la requête contient plutôt que d'exiger un paramètre de plus, que le modèle oublierait.
       const chiffres = q.replace(/[^0-9]/g, '');
       const filtres: ContactFilters = chiffres.length >= 4 && /^[0-9\s+.()-]+$/.test(q)
         ? { phoneContains: chiffres }
@@ -267,13 +250,8 @@ export const OUTILS: OutilMcp[] = [
       },
     },
     /**
-     * 🔴 IL N'AVAIT AUCUNE BORNE, ET C'ÉTAIT LE SEUL (trouvé le 2026-09-14, absent de l'audit). Ses trois
-     * voisins bornent leur `limit` entre 1 et 100 ou 200 ; celui-ci ne prenait aucun paramètre et rendait
-     * l'équipe ENTIÈRE. Sur nos espaces d'aujourd'hui, c'est trois lignes ; sur un client à plusieurs
-     * centaines de comptes, c'est une réponse que personne n'a dimensionnée, servie à chaque appel.
-     *
-     * ⚠️ `tronque` EST RENDU, comme sur les messages : sans lui, un modèle qui reçoit exactement `limit`
-     * membres n'a aucun moyen de savoir s'il les a tous, et il conclura que oui.
+     * Borné comme ses voisins, et `tronque` est rendu : sans lui, un modèle qui reçoit exactement `limit` membres
+     * conclurait qu'il les a tous.
      */
     async executer(deps, tenantId, args) {
       const limit = entierBorne(args, 'limit', 100, 1, 200);
@@ -300,16 +278,10 @@ export const OUTILS: OutilMcp[] = [
     async executer(deps, tenantId, args) {
       const id = texteObligatoire(args, 'conversation_id', 100);
       const texte = texteObligatoire(args, 'text', 4096);
-      // Deux champs, deux questions. `auteur = null` : aucun opérateur ne signe ce message, donc pas de
-      // pastille d'auteur dans l'inbox. `origine = 'mcp'` : ce qui l'a écrit est un agent tiers, ni un
-      // humain ni un scénario. Les déduire l'un de l'autre est précisément le bug que la revue a trouvé,
-      // et il était INVISIBLE parce que la valeur fausse était écrite explicitement en base.
-      /**
-       * 🔴 LE NUMÉRO DÉLIÉ (migration 0180) sort du point de passage des envois en EXCEPTION, pas en refus typé.
-       * Non traduite, elle tombait dans la branche « panne » du serveur (`-32603`, « échec interne de l’outil ») :
-       * l'agent tiers lisait « l'outil est cassé », sans la raison, et réessayait, chaque essai consommant le
-       * plafond de l'espace. C'est un REFUS, que seul un administrateur lève, et l'agent doit le lire.
-       */
+      // Deux champs, deux questions : `auteur = null` (aucun opérateur ne signe, pas de pastille dans l'inbox) et
+      // `origine = 'mcp'` (un agent tiers l'a écrit). Les déduire l'un de l'autre écrit une valeur fausse en base.
+      // Le numéro délié sort en exception : traduit en refus, sinon l'agent lirait une panne et réessaierait en
+      // consommant le plafond de l'espace.
       let res: Awaited<ReturnType<typeof repondreDansLaFenetre>>;
       try {
         res = await repondreDansLaFenetre(deps, tenantId, id, texte, null, 'mcp');
@@ -320,11 +292,8 @@ export const OUTILS: OutilMcp[] = [
       if ('refus' in res) {
         if (res.refus.motif === 'conversation_inconnue') throw new RefusOutil('conversation inconnue dans cet espace');
         if (res.refus.motif === 'aucun_numero') throw new RefusOutil('aucun numéro WhatsApp rattaché à cet espace');
-        /**
-         * 🔴 UNE MACHINE NE PARLE PAS À QUELQU'UN QUI A DIT STOP (décision de Julien du 2026-09-13). Le
-         * message le dit à l'agent ET lui donne l'issue : un opérateur, lui, peut encore répondre. Sans
-         * cette phrase, l'agent conclurait à une panne et réessaierait.
-         */
+        // 🔴 Une machine ne parle pas à quelqu'un qui a dit STOP. Le message donne la raison et l'issue (un
+        // opérateur peut encore répondre), sinon l'agent conclurait à une panne et réessaierait.
         if (res.refus.motif === 'contact_desabonne') {
           throw new RefusOutil(
             'ce contact a demandé à ne plus recevoir de messages (opt-out) : aucun envoi automatique ne lui '
@@ -360,8 +329,7 @@ export const OUTILS: OutilMcp[] = [
       if (tags.length === 0) throw new RefusOutil('paramètre « tags » requis (au moins un tag non vide)');
       const ctx = await contexteOuRefus(deps, tenantId, id);
       const { added } = await deps.ajouterTags(tenantId, ctx.waId, tags);
-      // On rend ce qui a RÉELLEMENT changé : un agent qui repose un tag déjà là doit pouvoir s'en rendre
-      // compte, sinon il boucle en croyant échouer.
+      // On rend ce qui a réellement changé : un agent qui repose un tag déjà là doit le voir, sinon il boucle.
       return { conversation_id: id, tags_ajoutes: added, deja_presents: tags.filter((t) => !added.includes(t)) };
     },
   },
@@ -382,14 +350,13 @@ export const OUTILS: OutilMcp[] = [
     async executer(deps, tenantId, args) {
       const id = texteObligatoire(args, 'conversation_id', 100);
       const brut = args.member_id;
-      // `null` explicite = libérer. Toute autre forme qu'une chaîne non vide est refusée : une valeur
-      // bancale ne doit pas se traduire par une libération silencieuse, qui rouvre le fil à tout le monde.
-      // Même règle que la route de console, et pour la même raison.
+      // `null` explicite = libérer. Toute autre forme qu'une chaîne non vide est refusée : une valeur bancale ne
+      // doit pas devenir une libération silencieuse, qui rouvre le fil à tout le monde.
       if (brut !== null && brut !== undefined && (typeof brut !== 'string' || brut.trim() === '')) {
         throw new RefusOutil('paramètre « member_id » invalide (identifiant de membre, ou null pour libérer)');
       }
       const membre = typeof brut === 'string' ? brut.trim() : null;
-      // `parUserId = null` : ce n'est pas un humain de la console qui affecte. Le journal d'audit le verra.
+      // `parUserId = null` : ce n'est pas un humain de la console qui affecte, le journal d'audit le verra.
       const ok = await deps.setAssignee(tenantId, id, membre, null);
       if (!ok) throw new RefusOutil('conversation inconnue, ou membre étranger à cet espace');
       return { conversation_id: id, assigned_to: membre };

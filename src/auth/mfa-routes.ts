@@ -13,14 +13,14 @@ export type ActionMfa = 'mfa.active' | 'mfa.code_secours_utilise' | 'mfa.echec' 
 export interface MfaRouteDeps {
   secret: string;
   /**
-   * Le magasin du second facteur. ABSENT -> ces routes répondent 503, et c'est un refus : la connexion d'un
-   * admin rend alors un jeton d'étape que rien ne sait honorer, donc AUCUNE session d'admin sans second facteur.
-   * L'absence ne peut jamais ouvrir une porte, seulement la fermer.
+   * Le magasin du second facteur. Absent : ces routes répondent 503, et la connexion d'un admin rend un jeton
+   * d'étape que rien n'honore, donc aucune session d'admin sans second facteur. L'absence ferme, jamais
+   * n'ouvre.
    */
   mfa?: MfaStore;
   /**
-   * Journal, écrit dans CHAQUE espace de l'identité, jamais attendu sur le chemin de réponse. Le `detail` ne porte
-   * ni code ni secret. Absent -> aucune trace (câblages de test).
+   * Journal, écrit dans chaque espace de l'identité, jamais attendu sur le chemin de réponse ; le `detail` ne
+   * porte ni code ni secret. Absent : aucune trace (câblages de test).
    */
   auditMfa?: (identityId: string, action: ActionMfa, detail?: Record<string, unknown>) => Promise<void>;
 }
@@ -28,10 +28,7 @@ export interface MfaRouteDeps {
 /** Ce que la connexion fait une fois le second facteur passé : session (un espace) ou jeton de choix (plusieurs). */
 export type SuiteDeConnexion = (etape: EtapeConnexion) => Promise<Record<string, unknown>>;
 
-/**
- * 🔴 UN SEUL MESSAGE pour un code faux, rejoué ou hors fenêtre : les distinguer dirait à celui qui essaie lequel de
- * ses codes a été juste une fois.
- */
+/** 🔴 Un seul message pour un code faux, rejoué ou hors fenêtre : les distinguer dirait lequel a été juste. */
 export const MESSAGE_CODE_INVALIDE = 'Code invalide ou expiré.';
 const MESSAGE_ETAPE_EXPIREE = 'Cette étape a expiré, reconnectez-vous.';
 const MESSAGE_TROP = 'Trop de tentatives, réessayez dans une minute.';
@@ -41,11 +38,9 @@ const MESSAGE_DEJA_ACTIVE = 'La double authentification est déjà active.';
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 /**
- * Le code présenté correspond-il au facteur ? TOTP d'abord, code de secours ensuite. Rend le moyen, ou `null`.
- *
- * 🔴 LE TOTP N'EST ACCEPTÉ QU'APRÈS L'ÉCRITURE CONDITIONNELLE DU PAS (`marquerPas`), et pas sur la seule
- * vérification en mémoire : deux présentations simultanées du même code lisent le même dernier pas et le
- * trouvent toutes deux neuf. Seule l'écriture en base les départage.
+ * Le code présenté correspond-il au facteur ? TOTP d'abord, code de secours ensuite ; rend le moyen, ou
+ * `null`. Le TOTP n'est accepté qu'après l'écriture conditionnelle du pas (`marquerPas`) : deux
+ * présentations simultanées du même code passent toutes deux la vérification en mémoire.
  */
 async function verifierFacteur(mfa: MfaStore, etat: EtatMfa, code: string): Promise<'totp' | 'secours' | null> {
   if (etat.secret === null) return null;
@@ -57,24 +52,21 @@ async function verifierFacteur(mfa: MfaStore, etat: EtatMfa, code: string): Prom
 }
 
 /**
- * Les routes du second facteur (plan `docs/superpowers/plans/2026-09-25-mfa-admins.md`).
+ * Les routes du second facteur, en deux familles :
+ *  - `/auth/mfa/verifier`, `/auth/mfa/enroler`, `/auth/mfa/activer` : avant toute session, autorisées par un
+ *    jeton d'étape signé (`mfaToken` ou `enrolToken`), 401 sans lui ;
+ *  - `/auth/mfa/moi*` : avec une session (`garde`), pour l'enrôlement volontaire, la régénération des codes
+ *    et la désactivation.
  *
- * DEUX FAMILLES, et elles ne se mélangent pas :
- *  - `/auth/mfa/verifier`, `/auth/mfa/enroler`, `/auth/mfa/activer` : AVANT toute session. Ce qui les autorise
- *    est un jeton d'étape signé (`mfaToken` ou `enrolToken`) ; sans lui, 401, comme une route gardée ;
- *  - `/auth/mfa/moi*` : AVEC une session (`garde`), pour l'enrôlement volontaire, la régénération des codes et la
- *    désactivation.
- *
- * ⚠️ LE PLAFOND EST PAR IDENTITÉ, pas par adresse IP : 5 essais par minute. La clé vient d'un jeton SIGNÉ ou d'une
- * session, donc d'une identité qui existe : la table est bornée par le nombre de personnes qui ont passé leur mot
- * de passe, et aucun plafond de clés n'est nécessaire (`src/auth/rate-limit.ts`, § « maxCles »).
+ * Plafond par identité (5 essais par minute), pas par IP : la clé vient d'un jeton signé ou d'une session, la
+ * table est bornée par les personnes qui ont passé leur mot de passe.
  */
 export function registerMfa(app: FastifyInstance, deps: MfaRouteDeps, garde: Guard, suite: SuiteDeConnexion): void {
   const essais = new RateLimiter(5, 60_000);
   // L'enrôlement tire un secret neuf à chaque appel : il ne se devine pas, il se borne seulement.
   const enrolements = new RateLimiter(10, 60_000);
   const journal = (identityId: string, action: ActionMfa, detail?: Record<string, unknown>): void => {
-    // `?.` sur le RETOUR : dep absent -> `undefined`, et `.catch` dessus lèverait (cf. `markLogin`).
+    // `?.` sur le retour : dépendance absente, `undefined`, et `.catch` dessus lèverait.
     void deps.auditMfa?.(identityId, action, detail)?.catch(() => {});
   };
 
@@ -85,7 +77,7 @@ export function registerMfa(app: FastifyInstance, deps: MfaRouteDeps, garde: Gua
     verifier: (t: string, s: string) => Promise<EtapeConnexion | null>,
     limiteur: RateLimiter,
   ): Promise<{ etape: EtapeConnexion; mfa: MfaStore } | null> {
-    // Le jeton AVANT le magasin : sans lui, rien n'autorise l'appel, et la réponse est celle d'une route gardée.
+    // Le jeton avant le magasin : sans lui, rien n'autorise l'appel, et la réponse est celle d'une route gardée.
     const etape = typeof jeton === 'string' && jeton !== '' ? await verifier(jeton, deps.secret) : null;
     if (!etape) {
       await reply.code(401).send({ error: MESSAGE_ETAPE_EXPIREE });
@@ -131,7 +123,7 @@ export function registerMfa(app: FastifyInstance, deps: MfaRouteDeps, garde: Gua
     }
     if (moyen === 'secours') {
       journal(ok.etape.identityId, 'mfa.code_secours_utilise');
-      // Lu AVANT la consommation, d'où le -1 : la console prévient quand il n'en reste plus beaucoup.
+      // Lu avant la consommation, d'où le -1 : la console prévient quand il n'en reste plus beaucoup.
       return reply.code(200).send({ ...(await suite(ok.etape)), codesSecoursRestants: Math.max(0, etat.codesSecoursRestants - 1) });
     }
     return reply.code(200).send(await suite(ok.etape));
@@ -165,7 +157,7 @@ export function registerMfa(app: FastifyInstance, deps: MfaRouteDeps, garde: Gua
   });
 
   /**
-   * Active le secret en attente si `code` est juste. Rend les dix codes de secours EN CLAIR (montrés une fois),
+   * Active le secret en attente si `code` est juste. Rend les dix codes de secours en clair (montrés une fois),
    * `invalide` ou `deja_active`. Partagé par l'enrôlement obligatoire et l'enrôlement volontaire.
    */
   async function activer(mfa: MfaStore, etat: EtatMfa, code: string, etape: string): Promise<string[] | 'invalide' | 'deja_active'> {
@@ -198,7 +190,7 @@ export function registerMfa(app: FastifyInstance, deps: MfaRouteDeps, garde: Gua
     });
   });
 
-  /** Enrôlement VOLONTAIRE (agent, manager), ou d'un admin après une réinitialisation, depuis la page Compte. */
+  /** Enrôlement volontaire (agent, manager), ou d'un admin après une réinitialisation, depuis la page Compte. */
   app.post('/auth/mfa/moi/enroler', opts, async (req, reply) => {
     const ok = await etatDeLaSession(req, reply);
     if (!ok) return reply;
@@ -221,8 +213,8 @@ export function registerMfa(app: FastifyInstance, deps: MfaRouteDeps, garde: Gua
   });
 
   /**
-   * RÉGÉNÈRE les dix codes de secours. 🔴 UN CODE EST EXIGÉ, même avec une session : une session volée (un poste
-   * resté ouvert) ne doit pas pouvoir se fabriquer dix codes, qui lui donneraient un second facteur à elle.
+   * Régénère les dix codes de secours. 🔴 Un code est exigé, même avec une session : une session volée ne doit
+   * pas pouvoir se fabriquer un second facteur à elle.
    */
   app.post('/auth/mfa/moi/codes', opts, async (req, reply) => {
     const ok = await etatDeLaSession(req, reply);
@@ -242,9 +234,8 @@ export function registerMfa(app: FastifyInstance, deps: MfaRouteDeps, garde: Gua
   });
 
   /**
-   * DÉSACTIVE le facteur. 🔴 REFUSÉ À UN ADMIN, quel que soit l'espace où il l'est : le facteur est obligatoire
-   * pour lui, et le retirer lui-même reviendrait à rendre l'obligation facultative. Un code est exigé pour la même
-   * raison que la régénération.
+   * Désactive le facteur. 🔴 Refusé à un admin, où qu'il le soit : le facteur est obligatoire pour lui. Un code
+   * est exigé, pour la même raison que la régénération.
    */
   app.post('/auth/mfa/moi/desactiver', opts, async (req, reply) => {
     const ok = await etatDeLaSession(req, reply);
@@ -258,7 +249,7 @@ export function registerMfa(app: FastifyInstance, deps: MfaRouteDeps, garde: Gua
       journal(ok.etat.identityId, 'mfa.echec', { etape: 'desactivation' });
       return reply.code(401).send({ error: MESSAGE_CODE_INVALIDE });
     }
-    // Le journal AVANT l'effacement serait faux s'il échouait ; APRÈS, il dit ce qui a eu lieu.
+    // Le journal après l'effacement : il dit ce qui a eu lieu.
     await ok.mfa.desactiver(ok.etat.identityId);
     journal(ok.etat.identityId, 'mfa.desactive');
     return reply.code(200).send({ ok: true });

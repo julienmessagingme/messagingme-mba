@@ -7,45 +7,35 @@ import type { RcsOutbound } from './types';
 import { aDesVariables, appliquerVariables } from './variables';
 
 /**
- * L'ENVOI D'UN RCS LIBRE : UNE implémentation, deux appelants (spec 2026-09-24, § 4).
+ * L'envoi d'un RCS libre, une implémentation pour deux appelants : le bouton RCS de l'Inbox (un opérateur) et
+ * `POST /v1/messages/rcs` (une machine), sur le modèle de `repondreDansLaFenetre` pour WhatsApp.
  *
- * Le bouton RCS de l'Inbox (un OPÉRATEUR) et `POST /v1/messages/rcs` (une MACHINE) passent par ici, sur le
- * modèle de `repondreDansLaFenetre` pour WhatsApp : une copie des gardes dans la route de l'API aurait fait
- * deux jeux de règles sur le même envoi.
+ * Ordre : un numéro ; pas désabonné (en général ni du RCS) ; consenti ou a déjà écrit ; canal actif ; pas
+ * connu injoignable. Le contact inconnu et le contact bloqué sont refusés avant, par la route de l'API.
  *
- * L'ORDRE est celui de la spec : un numéro ; pas désabonné (en général ni du RCS) ; consenti OU a déjà écrit ;
- * canal actif ; pas connu injoignable (désabonnement général, consentement et joignabilité : pour une machine
- * seulement). Le contact inconnu et le contact bloqué sont refusés AVANT, par la route
- * de l'API (elle seule sait résoudre une fiche) ; l'Inbox part d'une conversation qui existe.
+ * 🔴 Une machine ne parle pas à qui n'a ni consenti ni écrit, ni à qui a dit STOP ; un opérateur si. La garde
+ * porte sur « tout ce qui n'est pas un opérateur humain », jamais sur une liste d'appelants. Le STOP RCS
+ * arrête quand même l'opérateur, par le point de passage unique de l'envoi (`RcsSender.sendTo`).
  *
- * 🔴 UNE MACHINE NE PARLE PAS À QUI N'A NI CONSENTI NI ÉCRIT, NI À QUI A DIT STOP ; UN OPÉRATEUR SI. Même
- * doctrine que `repondreDansLaFenetre` (décision du 2026-09-13) : la garde se pose sur « tout ce qui n'est pas
- * un opérateur humain », jamais sur une liste d'appelants. Le STOP RCS arrête quand même l'opérateur, par le
- * point de passage unique de l'envoi (`RcsSender.sendTo`).
- *
- * 🔴 LA JOIGNABILITÉ SE LIT DANS LE CACHE, DIRECTEMENT, ET POUR UNE MACHINE SEULEMENT. `RcsSender` saute ce
- * contrôle quand le fournisseur ne sait pas vérifier avant l'envoi (smsmode) : le cache n'est alors nourri que
- * par les rapports de livraison (`traiterRapportRcs`, qui écrit la clé en E.164). ⚠️ Le cache porte pourtant un
- * même numéro sous DEUX formes (`+33…` et chiffres seuls, selon l'appelant qui l'a vérifié) : la lecture passe
- * donc par `joignabiliteRcsToutesFormes`, comme la fiche de l'API, et la plus récente gagne. Un « injoignable »
- * plus vieux que `TTL_MS` ne refuse plus rien : un parc mobile bascule. L'OPÉRATEUR n'y est pas soumis : la spec (§ 17)
- * veut le bouton RCS de l'Inbox IDENTIQUE, et smsmode range en échec définitif un téléphone simplement éteint
- * (UNDELIVERED), qui aurait refusé l'opérateur sept jours durant sur un numéro redevenu joignable.
+ * La joignabilité se lit dans le cache, pour une machine seulement. Chez smsmode, il n'est nourri que par les
+ * rapports de livraison, et porte un même numéro sous deux formes : la lecture passe par
+ * `joignabiliteRcsToutesFormes`. Un « injoignable » plus vieux que `TTL_MS` ne refuse plus rien. L'opérateur
+ * n'y est pas soumis : smsmode range en échec définitif un téléphone simplement éteint.
  */
 
 export type RefusRcsLibre = 'rcs_not_enabled' | 'rcs_unreachable' | 'opted_out' | 'no_consent' | 'no_phone' | 'rcs_message_not_found';
 
 export interface DepsRcsLibre {
   agentIdForTenant(tenantId: string): Promise<string | null>;
-  /** STOP général. REQUISE ; lue seulement pour une origine machine. */
+  /** STOP général. Requise ; lue seulement pour une origine machine. */
   estDesabonne(tenantId: string, waId: string): Promise<boolean>;
   /** STOP RCS (`contacts.rcs_optout_at`). Lue seulement pour une origine machine ; l'envoi la relit pour tous. */
   estDesabonneRcs(tenantId: string, e164: string): Promise<boolean>;
-  /** A consenti (`opted_in`) OU nous a déjà écrit (un entrant, tout canal). Lue seulement pour une machine. */
+  /** A consenti (`opted_in`) ou nous a déjà écrit (un entrant, tout canal). Lue seulement pour une machine. */
   aConsentiOuEcrit(tenantId: string, waId: string): Promise<boolean>;
   /**
-   * Le cache de joignabilité, lu clé par clé (agent, numéro) : `envoyerRcsLibre` le lit sous les DEUX formes
-   * du numéro (`joignabiliteRcsToutesFormes`). Lu seulement pour une origine machine.
+   * Le cache de joignabilité, lu clé par clé (agent, numéro) ; `envoyerRcsLibre` le lit sous les deux formes
+   * du numéro. Lu seulement pour une origine machine.
    */
   lireJoignabilite(agentId: string, e164: string): Promise<{ reachable: boolean; checkedAt: number } | null>;
   lireMessageRcs(tenantId: string, id: string): Promise<{ content: RcsOutbound | null } | null>;
@@ -63,7 +53,7 @@ export async function envoyerRcsLibre(
   contenu: { text: string } | { rcsMessageId: string },
   origine: 'humain' | 'api',
 ): Promise<{ messageId: string; apercu: string } | { refus: RefusRcsLibre }> {
-  // Le RCS s'adresse à un NUMÉRO : un wa_id qui n'en est pas un (un BSUID) ne peut pas le recevoir.
+  // Le RCS s'adresse à un numéro : un wa_id qui n'en est pas un (un BSUID) ne peut pas le recevoir.
   const { phoneE164 } = classifyWaId(waId);
   if (!phoneE164) return { refus: 'no_phone' };
 
@@ -75,15 +65,15 @@ export async function envoyerRcsLibre(
   const agentId = await deps.agentIdForTenant(tenantId);
   if (!agentId) return { refus: 'rcs_not_enabled' };
 
-  // Machine seulement : le bouton RCS de l'Inbox reste identique (spec § 17, cf. le docblock).
+  // Machine seulement : le bouton RCS de l'Inbox n'y est pas soumis (voir l'en-tête).
   if (origine !== 'humain') {
-    // Une FLÈCHE, pas `deps.lireJoignabilite` détachée : une méthode de classe y perdrait son `this`.
+    // Une flèche, pas `deps.lireJoignabilite` détachée : une méthode de classe y perdrait son `this`.
     const lire = { get: (a: string, e: string) => deps.lireJoignabilite(a, e) };
     const joignable = await joignabiliteRcsToutesFormes(lire, agentId, phoneE164, deps.maintenant());
     if (joignable === false) return { refus: 'rcs_unreachable' };
   }
 
-  // Réponse LIBRE : rien à relire, rien à substituer. Une accolade tapée par erreur n'est pas un trou.
+  // Réponse libre : rien à relire, rien à substituer. Une accolade tapée par erreur n'est pas un trou.
   let message: RcsOutbound;
   if ('text' in contenu) {
     message = { kind: 'text', text: contenu.text };
@@ -95,7 +85,7 @@ export async function envoyerRcsLibre(
       : enregistre.content;
   }
 
-  // QUI a cliqué : lu SEULEMENT si le message porte un lien tracé, et jamais bloquant.
+  // Qui a cliqué : lu seulement si le message porte un lien tracé, et jamais bloquant.
   const jeton = aDesLiensTracables(message) ? await deps.jetonDuContact(tenantId, waId) : undefined;
   const issue = await deps.envoyer(tenantId, agentId, waId, message, deps.nouvelId(), jeton);
   if ('skipped' in issue) return { refus: issue.skipped === 'rcs_optout' ? 'opted_out' : 'rcs_unreachable' };
@@ -103,8 +93,8 @@ export async function envoyerRcsLibre(
 }
 
 /**
- * La raison d'un refus, DESTINÉE À L'OPÉRATEUR de l'Inbox : « le canal n'est pas activé » et « ce contact s'est
- * désabonné » demandent deux gestes différents. Les quatre premières phrases sont celles qu'il lisait déjà.
+ * La raison d'un refus, destinée à l'opérateur de l'Inbox : « le canal n'est pas activé » et « ce contact
+ * s'est désabonné » demandent deux gestes différents.
  */
 export function phraseOperateur(refus: RefusRcsLibre): string {
   switch (refus) {

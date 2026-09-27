@@ -1,35 +1,34 @@
 import { createHmac, hash, timingSafeEqual } from 'node:crypto';
 
-/** Hash sha256 hex d'une chaîne. Pour stocker une clé d'API par son empreinte (jamais le clair), et la
- *  retrouver par index unique (pas de comparaison mémoire -> pas de canal de timing, comme auth_tokens). */
+/** Hash sha256 hex d'une chaîne. Une clé d'API se stocke par son empreinte (jamais le clair) et se retrouve par
+ *  index unique : pas de comparaison en mémoire, donc pas de canal de timing. */
 export function sha256Hex(raw: string): string {
   return hash('sha256', raw);
 }
 
 /**
- * Entrée du signeur de requête cross-repo (mba -> mm-hubspot). Le HMAC lie NON seulement le corps mais aussi
- * un horodatage, un nonce, la méthode et le chemin : un couple (header + corps) capturé n'est plus rejouable
- * indéfiniment (la fenêtre côté vérificateur le borne dans le temps). `ts`/`nonce` sont INJECTÉS (pas de
- * Date.now/randomBytes ici) pour garder la fonction PURE et testable.
+ * Entrée du signeur de requête vers mm-hubspot. Le HMAC lie le corps, un horodatage, un nonce, la méthode et le
+ * chemin : un couple (en-tête + corps) capturé n'est rejouable que dans la fenêtre du vérificateur. `ts` et
+ * `nonce` sont injectés pour garder la fonction pure et testable.
  */
 export interface RequestSignatureInput {
   /** Horodatage ms epoch (Date.now() côté appelant). */
   ts: number;
   /** Aléa par requête : randomBytes(8).toString('hex') = 16 hex. */
   nonce: string;
-  /** Méthode HTTP en MAJUSCULES (ex. 'POST'). */
+  /** Méthode HTTP en majuscules (ex. 'POST'). */
   method: string;
   /** Chemin (pathname sans query) tel que le vérificateur le verra (req.url sans '?'). */
   path: string;
-  /** Corps brut EXACT envoyé (mêmes octets que ceux signés). */
+  /** Corps brut exact envoyé (mêmes octets que ceux signés). */
   body: Buffer | string;
 }
 
 /**
- * ⚠️ FORMAT CANONIQUE DUPLIQUÉ dans mm-hubspot/src/lib/signature.ts (verifyRequest) — les deux repos ne
- * partagent aucun paquet : la construction de la préimage DOIT rester BYTE-identique (ordre, séparateur '.',
- * casse de method, pathname sans query), sinon 100 % du trafic /ingest et /service tombe en 401 silencieux.
- * Un vecteur d'or figé dans les tests des DEUX repos garde l'invariant.
+ * Format canonique dupliqué dans mm-hubspot (`src/lib/signature.ts`, `verifyRequest`), sans paquet partagé :
+ * la préimage doit rester identique à l'octet (ordre, séparateur '.', casse de method, pathname sans query),
+ * sinon tout le trafic /ingest et /service tombe en 401. Un vecteur d'or figé dans les tests des deux dépôts
+ * le tient.
  * Préimage = utf8(`${ts}.${nonce}.${method}.${path}.`) ++ rawBody. Header = `v1=${ts}.${nonce}.${hmacHex}`.
  */
 export function signRequest(secret: string, input: RequestSignatureInput): string {
@@ -40,16 +39,12 @@ export function signRequest(secret: string, input: RequestSignatureInput): strin
 }
 
 /**
- * Valide une signature `v1=` ENTRANTE, au format canonique ci-dessus. Miroir exact de `verifyRequest` du
- * connecteur (mm-hubspot/src/lib/signature.ts) : mba signait sans savoir vérifier, parce que le canal n'allait
- * que dans un sens. Le webhook HubSpot fait remonter des événements, donc mba doit vérifier à son tour.
+ * Valide une signature `v1=` entrante (le webhook HubSpot), au format canonique ci-dessus : miroir de
+ * `verifyRequest` du connecteur. `method` et `path` viennent de la requête, jamais d'un en-tête : aucune
+ * ambiguïté de délimiteur, même si un chemin contient un point.
  *
- * ⚠️ La préimage DOIT rester byte-identique à celle de `signRequest`. `method` et `path` viennent de LA
- * REQUÊTE (jamais d'un header), donc aucune ambiguïté de délimiteur même si un chemin contenait un point.
- *
- * La fenêtre borne le rejeu à sa durée, elle ne l'empêche pas dedans. C'est acceptable ici pour la même raison
- * que sur le canal inverse : le traitement en aval est idempotent (dédup par eventId côté connecteur, et une
- * automation a son propre anti-rebond par contact).
+ * La fenêtre borne le rejeu à sa durée sans l'empêcher dedans : acceptable parce que le traitement en aval est
+ * idempotent (dédup par eventId côté connecteur, anti-rebond par contact côté automation).
  */
 export function verifyRequest(
   raw: Buffer,
@@ -69,7 +64,7 @@ export function verifyRequest(
   const provided = Buffer.from(hex, 'hex');
   if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return false;
 
-  // Fenêtre vérifiée APRÈS la signature : pas de canal de timing sur la fraîcheur avant l'authentification.
+  // Fenêtre vérifiée après la signature : pas de canal de timing sur la fraîcheur avant l'authentification.
   const ts = Number(tsStr);
   if (!Number.isFinite(ts)) return false;
   const age = opts.now - ts;

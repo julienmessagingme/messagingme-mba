@@ -1,11 +1,10 @@
 import type { Pool } from 'pg';
 import { STATS_TZ, BOUNDS_CTE } from './range';
 import type { DateRange } from './range';
-// Type SEUL : `cost.ts` importe deja des types d'ici, et un import de VALEUR dans l'autre sens ferait un
-// cycle a l'execution. Le calcul du cout vit dans le cablage (`src/index.ts`), comme pour la serie.
+// Type seul : `cost.ts` importe déjà des types d'ici, un import de valeur dans l'autre sens ferait un cycle.
 import type { VolumeCampagneRow } from './cost';
-// Valeur SEULE, pas un type : le plafond doit etre le meme des deux cotes (le SQL en garde une de plus, la
-// fonction pure tranche et l'annonce). Deux nombres ecrits separement divergeraient au premier reglage.
+// Valeur partagée : le plafond doit être le même des deux côtés (le SQL en garde une de plus, la fonction pure
+// tranche et l'annonce).
 import { PLAFOND_CAMPAGNES_SYNTHESE } from './cost';
 import { ORIGINE_EFFECTIVE_SQL, THEME_DE_ORIGINE, DETAIL_IA } from '../inbox/origine';
 import { RECIPIENT_FAILED_SQL, INSTANT_ECHEC_SQL } from '../campaign/echecs-sql';
@@ -20,14 +19,11 @@ export interface DailyPoint {
 }
 
 /**
- * Funnel d'UNE campagne : envoyés -> délivrés -> lus -> répondus (message entrant après l'envoi), + échecs.
+ * Funnel d'une campagne : envoyés -> délivrés -> lus -> répondus (message entrant après l'envoi), et échecs.
  *
- * 🔴 IL PORTE DEUX GRAINS DEPUIS LA MIGRATION 0134, ET LES CONFONDRE DONNE DES CHIFFRES FAUX. Tous les
- * compteurs ci-dessous, plus `contactsVises`, comptent des PERSONNES (une ligne par contact dans
- * `campaign_recipients`). `parCanal` compte des TENTATIVES (une ligne par envoi tenté dans
- * `campaign_envois`). Sa somme DÉPASSE légitimement `contactsVises` dès qu'une chaîne de repli a fait
- * deux tentatives pour joindre la même personne : ce n'est pas une incohérence, c'est la réponse à une
- * autre question, et l'écran doit dire laquelle il pose.
+ * Deux grains : tous les compteurs et `contactsVises` comptent des personnes (`campaign_recipients`), `parCanal`
+ * compte des tentatives (`campaign_envois`). Sa somme dépasse légitimement `contactsVises` dès qu'une chaîne de
+ * repli a fait deux tentatives pour la même personne.
  */
 export interface CampaignFunnel {
   sent: number;
@@ -36,76 +32,52 @@ export interface CampaignFunnel {
   replied: number;
   failed: number;
   /**
-   * Envois partis dont Meta n'a JAMAIS rendu d'accusé : `delivered` et `read` ne les comptent pas, et ce
-   * n'est pas la même chose que « ils n'ont pas été délivrés ».
-   *
-   * 🔴 ET C'EST SYSTÉMATIQUE POUR UNE CAMPAGNE À SCÉNARIO, PAS UN ALÉA. Mesuré le 2026-09-11 sur la base :
-   * 29 envois de scénario, 29 sans accusé, soit 100 % ; contre 18 sur 21 AVEC accusé côté template. La
-   * raison est écrite dans `campaign/engine.ts` : la branche scénario enregistre un identifiant de message
-   * SYNTHÉTIQUE (`wf-…`, le même pour tous les destinataires), quand l'accusé de Meta porte le vrai
-   * `wamid`. `updateDeliveryByMessageId` ne peut donc jamais apparier les deux.
-   *
-   * ⚠️ SANS CE COMPTE, L'ÉCRAN AFFICHE UN ZÉRO LÀ OÙ IL N'Y A PAS DE MESURE, et on le lit comme un fait.
-   * Signalé par Julien le 2026-09-11 : « 3 envoyés, 0 délivrés, 0 lus et pourtant 3 répondus, erreur
-   * manifeste non ? ». Chaque nombre était juste ; c'est leur mise côte à côte qui mentait.
+   * Envois partis dont Meta n'a jamais rendu d'accusé : ni `delivered` ni `read` ne les comptent, ce qui ne veut
+   * pas dire « non délivrés ». Systématique pour une campagne à scénario : la branche scénario enregistre un
+   * identifiant synthétique (`wf-…`) que l'accusé de Meta, qui porte le vrai `wamid`, ne peut pas apparier. Sans
+   * ce compte, l'écran afficherait un zéro là où il n'y a pas de mesure.
    */
   sansAccuse: number;
   /**
-   * Taps sur un bouton de RÉPONSE RAPIDE du template, attribués comme `replied` (dont ils sont un
-   * sous-ensemble : un tap de bouton EST un message entrant).
+   * Taps sur un bouton de réponse rapide du template, attribués comme `replied` (dont ils sont un
+   * sous-ensemble : un tap est un message entrant).
    */
   buttonReplies: number;
   /**
-   * Clics sur les liens TRACÉS du template de la campagne, depuis son premier envoi.
+   * Clics sur les liens tracés du template de la campagne, depuis son premier envoi. `null` = aucun bouton URL
+   * tracé : une barre à zéro se lirait « personne n'a cliqué » au lieu de « rien à cliquer ».
    *
-   * `null` = ce template ne porte aucun bouton URL tracé et confirmé : l'étape n'est pas affichable, et une
-   * barre à zéro se lirait « personne n'a cliqué » au lieu de « il n'y a rien à cliquer ».
-   *
-   * ⚠️ C'est un compteur de TEMPLATE, pas de campagne : un lien ne sait pas quel envoi l'a porté. Le seuil au
-   * premier envoi écarte l'exploration de Meta (qui clique chaque bouton URL pendant la revue, donc AVANT le
-   * premier envoi), mais deux campagnes sur le même template partagent leurs clics. L'écran doit le dire.
+   * Compteur de template, pas de campagne : un lien ne sait pas quel envoi l'a porté, et deux campagnes sur le
+   * même template partagent leurs clics (l'écran doit le dire). Le seuil au premier envoi écarte l'exploration
+   * de Meta, qui clique chaque bouton URL pendant la revue.
    */
   urlClicks: number | null;
   /**
-   * COMBIEN D'HUMAINS CETTE CAMPAGNE A VISÉS, quel que soit le nombre de tentatives faites pour les
-   * joindre.
-   *
-   * 🔴 C'EST LA LIGNE DE TÊTE, ET ELLE NE SE DÉDUIT PAS DE `parCanal`. Additionner les envois des canaux
-   * donnerait le nombre de TENTATIVES : une personne jointe au second étage après un échec au premier y
-   * compterait pour deux. Le grain est garanti par `unique (campaign_id, contact_id)` sur
-   * `campaign_recipients`, qui est aussi le dédoublonnage du produit.
+   * Combien d'humains cette campagne a visés, quel que soit le nombre de tentatives : la ligne de tête, qui ne
+   * se déduit pas de `parCanal`. Le grain est garanti par `unique (campaign_id, contact_id)`.
    */
   contactsVises: number;
   /**
-   * LA VENTILATION PAR CANAL, lue sur le journal des tentatives (`campaign_envois`, migration 0134).
-   *
-   * ⚠️ ELLE PEUT ÊTRE VIDE ALORS QUE LA CAMPAGNE A ENVOYÉ, et il faut le savoir pour ne pas lire ce vide
-   * comme un zéro : le journal ne contient que les tentatives postérieures à sa mise en service. Toute
-   * campagne lancée avant n'a aucune ligne ici, pendant que les compteurs du dessus, eux, sont complets.
-   * L'écran doit taire la ventilation dans ce cas plutôt que d'annoncer « aucun envoi ».
-   *
-   * Une ligne par canal RÉELLEMENT emprunté, dans l'ordre des étages de la chaîne.
+   * La ventilation par canal, lue sur le journal des tentatives (`campaign_envois`), une ligne par canal
+   * réellement emprunté dans l'ordre des étages. Elle peut être vide alors que la campagne a envoyé (tentatives
+   * antérieures au journal) : l'écran la tait plutôt que d'annoncer « aucun envoi ».
    */
   parCanal: FunnelCanal[];
 }
 
-/** Les compteurs d'UN canal d'une campagne, au grain TENTATIVE (une personne peut en avoir plusieurs). */
+/** Les compteurs d'un canal d'une campagne, au grain tentative (une personne peut en avoir plusieurs). */
 export interface FunnelCanal {
   canal: CanalEtage;
   /** Toutes les tentatives de ce canal, quel qu'en soit le verdict (parties, échouées, écartées). */
   envois: number;
-  /** Celles qui sont VRAIMENT parties : même définition que `sent` du funnel global. */
+  /** Celles qui sont vraiment parties : même définition que `sent` du funnel global. */
   reussis: number;
   delivres: number;
   lus: number;
   repondus: number;
   /**
-   * Tentatives parties dont Meta n'a rendu AUCUN accusé, POUR CE CANAL.
-   *
-   * 🔴 LA DISTINCTION « ZÉRO » CONTRE « ON NE SAIT PAS » S'APPLIQUE PAR CANAL, SINON ELLE NE VEUT PLUS
-   * RIEN DIRE. Un canal parfaitement mesuré et un canal sans aucun accusé se retrouveraient derrière un
-   * seul verdict global : soit on efface les chiffres justes du premier, soit on affiche un « 0 délivré »
-   * crédible pour le second. C'est la mise côte à côte qui ment, exactement comme le 2026-09-11.
+   * Tentatives parties dont Meta n'a rendu aucun accusé, pour ce canal. La distinction « zéro » contre « on ne
+   * sait pas » s'applique par canal, sinon un canal sans accusé afficherait un « 0 délivré » crédible.
    */
   sansAccuse: number;
 }
@@ -117,57 +89,46 @@ export interface ErrorBreakdownRow {
   /** Template de la campagne à l'origine des erreurs (null si non renseigné). */
   templateName: string | null;
   /**
-   * La campagne d'où viennent ces erreurs. Elle n'est JAMAIS nulle : la seule population capable de porter
-   * une erreur est `campaign_recipients`, jointe à sa campagne (voir le docblock de `getErrorBreakdown`).
-   *
-   * ⚠️ Ces deux champs rendent la ligne PLUS FINE qu'avant : une par (code, template, campagne) au lieu
-   * d'une par (code, template). L'écran agrège déjà par code, donc l'affichage sans filtre est inchangé ;
-   * ce qui change, c'est qu'il peut désormais filtrer par campagne sans redemander au serveur.
+   * La campagne d'où viennent ces erreurs, jamais nulle : seule `campaign_recipients` porte une erreur (voir
+   * `getErrorBreakdown`). Une ligne par (code, template, campagne) : l'écran agrège par code et peut filtrer
+   * par campagne sans redemander au serveur.
    */
   campaignId: string;
   campaignName: string;
 }
 
 
-/** Volume d'envois de campagne par (jour, catégorie) — base du graphe de coût estimé. */
+/** Volume d'envois de campagne par (jour, catégorie), base du graphe de coût estimé. */
 export interface CostVolumeRow {
   date: string; // 'YYYY-MM-DD' (Europe/Paris)
   /**
-   * 'marketing' | 'utility' | **null**. Le null est arrivé avec la branche « hors campagne » : un envoi de
-   * scénario historique n'a pas de catégorie (`logTemplateSent` ne l'écrivait pas avant le 2026-09-07), et
-   * `estimateCostSeries` l'ignore alors. Le type le DIT désormais, au lieu de laisser un null atterrir dans
-   * un champ déclaré `string` : c'est précisément la valeur que l'écran doit rendre visible.
+   * 'marketing' | 'utility' | null : d'anciens envois de scénario n'ont pas de catégorie, et
+   * `estimateCostSeries` les ignore. Le type le dit : c'est la valeur que l'écran doit rendre visible.
    */
   category: string | null;
   count: number;
 }
 
 /**
- * Le filtre commun des écrans d'Analytics : DES campagnes OU DES templates. Plusieurs valeurs -> un résultat
- * COMPILÉ sur l'ensemble (les volumes s'additionnent jour par jour), pas la première valeur de la liste.
- *
- * Les deux axes restent MUTUELLEMENT EXCLUSIFS côté écran : combiner « campagne A » et « template B » ne
- * décrirait pas une union mais leur intersection, qui ne veut rien dire pour un opérateur. Une liste vide
- * équivaut à « tout », comme l'absence de filtre.
- *
- * ⚠️ Les deux axes ne désignent pas exactement la même population selon l'écran : côté coût, l'axe template
- * ramène AUSSI les envois hors campagne, alors qu'aucune erreur ne peut exister hors campagne. Le filtre est
- * le même, ce qu'il filtre ne l'est pas.
+ * Le filtre commun des écrans d'Analytics : des campagnes ou des templates. Plusieurs valeurs -> un résultat
+ * compilé sur l'ensemble ; une liste vide équivaut à « tout ». Les deux axes restent exclusifs côté écran (leur
+ * combinaison serait une intersection sans sens). Côté coût, l'axe template ramène aussi les envois hors
+ * campagne, alors qu'aucune erreur n'existe hors campagne.
  */
 export interface FiltreCampagneOuTemplate {
   campaignIds?: string[];
   templateNames?: string[];
 }
 
-/** Ce qui est parti et ce qui est arrivé sur UN canal, sur la fenêtre (cartes de l'Accueil). */
+/** Ce qui est parti et ce qui est arrivé sur un canal, sur la fenêtre (cartes de l'Accueil). */
 export interface VolumeCanal {
   envoyes: number;
   recus: number;
 }
 
 /**
- * Les volumes des deux canaux de messagerie. ⚠️ UN ZÉRO ICI EST MESURÉ : la requête a tourné et n'a trouvé
- * aucun message sur ce canal. L'écran, lui, n'affiche RIEN quand il n'a pas de réponse, jamais un zéro.
+ * Les volumes des deux canaux de messagerie. Un zéro ici est mesuré ; l'écran n'affiche rien quand il n'a pas
+ * de réponse, jamais un zéro.
  */
 export interface VolumesParCanal {
   whatsapp: VolumeCanal;
@@ -175,105 +136,52 @@ export interface VolumesParCanal {
 }
 
 export interface DashboardStats {
-  /** CUMULATIF : total de contacts à chaque jour (dense, une valeur/jour, reporte les jours sans ajout). */
+  /** Cumulatif : total de contacts à chaque jour (dense, une valeur/jour, reporte les jours sans ajout). */
   contacts: DailyPoint[];
   /**
-   * Les contacts ENCORE dans le mini-CRM ce jour-là (arbitrage de Julien du 2026-09-23).
-   *
-   * ⚠️ DEUX QUESTIONS DIFFERENTES, PAS DEUX VERSIONS DE LA MEME. Les cumulés disent ce qu'on a collecté,
-   * les actifs ce qu'on a encore : une base qu'on nettoie voit les deux courbes diverger, et c'est
-   * précisément l'écart qui est l'information. Rendre les deux d'un coup permet la bascule sans réseau.
+   * Les contacts encore dans le mini-CRM ce jour-là. Deux questions différentes : les cumulés disent ce qu'on a
+   * collecté, les actifs ce qu'on a encore, et l'écart est l'information.
    */
   contactsActifs: DailyPoint[];
   templates: { utility: DailyPoint[]; marketing: DailyPoint[] };
   exchanged: DailyPoint[];
   /**
-   * Messages de SERVICE : les SORTANTS qui ne sont pas des templates (réponse d'un agent depuis l'inbox,
-   * message d'un scénario dans la fenêtre de 24 h). Affichés à côté des templates, parce que c'est là qu'on
-   * lit ce qui est parti. Ils n'entrent PAS dans le coût estimé : Meta ne les facture pas au message, et
-   * leur inventer un prix reviendrait à mentir sur la facture.
-   *
-   * Sous-ensemble de `exchanged`, qui compte aussi les ENTRANTS : deux lectures différentes, même requête.
+   * Messages de service : les sortants qui ne sont pas des templates (réponse depuis l'inbox, message de
+   * scénario dans la fenêtre de 24 h). Hors du coût estimé des templates (`estimateCostSeries`). Sous-ensemble
+   * de `exchanged`, qui compte aussi les entrants.
    */
   service: DailyPoint[];
   /**
-   * Les mêmes messages de service, ventilés par ce qui les a ÉCRITS (migration 0099).
-   *
-   * Trois thèmes demandés par Julien : l'IA (notre agent et celui de Meta), le scripté (un scénario), et
-   * l'humain (un opérateur depuis l'inbox). Un quatrième, `indeterminee`, n'existe que pour rendre visible
-   * un chemin d'écriture qui aurait oublié de poser son origine : il vaut zéro tant que tout est en règle,
-   * et le montrer est le seul moyen de ne pas classer un tel message en silence dans un thème qui l'accueille.
-   *
-   * 🔴 Le total de cette ventilation ÉGALE la somme de `service` sur la période. C'est ce qui la rend
-   * lisible à côté de la courbe : un écart voudrait dire qu'un message échappe au classement.
+   * Les mêmes messages de service, ventilés par ce qui les a écrits : l'IA (notre agent, celui de Meta, un agent
+   * MCP), le scripté, l'humain, et `indeterminee` pour rendre visible un chemin d'écriture qui aurait oublié de
+   * poser son origine. Le total égale la somme de `service` sur la période.
    */
   serviceParOrigine: { ia: number; scenario: number; humain: number; indeterminee: number };
   /**
-   * LE DETAIL SOUS « IA » : laquelle des trois (demande de Julien, 2026-09-15).
-   *
-   * 🔴 L'INFORMATION EXISTAIT DEJA EN BASE, elle etait ecrasee a l'affichage. La colonne `origin` distingue
-   * `ia` (notre agent), `mba` (l'agent de Meta) et `mcp` (un agent tiers branche par MCP) depuis la
-   * migration 0099 ; `THEME_DE_ORIGINE` les versait toutes dans un theme unique parce que trois lignes
-   * avaient ete demandees et pas six. Aucune migration, aucune reprise : c'est le meme historique, lu plus
-   * finement.
-   *
-   * 🔴 `agent + mba + mcp` EGALE `serviceParOrigine.ia`, ET C'EST UN INVARIANT TENU PAR UN TEST. Les deux
-   * sont derives de la MEME boucle, sur les memes lignes : les calculer separement en ferait deux verites
-   * qui deriveraient au premier chemin d'ecriture ajoute, et un detail qui ne retombe pas sur son total est
-   * pire qu'aucun detail.
-   *
-   * ⚠️ LA SEPARATION N'EST EXACTE QUE DEPUIS `BASCULE_ORIGINE` (2026-09-01). Avant, la colonne n'etait
-   * remplie par personne et la derivation range tout en `scenario`, ce qui a ete MESURE et non supposé :
-   * aucun tour d'agent n'avait jamais tourné. Ces trois compteurs valent donc zero sur l'historique ancien,
-   * et c'est juste.
+   * Le détail sous « IA » : `agent + mba + mcp` égale `serviceParOrigine.ia` (tenu par un test), les deux étant
+   * dérivés de la même boucle. Exact seulement depuis `BASCULE_ORIGINE` : avant, tout est rangé en `scenario`,
+   * ce qui est juste puisqu'aucun tour d'agent n'existait alors.
    */
   serviceIaDetail: { agent: number; mba: number; mcp: number };
 }
 
 /**
- * 🔴 LES ENVOIS DE TEMPLATE FACTURABLES DE LA PÉRIODE, EN UN SEUL ENDROIT.
+ * Les envois de template facturables de la période, en un seul fragment : le graphe de coût et le tableau
+ * « Détail par template » doivent compter la même population (templates de campagne, de scénario et d'inbox).
+ * S'utilise seulement dans une requête qui déclare `${BOUNDS_CTE}` et passe `$1` = tenantId.
  *
- * Ce fragment existe parce que deux requêtes décrivaient la même chose et comptaient deux populations
- * DIFFÉRENTES. `getTemplateBreakdown` portait l'union vers `conversation_messages`, `getCostVolume` non :
- * un template envoyé par un nœud de scénario (ou depuis l'inbox) était donc compté dans le tableau
- * « Détail par template » et INVISIBLE du graphe « Coût estimé ». Mesuré le 2026-09-07 en production sur
- * `actu_cin_ma_2` : 0 côté coût, 7 côté détail, et sept autres templates dans le même cas. Le client
- * filtrait sur un template réellement envoyé et obtenait un graphe vide.
+ * Une ligne par envoi : `sent_at` pour le découpage par jour, et `campaign_id` : celui de la campagne pour un
+ * envoi de campagne, celui de la campagne scénario qui a démarré le parcours pour un envoi de scénario
+ * (attribution à la lecture, sans borne basse : tous les envois de scénario ultérieurs d'un contact lui sont
+ * attribués), `null` si le contact n'a jamais reçu de campagne scénario. Ce `null` fait sortir la ligne d'un
+ * filtre par campagne (`= any($5)` vaut NULL), alors qu'un filtre par template la garde : les deux sont voulus.
  *
- * Même doctrine que `RECIPIENT_FAILED_SQL` (`src/campaign/echecs-sql.ts`) : un fragment SQL partagé, jamais
- * deux copies, parce que deux copies divergent à la première correction.
+ * Asymétrie réelle : un échec de livraison n'est suivi que côté campagne (`delivery_status`), un template de
+ * scénario refusé après coup reste compté.
  *
- * Rend une ligne PAR ENVOI, avec de quoi agréger des deux façons dont on a besoin :
- *  - `sent_at` pour le découpage par jour (le coût), sans découpage pour le volume (le détail) ;
- *  - `campaign_id` : celui de la campagne pour un envoi de campagne, celui de la campagne SCÉNARIO qui a
- *    démarré le parcours pour un envoi de scénario (attribution à la lecture, voir la sous-requête), et
- *    `null` seulement si ce contact n'a JAMAIS été destinataire d'une campagne scénario.
- *    🔴 **Portée réelle, à connaître avant de lire le chiffre** : l'attribution remonte au dernier
- *    destinataire réclamé, SANS borne basse. Dès qu'un contact a reçu une campagne scénario, tous ses
- *    envois de scénario ultérieurs lui sont attribués, quel que soit ce qui les a déclenchés (mot-clé,
- *    webhook, lien de chaîne). C'est le compromis assumé de l'attribution à la lecture, choisie le
- *    2026-09-07 pour ne pas traverser le chemin qui reçoit les messages clients. Le seul moyen de faire
- *    mieux est d'écrire l'attribution à l'envoi.
- *    🔴 C'est ce `null` qui gouverne le filtre par campagne : `campaign_id = any($5)` vaut alors `NULL`, donc PAS `TRUE`, donc la ligne sort du `where`.
- *    ⚠️ Écrire « c'est faux » serait une justification fausse, et elle s'inverserait sous une négation
- *    (`not (...)`, `is distinct from`), où `NULL` ne se comporte pas comme `false`. Filtrer sur une
- *    campagne exclut donc les envois hors campagne, filtrer sur un template les inclut ; les deux sont
- *    voulus et tenus par un test.
- *
- * ⚠️ S'utilise UNIQUEMENT dans une requête qui déclare `${BOUNDS_CTE}` et passe `$1` = tenantId.
- *
- * 🔴 LES DEUX BRANCHES NE TRAITENT PAS L'ÉCHEC DE LA MÊME FAÇON, et le nier serait une justification
- * fausse. Un message jamais PARTI n'a de ligne dans aucune des deux. Mais un échec de LIVRAISON n'est
- * suivi que côté campagne (`delivery_status`), la branche 2 n'en a aucune notion : un template de scénario
- * refusé après coup y reste compté. C'est une asymétrie réelle du modèle, pas un oubli de ce fragment.
- */
-/**
- * 🔴 L ATTRIBUTION EST OPTIONNELLE, ET CE N EST PAS UN CONFORT. Cette sous-requete est CORRELEE : elle
- * s execute une fois PAR LIGNE de la branche 2, et son predicat
- * `cv.wa_id = regexp_replace(r3.to_e164, ...)` n est servi par AUCUN index (la migration 0096 a
- * explicitement refuse un index sur `campaign_recipients(to_e164, sent_at)`). Or `getTemplateBreakdown`
- * groupe sur `name, category` : il paierait ce balayage pour une colonne qu il JETTE, a chaque affichage
- * du tableau de bord. Le fragment reste UNIQUE, seule l attribution se branche.
+ * L'attribution est optionnelle : sa sous-requête corrélée n'est servie par aucun index
+ * (`cv.wa_id = regexp_replace(r3.to_e164, ...)`), et `getTemplateBreakdown`, qui jette la colonne, ne la paie
+ * pas.
  */
 const ATTRIBUTION_CAMPAGNE_SCENARIO = `(
            -- 🔴 ATTRIBUTION A LA LECTURE, decidee par Julien le 2026-09-07. Un envoi de template fait DANS
@@ -354,41 +262,19 @@ export interface TemplateBreakdownRow {
 const TZ = STATS_TZ;
 
 /**
- * LA FENETRE D ATTRIBUTION D UNE CAMPAGNE : sept jours apres l envoi recu par le contact.
- *
- * 🔴 UNE SEULE ECRITURE, PARCE QU IL Y EN AVAIT TROIS. Elle borne ce qui est attribue a une campagne :
- * les clics ET les reponses, qui sont les deux moities d `engagementsParCampagne`, et les messages de
- * service (`servicesParCampagne`). ⚠️ Ne pas la chercher dans `clicsParCampagne`, qui est une AUTRE lecture
- * et n a aucune fenetre de sept jours : elle compte depuis le premier envoi, sans borne haute.
- * Le cadrage dit « la fenetre de 7 jours n est pas un nombre choisi ici : c est celle
- * d `engagementsParCampagne`, reprise telle quelle », parce que numerateur et denominateur du cout par
- * engagement doivent parler de la MEME population sur la MEME fenetre. Trois litteraux `interval '7 days'`
- * recopies ne garantissaient rien de tel : le jour ou l un bouge, le ratio rapporte deux ensembles de gens
- * differents, et rien a l ecran ne le signale. Releve en revue finale le 2026-09-18.
- *
- * ⚠️ C EST UN FRAGMENT SQL, pas un nombre : il s interpole dans une requete. Le pendant cote TypeScript
- * existe deja pour la bascule RCS (`FENETRE_BASCULE_MS`), qui est une AUTRE fenetre, de meme duree mais
- * d une autre nature (une reaction qui fait basculer un tarif). Les aligner par accident serait une erreur.
+ * La fenêtre d'attribution d'une campagne : sept jours après l'envoi reçu par le contact. Une seule écriture
+ * pour les clics et les réponses (`engagementsParCampagne`) et les messages de service (`servicesParCampagne`) :
+ * numérateur et dénominateur du coût par engagement doivent parler de la même population sur la même fenêtre.
+ * `clicsParCampagne` n'a pas de fenêtre (depuis le premier envoi). Fragment SQL à interpoler ;
+ * `FENETRE_BASCULE_MS` est une autre fenêtre, de même durée par hasard.
  */
 export const FENETRE_IMPUTATION = "interval '7 days'";
 
-/** Séries « 1 point par jour » pour le dashboard. Buckets jour en tz Europe/Paris.
- *  Plage `range` (from..to INCLUS, Europe/Paris) : bornes SQL calculées via bounds CTE (DST-safe),
- *  borne haute EXCLUSIVE = minuit Paris de (to+1). Params partout : [tenantId, from, to, TZ]. */
 /**
- * « AUCUN DÉPART INTERCALÉ », lu sur les LIGNES DE DESTINATAIRE (`campaign_recipients`).
- *
- * C'est la garde d'origine, et elle porte tout l'historique : une ligne par contact et par campagne,
- * depuis toujours.
- *
- * 🔴 `exclure` EST OBLIGATOIRE DÈS QUE L'ANCRAGE N'EST PAS `r.sent_at` LUI-MÊME, et l'oublier est
- * exactement le défaut qui a rendu la CI rouge le 2026-09-12. Ancrée sur sa propre colonne, la ligne du
- * destinataire ne peut pas être « postérieure à elle-même » : elle s'auto-exclut, gratuitement. Ancrée sur
- * `e.sent_at`, qui est une colonne DIFFÉRENTE, elle se compare à un instant voisin de quelques
- * millisecondes, et le verdict se met à dépendre du SIGNE de cet écart. Mesuré dans le code : `markResult`
- * est le seul écrivain de `campaign_recipients.sent_at` et y pose l'horloge JS du moteur, tandis que la
- * ligne de journal prend le `now()` de Postgres à l'INSERT qui suit. Deux horloges, deux instants, aucun
- * ordre garanti. Une attribution qui dépend de cela n'est pas une attribution.
+ * « Aucun départ intercalé », lu sur les lignes de destinataire (`campaign_recipients`), qui portent tout
+ * l'historique. `exclure` est obligatoire dès que l'ancrage n'est pas `r.sent_at` lui-même : ancrée sur sa
+ * propre colonne la ligne s'auto-exclut, ancrée sur `e.sent_at` elle se compare à un instant voisin posé par une
+ * autre horloge (JS pour `markResult`, `now()` pour le journal), et le verdict dépendrait du signe de l'écart.
  */
 const aucunDepartDestinataire = (instant: string, numero: string, exclure?: string): string => `not exists (
                select 1 from campaign_recipients r2 join campaigns c2 on c2.id = r2.campaign_id
@@ -401,22 +287,11 @@ const aucunDepartDestinataire = (instant: string, numero: string, exclure?: stri
              )`;
 
 /**
- * « AUCUN DÉPART INTERCALÉ », lu sur le JOURNAL DES TENTATIVES (`campaign_envois`, migration 0134).
- *
- * 🔴 ELLE NE REMPLACE PAS LA PRÉCÉDENTE, ELLE LA COMPLÈTE, et il faut les deux parce qu'aucune des deux
- * ne connaît tous les départs. `campaign_recipients` n'a qu'UNE ligne par contact : elle ne sait pas dire
- * qu'un même destinataire est reparti deux fois, ce qui est précisément ce que le grain « tentative »
- * apporte. Sans cette garde-ci, un destinataire relancé (`resetForRetry`, l'auto-relance existe
- * aujourd'hui et n'attend aucune chaîne) a DEUX tentatives parties sur le même canal, et la même réponse
- * serait comptée sur les deux : `repondus` vaudrait 2 pour une seule personne qui a écrit une fois.
- *
- * ⚠️ `statut = 'sent'` : seule une tentative RÉELLEMENT PARTIE peut voler une réponse. Une tentative
- * échouée ou écartée n'a rien envoyé, donc n'a rien pu provoquer et ne s'intercale pas.
- *
- * ⚠️ CE QU'ELLE NE SAIT PAS FAIRE, et il vaut mieux le savoir que le découvrir : l'écriture du journal est
- * BEST-EFFORT côté moteur. Une tentative dont la ligne de journal n'a pas pu s'écrire est un départ
- * invisible ici. C'est aussi pourquoi la garde du dessus est conservée : elle, verra quand même la ligne
- * du destinataire, et les deux ensemble gardent l'invariant qui compte, `somme(repondus) <= replied`.
+ * « Aucun départ intercalé », lu sur le journal des tentatives (`campaign_envois`). Elle complète la
+ * précédente : `campaign_recipients` n'a qu'une ligne par contact et ne voit pas qu'un destinataire est reparti
+ * (relance, étage suivant), et sans cette garde une même réponse serait comptée sur deux tentatives. Seule une
+ * tentative réellement partie (`statut = 'sent'`) s'intercale. Le journal est best-effort : la garde du dessus
+ * reste, et les deux ensemble tiennent `somme(repondus) <= replied`.
  */
 const aucunDepartJournalise = (instant: string, numero: string): string => `not exists (
                select 1 from campaign_envois e2
@@ -430,26 +305,13 @@ const aucunDepartJournalise = (instant: string, numero: string): string => `not 
              )`;
 
 /**
- * Un message ENTRANT attribué à CET envoi : même numéro, après l'envoi, sur un canal par lequel cet envoi
- * est réellement passé, et aucun envoi ultérieur au même numéro entre les deux (sinon la réponse revient au
- * dernier envoi, pas à celui-ci). C'est ce qui empêche une même réponse d'être comptée sur deux campagnes.
+ * Un message entrant attribué à cet envoi : même numéro, après l'envoi, sur un canal par lequel cet envoi est
+ * réellement passé (`predicatCanal`), et aucun envoi ultérieur au même numéro entre les deux (sinon la réponse
+ * revient au dernier envoi). C'est ce qui empêche une même réponse d'être comptée sur deux campagnes, et une
+ * suggestion RCS d'être comptée comme réponse à un template WhatsApp.
  *
- * Sorti en fragment parce que le funnel s'en sert DEUX fois, pour « répondu » et pour « a tapé un bouton ».
- * Deux copies divergeraient à la première correction de l'attribution. Même doctrine que
- * `RECIPIENT_FAILED_SQL` (`src/campaign/echecs-sql.ts`).
- *
- * ⚠️ CE COMMENTAIRE ÉTAIT ORPHELIN : il décrivait ce fragment depuis une position située au-dessus d'une
- * AUTRE fonction, où le lecteur le rapportait au mauvais code. Il est revenu sur ce qu'il justifie.
- *
- * ⚠️ S'utilise UNIQUEMENT dans une requête où `c` est `campaigns` et `r` est `campaign_recipients`.
- * `extra` restreint la nature du message entrant (ex. `and m.type = 'button'`).
- *
- * 🔴 `predicatCanal` EST UN PRÉDICAT, PAS UNE COLONNE, et c'est ce qui a changé le 2026-09-12. Le principe
- * ne bouge pas : l'entrant doit venir d'un tuyau par lequel CETTE campagne a écrit à CE contact. Sans cette
- * garde, un contact qui ignorait le template mais tapait une suggestion RCS reçue par ailleurs était compté
- * « a répondu » ET « a tapé un bouton » de la campagne WhatsApp (une suggestion RCS est enregistrée avec
- * `type='button'`), et l'opérateur jugeait son template sur le taux de clic d'un autre canal. Ce qui bouge,
- * c'est que « le tuyau de la campagne » n'est plus une colonne unique dès qu'une chaîne de repli existe.
+ * Fragment partagé (« répondu » et « a tapé un bouton »). S'utilise seulement là où `c` est `campaigns` et `r`
+ * `campaign_recipients`. `extra` restreint la nature du message entrant (ex. `and m.type = 'button'`).
  */
 const entrantAttribueDepuis = (
   envoi: { instant: string; numero: string; predicatCanal: string },
@@ -467,25 +329,13 @@ const entrantAttribueDepuis = (
          )`;
 
 /**
- * LE CANAL, VU DU FUNNEL GLOBAL : celui que la campagne DÉCLARE, ou n'importe lequel de ceux par lesquels
- * elle a réellement écrit à CE destinataire.
+ * Le canal, vu du funnel global : celui que la campagne déclare, ou n'importe lequel de ceux par lesquels elle a
+ * réellement écrit à ce destinataire (sinon le funnel par canal et le funnel global se contrediraient dès
+ * qu'une chaîne existe). Élargir, jamais remplacer : sans chaîne, le second terme n'ajoute rien, et aucun
+ * `replied` existant ne bouge.
  *
- * 🔴 C'EST LA DETTE DU LOT 3, ET ELLE FAISAIT SE CONTREDIRE DEUX CHIFFRES DU MÊME ÉCRAN. `c.channel` cesse
- * d'être la vérité du canal dès qu'une chaîne existe : la réponse arrive en RCS, la campagne se déclare
- * WhatsApp, le funnel PAR CANAL la compte (il est ancré sur la tentative) et le funnel GLOBAL ne la voit
- * pas. Mesuré en intégration : `somme(parCanal.repondus)` valait 1 et `replied` valait 0.
- *
- * 🔴 ÉLARGIR, JAMAIS REMPLACER, et la nuance vaut tous les chiffres déjà affichés. Le premier terme est
- * celui d'avant, mot pour mot : aucune campagne existante ne voit son `replied` bouger. Le second n'ajoute
- * que des canaux sur lesquels une tentative est RÉELLEMENT PARTIE vers CE destinataire (`statut = 'sent'`,
- * `recipient_id = r.id`) ; sur une campagne sans chaîne, ces lignes portent justement `c.channel`, donc il
- * n'ajoute rien du tout. Retirer la garde de canal au lieu de l'élargir aurait rendu au contraire toute
- * réponse d'un autre tuyau, ce que la ligne du dessus existe pour empêcher.
- *
- * ⚠️ SON INDEX EXISTE DÉJÀ, et c'est pour ça que l'ordre des clauses est celui-ci : `campaign_id` puis
- * `canal` sont les deux colonnes de `campaign_envois_campagne_idx` (migration 0134), dans cet ordre. Le
- * filtre par destinataire et par statut se paie ensuite sur les quelques lignes retenues. Une clause
- * ancrée d'abord sur `recipient_id`, elle, n'a aucun index : la table n'en porte pas sur cette colonne.
+ * Ordre des clauses : `campaign_id` puis `canal`, les colonnes de `campaign_envois_campagne_idx` ;
+ * `recipient_id` n'a pas d'index.
  */
 const CANAL_DECLARE_OU_TENTE = `m.channel = c.channel or exists (
                select 1 from campaign_envois e4
@@ -496,14 +346,9 @@ const CANAL_DECLARE_OU_TENTE = `m.channel = c.channel or exists (
              )`;
 
 /**
- * L'attribution ancrée sur le DESTINATAIRE (`r`), celle du funnel GLOBAL.
- *
- * ⚠️ UNE SEULE GARDE D'INTERCALATION, sans exclusion, parce que l'ancrage EST la colonne comparée et que la
- * ligne s'auto-exclut donc toute seule. C'est la garde qui est inchangée ; le CANAL, lui, a été élargi le
- * 2026-09-12 (cf. `CANAL_DECLARE_OU_TENTE`), et ce commentaire a affirmé « INCHANGÉE » tout court, ce qui
- * se lisait comme une interdiction d'y toucher. La règle exacte est : ne pas ajouter de garde ici (elle
- * déplacerait les chiffres de toutes les campagnes), et élargir le canal seulement par ÉLARGISSEMENT,
- * c'est-à-dire sans jamais retirer le terme d'origine.
+ * L'attribution ancrée sur le destinataire (`r`), celle du funnel global. Une seule garde d'intercalation, sans
+ * exclusion (l'ancrage est la colonne comparée). Ne pas y ajouter de garde : elle déplacerait les chiffres de
+ * toutes les campagnes.
  */
 export const entrantAttribue = (extra = ''): string =>
   entrantAttribueDepuis({ instant: 'r.sent_at', numero: 'r.to_e164', predicatCanal: CANAL_DECLARE_OU_TENTE }, extra, [
@@ -511,34 +356,13 @@ export const entrantAttribue = (extra = ''): string =>
   ]);
 
 /**
- * L'attribution ancrée sur UNE TENTATIVE du journal (`e`, `campaign_envois`, migration 0134).
+ * L'attribution ancrée sur une tentative du journal (`e`, `campaign_envois`) : même doctrine, à l'ancrage près
+ * (l'instant et le canal de la tentative), sinon deux vérités sur l'écran de ventilation par canal.
  *
- * 🔴 MÊME DOCTRINE, PAS UNE SECONDE. Le fragment est le même à l'ancrage près, et c'est délibéré : deux
- * heuristiques d'attribution voisines donneraient deux vérités sur le MÊME écran, celui où l'on clique
- * sur une campagne pour voir sa ventilation par canal. Ce qui change est l'instant de référence (celui de
- * la tentative, pas celui du destinataire) et le canal (celui de la tentative, pas celui de la campagne),
- * puisque c'est précisément ce que le grain « une ligne par tentative » permet de distinguer.
- *
- * 🔴 DEUX GARDES, ET LA PREMIÈRE VERSION N'EN AVAIT QU'UNE : C'EST CE QUI A RENDU LA CI ROUGE. Elle
- * affirmait que « l'exclusion reste sur `campaign_recipients`, et c'est nécessaire », au motif que le
- * journal ne porte pas l'historique d'avant sa mise en service. Ce motif était doublement faux, et il
- * vaut mieux écrire pourquoi que le corriger en silence :
- *   1. il ne protégeait rien, puisque seul un départ POSTÉRIEUR à une tentative journalisée peut voler sa
- *      réponse, et qu'un départ postérieur à une ligne de journal est lui-même journalisé (le code neuf
- *      est en place dès qu'une telle ligne existe) ;
- *   2. il cachait le vrai défaut : ancrée sur `e.sent_at`, cette garde attrapait la ligne du destinataire
- *      LUI-MÊME et refusait toute attribution. Mesuré : `repondus` valait 0 partout, pendant que le
- *      `replied` du funnel global valait 1 sur la même personne. Deux vérités sur le même écran, soit
- *      exactement ce que le fragment partagé existe pour empêcher.
- *
- * ⚠️ LES DEUX GARDES DISENT LA MÊME RÈGLE sur deux populations, ce n'est pas une seconde heuristique :
- * « aucun départ intercalé ». Les départs d'un AUTRE destinataire se lisent sur `campaign_recipients`,
- * les départs SUPPLÉMENTAIRES du même destinataire (relance, étage suivant) ne se lisent que dans le
- * journal, parce que `campaign_recipients` n'a qu'une ligne par contact et ne sait pas les exprimer.
- *
- * ⚠️ `e.sent_at is not null` est TOUJOURS vrai (la colonne est `not null default now()`) : c'est le prix
- * du fragment partagé, et il ne coûte qu'un prédicat constant. Le rendre conditionnel aurait coûté une
- * seconde forme du fragment, exactement ce qu'on cherche à éviter.
+ * Deux gardes, qui disent la même règle sur deux populations : les départs d'un autre destinataire se lisent
+ * sur `campaign_recipients` (en excluant la ligne du destinataire, sinon elle refuserait toute attribution), les
+ * départs supplémentaires du même destinataire seulement dans le journal. `e.sent_at is not null` est toujours
+ * vrai : un prédicat constant, prix du fragment partagé.
  */
 export const entrantAttribueTentative = (extra = ''): string =>
   entrantAttribueDepuis({ instant: 'e.sent_at', numero: 'r.to_e164', predicatCanal: 'm.channel = e.canal' }, extra, [
@@ -549,27 +373,17 @@ export const entrantAttribueTentative = (extra = ''): string =>
 export class PgStatsStore {
   constructor(private readonly pool: Pool) {}
 
+  /**
+   * Séries « un point par jour » pour le dashboard, en jours Europe/Paris. Bornes SQL par la CTE `bounds`
+   * (changement d'heure compris), borne haute exclusive = minuit Paris de (to+1). Paramètres : tenantId, from,
+   * to, TZ.
+   */
   async getDashboard(tenantId: string, range: DateRange): Promise<DashboardStats> {
     const { from, to } = range;
 
-    // 1) Contacts CUMULÉS / jour : total courant = baseline (contacts créés AVANT la plage) +
-    //    somme courante des nouveaux/jour. Série DENSE (generate_series de from à to) pour que les jours
-    //    sans nouvel ajout reportent le total (pas de retour à 0), sans logique côté front.
-    //
-    // 🔴 ET LA MEME REQUETE REND LES ACTIFS (demande de Julien du 2026-09-23 : une bascule cumules/actifs).
-    // « Actif » = encore dans le mini-CRM ce jour-là, c'est-à-dire créé avant la fin du jour et pas encore
-    // supprimé. La suppression est DOUCE (`deleted_at`, migration 0049, aucun `delete from contacts` dans le
-    // dépôt), donc l'historique est reconstructible : on ne montre pas une courbe qui commence aujourd'hui.
-    //
-    // 🔴 PAR DIFFERENCE, ET PAS PAR UNE SOUS-REQUETE PAR JOUR. « Combien de contacts vivants au jour J »
-    // s'écrit naturellement en comptant les contacts pour CHAQUE jour de la série : c'est un balayage de la
-    // table des contacts par jour affiché, donc jusqu'à 366 balayages pour une plage d'un an. Les supprimés
-    // se cumulent exactement comme les créés, et actifs(J) = cumulés(J) - supprimés(J). Un contact créé ET
-    // supprimé le même jour entre dans les deux sommes, donc il ne compte pas, ce qui est juste.
-    //
-    // ⚠️ UN CONTACT SUPPRIME APRES LA PLAGE EST ACTIF PENDANT TOUTE LA PLAGE, et c'est ce que la borne haute
-    // de `supprimes_dans` garantit : sans elle, une suppression d'aujourd'hui ferait baisser la courbe d'il
-    // y a trois semaines, c'est-à-dire réécrirait le passé.
+    // 1) Contacts cumulés par jour (baseline + somme courante, série dense). Les actifs par différence,
+    //    cumulés(J) - supprimés(J) (la suppression est douce), plutôt qu'une sous-requête par jour ; la borne
+    //    haute de `supprimes_dans` empêche une suppression d'aujourd'hui de réécrire le passé.
     const contacts = await this.pool.query<{ d: string; count: string; actifs: string }>(
       `with ${BOUNDS_CTE},
        series as (
@@ -607,10 +421,9 @@ export class PgStatsStore {
       [tenantId, from, to, TZ],
     );
 
-    // 2) Templates envoyés / jour, par catégorie : campagnes (campaign_recipients + campaigns.category)
-    //    + envois template depuis l'inbox (conversation_messages.template_category).
-    //    🔴 `c.channel = 'whatsapp'` : une campagne RCS n'envoie AUCUN template. Sans ce filtre, 5 000 envois
-    //    RCS grossissaient la série « templates » d'un écran qui parle de Meta.
+    // 2) Templates envoyés par jour et par catégorie : campagnes (campaign_recipients + campaigns.category) et
+    //    envois template depuis l'inbox (conversation_messages.template_category). `c.channel = 'whatsapp'` :
+    //    une campagne RCS n'envoie aucun template.
     const templates = await this.pool.query<{ d: string; category: string | null; count: string }>(
       `with ${BOUNDS_CTE}
        select d, category, sum(cnt)::int as count from (
@@ -637,13 +450,9 @@ export class PgStatsStore {
       [tenantId, from, to, TZ],
     );
 
-    // 3) Messages hors template / jour. UNE requête pour deux lectures : les ÉCHANGÉS (entrants + sortants)
-    //    et, dans le même passage, les seuls SORTANTS, qui sont les messages de service. Un second balayage de
-    //    la même table pour un sous-ensemble ne serait qu'un coût de plus.
-    //    🔴 Les ÉCHANGÉS restent tous canaux (c'est un volume, les deux tuyaux comptent), mais les SORTANTS
-    //    de service sont restreints à WhatsApp : cette série affirme à l'écran que Meta ne les facture pas au
-    //    message, or smsmode facture bien les envois RCS. Le RCS n'a pas encore de série à lui, il vaut donc
-    //    mieux ne pas le montrer que le montrer comme gratuit.
+    // 3) Messages hors template par jour, en une requête pour deux lectures : les échangés (entrants et
+    //    sortants, tous canaux) et les seuls sortants WhatsApp, qui sont les messages de service. Le RCS en est
+    //    exclu : cette série n'a pas de prix RCS et le montrerait comme gratuit.
     const exchanged = await this.pool.query<{ d: string; count: string; sortants: string }>(
       `with ${BOUNDS_CTE}
        select to_char(date_trunc('day', m.created_at at time zone $4), 'YYYY-MM-DD') as d,
@@ -656,9 +465,8 @@ export class PgStatsStore {
       [tenantId, from, to, TZ],
     );
 
-    // 4) Ventilation des SEULS messages de service par origine. Même filtre exactement que la colonne
-    //    `sortants` ci-dessus (sortant, hors template, WhatsApp, hors fil de test), pour que le total de la
-    //    ventilation retombe sur celui de la courbe. Un filtre qui diverge d'un mot ferait mentir les deux.
+    // 4) Ventilation des messages de service par origine, avec exactement le filtre de `sortants` ci-dessus,
+    //    pour que le total de la ventilation retombe sur celui de la courbe.
     const parOrigine = await this.pool.query<{ origine: string; n: string }>(
       `with ${BOUNDS_CTE}
        select ${ORIGINE_EFFECTIVE_SQL} as origine, count(*)::int as n
@@ -675,9 +483,7 @@ export class PgStatsStore {
       // d'être perdue : c'est le seul comportement qui garde le total juste.
       const theme = THEME_DE_ORIGINE[ligne.origine] ?? 'indeterminee';
       serviceParOrigine[theme] += Number(ligne.n);
-      // 🔴 LE DETAIL SORT DE LA MEME BOUCLE QUE LE TOTAL, sur la meme ligne : une seconde boucle, ou pire une
-      // seconde requete, ferait deux verites qui derivent. `agent` porte NOTRE agent (`origin = 'ia'`), dont
-      // le nom de code est justement celui du theme, d'ou le renommage ici : `ia.ia` serait illisible.
+      // Le détail sort de la même boucle que le total, sur la même ligne, pour qu'ils ne dérivent pas.
       const detail = DETAIL_IA[ligne.origine];
       if (detail) serviceIaDetail[detail] += Number(ligne.n);
     }
@@ -702,26 +508,13 @@ export class PgStatsStore {
   }
 
   /**
-   * Les messages ÉCRITS par l'agent de Meta, depuis toujours (Julien, 2026-09-25) : ni les réponses du client,
-   * ni l'équipe, ni les campagnes, et aucune borne de date. Il remplace le compte de TOUT le fil des
-   * conversations que l'agent avait tenues sur 30 jours, qu'il fallait flanquer d'une légende pour ne pas être
-   * lu comme le travail de l'agent : ce chiffre-ci EST ce travail, et se passe de légende.
+   * Les messages écrits par l'agent de Meta, depuis toujours : ni les réponses du client, ni l'équipe, ni les
+   * campagnes. `ORIGINE_EFFECTIVE_SQL` s'importe (alias `m`) : il couvre `origin = 'mba'` et la dérivation
+   * `m.type = 'mba'` de l'historique, qu'un test écrit à la main raterait.
    *
-   * 🔴 LE FRAGMENT D'ORIGINE S'IMPORTE, IL NE SE RECOPIE PAS (règle « Modules partagés » du CLAUDE.md).
-   * `ORIGINE_EFFECTIVE_SQL` attend l'alias `m` pour `conversation_messages`. Le recopier ferait diverger ce
-   * chiffre de la ventilation du Performance Lab au premier changement de règle d'origine.
-   *
-   * 🔴 DEUX FAÇONS DE POSER L'ORIGINE `mba`, et le fragment couvre les deux : la colonne `origin = 'mba'`
-   * écrite depuis la migration 0099, et la dérivation `when m.type = 'mba'` pour l'historique d'avant.
-   * C'est exactement pourquoi on ne teste pas `m.origin = 'mba'` à la main.
-   *
-   * 🔴 `c.tenant_id = $1` EST LE SEUL CONTRÔLE D'ISOLATION : `conversation_messages` ne porte pas l'espace, il
-   * l'hérite de son fil, et la RLS est contournée en production. `not c.is_test` écarte le bac à sable.
-   *
-   * 🔴 `m.direction = 'out'` NE CHANGE AUCUN RÉSULTAT (le fragment ne rend `mba` que sur un sortant), mais il
-   * achète le CONTRAT DE L'INDEX PARTIEL : `conversation_messages_origin_idx` (migration 0099) est posé
-   * `where direction = 'out'`, et une requête qui ne le dit pas sort de son prédicat, donc du plan qu'il sert,
-   * sans qu'aucune erreur ne le signale (règle « un index partiel est un contrat avec une requête précise »).
+   * 🔴 `c.tenant_id = $1` est le seul contrôle d'isolation : `conversation_messages` hérite l'espace de son fil,
+   * et la RLS est contournée. `m.direction = 'out'` ne change aucun résultat mais tient le contrat de l'index
+   * partiel `conversation_messages_origin_idx` (`where direction = 'out'`).
    */
   async messagesEcritsParMba(tenantId: string): Promise<number> {
     const { rows } = await this.pool.query<{ n: string }>(
@@ -738,44 +531,20 @@ export class PgStatsStore {
   }
 
   /**
-   * Les messages ENVOYÉS et REÇUS par canal sur une fenêtre glissante de N jours : les chiffres des cartes
-   * « Numéro WhatsApp » et « Canal RCS » de l'Accueil (demande de Julien du 2026-09-25).
+   * Les messages envoyés et reçus par canal sur une fenêtre glissante de N jours (cartes « Numéro WhatsApp » et
+   * « Canal RCS » de l'Accueil) : chaque ligne du fil de l'Inbox, rangée par `channel`, `out` envoyés, `in`
+   * reçus. Tout ce qui part passe par ce fil, envois de campagne compris.
    *
-   * CE QUI EST COMPTÉ : chaque ligne de `conversation_messages` (le fil de l'Inbox) sur la fenêtre, rangée par
-   * `channel` (migration 0056), `out` pour les envoyés et `in` pour les reçus. Tout ce qui part passe par ce
-   * fil : réponses d'opérateur, de l'agent IA, de l'agent de Meta, du MCP et de l'API, messages de scénario, et
-   * envois de campagne (journalisés par le moteur, `recordOutboundByWaId`, sur WhatsApp comme en RCS).
+   * Les modèles sont comptés, contrairement à « Messages échangés » : cette carte dit ce qui est passé par le
+   * numéro. Écartés : les fils de test, et les canaux autres que `whatsapp` et `rcs`. Un envoi dont la
+   * livraison a échoué reste compté (il est parti).
    *
-   * 🔴 LES MODÈLES SONT COMPTÉS, et c'est l'écart délibéré avec « Messages échangés » (`getDashboard`, qui les
-   * écarte parce que la rangée voisine « Templates envoyés » les compte déjà). Cette carte dit ce qui est
-   * passé par le NUMÉRO : un espace qui ne fait que des campagnes lirait sinon « 3 envoyés » après en avoir
-   * envoyé 5 000, c'est-à-dire que son numéro ne sert à rien.
+   * 🔴 `cv.tenant_id = $1` est le seul contrôle d'isolation (la RLS est contournée).
    *
-   * CE QUI EST ÉCARTÉ, et pourquoi :
-   *  - les fils de TEST (`not cv.is_test`), comme partout dans les statistiques : c'est l'opérateur qui essaie
-   *    son propre scénario, pas un échange avec un client ;
-   *  - les ACCUSÉS (envoyé, remis, lu) : ce ne sont pas des messages, ils ne créent aucune ligne (ils posent
-   *    `accuse_le` ou le statut d'un destinataire de campagne), donc rien à exclure ;
-   *  - les canaux autres que `whatsapp` et `rcs` : aucun n'existe aujourd'hui, et un inconnu ne doit pas se
-   *    verser en silence dans l'un des deux.
-   * ⚠️ Un envoi dont la LIVRAISON a échoué ensuite reste compté, comme dans « Messages échangés » : il est
-   * parti de chez nous, et son échec se lit dans Sécurité > Journal des erreurs.
-   *
-   * 🔴 `cv.tenant_id = $1` EST LE SEUL CONTRÔLE D'ISOLATION : `conversation_messages` ne porte pas l'espace,
-   * il l'hérite de son fil, et la RLS est contournée en production.
-   *
-   * INDEX : les fils de l'espace ACTIFS sur la fenêtre se trouvent par `conversations_tenant_recent_idx
-   * (tenant_id, last_message_at desc, id desc)` (0069), puis leurs messages de la fenêtre par
-   * `conversation_messages_conv_idx (conversation_id, created_at)` (0009).
-   *
-   * 🔴 LA BORNE SUR `cv.last_message_at` EST UN PRÉFILTRE, PAS LE CRITÈRE (relecture du 2026-09-25). Sans elle, la
-   * requête parcourait TOUS les fils de l'espace, depuis toujours, pour n'en garder que les messages récents. Elle
-   * est exacte parce que les TROIS chemins qui écrivent un message (`recordInbound`, `recordOutboundByWaId`,
-   * `recordOutbound`, `src/inbox/store.pg.ts`) avancent `last_message_at` à `now()` dans l'instruction qui précède
-   * leur `insert` : un fil qui porte un message de la fenêtre a donc un `last_message_at` au moins aussi récent, à
-   * l'écart près entre ces deux instructions. La marge d'une heure absorbe cet écart ; le critère exact reste
-   * `m.created_at`. ⚠️ Un quatrième chemin d'écriture qui insérerait sans avancer `last_message_at` ferait
-   * disparaître ses messages de ce compte : il doit l'avancer lui aussi.
+   * Index : `conversations_tenant_recent_idx` pour les fils actifs, puis `conversation_messages_conv_idx`. La
+   * borne sur `cv.last_message_at` est un préfiltre, exact parce que les trois chemins d'écriture d'un message
+   * avancent `last_message_at` juste avant leur `insert` (marge d'une heure) ; un nouveau chemin d'écriture doit
+   * l'avancer lui aussi, sinon ses messages disparaîtraient de ce compte.
    */
   async volumesParCanal(tenantId: string, jours: number): Promise<VolumesParCanal> {
     const { rows } = await this.pool.query<{ canal: string; envoyes: string; recus: string }>(
@@ -799,12 +568,9 @@ export class PgStatsStore {
   }
 
   /**
-   * Volume par template envoyé sur la période (campagnes + envois inbox), pour le dropdown du
-   * dashboard et le prix estimé. Exclut les livraisons en échec (delivery_status='failed').
-   *
-   * 🔴 `c.channel = 'whatsapp'` et `nullif(c.template_name, '')` : une campagne RCS n'a pas de template, et
-   * elle stocke la CHAÎNE VIDE et non null (http/campaigns.ts), donc elle traversait tous les filtres écrits
-   * pour null. Elle apparaissait ici en ligne au nom vide, et son volume était facturé au tarif Meta.
+   * Volume par template envoyé sur la période (campagnes et envois inbox), pour le dropdown du dashboard et le
+   * prix estimé. Exclut les livraisons en échec. Une campagne RCS stocke `template_name = ''` et non null, d'où
+   * `nullif` et `c.channel = 'whatsapp'` dans le fragment.
    */
   async getTemplateBreakdown(tenantId: string, range: DateRange): Promise<TemplateBreakdownRow[]> {
     const { from, to } = range;
@@ -819,14 +585,9 @@ export class PgStatsStore {
   }
 
   /**
-   * Funnel d'UNE campagne (scopée au tenant) : envoyés -> délivrés -> lus -> répondus, + échecs.
-   * « répondu » = il existe un message ENTRANT (conversation_messages.direction='in') du même numéro
-   * APRÈS son envoi (created_at > sent_at) ET attribué à CETTE campagne : aucun envoi ULTÉRIEUR au même
-   * numéro (même tenant) n'a eu lieu entre cet envoi et la réponse (sinon la réponse est attribuée au
-   * dernier envoi, pas à celui-ci). Évite le double-comptage d'une même réponse sur plusieurs campagnes.
-   * NB : « répondu » peut dépasser « lu », et pour DEUX raisons qu'il ne faut pas confondre : le contact
-   * peut avoir désactivé ses accusés de lecture, ou l'envoi peut n'avoir AUCUN accusé du tout (`sansAccuse`,
-   * le cas de toute campagne à scénario). Dans le second, « 0 lus » ne veut pas dire « personne n'a lu ».
+   * Funnel d'une campagne (scopée au tenant) : envoyés -> délivrés -> lus -> répondus, et échecs. « Répondu » =
+   * un message entrant attribué à cet envoi (`entrantAttribue`). « Répondu » peut dépasser « lu » : le contact a
+   * pu couper ses accusés de lecture, ou l'envoi n'a aucun accusé (`sansAccuse`, toute campagne à scénario).
    */
   async getCampaignFunnel(tenantId: string, campaignId: string): Promise<CampaignFunnel> {
     const res = await this.pool.query<{ sent: string; delivered: string; read: string; replied: string; failed: string; sans_accuse: string; button_replies: string; contacts_vises: string }>(
@@ -866,24 +627,12 @@ export class PgStatsStore {
   }
 
   /**
-   * LA VENTILATION PAR CANAL d'une campagne, lue sur le journal des tentatives (migration 0134).
+   * La ventilation par canal d'une campagne, lue sur le journal des tentatives, en requête séparée : joindre les
+   * personnes à leurs tentatives multiplierait les lignes et fausserait les compteurs du haut. La somme des
+   * canaux n'est pas `sent` (une personne jointe au second étage compte deux tentatives).
    *
-   * 🔴 UNE REQUÊTE SÉPARÉE, PARCE QUE LES DEUX GRAINS NE SE MÉLANGENT PAS. La requête du dessus compte des
-   * PERSONNES (`campaign_recipients`, une ligne par contact), celle-ci compte des TENTATIVES : joindre les
-   * deux multiplierait les lignes de destinataires par leurs tentatives et fausserait tous les compteurs
-   * du haut, silencieusement, le jour où quelqu'un aura deux étages. Deux grains, deux requêtes.
-   *
-   * 🔴 ET LA SOMME DES CANAUX N'EST PAS `sent`, C'EST VOULU. Un contact joint au second étage après un
-   * échec au premier compte DEUX tentatives ici et UNE personne là-haut. L'écran doit dire laquelle des
-   * deux questions il répond ; c'est pour ça que `contactsVises` existe et qu'elle vient d'ailleurs.
-   *
-   * ⚠️ SCOPÉE AU TENANT PAR LA JOINTURE SUR `campaigns`, parce que `campaign_envois` NE PORTE PAS de
-   * `tenant_id` : son isolation passe par la campagne. La règle du dépôt est `tenant_id = $1` sur CHAQUE
-   * requête, le pooler étant superuser et la RLS contournée, et c'est cette jointure qui l'applique ici.
-   *
-   * ⚠️ `order by min(rang), canal` : la ventilation se lit dans l'ordre de la CHAÎNE, du premier étage
-   * tenté au dernier, pas dans l'ordre alphabétique d'un nom de canal. `canal` départage deux canaux
-   * arrivés au même rang, pour que l'affichage ne bouge pas d'un rafraîchissement à l'autre.
+   * 🔴 Scopée au tenant par la jointure sur `campaigns` : `campaign_envois` ne porte pas de `tenant_id`. Tri par
+   * `min(rang)` puis `canal` : l'ordre de la chaîne, stable d'un rafraîchissement à l'autre.
    */
   private async funnelParCanal(tenantId: string, campaignId: string): Promise<FunnelCanal[]> {
     const res = await this.pool.query<{
@@ -923,14 +672,9 @@ export class PgStatsStore {
   }
 
   /**
-   * L'identite d'une campagne, SCOPEE AU TENANT, pour la fiche de cout.
-   *
-   * 🔴 SCOPEE, et ce n'est pas une precaution de style : `PgCampaignStore.getForRun` lit `where id = $1`
-   * SANS tenant (elle rend le tenant pour que l'appelant tranche), et s'en servir ici aurait fait de cette
-   * route un IDOR : un identifiant de campagne devine ou vu ailleurs aurait rendu la fiche de couts d'un
-   * AUTRE client. La regle du depot est `tenant_id = $1` sur CHAQUE requete, la RLS etant contournee.
-   *
-   * `null` = la campagne n'existe pas, ou pas ici. L'appelant en fait un 404, jamais une fiche vide.
+   * L'identité d'une campagne, scopée au tenant, pour la fiche de coût. 🔴 `getForRun` lit sans tenant : s'en
+   * servir ici ferait de la route un IDOR sur la fiche de coûts d'un autre client. `null` = absente ou pas ici,
+   * l'appelant en fait un 404.
    */
   async ficheCampagne(tenantId: string, campaignId: string): Promise<{ id: string; nom: string; template: string | null; workflowId: string | null } | null> {
     const res = await this.pool.query<{ id: string; name: string; template_name: string | null; workflow_id: string | null }>(
@@ -944,26 +688,15 @@ export class PgStatsStore {
   }
 
   /**
-   * Les envois FACTURABLES d'UNE campagne sur TOUTE SA VIE, separes en LANCEMENT et en RELANCES.
+   * Les envois facturables d'une campagne sur toute sa vie, séparés en lancement et relances. Le lancement est
+   * le premier envoi par personne (la base du coût par interaction) ; les templates renvoyés ensuite par le
+   * scénario sont des relances, hors du ratio.
    *
-   * 🔴 « LE LANCEMENT » EST LE PREMIER ENVOI PAR PERSONNE, PAS LE PREMIER ENVOI DE LA CAMPAGNE. C'est le
-   * denominateur choisi par Julien le 2026-09-09 (« la base de depart, c'est le cout de lancement ») : un
-   * message par destinataire reellement parti, quel que soit le chemin. Une campagne a template direct n'a
-   * que celui-la ; une campagne a scenario y ajoute les templates que le parcours renvoie plus tard, qui
-   * sont factures en plus et qui n'ont RIEN a faire dans un ratio « ce que m'a coute un contact touche »
-   * (ils grossiraient a chaque relance, sans nouvelle interaction).
-   *
-   * ⚠️ MEME POPULATION que `getVolumeParCampagne`, aux memes gardes (statut `sent`, livraison non `failed`,
-   * canal WhatsApp, anti-double-compte par `meta_message_id`, attribution des envois de scenario, et depuis le
-   * lot 1 des pubs l'exclusion des 72 h gratuites, `horsEntreeGratuite`). Deux
-   * definitions de « ce que cette campagne a envoye » donneraient deux couts sur deux ecrans qui s'ouvrent
-   * l'un depuis l'autre, et c'est le clic sur la ligne qui les mettrait cote a cote.
-   *
-   * 🔴 AUCUNE BORNE DE PERIODE, et c'est voulu : un scenario recoit des reponses pendant des jours. Borne a
-   * la fenetre du haut de l'ecran, on lirait le cout d'un lancement sans les interactions qu'il a produites
-   * apres, donc un cout par interaction faux. La branche 2 est quand meme bornee PAR LE BAS au premier
-   * `claimed_at` de la campagne : aucun envoi de cette campagne ne peut le preceder, et sans cette borne la
-   * sous-requete correlee balaierait tout l'historique des messages du client.
+   * Même population que `getVolumeParCampagne`, aux mêmes gardes (statut `sent`, livraison non `failed`, canal
+   * WhatsApp, anti-double-compte par `meta_message_id`, attribution des envois de scénario, 72 h gratuites
+   * exclues) : la fiche s'ouvre depuis le tableau et les deux coûts se lisent côte à côte. Aucune borne de
+   * période (un scénario reçoit des réponses pendant des jours), sauf une borne basse au premier `claimed_at`
+   * de la campagne, pour que la sous-requête corrélée ne balaie pas tout l'historique.
    */
   async envoisDeLaCampagne(tenantId: string, campaignId: string): Promise<EnvoisCampagneRow[]> {
     const res = await this.pool.query<{ category: string | null; total: string; lancement: string }>(
@@ -1011,28 +744,14 @@ export class PgStatsStore {
   }
 
   /**
-   * Les mesures du scenario d'UNE campagne, bloc par bloc, sur toute la vie de la campagne.
+   * Les mesures du scénario d'une campagne, bloc par bloc, sur toute sa vie. `workflow_node_events` ne porte
+   * pas la campagne : on réutilise exactement l'attribution des envois (la dernière campagne scénario réclamée
+   * pour ce numéro avant l'événement), sinon deux vérités sur le même écran. Les événements anonymisés par la
+   * rétention sortent du compte.
    *
-   * 🔴 `workflow_node_events` NE PORTE PAS LA CAMPAGNE, et c'est le probleme entier de cette requete. Un
-   * scenario est declenche par des campagnes, par des automations et par des reponses de contacts : rendre
-   * les compteurs du SCENARIO sur un ecran qui parle d'UNE campagne y melangerait tout le reste. On
-   * reutilise donc EXACTEMENT l'attribution des envois (`ATTRIBUTION_CAMPAGNE_SCENARIO`) : l'evenement
-   * revient a la derniere campagne scenario reclamee pour ce numero avant lui. Une seconde heuristique,
-   * meme voisine, aurait donne deux verites sur le meme ecran.
-   *
-   * ⚠️ CE QU'ELLE PERD, et il vaut mieux le savoir que le decouvrir : les evenements ANONYMISES par la
-   * retention (`wa_id = 'anonyme'`, migration 0063) ne correspondent plus a aucun destinataire et sortent
-   * donc du compte. Ils restent visibles dans les mesures du SCENARIO, qui n'ont pas besoin d'attribution.
-   *
-   * 🔴 GROUPE PAR (BLOC, NATURE) ET NON PAR HANDLE, ET C EST LE COMPTE DES PERSONNES QUI L EXIGE. Avec le
-   * handle dans le `group by`, `count(distinct wa_id)` compte les personnes PAR BOUTON, et l appelant, qui
-   * n affiche pas le detail par bouton, les additionne : une personne qui tape deux boutons du meme bloc
-   * compte alors pour DEUX. Le cas existe en production (verifie le 2026-09-09, un contact reel sur un bloc
-   * reel), donc la colonne « pers. » aurait surestime des le premier ecran ouvert. La fiche ne montre pas
-   * le detail par bouton : le handle n a rien a faire dans le regroupement.
-   *
-   * ⚠️ Les clics sur un lien trace ne sont pas dans cette table : ils sont fusionnes a la lecture par
-   * `compteursDeClics`, avec leur propre attribution (`clicsAttribuesCampagne`).
+   * Groupé par (bloc, nature) et non par handle : sinon `count(distinct wa_id)` compterait les personnes par
+   * bouton, et l'appelant qui les additionne compterait deux fois qui tape deux boutons. Les clics sont
+   * fusionnés à la lecture par `compteursDeClics`.
    */
   async mesuresScenarioParCampagne(tenantId: string, campaignId: string): Promise<NodeEventCount[]> {
     const res = await this.pool.query<{ node_id: string; kind: string; n: string; c: string }>(
@@ -1064,26 +783,13 @@ export class PgStatsStore {
   }
 
   /**
-   * Clics sur les liens tracés des templates de PLUSIEURS campagnes, à partir du premier envoi de chacune.
+   * Clics sur les liens tracés des templates de plusieurs campagnes, depuis le premier envoi de chacune : une
+   * seule définition pour le funnel (un identifiant) et le tableau de synthèse. Le seuil au premier envoi écarte
+   * les clics de revue de Meta.
    *
-   * 🔴 UNE SEULE DÉFINITION DE « LES CLICS D'UNE CAMPAGNE », pour le funnel (une campagne) et pour le
-   * tableau de la synthèse (toutes celles de la période). La version par campagne unique existait déjà ;
-   * en écrire une seconde pour le tableau aurait donné deux chiffres sous le même mot, sur deux écrans du
-   * même onglet, et c'est exactement ce que le dépôt a déjà payé sur les erreurs de livraison. Le funnel
-   * appelle donc celle-ci avec un seul identifiant.
-   *
-   * Une campagne ABSENTE de la réponse n'a pas zéro clic : elle n'a rien de mesurable (campagne à scénario,
-   * dont `template_name` est nul, ou template sans lien tracé confirmé). L'appelant en fait `null`, et
-   * l'écran le DIT. Un zéro se lirait « personne n'a cliqué », ce qui est une affirmation.
-   *
-   * Le seuil au premier envoi n'est pas cosmétique : Meta explore puis fait cliquer chaque bouton URL
-   * pendant la revue du template, donc AVANT le moindre envoi.
-   *
-   * ⚠️ L'absence d'une campagne à SCÉNARIO est garantie DEUX fois, et le savoir évite de croire l'une
-   * suffisante : la jointure sur `l.template_name = b.template_name` ne peut pas trouver un nom `null`, et
-   * le `where` le dit en toutes lettres. Retirer le `where` ne change donc rien aujourd'hui ; le garder
-   * couvre le jour où la jointure deviendrait externe. Le test d'intégration, lui, fige le RÉSULTAT (une
-   * campagne sans template est absente), pas le mécanisme.
+   * Une campagne absente de la réponse n'a pas zéro clic, elle n'a rien de mesurable (scénario, ou template sans
+   * lien tracé confirmé) : l'appelant en fait `null`. Le `where b.template_name is not null` double la jointure,
+   * pour le jour où elle deviendrait externe.
    */
   async clicsParCampagne(tenantId: string, campaignIds: string[]): Promise<Map<string, number>> {
     if (campaignIds.length === 0) return new Map();
@@ -1114,47 +820,18 @@ export class PgStatsStore {
   }
 
   /**
-   * LES PERSONNES QUI SE SONT ENGAGÉES sur une campagne : celles qui ont CLIQUÉ, et celles qui ont RÉPONDU.
+   * Les personnes qui se sont engagées sur une campagne : celles qui ont cliqué et celles qui ont répondu (une
+   * réponse est un engagement de premier niveau). Des personnes, pas des gestes : `count(distinct ...)` sur
+   * l'union, quelqu'un qui clique puis répond compte une fois.
    *
-   * 🔴 UNE RÉPONSE EST UN ENGAGEMENT DE PREMIER NIVEAU (Julien, 2026-09-13, sur un cas réel : le
-   * destinataire de « Testjulien2 » n'avait pas cliqué mais avait répondu). Le tableau ne comptait que
-   * les clics, donc il annonçait « aucun engagement » sur une campagne qui en avait produit.
+   * Sept jours après son propre envoi, par destinataire (`FENETRE_IMPUTATION`) : sans borne haute le chiffre ne
+   * se stabiliserait jamais, bornée au premier envoi de la campagne une campagne étalée perdrait ses derniers
+   * destinataires. Les clics anonymes (sans jeton) en sont absents. Campagne absente de la map = aucune mesure.
    *
-   * 🔴 ON COMPTE DES PERSONNES, PAS DES GESTES, et c'est un écart ASSUMÉ avec la fiche des campagnes à
-   * scénario (`EtapeCoutCampagne.interactions` additionne liens + boutons + réponses). Tranché par Julien :
-   * diviser un coût par des PERSONNES donne ce que coûte une personne engagée, ce qui se compare d'une
-   * campagne à l'autre ; par des gestes, on flatte mécaniquement les campagnes dont les mêmes gens
-   * réagissent plusieurs fois. D'où le `count(distinct ...)` sur l'UNION des deux populations : quelqu'un
-   * qui clique PUIS répond compte une fois.
-   *
-   * 🔴 SEPT JOURS APRÈS SON PROPRE ENVOI, PAR DESTINATAIRE, et les deux moitiés de cette phrase comptent.
-   * Sans borne haute, toute réponse ultérieure gonflerait le score d'une vieille campagne à chaque message
-   * reçu, et son chiffre ne se stabiliserait jamais. Bornée au PREMIER envoi de la campagne plutôt qu'à
-   * celui de chacun, une campagne étalée sur plusieurs jours perdrait les réactions de ses derniers
-   * destinataires. ⚠️ C'est un écart DÉLIBÉRÉ avec la fiche, qui n'a aucune borne parce qu'un scénario
-   * reçoit des réponses pendant des jours : ici on mesure un envoi unique.
-   *
-   * ⚠️ LES CLICS ANONYMES EN SONT ABSENTS, ET C'EST INÉVITABLE. Un lien d'un template approuvé avant le
-   * 2026-09-02 n'a pas de jeton, donc `contact_id` est nul et le clic n'est rattaché à personne (cf.
-   * `clicsAnonymes`). On ne peut pas compter une personne qu'on ne sait pas nommer. `clicsParCampagne`,
-   * lui, continue de les compter : les deux colonnes ne disent pas la même chose, et c'est pour cela
-   * qu'on a ajouté celle-ci au lieu de renommer l'autre.
-   *
-   * ⚠️ Une campagne ABSENTE de la map = aucune mesure, ce qui n'est pas zéro. Même règle que partout
-   * ailleurs dans ce fichier.
-   *
-   * 🔴 SES TROIS JOINTURES SONT DES CONTRATS AVEC DES INDEX EXISTANTS, ET DEUX SONT PARTIELS. Vérifié en
-   * base le 2026-09-13, pas supposé :
-   *   - `conversation_messages_unread_idx` : `(conversation_id, created_at) WHERE direction = 'in'`,
-   *     c'est-à-dire le prédicat de la branche `repondeurs` mot pour mot ;
-   *   - `tracked_link_clicks_contact_idx` : `(tenant_id, contact_id) WHERE contact_id IS NOT NULL`,
-   *     celui de la branche `cliqueurs` ;
-   *   - `conversations_contact_idx` : `(contact_id) WHERE contact_id IS NOT NULL`.
-   *
-   * ⚠️ SORTIR DE CES PRÉDICATS NE PRODUIRAIT AUCUNE ERREUR, seulement un balayage. Compter aussi les
-   * messages SORTANTS, ou les clics sans `contact_id`, ferait tomber la requête hors de ses index
-   * partiels sur les deux tables les plus écrites du produit. Le dépôt a déjà payé ce défaut ailleurs :
-   * si le besoin change, l'index change AVEC la requête, dans le même lot.
+   * Ses jointures sont des contrats avec des index existants, dont deux partiels :
+   * `conversation_messages_unread_idx` (`WHERE direction = 'in'`), `tracked_link_clicks_contact_idx` et
+   * `conversations_contact_idx` (`WHERE contact_id IS NOT NULL`). Compter des sortants ou des clics sans
+   * `contact_id` sortirait de ces index sans erreur : si le besoin change, l'index change avec la requête.
    */
   async engagementsParCampagne(tenantId: string, campaignIds: string[]): Promise<Map<string, number>> {
     if (campaignIds.length === 0) return new Map();
@@ -1194,30 +871,13 @@ export class PgStatsStore {
   }
 
   /**
-   * LES MESSAGES DE SERVICE IMPUTES A CHAQUE CAMPAGNE.
+   * Les messages de service imputés à chaque campagne : le coût par engagement inclut le service, pas seulement
+   * les templates. Même fenêtre que `engagementsParCampagne` (`FENETRE_IMPUTATION`).
    *
-   * 🔴 SANS CETTE LECTURE, LE « COUT PAR ENGAGEMENT » NE COMPTAIT QUE LES TEMPLATES, ce qui contredit la
-   * demande (« les coûts doivent inclure les templates initiaux ET les messages de service »). Une campagne
-   * qui ouvre une conversation et fait échanger dix messages de service coûtait, à l'écran, le seul template
-   * de départ. Relevé en revue finale le 2026-09-17 : l'étape existait au plan et n'avait jamais été faite.
-   *
-   * 🔴 LA MEME FENETRE QUE `engagementsParCampagne`, SEPT JOURS, ET ELLE N'EST PAS CHOISIE ICI. Numérateur
-   * et dénominateur du ratio doivent parler de la même population sur la même fenêtre ; deux fenêtres
-   * produiraient un rapport dont aucune moitié ne décrit le même ensemble de gens, ce qui est indétectable
-   * à l'écran.
-   *
-   * 🔴 UN MESSAGE N'EST IMPUTE QU'A UNE SEULE CAMPAGNE, LA DERNIERE RECUE AVANT LUI, et c'est ce qui rend
-   * la somme juste. Deux campagnes vers le même contact à trois jours d'écart ont des fenêtres qui SE
-   * CHEVAUCHENT : compter le message dans les deux le facturerait deux fois, et le total des campagnes
-   * dépasserait le coût réel des messages. `engagementsParCampagne`, lui, dédoublonne par (campagne,
-   * contact) et peut légitimement créditer les deux d'un même engagé, parce qu'une personne engagée n'est
-   * pas une dépense. Compter des PERSONNES et compter des EUROS n'obéit pas à la même règle.
-   *
-   * ⚠️ LE FILTRE DE SERVICE EST CELUI DE `serviceParMois`, MOT POUR MOT : sortant, WhatsApp, hors template,
-   * hors fil de test. Il a maintenant QUATRE consommateurs qui doivent rester d'accord ; un filtre qui
-   * diverge d'un mot ferait mentir les quatre.
-   * ⚠️ SAUF l'exclusion des 72 h gratuites (`horsEntreeGratuite`), que seules les lectures de COÛT portent,
-   * celle-ci comme `serviceParMois` : un message gratuit reste un message envoyé dans les courbes de volume.
+   * 🔴 Un message n'est imputé qu'à une seule campagne, la dernière reçue avant lui : deux fenêtres qui se
+   * chevauchent factureraient sinon le message deux fois (un engagé, lui, peut créditer deux campagnes : une
+   * personne n'est pas une dépense). Le filtre de service est celui de `serviceParMois` (sortant, WhatsApp, hors
+   * template, hors fil de test, 72 h gratuites exclues), qui doit rester d'accord avec ses autres lecteurs.
    */
   async servicesParCampagne(tenantId: string, campaignIds: string[], range: DateRange): Promise<Map<string, number>> {
     if (campaignIds.length === 0) return new Map();
@@ -1271,43 +931,32 @@ export class PgStatsStore {
           order by s.message_id, e.sent_at desc
        )
        select campaign_id, count(*)::int as n from impute group by campaign_id`,
-      // ⚠️ L ORDRE EST CELUI DE `BOUNDS_CTE`, qui reserve $2, $3 et $4 : la liste de campagnes prend
-      // donc $5. Les intervertir ne produirait pas une erreur de type, seulement un resultat vide.
+      // L'ordre est celui de `BOUNDS_CTE`, qui réserve $2, $3 et $4 : la liste de campagnes prend $5.
       [tenantId, from, to, TZ, campaignIds],
     );
     return new Map(res.rows.map((r) => [r.campaign_id, Number(r.n ?? 0)]));
   }
 
   /**
-   * Le VOLUME d'envois facturables de la période, par campagne et par catégorie.
-   *
-   * ⚠️ MÊMES VOLUMES FACTURABLES que le graphe de coût (`envoisTemplateFacturables`, attribution comprise) :
-   * c'est ce qui garantit que les deux écrans chiffrent la même chose. La POPULATION, elle, est plus large
-   * depuis le lot 4 : ce tableau porte aussi les campagnes qui ont touché quelqu'un sans rien de facturable,
-   * avec un volume nul. Les totaux de coût restent donc égaux, pas le nombre de lignes. Le coût lui-même ne se
-   * calcule pas ici : il se calcule dans `estimateCoutParCampagne`, avec les mêmes règles que la série
-   * (une catégorie inconnue ou sans tarif ne produit aucun coût et se COMPTE à part).
-   *
-   * Les envois HORS campagne sont écartés (`campaign_id is not null`) : ce tableau a une ligne par
-   * campagne, et il n'y a pas de ligne « le reste » à laquelle les rattacher. Le graphe de coût, lui, les
-   * porte, ce qui explique qu'il puisse totaliser davantage.
+   * Le volume d'envois facturables de la période, par campagne et par catégorie : les mêmes volumes que le
+   * graphe de coût (`envoisTemplateFacturables`, attribution comprise). La population est plus large : les
+   * campagnes qui ont touché quelqu'un sans rien de facturable ont une ligne à volume nul. Le coût se calcule
+   * dans `estimateCoutParCampagne`. Les envois hors campagne sont écartés (pas de ligne « le reste »), d'où un
+   * graphe de coût qui peut totaliser davantage.
    */
   async getVolumeParCampagne(
     tenantId: string,
     range: DateRange,
     /**
-     * Les campagnes ARCHIVÉES entrent-elles dans le tableau ? Non par défaut (lot 4 de la liste du 2026-09-23) :
-     * elles y entraient sans le dire. ⚠️ Le filtre s'applique AVANT le plafond : appliqué après, une archivée
-     * prendrait la place d'une campagne visible, puis disparaîtrait de l'écran.
+     * Les campagnes archivées entrent-elles dans le tableau ? Non par défaut. Le filtre s'applique avant le
+     * plafond : après, une archivée prendrait la place d'une campagne visible puis disparaîtrait de l'écran.
      */
     opts: {
       inclureArchivees?: boolean;
       /**
-       * La retention d'instance, en jours (`CONVERSATION_RETENTION_DAYS`). Elle sert a savoir si les envois
-       * d'une campagne ont PU etre purges, donc si son cout est encore connaissable.
-       *
-       * ⚠️ ABSENTE = on ne marque RIEN hors retention, donc le comportement d'avant. C'est le bon defaut :
-       * un appelant qui ignore ce parametre ne doit pas faire disparaitre des couts.
+       * La rétention d'instance, en jours (`CONVERSATION_RETENTION_DAYS`), pour savoir si les envois d'une
+       * campagne ont pu être purgés. Absente = rien n'est marqué hors rétention : un appelant qui l'ignore ne
+       * doit pas faire disparaître des coûts.
        */
       retentionJours?: number;
     } = {},
@@ -1387,17 +1036,10 @@ export class PgStatsStore {
   }
 
   /**
-   * Breakdown des codes d'erreur Meta sur la plage (campagnes du tenant), trié par occurrences décroissantes.
-   *
-   * Population et ancrage viennent de `echecs-sql.ts`, comme le journal d'exploitation et les compteurs de
-   * campagne : c'est ce qui garantit qu'un clic sur « 12 » ouvre exactement 12 lignes dans la liste des
-   * contacts touchés, laquelle est servie par `PgErreursLivraisonStore.lister`.
-   *
-   * 🔴 CE QUE CE BREAKDOWN NE PEUT PAS MONTRER, parce qu'il est PAR CODE : un échec sans code Meta. Il en
-   * existe (`src/campaign/engine.ts` marque `failed` sans code quand un template ou un carrousel est
-   * inenvoyable, et toute panne réseau fait de même) : **2 sur 25** en production, mesurés le 2026-09-07.
-   * Ils vivent dans le journal des erreurs de livraison (Paramètres), et l'écran d'Analytics doit le DIRE
-   * plutôt que de laisser croire à un inventaire complet.
+   * Répartition des codes d'erreur Meta sur la plage (campagnes du tenant), par occurrences décroissantes.
+   * Population et ancrage viennent de `echecs-sql.ts`, comme le journal d'exploitation : un clic sur « 12 »
+   * ouvre exactement 12 lignes dans `PgErreursLivraisonStore.lister`. Un échec sans code Meta (template
+   * inenvoyable, panne réseau) n'y figure pas : il vit dans le journal des erreurs, et l'écran doit le dire.
    */
   async getErrorBreakdown(tenantId: string, range: DateRange, templateName?: string): Promise<ErrorBreakdownRow[]> {
     const { from, to } = range;
@@ -1423,20 +1065,10 @@ export class PgStatsStore {
   }
 
   /**
-   * Volume d'envois de template FACTURABLES par (jour Paris, catégorie) sur la plage, filtrable par
-   * campagne OU par template. Base du graphe de coût estimé (multiplié ensuite par le tarif Meta de la
-   * catégorie).
-   *
-   * ⚠️ Ce docblock a décrit la seule branche campagne jusqu'au 2026-09-07, et il est devenu faux le jour où
-   * la requête a gagné les envois HORS campagne. Ce qu'il faut savoir aujourd'hui :
-   *  - la population et ses gardes vivent dans `envoisTemplateFacturables`, pas ici. C'est LUI qui porte
-   *    `c.channel = 'whatsapp'` (le coût est au tarif Meta ; une campagne RCS part chez smsmode et Meta ne
-   *    facture rien, l'y compter affichait un coût WhatsApp inexistant sur l'écran même où le client décide
-   *    de son budget) ;
-   *  - les deux branches ne s'ancrent PAS sur la même colonne : `sent_at` côté campagne, `created_at` côté
-   *    hors campagne, et seule la première connaît `status` et `delivery_status` ;
-   *  - `category` peut être `null` (un envoi de scénario antérieur au 2026-09-07 n'en porte pas), et
-   *    `estimateCostSeries` ignore alors la ligne.
+   * Volume d'envois de template facturables par (jour Paris, catégorie) sur la plage, filtrable par campagne
+   * ou par template : la base du graphe de coût estimé. La population et ses gardes vivent dans
+   * `envoisTemplateFacturables`, dont `c.channel = 'whatsapp'` (un RCS n'est pas au tarif Meta). Les deux
+   * branches ne s'ancrent pas sur la même colonne (`sent_at` / `created_at`), et `category` peut être `null`.
    */
   async getCostVolume(tenantId: string, range: DateRange, filter: FiltreCampagneOuTemplate): Promise<CostVolumeRow[]> {
     const { from, to } = range;
@@ -1451,8 +1083,7 @@ export class PgStatsStore {
        where ($5::uuid[] is null or envois.campaign_id = any($5::uuid[]))
          and ($6::text[] is null or envois.name = any($6::text[]))
        group by 1, 2`,
-      // Liste VIDE -> null, pas un tableau vide : `= any('{}')` ne matche rien, donc un filtre vide effacerait
-      // le graphe au lieu de le laisser complet.
+      // Liste vide -> null, pas un tableau vide : `= any('{}')` ne matche rien et effacerait le graphe.
       [
         tenantId, from, to, TZ,
         filter.campaignIds?.length ? filter.campaignIds : null,
@@ -1463,22 +1094,12 @@ export class PgStatsStore {
   }
 
   /**
-   * LA GRILLE DE PRIX, UNE SEULE POUR TOUS LES ESPACES (migration 0168), telle quelle : c'est
-   * `grilleDepuisLigne` qui la lit.
+   * La grille de prix, une seule pour tous les espaces, telle quelle (`grilleDepuisLigne` la lit). Pas de
+   * paramètre d'espace : un paramètre accepté et ignoré ferait croire qu'on lit le prix d'un client.
    *
-   * 🔴 ELLE NE PREND PLUS D'ESPACE, ET LA SIGNATURE EST LA GARDE. Elle lisait `tenant_settings` par
-   * `tenant_id` jusqu'au 2026-09-23 (migration 0154) ; depuis l'arbitrage de Julien, il n'y a qu'une grille
-   * et elle vit dans `/ops`. Retirer le paramètre plutôt que l'ignorer est ce qui empêche un appelant de
-   * CROIRE qu'il lit le prix d'un client précis : un paramètre accepté et jeté est exactement le genre de
-   * mensonge que ce dépôt paie ailleurs.
-   *
-   * ⚠️ `select *` PLUTOT QUE LES COLONNES NOMMEES, et c'est le seul endroit du dépôt où c'est le bon
-   * choix : entre le déploiement de Vercel et celui du VPS, la migration n'est pas encore passée, et nommer
-   * une colonne absente ferait échouer la requête en `42703` au lieu de retomber sur les défauts.
-   *
-   * ⚠️ AUCUN CACHE, DELIBEREMENT. La ligne se lit par sa clé primaire et il n'y en a qu'une : le gain
-   * serait nul, et un cache par process rendrait un prix changé dans `/ops` invisible de l'API OU du worker
-   * pendant sa durée de vie, sans qu'aucune invalidation ne puisse traverser les deux.
+   * `select *` plutôt que des colonnes nommées : avant sa migration, nommer une colonne absente ferait échouer
+   * en `42703` au lieu de retomber sur les défauts. Aucun cache : une ligne par clé primaire, et un cache par
+   * process rendrait un prix changé dans `/ops` invisible de l'API ou du worker.
    */
   async grillePrixGlobale(): Promise<Record<string, unknown> | null> {
     try {
@@ -1492,24 +1113,13 @@ export class PgStatsStore {
   }
 
   /**
-   * LES MESSAGES DE SERVICE, MOIS PAR MOIS, avec ce qui a été consommé AVANT la fenêtre affichée.
+   * Les messages de service, mois par mois, avec ce qui a été consommé avant la fenêtre affichée : c'est cette
+   * forme qui rend la franchise mensuelle juste (la même période en début ou en fin de mois est gratuite ou
+   * payante). Le balayage commence au 1er du mois de la borne basse, donc tout message antérieur à `start_ts`
+   * appartient au mois de départ.
    *
-   * 🔴 C'EST CETTE FORME QUI REND LA FRANCHISE JUSTE, et rien d'autre. La franchise est MENSUELLE et la
-   * période affichée n'est pas un mois : savoir seulement « combien le mois a envoyé » ne dit pas si les
-   * messages de la période tombent AVANT ou APRES le millième. Une période sur les sept premiers jours d'un
-   * mois qui finit à 1200 envois est entièrement gratuite ; une période sur les sept derniers est
-   * entièrement payante. Le même total mensuel, deux réponses opposées.
-   *
-   * ⚠️ LE BALAYAGE COMMENCE AU 1er DU MOIS DE LA BORNE BASSE, pas au début de la période : c'est
-   * exactement ce qu'il faut lire pour connaître le « avant ». Comme le scan démarre là, tout message
-   * antérieur à `start_ts` appartient forcément au mois de départ, ce qui rend le `filter` juste sans
-   * condition supplémentaire.
-   *
-   * ⚠️ LE FILTRE EST CELUI DES MESSAGES DE SERVICE, MOT POUR MOT : sortant, WhatsApp, hors template, hors
-   * fil de test. Il a déjà DEUX consommateurs qui doivent rester d'accord (la courbe et sa ventilation par
-   * origine) ; celui-ci est le troisième. Un filtre qui diverge d'un mot ferait mentir les trois.
-   * ⚠️ SAUF l'exclusion des 72 h gratuites (`horsEntreeGratuite`), que seules les lectures de COÛT portent,
-   * celle-ci comme `servicesParCampagne` : un message gratuit reste un message envoyé dans les courbes de volume.
+   * 🔴 Le filtre est celui des messages de service de la courbe et de sa ventilation (sortant, WhatsApp, hors
+   * template, hors fil de test), plus l'exclusion des 72 h gratuites que seules les lectures de coût portent.
    */
   async serviceParMois(tenantId: string, range: DateRange): Promise<{ mois: string; avantLaPeriode: number; dansLaPeriode: number }[]> {
     const { from, to } = range;
@@ -1538,64 +1148,28 @@ export class PgStatsStore {
   }
 
   /**
-   * LES ENVOIS RCS DE LA PERIODE ET LES REACTIONS QUI PEUVENT LES FAIRE BASCULER.
+   * Les envois RCS de la période et les réactions qui peuvent les faire basculer au tarif conversationnel.
    *
-   * 🔴 UNE LIGNE PAR CONVERSATION, PAS PAR MESSAGE, ET C'EST CE QUI REND CETTE LECTURE TENABLE. La règle
-   * de bascule vit dans `basculesRcs` (`src/stats/rcs-conversationnel.ts`), qui est PURE et mutée dans les
-   * deux sens : la recopier en SQL créerait deux implémentations d'une même règle, et le jour où l'une
-   * change l'autre resterait juste assez plausible pour ne pas se voir. Mais la nourrir message par message
-   * ferait transiter une ligne par envoi, soit des dizaines de milliers sur une campagne RCS et un an de
-   * période. Le compromis est `array_agg` : le SQL réduit à une ligne par conversation en gardant TOUS les
-   * instants, et l'appelant les redéploie pour la fonction pure. Rien n'est approximé, et le transport
-   * reste compact.
+   * Une ligne par (conversation, campagne), avec tous les instants en `array_agg` : la règle vit dans
+   * `basculesRcs`, pure, et la recopier en SQL ferait deux implémentations ; ce transport reste compact sans
+   * rien approximer. Les envois sans campagne restent dans le lot (`campaignId` null) : la bascule porte sur
+   * l'échange entier.
    *
-   * 🔴 LES REACTIONS VONT JUSQU'A SEPT JOURS APRES LA FIN DE LA PERIODE, et l'oublier sous-facturerait le
-   * dernier jour de chaque fenêtre : un RCS envoyé le 30 peut basculer le 3 du mois suivant. La fenêtre est
-   * passée en paramètre depuis `FENETRE_BASCULE_MS` plutôt que réécrite en `interval '7 days'` : deux
-   * constantes de fichiers différents qui doivent rester ordonnées, c'est l'invariant que ce dépôt a déjà
-   * payé plusieurs fois.
+   * 🔴 Les réactions vont jusqu'à `fenetreMs` après la fin de la période (un RCS du 30 peut basculer le 3), la
+   * fenêtre venant de `FENETRE_BASCULE_MS` et non d'un `interval` réécrit. Une réaction est un entrant sur le
+   * même canal : une réponse WhatsApp ne fait pas basculer un RCS.
    *
-   * ⚠️ UNE REACTION EST UN ENTRANT SUR LE MEME CANAL. Un contact qui répondrait sur WhatsApp à un RCS ne
-   * fait pas basculer l'échange RCS : ce sont deux tuyaux, et Meta comme smsmode facturent le leur.
-   *
-   * 🔴 CHAQUE LIGNE DIT DE QUELLE CAMPAGNE ELLE VIENT, et c'est ce qui permet au tableau « coût par
-   * engagement » de chiffrer une campagne RCS (demande de Julien du 2026-09-23 : « on a justement défini un
-   * coût, 6 cts si pas conversationnel et 8 si conversationnel, donc il faut le compter ici »). Le
-   * groupement est donc (conversation, campagne) et plus (conversation) seule.
-   *
-   * ⚠️ LES ENVOIS SANS CAMPAGNE RESTENT DANS LE LOT, avec `campaignId` à `null`, et ce n'est pas du
-   * remplissage : la bascule porte sur l'ÉCHANGE ENTIER, donc une réaction qui suit un RCS envoyé hors
-   * campagne fait quand même passer à 8 cts les RCS de campagne du même échange. Ne rendre que les envois
-   * rattachés aurait sous-facturé ce cas, sans que rien ne le signale.
-   *
-   * ⚠️ LA CAMPAGNE SE TROUVE EN TROIS COUPS, du plus sûr au plus faible : l'identifiant du message porté par
-   * le destinataire, puis celui porté par l'étage (`campaign_envois`, migration 0134), puis l'ATTRIBUTION,
-   * la même heuristique que les templates de scénario. Les deux premiers sont des égalités exactes ; le
-   * troisième porte les limites écrites sur `ATTRIBUTION`, et les partager est précisément ce qui évite
-   * deux définitions de « cet envoi vient de cette campagne ».
-   *
-   * 🔴 ET LE TROISIEME COUP SE DEBRANCHE, parce qu'il COUTE et que l'un des deux appelants JETTE ce qu'il
-   * calcule (relevé en relecture le 2026-09-23). `ATTRIBUTION_CAMPAGNE_SCENARIO` est une sous-requête
-   * corrélée, exécutée une fois PAR MESSAGE RCS, et son prédicat n'est servi par AUCUN index : la migration
-   * 0096 a explicitement refusé celui de `campaign_recipients(to_e164, sent_at)`. Or `getCoutMessages` ne
-   * lit que les instants et les volumes, jamais la campagne. Aggravant : la page de synthèse appelle les
-   * DEUX routes, donc l'attribution tournait deux fois par affichage.
-   *
-   * ⚠️ C'EST LE MOTIF QUE CE FICHIER PORTE DEJA, et pas une invention : `envoisTemplateFacturables` prend son
-   * attribution en paramètre pour exactement cette raison, avec `SANS_ATTRIBUTION` en face. Un seul fragment,
-   * deux branchements.
+   * La campagne se trouve en trois coups : l'identifiant du message côté destinataire, puis côté étage
+   * (`campaign_envois`), puis l'attribution des templates de scénario. Ce dernier coup est coûteux (sous-requête
+   * corrélée sans index) : il ne tourne que sur demande, comme dans `envoisTemplateFacturables`.
    */
   async envoisEtReactionsRcs(
     tenantId: string,
     range: DateRange,
     fenetreMs: number,
     /**
-     * Faut-il RATTACHER chaque envoi à sa campagne ? Le rattachement coûte une sous-requête corrélée par
-     * message RCS, non servie par un index : seul l'appelant qui LIT `campaignId` doit la payer.
-     *
-     * ⚠️ DEFAUT `false`, donc le moins cher : un appelant qui ne demande rien ne paie rien et reçoit
-     * `campaignId: null` partout. C'est l'inverse du défaut qui flatte, et c'est voulu : oublier de
-     * demander se voit (les coûts par campagne tombent à vide), oublier de NE PAS demander ne se voit pas.
+     * Faut-il rattacher chaque envoi à sa campagne ? Défaut `false`, le moins cher : seul l'appelant qui lit
+     * `campaignId` paie la sous-requête. Oublier de demander se voit (coûts par campagne vides), l'inverse non.
      */
     opts: { attribuer?: boolean } = {},
   ): Promise<{
@@ -1651,20 +1225,9 @@ export class PgStatsStore {
   }
 
   /**
-   * CE QUE LE CLIENT A DEPENSE EN IA SUR LA PERIODE, et le detail de ses tours.
-   *
-   * 🔴 SON CREDIT, ET RIEN D'AUTRE (decide avec Julien le 2026-09-17). La transcription des vocaux, le bot
-   * d'aide de la console et les deux assistants de configuration sont sur NOTRE clé : les afficher ici
-   * ferait se demander a un client pourquoi on lui montre une dépense qu'on ne lui facture pas, et
-   * ouvrirait une discussion sur un coût interne. `agent_sessions` porte exactement ce qui est débité de
-   * son crédit prépayé.
-   *
-   * ⚠️ LE COUT DU META BUSINESS AGENT N'EST PAS ICI, ET CE N'EST PAS UN MANQUE : il tourne CHEZ Meta, qui
-   * le facture au message de service. Son coût est donc déjà dans la ligne 2 de la carte. L'écran doit le
-   * DIRE, sinon un lecteur conclura que la mesure manque.
-   *
-   * ⚠️ LA LISTE EST PLAFONNEE et le dit : une periode d'un an sur un espace actif porterait des milliers de
-   * tours, dans un accordéon qu'on ouvre pour se faire une idée. Même règle que partout ailleurs ici.
+   * Ce que le client a dépensé en IA sur la période, et le détail de ses tours : son crédit, et rien d'autre
+   * (`agent_sessions` porte exactement ce qui en est débité). Ce que coûte notre propre clé n'a rien à faire
+   * ici, et le Meta Business Agent est facturé par Meta au message de service. La liste est plafonnée et le dit.
    */
   async consommationIa(tenantId: string, range: DateRange, plafond: number): Promise<{
     coutMicroEur: number; tokensEntree: number; tokensSortie: number; sessions: number;
@@ -1692,8 +1255,7 @@ export class PgStatsStore {
           where s.tenant_id = $1 and s.created_at >= b.start_ts and s.created_at < b.end_ts
           order by s.created_at desc
           limit $5::int`,
-        // ⚠️ Une de PLUS que le plafond : c'est ainsi qu'on sait qu'on tronque sans compter à part, comme
-        // le tableau des campagnes de la synthèse.
+        // Une de plus que le plafond : c'est ainsi qu'on sait qu'on tronque.
         [tenantId, from, to, TZ, plafond + 1],
       ),
     ]);

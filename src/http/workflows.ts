@@ -13,16 +13,10 @@ import { espaceVerifie, nonEmpty, estUuid } from './scope';
 import { executerFonctionJs } from '../workflow/fonction-js';
 
 /**
- * NOTE (Lot D) : le SAVE n'exige PLUS qu'un scénario commence par un template. Un scénario peut désormais
- * ouvrir sur un formulaire / message rapide : il n'est simplement pas utilisable en CAMPAGNE broadcast (audience
- * froide, hors fenêtre 24 h), mais il est parfaitement valide pour un déclenchement où la fenêtre est garantie
- * (contact qui vient d'écrire : /v1/sends cible node, avance par webhook, et demain les déclencheurs Automation).
- *
- * Les deux protections qui comptent restent EN PLACE et sont indépendantes de ce save :
- *  - garde CAMPAGNE (`http/campaigns.ts`) : POST /campaigns refuse en 400 un workflow dont l'entrée n'est pas un
- *    template. C'est elle qui empêche réellement un envoi hors fenêtre (Meta 131047).
- *  - garde RUNTIME (`workflow/executor.ts` runFrom) : `start()` refuse de démarrer un run dont les actions
- *    ouvrent par un message de session, sauf `allowSessionOpen` (posé par le seul chemin qui a vérifié la fenêtre).
+ * La sauvegarde n'exige pas qu'un scénario commence par un template : un scénario qui ouvre sur un message de
+ * session est valide pour un déclenchement où la fenêtre est garantie. Les deux protections contre un envoi hors
+ * fenêtre (Meta 131047) sont ailleurs : la garde de campagne (`http/campaigns.ts`, 400 si l'entrée n'est pas un
+ * template) et la garde d'exécution (`workflow/executor.ts`, `allowSessionOpen`).
  */
 
 export interface WorkflowRouteDeps {
@@ -31,31 +25,23 @@ export interface WorkflowRouteDeps {
   tenantCode(tenantId: string): Promise<string>;
   listWorkflows(tenantId: string): Promise<WorkflowRow[]>;
   /**
-   * La liste RÉSUMÉE servie au navigateur : jamais les graphes, mais le nombre de blocs, l'existence d'un
+   * La liste résumée servie au navigateur : jamais les graphes, mais le nombre de blocs, l'existence d'un
    * brouillon et l'éligibilité en campagne, qui sont les trois seules choses que les écrans en tiraient.
    */
   listWorkflowsResume(tenantId: string): Promise<WorkflowResumeRow[]>;
   getWorkflow(id: string, tenantId: string): Promise<WorkflowRow | null>;
   updateWorkflow(id: string, tenantId: string, patch: { name?: string; graph?: WorkflowGraph }): Promise<MajScenario>;
-  /** Met le brouillon EN LIGNE. Rend la ligne à jour, null si le scénario n'est pas au tenant. */
+  /** Met le brouillon en ligne. Rend la ligne à jour, null si le scénario n'est pas au tenant. */
   publishWorkflow(id: string, tenantId: string): Promise<WorkflowRow | null>;
   deleteWorkflow(id: string, tenantId: string): Promise<boolean>;
   /**
-   * LES PUBLICITÉS VIVANTES QUI UTILISENT CE SCÉNARIO, par leur nom. Vide = aucune, la suppression passe.
-   *
-   * 🔴 REQUISE, JAMAIS OPTIONNELLE, et c'est une garde au sens strict. `publicites.workflow_id` est en
-   * `on delete set null` (migration 0170), choisi pour qu'une suppression de scénario ne fasse jamais
-   * échouer une contrainte sur un geste ordinaire. La conséquence est qu'un `delete` RÉUSSIT en silence et
-   * laisse la publicité avec une destination `scenario` et plus aucun scénario : ses prospects, qui ont
-   * coûté un clic, n'arrivent alors nulle part. Un câblage qui oublierait cette dépendance produirait
-   * exactement ce trou, et rien ne le signalerait. Le dépôt a payé deux fois ce motif (`estDesabonne`,
-   * la garde d'authentification), d'où le type qui l'impose.
-   *
-   * ⚠️ Les câblages de test qui ne parlent pas de publicités déclarent `aucunePubliciteUtilise`
-   * (`tests/pubs-fixtures.ts`), qui DIT l'hypothèse au lieu de la cacher, comme `jamaisDesabonne`.
+   * Les publicités vivantes qui utilisent ce scénario, par leur nom ; vide = la suppression passe. Requise :
+   * `publicites.workflow_id` est en `on delete set null`, donc un `delete` réussirait en silence et laisserait une
+   * publicité dont les prospects, qui ont coûté un clic, n'arrivent nulle part. Les tests qui n'en parlent pas
+   * déclarent `aucunePubliciteUtilise` (`tests/pubs-fixtures.ts`).
    */
   publicitesQuiUtilisent(tenantId: string, workflowId: string): Promise<string[]>;
-  /** Journal d'audit. Requis depuis le lot 3 de l'audit ponytail ; les fixtures qui ne l'observent pas passent `journalMuet`. */
+  /** Journal d'audit (les fixtures qui ne l'observent pas passent `journalMuet`). */
   audit: AuditSink;
   /** Déclare dans le référentiel Tags les tags saisis dans les blocs « ajout de tag » du graphe (best-effort). */
   declareTags(tenantId: string, tags: string[]): Promise<void>;
@@ -81,44 +67,28 @@ function tagsInGraph(graph: WorkflowGraph): string[] {
 }
 
 /**
- * Routes du bot builder (workflows). Admin-only via `garde`. Tenant dérivé du JWT. Le graphe est TOUJOURS
- * validé/sanitisé par `parseGraph` avant persistance (400 si invalide). bodyLimit relevé : un graphe peut
- * porter plusieurs blocs avec de la config. PB1 : CRUD + graphe. Pas d'exécution (PB2).
+ * Routes du bot builder (workflows), admin via `garde`, espace du JWT. Le graphe est toujours validé par
+ * `parseGraph` avant persistance (400 si invalide). bodyLimit relevé : un graphe porte de la config par bloc.
  */
 export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde, bodyLimit: 2 * 1024 * 1024 };
   const journal = makeJournal(deps.audit);
 
   /**
-   * ÉPROUVER une « Fonction JS » sur une valeur d'essai, depuis l'écran du bloc.
-   *
-   * 🔴 DÉCLARÉE AVANT `/workflows/:id`, et ce n'est pas cosmétique : `js-test` serait sinon lu comme un
-   * identifiant de scénario. Le dépôt a déjà payé ce piège sur `/conversations/unread-count`.
-   *
-   * ⚠️ CE BOUTON FAIT TOURNER DU CODE ÉCRIT PAR LE CLIENT sur notre infrastructure, exactement comme le
-   * parcours le fera. Il passe donc par LE MÊME bac à sable, avec les mêmes plafonds : un essai qui
-   * réussirait là où l'exécution échoue serait pire que pas d'essai du tout. Réservé aux administrateurs,
-   * comme tout ce module.
+   * Éprouver une « Fonction JS » sur une valeur d'essai, depuis l'écran du bloc. Déclarée avant `/workflows/:id`
+   * (sinon `js-test` serait lu comme un identifiant). 🔴 Du code écrit par le client tourne ici sur notre
+   * infrastructure : par le même bac à sable et les mêmes plafonds que le parcours.
    */
   app.post('/tenants/:tenantId/workflows/js-test', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const b = (req.body ?? {}) as { code?: unknown; valeur?: unknown; champSource?: unknown };
     if (typeof b.code !== 'string') return reply.code(400).send({ error: 'code requis' });
-    // La valeur d'essai est une CHAÎNE, comme le sera le champ source à l'exécution : accepter un nombre ici
+    // La valeur d'essai est une chaîne, comme le sera le champ source à l'exécution : accepter un nombre ici
     // ferait réussir un essai que le parcours ne saurait pas reproduire.
     const valeur = typeof b.valeur === 'string' ? b.valeur : '';
-    // 200 même en cas d'échec : l'erreur est le RÉSULTAT de l'essai, pas une panne de la route. Un 4xx ferait
-    // afficher un message d'infrastructure là où le client attend la faute de SON code.
-    /**
-     * 🔴 LE CHAMP SOURCE VOYAGE JUSQU'ICI, ET SON ABSENCE ÉTAIT UN DÉFAUT (relevé en revue le 2026-09-14).
-     * Le paramètre de la fonction porte le nom du champ choisi ; sans lui, l'essai échouait sur
-     * « adresse is not defined » alors que le MÊME code marche en production. C'est exactement le symptôme
-     * que ce lot répare, laissé intact sur le seul chemin où le client le vérifie, et ça démentait la
-     * promesse écrite juste à côté (« le même bac à sable que l'exécution »).
-     *
-     * ⚠️ NON VALIDÉ ICI, et ce n'est pas un oubli : `nomDeParametreSur` refuse déjà tout ce qui n'est pas un
-     * identifiant JavaScript sûr, et retombe sur `valeur`. Une garde de plus ne ferait que dupliquer la règle.
-     */
+    // 200 même en cas d'échec : l'erreur est le résultat de l'essai, pas une panne de la route. Le champ source
+    // voyage jusqu'ici : le paramètre de la fonction porte son nom, comme à l'exécution. Il n'est pas validé ici,
+    // `nomDeParametreSur` refuse déjà tout identifiant non sûr et retombe sur `valeur`.
     const champSource = typeof b.champSource === 'string' ? b.champSource : undefined;
     return reply.code(200).send(await executerFonctionJs(b.code, valeur,
       champSource ? { nomParametre: champSource } : {}));
@@ -131,7 +101,7 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     // graph optionnel à la création (démarrage vide) ; s'il est fourni, il doit être valide.
     const parsed = b.graph === undefined ? { nodes: [], edges: [] } : parseGraph(b.graph);
     if (parsed === null) return reply.code(400).send({ error: 'graphe invalide (nodes/edges, types, arêtes orphelines)' });
-    // Mint SERVEUR des codes publics de node (nod_<client>_<ulid>) : rempli/re-minté ici, jamais imposé par le client.
+    // Mint serveur des codes publics de node (nod_<client>_<ulid>) : rempli/re-minté ici, jamais imposé par le client.
     const graph = mintNodeCodes(parsed, await deps.tenantCode(tenant));
     const { id } = await deps.createWorkflow(tenant, b.name.trim(), graph);
     // Rend les tags des blocs « ajout de tag » visibles tout de suite dans Contenus > Tags (best-effort : ne
@@ -140,10 +110,9 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     return reply.code(201).send({ id, name: b.name.trim(), graph });
   });
 
-  // Dupliquer un scénario : clone le graphe en un NOUVEAU scénario. Nom « X (copie) » (puis « (copie 2) »… si
-  // pris). Codes de node RE-MINTÉS : sans ça, mintNodeCodes CONSERVE les codes valides du même tenant -> la copie
-  // partagerait les identifiants publics de l'original (contrat API cassé). Le `code` du scénario est minté frais
-  // par createWorkflow (insert). Aucune méthode store dédiée : réutilise getWorkflow/listWorkflows/createWorkflow.
+  // Dupliquer un scénario : un nouveau scénario « X (copie) » (puis « (copie 2) »…). Codes de node re-mintés :
+  // `mintNodeCodes` conserverait sinon les codes valides, et la copie partagerait les identifiants publics de
+  // l'original (contrat API cassé). Le `code` du scénario est minté frais par createWorkflow.
   app.post('/tenants/:tenantId/workflows/:id/duplicate', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
@@ -155,9 +124,8 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     let name = `${source.name} (copie)`;
     for (let n = 2; taken.has(name); n += 1) name = `${source.name} (copie ${n})`;
 
-    // Retire le code de chaque node AVANT de re-minter -> tous les codes sont frais (jamais conservés de la source).
-    // On copie ce que l'auteur VOIT dans l'éditeur (le brouillon s'il y en a un), pas la version en ligne :
-    // dupliquer sert à repartir de son travail en cours. La copie, elle, naît en brouillon (cf. `insert`).
+    // Retire le code de chaque node avant de re-minter. On copie ce que l'auteur voit (le brouillon s'il y en a
+    // un), pas la version en ligne ; la copie naît en brouillon (cf. `insert`).
     const modele = grapheEditable(source);
     const stripped: WorkflowGraph = {
       nodes: modele.nodes.map((node) => ({ ...node, data: { ...node.data, code: undefined } })),
@@ -171,16 +139,13 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
 
   app.get('/tenants/:tenantId/workflows', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    // 🔴 Le RÉSUMÉ, pas les graphes. La liste renvoyait DEUX graphes complets par ligne (le publié et le
-    // brouillon) pour des écrans qui n'affichent qu'un nom : avec des centaines de scénarios, chaque écran
-    // paie le transfert et l'analyse de tous les JSON. Le graphe complet reste sur `GET /workflows/:id`,
-    // que l'écran d'édition appelle déjà à l'ouverture.
+    // Le résumé, pas les graphes : les écrans de liste n'affichent qu'un nom, et le graphe complet reste sur
+    // `GET /workflows/:id`.
     return reply.code(200).send({ workflows: await deps.listWorkflowsResume(tenant) });
   });
 
-  // Contenu > Blocs : liste à plat de TOUS les nodes des scénarios du tenant, requêtable par ?type=.
-  // Chaque node porte son code public (nod_..., ou null s'il n'a jamais été re-sauvegardé depuis le Lot 4b).
-  // Route de LECTURE : dérivée des workflows (aucun store dédié), admin-only via `opts`.
+  // Contenu > Blocs : liste à plat de tous les nodes des scénarios de l'espace, requêtable par ?type=. Chaque
+  // node porte son code public (nod_..., ou null s'il n'a jamais été re-sauvegardé). Lecture dérivée des workflows.
   app.get('/tenants/:tenantId/nodes', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const q = (req.query ?? {}) as { type?: unknown };
@@ -212,7 +177,7 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     if (b.graph !== undefined) {
       const graph = parseGraph(b.graph);
       if (graph === null) return reply.code(400).send({ error: 'graphe invalide (nodes/edges, types, arêtes orphelines)' });
-      // Mint SERVEUR des codes de node (code valide du tenant conservé, absent/étranger re-minté).
+      // Mint serveur des codes de node (code valide du tenant conservé, absent/étranger re-minté).
       patch.graph = mintNodeCodes(graph, await deps.tenantCode(tenant));
     }
     if (Object.keys(patch).length === 0) return reply.code(400).send({ error: 'rien à modifier (name/graph)' });
@@ -220,7 +185,7 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     const maj = await deps.updateWorkflow(id, tenant, patch);
     if (!maj.trouve) return reply.code(404).send({ error: 'workflow inconnu' });
     if (patch.graph) { try { await deps.declareTags(tenant, tagsInGraph(patch.graph)); } catch { /* best-effort */ } }
-    // `brouillon` : reste-t-il quelque chose à publier APRÈS cette écriture ? C'est la base qui répond, et
+    // `brouillon` : reste-t-il quelque chose à publier après cette écriture ? C'est la base qui répond, et
     // c'est ce qui allume (ou éteint) le bouton « Publier ». L'éditeur ne peut pas le déduire seul : un
     // enregistrement identique au publié n'y laisse rien, et il s'en produit un à la simple ouverture d'un
     // scénario (React Flow mesure les blocs au montage).
@@ -228,15 +193,9 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
   });
 
   /**
-   * MET EN LIGNE le brouillon (lot 7). C'est le seul chemin qui touche le graphe publié, donc le seul qui
-   * change quoi que ce soit pour les contacts.
-   *
-   * Ce que la publication emporte, décidé par Julien le 2026-09-01 : un parcours DÉJÀ en cours bascule sur la
-   * nouvelle version (il n'est pas épinglé à celle qui l'a démarré), et une campagne programmée part avec la
-   * version en ligne le jour de l'expédition, pas celle de sa préparation. La version en ligne est la seule
-   * qui existe à l'exécution.
-   *
-   * ⚠️ Sans retour arrière : publier écrase la version précédente, qui n'est conservée nulle part.
+   * Met en ligne le brouillon : seul chemin qui touche le graphe publié, donc qui change quelque chose pour les
+   * contacts. Un parcours déjà en cours bascule sur la nouvelle version, une campagne programmée part avec la
+   * version en ligne le jour de l'expédition. Sans retour arrière : la version précédente n'est conservée nulle part.
    */
   app.post('/tenants/:tenantId/workflows/:id/publish', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -244,7 +203,7 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     if (!estUuid(id)) return reply.code(404).send({ error: 'workflow inconnu' });
     const row = await deps.publishWorkflow(id, tenant);
     if (!row) return reply.code(404).send({ error: 'workflow inconnu' });
-    // Le journal porte QUI a publié : la table `workflows`, elle, ne garde que la date. Détail non identifiant
+    // Le journal porte qui a publié : la table `workflows`, elle, ne garde que la date. Détail non identifiant
     // (un nombre de blocs), comme partout dans ce journal.
     await journal(tenant, req, 'workflow.published', { kind: 'workflow', id }, { blocs: row.graph.nodes.length });
     return reply.code(200).send({ id, graph: row.graph, publishedAt: row.publishedAt ?? null });
@@ -255,10 +214,8 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     const { id } = req.params as { id: string };
     if (!estUuid(id)) return reply.code(404).send({ error: 'workflow inconnu' });
     /**
-     * 🔴 LE REFUS SE POSE AVANT LA SUPPRESSION, ET C'EST TOUT CE QUI LE REND EFFICACE. La clé étrangère des
-     * publicités est en `on delete set null` : placé après, ce contrôle regarderait une publicité qui a DÉJÀ
-     * perdu son scénario, donc il ne verrait plus rien à refuser. C'est le motif « une garde ne garde que ce
-     * qui vient après elle », mesuré dans ce dépôt sur un `only:` posé sous un appel réseau.
+     * 🔴 Le refus se pose avant la suppression : la clé étrangère des publicités est en `on delete set null`, et
+     * placé après, ce contrôle regarderait une publicité qui a déjà perdu son scénario.
      */
     const pubs = await deps.publicitesQuiUtilisent(tenant, id);
     if (pubs.length > 0) {
@@ -272,9 +229,8 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
       if (!ok) return reply.code(404).send({ error: 'workflow inconnu' });
       return reply.code(200).send({ ok: true });
     } catch (err) {
-      // 🔴 `channelsme_links.workflow_id` est en `on delete restrict` (migration 0114, seule FK `restrict`
-      // de ce dépôt vers `workflows`) : sans cette traduction, la violation Postgres 23503 sortirait en 500,
-      // page d'erreur Cloudflare comprise, sans que l'utilisateur puisse deviner qu'un lien de chaîne bloque.
+      // `channelsme_links.workflow_id` est en `on delete restrict` : sans cette traduction, la violation 23503
+      // sortirait en 500, sans dire qu'un lien de chaîne bloque.
       if (err instanceof WorkflowUtiliseParLienChaine) {
         return reply.code(409).send({ error: 'ce scénario est utilisé par un lien de chaîne WhatsApp : éteins le lien, puis réessaie' });
       }
@@ -283,12 +239,9 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
   });
 
   /**
-   * Lien de TEST d'un scénario (Lot F) : renvoie le jeton, le lien wa.me et le numéro, pour que le client
-   * teste depuis SON téléphone sans campagne. POST et non GET : le premier appel POSE le jeton (écriture).
-   * Idempotent ensuite (le jeton est stable, le QR reste valable).
-   *
-   * `link` null = aucun numéro WhatsApp connecté : on renvoie quand même le jeton (le testeur peut écrire le
-   * mot à la main), plutôt qu'un lien cassé.
+   * Lien de test d'un scénario : le jeton, le lien wa.me et le numéro, pour tester depuis son téléphone sans
+   * campagne. POST : le premier appel pose le jeton, idempotent ensuite. `link` null = aucun numéro connecté ; le
+   * jeton est rendu quand même (le testeur peut écrire le mot à la main).
    */
   app.post('/tenants/:tenantId/workflows/:id/test-link', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);

@@ -8,10 +8,8 @@ import { espaceVerifie, nonEmpty } from './scope';
 
 export interface HubspotImportRouteDeps {
   /**
-   * État d'accès aux listes HubSpot pour ce tenant : `enabled` = réglage utilisateur « Campagnes via données
-   * HubSpot » ; `paused` = un numéro du tenant est en pause (F3-b, la pause suspend AUSSI les campagnes via listes).
-   * La route compose `available = enabled && !paused` (cf. `listsGateOpen`) et distingue les deux causes d'indispo
-   * pour un message clair (« désactivé » vs « en pause »).
+   * Accès aux listes HubSpot : `enabled` = réglage « Campagnes via données HubSpot », `paused` = un numéro de
+   * l'espace est en pause (la pause suspend aussi ces campagnes). La route distingue les deux causes dans son message.
    */
   listsAccess(tenantId: string): Promise<{ enabled: boolean; paused: boolean }>;
   /** Liste les listes HubSpot du portail (peut lever ReconsentRequiredError). */
@@ -22,15 +20,15 @@ export interface HubspotImportRouteDeps {
 
 /**
  * Import de listes HubSpot comme destinataires (3e source de campagne). Admin-only via `garde`. Tenant du JWT.
- * Proxifie le connecteur mm-hubspot (canal service signé). Toggle OFF -> `available:false` SANS aucun appel réseau.
+ * Proxifie le connecteur mm-hubspot (canal service signé). Toggle OFF -> `available:false` sans aucun appel réseau.
  */
 export function registerHubspotImport(app: FastifyInstance, deps: HubspotImportRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
 
   app.get('/tenants/:tenantId/hubspot/lists', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    // Indispo : on ne touche PAS le connecteur (zéro appel réseau, zéro scope sollicité). On distingue le toggle OFF
-    // (available:false sec) de la PAUSE (available:false + reason:'paused') pour un message UI honnête (F3-b).
+    // Indisponible : on ne touche pas le connecteur (aucun appel réseau). La pause se distingue du réglage éteint
+    // (`reason: 'paused'`) pour un message honnête.
     const { enabled, paused } = await deps.listsAccess(tenant);
     if (!listsGateOpen(enabled, paused)) {
       return reply.code(200).send({ available: false, ...(enabled && paused ? { reason: 'paused' as const } : {}) });

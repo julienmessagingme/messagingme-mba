@@ -7,13 +7,11 @@ import { carteVisiblePar, resoudre, type EcranAide } from './carte';
 import type { DepotAide, FicheAide } from './fiches';
 
 /**
- * LE MOTEUR DU BOT D'AIDE : rappel, verdict, réponse, et validation des clés d'écran.
+ * Le moteur du bot d'aide : rappel, verdict, réponse, et validation des clés d'écran.
  *
- * 🔴 DEUX CHOSES COMPTENT ICI, ET AUCUNE N'EST « il répond bien ». La première : quand aucune fiche n'est
- * pertinente, il DIT qu'il ne sait pas SANS appeler le modèle. Appeler sans source, c'est demander
- * d'inventer, et ça coûte pour un résultat qu'on refuserait. La seconde : une clé d'écran que le modèle
- * aurait inventée ne produit AUCUN lien, parce que `resoudre` la cherche dans une liste fermée. Le reste est
- * de la formulation, qui n'est pas testable et n'a pas à l'être.
+ * Deux garanties : sans fiche pertinente, il dit qu'il ne sait pas sans appeler le modèle (appeler sans
+ * source, c'est demander d'inventer) ; une clé d'écran inventée ne produit aucun lien, `resoudre` la cherchant
+ * dans une liste fermée. Le reste est de la formulation.
  */
 
 /** Ce qu'on demande au bot. */
@@ -25,12 +23,8 @@ export interface QuestionAide {
   /** La clé de l'écran où elle se trouve, pour que l'aide soit contextuelle sans qu'elle le demande. */
   ecranCourant: string | null;
   /**
-   * Les échanges précédents de la MÊME session, du plus ancien au plus récent.
-   *
-   * 🔴 SANS EUX, UNE QUESTION DE SUITE EST INCOMPRÉHENSIBLE. « Et ensuite ? » ne veut rien dire seul, et
-   * l'écran afficherait une conversation à laquelle le bot répond comme si rien ne précédait, ce qui est
-   * pire que pas d'historique du tout. Ils servent à DEUX choses distinctes : donner le fil au modèle, et
-   * rattraper le RAPPEL quand la question seule ne ramène aucune fiche.
+   * Les échanges précédents de la même session, du plus ancien au plus récent. Ils donnent le fil au modèle
+   * (« et ensuite ? » ne veut rien dire seul) et rattrapent le rappel quand la question seule ne ramène rien.
    */
   historique?: EchangeAide[];
 }
@@ -45,7 +39,7 @@ export interface ReponseAide {
   /** `false` = aucune source pertinente. Le texte est alors vide et l'écran propose le recours humain. */
   sait: boolean;
   texte: string;
-  /** Les TITRES des fiches utilisées, pour que le client voie d'où sort la réponse. */
+  /** Les titres des fiches utilisées, pour que le client voie d'où sort la réponse. */
   sources: string[];
   ecrans: EcranAide[];
 }
@@ -70,11 +64,8 @@ export interface DepsAide {
 export const OUTIL_REPONDRE = 'repondre';
 
 /**
- * Le schéma envoyé au modèle.
- *
- * 🔴 `ecrans` PREND DES CLÉS, JAMAIS DES ADRESSES. C'est toute la garde anti-hallucination : le modèle
- * choisit dans une liste fermée qu'on lui donne, et `resoudre` refuse ce qui n'y est pas. Lui laisser écrire
- * une adresse rendrait l'invention possible, et aucune consigne ne la rattraperait.
+ * Le schéma envoyé au modèle. `ecrans` prend des clés, jamais des adresses : le modèle choisit dans une liste
+ * fermée, et `resoudre` refuse ce qui n'y est pas.
  */
 export const SCHEMA_REPONSE = {
   type: 'object',
@@ -99,15 +90,8 @@ const reponseSchema = z.object({
 });
 
 /**
- * Au-delà, ce n'est plus une question mais un message recopié : on borne le coût du rappel.
- *
- * ⚠️ EXPORTÉE, et la route l'IMPORTE (`src/http/aide.ts`). Deux constantes de fichiers différents devant
- * rester ordonnées finissent par ne plus l'être : si la route acceptait plus que le moteur, la question
- * serait tronquée en silence et le client se demanderait pourquoi la réponse est à côté.
- *
- * ⚠️ Le suffixe `_CARACTERES` n'est pas décoratif : `QUESTION_MAX_ROWS` existe déjà dans le moteur de
- * scénario et borne les LIGNES d'un menu. Les deux sont dans des modules sans rapport, mais un grep les
- * rendait toutes les deux sans qu'on sache laquelle compte quoi.
+ * Au-delà, ce n'est plus une question mais un message recopié : on borne le coût du rappel. La route l'importe
+ * (`src/http/aide.ts`) : si elle acceptait plus que le moteur, la question serait tronquée en silence.
  */
 export const QUESTION_MAX_CARACTERES = 500;
 /** Ce qu'on donne du corps d'une fiche au modèle. Assez pour répondre, borné pour que le prompt reste petit. */
@@ -116,19 +100,14 @@ const CORPS_MAX = 2_000;
 const FICHES_RENDUES = 3;
 const DELAI_DEFAUT_MS = 20_000;
 /**
- * Combien d'échanges passés partent au modèle.
- *
- * ⚠️ BORNÉ, et pas par prudence : chaque appel renvoie l'INTÉGRALITÉ de ce qu'on lui donne, donc un fil non
- * borné ferait grossir le coût de CHAQUE question au fil de la conversation. Quatre suffisent pour qu'une
- * question de suite ait du sens ; au-delà, la personne a changé de sujet.
+ * Combien d'échanges passés partent au modèle. Borné parce que chaque appel renvoie tout le fil : son coût
+ * grossirait à chaque question. Quatre suffisent à une question de suite.
  */
 const MAX_ECHANGES = 4;
 
 /**
- * Fusionne le rappel lexical et le rappel vectoriel, sans doublon, en gardant la meilleure mesure de chacun.
- *
- * ⚠️ Une fiche trouvée des DEUX côtés garde ses mesures lexicales ET sa similarité : jeter l'une des deux
- * ferait perdre au reclassement une information qu'on a déjà payée.
+ * Fusionne le rappel lexical et le rappel vectoriel, sans doublon. Une fiche trouvée des deux côtés garde ses
+ * mesures lexicales et sa similarité, que le reclassement exploite.
  */
 function fusionner(lexicales: FicheAide[], vectorielles: FicheAide[]): FicheAide[] {
   const parId = new Map(lexicales.map((f) => [f.id, { ...f }]));
@@ -141,14 +120,9 @@ function fusionner(lexicales: FicheAide[], vectorielles: FicheAide[]): FicheAide
 }
 
 /**
- * LE VERDICT quand la recherche sémantique est branchée : le reclassement, et lui seul.
- *
- * 🔴 AUCUN SEUIL N'EST POSABLE SUR UN COSINUS D'EMBEDDING, mesuré le 2026-09-02 : une question hors sujet y
- * remonte à 0,361 quand une vraie question descend à 0,299. C'est le reclasseur qui sépare, et c'est
- * pourquoi il porte la garde anti-hallucination une fois le vectoriel branché.
- *
- * Un échec du reclasseur fait retomber sur la règle LEXICALE plutôt que de tout refuser : une panne du
- * fournisseur ne doit pas rendre le bot muet, elle doit le rendre moins fin.
+ * Le verdict quand la recherche sémantique est branchée : le reclassement, et lui seul (aucun seuil ne tient
+ * sur un cosinus d'embedding). Un échec du reclasseur retombe sur la règle lexicale : une panne du fournisseur
+ * doit rendre le bot moins fin, pas muet.
  */
 async function verdict(
   candidates: FicheAide[],
@@ -195,12 +169,8 @@ function consigne(q: QuestionAide, ecrans: EcranAide[]): string {
 }
 
 /**
- * Construit le répondeur.
- *
- * ⚠️ LES FICHES ARRIVENT DANS UN MESSAGE À PART, entre délimiteurs, jamais concaténées à la consigne. Leur
- * contenu vient de notre dépôt aujourd'hui, donc le risque est faible ; la forme doit être juste dès
- * maintenant parce que la seconde moitié du programme fera passer par ce même moteur des textes écrits par
- * des inconnus (les messages des contacts).
+ * Construit le répondeur. Les fiches arrivent dans un message à part, entre délimiteurs, jamais concaténées à
+ * la consigne : ce moteur doit pouvoir recevoir aussi des textes écrits par des inconnus.
  */
 export function creerRepondeur(deps: DepsAide): (q: QuestionAide) => Promise<ReponseAide> {
   const rien: ReponseAide = { sait: false, texte: '', sources: [], ecrans: [] };
@@ -218,8 +188,7 @@ export function creerRepondeur(deps: DepsAide): (q: QuestionAide) => Promise<Rep
           candidates = fusionner(lexicales, await deps.depot.chercherParVecteur(vecteur, deps.recherche.candidats));
         }
       } catch {
-        // Rappel vectoriel indisponible : on garde le lexical. C'est le comportement d'avant la migration
-        // 0131, et il répond encore.
+        // Rappel vectoriel indisponible : on garde le lexical.
       }
     }
 
@@ -227,13 +196,9 @@ export function creerRepondeur(deps: DepsAide): (q: QuestionAide) => Promise<Rep
       : candidates.filter(ficheEstPertinente)).slice(0, FICHES_RENDUES);
 
     /**
-     * 🔴 LE RATTRAPAGE DES QUESTIONS DE SUITE, et sans lui l'historique serait décoratif. « Et ensuite ? »
-     * ou « ça marche aussi pour les scénarios ? » ne ramènent RIEN au rappel : le bot dirait « je ne sais
-     * pas » à toute question de suite, c'est-à-dire exactement là où une conversation devient utile.
-     *
-     * ⚠️ ON NE CHERCHE AVEC LA QUESTION PRÉCÉDENTE QUE SI LA QUESTION SEULE A ÉCHOUÉ. La concaténer
-     * systématiquement polluerait toutes les recherches : un nouveau sujet posé après un premier ramènerait
-     * les fiches du premier, et le bot répondrait à côté avec aplomb.
+     * Le rattrapage des questions de suite : « et ensuite ? » ne ramène rien au rappel. On ne cherche avec la
+     * question précédente que si la question seule a échoué : la concaténer toujours ferait ramener les fiches du
+     * sujet d'avant à une nouvelle question.
      */
     const precedente = q.historique?.at(-1)?.question?.trim() ?? '';
     if (retenues.length === 0 && precedente !== '') {
@@ -243,7 +208,7 @@ export function creerRepondeur(deps: DepsAide): (q: QuestionAide) => Promise<Rep
         : rattrapees.filter(ficheEstPertinente)).slice(0, FICHES_RENDUES);
     }
 
-    // 🔴 AUCUNE SOURCE : on ne va PAS voir le modèle. C'est la garde la moins chère et la plus efficace.
+    // Aucune source : on ne va pas voir le modèle.
     if (retenues.length === 0) return rien;
 
     const permis = carteVisiblePar(q.role);
@@ -256,8 +221,7 @@ export function creerRepondeur(deps: DepsAide): (q: QuestionAide) => Promise<Rep
         messages: [
           { role: 'system', content: consigne(q, permis) },
           { role: 'user', content: `FICHES DU MODE D’EMPLOI :\n\n${blocFiches(retenues)}` },
-          // Le fil de la conversation, borné. Les échanges passés sont rejoués tels quels : c'est ce qui
-          // permet au modèle de comprendre « et ensuite ? » sans qu'on ait à lui expliquer de quoi il parle.
+          // Le fil de la conversation, borné, rejoué tel quel.
           ...(q.historique ?? []).slice(-MAX_ECHANGES).flatMap((e): ChatMessage[] => [
             { role: 'user', content: e.question },
             { role: 'assistant', content: e.reponse },
@@ -269,8 +233,7 @@ export function creerRepondeur(deps: DepsAide): (q: QuestionAide) => Promise<Rep
         signal: abandon.signal,
       });
     } catch {
-      // Panne ou délai dépassé : « je ne sais pas » plutôt qu'une erreur en travers de l'écran. La personne
-      // se voit alors proposer le recours humain, qui est une issue, là où un message d'erreur n'en est pas une.
+      // Panne ou délai dépassé : « je ne sais pas », qui propose le recours humain, plutôt qu'une erreur.
       return rien;
     } finally {
       clearTimeout(minuteur);

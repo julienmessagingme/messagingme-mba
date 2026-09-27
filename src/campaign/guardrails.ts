@@ -5,7 +5,7 @@ export interface OptInContact {
 }
 
 /**
- * Un opt-out explicite bloque TOUT (marketing comme utility). Sinon : marketing exige un
+ * Un opt-out explicite bloque tout (marketing comme utility). Sinon : marketing exige un
  * opt-in explicite ; utility passe (fenêtre de service).
  */
 export function optInAllows(category: CampaignCategory, contact: OptInContact): boolean {
@@ -15,9 +15,8 @@ export function optInAllows(category: CampaignCategory, contact: OptInContact): 
 }
 
 /**
- * LE MOTIF D'UN ENVOI AUTOMATIQUE REFUSÉ À QUELQU'UN QUI A DIT STOP. Un texte pour le scénario
- * (`WorkflowExecutor.apply`) et la campagne (la réclamation d'un destinataire, `PgRecipientStore.claim`) :
- * l'opérateur lit le même refus, d'où qu'il vienne.
+ * Le motif d'un envoi automatique refusé à quelqu'un qui a dit STOP : un seul texte pour le scénario et la
+ * campagne, l'opérateur lit le même refus d'où qu'il vienne.
  */
 export const MOTIF_DESABONNE = 'contact désabonné : il a demandé à ne plus recevoir de messages';
 
@@ -39,5 +38,3 @@ export function qualityGate(
   }
   return { pause: false };
 }
-
-// Les composants d'envoi se construisent dans meta/template-components.ts (source unique).

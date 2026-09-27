@@ -2,20 +2,15 @@ import type { Pool } from 'pg';
 import { enTransaction } from '../db/transaction';
 
 /**
- * DÉLIER ET RELIER LE NUMÉRO D'UN ESPACE (migration 0180, bloc « Canaux et services » de l'Accueil).
- *
- * Délier ne supprime RIEN : la ligne `phone_numbers` reste, avec son compte WhatsApp et le jeton chiffré de
- * `waba_credentials`, et rien n'est demandé à Meta. C'est ce qui permet de relier d'un clic.
- *
- * 🔴 TOUS LES NUMÉROS DE L'ESPACE, PAS SEULEMENT LE PREMIER. L'interrupteur de l'Accueil dit « le canal
- * WhatsApp de cet espace est éteint » ; une campagne peut viser un autre numéro que le principal, et elle
- * partirait sinon d'un espace que l'administrateur croit éteint. Le parc n'a qu'un numéro par espace
- * aujourd'hui (`SecondNumeroRefuseError`), la règle ne change donc rien au cas réel.
+ * Délier et relier le numéro d'un espace. Délier ne supprime rien et ne demande rien à Meta (numéro, compte et
+ * jeton chiffré restent) : c'est ce qui permet de relier d'un clic.
+ * Tous les numéros de l'espace, pas seulement le premier : une campagne visant un autre numéro partirait sinon
+ * d'un espace que l'administrateur croit éteint.
  */
 export interface ResultatDelier {
   /** Instant de la déliaison (ISO). Celui qu'on vient de poser, ou celui d'avant si le numéro l'était déjà. */
   delieLe: string;
-  /** Campagnes passées en pause `numero_delie` par CE geste. */
+  /** Campagnes passées en pause `numero_delie` par ce geste. */
   campagnesEnPause: number;
 }
 
@@ -30,20 +25,13 @@ export class PgNumeroDelieStore {
   constructor(private readonly pool: Pool) {}
 
   /**
-   * Délie les numéros de l'espace et met en pause ses campagnes WhatsApp en cours ou programmées, dans UNE
-   * transaction : un numéro délié dont les campagnes tournent encore n'est pas un état qu'on laisse exister.
-   * `null` = l'espace n'a aucun numéro.
+   * Délie les numéros de l'espace et met en pause ses campagnes WhatsApp en cours ou programmées, dans une
+   * transaction. `null` = l'espace n'a aucun numéro.
    *
-   * ⚠️ UNE CAMPAGNE EST « WHATSAPP » DÈS QU'UN DE SES ÉTAGES L'EST, repli compris. Une campagne RCS dont le repli
-   * est WhatsApp poursuivrait sinon son premier étage et ferait échouer son second, destinataire par
-   * destinataire, pour un état qu'un clic défait.
-   *
-   * ⚠️ `paused_until` à NUL, et c'est la garde du balayage de reprise : il ne reprend que les pauses qui portent
-   * une échéance, et que `debit` ou `hors_horaires` (`reprendreCampagnesDues`, index `campaigns_reprise_idx`).
-   * `scheduled_at` n'est PAS touché : c'est lui qui dira, à « Relier », qu'une campagne était programmée.
-   *
-   * ⚠️ Rejouable : un second « Délier » garde la date du premier, et ne remet en pause que ce qui a été lancé
-   * depuis (le point de passage des envois l'aurait fait de toute façon, au premier envoi).
+   * Une campagne est « WhatsApp » dès qu'un de ses étages l'est, repli compris.
+   * `paused_until` à nul : le balayage de reprise (`reprendreCampagnesDues`) ne reprend que les pauses datées.
+   * `scheduled_at` n'est pas touché : il dira, à « Relier », qu'une campagne était programmée.
+   * Rejouable : un second « Délier » garde la date du premier.
    */
   async delier(tenantId: string): Promise<ResultatDelier | null> {
     return enTransaction(this.pool, async (client) => {
@@ -65,16 +53,12 @@ export class PgNumeroDelieStore {
   }
 
   /**
-   * Relie les numéros de l'espace et lève les pauses `numero_delie`, dans UNE transaction. `null` = aucun numéro.
+   * Relie les numéros de l'espace et lève les pauses `numero_delie`, dans une transaction. `null` = aucun numéro.
    *
-   * 🔴 AUCUN ENFILEMENT ICI, ET C'EST UN CHOIX. Une campagne repassée `running` avec des destinataires en attente
-   * et sans verrou d'exécution est exactement ce que le balayage des campagnes gelées (R4, `listCampagnesGelees`)
-   * relance à la minute. Enfiler depuis l'API ferait un second chemin de relance à tenir aligné sur le premier.
-   *
-   * ⚠️ `scheduled_at` décide : non nul = la campagne était programmée quand on l'a mise en pause (le lancement
-   * le remet à nul, `markScheduledRunning`), elle redevient `scheduled` et le balayage des programmées la lance à
-   * son heure, tout de suite si l'heure est passée. Seules les pauses `numero_delie` sont levées : une pause
-   * décidée par un opérateur, ou une pause de qualité, reste une décision humaine.
+   * Aucun enfilement ici : une campagne repassée `running` sans verrou d'exécution est relancée à la minute par le
+   * balayage des campagnes gelées (`listCampagnesGelees`), un second chemin de relance serait à tenir aligné.
+   * `scheduled_at` non nul = la campagne était programmée : elle redevient `scheduled` et part à son heure. Seules
+   * les pauses `numero_delie` sont levées : celles d'un opérateur ou de qualité restent une décision humaine.
    */
   async relier(tenantId: string): Promise<ResultatRelier | null> {
     return enTransaction(this.pool, async (client) => {
@@ -94,26 +78,14 @@ export class PgNumeroDelieStore {
   }
 
   /**
-   * Met UNE campagne en pause `numero_delie`, depuis un run qui a buté sur la garde du point de passage des envois.
-   * `true` = la pause est écrite ; `false` = rien n'a bougé, parce que le numéro est relié en base ou que la
-   * campagne ne tourne plus.
+   * Met une campagne en pause `numero_delie`, depuis un run qui a buté sur la garde des envois. `true` = pause
+   * écrite ; `false` = numéro relié en base ou campagne arrêtée.
    *
-   * 🔴 UNE SEULE INSTRUCTION, ET C'EST TOUT LE CORRECTIF (relecture du 2026-09-25). Le run relisait la base puis
-   * écrivait la pause sans condition : un « Relier » validé entre les deux laissait une pause `numero_delie` sur un
-   * numéro relié, que plus rien ne levait (le balayage de reprise ignore ce motif, et « Relier » était passé). Et
-   * l'écriture sans condition écrasait une pause posée par un opérateur, que « Relier » relançait ensuite.
-   *
-   * 🔴 `for share` SUR LE NUMÉRO, ET C'EST LE VERROU COHÉRENT AVEC `relier` ET `delier`. Tous deux écrivent la ligne
-   * du numéro (`update phone_numbers`) avant de toucher aux campagnes : si « Relier » est en cours, cette instruction
-   * ATTEND sa fin, puis relit la ligne à jour et n'écrit rien ; si elle passe la première, « Relier » attend la fin
-   * de cette instruction, et son `update campaigns`, qui prend un nouvel instantané, voit la pause et la lève.
-   * Aucun interblocage : cette instruction ne tient aucune ligne de `campaigns` pendant qu'elle attend.
-   *
-   * ⚠️ `status in ('running', 'scheduled')` : les deux états que `delier` met lui-même en pause. Une campagne en
-   * pause pour une autre raison (un opérateur, la qualité) garde sa raison.
-   *
-   * 🔴 `tenant_id = $2` SUR LES DEUX TABLES : l'identifiant de campagne et le numéro viennent du run, mais le pool
-   * contourne la RLS, et c'est ce filtre qui fait qu'un numéro d'un espace ne décide jamais pour un autre.
+   * Une seule instruction conditionnelle : lire puis écrire laisserait un « Relier » intercalé poser une pause que
+   * plus rien ne lève, et écraserait la pause d'un opérateur.
+   * `for share` sur le numéro, cohérent avec `relier` et `delier` qui écrivent le numéro avant les campagnes : l'un
+   * attend l'autre, et le perdant voit l'état à jour. Aucun interblocage (aucune ligne de `campaigns` tenue).
+   * 🔴 `tenant_id = $2` sur les deux tables : un numéro d'un espace ne décide jamais pour un autre.
    */
   async pauserCampagne(campaignId: string, tenantId: string, phoneNumberId: string): Promise<boolean> {
     const res = await this.pool.query(
@@ -127,7 +99,7 @@ export class PgNumeroDelieStore {
     return (res.rowCount ?? 0) > 0;
   }
 
-  /** Le numéro est-il délié ? Lecture par clé primaire. Numéro inconnu -> `false` (le comportement d'avant). */
+  /** Le numéro est-il délié ? Lecture par clé primaire. Numéro inconnu : `false`. */
   async estDelie(phoneNumberId: string): Promise<boolean> {
     const res = await this.pool.query(
       `select 1 from phone_numbers where id = $1 and delie_le is not null`,
@@ -136,10 +108,7 @@ export class PgNumeroDelieStore {
     return (res.rowCount ?? 0) > 0;
   }
 
-  /**
-   * Parmi ces numéros, ceux qui sont déliés. UNE requête pour toutes les clés d'un webhook, par clé primaire.
-   * Une liste vide ne coûte rien : pas d'aller-retour.
-   */
+  /** Parmi ces numéros, ceux qui sont déliés : une requête pour toutes les clés d'un webhook, aucune si vide. */
   async numerosDelies(ids: readonly string[]): Promise<ReadonlySet<string>> {
     if (ids.length === 0) return new Set();
     const res = await this.pool.query<{ id: string }>(

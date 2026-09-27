@@ -1,34 +1,22 @@
 /**
- * Ce qui va changer chez Meta si l'on publie, calculé AVANT de rien écrire.
+ * Ce qui va changer chez Meta si l'on publie, calculé avant de rien écrire. Engage Me fait foi et la publication
+ * écrase : ce module compare ce que nous avons à ce que Meta a, et rend la liste des gestes, que le client voit
+ * avant qu'on écrive.
  *
- * 🔴 ENGAGE ME FAIT FOI, ET LA PUBLICATION ÉCRASE (décision de Julien du 2026-09-10). Ce module existe pour
- * que « écraser » ne soit jamais une surprise : il compare ce que nous avons à ce que Meta a, et rend la
- * liste des gestes en toutes lettres. L'écran la montre, le client décide, et alors seulement on écrit.
+ * Meta appelle le relais, plus le système du client : un espace a un connecteur chez Meta, `EngageMe`, dont
+ * l'adresse est notre relais et la clé une clé d'API de l'espace ; chaque outil exposé y devient un appel au
+ * relais, qui fait l'appel déclaré avec les valeurs du mini-CRM.
  *
- * 🔴 DEPUIS LE 2026-09-21, META APPELLE LE RELAIS, PLUS LE SYSTÈME DU CLIENT (spec
- * docs/superpowers/specs/2026-09-21-relais-mba-design.md). Un espace a UN connecteur chez Meta, `EngageMe`,
- * dont l'adresse est notre relais et la clé une clé d'API de l'espace. Chaque outil exposé y devient un
- * appel au relais, qui retrouve le contact et fait l'appel déclaré dans Tools > Connecteurs API avec les
- * valeurs du mini-CRM. Avant, un connecteur par source partait chez Meta avec le SECRET du client, et Meta
- * ne recevait que la méthode et le chemin : un outil qui envoyait un champ du contact arrivait vide.
- *
- * 🔴 PUR : aucune IO. C'est ce qui rend la décision testable sans réseau, et c'est la moitié qui compte. La
- * moitié qui appelle Meta est mécanique ; celle-ci porte tous les arbitrages.
- *
- * ⚠️ LA RÉCONCILIATION SE FAIT SUR LE NOM, jamais sur un identifiant Meta qu'on stockerait : une table de
- * correspondance dériverait dès qu'un client supprime un connecteur dans WhatsApp Manager, et le nom est
- * précisément ce que le modèle voit. Corollaire : renommer un outil chez nous se lit « supprimer l'ancien,
- * créer le nouveau », et l'aperçu le dit.
- *
- * ⚠️ IDEMPOTENTE : publier deux fois de suite ne doit produire AUCUN geste au second passage, et c'est le
- * seul test qui prouve que la réconciliation marche.
+ * Pur : aucune IO, toute la décision se teste sans réseau. La réconciliation se fait sur le nom, jamais sur un
+ * identifiant Meta stocké (qui dériverait) : renommer un outil se lit « supprimer l'ancien, créer le nouveau ».
+ * Idempotente : publier deux fois de suite ne produit aucun geste au second passage.
  */
 
 import type { VariableDeclaree } from '../agent/requetes';
 import { ENTETE_CONTACT_META, cheminOutilRelais } from './relais';
 
 /** Le nom du connecteur unique d'un espace chez Meta. Lettres, chiffres et tiret bas seulement : Meta refuse une
- *  espace ou un tiret (400, mesuré le 2026-09-18), et un test le garde. */
+ *  espace ou un tiret (400), et un test le garde. */
 export const NOM_CONNECTEUR_RELAIS = 'EngageMe';
 
 /** Le relais, tel que la publication le présente à Meta. */
@@ -36,20 +24,18 @@ export interface RelaisAPublier {
   /** `PUBLIC_API_URL` suivi de `/mba/relais`. */
   baseUrl: string;
   /**
-   * La clé retenue (`tenant_settings.mba_relais_cle_id`) est-elle toujours active ?
-   *
-   * 🔴 UN SECRET NE SE COMPARE PAS, IL SE SOUVIENT : Meta ne rend jamais la clé. Une clé révoquée par le
-   * client fait modifier le connecteur, et toute modification en pose une NEUVE (`src/mba/cle-relais.ts`).
+   * La clé retenue (`tenant_settings.mba_relais_cle_id`) est-elle toujours active ? Meta ne rend jamais la clé :
+   * une clé révoquée par le client fait modifier le connecteur, et toute modification en pose une neuve.
    */
   cleAJour: boolean;
 }
 
-/** Un OUTIL de chez nous, exposé au MBA, tel qu'il devient un outil du connecteur `EngageMe`. */
+/** Un outil de chez nous, exposé au MBA, tel qu'il devient un outil du connecteur `EngageMe`. */
 export interface OutilAPublier {
   id: string;
   name: string;
   description: string;
-  /** La clause « quand NE PAS l'appeler », concaténée à la description envoyée à Meta. */
+  /** La clause « quand ne pas l'appeler », concaténée à la description envoyée à Meta. */
   nePasUtiliser: string;
   /**
    * Les variables de l'appel : celles de la requête d'un connecteur, ou celle que la cible d'un geste maison
@@ -71,9 +57,8 @@ export interface OutilChezMeta {
   name: string;
   description?: string;
   /**
-   * 🔴 COMPARÉ EN ENTIER, et il ne l'était pas : la description seule d'abord, puis méthode et chemin. Une
-   * variable ajoutée chez nous aurait sinon été invisible chez Meta pour toujours, avec un aperçu qui annonce
-   * « rien à changer ».
+   * Comparé en entier : une variable ajoutée chez nous serait sinon invisible chez Meta pour toujours, avec un
+   * aperçu qui annonce « rien à changer ».
    */
   request_definition?: Record<string, unknown>;
 }
@@ -94,11 +79,8 @@ export interface EtatMeta {
 }
 
 /**
- * La description envoyée à Meta : la nôtre, suivie de la clause « quand ne pas l'appeler ».
- *
- * 🔴 `ne_pas_utiliser` N'A PAS DE CHAMP CHEZ META, et c'est le SEUL levier qui décide quand un outil se
- * déclenche. Le laisser de côté ferait travailler le client sur un texte qui ne produirait rien, ce qui est
- * exactement ce qui s'est passé chez nous jusqu'au correctif du 2026-08-29.
+ * La description envoyée à Meta : la nôtre, suivie de la clause « quand ne pas l'appeler ». `ne_pas_utiliser`
+ * n'a pas de champ chez Meta, et c'est le seul levier qui décide quand un outil se déclenche.
  */
 export function descriptionPourMeta(o: { description: string; nePasUtiliser: string }): string {
   const clause = o.nePasUtiliser.trim();
@@ -114,19 +96,12 @@ export interface CorpsOutilMeta {
 }
 
 /**
- * Le corps d'un outil chez Meta : un appel au RELAIS, jamais au système du client.
- *
- * 🔴 L'EN-TÊTE DU NUMÉRO EST LIÉ À LA MACRO `WHATSAPP_PHONE_NUMBER` : c'est Meta qui le remplit, son modèle ne
- * peut ni le choisir ni l'inventer. C'est ce qui permet au relais de retrouver le contact sans faire
- * confiance au modèle.
- *
- * ⚠️ SEULES LES VARIABLES `modele` SONT DÉCLARÉES : les autres viennent du mini-CRM, chez nous. Meta n'a pas
- * de champ pour une liste de valeurs permises (`BodyNode` n'a ni `enum` ni équivalent) : elle s'écrit à la
- * fin de la description, et le relais la vérifie. Les types de nos variables (`string`, `number`,
- * `integer`, `boolean`) sont tous acceptés tels quels par un `BodyNode`.
- *
- * ⚠️ `user_auth_required: false` est exigé par le schéma de Meta : nous ne collectons aucun jeton par
- * utilisateur final. L'omettre ferait échouer la création.
+ * Le corps d'un outil chez Meta : un appel au relais, jamais au système du client.
+ * 🔴 L'en-tête du numéro est lié à la macro `WHATSAPP_PHONE_NUMBER`, remplie par Meta : son modèle ne peut ni le
+ * choisir ni l'inventer, et le relais retrouve le contact sans lui faire confiance.
+ * Seules les variables `modele` sont déclarées (les autres viennent du mini-CRM). Meta n'a pas de champ pour une
+ * liste de valeurs permises : elle s'écrit à la fin de la description, et le relais la vérifie.
+ * `user_auth_required: false` est exigé par le schéma de Meta ; l'omettre fait échouer la création.
  */
 export function corpsOutilMeta(o: OutilAPublier): CorpsOutilMeta {
   const modele = o.variables.filter((v) => v.origine.type === 'modele');
@@ -159,20 +134,17 @@ export function corpsOutilMeta(o: OutilAPublier): CorpsOutilMeta {
 }
 
 /**
- * Le plan de publication : ce qui sera créé, modifié, supprimé.
- *
- * ⚠️ L'ORDRE DES GESTES EST CELUI DE L'EXÉCUTION, et il n'est pas indifférent : un outil ne peut pas être
- * créé avant son connecteur, un connecteur ne peut pas être supprimé avant ses outils. La liste se lit de
- * haut en bas comme une recette, et l'écran l'affiche telle quelle.
+ * Le plan de publication : ce qui sera créé, modifié, supprimé, dans l'ordre d'exécution (un outil ne se crée
+ * pas avant son connecteur, un connecteur ne se supprime pas avant ses outils). L'écran l'affiche tel quel.
  */
 export function planifierPublication(relais: RelaisAPublier, outils: OutilAPublier[], meta: EtatMeta): Geste[] {
   const gestes: Geste[] = [];
   const doitExister = outils.length > 0;
   const retenu = doitExister ? meta.connecteurs.find((c) => c.name === NOM_CONNECTEUR_RELAIS) : undefined;
 
-  // 1. Tout connecteur qui n'est pas LE relais retenu s'en va, ses outils d'abord : les anciens (un par
-  //    source, qui portaient le SECRET du client chez Meta), les doublons du relais, et le relais lui-même
-  //    quand plus aucun outil n'est exposé, auquel cas sa clé est oubliée avec lui.
+  // 1. Tout connecteur qui n'est pas le relais retenu s'en va, ses outils d'abord : les anciens (qui portaient
+  //    le secret du client chez Meta), les doublons, et le relais lui-même quand plus aucun outil n'est exposé,
+  //    sa clé étant alors oubliée avec lui.
   for (const c of meta.connecteurs) {
     if (retenu && c.id === retenu.id) continue;
     for (const o of meta.outilsParConnecteur[c.id] ?? []) {
@@ -185,8 +157,8 @@ export function planifierPublication(relais: RelaisAPublier, outils: OutilAPubli
   }
   if (!doitExister) return gestes;
 
-  // 2. Le relais : créé, ou modifié. Toute modification porte une clé NEUVE (Meta exige `auth_config` à
-  //    chaque écriture du connecteur, et nous ne gardons que l'empreinte de l'ancienne).
+  // 2. Le relais : créé, ou modifié. Toute modification porte une clé neuve (Meta exige `auth_config` à chaque
+  //    écriture, et nous ne gardons que l'empreinte de l'ancienne).
   if (!retenu) {
     gestes.push({ type: 'connecteur_creer', nom: NOM_CONNECTEUR_RELAIS });
   } else if (retenu.base_url !== relais.baseUrl || retenu.auth_type !== 'API_KEY' || !relais.cleAJour) {
@@ -204,9 +176,8 @@ export function planifierPublication(relais: RelaisAPublier, outils: OutilAPubli
     }
   }
   /**
-   * 🔴 UN DOUBLON CHEZ META S'EN VA (2026-09-18). Plusieurs clics sur « Envoyer » avaient créé deux fois le
-   * même outil. `parNom` est une Map : un nom en double n'y garde qu'une entrée, donc on compare par
-   * IDENTIFIANT, et tout exemplaire qui n'est pas celui qu'on a retenu s'en va.
+   * Un doublon chez Meta s'en va. `parNom` est une Map, qui ne garde qu'une entrée par nom : on compare donc par
+   * identifiant, et tout exemplaire autre que celui retenu est supprimé.
    */
   const nosNoms = new Set(outils.map((o) => o.name));
   for (const o of dejaLa) {
@@ -232,14 +203,10 @@ function normaliser(v: unknown): unknown {
 }
 
 /**
- * Cet outil a-t-il bougé depuis la dernière publication ?
- *
- * 🔴 ON COMPARE TOUTE LA DÉFINITION QUE NOUS ENVOYONS, normalisée (clés triées, `null` = absent).
- *
- * ⚠️ LA FORME QUE META RENVOIE N'EST PAS GARANTIE (sa spec dit « roundtripped » sans le promettre) : une clé
- * non nulle qu'il ajouterait produirait un geste à CHAQUE publication. L'idempotence se vérifie donc aussi
- * sur le vrai compte, à l'essai réel. ⚠️ Une définition ABSENTE de la réponse ne vaut pas « identique » : on
- * demande la mise à jour, parce que le prix de l'inverse est un outil cassé pour toujours, en silence.
+ * Cet outil a-t-il bougé depuis la dernière publication ? On compare toute la définition envoyée, normalisée
+ * (clés triées, `null` = absent). La forme que Meta renvoie n'est pas garantie : une clé qu'il ajouterait
+ * produirait un geste à chaque publication, d'où une vérification sur le vrai compte. Une définition absente
+ * de la réponse ne vaut pas « identique » : on met à jour, plutôt que de laisser un outil cassé en silence.
  */
 function aChange(chezMeta: OutilChezMeta, attendu: CorpsOutilMeta): boolean {
   if (chezMeta.description !== attendu.description) return true;
@@ -248,11 +215,9 @@ function aChange(chezMeta: OutilChezMeta, attendu: CorpsOutilMeta): boolean {
 }
 
 /**
- * L'AUTHENTIFICATION DU CONNECTEUR, TELLE QUE META LA VEUT : dans le CORPS du connecteur, sous
- * `auth_config.api_key` (mesuré le 2026-09-18 : sans elle, la création rend 400 « Invalid connector
- * request », et un changement d'`auth_type` rend « auth_config is required when changing auth_type »).
- *
- * ⚠️ Le préfixe `Bearer ` va dans le champ `prefix`, pas collé à la clé : Meta concatène lui-même.
+ * L'authentification du connecteur, telle que Meta la veut : dans le corps du connecteur, sous
+ * `auth_config.api_key` (sans elle, la création rend 400 « Invalid connector request »). Le préfixe `Bearer ` va
+ * dans le champ `prefix`, pas collé à la clé : Meta concatène lui-même.
  */
 export function authConfigRelais(cle: string): {
   api_key: { headers: Array<{ field_name: string; value: string; prefix: string }> };
@@ -261,12 +226,9 @@ export function authConfigRelais(cle: string): {
 }
 
 /**
- * Le connecteur unique de l'espace chez Meta : l'adresse du RELAIS, et la clé « Agent de Meta » dans son
- * corps.
- *
- * 🔴 `auth_config` VOYAGE AVEC LE CONNECTEUR, ET C'EST NON NÉGOCIABLE CÔTÉ META (mesuré le 2026-09-18) : une
- * création ou une modification en `API_KEY` sans lui rend 400. La clé arrive donc ici en paramètre, à chaque
- * écriture, et c'est pourquoi toute modification du connecteur pose une clé neuve (`src/mba/cle-relais.ts`).
+ * Le connecteur unique de l'espace chez Meta : l'adresse du relais, et la clé « Agent de Meta » dans son corps.
+ * `auth_config` voyage avec le connecteur, exigé par Meta en `API_KEY` à chaque création ou modification (400
+ * sinon) : c'est pourquoi toute modification pose une clé neuve (`src/mba/cle-relais.ts`).
  */
 export function corpsConnecteurRelais(baseUrl: string, cle: string): {
   name: string; description: string; base_url: string; auth_type: 'API_KEY'; auth_config: ReturnType<typeof authConfigRelais>;

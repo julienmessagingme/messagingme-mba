@@ -1,6 +1,6 @@
 import { llmOutputSchema, INTENTS, NOTE_MIN, NOTE_MAX, type Intent, type LlmOutput, type HandledBy } from './schema';
 
-/** Un message de conversation, forme minimale utilisée par l'analyse (pur, agnostique du stockage). */
+/** Un message de conversation, forme minimale utilisée par l'analyse (agnostique du stockage). */
 export interface AnalysisMessage {
   direction: 'in' | 'out';
   body: string | null;
@@ -15,23 +15,22 @@ export interface HandledBySignals {
 }
 
 /**
- * Qui a tenu la conversation. Humain si un agent a répondu depuis l'inbox ; sinon 'automatise' (campagne/workflow,
- * OU inbound jamais traité -> défaut le moins faux, l'enum n'a que ces 3 valeurs). 'mba' (agent LLM autonome) est
- * réservé : inatteignable tant que le MBA n'est pas ouvert (bloqué ToS). NB : c'est une heuristique, pas une garantie.
+ * Qui a tenu la conversation (heuristique) : `humain` si un agent a répondu depuis l'inbox, sinon `automatise`,
+ * défaut le moins faux y compris pour un entrant jamais traité. `mba` est réservé.
  */
 export function deduceHandledBy(s: HandledBySignals): HandledBy {
   if (s.hasHumanOutbound) return 'humain';
   return 'automatise';
 }
 
-/** Nombre d'échanges = nombre de tours du client (messages entrants). Proxy de friction (long = frottement). */
+/** Nombre d'échanges = nombre de tours du client (messages entrants), proxy de friction. */
 export function countExchanges(messages: AnalysisMessage[]): number {
   return messages.filter((m) => m.direction === 'in').length;
 }
 
 /**
- * Rend un transcript lisible "Client:/Agent:" chronologique, borné en caractères. Si trop long, on garde la FIN
- * (l'épisode récent porte le sentiment/intent), avec un marqueur de troncature en tête.
+ * Transcript « Client:/Agent: » chronologique, borné en caractères. Trop long, on garde la fin (l'épisode récent
+ * porte le sentiment et l'intention), avec un marqueur de troncature en tête.
  */
 export function buildTranscript(messages: AnalysisMessage[], maxChars = 6000): string {
   const lines = messages.map((m) => {
@@ -47,15 +46,10 @@ export function buildTranscript(messages: AnalysisMessage[], maxChars = 6000): s
 }
 
 /**
- * CE QUE VEUT DIRE CHAQUE INTENTION, TEL QU'ON LE DIT AU MODÈLE.
- *
- * 🔴 UN `Record<Intent, string>`, ET C'EST LA GARDE : une valeur ajoutée à `INTENTS` sans sa description ne
- * compile pas. Une intention que le schéma accepte mais que le prompt ne propose pas ne serait jamais rendue,
- * et l'écran montrerait une barre toujours vide sans que rien ne dise pourquoi.
- *
- * ⚠️ ÉCRITES POUR SÉPARER LES VOISINES (spec du 2026-09-24, § 7) : `achat` contre `demande_devis`,
- * `suivi_commande` contre `reclamation`, `retour` contre `sav`. Sans ces frontières, le modèle placerait la
- * limite différemment d'une conversation à l'autre, et la répartition ne voudrait plus rien dire.
+ * Ce que veut dire chaque intention, tel qu'on le dit au modèle. Un `Record<Intent, string>` : une valeur ajoutée à
+ * `INTENTS` sans description ne compile pas, sinon elle ne serait jamais proposée et sa barre resterait vide.
+ * Écrites pour séparer les voisines (`achat` / `demande_devis`, `suivi_commande` / `reclamation`, `retour` /
+ * `sav`), sans quoi la répartition ne voudrait plus rien dire.
  */
 export const DESCRIPTIONS_INTENTION: Record<Intent, string> = {
   demande_devis: "le client demande un prix ou un devis chiffré AVANT de s'engager (quantité, prestation sur mesure)",
@@ -74,8 +68,7 @@ const SYSTEM_INSTRUCTIONS = [
   'Analyse la conversation et renvoie UNIQUEMENT un objet JSON valide, sans texte autour, sans balises de code.',
   'Champs attendus :',
   '- sentiment : "positif" | "neutre" | "negatif" (ressenti global du client).',
-  // La liste ET ses descriptions sont DÉRIVÉES de `INTENTS` : écrites à la main ici, elles feraient une copie
-  // de plus, et c'est celle qu'on oublie qui fait qu'une intention n'est jamais proposée au modèle.
+  // Liste et descriptions dérivées de `INTENTS` : une copie à la main serait celle qu'on oublie.
   `- intent : ${INTENTS.map((i) => `"${i}"`).join(' | ')}.`,
   ...INTENTS.map((i) => `  - ${i} : ${DESCRIPTIONS_INTENTION[i]}.`),
   '  Entre deux voisines : une commande en retard dont le client se PLAINT est reclamation, la même question',
@@ -88,19 +81,14 @@ const SYSTEM_INSTRUCTIONS = [
   '- action_suggestion : action commerciale suggérée : "creer_devis" | "rappeler" | "relancer" | "escalader" | "aucune".',
   '- confidence : nombre entre 0 et 1 (ta confiance dans l\'analyse).',
   '- justification : une phrase courte qui justifie l\'action (ce que lirait un commercial pour décider).',
-  // Le résumé et la justification répondent à deux questions différentes, et le prompt doit le dire, sinon
-  // le modèle rend deux fois la même phrase et la fiche de conversation n'apprend rien de plus que le tableau.
+  // Résumé et justification répondent à deux questions : dit au modèle, sinon il rend deux fois la même phrase.
   '- summary : 2 à 3 phrases sur CE QUI S\'EST DIT (la demande du client, ce qui lui a été répondu, où en est',
   '  la conversation). C\'est un compte rendu, pas une justification : n\'y répète pas le champ justification.',
-  // Volontairement ÉTROIT : insultes et agressivité VISANT l'entreprise. Un client mécontent, même très sec,
-  // n'est pas injurieux, et le signaler noierait la liste sous des réclamations ordinaires, ce qui revient à
-  // ne plus la lire du tout.
+  // Volontairement étroit : un client mécontent, même sec, n'est pas injurieux, et le signaler noierait la liste.
   '- abusive : true UNIQUEMENT si le client insulte ou agresse verbalement l\'entreprise ou ses employés',
   '  (grossièretés dirigées, menaces, propos haineux). Un simple mécontentement, même vif, reste false.',
-  // Deux ENTIERS et non deux adjectifs : ces deux notes sont les axes d'un nuage de points, donc elles
-  // doivent se comparer entre conversations. Les bornes sont RÉPÉTÉES au modèle (0 = ..., 10 = ...) parce
-  // qu'une échelle sans ses extrémités se lit dans les deux sens : « 0 » voudrait dire « aucune urgence »
-  // pour l'un et « urgence maximale » pour l'autre, et le nuage entier basculerait sans rien signaler.
+  // Deux entiers comparables entre conversations (les axes d'un nuage de points). Les extrémités sont répétées au
+  // modèle : une échelle sans ses bornes se lit dans les deux sens, et le nuage basculerait en silence.
   `- satisfaction : entier de ${NOTE_MIN} à ${NOTE_MAX}. ${NOTE_MIN} = client très mécontent, ${NOTE_MAX} = client très satisfait.`,
   `- urgence : entier de ${NOTE_MIN} à ${NOTE_MAX}. ${NOTE_MIN} = aucune attente particulière, ${NOTE_MAX} = le client attend une réponse immédiate.`,
   '  Ces deux notes portent sur le CLIENT, pas sur la qualité de la réponse de l\'entreprise.',
@@ -112,8 +100,8 @@ export function buildPrompt(transcript: string): { system: string; user: string 
 }
 
 /**
- * Parse la sortie brute du LLM en LlmOutput validé, ou null si invalide. Tolère un préambule / des balises ```json
- * (on isole le 1er objet JSON du 1er `{` au dernier `}`), puis JSON.parse + validation Zod (aucun throw).
+ * Parse la sortie brute du LLM en LlmOutput validé, ou null. Tolère un préambule et des balises ```json (on isole du
+ * premier `{` au dernier `}`), puis JSON.parse et Zod, sans jamais lever.
  */
 export function parseLlmOutput(raw: string): LlmOutput | null {
   const start = raw.indexOf('{');

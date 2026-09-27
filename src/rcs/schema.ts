@@ -2,33 +2,22 @@ import { z } from 'zod';
 import type { RcsOutbound, RcsSuggestion } from './types';
 
 /**
- * Validation d'un message RCS reçu du client (assistant de campagne, bloc de scénario, bibliothèque).
- *
- * UNE SEULE définition dans le projet : elle vivait dans `http/campaigns.ts` et la bibliothèque en aurait
- * fait un second exemplaire. Deux schémas pour la même donnée finissent toujours par diverger, et c'est
- * exactement ce qui a coûté des bugs de production sur les composants Meta et les visuels de carousel.
- *
- * Les bornes ne sont pas décoratives : elles sont celles de l'API smsmode (spec lue à la source le
- * 2026-08-24). Un dépassement fait refuser l'envoi ENTIER, donc mieux vaut le refuser à la saisie, où
- * quelqu'un peut encore corriger.
- *
- * Union FERMÉE : un `kind` inconnu est refusé, il ne traverse jamais jusqu'au provider. Toujours en
- * `safeParse` chez l'appelant, jamais `parse`.
+ * Validation d'un message RCS reçu du client (assistant de campagne, bloc de scénario, bibliothèque), en une
+ * seule définition. Les bornes sont celles de l'API smsmode (un libellé de bouton : 25 caractères) : un
+ * dépassement fait refuser l'envoi entier, mieux vaut le refuser à la saisie. Union fermée : un `kind`
+ * inconnu ne traverse jamais jusqu'au provider ; toujours `safeParse` chez l'appelant.
  */
-/** Libellé d'un bouton : 25 caractères chez eux, sur les six formes. */
-/** Longueur maximale d'un message RCS texte. Exportée pour que la route d'envoi de l'inbox borne la
- *  réponse libre AVEC LA MÊME valeur : deux bornes séparées divergeraient au premier ajustement, et
- *  l'opérateur verrait son message accepté par l'écran puis refusé par le fournisseur. */
+/** Longueur maximale d'un message RCS texte, exportée pour que la route d'envoi de l'Inbox borne la réponse
+ *  libre avec la même valeur. */
 export const RCS_TEXTE_MAX = 3072;
 
 const libelle = z.string().min(1).max(25);
 const postback = z.string().min(1);
 
 /**
- * Une date-heure de bouton Agenda : soit une date ISO LOCALE (`2026-09-01T10:00:00`, la forme de leurs
- * exemples, sans fuseau), soit une variable `{{champ}}` résolue par contact à l'envoi. Les deux sont acceptées
- * à la saisie ; c'est `resoudreBoutons` qui tranche au moment d'envoyer, et qui retire le bouton si la valeur
- * résolue n'est pas une date.
+ * Une date-heure de bouton Agenda : une date ISO locale (`2026-09-01T10:00:00`, sans fuseau) ou une variable
+ * `{{champ}}` résolue par contact à l'envoi. `elaguerBoutonsInvalides` retire à l'envoi le bouton dont la
+ * valeur résolue n'est pas une date.
  */
 export const DATE_BOUTON_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/;
 const dateBouton = z.string().min(1).refine(
@@ -54,14 +43,9 @@ export const rcsSuggestionSchema = z.discriminatedUnion('kind', [
 ]);
 
 /**
- * Carte : le format à VISUEL. C'est lui qui porte l'image d'en-tête.
- *
- * `title` est optionnel depuis qu'une carte peut n'être qu'une image et un texte (le cas courant d'une
- * campagne : un visuel, un message, des boutons). L'API exige « un titre OU un média » : le refine ci-dessous
- * tient cette règle, sinon la carte partirait vide et se ferait refuser à l'envoi.
- *
- * `description` est plafonnée à 2000 alors qu'un message TEXTE va jusqu'à 3072 : c'est la borne de leur
- * champ, pas un choix de produit. L'écran doit le dire au moment où l'on ajoute une image.
+ * Carte : le format à visuel, qui porte l'image d'en-tête. `title` est optionnel, mais l'API exige « un titre
+ * ou un média » : le refine tient cette règle. `description` est plafonnée à 2000 (3072 pour un texte) : la
+ * borne de leur champ.
  */
 export const rcsCardSchema = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -76,16 +60,14 @@ export const rcsCardSchema = z.object({
 
 export const rcsOutboundSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('text'), text: z.string().min(1).max(RCS_TEXTE_MAX), suggestions: z.array(rcsSuggestionSchema).max(11).optional() }),
-  // 🔴 Les boutons d'une CARTE existent à deux niveaux chez le provider, et ce n'est pas une redondance :
-  // c'est CE CHOIX qui décide de leur apparence sur le téléphone. Dans la carte (4 maximum) ils s'affichent
-  // en boutons pleine largeur empilés et y RESTENT ; sous le message (11 maximum) ils s'affichent en petites
-  // pastilles en ligne qui disparaissent dès que la conversation avance. L'écran met les boutons DANS la
-  // carte dès qu'il y a un visuel, et laisse retomber le surplus en pastilles.
+  // Les boutons d'une carte existent à deux niveaux, et c'est ce qui décide de leur apparence : dans la carte
+  // (4 au plus), boutons pleine largeur qui restent ; sous le message (11 au plus), pastilles qui disparaissent
+  // dès que la conversation avance.
   z.object({ kind: z.literal('card'), card: rcsCardSchema, suggestions: z.array(rcsSuggestionSchema).max(11).optional() }),
   z.object({ kind: z.literal('carousel'), cards: z.array(rcsCardSchema).min(2).max(10) }),
 ]);
 
-/** Message relu de NOTRE base (jsonb déjà validé à l'écriture). Rendu `null` si la forme est inattendue,
+/** Message relu de notre base (jsonb déjà validé à l'écriture). Rendu `null` si la forme est inattendue,
  *  plutôt qu'un `as` qui laisserait passer n'importe quoi jusqu'au provider. */
 export function parseStoredRcsOutbound(raw: unknown): RcsOutbound | null {
   const r = rcsOutboundSchema.safeParse(raw);
@@ -93,10 +75,8 @@ export function parseStoredRcsOutbound(raw: unknown): RcsOutbound | null {
 }
 
 /**
- * Ce qui s'affiche dans le fil d'inbox pour un message RCS SORTANT.
- *
- * Une carte n'a pas de `text` : sans cette mise en forme, la bulle d'un message à visuel serait vide dans
- * l'historique de la conversation, alors que c'est justement le message le plus riche qu'on ait envoyé.
+ * Ce qui s'affiche dans le fil d'inbox pour un message RCS sortant : une carte n'a pas de `text`, sa bulle
+ * serait vide sans cette mise en forme.
  */
 export function apercuRcsSortant(msg: RcsOutbound): string {
   if (msg.kind === 'text') return msg.text;
@@ -105,23 +85,17 @@ export function apercuRcsSortant(msg: RcsOutbound): string {
 }
 
 /**
- * Réécrit le `postbackData` des boutons RÉPONSE en `btn:<i>`, i étant l'index du bouton PARMI LES RÉPONSES.
+ * Réécrit le `postbackData` des boutons réponse en `btn:<i>`, i étant l'index parmi les seules réponses.
  *
- * 🔴 C'est ce qui relie un clic à une branche de scénario, et ce n'est pas cosmétique. Le builder nomme les
- * sorties d'un bloc RCS `btn:0`, `btn:1`… en ne comptant QUE les boutons réponse (un bouton lien ou appel
- * sort de la conversation et ne revient jamais). Quand le contact tape un bouton, smsmode nous renvoie le
- * `postbackData` tel qu'on l'a envoyé, et l'exécuteur cherche l'arête qui porte ce nom. Si l'envoi portait
- * `btn_1` (ce qu'écrivait la bibliothèque) ou un texte libre, AUCUNE arête ne correspond : le clic tombe
- * dans le vide et le parcours s'arrête, en silence.
- *
- * Appliqué à l'ENVOI et non à l'enregistrement : les messages déjà en bibliothèque se réparent donc seuls,
- * sans migration ni ressaisie.
+ * C'est ce qui relie un clic à une branche : le builder nomme les sorties d'un bloc RCS `btn:0`, `btn:1`… en
+ * ne comptant que les boutons réponse, smsmode renvoie le `postbackData` tel qu'envoyé, et l'exécuteur
+ * cherche l'arête qui porte ce nom. Sans correspondance, le clic tombe dans le vide et le parcours s'arrête
+ * en silence. Appliqué à l'envoi : les messages déjà en bibliothèque se réparent seuls.
  */
 export function normaliserPostbacks(msg: RcsOutbound): RcsOutbound {
   if (msg.kind === 'carousel') return msg;
-  // 🔴 ORDRE : les boutons DE LA CARTE d'abord, les pastilles du message ensuite. C'est l'ordre dans lequel
-  // l'écran les écrit et celui dans lequel le builder numérote les sorties du bloc. Numéroter dans l'autre
-  // sens enverrait le clic du premier bouton sur la branche d'un autre.
+  // Ordre : les boutons de la carte d'abord, les pastilles ensuite, comme l'écran les écrit et le builder
+  // numérote les sorties. L'autre sens enverrait un clic sur la branche d'un autre bouton.
   let rang = 0;
   const reecrire = (suggestions: RcsSuggestion[] | undefined): RcsSuggestion[] | undefined => {
     if (!suggestions?.length) return suggestions;

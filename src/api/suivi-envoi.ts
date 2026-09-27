@@ -4,24 +4,15 @@ import { ouvertureApi, type OuvertureApi } from '../workflow/ouverture-api';
 import { nomDuMessageRcs } from './cible-rcs';
 
 /**
- * LE CONTRAT DE `GET /v1/sends/{sendId}` (spec 2026-09-24, § 3).
+ * Le contrat de `GET /v1/sends/{sendId}`, mis en forme à part de l'objet de la console : un changement de la
+ * console ne change pas l'API.
  *
- * 🔴 UNE MISE EN FORME DÉDIÉE, ET PAS L'OBJET DE LA CONSOLE : un changement de la console ne change plus l'API.
- *
- * ⚠️ Pour un scénario ou un bloc, la ligne décrit le DÉPART du parcours, et `channel` (au rang 1) son canal d'ouverture ;
- * la suite du parcours se lit dans la console. L'ouverture est recalculée sur le graphe PUBLIÉ relu
- * maintenant (aucune colonne ne la fige) : un scénario republié entre-temps se lit tel qu'il est.
- *
- * ⚠️ LA LECTURE VOIT TOUTE CAMPAGNE DE L'ESPACE, console comprise. Une campagne RCS de la console porte
- * `template_name` à `''` : le CANAL est donc jugé AVANT le template, et un nom vide n'est jamais une cible.
- * Sa cible est `{ rcsMessage: <nom> }` pour un envoi de l'API (lot 3 : le nom du message, relu derrière le
- * préfixe `[API] ` du nom de la campagne), `{ rcsMessage: null }` pour une campagne de la console, qui ne garde
- * que le CONTENU du message (`campaigns.rcs_message`) : aucun nom n'y est inventé.
- *
- * ⚠️ `channel` EST CELUI DE CHAQUE DESTINATAIRE : au rang 1, le canal d'ouverture ; au-delà (chaîne de repli de
- * la console, 0134), le canal de l'étage où il est, e-mail compris.
- *
- * ⚠️ `recipients` rend 500 lignes au plus ; `recipientsTotal` dit combien la campagne en compte.
+ * Pour un scénario ou un bloc, la ligne décrit le départ du parcours ; l'ouverture est recalculée sur le
+ * graphe publié relu maintenant. La lecture voit toute campagne de l'espace, console comprise : une campagne
+ * RCS porte `template_name` à `''`, donc le canal est jugé avant le template ; sa cible est
+ * `{ rcsMessage: <nom> }` pour un envoi de l'API, `{ rcsMessage: null }` pour une campagne de la console, qui
+ * ne garde que le contenu. `channel` est celui de chaque destinataire (au-delà du rang 1, le canal de son
+ * étage, e-mail compris).
  */
 export type CibleSuivi =
   | { template: { name: string; language: string } }
@@ -53,20 +44,18 @@ export interface SuiviEnvoiApi {
 }
 
 /**
- * Préfixe de l'identifiant SYNTHÉTIQUE qu'une campagne de scénario écrit à la place d'un wamid
- * (`wf-<workflowId>`, `src/campaign/engine.ts`). Le rendre ferait chercher à l'intégrateur un message qui
- * n'existe pas chez Meta : il vaut null.
+ * Préfixe de l'identifiant synthétique qu'une campagne de scénario écrit à la place d'un wamid
+ * (`wf-<workflowId>`) : le rendre ferait chercher un message qui n'existe pas chez Meta, il vaut null.
  */
 const ID_SYNTHETIQUE = 'wf-';
 
-/** Un nom de template ÉCRIT : null et `''` ne désignent aucun template. */
+/** Un nom de template écrit : null et `''` ne désignent aucun template. */
 const nomDeTemplate = (b: EnvoiApiBrut): string | null =>
   (b.templateName !== null && b.templateName.trim() !== '' ? b.templateName : null);
 
 function cibleDe(b: EnvoiApiBrut): CibleSuivi {
-  // Le CANAL d'abord : une campagne RCS porte `template_name` à `''`, pas null.
-  // Lot 3 : un envoi RCS de l'API NOMME son message (relu derrière `[API] ` dans le nom de la campagne) ; une
-  // campagne RCS de la console reste à `null`, elle ne garde que le contenu.
+  // Le canal d'abord : une campagne RCS porte `template_name` à `''`, pas null. Un envoi RCS de l'API nomme son
+  // message ; une campagne RCS de la console reste à `null`.
   if (b.channel === 'rcs') return { rcsMessage: nomDuMessageRcs(b.name) };
   const nom = nomDeTemplate(b);
   if (nom !== null) return { template: { name: nom, language: b.templateLanguage ?? '' } };

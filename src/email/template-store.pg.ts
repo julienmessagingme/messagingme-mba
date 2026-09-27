@@ -15,8 +15,7 @@ interface EmailTemplateRow {
   updated_at: Date;
 }
 
-/** Ligne brute -> EmailTemplate. Partagée par les méthodes qui SELECTent COLS, pour ne pas répéter le
- *  mapping (et ses casts) à chaque endroit. */
+/** Ligne brute -> EmailTemplate, partagée par les méthodes qui sélectionnent COLS. */
 function toTemplate(r: EmailTemplateRow): EmailTemplate {
   return {
     id: r.id,
@@ -67,8 +66,7 @@ export class PgEmailTemplateStore {
     if (patch.format !== undefined) push('format', patch.format);
     if (patch.subject !== undefined) push('subject', patch.subject);
     if (patch.body !== undefined) push('body', patch.body);
-    // Patch vide (aucun champ fourni) : no-op volontaire, pas d'UPDATE inutile. On relit l'état actuel pour
-    // renvoyer la même forme que le cas modifié (l'appelant ne distingue pas les deux).
+    // Patch vide : pas d'UPDATE, on relit l'état actuel pour rendre la même forme.
     if (sets.length === 0) return this.getById(tenantId, id);
     sets.push('updated_at=now()');
     vals.push(tenantId, id);

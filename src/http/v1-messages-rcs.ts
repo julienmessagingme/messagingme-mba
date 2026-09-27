@@ -13,37 +13,21 @@ import { INCONNUE_POUR_UN_MESSAGE, type ReponseMessageSimple } from './v1-messag
 import { messageDe } from '../lib/erreur';
 
 /**
- * `POST /v1/messages/rcs` : un TEXTE en RCS, à UNE personne qui a une fiche (spec 2026-09-24, § 4, lot 3).
- *
- * 🔴 ELLE N'A PRESQUE AUCUNE LOGIQUE À ELLE. Les gardes du RCS (désabonnement, consentement d'une machine, canal,
- * joignabilité) et l'envoi vivent dans `envoyerRcsLibre`, partagé avec le bouton RCS de l'Inbox. Cette route ne
- * fait que ce qu'elle seule sait faire : trouver la FICHE par les clés reçues, exiger un numéro, refuser un
- * contact bloqué, et traduire chaque refus en code.
- *
- * ⚠️ UN MODULE À PART DE `/v1/messages/whatsapp` : leurs règles n'ont presque rien en commun (pas de fenêtre de
- * 24 h ici, un consentement là), et la spec les veut en deux routes. Même garde, même limiteur, même droit
- * `sends:create`, même opération d'usage (`messages.send` : un message, une personne), et la même lecture du
- * corps (défauts de forme et de clé refusés AVANT le compteur, messages de la résolution partagée du lot 1).
- *
- * ⚠️ LE FIL S'OUVRE APRÈS L'ENVOI, JAMAIS AVANT. Un refus (pas de consentement, canal éteint) n'a rien à montrer
- * dans l'Inbox : ouvrir le fil d'abord y ferait apparaître une conversation vide en tête de liste pour une
- * personne à qui rien n'est parti.
- *
- * 🔴 ET IL S'OUVRE AVANT D'ÊTRE PRIS. `takeControl` est un `update` sur (espace, wa_id) qui ne crée rien : pris
- * avant l'ouverture, le fil d'une fiche qui n'a jamais écrit (le cas courant de l'API, une fiche créée par
- * `/v1/contacts`) naîtrait ensuite avec le détenteur par défaut, donc NON pris, à rebours du § 4 de la spec
- * (« Écrire PREND le fil »). `/v1/messages/whatsapp` ouvre, lui aussi, avant de prendre.
- *
- * ⚠️ AUCUNE CLÉ D'IDEMPOTENCE, comme la barre de réponse de l'Inbox et `/v1/messages/whatsapp`.
+ * `POST /v1/messages/rcs` : un texte en RCS, à une personne qui a une fiche.
+ * 🔴 Les gardes du RCS (désabonnement, consentement d'une machine, canal, joignabilité) et l'envoi vivent dans
+ * `envoyerRcsLibre`, partagé avec l'Inbox : la route trouve la fiche, exige un numéro, refuse un contact bloqué et
+ * traduit chaque refus en code. Module à part de `/v1/messages/whatsapp` (règles différentes), avec la même garde,
+ * le même droit `sends:create` et la même opération d'usage (`messages.send`).
+ * Le fil s'ouvre après l'envoi (un refus n'a rien à montrer dans l'Inbox), et avant d'être pris : `takeControl` ne
+ * crée rien, un fil neuf pris avant d'être ouvert naîtrait non pris. Aucune clé d'idempotence.
  */
 export interface V1MessagesRcsRouteDeps {
   /**
-   * La résolution de fiche du lot 1, liée par le câblage aux MÊMES dépendances que `/v1/contacts`, `/v1/sends`
-   * et `/v1/messages/whatsapp`. La route l'appelle en `creer: 'jamais'` : un message simple ne fonde pas une
-   * relation.
+   * La résolution de fiche partagée (mêmes dépendances que `/v1/contacts`, `/v1/sends` et `/v1/messages/whatsapp`),
+   * appelée en `creer: 'jamais'` : un message simple ne fonde pas une relation.
    */
   resoudreFiche(tenantId: string, cles: ClesFiche, opts: { creer: ModeCreation }): Promise<ResolutionFiche>;
-  /** Le numéro et le blocage d'une fiche NON supprimée de cet espace. `null` = introuvable. */
+  /** Le numéro et le blocage d'une fiche non supprimée de cet espace. `null` = introuvable. */
   etatPourEnvoi(tenantId: string, contactId: string): Promise<{ phoneE164: string | null; bloque: boolean } | null>;
   /** Les dépendances d'`envoyerRcsLibre`, transmises d'un seul objet, jamais recopiées champ par champ. */
   rcs: DepsRcsLibre;
@@ -51,13 +35,13 @@ export interface V1MessagesRcsRouteDeps {
   ouvrirConversation(tenantId: string, contactId: string): Promise<string | null>;
   takeControl(tenantId: string, waId: string): Promise<void>;
   recordOutbound: DepsRepondre['recordOutbound'];
-  /** Le garde d'usage, injecté par `buildServer`. OBLIGATOIRE, comme sur les autres routes /v1. */
+  /** Le garde d'usage, injecté par `buildServer`. Requis, comme sur les autres routes /v1. */
   usage: ApiUsageGuard;
 }
 
 /**
- * Les clés de fiche du lot 1, plus le texte. `strictObject` : une clé inconnue (un `rcsMessageId` d'Inbox, une
- * faute de frappe) est un défaut de forme, pas un champ ignoré.
+ * Les clés de fiche, plus le texte. `strictObject` : une clé inconnue (un `rcsMessageId` d'Inbox, une faute de
+ * frappe) est un défaut de forme, pas un champ ignoré.
  */
 export const schemaMessageRcs = z.strictObject({
   ...schemaClesFiche.shape,
@@ -75,7 +59,7 @@ const MESSAGE_RCS: Record<RefusRcsLibre, string> = {
 };
 
 /**
- * Le tenant vient à 100 % de `req.auth` (posé par `makeRequireApiKey`), jamais de l'URL ni du corps.
+ * 🔴 L'espace vient de `req.auth` (posé par `makeRequireApiKey`), jamais de l'URL ni du corps.
  * Garde attendue : `[makeRequireApiKey, requireScope('sends:create')]`, comme `/v1/messages/whatsapp`.
  */
 export function registerV1MessagesRcs(app: FastifyInstance, deps: V1MessagesRcsRouteDeps, garde: Guard): void {
@@ -89,12 +73,12 @@ export function registerV1MessagesRcs(app: FastifyInstance, deps: V1MessagesRcsR
     if (!corps.success) return refuser(reply, 400, 'invalid_body', messageDeForme(corps.error));
 
     const { text, ...cles } = corps.data;
-    // Les défauts de CLÉ (aucune clé, numéro illisible) sont des défauts de forme : refusés avant le compteur,
+    // Les défauts de clé (aucune clé, numéro illisible) sont des défauts de forme : refusés avant le compteur,
     // par la même normalisation que la résolution partagée.
     const n = normaliserCles(cles);
     if (!n.ok) return refuser(reply, STATUT_PAR_CODE[n.code], n.code, MESSAGE_RESOLUTION[n.code]);
 
-    // Compté APRÈS la validation, comme sur les autres routes : un corps malformé n'a demandé aucun travail.
+    // Compté après la validation, comme sur les autres routes : un corps malformé n'a demandé aucun travail.
     if (!await compterOuRefuser(deps.usage, req, reply, 'messages.send')) return reply;
 
     const fiche = await deps.resoudreFiche(tenantId, cles, { creer: 'jamais' });
@@ -103,7 +87,7 @@ export function registerV1MessagesRcs(app: FastifyInstance, deps: V1MessagesRcsR
       return refuser(reply, STATUT_PAR_CODE[fiche.code], fiche.code, message);
     }
 
-    // L'ordre du § 4 : la fiche existe, porte un numéro, n'est pas bloquée. Le reste est dans `envoyerRcsLibre`.
+    // L'ordre : la fiche existe, porte un numéro, n'est pas bloquée. Le reste est dans `envoyerRcsLibre`.
     const etat = await deps.etatPourEnvoi(tenantId, fiche.contactId);
     if (!etat) return refuser(reply, 404, 'unknown_contact', INCONNUE_POUR_UN_MESSAGE);
     const waId = waIdOf(etat.phoneE164, null);
@@ -114,12 +98,9 @@ export function registerV1MessagesRcs(app: FastifyInstance, deps: V1MessagesRcsR
     if ('refus' in issue) return refuser(reply, STATUT_PAR_CODE[issue.refus], issue.refus, MESSAGE_RCS[issue.refus]);
 
     /**
-     * APRÈS l'envoi réussi, et dans CET ordre : le fil est OUVERT (créé s'il n'existe pas), puis PRIS, puis le
-     * message y est INSCRIT (cf. le docblock : pris avant d'être ouvert, un fil neuf ne serait pas pris).
-     * Best-effort : le message est parti, un 5xx ferait réessayer l'intégrateur, donc envoyer deux fois.
-     * Origine `api` (0166), auteur `null` : personne ne signe ce message.
-     * ⚠️ Un rapport d'échec smsmode peut arriver avant l'inscription : `traiterRapportRcs` l'écrit quand même
-     * (`noterSansMessage`), rien à faire ici.
+     * Après l'envoi réussi, dans cet ordre : le fil est ouvert, pris, puis le message y est inscrit (origine `api`,
+     * auteur `null`). Au mieux : le message est parti, un 5xx ferait réessayer l'intégrateur, donc envoyer deux fois.
+     * Un rapport d'échec smsmode arrivé avant l'inscription est écrit quand même par `traiterRapportRcs`.
      */
     const conversationId = await deps.ouvrirConversation(tenantId, fiche.contactId).catch(() => null);
     if (conversationId) {
@@ -132,8 +113,7 @@ export function registerV1MessagesRcs(app: FastifyInstance, deps: V1MessagesRcsR
       // eslint-disable-next-line no-console
       console.error(`v1/messages/rcs: RCS parti, fil introuvable pour ${fiche.contactId} (${tenantId}), bloqué ou supprimé entre-temps`);
     }
-    // ⚠️ `conversationId` peut valoir `null` (fil introuvable ci-dessus) : 200 quand même, le message est PARTI,
-    // et un 5xx ferait réessayer, donc envoyer deux fois. La documentation le dit (`ReponseMessageSimple`).
+    // `conversationId` peut valoir `null` : 200 quand même, le message est parti (un 5xx ferait envoyer deux fois).
     return reply.code(200).send({ messageId: issue.messageId, conversationId, channel: 'rcs' } satisfies ReponseMessageSimple);
   });
 }

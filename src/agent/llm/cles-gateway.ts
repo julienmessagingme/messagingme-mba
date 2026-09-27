@@ -2,46 +2,31 @@ import { z } from 'zod';
 import type { HttpTransport, HttpTransportPatch } from '../../meta/http';
 
 /**
- * PROVISIONNER une cle AI Gateway chez Vercel, une par espace client (2026-09-09, demande de Julien).
+ * Provisionner une clé AI Gateway chez Vercel, une par espace client.
  *
- * 🔴 DEUX APPELS, DEUX HOTES, DEUX AUTHENTIFICATIONS, et c'est le piege de ce fichier. Ils se ressemblent
- * assez pour qu'on croie pouvoir les ecrire pareil, et ils ne le sont pas :
- *   - CREER une cle : `api.vercel.com/v1/api-keys?teamId=...`, porte le JETON DE COMPTE (`VERCEL_API_TOKEN`),
- *     celui qui sait fabriquer des cles ;
- *   - BOUGER son plafond : `ai-gateway.vercel.sh/v1/quotas?quotaEntityId=api_key_id_<id>`, porte la CLE
- *     GATEWAY maison (`AI_GATEWAY_API_KEY`), et l'entite s'ecrit avec le prefixe `api_key_id_`, pas l'id nu.
- * Verifie dans la documentation Vercel avant d'ecrire une ligne, precisement parce que le second etait
- * devinable de travers de trois facons independantes.
+ * Deux appels qui se ressemblent et ne s'écrivent pas pareil :
+ *   - créer une clé : `api.vercel.com/v1/api-keys?teamId=...`, avec le jeton de compte (`VERCEL_API_TOKEN`) ;
+ *   - bouger son plafond : `ai-gateway.vercel.sh/v1/quotas?quotaEntityId=api_key_id_<id>`, avec la clé
+ *     Gateway maison (`AI_GATEWAY_API_KEY`), et l'entité préfixée `api_key_id_`, pas l'id nu.
  *
- * 🔴 LE SECRET N'EST RENDU QU'UNE FOIS, a la creation. Il n'existe aucun moyen de le relire ensuite. Un
- * echec d'ecriture en base APRES un appel reussi laisse donc une cle qui facture et que personne ne peut
- * plus utiliser : c'est l'appelant qui doit ecrire avant de rendre la main, jamais l'inverse.
- *
- * ⚠️ Le secret ne doit JAMAIS entrer dans un journal. Les erreurs de ce module ne portent que le statut HTTP
- * et le nom de l'operation, jamais le corps de la reponse (qui contient la cle en cas de succes partiel).
+ * 🔴 Le secret n'est rendu qu'une fois, à la création : un échec d'écriture en base après un appel réussi
+ * laisse une clé qui facture sans servir. Il n'entre jamais dans un journal : les erreurs ne portent que le
+ * statut HTTP et l'opération, jamais le corps.
  */
 
 const CREATION_URL = 'https://api.vercel.com/v1/api-keys';
 const QUOTAS_URL = 'https://ai-gateway.vercel.sh/v1/quotas';
 
 /**
- * `none` et pas `monthly` : le credit d'un client est PREPAYE, pas une allocation mensuelle. Un plafond qui
- * se recharge tout seul le premier du mois lui redonnerait gratuitement ce qu'il n'a pas achete.
+ * `none` et pas `monthly` : le crédit d'un client est prépayé, un plafond rechargé le premier du mois lui
+ * redonnerait gratuitement ce qu'il n'a pas acheté.
  */
 const PERIODE = 'none';
 
 /**
- * Reponse de creation. `safeParse`, jamais `parse` ni `as` : c'est une reponse externe (regle du repo).
- *
- * 🔴 LA DOCUMENTATION DE VERCEL EST FAUSSE ICI, ET C'EST CE SCHEMA QUI L'A DIT. Elle annonce `apiKeyString`
- * ET `id` a la RACINE. Le serveur, lui, rend `apiKeyString` a la racine mais l'identifiant sous
- * `apiKey.id`. Mesure le 2026-09-09 sur le vrai compte, en imprimant les NOMS de champs de la reponse (jamais
- * les valeurs, l'un d'eux est le secret).
- *
- * Ce que cette garde a evite, concretement : sans elle, `id` valait `undefined`, on enregistrait une ligne
- * dont l'identifiant de cle est vide, et on perdait pour toujours le moyen de bouger le plafond de cette cle
- * ou de la revoquer, PENDANT qu'elle facture. Vercel ne rend le secret qu'une fois : il n'y a pas de session
- * de rattrapage.
+ * Réponse de création (`safeParse` : réponse externe). L'identifiant est sous `apiKey.id`, pas à la racine
+ * comme l'annonce la documentation de Vercel : sans cette garde, on enregistrerait une clé sans identifiant,
+ * impossible à replafonner ou à révoquer pendant qu'elle facture.
  */
 const creationSchema = z.object({
   apiKeyString: z.string().min(1),
@@ -50,7 +35,7 @@ const creationSchema = z.object({
 
 export class CleGatewayError extends Error {
   constructor(readonly operation: 'creation' | 'plafond' | 'revocation', readonly status: number | null, detail: string) {
-    // ⚠️ `detail` est un LIBELLE choisi ici, jamais le corps de la reponse : celui d'une creation reussie
+    // `detail` est un libellé choisi ici, jamais le corps de la réponse : celui d'une création réussie
     // porte le secret, et ce message finit dans les journaux.
     super(`cle gateway : ${operation} impossible (${status ?? 'reseau'}) : ${detail}`);
     this.name = 'CleGatewayError';
@@ -64,12 +49,7 @@ export interface CleCreee {
   cle: string;
 }
 
-/**
- * Cree la cle d'un espace, avec son plafond.
- *
- * `nom` sert UNIQUEMENT a s'y retrouver dans le tableau de bord Vercel : il porte le nom de l'espace et son
- * identifiant, parce qu'un nom d'espace peut etre change ou duplique, alors que l'identifiant tranche.
- */
+/** Crée la clé d'un espace, avec son plafond. `nom` ne sert qu'à s'y retrouver dans le tableau de bord Vercel. */
 export async function creerCleGateway(
   transport: HttpTransport,
   o: { jetonCompte: string; teamId: string; nom: string; plafondDollars: number },
@@ -86,9 +66,8 @@ export async function creerCleGateway(
       { authorization: `Bearer ${o.jetonCompte}` },
     );
   } catch (err) {
-    // Reseau, delai depasse : on ne connait meme pas le statut. ⚠️ Une creation a PEUT-ETRE abouti cote
-    // Vercel sans que la reponse nous parvienne. L'appelant refuse alors la creation d'agent, et la cle
-    // orpheline reste bornee par le plafond d'equipe, seul filet qui ne depend pas de nous.
+    // Réseau, délai dépassé : la création a peut-être abouti chez Vercel sans que la réponse arrive.
+    // L'appelant refuse la création d'agent ; la clé orpheline reste bornée par le plafond d'équipe.
     throw new CleGatewayError('creation', null, err instanceof Error ? err.name : 'appel impossible');
   }
   if (res.status < 200 || res.status >= 300) {
@@ -96,18 +75,13 @@ export async function creerCleGateway(
   }
   const parse = creationSchema.safeParse(res.json);
   if (!parse.success) {
-    // 200 avec un corps qu'on ne reconnait pas : la cle existe peut-etre, on ne sait pas la lire. Echouer
-    // est le seul choix honnete, deviner un champ en serait un autre qu'on paierait plus tard.
+    // 200 avec un corps inconnu : la clé existe peut-être, on ne sait pas la lire. Échouer plutôt que deviner.
     throw new CleGatewayError('creation', res.status, 'reponse illisible');
   }
   return { id: parse.data.apiKey.id, cle: parse.data.apiKeyString };
 }
 
-/**
- * Deplace le plafond d'une cle EXISTANTE, au rechargement du credit.
- *
- * ⚠️ Pas le meme hote ni la meme authentification que la creation, cf. l'en-tete du fichier.
- */
+/** Déplace le plafond d'une clé existante, au rechargement du crédit (autre hôte, autre authentification). */
 export async function majPlafondCleGateway(
   transport: HttpTransportPatch,
   o: { cleGatewayMaison: string; cleId: string; plafondDollars: number },
@@ -128,15 +102,9 @@ export async function majPlafondCleGateway(
 }
 
 /**
- * Supprime une cle chez Vercel. Sert au RATTRAPAGE, pas au menage courant.
- *
- * 🔴 POURQUOI ELLE EXISTE. Entre l appel a Vercel (qui reussit) et l ecriture en base (qui peut echouer), il
- * y a une fenetre ou une cle existe chez eux et nulle part chez nous. Elle FACTURE, personne ne peut s en
- * servir, et le client qui reessaie en fabrique une deuxieme, puis une troisieme. Sans cette suppression,
- * une base indisponible pendant une minute laissait autant de cles orphelines que de tentatives.
- *
- * ⚠️ Ne leve JAMAIS : elle est appelee depuis un chemin qui est deja en train d echouer, et une seconde
- * erreur y masquerait la premiere, qui est celle qui explique quelque chose.
+ * Supprime une clé chez Vercel, pour le rattrapage : entre l'appel réussi et l'écriture en base, une clé
+ * peut exister chez Vercel et nulle part chez nous, facturable et inutilisable. Ne lève jamais : elle est
+ * appelée depuis un chemin qui échoue déjà, et masquerait l'erreur d'origine.
  */
 export async function supprimerCleGateway(
   transport: HttpTransportSuppression,
@@ -153,19 +121,14 @@ export async function supprimerCleGateway(
   }
 }
 
-/** Le transport, plus `DELETE`. Meme raison qu ailleurs : on n ajoute pas de methode obligatoire a un type
- *  que huit faux implementent deja. */
+/** Le transport, plus `DELETE`, à part pour ne pas ajouter une méthode obligatoire aux faux existants. */
 export interface HttpTransportSuppression {
   delete(url: string, headers: Record<string, string>): Promise<{ status: number }>;
 }
 
 /**
- * Le Gateway a-t-il refuse cet appel PARCE QUE le plafond est atteint ?
- *
- * 🔴 CE N'EST PAS UNE ERREUR TECHNIQUE, c'est un fait commercial : le client a consomme ce qu'il a achete.
- * Le confondre avec une panne ferait rejouer l'appel (donc echouer en boucle) et afficher « reessayez plus
- * tard » a quelqu'un dont le probleme est de recharger. Le type est stable cote Vercel, le message ne l'est
- * pas : on lit le type.
+ * Le Gateway a-t-il refusé cet appel parce que le plafond est atteint ? Un fait commercial, pas une panne :
+ * le rejouer échouerait en boucle, et le client doit recharger. On lit le type, stable, pas le message.
  */
 export function estPlafondAtteint(corps: unknown): boolean {
   const type = (corps as { error?: { type?: unknown } } | null)?.error?.type;

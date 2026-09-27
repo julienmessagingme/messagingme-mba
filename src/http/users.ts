@@ -11,13 +11,10 @@ import { nomEspace, MESSAGE_NOM_ESPACE_INVALIDE } from '../user/nom-espace';
 
 export interface UsersRouteDeps {
   /**
-   * Journal d'audit des ACCÈS (2026-09-15). Requis depuis le lot 3 de l'audit ponytail ; les fixtures qui ne
-   * l'observent pas passent `journalMuet`.
-   *
-   * 🔴 LE `detail` NE PORTE JAMAIS D'EMAIL NI DE NOM, seulement le RÔLE avant et après. Cette table n'est
-   * jamais purgée par la rétention des contacts : y écrire une donnée personnelle la rendrait ineffaçable, et
-   * annulerait l'effacement qu'une autre ligne du même journal certifie (migration 0061). `actor_email` est
-   * la seule exception, dénormalisée exprès pour rester lisible après le départ du collaborateur.
+   * Journal d'audit des accès (les fixtures qui ne l'observent pas passent `journalMuet`).
+   * 🔴 Le `detail` ne porte jamais d'email ni de nom, seulement le rôle avant et après : cette table n'est pas
+   * purgée avec les contacts, une donnée personnelle y deviendrait ineffaçable. `actor_email` est la seule
+   * exception, dénormalisée pour rester lisible après le départ du collaborateur.
    */
   audit: AuditSink;
   listUsers(tenantId: string): Promise<UserRow[]>;
@@ -27,14 +24,11 @@ export interface UsersRouteDeps {
   setUserDisabled(tenantId: string, userId: string, disabled: boolean): Promise<UserMutation>;
   /** Supprime définitivement un compte. Refusé si dernier admin actif. */
   deleteUser(tenantId: string, userId: string): Promise<UserMutation>;
-  /** Invitation : crée un compte EN ATTENTE (sans mdp). */
+  /** Invitation : crée un compte en attente (sans mdp). */
   createPendingUser(tenantId: string, email: string, role: string, name?: string): Promise<UserRow>;
   /**
-   * Pose le nom affiché d'un membre. `not_found` = id inconnu ou autre espace.
-   *
-   * ⚠️ Le type de retour est celui des autres mutations de membre (`UserMutation`), même si `last_admin` ne
-   * peut pas arriver ici : renommer quelqu'un ne touche à aucun invariant. Le déclarer plus étroit obligerait
-   * le câblage à traduire, et c'est précisément là que les contrats divergent.
+   * Pose le nom affiché d'un membre. `not_found` = id inconnu ou autre espace. Même type de retour que les autres
+   * mutations de membre (`last_admin` n'arrive pas ici) : un type plus étroit obligerait le câblage à traduire.
    */
   setUserName(tenantId: string, userId: string, name: string): Promise<UserMutation>;
   /** Génère un token d'invitation à usage unique pour ce compte, renvoie le token en clair. */
@@ -52,7 +46,7 @@ export interface UsersRouteDeps {
   renommerEspace(tenantId: string, nom: string): Promise<boolean>;
   /**
    * Réinitialise le second facteur d'un membre (téléphone perdu, codes de secours épuisés). `autres_espaces` = la
-   * personne a un compte dans un AUTRE espace : refusé ici, ce cas passe par l'exploitation.
+   * personne a un compte dans un autre espace : refusé ici, ce cas passe par l'exploitation.
    */
   reinitialiserMfa(tenantId: string, userId: string): Promise<IssueReinitialisation>;
   /** Base URL du front pour le lien d'invitation. */
@@ -60,34 +54,28 @@ export interface UsersRouteDeps {
 }
 
 /**
- * Rôles attribuables à un membre.
- *
- * ⚠️ `manager` est un STATUT, pas encore un jeu de droits : côté serveur, tout ce qui n'est pas `admin` reste
- * fermé (`makeRequireRole(['admin'])` sur les groupes de routes, `forbidNonAdmin` dans les handlers). Un
- * manager a donc aujourd'hui exactement les accès d'un agent. Ouvrir des routes à ce rôle demandera de
- * décider, écriture par écriture, ce qu'un manager a le droit de faire : on n'accorde pas une autorisation
- * par défaut d'implémentation.
+ * Rôles attribuables à un membre. `manager` est un statut, pas encore un jeu de droits : côté serveur, tout ce qui
+ * n'est pas `admin` reste fermé, donc un manager a les accès d'un agent. Ouvrir une route à ce rôle se décide
+ * écriture par écriture.
  */
 const ROLES = new Set(['admin', 'manager', 'agent']);
 
 /**
- * Borne du NOM affiché d'un membre.
- *
- * ⚠️ C'est un libellé d'écran, pas un champ libre : il s'affiche dans la liste des membres, dans le sélecteur
- * d'affectation de l'Inbox et dans « suivi par… ». Trop long, il déborde partout à la fois.
+ * Borne du nom affiché d'un membre : un libellé d'écran (liste des membres, affectation de l'Inbox, « suivi
+ * par… »), pas un champ libre.
  */
 const MAX_NOM = 60;
 // Validation d'email minimale (un @, pas d'espace) : le vrai contrôle d'unicité est en base.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
- * Le NOM D'UN ESPACE, tel qu'il se choisit dans Compte & équipe. La règle est celle de `src/user/nom-espace.ts`,
+ * Le nom d'un espace, tel qu'il se choisit dans Compte & équipe. La règle est celle de `src/user/nom-espace.ts`,
  * partagée avec l'inscription : les deux écrivains publics de `tenants.name` refusent la même chose.
  */
 const nomEspaceSchema = z.object({ nom: nomEspace });
 
 /**
- * Gestion des comptes (onglet Admin). Le GROUPE est réservé aux admins via `garde`
+ * Gestion des comptes (onglet Admin). Le groupe est réservé aux admins via `garde`
  * (`[garde, makeRequireRole(['admin'])]`) : pas de garde de rôle en plus ici, la barrière
  * est au preHandler. On ne renvoie jamais le hash ; les mots de passe ne sont jamais journalisés.
  */
@@ -100,7 +88,7 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
     return reply.code(200).send({ users: await deps.listUsers(tenant) });
   });
 
-  // Inviter un membre : crée un compte EN ATTENTE (sans mot de passe) + envoie un lien pour qu'il choisisse le sien.
+  // Inviter un membre : crée un compte en attente (sans mot de passe) + envoie un lien pour qu'il choisisse le sien.
   app.post('/tenants/:tenantId/invitations', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
 
@@ -108,8 +96,6 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
     const email = typeof b.email === 'string' ? b.email.trim().toLowerCase() : '';
     if (!EMAIL_RE.test(email)) return reply.code(400).send({ error: 'email invalide' });
     if (typeof b.role !== 'string' || !ROLES.has(b.role)) return reply.code(400).send({ error: 'role invalide (admin|manager|agent)' });
-    // ⚠️ LE NOM EST FACULTATIF, et borné : c'est un libellé d'écran, pas un champ libre. Trop long, il
-    // déborderait de la liste des membres et du sélecteur d'affectation de l'Inbox.
     if (b.name !== undefined && (typeof b.name !== 'string' || b.name.length > MAX_NOM)) {
       return reply.code(400).send({ error: `nom invalide (${MAX_NOM} caractères maximum)` });
     }
@@ -121,12 +107,12 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
       let emailSent = false;
       if (deps.sendEmail && deps.appUrl) {
         const acceptUrl = `${deps.appUrl}/invite/${raw}`;
-        // Personnalisation best-effort : le nom de l'invitant (req.auth.userId) et de l'espace (tenant).
-        // Une panne de lookup ne bloque JAMAIS l'invitation -> repli sur une formulation générique.
+        // Personnalisation au mieux : le nom de l'invitant (req.auth.userId) et de l'espace. Une panne de lookup ne
+        // bloque jamais l'invitation -> repli sur une formulation générique.
         const inviterName = req.auth?.userId ? await deps.getInviterName(req.auth.userId).catch(() => null) : null;
         const workspaceName = await deps.getWorkspaceName(tenant).catch(() => null);
         const html = renderInvitationEmail({ inviterName, workspaceName, acceptUrl, role: b.role });
-        // Repli TEXTE brut pour les clients qui ne rendent pas le HTML (personnalisé si dispo).
+        // Repli texte brut pour les clients qui ne rendent pas le HTML (personnalisé si dispo).
         const intro = inviterName && workspaceName
           ? `${inviterName} t'invite à rejoindre l'espace ${workspaceName} sur Messaging Me.`
           : workspaceName
@@ -146,12 +132,9 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
         }
       }
       /**
-       * ⚠️ LE RÔLE INVITÉ, PAS L'ADRESSE. C'est le rôle qui dit ce qu'on vient d'accorder, et une adresse
-       * e-mail est une donnée personnelle que cette table ne purge jamais. La cible porte l'identifiant
-       * interne du compte créé : il suffit à retrouver qui, sans le graver.
-       *
-       * ⚠️ `emailSent` est journalisé parce qu'une invitation créée mais NON envoyée est un état réel, et la
-       * question « pourquoi n'a-t-il jamais reçu le lien ? » se pose des semaines après.
+       * Le rôle invité, pas l'adresse : l'email est une donnée personnelle que cette table ne purge jamais,
+       * l'identifiant interne suffit à retrouver qui. `emailSent` est journalisé : une invitation créée mais non
+       * envoyée est un état réel.
        */
       await journal(tenant, req, 'utilisateur.invite', { kind: 'user', id: user.id }, { role: b.role, emailSent });
       return reply.code(201).send({ user, emailSent });
@@ -162,15 +145,8 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
   });
 
   /**
-   * LE NOM AFFICHÉ d'un membre.
-   *
-   * 🔴 POURQUOI CETTE ROUTE EXISTE : la colonne `users.name` était là depuis toujours, tous les écrans font
-   * déjà `name ?? email`, et RIEN ne permettait de l'écrire. Conséquence, l'Inbox affichait des adresses
-   * e-mail partout (« suivi par julien@messagingme.fr »), ce qui n'est ni lisible ni ce qu'on montre à une
-   * équipe. Demandé par Julien le 2026-09-11.
-   *
-   * ⚠️ PAS DE SELF-BLOCK, contrairement au rôle : se renommer soi-même n'a aucune conséquence sur les droits,
-   * et un admin qui ne pourrait pas corriger son propre nom serait une bizarrerie sans raison.
+   * Le nom affiché d'un membre (tous les écrans font `name ?? email`). Pas de self-block, contrairement au rôle :
+   * se renommer n'a aucune conséquence sur les droits.
    */
   app.patch('/tenants/:tenantId/users/:userId/name', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -181,8 +157,8 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
     }
     const result = await deps.setUserName(tenant, userId, nom);
     if (result === 'not_found') return reply.code(404).send({ error: 'utilisateur inconnu' });
-    // Le nom EFFECTIF est rendu : vide -> `null`, ce que l'écran doit afficher comme « pas de nom » et non
-    // comme une chaîne vide qu'il aurait crue enregistrée.
+    // Le nom effectif est rendu : vide -> `null`, que l'écran affiche comme « pas de nom » et non comme une
+    // chaîne vide qu'il aurait crue enregistrée.
     return reply.code(200).send({ id: userId, name: nom.trim() === '' ? null : nom.trim() });
   });
 
@@ -194,9 +170,8 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
     if (typeof role !== 'string' || !ROLES.has(role)) {
       return reply.code(400).send({ error: 'role invalide (admin|manager|agent)' });
     }
-    // Self-block : un admin ne peut pas changer son PROPRE rôle (évite l'auto-lockout de l'UI en
-    // pleine session). L'invariant « ≥1 admin par tenant » est réellement garanti EN BASE par
-    // setUserRole (refus 'last_admin'), pas par ce seul self-block.
+    // Self-block : un admin ne peut pas changer son propre rôle (auto-lockout en pleine session). L'invariant
+    // « au moins un admin par espace » est garanti en base par setUserRole (refus 'last_admin').
     if (req.auth?.userId === userId) {
       return reply.code(400).send({ error: 'tu ne peux pas changer ton propre rôle' });
     }
@@ -205,8 +180,7 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
     const result = await deps.setUserRole(tenant, userId, role);
     if (result === 'not_found') return reply.code(404).send({ error: 'utilisateur inconnu' });
     if (result === 'last_admin') return reply.code(409).send({ error: 'au moins un administrateur est requis' });
-    // ⚠️ APRÈS le succès, jamais avant : journaliser une intention qui a été REFUSÉE (404, 409) ferait lire
-    // le journal comme un registre de changements alors qu'il serait un registre de tentatives.
+    // Après le succès, jamais avant : une intention refusée (404, 409) ferait du journal un registre de tentatives.
     await journal(tenant, req, 'utilisateur.role_change', { kind: 'user', id: userId }, { role });
     return reply.code(200).send({ id: userId, role });
   });
@@ -240,15 +214,11 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
   });
 
   /**
-   * RÉINITIALISER LE SECOND FACTEUR d'un membre (plan du 2026-09-25, tâche 6) : téléphone perdu, codes épuisés.
-   * Le membre repassera par l'enrôlement à sa prochaine connexion s'il est admin, et se connectera sans code sinon.
-   *
-   * 🔴 REFUSÉ SI LA PERSONNE A UN COMPTE DANS UN AUTRE ESPACE (409). Le facteur appartient à l'IDENTITÉ, pas au
-   * compte : le retirer d'ici l'affaiblirait aussi chez un autre client, dont l'admin d'ici n'a aucune raison de
-   * décider. Ce cas passe par l'exploitation (`POST /ops/mfa/reinitialiser`).
-   *
-   * ⚠️ PAS SUR SOI-MÊME, comme le rôle et la révocation : une session volée ne doit pas pouvoir retirer le facteur
-   * de son porteur, et un admin qui a perdu son téléphone n'a de toute façon plus de session.
+   * Réinitialiser le second facteur d'un membre (téléphone perdu, codes épuisés) : il repassera par l'enrôlement
+   * s'il est admin, et se connectera sans code sinon.
+   * 🔴 Refusé (409) si la personne a un compte dans un autre espace : le facteur appartient à l'identité, le retirer
+   * d'ici l'affaiblirait chez un autre client ; ce cas passe par l'exploitation (`POST /ops/mfa/reinitialiser`).
+   * Pas sur soi-même : une session volée ne doit pas pouvoir retirer le facteur de son porteur.
    */
   app.delete('/tenants/:tenantId/users/:userId/mfa', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -270,11 +240,8 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
   });
 
   /**
-   * LE NOM DE L'ESPACE (2026-09-25). `tenants.name` s'affichait au choix de l'espace à la connexion et dans /ops,
-   * et rien ne permettait de le changer : un espace créé « Demo +33 5 25 68 02 50 » le restait.
-   *
-   * ⚠️ Réservé aux admins par la garde du GROUPE (`g.admin` au montage, voir l'en-tête de ce module), comme
-   * toutes les écritures de Compte & équipe : un agent reçoit 403 avant d'entrer ici.
+   * Le nom de l'espace (`tenants.name`, affiché au choix de l'espace et dans /ops). Réservé aux admins par la garde
+   * du groupe (`g.admin` au montage), comme toutes les écritures de Compte & équipe.
    */
   app.get('/tenants/:tenantId/nom', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -288,18 +255,15 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
     const corps = nomEspaceSchema.safeParse(req.body ?? {});
     if (!corps.success) return reply.code(400).send({ error: MESSAGE_NOM_ESPACE_INVALIDE });
     const nom = corps.data.nom;
-    // L'ancien nom est lu AVANT l'écriture : il dit si l'espace existe, et si le nom change vraiment.
+    // L'ancien nom est lu avant l'écriture : il dit si l'espace existe, et si le nom change vraiment.
     const ancien = await deps.getWorkspaceName(tenant);
     if (ancien === null) return reply.code(404).send({ error: 'espace inconnu' });
-    // Rien n'a changé : ni écriture ni ligne de journal, qui est un registre de CHANGEMENTS.
+    // Rien n'a changé : ni écriture ni ligne de journal, qui est un registre de changements.
     if (ancien === nom) return reply.code(200).send({ nom });
     if (!(await deps.renommerEspace(tenant, nom))) return reply.code(404).send({ error: 'espace inconnu' });
     /**
-     * 🔴 LE JOURNAL DIT QUI A RENOMMÉ ET QUAND, JAMAIS LES DEUX NOMS (relecture du 2026-09-25). Un nom d'espace
-     * n'est pas toujours un libellé d'entreprise : l'inscription par Google le construit avec le NOM COMPLET de la
-     * personne (« Espace de Jean Dupont », `src/auth/routes.ts`), et un espace s'est déjà appelé d'après son numéro
-     * (« Demo +33 5 25 68 02 50 »). `audit_log` est gardé deux ans et ne suit pas le départ de la personne : y
-     * écrire ces noms les rendrait ineffaçables. Le nom courant se lit dans Compte & équipe ; le détail reste vide.
+     * 🔴 Le journal dit qui a renommé et quand, jamais les deux noms : un nom d'espace peut porter le nom complet
+     * d'une personne (inscription par Google) ou un numéro, et `audit_log`, gardé deux ans, le rendrait ineffaçable.
      */
     await journal(tenant, req, 'espace.renomme', { kind: 'tenant', id: tenant });
     return reply.code(200).send({ nom });

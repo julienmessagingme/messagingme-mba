@@ -12,17 +12,15 @@ export interface ClaimedConversation {
 }
 
 /**
- * Store Postgres de la passe d'analyse. Réclamation atomique (pending -> queued, FOR UPDATE SKIP LOCKED, même patron
- * que le claim de campagne) pour ne traiter chaque conversation qu'une fois malgré concurrence/replay. La fenêtre
- * analysée est bornée aux messages postérieurs à `analyzed_at` (la conversation ne se ferme jamais -> on analyse
- * l'épisode depuis la dernière analyse : coût + pertinence).
+ * Store Postgres de la passe d'analyse. Réclamation atomique (`pending` -> `queued`, FOR UPDATE SKIP LOCKED) pour
+ * ne traiter chaque conversation qu'une fois malgré concurrence et rejeu. La conversation ne se ferme jamais : on
+ * analyse l'épisode depuis `analyzed_at`.
  */
 export class PgConversationAnalysisStore {
   constructor(private readonly pool: Pool) {}
 
-  /** Réclame en lot les conversations inactives (last_message_at ancien) encore `pending` -> `queued`.
-   *  Les fils de TEST (jeton de test d'un scénario) sont exclus : ils ne sont pas de vraies conversations
-   *  client, donc ni analyse LLM (coût inutile), ni poussée vers HubSpot par construction. */
+  /** Réclame en lot les conversations inactives encore `pending` -> `queued`. Les fils de test sont exclus : ni
+   *  analyse LLM, ni poussée vers HubSpot. */
   async claimForAnalysis(inactivityMs: number, limit: number): Promise<ClaimedConversation[]> {
     const res = await this.pool.query<{ id: string; tenant_id: string }>(
       `update conversations set analysis_status = 'queued', analysis_queued_at = now()
@@ -39,7 +37,7 @@ export class PgConversationAnalysisStore {
     return res.rows.map((r) => ({ conversationId: r.id, tenantId: r.tenant_id }));
   }
 
-  /** Ramène en `pending` les conversations bloquées en `queued` (worker mort en cours de traitement). Nb récupéré. */
+  /** Ramène en `pending` les conversations bloquées en `queued` (worker mort en cours). Rend le nombre. */
   async reclaimStaleQueued(olderThanMs: number): Promise<number> {
     const res = await this.pool.query(
       `update conversations set analysis_status = 'pending'
@@ -50,9 +48,8 @@ export class PgConversationAnalysisStore {
   }
 
   /**
-   * Relâche immédiatement UNE conversation `queued` en `pending` (compensation d'un enqueue échoué : la conversation a
-   * été réclamée mais n'a pas de job -> reprise au prochain balayage au lieu d'attendre le reclaim périmé). Gardé sur
-   * `analysis_status = 'queued'` : on ne piétine jamais une transition concurrente (done/failed/pending déjà posée).
+   * Relâche une conversation `queued` en `pending` (enfilement échoué, pas de job). Gardé sur
+   * `analysis_status = 'queued'` : on ne piétine jamais une transition concurrente.
    */
   async reclaimQueued(conversationId: string): Promise<void> {
     await this.pool.query(
@@ -62,10 +59,8 @@ export class PgConversationAnalysisStore {
   }
 
   /**
-   * Contexte d'analyse d'une conversation : messages depuis la dernière analyse (bornés) + signaux déterministes.
-   * Depuis la Pièce 0, les envois automatisés (campagne/workflow) sont dans conversation_messages -> les signaux se
-   * lisent directement des messages (humain = sortant avec sender_user_id ; automatisé = sortant sans). null si la
-   * conversation n'existe plus.
+   * Contexte d'analyse : messages depuis la dernière analyse (bornés) et signaux déterministes (humain = sortant
+   * avec `sender_user_id`). null si la conversation n'existe plus.
    */
   async getContext(conversationId: string): Promise<AnalysisContext | null> {
     const conv = await this.pool.query<{ analyzed_at: Date | null }>(
@@ -73,9 +68,8 @@ export class PgConversationAnalysisStore {
       [conversationId],
     );
     if ((conv.rowCount ?? 0) === 0) return null;
-    // created_at::text : on garde la précision MICROSECONDE de Postgres. Un round-trip via `Date` JS tronque aux
-    // millisecondes -> la borne retomberait quelques µs SOUS le dernier message, qui repasserait alors `> borne` à
-    // chaque passe (réanalyse en boucle). On thread donc la borne comme chaîne texte, jamais comme Date.
+    // `created_at::text` : un Date JS tronque aux ms, la borne retomberait sous le dernier message et la
+    // conversation serait réanalysée en boucle. La borne voyage donc en texte.
     const rows = await this.pool.query<{ direction: 'in' | 'out'; body: string | null; type: string | null; sender_user_id: string | null; created_at: string }>(
       `select direction, body, type, sender_user_id, created_at::text as created_at from conversation_messages
        where conversation_id = $1 and created_at > coalesce((select analyzed_at from conversations where id = $1), '-infinity'::timestamptz)
@@ -85,23 +79,20 @@ export class PgConversationAnalysisStore {
     );
     const messages: AnalysisMessage[] = rows.rows.map((r) => ({ direction: r.direction, body: r.body, type: r.type, senderUserId: r.sender_user_id }));
     const hasHumanOutbound = messages.some((m) => m.direction === 'out' && m.senderUserId != null);
-    // Ordre ASC + limit 500 : le dernier lu est le max created_at de la fenêtre (si >500 messages, le reste sera repris).
+    // Ordre ASC et limit 500 : le dernier lu est la borne de la fenêtre (au-delà de 500, le reste sera repris).
     const windowEnd = rows.rows.length > 0 ? rows.rows[rows.rows.length - 1]!.created_at : null;
     return { messages, signals: { hasHumanOutbound }, windowEnd };
   }
 
   /**
-   * Persiste l'analyse (upsert 1 ligne/conversation) + avance `analyzed_at` jusqu'à `windowEnd` (borne des messages
-   * réellement analysés, PAS now()) + repasse la conversation en `pending` s'il reste des messages plus récents que la
-   * borne (arrivés pendant l'analyse) sinon `done`. Le tout en 1 transaction. `windowEnd` null -> pas d'avancée de borne.
-   * `windowEnd` = chaîne texte timestamptz (précision µs préservée, cf. getContext), pas un Date JS tronqué.
+   * Persiste l'analyse (une ligne par conversation) et avance `analyzed_at` jusqu'à `windowEnd` (texte, précision
+   * µs), jamais jusqu'à now() ; repasse en `pending` s'il reste des messages arrivés pendant l'analyse, sinon `done`.
+   * En une transaction.
    */
   async save(conversationId: string, tenantId: string, a: ConversationAnalysis, model: { provider: string; model: string }, windowEnd: string | null): Promise<void> {
     await enTransaction(this.pool, async (client) => {
-      // NB : ce `on conflict do update set tenant_id` a le même motif syntaxique que les upserts de l'Embedded Signup
-      // (es-store.pg.ts), mais N'EST PAS un vecteur de réaffectation inter-tenant : la clé de conflit est
-      // conversation_id, et une conversation appartient à un seul tenant, stable (save() reçoit le tenantId de la
-      // conversation elle-même). La réaffectation est donc un no-op, pas un hijack. Aucune garde `where` nécessaire ici.
+      // `on conflict ... set tenant_id` n'est pas une réaffectation entre espaces : la clé est `conversation_id`, et
+      // une conversation appartient à un seul espace, celui que reçoit save().
       await client.query(
         `insert into conversation_analysis
            (conversation_id, tenant_id, sentiment, intent, topic, resolved, handled_by, exchanges_count, entities,
@@ -116,13 +107,8 @@ export class PgConversationAnalysisStore {
            justification = excluded.justification, llm_provider = excluded.llm_provider, llm_model = excluded.llm_model,
            abusive = excluded.abusive, summary = excluded.summary,
            satisfaction = excluded.satisfaction, urgence = excluded.urgence, created_at = now()`,
-        // `summary` : une chaîne vide vaut absence. Le modèle peut rendre le champ vide plutôt que de
-        // l'omettre, et un résumé vide affiché comme un résumé serait pire qu'un repli assumé.
-        //
-        // 🔴 `satisfaction` et `urgence` : `?? null`, JAMAIS `?? 0`. Le modèle peut les omettre (le schéma
-        // le tolère exprès pour ne pas perdre l'analyse entière), et un zéro écrit à sa place se lirait
-        // « client furieux, aucune urgence », c'est-à-dire l'inverse d'une absence de mesure. La colonne
-        // est nullable pour porter cette différence, et le nuage de points en dépend.
+        // `summary` vide vaut absence : un résumé vide affiché comme tel serait pire qu'un repli assumé.
+        // `satisfaction` et `urgence` : `?? null`, jamais `?? 0`, qui se lirait « client furieux, aucune urgence ».
         [conversationId, tenantId, a.sentiment, a.intent, a.topic, a.resolved, a.handled_by, a.exchanges_count,
           JSON.stringify(a.entities), a.action_suggestion, a.confidence, a.justification, model.provider, model.model,
           a.abusive === true, a.summary !== undefined && a.summary.trim() !== '' ? a.summary : null,
@@ -143,9 +129,8 @@ export class PgConversationAnalysisStore {
   }
 
   /**
-   * Marque `done` sans analyse (rien de nouveau depuis la dernière passe) -> ne re-claim pas en boucle. N'avance PAS
-   * `analyzed_at` (aucun message analysé) : si un message est arrivé pendant le claim (created_at > analyzed_at), on
-   * repasse en `pending` pour le reprendre au lieu de l'enterrer sous une borne now().
+   * Marque `done` sans analyse (rien de nouveau), pour ne pas réclamer en boucle. N'avance pas `analyzed_at` : un
+   * message arrivé pendant la réclamation repasse la conversation en `pending`.
    */
   async markDone(conversationId: string): Promise<void> {
     await this.pool.query(
@@ -159,23 +144,16 @@ export class PgConversationAnalysisStore {
     );
   }
 
-  /** Marque la conversation en échec d'analyse (sortie LLM structurellement invalide : on ne rejoue pas en boucle). */
+  /** Marque l'échec d'analyse (sortie LLM structurellement invalide : on ne rejoue pas en boucle). */
   async markFailed(conversationId: string): Promise<void> {
     await this.pool.query(`update conversations set analysis_status = 'failed' where id = $1`, [conversationId]);
   }
 
   /**
-   * Relit l'analyse COURANTE d'une conversation (F3-a). Le job push-analysis ne transporte plus qu'une référence
-   * {conversationId, tenantId} et refetch l'état frais ICI : sans ça, un rattrapage rejouerait un snapshot figé
-   * qui, si la conversation a été réanalysée entre-temps (analyzed_at avancé -> eventId neuf), s'ingérerait comme
-   * "nouveau" côté mm-hubspot avec un contenu périmé. null si l'analyse a disparu. `entities` (jsonb) est déjà parsé.
-   */
-  /**
-   * ⚠️ `satisfaction` et `urgence` (migration 0121) ne sont VOLONTAIREMENT pas relues ici. Ce que rend cette
-   * methode part vers le connecteur HubSpot (`buildEvent` etale l'objet dans le champ `analysis`) : les
-   * ajouter changerait un contrat inter-depots que rien de ce lot ne demande de changer. Elles vivent pour
-   * l'instant dans le seul ecran qui les montre, la page de synthese. Le jour ou HubSpot doit les recevoir,
-   * c'est ici qu'on les ajoute, et cote connecteur qu'on les accueille.
+   * Relit l'analyse courante d'une conversation pour le job push-analysis, qui ne transporte qu'une référence : un
+   * instantané figé pourrait s'ingérer comme nouveau chez mm-hubspot avec un contenu périmé. null si disparue.
+   * `satisfaction` et `urgence` ne sont pas relues : ce retour part vers HubSpot (`buildEvent`), et les ajouter
+   * changerait un contrat entre dépôts.
    */
   async getStored(conversationId: string): Promise<StoredConversationAnalysis | null> {
     const res = await this.pool.query<{
@@ -190,16 +168,14 @@ export class PgConversationAnalysisStore {
     );
     const r = res.rows[0];
     if (!r) return null;
-    // Les CHECK SQL (0027, et 0176 pour l'intention) garantissent des valeurs d'enum valides -> cast direct
-    // vers les unions du schéma. `tests/intentions-parite.test.ts` tient l'égalité du CHECK et de `INTENTS`.
+    // Les CHECK SQL garantissent des valeurs d'enum valides, d'où le cast (`tests/intentions-parite.test.ts`).
     return {
       conversationId: r.conversation_id,
       tenantId: r.tenant_id,
       sentiment: r.sentiment as ConversationAnalysis['sentiment'],
       intent: r.intent as ConversationAnalysis['intent'],
       topic: r.topic,
-      // `?? false` : les analyses écrites avant la migration 0071 n'ont pas ce constat. Absent vaut « pas
-      // d'injure signalée », jamais « inconnu » : un doute ne doit pas faire remonter une conversation.
+      // Absent vaut « pas d'injure signalée » : un doute ne doit pas faire remonter une conversation.
       abusive: r.abusive ?? false,
       resolved: r.resolved,
       handled_by: r.handled_by as ConversationAnalysis['handled_by'],
@@ -212,9 +188,8 @@ export class PgConversationAnalysisStore {
   }
 
   /**
-   * Conversations à RATTRAPER pour un tenant (F3-a) : celles marquées `pending_catchup` par le push-job pendant une
-   * pause. C'est le registre DURABLE du backlog (indépendant de paused_at, qui peut être effacé à la reprise).
-   * Borné (défaut 2000) ; ordre stable. Réutilise l'index (tenant_id, created_at) de 0027.
+   * Conversations à rattraper pour un espace : celles marquées `pending_catchup` pendant une pause. Registre
+   * durable, indépendant de `paused_at` qui s'efface à la reprise. Borné, ordre stable.
    */
   async listConversationIdsPendingCatchup(tenantId: string, limit = 2000): Promise<string[]> {
     const n = Math.max(1, Math.min(5000, Math.floor(limit)));
@@ -227,10 +202,8 @@ export class PgConversationAnalysisStore {
   }
 
   /**
-   * Marque une analyse à rattraper (INCONDITIONNEL). La décision « faut-il marquer ? » (numéro en pause vs jamais
-   * activé) est prise par l'appelant à partir du MÊME snapshot que le gate (push-job -> getHubspotGateStatus),
-   * pas re-vérifiée ici : c'est ce qui ferme la course TOCTOU (une re-lecture « en pause ? » pouvait rater la
-   * marque si une reprise s'intercalait). UPDATE par id seul : idempotent, ne dépend d'aucun état concurrent.
+   * Marque une analyse à rattraper, sans condition : l'appelant décide sur le même instantané que le gate, une
+   * relecture ici rouvrirait la course. Idempotent.
    */
   async markPendingCatchup(conversationId: string): Promise<void> {
     await this.pool.query(
@@ -240,10 +213,8 @@ export class PgConversationAnalysisStore {
   }
 
   /**
-   * Tenants PRÊTS à rattraper (filet de sécurité du sweep worker) : ceux qui ont des marques `pending_catchup`
-   * ET au moins un numéro RECONNECTÉ. Exclut les tenants encore en pause (leurs marques attendent la reprise) et
-   * ne dépend PAS d'un événement de reprise : rattrape les marques restées si l'enqueue de reprise avait échoué,
-   * ou posées juste après que le catch-up de reprise ait déjà listé. Borné.
+   * Espaces prêts à rattraper (filet du balayage) : des marques `pending_catchup` et au moins un numéro reconnecté.
+   * Ne dépend d'aucun événement de reprise : rattrape les marques d'un enfilement de reprise raté. Borné.
    */
   async listTenantsReadyForCatchup(limit = 200): Promise<string[]> {
     const n = Math.max(1, Math.min(1000, Math.floor(limit)));
@@ -256,7 +227,7 @@ export class PgConversationAnalysisStore {
     return res.rows.map((r) => r.tenant_id);
   }
 
-  /** Efface la marque de rattrapage d'une conversation (appelé par le push-job APRÈS un post réussi : la reprise a bien poussé). */
+  /** Efface la marque de rattrapage, après un post réussi. */
   async clearPendingCatchup(conversationId: string): Promise<void> {
     await this.pool.query(
       `update conversation_analysis set pending_catchup = false where conversation_id = $1 and pending_catchup = true`,

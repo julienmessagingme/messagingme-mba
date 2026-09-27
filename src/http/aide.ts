@@ -10,20 +10,10 @@ import { addDays, todayParis } from '../stats/range';
 import { texteDe } from '../lib/erreur';
 
 /**
- * LE BOT D'AIDE DE LA CONSOLE : une route, synchrone.
- *
- * 🔴 SYNCHRONE ET PAS UNE FILE, contrairement à tout ce qui envoie des messages dans ce dépôt : la personne
- * attend devant son écran. Un travail de file lui ferait regarder une bulle qui tourne pendant qu'un worker
- * prend le job, pour un gain nul.
- *
- * 🔴 IL N'ÉCRIT RIEN, JAMAIS. Il répond et il pose des liens vers des écrans. C'est le périmètre tranché par
- * Julien le 2026-09-11, et c'est le seul où une réponse fausse ne coûte qu'un aller-retour.
- *
- * ⚠️ LES TOKENS SONT À NOTRE CHARGE (décision du 2026-09-11) : le répondeur utilise la clé MAISON, pas le
- * crédit prépayé du client. Facturer quelqu'un pour apprendre à se servir du produit se retourne contre
- * nous, celui qui hésite à poser une question étant celui qui abandonne. Le plafond d'équipe posé chez
- * Vercel borne la dépense globale ; le plafond de débit ci-dessous empêche un seul espace de la consommer
- * pour tout le monde.
+ * Le bot d'aide de la console : une route synchrone (la personne attend devant son écran, une file n'apporterait
+ * rien). Il n'écrit rien : il répond et pose des liens vers des écrans.
+ * 🔴 Les tokens sont à notre charge (clé maison, pas le crédit du client) : le plafond d'équipe chez Vercel borne
+ * la dépense globale, le plafond de débit ci-dessous empêche un espace de la consommer pour tous.
  */
 export interface AideRouteDeps {
   /** Absent = l'aide n'est pas configurée (clé du Gateway ou modèle manquant) -> 503, jamais un repli muet. */
@@ -34,12 +24,8 @@ export interface AideRouteDeps {
 
 export interface RecapRouteDeps {
   /**
-   * Calcule ET rédige le récap d'un jour, pour un espace.
-   *
-   * 🔴 LE JOUR EST CHOISI PAR LA ROUTE, JAMAIS PAR LE CLIENT. Le récap porte sur la veille et rien d'autre :
-   * pas d'historique, pas de choix de date, pas de relecture d'avant-hier (décision de Julien du 2026-09-12,
-   * « sinon trop compliqué »). Laisser le client nommer le jour rouvrirait une lecture de toute l'histoire
-   * de l'espace depuis un bouton d'aide, ce qui n'est pas ce qu'on a construit.
+   * Calcule et rédige le récap d'un jour, pour un espace. Le jour est choisi par la route, jamais par le client :
+   * le récap porte sur la veille seulement, et laisser nommer le jour rouvrirait toute l'histoire de l'espace.
    */
   calculer(tenantId: string, jour: string, langue: 'fr' | 'en'): Promise<RecapTexte>;
   /** Le jour civil courant dans le fuseau des stats. Injectable : c'est ce qui rend le cache testable. */
@@ -47,38 +33,26 @@ export interface RecapRouteDeps {
 }
 
 /**
- * Où le récap emmène.
- *
- * ⚠️ RÉSOLU DANS LA ROUTE ET PAS DANS LE TEXTE MIS EN CACHE, parce qu'il dépend du RÔLE : le tableau
- * qualitatif est marqué `adminOnly` dans la carte, donc un manager n'y a pas de lien. Mettre les écrans dans
- * ce qu'on met en cache ferait servir à tout l'espace les liens du premier qui a cliqué.
+ * Où le récap emmène. Résolu dans la route et pas dans le texte mis en cache, parce qu'il dépend du rôle : sinon
+ * tout l'espace recevrait les liens du premier qui a cliqué.
  */
 const ECRANS_RECAP = ['dashboard-quali'];
 
 /**
- * Qui a droit au récap.
- *
- * 🔴 LA GARDE EST CÔTÉ SERVEUR, et masquer le bouton n'est pas un contrôle d'accès. Le récap est un artefact
- * de PILOTAGE, pas un outil de traitement : un opérateur (rôle `agent`, qui ne voit que l'Inbox) n'y a pas
- * droit, et c'est la première fois que le rôle décide de ce qu'on a le droit de LIRE et pas seulement des
- * écrans qu'on a le droit de montrer.
- *
- * ⚠️ Le message de refus de `makeRequireRole` parle d'administrateurs alors que les managers passent aussi.
- * C'est le message commun à toutes les routes de rôle du dépôt, et il reste juste pour qui le reçoit : un
- * opérateur refusé apprend que c'est réservé à l'encadrement, ce qui est exactement le cas.
+ * Qui a droit au récap. 🔴 La garde est côté serveur (masquer le bouton n'est pas un contrôle d'accès) : le récap
+ * est un outil de pilotage, un opérateur (`agent`) n'y a pas droit. Le message de refus commun parle
+ * d'administrateurs, les managers passent aussi : il reste juste pour qui le reçoit.
  */
 const ROLES_RECAP = ['admin', 'manager'] as const;
 
 /**
- * Le plafond de débit de cette route.
- *
- * ⚠️ CLÉ = L'ESPACE, ET NON L'UTILISATEUR, contrairement au plafond ordinaire des routes authentifiées.
- * Chaque question coûte un appel de modèle sur NOTRE clé : ce qu'on protège, c'est notre facture, et c'est
- * l'espace qui la consomme. Vingt par minute laissent une équipe entière travailler et arrêtent une boucle.
+ * Le plafond de débit de cette route, par espace et non par utilisateur : chaque question coûte un appel de modèle
+ * sur notre clé, et c'est l'espace qui la consomme. Vingt par minute laissent une équipe travailler et arrêtent
+ * une boucle.
  */
 const PAR_MINUTE = 20;
 
-/** Combien d'échanges passés la route accepte. Le moteur en garde autant, ce plafond-ci borne la REQUÊTE. */
+/** Combien d'échanges passés la route accepte. Le moteur en garde autant, ce plafond-ci borne la requête. */
 const MAX_ECHANGES_RECUS = 4;
 /** Une réponse du bot tient largement là-dedans ; au-delà, c'est un appelant qui gonfle le prompt. */
 const REPONSE_MAX_CARACTERES = 4_000;
@@ -98,29 +72,21 @@ export function registerAide(app: FastifyInstance, deps: AideRouteDeps, garde: G
     const b = (req.body ?? {}) as { question?: unknown; ecranCourant?: unknown; langue?: unknown; historique?: unknown };
     const question = typeof b.question === 'string' ? b.question.trim() : '';
     if (question === '') return reply.code(400).send({ error: 'question requise' });
-    // 4xx et pas 5xx : Cloudflare remplace le corps de toute réponse 5xx par sa page d'erreur, et le client
-    // ne lirait jamais la raison.
+    // 4xx et pas 5xx : Cloudflare remplacerait le corps, et le client ne lirait jamais la raison.
     if (question.length > QUESTION_MAX_CARACTERES) {
       return reply.code(400).send({ error: `question trop longue (${QUESTION_MAX_CARACTERES} caractères maximum)` });
     }
 
-    // 🔴 LE RÔLE VIENT DU JETON, JAMAIS DU CORPS. C'est lui qui décide des écrans qu'on a le droit de
-    // montrer : le lire dans la requête laisserait n'importe qui se déclarer administrateur pour obtenir la
-    // carte complète de la console.
+    // 🔴 Le rôle vient du jeton, jamais du corps : il décide des écrans qu'on a le droit de montrer.
     const role = req.auth?.role ?? 'agent';
     const ecranCourant = typeof b.ecranCourant === 'string' && b.ecranCourant.trim() !== ''
       ? b.ecranCourant.trim().slice(0, 60) : null;
     const langue = b.langue === 'en' ? 'en' : 'fr';
 
     /**
-     * L'historique de la conversation, envoyé par l'écran.
-     *
-     * ⚠️ IL VIENT DU CLIENT, donc il est BORNÉ ici et pas seulement dans le moteur : un appelant qui pousse
-     * mille échanges ferait grossir le prompt, donc NOTRE facture, sans qu'aucune garde ne l'arrête. Quatre
-     * échanges, chacun aux mêmes bornes qu'une question et qu'une réponse.
-     *
-     * ⚠️ Et il est VALIDÉ forme par forme plutôt que pris tel quel : une entrée dont un champ n'est pas une
-     * chaîne est ignorée, pas devinée.
+     * L'historique de la conversation, envoyé par l'écran. Il vient du client, donc il est borné ici (quatre
+     * échanges, aux bornes d'une question et d'une réponse : sinon il gonflerait le prompt, donc notre facture) et
+     * validé forme par forme (une entrée mal typée est ignorée, pas devinée).
      */
     const brut = Array.isArray(b.historique) ? b.historique : [];
     const historique = brut
@@ -137,9 +103,8 @@ export function registerAide(app: FastifyInstance, deps: AideRouteDeps, garde: G
       const r = await deps.repondre({ question, role, langue, ecranCourant, historique });
       return reply.code(200).send(r);
     } catch (err) {
-      // JOURNALISER AVANT DE MASQUER, comme le formulaire de support. Un `catch` nu avalerait aussi bien une
-      // panne du Gateway qu'une faute de programmation, et les deux rendraient le même message pendant que
-      // la personne réessaierait indéfiniment.
+      // Journaliser avant de masquer : sinon une panne du Gateway et une faute de programmation rendraient le même
+      // message.
       // eslint-disable-next-line no-console
       console.error(JSON.stringify({
         lvl: 'error',
@@ -148,23 +113,15 @@ export function registerAide(app: FastifyInstance, deps: AideRouteDeps, garde: G
         err: texteDe(err),
         stack: err instanceof Error ? err.stack : undefined,
       }));
-      // ⚠️ 502 GARDÉ, DÉLIBÉRÉMENT, alors qu'une raison lisible sort ailleurs en 422 (documentation.md, « Aucun
-      // message destiné à l'utilisateur dans un 5xx »). Ce corps n'est lu par PERSONNE : le panneau
-      // (`web/components/BoutonAide.tsx`) affiche son propre texte, traduit, et propose le support. Cloudflare
-      // peut donc le remplacer sans rien faire perdre, et l'échec est bien le NÔTRE (Gateway en panne ou faute
-      // de programmation, ce `catch` ne les distingue pas) : un 5xx le dit honnêtement. Le jour où l'écran
-      // affichera `error`, ce code passe en 422.
+      // 502 gardé : ce corps n'est lu par personne (le panneau `BoutonAide.tsx` affiche son propre texte), et l'échec
+      // est bien le nôtre. Le jour où l'écran affichera `error`, ce code passe en 422.
       return reply.code(502).send({ error: 'aide indisponible pour le moment' });
     }
   });
 
   /**
-   * LE RÉCAP DE LA VEILLE.
-   *
-   * ⚠️ IL PARTAGE LE PLAFOND DE DÉBIT DE LA QUESTION, ET C'EST VOULU. Un récap coûte plus cher qu'une
-   * question, mais il n'est calculé qu'UNE FOIS par espace et par jour : les appels suivants lisent le
-   * cache, y compris ceux qui arrivent pendant que le premier calcule. Ce qu'il faut borner, c'est donc
-   * l'entrée commune vers notre clé, pas ce chemin-ci en particulier.
+   * Le récap de la veille. Il partage le plafond de débit de la question : calculé une seule fois par espace et par
+   * jour (les appels suivants lisent le cache), c'est l'entrée commune vers notre clé qu'il faut borner.
    */
   app.post('/tenants/:tenantId/aide/recap', gardeEtendue(garde, makeRequireRole(ROLES_RECAP)), async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -173,7 +130,7 @@ export function registerAide(app: FastifyInstance, deps: AideRouteDeps, garde: G
     }
     const recap = deps.recap;
 
-    // LA VEILLE, calculée ici et jamais reçue du client. `todayParis` est le jour civil du fuseau des stats,
+    // La veille, calculée ici et jamais reçue du client. `todayParis` est le jour civil du fuseau des stats,
     // celui dans lequel le SQL du récap borne ses journées : les deux doivent parler du même jour.
     const jour = addDays((recap.aujourdhui ?? todayParis)(), -1);
     const langue = ((req.body ?? {}) as { langue?: unknown }).langue === 'en' ? 'en' : 'fr';
@@ -195,7 +152,7 @@ export function registerAide(app: FastifyInstance, deps: AideRouteDeps, garde: G
         err: texteDe(err),
         stack: err instanceof Error ? err.stack : undefined,
       }));
-      // ⚠️ 502 GARDÉ, pour la même raison que la question : l'écran pose son propre texte et ne lit pas ce corps.
+      // 502 gardé, pour la même raison que la question : l'écran ne lit pas ce corps.
       return reply.code(502).send({ error: 'récap indisponible pour le moment' });
     }
   });

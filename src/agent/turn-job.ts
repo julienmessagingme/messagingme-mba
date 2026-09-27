@@ -1,20 +1,16 @@
 /**
- * File `agent-turn` : le tour de l'agent IA se joue en tache de fond, pas dans le handler.
- *
- * Un tour d'agent est un appel LLM plus N appels d'outils, donc 3 a 20 secondes. Le laisser en ligne
- * dans le handler de webhook Meta tiendrait la connexion ouverte tout ce temps et ferait retenter le
- * webhook pendant qu'on parle au modele. D'ou une file dediee, consommee par le worker (tache 13).
+ * File `agent-turn` : le tour de l'agent IA (un appel LLM plus N outils, 3 à 20 s) se joue en tâche de fond.
+ * En ligne dans le handler du webhook Meta, il tiendrait la connexion et ferait retenter le webhook.
  */
 
 export const AGENT_TURN_QUEUE = 'agent-turn';
 
 /**
- * Ce qui declenche un tour : demarrage de session, ou message entrant du contact.
+ * Ce qui déclenche un tour : démarrage de session, ou message entrant du contact.
  *
- * Il n y a PAS de raison « inactivite », et c est un choix : le reveil apres silence ne passe pas par cette
- * file. Il emprunte le mecanisme du bloc Question (echeance `resume_at` sur un run qui reste `waiting`, puis
- * `resume` par le handle `timeout`), donc il ne produit aucun job. Un vocabulaire sans producteur finit
- * toujours par etre remis en service par erreur.
+ * Pas de raison « inactivité » : le réveil après silence passe par l'échéance du bloc Question (`resume_at`
+ * puis le handle `timeout`) et ne produit aucun job. Un vocabulaire sans producteur finit remis en service
+ * par erreur.
  */
 export type RaisonTour = 'demarrage' | 'message';
 
@@ -28,10 +24,8 @@ export interface AgentTurnJob {
   waId: string;
   raison: RaisonTour;
   /**
-   * Numero de tour ATTENDU par le producteur. Sert de verrou optimiste cote consommateur : pg-boss est
-   * at-least-once, donc un job peut etre redelivre APRES que le contact a deja repondu et fait avancer le
-   * tour. Le consommateur compare ce numero au tour reel de la session et ignore le job perime plutot que de
-   * rejouer une reponse obsolete.
+   * Numéro de tour attendu par le producteur, verrou optimiste : pg-boss est at-least-once, donc un job peut
+   * être redélivré après que le contact a fait avancer le tour. Le consommateur ignore alors le job périmé.
    */
   tours: number;
 }
@@ -39,13 +33,9 @@ export interface AgentTurnJob {
 const RAISONS: readonly RaisonTour[] = ['demarrage', 'message'];
 
 /**
- * Coerce defensivement le payload de la file (JSON opaque, potentiellement ecrit par une version
- * anterieure du code) en job valide. Rend `null` plutot que de lever : un payload inexploitable ne doit
- * pas faire boucler la file jusqu'a la DLQ (meme doctrine que parseAutomationEventJob).
- *
- * Le producteur DOIT relire ce parseur avant d'emettre un nouveau champ : une chaine s'est deja retrouvee
- * morte sur `automation-event` parce qu'un producteur ecrivait un champ que le consommateur n'attendait
- * pas (cf. `event-job.ts`, cas `hubspot_deal_stage`).
+ * Relit défensivement le payload de la file (JSON opaque, parfois écrit par une version antérieure). Rend
+ * `null` plutôt que de lever : un payload inexploitable ne doit pas boucler jusqu'à la DLQ. Un producteur
+ * relit ce parseur avant de changer un champ : un job que le parseur refuse est perdu.
  */
 export function parseAgentTurnJob(raw: unknown): AgentTurnJob | null {
   if (!raw || typeof raw !== 'object') return null;

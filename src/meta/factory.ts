@@ -12,16 +12,12 @@ import type { ArbitreDeDebit } from './arbitre-debit';
 import { NumeroDelieError } from './numero-delie';
 
 /**
- * Fabrique de clients Meta PAR TENANT (B1). Elle résout le token du tenant (résolveur, avec repli sur le token
- * global tant qu'aucun WABA n'a de credentials propres = SOMMEIL), construit le client, et l'enveloppe d'un
- * INTERCEPTEUR d'auth : toute méthode qui échoue sur une erreur d'auth Meta (190/401/OAuthException) invalide le
- * token du WABA (best-effort) puis rethrow. On arrête ainsi d'envoyer/lire sur un token mort au lieu de brûler
- * des appels Graph.
+ * Fabrique de clients Meta par tenant. Elle résout le token du tenant (repli sur le token global quand le WABA
+ * n'a pas de credentials propres), construit le client et l'enveloppe d'un intercepteur d'auth : toute méthode
+ * qui échoue sur une erreur d'auth Meta (190, 401, OAuthException) invalide le token du WABA puis relance.
  *
- * L'intercepteur vit ICI (pas dans MetaClient) car MetaClient ne connaît que phoneNumberId + token, jamais le
- * wabaId : c'est la fabrique qui a le wabaId résolu sous la main. Il est appliqué UNIFORMÉMENT à toutes les
- * méthodes (envois ET lectures) via un Proxy -> les envois workflow (clientForTenant) s'auto-soignent aussi.
- * En SOMMEIL, wabaId est null -> l'intercepteur est un no-op (aucun WABA propre à invalider).
+ * L'intercepteur vit ici parce que seule la fabrique connaît le wabaId ; il s'applique à toutes les méthodes
+ * (envois et lectures) par un Proxy. Sans WABA propre (wabaId null), il ne fait rien.
  */
 export interface MetaClientFactoryOpts {
   resolver: MetaCredentialsResolver;
@@ -29,23 +25,14 @@ export interface MetaClientFactoryOpts {
   version: string;
   marketingViaLite: boolean;
   /**
-   * Arbitre de débit PAR NUMÉRO (lot 4). Injecté ici parce que c'est le point où les quatre chemins d'envoi
-   * se rejoignent : campagne, scénario, automation et réponse d'inbox construisent tous leur client par
-   * `clientForTenant`. Un chemin d'envoi futur en hérite donc sans que personne y pense.
-   *
-   * OPTIONNEL : absent -> aucun frein par numéro, comportement d'avant (fixtures de test).
+   * Arbitre de débit par numéro, posé ici parce que tous les chemins d'envoi construisent leur client par
+   * `clientForTenant` : un chemin futur en hérite. Absent : aucun frein par numéro (fixtures de test).
    */
   arbitreDebit?: ArbitreDeDebit;
   /**
-   * Ce numéro est-il DÉLIÉ de son espace (migration 0180) ? Oui : aucun client d'envoi n'est construit, et
-   * `clientForTenant` lève `NumeroDelieError`, dont le message dit quoi faire.
-   *
-   * 🔴 REQUISE, et c'est la leçon du dépôt : une garde optionnelle absente ne tourne pas, et le câblage qui
-   * l'oublie compile, se déploie et envoie depuis un numéro que l'administrateur croit éteint. Les fixtures
-   * DISENT leur hypothèse (`jamaisDelie`).
-   *
-   * Posée ICI pour la même raison que l'arbitre de débit : c'est le point où tous les chemins d'envoi se
-   * rejoignent, donc un chemin futur en hérite sans que personne y pense.
+   * Ce numéro est-il délié de son espace ? Oui : aucun client d'envoi n'est construit et `clientForTenant` lève
+   * `NumeroDelieError`. 🔴 Requise : une garde optionnelle oubliée par un câblage compilerait et enverrait depuis
+   * un numéro que l'administrateur croit éteint. Les fixtures disent leur hypothèse (`jamaisDelie`).
    */
   numeroDelie: (phoneNumberId: string) => Promise<boolean>;
 }
@@ -59,9 +46,8 @@ export class MetaClientFactory {
   }
 
   /**
-   * Lève `NumeroDelieError` si ce numéro est délié, sans rien construire. C'est LA garde de `clientForTenant`,
-   * exposée pour qu'un appelant puisse la poser AVANT un effet qui précède l'envoi (le parcours d'un scénario
-   * qui envoie un e-mail puis un modèle, `WorkflowExecutorDeps.verifierNumeroWhatsApp`). Même lecture, même cache.
+   * Lève `NumeroDelieError` si ce numéro est délié, sans rien construire : la garde de `clientForTenant`, exposée
+   * pour qu'un appelant la pose avant un effet qui précède l'envoi (`verifierNumeroWhatsApp`). Même lecture, même cache.
    */
   async verifierNumero(phoneNumberId: string): Promise<void> {
     if (await this.o.numeroDelie(phoneNumberId)) throw new NumeroDelieError(phoneNumberId);
@@ -69,7 +55,7 @@ export class MetaClientFactory {
 
   /** MetaClient complet pour un tenant (envois workflow : template/interactif/flow), enveloppé de l'intercepteur. */
   async clientForTenant(tenantId: string, phoneNumberId: string): Promise<MetaClient> {
-    // AVANT le jeton : un numéro délié ne coûte ni la résolution du jeton ni, surtout, un appel à Meta.
+    // Avant le jeton : un numéro délié ne coûte ni la résolution du jeton ni un appel à Meta.
     await this.verifierNumero(phoneNumberId);
     const { token, wabaId } = await this.o.resolver.resolveForTenant(tenantId);
     const client = new MetaClient({
@@ -78,9 +64,8 @@ export class MetaClientFactory {
       phoneNumberId,
       version: this.o.version,
       marketingViaLite: this.o.marketingViaLite,
-      // La porte du NUMÉRO, partagée par tout ce qui envoie depuis lui. `MetaClient.call` l'acquiert avant
-      // chaque appel `messages`, et seulement celui-là : lire un template ou téléverser un média ne consomme
-      // pas le budget d'envoi.
+      // La porte du numéro, partagée par tout ce qui envoie depuis lui. `MetaClient.call` l'acquiert avant chaque
+      // appel `messages`, et seulement celui-là : lire un template ou téléverser un média ne consomme pas le budget.
       ...(this.o.arbitreDebit ? { rateLimiter: this.o.arbitreDebit.pour(phoneNumberId) } : {}),
     });
     return this.guard(client, wabaId);
@@ -103,11 +88,8 @@ export class MetaClientFactory {
   }
 
   /**
-   * Client d'ajout et de vérification d'un numéro, avec le jeton de l'espace.
-   *
-   * ⚠️ AVEC LE JETON DE L'ESPACE, ET PAS LE JETON MAISON : le numéro d'un client embarqué vit dans SON compte
-   * WhatsApp, que notre jeton global ne voit pas. C'est la même raison qui fait passer `getPhone` par le
-   * business token pendant l'inscription.
+   * Client d'ajout et de vérification d'un numéro, avec le jeton de l'espace et non le jeton maison : le numéro
+   * d'un client embarqué vit dans son compte WhatsApp, que notre jeton global ne voit pas.
    */
   phoneRegisterClientForTenant(tenantId: string): Promise<MetaPhoneRegisterClient> {
     return this.pour(tenantId, (token) => new MetaPhoneRegisterClient(token, this.o.version));
@@ -125,9 +107,8 @@ export class MetaClientFactory {
   }
 
   /**
-   * Enveloppe un client Meta : chaque méthode async qui rejette est interceptée. Sur une erreur d'AUTH, le WABA du
-   * tenant est invalidé (resolver.onError filtre isMetaAuthError + wabaId non-null) ; l'erreur est TOUJOURS
-   * rethrow (l'appelant garde son comportement). Non-fonctions et retours non-promesse passent inchangés.
+   * Enveloppe un client Meta : chaque méthode async qui rejette est interceptée. Sur une erreur d'auth, le WABA du
+   * tenant est invalidé (`resolver.onError`) ; l'erreur est toujours relancée. Le reste passe inchangé.
    */
   private guard<T extends object>(target: T, wabaId: string | null): T {
     const resolver = this.o.resolver;

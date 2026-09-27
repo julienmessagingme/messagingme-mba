@@ -2,16 +2,13 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { sha256Hex } from '../lib/signature';
 
 /**
- * LE SECOND FACTEUR DES ADMINISTRATEURS : TOTP (RFC 6238) et codes de secours, sur `node:crypto` seul.
+ * Le second facteur des administrateurs : TOTP (RFC 6238) et codes de secours, sur `node:crypto` seul.
+ * HMAC-SHA1, pas de 30 secondes, 6 chiffres : ce que toutes les applications d'authentification lisent dans
+ * une URI `otpauth://` ; une dépendance pour quarante lignes ajouterait une chaîne d'approvisionnement sur le
+ * chemin de la connexion.
  *
- * HMAC-SHA1, pas de 30 secondes, 6 chiffres : c'est ce que toutes les applications d'authentification lisent
- * dans une URI `otpauth://` sans paramètre exotique. Une dépendance pour quarante lignes aurait ajouté une
- * chaîne d'approvisionnement de plus sur le chemin de la connexion.
- *
- * ⚠️ LE BASE32 EST CELUI DE LA RFC 4648, PAS CELUI DE `src/ids/code.ts`. Ce dernier est l'alphabet Crockford
- * (sans I, L, O, U), fait pour des identifiants lisibles ; une application d'authentification décode l'alphabet
- * RFC 4648 (A-Z puis 2-7). Réutiliser l'autre donnerait un secret que l'application décoderait autrement que
- * nous, donc des codes toujours faux, sans aucune erreur nulle part.
+ * Le base32 est celui de la RFC 4648 (A-Z puis 2-7), pas l'alphabet Crockford de `src/ids/code.ts` : l'autre
+ * donnerait un secret que l'application décoderait autrement, donc des codes toujours faux, sans erreur.
  */
 
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -85,18 +82,13 @@ export function codeAuPas(secret: string, pas: number): string {
 }
 
 /**
- * Vérifie un code saisi. Rend le PAS accepté, ou `null`.
+ * Vérifie un code saisi ; rend le pas accepté, ou `null`. Fenêtre de plus ou moins un pas : une horloge
+ * décalée de quelques secondes doit passer.
  *
- * FENÊTRE DE PLUS OU MOINS UN PAS : une horloge de téléphone décalée de quelques secondes, ou un code tapé à la fin
- * de sa période, doit passer. Au-delà, c'est un code d'une autre minute.
- *
- * 🔴 ANTI-REJEU : un pas inférieur ou égal à `dernierPas` est refusé, même si le code est juste. Sans cela, un
- * code vu par-dessus l'épaule (ou intercepté) resterait valable pendant 90 secondes. L'appelant ÉCRIT le pas
- * rendu, et c'est cette écriture, conditionnelle en base, qui ferme la course entre deux présentations
- * simultanées du même code (`MfaStore.marquerPas`).
- *
- * ⚠️ COMPARAISON EN TEMPS CONSTANT sur les trois pas, sans sortie anticipée : la durée de la réponse ne dit pas
- * lequel des trois a correspondu, ni combien de chiffres étaient justes.
+ * 🔴 Anti-rejeu : un pas inférieur ou égal à `dernierPas` est refusé, même si le code est juste, sinon un
+ * code vu par-dessus l'épaule resterait valable 90 secondes. L'appelant écrit le pas rendu, et cette écriture
+ * conditionnelle en base (`MfaStore.marquerPas`) ferme la course entre deux présentations simultanées.
+ * Comparaison en temps constant sur les trois pas, sans sortie anticipée.
  */
 export function verifierCode(secret: string, code: string, maintenantMs: number, dernierPas: number | null): number | null {
   const saisi = code.replace(/\s/g, '');
@@ -111,8 +103,8 @@ export function verifierCode(secret: string, code: string, maintenantMs: number,
 }
 
 /**
- * L'URI qu'une application d'authentification lit dans un QR code. L'émetteur est le nom du PRODUIT, jamais celui
- * d'une infrastructure : c'est ce que la personne verra dans son application, à côté de son adresse.
+ * L'URI qu'une application d'authentification lit dans un QR code. L'émetteur est le nom du produit, jamais
+ * celui d'une infrastructure : c'est ce que la personne verra dans son application, à côté de son adresse.
  */
 export function uriOtpauth(emetteur: string, email: string, secret: string): string {
   const libelle = `${encodeURIComponent(emetteur)}:${encodeURIComponent(email)}`;
@@ -133,13 +125,10 @@ export const EMETTEUR_TOTP = 'Engage Me';
 export const NOMBRE_CODES_SECOURS = 10;
 
 /**
- * Dix codes de 80 bits, affichés `ABCDEFGH-IJKLMNOP`, et leur EMPREINTE, seule chose qu'on stocke.
- *
- * 🔴 SHA-256 ET NON SCRYPT, et c'est délibéré : un hachage lent protège un secret FAIBLE (un mot de passe choisi
- * par un humain) contre une recherche exhaustive. 80 bits tirés au hasard ne se cherchent pas, et un hachage
- * DÉTERMINISTE permet de consommer un code en une seule requête conditionnelle, donc atomique. Un scrypt salé
- * obligerait à lire toutes les empreintes puis à les comparer une par une, et deux présentations simultanées du
- * même code passeraient toutes les deux.
+ * Dix codes de 80 bits, affichés `ABCDEFGH-IJKLMNOP`, et leur empreinte, seule chose stockée. 🔴 SHA-256 et
+ * non scrypt : un hachage lent protège un secret faible, 80 bits tirés au hasard ne se cherchent pas, et un
+ * hachage déterministe permet de consommer un code en une requête conditionnelle, donc atomique. Un scrypt
+ * salé obligerait à comparer une par une, et deux présentations simultanées du même code passeraient.
  */
 export function genererCodesSecours(): { clairs: string[]; empreintes: string[] } {
   const clairs: string[] = [];
@@ -151,8 +140,9 @@ export function genererCodesSecours(): { clairs: string[]; empreintes: string[] 
 }
 
 /**
- * L'empreinte d'un code de secours SAISI : tiret, espaces et casse tolérés. `null` si ce n'est pas la forme d'un
- * code de secours (16 caractères base32), ce qui évite une requête pour un code TOTP ou une faute de frappe.
+ * L'empreinte d'un code de secours saisi : tiret, espaces et casse tolérés. `null` si ce n'est pas la forme
+ * d'un code de secours (16 caractères base32), ce qui évite une requête pour un code TOTP ou une faute de
+ * frappe.
  */
 export function empreinteCodeSecours(saisi: string): string | null {
   const propre = saisi.replace(/[\s-]/g, '').toUpperCase();

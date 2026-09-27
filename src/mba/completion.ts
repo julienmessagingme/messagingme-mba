@@ -1,36 +1,14 @@
 import type { BusinessInfo, Faq, Skill, Website, KnowledgeFile, AgentSettings } from './client';
 
 /**
- * « Où en est la configuration de l'agent Meta », en une ligne et une liste.
+ * « Où en est la configuration de l'agent Meta », en une ligne et une liste : nos onglets ne disent pas ce qui
+ * manque. Plus strict que l'écran de Meta sur deux points : une compétence `pending_review` ne compte pas (elle
+ * existe sans agir), et un site à `pages_crawled: 0` non plus (« terminé » sans rien récolter).
  *
- * Repris de l'écran de Meta (« 4 of 5 tasks completed »), demandé par Julien le 2026-09-10, et pour une
- * raison précise : nos onglets ne disent PAS ce qui manque. Il faut les ouvrir un par un pour découvrir
- * qu'un réglage obligatoire est vide, ce qui est exactement ce qui venait de lui arriver avec les
- * compétences, restées vides pendant que l'agent répondait à tout le monde.
- *
- * 🔴 MAIS PLUS STRICT QUE CELUI DE META, SUR DEUX POINTS MESURÉS LE MÊME JOUR, et c'est tout l'intérêt
- * d'avoir le nôtre :
- *
- * 1. **Une compétence `pending_review` NE COMPTE PAS.** Meta relit les compétences avant de les activer.
- *    Entre l'écriture et l'activation, elle existe et n'agit pas. Une coche verte à ce moment-là dirait
- *    « c'est réglé » sur un agent qui répond encore sans elle.
- * 2. **Un site à `pages_crawled: 0` NE COMPTE PAS.** Sur notre propre numéro, l'écran de Meta affichait une
- *    coche verte sur `messagingme.fr` avec `crawl_status: "completed"` et ZÉRO page aspirée. Le crawl s'est
- *    « terminé » sans rien récolter. Une source de connaissance vide n'est pas une source de connaissance.
- *
- * 🔴 CE QU'ON NE SAIT PAS, ON LE DIT `inconnue`, ON NE LE COMPTE PAS. Les connecteurs et outils ne sont pas
- * encore pilotés depuis Engage Me, et une lecture qui échoue chez Meta laisse sa tâche sans état
- * connaissable. Les compter comme faits serait une invention ; les compter comme à faire serait un
- * reproche injuste. Ils sortent du dénominateur, ET du compte d'étapes de l'en-tête, et gardent leur ligne
- * avec la raison, dans la liste GRISE des signalements (`EnteteAgent`, prop `signalements`, qui ne retient
- * que les OBLIGATOIRES : les facultatifs `connecteurs` et `outils` n'y sont pas).
- *
- * ⚠️ « GARDENT LEUR LIGNE » A ÉTÉ FAUX DU 2026-09-23 AU MÊME JOUR, et personne ne l'a vu. L'en-tête qui a
- * remplacé `MbaCompletion` ne gardait que les tâches `a_faire` : ces lignes-là avaient purement disparu de
- * l'écran, pendant que cette phrase et quatre autres continuaient de les promettre. Relevé par la revue
- * finale, pas par un test, parce qu'aucun test ne les couvrait.
- *
- * PUR : aucune IO. C'est ici que se décide ce que « fait » veut dire, et ça se teste sans réseau.
+ * Ce qu'on ne sait pas se dit `inconnue` et ne se compte pas (connecteurs et outils non pilotés d'ici, lecture
+ * ratée chez Meta) : hors du dénominateur et du compte d'étapes, mais leur ligne reste, avec sa raison, dans la
+ * liste grise des signalements (`EnteteAgent`, prop `signalements`, obligatoires seulement).
+ * Pur : aucune IO. C'est ici que se décide ce que « fait » veut dire.
  */
 
 /** `inconnue` n'est pas un demi-état poli : c'est « nous ne pouvons pas le savoir », et ça se dit. */
@@ -43,36 +21,27 @@ export interface TacheMba {
   requise: boolean;
   etat: EtatTache;
   /**
-   * Pourquoi ce n'est pas fait, ou pourquoi on ne peut pas le dire. Absent quand c'est fait.
-   *
-   * ⚠️ Écrit ici et non à l'écran : la raison DÉPEND de ce qu'on a mesuré (« quatre compétences, aucune
-   * active » n'est pas « aucune compétence »), et un écran qui la reconstruirait à partir de l'état seul
-   * la perdrait.
+   * Pourquoi ce n'est pas fait, ou pourquoi on ne peut pas le dire ; absent quand c'est fait. Écrit ici et non à
+   * l'écran : la raison dépend de ce qu'on a mesuré (« quatre compétences, aucune active »).
    */
   raison?: string;
 }
 
 export interface CompletionMba {
   taches: TacheMba[];
-  /** Tâches OBLIGATOIRES faites, sur celles dont l'état est connaissable. C'est le « 3 sur 4 » de l'écran. */
+  /** Tâches obligatoires faites, sur celles dont l'état est connaissable : le « 3 sur 4 » de l'écran. */
   faites: number;
   total: number;
   /**
-   * Tâches obligatoires dont l'état est hors de notre portée. L'en-tête les rend à part, en gris, sous ses
-   * étapes : jamais dans le ratio, et jamais dans « n étapes à finir ».
-   *
-   * ⚠️ CE COMPTEUR N'EST LU PAR PERSONNE À L'ÉCRAN, et c'est volontaire : la liste grise se construit en
-   * filtrant `taches` (`etat === 'inconnue' && requise`), parce qu'une ligne doit porter SA raison. Le
-   * nombre reste rendu pour qui lirait la route directement, il ne gouverne aucun affichage.
+   * Tâches obligatoires dont l'état est hors de notre portée, jamais dans le ratio. Aucun affichage ne lit ce
+   * compteur : la liste grise filtre `taches`, pour qu'une ligne porte sa raison.
    */
   indeterminees: number;
 }
 
 /**
- * ⚠️ PAS DE TÂCHE « TESTER », alors que l'écran de Meta en a une. « Avoir testé » n'est pas un état de la
- * configuration : ça ne se lit sur aucune route de Meta, et notre propre historique d'essais (migration
- * 0119) répondrait à une autre question, « quelqu'un a-t-il cliqué », qui n'a pas sa place dans une liste
- * de réglages. L'onglet Tester existe et se suffit.
+ * Pas de tâche « tester », contrairement à l'écran de Meta : « avoir testé » n'est pas un état de la
+ * configuration et ne se lit sur aucune route de Meta. L'onglet Tester se suffit.
  */
 export interface EntreeCompletion {
   settings: AgentSettings | null;
@@ -86,9 +55,8 @@ export interface EntreeCompletion {
 const rempli = (v: unknown): boolean => typeof v === 'string' && v.trim() !== '';
 
 /**
- * ⚠️ `null` VEUT DIRE « PAS LU », PAS « VIDE », et la distinction porte tout le module. Chacune de ces
- * lectures est un aller-retour chez Meta qui peut échouer seul. Traiter un échec comme un tableau vide
- * afficherait « FAQ à faire » sur un agent qui en a trente, et enverrait le client en écrire une de plus.
+ * `null` veut dire « pas lu », pas « vide » : chaque lecture chez Meta peut échouer seule, et traiter un échec
+ * comme vide afficherait « FAQ à faire » sur un agent qui en a trente.
  */
 function etatListe(liste: unknown[] | null, vide: string): { etat: EtatTache; raison?: string } {
   if (liste === null) return { etat: 'inconnue', raison: 'Lecture impossible chez Meta pour l’instant.' };
@@ -111,7 +79,7 @@ export function calculerCompletion(e: EntreeCompletion): CompletionMba {
 
   taches.push({ cle: 'faq', requise: true, ...etatListe(e.faqs, 'Aucune question fréquente enregistrée.') });
 
-  // 🔴 La seule tâche où « écrite » et « active » se séparent, et c'est celle qui a coûté le plus cher.
+  // La seule tâche où « écrite » et « active » se séparent.
   if (e.skills === null) {
     taches.push({ cle: 'competences', requise: true, etat: 'inconnue', raison: 'Lecture impossible chez Meta pour l’instant.' });
   } else {
@@ -145,21 +113,11 @@ export function calculerCompletion(e: EntreeCompletion): CompletionMba {
   });
 
   /**
-   * 🔴 LE MOYEN DE PAIEMENT N'EST PAS UNE TÂCHE, ET C'EST UNE DÉCISION (Julien, 2026-09-24), PAS UN OUBLI.
-   * Il en était une jusqu'à cette date, toujours `inconnue`, donc il posait une ligne grise PERMANENTE que
-   * rien ne pouvait jamais faire disparaître. Elle ne disait rien de l'état de l'agent et ne se réglait pas
-   * dans la console : du bruit à chaque ouverture de l'écran, pas une information.
-   *
-   * ⚠️ CE QUI A ÉTÉ MESURÉ LE 2026-09-10 RESTE VRAI, et c'est pourquoi il est écrit ICI plutôt que perdu
-   * avec la tâche. Sur le WABA réel : `primary_funding_id` répond **code 10** (« requires that the Business
-   * that owns this App is a Business Solution Provider for WhatsApp »), donc une porte fermée derrière le
-   * statut BSP, qui est une décision d'entreprise et non un réglage ; `/{business}/extendedcredits` répond
-   * **code 200** (« requires business_management permission »), une PORTÉE de jeton que nous ne demandons
-   * pas et qui, elle, POURRAIT s'obtenir. Le jour où on la demande, le paiement devient lisible, donc une
-   * vraie tâche avec un vrai état, et il reprend sa place ici.
-   *
-   * 🔴 ET IL NE SE DÉDUIT PAS DE « L'AGENT EST ALLUMÉ », dans les deux sens : une audience restreinte
-   * n'exige aucun paiement (doc du 2026-09-10), et un paiement peut exister sans agent allumé.
+   * Le moyen de paiement n'est pas une tâche : jamais lisible (toujours `inconnue`), il posait une ligne grise
+   * permanente. Côté Meta : `primary_funding_id` répond code 10 (réservé aux Business Solution Providers), et
+   * `/{business}/extendedcredits` code 200 (portée `business_management`, que nous ne demandons pas mais qui
+   * s'obtiendrait ; le jour venu, il redevient une vraie tâche). Il ne se déduit pas de « l'agent est allumé » :
+   * une audience restreinte n'exige aucun paiement, et un paiement peut exister sans agent allumé.
    */
 
   // --- Facultatives ------------------------------------------------------------------------------

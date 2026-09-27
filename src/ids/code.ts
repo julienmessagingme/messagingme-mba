@@ -1,16 +1,14 @@
 import { randomBytes, createHash } from 'node:crypto';
 
 /**
- * Identifiants publics « lisibles API » — schéma A : `<type>_<code-client>_<ULID>`.
- * Ex. `scn_k7m2p3_01J9Z3QK8F5A2B7C9D0EF1GH`. Le code est ADDITIF (il n'a jamais vocation à remplacer les
- * clés internes uuid/slug/composite : ce sont elles qui portent les relations). C'est le handle stable pour
- * une future API :
- *  - `type`         : préfixe d'entité (scn/nod/usr/fld/tag) -> on sait ce qu'on regarde.
- *  - `code-client`  : racine STABLE par tenant (posée une fois, immuable), « liée au client ».
- *  - `ULID`         : suffixe unique triable dans le temps, sans compteur ni verrou.
+ * Identifiants publics lisibles par l'API : `<type>_<code-client>_<ULID>` (ex. `scn_k7m2p3_01J9Z3QK8F5A2B7C9D0EF1GH`).
+ * Additif : les relations restent portées par les clés internes (uuid, slug, composite).
+ *  - `type` : préfixe d'entité (scn/nod/usr/fld/tag) ;
+ *  - `code-client` : racine stable et immuable par espace ;
+ *  - `ULID` : suffixe unique triable dans le temps, sans compteur ni verrou.
  */
 
-// Alphabet Crockford base32 (sans I, L, O, U — pas d'ambiguïté visuelle).
+// Alphabet Crockford base32 (sans I, L, O, U : pas d'ambiguïté visuelle).
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
 export type EntityType = 'scn' | 'nod' | 'usr' | 'fld' | 'tag';
@@ -28,8 +26,8 @@ export function newUlid(now: number = Date.now()): string {
 }
 
 /**
- * Les `n` premiers caractères base32 (Crockford, MAJUSCULES) des octets donnés, lus 5 bits par 5 bits depuis
- * le premier octet. Les bits qui dépassent sont ignorés : l'appelant fournit au moins `ceil(5n/8)` octets.
+ * Les `n` premiers caractères base32 (Crockford, majuscules) des octets donnés, lus 5 bits par 5 bits. Les bits en
+ * trop sont ignorés : l'appelant fournit au moins `ceil(5n/8)` octets.
  */
 function base32(octets: Uint8Array, n: number): string {
   let out = '';
@@ -54,58 +52,42 @@ export function makeCode(type: EntityType, tenantCode: string): string {
 }
 
 /**
- * Code d'un lien de redirection tracé : 12 caractères base32, en minuscules, TIRÉS AU SORT.
- *
- * Délibérément différent du schéma `<type>_<tenantCode>_<ULID>` sur deux points, et pour deux raisons :
- *  - COURT (12 car. au lieu de 36) : ce code voyage dans une URL qu'un destinataire voit s'ouvrir, et qui
- *    compte dans les 2000 caractères que Meta accepte pour une URL de bouton.
- *  - SANS code client ni horodatage : `deriveTenantCode` est déterministe et l'ULID porte l'heure de
- *    création. Sur un lien public, les deux se lisent de l'extérieur et disent qui envoie et quand.
- *
- * 12 caractères base32 = 60 bits d'aléa : deviner un code voisin n'a pas de sens à cette échelle, ce qui
- * compte puisque la route de redirection est publique par nature.
+ * Code d'un lien de redirection tracé : 12 caractères base32 minuscules, tirés au sort (60 bits, la route est
+ * publique). Court, parce qu'il voyage dans une URL de bouton limitée par Meta ; sans code client ni horodatage,
+ * qui se liraient de l'extérieur et diraient qui envoie et quand.
  */
 export function newTrackingCode(): string {
   return codeAleatoire(12);
 }
 
 /**
- * Code public d'un webhook ENTRANT : 26 caracteres base32 minuscules, soit 130 bits d'alea.
- *
- * Deux fois plus long que le code d'un lien trace, et c'est voulu : ce code n'est pas un identifiant, c'est
- * la CLE D'ACCES. Il suffit a lui seul pour poster dans un espace, et il finit colle dans la configuration
- * d'un outil tiers. `newTrackingCode` se contente de 60 bits parce qu'il doit tenir dans une URL de bouton
- * WhatsApp ; nous n'avons pas cette contrainte, donc rien ne justifie d'economiser sur l'alea.
+ * Code public d'un webhook entrant : 26 caractères base32 minuscules, 130 bits. Ce n'est pas un identifiant mais
+ * la clé d'accès (il suffit pour poster dans un espace) : rien ne justifie d'économiser sur l'aléa.
  */
 export function newWebhookCode(): string {
   return codeAleatoire(26);
 }
 
 /**
- * Code public d'un VISUEL de message RCS : 26 caracteres base32, comme un webhook entrant, et pour la meme
- * raison. La route qui sert l'image est publique et non authentifiee (c'est l'operateur telecom qui la
- * telecharge, il n'a aucune session) : ce code n'est donc pas un identifiant, c'est ce qui donne acces au
- * fichier. Rien ne justifie d'economiser sur l'alea, l'URL etant posee par la machine et jamais tapee.
+ * Code public d'un visuel de message RCS : 26 caractères, comme un webhook. La route qui sert l'image est publique
+ * (l'opérateur télécom la télécharge sans session) : ce code est ce qui donne accès au fichier.
  */
 export function newMediaCode(): string {
   return codeAleatoire(26);
 }
 
-/** Chaine base32 (Crockford) minuscule de `longueur` caracteres, tiree au sort. */
+/** Chaîne base32 (Crockford) minuscule de `longueur` caractères, tirée au sort. */
 function codeAleatoire(longueur: number): string {
   return base32(randomBytes(Math.ceil((longueur * 5) / 8)), longueur).toLowerCase();
 }
 
-// `systemFieldCode` a vécu ici sans jamais avoir d'appelant côté serveur : le seul générateur utilisé est
-// celui du front (`web/lib/codes.ts`, appelé par la page Champs). Supprimé le 2026-07-18. Le format
-// `fld_<tenantCode>_sys_<key>` reste RÉSERVÉ et documenté côté front ; le résolveur d'API le reconnaît via
-// `SYS_RE` dans `src/ids/resolve.ts`, qui est le vrai consommateur serveur de cette convention.
+// Le format `fld_<tenantCode>_sys_<key>` reste réservé : généré par le front (`web/lib/codes.ts`), reconnu côté
+// serveur par `SYS_RE` dans `src/ids/resolve.ts`.
 
 /**
- * Racine `code-client` STABLE et DÉTERMINISTE dérivée d'un seed (l'uuid du tenant) : 6 caractères base32
- * minuscules. Déterministe -> utilisable à l'identique pour le backfill des tenants existants ET à la création.
- * Immuable (le seed = l'uuid du tenant ne change jamais). Collision astronomiquement improbable à l'échelle
- * (32^6 ≈ 1 milliard) et de toute façon barrée par l'index unique sur `tenants.public_code`.
+ * Racine `code-client` d'un espace : 6 caractères base32 minuscules dérivés de son uuid, donc déterministes
+ * (backfill et création donnent le même) et immuables. Une collision est barrée par l'index unique sur
+ * `tenants.public_code`.
  */
 export function deriveTenantCode(seed: string): string {
   return base32(createHash('sha256').update(seed).digest(), 6).toLowerCase();

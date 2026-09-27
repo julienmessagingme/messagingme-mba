@@ -3,14 +3,9 @@ import { encryptSecret, decryptSecret } from '../crypto/secretbox';
 import type { Connexion, ConnexionPublique } from './types';
 
 /**
- * Colonnes de la projection PUBLIQUE de `channelsme_connections`.
- *
- * 🔴 `api_key_enc` et `secret_enc` n y figurent pas, et ne sont meme pas TRANSPORTEES : sur ce chemin, le
- * chiffre ne quitte jamais la base. C est la difference entre « le secret n est pas rendu au client » et
- * « le secret n est pas lu du tout », et c est la seconde qu on veut, parce qu elle se verifie en lisant
- * une seule requete.
- *
- * ⚠️ Liste tenue A LA MAIN : ajouter une colonne oblige a toucher aussi `ConnexionRow` et `versPublique`.
+ * Colonnes de la projection publique de `channelsme_connections`. 🔴 `api_key_enc` et `secret_enc` n'y
+ * figurent pas : sur ce chemin, le chiffré ne quitte jamais la base, ce qui se vérifie en lisant une requête.
+ * Liste tenue à la main : une colonne ajoutée ici doit l'être aussi dans `ConnexionRow` et `versPublique`.
  */
 const COLS = 'org_id, channel_id, verified_at';
 
@@ -32,10 +27,9 @@ function versPublique(r: ConnexionRow): ConnexionPublique {
   return {
     orgId: r.org_id,
     channelId: r.channel_id,
-    // Les deux colonnes chiffrees sont `not null` (migration 0114) et `upsert` est leur SEUL redacteur : une
-    // ligne existe si et seulement si les deux creds sont enregistres. On l affirme ici plutot que de faire
-    // voyager le chiffre jusqu au mapping pour tester s il est vide.
-    // ⚠️ Rendre une de ces deux colonnes nullable un jour obligerait a calculer ces booleens en SQL.
+    // Les deux colonnes chiffrées sont `not null` et `upsert` est leur seul rédacteur : une ligne existe si et
+    // seulement si les deux secrets sont enregistrés. Si l'une devenait nullable, ces booléens se calculeraient
+    // en SQL.
     hasApiKey: true,
     hasSecret: true,
     verifiedAt: r.verified_at ? r.verified_at.toISOString() : null,
@@ -43,18 +37,14 @@ function versPublique(r: ConnexionRow): ConnexionPublique {
 }
 
 /**
- * La connexion Channels Me d un tenant : une ligne par tenant (cle primaire `tenant_id`), les deux secrets
- * chiffres au repos.
- *
- * Deux choses ne se negocient pas ici. Le chiffrement se fait DANS ce store, directement dans le tableau de
- * parametres de la requete : c est ce qui rend impossible de faire transiter un clair par une couche
- * superieure. Et la cle arrive par le CONSTRUCTEUR au lieu d etre lue dans la config, ce qui rend le store
- * testable sans variable d environnement, en local comme en CI.
+ * La connexion Channels Me d'un tenant : une ligne par tenant, les deux secrets chiffrés au repos. Le
+ * chiffrement se fait dans ce store, dans les paramètres de la requête, pour qu'aucun clair ne transite par
+ * une couche supérieure ; la clé arrive par le constructeur, testable sans variable d'environnement.
  */
 export class PgChannelsMeConnectionStore {
   constructor(private readonly pool: Pool, private readonly encryptionKey: string) {}
 
-  /** Ce que l API a le droit de rendre : jamais un secret, seulement leur PRESENCE. */
+  /** Ce que l'API a le droit de rendre : jamais un secret, seulement leur présence. */
   async get(tenantId: string): Promise<ConnexionPublique | null> {
     const { rows } = await this.pool.query<ConnexionRow>(
       `select ${COLS} from channelsme_connections where tenant_id=$1`,
@@ -63,10 +53,8 @@ export class PgChannelsMeConnectionStore {
     return rows[0] ? versPublique(rows[0]) : null;
   }
 
-  /**
-   * Les creds DECHIFFRES, pour appeler Channels Me depuis le serveur.
-   * En memoire uniquement, jamais serialise vers le client.
-   */
+  /** Les secrets déchiffrés, pour appeler Channels Me depuis le serveur. En mémoire uniquement, jamais
+   *  sérialisés vers le client. */
   async getSecrets(tenantId: string): Promise<Connexion | null> {
     const { rows } = await this.pool.query<ConnexionRowAvecSecrets>(
       `select ${COLS}, api_key_enc, secret_enc from channelsme_connections where tenant_id=$1`,
@@ -83,11 +71,9 @@ export class PgChannelsMeConnectionStore {
   }
 
   /**
-   * Provisionne ou REMPLACE les creds du tenant (une ligne par tenant, d ou l upsert sur la cle primaire).
-   *
-   * 🔴 `verified_at` retombe a null a chaque ecriture. Une preuve de validite porte sur les creds qui ont ete
-   * essayes, pas sur la ligne qui les contient : garder l ancienne date ferait dire a l ecran « connexion
-   * verifiee » a propos d une cle que personne n a jamais essayee.
+   * Provisionne ou remplace les secrets du tenant (upsert sur la clé primaire). `verified_at` retombe à null à
+   * chaque écriture : une preuve de validité porte sur les secrets essayés, pas sur la ligne, et l'écran
+   * dirait sinon « connexion vérifiée » d'une clé jamais essayée.
    */
   async upsert(tenantId: string, c: Connexion): Promise<void> {
     await this.pool.query(
@@ -109,12 +95,9 @@ export class PgChannelsMeConnectionStore {
   }
 
   /**
-   * DEBRANCHE la chaine : oublie les identifiants (bloc « Canaux et services » de l Accueil, 2026-09-25).
-   *
-   * 🔴 SEULE CETTE TABLE EST TOUCHEE. Les liens et les publications n ont aucune cle etrangere vers elle, et
-   * c est voulu : un post publie circule pour toujours, son bouton doit continuer de demarrer son scenario
-   * (l automation compagnon du lien reste allumee). Rebrancher, c est ressaisir les quatre identifiants.
-   * `true` = une connexion existait.
+   * Débranche la chaîne : oublie les identifiants ; `true` = une connexion existait. Seule cette table est
+   * touchée : liens et publications n'ont aucune clé étrangère vers elle, et un post publié circule pour
+   * toujours, son bouton doit continuer de démarrer son scénario. Rebrancher, c'est ressaisir les identifiants.
    */
   async supprimer(tenantId: string): Promise<boolean> {
     const res = await this.pool.query(`delete from channelsme_connections where tenant_id=$1`, [tenantId]);

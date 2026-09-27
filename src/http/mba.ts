@@ -13,26 +13,17 @@ import { calculerCompletion } from '../mba/completion';
 import { appliquerActivation, EtatMetaIllisible, MetaARefuse } from '../mba/activation';
 
 /**
- * Configuration de l'agent Meta Business Agent depuis la console : la base de connaissance (informations
- * business, FAQ, fichiers, sites web), la personnalité (skills), les réglages, la liste d'autorisation et le
- * bac à sable de test. C'est ce qui permet au client de tout régler depuis mba.messagingme.app au lieu de
- * passer par WhatsApp Manager.
- *
- * La surface MBA est indexée PAR NUMÉRO, pas par tenant : `phoneNumberBelongsToTenant` est donc le VRAI
- * contrôle d'isolation ici, au même titre que `scopeTenant`. Sans lui, un admin authentifié pourrait piloter
- * l'agent du numéro d'un autre client en changeant l'id dans l'URL.
- *
- * Groupe admin-only (garde posé par le serveur) : ces routes écrivent la connaissance publique de la marque.
+ * Configuration du Meta Business Agent depuis la console : base de connaissance (informations business, FAQ,
+ * fichiers, sites), compétences, réglages, liste d'autorisation et bac à sable. Groupe admin (ces routes écrivent
+ * la connaissance publique de la marque).
+ * 🔴 La surface MBA est indexée par numéro : `phoneNumberBelongsToTenant` est ici le vrai contrôle d'isolation,
+ * sans lui un admin piloterait l'agent du numéro d'un autre client en changeant l'id dans l'URL.
  */
 
 export interface MbaRouteDeps {
   /**
-   * L'HISTORIQUE DES RÉGLAGES (migration 0146). Requis depuis le lot 3 de l'audit ponytail ; les fixtures qui ne
-   * l'observent pas passent `historiqueMuet`.
-   *
-   * 🔴 IL EST BRANCHÉ SUR LES SUPPRESSIONS EN PRIORITÉ, et la raison n'est pas l'ordre alphabétique : chez
-   * Meta, une suppression est DÉFINITIVE (ni corbeille, ni historique). La ligne écrite ici est le seul
-   * exemplaire du contenu effacé. Une création ratée se refait ; une suppression non journalisée est perdue.
+   * L'historique des réglages (les fixtures qui ne l'observent pas passent `historiqueMuet`). 🔴 Chez Meta, une
+   * suppression est définitive : la ligne écrite ici est le seul exemplaire du contenu effacé.
    */
   journaliserSuppression(tenantId: string, ligne: {
     element: 'faq' | 'competence' | 'site' | 'fichier';
@@ -44,29 +35,19 @@ export interface MbaRouteDeps {
   /** Client MBA du tenant (token résolu par tenant, repli global en sommeil). */
   clientFor(tenantId: string): Promise<MbaClient>;
   /**
-   * Numéro Meta du tenant, RÉSOLU CÔTÉ SERVEUR. `null` = aucun numéro connecté.
-   *
-   * 🔴 C'est ce qui rend la route d'activation possible. Toutes les autres routes de ce module reçoivent le
-   * numéro dans l'URL, parce que la surface MBA est indexée par numéro. Celle-là ne peut pas : c'est
-   * précisément le fait que le NAVIGATEUR devait connaître le numéro avant de pouvoir agir qui a produit
-   * trois pannes le 2026-09-10, la dernière parce que `account` n'était pas encore chargé au clic.
+   * Numéro Meta de l'espace, résolu côté serveur. `null` = aucun numéro connecté. C'est ce qui permet la route
+   * d'activation, la seule de ce module qui ne reçoit pas le numéro du navigateur.
    */
   numeroDuTenant(tenantId: string): Promise<string | null>;
-  /** Écrit NOTRE drapeau `tenant_settings.mba_enabled`. */
+  /** Écrit notre drapeau `tenant_settings.mba_enabled`. */
   ecrireDrapeauMba(tenantId: string, enabled: boolean): Promise<void>;
   /** Le numéro appartient-il à ce tenant ? Contrôle d'isolation, en base. */
   phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
   /** Récupère une page pour l'import de FAQ depuis une URL. Injecté pour rester testable sans réseau. */
   fetchUrl?(url: string): Promise<PageDistante>;
   /**
-   * Les messages ÉCRITS par l'agent de Meta, depuis toujours (`PgStatsStore.messagesEcritsParMba`).
-   *
-   * ⚠️ PAR ESPACE, PAS PAR NUMÉRO, et ce n'est pas un raccourci : `conversations` ne porte aucun
-   * `phone_number_id` (migration 0009), sa clé métier est `(tenant_id, wa_id)`. Le produit refusant par
-   * ailleurs un second numéro par espace, les deux coïncident aujourd'hui. Le jour où un espace en
-   * piloterait deux, ce chiffre deviendrait la somme des deux et il faudrait le dire.
-   *
-   * ⚠️ REQUISE depuis le lot 3 de l'audit ponytail : le câblage de production la fournit toujours.
+   * Les messages écrits par l'agent de Meta, depuis toujours (`PgStatsStore.messagesEcritsParMba`). Par espace et
+   * non par numéro : `conversations` n'a pas de `phone_number_id`. Un espace à deux numéros verrait la somme.
    */
   messagesEcrits(tenantId: string): Promise<number>;
 }
@@ -75,9 +56,8 @@ export interface MbaRouteDeps {
 const MAX_IMPORT = 500;
 
 /**
- * Extensions acceptées par Meta (liste du schéma, pas de la prose : `.txt` et `.md` en sont ABSENTS).
- * ⚠️ Recopiée côté navigateur dans `web/lib/mba-files.ts` (les deux builds ne partagent aucun module).
- * `tests/web-mba-parity.test.ts` casse dès que les deux listes divergent.
+ * Extensions acceptées par Meta (liste du schéma : `.txt` et `.md` en sont absents). Recopiée côté navigateur
+ * (`web/lib/mba-files.ts`) ; `tests/web-mba-parity.test.ts` casse si les deux divergent.
  */
 export const EXTENSIONS_FICHIER: Record<string, string> = {
   'application/pdf': 'pdf',
@@ -101,13 +81,9 @@ export const DESCRIPTION_SKILL_MAX = 1024;
 export const CORPS_SKILL_MAX = 20000;
 
 /**
- * Les quatre règles ci-dessous sont RECOPIÉES côté navigateur (`web/lib/mba-files.ts`, `web/lib/mba-skills.ts`) :
- * les deux builds ne partagent aucun module, et la copie sert à refuser tout de suite ce que Meta refusera,
- * plutôt que de faire monter 27 Mo de base64 pour rien.
- *
- * Elles sont sorties en FONCTIONS PURES, et pas seulement en constantes, pour que `tests/web-mba-parity.test.ts`
- * puisse poser la même table de cas aux deux implémentations, comme `web-button-url-parity.test.ts`. Comparer
- * des constantes laisserait diverger la façon de s'en servir.
+ * Les quatre règles ci-dessous sont recopiées côté navigateur (`web/lib/mba-files.ts`, `web/lib/mba-skills.ts`)
+ * pour refuser tout de suite ce que Meta refusera. En fonctions pures pour que `tests/web-mba-parity.test.ts`
+ * pose la même table de cas aux deux implémentations.
  */
 
 /** Le nom du fichier porte-t-il l'extension qui correspond à son type déclaré ? */
@@ -143,17 +119,9 @@ async function contexte(
 
 /**
  * Supprime un élément de l'agent de Meta (FAQ, compétence, site, fichier) et journalise ce qu'il contenait.
- *
- * 🔴 LE CONTENU EST LU AVANT DE SUPPRIMER, et c'est la seule fenêtre où il existe encore : Meta ne rend plus un
- * objet parti, et la ligne d'historique en devient le seul exemplaire. Le lire après coup serait trop tard.
- *
- * ⚠️ BEST-EFFORT SUR LA LECTURE : si elle échoue, on supprime quand même et on journalise l'identifiant seul.
- * Refuser la suppression parce qu'on n'a pas pu lire ferait dépendre un geste ordinaire d'un appel de plus,
- * alors que c'est le client qui l'a demandé. Le `catch` porte sur la LISTE, pas sur `find` : c'est l'appel
- * réseau qui peut échouer. Sans journal branché, rien n'est lu.
- *
- * ⚠️ LE JOURNAL VIENT APRÈS la suppression : journaliser un geste qui n'a pas eu lieu ferait chercher une
- * cause inexistante. `libelle` et `champ` composent la ligne lisible (« FAQ : <question> »).
+ * Le contenu est lu avant de supprimer, seule fenêtre où il existe encore (Meta ne rend plus un objet parti).
+ * Au mieux : si la lecture de la liste échoue, on supprime quand même et on journalise l'identifiant seul. Le
+ * journal vient après la suppression ; `libelle` et `champ` composent la ligne lisible (« FAQ : <question> »).
  */
 async function supprimerAvecTrace(
   deps: MbaRouteDeps,
@@ -241,18 +209,10 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
   // ---------- État général ----------
 
   /**
-   * « Où en est la configuration », en une lecture. Reprend la sémantique de l'écran de Meta
-   * (« 4 of 5 tasks completed »), demandé par Julien le 2026-09-10 : nos onglets ne DISENT pas ce qui
-   * manque, il faut les ouvrir un par un, et c'est ainsi que les compétences sont restées vides pendant
-   * que l'agent répondait à tout le monde.
-   *
-   * 🔴 SIX LECTURES EN PARALLÈLE, ET CHACUNE PEUT ÉCHOUER SEULE. Un `allSettled` et non un `all` : une
-   * seule route de Meta en erreur ne doit pas priver l'écran des cinq autres réponses. Un échec devient
-   * `null`, que `calculerCompletion` traduit en « pas lu » et JAMAIS en « à faire » : afficher « FAQ à
-   * faire » sur un agent qui en a trente enverrait le client en écrire une de plus.
-   *
-   * ⚠️ Les compétences exigent un `agent_id` : sans agent créé, la liste n'est pas « vide », elle n'existe
-   * pas. On passe donc `null` plutôt qu'un tableau, et l'écran dira « pas lu ».
+   * « Où en est la configuration », en une lecture (sémantique de l'écran de Meta, « 4 of 5 tasks completed »).
+   * Six lectures en `allSettled` : une route de Meta en erreur ne prive pas l'écran des autres. Un échec devient
+   * `null`, que `calculerCompletion` traduit en « pas lu », jamais en « à faire ». Sans agent créé, les
+   * compétences n'existent pas : `null` aussi.
    */
   app.get(`${base}/completion`, g, async (req, reply) => {
     const ctx = await contexte(req, reply, deps);
@@ -272,10 +232,8 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
   });
 
   /**
-   * Combien de messages l'agent de Meta a ÉCRITS, depuis toujours. Pas de fenêtre, donc pas de `jours`.
-   *
-   * ⚠️ `messages: null` QUAND ON NE SAIT PAS, jamais 0. Un zéro affirmerait que l'agent n'a parlé à
-   * personne, ce qui est une information FAUSSE présentée comme une mesure.
+   * Combien de messages l'agent de Meta a écrits, depuis toujours. `messages: null` quand on ne sait pas, jamais
+   * 0 : un zéro affirmerait que l'agent n'a parlé à personne.
    */
   app.get(`${base}/messages`, g, async (req, reply) => {
     const ctx = await contexte(req, reply, deps);
@@ -304,9 +262,8 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
 
   /**
    * Réglages : seules les clés reconnues sont modifiables, le reste de l'objet est repassé tel quel par
-   * `modifierSettings` (le PUT de Meta est un remplacement complet). L'allumage n'est PAS ici : c'est une
-   * action à conséquence asymétrique (éteindre coupe tous les fils, rallumer ne reprend que les nouveaux),
-   * elle mérite sa propre route et sa propre confirmation.
+   * `modifierSettings` (le PUT de Meta est un remplacement complet). L'allumage n'est pas ici : action à
+   * conséquence asymétrique (éteindre coupe tous les fils, rallumer ne reprend que les nouveaux), elle a sa route.
    */
   app.patch(`${base}/settings`, g, async (req, reply) => {
     const ctx = await contexte(req, reply, deps);
@@ -330,7 +287,7 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
       if (typeof b.followupEnabled !== 'boolean') return reply.code(400).send({ error: 'followupEnabled invalide (booléen)' });
       patch.followup = { enabled: b.followupEnabled };
     }
-    // Passage de main. Les trois champs vont dans le MÊME sous-objet : `modifierSettings` fusionne `handoff`
+    // Passage de main. Les trois champs vont dans le même sous-objet : `modifierSettings` fusionne `handoff`
     // avec l'existant, donc n'envoyer qu'un champ ici ne détruit pas les deux autres.
     const handoff: Record<string, unknown> = {};
     if (b.handoffEnabled !== undefined) {
@@ -346,8 +303,7 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
         return reply.code(400).send({ error: "handoffMessageSelection invalide ('DEFAULT' | 'AGENT' | 'CUSTOM')" });
       }
       // `CUSTOM` sans texte laisserait l'agent annoncer un transfert avec on ne sait quelle phrase. On exige le
-      // texte dans le MÊME appel plutôt que d'aller relire l'existant : la règle est prévisible, et l'écran
-      // envoie de toute façon les deux ensemble.
+      // texte dans le même appel plutôt que d'aller relire l'existant : la règle est prévisible.
       if (b.handoffMessageSelection === 'CUSTOM' && handoff.message === undefined) {
         return reply.code(400).send({ error: 'handoffMessage requis avec handoffMessageSelection CUSTOM' });
       }
@@ -361,9 +317,8 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
   });
 
   /**
-   * Allumage / extinction, route séparée et explicite. Meta documente l'asymétrie : `false` arrête l'agent sur
-   * TOUTES les conversations, y compris celles en cours ; `true` ne le remet que sur les NOUVELLES. Ce n'est
-   * donc pas un interrupteur symétrique, et l'écran doit le dire avant de l'actionner.
+   * Allumage / extinction, route séparée. Meta documente l'asymétrie : `false` arrête l'agent sur toutes les
+   * conversations, y compris en cours ; `true` ne le remet que sur les nouvelles. L'écran doit le dire avant.
    */
   app.put(`${base}/rollout`, g, async (req, reply) => {
     const ctx = await contexte(req, reply, deps);
@@ -434,7 +389,7 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     return reply.code(200).send({ faqs, count: Array.isArray(faqs) ? faqs.length : 0 });
   });
 
-  /** Question et réponse sont TOUTES DEUX obligatoires, à la création comme à la modification (schéma Meta). */
+  /** Question et réponse sont toutes deux obligatoires, à la création comme à la modification (schéma Meta). */
   function lireFaq(body: unknown): { error: string } | { faq: Faq } {
     const b = (body ?? {}) as Record<string, unknown>;
     if (!nonEmpty(b.question)) return { error: 'question requise' };
@@ -472,9 +427,8 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
   });
 
   /**
-   * APERÇU d'un import, sans aucune écriture chez Meta. Étape obligatoire côté produit : la FAQ n'a ni
-   * suppression en lot ni corbeille, un import raté se rattrape à la main entrée par entrée. On montre donc
-   * d'abord ce qui serait créé, mis à jour et laissé tel quel.
+   * Aperçu d'un import, sans aucune écriture chez Meta. Étape obligatoire : la FAQ n'a ni suppression en lot ni
+   * corbeille, on montre donc d'abord ce qui serait créé, mis à jour et laissé tel quel.
    */
   app.post(`${base}/faq/preview`, g, async (req, reply) => {
     const ctx = await contexte(req, reply, deps);
@@ -493,10 +447,9 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
   });
 
   /**
-   * Applique l'import. Meta n'a pas de création en lot : c'est N appels SÉQUENTIELS (concurrence 1, le 429
-   * est le risque principal). On s'ARRÊTE à la première erreur et on rend ce qui a été appliqué : comme le
-   * plan est calculé par comparaison, relancer après correction reprend exactement là où ça s'est arrêté,
-   * sans recréer ce qui est déjà passé.
+   * Applique l'import. Meta n'a pas de création en lot : N appels séquentiels (concurrence 1, le 429 est le risque
+   * principal). Arrêt à la première erreur en rendant ce qui a été appliqué : le plan étant calculé par comparaison,
+   * relancer reprend là où ça s'est arrêté.
    */
   app.post(`${base}/faq/import`, g, async (req, reply) => {
     const ctx = await contexte(req, reply, deps);
@@ -550,7 +503,7 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     });
   });
 
-  // ---------- Skills (personnalité et procédures, PAS du tool calling) ----------
+  // ---------- Skills (personnalité et procédures, pas du tool calling) ----------
 
   app.get(`${base}/skills`, g, async (req, reply) => {
     const ctx = await contexte(req, reply, deps);
@@ -613,8 +566,8 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
   });
 
   /**
-   * L'URL est validée ICI : le schéma Meta est un simple `string` sans contrainte, donc une adresse saisie
-   * sans `https://` part en 400 générique côté Meta. Autant refuser en nommant le problème.
+   * L'URL est validée ici : le schéma Meta est un simple `string`, et une adresse sans `https://` y part en 400
+   * générique. Autant refuser en nommant le problème.
    */
   app.post(`${base}/websites`, g, async (req, reply) => {
     const ctx = await contexte(req, reply, deps);
@@ -647,9 +600,9 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
   });
 
   /**
-   * Upload d'un document (data URL base64, comme la route média). `file_name` est un champ SÉPARÉ du binaire
-   * côté Meta et rien ne garantit qu'il déduise le type du contenu : on impose donc une extension cohérente
-   * avec le type MIME déclaré, sinon l'ingestion peut échouer en silence.
+   * Upload d'un document (data URL base64, comme la route média). `file_name` est séparé du binaire côté Meta, et
+   * rien ne garantit qu'il déduise le type : on impose une extension cohérente avec le type MIME déclaré, sinon
+   * l'ingestion peut échouer en silence.
    */
   app.post(`${base}/files`, { ...g, bodyLimit: 28 * 1024 * 1024 }, async (req, reply) => {
     const ctx = await contexte(req, reply, deps);
@@ -741,16 +694,9 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
   });
 
   /**
-   * Allumer ou éteindre l'agent de Meta, en UN appel, décidé côté SERVEUR.
-   *
-   * 🔴 POURQUOI CETTE ROUTE EXISTE ALORS QUE `PUT .../rollout` EXISTE DÉJÀ. L'autre exige que l'appelant
-   * connaisse le numéro ET l'éligibilité avant d'agir : c'est le navigateur qui arbitrait, avec une
-   * connaissance partielle, et il a sauté l'appel à Meta trois fois le 2026-09-10 en écrivant quand même
-   * notre drapeau. L'écran annonçait « désactivé » pendant que l'agent répondait aux clients. Ici il n'y a
-   * plus rien à arbitrer côté navigateur : il envoie une intention, il reçoit ce qui a été fait.
-   *
-   * ⚠️ Le corps est volontairement minuscule (`{ enabled }`). Tout le reste se lit côté serveur : ajouter
-   * `phoneNumberId` au corps rouvrirait exactement la porte qu'on ferme.
+   * Allumer ou éteindre l'agent de Meta en un appel, décidé côté serveur. `PUT .../rollout` exige que le navigateur
+   * connaisse le numéro et l'éligibilité : ici il envoie une intention et reçoit ce qui a été fait. Le corps reste
+   * `{ enabled }` : y ajouter `phoneNumberId` rouvrirait l'arbitrage côté navigateur.
    */
   app.put('/tenants/:tenantId/mba-activation', g, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -762,8 +708,8 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
       const r = await appliquerActivation({
         numeroDuTenant: (t) => numeroDuTenant(t),
         eligible: async (t, pn) => (await deps.clientFor(t)).isEligible(pn),
-        // `modifierSettings` RELIT puis n'écrit que `rollout` : un modèle typé fermé effacerait
-        // `never_say_phrases`, `followup` et tout champ que Meta ajouterait.
+        // `modifierSettings` relit puis n'écrit que `rollout` : un modèle typé fermé effacerait `never_say_phrases`,
+        // `followup` et tout champ que Meta ajouterait.
         ecrireChezMeta: async (t, pn, enabled) => {
           await modifierSettings(await deps.clientFor(t), pn, { rollout: { enabled } });
         },
@@ -772,10 +718,8 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
       return reply.code(200).send(r);
     } catch (err) {
       /**
-       * 🔴 4xx, JAMAIS 5xx : Cloudflare remplace le corps de toute réponse 5xx par sa page d'erreur, donc un
-       * message destiné à l'utilisateur n'arriverait jamais. Et les DEUX cas se distinguent à l'écran, parce
-       * qu'ils appellent des gestes opposés : « on n'a pas pu demander » se réessaie, « Meta a refusé » se
-       * diagnostique.
+       * 4xx, jamais 5xx (Cloudflare remplacerait le corps). Les deux cas se distinguent à l'écran : « on n'a pas pu
+       * demander » se réessaie, « Meta a refusé » se diagnostique.
        */
       if (err instanceof EtatMetaIllisible) {
         // eslint-disable-next-line no-console

@@ -1,24 +1,13 @@
 /**
- * UNE LIGNE DE JOURNAL, en JSON, sur la sortie du process : ce que lit `docker logs`.
+ * Une ligne de journal, en JSON, sur la sortie du process : ce que lit `docker logs`.
  *
- * 🔴 `req.log` ET `app.log` SONT MUETS DANS CE DÉPÔT. Fastify est construit en `logger: false`
- * (`src/server.ts`), et son journal est alors une fonction vide : mesuré le 2026-09-22, `app.log.error` vaut
- * `function noop () { }`. Des appels s'en servaient pour une clé Gateway indéchiffrable, un refus de schéma,
- * un réglage illisible, sous des commentaires qui promettaient la trace ; l'un recevait même `req.log` EN
- * VALEUR, forme qu'aucune recherche ligne à ligne ne voyait. `tests/journal-muet.test.ts` refuse tout accès
- * au journal de Fastify, lu sur l'arbre syntaxique.
+ * `req.log` et `app.log` sont muets dans ce dépôt (Fastify en `logger: false`, son journal est une fonction
+ * vide) : on passe par ici, et `tests/journal-muet.test.ts` refuse tout accès au journal de Fastify.
+ * L'espace s'écrit `tenantId`, jamais `tenant`, pour qu'une recherche par espace retrouve toutes les lignes.
  *
- * Même forme que les lignes écrites à la main ailleurs (`{ lvl, msg, ... }`), pour qu'un seul `grep` les
- * retrouve toutes. ⚠️ L'espace s'y écrit `tenantId`, jamais `tenant` : deux clés pour la même chose coupent
- * en deux toute recherche par espace. `tests/journal-muet.test.ts` le tient pour chaque appel de cette fonction.
- *
- * ⚠️ UNE `Error` NE SE SÉRIALISE PAS : `JSON.stringify(new Error('x'))` rend `{}`. Elle est réduite à son
- * message, sa CAUSE suit sur un niveau (un `fetch failed` ne dit rien sans son `ENOTFOUND`), et sa pile suit
- * au niveau `error`.
- *
- * ⚠️ ET CETTE FONCTION NE LÈVE JAMAIS : elle vit dans des `catch`, et un journal qui casserait remplacerait
- * l'erreur qu'il devait décrire par la sienne. Un champ illisible (valeur circulaire, `BigInt`, pile dont la
- * lecture lève) est remplacé SEUL : il n'emporte pas l'espace ni l'erreur écrits à côté de lui.
+ * Une `Error` ne se sérialise pas (`JSON.stringify` rend `{}`) : elle est réduite à son message, sa cause suit
+ * sur un niveau, sa pile au niveau `error`. La fonction ne lève jamais (elle vit dans des `catch`) : un champ
+ * illisible est remplacé seul, sans emporter les autres.
  */
 export function journaliser(niveau: 'info' | 'warn' | 'error', msg: string, champs: Record<string, unknown> = {}): void {
   const ligne: Record<string, unknown> = { lvl: niveau, msg };
@@ -26,10 +15,9 @@ export function journaliser(niveau: 'info' | 'warn' | 'error', msg: string, cham
     for (const [cle, valeur] of Object.entries(champs)) {
       try {
         if (valeur instanceof Error) {
-          // `String` : un message qui n'est pas une chaîne ferait tomber la ligne ENTIÈRE à l'écriture.
+          // `String` : un message qui n'est pas une chaîne ferait tomber la ligne entière à l'écriture.
           ligne[cle] = String(valeur.message);
-          // La cause et la pile ont chacune leur `try` : illisibles, elles se perdent SEULES, sans emporter le
-          // message de leur erreur (une cause sans `toString`, ou dont la lecture lève).
+          // Cause et pile ont chacune leur `try` : illisibles, elles se perdent seules, sans emporter le message.
           try {
             const cause: unknown = valeur.cause;
             if (cause !== undefined) ligne[`${cle}Cause`] = decrireCause(cause);
@@ -60,7 +48,7 @@ export function journaliser(niveau: 'info' | 'warn' | 'error', msg: string, cham
   (niveau === 'error' ? console.error : niveau === 'warn' ? console.warn : console.log)(texte);
 }
 
-/** La cause d'une erreur, sur UN niveau : son code réseau s'il en a un, puis son message. */
+/** La cause d'une erreur, sur un niveau : son code réseau s'il en a un, puis son message. */
 function decrireCause(cause: unknown): string {
   if (!(cause instanceof Error)) return String(cause);
   const code = (cause as { code?: unknown }).code;

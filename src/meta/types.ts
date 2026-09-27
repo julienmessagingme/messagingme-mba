@@ -18,10 +18,9 @@ export interface MarketingParams {
 }
 
 /**
- * Résout l'identité d'un destinataire en champ Meta : un NUMÉRO va dans `to`, un BSUID dans `recipient`.
- * Numéro = E.164 avec `+` (campagne : `+33…`) OU chiffres nus <= 15 (wa_id webhook/workflow : `33…`).
- * BSUID = 16 chiffres et + OU alphanumérique (jamais avec `+`). Cohérent avec `classifyWaId` côté CRM, qui
- * n'émet jamais un BSUID court purement numérique. Source UNIQUE de routage pour tous les envois de template.
+ * Résout l'identité d'un destinataire en champ Meta : un numéro va dans `to`, un BSUID dans `recipient`.
+ * Numéro = E.164 avec `+`, ou chiffres nus <= 15 (wa_id). BSUID = 16 chiffres et plus, ou alphanumérique.
+ * Cohérent avec `classifyWaId` côté CRM. Source unique de routage pour tous les envois de template.
  */
 export function messagingTarget(identity: string): { to: string } | { recipient: string } {
   const t = identity.trim();

@@ -3,37 +3,26 @@ import { RateLimiter, refuserTropDeRequetes } from './rate-limit';
 import { journaliser } from '../lib/journal';
 
 /**
- * LE PLAFOND DE L'API PUBLIQUE PAR ESPACE (décision de Julien du 2026-09-25, migration 0181).
+ * Le plafond de l'API publique par espace, commun à toutes les clés d'un espace, `/v1` et `/mcp` confondus,
+ * sur deux fenêtres appliquées ensemble (minute et heure) : compté par clé, un espace à dix clés aurait dix
+ * fois le débit. Il compte des appels, pas du travail (un lot de 50 fiches vaut un appel) : le travail se
+ * mesure dans `src/api/usage-guard.ts`.
  *
- * 🔴 IL REMPLACE LE PLAFOND PAR CLÉ, ET C'EST TOUT LE SUJET. Compté par clé, un espace qui créait dix clés
- * avait dix fois le débit : le plafond ne bornait que la patience de l'intégrateur à cliquer « Créer une clé ».
- * Il est désormais COMMUN à toutes les clés d'un espace, `/v1` et `/mcp` confondus, sur DEUX fenêtres qui
- * s'appliquent ensemble : une minute ET une heure.
- *
- * ⚠️ IL COMPTE DES APPELS, PAS DU TRAVAIL : un lot de 50 fiches vaut un appel. Le travail est mesuré à part par
- * le garde d'usage (`src/api/usage-guard.ts`), qui n'a pas bougé.
- *
- * 🔴 UNE EXCEPTION, ET ELLE N'EST PAS ICI : la clé du relais du Meta Business Agent garde son propre compteur par
- * clé et n'entre JAMAIS dans ce plafond (`makeRequireApiKey`). Un intégrateur qui charge l'API ne doit pas priver
- * l'agent de Meta de ses outils en pleine conversation avec un client.
- *
- * 🔴 LOCAL AU PROCESS, comme tous les limiteurs du dépôt (`rate-limit.ts`) : le plafond annoncé est celui d'UNE
- * instance. Avec deux process d'API, un espace disposerait du double sans que rien ne le signale. Il n'y a qu'une
- * instance aujourd'hui ; le jour d'une seconde, le compteur part en base ou dans un cache partagé.
+ * La clé du relais du Meta Business Agent garde son propre compteur et n'entre jamais ici
+ * (`makeRequireApiKey`) : un intégrateur qui charge l'API ne doit pas priver l'agent de Meta de ses outils.
+ * Local au process : avec deux instances d'API, un espace aurait le double sans que rien le signale.
  */
 
-/** Les plafonds par défaut, tranchés par Julien le 2026-09-25. La configuration les reprend (`config.ts`). */
+/** Les plafonds par défaut ; la configuration les reprend (`config.ts`). */
 export const PLAFOND_API_DEFAUT = { minute: 60, heure: 1000 } as const;
 
 export const FENETRE_MINUTE_MS = 60_000;
 export const FENETRE_HEURE_MS = 3_600_000;
 
 /**
- * Combien de temps le réglage d'un espace est gardé en mémoire avant d'être relu.
- *
- * ⚠️ COURT, ET REMPLACÉ À L'ÉCRITURE : la route d'exploitation qui règle un espace y pose la valeur écrite, donc ce délai
- * ne compte que pour une écriture faite AILLEURS (à la main en base). Il existe parce que le limiteur est sur le
- * chemin de CHAQUE appel : sans lui, chaque appel paierait une requête de plus.
+ * Combien de temps le réglage d'un espace reste en mémoire avant relecture. Court, et remplacé à l'écriture
+ * par la route d'exploitation : il ne compte que pour une écriture faite ailleurs. Sans lui, chaque appel
+ * paierait une requête de plus.
  */
 export const DUREE_CACHE_REGLAGE_MS = 30_000;
 
@@ -45,7 +34,7 @@ export interface ReglagePlafondApi {
 
 export const SANS_REGLAGE: ReglagePlafondApi = { minute: null, heure: null };
 
-/** Les plafonds de la configuration. ⚠️ `0` = pas de plafond sur cette fenêtre, la convention de tout le dépôt. */
+/** Les plafonds de la configuration. `0` = pas de plafond sur cette fenêtre, la convention du dépôt. */
 export interface PlafondsParDefaut {
   readonly minute: number;
   readonly heure: number;
@@ -64,18 +53,13 @@ export interface LecteurReglagePlafond {
 }
 
 /**
- * Le réglage d'un espace, gardé `DUREE_CACHE_REGLAGE_MS` et remplacé par `poser` quand la route d'exploitation l'écrit.
+ * Le réglage d'un espace, gardé `DUREE_CACHE_REGLAGE_MS` et remplacé par `poser` à l'écriture. Une lecture
+ * en vol est partagée : une rafale d'un même espace ne fait qu'une requête.
  *
- * ⚠️ UNE LECTURE EN VOL EST PARTAGÉE : la promesse elle-même est gardée, donc une rafale d'appels simultanés d'un
- * même espace ne produit qu'UNE requête.
- *
- * 🔴 UNE LECTURE QUI ÉCHOUE NE COUPE PAS L'API, ET NE L'OUVRE PAS NON PLUS. On garde le dernier réglage connu,
- * sinon on applique le défaut de la configuration, c'est-à-dire un plafond. Le cas attendu est un code déployé
- * avant sa migration (`42703`) : l'API reste servie au défaut. L'échec se journalise au plus une fois par minute,
- * jamais une fois par appel.
- *
- * ⚠️ La table est bornée par le nombre d'ESPACES qui ont une clé résolue par ce process : on n'y entre qu'après
- * une résolution réussie, jamais sur une valeur choisie par l'appelant.
+ * Une lecture qui échoue ne coupe pas l'API et ne l'ouvre pas : on garde le dernier réglage connu, sinon le
+ * défaut de la configuration (un code déployé avant sa migration reste servi). L'échec se journalise au plus
+ * une fois par minute. La table est bornée par les espaces qui ont une clé résolue, jamais par une valeur
+ * choisie par l'appelant.
  */
 export class ReglagesPlafondEnCache implements LecteurReglagePlafond {
   private readonly entrees = new Map<string, { valeur: Promise<ReglagePlafondApi>; expire: number }>();
@@ -107,17 +91,10 @@ export class ReglagesPlafondEnCache implements LecteurReglagePlafond {
   }
 
   /**
-   * Pose le réglage qu'on VIENT D'ÉCRIRE en base, pour une durée de cache neuve. Appelé par la route d'exploitation,
-   * après son écriture.
-   *
-   * 🔴 IL REMPLACE `invalider`, QUI SUPPRIMAIT L'ENTRÉE (relecture du 2026-09-25). Supprimée, elle emportait le
-   * « dernier réglage connu » : si la relecture suivante échouait sur un incident de base passager, l'espace qu'un
-   * opérateur venait de relever à 600 appels par minute retombait au défaut de 60 pendant toute la durée du cache.
-   * Poser la valeur écrite est plus juste que la relire : c'est exactement ce que la base contient, et c'est elle
-   * qu'une lecture en échec gardera ensuite.
-   *
-   * ⚠️ APRÈS l'écriture, jamais avant : une lecture partie avant l'écriture peut encore se résoudre, mais elle ne
-   * touche plus la table (l'entrée qu'elle avait posée est remplacée ici), donc elle ne peut pas y remettre l'ancien.
+   * Pose le réglage qu'on vient d'écrire en base, pour une durée de cache neuve (appelé par la route
+   * d'exploitation, après son écriture). Plutôt que supprimer l'entrée : une relecture en échec retomberait
+   * sinon au défaut, perdant le réglage que l'opérateur vient de poser. Après l'écriture, jamais avant : une
+   * lecture partie avant ne peut plus remettre l'ancien dans la table.
    */
   poser(tenantId: string, reglage: ReglagePlafondApi): void {
     this.entrees.set(tenantId, { valeur: Promise.resolve(reglage), expire: this.now() + this.dureeMs });
@@ -125,11 +102,9 @@ export class ReglagesPlafondEnCache implements LecteurReglagePlafond {
 }
 
 /**
- * Les deux fenêtres d'un espace. Un appel passe s'il reste de la place dans CHACUNE ; refusé, il ne consomme rien.
- *
- * 🔴 LES DEUX SE VÉRIFIENT AVANT QU'AUCUNE NE CONSOMME. Prendre la minute puis constater l'heure pleine ferait
- * payer à l'espace un appel qu'on lui refuse. Rien n'est attendu entre la lecture et la prise, donc la paire est
- * atomique dans ce process.
+ * Les deux fenêtres d'un espace : un appel passe s'il reste de la place dans chacune, et refusé il ne
+ * consomme rien. Les deux se vérifient avant qu'aucune ne consomme (rien n'est attendu entre les deux, la
+ * paire est atomique dans ce process).
  */
 export class PlafondEspace {
   private readonly minute: RateLimiter;
@@ -140,20 +115,16 @@ export class PlafondEspace {
     private readonly reglages: LecteurReglagePlafond,
     now: () => number = () => Date.now(),
   ) {
-    // Aucun plafond de clés : la clé est l'ESPACE d'une clé résolue, jamais une valeur choisie par l'appelant.
+    // Aucun plafond de clés : la clé est l'espace d'une clé résolue, jamais une valeur choisie par l'appelant.
     this.minute = new RateLimiter(defauts.minute, FENETRE_MINUTE_MS, now);
     this.heure = new RateLimiter(defauts.heure, FENETRE_HEURE_MS, now);
   }
 
   /**
-   * Compte un appel de l'espace et pose les en-têtes `x-ratelimit-*`. `false` = refusé, le 429 est DÉJÀ parti.
-   *
-   * ⚠️ LES EN-TÊTES DÉCRIVENT LA FENÊTRE LA PLUS PROCHE DE SON PLAFOND : `x-ratelimit-remaining` est alors le
-   * nombre d'appels qui passeront encore avant un refus, quelle que soit la fenêtre qui le prononcera. En début
-   * d'heure c'est la minute ; quand l'heure s'épuise, c'est elle.
-   *
-   * ⚠️ AU REFUS, `retry-after` vaut l'attente de la fenêtre pleine qui se libère LE PLUS TARD : réessayer à la fin
-   * de la minute quand l'heure est pleine rendrait un second 429. Le message nomme cette fenêtre et son plafond.
+   * Compte un appel de l'espace et pose les en-têtes `x-ratelimit-*` ; `false` = refusé, le 429 est déjà
+   * parti. Les en-têtes décrivent la fenêtre la plus proche de son plafond. Au refus, `retry-after` vaut
+   * l'attente de la fenêtre pleine qui se libère le plus tard : réessayer à la fin de la minute quand l'heure
+   * est pleine rendrait un second 429.
    */
   async consommer(tenantId: string, reply: FastifyReply): Promise<boolean> {
     const reglage = await this.reglages.reglage(tenantId);

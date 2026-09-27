@@ -12,14 +12,10 @@ import { entryNode } from '../workflow/engine';
 import type { WorkflowGraph } from '../workflow/graph';
 
 /**
- * L'ONGLET « OUTILS » DE L'AGENT DE META (spec docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md, § 9).
- *
- * 🔴 IL NE PARLE QUE DES OUTILS DE L'AGENT DE META. La bibliothèque de l'espace (`GET /agent-tools`) reste aux
- * agents IA ; l'ancien écran mélangeait les deux, et c'est ce qui le rendait illisible (Julien, 2026-09-21).
- *
- * ⚠️ LE NUMÉRO VIENT DU SERVEUR, jamais du corps : c'est lui qui désigne l'agent de Meta de l'espace. La CIBLE
- * saisie devient un `binding` du catalogue (`src/mba/outils-maison.ts`), et le RISQUE d'un connecteur se dérive
- * de la méthode de sa requête : le navigateur ne choisit ni l'un ni l'autre (`.strict()` refuse les clés en trop).
+ * L'onglet « Outils » de l'agent de Meta : il ne parle que des outils de cet agent (la bibliothèque de l'espace
+ * reste aux agents IA). Le numéro vient du serveur, jamais du corps ; la cible saisie devient un `binding` du
+ * catalogue (`src/mba/outils-maison.ts`) et le risque d'un connecteur se dérive de la méthode de sa requête :
+ * le navigateur ne choisit ni l'un ni l'autre (`.strict()` refuse les clés en trop).
  */
 interface TextesOutil { name: string; title: string; description: string; nePasUtiliser: string }
 
@@ -33,20 +29,20 @@ export interface MbaOutilsDeps {
   /** Les clés des champs déclarés du mini-CRM. */
   champs(tenantId: string): Promise<string[]>;
   creerMaison(tenantId: string, phoneNumberId: string, outil: TextesOutil & { cible: CibleMaison }, parUtilisateur: string): Promise<{ id: string } | null>;
-  /** Créer l'outil de connecteur ET l'activer pour l'agent de Meta, au nom de `parUtilisateur`. */
+  /** Créer l'outil de connecteur et l'activer pour l'agent de Meta, au nom de `parUtilisateur`. */
   creerConnecteur(tenantId: string, phoneNumberId: string, outil: TextesOutil & {
     sourceId: string; requestId: string; params: unknown; risk: RisqueOutil;
   }, parUtilisateur: string): Promise<{ id: string } | null>;
   modifierMaison(tenantId: string, phoneNumberId: string, outilId: string, patch: Partial<TextesOutil> & { cible?: CibleMaison }): Promise<{ id: string } | null>;
   modifierConnecteur(tenantId: string, phoneNumberId: string, outilId: string, patch: Partial<TextesOutil>): Promise<{ id: string } | null>;
   retirer(tenantId: string, phoneNumberId: string, outilId: string): Promise<'supprime' | 'detache' | 'introuvable'>;
-  /** Rallumer un outil éteint par le départ de son auteur (plan 2026-09-21-outils-maison-mba, écart 4). */
+  /** Rallumer un outil éteint par le départ de son auteur. */
   reactiver(tenantId: string, phoneNumberId: string, outilId: string, parUtilisateur: string): Promise<boolean>;
-  /** Un scénario de l'espace, avec son graphe PUBLIÉ (celui que le relais joue), ou `null`. */
+  /** Un scénario de l'espace, avec son graphe publié (celui que le relais joue), ou `null`. */
   workflow(tenantId: string, id: string): Promise<{ name: string; graph: WorkflowGraph } | null>;
   /**
-   * Les blocs d'UN scénario publié, envoyables seuls ou non, pour le choix de l'écran. 🔴 Un scénario à la fois
-   * (Julien, essai réel du 2026-09-22) : lister tous les blocs de tous les scénarios ne tient pas à 200 scénarios.
+   * Les blocs d'un seul scénario publié, envoyables seuls ou non, pour le choix de l'écran : lister tous les blocs
+   * de tous les scénarios ne tiendrait pas à 200 scénarios.
    */
   blocs(tenantId: string, workflowId: string): Promise<BlocPropose[]>;
 }
@@ -55,13 +51,13 @@ const NOM = z.string().trim().regex(/^[a-z0-9_]{1,64}$/, 'nom technique au forma
 const texte = (max: number) => z.string().trim().min(1).max(max);
 
 /**
- * Les bornes de la saisie. 🔴 L'écran les applique AVANT l'envoi (`BORNES_OUTIL`, `web/lib/mba-outils.ts`) pour
- * dire ce qui manque au lieu d'un 400 ; `tests/mba-outils-parite.test.ts` tient les deux listes égales.
+ * Les bornes de la saisie, appliquées aussi par l'écran avant l'envoi (`BORNES_OUTIL`) pour dire ce qui manque
+ * au lieu d'un 400 ; `tests/mba-outils-parite.test.ts` tient les deux listes égales.
  */
 export const BORNES_OUTIL_MBA = { titre: 120, texte: 2000, tag: 64, champ: 64, valeur: 120, valeurs: 50 } as const;
 const B = BORNES_OUTIL_MBA;
 
-/** La cible SAISIE à l'écran. `connecteur` désigne un appel ; les autres deviennent un `binding` maison. */
+/** La cible saisie à l'écran. `connecteur` désigne un appel ; les autres deviennent un `binding` maison. */
 const cibleSaisieSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('tag'), tag: z.string().trim().min(1).max(B.tag) }).strict(),
   z.object({
@@ -76,8 +72,8 @@ const cibleSaisieSchema = z.discriminatedUnion('type', [
 type CibleSaisie = z.infer<typeof cibleSaisieSchema>;
 
 /**
- * Les types qu'une création accepte, lus sur le schéma lui-même. 🔴 L'écran en propose un sous-ensemble, et un
- * type proposé que la route refuse serait un bouton qui rend 400 : `tests/mba-outils-parite.test.ts` le tient.
+ * Les types qu'une création accepte, lus sur le schéma. L'écran en propose un sous-ensemble ; un type proposé que
+ * la route refuserait serait un bouton qui rend 400 (`tests/mba-outils-parite.test.ts`).
  */
 export const TYPES_SAISISSABLES: readonly string[] = cibleSaisieSchema.options.map((o) => o.shape.type.value);
 
@@ -112,8 +108,8 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
     if (c.type === 'champ' && !(await deps.champs(tenant)).includes(c.champ)) {
       return `le champ « ${c.champ} » n’existe pas dans le mini-CRM`;
     }
-    // 🔴 La même vérification que le relais fait à chaque appel (`blocSeul`) : un bloc à boutons accepté ici
-    // refuserait ensuite chaque appel de l'agent de Meta.
+    // Même vérification que le relais à chaque appel (`blocSeul`) : un bloc à boutons accepté ici serait ensuite
+    // refusé à chaque appel de l'agent de Meta.
     if (c.type === 'bloc' || c.type === 'scenario') {
       const wf = await deps.workflow(tenant, c.workflowId);
       if (!wf) return 'ce scénario n’existe pas';
@@ -127,7 +123,7 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
     return null;
   };
 
-  /** Un nom déjà pris est une erreur de saisie, lisible : 409, jamais un 500 dont Cloudflare remplace le corps. */
+  /** Un nom déjà pris est une erreur de saisie : 409 lisible, jamais un 500. */
   const siNomPris = (err: unknown, reply: FastifyReply): FastifyReply => {
     if (err instanceof NomOutilDejaPris) return reply.code(409).send({ error: err.message });
     throw err;
@@ -142,7 +138,7 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
     return reply.code(200).send({ outils: outils.map((o) => vueOutilMba(o, ctx)), phoneNumberId: pn });
   });
 
-  // Déclarée avant toute route `/:outilId` en GET (il n'y en a aucune aujourd'hui : seuls PATCH et DELETE en portent).
+  // Déclarée avant toute route `/:outilId` en GET.
   app.get(`${base}/blocs`, opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const workflowId = (req.query as { workflowId?: unknown } | undefined)?.workflowId;
@@ -163,7 +159,7 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
       if (cible.type === 'connecteur') {
         const requete = await deps.requete(tenant, cible.requeteId);
         if (!requete) return reply.code(404).send({ error: 'requête introuvable' });
-        // Le MODÈLE ne voit que ce qu'il doit remplir ; le risque se DÉRIVE de la méthode, jamais du navigateur.
+        // Le modèle ne voit que ce qu'il doit remplir ; le risque se dérive de la méthode, jamais du navigateur.
         const params = requete.variables.filter((v) => v.origine.type === 'modele').map((v) => ({
           name: v.nom, type: v.type, source: 'modele' as const,
           ...(v.description ? { description: v.description } : {}),
@@ -200,7 +196,7 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
     const { cible, ...mots } = lu.data;
     try {
       if (outil.origin === 'http') {
-        // Plan, écart 1 : la définition d'un connecteur est partagée avec les agents IA qui l'utilisent.
+        // La définition d'un connecteur est partagée avec les agents IA qui l'utilisent : on ne change pas son appel.
         if (cible) return reply.code(400).send({ error: 'pour changer d’appel, créez un autre outil' });
         const fait = await deps.modifierConnecteur(tenant, pn, outil.id, mots);
         return fait ? reply.code(200).send({ id: fait.id }) : reply.code(404).send({ error: 'outil introuvable' });
@@ -229,15 +225,13 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
   app.put<{ Params: { outilId: string } }>(`${base}/:outilId/actif`, opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     if (!estUuid(req.params.outilId)) return reply.code(404).send({ error: 'outil introuvable' });
-    // Seulement RALLUMER : éteindre sans retirer n'a pas d'usage à l'écran, et ferait un outil muet de plus.
+    // Seulement rallumer : éteindre sans retirer n'a pas d'usage à l'écran, et ferait un outil muet de plus.
     if (!reactivationSchema.safeParse(req.body).success) return reply.code(400).send({ error: 'seule la réactivation est possible' });
     const userId = utilisateur(req);
     if (userId === '') return reply.code(403).send({ error: 'réactivation impossible sans utilisateur identifié' });
     const pn = await deps.numeroDuTenant(tenant);
     if (!pn) return reply.code(409).send({ error: SANS_NUMERO });
-    // 🔴 `activerConsommateur` LÈVE sur un outil qui ne peut pas s'activer (un MCP marqué non activable, exposé
-    // à l'agent de Meta par l'ancienne bibliothèque). Sans ce `catch`, un 500, donc une page Cloudflare sans un
-    // mot ; l'ancienne route le traduisait déjà en 409, et la garde s'était perdue au portage.
+    // `activerConsommateur` lève sur un outil non activable (un MCP marqué non activable) : 409 plutôt qu'un 500.
     let fait: boolean;
     try {
       fait = await deps.reactiver(tenant, pn, req.params.outilId, userId);

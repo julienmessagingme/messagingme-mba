@@ -2,16 +2,12 @@ import type { Pool } from 'pg';
 import type { TarifMeta, TarifsMetaSink } from '../webhooks/tarif-meta';
 
 /**
- * L'écriture des tarifs de Meta (`tarifs_meta`, migration 0163).
+ * L'écriture des tarifs de Meta (`tarifs_meta`). L'espace se résout par le numéro destinataire de l'accusé,
+ * dans la même requête : un numéro inconnu n'écrit rien. Le premier accusé qui porte un tarif gagne (Meta
+ * répète le même `pricing` sur sent, delivered et read).
  *
- * L'espace se résout par le numéro DESTINATAIRE de l'accusé (`phone_numbers`), dans la même requête : un
- * numéro inconnu n'écrit rien. Le PREMIER accusé qui porte un tarif gagne : Meta répète le même `pricing` sur
- * sent, delivered et read.
- *
- * ⚠️ LE PRIX DE CETTE SIMPLICITÉ, ACCEPTÉ EN REVUE DU LOT 1 : jusqu'à trois tentatives par message sortant,
- * dont deux sans effet, sur la file des accusés, qui est sérialisée. C'est une recherche par clé primaire,
- * de l'ordre de la milliseconde. Si cette file ralentit un jour sur une grosse campagne, le levier est ici :
- * n'écrire que sur le premier statut qui porte un tarif, plutôt que de compter sur le conflit pour les écarter.
+ * Coût accepté : jusqu'à trois tentatives par message sortant sur la file sérialisée des accusés, dont deux
+ * écartées par le conflit (une recherche par clé primaire). Si cette file ralentit, le levier est ici.
  */
 export class PgTarifsMetaStore implements TarifsMetaSink {
   constructor(private readonly pool: Pool) {}

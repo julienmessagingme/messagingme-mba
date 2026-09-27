@@ -4,12 +4,11 @@ import { makeCode } from '../ids/code';
 const ULID_RE = '[0-9A-HJKMNP-TV-Z]{26}';
 
 /**
- * Minte côté SERVEUR le code public de chaque node (`nod_<code-client>_<ULID>`, stocké dans `node.data.code`).
- * - Un code VALIDE du MÊME tenant est CONSERVÉ (stabilité des codes = contrat API).
- * - Un code absent, malformé ou d'un AUTRE tenant (graphe copié / client qui forge) est (re)minté : le client
- *   ne peut pas imposer un code.
- * - Les edges ne sont JAMAIS touchés (elles référencent `node.id`, l'uuid interne, pas le code).
- * Les nodes déjà valides sont retournés par RÉFÉRENCE (permet au backfill de détecter « rien n'a changé »).
+ * Attribue côté serveur le code public de chaque node (`nod_<code-client>_<ULID>`, dans `node.data.code`).
+ * Un code valide du même tenant est conservé (stabilité des codes = contrat API) ; un code absent, malformé ou
+ * d'un autre tenant est refait : le client ne peut pas imposer un code. Les edges ne sont pas touchées (elles
+ * référencent `node.id`). Les nodes déjà valides sont rendus par référence, ce qui permet au backfill de voir
+ * que rien n'a changé.
  */
 export function mintNodeCodes(graph: WorkflowGraph, tenantCode: string): WorkflowGraph {
   const valid = new RegExp(`^nod_${tenantCode}_${ULID_RE}$`);

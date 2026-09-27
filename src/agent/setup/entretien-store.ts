@@ -3,13 +3,10 @@ import { ACTIONS, type Bascule, type Reponse } from './couverture';
 import { MAX_CARACTERES_MESSAGE, MAX_TOURS_HISTORIQUE } from './conversation';
 
 /**
- * L'entretien de construction, tel que le serveur le tient (migration 0090).
+ * L'entretien de construction, tel que le serveur le tient.
  *
- * 🔴 IL EST RELU, DONC IL EST VALIDÉ. Ce jsonb a été écrit par un tour antérieur, à partir d'une sortie de
- * modèle : le relire sans le valider reviendrait à faire confiance à ce que le modèle avait rendu il y a une
- * semaine, sur la seule foi qu'il a transité par notre base. Même règle que pour tout payload externe du
- * dépôt, `safeParse` et jamais `parse` : un état corrompu redémarre un entretien vierge plutôt que de faire
- * échouer l'écran.
+ * Ce jsonb a été écrit à partir d'une sortie de modèle : il est validé à la relecture (`safeParse`), et un
+ * état corrompu redémarre un entretien vierge plutôt que de faire échouer l'écran.
  */
 
 export interface TourEntretien {
@@ -21,37 +18,23 @@ export interface EntretienComplet {
   messages: TourEntretien[];
   reponses: Reponse[];
   poses: string[];
-  /** Les moments de bascule et leur traitement. À part des `reponses` parce que c'est une LISTE : il y a
-   *  autant de moments que le client en cite, chacun avec sa propre action et son propre moyen. */
+  /** Les moments de bascule et leur traitement. À part des `reponses` parce que c'est une liste : autant de
+   *  moments que le client en cite, chacun avec sa propre action et son propre moyen. */
   bascules: Bascule[];
   /**
-   * QUI A ÉCRIT CHAQUE MESSAGE : l'IDENTIFIANT du membre, dans le même ordre que `messages`
-   * (migration 0147). `null` pour les réponses de l'assistant, et pour les tours d'avant cette migration.
+   * Qui a écrit chaque message : l'identifiant du membre, dans le même ordre que `messages`, `null` pour
+   * l'assistant et pour les tours anciens (d'où un tableau parfois plus court).
    *
-   * 🔴 UN TABLEAU PARALLÈLE, PAS UNE CLÉ DANS `messages`, et ce n'est pas un détour : `tourSchema` est
-   * strict, donc y ajouter une clé obligatoire ferait échouer la relecture de TOUS les entretiens existants,
-   * qui retomberaient sur l'entretien vierge. Le client perdrait sa conversation, en silence.
-   *
-   * ⚠️ PLUS COURT QUE `messages` EST NORMAL : les tours d'avant le 2026-09-14 n'ont pas d'auteur connu, et
-   * leur en inventer un serait pire que de n'en afficher aucun.
-   *
-   * ⚠️ UN IDENTIFIANT, PAS UN E-MAIL, contrairement à `audit_log.actor_email` qui le DÉNORMALISE. L'écart est
-   * voulu : ce journal-là doit PROUVER qui a agi, même après la suppression du compte ; ici, un fil de
-   * conversation dont l'auteur a quitté l'espace affiche « auteur inconnu », ce qui est suffisant et évite
-   * de recopier une adresse dans un jsonb que personne ne purge.
+   * Un tableau parallèle, pas une clé dans `messages` : `tourSchema` est strict, et une clé obligatoire ferait
+   * échouer la relecture de tous les entretiens existants, qui retomberaient en silence sur l'entretien vierge.
+   * Un identifiant et pas un e-mail : un auteur parti affiche « auteur inconnu », sans recopier une adresse
+   * dans un jsonb que personne ne purge.
    */
   auteurs: Array<string | null>;
   /**
-   * L'ADRESSE DU SITE que le client a donnée au point `connaissance` (2026-09-18).
-   *
-   * 🔴 ELLE EST MÉMORISÉE ICI PARCE QU'ELLE N'ALLAIT NULLE PART. L'entretien posait la question, insistait
-   * même pour obtenir l'adresse exacte, et la réponse restait en texte libre dans `reponses` pendant que
-   * l'onglet Base de connaissance restait vide. Le client devait la recoller à la main, ce qui est
-   * exactement le motif « offert-et-inerte » que ce produit s'interdit.
-   *
-   * ⚠️ OPTIONNELLE, et c'est le cas NORMAL : tous les entretiens antérieurs au 2026-09-18 n'en portent pas,
-   * et `etatSchema` n'étant pas strict, ils se relisent sans rien perdre. Pour eux, la route retombe sur une
-   * extraction depuis la réponse au point `connaissance`.
+   * L'adresse du site donnée au point `connaissance`, mémorisée pour remplir la base de connaissance au lieu
+   * de rester en texte libre dans `reponses`. Optionnelle : les entretiens anciens n'en portent pas, et la
+   * route retombe alors sur une extraction depuis la réponse.
    */
   connaissanceUrl?: string;
 }
@@ -64,25 +47,20 @@ const tourSchema = z.object({
   content: z.string().max(MAX_CARACTERES_MESSAGE),
 });
 
-/** Plafond du nombre de moments de bascule. Chacun engendre DEUX questions : au-delà, l'entretien cesserait
- *  d'être un entretien. Un client qui en a davantage les regroupe, ou les ajoute ensuite à la main. */
+/** Plafond du nombre de moments de bascule. Chacun engendre deux questions : au-delà, l'entretien cesserait
+ *  d'être un entretien. */
 export const MAX_BASCULES = 12;
 
 /**
- * Plafond de ce que le FIL conserve. Sans rapport avec `MAX_TOURS_HISTORIQUE`, qui borne ce qu'on ENVOIE.
- *
- * ⚠️ Il existe pour qu'un jsonb ne grossisse pas sans fin, pas pour décider d'un contexte : à 4 000 tours,
- * une conversation d'assistant a largement de quoi couvrir des années, et la mémoire longue des décisions
- * vit de toute façon dans l'onglet Historique.
+ * Plafond de ce que le fil conserve, sans rapport avec `MAX_TOURS_HISTORIQUE` qui borne ce qu'on envoie :
+ * une garde contre un jsonb qui grossirait sans fin, pas une politique de contexte.
  */
 export const MAX_TOURS_CONSERVES = 4000;
 
 const etatSchema = z.object({
   /**
-   * 🔴 PLAFONNÉ LARGE, PLUS À LA TAILLE DU CONTEXTE (2026-09-14). Il valait `MAX_TOURS_HISTORIQUE * 2`,
-   * c'est-à-dire que la RELECTURE elle-même rejetait un fil plus long que ce qu'on envoie au modèle : un fil
-   * conservé au-delà serait retombé sur l'entretien vierge, donc perdu. Le plafond qui reste est une garde
-   * contre un jsonb qui grossirait sans fin, pas une politique de contexte.
+   * Plafonné large, pas à la taille du contexte : une relecture qui rejette un fil plus long que ce qu'on
+   * envoie au modèle le ferait retomber sur l'entretien vierge, donc perdre.
    */
   messages: z.array(tourSchema).max(MAX_TOURS_CONSERVES).default([]),
   reponses: z.array(z.object({
@@ -96,8 +74,8 @@ const etatSchema = z.object({
     moyen: z.string().max(2000).optional(),
   })).max(MAX_BASCULES).default([]),
   auteurs: z.array(z.string().max(320).nullable()).max(MAX_TOURS_CONSERVES).default([]),
-  // ⚠️ SANS `.default()`, contrairement à tout le reste de ce schéma : « absente » et « vide » ne disent pas
-  // la même chose ici, et un défaut ferait écrire une chaîne vide dans le jsonb de chaque entretien existant.
+  // Sans `.default()`, contrairement au reste : « absente » et « vide » ne disent pas la même chose, et un
+  // défaut écrirait une chaîne vide dans le jsonb de chaque entretien existant.
   connaissanceUrl: z.string().max(2000).optional(),
 });
 
@@ -109,20 +87,9 @@ export function lireEtat(brut: unknown): EntretienComplet {
 }
 
 /**
- * Borne l'historique ENVOYÉ AU MODÈLE. Ce qui est CONSERVÉ ne l'est pas.
- *
- * 🔴 ELLE ÉTAIT APPELÉE À L'ÉCRITURE JUSQU'AU 2026-09-14, ET ELLE DÉTRUISAIT. Sa documentation affirmait
- * qu'« un entretien long ne perd rien de ce qui compte, seulement sa transcription ancienne » : c'était vrai
- * pour un entretien de CONSTRUCTION, qui se termine. Ça cesse de l'être pour un fil qui PERDURE (décision de
- * Julien : « toute la conversation avec l'assistant doit perdurer »), où la transcription ancienne EST ce
- * qu'on vient relire des semaines plus tard.
- *
- * ⚠️ CONSERVER N'EST PAS ENVOYER, et l'écart est délibéré : le fil garde tout, le prompt reste borné. Un
- * historique sans fin dans le contexte finirait par pousser la fiche courante hors de la fenêtre du modèle,
- * donc par dégrader ce qu'on cherche à améliorer. La mémoire longue des DÉCISIONS vit dans l'onglet
- * Historique (migration 0146), qui est fait pour ça et se lit d'un coup d'œil.
- *
- * On garde les DERNIERS tours, pas les premiers : c'est la fin du fil qui porte le contexte utile.
+ * Borne l'historique envoyé au modèle, pas ce qui est conservé : le fil garde tout, le prompt reste borné,
+ * sinon un historique sans fin pousserait la fiche courante hors de la fenêtre du modèle. Appelée à la
+ * lecture, jamais à l'écriture, où elle détruirait les tours anciens. On garde les derniers tours.
  */
 export function bornerPourModele(messages: readonly TourEntretien[]): TourEntretien[] {
   return messages

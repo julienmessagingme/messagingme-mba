@@ -2,18 +2,15 @@ import { isSendableButtonUrl } from '../meta/button-url';
 import type { CreateTemplateInput, TemplateButton } from '../meta/templates';
 
 /**
- * Substitution des liens d'un template AVANT sa soumission à Meta.
- *
- * Tout est PUR ici : repérer les boutons traçables, et rendre une COPIE du template dont les URL sont
- * remplacées. L'allocation des codes et l'écriture en base restent à l'appelant, ce qui rend la règle
- * vérifiable sans base ni réseau.
+ * Substitution des liens d'un template avant sa soumission à Meta, en fonctions pures (repérer les boutons
+ * traçables, rendre une copie du template). L'allocation et la base restent à l'appelant.
  */
 
-/** Un bouton URL traçable, repéré à sa position DANS LA NUMÉROTATION DE META. */
+/** Un bouton URL traçable, repéré à sa position dans la numérotation de Meta. */
 export interface CibleBouton {
   /** Index de la carte de carousel, ou null pour un bouton du template lui-même. */
   cardIndex: number | null;
-  /** Index dans TOUS les boutons (non-URL compris) : c'est celui que Meta utilise. */
+  /** Index dans tous les boutons (non-URL compris) : c'est celui que Meta utilise. */
   buttonIndex: number;
   url: string;
 }
@@ -25,55 +22,37 @@ export const cleBouton = (cardIndex: number | null, buttonIndex: number): string
 export const lienDe = (base: string, code: string): string => `${base.replace(/\/+$/, '')}/r/${code}`;
 
 /**
- * L'adresse d'un code AVEC son suffixe variable, celle qu'on soumet à Meta depuis le 2026-09-02.
+ * L'adresse d'un code avec son suffixe variable, celle qu'on soumet à Meta.
  *
- * 🔴 C'EST CE SUFFIXE QUI PERMET DE SAVOIR QUI A CLIQUÉ. Sans lui, le lien est identique pour les 5 000
- * destinataires et l'information « qui » n'existe nulle part au moment du clic. Meta n'accepte une variable
- * dans une URL de bouton qu'À LA FIN, ce qui tombe bien : `/r/<code>/{{1}}` se lit comme un chemin, et la
- * route `/r/:code/:jeton` le résout.
- *
- * ⚠️ Les templates DÉJÀ APPROUVÉS gardent l'ancienne forme, pour toujours : leur URL est figée chez Meta.
- * Leurs clics resteront anonymes, et `/r/:code` ne disparaîtra donc jamais.
+ * Ce suffixe permet de savoir qui a cliqué : sans lui, le lien est le même pour tous les destinataires. Meta
+ * n'accepte une variable qu'en fin d'URL de bouton, et la route `/r/:code/:jeton` la résout.
+ * Les templates déjà approuvés sans suffixe restent figés chez Meta : `/r/:code` ne disparaîtra jamais.
  */
 export const lienTraceAvecJeton = (base: string, code: string): string => `${lienDe(base, code)}/{{1}}`;
 
 /**
- * Cette adresse de bouton, telle que Meta la rend, est-elle un lien tracé À JETON (la forme que
- * `lienTraceAvecJeton` produit, sur un code de `newTrackingCode`) ?
+ * Cette adresse de bouton, telle que Meta la rend, est-elle un lien tracé à jeton (forme de
+ * `lienTraceAvecJeton` sur un code de `newTrackingCode`) ?
  *
- * 🔴 C'EST LA SEULE VARIABLE D'ADRESSE QU'UN ENVOI REMPLIT : le suffixe de ce jeton (`suffixesBoutons`). Une
- * autre URL à variable, posée hors de la console, n'a aucun chemin qui fournisse sa valeur, et Meta refuse le
- * message. Le catalogue de l'API publique s'en sert pour ne pas l'annoncer.
- *
- * ⚠️ L'envoi, lui, lit `tracked_links` (les liens CONFIRMÉS et marqués `avec_jeton`), pas cette forme. Les deux ne
- * divergent que pour une adresse étrangère qui imiterait exactement `/r/<code de 12 caractères>/{{1}}`.
- * `tests/v1-catalogues.test.ts` tient la parité avec le producteur, sur des codes tirés par le vrai générateur.
+ * C'est la seule variable d'adresse qu'un envoi sait remplir (`suffixesBoutons`) : toute autre URL à variable
+ * ferait refuser le message, et le catalogue de l'API publique s'en sert pour ne pas l'annoncer.
+ * L'envoi, lui, lit `tracked_links` (liens confirmés `avec_jeton`). Parité tenue par `tests/v1-catalogues.test.ts`.
  */
 export const estLienTraceAvecJeton = (url: string): boolean => /\/r\/[0-9a-hjkmnp-tv-z]{12}\/\{\{1\}\}$/.test(url.trim());
 
 /**
- * L'adresse d'un code avec le jeton D'UN DESTINATAIRE écrit dedans, celle des messages RCS.
- *
- * 🔴 La différence avec `lienTraceAvecJeton` n'est pas cosmétique, c'est toute la différence entre les deux
- * canaux. Un template WhatsApp est soumis puis figé : son URL ne peut porter qu'un `{{1}}`, rempli à chaque
- * envoi par un composant de bouton, et se tromper fait échouer l'appel (132000). Un message RCS est composé À
- * L'ENVOI : on y écrit le jeton lui-même, sans variable, sans resoumission, sans risque de rejet.
- *
- * Sans jeton (contact inconnu de la base, lecture en échec), on rend l'adresse nue : le lien fonctionne et le
- * clic est compté, il n'est simplement rattaché à personne. Dégrader la mesure, jamais l'envoi.
+ * L'adresse d'un code avec le jeton d'un destinataire écrit dedans, celle des messages RCS : composés à l'envoi,
+ * ils n'ont pas besoin du `{{1}}` de `lienTraceAvecJeton` (ni resoumission, ni risque de 132000).
+ * Sans jeton, l'adresse nue : le clic est compté sans être rattaché. Dégrader la mesure, jamais l'envoi.
  */
 export const lienPourContact = (base: string, code: string, jeton?: string): string =>
   (jeton ? `${lienDe(base, code)}/${jeton}` : lienDe(base, code));
 
 /**
- * Les boutons URL qu'on sait tracer, dans l'ordre du template puis des cartes.
- *
- * Deux exclusions, chacune pour une raison précise :
- *  - une URL contenant déjà une VARIABLE (`{{1}}`) est laissée telle quelle : personne ne sait fournir sa
- *    valeur à l'envoi (aucun chemin d'envoi ne produit de composant `sub_type: 'url'`), et la tracer
+ * Les boutons URL qu'on sait tracer, dans l'ordre du template puis des cartes. Sont exclues :
+ *  - une URL qui porte déjà une variable (`{{1}}`) : aucun chemin d'envoi ne fournit sa valeur, la tracer
  *    fabriquerait un lien cassé ;
- *  - une URL que Meta refuserait de toute façon n'est pas tracée : on ne veut pas d'une ligne en base qui
- *    décrit un template qui n'existera jamais.
+ *  - une URL que Meta refuserait : pas de ligne en base pour un template qui n'existera jamais.
  */
 export function boutonsTracables(input: CreateTemplateInput): CibleBouton[] {
   const out: CibleBouton[] = [];
@@ -92,10 +71,8 @@ export function boutonsTracables(input: CreateTemplateInput): CibleBouton[] {
 }
 
 /**
- * Rend une COPIE du template dont les boutons listés dans `liens` portent l'adresse de redirection.
- *
- * Une copie et non une mutation : l'appelant garde l'original sous la main, ce dont il a besoin pour
- * soumettre le template NON tracé si l'allocation échoue en cours de route.
+ * Rend une copie du template dont les boutons listés dans `liens` portent l'adresse de redirection. Une copie
+ * et non une mutation : l'appelant garde l'original pour le soumettre non tracé si l'allocation échoue.
  */
 export function appliquerLiens(input: CreateTemplateInput, liens: ReadonlyMap<string, string>): CreateTemplateInput {
   if (liens.size === 0) return input;
@@ -119,12 +96,9 @@ export function appliquerLiens(input: CreateTemplateInput, liens: ReadonlyMap<st
 }
 
 /**
- * L'inverse, pour l'AFFICHAGE : remontrer à l'utilisateur le lien qu'il a saisi, là où Meta nous rend le
- * nôtre. Sans ça, la console afficherait `…/r/ab12cd34ef56` dans les quatre écrans qui listent les templates,
- * et la promesse « tu saisis ton lien » serait fausse dès le premier rechargement de la page.
- *
- * L'appariement se fait sur l'URL DE REDIRECTION, pas sur la position : un template édité hors console peut
- * avoir vu ses boutons réordonnés, et un appariement par index remettrait alors la mauvaise destination.
+ * L'inverse, pour l'affichage : remontrer le lien saisi là où Meta rend le nôtre (`…/r/ab12cd34ef56`).
+ * Appariement sur l'URL de redirection, pas sur la position : un template édité hors console peut avoir vu ses
+ * boutons réordonnés.
  */
 export function rehabillerBoutons<T extends { type: string; url?: string }>(
   boutons: readonly T[] | undefined,

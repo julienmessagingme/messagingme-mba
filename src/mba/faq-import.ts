@@ -3,17 +3,11 @@ import { parseCsv } from '../crm/csv';
 import type { Faq } from './client';
 
 /**
- * Chargement en LOT d'un jeu de questions/réponses vers la FAQ de l'agent MBA.
- *
- * Pourquoi ce module existe : un client arrive avec ses Q/R déjà écrites ailleurs (Keolis Auxerre en avait
- * 78), et l'API MBA n'offre NI création en lot, NI déduplication, NI suppression en lot, NI corbeille. Un
- * import naïf rejoué deux fois double donc la base de connaissance, et il n'existe aucun moyen simple de
- * revenir en arrière. Tout est ici : extraire depuis la source, normaliser, puis COMPARER à l'existant pour
- * ne réécrire que ce qui change.
- *
- * ⚠️ Rien ici ne SUPPRIME. La doc Meta est explicite : le GET de la liste n'est pas paginé et rien ne garantit
- * qu'il reste exhaustif si Meta ajoute une pagination. Une réconciliation destructive (« tout ce qui n'est pas
- * dans mon fichier, je l'efface ») effacerait alors des entrées devenues invisibles.
+ * Chargement en lot d'un jeu de questions/réponses vers la FAQ de l'agent MBA. L'API MBA n'offre ni création en
+ * lot, ni déduplication, ni suppression en lot, ni corbeille : un import naïf rejoué doublerait la base. On
+ * extrait, normalise, puis compare à l'existant pour ne réécrire que ce qui change.
+ * Rien ici ne supprime : le GET de la liste n'est pas paginé, rien ne garantit qu'il reste exhaustif, et une
+ * réconciliation destructive effacerait des entrées devenues invisibles.
  */
 
 export interface FaqRow {
@@ -28,9 +22,8 @@ function texte(v: unknown): string {
 }
 
 /**
- * Clé de comparaison d'une question : sans accent, sans casse, sans ponctuation de fin. C'est elle qui rend
- * un import REJOUABLE. « Les chiens sont-ils admis ? » et « les chiens sont ils admis » sont la même question
- * pour un humain ; sans cette normalisation, le second import créerait un doublon que personne ne verrait.
+ * Clé de comparaison d'une question : sans accent, sans casse, sans ponctuation de fin. C'est elle qui rend un
+ * import rejouable, sans doublon pour « Les chiens sont-ils admis ? » et « les chiens sont ils admis ».
  */
 export function cleQuestion(q: string): string {
   return texte(q)
@@ -48,9 +41,8 @@ const ENTETES_QUESTION = new Set(['question', 'questions', 'q', 'demande', 'inti
 const ENTETES_REPONSE = new Set(['reponse', 'reponses', 'answer', 'answers', 'response', 'r', 'a', 'contenu']);
 
 /**
- * CSV (et TSV, papaparse devine le séparateur). Les colonnes sont reconnues par leur nom ; à défaut, on
- * prend les DEUX PREMIÈRES colonnes. Ce repli est volontaire : la plupart des exports clients n'ont pas
- * d'en-tête normalisé, et l'écran d'import montre le résultat AVANT d'écrire quoi que ce soit chez Meta.
+ * CSV (et TSV, papaparse devine le séparateur). Colonnes reconnues par leur nom, sinon les deux premières : la
+ * plupart des exports n'ont pas d'en-tête normalisé, et l'écran montre le résultat avant d'écrire chez Meta.
  */
 export function extraireDepuisCsv(brut: string): FaqRow[] {
   const { headers, rows } = parseCsv(brut);
@@ -107,20 +99,16 @@ function decoder(s: string): string {
   });
 }
 
-/** Balises retirées, entités décodées, espaces réduits. Les blocs script/style sont ôtés AVANT (sinon leur code apparaît en réponse). */
+/** Balises retirées, entités décodées, espaces réduits. Les blocs script/style partent avant, sinon leur code
+ *  apparaîtrait en réponse. */
 function sansBalises(html: string): string {
   return texte(decoder(html.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]*>/g, ' ')));
 }
 
 /**
- * HTML : trois stratégies STRUCTURELLES, dans l'ordre de fiabilité. Aucune heuristique sur les titres :
- * deviner « ce paragraphe répond à ce h3 » produit des réponses fausses avec l'aplomb d'une réponse juste,
- * et une FAQ fausse est pire que pas de FAQ. Si aucune structure n'est reconnue, on rend une liste vide et
- * l'appelant demande un CSV.
- *
- * 1. JSON-LD `FAQPage` (schema.org) : la forme que produisent WordPress, Shopify et la plupart des CMS.
- * 2. `<details><summary>` : l'accordéon natif.
- * 3. `<dl><dt><dd>` : la liste de définitions.
+ * HTML : trois stratégies structurelles, dans l'ordre de fiabilité (JSON-LD `FAQPage` de schema.org,
+ * `<details><summary>`, `<dl><dt><dd>`). Aucune heuristique sur les titres : une FAQ fausse est pire que pas de
+ * FAQ. Sans structure reconnue, liste vide, et l'appelant demande un CSV.
  */
 export function extraireDepuisHtml(html: string): FaqRow[] {
   const parJsonLd = extraireJsonLd(html);
@@ -174,7 +162,7 @@ function collecterQuestions(noeud: unknown, out: FaqRow[], profondeur = 0): void
 
 // --- Normalisation et plan d'écriture -------------------------------------------------------------
 
-/** Nettoie, jette les lignes incomplètes, dédoublonne DANS le lot (la 1re occurrence gagne). */
+/** Nettoie, jette les lignes incomplètes, dédoublonne dans le lot (la 1re occurrence gagne). */
 export function normaliser(lignes: FaqRow[]): FaqRow[] {
   const vues = new Set<string>();
   const out: FaqRow[] = [];

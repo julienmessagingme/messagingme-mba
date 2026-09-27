@@ -4,27 +4,18 @@ import { lireJetonDeTest } from '../workflow/test-token';
 import { messageDe } from '../lib/erreur';
 
 /**
- * 🔴 UN JETON NE S ÉCRIT JAMAIS EN CLAIR DANS LES JOURNAUX, et les deux refus ci-dessous l ont fait. Le
- * second est le pire : c est un jeton VALIDE, appartenant à un AUTRE espace, donc le secret vivant d un
- * client déposé dans nos journaux, que lit tout ce qui les expédie ailleurs. Le premier ne vaut guère
- * mieux : un jeton refusé est presque toujours un secret VOISIN du vrai (une faute de frappe du testeur),
- * exactement la raison pour laquelle `/ops` ne journalise déjà pas le jeton qu on lui présente.
- *
- * ⚠️ L EMPREINTE GARDE CE QUI SERVAIT VRAIMENT, c est-à-dire de quoi RAPPROCHER deux lignes du journal. Elle
- * n est pas réversible, et elle reste stable d un message à l autre : un opérateur voit toujours que c est
- * le même jeton qui revient, sans jamais pouvoir s en servir.
+ * 🔴 Un jeton ne s'écrit jamais en clair dans les journaux : un jeton valide d'un autre espace est le secret
+ * vivant d'un client, et un jeton refusé est presque toujours un secret voisin du vrai (faute de frappe).
+ * L'empreinte, non réversible et stable, suffit à rapprocher deux lignes du journal.
  */
 function empreinteJeton(jeton: string): string {
   return createHash('sha256').update(jeton).digest('hex').slice(0, 8);
 }
 
 /**
- * Déclenche un scénario en MODE TEST quand le testeur envoie le jeton de son lien wa.me / QR (Lot F).
- *
- * ISOLÉ dans le handler (ne doit jamais faire échouer le job webhook partagé), et exécuté AVANT l'avance de
- * scénario et les automations : un jeton de test n'est pas une réponse à un parcours en cours, ni un mot-clé
- * ordinaire. Les messages consommés ici sont signalés à l'appelant pour que les étapes suivantes les ignorent,
- * sinon le même message servirait deux fois (test + avance, ou test + automation).
+ * Déclenche un scénario en mode test quand le testeur envoie le jeton de son lien wa.me ou QR. Isolé dans le
+ * handler, et exécuté avant l'avance de scénario et les automations : un jeton n'est ni une réponse à un
+ * parcours ni un mot-clé. Les messages consommés ici sont signalés pour que les étapes suivantes les ignorent.
  */
 export interface TestTokenDeps {
   /** Tenant propriétaire du numéro business. null si inconnu. */
@@ -32,29 +23,19 @@ export interface TestTokenDeps {
   /** Scénario portant ce jeton, avec son tenant (le jeton est unique globalement). null si inconnu. */
   findByTestToken(token: string): Promise<{ workflowId: string; tenantId: string } | null>;
   /**
-   * ⚠️ IL N'Y A PLUS DE GARDE `mayStart` ICI, ET C'EST UNE DÉCISION DE JULIEN (2026-09-16, après son essai
-   * réel). Elle refusait de démarrer dès que le fil n'appartenait pas au scénario, donc en particulier quand
-   * l'agent de Meta le tenait : « quand y a un jeton, le MBA ne marche pas ». Un jeton de test est un geste
-   * DÉLIBÉRÉ de quelqu'un qui tient le téléphone ; le cas « un opérateur répond au type qui est en train de
-   * tester » n'existe pas. La prise du fil est faite par l'exécuteur (`ignoreHumanControl`), qui la refuse
-   * lisiblement si Meta refuse de rendre la main.
+   * Pas de garde « le fil appartient-il au scénario ? » : un jeton est un geste délibéré de qui tient le
+   * téléphone, même quand l'agent de Meta tient le fil. L'exécuteur prend le fil (`ignoreHumanControl`) et refuse
+   * lisiblement si Meta ne le rend pas.
    */
   /**
-   * Marque la conversation comme un fil de TEST : elle sort de l'analyse (donc du push HubSpot) et des
-   * statistiques, pour qu'un essai interne ne ressemble pas à un vrai client dans le tableau de bord.
+   * Marque la conversation comme un fil de test : elle sort de l'analyse (donc du push HubSpot) et des
+   * statistiques, pour qu'un essai interne ne ressemble pas à un vrai client.
    */
   markConversationTest(tenantId: string, waId: string): Promise<void>;
   /**
-   * Termine le parcours éventuellement en attente pour ce contact. Un testeur qui relance son lien veut
-   * repartir du début : sans ça, un run resté en attente d'une réponse resterait orphelin à vie.
-   */
-  /**
-   * Démarre le scénario. Le contact vient d'écrire, la fenêtre 24 h est donc ouverte.
-   *
-   * `nodeId` = le BLOC désigné par le suffixe du jeton (2026-09-16), `null` = l'entrée du scénario, c'est-à-dire
-   * le comportement de tous les liens déjà distribués.
-   *
-   * true = parti ; `false` ou une chaîne (la raison) = pas parti, et la raison est JOURNALISÉE par l'appelant.
+   * Démarre le scénario ; le contact vient d'écrire, la fenêtre de 24 h est ouverte. `nodeId` = le bloc désigné
+   * par le suffixe du jeton, `null` = l'entrée du scénario. `true` = parti ; `false` ou une chaîne (la raison) =
+   * pas parti, et l'appelant journalise la raison.
    */
   startTestRun(tenantId: string, workflowId: string, waId: string, nodeId: string | null): Promise<boolean | string>;
 }
@@ -65,53 +46,28 @@ function extraitDeBloc(nodeId: string): string {
   return nodeId.length <= BLOC_TRACE_MAX ? nodeId : `${nodeId.slice(0, BLOC_TRACE_MAX)}… (${nodeId.length} caractères)`;
 }
 
-/**
- * Traite les jetons de test d'un payload. Renvoie les `messageId` CONSOMMÉS (à ignorer par les étapes
- * suivantes du même webhook).
- */
+/** Traite les jetons de test d'un payload et rend les `messageId` consommés, à ignorer par les étapes suivantes. */
 export async function processTestTokens(
   payload: unknown,
   deps: TestTokenDeps,
   /**
-   * `messageId` DÉJÀ traités par une exécution précédente de ce webhook (Meta redélivre, pg-boss rejoue).
-   * Sans ce filtre, un rejeu relancerait le scénario depuis le début : le testeur recevrait deux fois la
-   * séquence et le client paierait deux fois les templates. On préfère perdre un test que doubler un envoi.
+   * 🔴 `messageId` déjà traités par une exécution précédente de ce webhook (redélivrance Meta, rejeu pg-boss) : sans
+   * ce filtre, un rejeu relancerait le scénario et le client paierait deux fois les templates. Mieux vaut perdre
+   * un test.
    */
   alreadySeen?: ReadonlySet<string>,
 ): Promise<Set<string>> {
   const consumed = new Set<string>();
   for (const m of extractInbound(payload)) {
-    // Filtre du chemin chaud : seuls les messages qui RESSEMBLENT à un jeton interrogent la base. Un message
-    // client ordinaire ne coûte donc rien de plus qu'avant.
-    //
-    // ⚠️ UNE SEULE LECTURE, ET C'EST VOULU. Le filtre et l'extraction étaient deux appels (`looksLikeTestToken`
-    // puis `normalizeTestToken`) : deux occasions de diverger sur la forme acceptée. `lireJetonDeTest` rend les
-    // deux d'un coup, donc ce qui a passé le filtre est exactement ce qu'on lit.
-    //
-    // 🔴 ET IL EST LU AVANT TOUTE AUTRE GARDE, POUR QUE LES AUTRES PUISSENT PARLER. C'est la leçon de l'essai
-    // réel du 2026-09-16 : Julien a scanné son QR, l'agent de Meta a répondu à sa place, et ce chemin n'a
-    // laissé AUCUNE trace. Il avait quatre sorties muettes, et il était impossible de dire laquelle avait
-    // servi : le parcours n'existait pas, la conversation n'était pas marquée, les journaux étaient vides.
-    // Une fois qu'on SAIT que le texte est un jeton, chaque refus est rare et mérite d'être dit ; avant de le
-    // savoir, se taire est la seule option tenable (ce filtre voit chaque message de chaque client).
+    // Filtre du chemin chaud : seuls les messages qui ressemblent à un jeton interrogent la base. Une seule lecture
+    // (`lireJetonDeTest`) sert de filtre et d'extraction, pour qu'ils ne divergent pas. Une fois le jeton reconnu,
+    // chaque refus est rare et se journalise ; avant, se taire est la seule option (ce filtre voit chaque message).
     const lu = lireJetonDeTest(m.body);
     if (!lu) continue;
-    // 🔴 UN JETON REÇU EN `standby` EST TRAITÉ, ET C'EST LE CAS QUI COMPTE (2026-09-16, second essai réel de
-    // Julien). `standby`, c'est Meta qui dit « son agent tient ce fil » : autrement dit exactement la
-    // situation où le testeur a besoin qu'on la lui reprenne. Ce chemin refusait ce canal, donc le jeton
-    // n'était jamais vu, et l'agent répondait « je n'ai pas bien compris votre message ». Deux essais de
-    // suite, et le premier n'avait laissé aucune trace.
-    //
-    // ⚠️ ET LA MESURE DU 2026-09-15 ÉTAIT INCOMPLÈTE, PAS FAUSSE. `src/webhooks/inbound.ts` a établi sur 30
-    // jours de webhooks réels que 126 entrants sur 126 arrivaient en `messages`, zéro en `standby`. C'était
-    // vrai de ces 30 jours-là, où l'agent de Meta ne tenait presque jamais un fil dont le client repartait.
-    // Un entrant de client arrive BEL ET BIEN en `standby` quand l'agent tient le fil : le corps lu ici est
-    // le texte que Julien a envoyé, pas un écho de ce que l'agent a dit. Les échos, eux, vivent dans
-    // `message_echoes` et sont une autre liste (`src/webhooks/parse.ts`).
-    //
-    // ⚠️ RIEN D'AUTRE NE CHANGE DE CANAL : l'avance de scénario et les automations continuent de refuser le
-    // `standby`. Un jeton est un geste DÉLIBÉRÉ de quelqu'un qui tient le téléphone ; un message ordinaire
-    // reçu pendant que l'agent parle n'est pas une réponse à un parcours.
+    // Un jeton reçu en `standby` est traité : c'est justement le cas où l'agent de Meta tient le fil et où le
+    // testeur a besoin qu'on le lui reprenne. Un entrant de client arrive bien en `standby` quand l'agent tient le
+    // fil (les échos, eux, sont dans `message_echoes`). Rien d'autre ne change de canal : l'avance de scénario et
+    // les automations refusent toujours le `standby`.
     if (m.field === 'standby') {
       // eslint-disable-next-line no-console
       console.log(`test-token: jeton reçu en « standby » (l'agent de Meta tient le fil pour ${m.waId}), le test va le lui reprendre`);
@@ -123,11 +79,10 @@ export async function processTestTokens(
         console.warn(`test-token: jeton reçu sur le numéro ${m.phoneNumberId}, qui n'appartient à aucun espace connu (message ${m.messageId})`);
         continue;
       }
-      // 🔴 LE JETON SEUL, SANS LE SUFFIXE DE BLOC. Le suffixe n'est pas stocké : chercher le texte entier ne
-      // trouverait jamais rien, et le test ne démarrerait pas du tout.
+      // Le jeton seul, sans le suffixe de bloc, qui n'est pas stocké : chercher le texte entier ne trouverait rien.
       const wf = await deps.findByTestToken(lu.jeton);
-      // Jeton inconnu, ou appartenant à un AUTRE client : on ne déclenche rien. Le jeton désigne le scénario,
-      // mais c'est le numéro qui fait autorité sur le tenant ; un jeton fuité ne doit pas traverser les clients.
+      // 🔴 Jeton inconnu ou d'un autre client : rien ne se déclenche. C'est le numéro qui fait autorité sur le tenant,
+      // un jeton fuité ne doit pas traverser les clients.
       if (!wf) {
         // eslint-disable-next-line no-console
         console.warn(`test-token: le jeton #${empreinteJeton(lu.jeton)} ne correspond à aucun scénario (message ${m.messageId})`);
@@ -139,9 +94,8 @@ export async function processTestTokens(
         continue;
       }
 
-      // CONSOMMÉ ici, AVANT toute écriture et quoi qu'il arrive ensuite : ce message EST un jeton de test.
-      // Le rendre à l'avance de scénario le ferait interpréter comme une réponse du contact, et aux
-      // automations comme un mot-clé. Placé plus bas, un échec intermédiaire rouvrait ces deux portes.
+      // Consommé ici, avant toute écriture et quoi qu'il arrive : ce message est un jeton de test, que l'avance de
+      // scénario prendrait pour une réponse et les automations pour un mot-clé.
       consumed.add(m.messageId);
 
       // Rejeu du même message : tout a déjà été fait au premier passage. On garde la consommation (le message
@@ -149,22 +103,14 @@ export async function processTestTokens(
       if (alreadySeen?.has(m.messageId)) continue;
 
       await deps.markConversationTest(tenantId, m.waId);
-      // ⚠️ LA FERMETURE DU PARCOURS EN COURS N'EST PLUS ICI. Elle y était (`endWaitingRun`) et elle avait
-      // deux défauts que le passage par `runFrom` supprime : elle tirait AVANT les gardes de l'exécuteur,
-      // donc elle pouvait tuer un parcours pour un test qui n'allait pas démarrer (scénario vide, fil tenu) ;
-      // et elle ne voyait que `waiting`, laissant vivre un parcours ENDORMI qui se serait réveillé par-dessus
-      // le test. `closeActiveByWaId` couvre les deux statuts et efface l'échéance.
-      // 🔴 LE REFUS EST JOURNALISÉ, parce qu'un chemin qui décide de NE PAS agir doit le dire. Le résultat
-      // était jeté : un test qui ne partait pas ne laissait AUCUNE trace, ni en base ni dans les journaux, et
-      // le testeur ne voyait qu'un silence. C'est le défaut relevé sur le gel d'avance le 2026-09-14, et le
-      // lien PERMANENT le rend ordinaire : un lien collé il y a trois semaines peut désigner un bloc supprimé
-      // depuis, et l'exécuteur le refuse alors avec sa raison.
+      // La fermeture du parcours en cours se fait dans `runFrom` (`closeActiveByWaId`), après les gardes de
+      // l'exécuteur : un test qui ne démarre pas ne tue pas le parcours, et un parcours endormi est fermé aussi.
+      // Un refus se journalise : un lien permanent peut désigner un bloc supprimé depuis, que l'exécuteur refuse.
       const issue = await deps.startTestRun(tenantId, wf.workflowId, m.waId, lu.nodeId);
       if (issue !== true) {
         // eslint-disable-next-line no-console
-        // ⚠️ LE BLOC EST TRONQUÉ DANS LA TRACE. Le suffixe n'a plus de forme imposée (c'est ce qui évite
-        // qu'un identifiant inattendu fuie jusqu'à l'agent de Meta), donc sa LONGUEUR n'est bornée par rien :
-        // le recopier tel quel mettrait un message entier dans une ligne de journal.
+        // Le bloc est tronqué dans la trace : le suffixe n'a pas de forme imposée, donc sa longueur n'est bornée
+        // par rien.
         console.warn(`test-token: test NON démarré pour ${m.waId} sur le scénario ${wf.workflowId}${lu.nodeId ? ` au bloc ${extraitDeBloc(lu.nodeId)}` : ''} : ${issue === false ? 'refus sans raison' : issue}`);
       }
     } catch (err) {

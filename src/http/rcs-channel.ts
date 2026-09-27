@@ -7,23 +7,17 @@ import type { RcsChannelInfo, RcsChannelCheck } from '../rcs/channel-info';
 export interface RcsChannelRouteDeps {
   /** État courant du canal pour ce workspace. null = pas activé. */
   etat(tenantId: string): Promise<{ agentId: string; brandName: string; displayName: string | null; status: string; checkedAt: string | null } | null>;
-  /** Vérifie une clé chez le fournisseur SANS rien enregistrer. */
+  /** Vérifie une clé chez le fournisseur sans rien enregistrer. */
   verifier(apiKey: string): Promise<RcsChannelCheck>;
-  /** Enregistre une clé DÉJÀ vérifiée (chiffrement fait par l'appelant). */
+  /** Enregistre une clé déjà vérifiée (chiffrement fait par l'appelant). */
   activer(tenantId: string, canal: RcsChannelInfo, apiKey: string): Promise<void>;
   desactiver(tenantId: string): Promise<boolean>;
 }
 
 /**
- * Activation du canal RCS d'un workspace, depuis la page d'accueil, sous le numéro WhatsApp.
- *
- * La clé n'est JAMAIS relue par l'API : on ne la renvoie pas, même masquée. L'écran affiche ce qu'elle
- * OUVRE (agent, flux, quotas), ce qui est l'information utile, et jamais le secret lui-même.
- *
- * La vérification est faite AVANT l'enregistrement, et son échec est explicite. C'est important : chez
- * smsmode une clé est rattachée à un canal, et une clé de canal SMS passe l'authentification tout en étant
- * inutilisable en RCS. Sans ce contrôle, l'opérateur croirait avoir activé le canal et ne le découvrirait
- * qu'au premier envoi raté.
+ * Activation du canal RCS d'un espace, depuis la page d'accueil. La clé n'est jamais relue par l'API (pas même
+ * masquée) : l'écran montre ce qu'elle ouvre (agent, flux, quotas). Elle est vérifiée avant l'enregistrement,
+ * car chez smsmode une clé de canal SMS passe l'authentification mais ne sert à rien en RCS.
  */
 export function registerRcsChannel(app: FastifyInstance, deps: RcsChannelRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
@@ -43,8 +37,7 @@ export function registerRcsChannel(app: FastifyInstance, deps: RcsChannelRouteDe
 
     const check = await deps.verifier((apiKey as string).trim());
     if (!check.ok) {
-      // 422 et non 500 : c'est une saisie à corriger, pas une panne. Et un 5xx serait remplacé par la page
-      // d'erreur de Cloudflare, donc le message n'atteindrait jamais l'opérateur.
+      // 422 : une clé à corriger, pas une panne (un 5xx serait remplacé par la page d'erreur de Cloudflare).
       return reply.code(422).send({ error: check.detail, reason: check.reason });
     }
 

@@ -16,15 +16,12 @@ import type { DeliveryStore, DeliveryStatus } from '../webhooks/delivery';
 export interface CreateCampaignInput {
   tenantId: string;
   /**
-   * CE QUI SE PASSE QUAND LE CONTACT RÉPOND AU PREMIER ÉTAGE (migration 0144).
-   *
-   * ⚠️ IL VIT ICI ET PAS DANS `chaine`, et c'est l'invariant de la migration 0134 : le rang 1 EST la
-   * campagne elle-même, ses colonnes en sont la seule source. Les étages suivants portent le leur dans
-   * `chaine[].devenir`. Une campagne sans repli n'envoie pas de `chaine` du tout, et doit pourtant
-   * pouvoir dire ce que devient sa réponse : c'est ce champ qui le permet.
+   * Ce qui se passe quand le contact répond au premier étage. Il vit ici et pas dans `chaine` : le rang 1 est la
+   * campagne elle-même, ses colonnes en sont la seule source. Une campagne sans repli n'envoie pas de `chaine`
+   * et doit pourtant dire ce que devient sa réponse.
    */
   devenir?: DevenirEtage;
-  /** '' pour une campagne RCS : il n'y a pas de numéro Meta (colonne nullable depuis la migration 0056). */
+  /** '' pour une campagne RCS : il n'y a pas de numéro Meta (colonne nullable). */
   phoneNumberId: string;
   name: string;
   category: CampaignCategory;
@@ -36,50 +33,37 @@ export interface CreateCampaignInput {
   contactIds?: string[];
   /** Campagne workflow : démarre ce workflow par destinataire au lieu d'envoyer un template. */
   workflowId?: string;
-  /** Cible NODE (/v1/sends) : démarre le workflow à CE bloc au lieu de son entrée. Requiert `workflowId`. */
+  /** Cible node (/v1/sends) : démarre le workflow à ce bloc au lieu de son entrée. Requiert `workflowId`. */
   startNodeId?: string;
   /** Débit max en messages/minute (1..80). Absent/null = aucun throttle. */
   ratePerMinute?: number | null;
-  /** N'envoyer que pendant les heures d'ouverture de l'espace (migration 0122). Absent = aucune contrainte. */
+  /** N'envoyer que pendant les heures d'ouverture de l'espace. Absent = aucune contrainte. */
   businessHoursOnly?: boolean;
-  /** Canal d'envoi. Absent = 'whatsapp' (comportement historique). */
+  /** Canal d'envoi. Absent = 'whatsapp'. */
   channel?: 'whatsapp' | 'rcs';
-  /**
-   * Agent RCS (`rcs_agents.agent_id`). Requis si `channel = 'rcs'`, ET depuis le 2026-09-12 si la CHAÎNE
-   * porte un étage RCS alors que la campagne part sur un autre canal.
-   *
-   * ⚠️ Posé sur une campagne WhatsApp, il est INERTE : c'est `channel` qui gouverne le branchement du
-   * sender (`isRcs`, `src/campaign/run-job.ts`), jamais la présence de cette valeur. Il est là pour que
-   * le repli RCS ait un agent le jour où le moteur saura servir un second étage.
-   */
+  /** Agent RCS (`rcs_agents.agent_id`). Requis si `channel = 'rcs'` ou si la chaîne porte un étage RCS. */
   rcsAgentId?: string;
   /** Message RCS, validé par zod à la création. Requis si `channel = 'rcs'`. */
   rcsMessage?: unknown;
   /**
-   * Campagne AU FIL DE L'EAU : le webhook entrant qui lui amènera ses destinataires. Une telle campagne naît
-   * SANS destinataire (`contactIds` n'a plus de sens), et ne se termine pas toute seule.
+   * Campagne au fil de l'eau : le webhook entrant qui lui amène ses destinataires. Elle naît sans destinataire
+   * (`contactIds` n'a plus de sens) et ne se termine pas toute seule.
    */
   webhookId?: string;
   /**
-   * LA CHAÎNE D'ÉTAGES, quand la campagne en a une. Absente = UN étage, celui de la campagne, exactement
-   * comme avant.
+   * La chaîne d'étages, quand la campagne en a une. Absente = un seul étage, celui de la campagne.
+   * `insertCampaignRow` en est le seul écrivain.
    *
-   * 🔴 SANS ELLE, L'ASSISTANT AFFICHE TROIS ÉTAGES ET CRÉE UNE CAMPAGNE À UN SEUL. `insertCampaignRow`
-   * était le SEUL écrivain de `campaign_etages` et n'écrivait que le rang 1 : le moteur de bascule, la
-   * ventilation par canal et l'écran de repli existaient tous les trois sans que quoi que ce soit ne
-   * sache ENREGISTRER ce qu'ils décrivent.
-   *
-   * ⚠️ SES RANGS SONT UNE INTENTION D'ORDRE, PAS UNE VALEUR DE CONFIANCE : ils sont renumérotés 1..N par
-   * `normaliserChaine`, et `problemeDeChaine` refuse en amont ce que le CHECK de la table refuserait en
-   * 5xx. ⚠️ Le CONTENU du rang 1 est ignoré : il vient des colonnes de `campaigns`, seule source (cf.
-   * `insertCampaignRow`).
+   * Ses rangs sont une intention d'ordre, renumérotés 1..N par `normaliserChaine` ; `problemeDeChaine` refuse
+   * en amont ce que le CHECK refuserait en 5xx. Le contenu du rang 1 est ignoré : il vient des colonnes de
+   * `campaigns`.
    */
   chaine?: EtageEntrant[];
-  /** « Réessayer les envois qui échouent » (`campaigns.reessayer`, 0134). Absent = le défaut de la table (vrai). */
+  /** « Réessayer les envois qui échouent » (`campaigns.reessayer`). Absent = le défaut de la table (vrai). */
   reessayer?: boolean;
-  /** Le rattrapage peut-il partir hors des heures d'ouverture (0134) ? Absent = le défaut de la table (faux). */
+  /** Le rattrapage peut-il partir hors des heures d'ouverture ? Absent = le défaut de la table (faux). */
   rattrapageHorsHoraires?: boolean;
-  /** Comment les réponses se répartissent dans l'Inbox (0134). Absent/null = aucune assignation. */
+  /** Comment les réponses se répartissent dans l'Inbox. Absent/null = aucune assignation. */
   assignation?: 'personne' | 'tour_de_role' | null;
   /** La personne, quand `assignation` vaut `personne`. Ignoré sinon. */
   assignationUserId?: string | null;
@@ -97,8 +81,8 @@ export interface CampaignSummaryRow {
 }
 
 /**
- * Ligne SQL -> CampaignSummary. Fonction PURE (testable sans base). Ne COERCE PAS un null en chaîne vide :
- * une campagne scénario n'a pas de template, et le dire est le seul moyen d'empêcher le retour du « template () ».
+ * Ligne SQL -> CampaignSummary. Fonction pure. Ne coerce pas un null en chaîne vide : une campagne scénario n'a
+ * pas de template, et l'écran doit le savoir.
  */
 export function rowToSummary(r: CampaignSummaryRow): CampaignSummary {
   return {
@@ -140,40 +124,32 @@ export interface CampaignSummary {
   category: CampaignCategory;
   status: CampaignStatus;
   phoneNumberId: string;
-  /** null pour une campagne SCÉNARIO (c'est le scénario qui envoie, la campagne ne porte pas de template).
-   *  Nullable À DESSEIN : le `?? ''` d'avant transformait cette absence en valeur vide, que l'écran rendait
-   *  en « template () ». Le type oblige désormais chaque appelant à traiter le cas. */
+  /** null pour une campagne scénario (c'est le scénario qui envoie). Nullable à dessein : chaque appelant doit
+   *  traiter le cas, une chaîne vide s'afficherait en « template () ». */
   templateName: string | null;
   templateLanguage: string | null;
   /** Nom du scénario d'une campagne scénario. null = campagne template, ou scénario supprimé depuis. */
   workflowName: string | null;
-  /** Webhook qui alimente la campagne AU FIL DE L'EAU. null = campagne ordinaire (liste figée à la création). */
+  /** Webhook qui alimente la campagne au fil de l'eau. null = campagne ordinaire (liste figée à la création). */
   webhookId: string | null;
   /** Nom de ce webhook, pour l'afficher sans second appel. null = campagne ordinaire, ou adresse supprimée. */
   webhookName: string | null;
   createdAt: string;
   /** Instant de lancement programmé (ISO UTC) quand status = 'scheduled'. null sinon. */
   scheduledAt: string | null;
-  /** Instant d'archivage (ISO UTC). null = campagne active. ORTHOGONAL au statut : une campagne archivée
-   *  garde son statut d'origine (completed, failed...) et ses destinataires, qui portent l'historique. */
+  /** Instant d'archivage (ISO UTC). null = campagne active. Orthogonal au statut : une campagne archivée garde
+   *  son statut d'origine et ses destinataires, qui portent l'historique. */
   archivedAt: string | null;
   counts: RecipientCounts;
 }
 export interface CampaignDetail extends CampaignSummary {
   /**
-   * LA CHAÎNE TELLE QU'ELLE A ÉTÉ LANCÉE, étage par étage.
-   *
-   * 🔴 DEMANDÉE PAR JULIEN LE 2026-09-14 : « un truc qui me gêne, c'est qu'on ne retrouve pas les détails
-   * de comment est foutue une campagne une fois qu'on l'a lancée ; on doit pouvoir savoir quel message on
-   * a lancé, ou quel scénario, s'il y a un fallback quel message ou quel scénario ». Le détail ne rendait
-   * que des compteurs et des destinataires : ce qui avait été ENVOYÉ n'était consultable nulle part après
-   * coup, alors que c'est la première question qu'on se pose devant un résultat.
-   *
-   * ⚠️ Toute campagne en a au moins un étage (le rang 1 est écrit même sans repli, cf. `insertCampaign`),
-   * donc ce tableau n'est jamais vide pour une campagne créée par ce code.
+   * La chaîne telle qu'elle a été lancée, étage par étage : ce qui a été envoyé (message, scénario, repli) doit
+   * rester consultable après coup. Jamais vide pour une campagne créée par ce code (le rang 1 est toujours
+   * écrit).
    */
   chaine: Etage[];
-  /** Mapping des variables du template (positions -> source). Sert au front F7 (savoir quel champ corriger). */
+  /** Mapping des variables du template (positions -> source) : dit au front quel champ corriger. */
   paramMapping: TemplateParam[];
   recipients: Array<{
     id: string;
@@ -182,7 +158,7 @@ export interface CampaignDetail extends CampaignSummary {
     status: string;
     messageId: string | null;
     error: string | null;
-    /** Code d'erreur Meta numérique (null hors échec). Pilote le bouton « Corriger + renvoyer » (F7, famille variables). */
+    /** Code d'erreur Meta numérique (null hors échec). Pilote le bouton « Corriger + renvoyer ». */
     errorCode: number | null;
     sentAt: string | null;
     deliveryStatus: string | null;
@@ -191,35 +167,24 @@ export interface CampaignDetail extends CampaignSummary {
 }
 
 /**
- * CE QUE LA LECTURE D'UN ENVOI DE L'API REND, AVANT MISE EN FORME (`formaterSuiviEnvoi`,
- * `src/api/suivi-envoi.ts`).
+ * Ce que la lecture d'un envoi de l'API rend, avant mise en forme (`formaterSuiviEnvoi`). Distinct de
+ * `CampaignDetail` pour qu'un changement de la console ne change pas l'API.
  *
- * 🔴 CE N'EST PAS `CampaignDetail` : l'API renvoyait l'objet de la console (`chaine`, `paramMapping`,
- * `archivedAt`), donc un changement de la console changeait l'API. Cette lecture ne sert que l'API.
- *
- * ⚠️ `graph` est le graphe PUBLIÉ relu MAINTENANT : l'ouverture d'un envoi de scénario ou de bloc se recalcule
- * dessus, aucune colonne ne la fige.
- *
- * ⚠️ `channel` EST LU, parce que `GET /v1/sends/{sendId}` lit N'IMPORTE QUELLE campagne de l'espace, console
- * comprise : une campagne RCS de la console porte `template_name` à `''` (pas null, `insertCampaignRow`), et
- * sans son canal le suivi l'annoncerait comme un template WhatsApp au nom vide.
- *
- * ⚠️ `recipients` EST BORNÉ À 500 LIGNES (un envoi de l'API en compte 50 au plus, une campagne de la console
- * peut en compter des milliers). `recipientsTotal` dit combien il y en a : une liste tronquée se voit.
- *
- * ⚠️ LE CANAL D'UN DESTINATAIRE N'EST PAS TOUJOURS CELUI DE LA CAMPAGNE : une chaîne de repli (0134) fait
- * passer un destinataire au rang 2 ou 3, sur un autre canal (`campaign_recipients.etage_courant`). Le rang
- * et le canal de SON étage sont donc lus ligne par ligne.
+ * `graph` est le graphe publié relu maintenant : l'ouverture d'un envoi de scénario se recalcule dessus.
+ * `channel` est lu parce que `GET /v1/sends/{sendId}` lit n'importe quelle campagne de l'espace : une campagne
+ * RCS de la console a `template_name` à `''`, et passerait sinon pour un template WhatsApp au nom vide.
+ * `recipients` est borné à 500 lignes, `recipientsTotal` dit combien il y en a. Le rang et le canal sont lus
+ * par destinataire : une chaîne de repli le fait passer sur un autre canal.
  */
 export interface EnvoiApiBrut {
   id: string;
   status: CampaignStatus;
   createdAt: string;
-  /** `campaigns.channel` (0056, `not null default 'whatsapp'`). Une campagne RCS n'a jamais de scénario. */
+  /** `campaigns.channel` (`not null default 'whatsapp'`). Une campagne RCS n'a jamais de scénario. */
   channel: 'whatsapp' | 'rcs';
   /**
-   * Le nom de la campagne (lot 3). Pour un envoi RCS de l'API, `[API] <nom du message>`, jamais coupé : c'est
-   * là que le suivi relit la cible `rcsMessage` (`nomDuMessageRcs`), la campagne ne gardant que le CONTENU.
+   * Le nom de la campagne. Pour un envoi RCS de l'API, `[API] <nom du message>`, jamais coupé : c'est là que le
+   * suivi relit la cible `rcsMessage` (`nomDuMessageRcs`), la campagne ne gardant que le contenu.
    */
   name: string;
   templateName: string | null;
@@ -248,61 +213,41 @@ export interface EnvoiApiBrut {
   }>;
 }
 
-/** Codes d'erreur Meta « variable de template » (F7) : renvoyables après correction de la donnée du contact. */
+/** Codes d'erreur Meta « variable de template » : renvoyables après correction de la donnée du contact. */
 export const RETRYABLE_TEMPLATE_VAR_CODES = new Set([131009, 132012, 132000]);
 
 /**
- * « Cette campagne n'a PAS de repli », c'est-à-dire rien au-delà du premier étage.
+ * « Cette campagne n'a pas de repli », c'est-à-dire rien au-delà du premier étage.
  *
- * 🔴 C'EST LA FRONTIÈRE ENTRE LES DEUX POLITIQUES DE RATTRAPAGE, et elle est posée en SQL parce que
- * c'est le seul endroit qui la rend exclusive. Avec un repli, la chaîne gouverne (bascule) ; sans
- * repli, la politique de réessai gouverne (F6, inchangée). Sans cette clause, un destinataire d'une
- * campagne à chaîne resterait listé par les trois relances de F6 EN PLUS d'être basculé : deux
- * mécanismes sur le même échec, donc un envoi de trop, et rien ne l'aurait signalé.
+ * C'est la frontière entre les deux politiques de rattrapage, posée en SQL parce que c'est ce qui la rend
+ * exclusive : avec un repli la bascule gouverne, sans repli la politique de réessai. Sans cette clause, un même
+ * échec serait basculé et relancé, donc un envoi de trop.
  *
- * ⚠️ LE PARC EXISTANT RESTE « SANS REPLI », MAIS CE N'EST PLUS UN INVARIANT DU CODE. La reprise de
- * 0134 a mis toutes les campagnes d'avant au rang 1 ; ce qui a changé le 2026-09-12, c'est que
- * `insertCampaignRow` écrit désormais la chaîne COMPLÈTE qu'un appelant lui donne. Une campagne créée
- * avec un repli sort donc de cette clause, et c'est précisément ce pour quoi elle a été écrite : la
- * frontière n'était pas un constat sur le parc, c'est le contrôle qui empêche qu'un même échec soit à
- * la fois basculé et relancé par F6.
- *
- * ⚠️ `${RANG_INITIAL}` est interpolé et non paramétré : c'est une constante de module (un nombre du
- * code), jamais une entrée. Le paramétrer obligerait chaque appelant à décaler ses `$n`.
+ * `${RANG_INITIAL}` est interpolé et non paramétré : constante du code, jamais une entrée.
  */
 const SANS_REPLI_SQL = `not exists (select 1 from campaign_etages ce where ce.campaign_id = r.campaign_id and ce.rang > ${RANG_INITIAL})`;
 
-/** Destinataire candidat à une auto-relance (F6). */
 /**
- * Un destinataire repris par le balayage de relance.
- *
- * ⚠️ `contactId` sert à écrire la joignabilité CHEZ NOUS (migration 0133). `toE164` ne pouvait pas s'y
- * substituer : la mémoire est posée sur la ligne `contacts`, et retrouver un contact par son numéro serait
- * une seconde définition de son identité, là où `campaign_recipients.contact_id` la porte déjà.
+ * Un destinataire repris par le balayage de relance. `contactId` sert à écrire la joignabilité sur la ligne
+ * `contacts` : retrouver le contact par son numéro serait une seconde définition de son identité.
  */
 export interface AutoRetryRecipient {
   id: string; campaignId: string; tenantId: string; contactId: string; toE164: string;
   /**
-   * L'option `rattrapage_hors_horaires` de SA campagne (migration 0134).
-   *
-   * 🔴 ELLE EST PORTÉE PAR LE DESTINATAIRE, PAS PAR LE BALAYAGE, et c'est ce qui la rend juste : un
-   * tour de balayage sert les destinataires de PLUSIEURS campagnes, dont les réglages diffèrent. Un
-   * drapeau posé sur le balayage rendrait le réglage de la première campagne opposable à toutes.
+   * L'option `rattrapage_hors_horaires` de sa campagne, portée par le destinataire : un tour de balayage sert
+   * plusieurs campagnes aux réglages différents.
    */
   rattrapageHorsHoraires: boolean;
 }
 
 /**
- * Un destinataire en échec dont la campagne porte un REPLI, avec tout ce que la règle de bascule demande.
- *
- * 🔴 IL ÉTEND `EntreeDeDecision`, IL N'EN RECOPIE PAS LES CHAMPS. Une liste recopiée pour être
- * RETRANSMISE est une liste à tenir alignée à la main, et elle dérive : c'est exactement le défaut qui a
- * fait échouer toutes les campagnes à lien tracé en 131008 le 2026-09-02. En l'étendant, un champ ajouté
- * à la règle devient une erreur de compilation ICI, au seul endroit qui sait le remplir.
+ * Un destinataire en échec dont la campagne porte un repli, avec ce que la règle de bascule demande. Il étend
+ * `EntreeDeDecision` au lieu d'en recopier les champs : un champ ajouté à la règle devient une erreur de
+ * compilation ici, au seul endroit qui sait le remplir.
  */
 export interface CandidatBascule extends AutoRetryRecipient, EntreeDeDecision {}
 
-/** Résultat d'une tentative de renvoi (F7). Discriminé pour que la route mappe proprement 404/409/422/202. */
+/** Résultat d'une tentative de renvoi, discriminé pour que la route mappe 404/409/422/202. */
 export type RetryReset =
   | { result: 'queued'; campaignId: string }
   | { result: 'not_found' }
@@ -315,17 +260,13 @@ export interface PhoneNumberRow {
   verifiedName: string | null;
 }
 
-// La définition de « en échec » a DÉMÉNAGÉ dans `echecs-sql.ts` : elle était écrite ici et recopiée dans le
-// journal d'exploitation, donc deux écrans pouvaient compter deux populations différentes du même fait.
 
 /**
- * Projection commune de la liste et du détail d'une campagne : l'en-tête, le nom du scénario, et les
- * compteurs par statut. Les deux requêtes ne diffèrent QUE par leur `where` et leur `group by`, qui suivent
- * cette chaîne. Deux copies divergeaient au premier compteur ajusté.
+ * Projection commune de la liste et du détail d'une campagne (en-tête, nom du scénario, compteurs par statut) :
+ * les deux requêtes ne diffèrent que par leur `where` et leur `group by`.
  *
- * `colonnesEnPlus` sert au détail, qui a besoin d'une colonne que la liste ne doit PAS payer (le
- * `param_mapping`, un jsonb par campagne). Le `group by c.id` porte sur la clé primaire : toute colonne de
- * `campaigns` y est sélectionnable sans agrégat (dépendance fonctionnelle).
+ * `colonnesEnPlus` sert au détail (le `param_mapping`, que la liste ne doit pas payer). Le `group by c.id`
+ * porte sur la clé primaire : toute colonne de `campaigns` y est sélectionnable sans agrégat.
  */
 const summarySelect = (colonnesEnPlus = '') => `select c.id, c.name, c.category, c.status, c.phone_number_id,
               c.template_name, c.template_language, c.created_at, c.scheduled_at, c.archived_at,
@@ -346,14 +287,9 @@ export class PgCampaignRepo {
   constructor(private readonly pool: Pool) {}
 
   /**
-   * Crée UNE campagne, sans destinataire. Sert les tests d'intégration et l'API de bas niveau.
-   *
-   * 🔴 ELLE EST TRANSACTIONNELLE DEPUIS QUE LA CHAÎNE PEUT AVOIR PLUSIEURS ÉTAGES, et c'est une dette
-   * que le lot 0134 avait explicitement laissée ouverte (« un échec entre les deux laisserait une
-   * campagne à chaîne vide... à reprendre avec le moteur de bascule »). Elle ne coûtait rien tant qu'une
-   * chaîne avait toujours un étage unique écrit dans la foulée ; elle coûte une campagne MORTE dès qu'il
-   * y en a trois, parce que `getCampaign` lit la chaîne pour décider ce qu'un run envoie. Mieux vaut
-   * aucune campagne qu'une campagne que personne ne peut servir.
+   * Crée une campagne, sans destinataire (tests d'intégration, API de bas niveau). Transactionnelle : une chaîne
+   * à plusieurs étages écrite à moitié donnerait une campagne que personne ne peut servir, `getCampaign` lisant
+   * la chaîne pour décider ce qu'un run envoie.
    */
   async insertCampaign(input: CreateCampaignInput): Promise<string> {
     return enTransaction(this.pool, (client) => insertCampaignRow(client, input));
@@ -363,7 +299,7 @@ export class PgCampaignRepo {
     const res = await this.pool.query<{
       id: string;
       tenant_id: string;
-      /** null depuis 0056 : une campagne RCS n'a pas de numéro Meta. */
+      /** null pour une campagne RCS, qui n'a pas de numéro Meta. */
       phone_number_id: string | null;
       category: CampaignCategory;
       template_name: string | null;
@@ -379,11 +315,9 @@ export class PgCampaignRepo {
       webhook_id: string | null;
       business_hours_only: boolean | null;
     }>(
-      // `channel`, `rcs_agent_id` et `rcs_message` sont RELUS ici : c'est cette lecture qui alimente le job de
-      // run, donc c'est elle qui décide du canal d'envoi. Les omettre ferait repartir une campagne RCS bien
-      // enregistrée sur le chemin WhatsApp historique, avec un phone_number_id nul.
-      // `webhook_id` est relu pour la MÊME raison : c'est lui qui dit au moteur qu'une file vide n'est pas
-      // une campagne finie, mais une campagne qui attend son prochain arrivant.
+      // `channel`, `rcs_agent_id`, `rcs_message` et `webhook_id` sont relus : cette lecture alimente le job de
+      // run. Sans eux, une campagne RCS repartirait sur le chemin WhatsApp avec un phone_number_id nul, et une
+      // campagne au fil de l'eau se terminerait à la première file vide.
       `select id, tenant_id, phone_number_id, category, template_name, template_language,
               param_mapping, status, workflow_id, rate_per_minute, start_node_id,
               channel, rcs_agent_id, rcs_message, webhook_id, business_hours_only
@@ -404,54 +338,33 @@ export class PgCampaignRepo {
       workflowId: r.workflow_id,
       ratePerMinute: r.rate_per_minute,
       startNodeId: r.start_node_id,
-      // Campagne d'avant la migration 0056 : `channel` est null en base -> WhatsApp, comportement historique.
+      // Campagne ancienne : `channel` null en base -> WhatsApp.
       channel: r.channel ?? 'whatsapp',
       rcsAgentId: r.rcs_agent_id,
       rcsMessage: r.rcs_message,
       webhookId: r.webhook_id,
-      // Campagne d'avant la migration 0122 : la colonne a un DEFAUT false, donc `null` ne peut venir que d'une
-      // ligne d'avant. Aucune contrainte d'horaire, comportement historique.
+      // `null` ne vient que d'une ligne antérieure à la colonne (défaut false) : aucune contrainte d'horaire.
       businessHoursOnly: r.business_hours_only === true,
       chaine: await this.lireChaine(id),
     };
   }
 
   /**
-   * La CHAÎNE D'ÉTAGES d'une campagne (migration 0134), triée par rang.
+   * La chaîne d'étages d'une campagne, triée par rang. Une requête de plus par appel de `getCampaign`, jamais
+   * par destinataire ; la joindre à la lecture principale dupliquerait la ligne de campagne par étage.
    *
-   * ⚠️ UNE REQUÊTE DE PLUS PAR APPEL DE `getCampaign`, JAMAIS PAR DESTINATAIRE. Le compte exact de ce
-   * que ça coûte, parce qu'un « c'est négligeable » non chiffré finit toujours par être faux : deux
-   * appelants seulement. `run-job.ts` la lit UNE fois au démarrage d'un run, hors de la boucle d'envoi ;
-   * `listRunningByWebhook` la lit une fois par campagne vivante du webhook, à chaque arrivant du fil de
-   * l'eau, et c'est le seul endroit où le surcoût se répète (il y passe de une à deux requêtes).
-   * La joindre à la lecture principale aurait dupliqué la ligne de campagne par étage, donc obligé à
-   * dédoublonner en code ce que la base venait de multiplier.
-   *
-   * ⚠️ `order by rang` est ici pour le LECTEUR, pas pour la correction : `rangSuivant` et `etageAuRang`
-   * ne supposent aucun ordre, et c'est tenu par un test. Une chaîne triée se lit simplement dans un
-   * journal ou un débogueur, ce qui vaut la clause.
-   *
-   * ⚠️ Pas de `tenant_id` ici, et c'est le seul endroit du lot où son absence est correcte :
-   * `getCampaign` elle-même lit `where id = $1` sans tenant (elle REND le tenant pour que l'appelant
-   * tranche, cf. `getForRun`). Ajouter un filtre à la chaîne sans en ajouter à la campagne n'aurait
-   * protégé rien du tout, et en ajouter aux deux aurait changé le contrat de `getCampaign`.
+   * `order by rang` sert au lecteur, pas à la correction : `rangSuivant` et `etageAuRang` ne supposent aucun
+   * ordre. Pas de `tenant_id` ici : `getCampaign` lit `where id = $1` et rend le tenant pour que l'appelant
+   * tranche (`getForRun`), filtrer la chaîne seule ne protégerait rien.
    */
   private async lireChaine(campaignId: string): Promise<Etage[]> {
     return (await this.lireChainesDe([campaignId])).get(campaignId) ?? [];
   }
 
   /**
-   * Les chaînes de PLUSIEURS campagnes en une requête, indexées par campagne.
-   *
-   * 🔴 C'EST LE POINT DE PASSAGE UNIQUE DE LA TRADUCTION `campaign_etages` -> `Etage`, et `lireChaine`
-   * en dépend maintenant au lieu d'en porter une seconde copie. Le balayage de bascule a besoin des
-   * chaînes de tous ses candidats d'un coup : lui donner sa propre lecture aurait produit deux
-   * traductions des mêmes colonnes, donc deux occasions de diverger le jour où un étage gagne un champ.
-   *
-   * ⚠️ `= any($1::uuid[])` et non `= $1` : c'est la seule différence avec la lecture d'avant, et la clé
-   * primaire `(campaign_id, rang)` la sert exactement pareil. Le `order by` gagne `campaign_id` pour que
-   * le regroupement ne dépende pas de l'ordre de retour ; les rangs d'une même campagne restent triés,
-   * même si `etages.ts` ne le suppose nulle part.
+   * Les chaînes de plusieurs campagnes en une requête, indexées par campagne : point de passage unique de la
+   * traduction `campaign_etages` -> `Etage`, pour qu'un champ ajouté à un étage ne diverge pas entre deux
+   * copies. La clé primaire `(campaign_id, rang)` sert `= any($1::uuid[])`.
    */
   private async lireChainesDe(campaignIds: string[]): Promise<Map<string, Etage[]>> {
     const parCampagne = new Map<string, Etage[]>();
@@ -469,11 +382,7 @@ export class PgCampaignRepo {
       workflow_name: string | null;
       devenir: 'mba' | 'inbox' | null;
     }>(
-      /**
-       * ⚠️ LA JOINTURE EST EXTERNE, ET C'EST LE POINT : un scénario supprimé depuis ne doit pas faire
-       * DISPARAÎTRE l'étage de l'écran. Un `join` simple ferait perdre la ligne entière, donc la campagne
-       * paraîtrait n'avoir jamais rien envoyé.
-       */
+      // Jointure externe : un scénario supprimé depuis ne doit pas faire disparaître l'étage de l'écran.
       `select e.campaign_id, e.rang, e.canal, e.template_name, e.template_language, e.rcs_message,
               e.email_template_id, e.email_champ, e.workflow_id, w.name as workflow_name, e.devenir
          from campaign_etages e
@@ -518,11 +427,10 @@ export class PgCampaignRepo {
     return (res.rowCount ?? 0) > 0;
   }
 
-  /** Débit choisi + nb de destinataires EN ATTENTE : dimensionne le timeout du job de run (pacing.ts). */
+  /** Débit choisi + nb de destinataires en attente : dimensionne le timeout du job de run (pacing.ts). */
   async getRunSizing(campaignId: string): Promise<{ tenantId: string; ratePerMinute: number | null; pendingCount: number } | null> {
-    // `tenant_id` est rendu ICI parce que tout enfilement de run en a besoin : c'est lui le GROUPE de la file
-    // (lot 5), celui sur lequel la concurrence par espace s'applique. Le lire au même endroit que le
-    // dimensionnement évite une seconde requête à chaque relance.
+    // `tenant_id` est rendu ici parce que tout enfilement de run en a besoin : c'est le groupe de la file, sur
+    // lequel s'applique la concurrence par espace.
     const res = await this.pool.query<{ tenant_id: string; rate_per_minute: number | null; pending: string }>(
       `select c.tenant_id, c.rate_per_minute,
               (select count(*) from campaign_recipients r where r.campaign_id = c.id and r.status = 'pending')::text as pending
@@ -554,7 +462,7 @@ export class PgCampaignRepo {
     return (res.rowCount ?? 0) > 0;
   }
 
-  /** Campagnes programmées DUES (scheduled_at <= maintenant) + leur dimensionnement de run. Le sweeper les
+  /** Campagnes programmées dues (scheduled_at <= maintenant) et leur dimensionnement de run. Le sweeper les
    *  enfile puis les passe en 'running'. Cross-tenant (le sweeper tourne pour tous). */
   async listDueScheduled(now: Date = new Date()): Promise<Array<{ id: string; tenantId: string; ratePerMinute: number | null; pendingCount: number }>> {
     const res = await this.pool.query<{ id: string; tenant_id: string; rate_per_minute: number | null; pending: string }>(
@@ -568,7 +476,7 @@ export class PgCampaignRepo {
   }
 
   /** Passe une campagne programmée en 'running' (claim du sweeper, garde `status='scheduled'` anti-double).
-   *  true si claimée par CET appel (une seule fois même avec plusieurs sweepers). */
+   *  true si claimée par cet appel (une seule fois même avec plusieurs sweepers). */
   async markScheduledRunning(campaignId: string): Promise<boolean> {
     const res = await this.pool.query(
       `update campaigns set status = 'running', scheduled_at = null where id = $1 and status = 'scheduled'`,
@@ -578,11 +486,10 @@ export class PgCampaignRepo {
   }
 
   /**
-   * Campagnes ACTIVES (draft/running/paused) référençant un template (par nom ; langue optionnelle).
-   * Garde-fou D1 : éditer/supprimer un template utilisé par une de ces campagnes casserait des envois
-   * (un draft a déjà ses recipients construits ; un running/paused est relançable via POST /run ; un edit
-   * repasse le template en PENDING donc en 422 par destinataire). completed/failed = terminaux -> exclus.
-   * Langue omise = toutes langues (cas de la suppression par nom, qui efface toutes les langues chez Meta).
+   * Campagnes actives (draft, running, paused, scheduled) qui référencent un template (par nom ; langue
+   * optionnelle, omise = toutes). Éditer ou supprimer un template utilisé casserait leurs envois : un draft a
+   * déjà ses destinataires construits, un running/paused est relançable, et un edit repasse le template en
+   * PENDING.
    */
   async listActiveCampaignsForTemplate(
     tenantId: string,
@@ -602,19 +509,16 @@ export class PgCampaignRepo {
   }
 
   /**
-   * Résumé des campagnes du tenant avec le décompte des destinataires par statut.
-   * Par défaut, seules les campagnes ACTIVES : `opts.archived = true` renvoie exclusivement les archivées
-   * (les deux ensembles sont disjoints, jamais réunis, sinon la liste mélangerait actif et corbeille).
+   * Résumé des campagnes du tenant avec le décompte des destinataires par statut. Par défaut les campagnes
+   * actives ; `opts.archived = true` rend exclusivement les archivées (ensembles disjoints).
    */
   async listCampaignSummaries(tenantId: string, opts?: { archived?: boolean }): Promise<CampaignSummary[]> {
-    // Prédicat choisi sur un BOOLÉEN interne, jamais sur une valeur d'entrée : pas d'interpolation de donnée
-    // utilisateur. Écrit en littéral (et non `(archived_at is not null) = $2`) pour que la branche par défaut
-    // touche l'index partiel `campaigns_active_idx ... where archived_at is null` de la migration 0038.
+    // Prédicat choisi sur un booléen interne, jamais sur une entrée. Écrit en littéral pour que la branche par
+    // défaut touche l'index partiel `campaigns_active_idx ... where archived_at is null`.
     const archivedFilter = opts?.archived ? 'c.archived_at is not null' : 'c.archived_at is null';
     const res = await this.pool.query<CampaignSummaryRow>(
-      // Nom du scénario en SOUS-REQUÊTE SCALAIRE, pas en jointure : la requête agrège avec `group by c.id`, et
-      // Postgres refuserait `w.name` d'une table jointe (« must appear in the GROUP BY clause »). Au pire une
-      // lecture par clé primaire et par campagne.
+      // Nom du scénario en sous-requête scalaire : avec `group by c.id`, Postgres refuserait `w.name` d'une table
+      // jointe.
       `${summarySelect()}
        where c.tenant_id = $1 and ${archivedFilter}
        group by c.id
@@ -625,10 +529,9 @@ export class PgCampaignRepo {
   }
 
   /**
-   * Archive une campagne (scopée tenant). Réversible, et la ligne comme ses destinataires restent en base :
-   * c'est un masquage de liste, PAS une suppression. Les analytics continuent de la compter.
-   * Idempotent côté appelant : rowCount = 0 signifie « déjà archivée » aussi bien que « pas à toi », d'où le
-   * contrôle d'appartenance séparé dans la route (qui seul peut rendre un 404 honnête).
+   * Archive une campagne (scopée tenant). Réversible : un masquage de liste, pas une suppression, les
+   * analytics continuent de la compter. rowCount = 0 veut dire « déjà archivée » comme « pas à toi », d'où le
+   * contrôle d'appartenance séparé dans la route.
    */
   async archiveCampaign(campaignId: string, tenantId: string): Promise<boolean> {
     const res = await this.pool.query(
@@ -650,18 +553,13 @@ export class PgCampaignRepo {
   }
 
   /**
-   * Supprime DÉFINITIVEMENT une campagne, et seulement si elle n'a jamais rien envoyé. `campaign_recipients`
-   * part avec elle par `on delete cascade` (0003) : c'est la seule FK vers `campaigns`, rien d'autre à nettoyer.
+   * Supprime définitivement une campagne, seulement si elle n'a jamais rien envoyé. `campaign_recipients` part
+   * avec elle par `on delete cascade`.
    *
-   * La garde n'est PAS `status = 'draft'` seul. `POST /run` enfile le job SANS changer le statut (c'est le
-   * moteur qui passe à 'running') : entre le 202 et la prise en charge par le worker, une campagne lancée est
-   * encore un brouillon. On exige donc aussi qu'AUCUN destinataire n'ait quitté 'pending'. Les deux conditions
-   * sont dans le WHERE, donc évaluées atomiquement : pas de lecture-puis-écriture, pas de course.
-   *
-   * Fenêtre résiduelle assumée : si le job est enfilé mais que le worker n'a encore touché aucun destinataire,
-   * la suppression passe et le job échouera ensuite en « campagne inconnue » (job en DLQ, aucune donnée
-   * corrompue). Elle dure les quelques secondes entre le lancement et la prise en charge, sur une campagne
-   * qu'on vient précisément de lancer : la fermer exigerait d'interroger la file, ce qui ne vaut pas ce prix.
+   * 🔴 La garde n'est pas `status = 'draft'` seul : `POST /run` enfile sans changer le statut, donc une campagne
+   * lancée reste un brouillon jusqu'à sa prise en charge. On exige aussi qu'aucun destinataire n'ait quitté
+   * `pending`, dans le même WHERE (atomique). Fenêtre résiduelle : job enfilé mais aucun destinataire touché,
+   * la suppression passe et le job finit en « campagne inconnue », sans donnée corrompue.
    */
   async deleteDraftCampaign(campaignId: string, tenantId: string): Promise<boolean> {
     const res = await this.pool.query(
@@ -679,9 +577,8 @@ export class PgCampaignRepo {
   /** Détail d'une campagne (scopée tenant) + ses destinataires. null si absente/autre tenant. */
   async getCampaignDetail(campaignId: string, tenantId: string): Promise<CampaignDetail | null> {
     const head = await this.pool.query<CampaignSummaryRow & { param_mapping: TemplateParam[] | null }>(
-      // Le détail ne filtre PAS sur archived_at : une campagne archivée reste consultable (c'est tout l'intérêt
-      // d'archiver plutôt que de supprimer). On sélectionne quand même la colonne, sinon `toSummary` rendrait
-      // `archivedAt: null` sur une campagne archivée, c'est-à-dire une réponse fausse.
+      // Le détail ne filtre pas sur archived_at : une campagne archivée reste consultable, et la colonne est
+      // sélectionnée pour que `archivedAt` soit juste.
       `${summarySelect(',\n              c.param_mapping')}
        where c.id = $1 and c.tenant_id = $2
        group by c.id`,
@@ -697,8 +594,7 @@ export class PgCampaignRepo {
        from campaign_recipients where campaign_id = $1 order by status, id limit 500`,
       [campaignId],
     );
-    // ⚠️ MÊME LECTURE QUE LE RESTE DU STORE (`lireChainesDe`), pas une seconde traduction des mêmes
-    // colonnes : le jour où un étage gagne un champ, il n'y a qu'un endroit à changer.
+    // Même lecture que le reste du store (`lireChainesDe`), pas une seconde traduction des colonnes.
     const chaines = await this.lireChainesDe([campaignId]);
     return {
       ...rowToSummary(h),
@@ -721,12 +617,11 @@ export class PgCampaignRepo {
   }
 
   /**
-   * Renvoi d'UN destinataire en échec de variable de template (F7). Recharge le destinataire + sa campagne (scopé
-   * tenant) et le contact À JOUR, re-résout le paramMapping sur ce contact, et si tout est résolu remet le destinataire
-   * à `pending` avec les NOUVELLES valeurs (atomique, `where status='failed'`) -> le prochain `campaign-run` le renvoie
-   * (aucun nouveau chemin d'envoi : on réutilise runCampaign). Gardes : destinataire du tenant, status='failed', code
-   * d'erreur dans la famille variables. Une variable encore manquante -> `missing_var` (pas de reset : on renverrait le
-   * même 131009). L'appelant (route) enfile le run sur `queued`.
+   * Renvoi d'un destinataire en échec de variable de template. Recharge le destinataire, sa campagne (scopé
+   * tenant) et le contact à jour, re-résout le paramMapping, et si tout est résolu remet le destinataire à
+   * `pending` avec les nouvelles valeurs (atomique, `where status='failed'`) : le prochain `campaign-run` le
+   * renvoie. Une variable encore manquante rend `missing_var` sans reset (on renverrait le même 131009).
+   * L'appelant enfile le run sur `queued`.
    */
   async resetRecipientForRetry(tenantId: string, campaignId: string, recipientId: string): Promise<RetryReset> {
     const rec = await this.pool.query<{ contact_id: string; status: string; error_code: number | null; param_mapping: TemplateParam[] | null; variables: Record<string, string> | null }>(
@@ -748,9 +643,8 @@ export class PgCampaignRepo {
     if (!contact) return { result: 'not_found' };
     const { values, missing } = resolveTemplateParams(row.param_mapping ?? [], {
       phone_e164: contact.phone_e164, bsuid: contact.bsuid, profile_name: contact.profile_name, fields: contact.fields ?? {},
-    // 🔴 LES VARIABLES DU DESTINATAIRE REPARTENT AVEC LUI (migration 0174). Sans elles, une source
-    // « variable » d'un envoi de l'API serait toujours manquante au renvoi, et le bouton « Corriger +
-    // renvoyer » répondrait `missing_var` sur un destinataire parfaitement renseigné.
+    // Les variables du destinataire repartent avec lui : sans elles, une source « variable » d'un envoi de
+    // l'API serait toujours manquante au renvoi.
     }, { now: new Date(), ...(row.variables ? { variables: row.variables } : {}) });
     if (missing.length > 0) return { result: 'missing_var', missing };
     const upd = await this.pool.query(
@@ -763,36 +657,32 @@ export class PgCampaignRepo {
   }
 
   /**
-   * Destinataires 131049 (marketing plafonné par Meta) prêts à une auto-relance (F6) : relance permise (cf.
-   * `listAutoRetry`), `failed`, `retry_count=0`, échec il y a plus de 24 h (on relance « plus tard », pas dans la foulée). Le fenêtrage
-   * « début de journée » est décidé par l'appelant (fuseau), pas ici.
+   * Destinataires 131049 (marketing plafonné par Meta) prêts à une auto-relance : relance permise,
+   * `retry_count=0`, échec il y a plus de 24 h. La fenêtre « début de journée » est décidée par l'appelant.
    */
   async listRetry131049(nowMs: number, limit = 500): Promise<AutoRetryRecipient[]> {
     return this.listAutoRetry(`r.error_code = 131049 and r.retry_count = 0
        and coalesce(r.delivery_updated_at, r.sent_at) < to_timestamp($1::double precision / 1000.0) - interval '24 hours'`, [nowMs], limit);
   }
 
-  /** Destinataires 131026 (non délivrable) à retenter UNE fois (retry_count=0). */
+  /** Destinataires 131026 (non délivrable) à retenter une fois (retry_count=0). */
   async listRetry131026(limit = 500): Promise<AutoRetryRecipient[]> {
     return this.listAutoRetry(`r.error_code = 131026 and r.retry_count = 0`, [], limit);
   }
 
-  /** Destinataires 131026 ayant DÉJÀ été relancés une fois et re-échoué (retry_count=1) -> à marquer injoignable. */
+  /** Destinataires 131026 déjà relancés une fois et re-échoués (retry_count=1) -> à marquer injoignables. */
   async listRetry131026SecondFail(limit = 500): Promise<AutoRetryRecipient[]> {
     return this.listAutoRetry(`r.error_code = 131026 and r.retry_count = 1`, [], limit);
   }
 
   /**
-   * Fabrique commune : destinataires EN ÉCHEC dont la relance est PERMISE, matchant `cond`. « En échec » =
-   * `status='failed'` (rejet SYNCHRONE à l'envoi) OU `delivery_status='failed'` (échec ASYNCHRONE signalé par le
-   * webhook de livraison, `status` reste 'sent'). 131049/131026 arrivent quasi toujours par le webhook -> on DOIT
-   * inclure delivery_status (même définition d'échec que getCampaignDetail/les stats). Scopé par la jointure.
+   * Fabrique commune : destinataires en échec dont la relance est permise, selon `cond`. « En échec » inclut
+   * `delivery_status='failed'` : 131049 et 131026 arrivent presque toujours par le webhook. Scopé par la
+   * jointure.
    *
-   * 🔴 QUI PERMET LA RELANCE (migration 0165, lot 3 de la liste de Julien du 2026-09-23). Une campagne créée
-   * depuis ce lot (`reessai_par_campagne`) obéit à SA case « Réessayer les envois qui échouent » ; une campagne
-   * d'avant garde la règle d'avant, la case de l'espace (`auto_retry_enabled`), qui a quitté l'écran et ne
-   * bouge donc plus. La case de la campagne était offerte et inerte : aucun balayage ne la lisait.
-   * ⚠️ `left join` : une campagne neuve d'un espace SANS ligne de réglages doit être listée, un `join` l'écartait.
+   * La relance est permise par la case « Réessayer » de la campagne (`reessai_par_campagne`), ou pour une
+   * campagne plus ancienne par la case de l'espace (`auto_retry_enabled`). `left join` : une campagne d'un
+   * espace sans ligne de réglages doit être listée.
    */
   private async listAutoRetry(cond: string, params: unknown[], limit: number): Promise<AutoRetryRecipient[]> {
     const res = await this.pool.query<{
@@ -817,24 +707,15 @@ export class PgCampaignRepo {
   }
 
   /**
-   * Les destinataires en échec d'une campagne qui a un REPLI : la matière première de la bascule.
+   * Les destinataires en échec d'une campagne qui a un repli : la matière première de la bascule.
    *
-   * 🔴 ELLE NE DÉCIDE RIEN, ET C'EST DÉLIBÉRÉ. Le `where` sélectionne « la campagne a un étage au-delà
-   * du premier », pas « il existe un étage après CELUI de ce destinataire » : la seconde formulation
-   * ferait porter la règle par du SQL, donc hors de portée de `decider` et de ses tests. Un destinataire
-   * arrivé au dernier étage remonte donc ici, et c'est `decider` qui répond « plus d'étage disponible ».
+   * Elle ne décide rien : le `where` dit « la campagne a un étage au-delà du premier », et c'est `decider` qui
+   * répond « plus d'étage disponible » (la règle reste testable hors SQL). Elle n'est pas soumise à la
+   * permission de relance : une chaîne de repli est une configuration explicite de la campagne.
    *
-   * 🔴 ELLE N'EST PAS GATÉE PAR LA PERMISSION DE RELANCE, CONTRAIREMENT AUX TROIS LISTES DE RELANCE (la case
-   * de la campagne, ou celle de l'espace pour une campagne d'avant 0165). Elle gouverne le RATTRAPAGE
-   * AUTOMATIQUE d'un échec ; une chaîne de repli est une configuration
-   * explicite de la campagne, que l'opérateur a construite étage par étage. La refuser au motif qu'un
-   * réglage d'espace sans rapport est décoché rendrait une chaîne muette sans que rien ne le dise.
-   *
-   * ⚠️ CE QUI LA REND SERVABLE PAR UN INDEX : le `in (select ...)` part de `campaign_etages`, dont les
-   * lignes de rang > 1 sont rarissimes (la reprise de 0134 a tout mis au rang 1), et rejoint
-   * `campaign_recipients` par `campaign_id`, que l'unique `(campaign_id, contact_id)` de 0003 sert. Sans
-   * ce sens de lecture, la condition d'échec seule imposerait un parcours de la plus grosse table du
-   * produit à chaque tour de balayage.
+   * Le `in (select ...)` part de `campaign_etages` (rangs > 1 rares) et rejoint `campaign_recipients` par
+   * `campaign_id`, servi par l'unique `(campaign_id, contact_id)` : sans ce sens de lecture, la condition
+   * d'échec seule parcourrait la plus grosse table à chaque balayage.
    */
   async listCandidatsBascule(limit = 500): Promise<CandidatBascule[]> {
     const res = await this.pool.query<{
@@ -859,7 +740,7 @@ export class PgCampaignRepo {
       chaine: chaines.get(r.campaign_id) ?? [],
       rangCourant: r.etage_courant,
       reessayer: r.reessayer,
-      // Le budget de réessai est d'UN, tous motifs confondus : `retry_count` le porte déjà.
+      // Le budget de réessai est d'un, tous motifs confondus : `retry_count` le porte déjà.
       dejaReessaye: r.retry_count > 0,
       emailDuContact: null,
     }));
@@ -867,34 +748,19 @@ export class PgCampaignRepo {
   }
 
   /**
-   * L'ADRESSE E-MAIL DE CHAQUE CANDIDAT DONT LA CHAÎNE PORTE UN ÉTAGE E-MAIL.
+   * L'adresse e-mail de chaque candidat dont la chaîne porte un étage e-mail, lue dans le jsonb `fields` sous
+   * la clé de l'étage (`campaign_etages.email_champ`) : `contacts` n'a pas de colonne `email`.
    *
-   * 🔴 ELLE SE LIT DANS LE JSONB, SOUS LA CLÉ DE L'ÉTAGE, ET NULLE PART AILLEURS. `contacts` n'a pas de
-   * colonne `email` (0001 crée la table sans, 0002 ajoute `fields`, aucun `alter table contacts` n'en a
-   * ajouté depuis), et il n'existe aucune convention de nom : un espace l'appelle « mail », un autre
-   * « email » (`src/workflow/wiring.ts`, cas du 2026-08-25). La campagne dit donc quelle clé lire
-   * (`campaign_etages.email_champ`, migration 0135).
-   *
-   * 🔴 UNE REQUÊTE PAR CLÉ DISTINCTE, PAS UNE PAR CANDIDAT. En pratique il y en a ZÉRO (aucune chaîne à
-   * étage e-mail) ou UNE. `fields ->> $2` avec la clé en PARAMÈTRE, jamais interpolée : elle vient d'un
-   * écran, donc d'une entrée non fiable, et l'interpoler dans le SQL serait une injection.
-   *
-   * ⚠️ SON INDEX EST LA CLÉ PRIMAIRE DE `contacts` (`id = any($1::uuid[])`), et le lot est borné par la
-   * limite de `listCandidatsBascule` (500). C'est ce qui permet d'ajouter ce lecteur sans ajouter un
-   * parcours de la table des contacts à chaque tour de balayage.
-   *
-   * ⚠️ SCOPÉE TENANT, comme chaque requête du dépôt : le pooler est superuser, la RLS est contournée, et
-   * `contact_id` seul suffirait à lire la fiche d'un autre espace si un identifiant se glissait ici.
-   * Les candidats d'un même tour appartiennent à PLUSIEURS espaces, d'où le groupement par tenant.
+   * 🔴 Une requête par (espace, clé), scopée tenant : le pooler est superuser, et les candidats d'un même tour
+   * appartiennent à plusieurs espaces. La clé passe en paramètre (`fields ->> $3`), jamais interpolée : elle
+   * vient d'un écran. L'index est la clé primaire de `contacts`, le lot est borné par `listCandidatsBascule`.
    */
   private async poserLesAdresses(
     candidats: CandidatBascule[],
     chaines: Map<string, Etage[]>,
   ): Promise<CandidatBascule[]> {
-    // (tenant, clé de champ) -> les contacts à résoudre. La clé de groupe est un JSON des deux valeurs,
-    // et non leur concaténation : une clé de champ perso est un texte LIBRE (import CSV, webhook), donc
-    // rien n'interdit qu'elle contienne le séparateur qu'on aurait choisi, et deux groupes distincts se
-    // confondraient alors en un seul, résolu sur le mauvais champ.
+    // Clé de groupe en JSON et non par concaténation : une clé de champ est un texte libre qui peut contenir
+    // n'importe quel séparateur, et deux groupes se confondraient.
     const groupes = new Map<string, { tenantId: string; champ: string; contacts: Set<string> }>();
     for (const c of candidats) {
       const champ = (chaines.get(c.campaignId) ?? []).find((e) => e.canal === 'email')?.emailChamp;
@@ -923,45 +789,18 @@ export class PgCampaignRepo {
   }
 
   /**
-   * LA CAMPAGNE ASSIGNANTE DONT CE CONTACT EST UN DESTINATAIRE DÉJÀ SERVI, ou `null`.
+   * La campagne assignante dont ce contact est un destinataire déjà servi, ou `null` (le cas très majoritaire,
+   * ce qui la rend acceptable sur le chemin de chaque message entrant). Elle lit le devenir de l'étage où se
+   * trouvait le destinataire (`etage_courant`), pas de la campagne.
    *
-   * 🔴 ELLE REND `null` DANS L'ÉCRASANTE MAJORITÉ DES CAS, et c'est ce qui la rend acceptable sur le
-   * chemin de CHAQUE message entrant : trois conditions doivent tenir ensemble (la conversation existe et
-   * n'est pas encore affectée, le contact est destinataire d'une campagne, cette campagne demande une
-   * répartition). La très grande majorité des messages du produit n'en remplit aucune.
+   * `cv.assigned_to is null` est dans le `where` et doit y rester : le rang du tour de rôle est pris avant
+   * `assigner`, donc sans ce filtre chaque message d'un contact déjà assigné consommerait un rang et décalerait
+   * la répartition de toute l'équipe.
    *
-   * 🔴 `cv.assigned_to is null` EST DANS LA REQUÊTE, PAS SEULEMENT DANS L'ÉCRITURE, et ce n'est pas une
-   * optimisation : sans elle, un contact bavard ferait AVANCER le rang du roulement à chacun de ses
-   * messages. La répartition compterait alors des messages et non des conversations, et un seul
-   * interlocuteur pourrait décaler tout le tour de rôle de la campagne.
-   *
-   * ⚠️ SON INDEX EXISTE DÉJÀ, et c'est ce qui décide de la forme de la requête : l'unique
-   * `(tenant_id, wa_id)` de 0009 rend UNE conversation, puis `campaign_recipients_contact_idx`
-   * (`contact_id, sent_at desc`, migration 0039) rend ses destinataires déjà triés par date d'envoi. La
-   * clause ancrée sur `contact_id` est donc servie ; une clause ancrée sur `to_e164` ne le serait pas,
-   * aucun index ne portant cette colonne.
-   *
-   * ⚠️ LA PLUS RÉCENTE GAGNE. Un contact peut être destinataire de plusieurs campagnes assignantes ; on
-   * ne sait pas à laquelle il répond, et la dernière qui lui a écrit est la seule réponse défendable.
-   *
-   * ⚠️ AUCUNE FENÊTRE DE TEMPS, et c'est un choix qu'il faut connaître : un contact qui répond six mois
-   * plus tard est encore attribué à cette campagne. Une fenêtre serait un nombre inventé, et la garde
-   * `assigned_to is null` borne déjà le dégât à UNE affectation par conversation.
-   */
-  /**
-   * ⚠️ ELLE LIT L'ÉTAGE OÙ SE TROUVAIT LE DESTINATAIRE, PAS LA CAMPAGNE (migration 0144). Le devenir est
-   * une propriété de l'étage : une chaîne de repli peut servir un modèle seul en WhatsApp (réponses à
-   * l'équipe) et un scénario en RCS. `campaign_recipients.etage_courant` est la jointure qui le dit.
-   *
-   * 🔴 `cv.assigned_to is null` EST DANS LE `where`, ET J'AI ESSAYÉ DE L'EN RETIRER. Le raisonnement
-   * paraissait bon (« `assigner` refuse déjà une conversation affectée, la garde est descendue au seul
-   * endroit qui en a besoin ») et il était FAUX : le RANG DU TOUR DE RÔLE EST PRIS AVANT `assigner`. Sans
-   * ce filtre, chaque nouveau message d'un contact déjà assigné retrouvait sa campagne et consommait un
-   * rang pour rien, donc décalait la répartition de toute l'équipe à chaque bavardage.
-   *
-   * ⚠️ TROUVÉ PAR LE TEST D'INTÉGRATION, PAS PAR LA RELECTURE NI PAR LES UNITAIRES : ceux-ci montent un
-   * faux `prendreUnRang` et ne comptent rien en base (« un test unitaire monte un faux câblage, et le faux
-   * bouge avec le code »). Le cas s'appelle « un second message du même contact ne consomme aucun rang ».
+   * Index : l'unique `(tenant_id, wa_id)` rend la conversation, puis `campaign_recipients_contact_idx`
+   * (`contact_id, sent_at desc`) ses destinataires triés ; une clause sur `to_e164` ne serait servie par aucun
+   * index. La plus récente gagne. Aucune fenêtre de temps : la garde `assigned_to is null` borne déjà le dégât
+   * à une affectation par conversation.
    */
   async campagneAssignanteDuContact(
     tenantId: string,
@@ -997,40 +836,18 @@ export class PgCampaignRepo {
   }
 
   /**
-   * PREND LE PROCHAIN RANG DU TOUR DE RÔLE DE CETTE CAMPAGNE, ET L'AVANCE, EN UNE SEULE ÉCRITURE.
+   * Prend le prochain rang du tour de rôle de cette campagne et l'avance, en une seule écriture.
    *
-   * 🔴 LIRE PUIS ÉCRIRE SERAIT FAUX, ET LE DÉFAUT SERAIT INVISIBLE EN TEST. Deux réponses qui arrivent
-   * en même temps sur la même campagne liraient le même rang et tomberaient sur la même personne, une
-   * fois de temps en temps, sous charge. Un `update ... returning` fait les deux sous le verrou de ligne
-   * de Postgres : le second appelant attend, puis lit la valeur déjà avancée.
+   * Lire puis écrire serait faux sous charge : deux réponses simultanées liraient le même rang. `update ...
+   * returning` fait les deux sous le verrou de ligne. Elle rend la valeur nouvelle telle quelle (`RETURNING`
+   * ne rend jamais l'ancienne) : un tour de rôle n'a besoin que de valeurs consécutives et distinctes, c'est
+   * `prochainAssigne` qui ramène le rang dans l'équipe. Le premier rang consommé vaut donc 1.
    *
-   * 🔴 ELLE REND LA VALEUR NOUVELLE, TELLE QUELLE, ET C'EST TOUT. Une première version rendait
-   * `tour_de_role_rang - 1`, pour désigner « la valeur qu'on vient de consommer ». Deux choses
-   * l'ont fait retirer, et la CI a attrapé la première :
+   * Pas de repliage modulo dans le SQL (la colonne est un `integer`) : un repliage à 32767 ferait tomber deux
+   * rangs consécutifs sur la même personne pour les petites équipes.
    *
-   *   1. `RETURNING` rend la valeur NOUVELLE de la colonne, jamais l'ancienne. La soustraction était
-   *      donc une reconstruction, juste partout sauf au point de repliage, où elle sortait de
-   *      l'intervalle et rendait -1. Un rang négatif ne désigne personne.
-   *   2. Surtout, UN TOUR DE RÔLE N'A BESOIN QUE DE VALEURS CONSÉCUTIVES ET DISTINCTES, pas d'une
-   *      valeur particulière : c'est `prochainAssigne` qui ramène le rang dans l'équipe. Reconstruire
-   *      « la valeur d'avant » n'achetait rien et ajoutait une arithmétique à raisonner.
-   *
-   * ⚠️ CONSÉQUENCE ASSUMÉE : LE PREMIER RANG CONSOMMÉ VAUT 1, PAS 0. La colonne part de 0 et on rend
-   * l'après-incrément, donc la première réponse d'une campagne va au DEUXIÈME membre de la liste. Le
-   * point de départ d'une rotation est arbitraire ; ce qui compte est que deux réponses consécutives
-   * aillent à deux personnes différentes, et que la charge soit égale sur la durée. Les deux tiennent.
-   *
-   * 🔴 IL N'Y A PLUS DE REPLIAGE DANS LE SQL, ET C'EST LA MIGRATION 0136 QUI LE PERMET (la colonne passe
-   * en `integer`). Le `% 32767` qui protégeait le `smallint` créait un point où deux rangs consécutifs
-   * valent 32766 puis 0. Le roulement lisant `rang % nombre_de_membres`, une équipe de N y tombait sur la
-   * MÊME personne dès que **N divise 32766** (= 2 x 3 x 43 x 127), c'est-à-dire pour N valant 2, 3, 6, 43,
-   * 86, 127... ⚠️ Une première version de ce commentaire disait « seules les tailles qui divisent 32767 y
-   * échappaient » : c'est FAUX, et dans le sens rassurant. La plupart des tailles échappaient (4, 5, 7, 8,
-   * 9, 10 sont saines) ; ce sont au contraire **les trois plus petites équipes, donc les plus courantes**,
-   * qui collisionnaient. Il échangeait une panne visible contre une double affectation silencieuse.
-   *
-   * ⚠️ Campagne inconnue (supprimée entre-temps) -> `0`, c'est-à-dire le premier membre. Lever ici
-   * casserait l'enregistrement d'un message entrant pour une affectation de confort.
+   * Campagne inconnue -> `0` : lever casserait l'enregistrement d'un message entrant pour une affectation de
+   * confort.
    */
   async prendreUnRangDeTourDeRole(tenantId: string, campaignId: string): Promise<number> {
     const res = await this.pool.query<{ rang: number }>(
@@ -1045,18 +862,12 @@ export class PgCampaignRepo {
   /**
    * Fait avancer un destinataire à l'étage `rang` : il repart `pending`, le prochain run le reprend.
    *
-   * 🔴 `etage_courant < $2` EST LE VERROU, et il n'est pas décoratif : deux balayages qui se
-   * chevauchent (le tour précédent n'a pas fini) liraient le même candidat et basculeraient deux fois,
-   * donc enfileraient deux runs pour un seul échec. L'étage ne recule jamais, donc la seconde écriture
-   * ne touche aucune ligne et l'appelant n'enfile rien.
+   * `etage_courant < $2` est le verrou : deux balayages qui se chevauchent basculeraient deux fois (deux runs
+   * pour un échec) ; l'étage ne reculant jamais, la seconde écriture ne touche rien. `retry_count` n'est pas
+   * incrémenté : une bascule n'est pas un réessai.
    *
-   * 🔴 `retry_count` N'EST PAS INCRÉMENTÉ : une bascule n'est pas un réessai. L'incrémenter ferait
-   * mentir `dejaReessaye` à l'étage suivant, c'est-à-dire retirer au destinataire un budget qu'il n'a
-   * pas dépensé.
-   *
-   * ⚠️ Elle efface l'erreur, le `message_id` et l'état de livraison pour les MÊMES raisons que
-   * `resetForRetry` : sans ça le destinataire compterait encore comme échoué, et un accusé Meta tardif
-   * sur l'ANCIEN identifiant réécrirait `delivery_status = 'failed'` pendant l'envoi du nouvel étage.
+   * Elle efface l'erreur, le `message_id` et l'état de livraison comme `resetForRetry` : sinon un accusé Meta
+   * tardif sur l'ancien identifiant réécrirait `delivery_status = 'failed'` pendant l'envoi du nouvel étage.
    */
   async basculerEtage(id: string, rang: number): Promise<boolean> {
     const res = await this.pool.query(
@@ -1070,15 +881,13 @@ export class PgCampaignRepo {
   }
 
   /**
-   * Remet un destinataire en `pending` pour une auto-relance (F6) : incrémente retry_count, pose retried_at, efface
-   * l'erreur (le prochain run le renvoie avec ses resolved_params inchangés). Atomique (`where status='failed'`).
+   * Remet un destinataire en `pending` pour une auto-relance : incrémente retry_count, pose retried_at, efface
+   * l'erreur (le prochain run le renvoie avec ses resolved_params). Atomique (`where status='failed'`).
    */
   async resetForRetry(id: string): Promise<boolean> {
-    // Efface AUSSI l'état de livraison périmé ET l'ancien message_id : sans ça, un destinataire relancé garderait
-    // `delivery_status='failed'` (fausse le compteur d'échecs), et une redélivrance tardive du webhook Meta
-    // (at-least-once) sur l'ANCIEN message_id ré-écrirait `delivery_status='failed'` pendant la relance. En nullifiant
-    // message_id, un webhook sur l'ancien wamid ne matche plus cette ligne (updateDeliveryByMessageId filtre message_id).
-    // Atomique sur « en échec » (synchrone OU webhook), même définition que listAutoRetry.
+    // Efface aussi l'état de livraison et l'ancien message_id : sinon le compteur d'échecs resterait faux, et
+    // une redélivrance tardive du webhook Meta (at-least-once) sur l'ancien wamid réécrirait `delivery_status =
+    // 'failed'` pendant la relance (`updateDeliveryByMessageId` filtre sur message_id).
     const res = await this.pool.query(
       `update campaign_recipients set status = 'pending', retry_count = retry_count + 1, retried_at = now(),
          error = null, error_code = null, message_id = null, delivery_status = null, delivery_error = null, delivery_updated_at = null, claimed_at = null
@@ -1088,9 +897,8 @@ export class PgCampaignRepo {
     return (res.rowCount ?? 0) === 1;
   }
 
-  /** Marque un destinataire comme injoignable traité (F6, 2e 131026) : retry_count=2 (terminal) pour ne plus le
-   *  re-marquer. À appeler APRÈS le flag HubSpot ET la note de joignabilité, tous deux réussis (cf. `retry-sweep.ts`).
-   *  Atomique sur l'état attendu (131026, retry_count=1). */
+  /** Marque un destinataire injoignable traité (second 131026) : retry_count=2, terminal. À appeler après le
+   *  flag HubSpot et la note de joignabilité, tous deux réussis. Atomique sur l'état attendu (131026, retry_count=1). */
   async markUnreachableDone(id: string): Promise<boolean> {
     const res = await this.pool.query(
       `update campaign_recipients set retry_count = 2, retried_at = now()
@@ -1128,9 +936,8 @@ export class PgCampaignRepo {
   }
 
   /**
-   * Comme listContactsForBuild mais BORNÉE à des ids précis : la console, quand une campagne vise une liste
-   * explicite (`createCampaignWithRecipients`). L'API publique n'y passe plus : elle lit les bloqués AUSSI
-   * (`listContactsPourEnvoiApi`), et c'est `trierDestinataires` qui les écarte, avec le motif `blocked_contact`.
+   * Comme listContactsForBuild mais bornée à des ids précis (la console, liste explicite). L'API publique lit
+   * les bloqués aussi (`listContactsPourEnvoiApi`), pour les écarter avec le motif `blocked_contact`.
    */
   async listContactsForBuildByIds(tenantId: string, ids: string[]): Promise<BuildContact[]> {
     if (ids.length === 0) return [];
@@ -1151,12 +958,9 @@ export class PgCampaignRepo {
   }
 
   /**
-   * Les contacts d'un envoi de l'API publique, BLOQUÉS COMPRIS, avec ce qui les écarte.
-   *
-   * 🔴 ELLE NE FILTRE PAS `blocked_at`, à la différence de `listContactsForBuildByIds` (la console, qui la
-   * garde) : l'API doit DIRE qu'un contact est bloqué (`blocked_contact`), sinon il est compté puis perdu en
-   * silence (défaut 1 de la spec du 2026-09-24). Une fiche SUPPRIMÉE reste absente : la route l'écarte
-   * `unknown_contact`.
+   * Les contacts d'un envoi de l'API publique, bloqués compris, avec ce qui les écarte. Elle ne filtre pas
+   * `blocked_at` : l'API doit dire qu'un contact est bloqué, sinon il est compté puis perdu en silence. Une
+   * fiche supprimée reste absente (la route l'écarte `unknown_contact`).
    */
   async listContactsPourEnvoiApi(tenantId: string, ids: string[]): Promise<ContactEnvoi[]> {
     if (ids.length === 0) return [];
@@ -1178,12 +982,11 @@ export class PgCampaignRepo {
   }
 
   /**
-   * UN ENVOI DE L'API, tel que `GET /v1/sends/{sendId}` le décrit. null si absent ou d'un autre espace.
+   * Un envoi de l'API, tel que `GET /v1/sends/{sendId}` le décrit. null si absent ou d'un autre espace.
    *
-   * ⚠️ TROIS REQUÊTES, TOUTES TENUES À L'ESPACE : l'en-tête filtre `c.tenant_id = $2`, et les deux lectures de
-   * destinataires JOIGNENT la campagne sur ce même espace plutôt que de s'en remettre à la première.
-   * ⚠️ Mêmes définitions que les compteurs de la console (`summarySelect`) : « envoyé » exclut un échec de
-   * livraison, « en échec » est `RECIPIENT_FAILED_SQL`.
+   * 🔴 Trois requêtes, toutes tenues à l'espace : l'en-tête filtre `c.tenant_id = $2`, et les deux lectures de
+   * destinataires joignent la campagne sur ce même espace. Mêmes définitions que les compteurs de la console
+   * (`summarySelect`, `RECIPIENT_FAILED_SQL`).
    */
   async lireEnvoiApi(campaignId: string, tenantId: string): Promise<EnvoiApiBrut | null> {
     const tete = await this.pool.query<{
@@ -1292,11 +1095,9 @@ export class PgCampaignRepo {
   }
 
   /**
-   * UN contact prêt pour buildRecipients, résolu par son `wa_id`. Chemin des campagnes au fil de l'eau : un
-   * seul arrivant à la fois, donc charger tout le CRM (`listContactsForBuild`) n'aurait aucun sens.
-   *
-   * Mêmes exclusions que la liste complète (supprimé, bloqué) et MÊME fragment de résolution que l'inbox
-   * (`MATCH_BY_WAID_SQL`) : un contact doit être reconnu à l'identique quelle que soit la porte d'entrée.
+   * Un contact prêt pour buildRecipients, résolu par son `wa_id` (campagne au fil de l'eau : un arrivant à la
+   * fois). Mêmes exclusions que la liste complète et même fragment de résolution que l'inbox
+   * (`MATCH_BY_WAID_SQL`) : un contact est reconnu à l'identique quelle que soit la porte d'entrée.
    */
   async contactForBuildByWaId(tenantId: string, waId: string): Promise<BuildContact | null> {
     const res = await this.pool.query<{
@@ -1320,8 +1121,8 @@ export class PgCampaignRepo {
   }
 
   /**
-   * Les campagnes VIVANTES nourries par ce webhook. `running` uniquement : une campagne en pause, terminée ou
-   * jamais lancée ne prend pas les arrivants, et c'est ce qui rend le bouton « Arrêter » réellement efficace.
+   * Les campagnes vivantes nourries par ce webhook. `running` uniquement : une campagne en pause, terminée ou
+   * jamais lancée ne prend pas les arrivants, c'est ce qui rend « Arrêter » efficace.
    */
   async listRunningByWebhook(tenantId: string, webhookId: string): Promise<Campaign[]> {
     const res = await this.pool.query<{ id: string }>(
@@ -1330,8 +1131,7 @@ export class PgCampaignRepo {
        order by created_at`,
       [tenantId, webhookId],
     );
-    // Relecture par `getCampaign` : une seule projection de campagne dans ce fichier, donc aucun risque
-    // qu'une colonne décisive (canal, agent RCS, message) manque sur ce chemin-ci.
+    // Relecture par `getCampaign` : une seule projection de campagne, aucune colonne décisive ne peut manquer.
     const out: Campaign[] = [];
     for (const r of res.rows) {
       const c = await this.getCampaign(r.id);
@@ -1341,21 +1141,11 @@ export class PgCampaignRepo {
   }
 
   /**
-   * 🔴 LES CAMPAGNES GELÉES : `running`, du travail en attente, et AUCUN run vivant.
+   * Les campagnes gelées : `running`, du travail en attente, et aucun run vivant. Un déploiement tue le worker
+   * en plein envoi ; sans ce balayage, la campagne resterait `running` et plus rien ne la reprendrait.
    *
-   * C'est le correctif R4, et c'est le seul qui garantisse quelque chose. Un déploiement tue le worker en
-   * plein envoi (SIGKILL vers 10 s, un run de deux heures n'a aucune chance) ; sans ce balayage la campagne
-   * restait `running` avec ses destinataires en attente, et PLUS RIEN ne la reprenait. Chaque interruption
-   * consommait un rejeu pg-boss, et à la sixième elle était figée pour toujours, sans la moindre erreur
-   * visible.
-   *
-   * « Aucun run vivant » se lit sur le verrou d'exécution (`campaign_run_locks`, R1-bis) : c'est lui qui
-   * distingue une campagne abandonnée d'une campagne qui envoie tranquillement. Le bail étant COURT et
-   * renouvelé, un process mort le laisse expirer en deux minutes, et la campagne redevient reprenable.
-   *
-   * ⚠️ Ce balayage REMPLACE celui du fil de l'eau, qui n'en était qu'un cas particulier (les campagnes
-   * `webhook_id is not null`). Le garder à côté ferait deux requêtes par minute pour une seule question, et
-   * l'ancien ne savait pas voir qu'un run tournait déjà : il empilait un job de plus à chaque passage.
+   * « Aucun run vivant » se lit sur le verrou d'exécution (`campaign_run_locks`), dont le bail court expire en
+   * deux minutes après la mort d'un process. Couvre aussi les campagnes au fil de l'eau.
    */
   async listCampagnesGelees(): Promise<Array<{ id: string; tenantId: string; ratePerMinute: number | null; pendingCount: number }>> {
     const res = await this.pool.query<{ id: string; tenant_id: string; rate_per_minute: number | null; pending: string }>(
@@ -1370,11 +1160,9 @@ export class PgCampaignRepo {
   }
 
   /**
-   * Ferme une campagne au fil de l'eau : elle cesse de prendre les arrivants. `completed` et pas `paused`,
-   * parce que c'est un ARRÊT décidé, pas une suspension technique, et que la liste propose déjà « Reprendre »
-   * sur une campagne en pause (ce qui n'aurait ici aucun sens : rien ne reste à envoyer).
-   *
-   * Bornée aux statuts vivants et au tenant : false = rien de fermé (déjà arrêtée, ou pas la sienne).
+   * Ferme une campagne au fil de l'eau : elle cesse de prendre les arrivants. `completed` et pas `paused` :
+   * c'est un arrêt décidé, « Reprendre » n'aurait ici aucun sens. Bornée aux statuts vivants et au tenant :
+   * false = rien de fermé (déjà arrêtée, ou pas la sienne).
    */
   async stopWebhookCampaign(campaignId: string, tenantId: string): Promise<boolean> {
     const res = await this.pool.query(
@@ -1386,13 +1174,10 @@ export class PgCampaignRepo {
   }
 
   /**
-   * ARRÊTE une campagne en cours d'envoi. Bornée à `running` et au tenant : false = rien fait (elle n'envoyait
-   * pas, ou elle n'est pas à lui). Le run en vol le voit à sa prochaine relecture de statut (`runCampaign`,
-   * quelques secondes) et sort ; les destinataires non traités restent `pending`.
-   *
-   * `paused` et pas `completed` : c'est une SUSPENSION, et « Reprendre » repart exactement là où on s'est
-   * arrêté. À ne pas confondre avec `stopWebhookCampaign` juste au-dessus, qui est un arrêt DÉFINITIF et ne
-   * concerne que les campagnes au fil de l'eau, lesquelles n'ont aucun autre point final.
+   * Arrête une campagne en cours d'envoi. Bornée à `running` et au tenant : false = rien fait. Le run en vol le
+   * voit à sa prochaine relecture de statut et sort ; les destinataires non traités restent `pending`.
+   * `paused` et pas `completed` : une suspension, « Reprendre » repart là où on s'est arrêté (contrairement à
+   * `stopWebhookCampaign`, arrêt définitif).
    */
   async pauseCampaign(campaignId: string, tenantId: string): Promise<boolean> {
     const res = await this.pool.query(
@@ -1403,14 +1188,13 @@ export class PgCampaignRepo {
   }
 
   /**
-   * Lève la pause AVANT d'enfiler le run de reprise. Sans cette écriture, le job refuserait de démarrer une
-   * campagne en pause (garde de `campaignRunJob`) et « Reprendre » ne reprendrait rien. Bornée à `paused` :
-   * sur un brouillon ou une campagne déjà en cours, c'est un no-op, et l'appeler sans condition est donc sûr.
+   * Lève la pause avant d'enfiler le run de reprise, sinon le job refuserait de démarrer une campagne en pause.
+   * Bornée à `paused` : ailleurs c'est un no-op, l'appeler sans condition est sûr.
    */
   async resumeCampaign(campaignId: string, tenantId: string): Promise<boolean> {
     const res = await this.pool.query(
       // Les deux colonnes de pause sont effacées : une campagne relancée à la main ne doit pas garder une
-      // échéance qui ferait la « reprendre » une seconde fois par le balayage.
+      // échéance qui la ferait reprendre une seconde fois par le balayage.
       `update campaigns set status = 'running', pause_reason = null, paused_until = null
         where id = $1 and tenant_id = $2 and status = 'paused'`,
       [campaignId, tenantId],
@@ -1419,22 +1203,15 @@ export class PgCampaignRepo {
   }
 
   /**
-   * Reprend les campagnes dont la pause à ÉCHÉANCE est arrivée à terme. Rend celles réellement reprises.
+   * Reprend les campagnes dont la pause à échéance est arrivée à terme. Rend celles réellement reprises.
    *
-   * 🔴 RÉCLAMATION ATOMIQUE, comme les destinataires et les runs. L'`update ... returning` prend et rend dans
-   * la MÊME instruction : deux balayages concurrents (deux workers un jour, ou un balayage qui déborde sur le
-   * suivant) ne peuvent pas reprendre la même campagne deux fois et enfiler deux runs.
+   * Réclamation atomique : l'`update ... returning` prend et rend dans la même instruction, deux balayages
+   * concurrents ne reprennent pas la même campagne. Seuls `debit` et `hors_horaires` repartent seuls ; la
+   * qualité n'a pas d'échéance, et la nommer ici protège d'une ligne mal formée (relancer peut coûter le
+   * numéro).
    *
-   * 🔴 LA LISTE DES MOTIFS EST DANS LE WHERE, et c'est la garde qui compte. Deux motifs ont une échéance et
-   * repartent seuls : `debit` (une limite de cadence Meta, qui retombe) et `hors_horaires` (la fenêtre
-   * d'envoi du client, qui rouvre). La QUALITÉ n'y est pas : elle n'a pas d'échéance (`paused_until` nul) et
-   * n'entrerait donc pas ici de toute façon, mais l'écrire rend la règle lisible sur place et protège d'une
-   * ligne mal formée qui porterait une échéance sans le vouloir. Meta juge alors le numéro : relancer sans
-   * rien changer aggrave le problème et peut coûter le numéro.
-   *
-   * ⚠️ Ce `where` est le CONTRAT de l'index partiel `campaigns_reprise_idx` (migrations 0103 puis 0122) :
-   * les deux listes de motifs doivent rester identiques. En sortir ne produit aucune erreur, seulement un
-   * balayage qui parcourt la table des campagnes toutes les minutes.
+   * Ce `where` est le contrat de l'index partiel `campaigns_reprise_idx` : les deux listes de motifs doivent
+   * rester identiques, sinon le balayage parcourt la table des campagnes chaque minute, sans erreur.
    */
   async reprendreCampagnesDues(limite = 50): Promise<Array<{ id: string; tenantId: string }>> {
     const res = await this.pool.query<{ id: string; tenant_id: string }>(
@@ -1454,9 +1231,8 @@ export class PgCampaignRepo {
   }
 
   /**
-   * Une campagne ENCORE VIVANTE se nourrit-elle de ce webhook ? Interroge la route de suppression d'un
-   * webhook : la laisser passer transformerait la campagne en coquille « en cours » qui ne recevrait plus
-   * jamais rien, sans le moindre signal.
+   * Une campagne encore vivante se nourrit-elle de ce webhook ? Interroge la suppression d'un webhook : la
+   * laisser passer ferait une campagne « en cours » qui ne recevrait plus jamais rien.
    */
   async webhookFeedsLiveCampaign(tenantId: string, webhookId: string): Promise<string | null> {
     const res = await this.pool.query<{ name: string }>(
@@ -1469,7 +1245,7 @@ export class PgCampaignRepo {
   }
 
   /**
-   * Crée la campagne ET ses destinataires dans UNE transaction : un échec en cours de route
+   * Crée la campagne et ses destinataires dans une transaction : un échec en cours de route
    * ne laisse pas de campagne draft orpheline avec des destinataires partiels.
    */
   async createWithRecipients(
@@ -1489,14 +1265,9 @@ export class PgCampaignRepo {
   }
 
   /**
-   * UN arrivant d'une campagne au fil de l'eau.
-   *
-   * Le contrat d'unicité `(campaign_id, contact_id)` fait ici tout le travail : la même personne qui repasse
-   * par le webhook une deuxième fois ne reçoit pas le message une deuxième fois. `false` = déjà destinataire.
-   *
-   * `statut` vaut `skipped` quand `buildRecipients` a ÉCARTÉ l'arrivant (pas de consentement sur une campagne
-   * marketing, variable de template absente de sa fiche). On l'inscrit quand même, avec son motif : sans ça
-   * l'opérateur voit une campagne à zéro destinataire sans jamais savoir que des gens sont bien arrivés.
+   * Un arrivant d'une campagne au fil de l'eau. L'unicité `(campaign_id, contact_id)` fait tout le travail :
+   * la même personne qui repasse par le webhook ne reçoit pas le message deux fois. `false` = déjà
+   * destinataire. `skipped` (écarté par `buildRecipients`) est inscrit quand même, avec son motif.
    */
   async insertWebhookRecipient(
     campaignId: string,
@@ -1513,23 +1284,16 @@ export class PgCampaignRepo {
 }
 
 /**
- * Insert d'UNE campagne, seule définition des colonnes écrites. Fonctionne avec un client transactionnel
- * (createWithRecipients, le chemin réel) comme avec le pool (insertCampaign, utilisée par les tests
- * d'intégration), exactement comme `bulkInsertRecipients`.
- *
- * ⚠️ Cet INSERT était écrit DEUX fois. Ajouter une colonne à une seule copie la perdait en silence sur
- * l'autre chemin, et c'est déjà arrivé (`workflow_id` : le test visait la copie non branchée, d'où un faux
- * vert). Une nouvelle colonne se pose ici, et les deux chemins la portent.
+ * Insert d'une campagne, seule définition des colonnes écrites (client transactionnel de
+ * `createWithRecipients` ou pool de `insertCampaign`) : une nouvelle colonne se pose ici, et les deux chemins
+ * la portent.
  */
 async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInput): Promise<string> {
   // Campagne workflow : pas de template propre -> template_name/language null + workflow_id posé.
   const isWorkflow = !!input.workflowId;
   /**
-   * 🔴 LE CONTENU, CALCULÉ UNE FOIS POUR LES DEUX ÉCRITURES. Ces quatre valeurs partent à la fois dans
-   * `campaigns` et dans l'étage 1 de `campaign_etages`, et elles doivent être LES MÊMES : les recopier
-   * de part et d'autre, c'est se donner rendez-vous avec deux vérités sur la même campagne le jour où
-   * l'une des deux expressions bouge. C'est exactement la dérive que l'avertissement du dessus décrit
-   * sur les deux INSERT d'origine, une case plus loin.
+   * Le contenu, calculé une fois pour les deux écritures : ces valeurs partent dans `campaigns` et dans
+   * l'étage 1 de `campaign_etages`, et doivent être les mêmes.
    */
   const canal: CanalEtage = input.channel ?? 'whatsapp';
   const templateName = isWorkflow ? null : input.templateName;
@@ -1542,7 +1306,7 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
      returning id`,
     [
       input.tenantId,
-      // Campagne RCS : aucun numéro Meta. La colonne est nullable depuis 0056, on y met null plutôt que ''.
+      // Campagne RCS : aucun numéro Meta, null plutôt que ''.
       input.phoneNumberId === '' ? null : input.phoneNumberId,
       input.name,
       input.category,
@@ -1559,31 +1323,20 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
       input.webhookId ?? null,
       input.businessHoursOnly === true,
       /**
-       * 🔴 LES QUATRE RÉGLAGES DE L'ASSISTANT, ÉCRITS ICI ET NULLE PART AILLEURS. Les colonnes existent
-       * depuis 0134 et sont LUES (`listCandidatsBascule` lit `reessayer` et `rattrapage_hors_horaires`,
-       * l'assignation d'une réponse lit les deux autres), mais AUCUN chemin ne les écrivait : elles
-       * gardaient donc leur défaut de table quoi que l'opérateur ait coché. C'est exactement le même
-       * trou que celui de la chaîne, sur la même fonction, et il rendait l'assignation à tour de rôle
-       * inatteignable.
-       *
-       * ⚠️ `?? true` ET `?? false` REPRODUISENT LES DÉFAUTS DE LA TABLE, pas un choix nouveau : une
-       * création qui ne dit rien (l'API publique, un test, un client existant) obtient exactement ce
+       * Les réglages de l'assistant, écrits ici et nulle part ailleurs (lus par la bascule et l'assignation).
+       * `?? true` et `?? false` reproduisent les défauts de la table : une création qui ne dit rien obtient ce
        * qu'elle obtenait avant.
        */
-      // 🔴 LUE PAR LE BALAYAGE DEPUIS 0165, mais seulement si la création a CHOISI (`reessai_par_campagne`, le
-      // dernier paramètre). Avant, seule la case de l'espace comptait.
       input.reessayer ?? true,
       input.rattrapageHorsHoraires ?? false,
       input.assignation ?? null,
-      // ⚠️ L'identifiant ne survit QU'AVEC `personne` : le garder sur un tour de rôle laisserait en base
-      // une personne désignée que plus rien ne lit, donc une seconde vérité sur le même réglage.
+      // L'identifiant ne survit qu'avec `personne` : sinon une personne désignée que plus rien ne lit.
       input.assignation === 'personne' ? input.assignationUserId ?? null : null,
       /**
-       * 🔴 LA CAMPAGNE OBÉIT À SA CASE SEULEMENT SI LA CRÉATION L'A EXPRIMÉE (revue finale du 2026-09-23). La
-       * console transmet toujours son choix ; l'API publique (`/v1/sends`) jamais. Écrit à `true` en dur, le
-       * drapeau faisait relancer chaque envoi de l'API sur le défaut `reessayer = true`, donc renvoyer un
-       * 131049 le lendemain et marquer un contact injoignable dans HubSpot sans que personne l'ait choisi, et
-       * doubler les relances d'un intégrateur qui fait les siennes. Sans choix, la règle d'avant (l'espace).
+       * La campagne obéit à sa case « Réessayer » seulement si la création l'a exprimée. La console transmet
+       * toujours son choix, l'API publique jamais : un `true` en dur ferait relancer chaque envoi de l'API
+       * (131049 renvoyé, contact marqué injoignable dans HubSpot) sans que personne l'ait choisi. Sans choix,
+       * la règle de l'espace s'applique.
        */
       input.reessayer !== undefined,
     ],
@@ -1592,29 +1345,14 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
   if (!id) throw new Error('insertCampaignRow : aucun id retourné');
 
   /**
-   * LA CHAÎNE (migration 0134). Absente = UN étage, celui de la campagne, exactement comme avant.
+   * La chaîne. Absente = un seul étage, celui de la campagne.
    *
-   * 🔴 LE RANG 1 NE VIENT JAMAIS DE LA CHAÎNE REÇUE, IL VIENT DES COLONNES DE `campaigns`. C'est
-   * l'invariant que la migration 0134 pose en toutes lettres (« une seule source pour le contenu d'un
-   * étage ») et dont le moteur dépend : `contenuDeLEtage` (`src/campaign/engine.ts`) lit ces colonnes
-   * pour le rang 1 et la ligne d'étage pour les suivants. Recopier ici le contenu que le client a mis
-   * sur son premier étage
-   * ouvrirait deux vérités sur la même campagne, dont c'est la NÔTRE qui part et la SIENNE qu'on
-   * journalise. `problemeDeChaine` a déjà refusé le seul écart visible, un canal de rang 1 qui
-   * contredit `campaigns.channel`.
+   * Le rang 1 ne vient jamais de la chaîne reçue mais des colonnes de `campaigns`, que `contenuDeLEtage` lit
+   * pour lui : recopier le contenu du premier étage du client ouvrirait deux vérités (la nôtre part, la sienne
+   * est journalisée). Les rangs sont renumérotés, pas crus : le CHECK et la clé primaire trancheraient en 5xx.
    *
-   * ⚠️ LES RANGS SONT RENUMÉROTÉS, PAS CRUS. Le CHECK `rang between 1 and 3` et la clé primaire
-   * `(campaign_id, rang)` sont les bornes de la table ; y envoyer directement ce qu'un client a tapé
-   * ferait trancher Postgres, c'est-à-dire une 5xx remplacée par la page d'erreur de Cloudflare.
-   *
-   * ⚠️ Le `on conflict do nothing` n'a rien à rattraper sur un identifiant qu'on vient de créer ; il
-   * est là pour que la ligne reste idempotente le jour où cette fonction sera rejouée sur une campagne
-   * existante, ce que fait déjà `bulkInsertRecipients` juste en dessous.
-   *
-   * 🔴 LES DEUX ÉCRITURES SONT DANS LA MÊME TRANSACTION SUR LES DEUX CHEMINS DEPUIS CE LOT
-   * (`createWithRecipients` l'était déjà, `insertCampaign` ne l'était pas). Une campagne enregistrée
-   * sans ses étages est une campagne qu'aucun run ne peut servir, puisque `getCampaign` lit la chaîne
-   * pour décider ce qui part : mieux vaut aucune campagne qu'une campagne morte.
+   * `on conflict do nothing` garde la ligne idempotente si la fonction est rejouée. Les deux écritures sont dans
+   * la même transaction sur les deux chemins : une campagne sans ses étages ne peut être servie par aucun run.
    */
   const etages: Etage[] = input.chaine && input.chaine.length > 0
     ? normaliserChaine(input.chaine).map((e) => (e.rang === RANG_INITIAL
@@ -1632,8 +1370,8 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
       ...(input.workflowId ? { workflowId: input.workflowId } : {}),
       ...(input.devenir ? { devenir: input.devenir } : {}),
     }];
-  // ⚠️ UNE SEULE REQUÊTE POUR TOUTE LA CHAÎNE (`unnest`), sur le modèle de `bulkInsertRecipients` : trois
-  // allers-retours pour trois étages au milieu d'une transaction tiennent le client ouvert pour rien.
+  // Une seule requête pour toute la chaîne (`unnest`), comme `bulkInsertRecipients` : pas d'allers-retours au
+  // milieu d'une transaction.
   await q.query(
     `insert into campaign_etages (campaign_id, rang, canal, template_name, template_language, rcs_message, email_template_id, email_champ, workflow_id, devenir)
      select $1, r, c, tn, tl, rm::jsonb, et::uuid, ec, wf::uuid, dv
@@ -1643,9 +1381,8 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
       id,
       etages.map((e) => e.rang),
       etages.map((e) => e.canal),
-      // ⚠️ `?? null` ET NON `|| null` : une chaîne vide est ce que l'ancien chemin écrivait déjà pour une
-      // campagne RCS (`templateName: ''`), et la transformer en null ici changerait ce que la table porte
-      // pour toutes les campagnes existantes sans que personne ne l'ait demandé.
+      // `?? null` et non `|| null` : une chaîne vide (campagne RCS, `templateName: ''`) doit rester ce que la
+      // table porte déjà.
       etages.map((e) => e.templateName ?? null),
       etages.map((e) => e.templateLanguage ?? null),
       etages.map((e) => (e.rcsMessage === undefined ? null : JSON.stringify(e.rcsMessage))),
@@ -1659,9 +1396,8 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
 }
 
 /**
- * Insert bulk des destinataires en UNE requête (`unnest`) au lieu de N allers-retours.
- * Idempotent par (campaign_id, contact_id) ; retourne le nombre réellement inséré. Fonctionne
- * avec un client transactionnel (createWithRecipients) comme avec le pool.
+ * Insert bulk des destinataires en une requête (`unnest`). Idempotent par (campaign_id, contact_id) ; rend le
+ * nombre réellement inséré. Fonctionne avec un client transactionnel comme avec le pool.
  */
 async function bulkInsertRecipients(
   q: Pool | PoolClient,
@@ -1673,7 +1409,7 @@ async function bulkInsertRecipients(
   const toE164s = recipients.map((r) => r.toE164);
   const params = recipients.map((r) => JSON.stringify(r.resolvedParams));
   // null (et pas '{}') pour un destinataire sans variables : « il n'en porte pas » reste distinguable d'un
-  // objet vide, et toute campagne de la console écrit exactement ce qu'elle écrivait (migration 0174).
+  // objet vide.
   const variables = recipients.map((r) => (r.variables ? JSON.stringify(r.variables) : null));
   const res = await q.query(
     `insert into campaign_recipients (campaign_id, contact_id, to_e164, resolved_params, variables)
@@ -1692,9 +1428,8 @@ export class PgCampaignStore implements CampaignStore {
     status: CampaignStatus,
     pause?: { raison: MotifDePause; reprise: Date | null },
   ): Promise<void> {
-    // 🔴 Les deux colonnes sont TOUJOURS écrites, y compris à null quand `pause` est absent. Les laisser
-    // telles quelles sur une reprise ferait qu'une campagne repartie garderait l'échéance de sa pause
-    // d'avant, et le balayage de reprise la « reprendrait » une seconde fois, alors qu'elle tourne déjà.
+    // Les deux colonnes de pause sont toujours écrites, à null sans `pause` : une campagne repartie garderait
+    // sinon l'échéance de sa pause d'avant, et le balayage la reprendrait une seconde fois.
     await this.pool.query(
       `update campaigns set status = $2, pause_reason = $3, paused_until = $4 where id = $1`,
       [campaignId, status, pause?.raison ?? null, pause?.reprise ?? null],
@@ -1713,12 +1448,9 @@ export class PgCampaignStore implements CampaignStore {
 
 export class PgRecipientStore implements RecipientStore, DeliveryStore {
   /**
-   * Destinataires RÉSERVÉS mais pas encore résolus (`sending`).
-   *
-   * 🔴 Sert au moteur à ne pas déclarer une campagne terminée alors qu'un destinataire est en suspens. Mesuré
-   * au banc de charge le 2026-09-01 : sans ça, un `kill -9` en plein envoi laissait un destinataire en
-   * `sending`, la campagne passait `completed`, et le reclaim le remettait dix minutes plus tard en `pending`
-   * sur une campagne que plus aucune reprise ne regarde. Le contact ne recevait jamais son message.
+   * Destinataires réservés mais pas encore résolus (`sending`) : le moteur ne déclare pas une campagne terminée
+   * tant qu'il en reste, sinon un worker tué en plein envoi laisserait un destinataire que le reclaim remet en
+   * `pending` sur une campagne que plus aucune reprise ne regarde.
    */
   async countSending(campaignId: string): Promise<number> {
     const res = await this.pool.query<{ n: string }>(
@@ -1731,28 +1463,14 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
   constructor(private readonly pool: Pool) {}
 
   /**
-   * Applique un statut de livraison Meta (par message_id), en MONOTONE : sent -> delivered
-   * -> read ne régresse jamais (un `delivered` tardif n'écrase pas un `read`). `failed`
-   * s'applique toujours. Retourne le nb de lignes touchées (0 si le wamid n'est pas à nous).
+   * Applique un statut de livraison Meta (par message_id), en monotone : sent -> delivered -> read ne régresse
+   * jamais, `failed` s'applique toujours. Rend le nombre de destinataires touchés (0 si le wamid n'est pas à
+   * nous).
    *
-   * 🔴 ELLE MET À JOUR LES DEUX TABLES, ET C'EST INDISPENSABLE AU FUNNEL PAR CANAL.
-   * `campaign_recipients` ne porte qu'UN `delivery_status`, celui de la dernière tentative : le jour où
-   * un destinataire échouera en WhatsApp puis réussira en RCS, lire la livraison depuis cette ligne
-   * attribuerait l'accusé du second canal au PREMIER, c'est-à-dire à celui qui a échoué. Le journal
-   * (`campaign_envois`) garde donc son propre accusé, par tentative. Sans cette seconde écriture, sa
-   * colonne resterait NULLE pour toujours et le funnel par canal annoncerait « aucun accusé » sur toutes
-   * les campagnes du monde, ce qui est exactement le mensonge que la distinction « zéro contre on ne
-   * sait pas » est censée empêcher.
-   *
-   * 🔴 UNE SEULE INSTRUCTION, PAS DEUX REQUÊTES. Les deux mises à jour sont dans le même énoncé, donc
-   * dans la même transaction implicite : il est impossible que l'une passe et l'autre non, et les deux
-   * tables ne peuvent pas se retrouver en désaccord sur un accusé. La règle de monotonie est recopiée à
-   * l'identique dans les deux branches, pour la même raison qu'elle existe : un `delivered` en retard ne
-   * doit pas rabaisser un `read` d'un côté pendant qu'il le laisse de l'autre.
-   *
-   * ⚠️ LE COMPTE RENDU RESTE CELUI DES DESTINATAIRES (`maj`), jamais la somme des deux. C'est lui qui
-   * répond à la question posée par l'appelant, « ce wamid est-il à nous ? », et y ajouter les lignes de
-   * journal ferait répondre 2 à un webhook qui en attend 1.
+   * Elle met à jour `campaign_recipients` et le journal `campaign_envois` dans la même instruction : le premier
+   * ne garde que la dernière tentative, et sans le second le funnel par canal attribuerait l'accusé au mauvais
+   * canal ou n'en verrait aucun. Une seule instruction, donc les deux tables ne peuvent pas diverger ; la règle
+   * de monotonie est la même des deux côtés. Le compte rendu reste celui des destinataires (`maj`).
    */
   async updateDeliveryByMessageId(messageId: string, status: DeliveryStatus, error: string | null, errorCode: number | null): Promise<number> {
     const res = await this.pool.query<{ n: number }>(
@@ -1780,8 +1498,8 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
        select (select count(*) from maj)::int as n`,
       [messageId, status, error, errorCode],
     );
-    // ⚠️ `rowCount` ne convient plus : l'énoncé rend TOUJOURS une ligne (le `select` final), donc il
-    // vaudrait 1 même quand le wamid n'est pas à nous. C'est le compte porté PAR cette ligne qui répond.
+    // `rowCount` ne convient pas : l'énoncé rend toujours une ligne (le `select` final). C'est le compte porté
+    // par cette ligne qui répond.
     return Number(res.rows[0]?.n ?? 0);
   }
 
@@ -1795,10 +1513,8 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
       etage_courant: number;
       variables: Record<string, string> | null;
     }>(
-      // 🔴 `etage_courant` EST RELU ICI PARCE QUE C'EST LE MOTEUR QUI DÉCIDE QUOI ENVOYER. Il a manqué
-      // pendant un lot : la bascule faisait avancer le rang, `listPending` ne le rendait pas, et le run
-      // repartait donc sur le contenu du rang 1. La colonne est `not null default 1` (migration 0134),
-      // aucune ligne ne peut la rendre nulle.
+      // `etage_courant` est relu ici parce que c'est le moteur qui décide quoi envoyer : sans lui, le run
+      // repartirait sur le contenu du rang 1. La colonne est `not null default 1`.
       `select id, contact_id, to_e164, resolved_params, status, etage_courant, variables
        from campaign_recipients
        where campaign_id = $1 and status = 'pending'
@@ -1817,17 +1533,15 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
   }
 
   /**
-   * Claim atomique pending -> sending (rowCount=1 si CE run réserve, 0 si déjà pris).
+   * Claim atomique pending -> sending (rowCount=1 si ce run réserve, 0 si déjà pris).
    *
-   * 🔴 ET ELLE RELIT LA FICHE AU MOMENT D'ENVOYER : un STOP ou un blocage posé depuis la construction de la liste
-   * rend `{ ecart }`, que le moteur marque `skipped` avec son motif (`MOTIF_ECART_A_L_ENVOI`). Le destinataire est
-   * RÉSERVÉ quand même (même `update`, même prédicat qu'avant) : c'est ce qui garantit qu'un seul run l'écarte.
-   * Le STOP prime sur le blocage quand les deux sont posés.
+   * 🔴 Elle relit la fiche au moment d'envoyer : un STOP ou un blocage posé depuis la construction de la liste
+   * rend `{ ecart }`, que le moteur marque `skipped`. Le destinataire est réservé quand même, ce qui garantit
+   * qu'un seul run l'écarte. Le STOP prime sur le blocage.
    *
-   * ⚠️ LA FORME DE LA RÉSERVATION NE CHANGE PAS : seul le `returning` s'ajoute. Sa sous-requête lit UNE fiche par
-   * sa clé primaire (`contacts_pkey`), sur le `contact_id` du destinataire ; aucun index neuf. Une fiche disparue
-   * (sous-requête vide) rend `null`, donc le comportement d'avant : le moteur envoie. Le `contact_id` vient d'une
-   * liste construite sur l'espace de la campagne : aucune fiche d'un autre espace ne peut y être lue.
+   * La sous-requête lit une fiche par sa clé primaire. Une fiche disparue rend `null` : le moteur envoie. Le
+   * `contact_id` vient d'une liste construite sur l'espace de la campagne, aucune fiche d'un autre espace n'y
+   * est lue.
    */
   async claim(id: string): Promise<boolean | { ecart: EcartALEnvoi }> {
     const res = await this.pool.query<{ ecart: EcartALEnvoi | null }>(
@@ -1844,10 +1558,9 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
   }
 
   /**
-   * Sweeper : ramène à `pending` les destinataires bloqués en `sending` depuis plus de
-   * `olderThanMs` (crash entre le claim et l'envoi). Retourne le nb récupéré.
-   * NB : si l'envoi avait réussi mais que la persistance `sent` avait échoué, ce reclaim
-   * peut re-envoyer (rare) ; c'est le compromis assumé face à un destinataire figé à vie.
+   * Sweeper : ramène à `pending` les destinataires bloqués en `sending` depuis plus de `olderThanMs` (crash
+   * entre le claim et l'envoi). Si l'envoi avait réussi mais pas sa persistance, ce reclaim peut renvoyer
+   * (rare) : compromis assumé face à un destinataire figé à vie.
    */
   async reclaimStale(olderThanMs: number): Promise<number> {
     const res = await this.pool.query(
@@ -1860,11 +1573,9 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
   }
 
   /**
-   * Rend un destinataire RÉSERVÉ à la file : l'inverse exact de `claim`, pour un cas et un seul, le plafond
-   * de numéro. Le contact n'a rien fait de mal et aucun message n'est parti : le compter en échec le rendrait
-   * injoignable sans intervention, et le laisser en `sending` le ferait attendre le balayage de récupération.
-   *
-   * Scopé sur `status = 'sending'` : on ne ressuscite jamais un destinataire déjà envoyé ou déjà en échec.
+   * Rend un destinataire réservé à la file, l'inverse de `claim`, quand le refus vise le numéro (plafond de
+   * numéro, numéro délié) : le compter en échec le rendrait injoignable, le laisser `sending` le ferait
+   * attendre le balayage de récupération. Scopé sur `status = 'sending'` : jamais un destinataire déjà résolu.
    */
   async relacher(id: string): Promise<void> {
     await this.pool.query(

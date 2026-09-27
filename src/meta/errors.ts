@@ -10,48 +10,33 @@ export interface MetaErrorBody {
 }
 
 /**
- * Codes de PLAFOND DU NUMÉRO : Meta refuse temporairement, et son refus vise le numéro émetteur, pas le
- * destinataire. `130429` = plafond de débit, `131048` = plafond lié à la qualité (« spam rate limit »).
+ * Codes de plafond du numéro : Meta refuse temporairement, et son refus vise le numéro émetteur, pas le
+ * destinataire. `130429` = plafond de débit, `131048` = plafond lié à la qualité.
  *
- * 🔴 Ils n'étaient dans AUCUNE des deux listes ci-dessous, donc traités par le défaut « 4xx sans code connu =
- * terminal » : un plafond ne ralentissait pas une campagne, il faisait échouer DÉFINITIVEMENT le destinataire
- * en cours, puis le suivant, puis les 4 998 autres. Une campagne pouvait ainsi brûler toute son audience sur
- * une limite temporaire, sans qu'aucun de ces contacts ne soit joignable à nouveau sans intervention.
- *
- * Ils sont désormais rejouables (c'est la vérité : l'attente les résout), et le moteur de campagne les
- * reconnaît EN PLUS comme un plafond de numéro, pour mettre la campagne en pause au lieu d'insister
- * destinataire par destinataire. Les deux lectures sont complémentaires, cf. `estPlafondNumero`.
- *
- * ⚠️ `131056` reste à part : c'est un plafond de la PAIRE (trop de messages entre ce numéro et CE contact).
- * Rejouable, mais il ne dit rien du numéro, donc il ne doit pas mettre la campagne en pause.
+ * Rejouables, et reconnus en plus par le moteur de campagne comme un plafond de numéro, pour mettre la campagne
+ * en pause au lieu de faire échouer définitivement chaque destinataire (cf. `estPlafondNumero`).
+ * `131056` reste à part : plafond de la paire (ce numéro et ce contact), rejouable mais sans pause de campagne.
  */
 export const CODES_PLAFOND_NUMERO = new Set<number>([130429, 131048]);
 
 /**
- * Cette erreur dit-elle que le NUMÉRO est plafonné ? Le moteur de campagne s'en sert pour rendre le
+ * Cette erreur dit-elle que le numéro est plafonné ? Le moteur de campagne s'en sert pour rendre le
  * destinataire à la file et mettre la campagne en pause, plutôt que de le compter en échec : il n'a rien fait
  * de mal, et le suivant échouerait pour la même raison.
  */
 export function estPlafondNumero(err: unknown): boolean {
   if (!(err instanceof MetaApiError)) return false;
   if (err.code !== undefined && CODES_PLAFOND_NUMERO.has(err.code)) return true;
-  // 🔴 UN 429 EST UN PLAFOND, même sans code connu. Angle mort relevé par le contre-audit du 2026-09-01 : un
-  // HTTP 429 dont le corps ne porte pas 130429 était rejouable dans le transport, mais n'entrait pas ici.
-  // Une fois les tentatives épuisées, il finissait donc en ÉCHEC DU DESTINATAIRE, qui n'y est pour rien et
-  // devient injoignable sans intervention, pendant que le suivant échouait à son tour. « Trop de requêtes »
-  // ne parle jamais du destinataire, il parle de nous.
+  // Un 429 est un plafond même sans code connu : « trop de requêtes » parle de nous, jamais du destinataire,
+  // qui finirait sinon en échec et injoignable sans intervention.
   return err.httpStatus === 429;
 }
 
 /**
- * POURQUOI le numéro est plafonné, et c'est ce qui décide si la campagne peut repartir toute seule.
- *
- * 🔴 La distinction n'est pas cosmétique. Une limite de CADENCE retombe d'elle-même : la réessayer après un
- * délai est le bon geste. Une QUALITÉ dégradée (131048) est un jugement de Meta sur le numéro : relancer
- * sans rien changer aggrave le problème et peut coûter le numéro. Une pause qualité ne doit donc JAMAIS être
- * levée par une machine.
- *
- * `undefined` quand ce n'est pas un plafond du tout.
+ * Pourquoi le numéro est plafonné, ce qui décide si la campagne peut repartir seule. Une limite de cadence
+ * retombe d'elle-même. Une qualité dégradée (131048) est un jugement de Meta sur le numéro : relancer sans rien
+ * changer peut coûter le numéro, donc une pause qualité n'est jamais levée par une machine.
+ * `undefined` quand ce n'est pas un plafond.
  */
 export type RaisonDePause = 'debit' | 'qualite';
 
@@ -60,17 +45,10 @@ export function raisonDePause(err: unknown): RaisonDePause | undefined {
   return err instanceof MetaApiError && err.code === 131048 ? 'qualite' : 'debit';
 }
 
-// Premier jeu de codes (extensible, à affiner avec la doc Meta live).
 // Transitoires : rejouables tels quels.
-// 🔴 131026 N'EST PAS ICI, ET C'EST DÉLIBÉRÉ (2026-09-12). Meta dit textuellement que ce code veut
-// dire que le numéro n'est pas un numéro WhatsApp, ou que la personne n'a pas accepté les
-// conditions. Aucune de ces causes ne change dans la seconde : le rejouer double les appels sur
-// chaque numéro sans WhatsApp, sans aucune chance de succès. Son rattrapage vit au niveau
-// campagne (bascule d'étage ou joignabilité mémorisée), pas au niveau transport.
-// ⚠️ Ce retrait vaut pour TOUS les chemins d'envoi, pas seulement les campagnes : `classify` ne sert
-// qu'à `MetaApiError.retryable`, lu par le seul `withRetry` (`src/meta/http.ts`), qui enveloppe
-// `MetaClient.call`, donc l'envoi rapide de l'Inbox, le tour d'agent et le scénario autant que le
-// moteur de campagne. C'est voulu : le code veut dire la même chose partout.
+// 131026 n'y est pas : Meta dit que le numéro n'est pas sur WhatsApp ou que la personne n'a pas accepté les
+// conditions, rien qui change dans la seconde. Son rattrapage vit au niveau campagne. `classify` sert à
+// `withRetry`, qui enveloppe tous les envois (Inbox, agent, scénario, campagne) : la règle vaut partout.
 const RETRYABLE_CODES = new Set<number>([1, 2, 4, 130429, 131016, 131048, 131056, 133016]);
 // Terminaux : rejouer ne sert à rien (param invalide, hors fenêtre, marché bloqué, auth).
 const TERMINAL_CODES = new Set<number>([100, 190, 131047, 131049, 131051, 131052, 131053]);

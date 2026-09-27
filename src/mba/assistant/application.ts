@@ -3,18 +3,10 @@ import type { LigneHistorique } from '../../reglages/historique';
 import { messageDe, texteDe } from '../../lib/erreur';
 
 /**
- * APPLIQUER UN DIFF CHEZ META, OPÉRATION PAR OPÉRATION.
- *
- * 🔴 ON S'ARRÊTE À LA PREMIÈRE ERREUR, ET ON REND L'ÉTAT EXACT (décision de Julien du 2026-09-14). Meta
- * n'offre AUCUNE transaction : « tout annuler » voudrait dire défaire à la main ce qui est déjà passé, ce
- * qui peut échouer à son tour et produire un état encore moins lisible. Un arrêt net avec un compte rendu
- * exact est la seule chose qu'on puisse tenir.
- *
- * 🔴 ET RIEN N'EST JOURNALISÉ POUR UNE OPÉRATION QUI A ÉCHOUÉ. Une ligne d'historique sur un geste qui n'a
- * pas eu lieu ferait chercher une cause qui n'existe pas, sur le seul journal que le client consulte.
- *
- * ⚠️ LE CONTENU SUPPRIMÉ EST LU AVANT DE SUPPRIMER, jamais après : c'est le seul exemplaire qui en restera,
- * Meta ne le rend plus une fois l'objet parti.
+ * Appliquer un diff chez Meta, opération par opération, en s'arrêtant à la première erreur avec l'état exact :
+ * Meta n'offre aucune transaction, et « tout annuler » à la main pourrait échouer à son tour. Rien n'est
+ * journalisé pour une opération qui a échoué. Le contenu supprimé est lu avant de supprimer : c'est le seul
+ * exemplaire qui en restera.
  */
 
 /** Ce dont l'application a besoin. Interface étroite : satisfaite par le vrai client MBA comme par un faux. */
@@ -26,18 +18,15 @@ export interface ApplicationDeps {
   journaliser(tenantId: string, ligne: LigneHistorique): Promise<void>;
   /**
    * Le contenu d'une pièce jointe déposée dans le fil, par son jeton. `null` = jeton inconnu, expiré, ou
-   * appartenant à un AUTRE espace.
-   *
-   * 🔴 LE TENANT EST UN ARGUMENT, PAS UNE DÉCORATION : c'est lui qui rend un jeton inutilisable ailleurs.
-   * Il a été passé vide pendant une révision, ce qui aurait fait chercher toutes les pièces sous l'espace
-   * `''`, donc rendu tout dépôt introuvable au moment de l'appliquer.
+   * appartenant à un autre espace. 🔴 Le tenant est ce qui rend un jeton inutilisable ailleurs : ne jamais le
+   * passer vide.
    */
   pieceJointe?(tenantId: string, jeton: string): Promise<{ nom: string; contenu: Blob } | null>;
   /** Qui agit, pour l'historique. */
   acteur: { id: string | null; email: string | null };
 }
 
-/** Ce que l'application attend du client Meta. Un sous-ensemble STRICT de `MbaClient`. */
+/** Ce que l'application attend du client Meta, sous-ensemble strict de `MbaClient`. */
 export interface ClientMbaEcriture {
   listFaqs(p: string): Promise<Array<{ id?: string; question?: string; answer?: string }>>;
   createFaq(p: string, faq: unknown): Promise<unknown>;
@@ -54,9 +43,8 @@ export interface ClientMbaEcriture {
   uploadFile(p: string, nom: string, contenu: Blob): Promise<unknown>;
   deleteFile(p: string, id: string): Promise<void>;
   /**
-   * ⚠️ `unknown` ET NON `Record<string, unknown>` : le vrai `MbaClient` rend un type NOMMÉ (`BusinessInfo`),
-   * qui n'a pas d'index de chaîne et n'est donc pas assignable. Resserrer ici obligerait à élargir là-bas,
-   * c'est-à-dire à affaiblir un type juste pour satisfaire un contrat de test.
+   * `unknown` et non `Record<string, unknown>` : le vrai `MbaClient` rend un type nommé (`BusinessInfo`), sans
+   * index de chaîne, donc non assignable ; resserrer ici obligerait à affaiblir ce type.
    */
   getBusinessInfo(p: string): Promise<unknown>;
   putBusinessInfo(p: string, info: unknown): Promise<unknown>;
@@ -64,12 +52,12 @@ export interface ClientMbaEcriture {
   putSettings(p: string, s: unknown, agentId?: string): Promise<unknown>;
 }
 
-/** Le message d'erreur INTERNE d'un jeton de pièce jointe qui ne résout plus. Jamais montré tel quel. */
+/** Le message d'erreur interne d'un jeton de pièce jointe qui ne résout plus. Jamais montré tel quel. */
 export const ERREUR_PIECE_ABSENTE = 'piece jointe introuvable ou expiree';
 
 export interface EchecOperation {
   operation: Operation;
-  /** En français, destiné au client. Le message BRUT de Meta va dans les journaux, pas ici. */
+  /** En français, destiné au client. Le message brut de Meta va dans les journaux, pas ici. */
   message: string;
 }
 
@@ -115,16 +103,14 @@ export function operationDe(o: Operation): LigneHistorique['operation'] {
 }
 
 /**
- * Traduit une erreur de Meta en une phrase destinée au client.
- *
- * 🔴 LE MESSAGE BRUT NE REMONTE PAS TEL QUEL. Meta répond en anglais, souvent avec un code interne ; le
- * client n'a pas à le lire. Il reste dans les journaux serveur, où il sert au diagnostic.
+ * Traduit une erreur de Meta en une phrase destinée au client. Le message brut (anglais, codes internes) reste
+ * dans les journaux serveur.
  */
 export function raisonLisible(err: unknown): string {
   const brut = texteDe(err);
   /**
-   * 🔴 LE SEUL ÉCHEC QUI NE VIENT PAS DE META, et le confondre avec les siens ferait chercher la panne du
-   * mauvais côté : le document déposé a expiré chez NOUS. Il se teste en premier, avant les motifs de Meta.
+   * Le seul échec qui ne vient pas de Meta (le document déposé a expiré chez nous), testé en premier pour ne pas
+   * faire chercher la panne du mauvais côté.
    */
   if (brut === ERREUR_PIECE_ABSENTE) {
     return 'Le document déposé n’est plus disponible : redéposez-le, puis réessayez.';
@@ -136,10 +122,8 @@ export function raisonLisible(err: unknown): string {
 }
 
 /**
- * APPLIQUE LES OPÉRATIONS, DANS L'ORDRE, ET S'ARRÊTE À LA PREMIÈRE QUI ÉCHOUE.
- *
- * ⚠️ NE LÈVE JAMAIS : l'appelant est une route qui doit rendre un compte rendu, pas une pile. Tout ressort
- * dans `echec`.
+ * Applique les opérations dans l'ordre et s'arrête à la première qui échoue. Ne lève jamais : l'appelant, une
+ * route, rend un compte rendu, et tout ressort dans `echec`.
  */
 export async function appliquer(
   deps: ApplicationDeps,
@@ -177,19 +161,9 @@ export async function appliquer(
 }
 
 /**
- * ÉCRIT LA LIGNE D'HISTORIQUE, ET NE FAIT JAMAIS ÉCHOUER L'OPÉRATION.
- *
- * 🔴 ELLE ÉTAIT DANS LE `try` DE LA BOUCLE, ET C'EST UN DÉFAUT À TROIS TÊTES. Une panne de NOTRE base
- * (journal indisponible) survenait APRÈS que Meta ait accepté l'écriture, donc :
- *  - l'opération se retrouvait à la fois dans `passees` et dans `echec.operation`, et l'écran l'affichait
- *    sous « Fait » ET sous « Arrêté sur » ;
- *  - `raisonLisible` rendait « Meta a refusé cette modification », c'est-à-dire qu'on accusait Meta d'une
- *    panne qui vient de chez nous, exactement ce que la traduction des erreurs existe pour éviter ;
- *  - les opérations suivantes étaient abandonnées, pour un journal muet.
- *
- * ⚠️ BEST-EFFORT, comme `JournalAppels.clore` : un journal muet ne doit pas tuer un geste qui a eu lieu. Ce
- * qu'on perd est une ligne d'historique ; ce qu'on éviterait en levant est pire, puisque le geste, lui, est
- * déjà passé chez Meta et ne se défait pas.
+ * Écrit la ligne d'historique, sans jamais faire échouer l'opération : une panne de notre journal survient après
+ * que Meta a accepté l'écriture, et la traiter en échec afficherait l'opération faite et arrêtée à la fois,
+ * accuserait Meta, et abandonnerait les suivantes. Best-effort : on perd une ligne, pas un geste déjà passé.
  */
 async function journaliserOuTaire(
   deps: ApplicationDeps, tenantId: string, o: Operation, avant: unknown,
@@ -215,10 +189,8 @@ async function journaliserOuTaire(
 }
 
 /**
- * L'ÉTAT AVANT, LU AVANT DE TOUCHER À QUOI QUE CE SOIT.
- *
- * 🔴 SEULES LES SUPPRESSIONS EN ONT BESOIN, et elles en ont ABSOLUMENT besoin : c'est le seul exemplaire
- * qui restera. Le lire après coup serait trop tard, Meta ne rend plus un objet parti.
+ * L'état avant, lu avant de toucher à quoi que ce soit. Seules les suppressions en ont besoin, absolument : Meta
+ * ne rend plus un objet parti.
  */
 async function etatAvant(
   client: ClientMbaEcriture, numero: string, agentId: string, o: Operation,
@@ -254,9 +226,8 @@ async function executer(
     case 'fichier.supprimer': await client.deleteFile(numero, o.cible); return;
     case 'fichier.ajouter': {
       /**
-       * ⚠️ LE JETON, PAS LE CONTENU : le fichier n'a jamais traversé le prompt. Un jeton inconnu ou expiré
-       * est une erreur LISIBLE, pas un silence : le client vient de déposer quelque chose et doit savoir
-       * que ce n'est pas parti.
+       * Le jeton, pas le contenu : le fichier n'a jamais traversé le prompt. Un jeton inconnu ou expiré est une
+       * erreur lisible : le client doit savoir que son dépôt n'est pas parti.
        */
       const piece = deps.pieceJointe ? await deps.pieceJointe(tenantId, o.jeton) : null;
       if (!piece) throw new Error(ERREUR_PIECE_ABSENTE);
@@ -264,9 +235,8 @@ async function executer(
       return;
     }
     case 'business.modifier': {
-      // ⚠️ LECTURE PUIS FUSION : `putBusinessInfo` REMPLACE. Envoyer le seul champ modifié effacerait tous
-      // les autres, c'est-à-dire la description de l'activité, sur un geste annoncé comme « changer les
-      // horaires ». Même règle que `fusionnerBusinessInfo` (`src/mba/client.ts`).
+      // Lecture puis fusion : `putBusinessInfo` remplace, et envoyer le seul champ modifié effacerait les autres
+      // (la description de l'activité). Même règle que `fusionnerBusinessInfo` (`src/mba/client.ts`).
       const actuel = (await client.getBusinessInfo(numero)) as Record<string, unknown>;
       await client.putBusinessInfo(numero, { ...actuel, [champMeta(o.champ)]: o.valeur });
       return;
@@ -281,10 +251,8 @@ async function executer(
 }
 
 /**
- * La clé que Meta attend pour un champ de fiche d'activité.
- *
- * ⚠️ NOS NOMS NE SONT PAS LES SIENS : notre écran dit « description », Meta veut `business_description`. La
- * table est ici, en un seul endroit, plutôt que dispersée dans les appels.
+ * La clé que Meta attend pour un champ de fiche d'activité : notre écran dit « description », Meta veut
+ * `business_description`. La table est ici, en un seul endroit.
  */
 function champMeta(champ: string): string {
   return ({

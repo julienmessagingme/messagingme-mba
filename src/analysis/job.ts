@@ -3,7 +3,7 @@ import type { LlmClient } from './llm-client';
 import type { OnConversationAnalyzed } from './events';
 import type { ConversationAnalysis } from './schema';
 
-/** IO du job (injectée -> testable sans DB/réseau). Sous-ensemble de PgConversationAnalysisStore. */
+/** IO du job, injectée (sous-ensemble de PgConversationAnalysisStore). */
 export interface AnalyzeStore {
   getContext(conversationId: string): Promise<AnalysisContext | null>;
   save(conversationId: string, tenantId: string, a: ConversationAnalysis, model: { provider: string; model: string }, windowEnd: string | null): Promise<void>;
@@ -19,10 +19,9 @@ export interface AnalyzeJobDeps {
 }
 
 /**
- * Handler du job `analyze-conversation` (miroir de campaign/run-job) : valide le payload, charge le contexte, analyse,
- * persiste, appelle le point de sortie. Distinction rejouable/terminal : une sortie LLM invalide (InvalidLlmOutputError)
- * -> markFailed SANS rethrow (on ne rejoue pas un contenu cassé) ; une erreur réseau/429/5xx -> rethrow (pg-boss
- * rejoue avec backoff, DLQ à l'épuisement).
+ * Handler du job `analyze-conversation` : valide le payload, charge le contexte, analyse, persiste, appelle le point
+ * de sortie. Sortie LLM invalide : markFailed sans rethrow (on ne rejoue pas un contenu cassé) ; réseau, 429, 5xx :
+ * rethrow (pg-boss rejoue, DLQ à l'épuisement).
  */
 export async function analyzeConversationJob(data: unknown, deps: AnalyzeJobDeps): Promise<void> {
   const d = data as { conversationId?: unknown; tenantId?: unknown } | null;

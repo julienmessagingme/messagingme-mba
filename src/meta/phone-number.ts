@@ -24,16 +24,13 @@ export interface WabaInfo {
   accountReviewStatus?: string;
   /** Vérification d'entreprise (`business_verification_status` : verified / not_verified / pending). */
   businessVerificationStatus?: string;
-  /** Statut d'onboarding de l'API MM Lite (`marketing_messages_lite_api_status` : ONBOARDED / ...). Mesuré lisible. */
+  /** Statut d'onboarding de l'API MM Lite (`marketing_messages_lite_api_status` : ONBOARDED / ...). */
   marketingMessagesLiteApiStatus?: string;
-  /** Nom du business propriétaire du WABA (`owner_business_info.name`). Contexte du panneau statut compte. */
+  /** Nom du business propriétaire du WABA (`owner_business_info.name`). */
   ownerBusinessName?: string;
 }
 
-/**
- * Client Graph en LECTURE d'un numéro WhatsApp. Sert au statut compte de la page Accueil.
- * Calqué sur MetaTemplateClient (Bearer token, fetch injectable, throw MetaApiError si non-2xx).
- */
+/** Client Graph en lecture d'un numéro WhatsApp (statut du compte sur l'Accueil). Lève MetaApiError si non-2xx. */
 export class MetaPhoneNumberClient {
   constructor(
     private readonly token: string,
@@ -42,7 +39,6 @@ export class MetaPhoneNumberClient {
     private readonly baseUrl = 'https://graph.facebook.com',
   ) {}
 
-  /** `GET /{phone_number_id}?fields=status,quality_rating,messaging_limit_tier,name_status,display_phone_number,code_verification_status,throughput,verified_name`. */
   async get(phoneNumberId: string): Promise<PhoneNumberInfo> {
     const fields = 'status,quality_rating,messaging_limit_tier,name_status,display_phone_number,code_verification_status,throughput,verified_name';
     const url = `${this.baseUrl}/${this.version}/${encodeURIComponent(phoneNumberId)}?fields=${fields}`;
@@ -65,18 +61,9 @@ export class MetaPhoneNumberClient {
   }
 
   /**
-   * La PHOTO DE PROFIL WhatsApp du numéro (`GET /{phone_number_id}/whatsapp_business_profile`).
-   *
-   * C'est la pastille que Meta affiche à côté du numéro dans le Business Manager, et celle que voient les
-   * destinataires dans WhatsApp. Demande de Julien du 2026-09-08 : la montrer sur l'Accueil, à côté du
-   * numéro.
-   *
-   * 🔴 L'URL RENDUE EST SIGNÉE ET EXPIRE. Elle ne se STOCKE pas : on la relit à l'affichage. La ranger en
-   * base donnerait une pastille qui marche quelques heures puis casse, et personne ne saurait pourquoi.
-   *
-   * ⚠️ `null` quand le numéro n'a PAS de photo, et c'est le cas le plus courant au début : Meta répond
-   * alors `{"data":[{"messaging_product":"whatsapp"}]}`, sans le champ (mesuré sur les deux numéros du parc
-   * le 2026-09-08). L'écran doit donc savoir se passer d'elle, pas l'attendre.
+   * La photo de profil WhatsApp du numéro (`GET /{phone_number_id}/whatsapp_business_profile`), celle que voient
+   * les destinataires. L'URL rendue est signée et expire : elle se relit à l'affichage, jamais en base.
+   * `null` quand le numéro n'a pas de photo (Meta rend alors l'objet sans le champ), cas courant au début.
    */
   async photoDeProfil(phoneNumberId: string): Promise<string | null> {
     const url = `${this.baseUrl}/${this.version}/${encodeURIComponent(phoneNumberId)}/whatsapp_business_profile?fields=profile_picture_url`;
@@ -88,11 +75,8 @@ export class MetaPhoneNumberClient {
   }
 
   /**
-   * `GET /{waba_id}?fields=health_status,account_review_status,business_verification_status,
-   * marketing_messages_lite_api_status,owner_business_info`. Santé globale du WABA + statut MM Lite + business
-   * propriétaire (panneau statut du dashboard). `health_status` est un OBJET côté Graph -> on extrait
-   * `can_send_message` (tolérant si Meta renvoie déjà une chaîne selon la version) ; `owner_business_info.name`
-   * pour le nom du business. Throw MetaApiError si non-2xx (même contrat que `get`).
+   * Santé du WABA, statut MM Lite et business propriétaire. `health_status` est un objet côté Graph : on en
+   * extrait `can_send_message`, en tolérant une chaîne selon la version. Lève MetaApiError si non-2xx.
    */
   async getWabaHealth(wabaId: string): Promise<WabaInfo> {
     const fields = 'health_status,account_review_status,business_verification_status,marketing_messages_lite_api_status,owner_business_info';

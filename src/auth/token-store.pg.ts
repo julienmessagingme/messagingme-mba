@@ -5,12 +5,10 @@ import { sha256Hex } from '../lib/signature';
 export type TokenPurpose = 'invite' | 'reset';
 
 /**
- * Tokens à usage unique (invitation d'équipe, réinitialisation de mot de passe). `create` renvoie le token EN
- * CLAIR (à mettre dans le lien email) mais ne persiste que son hash. `consume` valide + marque utilisé de façon
- * ATOMIQUE (`used_at is null` dans le UPDATE) -> pas de double-consommation même en concurrence.
- *
- * Seul le HASH du token est stocké, jamais le clair (comme un mot de passe). sha256 suffit ici : le token est
- * déjà 256 bits aléatoires, pas un secret humain rejouable, donc pas besoin de sel coûteux.
+ * Jetons à usage unique (invitation d'équipe, réinitialisation de mot de passe). `create` rend le jeton en
+ * clair (pour le lien d'e-mail) et 🔴 ne stocke que son hash : sha256 suffit, le jeton étant 256 bits
+ * aléatoires, pas un secret humain. `consume` valide et marque utilisé atomiquement (`used_at is null` dans
+ * l'UPDATE) : pas de double consommation, même en concurrence.
  */
 export class PgAuthTokenStore {
   constructor(private readonly pool: Pool) {}

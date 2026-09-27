@@ -5,39 +5,20 @@ import {
 } from './historique';
 
 /**
- * L'historique des réglages en base (table `reglages_historique`, migration 0146).
- *
- * ⚠️ `tenant_id = $1` sur CHAQUE requête : la connexion passe par le pooler en rôle superuser, donc la RLS
- * est contournée et ce filtrage EST le contrôle d'accès.
+ * L'historique des réglages en base (`reglages_historique`). 🔴 `tenant_id = $1` sur chaque requête : le pooler
+ * contourne la RLS, ce filtre est le contrôle d'accès.
  */
 export class PgHistoriqueStore implements HistoriqueStore {
   constructor(private readonly pool: Pool) {}
 
   async ecrire(tenantId: string, l: LigneHistorique): Promise<void> {
-    /**
-     * 🔴 LA GARDE EST ICI **ET** DANS LE SCHÉMA, ET LES DEUX SONT VOULUES. Celle-ci lève une erreur qui NOMME
-     * le problème ; celle de la base est infranchissable mais ressort en violation de contrainte, c'est-à-dire
-     * en 500, donc derrière une page Cloudflare qui n'explique rien.
-     */
+    // Garde ici et dans le schéma : celle-ci nomme le problème, celle de la base rendrait un 500 muet.
     const probleme = problemeDeLigne(l);
     if (probleme !== null) throw new Error(`historique : ${probleme}`);
 
-    /**
-     * 🔴 L'E-MAIL SE RÉSOUT ICI, DANS L'INSERT, ET C'EST CE QUI REND VRAIE LA JUSTIFICATION DU SCHÉMA.
-     * La migration 0146 annonce une colonne DÉNORMALISÉE « pour que le départ d'un collaborateur ne rende
-     * pas l'historique anonyme ». Aucun appelant ne la renseignait : elle était donc nulle DÈS L'ÉCRITURE,
-     * l'écran affichait « auteur inconnu » sur toutes les lignes, et la justification inscrite dans le
-     * schéma était fausse, donc recopiable.
-     *
-     * 🔴 ELLE EST ICI ET PAS CHEZ LES APPELANTS parce qu'ils sont TROIS (l'assistant, les formulaires du
-     * MBA, et l'agent IA), et que la capacité câblée sur un consommateur sur trois est le défaut que ce
-     * dépôt a payé le plus souvent. Un quatrième appelant l'aura sans rien faire.
-     *
-     * ⚠️ UNE SEULE REQUÊTE, pas deux : la résolution est un sous-`select`, donc aucun aller-retour de plus.
-     * Il porte `tenant_id = $1` comme le reste, un identifiant d'acteur d'un autre espace ne résolvant alors
-     * rien. Et un `acteurEmail` fourni explicitement GAGNE, pour qu'un appelant puisse écrire l'adresse d'un
-     * compte déjà parti.
-     */
+    // L'e-mail de l'acteur se résout ici, dans l'INSERT : la colonne est dénormalisée pour qu'un départ ne rende pas
+    // l'historique anonyme, et la résoudre au point de passage unique la remplit pour tous les appelants. Le
+    // sous-select porte `tenant_id = $1` ; un `acteurEmail` fourni gagne (compte déjà parti).
     await this.pool.query(
       `insert into reglages_historique
          (tenant_id, surface, surface_id, element, operation, cible, libelle, avant, apres,
@@ -55,11 +36,7 @@ export class PgHistoriqueStore implements HistoriqueStore {
   }
 
   async lister(tenantId: string, f: FiltreHistorique): Promise<LigneHistoriqueLue[]> {
-    /**
-     * 🔴 `is not distinct from` ET NON `=`. Pour le MBA, `surfaceId` vaut `null`, et `null = null` est FAUX
-     * en SQL : la requête rendrait ZÉRO ligne, sans aucune erreur, sur la surface qui en a le plus besoin.
-     * C'est le mode de panne le plus silencieux d'une colonne nullable.
-     */
+    // `is not distinct from` et non `=` : pour le MBA, `surfaceId` vaut `null`, et `null = null` est faux en SQL.
     const res = await this.pool.query<{
       id: string; surface: 'mba' | 'agent'; surface_id: string | null; element: string;
       operation: string; cible: string | null; libelle: string; avant: unknown; apres: unknown;

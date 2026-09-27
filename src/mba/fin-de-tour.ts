@@ -1,27 +1,17 @@
 /**
- * ATTENDRE QUE L'AGENT DE META AIT FINI SON TOUR avant de lui prendre le fil (essai réel du 2026-09-22).
- *
- * 🔴 CE QUI A ÉTÉ MESURÉ. Chaque fois que le relais a pris le fil PENDANT que l'agent de Meta attendait la réponse
- * de l'outil (bloc à 14 h 46, scénario à 15 h 27), Meta a envoyé au client un texte générique, « Merci d'avoir pris
- * contact avec nous. Un membre de l'équipe reprendra la conversation… », qui n'est même pas le message de passage
- * à un humain réglé sur l'agent. Répondre en 1,5 s au lieu de 3 n'y a rien changé. Un message d'opérateur envoyé
- * depuis l'Inbox HORS d'un tour de l'agent, lui, ne le déclenche pas (vérifié par Julien).
- *
- * ⚠️ C'EST UNE EXPÉRIENCE, décidée par Julien : l'hypothèse est « prendre le fil en plein tour de l'agent ». Le
- * relais répond donc d'abord (« dis au client que tu le lui envoies »), puis le geste attend ICI que l'agent ait
- * parlé (un nouvel écho de sa part), au plus `FIN_DE_TOUR_MAX_MS`, et seulement ensuite prend le fil et envoie.
- * Le journal dit laquelle des deux fins a eu lieu : c'est ce que le prochain essai réel doit lire.
- *
- * 🔴 NE LÈVE JAMAIS : une lecture ratée n'est pas une raison de ne pas envoyer ce que l'agent a annoncé. Elle
- * rend `illisible` et le geste continue.
+ * Attendre que l'agent de Meta ait fini son tour avant de lui prendre le fil. Pris pendant que l'agent attend la
+ * réponse de l'outil, Meta envoie au client un texte générique de passage à un humain ; un message d'opérateur
+ * hors tour ne le déclenche pas. Le relais répond donc d'abord, puis le geste attend ici un nouvel écho de
+ * l'agent, au plus `FIN_DE_TOUR_MAX_MS`, avant de prendre le fil et d'envoyer. Hypothèse en cours d'essai : le
+ * journal dit laquelle des deux fins a eu lieu.
+ * Ne lève jamais : une lecture ratée rend `illisible` et le geste continue.
  */
 export const FIN_DE_TOUR_MAX_MS = 15_000;
 export const FIN_DE_TOUR_PAS_MS = 500;
 /**
- * On ne relève l'écho « d'avant » qu'APRÈS ce délai, celui où le relais répond à Meta (`DELAI_REPONSE_ENVOI_MS`,
- * égalité tenue par un test). 🔴 Relevé plus tôt, un texte que l'agent a écrit AVANT d'appeler l'outil, encore en
- * route vers nous, serait pris pour la fin de son tour : le fil serait pris en plein tour, exactement ce que
- * l'expérience veut éviter, et le journal dirait `reponse` (revue du 2026-09-22).
+ * L'écho « d'avant » ne se relève qu'après ce délai, celui où le relais répond à Meta (`DELAI_REPONSE_ENVOI_MS`,
+ * égalité tenue par un test) : plus tôt, un texte écrit par l'agent avant d'appeler l'outil serait pris pour la
+ * fin de son tour.
  */
 export const FIN_DE_TOUR_DEBUT_MS = 1500;
 

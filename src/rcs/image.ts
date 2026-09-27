@@ -1,22 +1,17 @@
 /**
- * Reconnaissance d'une image à partir de ses OCTETS, pour le visuel d'un message RCS.
+ * Reconnaissance d'une image à partir de ses octets, pour le visuel d'un message RCS.
  *
- * Module PUR. Il existe parce que ces fichiers finissent servis sur une URL PUBLIQUE, que n'importe qui peut
- * ouvrir dans un navigateur : le type déclaré par le téléversement ne prouve rien, et servir un fichier
- * pour ce qu'il prétend être est la façon classique de transformer un hébergeur d'images en hébergeur de
- * pages. On lit donc la signature réelle du fichier, et c'est ELLE qui décide du `Content-Type` rendu.
- *
- * Trois formats seulement, ceux que l'opérateur accepte pour l'image d'une carte (spec smsmode : extension
- * `jpeg`, `jpg`, `gif` ou `png`). Pas de SVG : c'est du XML exécutable, donc une surface de script, et le
- * provider n'en veut pas non plus.
+ * 🔴 Ces fichiers sont servis sur une URL publique : le type déclaré au téléversement ne prouve rien, et
+ * servir un fichier pour ce qu'il prétend être transforme un hébergeur d'images en hébergeur de pages. La
+ * signature réelle décide du `Content-Type`. Trois formats, ceux qu'accepte l'opérateur ; pas de SVG, du XML
+ * exécutable.
  */
 
 export type MimeImage = 'image/jpeg' | 'image/png' | 'image/gif';
 
 /**
- * Plafond de poids. C'EST NOTRE limite, pas celle du fournisseur : un visuel de message doit s'afficher sur
- * un téléphone en réseau mobile, et les octets vivent dans notre base. 2 Mo laisse largement la place à une
- * image de campagne bien exportée, et refuse une photo brute d'appareil sans la redimensionner en douce.
+ * Plafond de poids, le nôtre : un visuel doit s'afficher sur un téléphone en réseau mobile, et les octets
+ * vivent dans notre base.
  */
 export const TAILLE_IMAGE_MAX = 2 * 1024 * 1024;
 
@@ -26,7 +21,7 @@ const SIGNATURES: ReadonlyArray<{ mime: MimeImage; octets: readonly number[] }> 
   { mime: 'image/gif', octets: [0x47, 0x49, 0x46, 0x38] }, // « GIF8 », couvre 87a et 89a
 ];
 
-/** Type RÉEL du fichier d'après sa signature, ou null si ce n'est pas une image acceptée. */
+/** Type réel du fichier d'après sa signature, ou null si ce n'est pas une image acceptée. */
 export function typeImage(bytes: Buffer): MimeImage | null {
   for (const { mime, octets } of SIGNATURES) {
     if (bytes.length >= octets.length && octets.every((o, i) => bytes[i] === o)) return mime;
@@ -35,10 +30,8 @@ export function typeImage(bytes: Buffer): MimeImage | null {
 }
 
 /**
- * Extension à mettre dans l'URL publique.
- *
- * 🔴 Ce n'est PAS cosmétique. Le fournisseur exige une adresse qui se TERMINE par `.jpg`, `.jpeg`, `.png` ou
- * `.gif` ; une URL sans extension est refusée à l'envoi, quelle qu'en soit l'en-tête de réponse.
+ * Extension à mettre dans l'URL publique : le fournisseur exige une adresse qui se termine par `.jpg`,
+ * `.jpeg`, `.png` ou `.gif`, et refuse une URL sans extension quel que soit l'en-tête de réponse.
  */
 export function extensionDe(mime: MimeImage): 'jpg' | 'png' | 'gif' {
   if (mime === 'image/jpeg') return 'jpg';
@@ -69,7 +62,7 @@ export function octetsDepuisDataUrl(dataUrl: string): Buffer | null {
   }
 }
 
-/** URL publique d'un visuel. L'extension est portée par le CHEMIN, pas par une requête : c'est ce que le
+/** URL publique d'un visuel. L'extension est portée par le chemin, pas par une requête : c'est ce que le
  *  fournisseur regarde. */
 export function urlImageRcs(appUrl: string, code: string, mime: MimeImage): string {
   return `${appUrl.replace(/\/+$/, '')}/m/${code}.${extensionDe(mime)}`;

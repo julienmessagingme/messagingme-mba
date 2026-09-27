@@ -12,31 +12,23 @@ import type { CountryCode } from 'libphonenumber-js';
 import { MAX_EXTERNAL_ID } from './fiche';
 
 /**
- * LES BORNES DE FORME D'UN CONTACT POUSSÉ PAR L'API.
- *
- * 🔴 CHAMPS ET ÉTIQUETTES PAR FICHE : 20 à l'unité (`POST /v1/contacts`, `PATCH`), 10 dans un lot (décision de
- * Julien du 2026-09-26). Mesure du 2026-09-14 : aucun contact ne portait plus de 6 champs. Une fiche coûte UNE
- * écriture quel que soit son nombre de champs : ces bornes tiennent la taille d'un corps et le vocabulaire qu'un
- * appel touche, pas la charge de la base (c'est la taille du lot qui la tient, `MAX_BATCH`).
- *
- * ⚠️ CE N'EST PAS LE PLAFOND PAR ESPACE, qui est un autre sujet (le nombre total de définitions qu'une
- * série d'appels peut faire naître). Ici on borne UN contact, dans le corps d'UNE requête.
+ * Les bornes de forme d'un contact poussé par l'API : champs et étiquettes par fiche, 20 à l'unité, 10 dans
+ * un lot. Une fiche coûte une écriture quel que soit son nombre de champs : ces bornes tiennent la taille
+ * d'un corps, pas la charge de la base (c'est la taille du lot, `MAX_BATCH`). Rien à voir avec le plafond de
+ * définitions de champs par espace.
  */
 export const MAX_CLE_CHAMP = config.API_MAX_CLE_CHAMP;
 export const MAX_PAR_FICHE = 20;
 export const MAX_PAR_FICHE_EN_LOT = 10;
 /**
- * ⚠️ CELLE-CI N'EST PAS CONFIGURABLE, et c'est un choix : `optInSource` JUSTIFIE un consentement
- * (`crm`, `csv_import`, `webhook:<nom>`, 12 caractères au plus en production). Aucun réglage d'exploitation
- * n'a de raison de la desserrer, là où les deux autres peuvent gêner un intégrateur légitime.
+ * Pas configurable : `optInSource` justifie un consentement (`crm`, `csv_import`, `webhook:<nom>`), aucun
+ * réglage d'exploitation n'a de raison de la desserrer.
  */
 export const MAX_OPT_IN_SOURCE = 100;
 
 /**
- * ⚠️ UN NOMBRE ET UN BOOLÉEN RESTENT ACCEPTÉS, convertis en texte. Le service faisait déjà `String(...)`
- * sur la valeur : les refuser casserait toute intégration qui envoie `{age: 42}` pour aucun gain. Ce
- * qu'on refuse, c'est ce dont il n'existe pas de texte SENSÉ : un objet (stocké « [object Object] »,
- * donnée irrécupérable), un tableau, `null`.
+ * Un nombre et un booléen restent acceptés, convertis en texte (`{age: 42}` doit passer). On refuse ce dont
+ * il n'existe pas de texte sensé : un objet (« [object Object] »), un tableau, `null`.
  */
 export const valeurDeChamp = z.union([z.string(), z.number(), z.boolean()]).transform(String);
 
@@ -51,25 +43,18 @@ export const schemaChamps = (max: number) => z.record(z.string().max(MAX_CLE_CHA
 export const schemaTags = (max: number) => z.array(z.union([z.string(), z.number()]).transform(String)).max(max);
 
 /**
- * LA FORME D'UN CONTACT QU'ÉCRIT `upsertContactsFromApi`, dont dérive le type `ApiContactInput`.
- *
- * ⚠️ AUCUNE ROUTE NE VALIDE PLUS SON CORPS AVEC CE SCHÉMA. Il a été écrit pour l'ancien `POST /v1/contacts`, qui
- * castait son corps (`as ApiContactInput[]`) : l'API publique valide désormais par ses propres schémas
- * (`schemaClesFiche`, `src/api/contacts-v1.ts`) et ne passe plus par `upsertContactsFromApi`. Les appelants
- * restants (le webhook entrant et la création à la main dans la console, `src/index.ts`) construisent cet objet
- * eux-mêmes : ce schéma n'est plus que la source du type, et ses bornes ne protègent aucune entrée aujourd'hui.
- *
- * ⚠️ S'il revalidait un jour un corps : les clés inconnues y sont ÉCARTÉES, pas refusées (comportement par
- * défaut de Zod, vérifié), et un tableau démesuré y est refusé, pas tronqué.
+ * La forme d'un contact qu'écrit `upsertContactsFromApi`, dont dérive `ApiContactInput`. Aucune route ne
+ * valide plus son corps avec ce schéma : l'API publique a ses propres schémas, et les appelants restants
+ * (webhook entrant, création à la main dans la console) construisent l'objet eux-mêmes. S'il revalidait un
+ * corps : clés inconnues écartées, tableau démesuré refusé, pas tronqué.
  */
 export const schemaContactApi = z.object({
   phone: z.string().trim().min(1),
   name: z.string().optional(),
   fields: schemaChamps(MAX_PAR_FICHE).optional(),
   /**
-   * ⚠️ BORNÉE ICI AUSSI (relevé en revue) : le service coupe déjà à 50 tags, mais il coupe APRÈS avoir
-   * reçu la liste. Un tableau de 100 000 entrées traversait donc la validation entière pour finir
-   * tronqué. On refuse au lieu de tronquer, comme partout ailleurs dans ce schéma.
+   * Bornée ici aussi : le service coupe à 50 tags après avoir reçu la liste, un tableau de 100 000 entrées
+   * traverserait la validation. On refuse au lieu de tronquer.
    */
   tags: schemaTags(MAX_PAR_FICHE).optional(),
   optIn: z.boolean().optional(),
@@ -78,15 +63,12 @@ export const schemaContactApi = z.object({
 });
 
 /**
- * UN CONTACT ÉCRIT PAR `upsertContactsFromApi` : téléphone + attributs optionnels. `fields` adressés par clé technique OU code.
- *
- * 🔴 IL EST DÉRIVÉ DU SCHÉMA, ET C'EST TOUT L'INTÉRÊT. Écrit à la main à côté, il redeviendrait une
- * seconde vérité : le jour où l'un des deux gagne un champ, l'autre le refuse ou le laisse passer sans
- * que rien ne le signale. Le type est ce que la validation REND, jamais ce qu'on espère recevoir.
+ * Un contact écrit par `upsertContactsFromApi` : téléphone et attributs optionnels, `fields` adressés par clé
+ * technique ou code. Dérivé du schéma : le type est ce que la validation rend, jamais une seconde vérité.
  */
 export type ApiContactInput = z.infer<typeof schemaContactApi>;
 
-/** Les clés qu'un schéma REFUSE (`z.never`), et ce qu'on dit à qui les envoie. */
+/** Les clés qu'un schéma refuse (`z.never`), et ce qu'on dit à qui les envoie. */
 const CLES_REFUSEES: Record<string, string> = {
   optIn: '« optIn » n’existe plus : utilisez « consent » (« opted_in » ou « opted_out »)',
   optInSource: '« optInSource » n’existe plus : utilisez « consentSource »',
@@ -95,24 +77,16 @@ const CLES_REFUSEES: Record<string, string> = {
 };
 
 /**
- * CE QU'ON DIT À L'INTÉGRATEUR QUAND SON ÉLÉMENT EST REFUSÉ.
- *
- * 🔴 LE CHEMIN AVANT LE MESSAGE, parce que c'est le chemin qui le fait corriger : « fields.adresse »
- * lui désigne la ligne à reprendre, là où « Invalid input » l'envoie relire son lot entier.
- *
- * ⚠️ LES MESSAGES DE ZOD SONT EN ANGLAIS ET PEU PARLANTS (mesuré : une clé de champ trop longue rend
- * « Invalid key in record », une valeur imbriquée rend « Invalid input »). Le reste de cette API répond
- * en français à des intégrateurs français : on traduit donc les cas qu'on provoque nous-mêmes, et on
- * garde le message d'origine pour les autres plutôt que d'inventer une phrase qui pourrait être fausse.
+ * Ce qu'on dit à l'intégrateur quand son élément est refusé : le chemin avant le message (« fields.adresse »
+ * désigne la ligne à reprendre). Les messages de zod sont en anglais et peu parlants : on traduit les cas
+ * qu'on provoque, et on garde le message d'origine pour les autres plutôt que d'inventer.
  */
 export function raisonDeValidation(err: z.ZodError): string {
   const i = err.issues[0];
   if (!i) return 'contact invalide';
   /**
-   * ⚠️ LE CHEMIN EST BORNÉ AVANT D'ÊTRE RECOPIÉ (relevé en revue). Il contient la CLÉ envoyée par
-   * l'appelant : sans cette coupe, une clé de 5 000 caractères reviendrait telle quelle dans la réponse,
-   * multipliée par le nombre de lignes fautives. Ce n'est pas une fuite, c'est une amplification, et
-   * c'est précisément ce que ce lot existe pour fermer.
+   * Le chemin contient la clé envoyée par l'appelant : borné avant d'être recopié, sinon une clé de 5 000
+   * caractères reviendrait dans la réponse, multipliée par le nombre de lignes fautives.
    */
   const chemin = i.path.join('.').slice(0, 80);
   // Un `refine` posé à la racine porte un message écrit par nous, en français : on le rend tel quel.
@@ -123,7 +97,7 @@ export function raisonDeValidation(err: z.ZodError): string {
   if (chemin === 'externalId') return `« externalId » : texte de ${MAX_EXTERNAL_ID} caractères au plus`;
   if (chemin === 'consent') return '« consent » : « opted_in » ou « opted_out » est attendu';
   if (chemin === 'consentSource') return `« consentSource » : ${MAX_OPT_IN_SOURCE} caractères au plus`;
-  // Les trois listes d'étiquettes, et un défaut sur l'un de leurs ÉLÉMENTS (`addTags.3`) : sans ce second cas,
+  // Les trois listes d'étiquettes, et un défaut sur l'un de leurs éléments (`addTags.3`) : sans ce second cas,
   // un élément fautif retombait sur le message anglais de zod.
   const liste = chemin.split('.')[0];
   if (liste === 'tags' || liste === 'addTags' || liste === 'removeTags') {
@@ -135,7 +109,7 @@ export function raisonDeValidation(err: z.ZodError): string {
   }
   if (i.code === 'invalid_key') return `« ${chemin} » : clé de champ invalide (texte, ${MAX_CLE_CHAMP} caractères au plus)`;
   if (chemin === 'fields') {
-    // Le message du `refine` porte la borne de SON schéma (`champsAuPlus`).
+    // Le message du `refine` porte la borne de son schéma (`champsAuPlus`).
     return i.code === 'custom' ? i.message : '« fields » : un objet { clé: valeur } est attendu';
   }
   if (chemin.startsWith('fields.')) return `« ${chemin} » : texte, nombre ou booléen attendu`;
@@ -155,49 +129,26 @@ export const normalizeTags = (v: unknown): string[] =>
   Array.isArray(v) ? [...new Set(v.map((t) => String(t).trim().slice(0, 64)).filter((t) => t !== ''))].slice(0, 50) : [];
 
 /**
- * Upsert d'un lot de contacts désignés par leur NUMÉRO (webhook entrant, création à la main de la console).
- * L'API publique ne passe plus par ici : elle désigne une fiche par plusieurs clés (`src/api/contacts-v1.ts`).
- * Par item : normalise le téléphone,
- * résout chaque champ (clé technique OU code, D-2 ; champ inconnu -> auto-créé en texte, comme l'import CSV),
- * valide + canonicalise chaque valeur, pose tags + opt-in, upsert par téléphone. Séquentiel (chaque upsert
- * est déjà atomique via ON CONFLICT ; pas de transaction géante, comme importContacts). Un item invalide ->
- * outcome `error` avec la raison, sans faire échouer les autres. Renvoie un outcome par item (index préservé).
- */
-/**
- * Combien d'upserts en vol à la fois.
- *
- * 4 et pas 8 : le pool applicatif de ce process en compte 8 au total (`DB_POOL_MAX`, valeur mesurée comme la
- * capacité réelle du pooler), et cette API ne doit pas prendre à elle seule toutes les connexions pendant
- * qu'un opérateur charge son inbox. Chaque upsert est UNE instruction `on conflict`, donc deux vagues ne
- * peuvent pas s'interbloquer : au pire elles attendent le même verrou de ligne, ce qui est le cas voulu quand
- * un lot répète le même numéro.
+ * Combien d'upserts en vol à la fois : 4 et pas 8, le pool de ce process en compte 8 au total
+ * (`DB_POOL_MAX`), et cette API ne doit pas les prendre toutes pendant qu'un opérateur charge son inbox.
+ * Chaque upsert est une instruction `on conflict` : deux vagues ne peuvent pas s'interbloquer.
  */
 export const ECRITURES_EN_VOL = 4;
 
-/** Ce que rend la préparation des champs d'UN contact : les valeurs canoniques, ou la raison du refus. */
+/** Ce que rend la préparation des champs d'un contact : les valeurs canoniques, ou la raison du refus. */
 export type ChampsPrepares = { ok: true; valeurs: Record<string, string> } | { ok: false; raison: string };
 
 /**
- * PRÉPARER LES CHAMPS D'UN CONTACT : résoudre chaque référence (clé technique OU code, D-2), auto-créer en
- * texte un champ inconnu dans la limite du plafond, valider et canonicaliser chaque valeur.
+ * Préparer les champs d'un contact : résoudre chaque référence (clé technique ou code), auto-créer en texte
+ * un champ inconnu dans la limite du plafond, valider et canonicaliser chaque valeur. Définitions chargées
+ * une fois ; le cache grossit au fil des appels.
  *
- * Les définitions sont chargées UNE fois, et le cache GROSSIT au fil des appels : un champ auto-créé par un
- * contact est connu du suivant sans relire la base.
+ * Le plafond se compte sur `defs`, qui grossit au fil du lot : compté sur la photo d'avant, un lot portant
+ * une clé distincte par contact passerait entier. Il ne refuse que la création : un contact qui n'utilise que
+ * des champs déclarés passe, même au plafond.
  *
- * 🔴 LE PLAFOND SE COMPTE SUR `defs`, QUI GROSSIT AU FIL DU LOT, et c'est ce qui en fait une borne.
- * Compté sur la seule photo d'avant, un unique lot portant une clé distincte par contact passerait
- * entièrement : le plafond ne serait qu'un compteur d'historique.
- *
- * ⚠️ IL NE SERT QU'AUX CHEMINS QUI CRÉENT : le webhook entrant (`src/webhook-entrant/chemin.ts`), dont les clés
- * viennent d'un mapping qu'un ADMIN de l'espace a configuré, et la création à la main de la console.
- *
- * 🔴 L'API PUBLIQUE NE CRÉE AUCUN CHAMP (`champInconnu: 'refuser'`, décision de Julien du 2026-09-26) : un champ
- * se crée dans la console, et une clé inconnue refuse la fiche en disant où le faire. L'option est REQUISE : un
- * appelant de plus doit choisir, pas hériter en silence de la création.
- *
- * ⚠️ ET IL NE REFUSE QUE LA CRÉATION. Un contact qui n'utilise que des champs DÉJÀ déclarés passe, même
- * au plafond, y compris dans le lot où un autre contact vient d'être refusé. Un plafond qui bloquerait
- * l'espace entier une fois atteint changerait une protection en panne.
+ * `champInconnu` est requis : l'API publique refuse (un champ se crée dans la console), le webhook entrant
+ * (mapping configuré par un admin) et la console créent. Un appelant de plus doit choisir.
  */
 export async function preparateurDeChamps(
   tenantId: string,
@@ -218,8 +169,7 @@ export async function preparateurDeChamps(
           return { ok: false, raison: `« ${ref} » : champ inconnu de cet espace. Créez-le dans la console (Bibliothèque > Champs), puis relancez.` };
         }
         if (plafondAtteint()) {
-          // La raison NOMME le geste qui débloque : l'intégrateur ne peut pas deviner qu'un champ se crée
-          // aussi depuis la console, et un refus sans issue se transforme en ticket de support.
+          // La raison nomme le geste qui débloque : un refus sans issue devient un ticket de support.
           return { ok: false, raison: `« ${resolved.key} » : cet espace a atteint son plafond de ${plafondEspace} champs personnalisés. Créez-le depuis la console, puis relancez.` };
         }
         await ensureFieldByKey(deps.fields, tenantId, resolved.key, resolved.key, 'text');
@@ -228,8 +178,8 @@ export async function preparateurDeChamps(
       }
       const val = String(rawVal);
       if (!validateFieldValue(resolved.type, val)) {
-        // Une date refusée dit POURQUOI : ambiguë, sans heure, ou illisible. « valeur invalide (datetime) »
-        // n'apprend rien à l'intégrateur d'un webhook, qui ne voit pas notre écran et ne peut que deviner.
+        // Une date refusée dit pourquoi (ambiguë, sans heure, illisible) : l'intégrateur d'un webhook ne voit pas
+        // notre écran.
         const detail = resolved.type === 'date' || resolved.type === 'datetime'
           ? raisonDateLisible((normaliserDate(val, resolved.type) as { raison: 'ambigu' | 'sans_heure' | 'illisible' }).raison)
           : `valeur invalide (${resolved.type})`;
@@ -249,25 +199,20 @@ export async function upsertContactsFromApi(
     fields: PgUserFieldStore;
     defaultCountry?: CountryCode;
     /**
-     * COMBIEN DE DÉFINITIONS DE CHAMPS UN ESPACE PEUT PORTER. Défaut : `API_MAX_CHAMPS_PAR_ESPACE`, 0 désactive.
-     *
-     * ⚠️ INJECTABLE PLUTÔT QUE LUE ICI, pour que les tests l'exercent sans remonter le module : une borne
-     * qu'on ne peut pas faire varier ne se teste que sur sa valeur du jour, donc pas du tout.
+     * Combien de définitions de champs un espace peut porter ; défaut `API_MAX_CHAMPS_PAR_ESPACE`, 0 désactive.
+     * Injectable pour que les tests fassent varier la borne.
      */
     maxChampsParEspace?: number;
   },
 ): Promise<ApiUpsertOutcome[]> {
-  // La préparation des champs est PARTAGÉE avec l'API publique (`preparateurDeChamps`) : mêmes règles de
-  // résolution, un seul cache par appel. Ici on CRÉE (webhook entrant, console) ; l'API, elle, refuse.
+  // Upsert d'un lot de contacts désignés par leur numéro (webhook entrant, création à la main dans la
+  // console) ; un item invalide rend `error` sans faire échouer les autres, un outcome par item. La préparation
+  // des champs est partagée avec l'API publique (`preparateurDeChamps`) : ici on crée un champ inconnu, l'API
+  // refuse.
   const preparer = await preparateurDeChamps(tenantId, { ...deps, champInconnu: 'creer' });
 
-  // DEUX TEMPS (lot 6 du programme II), et l'ordre n'est pas indifférent.
-  //
-  // 1) La validation reste SÉQUENTIELLE : elle partage un cache de définitions de champs et peut en créer un
-  //    au passage. La paralléliser ferait courir deux items sur la même création, pour un gain nul (le cache
-  //    évite déjà presque tous les allers-retours).
-  // 2) Les ÉCRITURES partent par vagues. C'est là qu'était le coût : 500 upserts à la file, un aller-retour
-  //    chacun, soit environ cinq secondes et demie de latence pure pour un lot plein.
+  // Deux temps : la validation reste séquentielle (cache de définitions partagé, création possible au
+  // passage), les écritures partent par vagues, là où était le coût (un aller-retour par upsert).
   const out: ApiUpsertOutcome[] = [];
   const aEcrire: Array<{ index: number; upsert: Parameters<PgContactStore['upsertByPhoneReturningId']>[0] }> = [];
   for (let i = 0; i < items.length; i += 1) {
@@ -308,9 +253,8 @@ export async function upsertContactsFromApi(
         const res = await deps.contacts.upsertByPhoneReturningId(upsert);
         return { index, status: res.created ? 'created' : 'updated', contactId: res.id };
       } catch (err) {
-        // `contacts_tenant_bsuid_uidx` rend le BSUID unique par espace. Le violer est une erreur de SAISIE, pas
-        // une panne : sans ce filet elle sortirait en 500, et Cloudflare remplace le corps des 5xx par sa propre
-        // page, donc l'opérateur ne verrait même pas ce qu'on lui reproche.
+        // `contacts_tenant_bsuid_uidx` rend le BSUID unique par espace : le violer est une erreur de saisie, pas une
+        // panne. En 500, Cloudflare remplacerait le corps par sa page, et l'opérateur ne verrait pas la raison.
         if ((err as { code?: string }).code === '23505') {
           return { index, status: 'error', reason: 'ce BSUID est déjà utilisé par un autre contact de cet espace' };
         }
@@ -319,7 +263,7 @@ export async function upsertContactsFromApi(
     }));
     out.push(...resultats);
   }
-  // Les erreurs de validation sont poussées au fil du premier temps, les écritures au second : on RETRIE sur
-  // l'index pour rendre les résultats dans l'ordre reçu, qui est le contrat de cette API.
+  // Validation et écritures poussent leurs résultats à des moments différents : on retrie sur l'index pour
+  // rendre l'ordre reçu, qui est le contrat.
   return out.sort((a, b) => a.index - b.index);
 }

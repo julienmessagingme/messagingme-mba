@@ -3,10 +3,9 @@ import type { UserFieldType, UserFieldDef } from '../crm/types';
 import { slugify, SYSTEM_FIELD_KEYS } from '../crm/fields';
 
 /**
- * Résolution d'un handle d'API (code stable OU nom) vers l'entité interne. Toujours scopé au tenant de la
- * clé d'API. Un `code` (scn_/tag_/fld_/nod_) est non ambigu (index unique) ; un NOM peut matcher plusieurs
- * entités (workflows.name n'a aucune contrainte d'unicité) -> `ambiguous` (409 côté route, jamais un choix
- * silencieux). Chaque résolveur ne lit que ce dont il a besoin (interfaces étroites -> fakes de test simples).
+ * Résolution d'un handle d'API (code stable ou nom) vers l'entité interne, toujours filtrée sur l'espace de la clé.
+ * Un code (scn_/tag_/fld_/nod_) est non ambigu ; un nom peut désigner plusieurs entités : `ambiguous` (409), jamais
+ * un choix silencieux.
  */
 export type ResolveResult<T> =
   | { ok: true; value: T }
@@ -40,7 +39,7 @@ export async function resolveScenario(
   return { ok: true, value: matches[0]! };
 }
 
-/** Node par code `nod_...` : scan des graphes du tenant (le code vit dans node.data.code). Jamais ambigu. */
+/** Node par code `nod_...`, cherché dans les graphes de l'espace (le code vit dans node.data.code). Jamais ambigu. */
 export async function resolveNode(
   tenantId: string,
   code: string,
@@ -55,11 +54,6 @@ export async function resolveNode(
   return { ok: false, reason: 'not_found' };
 }
 
-// `resolveTag` a vécu ici sans jamais avoir d'appelant : aucun endpoint n'adresse un tag par code ou par nom.
-// Il avait été écrit « par symétrie » avec les autres résolveurs, et son propre commentaire avouait que le
-// chemin d'ambiguïté qu'il gérait était impossible. Supprimé le 2026-07-18 avec son interface `TagLister`.
-// À réécrire le jour où un endpoint en aura vraiment besoin, en repartant du besoin réel.
-
 const SYS_RE = /^fld_[0-9a-z]+_sys_(.+)$/;
 
 export type FieldResolve =
@@ -67,12 +61,11 @@ export type FieldResolve =
   | { ok: false; reason: 'not_found' };
 
 /**
- * Résout un champ contact désigné par sa CLÉ technique OU son code (D-2). Jamais par libellé.
- *  - `fld_<tenant>_sys_<key>` (key système) -> résolu SANS DB (déterministe), type 'text'.
- *  - `fld_...` (autre code) -> lookup par code en base ; introuvable -> not_found (un code ne se devine pas).
- *  - sinon -> traité comme la clé technique : présente dans les defs -> connue ; absente -> `known:false`
- *    (le webhook entrant et la création à la main auto-créent un champ texte, comme l'import CSV ; l'API
- *    publique le refuse, `preparateurDeChamps`).
+ * Résout un champ contact par sa clé technique ou son code, jamais par libellé :
+ *  - `fld_<tenant>_sys_<key>` (clé système) : résolu sans base, type 'text' ;
+ *  - autre `fld_...` : cherché par code ; introuvable -> not_found (un code ne se devine pas) ;
+ *  - sinon, la clé technique : présente -> connue, absente -> `known:false` (le webhook entrant et la saisie à la
+ *    main créent un champ texte ; l'API publique refuse, `preparateurDeChamps`).
  */
 export async function resolveFieldKey(tenantId: string, ref: string, fields: FieldLister): Promise<FieldResolve> {
   const sys = SYS_RE.exec(ref);

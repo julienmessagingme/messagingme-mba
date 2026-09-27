@@ -4,16 +4,12 @@ import {
 } from './types';
 
 /**
- * RELIRE CE QUE LE SIGNAL NE TRANSPORTE PAS (spec 2026-09-24, § 8), au moment de pousser et jamais sur le
- * chemin chaud : la fiche et son consentement COURANT, l'origine et l'envoi d'un message, le lien cliqué,
- * l'analyse. GÉNÉRIQUE : aucun outil cible n'est nommé ici, tout adaptateur en part.
+ * Relire ce que le signal ne transporte pas, au moment de pousser et jamais sur le chemin chaud : la fiche et son
+ * consentement courant, l'origine et l'envoi d'un message, le lien cliqué, l'analyse. Aucun outil n'est nommé ici.
  *
- * 🔴 UN CONTRAT, PAS UNE GÉNÉRICITÉ TOTALE : il porte UNE règle d'identité, celle de l'adaptateur actuel
- * (`identifiantPoussable` : une fiche ne se pousse que sous son `externalId`). Sans elle, il ne relit ni le
- * contexte d'un message ni le lien d'un clic, puisque l'adaptateur comptera la fiche au lieu de la pousser. Un
- * adaptateur qui désignerait un profil AUTREMENT (numéro, identifiant propre à son outil) devra faire passer SON
- * critère ici, en paramètre, au lieu de lire `identifiantPoussable` en dur : sinon il recevrait des signaux
- * amputés pour toutes les fiches sans `externalId`, sans qu'aucune erreur ne le dise.
+ * Une seule règle d'identité y est lue en dur, celle de l'adaptateur actuel (`identifiantPoussable` : une fiche
+ * ne se pousse que sous son `externalId`). Un adaptateur qui désignerait un profil autrement devra passer son
+ * critère en paramètre, sinon il recevrait des signaux amputés pour les fiches sans `externalId`, en silence.
  *
  * `null` = plus rien à pousser (fiche supprimée, conversation ou analyse disparue) : ce n'est pas un échec.
  */
@@ -22,7 +18,7 @@ export interface FicheDuSignal extends ContactDuSignal {
   optInSource: string | null;
 }
 
-/** Chaque lecture reçoit l'espace du JOB et filtre dessus (`tenant_id = $1`) : c'est le seul contrôle. */
+/** 🔴 Chaque lecture reçoit l'espace du job et filtre dessus (`tenant_id = $1`) : c'est le seul contrôle. */
 export interface LecturesSignal {
   ficheParWaId(tenantId: string, waId: string): Promise<FicheDuSignal | null>;
   ficheParId(tenantId: string, contactId: string): Promise<FicheDuSignal | null>;
@@ -33,12 +29,11 @@ export interface LecturesSignal {
 }
 
 /**
- * Le canal sur lequel la personne a DIT STOP, ou `null`.
+ * Le canal sur lequel la personne a dit STOP, ou `null`.
  *
- * 🔴 LE `canal` DU JOB NE LE DIT PAS : il dit quel consentement l'écriture a retiré (`opt_in_status` pour
- * `whatsapp`). Or le dépôt des contacts écrit `opted_out` pour le mot-clé STOP, mais aussi depuis la fiche,
- * l'action en masse, un scénario ou l'API publique. Annoncer `whatsapp` pour ces derniers ferait croire à
- * l'intégrateur que le contact a écrit STOP sur WhatsApp. Seule la source le prouve, relue sur la fiche.
+ * Le `canal` du job ne le dit pas : il dit quel consentement a été retiré, et `opted_out` s'écrit aussi depuis la
+ * fiche, l'action en masse, un scénario ou l'API. Annoncer `whatsapp` pour ceux-là ferait croire à un STOP écrit
+ * sur WhatsApp : seule la source relue sur la fiche le prouve.
  */
 function canalDuStop(s: Extract<Signal, { nom: 'em_opted_out' }>, fiche: FicheDuSignal): CanalSignal | null {
   if (s.canal === 'rcs') return 'rcs';
@@ -60,13 +55,9 @@ const SANS_CONTEXTE = { origine: null, sendId: null } as const;
 export async function completerSignal(l: LecturesSignal, tenantId: string, s: Signal): Promise<SignalComplet | null> {
   const fiche = await ficheDu(l, tenantId, s);
   if (fiche === null) return null;
-  /**
-   * 🔴 CE QUI NE SERT QU'À LA POUSSÉE NE SE RELIT PAS POUR UNE FICHE QUI NE SERA JAMAIS POUSSÉE. Sans identifiant
-   * externe, l'adaptateur la COMPTE et s'arrête là : le contexte d'un message (trois sous-requêtes, et un accusé
-   * de campagne en produit des milliers) et le lien d'un clic seraient lus pour rien. L'analyse, elle, se relit
-   * quand même : son absence veut dire « plus rien à pousser » (`null`), et la fiche ne serait plus comptée.
-   * ⚠️ C'est LA règle d'identité de l'adaptateur actuel, lue en dur : voir le contrat en tête de ce fichier.
-   */
+  // Une fiche sans identifiant externe sera seulement comptée : on ne relit pas pour elle le contexte d'un message
+  // (un accusé de campagne en produit des milliers) ni le lien d'un clic. L'analyse se relit quand même : son
+  // absence veut dire « plus rien à pousser ». Règle d'identité lue en dur, cf. l'en-tête du fichier.
   const poussable = identifiantPoussable(fiche) !== null;
   const base = {
     id: s.id,
@@ -90,8 +81,8 @@ export async function completerSignal(l: LecturesSignal, tenantId: string, s: Si
       return { ...base, contenu: { nom: s.nom, lien: s.lien, template: lien?.template ?? null, destination: lien?.destination ?? null } };
     }
     case 'em_opted_out':
-      // ⚠️ La source est relue au moment de pousser : un contact réabonné entre-temps rend la source de son
-      // réabonnement, donc aucun canal. C'est le sens exact de « le canal n'est dit que s'il est prouvé ».
+      // Source relue au moment de pousser : un contact réabonné entre-temps rend la source de son réabonnement,
+      // donc aucun canal.
       return { ...base, contenu: { nom: s.nom, canal: canalDuStop(s, fiche), source: s.canal === 'rcs' ? SOURCE_STOP_RCS : fiche.optInSource } };
     case 'em_conversation_analyzed': {
       const analyse = await l.analyse(tenantId, s.conversationId);

@@ -23,32 +23,19 @@ import { direPanneModele } from '../llm/errors';
 import { journaliser } from '../lib/journal';
 
 /**
- * La conversation de CONSTRUCTION d'un agent : elle propose, le client corrige.
- *
- * 🔴 CETTE ROUTE N'ÉCRIT RIEN DE L'AGENT. Elle rend une proposition et le diff qu'elle produirait ; l'écriture
- * passe par le `PATCH` de la fiche et par les routes d'outils, avec leurs verrous et leurs contrôles. C'est la
- * règle du cadrage §5.9, et elle a une raison précise : le jour où l'onglet « Create » a disparu de
- * l'interface d'OpenAI, des GPTs sont devenus non modifiables du jour au lendemain. Ici la conversation n'est
- * jamais le seul chemin d'édition, et elle n'a aucun pouvoir que le formulaire n'ait déjà. La seule chose
- * qu'elle écrit est SON PROPRE ÉTAT (table `agent_setup_conversations`).
- *
- * 🔴 CE QUE LE MODÈLE PEUT PROPOSER EST ÉNUMÉRÉ dans `src/agent/setup/proposition.ts` : la fiche et les mots
- * des outils maison. Ni la mention légale d'IA, ni les plafonds, ni le modèle de l'agent, ni le risque d'un
- * outil, ni son activation. Compromettre cette conversation ne compromet donc pas l'agent.
- *
- * 🔴 C'EST LE SERVEUR QUI CONDUIT L'ENTRETIEN, depuis le 2026-08-31. L'ordre du jour, le point du tour et la
- * couverture sont calculés ici, à partir d'un état persisté ; le modèle formule et extrait, il ne décide de
- * rien. Le navigateur ne renvoie plus l'historique : il envoie UN message, et c'est tout. Avant, il portait la
- * conversation entière, ce qui la perdait au changement d'onglet et laissait la séquence des questions à la
- * discrétion du modèle, qui sautait le ton, l'identité et la base de connaissance.
+ * La conversation de construction d'un agent : elle propose, le client corrige.
+ * Cette route n'écrit rien de l'agent : elle rend une proposition et son diff, l'écriture passe par le `PATCH`
+ * de la fiche et les routes d'outils. La conversation n'est jamais le seul chemin d'édition ; elle n'écrit que
+ * son propre état (`agent_setup_conversations`).
+ * 🔴 Ce que le modèle peut proposer est énuméré dans `src/agent/setup/proposition.ts` (la fiche et les mots des
+ * outils maison) : ni mention légale d'IA, ni plafonds, ni modèle, ni risque, ni activation.
+ * C'est le serveur qui conduit l'entretien : ordre du jour, point du tour et couverture sont calculés ici à
+ * partir d'un état persisté ; le navigateur n'envoie qu'un message, le modèle formule et extrait.
  */
 
 /**
- * Combien de messages l'écran reçoit d'un coup.
- *
- * ⚠️ CE N'EST PAS `MAX_TOURS_HISTORIQUE` (ce qu'on envoie au MODÈLE) ni `MAX_TOURS_CONSERVES` (ce que la
- * base garde) : trois plafonds, trois raisons. Celui-ci borne le POIDS D'UNE RÉPONSE HTTP, et il est
- * généreux parce qu'un fil de travail se relit.
+ * Combien de messages l'écran reçoit d'un coup. Ni `MAX_TOURS_HISTORIQUE` (ce qu'on envoie au modèle) ni
+ * `MAX_TOURS_CONSERVES` (ce que la base garde) : celui-ci borne le poids d'une réponse HTTP.
  */
 export const MAX_MESSAGES_AFFICHES = 200;
 
@@ -56,47 +43,24 @@ export interface AgentSetupRouteDeps {
   /** L'état courant de l'agent, ou `null` s'il n'existe pas ou appartient à un autre tenant. */
   etatCourant(tenantId: string, agentId: string): Promise<ContexteConstruction | null>;
   /**
-   * QUI a écrit chaque message : les adresses des membres de l'espace, par identifiant.
-   *
-   * 🔴 RÉSOLU CÔTÉ SERVEUR, jamais par le navigateur. Le fil ne porte que des identifiants (migration 0147,
-   * et c'est le bon choix : recopier une adresse dans un jsonb que personne ne purge serait pire). L'écran,
-   * lui, ne peut afficher qu'un nom : le faire résoudre par le navigateur ajouterait un appel à chaque
-   * ouverture d'onglet, et donnerait à voir la liste des comptes de l'espace pour afficher deux adresses.
-   *
-   * ⚠️ Son ÉCHEC laisse le fil s'afficher avec « auteur inconnu », ce qui est le comportement des tours
-   * d'avant la migration. Un journal sans auteur reste lisible ; un écran qui refuse de s'ouvrir, non.
+   * Qui a écrit chaque message : les adresses des membres de l'espace, par identifiant, résolues côté serveur (le
+   * fil ne porte que des identifiants ; le navigateur n'a pas à voir la liste des comptes). Son échec laisse le
+   * fil s'afficher avec « auteur inconnu ».
    */
   emailsDesMembres(tenantId: string): Promise<Record<string, string>>;
   /**
-   * LE COMPTEUR DE NOTRE DÉPENSE, partagé avec l'assistant du Meta Business Agent.
-   *
-   * 🔴 IL MANQUAIT, ET LE COMMENTAIRE DU CÂBLAGE L'AVAIT ANNONCÉ : « c'est ce qui rend le plafond
-   * obligatoire [...] les deux moitiés de cette décision vont ensemble, l'une sans l'autre est dangereuse ».
-   * Cet assistant est passé sur NOTRE clé le 2026-09-14 ; le plafond, lui, n'a été câblé que sur l'autre.
-   * Un espace pouvait donc bavarder sans limite avec l'assistant d'agent, à nos frais.
-   *
-   * 🔴 LE COMPTEUR EST PAR ESPACE, PAS PAR ASSISTANT (migration 0146) : un plafond par assistant
-   * multiplierait notre exposition par le nombre de robots, c'est-à-dire par un chiffre que le client
-   * contrôle lui-même.
-   *
-   * REQUIS depuis le lot 3 de l'audit ponytail (2026-09-26) : le câblage de production le fournit toujours.
+   * 🔴 Le compteur de notre dépense, partagé avec l'assistant du Meta Business Agent : cet assistant tourne sur
+   * notre clé, et sans plafond un espace bavarderait à nos frais. Par espace et non par assistant : un plafond par
+   * assistant multiplierait notre exposition par un nombre que le client contrôle.
    */
   depenses: DepenseStore;
   /** Le plafond mensuel, en euros. 0 = pas de plafond (`ASSISTANT_PLAFOND_EUROS_MOIS`). */
   plafondEuros: number;
   tauxEurParDollar: number;
   /**
-   * Écrit une fiche de connaissance. Sert aux PIÈCES JOINTES : un document joint devient des fiches, c'est
-   * tout l'intérêt de pouvoir en joindre un.
-   */
-  /**
-   * Ecrit les fiches d'une piece jointe, EN REMPLACANT celles que le meme fichier avait deja produites.
-   *
-   * 🔴 REMPLACE, ET PORTE LA PROVENANCE, alors que cette route creait des fiches ANONYMES une par une.
-   * Deux consequences vecues : redeposer le meme PDF doublait la base (et la recherche remontait deux fois
-   * la meme reponse), et une fiche issue d'un document etait INDISCERNABLE d'une fiche tapee a la main,
-   * donc l'ecran ne pouvait pas dire d'ou elle venait. C'est la coherence que Julien demandait le
-   * 2026-09-08 : le fichier joint en parlant au robot, et la fiche qui en decoule, doivent se retrouver.
+   * Écrit les fiches d'une pièce jointe, en remplaçant celles que le même fichier avait produites, et avec leur
+   * provenance : sans remplacement, redéposer le même PDF doublerait la base ; sans provenance, une fiche issue
+   * d'un document serait indiscernable d'une fiche tapée à la main.
    */
   ecrireFichesDocument(
     tenantId: string, agentId: string, nom: string, fiches: Array<{ titre: string; corps: string }>,
@@ -104,19 +68,17 @@ export interface AgentSetupRouteDeps {
   /** L'entretien persisté. Requis : un entretien sans mémoire redeviendrait non déterministe sans que personne
    *  ne le voie. */
   entretiens: EntretienStore;
-  /** Appel du modèle. Injecté pour rester testable sans réseau ; absent, la route répond 503. */
-  /** ⚠️ `tenantId` decide QUELLE CLE paie l'appel (2026-09-09) : le bac a sable est du temps de modele, et
-   *  il se paie sur le credit du client comme le reste. */
+  /**
+   * Appel du modèle, injecté pour rester testable sans réseau ; absent, la route répond 503. `tenantId` décide
+   * quelle clé paie l'appel.
+   */
   completer?(input: { tenantId: string; modele: string; messages: Array<ChatMessage | ChatMessageImage>; outils: OutilExpose[]; toolChoice: string; signal: AbortSignal }): Promise<ReponseChat>;
-  /** Modèle de l'IA de CONSTRUCTION. À ne pas confondre avec celui de l'agent : celui-ci tourne rarement et
-   *  joue le rôle le plus dur, celui-là répond à chaque message d'un contact. */
+  /** Modèle de l'IA de construction. À ne pas confondre avec celui de l'agent : celui-ci tourne rarement et
+  *  joue le rôle le plus dur, celui-là répond à chaque message d'un contact. */
   modele: string;
   /**
-   * Modèle qui LIT LES IMAGES jointes. Vide = les images sont refusées, les documents passent quand même.
-   *
-   * 🔴 Séparé du modèle d'entretien, et ce n'est pas de la précaution : mesuré le 2026-08-31, `zai/glm-4.7`
-   * (celui de la production) REFUSE une part `image_url` avec un 400 au corps vide. Réutiliser le modèle
-   * d'entretien aurait livré une pièce jointe image morte, avec une erreur illisible.
+   * Modèle qui lit les images jointes. Vide = les images sont refusées, les documents passent quand même. Séparé
+   * du modèle d'entretien : celui de la production refuse une part `image_url` (400 au corps vide).
    */
   modeleVision: string;
 }
@@ -126,22 +88,21 @@ const corpsSchema = z.object({
 });
 
 const pieceSchema = z.object({
-  /** Le nom du fichier, qui sert de TITRE par défaut aux fiches. Il n'est jamais interprété comme un chemin
-   *  ni comme un type : la nature du fichier vient de sa signature. */
+  /** Le nom du fichier, qui sert de titre par défaut aux fiches. Il n'est jamais interprété comme un chemin
+  *  ni comme un type : la nature du fichier vient de sa signature. */
   nom: z.string().trim().min(1).max(200),
   dataUrl: z.string().min(1),
 });
 
-/** Ce qu'on demande au modèle vision. Le cadre compte : sans lui, il RACONTE l'image au lieu de la relever, et
- *  une base de connaissance faite de descriptions ne répond à aucune question de contact. */
+/** Ce qu'on demande au modèle vision. Le cadre compte : sans lui, il raconte l'image au lieu de la relever, et
+*  une base de connaissance faite de descriptions ne répond à aucune question de contact. */
 const CONSIGNE_IMAGE = 'Relève TOUT le texte lisible de cette image, tel quel, en gardant sa structure (titres, '
   + 'listes, tableaux ligne par ligne). Ne commente pas, n’interprète pas, n’invente aucune valeur illisible : '
   + 'si un passage est flou, écris [illisible]. Si l’image ne contient aucun texte, décris en une phrase ce '
   + 'qu’elle montre, sans plus.';
 
-/** Lit une image par le modèle et rend son texte AVEC son coût. Isolé pour que la route reste lisible.
- *  ⚠️ Le coût remonte parce que cet appel-là compte dans le plafond : le jeter rendrait la lecture d'image
- *  gratuite du point de vue du compteur, donc contournable. */
+/** Lit une image par le modèle et rend son texte avec son coût : cet appel compte dans le plafond, le jeter
+*  rendrait la lecture d'image gratuite du point de vue du compteur, donc contournable. */
 async function lireImage(
   deps: AgentSetupRouteDeps, tenantId: string, modele: string, dataUrl: string, nom: string,
 ): Promise<{ texte: string | null; coutDollars: number }> {
@@ -159,8 +120,6 @@ async function lireImage(
     toolChoice: '',
     signal: AbortSignal.timeout(DELAI_MS),
   });
-  // ⚠️ LE COÛT REMONTE AVEC LE TEXTE : une image part chez un fournisseur qui la facture, sur NOTRE clé.
-  // Le jeter ici rendrait la lecture d'image gratuite du point de vue du plafond, donc le contournerait.
   return { texte: r.texte, coutDollars: r.usage.coutDollars };
 }
 
@@ -168,9 +127,8 @@ async function lireImage(
 const DELAI_MS = 45_000;
 
 /**
- * LE PLAFOND, LU AVANT L'APPEL. `true` = on peut parler.
- *
- * ⚠️ Un plafond à 0 laisse passer : c'est `ASSISTANT_PLAFOND_EUROS_MOIS=0`, le plafond désactivé.
+ * Le plafond, lu avant l'appel. `true` = on peut parler. Un plafond à 0 laisse passer
+ * (`ASSISTANT_PLAFOND_EUROS_MOIS=0` le désactive).
  */
 async function budgetOuvert(deps: AgentSetupRouteDeps, tenantId: string): Promise<boolean> {
   if (!deps.plafondEuros) return true;
@@ -178,26 +136,24 @@ async function budgetOuvert(deps: AgentSetupRouteDeps, tenantId: string): Promis
 }
 
 /**
- * LA DÉPENSE, NOTÉE APRÈS L'APPEL, avec le coût RÉEL.
- *
- * ⚠️ Une estimation avant serait fausse, et le dépassement du dernier tour est assumé : il est borné par le
- * coût d'UN tour. Même règle que l'assistant du Meta Business Agent.
+ * La dépense, notée après l'appel, au coût réel. Le dépassement du dernier tour est assumé : il est borné par
+ * le coût d'un tour.
  */
 async function noterDepense(deps: AgentSetupRouteDeps, tenantId: string, coutDollars: number): Promise<void> {
   await deps.depenses.ajouter(tenantId, moisDe(new Date()),
     microEurosDepuisDollars(coutDollars, deps.tauxEurParDollar));
 }
 
-/** L'avancement, tel que l'écran l'affiche. Le total est celui de l'ordre du jour EFFECTIF : un client dont
- *  l'agent n'appellera jamais d'outil ne doit pas se voir annoncer un point qui n'existera jamais pour lui. */
+/** L'avancement, tel que l'écran l'affiche. Le total est celui de l'ordre du jour effectif : un client dont
+*  l'agent n'appellera jamais d'outil ne doit pas se voir annoncer un point qui n'existera jamais pour lui. */
 function avancement(etat: EntretienComplet, ctx: ContexteConstruction | null): { manquants: string[]; total: number; pointOuvert: string | null } {
-  // L'INVENTAIRE entre ici parce qu'il change la QUESTION du moyen, pas la liste des points : le compte et
+  // L'inventaire entre ici parce qu'il change la question du moyen, pas la liste des points : le compte et
   // l'ordre sont les mêmes, mais la question posée montre ce qui est réellement branché.
   const inv = ctx ? inventaireDe(ctx) : undefined;
   /**
-   * ⚠️ UN CHAMP VIDÉ N'ENTRE PAS DANS CE COMPTE, et ce n'est pas un oubli : cette couverture-là RETIENT la
-   * proposition, or un champ ne se remplit qu'en appliquant une proposition. L'y faire entrer enfermerait
-   * l'entretien dans un cycle. Le champ vidé est SIGNALÉ dans la consigne d'évolution, pas recompté ici.
+   * Un champ vidé n'entre pas dans ce compte : cette couverture retient la proposition, or un champ ne se remplit
+   * qu'en appliquant une proposition (l'y faire entrer enfermerait l'entretien dans un cycle). Le champ vidé est
+   * signalé dans la consigne d'évolution.
    */
   const manquants = manquesDeCouverture(etat, inv);
   return {
@@ -208,8 +164,8 @@ function avancement(etat: EntretienComplet, ctx: ContexteConstruction | null): {
 }
 
 /**
- * Les noms d'outils RETENUS : ceux qui existent dans la bibliothèque de l'espace ET dont le branchement
- * changerait vraiment d'état. `brancheAttendu` dit l'état dans lequel l'outil doit être AUJOURD'HUI pour que
+ * Les noms d'outils retenus : ceux qui existent dans la bibliothèque de l'espace et dont le branchement
+ * changerait vraiment d'état. `brancheAttendu` dit l'état dans lequel l'outil doit être maintenant pour que
  * le geste ait un sens (`false` pour brancher, `true` pour débrancher).
  */
 export function brancheables(
@@ -222,7 +178,7 @@ export function brancheables(
 export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
 
-  /** Contrôle d'accès commun aux trois routes : tenant du jeton, agent existant DE CE TENANT. */
+  /** Contrôle d'accès commun aux trois routes : tenant du jeton, agent existant de ce tenant. */
   const ouvrir = async (req: FastifyRequest, reply: FastifyReply) => {
     const tenant = espaceVerifie(req);
     const { agentId } = req.params as { agentId: string };
@@ -232,32 +188,20 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     return { tenant, agentId, etat, entretiens: deps.entretiens };
   };
 
-  /**
-   * L'entretien tel qu'il est, pour rouvrir l'onglet là où on l'avait laissé.
-   *
-   * Julien, 2026-08-31 : « je veux que la conversation qui a été tenue préalablement soit persistante quand on
-   * revient plus tard sur l'onglet ». Sans cette route, l'écran repartirait d'une page blanche et le client
-   * recommencerait un entretien qu'il avait déjà mené.
-   */
+  /** L'entretien tel qu'il est, pour rouvrir l'onglet là où on l'avait laissé. */
   app.get('/tenants/:tenantId/agents/:agentId/setup', opts, async (req, reply) => {
     const ctx = await ouvrir(req, reply);
     if (!ctx) return;
     const entretien = (await ctx.entretiens.lire(ctx.tenant, ctx.agentId)) ?? ENTRETIEN_VIERGE;
     /**
-     * 🔴 L'ÉCRAN NE REÇOIT PAS LE FIL ENTIER, ET C'EST UN DÉFAUT RELEVÉ EN REVUE (2026-09-14). Depuis que le
-     * fil PERDURE, la base n'en tronque plus rien : envoyer `entretien.messages` tel quel ferait grossir
-     * cette réponse sans fin, sur une route appelée à CHAQUE ouverture de l'onglet. Avant, la troncature à
-     * l'écriture masquait le problème ; en la retirant, on l'a créé.
-     *
-     * ⚠️ LE FIL RESTE ENTIER EN BASE : c'est bien l'AFFICHAGE qui est borné, pas la conservation. Le total
-     * part avec, pour que l'écran puisse dire « 340 messages, les 200 derniers » plutôt que de laisser croire
-     * que le reste n'existe plus.
+     * L'écran ne reçoit pas le fil entier : la base le conserve sans troncature, et cette route est appelée à chaque
+     * ouverture de l'onglet. Le total part avec, pour que l'écran dise « 340 messages, les 200 derniers ».
      */
     const recents = entretien.messages.slice(-MAX_MESSAGES_AFFICHES);
     const auteurs = entretien.auteurs.slice(-MAX_MESSAGES_AFFICHES);
     /**
-     * ⚠️ ON NE RÉSOUT QUE S'IL Y A QUELQUE CHOSE À RÉSOUDRE : un fil entièrement anonyme (les tours d'avant
-     * la migration 0147, et les réponses de l'assistant) ne doit pas coûter une requête à chaque ouverture.
+     * On ne résout que s'il y a quelque chose à résoudre : un fil entièrement anonyme ne doit pas coûter une
+     * requête à chaque ouverture.
      */
     const emails = auteurs.some((a) => a !== null)
       ? await deps.emailsDesMembres(ctx.tenant).catch(() => ({} as Record<string, string>))
@@ -265,8 +209,8 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     return reply.code(200).send({
       messages: recents,
       /**
-       * 🔴 DES ADRESSES, PAS DES IDENTIFIANTS, et `null` quand on ne sait pas : un compte supprimé laisse un
-       * tour sans auteur, et lui en inventer un serait faux. L'écran dit alors « auteur inconnu ».
+       * Des adresses, pas des identifiants, et `null` quand on ne sait pas (un compte supprimé laisse un tour sans
+       * auteur) : l'écran dit alors « auteur inconnu ».
        */
       auteurs: auteurs.map((a) => (a === null ? null : emails[a] ?? null)),
       total: entretien.messages.length,
@@ -275,14 +219,9 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
   });
 
   /**
-   * CE QUE L'ENTRETIEN A NOTÉ ET QU'AUCUN ÉCRAN N'A ENCORE UTILISÉ (2026-09-18).
-   *
-   * 🔴 UNE ROUTE À PART, ET LÉGÈRE, PARCE QUE L'APPELANT N'EST PAS L'ONGLET DE CONVERSATION. C'est l'onglet
-   * Base de connaissance qui a besoin de l'adresse du site, et la page des agents la lit à l'ouverture, à
-   * côté des manques. Passer par le `GET /setup` enverrait deux cents messages pour obtenir une chaîne.
-   *
-   * ⚠️ ELLE NE DÉCLENCHE RIEN ET NE RÉCUPÈRE RIEN : elle RAPPORTE ce que le client a dit. L'import, avec son
-   * aperçu, ses contrôles d'adresse privée et son plafond de pages, reste un geste que le client fait.
+   * Ce que l'entretien a noté et qu'aucun écran n'a encore utilisé (l'adresse du site, lue par l'onglet Base de
+   * connaissance). Route légère : `GET /setup` enverrait deux cents messages pour une chaîne. Elle ne déclenche
+   * rien : l'import, avec ses contrôles, reste un geste du client.
    */
   app.get('/tenants/:tenantId/agents/:agentId/setup/suggestions', opts, async (req, reply) => {
     const ctx = await ouvrir(req, reply);
@@ -296,9 +235,8 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
   });
 
   /**
-   * Recommencer. Un entretien qui a mal tourné doit pouvoir se jeter sans supprimer l'agent : sans ce geste,
-   * la persistance qu'on vient d'ajouter deviendrait une prison, et le seul moyen de repartir proprement
-   * serait de recréer l'agent et de perdre tout ce qui a déjà été réglé dans les autres onglets.
+   * Recommencer : un entretien qui a mal tourné se jette sans supprimer l'agent ni perdre ce qui est réglé dans
+   * les autres onglets.
    */
   app.delete('/tenants/:tenantId/agents/:agentId/setup', opts, async (req, reply) => {
     const ctx = await ouvrir(req, reply);
@@ -308,22 +246,10 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
   });
 
   /**
-   * UNE PIÈCE JOINTE, transformée en fiches de connaissance.
-   *
-   * Julien, 2026-08-31 : « il faut aussi qu'on puisse rajouter des pièces jointes (images, documents, …) dans
-   * la conversation (notamment pour rajouter des base de connaissance) ». Un client arrive avec ses procédures
-   * déjà écrites ; les retaper fiche par fiche est exactement le travail qu'on lui promet d'éviter.
-   *
-   * 🔴 CE QUE LA ROUTE ÉCRIT, ET POURQUOI CE N'EST PAS UNE ENTORSE au « rien ne s'écrit sans un clic ». Ce
-   * diff-là protège contre ce que le MODÈLE propose ; ici c'est le CLIENT qui téléverse son propre document,
-   * délibérément, et le geste EST le consentement. Même doctrine que l'import d'une page de son site, qui
-   * écrit lui aussi ses fiches directement. Tout reste relisible et modifiable dans l'onglet Connaissance.
-   *
-   * 🔴 UNE IMAGE EST LUE UNE SEULE FOIS, ICI. Elle part au modèle vision au moment où elle est jointe, et ce
-   * qu'on en garde est du TEXTE. La garder pour les tours suivants ferait grossir l'entretien de plusieurs
-   * méga et referait payer sa lecture à chaque tour.
-   *
-   * `bodyLimit` dédié : les octets transitent en base64 (+33 %), comme pour l'upload média.
+   * Une pièce jointe, transformée en fiches de connaissance. La route écrit ses fiches directement : c'est le
+   * client qui téléverse son propre document, et le geste est le consentement (comme l'import d'une page de son
+   * site) ; tout reste relisible dans l'onglet Connaissance. Une image est lue une seule fois, ici, par le modèle
+   * vision, et on n'en garde que du texte. `bodyLimit` dédié : les octets transitent en base64 (+33 %).
    */
   const optsPiece = { ...opts, bodyLimit: Math.ceil(TAILLE_DOCUMENT_MAX * 1.4) };
   app.post('/tenants/:tenantId/agents/:agentId/setup/piece-jointe', optsPiece, async (req, reply) => {
@@ -335,7 +261,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     const bytes = octetsDepuisDataUrl(parse.data.dataUrl);
     if (!bytes) return reply.code(400).send({ error: 'fichier illisible (data URL base64 attendu)' });
     const reconnu = reconnaitre(bytes);
-    // 415 et pas 400 : le corps est bien formé, c'est le TYPE du contenu qu'on refuse. Et le refus se fonde
+    // 415 et pas 400 : le corps est bien formé, c'est le type du contenu qu'on refuse. Et le refus se fonde
     // sur la signature réelle, jamais sur l'extension du nom, qui ne prouve rien.
     if (!reconnu) {
       return reply.code(415).send({ error: 'format non accepté (texte, CSV, PDF, Word, ou image JPEG/PNG/GIF/WebP)' });
@@ -347,27 +273,22 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
 
     let texte: string | null;
     if (reconnu.nature === 'image') {
-      // Refus EXPLICITE plutôt qu'un appel voué à un 400 illisible : sans modèle de vision, on le dit, et les
+      // Refus explicite plutôt qu'un appel voué à un 400 illisible : sans modèle de vision, on le dit, et les
       // documents continuent de passer par ailleurs (ils n'ont besoin d'aucun modèle).
       const vision = deps.modeleVision.trim();
       if (!deps.completer || vision === '') {
         return reply.code(503).send({ error: 'lecture d’image indisponible sur ce serveur (aucun modèle de vision configuré) ; les documents texte, PDF et Word passent quand même' });
       }
       if (!(await budgetOuvert(deps, ctx.tenant))) {
-        // 422 et pas 200 : ici le client attend un IMPORT, pas une phrase. Lui dire que ce n'est pas parti
+        // 422 et pas 200 : ici le client attend un import, pas une phrase. Lui dire que ce n'est pas parti
         // est le seul comportement honnête, et les documents texte, eux, continuent de passer.
         return reply.code(422).send({ error: `${MESSAGE_PLAFOND} Les documents texte, PDF et Word passent quand même.` });
       }
       /**
-       * 🔴 422 ET PAS 502 pour une panne du FOURNISSEUR : la raison est écrite pour l'administrateur, et
-       * Cloudflare remplace le corps de toute 5xx par sa propre page, donc l'écran n'affichait que « Erreur 502 »
-       * (documentation.md, « Aucun message destiné à l'utilisateur dans un 5xx »). Journalisée en plus : le
-       * corps peut se perdre, le log reste. Toute AUTRE erreur est la nôtre : relancée, elle sort en 500 opaque
-       * (`direPanneModele`), jamais avec son texte.
-       *
-       * ⚠️ LE `try` NE COUVRE QUE L'APPEL AU MODÈLE. Il couvrait aussi `noterDepense` : une écriture en base qui
-       * lève aurait été annoncée « l'image n'a pas pu être lue », avec le texte de l'erreur SQL, alors que
-       * l'image avait été lue.
+       * 422 et pas 502 pour une panne du fournisseur : la raison est écrite pour l'administrateur, et Cloudflare
+       * remplacerait le corps d'une 5xx ; journalisée en plus. Toute autre erreur est la nôtre, relancée en 500
+       * opaque (`direPanneModele`). Le `try` ne couvre que l'appel au modèle : une écriture qui lève ne doit pas être
+       * annoncée « l'image n'a pas pu être lue ».
        */
       let lu: Awaited<ReturnType<typeof lireImage>>;
       try {
@@ -414,38 +335,22 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
 
     const avant = (await ctx.entretiens.lire(ctx.tenant, ctx.agentId)) ?? ENTRETIEN_VIERGE;
     /**
-     * 🔴 LA BORNE EST ICI, À LA CONSTRUCTION DU PROMPT, ET PLUS À L'ÉCRITURE (2026-09-14). Elle était posée
-     * dans `PgEntretienStore.ecrire` : les tours anciens n'étaient donc pas seulement absents du contexte du
-     * modèle, ils étaient DÉTRUITS. Un fil qui perdure (décision de Julien : « toute la conversation avec
-     * l'assistant doit perdurer ») ne peut pas se faire amputer par sa propre sauvegarde.
-     *
-     * ⚠️ On borne ce qui PART, jamais ce qu'on GARDE : le fil conserve tout, le prompt reste borné. Un
-     * historique sans fin dans le contexte pousserait la fiche courante hors de la fenêtre du modèle.
-     */
-    /**
-     * 🔴 DEUX FILS, ET LES CONFONDRE ANNULE TOUT LE LOT. `filComplet` est ce qu'on CONSERVE ; `historique`
-     * est ce qu'on ENVOIE au modèle. Une première version construisait l'état écrit à partir du fil BORNÉ :
-     * la troncature était alors seulement DÉPLACÉE, pas supprimée, et la base recevait un fil amputé à
-     * chaque tour. Relevé en revue, jamais par un test ni par le compilateur, les deux tableaux ayant
-     * exactement le même type.
-     *
-     * ⚠️ L'AUTEUR EST POSÉ ICI, sur le message de l'utilisateur, et `null` pour la réponse de l'assistant :
-     * le fil est partagé entre les admins d'un espace, donc « qui a demandé ça ? » doit avoir une réponse.
+     * La borne est posée à la construction du prompt, pas à l'écriture : on borne ce qui part, jamais ce qu'on
+     * garde. Deux fils : `filComplet` est ce qu'on conserve, `historique` ce qu'on envoie au modèle (construire
+     * l'état écrit à partir du fil borné amputerait la base à chaque tour). L'auteur est posé ici sur le message de
+     * l'utilisateur, `null` pour la réponse de l'assistant.
      */
     const filComplet: TourEntretien[] = [...avant.messages, { role: 'user', content: parse.data.message }];
     const auteursComplets: Array<string | null> = [...avant.auteurs, req.auth?.userId ?? null];
     const historique: TourEntretien[] = bornerPourModele(filComplet);
-    // 🔴 Le point du tour est arrêté AVANT l'appel, sur l'état serveur : c'est ce qui rend la séquence des
-    // questions non négociable. Il est noté « posé » plus bas, parce que la réponse du modèle le pose.
+    // Le point du tour est arrêté avant l'appel, sur l'état serveur : la séquence des questions n'est pas
+    // négociable. Il est noté « posé » plus bas, parce que la réponse du modèle le pose.
     const pointDuTour = prochainPoint(avant, inventaireDe(ctx.etat));
 
     /**
-     * 🔴 LE PLAFOND EST VÉRIFIÉ AVANT L'APPEL, ET IL REND 200. Ce n'est pas une panne : c'est une limite
-     * volontaire, et l'assistant la DIT. Un 4xx afficherait un message d'infrastructure là où le client
-     * attend une phrase, et un 5xx serait remplacé par la page d'erreur de Cloudflare.
-     *
-     * ⚠️ LA FORME DE LA RÉPONSE NE CHANGE PAS : l'écran attend `message`, `couverture`, `proposition` et
-     * `changements`. Un corps amputé ferait planter le rendu sur ce qui doit être le cas le plus doux.
+     * Le plafond est vérifié avant l'appel et rend 200 : c'est une limite voulue, l'assistant la dit (un 4xx
+     * afficherait un message d'infrastructure, un 5xx la page de Cloudflare). La forme de la réponse ne change pas :
+     * l'écran attend `message`, `couverture`, `proposition` et `changements`.
      */
     if (!(await budgetOuvert(deps, ctx.tenant))) {
       return reply.code(200).send({
@@ -459,7 +364,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
       });
     }
 
-    // Construits AVANT le `try` : une faute de programmation ici est NOTRE panne, pas une réponse du modèle.
+    // Construits avant le `try` : une faute de programmation ici est notre panne, pas une réponse du modèle.
     const messages = construireMessages(ctx.etat, historique, avant);
     let reponse: ReponseChat;
     try {
@@ -476,19 +381,16 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
         signal: AbortSignal.timeout(DELAI_MS),
       });
     } catch (err) {
-      // Panne du fournisseur, délai dépassé, clé refusée : rien de tout ça n'est un incident de la console,
-      // et un 5xx verrait son corps remplacé par la page d'erreur de Cloudflare.
-      // 🔴 D'OÙ 422. Ce commentaire le disait déjà, au-dessus d'un 502 : l'écran n'affichait que « Erreur 502 ».
-      // Et SEULEMENT pour ces trois-là : le reste est notre panne, relancée en 500 opaque (`direPanneModele`).
+      // Panne du fournisseur, délai dépassé, clé refusée : pas un incident de la console, d'où 422 (un 5xx serait
+      // remplacé par la page de Cloudflare). Seulement ces trois-là : le reste est notre panne, relancée en 500 opaque.
       const raison = direPanneModele(err);
       if (raison === null) throw err;
       journaliser('error', 'agent_setup_tour_echec', { tenantId: ctx.tenant, err });
       return reply.code(422).send({ error: `l’assistant n’a pas répondu : ${raison}` });
     }
 
-    // ⚠️ AVANT toute sortie d'erreur : l'appel a eu lieu, donc il est payé, même si sa réponse est
-    // inexploitable. Le noter seulement sur le chemin heureux rendrait le plafond contournable par un modèle
-    // qui répond de travers.
+    // Avant toute sortie d'erreur : l'appel a eu lieu, donc il est payé. Le noter seulement sur le chemin heureux
+    // rendrait le plafond contournable par un modèle qui répond de travers.
     await noterDepense(deps, ctx.tenant, reponse.usage.coutDollars);
 
     const appel = reponse.appelsOutils.find((a) => a.nom === OUTIL_PROPOSER);
@@ -501,19 +403,14 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     } catch {
       return reply.code(422).send({ error: 'l’assistant a rendu une proposition illisible' });
     }
-    // `safeParse` : tout ce qui n'est pas au schéma est ÉCARTÉ, silencieusement et sans faire échouer le
-    // tour. Un modèle qui tente une clé de sécurité n'obtient rien, il ne casse pas la conversation.
-    //
-    // ⚠️ ASSAINI D'ABORD (2026-09-17) : ce qui relève de l'HYGIÈNE (une longueur, un slug, un doublon) est
-    // ramené dans les bornes au lieu de faire perdre le tour. La FRONTIÈRE, elle, reste jugée par Zod
-    // juste après. Voir `assainirProposition`.
+    // `safeParse` : ce qui n'est pas au schéma est écarté sans faire échouer le tour (un modèle qui tente une clé de
+    // sécurité n'obtient rien). Assaini d'abord : l'hygiène (longueur, slug, doublon) est ramenée dans les bornes,
+    // la frontière reste jugée par Zod juste après (`assainirProposition`).
     const propose = propositionSchema.safeParse(assainirProposition(brut));
     if (!propose.success) {
       /**
-       * 🔴 LA RAISON EST JOURNALISÉE, SINON LE DÉFAUT SUIVANT SERA AUSSI AVEUGLE QUE CELUI-CI. Le
-       * 2026-09-17, un 422 « hors format » a été signalé par Julien sans qu'aucune trace ne dise QUEL champ
-       * avait été refusé : il a fallu mesurer l'écart entre les deux schémas pour retrouver le coupable. On
-       * journalise les CHEMINS et les CODES d'erreur, jamais les valeurs : elles portent les mots du client.
+       * La raison est journalisée (chemins et codes d'erreur, jamais les valeurs, qui portent les mots du client) :
+       * sans elle, un 422 « hors format » ne dirait pas quel champ a été refusé.
        */
       journaliser('warn', 'agent_setup_proposition_hors_schema', {
         tenantId: ctx.tenant, agentId: ctx.agentId,
@@ -523,17 +420,12 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     }
 
     /**
-     * 🔴 L'ÉTAT DE L'ENTRETIEN EST RECALCULÉ ICI, ET NULLE PART AILLEURS.
-     *
-     * Deux écritures, et chacune porte une garantie :
-     *  - les RÉPONSES extraites entrent dans l'état (`fusionner` ignore les codes inconnus et les valeurs
-     *    vides : un modèle qui invente un point n'obtient rien) ;
-     *  - le point du tour est noté POSÉ, parce que le message que l'assistant vient d'écrire le pose. C'est
-     *    ce qui interdit de compter couvert un point que le client n'a jamais vu passer, même si le modèle
-     *    prétend en connaître la réponse. La couverture cesse d'être une déclaration pour devenir un fait.
+     * L'état de l'entretien est recalculé ici, et nulle part ailleurs. Les réponses extraites entrent dans l'état
+     * (`fusionner` ignore les codes inconnus et les valeurs vides) ; le point du tour est noté posé, parce que le
+     * message de l'assistant le pose : un point jamais montré au client ne peut pas être compté couvert.
      */
     const reponses = fusionner(avant.reponses, propose.data.reponses);
-    // Les BASCULES vivent à part : elles sont une LISTE (un moment, une action, un moyen), pas une réponse à
+    // Les bascules vivent à part : elles sont une liste (un moment, une action, un moyen), pas une réponse à
     // un point. C'est ce qui permet de les prendre une par une au lieu de les écraser l'une sur l'autre.
     const listeBascules = fusionnerBascules(avant.bascules ?? [], propose.data.bascules ?? []);
     const poses = pointDuTour && !avant.poses.includes(pointDuTour.code)
@@ -541,24 +433,17 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
       : avant.poses;
 
     /**
-     * 🔴 UN MESSAGE QUI N'INTERROGE RIEN LAISSE L'ENTRETIEN MORT. Le serveur pose alors la question lui-même.
-     *
-     * Vu par Julien le 2026-08-31, au point 3 sur 8 : l'assistant a accusé réception (« D'accord : les pages
-     * de description des véhicules seront importées ») et s'est arrêté là. Le client n'avait plus rien à quoi
-     * répondre, et rien dans le dispositif ne le rattrapait. Le mandat bornait le MAXIMUM de questions et
-     * n'avait jamais posé de minimum.
-     *
-     * La question ajoutée est celle du point ENCORE OUVERT une fois les réponses de ce tour intégrées : c'est
-     * bien la suivante, pas celle à laquelle il vient de répondre. Et on la note POSÉE, puisqu'on vient de la
-     * poser : sans ça, le tour d'après la reposerait.
+     * Un message qui n'interroge rien laisserait l'entretien mort : le serveur pose alors lui-même la question du
+     * point encore ouvert une fois les réponses du tour intégrées, et la note posée (sinon le tour d'après la
+     * reposerait).
      */
     const ouvertApres = prochainPoint({ poses, reponses, bascules: listeBascules }, inventaireDe(ctx.etat));
     const relance = ouvertApres && !poseUneQuestion(propose.data.message) ? ouvertApres : null;
     const posesApres = relance && !poses.includes(relance.code) ? [...poses, relance.code] : poses;
 
     /**
-     * L'état de ce tour SANS son message : il sert à savoir où en est la couverture, et il faut le savoir
-     * AVANT de connaître le message, puisque c'est la couverture qui décide s'il y a un tour de synthèse.
+     * L'état de ce tour sans son message : il sert à savoir où en est la couverture, et il faut le savoir
+     * avant de connaître le message, puisque c'est la couverture qui décide s'il y a un tour de synthèse.
      */
     const etatApres: EntretienComplet = {
       messages: filComplet, auteurs: auteursComplets, reponses, bascules: listeBascules, poses: posesApres,
@@ -572,28 +457,12 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     let tokensOut = reponse.usage.tokensOut;
 
     /**
-     * 🔴 LE TOUR DE SYNTHÈSE : UN SECOND APPEL, ET IL N'A LIEU QU'UNE FOIS PAR ENTRETIEN (2026-09-18).
-     *
-     * Le mandat promettait un « temps 2 » où le modèle écrit les champs une fois tous les points couverts.
-     * Ce tour n'existait pas. La consigne du tour est arrêtée AVANT de lire le client, donc au tour qui
-     * répond au dernier point elle dit encore « LE POINT OUVERT : ton » : le modèle ne parle que du ton, et
-     * c'est pourtant CE tour-là dont le diff est enfin montré. Au tour d'après, la consigne est déjà passée
-     * en ÉVOLUTION, qui interdit toute proposition non sollicitée. Résultat mesuré sur l'entretien de Julien
-     * du 2026-09-18 : seul le ton avait atterri, le nom, l'objectif et la personnalité étaient restés vides.
-     *
-     * 🔴 LA CONDITION EST UNE TRANSITION, PAS UN ÉTAT : « l'ordre du jour vient de se fermer », donc il
-     * manquait des points AVANT ce tour et il n'en manque plus. Sur un état seul, chaque message envoyé
-     * après la fin de l'entretien relancerait une synthèse, et l'assistant reproposerait sans fin des champs
-     * que personne ne lui a demandé de rouvrir.
-     *
-     * ⚠️ IL NE REMPLACE PAS LE PREMIER APPEL, il le COMPLÈTE : c'est le premier qui a extrait les réponses
-     * ayant fermé l'ordre du jour, et elles sont conservées telles quelles. On ne garde du second que ce
-     * qu'il est seul à savoir faire, le message et les CHAMPS ; ses `reponses` et ses `bascules` sont
-     * ignorées, l'ordre du jour étant déjà clos et une seconde extraction ne pouvant que le paraphraser.
-     *
-     * ⚠️ TOUT ÉCHEC RETOMBE SUR LA PROPOSITION DU PREMIER APPEL. Une panne de fournisseur, un plafond
-     * atteint entre les deux appels ou une réponse illisible ne doivent pas faire perdre un tour que le
-     * client a déjà payé de dix questions : il verra un diff pauvre, jamais une erreur.
+     * Le tour de synthèse : un second appel, une seule fois par entretien, quand l'ordre du jour vient de se
+     * fermer. La consigne du tour est arrêtée avant de lire le client, donc le tour qui répond au dernier point ne
+     * parle que de ce point ; sans synthèse, les autres champs resteraient vides dans le diff.
+     * La condition est une transition (il manquait des points avant ce tour, plus après), pas un état : sinon chaque
+     * message suivant relancerait une synthèse. Il complète le premier appel : on n'en garde que le message et les
+     * champs. Tout échec retombe sur la proposition du premier appel, jamais une erreur.
      */
     if (!enEntretien && avancement(avant, ctx.etat).manquants.length > 0) {
       try {
@@ -601,7 +470,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
           const seconde = await deps.completer({
             tenantId: ctx.tenant,
             modele: deps.modele,
-            // `historique` se termine sur le message du CLIENT : la synthèse en accuse elle-même réception,
+            // `historique` se termine sur le message du client : la synthèse en accuse elle-même réception,
             // et y glisser le message du premier appel ferait dire deux fois la même chose.
             messages: construireMessages(ctx.etat, historique, etatApres, { synthese: true }),
             outils: [{
@@ -632,9 +501,9 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
           }
         }
       } catch (err) {
-        // Le tour de synthèse échoue sans faire échouer le tour : on garde la proposition du tour.
-        // ⚠️ Une `SyntaxError` ne se journalise que par son NOM : celle de `JSON.parse` recopie un morceau des
-        // arguments du modèle, donc les mots du client (même règle que le refus de schéma, plus haut).
+        // Le tour de synthèse échoue sans faire échouer le tour : on garde la proposition du tour. Une `SyntaxError`
+        // ne se journalise que par son nom : celle de `JSON.parse` recopie les arguments du modèle, donc les mots du
+        // client.
         journaliser('warn', 'agent_setup_synthese_echec', {
           tenantId: ctx.tenant, agentId: ctx.agentId, err: err instanceof SyntaxError ? err.name : err,
         });
@@ -642,8 +511,8 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     }
 
     const apres: EntretienComplet = {
-      // 🔴 `filComplet`, JAMAIS `historique` : voir la note plus haut. C'est la ligne qui décide si le fil
-      // perdure ou se fait amputer par sa propre sauvegarde.
+      // 🔴 `filComplet`, jamais `historique` : c'est la ligne qui décide si le fil perdure ou se fait amputer par
+      // sa propre sauvegarde.
       messages: [...filComplet, { role: 'assistant', content: message }],
       // L'assistant n'a pas d'auteur humain : `null`, et l'écran l'affiche comme venant de l'assistant.
       auteurs: [...auteursComplets, null],
@@ -651,8 +520,8 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
       bascules: listeBascules,
       poses: posesApres,
       /**
-       * ⚠️ ON GARDE L'ANCIENNE QUAND LE TOUR N'EN APPORTE PAS. L'adresse est donnée au point `connaissance`,
-       * bien avant la fin de l'entretien : l'écraser à chaque tour la perdrait dès la question suivante.
+       * On garde l'ancienne adresse quand le tour n'en apporte pas : donnée au point `connaissance`, bien avant la
+       * fin de l'entretien, l'écraser la perdrait dès la question suivante.
        */
       ...(propositionFinale.connaissanceUrl ?? avant.connaissanceUrl
         ? { connaissanceUrl: propositionFinale.connaissanceUrl ?? avant.connaissanceUrl }
@@ -661,36 +530,24 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     await ctx.entretiens.ecrire(ctx.tenant, ctx.agentId, apres);
 
     /**
-     * 🔴 LE DIFF EST RETENU TANT QUE L'ORDRE DU JOUR N'EST PAS ÉPUISÉ.
-     *
-     * Julien, 2026-08-28 : « poser des questions pour couvrir d'abord tout le périmètre en un premier round
-     * avant d'afficher les règles ». Le mandat le dit au modèle ; ceci le lui IMPOSE, et depuis le 2026-08-31
-     * sans le vieux garde-fou du « au moins deux messages du client », qui était un pis-aller : il compensait
-     * le fait que la couverture était déclarée par le modèle. Elle ne l'est plus.
-     *
-     * On ne jette pas la proposition, on ne la MONTRE pas : le tour suivant la reformulera avec ce qu'il aura
-     * appris entre-temps, et rien de ce que le client n'a pas encore dit n'aura été présenté comme compris.
+     * Le diff est retenu tant que l'ordre du jour n'est pas épuisé : couvrir tout le périmètre d'abord, avant
+     * d'afficher les règles. La proposition n'est pas jetée, elle n'est pas montrée : le tour suivant la reformulera.
      */
-    // ⚠️ `suivi` est celui de `etatApres`, calculé plus haut : la couverture ne lit que les réponses, les
-    // bascules et les points posés, jamais les messages, donc ajouter celui de l'assistant ne la change pas.
+    // `suivi` est celui de `etatApres` : la couverture ne lit que les réponses, les bascules et les points posés,
+    // jamais les messages, donc ajouter celui de l'assistant ne la change pas.
     return reply.code(200).send({
       message,
       couverture: suivi,
       proposition: enEntretien ? { fiche: {}, outils: [], connecteurs: [], outilsBranches: [], outilsDebranches: [] } : {
         fiche: propositionFinale.fiche ?? {},
         outils: propositionFinale.outils ?? [],
-        // Les connecteurs proposés sont filtrés sur ceux qui EXISTENT : l'assistant n'en crée pas, et un nom
+        // Les connecteurs proposés sont filtrés sur ceux qui existent : l'assistant n'en crée pas, et un nom
         // inventé ne doit pas atteindre l'application, qui tenterait un patch sur un outil inconnu.
         connecteurs: (propositionFinale.connecteurs ?? []).filter((c) => (ctx.etat.connecteurs ?? []).some((x) => x.nom === c.nom)),
         /**
-         * 🔴 LE BRANCHEMENT EST FILTRÉ SUR LA BIBLIOTHÈQUE DE L'ESPACE, et c'est LE contrôle : le schéma ne
-         * connaît pas le catalogue, donc il ne peut pas refuser un nom inventé. Julien, 2026-09-14 : « il
-         * n'a pas la main pour créer des outils puisqu'il n'a que la liste d'outils déjà setuppés, donc au
-         * pire il en débranche un ».
-         *
-         * ⚠️ ON FILTRE AUSSI SUR L'ÉTAT COURANT : brancher ce qui l'est déjà, ou débrancher ce qui ne l'est
-         * pas, n'est pas une erreur mais ne doit produire AUCUN geste, sans quoi l'écran annoncerait une
-         * modification qui n'en est pas une. Même règle que le diff, qui ne montre que ce qui change.
+         * 🔴 Le branchement est filtré sur la bibliothèque de l'espace : le schéma ne connaît pas le catalogue et ne
+         * peut pas refuser un nom inventé. Filtré aussi sur l'état courant : brancher ce qui l'est déjà ne produit
+         * aucun geste.
          */
         outilsBranches: brancheables(ctx.etat.catalogue, propositionFinale.outilsBranches, false),
         outilsDebranches: brancheables(ctx.etat.catalogue, propositionFinale.outilsDebranches, true),

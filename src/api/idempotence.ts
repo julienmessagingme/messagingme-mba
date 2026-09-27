@@ -1,24 +1,17 @@
 import { sha256Hex } from '../lib/signature';
 
 /**
- * L'IDEMPOTENCE D'UN ENVOI PAR L'API : quelle clé, et quelle empreinte (spec 2026-09-24, § 3).
+ * L'idempotence d'un envoi par l'API : quelle clé, et quelle empreinte.
  *
- * 🔴 LA CLÉ SE DONNE EN EN-TÊTE (`Idempotency-Key`) OU DANS LE CORPS (`idempotencyKey`). Un outil qui appelle
- * une adresse PAR CONTACT remplit son corps avec les données du contact, et rien ne garantit qu'il en fasse
- * autant pour ses en-têtes : exiger l'en-tête lui interdirait une clé par contact. Les deux présentes et
- * différentes : refus, jamais un choix silencieux entre les deux.
- *
- * 🔴 L'EMPREINTE DU CORPS EST GARDÉE AVEC LA CLÉ (`api_idempotency.request_hash`) : la même clé avec un AUTRE
- * corps est refusée au lieu de rejouer en silence le rapport du premier envoi.
+ * La clé se donne en en-tête (`Idempotency-Key`) ou dans le corps (`idempotencyKey`) : un outil qui appelle
+ * une adresse par contact remplit son corps, pas forcément ses en-têtes. Les deux présentes et différentes :
+ * refus, jamais un choix silencieux. L'empreinte du corps est gardée avec la clé : la même clé avec un autre
+ * corps est refusée au lieu de rejouer le rapport du premier envoi.
  */
 
 /**
- * LA DURÉE DE VIE D'UNE CLÉ : 24 h, écrite UNE fois. Le claim libère une clé plus vieille
- * (`PgApiIdempotencyStore.claim`), la purge du worker fait le ménage avec la même durée, et le message du 422
- * l'annonce (`src/http/v1-sends.ts`).
- *
- * 🔴 LA PURGE NE DESCEND JAMAIS DESSOUS : une clé purgée trop tôt redevient libre, et un rejeu légitime
- * recréerait l'envoi, donc enverrait deux fois. `sweepOlderThan` la prend pour plancher, et un test le garde.
+ * La durée de vie d'une clé : 24 h, écrite une fois (claim, purge du worker, message du 422). La purge ne
+ * descend jamais dessous (voir `sweepOlderThan`).
  */
 export const DUREE_CLE_IDEMPOTENCE_MS = 24 * 60 * 60 * 1000;
 
@@ -44,8 +37,8 @@ export function cleIdempotence(entete: string | string[] | undefined, corps: unk
   if (cle === null) {
     return { ok: false, code: 'idempotency_key_required', message: 'clé d’idempotence requise : en-tête Idempotency-Key ou champ idempotencyKey du corps' };
   }
-  // Un caractère de contrôle ne peut venir que du corps (un en-tête HTTP ne le porte pas), et l'octet nul est
-  // refusé par Postgres dans un `text` : sans ce refus, la clé finissait en 500 au lieu d'un 400.
+  // Un caractère de contrôle ne peut venir que du corps, et Postgres refuse l'octet nul dans un `text` : sans
+  // ce refus, un 500 au lieu d'un 400.
   if (/[\u0000-\u001f\u007f]/.test(cle)) {
     return { ok: false, code: 'invalid_body', message: 'clé d’idempotence : caractères de contrôle interdits' };
   }
@@ -55,7 +48,7 @@ export function cleIdempotence(entete: string | string[] | undefined, corps: unk
   return { ok: true, cle };
 }
 
-/** Sérialisation CANONIQUE : clés d'objet triées, récursivement. L'ordre d'un tableau est gardé : il a un sens. */
+/** Sérialisation canonique : clés d'objet triées, récursivement. L'ordre d'un tableau est gardé : il a un sens. */
 function canonique(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(canonique);
   if (v !== null && typeof v === 'object') {
@@ -69,10 +62,8 @@ function canonique(v: unknown): unknown {
 }
 
 /**
- * L'EMPREINTE d'un corps d'envoi : ce qui dit « c'est la MÊME demande ».
- *
- * ⚠️ `idempotencyKey` est RETIRÉE avant le calcul : la même demande passée une fois avec la clé en en-tête, une
- * fois avec la clé dans le corps, doit avoir la même empreinte, sinon le rejeu légitime serait refusé.
+ * L'empreinte d'un corps d'envoi : ce qui dit « c'est la même demande ». `idempotencyKey` est retirée avant
+ * le calcul : la clé en en-tête ou dans le corps doit donner la même empreinte.
  */
 export function empreinteCorps(corps: unknown): string {
   const sansCle = corps !== null && typeof corps === 'object' && !Array.isArray(corps)

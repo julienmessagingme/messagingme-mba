@@ -1,9 +1,5 @@
-/**
- * Types de PERSISTANCE du compte (numéro principal, lien portail HubSpot). Ils vivaient dans la couche HTTP,
- * que le store importait : seule dépendance store -> http de tout `src/`, à rebours du sens habituel
- * (une route importe son store, jamais l'inverse).
- */
-/** Numéro principal du tenant, avec le statut PERSISTÉ (dernier pull connu). */
+/** Types de persistance du compte (numéro principal, lien portail HubSpot), hors de la couche HTTP. */
+/** Numéro principal de l'espace, avec le statut persisté (dernier pull connu). */
 export interface PhoneNumberRecord {
   id: string;
   displayPhoneNumber: string | null;
@@ -19,18 +15,17 @@ export interface PhoneNumberRecord {
   businessVerificationStatus: string | null;
   marketingMessagesLiteApiStatus: string | null;
   ownerBusinessName: string | null;
-  /** Synchro HubSpot active pour ce numéro (toggle admin). Le backfill 0028 met les numéros existants à true. */
+  /** Synchro HubSpot active pour ce numéro (réglage admin). */
   hubspotConnected: boolean;
-  /** Instant de mise en PAUSE (timestamptz texte). null = jamais activé OU actif ; non-null + connected=false = en pause (F3-a). */
+  /** Instant de mise en pause (texte). null = jamais activé ou actif ; non nul avec connected=false = en pause. */
   hubspotPausedAt: string | null;
-  /** Instant où le numéro a été DÉLIÉ de l'espace (migration 0180, ISO). null = relié. */
+  /** Instant où le numéro a été délié de l'espace (ISO). null = relié. */
   delieLe: string | null;
 }
 
 /**
- * Lien vers le portail HubSpot du tenant (mapping mmhs.tenant_portals). `connected=false` -> aucun portail installé
- * pour ce tenant (la console propose « Connecter HubSpot »). `hubDomain` = nom/domaine du portail (peut être null si
- * le portail a été installé avant la colonne hub_domain, ou domaine non renvoyé) -> l'UI retombe sur `hubId`.
+ * Lien vers le portail HubSpot de l'espace (`mmhs.tenant_portals`). `connected=false` : aucun portail installé.
+ * `hubDomain` peut être null (portail ancien ou domaine non renvoyé) : l'UI retombe sur `hubId`.
  */
 export interface HubspotPortalLink {
   connected: boolean;

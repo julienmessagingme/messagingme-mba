@@ -4,28 +4,20 @@ import { Agent, buildConnector, fetch as fetchUndici } from 'undici';
 import { estAdressePrivee } from './adresse-privee';
 
 /**
- * LA CONNEXION VÉRIFIÉE : l'adresse est contrôlée AU MOMENT OÙ LA SOCKET S'OUVRE, pas avant.
+ * La connexion vérifiée : l'adresse est contrôlée au moment où la socket s'ouvre, pas avant.
  *
- * 🔴 CE QUE ÇA FERME : LE « DNS REBINDING ». `resolutionPublique` vérifie qu'un nom résout vers une adresse
- * publique, puis `fetch` refait SA PROPRE résolution pour se connecter. Entre les deux, un serveur DNS hostile
- * peut répondre autre chose : une adresse publique à la vérification, puis le réseau Docker du VPS ou les
- * métadonnées du fournisseur à la connexion. Relevé par plusieurs audits depuis le 2026-09-02. Ici, la
- * résolution qui sert à se connecter est CELLE qui est vérifiée : il n'y a plus d'écart où glisser une autre
- * réponse.
+ * 🔴 Ce que ça ferme : le « DNS rebinding ». `resolutionPublique` vérifie qu'un nom résout vers une adresse
+ * publique, puis `fetch` refait sa propre résolution : un DNS hostile peut répondre public à la première,
+ * interne à la seconde. Ici, la résolution qui sert à se connecter est celle qui est vérifiée. La vérification
+ * préalable reste pour rendre un refus lisible avant l'appel ; seule celle-ci fait la sécurité.
  *
- * ⚠️ LA VÉRIFICATION PRÉALABLE RESTE, ET ELLE A UN AUTRE RÔLE : elle rend un refus LISIBLE avant l'appel
- * (« ce nom pointe vers une adresse interne »), là où un refus à la connexion ne remonte que comme une panne
- * réseau. Elle ne suffit plus seule à la sécurité, elle ne l'est plus du tout pour cette pièce.
+ * Deux portes : un nom passe par la résolution (`lookupPublic`) ; une adresse écrite en chiffres n'y passe
+ * jamais (la pile réseau ne résout pas un littéral), elle est jugée à part dans le connecteur, redirection vers
+ * un littéral comprise.
  *
- * 🔴 DEUX PORTES, PAS UNE. Un nom passe par la résolution (`lookupPublic`). Une adresse écrite EN CHIFFRES
- * (`http://127.0.0.1/`) n'y passe JAMAIS : la pile réseau ne résout pas un littéral. Elle est donc jugée à part,
- * dans le connecteur, avant d'ouvrir quoi que ce soit. C'est ce qui couvre aussi une redirection vers un
- * littéral, pour un appelant qui suivrait les redirections.
- *
- * 🔴 `fetch` ET `Agent` VIENNENT DU MÊME PAQUET `undici`, et c'est délibéré. La production tourne en Node 22,
- * dont le `fetch` intégré embarque undici 6 ; le poste de développement tourne en Node 24 (undici 7). Donner un
- * `Agent` d'un paquet au `fetch` intégré d'une autre version est le piège classique : un comportement qui
- * diffère selon la machine. Ici, les deux viennent de la même version, partout.
+ * `fetch` et `Agent` viennent du même paquet `undici` : la production (Node 22) et le poste (Node 24)
+ * embarquent des undici différents, et donner un `Agent` d'une version au `fetch` intégré d'une autre donne un
+ * comportement qui dépend de la machine.
  */
 
 /** Refus d'une adresse interne au moment de la connexion. Le code se lit dans la chaîne `cause` de l'erreur. */
@@ -53,14 +45,9 @@ type Lookup = (
 ) => void;
 
 /**
- * Le `lookup` branché sur la socket : il résout, REFUSE si une seule adresse est interne, et rend sinon
- * exactement ce qu'il a vérifié.
- *
- * 🔴 UNE SEULE ADRESSE INTERDITE CONDAMNE LE NOM, comme dans `resolutionPublique` : sinon le choix entre une
- * adresse publique et une adresse privée reviendrait à la pile réseau, donc au hasard.
- *
- * ⚠️ Les deux formes de rappel existent : `net.connect` demande `all: true` quand il essaie plusieurs familles
- * (le défaut de Node récent), et une seule adresse sinon.
+ * Le `lookup` branché sur la socket : il résout, refuse si une seule adresse est interne (sinon le choix
+ * reviendrait à la pile réseau, donc au hasard), et rend sinon exactement ce qu'il a vérifié. Les deux formes
+ * de rappel existent : `net.connect` demande `all: true` quand il essaie plusieurs familles.
  */
 export function lookupPublic(
   resoudre: ResoudreTout = resoudreParDefaut,
@@ -106,14 +93,14 @@ export function fetchPublicAvec(agent: Agent): typeof fetch {
 }
 
 /**
- * L'agent de production, UN seul pour le process : il garde les connexions ouvertes d'un appel à l'autre. Une
- * connexion réutilisée a été vérifiée à son ouverture, et reste liée à l'adresse vérifiée.
+ * L'agent de production, un seul pour le process : il garde les connexions ouvertes, et une connexion
+ * réutilisée reste liée à l'adresse vérifiée à son ouverture.
  */
 const agentPublic = new Agent({ connect: connecteurPublic() });
 
 /**
- * 🔴 LE `fetch` DE TOUT APPEL VERS UNE ADRESSE SAISIE PAR UN CLIENT (connecteur, test de requête, épreuve de
- * source, page distante, client MCP). L'inventaire de ces chemins est tenu par `tests/lib-adresse-privee.test.ts`.
+ * 🔴 Le `fetch` de tout appel vers une adresse saisie par un client. L'inventaire de ces chemins est tenu par
+ * `tests/lib-adresse-privee.test.ts`.
  */
 export const fetchPublic: typeof fetch = fetchPublicAvec(agentPublic);
 
@@ -128,17 +115,14 @@ export function estRefusAdresseInterne(err: unknown): boolean {
 }
 
 /**
- * Vrai si l'appel a été refusé parce que la réponse REDIRIGEAIT (`redirect: 'error'`).
- *
- * 🔴 LA RAISON EST DANS LA CAUSE, PAS DANS LE MESSAGE. Le `fetch` d'undici, comme celui de Node, lève
- * « fetch failed » et range « unexpected redirect » dans `cause` (mesuré contre un serveur local, 2026-09-21).
- * Lire le seul `message`, c'était ne jamais reconnaître une redirection : elle s'affichait « injoignable ».
+ * Vrai si l'appel a été refusé parce que la réponse redirigeait (`redirect: 'error'`). La raison est dans la
+ * cause, pas dans le message : undici lève « fetch failed » et range « unexpected redirect » dans `cause`.
  */
 export function estRedirectionRefusee(err: unknown): boolean {
   let e: unknown = err;
   for (let i = 0; i < 5 && e; i += 1) {
-    // Le message exact d'undici. Un simple « redirect » prendrait pour une redirection une panne DNS sur un
-    // hôte dont le NOM contient ce mot (`getaddrinfo ENOTFOUND redirect.client.fr`).
+    // Le message exact d'undici : un simple « redirect » prendrait pour une redirection une panne DNS sur un hôte
+    // dont le nom contient ce mot (`getaddrinfo ENOTFOUND redirect.client.fr`).
     if (e instanceof Error && /unexpected redirect/i.test(e.message)) return true;
     e = (e as { cause?: unknown }).cause;
   }
@@ -146,20 +130,14 @@ export function estRedirectionRefusee(err: unknown): boolean {
 }
 
 /**
- * UNE SOCKET TCP VÉRIFIÉE, pour un protocole qui n'est pas du HTTP (le SMTP d'une boîte d'envoi, que nodemailer
- * reçoit par son option `getSocket`).
+ * Une socket TCP vérifiée, pour un protocole qui n'est pas du HTTP (le SMTP d'une boîte d'envoi, donné à
+ * nodemailer par son option `getSocket`). Même garde que `fetchPublic` : un littéral interne est refusé sans
+ * rien ouvrir, un nom passe par `lookupPublic`, et la connexion part sur ce qui a été vérifié.
  *
- * 🔴 LA MÊME GARDE QUE `fetchPublic`, DANS LA SOCKET : un littéral interne est refusé sans rien ouvrir, un nom est
- * résolu par `lookupPublic`, qui refuse si une seule adresse est interne, et la connexion part sur ce qui a été
- * vérifié. Il n'y a donc pas d'écart où glisser une autre réponse DNS.
- *
- * ⚠️ POURQUOI UNE SOCKET, ET PAS UNE ADRESSE VÉRIFIÉE DONNÉE À NODEMAILER. Lui passer l'IP coupait trois choses
- * qu'il fait bien : garder le NOM pour TLS (SNI et certificat), basculer sur l'adresse suivante quand la première
- * ne répond pas, et ne rien mettre dans le SNI quand l'hôte est écrit en chiffres. Ici il garde tout cela :
- * `autoSelectFamily` essaie les adresses vérifiées l'une après l'autre, et le nom d'hôte reste le sien.
- *
- * ⚠️ UN PLAFOND DE TEMPS COUVRE LA RÉSOLUTION ET L'OUVERTURE : nodemailer n'arme le sien qu'une fois la socket
- * reçue, et `dns.lookup` n'accepte aucun signal d'abandon.
+ * Une socket plutôt qu'une IP vérifiée donnée à nodemailer : il garde le nom pour TLS (SNI, certificat) et
+ * bascule sur l'adresse suivante (`autoSelectFamily`). Le plafond de temps couvre la résolution et
+ * l'ouverture : nodemailer n'arme le sien qu'une fois la socket reçue, et `dns.lookup` n'accepte aucun signal
+ * d'abandon.
  */
 export function ouvrirSocketPublique(
   hote: string,
@@ -182,8 +160,8 @@ export function ouvrirSocketPublique(
     socket.once('connect', () => {
       clearTimeout(echeance);
       socket.removeListener('error', echec);
-      // Un auditeur neutre le temps que nodemailer pose les siens : une erreur dans l'intervalle ne doit pas
-      // faire tomber le process (un 'error' sans auditeur lève). Nodemailer reçoit aussi l'événement.
+      // Un auditeur neutre le temps que nodemailer pose les siens : un 'error' sans auditeur ferait tomber le
+      // process. Nodemailer reçoit aussi l'événement.
       socket.on('error', () => {});
       ok(socket);
     });

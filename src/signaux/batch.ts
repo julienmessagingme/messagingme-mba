@@ -6,39 +6,31 @@ import {
 } from './types';
 
 /**
- * L'ADAPTATEUR BATCH (spec 2026-09-24, § 8) : le dictionnaire des signaux traduit pour l'API Profils de Batch.
+ * L'adaptateur Batch : le dictionnaire des signaux traduit pour l'API Profils de Batch.
  *
- * 🔴 C'EST LE SEUL FICHIER (avec son travail de file et son réglage) OÙ BATCH EXISTE. Le dictionnaire
- * (`types.ts`) et l'émetteur ne le nomment pas : un second outil se branche par un second adaptateur, sans
- * toucher au dictionnaire. Et cet adaptateur ne CHOISIT aucun nom : les noms d'événements, d'attributs et de
- * champs sont ceux du dictionnaire (`CHAMPS_EVENEMENT`), la documentation publique les promet identiques pour
- * tous les outils.
- *
- * Batch est un HÔTE FIXE, pas une adresse saisie par un client : la garde d'adresse publique ne s'applique pas,
- * comme pour les clients de Meta et du fournisseur RCS.
+ * C'est le seul fichier (avec son travail de file et son réglage) où Batch existe : le dictionnaire (`types.ts`)
+ * et l'émetteur ne le nomment pas, un second outil se branche par un second adaptateur. Il ne choisit aucun nom :
+ * ceux des événements, attributs et champs viennent du dictionnaire, promis identiques pour tous les outils.
+ * Batch est un hôte fixe, pas une adresse saisie par un client : la garde d'adresse publique ne s'applique pas.
  */
 
 /** La file pg-boss de cet adaptateur (déclarée dans `BASE_QUEUES`). */
 export const FILE_SIGNAUX_BATCH = 'signaux-batch';
 
-/** Relue sur la page de l'API Profils le 2026-09-25. La version vit ICI et nulle part ailleurs. */
+/** La version de l'API Profils vit ici et nulle part ailleurs. */
 export const BATCH_URL_PROFILS = 'https://api.batch.com/2.13/profiles/update';
 export const BATCH_MAX_PROFILS = 200;
 export const BATCH_MAX_EVENEMENTS = 15;
 /**
- * Un attribut texte chez Batch fait de 1 à 300 caractères, de FICHE COMME D'ÉVÉNEMENT : la page le dit des
- * attributs de fiche (« cannot be empty or over 300 characters ») et renvoie à eux pour ceux d'un événement
- * (« All types except for Array & Object behave as they do in profile attributes »), relue le 2026-09-25.
- * Un texte vide ou plus long y est rejeté SEUL, en 202 `SUCCESS_WITH_PARTIAL_ERRORS` : la poussée « réussit »
- * et la donnée disparaît. D'où le résumé en morceaux (`morceauxDuResume`), et `propre`, qui écarte le vide.
+ * Un attribut texte chez Batch fait de 1 à 300 caractères, de fiche comme d'événement. Un texte vide ou plus
+ * long y est rejeté seul, en 202 `SUCCESS_WITH_PARTIAL_ERRORS` : la poussée « réussit » et la donnée disparaît.
+ * D'où le résumé en morceaux (`morceauxDuResume`), et `propre`, qui écarte le vide.
  */
 export const BATCH_MAX_TEXTE = 300;
 /**
- * 🔴 L'OUTIL N'ACCEPTE QUE LES ÉVÉNEMENTS DES DERNIÈRES 24 HEURES, et aucun dans le futur (page de l'API Profils,
- * relue le 2026-09-25). Un événement plus vieux y est refusé seul, en 202 `SUCCESS_WITH_PARTIAL_ERRORS`.
- * Fenêtre retenue : 24 h MOINS CINQ MINUTES, la marge couvrant la durée d'un appel et de ses rejeux
- * (`withRetry`, quelques dizaines de secondes au plus) : un événement coupé à 23 h 56 se dit dans le journal du
- * job, un événement envoyé à 24 h 01 serait refusé par l'outil.
+ * Batch n'accepte que les événements des dernières 24 heures, et aucun dans le futur ; un plus vieux est refusé
+ * seul, en 202 `SUCCESS_WITH_PARTIAL_ERRORS`. La marge de cinq minutes couvre la durée d'un appel et de ses
+ * rejeux (`withRetry`).
  */
 export const BATCH_FENETRE_EVENEMENT_MS = 24 * 60 * 60_000 - 5 * 60_000;
 
@@ -49,10 +41,9 @@ export interface EvenementBatch {
   attributes: Record<string, ValeurBatch>;
 }
 /**
- * Un attribut de fiche à `null` est EFFACÉ chez l'outil (« To delete an attribute, set its value to null », page
- * de l'API Profils, relue le 2026-09-25). Seul le risque de désengagement s'en sert (`attributsEffaces`) : partout
- * ailleurs, une absence ne s'écrit pas (`propre`), et c'est voulu (une analyse sans note n'efface pas la
- * précédente). Un attribut d'ÉVÉNEMENT n'est jamais `null`.
+ * Un attribut de fiche à `null` est effacé chez l'outil. Seul le risque de désengagement s'en sert
+ * (`attributsEffaces`) : ailleurs une absence ne s'écrit pas (`propre`), une analyse sans note n'efface pas la
+ * précédente. Un attribut d'événement n'est jamais `null`.
  */
 export type AttributsProfil = Record<string, ValeurBatch | null>;
 export interface ProfilBatch {
@@ -64,31 +55,28 @@ export interface OptionsBatch {
   /** L'espace a coché « Envoyer le résumé des conversations ». */
   resume: boolean;
   /**
-   * Instant (ISO) avant lequel un ÉVÉNEMENT n'est plus envoyé : l'outil le refuserait (`BATCH_FENETRE_EVENEMENT_MS`).
-   * Il est compté (`tropVieux`), et seul l'état RELU de sa fiche part (`attributsRelus`), jamais ce que le signal
-   * lui-même apprenait. Absent = aucun filtre. Calculé par l'appelant, pour que cette fonction reste pure.
+   * Instant (ISO) avant lequel un événement n'est plus envoyé, l'outil le refuserait (`BATCH_FENETRE_EVENEMENT_MS`).
+   * Il est compté (`tropVieux`), et seul l'état relu de sa fiche part (`attributsRelus`). Absent = aucun filtre.
+   * Calculé par l'appelant, pour que la traduction reste pure.
    */
   evenementsDepuis?: string;
 }
 
 type Brut = Record<string, ValeurBatch | null | undefined>;
-/** Les champs d'un événement, NOMMÉS par le dictionnaire : un nom qui n'y figure pas ne compile pas (`satisfies`). */
+/** Les champs d'un événement, nommés par le dictionnaire : un nom qui n'y figure pas ne compile pas (`satisfies`). */
 type Champs<N extends NomEvenement> = Partial<Record<ChampEvenement<N>, ValeurBatch | null>>;
 
 const borne = (v: string): string => borneTexte(v, BATCH_MAX_TEXTE);
 
 /**
- * 🔴 UNE ADRESSE NE SE COUPE PAS : coupée, elle mène ailleurs ou nulle part, et l'outil la prendrait pour vraie.
- * Au-delà de la borne des textes, le champ est OMIS (`propre` écarte `null`), jamais borné comme un texte.
+ * 🔴 Une adresse ne se coupe pas : coupée, elle mène ailleurs ou nulle part. Au-delà de la borne des textes, le
+ * champ est omis (`propre` écarte `null`).
  */
 const adresseEntiere = (v: string | null): string | null => (v !== null && v.length <= BATCH_MAX_TEXTE ? v : null);
 
 /**
- * Retire ce qui ne s'écrit pas chez l'outil et borne les textes.
- *
- * 🔴 L'ABSENCE (`null`) ET LE TEXTE VIDE sont écartés tous les deux. Une absence ne s'écrit pas ; un texte vide
- * (un `topic` vide, une origine `''`) serait refusé par Batch attribut par attribut, et chaque signal ajouterait
- * une ligne « succès partiel » au journal des erreurs pour rien.
+ * Retire ce qui ne s'écrit pas chez l'outil et borne les textes. L'absence (`null`) et le texte vide sont écartés
+ * tous les deux : Batch refuserait un texte vide attribut par attribut, en « succès partiel » dans le journal.
  */
 function propre(o: Brut): Record<string, ValeurBatch> {
   const out: Record<string, ValeurBatch> = {};
@@ -105,11 +93,9 @@ function propre(o: Brut): Record<string, ValeurBatch> {
 }
 
 /**
- * L'état de la fiche RELU au moment de pousser (`completerSignal`) : identifiant et consentement COURANTS. Il est
- * juste quel que soit l'âge du signal, donc il part toujours, trop vieux compris.
- *
- * ⚠️ `em_contact_id` part à chaque poussée, pas seulement à la première : réécrire la même valeur ne coûte
- * rien chez l'outil, et se souvenir de « déjà envoyé » demanderait un état de plus qui peut mentir.
+ * L'état de la fiche relu au moment de pousser (`completerSignal`) : identifiant et consentement courants, justes
+ * quel que soit l'âge du signal, donc envoyés toujours. `em_contact_id` part à chaque poussée : réécrire la même
+ * valeur ne coûte rien, et se souvenir de « déjà envoyé » serait un état de plus qui peut mentir.
  */
 function attributsRelus(s: SignalComplet): Brut {
   return {
@@ -120,12 +106,9 @@ function attributsRelus(s: SignalComplet): Brut {
 }
 
 /**
- * Ce que le SIGNAL LUI-MÊME apprend de la fiche : la dernière réponse, la joignabilité RCS, la dernière analyse.
- * C'était vrai À LA DATE DU SIGNAL, pas forcément aujourd'hui.
- *
- * 🔴 D'OÙ `versBatch` NE L'ÉCRIT PAS POUR UN SIGNAL TROP VIEUX (son événement est écarté) : un échec RCS rejoué
- * tard réécrirait `em_rcs_reachable = false` par-dessus un « délivré » plus récent, une analyse rejouée
- * remplacerait `em_last_intent` par celle d'une conversation plus ancienne. Rien de tout cela ne se relit.
+ * Ce que le signal lui-même apprend de la fiche (dernière réponse, joignabilité RCS, dernière analyse) : vrai à la
+ * date du signal, pas forcément aujourd'hui. `versBatch` ne l'écrit donc pas pour un signal trop vieux : un échec
+ * RCS rejoué tard écraserait un « délivré » plus récent.
  */
 function attributsDuSignal(s: SignalComplet): Brut {
   const c = s.contenu;
@@ -137,7 +120,7 @@ function attributsDuSignal(s: SignalComplet): Brut {
     a.em_last_intent = c.analyse.intent;
     a.em_last_sentiment = c.analyse.sentiment;
     a.em_last_resolved = c.analyse.resolved;
-    // 🔴 `null` n'est pas 0 : une analyse sans note ne l'écrase pas (`propre` retire la clé).
+    // `null` n'est pas 0 : une analyse sans note ne l'écrase pas (`propre` retire la clé).
     a.em_satisfaction = c.analyse.satisfaction;
     a.em_urgency = c.analyse.urgence;
   }
@@ -151,11 +134,9 @@ function attributsDuSignal(s: SignalComplet): Brut {
 }
 
 /**
- * 🔴 CE QUE LE SIGNAL EFFACE CHEZ L'OUTIL, et seul le risque le demande. Ses attributs décrivent l'état COURANT :
- * un contact passé d'« élevé, score 70, silence_60j » à « inconnu » n'a plus de score, et un contact « faible »
- * peut n'avoir aucune raison. Ne rien écrire (`propre`) laisserait chez l'outil le score et les raisons d'avant à
- * côté du niveau neuf, donc un état faux. Même règle d'âge que `attributsDuSignal` : un signal trop vieux n'efface
- * rien.
+ * Ce que le signal efface chez l'outil, et seul le risque le demande : ses attributs décrivent l'état courant, et
+ * ne rien écrire laisserait le score et les raisons d'avant à côté du niveau neuf. Même règle d'âge que
+ * `attributsDuSignal` : un signal trop vieux n'efface rien.
  */
 function attributsEffaces(s: SignalComplet): Record<string, null> {
   const c = s.contenu;
@@ -167,9 +148,8 @@ function attributsEffaces(s: SignalComplet): Record<string, null> {
 }
 
 /**
- * Les champs d'un événement, sous les noms du DICTIONNAIRE. Chaque branche `satisfies` le type de son événement :
- * un champ renommé ou inventé ici ne compile pas, et `tests/signaux-batch.test.ts` vérifie qu'il n'en MANQUE
- * aucun (les morceaux du résumé s'ajoutent dans `evenement`, seulement si l'option est cochée).
+ * Les champs d'un événement, sous les noms du dictionnaire : un champ renommé ou inventé ne compile pas
+ * (`satisfies`), et `tests/signaux-batch.test.ts` vérifie qu'il n'en manque aucun.
  */
 function attributsDEvenement(c: ContenuSignal): Brut {
   switch (c.nom) {
@@ -208,16 +188,14 @@ function attributsDEvenement(c: ContenuSignal): Brut {
 }
 
 /**
- * ⚠️ `time` est la date du signal. La page de l'API Profils (relue le 2026-09-25) n'accepte que des événements
- * des DERNIÈRES 24 HEURES, et aucun dans le futur : la traduction reste pure, et c'est l'option
- * `evenementsDepuis`, calculée par le travail de la file, qui écarte un événement trop vieux (`versBatch`).
+ * `time` est la date du signal. La traduction reste pure : c'est l'option `evenementsDepuis`, calculée par le
+ * travail de la file, qui écarte un événement trop vieux (`versBatch`).
  */
 function evenement(s: SignalComplet, o: OptionsBatch): EvenementBatch {
   const c = s.contenu;
   const brut: Brut = { [CHAMP_ID_EVENEMENT]: s.id, ...attributsDEvenement(c) };
-  // 🔴 LE RÉSUMÉ CONTIENT DES PROPOS DU CLIENT : il ne part que si l'espace l'a demandé. Et il part en MORCEAUX
-  // de 300 caractères au plus (`summary_1` à `summary_3`) : un texte d'événement plafonne à 300 chez Batch, le
-  // résumé en fait jusqu'à 800, et un texte trop long serait refusé seul, sans que la poussée échoue.
+  // 🔴 Le résumé contient des propos du client : il ne part que si l'espace l'a demandé. En morceaux de 300
+  // caractères au plus (`summary_1` à `summary_3`), le résumé pouvant atteindre 800.
   if (c.nom === 'em_conversation_analyzed' && o.resume && c.analyse.summary) {
     morceauxDuResume(c.analyse.summary).forEach((m, i) => {
       const cle = MORCEAUX_RESUME[i];
@@ -228,18 +206,15 @@ function evenement(s: SignalComplet, o: OptionsBatch): EvenementBatch {
 }
 
 /**
- * Traduit des signaux complets en corps d'appels à `POST /profiles/update`. PURE : aucune lecture, aucune date.
+ * Traduit des signaux complets en corps d'appels à `POST /profiles/update`. Pure : aucune lecture, aucune date.
  *
- * - Une fiche sans `externalId` n'est PAS poussée : elle est comptée (`sansIdentifiant`), et l'écran du réglage
- *   montre ce compte.
- * - Une même fiche = un profil par appel ; ses événements restent dans l'ordre ; son état est celui du DERNIER
+ * - Une fiche sans `externalId` n'est pas poussée, elle est comptée (`sansIdentifiant`) et l'écran le montre.
+ * - Une même fiche = un profil par appel ; ses événements restent dans l'ordre ; son état est celui du dernier
  *   signal.
- * - Bornes de Batch : `BATCH_MAX_PROFILS` profils par appel, `BATCH_MAX_EVENEMENTS` événements par profil et par
- *   appel. Au-delà, la fiche repasse dans l'appel SUIVANT (jamais deux fois dans le même), et son état part avec
- *   sa dernière tranche.
- * - Un événement antérieur à `evenementsDepuis` n'est pas envoyé, il est compté (`tropVieux`) ; son signal ne
- *   contribue qu'à l'état RELU de la fiche (`attributsRelus`), qui part seul (sans `events`) si plus aucun
- *   événement ne reste. Ce que le signal apprenait lui-même (`attributsDuSignal`) n'est pas écrit.
+ * - Au-delà de `BATCH_MAX_PROFILS` profils par appel ou `BATCH_MAX_EVENEMENTS` événements par profil, la fiche
+ *   repasse dans l'appel suivant (jamais deux fois dans le même), et son état part avec sa dernière tranche.
+ * - Un événement antérieur à `evenementsDepuis` est compté (`tropVieux`) sans être envoyé ; seul l'état relu de
+ *   la fiche part alors, sans `events` si plus aucun ne reste.
  */
 export function versBatch(
   signaux: readonly SignalComplet[],
@@ -268,7 +243,7 @@ export function versBatch(
   for (const [customId, p] of parProfil) {
     const tranches: EvenementBatch[][] = [];
     for (let i = 0; i < p.events.length; i += BATCH_MAX_EVENEMENTS) tranches.push(p.events.slice(i, i + BATCH_MAX_EVENEMENTS));
-    // Tous ses événements étaient trop vieux : l'état relu de la fiche part SEUL, dans une tranche sans événement.
+    // Tous ses événements étaient trop vieux : l'état relu de la fiche part seul, dans une tranche sans événement.
     if (tranches.length === 0) tranches.push([]);
     let depart = 0;
     tranches.forEach((events, i) => {
@@ -288,9 +263,7 @@ export function versBatch(
 
 /**
  * Une réponse de Batch en erreur. `retryable` (429, 5xx) : `withRetry` rejoue, puis la file. Sinon terminal.
- *
- * ⚠️ Son MESSAGE part dans Sécurité > Journal des erreurs (`erreur` de la ligne) : il ne nomme pas l'outil, pour
- * la même raison que `NOM_APPEL_SIGNAUX` (spec § 10). Le nom de la classe, lui, ne sort pas du code.
+ * Son message part dans le journal des erreurs du client : il ne nomme pas l'outil (comme `NOM_APPEL_SIGNAUX`).
  */
 export class BatchApiError extends Error {
   readonly retryAfterMs: number | undefined;
@@ -314,9 +287,9 @@ const reponseBatch = z.object({
 }).passthrough();
 
 /**
- * Pousse UN appel. Rejoue sur 429, 5xx et panne réseau (backoff borné de `withRetry`) ; un 4xx est terminal.
- * Un succès partiel (202 `SUCCESS_WITH_PARTIAL_ERRORS`) n'est pas une erreur, mais il est RENDU : l'appelant
- * l'écrit dans le journal, sans quoi un attribut refusé disparaîtrait en silence.
+ * Pousse un appel. Rejoue sur 429, 5xx et panne réseau (backoff borné de `withRetry`) ; un 4xx est terminal.
+ * Un succès partiel (202 `SUCCESS_WITH_PARTIAL_ERRORS`) est rendu : l'appelant l'écrit dans le journal, sans quoi
+ * un attribut refusé disparaîtrait en silence.
  */
 export async function pousserVersBatch(
   requete: ProfilBatch[],

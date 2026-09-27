@@ -37,21 +37,16 @@ interface Ligne {
 }
 
 /**
- * La jointure, écrite UNE fois. `c.tenant_id = t.tenant_id` est dans la JOINTURE en plus du `where` : le
- * second suffirait à l'isolation entre clients, le premier empêche en plus une ligne de liaison mal écrite
- * (portant le tenant d'un autre client) de rattacher un outil qui n'est pas le sien.
+ * La jointure, écrite une fois. `c.tenant_id = t.tenant_id` est dans la jointure en plus du `where` : le
+ * second suffit à l'isolation entre clients, le premier empêche une ligne de liaison mal écrite de
+ * rattacher un outil qui n'est pas le sien.
  */
 const JOINTURE = `from agent_tools t
                   join agent_tool_consommateurs c on c.tool_id = t.id and c.tenant_id = t.tenant_id`;
 
 /**
- * Colonnes lues par TOUTES les requêtes. Une seule liste : deux projections divergentes finiraient par ne
- * plus rendre le même outil selon le chemin, et le chemin qui compte est celui de l'exécution.
- *
- * 🔴 `autonome` VIENT DE `c`, LA LIAISON, PAS DE `t`. C'est un consentement, il est par consommateur. La
- * colonne de `t` n'existe plus depuis 0128, mais tant qu'elle était là, la lire aurait été silencieusement
- * juste pour le premier consommateur et faux pour tous les autres : le compilateur n'en aurait rien dit, et
- * la base non plus.
+ * Colonnes lues par toutes les requêtes : une seule projection, pour que l'exécution voie le même outil que
+ * les autres chemins. 🔴 `autonome` vient de `c`, la liaison : c'est un consentement, par consommateur.
  */
 const COLONNES = `t.id, t.tenant_id, t.origin, t.name, t.description, t.ne_pas_utiliser, t.params,
                   t.binding, t.source_id, t.request_id, t.output_paths, t.nature, t.risk, t.timeout_ms, t.max_bytes,
@@ -66,33 +61,28 @@ function versOutil(r: Ligne): OutilDefini {
     origin: r.origin,
     name: r.name,
     description: r.description,
-    // 🔴 LUE PAR LE RUNTIME depuis le 2026-08-29, et elle ne l'était pas. Elle vivait dans la seule
-    // projection d'administration, donc le modèle ne l'a jamais vue. Voir `OutilDefini.nePasUtiliser`.
+    // Lue par le runtime : le modèle la voit (voir `OutilDefini.nePasUtiliser`).
     nePasUtiliser: r.ne_pas_utiliser,
-    // `safeParse` et repli VIDE : un jsonb corrompu ne doit pas rendre un agent muet sur le chemin de
-    // chaque message, il doit ne produire aucun geste.
+    // `safeParse` et repli vide : un jsonb corrompu ne produit aucun geste, sans rendre l'agent muet.
     gestes: lireGestes(r.gestes),
     params: r.params,
-    // `binding` est du jsonb, donc opaque : lu par le helper défensif maison plutôt qu'affirmé par un `as`.
-    // Un scalaire ou un null donne un objet vide, et le résolveur refuse alors proprement.
+    // `binding` est du jsonb opaque : un scalaire ou un null donne un objet vide, et le résolveur refuse.
     binding: asRecord(r.binding),
-    // La source vit sur la LIGNE, pas dans `binding` : elle est une clé étrangère, et la contrainte
-    // `agent_tools_origin_src_chk` la rend obligatoire dès que l'origine n'est pas `mba`.
+    // La source vit sur la ligne, pas dans `binding` : clé étrangère, obligatoire dès que l'origine n'est pas
+    // `mba` (`agent_tools_origin_src_chk`).
     sourceId: r.source_id,
-    // La REQUETE que l'outil declenche (migration 0105). Sur la LIGNE pour la meme raison que la source :
-    // c'est une cle etrangere, pas une donnee libre, donc la base garantit qu'elle designe quelque chose.
+    // La requête que l'outil déclenche, sur la ligne pour la même raison : une clé étrangère garantit qu'elle
+    // désigne quelque chose.
     requestId: r.request_id,
     outputPaths: r.output_paths ?? [],
-    // ⚠️ `?? 'integre'` ET PAS UN `as` : une ligne écrite avant la migration 0150 n'a pas de nature, et la
-    // valeur par défaut de la colonne la donne de toute façon. Le repli est là pour les faux de test et
-    // pour une lecture faite pendant le déploiement, pas pour couvrir une donnée douteuse.
+    // `?? 'integre'` plutôt qu'un `as` : le défaut de la colonne la donne, le repli sert aux faux de test.
     nature: r.nature === 'pousse' ? 'pousse' : 'integre',
     risk: r.risk,
     timeoutMs: r.timeout_ms,
     maxBytes: r.max_bytes,
     autonome: r.autonome,
-    // ⚠️ `null` ET PAS `undefined`, pour les quatre. La distinction a déjà coûté un défaut de bascule sur
-    // l'écran MBA : un champ absent et un champ vide se lisent pareil à l'oeil, et pas dans le code.
+    // `null` et pas `undefined`, pour les quatre : un champ absent et un champ vide se lisent pareil à l'œil,
+    // pas dans le code.
     mcpAnnonce: r.mcp_annonce ?? null,
     mcpNonActivable: r.mcp_non_activable,
     mcpIndisponibleLe: r.mcp_indisponible_le,
@@ -101,18 +91,12 @@ function versOutil(r: Ligne): OutilDefini {
 }
 
 /**
- * 🔴 UN CONSENTEMENT D'AGENT VERROUILLE SON AGENT, dans une instruction À PART, avant de toucher à l'outil
- * (relecture du 2026-09-22). Sans ce verrou, un rattachement ne voyait pas qu'on supprimait l'agent : son
- * consentement survivait à l'agent (un consommateur fantôme, qui empêche à jamais le dernier détachement
- * d'effacer le connecteur), ou il se glissait entre la lecture et le retrait de `PgAgentStore.remove`, dont
- * l'ordre de verrous était alors inversé pour lui. Avec lui, il attend la suppression, puis ne trouve plus
- * l'agent et rend `false`. Instruction À PART : dans un même `where`, l'ordre de deux `exists` n'est pas
- * garanti, et celui-ci doit précéder le verrou de l'outil (l'ordre de `remove` : l'agent, puis l'outil).
- * Rend `false` quand l'agent n'existe plus. Un consommateur qui n'est pas un agent (`mba:`) passe.
- *
- * ⚠️ Une clé `agent:` que `FORME_CONSOMMATEUR` refuse (un identifiant en majuscules, que `estUuid` accepte)
- * rend `false` elle aussi : la laisser passer comme « pas un agent » sautait la garde, et c'est le CHECK de 0127
- * qui la refusait ensuite, en 500 (relecture du 2026-09-22).
+ * Un consentement d'agent verrouille son agent, dans une instruction à part, avant de toucher à l'outil
+ * (l'ordre de `PgAgentStore.remove` : l'agent, puis l'outil). Sans ça, le consentement survivrait à un agent
+ * en cours de suppression (un consommateur fantôme qui empêche d'effacer le connecteur), ou inverserait
+ * l'ordre des verrous. Instruction à part : l'ordre de deux `exists` d'un même `where` n'est pas garanti.
+ * Rend `false` quand l'agent n'existe plus, ou pour une clé `agent:` malformée (sinon le CHECK la refuserait
+ * en 500). Un consommateur qui n'est pas un agent (`mba:`) passe.
  */
 async function verrouillerAgentDuConsommateur(client: PoolClient, tenantId: string, consommateur: string): Promise<boolean> {
   const agentId = agentDuConsommateur(consommateur);
@@ -122,24 +106,13 @@ async function verrouillerAgentDuConsommateur(client: PoolClient, tenantId: stri
 }
 
 /**
- * 🔴 VERROUILLER LES DÉFINITIONS AVANT LE `not exists` QUI DÉCIDE DE LES EFFACER (décision du 2026-09-21 :
- * une action ou un connecteur HTTP que plus personne n'utilise part).
+ * Verrouiller les définitions avant le `not exists` qui décide de les effacer (une action ou un connecteur
+ * HTTP que plus personne n'utilise part) : sans ce verrou, un rattachement concurrent, invisible du
+ * `not exists`, partirait dans la cascade. Avec lui, l'un attend l'autre.
  *
- * Sans ce verrou, un rattachement concurrent posait son consentement juste avant le `not exists` : invisible de
- * ce dernier (pas encore validé), il partait ensuite dans la cascade de la définition effacée. C'est la raison
- * qu'écrivait déjà l'ancien `supprimerDefinition`, et les trois chemins qui l'ont remplacé l'avaient perdue
- * (revue finale du 2026-09-21). Avec lui, l'un attend l'autre : le rattachement validé d'abord est VU par le
- * `not exists`, qui s'exécute ensuite dans une nouvelle instruction ; celui qui arrive après attend
- * (`for key share` dans `rattacherConsommateur`) et ne trouve plus rien.
- *
- * ⚠️ DEUX CONTRAINTES : le verrou précède le `not exists` ; et les chemins des CONSENTEMENTS et du JOURNAL suivent
- * un même ordre, l'agent, ses sessions, les définitions (triées par identifiant), puis ce qui en dépend (lignes de
- * consentement, appels journalisés). Sinon deux chemins s'attendent l'un l'autre (40P01). Le JSDoc de
- * `PgAgentStore.remove` raconte les trois ordres qui ont interbloqué avant celui-là, et les chemins voisins (import
- * et suppression d'un serveur MCP, relecture de la connaissance) qui s'y sont alignés.
- *
- * ⚠️ `order by id` : deux effacements qui verrouillent plusieurs définitions le font dans le même ordre, sinon
- * ils pourraient s'attendre l'un l'autre.
+ * Tous les chemins des consentements et du journal suivent le même ordre : l'agent, ses sessions, les
+ * définitions (triées par identifiant, `order by id`), puis ce qui en dépend. Sinon deux chemins
+ * s'attendent (40P01) : voir `PgAgentStore.remove`.
  */
 export async function verrouillerDefinitions(client: PoolClient, tenantId: string, ids: readonly string[]): Promise<void> {
   if (ids.length === 0) return;
@@ -150,23 +123,16 @@ export async function verrouillerDefinitions(client: PoolClient, tenantId: strin
 }
 
 /**
- * Lecture du catalogue d'outils (migration 0086).
+ * Lecture et écriture du catalogue d'outils.
  *
- * 🔴 `and actif` est dans le SQL des DEUX requêtes, et `t.tenant_id = $1 and c.consommateur = $2` aussi. Le
- * nom d'outil vient du modèle, donc d'un texte qu'un contact peut influencer : c'est la clause `where` qui
- * empêche d'appeler l'outil d'un autre agent ou d'un autre client (voir `ToolCatalog.byName`).
+ * 🔴 `t.tenant_id = $1 and c.consommateur = $2` et `and actif` dans chaque requête d'exécution : le nom
+ * d'outil vient du modèle, et c'est ce `where` qui empêche d'appeler l'outil d'un autre agent ou d'un autre
+ * client. C'est la liaison qui isole, pas `agent_id` (qui dit à qui appartient une définition) : filtrer sur
+ * `agent_id` laisserait passer un connecteur partagé jamais rattaché à cet agent.
  *
- * ⚠️ C'EST LA LIAISON QUI ISOLE, PAS `agent_id`, et il ne faut pas les confondre depuis 0157. `agent_id` dit
- * à QUI APPARTIENT une définition (une action à son agent, un connecteur à personne) ; le consentement dit
- * QUI A LE DROIT DE S'EN SERVIR, et c'est lui seul qui garde le chemin d'exécution. Filtrer ici sur
- * `agent_id` laisserait passer un connecteur partagé auquel cet agent n'a jamais été rattaché.
- *
- * L'écriture (l'écran de réglage) vit dans la même classe. 🔴 L'ACTIVATION PORTE LE NOM DE QUI L'A FAITE, et ce
- * n'est pas de la traçabilité de confort. La spec MCP exige un consentement humain avant l'invocation d'un
- * outil ; notre agent n'a aucun humain au runtime. Le consentement est donc déplacé du runtime vers la
- * CONFIGURATION, et la migration 0086 le rend incontournable en base (`actif = false or active_par is not
- * null`). Même doctrine pour l'autonomie. L'identité vient du JETON, jamais du corps de la requête : sinon la
- * trace désignerait qui l'appelant veut.
+ * L'activation porte le nom de qui l'a faite, tiré du jeton, jamais du corps : la spec MCP exige un
+ * consentement humain avant l'invocation, déplacé ici du runtime vers la configuration (la base refuse
+ * `actif` sans `active_par`). Même chose pour l'autonomie.
  */
 export class PgToolCatalog implements ToolCatalog {
   constructor(private readonly pool: Pool) {}
@@ -195,23 +161,18 @@ export class PgToolCatalog implements ToolCatalog {
     return res.rows.map(versOutil);
   }
 
-  // ---------- Écriture : l'écran de réglage (tranche 19c) ----------
+  // ---------- Écriture : l'écran de réglage ----------
 
   /**
-   * TOUS les outils d'un agent, actifs ou non.
-   *
-   * ⚠️ JOINTURE INTERNE, ET C'EST DÉLIBÉRÉ. L'onglet Outils d'un agent montre ce que CET agent utilise, pas
-   * tout le catalogue de l'espace : la bibliothèque complète est un autre écran. Passer en `left join` ferait
-   * apparaître, dans chaque agent, les outils de tous les autres.
+   * Tous les outils d'un agent, actifs ou non. Jointure interne : l'onglet montre ce que cet agent utilise ;
+   * un `left join` y ferait apparaître les outils de tous les autres.
    */
   async listToutes(tenantId: string, agentId: string): Promise<OutilComplet[]> {
     return this.listToutesConsommateur(tenantId, consommateurAgent(agentId));
   }
 
-  /**
-   * Tous les outils d'un consommateur, actifs ou non, avec leurs champs d'écran. Sert l'onglet d'un agent IA
-   * (`listToutes`) et celui de l'agent de Meta (`mba:<numéro>`, spec 2026-09-21-outils-maison-mba).
-   */
+  /** Tous les outils d'un consommateur, actifs ou non, avec leurs champs d'écran : l'onglet d'un agent IA
+   *  (`listToutes`) et celui de l'agent de Meta (`mba:<numéro>`). */
   async listToutesConsommateur(tenantId: string, consommateur: string): Promise<OutilComplet[]> {
     const res = await this.pool.query<LigneAdmin>(
       `select ${COLONNES_ADMIN} ${JOINTURE}
@@ -221,27 +182,18 @@ export class PgToolCatalog implements ToolCatalog {
     return res.rows.map(versComplet);
   }
 
-  /**
-   * Ajoute un outil MAISON à un agent, inactif. Rend `null` si l'agent n'existe pas ou appartient à un autre
-   * tenant. LÈVE `NomOutilDejaPris` si le nom exposé est déjà porté par un outil de cet agent.
-   */
+  /** Ajoute un outil maison à un agent, inactif. Rend `null` si l'agent n'existe pas ou appartient à un
+   *  autre tenant. Lève `NomOutilDejaPris` si le nom exposé est déjà porté par un outil de cet agent. */
   async ajouter(tenantId: string, agentId: string, outil: {
     handler: string; name: string; title: string; description: string; nePasUtiliser: string;
     params: unknown; risk: RisqueOutil;
   }): Promise<OutilComplet | null> {
-    // `origin` vaut 'mba' en dur : L1 n'a que des outils maison, et le corps de la requête n'a rien à dire
-    // là-dessus. `actif` reste à son défaut (faux) : la migration 0086 refuserait un actif sans activateur,
-    // et surtout un outil actif d'emblée serait exposé au modèle avant que quiconque ait relu ses mots.
-    // 🔴 DEUX ÉCRITURES, DONC UNE TRANSACTION. Une définition créée sans son rattachement serait un outil
-    // qui n'apparaît dans AUCUN écran : ni dans l'agent d'où on vient de le créer, ni ailleurs.
+    // `actif` reste faux par défaut : un outil actif d'emblée serait exposé au modèle avant qu'on relise ses
+    // mots. Deux écritures, donc une transaction : une définition sans rattachement n'apparaîtrait nulle part.
     return enTransaction(this.pool, async (client) => {
       const res = await client.query<{ id: string }>(
-        /**
-         * 🔴 `agent_id` EST RENSEIGNÉ DEPUIS LA MIGRATION 0157 : une ACTION appartient à l'agent, quand un
-         * CONNECTEUR appartient à l'espace. C'est ce qui fait disparaître « un outil de cet espace porte
-         * déjà ce nom » : deux agents peuvent chacun avoir leur « terminer », le nom n'étant plus unique
-         * que par agent pour les actions.
-         */
+        /** `agent_id` renseigné : une action appartient à son agent (un connecteur, à l'espace), et son nom n'est
+         *  unique que par agent. */
         `insert into agent_tools
            (tenant_id, agent_id, origin, name, title, description, ne_pas_utiliser, params, binding, risk)
          select $1, $9, 'mba', $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8
@@ -250,8 +202,7 @@ export class PgToolCatalog implements ToolCatalog {
         [
           tenantId, outil.name, outil.title, outil.description, outil.nePasUtiliser,
           JSON.stringify(outil.params ?? []),
-          // `binding.handler` est ce qui donne son COMPORTEMENT à l'outil : le résolveur maison le lit là, et
-          // jamais dans le nom exposé, que le client peut changer.
+          // `binding.handler` donne son comportement à l'outil, jamais le nom exposé, que le client peut changer.
           JSON.stringify({ handler: outil.handler }),
           outil.risk, agentId,
         ],
@@ -267,31 +218,21 @@ export class PgToolCatalog implements ToolCatalog {
   }
 
   /**
-   * Un outil de CONNECTEUR (lot L2). `origin` vaut `'http'` en dur : comme pour les outils maison, le corps de
-   * la requête n'a rien à dire là-dessus.
-   *
-   * La SOURCE est vérifiée dans le même ordre que l'agent, par le `where exists` : une source d'un autre
-   * tenant ne produit aucune ligne plutôt qu'une violation de clé étrangère, donc un 404 plutôt qu'un 500.
+   * Un outil de connecteur, pour un agent. La source est vérifiée par le `where exists` : une source d'un autre
+   * tenant ne produit aucune ligne (404) plutôt qu'une violation de clé étrangère (500).
    */
   async ajouterConnecteur(tenantId: string, agentId: string, outil: {
     sourceId: string; requestId: string; name: string; title: string; description: string; nePasUtiliser: string;
     params: unknown; risk: RisqueOutil;
-    /**
-     * 🔴 OBLIGATOIRES TOUS LES DEUX, ET C'EST DÉLIBÉRÉ (2026-09-15). Les rendre optionnels ferait retomber un
-     * appelant distrait sur `integre` avec une liste vide, c'est-à-dire sur un outil qui refuse chaque appel
-     * en pleine conversation. Un champ obligatoire force à répondre ; un champ optionnel se laisse oublier.
-     */
+    /** Obligatoires tous les deux : optionnels, un appelant retomberait sur `integre` avec une liste vide, donc
+     *  un outil qui refuse chaque appel. */
     nature: NatureOutil; outputPaths: readonly string[];
   }): Promise<OutilComplet | null> {
     return this.creerOutilConnecteur(tenantId, consommateurAgent(agentId), outil);
   }
 
-  /**
-   * LE GESTE COMMUN aux deux portes d'entrée : celle d'un agent IA, et celle du Meta Business Agent.
-   *
-   * 🔴 UN SEUL `insert`, DEUX APPELANTS. Le recopier ferait diverger les gardes d'isolation au premier
-   * ajustement, et c'est le motif que ce dépôt a payé une centaine de fois à l'audit du 2026-08-18.
-   */
+  /** Le geste commun à un agent IA et au Meta Business Agent : un seul `insert`, pour que les gardes
+   *  d'isolation ne divergent pas. */
   private async creerOutilConnecteur(tenantId: string, consommateur: string, outil: {
     sourceId: string; requestId: string; name: string; title: string; description: string; nePasUtiliser: string;
     params: unknown; risk: RisqueOutil; nature: NatureOutil; outputPaths: readonly string[];
@@ -300,30 +241,11 @@ export class PgToolCatalog implements ToolCatalog {
       if (!(await verrouillerAgentDuConsommateur(client, tenantId, consommateur))) return null;
       const res = await client.query<{ id: string }>(
         /**
-         * ⚠️ `binding` RESTE VIDE : l'appel n'est plus décrit ici depuis la migration 0105, la requête le
-         * porte, et le redécrire par agent est précisément le défaut que 0105 a corrigé.
-         *
-         * 🔴 MAIS `output_paths` EST DÉSORMAIS REMPLI, ET LA JUSTIFICATION D'À CÔTÉ S'EST INVERSÉE
-         * (2026-09-15). Elle disait « les remplir en double créerait deux vérités, dont une que le résolveur
-         * ne lit pas » : c'était juste tant que ce qu'un agent lisait était une propriété de l'APPEL. Ça ne
-         * l'est plus, parce qu'un appel est partagé et que restreindre pour un agent restreignait pour tous.
-         * La requête garde sa liste comme DÉFAUT de pré-remplissage, l'outil porte celle qui s'applique.
-         *
-         * ⚠️ ET LA « VÉRITÉ QUE PERSONNE NE LISAIT » EXISTAIT BEL ET BIEN : le bac à sable bouclait déjà sur
-         * cette colonne vide et rendait un objet VIDE, en promettant « exactement ce que l'agent recevra ».
-         *
-         * Les trois `exists` sont la garde d'isolation : l'agent, la source ET la requête doivent être de ce
-         * tenant. Sans eux, les clés étrangères lèveraient en 500, dont Cloudflare remplace le corps.
-         */
-        /**
-         * 🔴 `source_kind` EST ÉCRIT ICI, ET LA SOURCE EST CONTRAINTE À `kind = 'http'` (migration 0152).
-         * Les deux vont ensemble : la colonne porte la garde en base (clé étrangère composite vers
-         * `agent_tool_sources (id, kind)`), et le `kind = 'http'` du `exists` refuse dès l'écriture qu'un
-         * outil HTTP se branche sur un serveur MCP. Sans lui, la ligne passerait la clé étrangère (elle
-         * serait cohérente) mais le résolveur partirait dans la mauvaise branche à l'exécution.
-         *
-         * ⚠️ Le refus prend la forme d'un `insert` qui ne rend AUCUNE ligne, donc le `null` que l'appelant
-         * traite déjà, et pas une erreur de contrainte en 500 dont Cloudflare remplace le corps.
+         * `binding` reste vide : la requête porte l'appel. `output_paths` est rempli : ce qu'un agent lit est une
+         * propriété de son outil (la requête garde sa liste comme défaut). Les trois `exists` sont la garde
+         * d'isolation (agent, source et requête de ce tenant). `source_kind` est écrit et la source contrainte à
+         * `kind = 'http'` : un outil HTTP ne se branche pas sur un serveur MCP. Un refus rend zéro ligne, donc le
+         * `null` de l'appelant, pas un 500.
          */
         `insert into agent_tools
            (tenant_id, origin, source_id, source_kind, request_id, name, title, description, ne_pas_utiliser, params, binding, output_paths, nature, risk)
@@ -336,8 +258,7 @@ export class PgToolCatalog implements ToolCatalog {
           tenantId, outil.sourceId, outil.requestId,
           outil.name, outil.title, outil.description, outil.nePasUtiliser,
           JSON.stringify(outil.params ?? []),
-          // ⚠️ Un `pousse` force la liste à VIDE plutôt que de faire confiance à l'appelant : deux champs qui
-          // doivent rester cohérents et que l'on écrit indépendamment finissent par diverger.
+          // Un `pousse` force la liste à vide plutôt que de faire confiance à l'appelant.
           outil.nature === 'pousse' ? [] : [...outil.outputPaths],
           outil.nature,
           outil.risk, agentDuConsommateur(consommateur),
@@ -354,25 +275,9 @@ export class PgToolCatalog implements ToolCatalog {
   }
 
   /**
-   * LE MÊME GESTE, POUR UN CONSOMMATEUR QUI N'EST PAS UN AGENT (2026-09-15).
-   *
-   * 🔴 ET IL NE DEMANDE AUCUNE MIGRATION, ce qui a été MESURÉ et non déduit : un CONNECTEUR appartient à
-   * l'ESPACE, seule la ligne `agent_tool_consommateurs` le rattache à quelqu'un, et le Meta Business Agent y
-   * est un consommateur comme un autre (`mba:<numero>`). Le plan de ce lot prévoyait de rendre une colonne
-   * nullable : elle n'était plus là.
-   *
-   * ⚠️ CETTE JUSTIFICATION DISAIT « `agent_id` N'EXISTE PLUS DEPUIS 0128 », ET C'EST DEVENU FAUX AVEC 0157,
-   * qui l'a remise pour les ACTIONS. Ce qui reste vrai est ce qui compte ici : un connecteur laisse
-   * `agent_id` à `null`, et le CHECK `agent_tools_agent_origin_chk` le lui impose.
-   *
-   * 🔴 POURQUOI CE CHEMIN EXISTE. Un outil naissait en le donnant à un agent IA : exposer un appel au Meta
-   * Business Agent obligeait donc à créer un agent dont on n'a pas besoin, et à répondre pour lui à des
-   * questions que Meta ignore (il appelle le système du client en direct et lit toute la réponse). Julien,
-   * 2026-09-15 : « je ne sais pas où l'affecter pour le MBA ».
-   *
-   * ⚠️ `nature` VAUT TOUJOURS `integre` ICI, et ce n'est pas un défaut paresseux : la question ne se pose pas
-   * pour Meta, qui lit tout quoi qu'on déclare. Écrire `pousse` laisserait croire à un réglage qui n'a aucun
-   * effet de ce côté.
+   * Le même geste pour le Meta Business Agent, consommateur qui n'est pas un agent (`mba:<numero>`) : exposer
+   * un appel à Meta ne doit pas obliger à créer un agent IA. Un connecteur laisse `agent_id` à `null` (CHECK
+   * `agent_tools_agent_origin_chk`). `nature` vaut `integre` : Meta lit toute la réponse quoi qu'on déclare.
    */
   async ajouterConnecteurPourMba(tenantId: string, phoneNumberId: string, outil: {
     sourceId: string; requestId: string; name: string; title: string; description: string; nePasUtiliser: string;
@@ -384,14 +289,9 @@ export class PgToolCatalog implements ToolCatalog {
   }
 
   /**
-   * UN OUTIL MAISON DE L'AGENT DE META (migration 0162, spec 2026-09-21-outils-maison-mba § 6).
-   *
-   * 🔴 IL NAÎT EXPOSÉ ET ACTIF, AU NOM DE L'ADMINISTRATEUR, dans la même transaction. Il n'a pas d'autre
-   * consommateur possible (`rattacherConsommateur` refuse un agent IA), donc un outil créé mais inactif ne
-   * servirait à personne ; et `atc_actif_humain_chk` exige qu'un humain l'ait activé.
-   *
-   * ⚠️ `params` RESTE VIDE : ce que Meta envoie se dérive de la cible (`variablesPourMeta`), et le recopier ici
-   * ferait une seconde vérité.
+   * Un outil maison de l'agent de Meta, créé exposé et actif au nom de l'administrateur, dans la même
+   * transaction : il n'a pas d'autre consommateur possible, et `atc_actif_humain_chk` exige un activateur
+   * humain. `params` reste vide : ce que Meta envoie se dérive de la cible (`variablesPourMeta`).
    */
   async ajouterMaisonPourMba(tenantId: string, phoneNumberId: string, outil: {
     name: string; title: string; description: string; nePasUtiliser: string; cible: CibleMaison;
@@ -417,11 +317,8 @@ export class PgToolCatalog implements ToolCatalog {
     });
   }
 
-  /**
-   * Corrige les mots ou la cible d'un outil maison de l'agent de Meta. `null` = pas un outil de CET agent.
-   *
-   * ⚠️ LE RISQUE SUIT LA CIBLE : il se recalcule quand elle change, jamais depuis le corps de la requête.
-   */
+  /** Corrige les mots ou la cible d'un outil maison de l'agent de Meta. `null` = pas un outil de cet agent.
+   *  Le risque suit la cible, jamais le corps de la requête. */
   async patchMaisonPourMba(tenantId: string, phoneNumberId: string, outilId: string, patch: {
     name?: string; title?: string; description?: string; nePasUtiliser?: string; cible?: CibleMaison;
   }): Promise<OutilComplet | null> {
@@ -446,13 +343,10 @@ export class PgToolCatalog implements ToolCatalog {
   }
 
   /**
-   * « SUPPRIMER » DEPUIS L'ONGLET DE L'AGENT DE META (spec 2026-09-21-outils-maison-mba § 9.1).
-   *
-   * 🔴 L'OUTIL N'EST RETIRÉ QU'À L'AGENT DE META. Un connecteur partagé avec un agent IA reste à cet agent
-   * (`detache`) ; un outil qui n'a plus aucun consommateur part (`supprime`), sinon sa définition resterait
-   * sans écran pour la voir, et son nom resterait pris : même règle que `detacher`. `agent_id is null` épargne
-   * une action d'agent IA rattachée au MBA par l'ancienne route, et `origin <> 'mcp'` un outil MCP importé,
-   * qui doit rester branchable.
+   * « Supprimer » depuis l'onglet de l'agent de Meta. L'outil n'est retiré qu'à l'agent de Meta : un
+   * connecteur encore utilisé par un agent IA reste (`detache`) ; un outil sans plus aucun consommateur part
+   * (`supprime`), même règle que `detacher`. `agent_id is null` épargne une action d'agent IA, `origin <>
+   * 'mcp'` un outil MCP importé, qui doit rester branchable.
    */
   async retirerDeMba(tenantId: string, phoneNumberId: string, outilId: string): Promise<'supprime' | 'detache' | 'introuvable'> {
     const consommateur = consommateurMba(phoneNumberId);
@@ -478,28 +372,16 @@ export class PgToolCatalog implements ToolCatalog {
     return this.patchConsommateur(tenantId, consommateurAgent(agentId), outilId, patch);
   }
 
-  /**
-   * 🔴 LE MÊME GESTE POUR UN CONSOMMATEUR QUI N'EST PAS UN AGENT (2026-09-18), et son absence rendait un
-   * outil du Meta Business Agent DÉFINITIVEMENT figé. `patch` était scopé par agent, or un outil créé pour
-   * le MBA n'en a aucun : aucune route ne pouvait donc corriger son nom, son titre, ce à quoi il sert ni
-   * quand ne pas l'appeler. Julien : « je ne peux rien changer sur l'outil dans l'onglet outils ». C'est
-   * exactement le motif `activer`/`activerConsommateur` du même fichier : une capacité câblée sur un
-   * consommateur sur deux est un correctif à moitié.
-   */
+  /** Le même geste pour un consommateur qui n'est pas un agent (le MBA), dont les outils n'ont pas d'agent. */
   async patchConsommateur(
     tenantId: string, consommateur: string, outilId: string, patch: PatchOutil,
   ): Promise<OutilComplet | null> {
-    // Les énumérations sont réécrites DANS le jsonb, en une instruction : une lecture suivie d'une écriture
-    // laisserait deux administrateurs se recouvrir en silence sur la même colonne.
+    // Les énumérations sont réécrites dans le jsonb, en une instruction : une lecture suivie d'une écriture
+    // laisserait deux administrateurs se recouvrir en silence.
     const res = await this.pool.query<{ id: string }>(
-      // 🔴 AUCUN ALIAS SUR LA TABLE MISE A JOUR, et surtout PAS `returning ${COLONNES_ADMIN}` : cette liste
-      // porte desormais les prefixes `t.` et `c.` de la JOINTURE, qui n existent pas dans un UPDATE. Postgres
-      // repond « missing FROM-clause entry for table t », et c est ce qu il a repondu en CI.
-      //
-      // ⚠️ C EST LA LIAISON QUI BORNE LE PERIMETRE, PAS `agent_id`, et l `exists` n est pas decoratif : sans
-      // lui, l ecran d un agent pourrait corriger les mots d un outil qu il n utilise pas, donc changer le
-      // comportement de l agent du voisin. Le consentement est la bonne cle ici meme depuis 0157 : un
-      // CONNECTEUR n a pas d `agent_id`, et c est pourtant bien cet agent-la qui a le droit de le renommer.
+      // Pas d'alias ni de `returning ${COLONNES_ADMIN}` : ses préfixes `t.` et `c.` n'existent pas dans un
+      // UPDATE. L'`exists` sur la liaison borne le périmètre : sans lui, l'écran d'un agent corrigerait les
+      // mots d'un outil qu'il n'utilise pas, donc le comportement de l'agent du voisin.
       `update agent_tools set
          name = coalesce($4, name),
          title = coalesce($5, title),
@@ -540,26 +422,16 @@ export class PgToolCatalog implements ToolCatalog {
   }
 
   /**
-   * Active ou désactive pour un consommateur qui n'est pas un agent.
-   *
-   * ⚠️ `update`, JAMAIS `insert ... on conflict` : activer n'est PAS un rattachement implicite. Un
-   * identifiant d'agent erroné doit rendre `null`, pas fabriquer un consentement pour un consommateur qui
-   * n'existe nulle part et que plus aucun écran ne montrerait.
-   *
-   * Désactiver EFFACE l'activateur : ces deux colonnes disent « qui l'a mis en service, et quand », pas
-   * « qui y a touché un jour ». Les garder ferait afficher un consentement qui n'a plus cours.
+   * Active ou désactive pour un consommateur qui n'est pas un agent. `update`, jamais `insert ... on
+   * conflict` : activer n'est pas un rattachement implicite, un identifiant erroné rend `null`. Désactiver
+   * efface l'activateur : ces colonnes disent qui l'a mis en service, pas qui y a touché un jour.
    */
   async activerConsommateur(
     tenantId: string, consommateur: string, outilId: string, actif: boolean, parUtilisateur: string,
   ): Promise<OutilComplet | null> {
     /**
-     * 🔴 LE POINT DE PASSAGE UNIQUE DE L'ACTIVATION, ET C'EST POUR ÇA QUE LA GARDE EST ICI. Les deux
-     * chemins y aboutissent : l'onglet Outils d'un agent (`activer`, juste au-dessus) et la réactivation d'un
-     * outil de l'agent de Meta (`src/http/mba-outils.ts`). La poser dans l'un des deux la laisserait absente
-     * de l'autre, ce qui est le motif « capacité câblée sur un consommateur sur deux ».
-     *
-     * ⚠️ SEULEMENT À L'ACTIVATION. Désactiver un outil devenu non activable doit rester possible : c'est
-     * même le seul geste qui reste au client.
+     * La garde est ici, au point de passage unique de l'activation (onglet d'un agent et outils de l'agent de
+     * Meta). Seulement à l'activation : désactiver un outil devenu non activable reste le seul geste du client.
      */
     if (actif) {
       const etat = await this.pool.query<{ mcp_non_activable: string | null; mcp_indisponible_le: Date | null }>(
@@ -604,31 +476,20 @@ export class PgToolCatalog implements ToolCatalog {
   }
 
   /**
-   * Rend cet outil de l'espace disponible pour cet agent, INACTIF.
-   *
-   * ⚠️ LE RATTACHEMENT ET L'ACTIVATION SONT DEUX GESTES. Les fondre ferait qu'ajouter un outil de la
-   * bibliothèque à un agent l'exposerait au modèle dans la foulée, sans que personne ait relu ses mots :
-   * exactement ce que la migration 0086 existe pour empêcher.
-   * `false` = l'outil n'existe pas dans cet espace, il y est déjà rattaché, c'est un outil de l'agent de Meta
-   * (jamais ouvert à un agent IA, migration 0162), ou un effacement concurrent vient de l'emporter.
+   * Rend cet outil de l'espace disponible pour cet agent, inactif : rattacher et activer sont deux gestes,
+   * sinon ajouter un outil l'exposerait au modèle sans que personne ait relu ses mots. `false` = outil absent
+   * de cet espace, déjà rattaché, réservé à l'agent de Meta, ou effacé à l'instant.
    */
   async rattacher(tenantId: string, agentId: string, outilId: string): Promise<boolean> {
     return this.rattacherConsommateur(tenantId, consommateurAgent(agentId), outilId);
   }
 
-  /**
-   * Même geste, pour un consommateur qui n'est pas un agent (le MBA).
-   *
-   * Le `where exists` vérifie que l'outil est de CE tenant : une clé étrangère lèverait en 500, dont
-   * Cloudflare remplace le corps. `do nothing` rend un rattachement répété inoffensif.
-   */
+  /** Même geste, pour un consommateur qui n'est pas un agent (le MBA). Le `where exists` vérifie que l'outil
+   *  est de ce tenant (404 plutôt que 500) ; `do nothing` rend un rattachement répété inoffensif. */
   async rattacherConsommateur(tenantId: string, consommateur: string, outilId: string): Promise<boolean> {
-    // 🔴 UN OUTIL DE L'AGENT DE META NE S'OUVRE JAMAIS À UN AGENT IA (migration 0162) : son handler n'existe pas
-    // chez eux, et le brancher ferait un outil offert qui refuse à chaque appel.
-    // ⚠️ `for key share` : si un dernier détachement tient la définition (`verrouillerDefinitions`), on l'ATTEND,
-    // puis on ne trouve plus rien et l'on rend `false` (404). Sans lui, l'insertion passait la lecture, butait
-    // ensuite sur la clé étrangère de la définition effacée, et le rattachement rendait 500.
-    // 🔴 Et l'AGENT d'abord (`verrouillerAgentDuConsommateur`) : un agent qu'on supprime rend `false`, jamais un
+    // Un outil de l'agent de Meta ne s'ouvre jamais à un agent IA : son handler n'existe pas chez eux.
+    // `for key share` : si un dernier détachement tient la définition, on l'attend, puis on rend `false` au lieu
+    // d'un 500 sur la clé étrangère. L'agent d'abord (`verrouillerAgentDuConsommateur`) : jamais de
     // consentement fantôme.
     return enTransaction(this.pool, async (client) => {
       if (!(await verrouillerAgentDuConsommateur(client, tenantId, consommateur))) return false;
@@ -646,32 +507,11 @@ export class PgToolCatalog implements ToolCatalog {
   }
 
   /**
-   * Retire l'outil de CET agent. La définition reste tant qu'un autre consommateur s'en sert ; une action ou un
-   * connecteur HTTP qui perd son DERNIER consommateur part avec lui, un outil MCP reste (2026-09-21).
-   *
-   * 🔴 DÉTACHER LE DERNIER UTILISATEUR D'UNE ACTION OU D'UN CONNECTEUR HTTP LE SUPPRIME ; UN OUTIL MCP RESTE
-   * (revue finale du 2026-09-18 pour l'action, décision de Julien du 2026-09-21 pour le connecteur).
-   *
-   * Le défaut était une conséquence non vue de 0157, et c'était le cul-de-sac même que ce lot corrigeait,
-   * reproduit un cran plus bas. `listCatalogue` exclut désormais les actions d'agent de la bibliothèque de
-   * l'espace ; or la bibliothèque est le SEUL écran d'où l'on puisse supprimer une définition. Détacher une
-   * action ne retirait que la ligne de consentement : la définition restait, plus aucun écran ne la
-   * montrait, plus aucun geste ne pouvait l'effacer, et son nom restait pris pour cet agent. Recréer le même
-   * outil rendait 409, sans issue.
-   *
-   * 🔴 LE MÊME CUL-DE-SAC EST REVENU POUR LES CONNECTEURS, ET C'EST CE QUE LE 2026-09-21 FERME. Un connecteur
-   * appartient à l'espace et se partage, donc son détachement ne l'effaçait pas ; son dernier écran de
-   * suppression était l'ancien onglet Outils du MBA, parti avec le chantier des outils maison. Un connecteur
-   * orphelin gardait alors son nom pris et BLOQUAIT la suppression de sa requête dans Connecteurs API, sans
-   * écran pour s'en défaire. Décision de Julien : un connecteur HTTP que plus personne n'utilise part.
-   *
-   * ⚠️ LA CONDITION QUI COMPTE EST L'ABSENCE DE CONSOMMATEUR RESTANT : elle épargne une définition qu'un autre
-   * agent (ou l'agent de Meta) utilise encore, dont la cascade emporterait le consentement. `origin = 'http'`
-   * épargne les outils MCP : ils viennent d'un import de serveur et doivent rester branchables depuis la
-   * bibliothèque. Et `agent_id = $3` borne l'effacement d'une action à SON agent.
-   *
-   * 🔴 UNE TRANSACTION, parce que ce sont DEUX écritures. Entre les deux, la définition est exactement dans
-   * l'état orphelin qu'on veut ne jamais laisser derrière soi.
+   * Retire l'outil de cet agent. 🔴 Une action ou un connecteur HTTP qui perd son dernier consommateur part
+   * avec lui : sinon la définition resterait sans écran pour la supprimer, son nom pris, et la suppression de
+   * sa requête bloquée. Un outil MCP reste, branchable depuis la bibliothèque. La condition qui compte est
+   * l'absence de consommateur restant (sinon la cascade emporterait un consentement d'un autre), et
+   * `agent_id = $3` borne l'effacement d'une action à son agent. Deux écritures, une transaction.
    */
   async detacher(tenantId: string, agentId: string, outilId: string): Promise<boolean> {
     return enTransaction(this.pool, async (client) => {
@@ -694,27 +534,10 @@ export class PgToolCatalog implements ToolCatalog {
   }
 
   /**
-   * Les définitions qu'un agent IA peut BRANCHER, avec qui s'en sert : les connecteurs et les outils MCP de
-   * l'espace. Ni les actions d'un agent (elles lui appartiennent, 0157), ni les outils de l'agent de Meta
-   * (0162). Lue par l'onglet Outils d'un agent, l'assistant de construction et la vue de l'onglet de l'agent
-   * de Meta (« Aussi utilisé par »).
-   *
-   * La bibliothèque de l'espace : chaque définition, et qui s'en sert.
-   *
-   * ⚠️ UNE SEULE REQUÊTE, pas une par outil. Une bibliothèque de trente outils ferait sinon trente allers et
-   * retours, ce que l'audit du 2026-08-25 a déjà eu à corriger ailleurs. Les consommateurs sont agrégés en
-   * jsonb dans la même passe.
-   *
-   * ⚠️ `left join` SUR LES CONSOMMATEURS : un outil MCP importé que personne n'a encore branché doit APPARAÎTRE,
-   * c'est précisément celui qu'un agent vient chercher ici. (Un connecteur HTTP sans consommateur n'existe
-   * plus : `detacher` et la suppression d'un agent l'effacent, décision du 2026-09-21.)
-   *
-   * 🔴 ET C'EST EXACTEMENT POURQUOI `detacher` EFFACE UNE ACTION (revue finale du 2026-09-18). Le filtre
-   * `agent_id is null` ci-dessous sort les actions de cet écran, donc du SEUL endroit d'où l'on supprime une
-   * définition : détacher une action y laissait un orphelin que rien ne montrait, que rien ne pouvait
-   * effacer, et dont le nom restait pris pour cet agent. Depuis le 2026-09-21, plus aucun écran ne supprime
-   * une définition à la main : ce qui ne sert plus à personne part avec son dernier détachement (`detacher`,
-   * `PgAgentStore.remove`, `retirerDeMba`), sauf un outil MCP, qui reste branchable.
+   * La bibliothèque de l'espace : les définitions qu'un agent IA peut brancher (connecteurs et outils MCP),
+   * avec qui s'en sert. Ni les actions d'un agent, qui lui appartiennent, ni les outils de l'agent de Meta.
+   * Une seule requête, consommateurs agrégés en jsonb. `left join` : un outil MCP importé que personne n'a
+   * branché doit apparaître, c'est celui qu'on vient chercher.
    */
   async listCatalogue(tenantId: string): Promise<OutilBibliotheque[]> {
     const res = await this.pool.query<{
@@ -783,18 +606,9 @@ export class PgToolCatalog implements ToolCatalog {
 }
 
 /**
- * Les index uniques de nom, traduits en erreur métier. Sans ça, deux outils du même nom remontaient en 500,
- * dont Cloudflare remplace le corps : le client ne voyait rien.
- *
- * 🔴 IL Y EN A DEUX DEPUIS 0157, ET LE MESSAGE DOIT DIRE LEQUEL A REFUSÉ. `agent_tools_nom_agent_uidx` tient
- * l'unicité d'une ACTION par agent, `agent_tools_nom_espace_uidx` celle d'une définition d'ESPACE. La portée
- * a fait l'aller-retour (par agent jusqu'à 0127, par espace jusqu'à 0157, par agent de nouveau pour les
- * actions) et elle a laissé deux fois un message périmé derrière elle. On la LIT donc sur la contrainte
- * violée, la seule chose qui ne puisse pas dériver.
- *
- * ⚠️ LE REPLI EST « ESPACE », et c'est le bon sens du doute : une contrainte inconnue est plus probablement
- * une unicité d'espace (le régime historique), et désigner l'espace sur un conflit d'agent fait chercher
- * trop large, quand l'inverse fait chercher à côté.
+ * Les index uniques de nom, traduits en erreur métier (409 plutôt que 500). Deux index : une action est
+ * unique par agent (`agent_tools_nom_agent_uidx`), une définition d'espace par espace. La portée se lit sur
+ * la contrainte violée ; le repli est « espace », qui fait chercher trop large plutôt qu'à côté.
  */
 function surNomDejaPris(err: unknown): never {
   const e = err as { code?: string; constraint?: string } | null;
@@ -804,7 +618,7 @@ function surNomDejaPris(err: unknown): never {
   throw err;
 }
 
-// `ne_pas_utiliser` n'y est plus : elle est passée dans `COLONNES`, que le RUNTIME lit aussi.
+// `ne_pas_utiliser` est dans `COLONNES`, que le runtime lit aussi.
 const COLONNES_ADMIN = `${COLONNES}, t.title, c.actif, c.active_le, c.autonome_le`;
 
 interface LigneAdmin extends Ligne {

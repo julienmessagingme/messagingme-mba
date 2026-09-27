@@ -7,28 +7,22 @@ import {
 } from './types';
 
 /**
- * L'ÉMETTEUR DE SIGNAUX (spec 2026-09-24, § 8) : le SEUL point par lequel un chemin du produit dit « il s'est
- * passé quelque chose sur cette fiche ».
+ * L'émetteur de signaux : le seul point par lequel un chemin du produit dit « il s'est passé quelque chose sur
+ * cette fiche ».
  *
- * 🔴 IL NE LÈVE JAMAIS, et ses points d'appel sont des chemins CHAUDS : l'accusé de chaque message, chaque
- * message entrant, la redirection d'un lien suivi. Une panne de la remontée ne doit ni retarder ni faire
- * rejouer aucun d'eux.
- *
- * 🔴 IL NE CONNAÎT AUCUN OUTIL. Il reçoit une liste de DESTINATIONS (une par adaptateur : sa file, et les
- * espaces qui l'ont branché) ; brancher un second outil ajoute une destination, rien d'autre.
- *
- * ⚠️ LA LISTE DES ESPACES ACTIFS SE LIT À TRAVERS UN CACHE COURT (`DUREE_CACHE_ESPACES_ACTIFS_MS`), par
- * process. Conséquence assumée : un outil branché depuis l'écran reçoit les signaux émis par le WORKER jusqu'à
- * une minute plus tard (l'API, elle, invalide son cache à l'enregistrement).
+ * Il ne lève jamais : ses points d'appel sont des chemins chauds (accusé de chaque message, message entrant,
+ * redirection d'un lien), qu'une panne de la remontée ne doit ni retarder ni faire rejouer.
+ * Il ne connaît aucun outil : il reçoit une destination par adaptateur (sa file, et les espaces qui l'ont branché).
+ * Les espaces actifs se lisent à travers un cache court par process : un outil branché reçoit les signaux émis par
+ * le worker jusqu'à une minute plus tard (l'API, elle, invalide son cache à l'enregistrement).
  */
 export const DUREE_CACHE_ESPACES_ACTIFS_MS = 60_000;
 
 /**
- * 🔴 LA PRIORITÉ D'UN SIGNAL DANS LA FILE (pg-boss prend `priority desc`, puis par date de création).
- *
- * Les ACCUSÉS restent à 0 : une campagne en produit des milliers d'un coup, et la file d'un espace les traite un
- * par un. Tout ce qui répond à un GESTE du contact (réponse, clic, désabonnement) ou le résume (analyse) passe
- * en 1, donc devant cet arriéré : c'est ce qui permet à la documentation de promettre ces signaux dans la minute.
+ * La priorité d'un signal dans la file (pg-boss prend `priority desc`, puis la date de création).
+ * Les accusés restent à 0 : une campagne en produit des milliers d'un coup. Ce qui répond à un geste du contact
+ * (réponse, clic, désabonnement) ou le résume (analyse) passe en 1, devant cet arriéré : c'est ce qui permet de
+ * promettre ces signaux dans la minute.
  */
 export const PRIORITE_SIGNAL: Readonly<Record<NomEvenement, number>> = {
   em_message_delivered: 0,
@@ -38,16 +32,14 @@ export const PRIORITE_SIGNAL: Readonly<Record<NomEvenement, number>> = {
   em_link_clicked: 1,
   em_opted_out: 1,
   em_conversation_analyzed: 1,
-  // Le balayage de NUIT en émet autant qu'il y a de changements de niveau : c'est un arriéré, comme les accusés,
-  // et il ne doit pas passer devant une réponse ou un désabonnement du jour.
+  // Le balayage de nuit en émet autant qu'il y a de changements de niveau : un arriéré, comme les accusés.
   em_risk_changed: 0,
 };
 
 /**
- * Les types de message WhatsApp qui sont une RÉPONSE du contact : ce qu'il a composé ou tapé. Une réaction (un
- * emoji posé sur un message), un type non pris en charge par Meta (`unsupported`), un message système ou un type
- * inconnu n'en sont pas : les compter ferait mentir `em_replied` et `em_last_reply_at`. Liste POSITIVE, donc un
- * type que Meta ajouterait demain ne devient pas une réponse sans qu'on l'ait décidé.
+ * Les types de message WhatsApp qui sont une réponse du contact. Une réaction, un type `unsupported`, un message
+ * système ou un type inconnu n'en sont pas : les compter ferait mentir `em_replied` et `em_last_reply_at`. Liste
+ * positive : un type que Meta ajouterait ne devient pas une réponse sans qu'on l'ait décidé.
  */
 export const TYPES_DE_REPONSE: ReadonlySet<string> = new Set([
   'text', 'button', 'interactive', 'image', 'audio', 'video', 'document', 'sticker', 'location', 'contacts', 'order',
@@ -80,8 +72,8 @@ export function creerEmetteur(deps: DepsEmetteur): Emetteur {
     for (const d of deps.destinations) {
       try {
         if (!(await d.espacesActifs()).has(tenantId)) continue;
-        // Validé AVANT d'entrer dans la file, signal par signal : le lecteur relit le job avec le même schéma, et
-        // un job qu'il refuse irait jusqu'à la DLQ après cinq essais, en emportant les signaux valides avec lui.
+        // Validé avant d'entrer dans la file, signal par signal : un job que le lecteur refuse irait jusqu'à la DLQ
+        // en emportant les signaux valides avec lui.
         const parPriorite = new Map<number, Signal[]>();
         for (const s of signaux) {
           const valide = schemaSignal.safeParse(s);
@@ -139,8 +131,8 @@ export function signalDeLAccuse(a: AccuseDuStatut, canal: CanalSignal): Signal |
 }
 
 /**
- * Le libellé du bouton tapé, ou `null`. JAMAIS un texte saisi : une réponse de FORMULAIRE porte son JSON dans
- * `buttonPayload`, et ce JSON est ce que la personne a écrit.
+ * Le libellé du bouton tapé, ou `null`. Jamais un texte saisi : une réponse de formulaire porte dans
+ * `buttonPayload` le JSON de ce que la personne a écrit.
  */
 export function boutonTape(m: Pick<InboundMessage, 'type' | 'body' | 'buttonPayload'>): string | null {
   if (m.type === 'button') return m.body;
@@ -156,7 +148,7 @@ export function signalDeLaReponse(r: { messageId: string; waId: string; bouton: 
   };
 }
 
-/** Un clic ATTRIBUÉ (l'adresse portait le jeton du contact). Un clic anonyme ne fait pas de signal : sans fiche, pas de profil. */
+/** Un clic attribué (l'adresse portait le jeton du contact). Un clic anonyme ne fait pas de signal. */
 export function signalDuClic(contactId: string, code: string): Signal {
   return { nom: 'em_link_clicked', id: idSignal('em_link_clicked'), le: maintenant(), contactId, lien: code };
 }
@@ -164,34 +156,25 @@ export function signalDuClic(contactId: string, code: string): Signal {
 /**
  * Un désabonnement.
  *
- * 🔴 `messageDuStop` : l'identifiant du message qui a DIT STOP (le wamid de Meta, celui du fournisseur RCS). C'est
- * la clé naturelle du refus : un STOP que Meta nous redélivre, ou un job de webhook rejoué, rend le MÊME
- * `em_event_id`, et l'outil du client peut dédupliquer comme le promet la spec (§ 8). L'ALÉA reste partout où
- * l'écriture ne connaît pas le message : la fiche, l'action en masse, l'API publique, un bloc de scénario. Il est
- * figé à l'émission, dans le job, donc stable pour un job rejoué.
- *
- * ⚠️ « AUCUN MESSAGE NE PORTE LE REFUS » N'EST PAS LE CRITÈRE, et cette phrase l'a longtemps affirmé : un bloc
- * « Action » déclenché par une automation sur un mot de refus (l'ancien contournement, d'avant le mot-clé natif)
- * écrit un refus PORTÉ par un message, sans en connaître l'identifiant. Ce qui borne le doublon est ailleurs :
- * un désabonnement n'est annoncé que si le statut CHANGE (`setOptInByWaId`, `ecrireConsentementParId`). Le même
- * STOP écrit par le mot-clé puis par l'automation n'est donc annoncé qu'une fois, par le premier ; mais si le mot
- * n'est reconnu QUE par l'automation, l'annonce part sous un identifiant aléatoire.
+ * `messageDuStop`, l'identifiant du message qui a dit STOP, est la clé naturelle du refus : un STOP redélivré par
+ * Meta ou un job rejoué rend le même `em_event_id`, et l'outil peut dédupliquer. Sans message connu (fiche, action
+ * en masse, API, bloc de scénario), un aléa figé dans le job, donc stable pour un job rejoué.
+ * Le doublon est borné ailleurs : un désabonnement n'est annoncé que si le statut change (`setOptInByWaId`,
+ * `ecrireConsentementParId`). Un STOP reconnu seulement par une automation part donc sous un identifiant aléatoire.
  */
 export function signalDesabonnement(waId: string, canal: CanalSignal, messageDuStop?: string): Signal {
   return { nom: 'em_opted_out', id: idSignal('em_opted_out', messageDuStop), le: maintenant(), waId, canal };
 }
 
-/** La conversation analysée : une RÉFÉRENCE. L'analyse se relit au moment de pousser, jamais dans la file. */
+/** La conversation analysée : une référence. L'analyse se relit au moment de pousser, jamais dans la file. */
 export function signalAnalyse(conversationId: string): Signal {
   return { nom: 'em_conversation_analyzed', id: idSignal('em_conversation_analyzed'), le: maintenant(), conversationId };
 }
 
 /**
- * Un changement de NIVEAU du risque de désengagement (balayage de nuit, spec § 19).
- *
- * ⚠️ LE CALCUL VOYAGE DANS LE JOB, contrairement à l'analyse : c'est ce que le balayage a constaté à `calculeLe`,
- * et le relire au moment de pousser rendrait peut-être le calcul d'une nuit suivante sous l'identifiant de
- * celle-ci. La clé naturelle (fiche, instant du calcul) rend l'identifiant stable et opaque.
+ * Un changement de niveau du risque de désengagement (balayage de nuit).
+ * Le calcul voyage dans le job, contrairement à l'analyse : le relire au moment de pousser rendrait peut-être le
+ * calcul d'une nuit suivante sous cet identifiant. La clé (fiche, instant du calcul) le rend stable et opaque.
  */
 export function signalRisque(r: {
   contactId: string; ancien: NiveauRisque | null; nouveau: NiveauRisque; score: number | null; raisons: RaisonRisque[];
@@ -206,14 +189,11 @@ export function signalRisque(r: {
 /**
  * Les deux puits que le webhook Meta reçoit (`src/webhooks/delivery.ts`, `src/webhooks/inbound.ts`).
  *
- * 🔴 L'ORDRE DE `accuse` EST LA GARANTIE DE COÛT : un statut `sent` (le plus fréquent) s'arrête avant toute
- * lecture, et tant qu'aucun espace n'a branché d'outil, le numéro n'est même pas résolu.
- *
- * ⚠️ `reponse` GARDE LE `standby`, délibérément. Un message extrait par `processInbound` en `standby` est un
- * message du CONTACT pendant que l'agent de Meta tient le fil (payload réel, essais du 2026-09-16) ; l'écho de
- * ce que l'agent a dit vit sous `message_echoes`, que `extractInbound` ne lit pas. L'avance de scénario et les
- * automations le refusent parce que RÉPONDRE reprendrait le fil à l'agent ; un signal n'envoie rien au contact.
- * Le filtrer perdrait chaque réponse faite à une campagne qui confie ses réponses à l'agent de Meta.
+ * L'ordre de `accuse` est la garantie de coût : un statut `sent` (le plus fréquent) s'arrête avant toute lecture,
+ * et tant qu'aucun espace n'a branché d'outil, le numéro n'est même pas résolu.
+ * `reponse` garde le `standby` : c'est un message du contact pendant que l'agent de Meta tient le fil (son écho
+ * vit sous `message_echoes`, non lu). Scénarios et automations le refusent parce que répondre reprendrait le fil ;
+ * un signal n'envoie rien, et le filtrer perdrait les réponses aux campagnes confiées à l'agent de Meta.
  */
 export function creerPuitsSignauxMeta(deps: {
   emetteur: Emetteur;
@@ -242,21 +222,13 @@ export function creerPuitsSignauxMeta(deps: {
 /**
  * Compose l'annonce d'opt-out du dépôt des contacts avec les signaux.
  *
- * 🔴 POSÉE SUR LE DÉPÔT, COMME L'ANNONCE : elle couvre par CONSTRUCTION toutes les méthodes capables d'écrire
- * `opted_out` (mot-clé entrant, fiche, action en masse, consentement de l'API), au lieu d'être recopiée sur
- * chaque appelant. Le STOP RCS n'y passe pas (il écrit `rcs_optout_at` ailleurs) : il émet lui-même.
- *
- * ⚠️ `finally` : une annonce en panne n'empêche pas le signal, et son erreur remonte au dépôt, qui la journalise.
- *
- * ⚠️ `'whatsapp'` dit ici QUEL CONSENTEMENT le dépôt a retiré (`opt_in_status`), pas le canal sur lequel la
- * personne a parlé : celui-là se déduit de la source au moment de pousser (`completerSignal`).
- *
- * 🔴 UNE SEULE ÉMISSION pour toute la liste : une action en masse de milliers de fiches s'enfile en quelques
- * jobs (`SIGNAUX_PAR_JOB`), dans la requête HTTP de l'opérateur, et non en un enfilement par fiche.
- *
- * ⚠️ `messageDuStop` (le message qui a dit STOP, cf. `signalDesabonnement`) ne vaut que pour UNE personne : un
- * message n'a qu'un auteur. Posé sur une liste, il donnerait le même `em_event_id` à des fiches différentes, que
- * l'outil fusionnerait ; il y est donc ignoré.
+ * Posée sur le dépôt, comme l'annonce : elle couvre par construction toute méthode capable d'écrire `opted_out`,
+ * au lieu d'être recopiée sur chaque appelant. Le STOP RCS n'y passe pas (`rcs_optout_at`) : il émet lui-même.
+ * `finally` : une annonce en panne n'empêche pas le signal, et son erreur remonte au dépôt.
+ * `'whatsapp'` dit quel consentement a été retiré, pas le canal où la personne a parlé (`completerSignal`).
+ * Une seule émission pour toute la liste : une action en masse s'enfile en quelques jobs (`SIGNAUX_PAR_JOB`).
+ * `messageDuStop` ne vaut que pour une personne : posé sur une liste, il donnerait le même `em_event_id` à des
+ * fiches différentes, que l'outil fusionnerait.
  */
 export function annoncerAussiAuxSignaux(
   annonce: (tenantId: string, waIds: string[]) => Promise<void>,

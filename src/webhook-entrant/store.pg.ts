@@ -6,17 +6,15 @@ import { coerceMapping } from './mapping';
 import type { RegleMapping } from './mapping';
 
 /**
- * Webhooks ENTRANTS. Tout est scopé `tenant_id` sur CHAQUE requête, SAUF `getByCode` : là le code EST la
- * preuve d'appartenance, et c'est lui qui rend le tenant (même doctrine que `/r/:code`, où aucune session
- * n'existe).
+ * Webhooks entrants. 🔴 `tenant_id` sur chaque requête, sauf `getByCode` : là, le code est la preuve
+ * d'appartenance et c'est lui qui rend l'espace (comme `/r/:code`, sans session).
  *
- * Ce store porte aussi la ligne `automations` COMPAGNON d'un webhook (cf. migration 0074). Écrire dans une
- * table qui appartient à `PgAutomationStore` se justifie ici par l'atomicité : le lien webhook <-> automation
- * est un invariant, et le rompre laisserait soit un webhook qui ne déclenche rien en silence, soit une
- * automation orpheline qu'aucun écran ne montre. Les deux écritures vivent donc dans une transaction.
+ * Ce store écrit aussi la ligne `automations` compagnon d'un webhook, dans la même transaction : le lien webhook
+ * <-> automation est un invariant, et le rompre laisserait un webhook qui ne déclenche rien ou une automation
+ * orpheline.
  */
 
-/** Ce que la route PUBLIQUE a besoin pour traiter un appel. */
+/** Ce dont la route publique a besoin pour traiter un appel. */
 export interface WebhookPublic {
   id: string;
   tenantId: string;
@@ -26,27 +24,22 @@ export interface WebhookPublic {
   mapping: RegleMapping[];
   createContact: boolean;
   /**
-   * Les contacts nés de ce webhook sont-ils considérés comme CONSENTANTS ?
-   *
-   * C'est l'opérateur qui l'affirme, jamais nous qui le déduisons : même doctrine que l'import CSV et l'API
-   * publique. Faux -> consentement « inconnu », ce qui ferme le marketing pour ce contact.
+   * Les contacts nés de ce webhook sont-ils consentants ? L'opérateur l'affirme, nous ne le déduisons jamais (comme
+   * l'import CSV et l'API). Faux : consentement « inconnu », ce qui ferme le marketing pour ce contact.
    */
   optIn: boolean;
-  /** Nom du webhook, tracé dans `contacts.opt_in_source` : c'est ce qui dit PAR OÙ un consentement est entré. */
+  /** Nom du webhook, tracé dans `contacts.opt_in_source` : il dit par où un consentement est entré. */
   name: string;
-  /** null = ce webhook n'écrit que des champs, il n'y a aucun scénario à déclencher. */
+  /** null = ce webhook n'écrit que des champs, aucun scénario à déclencher. */
   automationId: string | null;
   /**
-   * Une campagne AU FIL DE L'EAU en cours attend-elle les arrivants de cette adresse ?
-   *
-   * Sert UNIQUEMENT à décider de publier l'événement : un webhook sans scénario ne publiait rien, ce qui
-   * suffisait tant que le scénario était le seul consommateur. Absent (faux store de test) -> comportement
-   * d'avant, c'est-à-dire « publie seulement s'il y a un scénario ».
+   * Une campagne au fil de l'eau en cours attend-elle les arrivants de cette adresse ? Décide seulement de publier
+   * l'événement. Absent (faux store de test) : publie seulement s'il y a un scénario.
    */
   alimenteCampagne?: boolean;
 }
 
-/** Ce que l'écran d'administration affiche. Ne contient JAMAIS le hash du secret, ni son clair (qu'on n'a pas). */
+/** Ce que l'écran d'administration affiche. Ne contient jamais le hash du secret, ni son clair (qu'on n'a pas). */
 export interface WebhookRow {
   id: string;
   name: string;
@@ -72,7 +65,7 @@ export interface WebhookInput {
   mapping: RegleMapping[];
   createContact: boolean;
   optIn: boolean;
-  /** null = aucun scénario -> la ligne compagnon est supprimée. */
+  /** null = aucun scénario : la ligne compagnon est supprimée. */
   workflowId: string | null;
   startNodeId: string | null;
   cooldownSeconds: number | null;
@@ -86,19 +79,16 @@ export interface RawAdmin {
 }
 
 /**
- * Colonnes de l'écran. La jointure sur `automations` est un LEFT JOIN : un webhook sans scénario, ou dont le
- * scénario vient d'être supprimé (cascade `automations` -> `webhooks.automation_id` mis à null), reste
- * listable avec son URL et son mapping.
+ * Colonnes de l'écran. LEFT JOIN sur `automations` : un webhook sans scénario (ou dont le scénario vient d'être
+ * supprimé) reste listable.
  */
 const COLS_ADMIN = `w.id, w.name, w.enabled, w.code, w.secret_hash, w.mapping, w.create_contact, w.opt_in,
        w.last_payload, w.last_received_at, w.contacts_created, w.created_at,
        a.workflow_id, a.start_node_id, a.cooldown_seconds`;
 
 /**
- * Ligne de base -> ligne d'ecran. C'est ICI que le secret est retire : `COLS_ADMIN` selectionne bien
- * `secret_hash` (il faut savoir si un secret existe), et cette fonction n'en garde que le BOOLEEN. Exportee
- * pour etre testee directement : un test qui passe par un faux store ne prouve rien de cette frontiere,
- * puisque le faux ne porte deja pas de secret.
+ * Ligne de base -> ligne d'écran. 🔴 C'est ici que le secret est retiré : `COLS_ADMIN` sélectionne `secret_hash`,
+ * et seul le booléen en sort. Exportée pour être testée directement, un faux store ne portant pas de secret.
  */
 export function toRow(r: RawAdmin): WebhookRow {
   return {
@@ -124,18 +114,13 @@ export class PgWebhookStore {
   constructor(private readonly pool: Pool) {}
 
   /**
-   * CHEMIN PUBLIC : retrouve un webhook par son code. Le tenant vient d'ICI, jamais du corps de la requête.
-   *
-   * `enabled` est RENDU au lieu d'être filtré en SQL : c'est la route qui décide du 404, ce qui la rend
-   * testable sans base (`server.inject` avec un faux store).
+   * Chemin public : retrouve un webhook par son code. L'espace vient d'ici, jamais du corps de la requête.
+   * `enabled` est rendu au lieu d'être filtré : la route décide du 404, testable sans base.
    */
   async getByCode(code: string): Promise<WebhookPublic | null> {
     const res = await this.pool.query<{ id: string; tenant_id: string; name: string; enabled: boolean; secret_hash: string | null; mapping: unknown; create_contact: boolean; opt_in: boolean; automation_id: string | null; alimente_campagne: boolean }>(
-      // `alimente_campagne` : une campagne AU FIL DE L'EAU attend-elle les arrivants de cette adresse ?
-      // Calculé ICI, dans la requête qui a lieu de toute façon, plutôt que tenu en compteur sur la table (un
-      // compteur se désynchronise au premier arrêt, archivage ou suppression oubliés). C'est ce booléen qui
-      // décide de publier l'événement quand le webhook n'a AUCUN scénario attaché : sans lui, une campagne au
-      // fil de l'eau ne recevrait jamais rien, sans le moindre signal.
+      // `alimente_campagne` calculé ici, dans la requête qui a lieu de toute façon, plutôt que tenu en compteur (qui
+      // se désynchronise) : sans lui, une campagne au fil de l'eau sur un webhook sans scénario ne recevrait rien.
       `select id, tenant_id, name, enabled, secret_hash, mapping, create_contact, opt_in, automation_id,
               exists (select 1 from campaigns c where c.webhook_id = webhooks.id and c.status = 'running') as alimente_campagne
          from webhooks where code = $1 limit 1`,
@@ -158,8 +143,8 @@ export class PgWebhookStore {
   }
 
   /**
-   * Ce webhook est-il utilisable comme SOURCE d'une campagne au fil de l'eau ? Il doit appartenir à l'espace
-   * et être actif : brancher une campagne sur une adresse éteinte donnerait une campagne qui n'attrape rien.
+   * Ce webhook peut-il servir de source à une campagne au fil de l'eau ? Il doit appartenir à l'espace et être
+   * actif, sinon la campagne n'attraperait rien.
    */
   async usableByTenant(tenantId: string, id: string): Promise<boolean> {
     const res = await this.pool.query(
@@ -170,10 +155,8 @@ export class PgWebhookStore {
   }
 
   /**
-   * Enregistre le passage d'un appel : le dernier payload REMPLACE le précédent (jamais d'historique, cf. la
-   * note RGPD de la migration) et le compteur de contacts créés avance.
-   *
-   * Best-effort côté appelant : l'échec de cette écriture ne doit pas faire échouer l'appel du tiers.
+   * Enregistre le passage d'un appel : le dernier payload remplace le précédent (jamais d'historique, RGPD) et le
+   * compteur de contacts créés avance. Best-effort : l'échec ne fait pas échouer l'appel du tiers.
    */
   async recordCall(tenantId: string, id: string, payload: unknown, contactCreated: boolean): Promise<void> {
     await this.pool.query(
@@ -243,11 +226,9 @@ export class PgWebhookStore {
   }
 
   /**
-   * Aligne la ligne `automations` compagnon sur l'état voulu du webhook.
-   *
-   * Trois cas, et un seul invariant : `webhooks.automation_id` pointe une automation de type `webhook` dont
-   * le `trigger_config.webhookId` est CE webhook. La ligne peut avoir disparu sans nous (cascade quand le
-   * scénario est supprimé), d'où la ré-insertion quand la mise à jour ne touche aucune ligne.
+   * Aligne la ligne `automations` compagnon sur l'état voulu. Invariant : `webhooks.automation_id` pointe une
+   * automation `webhook` dont `trigger_config.webhookId` est ce webhook. La ligne peut avoir disparu (cascade à la
+   * suppression du scénario), d'où la ré-insertion quand la mise à jour ne touche rien.
    */
   private async syncAutomation(
     client: { query: Pool['query'] },
@@ -264,8 +245,7 @@ export class PgWebhookStore {
       return;
     }
 
-    // Le nom porte celui du webhook : si cette ligne apparaît un jour dans une surface d'exploitation, on
-    // doit pouvoir dire d'où elle vient sans requête supplémentaire.
+    // Le nom porte celui du webhook, pour dire d'où vient cette ligne sans requête supplémentaire.
     const nom = `Webhook : ${input.name}`.slice(0, 200);
     const cfg = JSON.stringify({ webhookId });
 
@@ -305,8 +285,8 @@ export class PgWebhookStore {
   }
 
   /**
-   * Pose un secret d'en-tête neuf et renvoie son CLAIR, une seule fois (jamais re-affichable), comme
-   * `PgApiKeyStore.create`. Seule l'empreinte est stockée. null = webhook inconnu dans cet espace.
+   * Pose un secret d'en-tête neuf et rend son clair une seule fois, comme `PgApiKeyStore.create` ; seule l'empreinte
+   * est stockée. null = webhook inconnu dans cet espace.
    */
   async rotateSecret(tenantId: string, id: string): Promise<string | null> {
     const secret = `whk_${newWebhookCode()}${newWebhookCode()}`;
@@ -336,8 +316,8 @@ export class PgWebhookStore {
   }
 
   /**
-   * Purge automatique des payloads dormants (balayage périodique). CROSS-TENANT par nature, comme les autres
-   * balayages du worker : c'est une obligation de conservation, pas une action d'utilisateur.
+   * Purge des payloads dormants, tous espaces confondus comme les autres balayages : une obligation de
+   * conservation, pas une action d'utilisateur.
    */
   async purgeStalePayloads(days: number): Promise<number> {
     const res = await this.pool.query(

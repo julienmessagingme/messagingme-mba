@@ -18,24 +18,21 @@ export interface CompteAccessible {
 }
 
 /**
- * Ce qu'on trouve derrière une adresse : UN mot de passe, et un ou plusieurs espaces.
- *
- * C'est le changement de fond du multi-espaces. Avant, une adresse valait un compte et le login rendait
- * directement ce compte ; désormais l'adresse porte l'authentification, et les espaces en découlent.
+ * Ce qu'on trouve derrière une adresse : un mot de passe, et un ou plusieurs espaces. L'adresse porte
+ * l'authentification, les espaces en découlent.
  */
 export interface EmailIdentity {
-  /** L'identité (migration 0072) : c'est elle qui porte le mot de passe ET le second facteur (0182). */
+  /** L'identité : c'est elle qui porte le mot de passe et le second facteur. */
   identityId: string;
   /** Hash à vérifier. Une adresse sans mot de passe (invitation en attente) ne peut pas se connecter. */
   passwordHash: string;
   /**
-   * L'identité a-t-elle un second facteur ACTIF ? Si oui, la connexion demande son code, quel que soit le rôle.
-   *
-   * 🔴 REQUIS, et c'est délibéré : un faux magasin de test doit DIRE s'il a un facteur, plutôt que de laisser un
-   * champ absent valoir « non » en silence.
+   * L'identité a-t-elle un second facteur actif ? Si oui, la connexion demande son code, quel que soit le
+   * rôle. Requis : un faux magasin de test doit dire s'il a un facteur, plutôt qu'un champ absent vaille
+   * « non ».
    */
   mfaActif: boolean;
-  /** Espaces accessibles. JAMAIS vide : une identité sans compte actif n'est pas rendue. */
+  /** Espaces accessibles. Jamais vide : une identité sans compte actif n'est pas rendue. */
   comptes: CompteAccessible[];
 }
 
@@ -63,15 +60,9 @@ export class PgUserAuthStore implements UserAuthStore {
       email: string;
       role: string;
     }>(
-      // Le mot de passe vient de l'IDENTITÉ (migration 0072) : une adresse = un mot de passe, quel que soit
-      // le nombre d'espaces. `users.password_hash` n'est plus lu ici.
-      //
-      // `disabled_at is null` : un compte révoqué ne s'authentifie pas et n'apparaît pas dans le choix. Si
-      // TOUS les comptes d'une adresse sont révoqués, la requête ne rend rien, et l'appelant répond comme
-      // pour une adresse inconnue.
-      //
-      // Trié par nom d'espace : l'ordre de l'écran de choix doit être stable d'une connexion à l'autre,
-      // sinon on finit par cliquer au mauvais endroit par habitude.
+      // Le mot de passe vient de l'identité : une adresse, un mot de passe, quel que soit le nombre d'espaces.
+      // `disabled_at is null` : un compte révoqué ne s'authentifie pas ; si tous le sont, rien n'est rendu, comme
+      // pour une adresse inconnue. Trié par nom d'espace : l'ordre de l'écran de choix reste stable.
       `select i.id as identity_id, i.password_hash, (i.mfa_active_le is not null) as mfa_actif,
               u.id as user_id, u.tenant_id, t.name as tenant_name, u.email, u.role
          from identities i

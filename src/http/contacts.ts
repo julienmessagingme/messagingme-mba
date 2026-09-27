@@ -25,20 +25,19 @@ export interface ContactsRouteDeps {
     },
   ): Promise<{ contact: ContactRow; addedTags: string[] } | null>;
   /**
-   * MODÉRATION : bloque ou débloque un contact. Bloqué = plus aucun envoi, et sa conversation disparaît de
-   * l'inbox.
+   * Modération : bloque ou débloque un contact. Bloqué = plus aucun envoi, et sa conversation disparaît de
+   * l'Inbox.
    */
   setBlocked(tenantId: string, contactId: string, bloque: boolean, parUserId: string | null): Promise<boolean>;
   listBlocked(tenantId: string): Promise<Array<{ id: string; profileName: string | null; phoneE164: string | null; blockedAt: string }>>;
   /**
-   * Les contacts qui ont demandé à ne plus être contactés. REQUISE depuis le lot 3 de l'audit ponytail : elle
-   * rendait 503 en son absence, jamais une liste vide (« aucun désabonné » et « la liste n'est pas branchée »
-   * sont deux situations opposées), et c'est désormais le compilateur qui interdit la seconde.
+   * Les contacts qui ont demandé à ne plus être contactés. Requise : « aucun désabonné » et « la liste n'est pas
+   * branchée » sont deux situations opposées, et le compilateur interdit la seconde.
    */
   listeDesabonnes(tenantId: string): Promise<Array<{
     id: string; profileName: string | null; phoneE164: string | null; desabonneLe: string | null; source: string | null;
   }>>;
-  /** Les messages entrants récents à relire avec la règle ÉLARGIE. Cf. `PgContactStore.messagesARelire`. */
+  /** Les messages entrants récents à relire avec la règle élargie. Cf. `PgContactStore.messagesARelire`. */
   messagesARelire(tenantId: string): Promise<{
     scannes: number;
     messages: Array<{ messageId: string; conversationId: string; contactId: string | null; waId: string; profileName: string | null; body: string; recuLe: string }>;
@@ -46,41 +45,34 @@ export interface ContactsRouteDeps {
   /** Action en masse (tags +/- et/ou poser un champ) sur une cible (ids ou filtres). Renvoie le nb touché. */
   applyEditsMany(tenantId: string, target: BulkTarget, edits: BulkEdits): Promise<number>;
   /**
-   * SUPPRESSION : efface le contenu (fil, messages, analyse qualitative) et anonymise ce qui porte les
+   * 🔴 Suppression : efface le contenu (fil, messages, analyse qualitative) et anonymise ce qui porte les
    * compteurs. Irréversible.
    */
   purgeMany(tenantId: string, ids: readonly string[]): Promise<{ purges: number; conversations: number; messages: number; analyses: number }>;
-  /** Résout une cible (ids OU filtres) en identifiants. Nécessaire à la purge, qui travaille par identifiants. */
+  /** Résout une cible (ids ou filtres) en identifiants. Nécessaire à la purge, qui travaille par identifiants. */
   contactIdsForTarget(tenantId: string, target: BulkTarget): Promise<string[]>;
   /**
-   * Journal d'audit. Requis depuis le lot 3 de l'audit ponytail ; les fixtures qui ne l'observent pas passent `journalMuet`. BEST-EFFORT à
-   * l'appel : un journal en échec ne doit jamais faire échouer l'action métier qu'il observe.
+   * Journal d'audit (les fixtures qui ne l'observent pas passent `journalMuet`). Au mieux à l'appel : un journal
+   * en échec ne fait jamais échouer l'action métier qu'il observe.
    */
   audit: AuditSink;
   /**
-   * Lecture du journal. Séparée de l'écriture à dessein : le store est en AJOUT SEUL, et rien ici ne doit
-   * laisser croire qu'une entrée se modifie.
+   * Lecture du journal. Séparée de l'écriture : le store est en ajout seul, et rien ici ne doit laisser croire
+   * qu'une entrée se modifie.
    */
   listAudit(tenantId: string, opts: { limit?: number; targetId?: string; q?: string; acteur?: string; telephone?: string }): Promise<AuditEntry[]>;
-  /**
-   * Le journal des ERREURS DE LIVRAISON. Séparé du journal d'actions, et pas par commodité : celui-ci porte
-   * les numéros (sans eux il ne répond à rien), celui-là n'en porte jamais (y écrire un numéro annulerait la
-   * purge d'un contact).
-   */
-  /**
-   * La moitié SYSTÈME du journal des erreurs : les appels vers les systèmes du client qui n'ont pas abouti.
-   */
+  /** La moitié système du journal des erreurs : les appels vers les systèmes du client qui n'ont pas abouti. */
   listErreursSysteme(tenantId: string, limit?: number): Promise<unknown[]>;
   listErreursLivraison(tenantId: string, filtre: { limit?: number; q?: string; telephone?: string; code?: number }): Promise<unknown[]>;
   /** Définitions des user fields du tenant (pour valider clé + type d'une valeur saisie). */
   listUserFields(tenantId: string): Promise<UserFieldDef[]>;
   /**
-   * Matérialise un champ SOCLE (`prenom`/`email`) absent de la base. Idempotent. Les fixtures qui ne la
+   * Matérialise un champ socle (`prenom`/`email`) absent de la base. Idempotent. Les fixtures qui ne la
    * regardent pas passent `socleJamaisCree`, qui garde le refus « champ inconnu ».
    */
   ensureSocleField(tenantId: string, key: string, label: string, type: UserFieldDef['type']): Promise<void>;
   /**
-   * Crée (ou met à jour) UN contact saisi à la main. Délègue au MÊME upsert que le webhook entrant, dont la
+   * Crée (ou met à jour) un contact saisi à la main. Délègue au même upsert que le webhook entrant, dont la
    * préparation des champs est aussi celle de l'API publique : un second chemin divergerait sur la
    * normalisation du numéro, l'opt-in ou les champs.
    */
@@ -92,28 +84,20 @@ export interface ContactsRouteDeps {
   getContactHistory(tenantId: string, contactId: string): Promise<ContactHistory | null>;
   /**
    * Le résumé de la dernière conversation analysée : la ligne « champ de base » de la fiche. null si le
-   * contact n'est pas dans le tenant.
-   *
-   * REQUISE depuis le lot 3 de l'audit ponytail : elle était optionnelle pour ne pas forcer les câblages de
-   * test à la déclarer, ce qui n'est pas une raison (le motif `estDesabonne`).
+   * contact n'est pas dans l'espace.
    */
   getResumeContact(tenantId: string, contactId: string): Promise<ResumeContact | null>;
   /** Envois du contact pour l'export CSV (non capé). null si le contact n'est pas dans le tenant. */
   listSendsForExport(tenantId: string, contactId: string): Promise<ContactSend[] | null>;
   /**
-   * CE QU'UN CONTACT A COÛTÉ, et jusqu'où il est allé (2026-09-11).
-   *
-   * Elle appelle Meta pour les tarifs : son ÉCHEC ne doit pas empêcher la fiche contact de s'ouvrir, qui
-   * appelle cette route à part.
+   * Ce qu'un contact a coûté, et jusqu'où il est allé. Elle appelle Meta pour les tarifs : son échec ne doit pas
+   * empêcher la fiche contact de s'ouvrir, qui appelle cette route à part.
    */
   getBilanContact(tenantId: string, contactId: string): Promise<{ cout: CoutContact; entonnoir: NiveauEngagement[] } | null>;
   /**
-   * Signale qu'un tag vient d'être posé sur UN contact, pour les automations « tag ajouté » (E.2). Best-effort :
-   * l'édition de la fiche a déjà réussi, un échec ici ne doit pas la faire échouer.
-   *
-   * Volontairement absent de l'action EN MASSE et de l'import : poser un tag sur des milliers de contacts
-   * déclencherait autant de scénarios, donc autant de messages facturés. Pour toucher une liste, c'est la
-   * campagne.
+   * Signale qu'un tag vient d'être posé sur un contact, pour les automations « tag ajouté ». Au mieux : l'édition
+   * a déjà réussi. 🔴 Absent de l'action en masse et de l'import : un tag posé sur des milliers de contacts
+   * déclencherait autant de scénarios, donc autant de messages facturés.
    */
   emitTagAdded(tenantId: string, contactId: string, tags: string[]): Promise<void>;
 }
@@ -123,8 +107,8 @@ export interface ContactsRouteDeps {
 const asIdArray = (v: unknown): string[] =>
   Array.isArray(v) ? [...new Set(v.map(String).map((s) => s.trim()).filter((s) => s !== ''))].slice(0, 100_000) : [];
 
-/** Normalise un ContactFilters depuis un corps JSON (donnée cliente). Le corps porte des TABLEAUX là où les
- *  query params portent des chaînes CSV : seul ce décodage est local, les règles viennent de crm/contact-filters. */
+/** Normalise un ContactFilters depuis un corps JSON (donnée cliente). Le corps porte des tableaux là où les
+*  query params portent des chaînes CSV : seul ce décodage est local, les règles viennent de crm/contact-filters. */
 function normalizeContactFilters(raw: unknown): ContactFilters {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
   const r = raw as Record<string, unknown>;
@@ -146,11 +130,9 @@ function normalizeContactFilters(raw: unknown): ContactFilters {
 
 /**
  * Cible d'une action en masse depuis le corps : `ids` non vides -> par ids ; sinon `filters` (+ `excludeIds`).
- * null si aucune cible exploitable (-> 400, jamais un UPDATE global par erreur).
- *
- * EXPORTÉE parce que la création de campagne s'en sert aussi (elle désigne ses destinataires exactement de la
- * même façon depuis le 2026-09-01). Un second analyseur dériverait, et une cible qui dérive veut dire une
- * campagne qui ne vise pas ce que l'écran du mini-CRM montrait.
+ * null si aucune cible exploitable (-> 400, jamais un UPDATE global par erreur). Exportée : la création de
+ * campagne désigne ses destinataires de la même façon, et un second analyseur ferait viser à une campagne autre
+ * chose que ce que montrait le mini-CRM.
  */
 export function parseBulkTarget(raw: unknown): BulkTarget | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
@@ -169,15 +151,9 @@ const asStringArray = (v: unknown): string[] =>
   Array.isArray(v) ? [...new Set(v.map(String).map((t) => t.trim().slice(0, 64)).filter((t) => t !== ''))].slice(0, 50) : [];
 
 /**
- * Édition d'UN contact (admin-only) : ajouter/mettre à jour des valeurs de user fields + affecter/retirer
- * des tags, depuis la fiche. Le tenant vient du JWT. MERGE (n'écrase jamais les autres clés). Renvoie le
- * contact à jour. Valide chaque valeur selon le type déclaré du user field (clé inconnue / valeur invalide -> 400).
- */
-/**
- * Définition d'un champ pour valider une valeur saisie. Un champ SOCLE (`prenom`/`email`) absent est MATÉRIALISÉ
- * à la volée : l'écran le propose dès l'ouverture d'un espace, alors qu'aucun chemin d'inscription ne le créait
- * en base (bug vécu le 2026-08-17, « champ inconnu : prenom » sur un compte neuf). Tout autre champ inconnu
- * reste REFUSÉ : c'est la garde qui empêche une faute de frappe de créer un champ fantôme.
+ * Définition d'un champ pour valider une valeur saisie. Un champ socle (`prenom`/`email`) absent est matérialisé
+ * à la volée (l'écran le propose dès l'ouverture d'un espace) ; tout autre champ inconnu reste refusé, pour
+ * qu'une faute de frappe ne crée pas un champ fantôme.
  */
 async function defPourEcriture(deps: ContactsRouteDeps, tenantId: string, key: string): Promise<UserFieldDef | undefined> {
   const lu = async (): Promise<UserFieldDef | undefined> => (await deps.listUserFields(tenantId)).find((d) => d.key === key);
@@ -192,40 +168,22 @@ async function defPourEcriture(deps: ContactsRouteDeps, tenantId: string, key: s
 export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, garde: Guard, gardeEncadrement: Guard, limiteCouteuse?: PreHandler): void {
   const opts = { preHandler: garde };
   /**
-   * L'ENCADREMENT, ET PAS TOUT LE MONDE : `admin` et `manager`. La liste des désabonnés nomme des personnes
-   * avec leur numéro ; c'est un artefact de conformité, pas un outil de traitement quotidien.
-   *
-   * 🔴 ELLE A ÉTÉ INERTE UNE JOURNÉE, ET C'EST CE QUE LA REVUE DU CHANTIER A TROUVÉ : `AppShell` renvoyait à
-   * l'inbox tout compte non-admin, sur toute page, donc aucun manager n'atteignait cet écran. Tranché par
-   * Julien le 2026-09-14 (« ouvre la console aux managers sur les écrans de conformité ») : la console et
-   * le serveur bougent désormais ensemble, et `web/lib/nav.ts` porte la liste des écrans ouverts.
-   *
-   * ⚠️ ELLE COUVRE LES LECTURES DE CONFORMITÉ, ET ELLES SEULES : les désabonnés, les refus possibles, le
-   * journal des actions et les deux moitiés du journal des erreurs. Consulter n'est pas décider : brancher
-   * un connecteur sur le consentement, purger un contact ou bloquer quelqu'un restent `forbidNonAdmin`.
+   * L'encadrement (`admin` et `manager`), pour les lectures de conformité seulement : désabonnés, refus possibles,
+   * journal des actions et les deux moitiés du journal des erreurs. Consulter n'est pas décider : brancher un
+   * connecteur sur le consentement, purger ou bloquer restent `forbidNonAdmin`. `web/lib/nav.ts` porte la liste
+   * des écrans ouverts.
    */
-  // 🔴 LA GARDE D'ENCADREMENT SEULE, pas empilée sur `garde` : `garde` est `g.admin`, dont le contrôle de rôle
-  // refusait le manager AVANT que l'encadrement soit lu (défaut vécu jusqu'au 2026-09-27).
+  // La garde d'encadrement seule, pas empilée sur `garde` : `garde` est `g.admin`, dont le contrôle de rôle
+  // refuserait le manager avant que l'encadrement soit lu.
   const optsEncadrement = { preHandler: gardeEncadrement };
-  // Garde des routes coûteuses : la garde habituelle, PLUS le plafond par espace (chaîne APLATIE).
+  // Garde des routes coûteuses : la garde habituelle plus le plafond par espace (chaîne aplatie).
   const couteux = gardeEtendue(garde, limiteCouteuse);
   const journal = makeJournal(deps.audit);
 
   /**
-   * Contacts bloqués du tenant. Cette liste est la SEULE porte de sortie d'un blocage : sans elle, un contact
-   * bloqué, invisible dans l'inbox et injoignable par campagne, serait perdu pour de bon.
-   *
-   * Déclarée AVANT `/contacts/:contactId` : `blocked` n'est pas un identifiant de contact.
-   */
-  /**
-   * LES CONTACTS DÉSABONNÉS : la liste du centre de Sécurité & compliance.
-   *
-   * 🔴 RÉSERVÉE À L'ENCADREMENT (`admin` et `manager`). Elle nomme des personnes qui ont demandé qu'on les
-   * laisse tranquilles, avec leur numéro : c'est une liste de conformité, pas un outil de travail
-   * quotidien. Même garde que le récap du bot d'aide, et pour la même raison.
-   *
-   * ⚠️ `tenant_id = $1` dans la requête, EN PLUS de `scopeTenant` : le pooler est superuser, la RLS est
-   * contournée, et le filtrage en code est donc le seul contrôle.
+   * Les contacts désabonnés : la liste du centre de Sécurité & compliance, réservée à l'encadrement (elle nomme
+   * des personnes avec leur numéro). 🔴 `tenant_id = $1` dans la requête en plus de `scopeTenant` : le pooler est
+   * superuser, la RLS est contournée, le filtrage en code est le seul contrôle.
    */
   app.get('/tenants/:tenantId/contacts/desabonnes', optsEncadrement, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -233,20 +191,14 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
   });
 
   /**
-   * LES REFUS POSSIBLES À CONFIRMER : ce que la règle ÉLARGIE aurait attrapé, et qu'elle n'a PAS appliqué.
-   *
-   * 🔴 ELLE N'A DÉSABONNÉ PERSONNE, ET CETTE ROUTE N'ÉCRIT RIEN. Mesure du 2026-09-13 : sur 135 messages
-   * entrants réels, zéro reconnu par la règle qui agit comme par une règle élargie candidate. Il n'y a rien
-   * sur quoi calibrer, donc on instrumente d'abord et on décide ensuite. Cette liste EST l'instrument.
-   *
-   * ⚠️ LE PLAFOND DE MESSAGES SCANNÉS EST REMONTÉ TEL QUEL (`scannes`), pour que l'écran puisse dire sur
-   * quoi il a regardé. Une liste vide obtenue en n'ayant rien lu et une liste vide obtenue après avoir tout
-   * lu ne veulent pas dire la même chose.
+   * Les refus possibles à confirmer : ce que la règle élargie aurait attrapé, sans l'appliquer. Cette route
+   * n'écrit rien et n'a désabonné personne : c'est l'instrument avant de décider. Le nombre de messages scannés
+   * remonte (`scannes`) : une liste vide après n'avoir rien lu ne dit pas la même chose qu'après avoir tout lu.
    */
   app.get('/tenants/:tenantId/contacts/refus-possibles', optsEncadrement, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { scannes, messages } = await deps.messagesARelire(tenant);
-    // La règle vit dans `src/crm/consentement.ts`, avec ses tests. Elle n'est PAS recopiée ici.
+    // La règle vit dans `src/crm/consentement.ts`, avec ses tests. Elle n'est pas recopiée ici.
     const refus = messages.filter((m) => classerDemandeArret(m.body) === 'peut_etre');
     return reply.code(200).send({ scannes, refus });
   });
@@ -292,7 +244,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     }
 
     // Suppression de valeurs de champs : n'importe quelle clé présente sur le contact (l'opérateur jsonb `- text[]`
-    // est inoffensif et scopé). On accepte donc les clés SANS définition (champ « orphelin » dont le def a été
+    // est inoffensif et scopé). On accepte donc les clés sans définition (champ « orphelin » dont le def a été
     // supprimé mais dont la valeur traîne encore sur le contact) : sinon elles seraient impossibles à retirer.
     const removeFields = Array.isArray(b.removeFields)
       ? [...new Set(b.removeFields.map(String).map((k) => k.trim()).filter((k) => k !== ''))].slice(0, 50)
@@ -306,7 +258,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
       profileName = trimmed === '' ? null : trimmed;
     }
 
-    // Consentement posé à la main depuis la fiche. DEUX valeurs seulement : « inconnu » veut dire « rien n'a
+    // 🔴 Consentement posé à la main depuis la fiche, deux valeurs seulement : « inconnu » veut dire « rien n'a
     // jamais été enregistré », et le réécrire après coup falsifierait le registre au lieu de le corriger.
     let optInStatus: 'opted_in' | 'opted_out' | undefined;
     if (b.optInStatus !== undefined) {
@@ -328,14 +280,13 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     });
     if (!updated) return reply.code(404).send({ error: 'contact inconnu' });
     // Journalisé comme la bascule en masse : c'est la même décision, prise sur une fiche au lieu d'une liste.
-    // APRÈS l'écriture réussie, sinon on consignerait un consentement qu'on n'a pas posé.
+    // Après l'écriture réussie, sinon on consignerait un consentement qu'on n'a pas posé.
     if (optInStatus !== undefined) {
       await journal(tenant, req, optInStatus === 'opted_in' ? 'contact.optin' : 'contact.optout', { kind: 'contact', id: contactId }, { source: 'fiche' });
     }
-    // Automations « tag ajouté » (E.2), sur les tags RÉELLEMENT nouveaux : reposer un tag déjà présent ne
-    // change rien en base, le déclencheur ne doit donc pas partir. APRÈS l'écriture réussie et en best-effort
-    // (un incident de file ne transforme pas une édition de fiche réussie en erreur pour l'opérateur), mais
-    // l'échec est JOURNALISÉ : sans trace, une automation muette serait indébogable.
+    // Automations « tag ajouté », sur les tags réellement nouveaux (reposer un tag présent ne change rien). Après
+    // l'écriture réussie et au mieux (un incident de file ne transforme pas l'édition en erreur), mais l'échec est
+    // journalisé : sans trace, une automation muette serait indébogable.
     if (updated.addedTags.length > 0) {
       await deps.emitTagAdded(tenant, contactId, updated.addedTags).catch((err: unknown) => {
         // eslint-disable-next-line no-console
@@ -346,14 +297,8 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
   });
 
   /**
-   * Historique d'un contact : campagnes reçues et conversations tenues. Lecture seule.
-   *
-   * Le segment `/history` n'est pas décoratif : un `GET /tenants/:t/contacts/:contactId` nu entrerait en
-   * concurrence de routage avec les GET statiques `/contacts/count` et `/contacts/ids` de src/http/import.ts.
-   * Fastify tranche en faveur du statique, mais c'est une ambiguïté gratuite.
-   *
-   * Admin-only, comme tout ce fichier (`registerContacts` est monté avec `gardeAdmin`). Un agent voit déjà
-   * les mêmes conversations dans l'inbox, mais pas l'historique de campagnes, qui est une vue de pilotage.
+   * Historique d'un contact : campagnes reçues et conversations tenues. Lecture seule, admin. Le segment
+   * `/history` évite une ambiguïté de routage avec `/contacts/count` et `/contacts/ids` (`src/http/import.ts`).
    */
   app.get('/tenants/:tenantId/contacts/:contactId/history', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -364,16 +309,9 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
   });
 
   /**
-   * LE RÉSUMÉ de la dernière conversation analysée : la ligne « champ de base » de la fiche contact
-   * (demande de Julien : « le résumé de la conversation [...] ça serait un champ de base à partir du moment
-   * où il y a une conversation »).
-   *
-   * ⚠️ ROUTE À PART DE `/history`, ET L'INVERSE DU CAS DU BILAN. Le bilan est séparé parce qu'il est plus
-   * LENT (il appelle Meta) ; celui-ci est séparé parce qu'il doit être plus RAPIDE : il part à l'ouverture de
-   * la fiche, sur l'onglet « Fiche », alors que l'historique n'est chargé que si l'on clique « Historique ».
-   *
-   * Admin-only comme tout ce fichier. Ce texte est une analyse de ce qu'une personne a raconté : il n'a pas
-   * moins de valeur que le fil lui-même, il en a la substance.
+   * Le résumé de la dernière conversation analysée, ligne « champ de base » de la fiche. Route à part de
+   * `/history` pour être rapide : elle part à l'ouverture de la fiche, l'historique seulement au clic. Admin : ce
+   * texte a la substance du fil lui-même.
    */
   app.get('/tenants/:tenantId/contacts/:contactId/resume', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -384,14 +322,8 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
   });
 
   /**
-   * LE BILAN d'un contact : ce qu'il a coûté, et son entonnoir d'engagement (demande de Julien,
-   * 2026-09-11 : « mettre le fric que la personne nous a coûté et en face le nombre d'engagements de 1er
-   * niveau [...] puis de 2e niveau, 3e niveau »).
-   *
-   * ⚠️ ROUTE À PART DE `/history`, alors que l'écran les affiche ensemble, et pour une raison qui compte :
-   * celle-ci appelle META pour les tarifs. La fiche contact s'ouvre souvent juste pour corriger un champ, et
-   * faire dépendre son historique d'un aller-retour réseau chez Meta transformerait une lecture locale en
-   * lecture distante. Les deux partent en parallèle depuis l'écran.
+   * Le bilan d'un contact : ce qu'il a coûté, et son entonnoir d'engagement. Route à part de `/history` parce
+   * qu'elle appelle Meta pour les tarifs : l'historique reste une lecture locale, les deux partent en parallèle.
    */
   app.get('/tenants/:tenantId/contacts/:contactId/bilan', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -402,7 +334,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
   });
 
   /**
-   * Envois du contact pour l'EXPORT CSV (F5), non capé. Renvoie du JSON `{ sends: [...] }` (le front construit et
+   * Envois du contact pour l'export CSV, non capé. Renvoie du JSON `{ sends: [...] }` (le front construit et
    * télécharge le CSV : le wrapper `request()` fait toujours res.json(), donc pas de CSV brut côté serveur). Admin-only.
    */
   app.get('/tenants/:tenantId/contacts/:contactId/history/export', couteux, async (req, reply) => {
@@ -411,28 +343,16 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     const sends = await deps.listSendsForExport(tenant, contactId);
     if (!sends) return reply.code(404).send({ error: 'contact inconnu' });
     /**
-     * 🔴 UNE EXTRACTION DE DONNÉES PERSONNELLES NE LAISSAIT AUCUNE TRACE (choix de Julien, 2026-09-15). Ce
-     * qui sort d'ici, c'est l'historique d'envois d'une personne, destiné à un fichier qui vit ensuite hors
-     * du produit. C'est précisément le geste qu'un DPO veut pouvoir retracer.
-     *
-     * ⚠️ LE NOMBRE, PAS LE CONTENU : le détail dit combien de lignes sont parties, jamais lesquelles. Les y
-     * écrire recopierait dans une table jamais purgée ce que l'export est censé simplement montrer.
+     * 🔴 Une extraction de données personnelles laisse une trace : c'est le geste qu'un DPO veut retracer. Le
+     * nombre, pas le contenu : écrire les lignes recopierait dans une table jamais purgée ce que l'export montre.
      */
     await journal(tenant, req, 'contact.exporte', { kind: 'contact', id: contactId }, { envois: sends.length });
     return reply.code(200).send({ sends });
   });
 
   /**
-   * Action en masse (mini-CRM, admin-only) : ajouter/retirer un tag OU poser la valeur d'un champ sur une
-   * cible (ids cochés OU filtres + exclusions). Une seule action par appel. Le champ est validé contre les
-   * définitions user_fields du tenant (clé inconnue -> 400 ; valeur invalide pour le type -> 400, comme la
-   * fiche). La cible est toujours re-scopée `tenant_id` + `deleted_at is null` côté store. Renvoie `{ affected }`.
-   */
-  /**
-   * Crée UN contact à la main (le mini-CRM ne savait le faire que par import CSV : fabriquer un fichier pour un
-   * seul numéro). Admin-only, tenant du JWT. Délègue à l'upsert partagé, donc le numéro est normalisé comme
-   * ailleurs et un numéro DÉJÀ connu met le contact à jour au lieu d'échouer : la réponse dit lequel des deux
-   * s'est produit (`status`), pour que l'écran ne prétende pas avoir créé ce qui existait déjà.
+   * Crée un contact à la main (admin, espace du JWT). Délègue à l'upsert partagé : le numéro est normalisé comme
+   * ailleurs, et un numéro déjà connu met le contact à jour ; la réponse dit lequel des deux (`status`).
    */
   app.post('/tenants/:tenantId/contacts', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -442,9 +362,8 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     if (phone === '') return reply.code(400).send({ error: 'téléphone requis' });
     const rawFields = b.fields && typeof b.fields === 'object' && !Array.isArray(b.fields) ? (b.fields as Record<string, unknown>) : {};
 
-    // Les champs sont validés ICI contre les définitions du tenant, alors que l'upsert partagé auto-créerait
-    // toute clé inconnue. C'est voulu : une saisie à la main ne doit pas pouvoir inventer un champ, sinon une
-    // faute de frappe crée un champ fantôme pour tout l'espace. Un champ SOCLE absent est matérialisé.
+    // Les champs sont validés ici contre les définitions de l'espace, alors que l'upsert partagé auto-créerait
+    // toute clé inconnue : une saisie à la main ne doit pas inventer un champ. Un champ socle absent est matérialisé.
     const fields: Record<string, string> = {};
     for (const [key, raw] of Object.entries(rawFields)) {
       const val = String(raw ?? '').trim();
@@ -455,13 +374,8 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
       fields[key] = canonicalizeFieldValue(def.type, val);
     }
 
-    // OPT-IN PAR DÉFAUT, et seulement ici. Saisir un numéro à la main suppose qu'on l'a obtenu de la personne ;
-    // le créer muet en ferait un contact que le garde-fou de campagne ÉCARTE du marketing (il exige un opt-in
-    // explicite), sans que rien ne le dise à l'écran. L'import CSV et l'API publique gardent l'exigence inverse :
-    // là, l'opérateur charge une liste dont il ne connaît pas chaque ligne. Décision de Julien, 2026-08-18.
-    //
-    // Calculé UNE fois : la valeur sert à créer le contact ET à le journaliser. Deux expressions séparées ont
-    // divergé le temps d'un déploiement, et le journal annonçait « optIn: non » sur un contact opt-in.
+    // 🔴 Opt-in par défaut : saisir un numéro à la main suppose qu'on l'a obtenu de la personne ; muet, le contact
+    // serait écarté du marketing sans que l'écran le dise. Calculé une fois : la valeur sert à créer et à journaliser.
     const optIn = b.optIn !== false;
 
     const name = typeof b.name === 'string' && b.name.trim() !== '' ? b.name.trim().slice(0, 120) : undefined;
@@ -471,13 +385,13 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
       ...(Object.keys(fields).length > 0 ? { fields } : {}),
       tags: asStringArray(b.tags),
       optIn,
-      // Facultatif, et surtout PAS une seconde identité obligatoire : le numéro reste la clé de ce chemin.
+      // Facultatif, et surtout pas une seconde identité obligatoire : le numéro reste la clé de ce chemin.
       ...(typeof b.bsuid === 'string' && b.bsuid.trim() !== '' ? { bsuid: b.bsuid.trim().slice(0, 200) } : {}),
     });
     if (res.status === 'error') return reply.code(400).send({ error: res.reason ?? 'contact invalide' });
     // Le détail dit `updated` quand le numéro était déjà connu : sans ça, l'historique laisserait croire à une
     // création alors que la fiche existait. L'opt-in figure ici plutôt que sur une ligne `contact.optin` à part,
-    // parce qu'il n'y a eu qu'UNE action de l'opérateur.
+    // parce qu'il n'y a eu qu'une action de l'opérateur.
     await journal(tenant, req, 'contact.created', { kind: 'contact', id: res.contactId ?? 'inconnu' }, { status: res.status, optIn });
     return reply.code(res.status === 'created' ? 201 : 200).send({ status: res.status, contactId: res.contactId });
   });
@@ -525,10 +439,8 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
   });
 
   /**
-   * Historique d'audit de l'espace, du plus récent au plus ancien. Lecture seule, admin-only.
-   *
-   * Monté ici et pas dans un fichier à part : toutes les actions journalisées sont des actions de CONTACT,
-   * et ce fichier est déjà leur périmètre admin. `targetId` filtre sur un contact précis (fiche).
+   * Historique d'audit de l'espace, du plus récent au plus ancien. Lecture seule, encadrement. `targetId` filtre
+   * sur un contact précis (fiche).
    */
   app.get('/tenants/:tenantId/audit', optsEncadrement, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -547,21 +459,17 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
   });
 
   /**
-   * LE JOURNAL DES ERREURS DE LIVRAISON : ce que Meta a répondu quand un message n'est pas parti, ou n'est pas
-   * arrivé. Lecture seule, admin-only, au même endroit que le journal des actions.
-   *
-   * ⚠️ Il porte les NUMÉROS, contrairement au journal des actions, et c'est délibéré : « quel message n'est pas
-   * arrivé » sans dire « à qui » ne répond à rien. Il n'a rien d'immuable, il se lit depuis les destinataires
-   * de campagne, les échecs d'avance de scénario (0108) et les échecs de messages libres (0175), et il disparaît
-   * avec le contact quand on le purge. Les appels en échec vers les systèmes du client ont leur propre route,
-   * `/erreurs-systeme`.
+   * Le journal des erreurs de livraison : ce que Meta a répondu quand un message n'est pas parti ou pas arrivé.
+   * Lecture seule. Il porte les numéros, contrairement au journal des actions (« quel message » sans « à qui » ne
+   * répond à rien) ; il se lit depuis les destinataires de campagne, les échecs de scénario et de messages libres,
+   * et disparaît avec le contact purgé. Les appels en échec vers les systèmes du client : `/erreurs-systeme`.
    */
   app.get('/tenants/:tenantId/erreurs-livraison', optsEncadrement, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const q = (req.query ?? {}) as { limit?: unknown; q?: unknown; telephone?: unknown; code?: unknown };
     const limit = Number.isFinite(Number(q.limit)) ? Number(q.limit) : undefined;
     const texte = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v.trim().slice(0, 120) : undefined);
-    // Un code non numérique est IGNORÉ plutôt que refusé : il vient d'un champ de recherche, où l'on tape ce
+    // Un code non numérique est ignoré plutôt que refusé : il vient d'un champ de recherche, où l'on tape ce
     // qu'on a sous la main. `q` couvre déjà la recherche libre.
     const code = Number.isInteger(Number(q.code)) && String(q.code).trim() !== '' ? Number(q.code) : undefined;
     const erreurs = await deps.listErreursLivraison(tenant, {
@@ -574,15 +482,9 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
   });
 
   /**
-   * LA MOITIÉ SYSTÈME DU JOURNAL : les appels vers VOS systèmes qui n'ont pas abouti (migration 0142).
-   *
-   * 🔴 UNE ROUTE À PART, ET PAS UN CHAMP DE PLUS SUR LA PRÉCÉDENTE. Les deux moitiés sont de NATURE
-   * différente (Meta refuse un message vers un contact / le système du client refuse un appel que nous lui
-   * passons), elles n'ont pas les mêmes colonnes, et les fondre obligerait chacune à porter les champs vides
-   * de l'autre. L'écran les montre côte à côte, distinguées, pas mélangées.
-   *
-   * ⚠️ ADMIN-ONLY, comme la précédente : elle nomme les systèmes internes d'un client et ce qu'ils ont
-   * répondu.
+   * La moitié système du journal : les appels vers les systèmes du client qui n'ont pas abouti. Route à part :
+   * les deux moitiés n'ont ni la même nature ni les mêmes colonnes. Elle nomme les systèmes internes d'un client
+   * et leurs réponses.
    */
   app.get('/tenants/:tenantId/erreurs-systeme', optsEncadrement, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -592,17 +494,9 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
   });
 
   /**
-   * SUPPRESSION d'un contact : la SEULE, et elle efface pour de vrai.
-   *
-   * Il a existé deux destructions, une douce (réversible, qui gardait le fil) et celle-ci. Les distinguer à
-   * l'écran ne servait personne : on supprime un contact pour qu'il disparaisse, pas pour qu'il disparaisse
-   * à moitié. Décision de Julien le 2026-08-19, après avoir supprimé un contact dont la conversation restait.
-   *
-   * Le corps doit porter `confirm: 'SUPPRIMER'`. Ce n'est pas de la décoration : l'action est irréversible et
-   * peut viser des milliers de fiches d'un coup via des filtres.
-   *
-   * ⚠️ Le journal enregistre l'IDENTIFIANT du contact, jamais son numéro : y écrire le numéro annulerait la
-   * purge, en réinscrivant la personne dans une table faite pour ne jamais être modifiée.
+   * 🔴 Suppression d'un contact : la seule, et elle efface pour de vrai. Irréversible, et elle peut viser des
+   * milliers de fiches par filtres : le corps doit porter `confirm: 'SUPPRIMER'`. Le journal enregistre
+   * l'identifiant, jamais le numéro (qui réinscrirait la personne dans une table jamais modifiée).
    */
   app.post('/tenants/:tenantId/contacts/purge', couteux, async (req, reply) => {
     const tenant = espaceVerifie(req);

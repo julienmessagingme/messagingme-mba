@@ -6,29 +6,25 @@ export type ParamSource =
   | { type: 'now' }
   | { type: 'literal'; value: string }
   /**
-   * UNE VARIABLE DU DESTINATAIRE, passée par l'API publique dans `recipients[].variables` (spec 2026-09-24,
-   * § 3, lot 3). Elle ne vit que le temps d'un envoi et n'est JAMAIS écrite sur la fiche.
-   *
-   * 🔴 ACCEPTÉE SEULEMENT LÀ OÙ ELLE A UN SENS (`validateParamMapping(..., { accepterVariables: true })`,
-   * appelé par `/v1/sends`). La console et les indices de template la refusent : un mapping de campagne de
-   * la console qui la porterait écarterait TOUS ses destinataires en `missing_variable`, puisqu'aucun n'a de
-   * variables.
+   * Une variable du destinataire, passée par l'API publique dans `recipients[].variables` : elle ne vit que le
+   * temps d'un envoi et n'est jamais écrite sur la fiche. Acceptée seulement par `/v1/sends`
+   * (`accepterVariables: true`) : dans un mapping de la console, elle écarterait tous les destinataires en
+   * `missing_variable`.
    */
   | { type: 'variable'; key: string };
 
 /**
- * Le nom d'une variable de destinataire. La MÊME classe de caractères que les `{{nom}}` d'un message RCS
- * (`MOTIF`, `src/rcs/variables.ts`) : une variable nommée ici doit pouvoir y être appelée.
+ * Le nom d'une variable de destinataire : la même classe de caractères que les `{{nom}}` d'un message RCS
+ * (`MOTIF`, `src/rcs/variables.ts`), pour qu'une variable nommée ici puisse y être appelée.
  */
 export const CLE_VARIABLE = /^[A-Za-z0-9_.-]{1,64}$/;
 
-/** Fuseau par défaut pour la source NOW quand l'appelant n'en fournit pas. ⚠️ v1 : AUCUN chemin d'envoi ne
- *  fournit `tz` aujourd'hui -> NOW s'affiche toujours dans ce fuseau (marché principal FR), même si le tenant a
- *  configuré un autre fuseau (respecté, lui, par les CONDITIONS). Raffinement par tenant = évolution possible. */
+/** Fuseau par défaut de la source NOW. Aucun chemin d'envoi ne fournit `tz` aujourd'hui : NOW s'affiche donc
+ *  toujours dans ce fuseau, même si le tenant en a configuré un autre (respecté, lui, par les conditions). */
 const DEFAULT_NOW_TZ = 'Europe/Paris';
 
-/** Contexte de résolution non lié au contact : `now` (source NOW) + fuseau d'affichage. Optionnel — un template
- *  qui n'utilise pas la source NOW n'en a pas besoin. */
+/** Contexte de résolution non lié au contact : `now` (source NOW) et fuseau d'affichage. Optionnel pour un
+ *  template qui n'utilise pas la source NOW. */
 export interface ResolveOpts {
   now?: Date;
   tz?: string;
@@ -68,11 +64,9 @@ function isValidSource(s: unknown, accepterVariables = false): s is ParamSource 
 }
 
 /**
- * Valide un paramMapping non fiable (issu d'un body HTTP) : chaque entrée doit avoir une
- * position entière et une source bien formée, et l'ensemble des positions doit être 1..N
- * contigu et unique (même invariant que resolveTemplateParams, mais SANS throw). Retourne
- * le tableau typé si valide, sinon null -> la route répond 400 plutôt que de laisser
- * resolveTemplateParams throw en 500.
+ * Valide un paramMapping non fiable (corps HTTP) : positions entières, sources bien formées, et positions 1..N
+ * contiguës et uniques (l'invariant de resolveTemplateParams, sans throw). Rend le tableau typé, ou null pour
+ * que la route réponde 400 plutôt qu'un 500.
  */
 export function validateParamMapping(raw: unknown, options: { accepterVariables?: boolean } = {}): TemplateParam[] | null {
   if (!Array.isArray(raw)) return null;
@@ -95,10 +89,9 @@ export function validateParamMapping(raw: unknown, options: { accepterVariables?
 }
 
 /**
- * Valide des « indices » variable -> champ (posés au design d'un template). Contrairement à
- * validateParamMapping, ils sont SPARSE (seules les variables insérées via le sélecteur ont un indice ; les
- * `{{n}}` tapés à la main n'en ont pas) : on n'exige donc PAS une suite 1..N contiguë. Chaque entrée = une
- * position entière >= 1 (unique) + une source bien formée. Retourne les indices typés, ou null si malformé.
+ * Valide des indices variable -> champ posés au design. Contrairement au paramMapping, ils sont épars (un
+ * `{{n}}` tapé à la main n'en a pas) : pas de suite 1..N exigée, seulement des positions entières >= 1 uniques
+ * et des sources bien formées. Rend les indices typés, ou null si malformé.
  */
 export function parseParamHints(raw: unknown): Array<{ position: number; source: ParamSource }> | null {
   if (raw === undefined) return [];
@@ -122,11 +115,11 @@ function valueOf(source: ParamSource, c: ResolvableContact, opts?: ResolveOpts):
     case 'literal':
       return source.value;
     case 'now':
-      // NOW ne dépend pas du contact : date du jour dans le fuseau tenant. Sans `now` fourni par l'appelant
-      // (chemin qui ne supporte pas NOW), la valeur est absente -> position `missing` (jamais un envoi faux).
+      // NOW ne dépend pas du contact. Sans `now` fourni par l'appelant, la valeur est absente -> position
+      // `missing`, jamais un envoi faux.
       return opts?.now ? formatNow(opts.now, opts.tz ?? DEFAULT_NOW_TZ) : undefined;
     case 'attribute':
-      // Switch EXHAUSTIF par clé : un ternaire binaire ferait retomber bsuid/wa_id sur le téléphone (bug muet).
+      // Switch exhaustif par clé : un ternaire binaire ferait retomber bsuid et wa_id sur le téléphone.
       switch (source.key) {
         case 'name':
           return c.profile_name;
@@ -148,10 +141,9 @@ function valueOf(source: ParamSource, c: ResolvableContact, opts?: ResolveOpts):
 }
 
 /**
- * Résultat de résolution : les valeurs ordonnées par position (`values`) + les positions dont la valeur est
- * MANQUANTE (`missing`, 1-based). Une variable manquante ne doit JAMAIS partir à Meta en `text:''` (rejet 132012) :
- * le destinataire est sauté en amont (cf. `buildRecipients`, worker). On ne remplit PAS avec l'exemple Meta du
- * template (échantillon de design, ex. « Jean » -> l'envoyer à tout le monde serait faux).
+ * Résultat de résolution : les valeurs ordonnées par position (`values`) et les positions manquantes
+ * (`missing`, 1-based). Une variable manquante ne part jamais à Meta en `text:''` (rejet 132012) : le
+ * destinataire est sauté en amont. On ne remplit pas avec l'exemple de design du template.
  */
 export interface ResolvedParams {
   values: string[];
@@ -159,16 +151,16 @@ export interface ResolvedParams {
 }
 
 /**
- * Nombre de variables d'un corps de template = MAX des positions `{{n}}` (Meta attend des params pour 1..N). Le simple
- * nombre de `{{n}}` distincts sous-compterait un corps non contigu (`{{1}} ... {{3}}` = 3 params attendus, pas 2 ->
- * évite 132000). 0 si aucune variable.
+ * Nombre de variables d'un corps de template = le maximum des positions `{{n}}` (Meta attend des params pour
+ * 1..N) : compter les `{{n}}` distincts sous-compterait un corps non contigu (132000). 0 si aucune.
  */
 export function countTemplateVariables(body: string): number {
   const positions = [...body.matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map((m) => Number(m[1]));
   return positions.length > 0 ? Math.max(...positions) : 0;
 }
 
-/** Valeur d'une source pour un contact : non-vide -> string, sinon `undefined` (déclenche `missing`). `fallback` = défaut design explicite, compte comme rempli. */
+/** Valeur d'une source pour un contact : non vide -> string, sinon `undefined` (donc `missing`). `fallback`,
+ *  défaut explicite du design, compte comme rempli. */
 function resolveOne(source: ParamSource, contact: ResolvableContact, fallback?: string, opts?: ResolveOpts): string | undefined {
   const v = valueOf(source, contact, opts);
   const s = v === null || v === undefined || v === '' ? undefined : String(v);
@@ -177,8 +169,8 @@ function resolveOne(source: ParamSource, contact: ResolvableContact, fallback?: 
 }
 
 /**
- * Résout les variables d'un template pour un contact (voie directe : mapping 1..N contigu). Valeur absente ->
- * position marquée `missing` (jamais `''` envoyé). C'est la glue « coller les infos du CRM dans les templates ».
+ * Résout les variables d'un template pour un contact (mapping 1..N contigu). Valeur absente -> position
+ * marquée `missing`, jamais `''` envoyé.
  */
 export function resolveTemplateParams(params: TemplateParam[], contact: ResolvableContact, opts?: ResolveOpts): ResolvedParams {
   const sorted = [...params].sort((a, b) => a.position - b.position);
@@ -200,11 +192,9 @@ export function resolveTemplateParams(params: TemplateParam[], contact: Resolvab
 }
 
 /**
- * Résout les `count` variables du corps d'un template à partir d'indices SPARSE (variable {{position}} -> champ,
- * posés au design). On part du NOMBRE de variables connu du template live et on remplit CHAQUE position 1..count :
- * indice mappé -> valeur du contact, sinon position marquée `missing`. Renvoie TOUJOURS `count` valeurs (le compte
- * fourni à Meta correspond -> pas de 132000) MAIS toute position `missing` doit faire SAUTER le destinataire en
- * amont (pas d'envoi `text:''` -> pas de 132012). C'est ce qui « colle le prénom » sans re-demander.
+ * Résout les `count` variables du corps d'un template à partir d'indices épars posés au design : chaque
+ * position 1..count prend la valeur du contact si elle est mappée, sinon elle est `missing`. Rend toujours
+ * `count` valeurs (pas de 132000), mais toute position `missing` doit faire sauter le destinataire (pas de 132012).
  */
 export function resolveHintParams(
   hints: Array<{ position: number; source: ParamSource }>,
@@ -225,11 +215,9 @@ export function resolveHintParams(
 }
 
 /**
- * Rafraîchit les positions de source NOW dans des params DÉJÀ résolus, à l'instant de l'ENVOI. Les campagnes
- * résolvent field/attribute/literal à la CRÉATION (état contact figé, resolved_params stockés), mais NOW doit
- * refléter le jour de l'ENVOI, pas de la création : une campagne créée lundi et envoyée jeudi (programmée/draft)
- * doit afficher jeudi. Les autres positions sont laissées INCHANGÉES. No-op s'il n'y a aucune source NOW ou pas de
- * `now`. À appeler au plus près de l'envoi (moteur de campagne).
+ * Rafraîchit les positions NOW de params déjà résolus, à l'instant de l'envoi : une campagne résout le reste à
+ * la création, mais NOW doit refléter le jour de l'envoi. Les autres positions restent inchangées. À appeler au
+ * plus près de l'envoi.
  */
 export function refreshNowParams(resolvedParams: string[], paramMapping: TemplateParam[], opts: ResolveOpts): string[] {
   if (!opts.now || !paramMapping.some((p) => p.source.type === 'now')) return resolvedParams;

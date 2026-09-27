@@ -1,10 +1,9 @@
 /**
- * Client Graph API de l'Embedded Signup (Tech Provider). Séquence officielle, vérifiée sur la doc
- * primaire Meta (2026-07-15, ES v4) :
- *  1. échange du code renvoyé par la popup (TTL 30 s) -> business token (BISU, scopé au client onboardé) ;
- *  2. GET du numéro AVEC ce business token -> display/verified/status ;
+ * Client Graph API de l'Embedded Signup (Tech Provider), séquence officielle Meta (ES v4) :
+ *  1. échange du code de la popup (TTL 30 s) -> business token, scopé au client embarqué ;
+ *  2. GET du numéro avec ce token -> display, verified, status ;
  *  3. POST /{waba_id}/subscribed_apps -> webhooks du WABA branchés sur notre app (idempotent) ;
- *  4. POST /{phone_number_id}/register (pin) : numéro NEUF uniquement — un numéro déjà CONNECTED se
+ *  4. POST /{phone_number_id}/register (pin) : numéro neuf uniquement, un numéro déjà CONNECTED se
  *     re-sélectionne dans la popup sans OTP ni register.
  */
 
@@ -17,39 +16,24 @@ export interface EsPhoneInfo {
   /** Statut du numéro (ex. CONNECTED) : décide si le register est nécessaire. */
   status: string | null;
   /**
-   * Vérification du numéro par code (`VERIFIED`, `NOT_VERIFIED`, `EXPIRED`). Rendu par `getPhone` seulement,
-   * d'où l'optionnalité : `listPhones` ne sert qu'à retrouver un identifiant et ne le demande pas.
-   *
-   * 🔴 DEPUIS LA v4 DE L'INSCRIPTION, un client peut terminer le parcours avec un numéro NON vérifié (la v2
-   * finissait toujours vérifié). `register` refuse alors le numéro (133006) et chaque tentative consomme une
-   * des 10 requêtes permises par numéro sur 72 h. Mesuré le 2026-09-22 : numéro resté `PENDING`, cause perdue.
+   * Vérification du numéro par code (`VERIFIED`, `NOT_VERIFIED`, `EXPIRED`), rendue par `getPhone` seulement.
+   * Depuis la v4, un client peut finir le parcours avec un numéro non vérifié : `register` le refuse (133006), et
+   * chaque tentative consomme une des 10 requêtes permises par numéro sur 72 h.
    */
   codeVerificationStatus?: string | null;
 }
 
-/**
- * L'appel Graph, l'échange de code et la lecture des cibles d'un jeton viennent de `ClientGraph`
- * (`./graph.ts`), extrait le 2026-09-23 pour que les publicités ne les recopient pas. Ce qui suit est ce
- * qui appartient EN PROPRE à l'inscription WhatsApp.
- */
+/** Ce qui est propre à l'inscription WhatsApp ; l'appel Graph et l'échange de code viennent de `ClientGraph`. */
 export class MetaEmbeddedSignupClient extends ClientGraph {
 
   /**
-   * Comptes WhatsApp auxquels ce business token donne accès, lus DANS LE TOKEN (`GET /debug_token` ->
-   * `granular_scopes[...].target_ids`).
-   *
-   * 🔴 POURQUOI ce détour existe. La popup n'émet ses informations de compte (`WA_EMBEDDED_SIGNUP`) que
-   * lorsqu'elle exécute VRAIMENT les étapes de configuration. Un client qui rouvre le parcours après un premier
-   * passage déjà abouti obtient un code d'autorisation... et RIEN d'autre : Meta n'a plus rien à configurer,
-   * donc plus rien à annoncer. Mesuré le 2026-08-17 avec toute trace de filtrage retirée : le seul message reçu
-   * de facebook.com était le canal interne du SDK portant le code. Tant qu'on dépendait de ce message, un client
-   * ayant cliqué deux fois restait bloqué DÉFINITIVEMENT, sans aucun recours.
-   *
-   * Rend [] si le token n'expose aucune cible, et ce n'est pas une erreur : un token NON scopé (System User de
-   * notre propre business, mesuré le 2026-08-17) rend `target_ids: null`. L'appelant décide quoi en dire.
+   * Comptes WhatsApp auxquels ce business token donne accès, lus dans le token (`GET /debug_token` ->
+   * `granular_scopes[...].target_ids`). La popup n'annonce ses comptes (`WA_EMBEDDED_SIGNUP`) que lorsqu'elle
+   * configure vraiment : un client qui refait le parcours ne reçoit que le code, et resterait bloqué sans ce détour.
+   * Rend [] si le token n'expose aucune cible (un token non scopé rend `target_ids: null`) : l'appelant décide.
    */
   async wabasForToken(businessToken: string): Promise<string[]> {
-    // Les DEUX scopes WhatsApp sont acceptés : selon la configuration, la cible n'est portée que par l'un.
+    // Les deux scopes WhatsApp sont acceptés : selon la configuration, la cible n'est portée que par l'un.
     return this.ciblesDuJeton(businessToken, ['whatsapp_business_management', 'whatsapp_business_messaging']);
   }
 
@@ -71,9 +55,9 @@ export class MetaEmbeddedSignupClient extends ClientGraph {
   }
 
   /**
-   * PREUVE D'APPARTENANCE du WABA : GET /{waba_id} avec le business token. Le token est scopé au client qui a
-   * complété l'Embedded Signup -> l'appel ne réussit QUE si ce WABA lui appartient. Throw sinon. C'est le garde-fou
-   * anti-hijack cross-tenant : sans ça, un tenant pourrait rattacher le WABA d'un autre en forgeant l'id.
+   * 🔴 Preuve d'appartenance du WABA : `GET /{waba_id}` avec le business token, scopé au client qui a fait
+   * l'Embedded Signup, ne réussit que si ce WABA lui appartient (lève sinon). Sans elle, un tenant pourrait
+   * rattacher le WABA d'un autre en forgeant l'identifiant.
    */
   async verifyWaba(wabaId: string, businessToken: string): Promise<void> {
     await this.call(`${this.baseUrl}/${this.version}/${encodeURIComponent(wabaId)}?fields=id`, {
@@ -81,8 +65,10 @@ export class MetaEmbeddedSignupClient extends ClientGraph {
     });
   }
 
-  /** Infos du numéro onboardé, lues avec le business token (le token global ne voit pas les WABA clients).
-   *  Sert AUSSI de preuve d'appartenance du numéro (l'appel échoue si le token ne le possède pas). */
+  /**
+   * Infos du numéro embarqué, lues avec le business token (le token global ne voit pas les WABA clients).
+   * Sert aussi de preuve d'appartenance du numéro : l'appel échoue si le token ne le possède pas.
+   */
   async getPhone(phoneNumberId: string, businessToken: string): Promise<EsPhoneInfo> {
     const qs = new URLSearchParams({ fields: 'id,display_phone_number,verified_name,status,code_verification_status' });
     const b = await this.call(`${this.baseUrl}/${this.version}/${encodeURIComponent(phoneNumberId)}?${qs.toString()}`, {
@@ -97,7 +83,7 @@ export class MetaEmbeddedSignupClient extends ClientGraph {
     };
   }
 
-  /** Abonne NOTRE app aux webhooks du WABA du client (messages, statuts...). Idempotent côté Meta. */
+  /** Abonne notre app aux webhooks du WABA du client (messages, statuts...). Idempotent côté Meta. */
   async subscribeApp(wabaId: string, businessToken: string): Promise<void> {
     await this.call(`${this.baseUrl}/${this.version}/${encodeURIComponent(wabaId)}/subscribed_apps`, {
       method: 'POST',

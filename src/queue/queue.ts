@@ -1,68 +1,39 @@
-/**
- * Abstraction de file de jobs. Permet de mocker en test (FakeQueue) et de
- * swapper l'implémentation (pg-boss aujourd'hui, BullMQ/Redis en Phase 3).
- */
+/** Abstraction de file de jobs : mockable en test (FakeQueue), implémentée par pg-boss. */
 export interface Queue {
   start(): Promise<void>;
   stop(): Promise<void>;
   /**
-   * Empile un job (fire-and-forget, durable côté impl réelle). `opts.expireInSeconds` : durée max du job
-   * ACTIF avant qu'il soit considéré expiré et rejoué (par-job, prime sur la policy de file). Sert à
-   * dimensionner un run de campagne throttlé sur son travail réel (sinon un run long expire et est rejoué en
-   * parallèle). `opts.groupId` : groupe du job (ex. le tenant), pour un plafond de concurrence PAR GROUPE
-   * côté `work`.
+   * Empile un job (fire-and-forget, durable côté implémentation réelle). `opts.expireInSeconds` : durée max du
+   * job actif avant expiration et rejeu (par job, prime sur la policy de file), pour dimensionner un run de
+   * campagne throttlé. `opts.groupId` : groupe du job (l'espace), plafonné côté `work`.
    *
-   * 🔴 **Il n'y a AUCUNE déduplication ici, et `singletonKey` a été RETIRÉ le 2026-08-31 parce qu'il n'en
-   * apportait aucune.** Le dépôt en posait un sur sept enfilements en croyant garantir « un seul job vivant
-   * par campagne / par conversation ». C'était faux depuis toujours : pg-boss ne déduplique sur
-   * `singleton_key` que via des index uniques PARTIELS, tous conditionnés à une policy de file (`short`,
-   * `singleton`, `stately`, `exclusive`, `key_strict_fifo`), or `PgBossQueue.ensure()` crée les files sans
-   * policy, donc en `standard`, où aucun de ces index ne s'applique. Le paramètre était accepté, écrit en
-   * base, et ignoré.
-   *
-   * Ne pas le remettre : la policy d'une file est IMMUABLE après création, la reposer ne suffirait donc pas.
-   * Là où l'unicité compte vraiment, elle est portée par un verrou APPLICATIF, pas par la file : pour les
-   * campagnes, `src/campaign/run-lock.ts` (même patron qu'`api_idempotency`), posé à l'EXÉCUTION du job et non
-   * à son enfilement. Écrire le même verrou pour une autre file se fait sur ce modèle.
-   *
-   * Toute file SANS verrou de ce genre n'a donc aucune unicité : deux enfilements = deux jobs qui tournent.
+   * 🔴 Aucune déduplication : les files sont en policy `standard`, où pg-boss ignore `singleton_key`, et une
+   * policy est immuable après création. Deux enfilements = deux jobs qui tournent. Là où l'unicité compte, elle
+   * est portée par un verrou applicatif posé à l'exécution (modèle : `src/campaign/run-lock.ts`).
    */
   enqueue(
     name: string,
     data: unknown,
     /**
-     * `priority` (lot 6 de l'API publique, 2026-09-24) : pg-boss prend les jobs par `priority desc`, puis par
-     * date de création. Absente = 0, le comportement de toutes les files d'avant. Sert à faire passer les
-     * signaux qui répondent à un geste du contact devant un arriéré d'accusés (`PRIORITE_SIGNAL`).
-     *
-     * `startAfter` (2026-09-25) : le job n'est pas pris avant cet instant (pg-boss `startAfter`). Absent = tout de
-     * suite, le comportement de toutes les files d'avant. Premier usage : l'automation « risque élevé », qui part
-     * à l'ouverture de l'espace et non pendant le balayage de nuit (`src/engagement/balayage.ts`). ⚠️ Un job
-     * différé reste soumis à la rétention de pg-boss (14 jours dans l'état « créé ») : ce n'est pas un agenda.
+     * `priority` : pg-boss prend les jobs par `priority desc`, puis par date de création. Absente = 0. Fait passer
+     * les signaux de geste devant un arriéré d'accusés (`PRIORITE_SIGNAL`).
+     * `startAfter` : le job n'est pas pris avant cet instant. Un job différé reste soumis à la rétention de
+     * pg-boss (14 jours dans l'état « créé ») : ce n'est pas un agenda.
      */
     opts?: { expireInSeconds?: number; groupId?: string; priority?: number; startAfter?: Date },
   ): Promise<void>;
   /**
    * Enregistre un worker qui traite les jobs de la file `name`.
    *
-   * `opts.concurrency` : nombre de jobs EN VOL simultanément pour CETTE file, tous groupes confondus
-   * (pg-boss `localConcurrency`). Chaque unité spawn un worker qui POLLE INDÉPENDAMMENT : relever la
-   * concurrence multiplie d'autant le coût de polling à vide de cette file (cf. `names.ts` sur l'egress).
-   * Défaut : 1, soit le comportement actuel. `opts.groupConcurrency` : plafond de jobs simultanés POUR UN
-   * MÊME groupe (le `groupId` posé à l'enqueue). SANS EFFET tant que `concurrency` reste à 1 : les deux se
-   * posent ENSEMBLE.
+   * `opts.concurrency` : jobs en vol pour cette file, tous groupes confondus (pg-boss `localConcurrency`). Chaque
+   * unité sonde indépendamment : relever la concurrence multiplie le coût de sondage à vide (cf. `names.ts`).
+   * Défaut : 1. `opts.groupConcurrency` : plafond par groupe (`groupId`), sans effet tant que `concurrency` vaut 1.
    */
   work(
     name: string,
     handler: (data: unknown) => Promise<void>,
     opts?: { concurrency?: number; groupConcurrency?: number },
   ): Promise<void>;
-  /**
-   * Les files RÉELLEMENT consommées par ce process, dans l'ordre d'enregistrement.
-   *
-   * Existe pour que le message de démarrage du worker soit DÉRIVÉ et non recopié. Il l'était : une liste
-   * écrite à la main, avec ses propres conditions (`si le Gateway est configuré`...), donc une seconde vérité
-   * qui a menti le jour même de l'ajout de `webhook-status`, en annonçant sept files pour huit consommées.
-   */
+  /** Les files consommées par ce process, dans l'ordre : le message de démarrage du worker en dérive. */
   filesTravaillees(): readonly string[];
 }

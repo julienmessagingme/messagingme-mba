@@ -1,4 +1,3 @@
-// src/api/fiche.ts
 import { z } from 'zod';
 import type { CountryCode } from 'libphonenumber-js';
 import { normalizePhone } from '../crm/phone';
@@ -6,29 +5,26 @@ import { estUuid } from '../http/scope';
 import type { ClesNormalisees, FicheIdentite, PgContactStore } from '../crm/contact-store.pg';
 
 /**
- * TROUVER LA FICHE D'UNE PERSONNE À PARTIR DE CE QUE L'INTÉGRATEUR A (spec de l'API publique, § 1).
+ * Trouver la fiche d'une personne à partir de ce que l'intégrateur a. Une seule fonction pour toute l'API
+ * publique : une seconde résolution divergerait sur la règle multi-clés, et une personne aurait deux fiches.
  *
- * 🔴 UNE SEULE FONCTION pour `/v1/contacts`, et demain pour les destinataires d'un envoi et les messages
- * simples. Une seconde résolution divergerait sur la règle multi-clés, et une personne aurait deux fiches.
- *
- * La règle :
  *  - au moins une clé parmi `contactId`, `externalId`, `phone`, `bsuid`, sinon `invalid_recipient` ;
- *  - toutes les clés données désignent LA MÊME fiche, sinon `identity_conflict`, et rien n'est écrit ;
- *  - une clé que la fiche ne porte pas encore lui est RATTACHÉE ; une clé qu'elle porte AUTREMENT est un
- *    conflit (on ne remplace jamais une identité ici, `PATCH` le fait pour l'identifiant externe seul) ;
+ *  - toutes les clés données désignent la même fiche, sinon `identity_conflict`, et rien n'est écrit ;
+ *  - une clé que la fiche ne porte pas encore lui est rattachée ; une clé qu'elle porte autrement est un
+ *    conflit (on ne remplace jamais une identité ici) ;
  *  - `contactId` ne se rattache jamais : il existe, ou il est inconnu ;
- *  - aucune fiche : création SEULEMENT si le mode le permet et qu'un `phone` (ou un `bsuid`, selon le mode)
- *    est donné, la base exigeant l'un des deux. Sinon `unknown_contact`.
+ *  - aucune fiche : création seulement si le mode le permet et qu'un `phone` (ou un `bsuid`, selon le mode)
+ *    est donné. Sinon `unknown_contact`.
  *
- * ⚠️ ELLE REND UNE FICHE, JAMAIS UNE ADRESSE : l'adresse d'envoi se calcule sur la fiche (`waIdOf` pour
- * WhatsApp), pas sur la clé reçue. C'est ce qui garde un seul fil par personne.
+ * Elle rend une fiche, jamais une adresse : l'adresse d'envoi se calcule sur la fiche (`waIdOf`), ce qui
+ * garde un seul fil par personne.
  */
 
 /** La borne de l'identifiant externe (celle des outils qui en ont une, la plus stricte connue). */
 export const MAX_EXTERNAL_ID = 512;
 
 /**
- * Une chaîne vide ou blanche vaut ABSENCE. Un outil qui remplit son corps avec les variables d'un profil
+ * Une chaîne vide ou blanche vaut absence : un outil qui remplit son corps avec les variables d'un profil
  * envoie `""` pour une variable que le profil n'a pas, et ce n'est pas une clé.
  */
 export const videEnAbsent = (v: unknown): unknown => (typeof v === 'string' && v.trim() === '' ? undefined : v);
@@ -37,7 +33,7 @@ export const schemaClesFiche = z.object({
   contactId: z.preprocess(videEnAbsent, z.guid().optional()),
   externalId: z.preprocess(videEnAbsent, z.string().trim().max(MAX_EXTERNAL_ID).optional()),
   phone: z.preprocess(videEnAbsent, z.string().trim().max(64).optional()),
-  // Refusé au-delà de 200 plutôt que tronqué : un BSUID coupé serait l'identité d'un AUTRE compte.
+  // Refusé au-delà de 200 plutôt que tronqué : un BSUID coupé serait l'identité d'un autre compte.
   bsuid: z.preprocess(videEnAbsent, z.string().trim().max(200).optional()),
 });
 
@@ -66,9 +62,8 @@ export function normaliserCles(
   pays: CountryCode = 'FR',
 ): { ok: true; cles: ClesNormalisees } | { ok: false; code: 'invalid_recipient' | 'invalid_phone' } {
   const propre = (v: string | undefined): string | undefined => (v !== undefined && v.trim() !== '' ? v.trim() : undefined);
-  // 🔴 En MINUSCULES, la forme que la base rend : `id = $2::uuid` retrouve la fiche quelle que soit la casse,
-  // mais `juger` compare en texte. Un identifiant écrit en majuscules (des outils les formatent ainsi) serait
-  // sinon trouvé puis déclaré inconnu.
+  // En minuscules, la forme que la base rend : `juger` compare en texte, et un identifiant en majuscules
+  // serait trouvé puis déclaré inconnu.
   const contactId = propre(cles.contactId)?.toLowerCase();
   const externalId = propre(cles.externalId);
   const phone = propre(cles.phone);
@@ -132,9 +127,8 @@ function peutCreer(c: ClesNormalisees, mode: ModeCreation): boolean {
 }
 
 /**
- * ⚠️ DEUX PASSES AU PLUS. Une écriture concurrente peut prendre une clé entre la lecture et l'écriture (la
- * base rend alors « conflit », ou « absente » pour une fiche purgée entre-temps) : on relit UNE fois, et la
- * seconde lecture dit la vérité. Au-delà, c'est un conflit, jamais une boucle.
+ * Deux passes au plus : une écriture concurrente peut prendre une clé entre la lecture et l'écriture ; on
+ * relit une fois, et au-delà c'est un conflit, jamais une boucle.
  */
 const PASSES = 2;
 

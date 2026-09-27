@@ -5,12 +5,8 @@ import { aplatirSchema } from './aplatir';
 import { normaliserNom, nomUnique } from './nommer';
 
 /**
- * Comparer le catalogue d'un serveur MCP à ce qu'on en avait, et rendre un PLAN.
- *
- * 🔴 CE MODULE EST PUR, ET C'EST TOUT SON INTÉRÊT. Il ne lit ni la base ni le réseau : il COMPARE. L'écriture
- * est ailleurs, ce qui permet de MONTRER le plan avant de l'appliquer. Même patron que l'aperçu de
- * publication chez Meta, pour la même raison qui y est écrite : écraser n'est acceptable que si l'on montre
- * QUOI avant de le faire, suppressions comprises.
+ * Comparer le catalogue d'un serveur MCP à ce qu'on en avait, et rendre un plan. Module pur : l'écriture est
+ * ailleurs, ce qui permet de montrer le plan (suppressions comprises) avant de l'appliquer.
  */
 
 /** Ce qu'on sait d'un outil MCP déjà importé, tel que le store le rend. */
@@ -18,19 +14,17 @@ export interface OutilExistantMcp {
   id: string;
   /** Notre nom local, celui exposé au modèle. */
   name: string;
-  /** Le nom chez le serveur : c'est LUI qui apparie, pas le nôtre. */
+  /** Le nom chez le serveur : c'est lui qui apparie, pas le nôtre. */
   nomDistant: string;
-  /** L'annonce d'avant (`agent_tools.mcp_annonce`), ou `null` si la ligne est antérieure à ce lot. */
+  /** L'annonce d'avant (`agent_tools.mcp_annonce`), ou `null` pour une ligne plus ancienne. */
   mcpAnnonce: unknown;
   mcpIndisponibleLe: Date | null;
   /**
-   * Les paramètres de la version en place, avec le clouage que le client y a posé.
-   *
-   * 🔴 REQUIS, pas optionnel : un appelant qui l'oublierait ferait silencieusement retomber tous les
-   * paramètres en « remplis par le modèle » au premier changement de schéma.
+   * Les paramètres de la version en place, avec le clouage que le client y a posé. Requis : un appelant qui
+   * l'oublierait ferait retomber tous les paramètres en « remplis par le modèle » au premier changement.
    */
   params: ParamOutil[];
-  /** Combien de consommateurs l'ont ACTIVÉ. C'est ce qu'un changement fait tomber. */
+  /** Combien de consommateurs l'ont activé. C'est ce qu'un changement fait tomber. */
   consommateursActifs: number;
 }
 
@@ -41,16 +35,12 @@ export type ChangementMcp =
   | { type: 'disparu'; nom: string; consentementsTombes: number };
 
 /**
- * Une empreinte STABLE de ce que le serveur annonce pour un outil.
+ * Une empreinte stable de ce que le serveur annonce pour un outil.
  *
- * 🔴 ELLE NE DOIT PAS CHANGER QUAND LE SERVEUR RÉORDONNE SES CLÉS. La sérialisation d'un objet JSON n'a
- * aucun ordre garanti : une empreinte naïve ferait tomber TOUS les consentements du client à chaque
- * rafraîchissement, pour une différence qui n'existe pas. D'où le tri récursif.
- *
- * 🔴 ELLE COUVRE TOUTE L'ANNONCE, PAS SEULEMENT LE SCHÉMA. La `description` d'un outil distant est du texte
- * écrit par un TIERS qui arrive dans le contexte du modèle : la traiter comme cosmétique laisserait un
- * serveur réécrire ce que l'agent croit devoir faire, sans que personne ne redise oui. Les `annotations`
- * y sont aussi : elles pré-remplissent le risque proposé au client.
+ * Triée récursivement : un serveur qui réordonne ses clés ne doit pas faire tomber tous les consentements.
+ * 🔴 Elle couvre toute l'annonce, pas seulement le schéma : la `description` est du texte d'un tiers qui
+ * arrive dans le contexte du modèle, et les `annotations` pré-remplissent le risque. Un changement exige un
+ * nouveau oui.
  */
 export function empreinteAnnonce(annonce: OutilAnnonce): string {
   return JSON.stringify(trier(annonce as unknown));
@@ -66,11 +56,8 @@ function trier(v: unknown): unknown {
 }
 
 /**
- * Le plan d'un rafraîchissement, outil par outil.
- *
- * 🔴 `tronque` EST REQUIS, ET CE N'EST PAS DE LA RIGUEUR DE FORME. Un booléen optionnel valant `false` par
- * défaut ferait exactement ce qu'on cherche à empêcher le jour où un appelant l'oublie : c'est le motif
- * « dépendance optionnelle » que ce dépôt a déjà payé trois fois (`estDesabonne`, `guard`, `journal`).
+ * Le plan d'un rafraîchissement, outil par outil. `tronque` est requis : un booléen optionnel à `false` par
+ * défaut ferait, le jour où un appelant l'oublie, marquer disparus les outils au-delà de la borne.
  */
 export function planifierImport(
   annonces: readonly OutilAnnonce[],
@@ -87,9 +74,8 @@ export function planifierImport(
     if (!avant) { plan.push({ type: 'nouveau', nom: a.name }); continue; }
 
     /**
-     * ⚠️ UNE ANNONCE ABSENTE EST TRAITÉE COMME UN CHANGEMENT, jamais comme un « inchangé ». Une ligne
-     * écrite avant ce lot, ou reprise à la main, n'a pas d'annonce : on ne peut donc PAS affirmer que rien
-     * n'a bougé. Dire « inchangé » laisserait un consentement couvrir un outil qu'on n'a jamais comparé.
+     * Une annonce absente est un changement, jamais un « inchangé » : on ne peut pas affirmer que rien n'a bougé
+     * sur un outil qu'on n'a jamais comparé, et un consentement le couvrirait.
      */
     const identique = avant.mcpAnnonce !== null
       && avant.mcpAnnonce !== undefined
@@ -102,18 +88,12 @@ export function planifierImport(
   for (const e of existants) {
     if (vus.has(e.nomDistant)) continue;
     /**
-     * 🔴 SUR UN CATALOGUE TRONQUÉ, AUCUNE DISPARITION. La liste EST partielle, légitimement : le serveur
-     * annonce plus d'outils que nos bornes. Marquer « disparu » ce qui n'y figure pas ferait tomber le
-     * consentement de tout ce qui vivait au delà de la borne. C'est le même danger que la liste rendue
-     * après l'échec d'une page, par l'autre porte, et le contrat est écrit sur `SessionMcp.lister()` :
-     * sur `tronque`, on AJOUTE et on MET À JOUR, on ne RETIRE jamais.
-     *
-     * ⚠️ Ce qu'on suspend est la SUPPRESSION, pas la mise à jour : un schéma qui a bougé fait tomber son
-     * consentement dans les deux cas, parce que là on a bien comparé deux choses.
+     * Sur un catalogue tronqué, aucune disparition : le serveur annonce plus d'outils que nos bornes, et
+     * marquer « disparu » ce qui n'y figure pas ferait tomber le consentement de tout ce qui vit au-delà
+     * (contrat de `SessionMcp.lister()`). On suspend la suppression, pas la mise à jour.
      */
     if (opts.tronque) continue;
-    // Déjà marqué : ne pas le re-signaler à chaque rafraîchissement, sinon le plan du client se remplit
-    // d'un bruit qu'il a déjà lu et qui lui cache ce qui vient de changer.
+    // Déjà marqué : ne pas le re-signaler à chaque rafraîchissement, sinon ce bruit cache ce qui vient de changer.
     if (e.mcpIndisponibleLe !== null) continue;
     plan.push({ type: 'disparu', nom: e.nomDistant, consentementsTombes: e.consommateursActifs });
   }
@@ -122,14 +102,11 @@ export function planifierImport(
 }
 
 /**
- * Ce qu'un outil annoncé devient chez nous, avant toute écriture.
- *
- * 🔴 PUR, COMME LE RESTE DE CE MODULE. La traduction d'une annonce en ligne d'`agent_tools` est ce qui
- * décide de tout (le nom exposé au modèle, les paramètres, l'activabilité) : la faire dans une route la
- * rendrait intestable sans monter un serveur, et c'est précisément ce qui n'a jamais été éprouvé ailleurs.
+ * Ce qu'un outil annoncé devient chez nous, avant toute écriture (nom exposé, paramètres, activabilité),
+ * calculé ici, en pur, pour se tester sans serveur.
  */
 export interface OutilAImporter {
-  /** Le nom chez le serveur. C'est LUI qu'on renvoie à l'appel, et lui qui apparie au rafraîchissement. */
+  /** Le nom chez le serveur : c'est lui qu'on renvoie à l'appel, et lui qui apparie au rafraîchissement. */
   nomDistant: string;
   /** Notre nom local, préfixé et unique dans l'espace. */
   name: string;
@@ -144,15 +121,9 @@ export interface OutilAImporter {
 }
 
 /**
- * Le risque PROPOSÉ pour un outil annoncé.
- *
- * 🔴 PRÉ-REMPLI, JAMAIS DÉCIDÉ. La spec MCP dit en toutes lettres que les annotations d'un outil sont à
- * considérer comme NON FIABLES sauf serveur de confiance : un serveur qui se déclarerait `readOnlyHint`
- * désarmerait la garde d'autonomie sur une action irréversible. Elles servent donc à proposer, et c'est le
- * client qui confirme, exactement comme il le fait déjà pour l'autonomie d'un outil.
- *
- * ⚠️ LE DÉFAUT EST `write`, PAS `read`. Quand le serveur ne dit rien, on ne sait pas : le défaut penche vers
- * la prudence, parce qu'entre les deux erreurs possibles, une seule se rattrape.
+ * Le risque proposé pour un outil annoncé : pré-rempli, jamais décidé. La spec MCP tient les annotations
+ * pour non fiables, et un `readOnlyHint` menteur désarmerait la garde d'autonomie ; le client confirme. Sans
+ * annotation, `write` : entre les deux erreurs, une seule se rattrape.
  */
 export function risquePropose(annonce: OutilAnnonce): RisqueOutil {
   const a = annonce.annotations;
@@ -162,26 +133,13 @@ export function risquePropose(annonce: OutilAnnonce): RisqueOutil {
 }
 
 /**
- * Reporte sur les paramètres NEUFS le clouage que le client avait posé sur les anciens.
+ * Reporte sur les paramètres neufs le clouage que le client avait posé sur les anciens.
  *
- * 🔴 SANS ÇA, UN RAFRAÎCHISSEMENT EFFACE LA GARDE D'IDENTITÉ, EN SILENCE. Une annonce distante ne porte
- * aucune notion de source : tout en revient en `modele`. Un outil dont le schéma a changé était donc
- * réécrit avec ses paramètres remis « remplis par le modèle », c'est-à-dire influençables par le contact.
- * Et comme le consentement tombe au même moment, le client le redonne depuis `AI Agent > Outils`, qui
- * n'est PAS l'écran de clouage : il réactive un outil dont l'identifiant est redevenu libre sans que rien
- * ne le lui dise. C'est exactement l'IDOR que ce lot existe pour fermer, par la porte de derrière.
- *
- * ⚠️ AGGRAVÉ PAR L'EMPREINTE, qui couvre TOUTE l'annonce : un simple changement de `description` chez le
- * fournisseur suffisait à déclencher la remise à zéro.
- *
- * 🔴 L'APPARIEMENT SE FAIT SUR `cheminMcp`, PAS SUR NOTRE NOM. Le chemin est la donnée de protocole, stable
- * par construction ; notre nom est une étiquette locale qui peut être recalculée.
- *
- * ⚠️ LE CLOUAGE EST REPORTÉ MÊME SI LE TYPE A CHANGÉ, et ce n'est pas une négligence : entre les deux
- * erreurs possibles, une seule se rattrape. Un paramètre cloué qui devrait être libre produit un appel que
- * le client corrige en le voyant ; un paramètre libéré qui devrait être cloué produit une fuite que
- * personne ne voit. Le changement de schéma fait de toute façon tomber le consentement, donc un humain
- * repassera devant.
+ * 🔴 Une annonce distante ne porte aucune source : sans ce report, un changement de schéma (ou de simple
+ * `description`) remettrait tout en « rempli par le modèle », et le client, en redonnant son consentement
+ * depuis un autre écran, réactiverait un identifiant redevenu libre (IDOR). L'appariement se fait sur
+ * `cheminMcp`, stable, pas sur notre nom. Le clouage est reporté même si le type a changé : un paramètre
+ * trop cloué se voit et se corrige, un paramètre libéré à tort fuit sans bruit.
  */
 export function reporterClouage(neufs: ParamOutil[], anciens: readonly ParamOutil[]): ParamOutil[] {
   const parChemin = new Map(anciens.filter((p) => p.cheminMcp).map((p) => [p.cheminMcp!, p]));
@@ -202,41 +160,29 @@ export function outilDepuisAnnonce(
   annonce: OutilAnnonce,
   libelleSource: string,
   pris: ReadonlySet<string>,
-  /** Les paramètres de la version PRÉCÉDENTE, quand il y en a une. Leur clouage est reporté. */
+  /** Les paramètres de la version précédente, quand il y en a une. Leur clouage est reporté. */
   anciens: readonly ParamOutil[] = [],
 ): OutilAImporter {
   const aplati = aplatirSchema(annonce.inputSchema);
   return {
     nomDistant: annonce.name,
-    // 🔴 PRÉFIXÉ PAR LE SERVEUR. Le nom est unique par ESPACE depuis 0127 : deux serveurs qui exposent
-    // chacun un `search` entreraient sinon en collision, et le second échouerait à l'import sur une
-    // contrainte de base, ce qui est illisible pour le client. Le modèle y gagne aussi : il VOIT d'où
-    // vient l'outil quand il en a quinze sous les yeux.
+    // Préfixé par le serveur : le nom est unique par espace, deux serveurs qui exposent chacun un `search`
+    // entreraient en collision. Le modèle voit aussi d'où vient l'outil.
     name: nomUnique(`${normaliserNom(libelleSource)}_${normaliserNom(annonce.name)}`, pris),
     title: (annonce.title ?? annonce.name).slice(0, 120),
     description: (annonce.description ?? '').slice(0, 2000),
-    // ⚠️ VIDE À L'IMPORT, et c'est au client de l'écrire : « quand NE PAS l'appeler » est le seul levier qui
-    // décide quand un outil se déclenche, et le serveur distant n'en sait rien.
+    // Vide à l'import : « quand ne pas l'appeler » est au client d'écrire, le serveur distant n'en sait rien.
     nePasUtiliser: '',
     /**
-     * ⚠️ TOUT ARRIVE EN `modele` À LA PREMIÈRE IMPORTATION, et le client cloue ensuite ce qui doit l'être.
-     * Aux rafraîchissements SUIVANTS, `reporterClouage` remet ce qu'il avait posé : sans quoi chaque
-     * changement de schéma rouvrirait la garde d'identité en silence. Un import qui devinerait qu'un paramètre nommé `email` doit venir de la fiche poserait
-     * une garde d'identité que personne n'a demandée, sur une correspondance de nom : le jour où elle se
-     * trompe, l'appel part sur la mauvaise ressource sans que rien ne le dise.
+     * Tout arrive en `modele` à la première importation, et le client cloue ensuite ce qui doit l'être. Pas de
+     * clouage deviné sur un nom (`email`) : le jour où la correspondance se tromperait, l'appel viserait la
+     * mauvaise ressource sans rien dire.
      */
     /**
-     * 🔴 UN OUTIL DEVENU NON ACTIVABLE GARDE SES PARAMÈTRES D'AVANT, ET C'EST CE QUI SAUVE LA GARDE
-     * D'IDENTITÉ SUR LE CHEMIN LE PLUS SOURNOIS. `aplatirSchema` rend `feuilles: []` quand la forme n'est
-     * pas représentable : écrire ce `[]` en base EFFAÇAIT le clouage pour toujours. Le serveur distant
-     * n'avait alors qu'à publier un schéma irreprésentable, puis à revenir au précédent, pour que
-     * `reporterClouage` n'ait plus rien à reporter et que TOUT reparte en « rempli par le modèle », donc
-     * influençable par le contact. C'est exactement l'IDOR que `reporterClouage` dit fermer, rouvert par la
-     * porte d'à côté. Relevé par la revue à froid du 2026-09-17.
-     *
-     * ⚠️ LES GARDER NE COÛTE RIEN : un outil non activable est refusé À L'ACTIVATION (`OutilNonActivable`)
-     * ET À L'EXÉCUTION (la ceinture du résolveur), donc ces paramètres ne partent nulle part. Ils ne
-     * servent qu'à être RENDUS le jour où le schéma redevient lisible.
+     * Un outil devenu non activable garde ses paramètres d'avant : écrire `feuilles: []` effacerait le
+     * clouage, et un serveur n'aurait qu'à publier un schéma irreprésentable puis revenir au précédent pour
+     * tout remettre « rempli par le modèle ». Les garder ne coûte rien : l'outil est refusé à l'activation et à
+     * l'exécution.
      */
     params: aplati.raisonNonActivable !== null
       ? [...anciens]

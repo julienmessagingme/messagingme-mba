@@ -7,16 +7,14 @@ export interface LlmPrompt {
   user: string;
 }
 
-/** Contrat minimal d'un client LLM : une complétion texte. UNE SEULE implémentation existe (Anthropic), que le
- *  worker construit directement. Ne pas relire ce contrat comme « c'est déjà multi-provider ». */
+/** Contrat minimal d'un client LLM : une complétion texte. Une seule implémentation existe (Anthropic). */
 export interface LlmClient {
   complete(prompt: LlmPrompt): Promise<string>;
 }
 
 /**
- * Client Anthropic (Claude) via l'API Messages en HTTP brut, sur le MÊME transport injectable + `withRetry` que les
- * clients Meta du repo (testable via FakeTransport, pas de dépendance en plus, cohérent avec la stack). 429/5xx ->
- * LlmApiError retryable (rejoué par withRetry, puis par pg-boss si épuisé). `refusal` -> erreur terminale (contenu).
+ * Client Anthropic via l'API Messages en HTTP brut, sur le même transport injectable et `withRetry` que les clients
+ * Meta. 429 et 5xx : LlmApiError rejouable (withRetry, puis pg-boss). `refusal` : erreur terminale.
  */
 export class AnthropicClient implements LlmClient {
   private static readonly URL = 'https://api.anthropic.com/v1/messages';
@@ -26,7 +24,7 @@ export class AnthropicClient implements LlmClient {
     private readonly apiKey: string,
     private readonly model: string,
     private readonly maxTokens: number,
-    // Plafond LARGE : un modele a le droit d'etre lent la ou Meta n'en a pas le droit (cf. meta/http.ts).
+    // Plafond large : un modèle a le droit d'être lent, Meta non (cf. meta/http.ts).
     private readonly transport: HttpTransport = new FetchTransport(HTTP_TIMEOUT_MODELE_MS),
   ) {}
 
@@ -49,7 +47,7 @@ export class AnthropicClient implements LlmClient {
       }
       const body = res.json as { content?: Array<{ type?: string; text?: string }>; stop_reason?: string } | null;
       if (body?.stop_reason === 'refusal') {
-        // Refus des classifieurs de sûreté (HTTP 200) : contenu non exploitable -> terminal, pas de retry.
+        // Refus des classifieurs de sûreté (HTTP 200) : contenu non exploitable, terminal.
         throw new LlmApiError(200, 'refus du modèle (safety)', false);
       }
       const text = body?.content?.find((b) => b.type === 'text')?.text ?? '';

@@ -5,22 +5,15 @@ import { joignabiliteRcsConnue } from '../rcs/reachability';
 import type { FaitsRisque, MessageDelivre, NiveauRisque, RaisonRisque, Risque } from './risque';
 
 /**
- * LA LECTURE ET L'ÉCRITURE DU RISQUE DE DÉSENGAGEMENT (spec § 19, tâche 3 du plan du lot 7).
+ * La lecture et l'écriture du risque de désengagement.
  *
- * 🔴 `tenant_id = $1` SUR CHAQUE TABLE QUI EN PORTE UN : la connexion passe par le pooler en rôle superuser, la
- * RLS est contournée, ce filtre est le seul contrôle (`tests/risque-isolation.test.ts`, qui se mute en local).
- * Les trois tables qui n'en portent pas sont bornées par une jointure qui, elle, filtre : `campaign_recipients` par
- * sa campagne, `conversation_messages` par les fils de l'espace, `rcs_capabilities_cache` par l'agent RCS de
- * l'espace.
+ * 🔴 `tenant_id = $1` sur chaque table qui en porte un : le pooler est en rôle superuser, la RLS est contournée,
+ * ce filtre est le seul contrôle (`tests/risque-isolation.test.ts`). Les tables sans `tenant_id` sont bornées par
+ * une jointure qui filtre : `campaign_recipients` par sa campagne, `conversation_messages` par les fils de
+ * l'espace, `rcs_capabilities_cache` par l'agent RCS de l'espace.
  *
- * 🔴 GROUPÉE, JAMAIS UNE REQUÊTE PAR CONTACT. Un balayage d'espace fait UNE lecture des fiches à évaluer, puis,
- * par lot de fiches (`TAILLE_LOT_RISQUE`, dans `balayage.ts`), UNE lecture des faits et UNE écriture. Sur un espace
- * de 100 000 contacts : la liste parcourt les fiches de l'espace et sonde, pour chacune qui n'est pas déjà
- * retenue, `campaign_recipients_contact_idx (contact_id, sent_at desc)` ; chaque lot de faits ne touche que des
- * index (clé primaire des contacts, `conversations_contact_idx` et l'unique `(tenant_id, wa_id)` des fils,
- * `campaign_recipients_contact_idx`, `conversation_messages_unread_idx` partiel sur les entrants,
- * `tracked_link_clicks_contact_idx`, la clé primaire de `conversation_analysis`, celle du cache RCS), bornés par
- * la fenêtre de 90 jours ; l'écriture se fait par clé primaire.
+ * Groupée, jamais une requête par contact : une lecture des fiches à évaluer, puis par lot une lecture des faits
+ * et une écriture, chacune servie par des index et bornée par la fenêtre de 90 jours.
  */
 
 /** La ligne d'une fiche à évaluer : ses faits, et le niveau stocké (celui dont on part). */
@@ -30,7 +23,7 @@ export interface ContactAEvaluer {
   faits: FaitsRisque;
 }
 
-/** Un changement de NIVEAU, rendu par l'écriture. Rester au même niveau n'en est pas un. */
+/** Un changement de niveau, rendu par l'écriture. Rester au même niveau n'en est pas un. */
 export interface TransitionRisque {
   contactId: string;
   /** L'adresse du contact pour les automations (numéro en chiffres, sinon BSUID). `null` = aucune. */
@@ -93,9 +86,8 @@ export class PgRisqueStore {
   constructor(private readonly pool: Pool) {}
 
   /**
-   * Les espaces à balayer. LA SEULE LECTURE TRANSVERSE de ce fichier, délibérée : le balayage de nuit fait le
-   * tour des espaces. Un espace VERROUILLÉ (arrêt d'urgence, `/ops/verrou`) est sauté : le balayage peut
-   * déclencher des scénarios, et un espace arrêté ne doit rien démarrer de neuf.
+   * Les espaces à balayer, seule lecture transverse de ce fichier. Un espace verrouillé (`/ops/verrou`) est
+   * sauté : le balayage peut déclencher des scénarios, et un espace arrêté ne doit rien démarrer.
    */
   async espaces(): Promise<string[]> {
     const res = await this.pool.query<{ id: string }>(`select id from tenants where status <> 'locked' order by created_at asc`);
@@ -108,18 +100,11 @@ export class PgRisqueStore {
   }
 
   /**
-   * Les fiches à évaluer (plan, tâche 3) : celles qui ont reçu un envoi de campagne sur la fenêtre, celles dont
-   * le niveau stocké n'est pas null (pour qu'un contact qu'on n'écrit plus retombe en `inconnu` au lieu de
-   * garder un niveau d'il y a trois mois), les désabonnées et les bloquées. Des identifiants seulement : les
-   * faits se lisent ensuite par lots.
-   *
-   * ⚠️ L'INDEX DU RISQUE NE SERT PAS CETTE REQUÊTE, et le commentaire de la migration 0178 le dit à tort (« il sert
-   * aussi la lecture des fiches à réévaluer »). `risque_niveau is not null` n'y est qu'une branche d'un OU dont une
-   * autre est un `exists` : aucun index ne peut servir la condition entière, donc la requête parcourt les fiches
-   * de l'espace et sonde `campaign_recipients_contact_idx` pour chacune (cf. l'en-tête du fichier).
-   * `contacts_tenant_risque_idx (tenant_id, risque_niveau)` sert le filtre de la liste, qui pose une égalité nue,
-   * et le compte du plafond du jour (`declenchablesDepuis`). Une migration appliquée ne se réécrit pas : la
-   * correction vit ici et dans `documentation.md`.
+   * Les fiches à évaluer : celles qui ont reçu un envoi de campagne sur la fenêtre, celles dont le niveau stocké
+   * n'est pas null (pour retomber en `inconnu` plutôt que garder un vieux niveau), les désabonnées et les bloquées.
+   * Des identifiants seulement, les faits se lisent ensuite par lots.
+   * `contacts_tenant_risque_idx` ne sert pas cette requête (un OU avec un `exists`, contrairement à ce que dit la
+   * migration 0178) : elle parcourt les fiches de l'espace et sonde `campaign_recipients_contact_idx`.
    */
   async contactsAEvaluer(tenantId: string, depuis: Date): Promise<string[]> {
     const res = await this.pool.query<{ id: string }>(
@@ -136,15 +121,11 @@ export class PgRisqueStore {
   }
 
   /**
-   * Les faits d'un LOT de fiches, en une requête. Une fiche supprimée entre-temps n'est pas rendue.
-   *
-   * ⚠️ LES FILS D'UN CONTACT SE TROUVENT PAR DEUX CHEMINS, comme sur la fiche du mini-CRM
-   * (`CONVERSATION_DU_CONTACT_SQL`) : `contact_id` seul perd les conversations ouvertes avant que la fiche
-   * existe, il faut rattraper par `wa_id`. Écrits ici en UNION de deux jointures, chacune sur son index, plutôt
-   * qu'avec le `or` du fragment, qui ne sait servir qu'UN contact à la fois.
-   *
-   * ⚠️ UNE RÉPONSE EST TOUT MESSAGE ENTRANT, comme l'« engagé » de l'historique d'une fiche : un appui de bouton
-   * arrive en entrant, et « oui » écrit à la main est la même réaction.
+   * Les faits d'un lot de fiches, en une requête. Une fiche supprimée entre-temps n'est pas rendue.
+   * Les fils d'un contact se trouvent par deux chemins, comme sur la fiche (`CONVERSATION_DU_CONTACT_SQL`) :
+   * `contact_id` seul perd les conversations ouvertes avant la fiche, on rattrape par `wa_id`. En union de deux
+   * jointures indexées, le `or` du fragment ne servant qu'un contact à la fois.
+   * Une réponse est tout message entrant (un appui de bouton compte comme « oui » écrit à la main).
    */
   async faits(tenantId: string, ids: readonly string[], depuis: Date, maintenant: Date): Promise<ContactAEvaluer[]> {
     if (ids.length === 0) return [];
@@ -218,28 +199,16 @@ export class PgRisqueStore {
   }
 
   /**
-   * Écrit le calcul d'un lot et rend les CHANGEMENTS DE NIVEAU.
+   * Écrit le calcul d'un lot et rend les changements de niveau.
    *
-   * 🔴 L'ANCIEN NIVEAU EST LU SOUS VERROU, DANS LA MÊME INSTRUCTION (`for update`). Le balayage de nuit (worker) et
-   * le lancement à la demande (`/ops`, l'API) peuvent passer en même temps sur un même espace : sans ce verrou,
-   * les deux liraient « moyen », écriraient « élevé », et déclencheraient chacun l'automation. Le second attend
-   * le premier, relit « élevé », et ne voit aucun passage.
-   *
-   * ⚠️ `updated_at` NE BOUGE PAS : un calcul n'est pas une modification de la fiche par quelqu'un.
-   *
-   * 🔴 SEULES LES FICHES QUI CHANGENT SONT RÉÉCRITES (relecture du lot 7, 2026-09-25). `contacts` est la table du
-   * chemin chaud (chaque message entrant la lit et l'écrit) : réécrire chaque nuit toutes les fiches évaluées,
-   * même inchangées, y produisait une version morte par fiche et par nuit. La garde `is distinct from` porte sur
-   * les TROIS colonnes de la valeur (niveau, score, raisons), dans `avant`, donc une fiche inchangée n'est ni
-   * verrouillée ni réécrite. Un changement de niveau change forcément la valeur : aucune transition ne peut être
-   * perdue par la garde. Si un passage concurrent a écrit entre-temps, le verrou relit la nouvelle version et la
-   * garde la réévalue sur elle.
-   *
-   * 🔴 ET `risque_calcule_le` NE BOUGE QU'AVEC LE NIVEAU : c'est désormais « à ce niveau DEPUIS le », et la console
-   * comme l'API le disent ainsi (`computedAt`). Un score ou des raisons qui changent sans changer le niveau sont
-   * réécrits, pas la date. La faire bouger chaque nuit pour dire « vérifié le » aurait exigé de réécrire chaque
-   * fiche chaque nuit, c'est-à-dire exactement ce que la garde retire. C'est aussi la date que lit le plafond du
-   * jour (`declenchablesDepuis`) : un passage en élevé est un changement de niveau, donc il porte sa date.
+   * 🔴 L'ancien niveau est lu sous verrou, dans la même instruction (`for update`) : le balayage de nuit et `/ops`
+   * peuvent passer en même temps sur un espace, et sans verrou les deux verraient le passage en élevé et
+   * déclencheraient chacun l'automation.
+   * Seules les fiches qui changent sont réécrites (`is distinct from` sur niveau, score et raisons) : `contacts`
+   * est la table du chemin chaud, une réécriture nocturne de toutes les fiches y ferait une version morte par
+   * fiche. Un changement de niveau change forcément la valeur, aucune transition n'est perdue.
+   * `updated_at` ne bouge pas (un calcul n'est pas une modification), et `risque_calcule_le` ne bouge qu'avec le
+   * niveau : c'est « à ce niveau depuis le », la date que lit aussi le plafond du jour (`declenchablesDepuis`).
    */
   async ecrire(tenantId: string, lignes: ReadonlyArray<{ contactId: string; risque: Risque }>, calculeLe: Date): Promise<TransitionRisque[]> {
     if (lignes.length === 0) return [];
@@ -277,17 +246,11 @@ export class PgRisqueStore {
   }
 
   /**
-   * Les passages en élevé DÉCLENCHABLES écrits pour cet espace depuis `depuis` (minuit, Paris) : le plafond du
-   * jour (`PLAFOND_DECLENCHEMENTS_PAR_JOUR`, `balayage.ts`) s'en sert pour qu'un lancement `/ops` ne s'ajoute pas
-   * à la nuit.
-   *
-   * La trace est la fiche elle-même : `risque_calcule_le` ne bouge qu'au changement de niveau (`ecrire`), donc un
-   * `eleve` daté d'aujourd'hui est un passage d'aujourd'hui. Mêmes exclusions que le point d'émission : STOP et
-   * blocage (ils ne déclenchent rien, et la première nuit en ferait passer beaucoup), fiche sans adresse (`waIdOf`
-   * ne rend rien : un téléphone vide et aucun BSUID).
-   *
-   * ⚠️ L'égalité NUE `risque_niveau = 'eleve'` derrière `tenant_id = $1 and deleted_at is null` est le contrat de
-   * l'index partiel `contacts_tenant_risque_idx` : la requête ne lit que les fiches en élevé de l'espace.
+   * Les passages en élevé déclenchables écrits pour cet espace depuis minuit (Paris), pour le plafond du jour.
+   * La trace est la fiche : `risque_calcule_le` ne bouge qu'au changement de niveau. Mêmes exclusions que le point
+   * d'émission : STOP, blocage, fiche sans adresse.
+   * L'égalité nue `risque_niveau = 'eleve'` derrière `tenant_id = $1 and deleted_at is null` est le contrat de
+   * l'index partiel `contacts_tenant_risque_idx`.
    */
   async declenchablesDepuis(tenantId: string, depuis: Date): Promise<number> {
     const res = await this.pool.query<{ n: number }>(

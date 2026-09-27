@@ -2,7 +2,7 @@ import type { RcsProvider, RcsOutbound, RcsCapabilities } from './types';
 import type { SendResult } from '../meta/types';
 
 export interface FakeRcsOptions {
-  /** Numéros déclarés NON joignables en RCS. */
+  /** Numéros déclarés non joignables en RCS. */
   unreachable?: Set<string>;
 }
 
@@ -14,11 +14,9 @@ export interface FakeSentRecord {
 }
 
 /**
- * Provider factice : livre et démontre le canal RCS sans aucun compte ouvert (lot 1).
- *
- * Il reproduit les DEUX comportements du vrai provider dont le reste du code dépend, et rien d'autre :
- * la non-joignabilité rendue en `null`, et l'idempotence par `messageId` PAR AGENT (deux agents qui
- * utilisent le même identifiant envoient bien deux messages, comme chez RBM).
+ * Provider factice : démontre le canal RCS sans compte ouvert. Il reproduit les deux comportements du vrai
+ * provider dont le reste du code dépend : la non-joignabilité rendue en `null`, et l'idempotence par
+ * `messageId` par agent (deux agents au même identifiant envoient bien deux messages, comme chez RBM).
  */
 export class FakeRcsProvider implements RcsProvider {
   readonly sent: FakeSentRecord[] = [];

@@ -1,8 +1,7 @@
 /**
- * Handler du job `hubspot-catchup` (F3-a) : à la RÉACTIVATION d'une synchro HubSpot mise en pause, re-enfile un
- * push-analysis (référence seule) pour chaque conversation marquée `pending_catchup`. Chaque push refetch l'état frais,
- * repasse le gate (désormais true), pousse, et efface la marque. Idempotent : un rejeu de ce job (ou un doublon)
- * re-enfile les mêmes refs -> POST dédupliqué par eventId côté mm-hubspot, jamais de double écriture. Fonction pure.
+ * Job `hubspot-catchup` : à la réactivation d'une synchro HubSpot, re-enfile un push-analysis (référence seule) pour
+ * chaque conversation marquée `pending_catchup`. Idempotent : un rejeu re-enfile les mêmes refs, dédupliquées par
+ * eventId côté mm-hubspot.
  */
 export interface CatchupJobDeps {
   /** Conversations marquées à rattraper pour le tenant (registre durable, indépendant de paused_at). */

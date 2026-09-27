@@ -9,19 +9,10 @@ import { espaceVerifie } from './scope';
 import { messageDe } from '../lib/erreur';
 
 /**
- * Publier le catalogue d'outils de l'espace chez Meta.
- *
- * 🔴 DEUX ROUTES, ET LA PREMIÈRE N'ÉCRIT RIEN. « Engage Me fait foi, la publication écrase » est la décision
- * de Julien du 2026-09-10 : écraser n'est acceptable que si l'on montre QUOI avant de le faire. Le `GET`
- * rend le plan en toutes lettres, le `POST` l'exécute. Une publication sans aperçu serait une promesse tenue
- * dans le dos du client.
- *
- * ⚠️ LE PLAN EST RECALCULÉ AU MOMENT D'APPLIQUER, jamais transmis par le navigateur. Le lui faire porter
- * ouvrirait une fenêtre où Meta a changé entre l'aperçu et le clic, et où l'on exécuterait des gestes
- * calculés sur un état périmé, en croyant montrer ce qu'on allait faire.
- *
- * 🔴 DEPUIS LE 2026-09-21, CE QUI PART EST LE RELAIS (spec 2026-09-21-relais-mba-design.md) : un connecteur
- * `EngageMe` par espace, dont les outils appellent Engage Me. Le plan pur vit dans `src/mba/publication.ts`.
+ * Publier le catalogue d'outils de l'espace chez Meta (le relais : un connecteur `EngageMe` par espace, dont les
+ * outils appellent Engage Me ; plan pur dans `src/mba/publication.ts`).
+ * Deux routes : le `GET` rend le plan (la publication écrase, donc on montre quoi avant), le `POST` l'exécute. Le
+ * plan est recalculé au moment d'appliquer, jamais transmis par le navigateur : Meta a pu changer entre-temps.
  */
 
 export interface MbaPublicationDeps {
@@ -29,16 +20,14 @@ export interface MbaPublicationDeps {
   numeroDuTenant(tenantId: string): Promise<string | null>;
   /** Le relais tel qu'il se présente à Meta. `null` = `PUBLIC_API_URL` vide : Meta ne saurait pas où appeler. */
   relais(tenantId: string): Promise<RelaisAPublier | null>;
-  /** Les outils EXPOSÉS au MBA, avec ce que Meta doit fournir (`src/mba/outils-a-publier.ts`). */
+  /** Les outils exposés au MBA, avec ce que Meta doit fournir (`src/mba/outils-a-publier.ts`). */
   outilsExposes(tenantId: string, phoneNumberId: string): Promise<OutilAPublier[]>;
   /** L'état actuel chez Meta. */
   etatMeta(tenantId: string, phoneNumberId: string): Promise<EtatMeta>;
   /**
-   * Applique UN geste. Isolé pour rester testable sans réseau.
-   *
-   * ⚠️ `ctx` EST UN BAC À MÉMOIRE PARTAGÉ PAR TOUTE UNE PUBLICATION, et il n'est pas décoratif : sans lui,
-   * l'implémentation relisait la liste des connecteurs CHEZ META à chaque geste. La route l'AMORCE avec les
-   * outils du plan de cette publication (`CTX_OUTILS`) et l'administrateur qui publie (`CTX_ACTEUR`).
+   * Applique un geste, isolé pour rester testable sans réseau. `ctx` est partagé par toute une publication (sinon
+   * la liste des connecteurs serait relue chez Meta à chaque geste) ; la route l'amorce avec les outils du plan
+   * (`CTX_OUTILS`) et l'administrateur qui publie (`CTX_ACTEUR`).
    */
   appliquer(tenantId: string, phoneNumberId: string, geste: Geste, ctx: Map<string, unknown>): Promise<void>;
 }
@@ -59,13 +48,9 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
   }
 
   /**
-   * 🔴 UNE SEULE PUBLICATION À LA FOIS PAR ESPACE (revue finale du 2026-09-21). Deux publications simultanées
-   * posaient chacune une clé chez Meta puis révoquaient « toutes les autres », donc celle de l'autre : Meta se
-   * retrouvait avec une clé révoquée, chaque appel d'outil sortait en 401, et les deux POST rendaient 200.
-   * Des clics multiples ont DÉJÀ eu lieu en production (le 2026-09-18).
-   *
-   * ⚠️ VERROU LOCAL AU PROCESS, comme les plafonds de débit : il suffit tant que l'API tourne en UNE instance.
-   * Le passer en base (bail, sur le modèle de `src/campaign/run-lock.ts`) avant tout multi-réplica (`todo.md`).
+   * Une seule publication à la fois par espace : deux publications simultanées posaient chacune une clé chez Meta
+   * puis révoquaient l'autre, et chaque appel d'outil sortait en 401. Verrou local au process : suffisant tant que
+   * l'API tourne en une instance, à passer en base (bail, cf. `src/campaign/run-lock.ts`) avant tout multi-réplica.
    */
   const enCours = new Set<string>();
 
@@ -79,11 +64,8 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
   });
 
   /**
-   * Exécute le plan.
-   *
-   * 🔴 ON S'ARRÊTE AU PREMIER ÉCHEC, et on rend ce qui a été fait. Continuer laisserait un état à moitié
-   * publié dont personne ne connaîtrait la forme ; s'arrêter en le disant permet de rejouer, et la
-   * publication étant IDEMPOTENTE, rejouer ne refait pas ce qui a réussi.
+   * Exécute le plan, et s'arrête au premier échec en rendant ce qui a été fait : la publication étant idempotente,
+   * rejouer ne refait pas ce qui a réussi.
    */
   app.post(base, opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -106,9 +88,8 @@ export function registerMbaPublication(app: FastifyInstance, deps: MbaPublicatio
     const plan = await planifier(tenant, pn);
     if (plan === null) return reply.code(409).send({ error: SANS_ADRESSE });
     const faits: Geste[] = [];
-    // Vit le temps de CETTE publication, et meurt avec elle : deux publications ne partagent jamais un état
-    // lu, ce qui serait précisément la façon d'agir sur une photo périmée. Amorcée avec les outils sur lesquels
-    // le plan de CETTE publication a été calculé, et l'administrateur qui publie (l'audit des clés le nomme).
+    // Vit le temps de cette publication : deux publications ne partagent jamais un état lu. Amorcée avec les outils
+    // du plan et l'administrateur qui publie (l'audit des clés le nomme).
     const ctx = new Map<string, unknown>([[CTX_OUTILS, plan.outils], [CTX_ACTEUR, acteur]]);
     for (const g of plan.gestes) {
       try {

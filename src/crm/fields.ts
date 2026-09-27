@@ -20,20 +20,16 @@ export function isUserFieldType(t: string): t is UserFieldType {
   return (USER_FIELD_TYPES as readonly string[]).includes(t);
 }
 
-/** Clé + libellé du champ booléen de consentement par défaut (WhatsApp opt-in). Créé à la volée quand un
- *  écran OptIn de flow n'a pas de cible explicite. La clé est STABLE (jamais dérivée d'un libellé mutable). */
+/** Clé + libellé du champ booléen de consentement par défaut (WhatsApp opt-in), créé à la volée quand un
+ *  écran OptIn de flow n'a pas de cible explicite. Clé stable, jamais dérivée d'un libellé mutable. */
 export const WHATSAPP_OPTIN_FIELD_KEY = 'whatsapp_optin';
 export const WHATSAPP_OPTIN_FIELD_LABEL = 'Consentement WhatsApp';
 
 /**
- * Clés + libellés des champs qui portent la PUBLICITÉ Click-to-WhatsApp d'où vient un contact.
- *
- * 🔴 Meta n'envoie l'origine que sur le PREMIER message après le clic sur la pub. Ne pas la poser sur la
- * fiche à cet instant, c'est la perdre définitivement.
- *
- * Des CHAMPS de contact plutôt qu'une colonne dédiée, et ce n'est pas un raccourci : l'origine devient du
- * coup filtrable dans le mini-CRM, utilisable comme variable dans un message, et segmentable en campagne,
- * sans une ligne de migration ni un écran de plus. Clés STABLES, jamais dérivées d'un libellé mutable.
+ * Clés et libellés des champs qui portent la publicité Click-to-WhatsApp d'où vient un contact. Meta n'envoie
+ * l'origine que sur le premier message après le clic : ne pas la poser à cet instant, c'est la perdre. Des
+ * champs plutôt qu'une colonne : l'origine devient filtrable, utilisable en variable et segmentable sans
+ * migration. Clés stables, jamais dérivées d'un libellé mutable.
  */
 export const CTWA_AD_ID_FIELD_KEY = 'pub_id';
 export const CTWA_AD_ID_FIELD_LABEL = 'Pub (identifiant)';
@@ -41,17 +37,13 @@ export const CTWA_AD_TITLE_FIELD_KEY = 'pub_titre';
 export const CTWA_AD_TITLE_FIELD_LABEL = 'Pub (titre)';
 
 /** Valide une valeur (string) selon le type déclaré du user field. Vide -> invalide (utiliser un retrait).
- *  Les valeurs sont stockées en STRING (cohérent avec String(v) de la substitution campagne). Déplacée depuis
- *  http/contacts.ts (comportement identique) pour être partagée par la fiche contact, l'import CSV et le
- *  report de WhatsApp Flow. */
+ *  Valeurs stockées en string. Partagée par la fiche contact, l'import CSV et le report de WhatsApp Flow. */
 export function validateFieldValue(type: UserFieldType, value: string): boolean {
   const v = value.trim();
   if (v === '') return false;
   if (v.length > 1000) return false;
   if (type === 'number') return Number.isFinite(Number(v));
-  // date et datetime : voir `date-iso.ts`. On accepte tout ce qui est NON AMBIGU (ISO avec `T` ou avec une
-  // espace, jour seul, epoch 10/13 chiffres) et on refuse le reste. Élargi le 2026-08-23 : un webhook tiers
-  // qui envoie `2026-08-23 15:40:00` était refusé alors que la valeur ne prête à aucune confusion.
+  // date et datetime : tout ce qui est non ambigu (voir `date-iso.ts`) est accepté, le reste refusé.
   if (type === 'date' || type === 'datetime') return normaliserDate(v, type).ok;
   if (type === 'boolean') return ['true', 'false', 'oui', 'non', '1', '0'].includes(v.toLowerCase());
   if (type === 'url') return /^https?:\/\/\S+$/i.test(v);
@@ -62,18 +54,14 @@ const BOOLEAN_TRUE_TOKENS = new Set(['true', 'oui', '1']);
 const BOOLEAN_FALSE_TOKENS = new Set(['false', 'non', '0']);
 
 /**
- * Canonicalise une valeur vers sa forme de stockage stable et comparable. `boolean` -> `'true'`/`'false'`
- * STRICT (jamais `'oui'`/`'1'`), pour que le gate opt-in, les filtres CRM (égalité `fields ->> key = 'true'`)
- * et toute comparaison ultérieure restent fiables. Les autres types -> trim (stockage STRING inchangé).
- * Défensif : une valeur booléenne non reconnue est renvoyée trimée telle quelle (jamais de throw) ; la
- * validation en amont (validateFieldValue) reste la barrière qui rejette l'invalide sur les chemins validés.
+ * Canonicalise une valeur vers une forme de stockage stable et comparable. `boolean` -> `'true'`/`'false'`
+ * strict, pour que le gate opt-in et les filtres CRM (`fields ->> key = 'true'`) restent fiables ; les autres
+ * types -> trim. Ne lève jamais : une valeur non reconnue ressort trimée, `validateFieldValue` étant la barrière.
  */
 export function canonicalizeFieldValue(type: UserFieldType, value: string): string {
   const v = value.trim();
-  // Une date est stockée sous sa forme INTERNATIONALE, quelle que soit celle par laquelle elle est arrivée :
-  // c'est ce qui permet de la comparer et de la trier ensuite (et, pour un futur déclencheur temporel, de
-  // savoir quand elle tombe). Défensif comme le reste : une valeur non normalisable ressort trimée telle
-  // quelle, la barrière étant `validateFieldValue` en amont.
+  // Une date est stockée sous sa forme internationale, quelle que soit sa forme d'arrivée, pour pouvoir la
+  // comparer et la trier.
   if (type === 'date' || type === 'datetime') {
     const n = normaliserDate(v, type);
     return n.ok ? n.iso : v;
@@ -86,9 +74,9 @@ export function canonicalizeFieldValue(type: UserFieldType, value: string): stri
 }
 
 /**
- * Clés des champs de BASE (« système ») : toujours proposés, non supprimables ni renommables par l'utilisateur.
- * Attributs du contact (name/phone/bsuid/wa_id, résolus hors `contacts.fields`) + champs socles (prenom/email).
- * Miroir côté front : `web/lib/fields.ts` (SYSTEM_FIELDS). Sert de garde sur PATCH/DELETE d'un user field.
+ * Clés des champs de base (« système ») : toujours proposés, ni supprimables ni renommables. Attributs du
+ * contact (name/phone/bsuid/wa_id, hors `contacts.fields`) et champs socles (prenom/email). Miroir :
+ * `web/lib/fields.ts` (SYSTEM_FIELDS). Sert de garde sur PATCH/DELETE d'un user field.
  */
 export const SYSTEM_FIELD_KEYS: readonly string[] = ['name', 'phone', 'bsuid', 'wa_id', 'prenom', 'email'];
 
@@ -97,16 +85,9 @@ export function isSystemFieldKey(key: string): boolean {
 }
 
 /**
- * LIBELLÉS des champs de base, dans les DEUX langues. Miroir de `web/lib/fields.ts` (SYSTEM_FIELD_META),
- * tenu par un test anti-dérive.
- *
- * 🔴 Pourquoi une liste EN PLUS des clés. Le garde-fou de création comparait le slug du libellé saisi aux
- * seules CLÉS, qui sont anglaises (`name`, `phone`), alors que l'écran Champs affiche des libellés
- * FRANÇAIS. Taper « Nom » produit le slug `nom`, absent de la liste : le doublon passait. L'espace se
- * retrouvait avec deux entrées « Nom » indiscernables dans TOUS les sélecteurs de la console (variables de
- * campagne, « Enregistrer dans » d'un formulaire, mapping d'un webhook), dont une qu'aucun chemin d'écriture
- * ne peut jamais remplir : le nom et le téléphone vont dans les ATTRIBUTS du contact, pas dans le jsonb.
- * Constaté sur un espace réel le 2026-08-23.
+ * Libellés des champs de base, dans les deux langues (miroir de `web/lib/fields.ts` SYSTEM_FIELD_META, tenu par
+ * un test). Les clés sont anglaises et l'écran affiche du français : sans cette liste, créer « Nom » (slug `nom`)
+ * produirait un doublon visible dans tous les sélecteurs, et qu'aucun chemin d'écriture ne remplirait.
  */
 export const SYSTEM_FIELD_LABELS: readonly string[] = [
   'Nom', 'Name',
@@ -117,33 +98,24 @@ export const SYSTEM_FIELD_LABELS: readonly string[] = [
   'Email',
 ];
 
-/** Slugs interdits à la CRÉATION et au RENOMMAGE : les clés système, plus le slug de chaque libellé de base. */
+/** Slugs interdits à la création et au renommage : les clés système, plus le slug de chaque libellé de base. */
 const SLUGS_RESERVES: ReadonlySet<string> = new Set([
   ...SYSTEM_FIELD_KEYS,
   ...SYSTEM_FIELD_LABELS.map((l) => slugify(l)),
 ]);
 
 /**
- * Ce libellé fabriquerait-il un doublon d'un champ de BASE ?
- *
- * ⚠️ Volontairement SÉPARÉE d'`isSystemFieldKey`, qui garde aussi la modification et la suppression.
- * Élargir celle-là rendrait INDÉLÉBILES les doublons déjà créés (« champ système, non supprimable »),
- * c'est-à-dire exactement les champs qu'il faut pouvoir nettoyer.
+ * Ce libellé fabriquerait-il un doublon d'un champ de base ? Séparée d'`isSystemFieldKey`, qui garde aussi la
+ * modification et la suppression : l'élargir rendrait indélébiles les doublons déjà créés.
  */
 export function isReservedFieldLabel(label: string): boolean {
   return SLUGS_RESERVES.has(slugify(label));
 }
 
 /**
- * Champs SOCLES : les deux seuls champs système STOCKÉS dans `contacts.fields`. Les autres clés systèmes sont
- * des ATTRIBUTS (name/phone/bsuid/wa_id), résolus hors de ce jsonb. La fiche contact les propose dès l'ouverture
- * d'un espace.
- *
- * 🔴 Ils n'étaient créés en base par AUCUN chemin d'inscription : ils n'apparaissaient que par effet de bord d'un
- * import CSV (qui crée un champ par colonne). Sur un espace NEUF, saisir un prénom rendait donc « champ inconnu :
- * prenom » alors que l'écran le proposait, sans aucun moyen de s'en sortir. Constaté sur un vrai compte client le
- * 2026-08-17. Ils sont désormais matérialisés à la première écriture (cf. `http/contacts.ts`), ce qui répare du
- * même coup les espaces déjà créés, sans script de reprise.
+ * Champs socles : les deux seuls champs système stockés dans `contacts.fields` (les autres sont des attributs).
+ * Aucun chemin d'inscription ne les crée : ils sont matérialisés à la première écriture (cf. `http/contacts.ts`),
+ * sans quoi saisir un prénom sur un espace neuf rendrait « champ inconnu ».
  */
 export const SOCLE_FIELDS: ReadonlyArray<{ key: string; label: string; type: UserFieldType }> = [
   { key: 'prenom', label: 'Prénom', type: 'text' },
@@ -159,7 +131,7 @@ export interface UserFieldStore {
   upsert(tenantId: string, def: UserFieldDef): Promise<void>;
 }
 
-/** Crée le champ perso s'il n'existe pas (idempotent, dédup PAR SLUG du libellé). Rejette un type invalide. */
+/** Crée le champ perso s'il n'existe pas (idempotent, dédup par slug du libellé). Rejette un type invalide. */
 export async function ensureField(
   store: UserFieldStore,
   tenantId: string,
@@ -169,9 +141,8 @@ export async function ensureField(
   return ensureFieldByKey(store, tenantId, slugify(label), label, type);
 }
 
-/** Crée le champ perso à une CLÉ EXPLICITE s'il n'existe pas (idempotent PAR CLÉ, pas par slug du libellé) :
- *  sert au champ canonique de consentement, dont la clé doit rester stable même si le client renomme le
- *  libellé. Un champ existant à cette clé est CONSERVÉ tel quel (type inclus, on ne le réécrit pas). */
+/** Crée le champ perso à une clé explicite s'il n'existe pas (idempotent par clé) : pour le champ canonique de
+ *  consentement, dont la clé reste stable si le client renomme le libellé. Un champ existant est conservé tel quel. */
 export async function ensureFieldByKey(
   store: UserFieldStore,
   tenantId: string,

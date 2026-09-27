@@ -6,7 +6,7 @@ import type { EmailAccount, DecryptedEmailAccount, EmailAccountInput, EmailAccou
 const COLS = `id, tenant_id, label, host, port, secure, username, from_address, from_name, reply_to,
   verified_at, created_at`;
 
-/** Forme brute d'une ligne `email_accounts` telle que Postgres la rend (colonnes de COLS, jamais le secret). */
+/** Forme brute d'une ligne `email_accounts` (colonnes de COLS, jamais le secret). */
 interface EmailAccountRow {
   id: string;
   tenant_id: string;
@@ -22,13 +22,12 @@ interface EmailAccountRow {
   created_at: Date;
 }
 
-/** Idem + le secret chiffré : uniquement pour getDecrypted(), jamais sélectionné ailleurs. */
+/** Idem avec le secret chiffré : uniquement pour getDecrypted(), jamais sélectionné ailleurs. */
 interface EmailAccountRowWithSecret extends EmailAccountRow {
   password_enc: string;
 }
 
-/** Ligne brute -> EmailAccount. Partagée par les 4 méthodes qui SELECTent COLS, pour ne pas répéter le
- *  mapping (et ses casts) à chaque endroit. */
+/** Ligne brute -> EmailAccount, partagée par les méthodes qui sélectionnent COLS. */
 function toAccount(r: EmailAccountRow): EmailAccount {
   return {
     id: r.id,
@@ -101,8 +100,7 @@ export class PgEmailAccountStore {
     if (patch.fromAddress !== undefined) push('from_address', patch.fromAddress);
     if (patch.fromName !== undefined) push('from_name', patch.fromName);
     if (patch.replyTo !== undefined) push('reply_to', patch.replyTo);
-    // Patch vide (aucun champ fourni) : no-op volontaire, pas d'UPDATE inutile. On relit l'état actuel pour
-    // renvoyer la même forme que le cas modifié (l'appelant ne distingue pas les deux).
+    // Patch vide : pas d'UPDATE, on relit l'état actuel pour rendre la même forme.
     if (sets.length === 0) return this.getById(tenantId, id);
     sets.push('updated_at=now()');
     vals.push(tenantId, id);

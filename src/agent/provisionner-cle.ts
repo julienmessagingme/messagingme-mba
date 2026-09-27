@@ -4,21 +4,14 @@ import type { CleGatewayEspace, PgCleGatewayStore } from './cles-gateway.pg';
 import type { HttpTransportPatch } from '../meta/http';
 
 /**
- * S'ASSURER QU'UN ESPACE A SA CLE AI Gateway, et la creer chez Vercel s'il n'en a pas (2026-09-09).
+ * S'assurer qu'un espace a sa clé AI Gateway, et la créer chez Vercel s'il n'en a pas.
  *
- * 🔴 QUAND, ET POURQUOI PAS PLUS TARD. Julien : « creer automatiquement une cle API dans Vercel lorsque le
- * client cree un agent IA, pas la peine de la creer avant ». Le declencheur est la CREATION de l'agent, pas
- * son activation, et la raison est le BAC A SABLE : un agent en brouillon qu'on essaie appelle vraiment le
- * modele et brule vraiment des jetons. Provisionner a l'activation laisserait toute la mise au point, celle
- * qui tatonne donc celle qui coute, sur la cle maison, c'est-a-dire non attribuee.
+ * Déclenché à la création de l'agent, pas à son activation : le bac à sable appelle vraiment le modèle, et
+ * sa mise au point doit être attribuée à l'espace.
  *
- * 🔴 LE PLAFOND EST LE CREDIT ACHETE, jamais un nombre saisi (tranche par Julien le 2026-09-09 : « oui c'est
- * bien le credit achete »). La nuance decide de tout : un plafond que le client choisit ne protege personne,
- * il suffit d'y taper 10 000 pour vider le pot commun ; un plafond egal a ce qu'il a paye est une garantie.
- *
- * 🔴 PAS DE CREDIT, PAS DE CLE, DONC PAS D'AGENT. C'est la consequence assumee du choix de Julien de REFUSER
- * la creation quand la cle manque. Sans cette regle, un client a zero mettrait son agent au point dans le
- * bac a sable sur notre argent.
+ * 🔴 Le plafond est le crédit acheté, jamais un nombre saisi : un plafond choisi ne protège personne, un
+ * plafond égal à ce qui a été payé est une garantie. Pas de crédit, pas de clé, donc pas d'agent : sinon un
+ * client à zéro mettrait son agent au point sur notre argent.
  */
 
 /** L'espace n'a pas de quoi ouvrir une cle. Distinct d'une panne : rien n'est casse, il faut recharger. */
@@ -31,7 +24,7 @@ export class CreditInsuffisantPourCle extends Error {
 
 export interface DepsProvisionCle {
   cles: Pick<PgCleGatewayStore, 'lire' | 'enregistrer' | 'noterPlafond' | 'oublier'>;
-  /** Le solde PREPAYE de l'espace, en micro-euros. C'est lui qui devient le plafond. */
+  /** Le solde prépayé de l'espace, en micro-euros. C'est lui qui devient le plafond. */
   solde(tenantId: string): Promise<number>;
   /** Comment nommer la cle dans le tableau de bord Vercel. */
   nomEspace(tenantId: string): Promise<string | null>;
@@ -43,19 +36,12 @@ export interface DepsProvisionCle {
 }
 
 /**
- * ⚠️ L'ORDRE DES DEUX ECRITURES N'EST PAS INTERCHANGEABLE. On appelle Vercel, PUIS on enregistre : Vercel ne
- * rend le secret QU'UNE FOIS, donc il n'existe aucune facon d'enregistrer avant. L'enregistrement est la
- * derniere chose faite, et il ne fait rien d'autre.
+ * On appelle Vercel, puis on enregistre : Vercel ne rend le secret qu'une fois, impossible d'enregistrer
+ * avant.
  *
- * 🔴 IL Y A DONC DEUX FACONS DE SE RETROUVER AVEC UNE CLE QUI FACTURE ET QUE PERSONNE NE PEUT UTILISER, et
- * la seconde est plus discrete que la premiere :
- *   1. l'enregistrement ECHOUE (base indisponible) : on leve, et le client qui reessaie fabrique une cle de
- *      plus a chaque tentative ;
- *   2. l'enregistrement REUSSIT mais sur un CONFLIT : une autre creation d'agent du meme espace a gagne la
- *      course, la cle qui fait autorite est la sienne, et la NOTRE ne sera jamais lue par personne. Aucune
- *      exception ne se leve ici, c'est pourquoi ce cas se voyait moins.
- * Les deux sont rattrapes : la cle qu'on vient de creer est SUPPRIMEE chez Vercel des qu'elle se revele
- * inutile. Sans ca, le plafond d'equipe reste le seul filet, et il ne dit rien de la fuite.
+ * 🔴 Deux façons d'obtenir une clé qui facture sans servir, toutes deux rattrapées en la supprimant chez
+ * Vercel : l'enregistrement échoue (chaque nouvel essai en fabriquerait une de plus), ou il réussit sur un
+ * conflit (une autre création d'agent a gagné la course, sans aucune exception).
  */
 export async function assurerCleGateway(deps: DepsProvisionCle, tenantId: string): Promise<CleGatewayEspace> {
   const existante = await deps.cles.lire(tenantId);
@@ -66,8 +52,8 @@ export async function assurerCleGateway(deps: DepsProvisionCle, tenantId: string
   if (plafond === null) throw new CreditInsuffisantPourCle(solde);
 
   const nom = await deps.nomEspace(tenantId);
-  // Le nom de l'espace peut changer ou etre duplique ; l'identifiant, non. Les deux, pour qu'un humain s'y
-  // retrouve dans le tableau de bord Vercel sans avoir a croiser une base.
+  // Le nom de l'espace peut changer ou être dupliqué, l'identifiant non : les deux, pour qu'un humain s'y
+  // retrouve dans le tableau de bord Vercel.
   const etiquette = `${nom ?? 'espace'} (${tenantId})`;
 
   const creee = await creerCleGateway(deps.transport, {
@@ -80,18 +66,13 @@ export async function assurerCleGateway(deps: DepsProvisionCle, tenantId: string
   try {
     enregistree = await deps.cles.enregistrer(tenantId, { cleId: creee.id, cle: creee.cle, plafondMicroEur: solde });
   } catch (err) {
-    // 🔴 LA CLE EXISTE CHEZ VERCEL ET NULLE PART CHEZ NOUS. Elle facture, personne ne peut s en servir, et
-    // le client qui reessaie en fabrique une deuxieme, puis une troisieme : une base indisponible une minute
-    // laissait autant de cles orphelines que de tentatives. On la retire avant de relever l echec.
-    // ⚠️ La suppression ne leve jamais et son resultat n est PAS teste : on est deja dans un chemin qui
-    // echoue, et masquer l erreur d origine par une seconde erreur ferait chercher au mauvais endroit.
+    // La clé existe chez Vercel et nulle part chez nous : on la retire avant de relever l'échec. La
+    // suppression ne lève jamais, pour ne pas masquer l'erreur d'origine.
     await supprimerCleGateway(deps.transport, { jetonCompte: deps.jetonCompte, teamId: deps.teamId, cleId: creee.id });
     throw err;
   }
-  // 🔴 LE PERDANT DE LA COURSE JETTE SA PROPRE CLE. `enregistrer` rend ce qui est EN BASE apres coup : un
-  // identifiant different du notre veut dire qu'une autre creation d'agent a gagne, et que la cle qu'on
-  // vient de fabriquer ne sera jamais lue par personne. Elle facturerait pourtant. Aucune exception ne se
-  // leve sur ce chemin, ce qui est precisement pourquoi il se voyait moins que l'echec d'ecriture.
+  // Le perdant de la course jette sa propre clé : un identifiant en base différent du nôtre veut dire
+  // qu'une autre création a gagné.
   if (enregistree.cleId !== creee.id) {
     await supprimerCleGateway(deps.transport, { jetonCompte: deps.jetonCompte, teamId: deps.teamId, cleId: creee.id });
   }
@@ -99,19 +80,12 @@ export async function assurerCleGateway(deps: DepsProvisionCle, tenantId: string
 }
 
 /**
- * Remonte le plafond apres un RECHARGEMENT du credit.
+ * Remonte le plafond après un rechargement du crédit.
  *
- * ⚠️ N'appelle Vercel QUE si le plafond change vraiment. Le solde descend a chaque tour d'agent ; suivre le
- * solde ferait un appel reseau par tour, pour reecrire le meme nombre. On compare donc au dernier plafond
- * POSE, pas au solde.
- *
- * ⚠️ NE DESCEND JAMAIS le plafond. Chez Vercel, le compteur mesure ce que la cle a DEJA depense ; notre
- * solde, lui, est ce qui RESTE. Les aligner en cours de route couperait le client bien avant qu'il ait
- * consomme ce qu'il a paye. Le plafond est donc un CUMUL de ce qui a ete achete, et il ne fait que monter.
- *
- * Rend `true` si Vercel a ete appele. Ne leve pas : un plafond en retard laisse le client dans les limites
- * de son ancien credit, ce qui est genant mais pas casse, et surtout un rechargement paye ne doit jamais
- * echouer a cause de Vercel.
+ * N'appelle Vercel que si le plafond change : on compare au dernier plafond posé, pas au solde qui descend
+ * à chaque tour. Ne descend jamais : Vercel mesure ce que la clé a déjà dépensé, notre solde ce qui reste,
+ * donc le plafond est le cumul de ce qui a été acheté. Ne lève pas : un rechargement payé ne doit jamais
+ * échouer à cause de Vercel. Rend `true` si Vercel a été appelé.
  */
 export async function remonterPlafondApresRecharge(
   deps: DepsProvisionCle,
@@ -140,19 +114,11 @@ export async function remonterPlafondApresRecharge(
 }
 
 /**
- * REVOQUER la cle d'un espace : chez Vercel, PUIS chez nous (2026-09-09, question de Julien).
+ * Révoquer la clé d'un espace : chez Vercel, puis chez nous.
  *
- * 🔴 POURQUOI CETTE FONCTION EXISTE, ET CE QU'ELLE EMPECHE. `agent_gateway_keys.tenant_id` porte un
- * `on delete cascade` : le jour ou un ESPACE sera supprime, notre ligne partira avec lui et la cle survivra
- * chez Vercel avec son identifiant PERDU. Plus personne ne pourrait la revoquer, jamais, et elle resterait
- * facturable. Aucun chemin ne supprime un espace aujourd'hui, mais le cascade arme le piege pour le jour ou
- * ca existera, et ce jour-la personne ne pensera a la cle.
- *
- * 🔴 L'ORDRE EST LE CONTROLE, ET IL EST L'INVERSE DE L'INTUITION. On supprime chez VERCEL d'abord, chez nous
- * ensuite. Commencer par notre ligne perdrait l'identifiant si l'appel a Vercel echouait, ce qui est
- * exactement la panne qu'on veut eviter. En echouant dans ce sens-ci, on garde de quoi reessayer.
- *
- * Rend `false` quand l'espace n'avait pas de cle : ce n'est pas une erreur, c'est le cas le plus frequent.
+ * 🔴 `agent_gateway_keys.tenant_id` porte un `on delete cascade` : supprimer un espace sans passer par ici
+ * laisserait chez Vercel une clé facturable dont l'identifiant est perdu. Vercel d'abord : commencer par
+ * notre ligne perdrait l'identifiant si l'appel échouait. Rend `false` quand l'espace n'avait pas de clé.
  */
 export async function revoquerCleGateway(deps: DepsProvisionCle, tenantId: string): Promise<boolean> {
   const cle = await deps.cles.lire(tenantId);
@@ -160,11 +126,11 @@ export async function revoquerCleGateway(deps: DepsProvisionCle, tenantId: strin
   const supprimee = await supprimerCleGateway(deps.transport, {
     jetonCompte: deps.jetonCompte, teamId: deps.teamId, cleId: cle.cleId,
   });
-  // ⚠️ On n'oublie la ligne QUE si Vercel a confirme. Sinon on garde l'identifiant, seul moyen de reessayer.
+  // On n'oublie la ligne que si Vercel a confirmé : sinon on garde l'identifiant, seul moyen de réessayer.
   if (!supprimee) throw new CleGatewayError('revocation', null, 'Vercel n a pas confirme la suppression');
   await deps.cles.oublier(tenantId);
   return true;
 }
 
-/** Le minimum de Vercel, re-exporte pour que les messages d'erreur d'IHM parlent du meme chiffre. */
+/** Le minimum de Vercel, réexporté pour que les messages d'erreur de l'écran parlent du même chiffre. */
 export { PLAFOND_GATEWAY_MIN_DOLLARS };

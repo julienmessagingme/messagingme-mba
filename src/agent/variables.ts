@@ -1,37 +1,24 @@
 /**
- * D'OÙ peut venir la valeur d'une variable de connecteur, et comment on la calcule.
+ * D'où peut venir la valeur d'une variable de connecteur, et comment on la calcule.
  *
- * 🔴 CATALOGUE FERMÉ, ET C'EST LA GARDE. `src/agent/champs-contact.ts` porte déjà la même doctrine pour les
- * attributs de la fiche : un chemin LIBRE ferait dériver une variable de n'importe quelle clé de la
- * projection, y compris d'une qu'on y ajouterait un jour pour tout autre chose. On l'étend ici sans
- * l'affaiblir : les nouvelles origines sont des CAS EXPLICITES, pas un chemin libre de plus.
- *
- * Ce que le client peut envoyer dans une requête, et rien d'autre :
- *  - `modele`   : le modèle décide de la valeur (c'est le paramètre d'un outil au sens classique) ;
+ * 🔴 Catalogue fermé, c'est la garde : un chemin libre ferait dériver une variable de n'importe quelle clé
+ * future de la projection. Les origines possibles :
+ *  - `modele`   : le modèle décide de la valeur ;
  *  - `contact`  : un attribut de la fiche, dans la liste fermée de `champs-contact.ts` ;
- *  - `champ`    : un CHAMP PERSONNALISÉ du contact, désigné par sa clé. Ce cas manquait, et c'était le plus
- *                 demandé : dix champs personnalisés sont déclarés en production et aucun n'était atteignable ;
+ *  - `champ`    : un champ personnalisé du contact, désigné par sa clé ;
  *  - `systeme`  : une valeur calculée par la plateforme, liste fermée ci-dessous ;
  *  - `fixe`     : une constante écrite dans la configuration du connecteur.
  *
- * ⚠️ `champ` est désigné par une CLÉ, donc par une chaîne libre, ce qui ressemble au chemin libre qu'on
- * refuse juste au-dessus. La différence tient en un mot : l'espace des clés de `user_fields` est déclaré PAR
- * LE CLIENT, pour ses contacts, et ne contient par construction rien d'autre. Lire un champ personnalisé ne
- * peut donc pas atteindre une donnée que le client n'a pas lui-même créée. La route valide en plus que la clé
- * existe, pour que la faute de frappe se voie à la configuration et pas à l'exécution.
+ * `champ` prend une clé libre, mais dans l'espace des champs que le client a lui-même déclarés : il ne peut
+ * pas atteindre une donnée que le client n'a pas créée. La route vérifie que la clé existe.
  */
 
 import { CHAMPS_CONTACT_AUTORISES, type ChampContact } from './champs-contact';
 
 /**
- * Les valeurs SYSTÈME. Fermée, courte, et chacune répond à un besoin nommé.
- *
- * `derniere_saisie` : le dernier message TEXTE écrit par le contact. Julien : « il faut qu'on ait un champ
- * système genre last text input, que systématiquement la dernière chose que le client ait dit soit un champ
- * mis à jour constamment ». C'est ce qui permet d'envoyer au système du client ce que la personne vient
- * d'écrire, sans demander au modèle de le recopier (et donc sans risquer qu'il le reformule).
- *
- * `maintenant` : l'instant courant, en ISO 8601 AVEC LE DÉCALAGE du fuseau de l'espace. Voir `formatMaintenant`.
+ * Les valeurs système, liste fermée. `derniere_saisie` : le dernier message texte du contact, envoyé tel quel
+ * sans demander au modèle de le recopier (donc de le reformuler). `maintenant` : l'instant courant en ISO
+ * 8601 avec le décalage du fuseau de l'espace (`formatMaintenant`).
  */
 export const CLES_SYSTEME = ['derniere_saisie', 'maintenant'] as const;
 export type CleSysteme = (typeof CLES_SYSTEME)[number];
@@ -46,23 +33,21 @@ export type OrigineVariable =
 export type ValeurResolue = string | number | boolean | null;
 
 /**
- * Ce qu'il faut sous la main pour résoudre les variables d'UN appel. Tout est fourni par l'appelant : ce
- * module ne lit ni la base ni l'horloge, donc il se teste entièrement.
+ * Ce qu'il faut pour résoudre les variables d'un appel, tout fourni par l'appelant : ce module ne lit ni la
+ * base ni l'horloge.
  */
 export interface ContexteVariables {
   /**
-   * 🔴 Le numéro vient du TOUR, pas de la projection, et c'est la clé de voûte anti-IDOR d'un connecteur.
-   * Un connecteur sert d'abord à répondre « où en est MA commande » : la ressource est désignée par le
-   * contact lui-même. `waId` est authentifié par la signature du webhook Meta ; le laisser venir des
-   * arguments du modèle offrirait la commande du voisin au premier qui la demande.
+   * 🔴 Le numéro vient du tour, authentifié par la signature du webhook Meta, jamais des arguments du modèle :
+   * sinon un connecteur offrirait la commande du voisin au premier qui la demande.
    */
   waId: string;
-  /** La PROJECTION du contact (bornée par l'appelant), ou `null` si le contact est inconnu. */
+  /** La projection du contact (bornée par l'appelant), ou `null` si le contact est inconnu. */
   contact: Record<string, unknown> | null;
   /** Les champs personnalisés du contact. Séparés de la projection : celle-ci part chez le fournisseur de
    *  modèle, ceux-là ne partent que dans la requête du client. */
   champs: Record<string, unknown> | null;
-  /** Le dernier message TEXTE écrit par le contact, ou `null` s'il n'y en a pas encore. */
+  /** Le dernier message texte écrit par le contact, ou `null` s'il n'y en a pas encore. */
   derniereSaisie: string | null;
   /** Instant de référence. Injecté pour que le test ne dépende pas de l'horloge. */
   maintenant: Date;
@@ -71,24 +56,14 @@ export interface ContexteVariables {
 }
 
 /**
- * L'instant courant en ISO 8601 AVEC le décalage du fuseau de l'espace : `2026-09-02T11:45:00+02:00`.
- *
- * 🔴 Pourquoi pas `toISOString()`, qui est ce que faisait le bloc « poser un champ = maintenant ». Cette
- * méthode rend toujours de l'UTC (`...T09:45:00.000Z`). Ce n'est pas faux, l'instant est le même et la
- * notation est internationale, mais elle a perdu l'heure LOCALE : un système client qui affiche la valeur
- * telle quelle montre 09:45 alors qu'il est 11:45 à Paris, et personne ne comprend d'où vient l'écart.
- * Avec le décalage explicite, l'instant reste le même, l'heure lue est la bonne, et la valeur reste
- * comparable et triable comme n'importe quel ISO 8601.
- *
- * Julien, le 2026-09-02 : « il faut que ça soit la valeur au format international qui prenne bien en compte
- * le GMT ». Les deux à la fois, donc, et c'est exactement ce que cette forme permet.
+ * L'instant courant en ISO 8601 avec le décalage du fuseau de l'espace : `2026-09-02T11:45:00+02:00`.
+ * Pas `toISOString()`, qui rend de l'UTC : un système client qui affiche la valeur telle quelle montrerait
+ * 09:45 quand il est 11:45 à Paris. Le décalage explicite garde un instant comparable et triable.
  */
 export function formatMaintenant(instant: Date, fuseau: string): string {
-  // `Intl` donne les composants DANS le fuseau ; le décalage se déduit de l'écart entre l'instant reconstruit
-  // et l'instant réel. C'est la façon portable de le faire : `Date` n'expose aucun décalage arbitraire.
-  // ⚠️ `hourCycle: 'h23'` et NON `hour12: false`. Les deux disent « format 24 h », mais le second laisse le
-  // moteur choisir le cycle h24, où minuit se rend « 24:00 » : la chaîne produite ne serait alors pas un
-  // ISO 8601 valide, une nuit sur deux, selon le moteur. On demande donc explicitement 00 à 23.
+  // `Intl` donne les composants dans le fuseau, le décalage se déduit ensuite (`Date` n'en expose aucun).
+  // `hourCycle: 'h23'` et non `hour12: false`, qui laisse le moteur choisir h24 et rendre minuit « 24:00 »,
+  // ce qui n'est pas un ISO 8601 valide.
   const parties = new Intl.DateTimeFormat('en-CA', {
     timeZone: fuseau,
     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -97,7 +72,7 @@ export function formatMaintenant(instant: Date, fuseau: string): string {
   }).formatToParts(instant);
   const p = (t: string): string => parties.find((x) => x.type === t)?.value ?? '00';
   const local = `${p('year')}-${p('month')}-${p('day')}T${p('hour')}:${p('minute')}:${p('second')}`;
-  // Le décalage : on relit la même heure locale comme si elle était en UTC, la différence EST le décalage.
+  // Le décalage : on relit la même heure locale comme si elle était en UTC, la différence est le décalage.
   const commeUtc = Date.UTC(
     Number(p('year')), Number(p('month')) - 1, Number(p('day')),
     Number(p('hour')), Number(p('minute')), Number(p('second')),
@@ -111,19 +86,16 @@ export function formatMaintenant(instant: Date, fuseau: string): string {
 }
 
 /**
- * Résout UNE variable. Rend `null` quand la valeur n'existe pas (contact inconnu, champ jamais rempli) :
- * l'absence est une information, et c'est l'appelant qui décide si elle est acceptable.
- *
- * Une valeur absente n'est JAMAIS remplacée par une valeur par défaut inventée. Envoyer au système du client
- * une ville qu'on ne connaît pas serait pire que ne rien envoyer : sa réponse serait fausse, et l'agent la
- * répéterait au contact avec assurance.
+ * Résout une variable. Rend `null` quand la valeur n'existe pas (contact inconnu, champ jamais rempli) :
+ * c'est l'appelant qui décide si l'absence est acceptable. Jamais de valeur par défaut inventée, sinon le
+ * système du client répondrait faux et l'agent le répéterait avec assurance.
  */
 export function resoudreVariable(origine: OrigineVariable, ctx: ContexteVariables): ValeurResolue {
   switch (origine.type) {
     case 'fixe':
       return origine.valeur;
     case 'contact':
-      // `wa_id` ne vient PAS de la projection : voir le commentaire de `ContexteVariables.waId`.
+      // `wa_id` ne vient pas de la projection : voir `ContexteVariables.waId`.
       if (origine.cle === 'wa_id') return ctx.waId;
       return normaliser(ctx.contact ? ctx.contact[origine.cle] : null);
     case 'champ':
@@ -132,8 +104,8 @@ export function resoudreVariable(origine: OrigineVariable, ctx: ContexteVariable
       if (origine.cle === 'maintenant') return formatMaintenant(ctx.maintenant, ctx.fuseau);
       return ctx.derniereSaisie;
     case 'modele':
-      // La valeur vient des arguments du modèle, que l'exécuteur a déjà validés : rien à calculer ici. Ce cas
-      // existe pour que le catalogue soit EXHAUSTIF, donc pour que le compilateur refuse une origine oubliée.
+      // La valeur vient des arguments du modèle, déjà validés par l'exécuteur. Ce cas rend le catalogue
+      // exhaustif, pour que le compilateur refuse une origine oubliée.
       return null;
     default: {
       // Exhaustivité vérifiée à la compilation : ajouter une origine sans la traiter ici ne compile pas.
@@ -157,12 +129,8 @@ function normaliser(v: unknown): ValeurResolue {
 }
 
 /**
- * Le libellé d'une origine, tel que la console et la fenêtre de création d'agent l'affichent.
- *
- * 🔴 IL VIT ICI, à côté de la définition, et pas dans l'écran. La fenêtre de création d'agent doit annoncer
- * au client ce qui partira dans la requête (« on envoie Ville et Dernière saisie, c'est bien ça ? ») : deux
- * listes de libellés tenues séparément finiraient par ne plus dire la même chose que ce qui part réellement,
- * et ce serait une confirmation qui ment.
+ * Le libellé d'une origine, tel que la console l'affiche. Ici, à côté de la définition, parce que la
+ * confirmation de ce qui part dans la requête doit dire ce qui part réellement.
  */
 export function libelleOrigine(origine: OrigineVariable): string {
   switch (origine.type) {

@@ -1,16 +1,10 @@
 import { escapeHtml } from '../crm/render';
 /**
- * Gabarits d'email HTML brandés « Messaging Me / Business Agent ».
- *
- * Fonctions PURES (aucune dépendance réseau ou d'état) -> testables et réutilisables.
- * `renderBrandedEmail` rend un shell générique (invitation aujourd'hui, reset de mot de passe
- * demain) : tables + styles INLINE pour la compat Gmail/Outlook, largeur ~600px, en-tête aux
- * 3 couleurs de la marque, bouton CTA construit en table (pas de <button>), pied discret.
- *
- * ⚠️ Gmail STRIPPE les <img> hors PNG/JPG et bloque souvent le chargement des images par défaut :
- * l'identité tient sans image (wordmark + barre d'accent colorée en CSS/table). Le logo PNG hébergé
- * n'est qu'un bonus pour les clients qui l'affichent, posé sur une cellule à fond blanc explicite
- * pour rester visible même en mode sombre.
+ * Gabarits d'email HTML à la marque, en fonctions pures. `renderBrandedEmail` rend un shell générique : tables et
+ * styles en ligne pour Gmail et Outlook, ~600px, en-tête aux trois couleurs, bouton construit en table (pas de
+ * <button>), pied discret.
+ * Gmail retire les <img> hors PNG/JPG et bloque souvent les images : l'identité tient sans image (wordmark et barre
+ * d'accent en table). Le logo PNG est un bonus, sur une cellule à fond blanc explicite pour le mode sombre.
  */
 
 // Couleurs de marque (icon.svg) : navy, bleu, vert.
@@ -30,7 +24,7 @@ const LOGO_URL = 'https://mba.messagingme.app/logo.png';
 export interface BrandedEmailInput {
   /** Titre affiché en gros dans le corps (déjà lisible en clair, sera échappé). */
   title: string;
-  /** Corps HTML DÉJÀ échappé/construit par l'appelant (peut contenir des <p>, <strong>...). */
+  /** Corps HTML déjà échappé et construit par l'appelant (peut contenir des <p>, <strong>...). */
   bodyHtml: string;
   /** Libellé du bouton d'action (sera échappé). */
   ctaLabel: string;
@@ -43,8 +37,8 @@ export interface BrandedEmailInput {
 }
 
 /**
- * Shell HTML brandé et réutilisable. `bodyHtml` est inséré tel quel : l'appelant est responsable
- * d'échapper les données non fiables qu'il y met (utiliser `escapeHtml`).
+ * Shell HTML à la marque. 🔴 `bodyHtml` est inséré tel quel : l'appelant échappe les données non fiables qu'il y met
+ * (`escapeHtml`).
  */
 export function renderBrandedEmail(input: BrandedEmailInput): string {
   const { title, bodyHtml, ctaLabel, ctaUrl, preheader, footnote } = input;
@@ -162,9 +156,8 @@ export interface InvitationEmailInput {
 }
 
 /**
- * Email d'invitation d'équipe personnalisé : « <invitant> t'invite à rejoindre l'espace
- * <workspace> sur Messaging Me ». Retombe proprement sur des formulations génériques si le nom
- * de l'invitant ou de l'espace manque. Utilise le shell brandé.
+ * Email d'invitation d'équipe : « <invitant> t'invite à rejoindre l'espace <espace> sur Messaging Me », avec des
+ * formulations génériques si l'un des noms manque.
  */
 export function renderInvitationEmail(input: InvitationEmailInput): string {
   const inviter = (input.inviterName ?? '').trim();
@@ -189,7 +182,7 @@ export function renderInvitationEmail(input: InvitationEmailInput): string {
     `<p style="margin:0 0 14px 0;">Tu y rejoindras l'équipe avec le rôle <strong>${escapeHtml(roleLabel(input.role))}</strong>. Clique sur le bouton ci-dessous pour choisir ton mot de passe et activer ton compte.</p>`,
   ].join('\n');
 
-  // Titre en clair : renderBrandedEmail l'échappe (une seule fois). Ne PAS pré-échapper ici (sinon double-échappement).
+  // Titre en clair : renderBrandedEmail l'échappe une fois. Ne pas pré-échapper ici (double échappement).
   const title = workspace ? `Rejoins ${workspace} sur Messaging Me` : 'Rejoins ton équipe sur Messaging Me';
 
   return renderBrandedEmail({

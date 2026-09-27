@@ -1,46 +1,36 @@
 /**
- * Normalise une date venue d'un TIERS vers la forme ISO 8601, ou la refuse quand elle est AMBIGUË.
+ * Normalise une date venue d'un tiers vers l'ISO 8601, ou la refuse quand elle est ambiguë. Module pur, qui sert
+ * tous les chemins d'écriture d'un champ (`validateFieldValue`, `canonicalizeFieldValue`).
  *
- * Module PUR. Sert `validateFieldValue` et `canonicalizeFieldValue`, donc TOUS les chemins d'écriture d'un
- * champ (webhook entrant, API publique, import CSV, fiche contact, report de formulaire).
- *
- * 🔴 La règle de fond : on normalise ce qui est NON AMBIGU, on refuse le reste EN LE DISANT.
- *
- * `03/04/2026` peut être le 3 avril ou le 4 mars, et rien dans la valeur ne permet de trancher. Deviner
- * produirait des rappels envoyés un mois trop tôt ou trop tard, sans que personne ne s'en aperçoive : la
- * donnée aurait l'air juste. On refuse donc, avec un message qui dit quoi envoyer à la place.
- *
- * ⚠️ Un refus vaut mieux qu'une date fausse, mais UNIQUEMENT parce que l'appelant remonte la raison. Toute
- * évolution qui avalerait ce refus en silence rouvrirait le trou.
+ * On normalise ce qui est non ambigu et on refuse le reste en le disant : `03/04/2026` peut être le 3 avril ou
+ * le 4 mars, et deviner produirait des rappels décalés d'un mois sans que personne le voie. Le refus ne vaut que
+ * parce que l'appelant remonte la raison.
  */
 
 /** Ce qu'on sait faire d'une valeur reçue. */
 export type NormalisationDate =
   | { ok: true; iso: string }
-  /** La forme est reconnaissable mais ne désigne pas UNE date (jour et mois interchangeables). */
+  /** La forme est reconnaissable mais ne désigne pas une date (jour et mois interchangeables). */
   | { ok: false; raison: 'ambigu' }
-  /** Un JOUR sans heure, là où un instant est attendu. */
+  /** Un jour sans heure, là où un instant est attendu. */
   | { ok: false; raison: 'sans_heure' }
   /** Rien d'exploitable. */
   | { ok: false; raison: 'illisible' };
 
 /** ISO 8601 complet : `2026-08-23T15:40`, avec secondes, fraction et fuseau optionnels. */
 const ISO_COMPLET = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/;
-/** Même chose, mais séparée par une ESPACE : la forme que sortent la plupart des bases et des tableurs. */
+/** Même chose, séparée par une espace : la forme que sortent la plupart des bases et des tableurs. */
 const ISO_ESPACE = /^(\d{4}-\d{2}-\d{2})[ ]+(\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?)$/;
 /** Jour seul. */
 const JOUR_SEUL = /^(\d{4})-(\d{2})-(\d{2})$/;
 /**
- * Horodatage epoch. SEULEMENT 10 chiffres (secondes) ou 13 (millisecondes) : c'est ce qui permet de ne pas
- * confondre avec une date compacte du genre `20260823`, qui en fait 8 et n'est PAS un epoch.
+ * Horodatage epoch : seulement 10 chiffres (secondes) ou 13 (millisecondes), pour ne pas confondre avec une
+ * date compacte comme `20260823`.
  */
 const EPOCH = /^\d{10}$|^\d{13}$/;
 /**
- * Formes où le jour et le mois sont INTERCHANGEABLES : `03/04/2026`, `03-04-2026`, `3.4.26`.
- *
- * ⚠️ L'année doit être en DERNIER (deux premiers groupes de 1 à 2 chiffres). Une première version acceptait
- * 1 à 4 chiffres en tête, si bien que `2026-07-17` tombait dans « ambigu » : toutes les dates ISO, c'est-à-dire
- * exactement celles qu'on veut, auraient été refusées. Attrapé par la suite existante.
+ * Formes où le jour et le mois sont interchangeables : `03/04/2026`, `03-04-2026`, `3.4.26`. L'année doit être
+ * en dernier (deux premiers groupes de 1 à 2 chiffres), sinon les dates ISO tomberaient dans « ambigu ».
  */
 const AMBIGU = /^\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}([ T].*)?$/;
 
@@ -52,11 +42,8 @@ function jourReel(annee: number, mois: number, jour: number): boolean {
 }
 
 /**
- * Normalise vers l'ISO 8601, pour un champ de type `date` (jour seul) ou `datetime` (jour + heure).
- *
- * ⚠️ Une valeur SANS fuseau est laissée SANS fuseau. C'est une heure murale, interprétée dans le fuseau de
- * l'espace au moment de l'évaluation (même convention que le `datetime-local` des écrans). Lui coller un
- * `Z` la décalerait de plusieurs heures, silencieusement.
+ * Normalise vers l'ISO 8601, pour un champ `date` (jour seul) ou `datetime` (jour + heure). Une valeur sans
+ * fuseau reste sans fuseau : une heure murale, lue dans le fuseau de l'espace ; lui coller un `Z` la décalerait.
  */
 export function normaliserDate(valeur: string, type: 'date' | 'datetime'): NormalisationDate {
   const v = String(valeur ?? '').trim();
@@ -71,8 +58,8 @@ export function normaliserDate(valeur: string, type: 'date' | 'datetime'): Norma
     return { ok: true, iso: type === 'date' ? iso.slice(0, 10) : iso };
   }
 
-  // ⚠️ Testé AVANT les formes ISO : sinon `03/04/2026` tomberait dans « illisible », et le message perdrait
-  // la seule information utile, à savoir qu'il faut envoyer du ISO.
+  // Testé avant les formes ISO : sinon `03/04/2026` tomberait dans « illisible », et le message ne dirait plus
+  // qu'il faut envoyer de l'ISO.
   if (AMBIGU.test(v)) return { ok: false, raison: 'ambigu' };
 
   const espace = ISO_ESPACE.exec(v);
@@ -88,10 +75,8 @@ export function normaliserDate(valeur: string, type: 'date' | 'datetime'): Norma
   const jour = JOUR_SEUL.exec(candidat);
   if (jour) {
     if (!jourReel(Number(jour[1]), Number(jour[2]), Number(jour[3]))) return { ok: false, raison: 'illisible' };
-    // 🔴 Un jour SEUL n'est pas un instant, et on ne lui invente pas minuit. C'est le contrat écrit depuis
-    // toujours (« date nue = pas datetime ») et il compte encore plus depuis qu'un déclencheur peut partir
-    // « X heures avant » cette valeur : un rappel réglé sur 2 h avant partirait à 22 h la VEILLE, et
-    // personne ne verrait d'où vient le décalage. On refuse, en disant ce qui manque.
+    // Un jour seul n'est pas un instant, et on ne lui invente pas minuit : un rappel réglé « 2 h avant »
+    // partirait à 22 h la veille. On refuse, en disant ce qui manque.
     if (type === 'datetime') return { ok: false, raison: 'sans_heure' };
     return { ok: true, iso: candidat };
   }

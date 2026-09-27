@@ -8,13 +8,13 @@ export interface GoogleIdentity {
   sub: string;
 }
 
-// Clés publiques Google (JWKS) : jose les récupère + met en cache tout seul. Pas de dépendance en plus.
+// Clés publiques Google (JWKS) : jose les récupère et les met en cache.
 const GOOGLE_JWKS = createRemoteJWKSet(new URL('https://www.googleapis.com/oauth2/v3/certs'));
 
 /**
- * Vérifie un jeton ID Google (flux « Sign in with Google » côté front) : signature via le JWKS Google,
- * `issuer` = accounts.google.com, `audience` = NOTRE client_id. Renvoie l'identité, ou null si invalide/expiré
- * (jamais de throw : donnée non fiable). L'appelant doit exiger `emailVerified`.
+ * Vérifie un jeton ID Google (« Sign in with Google ») : signature par le JWKS Google, `issuer`
+ * accounts.google.com, `audience` = notre client_id. Rend l'identité, ou null si invalide ou expiré (jamais
+ * de throw : donnée non fiable). 🔴 L'appelant doit exiger `emailVerified`.
  */
 export async function verifyGoogleIdToken(idToken: string, clientId: string): Promise<GoogleIdentity | null> {
   if (!idToken || !clientId) return null;

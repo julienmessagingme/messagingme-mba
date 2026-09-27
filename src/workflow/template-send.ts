@@ -5,14 +5,12 @@ import type { OutboundCarouselCard } from '../meta/template-components';
 import type { WorkflowButton } from './engine';
 
 /**
- * Construit les `components` Meta d'un envoi de template DANS un workflow (chemin réel de prod, worker.ts). Deux
- * apports :
- *  1) Variables du corps : on COLLE les attributs du contact via les indices `template_param_hints` (ex. {{1}} ->
- *     prenom), avec repli sur les exemples du template. On fournit EXACTEMENT `varCount` valeurs (le compte attendu
- *     par Meta) -> corrige l'erreur 132000 « le nombre de variables fournies ne correspond pas au template ».
+ * Construit les `components` Meta d'un envoi de template dans un workflow. Pur : la lecture du contact, des
+ * hints et du corps live du template reste dans worker.ts.
+ *  1) Variables du corps : attributs du contact collés via `template_param_hints` (ex. {{1}} -> prenom), repli
+ *     sur les exemples du template. Exactement `varCount` valeurs, le compte attendu par Meta (sinon 132000).
  *  2) Payload contrôlé sur chaque bouton quick-reply (`btn:<index>`) -> branche déterministe au tap.
- * Fonction PURE (aucune IO) donc testable directement ; l'IO (lecture du contact, des hints, du corps live du
- * template) reste dans worker.ts. Ordre respecté : body avant boutons (attendu par l'API Cloud).
+ * Ordre attendu par l'API Cloud : body avant boutons.
  */
 export function buildWorkflowTemplateComponents(opts: {
   hints: ParamHint[];
@@ -20,39 +18,35 @@ export function buildWorkflowTemplateComponents(opts: {
   contact: ResolvableContact;
   buttons: WorkflowButton[];
   /**
-   * Variables du corps DÉJÀ résolues (campagne workflow, 1er template) : si fourni, on court-circuite la résolution
-   * par hints et on utilise ces valeurs directement. Une valeur vide -> position `missing` (l'appelant saute :
-   * jamais de `text:''`). Absent -> résolution par hints (chemin advance/webhook, inchangé).
+   * Variables du corps déjà résolues (campagne workflow, 1er template) : court-circuite la résolution par hints.
+   * Une valeur vide -> position `missing` (l'appelant saute : jamais de `text:''`).
    */
   explicitParams?: string[];
   /** Horodatage courant + fuseau, pour la source de variable NOW (date du jour). Absent -> pas de NOW résolu. */
   now?: Date;
   tz?: string;
   /**
-   * Jeton de session pour un bouton FLOW (formulaire). Meta l'EXIGE non vide à l'envoi d'un template NAVIGATE
-   * (sinon #131009 « Parameter value is not valid »). La corrélation de la réponse côté mba passe par `_ref` baké
-   * dans le flow_json, PAS par ce jeton -> n'importe quelle valeur non vide convient (le worker en passe un unique).
+   * Jeton de session d'un bouton FLOW. Meta l'exige non vide à l'envoi d'un template NAVIGATE (sinon #131009).
+   * La corrélation de la réponse passe par `_ref` baké dans le flow_json, pas par ce jeton : toute valeur non
+   * vide convient.
    */
   flowToken?: string;
   /**
-   * Cartes du CAROUSEL du template (relues chez Meta). Absent = template sans carousel, sortie inchangée.
-   * Le même constructeur sert au chemin campagne : un même template produit les mêmes composants des deux côtés.
+   * Cartes du carousel du template (relues chez Meta). Absent = template sans carousel. Même constructeur que
+   * le chemin campagne : un même template produit les mêmes composants des deux côtés.
    */
   carousel?: { cards: OutboundCarouselCard[] };
   /**
-   * `media id` de l'en-tête média, déjà préparé par l'appelant (re-téléversé sur le numéro d'envoi). Meta EXIGE
-   * ce média à CHAQUE envoi d'un template à en-tête IMAGE/VIDEO/DOCUMENT : sans lui, 132012 pour tous les
-   * destinataires. L'appelant refuse en amont via `headerMediaSendBlocker` plutôt que de laisser partir.
+   * `media id` de l'en-tête média, préparé par l'appelant (re-téléversé sur le numéro d'envoi). Meta l'exige à
+   * chaque envoi d'un template à en-tête IMAGE/VIDEO/DOCUMENT (sinon 132012) ; l'appelant refuse en amont via
+   * `headerMediaSendBlocker`.
    */
   headerMediaId?: string;
   headerFormat?: 'IMAGE' | 'VIDEO' | 'DOCUMENT';
   /**
-   * Suffixes des boutons URL TRACÉS, par index de bouton (attribution des clics, migration 0106).
-   *
-   * 🔴 Un scénario envoie EXACTEMENT les mêmes templates qu'une campagne directe. Quand l'URL d'un bouton a
-   * été soumise à Meta sous la forme `/r/<code>/{{1}}`, elle exige son composant à CHAQUE envoi, quel que
-   * soit le chemin qui envoie. L'oublier ici refuse l'envoi en 131008, ce qu'a fait tout scénario démarrant
-   * par un template tracé jusqu'au 2026-09-02.
+   * Suffixes des boutons URL tracés, par index de bouton (attribution des clics). Une URL soumise à Meta sous
+   * la forme `/r/<code>/{{1}}` exige son composant à chaque envoi, quel que soit le chemin qui envoie :
+   * l'oublier ici fait refuser l'envoi en 131008.
    */
   suffixesBoutons?: Record<number, string>;
 }): { components: unknown[]; missing: number[] } {
@@ -67,13 +61,13 @@ export function buildWorkflowTemplateComponents(opts: {
     ...(opts.suffixesBoutons ? { suffixesBoutons: opts.suffixesBoutons } : {}),
   });
   const flowToken = opts.flowToken && opts.flowToken !== '' ? opts.flowToken : 'mba-flow';
-  // Un composant par bouton, à l'INDEX du template (préservé) : quick-reply -> payload contrôlé (`btn:<i>`) ;
-  // FLOW -> action + flow_token (requis par Meta pour un template à bouton formulaire) ; URL statique -> rien.
+  // Un composant par bouton, à l'index du template : quick-reply -> payload contrôlé (`btn:<i>`) ; FLOW ->
+  // action + flow_token (requis par Meta pour un template à bouton formulaire) ; URL statique -> rien.
   const buttonComponents = opts.buttons.flatMap((b, i): unknown[] => {
     if (b.type === 'QUICK_REPLY') return [{ type: 'button', sub_type: 'quick_reply', index: String(i), parameters: [{ type: 'payload', payload: `btn:${i}` }] }];
     if (b.type === 'FLOW') return [{ type: 'button', sub_type: 'flow', index: String(i), parameters: [{ type: 'action', action: { flow_token: flowToken } }] }];
     return [];
   });
-  // `missing` non vide -> l'appelant (worker) SAUTE l'envoi (pas de `text:''` -> pas de 132012).
+  // `missing` non vide -> l'appelant saute l'envoi (pas de `text:''`, donc pas de 132012).
   return { components: [...bodyComponents, ...buttonComponents], missing: resolved.missing };
 }

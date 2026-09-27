@@ -14,16 +14,15 @@ export interface ContactUpsert {
   /** Tags à ajouter (union avec les tags existants côté store, jamais d'écrasement). */
   tags?: string[];
   /**
-   * Identifiant WhatsApp d'un client qui n'a pas partagé son numéro. OPTIONNEL et jamais requis : le numéro
-   * reste l'identité de ce chemin d'upsert. Absent -> le BSUID déjà en base est PRÉSERVÉ (jamais écrasé par
-   * du vide), sinon un import CSV effacerait l'identifiant d'un contact arrivé par l'inbound.
+   * Identifiant WhatsApp d'un client qui n'a pas partagé son numéro, optionnel : le numéro reste l'identité de cet
+   * upsert. Absent -> le BSUID en base est préservé, sinon un import CSV effacerait celui d'un contact entrant.
    */
   bsuid?: string | null;
 }
 
 /**
- * Ce qui VARIE d'une ligne à l'autre dans un import. L'espace, le consentement et les tags valent pour tout
- * le lot : les répéter par ligne enverrait cinq mille fois la même valeur sur le fil.
+ * Ce qui varie d'une ligne à l'autre dans un import. L'espace, le consentement et les tags valent pour tout le
+ * lot : les répéter par ligne enverrait cinq mille fois la même valeur sur le fil.
  */
 export interface ContactDeLot {
   phoneE164: string;
@@ -37,12 +36,12 @@ export interface LotContacts {
   /** Ces contacts sont-ils opt-in ? Vaut pour tout le lot (la case cochée à l'écran d'import). */
   optInStatus: 'opted_in' | 'unknown';
   optInSource?: string;
-  /** Tags appliqués à TOUS les contacts du lot (union avec l'existant, jamais d'écrasement). */
+  /** Tags appliqués à tous les contacts du lot (union avec l'existant, jamais d'écrasement). */
   tags?: string[];
   /**
-   * 🔴 Ce lot peut-il réabonner quelqu'un qui a dit STOP ? Seul l'import CSV case cochée le peut (décision de
-   * Julien du 2026-09-26) : c'est l'opérateur qui le demande. Absent = non, et c'est le défaut SÛR : un appelant
-   * qui l'oublie garde le STOP, il ne le lève pas. L'import HubSpot ne le pose jamais.
+   * 🔴 Ce lot peut-il réabonner quelqu'un qui a dit STOP ? Seul l'import CSV case cochée le peut, à la demande
+   * de l'opérateur. Absent = non, le défaut sûr : un appelant qui l'oublie garde le STOP. L'import HubSpot ne le
+   * pose jamais.
    */
   peutLeverStop?: boolean;
   contacts: ContactDeLot[];
@@ -50,25 +49,16 @@ export interface LotContacts {
 
 export interface ContactStore {
   /**
-   * Upsert d'un LOT de contacts par (tenant, téléphone), en UNE requête (AUDIT-SCALE-2026-08-25.md, R9).
-   *
-   * ⚠️ `fields` est un PATCH À FUSIONNER (merge, pas replace) : côté SQL, faire
-   * `fields = contacts.fields || excluded.fields` (jsonb) pour ne PAS écraser les champs perso déjà présents
-   * et absents du CSV courant. Le CSV ne porte que les clés non vides.
-   *
-   * Rend un résultat PAR CONTACT DONNÉ, dans l'ordre reçu : c'est ce qui permet au rapport d'import de
-   * compter juste, y compris quand le même numéro apparaît plusieurs fois dans le fichier (une seule
-   * création possible, les suivantes sont des mises à jour).
+   * Upsert d'un lot de contacts par (tenant, téléphone), en une requête. `fields` est un patch à fusionner
+   * (`fields = contacts.fields || excluded.fields`), pour ne pas écraser les champs absents du CSV. Rend un résultat
+   * par contact donné, dans l'ordre reçu, pour un rapport juste même si un numéro apparaît plusieurs fois.
    */
   upsertManyByPhone(lot: LotContacts): Promise<Array<'created' | 'updated'>>;
 }
 
 /**
- * Taille d'un lot d'upsert. 500 lignes en une requête plutôt qu'une requête par ligne : à 11 ms
- * d'aller-retour mesurés vers le pooler, un fichier de 50 000 contacts passe de neuf minutes (donc un
- * timeout Cloudflare à 100 s, et un opérateur qui voit une erreur pendant que le serveur travaille encore)
- * à une centaine de requêtes. Pas 5000 : au-delà, un lot fait une requête énorme dont l'échec coûte cher à
- * rejouer, sans gagner grand-chose sur le nombre d'allers-retours.
+ * Taille d'un lot d'upsert. 500 lignes par requête : une requête par ligne ferait durer un gros fichier plus
+ * que le timeout Cloudflare (100 s). Pas 5000 : un lot énorme coûte cher à rejouer, sans gagner grand-chose.
  */
 const TAILLE_LOT = 500;
 
@@ -78,10 +68,10 @@ export interface ImportInput {
   tenantId: string;
   /** Ces contacts sont-ils opt-in (la preuve est gérée en amont) ? */
   optIn: boolean;
-  /** D'où vient la preuve du consentement. Défaut `csv_import`. Une liste HubSpot pose `hubspot_list` :
-   *  le consentement y est géré par HubSpot, c'est lui la source, et il faut pouvoir le retracer. */
+  /** D'où vient la preuve du consentement. Défaut `csv_import` ; une liste HubSpot pose `hubspot_list`, qui en
+   *  est la source et doit rester traçable. */
   optInSource?: string;
-  /** Tags appliqués à TOUS les contacts de cet import (union avec l'existant). */
+  /** Tags appliqués à tous les contacts de cet import (union avec l'existant). */
   tags?: string[];
   /** Cet import peut-il réabonner quelqu'un qui a dit STOP ? Seule la route CSV, case cochée. Cf. `LotContacts`. */
   peutLeverStop?: boolean;
@@ -102,9 +92,8 @@ export async function importContacts(input: ImportInput, deps: ImportDeps): Prom
   const report: ImportReport = { created: 0, updated: 0, skipped: 0, errors: [] };
   const cols = Object.entries(input.mapping.columns);
   /**
-   * Une erreur par ligne rejetée, PLAFONNÉE. Depuis que la route accepte 8 Mo, un fichier dont aucune ligne
-   * n'a de téléphone produirait 150 000 entrées, donc une réponse de plusieurs mégaoctets pour un écran qui
-   * n'en affiche que cinq. Le COMPTE (`skipped`), lui, reste exact : c'est lui qui dit l'ampleur.
+   * Une erreur par ligne rejetée, plafonnée : un gros fichier sans téléphone produirait sinon une réponse de
+   * plusieurs mégaoctets pour un écran qui en affiche cinq. Le compte (`skipped`), lui, reste exact.
    */
   const signaler = (line: number, reason: string): void => {
     if (report.errors.length < 100) report.errors.push({ line, reason });
@@ -124,8 +113,8 @@ export async function importContacts(input: ImportInput, deps: ImportDeps): Prom
       signaler(1, `colonnes fusionnées sur la clé "${key}": ${headers.join(', ')}`);
     }
   }
-  // On garde la DÉFINITION (type inclus), pas juste la clé : elle sert à canonicaliser chaque valeur selon
-  // le type déclaré du champ (ex. un booléen « Oui » -> 'true'), sur les MÊMES règles que la fiche contact.
+  // On garde la définition (type inclus) : elle sert à canonicaliser chaque valeur selon le type déclaré,
+  // sur les mêmes règles que la fiche contact.
   const defsByKey = new Map((await deps.userFields.list(input.tenantId)).map((f) => [f.key, f] as const));
   for (const key of keyToHeaders.keys()) {
     if (!defsByKey.has(key)) {
@@ -135,8 +124,8 @@ export async function importContacts(input: ImportInput, deps: ImportDeps): Prom
     }
   }
 
-  // 2) Traiter chaque ligne : validation ligne à ligne (elle produit le rapport d'erreurs), puis
-  //    accumulation. L'écriture, elle, se fait par LOTS plus bas.
+  // 2) Traiter chaque ligne : validation ligne à ligne (elle produit le rapport d'erreurs), puis accumulation.
+  //    L'écriture se fait par lots plus bas.
   const aEcrire: ContactDeLot[] = [];
   for (let i = 0; i < input.rows.length; i += 1) {
     const row = input.rows[i] ?? {};
@@ -146,8 +135,8 @@ export async function importContacts(input: ImportInput, deps: ImportDeps): Prom
 
     for (const [header, m] of cols) {
       const val = (row[header] ?? '').trim();
-      // Garder la PREMIÈRE valeur non vide : une 2e colonne mappée (ex. Mobile vide après
-      // Telephone) ne doit pas écraser un numéro/nom déjà trouvé.
+      // Garder la première valeur non vide : une 2e colonne mappée (ex. Mobile vide après Telephone) n'écrase
+      // pas un numéro ou un nom déjà trouvé.
       if (m.target === 'phone') {
         if (val && !phoneRaw) phoneRaw = val;
       } else if (m.target === 'name') {
@@ -155,8 +144,8 @@ export async function importContacts(input: ImportInput, deps: ImportDeps): Prom
       } else if (m.target === 'custom') {
         const key = m.key ?? slugify(header);
         if (val && fields[key] === undefined) {
-          // Canonicalise selon le type déclaré (booléen 'Oui' -> 'true'). Valeur non valide pour le type ->
-          // conservée BRUTE (comme avant : l'import ne rejette pas une ligne sur une valeur de champ perso).
+          // Canonicalise selon le type déclaré ; une valeur non valide pour le type est conservée brute (l'import
+          // ne rejette pas une ligne sur un champ perso).
           const type = defsByKey.get(key)?.type ?? 'text';
           fields[key] = validateFieldValue(type, val) ? canonicalizeFieldValue(type, val) : val;
         }
@@ -181,7 +170,7 @@ export async function importContacts(input: ImportInput, deps: ImportDeps): Prom
   }
 
   // 3) Écrire par lots. Chaque lot est une requête indépendante : un échec en cours de route laisse en base
-  //    ce que les lots précédents ont écrit, exactement comme le faisait l'écriture ligne à ligne.
+  //    ce que les lots précédents ont écrit.
   const commun = {
     tenantId: input.tenantId,
     optInStatus: (input.optIn ? 'opted_in' : 'unknown') as 'opted_in' | 'unknown',

@@ -1,48 +1,39 @@
 import { campaignJobExpireSeconds, resolveRatePerMinute, SANS_PLAFOND } from './pacing';
 
 /**
- * BALAYAGE DE REPRISE APRÈS UNE PAUSE DE DÉBIT (migration 0103).
+ * Balayage de reprise après une pause de débit : une campagne qui a touché un plafond de cadence Meta repart
+ * d'elle-même à l'échéance.
  *
- * Une campagne qui touche un plafond de cadence Meta se met en pause d'elle-même, sans perdre personne.
- * Jusqu'ici, RIEN ne la repartait : il fallait un clic. Le texte affiché à l'opérateur promettait pourtant
- * une reprise automatique. Ce balayage rend cette phrase vraie.
+ * Il ne reprend que les pauses de débit. Une pause de qualité (131048) n'a pas d'échéance : Meta juge alors le
+ * numéro, pas la cadence, et relancer sans rien changer aggrave le problème. Cette décision reste humaine.
  *
- * 🔴 IL NE REPREND QUE LES PAUSES DE DÉBIT. Une pause de QUALITÉ (131048) n'a pas d'échéance et n'entre pas
- * ici : Meta juge alors le numéro, pas la cadence, et relancer sans rien changer aggrave le problème. Cette
- * décision-là reste humaine, et c'est le point le plus important de tout le lot.
- *
- * La réclamation est ATOMIQUE côté store (`update ... returning` sur les lignes dues) : deux balayages
- * concurrents ne peuvent pas reprendre la même campagne ni enfiler deux runs pour elle.
+ * La réclamation est atomique côté store (`update ... returning`) : deux balayages concurrents ne reprennent
+ * pas la même campagne.
  */
 export interface RepriseSweepDeps {
   /** Reprend en base les campagnes dues (atomique) et rend celles réellement reprises. */
   reprendreDues(): Promise<Array<{ id: string; tenantId: string }>>;
   /** Dimensionnement du run, pour l'expiration du job. `null` = campagne disparue depuis la reprise. */
   getRunSizing(campaignId: string): Promise<{ ratePerMinute: number | null; pendingCount: number } | null>;
-  /** Enfile le run. `tenantId` porte le GROUPE de la file : sans lui, une reprise échapperait au plafond de
-   *  concurrence par espace, et un client qui touche souvent le plafond occuperait toute la file. */
+  /** Enfile le run. `tenantId` porte le groupe de la file : sans lui, une reprise échapperait au plafond de
+   *  concurrence par espace. */
   enqueueRun(campaignId: string, tenantId: string, expireInSeconds: number): Promise<void>;
   defaultRatePerMinute?: number;
   /**
-   * Le plus BAS des plafonds de canal (`plafondLePlusBas`), pour ESTIMER une durée sans connaître le
-   * canal. ⚠️ Absent (tests) -> aucun plafond, donc le comportement d'avant. Ce n'est pas le frein
-   * réel : celui-là est posé par `run-job`, qui lit le canal sur la campagne.
+   * Le plus bas des plafonds de canal, pour estimer une durée sans connaître le canal. Absent (tests) -> aucun
+   * plafond. Le frein réel est posé par `run-job`, qui lit le canal sur la campagne.
    */
   plafondLePlusBas?: number;
-  /** Échec sur UNE campagne. Le balayage, lui, continue : une campagne qui n'a pas pu être enfilée ne doit
-   *  pas empêcher les autres de repartir. Sans cette remontée, elle resterait `running` sans run. */
+  /** Échec sur une campagne. Le balayage continue ; sans cette remontée, elle resterait `running` sans run. */
   onError?: (msg: string, err: unknown) => void;
 }
 
 /**
  * Reprend les campagnes dues et enfile leur run. Rend le nombre de campagnes réellement relancées.
  *
- * ⚠️ L'ORDRE est l'inverse de celui du balayage des campagnes programmées, et c'est voulu. Là-bas on enfile
- * PUIS on marque, pour qu'un échec d'enfilement laisse la campagne `scheduled` et reprise au tour suivant.
- * Ici la reprise en base est ce qui RÉCLAME la ligne : elle doit venir d'abord, sinon deux balayages
- * enfileraient deux runs pour la même campagne. La contrepartie est qu'un échec d'enfilement laisse une
- * campagne `running` sans run, et c'est exactement le cas que le balayage de reprise après gel (R4) attrape
- * déjà, à la minute suivante. On échange donc un double envoi possible contre un retard d'une minute.
+ * L'ordre est l'inverse du balayage des campagnes programmées : ici la reprise en base réclame la ligne et doit
+ * venir d'abord, sinon deux balayages enfileraient deux runs. Un échec d'enfilement laisse alors une campagne
+ * `running` sans run, que le balayage de reprise après gel rattrape à la minute suivante.
  */
 export async function runCampaignRepriseSweep(deps: RepriseSweepDeps): Promise<number> {
   const reprises = await deps.reprendreDues();

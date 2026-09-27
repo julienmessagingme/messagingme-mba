@@ -1,42 +1,26 @@
 /**
- * Modèle du graphe d'un workflow (bot builder). PUR : parsing/validation/sanitisation, aucune IO.
- * Un workflow = des blocs (nodes) reliés par des arêtes (edges). PB1 : on stocke/valide/édite le graphe.
- * L'exécution (machine à états par contact) arrive en PB2 et interprétera `data` selon le type de node.
+ * Modèle du graphe d'un workflow (bot builder). Pur : parsing, validation, sanitisation, aucune IO.
+ * Un workflow = des blocs (nodes) reliés par des arêtes (edges) ; l'exécuteur interprète `data` selon le type.
  */
 
-// `action` = bloc unifié (ajouter/retirer un tag, mettre à jour/vider un champ) via `data.actionKind`. Les types
-// `tag`/`field` restent lus pour les scénarios existants (legacy), mais la palette ne crée plus que `action`.
-// `inbox` = le fil passe à un HUMAIN : le scénario s'arrête là et la conversation apparaît dans « À traiter ».
-// C'est le bloc « Assigner à un agent ». Il ne coupe pas l'agent de Meta par lui-même : c'est le message qui le
-// précède qui a pris le contrôle du fil, en partant. Lui ne fait que revendiquer le fil pour l'humain, ce qui
-// suffit à ce que la règle du hors-script ne le rende plus à l'agent.
-//
-// `mba_handoff` / `mba_disable` : blocs RETIRÉS du produit (ils ne faisaient rien, et le retour à l'agent de
-// Meta est désormais implicite : une étape qui n'offre aucun choix relâche le fil). Ils ne sont plus dans la
-// palette, plus dans le panneau de configuration, et le moteur les traverse en passe-plat par sa branche
-// générique.
-//
-// ⚠️ Ils restent ACCEPTÉS ici, exactement comme `tag`/`field`, et ce n'est PAS un oubli : `parseGraph` rejette
-// le graphe ENTIER dès qu'un type est inconnu. Les retirer de cette liste rendrait un scénario enregistré avant
-// le retrait impossible à sauvegarder, avec un « graphe invalide » que personne ne saurait expliquer. Vérifié
-// en production avant le retrait : 0 scénario sur 8 en contient, mais la tolérance ne coûte rien et la
-// suppression coûterait un incident.
-// `rcs_message` = envoi sur le canal RCS. Deux sorties TYPÉES ('sent' / 'unreachable') : sa branche dépend de la
-// joignabilité du numéro, donc d'un appel réseau. Le walk (PUR) rend la main à l'executor, qui fait cette IO.
-// `email` = node « Envoi de mail » (boîte SMTP + modèle + destinataire). Contrairement à `rcs_message`, ce n'est
-// PAS un envoi bloquant côté walk : c'est une action SYNCHRONE non bloquante (même branche que `tag`/`action`),
-// l'IO réelle étant faite best-effort par l'executor après coup (le parcours ne l'attend jamais).
-// `question` : pose une question au contact, avec un MENU déroulant de réponses (liste interactive WhatsApp)
-// ou sans menu du tout. Il ATTEND toujours une réponse, comme un message rapide à boutons, et il est le seul
-// bloc à porter EN PLUS une échéance : son parcours attend la réponse ET le temps qui passe.
-// Sorties : `row:<i>` par ligne du menu, `timeout` à l'échéance, et l'arête libre pour une réponse écrite.
-// `http` = « Appel HTTP » : joue un appel DEJA mis au point dans Tools > Connecteurs API et range sa reponse
-// dans un champ du contact. Action SYNCHRONE non bloquante, comme `tag` ou `field` : le walk (PUR) emet
-// l'action, l'executor fait l'IO. Le bloc ne DECRIT aucun appel, il en DESIGNE un : l'adresse, la methode, le
-// corps et le filtre de sortie vivent dans la bibliotheque, ou ils sont eprouves une fois pour toutes.
-// `js` = « Fonction JS » : transforme la valeur d'un champ par un bout de JavaScript ecrit par le client, et
-// range le resultat dans un champ. Le code tourne dans QuickJS compile en WebAssembly, avec plafond de temps
-// et de memoire : voir `src/workflow/fonction-js.ts`, qui porte les mesures.
+// `action` = bloc unifié (tag, champ) via `data.actionKind` ; `tag`/`field` restent lus pour les scénarios
+// existants, la palette ne crée plus que `action`.
+// `inbox` = « Assigner à un agent » : le scénario s'arrête et la conversation passe à un humain (« À traiter »).
+// Il ne coupe pas l'agent de Meta lui-même (c'est le message qui le précède qui a pris le fil) : il revendique
+// le fil pour l'humain, ce qui suffit à ce que la règle du hors-script ne le rende plus à l'agent.
+// `mba_handoff` / `mba_disable` : retirés du produit, le moteur les traverse en passe-plat. Ils restent acceptés
+// ici, comme `tag`/`field` : `parseGraph` rejette le graphe entier dès qu'un type est inconnu, donc un ancien
+// scénario qui en contient deviendrait impossible à sauvegarder.
+// `rcs_message` = envoi RCS, deux sorties typées ('sent' / 'unreachable') : sa branche dépend de la
+// joignabilité, donc d'un appel réseau, et le walk (pur) rend la main à l'executor pour cette IO.
+// `email` = « Envoi de mail » : action synchrone non bloquante (même branche que `tag`), l'IO étant faite
+// best-effort par l'executor après coup.
+// `question` : question au contact, avec ou sans menu (liste interactive WhatsApp). Attend une réponse ET porte
+// une échéance. Sorties : `row:<i>` par ligne, `timeout` à l'échéance, l'arête libre pour une réponse écrite.
+// `http` = « Appel HTTP » : joue un appel de Tools > Connecteurs API et range la réponse dans un champ. Action
+// synchrone non bloquante ; le bloc désigne un appel de la bibliothèque, il ne le décrit pas.
+// `js` = « Fonction JS » : transforme un champ par du JavaScript du client, exécuté dans QuickJS (WebAssembly)
+// avec plafonds de temps et de mémoire (voir `src/workflow/fonction-js.ts`).
 export const WORKFLOW_NODE_TYPES = ['template', 'quick_message', 'inbox', 'flow', 'question', 'tag', 'field', 'condition', 'action', 'wait', 'mba_handoff', 'mba_disable', 'rcs_message', 'email', 'agent', 'http', 'js'] as const;
 export type WorkflowNodeType = (typeof WORKFLOW_NODE_TYPES)[number];
 export function isWorkflowNodeType(t: unknown): t is WorkflowNodeType {
@@ -47,7 +31,7 @@ export interface WorkflowNode {
   id: string;
   type: WorkflowNodeType;
   position: { x: number; y: number };
-  /** Config du bloc, dépend du type (templateName / flowId / tag / key+value...). Opaque en PB1. */
+  /** Config du bloc, dépend du type (templateName / flowId / tag / key+value...). Opaque ici. */
   data: Record<string, unknown>;
 }
 
@@ -55,7 +39,7 @@ export interface WorkflowEdge {
   id: string;
   source: string;
   target: string;
-  /** Port de sortie (branche) : réservé pour PB2 (ex. bouton quick-reply d'un template). */
+  /** Port de sortie (branche), ex. bouton quick-reply d'un template. */
   sourceHandle?: string;
 }
 
@@ -68,9 +52,9 @@ const MAX_NODES = 200;
 const MAX_EDGES = 400;
 
 /**
- * Parse + SANITISE un graphe reçu du client. Renvoie un graphe propre (champs inconnus retirés) ou null si
+ * Parse + sanitise un graphe reçu du client. Renvoie un graphe propre (champs inconnus retirés) ou null si
  * invalide : ids manquants/dupliqués, type de node inconnu, position non numérique, arête pointant un node
- * inexistant (intégrité référentielle), ou graphe trop gros. Ne fait AUCUNE hypothèse sur `data` (opaque).
+ * inexistant, ou graphe trop gros. Ne fait aucune hypothèse sur `data` (opaque).
  */
 export function parseGraph(v: unknown): WorkflowGraph | null {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return null;

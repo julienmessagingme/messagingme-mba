@@ -1,22 +1,13 @@
 /**
- * LA CLÉ QUE META PRÉSENTE AU RELAIS : une clé d'API de l'espace, droit `mba:relais`, visible dans sa liste
- * sous le nom « Agent de Meta » (arbitrage de Julien, 2026-09-21 ; spec 2026-09-21-relais-mba-design.md).
+ * La clé que Meta présente au relais : une clé d'API de l'espace, droit `mba:relais`, nommée « Agent de Meta ».
  *
- * 🔴 CE DROIT N'EST PAS ATTRIBUABLE DEPUIS L'ÉCRAN (`VALID_API_SCOPES` ne le contient pas). Son porteur peut
- * appeler les outils de l'espace au nom de n'importe lequel de ses contacts, puisque c'est l'en-tête qui
- * désigne le contact : seule la publication en crée une, pour la poser chez Meta.
- *
- * 🔴 UN SECRET NE SE COMPARE PAS, IL SE SOUVIENT. Meta ne rend jamais la clé et nous n'en gardons que
- * l'empreinte : `tenant_settings.mba_relais_cle_id` (migration 0161) dit laquelle est chez Meta. Meta exige
- * `auth_config` à chaque écriture du connecteur, donc toute écriture pose une clé NEUVE.
- *
- * 🔴 L'ORDRE : créer, écrire chez Meta, retenir APRÈS son accusé, puis révoquer TOUTE AUTRE clé `mba:relais`
- * de l'espace (pas seulement l'ancienne retenue : une orpheline laissée par un échec passé part aussi).
- *
- * ⚠️ UN ÉCHEC PEUT ÊTRE AMBIGU : Meta a écrit le connecteur, mais nous recevons une erreur (délai dépassé).
- * La clé neuve est alors révoquée alors que Meta la détient, et ses appels sortent en 401. On ne peut pas
- * le savoir d'ici ; on s'assure donc que la publication SUIVANTE répare : plus aucune clé n'est retenue, donc
- * `cleAJour` rend faux et le plan repose une clé. La route dit déjà « Relancez » sur tout échec.
+ * 🔴 Ce droit n'est pas attribuable depuis l'écran (`VALID_API_SCOPES` ne le contient pas) : son porteur peut
+ * appeler les outils de l'espace au nom de n'importe quel contact. Seule la publication en crée une.
+ * Meta ne rend jamais la clé et nous n'en gardons que l'empreinte (`tenant_settings.mba_relais_cle_id`) ; Meta
+ * exige `auth_config` à chaque écriture du connecteur, donc toute écriture pose une clé neuve.
+ * Ordre : créer, écrire chez Meta, retenir après son accusé, puis révoquer toute autre clé `mba:relais` de
+ * l'espace. Un échec ambigu (Meta a écrit, nous recevons une erreur) révoque une clé que Meta détient : plus
+ * aucune clé n'est alors retenue, et la publication suivante en repose une.
  */
 import type { AuditSink } from '../audit/journal';
 import { messageDe } from '../lib/erreur';
@@ -51,13 +42,9 @@ export interface StoresCleRelais {
 }
 
 /**
- * Les dépendances de la clé pour un ACTEUR (l'identifiant de l'administrateur qui publie, `null` = système).
- *
- * ⚠️ CHAQUE CRÉATION ET CHAQUE RÉVOCATION EST AUDITÉE, comme sur la page des clés (`cle_api.creee`,
- * `cle_api.revoquee`) : c'est la clé au droit le plus large de l'espace, et elle naît du clic « Envoyer »
- * d'un administrateur, que l'audit NOMME. Sortie du câblage (revue finale du 2026-09-21) pour que l'acteur
- * reçu par le journal se teste : il n'était vérifié que jusqu'à la fabrique. Un audit qui échoue ne bloque
- * pas la publication, mais se voit en console : un journal muet serait indétectable (`makeJournal`).
+ * Les dépendances de la clé pour un acteur (l'administrateur qui publie, `null` = système). Chaque création et
+ * révocation est auditée (`cle_api.creee`, `cle_api.revoquee`) au nom de cet administrateur : c'est la clé au
+ * droit le plus large de l'espace. Un audit qui échoue ne bloque pas la publication, mais se voit en console.
  */
 export function depsCleRelaisDepuis(stores: StoresCleRelais): (acteur: string | null) => DepsCleRelais {
   return (acteur) => {
@@ -93,9 +80,8 @@ export async function cleAJour(deps: DepsCleRelais, tenantId: string): Promise<b
 }
 
 /**
- * Pose une clé NEUVE chez Meta par `ecrireChezMeta`, dans l'ordre de l'en-tête. ⚠️ Deux poses SIMULTANÉES
- * du même espace se révoqueraient l'une l'autre (chacune garde la sienne et révoque « toutes les autres ») :
- * la route de publication les sérialise par espace, et c'est ce qui rend cet ordre sûr.
+ * Pose une clé neuve chez Meta par `ecrireChezMeta`, dans l'ordre de l'en-tête. Deux poses simultanées du même
+ * espace se révoqueraient l'une l'autre : la route de publication les sérialise par espace.
  */
 export async function poserCleNeuve(
   deps: DepsCleRelais,
@@ -116,7 +102,7 @@ export async function poserCleNeuve(
   await deps.revoquerAutres(tenantId, neuve.id).catch(() => {});
 }
 
-/** Le relais quitte Meta : TOUTES les clés du relais de l'espace sont révoquées, et plus aucune n'est retenue. */
+/** Le relais quitte Meta : toutes les clés du relais de l'espace sont révoquées, et plus aucune n'est retenue. */
 export async function oublierCle(deps: DepsCleRelais, tenantId: string): Promise<void> {
   await deps.revoquerAutres(tenantId, null).catch(() => {});
   await deps.retenir(tenantId, null);

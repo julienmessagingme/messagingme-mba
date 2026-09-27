@@ -1,20 +1,13 @@
 import type { ApiUsageGuard, CompteurUsage, DemandeUsage, LiberationLourde, VerdictUsage } from './usage-guard';
 
 /**
- * LE GARDE D'USAGE, EN MÉMOIRE, AGRÉGÉ PAR MINUTE.
+ * Le garde d'usage, en mémoire, agrégé par minute. Il exerce le contrat entier, sert les tests et tourne en
+ * production tant qu'il n'y a qu'une instance d'API ; en multi-replica, c'est lui qu'on remplace, aucune
+ * route ne sait qu'il existe.
  *
- * 🔴 IL N'EST PAS UN BROUILLON : il exerce le contrat entier, il sert les tests, et il est ce qui tourne
- * en production tant qu'il n'y a qu'une instance d'API. Le jour du multi-replica, c'est LUI qu'on
- * remplace, et rien d'autre : aucune route ne sait qu'il existe.
- *
- * 🔴 PAS UNE LIGNE SQL PAR REQUÊTE, ET C'EST UNE DÉCISION, PAS UNE ÉCONOMIE. Journaliser chaque appel en
- * base ferait amplifier par la journalisation la charge qu'elle est censée observer : sous rafale, chaque
- * requête hostile en provoquerait une seconde, chez nous, sur le budget de connexions qu'on protège.
- * L'agrégation par minute transforme une rafale de dix mille appels en une ligne.
- *
- * ⚠️ LOCAL AU PROCESS, comme les limiteurs de débit. Les compteurs décrivent CETTE instance : avec deux
- * process d'API, `/ops` en montrerait deux moitiés. Ce n'est pas un défaut aujourd'hui (il n'y a qu'une
- * instance), c'est une propriété à connaître avant d'en lancer une seconde.
+ * Pas une ligne SQL par requête : sous rafale, chaque requête hostile en provoquerait une seconde sur le
+ * budget de connexions qu'on protège. Local au process : avec deux instances, `/ops` en montrerait deux
+ * moitiés.
  */
 export class GardeUsageMemoire implements ApiUsageGuard {
   /** Clé d'agrégation -> compteur. La minute fait partie de la clé, d'où le regroupement naturel. */
@@ -22,28 +15,19 @@ export class GardeUsageMemoire implements ApiUsageGuard {
 
   constructor(
     /**
-     * Combien de MINUTES on garde. 120 = deux heures, soit de quoi regarder une rafale après coup sans
-     * ouvrir un tableau de bord au moment où elle a lieu.
-     *
-     * ⚠️ LA BORNE EST EN MINUTES, PAS EN LIGNES, et la nuance compte : un plafond de lignes se remplirait
-     * avec les clés d'un seul espace bavard, et effacerait l'historique des autres.
+     * Combien de minutes on garde (120 = deux heures, de quoi regarder une rafale après coup). La borne est en
+     * minutes, pas en lignes : un plafond de lignes se remplirait avec un seul espace bavard.
      */
     private readonly minutesGardees = 120,
     /**
-     * Le plafond d'unités par espace et par minute. `0` = OBSERVATION PURE : on compte, on ne refuse rien.
-     *
-     * 🔴 IL VAUT 0 AUJOURD'HUI, ET CE N'EST PAS UN OUBLI (plan du 2026-09-14). Aucun seuil n'est inventé
-     * dans ce chantier : on compte d'abord, on regarde ce que font les vrais clients, Julien tranche
-     * ensuite. Un seuil deviné qui mord est une panne qu'on s'inflige.
+     * Le plafond d'unités par espace et par minute ; `0` = observation pure, on compte sans refuser. Il vaut 0 :
+     * aucun seuil deviné, on compte d'abord ce que font les vrais clients.
      */
     private readonly plafondUnitesParEspace = 0,
     private readonly maintenant: () => number = () => Date.now(),
     /**
-     * COMBIEN D'OPÉRATIONS LOURDES PEUVENT ÊTRE EN VOL EN MÊME TEMPS. `0` = pas de plafond.
-     *
-     * La valeur et son calcul vivent sur `API_MAX_LOURDES_SIMULTANEES` (`src/config.ts`), qui est ce que la
-     * production passe ici ; ce défaut ne sert qu'aux câblages qui ne le passent pas, et il lui est ALIGNÉ.
-     * Le recopier ici avait fait vivre la même justification à deux endroits.
+     * Combien d'opérations lourdes peuvent être en vol en même temps ; `0` = pas de plafond. La valeur et son
+     * calcul vivent sur `API_MAX_LOURDES_SIMULTANEES` (`src/config.ts`) ; ce défaut lui est aligné.
      */
     private readonly maxLourdesSimultanees = 1,
   ) {}
@@ -55,9 +39,8 @@ export class GardeUsageMemoire implements ApiUsageGuard {
     if (this.maxLourdesSimultanees > 0 && this.lourdesEnVol >= this.maxLourdesSimultanees) return null;
     this.lourdesEnVol += 1;
     /**
-     * ⚠️ IDEMPOTENTE : la fermeture porte son propre drapeau. Une réponse peut être close deux fois (un
-     * client qui coupe puis le cycle normal), et rendre deux places pour une prise ferait monter le
-     * plafond tout seul, ce qui ne se verrait qu'un jour de charge.
+     * Idempotente : une réponse peut être close deux fois, et rendre deux places pour une prise ferait monter le
+     * plafond tout seul.
      */
     let rendue = false;
     return () => {
@@ -83,8 +66,8 @@ export class GardeUsageMemoire implements ApiUsageGuard {
   }
 
   /**
-   * ⚠️ ELLE N'AJOUTE NI APPEL NI UNITÉ, et c'est le point : un appel refusé n'a pas travaillé. Compter son
-   * travail ferait surestimer l'usage d'un client precisément les jours où il est bridé.
+   * N'ajoute ni appel ni unité : un appel refusé n'a pas travaillé, et le compter surestimerait l'usage d'un
+   * client les jours où il est bridé.
    */
   noterRefus(demande: DemandeUsage): void {
     const minute = Math.floor(this.maintenant() / 60_000) * 60_000;
@@ -97,11 +80,9 @@ export class GardeUsageMemoire implements ApiUsageGuard {
   }
 
   /**
-   * ⚠️ LE PLAFOND SE LIT SUR L'ESPACE, PAS SUR LA CLÉ, et ce serait le premier piège d'un seuil posé à la
-   * légère : un espace à dix clés disposerait sinon de dix fois le quota, et le plafond ne voudrait plus
-   * rien dire. Le limiteur d'APPELS compte lui aussi par espace depuis le 2026-09-25 (`src/auth/plafond-espace.ts`,
-   * une minute et une heure, `/v1` et `/mcp` confondus) ; celui-ci compte les UNITÉS de travail. Seule la clé du
-   * relais du Meta Business Agent garde un compteur par clé, hors de ces deux plafonds.
+   * Le plafond se lit sur l'espace, pas sur la clé : un espace à dix clés aurait sinon dix fois le quota. Le
+   * limiteur d'appels (`src/auth/plafond-espace.ts`) compte aussi par espace ; celui-ci compte les unités de
+   * travail. Seule la clé du relais du Meta Business Agent garde un compteur par clé, hors de ces plafonds.
    */
   private verdict(minute: number, demande: DemandeUsage): VerdictUsage {
     if (this.plafondUnitesParEspace <= 0) return { accepte: true };

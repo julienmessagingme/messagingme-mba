@@ -6,15 +6,11 @@ import type { WorkflowGraph, WorkflowNode } from '../workflow/graph';
 import { CODE_BLOC_RE, summarize } from '../workflow/node-list';
 
 /**
- * LES GESTES DE L'AGENT DE META : ce que le relais exécute lui-même, sans système tiers (spec
- * docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md, § 3).
- *
- * 🔴 DES HANDLERS À PART DE CEUX DES AGENTS IA (`src/agent/outils-maison.ts`), et c'est une garde. Un outil de
- * l'agent de Meta qui atteindrait par erreur un agent IA tomberait sur un handler inconnu, donc un refus, au
- * lieu d'être joué avec une autre forme de paramètres. `tests/mba-outils-maison.test.ts` tient la disjonction.
- *
- * 🔴 LA CIBLE EST FIXÉE PAR L'ADMINISTRATEUR, jamais par le modèle (arbitrage de Julien, 2026-09-21 : « fixé
- * d'avance »). L'agent de Meta ne décide que du MOMENT, et pour un champ, de la valeur.
+ * Les gestes de l'agent de Meta : ce que le relais exécute lui-même, sans système tiers.
+ * Handlers distincts de ceux des agents IA (`src/agent/outils-maison.ts`) : un outil de l'agent de Meta qui
+ * atteindrait un agent IA tomberait sur un handler inconnu, donc un refus (disjonction tenue par
+ * `tests/mba-outils-maison.test.ts`). 🔴 La cible est fixée par l'administrateur, jamais par le modèle : l'agent
+ * ne décide que du moment et, pour un champ, de la valeur.
  */
 export const HANDLERS_MAISON_MBA = ['tag_fixe', 'champ_fixe', 'bloc_fixe', 'scenario_fixe'] as const;
 export type HandlerMaisonMba = (typeof HANDLERS_MAISON_MBA)[number];
@@ -23,8 +19,8 @@ export type HandlerMaisonMba = (typeof HANDLERS_MAISON_MBA)[number];
 export type TypeOutilMba = 'tag' | 'champ' | 'bloc' | 'scenario' | 'connecteur';
 
 /**
- * ⚠️ `.strict()` : le `binding` est un jsonb que rien d'autre ne contraint. Une clé en trop veut dire qu'une
- * autre écriture l'a produit, et un outil qu'on ne comprend pas ne s'exécute pas.
+ * `.strict()` : le `binding` est un jsonb que rien d'autre ne contraint. Une clé en trop veut dire qu'une autre
+ * écriture l'a produit, et un outil qu'on ne comprend pas ne s'exécute pas.
  */
 export const cibleMaisonSchema = z.discriminatedUnion('handler', [
   z.object({ handler: z.literal('tag_fixe'), tag: z.string().trim().min(1).max(64) }).strict(),
@@ -33,8 +29,8 @@ export const cibleMaisonSchema = z.discriminatedUnion('handler', [
     champ: z.string().trim().min(1).max(64),
     valeurs: z.array(z.string().trim().min(1).max(120)).max(50),
   }).strict(),
-  // Un bloc se désigne par son CODE public (`nod_…`), pas par l'identifiant du nœud : c'est le code qui survit à
-  // la réécriture du graphe par l'éditeur, et c'est déjà lui que l'API publique vise (`/v1/sends`).
+  // Un bloc se désigne par son code public (`nod_…`), pas par l'identifiant du nœud : le code survit à la
+  // réécriture du graphe par l'éditeur, et c'est lui que vise l'API publique (`/v1/sends`).
   z.object({ handler: z.literal('bloc_fixe'), workflowId: z.string().uuid(), code: z.string().regex(CODE_BLOC_RE) }).strict(),
   z.object({ handler: z.literal('scenario_fixe'), workflowId: z.string().uuid() }).strict(),
 ]);
@@ -57,9 +53,8 @@ export function typeDeLaCible(c: CibleMaison): Exclude<TypeOutilMba, 'connecteur
 }
 
 /**
- * Le risque déclaré en base. Meta n'a aucun réglage d'autonomie : il sert au journal et à la lecture.
- * ⚠️ Un bloc et un scénario ENVOIENT au client : un message parti ne se rappelle pas, d'où `irreversible`, que
- * l'écran signale.
+ * Le risque déclaré en base ; Meta n'a aucun réglage d'autonomie, il sert au journal et à la lecture. Un bloc et
+ * un scénario envoient au client : un message parti ne se rappelle pas, d'où `irreversible`, que l'écran signale.
  */
 export const RISQUE_MAISON: Record<HandlerMaisonMba, RisqueOutil> = {
   tag_fixe: 'write',
@@ -69,38 +64,26 @@ export const RISQUE_MAISON: Record<HandlerMaisonMba, RisqueOutil> = {
 };
 
 /**
- * CE QUE L'AGENT DE META REÇOIT EN CAS DE SUCCÈS (spec § 7).
- *
- * ⚠️ Jamais le nom de l'étiquette ni du champ : ce sont des noms internes, et l'agent les répéterait au client.
+ * Ce que l'agent de Meta reçoit en cas de succès : jamais le nom de l'étiquette ni du champ, des noms internes
+ * qu'il répéterait au client.
  */
 export const REPONSE_MAISON: Record<HandlerMaisonMba, string> = {
   tag_fixe: 'C’est fait, c’est enregistré sur la fiche du client. Confirme-le-lui sans citer de nom technique.',
   champ_fixe: 'C’est enregistré sur la fiche du client.',
-  // 🔴 « C'EST FAIT » ET « NE RAPPELLE PAS CET OUTIL » (essai réel du 2026-09-22). La première version disait
-  // « Engage Me déroule maintenant un parcours… N'écris rien » : l'agent de Meta a rappelé l'outil sept fois dans le
-  // même tour, sans jamais conclure. La réponse du tag, qui dit « c'est fait », avait marché du premier coup.
-  // 🔴 L'INTERDICTION DE RAPPELER EST BORNÉE AU MESSAGE EN COURS, ET LA SUITE EST PERMISE EN TOUTES LETTRES (essais
-  // réels du 2026-09-22, 16 h 32, 16 h 50, 17 h 01). « Ne rappelle pas cet outil. », sans borne, a été lu comme
-  // valant pour TOUTE la conversation : l'agent s'en souvenait, ne rappelait plus l'outil quand le client
-  // redemandait, et escaladait vers un humain faute d'autre moyen. Un test tient la borne sur chaque réponse.
+  // « C'est fait » et « ne rappelle pas cet outil » : sans conclusion claire, l'agent de Meta rappelait l'outil en
+  // boucle dans le même tour. L'interdiction est bornée au message en cours et la suite permise en toutes lettres :
+  // sans borne, l'agent ne rappelait plus l'outil quand le client redemandait. Un test tient la borne.
   bloc_fixe: 'C’est fait : le client vient de recevoir le message prévu. Ne rappelle pas cet outil pour ce message-ci du client, et n’en répète pas le contenu. Si le client le redemande plus tard, rappelle cet outil.',
   scenario_fixe: 'C’est fait : le parcours est lancé et le client en reçoit déjà les messages. Ne rappelle pas cet outil pour ce message-ci du client, et n’écris rien de plus pour cette demande : la conversation te reviendra à la fin du parcours. Si le client le redemande plus tard, rappelle cet outil.',
 };
 
 /**
- * Ce que l'agent de Meta lit quand l'envoi n'a pas FINI dans le délai de réponse du relais : il continue sans lui.
- *
- * 🔴 META COUPE UN OUTIL VERS TROIS SECONDES (essai réel du 2026-09-22, mesure en conversation) : notre relais a
- * répondu en 3 005 ms, et l'agent de Meta a traité l'appel comme un échec. Il a passé la main à « un membre de
- * l'équipe » six secondes après que le bloc soit bien parti ; c'est très probablement aussi ce qui lui avait fait
- * RAPPELER sept fois un scénario le matin même. Un envoi prend le fil puis envoie : deux appels à Meta, sa durée
- * n'est pas à nous. Le relais n'attend donc l'envoi que `DELAI_REPONSE_ENVOI_MS` (`src/http/mba-relais.ts`), puis
- * répond ceci, et l'envoi continue. S'il échoue ensuite, l'agent l'apprend par un événement
- * (`src/mba/signaler-echec-tardif.ts`).
- *
- * 🔴 ET L'ENVOI N'A LIEU QU'APRÈS SON TOUR (expérience du 2026-09-22, `src/mba/fin-de-tour.ts`) : prendre le fil
- * pendant que l'agent attend l'outil fait envoyer par Meta « un membre de l'équipe reprendra la conversation ».
- * L'agent est donc invité à annoncer l'envoi en UNE phrase : c'est son écho qui dit que son tour est fini.
+ * Ce que l'agent de Meta lit quand l'envoi n'a pas fini dans le délai de réponse du relais. Meta coupe un outil
+ * vers trois secondes et traite l'appel comme un échec ; un envoi (prendre le fil, puis envoyer) dépend de Meta.
+ * Le relais n'attend donc que `DELAI_REPONSE_ENVOI_MS` (`src/http/mba-relais.ts`), répond ceci, et l'envoi
+ * continue ; un échec ultérieur arrive par un événement (`src/mba/signaler-echec-tardif.ts`). L'envoi n'a lieu
+ * qu'après le tour de l'agent (`src/mba/fin-de-tour.ts`) : il est invité à l'annoncer en une phrase, dont l'écho
+ * marque la fin de son tour.
  */
 export const REPONSE_EN_COURS: Record<'bloc_fixe' | 'scenario_fixe', string> = {
   bloc_fixe: 'C’est parti : le message prévu arrive au client dans quelques secondes. Dis-lui seulement, en une phrase courte, que tu le lui envoies, sans en donner le contenu. Ne rappelle pas cet outil pour ce message-ci du client. Si le client le redemande plus tard, rappelle cet outil.',
@@ -125,8 +108,8 @@ export function variablesPourMeta(c: CibleMaison): VariableDeclaree[] {
   }];
 }
 
-// 🔴 La clé LUE est celle qu'on PUBLIE (`variablesPourMeta`) : écrite en dur ici, un renommage de la variable
-// publiée aurait fait refuser toute valeur envoyée par Meta, sans aucune erreur de compilation.
+// La clé lue est celle qu'on publie (`variablesPourMeta`) : écrite en dur, un renommage de la variable publiée
+// ferait refuser toute valeur envoyée par Meta, sans erreur de compilation.
 const corpsChampSchema = z.object({ [VARIABLE_VALEUR]: z.string().trim().min(1).max(500) });
 
 /** La valeur que l'agent de Meta envoie pour un champ, validée contre la liste permise. */
@@ -167,13 +150,10 @@ export function nomDuBloc(n: WorkflowNode): string {
 }
 
 /**
- * LE BLOC SEUL (spec 2026-09-21-outils-maison-mba, § 3.3) : le bloc désigné, SANS ce qui le suit, et seulement
- * s'il ne demande pas de réponse.
- *
- * 🔴 VÉRIFIÉ À LA CRÉATION ET À CHAQUE APPEL : le scénario peut avoir été modifié depuis. Le walk est pur et se
- * joue sur un graphe RÉDUIT au seul bloc, qui est aussi ce que le relais envoie : ce qui suit le bloc dans le
- * scénario ne peut donc pas partir. `mbaActif: true` parce que l'agent de Meta est par définition allumé.
- * `modele` dit si tout ce qui part est un modèle, seul envoi possible hors de la fenêtre de 24 h.
+ * Le bloc seul : le bloc désigné, sans ce qui le suit, et seulement s'il ne demande pas de réponse. Vérifié à la
+ * création et à chaque appel (le scénario a pu changer) ; le walk, pur, se joue sur un graphe réduit au bloc,
+ * qui est aussi ce que le relais envoie. `mbaActif: true` : l'agent de Meta est par définition allumé. `modele`
+ * dit si tout ce qui part est un modèle, seul envoi possible hors de la fenêtre de 24 h.
  */
 export function blocSeul(
   graph: WorkflowGraph, code: string,
@@ -200,8 +180,8 @@ export interface BlocPropose {
 }
 
 /**
- * Les blocs PUBLIÉS de l'espace, pour le choix de l'écran : les refusés restent visibles, avec leur raison, pour
- * qu'on comprenne pourquoi un bloc à boutons ne se choisit pas (il se lance avec son scénario).
+ * Les blocs publiés de l'espace, pour le choix de l'écran : les refusés restent visibles avec leur raison (un
+ * bloc à boutons se lance avec son scénario).
  */
 export function blocsProposables(workflows: readonly { id: string; name: string; graph: WorkflowGraph }[]): BlocPropose[] {
   const sortie: BlocPropose[] = [];

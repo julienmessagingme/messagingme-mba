@@ -2,21 +2,12 @@ import { prochaineOuverture } from '../lib/heures-ouvrees';
 import type { BusinessHours } from '../workflow/conditions';
 
 /**
- * L'ÉQUIPE EST-ELLE JOIGNABLE QUAND L'AGENT PASSE LA MAIN ? (lot 1 du plan du 2026-09-18)
+ * L'équipe est-elle joignable quand l'agent passe la main ? Un bloc statique câblé sur la sortie `humain` ne
+ * peut dire ni « c'est fermé » ni « nous reprenons lundi 9 h » : ce module le permet.
  *
- * 🔴 CE QUE ÇA RÉPARE. Un agent IA qui transfère à 3 h du matin laisse le contact devant ce que le client a
- * câblé sur la sortie `humain` de son bloc, c'est-à-dire un BLOC STATIQUE. Un bloc statique ne peut dire ni
- * « c'est fermé », ni « nous reprenons lundi 9 h » : il dit la même chose à toute heure. Demande de Julien,
- * 2026-09-18 : « il faut que le user setup si il veut qu'on transfère à toute heure ou jamais en dehors des
- * heures ouvrées, ou encore nous sommes fermés mais nous reviendrons vers vous dès demain 9h ».
- *
- * 🔴 LES TROIS VALEURS SONT CELLES DU MBA, PAS DES NOUVELLES. `mba_handoff_mode` (migration 0067) pose déjà
- * exactement cette question pour l'agent de Meta. En inventer un quatrième vocabulaire aurait donné deux
- * réglages voisins que personne ne saurait rapprocher, sur un écran où les deux agents cohabitent.
- *
- * ⚠️ CE MODULE NE DÉCIDE PAS SI ON TRANSFÈRE. La conversation arrive dans « À traiter » dans TOUS les cas,
- * c'est l'arbitrage de Julien : une phrase « on revient vers vous » sans ligne de travail derrière est un
- * mensonge poli. Ce qui change, c'est ce que l'agent a le droit de PROMETTRE.
+ * Les trois valeurs sont celles de `mba_handoff_mode`, pour ne pas avoir deux vocabulaires voisins sur le
+ * même écran. Ce module ne décide pas si on transfère : la conversation arrive dans « À traiter » dans tous
+ * les cas. Il décide de ce que l'agent a le droit de promettre.
  */
 export type ModeTransfert = 'always' | 'business_hours' | 'never';
 
@@ -26,22 +17,16 @@ export const MODES_TRANSFERT: readonly ModeTransfert[] = ['always', 'business_ho
 export const MODE_TRANSFERT_DEFAUT: ModeTransfert = 'always';
 
 /**
- * Cette valeur lue en base est-elle un mode connu ?
- *
- * ⚠️ ELLE VIT ICI, avec le vocabulaire, et pas dans le store : une valeur inconnue doit valoir `null`, donc
- * « rien n'a été réglé », donc le défaut. Sans cette garde, une base en retard sur la migration ferait
- * remonter `undefined` dans un champ typé et l'écran afficherait un mode qui n'existe pas.
+ * Cette valeur lue en base est-elle un mode connu ? Une valeur inconnue vaut `null`, donc le défaut, plutôt
+ * qu'un mode inexistant affiché à l'écran.
  */
 export function estModeTransfert(v: unknown): v is ModeTransfert {
   return typeof v === 'string' && (MODES_TRANSFERT as readonly string[]).includes(v);
 }
 
 /**
- * La disponibilité telle que le TOUR la transporte : la date est déjà écrite en français.
- *
- * ⚠️ ABSENTE = DISPONIBLE, et ce défaut n'est pas une commodité : il garantit qu'un câblage qui ne la
- * fournit pas se comporte exactement comme avant le 2026-09-18. Un agent qui se tairait sur un délai parce
- * qu'une dépendance a été oubliée serait pire que le défaut qu'on corrige.
+ * La disponibilité telle que le tour la transporte, la date déjà écrite en français. Absente = disponible :
+ * un câblage qui l'oublie garde le comportement d'origine.
  */
 export interface EquipePourPrompt {
   disponible: boolean;
@@ -50,25 +35,19 @@ export interface EquipePourPrompt {
 }
 
 export interface DisponibiliteEquipe {
-  /** `true` = l'agent peut annoncer un conseiller tout de suite, comme il le fait depuis toujours. */
+  /** `true` = l'agent peut annoncer un conseiller tout de suite. */
   disponible: boolean;
   /**
-   * Quand l'équipe reprend, ou `null` quand on ne peut RIEN promettre.
-   *
-   * ⚠️ `null` alors qu'on est indisponible n'est pas une erreur : c'est le mode `never`, et c'est aussi une
-   * semaine entièrement fermée. Dans les deux cas l'agent doit se taire sur le délai plutôt que d'en
-   * inventer un.
+   * Quand l'équipe reprend, ou `null` quand on ne peut rien promettre (mode `never`, ou semaine entièrement
+   * fermée) : l'agent se tait alors sur le délai plutôt que d'en inventer un.
    */
   reouverture: Date | null;
 }
 
 /**
- * ⚠️ `hours` ABSENT OU VIDE FAIT BASCULER `business_hours` VERS L'INDISPONIBILITÉ, jamais vers la
- * disponibilité, et le choix se pèse dans les deux sens. Un espace qui a demandé « seulement aux heures
- * ouvrées » sans jamais déclarer ses horaires ne nous a pas dit quand il répond : traiter ce cas comme
- * `always` ferait promettre un conseiller à 3 h du matin, ce que le réglage existait justement pour
- * empêcher. Le traiter comme une indisponibilité sans date coûte, elle, une phrase moins précise, sur une
- * conversation qui arrive de toute façon dans « À traiter ».
+ * `hours` absent ou vide fait basculer `business_hours` vers l'indisponibilité, jamais vers la
+ * disponibilité : un espace qui a demandé « seulement aux heures ouvrées » sans déclarer ses horaires ne doit
+ * pas voir promettre un conseiller à 3 h du matin.
  */
 export function disponibiliteEquipe(
   mode: ModeTransfert,
@@ -81,9 +60,8 @@ export function disponibiliteEquipe(
 
   if (!hours) return { disponible: false, reouverture: null };
   const prochaine = prochaineOuverture(maintenant, timeZone, hours);
-  // 🔴 `prochaineOuverture` rend `depuis` TEL QUEL quand on est déjà ouvert : c'est son contrat, et c'est ce
-  // qui permet de ne pas redemander `withinBusinessHours` ici, donc de ne pas avoir deux lectures des
-  // horaires qui pourraient diverger d'une minute.
+  // `prochaineOuverture` rend `depuis` tel quel quand on est déjà ouvert (son contrat) : pas de seconde
+  // lecture des horaires qui pourrait diverger d'une minute.
   if (prochaine !== null && prochaine.getTime() === maintenant.getTime()) {
     return { disponible: true, reouverture: null };
   }
@@ -91,35 +69,24 @@ export function disponibiliteEquipe(
 }
 
 /**
- * La réouverture en FRANÇAIS, dans le fuseau de l'espace, prête à être lue par un humain.
- *
- * 🔴 C'EST NOUS QUI FORMATONS, PAS LE MODÈLE, et c'est le point entier. Julien, 2026-09-18 : « un client qui
- * nous contacte un samedi alors que c'est fermé tout le week-end, faut pas lui dire on vous contacte demain
- * à 9h mais on vous contacte lundi à 9h ». `prochaineOuverture` sait déjà franchir un week-end et les
- * changements d'heure ; un modèle à qui l'on donnerait le calendrier brut ferait l'arithmétique lui-même, et
- * c'est exactement le genre de calcul qu'il rate, sur la phrase que le contact va croire.
- *
- * ⚠️ Le modèle reçoit donc un FAIT déjà écrit (« lundi 22 septembre à 9 h ») et n'a plus qu'à le formuler
- * dans son ton. Il garde la voix, il perd le calcul.
+ * La réouverture en français, dans le fuseau de l'espace. C'est nous qui formatons, pas le modèle :
+ * `prochaineOuverture` sait franchir un week-end et un changement d'heure, un modèle ferait l'arithmétique
+ * et la raterait. Il reçoit un fait écrit (« lundi 22 septembre à 9 h ») et n'a plus qu'à le formuler.
  */
 export function reouvertureEnClair(quand: Date, timeZone: string): string {
   const f = new Intl.DateTimeFormat('fr-FR', {
     timeZone, weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit',
   });
-  // ⚠️ `formatToParts` plutôt que `format` : le format français par défaut intercale « à » ou une virgule
-  // selon la version d'ICU, et on ne veut pas que la phrase change de forme au gré du runtime.
+  // `formatToParts` plutôt que `format` : le format par défaut intercale « à » ou une virgule selon la
+  // version d'ICU.
   const p = Object.fromEntries(f.formatToParts(quand).map((x) => [x.type, x.value]));
   const minutes = p.minute === '00' ? '' : ` ${p.minute}`;
   return `${p.weekday} ${p.day} ${p.month} à ${p.hour} h${minutes}`;
 }
 
 /**
- * La disponibilité prête pour le prompt : le calcul ET la mise en français, en un seul appel.
- *
- * 🔴 IL EXISTE POUR QUE LES DEUX CÂBLAGES NE LE REFASSENT PAS CHACUN. Le tour de production et le bac à
- * sable construisent le contexte de l'agent par le même point de passage (`lireContexteAgent`), et c'est
- * précisément ce que ce module protège : un espace fermé doit produire la même phrase des deux côtés, sans
- * quoi le bac à sable cesserait de montrer ce que la production fera.
+ * La disponibilité prête pour le prompt, calcul et mise en français en un appel, pour que le tour de
+ * production et le bac à sable produisent la même phrase.
  */
 export function equipePourPrompt(
   mode: ModeTransfert,

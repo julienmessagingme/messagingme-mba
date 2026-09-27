@@ -1,11 +1,7 @@
 /**
- * Le RELAIS du Meta Business Agent, sa moitié PURE (spec docs/superpowers/specs/2026-09-21-relais-mba-design.md).
- *
- * 🔴 POURQUOI UN RELAIS. Meta appelle le système du client en direct et ne lit pas notre mini-CRM : il ne
- * remplit une valeur que par son modèle, une constante ou trois macros. Un outil qui envoie un champ du
- * contact (`tag_ns` chez UChat) était donc impossible, et l'outil `add_tag` de Julien est parti chez Meta
- * sans son corps le 2026-09-21. Meta nous appelle désormais, et nous faisons l'appel déclaré dans Tools >
- * Connecteurs API, avec les gardes et le journal d'un agent IA. La route vit dans `src/http/mba-relais.ts`.
+ * Le relais du Meta Business Agent, sa moitié pure. Meta n'appelle pas le mini-CRM : il ne remplit une valeur
+ * que par son modèle, une constante ou trois macros. Il nous appelle donc, et nous faisons l'appel déclaré dans
+ * Tools > Connecteurs API, avec les gardes et le journal d'un agent IA. La route vit dans `src/http/mba-relais.ts`.
  */
 
 import { z } from 'zod';
@@ -19,11 +15,9 @@ import type { VariableDeclaree } from '../agent/requetes';
 export const ENTETE_CONTACT_META = 'X-Contact-WhatsApp';
 
 /**
- * L'ADRESSE DU RELAIS, EN UN SEUL ENDROIT. Elle s'assemble en trois morceaux : la base du connecteur
- * (`baseDuRelais`, appelée par `src/index.ts`), le chemin de chaque outil (`cheminOutilRelais`, appelé par
- * `src/mba/publication.ts`) et la route montée (`src/http/mba-relais.ts`). Écrits trois fois, un seul qui
- * change envoie chaque appel de Meta sur une 404 sans qu'aucun test ne tombe : `tests/http-mba-relais.test.ts`
- * recolle les trois, en passant par ces deux fonctions.
+ * L'adresse du relais, en un seul endroit : la base du connecteur (`baseDuRelais`), le chemin de chaque outil
+ * (`cheminOutilRelais`) et la route montée (`src/http/mba-relais.ts`). Un seul morceau qui change enverrait
+ * chaque appel de Meta sur une 404 : `tests/http-mba-relais.test.ts` recolle les trois.
  */
 export const CHEMIN_RELAIS = '/mba/relais';
 
@@ -39,15 +33,10 @@ export function cheminOutilRelais(outilId: string): string {
 }
 
 /**
- * Le corps BRUT reçu est-il un JSON illisible ?
- *
- * ⚠️ LE LECTEUR DE JSON DU SERVEUR REND `{}` SUR UN JSON INVALIDE (celui du webhook Meta, monté pour tout le
- * serveur, `src/webhooks/receiver.ts`) : sans cette vérification, un corps tronqué passait pour un corps vide,
- * et l'appel partait sans les valeurs facultatives, sans aucun signal. Un corps VIDE, lui, est légitime :
- * c'est celui d'un outil dont toutes les valeurs viennent du mini-CRM.
- *
- * ⚠️ LE MÊME LECTEUR QUE LE SERVEUR (`secure-json-parse`, mêmes options) : un `JSON.parse` jugeait illisible
- * un corps que le serveur lit sans erreur (un corps précédé d'un BOM), et le relais le refusait à tort.
+ * Le corps brut reçu est-il un JSON illisible ? Le lecteur JSON du serveur (celui du webhook Meta) rend `{}` sur
+ * un JSON invalide : sans ce test, un corps tronqué passerait pour vide, et l'appel partirait sans ses valeurs.
+ * Un corps vide est légitime. Même lecteur que le serveur (`secure-json-parse`, mêmes options), pour ne pas
+ * refuser un corps qu'il lit (précédé d'un BOM, par exemple).
  */
 export function corpsIllisible(brut: unknown): boolean {
   if (!(brut instanceof Uint8Array) || brut.length === 0) return false;
@@ -60,11 +49,9 @@ export function corpsIllisible(brut: unknown): boolean {
 }
 
 /**
- * Le numéro rempli par Meta, ramené à ce que `getContactStateByWaId` sait chercher.
- *
- * ⚠️ SON FORMAT N'EST PAS DOCUMENTÉ (avec ou sans `+` ?) : on accepte les deux, et la recherche de contact
- * sait déjà trouver `+33...`, `33...` et un BSUID. Une valeur qui n'a pas la forme d'un numéro est gardée
- * telle quelle, bornée : c'est peut-être l'identifiant d'un client qui n'a qu'un nom d'utilisateur.
+ * Le numéro rempli par Meta, ramené à ce que `getContactStateByWaId` sait chercher. Format non documenté (avec
+ * ou sans `+`) : les deux sont acceptés. Une valeur qui n'a pas la forme d'un numéro est gardée telle quelle,
+ * bornée (peut-être un client qui n'a qu'un nom d'utilisateur).
  */
 export function waIdDepuisEntete(brut: unknown): string | null {
   if (typeof brut !== 'string') return null;
@@ -78,7 +65,7 @@ export function waIdDepuisEntete(brut: unknown): string | null {
 }
 
 /**
- * La FORME de l'en-tête, jamais sa valeur : ce qu'on journalise tant que le format réel de la macro n'est
+ * La forme de l'en-tête, jamais sa valeur : ce qu'on journalise tant que le format réel de la macro n'est
  * pas mesuré. Un numéro de téléphone dans un journal range une donnée personnelle là où personne ne la cherche.
  */
 export function formeEntete(brut: unknown): string {
@@ -89,10 +76,9 @@ export function formeEntete(brut: unknown): string {
 }
 
 /**
- * Le schéma d'UNE variable du modèle. ⚠️ LES VALEURS PERMISES VALENT AUSSI POUR UN NOMBRE : l'écran d'une
- * requête accepte une liste sur `integer` et `number` (`src/http/agent-requetes.ts`), et la description
- * publiée chez Meta l'annonce. Elles sont stockées en TEXTE mais comparées en NOMBRE : « 1.0 » saisi à
- * l'écran doit accepter le `1` que le modèle envoie.
+ * Le schéma d'une variable du modèle. Les valeurs permises valent aussi pour un nombre (l'écran d'une requête
+ * accepte une liste sur `integer` et `number`) : stockées en texte, comparées en nombre, pour que « 1.0 » saisi
+ * accepte le `1` envoyé par le modèle.
  */
 function schemaVariable(v: VariableDeclaree): z.ZodType<unknown> {
   const permises = v.enum && v.enum.length > 0 ? v.enum : null;
@@ -107,11 +93,9 @@ function schemaVariable(v: VariableDeclaree): z.ZodType<unknown> {
 }
 
 /**
- * Les valeurs que le modèle de Meta envoie, validées contre les variables `modele` DÉCLARÉES.
- *
- * 🔴 SEULES LES VARIABLES `modele` SONT LUES. Une variable `champ` ou `contact` vient du mini-CRM : si le
- * modèle pouvait l'imposer, il enverrait l'étiquette ou l'identifiant de son choix au système du client.
- * Toute autre clé du corps est ignorée.
+ * Les valeurs que le modèle de Meta envoie, validées contre les variables `modele` déclarées. 🔴 Seules
+ * celles-là sont lues : une variable `champ` ou `contact` vient du mini-CRM, et si le modèle pouvait l'imposer,
+ * il enverrait la valeur de son choix au système du client. Toute autre clé est ignorée.
  */
 export function lireValeursModele(
   variables: readonly VariableDeclaree[],
@@ -134,7 +118,7 @@ export function lireValeursModele(
   return { ok: true, valeurs };
 }
 
-/** Le message d'échec rendu à Meta : celui, SÛR, que le point de passage a déjà écrit pour un modèle. */
+/** Le message d'échec rendu à Meta : celui, sûr, que le point de passage a déjà écrit pour un modèle. */
 export function texteErreur(contenu: unknown): string {
   if (contenu !== null && typeof contenu === 'object' && typeof (contenu as { erreur?: unknown }).erreur === 'string') {
     return (contenu as { erreur: string }).erreur;

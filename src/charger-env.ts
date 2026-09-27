@@ -1,10 +1,9 @@
 /**
- * Charge `.env` quand il existe (poste de développement), à importer EN PREMIER par un point d'entrée : un
- * import est évalué dans l'ordre, et `./config` lit l'environnement dès le sien.
+ * Charge `.env` quand il existe (poste de développement). À importer en premier : `./config` lit
+ * l'environnement dès son propre import.
  *
- * En production il n'y a pas de fichier (les variables viennent de l'`env_file` de compose, `.dockerignore`
- * exclut `.env`) : seule l'absence du fichier est tolérée, toute autre erreur (fichier illisible, mal formé)
- * remonte. Une variable déjà posée dans l'environnement n'est jamais écrasée, comme avec `dotenv` avant.
+ * En production il n'y a pas de fichier (variables de l'`env_file` de compose) : seule son absence est tolérée,
+ * toute autre erreur remonte. Une variable déjà posée dans l'environnement n'est jamais écrasée.
  */
 try {
   process.loadEnvFile();

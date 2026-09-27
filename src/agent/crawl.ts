@@ -1,53 +1,34 @@
 /**
- * QUELLES PAGES D'UN SITE ON IMPORTE, et jusqu'où on va.
+ * Quelles pages d'un site on importe, et jusqu'où on va : une page d'accueil seule est une vitrine, sans une
+ * ligne sur un contrat.
  *
- * 🔴 POURQUOI CE MODULE EXISTE. L'import ne prenait qu'UNE page. Julien a donné `ganprevoyance.fr`, on a
- * importé la page d'accueil, et une page d'accueil est une vitrine : des slogans, des témoignages, des
- * chiffres clés, et pas une ligne sur un contrat. Son agent ne pouvait répondre à rien, et aucune
- * vectorisation ne rattrape ce qui n'est pas dans la base.
+ * La portée se déduit de l'adresse donnée : la racine d'un domaine veut dire « ce site », un chemin « cette
+ * page ». Deviner l'inverse importerait cinquante pages non voulues, ou laisserait un agent muet. « Seulement
+ * cette partie du site » se choisit, ne se devine pas.
  *
- * 🔴 LA PORTÉE SE DÉDUIT DE L'ADRESSE DONNÉE, et c'est la règle que Julien a posée : la RACINE d'un domaine
- * veut dire « ce site », une adresse avec un chemin veut dire « cette page ». Deviner l'inverse coûte cher
- * des deux côtés : crawler quand on demandait une page importe cinquante pages non voulues, et importer une
- * page quand on demandait le site laisse un agent muet sans que rien ne le dise.
- *
- * Le troisième cas est un CHOIX, jamais une déduction : « seulement cette partie du site » se dit, et ne se
- * devine pas d'une adresse.
- *
- * Module PUR : aucune IO. La lecture des pages est injectée, ce qui rend le parcours testable sans réseau et
- * garde la garde anti-SSRF chez son propriétaire (`urlRecuperable`, appelée par l'appelant sur CHAQUE
- * adresse, y compris celles découvertes dans le HTML : un lien d'une page tierce n'est pas plus digne de
- * confiance que ce qu'un client saisit).
+ * 🔴 Module pur : la lecture est injectée, et la garde anti-SSRF (`urlRecuperable`) est appelée par
+ * l'appelant sur chaque adresse, y compris celles découvertes dans le HTML.
  */
 
 /** Ce qu'on accepte de visiter à partir de l'adresse donnée. */
 export type PorteeImport = 'page' | 'sous-arbre' | 'site';
 
 /**
- * Profondeur maximale, en nombre de sauts depuis l'adresse de départ.
- *
- * 2, décidé par Julien : la page d'accueil, ce qu'elle référence, et ce que celles-là référencent. Au-delà on
- * ramasse les mentions légales et les archives d'actualités, qui font du bruit dans une recherche sans jamais
- * répondre à une question de client.
+ * Profondeur maximale, en sauts depuis l'adresse de départ : l'accueil, ce qu'il référence, et ce que
+ * celles-là référencent. Au-delà viennent les mentions légales et les archives, du bruit pour la recherche.
  */
 export const PROFONDEUR_MAX = 2;
 
-/** Plafond de pages visitées, décidé par Julien. Il borne le temps d'attente autant que le coût. */
+/** Plafond de pages visitées. Il borne le temps d'attente autant que le coût. */
 export const PAGES_MAX = 50;
 
 /**
- * Extensions qu'on ne suit pas : ce ne sont pas des pages.
- *
- * ⚠️ La lecture refuse déjà ce qui n'est pas du HTML, mais elle le fait APRÈS avoir téléchargé. Écarter ici
- * évite de payer un aller-retour par PDF d'un site qui en publie deux cents.
+ * Extensions qu'on ne suit pas : ce ne sont pas des pages. La lecture refuse déjà ce qui n'est pas du HTML,
+ * mais après l'avoir téléchargé.
  */
 const EXTENSIONS_IGNOREES = /\.(pdf|jpe?g|png|gif|webp|svg|ico|css|js|zip|docx?|xlsx?|pptx?|mp[34]|avi|mov)$/i;
 
-/**
- * La portée que l'adresse implique, quand personne n'en a choisi une.
- *
- * Racine du domaine (`/` ou vide) -> le SITE. Un chemin -> cette PAGE.
- */
+/** La portée implicite de l'adresse : la racine du domaine (`/` ou vide) vaut le site, un chemin la page. */
 export function porteeParDefaut(url: string): PorteeImport {
   try {
     const chemin = new URL(url).pathname.replace(/\/+$/, '');
@@ -58,13 +39,9 @@ export function porteeParDefaut(url: string): PorteeImport {
 }
 
 /**
- * Forme canonique d'une adresse, pour ne pas visiter deux fois la même page.
- *
- * Le fragment part (`#section` désigne un endroit DANS la page, pas une autre page). La barre finale part
- * aussi : sans ça, `/tarifs` et `/tarifs/` seraient deux pages, donc deux jeux de fiches jumelles.
- *
- * ⚠️ La query est CONSERVÉE : sur beaucoup de sites elle porte la page réelle (`?p=12`), et la retirer
- * ramènerait tout le site à une seule adresse.
+ * Forme canonique d'une adresse, pour ne pas visiter deux fois la même page : le fragment part, la barre
+ * finale aussi (`/tarifs` et `/tarifs/` feraient des fiches jumelles). La query reste : elle porte souvent
+ * la page réelle (`?p=12`).
  */
 export function normaliserUrl(url: string): string {
   const u = new URL(url);
@@ -83,22 +60,20 @@ export function dansLaPortee(candidat: string, depart: string, portee: PorteeImp
   } catch {
     return false;
   }
-  // 🔴 MÊME ORIGINE, TOUJOURS. Suivre un lien sortant importerait le contenu d'un tiers dans la base de
-  // connaissance d'un client, donc dans les réponses faites à ses contacts en son nom.
+  // 🔴 Même origine, toujours : un lien sortant importerait le contenu d'un tiers dans la base d'un client,
+  // donc dans les réponses faites en son nom.
   if (c.origin !== d.origin) return false;
   if (portee === 'site') return true;
   if (portee === 'page') return normaliserUrl(candidat) === normaliserUrl(depart);
-  // Sous-arbre : le chemin de départ est un PRÉFIXE DE SEGMENTS, jamais de caractères. Sans ça, `/pro`
-  // laisserait entrer `/professionnels-autre-chose`, qui n'est pas dessous.
+  // Sous-arbre : préfixe de segments, jamais de caractères, sinon `/pro` laisserait entrer
+  // `/professionnels-autre-chose`.
   const base = d.pathname.replace(/\/+$/, '');
   return c.pathname === base || c.pathname.startsWith(`${base}/`);
 }
 
 /**
- * Les adresses vers lesquelles cette page pointe, dans la portée, sous forme canonique et dédoublonnées.
- *
- * Volontairement bête : une expression régulière sur `href`, pas d'arbre DOM, comme le reste de l'extracteur.
- * Un lien manqué coûte une page non importée, jamais une erreur.
+ * Les adresses vers lesquelles cette page pointe, dans la portée, canoniques et dédoublonnées. Une
+ * expression régulière sur `href`, pas de DOM : un lien manqué coûte une page non importée, jamais une erreur.
  */
 export function liensDeLaPage(html: string, base: string, portee: PorteeImport): string[] {
   const vus = new Set<string>();
@@ -129,22 +104,17 @@ export interface PageLue {
 /** Ce que le parcours rend, page par page, dans l'ordre de visite. */
 export interface VisiteResultat {
   pages: PageLue[];
-  /** Adresses écartées, avec la raison, pour que l'écran puisse le DIRE au lieu de les perdre en silence. */
+  /** Adresses écartées, avec la raison, pour que l'écran le dise au lieu de les perdre en silence. */
   ecartees: Array<{ url: string; raison: string }>;
   /** Le plafond a-t-il coupé ? L'écran doit le dire : « 50 pages » n'est pas « tout le site ». */
   plafondAtteint: boolean;
 }
 
 /**
- * Parcourt le site en largeur, à partir de `depart`.
- *
- * 🔴 EN LARGEUR, PAS EN PROFONDEUR, et ce n'est pas un détail : avec un plafond de pages, un parcours en
- * profondeur dépenserait ses cinquante pages dans une seule branche (les archives d'actualités, typiquement)
- * et n'atteindrait jamais la page « nos contrats » liée depuis l'accueil. En largeur, les pages les plus
- * proches de l'accueil passent en premier, et ce sont celles qui portent le contenu.
- *
- * `lire` rend `null` quand la page est injoignable ou n'est pas du HTML : une page ratée n'arrête jamais le
- * parcours, elle est écartée et dite.
+ * Parcourt le site en largeur, à partir de `depart` : avec un plafond de pages, un parcours en profondeur
+ * les dépenserait dans une seule branche (les archives) au lieu des pages proches de l'accueil, qui portent
+ * le contenu. `lire` rend une erreur pour une page injoignable ou non HTML : elle est écartée et dite, le
+ * parcours continue.
  */
 export async function visiter(
   depart: string,
@@ -175,7 +145,7 @@ export async function visiter(
     }
     pages.push({ url: courant.url, html: res.html });
 
-    // Une page à la profondeur maximale est LUE, mais ses liens ne sont pas suivis.
+    // Une page à la profondeur maximale est lue, mais ses liens ne sont pas suivis.
     if (portee === 'page' || courant.profondeur >= profondeurMax) continue;
     for (const lien of liensDeLaPage(res.html, racine, portee)) {
       if (vues.has(lien)) continue;

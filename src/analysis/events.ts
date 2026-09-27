@@ -6,11 +6,7 @@ export interface StoredConversationAnalysis extends ConversationAnalysis {
   tenantId: string;
 }
 
-/**
- * Point de sortie : « cette conversation a été analysée ». Interface d'extension que les pièces 2 (connecteur HubSpot)
- * et 3 (onglet tendances) consommeront plus tard. V1 = no-op : aucun consommateur codé ici (ce lot ne couvre que
- * l'analyse). Ne PAS coupler ce lot à HubSpot.
- */
+/** Point de sortie « cette conversation a été analysée », sans couplage à un consommateur (no-op par défaut). */
 export type OnConversationAnalyzed = (analysis: StoredConversationAnalysis) => Promise<void>;
 
 export const noopOnAnalyzed: OnConversationAnalyzed = async () => {};

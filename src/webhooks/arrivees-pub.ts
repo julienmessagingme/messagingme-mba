@@ -2,16 +2,11 @@ import { extractInbound, type InboundMessage } from './inbound';
 import { messageDe } from '../lib/erreur';
 
 /**
- * L'ARRIVÉE PUBLICITAIRE : une ligne par message entrant qui porte un `referral` (lot 1 des publicités
- * Click-to-WhatsApp, spec `docs/superpowers/specs/2026-09-22-pubs-ctwa-design.md` § 2).
- *
- * 🔴 ICI OU JAMAIS. Meta ne joint le `referral`, donc `ctwa_clid`, qu'au PREMIER message après le clic, et le
- * corps brut du webhook est purgé à 30 jours. Les champs `pub_id` et `pub_titre` de la fiche gardent la
- * DERNIÈRE pub ; cette ligne garde CHAQUE arrivée, et c'est elle que le renvoi des conversions lira.
- *
- * ⚠️ LE STANDBY N'EST PAS EXCLU, contrairement aux étapes voisines. C'est même la mesure qu'on attend : un lead
- * arrivé pendant que l'agent de Meta tenait la conversation porte-t-il son `referral` ? La réponse décide du
- * plan A ou du plan B du lot 3.
+ * L'arrivée publicitaire : une ligne par message entrant qui porte un `referral`. Meta ne joint le `referral`
+ * (donc `ctwa_clid`) qu'au premier message après le clic, et le webhook brut est purgé : c'est ici ou jamais.
+ * Les champs `pub_id` et `pub_titre` de la fiche gardent la dernière pub ; cette ligne garde chaque arrivée, pour
+ * le renvoi des conversions. Le standby n'est pas exclu, contrairement aux étapes voisines : on veut savoir si
+ * un lead arrivé pendant que l'agent de Meta tenait la conversation porte son `referral`.
  */
 export interface ArriveePub {
   messageId: string;
@@ -47,13 +42,9 @@ export interface ArriveesPubDeps {
 }
 
 /**
- * Pour chaque message entrant qui porte un `referral`, écrit son arrivée.
- *
- * ⚠️ APRÈS l'upsert du contact (`handleWebhookJob`) : l'écriture retrouve la fiche par son `wa_id`. Si
- * l'auto-création a échoué juste avant, l'arrivée est perdue, et le journal le dit (sans le numéro).
- *
- * ⚠️ ISOLÉE PAR MESSAGE, comme ses voisines, et elle ne lève jamais : Meta groupe plusieurs contacts dans un
- * même webhook, et l'échec de l'un ne doit priver ni les autres, ni les étapes suivantes du job.
+ * Pour chaque message entrant qui porte un `referral`, écrit son arrivée, après l'upsert du contact
+ * (`handleWebhookJob`) puisqu'elle retrouve la fiche par son `wa_id` : si l'auto-création a échoué, l'arrivée
+ * est perdue et le journal le dit, sans le numéro. Isolée par message, ne lève jamais.
  */
 export async function processArriveesPub(payload: unknown, deps: ArriveesPubDeps): Promise<void> {
   for (const m of extractInbound(payload)) {

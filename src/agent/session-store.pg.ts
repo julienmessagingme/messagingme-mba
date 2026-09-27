@@ -33,7 +33,6 @@ function versSession(r: Ligne): AgentSession {
     waId: r.wa_id,
     tours: r.tours,
     appelsOutils: r.appels_outils,
-    // `bigint` rendu en `string` par node-pg. Converti ici, comme partout ailleurs dans le repo.
     coutMicroEur: Number(r.cout_micro_eur ?? 0),
     status: r.status,
     ouvertLe: r.created_at.toISOString(),
@@ -41,18 +40,17 @@ function versSession(r: Ligne): AgentSession {
 }
 
 /**
- * État multi-tours d'une conversation d'agent (migration 0086).
+ * État multi-tours d'une conversation d'agent, en base.
  *
- * ⚠️ `tenant_id = $x` sur CHAQUE requête, y compris celles qui ciblent déjà un identifiant de session : le
- * pooler est superuser, la RLS est bypassée, ce filtrage est le SEUL contrôle d'isolation entre clients.
+ * 🔴 `tenant_id` sur chaque requête, même celles qui ciblent déjà une session : la RLS est contournée par le
+ * pooler, ce filtrage est le seul contrôle d'isolation entre clients.
  */
 export class PgAgentSessionStore implements AgentSessionStore {
   constructor(private readonly pool: Pool) {}
 
   async open(input: { tenantId: string; runId: string; agentId: string; nodeId: string; waId: string }): Promise<AgentSession> {
-    // LÈVE si le parcours a déjà une session vivante : l'index partiel `agent_sessions_run_vivante_idx`
-    // (where status = 'en_cours') rend l'invariant incontournable EN BASE. On ne le rattrape pas ici, un
-    // second `open` est un bug d'appelant, pas un cas nominal.
+    // Lève si le parcours a déjà une session vivante : l'index partiel `agent_sessions_run_vivante_idx`
+    // (`where status = 'en_cours'`) tient l'invariant en base. Un second `open` est un bug d'appelant.
     const res = await this.pool.query<Ligne>(
       `insert into agent_sessions (tenant_id, run_id, agent_id, node_id, wa_id)
        values ($1, $2, $3, $4, $5) returning ${COLONNES}`,
@@ -72,11 +70,9 @@ export class PgAgentSessionStore implements AgentSessionStore {
   }
 
   async prendreLeTour(tenantId: string, sessionId: string, toursAttendus: number): Promise<AgentSession | null> {
-    // UNE seule requête : le test et l'incrément sont atomiques, donc deux jobs concurrents ne peuvent pas
-    // prendre le même tour. Zéro ligne rendue vaut REJEU, l'appelant doit sortir sans rien faire.
-    // `tour_commence_le` est posé ICI, dans la MÊME requête que l'incrément (migration 0112) : c'est ce qui
-    // rend le marqueur fiable. Posé après, un crash entre les deux laisserait un tour incrémenté sans marque,
-    // donc invisible du balayage, exactement le cas qu'on vient fermer.
+    // Une seule requête : test et incrément atomiques, deux jobs ne prennent pas le même tour ; zéro ligne vaut
+    // rejeu. `tour_commence_le` est posé dans la même requête : posé après, un crash laisserait un tour
+    // incrémenté sans marque, invisible du balayage.
     const res = await this.pool.query<Ligne>(
       `update agent_sessions set tours = tours + 1, derniere_activite = now(), tour_commence_le = now()
        where id = $1 and tenant_id = $2 and status = 'en_cours' and tours = $3
@@ -88,8 +84,8 @@ export class PgAgentSessionStore implements AgentSessionStore {
   }
 
   async ajouterAuTranscript(tenantId: string, sessionId: string, entree: unknown): Promise<void> {
-    // Concaténation côté BASE (`||`) plutôt que lecture-modification-écriture : deux écritures concurrentes
-    // ne peuvent pas s'écraser l'une l'autre, et on ne rapatrie jamais un transcript qui grossit à chaque tour.
+    // Concaténation côté base (`||`) : deux écritures concurrentes ne s'écrasent pas, et on ne rapatrie jamais
+    // un transcript qui grossit.
     await this.pool.query(
       `update agent_sessions
           set transcript = transcript || $3::jsonb, derniere_activite = now()
@@ -99,12 +95,12 @@ export class PgAgentSessionStore implements AgentSessionStore {
   }
 
   async ajouterCout(tenantId: string, sessionId: string, montantMicroEur: number): Promise<void> {
-    // Un montant nul ou négatif ne s'écrit pas : il ne dirait rien, et un négatif serait un remboursement
-    // déguisé sur un compteur qui ne doit que monter.
+    // Un montant nul ou négatif ne s'écrit pas : un négatif serait un remboursement déguisé sur un compteur
+    // qui ne doit que monter.
     const montant = Math.max(0, Math.round(montantMicroEur));
     if (montant === 0) return;
-    // Incrément côté BASE, comme `compterAppel` : deux tours concurrents ne s'écrasent pas, et sans condition
-    // de statut parce qu'un tour déjà joué a déjà coûté, même si la session vient d'être close.
+    // Incrément côté base, sans condition de statut : un tour déjà joué a coûté, même si la session vient
+    // d'être close.
     await this.pool.query(
       `update agent_sessions set cout_micro_eur = cout_micro_eur + $3::bigint, derniere_activite = now()
         where id = $1 and tenant_id = $2`,
@@ -113,8 +109,7 @@ export class PgAgentSessionStore implements AgentSessionStore {
   }
 
   async compterAppel(tenantId: string, sessionId: string): Promise<void> {
-    // Incrément côté BASE, sans condition de statut : un appel servi doit se compter même si la session vient
-    // d'être close par l'outil lui-même (l'escalade humaine clôt, et son appel compte quand même).
+    // Incrément côté base, sans condition de statut : l'escalade clôt la session, et son appel compte quand même.
     await this.pool.query(
       `update agent_sessions set appels_outils = appels_outils + 1, derniere_activite = now()
         where id = $1 and tenant_id = $2`,
@@ -123,10 +118,8 @@ export class PgAgentSessionStore implements AgentSessionStore {
   }
 
   async finirLeTour(tenantId: string, sessionId: string): Promise<void> {
-    // Le pendant de `prendreLeTour`. Appelé sur les sorties qui laissent la session VIVANTE (l'agent a
-    // répondu et attend, ou la main est passée à un humain) : sans lui, une session parfaitement saine
-    // porterait une marque de tour en vol jusqu'à ce que le balayage la tue.
-    // `status = 'en_cours'` dans le WHERE pour la même raison que `clore` : on n'exhume pas une session close.
+    // Le pendant de `prendreLeTour`, sur les sorties qui laissent la session vivante : sans lui, une session
+    // saine porterait une marque de tour en vol. `status = 'en_cours'` : on n'exhume pas une session close.
     await this.pool.query(
       `update agent_sessions set tour_commence_le = null
         where id = $1 and tenant_id = $2 and status = 'en_cours'`,
@@ -135,11 +128,8 @@ export class PgAgentSessionStore implements AgentSessionStore {
   }
 
   /**
-   * La sortie due a été appliquée au parcours : la marque peut tomber.
-   *
-   * `status <> 'en_cours'` est la garde MIROIR de celle de `finirLeTour`, et elle a la même fonction : un
-   * tour encore vivant ne doit pas pouvoir effacer une marque qui désigne du travail restant. Les deux
-   * méthodes se partagent ainsi le marqueur sans jamais pouvoir se marcher dessus.
+   * La sortie due a été appliquée au parcours : la marque peut tomber. `status <> 'en_cours'` est la garde
+   * miroir de `finirLeTour` : un tour vivant ne peut pas effacer une marque qui désigne du travail restant.
    */
   async sortieAppliquee(tenantId: string, sessionId: string): Promise<void> {
     await this.pool.query(
@@ -153,12 +143,9 @@ export class PgAgentSessionStore implements AgentSessionStore {
     tenantId: string, sessionId: string, status: AgentSessionStatus, sortie?: string,
     options?: { sortieDue?: boolean },
   ): Promise<void> {
-    // `status = 'en_cours'` dans le WHERE : clore une session déjà close est sans effet plutôt que d'écraser
-    // la cause de sa fin (un rejeu ne doit pas transformer une `sortie` en `erreur`).
-    //
-    // `tour_commence_le` retombe à null SAUF quand une sortie reste due : la marque est alors ce qui permet
-    // au balayage de retrouver la ligne si l'appelant meurt entre la clôture et la sortie du parcours. Elle
-    // est effacée par `finirLeTour`, une fois la sortie appliquée. Cf. le contrat, qui porte le raisonnement.
+    // `status = 'en_cours'` : clore une session close est sans effet (un rejeu ne transforme pas une `sortie`
+    // en `erreur`). La marque reste quand une sortie est due, pour que le balayage retrouve la ligne si
+    // l'appelant meurt avant la sortie du parcours.
     await this.pool.query(
       `update agent_sessions
           set status = $3, sortie = $4, derniere_activite = now(),
@@ -169,26 +156,13 @@ export class PgAgentSessionStore implements AgentSessionStore {
   }
 
   /**
-   * RÉCLAME les tours en vol depuis trop longtemps, et les clôt dans le même mouvement.
+   * Réclame les tours en vol depuis trop longtemps, et les clôt dans la même requête : deux workers ne
+   * peuvent pas sortir la même session deux fois.
    *
-   * 🔴 Réclamation et clôture en UNE requête, comme le claim du balayage de réveil : deux workers qui
-   * balaient en même temps ne peuvent pas sortir la même session deux fois, donc le scénario ne prend pas
-   * deux fois sa branche d'échec. Le `returning` rend de quoi faire sortir le parcours, ce qui suit.
-   *
-   * 🔴 LA MARQUE EST REPOUSSÉE, PAS EFFACÉE (contre-audit du 2026-09-03). Elle l'était, et la ligne devenait
-   * alors inatteignable pour DEUX raisons à la fois : plus `en_cours`, et plus de marqueur. Si la sortie du
-   * parcours échouait juste après, plus rien au monde ne rattrapait ce parcours. `tour_commence_le = now()`
-   * fait donc les deux à la fois : un BAIL de quinze minutes (`AGE_TOUR_MORT_S`) qui empêche un autre passage de reprendre la même
-   * ligne, et la trace qu'il reste une sortie à appliquer. Le prochain passage la reprendra tant que
-   * `finirLeTour` ne l'a pas effacée.
-   *
-   * ⚠️ D'où le prédicat SANS `status` : le balayage réclame aussi des sessions DÉJÀ closes, celles dont la
-   * sortie est restée due. Le `case` ne clôt que celles qui sont encore `en_cours`, pour ne pas réécrire la
-   * cause de fin d'une session close proprement (un rejeu ne transforme pas une `sortie` en `erreur`).
-   *
-   * On ne REJOUE PAS le tour, et c'est un choix tranché : le worker a pu mourir APRÈS avoir envoyé le
-   * message au contact, et rien en base ne permet de le savoir. Rejouer risquerait un doublon chez le
-   * contact ; clore fait au pire répéter la branche d'échec du scénario, qui est prévue pour ça.
+   * La marque est repoussée (`tour_commence_le = now()`), pas effacée : c'est un bail de `AGE_TOUR_MORT_S`
+   * contre une reprise concurrente, et la trace qu'une sortie reste à appliquer. D'où le prédicat sans
+   * `status` : on réclame aussi les sessions closes dont la sortie est due, et le `case` ne clôt que celles
+   * encore `en_cours`. On ne rejoue pas le tour : l'envoi a pu partir avant la mort du worker.
    */
   async reclamerToursBloques(ageSecondes: number, limite: number, sortie: string): Promise<TourBloque[]> {
     const res = await this.pool.query<{ id: string; tenant_id: string; run_id: string; wa_id: string; node_id: string; sortie: string }>(
@@ -206,32 +180,21 @@ export class PgAgentSessionStore implements AgentSessionStore {
            for update skip locked
         )
       returning s.id, s.tenant_id, s.run_id, s.wa_id, s.node_id, coalesce(s.sortie, $3::text) as sortie`,
-      // Bornés des DEUX côtés : `make_interval(secs => $1::int)` refuse tout ce qui dépasse un entier signé
-      // 32 bits (`value out of range for type integer`, vérifié contre la base le 2026-09-03 en passant un
-      // âge de cent ans). Aucun appelant sain n'en approche, mais une fonction qui lève sur son argument est
-      // une fonction qu'on ne peut pas régler sans la relire.
+      // Bornés des deux côtés : `make_interval(secs => $1::int)` lève au-delà d'un entier signé 32 bits.
       [borner(ageSecondes), borner(limite), sortie],
     );
     return res.rows.map((r) => ({
       sessionId: r.id, tenantId: r.tenant_id, runId: r.run_id, waId: r.wa_id, nodeId: r.node_id,
-      // `coalesce` côté SQL plutôt qu'un repli côté TypeScript : le `returning` d'un UPDATE rend la valeur
-      // d'APRÈS écriture, donc une session encore `en_cours` relit exactement la sortie forcée qu'on vient de
-      // lui poser, et une session déjà close rend la sienne. Un point de décision en moins à tenir ici.
+      // `coalesce` en SQL : le `returning` d'un UPDATE rend la valeur après écriture, donc la sortie forcée
+      // d'une session encore `en_cours`, ou celle d'une session déjà close.
       sortie: r.sortie,
     }));
   }
 
   /**
-   * La consommation de cet agent sur une fenetre glissante.
-   *
-   * ⚠️ Elle est bornee dans le TEMPS et jamais depuis toujours : `agent_sessions_tenant_idx` porte
-   * `(tenant_id, created_at desc)`, donc une fenetre sert l'index. Un total « depuis le debut » obligerait a
-   * relire toutes les sessions de l'espace a chaque ouverture d'ecran, pour un chiffre qui ne dit rien de
-   * l'usage courant.
-   *
-   * ⚠️ `agent_id` est dans le `where` mais PAS dans l'index : la fenetre borne deja le balayage, et poser un
-   * index par agent pour un ecran d'administration serait payer une ecriture sur le chemin chaud pour une
-   * lecture rare. A revoir le jour ou un espace aura des dizaines de milliers de sessions par mois.
+   * La consommation de cet agent sur une fenêtre glissante, jamais depuis toujours : la fenêtre sert l'index
+   * `(tenant_id, created_at desc)`. `agent_id` n'est pas indexé : la fenêtre borne déjà le balayage, et un
+   * index de plus se paierait à l'écriture sur le chemin chaud.
    */
   async consommation(tenantId: string, agentId: string, jours: number): Promise<ConsommationAgent> {
     const { rows } = await this.pool.query<{
@@ -259,22 +222,10 @@ export class PgAgentSessionStore implements AgentSessionStore {
   /**
    * Les messages échangés dans les conversations que cet agent a tenues sur la fenêtre.
    *
-   * 🔴 LA JOINTURE SUR `conversations` EST LE SEUL CONTRÔLE D'ISOLATION. `conversation_messages` ne porte
-   * PAS de `tenant_id` (migration 0009) : une requête qui compterait les messages sur la seule fenêtre de
-   * temps compterait ceux de TOUS les espaces. Ce n'est pas une imprécision, c'est une fuite entre clients.
-   *
-   * 🔴 `not c.is_test` : sans lui, les conversations ouvertes par « Tester le scénario » gonflent le
-   * chiffre. Tout le reste des statistiques de ce dépôt les exclut, et un chiffre qui les compterait ici
-   * contredirait le Performance Lab à deux écrans de distance.
-   *
-   * ⚠️ LE RAPPROCHEMENT SE FAIT SUR `wa_id`, ET IL N'Y A PAS D'AUTRE CLÉ. `agent_sessions` ne porte aucun
-   * `conversation_id` ; `conversations` porte un `unique (tenant_id, wa_id)`, ce qui rend le rapprochement
-   * déterministe à l'intérieur d'un espace. Ne pas chercher une clé étrangère, il n'y en a pas, et
-   * `run_id` ne mène pas à une conversation.
-   *
-   * ⚠️ FENÊTRE GLISSANTE, comme `consommation` juste au-dessus, et pas les bornes civiles de `BOUNDS_CTE` :
-   * les deux chiffres se lisent côte à côte sur le même écran, et deux fenêtres différentes y seraient
-   * illisibles.
+   * 🔴 `conversation_messages` ne porte pas de `tenant_id` : la jointure sur `conversations` est le seul
+   * contrôle d'isolation, sans elle on compterait les messages de tous les espaces. `not c.is_test`, comme le
+   * reste des statistiques. Le rapprochement se fait sur `wa_id`, unique par espace dans `conversations` :
+   * `agent_sessions` n'a pas de `conversation_id`. Même fenêtre glissante que `consommation`, affichée à côté.
    */
   async messagesTenus(tenantId: string, agentId: string, jours: number): Promise<number> {
     const { rows } = await this.pool.query<{ n: string }>(

@@ -22,11 +22,9 @@ function lireNom(body: unknown): string | null {
 }
 
 /**
- * Bibliothèque de messages RCS. Lecture ouverte à tout utilisateur du tenant (l'inbox et les scénarios en ont
- * besoin), écritures réservées aux admins comme partout ailleurs dans ce projet.
- *
- * Le contenu est validé en `safeParse` À CHAQUE écriture : c'est la frontière où un message malformé doit être
- * refusé, pas au moment de l'envoi devant un client.
+ * Bibliothèque de messages RCS. Lecture ouverte à tout utilisateur de l'espace (l'Inbox et les scénarios en ont
+ * besoin), écritures réservées aux admins. Le contenu est validé en `safeParse` à chaque écriture : un message
+ * malformé se refuse ici, pas à l'envoi devant un client.
  */
 export function registerRcsMessages(app: FastifyInstance, deps: RcsMessageRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };

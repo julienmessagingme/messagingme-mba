@@ -2,10 +2,8 @@ import type { Pool } from 'pg';
 import type { EssaiAEcrire, EssaiAgent, TestRunStore } from './test-runs';
 
 /**
- * L'historique des essais, en base.
- *
- * ⚠️ `bigint` rendu en `string` par le pilote pg : d'où les `Number()`. Un coût lu comme une chaîne
- * s'additionnerait en concaténation, et l'écran afficherait « 12001200 » pour deux essais à 1200.
+ * L'historique des essais, en base. Le pilote pg rend un `bigint` en `string`, d'où les `Number()` : sinon
+ * deux coûts s'additionneraient en concaténation.
  */
 const COLONNES = 'id, messages, reponse, sortie, appels, tokens_in, tokens_out, cout_micro_eur, created_at';
 
@@ -30,8 +28,7 @@ export class PgTestRunStore implements TestRunStore {
   constructor(private readonly pool: Pool) {}
 
   /**
-   * ⚠️ Il LÈVE en cas d'échec, et c'est voulu : c'est la route qui protège l'essai (elle seule sait qu'une
-   * réponse déjà facturée est en jeu), et avaler ici priverait son journal de la cause.
+   * Lève en cas d'échec : c'est la route qui protège l'essai, et avaler ici priverait son journal de la cause.
    */
   async ecrire(tenantId: string, agentId: string, essai: EssaiAEcrire): Promise<void> {
     await this.pool.query(
@@ -68,9 +65,8 @@ export class PgTestRunStore implements TestRunStore {
   }
 
   /**
-   * ⚠️ Pas de plafond par passage, contrairement aux purges de conversations : ces lignes sont écrites à la
-   * main, une par clic sur « Tester ». Même un réglage acharné n'en produit pas de quoi rendre un `delete`
-   * coûteux, et un plafond ferait traîner l'effacement sans rien protéger.
+   * Pas de plafond par passage, contrairement aux purges de conversations : une ligne par clic sur « Tester »
+   * n'en produit jamais assez pour rendre ce `delete` coûteux.
    */
   async purger(jours: number): Promise<number> {
     const res = await this.pool.query(

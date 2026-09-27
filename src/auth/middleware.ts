@@ -21,9 +21,8 @@ export type Guard = PreHandler | PreHandler[];
 export type UserStateLoader = (userId: string, tenantId: string) => Promise<{ role: string; disabled: boolean; tenantStatus?: string } | null>;
 
 /**
- * Garde de rôle à utiliser DANS un handler déjà authentifié : renvoie true (et répond 403)
- * si l'appelant n'est pas admin. Les actions à impact (créer/lancer campagne, import) sont
- * réservées aux admins ; les lectures restent ouvertes à tout compte authentifié.
+ * Garde de rôle à utiliser dans un handler déjà authentifié : rend true (et répond 403) si l'appelant n'est
+ * pas admin.
  */
 export function forbidNonAdmin(req: FastifyRequest, reply: FastifyReply): boolean {
   if (req.auth && req.auth.role !== 'admin') {
@@ -34,10 +33,8 @@ export function forbidNonAdmin(req: FastifyRequest, reply: FastifyReply): boolea
 }
 
 /**
- * preHandler de groupe : exige que `req.auth.role` soit dans `roles`. À composer APRÈS
- * `makeRequireAuth` (`preHandler: [requireAuth, makeRequireRole(['admin'])]`) — il suppose
- * `req.auth` déjà posé. 401 défensif si l'auth manque, 403 si le rôle n'est pas autorisé.
- * C'est la barrière serveur qui réserve tout sauf l'inbox aux admins (agent = inbox only).
+ * preHandler de groupe : exige que `req.auth.role` soit dans `roles`. À composer après `makeRequireAuth`,
+ * dont il suppose `req.auth` ; 401 défensif si l'auth manque, 403 si le rôle n'est pas autorisé.
  */
 export function makeRequireRole(roles: readonly string[]): PreHandler {
   const allowed = new Set(roles);
@@ -54,21 +51,17 @@ export function makeRequireRole(roles: readonly string[]): PreHandler {
 }
 
 /**
- * preHandler de la surface d'exploitation cross-tenant `/ops` : exige le header `x-ops-token` ÉGAL
- * (comparaison constant-time) au secret d'env `OPS_TOKEN`. 401 si le token est vide (surface
- * désactivée par défaut), absent, ou incorrect. N'utilise PAS `req.auth` : c'est une autorité
- * distincte du JWT tenant (un admin de tenant ne peut donc PAS atteindre /ops, et réciproquement).
+ * preHandler de `/ops` : exige le header `x-ops-token` égal (en temps constant) à `OPS_TOKEN`. 401 si le
+ * jeton attendu est vide (surface désactivée par défaut), absent ou faux. 🔴 Autorité distincte du JWT
+ * tenant : un admin d'espace n'atteint pas `/ops`, et réciproquement.
  */
 export function makeRequireOps(opsToken: string, surveillance?: SurveillanceOps): PreHandler {
   return async function requireOps(req: FastifyRequest, reply: FastifyReply): Promise<void> {
     const raw = req.headers['x-ops-token'];
     const provided = Array.isArray(raw) ? raw[0] : raw;
     if (!opsToken || !provided || !timingSafeEqualStr(provided, opsToken)) {
-      // 🔴 SIGNALER AVANT DE RÉPONDRE, et sans jamais rien attendre. `/ops` ouvre la lecture de toutes les
-      // conversations de tous les clients : jusqu'ici, quelqu'un qui cherchait le jeton ne laissait AUCUNE
-      // trace (Fastify tourne en `logger: false`). Le jour où l'adresse devient devinable, cet aveuglement
-      // coûte cher. ⚠️ Le jeton PRÉSENTÉ n'est jamais transmis : une tentative est presque toujours un secret
-      // voisin du vrai, l'écrire quelque part reviendrait à publier ce qu'on protège.
+      // Signalé avant de répondre, sans rien attendre : `/ops` ouvre la lecture de tous les clients. Le jeton
+      // présenté n'est jamais transmis (voir `ops/tentatives.ts`).
       surveillance?.refus({ chemin: req.url, ip: ipIndicative(req) });
       await reply.code(401).send({ error: 'ops: non autorisé' });
       return;
@@ -77,13 +70,12 @@ export function makeRequireOps(opsToken: string, surveillance?: SurveillanceOps)
 }
 
 /**
- * Construit un preHandler Fastify qui exige un Bearer JWT valide et pose `req.auth`.
- * 401 si absent/invalide. Les routes DÉRIVENT le tenant de `req.auth`, jamais de l'URL.
+ * preHandler qui exige un Bearer JWT valide et pose `req.auth` ; 401 sinon. 🔴 Les routes dérivent le tenant
+ * de `req.auth`, jamais de l'URL.
  *
- * `loadState` (optionnel) relit l'état du compte EN BASE à chaque requête : compte supprimé ou
- * révoqué -> 401 immédiat (le JWT ne fait plus foi seul), et le rôle est rafraîchi depuis la base
- * (un changement de rôle prend effet tout de suite). Ferme la fenêtre de staleness du token de 12 h.
- * Sans `loadState` (tests DB-free), on retombe sur la vérification JWT seule.
+ * `loadState` relit l'état du compte en base à chaque requête : compte supprimé ou révoqué, 401 immédiat ;
+ * rôle rafraîchi (un changement prend effet tout de suite). Sans lui (tests sans base), vérification JWT
+ * seule.
  */
 export function makeRequireAuth(secret: string, loadState?: UserStateLoader, limiteur?: RateLimiter): PreHandler {
   return async function requireAuth(req: FastifyRequest, reply: FastifyReply): Promise<void> {
@@ -98,32 +90,22 @@ export function makeRequireAuth(secret: string, loadState?: UserStateLoader, lim
       await reply.code(401).send({ error: 'token invalide ou expiré' });
       return;
     }
-    // 🔴 LE PLAFOND SE PREND ICI, et sa place dans la fonction est le fond du sujet.
-    //
-    // APRÈS `verifySession` : la clé est `session.userId`, et il n'y en a pas d'autre. `req.ip` désigne le
-    // conteneur proxy (Fastify est construit sans `trustProxy`, cf. `ops/tentatives.ts`), donc un plafond
-    // clé dessus serait GLOBAL à la plateforme : un seul appelant bruyant couperait tout le monde.
-    //
-    // AVANT `loadState` : un appelant qui martèle ne doit pas coûter une requête SQL par refus. Même
-    // raisonnement que le limiteur de `/w/:code`, posé avant `getByCode` pour la même raison.
-    //
-    // AVANT la branche des sessions d'emprunt, qui sort par un `return` anticipé : la poser après laisserait
-    // cette branche sans plafond, ce qui est exactement le genre d'oubli qu'un test doit tenir.
+    // Le plafond se prend ici :
+    //  - après `verifySession`, la clé étant `session.userId` : `req.ip` désigne le proxy (pas de
+    //    `trustProxy`), un plafond sur lui serait global à la plateforme ;
+    //  - avant `loadState` : un appelant qui martèle ne coûte pas une requête SQL par refus ;
+    //  - avant la branche des sessions d'emprunt, qui sort par un `return` anticipé.
     if (limiteur && !(await consommerAvecEntetes(limiteur, session.userId, reply))) return;
-    // 🔴 Session d'EMPRUNT : LECTURE SEULE, quelle que soit la route. Une garde ici plutôt que route par
-    // route, parce qu'une route oubliée serait exactement la faille : le porteur entre chez un client sans y
-    // avoir de compte, et une écriture faite par mégarde serait indiscernable d'une action du client.
-    //
-    // `GET` et `HEAD` seulement : tout le reste est refusé, y compris une route d'écriture ajoutée demain,
-    // sans que personne ait à y penser.
+    // 🔴 Session d'emprunt : lecture seule, quelle que soit la route. Une garde ici plutôt que route par route :
+    // une route oubliée serait la faille. `GET` et `HEAD` seulement, une route d'écriture ajoutée demain comprise.
     if (session.impersonated === true) {
       const methode = req.method.toUpperCase();
       if (methode !== 'GET' && methode !== 'HEAD') {
         await reply.code(403).send({ error: 'session d’observation : lecture seule', code: 'impersonation_read_only' });
         return;
       }
-      // Pas de relecture d'état : le porteur n'a PAS de compte dans cet espace, le loader ne trouverait rien
-      // et révoquerait la session. Sa légitimité vient de sa signature, émise par la surface d'exploitation.
+      // Pas de relecture d'état : le porteur n'a pas de compte dans cet espace, le loader révoquerait la session.
+      // Sa légitimité vient de sa signature, émise par `/ops`.
       req.auth = session;
       return;
     }
@@ -133,8 +115,8 @@ export function makeRequireAuth(secret: string, loadState?: UserStateLoader, lim
         await reply.code(401).send({ error: 'session révoquée' });
         return;
       }
-      // Crochet barrage de paiement : un espace `locked` coupe l'accès à toutes les routes gardées. Inerte tant
-      // qu'aucun espace n'est verrouillé (défaut 'active'). On ne bloque QUE sur 'locked' explicite.
+      // Barrage de paiement : un espace `locked` coupe l'accès à toutes les routes gardées ; on ne bloque que sur
+      // 'locked' explicite.
       if (state.tenantStatus === 'locked') {
         await reply.code(403).send({ error: 'espace suspendu', code: 'tenant_locked' });
         return;
@@ -146,21 +128,14 @@ export function makeRequireAuth(secret: string, loadState?: UserStateLoader, lim
 }
 
 /**
- * preHandler des routes COÛTEUSES (import CSV, action en masse, purge, export d'historique, lancement de
- * campagne), à composer APRÈS `makeRequireAuth` : il suppose `req.auth` déjà posé.
- *
- * 🔴 LA CLÉ EST LE TENANT, PAS L'UTILISATEUR, et c'est le seul choix qui distingue cette garde du plafond
- * général. Sur ces routes-là, ce qu'il faut borner n'est pas la politesse d'un opérateur mais la charge qu'un
- * ESPACE envoie à Postgres : un espace à dix comptes disposerait sinon de dix fois le plafond, et c'est
- * précisément le cas où l'import de masse fait mal.
- *
- * S'ajoute au plafond général sans le remplacer : les deux limiteurs sont distincts, donc un espace bloqué
- * ici garde l'usage normal de sa console.
+ * preHandler des routes coûteuses (import CSV, action en masse, purge, export d'historique, lancement de
+ * campagne), à composer après `makeRequireAuth`. La clé est le tenant, pas l'utilisateur : on borne la
+ * charge qu'un espace envoie à Postgres, et un espace à dix comptes aurait sinon dix fois le plafond.
+ * S'ajoute au plafond général sans le remplacer.
  */
 export function makeLimiteParTenant(limiteur: RateLimiter, message?: string): PreHandler {
   return async function limiteParTenant(req: FastifyRequest, reply: FastifyReply): Promise<void> {
-    // 401 défensif, comme `makeRequireRole` : sans `req.auth`, la clé serait vide et TOUS les espaces
-    // partageraient alors le même compteur, ce qui est pire que de refuser.
+    // 401 défensif : sans `req.auth`, la clé serait vide et tous les espaces partageraient le même compteur.
     if (!req.auth) {
       await reply.code(401).send({ error: 'authentification requise' });
       return;
@@ -170,18 +145,9 @@ export function makeLimiteParTenant(limiteur: RateLimiter, message?: string): Pr
 }
 
 /**
- * Options de route `{ preHandler }` : la garde existante, suivie de `extra` s'il est fourni.
- *
- * ⚠️ APLATIT la chaîne. `Guard` est « un preHandler OU un tableau », et `requireAdmin` est déjà un tableau :
- * écrire `[garde, extra]` produirait un tableau IMBRIQUÉ, que Fastify n'exécute pas. Le bug serait muet, la
- * garde ajoutée ne tournerait simplement jamais. C'est pour ça que la composition passe par ici plutôt que
- * d'être recopiée dans chaque module de routes.
- *
- * 🔴 LA GARDE EST REQUISE, ET C'EST LE POINT DE PASSAGE QUI PORTAIT LA DÉGRADATION (lot 2 du plan
- * 2026-09-14). Elle acceptait `undefined` et rendait alors `{}` : autrement dit, le helper PARTAGÉ par sept
- * modules savait produire des options de route SANS AUCUN `preHandler`, en silence. Le type l'interdit
- * désormais, et le retour n'est plus optionnel non plus : `{ preHandler }` est toujours posé, donc un
- * appelant ne peut plus recevoir un objet vide sans s'en apercevoir.
+ * Options de route `{ preHandler }` : la garde, suivie de `extra` s'il est fourni. Aplatit la chaîne :
+ * `[garde, extra]` avec une garde déjà en tableau donnerait un tableau imbriqué, que Fastify n'exécute pas,
+ * en silence. 🔴 La garde est requise et `preHandler` toujours posé : jamais d'options de route sans garde.
  */
 export function gardeEtendue(garde: Guard, extra?: PreHandler): { preHandler: Guard } {
   const base = Array.isArray(garde) ? garde : [garde];

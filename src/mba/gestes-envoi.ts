@@ -5,24 +5,18 @@ import type { WorkflowGraph } from '../workflow/graph';
 import type { StartOutcome } from '../workflow/executor';
 
 /**
- * LES DEUX GESTES QUI ENVOIENT AU CLIENT depuis le relais de l'agent de Meta (spec 2026-09-21-outils-maison-mba,
- * § 3.3 et § 3.4) : « Envoyer un bloc » et « Lancer un scénario ».
- *
- * 🔴 TOUTE ISSUE RATÉE REND LE FIL, EXCEPTION COMPRISE (revue finale du 2026-09-22). Les deux passent par `runFrom`,
- * qui REPREND le fil à l'agent de Meta avant d'envoyer. S'il refuse ensuite (désabonné, envoi refusé), il rend une
- * raison SANS rendre la main, parce que ses autres appelants (l'Inbox) ont un opérateur ; et s'il LÈVE (Meta refuse
- * un modèle en pause, coupure réseau), l'exception traverse tout. Ici personne n'est là pour rendre le fil : sans
- * ce module, il restait à nous (`app_workflow`, donc hors de « À traiter ») et l'agent de Meta muet. Si la reprise
- * elle-même a échoué, `rendreLaMain` ne touche à rien (sa garde `only: ['app_workflow']`).
- *
- * ⚠️ SORTI DU CÂBLAGE POUR ÊTRE TESTÉ : écrit dans `src/index.ts`, retirer ce rendu ne faisait tomber aucun test.
+ * Les deux gestes qui envoient au client depuis le relais de l'agent de Meta : « Envoyer un bloc » et « Lancer
+ * un scénario ». Toute issue ratée rend le fil, exception comprise : `runFrom` reprend le fil à l'agent avant
+ * d'envoyer, puis sur un refus rend une raison sans rendre la main (l'Inbox a un opérateur), et une exception
+ * traverse tout. Ici personne n'est là : sans ce rendu, le fil resterait à nous, hors de « À traiter », et
+ * l'agent muet. Si la reprise a échoué, `rendreLaMain` ne touche à rien (garde `only: ['app_workflow']`).
  */
 export interface DepsGestesEnvoi {
-  /** Le graphe PUBLIÉ du scénario, celui que les contacts parcourent, ou `null`. Jamais le brouillon. */
+  /** Le graphe publié du scénario, celui que les contacts parcourent, ou `null`. Jamais le brouillon. */
   graphePublie(tenantId: string, workflowId: string): Promise<WorkflowGraph | null>;
   fenetreOuverte(tenantId: string, waId: string): Promise<boolean>;
   contactId(tenantId: string, waId: string): Promise<string | null>;
-  /** `startFromNode` : reprend le fil, envoie, et le rend à l'accusé (0149). */
+  /** `startFromNode` : reprend le fil, envoie, et le rend à l'accusé. */
   envoyerDepuisBloc(
     tenantId: string, workflowId: string, graphe: WorkflowGraph, contact: { waId: string; contactId: string | null }, noeudId: string,
   ): Promise<StartOutcome>;
@@ -31,36 +25,28 @@ export interface DepsGestesEnvoi {
   /** `rendreLaMainApresParcours` (`wiring.ts`). */
   rendreLaMain(tenantId: string, waId: string): Promise<void>;
   /**
-   * Attend que l'agent de Meta ait fini son tour, JUSTE AVANT de lui prendre le fil (`src/mba/fin-de-tour.ts`).
-   * Placé après les refus qui ne demandent rien à Meta (bloc disparu, fenêtre fermée) : ceux-là partent tout de
-   * suite, dans le délai de réponse du relais, et l'agent les lit.
+   * Attend que l'agent de Meta ait fini son tour, juste avant de lui prendre le fil (`src/mba/fin-de-tour.ts`).
+   * Placé après les refus qui ne demandent rien à Meta (bloc disparu, fenêtre fermée), qui partent tout de suite.
    */
   attendreFinDuTour(tenantId: string, waId: string): Promise<unknown>;
-  /** L'empreinte du fil (`PgInboxStore.empreinteDuFil`), relue AVANT et APRÈS l'attente. */
+  /** L'empreinte du fil (`PgInboxStore.empreinteDuFil`), relue avant et après l'attente. */
   empreinteDuFil(tenantId: string, waId: string): Promise<EmpreinteDuFil | null>;
-  /** Le contact est-il bloqué dans l'Inbox ? Relu APRÈS l'attente : il a pu l'être pendant. */
+  /** Le contact est-il bloqué dans l'Inbox ? Relu après l'attente : il a pu l'être pendant. */
   estBloque(tenantId: string, waId: string): Promise<boolean>;
 }
 
 /**
- * Ce que l'agent de Meta lit quand la conversation a changé de main pendant l'attente de fin de tour.
- *
- * 🔴 L'ATTENTE PEUT DURER 15 S (revue du 2026-09-22) : un opérateur a pu prendre la conversation ou y répondre, un
- * parcours démarrer. L'envoi part avec `ignoreHumanControl` et le fil serait ensuite rendu au robot : il passerait
- * par-dessus cette décision, et la conversation sortirait d'« À traiter ».
+ * Ce que l'agent de Meta lit quand la conversation a changé de main pendant l'attente de fin de tour (jusqu'à
+ * 15 s) : l'envoi part avec `ignoreHumanControl`, et passerait par-dessus un opérateur ou un parcours.
  */
 export const FIL_CHANGE_PENDANT_ATTENTE =
   'la conversation a changé de main pendant l’attente (un opérateur ou un parcours l’a prise) : rien n’a été envoyé';
 
 /**
- * La conversation a-t-elle changé de main entre deux empreintes ?
- *
- * 🔴 UN NOUVEL ENVOI DE NOTRE PART, C'EST OUI, quelle que soit la colonne : un parcours lancé pendant l'attente
- * réécrit `app_workflow` sans rien changer, mais il envoie (relecture du 2026-09-22). Un opérateur qui répond aussi.
- * ⚠️ UN FIL RENDU À L'AGENT DE META PENDANT L'ATTENTE (accusé reçu, balayage), C'EST NON : c'est à lui qu'on
- * s'apprêtait à le prendre. Le refuser mentirait à l'agent (« un opérateur l'a prise ») pour un geste attendu.
- * Limite assumée : un parcours lancé pendant l'attente dont le premier bloc est une attente, sans rien envoyer ni
- * changer le détenteur, reste invisible.
+ * La conversation a-t-elle changé de main entre deux empreintes ? Un nouvel envoi de notre part, oui, quelle que
+ * soit la colonne (un parcours ou un opérateur a envoyé). Un fil rendu à l'agent de Meta pendant l'attente, non :
+ * c'est à lui qu'on allait le prendre. Limite : un parcours lancé pendant l'attente qui n'envoie rien et ne change
+ * pas le détenteur reste invisible.
  */
 export function aChangeDeMain(avant: EmpreinteDuFil | null, apres: EmpreinteDuFil | null): boolean {
   if (avant === null || apres === null) return avant !== apres;
@@ -90,8 +76,8 @@ export function creerGestesEnvoi(deps: DepsGestesEnvoi): {
   };
 
   /**
-   * Attend la fin du tour de l'agent, puis rend un REFUS si la conversation a changé de main ou si le contact a été
-   * bloqué entre-temps, `null` sinon. Un refus ici n'a rien pris : il ne rend PAS le fil (sinon un parcours lancé
+   * Attend la fin du tour de l'agent, puis rend un refus si la conversation a changé de main ou si le contact a
+   * été bloqué entre-temps, `null` sinon. Ce refus n'a rien pris : il ne rend pas le fil (un parcours lancé
    * entre-temps serait relâché).
    */
   const attendreEtRevérifier = async (tenantId: string, waId: string): Promise<string | null> => {
@@ -106,7 +92,7 @@ export function creerGestesEnvoi(deps: DepsGestesEnvoi): {
     async envoyerBloc(tenantId, waId, { workflowId, code }) {
       const graphe = await deps.graphePublie(tenantId, workflowId);
       if (!graphe) return 'le scénario de ce bloc n’existe plus';
-      // Revérifié à CHAQUE appel : le scénario a pu changer depuis la création de l'outil.
+      // Revérifié à chaque appel : le scénario a pu changer depuis la création de l'outil.
       const seul = blocSeul(graphe, code);
       if (!seul.ok) return seul.raison;
       if (!seul.modele && !(await deps.fenetreOuverte(tenantId, waId))) {
@@ -115,7 +101,7 @@ export function creerGestesEnvoi(deps: DepsGestesEnvoi): {
       const contactId = await deps.contactId(tenantId, waId);
       const refus = await attendreEtRevérifier(tenantId, waId);
       if (refus !== null) return refus;
-      // Le graphe RÉDUIT au bloc : ce qui le suit dans le scénario ne peut pas partir.
+      // Le graphe réduit au bloc : ce qui le suit dans le scénario ne peut pas partir.
       return enRendantSurEchec(tenantId, waId,
         () => deps.envoyerDepuisBloc(tenantId, workflowId, seul.graphe, { waId, contactId }, seul.noeudId),
         'le bloc n’a pas pu partir');

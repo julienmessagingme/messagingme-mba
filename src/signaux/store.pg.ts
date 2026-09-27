@@ -4,8 +4,8 @@ import type { AnalyseDuSignal } from './types';
 import type { FicheDuSignal, LecturesSignal } from './completer';
 
 /**
- * Les lectures des signaux, en Postgres. `tenant_id = $1` sur CHAQUE requête : la connexion passe par le pooler
- * en rôle superuser, la RLS est contournée, ce filtre est le seul contrôle (`tests/signaux-isolation.test.ts`).
+ * 🔴 Les lectures des signaux, en Postgres. `tenant_id = $1` sur chaque requête : le pooler est en rôle
+ * superuser, la RLS est contournée, ce filtre est le seul contrôle (`tests/signaux-isolation.test.ts`).
  */
 interface LigneFiche {
   id: string;
@@ -29,7 +29,7 @@ function fiche(r: LigneFiche): FicheDuSignal {
 export class PgSignauxStore implements LecturesSignal {
   constructor(private readonly pool: Pool) {}
 
-  /** Par `wa_id` : numéro (avec ou sans `+`) ou BSUID, par le fragment PARTAGÉ du dépôt, jamais recopié. */
+  /** Par `wa_id` : numéro (avec ou sans `+`) ou BSUID, par le fragment partagé du dépôt, jamais recopié. */
   async ficheParWaId(tenantId: string, waId: string): Promise<FicheDuSignal | null> {
     const res = await this.pool.query<LigneFiche>(
       `select ${COLONNES_FICHE} from contacts
@@ -58,13 +58,9 @@ export class PgSignauxStore implements LecturesSignal {
 
   /**
    * L'origine d'un message sortant et l'envoi auquel il appartient. Trois sous-requêtes sur clé, chacune servie
-   * par son index (`conversation_messages_wamid_uidx`, `campaign_recipients_message_id_idx`,
-   * `campaign_envois_message_id_idx`), chacune filtrée sur l'espace par sa jointure.
-   *
-   * 🔴 `campaign_envois` EN REPLI, ET IL N'EST PAS FACULTATIF. `campaign_recipients.message_id` ne garde que la
-   * DERNIÈRE tentative d'un destinataire (0134) : l'accusé d'un étage PRÉCÉDENT d'une chaîne de repli (le
-   * WhatsApp en échec avant le RCS, ou délivré tard) n'y est plus, et rendrait `sendId` à `null`. Le journal des
-   * tentatives, lui, les garde toutes.
+   * par son index et filtrée sur l'espace par sa jointure.
+   * `campaign_envois` en repli, indispensable : `campaign_recipients.message_id` ne garde que la dernière
+   * tentative, donc l'accusé d'un étage précédent d'une chaîne de repli n'y est plus.
    */
   async contexteDuMessage(tenantId: string, messageId: string): Promise<{ origine: string | null; sendId: string | null }> {
     const res = await this.pool.query<{ origine: string | null; send_id: string | null }>(

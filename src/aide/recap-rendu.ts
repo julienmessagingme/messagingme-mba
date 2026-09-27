@@ -5,19 +5,12 @@ import { STATS_TZ } from '../stats/range';
 import type { Recap } from './recap.pg';
 
 /**
- * LE RENDU DU RÉCAP : un gabarit déterministe, et un modèle les jours où il achète quelque chose.
+ * Le rendu du récap : un gabarit déterministe, et un modèle les jours où il achète quelque chose.
  *
- * 🔴 LE MODÈLE NE COMPTE JAMAIS, ET CE N'EST PAS UNE CONSIGNE, C'EST UNE GARDE. Tout nombre qu'il a le droit
- * de citer est dans son entrée ; `nombresInventes` relit sa réponse et la REFUSE si elle contient un nombre
- * qui n'y était pas. Une consigne qui interdit de calculer est une intention ; un contrôle au retour est une
- * garantie, et c'est la leçon de la migration 0126, où l'annonce d'IA était confiée au modèle et où le code
- * a dû reprendre la décision.
- *
- * 🔴 ET IL N'EST APPELÉ QUE QUAND LE SQL A TROUVÉ QUELQUE CHOSE À SIGNALER. Un gabarit dit déjà « hier :
- * 42 conversations, 128 messages reçus, trois sujets dominants ». Ce que le modèle ajoute n'est pas la mise
- * en forme, c'est le REMARQUABLE : un volume qui double, un sujet qui n'existait pas la semaine d'avant.
- * S'il ne fait que reformuler une liste, il ne vaut pas sa dépense, et cette dépense est la NÔTRE
- * (décision de Julien du 2026-09-11, cf. `src/http/aide.ts`).
+ * Le modèle ne compte jamais, et c'est une garde, pas une consigne : tout nombre qu'il a le droit de citer est
+ * dans son entrée, et `nombresInventes` refuse sa réponse si elle en contient un autre. Il n'est appelé que
+ * quand le SQL a trouvé quelque chose de remarquable (un volume qui double, un sujet nouveau) : reformuler
+ * une liste ne vaut pas la dépense, qui est la nôtre.
  */
 
 /** Ce qui sort d'ici : le texte, et s'il a coûté un appel de modèle. */
@@ -28,10 +21,8 @@ export interface RecapTexte {
 }
 
 /**
- * L'écart à partir duquel un volume mérite une phrase.
- *
- * ⚠️ RELATIF ET AVEC UN PLANCHER, et les deux comptent. Sans plancher, passer de 1 à 3 conversations est une
- * hausse de 200 % : on paierait un appel de modèle pour commenter le bruit d'un petit espace.
+ * L'écart à partir duquel un volume mérite une phrase, relatif et avec un plancher : sans plancher, passer de
+ * 1 à 3 conversations ferait payer un appel de modèle pour commenter le bruit d'un petit espace.
  */
 const ECART_NOTABLE = 0.5;
 const PLANCHER_VOLUME = 5;
@@ -44,17 +35,15 @@ function ecartNotable(jour: number, semaineAvant: number): boolean {
 }
 
 /**
- * Un sujet qui n'existait pas le même jour de la semaine précédente.
- *
- * ⚠️ ON NE CONCLUT RIEN QUAND LA SEMAINE D'AVANT N'A AUCUN SUJET : tout serait alors « nouveau », et un
- * espace qui vient d'activer l'analyse paierait un appel de modèle chaque jour pour l'apprendre.
+ * Un sujet qui n'existait pas le même jour de la semaine précédente. Rien quand la semaine d'avant n'a aucun
+ * sujet : tout serait « nouveau », et un espace qui vient d'activer l'analyse paierait un appel par jour.
  */
 function sujetNouveau(r: Recap): boolean {
   if (r.semainePrecedente.themes.length === 0) return false;
   return r.themes.some((t) => !r.semainePrecedente.themes.includes(t.topic));
 }
 
-/** Y a-t-il quelque chose à SIGNALER, c'est-à-dire quelque chose qu'un gabarit ne dirait pas ? */
+/** Y a-t-il quelque chose à signaler, c'est-à-dire quelque chose qu'un gabarit ne dirait pas ? */
 export function meriteUnModele(r: Recap): boolean {
   if (r.conversations === 0) return false;
   return ecartNotable(r.conversations, r.semainePrecedente.conversations)
@@ -102,9 +91,8 @@ export function gabarit(r: Recap, langue: 'fr' | 'en'): string {
   }
 
   /**
-   * 🔴 LA PHRASE QUI DIT CE QU'ON NE SAIT PAS. L'analyse ne tourne qu'à l'inactivité : une conversation
-   * d'hier soir encore vivante ce matin n'a pas de sujet. Sans cette phrase, le récap sous-déclare en
-   * silence, et quelqu'un conclura que le sujet dont il se préoccupe n'est pas remonté.
+   * La phrase qui dit ce qu'on ne sait pas : l'analyse ne tourne qu'à l'inactivité, et sans elle le récap
+   * sous-déclarerait en silence.
    */
   const enAttente = r.conversations - r.conversationsAnalysees;
   if (enAttente > 0) {
@@ -117,17 +105,10 @@ export function gabarit(r: Recap, langue: 'fr' | 'en'): string {
 }
 
 /**
- * TOUT NOMBRE QUE LE MODÈLE A LE DROIT D'ÉCRIRE.
- *
- * 🔴 LA DATE N'EN FAIT PAS PARTIE, ET C'EST DÉLIBÉRÉ. Le jour du mois (1 à 31) et le numéro du mois (1 à 12)
- * recouvrent exactement la plage des pourcentages qu'un modèle invente le plus volontiers (« hausse de 9 % »,
- * « +12 % »). Les autoriser comme jetons libres n'importe où dans le texte perçait la garde sur toute cette
- * plage, et le jour où le récap tombe un 20, « +20 % » passerait sans bruit. Le modèle reçoit la date DÉJÀ
- * ÉCRITE EN TOUTES LETTRES et n'a donc aucune raison légitime d'écrire un chiffre de date ; s'il en écrit un
- * quand même, on retombe sur le gabarit, ce qui ne coûte qu'un appel.
- *
- * ⚠️ L'écart entre conversations et conversations ANALYSÉES en fait partie, lui, parce que le gabarit le cite
- * déjà et qu'on veut que le modèle puisse dire la même chose.
+ * Tout nombre que le modèle a le droit d'écrire. La date n'en fait pas partie : le jour et le mois (1 à 31)
+ * recouvrent la plage des pourcentages qu'un modèle invente le plus volontiers, et un « +20 % » passerait le
+ * 20 du mois. Le modèle reçoit la date écrite en toutes lettres. L'écart entre conversations et conversations
+ * analysées en fait partie : le gabarit le cite déjà.
  */
 export function nombresDuRecap(r: Recap): Set<number> {
   return new Set<number>([
@@ -146,23 +127,12 @@ export function nombresDuRecap(r: Recap): Set<number> {
 }
 
 /**
- * Les nombres du texte qui ne sont PAS dans l'entrée du modèle.
+ * Les nombres du texte qui ne sont pas dans l'entrée du modèle : un seul, et le texte est jeté.
  *
- * 🔴 C'EST LA GARDE, PAS UNE STATISTIQUE. Un seul nombre étranger et le texte est jeté : un récap qui
- * affiche un chiffre plausible et faux est pire que pas de récap, parce que les gens agissent dessus.
- *
- * ⚠️ Les séparateurs de milliers sont retirés avant lecture (« 1 234 » est UN nombre, pas deux), y compris
- * l'espace insécable et l'espace fine que les rendus français emploient.
- *
- * ⚠️ ET LA CLASSE DES SÉPARATEURS EXCLUT LE RETOUR À LA LIGNE, délibérément : avec `\s`, « 42 » en fin de
- * ligne suivi de « 128 » au début de la suivante se lisait comme le nombre 42128, donc comme un nombre
- * inventé, et un texte parfaitement juste était refusé. Un séparateur de milliers est une espace, jamais
- * une fin de ligne.
- *
- * ⚠️ CE QU'ELLE N'ATTRAPE PAS, ET C'EST ASSUMÉ : un petit nombre qui se trouve déjà dans l'entrée pour une
- * autre raison (le jour du mois, le numéro du mois, un compte de sujets) passe même employé à tort. Elle
- * arrête les ORDRES DE GRANDEUR inventés, c'est-à-dire les pourcentages et les volumes, qui sont ce sur
- * quoi quelqu'un agirait.
+ * Les séparateurs de milliers sont retirés avant lecture (« 1 234 » est un nombre), espaces insécable et fine
+ * comprises, mais pas le retour à la ligne : « 42 » en fin de ligne suivi de « 128 » se lirait 42128. Un petit
+ * nombre déjà présent dans l'entrée pour une autre raison passe même employé à tort : la garde arrête les
+ * ordres de grandeur inventés.
  */
 export function nombresInventes(texte: string, autorises: Set<number>): number[] {
   const trouves = texte.match(/\d+(?:[   ]\d{3})*/g) ?? [];
@@ -220,10 +190,8 @@ function consigne(langue: 'fr' | 'en'): string {
 }
 
 /**
- * Le rédacteur.
- *
- * ⚠️ IL NE LÈVE JAMAIS : panne, délai dépassé, sortie illisible ou nombre inventé, tout retombe sur le
- * gabarit. Les chiffres sont déjà calculés, un récap n'a donc aucune raison d'échouer.
+ * Le rédacteur. Il ne lève jamais : panne, délai dépassé, sortie illisible ou nombre inventé, tout retombe
+ * sur le gabarit.
  */
 export function creerRedacteurRecap(deps: DepsRedacteurRecap): (r: Recap, langue: 'fr' | 'en') => Promise<RecapTexte> {
   return async (r, langue) => {
@@ -238,12 +206,8 @@ export function creerRedacteurRecap(deps: DepsRedacteurRecap): (r: Recap, langue
         modele: deps.modele,
         messages: [
           { role: 'system', content: consigne(langue) },
-          // Les données arrivent dans un bloc DÉLIMITÉ, jamais concaténées à la consigne.
-          /**
-           * ⚠️ `jour` part EN TOUTES LETTRES et non en `YYYY-MM-DD` : sans ça, le modèle recopierait des
-           * chiffres de date, qu'il faudrait alors autoriser dans `nombresDuRecap`, ce qui rouvrirait la
-           * garde sur toute la plage 1-31, celle des pourcentages.
-           */
+          // Données dans un bloc délimité, jamais concaténées à la consigne. `jour` part en toutes lettres : des
+          // chiffres de date obligeraient à rouvrir `nombresDuRecap` sur la plage 1-31, celle des pourcentages.
           {
             role: 'user',
             content: `<<<DONNEES>>>\n${JSON.stringify({ ...r, jour: jourEnToutesLettres(r.jour, langue) })}`
@@ -273,19 +237,15 @@ export function creerRedacteurRecap(deps: DepsRedacteurRecap): (r: Recap, langue
     if (!valide.success) return repli;
     const texte = valide.data.texte.trim().slice(0, TEXTE_MAX);
     if (texte === '') return repli;
-    // 🔴 LA GARDE : un seul nombre étranger à l'entrée et on rend le gabarit.
+    // La garde : un seul nombre étranger à l'entrée et on rend le gabarit.
     if (nombresInventes(texte, nombresDuRecap(r)).length > 0) return repli;
     return { texte, redigeParModele: true };
   };
 }
 
 /**
- * Assemble le récap complet : le SQL compte, le rendu formule.
- *
- * ⚠️ AUCUNE FICHE D'AIDE N'EST CONSULTÉE ICI, et c'est délibéré. Le moteur de questions porte une garde
- * documentée (« aucune fiche pertinente = je ne sais pas SANS appeler le modèle ») : un récap ne vient
- * d'aucune fiche, donc branché comme une question ordinaire il tomberait droit dans ce chemin. Le récap est
- * un chemin à part, pas une question déguisée.
+ * Assemble le récap complet : le SQL compte, le rendu formule. Aucune fiche d'aide n'est consultée : branché
+ * comme une question ordinaire, le récap tomberait dans « aucune fiche pertinente = je ne sais pas ».
  */
 export function creerRecapRedige(deps: {
   recap(tenantId: string, jour: string): Promise<Recap>;

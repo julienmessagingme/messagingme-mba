@@ -8,11 +8,9 @@ import type { WebhookRow, WebhookInput } from '../webhook-entrant/store.pg';
 import { makeJournal, type AuditSink } from '../audit/journal';
 
 /**
- * Gestion des webhooks entrants (écran Tools > Webhooks). ADMIN ONLY : une URL de webhook est un pouvoir
- * d'écriture sur le CRM et, quand un scénario y est attaché, un pouvoir d'envoi. Le tenant vient du JWT.
- *
- * La route publique qui REÇOIT les appels vit ailleurs (`http/webhook-entrant.ts`) et n'a aucune
- * authentification : ce sont deux surfaces distinctes, montées séparément.
+ * Gestion des webhooks entrants (écran Tools > Webhooks), admin : une URL de webhook est un pouvoir d'écriture
+ * sur le CRM et, avec un scénario attaché, un pouvoir d'envoi. La route publique qui reçoit les appels vit dans
+ * `webhook-entrant.ts`, montée séparément.
  */
 
 /** Même borne que l'anti-rebond d'une automation : au-delà de 7 jours, ce n'est plus un anti-rebond. */
@@ -20,16 +18,9 @@ const MAX_COOLDOWN = 7 * 24 * 3600;
 
 export interface WebhooksAdminRouteDeps {
   /**
-   * Journal d'audit (2026-09-16). Requis depuis le lot 3 de l'audit ponytail ; les fixtures qui ne l'observent pas passent `journalMuet`.
-   *
-   * 🔴 UN WEBHOOK EST UNE PORTE D'ENTRÉE DANS L'ESPACE. L'adresse qu'on crée ici est appelée par un tiers, et
-   * ce qu'il envoie devient des contacts, parfois les destinataires d'une campagne « au fil de l'eau ». Savoir
-   * qui a ouvert cette porte, et quand, est la question qu'on se pose le jour où des contacts inattendus
-   * apparaissent. La supprimer tarit une campagne vivante, ce qui est l'autre moitié du sujet.
-   *
-   * 🔴 LE `detail` NE PORTE NI LE CODE DE L'ADRESSE NI LE SECRET. Le code est ce qui rend l'adresse
-   * devinable, le secret ce qui l'authentifie : les graver dans une table jamais purgée donnerait de quoi
-   * rejouer la porte bien après sa fermeture.
+   * Journal d'audit (les fixtures qui ne l'observent pas passent `journalMuet`). Un webhook est une porte d'entrée :
+   * ce qu'un tiers y envoie devient des contacts, et savoir qui l'a ouverte répond aux contacts inattendus.
+   * 🔴 Le `detail` ne porte ni le code de l'adresse (ce qui la rend devinable) ni le secret (ce qui l'authentifie).
    */
   audit: AuditSink;
   list(tenantId: string): Promise<WebhookRow[]>;
@@ -37,16 +28,15 @@ export interface WebhooksAdminRouteDeps {
   create(tenantId: string, input: WebhookInput): Promise<{ id: string; code: string }>;
   update(tenantId: string, id: string, input: WebhookInput): Promise<boolean>;
   remove(tenantId: string, id: string): Promise<boolean>;
-  /** Renvoie le secret EN CLAIR, une seule fois. null = webhook inconnu. */
+  /** Renvoie le secret en clair, une seule fois. null = webhook inconnu. */
   rotateSecret(tenantId: string, id: string): Promise<string | null>;
   clearSecret(tenantId: string, id: string): Promise<boolean>;
   forgetPayload(tenantId: string, id: string): Promise<boolean>;
   /** Le scénario ciblé appartient-il bien à ce tenant ? Même garde que la campagne et l'automation. */
   workflowBelongsToTenant(workflowId: string, tenantId: string): Promise<boolean>;
   /**
-   * Nom d'une campagne AU FIL DE L'EAU encore vivante nourrie par ce webhook, s'il y en a une. Interroge la
-   * SUPPRESSION : couper l'adresse laisserait la campagne « en cours » sans qu'elle ne reçoive plus jamais
-   * rien.
+   * Nom d'une campagne au fil de l'eau encore vivante nourrie par ce webhook, s'il y en a une. Interrogé à la
+   * suppression : couper l'adresse laisserait la campagne « en cours » sans plus rien recevoir.
    */
   campagneVivante(tenantId: string, webhookId: string): Promise<string | null>;
   /** Base publique des URLs (`config.APP_URL`) : l'écran affiche l'URL complète à coller chez le tiers. */
@@ -54,15 +44,10 @@ export interface WebhooksAdminRouteDeps {
 }
 
 /**
- * Valide le mapping. Le `payload` est le dernier appel reçu, quand il existe : c'est ce qui permet de refuser
- * À LA CONFIGURATION un chemin qui vise un objet ou un tableau.
- *
- * 🔴 Pourquoi ce refus. Les valeurs de champ sont stockées en chaîne, et `contactVars` transforme en `null`
- * toute valeur non primitive : un objet écrit dans un champ rendrait la variable VIDE dans un template, sans
- * la moindre erreur. Le seul moment où l'utilisateur peut comprendre le problème, c'est maintenant.
- *
- * Un chemin qui ne résout PAS est en revanche accepté : un tiers n'envoie pas toujours ses champs
- * facultatifs, et le dernier payload n'est qu'un échantillon.
+ * Valide le mapping. Le `payload` (dernier appel reçu, s'il existe) permet de refuser dès la configuration un
+ * chemin qui vise un objet ou un tableau : les champs sont stockés en chaîne et `contactVars` rend `null` pour
+ * une valeur non primitive, donc une variable vide dans un template, sans erreur. Un chemin qui ne résout pas
+ * est accepté : le dernier payload n'est qu'un échantillon.
  */
 function validerMapping(brut: unknown, payload: unknown): { error: string } | { mapping: RegleMapping[] } {
   if (brut === undefined) return { mapping: [] };
@@ -111,8 +96,8 @@ function parseBody(body: unknown, actuel: WebhookRow | null, payload: unknown): 
     createContact = b.createContact;
   }
 
-  // Le consentement des contacts nés de ce webhook. Vrai par défaut (décision de Julien du 2026-08-24) :
-  // c'est l'opérateur qui AFFIRME que sa source recueille bien un consentement, comme pour l'import CSV.
+  // 🔴 Consentement des contacts nés de ce webhook, vrai par défaut : l'opérateur affirme que sa source le
+  // recueille, comme pour l'import CSV.
   let optIn = actuel?.optIn ?? true;
   if (b.optIn !== undefined) {
     if (typeof b.optIn !== 'boolean') return { error: 'optIn (booléen)' };
@@ -156,15 +141,9 @@ function parseBody(body: unknown, actuel: WebhookRow | null, payload: unknown): 
   return { input: { name, enabled, mapping, createContact, optIn, workflowId, startNodeId, cooldownSeconds } };
 }
 
-/** URL publique complète à coller chez le tiers. */
 /**
- * L'adresse qu'on donne AU TIERS pour qu'il nous appelle.
- *
- * ⚠️ Le préfixe `/api/backend` n'est plus écrit ici, et c'est un correctif, pas un déplacement : il
- * appartient au PROXY (le rewrite Next), pas à cette route. Le jour où l'API répond sous son propre nom, ce
- * préfixe n'existe plus, et le laisser en dur aurait produit une adresse morte donnée à un tiers. `baseUrl`
- * porte donc désormais la base COMPLÈTE, préfixe compris quand il y en a un, résolue une seule fois par
- * `adressesPubliques` (`src/lib/adresses-publiques.ts`).
+ * L'URL publique complète à donner au tiers. `baseUrl` porte la base entière, préfixe du proxy compris quand il y
+ * en a un (`adressesPubliques`) : l'écrire ici donnerait une adresse morte le jour où l'API répond sous son nom.
  */
 function urlPublique(baseUrl: string, code: string): string {
   return `${baseUrl.replace(/\/+$/, '')}/w/${code}`;
@@ -196,8 +175,7 @@ export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminR
       return reply.code(400).send({ error: 'workflowId inconnu pour ce tenant' });
     }
     const { id, code } = await deps.create(tenant, parsed.input);
-    // ⚠️ NI `code` NI l'URL : le code EST le secret de cette adresse. L'identifiant interne suffit à la
-    // retrouver dans l'écran des webhooks.
+    // Ni `code` ni l'URL : le code est le secret de cette adresse. L'identifiant interne suffit à la retrouver.
     await journal(tenant, req, 'webhook.cree', { kind: 'webhook', id }, { workflowId: parsed.input.workflowId });
     return reply.code(201).send({ id, code, url: urlPublique(deps.baseUrl, code), ...parsed.input });
   });
@@ -205,7 +183,7 @@ export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminR
   app.patch('/tenants/:tenantId/webhooks/:id', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
-    // Relecture systématique : le mapping se valide CONTRE le dernier payload reçu, et le corps est partiel
+    // Relecture systématique : le mapping se valide contre le dernier payload reçu, et le corps est partiel
     // alors que le store écrit un état complet.
     const actuel = await deps.get(tenant, id);
     if (!actuel) return reply.code(404).send({ error: 'webhook inconnu' });
@@ -224,10 +202,8 @@ export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminR
   app.delete('/tenants/:tenantId/webhooks/:id', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
-    // Une campagne au fil de l'eau vit de cette adresse : la supprimer la transformerait en coquille « en
-    // cours » qui ne recevrait plus rien, sans le moindre signal. On refuse, en la NOMMANT, plutôt que de
-    // laisser l'opérateur découvrir le trou des semaines plus tard. 409 (et pas 5xx) : Cloudflare remplace le
-    // corps de toute réponse 5xx, le message n'arriverait jamais à l'écran.
+    // Une campagne au fil de l'eau vit de cette adresse : la supprimer en ferait une coquille « en cours » qui ne
+    // reçoit plus rien. On refuse en la nommant, en 409 pour que le message atteigne l'écran.
     const campagne = await deps.campagneVivante(tenant, id);
     if (campagne !== null) {
       return reply.code(409).send({ error: `La campagne « ${campagne} » se nourrit de ce webhook. Arrête-la avant de supprimer l'adresse.` });
@@ -238,13 +214,13 @@ export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminR
     return reply.code(204).send();
   });
 
-  /** Pose un secret neuf. Le clair n'est rendu QU'ICI, une seule fois, comme une clé d'API. */
+  /** Pose un secret neuf. Le clair n'est rendu qu'ici, une seule fois, comme une clé d'API. */
   app.post('/tenants/:tenantId/webhooks/:id/secret', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { id } = req.params as { id: string };
     const secret = await deps.rotateSecret(tenant, id);
     if (secret === null) return reply.code(404).send({ error: 'webhook inconnu' });
-    // ⚠️ `pose` distingue la pose du retrait sans inventer deux actions dont personne ne lirait la différence.
+    // `pose` distingue la pose du retrait sans inventer deux actions.
     await journal(tenant, req, 'webhook.secret_change', { kind: 'webhook', id }, { pose: true });
     return reply.code(201).send({ secret, entete: 'X-Webhook-Secret' });
   });

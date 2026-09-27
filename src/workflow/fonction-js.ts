@@ -1,21 +1,15 @@
 import { getQuickJS } from 'quickjs-emscripten';
 
 /**
- * EXÉCUTER DU JAVASCRIPT ÉCRIT PAR UN CLIENT, sur notre infrastructure.
+ * Exécuter du JavaScript écrit par un client, sur notre infrastructure.
  *
- * 🔴 `node:vm` N'EST PAS UN BAC À SABLE, et c'est la première chose à savoir ici : on s'en échappe en
- * remontant la chaîne des prototypes jusqu'au constructeur de fonction du contexte hôte, et la documentation
- * de Node le dit elle-même. Le code d'un client s'exécute donc dans **QuickJS compilé en WebAssembly** : un
- * autre moteur, dans un autre tas, sans aucune passerelle vers le nôtre.
+ * 🔴 `node:vm` n'est pas un bac à sable (on s'en échappe par la chaîne des prototypes, la doc de Node le dit).
+ * Le code d'un client s'exécute donc dans QuickJS compilé en WebAssembly : un autre moteur, dans un autre tas,
+ * sans passerelle vers le nôtre. `require`, `process` et `fetch` y valent `undefined`, une boucle infinie est
+ * coupée par le gestionnaire d'interruption, et le plafond de mémoire est posé sur le runtime.
  *
- * MESURÉ le 2026-09-11 avant d'écrire une ligne, pas supposé :
- *   - `require`, `process` et `fetch` valent `undefined` dans le bac à sable (il n'y a rien à atteindre) ;
- *   - une boucle infinie est COUPÉE par le gestionnaire d'interruption (201 ms mesurées pour un budget de
- *     200 ms), donc un client ne peut pas immobiliser le worker ;
- *   - le plafond de mémoire est posé sur le runtime, pas espéré.
- *
- * ⚠️ CE QUI RESTE VRAI MALGRÉ TOUT : le code d'un client consomme du CPU pendant sa durée d'exécution. Le
- * plafond de temps est donc la vraie protection, et il est court exprès.
+ * Le code consomme quand même du CPU pendant son exécution : le plafond de temps est la vraie protection, et
+ * il est court exprès.
  */
 
 /** Plafond de temps d'une exécution. Court : un contact attend la suite de son parcours. */
@@ -36,11 +30,8 @@ export interface ResultatJs {
 }
 
 /**
- * La valeur rendue par la fonction, telle qu'elle se range dans un champ.
- *
- * ⚠️ MÊME RÈGLE QUE LE BLOC « APPEL API » (`valeurPourChamp`) : une valeur simple devient son texte, une
- * structure devient du JSON. Deux règles différentes pour deux blocs qui écrivent tous deux dans un champ
- * obligeraient le client à se souvenir de laquelle s'applique.
+ * La valeur rendue par la fonction, telle qu'elle se range dans un champ. Même règle que le bloc « Appel API »
+ * (`valeurPourChamp`) : une valeur simple devient son texte, une structure du JSON.
  */
 function enTexte(v: unknown): string {
   if (v === null || v === undefined) return '';
@@ -49,42 +40,27 @@ function enTexte(v: unknown): string {
 }
 
 /**
- * Exécute `code` avec `valeur` en entrée, et rend ce que la fonction retourne.
+ * Exécute `code` avec `valeur` en entrée, et rend ce que la fonction retourne. Le code est le corps d'une
+ * fonction qui reçoit `valeur` : il doit faire `return`.
  *
- * Le code est le CORPS d'une fonction qui reçoit `valeur` : il doit faire `return`. C'est le contrat le plus
- * familier possible, et l'écran le montre en toutes lettres.
- *
- * ⚠️ ELLE NE LÈVE JAMAIS. Une faute de frappe du client, une exception de son code, un dépassement de temps :
- * tout ressort en `{ok: false, erreur}`. Un parcours de contact ne s'arrête pas parce qu'une transformation
- * a raté, et l'écran de mise au point a besoin du message, pas d'une pile.
+ * Ne lève jamais : faute de frappe, exception, dépassement de temps ressortent en `{ok: false, erreur}`. Un
+ * parcours ne s'arrête pas parce qu'une transformation a raté, et l'écran de mise au point veut le message.
  */
 /**
- * LA SOURCE « MAINTENANT », ET C'EST CELLE QUI EXISTE DÉJÀ.
+ * La source « maintenant ». `now` est la clé déjà utilisée ailleurs (`ParamSource` dans `src/crm/template.ts`,
+ * le sélecteur de variables `web/lib/variables-template.ts`) : pas de seconde notion sous un autre nom.
  *
- * 🔴 PAS DE DOUBLON : `now` EST LA CLÉ DU DÉPÔT, relevée par Julien le 2026-09-14 (« je crois qu'on avait
- * dev un champ système qui donne l'heure et la date actuelle, pas de doublon hein ! »). Elle vit dans
- * `ParamSource` (`src/crm/template.ts`, `{ type: 'now' }`) et dans le sélecteur de variables du front
- * (`web/lib/variables-template.ts`, `sel === 'now'`). En créer une seconde sous un autre nom aurait été le
- * pire cas : deux notions pour la même chose, avec deux orthographes.
+ * La mise en forme diffère exprès : `formatNow` rend « 12/04/2026 » pour un message, que `new Date` ne relit
+ * pas ; le bloc JS reçoit l'ISO UTC, la seule forme qu'un script relit sans ambiguïté.
  *
- * ⚠️ LA MISE EN FORME, ELLE, DIFFÈRE, ET C'EST VOULU. `formatNow` rend « 12/04/2026 », un affichage
- * français destiné à un message ; `new Date('12/04/2026')` ne le relit pas. Le bloc JS reçoit donc l'ISO
- * UTC, la seule forme qu'un script relit sans ambiguïté. Mettre en forme est justement le travail que ce
- * bloc existe pour faire.
- *
- * ⚠️ UN CHAMP PERSONNALISÉ NOMMÉ « now » SERAIT MASQUÉ par celui-ci. Le cas est théorique (aucun espace
- * n'en a, vérifié) et l'écran range la source système dans un groupe à part, mais la précédence est ici :
- * le système gagne.
+ * Un champ personnalisé nommé « now » serait masqué par celui-ci : le système gagne.
  */
 export const CHAMP_MAINTENANT = 'now';
 
 /**
- * Un nom de paramètre JavaScript sûr, ou `null`.
- *
- * 🔴 IL SE VÉRIFIE, IL NE SE SUPPOSE PAS. Le nom vient d'une CLÉ DE CHAMP que le client a créée lui-même :
- * « mail pro », « date-naissance », « prénom » ou « class » sont des clés parfaitement valides côté contact
- * et des paramètres illégaux côté JavaScript. Injecter l'un d'eux produirait une erreur de syntaxe sur un
- * code que le client a pourtant bien écrit, ce qui est le pire message possible.
+ * Un nom de paramètre JavaScript sûr, ou `null`. Le nom vient d'une clé de champ créée par le client
+ * (« mail pro », « date-naissance », « class ») : l'injecter tel quel produirait une erreur de syntaxe sur un
+ * code pourtant correct.
  */
 export function nomDeParametreSur(cle: string | undefined): string | null {
   if (!cle || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(cle)) return null;
@@ -109,40 +85,24 @@ export async function executerFonctionJs(
   const runtime = QuickJS.newRuntime();
   try {
     runtime.setMemoryLimit(opts.memoireOctets ?? MEMOIRE_JS_OCTETS);
-    // 🔴 LE GESTIONNAIRE EST POSÉ TÔT, L'ÉCHÉANCE DÉMARRE TARD, ET LES DEUX MOMENTS SONT DISTINCTS.
-    // Le gestionnaire doit exister avant tout code, c'est lui qui rend une boucle infinie inoffensive.
-    // Mais le BUDGET ne commence qu'au moment où le code du CLIENT part (juste avant `evalCode`).
-    //
-    // 🔴 POURQUOI ÇA COMPTE, ET C'EST MESURÉ. L'échéance démarrait ici, donc la création du contexte et
-    // la construction de l'appel étaient PRISES SUR LES 200 ms DU CLIENT. Machine au repos, tout cela
-    // coûte 0 à 8 ms et rien ne se voit ; machine saturée, le budget est consommé avant que le client
-    // n'ait écrit une ligne, et `return valeur.toUpperCase()` rend « la fonction a dépassé 200 ms ».
-    // Constaté deux fois sur trois passages complets de la suite unitaire le 2026-09-23, avec ce
-    // symptôme exact. En production, cela veut dire qu'un bloc « Fonction JS » parfaitement correct
-    // échoue sur un worker chargé, avec un message qui accuse le code du client.
-    //
-    // ⚠️ `POSITIVE_INFINITY` tant que rien du client ne tourne : aucune interruption ne peut partir
-    // avant que le budget ne soit armé, ce qui est exactement la propriété qui manquait.
+    // Le gestionnaire d'interruption est posé avant tout code (il rend une boucle infinie inoffensive), mais le
+    // budget ne démarre qu'au lancement du code du client : sinon, sur un worker saturé, la création du contexte
+    // mange les 200 ms et un code correct échoue avec un message qui l'accuse. `POSITIVE_INFINITY` d'ici là :
+    // aucune interruption ne peut partir avant que le budget ne soit armé.
     let echeance = Number.POSITIVE_INFINITY;
     runtime.setInterruptHandler(() => Date.now() > echeance);
     const ctx = runtime.newContext();
     try {
-      // La valeur d'entrée voyage en JSON, donc sans aucune référence à un objet de NOTRE tas : c'est la
-      // seule façon de passer une donnée sans ouvrir un pont entre les deux mondes.
+      // La valeur d'entrée voyage en JSON, sans référence à un objet de notre tas : aucun pont entre les deux
+      // mondes.
       const entree = JSON.stringify(valeur);
       /**
-       * 🔴 LA VALEUR ARRIVE SOUS DEUX NOMS, ET `valeur` RESTE TOUJOURS VALIDE. Julien, le 2026-09-14,
-       * après avoir écrit `function (valeur) {return new Date(adresse).getFullYear();}` : « j’ai
-       * l’impression que ce n’est pas dynamique ; il faut que ta function soit plutôt comme ça
-       * function (adresse) ». Il a raison sur l’intention, et l’écran montre désormais le nom du champ.
-       *
-       * ⚠️ MAIS `valeur` NE PEUT PAS DISPARAÎTRE : des blocs écrits avant aujourd’hui l’emploient et
-       * tournent en production. Renommer le paramètre les casserait TOUS, en silence, sur un chemin qu’on
-       * n’emprunte qu’au passage d’un contact. Les deux noms désignent la même donnée.
+       * La valeur arrive sous deux noms : le nom du champ (ce que l'écran montre) et `valeur`, que des blocs
+       * existants emploient et qu'on ne peut donc pas retirer sans les casser en silence.
        */
       const alias = nomDeParametreSur(opts.nomParametre);
-      // Le budget du client commence ICI, et il couvre la compilation de SON code comme son exécution :
-      // `evalCode` fait les deux, et un programme pathologique à compiler est aussi son affaire.
+      // Le budget du client commence ici et couvre la compilation de son code comme son exécution (`evalCode`
+      // fait les deux).
       echeance = Date.now() + (opts.delaiMs ?? DELAI_JS_MS);
       const res = ctx.evalCode(alias
         ? `(function(valeur, ${alias}){
@@ -157,8 +117,8 @@ ${code}
         const msg = details !== null && typeof details === 'object' && 'message' in details
           ? String((details as { message: unknown }).message)
           : String(details);
-        // Le dépassement de temps ressort comme une erreur d'interruption : on le NOMME, sinon le client lit
-        // un message interne qui ne lui dit pas quoi corriger.
+        // Le dépassement de temps ressort comme une erreur d'interruption : on le nomme, sinon le client lit un
+        // message interne qui ne lui dit pas quoi corriger.
         const clair = Date.now() > echeance ? `la fonction a dépassé ${opts.delaiMs ?? DELAI_JS_MS} ms` : msg;
         return { ok: false, valeur: '', erreur: clair };
       }

@@ -1,22 +1,13 @@
 /**
- * CE QUI A CHANGÉ DANS LES RÉGLAGES D'UN ROBOT, ET CE QUI A ÉTÉ EFFACÉ.
+ * Ce qui a changé dans les réglages d'un robot, et ce qui a été effacé.
  *
- * 🔴 IL EXISTE PARCE QUE META N'A PAS DE CORBEILLE. Les FAQ, compétences et sites d'un Meta Business Agent
- * vivent CHEZ LUI : rien n'est stocké chez nous, il n'y a ni historique ni annulation. Une suppression par
- * erreur est définitive, et ces lignes en sont le seul exemplaire.
- *
- * 🔴 CE N'EST PAS `audit_log`, ET LA RAISON EST MESURÉE. Ce journal-là conviendrait par sa forme
- * (`action`, `target_kind`, `target_id`, `detail` jsonb, `actor_email` dénormalisé), mais il est PURGÉ :
- * `PgAuditStore.purgeOlderThan`, deux ans par défaut. La rétention demandée ici est illimitée. Y ranger cet
- * historique aurait été une promesse démentie par un `delete` écrit dans un autre fichier.
- *
- * ⚠️ LES DEUX JOURNAUX COEXISTENT et ne répondent pas à la même question : `audit_log` est la PREUVE qu'une
- * purge RGPD a eu lieu et de qui l'a demandée ; celui-ci dit ce qu'un robot savait hier et ne sait plus.
- *
- * PUR : aucune IO. L'implémentation Postgres vit dans `./historique.pg.ts`.
+ * Meta n'a pas de corbeille : les FAQ, compétences et sites d'un Meta Business Agent vivent chez lui, sans
+ * historique ni annulation. Ces lignes sont le seul exemplaire d'un contenu supprimé.
+ * 🔴 Ce n'est pas `audit_log`, qui est purgé (deux ans) : la rétention voulue ici est illimitée.
+ * Module pur ; l'implémentation Postgres vit dans `./historique.pg.ts`.
  */
 
-/** Ce sur quoi une ligne porte. Miroir de rien en base (`element` est un `text` libre), mais la liste. */
+/** Ce sur quoi une ligne porte (`element` est un `text` libre en base). */
 export const ELEMENTS = [
   'business_info', 'faq', 'competence', 'site', 'fichier', 'outil', 'activation',
   'fiche_agent', 'connaissance',
@@ -35,21 +26,14 @@ export interface LigneHistorique {
   surfaceId: string | null;
   element: Element;
   operation: Operation;
-  /**
-   * L'identifiant chez Meta, ou la clé du champ modifié.
-   *
-   * ⚠️ INDICATIF, JAMAIS UNE RÉFÉRENCE : un identifiant Meta ne survit pas à la suppression de l'objet
-   * qu'il désigne. Il sert à rapprocher deux lignes entre elles, pas à retrouver quoi que ce soit.
-   */
+  /** L'identifiant chez Meta, ou la clé du champ modifié. Indicatif, jamais une référence : il ne survit pas à la
+   *  suppression de l'objet. */
   cible: string | null;
   /** Ce qu'on montre à l'écran, déjà rédigé : « FAQ : horaires du dimanche ». */
   libelle: string;
   /**
-   * L'état AVANT.
-   *
-   * 🔴 OBLIGATOIRE POUR UNE SUPPRESSION : c'est le seul exemplaire du contenu effacé. La garde est ici ET
-   * dans le schéma, et les deux sont voulues : celle-ci donne une erreur lisible au développeur, celle-là
-   * est infranchissable.
+   * L'état avant. 🔴 Obligatoire pour une suppression : seul exemplaire du contenu effacé (garde ici et dans le
+   * schéma).
    */
   avant: unknown;
   apres: unknown;
@@ -81,10 +65,8 @@ export interface HistoriqueStore {
 export const MAX_LIGNES_HISTORIQUE = 500;
 
 /**
- * CE QUI INTERDIT D'ÉCRIRE CETTE LIGNE, en français, ou `null` si rien ne l'interdit.
- *
- * 🔴 ELLE REND UN MESSAGE PLUTÔT QU'UN BOOLÉEN, comme `problemeDeChaine` : l'appelant est parfois une route
- * qui doit répondre en 4xx, et « false » ne se transmet pas à un utilisateur. PURE, donc éprouvable sans base.
+ * Ce qui interdit d'écrire cette ligne, en français, ou `null`. Un message plutôt qu'un booléen : une route doit
+ * pouvoir le rendre en 4xx. Pure.
  */
 export function problemeDeLigne(l: LigneHistorique): string | null {
   if (l.operation === 'suppression' && (l.avant === null || l.avant === undefined)) {

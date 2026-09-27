@@ -10,7 +10,7 @@ export interface NumeroDirect {
   description: string;
   /** Nom libre donné dans le panneau : sert à savoir à quoi le numéro est déjà affecté. */
   nom: string;
-  /** ⚠️ Faux sur les numéros français : ils sont VOIX seule, l'OTP par SMS est donc exclu. */
+  /** Faux sur les numéros français, voix seule : l'OTP par SMS est exclu. */
   recoitSms: boolean;
   fraisMensuel: number;
   devise: string;
@@ -22,21 +22,18 @@ export interface AppelEntrant {
   callId: string;
   /** Numéro appelant (Meta, pour un appel d'OTP). */
   appelant: string;
-  /** Numéro appelé, c'est-à-dire NOTRE numéro. */
+  /** Numéro appelé, c'est-à-dire notre numéro. */
   destination: string;
   /** `answered`, `no answer`, `busy`... */
   etat: string;
-  /** Un enregistrement existe et peut être transcrit. Passe à vrai à la FIN de l'appel, pas pendant. */
+  /** Un enregistrement existe et peut être transcrit. Passe à vrai à la fin de l'appel, pas pendant. */
   enregistre: boolean;
   debut: string;
 }
 
 /**
- * Transcription d'un enregistrement d'APPEL TÉLÉPHONIQUE (`GET /v1/speech_recognition/`), par Zadarma.
- *
- * ⚠️ Ne pas confondre avec `TranscriptionAudio` de `src/agent/llm/transcription.ts`, qui transcrit un
- * FICHIER audio reçu sur WhatsApp par un modèle. Deux fournisseurs, deux entrées (identifiant d'appel contre
- * octets), deux usages : rien à mettre en commun.
+ * Transcription d'un enregistrement d'appel téléphonique (`GET /v1/speech_recognition/`), par Zadarma. À ne pas
+ * confondre avec `TranscriptionAudio` (`src/agent/llm/transcription.ts`), qui transcrit un audio WhatsApp.
  */
 export interface Transcription {
   /** La reconnaissance est terminée et le texte est exploitable. */
@@ -72,12 +69,9 @@ function horodatage(d: Date): string {
 }
 
 /**
- * Appels ENTRANTS d'une fenêtre récente.
- *
- * ⚠️ La fenêtre est volontairement LARGE (le paramètre `heures`), et elle ne sert JAMAIS à identifier « le »
- * bon appel : le fuseau horaire du compte Zadarma n'est pas garanti être celui du serveur, donc un filtrage
- * fin sur l'heure sélectionnerait le mauvais appel, ou aucun. L'identification se fait par différence avec un
- * instantané pris avant de déclencher l'appel (cf. `capturerOtp`), ce qui est insensible au fuseau.
+ * Appels entrants d'une fenêtre récente, volontairement large : elle ne sert jamais à identifier le bon appel, le
+ * fuseau du compte Zadarma n'étant pas garanti. L'identification se fait par différence avec un instantané pris
+ * avant l'appel (`capturerOtp`).
  */
 export async function appelsEntrantsRecents(client: ZadarmaClient, maintenant: number, heures = 6): Promise<AppelEntrant[]> {
   const res = (await client.call('GET', '/v1/statistics/pbx/', {
@@ -105,9 +99,8 @@ export async function demanderTranscription(client: ZadarmaClient, callId: strin
 }
 
 /**
- * Relit une transcription. `recognitionStatus` vaut « recognized » quand c'est prêt ; tout autre état
- * (« in progress », « ready for recognize », « not available », « error ») rend `pret:false`, l'appelant
- * réessaie ou abandonne.
+ * Relit une transcription. Prête quand `recognitionStatus` vaut « recognized » ; tout autre état rend
+ * `pret:false`, l'appelant réessaie ou abandonne.
  */
 export async function lireTranscription(client: ZadarmaClient, callId: string, langue = 'fr-FR'): Promise<Transcription> {
   const res = (await client.call('GET', '/v1/speech_recognition/', { call_id: callId, lang: langue })) as {
@@ -116,8 +109,7 @@ export async function lireTranscription(client: ZadarmaClient, callId: string, l
     words?: unknown;
   };
   const etat = str(res?.recognitionStatus);
-  // Zadarma rend soit des phrases, soit des mots (paramètre `return`). On accepte les deux plutôt que de
-  // parier sur un format : une transcription perdue parce qu'elle est arrivée en « mots » serait absurde.
+  // Zadarma rend des phrases ou des mots (paramètre `return`) : on accepte les deux.
   const phrases = (Array.isArray(res?.phrases) ? res.phrases : []) as Array<Record<string, unknown>>;
   const mots = (Array.isArray(res?.words) ? res.words : []) as Array<Record<string, unknown>>;
   const texte = phrases.length > 0

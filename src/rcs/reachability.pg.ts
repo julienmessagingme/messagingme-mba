@@ -1,8 +1,8 @@
 import type { Pool } from 'pg';
 import type { ReachabilityStore } from './reachability';
 
-/** Cache de joignabilité RCS en base (table `rcs_capabilities_cache`, migration 0057). Clé (agent, numéro) :
- *  un même numéro peut être joignable pour un agent lancé et pas pour un agent encore en test. */
+/** Cache de joignabilité RCS en base (`rcs_capabilities_cache`). Clé (agent, numéro) : un même numéro peut
+ *  être joignable pour un agent lancé et pas pour un agent encore en test. */
 export class PgReachabilityStore implements ReachabilityStore {
   constructor(private readonly pool: Pool) {}
 

@@ -2,11 +2,9 @@ import type { Pool } from 'pg';
 import type { RcsOptoutStore } from './sender';
 
 /**
- * Agents RCS d'un tenant (table `rcs_agents`, migration 0057).
- *
- * C'est ce mapping qui porte l'isolation multi-tenant du canal : le partenaire RBM est GLOBAL (MessagingMe,
- * une seule clé de service account), donc rien d'autre n'empêche un tenant d'envoyer sous la marque d'un
- * autre. Toute résolution d'agent passe par ici, scopée tenant, sans exception.
+ * Agents RCS d'un tenant (`rcs_agents`). 🔴 Ce mapping porte l'isolation multi-tenant du canal : le
+ * partenaire RBM est global (une seule clé de service account), rien d'autre n'empêche un tenant d'envoyer
+ * sous la marque d'un autre. Toute résolution d'agent passe par ici, scopée tenant.
  */
 export class PgRcsAgentStore {
   constructor(private readonly pool: Pool) {}
@@ -31,7 +29,7 @@ export class PgRcsAgentStore {
   }
 
   /**
-   * Clé d'API du canal RCS de ce tenant, DÉCHIFFRÉE. null = pas de clé propre -> l'appelant retombe sur celle
+   * Clé d'API du canal RCS de ce tenant, déchiffrée. null = pas de clé propre : l'appelant retombe sur celle
    * du serveur. Le déchiffrement est injecté : ce store ne connaît pas la clé maîtresse.
    */
   async apiKeyFor(tenantId: string, decrypt: (enc: string) => string): Promise<string | null> {
@@ -44,15 +42,15 @@ export class PgRcsAgentStore {
     try {
       return decrypt(enc);
     } catch {
-      // Clé illisible (clé maîtresse changée, valeur corrompue) : on ne fait PAS semblant d'avoir une clé.
-      // L'appelant retombera sur celle du serveur, et l'écran d'activation invitera à la ressaisir.
+      // Clé illisible (clé maîtresse changée, valeur corrompue) : on ne fait pas semblant d'avoir une clé ;
+      // l'appelant retombe sur celle du serveur, et l'écran d'activation invite à la ressaisir.
       return null;
     }
   }
 
   /**
    * Code d'URL des rappels smsmode de ce tenant (DLR + MO). null = pas d'agent, donc aucune adresse à donner
-   * au fournisseur. Lu à CHAQUE envoi, comme la clé : une réactivation change le code, et un message parti
+   * au fournisseur. Lu à chaque envoi, comme la clé : une réactivation change le code, et un message parti
    * après doit porter la nouvelle adresse.
    */
   async webhookCodePour(tenantId: string): Promise<string | null> {
@@ -64,9 +62,9 @@ export class PgRcsAgentStore {
   }
 
   /**
-   * Workspace et agent portés par un code d'URL de rappel. C'EST la clé d'autorisation du webhook smsmode :
-   * le tenant vient du code, JAMAIS du corps de la requête (qu'un tiers peut forger). Le `agent_id` rendu
-   * sert à la deuxième garde : le canal annoncé dans le corps doit être celui-là.
+   * Workspace et agent portés par un code d'URL de rappel. 🔴 C'est la clé d'autorisation du webhook smsmode :
+   * le tenant vient du code, jamais du corps de la requête (qu'un tiers peut forger). L'`agent_id` rendu sert
+   * à la deuxième garde : le canal annoncé dans le corps doit être celui-là.
    */
   async parWebhookCode(code: string): Promise<{ tenantId: string; agentId: string } | null> {
     const res = await this.pool.query<{ tenant_id: string; agent_id: string }>(
@@ -77,7 +75,7 @@ export class PgRcsAgentStore {
     return r ? { tenantId: r.tenant_id, agentId: r.agent_id } : null;
   }
 
-  /** Le tenant a-t-il au moins un agent RCS ? C'est CE test qui allume ou éteint le canal dans l'interface :
+  /** Le tenant a-t-il au moins un agent RCS ? C'est ce test qui allume ou éteint le canal dans l'interface :
    *  pas de drapeau à basculer à la main, l'outil suit l'état réel du dépôt d'agent. */
   async hasAgent(tenantId: string): Promise<boolean> {
     const res = await this.pool.query('select 1 from rcs_agents where tenant_id = $1 limit 1', [tenantId]);
@@ -104,7 +102,7 @@ export class PgRcsAgentStore {
     } : null;
   }
 
-  /** Active (ou réactive) le canal RCS d'un workspace avec une clé DÉJÀ vérifiée et chiffrée. */
+  /** Active (ou réactive) le canal RCS d'un workspace avec une clé déjà vérifiée et chiffrée. */
   async activer(
     tenantId: string,
     canal: { channelId: string; agentName: string },
@@ -121,21 +119,16 @@ export class PgRcsAgentStore {
     );
   }
 
-  /** Désactive le canal : la ligne est SUPPRIMÉE, donc `hasAgent` redevient faux et l'interface s'éteint. */
+  /** Désactive le canal : la ligne est supprimée, donc `hasAgent` redevient faux et l'interface s'éteint. */
   async desactiver(tenantId: string): Promise<boolean> {
     const res = await this.pool.query('delete from rcs_agents where tenant_id = $1', [tenantId]);
     return (res.rowCount ?? 0) > 0;
   }
 
   /**
-   * Garde le DERNIER rappel reçu du fournisseur, tel quel.
-   *
-   * 🔴 Écrit avant toute tentative de lecture, et en best-effort. Le 2026-08-24, un rappel a été rejeté par
-   * notre parseur et la seule trace était « non exploitable » SANS le corps : impossible de savoir ce que
-   * smsmode avait envoyé sans redéployer une version qui journalise, puis faire recliquer quelqu'un. Même
-   * remède que `webhooks.last_payload` pour les webhooks entrants.
-   *
-   * UN SEUL corps conservé, écrasé au suivant : c'est de la donnée tierce, potentiellement personnelle.
+   * Garde le dernier rappel reçu du fournisseur, tel quel, écrit avant toute lecture et en best-effort : sans
+   * lui, un rappel rejeté par notre parseur ne laisse aucune trace de ce que smsmode a envoyé. Un seul corps
+   * conservé, écrasé au suivant : c'est de la donnée tierce, potentiellement personnelle.
    */
   async noterRappel(tenantId: string, corps: unknown): Promise<void> {
     await this.pool.query(
@@ -156,20 +149,16 @@ export class PgRcsAgentStore {
 }
 
 /**
- * Opt-out RCS d'un contact (`contacts.rcs_optout_at`, migration 0057).
- *
- * `wa_id` est un E.164 en chiffres nus OU avec `+` selon le chemin d'appel : on tente les deux formes, comme
- * la réconciliation de l'inbox. Un opt-out qu'on ne retrouve pas parce que le numéro est formaté autrement,
- * c'est un STOP non respecté.
+ * Opt-out RCS d'un contact (`contacts.rcs_optout_at`). 🔴 Le numéro arrive en chiffres nus ou avec `+` selon
+ * le chemin : on tente les deux formes, car un opt-out qu'on ne retrouve pas, c'est un STOP non respecté.
  */
 export class PgRcsOptoutStore implements RcsOptoutStore {
   constructor(private readonly pool: Pool) {}
 
   async isOptedOut(tenantId: string, e164: string): Promise<boolean> {
-    // Comparaisons EXACTES sur la colonne, jamais une fonction dessus : `regexp_replace(phone_e164, …)`
-    // rendait inutilisable l'index unique (tenant_id, phone_e164) de 0001, donc un balayage complet des
-    // contacts du tenant PAR DESTINATAIRE. Sur une campagne de 5 000 numéros, 5 000 balayages.
-    // Les deux formes de stockage sont couvertes par une liste de valeurs, ce qui garde l'index.
+    // Comparaisons exactes sur la colonne, jamais une fonction dessus : `regexp_replace(phone_e164, …)` rendrait
+    // inutilisable l'index unique (tenant_id, phone_e164), donc un balayage des contacts par destinataire. La
+    // liste de deux valeurs couvre les deux formes et garde l'index.
     const nu = e164.replace(/[^0-9]/g, '');
     const res = await this.pool.query(
       `select 1 from contacts
@@ -181,12 +170,9 @@ export class PgRcsOptoutStore implements RcsOptoutStore {
   }
 
   /**
-   * Enregistre un STOP reçu en RCS. Idempotent : `rcs_optout_at is null` garde la DATE du premier refus, qui
-   * est la date qui compte si l'opérateur ou la CNIL la demande.
-   *
-   * Ne CRÉE pas le contact : un STOP venu d'un numéro qu'on n'a jamais enregistré ne peut pas être en train
-   * de recevoir nos campagnes (elles partent de la base de contacts). Rendre `false` dit exactement cela à
-   * l'appelant, qui le journalise, au lieu de fabriquer une fiche vide pour un refus.
+   * Enregistre un STOP reçu en RCS. Idempotent : `rcs_optout_at is null` garde la date du premier refus, celle
+   * que l'opérateur ou la CNIL demanderait. Ne crée pas le contact : un numéro jamais enregistré ne reçoit pas
+   * nos campagnes, et `false` le dit à l'appelant plutôt que de fabriquer une fiche vide.
    */
   async markOptedOut(tenantId: string, e164: string): Promise<boolean> {
     const nu = e164.replace(/[^0-9]/g, '');

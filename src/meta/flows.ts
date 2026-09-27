@@ -30,9 +30,8 @@ export class FlowJsonInvalidError extends Error {
 }
 
 /**
- * Client des WhatsApp Flows (niveau WABA). Créer / publier / lister via l'API Graph. `fetchImpl`
- * injectable pour les tests. Ne lève que MetaApiError (réseau/HTTP) ou FlowJsonInvalidError (validation).
- * Calque de MetaTemplateClient : la génération du flow_json est interne (buildFlowScreens).
+ * Client des WhatsApp Flows (niveau WABA) : créer, publier, lister via l'API Graph. Ne lève que MetaApiError
+ * (réseau, HTTP) ou FlowJsonInvalidError (validation) ; la génération du flow_json est interne (buildFlowScreens).
  */
 export class MetaFlowClient {
   constructor(
@@ -47,7 +46,7 @@ export class MetaFlowClient {
     return appelGraph(this.fetchImpl, this.token, url, init);
   }
 
-  /** POST /{waba}/flows — name + categories:['LEAD_GENERATION'] + flow_json (STRING). Statut initial DRAFT. */
+  /** POST /{waba}/flows : name + categories:['LEAD_GENERATION'] + flow_json (en chaîne). Statut initial DRAFT. */
   async create(wabaId: string, input: CreateFlowInput): Promise<{ id: string; status: string }> {
     const flowJson = buildFlowScreens(input.name, input.screens, this.flowJsonVersion, input.ref, input.cta);
     const json = (await this.call(`${this.baseUrl}/${this.version}/${wabaId}/flows`, {
@@ -61,10 +60,9 @@ export class MetaFlowClient {
   }
 
   /**
-   * Édite le flow_json d'un flow DRAFT : POST /{flowId}/assets en MULTIPART (asset_type=FLOW_JSON,
-   * name=flow.json, file=<json>). ⚠️ Diffère du create (JSON inline) : /assets EXIGE du multipart/form-data
-   * (vérifié live). Ne PAS forcer content-type (le runtime pose le boundary). Un flow PUBLISHED est immuable
-   * chez Meta (refusé) : la route amont doit garantir status=DRAFT (409 sinon). Relit validation_errors.
+   * Édite le flow_json d'un flow DRAFT : `POST /{flowId}/assets` en multipart (asset_type=FLOW_JSON,
+   * name=flow.json), là où la création passe le JSON inline. Ne pas forcer le content-type (le runtime pose le
+   * boundary). Un flow PUBLISHED est immuable chez Meta : la route amont garantit status=DRAFT.
    */
   async updateDraft(flowId: string, input: CreateFlowInput): Promise<void> {
     const flowJson = buildFlowScreens(input.name, input.screens, this.flowJsonVersion, input.ref, input.cta);
@@ -80,23 +78,22 @@ export class MetaFlowClient {
     if (errs.length > 0) throw new FlowJsonInvalidError(errs.map((e) => e.message ?? e.error ?? 'erreur'));
   }
 
-  /** POST /{flow}/publish — DRAFT -> PUBLISHED. Irréversible côté Meta. */
+  /** POST /{flow}/publish : DRAFT -> PUBLISHED, irréversible côté Meta. */
   async publish(flowId: string): Promise<void> {
     await this.call(`${this.baseUrl}/${this.version}/${flowId}/publish`, { method: 'POST' });
   }
 
-  /** DELETE /{flow} — supprime un flow DRAFT (Meta n'autorise la suppression QUE sur un DRAFT). */
+  /** DELETE /{flow} : Meta n'autorise la suppression que sur un DRAFT. */
   async delete(flowId: string): Promise<void> {
     await this.call(`${this.baseUrl}/${this.version}/${flowId}`, { method: 'DELETE' });
   }
 
-  /** POST /{flow}/deprecate — déprécie un flow PUBLISHED (immuable : pas de delete, on le retire de l'usage). */
+  /** POST /{flow}/deprecate : retire de l'usage un flow PUBLISHED, qui ne se supprime pas. */
   async deprecate(flowId: string): Promise<void> {
     await this.call(`${this.baseUrl}/${this.version}/${flowId}/deprecate`, { method: 'POST' });
   }
 
-  /** GET /{waba}/flows — suit paging.next (calque templates.list). Non branché sur la route GET (qui
-   *  sert le store local) ; utile pour un futur script de réconciliation/ops. */
+  /** GET /{waba}/flows, en suivant paging.next. Non branché sur la route GET, qui sert le store local. */
   async list(wabaId: string): Promise<FlowSummary[]> {
     const out: FlowSummary[] = [];
     let next: string | null = `${this.baseUrl}/${this.version}/${wabaId}/flows?fields=id,name,status,categories&limit=100`;

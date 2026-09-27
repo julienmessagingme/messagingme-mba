@@ -16,15 +16,9 @@ export interface HubspotPipelinesRouteDeps {
 const estNonConnecte = (err: unknown): boolean => err instanceof HubspotServiceError && err.status === 404;
 
 /**
- * Étapes de deal du portail HubSpot, pour configurer une automation « étape de deal » avec des LIBELLÉS plutôt
- * qu'avec des identifiants opaques. Lecture seule, admin-only (comme le reste de la configuration).
- *
- * Volontairement NON gardée par le réglage « Campagnes via données HubSpot » : ce réglage gouverne l'import de
- * contacts depuis les listes, un tout autre pouvoir. Une automation d'étape n'importe personne et n'envoie rien
- * par elle-même, et la brancher sur ce réglage rendrait le menu vide pour un portail parfaitement connecté.
- *
- * Un portail non lié rend `{connected:false}` en 200 : l'écran affiche « connecte HubSpot d'abord », pas une
- * erreur rouge. Toute autre panne remonte (500), on ne fait pas passer une indisponibilité pour une absence.
+ * Étapes de deal du portail HubSpot, pour configurer une automation « étape de deal » par libellés. Lecture seule,
+ * admin. Non gardée par le réglage « Campagnes via données HubSpot », qui gouverne l'import de contacts : une
+ * automation d'étape n'importe ni n'envoie rien. Portail non lié : 200 `{connected:false}` ; toute autre panne remonte.
  */
 export function registerHubspotPipelines(app: FastifyInstance, deps: HubspotPipelinesRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };

@@ -1,41 +1,25 @@
 /**
  * Distinguer le clic d'un destinataire d'un appel automatique, au moment de compter.
  *
- * MESURÉ le 2026-08-21 sur le premier lien tracé de la production : 70 requêtes sur le lien d'un template
- * qui n'avait JAMAIS été envoyé à personne. 59 portaient l'agent `facebookexternalhit` (le robot
- * d'exploration de Meta) ; les 11 autres venaient de vrais navigateurs mobiles, mais arrivaient de Facebook
- * (référent `*.facebook.com`, paramètre `fbclid`), soit l'équipe de revue de Meta qui ouvre le bouton
- * pendant l'examen du template. Zéro destinataire, par construction.
+ * Tout template portant un bouton URL est exploré par le robot de Meta (`facebookexternalhit`) puis ouvert par
+ * son équipe de revue (référent `*.facebook.com`, paramètre `fbclid`) avant son premier envoi. Sans ce filtre,
+ * chaque campagne démarre avec un compteur déjà faux.
  *
- * Autrement dit : TOUT template portant un bouton URL est exploré puis cliqué par Meta AVANT son premier
- * envoi. Sans ce filtre, chaque campagne démarre avec un compteur déjà faux, et personne ne peut deviner
- * pourquoi.
- *
- * ⚠️ Ce filtre ne décide QUE du comptage. La redirection reste inconditionnelle : un lien déjà livré doit
- * fonctionner pour tout le monde, robot compris. Voir `src/http/links.ts`.
- *
- * ⚠️ RGPD : rien de tout cela n'est enregistré. On lit l'en-tête, on décide, on l'oublie. La table
- * `tracked_link_clicks` ne contient toujours ni agent, ni adresse IP, ni référent (migration 0066).
+ * Ce filtre ne décide que du comptage : la redirection reste inconditionnelle, robot compris (`src/http/links.ts`).
+ * RGPD : on lit l'en-tête, on décide, on l'oublie. `tracked_link_clicks` ne garde ni agent, ni IP, ni référent.
  */
 
 /**
  * Marqueurs d'agents non humains, en minuscules.
  *
- * Le premier est celui qu'on a réellement mesuré ; les suivants sont le fond de robots que reçoit toute URL
- * publique. La liste est délibérément ÉTROITE : un faux positif ici efface le clic d'un vrai client, en
- * silence et définitivement, ce qui est pire que de laisser passer un robot exotique.
- *
- * 🔴 Chaque marqueur porte son DÉLIMITEUR (`/`, `-`, ou le mot entier). Un marqueur nu testé en sous-chaîne
- * libre attrape de vrais téléphones : « bot » seul écarte tous les appareils **CUBOT**, une marque
- * d'Android vendue en Europe, dont le nom de modèle figure dans le user-agent. C'est exactement le faux
- * positif que la liste étroite était censée éviter.
- *
- * `whatsapp` n'y est PAS. Un lien tracé vit sur un BOUTON, et Meta ne génère pas d'aperçu pour un bouton :
- * le cas ne se présente donc pas. L'y ajouter risquerait au contraire d'effacer les clics venus du
+ * Liste étroite : un faux positif efface le clic d'un vrai client, en silence et définitivement.
+ * Chaque marqueur porte son délimiteur (`/`, `-` ou le mot entier) : « bot » seul en sous-chaîne écarterait les
+ * téléphones CUBOT, dont le modèle figure dans le user-agent.
+ * `whatsapp` n'y est pas : Meta ne génère pas d'aperçu pour un bouton, et on effacerait les clics venus du
  * navigateur intégré de WhatsApp.
  */
 const AGENTS_AUTOMATIQUES = [
-  'facebookexternal', // couvre `facebookexternalhit` ET `facebookexternalua`, tous deux mesurés
+  'facebookexternal', // couvre `facebookexternalhit` et `facebookexternalua`
   // Robots d'indexation : nom complet, jamais le suffixe `bot` seul.
   'googlebot',
   'bingbot',
@@ -87,15 +71,14 @@ function vientDeFacebook(referer: string): boolean {
 /**
  * Vrai si ce clic ne doit pas être compté.
  *
- * Trois signaux, du plus fiable au plus faible, et il suffit d'UN pour écarter :
+ * Trois signaux, du plus fiable au plus faible, et il suffit d'un pour écarter :
  *  1. l'agent se déclare robot ;
  *  2. le référent est Facebook (revue de template, jamais un destinataire) ;
  *  3. l'URL porte un `fbclid`, que Facebook ajoute en sortie de son redirecteur.
  */
 export function estClicAutomatique(signaux: SignauxClic): boolean {
-  // Un agent ABSENT ne disqualifie pas. C'est tentant (tout navigateur en envoie un), mais entre effacer le
-  // clic d'un vrai client et laisser passer un robot muet, le premier est pire : il est invisible et
-  // définitif. Tous les appels automatiques mesurés se déclaraient, eux.
+  // Un agent absent ne disqualifie pas : entre effacer le clic d'un vrai client et laisser passer un robot
+  // muet, le premier est pire (invisible et définitif).
   const agent = (signaux.userAgent ?? '').toLowerCase();
   if (agent !== '' && AGENTS_AUTOMATIQUES.some((m) => agent.includes(m))) return true;
 

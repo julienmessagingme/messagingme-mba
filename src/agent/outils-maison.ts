@@ -3,18 +3,12 @@ import type { SortieAgent } from './agent-store';
 import { paramsOutil, toolParamsToJsonSchema, type ParamOutil, type SchemaObjet } from './llm/tool-schema';
 
 /**
- * Le CATALOGUE des outils maison, et ce que le modèle voit d'un outil.
+ * Le catalogue des outils maison, et ce que le modèle voit d'un outil.
  *
- * 🔴 POURQUOI UN CATALOGUE ET NON UN FORMULAIRE LIBRE. Le comportement d'un outil maison vient de son
- * `binding.handler`, et les seuls handlers qui existent sont ceux de `resolvers/mba.ts`. Une console qui
- * laisserait écrire un handler quelconque produirait un outil ACTIF, exposé au modèle, et qui refuse à chaque
- * appel : le client verrait un agent qui « ne fait rien » sans aucune trace lisible. Le client choisit donc
- * dans cette liste, et ne compose que ce qui lui appartient vraiment : le nom, les mots, et les valeurs
- * autorisées là où on lui en laisse.
- *
- * ⚠️ Ce fichier est le miroir de `HANDLERS` dans `src/agent/resolvers/mba.ts`. `tests/agent-outils-maison.test.ts`
- * casse si l'un porte un handler que l'autre ignore : un handler ajouté au résolveur sans entrée ici serait
- * inatteignable, et une entrée ici sans handler serait un outil mort-né.
+ * Un catalogue plutôt qu'un formulaire libre : le comportement vient de `binding.handler`, et seuls existent
+ * les handlers de `resolvers/mba.ts`. Un handler libre produirait un outil actif qui refuse à chaque appel.
+ * Le client ne compose que le nom, les mots et les valeurs autorisées. Miroir de `HANDLERS`, tenu par
+ * `tests/agent-outils-maison.test.ts`.
  */
 
 /** Ce que le client peut composer sur un paramètre, en plus de rien. */
@@ -23,7 +17,7 @@ export type EditionParam =
   | 'aucune'
   /** Le client liste les valeurs autorisées (les codes de ses blocs, les noms de ses champs). */
   | 'enum'
-  /** L'énumération DÉRIVE de la fiche de l'agent et n'est jamais stockée (voir `outilsExposes`). */
+  /** L'énumération dérive de la fiche de l'agent et n'est jamais stockée (voir `outilsExposes`). */
   | 'derive_des_sorties';
 
 export interface ParamCatalogue extends ParamOutil {
@@ -51,25 +45,16 @@ const P = (
 });
 
 /**
- * Les sept outils maison.
- *
- * `envoyer_bloc` est déclaré IRRÉVERSIBLE, et c'est un choix, pas une classification par défaut : un message
- * parti chez un contact ne se rappelle pas, et il est facturé. Le tronc commun refuse alors l'appel tant que
- * le client n'a pas coché l'autonomie sur CET outil (`src/agent/executor.ts`). C'est ce qui rend ce drapeau
- * vivant dès L1, au lieu d'un réglage qui n'aurait servi qu'aux familles HTTP et MCP.
+ * Les sept outils maison. `envoyer_bloc` est déclaré irréversible : un message parti ne se rappelle pas et
+ * il est facturé, donc le tronc commun le refuse tant que le client n'a pas coché l'autonomie sur cet outil.
  */
 export const OUTILS_MAISON: readonly OutilCatalogue[] = [
   {
     handler: 'terminer',
     nomDefaut: 'mba_terminer',
     titre: { fr: 'Terminer par une règle d’arrêt', en: 'Finish through a stop rule' },
-    // ⚠️ LE TEXTE NOMME MAINTENANT L'ONGLET, parce que « un de ses aboutissements » ne disait pas D'OÙ ils
-    // viennent. Question de Julien, le 2026-09-11 : « est-on d'accord que les conditions d'aboutissement dont
-    // tu parles sont définies dans Règles d'arrêt ? ». Oui, et c'est mécanique : le paramètre `sortie` est en
-    // `derive_des_sorties`, donc son énumération EST la liste des règles d'arrêt de la fiche, jamais stockée
-    // ni recopiée. L'écran le disait déjà sous le champ ; la description, elle, ne le disait pas.
-    // ⚠️ Ce texte est le DÉFAUT d'un outil NEUF : les outils déjà posés gardent leur copie en base, et c'est
-    // voulu (le client peut réécrire ces mots, ce sont eux qui pilotent l'appel de fonction).
+    // Le texte nomme l'onglet des règles d'arrêt : le paramètre `sortie` en dérive son énumération. C'est le
+    // défaut d'un outil neuf ; les outils déjà posés gardent leur copie, que le client peut réécrire.
     description: {
       fr: 'À appeler quand la conversation a atteint un de ses aboutissements, c’est-à-dire une des règles d’arrêt de l’onglet « Objectif et transferts ». Rend la main au scénario par la sortie choisie.',
       en: 'Call when the conversation has reached one of its outcomes, that is one of the stop rules from the “Objective and handovers” tab. Hands back to the scenario through the chosen output.',
@@ -161,8 +146,8 @@ export const OUTILS_MAISON: readonly OutilCatalogue[] = [
     },
     risk: 'write',
     params: [
-      // ⚠️ La CLÉ vient du modèle : une injection peut viser le champ sur lequel une condition du scénario
-      // branche. L'énumération fermée est la parade, et c'est pour ça que l'écran la met en avant.
+      // La clé vient du modèle : une injection peut viser le champ sur lequel une condition du scénario
+      // branche. L'énumération fermée est la parade, d'où sa mise en avant à l'écran.
       P(
         'cle', 'Le champ à renseigner.', 'enum',
         { fr: 'Les champs que cet agent a le droit d’écrire. À remplir : sans liste, il peut écrire dans n’importe lequel.', en: 'The fields this agent may write. Fill it in: without a list, it can write into any of them.' },
@@ -182,12 +167,9 @@ export const OUTILS_MAISON: readonly OutilCatalogue[] = [
       fr: 'Ne pas appeler pour dire ce qu’un message écrit dirait aussi bien.',
       en: 'Do not call for something a written message would say just as well.',
     },
-    // Un message parti chez un contact ne se rappelle pas, et il est facturé : c'est la définition même de
-    // l'irréversible, et le tronc commun le refuse tant que le client n'a pas coché l'autonomie.
+    // Irréversible : un message parti ne se rappelle pas, et il est facturé.
     risk: 'irreversible',
-    // ⚠️ L'AIDE NE DEMANDE PLUS DE TAPER UN CODE. Elle disait « les codes de blocs [...] en nod_… », qui sont
-    // justes et que le client ne voit NULLE PART : la console les lui fait cocher dans une liste depuis le
-    // 2026-09-11 (`ChoixDeBlocs`). Un texte qui redemanderait la saisie rouvrirait l'impasse.
+    // L'aide fait cocher les blocs dans une liste (`ChoixDeBlocs`) : le client ne voit nulle part leurs codes.
     params: [P(
       'code', 'Le code du bloc à envoyer.', 'enum',
       { fr: 'Les blocs que cet agent a le droit d’envoyer. Cochez-les ci-dessous : seuls ceux d’un scénario contenant un bloc Agent IA peuvent partir.', en: 'The blocks this agent may send. Tick them below: only those in a scenario containing an AI Agent block can be sent.' },
@@ -197,13 +179,9 @@ export const OUTILS_MAISON: readonly OutilCatalogue[] = [
 
 const PAR_HANDLER = new Map(OUTILS_MAISON.map((o) => [o.handler, o]));
 
-/** Le modèle d'outil correspondant à ce handler, ou `undefined`. Sert à refuser un handler inventé. */
 /**
- * Le `handler` d'un outil MAISON, ou la chaîne vide pour un outil qui n'en est pas un.
- *
- * ⚠️ La règle « le handler vit dans `binding.handler` » était recopiée à chaque lecture. Elle n'est pas
- * évidente (`binding` est un jsonb opaque) et une lecture de travers rend simplement une chaîne vide, donc
- * un outil qu'on croit absent. C'est exactement le genre de silence qui a coûté un agent muet.
+ * Le `handler` d'un outil maison, ou la chaîne vide pour un outil qui n'en est pas un. En un seul endroit :
+ * une lecture de travers du jsonb `binding` rendrait une chaîne vide, donc un outil qu'on croit absent.
  */
 export function handlerMaison(outil: { origin: string; binding: Record<string, unknown> }): string {
   return outil.origin === 'mba' ? String(outil.binding.handler ?? '').trim() : '';
@@ -214,10 +192,8 @@ export function outilMaison(handler: string): OutilCatalogue | undefined {
 }
 
 /**
- * Les paramètres à ÉCRIRE en base pour un outil maison neuf.
- *
- * 🔴 Une énumération DÉRIVÉE n'est jamais stockée. Deux copies (la fiche et la colonne) divergeraient au
- * premier ajout de règle d'arrêt, et le modèle terminerait alors par une sortie que le bloc ne dessine pas.
+ * Les paramètres à écrire en base pour un outil maison neuf. Une énumération dérivée n'est jamais stockée :
+ * une copie divergerait au premier ajout de règle d'arrêt.
  */
 export function paramsInitiaux(modele: OutilCatalogue): ParamOutil[] {
   return modele.params.map(({ edition, aideEnum: _aide, enum: valeurs, ...p }) => (
@@ -235,18 +211,10 @@ export interface OutilExpose {
 /**
  * Ce que le modèle voit d'un outil, ou `null` quand il ne doit rien en voir.
  *
- * 🔴 C'EST ICI QUE L'ÉNUMÉRATION DE `terminer` EST POSÉE, à partir de `fiche.sorties` et de rien d'autre.
- * La fiche fait autorité : c'est là que le client déclare ses règles d'arrêt, et c'est de là que le builder
- * tire les handles du bloc. Recopier ces codes dans `agent_tools.params` créerait une seconde vérité qui
- * divergerait au premier ajout, et le modèle terminerait alors par une sortie que le bloc ne dessine pas,
- * donc par une conversation qui remonte en inbox sans que personne comprenne pourquoi.
- *
- * ⚠️ Une dérivation VIDE retire l'outil, elle ne l'expose pas sans énumération. Sans cette règle, un agent
- * dont la fiche n'a aucune règle d'arrêt exposerait un `terminer` acceptant n'importe quelle chaîne : le
- * modèle en inventerait une, le bloc n'aurait pas ce handle, et la conversation remonterait en inbox sans
- * explication. Ne rien offrir est plus honnête : l'agent sort alors par les sorties automatiques du bloc,
- * ce que l'écran des règles d'arrêt annonce déjà. La distinction avec une liste vide REMPLIE PAR LE CLIENT
- * (les tags autorisés, par exemple) est nette : là, vide veut dire « aucune restriction ».
+ * L'énumération de `terminer` est posée ici, depuis `fiche.sorties` seule : la fiche fait autorité, et une
+ * copie dans `agent_tools.params` divergerait. Une dérivation vide retire l'outil au lieu de l'exposer sans
+ * énumération, sinon le modèle inventerait un code que le bloc ne dessine pas. À distinguer d'une liste vide
+ * remplie par le client (les tags autorisés), qui veut dire « aucune restriction ».
  */
 export function outilExpose(outil: OutilDefini, sorties: readonly SortieAgent[]): OutilExpose | null {
   const params = paramsAvecDerivations(outil, sorties.map((s) => s.code));
@@ -255,37 +223,27 @@ export function outilExpose(outil: OutilDefini, sorties: readonly SortieAgent[])
 }
 
 /**
- * Les DEUX textes d'un outil, réunis en un seul, parce que la surface d'appel n'en accepte qu'un.
- *
- * 🔴 LA CLAUSE « QUAND NE PAS L'APPELER » N'ATTEIGNAIT PAS LE MODÈLE, jusqu'au 2026-08-29. La colonne existe
- * depuis la migration 0086, la route l'exige pour un connecteur, l'écran l'affiche, l'IA de construction la
- * rédige, et le CLAUDE.md dit d'elle qu'« elle évite les appels de trop ». Mais `outilExpose` ne construisait
- * que la description, et la requête du runtime ne lisait même pas la colonne. Le client faisait donc un
- * travail sans effet, sur le seul levier qui décide quand un outil se déclenche.
- *
- * ⚠️ Elle est séparée par une ligne et ANNONCÉE, pas simplement collée : deux paragraphes accolés se lisent
- * comme une seule consigne, et une clause de refus noyée dans une description d'usage est une clause qu'un
- * modèle applique mal. Vide, on n'écrit rien du tout : une rubrique vide est du contexte payé à chaque
- * aller-retour pour dire qu'il n'y a rien à dire.
+ * La description et la clause « quand ne pas l'appeler », réunies parce que la surface d'appel n'accepte
+ * qu'un texte. La clause est séparée par une ligne et annoncée : collée, elle se lirait comme une consigne
+ * d'usage. Vide, rien n'est écrit (du contexte payé à chaque aller-retour pour rien).
  */
 function motsExposes(outil: OutilDefini): string {
   const refus = outil.nePasUtiliser.trim();
   return refus === '' ? outil.description : `${outil.description}\n\nNE PAS l’appeler : ${refus}`;
 }
 
-/** Les outils qu'on envoie au modèle. Ceux qui n'ont aucune valeur possible sont RETIRÉS, pas offerts vides. */
+/** Les outils qu'on envoie au modèle. Ceux qui n'ont aucune valeur possible sont retirés, pas offerts vides. */
 export function outilsExposes(outils: readonly OutilDefini[], sorties: readonly SortieAgent[]): OutilExpose[] {
   return outils.map((o) => outilExpose(o, sorties)).filter((o): o is OutilExpose => o !== null);
 }
 
-/** Les paramètres d'un outil, énumérations dérivées appliquées, ou `null` si une dérivation est vide. Passe
- *  par `paramsOutil`, jamais par une seconde lecture de `params` : c'est le point de passage unique de la
- *  séparation des sources. */
+/** Les paramètres d'un outil, énumérations dérivées appliquées, ou `null` si une dérivation est vide.
+ *  Passe par `paramsOutil`, le point de passage unique de la séparation des sources. */
 function paramsAvecDerivations(outil: OutilDefini, codesSortie: string[]): ParamOutil[] | null {
   const modele = outilMaison(String(outil.binding.handler ?? ''));
   const params = paramsOutil(outil.params);
-  // Un outil dont le handler n'est plus au catalogue (ligne écrite par une version antérieure) garde ses
-  // paramètres tels quels : il ne doit pas faire tomber la construction du schéma de tout un tour.
+  // Un handler sorti du catalogue (ligne ancienne) garde ses paramètres tels quels : il ne doit pas faire
+  // tomber la construction du schéma de tout un tour.
   if (!modele) return params;
   const derives = new Set(modele.params.filter((p) => p.edition === 'derive_des_sorties').map((p) => p.name));
   if (derives.size === 0) return params;

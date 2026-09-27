@@ -4,35 +4,21 @@ import { numeroBusinessDuChange } from './handover';
 import { journaliser } from '../lib/journal';
 
 /**
- * L'ÉCART DES ENTRANTS D'UN NUMÉRO DÉLIÉ (migration 0180, bloc « Canaux et services » de l'Accueil).
- *
- * Délier un numéro ne touche à rien chez Meta : Meta continue donc de nous envoyer ce que ses clients écrivent
- * à ce numéro. Le geste promet pourtant que rien n'est enregistré. Ce module retire du payload, AVANT toute
- * étape du traitement (journal brut, Inbox, fiche, automations, avance de scénario, publicités, bascule de
- * l'agent de Meta), tout ce qui concerne un numéro délié, et il le journalise.
- *
- * 🔴 SAUF LES ACCUSÉS DE LIVRAISON. Ils ne sont pas des entrants : ce sont les nouvelles des messages que NOUS
- * avons envoyés avant le geste (livré, lu, échoué). Les jeter ferait mentir les statistiques d'une campagne
- * mise en pause au milieu, pour un geste qui promettait seulement de ne plus rien enregistrer de nouveau.
- *
- * 🔴 CE QUE ÇA COÛTE, ET C'EST BORNÉ PAR CONSTRUCTION :
- * - une lecture par clé primaire de `phone_numbers`, en UNE requête pour tous les numéros du payload (il n'y
- *   en a qu'un en pratique), et seulement si le payload porte autre chose que des accusés ;
- * - ZÉRO lecture pour un lot d'accusés purs, c'est-à-dire pour toute la file `webhook-status`, et ce module
- *   n'y est même pas câblé ;
- * - aucune écriture, aucun appel extérieur.
- *
- * 🔴 BEST-EFFORT, ET DANS LE BON SENS. Une lecture qui échoue ne fait PAS échouer le job : pg-boss le
- * rejouerait, et un entrant d'un AUTRE numéro serait retardé, voire traité deux fois par les étapes non
- * idempotentes, pour une vérification qui ne le concerne pas. On journalise et on traite le payload tel quel,
- * c'est-à-dire exactement comme avant ce lot. Et l'écart se fait CHANGE PAR CHANGE : un numéro délié ne retire
- * rien à un autre numéro du même payload.
+ * L'écart des entrants d'un numéro délié. Délier ne touche à rien chez Meta, qui continue d'envoyer ce que ses
+ * clients écrivent ; le geste promet pourtant que rien n'est enregistré. Ce module retire du payload, avant toute
+ * étape du traitement, ce qui concerne un numéro délié, et le journalise.
+ * Sauf les accusés de livraison : ce sont les nouvelles de nos propres envois d'avant le geste, et les jeter
+ * fausserait les statistiques d'une campagne mise en pause.
+ * Coût borné : une lecture par clé primaire, en une requête, seulement si le payload porte autre chose que des
+ * accusés (zéro pour la file `webhook-status`, où il n'est pas câblé). Best-effort : une lecture en échec ne fait
+ * pas échouer le job (un rejeu retarderait ou doublerait l'entrant d'un autre numéro) ; le payload passe tel
+ * quel. L'écart se fait change par change.
  */
 
 /** Parmi ces numéros, ceux qui sont déliés (`PgNumeroDelieStore.numerosDelies`). */
 export type NumerosDelies = (ids: readonly string[]) => Promise<ReadonlySet<string>>;
 
-/** Ce qu'un change porte d'AUTRE que des accusés : messages, échos de l'agent de Meta, bascule de contrôle. */
+/** Ce qu'un change porte d'autre que des accusés : messages, échos de l'agent de Meta, bascule de contrôle. */
 function elementsHorsAccuses(field: unknown, value: Record<string, unknown>): number {
   return asArray(value['messages']).length
     + asArray(value['message_echoes']).length
@@ -65,11 +51,9 @@ export interface Ecart {
 }
 
 /**
- * Le payload SANS ce qui concerne un numéro délié, accusés exceptés. Fonction PURE : le payload reçu n'est
- * jamais modifié, et il est rendu tel quel quand rien n'est à retirer.
- *
- * ⚠️ Un change sans numéro business lisible est GARDÉ : on ne retire que ce qu'on sait attribuer. Les événements
- * de compte (sans numéro) passent donc comme avant.
+ * Le payload sans ce qui concerne un numéro délié, accusés exceptés. Fonction pure : le payload reçu n'est pas
+ * modifié, et il est rendu tel quel quand rien n'est à retirer. Un change sans numéro business lisible est
+ * gardé (événements de compte) : on ne retire que ce qu'on sait attribuer.
  */
 export function ecarterLesNumerosDelies(payload: unknown, delies: ReadonlySet<string>): { payload: unknown; ecartes: Ecart[] } {
   if (delies.size === 0) return { payload, ecartes: [] };
@@ -86,8 +70,7 @@ export function ecarterLesNumerosDelies(payload: unknown, delies: ReadonlySet<st
       ecartes.push({ phoneNumberId: id, elements });
       const statuses = asArray(value['statuses']);
       if (statuses.length === 0) return [];
-      // Les accusés RESTENT, remontés au premier niveau : c'est la forme que lit `processStatuses` (par
-      // `valeurEffective`, qui laisse passer un `value` sans `standby`).
+      // Les accusés restent, remontés au premier niveau : la forme que lit `processStatuses` (par `valeurEffective`).
       return [{ ...change, value: { messaging_product: value['messaging_product'], metadata: value['metadata'], statuses } }];
     });
     return { ...e, changes };
@@ -96,8 +79,8 @@ export function ecarterLesNumerosDelies(payload: unknown, delies: ReadonlySet<st
 }
 
 /**
- * L'étape du job webhook : lit les numéros déliés du payload, retire ce qui les concerne, journalise.
- * NE LÈVE JAMAIS (voir l'en-tête : une lecture en échec rend le payload tel quel).
+ * L'étape du job webhook : lit les numéros déliés du payload, retire ce qui les concerne, journalise. Ne lève
+ * jamais : une lecture en échec rend le payload tel quel.
  */
 export async function ecarterLesEntrantsDelies(payload: unknown, numerosDelies: NumerosDelies): Promise<unknown> {
   const ids = numerosAInterroger(payload);

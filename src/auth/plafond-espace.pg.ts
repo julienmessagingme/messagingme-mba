@@ -2,12 +2,9 @@ import type { Pool } from 'pg';
 import type { PlafondApiStore, ReglagePlafondApi } from './plafond-espace';
 
 /**
- * Le réglage du plafond de l'API d'un espace (migration 0181) : `tenant_settings.api_plafond_minute` et
- * `api_plafond_heure`, `null` = le défaut de la configuration.
- *
- * ⚠️ LA LECTURE PART DE `tenants`, PAS DE `tenant_settings` : un espace sans ligne de réglages est un espace
- * EXISTANT au défaut, et seule l'absence de l'espace lui-même rend `null`. La route d'exploitation en a besoin
- * pour dire 404 plutôt que d'annoncer un défaut pour un identifiant tapé de travers.
+ * Le réglage du plafond de l'API d'un espace (`tenant_settings.api_plafond_minute` et `api_plafond_heure`,
+ * `null` = le défaut de la configuration). La lecture part de `tenants` : un espace sans ligne de réglages
+ * est au défaut, et seule l'absence de l'espace rend `null`, pour que la route d'exploitation dise 404.
  */
 export class PgPlafondEspaceStore implements PlafondApiStore {
   constructor(private readonly pool: Pool) {}
@@ -24,8 +21,8 @@ export class PgPlafondEspaceStore implements PlafondApiStore {
   }
 
   /**
-   * Upsert CIBLÉ : n'écrase aucun autre réglage. Le `select ... from tenants` fait qu'un espace inconnu n'écrit
-   * rien (`false`), au lieu de lever sur la clé étrangère, donc de rendre un 500.
+   * Upsert ciblé : n'écrase aucun autre réglage. Le `select ... from tenants` fait qu'un espace inconnu
+   * n'écrit rien (`false`), au lieu de lever sur la clé étrangère, donc de rendre un 500.
    */
   async ecrire(tenantId: string, reglage: ReglagePlafondApi): Promise<boolean> {
     const r = await this.pool.query(

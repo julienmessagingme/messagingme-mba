@@ -5,15 +5,11 @@ import type { ErreurLivraison, FiltreErreurs } from '../ops/erreurs-livraison.pg
 import { messageDe } from '../lib/erreur';
 
 /**
- * LES ÉCHECS DE LIVRAISON DES MESSAGES LIBRES (spec 2026-09-24, § 5, migration 0175, « défaut 4 »).
- *
- * Le rapport de smsmode et les statuts de Meta ne mettaient à jour que les destinataires de CAMPAGNE. Une
- * réponse de l'Inbox, un RCS libre, un message de l'API ou d'un bloc de scénario qui n'arrivait pas n'était
- * écrit nulle part : ni journal des erreurs, ni joignabilité. Cette table est leur seul domicile.
- *
- * 🔴 SEULS LES ÉCHECS SONT ÉCRITS, ET SEULEMENT CEUX QU'AUCUNE CAMPAGNE NE PORTE. L'appelant ne l'appelle que
- * sur un échec qui n'a touché aucun destinataire de campagne ; la requête exclut en plus l'origine
- * `campagne`, pour qu'une tentative ancienne d'un destinataire de campagne n'apparaisse pas deux fois.
+ * Les échecs de livraison des messages libres (réponse de l'Inbox, RCS libre, API, bloc de scénario) : les statuts
+ * de Meta et le rapport smsmode ne mettent à jour que les destinataires de campagne, et cette table est le seul
+ * domicile de ces échecs.
+ * Seuls les échecs qu'aucune campagne ne porte sont écrits : la requête exclut en plus l'origine `campagne`, pour
+ * qu'une tentative ancienne d'un destinataire n'apparaisse pas deux fois.
  */
 
 /** Ce que les deux traitements de statuts savent d'un échec. */
@@ -23,16 +19,15 @@ export interface EchecMessageLibre {
   code: number | null;
   motif: string | null;
   /**
-   * L'espace, quand l'appelant le CONNAÎT : le rappel smsmode le tient du code de son URL, et il devient
-   * alors un filtre. Un accusé de Meta ne connaît qu'un identifiant de message : c'est la ligne retrouvée
-   * qui dit l'espace.
+   * L'espace, quand l'appelant le connaît (le rappel smsmode le tient de son URL) : il devient un filtre. Un accusé
+   * de Meta n'a que l'identifiant de message, et c'est la ligne retrouvée qui dit l'espace.
    */
   tenantId?: string;
 }
 
 /**
- * Ce que le rapport smsmode sait d'un échec quand le message N'EST PAS (encore) inscrit dans le fil : son
- * identifiant, l'espace (le code de l'URL de rappel) et le numéro (`to`, en chiffres nus, donc un wa_id).
+ * Ce que le rapport smsmode sait d'un échec quand le message n'est pas (encore) dans le fil : identifiant, espace
+ * (code de l'URL de rappel) et numéro (`to`, en chiffres nus, donc un wa_id).
  */
 export interface EchecSansMessage {
   messageId: string;
@@ -44,8 +39,8 @@ export interface EchecSansMessage {
 }
 
 /**
- * La ligne écrite, ou `null` quand aucun message sortant ne porte cet identifiant : c'est ce `null` qui fait
- * replier le rapport smsmode sur `noterSansMessage` (`traiterRapportRcs`).
+ * La ligne écrite, ou `null` quand aucun message sortant ne porte cet identifiant : ce `null` fait replier le
+ * rapport smsmode sur `noterSansMessage`.
  */
 export interface EchecEcrit {
   tenantId: string;
@@ -58,19 +53,13 @@ export class PgEchecsMessagesStore {
   constructor(private readonly pool: Pool) {}
 
   /**
-   * NOTE un échec. `null` = rien d'écrit : identifiant inconnu, message entrant, envoi de campagne, message
-   * d'un autre espace que celui annoncé, ou échec déjà noté.
-   *
-   * 🔴 UNE SEULE REQUÊTE, par l'index unique de meta_message_id (0009). Elle n'a lieu que sur un échec : un
-   * statut ordinaire n'y arrive jamais.
-   *
-   * ⚠️ tenant_id N'EST PAS TOUJOURS DANS LE WHERE, ET C'EST LA MÊME EXCEPTION QUE `consommerReleaseMba` : un
-   * accusé de Meta ne porte aucun espace, et l'identifiant de message est unique dans toute la base, donc il
-   * ne peut désigner qu'une conversation d'un seul espace. Quand l'appelant connaît l'espace, il le passe et
-   * il filtre.
-   *
-   * ⚠️ `on conflict (message_id) do nothing` S'APPUIE SUR L'INDEX UNIQUE de la migration : pg-boss rejoue un
-   * job de statuts en entier, et Meta renvoie parfois deux fois le même échec.
+   * Note un échec. `null` = rien d'écrit : identifiant inconnu, message entrant, envoi de campagne, autre espace que
+   * celui annoncé, ou échec déjà noté. Une seule requête, par l'index unique de meta_message_id, et seulement sur un
+   * échec.
+   * 🔴 `tenant_id` n'est pas toujours dans le WHERE (même exception que `consommerReleaseMba`) : un accusé de Meta ne
+   * porte aucun espace, et l'identifiant de message, unique dans toute la base, ne désigne qu'un espace. Quand
+   * l'appelant connaît l'espace, il filtre.
+   * `on conflict (message_id) do nothing` : pg-boss rejoue un job en entier, et Meta renvoie parfois un échec deux fois.
    */
   async noter(e: EchecMessageLibre): Promise<EchecEcrit | null> {
     const res = await this.pool.query<{ tenant_id: string; wa_id: string; canal: string; origine: string | null }>(
@@ -91,17 +80,10 @@ export class PgEchecsMessagesStore {
   }
 
   /**
-   * NOTE un échec dont le message N'EST PAS dans conversation_messages, à partir de ce que le rapport en sait.
-   *
-   * 🔴 LA COURSE QU'ELLE FERME : l'envoi rend la main, PUIS la route (ou l'Inbox) inscrit le message dans le
-   * fil. Un rapport smsmode rapide (numéro sans RCS : UNDELIVERABLE) peut arriver entre les deux ; `noter` ne
-   * trouve alors rien, et l'échec retombait dans le silence que ce lot répare (défaut 4). L'origine reste
-   * `null` : le message n'était pas encore là pour la dire.
-   *
-   * ⚠️ `where not exists` : si le message EST inscrit, c'est `noter` qui a décidé (entrant, envoi de campagne,
-   * autre espace, déjà noté), et cette méthode n'écrit RIEN. Elle ne sert que l'absence.
-   * ⚠️ L'espace est CONNU de l'appelant (le code de l'URL de rappel, puis l'agent vérifié) : il est écrit tel
-   * quel. Même idempotence que `noter`, par l'index unique sur message_id.
+   * Note un échec dont le message n'est pas dans conversation_messages : un rapport smsmode rapide peut arriver
+   * entre l'envoi et l'inscription du message dans le fil. L'origine reste `null`.
+   * `where not exists` : si le message est inscrit, c'est `noter` qui décide, et rien n'est écrit ici. L'espace est
+   * connu de l'appelant (URL de rappel, agent vérifié). Même idempotence que `noter`.
    */
   async noterSansMessage(e: EchecSansMessage): Promise<EchecEcrit | null> {
     const res = await this.pool.query<{ tenant_id: string; wa_id: string; canal: string; origine: string | null }>(
@@ -117,12 +99,9 @@ export class PgEchecsMessagesStore {
   }
 
   /**
-   * La QUATRIÈME source du journal des erreurs, origine `message`, avec les mêmes filtres que les autres.
-   *
-   * ⚠️ Un message libre n'appartient à aucune campagne ni à aucun template : filtrer par campagne ou par
-   * template, ou demander les seules campagnes (Analytics), rend une liste vide.
-   * ⚠️ Le numéro se compare en CHIFFRES : la table porte le wa_id (sans « + »), l'écran laisse taper un E.164.
-   * ⚠️ DÉGRADE PROPREMENT : table absente (migration pas passée), liste vide et une ligne d'erreur.
+   * La source `message` du journal des erreurs, avec les mêmes filtres que les autres. Un message libre n'a ni
+   * campagne ni template : ces filtres, ou « campagnes seulement », rendent une liste vide. Le numéro se compare en
+   * chiffres (wa_id sans « + »). Table absente : liste vide et une ligne d'erreur.
    */
   async lister(tenantId: string, filtre: FiltreErreurs, limit: number): Promise<ErreurLivraison[]> {
     if (filtre.campagnesSeulement) return [];
@@ -158,7 +137,7 @@ export class PgEchecsMessagesStore {
         id: string; wa_id: string; canal: string; origine: string | null; code: number | null; motif: string | null;
         at: Date; contact_id: string | null; contact_nom: string | null;
       }>(
-        // Même garde de tenant sur la jointure du contact que les autres sources : le pooler est superuser.
+        // 🔴 Garde d'espace sur la jointure du contact aussi : le pooler est superuser.
         `select e.id, e.wa_id, e.canal, e.origine, e.code, e.motif, e.at,
                 ct.id as contact_id, ct.profile_name as contact_nom
            from echecs_messages e

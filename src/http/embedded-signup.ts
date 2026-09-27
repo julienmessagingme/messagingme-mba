@@ -8,15 +8,10 @@ import { texteDe } from '../lib/erreur';
 
 export interface EmbeddedSignupRouteDeps {
   /**
-   * Journal d'audit (2026-09-16). Requis depuis le lot 3 de l'audit ponytail ; les fixtures qui ne l'observent pas passent `journalMuet`.
-   *
-   * 🔴 RATTACHER UN NUMÉRO, C'EST DONNER UNE VOIX. À partir de cet instant, le produit parle aux clients SOUS
-   * CETTE IDENTITÉ, et un token business chiffré est conservé. C'est le geste le plus structurant de tout
-   * l'embarquement, et il ne laissait aucune trace.
-   *
-   * 🔴 LE `detail` NE PORTE PAS LE NUMÉRO AFFICHÉ (`displayPhoneNumber`), qui est un numéro de téléphone,
-   * donc une donnée personnelle dans une table jamais purgée. Il porte les IDENTIFIANTS META, qui désignent
-   * le compte et le numéro sans être le numéro.
+   * Journal d'audit (les fixtures qui ne l'observent pas passent `journalMuet`). Rattacher un numéro, c'est donner
+   * une voix : le produit parle aux clients sous cette identité, et un token business chiffré est conservé.
+   * 🔴 Le `detail` ne porte pas le numéro affiché (donnée personnelle, table jamais purgée), seulement les
+   * identifiants Meta du compte et du numéro.
    */
   audit: AuditSink;
   /** config_id de la configuration ES (dashboard Meta, Facebook Login for Business). Vide -> feature OFF. */
@@ -28,9 +23,8 @@ export interface EmbeddedSignupRouteDeps {
   /** Preuve d'appartenance du WABA (GET /{waba_id} avec le business token) : throw si le token ne le possède pas. */
   verifyWaba(wabaId: string, businessToken: string): Promise<void>;
   /**
-   * Comptes WhatsApp auxquels le business token donne accès. Sert quand la popup n'a PAS annoncé les
-   * identifiants (client qui rouvre un parcours déjà abouti : Meta n'a plus rien à configurer, donc plus rien à
-   * annoncer).
+   * Comptes WhatsApp auxquels le business token donne accès. Sert quand la popup n'a pas annoncé les identifiants
+   * (client qui rouvre un parcours déjà abouti : Meta n'a plus rien à configurer, donc plus rien à annoncer).
    */
   wabasForToken(businessToken: string): Promise<string[]>;
   listPhones(wabaId: string, businessToken: string): Promise<Array<{ id: string }>>;
@@ -38,27 +32,21 @@ export interface EmbeddedSignupRouteDeps {
   subscribeApp(wabaId: string, businessToken: string): Promise<void>;
   register(phoneNumberId: string, businessToken: string, pin: string): Promise<void>;
   link(input: { tenantId: string; wabaId: string; phoneNumberId: string; displayPhoneNumber: string | null; verifiedName: string | null }): Promise<void>;
-  /** Persiste le token business (le câblage chiffre AVANT, la route ne voit jamais le stockage en clair). */
+  /** Persiste le token business (le câblage chiffre avant, la route ne voit jamais le stockage en clair). */
   saveCredentials(wabaId: string, tenantId: string, businessToken: string, pin: string | null): Promise<void>;
 
   // ----- « Activer le numéro » : finir chez nous ce que la fenêtre Meta a laissé en plan -----
   //
-  // 🔴 AUCUNE DE CES DÉPENDANCES N'EST OPTIONNELLE, et c'est délibéré. Le dépôt a payé deux fois le motif
-  // « dépendance optionnelle absente = garde qui ne tourne pas » (la garde d'authentification, puis
-  // `estDesabonne`). Un câblage qui les oublie ne compile pas.
-  //
-  // ⚠️ AUCUNE NE REÇOIT DE JETON : le câblage le résout et ne laisse passer que le `tenantId`. Un jeton qui
-  // n'entre pas dans la route ne peut ni fuiter dans un journal ni partir dans un corps de réponse.
+  // Aucune de ces dépendances n'est optionnelle : un câblage qui les oublie ne compile pas. Aucune ne reçoit de
+  // jeton : le câblage le résout, et un jeton qui n'entre pas dans la route ne peut ni fuiter ni partir.
 
   /**
-   * Numéro principal de l'espace (identifiant Meta), `null` si aucun.
-   *
-   * 🔴 LU EN BASE, JAMAIS PRIS DANS LE CORPS DE LA REQUÊTE. C'est ce qui empêche un admin d'activer le numéro
-   * d'un autre espace en forgeant un identifiant : il n'y a rien à forger.
+   * Numéro principal de l'espace (identifiant Meta), `null` si aucun. 🔴 Lu en base, jamais pris dans le corps :
+   * un admin ne peut pas activer le numéro d'un autre espace en forgeant un identifiant.
    */
   numeroDuTenant(tenantId: string): Promise<string | null>;
   /**
-   * État du numéro chez Meta. RELU AVANT CHAQUE GESTE, jamais lu dans notre base : c'est Meta qui tranche, et
+   * État du numéro chez Meta, relu avant chaque geste, jamais lu dans notre base : c'est Meta qui tranche, et
    * notre copie date du dernier pull.
    */
   etatNumero(tenantId: string, phoneNumberId: string): Promise<{ status: string | null; codeVerificationStatus: string | null }>;
@@ -68,13 +56,13 @@ export interface EmbeddedSignupRouteDeps {
   verifierCode(tenantId: string, phoneNumberId: string, code: string): Promise<void>;
   /** Enregistre le numéro sur la Cloud API avec ce PIN (c'est son PIN 2FA). */
   enregistrerNumero(tenantId: string, phoneNumberId: string, pin: string): Promise<void>;
-  /** Conserve le PIN, chiffré par le câblage, SEULEMENT après que Meta l'a accepté. */
+  /** Conserve le PIN, chiffré par le câblage, seulement après que Meta l'a accepté. */
   sauverPin(tenantId: string, pin: string): Promise<void>;
 
-  // ----- « Délier » et « Relier » : l'interrupteur du numéro sur l'Accueil (migration 0180) -----
+  // ----- « Délier » et « Relier » : l'interrupteur du numéro sur l'Accueil -----
   //
-  // 🔴 REQUISES, pour la même raison que les précédentes. Et AUCUNE NE PARLE À META : délier est un état de
-  // CET espace, le numéro reste relié à son compte WhatsApp et son jeton reste chiffré chez nous.
+  // Requises, comme les précédentes. Aucune ne parle à Meta : délier est un état de cet espace, le numéro reste
+  // relié à son compte WhatsApp et son jeton reste chiffré chez nous.
 
   /**
    * Délie le numéro de l'espace et met en pause ses campagnes WhatsApp en cours ou programmées
@@ -88,32 +76,22 @@ export interface EmbeddedSignupRouteDeps {
 }
 
 /**
- * Délai minimal entre deux demandes de code pour un même numéro.
- *
- * 🔴 CE N'EST PAS UN PLAFOND DE DÉBIT, C'EST LE QUOTA DE META QU'ON PROTÈGE. Il permet DIX requêtes par numéro
- * sur 72 heures, toutes étapes confondues ; au-delà, erreur 133016 et numéro bloqué 72 heures. Un client qui
- * clique trois fois parce que « rien ne se passe » brûlerait un tiers de son quota en dix secondes, et rien ne
- * le lui rendrait avant trois jours.
- *
- * ⚠️ EN MÉMOIRE DU PROCESS, comme les autres plafonds du dépôt : un redémarrage le remet à zéro, et c'est sans
- * conséquence pour une minute. Le persister demanderait une table pour une protection contre le double-clic.
+ * Délai minimal entre deux demandes de code pour un même numéro. Ce n'est pas un plafond de débit, c'est le
+ * quota de Meta : dix requêtes par numéro sur 72 heures, toutes étapes confondues, au-delà le numéro est bloqué
+ * 72 heures (133016). En mémoire du process : un redémarrage le remet à zéro, sans conséquence pour une minute.
  */
 const DELAI_ENTRE_CODES_MS = 60_000;
 
 /**
- * Embedded Signup (Tech Provider), admin-only. Quatre routes :
+ * Embedded Signup (Tech Provider), admin. Quatre routes :
  *  - GET  /embedded-signup/config   : de quoi le front lance la popup (appId + configId publics, pas de secret).
- *  - POST /embedded-signup/complete : reçoit { code, wabaId, phoneNumberId } de la popup (code TTL 30 s !),
- *    échange le code -> business token, rattache WABA + numéro au workspace, abonne les webhooks, register si
- *    numéro neuf (jamais pour un numéro déjà CONNECTED, jamais pour un numéro NON vérifié : la v4 laisse finir
- *    le parcours sans vérification, et Meta refuserait), stocke le token chiffré. Les étapes NON bloquantes qui
- *    échouent remontent en `warnings` (jamais de demi-échec silencieux).
+ *  - POST /embedded-signup/complete : reçoit { code, wabaId, phoneNumberId } de la popup (code TTL 30 s),
+ *    échange le code contre un business token, rattache WABA et numéro à l'espace, abonne les webhooks, register
+ *    un numéro neuf (jamais un numéro déjà CONNECTED ni non vérifié), stocke le token chiffré. Les étapes non
+ *    bloquantes qui échouent remontent en `warnings`.
  *  - POST /numero/code              : Meta envoie le code de vérification du numéro (appel par défaut, ou SMS).
  *  - POST /numero/activer           : vérifie le code s'il le faut, puis enregistre le numéro sur la Cloud API.
- *
- * 🔴 LES DEUX DERNIÈRES EXISTENT PARCE QUE LA v4 LAISSE FINIR SANS VÉRIFICATION. Avant elle, un parcours abouti
- * donnait toujours un numéro vérifié ; depuis, il peut rendre la main sur un numéro que Meta refuse d'enregistrer,
- * et le client n'avait alors aucun recours dans la console (vécu le 2026-09-22 : passage par WhatsApp Manager).
+ * Les deux dernières existent parce que la fenêtre Meta peut se terminer sur un numéro non vérifié.
  */
 export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignupRouteDeps, garde: Guard, limiteCouteuse?: PreHandler): void {
   const journal = makeJournal(deps.audit);
@@ -121,8 +99,8 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
   // Les deux routes d'activation appellent Meta sur un quota étroit : elles portent la limite coûteuse, comme
   // l'import ou l'aperçu de site.
   const couteux = gardeEtendue(garde, limiteCouteuse);
-  /** Dernier envoi de code PAR NUMÉRO. Porté par l'instance de serveur (et non par le module) : deux serveurs
-   *  montés dans le même process, ce qui n'arrive qu'en test, ne se gênent pas l'un l'autre. */
+  /** Dernier envoi de code par numéro. Porté par l'instance de serveur (et non par le module) : deux serveurs
+  *  montés dans le même process, ce qui n'arrive qu'en test, ne se gênent pas l'un l'autre. */
   const dernierCode = new Map<string, number>();
 
   app.get('/tenants/:tenantId/embedded-signup/config', opts, async (req, reply) => {
@@ -135,9 +113,8 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     const tenant = espaceVerifie(req);
     if (deps.configId === '') return reply.code(503).send({ error: 'Embedded Signup non configuré (META_ES_CONFIG_ID)' });
     const b = (req.body ?? {}) as { code?: unknown; wabaId?: unknown; phoneNumberId?: unknown };
-    // `wabaId` / `phoneNumberId` sont FACULTATIFS : la popup ne les annonce que lorsqu'elle exécute vraiment les
-    // étapes de configuration. Un client qui rouvre le parcours après un premier passage abouti n'obtient qu'un
-    // code, et restait donc bloqué DÉFINITIVEMENT (mesuré le 2026-08-17). Absents -> on les retrouve (1 bis).
+    // `wabaId` / `phoneNumberId` sont facultatifs : la popup ne les annonce que lorsqu'elle exécute vraiment la
+    // configuration, et un client qui rouvre un parcours abouti n'obtient qu'un code. Absents -> retrouvés (1 bis).
     if (!nonEmpty(b.code)) return reply.code(400).send({ error: 'code requis' });
     const code = b.code.trim();
 
@@ -152,10 +129,10 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
       return reply.code(422).send({ error: `échange du code Meta échoué : ${msg}` });
     }
 
-    // 1 bis. Identifiants non annoncés -> on les lit dans le TOKEN (les comptes auxquels il donne accès), puis
+    // 1 bis. Identifiants non annoncés -> on les lit dans le token (les comptes auxquels il donne accès), puis
     //        dans le compte (ses numéros). Aucune perte de sûreté : ils viennent du token du client lui-même,
     //        ils ne peuvent donc pas désigner les biens d'un autre, et l'étape 2 les vérifie quand même. On
-    //        REFUSE l'ambiguïté (plusieurs comptes ou plusieurs numéros) au lieu d'en choisir un au hasard :
+    //        refuse l'ambiguïté (plusieurs comptes ou plusieurs numéros) au lieu d'en choisir un au hasard :
     //        rattacher le mauvais numéro serait bien pire qu'un message d'erreur.
     let wabaId = nonEmpty(b.wabaId) ? b.wabaId.trim() : '';
     let phoneNumberId = nonEmpty(b.phoneNumberId) ? b.phoneNumberId.trim() : '';
@@ -193,11 +170,10 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
       }
     }
 
-    // 2. PREUVE D'APPARTENANCE (garde anti-hijack cross-tenant) : le business token est scopé au client qui a
-    //    complété l'ES ; il ne peut lire le WABA et le numéro QUE s'ils lui appartiennent. Ces deux appels sont
-    //    BLOQUANTS : si l'un échoue, le token ne possède pas l'asset demandé -> 422 et on ne persiste RIEN (ni
-    //    rattachement, ni webhooks, ni register, ni token). Sans ça, un tenant pourrait rattacher les assets d'un
-    //    autre en forgeant wabaId/phoneNumberId. `getPhone` renvoie aussi le vrai `status` (décide du register).
+    // 2. 🔴 Preuve d'appartenance (garde anti-hijack entre espaces) : le business token ne peut lire le WABA et le
+    //    numéro que s'ils appartiennent au client qui a complété l'ES. Appels bloquants : un échec -> 422 et rien
+    //    n'est persisté. Sans ça, un espace rattacherait les assets d'un autre en forgeant wabaId/phoneNumberId.
+    //    `getPhone` rend aussi le vrai `status` (décide du register).
     let phone: { displayPhoneNumber: string | null; verifiedName: string | null; status: string | null; codeVerificationStatus?: string | null };
     try {
       await deps.verifyWaba(wabaId, businessToken);
@@ -210,17 +186,16 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     }
 
     const warnings: string[] = [];
-    // 3. Rattachement au workspace. Un WABA/numéro déjà rattaché à un AUTRE workspace est REFUSÉ (409), pas réaffecté
-    //    en silence : on interrompt AVANT d'abonner les webhooks, de register ou de stocker le token. La migration
-    //    volontaire d'un numéro entre workspaces passe par le chemin admin dédié, pas par l'Embedded Signup.
+    // 3. 🔴 Rattachement à l'espace. Un WABA ou numéro déjà rattaché à un autre espace est refusé (409), pas
+    //    réaffecté en silence, avant webhooks, register et token. La migration volontaire passe par le chemin admin.
     try {
       await deps.link({ tenantId: tenant, wabaId, phoneNumberId, displayPhoneNumber: phone.displayPhoneNumber, verifiedName: phone.verifiedName });
     } catch (err) {
       if (err instanceof TenantConflictError) {
         return reply.code(409).send({ error: 'ce numéro ou ce WABA est déjà rattaché à un autre workspace' });
       }
-      // Un seul numéro par workspace. Le message dit CE QUI EST DÉJÀ LÀ et quoi faire : sans ça, l'opérateur
-      // conclut à une panne et recommence. 409 et non 5xx, sinon Cloudflare remplace le corps par sa page.
+      // Un seul numéro par espace. Le message dit ce qui est déjà là et quoi faire, sinon l'opérateur conclut à une
+      // panne et recommence. 409 et non 5xx, sinon Cloudflare remplace le corps par sa page.
       if (err instanceof SecondNumeroRefuseError) {
         return reply.code(409).send({
           error: `Cet espace utilise déjà le numéro ${err.dejaRattache}. Un espace ne peut piloter qu'un seul numéro WhatsApp : pour en connecter un autre, crée un second espace, ou détache d'abord le numéro actuel.`,
@@ -236,17 +211,10 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
       warnings.push(`abonnement webhooks : ${texteDe(err)}`);
     }
 
-    // 5. Register : SEULEMENT si le numéro n'est pas déjà sur la Cloud API (numéro neuf). PIN généré et conservé
-    //    (c'est le PIN 2FA du numéro : nécessaire aux re-régistrations).
-    //
-    // 🔴 ET SEULEMENT SI LE NUMÉRO EST VÉRIFIÉ. Depuis la v4 de l'inscription, le client peut terminer le
-    //    parcours Meta avec un numéro NON vérifié (la v2 finissait toujours vérifié) : `register` le refuse
-    //    alors (133006) et chaque tentative consomme une des 10 requêtes permises par numéro sur 72 h, au-delà
-    //    desquelles Meta bloque le numéro pour 72 h (133016). On ne brûle pas un essai pour rien.
-    //    Seul `NOT_VERIFIED` retient le register : `EXPIRED` n'a jamais été mesuré ici, et le refuser sur une
-    //    valeur qu'on n'a jamais vue casserait un embarquement qui marche aujourd'hui.
-    //    Le numéro RESTE rattaché : c'est le bouton « Activer le numéro » de l'Accueil qui finit le travail,
-    //    sans redemander au client de refaire tout le parcours Meta pour un code qu'il peut saisir chez nous.
+    // 5. Register seulement pour un numéro neuf (pas déjà sur la Cloud API), avec un PIN généré et conservé (le
+    //    PIN 2FA du numéro, nécessaire aux re-régistrations). Et seulement s'il est vérifié : sinon `register` est
+    //    refusé (133006) et chaque tentative consomme une des 10 requêtes par numéro sur 72 h. Seul `NOT_VERIFIED`
+    //    retient le register (`EXPIRED` n'a jamais été vu). Le numéro reste rattaché : « Activer le numéro » finit.
     let pin: string | null = null;
     const aActiver = phone.status !== 'CONNECTED' && phone.codeVerificationStatus === 'NOT_VERIFIED';
     if (aActiver) {
@@ -259,9 +227,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
         await deps.register(phoneNumberId, businessToken, pin);
       } catch (err) {
         const msg = texteDe(err);
-        // ⚠️ JOURNALISÉ, et pas seulement rendu. Le 2026-09-22 au soir, un register a échoué en silence : la
-        // route ne le mettait que dans `warnings`, que l'écran effaçait en rechargeant le compte. La cause a
-        // failli être perdue, et c'est ce qui a coûté la soirée.
+        // Journalisé, et pas seulement rendu : `warnings` est effacé par l'écran au rechargement du compte.
         // eslint-disable-next-line no-console
         console.error(`embedded-signup: register refusé (tenant ${tenant}, waba ${wabaId}, numéro ${phoneNumberId}) : ${msg}`);
         warnings.push(`register du numéro : ${msg}`);
@@ -272,9 +238,8 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     // 6. Token business conservé (chiffré au repos par le câblage).
     await deps.saveCredentials(wabaId, tenant, businessToken, pin);
 
-    // ⚠️ APRÈS l'enregistrement des identifiants : avant, on tracerait une intention, pas un rattachement.
-    // `avertissements` est journalisé parce qu'un numéro rattaché AVEC des avertissements est un état réel,
-    // et la question « pourquoi les statuts n'arrivent pas ? » se pose des semaines plus tard.
+    // Après l'enregistrement des identifiants (avant, on tracerait une intention). `avertissements` est
+    // journalisé : un numéro rattaché avec des avertissements est un état réel.
     await journal(tenant, req, 'numero.connecte', { kind: 'phone_number', id: phoneNumberId }, {
       wabaId, avertissements: warnings.length,
     });
@@ -283,7 +248,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
       wabaId,
       phoneNumberId,
       displayPhoneNumber: phone.displayPhoneNumber,
-      // `aActiver` n'est posé QUE dans ce cas : l'écran s'en sert pour envoyer tout de suite vers l'activation,
+      // `aActiver` n'est posé que dans ce cas : l'écran s'en sert pour envoyer tout de suite vers l'activation,
       // au lieu de laisser croire que le numéro est prêt à envoyer.
       ...(aActiver ? { aActiver: true } : {}),
       ...(warnings.length > 0 ? { warnings } : {}),
@@ -291,11 +256,8 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
   });
 
   /**
-   * Demande à Meta d'envoyer le code de vérification du numéro de l'espace.
-   *
-   * 🔴 ELLE LIT L'ÉTAT AVANT D'AGIR, et ce n'est pas une précaution : c'est la seule séquence valide. Meta
-   * refuse une demande de code sur un numéro déjà vérifié (136024), et chaque refus consomme une des dix
-   * requêtes permises sur 72 heures. Apprendre l'état en le demandant à Meta coûterait donc un essai au client.
+   * Demande à Meta d'envoyer le code de vérification du numéro de l'espace. Elle lit l'état avant d'agir : Meta
+   * refuse une demande sur un numéro déjà vérifié (136024), et chaque refus consomme une des dix requêtes.
    */
   app.post('/tenants/:tenantId/numero/code', couteux, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -329,18 +291,15 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
       return reply.code(429).send({ error: `un code vient d’être envoyé. Attends ${reste} s avant d’en redemander un : Meta n’en permet que dix par numéro sur 72 heures.` });
     }
 
-    // 🔴 LA MARQUE EST POSÉE AVANT L'APPEL, ET C'EST LE SENS DE LA GARDE. Meta compte des REQUÊTES, pas des
-    //    succès : un envoi qu'il REFUSE a quand même consommé un des dix essais du numéro. Ne marquer qu'en
-    //    cas de succès laisserait donc le chemin d'échec sans protection, c'est-à-dire précisément celui où
-    //    le client reclique parce que « rien ne s'est passé ». Le prix est une minute d'attente quand l'appel
-    //    n'a même pas atteint Meta, contre 72 heures de numéro bloqué dans l'autre sens.
+    // La marque est posée avant l'appel : Meta compte des requêtes, pas des succès, et un refus consomme aussi un
+    // essai. Marquer au seul succès laisserait sans protection le client qui reclique après un échec : une minute
+    // d'attente contre 72 heures de numéro bloqué.
     dernierCode.set(phoneNumberId, maintenant);
     try {
       await deps.demanderCode(tenant, phoneNumberId, methode);
     } catch (err) {
       const msg = texteDe(err);
-      // Journalisé AVEC le code de Meta, jamais avec le code reçu par le client : c'est ce qui manquait le
-      // 2026-09-22 au soir, et la cause d'un échec a failli être perdue.
+      // Journalisé avec le code de Meta, jamais avec le code reçu par le client.
       // eslint-disable-next-line no-console
       console.error(`numero/code: refus de Meta (tenant ${tenant}, numéro ${phoneNumberId}, ${methode}) : ${msg}`);
       return reply.code(422).send({ error: `Meta a refusé l’envoi du code : ${msg}` });
@@ -349,11 +308,8 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
   });
 
   /**
-   * Active le numéro : vérifie le code s'il le faut, puis l'enregistre sur la Cloud API.
-   *
-   * 🔴 AUCUNE RELANCE AUTOMATIQUE (décision de Julien, 2026-09-22). Un échec laisse le numéro « à activer »,
-   * visible à l'écran, et c'est le client qui décide quand réessayer. Une répétition invisible consommerait le
-   * quota des dix requêtes sans que personne ne le voie.
+   * Active le numéro : vérifie le code s'il le faut, puis l'enregistre sur la Cloud API. Aucune relance
+   * automatique : un échec laisse le numéro « à activer », et une répétition invisible consommerait le quota.
    */
   app.post('/tenants/:tenantId/numero/activer', couteux, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -371,7 +327,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
       console.error(`numero/activer: état illisible chez Meta (tenant ${tenant}, numéro ${phoneNumberId}) : ${msg}`);
       return reply.code(422).send({ error: `état du numéro illisible chez Meta : ${msg}` });
     }
-    // Déjà activé : on ne fait RIEN et on le dit. Un register de plus serait un essai brûlé pour confirmer ce
+    // Déjà activé : on ne fait rien et on le dit. Un register de plus serait un essai brûlé pour confirmer ce
     // que Meta vient de nous dire.
     if (etat.status === 'CONNECTED') return reply.code(200).send({ actif: true, deja: true });
 
@@ -385,14 +341,14 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
         await deps.verifierCode(tenant, phoneNumberId, body.code.trim());
       } catch (err) {
         const msg = texteDe(err);
-        // ⚠️ LE CODE REÇU N'EST JAMAIS JOURNALISÉ, ni le PIN : seuls l'identifiant du numéro et le refus de Meta.
+        // Le code reçu n'est jamais journalisé, ni le PIN : seuls l'identifiant du numéro et le refus de Meta.
         // eslint-disable-next-line no-console
         console.error(`numero/activer: code refusé par Meta (tenant ${tenant}, numéro ${phoneNumberId}) : ${msg}`);
         return reply.code(422).send({ error: `Meta a refusé ce code : ${msg}` });
       }
     }
 
-    // Enregistrement sur la Cloud API. Le PIN est le PIN 2FA du numéro : tiré au CSPRNG, et conservé SEULEMENT
+    // Enregistrement sur la Cloud API. Le PIN est le PIN 2FA du numéro : tiré au CSPRNG, et conservé seulement
     // si Meta l'accepte. En conserver un que Meta n'a pas posé donnerait un secret faux en base, qui ferait
     // échouer la prochaine re-régistration sans cause visible.
     const pin = String(randomInt(100000, 1000000));
@@ -404,10 +360,8 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
       console.error(`numero/activer: register refusé par Meta (tenant ${tenant}, numéro ${phoneNumberId}) : ${msg}`);
       return reply.code(422).send({ error: `Meta a refusé l’activation : ${msg}` });
     }
-    // 🔴 BEST-EFFORT, ET APRÈS L'EFFET : à cet instant, Meta a ACTIVÉ le numéro. Faire échouer la route parce
-    //    qu'on n'a pas su ranger le PIN annoncerait une panne au client alors que son numéro marche, et
-    //    l'inviterait à recommencer, donc à brûler un essai. Le cas réel n'est pas théorique : un numéro
-    //    branché à la main n'a aucune ligne de credentials où écrire. L'échec est journalisé, jamais tu.
+    // Au mieux, et après l'effet : Meta a activé le numéro, faire échouer la route annoncerait une panne et ferait
+    // brûler un essai. Un numéro branché à la main n'a aucune ligne de credentials où écrire. L'échec est journalisé.
     try {
       await deps.sauverPin(tenant, pin);
     } catch (err) {
@@ -421,31 +375,25 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
   });
 
   /**
-   * DÉLIE le numéro de l'espace : l'interrupteur « Numéro WhatsApp » de l'Accueil, éteint (migration 0180).
-   *
-   * Ce que ça arrête, et c'est ce que dit la confirmation de l'écran : aucun envoi ne part (le point de passage
-   * des envois le refuse, `NumeroDelieError`), les campagnes WhatsApp en cours ou programmées passent en pause
-   * `numero_delie`, et les messages reçus sur ce numéro ne sont plus enregistrés (le webhook les écarte).
-   *
-   * 🔴 RIEN N'EST TOUCHÉ CHEZ META, ni supprimé chez nous : le numéro, son compte, son jeton chiffré et
-   * l'historique restent. C'est ce qui rend « Relier » possible d'un clic, sans refaire la fenêtre Meta.
-   *
-   * ⚠️ ADMIN SEULEMENT : le module est monté derrière `g.admin` (`src/server.ts`), comme `/numero/activer`.
+   * Délie le numéro de l'espace (interrupteur « Numéro WhatsApp » de l'Accueil, éteint) : aucun envoi ne part
+   * (`NumeroDelieError`), les campagnes WhatsApp en cours ou programmées passent en pause `numero_delie`, et les
+   * messages reçus ne sont plus enregistrés. Rien n'est touché chez Meta ni supprimé chez nous : « Relier » se
+   * fait d'un clic. Admin seulement (`g.admin`).
    */
   app.post('/tenants/:tenantId/numero/delier', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const r = await deps.delierNumero(tenant);
     if (r === null) return reply.code(404).send({ error: 'aucun numéro rattaché à cet espace' });
-    // L'identifiant de l'ESPACE en cible : délier porte sur tous ses numéros, et le numéro affiché est une donnée
+    // L'identifiant de l'espace en cible : délier porte sur tous ses numéros, et le numéro affiché est une donnée
     // personnelle que ce journal, jamais purgé, n'a pas à porter.
     await journal(tenant, req, 'numero.delie', { kind: 'tenant', id: tenant }, { campagnesEnPause: r.campagnesEnPause });
     return reply.code(200).send({ delie: true, delieLe: r.delieLe, campagnesEnPause: r.campagnesEnPause });
   });
 
   /**
-   * RELIE le numéro : l'interrupteur rallumé, SANS confirmation (plan du 2026-09-25 : éteindre se confirme,
-   * rallumer non). Les campagnes mises en pause par « Délier » repartent : `running` pour celles qui tournaient,
-   * reprises dans la minute par le balayage des campagnes gelées, `scheduled` pour celles qui étaient programmées.
+   * Relie le numéro, sans confirmation (éteindre se confirme, rallumer non). Les campagnes mises en pause par
+   * « Délier » repartent : `running` pour celles qui tournaient (reprises par le balayage), `scheduled` pour les
+   * programmées.
    */
   app.post('/tenants/:tenantId/numero/relier', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);

@@ -1,4 +1,3 @@
-// src/http/v1-catalogues.ts
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import type { TemplateSummary } from '../meta/templates';
@@ -16,33 +15,18 @@ import { modeleLuDe, verdictModele } from '../api/modele-envoi';
 import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
 
 /**
- * LES CATALOGUES DE L'API PUBLIQUE : ce qu'un intégrateur peut envoyer, lu sans ouvrir la console.
+ * Les catalogues de l'API publique : ce qu'un intégrateur peut envoyer, lu sans ouvrir la console.
  *
- * 🔴 UN TEMPLATE ET UN MESSAGE RCS N'ENTRENT QUE S'ILS PEUVENT PARTIR PAR `POST /v1/sends`, et c'est ce qui
- * décide de ce qu'on écarte : un template non approuvé ou d'une catégorie que l'envoi ne connaît pas
- * (authentification), un en-tête qu'il ne sait pas remplir (localisation, texte à variable), un bouton de lien à
- * variable qu'aucun envoi ne remplit (tout ce qui n'est pas un lien tracé à jeton), ce que le moteur refuserait
- * avant de partir (carte ou lien de carte à variable, carte ou en-tête média sans visuel lisible) ; un message
- * RCS dont le contenu stocké n'est plus reconnu. Les montrer ferait construire un appel refusé.
+ * 🔴 Un template ou un message RCS n'entre que s'il peut partir par `POST /v1/sends`, jugé par les fonctions de
+ * l'envoi (`verdictModele` sur `modeleLuDe`, `modeleDOuverture`) : non approuvé, catégorie inconnue de l'envoi,
+ * en-tête ou bouton qu'aucun envoi ne remplit, carte que le moteur refuse, contenu RCS non reconnu, tout cela est
+ * écarté. Le montrer ferait construire un appel refusé. `tests/v1-sends.test.ts` tient la parité.
  *
- * ⚠️ UN SCÉNARIO, LUI, ENTRE DÈS QU'IL EST PUBLIÉ, qu'il puisse partir ou non : la spec (§ 6) veut les scénarios
- * PUBLIÉS, et `opening` dit lequel peut partir (`null` : aucun ; `whatsapp_session` : seulement par son bloc
- * d'entrée, `entryNode`). Le taire ferait chercher à l'intégrateur un scénario qu'il voit dans la console.
+ * Un scénario entre dès qu'il est publié ; `opening` dit s'il peut partir (`null` : non ; `whatsapp_session` :
+ * par son bloc d'entrée). Son ouverture vient de `ouvertureApi`, la fonction de `/v1/sends`, jamais d'un calcul
+ * voisin (`tests/v1-catalogues.test.ts` tient la parité avec elle et avec la console).
  *
- * 🔴 CHAQUE TRI EST CELUI DE L'ENVOI, par SA fonction : `verdictModele` sur `modeleLuDe`, la construction que
- * la lecture partagée de `POST /v1/sends` emploie aussi (statut, catégorie, et `raisonNonEnvoyable` : en-tête
- * qu'aucun envoi ne remplit, carrousel ou visuel que le moteur refuse, bouton de lien à variable non tracé), et
- * `modeleDOuverture` (le template que `params` paramètre). L'envoi refusait jadis moins que le catalogue n'écartait
- * (201 puis un échec par destinataire) : `tests/v1-sends.test.ts` tient désormais les deux sur les mêmes templates.
- * ⚠️ Seul reste imprévisible d'ici un visuel dont le re-téléversement échoue le jour de l'envoi.
- *
- * 🔴 L'OUVERTURE D'UN SCÉNARIO VIENT DE `ouvertureApi`, LA FONCTION DE `/v1/sends`, jamais d'un calcul
- * voisin. Deux règles écrites en parallèle divergent un jour, et la divergence serait muette : le catalogue
- * annoncerait un scénario que l'envoi refuse. `tests/v1-catalogues.test.ts` tient la parité avec
- * `ouvertureApi` ET avec la console (`canalDOuverture`), sur les mêmes graphes.
- *
- * ⚠️ Le tenant vient à 100 % de `req.auth` (posé par la garde de clé d'API), jamais de l'URL. Droit
- * attendu : `sends:create`, celui des envois que ces lectures servent à construire.
+ * L'espace vient de `req.auth` (garde de clé d'API), jamais de l'URL. Droit attendu : `sends:create`.
  */
 
 /** L'en-tête d'un template, tel que le catalogue le nomme. */
@@ -66,7 +50,7 @@ export interface TemplateCatalogue {
   name: string;
   language: string;
   category: 'marketing' | 'utility';
-  /** ⚠️ Un carrousel a ses visuels PAR CARTE, sans en-tête de premier niveau : il vaut `none`. */
+  /** Un carrousel a ses visuels par carte, sans en-tête de premier niveau : il vaut `none`. */
   header: EnteteTemplate;
   variables: VariableDeTemplate[];
 }
@@ -77,9 +61,8 @@ export interface ScenarioCatalogue {
   /** `null` = ce scénario ne peut pas partir par l'API. `whatsapp_session` = il se vise par son bloc d'entrée. */
   opening: OuvertureApi | null;
   /**
-   * Le template que `params` paramètre quand on vise le SCÉNARIO, pour une ouverture `whatsapp_template` ;
-   * `null` sinon. ⚠️ Son nombre de variables n'est pas ici : il se lit chez Meta, donc dans `GET /v1/templates`
-   * (la ligne du même nom et de la même langue). Le relire ici coûterait la liste complète du WABA par appel.
+   * Le template que `params` paramètre quand on vise le scénario, pour une ouverture `whatsapp_template` ; `null`
+   * sinon. Son nombre de variables se lit dans `GET /v1/templates` (le relire ici coûterait la liste du WABA).
    */
   openingTemplate: { name: string; language: string } | null;
   /** Le code `nod_` du bloc d'entrée, celui qu'on vise en cible `node` (seul chemin d'un `whatsapp_session`). */
@@ -106,7 +89,7 @@ export function catalogueTemplates(
 ): TemplateCatalogue[] {
   const sources = new Map<string, Map<number, ParamSource>>();
   for (const i of indices) {
-    // Relu par le MÊME validateur qu'à l'écriture : la colonne est un jsonb, et ce qui en sort part vers un
+    // Relu par le même validateur qu'à l'écriture : la colonne est un jsonb, et ce qui en sort part vers un
     // tiers. Un indice illisible devient « aucune source connue », jamais une valeur inventée.
     const [valide] = parseParamHints([{ position: i.position, source: i.source }]) ?? [];
     if (!valide) continue;
@@ -119,14 +102,12 @@ export function catalogueTemplates(
   const sortie: TemplateCatalogue[] = [];
   for (const t of templates) {
     /**
-     * Le jugement de `POST /v1/sends`, jamais une règle voisine : `modeleLuDe` est la construction que la lecture
-     * partagée (`templateVarInfo`, `src/workflow/wiring.ts`) emploie, et `verdictModele` la lecture de l'envoi.
-     * Statut, catégorie ET ce qui empêcherait tout envoi (`raisonNonEnvoyable`) : un template n'entre que si
-     * l'envoi l'accepterait. `count` est le MAX des positions {{n}}, pas leur nombre.
+     * Le jugement de `POST /v1/sends`, jamais une règle voisine : `modeleLuDe` (la construction de la lecture
+     * partagée) et `verdictModele`. `count` est le max des positions {{n}}, pas leur nombre.
      */
     const verdict = verdictModele(modeleLuDe(t), t.language);
     if (verdict.statut !== 'approuve') continue;
-    // Garde de TYPE : un format hors de la table est déjà `non_envoyable` (`raisonNonEnvoyable`).
+    // Garde de type : un format hors de la table est déjà `non_envoyable` (`raisonNonEnvoyable`).
     const header = t.headerFormat === null ? 'none' : ENTETES.get(t.headerFormat);
     if (!header) continue;
     const parPosition = sources.get(cleTemplate(t.name, t.language));
@@ -177,27 +158,22 @@ export function catalogueMessagesRcs(
 }
 
 export interface V1CataloguesRouteDeps {
-  /** Le garde d'usage, injecté au bootstrap. OBLIGATOIRE, comme sur les autres modules /v1. */
+  /** Le garde d'usage, injecté au bootstrap. Requis, comme sur les autres modules /v1. */
   usage: ApiUsageGuard;
   /** Les templates du WABA de l'espace, tels que Meta les rend. `[]` quand l'espace n'a pas de WABA. */
   templates(tenantId: string): Promise<TemplateSummary[]>;
-  /** Tous les indices « variable vers champ » de l'espace, en UNE requête. */
+  /** Tous les indices « variable vers champ » de l'espace, en une requête. */
   indicesDeVariables(tenantId: string): Promise<IndiceDuTemplate[]>;
-  /** Les scénarios dont le graphe PUBLIÉ porte au moins un bloc. */
+  /** Les scénarios dont le graphe publié porte au moins un bloc. */
   scenariosPublies(tenantId: string): Promise<ScenarioPublie[]>;
   /** La bibliothèque RCS, suppressions douces exclues. */
   messagesRcs(tenantId: string): Promise<ReadonlyArray<{ name: string; content: RcsOutbound | null }>>;
 }
 
 /**
- * Guard attendu : `[makeRequireApiKey, requireScope('sends:create')]`, posé par l'entrée `v1` du registre.
- *
- * ⚠️ Une panne de Meta sur `/v1/templates` remonte telle quelle au gestionnaire d'erreur global
- * (`setErrorHandler`, `src/server.ts`), jamais en liste vide, qui ferait croire à l'intégrateur qu'il n'a aucun
- * template approuvé. Ce qu'il rend, SANS `code` dans les deux cas : un REFUS de Meta (`MetaApiError`) sort en
- * 422 `{ error: "Meta: …" }` ; une panne réseau ou toute autre exception sort en 500 au corps opaque, qu'un
- * proxy peut remplacer par sa propre page. `tests/v1-catalogues.test.ts` fige les deux. Aucun code dédié : c'est
- * une décision de spec (§ 9, `CodeApi`), laissée à Julien (`todo.md`) ; la page dit l'exception.
+ * Garde attendue : `[makeRequireApiKey, requireScope('sends:create')]`, posée par l'entrée `v1` du registre.
+ * Une panne de Meta sur `/v1/templates` remonte au gestionnaire global, jamais en liste vide (qui ferait croire
+ * à l'absence de template approuvé) : un refus de Meta sort en 422 `{ error: "Meta: …" }`, le reste en 500 opaque.
  */
 export function registerV1Catalogues(app: FastifyInstance, deps: V1CataloguesRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };

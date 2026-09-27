@@ -1,38 +1,22 @@
 /**
- * OÙ VA LE LEAD D'UNE PUBLICITÉ CLICK-TO-WHATSAPP. Module PUR : aucune IO, aucun import qui tire pg, aucune
- * horloge. Les faits entrent, une décision sort.
+ * Où va le lead d'une publicité Click-to-WhatsApp. Module pur : les faits entrent, une décision sort.
  *
- * 🔴 POURQUOI UNE FONCTION PURE ET PAS UNE SUITE DE `if` DANS LE CÂBLAGE (spec § 3.3, décision de Julien du
- * 2026-09-22). Cette règle décide, pour un vrai client qui vient de cliquer sur une publicité PAYÉE, qui lui
- * répond : l'agent de Meta, un scénario, ou personne. Six cas, dont trois « on ne fait rien » qui se
- * ressemblent à l'œil et ne veulent pas dire la même chose. Écrite dans le chemin du webhook, elle ne serait
- * éprouvable qu'en montant un webhook, un contact, une pub et un agent ; écrite ici, chaque ligne du tableau
- * de la spec est un test de trois lignes.
- *
- * 🔴 ET C'EST LA MÊME LEÇON QUE `retirerAncienAcces` (lot 2), payée la semaine dernière : une décision qui
- * vit dans un `if` du câblage finit gardée par un test qui lit le TEXTE de ce `if`, et un test de source
- * pince une ORTHOGRAPHE, pas une sémantique. Trois écritures du même bug avaient traversé deux gardes
- * successives.
- *
- * Le modèle est `src/inbox/assignation-campagne.ts` (`devenirEffectif`), qui répond à la question jumelle
- * pour une réponse de campagne.
+ * La règle décide qui répond à un client qui vient de cliquer une publicité payée (l'agent de Meta, un
+ * scénario, ou personne). Six cas, dont trois « on ne fait rien » qui ne veulent pas dire la même chose :
+ * écrite ici, chaque ligne du tableau est un test de trois lignes ; dans un `if` du câblage, elle finirait
+ * gardée par un test qui lit le texte du `if`. Modèle : `devenirEffectif` (`src/inbox/assignation-campagne.ts`).
  */
 
-/** Qui répond aux leads d'une campagne. Exclusif : c'est l'un OU l'autre, jamais les deux. */
+/** Qui répond aux leads d'une campagne. Exclusif : c'est l'un ou l'autre, jamais les deux. */
 export type DestinationPub = 'scenario' | 'agent_meta';
 
 /**
- * L'ISSUE d'une arrivée, inscrite sur `arrivees_pub.issue`. Les HUIT valeurs reprennent le tableau de la
- * spec § 3.3 (sept lignes) plus `sans_scenario`, ajoutée par une relecture à froid, et elles servent DEUX
- * choses : comprendre après coup ce qui s'est passé pour un lead précis, et
- * compter à part, dans l'entonnoir, les clics payés qui n'ont abouti à rien.
- *
- * ⚠️ C'EST UNE VALEUR, ET LE TYPE EN DÉCOULE, pas l'inverse. Un type seul ne peut pas être comparé au
- * CHECK de la migration 0170 à l'exécution, donc l'accord entre les deux ne tenait par rien.
- * `tests/pubs-entonnoir.test.ts` LIT le fichier SQL et exige l'égalité des deux listes.
+ * L'issue d'une arrivée, inscrite sur `arrivees_pub.issue`. Elle sert à comprendre après coup ce qui s'est
+ * passé pour un lead, et à compter à part les clics payés qui n'ont abouti à rien. Une valeur dont le type
+ * découle, pour que `tests/pubs-entonnoir.test.ts` compare la liste au CHECK de la base.
  */
 export const ISSUES_ROUTAGE = [
-  /** Aucune campagne connue : les déclencheurs ordinaires tournent, exactement comme avant ce lot. */
+  /** Aucune campagne connue : les déclencheurs ordinaires tournent comme pour tout message. */
   'inchange',
   /** La pub envoie ses leads à l'agent de Meta : on ne déclenche rien, il répond, c'est lui le primaire. */
   'agent_meta',
@@ -47,14 +31,9 @@ export const ISSUES_ROUTAGE = [
   /** Cas nominal : le scénario de la pub, et lui seul, est évalué. */
   'scenario',
   /**
-   * La publicité confie ses leads à un scénario, et il n'y a RIEN à démarrer : scénario supprimé, ou
-   * publicité pas encore publiée (son automation naît éteinte).
-   *
-   * 🔴 ELLE EXISTE PARCE QU'ON NE PREND PAS LE FIL DANS CE CAS, et c'est tout ce qu'elle dit. Relevée
-   * par une relecture à froid : sans elle, un lead `standby` faisait prendre le fil à l'agent de Meta
-   * pour que PERSONNE ne parle ensuite, donc un clic PAYÉ répondu par un silence de vingt-quatre heures,
-   * là où l'agent de Meta répondait avant ce lot. Une capacité manquante est un désagrément ; une
-   * RÉGRESSION sur le chemin d'un client qui paie est autre chose.
+   * La publicité confie ses leads à un scénario et il n'y a rien à démarrer (scénario supprimé, ou publicité
+   * pas encore publiée, son automation naît éteinte). On ne prend alors pas le fil : l'agent de Meta continue
+   * de répondre, au lieu d'un silence de vingt-quatre heures sur un clic payé.
    */
   'sans_scenario',
 ] as const;
@@ -63,26 +42,20 @@ export type IssueRoutage = typeof ISSUES_ROUTAGE[number];
 
 /** La publicité qui pilote ce lead, telle que nos tables la connaissent. */
 export interface PubDuLead {
-  /** L'identifiant Meta de la CAMPAGNE. C'est le niveau du lien, pas la pub (spec § 1). */
+  /** L'identifiant Meta de la campagne : c'est le niveau du lien, pas la pub. */
   campagneId: string;
   destination: DestinationPub;
   /**
-   * L'automation possédée par cette pub, ET SEULEMENT SI ELLE EST ALLUMÉE.
-   *
-   * 🔴 `null` VEUT DIRE « RIEN NE PARTIRA », ET C'EST CE SENS-LÀ QUI COMPTE. Il couvre DEUX états, et les
-   * confondre est précisément ce qui a créé une régression : le scénario supprimé (`on delete set null`,
-   * migration 0170) ET la publicité pas encore publiée, dont l'automation naît éteinte. Dans les deux cas
-   * il n'y a rien à démarrer, donc rien ne justifie de prendre le fil à l'agent de Meta.
-   *
-   * ⚠️ LE FILTRE SUR `enabled` EST DANS LA REQUÊTE, pas ici : la règle est pure, elle ne sait pas
-   * interroger. C'est `PgPublicitesStore.pubDeLaCampagne` qui ne rend l'identifiant que si l'automation
-   * est allumée, et un test d'intégration le tient.
+   * L'automation possédée par cette pub, seulement si elle est allumée. `null` = rien ne partira, qu'il
+   * s'agisse d'un scénario supprimé ou d'une publicité pas encore publiée ; rien ne justifie alors de prendre
+   * le fil. Le filtre sur `enabled` est dans la requête (`PgPublicitesStore.pubDeLaCampagne`), la règle étant
+   * pure.
    */
   automationId: string | null;
 }
 
 /**
- * Tout ce que la règle regarde. Rassemblé par le câblage AVANT l'appel, jamais lu paresseusement ici : une
+ * Tout ce que la règle regarde, rassemblé par le câblage avant l'appel, jamais lu paresseusement ici : une
  * règle pure qui irait chercher ses faits ne serait plus pure.
  */
 export interface FaitsDuLead {
@@ -95,11 +68,9 @@ export interface FaitsDuLead {
 }
 
 /**
- * CE QU'IL FAUT FAIRE, et les quatre cas sont exhaustifs.
- *
- * ⚠️ `reprendre_puis_pub` est le SEUL à ne pas porter son issue, et ce n'est pas un oubli : elle dépend de
- * la réponse de Meta, que seul le câblage connaîtra. Les trois autres la portent, donc le compilateur
- * interdit d'en inventer une au moment de l'écrire.
+ * Ce qu'il faut faire, en quatre cas exhaustifs. `reprendre_puis_pub` seul ne porte pas son issue : elle
+ * dépend de la réponse de Meta, que seul le câblage connaîtra. Les autres la portent, donc le compilateur
+ * interdit d'en inventer une.
  */
 export type DecisionRoutage =
   | { sorte: 'inchange'; issue: 'inchange' }
@@ -108,48 +79,34 @@ export type DecisionRoutage =
   | { sorte: 'reprendre_puis_pub'; automationId: string | null };
 
 /**
- * LA RÈGLE, ligne par ligne du tableau de la spec § 3.3, DANS SON ORDRE.
+ * La règle, dans l'ordre du tableau, et l'ordre des tests est la moitié de la règle :
  *
- * 🔴 L'ORDRE DES TESTS EST LA MOITIÉ DE LA RÈGLE, et il n'est pas celui qu'on écrirait d'instinct :
+ *  1. la campagne d'abord : sans campagne connue, on ne touche à rien ;
+ *  2. la destination avant l'état du contact : une pub « agent de Meta » ne regarde ni blocage ni
+ *     désabonnement, car nous n'envoyons rien, et ces gardes protègent nos envois ;
+ *  3. bloqué avant désabonné : une décision de modération prime sur un état de consentement, et
+ *     l'entonnoir les compte à part ;
+ *  4. `standby` en dernier, seul cas qui demande un geste chez Meta avant d'agir.
  *
- *  1. **La campagne d'abord.** Sans campagne connue, on ne touche à RIEN. C'est le cas de l'immense majorité
- *     du trafic publicitaire d'aujourd'hui (une pub créée dans le Gestionnaire, un `referral` de publication)
- *     et il doit continuer de se comporter exactement comme avant ce lot.
- *  2. **La destination avant l'état du contact.** Une pub « agent de Meta » ne regarde ni le blocage ni le
- *     désabonnement, et c'est correct : nous n'envoyons rien, donc il n'y a rien à retenir. C'est l'agent de
- *     Meta qui parle, sur le numéro du client, et ces deux gardes-là protègent NOS envois.
- *  3. **Bloqué avant désabonné.** Les deux rendent « rien ne part », mais pas pour la même raison, et
- *     l'entonnoir les compte séparément. Un contact à la fois bloqué et désabonné est d'abord un contact
- *     bloqué : c'est une décision de modération, elle prime sur un état de consentement.
- *  4. **`standby` en dernier**, parce que c'est le seul cas qui demande un geste chez Meta avant d'agir.
- *
- * ⚠️ `bloque` ET `desabonne` NE SONT PAS LUS dans les deux premières branches, et un test le pince : le
- * câblage a le droit de ne pas aller les chercher quand la campagne est inconnue ou qu'elle va à l'agent de
- * Meta, ce qui lui économise deux requêtes sur le chemin chaud de CHAQUE message entrant publicitaire.
+ * `bloque` et `desabonne` ne sont pas lus dans les deux premières branches (un test le pince) : le câblage
+ * peut ne pas aller les chercher, deux requêtes de moins sur le chemin chaud.
  */
 export function routerLeLead(f: FaitsDuLead): DecisionRoutage {
   if (f.pub === null) return { sorte: 'inchange', issue: 'inchange' };
   if (f.pub.destination === 'agent_meta') return { sorte: 'aucun_declencheur', issue: 'agent_meta' };
   if (f.bloque) return { sorte: 'aucun_declencheur', issue: 'bloque' };
   if (f.desabonne) return { sorte: 'aucun_declencheur', issue: 'desabonne' };
-  // 🔴 RIEN À DÉMARRER : ON NE TOUCHE À RIEN, ET SURTOUT PAS AU FIL. `automationId` est nul quand le
-  // scénario a été supprimé, ou quand la publicité n'est pas encore publiée (son automation naît éteinte,
-  // et c'est la publication qui l'allume). Prendre le fil à l'agent de Meta pour que personne ne parle
-  // ensuite transformerait un clic payé en silence de vingt-quatre heures, alors que sans nous l'agent de
-  // Meta aurait répondu. Ce test passe donc AVANT le standby, et c'est tout son intérêt.
+  // Rien à démarrer : on ne touche pas au fil. Prendre le fil à l'agent de Meta pour que personne ne parle
+  // transformerait un clic payé en silence ; ce test passe donc avant le standby.
   if (f.pub.automationId === null) return { sorte: 'aucun_declencheur', issue: 'sans_scenario' };
   if (f.enStandby) return { sorte: 'reprendre_puis_pub', automationId: f.pub.automationId };
   return { sorte: 'pub_seule', issue: 'scenario', automationId: f.pub.automationId };
 }
 
 /**
- * CE QUE LES DÉCLENCHEURS ONT LE DROIT DE FAIRE DE CE MESSAGE.
- *
- * 🔴 `seule` EST CE QUI DÉBRANCHE « TOUTES LES PUBS » ET « NOUVEAU CONTACT ». La spec (§ 3.3) exige que
- * **seule** l'automation de la pub soit évaluée quand la campagne est reliée. Ce n'est pas exprimable par la
- * mise en correspondance des déclencheurs : une automation `ctwa_ad` sans pub précise veut dire « n'importe
- * quelle pub », et elle a raison de le vouloir partout ailleurs. C'est donc une RESTRICTION posée en amont,
- * et c'est elle qui change le comportement des automations DÉJÀ créées.
+ * Ce que les déclencheurs ont le droit de faire de ce message. `seule` débranche « toutes les pubs » et
+ * « nouveau contact » : une automation `ctwa_ad` sans pub précise veut dire « n'importe quelle pub », et ce
+ * n'est pas exprimable par la correspondance, d'où cette restriction posée en amont.
  */
 export type RestrictionDeclencheurs =
   /** Rien à restreindre : le message suit le chemin ordinaire. */
@@ -160,40 +117,26 @@ export type RestrictionDeclencheurs =
   | { sorte: 'seule'; automationId: string };
 
 /**
- * CE QUE LE ROUTAGE LÈGUE AUX DÉCLENCHEURS pour UN message.
- *
- * ⚠️ LA CAMPAGNE VOYAGE AVEC LA RESTRICTION, et pas seulement l'automation à retenir. L'automation d'une pub
- * porte `{campaignId}` dans sa configuration : sans cette valeur dans l'événement, elle serait retenue par la
- * restriction puis REFUSÉE par sa propre correspondance, et le lead n'irait nulle part. Les deux moitiés se
- * posent ensemble ou pas du tout.
+ * Ce que le routage lègue aux déclencheurs pour un message. La campagne voyage avec la restriction :
+ * l'automation d'une pub porte `{campaignId}`, et sans cette valeur dans l'événement elle serait retenue par
+ * la restriction puis refusée par sa propre correspondance.
  */
 export interface RoutageDuMessage {
   restriction: RestrictionDeclencheurs;
-  /** `null` = campagne inconnue. C'est le cas de tout le trafic d'avant ce lot. */
+  /** `null` = campagne inconnue. */
   campagneId: string | null;
   /**
-   * LE FIL A ÉTÉ PRIS À L'AGENT DE META POUR CE MESSAGE, et voici à qui il appartient. `null` = on n'a rien
-   * pris, donc il n'y a rien à rendre.
-   *
-   * 🔴 IL EXISTE POUR QU'ON PUISSE LE RENDRE, et c'est le filet du seul cas que la règle ne peut pas
-   * prévoir : on prend le fil AVANT de savoir si l'automation va réellement démarrer. Elle peut encore
-   * être retenue par son anti-rebond, ou refuser parce que son scénario a disparu. Sans ce retour, le fil
-   * resterait à nous et personne ne parlerait, jusqu'au balayage de contrôle, vingt-quatre heures plus
-   * tard, quand la fenêtre de service de Meta est déjà fermée.
+   * Le fil a été pris à l'agent de Meta pour ce message, et voici à qui il appartient ; `null` = rien à
+   * rendre. On prend le fil avant de savoir si l'automation démarrera (anti-rebond, scénario disparu) : sans ce
+   * retour, personne ne parlerait jusqu'au balayage de contrôle, fenêtre de service déjà fermée.
    */
   repris: { tenantId: string; waId: string } | null;
 }
 
 /**
- * La restriction qui découle de la décision, une fois la reprise tentée.
- *
- * ⚠️ `repriseReussie` n'est lu que pour la décision qui en demande une, et il vaut alors exactement ce que
- * Meta a répondu. Sur un refus, on retombe sur `aucun` : l'agent de Meta garde le lead et NOUS ne devons
- * surtout pas lui répondre par-dessus, ce qui ferait recevoir deux messages au contact.
- *
- * ⚠️ UNE AUTOMATION ABSENTE VAUT `aucun`, JAMAIS `tous`. Le scénario d'une pub a pu être supprimé : la pub
- * reste, la destination reste `scenario`, et il n'y a plus rien à démarrer. Retomber sur le chemin ordinaire
- * ferait ramasser ce lead par une automation par mot-clé, c'est-à-dire répondre à côté sur un clic payé.
+ * La restriction qui découle de la décision, une fois la reprise tentée. Sur un refus de Meta, `aucun` :
+ * répondre par-dessus son agent ferait recevoir deux messages au contact. Une automation absente vaut
+ * `aucun`, jamais `tous` : le chemin ordinaire ferait ramasser le lead par une automation par mot-clé.
  */
 export function restrictionDuRoutage(d: DecisionRoutage, repriseReussie: boolean): RestrictionDeclencheurs {
   if (d.sorte === 'inchange') return { sorte: 'tous' };

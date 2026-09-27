@@ -5,41 +5,23 @@ import { equipePourPrompt, MODE_TRANSFERT_DEFAUT, type EquipePourPrompt, type Mo
 import type { BusinessHours } from '../workflow/conditions';
 
 /**
- * Tout ce que le cerveau doit savoir d'un agent : sa fiche, ses règles d'arrêt, ses outils ACTIFS.
+ * Tout ce que le cerveau doit savoir d'un agent : sa fiche, ses règles d'arrêt, ses outils actifs.
  *
- * 🔴 UN SEUL POINT DE LECTURE, pour les deux consommateurs. Le tour de production (`src/worker.ts`) et le bac
- * à sable de la console (`src/index.ts`) construisaient chacun le leur, à l'identique : c'est exactement la
- * famille de doublons que l'audit anti-slop du 2026-08-18 a nettoyée. Le risque n'est pas la duplication en
- * soi, c'est qu'un champ ajouté d'un seul côté fasse diverger ce que le modèle voit selon qu'on teste ou
- * qu'on est en production, c'est-à-dire précisément ce que le bac à sable existe pour empêcher.
- *
- * Typée contre les CONTRATS (`AgentStore`, `ToolCatalog`) et non contre leurs implémentations Postgres : elle
- * se teste sans base.
+ * Un seul point de lecture pour le tour de production et le bac à sable : un champ ajouté d'un seul côté
+ * ferait diverger ce que le modèle voit en essai et en production. Typé contre les contrats, pas contre
+ * Postgres, pour se tester sans base.
  */
 export interface DepsContexteAgent {
   agents: Pick<AgentStore, 'complet'>;
   outils: Pick<ToolCatalog, 'listActifs'>;
   /**
-   * QUAND les agents de cet ESPACE annoncent qu'ils sont des IA (migration 0140).
-   *
-   * 🔴 UNE DEP À PART, parce que ce n'est plus un champ de la fiche : l'obligation d'information pèse sur la
-   * marque déployante, donc un espace porte UNE politique et pas une par robot. La lire ici, dans le point
-   * de passage unique, garantit que le bac à sable et la production voient la MÊME chose : c'est
-   * précisément ce que ce module existe pour empêcher de diverger.
-   *
-   * ⚠️ Absente -> `session`, le défaut de 0126, donc le comportement d'avant. Un harnais de test qui ne la
-   * câble pas ne change donc rien.
+   * Quand les agents de cet espace annoncent qu'ils sont des IA : une politique d'espace, pas un champ de la
+   * fiche (l'obligation d'information pèse sur la marque déployante). Absente : `session`.
    */
   politiqueMentionIa?(tenantId: string): Promise<FrequenceMentionIa | null>;
   /**
-   * L'ÉQUIPE EST-ELLE JOIGNABLE, ET SINON QUAND REPREND-ELLE ? (lot 1 du 2026-09-18)
-   *
-   * 🔴 MÊME FORME ET MÊME RAISON QUE SA VOISINE : c'est un réglage d'ESPACE (migration 0156), lu au point de
-   * passage unique pour que le bac à sable et la production voient la MÊME chose. Un espace fermé doit
-   * produire la même phrase des deux côtés, sans quoi l'essai cesse de prouver quoi que ce soit.
-   *
-   * ⚠️ Absente -> l'équipe est réputée joignable, donc le comportement d'avant le 2026-09-18. Un harnais de
-   * test qui ne la câble pas ne change donc rien.
+   * L'équipe est-elle joignable, et sinon quand reprend-elle : réglage d'espace, lu ici pour que le bac à sable
+   * et la production produisent la même phrase. Absente : l'équipe est réputée joignable.
    */
   disponibiliteEquipe?(tenantId: string): Promise<EquipePourPrompt | null>;
 }
@@ -50,36 +32,28 @@ export async function lireContexteAgent(
   const fiche = await deps.agents.complet(tenantId, agentId);
   if (!fiche) return null;
   return {
-    // Le modèle de l'AGENT, pas celui de l'IA de construction : ce sont deux réglages distincts, et les
-    // confondre ferait répondre aux contacts avec le modèle réservé au setup.
+    // Le modèle de l'agent, pas celui de l'IA de construction : deux réglages distincts.
     modele: fiche.modele,
     mentionIa: fiche.mentionIa,
-    // La politique de l'ESPACE, jamais celle de l'agent : la fiche n'en porte plus depuis 0140.
+    // La politique de l'espace, jamais celle de l'agent.
     mentionIaFrequence: (deps.politiqueMentionIa ? await deps.politiqueMentionIa(tenantId) : null) ?? 'session',
     sorties: fiche.contenu.sorties,
     contenu: fiche.contenu,
     outilsActifs: await deps.outils.listActifs(tenantId, agentId),
     plafonds: { maxAppelsOutils: fiche.maxAppelsOutils, budgetMicroEur: fiche.budgetMicroEur },
-    // La politique face à un contact inconnu vient de la FICHE, jamais de l'appelant : c'est ce qui fait que
-    // le bac à sable montre le même refus d'outil que la production.
+    // La politique face à un contact inconnu vient de la fiche, jamais de l'appelant : le bac à sable montre
+    // ainsi le même refus d'outil que la production.
     contactInconnu: fiche.contactInconnu,
-    // ⚠️ `?? undefined` et non `?? { disponible: true }` : le champ ABSENT veut déjà dire « joignable », et
-    // deux façons d'écrire la même chose finiraient par diverger.
+    // `?? undefined` et non `?? { disponible: true }` : le champ absent veut déjà dire « joignable ».
     equipe: (deps.disponibiliteEquipe ? await deps.disponibiliteEquipe(tenantId) : null) ?? undefined,
   };
 }
 
 /**
- * Le contexte d'un tour avec les DEUX politiques de l'espace lues dans ses réglages, pour le tour de production
- * (`src/worker.ts`) comme pour le bac à sable (`src/index.ts`) : leurs deux câblages étaient recopiés à
- * l'identique (audit ponytail du 2026-09-25).
- *
- * ⚠️ UNE SEULE LECTURE DES RÉGLAGES POUR LES DEUX POLITIQUES D'ESPACE. Cette fonction est sur le chemin de
- * CHAQUE tour d'agent : deux `get` y feraient deux allers-retours pour la même ligne, et la seconde politique
- * est arrivée le 2026-09-18 à côté de la première.
- *
- * ⚠️ L'heure est prise AU MOMENT DU TOUR : une disponibilité calculée plus tôt serait fausse sur une
- * conversation qui traverse l'heure de fermeture.
+ * Le contexte d'un tour avec les deux politiques de l'espace lues dans ses réglages, pour le tour de
+ * production comme pour le bac à sable. Une seule lecture des réglages (chemin de chaque tour d'agent), et
+ * l'heure prise au moment du tour : calculée plus tôt, la disponibilité serait fausse sur une conversation
+ * qui traverse l'heure de fermeture.
  */
 export async function lireContexteAvecReglages(
   deps: Pick<DepsContexteAgent, 'agents' | 'outils'> & {

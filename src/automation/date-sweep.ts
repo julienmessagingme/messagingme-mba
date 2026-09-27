@@ -3,33 +3,24 @@ import type { AutomationRow } from './match';
 import { texteDe } from '../lib/erreur';
 
 /**
- * Balayage du déclencheur `avant_date` : le seul qui ne répond pas à un événement mais à l'ÉCOULEMENT DU
- * TEMPS. Rien ne se passe côté client ; c'est nous qui devons aller voir si une échéance est arrivée.
+ * Balayage du déclencheur `avant_date` : le seul qui répond à l'écoulement du temps, pas à un événement. IO
+ * injectée, testable sans base ; la décision par contact vit dans `avant-date.ts`.
  *
- * IO INJECTÉE (aucun import pg) -> testable sans base, comme `runAutomations`. La décision par contact vit
- * dans `avant-date.ts`, qui est pur ; ce module ne fait que la promener sur les contacts candidats.
+ * 🔴 Il publie, il ne démarre rien : le scénario part par `runAutomations`, avec les garde-fous de tous les
+ * déclencheurs (contact bloqué, plafond horaire, un seul parcours à la fois).
  *
- * 🔴 Il PUBLIE, il ne démarre rien. Le scénario part par le chemin commun (`runAutomations`), donc avec les
- * mêmes garde-fous que tous les autres déclencheurs. Démarrer ici aurait dupliqué le contact bloqué, le
- * plafond horaire et « un seul parcours à la fois ».
- *
- * ⚠️ CONSÉQUENCE À CONNAÎTRE, mesurée en production le 2026-08-23. Quand le scénario ne DÉMARRE pas (fil tenu
- * par un humain, scénario vide, bloc absent), `runAutomations` annule le tir : rien n'est parti, donc rien
- * n'est à protéger. Le marqueur d'occurrence disparaît avec lui, et le balayage suivant REPUBLIE. L'échéance
- * est donc retentée à chaque passage tant que la fenêtre de tolérance est ouverte, puis abandonnée.
- *
- * C'est le comportement voulu : un fil momentanément tenu par un opérateur doit pouvoir laisser passer le
- * rappel une minute plus tard. Ça reste borné (la fenêtre), et aucun message ne part pendant les tentatives.
- * En revanche un scénario structurellement cassé produit une ligne de journal par minute pendant la fenêtre :
- * c'est bruyant, et c'est le signal qu'il y a quelque chose à corriger.
+ * Quand le scénario ne démarre pas (fil tenu par un humain, scénario vide), `runAutomations` annule le tir et
+ * son marqueur : le balayage suivant republie, tant que la fenêtre de tolérance est ouverte. Voulu (un fil
+ * momentanément tenu doit pouvoir laisser passer le rappel), borné, et aucun message ne part pendant les
+ * tentatives ; un scénario cassé produit une ligne de journal par minute.
  */
 
 export interface DateSweepDeps {
   /** Espaces ayant au moins une automation `avant_date` active. */
   tenants(): Promise<string[]>;
-  /** Automations ACTIVES de ce type pour cet espace. */
+  /** Automations actives de ce type pour cet espace. */
   automations(tenantId: string): Promise<AutomationRow[]>;
-  /** Fuseau de l'espace : une date sans fuseau est une heure MURALE, elle n'est un instant que là-dedans. */
+  /** Fuseau de l'espace : une date sans fuseau est une heure murale, elle n'est un instant que là-dedans. */
   timeZone(tenantId: string): Promise<string>;
   /** Contacts dont la date tombe dans la fenêtre grossière, avec la valeur déjà tirée. */
   candidats(
@@ -42,8 +33,8 @@ export interface DateSweepDeps {
   /** Publie l'événement d'automation. C'est le worker qui décide ensuite quoi déclencher. */
   publish(tenantId: string, ev: { kind: 'avant_date'; waId: string; automationId: string; valeur: string }): Promise<void>;
   /**
-   * Fenêtre de rattrapage après le moment prévu. Elle existe pour qu'un redémarrage du worker ne perde pas
-   * les échéances de la minute d'avant, PAS pour rattraper un retard réel : au-delà, on n'envoie rien.
+   * Fenêtre de rattrapage après le moment prévu : pour qu'un redémarrage du worker ne perde pas les échéances
+   * de la minute d'avant, pas pour rattraper un retard réel.
    */
   toleranceMinutes: number;
   now?: () => number;
@@ -54,10 +45,8 @@ export interface DateSweepDeps {
 const MARGE_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Un passage. Renvoie le nombre d'événements publiés.
- *
- * Isolation PAR AUTOMATION : une automation qui échoue (champ supprimé, base indisponible) ne doit pas
- * empêcher les autres de partir, ni faire échouer le balayage entier.
+ * Un passage ; renvoie le nombre d'événements publiés. Isolation par automation : une automation qui échoue
+ * ne doit pas empêcher les autres de partir.
  */
 export async function runDateSweep(deps: DateSweepDeps): Promise<number> {
   const now = deps.now ?? (() => Date.now());
@@ -69,8 +58,8 @@ export async function runDateSweep(deps: DateSweepDeps): Promise<number> {
     try {
       timeZone = await deps.timeZone(tenantId);
     } catch {
-      // Fuseau illisible : on continue sur le défaut plutôt que d'abandonner l'espace entier. Un rappel à
-      // une heure approchante vaut mieux qu'aucun rappel, et le cas ne devrait pas exister.
+      // Fuseau illisible : repli sur le défaut plutôt qu'abandonner l'espace (un rappel à une heure approchante
+      // vaut mieux qu'aucun).
       journal(`date-sweep: fuseau illisible pour ${tenantId}, repli sur ${timeZone}`);
     }
 
@@ -83,12 +72,9 @@ export async function runDateSweep(deps: DateSweepDeps): Promise<number> {
         }
         const offsetMinutes = minutesDuDelai(cfg.delai, cfg.unite);
         const t = now();
-        // Les dates cherchées sont celles dont l'échéance tombe maintenant. La marge d'un jour absorbe les
-        // écarts de fuseau entre valeurs stockées.
-        // ⚠️ LE CENTRE CHANGE DE CoTÉ AVEC LE SENS. Pour « avant », l'échéance tombe maintenant quand la date
-        // vaut `maintenant + délai` ; pour « après », quand elle vaut `maintenant - délai`. Chercher du même
-        // côté dans les deux cas ramènerait une fenêtre de contacts qui ne contient jamais les bons, et
-        // l'automation serait muette sans aucune erreur.
+        // Les dates cherchées sont celles dont l'échéance tombe maintenant, à un jour près (écarts de fuseau). Le
+        // centre change de côté avec le sens : `maintenant + délai` pour « avant », `maintenant - délai` pour
+        // « après » ; du même côté, la fenêtre ne contiendrait jamais les bons contacts, sans erreur.
         const centre = t + (cfg.sens === 'apres' ? -1 : 1) * offsetMinutes * 60_000;
         const borneBasse = new Date(centre - MARGE_MS).toISOString();
         const borneHaute = new Date(centre + MARGE_MS).toISOString();

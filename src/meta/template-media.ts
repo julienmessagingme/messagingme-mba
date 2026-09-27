@@ -2,23 +2,17 @@ import type { OutboundCarouselCard } from './template-components';
 import { texteDe } from '../lib/erreur';
 
 /**
- * Prépare les visuels d'un template POUR L'ENVOI : chaque image lue chez Meta est re-téléversée sur le numéro
- * d'envoi, et c'est son `media id` qui part. Sert aux cartes d'un carousel ET à l'en-tête média d'un template
- * simple, qui ont exactement le même besoin.
+ * Prépare les visuels d'un template pour l'envoi : chaque image lue chez Meta est re-téléversée sur le numéro
+ * d'envoi, et c'est son `media id` qui part (cartes de carousel et en-tête média d'un template simple).
  *
- * Pourquoi ce détour, mesuré en live le 2026-08-15 : envoyer l'URL du CDN de Meta (`link`) est ACCEPTÉ par
- * l'API (200 + id de message) puis échoue 2 s plus tard en `131053`, parce que le téléchargeur de Meta se
- * prend un 403 sur son propre CDN. L'URL est pourtant publiquement lisible depuis n'importe où ailleurs :
- * c'est ce qui rendait le bug invisible à une sonde qui se contente de lire l'URL.
- *
- * Extrait du worker parce que l'INBOX en a besoin aussi (envoi à la main dans une conversation). Un second
- * exemplaire de cette logique est exactement ce qui avait laissé le carousel non branché côté campagne : il
- * n'y en a qu'un, et les deux processus l'instancient.
+ * Envoyer l'URL du CDN de Meta (`link`) est accepté par l'API puis échoue en `131053` quelques secondes plus
+ * tard : le téléchargeur de Meta prend un 403 sur son propre CDN, alors que l'URL est lisible partout ailleurs.
+ * Un seul exemplaire de cette logique, instancié par le worker et par l'API (Inbox).
  */
 export interface TemplateMediaDeps {
   /** Numéro d'envoi du tenant : un `media id` est scopé au numéro qui l'a téléversé. */
   getPhoneNumberId(tenantId: string): Promise<string | null>;
-  /** Client d'upload résolu PAR TENANT (token du tenant). */
+  /** Client d'upload résolu par tenant (token du tenant). */
   mediaClientFor(tenantId: string): Promise<{ uploadForSend(phoneNumberId: string, bytes: Buffer, mime: string): Promise<string> }>;
   /** Téléchargement du visuel chez Meta. Injecté par les tests ; défaut : `fetch` global. */
   fetchImpl?: (url: string) => Promise<Response>;
@@ -30,8 +24,10 @@ export interface TemplateMediaDeps {
 const MEDIA_CACHE_MS = 7 * 86_400_000;
 
 export class TemplateMediaPreparer {
-  /** Cache par CHEMIN d'image (l'URL porte une signature qui change à chaque lecture du template). Sans lui,
-   *  une campagne de 5 000 destinataires re-téléverserait 5 000 fois le même visuel. */
+  /**
+   * Cache par chemin d'image (l'URL porte une signature qui change à chaque lecture du template) : sans lui, une
+   * campagne re-téléverserait le même visuel pour chaque destinataire.
+   */
   private readonly cache = new Map<string, { at: number; id: string }>();
 
   constructor(private readonly deps: TemplateMediaDeps) {}
@@ -41,11 +37,9 @@ export class TemplateMediaPreparer {
   }
 
   /**
-   * Téléverse (ou relit du cache) UN visuel pour un numéro d'envoi DÉJÀ résolu.
-   *
-   * ⚠️ La clé de cache porte le NUMÉRO, pas seulement l'URL : un `media id` est scopé au numéro qui l'a
-   * téléversé. Sans lui, un numéro reconnecté ou remplacé dans les 7 jours réutiliserait un identifiant
-   * téléversé sur l'ancien, et l'envoi échouerait sans qu'on comprenne pourquoi.
+   * Téléverse (ou relit du cache) un visuel pour un numéro d'envoi déjà résolu. La clé de cache porte le numéro :
+   * un `media id` est scopé au numéro qui l'a téléversé, et un numéro remplacé réutiliserait sinon un identifiant
+   * inutilisable.
    */
   private async televerse(tenantId: string, pn: string, mediaUrl: string): Promise<string | null> {
     const cle = `${pn}|${mediaUrl.split('?')[0]!}`;
@@ -69,12 +63,9 @@ export class TemplateMediaPreparer {
   }
 
   /**
-   * UNE URL de visuel -> son `media id`, ou null si la préparation a échoué (numéro d'envoi absent,
-   * téléchargement refusé, téléversement en erreur). Jamais de throw : l'appelant refuse l'envoi en nommant ce
-   * qui manque, plutôt que de laisser partir un message que Meta accepterait puis ne livrerait pas.
-   *
-   * Point d'entrée COMMUN aux cartes de carousel et à l'en-tête média : un même visuel servant aux deux, sur le
-   * même numéro, ne se téléverse qu'une fois.
+   * Une URL de visuel -> son `media id`, ou null si la préparation a échoué. Ne lève jamais : l'appelant refuse
+   * l'envoi en nommant ce qui manque, plutôt que de laisser partir un message que Meta accepterait sans le livrer.
+   * Point d'entrée commun aux cartes et à l'en-tête : un même visuel sur un même numéro ne se téléverse qu'une fois.
    */
   async prepareOne(tenantId: string, mediaUrl: string): Promise<string | null> {
     if (mediaUrl === '') return null;
@@ -88,11 +79,8 @@ export class TemplateMediaPreparer {
   }
 
   /**
-   * Rend les cartes prêtes à l'envoi. Une carte dont le visuel n'a pas pu être préparé revient SANS `mediaId` :
-   * c'est `carouselSendBlocker` qui refuse alors l'envoi en la nommant, plutôt que de laisser partir un
-   * message que Meta accepterait puis ne livrerait pas.
-   *
-   * Le numéro d'envoi est résolu UNE fois pour toutes les cartes, pas une fois par carte.
+   * Rend les cartes prêtes à l'envoi. Une carte dont le visuel n'a pas pu être préparé revient sans `mediaId` :
+   * `carouselSendBlocker` refuse alors l'envoi en la nommant. Le numéro d'envoi est résolu une fois pour toutes.
    */
   async prepare(tenantId: string, cards: OutboundCarouselCard[]): Promise<OutboundCarouselCard[]> {
     const pn = await this.deps.getPhoneNumberId(tenantId);

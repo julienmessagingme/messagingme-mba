@@ -1,26 +1,18 @@
 /**
  * Dérive le JSON Schema d'un outil, tel qu'il est envoyé au modèle.
  *
- * 🔴 C'EST ICI QUE LE MODÈLE PERD LA MAIN SUR LA CIBLE, et c'est tout l'intérêt de ce module. Chaque
- * paramètre porte une `source` :
- *
- *  - `modele`  : le modèle le remplit. SEULS ceux-là entrent dans le schéma.
- *  - `contact` : dérivé du numéro authentifié par la signature du webhook Meta, ou d'un champ de la fiche
- *                contact. Le modèle ne le VOIT pas, il ne peut donc pas le fabriquer.
- *  - `fixe`    : constante du tenant (identifiant de compte, code boutique).
- *
- * Sans cette séparation, un connecteur client serait un IDOR offert au premier venu qui écrit sur le
- * numéro : il suffirait de demander à l'agent la commande de quelqu'un d'autre. Les paramètres `contact` et
- * `fixe` sont injectés par le runtime au moment de l'appel, jamais négociés avec le modèle.
+ * 🔴 C'est ici que le modèle perd la main sur la cible. Chaque paramètre porte une `source` :
+ *  - `modele`  : le modèle le remplit, seuls ceux-là entrent dans le schéma ;
+ *  - `contact` : dérivé du numéro authentifié par la signature du webhook Meta, ou d'un attribut de la fiche ;
+ *  - `champ`   : un champ personnalisé déclaré par le client ;
+ *  - `fixe`    : constante du tenant.
+ * Les trois derniers sont injectés par le runtime, jamais négociés avec le modèle : sinon un connecteur
+ * serait un IDOR (demander à l'agent la commande de quelqu'un d'autre).
  */
 
 /**
- * ⚠️ `champ` EST ARRIVÉE LE 2026-09-16, ET ELLE ALIGNE UN VOCABULAIRE QUI EXISTAIT DÉJÀ. Les variables de
- * requête (`src/agent/variables.ts`) distinguent depuis longtemps un attribut de fiche (`contact`, liste
- * fermée) d'un CHAMP PERSONNALISÉ (`champ`, clé déclarée par le client). Les paramètres d'outil n'avaient
- * que le premier, ce qui suffisait tant qu'un connecteur décrivait son appel dans une requête. Un outil MCP
- * n'a PAS de requête : ses paramètres viennent du schéma distant et passent par ici. Sans `champ`, un
- * paramètre que le serveur identifie par e-mail retomberait sur le modèle, donc sur le contact.
+ * `champ` aligne les paramètres d'outil sur les variables de requête (`src/agent/variables.ts`) : un outil
+ * MCP n'a pas de requête, et sans `champ` un paramètre identifié par e-mail retomberait sur le modèle.
  */
 export type SourceParam = 'modele' | 'contact' | 'champ' | 'fixe';
 
@@ -39,22 +31,16 @@ export interface ParamOutil {
   /** `source: 'contact'` : le champ de la fiche contact d'où vient la valeur (`wa_id` compris). Jamais exposé. */
   contactPath?: string;
   /**
-   * `source: 'champ'` : la CLÉ du champ personnalisé déclaré par le client. Jamais exposée.
-   *
-   * 🔴 UN `champ` SANS `cle` EST ÉCARTÉ par la coercion, et ce n'est pas de la rigueur de forme : il ne
-   * désignerait rien, donc l'appel partirait chez le client avec un trou à la place d'un identifiant.
+   * `source: 'champ'` : la clé du champ personnalisé déclaré par le client. Jamais exposée. Un `champ` sans
+   * `cle` est écarté par la coercion.
    */
   cle?: string;
   /** `source: 'fixe'` : la constante du tenant. Jamais exposée. */
   value?: string | number | boolean;
   /**
-   * Outil MCP : le CHEMIN de ce paramètre dans le schéma du serveur distant (`filtres.ville`), tel qu'il y
-   * est écrit, casse comprise.
-   *
-   * 🔴 IL N'EST JAMAIS EXPOSÉ AU MODÈLE, et il n'est pas décoratif : `name` est une étiquette LOCALE, plate
-   * et normalisée, quand le chemin est la donnée de PROTOCOLE qui permet de recomposer l'objet imbriqué au
-   * moment de l'appel. Sans lui, un paramètre imbriqué n'aurait aucune case où poser son marquage
-   * `contact` / `fixe`, donc il serait forcément rempli par le modèle, donc influençable par le contact.
+   * Outil MCP : le chemin de ce paramètre dans le schéma du serveur distant (`filtres.ville`), casse comprise.
+   * Jamais exposé : `name` n'est qu'une étiquette locale, le chemin permet de recomposer l'objet imbriqué à
+   * l'appel, et donc de marquer un paramètre imbriqué `contact` ou `fixe`.
    */
   cheminMcp?: string;
 }
@@ -71,13 +57,9 @@ export interface SchemaObjet {
 const TYPES: readonly TypeParam[] = ['string', 'number', 'integer', 'boolean'];
 
 /**
- * Coerce défensivement une entrée de `agent_tools.params` (du jsonb, donc opaque) en paramètre exploitable.
- * Rend `null` sur une entrée inutilisable plutôt que de lever.
- *
- * ⚠️ IGNORER UNE ENTRÉE N'EST PAS ANODIN, contrairement à ce que ce commentaire affirmait. Tant que la
- * coercion n'avait qu'un consommateur (l'exposition au modèle), la retirer ne pouvait que retrancher. Depuis
- * qu'elle sert AUSSI l'injection du runtime, écarter une entrée `contact` malformée pendant qu'une entrée
- * `modele` du MÊME nom survit rendrait la cible au modèle. C'est `paramsOutil` qui ferme ce cas, sur le brut.
+ * Relit défensivement une entrée de `agent_tools.params` (jsonb opaque). Rend `null` sur une entrée
+ * inutilisable plutôt que de lever. Écarter une entrée n'est pas anodin : voir `paramsOutil`, qui empêche
+ * qu'un `contact` malformé rende la cible au modèle.
  */
 function coercer(brut: unknown): ParamOutil | null {
   if (!brut || typeof brut !== 'object') return null;
@@ -87,8 +69,7 @@ function coercer(brut: unknown): ParamOutil | null {
   const source = (['modele', 'contact', 'champ', 'fixe'] as const).find((s) => s === o.source);
   if (!name || !type || !source) return null;
   const cle = typeof o.cle === 'string' ? o.cle.trim() : '';
-  // 🔴 Un `champ` sans clé ne désigne RIEN. Le garder produirait un argument que personne ne remplit, donc
-  // un appel au système du client avec un trou à la place d'un identifiant.
+  // Un `champ` sans clé ne désigne rien : l'appel partirait avec un trou à la place d'un identifiant.
   if (source === 'champ' && cle === '') return null;
   const enumeration = Array.isArray(o.enum)
     ? o.enum.filter((v): v is string => typeof v === 'string' && v !== '')
@@ -106,32 +87,21 @@ function coercer(brut: unknown): ParamOutil | null {
     ...(typeof o.contactPath === 'string' && o.contactPath.trim() !== '' ? { contactPath: o.contactPath.trim() } : {}),
     ...(valeurFixe !== undefined ? { value: valeurFixe } : {}),
     ...(source === 'champ' ? { cle } : {}),
-    // ⚠️ NON TRIMÉ, contrairement aux autres : c'est un chemin du schéma DISTANT, et un espace y appartient
-    // au nom de la propriété du serveur. Le nettoyer ferait viser une clé qui n'existe pas chez lui.
+    // Non trimé : c'est un chemin du schéma distant, un espace y appartient au nom de la propriété.
     ...(typeof o.cheminMcp === 'string' && o.cheminMcp !== '' ? { cheminMcp: o.cheminMcp } : {}),
   };
 }
 
 /**
- * Les paramètres d'un outil, coercés, TOUTES sources confondues.
- *
- * 🔴 SOURCE UNIQUE de la séparation des sources. Le schéma exposé au modèle (ci-dessous), le schéma de
- * validation des arguments et l'injection des valeurs du runtime (`src/agent/executor.ts`) dérivent tous les
- * trois d'ICI. Deux lectures divergentes de `params` seraient exactement la faille que ce module existe pour
- * fermer : le modèle perdrait la main sur la cible dans une lecture et la reprendrait dans l'autre.
+ * Les paramètres d'un outil, coercés, toutes sources confondues : le schéma exposé au modèle, la validation
+ * des arguments et l'injection du runtime (`src/agent/executor.ts`) en dérivent tous. Deux lectures
+ * divergentes rendraient la cible au modèle dans l'une d'elles.
  */
 export function paramsOutil(params: unknown): ParamOutil[] {
   const liste = Array.isArray(params) ? params : [];
-  // 🔴 Noms RÉSERVÉS par le runtime, lus sur le BRUT et non sur la coercion. Une entrée `contact`, `champ`
-  // ou `fixe` inutilisable (type absent, clé manquante, mal orthographiée) est écartée par `coercer` ; si le
-  // même nom est aussi déclaré en `modele`, il resterait alors exposé, validé, et plus rien ne viendrait
-  // l'écraser à l'injection : le modèle reprendrait la main sur la cible, c'est-à-dire exactement l'IDOR que
-  // ce module ferme. Une déclaration ambiguë se tranche donc TOUJOURS en faveur du runtime, y compris quand
-  // elle est cassée.
-  //
-  // ⚠️ `champ` A DÛ ENTRER ICI EN MÊME TEMPS QUE DANS `SourceParam`, et c'est le genre d'oubli qui ne se
-  // voit ni du compilateur ni d'un test qui n'aurait pas été écrit pour ça : une capacité ajoutée à un
-  // endroit et câblée sur deux consommateurs sur trois est un correctif à moitié, pas un correctif.
+  // 🔴 Noms réservés par le runtime, lus sur le brut et non sur la coercion : une entrée `contact`, `champ`
+  // ou `fixe` inutilisable est écartée par `coercer`, et un même nom déclaré en `modele` resterait exposé,
+  // sans rien pour l'écraser à l'injection. Une déclaration ambiguë se tranche toujours pour le runtime.
   const reserves = new Set(
     liste
       .filter((b): b is Record<string, unknown> => !!b && typeof b === 'object')
@@ -148,17 +118,13 @@ export function paramsOutil(params: unknown): ParamOutil[] {
 }
 
 /**
- * Le schéma envoyé au modèle pour un outil.
- *
- * Aucun `$schema` (aucun fournisseur ne l'attend), et aucune borne numérique parasite : le schéma est
- * construit DIRECTEMENT plutôt que dérivé d'un schéma Zod, donc le bruit `minimum: -9007199254740991` que
- * produit `z.number().int()` n'existe pas ici par construction. Un test l'ancre, pour qu'une future
- * dérivation ne le réintroduise pas sans qu'on le voie : ce bruit se paie à CHAQUE tour, dans le prompt.
+ * Le schéma envoyé au modèle pour un outil, construit directement et pas dérivé de Zod : ni `$schema` ni
+ * bornes parasites (`minimum: -9007199254740991` de `z.number().int()`), qui se paieraient à chaque tour.
  */
 export function toolParamsToJsonSchema(params: unknown): SchemaObjet {
   const schema: SchemaObjet = { type: 'object', properties: {}, required: [], additionalProperties: false };
   for (const p of paramsOutil(params)) {
-    // 🔴 LA garde de ce module : tout ce qui n'est pas rempli par le modèle est invisible pour lui.
+    // La garde de ce module : tout ce qui n'est pas rempli par le modèle est invisible pour lui.
     if (p.source !== 'modele') continue;
     schema.properties[p.name] = {
       type: p.type,

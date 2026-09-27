@@ -4,24 +4,12 @@ import type { OutilAPublier } from './publication';
 import { lireCibleMaison, variablesPourMeta } from './outils-maison';
 
 /**
- * CE QUE CHAQUE OUTIL EXPOSÉ À L'AGENT DE META DEVIENT CHEZ META (spec 2026-09-21-outils-maison-mba, § 8).
- *
- * 🔴 SORTI DE `src/index.ts` POUR ÊTRE TESTÉ : c'est la liste que la publication compare à Meta et que l'aperçu
- * montre, et un câblage ne se teste pas.
- *
- * Deux familles partent : un appel de connecteur (les variables de sa requête), et un geste maison de l'agent
- * de Meta (les variables que sa cible laisse à l'agent). Tout le reste est filtré ICI plutôt que de produire un
- * geste qui échouerait et arrêterait toute la publication : un MCP, une action d'agent IA (handler inconnu du
- * relais), un outil maison illisible, un connecteur dont l'appel a disparu.
- *
- * 🔴 LE MCP EST ÉCARTÉ PAR MANQUE DE CODE, PAS PAR REFUS DE META, et cette ligne a dit le contraire jusqu'au
- * 2026-09-24. Elle affirmait « Meta n'appelle que du HTTP ». C'était déjà à moitié faux depuis le relais du
- * 2026-09-21 : depuis, Meta n'appelle plus le système du client, il appelle NOTRE relais en HTTP, et ce que
- * nous parlons de l'autre côté lui est invisible. Et c'est devenu entièrement faux quand Meta a documenté
- * `connector_protocol: MCP` sur ses connecteurs (vérifié le 2026-09-24 ; le corpus du 2026-09-10 ne le
- * portait pas). Ce qui manque est ici : traduire le schéma d'un outil MCP en variables déclarées, et donner
- * au relais une troisième branche vers le résolveur MCP. ⚠️ Cette justification fausse avait été RECOPIÉE
- * dans l'écran des connecteurs MCP, où elle disait au client d'aller se plaindre chez Meta.
+ * Ce que chaque outil exposé à l'agent de Meta devient chez Meta : la liste que la publication compare à Meta et
+ * que l'aperçu montre. Deux familles partent : un appel de connecteur (les variables de sa requête) et un geste
+ * maison (les variables que sa cible laisse à l'agent). Le reste est filtré ici plutôt que de faire échouer toute
+ * la publication : un MCP, une action d'agent IA, un outil maison illisible, un connecteur sans appel.
+ * Le MCP est écarté faute de code, pas par refus de Meta (qui appelle notre relais en HTTP) : il manque la
+ * traduction de son schéma en variables et une branche du relais vers le résolveur MCP.
  */
 export async function outilsAPublier(
   actifs: readonly Pick<OutilDefini, 'id' | 'name' | 'description' | 'nePasUtiliser' | 'origin' | 'requestId' | 'binding'>[],

@@ -1,58 +1,28 @@
 import type { FicheAgentContenu } from '../fiche';
 
 /**
- * L'ORDRE DU JOUR DE L'ENTRETIEN, ET QUI LE CONDUIT.
+ * L'ordre du jour de l'entretien, et qui le conduit : le serveur, pas le modèle. Le modèle formule la
+ * question qu'on lui désigne et extrait la réponse.
  *
- * 🔴 CE FICHIER A CHANGÉ DE NATURE LE 2026-08-31. Il portait six dimensions à plat, le modèle choisissait sa
- * question suivante, et il déclarait lui-même ce qu'il avait couvert. Le serveur ne faisait que compter. Rien
- * n'était déterministe, et ça se voyait : Julien, à l'usage, « la première phase (objectif, quand s'arrêter)
- * se passe bien, mais il manque beaucoup de choses au questionnement : le ton, l'identité, quelle base de
- * connaissance pour répondre aux questions ». Un modèle pressé de faire plaisir déclarait couvert et passait.
+ * 1. Un point n'est couvert que s'il a été posé au client (`poses`), pas parce que le modèle prétend en
+ *    connaître la réponse. Une réponse donnée d'avance est gardée, et se fait confirmer en une phrase.
+ * 2. Certains points n'existent que si une réponse les fait exister : répondre « l'agent le fait tout seul »
+ *    à une bascule ouvre la question du moyen, et l'entretien ne peut pas se terminer sans.
  *
- * L'INVERSION : l'ordre du jour et la couverture sont des faits du SERVEUR. Le modèle ne choisit plus rien ;
- * il formule la question qu'on lui désigne et il extrait la réponse. Deux conséquences qui font la
- * détermination :
- *
- *  1. **Un point n'est couvert que s'il a été POSÉ au client** (`poses`), pas seulement si le modèle prétend
- *     connaître la réponse. C'est ce qui garantit qu'on a réellement fait le tour, et pas que le modèle a
- *     bien deviné. Une réponse donnée spontanément avant qu'on pose la question est gardée : le tour venu, on
- *     la fait CONFIRMER en une phrase au lieu de reposer la question, ce qui rend l'entretien court sans rien
- *     sauter.
- *  2. **Certains points n'existent que si la réponse à un autre les fait exister** (`debloquePar`). C'est le
- *     creusement que Julien demandait : « si c'est l'agent qui peut le faire lui-même, il faut que l'agent
- *     creuse et demande, ben comment l'agent fait dans ces cas là ? (en gros il faut définir quel tool
- *     l'agent va pouvoir appeler pour gérer ça) ». Répondre « l'agent le fait tout seul » à `bascules` ouvre
- *     donc `quel_outil`, mécaniquement, et l'entretien ne peut pas se terminer sans.
- *
- * Chaque point correspond à ce qu'il faut savoir pour écrire la fiche sans rien inventer : ce n'est pas un
- * questionnaire décoratif.
+ * Chaque point correspond à ce qu'il faut savoir pour écrire la fiche sans rien inventer.
  */
 
 /**
- * Ce que l'agent FAIT au moment d'une bascule. Énumération fermée, et c'est elle qui pilote le creusement :
- * le serveur lit cette valeur pour décider s'il reste une question à poser.
- *
- * ⚠️ `continuer` est une réponse COMPLÈTE, pas un aveu d'ignorance. Un client qui pose encore des questions
- * n'est pas un point de bascule, c'est le travail normal de l'agent. Sans cette valeur, le modèle inventerait
- * une action pour un moment qui n'en demande aucune, ce qu'il faisait avant le 2026-08-28.
+ * Ce que l'agent fait au moment d'une bascule. Énumération fermée, lue par le serveur pour décider s'il
+ * reste une question à poser. `continuer` est une réponse complète : sans elle, le modèle inventerait une
+ * action pour un moment qui n'en demande aucune.
  */
 export const ACTIONS = ['scenario', 'outil_api', 'outil_mcp', 'humain', 'continuer', 'autre'] as const;
 export type Action = (typeof ACTIONS)[number];
 
 /**
- * Le questionnaire montré au client pour UNE bascule. Julien, 2026-08-31 : « il faut que tu prennes 1 par 1,
- * je dis bien 1 par 1, et que tu poses les questions sous forme de questionnaire avec des choix ».
- *
- * ⚠️ `humain` et `continuer` ne figuraient pas dans sa liste, et sont gardés quand même : ce sont DEUX réponses
- * qu'il avait lui-même exigées le 2026-08-28 (« si le mec continue de poser des questions ben tu continues de
- * répondre »). Les retirer rouvrirait le défaut qu'on venait de fermer, celui de l'action inventée faute de
- * pouvoir dire « rien de spécial ».
- *
- * ⚠️ `outil_mcp` A ÉTÉ PROPOSÉ PENDANT DES SEMAINES ALORS QUE MCP N'ÉTAIT PAS CÂBLÉ, et ces trois textes
- * l'annonçaient au client. Ils sont devenus FAUX le 2026-09-17, quand les connecteurs MCP ont été livrés :
- * une justification qui survit à ce qu'elle justifiait est pire qu'aucune, parce qu'elle sera recopiée. Le
- * choix reste proposé pour la même raison qu'avant (le client doit pouvoir dire son intention), mais il
- * ÉNUMÈRE désormais ce qui est réellement branché, comme `outil_api` juste au-dessus.
+ * Le questionnaire montré au client pour une bascule, un choix par ligne. `humain` et `continuer` restent
+ * proposés : sans eux, le client ne pourrait pas dire « rien de spécial », et une action serait inventée.
  */
 export const CHOIX_ACTION: ReadonlyArray<{ action: Action; libelle: string }> = [
   { action: 'scenario', libelle: 'créer et lancer un scénario' },
@@ -63,46 +33,24 @@ export const CHOIX_ACTION: ReadonlyArray<{ action: Action; libelle: string }> = 
   { action: 'autre', libelle: 'autre chose' },
 ];
 
-/** Les actions qui appellent un MOYEN concret. `humain` a son propre point, `continuer` ne demande rien. */
+/** Les actions qui appellent un moyen concret. `humain` a son propre point, `continuer` ne demande rien. */
 const DEMANDE_UN_MOYEN = new Set<Action>(['scenario', 'outil_api', 'outil_mcp', 'autre']);
 
 /**
- * CE QUI EST RÉELLEMENT BRANCHÉ, au moment où on pose la question.
- *
- * 🔴 Julien, 2026-08-31 : « si la personne dit MCP ou API, il faut que t'ailles chercher ce qui est branché
- * pour que la personne dise exactement lequel c'est ; donc si c'est pas branché ou s'il y a rien, ben y a
- * rien et la personne devra choisir autre chose ».
- *
- * C'est le dernier verrou contre l'outil inventé. Le reste du dispositif empêche le MODÈLE d'en inventer un ;
- * celui-ci empêche la CONVERSATION de se conclure sur un moyen qui n'existe pas, en montrant l'inventaire réel
- * au lieu de laisser le client nommer quelque chose au hasard.
- *
- * Trois listes et pas une, parce que les trois situations appellent trois réponses différentes.
+ * Ce qui est réellement branché, au moment où on pose la question : la conversation ne peut pas se conclure
+ * sur un moyen qui n'existe pas. Des listes distinctes, parce que chaque situation appelle une réponse
+ * différente.
  */
 export interface Inventaire {
-  /** Les outils de connecteur DÉJÀ branchés SUR CET AGENT : appelables aujourd'hui, sans rien faire de plus. */
+  /** Les outils de connecteur déjà branchés sur cet agent : appelables aujourd'hui. */
   outilsApi: string[];
-  /** Les systèmes déclarés dans l'espace mais PAS branchés sur cet agent : à relier, ce qui est un geste
-   *  d'administrateur et non une réponse d'entretien. Les taire ferait dire « rien n'existe » à un client qui
-   *  a justement déclaré son ERP la semaine dernière. */
+  /** Les systèmes déclarés dans l'espace mais pas branchés sur cet agent : à relier (geste d'administrateur).
+   *  Les taire ferait dire « rien n'existe » à un client qui a déclaré son ERP. */
   systemesApi: string[];
-  /**
-   * Les serveurs MCP DÉCLARÉS dans l'espace, mais dont aucun outil n'est encore branché sur CET agent.
-   *
-   * ⚠️ CE COMMENTAIRE A DIT « MCP n'est PAS exécutable aujourd'hui (lot L4 non développé) » JUSQU'AU
-   * 2026-09-17, alors que le lot était livré. C'était le troisième des trois textes que le plan demandait
-   * de corriger ENSEMBLE, et le seul qu'on avait laissé : corriger un compte à deux endroits et le laisser
-   * au troisième, c'est le laisser faux.
-   */
+  /** Les serveurs MCP déclarés dans l'espace, mais dont aucun outil n'est encore branché sur cet agent. */
   mcp: string[];
-  /**
-   * Les outils MCP DÉJÀ branchés sur cet agent, par leur nom exposé.
-   *
-   * 🔴 SANS CETTE SÉPARATION, LES OUTILS MCP ÉTAIENT ANNONCÉS COMME DES CONNECTEURS API. `connecteurs` est
-   * construit sur `origin !== 'mba'`, donc il porte les DEUX familles : la branche `outil_api` les
-   * énumérait tous sous « Branchés sur cet agent », pendant que la branche `outil_mcp` ne savait nommer
-   * que des serveurs. L'assistant promettait donc un appel API sur un outil MCP.
-   */
+  /** Les outils MCP déjà branchés sur cet agent, par leur nom exposé : séparés des connecteurs API, pour ne
+   *  pas promettre un appel API sur un outil MCP. */
   outilsMcp: string[];
 }
 
@@ -125,33 +73,23 @@ export interface Point {
   /** Ce que l'assistant doit avoir obtenu. Part dans le prompt, telle quelle. */
   aObtenir: string;
   /**
-   * LA QUESTION, telle qu'on la poserait. Deux usages, et le second est le seul qui garantisse quoi que ce
-   * soit : le modèle la reçoit pour la reformuler dans le fil de la conversation, ET le serveur la POSE
-   * LUI-MÊME quand le modèle a rendu un message qui n'interroge rien. Sans ce repli, l'entretien s'arrête net
-   * sur un accusé de réception, ce qui est arrivé à Julien le 2026-08-31 au point 3 sur 8.
+   * La question, telle qu'on la poserait : le modèle la reformule, et le serveur la pose lui-même quand le
+   * modèle a rendu un message qui n'interroge rien. Sans ce repli, l'entretien s'arrêterait sur un accusé de
+   * réception.
    */
   question: string;
-  /** Possibilités à montrer au client pour qu'il tranche au lieu de rédiger. Ce sont des EXEMPLES à
-   *  transposer dans son métier, jamais un menu à réciter (cf. le mandat). */
+  /** Possibilités à montrer au client pour qu'il tranche au lieu de rédiger : des exemples à transposer dans
+   *  son métier, jamais un menu à réciter. */
   pistes?: string[];
-  /**
-   * Ce point COLLECTE une liste de moments, et chaque moment ouvre ensuite ses propres questions. C'est le
-   * creusement, et il est devenu une BOUCLE le 2026-08-31 : il n'y a pas « un » moment de bascule avec « une »
-   * action, il y en a autant que le client en cite, chacun avec la sienne.
-   */
+  /** Ce point collecte une liste de moments, et chaque moment ouvre ensuite ses propres questions : autant de
+   *  moments que le client en cite, chacun avec son action. */
   collecteDesMoments?: true;
 }
 
 /**
- * L'ordre du jour, de la substance vers la surface.
- *
- * Il en compte DIX (six à l'origine, neuf le 2026-08-31, dix le 2026-09-11), et l'ordre n'est pas décoratif :
- * on ne demande le ton et l'identité qu'une fois qu'on sait ce que l'agent fait, sinon on décore une
- * coquille. Dix reste tenable ; c'est l'entretien de quarante questions qui serait un formulaire avec plus de
- * friction, pas celui-ci.
- *
- * ⚠️ CETTE PHRASE PORTE UN COMPTE, DONC ELLE DÉRIVE : `tests/agent-setup-agenda.test.ts` la tient, et tient
- * surtout l'invariant qui compte vraiment, à savoir que chaque point a QUELQUE PART OÙ RANGER sa réponse.
+ * L'ordre du jour, de la substance vers la surface : on ne demande le ton et l'identité qu'une fois qu'on
+ * sait ce que l'agent fait. `tests/agent-setup-agenda.test.ts` tient l'invariant que chaque point a quelque
+ * part où ranger sa réponse.
  */
 export const AGENDA: Point[] = [
   {
@@ -169,12 +107,7 @@ export const AGENDA: Point[] = [
   {
     code: 'connaissance',
     question: 'D’où viendront ses réponses de fond : des pages de votre site, un document que vous me joignez, des fiches que vous écrirez, ou rien pour l’instant ?',
-    /**
-     * 🔴 « MON SITE » N'EST PAS UNE RÉPONSE SUFFISANTE, ET S'EN CONTENTER A COÛTÉ UN AGENT MUET. Le
-     * 2026-09-08, Julien a répondu « les réponses viennent du site internet ». L'entretien l'a noté, n'a
-     * jamais demandé LEQUEL, et l'onglet Base de connaissance est resté vide : il a fallu y coller l'adresse
-     * à la main. Une source qu'on ne sait pas nommer n'est pas une source, c'est une intention.
-     */
+    /** « Mon site » ne suffit pas : une source qu'on ne sait pas nommer laisse la base de connaissance vide. */
     aObtenir: 'D’OÙ viennent ses réponses de fond : une base de connaissance à remplir, des pages de son site '
       + 'à importer, un document qu’il va joindre, ou rien du tout (et alors l’agent transfère toute question de fond). '
       + 'S’il dit « mon site », DEMANDE-LUI L’ADRESSE EXACTE avant de passer au point suivant : sans elle, '
@@ -197,15 +130,9 @@ export const AGENDA: Point[] = [
   },
   {
     /**
-     * 🔴 LE SILENCE DU CONTACT EST UNE FIN DE CONVERSATION COMME UNE AUTRE, et personne ne la déclarait.
-     * Demande de Julien, le 2026-09-11 : « le client ne réagit plus.. au bout de combien de temps de non
-     * réaction, on ne relance plus l'agent IA si le client revient ? ». Le réglage EXISTAIT déjà
-     * (`agents.inactivite_minutes`, 30 minutes par défaut, sortie « Pas de réponse »), mais il vivait dans
-     * un onglet de garde-fous techniques que personne n'ouvre, et l'entretien ne l'abordait pas. Un réglage
-     * qu'on ne demande jamais est un réglage qui garde sa valeur d'usine chez tout le monde.
-     *
-     * ⚠️ IL VIENT APRÈS `aboutissements` ET AVANT `humain`, et l'ordre a un sens : on demande à quoi
-     * ressemble une conversation RÉUSSIE, puis ce qui se passe quand il n'y en a pas, puis qui reprend.
+     * Le silence du contact est une fin de conversation comme une autre (`agents.inactivite_minutes`) : un
+     * réglage qu'on ne demande jamais garde sa valeur d'usine chez tout le monde. Placé entre
+     * `aboutissements` et `humain` : ce qui réussit, ce qui se passe sans réponse, puis qui reprend.
      */
     code: 'silence',
     question: 'Si le contact ne répond plus, au bout de combien de temps votre agent doit-il lâcher la conversation ?',
@@ -229,11 +156,9 @@ export const AGENDA: Point[] = [
   },
   {
     /**
-     * 🔴 UN SEUL POINT POUR DEUX QUESTIONS, ET C'EST VOULU. Julien en a demandé deux (« dois-je dire que je
-     * suis une IA », puis « à chaque fois ou une fois par session »), mais la seconde n'a de sens que si la
-     * première est oui : deux points la poseraient même après un non. Un point d'agenda est une unité de
-     * COUVERTURE, pas de phrase, et le repli du serveur repose `question` quand le modèle n'interroge rien.
-     * Même forme que `connaissance`, qui exige déjà une relance ciblée dans son `aObtenir`.
+     * Un seul point pour deux questions (annoncer, puis à quelle fréquence) : la seconde n'a de sens que si la
+     * première est oui. Un point d'agenda est une unité de couverture, pas de phrase ; la relance ciblée est
+     * dans `aObtenir`, comme pour `connaissance`.
      */
     code: 'annonce_ia',
     question: 'Votre agent doit-il annoncer qu’il est une IA ? Si oui, à chaque message ou une seule fois par conversation ?',
@@ -266,14 +191,11 @@ export interface Reponse {
 }
 
 /**
- * UN moment où l'agent doit faire autre chose que répondre, et ce qu'il y fait.
- *
- * 🔴 C'est une LISTE, et c'est tout l'objet du changement du 2026-08-31. Le modèle précédent portait UNE action
- * sur le point `bascules` : Julien en a cité deux dans la même phrase (prendre un rendez-vous -> un outil ;
- * donner l'adresse d'une concession -> un scénario), et le second écrasait le premier en silence.
+ * Un moment où l'agent doit faire autre chose que répondre, et ce qu'il y fait. Une liste : deux moments
+ * cités dans la même phrase ne doivent pas s'écraser.
  */
 export interface Bascule {
-  /** Le moment, dans les mots du client. Sert de CLÉ (on apparie là-dessus) et d'intitulé de question. */
+  /** Le moment, dans les mots du client. Sert de clé (on apparie là-dessus) et d'intitulé de question. */
   moment: string;
   /** Ce que l'agent y fait. Absent = pas encore tranché, c'est la prochaine question. */
   action?: Action;
@@ -283,7 +205,7 @@ export interface Bascule {
 
 /** L'état de l'entretien, tel que le serveur le tient. */
 export interface EtatEntretien {
-  /** Les points DÉJÀ POSÉS au client. Un point jamais posé n'est jamais couvert, même répondu d'avance. */
+  /** Les points déjà posés au client. Un point jamais posé n'est jamais couvert, même répondu d'avance. */
   poses: string[];
   reponses: Reponse[];
   /** Les moments de bascule et leur traitement. Vide tant que le point `bascules` n'a rien donné. */
@@ -301,7 +223,7 @@ function bascules(etat: EtatEntretien): Bascule[] {
   return (etat.bascules ?? []).filter((b) => b.moment.trim() !== '');
 }
 
-/** Codes des points ENGENDRÉS par une bascule. L'index les rend stables tant que la liste ne se réordonne
+/** Codes des points engendrés par une bascule. L'index les rend stables tant que la liste ne se réordonne
  *  pas, ce que `fusionnerBascules` garantit (appariement par moment, ajout en fin). */
 const codeAction = (i: number): string => `bascule_${i + 1}_action`;
 const codeMoyen = (i: number): string => `bascule_${i + 1}_moyen`;
@@ -312,13 +234,9 @@ export function libelleAction(action: Action): string {
 }
 
 /**
- * L'ordre du jour EFFECTIF : les points de base, plus DEUX points par bascule citée (que fait-on ? par quel
- * moyen ?), insérés juste après le point qui les a fait naître.
- *
- * 🔴 C'est ici que « un par un » devient un fait et non une consigne. Une bascule sans action engendre sa
- * question ; une action qui appelle un moyen engendre la sienne ; et l'entretien ne peut pas se terminer tant
- * qu'il en reste une. Le total annoncé au client GRANDIT donc à mesure qu'il cite des moments, ce qui est
- * honnête : il ne pouvait pas savoir combien il en aurait avant de les avoir dits.
+ * L'ordre du jour effectif : les points de base, plus deux points par bascule citée (que fait-on ? par quel
+ * moyen ?), insérés après le point qui les a fait naître. L'entretien ne peut pas se terminer tant qu'il en
+ * reste un ; le total grandit à mesure que le client cite des moments.
  */
 export function agendaEffectif(etat: EtatEntretien, inv: Inventaire = INVENTAIRE_VIDE): Point[] {
   const liste = bascules(etat);
@@ -346,11 +264,9 @@ export function agendaEffectif(etat: EtatEntretien, inv: Inventaire = INVENTAIRE
 }
 
 /**
- * La question du moyen, selon l'action choisie ET l'inventaire réel.
- *
- * 🔴 Elle MONTRE ce qui est branché plutôt que de demander au client de le deviner. Quand rien ne l'est, elle
- * le dit et propose les deux seules issues honnêtes : changer d'action, ou décrire ce qu'il faudra brancher.
- * Ne laisser aucune issue ferait un entretien qui ne peut plus se terminer.
+ * La question du moyen, selon l'action choisie et l'inventaire réel : elle montre ce qui est branché, et
+ * quand rien ne l'est, propose de changer d'action ou de décrire ce qu'il faudra brancher, pour que
+ * l'entretien puisse toujours se terminer.
  */
 function moyenDemande(action: Action, inv: Inventaire): string {
   if (action === 'scenario') return 'quel scénario doit-il lancer, ou que doit contenir ce scénario ?';
@@ -371,11 +287,8 @@ function moyenDemande(action: Action, inv: Inventaire): string {
       + 'rien à appeler aujourd’hui. Décrivez ce qu’il faudrait brancher, ou choisissez autre chose pour ce moment.';
   }
   if (action === 'outil_mcp') {
-    // ⚠️ MÊME FORME QUE `outil_api`, et c'est le but : les deux familles se branchent pareil depuis le
-    // 2026-09-17, et deux réponses de forme différente feraient croire à deux dispositifs différents.
-    // 🔴 DEUX NIVEAUX, comme son jumeau : ce qui est BRANCHÉ sur cet agent d'abord, ce qui est seulement
-    // DÉCLARÉ dans l'espace ensuite. N'annoncer que les serveurs faisait dire « voici ce qu'il peut
-    // appeler » en nommant des choses qui n'étaient reliées à rien.
+    // Même forme que `outil_api`, sur deux niveaux : ce qui est branché sur cet agent d'abord, ce qui est
+    // seulement déclaré dans l'espace ensuite.
     if (inv.outilsMcp.length > 0) {
       const dispo = `Branchés sur cet agent : ${enumerer(inv.outilsMcp)}.`;
       const aRelier = inv.mcp.length > 0
@@ -396,21 +309,13 @@ function moyenDemande(action: Action, inv: Inventaire): string {
 }
 
 /**
- * LES POINTS DONT LE CONTENU A DISPARU DE LA FICHE.
+ * Les points dont le contenu a disparu de la fiche, élément par élément : vider un champ fait parler de ce
+ * point-là seulement. Un signalement, pas une question : la réponse du client est toujours dans
+ * `reponses`, c'est le champ qui a été effacé.
  *
- * 🔴 LE GRAIN EST L'ÉLÉMENT, PAS L'ENTRETIEN (décision de Julien du 2026-09-14). Vider les règles d'arrêt
- * dans le formulaire fait parler de CE point-là, et de lui seul : relancer tout l'entretien pour un champ
- * effacé reposerait neuf questions déjà tranchées, et personne ne le ferait deux fois.
- *
- * 🔴 ET CE QUE ÇA PRODUIT EST UN SIGNALEMENT, PAS UNE QUESTION. La réponse du client est toujours là, dans
- * `reponses` : c'est le CHAMP qui a été effacé. Rouvrir le point le ferait compter comme non couvert, donc
- * retiendrait la proposition, donc empêcherait de remplir le champ qu'on vient de constater vide. Voir
- * `manquesDeCouverture`.
- *
- * ⚠️ TOUS LES POINTS N'ONT PAS DE CHAMP À SURVEILLER, et les absents de cette table ne sont pas un oubli :
- * `silence` et `annonce_ia` portent toujours une valeur (un défaut existe), `connaissance` peut légitimement
- * être vide (« rien pour l'instant » est une réponse), `perimetre` et `bascules` vivent dans l'entretien.
- * Surveiller un champ qui n'a pas d'état « vide » signifiant rouvrirait une question sans raison.
+ * Seuls les points dont le champ a un état « vide » signifiant sont surveillés : `silence` et `annonce_ia`
+ * ont toujours une valeur, `connaissance` peut être vide à bon droit, `perimetre` et `bascules` vivent dans
+ * l'entretien.
  */
 export function pointsSansContenu(fiche: FicheAgentContenu): string[] {
   const vide = (t: string): boolean => t.trim() === '';
@@ -418,32 +323,25 @@ export function pointsSansContenu(fiche: FicheAgentContenu): string[] {
   if (vide(fiche.objectif)) out.push('mission');
   if (fiche.sorties.length === 0) out.push('aboutissements');
   if (vide(fiche.reglesTransfert)) out.push('humain');
-  // `identite` couvre le NOM et les traits : il n'est vide que si les deux le sont, un agent sans nom mais
-  // avec une personnalité ayant bien répondu à la question.
+  // `identite` couvre le nom et les traits : vide seulement si les deux le sont.
   if (vide(fiche.nom) && vide(fiche.personnalite)) out.push('identite');
   if (vide(fiche.ton)) out.push('ton');
   return out;
 }
 
 /**
- * Ce qui reste à couvrir, dans l'ordre. Un point compte comme couvert s'il a été POSÉ **et** répondu.
+ * Ce qui reste à couvrir, dans l'ordre. Un point est couvert s'il a été posé et répondu.
  *
- * 🔴 UN CHAMP VIDÉ NE ROUVRE PAS SON POINT, ET C'EST UN VERROU CONTRE UN BLOCAGE. La couverture est ce qui
- * RETIENT la proposition (« tant que l'ordre du jour n'est pas épuisé, aucun champ n'est montré ») ; or un
- * champ ne se remplit qu'en APPLIQUANT une proposition. Rouvrir un point sur un champ vide enfermerait donc
- * l'entretien dans un cycle : le champ est vide, donc pas de proposition, donc le champ reste vide. Mesuré
- * en écrivant ce lot, sur un agent dont l'entretien était fini et la fiche pas encore écrite.
- *
- * ⚠️ Ce qu'un champ vidé produit est un SIGNALEMENT, pas une question : la réponse du client est toujours
- * dans `reponses`, c'est le champ qui a été effacé ailleurs. Voir `pointsSansContenu`, `ordreDuJour` et la
- * consigne d'évolution.
+ * Un champ vidé ne rouvre pas son point : la couverture retient la proposition, et un champ ne se remplit
+ * qu'en appliquant une proposition. Le rouvrir enfermerait l'entretien dans un cycle. Un champ vidé produit
+ * un signalement (`pointsSansContenu`).
  */
 export function manquesDeCouverture(etat: EtatEntretien, inv: Inventaire = INVENTAIRE_VIDE): string[] {
   const poses = new Set(etat.poses);
   const repondus = new Set(retenues(etat.reponses).map((r) => r.point));
   const liste = bascules(etat);
-  // Une question engendrée est « répondue » quand la bascule porte le champ correspondant : elle ne passe pas
-  // par `reponses`, sinon la même information vivrait à deux endroits et finirait par diverger.
+  // Une question engendrée est répondue quand la bascule porte le champ : pas de copie dans `reponses`, qui
+  // finirait par diverger.
   liste.forEach((b, i) => {
     if (b.action) repondus.add(codeAction(i));
     if (b.moyen && b.moyen.trim() !== '') repondus.add(codeMoyen(i));
@@ -459,10 +357,8 @@ function parCode(etat: EtatEntretien, inv: Inventaire): Map<string, Point> {
 }
 
 /**
- * LE point de ce tour : le premier de l'ordre du jour effectif qui ne soit pas couvert. `null` = l'entretien
- * est fini, on peut montrer la proposition.
- *
- * C'est cette fonction, et elle seule, qui décide de quoi on parle. Le modèle ne vote pas.
+ * Le point de ce tour : le premier non couvert de l'ordre du jour effectif, ou `null` si l'entretien est
+ * fini. Seule cette fonction décide de quoi on parle.
  */
 export function prochainPoint(etat: EtatEntretien, inv: Inventaire = INVENTAIRE_VIDE): Point | null {
   const manquants = manquesDeCouverture(etat, inv);
@@ -470,12 +366,9 @@ export function prochainPoint(etat: EtatEntretien, inv: Inventaire = INVENTAIRE_
 }
 
 /**
- * Le point OUVERT et celui qui le suit.
- *
- * Le second existe parce que le serveur choisit la question AVANT de lire la réponse du client : il ne peut
- * donc pas savoir que le message qu'on s'apprête à traiter répond justement au point ouvert. Donner les deux
- * laisse l'assistant enchaîner sans reposer une question déjà résolue, tout en lui interdisant de sauter plus
- * loin. Un seul point ferait piétiner l'entretien, la liste entière le laisserait le survoler.
+ * Le point ouvert et celui qui le suit : le serveur choisit la question avant de lire la réponse, et ne sait
+ * pas si le message traité répond déjà au point ouvert. Deux points laissent enchaîner sans reposer une
+ * question résolue, sans permettre de sauter plus loin.
  */
 export function prochainsPoints(etat: EtatEntretien, inv: Inventaire = INVENTAIRE_VIDE): [Point | null, Point | null] {
   const manquants = manquesDeCouverture(etat, inv);
@@ -483,26 +376,20 @@ export function prochainsPoints(etat: EtatEntretien, inv: Inventaire = INVENTAIR
   return [par.get(manquants[0] ?? '') ?? null, par.get(manquants[1] ?? '') ?? null];
 }
 
-/**
- * Fusionne les réponses d'un tour dans l'état. Une nouvelle réponse REMPLACE l'ancienne du même point : le
- * client a le droit de se raviser, et l'entretien doit suivre plutôt que garder sa première idée.
- */
+/** Fusionne les réponses d'un tour. Une nouvelle réponse remplace l'ancienne du même point : le client a le
+ *  droit de se raviser. */
 export function fusionner(etat: readonly Reponse[], nouvelles: readonly Reponse[]): Reponse[] {
   const par = new Map(etat.map((r) => [r.point, r]));
   for (const r of retenues(nouvelles)) par.set(r.point, r);
-  // Ordre de l'AGENDA, pas ordre d'arrivée : l'état se relit comme le questionnaire, en base comme au prompt.
+  // Ordre de l'agenda, pas d'arrivée : l'état se relit comme le questionnaire.
   return AGENDA.map((p) => par.get(p.code)).filter((r): r is Reponse => r !== undefined);
 }
 
 /**
- * Fusionne les bascules d'un tour.
- *
- * 🔴 APPARIEMENT PAR MOMENT, ET AJOUT EN FIN. C'est ce qui rend les codes engendrés (`bascule_2_action`…)
- * stables d'un tour à l'autre : si la liste se réordonnait, un point noté POSÉ désignerait soudain une autre
- * bascule, et on reposerait une question déjà tranchée en croyant en poser une neuve.
- *
- * Un champ ABSENT d'une nouvelle version ne l'efface pas : le modèle rend souvent la bascule entière alors
- * qu'il n'a appris que son action, et effacer le reste ferait perdre un moyen déjà donné.
+ * Fusionne les bascules d'un tour, appariées par moment et ajoutées en fin : les codes engendrés
+ * (`bascule_2_action`) restent stables, sinon un point noté posé désignerait une autre bascule. Un champ
+ * absent d'une nouvelle version n'efface rien : le modèle rend souvent la bascule entière en n'ayant appris
+ * que son action.
  */
 export function fusionnerBascules(etat: readonly Bascule[], nouvelles: readonly Bascule[]): Bascule[] {
   const out = etat.map((b) => ({ ...b }));
@@ -521,18 +408,14 @@ export function fusionnerBascules(etat: readonly Bascule[], nouvelles: readonly 
 }
 
 /**
- * L'ordre du jour tel qu'il part dans le prompt, avec ce qui est déjà su.
- *
- * Le modèle reçoit la liste ENTIÈRE et les réponses déjà notées, pas seulement ce qui manque : il doit
- * pouvoir constater qu'une réponse déjà donnée rend la question suivante inutile à reposer telle quelle, et
- * revenir sur un point si la suite le contredit.
+ * L'ordre du jour tel qu'il part dans le prompt, entier et avec ce qui est déjà su : le modèle doit voir
+ * qu'une réponse donnée rend une question inutile à reposer telle quelle, et revenir sur un point contredit.
  */
 export function ordreDuJour(
   etat: EtatEntretien, inv: Inventaire = INVENTAIRE_VIDE, vides: readonly string[] = [],
 ): string {
   const gardees = new Map(retenues(etat.reponses).map((r) => [r.point, r.valeur]));
-  // Ce qu'on sait des points ENGENDRÉS ne vit pas dans `reponses` mais sur la bascule elle-même : on le
-  // reprojette ici pour que le modèle voie l'ordre du jour d'un seul tenant.
+  // Ce qu'on sait des points engendrés vit sur la bascule : reprojeté ici, pour un ordre du jour d'un seul bloc.
   bascules(etat).forEach((b, i) => {
     if (b.action) gardees.set(codeAction(i), libelleAction(b.action));
     if (b.moyen && b.moyen.trim() !== '') gardees.set(codeMoyen(i), b.moyen);
@@ -543,11 +426,7 @@ export function ordreDuJour(
   return effectif
     .map((p) => {
       const su = gardees.get(p.code);
-      /**
-       * ⚠️ « VIDÉ DEPUIS » PLUTÔT QUE « À POSER », et la nuance compte pour le modèle : la réponse du client
-       * est toujours là, c'est le CHAMP qui a été effacé ailleurs. Lui dire « à poser » lui ferait reposer la
-       * question comme si elle n'avait jamais été traitée.
-       */
+      /** « Vidé depuis » et non « à poser » : la réponse existe, c'est le champ qui a été effacé ailleurs. */
       const etatDuPoint = vides.includes(p.code) && su !== undefined
         ? 'VIDÉ DEPUIS, à reproposer'
         : su === undefined
@@ -559,16 +438,9 @@ export function ordreDuJour(
 }
 
 /**
- * LA PREMIERE ADRESSE http(s) que porte la reponse au point `connaissance`, ou `null`.
- *
- * 🔴 C'EST UN REPLI POUR LES ENTRETIENS DEJA MENES, pas le chemin normal. Depuis le 2026-09-18 l'assistant
- * rend l'adresse dans un champ dedie (`connaissanceUrl`), ce qui est fiable. Mais tous les entretiens
- * anterieurs, dont celui que Julien avait mene jusqu'au bout, n'ont l'adresse que dans le TEXTE de la
- * reponse : sans ce repli, le correctif n'aurait rien change pour eux, c'est-a-dire pour les seuls clients
- * qui l'attendaient.
- *
- * ⚠️ LA PONCTUATION FINALE EST RETIREE : une reponse se termine souvent par « ... de son site
- * https://exemple.fr. », et garder le point produirait une adresse qui ne resout pas.
+ * La première adresse http(s) de la réponse au point `connaissance`, ou `null`. Un repli pour les entretiens
+ * menés avant le champ dédié `connaissanceUrl`. La ponctuation finale est retirée : « ...son site
+ * https://exemple.fr. » donnerait sinon une adresse qui ne résout pas.
  */
 const URL_DANS_LE_TEXTE = /https?:\/\/[^\s<>"'),]+/;
 
@@ -584,19 +456,10 @@ export function pistesDe(point: Point): string {
 }
 
 /**
- * 🔴 LE MESSAGE POSE-T-IL UNE QUESTION ?
- *
- * Test volontairement GROSSIER, et dans un seul sens : pas le moindre point d'interrogation, donc à coup sûr
- * aucune question. L'inverse n'est pas vrai (une question peut se formuler sans point d'interrogation), et
- * c'est très bien ainsi : ce test ne sert qu'à déclencher un REPLI, jamais à refuser un message. Un faux
- * négatif ajoute une question de trop ; un faux positif laisserait l'entretien mort, ce qu'on ne veut à aucun
- * prix.
- *
- * POURQUOI ÇA EXISTE. Le mandat bornait le MAXIMUM (« jamais plus d'une question à la fois ») et n'a jamais
- * posé de minimum. Julien, le 2026-08-31, en plein entretien : l'assistant a accusé réception de sa réponse
- * (« D'accord : les pages de description des véhicules seront importées ») et s'est arrêté là. L'entretien
- * cale, et le client n'a plus rien à quoi répondre. Une consigne de prompt seule est un vœu : celle-ci a un
- * mécanisme derrière.
+ * Le message pose-t-il une question ? Test volontairement grossier, dans un seul sens : sans point
+ * d'interrogation, aucune question à coup sûr. Il ne sert qu'à déclencher un repli (le serveur pose la
+ * question), jamais à refuser un message : un faux négatif ajoute une question, un faux positif laisserait
+ * l'entretien mort.
  */
 export function poseUneQuestion(message: string): boolean {
   return message.includes('?');

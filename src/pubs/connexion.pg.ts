@@ -3,18 +3,15 @@ import { enTransaction } from '../db/transaction';
 import type { LiaisonPage } from '../meta/pubs';
 
 /**
- * LA CONNEXION PUBLICITAIRE D'UN ESPACE (`pub_connexion`, migration 0167).
+ * La connexion publicitaire d'un espace (`pub_connexion`).
  *
- * 🔴 `tenant_id = $1` SUR CHAQUE REQUÊTE, sans exception. La connexion au pooler est un rôle superuser,
- * donc la RLS est contournée : ce filtrage EST le contrôle d'isolation, pas une ceinture en plus.
- *
- * 🔴 LE JETON N'EST JAMAIS LU PAR CE DÉPÔT EN CLAIR. Il entre chiffré (`chiffre`) et sort chiffré
- * (`lireJetonChiffre`), le déchiffrement appartenant au câblage. Un dépôt qui déchiffrerait mettrait la
- * clé à portée de chaque appelant, et un jeton en clair finirait un jour dans un journal.
+ * 🔴 `tenant_id = $1` sur chaque requête : le pooler est superuser, la RLS est contournée, ce filtrage est le
+ * contrôle d'isolation. 🔴 Le jeton n'est jamais lu en clair ici : il entre et sort chiffré, le déchiffrement
+ * appartient au câblage, pour qu'il ne finisse pas un jour dans un journal.
  */
 export interface ConnexionPub {
   comptePubId: string | null;
-  /** Le nom vu chez Meta AU MOMENT DU CHOIX (0169). Libellé d'affichage, jamais une clé. */
+  /** Le nom vu chez Meta au moment du choix. Libellé d'affichage, jamais une clé. */
   compteNom: string | null;
   pageId: string | null;
   pageNom: string | null;
@@ -67,18 +64,11 @@ export class PgPubConnexionStore {
   }
 
   /**
-   * Pose le jeton fraîchement échangé. Rend `false` quand une connexion EXISTE DÉJÀ, sans rien écraser.
-   *
-   * 🔴 L'INVARIANT EST TENU PAR LA BASE, PAS PAR L'ÉCRAN NI PAR UN CONTRÔLE PRÉALABLE. Cette méthode
-   * faisait un `do update set jeton_chiffre`, et un second jeton écrasait le premier : l'ancien, SANS
-   * EXPIRATION, restait vivant chez Meta alors que nous venions d'en perdre le seul exemplaire. C'est le
-   * piège de la clé Vercel (0124), et il s'était déplacé deux fois avant d'arriver ici : d'abord non vu, puis
-   * confié à un enchaînement de l'écran qui ne s'arrêtait pas en cas d'échec (relecture du 2026-09-23).
-   *
-   * ⚠️ `on conflict do nothing` et pas un `select` préalable : entre la lecture et l'écriture, deux
-   * connexions simultanées passeraient toutes les deux. Ici la seconde repart avec `false`, toujours.
-   *
-   * Pour reconnecter, il faut donc PASSER PAR LA DÉCONNEXION, qui révoque avant d'effacer.
+   * Pose le jeton fraîchement échangé ; `false` quand une connexion existe déjà, sans rien écraser. 🔴 Un
+   * second jeton qui écraserait le premier laisserait l'ancien, sans expiration, vivant chez Meta alors qu'on
+   * en perd le seul exemplaire. `on conflict do nothing` plutôt qu'un `select` préalable : deux connexions
+   * simultanées ne passent pas toutes les deux. Pour reconnecter, on passe par la déconnexion, qui révoque
+   * avant d'effacer.
    */
   async poserJeton(tenantId: string, jetonChiffre: string, parUserId: string | null): Promise<boolean> {
     const { rows } = await this.pool.query<{ tenant_id: string }>(
@@ -108,18 +98,10 @@ export class PgPubConnexionStore {
   }
 
   /**
-   * REMPLACE la connexion d'un espace EN UNE SEULE TRANSACTION : efface, repose, rechoisit.
-   *
-   * 🔴 POURQUOI UNE TRANSACTION, ET PAS TROIS APPELS À LA SUITE. C'est le geste de `/ops`, le seul
-   * chemin qui remplace au lieu de refuser. En trois appels, un échec APRÈS le `delete` laisse l'espace
-   * SANS connexion, avec l'ancien jeton déjà perdu et le neuf jamais rangé : l'appelant reçoit une
-   * erreur qui ressemble à « rien ne s'est passé » alors que tout a été détruit. Ici, un échec ne
-   * laisse rien derrière lui.
-   *
-   * ⚠️ L'INSERT N'A PAS DE `on conflict` : la ligne vient d'être effacée dans la MÊME transaction, donc
-   * un conflit signifierait qu'une autre connexion s'est faufilée entre les deux, ce que la clé
-   * primaire empêche. Le `do nothing` de `poserJeton` protège un cas différent (deux connexions par
-   * l'écran), et le recopier ici masquerait l'anomalie au lieu de la rendre.
+   * Remplace la connexion d'un espace en une seule transaction : efface, repose, rechoisit. C'est le geste de
+   * `/ops`, le seul qui remplace au lieu de refuser : en trois appels, un échec après le `delete` laisserait
+   * l'espace sans connexion, ancien jeton perdu et neuf jamais rangé. L'insert n'a pas de `on conflict` : un
+   * conflit serait une anomalie à rendre, pas à masquer.
    */
   async remplacer(
     tenantId: string,

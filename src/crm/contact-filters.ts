@@ -2,13 +2,10 @@ import { NIVEAUX_RISQUE, type NiveauRisque } from '../engagement/risque';
 import { isContactFieldOp, type ContactFieldFilter, type ContactFilters } from './contact-store.pg';
 
 /**
- * Construction d'un `ContactFilters` à partir de données NON FIABLES.
- *
- * Deux points d'entrée l'alimentent : les query params d'une URL (`parseFilters`, où tout arrive en chaînes
- * CSV ou JSON) et le corps JSON d'une action en masse (`normalizeContactFilters`, où tout arrive en tableaux).
- * Le DÉCODAGE diffère donc légitimement, mais les RÈGLES qui suivent (bornes, whitelist d'opérateurs, plafonds,
- * champs retenus) étaient recopiées ligne à ligne des deux côtés : deux écrans de ciblage qui divergent au
- * premier ajustement, donc deux populations de destinataires différentes pour un même filtre affiché.
+ * Construction d'un `ContactFilters` à partir de données non fiables. Deux entrées : les query params d'une URL
+ * (`parseFilters`) et le corps JSON d'une action en masse (`normalizeContactFilters`). Le décodage diffère, les
+ * règles (bornes, opérateurs, plafonds) sont ici, communes : sinon un même filtre affiché viserait deux
+ * populations différentes.
  */
 
 /** Plafonds : ils bornent une donnée cliente, pas un choix d'ergonomie. */
@@ -44,7 +41,7 @@ export function normalizeFieldFilters(raw: unknown[]): ContactFieldFilter[] {
     .slice(0, MAX_FIELD_FILTERS);
 }
 
-/** Entrées déjà décodées par l'appelant (chacun sait lire SA forme), avant application des règles communes. */
+/** Entrées déjà décodées par l'appelant (chacun sait lire sa forme), avant les règles communes. */
 export interface EntreesFiltres {
   tags: string[];
   tagMode: unknown;
@@ -59,23 +56,18 @@ export interface EntreesFiltres {
 }
 
 /**
- * Un filtre de contacts qu'on REFUSE au lieu de l'ignorer. `statusCode` le fait rendre en 400 par le gestionnaire
- * d'erreurs de `src/server.ts`, avec ce message, par TOUTES les routes qui lisent des filtres (liste, compte,
- * identifiants, action en masse, suppression, cible d'une campagne) : aucune ne peut oublier de le traiter, et
- * celle qui l'oublierait rendrait quand même un refus, jamais une liste.
+ * Un filtre de contacts refusé plutôt qu'ignoré. `statusCode` le fait rendre en 400 par le gestionnaire
+ * d'erreurs de `src/server.ts`, avec ce message, par toutes les routes qui lisent des filtres : aucune ne peut
+ * l'oublier et rendre une liste.
  */
 export class FiltreContactInvalide extends Error {
   readonly statusCode = 400;
 }
 
 /**
- * Le niveau de risque demandé : absent, ou l'un des quatre niveaux.
- *
- * 🔴 TOUTE AUTRE VALEUR EST REFUSÉE, et c'est l'inverse du reste de ce module, délibérément. Ailleurs, une
- * valeur incomprise est jetée : le filtre ne se pose pas, et l'écran qui l'a demandé le voit. Ici, un niveau
- * mal orthographié (`élevé`, `high`, `eleve,moyen`) jeté en silence rendrait TOUT l'espace à qui demandait
- * « risque élevé », et une campagne construite dessus partirait à tout le monde. Une chaîne vide, elle, n'est pas
- * un filtre (le choix « tous » de l'écran).
+ * Le niveau de risque demandé : absent, ou l'un des quatre niveaux. 🔴 Toute autre valeur est refusée, à
+ * l'inverse du reste du module : un niveau mal orthographié jeté en silence rendrait tout l'espace à qui
+ * demandait « risque élevé », et une campagne construite dessus partirait à tout le monde. Chaîne vide = « tous ».
  */
 function risqueFiltre(v: unknown): NiveauRisque | undefined {
   if (v === undefined || v === null || v === '') return undefined;
@@ -98,10 +90,8 @@ export function buildContactFilters(e: EntreesFiltres): ContactFilters {
     ...(texteFiltre(e.phonePrefix) ? { phonePrefix: texteFiltre(e.phonePrefix) } : {}),
     ...(texteFiltre(e.phoneContains) ? { phoneContains: texteFiltre(e.phoneContains) } : {}),
     ...(texteFiltre(e.nameSearch) ? { nameSearch: texteFiltre(e.nameSearch) } : {}),
-    // ⚠️ UNE SEULE VALEUR RECONNUE, le reste est JETÉ. C'est la règle de ce module, sauf pour UN filtre : une
-    // donnée cliente à moitié comprise viserait la mauvaise population, ce qui est pire que pas de filtre du tout.
-    // L'exception est le niveau de risque, juste en dessous, qui REFUSE (400) au lieu de jeter : jeté, « élevé »
-    // mal orthographié rendrait tout l'espace (cf. `risqueFiltre`).
+    // Une seule valeur reconnue, le reste est jeté : une donnée à moitié comprise viserait la mauvaise population.
+    // Seul le niveau de risque refuse au lieu de jeter (cf. `risqueFiltre`).
     ...(e.joignabilite === 'connu_injoignable' ? { joignabiliteWhatsApp: 'connu_injoignable' as const } : {}),
     ...(risque !== undefined ? { risque } : {}),
     ...(e.fieldFilters.length > 0 ? { fieldFilters: e.fieldFilters } : {}),

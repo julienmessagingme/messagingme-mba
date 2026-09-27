@@ -1,15 +1,11 @@
 import { z } from 'zod';
 
 /**
- * LE TARIF QUE META ANNONCE POUR UN DE NOS MESSAGES SORTANTS (objet `pricing` d'un accusé de réception).
- *
- * 🔴 C'EST LA SEULE SOURCE DE « META NE FACTURE PAS CE MESSAGE ». Un message parti dans les 72 h qui suivent un
- * clic sur une pub Click-to-WhatsApp (« free entry point ») est gratuit, modèles compris, et seul l'accusé le
- * dit. Recalculer la fenêtre nous-mêmes recopierait les conditions de Meta (réponse sous 24 h, clic depuis un
- * téléphone...), et notre chiffre deviendrait faux le jour où elles changent.
- *
- * ⚠️ `safeParse`, jamais `parse` : c'est un payload externe. Un `pricing` illisible rend `null`, et le message
- * reste compté comme payant, c'est-à-dire le comportement d'avant.
+ * Le tarif que Meta annonce pour un de nos messages sortants (objet `pricing` d'un accusé de réception).
+ * 🔴 Seule source de « Meta ne facture pas ce message » : un message parti dans les 72 h qui suivent un clic sur
+ * une pub Click-to-WhatsApp (« free entry point ») est gratuit, modèles compris, et seul l'accusé le dit.
+ * Recalculer la fenêtre recopierait les conditions de Meta, qui peuvent changer. `safeParse` : un `pricing`
+ * illisible rend `null`, et le message reste compté comme payant.
  */
 export const TYPE_ENTREE_GRATUITE = 'free_entry_point';
 
@@ -47,7 +43,7 @@ export function extraireTarif(data: unknown): TarifMeta | null {
 }
 
 /**
- * Garde le tarif d'un message. `phoneNumberId` est le numéro Meta DESTINATAIRE de l'accusé : c'est le seul
+ * Garde le tarif d'un message. `phoneNumberId` est le numéro Meta destinataire de l'accusé : le seul
  * rattachement à un espace que porte un payload Meta.
  */
 export interface TarifsMetaSink {

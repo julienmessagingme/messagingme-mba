@@ -2,10 +2,7 @@ import { appelGraph } from './graph';
 import { FLOW_ENTRY_SCREEN } from './flow-json';
 import type { OutboundCarouselCard } from './template-components';
 
-/**
- * Client des templates WhatsApp (niveau WABA, pas phone_number_id). Création + liste via
- * l'API Graph. `fetchImpl` injectable pour les tests (aucun réseau).
- */
+/** Client des templates WhatsApp (niveau WABA) : création et liste via l'API Graph, `fetchImpl` injectable. */
 export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
 export interface TemplateButton {
@@ -24,7 +21,7 @@ export interface CarouselCard {
   buttons?: TemplateButton[];
 }
 
-/** En-tête d'un template : texte (avec variable optionnelle) OU média (handle du resumable upload). */
+/** En-tête d'un template : texte (avec variable optionnelle) ou média (handle du resumable upload). */
 export type TemplateHeader =
   | { format: 'TEXT'; text: string; example?: string }
   | { format: 'IMAGE' | 'VIDEO' | 'DOCUMENT'; handle: string };
@@ -59,8 +56,8 @@ export interface TemplateSummary {
   headerFormat: string | null;
   /** Texte du header TEXT (pour pré-remplir l'édition). undefined si header média/absent. */
   headerText?: string;
-  /** URL du média d'en-tête lue chez Meta quand `headerFormat` vaut IMAGE/VIDEO/DOCUMENT. Sert à obtenir le
-   *  `media id` de l'envoi, jamais envoyée telle quelle (cf. `headerMediaUrlOf`). undefined si pas de média. */
+  /** URL du média d'en-tête lue chez Meta : sert à obtenir le `media id` de l'envoi, jamais envoyée telle quelle
+   *  (cf. `headerMediaUrlOf`). undefined si pas de média. */
   headerMediaUrl?: string;
   /** Pied de page (composant FOOTER), pour pré-remplir l'édition. undefined si absent. */
   footer?: string;
@@ -70,11 +67,10 @@ export interface TemplateSummary {
   example?: string[];
   /** true si le template est un CAROUSEL (édition non supportée : header_handle non récupérable). */
   isCarousel: boolean;
-  /** Cartes du CAROUSEL relues pour l'ENVOI (média, corps, boutons). undefined si le template n'en a pas. */
+  /** Cartes du CAROUSEL relues pour l'envoi (média, corps, boutons). undefined si le template n'en a pas. */
   carousel?: { cards: OutboundCarouselCard[] };
-  /** true si le template se limite à BODY (+BUTTONS) : seul cas éditable en place sans PERTE. Un HEADER,
-   *  un FOOTER ou un CAROUSEL serait supprimé par l'édition (buildComponents ne les régénère pas + Meta
-   *  REMPLACE tous les components). L'UI et la route PATCH bloquent l'édition si `editable` est false. */
+  /** true si l'édition en place ne perd rien (cf. `isSimpleEditable`) : Meta remplace tous les components.
+   *  L'UI et la route PATCH bloquent l'édition si `editable` est false. */
   editable: boolean;
 }
 
@@ -85,9 +81,8 @@ type Composant = {
 } | null | undefined;
 
 /**
- * La PREMIÈRE valeur que `lire` rend (autre que `undefined`) en parcourant les components d'un template, dans
- * l'ordre. `lire` décide seul s'il s'arrête sur un composant (rendre une valeur, `null` compris) ou s'il passe
- * au suivant (rendre `undefined`). `undefined` = rien trouvé, ou `components` n'est pas un tableau.
+ * La première valeur que `lire` rend (autre que `undefined`) en parcourant les components dans l'ordre. `lire`
+ * s'arrête sur un composant en rendant une valeur (`null` compris), ou passe au suivant en rendant `undefined`.
  */
 function premier<T>(components: unknown, lire: (c: Composant) => T | undefined): T | undefined {
   if (!Array.isArray(components)) return undefined;
@@ -103,7 +98,7 @@ function bodyOf(components: unknown): string {
   return premier(components, (c) => (c?.type === 'BODY' && typeof c.text === 'string' ? c.text : undefined)) ?? '';
 }
 
-/** Format du composant HEADER (IMAGE/VIDEO/DOCUMENT/TEXT), null si aucun. S'arrête au PREMIER HEADER. */
+/** Format du composant HEADER (IMAGE/VIDEO/DOCUMENT/TEXT), null si aucun. S'arrête au premier HEADER. */
 function headerFormatOf(components: unknown): string | null {
   return premier(components, (c) => (c?.type === 'HEADER' ? (typeof c.format === 'string' ? c.format : null) : undefined)) ?? null;
 }
@@ -141,13 +136,8 @@ function exampleOf(components: unknown): string[] | undefined {
 
 /**
  * URL de média d'un composant HEADER, lue dans `example.header_handle[0]`. Un handle de resumable upload
- * (`4::aW1hZ2U...`, ce qu'on POSTe à la CRÉATION) n'en est PAS une : on ne garde que ce qui est une URL,
- * sinon on enverrait une valeur que Meta refuse. undefined = pas de média exploitable.
- *
- * ⚠️ Cette URL sert à OBTENIR un `media id` (re-téléversement), JAMAIS à l'envoi direct en `link`. Le
- * commentaire précédent affirmait le contraire (« exploitable telle quelle, vérifié live ») sans trace de
- * mesure, et la mesure du 2026-08-15 le contredit : Meta accepte le `link` (200) puis échoue 2 s plus tard en
- * 131053, son téléchargeur se prenant un 403 sur son propre CDN. Cf. `meta/template-media.ts`.
+ * (`4::aW1hZ2U...`, posté à la création) n'en est pas une : on ne garde qu'une URL. undefined = pas de média.
+ * Cette URL sert à obtenir un `media id`, jamais à l'envoi en `link` (échec 131053, cf. `template-media.ts`).
  */
 function headerMediaUrlOf(components: unknown): string | undefined {
   return premier(components, (c) => {
@@ -159,8 +149,8 @@ function headerMediaUrlOf(components: unknown): string | undefined {
 }
 
 /**
- * Cartes du composant CAROUSEL, relues pour l'ENVOI. Les `cards[].components[]` ont exactement la forme des
- * components top-level (HEADER/BODY/BUTTONS) : on réutilise les mêmes extracteurs. undefined = pas de carousel.
+ * Cartes du composant CAROUSEL, relues pour l'envoi. Les `cards[].components[]` ont la forme des components
+ * top-level : on réutilise les mêmes extracteurs. undefined = pas de carousel.
  */
 function carouselOf(components: unknown): { cards: OutboundCarouselCard[] } | undefined {
   if (!Array.isArray(components)) return undefined;
@@ -187,9 +177,8 @@ function carouselOf(components: unknown): { cards: OutboundCarouselCard[] } | un
 }
 
 /**
- * Éditable en place = on sait REGÉNÉRER tous ses composants à l'identique. OK : BODY, BUTTONS, FOOTER, et un
- * HEADER **TEXTE** (texte récupérable depuis list). PAS éditable : un HEADER **média** (le header_handle
- * n'est pas récupérable -> l'édition le détruirait) ni un CAROUSEL. Meta remplace TOUS les components à l'edit.
+ * Éditable en place = on sait regénérer tous ses composants à l'identique (Meta les remplace tous à l'édition) :
+ * BODY, BUTTONS, FOOTER et un HEADER texte. Pas un HEADER média (header_handle non récupérable) ni un CAROUSEL.
  */
 function isSimpleEditable(components: unknown): boolean {
   if (!Array.isArray(components)) return false;
@@ -206,11 +195,11 @@ function isSimpleEditable(components: unknown): boolean {
 
 /** Mappe un bouton applicatif -> composant Meta (QUICK_REPLY / URL / FLOW). Réutilisé top-level + cartes. */
 function mapButton(b: TemplateButton): Record<string, unknown> {
-  // Bouton FLOW : ouvre le flow publié à son écran d'entrée (navigate_screen = id d'écran, vérifié live).
+  // Bouton FLOW : ouvre le flow publié à son écran d'entrée (navigate_screen = id d'écran).
   if (b.type === 'FLOW') return { type: 'FLOW', text: b.text, flow_id: b.flowId, navigate_screen: FLOW_ENTRY_SCREEN, flow_action: 'navigate' };
   if (b.type !== 'URL') return { type: 'QUICK_REPLY', text: b.text };
   const btn: Record<string, unknown> = { type: 'URL', text: b.text, url: b.url };
-  // URL dynamique ({{1}}) : Meta EXIGE un exemple d'URL complète au niveau du bouton.
+  // URL dynamique ({{1}}) : Meta exige un exemple d'URL complète au niveau du bouton.
   if (b.url && /\{\{\s*\d+\s*\}\}/.test(b.url)) {
     btn.example = [b.url.replace(/\{\{\s*\d+\s*\}\}/g, 'exemple')];
   }
@@ -297,10 +286,7 @@ export class MetaTemplateClient {
     return { id: json.id ?? '', status: json.status ?? 'PENDING' };
   }
 
-  /**
-   * Liste TOUS les templates du WABA avec leur statut (APPROVED/PENDING/REJECTED).
-   * Suit le curseur `paging.next` pour ne rien tronquer (cap de sécurité à 20 pages).
-   */
+  /** Liste tous les templates du WABA avec leur statut, en suivant `paging.next` (plafond de 20 pages). */
   async list(wabaId: string): Promise<TemplateSummary[]> {
     const out: TemplateSummary[] = [];
     let next: string | null = this.url(wabaId, '?fields=id,name,status,category,language,components&limit=100');
@@ -320,8 +306,8 @@ export class MetaTemplateClient {
           body: bodyOf(t.components),
           headerFormat: headerFormatOf(t.components),
           ...(headerTextOf(t.components) !== undefined ? { headerText: headerTextOf(t.components) } : {}),
-          // Uniquement pour un en-tête MÉDIA : sur un carousel, les visuels sont par carte (cf. `carouselOf`),
-          // et un en-tête top-level n'existe pas, donc en exposer un ici induirait l'envoi en erreur.
+          // Seulement pour un en-tête média : sur un carousel, les visuels sont par carte (cf. `carouselOf`), et un
+          // en-tête top-level induirait l'envoi en erreur.
           ...(!carousel && headerMediaUrlOf(t.components) !== undefined ? { headerMediaUrl: headerMediaUrlOf(t.components) } : {}),
           ...(footerOf(t.components) !== undefined ? { footer: footerOf(t.components) } : {}),
           ...(buttonsOf(t.components) ? { buttons: buttonsOf(t.components) } : {}),
@@ -337,9 +323,8 @@ export class MetaTemplateClient {
   }
 
   /**
-   * Édite un template existant : POST /{templateId} (node template, PAS /message_templates). Meta REMPLACE
-   * intégralement les components (pas de patch) et n'accepte QUE category et/ou components (name/language
-   * immuables). Un APPROVED édité repasse en revue (PENDING) puis est auto-réapprouvé si la review passe.
+   * Édite un template : POST /{templateId} (pas /message_templates). Meta remplace intégralement les components
+   * et n'accepte que category et components (name et language immuables). Un APPROVED édité repasse en revue.
    */
   async update(
     templateId: string,
@@ -353,7 +338,7 @@ export class MetaTemplateClient {
     return { success: json.success ?? false };
   }
 
-  /** Supprime un template par NOM (toutes langues) : DELETE /{waba}/message_templates?name=. */
+  /** Supprime un template par nom (toutes langues) : DELETE /{waba}/message_templates?name=. */
   async remove(wabaId: string, name: string): Promise<{ success: boolean }> {
     const json = (await this.call(this.url(wabaId, `?name=${encodeURIComponent(name)}`), { method: 'DELETE' })) as { success?: boolean };
     return { success: json.success ?? false };

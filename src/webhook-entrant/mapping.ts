@@ -1,19 +1,15 @@
 import { cheminValide, litChemin, valeurTexte } from './chemin';
 
 /**
- * Ce qu'une règle de mapping peut VISER, et comment on l'applique à un payload reçu.
- *
- * Module PUR. La règle structurante tient en une phrase : **on itère sur NOTRE mapping, jamais sur les clés
- * reçues**. C'est la même doctrine que `web/lib/flow-mapping.ts` côté formulaires. Parcourir le payload pour
- * y chercher des noms connus laisserait un tiers écrire où il veut, simplement en nommant ses clés comme nos
- * champs.
+ * Ce qu'une règle de mapping peut viser, et comment on l'applique à un payload reçu. Module pur.
+ * 🔴 On itère sur notre mapping, jamais sur les clés reçues (même doctrine que `web/lib/flow-mapping.ts`) : sinon
+ * un tiers écrirait où il veut en nommant ses clés comme nos champs.
  */
 
-/** Le téléphone : c'est lui qui désigne le contact. Sans lui, un appel ne peut rien faire d'autre que
- *  s'enregistrer dans `last_payload`. */
+/** Le téléphone, qui désigne le contact. Sans lui, un appel ne fait que s'enregistrer dans `last_payload`. */
 export const CIBLE_TELEPHONE = 'sys:phone';
-/** Le nom affiché. ⚠️ C'est un ATTRIBUT (`contacts.profile_name`), pas une clé de `contacts.fields` :
- *  l'écrire dans le jsonb créerait un doublon silencieux, invisible partout où le nom est lu. */
+/** Le nom affiché : un attribut (`contacts.profile_name`), pas une clé de `contacts.fields`, sinon un doublon que
+ *  personne ne lit. */
 export const CIBLE_NOM = 'sys:name';
 /** Tout le reste : `field:<clé technique>` ou `field:<code fld_...>`, résolu par `resolveFieldKey`. */
 export const PREFIXE_CHAMP = 'field:';
@@ -43,11 +39,9 @@ export function cibleValide(cible: unknown): boolean {
 }
 
 /**
- * Coerce le `mapping` jsonb (opaque : écrit par une route, potentiellement par une version antérieure) en
- * règles exploitables. Jamais de throw sur une valeur malformée : une règle illisible est simplement retirée,
- * comme `toRow` retire une automation au `trigger_kind` inconnu. Les doublons de cible sont CONSERVÉS : c'est
- * `extraireDuPayload` qui tranche (la première règle qui rend une valeur gagne), ce qui permet un chemin de
- * repli quand un tiers n'envoie pas toujours la même forme.
+ * Coerce le `mapping` jsonb (écrit par une route, peut-être d'une version antérieure) en règles exploitables. Une
+ * règle illisible est retirée, sans lever. Les doublons de cible sont conservés : `extraireDuPayload` garde la
+ * première valeur, ce qui permet un chemin de repli.
  */
 export function coerceMapping(raw: unknown): RegleMapping[] {
   if (!Array.isArray(raw)) return [];
@@ -64,31 +58,26 @@ export function coerceMapping(raw: unknown): RegleMapping[] {
 }
 
 export interface Extraction {
-  /** Téléphone tel qu'il est arrivé (format libre) : la normalisation E.164 reste au chemin d'écriture partagé. */
+  /** Téléphone tel qu'il est arrivé : la normalisation E.164 reste au chemin d'écriture partagé. */
   telephone: string | null;
   nom: string | null;
-  /** Référence de champ -> valeur texte. La résolution et la validation par TYPE restent à l'appelant, qui
-   *  a la base : c'est `upsertContactsFromApi` qui les fait (sa préparation des champs est aussi celle de
-   *  l'API publique). */
+  /** Référence de champ -> valeur texte. La résolution et la validation par type restent à `upsertContactsFromApi`,
+   *  partagé avec l'API publique. */
   champs: Record<string, string>;
-  /** Chemins qui n'ont rien rendu (absents du payload, ou valeur non stockable). Renvoyés pour que la réponse
-   *  au tiers puisse le dire : un mapping muet sans trace est indébogable. */
+  /** Chemins qui n'ont rien rendu, renvoyés pour que la réponse au tiers le dise : un mapping muet est indébogable. */
   ignores: string[];
 }
 
 /**
- * Applique le mapping à un payload. Ne lève jamais, n'écrit rien : elle DIT ce qu'il y a à écrire.
- *
- * Une règle qui ne résout pas est ignorée sans empêcher les autres : un tiers qui cesse d'envoyer un champ
- * facultatif ne doit pas faire tomber tout le reste de l'appel.
+ * Applique le mapping à un payload. Ne lève jamais, n'écrit rien : elle dit ce qu'il y a à écrire. Une règle qui ne
+ * résout pas n'empêche pas les autres.
  */
 export function extraireDuPayload(payload: unknown, regles: readonly RegleMapping[]): Extraction {
   const ex: Extraction = { telephone: null, nom: null, champs: {}, ignores: [] };
   for (const r of regles) {
     const valeur = valeurTexte(litChemin(payload, r.chemin));
     if (valeur === null) { ex.ignores.push(r.chemin); continue; }
-    // Première règle qui rend une valeur : gagne. Les suivantes visant la même cible sont des REPLIS, pas des
-    // écrasements ; sinon un chemin de repli vide effacerait la valeur trouvée par le chemin principal.
+    // Première règle qui rend une valeur : gagne. Les suivantes sont des replis, pas des écrasements.
     if (r.cible === CIBLE_TELEPHONE) {
       if (ex.telephone === null) ex.telephone = valeur;
       continue;

@@ -10,7 +10,7 @@ export interface SupportRouteDeps {
   /** Envoie le message. Lève sur erreur réseau/Resend (mappée en 422 par la route, pas de 500 nu). */
   sendSupport(input: { tenantId: string; userId: string | null; email: string | null; subject: string; message: string }): Promise<void>;
   /**
-   * Email du compte AUTHENTIFIÉ, résolu en base depuis `req.auth.userId`. C'est lui qui sert de reply-to.
+   * Email du compte authentifié, résolu en base depuis `req.auth.userId`, qui sert de reply-to.
    * `null` -> pas de reply-to, jamais une adresse venue du client.
    */
   getUserEmail(userId: string): Promise<string | null>;
@@ -24,13 +24,8 @@ const MESSAGE_MAX = 5000;
 export function registerSupport(app: FastifyInstance, deps: SupportRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
 
-  // Un limiteur PROPRE à cet endpoint (jamais l'instance d'un autre : c'est la règle déjà posée dans
-  // src/auth/routes.ts). Cadence calquée sur /auth/forgot-password, l'autre endpoint qui déclenche un email.
-  //
-  // Clé = userId, PAS req.ip. La route est authentifiée, donc l'identité est connue et c'est la bonne maille.
-  // Surtout, Fastify n'est pas construit en `trustProxy` : derrière NPM, `req.ip` est l'IP du conteneur
-  // mba-web, identique pour TOUT LE MONDE. Un limiteur par IP serait ici un plafond global à la plateforme,
-  // qu'un seul utilisateur suffirait à épuiser pour tous les autres.
+  // Limiteur propre à cet endpoint, cadence calquée sur /auth/forgot-password. Clé = userId, pas req.ip : sans
+  // `trustProxy`, derrière NPM, `req.ip` est le même pour tous (un plafond global qu'un seul épuiserait).
   const limiter = new RateLimiter(5, 60_000);
 
   app.post('/tenants/:tenantId/support', opts, async (req, reply) => {
@@ -47,9 +42,8 @@ export function registerSupport(app: FastifyInstance, deps: SupportRouteDeps, ga
     if (!nonEmpty(b.subject)) return reply.code(400).send({ error: 'sujet requis' });
     if (!nonEmpty(b.message)) return reply.code(400).send({ error: 'message requis' });
 
-    // Reply-to résolu EN BASE depuis le compte authentifié, jamais lu dans le corps de la requête : sinon
-    // n'importe quel compte pouvait faire répondre l'équipe à l'adresse de son choix. Une panne de lookup ne
-    // bloque pas l'envoi, elle le prive seulement de son reply-to.
+    // Reply-to résolu en base depuis le compte authentifié, jamais lu dans le corps (sinon n'importe qui ferait
+    // répondre l'équipe à l'adresse de son choix). Une panne de lookup prive seulement l'envoi de son reply-to.
     const email = userId ? await deps.getUserEmail(userId).catch(() => null) : null;
 
     try {
@@ -62,9 +56,7 @@ export function registerSupport(app: FastifyInstance, deps: SupportRouteDeps, ga
       });
       return reply.code(200).send({ ok: true });
     } catch (err) {
-      // JOURNALISER AVANT DE MASQUER (même règle que le handler d'erreur global de src/server.ts). Le `catch`
-      // nu d'avant avalait aussi bien une panne Resend qu'une TypeError dans sendSupport : les deux rendaient
-      // « réessaie plus tard », et l'utilisateur réessayait indéfiniment sur un bug qui ne passerait jamais.
+      // Journaliser avant de masquer : sinon une panne Resend et un bug rendent le même « réessaie plus tard ».
       // `console.error` et non `req.log` : Fastify est construit en `logger: false`.
       // eslint-disable-next-line no-console
       console.error(JSON.stringify({
@@ -75,9 +67,7 @@ export function registerSupport(app: FastifyInstance, deps: SupportRouteDeps, ga
         err: texteDe(err),
         stack: err instanceof Error ? err.stack : undefined,
       }));
-      // 🔴 422 ET PAS 502 : l'écran de support affiche ce message tel quel, et Cloudflare remplace le corps de
-      // toute 5xx par sa propre page. La personne lisait « Erreur 502 » sur la page même où l'on vient quand
-      // quelque chose ne marche pas (documentation.md, « Aucun message destiné à l'utilisateur dans un 5xx »).
+      // 422 et pas 502 : l'écran affiche ce message tel quel, et Cloudflare remplace le corps de toute 5xx.
       return reply.code(422).send({ error: 'envoi impossible pour le moment, réessaie plus tard' });
     }
   });

@@ -19,13 +19,12 @@ function norm(h: string): string {
 // Attributs standard (colonnes du contact).
 const STANDARD: Record<'phone' | 'name', string[]> = {
   phone: ['phone', 'telephone', 'tel', 'mobile', 'portable', 'whatsapp', 'gsm', 'msisdn', 'phone number', 'mobile number', 'numero de telephone', 'numero mobile'],
-  // `name` = nom d'affichage (profile_name). Le prénom est traité à part pour ne PAS écraser le
-  // nom quand le CSV a les deux colonnes.
+  // `name` = nom d'affichage (profile_name). Le prénom est traité à part pour ne pas écraser le nom.
   name: ['name', 'nom', 'fullname', 'contact', 'full name', 'nom complet', 'lastname', 'last name', 'nom de famille'],
 };
-// Prénom -> champ perso `prenom`. Vérifié AVANT `name` (« first name » contient le token « name »).
+// Prénom -> champ perso `prenom`. Vérifié avant `name` (« first name » contient le token « name »).
 const PRENOM = ['prenom', 'firstname', 'first name', 'given name'];
-// Alias ambigus : ne matchent phone QUE si le header normalisé est EXACTEMENT ça
+// Alias ambigus : ne matchent phone que si l'en-tête normalisé est exactement ça
 // (`numéro` seul -> phone, mais `numéro de commande` -> custom).
 const PHONE_EXACT = ['numero', 'number', 'num'];
 // Champs perso à key normalisée (reconnus mais stockés en custom).

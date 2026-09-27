@@ -14,14 +14,10 @@ export interface ApiKeyRow {
 /** Ce que le preHandler /v1 a besoin de résoudre pour authentifier une requête (interface étroite). */
 export interface ApiKeyLookup {
   /**
-   * Résout une clé par son empreinte. `tenantStatus` porte le statut de l'ESPACE (`tenants.status`).
-   *
-   * 🔴 IL VOYAGE AVEC LE LOOKUP, PAS DANS UNE SECONDE REQUÊTE, et c'est ce qui rend l'arrêt d'urgence
-   * gratuit sur le chemin chaud : la jointure coûte le même aller-retour. Une requête de plus par appel
-   * d'API aurait été payée par tous les clients, tous les jours, pour un verrou qui ne sert presque jamais.
-   *
-   * ⚠️ OPTIONNEL DANS LE TYPE : les faux de tests ne le posent pas, et un statut absent doit PASSER. On ne
-   * bloque que sur `locked` explicite, comme la garde de session.
+   * Résout une clé par son empreinte ; `tenantStatus` porte le statut de l'espace. Il voyage avec le lookup,
+   * par jointure, pas dans une seconde requête : l'arrêt d'urgence ne coûte rien sur le chemin chaud.
+   * Optionnel dans le type : un statut absent passe, on ne bloque que sur `locked` explicite, comme la garde de
+   * session.
    */
   findActiveByHash(hash: string): Promise<{ id: string; tenantId: string; scopes: string[]; tenantStatus?: string } | null>;
   touchLastUsed(id: string): Promise<void>;
@@ -31,10 +27,9 @@ export interface ApiKeyLookup {
 export const API_KEY_PREFIX = 'mba_';
 
 /**
- * Clés d'API par tenant. `create` renvoie la clé EN CLAIR une seule fois (à copier par le client) mais ne
- * persiste que son hash sha256 (comme PgAuthTokenStore). Le lookup se fait par hash sur un index unique :
- * pas de comparaison en mémoire d'un secret -> pas de canal de timing à protéger. `listByTenant` ne renvoie
- * JAMAIS le hash.
+ * Clés d'API par tenant. `create` rend la clé en clair une seule fois et 🔴 ne persiste que son hash
+ * sha256 ; le lookup se fait par hash sur un index unique, sans comparaison en mémoire d'un secret.
+ * `listByTenant` ne rend jamais le hash.
  */
 export class PgApiKeyStore implements ApiKeyLookup {
   constructor(private readonly pool: Pool) {}
@@ -49,8 +44,7 @@ export class PgApiKeyStore implements ApiKeyLookup {
   }
 
   async findActiveByHash(hash: string): Promise<{ id: string; tenantId: string; scopes: string[]; tenantStatus?: string } | null> {
-    // ⚠️ LA JOINTURE NE COÛTE PAS UN ALLER-RETOUR DE PLUS : c'est tout l'intérêt de faire voyager le statut
-    // avec le lookup plutôt que de le lire à part. `tenants.id` est la clé primaire.
+    // La jointure ne coûte pas d'aller-retour de plus (`tenants.id` est la clé primaire).
     const res = await this.pool.query<{ id: string; tenant_id: string; scopes: string[]; tenant_status: string | null }>(
       `select k.id, k.tenant_id, k.scopes, t.status as tenant_status
          from api_keys k join tenants t on t.id = k.tenant_id
@@ -70,7 +64,7 @@ export class PgApiKeyStore implements ApiKeyLookup {
   }
 
   /**
-   * La clé existe-t-elle, pour CET espace, sans être révoquée ? Sert au relais du MBA : une clé « Agent de
+   * La clé existe-t-elle, pour cet espace, sans être révoquée ? Sert au relais du MBA : une clé « Agent de
    * Meta » révoquée par le client doit être remplacée chez Meta à la publication suivante.
    */
   async estActive(tenantId: string, id: string): Promise<boolean> {
@@ -104,7 +98,7 @@ export class PgApiKeyStore implements ApiKeyLookup {
     return (res.rowCount ?? 0) > 0;
   }
 
-  /** Liste les clés du tenant SANS jamais exposer le hash (ni le clair, qu'on n'a pas). */
+  /** Liste les clés du tenant sans jamais exposer le hash (ni le clair, qu'on n'a pas). */
   async listByTenant(tenantId: string): Promise<ApiKeyRow[]> {
     const res = await this.pool.query<{ id: string; name: string; scopes: string[]; created_at: Date; last_used_at: Date | null; revoked_at: Date | null }>(
       `select id, name, scopes, created_at, last_used_at, revoked_at from api_keys

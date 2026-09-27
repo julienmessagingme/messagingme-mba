@@ -2,20 +2,16 @@ import { z } from 'zod';
 import { CLE_VARIABLE } from '../crm/template';
 
 /**
- * LES VARIABLES D'UN DESTINATAIRE DE `/v1/sends` (spec 2026-09-24, § 3, lot 3) : `{ clé: texte }`, propres à
- * CE destinataire, jamais écrites sur sa fiche.
- *
- * Les bornes : 50 variables de 1 024 caractères au plus. Un paramètre de template WhatsApp et un texte RCS
- * tiennent dedans, et un corps de 50 destinataires reste loin du plafond de 1 Mo du serveur.
+ * Les variables d'un destinataire de `/v1/sends` : `{ clé: texte }`, propres à ce destinataire, jamais
+ * écrites sur sa fiche. Bornes : 50 variables de 1 024 caractères au plus (un corps de 50 destinataires
+ * reste loin du plafond de 1 Mo du serveur).
  */
 export const VALEUR_VARIABLE_MAX = 1024;
 export const VARIABLES_MAX = 50;
 
 /**
- * ⚠️ `__proto__` EST REFUSÉ SUR L'ENTRÉE BRUTE, AVANT le `record`, et pas par un `refine` sur la clé : zod 4 le
- * RETIRE du résultat sans rien dire (mesuré : `{"__proto__": "x", "a": "b"}` rend `{ a: "b" }` en succès), donc
- * une garde posée sur la clé ne s'exécute jamais. Le retirer en silence ne pollue rien, mais ferait croire à
- * l'intégrateur que sa variable est partie.
+ * `__proto__` est refusé sur l'entrée brute, avant le `record` : zod 4 le retire du résultat sans rien dire,
+ * donc une garde posée sur la clé ne s'exécute jamais, et l'intégrateur croirait sa variable partie.
  */
 export const schemaVariables = z.unknown()
   .refine((v) => typeof v !== 'object' || v === null || !Object.hasOwn(v, '__proto__'), 'nom de variable réservé : __proto__')
@@ -28,14 +24,10 @@ export const schemaVariables = z.unknown()
 export type TypeDeCible = 'template' | 'scenario' | 'node' | 'rcsMessage';
 
 /**
- * L'index du premier destinataire qui porte une clé `variables` alors que la cible n'en a pas l'usage, sinon
- * `null`. 🔴 Un scénario ou un bloc n'a aujourd'hui AUCUN endroit où les ranger : les accepter en silence ferait
- * croire à l'intégrateur qu'elles servent.
- *
- * ⚠️ ELLE LIT LES DESTINATAIRES TELS QUE REÇUS (`unknown`), et c'est voulu : le refus est un 400 sur tout
- * l'envoi, qui doit tomber AVANT le compteur d'usage et le claim d'idempotence, alors que la route du lot 2 ne
- * valide chaque destinataire qu'APRÈS (un destinataire mal formé y est écarté, pas refusé). Aucun `as` :
- * `Object.hasOwn` suffit à lire une clé sur un objet quelconque.
+ * L'index du premier destinataire qui porte `variables` alors que la cible n'en a pas l'usage, sinon
+ * `null`. Un scénario ou un bloc n'a aucun endroit où les ranger : les accepter ferait croire qu'elles
+ * servent. Lit les destinataires tels que reçus : ce 400 sur tout l'envoi doit tomber avant le compteur
+ * d'usage et le claim d'idempotence, alors que chaque destinataire n'est validé qu'après.
  */
 export function destinataireAvecVariablesInterdites(cible: TypeDeCible, destinataires: readonly unknown[]): number | null {
   if (cible === 'template' || cible === 'rcsMessage') return null;

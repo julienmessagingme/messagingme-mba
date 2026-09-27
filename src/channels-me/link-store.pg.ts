@@ -3,11 +3,9 @@ import { MOTIF_JETON } from './jeton';
 import { compterParLien, type ConversationsDunLien } from './conversions';
 
 /**
- * Une ligne de `channelsme_links`, telle que les routes et la console la lisent.
- *
- * 🔴 Pas de champ `enabled`, et ce n est pas un oubli : l etat allume ou eteint du lien EST le `enabled` de
- * son automation compagnon, seule source de verite. Poser un second drapeau ici creerait deux copies du
- * meme etat, qui divergeraient au premier chemin qui n ecrirait qu une des deux.
+ * Une ligne de `channelsme_links`, telle que les routes et la console la lisent. Pas de champ `enabled`
+ * stocké : l'état allumé du lien est le `enabled` de son automation compagnon, seule source de vérité ; une
+ * copie ici divergerait au premier chemin qui n'écrirait qu'une des deux.
  */
 export interface LienRow {
   id: string;
@@ -17,35 +15,24 @@ export interface LienRow {
   token: string;
   phrase: string;
   automationId: string | null;
-  /** Plafond horaire PROPRE a ce lien. null veut dire « plafond global de l instance », pas « zero ». */
+  /** Plafond horaire propre à ce lien. null = plafond global de l'instance, pas « zéro ». */
   maxParHeure: number | null;
   createdAt: string;
   /**
-   * L etat ALLUME de l automation compagnon, LU a chaque lecture, jamais ecrit ici.
-   *
-   * 🔴 Ce n est pas le second drapeau que la note ci-dessus interdit. La regle interdit de COPIER l etat
-   * (deux colonnes qui divergent au premier chemin qui n en ecrit qu une) ; elle n interdit pas de le LIRE
-   * a sa source. Sans ce champ, l etat n est lisible NULLE PART : l automation compagnon est possedee
-   * (`possede_par = 'channelsme_link'`), donc exclue du predicat de `PgAutomationStore`, donc absente de
-   * `GET /automations`. La console affichait deux boutons (allumer, eteindre) sans jamais pouvoir dire
-   * lequel des deux avait un sens.
-   *
-   * `null` veut dire « ce lien n a plus d automation compagnon », le cas que `/enable` et `/disable`
-   * refusent deja en 409. Ce n est PAS « eteint ».
+   * L'état allumé de l'automation compagnon, lu à sa source à chaque lecture, jamais copié. Sans lui l'état
+   * n'est lisible nulle part : l'automation possédée est exclue de `GET /automations`. `null` = ce lien n'a
+   * plus d'automation compagnon (ce que `/enable` et `/disable` refusent en 409), pas « éteint ».
    */
   enabled: boolean | null;
 }
 
-/** ⚠️ Liste tenue A LA MAIN : ajouter une colonne oblige a toucher aussi `LienRowBrut` et `versLien`. */
+/** Liste tenue à la main : une colonne ajoutée ici doit l'être aussi dans `LienRowBrut` et `versLien`. */
 const COLS = 'id, tenant_id, workflow_id, start_node_id, token, phrase, automation_id, max_par_heure, created_at';
 
 /**
- * Les memes colonnes prefixees `l.`, plus l etat allume lu sur l automation compagnon.
- *
- * La jointure porte la MEME garde miroir que `definirEtatAutomation` (`tenant_id` ET
- * `possede_par = 'channelsme_link'`) : on ne lit pas plus largement qu on n ecrit. Une automation qui ne
- * nous appartient pas ne joint pas, et `enabled` sort a `null` plutot que de reveler l etat d une ligne
- * d un autre proprietaire.
+ * Les mêmes colonnes préfixées `l.`, plus l'état lu sur l'automation compagnon. 🔴 La jointure porte la même
+ * garde miroir que `definirEtatAutomation` (`tenant_id` et `possede_par = 'channelsme_link'`) : on ne lit pas
+ * plus largement qu'on n'écrit, et une automation d'un autre propriétaire ne joint pas.
  */
 const COLS_AVEC_ETAT = `${COLS.split(', ').map((c) => `l.${c}`).join(', ')}, a.enabled as enabled`;
 const JOINTURE_ETAT =
@@ -77,47 +64,23 @@ function versLien(r: LienRowBrut): LienRow {
     automationId: r.automation_id,
     maxParHeure: r.max_par_heure,
     createdAt: r.created_at.toISOString(),
-    // `?? null` couvre le seul cas ou la colonne est absente de la ligne brute : aucun aujourd hui, les
-    // trois requetes de ce store la rendent. C est un filet pour une 4e requete qui l oublierait, et il
-    // retombe alors sur `null`, c est-a-dire « on ne sait pas », jamais sur `false`, qui serait une
-    // affirmation. Postgres rend deja `null` quand la sous-requete ou la jointure ne trouve rien.
+    // `?? null` : filet pour une requête qui oublierait la colonne, qui retombe sur « on ne sait pas », jamais
+    // sur `false`, qui serait une affirmation.
     enabled: r.enabled ?? null,
   };
 }
 
 /**
- * Les liens de chaine d un tenant : un jeton, une phrase, un scenario, et l automation compagnon qui les
- * relie.
- *
- * Ce store ne sait ni allumer ni eteindre un lien : cet etat vit sur l automation, pas ici. Il ne sait pas
- * non plus repointer un lien vers un autre scenario, ce qui est une decision produit et pas une lacune (un
- * autre scenario veut un autre lien, donc un autre jeton, donc une autre mesure de conversion).
- */
-/**
- * Combien de messages entrants RECENTS on regarde pour juger si une phrase est trop banale.
- *
- * ⚠️ C'est une borne de COUT, pas un seuil semantique, et il faut le dire : le controle repond a « cette
- * phrase apparait-elle dans la conversation ordinaire », et en examiner davantage ne changerait pas la
- * decision qu'il alimente. Une phrase vue il y a deux ans et jamais depuis n'est pas un risque vivant.
- *
- * Mesure du 2026-09-07 : `conversation_messages` contenait 221 lignes, donc le controle est aujourd'hui
- * gratuit. Cette borne existe pour qu'il le reste quand la table aura grossi, sans avoir a poser un index
- * trigramme sur le corps des messages du chemin chaud pour une garde qui ne sert qu'a la creation d'un lien.
+ * Combien de messages entrants récents on regarde pour juger si une phrase est trop banale : une borne de
+ * coût, pas un seuil sémantique. Elle garde le contrôle gratuit quand la table grossit, sans index trigramme
+ * sur le corps des messages pour une garde qui ne sert qu'à la création d'un lien.
  */
 const MESSAGES_EXAMINES = 2000;
 
 /**
- * Combien de messages entrants on relit pour COMPTER les conversations demarrees par les boutons.
- *
- * ⚠️ CE N'EST PAS `MESSAGES_EXAMINES`, ET LES DEUX BORNES NE REPONDENT PAS A LA MEME QUESTION. Celle-la
- * borne une GARDE (« cette phrase est-elle banale ? »), a laquelle en regarder plus ne changerait rien.
- * Celle-ci borne une MESURE affichee a un client : la tronquer rend un chiffre FAUX, pas approximatif.
- * D'ou le plafond plus haut, et surtout le drapeau `partiel` rendu avec le resultat, pour que l'ecran
- * puisse dire « au moins N » au lieu d'annoncer un total qu'il n'a pas.
- *
- * Mesure du 2026-09-07 sur la base de production : 89 messages entrants WhatsApp au total. Le plafond est
- * donc tres loin d'etre atteint aujourd'hui ; il existe pour que la lecture reste bornee quand la table
- * aura grossi.
+ * Combien de messages entrants on relit pour compter ce que les boutons ont produit. Pas la même question
+ * que `MESSAGES_EXAMINES` : celle-ci borne une mesure affichée à un client, où tronquer rend un chiffre faux.
+ * D'où un plafond plus haut, et le drapeau `partiel`, pour que l'écran dise « au moins N ».
  */
 const MESSAGES_CONVERSIONS = 20_000;
 
@@ -125,19 +88,14 @@ export class PgChannelsMeLinkStore {
   constructor(private readonly pool: Pool) {}
 
   /**
-   * Les phrases des liens de ce tenant, telles qu'elles sont stockees.
-   *
-   * 🔴 LA COMPARAISON SE FAIT EN JS, avec `normalizeText`, exactement celle qui decide de la correspondance
-   * d'un message. La faire en SQL obligerait a la reecrire (`lower(btrim(...))` ne retire pas les accents, et
-   * `unaccent` n'est pas installe ni immuable, donc inutilisable dans un index), et deux definitions de « la
-   * meme phrase » divergeraient au premier accent. La table est petite par nature : quelques liens par
-   * espace, un par post publie.
+   * Les phrases des liens de ce tenant, telles qu'elles sont stockées. La comparaison se fait en JS avec
+   * `normalizeText`, celle qui décide de la correspondance d'un message (en SQL, `lower` ne retire pas les
+   * accents et `unaccent` n'est pas installé). La table est petite par nature : quelques liens par espace.
    */
   async phrasesDesLiens(tenantId: string): Promise<string[]> {
     const res = await this.pool.query<{ phrase: string }>(
-      // Pas de `limit` : un plafond sans `order by` rendrait un sous-ensemble ARBITRAIRE au-dela du
-      // plafond, donc une garde qui se degrade en silence. La table est petite par nature, c'est
-      // precisement l'argument qui autorise la comparaison en JS.
+      // Pas de `limit` : un plafond sans `order by` rendrait un sous-ensemble arbitraire, une garde qui se dégrade
+      // en silence.
       'select phrase from channelsme_links where tenant_id = $1',
       [tenantId],
     );
@@ -145,37 +103,16 @@ export class PgChannelsMeLinkStore {
   }
 
   /**
-   * Les conversations demarrees par CHAQUE bouton de chaine de ce tenant.
+   * Ce que chaque bouton de chaîne de ce tenant a produit, compté en JS avec `normalizeText` (même raison que
+   * `phrasesDesLiens` : un compteur qui compte autrement que ce qui déclenche est pire que pas de compteur).
    *
-   * 🔴 LE COMPTAGE SE FAIT EN JS, avec `normalizeText`, pour la meme raison que `phrasesDesLiens` : c'est
-   * la seule definition de « ce message correspond a cette phrase », et c'est celle dont le moteur se sert
-   * pour declencher. En SQL il aurait fallu la reecrire, et un compteur qui compte autrement que ce qui
-   * declenche est pire que pas de compteur.
+   * La lecture est bornée par la date du plus ancien lien de l'espace : elle ne perd rien, mais peut inclure
+   * des messages antérieurs à la création d'un bouton donné (un abonné qui a écrit la phrase spontanément). Une
+   * borne par lien coûterait une requête par lien ; l'écran dit qu'on compte des messages reçus.
    *
-   * 🔴 LA LECTURE EST BORNEE PAR LA DATE DU PLUS ANCIEN LIEN DE L'ESPACE. Aucun bouton n'a pu produire de
-   * conversation avant d'exister, donc cette borne ne peut RIEN perdre, et elle retire tout l'historique
-   * anterieur au premier lien.
-   *
-   * 🔴 ELLE EST LARGE, ET LE COMPTE PEUT DONC INCLURE DES MESSAGES ANTERIEURS A LA CREATION DU BOUTON.
-   * C'est le plus ancien lien de l'ESPACE, pas la date de chaque lien. Une premiere version de ce
-   * commentaire affirmait que c'etait sans effet, au motif que l'unicite de phrase empeche un autre message
-   * de contenir celle-ci : c'est FAUX, et le raisonnement confondait deux choses. L'unicite porte sur les
-   * phrases des LIENS entre elles ; elle n'empeche pas un abonne d'avoir ecrit spontanement « Je veux le
-   * guide » avant que ce bouton existe. La garde de creation MESURE d'ailleurs exactement ce risque
-   * (`messagesContenantLaPhrase`) au lieu de le nier.
-   *
-   * On garde la borne large plutot qu'une borne par lien, qui couterait une requete par lien, et l'ecart
-   * est DIT a l'utilisateur : l'ecran annonce qu'on compte des messages recus, pas des demarrages.
-   *
-   * ⚠️ `not c.is_test` EXCLUT DEFINITIVEMENT un contact qui a servi une fois de cible de test. Il n'y a
-   * qu'UN fil par contact (unicite `(tenant_id, wa_id)`, migration 0058) et `is_test` n'est jamais remis a
-   * false (migration 0053, qui le dit). Un vrai abonne sur lequel on a testé un scenario est donc absent du
-   * compte, pour toujours. C'est le compromis retenu : compter notre propre trafic de test gonflerait le
-   * chiffre de tous les liens, alors que ce trou-la ne touche que les quelques numeros qui nous servent
-   * d'essai.
-   *
-   * `partiel` dit que le plafond a ete atteint, donc que les chiffres sont des MINIMUMS. Un ecran qui
-   * afficherait un total tronque sans le dire mentirait.
+   * `not c.is_test` exclut pour toujours un contact qui a servi de cible de test (`is_test` n'est jamais remis
+   * à false) : compter notre trafic de test gonflerait tous les liens. `partiel` dit que le plafond a été
+   * atteint, donc que les chiffres sont des minimums.
    */
   async conversationsParLien(tenantId: string): Promise<{ parLien: ConversationsDunLien[]; partiel: boolean }> {
     const liens = await this.pool.query<{ id: string; phrase: string }>(
@@ -208,16 +145,11 @@ export class PgChannelsMeLinkStore {
   }
 
   /**
-   * Combien des messages entrants RECENTS de ce tenant contiennent deja cette phrase.
-   *
-   * 🔴 CE CONTROLE REMPLACE UN SEUIL DE LONGUEUR INVENTE. Le danger d'une phrase n'est pas d'etre courte,
-   * c'est d'apparaitre dans la conversation ordinaire : « Bonjour » declencherait sur tout. On le COMPTE au
-   * lieu de le deviner.
-   *
-   * ⚠️ La comparaison SQL est `lower(...) like` : elle ignore la casse, pas les accents. C'est volontairement
-   * plus PERMISSIF que `normalizeText` (elle laissera passer une phrase qui ne differe que par un accent
-   * d'un message existant). Une garde qui rate un cas rare est acceptable ; une garde qui refuse a tort la
-   * phrase d'un client ne l'est pas.
+   * Combien des messages entrants récents de ce tenant contiennent déjà cette phrase. Le danger d'une phrase
+   * n'est pas d'être courte, c'est d'apparaître dans la conversation ordinaire (« Bonjour » déclencherait sur
+   * tout) : on le compte. La comparaison ignore la casse, pas les accents : plus permissive que
+   * `normalizeText`, parce qu'une garde qui refuse à tort la phrase d'un client est pire que celle qui rate un
+   * cas rare.
    */
   async messagesContenantLaPhrase(tenantId: string, phrase: string): Promise<number> {
     const res = await this.pool.query<{ n: number }>(
@@ -249,9 +181,8 @@ export class PgChannelsMeLinkStore {
   }
 
   /**
-   * ⚠️ `automationId` est fourni A LA CREATION, il ne se pose pas apres coup : l automation compagnon se cree
-   * AVANT le lien (elle ne reference pas le lien, elle porte juste sa marque de possession), donc son id est
-   * deja connu quand on arrive ici.
+   * `automationId` est fourni à la création : l'automation compagnon se crée avant le lien (elle porte sa
+   * marque de possession, pas de référence au lien), son id est donc connu ici.
    */
   async create(
     tenantId: string,
@@ -264,12 +195,9 @@ export class PgChannelsMeLinkStore {
       maxParHeure: number | null;
     },
   ): Promise<LienRow> {
-    // 🔴 LE `returning` LIT L ETAT DE L AUTOMATION COMPAGNON, il ne le suppose pas. Sans cette sous-requete,
-    // `enabled` sortait a `null` pour un lien qui vient pourtant d en recevoir une (creee ETEINTE juste
-    // avant par la route) : or `null` veut dire « plus d automation compagnon », donc la reponse de
-    // POST /links affirmait le contraire de la verite, et l ecran ne marquait pas le lien neuf comme eteint.
-    // Meme garde miroir que partout ailleurs dans ce store (tenant_id ET possede_par), et aucune requete de
-    // plus : on ne relit jamais en 2e requete ce que l INSERT peut rendre.
+    // Le `returning` lit l'état de l'automation compagnon (créée éteinte juste avant par la route) au lieu de le
+    // supposer : sans lui `enabled` sortirait `null`, « plus d'automation », le contraire de la vérité. Même
+    // garde miroir que partout ailleurs dans ce store.
     const { rows } = await this.pool.query<LienRowBrut>(
       `insert into channelsme_links
          (tenant_id, workflow_id, start_node_id, token, phrase, automation_id, max_par_heure)
@@ -282,7 +210,7 @@ export class PgChannelsMeLinkStore {
     return versLien(rows[0]!);
   }
 
-  /** 🔴 `order by created_at desc` : c est l ordre de l index channelsme_links_tenant_idx (tenant_id, created_at desc). */
+  /** `order by created_at desc` : l'ordre de l'index `channelsme_links_tenant_idx` (tenant_id, created_at desc). */
   async list(tenantId: string): Promise<LienRow[]> {
     const { rows } = await this.pool.query<LienRowBrut>(
       `select ${COLS_AVEC_ETAT} from channelsme_links l ${JOINTURE_ETAT}
@@ -302,40 +230,25 @@ export class PgChannelsMeLinkStore {
   }
 
   /**
-   * Allume l automation compagnon de ce lien : chemin appele a la publication d un post (une chaine qui
-   * publie doit se mettre a repondre a son jeton).
-   *
-   * 🔴 CE STORE ECRIT SA PROPRE REQUETE sur `automations`, il ne passe PAS par `PgAutomationStore`. Cette
-   * classe exclut de `update`/`remove` toute ligne dont `possede_par` n est pas nul (meme patron que
-   * `HORS_WEBHOOK` pour les webhooks entrants) : une automation possedee par un lien de chaine lui est donc
-   * devenue INACCESSIBLE en ecriture depuis ce store-la, y compris pour l allumer. Le proprietaire ecrit ses
-   * propres requetes, comme `PgWebhookStore.syncAutomation` le fait deja pour les siennes.
-   *
-   * La clause `possede_par = 'channelsme_link'` est une GARDE MIROIR : elle interdit a ce store de toucher
-   * une automation qui ne lui appartient pas, exactement comme le predicat de `PgAutomationStore` interdit a
-   * l ecran Automation de toucher les siennes. C est ce qui rend la frontiere etanche dans les deux sens, pas
-   * seulement le fait que `PgAutomationStore` regarde ailleurs.
+   * Allume l'automation compagnon de ce lien, à la publication d'un post. Ce store écrit sa propre requête sur
+   * `automations` : `PgAutomationStore` exclut toute ligne dont `possede_par` n'est pas nul. La clause
+   * `possede_par = 'channelsme_link'` est une garde miroir : ce store ne touche qu'aux automations qui lui
+   * appartiennent, comme l'écran Automation ne touche pas aux siennes.
    */
   async allumerAutomation(tenantId: string, linkId: string): Promise<void> {
     await this.definirEtatAutomation(tenantId, linkId, true);
   }
 
-  /** Eteint l automation compagnon. Meme garde que `allumerAutomation`, voir sa note. */
+  /** Éteint l'automation compagnon. Même garde que `allumerAutomation`. */
   async eteindreAutomation(tenantId: string, linkId: string): Promise<void> {
     await this.definirEtatAutomation(tenantId, linkId, false);
   }
 
   /**
-   * Defait l automation compagnon qu on vient de creer, quand la creation du LIEN cense la referencer echoue
-   * juste apres (POST /links, `src/http/channels-me.ts`) : sans ce rattrapage, l automation reste, POSSEDEE
-   * (`possede_par = 'channelsme_link'`), donc exclue du predicat de `PgAutomationStore` (invisible et
-   * inaccessible depuis l ecran Automation) SANS qu aucun lien ne la reference jamais. Une orpheline que
-   * personne ne peut plus voir ni supprimer.
-   *
-   * Meme garde miroir que `allumerAutomation`/`eteindreAutomation` : bornee par `tenant_id` ET par
-   * `possede_par = 'channelsme_link'`, pour ne jamais pouvoir toucher une automation qui ne serait pas la
-   * notre. Idempotent et sans effet si l id ne correspond a rien (id deja rattrape, ou jamais possede par un
-   * lien de chaine) : ce n est jamais une raison d echouer davantage.
+   * Défait l'automation compagnon qu'on vient de créer quand la création du lien échoue juste après (POST
+   * /links) : sinon elle resterait possédée, invisible de l'écran Automation, sans lien qui la référence, et
+   * personne ne pourrait la supprimer. Même garde miroir ; idempotent, et sans effet si l'id ne correspond à
+   * rien.
    */
   async supprimerAutomationCompagnon(tenantId: string, automationId: string): Promise<void> {
     await this.pool.query(
@@ -345,11 +258,9 @@ export class PgChannelsMeLinkStore {
   }
 
   /**
-   * Partagee par `allumerAutomation` et `eteindreAutomation` : la sous-requete resout l automation compagnon
-   * du lien, scopee tenant, et la mise a jour porte ELLE-MEME `tenant_id` ET `possede_par` en garde. Si le
-   * lien n existe pas pour ce tenant, ou si son automation compagnon n est pas possedee par channelsme_link
-   * (jamais cense arriver, mais pas suppose), la requete touche zero ligne, silencieusement : appeler cette
-   * methode n est jamais une raison d echouer la publication qui l a declenchee.
+   * Partagée par `allumerAutomation` et `eteindreAutomation` : la sous-requête résout l'automation compagnon
+   * du lien, scopée tenant, et la mise à jour porte elle-même `tenant_id` et `possede_par`. Sinon, zéro ligne
+   * touchée en silence : ce n'est jamais une raison d'échouer la publication.
    */
   private async definirEtatAutomation(tenantId: string, linkId: string, enabled: boolean): Promise<void> {
     await this.pool.query(

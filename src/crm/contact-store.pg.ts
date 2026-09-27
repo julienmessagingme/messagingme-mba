@@ -12,8 +12,8 @@ export interface ContactRow {
   /** Identité BSUID (business-scoped user id) quand le contact n'a pas de numéro. */
   bsuid: string | null;
   /**
-   * L'identifiant de l'OUTIL DU CLIENT (migration 0172), posé par l'API publique. `null` = aucun.
-   * Il sert à RETROUVER la fiche et à réécrire dans l'outil qui l'a donné, jamais d'adresse d'envoi.
+   * L'identifiant de l'outil du client, posé par l'API publique ; `null` = aucun. Il sert à retrouver la fiche et
+   * à réécrire dans l'outil qui l'a donné, jamais d'adresse d'envoi.
    */
   externalId: string | null;
   profileName: string | null;
@@ -24,17 +24,14 @@ export interface ContactRow {
   /** Date de blocage (modération). `null` = non bloqué. Bloqué : plus aucun envoi, conversation masquée. */
   blockedAt: string | null;
   /**
-   * Joignabilité WhatsApp MESURÉE (migration 0133), et sa date. Les DEUX voyagent ensemble, toujours.
-   *
-   * 🔴 UNE VALEUR SANS SA DATE N'EST PAS UNE MESURE : elle ne pourrait pas se périmer, donc elle vaudrait
-   * pour toujours. C'est pourquoi la fiche ne lit jamais `whatsappJoignable` seul, elle passe par
-   * `verdictWhatsApp`, qui rend `inconnu` dans ce cas comme dans celui d'un contact jamais sollicité.
+   * Joignabilité WhatsApp mesurée, et sa date : les deux voyagent toujours ensemble. Une valeur sans date ne
+   * pourrait pas se périmer : la fiche lit donc `verdictWhatsApp`, qui rend alors `inconnu`, jamais la valeur seule.
    */
   whatsappJoignable: boolean | null;
   whatsappJoignableLe: string | null;
   /**
-   * Le risque de désengagement (migration 0178), écrit par le seul balayage de nuit. `null` = jamais calculé :
-   * la console affiche alors « pas encore calculé ». Voir `RisqueContact`.
+   * Le risque de désengagement, écrit par le seul balayage de nuit. `null` = jamais calculé : la console affiche
+   * alors « pas encore calculé ». Voir `RisqueContact`.
    */
   risque: RisqueContact | null;
 }
@@ -46,19 +43,18 @@ export interface ContactRow {
  */
 export interface RisqueContact {
   niveau: NiveauRisque;
-  /** `null` pour `inconnu`, et seulement pour lui (CHECK de 0178). */
+  /** `null` pour `inconnu`, et seulement pour lui (CHECK en base). */
   score: number | null;
   /** Les trois raisons les plus lourdes, en codes (`RAISONS_RISQUE`) : la console les traduit. */
   raisons: RaisonRisque[];
   /**
-   * La date à laquelle la fiche est passée à CE niveau (« depuis le »). Le calcul repasse chaque nuit, mais une
-   * fiche dont le niveau ne change pas garde sa date ; son score et ses raisons, eux, sont à jour
-   * (`PgRisqueStore.ecrire`).
+   * La date à laquelle la fiche est passée à ce niveau (« depuis le »). Une fiche dont le niveau ne change pas
+   * garde sa date ; son score et ses raisons, eux, sont recalculés chaque nuit (`PgRisqueStore.ecrire`).
    */
   calculeLe: string;
 }
 
-/** Ce qu'il faut d'une fiche pour savoir QUELLES clés elle porte (`resoudreFiche`, `src/api/fiche.ts`). */
+/** Ce qu'il faut d'une fiche pour savoir quelles clés elle porte (`resoudreFiche`, `src/api/fiche.ts`). */
 export interface FicheIdentite {
   id: string;
   externalId: string | null;
@@ -66,7 +62,7 @@ export interface FicheIdentite {
   bsuid: string | null;
 }
 
-/** Les clés d'une fiche, NORMALISÉES (numéro en E.164). L'appelant en donne au moins une. */
+/** Les clés d'une fiche, normalisées (numéro en E.164). L'appelant en donne au moins une. */
 export interface ClesNormalisees {
   contactId?: string;
   externalId?: string;
@@ -77,7 +73,7 @@ export interface ClesNormalisees {
 /** Une fiche créée ou retrouvée par l'index du numéro ou du BSUID, ou le refus d'un index d'unicité. */
 export type CreationFiche = (FicheIdentite & { created: boolean }) | 'conflit';
 
-/** Tout ce que `GET /v1/contacts/{contactId}` rend, lu en UNE requête. Dates en ISO. */
+/** Tout ce que `GET /v1/contacts/{contactId}` rend, lu en une requête. Dates en ISO. */
 export interface FicheApiLigne {
   id: string;
   externalId: string | null;
@@ -93,7 +89,7 @@ export interface FicheApiLigne {
   blockedAt: string | null;
   whatsappJoignable: boolean | null;
   whatsappJoignableLe: string | null;
-  /** Le risque de désengagement (migration 0178), écrit par le seul balayage. `null` = jamais calculé. */
+  /** Le risque de désengagement, écrit par le seul balayage. `null` = jamais calculé. */
   risqueNiveau: NiveauRisque | null;
   risqueScore: number | null;
   risqueRaisons: RaisonRisque[];
@@ -113,15 +109,15 @@ export interface EditionFicheApi {
   profileName?: string | null;
 }
 
-/** Une violation d'index unique : un refus de SAISIE, pas une panne. */
+/** Une violation d'index unique : un refus de saisie, pas une panne. */
 const estUnicite = (err: unknown): boolean => (err as { code?: string }).code === '23505';
 
-/** Opérateurs de filtre sur un champ perso (jsonb, valeur STRING).
- *  `eq`/`contains`/`not_contains` exigent une valeur ; `empty`/`not_empty` n'en prennent pas. */
+/** Opérateurs de filtre sur un champ perso (jsonb, valeur string). `eq`/`contains`/`not_contains` exigent
+ *  une valeur ; `empty`/`not_empty` n'en prennent pas. */
 export type ContactFieldOp = 'eq' | 'contains' | 'not_contains' | 'empty' | 'not_empty';
 
-/** Whitelist des opérateurs de champ. Source UNIQUE partagée par le parsing des query params (GET) ET du
- *  corps JSON (POST bulk) -> pas de divergence entre les deux points d'entrée. */
+/** Whitelist des opérateurs de champ, partagée par le parsing des query params (GET) et du corps JSON (POST
+ *  bulk) : pas de divergence entre les deux points d'entrée. */
 export const CONTACT_FIELD_OPS: readonly ContactFieldOp[] = ['eq', 'contains', 'not_contains', 'empty', 'not_empty'];
 export function isContactFieldOp(v: unknown): v is ContactFieldOp {
   return typeof v === 'string' && (CONTACT_FIELD_OPS as readonly string[]).includes(v);
@@ -131,14 +127,9 @@ export function isContactFieldOp(v: unknown): v is ContactFieldOp {
 export interface ContactFieldFilter { key: string; op: ContactFieldOp; value: string }
 
 /**
- * Résolution d'un contact à partir d'un `wa_id` : E.164 exact (`'+' || wa_id`), sinon chiffres nus, sinon
- * BSUID ; un seul contact, préférence à la correspondance exacte. Attend `$1` = tenant, `$2` = wa_id, et se
- * pose derrière un `where tenant_id = $1` (auquel l'appelant ajoute ses propres clauses avant, ex.
- * `deleted_at is null`).
- *
- * Fragment partagé parce que c'est la règle de routage des messages entrants : elle était recopiée dans
- * neuf requêtes de ce fichier, et les copies avaient commencé à diverger. Une seule écriture, sinon un
- * ajustement s'applique à huit sites sur neuf sans que rien ne le signale.
+ * Résolution d'un contact à partir d'un `wa_id` : E.164 exact (`'+' || wa_id`), sinon chiffres nus, sinon BSUID ;
+ * un seul contact, préférence à la correspondance exacte. Attend `$1` = tenant, `$2` = wa_id, derrière un
+ * `where tenant_id = $1`. Règle de routage des messages entrants : une seule écriture, sinon les copies divergent.
  */
 export function matchWaIdPredicat(contact: string, waId: string): string {
   return `(${contact}phone_e164 = '+' || ${waId} or regexp_replace(${contact}phone_e164, '[^0-9]', '', 'g') = ${waId} or ${contact}bsuid = ${waId})`;
@@ -147,13 +138,13 @@ export function matchWaIdPredicat(contact: string, waId: string): string {
 export const MATCH_BY_WAID_SQL = `and ${matchWaIdPredicat('', '$2')}
        order by (phone_e164 = '+' || $2) desc limit 1`;
 
-/** Critères de requête composables de la « Liste de contacts » (source de campagne) et du mini-CRM. Tous
- *  optionnels ; vides -> aucun filtre (tous les contacts ACTIFS du tenant, `deleted_at is null` toujours posé). */
+/** Critères composables de la « Liste de contacts » (source de campagne) et du mini-CRM, tous optionnels ; vides,
+ *  aucun filtre (tous les contacts actifs du tenant, `deleted_at is null` toujours posé). */
 export interface ContactFilters {
   tags?: string[];
-  /** 'and' (défaut) = contient TOUS les tags ; 'or' = en partage au moins un. */
+  /** 'and' (défaut) = contient tous les tags ; 'or' = en partage au moins un. */
   tagMode?: 'and' | 'or';
-  /** Exclut tout contact portant AU MOINS un de ces tags (« ne possède pas »). */
+  /** Exclut tout contact portant au moins un de ces tags (« ne possède pas »). */
   tagsExclude?: string[];
   optIn?: 'opted_in' | 'opted_out' | 'unknown';
   /** Préfixe E.164 ancré (ex. « +336 »). */
@@ -163,75 +154,49 @@ export interface ContactFilters {
   /** Recherche sur le nom de profil (insensible à la casse). */
   nameSearch?: string;
   /**
-   * Joignabilité WhatsApp MÉMORISÉE (migration 0133). Une seule valeur aujourd'hui, `connu_injoignable` :
-   * « écarte ceux qu'on SAIT injoignables ».
-   *
-   * 🔴 UN INCONNU N'EST PAS UN INJOIGNABLE. C'est la même règle que `verdictWhatsApp`, et elle décide de
-   * tout : un contact jamais sollicité porte `null`, et le compter injoignable viderait l'audience de tout
-   * client qui démarre. Le SQL dit donc `is not false`, jamais `is not true`.
-   *
-   * ⚠️ PAS DE CANAL RCS ICI, et ce n'est pas un oubli : la joignabilité RCS vit dans un cache indexé par
-   * AGENT (`src/rcs/reachability.ts`), pas sur la ligne `contacts`. L'exprimer dans ce WHERE demanderait un
-   * agent que l'appelant ne fournit pas, et l'approcher autrement serait une SECONDE définition de
-   * « joignable », exactement ce que `src/contacts/joignabilite.ts` interdit.
+   * Joignabilité WhatsApp mémorisée ; une seule valeur, `connu_injoignable` : « écarte ceux qu'on sait
+   * injoignables ». Un inconnu n'est pas un injoignable (même règle que `verdictWhatsApp`) : un contact jamais
+   * sollicité porte `null`, d'où `is not false` et jamais `is not true`. Pas de canal RCS ici : sa joignabilité
+   * vit dans un cache par agent (`src/rcs/reachability.ts`), et l'approcher autrement en ferait une seconde définition.
    */
   joignabiliteWhatsApp?: 'connu_injoignable';
   /**
-   * Le NIVEAU de risque de désengagement STOCKÉ (migration 0178, écrit par le balayage de nuit). Une fiche jamais
-   * calculée (`risque_niveau` à null) n'est dans aucun niveau, `inconnu` compris : `inconnu` est un calcul qui
-   * n'a rien pu observer, pas une absence de calcul.
-   *
-   * 🔴 UNE VALEUR HORS DES QUATRE NIVEAUX EST REFUSÉE (400) par `buildContactFilters`, jamais ignorée : ignorée,
-   * « risque élevé » mal orthographié montrerait tout l'espace, et une campagne partirait à tout le monde.
+   * Le niveau de risque de désengagement stocké. Une fiche jamais calculée (`risque_niveau` null) n'est dans aucun
+   * niveau, `inconnu` compris. Une valeur hors des quatre niveaux est refusée par `buildContactFilters`.
    */
   risque?: NiveauRisque;
   fieldFilters?: ContactFieldFilter[];
 }
 
-/** Cible d'une action en masse : soit une liste d'ids explicites, soit un jeu de filtres re-résolu côté
- *  serveur (avec exclusions pour les lignes décochées d'un « tout sélectionner »). Jamais un payload de 100k UUID. */
+/** Cible d'une action en masse : une liste d'ids explicites, ou un jeu de filtres re-résolu côté serveur (avec
+ *  exclusions pour les lignes décochées d'un « tout sélectionner »), jamais 100k UUID en payload. */
 export type BulkTarget = { ids: string[] } | { filters: ContactFilters; excludeIds?: string[] };
 
-/** Mutation d'une action en masse (une seule à la fois côté menu, mais cumulable). Valeur de champ déjà
- *  VALIDÉE + canonicalisée en amont (route). */
+/** Mutation d'une action en masse. Valeur de champ déjà validée et canonicalisée en amont (route). */
 export interface BulkEdits {
   addTags?: string[];
   removeTags?: string[];
   setField?: { key: string; value: string };
   /**
-   * Bascule du consentement marketing depuis le mini-CRM, en masse. L'upsert d'import ne fait JAMAIS
-   * régresser un statut (unknown -> opted_in seulement, cf. `upsertByPhoneReturningId`) : un refus s'écrit par une
-   * méthode dédiée, celle-ci, la fiche (`applyEdits`), le mot-clé entrant (`setOptInByWaId`) ou l'API
-   * publique (`ecrireConsentementParId`). La liste qui fait foi est dérivée par `tests/optout-poussee.test.ts`.
+   * Bascule du consentement marketing depuis le mini-CRM, en masse. L'upsert d'import ne fait jamais régresser un
+   * statut : un refus s'écrit par une méthode dédiée (celle-ci, `applyEdits`, `setOptInByWaId`,
+   * `ecrireConsentementParId`), liste dérivée par `tests/optout-poussee.test.ts`.
    */
   setOptIn?: 'opted_in' | 'opted_out';
 }
 
 /**
- * Store Postgres des contacts. Upsert par (tenant, téléphone) avec MERGE jsonb des
- * champs perso (jamais d'écrasement des clés absentes du CSV courant) et opt-in qui
- * ne régresse jamais (unknown -> opted_in seulement).
+ * Store Postgres des contacts. Upsert par (tenant, téléphone) avec fusion jsonb des champs perso (jamais
+ * d'écrasement des clés absentes du CSV) et un opt-in qui ne régresse jamais (unknown -> opted_in seulement).
  */
 export class PgContactStore implements ContactStore {
   /**
-   * @param annoncerDesabonnement APPELÉE APRÈS chaque écriture qui pose `opted_out`, avec les `wa_id` touchés.
-   *
-   * 🔴 ELLE EST ICI, ET PAS CHEZ LES APPELANTS, POUR UNE RAISON MESURÉE. L'invariant « un refus se pousse
-   * vers le système du client » se tient PARTOUT ou nulle part, et le dépôt vient de payer exactement cette
-   * leçon : la migration 0138 énonçait « la date se remet à null au réabonnement » et trois chemins
-   * d'écriture sur quatre la tenaient. Posée sur les appelants, l'annonce aurait été oubliée au prochain
-   * bouton. Posée ici, elle couvre par CONSTRUCTION toutes les méthodes capables d'écrire `opted_out`, et
-   * `tests/optout-poussee.test.ts` DÉRIVE cette liste du fichier plutôt que de la recopier.
-   *
-   * ⚠️ ELLE NE PEUT PAS FAIRE ÉCHOUER L'ÉCRITURE : elle n'est appelée qu'APRÈS le `commit`, et ce qu'elle
-   * lève est absorbé (`annoncer`). L'ordre EST la fonctionnalité, cf. `src/crm/poussee-optout.ts`.
-   *
-   * ⚠️ ABSENTE = personne n'est prévenu, ce qui est le comportement d'avant. Les scripts et les tests qui
-   * construisent ce dépôt avec le seul pool continuent donc de marcher à l'identique.
-   *
-   * `messageDuStop` : l'identifiant du message qui a dit STOP, quand le refus en vient (le mot-clé entrant). Il
-   * rend l'identifiant du signal STABLE d'une redélivrance à l'autre (`signalDesabonnement`) ; absent partout où
-   * aucun message ne porte le refus.
+   * @param annoncerDesabonnement appelée après chaque écriture qui pose `opted_out`, avec les `wa_id` touchés.
+   *   🔴 Ici et pas chez les appelants : l'invariant « un refus se pousse vers le système du client » couvre ainsi
+   *   par construction toutes les méthodes qui écrivent `opted_out` (liste dérivée par `tests/optout-poussee.test.ts`).
+   *   Appelée après le `commit`, et ce qu'elle lève est absorbé : elle ne peut pas faire échouer l'écriture.
+   *   Absente : personne n'est prévenu (scripts et tests). `messageDuStop` : l'identifiant du message STOP, qui
+   *   rend l'identifiant du signal stable d'une redélivrance à l'autre.
    */
   constructor(
     private readonly pool: Pool,
@@ -239,9 +204,8 @@ export class PgContactStore implements ContactStore {
   ) {}
 
   /**
-   * Annonce, sans jamais lever. Un refus est DÉJÀ enregistré quand on arrive ici : laisser une exception
-   * remonter ferait rendre 500 à la route qui vient pourtant de l'écrire, et l'opérateur croirait son geste
-   * perdu.
+   * Annonce sans jamais lever : le refus est déjà enregistré, et une exception ferait rendre 500 à la route qui
+   * vient de l'écrire.
    */
   private async annoncer(tenantId: string, waIds: Array<string | null>, messageDuStop?: string): Promise<void> {
     if (!this.annoncerDesabonnement) return;
@@ -256,13 +220,12 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * Upsert d'UN contact par son numéro, qui rend son id. Sert le webhook entrant et la création à la main
-   * dans la console (`upsertContactsFromApi`). L'API publique n'y passe plus : elle résout une fiche par
-   * `resoudreFiche` (lot 1) et la crée par `creerFicheApi`.
+   * Upsert d'un contact par son numéro, qui rend son id : webhook entrant et création à la main dans la console.
+   * L'API publique passe par `resoudreFiche` et `creerFicheApi`.
    */
   async upsertByPhoneReturningId(c: ContactUpsert): Promise<{ id: string; created: boolean }> {
-    // Index unique PARTIEL contacts_tenant_phone_uidx (where phone_e164 is not null) :
-    // le ON CONFLICT doit répéter le prédicat pour cibler cet index.
+    // Index unique partiel contacts_tenant_phone_uidx (where phone_e164 is not null) : le ON CONFLICT doit répéter
+    // le prédicat pour cibler cet index.
     const res = await this.pool.query<{ id: string; created: boolean }>(
       `insert into contacts (tenant_id, phone_e164, profile_name, fields, opt_in_status, opt_in_source, tags, bsuid)
        values ($1, $2, $3, $4::jsonb, $5, $6, $7::text[], $8)
@@ -316,19 +279,14 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * Upsert d'un LOT en UNE requête (AUDIT-SCALE-2026-08-25.md, R9). Mêmes règles d'écriture que
-   * `upsertByPhoneReturningId`, ligne pour ligne : fusion jsonb des champs, nom conservé s'il n'en arrive pas
-   * de nouveau, opt-in qui ne régresse jamais, STOP gardé, union des tags, résurrection d'un contact supprimé.
-   * Une seule différence : un lot `peutLeverStop` (l'import CSV case cochée) lève un STOP.
-   *
-   * Le lot voyage en UN seul paramètre JSON (`jsonb_to_recordset`) plutôt qu'en trois tableaux parallèles :
-   * un tableau de fragments JSON devrait être échappé comme littéral de tableau Postgres, et la moindre
-   * valeur contenant une accolade ou une virgule y est un piège.
-   *
-   * 🔴 DÉDUPLICATION OBLIGATOIRE dans le lot : Postgres refuse qu'un `on conflict do update` touche deux fois
-   * la même ligne dans la même commande (« cannot affect row a second time »), et un CSV a des doublons. On
-   * fusionne donc les occurrences d'un même numéro AVANT d'écrire, sur la règle exacte qu'appliquait
-   * l'écriture ligne à ligne : la ligne suivante écrase les mêmes clés de champs, et un nom non vide gagne.
+   * Upsert d'un lot en une requête, avec les règles d'écriture de `upsertByPhoneReturningId` : fusion jsonb des
+   * champs, nom conservé faute de nouveau, opt-in qui ne régresse jamais, STOP gardé, union des tags, résurrection
+   * d'un contact supprimé. Seule différence : un lot `peutLeverStop` (import CSV case cochée) lève un STOP.
+   * Le lot voyage en un seul paramètre JSON (`jsonb_to_recordset`) : un tableau de fragments JSON devrait être
+   * échappé comme littéral de tableau Postgres, piège à la moindre accolade ou virgule.
+   * Déduplication obligatoire : Postgres refuse qu'un `on conflict do update` touche deux fois la même ligne dans
+   * une commande. Les occurrences d'un même numéro fusionnent avant l'écriture (la suivante écrase les mêmes clés,
+   * un nom non vide gagne).
    */
   async upsertManyByPhone(lot: LotContacts): Promise<Array<'created' | 'updated'>> {
     if (lot.contacts.length === 0) return [];
@@ -385,25 +343,21 @@ export class PgContactStore implements ContactStore {
          deleted_at = null,
          updated_at = now()
        returning phone_e164, (xmax = 0) as created`,
-      // `bsuid` n'est PAS dans les colonnes écrites : un import n'en porte jamais, et ne pas y toucher
-      // préserve l'identifiant d'un contact arrivé par l'inbound sans numéro partagé (même intention que le
-      // `coalesce` de l'upsert unitaire, obtenue ici en n'écrivant pas la colonne du tout).
-      // $6 : `=== true`, jamais une coercition. Absent vaut NON, le défaut qui garde le STOP.
+      // `bsuid` n'est pas écrit : un import n'en porte jamais, et ne pas toucher la colonne préserve l'identifiant d'un
+      // contact arrivé sans numéro partagé. $6 : `=== true`, jamais une coercition ; absent vaut non, et garde le STOP.
       [lot.tenantId, lot.optInStatus, lot.optInSource ?? null, lot.tags ?? [], JSON.stringify(lignes), lot.peutLeverStop === true],
     );
 
     const creePar = new Map(res.rows.map((r) => [r.phone_e164, r.created] as const));
-    // Un numéro en double ne peut être « créé » qu'à sa PREMIÈRE apparition : les suivantes sont, comme
-    // avant, comptées en mises à jour. Sans ce test, un fichier qui répète cinq fois le même contact
-    // annoncerait cinq créations pour une seule personne.
+    // Un numéro en double n'est « créé » qu'à sa première apparition, les suivantes sont des mises à jour : sinon
+    // un fichier qui répète cinq fois un contact annoncerait cinq créations.
     return lot.contacts.map((c, i) =>
       creePar.get(c.phoneE164) === true && premiereApparition.get(c.phoneE164) === i ? 'created' : 'updated',
     );
   }
 
-  /** Contact ACTIF par téléphone E.164 exact (tenant scopé). null si absent OU supprimé (soft-delete) : un
-   *  contact supprimé est « introuvable » pour le serveur MCP (`contactParTelephone`). `/v1/sends` ne passe
-   *  plus par ici : il résout une fiche par `resoudreFiche` (lot 1). Jamais destinataire d'un envoi. */
+  /** Contact actif par téléphone E.164 exact (tenant scopé), ou null s'il est absent ou supprimé : un contact
+   *  supprimé est introuvable pour le serveur MCP (`contactParTelephone`). Jamais destinataire d'un envoi. */
   async findByPhone(tenantId: string, phoneE164: string): Promise<ContactRow | null> {
     const res = await this.pool.query(
       `select id, phone_e164, bsuid, external_id, profile_name, opt_in_status, fields, tags, created_at, blocked_at,
@@ -416,10 +370,9 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * MERGE jsonb des valeurs saisies dans un WhatsApp Flow sur le contact correspondant (par tenant + wa_id).
-   * Matching `MATCH_BY_WAID_SQL`. V1 : NE crée PAS un contact inconnu (merge-only) — un flow rempli par un numéro hors
-   * base n'invente pas de fiche. Renvoie le nombre de contacts touchés (0 = inconnu). `fields || values` :
-   * les clés fournies écrasent, les autres sont préservées.
+   * Fusion jsonb des valeurs saisies dans un WhatsApp Flow sur le contact du `wa_id` (`MATCH_BY_WAID_SQL`) : les
+   * clés fournies écrasent, les autres restent. Ne crée pas de fiche pour un numéro hors base. Rend le nombre de
+   * contacts touchés (0 = inconnu).
    */
   async mergeFieldsByPhone(tenantId: string, waId: string, values: Record<string, unknown>): Promise<number> {
     if (Object.keys(values).length === 0) return 0;
@@ -435,43 +388,23 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * Consentement marketing EXPLICITE capté par un WhatsApp Flow (composant OptIn coché) : passe le contact à
-   * opt_in_status='opted_in'. GAGNE toujours, même sur un opted_out antérieur (décision produit Julien : une
-   * action fraîche du contact lui-même dans WhatsApp est une preuve forte, cohérent avec l'opt-in de l'import
-   * CSV). Matching `MATCH_BY_WAID_SQL`. Merge-only : ne crée pas de fiche pour un numéro inconnu.
-   *
-   * Renvoie l'IDENTIFIANT du contact touché, `null` si le numéro est inconnu. L'identifiant, et pas un
-   * compteur : c'est la seule chose que le journal d'audit ait le droit d'écrire (y consigner le numéro
-   * ruinerait la purge, qui existe pour l'effacer).
+   * Consentement marketing explicite capté par un WhatsApp Flow (OptIn coché) : passe le contact en `opted_in`,
+   * même sur un `opted_out` antérieur (une action fraîche du contact dans WhatsApp est une preuve forte). Ne crée
+   * pas de fiche. Rend l'identifiant du contact touché, ou `null` : seul l'identifiant peut aller au journal
+   * d'audit, le numéro ruinerait la purge.
    */
   async markOptedIn(tenantId: string, waId: string, source: string): Promise<string | null> {
     return this.setOptInByWaId(tenantId, waId, 'opted_in', source);
   }
 
   /**
-   * Écrit le consentement d'un contact désigné par son `wa_id`, dans les DEUX sens. Sert au bloc « Action » d'un
-   * scénario (passer le contact en opt-in ou en opt-out) et, via `markOptedIn`, au consentement capté par un Flow.
+   * Écrit le consentement d'un contact désigné par son `wa_id`, dans les deux sens : bloc « Action » d'un scénario,
+   * mot-clé STOP, et consentement d'un Flow (`markOptedIn`). Une seule écriture et une seule copie de
+   * `MATCH_BY_WAID_SQL`. Rend l'identifiant du contact touché, `null` s'il est inconnu ; ne crée aucune fiche.
+   * `messageDuStop` : l'identifiant du message STOP, pour que le signal reste stable si Meta le redélivre.
    *
-   * Une SEULE écriture pour les deux sens, et une seule copie de `MATCH_BY_WAID_SQL` : ce prédicat a déjà
-   * divergé dans ce dépôt (bug de purge du 2026-08-18, où une correspondance recopiée à la main ne pouvait
-   * jamais être vraie). Renvoie l'identifiant du contact touché, `null` si le numéro est inconnu. Merge-only :
-   * ne crée aucune fiche.
-   *
-   * `messageDuStop` : l'identifiant du message entrant qui porte le refus (le mot-clé STOP), transmis à l'annonce
-   * pour que le signal garde le même identifiant si Meta redélivre ce message. Le bloc « Action » d'un scénario
-   * n'en a pas.
-   *
-   * 🔴 LE REFUS N'EST ANNONCÉ QUE SI LE STATUT CHANGE. Il l'était à chaque écriture : avec l'ancien contournement
-   * (une automation sur le mot STOP vers un bloc « Action »), un seul STOP était annoncé DEUX fois, dont une avec
-   * un identifiant aléatoire que l'outil du client ne peut pas dédoublonner. Le premier chemin qui écrit annonce,
-   * le second trouve la fiche déjà désabonnée et se tait.
-   *
-   * 🔴 ET RIEN N'EST ÉCRIT QUAND LE STATUT NE CHANGE PAS (lot 7 de l'API publique). Le même contournement faisait
-   * écrire le second passage : la source `whatsapp_stop` devenait `scenario`, et la date du refus celle du second
-   * geste. Or la source est RELUE au moment de pousser le signal (`completerSignal`, qui en déduit le canal du
-   * STOP) : l'outil du client apprenait qu'on avait désabonné la personne par un scénario, sans canal, alors
-   * qu'elle avait écrit STOP. Le premier geste qui pose un statut garde sa source et sa date ; un réabonnement,
-   * qui CHANGE le statut, écrit comme avant. L'identifiant reste rendu dans les deux cas : la fiche existe.
+   * 🔴 Rien n'est écrit ni annoncé quand le statut ne change pas : le premier geste garde sa source et sa date
+   * (la source, relue pour pousser le signal, dit le canal du STOP), et un seul STOP ne s'annonce qu'une fois.
    */
   async setOptInByWaId(
     tenantId: string,
@@ -481,14 +414,10 @@ export class PgContactStore implements ContactStore {
     messageDuStop?: string,
   ): Promise<string | null> {
     const res = await this.pool.query<{ id: string; avant: string | null }>(
-      // 🔴 `opt_out_at` SUIT LE STATUT, DANS LES DEUX SENS (migration 0138) : posée en se désabonnant,
-      // REMISE À NULL en se réabonnant. La colonne répond à « depuis quand est-il désabonné ? » ; garder une
-      // date sur un contact réabonné ferait apparaître un refus là où il n'y en a plus.
-      // ⚠️ L'ANCIEN STATUT EST LU DANS LA MÊME INSTRUCTION, SOUS VERROU (`for update`) : deux STOP simultanés (une
-      // redélivrance, le mot-clé et l'automation) liraient sinon tous deux « abonné », et annonceraient deux fois.
-      // Le second attend le premier, puis relit la fiche déjà désabonnée.
-      // 🔴 L'ÉCRITURE EST GARDÉE PAR `is distinct from` : un statut déjà en place n'est pas réécrit (sa source et sa
-      // date restent celles du premier geste). La fiche est rendue par `avant`, écrite ou non.
+      // 🔴 `opt_out_at` suit le statut dans les deux sens : posée au désabonnement, remise à null au réabonnement.
+      // L'ancien statut est lu dans la même instruction, sous verrou (`for update`) : deux STOP simultanés liraient
+      // sinon tous deux « abonné » et annonceraient deux fois. L'écriture est gardée par `is distinct from` : un statut
+      // déjà en place n'est pas réécrit. La fiche est rendue par `avant`, écrite ou non.
       `with avant as (
          select id, opt_in_status from contacts where tenant_id = $1
          ${MATCH_BY_WAID_SQL}
@@ -504,22 +433,17 @@ export class PgContactStore implements ContactStore {
       [tenantId, waId, source, statut],
     );
     const id = res.rows[0]?.id ?? null;
-    // L'annonce vient APRÈS l'écriture, et seulement si elle a touché quelqu'un ET changé son statut : annoncer le
-    // refus d'un numéro inconnu pousserait vers le système du client une personne qui n'existe pas chez nous, et
-    // réannoncer un refus déjà enregistré ferait deux événements d'un seul STOP.
+    // L'annonce vient après l'écriture, et seulement si elle a touché quelqu'un et changé son statut : ni personne
+    // inconnue poussée chez le client, ni deux événements pour un seul STOP.
     if (statut === 'opted_out' && id !== null && res.rows[0]?.avant !== 'opted_out') await this.annoncer(tenantId, [waId], messageDuStop);
     return id;
   }
 
   /**
-   * LE CONSENTEMENT POSÉ PAR L'API PUBLIQUE, sur une fiche désignée par son IDENTIFIANT (`appliquerConsentement`).
-   *
-   * 🔴 IL N'ÉCRIT QUE SI LE STATUT CHANGE (`is distinct from`). Un outil qui renvoie le même consentement à chaque
-   * appel ne repousse pas la date d'un désabonnement, et n'annonce pas dix fois le même refus.
-   * `opt_out_at` suit le statut dans les deux sens, comme sur les autres chemins (migration 0138).
-   *
-   * ⚠️ `inchange` et `absente` ne se distinguent qu'en relisant : la seconde requête ne part que si la première
-   * n'a rien touché, c'est-à-dire presque jamais sur un premier appel.
+   * Le consentement posé par l'API publique sur une fiche désignée par son identifiant (`appliquerConsentement`).
+   * N'écrit que si le statut change (`is distinct from`) : un outil qui renvoie le même consentement ne repousse
+   * pas la date d'un désabonnement et n'annonce pas dix fois le même refus. `opt_out_at` suit le statut. La
+   * seconde requête, qui distingue `inchange` d'`absente`, ne part que si la première n'a rien touché.
    */
   async ecrireConsentementParId(
     tenantId: string,
@@ -527,11 +451,9 @@ export class PgContactStore implements ContactStore {
     statut: 'opted_in' | 'opted_out',
     source: string,
   ): Promise<'change' | 'inchange' | 'refuse' | 'absente'> {
-    // 🔴 UN STOP NE SE LÈVE PAS PAR MACHINE (décision de Julien du 2026-09-24) : cette écriture sert l'API
-    // publique, et elle ne fait JAMAIS passer une fiche de `opted_out` à `opted_in`. Une synchronisation qui
-    // porte un consentement périmé réabonnerait quelqu'un qui nous a dit stop. La garde est DANS la requête,
-    // pas seulement dans le service qui vérifie avant d'écrire, pour tenir un STOP arrivé entre les deux.
-    // Seul un opérateur (la fiche de la console, `applyEdits`) ou la personne elle-même lève un STOP.
+    // 🔴 Un STOP ne se lève pas par machine : cette écriture ne fait jamais passer `opted_out` à `opted_in` (une
+    // synchronisation périmée réabonnerait quelqu'un qui a dit stop). La garde est dans la requête, pour tenir un
+    // STOP arrivé entre la vérification et l'écriture. Seul un opérateur (`applyEdits`) ou la personne le lève.
     const res = await this.pool.query<{ phone_e164: string | null; bsuid: string | null }>(
       `update contacts set opt_in_status = $3, opt_in_source = $4, updated_at = now(),
               opt_out_at = case when $3 = 'opted_out' then now() else null end
@@ -542,11 +464,11 @@ export class PgContactStore implements ContactStore {
     );
     const r = res.rows[0];
     if (r) {
-      // APRÈS l'écriture, jamais avant : ce qui part vers le système du client décrit ce qui est enregistré.
+      // Après l'écriture, jamais avant : ce qui part vers le système du client décrit ce qui est enregistré.
       if (statut === 'opted_out') await this.annoncer(tenantId, [waIdOf(r.phone_e164, r.bsuid)]);
       return 'change';
     }
-    // La relecture dit POURQUOI rien n'a bougé : fiche partie, STOP à respecter, ou statut déjà en place.
+    // La relecture dit pourquoi rien n'a bougé : fiche partie, STOP à respecter, ou statut déjà en place.
     const existe = await this.pool.query<{ opt_in_status: string }>(
       'select opt_in_status from contacts where tenant_id = $1 and id = $2 and deleted_at is null',
       [tenantId, contactId],
@@ -557,9 +479,8 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * Écrit le NOM (profile_name) du contact d'un numéro : sert au champ de BASE « Nom » d'un WhatsApp Flow, qui
-   * est un attribut (pas une clé de `contacts.fields`) et ne peut donc pas passer par mergeFieldsByPhone.
-   * Matching `MATCH_BY_WAID_SQL`. Merge-only : ne crée pas de fiche pour un numéro inconnu. Nom vide -> no-op (on n'écrase pas par du vide). Renvoie le nb touché.
+   * Écrit le nom (profile_name) du contact d'un numéro, pour le champ de base « Nom » d'un WhatsApp Flow (un
+   * attribut, pas une clé de `contacts.fields`). Ne crée pas de fiche ; nom vide -> rien. Rend le nombre touché.
    */
   async setProfileNameByPhone(tenantId: string, waId: string, name: string): Promise<number> {
     const n = name.trim();
@@ -576,12 +497,9 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * Comme `addTagsByPhone`, mais dit AUSSI lesquels étaient réellement nouveaux.
-   *
-   * L'ajout est une union : reposer un tag déjà présent réécrit la ligne sans rien changer, donc le `rowCount`
-   * vaut 1 dans les deux cas et ne prouve rien. Or « tag ajouté » déclenche un scénario, donc un envoi facturé :
-   * annoncer un ajout qui n'a pas eu lieu enverrait un message pour un non-événement. `RETURNING` l'état d'avant
-   * (via une sous-requête) donne le delta sans aller-retour supplémentaire.
+   * Ajoute des tags au contact d'un numéro et dit lesquels étaient réellement nouveaux : « tag ajouté » déclenche
+   * un scénario, donc un envoi facturé, et le `rowCount` vaut 1 même quand rien ne change. `RETURNING` l'état
+   * d'avant (par une sous-requête) donne le delta sans aller-retour de plus.
    */
   async addTagsByPhoneReturningNew(tenantId: string, waId: string, tags: string[]): Promise<{ touched: number; added: string[] }> {
     const clean = [...new Set(tags.map((t) => t.trim()).filter((t) => t !== ''))];
@@ -600,10 +518,7 @@ export class PgContactStore implements ContactStore {
     return { touched: res.rowCount ?? 0, added: (res.rowCount ?? 0) === 0 ? [] : clean.filter((t) => !avant.has(t)) };
   }
 
-  /**
-   * Retire des tags du contact d'un numéro (bloc Action « retirer un tag »). Matching `MATCH_BY_WAID_SQL`.
-   * Merge-only : ne crée pas de fiche. Renvoie le nb touché.
-   */
+  /** Retire des tags du contact d'un numéro (bloc Action « retirer un tag »), sans créer de fiche. Rend le nb touché. */
   async removeTagsByPhone(tenantId: string, waId: string, tags: string[]): Promise<number> {
     const clean = [...new Set(tags.map((t) => t.trim()).filter((t) => t !== ''))];
     if (clean.length === 0) return 0;
@@ -618,10 +533,8 @@ export class PgContactStore implements ContactStore {
     return res.rowCount ?? 0;
   }
 
-  /**
-   * Vide des champs (retire les clés de `contacts.fields`) du contact d'un numéro (bloc Action « vider un champ »).
-   * Matching `MATCH_BY_WAID_SQL`. Merge-only : ne crée pas de fiche. Renvoie le nb de contacts touchés.
-   */
+  /** Vide des champs (clés de `contacts.fields`) du contact d'un numéro (bloc Action « vider un champ »), sans
+   *  créer de fiche. Rend le nb de contacts touchés. */
   async clearFieldsByPhone(tenantId: string, waId: string, keys: string[]): Promise<number> {
     const clean = [...new Set(keys.map((k) => k.trim()).filter((k) => k !== ''))];
     if (clean.length === 0) return 0;
@@ -637,11 +550,9 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * Auto-crée (ou rafraîchit) une fiche contact depuis un message ENTRANT. Le `wa_id` est classé en numéro
-   * OU BSUID (règle `classifyWaId`). Upsert par l'index unique correspondant : ne régresse JAMAIS l'opt-in
-   * (posé à 'unknown' seulement à la création, source 'inbound'), et ne met à jour que le nom de profil
-   * (coalesce, jamais écrasé par null). Best-effort : à appeler en isolation (ne doit pas casser l'inbox).
-   * Renvoie 'created' | 'updated' | 'skipped' (wa_id vide).
+   * Crée ou rafraîchit une fiche depuis un message entrant, le `wa_id` classé en numéro ou BSUID (`classifyWaId`).
+   * Ne fait jamais régresser l'opt-in (`unknown` seulement à la création, source 'inbound') et ne met à jour que le
+   * nom de profil (jamais écrasé par null). Best-effort, à appeler isolé : ne doit pas casser l'inbox.
    */
   async upsertFromInbound(tenantId: string, waId: string, profileName: string | null): Promise<'created' | 'updated' | 'skipped'> {
     const { phoneE164, bsuid } = classifyWaId(waId);
@@ -662,10 +573,9 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * Résout un contact par wa_id pour COLLER ses attributs dans les variables d'un template (envoi via workflow).
-   * Matching `MATCH_BY_WAID_SQL`. Renvoie {phone_e164, bsuid, profile_name, fields} (forme ResolvableContact),
-   * ou null si le numéro est hors base -> l'appelant retombe sur les exemples du template (jamais de throw).
-   * `bsuid` est inclus : les sources de variable système `bsuid`/`wa_id` doivent se résoudre AUSSI sur la voie workflow.
+   * Résout un contact par wa_id pour remplir les variables d'un template envoyé par un scénario
+   * (`MATCH_BY_WAID_SQL`). null si hors base : l'appelant retombe sur les exemples du template. `bsuid` inclus pour
+   * que les sources `bsuid` et `wa_id` se résolvent aussi sur cette voie.
    */
   async getResolvableByPhone(
     tenantId: string,
@@ -681,12 +591,10 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * La fiche d'un contact PROJETÉE pour ce qui sort de chez nous : le système d'un client (un connecteur, la
-   * poussée d'un opt-out, le relais de l'agent de Meta) ou un modèle (`mba_lire_contact`). `null` hors base.
-   *
-   * 🔴 PROJECTION, jamais la ligne brute : le numéro, le BSUID et le statut d'opt-in n'ont rien à faire dans ce
-   * qui part vers un tiers, que personne n'a décidé de leur partager. Le nom, les tags et les champs libres
-   * suffisent. Relue à chaque appel : un bloc qui vient d'écrire un champ doit être vu par le suivant.
+   * La fiche d'un contact projetée pour ce qui sort de chez nous (connecteur, poussée d'un opt-out, relais de
+   * l'agent de Meta) ou pour un modèle (`mba_lire_contact`) ; `null` hors base.
+   * 🔴 Projection, jamais la ligne brute : numéro, BSUID et statut d'opt-in ne partent pas vers un tiers ; le nom,
+   * les tags et les champs suffisent. Relue à chaque appel, pour voir un champ qu'un bloc vient d'écrire.
    */
   async projectionPourTiers(
     tenantId: string,
@@ -697,9 +605,8 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * État d'un contact par wa_id pour ÉVALUER une condition de scénario (node « Si ») : fields + tags + opt-in +
-   * attributs name/phone/bsuid. Matching `MATCH_BY_WAID_SQL`. `null` si hors base -> l'appelant retombe sur la branche
-   * 'false' (déterministe). Étend `getResolvableByPhone` (qui n'a ni tags ni opt-in), forme alignée sur `EvalContext`.
+   * État d'un contact par wa_id pour évaluer une condition de scénario (bloc « Si ») : champs, tags, opt-in et
+   * attributs. `null` si hors base : l'appelant prend la branche 'false'. Forme alignée sur `EvalContext`.
    */
   async getContactStateByWaId(
     tenantId: string,
@@ -717,15 +624,9 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * CE CONTACT A-T-IL DEMANDÉ À NE PLUS ÊTRE CONTACTÉ ?
-   *
-   * 🔴 UNE MÉTHODE À PART, ET LA PLUS ÉTROITE POSSIBLE, parce qu'elle est sur le chemin de CHAQUE envoi
-   * automatique. `getContactStateByWaId` répondrait aussi, mais elle ramène les champs et les tags du
-   * contact : payer un jsonb entier pour lire un mot, à chaque message d'un scénario, serait un coût qu'on
-   * ne reverrait jamais.
-   *
-   * ⚠️ UN CONTACT INCONNU N'EST PAS DÉSABONNÉ. C'est le cas ordinaire d'un premier contact, et répondre
-   * « désabonné » par prudence bloquerait précisément les gens à qui on n'a jamais écrit.
+   * 🔴 Ce contact a-t-il demandé à ne plus être contacté ? Méthode la plus étroite possible, sur le chemin de
+   * chaque envoi automatique (ne pas ramener le jsonb des champs pour lire un mot). Un contact inconnu n'est pas
+   * désabonné : c'est le cas ordinaire d'un premier contact.
    */
   async estDesabonneParWaId(tenantId: string, waId: string): Promise<boolean> {
     const res = await this.pool.query<{ opt_in_status: string }>(
@@ -736,12 +637,9 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * CE CONTACT A-T-IL CONSENTI, OU NOUS A-T-IL DÉJÀ ÉCRIT ? La garde d'un RCS libre envoyé par une MACHINE
-   * (spec 2026-09-24, § 4) : un message simple ne fonde pas une relation.
-   *
-   * « A écrit » = au moins un message ENTRANT dans son fil, tout canal (le fil est unique par contact, 0056).
-   * ⚠️ Un contact INCONNU n'a ni consenti ni écrit : `false`, et c'est la route qui l'a déjà refusé en 404.
-   * ⚠️ Le `exists` s'arrête au premier entrant, par l'index (conversation_id, created_at) de 0009.
+   * Ce contact a-t-il consenti, ou nous a-t-il déjà écrit ? La garde d'un RCS libre envoyé par une machine : un
+   * message simple ne fonde pas une relation. « A écrit » = au moins un entrant dans son fil, tout canal. Un
+   * contact inconnu rend `false`. Le `exists` s'arrête au premier entrant, par l'index (conversation_id, created_at).
    */
   async aConsentiOuEcritParWaId(tenantId: string, waId: string): Promise<boolean> {
     const res = await this.pool.query<{ ok: boolean }>(
@@ -760,10 +658,8 @@ export class PgContactStore implements ContactStore {
     return res.rows[0]?.ok === true;
   }
 
-  /**
-   * Ce qu'un envoi simple doit savoir d'une fiche : son numéro, et si elle est bloquée. `null` = introuvable
-   * dans cet espace, ou supprimée. Sert `POST /v1/messages/rcs` (lot 3 de l'API publique).
-   */
+  /** Ce qu'un envoi simple doit savoir d'une fiche : son numéro, et si elle est bloquée. `null` = introuvable
+   *  dans cet espace, ou supprimée. Sert `POST /v1/messages/rcs`. */
   async etatPourEnvoi(tenantId: string, contactId: string): Promise<{ phoneE164: string | null; bloque: boolean } | null> {
     const res = await this.pool.query<{ phone_e164: string | null; bloque: boolean }>(
       `select phone_e164, (blocked_at is not null) as bloque
@@ -776,19 +672,9 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * Id du contact par wa_id : matching `MATCH_BY_WAID_SQL`, restreint aux contacts NON supprimés. Sert à
-   * RELIER un run de scénario déclenché par une automation à la fiche du contact : sans lui, le run partirait
-   * avec `contactId: null` alors que la fiche existe (l'upsert d'inbound vient de tourner). null = aucune
-   * fiche (rien à relier, pas une erreur).
-   */
-  /**
-   * Bloque ou débloque un contact (modération).
-   *
-   * Bloqué = plus AUCUN envoi vers lui (campagnes, scénarios, automations) et sa conversation disparaît de
-   * l'inbox. Ses messages continuent d'être ENREGISTRÉS : filtrer à la réception ferait disparaître une
-   * résiliation ou une menace juridique sans que personne ne le sache.
-   *
-   * `false` = contact inconnu pour ce tenant. L'appelant en fait un 404, jamais un blocage silencieux.
+   * Bloque ou débloque un contact (modération) : plus aucun envoi vers lui, et sa conversation disparaît de
+   * l'inbox. Ses messages restent enregistrés : filtrer à la réception ferait disparaître une résiliation ou une
+   * menace juridique. `false` = contact inconnu pour ce tenant (404 chez l'appelant).
    */
   async setBlocked(tenantId: string, contactId: string, bloque: boolean, parUserId: string | null): Promise<boolean> {
     const res = await this.pool.query(
@@ -802,11 +688,8 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * Ce contact est-il bloqué ? Interrogé par `wa_id` parce que c'est ce que connaissent les automations et
-   * l'inbox, qui raisonnent par conversation et non par fiche.
-   *
-   * Contact INCONNU -> `false` : on ne bloque que ce qui a été explicitement bloqué. Répondre `true` sur un
-   * inconnu couperait des conversations de contacts jamais importés dans le mini-CRM.
+   * Ce contact est-il bloqué ? Interrogé par `wa_id`, comme raisonnent les automations et l'inbox. Contact inconnu
+   * -> `false` : on ne bloque que ce qui a été explicitement bloqué.
    */
   async isBlockedByWaId(tenantId: string, waId: string): Promise<boolean> {
     const res = await this.pool.query<{ bloque: boolean }>(
@@ -832,19 +715,11 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * LES CONTACTS QUI ONT DEMANDÉ À NE PLUS ÊTRE CONTACTÉS, du plus récent au plus ancien.
-   *
-   * 🔴 `desabonneLe` PEUT ÊTRE `null`, ET L'ÉCRAN DOIT LE DIRE. La date n'existe que depuis la migration
-   * 0138 : les désabonnements antérieurs n'en ont pas, et la reconstituer depuis `updated_at` serait un
-   * mensonge (cette colonne bouge à la moindre modification de la fiche). « Date inconnue » est la vérité.
-   *
-   * ⚠️ `source` dit D'OÙ vient le refus ('crm' = saisi à la main, 'scenario' = posé par un parcours, 'flow'
-   * = coché par la personne dans un formulaire, 'webhook:<nom>' = reçu d'un système tiers). C'est la seule
-   * chose qui distingue un refus exprimé par la personne d'un statut posé par l'équipe.
-   *
-   * ⚠️ Servi par l'index PARTIEL `contacts_opted_out_idx` (0138), dont le prédicat reprend EXACTEMENT le
-   * `where` ci-dessous : l'élargir sans élargir l'index ferait retomber cette page sur un balayage complet
-   * de la table des contacts, sans qu'aucune erreur ne le signale.
+   * Les contacts qui ont demandé à ne plus être contactés, du plus récent au plus ancien. `desabonneLe` peut être
+   * `null` (refus antérieurs à la colonne) et l'écran le dit : la reconstituer depuis `updated_at` serait faux.
+   * `source` dit d'où vient le refus ('crm', 'scenario', 'flow', 'webhook:<nom>'), seul moyen de distinguer un refus
+   * de la personne d'un statut posé par l'équipe. Servi par l'index partiel `contacts_opted_out_idx`, dont le
+   * prédicat reprend exactement le `where` : l'élargir seul retomberait sur un balayage complet, sans erreur.
    */
   async listeDesabonnes(
     tenantId: string,
@@ -870,21 +745,10 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * LES MESSAGES ENTRANTS RÉCENTS de contacts PAS ENCORE désabonnés, pour que la règle élargie les relise.
-   *
-   * 🔴 LA RÈGLE N'EST PAS APPLIQUÉE ICI, ET C'EST VOULU. Elle vit dans `src/crm/consentement.ts`, en
-   * TypeScript, avec ses tests : la recopier en SQL en ferait une seconde version, et deux versions d'une
-   * règle de consentement qui divergent, c'est un refus respecté d'un côté et ignoré de l'autre. Ce store ne
-   * fait que RAMENER les messages à relire.
-   *
-   * 🔴 LE PLAFOND EST UN NOMBRE DE MESSAGES SCANNÉS, PAS DE RÉSULTATS, et l'appelant doit le DIRE quand il
-   * mord : filtrer après une troncature ferait manquer des refus plus anciens que les `limite` derniers
-   * messages, en affichant une liste qui aurait l'air complète. (Mesure du 2026-09-13 : 135 messages
-   * entrants porteurs de texte en tout sur la production, donc le plafond ne mord pas aujourd'hui.)
-   *
-   * ⚠️ Les contacts DÉJÀ désabonnés sont écartés : ce qu'on cherche, ce sont les refus qu'on n'a PAS
-   * entendus. Un message sans fiche contact est gardé, parce qu'un refus vaut d'être lu même si le
-   * rapprochement de fiche a échoué.
+   * Les messages entrants récents de contacts pas encore désabonnés, pour que la règle élargie les relise. La règle
+   * n'est pas appliquée ici : elle vit dans `src/crm/consentement.ts`, et une seconde version en SQL divergerait.
+   * Le plafond compte les messages scannés, pas les résultats : l'appelant doit dire quand il mord, sans quoi des
+   * refus plus anciens manqueraient à une liste qui paraît complète. Un message sans fiche contact est gardé.
    */
   async messagesARelire(
     tenantId: string,
@@ -925,6 +789,10 @@ export class PgContactStore implements ContactStore {
     };
   }
 
+  /**
+   * Id du contact actif d'un wa_id (`MATCH_BY_WAID_SQL`), pour relier à sa fiche un run de scénario déclenché par
+   * une automation. null = aucune fiche, rien à relier.
+   */
   async findIdByWaId(tenantId: string, waId: string): Promise<string | null> {
     const res = await this.pool.query<{ id: string }>(
       `select id from contacts where tenant_id = $1 and deleted_at is null
@@ -935,9 +803,8 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * `wa_id` d'un contact (numéro en chiffres nus, sinon BSUID). Réciproque de `findIdByWaId`, utilisée quand un
-   * événement part d'une fiche (édition mini-CRM) alors que le moteur de scénario, lui, raisonne par wa_id.
-   * null = contact absent du tenant, ou sans identité joignable (ni téléphone ni BSUID).
+   * `wa_id` d'un contact (numéro en chiffres nus, sinon BSUID), réciproque de `findIdByWaId`, quand un événement
+   * part d'une fiche. null = contact absent, ou sans identité joignable.
    */
   async waIdOfContact(tenantId: string, contactId: string): Promise<string | null> {
     const res = await this.pool.query<{ phone_e164: string | null; bsuid: string | null }>(
@@ -946,21 +813,14 @@ export class PgContactStore implements ContactStore {
     );
     const r = res.rows[0];
     if (!r) return null;
-    // Règle de routage WhatsApp = `waIdOf` (crm/identity), DÉFINITION DE RÉFÉRENCE. Ne pas la réécrire ici :
-    // deux copies divergeraient le jour où le format de stockage évolue, et l'événement partirait avec un
-    // wa_id que le reste du moteur ne résout plus.
+    // Règle de routage WhatsApp = `waIdOf` (crm/identity), la définition de référence : une copie divergerait.
     return waIdOf(r.phone_e164, r.bsuid);
   }
 
   /**
-   * LES FICHES ACTIVES QUE DÉSIGNE CHACUNE DES CLÉS DONNÉES, en UNE requête (API publique, `resoudreFiche`).
-   *
-   * Chaque clé est unique par espace (clé primaire, `contacts_tenant_phone_uidx`, `contacts_tenant_bsuid_uidx`,
-   * `contacts_tenant_external_id_uidx`) : au plus une fiche par clé, donc au plus quatre lignes. C'est
-   * `resoudreFiche` qui juge si elles désignent la même personne, pas ce `select`.
-   *
-   * ⚠️ `contactId` DOIT avoir la forme d'un UUID (l'appelant le garantit) : sinon le cast lève `22P02`.
-   * ⚠️ Égalité EXACTE sur le numéro : l'API le normalise en E.164 avant de chercher, comme il est stocké.
+   * Les fiches actives que désigne chacune des clés données, en une requête (API publique, `resoudreFiche`).
+   * Chaque clé est unique par espace, donc au plus quatre lignes ; c'est `resoudreFiche` qui juge si elles
+   * désignent la même personne. `contactId` doit avoir la forme d'un UUID (sinon `22P02`) ; le numéro est en E.164.
    */
   async chercherParCles(tenantId: string, cles: ClesNormalisees): Promise<FicheIdentite[]> {
     if (!cles.contactId && !cles.externalId && !cles.phoneE164 && !cles.bsuid) return [];
@@ -969,28 +829,19 @@ export class PgContactStore implements ContactStore {
         where tenant_id = $1 and deleted_at is null
           and (id = $2::uuid or external_id = $3 or phone_e164 = $4 or bsuid = $5)
         limit 4`,
-      // `|| null` et pas `?? null` : une chaîne vide vaut ABSENCE ici comme dans la garde juste au-dessus. Sinon
-      // un `contactId` vide lèverait `22P02` sur le cast, et une clé vide chercherait la valeur `''`.
+      // `|| null` et pas `?? null` : une chaîne vide vaut absence, sinon un `contactId` vide lèverait `22P02` et une
+      // clé vide chercherait `''`.
       [tenantId, cles.contactId || null, cles.externalId || null, cles.phoneE164 || null, cles.bsuid || null],
     );
     return res.rows.map((r) => ({ id: r.id, externalId: r.external_id, phoneE164: r.phone_e164, bsuid: r.bsuid }));
   }
 
   /**
-   * CRÉE UNE FICHE NUE pour l'API publique, par son numéro ou, à défaut, son BSUID.
-   *
-   * 🔴 `on conflict ... do update`, et pas `do nothing` : une fiche SUPPRIMÉE qui porte encore ce numéro (une
-   * suppression douce d'avant l'anonymisation) est RESSUSCITÉE, exactement comme le faisait l'upsert de l'API
-   * (`upsertByPhoneReturningId`, `deleted_at = null`). Les clés déjà portées sont GARDÉES (`coalesce`).
-   *
-   * 🔴 MAIS SEULEMENT SI LES CLÉS DEMANDÉES TIENNENT, et c'est le `where` du `do update` qui le garantit : une
-   * fiche retrouvée par l'index qui porte un AUTRE identifiant externe ou un AUTRE BSUID n'est ni ressuscitée ni
-   * touchée. Postgres ne rend alors aucune ligne, et c'est « conflit » : `resoudreFiche` relit la base, puis
-   * répond `identity_conflict` SANS avoir rien écrit. Sans ce `where`, la mise à jour partait toujours, et une
-   * requête refusée avait pourtant ressuscité une fiche et lui avait rattaché un BSUID.
-   *
-   * ⚠️ Une violation d'un AUTRE index unique (l'identifiant externe ou le BSUID pris par une autre fiche) rend
-   * « conflit » aussi : `resoudreFiche` relit alors la base, qui dit laquelle.
+   * Crée une fiche nue pour l'API publique, par son numéro ou à défaut son BSUID. `on conflict ... do update` et
+   * non `do nothing` : une fiche supprimée qui porte encore ce numéro est ressuscitée, ses clés gardées
+   * (`coalesce`). Mais seulement si les clés demandées tiennent : le `where` du `do update` refuse une fiche qui
+   * porte un autre identifiant externe ou BSUID, et c'est « conflit », sans rien avoir écrit. Une violation d'un
+   * autre index unique rend « conflit » aussi ; `resoudreFiche` relit alors la base.
    */
   async creerFicheApi(tenantId: string, cles: { phoneE164?: string; bsuid?: string; externalId?: string }): Promise<CreationFiche> {
     if (!cles.phoneE164 && !cles.bsuid) throw new Error('creerFicheApi : un numéro ou un BSUID est requis');
@@ -1010,12 +861,12 @@ export class PgContactStore implements ContactStore {
          where (contacts.external_id is null or excluded.external_id is null or contacts.external_id = excluded.external_id)
            and (contacts.bsuid is null or excluded.bsuid is null or contacts.bsuid = excluded.bsuid)
          returning id, (xmax = 0) as created, external_id, phone_e164, bsuid`,
-        // `|| null` : une chaîne vide vaut ABSENCE, comme dans la garde au-dessus. Sinon `{ phoneE164: '' }`
-        // viserait l'index du BSUID mais INSÉRERAIT un numéro vide, qui occuperait ensuite l'index du numéro.
+        // `|| null` : une chaîne vide vaut absence ; sinon `{ phoneE164: '' }` insérerait un numéro vide qui occuperait
+        // ensuite l'index du numéro.
         [tenantId, cles.phoneE164 || null, cles.bsuid || null, cles.externalId || null],
       );
       const r = res.rows[0];
-      // Aucune ligne : la fiche de ce numéro (ou de ce BSUID) porte une AUTRE clé, le `where` a tout refusé.
+      // Aucune ligne : la fiche de ce numéro (ou BSUID) porte une autre clé, le `where` a tout refusé.
       if (!r) return 'conflit';
       return { id: r.id, created: r.created, externalId: r.external_id, phoneE164: r.phone_e164, bsuid: r.bsuid };
     } catch (err) {
@@ -1025,24 +876,18 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * RATTACHE à une fiche les clés qu'elle ne porte PAS ENCORE. Ne remplace jamais une clé portée.
-   *
-   * 🔴 TOUT OU RIEN, et c'est le `where` qui le tient : chaque clé demandée doit être absente de la fiche ou y
-   * être déjà ÉGALE. Si une seule est portée AUTREMENT (ou qu'une écriture concurrente l'a posée entre la
-   * lecture et ici), la ligne n'est pas touchée du tout, et c'est « conflit ». Sans cette garde, les trois
-   * `coalesce` s'appliquaient chacun de son côté : un appel refusé en `identity_conflict` avait pourtant
-   * rattaché les autres clés, alors que la réponse dit « rien n'a été écrit ».
-   * Aucune ligne rendue : on relit pour distinguer la fiche ABSENTE (supprimée, purgée, autre espace) du conflit.
-   * ⚠️ Rattacher un numéro à une fiche qui n'avait qu'un BSUID change son adresse WhatsApp (`waIdOf` préfère
-   * le numéro) : aucune fiche n'est dans ce cas tant qu'aucun BSUID n'a été reçu.
+   * Rattache à une fiche les clés qu'elle ne porte pas encore, sans jamais remplacer une clé portée. Tout ou rien,
+   * tenu par le `where` : si une seule clé est portée autrement (y compris par une écriture concurrente), rien
+   * n'est touché et c'est « conflit ». Aucune ligne rendue : on relit pour distinguer une fiche absente du conflit.
+   * Rattacher un numéro à une fiche qui n'avait qu'un BSUID change son adresse WhatsApp (`waIdOf` préfère le numéro).
    */
   async rattacherCles(
     tenantId: string,
     contactId: string,
     cles: { externalId?: string; phoneE164?: string; bsuid?: string },
   ): Promise<'ok' | 'conflit' | 'absente'> {
-    // Une chaîne vide vaut ABSENCE, ici comme dans `chercherParCles` : sinon `coalesce` poserait `''` comme
-    // identifiant, et `''` bloquerait ensuite cette valeur pour toute autre fiche de l'espace.
+    // Une chaîne vide vaut absence : sinon `coalesce` poserait `''`, qui bloquerait ensuite cette valeur pour toute
+    // autre fiche de l'espace.
     const voulu = {
       externalId: cles.externalId || undefined,
       phoneE164: cles.phoneE164 || undefined,
@@ -1078,7 +923,7 @@ export class PgContactStore implements ContactStore {
     }
   }
 
-  /** POSE ou REMPLACE l'identifiant externe (`PATCH /v1/contacts/{contactId}`). Porté ailleurs : « conflit ». */
+  /** Pose ou remplace l'identifiant externe (`PATCH /v1/contacts/{contactId}`). Porté ailleurs : « conflit ». */
   async poserExternalId(tenantId: string, contactId: string, externalId: string): Promise<'ok' | 'conflit' | 'absente'> {
     try {
       const res = await this.pool.query(
@@ -1094,18 +939,12 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * ÉCRIT CE QUE L'API PUBLIQUE A DEMANDÉ SUR UNE FICHE DÉJÀ RÉSOLUE, en UNE requête : fusion des champs
-   * (une clé absente n'est jamais écrasée), retrait des clés vidées, union puis retrait des étiquettes, nom.
-   *
-   * 🔴 `deleted_at is null` DANS LE `where`, et c'est la raison de cette méthode. `applyEdits` (la fiche de la
-   * console) verrouille sans ce filtre : une purge passée entre `resoudreFiche` et l'écriture ferait réécrire
-   * un nom et des champs sur une fiche ANONYMISÉE. Ici, elle rend `false`, donc `unknown_contact`.
-   * 🔴 ET UNE SEULE REQUÊTE, sans transaction ni client dédié : `/v1/contacts/batch` en lance
-   * `ECRITURES_EN_VOL` à la fois, et une transaction par élément (connexion, `begin`, verrou, jusqu'à trois
-   * mises à jour, relecture, `commit`) retiendrait autant de connexions d'un pool que l'Inbox partage. L'ordre
-   * de `applyEdits` est gardé : on fusionne puis on retire, on ajoute puis on retire (une étiquette présente
-   * dans les deux listes n'est pas sur la fiche à la fin).
-   * ⚠️ Aucun événement d'automation n'en part : l'API n'émet jamais (invariant « aucun chemin de masse n'émet »).
+   * Écrit ce que l'API publique demande sur une fiche déjà résolue, en une requête : fusion des champs, retrait
+   * des clés vidées, union puis retrait des étiquettes, nom (même ordre que `applyEdits`).
+   * 🔴 `deleted_at is null` dans le `where` : une purge passée entre `resoudreFiche` et l'écriture ne doit pas
+   * réécrire une fiche anonymisée (rend `false`, donc `unknown_contact`). Une seule requête sans transaction :
+   * `/v1/contacts/batch` en lance plusieurs à la fois sur un pool partagé avec l'Inbox. N'émet aucun événement
+   * d'automation (aucun chemin de masse n'émet).
    */
   async editerFicheApi(tenantId: string, contactId: string, e: EditionFicheApi): Promise<boolean> {
     const res = await this.pool.query(
@@ -1130,10 +969,9 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * Parmi `noms`, les étiquettes que l'espace NE CONNAÎT PAS : ni déclarées (`tags`), ni portées par une fiche.
-   * C'est la définition de la liste Bibliothèque > Étiquettes (`PgTagStore.listDistinct`), fiches supprimées
-   * comprises comme elle : l'API refuse ce que la console ne montre pas, et accepte ce qu'elle montre.
-   * ⚠️ `tags @> array[n]` est servi par `contacts_tags_gin` (0011).
+   * Parmi `noms`, les étiquettes que l'espace ne connaît pas (ni déclarées, ni portées), selon la définition de
+   * `PgTagStore.listDistinct` : l'API refuse ce que la console ne montre pas. `tags @> array[n]` est servi par
+   * `contacts_tags_gin`.
    */
   async etiquettesInconnues(tenantId: string, noms: string[]): Promise<string[]> {
     if (noms.length === 0) return [];
@@ -1146,10 +984,8 @@ export class PgContactStore implements ContactStore {
     return res.rows.map((r) => r.nom);
   }
 
-  /**
-   * TOUT CE QUE L'API REND D'UNE FICHE, en une requête. Une fiche supprimée n'existe plus : `null`, donc 404.
-   * ⚠️ `contactId` doit avoir la forme d'un UUID : l'appelant le vérifie avant (`estUuid`).
-   */
+  /** Tout ce que l'API rend d'une fiche, en une requête. Une fiche supprimée n'existe plus : `null`, donc 404.
+   *  `contactId` doit avoir la forme d'un UUID (l'appelant le vérifie). */
   async lireFicheApi(tenantId: string, contactId: string): Promise<FicheApiLigne | null> {
     const res = await this.pool.query<{
       id: string; external_id: string | null; phone_e164: string | null; bsuid: string | null; profile_name: string | null;
@@ -1158,7 +994,7 @@ export class PgContactStore implements ContactStore {
       whatsapp_joignable: boolean | null; whatsapp_joignable_le: Date | null; created_at: Date;
       risque_niveau: NiveauRisque | null; risque_score: number | null; risque_raisons: RaisonRisque[] | null; risque_calcule_le: Date | null;
     }>(
-      // Les colonnes du risque (0178) sont NOMMÉES : la migration passe avant ce code, sinon 42703 sur chaque lecture.
+      // Colonnes du risque nommées : leur migration passe avant ce code, sinon 42703 sur chaque lecture.
       `select id, external_id, phone_e164, bsuid, profile_name, fields, tags, opt_in_status, opt_in_source,
               opt_out_at, rcs_optout_at, blocked_at, whatsapp_joignable, whatsapp_joignable_le, created_at,
               risque_niveau, risque_score, risque_raisons, risque_calcule_le
@@ -1181,19 +1017,12 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * Les colonnes du risque (migration 0178), NOMMÉES par les trois `select` qui alimentent `rowToContact`
-   * (`findByPhone`, `SELECT_ONE`, `query`). Une constante et pas trois copies : un `select` qui les oublierait
-   * rendrait `risque: null` sur une fiche calculée, donc « pas encore calculé » à l'écran, sans aucune erreur.
-   *
-   * 🔴 LA MIGRATION 0178 PASSE AVANT CE CODE : sans elle, la liste des contacts, la fiche et sa modification
-   * rendent 42703.
+   * Les colonnes du risque, nommées par les trois `select` qui alimentent `rowToContact` : un `select` qui les
+   * oublierait rendrait « pas encore calculé » sur une fiche calculée, sans erreur. Leur migration passe avant ce code.
    */
   private static readonly COLONNES_RISQUE = 'risque_niveau, risque_score, risque_raisons, risque_calcule_le';
 
-  /**
-   * Le risque d'une ligne. ⚠️ Un niveau sans date de calcul ne peut pas exister (CHECK de cohérence de 0178) :
-   * s'il se présentait quand même, on rend `null` plutôt qu'une date inventée, comme la fiche de l'API.
-   */
+  /** Le risque d'une ligne ; un niveau sans date de calcul rend `null` plutôt qu'une date inventée. */
   private static risqueDeLaLigne(r: {
     risque_niveau?: NiveauRisque | null; risque_score?: number | null; risque_raisons?: RaisonRisque[] | null; risque_calcule_le?: Date | null;
   }): RisqueContact | null {
@@ -1219,14 +1048,8 @@ export class PgContactStore implements ContactStore {
       phoneE164: r.phone_e164, bsuid: r.bsuid, profileName: r.profile_name, optInStatus: r.opt_in_status,
       fields: r.fields, tags: r.tags ?? [], createdAt: r.created_at.toISOString(),
       blockedAt: r.blocked_at ? r.blocked_at.toISOString() : null,
-      // ⚠️ `?? null`, jamais `undefined` : un `undefined` traverserait `JSON.stringify` en DISPARAISSANT du
-      // corps, et l'écran lirait une clé absente là où il attend « jamais mesuré ». Même valeur, mais par
-      // accident.
-      //
-      // 🔴 CE N'EST PAS UNE TOLÉRANCE À LA MIGRATION MANQUANTE, et une version de ce commentaire l'a
-      // affirmé. Les trois `select` qui alimentent cette fonction listent les deux colonnes : sans la
-      // migration 0133, Postgres rend `42703` et la ligne n'arrive jamais ici. La garde couvre un objet
-      // construit sans ces clés (un faux de test), pas une table sans ces colonnes.
+      // `?? null`, jamais `undefined` : un `undefined` disparaîtrait du corps JSON, et l'écran lirait une clé absente
+      // là où il attend « jamais mesuré ». Garde pour un objet construit sans ces clés (un faux de test).
       whatsappJoignable: r.whatsapp_joignable ?? null,
       whatsappJoignableLe: r.whatsapp_joignable_le ? r.whatsapp_joignable_le.toISOString() : null,
       risque: PgContactStore.risqueDeLaLigne(r),
@@ -1237,7 +1060,7 @@ export class PgContactStore implements ContactStore {
             whatsapp_joignable, whatsapp_joignable_le, ${PgContactStore.COLONNES_RISQUE}
        from contacts where id = $1 and tenant_id = $2`;
 
-  /** Un contact par id, scopé tenant. null si absent/autre tenant. */
+  /** Un contact par id, scopé tenant. null si absent ou d'un autre tenant. */
   async getById(tenantId: string, contactId: string): Promise<ContactRow | null> {
     const res = await this.pool.query(PgContactStore.SELECT_ONE, [contactId, tenantId]);
     const r = res.rows[0];
@@ -1245,10 +1068,8 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * Édite UN contact (fiche) en une TRANSACTION : MERGE des valeurs de fields (n'écrase que les clés
-   * fournies, invariant import/flow) + ajout/retrait de tags (dédupliqués). Verrouille la ligne (FOR UPDATE),
-   * renvoie le contact à jour, ou null s'il n'existe pas dans le tenant (=> 404). Atomique : un échec en
-   * cours de route ne laisse pas une modif partielle (calqué sur createWithRecipients).
+   * Édite un contact (fiche) en une transaction, ligne verrouillée : fusion des champs (seules les clés fournies),
+   * ajout et retrait de tags. Rend le contact à jour, ou null s'il n'existe pas dans le tenant (404).
    */
   async applyEdits(
     tenantId: string,
@@ -1256,22 +1077,21 @@ export class PgContactStore implements ContactStore {
     edits: {
       fields: Record<string, string>; removeFields?: string[]; addTags: string[]; removeTags: string[];
       profileName?: string | null;
-      /** Consentement posé À LA MAIN depuis la fiche. Voir le commentaire de l'écriture, plus bas. */
+      /** Consentement posé à la main depuis la fiche (voir l'écriture plus bas). */
       optInStatus?: 'opted_in' | 'opted_out';
     },
   ): Promise<{ contact: ContactRow; addedTags: string[] } | null> {
     const ecrit = await enTransaction(this.pool, async (client) => {
-      // On lit les tags AVANT dans le verrou déjà pris : ça ne coûte rien de plus et c'est la seule façon de
-      // savoir lesquels sont RÉELLEMENT nouveaux. L'ajout est une union, donc reposer un tag déjà présent ne
-      // change rien en base : l'annoncer comme « tag ajouté » relancerait un scénario pour un non-événement.
+      // Les tags d'avant, lus sous le verrou : seul moyen de savoir lesquels sont réellement nouveaux, et « tag
+      // ajouté » relance un scénario.
       const exists = await client.query<{ tags: string[] | null }>('select tags from contacts where id = $1 and tenant_id = $2 for update', [contactId, tenantId]);
       if ((exists.rowCount ?? 0) === 0) return null;
       if (Object.keys(edits.fields).length > 0) {
-        // MERGE : n'écrase que les clés fournies (mise à jour en place d'une valeur = fournir la clé).
+        // Fusion : n'écrase que les clés fournies.
         await client.query('update contacts set fields = fields || $3::jsonb, updated_at = now() where id = $1 and tenant_id = $2', [contactId, tenantId, JSON.stringify(edits.fields)]);
       }
       if (edits.removeFields && edits.removeFields.length > 0) {
-        // Retire les clés jsonb (opérateur `- text[]`, PG 10+) : purge la valeur du champ SUR CE contact (pas la définition).
+        // Retire les clés jsonb (`- text[]`) : purge la valeur du champ sur ce contact, pas la définition.
         await client.query('update contacts set fields = fields - $3::text[], updated_at = now() where id = $1 and tenant_id = $2', [contactId, tenantId, edits.removeFields]);
       }
       if (edits.profileName !== undefined) {
@@ -1279,13 +1099,11 @@ export class PgContactStore implements ContactStore {
         await client.query('update contacts set profile_name = $3, updated_at = now() where id = $1 and tenant_id = $2', [contactId, tenantId, edits.profileName]);
       }
       if (edits.optInStatus !== undefined) {
-        // Écriture DIRECTE du statut, y compris à la baisse : c'est une décision d'opérateur devant la fiche,
-        // pas une donnée importée. L'upsert, lui, ne fait jamais régresser un statut. La source dit d'où vient
-        // la décision, pour qu'un `opted_out` posé ici ne se confonde pas plus tard avec un statut jamais
-        // renseigné. Aucun retour à « inconnu » : ce statut signifie « rien n'a jamais été enregistré », et
-        // l'écrire après coup falsifierait le registre plutôt que de le corriger.
+        // Écriture directe du statut, y compris à la baisse : une décision d'opérateur devant la fiche. La source
+        // 'crm' distingue un `opted_out` posé ici d'un statut jamais renseigné. Aucun retour à « inconnu » : ce statut
+        // veut dire « rien n'a jamais été enregistré ».
         await client.query(
-          // `opt_out_at` suit le statut dans les deux sens, cf. `setOptInByWaId` (migration 0138).
+          // `opt_out_at` suit le statut dans les deux sens, cf. `setOptInByWaId`.
           `update contacts set opt_in_status = $3, opt_in_source = 'crm', updated_at = now(),
                   opt_out_at = case when $3 = 'opted_out' then now() else null end
              where id = $1 and tenant_id = $2`,
@@ -1303,14 +1121,12 @@ export class PgContactStore implements ContactStore {
     });
     if (ecrit === null || !ecrit.r) return null;
     const avant = new Set(ecrit.avant);
-    // Le retrait s'applique APRÈS l'ajout dans cette transaction : un tag présent dans addTags ET removeTags
-    // n'est pas sur le contact à la fin. L'annoncer « ajouté » enverrait un message pour un tag inexistant.
-    // On se fie donc à l'état FINAL réellement écrit, pas seulement au snapshot d'avant.
+    // Le retrait s'applique après l'ajout : un tag présent dans addTags et removeTags n'est pas sur le contact à la
+    // fin. On se fie donc à l'état final écrit, pas au snapshot d'avant.
     const apres = new Set(PgContactStore.rowToContact(ecrit.r).tags);
     const contact = PgContactStore.rowToContact(ecrit.r);
-    // APRÈS le `commit`, jamais dans la transaction : ce qui part vers le système du client ne doit décrire
-    // que ce qui est réellement enregistré chez nous. Annoncer avant, c'est risquer d'annoncer un refus
-    // qu'un `rollback` vient d'annuler.
+    // Après le `commit`, jamais dans la transaction : on n'annonce que ce qui est enregistré, pas un refus qu'un
+    // `rollback` viendrait d'annuler.
     if (edits.optInStatus === 'opted_out') {
       await this.annoncer(tenantId, [waIdOf(contact.phoneE164, contact.bsuid)]);
     }
@@ -1321,9 +1137,8 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * Requête filtrée + paginée (source « Liste de contacts » de campagne + mini-CRM). Filtres composables (tags
-   * AND/OR + exclusion, opt-in, préfixe/contenu de téléphone, recherche nom, valeur de champ perso). Scopé tenant,
-   * `deleted_at is null` toujours posé (un contact supprimé disparaît).
+   * Requête filtrée et paginée (« Liste de contacts » de campagne, mini-CRM), scopée tenant, `deleted_at is null`
+   * toujours posé.
    */
   async query(tenantId: string, filters: ContactFilters, limit = 100, offset = 0): Promise<ContactRow[]> {
     const capped = Math.min(Math.max(limit, 1), 500);
@@ -1344,18 +1159,9 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * Combien de fiches ont chaque champ REMPLI, et combien de fiches existent en tout.
-   *
-   * 🔴 Pourquoi ça existe : le 2026-08-25, un bloc « Envoi de mail » a été branché sur le champ « Mail »
-   * alors que les fiches portaient leur adresse dans « Email ». Deux champs voisins, l'un rempli, l'autre
-   * vide, et le sélecteur les présentait à l'identique. Rien n'est parti, et rien ne l'a dit.
-   *
-   * UNE seule passe sur les contacts de l'espace, en dépliant les clés réellement présentes dans chaque
-   * fiche (`jsonb_each_text`). Une requête par champ aurait relu toute la table autant de fois qu'il y a de
-   * champs, pour un compteur qui n'orne qu'un sélecteur.
-   *
-   * Même population que le reste du CRM : `deleted_at is null` (cf. `buildContactWhere`). Une valeur vide
-   * compte comme absente : c'est ce que voit le résolveur de variables à l'envoi.
+   * Combien de fiches ont chaque champ rempli, et combien de fiches existent en tout, pour que le sélecteur montre
+   * qu'un champ voisin est vide. Une seule passe sur les contacts (`jsonb_each_text`), même population que le reste
+   * du CRM ; une valeur vide compte comme absente, comme pour le résolveur de variables à l'envoi.
    */
   async fieldUsage(tenantId: string): Promise<{ total: number; parChamp: Record<string, number> }> {
     const [remplis, total] = await Promise.all([
@@ -1376,15 +1182,15 @@ export class PgContactStore implements ContactStore {
     return { total: Number(total.rows[0]?.n ?? 0), parChamp };
   }
 
-  /** Nombre de contacts correspondant aux filtres (pour afficher « N contacts » AVANT de fixer le débit). */
+  /** Nombre de contacts correspondant aux filtres (« N contacts » avant de fixer le débit). */
   async count(tenantId: string, filters: ContactFilters): Promise<number> {
     const { where, params } = buildContactWhere(tenantId, filters);
     const res = await this.pool.query<{ n: string }>(`select count(*)::text as n from contacts where ${where}`, params);
     return Number(res.rows[0]?.n ?? 0);
   }
 
-  /** Ids des contacts correspondant aux filtres (résolution serveur de la source « Liste de contacts »
-   *  d'une campagne, sans charger tout le CRM côté front). Scopé tenant. Cap dur anti-abus. */
+  /** Ids des contacts correspondant aux filtres (source « Liste de contacts » d'une campagne), scopé tenant,
+   *  avec un plafond dur. */
   async idsForFilters(tenantId: string, filters: ContactFilters, cap = 100_000): Promise<string[]> {
     const { where, params } = buildContactWhere(tenantId, filters);
     const capRef = `$${params.length + 1}`;
@@ -1395,22 +1201,16 @@ export class PgContactStore implements ContactStore {
     return res.rows.map((r) => r.id);
   }
 
-  /**
-   * Liste paginée des contacts d'un tenant (les plus récents d'abord), éventuellement filtrée sur UN tag.
-   * Délègue à `query` : elle réécrivait le même WHERE (tenant, non supprimé, tag) et remappait les lignes à la
-   * main, donc deux définitions de « lister des contacts » à garder alignées pour rien.
-   */
+  /** Liste paginée des contacts d'un tenant (les plus récents d'abord), éventuellement filtrée sur un tag. */
   async list(tenantId: string, limit = 100, offset = 0, tag?: string): Promise<ContactRow[]> {
     const t = tag?.trim();
     return this.query(tenantId, t ? { tags: [t] } : {}, limit, offset);
   }
 
   /**
-   * Action en masse (mini-CRM) : ajoute/retire des tags et/ou pose la valeur d'UN champ perso sur la cible
-   * (ids explicites OU filtres re-résolus côté serveur, avec exclusions). UNE seule requête UPDATE ensembliste
-   * (pas de boucle par contact), atomique par nature. La valeur de champ est déjà VALIDÉE + canonicalisée par
-   * la route (invariant : jamais de valeur non validée en base). Toujours scopé `tenant_id` + `deleted_at is null`.
-   * Renvoie le nombre de contacts touchés. Aucune mutation demandée -> 0 (no-op).
+   * Action en masse du mini-CRM sur la cible (ids ou filtres re-résolus, avec exclusions) : tags, un champ perso,
+   * consentement. Une seule requête UPDATE ensembliste, scopée `tenant_id` et `deleted_at is null`. La valeur de
+   * champ arrive validée et canonicalisée par la route. Rend le nombre touché ; aucune mutation -> 0.
    */
   async applyEditsMany(tenantId: string, target: BulkTarget, edits: BulkEdits): Promise<number> {
     const addTags = [...new Set((edits.addTags ?? []).map((t) => t.trim()).filter((t) => t !== ''))];
@@ -1424,36 +1224,27 @@ export class PgContactStore implements ContactStore {
     const add = (v: unknown): string => { params.push(v); return `$${params.length}`; };
     const sets: string[] = [];
     if (addTags.length > 0 || removeTags.length > 0) {
-      // UNE SEULE assignation `tags =` : Postgres refuse deux assignations de la même colonne dans un même
-      // UPDATE. On ajoute (union dédupliquée) PUIS on retire, en un sous-select. add vide -> rien ajouté ;
-      // remove vide -> `t <> all('{}')` vaut TRUE partout -> rien retiré. Gère add seul, remove seul, ou les deux.
+      // Une seule assignation `tags =` (Postgres en refuse deux sur une colonne) : union dédupliquée puis retrait, en
+      // un sous-select. Un `remove` vide donne `t <> all('{}')`, vrai partout, donc rien retiré.
       const addRef = add(addTags);
       const remRef = add(removeTags);
       sets.push(`tags = (select coalesce(array_agg(distinct t), '{}') from unnest(tags || ${addRef}::text[]) t where t <> all(${remRef}::text[]))`);
     }
     if (hasSet) {
-      // MERGE jsonb : n'écrase que la clé posée, préserve les autres champs (invariant import/flow).
+      // Fusion jsonb : n'écrase que la clé posée.
       sets.push(`fields = fields || ${add(JSON.stringify({ [edits.setField!.key]: edits.setField!.value }))}::jsonb`);
     }
     if (optIn !== undefined) {
-      // Écriture DIRECTE du statut, y compris à la baisse : c'est une décision d'opérateur, pas une donnée
-      // importée. La source dit d'où vient la décision, pour qu'un `opted_out` ne soit pas confondu plus tard
-      // avec un statut jamais renseigné.
-      // `opt_out_at` suit le statut dans les deux sens, cf. `setOptInByWaId` (migration 0138). La valeur est
-      // connue ICI (`optIn`), donc la date se pose sans `case` : une action en masse porte UN seul statut.
+      // Écriture directe du statut, y compris à la baisse : une décision d'opérateur, source 'crm'. `opt_out_at` suit
+      // le statut ; une action en masse n'en porte qu'un, d'où la date posée sans `case`.
       sets.push(`opt_in_status = ${add(optIn)}`, `opt_in_source = ${add('crm')}`,
         `opt_out_at = ${optIn === 'opted_out' ? 'now()' : 'null'}`);
     }
     sets.push('updated_at = now()');
     /**
-     * `returning` SEULEMENT quand c'est un opt-out, et la condition n'est pas cosmétique.
-     *
-     * 🔴 L'annonce a besoin des IDENTITÉS, et les relire après coup par une seconde requête donnerait une
-     * photo d'APRÈS, donc potentiellement d'autres contacts (une action en masse se résout sur des filtres).
-     * Mais un `returning` INCONDITIONNEL ferait remonter une ligne par contact pour TOUTE action en masse,
-     * y compris une pose d'étiquette sur dix mille fiches, où personne n'en a l'usage. Cette base est
-     * facturée à l'egress, et c'est exactement le genre de coût qui ne se voit dans aucun écran (cf.
-     * `src/queue/names.ts`, où le sondage à vide pesait 88 % du trafic sans que personne ne le sache).
+     * `returning` seulement pour un opt-out : l'annonce a besoin des identités touchées (une relecture après coup
+     * pourrait viser d'autres contacts, la cible étant des filtres), mais un `returning` systématique remonterait
+     * une ligne par fiche pour toute action en masse, un coût d'egress invisible.
      */
     const estOptOut = optIn === 'opted_out';
     const res = await this.pool.query<{ id: string; phone_e164: string | null; bsuid: string | null }>(
@@ -1467,40 +1258,9 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * PURGE : efface réellement les données d'une personne, et garde les compteurs.
-   *
-   * Deux traitements distincts, et c'est tout le sujet.
-   *
-   * EFFACÉ, parce que c'est du contenu et qu'il identifie : le fil de conversation, tous ses messages, et son
-   * ANALYSE qualitative (la table `conversation_analysis` porte un `topic` et une `justification` en texte libre
-   * produits par un modèle à partir de la conversation, donc potentiellement tout ce que la personne a raconté).
-   * Plus les traces techniques qui portent le numéro : parcours de scénario, déclenchements d'automation, cache
-   * de joignabilité RCS.
-   *
-   * ANONYMISÉ, pour que le QUANTITATIF survive : la ligne de contact et ses lignes de campagne restent, mais
-   * leurs colonnes identifiantes sont remplacées. Les totaux d'envoi, de livraison et d'échec restent donc
-   * justes, et plus personne n'est reconnaissable.
-   *
-   * ⚠️ L'identifiant de remplacement est ALÉATOIRE, pas une empreinte du numéro. Une empreinte serait
-   * réversible en pratique : un numéro français tient dans un espace de quelques milliards, qu'un attaquant
-   * parcourt en quelques minutes pour retrouver qui se cache derrière un hachage. Le prix de l'aléatoire est
-   * qu'on ne reconnaît plus la personne si elle revient, ce qui est précisément ce que « plus aucune trace » veut
-   * dire.
-   *
-   * TRANSACTIONNEL : une purge à moitié faite laisserait des messages orphelins d'un contact déjà anonymisé,
-   * c'est-à-dire le contenu sans le moyen de le retrouver pour finir le travail.
-   */
-  /**
-   * Résout une cible de masse (identifiants explicites OU filtres) en liste d'identifiants.
-   *
-   * `limite` borne la sélection PAR FILTRES (constat B4 de l'audit externe du 2026-09-02) : sans elle, le
-   * chemin par filtres matérialisait jusqu'à 100 000 identifiants avant de se faire refuser par un plafond de
-   * campagne à 20 000, soit quatre-vingt mille lignes chargées pour rien. L'appelant passe `plafond + 1`, le
-   * `+ 1` étant ce qui distingue « pile au plafond » de « au-dessus ».
-   *
-   * ⚠️ La branche par IDENTIFIANTS EXPLICITES n'est volontairement PAS bornée : l'appelant a déjà la liste en
-   * main, la tronquer ici ferait partir une campagne vers un sous-ensemble silencieux de ce qu'il a demandé.
-   * Son plafond est le refus qui suit, pas une troncature.
+   * Résout une cible de masse (identifiants ou filtres) en liste d'identifiants. `limite` borne la sélection par
+   * filtres ; l'appelant passe `plafond + 1` pour distinguer « pile au plafond » de « au-dessus ». La branche par
+   * identifiants explicites n'est pas bornée : la tronquer enverrait une campagne à un sous-ensemble silencieux.
    */
   async contactIdsForTarget(tenantId: string, target: BulkTarget, limite?: number): Promise<string[]> {
     if ('ids' in target) {
@@ -1512,38 +1272,14 @@ export class PgContactStore implements ContactStore {
       return res.rows.map((r) => r.id);
     }
     /**
-     * 🔴 LES EXCLUSIONS SONT DANS LE `WHERE`, DONC AVANT LE `LIMIT` (contre-audit du 2026-09-03).
-     *
-     * Le code retirait `excludeIds` EN MÉMOIRE, après que SQL avait déjà tranché à `limite`. Une campagne
-     * qui vise plus que le plafond avec des exclusions SOUS-ENVOYAIT donc en silence : sur 30 000 contacts
-     * correspondants, un plafond de 20 000 et 5 000 exclus parmi les 20 001 premiers, la fonction rendait
-     * ~15 001 identifiants, la campagne était acceptée, et les 10 000 contacts éligibles situés APRÈS la
-     * fenêtre n'étaient jamais atteints. Personne n'aurait vu la différence : le nombre affiché est celui
-     * qu'on vient de calculer.
-     *
-     * `buildBulkSelector` pousse les exclusions dans le prédicat SQL, et il existait DÉJÀ dans ce fichier,
-     * utilisé par les actions en masse du mini-CRM. La leçon : quand une opération se fait en deux temps,
-     * un filtre en base puis un filtre en mémoire, **l'ordre décide du résultat**, et le second ne peut
-     * jamais rattraper ce que le premier a coupé.
+     * Les exclusions sont dans le `WHERE`, donc avant le `LIMIT` : retirées en mémoire après la troncature, elles
+     * feraient sous-envoyer une campagne en silence (les éligibles au-delà de la fenêtre jamais atteints).
      */
     const sel = buildBulkSelector(tenantId, target);
     /**
-     * 🔴 PAS DE BORNE HAUTE SUR UNE LIMITE DEMANDÉE, et ce `Math.min` était à moi (2026-09-03).
-     *
-     * En réécrivant ce chemin j'avais écrit `Math.min(100_000, limite ?? 100_000)`, ce qui écrase EN SILENCE
-     * une limite plus grande. Le plafond de campagne vit en configuration, précisément pour se relever sans
-     * redéploiement le jour d'un gros client : le geste que le produit a prévu est donc exactement celui qui
-     * arme le défaut. Au-delà de 100 000, la route demande `plafond + 1` pour distinguer « pile au plafond »
-     * de « au-dessus », reçoit 100 000, et la garde de plafond conclut que ça passe. La campagne partirait
-     * avec 100 000 destinataires au lieu des 150 000 visés, **et le nombre affiché à l'opérateur serait celui
-     * qu'on vient de calculer**, donc rien ne clocherait à l'écran.
-     *
-     * C'est mot pour mot le sous-envoi silencieux décrit juste au-dessus, transposé du filtre d'exclusion au
-     * filtre de taille : j'ai fermé un défaut en en rouvrant un de la même famille, trois lignes plus bas.
-     *
-     * Les 100 000 restent le garde-fou de l'appel NON borné (la purge), là où il a un sens : personne n'a
-     * demandé de taille, donc on refuse de matérialiser la table entière. Un appelant qui demande une taille
-     * l'obtient, ce qui était le comportement d'avant.
+     * Pas de borne haute sur une limite demandée : le plafond de campagne se relève en configuration, et un
+     * `Math.min` écraserait en silence une limite plus grande (sous-envoi que l'écran ne montrerait pas). Les
+     * 100 000 ne bornent que l'appel sans limite (la purge), qui refuse de matérialiser la table entière.
      */
     const cap = limite === undefined ? 100_000 : Math.max(1, Math.round(limite));
     const res = await this.pool.query<{ id: string }>(
@@ -1553,24 +1289,29 @@ export class PgContactStore implements ContactStore {
     return res.rows.map((r) => r.id);
   }
 
+  /**
+   * 🔴 Purge : efface réellement les données d'une personne, en gardant les compteurs.
+   * Effacé : le fil, ses messages, son analyse (texte libre tiré de la conversation), et les traces techniques
+   * qui portent le numéro (parcours, déclenchements d'automation, cache RCS). Anonymisé : la fiche et ses lignes
+   * de campagne restent, colonnes identifiantes remplacées, pour que les totaux restent justes.
+   * L'identifiant de remplacement est aléatoire, pas une empreinte du numéro (réversible en quelques minutes).
+   * Transactionnel : une purge à moitié faite laisserait du contenu sans moyen de le retrouver.
+   */
   async purgeMany(tenantId: string, ids: readonly string[]): Promise<{ purges: number; conversations: number; messages: number; analyses: number }> {
     if (ids.length === 0) return { purges: 0, conversations: 0, messages: 0, analyses: 0 };
     return enTransaction(this.pool, async (client) => {
-      // Numéros des contacts visés, lus AVANT l'anonymisation qui les remplace. Servent au cache RCS, indexé
-      // en E.164 (`+33…`) et NON en wa_id : lui passer des chiffres nus ne supprimait rien.
+      // Numéros des contacts visés, lus avant l'anonymisation : le cache RCS est indexé en E.164 (`+33…`), pas en wa_id.
       const cibles = await client.query<{ phone_e164: string | null }>(
         `select phone_e164 from contacts where tenant_id = $1 and id = any($2::uuid[])`,
         [tenantId, ids],
       );
       const e164 = cibles.rows.map((r) => r.phone_e164).filter((p): p is string => p !== null && !p.startsWith('anon:'));
-      // Les mesures par bloc sont indexees par wa_id (chiffres nus). On derive donc les numeros vises ici, en
-      // plus des wa_id des fils : un contact peut avoir des mesures sans conversation ouverte.
+      // Les mesures par bloc sont indexées par wa_id (chiffres nus) : on dérive les numéros visés en plus des wa_id
+      // des fils, un contact pouvant avoir des mesures sans conversation.
       const waIdsDuNumero = e164.map((p) => p.replace(/[^0-9]/g, '')).filter((d) => d !== '');
 
-      // Les fils visés, par la RÈGLE PARTAGÉE de correspondance contact <-> wa_id. Une simple égalité
-      // `conversations.wa_id = contacts.phone_e164` ne peut jamais être vraie : le fil porte `33612345678`,
-      // la fiche `+33612345678`. La purge anonymisait donc le contact en laissant la conversation intacte,
-      // ce qui est l'inverse exact de ce qu'elle promet. Vu en production le 2026-08-18.
+      // Les fils visés, par la règle partagée contact <-> wa_id. Une égalité `conversations.wa_id =
+      // contacts.phone_e164` ne serait jamais vraie (`33612345678` contre `+33612345678`) : le fil survivrait à la purge.
       const fils = await client.query<{ id: string; wa_id: string }>(
         `select v.id, v.wa_id from conversations v
           where v.tenant_id = $1 and exists (
@@ -1592,25 +1333,20 @@ export class PgContactStore implements ContactStore {
       if (waIds.length > 0) {
         // `workflow_runs` et `automation_fires` portent bien un wa_id (chiffres nus), eux.
         await client.query(`delete from workflow_runs where tenant_id = $1 and wa_id = any($2::text[])`, [tenantId, waIds]);
-        // `automation_fires` a pour clé (automation_id, wa_id) et NE PORTE PAS de tenant_id : le cloisonnement
-        // passe par l'automation. La version precedente filtrait sur une colonne inexistante, ce qui faisait
-        // echouer et ROULER EN ARRIERE toute la purge des qu'un contact avait un fil. Invisible jusqu'ici :
-        // aucun fil n'etait jamais trouve, donc cette branche n'etait jamais atteinte.
+        // `automation_fires` a pour clé (automation_id, wa_id), sans tenant_id : le cloisonnement passe par l'automation.
         await client.query(
           `delete from automation_fires f using automations a
             where a.id = f.automation_id and a.tenant_id = $1 and f.wa_id = any($2::text[])`,
           [tenantId, waIds],
         );
       }
-      // Cache RCS : clé (agent_id, phone_e164), donc E.164. Effacé même si le contact n'a AUCUN fil, sinon un
-      // contact purgé sans conversation laisserait son numéro dans une table de joignabilité.
+      // Cache RCS : clé (agent_id, phone_e164). Effacé même sans fil, sinon le numéro resterait dans la table de
+      // joignabilité.
       if (e164.length > 0) {
         await client.query(`delete from rcs_capabilities_cache where phone_e164 = any($1::text[])`, [e164]);
       }
 
-      // Mesures par bloc (Analytics > Mes tableaux) : ANONYMISEES, pas supprimees. Un tableau deja construit
-      // garderait sinon des trous a chaque effacement, alors que la decision produit est « on anonymise pour
-      // garder le quanti ». Le numero part, la ligne reste, les compteurs restent justes.
+      // Mesures par bloc : anonymisées, pas supprimées, pour que les tableaux gardent des compteurs justes.
       const waIdsAAnonymiser = [...new Set([...waIds, ...waIdsDuNumero])];
       if (waIdsAAnonymiser.length > 0) {
         await client.query(
@@ -1619,18 +1355,11 @@ export class PgContactStore implements ContactStore {
         );
       }
 
-      // `webhook_events` garde le payload BRUT de chaque événement Meta : le TEXTE du message entrant et le
-      // numéro de qui l'écrit. C'était la dernière table du dépôt à garder une trace nominative hors de portée
-      // de cette purge, faute de discriminant d'espace (PLAN.md 5.2, migration 0093).
-      //
-      // La personne est visée par `from` (message entrant, echo de MBA) ou `recipient_id` (statut de
-      // livraison). L'effacement reste SCOPÉ AU TENANT par le numéro destinataire : la même personne peut
-      // écrire à deux de nos clients, et purger chez l'un ne doit pas toucher au journal de l'autre.
-      //
-      // ⚠️ Deux limites, assumées et couvertes par la rétention : les lignes écrites AVANT la migration 0093
-      // n'ont pas de `phone_number_id`, donc ne sont attribuables à personne et ne sont pas visées ici ; et
-      // les payloads `messaging_handovers` ne portent ni `from` ni `recipient_id` (ils n'ont pas de texte,
-      // seulement des identifiants d'application).
+      // `webhook_events` garde le payload brut de chaque événement Meta, texte et numéro compris. La personne est visée
+      // par `from` (entrant, echo) ou `recipient_id` (statut). 🔴 Scopé au tenant par le numéro destinataire : la même
+      // personne peut écrire à deux de nos clients, et purger chez l'un ne touche pas le journal de l'autre. Hors
+      // d'atteinte, couverts par la rétention : les lignes sans `phone_number_id`, et les `messaging_handovers` (sans
+      // `from` ni `recipient_id`, ni texte).
       if (waIdsAAnonymiser.length > 0) {
         await client.query(
           `delete from webhook_events
@@ -1640,10 +1369,8 @@ export class PgContactStore implements ContactStore {
         );
       }
 
-      // L'ÉCHEC D'UN MESSAGE LIBRE (migration 0175, lot 3 de l'API publique) garde le numéro et le motif.
-      // EFFACÉ, pas anonymisé : c'est un journal d'exploitation, il n'a aucun quantitatif à préserver. Scopé à
-      // l'espace, et visé par les DEUX formes du numéro (fils trouvés ET numéro de la fiche) : un échec survit à
-      // son fil, et un rapport arrivé avant l'inscription du message n'en a jamais eu (`noterSansMessage`).
+      // L'échec d'un message libre garde le numéro et le motif : effacé, pas anonymisé (journal d'exploitation, sans
+      // quantitatif). Visé par les deux formes du numéro : un échec survit à son fil, et peut précéder le message.
       if (waIdsAAnonymiser.length > 0) {
         await client.query(
           `delete from echecs_messages where tenant_id = $1 and wa_id = any($2::text[])`,
@@ -1651,21 +1378,17 @@ export class PgContactStore implements ContactStore {
         );
       }
 
-      // Quantitatif préservé : la ligne de campagne reste (statut, horodatage, livraison), son numéro et ses
-      // variables partent. `resolved_params` porte les valeurs injectées dans le template, donc typiquement le
-      // prénom ; `variables` (migration 0174, lot 3 de l'API publique) porte ce que l'intégrateur a passé pour CE
-      // destinataire (un numéro de commande, un montant). `null` et pas '{}' : « n'en porte pas ».
+      // La ligne de campagne reste (statut, horodatage, livraison) ; son numéro et ses variables partent :
+      // `resolved_params` porte les valeurs injectées (typiquement le prénom), `variables` ce que l'intégrateur a
+      // passé pour ce destinataire. `null` et pas '{}' : « n'en porte pas ».
       await client.query(
         `update campaign_recipients set to_e164 = 'anonyme', resolved_params = '{}'::jsonb, variables = null
           where contact_id = any($1::uuid[])`,
         [ids],
       );
 
-      // L'ARRIVÉE PUBLICITAIRE (lot 1 des pubs Click-to-WhatsApp, migration 0163) : `ctwa_clid` est
-      // l'identifiant du CLIC, que Meta sait relier à la personne. La ligne reste, pour que le compte des leads
-      // d'une pub survive à l'effacement comme celui des campagnes juste au-dessus ; l'identifiant part.
-      // ⚠️ La suppression en cascade de la fiche ne joue JAMAIS ici : cette purge ANONYMISE la fiche, elle ne
-      // la supprime pas.
+      // L'arrivée publicitaire : `ctwa_clid` identifie le clic, que Meta sait relier à la personne. La ligne reste pour
+      // le compte des leads, l'identifiant part. La cascade de la fiche ne joue pas ici : la purge l'anonymise.
       await client.query(
         `update arrivees_pub set ctwa_clid = null where tenant_id = $1 and contact_id = any($2::uuid[])`,
         [tenantId, ids],
@@ -1692,10 +1415,9 @@ export class PgContactStore implements ContactStore {
 }
 
 /**
- * Construit un WHERE dynamique PARAMÉTRÉ pour requêter les contacts (source « Liste de contacts » d'une campagne
- * + mini-CRM). `tenant_id = $1` ET `deleted_at is null` TOUJOURS présents (anti-fuite cross-tenant + soft-delete).
- * Chaque filtre ajoute un paramètre. Les valeurs de champ perso sont stockées en STRING dans le jsonb ->
- * comparaison textuelle. Fonction PURE (aucun accès DB) -> testable en unitaire sans Postgres.
+ * Construit un WHERE paramétré pour requêter les contacts (« Liste de contacts » de campagne, mini-CRM). Fonction
+ * pure. 🔴 `tenant_id = $1` et `deleted_at is null` toujours présents. Les valeurs de champ perso sont des
+ * chaînes dans le jsonb : comparaison textuelle.
  */
 export function buildContactWhere(tenantId: string, f: ContactFilters): { where: string; params: unknown[] } {
   const clauses: string[] = ['tenant_id = $1', 'deleted_at is null'];
@@ -1704,66 +1426,53 @@ export function buildContactWhere(tenantId: string, f: ContactFilters): { where:
 
   const tags = (f.tags ?? []).map((t) => t.trim()).filter((t) => t !== '');
   if (tags.length > 0) {
-    // AND = contient TOUS les tags (@>) ; OR = en partage AU MOINS un (&&).
+    // AND = contient tous les tags (@>) ; OR = en partage au moins un (&&).
     const op = f.tagMode === 'or' ? '&&' : '@>';
     clauses.push(`tags ${op} ${add(tags)}::text[]`);
   }
   const tagsExclude = (f.tagsExclude ?? []).map((t) => t.trim()).filter((t) => t !== '');
   if (tagsExclude.length > 0) {
-    // « Ne possède pas » : exclut tout contact partageant au moins un de ces tags. `tags` est non-null (default '{}'),
-    // donc un contact sans tag -> `not ('{}' && [...])` = not false = INCLUS. Correct.
+    // « Ne possède pas » : `tags` est non-null (défaut '{}'), donc un contact sans tag est inclus.
     clauses.push(`not (tags && ${add(tagsExclude)}::text[])`);
   }
   if (f.optIn === 'opted_in' || f.optIn === 'opted_out' || f.optIn === 'unknown') {
     clauses.push(`opt_in_status = ${add(f.optIn)}`);
   }
   if (f.phonePrefix && f.phonePrefix.trim() !== '') {
-    // Préfixe ANCRÉ. ⚠️ Ce commentaire affirmait qu'il « utilise l'index unique sur phone_e164 » : c'était
-    // FAUX, et mesuré tel quel sur la production le 2026-09-01 (le `like` y sortait en Filter, jamais en
-    // Index Cond). Un btree ordinaire ordonne selon la collation, pas octet par octet, donc il ne sait pas
-    // borner un préfixe. C'est `contacts_tenant_phone_prefix_idx` (migration 0096, `text_pattern_ops`) qui
-    // sert cette clause. On garde `+` et chiffres saisis tels quels.
+    // Préfixe ancré, servi par `contacts_tenant_phone_prefix_idx` (`text_pattern_ops`) : un btree ordinaire suit la
+    // collation et ne sait pas borner un préfixe. `+` et chiffres saisis gardés tels quels.
     clauses.push(`phone_e164 like ${add(f.phonePrefix.trim() + '%')}`);
   }
   if (f.phoneContains && f.phoneContains.replace(/\D/g, '') !== '') {
-    // Contenu : on compare sur les CHIFFRES nus des deux côtés (le stocké est +E.164).
+    // Contenu : on compare les chiffres nus des deux côtés (le stocké est en E.164).
     clauses.push(`regexp_replace(coalesce(phone_e164,''), '[^0-9]', '', 'g') like '%' || ${add(f.phoneContains.replace(/\D/g, ''))} || '%'`);
   }
   if (f.nameSearch && f.nameSearch.trim() !== '') {
     clauses.push(`profile_name ilike '%' || ${add(f.nameSearch.trim())} || '%'`);
   }
   if (f.joignabiliteWhatsApp === 'connu_injoignable') {
-    // 🔴 LES TROIS TERMES SONT LA TRANSPOSITION EXACTE DE `verdictWhatsApp`, dans l'ordre où il les teste :
-    // `null` est INCONNU (donc gardé), une valeur SANS date est inconnue elle aussi (une mesure sans instant
-    // ne peut pas se périmer, donc elle vaudrait pour toujours), et une mesure périmée redevient inconnue.
-    // En retirer un ferait diverger la liste de ce que la fiche du même contact affiche, sans rien casser
-    // de visible : c'est exactement le genre d'écart que personne ne va chercher.
-    //
-    // ⚠️ Le seuil est PARAMÉTRÉ depuis `PEREMPTION_WHATSAPP_MS`, jamais écrit « 90 days » : un nombre posé à
-    // deux endroits est un nombre qui finira par différer, et c'est la règle qui perdrait son sens.
+    // Les trois termes transposent exactement `verdictWhatsApp`, dans son ordre : `null` est inconnu (gardé), une
+    // valeur sans date aussi, et une mesure périmée redevient inconnue. En retirer un ferait diverger la liste de la
+    // fiche. Le seuil vient de `PEREMPTION_WHATSAPP_MS`, jamais écrit en dur.
     clauses.push(
       `(whatsapp_joignable is not false or whatsapp_joignable_le is null` +
       ` or whatsapp_joignable_le < now() - (${add(PEREMPTION_WHATSAPP_MS)}::bigint * interval '1 millisecond'))`,
     );
   }
   if (f.risque !== undefined) {
-    // 🔴 UNE ÉGALITÉ NUE SUR LA COLONNE, et c'est un contrat avec l'index `contacts_tenant_risque_idx` (0178) :
-    // `(tenant_id, risque_niveau) where deleted_at is null`. Les deux premières clauses de ce WHERE portent
-    // l'espace et le prédicat de l'index, celle-ci la seconde colonne. Un `coalesce(risque_niveau, ...)` ou un
-    // `in (...)` réécrit sur une expression sortirait de l'index sans aucune erreur, seulement un balayage de
-    // la table des contacts à chaque ouverture de la liste. `tests/contact-where.test.ts` relit la migration.
+    // Égalité nue sur la colonne : un contrat avec l'index `contacts_tenant_risque_idx` (`(tenant_id, risque_niveau)
+    // where deleted_at is null`). Un `coalesce` ou un `in (...)` sur une expression sortirait de l'index sans erreur.
+    // `tests/contact-where.test.ts` relit la migration.
     clauses.push(`risque_niveau = ${add(f.risque)}`);
   }
   for (const ff of f.fieldFilters ?? []) {
     const key = String(ff.key ?? '').trim();
     if (key === '') continue;
-    // `fields ->> $key` : la clé jsonb est PARAMÉTRÉE (pas d'interpolation SQL). Le placeholder est réutilisé
-    // (Postgres autorise un même $N plusieurs fois) -> un seul param par clé. IMPORTANT : ne pousser le param
-    // clé (add(key)) QU'UNE FOIS la clause décidée, sinon un filtre sauté laisserait un param orphelin non
-    // référencé (numérotation $N décalée). D'où le contrôle de valeur AVANT `add` pour eq/contains/not_contains.
+    // `fields ->> $key` : la clé jsonb est paramétrée, et son placeholder réutilisé. Ne pousser le param de clé
+    // qu'une fois la clause décidée, sinon un filtre sauté laisserait un param orphelin qui décalerait la numérotation.
     if (ff.op === 'empty') { const kr = add(key); clauses.push(`(fields ->> ${kr} is null or fields ->> ${kr} = '')`); continue; }
     if (ff.op === 'not_empty') { const kr = add(key); clauses.push(`(fields ->> ${kr} is not null and fields ->> ${kr} <> '')`); continue; }
-    // eq / contains / not_contains : exigent une valeur non vide (sans quoi le filtre n'est PAS posé).
+    // eq, contains, not_contains : exigent une valeur non vide, sinon le filtre n'est pas posé.
     const val = String(ff.value ?? '');
     if (val === '') continue;
     const kr = add(key);
@@ -1775,9 +1484,8 @@ export function buildContactWhere(tenantId: string, f: ContactFilters): { where:
 }
 
 /**
- * Construit le WHERE d'une action en masse depuis une BulkTarget. Ids explicites -> `id = any($ids)` (toujours
- * scopé tenant + actif). Filtres -> réutilise `buildContactWhere` (donc tenant + `deleted_at is null` inclus)
- * puis exclut les ids décochés. Fonction PURE (testable sans DB).
+ * Construit le WHERE d'une action en masse. Ids explicites -> `id = any($ids)`, scopé tenant et actif ; filtres
+ * -> `buildContactWhere`, puis exclusion des ids décochés. Fonction pure.
  */
 export function buildBulkSelector(tenantId: string, target: BulkTarget): { where: string; params: unknown[] } {
   if ('ids' in target) {

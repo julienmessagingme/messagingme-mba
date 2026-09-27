@@ -1,15 +1,12 @@
 import type { Pool } from 'pg';
 
 /**
- * LE RÉGLAGE DE L'ADAPTATEUR BATCH, une ligne par espace (migration 0177, `integration_batch`).
+ * Le réglage de l'adaptateur Batch, une ligne par espace (`integration_batch`).
  *
- * 🔴 LES CLÉS NE SORTENT JAMAIS EN CLAIR DE CE FICHIER VERS UN ÉCRAN : `lire` ne les sélectionne même pas.
- * Seul `secrets` les rend, CHIFFRÉES, au worker qui pousse.
- *
- * ⚠️ `tenant_id = $1` sur chaque requête qui sert un espace. `espacesActifs` est la SEULE lecture transverse,
- * et c'est délibéré : elle alimente le cache de l'émetteur, qui répond « cet espace a-t-il branché un outil ? »
- * sans une requête par signal. Elle exclut un espace dont les clés ont été refusées : ses signaux ne sont plus
- * enfilés tant qu'il ne les a pas corrigées.
+ * 🔴 Les clés ne sortent jamais en clair vers un écran : `lire` ne les sélectionne pas, seul `secrets` les rend,
+ * chiffrées, au worker qui pousse.
+ * `tenant_id = $1` sur chaque requête qui sert un espace. `espacesActifs` est la seule lecture transverse : elle
+ * alimente le cache de l'émetteur, et exclut un espace dont les clés ont été refusées.
  */
 export interface VueIntegrationBatch {
   envoyerResume: boolean;
@@ -65,10 +62,9 @@ export class PgIntegrationBatchStore {
   }
 
   /**
-   * Écrit le réglage. Les clés arrivent DÉJÀ chiffrées ; `null` = garder celle qui est enregistrée.
-   *
-   * 🔴 `false` = premier branchement sans les DEUX clés : rien n'est écrit (une ligne sans clé ne pousserait
-   * rien et ferait croire le contraire). Une clé neuve lève la suspension : c'est le geste qui la corrige.
+   * Écrit le réglage. Les clés arrivent déjà chiffrées ; `null` = garder celle qui est enregistrée.
+   * `false` = premier branchement sans les deux clés : rien n'est écrit (une ligne sans clé ne pousserait rien et
+   * ferait croire le contraire). Une clé neuve lève la suspension.
    */
   async enregistrer(tenantId: string, r: { cleRestChiffree: string | null; cleProjetChiffree: string | null; envoyerResume: boolean }): Promise<boolean> {
     if (r.cleRestChiffree !== null && r.cleProjetChiffree !== null) {

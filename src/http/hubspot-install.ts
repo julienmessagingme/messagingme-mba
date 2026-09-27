@@ -16,9 +16,8 @@ export interface HubspotInstallRouteDeps {
 const ALLOWED_GRANTS = new Set(['lists']);
 
 /**
- * `POST /tenants/:tenantId/hubspot/install-link` (admin-only). Émet un lien d'install/re-consentement HubSpot portant
- * un JETON SIGNÉ (le tenant est dans la signature, plus dans un `?tenant=` en clair forgeable). Le front ouvre l'URL
- * renvoyée. Le tenant vient du JWT (scopeTenant), jamais du corps. Body optionnel : `{ grant?: 'lists' }`.
+ * `POST /tenants/:tenantId/hubspot/install-link` (admin). Émet un lien d'installation HubSpot portant un jeton
+ * signé : l'espace est dans la signature (jamais dans un `?tenant=` forgeable) et vient du JWT, jamais du corps.
  */
 export function registerHubspotInstall(app: FastifyInstance, deps: HubspotInstallRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };

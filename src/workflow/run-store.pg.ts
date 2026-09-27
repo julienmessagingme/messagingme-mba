@@ -3,18 +3,11 @@ import type { WorkflowGraph } from './graph';
 import { parseGraph } from './graph';
 
 /**
- * Relit le graphe figé d'un parcours. `null` = ce parcours n'en porte pas, le cas de TOUS les parcours réels.
+ * Relit le graphe figé d'un parcours. `null` = ce parcours n'en porte pas, le cas de tous les parcours réels.
  *
- * 🔴 UN REFUS SE DIT (seconde passe de revue finale, 2026-09-16). `parseGraph` rendait `null` sur un jsonb
- * qu'il refuse, et la lecture retombait alors sur le publié SANS UN MOT : c'est exactement le symptôme que
- * la migration 0151 répare, reproduit par sa propre garde. Ce dépôt énonce la règle inverse à deux pas d'ici
- * (`src/webhooks/test-token.ts`, « un chemin qui décide de NE PAS agir doit le dire »).
- *
- * ⚠️ POURQUOI `workflows.graph` ET `.draft_graph` NE SONT PAS PARSÉES, ELLES. Ces deux colonnes sont la
- * SOURCE : rien ne les écrit sans passer par `parseGraph` (`src/http/workflows.ts`), et si l'une d'elles
- * devenait illisible, la retomber sur autre chose n'aurait aucun sens, il n'y a pas d'« autre chose ». Ici
- * au contraire, le repli EXISTE et il est correct : on rejoue le publié. C'est cette asymétrie qui justifie
- * la garde d'un seul côté, pas un durcissement à moitié.
+ * Un refus de `parseGraph` se journalise : sinon la lecture retomberait sur le publié sans un mot. Seul ce
+ * jsonb est reparsé : `workflows.graph` et `.draft_graph` sont la source (écrites via `parseGraph`), sans
+ * repli possible, alors qu'ici le repli sur le publié existe et est correct.
  */
 function relireGrapheFige(brut: unknown, runId: string): WorkflowGraph | null {
   if (brut === null || brut === undefined) return null;
@@ -41,19 +34,14 @@ function runDeLigne(r: LigneRun): WorkflowRunRow {
   };
 }
 
-/** `sleeping` = le run attend que le TEMPS passe (bloc Attente), `waiting` qu'un CONTACT réponde. */
+/** `sleeping` = le run attend que le temps passe (bloc Attente), `waiting` qu'un contact réponde. */
 export type RunStatus = 'waiting' | 'inbox' | 'done' | 'sleeping';
 
 /**
- * Canal sur lequel la conversation se poursuit, PORTÉ PAR LE RUN (migration 0082).
- *
- * 🔴 Le canal n'est pas une propriété du bloc, c'est l'état du parcours. Un « message rapide » est un texte
- * avec des réponses en un tap : WhatsApp sait le faire, le RCS aussi. Le fixer au bloc obligeait à envoyer en
- * WhatsApp un message qui suit un échange RCS, alors que le contact n'a jamais écrit sur WhatsApp : Meta le
- * refuse (fenêtre de 24 h), et le parcours mourait là.
- *
- * La règle : un envoi RCS met le parcours sur `rcs`, un envoi de template le remet sur `whatsapp` (un template
- * est WhatsApp par nature, et c'est ainsi qu'on BASCULE volontairement de canal). Tout le reste suit.
+ * Canal sur lequel la conversation se poursuit, porté par le run et non par le bloc : un message rapide
+ * existe en WhatsApp comme en RCS, et l'envoyer en WhatsApp après un échange RCS serait refusé par Meta
+ * (fenêtre de 24 h). Un envoi RCS met le parcours sur `rcs`, un envoi de template le remet sur `whatsapp`
+ * (c'est ainsi qu'on bascule volontairement). Tout le reste suit.
  */
 export type RunChannel = 'whatsapp' | 'rcs';
 
@@ -66,22 +54,14 @@ export interface WorkflowRunRow {
   currentNode: string | null;
   status: RunStatus;
   lastMessageId: string | null;
-  /** Canal courant. Absent (ligne d'avant la migration) -> WhatsApp, le comportement historique. */
+  /** Canal courant. Absent (ligne ancienne) -> WhatsApp. */
   channel?: RunChannel;
   /**
-   * LE GRAPHE QUE CE PARCOURS JOUE, figé à son démarrage (migration 0151). `null` = on lit le publié.
+   * Le graphe que ce parcours joue, figé à son démarrage. `null` = on lit le publié (le cas normal).
    *
-   * 🔴 RELUE PAR `parseGraph`, JAMAIS RENDUE TELLE QUELLE (correction de la revue finale, 2026-09-16). Ce
-   * jsonb est une entrée que le code d'aujourd'hui ne contrôle pas : une ligne écrite par une version
-   * antérieure, ou un objet arrivé par un chemin qu'on n'a pas prévu, partait droit dans
-   * `graph.nodes.find(...)` sur le chemin chaud d'un message entrant. `parseGraph` rend `null` sur tout ce
-   * qui n'est pas un graphe, ce qui fait retomber proprement sur le publié. C'est la règle du dépôt :
-   * `safeParse`, jamais `as`, sur toute entrée non fiable.
-   *
-   * 🔴 REQUISE, JAMAIS OPTIONNELLE, et `null` est le cas NORMAL (aucun parcours réel n'en porte). Optionnelle,
-   * un dépôt qui oublierait de la lire rendrait `undefined`, la préférence retomberait sur le publié, et on
-   * retrouverait exactement le défaut qu'elle répare : un test qui change de version au premier bloc d'attente,
-   * en silence. Le compilateur doit énumérer les lectures à compléter, c'est tout son intérêt ici.
+   * Relu par `parseGraph`, jamais rendu tel quel : ce jsonb est une entrée non fiable, et `parseGraph` rend
+   * `null` sur tout ce qui n'est pas un graphe (retour propre au publié). Requis et non optionnel : un store
+   * qui oublierait de le lire rendrait `undefined`, et un parcours de test changerait de version en silence.
    */
   grapheFige: WorkflowGraph | null;
 }
@@ -96,20 +76,17 @@ export interface RunState {
   resumeAt?: Date | null;
 }
 
-/** Suivi des runs (exécution par contact) d'un workflow. Le webhook avance UN run en attente par (tenant, wa_id). */
+/** Suivi des runs (exécution par contact) d'un workflow. Le webhook avance un run en attente par (tenant, wa_id). */
 export class PgWorkflowRunStore {
   constructor(private readonly pool: Pool) {}
 
   /**
-   * `grapheFige` est un paramètre À PART, et pas un champ de `RunState` : il s'écrit UNE SEULE FOIS, à la
-   * naissance du parcours. Le poser dans `RunState` l'aurait rendu acceptable par `setState`,
-   * `setStateSiVivant` et `setStateSiEncoreSur`, qui l'auraient silencieusement ignoré : c'est le motif
-   * « offert-et-inerte » que ce dépôt s'interdit ailleurs.
+   * `grapheFige` est un paramètre à part, pas un champ de `RunState` : il s'écrit une seule fois, à la
+   * naissance du parcours, et `setState` et ses variantes l'auraient ignoré en silence.
    */
   async start(tenantId: string, workflowId: string, waId: string, contactId: string | null, state: RunState, grapheFige: WorkflowGraph | null): Promise<{ id: string }> {
-    // `resume_at` est écrit DÈS LA CRÉATION : un scénario dont le tout premier passage tombe sur un bloc
-    // Attente naît directement en sommeil. L'omettre laissait un run `sleeping` SANS échéance, que le balayage
-    // (qui exige `resume_at <= now()`) n'aurait jamais réveillé : parcours mort en silence.
+    // `resume_at` est écrit dès la création : un scénario dont le premier passage tombe sur un bloc Attente
+    // naît en sommeil, et sans échéance le balayage (`resume_at <= now()`) ne le réveillerait jamais.
     const res = await this.pool.query<{ id: string }>(
       `insert into workflow_runs (workflow_id, tenant_id, contact_id, wa_id, current_node, status, resume_at, channel, graphe_fige)
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id`,
@@ -119,7 +96,7 @@ export class PgWorkflowRunStore {
     return { id: res.rows[0]!.id };
   }
 
-  /** LE run en attente d'un contact (par tenant + numéro). Un seul actif à la fois par contact (V1). */
+  /** Le run en attente d'un contact (par tenant + numéro). Un seul actif à la fois par contact. */
   async findWaitingByWaId(tenantId: string, waId: string): Promise<WorkflowRunRow | null> {
     const res = await this.pool.query<LigneRun>(
       `select id, workflow_id, tenant_id, wa_id, current_node, status, last_message_id, channel, graphe_fige
@@ -132,13 +109,10 @@ export class PgWorkflowRunStore {
   }
 
   /**
-   * UN run par son identifiant, quel que soit son statut.
-   *
-   * Sert la garde du tour d'agent : le job relit le run et exige qu'il attende toujours SUR SON bloc avant
-   * d'envoyer quoi que ce soit. C'est ce qui rend inoffensif tout chemin qui tue un run `waiting` sans rien
-   * savoir des sessions d'agent (lancement manuel depuis l'inbox, jeton de test, clôtures internes), y compris
-   * ceux qui n'existent pas encore. D'où la lecture de TOUS les statuts, et pas seulement `waiting` : le tour
-   * doit pouvoir DISTINGUER un run mort d'un run introuvable.
+   * Un run par son identifiant, quel que soit son statut. Sert la garde du tour d'agent, qui exige que le run
+   * attende toujours sur son bloc avant d'envoyer : c'est ce qui rend inoffensif tout chemin qui tue un run
+   * `waiting` sans rien savoir des sessions d'agent. Tous les statuts, pour distinguer un run mort d'un run
+   * introuvable.
    */
   async byId(tenantId: string, id: string): Promise<WorkflowRunRow | null> {
     const res = await this.pool.query<LigneRun>(
@@ -151,27 +125,16 @@ export class PgWorkflowRunStore {
   }
 
   /**
-   * Clôt TOUS les parcours encore actifs d'un contact (en attente d'une réponse, ou endormis sur un bloc
-   * Attente) et rend combien ont été clos.
+   * Clôt tous les parcours encore actifs d'un contact (`waiting` ou `sleeping`) et rend leurs identifiants.
    *
-   * 🔴 APPELÉE PAR `runFrom`, DONC PAR LES QUATRE CHEMINS DE DÉMARRAGE (Inbox, jeton de test, automation,
-   * campagne et cible node), depuis le 2026-09-07. Elle ne servait avant qu'au lancement manuel depuis
-   * l'Inbox, et c'est ce qui a changé son régime : d'un appel occasionnel à UN PAR DESTINATAIRE de campagne.
-   * Deux choses en découlent, et se lisent ailleurs : la migration 0115 (aucun index ne servait sa clause),
-   * et la garde de vivacité de `setStateSiVivant` (une course jusque-là quasi inatteignable).
-   *
-   * Sans elle, un second démarrage crée deux runs concurrents : `findWaitingByWaId` ne rend que le plus
-   * récent (`limit 1`), donc le premier devient orphelin POUR TOUJOURS (aucun balayage ne nettoie un run
-   * `waiting`), invisible, pendant que le contact reçoit les messages des deux.
-   *
-   * Règle posée par Julien : « on ne bloque personne sur un scénario, surtout quand on lance un nouveau
-   * scénario ». Le nouveau remplace l'ancien, sans exception.
+   * Appelée par `runFrom`, donc par tous les chemins de démarrage, campagnes comprises (une fois par
+   * destinataire ; la migration 0115 porte l'index qui sert sa clause). Le nouveau parcours remplace l'ancien,
+   * sans exception. Sans elle, deux runs coexistent : `findWaitingByWaId` ne rend que le plus récent, l'autre
+   * devient orphelin pour toujours pendant que le contact reçoit les messages des deux.
    */
   async closeActiveByWaId(tenantId: string, waId: string): Promise<string[]> {
-    // `returning id` : l'appelant doit pouvoir clore les SESSIONS D'AGENT rattachées à ces parcours. Sans
-    // elles, une session reste `en_cours` avec un tour jamais commencé, donc invisible de la reprise des
-    // tours bloqués, jusqu'à la purge de rétention. Rare tant que la fermeture était un geste d'opérateur,
-    // ordinaire depuis qu'elle a lieu par destinataire de campagne.
+    // `returning id` : l'appelant doit clore les sessions d'agent rattachées à ces parcours, sinon une session
+    // reste `en_cours` avec un tour jamais commencé, invisible de la reprise des tours bloqués.
     const res = await this.pool.query<{ id: string }>(
       `update workflow_runs set status = 'done', current_node = null, resume_at = null, updated_at = now()
        where tenant_id = $1 and wa_id = $2 and status in ('waiting', 'sleeping')
@@ -182,34 +145,14 @@ export class PgWorkflowRunStore {
   }
 
   /**
-   * Écrit l'état d'un run SEULEMENT s'il attend encore sur le bloc qu'on croit. Rend `false` si rien n'a bougé.
+   * Réserve le tour d'avance d'un parcours, avant tout envoi : c'est ce qui ferme le double envoi, que
+   * `setStateSiEncoreSur` (qui arrive après les envois) ne peut pas empêcher.
    *
-   * 🔴 POURQUOI CETTE VARIANTE EXISTE. Un tour d'agent dure 3 à 30 secondes, et il écrit son état à la fin.
-   * Entre-temps, le run peut avoir été TUÉ : TOUT démarrage de scénario appelle `closeActiveByWaId`, qui
-   * passe le run en `done`, et en crée un autre. ⚠️ Ce n'était le fait que du lancement manuel depuis
-   * l'Inbox jusqu'au 2026-09-07 ; c'est désormais le passage commun des quatre chemins, campagnes comprises,
-   * donc cette course est passée de rare à ordinaire. Un `setState` inconditionnel le
-   * ressusciterait en `waiting` AVEC une échéance : invisible de `findWaitingByWaId` (le nouveau run est plus
-   * récent), mais parfaitement visible de `claimDueQuestions`, qui déclencherait plus tard la branche
-   * « pas de réponse » d'un parcours que quelqu'un avait délibérément fermé, en parallèle du nouveau.
-   *
-   * C'est le pendant, côté ÉCRITURE, de la garde que le tour applique déjà en lecture : « le run attend-il
-   * toujours sur CE bloc ». Même motif de verrou optimiste que `prendreLeTour` et `claimDueQuestions`.
-   */
-  /**
-   * RÉSERVE LE TOUR D'AVANCE d'un parcours, AVANT tout envoi (migration 0104).
-   *
-   * 🔴 C'est ce qui ferme le double envoi. `setStateSiEncoreSur` protège l'ÉTAT mais arrive APRÈS les
-   * envois : deux avances concurrentes envoyaient toutes les deux, et seule la seconde écriture était
-   * refusée. Le contact recevait donc deux messages, dont un qu'il ne devait jamais voir.
-   *
-   * Rend `null` quand un autre traitement tient déjà le tour : l'appelant doit alors sortir SANS RIEN FAIRE.
-   * C'est la même convention que `prendreLeTour` d'une session d'agent, et pour la même raison.
-   *
-   * Les trois pièces d'un vrai verrou :
-   * - le BAIL (`avance_jusqu_a`) : un worker tué en plein traitement ne bloque pas le parcours à vie ;
-   * - le JETON, rendu à l'appelant, qui seul permet de libérer : un porteur de bail périmé ne peut pas
-   *   libérer le verrou de celui qui l'a repris entre-temps ;
+   * Rend `null` quand un autre traitement tient déjà le tour : l'appelant sort alors sans rien faire (même
+   * convention que `prendreLeTour` d'une session d'agent). Les trois pièces du verrou :
+   * - le bail (`avance_jusqu_a`) : un worker tué ne bloque pas le parcours à vie ;
+   * - le jeton, rendu à l'appelant, seul moyen de libérer : un porteur de bail périmé ne peut pas libérer le
+   *   verrou de celui qui l'a repris ;
    * - la garde sur `current_node`, qui refuse le tour si le parcours a bougé pendant qu'on lisait.
    */
   async reserverAvance(tenantId: string, id: string, nodeId: string | null, bailSecondes: number): Promise<string | null> {
@@ -227,17 +170,11 @@ export class PgWorkflowRunStore {
   }
 
   /**
-   * PROLONGE le bail tant que l'avance travaille (lot 1 du plan post-audit, 2026-09-02).
+   * Prolonge le bail tant que l'avance travaille (cadence et raison : `bail-avance.ts`).
    *
-   * 🔴 C'est la pièce qui distingue « porteur mort » de « porteur LENT ». Sans elle, une avance plus longue
-   * que le bail (~154 s au pire pour un seul envoi Meta qui rejoue ses tentatives) voyait son tour repris par
-   * une autre, et les deux envoyaient. Aucune valeur de bail ne pouvait fermer ça : le nombre d'envois d'une
-   * avance n'est pas borné. Cf. `bail-avance.ts` pour la cadence et pourquoi c'est un tiers du bail.
-   *
-   * Le JETON est la seule garde, volontairement SANS condition sur `avance_jusqu_a` : si notre bail a expiré
-   * mais que personne ne l'a repris, le jeton est encore le nôtre et on a le droit de le reprolonger. C'est
-   * exactement le cas qu'on veut soigner, un battement arrivé en retard. Si un autre l'a repris, le jeton a
-   * changé, la requête ne touche aucune ligne, et `false` remonte jusqu'au battement qui s'arrête.
+   * Le jeton est la seule garde, sans condition sur `avance_jusqu_a` : un bail expiré que personne n'a repris
+   * est encore le nôtre (un battement en retard), on peut le reprolonger. Si un autre l'a repris, le jeton a
+   * changé, aucune ligne ne bouge, et `false` arrête le battement.
    */
   async prolongerAvance(id: string, token: string, bailSecondes: number): Promise<boolean> {
     const res = await this.pool.query(
@@ -250,10 +187,8 @@ export class PgWorkflowRunStore {
   }
 
   /**
-   * Rend le tour. Le JETON est dans le `where` : un porteur de bail périmé, revenu tard, ne peut pas libérer
-   * le verrou de celui qui l'a repris. Sans ça, un traitement lent ferait sauter la garde d'un autre.
-   *
-   * Best-effort chez l'appelant : ne pas réussir à libérer coûte au pire l'attente du bail.
+   * Rend le tour. Le jeton est dans le `where` : un porteur de bail périmé, revenu tard, ne peut pas libérer
+   * le verrou de celui qui l'a repris. Best-effort chez l'appelant : un échec coûte au pire l'attente du bail.
    */
   async libererAvance(id: string, token: string): Promise<void> {
     await this.pool.query(
@@ -263,15 +198,17 @@ export class PgWorkflowRunStore {
   }
 
   /**
-   * 🔴 Le JETON est dans la garde depuis le lot 1 du plan post-audit (2026-09-02). Avant, cette écriture
-   * filtrait sur `id`, `tenant_id`, `status` et `current_node`, jamais sur `avance_token` : un porteur de bail
-   * PÉRIMÉ, revenu tard, pouvait donc encore écrire l'état par-dessus celui qui avait repris le tour. La
-   * réservation protégeait les envois, l'écriture restait ouverte.
+   * Écrit l'état d'un run seulement s'il attend encore sur le bloc qu'on croit, avec le jeton d'avance. Rend
+   * `false` si rien n'a bougé.
    *
-   * `token` à `null` = aucune réservation n'a eu lieu (câblages de test, e2e, tout store qui ne pose pas
-   * `reserverAvance`). La garde retombe alors sur son comportement d'avant plutôt que de refuser toute
-   * écriture, ce qui figerait ces parcours. Le `is null` est porté par le PARAMÈTRE, pas par la colonne : un
-   * appelant qui tient un jeton est toujours confronté au jeton de la ligne.
+   * Un tour d'agent dure de 3 à 30 s et écrit son état à la fin ; entre-temps, tout démarrage de scénario
+   * (`closeActiveByWaId`) peut avoir tué le run. Un `setState` inconditionnel le ressusciterait en `waiting`
+   * avec une échéance, que `claimDueQuestions` réveillerait plus tard en parallèle du nouveau parcours. Le
+   * jeton empêche en plus un porteur de bail périmé d'écrire par-dessus celui qui a repris le tour.
+   *
+   * `token` à `null` = aucune réservation n'a eu lieu (câblages de test, stores sans `reserverAvance`) : la
+   * garde du jeton ne s'applique pas. Le `is null` porte sur le paramètre, pas sur la colonne : un appelant qui
+   * tient un jeton est toujours confronté à celui de la ligne.
    */
   async setStateSiEncoreSur(tenantId: string, id: string, nodeId: string | null, state: RunState, token: string | null = null): Promise<boolean> {
     const res = await this.pool.query(
@@ -290,24 +227,14 @@ export class PgWorkflowRunStore {
   }
 
   /**
-   * Écrit l'état d'un run SEULEMENT s'il est encore VIVANT (`waiting` ou `sleeping`). Rend `false` s'il a été
+   * Écrit l'état d'un run seulement s'il est encore vivant (`waiting` ou `sleeping`). Rend `false` s'il a été
    * clos entre-temps.
    *
-   * 🔴 CE QUE ÇA FERME, ET POURQUOI SEULEMENT MAINTENANT. `setState` écrit sur `where id = $1`, sans regarder
-   * l'état. La reprise d'un parcours endormi (`resume`) l'appelle À LA FIN, après ses envois, qui prennent du
-   * temps. Entre le moment où le balayage réclame le run et celui où la reprise écrit, un autre chemin peut
-   * avoir appelé `closeActiveByWaId` : la reprise réécrit alors `waiting`/`sleeping` AVEC une échéance sur un
-   * run passé à `done`. Il devient invisible de `findWaitingByWaId` (qui ne rend que le plus récent) mais
-   * reste parfaitement réveillable par les balayages, et parle au client depuis un scénario abandonné.
-   *
-   * ⚠️ Ce n'était pas atteignable en pratique tant que la fermeture n'était appelée que par un lancement
-   * manuel depuis l'Inbox, quelques fois par jour. Depuis le 2026-09-07, elle l'est UNE FOIS PAR DESTINATAIRE
-   * de campagne. C'est le cas d'école du CLAUDE.md : élargir le domaine d'une réparation oblige à relire ce
-   * qu'elle supposait.
-   *
-   * Même famille que `setStateSiEncoreSur`, qui ferme la même course pour `advance` : là-bas la garde porte
-   * sur le BLOC attendu, ici sur le fait que le parcours vive encore, parce qu'une reprise change de bloc par
-   * construction.
+   * La reprise d'un parcours endormi (`resume`) écrit à la fin, après des envois qui prennent du temps. Si
+   * `closeActiveByWaId` est passé entre-temps (une fois par destinataire de campagne), un `setState`
+   * réécrirait `waiting`/`sleeping` avec une échéance sur un run `done` : invisible de `findWaitingByWaId`,
+   * mais réveillable par les balayages, il parlerait au client depuis un scénario abandonné. Pendant de
+   * `setStateSiEncoreSur`, qui garde le bloc attendu ; ici la reprise change de bloc par construction.
    */
   async setStateSiVivant(tenantId: string, id: string, state: RunState): Promise<boolean> {
     const res = await this.pool.query(
@@ -320,11 +247,11 @@ export class PgWorkflowRunStore {
   }
 
   async setState(id: string, state: RunState): Promise<void> {
-    // `resume_at` est écrit SANS coalesce : quitter le sommeil doit effacer l'échéance, sinon un run réveillé
-    // resterait éligible au balayage suivant.
+    // `resume_at` sans coalesce : quitter le sommeil doit effacer l'échéance, sinon un run réveillé resterait
+    // éligible au balayage suivant.
     await this.pool.query(
-      // `channel` avec coalesce, à l'inverse de `resume_at` : un état écrit SANS canal (une clôture, une
-      // remontée en inbox) ne doit pas ramener le parcours sur WhatsApp par omission.
+      // `channel` avec coalesce : un état écrit sans canal (clôture, remontée en inbox) ne doit pas ramener le
+      // parcours sur WhatsApp par omission.
       `update workflow_runs set current_node = $2, status = $3, last_message_id = coalesce($4, last_message_id),
               resume_at = $5, channel = coalesce($6, channel), updated_at = now()
        where id = $1`,
@@ -333,67 +260,45 @@ export class PgWorkflowRunStore {
   }
 
   /**
-   * CLAIM des runs dormants DUS : passe `sleeping` -> `waiting` et rend les lignes prises, en UNE requête.
-   *
-   * L'update et la sélection sont indissociables : deux workers qui balaient en même temps ne peuvent pas
-   * prendre la même ligne (le second ne la voit plus en `sleeping`). Un `select` puis `update` séparés
-   * réveilleraient le même parcours deux fois, donc enverraient le message en double.
-   *
-   * Statut de sortie `waiting` : le run redevient un parcours normal, et si la reprise échoue (worker tué en
-   * plein vol) il ne dort pas éternellement, il est simplement en attente comme après un envoi.
+   * Réclame les runs dormants dus (bail, voir `claimDue`) et rend les lignes prises, en une requête : un
+   * `select` puis un `update` séparés réveilleraient le même parcours deux fois, donc enverraient en double.
    */
   async claimDueSleeping(limit: number): Promise<WorkflowRunRow[]> {
     return this.claimDue('sleeping', limit);
   }
 
   /**
-   * Réclame les parcours qui ATTENDENT UNE RÉPONSE et dont le délai « pas de réponse » a expiré (bloc
-   * Question). Miroir de `claimDueSleeping`, avec une différence de fond dans la façon de réclamer.
+   * Réclame les parcours qui attendent une réponse et dont le délai « pas de réponse » a expiré (bloc
+   * Question).
    *
-   * MÊME BAIL que `claimDueSleeping`, et c'est la seule chose sûre. Une première version CONSOMMAIT
-   * l'échéance (`resume_at = null`) pour garantir qu'une expiration n'est prise qu'une fois. Elle garantissait
-   * surtout qu'une reprise ratée la perdait POUR TOUJOURS : un refus de Meta, un worker redéployé au mauvais
-   * moment, et le parcours restait `waiting` sur sa question, sans échéance, avec le fil tenu par un run mort
-   * que plus rien ne réveille et que `closeStaleSleeping` ne voit pas (il ne regarde que les dormants).
+   * Même bail que `claimDueSleeping` : consommer l'échéance (`resume_at = null`) perdrait pour toujours une
+   * reprise ratée (refus de Meta, worker redéployé), le parcours restant `waiting` sans échéance. Avec le bail,
+   * une reprise interrompue redevient due 15 minutes plus tard ; c'est la reprise elle-même qui efface
+   * l'échéance (toutes les sorties de `WorkflowExecutor.resume` passent par `setState`, sans coalesce).
    *
-   * Le bail rend la reprise REJOUABLE sans rien perdre de l'exclusivité : les autres passes ne voient plus la
-   * ligne comme due, et une reprise interrompue redevient due 15 minutes plus tard.
-   *
-   * Ce qui efface l'échéance pour de bon, c'est la reprise elle-même : TOUTES les sorties de
-   * `WorkflowExecutor.resume` passent par `setState`, qui écrit `resume_at` SANS coalesce.
-   *
-   * ⚠️ Différence de fond avec le sommeil, et elle est voulue : le run reste `waiting`, donc `advance` le voit
-   * pendant toute la reprise. Une réponse du contact peut le reprendre à tout instant, y compris juste après
-   * la réclamation. C'est le prix à payer pour ne jamais avaler une réponse de client, et l'ordre inverse
-   * (réponse PUIS échéance) est sûr de toute façon, `advance` effaçant `resume_at` en réécrivant l'état.
+   * Le run reste `waiting`, donc une réponse du contact peut le reprendre à tout instant : on n'avale jamais
+   * une réponse, et l'ordre inverse (réponse puis échéance) est sûr, `advance` effaçant `resume_at`.
    */
   async claimDueQuestions(limit: number): Promise<WorkflowRunRow[]> {
     return this.claimDue('waiting', limit);
   }
 
   /**
-   * LA réclamation commune aux deux balayages ci-dessus : un BAIL de 15 minutes sur les runs dus du statut
-   * donné, pris d'un bloc et rendus en UNE requête.
+   * La réclamation commune aux deux balayages : un bail de 15 minutes sur les runs dus du statut donné, pris
+   * d'un bloc et rendus en une requête.
    *
-   * 🔴 BAIL, PAS CHANGEMENT DE STATUT : on repousse l'échéance en RESTANT dans son statut.
-   *  - passer un dormant à `waiting` le mettrait à portée de `findWaitingByWaId`, donc de `advance` : un message
-   *    du contact pendant la reprise rejouerait le MÊME bloc suivant et enverrait le message deux fois ;
-   *  - et un worker tué après le claim laisserait un run `waiting` figé sur le bloc Attente, indiscernable
-   *    d'un run sain, que n'importe quel message ultérieur ressusciterait (y compris après l'envoi).
-   * Avec le bail : les autres workers ne voient plus la ligne comme due, et un worker tué la rend simplement
-   * due à nouveau à l'expiration du bail.
+   * Bail, pas changement de statut. Passer un dormant à `waiting` le mettrait à portée de `advance` (un
+   * message pendant la reprise rejouerait le même bloc et enverrait deux fois), et un worker tué laisserait un
+   * run `waiting` figé que n'importe quel message ressusciterait. Avec le bail, un worker tué rend simplement
+   * la ligne due à nouveau.
    *
-   * `created_at` borné : deux blocs Attente qui se pointent l'un l'autre relanceraient un sommeil à chaque
-   * réveil, pour toujours. Au-delà de 90 jours on cesse de réveiller (le sweeper clôt ces runs à part), et la
-   * fenêtre de service d'une question est de toute façon fermée depuis longtemps.
+   * Le bail doit couvrir la reprise de tout un lot (`batchSize`, 50) au pire cas, relances Meta comprises
+   * (withRetry + Retry-After) : sinon la passe suivante re-réclame les derniers runs et deux reprises tournent
+   * sur le même parcours.
    *
-   * INVARIANT du bail : il doit couvrir la reprise de TOUT un lot (`batchSize`, 50 par défaut) au pire cas,
-   * relances Meta comprises (withRetry + Retry-After). À 5 minutes, un incident Meta suffisait à le faire
-   * expirer avant la fin du lot : la passe suivante re-claimait les derniers runs et DEUX reprises tournaient
-   * en parallèle sur le même parcours. 15 minutes, plus la garde de ré-entrance du registre des tâches.
-   *
-   * ⚠️ LE STATUT EST ÉCRIT EN LITTÉRAL dans la requête, jamais passé en paramètre : c'est une union FERMÉE, et
-   * un paramètre priverait le planificateur des index partiels posés sur `status`.
+   * `created_at` borné à 90 jours : deux blocs Attente qui se pointent l'un l'autre se relanceraient pour
+   * toujours (le sweeper clôt ces runs à part). Le statut est écrit en littéral, jamais en paramètre : un
+   * paramètre priverait le planificateur des index partiels posés sur `status`.
    */
   private async claimDue(statut: 'sleeping' | 'waiting', limit: number): Promise<WorkflowRunRow[]> {
     const res = await this.pool.query<{
@@ -421,10 +326,8 @@ export class PgWorkflowRunStore {
   }
 
   /**
-   * Clôt les parcours dormants trop vieux. `created_at` est l'âge du RUN, pas du sommeil : ce que ça clôt
-   * surtout, c'est un parcours ABANDONNÉ (né il y a longtemps, réveillé tard), et accessoirement une chaîne
-   * d'attentes qui se rendort sans fin. Cohérent avec la doctrine maison, qui considère déjà un run `waiting`
-   * abandonné au bout de 7 jours. Rend le nombre de parcours clos.
+   * Clôt les parcours dormants trop vieux. `created_at` est l'âge du run, pas du sommeil : cela clôt surtout
+   * un parcours abandonné, et accessoirement une chaîne d'attentes sans fin. Rend le nombre de parcours clos.
    */
   async closeStaleSleeping(maxAgeDays = 90): Promise<number> {
     const res = await this.pool.query(
@@ -436,16 +339,12 @@ export class PgWorkflowRunStore {
   }
 
   /**
-   * Purge les parcours TERMINÉS plus vieux que la rétention.
+   * Purge les parcours terminés plus vieux que la rétention (ils portent le `wa_id`, donnée personnelle, et
+   * plus rien ne les relit).
    *
-   * 🔴 UN PARCOURS VIVANT N'EST JAMAIS EFFACÉ, quel que soit son âge. Le filtre porte sur les statuts
-   * terminaux (`done`, `inbox`), et l'index partiel de la migration 0097 porte le même : la garde est donc
-   * posée deux fois, en base et dans la requête. Un run `waiting` ou `sleeping` vieux d'un an est une anomalie
-   * à corriger ailleurs, sûrement pas une ligne à supprimer en silence sous les pieds d'un contact.
-   *
-   * Ce que ça ferme : ces lignes portent le `wa_id` du contact (donnée personnelle) et ne sont plus lues par
-   * personne une fois le parcours fini. Aucun écran, aucun rapport ne les relit : seule l'exécution interroge
-   * cette table, et elle ne cherche que des parcours vivants.
+   * 🔴 Un parcours vivant n'est jamais effacé, quel que soit son âge : le filtre porte sur les statuts
+   * terminaux (`done`, `inbox`), comme l'index partiel de la migration 0097. Un run `waiting` ou `sleeping`
+   * très vieux est une anomalie à corriger ailleurs, pas une ligne à supprimer sous les pieds d'un contact.
    */
   async purgeTerminesOlderThan(days: number, maxParPassage = 50_000): Promise<number> {
     if (days <= 0) return 0;

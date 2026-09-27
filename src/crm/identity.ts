@@ -1,20 +1,13 @@
 /**
- * Identité WhatsApp d'un contact, côté SERVEUR.
- *
- * Un contact WhatsApp est identifié par un NUMÉRO (E.164) OU un BSUID (business-scoped user id, remonté
- * quand le client n'a pas partagé son numéro, post-octobre). La table `contacts` porte les deux colonnes
- * (`phone_e164`, `bsuid`) avec la contrainte « au moins un des deux ».
- *
- * ⚠️ Ce module ne prétend PAS être la source unique de la règle « numéro sinon BSUID ». Cette règle
- * d'AFFICHAGE vit côté front (`web/lib/api.ts`, `contactIdentity`) et est réécrite à la main dans
- * `src/api/sends-build.ts` et `src/campaign/build.ts`. Un `contactIdentity` serveur a existé ici en se
- * décrivant comme « réutilisé partout » alors qu'il n'avait aucun appelant : supprimé le 2026-07-18.
- * Factoriser les trois occurrences restantes est un vrai chantier, pas un commentaire.
+ * Identité WhatsApp d'un contact, côté serveur : un numéro (E.164) ou un BSUID (business-scoped user id, quand
+ * le client n'a pas partagé son numéro). `contacts` porte les deux colonnes, avec « au moins un des deux ».
+ * La règle d'affichage « numéro sinon BSUID » n'est pas centralisée ici : elle vit côté front
+ * (`web/lib/api.ts`, `contactIdentity`) et est réécrite dans `src/api/sends-build.ts` et `src/campaign/build.ts`.
  */
 
 /**
- * WhatsApp ID (wa_id) d'un contact : les chiffres du numéro SANS « + » s'il existe, sinon le BSUID. C'est la clé
- * de routage WhatsApp telle que Meta l'émet (cf. `classifyWaId` : un numéro est stocké `'+' + chiffres`). null si aucun.
+ * WhatsApp ID (wa_id) d'un contact : les chiffres du numéro sans « + » s'il existe, sinon le BSUID ; null si aucun.
+ * C'est la clé de routage telle que Meta l'émet (cf. `classifyWaId` : un numéro est stocké `'+' + chiffres`).
  */
 export function waIdOf(phoneE164: string | null | undefined, bsuid: string | null | undefined): string | null {
   if (phoneE164) return phoneE164.replace(/[^0-9]/g, '');
@@ -22,20 +15,18 @@ export function waIdOf(phoneE164: string | null | undefined, bsuid: string | nul
 }
 
 /**
- * Même règle, pour une cible d'envoi qui porte les deux identités dans UN seul champ (le `toE164` d'un
- * destinataire de campagne : un E.164 commençant par « + », ou un BSUID opaque). Le moteur de campagne la
- * redérivait, alors qu'une divergence créerait deux conversations pour un même contact.
+ * Même règle pour une cible d'envoi qui porte les deux identités dans un seul champ (le `toE164` d'un
+ * destinataire de campagne : E.164 avec « + », ou BSUID opaque). Une divergence créerait deux conversations
+ * pour un même contact.
  */
 export function waIdOfTarget(toE164OrBsuid: string): string {
   return toE164OrBsuid.startsWith('+') ? toE164OrBsuid.replace(/[^0-9]/g, '') : toE164OrBsuid;
 }
 
 /**
- * Classe le `wa_id` d'un message entrant en numéro OU BSUID. Un `wa_id` de 7 à 15 chiffres est un numéro
- * (E.164, max 15 chiffres) -> on le stocke `'+' + chiffres` (cohérent avec le matching `'+' || wa_id`
- * de l'inbox). Tout le reste (plus long, ou non numérique) est traité comme un BSUID opaque.
- * ⚠️ Heuristique : à confirmer/ajuster le jour où Meta nous enverra un vrai BSUID en prod (aucun trafic
- * BSUID aujourd'hui -> 100 % des `wa_id` actuels sont des numéros <= 15 chiffres, donc zéro risque).
+ * Classe le `wa_id` d'un message entrant en numéro ou BSUID. 7 à 15 chiffres = numéro (E.164), stocké
+ * `'+' + chiffres` (cohérent avec le matching `'+' || wa_id` de l'inbox) ; tout le reste est un BSUID opaque.
+ * Heuristique à confirmer le jour où Meta enverra un vrai BSUID.
  */
 export function classifyWaId(waId: string): { phoneE164?: string; bsuid?: string } {
   const t = waId.trim();

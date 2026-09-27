@@ -1,38 +1,19 @@
 /**
- * CE QU'ON ENVOIE À META POUR CRÉER UNE PUBLICITÉ CLICK-TO-WHATSAPP. Module PUR : aucune IO, aucun import
- * qui tire pg. Les charges utiles entrent en objets et sortent en objets, ce qui permet de comparer le texte
- * EXACT envoyé à Meta avec les exemples de sa documentation, en quelques millisecondes et sans réseau
- * (spec § 5 : « le texte exact envoyé à Meta pour la campagne, l'ensemble de pubs, la créa et le message
- * pré-rempli, comparé aux exemples de la doc »).
- *
- * 🔴 RELU EN LIGNE LE 2026-09-23, PAS DE MÉMOIRE NI D'UN CORPUS TÉLÉCHARGÉ. Source :
- * developers.facebook.com, « Publicités clic vers WhatsApp », page mise à jour le 2026-05-21. Ce dépôt a
- * déjà payé la leçon inverse : un corpus OpenAPI téléchargé affirmait qu'il n'existait pas d'action `take`
- * sur `thread_control`, Meta l'avait ajoutée, et « Reprendre la main » n'éteignait pas l'agent de Meta.
- * **Un document téléchargé ne vieillit pas tout seul, il a l'air d'une source primaire et n'en est plus une.**
+ * Ce qu'on envoie à Meta pour créer une publicité Click-to-WhatsApp. Module pur (aucune IO), pour comparer le
+ * texte exact envoyé à Meta aux exemples de sa documentation, sans réseau. Source : la page Meta « Publicités
+ * clic vers WhatsApp », relue en ligne ; un corpus téléchargé vieillit sans le dire.
  */
 
 /**
- * L'OBJECTIF DE CAMPAGNE, et il n'y en a qu'un chez nous.
- *
- * Meta en accepte quatre pour le clic vers WhatsApp (`OUTCOME_ENGAGEMENT`, `OUTCOME_LEADS`, `OUTCOME_SALES`,
- * `OUTCOME_TRAFFIC`). On prend `OUTCOME_ENGAGEMENT` parce que c'est le seul qui accepte les DEUX
- * optimisations dont on a besoin (`CONVERSATIONS` et `LINK_CLICKS`) : `OUTCOME_LEADS` n'accepte que
- * `CONVERSATIONS`, donc il condamnerait le repli si la mesure du pilote refusait `CONVERSATIONS` en France.
+ * L'objectif de campagne. `OUTCOME_ENGAGEMENT` est le seul des quatre objectifs clic vers WhatsApp qui accepte
+ * les deux optimisations utiles (`CONVERSATIONS` et `LINK_CLICKS`) : `OUTCOME_LEADS` n'accepte que la première.
  */
 export const OBJECTIF_CAMPAGNE = 'OUTCOME_ENGAGEMENT';
 
 /**
- * L'OPTIMISATION DE L'ENSEMBLE DE PUBLICITÉS, ET C'EST UNE CONSTANTE QUI ATTEND SA MESURE.
- *
- * 🔴 CE QUE LA SPEC EXIGE, mot pour mot (§ 4) : « `CONVERSATIONS` refusée pour la France : mesurée une fois
- * au pilote, puis figée dans une constante. **Pas de repli silencieux** : une création refusée affiche le
- * message de Meta. » Un repli automatique vers `LINK_CLICKS` paraîtrait serviable et serait un piège : le
- * client paierait des clics là où il croit payer des conversations, et personne ne le saurait jamais.
- *
- * ⚠️ NON MESURÉE À CE JOUR. Une agence britannique rapporte que ni `CONVERSATIONS` ni les leads ne passent
- * pour l'Europe, et aucune liste officielle n'existe. La première création réelle du pilote tranche, et
- * c'est CETTE ligne qu'on change alors, une fois.
+ * L'optimisation de l'ensemble de publicités, à confirmer par la première création réelle (`CONVERSATIONS`
+ * pourrait être refusée en Europe). 🔴 Pas de repli silencieux vers `LINK_CLICKS` : le client paierait des clics
+ * en croyant payer des conversations. Une création refusée affiche le message de Meta.
  */
 export const OPTIMISATION_ENSEMBLE = 'CONVERSATIONS';
 
@@ -42,7 +23,7 @@ export const OPTIMISATION_ENSEMBLE = 'CONVERSATIONS';
  */
 export const LIEN_WHATSAPP = 'https://api.whatsapp.com/send';
 
-/** Ce qu'on demande à Meta de créer : tout en PAUSE, sans exception. Voir `CreationPub`. */
+/** Ce qu'on demande à Meta de créer : tout en pause, sans exception. Voir `CreationPub`. */
 export const STATUT_PAUSE = 'PAUSED';
 export const STATUT_ACTIF = 'ACTIVE';
 
@@ -57,22 +38,12 @@ export interface FormulairePub {
   messagePreRempli: string;
   /** La phrase d'accueil affichée dans la conversation avant que le prospect n'écrive. */
   accueil: string;
-  /** Budget TOTAL, dans l'unité PRINCIPALE de la devise du compte (des euros, pas des centimes). */
+  /** Budget total, dans l'unité principale de la devise du compte (des euros, pas des centimes). */
   budgetTotal: number;
   /**
-   * Bornes de diffusion, TELLES QUE LE CLIENT LES A SAISIES, transmises à Meta sans conversion.
-   *
-   * 🔴 CE COMMENTAIRE A DIT « déjà exprimées dans le fuseau du compte publicitaire par l'appelant », ET
-   * C'ÉTAIT FAUX : aucun appelant ne convertit quoi que ce soit, et `pub_connexion.fuseau` n'entre nulle
-   * part dans ce chemin. Relevé par une relecture à froid. Une justification fausse est pire qu'aucune,
-   * parce qu'elle sera recopiée, puis elle servira de preuve.
-   *
-   * ⚠️ CE QUE CELA VEUT DIRE EN PRATIQUE, ET QUI N'EST PAS MESURÉ : une date sans décalage horaire est
-   * interprétée par Meta dans le fuseau du compte publicitaire (sa documentation donne les deux formes,
-   * `2015-03-12 23:59:59-07:00` et `2015-03-12 23:59:59 PDT`). Pour un compte en Europe/Paris et un client
-   * en France, c'est ce qu'on veut. Pour un compte dont le fuseau diffère de celui du client, l'écart est
-   * réel et vaut quelques heures de diffusion. La première campagne du pilote le tranchera, en comparant
-   * l'heure de début affichée dans le Gestionnaire à celle qui a été saisie ici.
+   * Bornes de diffusion telles que le client les a saisies, transmises à Meta sans conversion. Une date sans
+   * décalage est lue par Meta dans le fuseau du compte publicitaire : juste pour un compte et un client en France,
+   * décalée de quelques heures si les fuseaux diffèrent.
    */
   debut: string;
   fin: string;
@@ -85,29 +56,18 @@ export interface FormulairePub {
 }
 
 /**
- * LE BUDGET, EN UNITÉS MINEURES DE LA DEVISE DU COMPTE.
- *
- * 🔴 META COMPTE EN CENTIMES, ET SE TROMPER ICI COÛTE CENT FOIS LE BUDGET, ou un centième. Sa documentation
- * dit « dans la devise de votre compte » et donne `1` en exemple, ce qui ne lève pas l'ambiguïté à la
- * lecture ; c'est sa convention pour tous les montants de l'API Marketing. Un nombre entier est exigé :
- * `Math.round` plutôt qu'une troncature, sinon 10,99 € deviendrait 10,98 €.
- *
- * ⚠️ LES DEVISES SANS SOUS-UNITÉ (le yen, le won) SE COMPTENT EN UNITÉS ENTIÈRES chez Meta, donc ce calcul
- * y serait faux d'un facteur cent. Le pilote est en euros et le compte du client porte sa devise
- * (`pub_connexion.devise`) : le jour où un compte n'est pas en euros, c'est cette fonction qu'on ouvre, et
- * cette ligne est là pour qu'on la trouve.
+ * 🔴 Le budget en unités mineures de la devise du compte : Meta compte en centimes pour tous les montants de
+ * l'API Marketing, et se tromper coûte cent fois le budget. `Math.round` plutôt qu'une troncature (10,99 € ne
+ * doit pas devenir 10,98 €). Faux pour une devise sans sous-unité (yen, won), que Meta compte en unités entières.
  */
 export function budgetEnUnitesMineures(montant: number): number {
   return Math.round(montant * 100);
 }
 
 /**
- * LE MESSAGE D'ACCUEIL DE LA PAGE, dans la forme exacte que Meta documente pour un message pré-rempli.
- *
- * Deux textes, et ils ne servent pas à la même chose : `text` est la phrase que le prospect LIT en ouvrant
- * la conversation, `autofill_message.content` est ce que WhatsApp ÉCRIT dans sa zone de saisie, qu'il n'a
- * plus qu'à envoyer. C'est ce second message qui déclenche tout chez nous, puisque c'est lui qui arrive en
- * webhook avec son `referral`.
+ * Le message d'accueil de la page, dans la forme que Meta documente. `text` est la phrase que le prospect lit en
+ * ouvrant la conversation ; `autofill_message.content` est ce que WhatsApp pré-remplit dans sa zone de saisie,
+ * et c'est ce message, arrivé en webhook avec son `referral`, qui déclenche tout chez nous.
  */
 export function messageBienvenue(accueil: string, preRempli: string): Record<string, unknown> {
   return {
@@ -125,26 +85,22 @@ export function messageBienvenue(accueil: string, preRempli: string): Record<str
   };
 }
 
-/** La campagne. `special_ad_categories` VIDE : hors catégorie spéciale seulement (spec, § 4 et § 10). */
+/** La campagne, hors catégorie spéciale seulement (`special_ad_categories` vide). */
 export function payloadCampagne(nom: string): Record<string, unknown> {
   return {
     name: nom,
     objective: OBJECTIF_CAMPAGNE,
-    // 🔴 OBLIGATOIRE ET VIDE. Une pub de logement, d'emploi, de crédit ou de politique relève d'une
-    // catégorie spéciale, qui impose un ciblage restreint et des obligations légales que cet écran ne sait
-    // pas porter. L'écran l'exige par une case à cocher ; ici, la liste vide est ce qui le dit à Meta.
+    // Obligatoire et vide : logement, emploi, crédit ou politique imposent un ciblage restreint et des obligations
+    // légales que cet écran ne porte pas. L'écran l'exige par une case à cocher ; la liste vide le dit à Meta.
     special_ad_categories: [],
     status: STATUT_PAUSE,
   };
 }
 
 /**
- * LE CIBLAGE. `geo_locations` est obligatoire, et c'est le seul champ de ciblage que ce lot expose.
- *
- * ⚠️ `device_platforms` N'EST PAS POSÉ, délibérément. Le restreindre à `mobile` paraît naturel pour une pub
- * qui ouvre WhatsApp, et ce serait une erreur coûteuse : un clic depuis un ORDINATEUR fonctionne (il ouvre
- * WhatsApp Web), il n'ouvre simplement pas la fenêtre de 72 h gratuites. Exclure ces clics retirerait des
- * prospects réels pour économiser une gratuité.
+ * Le ciblage : `geo_locations` est obligatoire, et c'est le seul champ exposé. `device_platforms` n'est pas
+ * posé : un clic depuis un ordinateur ouvre WhatsApp Web, sans la fenêtre gratuite de 72 h, mais c'est un
+ * prospect réel.
  */
 export function ciblage(f: Pick<FormulairePub, 'pays' | 'villes' | 'ageMin' | 'ageMax'>): Record<string, unknown> {
   const geo: Record<string, unknown> = {};
@@ -156,17 +112,10 @@ export function ciblage(f: Pick<FormulairePub, 'pays' | 'villes' | 'ageMin' | 'a
 }
 
 /**
- * L'ENSEMBLE DE PUBLICITÉS : le budget, les dates, le ciblage, et le numéro WhatsApp qui recevra les leads.
- *
- * 🔴 `lifetime_budget` EXIGE `end_time`, et c'est Meta qui le dit. Le garde-fou du produit (budget total et
- * date de fin OBLIGATOIRES, décision de Julien) et la contrainte de l'API disent donc la même chose, ce qui
- * n'est pas un hasard : un budget total sans fin n'a pas de sens, il ne borne rien tant qu'il n'est pas
- * consommé.
- *
- * ⚠️ NI `bid_amount` NI `bid_strategy`. Meta n'exige `bid_amount` que si la stratégie est plafonnée
- * (`LOWEST_COST_WITH_BID_CAP`, `COST_CAP`) ; sans stratégie déclarée, le défaut est `LOWEST_COST_WITHOUT_CAP`,
- * c'est-à-dire « dépense le budget au mieux ». Poser un plafond d'enchère deviné à la place du client serait
- * choisir pour lui combien vaut un prospect.
+ * L'ensemble de publicités : budget, dates, ciblage, et le numéro WhatsApp qui recevra les leads.
+ * `lifetime_budget` exige `end_time` (contrainte Meta, et garde-fou du produit). Ni `bid_amount` ni
+ * `bid_strategy` : le défaut `LOWEST_COST_WITHOUT_CAP` dépense le budget au mieux, et un plafond d'enchère
+ * deviné choisirait pour le client combien vaut un prospect.
  */
 export function payloadEnsemble(
   f: FormulairePub,
@@ -183,8 +132,8 @@ export function payloadEnsemble(
     start_time: f.debut,
     end_time: f.fin,
     targeting: ciblage(f),
-    // ⚠️ `whatsapp_phone_number` est FACULTATIF chez Meta, et on le pose quand on le connaît : sans lui, Meta
-    // choisit le numéro associé à la Page, qui peut ne pas être celui de cet espace. La Page est obligatoire.
+    // `whatsapp_phone_number` est facultatif chez Meta mais posé quand on le connaît : sans lui, Meta choisit le
+    // numéro associé à la Page, qui peut ne pas être celui de cet espace.
     promoted_object: {
       page_id: v.pageId,
       ...(v.numeroWhatsApp ? { whatsapp_phone_number: v.numeroWhatsApp } : {}),
@@ -193,13 +142,9 @@ export function payloadEnsemble(
 }
 
 /**
- * LA CRÉA : l'image, les textes, le bouton, et le message pré-rempli.
- *
- * ⚠️ LA DOCUMENTATION DE META SE CONTREDIT SUR L'EMPLACEMENT DE `page_welcome_message`, et il faut le dire
- * plutôt que de choisir en silence. Ses DEUX exemples de création le posent dans `link_data` ; sa lecture
- * (`GET /<AD_CREATIVE_ID>`) le rend sous `object_story_spec`, à côté de `link_data`. On suit les exemples de
- * CRÉATION, puisque c'est ce qu'on fait. **Non mesuré** : la première création réelle du pilote tranche, et
- * si Meta refuse, son message s'affiche tel quel (aucun repli silencieux), donc l'erreur sera lisible.
+ * La créa : l'image, les textes, le bouton et le message pré-rempli. La documentation de Meta se contredit sur
+ * l'emplacement de `page_welcome_message` (dans `link_data` à la création, sous `object_story_spec` à la
+ * lecture) : on suit les exemples de création, et un refus de Meta s'affiche tel quel.
  */
 export function payloadCrea(
   f: FormulairePub,

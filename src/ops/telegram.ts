@@ -2,12 +2,9 @@ import { config } from '../config';
 import { messageDe } from '../lib/erreur';
 
 /**
- * Petit client d'alerte Telegram, ENV-FIRST (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID). Extrait des crons ops
- * (qui lisaient le config.json de l'hôte, inaccessible au conteneur worker). Contrat de robustesse :
- *  - no-op silencieux si non configuré (aucun appel réseau) ;
- *  - timeout dur (AbortSignal) + catch : ne bloque JAMAIS l'appelant et ne throw JAMAIS ;
- *  - retourne `true` seulement sur un 2xx, sinon `false` (l'appelant n'a rien à gérer).
- * Une panne Telegram ne doit pas pouvoir tuer le worker (le seul process qui envoie les messages).
+ * Petit client d'alerte Telegram (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID). Il ne bloque ni ne lève jamais :
+ * no-op sans configuration, timeout dur, `true` seulement sur un 2xx. Une panne Telegram ne doit pas pouvoir
+ * tuer le worker, le seul process qui envoie les messages.
  */
 export async function sendTelegram(
   text: string,
@@ -31,7 +28,6 @@ export async function sendTelegram(
     }
     return true;
   } catch (err) {
-    // Réseau KO / timeout : on avale (best-effort). Ne throw JAMAIS.
     // eslint-disable-next-line no-console
     console.error('[telegram] envoi erreur:', messageDe(err));
     return false;

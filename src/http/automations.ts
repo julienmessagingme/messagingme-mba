@@ -14,21 +14,19 @@ export interface AutomationRouteDeps {
   remove(id: string, tenantId: string): Promise<boolean>;
   /** Le scénario ciblé appartient-il bien à ce tenant ? Garde d'appartenance (comme la campagne workflow). */
   workflowBelongsToTenant(workflowId: string, tenantId: string): Promise<boolean>;
-  /** UNE automation par id (scopée tenant). Lecture ciblée : `list` est capée, donc aveugle au-delà du plafond. */
+  /** Une automation par id (scopée tenant). Lecture ciblée : `list` est capée, donc aveugle au-delà du plafond. */
   getById(id: string, tenantId: string): Promise<AutomationRow | null>;
 }
 
 /**
- * Les types qu'on crée DEPUIS CET ÉCRAN : tous ceux du chemin chaud, moins `webhook`, que son propre écran possède
- * (cf. `validateTriggerConfig`). DÉRIVÉ de `AUTOMATION_TRIGGER_KINDS` : le message d'erreur écrit à la main avait
- * cessé de citer la moitié des types, dont `risque_eleve`.
+ * Les types qu'on crée depuis cet écran : ceux du chemin chaud moins `webhook`, que son propre écran possède.
+ * Dérivé de `AUTOMATION_TRIGGER_KINDS`, pour que le message d'erreur cite tous les types.
  */
 const TYPES_CREABLES_ICI = AUTOMATION_TRIGGER_KINDS.filter((k) => k !== 'webhook');
 
 /**
- * Borne haute de l'anti-rebond RÉGLÉ : 7 jours, comme le gel de contrôle. Au-delà ce n'est plus un anti-rebond.
- * ⚠️ Le DÉFAUT d'une automation « risque élevé » sans réglage est de 30 jours (`antiRebondParDefaut`) : il
- * s'applique au déclenchement, sans passer par cette borne.
+ * Borne haute de l'anti-rebond réglé : 7 jours, comme le gel de contrôle. Le défaut d'une automation « risque
+ * élevé » sans réglage (30 jours, `antiRebondParDefaut`) s'applique au déclenchement, sans passer par cette borne.
  */
 const MAX_COOLDOWN = 7 * 24 * 3600;
 /** Plancher pour « conversation analysée » : doit rester au-dessus du délai d'inactivité qui déclenche une
@@ -36,12 +34,9 @@ const MAX_COOLDOWN = 7 * 24 * 3600;
 const MIN_ANALYSIS_COOLDOWN = 3600;
 
 /**
- * Refuse une combinaison (type, anti-rebond) qui rouvrirait la boucle analyse <-> scénario.
- *
- * Raisonne sur l'état EFFECTIF, jamais sur le seul corps de la requête : la boucle s'ouvre aussi bien en
- * baissant le délai d'une automation déjà « conversation analysée » qu'en basculant vers ce type une
- * automation dont le délai est déjà trop court. Deux gardes séparées ne voyaient chacune qu'un des deux sens.
- * Renvoie le message d'erreur, ou null.
+ * Refuse une combinaison (type, anti-rebond) qui rouvrirait la boucle analyse <-> scénario. Raisonne sur l'état
+ * effectif, jamais sur le seul corps : la boucle s'ouvre en baissant le délai comme en changeant de type.
+ * Rend le message d'erreur, ou null.
  */
 function refuseIfLoopy(kind: AutomationTriggerKind | undefined, cooldown: number | null | undefined): string | null {
   if (kind !== 'conversation_analyzed') return null;
@@ -50,7 +45,7 @@ function refuseIfLoopy(kind: AutomationTriggerKind | undefined, cooldown: number
   return `pour « conversation analysée », l'anti-rebond doit valoir au moins ${MIN_ANALYSIS_COOLDOWN} s (ou null pour le défaut) : le scénario rouvre l'analyse en écrivant, un délai plus court boucle`;
 }
 
-/** Config du déclencheur, validée SELON son type. Renvoie un message d'erreur, ou null si tout va bien. */
+/** Config du déclencheur, validée selon son type. Renvoie un message d'erreur, ou null si tout va bien. */
 function validateTriggerConfig(kind: AutomationTriggerKind, cfg: Record<string, unknown>): string | null {
   if (kind === 'keyword') {
     if (!Array.isArray(cfg.keywords)) return 'keywords (tableau) requis pour un déclencheur mot-clé';
@@ -59,7 +54,7 @@ function validateTriggerConfig(kind: AutomationTriggerKind, cfg: Record<string, 
     return null;
   }
   if (kind === 'ctwa_ad') {
-    // `adId` FACULTATIF, contrairement au tag ou à l'étape de deal : vide veut dire « n'importe quelle pub »,
+    // `adId` facultatif, contrairement au tag ou à l'étape de deal : vide veut dire « n'importe quelle pub »,
     // ce qui est le montage le plus courant et reste borné aux messages venus d'une pub. Fourni, il doit
     // être exploitable : un identifiant vide ne matcherait jamais et l'automation paraîtrait active pour rien.
     if (cfg.adId !== undefined && cfg.adId !== null && cfg.adId !== '' && !nonEmpty(cfg.adId)) {
@@ -73,7 +68,7 @@ function validateTriggerConfig(kind: AutomationTriggerKind, cfg: Record<string, 
     return null;
   }
   if (kind === 'conversation_analyzed') {
-    // Les deux filtres sont FACULTATIFS (aucun = déclenche à chaque analyse, choix explicite), mais s'ils
+    // Les deux filtres sont facultatifs (aucun = déclenche à chaque analyse, choix explicite), mais s'ils
     // sont fournis ils doivent être exploitables : un sentiment hors nomenclature ne matcherait jamais.
     const s = cfg.sentiment;
     if (s !== undefined && s !== null && s !== '' && s !== 'positif' && s !== 'neutre' && s !== 'negatif') {
@@ -83,21 +78,19 @@ function validateTriggerConfig(kind: AutomationTriggerKind, cfg: Record<string, 
     return null;
   }
   if (kind === 'hubspot_deal_stage') {
-    // Sans étape, l'automation partirait sur TOUT changement d'étape du portail : on refuse plutôt que de
+    // Sans étape, l'automation partirait sur tout changement d'étape du portail : on refuse plutôt que de
     // deviner. L'identifiant vient de HubSpot et est opaque : on vérifie qu'il est là, pas sa forme.
     if (!nonEmpty(cfg.stageId)) return 'stageId requis pour un déclencheur « étape de deal »';
     if (!nonEmpty(cfg.pipelineId)) return 'pipelineId requis pour un déclencheur « étape de deal »';
-    // `stageLabel` est FACULTATIF et purement décoratif : il réaffiche « Devis envoyé » dans la liste sans
-    // rappeler HubSpot. Il n'entre JAMAIS dans le matching, sinon un renommage côté HubSpot casserait
-    // l'automation en silence, ce qui est précisément ce qu'on cherche à éviter.
+    // `stageLabel` est facultatif et décoratif (réaffiche « Devis envoyé » sans rappeler HubSpot). Il n'entre jamais
+    // dans le matching : un renommage côté HubSpot casserait l'automation en silence.
     if (cfg.stageLabel !== undefined && typeof cfg.stageLabel !== 'string') return 'stageLabel (texte)';
     return null;
   }
   if (kind === 'avant_date') {
-    // Un champ et un délai, sinon l'automation ne saurait ni QUOI regarder ni QUAND partir. La coercition
-    // est la MÊME que celle du balayage : une config acceptée ici est forcément exploitable là-bas.
-    // ⚠️ `sens` (avant / après, 2026-09-08) n'a rien à valider de plus : la coercition le tolère absent ou
-    // aberrant et retombe sur « avant ». Le refuser ici rejetterait des configurations déjà en base.
+    // Un champ et un délai, sinon l'automation ne saurait ni quoi regarder ni quand partir. Même coercition que le
+    // balayage : une config acceptée ici est exploitable là-bas. `sens` n'a rien à valider : absent ou aberrant, il
+    // retombe sur « avant » (le refuser rejetterait des configurations déjà en base).
     if (!nonEmpty(cfg.fieldKey)) return 'fieldKey requis pour un déclencheur « avant ou après une date »';
     if (!coerceConfigAvantDate(cfg)) {
       return `délai invalide : un entier positif et une unité parmi ${UNITES_DELAI.join(' | ')}, sans dépasser ${DELAI_MAX_MINUTES / (24 * 60)} jours`;
@@ -105,14 +98,12 @@ function validateTriggerConfig(kind: AutomationTriggerKind, cfg: Record<string, 
     return null;
   }
   if (kind === 'webhook') {
-    // 🔴 Fermé ICI, volontairement. `webhook` est un type d'automation VALIDE (le chemin chaud le lit), mais
-    // ses lignes sont POSSÉDÉES par un webhook entrant : créées, modifiées et supprimées par l'écran
-    // Tools > Webhooks, et exclues de la liste de cet écran-ci. En laisser créer une depuis ici produirait
-    // une automation active que son propre écran ne montre pas, et qu'aucun webhook ne détient.
+    // Fermé ici : les automations `webhook` sont possédées par un webhook entrant (écran Tools > Webhooks) et
+    // exclues de cette liste. En créer une ici ferait une automation active que son écran ne montre pas.
     return 'un déclencheur « webhook » se configure depuis l’écran Tools > Webhooks';
   }
-  // new_contact et risque_eleve : aucune config, elle est ignorée. ⚠️ Tout type ajouté à
-  // `AUTOMATION_TRIGGER_KINDS` arrive ICI s'il n'a pas sa branche : il faut alors se demander ce qu'il exige.
+  // new_contact et risque_eleve : aucune config. Un type ajouté à `AUTOMATION_TRIGGER_KINDS` sans branche arrive
+  // ici : se demander alors ce qu'il exige.
   return null;
 }
 
@@ -144,7 +135,7 @@ function parseBody(body: unknown, partial: boolean): { error: string } | { input
     if (typeof b.enabled !== 'boolean') return { error: 'enabled (booléen)' };
     out.enabled = b.enabled;
   } else if (!partial) {
-    out.enabled = false; // une automation neuve ne part JAMAIS sans activation explicite
+    out.enabled = false; // une automation neuve ne part jamais sans activation explicite
   }
   if (b.conditionGroup !== undefined) {
     if (b.conditionGroup !== null && (typeof b.conditionGroup !== 'object' || Array.isArray(b.conditionGroup))) {
@@ -186,9 +177,8 @@ function parseBody(body: unknown, partial: boolean): { error: string } | { input
 }
 
 /**
- * Automations (Lot E) : déclencher un scénario sur un événement. Lecture ouverte à tout compte authentifié,
- * ÉCRITURES admin-only (une automation active écrit au client sans qu'un humain relise : c'est un pouvoir
- * d'envoi, au même titre qu'une campagne).
+ * Automations : déclencher un scénario sur un événement. Lecture ouverte à tout compte authentifié, écritures
+ * admin (une automation active écrit au client sans relecture humaine : c'est un pouvoir d'envoi).
  */
 export function registerAutomations(app: FastifyInstance, deps: AutomationRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
@@ -204,8 +194,8 @@ export function registerAutomations(app: FastifyInstance, deps: AutomationRouteD
     const parsed = parseBody(req.body, false);
     if ('error' in parsed) return reply.code(400).send({ error: parsed.error });
     const input = parsed.input as AutomationInput;
-    // Le scénario ciblé doit appartenir au tenant : sinon une automation d'un client démarrerait le scénario
-    // d'un autre. Même garde que la campagne workflow.
+    // 🔴 Le scénario ciblé doit appartenir à l'espace, sinon une automation d'un client démarrerait le scénario
+    // d'un autre.
     if (!(await deps.workflowBelongsToTenant(input.workflowId, tenant))) {
       return reply.code(400).send({ error: 'workflowId inconnu pour ce tenant' });
     }
@@ -225,9 +215,8 @@ export function registerAutomations(app: FastifyInstance, deps: AutomationRouteD
     if (parsed.input.workflowId !== undefined && !(await deps.workflowBelongsToTenant(parsed.input.workflowId, tenant))) {
       return reply.code(400).send({ error: 'workflowId inconnu pour ce tenant' });
     }
-    // Garde anti-boucle sur l'état EFFECTIF après ce PATCH. On ne relit l'automation courante que si le corps
-    // ne suffit pas à trancher : modifier le type SANS le délai, ou le délai SANS le type, ouvre la boucle
-    // aussi sûrement que les deux à la fois.
+    // Garde anti-boucle sur l'état effectif après ce PATCH. On ne relit l'automation courante que si le corps ne
+    // suffit pas : modifier le type sans le délai, ou le délai sans le type, ouvre la boucle aussi sûrement.
     if (parsed.input.triggerKind !== undefined || parsed.input.cooldownSeconds !== undefined) {
       const besoinRelecture = parsed.input.triggerKind === undefined || parsed.input.cooldownSeconds === undefined;
       const courant = besoinRelecture ? await deps.getById(id, tenant) : null;

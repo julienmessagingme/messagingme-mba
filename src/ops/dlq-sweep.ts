@@ -2,11 +2,10 @@ import { BASE_QUEUES, dlqName } from '../queue/names';
 import type { QueueLoadRow } from './store.pg';
 
 export interface DlqSweepDeps {
-  /** Charge de TOUTES les files (PgOpsStore.getQueueLoad). Les DLQ y sont déjà : `ALL_QUEUES` les inclut, et
-   *  un job mis en DLQ y est en état `created`, donc compté dans `backlog`. Aucune requête nouvelle. */
+  /** Charge de toutes les files (`getQueueLoad`) : les DLQ y sont, et un job mis en DLQ y compte dans `backlog`. */
   queueLoad: () => Promise<QueueLoadRow[]>;
-  /** Émet l'alerte (Telegram côté worker). `queue` est passé À PART pour servir de clé de throttle : le
-   *  redécouper depuis `msg` casserait à la première reformulation du message. */
+  /** Émet l'alerte. `queue` est passé à part pour servir de clé de throttle : le redécouper depuis `msg`
+   *  casserait à la première reformulation du message. */
   alert: (queue: string, msg: string) => void;
 }
 
@@ -14,32 +13,20 @@ export interface DlqSweepDeps {
 const DLQ = new Set(BASE_QUEUES.map((q) => dlqName(q)));
 
 /**
- * Surveille la profondeur des dead letter queues et alerte quand elle AUGMENTE.
+ * Surveille la profondeur des dead letter queues et alerte quand elle augmente. Rien ne consomme une DLQ (c'est
+ * un dépôt inspecté par /ops) : sans ce balayage, un message entrant peut y dormir sans que personne l'apprenne.
  *
- * Pourquoi ce balayage existe : un job qui épuise ses rejeux part en DLQ, que RIEN ne consomme (c'est un dépôt
- * inspecté par /ops, cf. `src/queue/names.ts`). Personne n'était prévenu. Constaté en production le
- * 2026-08-25 : un message client entrant y dormait depuis le 2026-08-17, perdu en silence par une migration
- * manquante. À 100 tenants, le même incident draine l'entrant de tout le parc sans que personne ne l'apprenne.
- *
- * ⚠️ ALERTE SUR LA HAUSSE, PAS SUR L'ÉTAT. Réutiliser tel quel l'alerte throttlée du worker (5 min) enverrait
- * un Telegram toutes les 5 minutes À VIE tant qu'un job reste en DLQ, puisque la condition est PERMANENTE :
- * personne ne vide ces files. On ne signale donc qu'un franchissement vers le haut. La conséquence assumée est
- * qu'une DLQ vidée puis re-remplie au même niveau ne réalerte pas tant que le compteur n'a pas été vu plus
- * bas ; c'est le bon compromis contre le harcèlement, et /ops montre l'état exact à tout moment.
- *
- * L'état vit en mémoire du process : un redémarrage réalerte une fois sur une DLQ déjà pleine. C'est voulu,
- * c'est même utile après un déploiement.
+ * On alerte sur la hausse, pas sur l'état : la condition est permanente tant que personne ne vide la file, et
+ * une alerte throttlée partirait toutes les 5 minutes à vie. L'état vit en mémoire : un redémarrage réalerte
+ * une fois sur une DLQ déjà pleine.
  */
 export function creerDlqSweep(deps: DlqSweepDeps): () => Promise<number> {
   const dejaAlerte = new Map<string, number>();
   let enCours = false;
 
   return async function dlqSweep(): Promise<number> {
-    // Garde de RÉ-ENTRANCE. `setInterval` n'attend pas la passe précédente : deux passes qui se chevauchent
-    // liraient le même `dejaAlerte` avant que l'une des deux ne l'ait mis à jour, donc alerteraient DEUX FOIS
-    // sur la même hausse. Elle vit ICI et non dans le câblage (contrairement à `wakeSweep`) parce que cette
-    // fonction est une fabrique qui porte déjà son état : la garde est indissociable du compteur qu'elle
-    // protège, et elle devient testable au passage.
+    // Garde de ré-entrance : `setInterval` n'attend pas la passe précédente, et deux passes qui se chevauchent
+    // alerteraient deux fois sur la même hausse. Elle vit avec le compteur qu'elle protège.
     if (enCours) return 0;
     enCours = true;
     try {
@@ -53,7 +40,7 @@ export function creerDlqSweep(deps: DlqSweepDeps): () => Promise<number> {
     const charge = await deps.queueLoad();
     let enHausse = 0;
     for (const ligne of charge) {
-      // Le filtre vit ICI, pas en SQL : c'est ce qui rend testable la garde « ne pas alerter sur une file saine ».
+      // Filtre en code et non en SQL : c'est ce qui rend testable « ne pas alerter sur une file saine ».
       if (!DLQ.has(ligne.queue)) continue;
       const profondeur = ligne.backlog + ligne.active + ligne.failed;
       const vu = dejaAlerte.get(ligne.queue) ?? 0;

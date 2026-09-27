@@ -3,21 +3,17 @@ import { messageDe } from '../lib/erreur';
 import { FENETRE_SERVICE_MS } from '../workflow/engine';
 
 /**
- * La fenetre de service client de Meta : 24 h depuis le DERNIER message ENTRANT. Au-dela, aucun echange
- * n est possible sans template, et surtout aucune passation de fil n a de sens puisqu il n y a plus de
- * session a transmettre.
- *
- * Une constante et pas un reglage : ce delai appartient a Meta, pas a nous, et un client ne peut pas le
- * changer. Le rendre reglable donnerait l illusion d une prise sur une regle qui nous est imposee.
+ * La fenêtre de service client de Meta : 24 h depuis le dernier message entrant. Au-delà, aucun échange sans
+ * template, et aucune passation de fil n'a de sens. Une constante et pas un réglage : ce délai appartient à
+ * Meta.
  */
 const FENETRE_META_MS = FENETRE_SERVICE_MS;
 
 /** Ce dont le balayage a besoin (interface étroite, satisfaite par PgInboxStore). */
 export interface ControlSweepDeps {
   /**
-   * Les conversations dont le fil est détenu. `ageScenarioMs` borne ce qu'on ramène des fils tenus par un
-   * SCÉNARIO : seuls les plus vieux que ce délai entrent, parce que `app_workflow` est l'état normal de
-   * toute conversation et que les ramener tous saturerait le lot au détriment des fils humains à rendre.
+   * Les conversations dont le fil est détenu. `ageScenarioMs` ne ramène que les fils de scénario plus vieux que
+   * ce délai : `app_workflow` est l'état normal, les ramener tous saturerait le lot au détriment des fils humains.
    */
   listHeldControl(
     limit?: number,
@@ -27,65 +23,44 @@ export interface ControlSweepDeps {
     tenantId: string,
     waId: string,
     owner: ControlOwner,
-    /** `effacerEscalade` : le drapeau de la migration 0164, périmé dès lors qu'on déplace ce fil (cf. plus bas). */
+    /** `effacerEscalade` : le drapeau d'escalade, périmé dès qu'on déplace ce fil (cf. plus bas). */
     opts?: { only?: readonly ControlOwner[]; effacerEscalade?: boolean },
   ): Promise<boolean>;
   /**
-   * Délai d'inactivité par détenteur, en ms. C'est le DÉFAUT du serveur : il s'applique aux clients qui
-   * n'ont rien réglé. 0 ou absent = cet état n'est jamais repris automatiquement.
+   * Délai d'inactivité par détenteur, en ms : le défaut du serveur pour les clients qui n'ont rien réglé. 0 ou
+   * absent = cet état n'est jamais repris automatiquement.
    */
   timeouts: Partial<Record<ControlOwner, number>>;
   /**
-   * Réglage PAR CLIENT de la durée du gel humain, en ms. Absent de la Map = ce client n'a rien réglé, on
-   * applique le défaut ci-dessus. Une valeur 0 = ce client ne veut aucune reprise automatique.
-   *
-   * Ne concerne QUE `app_human` : c'est la seule durée qui relève d'un arbitrage métier du client (combien
-   * de temps on laisse un opérateur travailler tranquille). Le délai `mba` reste un garde-fou technique.
+   * Réglage par client de la durée du gel humain, en ms (absent = défaut, 0 = aucune reprise). Ne concerne que
+   * `app_human`, seule durée qui relève d'un arbitrage métier ; le délai `mba` est un garde-fou technique.
    */
   handbackMsByTenant?(tenantIds: readonly string[]): Promise<Map<string, number>>;
   /**
-   * L'agent de Meta est-il allumé chez ce client ? Décide de la DESTINATION d'un fil rendu : l'agent quand il
-   * est là, le scénario sinon. Absent -> aucun tenant n'a MBA, donc comportement historique.
+   * L'agent de Meta est-il allumé chez ce client ? Décide de la destination d'un fil rendu : l'agent quand il
+   * est là, le scénario sinon. Absent -> aucun tenant n'a MBA.
    */
   mbaActifParTenant?(tenantIds: readonly string[]): Promise<Set<string>>;
   /**
-   * Rend effectivement le fil à Meta (`thread_control` action `release`). Appelé UNIQUEMENT quand la
-   * destination est `mba`, et UNIQUEMENT sur une fenêtre encore ouverte.
-   *
-   * 🔴 SON VERDICT GOUVERNE L'ÉCRITURE LOCALE DEPUIS LE 2026-09-15. `false` (aucun numéro connecté) et une
-   * exception (Meta refuse) empêchent tous deux la bascule locale. Le commentaire d'avant annonçait
-   * l'inverse (« un échec ne doit pas empêcher la bascule locale ») : c'est ce best-effort qui a produit neuf
-   * conversations annonçant `mba` alors que Meta pensait le contraire.
+   * Rend le fil à Meta (`thread_control` action `release`), seulement vers `mba` et sur une fenêtre ouverte.
+   * Son verdict gouverne l'écriture locale : `false` (aucun numéro) comme une exception (refus de Meta)
+   * empêchent la bascule, sinon notre colonne annoncerait `mba` quand Meta pense le contraire.
    */
   releaseToMba?(tenantId: string, waId: string): Promise<boolean>;
   now?: () => number;
 }
 
 /**
- * Rend la main au scénario sur les conversations que plus personne ne traite.
- *
- * Raison d'être : il n'existe AUCUN release automatique côté Meta. Sans ce balayage, un opérateur qui ferme
- * son onglet, ou un worker qui meurt, gèlerait la conversation indéfiniment, avec le scénario muet et le
- * client sans réponse. C'est la soupape de la capacité de gel, et elle doit partir dans le même
- * déploiement qu'elle.
- *
- * Extrait de `main()` pour être testable, comme ses jumeaux `campaign/schedule-sweep` et `analysis/sweep`.
- *
- * Renvoie le nombre de conversations réellement rendues.
+ * Rend la main au scénario (ou à l'agent de Meta) sur les conversations que plus personne ne traite. Meta n'a
+ * aucun release automatique : sans ce balayage, un opérateur qui ferme son onglet ou un worker qui meurt
+ * gèlerait la conversation indéfiniment. Rend le nombre de conversations réellement rendues.
  */
 export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
   const now = deps.now ?? (() => Date.now());
 
-  // Le lot ramène toutes les conversations tenues par un HUMAIN ou par l'agent de Meta sans aucun filtre
-  // d'âge : ces délais-là sont réglables par client et peuvent être plus courts que le défaut du serveur,
-  // donc un filtre SQL basé sur le défaut raterait silencieusement les conversations des clients pressés.
-  //
-  // ⚠️ LES FILS DE SCÉNARIO, EUX, SONT FILTRÉS PAR ÂGE EN SQL, et l'écart est voulu : leur délai est FIXE,
-  // donc il peut voyager jusqu'à la requête. Sans ce filtre, `app_workflow` étant l'état NORMAL de toute
-  // conversation, le lot serait saturé de fils parfaitement sains et les fils humains à rendre, plus
-  // anciens, ne seraient jamais atteints.
-  // Le délai des fils de scénario est FIXE (jamais réglable par client), donc il peut voyager jusqu'au SQL
-  // et y borner ce qu'on ramène. 0 ou absent = on n'en ramène aucun, c'est-à-dire le comportement d'avant.
+  // Les fils tenus par un humain ou par l'agent de Meta reviennent sans filtre d'âge : leurs délais sont
+  // réglables par client, un filtre SQL sur le défaut raterait les clients pressés. Les fils de scénario, au
+  // délai fixe, sont filtrés en SQL, sinon ces fils sains satureraient le lot. 0 ou absent = aucun.
   const held = await deps.listHeldControl(undefined, deps.timeouts.app_workflow ?? 0);
   if (held.length === 0) return 0;
 
@@ -99,97 +74,33 @@ export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
 
   let rendues = 0;
   for (const c of held) {
-    // Le réglage du client prime sur le défaut du serveur, et UNIQUEMENT sur le gel humain : c'est la
-    // seule durée qui relève d'un arbitrage métier (combien de temps on laisse un opérateur travailler).
+    // Le réglage du client prime sur le défaut, et seulement pour le gel humain.
     const reglageClient = c.owner === 'app_human' ? parTenant.get(c.tenantId) : undefined;
     const ms = reglageClient ?? deps.timeouts[c.owner];
-    // 🔴 UNE ESCALADE SANS RÉPONSE NE REVIENT PAS À L'AGENT (0164, arbitrage de Julien du 2026-09-23) : le client
-    // attend un humain, lui renvoyer le robot serait pire que le silence. La première réponse d'un opérateur
-    // efface l'escalade ; les 2 h habituelles courent ensuite depuis elle.
+    // Une escalade sans réponse ne revient pas à l'agent : le client attend un humain. La première réponse d'un
+    // opérateur efface l'escalade, et le délai habituel court ensuite.
     if (c.owner === 'app_human' && c.escaladee) continue;
-    // Absent ou 0 = jamais de reprise automatique pour cet état. Un client qui pose 0 garde la main
-    // jusqu'à ce qu'un opérateur la rende explicitement, c'est un choix légitime.
+    // Absent ou 0 = jamais de reprise automatique pour cet état : un client qui pose 0 garde la main.
     if (ms === undefined || ms <= 0) continue;
-    // `changedAt` null = bascule antérieure à la migration 0040, donc éligible (sinon ces conversations
-    // resteraient bloquées pour toujours, ce qui est exactement ce que ce balayage existe pour éviter).
+    // `changedAt` null = bascule ancienne, donc éligible (sinon bloquée pour toujours).
     if (c.changedAt !== null && now() - c.changedAt.getTime() < ms) continue;
-    // `only` sur le détenteur LU : si une bascule est survenue entre la lecture et l'écriture (un opérateur
-    // qui reprend la main juste à cet instant), la garde refuse et on ne détruit pas un contrôle tout neuf.
-    // Destination : l'agent de Meta quand il est allumé chez ce client, le scénario sinon. Rien à arbitrer, la
-    // règle se déduit de l'état du compte, ce qui est tout l'objet de la suppression du réglage de reprise.
-    /**
-     * 🔴 `app_workflow` REND AUSSI LA MAIN DEPUIS LE 2026-09-14, et c'est la soupape du geste `take`.
-     * Avant, un scénario n'écrivait que notre colonne et Meta gardait le fil : son agent reprenait tout
-     * seul. Depuis qu'on le prend pour de vrai, un parcours abandonné (le contact ne répond jamais, le run
-     * reste `waiting`) garderait le fil à jamais.
-     *
-     * ⚠️ Sans MBA chez ce client, la destination vaut `app_workflow`, donc la valeur que la conversation
-     * porte déjà : `setControlOwner` refuse une écriture qui ne change rien, la boucle passe au suivant, et
-     * rien ne bouge. Ce cas est inoffensif par construction, pas par précaution.
-     */
-    /**
-     * 🔴 ON NE PASSE PAS LA MAIN SUR UNE FENÊTRE FERMÉE, ET C'EST LE CORRECTIF DU 2026-09-15.
-     *
-     * L'agent de Meta ne peut prendre un fil que s'il existe une session ouverte. Mesuré ce jour-là : ce
-     * balayage a rendu DIX conversations d'un coup, toutes muettes depuis 166 à 281 heures, donc toutes hors
-     * fenêtre. Il n'y avait rien à transmettre, et le message suivant de l'une d'elles est arrivé en
-     * `messages` (donc chez NOUS) au lieu de `standby` : notre colonne disait `mba`, Meta pensait l'inverse,
-     * et personne n'a répondu au client.
-     *
-     * ⚠️ ON SAUTE, ON NE REPLIE PAS SUR `app_workflow`. Ce serait échanger un défaut contre un pire : c'est
-     * la SEULE valeur que le dossier « À traiter » exclut, donc une conversation `app_human` abandonnée
-     * deviendrait invisible au lieu d'être une ligne de travail. Sauter la laisse telle quelle, donc visible,
-     * et le message entrant la reprendra (`remiseMbaSiPersonneNeSuit`) le jour où le client revient.
-     *
-     * ⚠️ `lastMessageAt` EST UN PROXY À SENS UNIQUE : un dernier message vieux de plus de 24 h PROUVE que la
-     * fenêtre est fermée ; un dernier message récent mais SORTANT ne prouve pas qu'elle est ouverte. C'est
-     * l'ordre inversé ci-dessous qui absorbe cette imprécision.
-     */
+    // Destination : l'agent de Meta s'il est allumé chez ce client, le scénario sinon (`app_workflow` rend aussi
+    // la main, puisque `take` prend le fil pour de vrai). On ne passe pas la main sur une fenêtre fermée : l'agent
+    // ne prendrait rien et personne ne répondrait. On saute, sans replier sur `app_workflow` que « À traiter »
+    // exclut. `lastMessageAt` prouve une fenêtre fermée, pas une fenêtre ouverte.
     const fenetreOuverte = c.lastMessageAt !== null && now() - c.lastMessageAt.getTime() < FENETRE_META_MS;
     const versMba = (c.owner === 'app_human' || c.owner === 'app_workflow') && avecMba.has(c.tenantId);
-    /**
-     * ⚠️ LA GARDE PORTE SUR `versMba`, PAS SUR « ce client a l'agent allumé », ET LA NUANCE A ÉTÉ TROUVÉE EN
-     * REVUE. Une première version sautait dès que le client avait l'agent, ce qui bloquait aussi les
-     * transitions qui ne parlent PAS à Meta : un fil déjà détenu par l'agent, repris vers le scénario au bout
-     * de 24 h, n'émet aucun appel et n'a donc rien à faire d'une fenêtre. La garde n'a de sens que là où un
-     * appel Meta allait partir.
-     */
+    // La garde ne porte que sur `versMba` : une transition qui ne parle pas à Meta n'a rien à faire d'une fenêtre.
     if (versMba && !fenetreOuverte) continue;
     /**
-     * 🔴 META D'ABORD, L'ÉCRITURE ENSUITE, ET L'ORDRE EST INVERSÉ DEPUIS LE 2026-09-15.
+     * Meta d'abord, l'écriture ensuite : écrire un état que Meta n'a pas confirmé laisse deux systèmes se croire
+     * chacun déchargés du client. Refuser d'écrire ne gèle rien, la conversation reste visible et ce balayage
+     * repasse. `rendreLeFil` lève sur un refus (tracé) et rend `false` sans numéro (configuration) : les deux
+     * font sauter la ligne, sans repli sur `app_workflow` qui la sortirait de « À traiter ». Le coût est un
+     * réexamen à chaque passe.
      *
-     * Il était l'inverse, avec cette raison : « la bascule locale d'abord, l'appel Meta en best-effort :
-     * l'inverse laisserait un fil gelé pour toujours sur un hoquet réseau ». Cette crainte ne tient plus, et
-     * elle ne tenait déjà pas tout à fait : refuser d'écrire ne GÈLE rien, ça laisse la conversation dans
-     * l'état où elle est, donc VISIBLE, et ce balayage repasse toutes les cinq minutes. Ce qui l'emporte,
-     * c'est qu'écrire un état que Meta n'a pas confirmé produit exactement la panne du 2026-09-15 : deux
-     * systèmes qui se croient chacun déchargés du client.
-     *
-     * ⚠️ `rendreLeFil` LÈVE quand Meta refuse et rend `false` quand il n'y a aucun numéro connecté. Les deux
-     * empêchent l'écriture, pour la même raison, et seul le refus mérite une trace : l'absence de numéro est
-     * un état de configuration, pas une panne.
-     *
-     * ⚠️ RÉSIDU ASSUMÉ, RELEVÉ EN REVUE LE 2026-09-15, ET C'EST LE PRIX DE L'INVERSION. L'ordre d'avant
-     * protégeait d'une course : la garde `only` refusait l'écriture si un opérateur avait repris la main
-     * entre la lecture du lot et l'écriture, et l'appel Meta était alors sauté. Avec Meta d'abord, cette
-     * course reste ouverte pendant la durée de l'appel. Le calcul est délibéré : la course demande un clic
-     * « Reprendre la main » dans la fraction de seconde où ce balayage traite CETTE conversation, et son
-     * remède est un second clic ; le défaut qu'on ferme, lui, a laissé neuf conversations dans un état faux
-     * pendant des heures, sans recours. ⚠️ Le geste du chemin entrant (`remiseMbaSiPersonneNeSuit`), lui,
-     * relit bien le détenteur avant d'appeler Meta : là-bas le risque est permanent, pas fugace.
-     */
-    /**
-     * 🔴 « RIEN À RENDRE » FAIT SAUTER LA LIGNE, ET LA CONVERSATION RESTE TELLE QUELLE. C'est délibéré, et
-     * ça a été rouvert puis refermé le 2026-09-17 : une première correction repliait ces cas sur
-     * `app_workflow` pour qu'ils cessent d'être candidats, ce qui les faisait SORTIR du dossier
-     * « À traiter » (seule valeur qu'il exclut). Sur un espace `mba_enabled` SANS numéro connecté, un
-     * client qui vient d'écrire disparaissait donc du dossier de travail : le symptôme exact que la
-     * migration 0149 a réparé, et que le commentaire du bloc ci-dessus interdit nommément.
-     *
-     * ⚠️ LE COÛT ASSUMÉ EST UN RÉEXAMEN, PAS UNE FUITE. Une conversation de test, ou un espace sans numéro,
-     * restera candidate à chaque passe et coûtera une lecture. C'est borné par le nombre de ces
-     * conversations, et c'est très exactement le prix à payer pour qu'aucune ligne de travail ne devienne
-     * invisible. Entre les deux erreurs possibles, une seule se rattrape.
+     * Résidu assumé : la garde `only` ne protège plus d'un « Reprendre la main » cliqué pendant l'appel Meta
+     * (course fugace, réparée par un second clic).
      */
     if (versMba && deps.releaseToMba) {
       try {
@@ -201,9 +112,8 @@ export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
       }
     }
     const dest: ControlOwner = versMba ? 'mba' : 'app_workflow';
-    // ⚠️ `effacerEscalade` : arrivé ici, une escalade EN COURS a déjà été sautée (`c.escaladee` plus haut). Un
-    // drapeau qui subsiste est donc périmé, et le laisser sur une conversation qu'on déplace l'armerait pour le
-    // jour où elle redeviendrait `app_human` : le balayage ne la rendrait alors plus jamais.
+    // Une escalade en cours a déjà été sautée plus haut : un drapeau qui subsiste est périmé, et le laisser
+    // l'armerait pour le jour où la conversation redeviendrait `app_human`.
     if (!(await deps.setControlOwner(c.tenantId, c.waId, dest, { only: [c.owner], effacerEscalade: true }))) continue;
     rendues += 1;
   }

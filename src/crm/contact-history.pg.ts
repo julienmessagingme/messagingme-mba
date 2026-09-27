@@ -3,23 +3,14 @@ import { horsEntreeGratuite } from '../stats/entree-gratuite';
 import { journaliser } from '../lib/journal';
 
 /**
- * Historique d'un contact : ce qu'on lui a ENVOYÉ, et ce qu'il a ÉCHANGÉ avec nous.
+ * Historique d'un contact : ce qu'on lui a envoyé, et ce qu'il a échangé avec nous. Store de lecture seule.
  *
- * Store de LECTURE uniquement, séparé du store d'écriture des contacts (même découpage que
- * `src/stats/conversation-stats.pg.ts` face à `src/analysis/store.pg.ts`).
- *
- * Deux règles de jointure, différentes, et c'est le cœur du sujet :
- *
- *  - les ENVOIS se relient par `campaign_recipients.contact_id`, jamais par le numéro. `to_e164` est figé à la
- *    construction de la campagne : si le contact change de numéro ensuite, une correspondance par numéro rate
- *    tout son passé. (`getCampaignFunnel` joint bien par `to_e164`, mais c'est un funnel de campagne, pas un
- *    historique de personne : ce serait un bug ici.)
- *
- *  - les CONVERSATIONS ne peuvent PAS se relier par `contact_id` seul. Cette colonne est nullable et posée en
- *    `coalesce` dans `upsertConversationByWaId` : une conversation ouverte AVANT que le contact existe garde
- *    `contact_id` null jusqu'au message suivant. S'en tenir à `contact_id` perdrait ces échanges EN SILENCE.
- *    On rattrape donc par `wa_id`, en recopiant la règle d'identité de l'inbox : le numéro en chiffres nus, et
- *    le BSUID brut. Un contact peut porter les deux, donc plusieurs conversations : on renvoie une liste.
+ * Deux règles de jointure :
+ *  - les envois se relient par `campaign_recipients.contact_id`, jamais par le numéro : `to_e164` est figé à la
+ *    construction de la campagne, et un contact qui change de numéro perdrait son passé ;
+ *  - les conversations ne se relient pas par `contact_id` seul : nullable et posé en `coalesce`, il reste null
+ *    sur une conversation ouverte avant la création du contact. On rattrape par `wa_id` (numéro en chiffres
+ *    nus, ou BSUID brut), comme l'inbox ; un contact peut donc avoir plusieurs conversations.
  */
 
 export interface ContactSend {
@@ -36,28 +27,17 @@ export interface ContactSend {
   sentAt: string | null;
   error: string | null;
   /**
-   * Dernier état de livraison connu : sent < delivered < read, ou failed. NULL sur un envoi parfaitement
-   * réussi dont le webhook de statut n'est jamais arrivé : cela veut dire « statut inconnu », JAMAIS
-   * « non délivré ». Il n'existe aucun horodatage par étape, seulement celui du dernier changement.
+   * Dernier état de livraison connu : sent < delivered < read, ou failed. NULL sur un envoi réussi dont le
+   * webhook de statut n'est jamais arrivé veut dire « statut inconnu », jamais « non délivré ». Un seul
+   * horodatage : celui du dernier changement.
    */
   deliveryStatus: string | null;
   deliveryUpdatedAt: string | null;
   /**
-   * La personne a-t-elle RÉAGI à cet envoi : répondu, appuyé sur un bouton, ou CLIQUÉ sur un lien du message.
-   *
-   * 🔴 Ce n'est PAS « lu ». « Lu » dit que Meta a affiché le message ; « engagé » dit qu'un humain a fait
-   * quelque chose. Un message peut être lu par milliers sans qu'une seule personne ne réagisse, et c'est
-   * précisément l'écart que cet indicateur rend visible.
-   *
-   * ⚠️ LE CLIC A ÉTÉ AJOUTÉ LE 2026-09-02, ET IL COMBLAIT UN TROU RÉEL. Un bouton URL fait SORTIR le contact
-   * de la conversation : il n'en revient aucun message entrant, donc la personne la plus engagée de la
-   * campagne, celle qui a ouvert le lien, s'affichait comme n'ayant pas réagi. C'est aussi ce qui rend enfin
-   * VISIBLE l'attribution des clics (migrations 0106 et 0107) : sans elle, on saurait qui a cliqué sans
-   * jamais le montrer nulle part.
-   *
-   * Bornes : après l'envoi, avant le prochain envoi à ce contact, et dans les 24 h. La première borne évite
-   * que deux campagnes du même jour se créditent l'une l'autre ; la seconde évite de compter une réponse de
-   * la semaine suivante comme une réaction à ce message-là.
+   * La personne a-t-elle réagi à cet envoi : répondu, appuyé sur un bouton, ou cliqué sur un lien du message.
+   * Ce n'est pas « lu » (Meta a affiché le message) : « engagé » dit qu'un humain a fait quelque chose. Le clic
+   * compte parce qu'un bouton URL fait sortir le contact sans message entrant. Bornes : après l'envoi, avant le
+   * prochain envoi à ce contact, et dans les 24 h.
    */
   engage: boolean;
 }
@@ -70,45 +50,27 @@ export interface ContactConversationAnalysis {
   handledBy: string;
   exchangesCount: number;
   actionSuggestion: string;
-  /** Date de la DERNIÈRE analyse (upsert sur la clé primaire), pas la date de la conversation. */
+  /** Date de la dernière analyse (upsert sur la clé primaire), pas la date de la conversation. */
   analyzedAt: string;
   /**
-   * CE QUI S'EST DIT, en deux ou trois phrases (migration 0100).
-   *
-   * ⚠️ `null` EST UN CAS NORMAL, ET IL NE VEUT PAS DIRE « CONVERSATION VIDE » : les analyses antérieures à
-   * la migration 0100 n'ont pas de résumé et n'en auront jamais (le reconstruire voudrait dire rappeler le
-   * modèle sur chaque conversation déjà analysée). L'écran le DIT, il ne laisse pas un vide qui passerait
-   * pour une panne. C'est la même règle que sur la fiche d'analyse, et elle a la même formulation :
-   * `web/lib/resume-conversation.ts` la porte une seule fois pour les deux écrans.
-   *
-   * 🔴 ET SURTOUT, IL NE SE SUBSTITUE PAS À `justification` : celle-ci explique le CLASSEMENT
-   * (« pourquoi j'ai proposé de rappeler »), pas ce qui s'est dit. Les échanger serait un mensonge discret.
+   * Ce qui s'est dit, en deux ou trois phrases. `null` est un cas normal (analyses anciennes, sans résumé) et ne
+   * veut pas dire « conversation vide » : l'écran le dit (`web/lib/resume-conversation.ts`). Ne se substitue pas à
+   * `justification`, qui explique le classement et non ce qui s'est dit.
    */
   summary: string | null;
 }
 
 /**
- * LE RÉSUMÉ QUI DEVIENT UN CHAMP DE BASE DU MINI-CRM (demande de Julien : « le résumé de la conversation,
- * ce qui serait top c'est que ça devienne un champ du mini CRM, ça serait un champ de base à partir du
- * moment où il y a une conversation »).
- *
- * 🔴 DÉRIVÉ À LA LECTURE, JAMAIS RECOPIÉ DANS `contacts.fields`, et la rétention a fait de ce choix de
- * cohérence un choix de CONFORMITÉ. Recopier créerait une seconde vérité à côté de
- * `conversation_analysis.summary` ; depuis que la rétention descend à 90 jours (migration 0155), ce serait
- * pire : la purge efface la conversation et son analyse EN CASCADE, et la copie, elle, survivrait dans la
- * fiche du contact. On garderait alors un texte tiré de ce que la personne a raconté, précisément au-delà
- * de la durée qu'on s'est engagé à tenir. Dérivé, le champ se vide tout seul, au bon moment.
- *
- * ⚠️ IL N'EST PAS UNE VARIABLE DE MESSAGE, et ce n'est pas un oubli. Deux raisons, chacune suffisante :
- * `contactVars` (`src/crm/render.ts`) est le chemin d'envoi d'une CAMPAGNE, donc une jointure par
- * destinataire sur des envois de plusieurs milliers ; et surtout, envoyer à quelqu'un le résumé que notre
- * modèle a fait de sa propre conversation n'est pas un geste qu'on veut rendre possible en un clic.
+ * Le résumé affiché comme champ de base du mini-CRM.
+ * 🔴 Dérivé à la lecture, jamais recopié dans `contacts.fields` : la purge de rétention efface la conversation et
+ * son analyse en cascade, et une copie survivrait dans la fiche au-delà de la durée promise. Ce n'est pas non
+ * plus une variable de message : `contactVars` sert les campagnes (une jointure par destinataire), et envoyer à
+ * quelqu'un le résumé de sa propre conversation ne doit pas être possible en un clic.
  */
 export interface ResumeContact {
   /**
-   * Le texte du résumé. `null` quand il n'y en a pas, et `conversations`/`analysee` disent POURQUOI : ces
-   * trois champs ne se déduisent pas les uns des autres, et les confondre afficherait « pas encore
-   * analysée » sur un contact qui n'a jamais ouvert la moindre conversation.
+   * Le texte du résumé, `null` quand il n'y en a pas ; `conversations` et `analysee` disent pourquoi (sinon on
+   * afficherait « pas encore analysée » à un contact sans aucune conversation).
    */
   texte: string | null;
   /** Date de l'analyse qui porte ce résumé. `null` quand aucune conversation n'a été analysée. */
@@ -119,10 +81,7 @@ export interface ResumeContact {
   conversations: number;
   /** Au moins une conversation est analysée. `false` avec `conversations > 0` = analyse en cours ou échouée. */
   analysee: boolean;
-  /**
-   * Un message est arrivé APRÈS l'analyse : le résumé ne couvre pas la fin du fil. Même règle
-   * qu'`analysisStale` sur la liste des conversations, et volontairement le même mot à l'écran.
-   */
+  /** Un message est arrivé après l'analyse : le résumé ne couvre pas la fin du fil (même règle qu'`analysisStale`). */
   perime: boolean;
 }
 
@@ -136,11 +95,11 @@ export interface ContactConversation {
   analysisStatus: string;
   analysis: ContactConversationAnalysis | null;
   /**
-   * true quand une analyse EXISTE mais qu'un message est arrivé depuis (le statut est retombé hors 'done').
-   * Sans ce drapeau, l'interface afficherait une analyse périmée comme si elle était fraîche.
+   * true quand une analyse existe mais qu'un message est arrivé depuis (statut retombé hors 'done'), pour ne pas
+   * afficher une analyse périmée comme fraîche.
    */
   analysisStale: boolean;
-  /** Lien vers le fil complet dans l'inbox. Les messages ne sont PAS embarqués ici (voir le commentaire bas). */
+  /** Lien vers le fil complet dans l'inbox ; les messages ne sont pas embarqués ici. */
   inboxHref: string;
 }
 
@@ -150,12 +109,9 @@ export interface ContactHistory {
 }
 
 /**
- * LES IDENTITÉS D'UN CONTACT, DÉRIVÉES EN SQL. Attend `$1` = tenant, `$2` = contact, et se pose en CTE `ct`.
- *
- * Les identités ne viennent JAMAIS du client : accepter un `wa_id` envoyé par le front ouvrirait la lecture
- * des conversations de n'importe qui. `array_remove` s'appuie dessus plus bas, d'où les deux `nullif` : un
- * contact n'a pas forcément les deux identités, et un `phone_e164` vide donnerait une chaîne vide qui ne
- * doit surtout pas servir de critère.
+ * Les identités d'un contact, dérivées en SQL (`$1` = tenant, `$2` = contact), à poser en CTE `ct`.
+ * 🔴 Jamais fournies par le client : accepter un `wa_id` du front ouvrirait la lecture des conversations de
+ * n'importe qui. Les `nullif` évitent qu'une identité absente devienne une chaîne vide servant de critère.
  */
 export const CONTACT_IDENTITES_SQL = `select id,
                 nullif(regexp_replace(coalesce(phone_e164, ''), '[^0-9]', '', 'g'), '') as digits,
@@ -163,13 +119,9 @@ export const CONTACT_IDENTITES_SQL = `select id,
          from contacts where id = $2 and tenant_id = $1`;
 
 /**
- * LE RATTACHEMENT D'UNE CONVERSATION À UN CONTACT (`c` = `conversations`, `ct` = le CTE ci-dessus).
- *
- * 🔴 FRAGMENT PARTAGÉ, ET CE N'EST PAS UNE COMMODITÉ D'ÉCRITURE. La règle est expliquée en tête de fichier :
- * `contact_id` seul PERD les conversations ouvertes avant que le contact existe, il faut rattraper par
- * `wa_id`. DEUX requêtes la portent maintenant, la liste des conversations et le résumé affiché en champ de
- * base. Recopiée, elle divergerait, et la divergence serait MUETTE : la fiche montrerait le résumé d'une
- * conversation absente de sa propre liste d'historique, ou l'inverse, sans qu'aucune erreur ne le signale.
+ * Le rattachement d'une conversation à un contact (`c` = `conversations`, `ct` = le CTE ci-dessus), partagé par
+ * la liste des conversations et le résumé : recopié, il divergerait en silence (le résumé d'une conversation
+ * absente de la liste). À citer, jamais à réécrire.
  */
 export const CONVERSATION_DU_CONTACT_SQL =
   `(c.contact_id = ct.id or c.wa_id = any(array_remove(array[ct.digits, ct.bsuid], null)))`;
@@ -177,7 +129,7 @@ export const CONVERSATION_DU_CONTACT_SQL =
 /** Bornes de lecture : un historique d'écran, pas un export. Au-delà, l'inbox et le détail de campagne. */
 const MAX_SENDS = 200;
 const MAX_CONVERSATIONS = 100;
-/** Borne HAUTE de l'export CSV (F5) : bien au-delà d'un écran, mais bornée pour ne pas ramener un volume illimité. */
+/** Borne haute de l'export CSV : bien au-delà d'un écran, mais bornée. */
 const EXPORT_MAX_SENDS = 5000;
 
 export class PgContactHistoryStore {
@@ -185,9 +137,8 @@ export class PgContactHistoryStore {
 
   /** null si le contact n'existe pas pour ce tenant (la route en fait un 404, jamais une liste vide trompeuse). */
   async getContactHistory(tenantId: string, contactId: string): Promise<ContactHistory | null> {
-    // Le contact est chargé D'ABORD, scopé tenant : c'est lui qui distingue « aucun historique » (listes vides,
-    // réponse 200) de « ce contact n'est pas à toi » (404). Sans ce contrôle, un id d'un autre tenant
-    // renverrait deux listes vides, c'est-à-dire un 200 rassurant sur une ressource interdite.
+    // 🔴 Le contact est chargé d'abord, scopé tenant : c'est ce qui distingue « aucun historique » (200) de « ce
+    // contact n'est pas à toi » (404), au lieu d'un 200 rassurant sur une ressource interdite.
     const owner = await this.pool.query<{ id: string }>(
       `select id from contacts where id = $1 and tenant_id = $2`,
       [contactId, tenantId],
@@ -202,33 +153,18 @@ export class PgContactHistoryStore {
   }
 
   /**
-   * LE RÉSUMÉ DE LA DERNIÈRE CONVERSATION ANALYSÉE, pour la ligne « champ de base » de la fiche contact.
-   * `null` si le contact n'est pas dans cet espace (la route en fait un 404, jamais un 200 rassurant sur une
-   * ressource interdite : c'est la même garde que `getContactHistory`, pour la même raison).
-   *
-   * 🔴 ROUTE À PART, ET C'EST LE POINT DE L'ARBITRAGE. La fiche s'ouvre sur l'onglet « Fiche », qui ne
-   * charge PAS l'historique (200 envois, 100 conversations et un `count(*)` par conversation) : y brancher
-   * ce résumé ferait payer tout l'historique à chaque ouverture. Et il ne rejoint pas non plus `ContactRow` :
-   * la LISTE du mini-CRM se lit par `list` et `query`, qui peuvent rendre des centaines de lignes, et une
-   * sous-requête par ligne y coûterait une jointure sur les deux tables les plus écrites du produit, pour
-   * une valeur que personne ne lit dans une liste. Une seule requête, un seul contact, à l'ouverture.
-   *
-   * 🔴 LA DERNIÈRE ANALYSÉE, PAS LA DERNIÈRE QUI PORTE UN RÉSUMÉ. Remonter à une conversation plus ancienne
-   * parce que la plus récente a été analysée avant la migration 0100 afficherait un texte périmé comme s'il
-   * était d'aujourd'hui. On prend la plus récente analysée et, si elle n'a pas de résumé, l'écran le DIT.
-   *
-   * ⚠️ ET CE CAS N'EST PAS THÉORIQUE : MESURÉ. Sonde en lecture seule du 2026-09-17, jouée PAR CE CODE sur la
-   * base de production, sur les cinq contacts qui portent le plus de conversations : les cinq concordent au
-   * caractère près avec la première conversation analysée de leur historique, un contact d'un autre espace
-   * rend bien `null`, et **DEUX des cinq** ont une analyse SANS résumé. L'état « analysée mais pas de résumé »
-   * représente donc 40 % de l'échantillon mesuré, pas un repli rare.
+   * Le résumé de la dernière conversation analysée, pour la ligne « champ de base » de la fiche. `null` si le
+   * contact n'est pas dans cet espace (404, même garde que `getContactHistory`).
+   * Route à part : l'onglet « Fiche » ne charge pas l'historique, et la liste du mini-CRM ne doit pas payer une
+   * sous-requête par ligne. La dernière analysée, pas la dernière qui porte un résumé : remonter plus loin
+   * afficherait un texte périmé comme actuel ; sans résumé, l'écran le dit (cas fréquent, pas un repli rare).
    */
   async resumeContact(tenantId: string, contactId: string): Promise<ResumeContact | null> {
     const res = await this.pool.query<{
       connu: boolean; conversations: number; conversation_id: string | null;
       analysis_status: string | null; analyse_le: Date | null; summary: string | null;
     }>(
-      // Les deux fragments sont CITÉS, jamais recopiés : leur justification est à leur définition, plus haut.
+      // Les deux fragments sont cités, jamais recopiés : leur justification est à leur définition.
       `with ct as (
          ${CONTACT_IDENTITES_SQL}
        ),
@@ -274,54 +210,24 @@ export class PgContactHistoryStore {
       conversationId: r.conversation_id,
       conversations: r.conversations,
       analysee,
-      // Une analyse existe ET le statut est reparti hors 'done' -> un message est arrivé depuis. Même
-      // règle qu'`analysisStale`, et il n'en existe pas de seconde définition.
+      // Une analyse existe et le statut est reparti hors 'done' -> un message est arrivé depuis (même règle
+      // qu'`analysisStale`).
       perime: analysee && r.analysis_status !== 'done',
     };
   }
 
   /**
-   * LA MATIÈRE DU BILAN D'UN CONTACT : ses envois par catégorie (pour le coût), et la profondeur atteinte
-   * parcours par parcours (pour l'entonnoir). Demande de Julien du 2026-09-11.
-   *
-   * 🔴 UN PARCOURS = UN ENVOI DE CAMPAGNE, BORNÉ COMME `engage` L'EST DÉJÀ : jusqu'au prochain envoi, et au
-   * plus 24 h. Ce n'est pas un choix de confort, c'est la seule borne cohérente avec le reste de la fiche.
-   * Sans elle, mesuré sur les données réelles, le dernier parcours avalait toute la conversation qui suit et
-   * rendait des « niveaux » 27 et 35 : une discussion racontée comme un entonnoir.
-   *
-   * 🔴 SEULS LES SORTANTS AUTOMATIQUES COMPTENT COMME SOLLICITATION (`sender_user_id is null`). Un opérateur
-   * qui écrit depuis l'Inbox ne fait pas avancer un scénario d'un cran : compter ses messages ferait grimper
-   * le niveau d'un contact au seul motif qu'on a discuté avec lui, ce qui est l'inverse de ce que l'entonnoir
-   * mesure.
-   *
-   * ⚠️ ET C'EST `sender_user_id`, PAS `origin`, POUR UNE RAISON MESURÉE. La colonne `origin` dit pourtant
-   * « humain » en toutes lettres, ce qui serait plus lisible ; mais elle est NULLE sur 73 des 163 sortants
-   * de la base (relevé le 2026-09-11), parce qu'elle est arrivée après eux. S'y fier ferait compter tout
-   * l'historique comme automatique, sans qu'aucun test le voie : les faux d'un test sont toujours complets.
-   *
-   * ⚠️ UNE RÉACTION EST UN ENTRANT **OU** UN CLIC ATTRIBUÉ, exactement la définition d'`engage` un peu plus
-   * haut, appliquée en profondeur : « cliqué ou répondu, bref il y a eu un engagement » (Julien). Un bouton
-   * de réponse rapide arrive comme un entrant portant son `button_payload`, donc il compte ; un bouton URL
-   * fait SORTIR le contact de la conversation, d'où le second test.
-   *
-   * ⚠️ La profondeur est un `max`, pas un compte : le niveau ATTEINT est le plus profond, et c'est
-   * `entonnoirEngagement` qui en fait un cumul « au moins N ».
-   *
-   * 🔴 LA DERNIERE SOLLICITATION D UN PARCOURS EST BORNEE PAR `p.fin`, PAS SEULEMENT PAR 24 H. Sans
-   * `s.fin` dans le `coalesce`, elle n avait aucune borne haute autre que la fenetre de service : si la
-   * campagne SUIVANTE partait moins de 24 h apres, la reaction qu ELLE provoquait comptait aussi comme un
-   * engagement sur le parcours PRECEDENT. L entonnoir surestimait alors la profondeur, et d autant plus que
-   * le client enchaine ses campagnes. Releve en revue le 2026-09-11.
-   *
-   * ⚠️ LES DEPARTS SONT DEDUPLIQUES ET BORNES, et les deux raisons sont ecrites dans la requete : deux
-   * envois a la meme milliseconde produisaient une fenetre VIDE, donc un parcours perdu en silence ; et
-   * l entonnoir couvre les `MAX_SENDS` derniers departs, exactement la population de la liste d envois
-   * affichee juste en dessous.
-   *
-   * ⚠️ LES ENVOIS DU COÛT excluent les 72 h gratuites qui suivent un clic sur une pub (`horsEntreeGratuite`),
-   * comme toute lecture de coût. Ils ne portent PAS, en revanche, les gardes de livraison des autres lectures
-   * (`status = 'sent'`, livraison non `failed`, canal WhatsApp) : écart antérieur au lot 1 des pubs, relevé
-   * par sa revue et suivi à part, pas corrigé en silence ici.
+   * La matière du bilan d'un contact : ses envois par catégorie (pour le coût), et la profondeur atteinte
+   * parcours par parcours (pour l'entonnoir).
+   *  - Un parcours = un envoi de campagne, borné comme `engage` : jusqu'au prochain envoi (`p.fin`), et au plus
+   *    24 h. Sans ces bornes, le dernier parcours avalerait la conversation qui suit, ou la campagne suivante.
+   *  - Seuls les sortants automatiques comptent comme sollicitation (`sender_user_id is null`, et non `origin`,
+   *    nul sur les sortants anciens) : un opérateur qui discute ne fait pas avancer un scénario.
+   *  - Une réaction est un entrant ou un clic attribué, comme `engage`. La profondeur est un `max` ;
+   *    `entonnoirEngagement` en fait un cumul.
+   *  - Les départs sont dédupliqués et bornés à `MAX_SENDS`, la population de la liste d'envois.
+   *  - Les envois du coût excluent les 72 h gratuites après un clic sur une pub (`horsEntreeGratuite`), sans
+   *    porter les gardes de livraison des autres lectures de coût (écart connu, suivi à part).
    */
   async bilanContact(tenantId: string, contactId: string): Promise<{ envois: Array<{ category: string | null; count: number }>; profondeurs: number[] } | null> {
     const owner = await this.pool.query<{ id: string }>(
@@ -395,9 +301,8 @@ export class PgContactHistoryStore {
   }
 
   /**
-   * Envois d'un contact pour l'EXPORT CSV (F5) : mêmes lignes que l'historique d'écran mais SANS le cap 200 (borné à
-   * EXPORT_MAX_SENDS par sûreté, log si atteint). null si le contact n'appartient pas au tenant (404 côté route, pas
-   * une liste vide trompeuse sur une ressource interdite). Lecture seule, scopée tenant en SQL.
+   * Envois d'un contact pour l'export CSV : les mêmes lignes que l'historique d'écran, bornées à EXPORT_MAX_SENDS
+   * (journalisé si atteint). null si le contact n'appartient pas au tenant (404 côté route). Scopé tenant en SQL.
    */
   async listSendsForExport(tenantId: string, contactId: string): Promise<ContactSend[] | null> {
     const owner = await this.pool.query<{ id: string }>(
@@ -419,34 +324,14 @@ export class PgContactHistoryStore {
       status: string; sent_at: Date | null; error: string | null;
       delivery_status: string | null; delivery_updated_at: Date | null; engage: boolean;
     }>(
-      // `c.tenant_id = $1` en plus du contrôle d'appartenance du contact : double barrière assumée, la même
-      // que dans conversation-stats.pg.ts. Une campagne d'un autre tenant ne peut pas remonter ici.
+      // 🔴 `c.tenant_id = $1` en plus du contrôle d'appartenance du contact : double barrière, une campagne d'un
+      // autre tenant ne peut pas remonter ici.
       //
-      // 🔴 `engage` : la personne a-t-elle RÉAGI à cet envoi ? Demandé par Julien le 2026-09-02, « en plus de
-      // l'indicateur Lu, Engagé, ce qui montre que la personne a au moins réagi ou a appuyé quelque part dans
-      // le template envoyé ». « Lu » dit que Meta a affiché le message ; « engagé » dit qu'un humain a fait
-      // quelque chose, ce qui n'est pas la même information et n'a pas la même valeur.
-      //
-      // DEUX BORNES, et chacune corrige une façon de mentir :
-      //  - la borne HAUTE de 24 h, parce qu'une réponse trois jours plus tard n'est pas une réaction à ce
-      //    message-là ; c'est aussi la fenêtre de service, donc la seule pendant laquelle la personne peut
-      //    répondre librement ;
-      //  - le PROCHAIN ENVOI, parce que deux campagnes le même jour se créditeraient l'une l'autre : une
-      //    réponse arrivée après le second message ne dit rien du premier.
-      //
-      // Tout message ENTRANT compte, texte comme appui de bouton : un appui arrive comme un entrant portant
-      // son `button_payload`, et exiger un payload exclurait « oui » écrit à la main, qui est pourtant la
-      // même réaction.
-      //
-      // 🔴 ET LE CLIC SUR UN LIEN, depuis le 2026-09-02. Un bouton URL fait SORTIR le contact de la
-      // conversation : il n'en revient aucun entrant, donc sans ce second test la personne qui a ouvert le
-      // lien, la plus engagée de la campagne, s'affichait comme n'ayant pas réagi. Les MÊMES bornes que la
-      // réponse, et pour les mêmes raisons.
-      //
-      // ⚠️ Ne remontent ici que les clics ATTRIBUÉS (`contact_id` non nul), c'est-à-dire ceux dont l'URL
-      // portait le jeton du destinataire. Les liens des templates approuvés avant le 2026-09-02 ont une
-      // adresse figée chez Meta, sans jeton : leurs clics restent anonymes et ne peuvent créditer personne.
-      // C'est une limite physique, pas un oubli, et Julien l'a arbitrée : « on s'en fout des vieux templates ».
+      // `engage` : la personne a-t-elle réagi à cet envoi ? Tout entrant compte (texte ou appui de bouton), et le clic
+      // attribué sur un lien aussi (un bouton URL fait sortir le contact sans entrant). Deux bornes : 24 h (une
+      // réponse trois jours plus tard n'est pas une réaction, et c'est la fenêtre de service), et le prochain envoi
+      // (deux campagnes du même jour se créditeraient l'une l'autre). Seuls les clics attribués (`contact_id` non
+      // nul) remontent : les liens des anciens templates n'ont pas de jeton et restent anonymes.
       `with envois as (
          select r.contact_id, r.status, r.sent_at, r.error, r.delivery_status, r.delivery_updated_at,
                 c.id as campaign_id, c.name, c.category, c.template_name, c.template_language, c.created_at,
@@ -505,7 +390,7 @@ export class PgContactHistoryStore {
       handled_by: string | null; exchanges_count: number | null; action_suggestion: string | null;
       analyzed_row_at: Date | null; summary: string | null;
     }>(
-      // Les deux fragments sont CITÉS, jamais recopiés : leur justification est à leur définition, plus haut.
+      // Les deux fragments sont cités, jamais recopiés : leur justification est à leur définition.
       `with ct as (
          ${CONTACT_IDENTITES_SQL}
        )
@@ -534,9 +419,8 @@ export class PgContactHistoryStore {
               exchangesCount: r.exchanges_count ?? 0,
               actionSuggestion: r.action_suggestion ?? '',
               analyzedAt: r.analyzed_row_at.toISOString(),
-              // ⚠️ Une chaîne VIDE vaut absence, exactement comme à l'écriture (`src/analysis/store.pg.ts`) :
-              // le modèle peut rendre le champ vide plutôt que de l'omettre, et la laisser passer afficherait
-              // un résumé blanc là où l'écran doit dire qu'il n'y en a pas.
+              // Une chaîne vide vaut absence, comme à l'écriture (`src/analysis/store.pg.ts`) : le modèle peut rendre le
+              // champ vide, et l'écran doit dire qu'il n'y a pas de résumé.
               summary: r.summary !== null && r.summary.trim() !== '' ? r.summary : null,
             }
           : null;
@@ -548,7 +432,7 @@ export class PgContactHistoryStore {
         messagesCount: Number(r.messages_count),
         analysisStatus: r.analysis_status,
         analysis,
-        // Une analyse existe ET le statut est reparti hors 'done' -> un message est arrivé depuis.
+        // Une analyse existe et le statut est reparti hors 'done' -> un message est arrivé depuis.
         analysisStale: analysis !== null && r.analysis_status !== 'done',
         inboxHref: `/inbox?c=${r.id}`,
       };

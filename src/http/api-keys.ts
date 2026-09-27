@@ -4,27 +4,18 @@ import type { ApiKeyRow } from '../auth/api-key-store.pg';
 import { espaceVerifie, nonEmpty } from './scope';
 import { makeJournal, type AuditSink } from '../audit/journal';
 
-/** Scopes d'API reconnus en V1. Une clé demande un sous-ensemble non vide. */
 /**
- * Les droits qu'une clé d'API peut porter.
- *
- * `mcp:read` et `mcp:write` sont SÉPARÉS des autres, et c'est voulu : une clé donnée à un agent tiers
- * pour lire l'inbox ne doit pas emporter au passage le droit de créer des contacts ou de lancer un envoi.
- * Le serveur MCP ne liste même pas les outils hors des scopes de la clé, donc « lecture seule » veut dire
- * qu'un agent ne VOIT pas l'outil qui écrit.
+ * Les droits qu'une clé d'API peut porter (sous-ensemble non vide). `mcp:read` et `mcp:write` sont séparés des
+ * autres : une clé donnée à un agent tiers pour lire l'Inbox n'emporte pas le droit d'écrire, et le serveur MCP
+ * ne liste même pas les outils hors des scopes de la clé.
  */
 export const VALID_API_SCOPES = ['contacts:write', 'contacts:read', 'sends:create', 'mcp:read', 'mcp:write'] as const;
 
 export interface ApiKeysRouteDeps {
   /**
-   * Journal d'audit (2026-09-15). Requis depuis le lot 3 de l'audit ponytail ; les fixtures qui ne l'observent pas passent `journalMuet`.
-   *
-   * 🔴 UNE CLÉ D'API LIT LES CONTACTS D'UN ESPACE SANS PASSER PAR UN COMPTE. Savoir qui l'a créée et quand
-   * est la seule façon de répondre à « d'où vient cet accès ? », et la clé elle-même n'est montrée qu'UNE
-   * fois : après ça, plus rien ne relie le porteur à celui qui la lui a donnée.
-   *
-   * 🔴 LE `detail` NE PORTE JAMAIS LA CLÉ, NI SON EMPREINTE, seulement les DROITS accordés. Une empreinte
-   * dans un journal jamais purgé donnerait de quoi reconnaître une clé bien après sa révocation.
+   * Journal d'audit (les fixtures qui ne l'observent pas passent `journalMuet`). Une clé d'API lit les contacts
+   * sans compte : savoir qui l'a créée et quand est la seule trace de l'origine de l'accès.
+   * 🔴 Le `detail` ne porte jamais la clé ni son empreinte, seulement les droits accordés (ce journal n'est pas purgé).
    */
   audit: AuditSink;
   createKey(tenantId: string, name: string, scopes: string[]): Promise<{ id: string; key: string }>;
@@ -33,9 +24,8 @@ export interface ApiKeysRouteDeps {
 }
 
 /**
- * CRUD des clés d'API (console admin, JWT). Admin-only par la garde de montage (`g.admin`, tenue par
- * `tests/role-admin.test.ts`). Le tenant vient du JWT, vérifié par l'étape d'espace.
- * La création renvoie la clé EN CLAIR UNE SEULE FOIS (jamais re-affichable) ; la liste n'expose jamais le hash.
+ * CRUD des clés d'API (console, admin par la garde de montage `g.admin`). L'espace vient du JWT. La création rend
+ * la clé en clair une seule fois ; la liste n'expose jamais le hash.
  */
 export function registerApiKeys(app: FastifyInstance, deps: ApiKeysRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
@@ -50,8 +40,7 @@ export function registerApiKeys(app: FastifyInstance, deps: ApiKeysRouteDeps, ga
     const invalid = scopes.filter((s) => !(VALID_API_SCOPES as readonly string[]).includes(s));
     if (invalid.length > 0) return reply.code(400).send({ error: `scope(s) inconnu(s) : ${invalid.join(', ')}` });
     const { id, key } = await deps.createKey(tenant, b.name.trim().slice(0, 100), scopes);
-    // key = clair, montré UNE fois. Le client doit le stocker maintenant.
-    // ⚠️ LES DROITS, PAS LA CLÉ : `scopes` dit ce qui a été accordé, et c'est toute la question.
+    // `key` en clair, montrée une seule fois. L'audit porte les droits accordés, jamais la clé.
     await journal(tenant, req, 'cle_api.creee', { kind: 'api_key', id }, { scopes });
     return reply.code(201).send({ id, key, name: b.name.trim().slice(0, 100), scopes });
   });
@@ -66,7 +55,7 @@ export function registerApiKeys(app: FastifyInstance, deps: ApiKeysRouteDeps, ga
     const { id } = req.params as { id: string };
     const ok = await deps.revokeKey(tenant, id);
     if (!ok) return reply.code(404).send({ error: 'clé inconnue ou déjà révoquée' });
-    // APRÈS le succès : une révocation refusée (clé inconnue, déjà révoquée) n'a rien révoqué.
+    // Après le succès : une révocation refusée n'a rien révoqué.
     await journal(tenant, req, 'cle_api.revoquee', { kind: 'api_key', id });
     return reply.code(200).send({ id, revoked: true });
   });

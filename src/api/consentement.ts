@@ -1,26 +1,17 @@
-// src/api/consentement.ts
 import type { AuditSink } from '../audit/journal';
 import { tenter } from '../lib/tenter';
 
 /**
- * LE CONSENTEMENT POSÉ PAR UNE MACHINE (spec de l'API publique, § 2 et § 3).
+ * Le consentement posé par une machine.
  *
- * 🔴 L'UPSERT NE SAIT QUE PROMOUVOIR, et c'est une bonne garde qu'on garde (un import n'écrase jamais un
- * consentement) : un refus s'écrit donc par une écriture DÉDIÉE, sur l'identifiant de la fiche, comme la
- * route `PATCH` de la fiche dans la console. Les deux sens passent par elle, parce que la fiche peut avoir
- * été trouvée par un identifiant externe, sans numéro.
+ * L'upsert ne sait que promouvoir (un import n'écrase jamais un consentement) : un refus s'écrit par une
+ * écriture dédiée, sur l'identifiant de la fiche, comme le `PATCH` de la console. `audit` est requis, et
+ * reste best-effort à l'appel.
  *
- * ⚠️ `audit` EST REQUIS : un consentement posé par une machine sans trace ne se justifie plus. Il reste
- * BEST-EFFORT à l'appel, comme partout : une panne d'écriture de log n'empêche pas d'enregistrer un refus.
- *
- * 🔴 L'ISSUE EST RENDUE, et l'appelant DOIT lire `absente` : une fiche purgée entre la résolution et cette
- * écriture n'a rien reçu. Répondre « mis à jour » ferait croire à l'intégrateur un désabonnement enregistré.
- * ⚠️ `inchange` couvre aussi la SOURCE : sur une fiche déjà `opted_in`, un `opted_in` d'une autre source ne
- * réécrit rien, la source d'origine du consentement est gardée (décision du lot 1, spec § 2).
- *
- * 🔴 `refuse` : un `opted_in` sur une fiche `opted_out`. UN STOP NE SE LÈVE PAS PAR MACHINE (décision de
- * Julien du 2026-09-24) ; seul un opérateur ou la personne elle-même le peut. L'appelant le rend en
- * `opted_out`, jamais en succès.
+ * 🔴 L'issue est rendue et l'appelant doit la lire : `absente` (fiche purgée entre-temps) n'a rien reçu ;
+ * `refuse` est un `opted_in` sur une fiche `opted_out` : un STOP ne se lève pas par machine, seul un
+ * opérateur ou la personne le peut, et l'appelant le rend en `opted_out`, jamais en succès. `inchange` garde
+ * aussi la source d'origine d'un consentement déjà posé.
  */
 export type ConsentementApi = 'opted_in' | 'opted_out';
 export type IssueConsentement = 'change' | 'inchange' | 'refuse' | 'absente';
@@ -36,12 +27,9 @@ export interface DepsConsentement {
 }
 
 /**
- * LES DÉPENDANCES DU CONSENTEMENT, CONSTRUITES ICI ET NULLE PART AILLEURS : `creerServiceContactsV1`
- * (`/v1/contacts`) et le câblage de `/v1/sends` (`src/index.ts`) passent par elle. Deux constructions
- * écrites à la main divergeraient, et une route journaliserait un consentement que l'autre écrirait sans trace.
- *
- * ⚠️ La flèche garde le `this` du dépôt : passer `contacts.ecrireConsentementParId` tel quel le perdrait sur
- * une instance de `PgContactStore`.
+ * Les dépendances du consentement, construites ici et nulle part ailleurs (`/v1/contacts` et `/v1/sends`) :
+ * deux constructions à la main divergeraient, et une route écrirait un consentement sans trace. La flèche
+ * garde le `this` du dépôt.
  */
 export function depsConsentementDe(contacts: Pick<DepsConsentement, 'ecrireConsentementParId'>, audit: AuditSink): DepsConsentement {
   return {
@@ -62,7 +50,7 @@ export async function appliquerConsentement(
   if (issue !== 'change') return issue;
   await tenter('audit du consentement ignoré:', () => deps.audit(
     tenantId,
-    // Une clé d'API n'est pas un compte : l'acteur reste vide, la SOURCE dit d'où vient la décision.
+    // Une clé d'API n'est pas un compte : l'acteur reste vide, la source dit d'où vient la décision.
     { userId: null, email: null },
     consent === 'opted_in' ? 'contact.optin' : 'contact.optout',
     { kind: 'contact', id: contactId },

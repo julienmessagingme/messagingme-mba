@@ -1,18 +1,15 @@
 /**
- * Qui a le droit d'écrire dans une conversation, selon son affectation.
+ * Qui a le droit d'écrire dans une conversation, selon son affectation. Fonction pure, appelée par toutes les
+ * routes d'écriture de l'inbox : une règle d'accès recopiée par route diverge, et la route oubliée devient la
+ * faille.
  *
- * Fonction PURE et isolée, appelée par toutes les routes d'écriture de l'inbox. Une règle d'accès recopiée
- * dans chaque route diverge au premier ajustement, et c'est la route oubliée qui devient la faille.
- *
- * La règle, telle qu'elle a été décidée :
- *   - conversation NON affectée -> tout le monde peut répondre, agents compris ;
+ *   - conversation non affectée -> tout le monde peut répondre, agents compris ;
  *   - conversation affectée     -> seul l'agent désigné ;
- *   - manager et admin          -> peuvent TOUJOURS reprendre la main ;
- *   - un agent peut PRENDRE une conversation non affectée si l'espace l'y autorise (`peutPrendre`), et
- *     jamais la passer à quelqu'un d'autre.
+ *   - manager et admin          -> peuvent toujours reprendre la main ;
+ *   - un agent peut prendre une conversation non affectée si l'espace l'y autorise, jamais la passer à un autre.
  *
- * ⚠️ C'est la seule barrière qui compte. Griser un bouton à l'écran n'empêche personne d'appeler l'API : le
- * refus doit venir du serveur, l'écran n'étant qu'un confort.
+ * 🔴 C'est la seule barrière qui compte : le refus doit venir du serveur, griser un bouton n'empêche personne
+ * d'appeler l'API.
  */
 export interface ActeurConversation {
   userId: string | null;
@@ -23,30 +20,20 @@ export interface ActeurConversation {
 export function peutEcrire(acteur: ActeurConversation, assignedTo: string | null): boolean {
   if (assignedTo === null) return true;
   if (acteur.role === 'admin' || acteur.role === 'manager') return true;
-  // Un acteur sans identité (câblage sans authentification) n'est PAS l'agent affecté : fail-closed.
+  // Un acteur sans identité (câblage sans authentification) n'est pas l'agent affecté : fail-closed.
   return acteur.userId !== null && acteur.userId === assignedTo;
 }
 
-/** Peut-on AFFECTER une conversation ? Réservé aux managers et aux admins. */
+/** Peut-on affecter une conversation ? Réservé aux managers et aux admins. */
 export function peutAffecter(acteur: ActeurConversation): boolean {
   return acteur.role === 'admin' || acteur.role === 'manager';
 }
 
 /**
- * Peut-on PRENDRE cette conversation, c'est-à-dire se l'affecter à SOI (migration 0160) ?
- *
- * 🔴 PRENDRE, JAMAIS RÉAFFECTER : c'est l'arbitrage de Julien du 2026-09-19, mot pour mot « un agent ne peut
- * pas réaffecter de conversations, ni les siennes, ni celles du pot commun, en revanche il peut prendre parmi
- * celles du pot commun ». Trois conditions, et chacune ferme une porte :
- *   - la conversation est à PERSONNE : prendre celle d'un collègue serait la lui retirer ;
- *   - l'espace l'a AUTORISÉ (`tenant_settings.agents_peuvent_prendre`, réglé par un admin ou un manager) ;
- *   - l'acteur a une IDENTITÉ : sans elle, il n'y a personne à qui l'affecter (fail-closed).
- *
- * ⚠️ L'ENCADREMENT PEUT TOUJOURS PRENDRE, réglage ou pas : il peut déjà tout affecter à n'importe qui, se
- * l'affecter à soi en fait partie. Le réglage ne gouverne QUE les agents.
- *
- * ⚠️ UNE SEULE RÈGLE POUR DEUX LECTEURS : la route qui écrit, et le drapeau que la liste rend pour que
- * l'écran montre le bouton. Écrites deux fois, elles finiraient par proposer un geste que le serveur refuse.
+ * Peut-on prendre cette conversation, c'est-à-dire se l'affecter à soi ? Prendre, jamais réaffecter : la
+ * conversation est à personne (prendre celle d'un collègue la lui retirerait), l'espace l'a autorisé
+ * (`agents_peuvent_prendre`), et l'acteur a une identité (fail-closed). L'encadrement peut toujours prendre.
+ * Une seule règle pour la route qui écrit et le drapeau qui montre le bouton.
  */
 export function peutPrendre(acteur: ActeurConversation, assignedTo: string | null, agentsPeuventPrendre: boolean): boolean {
   if (assignedTo !== null || acteur.userId === null) return false;
@@ -54,28 +41,17 @@ export function peutPrendre(acteur: ActeurConversation, assignedTo: string | nul
 }
 
 /**
- * Voit-on TOUT, quelle que soit l'affectation ? Managers et admins.
- *
- * ⚠️ Exactement la même frontière que `peutAffecter`, mais ce n'est PAS la même question : l'une donne le
- * droit de distribuer le travail, l'autre celui de le voir. Les confondre en une seule fonction ferait qu'en
- * bougeant l'une on bougerait l'autre sans s'en apercevoir.
+ * Voit-on tout, quelle que soit l'affectation ? Managers et admins. Même frontière que `peutAffecter` mais pas
+ * la même question (voir le travail, pas le distribuer) : les fusionner ferait bouger l'une avec l'autre.
  */
 export function voitTout(acteur: ActeurConversation): boolean {
   return acteur.role === 'admin' || acteur.role === 'manager';
 }
 
 /**
- * LA MÊME RÈGLE QUE `peutEcrire`, EN SQL, pour les compteurs qui ne peuvent pas la faire tourner ligne à
- * ligne. `c` est l'alias de `conversations`.
- *
- * 🔴 DEUX ÉCRITURES D'UNE MÊME RÈGLE, ET C'EST ASSUMÉ : une pastille se calcule en une requête sur toute la
- * base, on ne va pas rapatrier les conversations pour leur appliquer une fonction. Ce qui rend la
- * duplication tenable, c'est qu'elles vivent DANS LE MÊME FICHIER, sous les yeux l'une de l'autre, et qu'un
- * test d'intégration vérifie qu'elles rendent le MÊME verdict sur les mêmes lignes.
- *
- * ⚠️ `assigned_to is null` D'ABORD : une conversation que personne ne s'est vu confier appartient au pot
- * commun, et tout le monde doit la voir, sinon une conversation non affectée n'allumerait la pastille de
- * personne et resterait invisible jusqu'à ce qu'un manager la distribue.
+ * La même règle que `peutEcrire`, en SQL, pour les compteurs (`c` = alias de `conversations`). Deux écritures
+ * d'une règle, dans le même fichier, et un test d'intégration vérifie qu'elles rendent le même verdict.
+ * `assigned_to is null` d'abord : une conversation du pot commun doit allumer la pastille de tout le monde.
  */
 export function visibiliteSql(paramVoitTout: string, paramUserId: string): string {
   return `(${paramVoitTout}::boolean or c.assigned_to is null or c.assigned_to = ${paramUserId}::uuid)`;

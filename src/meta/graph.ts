@@ -3,14 +3,10 @@ import { MetaApiError, type MetaErrorBody } from './errors';
 import type { FetchLike } from './templates';
 
 /**
- * L'APPEL GRAPH AUTHENTIFIÉ des clients WhatsApp (modèles, flows, lecture et inscription du numéro, média
- * entrant) : jeton en `Bearer`, `fetch` injectable, corps JSON (`null` s'il est illisible), `MetaApiError` si
- * la réponse n'est pas 2xx. Les en-têtes de l'appelant s'ajoutent après l'autorisation.
- *
- * ⚠️ CE N'EST PAS `ClientGraph.call` ci-dessous, et les réunir changerait un comportement : celui-là porte un
- * plafond de durée et lève `ErreurGraph`, avec une autre phrase, que l'inscription et les publicités lisent.
- * `MbaClient` (en-tête de version, erreurs de l'agent) et le transport des envois (rejeu, `Retry-After`) ont
- * aussi leur appel à eux, pour la même raison.
+ * L'appel Graph authentifié des clients WhatsApp (modèles, flows, numéro, média entrant) : jeton en `Bearer`,
+ * `fetch` injectable, corps JSON (`null` s'il est illisible), `MetaApiError` si non-2xx.
+ * Distinct de `ClientGraph.call`, qui porte un plafond de durée et lève `ErreurGraph` avec une autre phrase,
+ * lue par l'inscription et les publicités : les réunir changerait un comportement.
  */
 export async function appelGraph(fetchImpl: FetchLike, token: string, url: string, init: RequestInit = {}): Promise<unknown> {
   const res = await fetchImpl(url, { ...init, headers: { authorization: `Bearer ${token}`, ...(init.headers ?? {}) } });
@@ -20,24 +16,8 @@ export async function appelGraph(fetchImpl: FetchLike, token: string, url: strin
 }
 
 /**
- * LE SOCLE COMMUN DES CLIENTS GRAPH (2026-09-23, lot 2 des publicités Click-to-WhatsApp).
- *
- * 🔴 EXTRAIT, PAS RÉÉCRIT. Trois choses étaient identiques entre l'inscription WhatsApp et les publicités :
- * l'appel Graph avec son message d'erreur, l'échange du code rendu par la fenêtre Meta, et la lecture des
- * cibles d'un `granular_scope` dans `debug_token`. Les recopier aurait créé deux vérités, et c'est
- * exactement ce que le dépôt s'interdit (« avant d'écrire un helper, regarder s'il existe déjà »).
- *
- * ⚠️ AUCUN COMPORTEMENT N'A CHANGÉ à l'extraction, et la preuve est que les tests de l'Embedded Signup
- * passent SANS avoir été touchés. Si l'un d'eux avait dû changer, l'extraction aurait changé un
- * comportement du chemin d'inscription, qui est le plus structurant du produit.
- */
-/**
- * L'ÉCHEC D'UN APPEL GRAPH, AVEC SON STATUT ET SON CODE, pas seulement sa phrase.
- *
- * 🔴 LE MESSAGE NE CHANGE PAS D'UN CARACTÈRE : c'est une sous-classe d'`Error`, pas un format neuf. Ce
- * qu'elle ajoute, c'est de quoi DISTINGUER un jeton refusé (401, ou code 190) d'une panne passagère, sans
- * relire la phrase à l'expression régulière. Un message se traduit, se reformule et casse en silence ; un
- * code est un contrat.
+ * L'échec d'un appel Graph, avec son statut et son code. Le message reste celui d'une `Error` ordinaire ; le
+ * code permet de distinguer un jeton refusé (401, 190) d'une panne sans relire la phrase.
  */
 export class ErreurGraph extends Error {
   constructor(readonly status: number, readonly code: number | null, message: string) {
@@ -47,21 +27,14 @@ export class ErreurGraph extends Error {
 }
 
 /**
- * Meta a refusé LE JETON LUI-MÊME (expiré, révoqué, session fermée), par opposition à une panne.
- *
- * ⚠️ LE CODE 10 EST DÉLIBÉRÉMENT DEHORS. Il dit « cette ACTION n'est pas permise », pas « ce jeton est
- * mort » : le retenir ferait afficher « reconnectez-vous » à un client dont la connexion est parfaitement
- * valide, pour un appel précis qui, lui, restera refusé après la reconnexion. L'erreur remonte de toute
- * façon à l'écran avec le message de Meta.
+ * Meta a refusé le jeton lui-même (expiré, révoqué, session fermée), par opposition à une panne. Le code 10 est
+ * dehors : il dit « cette action n'est pas permise », et « reconnectez-vous » serait faux pour ce client.
  */
 export function estJetonRefuse(err: unknown): boolean {
   return err instanceof ErreurGraph && (err.status === 401 || err.code === 190 || err.code === 102);
 }
 
-/** Plafond de durée d'un appel Graph. Très au-dessus du temps de réponse normal, donc sans effet
- *  sur un appel sain : il ne borne qu'un appel qui ne reviendra jamais. */
-/** ⚠️ LA MÊME constante que le transport HTTP du dépôt, importée et pas recopiée : deux nombres
- *  égaux écrits à deux endroits sont deux nombres qui divergeront. */
+/** Plafond de durée d'un appel Graph, très au-dessus d'un appel sain : la constante du transport HTTP, importée. */
 const DELAI_GRAPH_MS = HTTP_TIMEOUT_DEFAUT_MS;
 
 export abstract class ClientGraph {
@@ -73,20 +46,9 @@ export abstract class ClientGraph {
   ) {}
 
   /**
-   * 🔴 UN APPEL GRAPH A UN PLAFOND DE DURÉE, parce que `fetch` n'en a AUCUN par défaut.
-   *
-   * Sans lui, un Meta qui accepte la connexion et ne répond jamais retient le gestionnaire Fastify
-   * pour toujours : ni le client ni nous ne reprenons la main, et un `.catch()` placé autour de
-   * l'appel ne sert à rien puisqu'il n'y a pas d'erreur à attraper. Trente secondes sont très au-dessus
-   * de ce que Graph met normalement (moins d'une seconde) : ce plafond ne peut pas couper un appel
-   * sain, il ne coupe qu'un appel perdu.
-   *
-   * ⚠️ RAYON DE SOUFFLE ASSUMÉ : cette classe sert AUSSI l'inscription WhatsApp
-   * (`MetaEmbeddedSignupClient`), donc un chemin de production. Le plafond y est un gain du même
-   * ordre, pour la même raison, et il n'a pas de raison d'être différent selon l'appelant.
-   *
-   * ⚠️ `init.signal` FOURNI PAR L'APPELANT GAGNE : s'il en pose un, c'est le sien qui s'applique, et
-   * le plafond ne s'ajoute pas par-dessus.
+   * Un appel Graph a un plafond de durée, parce que `fetch` n'en a aucun : un Meta qui accepte la connexion sans
+   * jamais répondre retiendrait le gestionnaire Fastify pour toujours. Ce plafond sert aussi l'inscription
+   * WhatsApp. Un `init.signal` fourni par l'appelant l'emporte sur le plafond.
    */
   protected async call(url: string, init?: RequestInit): Promise<Record<string, unknown>> {
     let res: Response;
@@ -96,13 +58,9 @@ export abstract class ClientGraph {
       if (estAbandon(err)) throw new HttpTimeoutError(url, DELAI_GRAPH_MS);
       throw err;
     }
-    // 🔴 DISTINGUER « CORPS ILLISIBLE » DE « CORPS COUPÉ », et c'est le piège que le plafond OUVRE.
-    // L'échéance couvre aussi la lecture du corps : un Meta qui envoie ses en-têtes puis se tait fait
-    // échouer ICI. Un `catch(() => ({}))` avalerait notre propre abandon et rendrait un SUCCÈS au corps
-    // vide, c'est-à-dire, sur `actifsAccordes`, deux listes vides et un écran qui annonce « aucun
-    // compte » sur une connexion saine. Le client se déconnecterait, donc révoquerait un jeton valide.
-    // Le transport HTTP du dépôt garde déjà exactement ce cas (`src/meta/http.ts`), d'où les mêmes
-    // briques ici plutôt qu'une seconde façon de faire.
+    // Distinguer « corps illisible » de « corps coupé » : l'échéance couvre aussi la lecture du corps. Un
+    // `catch(() => ({}))` avalerait notre abandon et rendrait un succès au corps vide (sur `actifsAccordes`, un
+    // « aucun compte » sur une connexion saine). Même traitement que le transport HTTP (`src/meta/http.ts`).
     let body: Record<string, unknown>;
     try {
       body = (await res.json()) as Record<string, unknown>;
@@ -122,11 +80,8 @@ export abstract class ClientGraph {
   }
 
   /**
-   * Échange le code rendu par la fenêtre Meta (TTL 30 s) contre le jeton du client.
-   *
-   * ⚠️ MÊME APPEL pour l'inscription WhatsApp et pour les publicités : ce qui change entre les deux n'est
-   * pas l'échange, c'est la CONFIGURATION qui a ouvert la fenêtre, donc les permissions et le type du jeton
-   * rendu. Le code, lui, s'échange de la même façon.
+   * Échange le code rendu par la fenêtre Meta (TTL 30 s) contre le jeton du client. Même appel pour l'inscription
+   * et les publicités : seule la configuration qui a ouvert la fenêtre change (permissions, type de jeton).
    */
   async exchangeCode(code: string): Promise<string> {
     const qs = new URLSearchParams({ client_id: this.appId, client_secret: this.appSecret, code });
@@ -137,17 +92,10 @@ export abstract class ClientGraph {
   }
 
   /**
-   * Les actifs qu'un jeton accorde, lus DANS LE JETON (`GET /debug_token` -> `granular_scopes[].target_ids`),
-   * pour les scopes demandés.
-   *
-   * ⚠️ DEUX tokens, et ils ne jouent pas le même rôle. `input_token` est le token INSPECTÉ (celui du client) ;
-   * l'autorisation, elle, doit être un TOKEN D'APPLICATION (`{app_id}|{app_secret}`). S'authentifier avec le
-   * token du client rend « (#100) You must provide an app access token, or a user access token that is an
-   * owner or developer of the app » (mesuré le 2026-08-17). Le token d'app ne quitte jamais le serveur.
-   *
-   * Rend [] si le token n'expose aucune cible pour ces scopes, et ce n'est pas une erreur : un token NON
-   * scopé (System User de notre propre business, mesuré le 2026-08-17) rend `target_ids: null`. L'appelant
-   * décide quoi en dire.
+   * Les actifs qu'un jeton accorde pour les scopes demandés, lus dans le jeton (`GET /debug_token` ->
+   * `granular_scopes[].target_ids`). `input_token` est le jeton inspecté ; l'autorisation doit être un jeton
+   * d'application (`{app_id}|{app_secret}`), sans quoi Meta rend « (#100) You must provide an app access token ».
+   * Le jeton d'app ne quitte jamais le serveur. Rend [] sans cible (un jeton non scopé rend `target_ids: null`).
    */
   protected async ciblesDuJeton(jeton: string, scopesVoulus: readonly string[]): Promise<string[]> {
     const qs = new URLSearchParams({ input_token: jeton, access_token: `${this.appId}|${this.appSecret}` });

@@ -2,8 +2,8 @@ import type { AuditAction } from './store.pg';
 import { tenter } from '../lib/tenter';
 
 /**
- * Écriture du journal, telle qu'une route la reçoit en dépendance. OPTIONNELLE partout : absente, l'action
- * métier se déroule sans trace (c'est le cas des câblages de test, qui ne montent pas de base).
+ * Écriture du journal, telle qu'une route la reçoit en dépendance. Optionnelle : absente (câblages de test),
+ * l'action métier se déroule sans trace.
  */
 export type AuditSink = (
   tenantId: string,
@@ -23,14 +23,9 @@ export type Journal = (
 ) => Promise<void>;
 
 /**
- * Fabrique le journaliseur d'une route.
- *
- * BEST-EFFORT PAR CONSTRUCTION, et ce n'est pas de la négligence : l'inverse voudrait dire qu'une panne
- * d'écriture de log empêche un client d'exercer son droit à l'effacement. L'échec reste visible en console,
- * sans quoi un journal muet serait indétectable.
- *
- * L'acteur ne porte que l'identifiant : l'email est résolu au câblage, où il est DÉNORMALISÉ dans le journal
- * pour rester lisible même après le départ du collaborateur.
+ * Fabrique le journaliseur d'une route. Best-effort par construction : une panne d'écriture du journal ne doit pas
+ * empêcher un client d'exercer son droit à l'effacement. L'échec reste visible en console.
+ * L'acteur ne porte que l'identifiant ; l'email est résolu au câblage et dénormalisé, lisible après un départ.
  */
 export function makeJournal(audit?: AuditSink): Journal {
   return async (tenantId, req, action, target, detail = {}) => {

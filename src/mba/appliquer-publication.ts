@@ -1,14 +1,8 @@
 /**
- * APPLIQUER UN GESTE DU PLAN DE PUBLICATION chez Meta (relais du MBA, migration 0161).
- *
- * 🔴 SORTI DU CÂBLAGE POUR ÊTRE TESTÉ (revue finale du 2026-09-21). Il vivait en ligne dans `src/index.ts`,
- * et la revue a montré qu'on pouvait y débrancher la pose ou l'oubli de la clé sans qu'aucun test ne tombe :
- * l'ordre était testé dans `cle-relais.ts`, pas le fait que `appliquer` l'appelle. Il reçoit désormais tout
- * par injection, et `tests/mba-appliquer-publication.test.ts` le joue contre des faux.
- *
- * ⚠️ UN REFUS QUI VIENT DE NOUS LÈVE `ErreurPublication`, et la route le dit tel quel au lieu de
- * « Meta a refusé ». L'ancien câblage rendait la main en silence sur un connecteur ou un outil introuvable,
- * et le POST annonçait « Publié » pour un geste qui n'avait rien fait.
+ * Appliquer un geste du plan de publication chez Meta (relais du MBA). Tout arrive par injection, pour que
+ * `tests/mba-appliquer-publication.test.ts` vérifie que la pose et l'oubli de la clé sont bien appelés.
+ * Un refus qui vient de nous lève `ErreurPublication`, que la route dit tel quel : sinon un connecteur ou un
+ * outil introuvable ferait annoncer « Publié » pour un geste qui n'a rien fait.
  */
 
 import {
@@ -17,15 +11,14 @@ import {
 import { poserCleNeuve, oublierCle, type DepsCleRelais } from './cle-relais';
 
 /**
- * Les clés de la mémoire d'UNE publication (`ctx`), partagées avec la route qui l'amorce.
- * `outils` : la liste d'outils sur laquelle le plan de CETTE publication a été calculé, pour que les corps
- * publiés soient exactement ceux que le plan a comparés, et qu'on ne relise pas la base. `acteur` : l'administrateur qui publie, que
- * l'audit des clés nomme (une clé au droit `mba:relais` naît de son clic, pas du système).
+ * Les clés de la mémoire d'une publication (`ctx`), partagées avec la route qui l'amorce. `outils` : la liste sur
+ * laquelle le plan a été calculé, pour publier exactement les corps comparés. `acteur` : l'administrateur qui
+ * publie, que l'audit des clés nomme.
  */
 export const CTX_OUTILS = 'outils';
 export const CTX_ACTEUR = 'acteur';
 
-/** Un refus qui vient de NOUS, pas de Meta. */
+/** Un refus qui vient de nous, pas de Meta. */
 export class ErreurPublication extends Error {
   constructor(message: string) { super(message); this.name = 'ErreurPublication'; }
 }
@@ -46,7 +39,7 @@ export interface DepsAppliquer {
   /** La base du connecteur (`PUBLIC_API_URL` + `CHEMIN_RELAIS`), `null` quand l'adresse publique manque. */
   adresseDuRelais(): string | null;
   outils(tenantId: string, pn: string): Promise<OutilAPublier[]>;
-  /** Les dépendances de la clé, pour un ACTEUR donné (l'identifiant de l'administrateur, `null` = système). */
+  /** Les dépendances de la clé, pour un acteur donné (l'identifiant de l'administrateur, `null` = système). */
   cle(acteur: string | null): DepsCleRelais;
 }
 
@@ -59,10 +52,9 @@ export function creerAppliquerGeste(deps: DepsAppliquer) {
     if (base === null) throw new ErreurPublication('l’adresse publique de l’API n’est pas réglée');
 
     /**
-     * Deux lectures MÉMORISÉES pour toute la publication : la liste des connecteurs CHEZ META et les outils
-     * exposés. 🔴 La première est INVALIDÉE dès qu'on crée ou supprime un connecteur, sinon le geste suivant
-     * chercherait le relais dans une photo prise AVANT sa création. La seconde est AMORCÉE par la route avec
-     * la liste du plan (`CTX_OUTILS`) ; elle n'est lue ici qu'à défaut.
+     * Deux lectures mémorisées pour toute la publication : les connecteurs chez Meta et les outils exposés. La
+     * première est invalidée dès qu'on crée ou supprime un connecteur, sinon le geste suivant chercherait le relais
+     * dans une photo prise avant sa création. La seconde est amorcée par la route avec la liste du plan (`CTX_OUTILS`).
      */
     const idDuRelais = async (): Promise<string | null> => {
       let vus = ctx.get('connecteurs') as Array<{ id: string; name: string }> | undefined;
@@ -75,8 +67,8 @@ export function creerAppliquerGeste(deps: DepsAppliquer) {
       return vus;
     };
 
-    // 🔴 TOUTE ÉCRITURE DU CONNECTEUR POSE UNE CLÉ NEUVE : Meta exige `auth_config` à chaque fois, et nous ne
-    // gardons que l'empreinte de l'ancienne. L'ordre vit dans `poserCleNeuve`, testé là-bas.
+    // 🔴 Toute écriture du connecteur pose une clé neuve : Meta exige `auth_config` à chaque fois, et nous ne gardons
+    // que l'empreinte de l'ancienne. L'ordre vit dans `poserCleNeuve`.
     if (geste.type === 'connecteur_creer') {
       await poserCleNeuve(cleDe, tenantId, async (cle) => { await client.createConnector(pn, corpsConnecteurRelais(base, cle)); });
       ctx.delete('connecteurs');

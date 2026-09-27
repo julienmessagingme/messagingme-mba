@@ -8,7 +8,7 @@ import { normalizePhone } from '../crm/phone';
 type WithRawBody = FastifyRequest & { rawBody?: Buffer };
 
 /**
- * Événement poussé par le connecteur HubSpot. Payload EXTERNE, donc validé au `safeParse` : le connecteur est
+ * Événement poussé par le connecteur HubSpot. Payload externe, validé au `safeParse` : le connecteur est
  * authentifié par signature, mais une version décalée des deux côtés reste possible.
  */
 const dealStageSchema = z.object({
@@ -33,10 +33,9 @@ export interface HubspotEventRouteDeps {
 }
 
 /**
- * Canal ENTRANT depuis le connecteur HubSpot. C'est le seul endroit où un système extérieur peut provoquer un
- * envoi WhatsApp, donc il est volontairement étroit : une seule route, un seul type d'événement, et aucune
- * décision prise ici. La route traduit « ce deal a changé d'étape » en événement d'automation ; ce sont les
- * automations du workspace qui décident s'il se passe quelque chose, avec leurs propres garde-fous.
+ * Canal entrant depuis le connecteur HubSpot, seul endroit où un système extérieur peut provoquer un envoi
+ * WhatsApp : une route, un type d'événement, aucune décision ici. Ce sont les automations de l'espace qui
+ * décident, avec leurs propres garde-fous.
  */
 export function registerHubspotEvents(app: FastifyInstance, deps: HubspotEventRouteDeps): void {
   const now = deps.now ?? (() => Date.now());
@@ -55,19 +54,18 @@ export function registerHubspotEvents(app: FastifyInstance, deps: HubspotEventRo
     if (!parsed.success) return reply.code(400).send({ error: 'payload invalide' });
     const { tenantId, phone, stageId, pipelineId } = parsed.data;
 
-    // Numéro normalisé avec la MÊME fonction que l'import CSV et l'import de liste : un contact doit être
-    // reconnu à l'identique quel que soit le chemin par lequel son numéro nous arrive.
+    // Numéro normalisé avec la même fonction que l'import CSV et l'import de liste : un contact doit être
+    // reconnu à l'identique quel que soit le chemin par lequel son numéro arrive.
     const e164 = normalizePhone(phone, 'FR').e164;
     if (!e164) return reply.code(200).send({ ok: true, triggered: false, reason: 'numéro inexploitable' });
 
-    // `waIdOf` est la règle PARTAGÉE (crm/identity.ts) : la redériver ici créerait un second contact pour la
+    // `waIdOf` est la règle partagée (crm/identity.ts) : la redériver ici créerait un second contact pour la
     // même personne le jour où l'une des deux versions changerait.
     const waId = waIdOf(e164, null);
     if (!waId) return reply.code(200).send({ ok: true, triggered: false, reason: 'numéro inexploitable' });
 
-    // Contact INCONNU de ce workspace : on ne le crée PAS. Un événement de CRM ne doit pas faire apparaître
-    // des fiches en silence, et un contact sans fiche n'a ni consentement connu ni champ pour les variables
-    // d'un template. L'opérateur importe sa liste HubSpot d'abord ; c'est explicite et déjà outillé.
+    // 🔴 Contact inconnu de l'espace : on ne le crée pas. Un contact sans fiche n'a ni consentement connu ni champ
+    // pour les variables d'un template ; l'opérateur importe d'abord sa liste HubSpot.
     const connu = await deps.findWaId(tenantId, waId);
     if (!connu) {
       // eslint-disable-next-line no-console

@@ -4,9 +4,7 @@ import { STATS_TZ, BOUNDS_CTE } from '../stats/range';
 
 /**
  * Liens de redirection tracés : la destination d'origine d'un bouton URL, et les clics qu'il a reçus.
- *
- * ⚠️ Cette table est la SEULE mémoire de la destination d'origine. Une fois le template approuvé chez Meta,
- * c'est notre lien qui y figure, et le lien du client n'existe plus nulle part ailleurs.
+ * Cette table est la seule mémoire de la destination d'origine : chez Meta, c'est notre lien qui figure.
  */
 
 /** Le bouton visé, dans la numérotation de Meta. `cardIndex` non nul = bouton d'une carte de carousel. */
@@ -22,11 +20,8 @@ export interface LienTrace extends CibleLien {
   destination: string;
   /**
    * L'URL soumise à Meta porte-t-elle le suffixe variable qui fait voyager le jeton du destinataire ?
-   *
-   * 🔴 C'est cette colonne, et elle seule, qui dit à l'ENVOI s'il doit fournir un composant de bouton. Se
-   * tromper fait échouer l'appel dans les DEUX sens (132000) : un composant pour une URL sans variable, comme
-   * une variable sans composant. `false` pour tous les liens d'avant le 2026-09-02, dont l'adresse est figée
-   * chez Meta et ne pourra jamais en porter.
+   * Cette colonne seule dit à l'envoi s'il doit fournir un composant de bouton : se tromper fait échouer l'appel
+   * dans les deux sens (132000). `false` pour les liens dont l'adresse figée chez Meta n'en porte pas.
    */
   avecJeton: boolean;
 }
@@ -41,27 +36,17 @@ export class PgTrackedLinkStore {
   constructor(private readonly pool: Pool) {}
 
   /**
-   * Réserve (ou retrouve) le code d'un bouton et enregistre sa destination. Rend le code à mettre dans l'URL
-   * soumise à Meta.
-   *
-   * Ré-appelée sur le MÊME bouton (template supprimé puis recréé sous le même nom, template resoumis), elle
-   * garde le code et met à jour la destination : les messages déjà livrés continuent de fonctionner et
-   * suivent la nouvelle cible. Attribuer un nouveau code les aurait laissés pointer une ligne orpheline.
+   * Réserve (ou retrouve) le code d'un bouton et enregistre sa destination ; rend le code à mettre dans l'URL.
+   * Ré-appelée sur le même bouton (template recréé ou resoumis), elle garde le code et met à jour la
+   * destination : les messages déjà livrés suivent la nouvelle cible au lieu de pointer une ligne orpheline.
    */
   async allocate(tenantId: string, code: string, cible: CibleLien, destination: string, avecJeton: boolean): Promise<string> {
     const res = await this.pool.query<{ code: string }>(
-      // `confirmed_at = null` remis à chaque réservation : une nouvelle soumission n'est confirmée que si
-      // Meta l'accepte à son tour. Sans cette remise à zéro, un template resoumis puis refusé garderait la
-      // confirmation de sa version précédente.
-      // `avec_jeton` dit a l ENVOI s il doit fournir un composant de bouton, et c est cette colonne SEULE qui
-      // le dit : la deduire de la date de creation serait une regle qui se casse au premier retard de
-      // deploiement. Se tromper fait echouer l envoi dans les deux sens (131008 quand le composant manque,
-      // 132000 quand il est fourni pour une URL sans variable).
-      //
-      // 🔴 ELLE EST DESORMAIS DECIDEE PAR L APPELANT, et ce n est plus toujours `true`. Un bouton de CARTE de
-      // carousel n est pas adressable par le constructeur de composants (il ne sait produire qu un composant
-      // de premier niveau) : lui soumettre un `{{1}}` le condamnerait au 131008 pour toujours. Cf. la regle
-      // dans `src/http/templates.ts`.
+      // `confirmed_at = null` à chaque réservation : une resoumission n'est confirmée que si Meta l'accepte à
+      // son tour, sinon un template resoumis puis refusé garderait la confirmation précédente.
+      // `avec_jeton`, décidé par l'appelant, est la seule source de vérité pour l'envoi (131008 si le composant
+      // manque, 132000 s'il est fourni sans variable). Un bouton de carte de carousel n'est pas adressable par le
+      // constructeur de composants : il ne reçoit jamais de `{{1}}` (règle dans `src/http/templates.ts`).
       `insert into tracked_links (code, tenant_id, template_name, template_language, card_index, button_index, destination, avec_jeton)
        values ($1, $2, $3, $4, $5, $6, $7, $8)
        on conflict (tenant_id, template_name, template_language, coalesce(card_index, -1), button_index)
@@ -74,19 +59,12 @@ export class PgTrackedLinkStore {
   }
 
   /**
-   * Réserve (ou retrouve) le code d'une ADRESSE tracée en RCS. Rend le code à mettre dans l'URL envoyée.
+   * Réserve (ou retrouve) le code d'une adresse tracée en RCS ; rend le code à mettre dans l'URL envoyée.
    *
-   * 🔴 CLÉ SUR LA DESTINATION, PAS SUR UN BOUTON (migration 0107). Un message RCS n'est soumis à personne : il
-   * est composé à l'envoi, donc il n'y a aucune réservation à rendre idempotente, seulement un code stable par
-   * adresse. Le raisonnement complet est en tête de la 0107.
-   *
-   * `confirmed_at` posé TOUT DE SUITE, contrairement au chemin WhatsApp : là-bas la confirmation attend
-   * l'accord de Meta, parce qu'un template refusé ne portera jamais notre lien. Ici il n'y a personne à
-   * attendre : le lien part dans le message qui suit immédiatement cet appel.
-   *
-   * `do update` sur un conflit plutôt que `do nothing` : c'est ce qui garantit le `returning code` dans les
-   * deux cas. Sans lui, un envoi sur une adresse déjà connue ne rendrait aucune ligne, et le message partirait
-   * avec son adresse d'origine, non mesuré, sans que rien ne le dise.
+   * Clé sur la destination, pas sur un bouton (0107) : un message RCS est composé à l'envoi, il faut seulement
+   * un code stable par adresse. `confirmed_at` est posé tout de suite : aucun accord de Meta à attendre.
+   * `do update` plutôt que `do nothing` pour garantir le `returning code` : sans lui, une adresse déjà connue ne
+   * rendrait aucune ligne et le message partirait non mesuré, en silence.
    */
   async allocateRcs(tenantId: string, code: string, destination: string): Promise<string> {
     const res = await this.pool.query<{ code: string }>(
@@ -101,8 +79,8 @@ export class PgTrackedLinkStore {
   }
 
   /**
-   * Confirme les liens d'un template : Meta l'a accepté, il porte donc bien nos adresses. Tant que ce n'est
-   * pas fait, les mesures ignorent ces liens (cf. le commentaire de `confirmed_at` dans la migration 0066).
+   * Confirme les liens d'un template accepté par Meta. Tant que ce n'est pas fait, les mesures ignorent ces
+   * liens (cf. `confirmed_at` dans la migration 0066).
    */
   async confirm(tenantId: string, codes: readonly string[]): Promise<void> {
     if (codes.length === 0) return;
@@ -113,12 +91,9 @@ export class PgTrackedLinkStore {
   }
 
   /**
-   * Destination d'un code, pour la redirection publique. Le code arrive d'une URL : on le normalise en
-   * minuscules plutôt que de faire confiance à la casse tapée (ou recopiée) par un client.
-   *
-   * ⚠️ Ne filtre PAS sur `confirmed_at`, et c'est VOLONTAIRE : si Meta a accepté le template mais que notre
-   * confirmation a échoué, le lien circule déjà dans des messages livrés. Un lien qui marche sans être
-   * mesuré vaut mieux qu'un lien mort proprement comptabilisé.
+   * Destination d'un code, pour la redirection publique. Le code arrive d'une URL : normalisé en minuscules.
+   * Ne filtre pas sur `confirmed_at` : si notre confirmation a échoué, le lien circule déjà dans des messages
+   * livrés, et un lien qui marche sans être mesuré vaut mieux qu'un lien mort.
    */
   async getByCode(code: string): Promise<DestinationLien | null> {
     const res = await this.pool.query<{ tenant_id: string; destination: string }>(
@@ -130,11 +105,9 @@ export class PgTrackedLinkStore {
   }
 
   /**
-   * Enregistre un clic. Appelée en BEST-EFFORT : un échec ne doit jamais empêcher la redirection.
-   *
-   * `contactId` = QUI a cliqué (migration 0106), `null` quand l'URL ne portait pas de jeton. C'est le cas de
-   * tous les templates approuvés avant le 2026-09-02 : leur adresse est figée chez Meta et ne pourra jamais
-   * en porter. Compter ces clics-là sans savoir qui vaut mieux que ne pas les compter.
+   * Enregistre un clic, en best-effort : un échec ne doit jamais empêcher la redirection.
+   * `contactId` = qui a cliqué, `null` quand l'URL ne portait pas de jeton (adresse figée chez Meta) : compter
+   * ces clics sans savoir qui vaut mieux que ne pas les compter.
    */
   async recordClick(code: string, tenantId: string, contactId?: string | null): Promise<void> {
     await this.pool.query(
@@ -144,14 +117,12 @@ export class PgTrackedLinkStore {
   }
 
   /**
-   * Résout un jeton public en identifiant de contact, DANS un espace donné.
+   * Résout un jeton public en identifiant de contact, dans un espace donné.
    *
-   * 🔴 `tenant_id = $1` alors que le jeton est unique globalement, et ce n'est pas redondant : l'espace vient
-   * du LIEN cliqué, pas de l'URL. Sans ce filtre, un jeton d'un autre client se verrait attribuer ce clic-ci,
-   * ce qui mêlerait deux clientèles dans une même mesure.
-   *
-   * ⚠️ Un contact ANONYMISÉ garde sa ligne mais son jeton est effacé par la purge : il ne se résout donc
-   * plus, et ses clics futurs redeviennent anonymes. C'est le comportement voulu du droit à l'effacement.
+   * 🔴 `tenant_id = $1` bien que le jeton soit unique globalement : l'espace vient du lien cliqué, et sans ce
+   * filtre un jeton d'un autre client se verrait attribuer ce clic.
+   * La purge efface le jeton d'un contact anonymisé : ses clics futurs redeviennent anonymes (droit à
+   * l'effacement).
    */
   async contactParJeton(tenantId: string, jeton: string): Promise<string | null> {
     const res = await this.pool.query<{ id: string }>(
@@ -162,17 +133,11 @@ export class PgTrackedLinkStore {
   }
 
   /**
-   * Le jeton public de CES contacts, fabriqué pour ceux qui n'en ont pas encore.
+   * Le jeton public de ces contacts, fabriqué pour ceux qui n'en ont pas encore.
    *
-   * 🔴 POSÉ À L'ENVOI, PAS À LA CRÉATION DU CONTACT. On ne fabrique pas d'identifiants pour des gens à qui on
-   * n'envoie jamais de lien tracé, et une campagne qui n'en contient pas n'écrit donc rien du tout.
-   *
-   * `on conflict do nothing` sur l'index unique global : deux envois simultanés au même contact peuvent tirer
-   * deux jetons, un seul entre, et la lecture qui suit rend celui qui a gagné. Sans ça, l'un des deux lèverait
-   * en pleine campagne.
-   *
-   * Rend une map identifiant -> jeton. Les contacts absents de la map (aucun, en pratique) partiront sans
-   * jeton, donc avec un lien anonyme : dégrader vaut mieux que faire échouer un envoi.
+   * Posé à l'envoi, pas à la création du contact : pas d'identifiant pour qui ne reçoit jamais de lien tracé.
+   * Une collision de deux envois simultanés est absorbée, et la relecture rend le jeton du gagnant. Un contact
+   * absent de la map part avec un lien anonyme : dégrader vaut mieux que faire échouer un envoi.
    */
   async jetonsPourContacts(tenantId: string, contactIds: readonly string[], fabriquer: () => string): Promise<Map<string, string>> {
     const out = new Map<string, string>();
@@ -183,8 +148,7 @@ export class PgTrackedLinkStore {
       [tenantId, [...contactIds]],
     );
     if (manquants.rowCount && manquants.rowCount > 0) {
-      // Un seul énoncé pour tous : autant d'allers-retours que de contacts ferait de l'attribution un coût
-      // proportionnel à la taille de la campagne, sur le chemin d'envoi.
+      // Un seul énoncé pour tous : une requête par contact rendrait le coût proportionnel à la campagne.
       const paires = manquants.rows.map((r) => [r.id, fabriquer()] as const);
       await this.pool.query(
         `update contacts as c set jeton_public = v.jeton
@@ -203,19 +167,12 @@ export class PgTrackedLinkStore {
   }
 
   /**
-   * Le jeton public du contact qui porte CE numéro, fabriqué s'il n'en a pas encore.
+   * Le jeton public du contact qui porte ce numéro, fabriqué s'il n'en a pas encore : le pendant unitaire de
+   * `jetonsPourContacts`, pour les chemins qui envoient à une personne à la fois et connaissent un numéro.
    *
-   * Le pendant UNITAIRE de `jetonsPourContacts`, pour les chemins qui envoient à une personne à la fois (un
-   * bloc de scénario, une réponse depuis l'inbox) et qui connaissent un numéro, pas un identifiant de contact.
-   * Le chemin de MASSE garde son chargement en un seul énoncé : une requête par destinataire y ferait de
-   * l'attribution un coût proportionnel à la taille de la campagne.
-   *
-   * ⚠️ Les deux formes de stockage du numéro sont couvertes par une liste de valeurs (`in ($2, $3)`) et non
-   * par une fonction sur la colonne : `regexp_replace(phone_e164, …)` rendrait inutilisable l'index unique
-   * (tenant_id, phone_e164), donc un balayage complet des contacts par envoi. Même leçon que `isOptedOut`.
-   *
-   * `null` = numéro inconnu de la base. Le lien part alors sans jeton, donc anonyme : dégrader la mesure vaut
-   * mieux que faire échouer un envoi.
+   * Les deux formes de stockage du numéro passent par `in ($2, $3)` et non par une fonction sur la colonne, qui
+   * rendrait inutilisable l'index unique (tenant_id, phone_e164). Même leçon que `isOptedOut`.
+   * `null` = numéro inconnu : le lien part anonyme plutôt que l'envoi n'échoue.
    */
   async jetonPourE164(tenantId: string, e164: string, fabriquer: () => string): Promise<string | null> {
     const nu = e164.replace(/[^0-9]/g, '');
@@ -232,9 +189,8 @@ export class PgTrackedLinkStore {
     if (!contact) return null;
     if (contact.jeton) return contact.jeton;
 
-    // `jeton_public is null` dans le WHERE : deux envois simultanés au même contact tirent deux jetons, un
-    // seul entre, et la relecture rend celui du gagnant. Sans cette garde, le second écraserait le premier,
-    // ce qui rendrait anonymes les clics des messages déjà partis avec l'ancien.
+    // `jeton_public is null` dans le WHERE : de deux envois simultanés, le second n'écrase pas le premier (les
+    // clics des messages déjà partis avec l'ancien deviendraient anonymes) ; la relecture rend le gagnant.
     const pose = await this.pool.query<{ jeton_public: string }>(
       `update contacts set jeton_public = $3
         where id = $2 and tenant_id = $1 and jeton_public is null
@@ -247,18 +203,16 @@ export class PgTrackedLinkStore {
   }
 
   /**
-   * Les liens tracés de CES templates. Sert à deux choses : ré-habiller l'affichage (remontrer le lien
-   * d'origine à l'utilisateur) et savoir quels boutons sont mesurables.
-   *
-   * Liste vide -> aucune requête : `= any('{}')` ne matcherait rien, autant ne pas déranger la base.
+   * Les liens tracés de ces templates, pour ré-habiller l'affichage et savoir quels boutons sont mesurables.
+   * Liste vide : aucune requête.
    */
   async listByTemplates(tenantId: string, noms: readonly string[]): Promise<LienTrace[]> {
     if (noms.length === 0) return [];
     const res = await this.pool.query<{
       code: string; template_name: string; template_language: string; card_index: number | null; button_index: number; destination: string; avec_jeton: boolean;
     }>(
-      // CONFIRMÉS seulement : une ligne réservée dont Meta a refusé le template ne décrit aucun lien réel,
-      // et l'exposer ferait apparaître une mesure qui resterait à zéro pour toujours.
+      // Confirmés seulement : une ligne dont Meta a refusé le template ne décrit aucun lien réel, et sa mesure
+      // resterait à zéro pour toujours.
       `select code, template_name, template_language, card_index, button_index, destination, avec_jeton
          from tracked_links
         where tenant_id = $1 and template_name = any($2::text[]) and confirmed_at is not null`,
@@ -276,10 +230,8 @@ export class PgTrackedLinkStore {
   }
 
   /**
-   * Les codes des liens RCS de CES adresses (`adresse -> code`), pour les mesures.
-   *
-   * Une adresse absente de la réponse n'a jamais été envoyée : son code naît au premier envoi, pas à
-   * l'écriture du scénario. L'appelant l'affiche alors à zéro, ce qui est la vérité exacte.
+   * Les codes des liens RCS de ces adresses (`adresse -> code`), pour les mesures. Une adresse absente n'a
+   * jamais été envoyée (le code naît au premier envoi) : l'appelant l'affiche à zéro, ce qui est exact.
    */
   async codesRcsParDestination(tenantId: string, destinations: readonly string[]): Promise<Map<string, string>> {
     const out = new Map<string, string>();
@@ -294,34 +246,13 @@ export class PgTrackedLinkStore {
   }
 
   /**
-   * Clics par code sur la plage (bornes Europe/Paris, `to` inclus), pour les codes demandés.
+   * Les clics d'une campagne sur des codes donnés, séparés en attribués et anonymes.
    *
-   * Rend UNIQUEMENT les codes qui ont au moins un clic : c'est l'appelant qui sait quels codes existent et
-   * doit afficher zéro pour les autres. Une mesure choisie qui vaut zéro est une information, et c'est à lui
-   * de la produire, pas à cette requête d'inventer des lignes.
-   */
-  /**
-   * Les clics d'UNE campagne sur des codes donnes, separes en ATTRIBUES et ANONYMES.
-   *
-   * 🔴 CETTE METHODE EXISTE PARCE QUE J AI AFFIRME LE CONTRAIRE, ET QUE C ETAIT FAUX. La premiere version
-   * de la fiche de campagne annoncait qu un clic « ne porte aucun numero, donc ne se rattache a aucune
-   * campagne », et refusait sur cette base la colonne que Julien avait demandee. La migration 0106 a ajoute
-   * `tracked_link_clicks.contact_id` : un lien dont l URL porte le jeton du destinataire SAIT qui a clique.
-   * L affirmation n etait vraie que du cas legataire, et une justification fausse est pire qu aucune,
-   * puisqu elle se recopie.
-   *
-   * ⚠️ CE QUI RESTE VRAI, ET QUI EST COMPTE A PART : les clics venus d un template approuve AVANT le
-   * 2026-09-02 portent une URL figee chez Meta, sans jeton, et n auront JAMAIS d identifiant (migration
-   * 0106 : « les templates deja approuves gardent leur URL sans jeton, pour toujours »). Ceux-la sont
-   * `anonymes` : ils ont eu lieu, on ne peut les rattacher a personne, et l ecran doit le dire plutot que
-   * de les taire ou de les compter ici.
-   *
-   * L attribution est EXACTEMENT celle des envois et des evenements de bloc : la derniere campagne scenario
-   * reclamee pour ce numero avant le clic. Une troisieme heuristique aurait donne une troisieme verite.
-   *
-   * ⚠️ Les anonymes sont bornes au PREMIER `claimed_at` de la campagne : sans cette borne, on remonterait
-   * des clics anterieurs a son existence. Ils ne sont pas pour autant SES clics, et le libelle de l ecran
-   * ne le pretend pas.
+   * Un lien dont l'URL porte le jeton du destinataire sait qui a cliqué (`tracked_link_clicks.contact_id`).
+   * L'attribution est celle des envois et des événements de bloc : la dernière campagne scénario réclamée pour
+   * ce numéro avant le clic (une autre heuristique donnerait une troisième vérité).
+   * Les clics sans jeton (URL figée chez Meta) sont comptés à part en `anonymes`, bornés au premier
+   * `claimed_at` de la campagne ; ils ne sont pas pour autant les siens, et l'écran ne le prétend pas.
    */
   async clicsAttribuesCampagne(
     tenantId: string, campaignId: string, codes: readonly string[],
@@ -367,6 +298,10 @@ export class PgTrackedLinkStore {
     return { attribues, anonymes };
   }
 
+  /**
+   * Clics par code sur la plage (bornes Europe/Paris, `to` inclus), pour les codes demandés. Ne rend que les
+   * codes qui ont au moins un clic : c'est l'appelant qui sait quels codes existent et affiche zéro.
+   */
   async countClicks(tenantId: string, codes: readonly string[], range: DateRange): Promise<Record<string, number>> {
     if (codes.length === 0) return {};
     const res = await this.pool.query<{ code: string; n: string }>(
@@ -384,16 +319,11 @@ export class PgTrackedLinkStore {
   }
 
   /**
-   * Purge les CLICS plus vieux que la rétention.
+   * Purge les clics plus vieux que la rétention.
    *
-   * 🔴 LES CLICS, JAMAIS LES LIENS. `tracked_links` est une porte à SENS UNIQUE (cf. CLAUDE.md) : dès qu'un
-   * template portant un lien `/r/<code>` est approuvé et ENVOYÉ, son adresse circule dans des messages déjà
-   * livrés. Supprimer une ligne de `tracked_links` casserait ces liens-là définitivement, chez des contacts
-   * qui les ont encore sous les yeux. Une purge qui remonterait la cascade `on delete cascade` depuis les
-   * clics serait donc une catastrophe silencieuse : elle ne remonte pas, ce `delete` ne touche que les clics.
-   *
-   * Cette table ne porte AUCUNE donnée personnelle (un code, un espace, une date) : ce balayage répond à la
-   * croissance, pas au RGPD. D'où une rétention longue, qui garde les mesures d'une année sur l'autre.
+   * 🔴 Les clics, jamais les liens : `tracked_links` est une porte à sens unique. Une adresse `/r/<code>`
+   * envoyée circule dans des messages livrés, et supprimer sa ligne casserait ces liens définitivement.
+   * Rétention longue, pour garder les mesures d'une année sur l'autre.
    */
   async purgeClicsOlderThan(days: number, maxParPassage = 50_000): Promise<number> {
     if (days <= 0) return 0;

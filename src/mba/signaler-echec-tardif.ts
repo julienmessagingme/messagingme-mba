@@ -1,17 +1,12 @@
 import { traceReponse, destinataireAgentEvent, evenementEnvoiEchoue, type EvenementAgent } from './evenement';
 
 /**
- * DIRE À L'AGENT DE META QU'UN ENVOI A ÉCHOUÉ APRÈS SA RÉPONSE (revue du 2026-09-22).
- *
- * Le relais répond « C'est parti » au bout de `DELAI_REPONSE_ENVOI_MS`, parce que Meta coupe un outil vers trois
- * secondes. Un scénario, lui, reprend le fil AVANT ses autres refus (`runFrom`) : Meta qui refuse de rendre le fil,
- * contact désabonné, envoi refusé, panne. Ces refus tombent donc souvent APRÈS la réponse, et l'agent, qui a lu
- * « n'écris rien de plus », se taisait : le client restait sans réponse. `gestes-envoi.ts` a déjà rendu le fil ; cet
+ * Dire à l'agent de Meta qu'un envoi a échoué après sa réponse. Le relais répond « C'est parti » avant la fin de
+ * l'envoi (Meta coupe un outil vers trois secondes), et un scénario reprend le fil avant ses autres refus : ces
+ * refus tombent souvent après la réponse, et l'agent se tairait. `gestes-envoi.ts` a déjà rendu le fil ; cet
  * événement fait parler l'agent.
- *
- * 🔴 SEULEMENT SI LE FIL EST VRAIMENT À LUI (`mba` chez nous), même garde que la réponse « à côté »
- * (`transmettre-hors-parcours.ts`) : un opérateur qui a pris la conversation entre-temps, ou un envoi PARTIEL qui
- * attend son accusé (0149), laissent un autre détenteur, et l'événement ferait parler l'agent par-dessus.
+ * Seulement si le fil est vraiment à lui (`mba` chez nous) : un opérateur qui a pris la conversation, ou un envoi
+ * partiel qui attend son accusé, laissent un autre détenteur, et l'agent parlerait par-dessus.
  */
 export interface DepsSignalerEchec {
   detenteur(tenantId: string, waId: string): Promise<string>;

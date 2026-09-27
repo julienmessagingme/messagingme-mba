@@ -11,32 +11,19 @@ export interface CostSeries {
   /** Devise du compte (ISO 4217) rendue par Meta ; null = inconnue, l'écran affiche alors le nombre nu. */
   currency: string | null;
   /**
-   * Nombre d'envois COMPTÉS dans le volume mais absents du coût. Somme des deux causes ci-dessous.
-   *
-   * 🔴 Ce champ existe pour que l'écran puisse le DIRE. Sans lui, ces envois disparaissaient du calcul en
-   * silence et le client lisait un coût nul là où il avait bien envoyé : c'est ce qui s'est passé pour
-   * 22 envois de scénario du tenant Demo, dont la catégorie n'était pas écrite avant le 2026-09-07. Un
-   * volume non chiffrable est une information ; l'escamoter en fait un mensonge par omission.
+   * Nombre d'envois comptés dans le volume mais absents du coût (somme des deux causes ci-dessous). Il existe
+   * pour que l'écran le dise : sinon le client lirait un coût nul là où il a bien envoyé.
    */
   nonChiffrables: number;
   /**
-   * ...dont l'envoi n'a AUCUNE catégorie enregistrée.
-   *
-   * 🔴 CAUSE FERMÉE ET DATÉE, ET C'EST TOUTE LA DIFFÉRENCE AVEC LA SUIVANTE. Un envoi de scénario
-   * antérieur au 2026-09-07 ne porte pas sa catégorie : le code lisait bien la fiche du template chez Meta
-   * mais la JETAIT. Mesuré sur la production le 2026-09-09, chemin d'écriture par chemin d'écriture :
-   * 15 envois `origin = scenario`, le dernier le 2026-09-07 à 12h36, et zéro depuis ; les chemins
-   * `campagne` et `humain` n'ont jamais rien perdu. Ces envois ne redeviendront JAMAIS chiffrables (on ne
-   * réécrit pas ce que Meta a déjà facturé), donc l'écran doit dire que c'est de l'HISTORIQUE et non une
-   * panne en cours : les deux appellent des gestes opposés.
+   * ...dont l'envoi n'a aucune catégorie enregistrée : cause fermée, de l'historique (d'anciens envois de
+   * scénario ne portent pas leur catégorie). Ils ne redeviendront jamais chiffrables, et l'écran doit le dire
+   * comme un héritage, pas comme une panne.
    */
   sansCategorie: number;
   /**
-   * ...dont la catégorie est connue mais dont Meta ne rend AUCUN tarif pour la période.
-   *
-   * Cause VIVANTE, celle-là : elle peut apparaître demain sur un envoi d'aujourd'hui, et elle se répare en
-   * relisant les tarifs. Les confondre avec les précédents ferait lire « panne » là où il n'y a qu'un
-   * héritage, et l'inverse.
+   * ...dont la catégorie est connue mais dont Meta ne rend aucun tarif pour la période : cause vivante, qui se
+   * répare en relisant les tarifs.
    */
   sansTarif: number;
 }
@@ -53,16 +40,10 @@ export interface CategoryRates {
 export const round2 = (x: number): number => Math.round(x * 100) / 100;
 
 /**
- * Ce qu'on peut faire d'une catégorie d'envoi : la chiffrer, ou dire POURQUOI on ne peut pas.
- *
- * 🔴 UNE SEULE DÉFINITION DE « CHIFFRABLE », pour les TROIS écrans qui l'affichent (la série de coût, le
- * tableau par campagne, et le bilan d'un contact). Deux définitions donneraient deux totaux sur deux écrans
- * du même produit, et le client les comparerait. La règle était déjà écrite deux fois à l'identique quand le
- * troisième écran est arrivé : c'est le moment où recopier devient une dette, pas avant.
- *
- * ⚠️ LES DEUX CAUSES RESTENT DISTINCTES, parce qu'elles ne se réparent pas pareil : une catégorie absente est
- * un héritage définitif (rien ne la retrouvera), un tarif manquant est une panne du jour (Meta le rendra
- * demain). Un seul nombre les confondait, et l'écran ne pouvait dire ni l'un ni l'autre sans risquer de mentir.
+ * Ce qu'on peut faire d'une catégorie d'envoi : la chiffrer, ou dire pourquoi on ne peut pas. 🔴 Une seule
+ * définition de « chiffrable » pour tous les écrans qui affichent un coût, sinon deux totaux pour les mêmes
+ * envois. Les deux causes restent distinctes : une catégorie absente est un héritage définitif, un tarif
+ * manquant une panne du jour.
  */
 export type Chiffrage = { tarif: number } | { refus: 'sansCategorie' | 'sansTarif' };
 
@@ -72,7 +53,7 @@ export function chiffrer(category: string | null, rates: CategoryRates): Chiffra
   return tarif == null ? { refus: 'sansTarif' } : { tarif };
 }
 
-/** Énumère les jours 'YYYY-MM-DD' de from à to INCLUS (arithmétique UTC pure, borne 366 jours). */
+/** Énumère les jours 'YYYY-MM-DD' de from à to inclus (arithmétique UTC pure, borne 366 jours). */
 export function enumerateDays(from: string, to: string): string[] {
   const [fy, fm, fd] = from.split('-').map(Number) as [number, number, number];
   const [ty, tm, td] = to.split('-').map(Number) as [number, number, number];
@@ -92,15 +73,7 @@ export function estimateCostSeries(from: string, to: string, rows: CostVolumeRow
   const days = enumerateDays(from, to);
   const mktByDay = new Map<string, number>();
   const utilByDay = new Map<string, number>();
-  // 🔴 CE QUI TOMBE DANS LE VIDE, COMPTE PLUTOT QUE JETE EN SILENCE. Une ligne sans catégorie connue (ou
-  // dont le tarif Meta manque) ne produit aucun coût, et jusqu'ici elle disparaissait sans laisser de
-  // trace : l'écran affichait zéro là où il y avait bien eu des envois. C'est ce qui a fait croire à un
-  // coût nul sur 22 envois de scénario du tenant Demo, dont la catégorie n'était pas écrite avant le
-  // 2026-09-07. Un volume non chiffrable est une information, pas un néant : l'écran doit le DIRE.
-  //
-  // ⚠️ ET LES DEUX CAUSES SE COMPTENT À PART, parce qu'elles ne se réparent pas pareil : une catégorie
-  // absente est un héritage définitif, un tarif manquant est une panne du jour. Un seul nombre les
-  // confondait, et l'écran ne pouvait dire ni l'un ni l'autre sans risquer de mentir.
+  // Ce qui ne se chiffre pas est compté, par cause, plutôt que jeté en silence : l'écran doit le dire.
   let sansCategorie = 0;
   let sansTarif = 0;
   for (const r of rows) {
@@ -125,55 +98,37 @@ export function estimateCostSeries(from: string, to: string, rows: CostVolumeRow
   };
 }
 
-/** Un volume d'envois facturables d'UNE campagne, pour UNE catégorie Meta (marketing / utility / inconnue). */
+/** Un volume d'envois facturables d'une campagne, pour une catégorie Meta (marketing / utility / inconnue). */
 export interface VolumeCampagneRow {
   campaignId: string;
   nom: string;
   /** Le template de la campagne, `null` pour une campagne à scénario. C'est ce qui décide si un clic existe. */
   template: string | null;
   /**
-   * Le canal de la campagne.
-   *
-   * ⚠️ IL NE DECIDE PLUS D'UNE CASE VIDE, IL DECIDE DE LA SOURCE DU PRIX (2026-09-23). Ce tableau a longtemps
-   * dit « je ne connais que les tarifs Meta, donc une campagne RCS garde sa case vide » ; c'etait faux depuis
-   * la migration 0154, qui porte les deux prix RCS de l'espace. Le canal sert maintenant a savoir quoi faire
-   * quand RIEN n'a ete chiffre : une campagne WhatsApp sans envoi facturable a coute ce que coutent ses
-   * messages de service, une campagne RCS dont aucun envoi n'a pu etre rattache reste inconnue.
+   * Le canal de la campagne : il décide de la source du prix quand rien n'a été chiffré. Une campagne WhatsApp
+   * sans envoi facturable a coûté ses messages de service ; une campagne RCS dont aucun envoi n'a pu être
+   * rattaché reste inconnue.
    */
   canal: string;
   category: string | null;
   /**
-   * Envois FACTURABLES de cette catégorie. ⚠️ `0` (et `category` à `null`) sur la ligne unique d'une campagne qui
-   * a touché quelqu'un sans rien de facturable : elle a sa ligne quand même (lot 4 de la liste du 2026-09-23).
+   * Envois facturables de cette catégorie. `0` (et `category` à `null`) sur la ligne unique d'une campagne qui
+   * a touché quelqu'un sans rien de facturable : elle a sa ligne quand même.
    */
   count: number;
-  /** Personnes TOUCHÉES par la campagne sur la période, facturable ou non. Même valeur sur chaque ligne d'une campagne. */
+  /** Personnes touchées par la campagne sur la période, facturable ou non. Même valeur sur chaque ligne d'une campagne. */
   envois: number;
   /**
-   * Les envois de cette campagne ont-ils PU être purgés ?
-   *
-   * 🔴 CE QUI SÉPARE « ÇA N'A RIEN COÛTÉ » DE « ON NE PEUT PLUS LE SAVOIR ». Les envois d'un SCÉNARIO ne
-   * vivent pas dans `campaign_recipients` mais dans les conversations, et la purge de rétention les
-   * supprime. Une campagne ancienne rendait donc « zéro envoi facturable », exactement comme une campagne
-   * qui n'a vraiment rien facturé, et la case affichait 0,00 €. Sur un écran de coût, un zéro est une
-   * affirmation : il se lit « gratuit ».
-   *
-   * ⚠️ OPTIONNEL, et absent vaut `false` : une instance qui ne calcule pas encore ce drapeau garde le
-   * comportement d'avant plutôt que de vider des cases au déploiement.
+   * Les envois de cette campagne ont-ils pu être purgés ? Les envois d'un scénario vivent dans les
+   * conversations, que la rétention supprime : sans ce drapeau, une campagne ancienne afficherait 0,00 €, lu
+   * « gratuit », au lieu de « on ne sait plus ». Absent vaut `false`.
    */
   horsRetention?: boolean;
 }
 
 /**
- * Combien de campagnes le tableau de la synthèse montre au plus.
- *
- * 🔴 UNE LISTE SANS BORNE EST UN DÉFAUT, PAS UN CONFORT. La plage accepte jusqu'à 366 jours : un client qui
- * lance quelques campagnes par semaine en a des centaines sur un an, et l'écran les rendrait toutes, dans une
- * page qu'on ouvre pour se faire une idée. Le dépôt a déjà posé cette règle sur les contacts touchés par une
- * erreur (`PLAFOND_CONTACTS_ERREUR`) et sur la liste quali. Ici, on garde les campagnes qui ont le PLUS
- * ENVOYÉ, et le tableau DIT qu'il tronque : une troncature muette se lit comme un inventaire complet.
- *
- * ⚠️ Le SQL en demande une de plus (`+ 1`) : c'est ainsi qu'on sait qu'on tronque sans compter à part.
+ * Combien de campagnes le tableau de la synthèse montre au plus (la plage va jusqu'à 366 jours). On garde celles
+ * qui ont le plus envoyé, et le tableau dit qu'il tronque. Le SQL en demande une de plus pour le savoir.
  */
 export const PLAFOND_CAMPAGNES_SYNTHESE = 50;
 
@@ -185,18 +140,14 @@ export interface LigneCoutCampagne {
   /** Envois facturables de la période, chiffrables ou non. */
   envoyes: number;
   /**
-   * Ce que la colonne « Envoyés » affiche : les personnes TOUCHÉES sur la période, facturable ou non. Une
-   * campagne à scénario ou RCS n'a souvent aucun envoi facturable, et « 0 envoyé » se lirait « rien n'est parti ».
-   *
-   * 🔴 JAMAIS MOINS QUE `envoyes` (revue finale du 2026-09-23). Les envois facturables peuvent venir de
-   * l'ATTRIBUTION, qui n'a aucune borne basse : une campagne partie il y a trois semaines dont les modèles
-   * partent cette semaine a des envois facturables et AUCUN destinataire daté de la période. Elle affichait
-   * alors « 0 envoyés » en face d'un coût, c'est-à-dire l'inverse de ce que ce lot cherche.
+   * Ce que la colonne « Envoyés » affiche : les personnes touchées sur la période, facturable ou non (« 0 envoyé »
+   * se lirait « rien n'est parti » pour une campagne à scénario ou RCS). Jamais moins que `envoyes` : les envois
+   * facturables peuvent venir d'une attribution sans borne basse.
    */
   envois: number;
   /**
-   * Coût ESTIMÉ (envois × tarif Meta de la catégorie). `null` quand AUCUN des envois de la campagne n'a pu
-   * être chiffré : la case reste vide et le dit, plutôt que d'afficher un zéro qui se lirait « gratuit ».
+   * Coût estimé (envois × tarif). `null` quand aucun des envois n'a pu être chiffré : la case reste vide plutôt
+   * que d'afficher un zéro qui se lirait « gratuit ».
    */
   cout: number | null;
   /** Envois comptés dans `envoyes` mais absents du coût. Somme des deux causes qui suivent. */
@@ -206,36 +157,23 @@ export interface LigneCoutCampagne {
   /** ...dont ceux dont Meta ne rend pas le tarif : panne du jour, réparable, cf. `CostSeries.sansTarif`. */
   sansTarif: number;
   /**
-   * Clics sur les liens tracés, depuis le premier envoi. `null` = rien de mesurable ici, ce qui n'est PAS
-   * zéro : campagne à scénario (elle n'a pas de template, donc pas de lien tracé) ou template sans lien.
+   * Clics sur les liens tracés, depuis le premier envoi. `null` = rien de mesurable (campagne à scénario, ou
+   * template sans lien), ce qui n'est pas zéro.
    */
   clics: number | null;
   /**
-   * Coût par clic. `null` dès qu'un des deux termes manque OU que les clics valent zéro : un « ∞ » ou un
-   * « 0 € » serait une réponse à une question qu'on n'a pas pu poser.
+   * Coût par clic. `null` dès qu'un des deux termes manque ou que les clics valent zéro : un « ∞ » ou un « 0 € »
+   * répondrait à une question qu'on n'a pas pu poser.
    */
   coutParClic: number | null;
   /**
-   * LES PERSONNES QUI SE SONT ENGAGÉES : celles qui ont cliqué, ET celles qui ont RÉPONDU.
+   * Les personnes qui se sont engagées : celles qui ont cliqué et celles qui ont répondu (une réponse est un
+   * engagement de premier niveau).
    *
-   * 🔴 UNE RÉPONSE EST UN ENGAGEMENT DE PREMIER NIVEAU (décision de Julien du 2026-09-13, sur un cas
-   * réel : « le destinataire n'a pas cliqué mais en revanche il a répondu, c'est comme un clic »).
-   * Quelqu'un qui prend la peine d'écrire s'est engagé plus fort que quelqu'un qui clique ; ne pas le
-   * compter sous-estimait exactement ce que cette colonne prétend mesurer.
-   *
-   * 🔴 ON COMPTE DES PERSONNES, PAS DES GESTES, et c'est un écart ASSUMÉ avec `EtapeCoutCampagne`
-   * (qui additionne liens + boutons + réponses). Tranché par Julien le 2026-09-13 : diviser un coût
-   * par des PERSONNES donne ce que coûte une personne engagée, ce qui se compare d'une campagne à
-   * l'autre ; le diviser par des gestes flatte mécaniquement les campagnes dont les gens réagissent
-   * plusieurs fois. Quelqu'un qui clique PUIS répond compte donc une fois.
-   *
-   * ⚠️ LES CLICS ANONYMES N'Y SONT PAS, ET C'EST INÉVITABLE : un lien d'un template approuvé avant le
-   * 2026-09-02 n'a pas de jeton, donc son clic n'est rattaché à personne (cf. `clicsAnonymes`). On ne
-   * peut pas compter une personne qu'on ne sait pas nommer. `clics` continue de les compter, lui.
-   *
-   * ⚠️ OPTIONNEL, comme `sansCategorie` et `sansTarif`, et pour la même raison de RÉSEAU : la console
-   * part sur Vercel à chaque push, l'API se déploie à la main sur le VPS. Entre les deux, la réponse
-   * ne porte pas ce champ, et l'écran doit retomber sur les clics sans rien casser.
+   * On compte des personnes, pas des gestes, contrairement à `EtapeCoutCampagne` : le coût par personne engagée
+   * se compare d'une campagne à l'autre, alors qu'un coût par geste flatte les campagnes où l'on réagit
+   * plusieurs fois. Les clics anonymes n'y sont pas (personne à nommer), `clics` les compte. Optionnel : entre
+   * deux déploiements, l'écran retombe sur les clics.
    */
   engagements?: number | null;
   /** Coût par personne engagée. `null` aux mêmes conditions que `coutParClic`. */
@@ -245,84 +183,49 @@ export interface LigneCoutCampagne {
 export interface CoutParCampagne {
   lignes: LigneCoutCampagne[];
   /**
-   * La période comptait PLUS de campagnes que le plafond, et le tableau n'en montre qu'une partie (les plus
-   * grosses). L'écran le dit : sans ça, la liste se lirait comme l'inventaire complet de la période.
+   * La période comptait plus de campagnes que le plafond, et le tableau n'en montre qu'une partie (les plus
+   * grosses). L'écran le dit.
    */
   tronque: boolean;
   /** Devise rendue par Meta ; `null` = inconnue, l'écran affiche alors le nombre nu. */
   currency: string | null;
-  /** Meta n'a rendu AUCUN tarif : toute la colonne coût est vide, et l'écran doit dire pourquoi. */
+  /** Meta n'a rendu aucun tarif : toute la colonne coût est vide, et l'écran doit dire pourquoi. */
   hasRates: boolean;
 }
 
 /**
- * Le tableau « coût par engagement », à partir des volumes par campagne, des tarifs Meta et des clics.
- *
- * 🔴 LES MÊMES RÈGLES QUE `estimateCostSeries`, ET POUR LA MÊME RAISON : une catégorie inconnue ou sans
- * tarif ne produit AUCUN coût et se COMPTE à part (`nonChiffrables`). Deux définitions de « chiffrable »
- * donneraient deux totaux sur deux écrans du même onglet, et le client comparerait.
- *
- * Pur (aucune DB, aucun réseau) : c'est ici que se décident les trois cases vides, et elles se testent sans
- * base. Tri par coût décroissant, puis par envois : la question posée est « ce que ça coûte ».
+ * Le tableau « coût par engagement », à partir des volumes par campagne, des tarifs et des clics. Mêmes règles
+ * que `estimateCostSeries` : une catégorie inconnue ou sans tarif ne produit aucun coût et se compte à part.
+ * Pur ; tri par coût décroissant, puis par envois.
  */
 export function estimateCoutParCampagne(
   rows: VolumeCampagneRow[],
   rates: CategoryRates,
   clics: Map<string, number>,
   /**
-   * Les PERSONNES engagées par campagne (cliqueurs identifiés et répondeurs, dédoublonnés).
-   *
-   * ⚠️ ABSENTE = on ne sait pas, et l'écran retombe sur les clics. Ce n'est pas zéro : une campagne
-   * sans engagement mesurable et une campagne dont on n'a pas mesuré l'engagement ne se disent pas
-   * de la même façon, et c'est la règle que tout ce fichier applique déjà aux trois autres cases.
+   * Les personnes engagées par campagne (cliqueurs identifiés et répondeurs, dédoublonnés). Absente = on ne
+   * sait pas, l'écran retombe sur les clics : ce n'est pas zéro.
    */
   engagements?: Map<string, number>,
   /**
-   * LES MESSAGES DE SERVICE IMPUTES A CHAQUE CAMPAGNE, et le prix effectif de l'un d'eux.
+   * Les messages de service imputés à chaque campagne, et le prix effectif de l'un d'eux : une campagne qui
+   * ouvre une conversation ne coûte pas son seul template.
    *
-   * 🔴 LE NUMERATEUR INCLUT LES MESSAGES DE SERVICE, PAS SEULEMENT LES TEMPLATES (décision du cadrage).
-   * Une campagne qui ouvre une conversation et fait échanger dix messages de service ne coûte pas son seul
-   * template de départ.
-   *
-   * 🔴 LA FRANCHISE MENSUELLE SE REPARTIT AU PRORATA, ET C'EST LE SEUL PARTAGE QUI NE PRIVILEGIE PERSONNE.
-   * Elle appartient à l'ESPACE et au MOIS, pas à une campagne : lui en donner mille gratuits chacune
-   * multiplierait la franchise par le nombre de campagnes, et la donner à la première du mois ferait
-   * apparaître une campagne gratuite à côté d'une campagne chère pour le même geste. Le prix effectif
-   * (`coût total du service / messages de service de la période`) porte donc la franchise déjà déduite, et
-   * chaque campagne le paie sur SA part.
-   *
-   * ⚠️ LA SOMME DES CAMPAGNES RESTE INFERIEURE OU EGALE AU TOTAL DE LA LIGNE « MESSAGES », et c'est
-   * correct : les messages de service d'une conversation qu'aucune campagne n'a ouverte n'appartiennent à
-   * aucune campagne. Ils sont dans le total de l'espace, pas dans le coût d'un envoi.
-   *
-   * ⚠️ ABSENTS = on n'impute rien, et le coût reste celui des templates. Ce n'est pas zéro service : c'est
-   * une instance qui ne sait pas encore les compter, et la carte doit alors le DIRE.
+   * 🔴 La franchise mensuelle appartient à l'espace et au mois : elle se répartit au prorata, via le prix
+   * effectif (coût total du service / messages de service), sinon on la multiplierait par le nombre de
+   * campagnes. La somme des campagnes reste inférieure ou égale au total « messages » (le service hors campagne
+   * n'est à personne). Absents = rien d'imputé, pas zéro service.
    */
   service?: { parCampagne: Map<string, number>; prixUnitaire: number },
   /**
-   * LES ENVOIS RCS IMPUTES A CHAQUE CAMPAGNE, et la grille qui les tarife.
-   *
-   * 🔴 LE RCS A UN PRIX, ET CE DEPOT LE CONNAIT (Julien, 2026-09-23 : « on a justement defini un cout, 6 cts
-   * si pas conversationnel et 8 si conversationnel »). Il est saisi par espace depuis la migration 0154, et
-   * la ligne « cout des messages envoyes » le compte deja. Ne pas le compter ICI laissait une campagne RCS
-   * avec une case vide, c'est-a-dire « on ne sait pas » la ou on savait.
-   *
-   * 🔴 LA BASCULE CONVERSATIONNELLE EST DEJA TRANCHEE PAR L'APPELANT (`basculesRcs`), et ce n'est pas un
-   * detail de cablage : la regle porte sur l'ECHANGE entier sur sept jours, donc elle a besoin d'envois que
-   * cette campagne n'a pas faits. La recalculer ici avec les seules donnees d'une campagne donnerait un
-   * SECOND verdict, plus faible, sur la meme question.
-   *
-   * ⚠️ ABSENT = on n'impute aucun RCS. Ce n'est pas « zero RCS » : c'est une instance qui ne sait pas encore
-   * les rattacher, et la case doit alors rester vide plutot que d'afficher un zero.
+   * Les envois RCS imputés à chaque campagne, et la grille qui les tarife. La bascule conversationnelle est
+   * déjà tranchée par l'appelant (`basculesRcs`) : elle porte sur l'échange entier sur sept jours, la recalculer
+   * ici donnerait un second verdict. Absent = aucun RCS imputé, la case reste vide plutôt qu'à zéro.
    */
   rcs?: { parCampagne: Map<string, { simple: number; conversationnel: number }>; grille: GrillePrix },
   /**
-   * ⚠️ IL N Y A PLUS DE PARAMETRE DE MARGE ICI, ET C EST VOLONTAIRE. Elle a vecu a cette place quelques
-   * heures, le temps qu une revue montre que deux AUTRES consommateurs des memes tarifs l ignoraient. Elle
-   * est desormais posee UNE SEULE FOIS, a la source (`tarifsFactures`), donc `rates` porte deja le prix de
-   * VENTE quand il arrive ici. Le parametre a ete laisse en place une heure de plus, mort, avec dix lignes
-   * de documentation affirmant qu il s appliquait : un appelant qui l aurait cru et aurait passe 150 aurait
-   * vu sa marge avalee en silence, sans erreur du compilateur (il etait optionnel) ni d aucun test.
+   * Pas de paramètre de marge : elle est posée une seule fois, à la source (`tarifsFactures`), et `rates` porte
+   * déjà le prix de vente.
    */
 ): CoutParCampagne {
   const par = new Map<string, LigneCoutCampagne & { chiffres: number; canal: string; horsRetention: boolean }>();
@@ -333,16 +236,12 @@ export function estimateCoutParCampagne(
       horsRetention: false,
     };
     ligne.envois = Math.max(ligne.envois, r.envois);
-    // ⚠️ UNE SEULE LIGNE SUFFIT A LE POSER : le drapeau porte sur la CAMPAGNE, pas sur une categorie, et le
-    // SQL le rend identique sur chacune de ses lignes. `||` plutot qu'une affectation, pour que l'ordre des
-    // lignes ne decide de rien.
+    // Le drapeau porte sur la campagne et le SQL le rend identique sur chaque ligne : `||` pour que l'ordre des
+    // lignes ne décide de rien.
     ligne.horsRetention = ligne.horsRetention || r.horsRetention === true;
-    // ⚠️ UNE CAMPAGNE SANS RIEN DE FACTURABLE A SA LIGNE (lot 4) : `count` à 0, aucune catégorie à juger. La
-    // garde ÉVITE UN APPEL INUTILE à `chiffrer`, rien de plus : tous les compteurs ci-dessous s'incrémenteraient
-    // de zéro sans elle. Ne pas lui prêter un effet qu'elle n'a pas (relevé en revue le 2026-09-23).
+    // Une campagne sans rien de facturable a sa ligne (`count` à 0) : la garde évite seulement un appel inutile.
     if (r.count > 0) {
-      // ⚠️ MÊME PARTAGE DES DEUX CAUSES QUE `estimateCostSeries`, et pour la même raison qu'elles y sont
-      // partagées : les deux écrans du même onglet doivent nommer la même chose de la même façon.
+      // Même partage des deux causes que `estimateCostSeries` : les deux écrans nomment la même chose pareil.
       const verdict = chiffrer(r.category, rates);
       ligne.envoyes += r.count;
       if ('refus' in verdict) {
@@ -350,7 +249,7 @@ export function estimateCoutParCampagne(
         ligne.nonChiffrables += r.count;
       } else {
         ligne.chiffres += r.count;
-        // `rates` porte DEJA le prix de vente : la marge est posee une fois pour toutes par `prixFactures`.
+        // `rates` porte déjà le prix de vente : la marge est posée une fois par `prixFactures`.
         ligne.cout = (ligne.cout ?? 0) + r.count * verdict.tarif;
       }
     }
@@ -359,41 +258,23 @@ export function estimateCoutParCampagne(
 
   const lignes = [...par.values()].map((l) => {
     /**
-     * LE SERVICE S'AJOUTE AU TEMPLATE, et l'ordre des deux gardes compte.
-     *
-     * 🔴 IL NE CREE PAS DE COUT LA OU IL N'Y EN AVAIT PAS. Une campagne dont AUCUN envoi n'est chiffrable
-     * (catégorie inconnue, tarif absent) garde sa case VIDE : afficher le seul coût de ses messages de
-     * service se lirait « voilà ce qu'elle a coûté », alors que la vérité reste « on ne sait pas ». La
-     * règle des trois cases vides de ce fichier ne se contourne pas par une addition.
+     * Le service et le RCS s'ajoutent au template, sans créer de coût là où il n'y en avait pas : une campagne
+     * dont aucun envoi n'est chiffrable garde sa case vide.
      */
     const services = service?.parCampagne.get(l.campaignId) ?? 0;
-    // Le RCS de cette campagne, deja separe en simple et conversationnel par l'appelant.
+    // Le RCS de cette campagne, déjà séparé en simple et conversationnel par l'appelant.
     const envoisRcs = rcs?.parCampagne.get(l.campaignId) ?? { simple: 0, conversationnel: 0 };
     const nbRcs = envoisRcs.simple + envoisRcs.conversationnel;
     const prixRcs = rcs ? coutRcsEuros(envoisRcs.simple, envoisRcs.conversationnel, rcs.grille) : 0;
     const brut = (l.cout ?? 0) + (service ? services * service.prixUnitaire : 0) + prixRcs;
-    // Aucun envoi chiffré -> la case COÛT est vide, pas à zéro. Un zéro se lirait « cette campagne n'a rien
-    // coûté », alors que la vérité est « on ne sait pas ce qu'elle a coûté ».
-    // 🔴 SAUF QUAND IL N'Y AVAIT RIEN À CHIFFRER (lot 4) : une campagne WhatsApp sans aucun envoi facturable a
-    // un coût CONNU, celui de ses messages de service (souvent nul). Une campagne RCS, elle, garde sa case
-    // vide : ce tableau ne connaît que les tarifs Meta, et « 0 » y serait faux.
-    // 🔴 ET LE RCS COMPTE COMME UN ENVOI CHIFFRE : son prix vient de la grille de l'espace, pas de Meta.
-    // Une campagne RCS qui a touche quelqu'un a donc un cout, la ou elle affichait « — » (2026-09-23).
-    // ⚠️ MAIS UNE CAMPAGNE RCS SANS AUCUN ENVOI RATTACHE GARDE SA CASE VIDE : ecrire 0 la dirait gratuite,
-    // alors qu'elle a envoye et que c'est le rattachement qui manque (une campagne anterieure a la
-    // migration 0134, un envoi sans identifiant). La doctrine des cases vides de ce fichier tient : zero se
-    // lit « rien coute », vide se lit « on ne sait pas ».
-    //
-    // 🔴 ET UNE CAMPAGNE DONT LES ENVOIS ONT PU ETRE PURGES N'A PLUS DE COUT CONNU (jaune de la revue du
-    // 2026-09-23). Les envois d'un scenario vivent dans les conversations, que la retention supprime : passe
-    // cette borne, « zero envoi facturable » ne veut plus dire « rien n a ete facture ». Sans ce terme, une
-    // campagne de plus de 90 jours serait passee de son vrai cout a 0,00 €, toute seule, un matin.
+    // Aucun envoi chiffré : case vide, pas zéro. Sauf le RCS (prix de la grille) et une campagne WhatsApp sans
+    // rien de facturable (coût connu, son service), si ses envois n'ont pas pu être purgés par la rétention.
     const rienAChiffrer = l.chiffres === 0 && l.nonChiffrables === 0 && nbRcs === 0
       && l.canal === 'whatsapp' && l.horsRetention !== true;
     const cout = l.chiffres > 0 || nbRcs > 0 || rienAChiffrer ? round2(brut) : null;
     const n = clics.get(l.campaignId);
     const nbClics = n === undefined ? null : n;
-    // Le ratio n'existe que si ses DEUX termes existent, et si le dénominateur n'est pas nul.
+    // Le ratio n'existe que si ses deux termes existent, et si le dénominateur n'est pas nul.
     const coutParClic = cout !== null && nbClics !== null && nbClics > 0 ? Math.round((cout / nbClics) * 10000) / 10000 : null;
     // Même règle que le coût par clic, sur l'autre dénominateur : les deux termes, et un dénominateur non nul.
     const e = engagements?.get(l.campaignId);
@@ -409,20 +290,10 @@ export function estimateCoutParCampagne(
     };
   });
   /**
-   * 🔴 ON TRONQUE SUR LE VOLUME, ON AFFICHE SUR LE COÛT, ET L'ORDRE DES DEUX COMPTE.
-   *
-   * Le SQL ne connaît pas les tarifs Meta : il garde les N+1 campagnes qui ont le PLUS ENVOYÉ (le `+1` est
-   * ce qui permet de savoir qu'on tronque). Si on triait ici au coût avant de couper, la campagne écartée
-   * serait la moins chère des survivantes, et l'ensemble affiché ne serait plus « les N qui ont le plus
-   * envoyé » : ce serait un mélange des deux critères, que la phrase de l'écran décrirait de travers.
-   *
-   * On rejoue donc EXACTEMENT le critère du SQL (volume décroissant, identifiant en départage), on coupe,
-   * puis on trie au coût pour l'affichage.
+   * On tronque sur le volume, on affiche sur le coût : le SQL, qui ne connaît pas les tarifs, garde les N+1
+   * campagnes qui ont le plus envoyé. On rejoue exactement ce critère (`envois`, la colonne affichée, puis
+   * l'identifiant), on coupe, puis on trie au coût. Trier au coût avant de couper mélangerait les deux critères.
    */
-  // 🔴 ET LE CRITÈRE EST CELUI QUE LA COLONNE MONTRE (`envois`, revue finale du 2026-09-23). Trié sur les seuls
-  // envois FACTURABLES, tout ce qui n'a rien de facturable se retrouvait à égalité (0), départagé par
-  // l'identifiant : au-delà de 50 campagnes, une campagne à scénario de 5 000 personnes sortait pendant qu'une
-  // campagne à un seul envoi restait, sous une phrase qui dit « celles qui ont le plus envoyé ».
   const tronque = lignes.length > PLAFOND_CAMPAGNES_SYNTHESE;
   const gardees = tronque
     ? [...lignes].sort((a, b) => b.envois - a.envois || a.campaignId.localeCompare(b.campaignId)).slice(0, PLAFOND_CAMPAGNES_SYNTHESE)
@@ -437,7 +308,7 @@ export function estimateCoutParCampagne(
   };
 }
 
-/** Un volume d'envois facturables vers UN contact, pour UNE catégorie Meta. */
+/** Un volume d'envois facturables vers un contact, pour une catégorie Meta. */
 export interface VolumeContactRow {
   category: string | null;
   count: number;
@@ -448,8 +319,8 @@ export interface CoutContact {
   /** Envois facturables, chiffrables ou non. */
   envoyes: number;
   /**
-   * Coût ESTIMÉ. `null` quand AUCUN envoi n'a pu être chiffré : la case reste vide et le dit, plutôt qu'un
-   * zéro qui se lirait « ce contact ne nous a rien coûté ».
+   * Coût estimé. `null` quand aucun envoi n'a pu être chiffré : pas de zéro qui se lirait « ce contact ne nous
+   * a rien coûté ».
    */
   cout: number | null;
   nonChiffrables: number;
@@ -459,24 +330,18 @@ export interface CoutContact {
 }
 
 /**
- * Ce qu'un contact a coûté, à partir de ses envois par catégorie et des tarifs Meta.
- *
- * 🔴 LES MÊMES RÈGLES QUE LES DEUX AUTRES ÉCRANS, par le MÊME `chiffrer` : un client qui compare le coût
- * d'un contact au coût de la campagne qui le lui a envoyé doit retrouver la même arithmétique.
- *
- * ⚠️ IL NE COMPTE QUE LES ENVOIS DE CAMPAGNE, et c'est une limite à dire plutôt qu'à taire : un message de
- * scénario ou une réponse d'opérateur dans la fenêtre de service ne passe pas par `campaign_recipients`,
- * donc n'entre pas ici. Meta les facture souvent à zéro (`FREE_CUSTOMER_SERVICE`, mesuré sur notre WABA),
- * mais pas toujours. Le chiffre est donc un PLANCHER, jamais une facture.
+ * Ce qu'un contact a coûté, à partir de ses envois par catégorie et des tarifs, par le même `chiffrer` que les
+ * autres écrans. Ne compte que les envois de campagne : un message de scénario ou une réponse dans la fenêtre de
+ * service n'y entre pas (Meta les facture souvent à zéro, pas toujours). Le chiffre est un plancher, pas une
+ * facture.
  */
 export function estimerCoutContact(rows: VolumeContactRow[], rates: CategoryRates): CoutContact {
   return { ...chiffrerVolume(rows, rates), currency: rates.currency ?? null };
 }
 
 /**
- * Chiffre un VOLUME d'envois (le bilan d'un contact, le lancement et les relances d'une campagne) : combien
- * sont partis, combien sont chiffrés, et POURQUOI les autres ne le sont pas, par la règle unique `chiffrer`.
- * `cout` vaut `null` quand AUCUN n'a pu l'être : zéro se lirait « gratuit ».
+ * Chiffre un volume d'envois : combien sont partis, combien sont chiffrés, et pourquoi les autres ne le sont
+ * pas, par la règle unique `chiffrer`. `cout` vaut `null` quand aucun n'a pu l'être : zéro se lirait « gratuit ».
  */
 export function chiffrerVolume(
   rows: ReadonlyArray<{ category: string | null; count: number }>,
@@ -503,31 +368,21 @@ export function chiffrerVolume(
 }
 
 /**
- * Combien de niveaux l'entonnoir d'un contact montre au plus.
- *
- * 🔴 UNE BORNE, PAS UN CONFORT. Mesuré sur les données réelles le 2026-09-11 : sans borne de temps ni de
- * profondeur, un contact bavard produisait des « niveaux » 27 et 35, c'est-à-dire une conversation racontée
- * comme un entonnoir. Au-delà du cinquième échange, ce n'est plus une progression dans un scénario, c'est un
- * dialogue, et il se lit dans l'Inbox.
+ * Combien de niveaux l'entonnoir d'un contact montre au plus : au-delà du cinquième échange, ce n'est plus une
+ * progression dans un scénario mais un dialogue, qui se lit dans l'Inbox.
  */
 export const NIVEAUX_MONTRES = 5;
 
-/** Un niveau de l'entonnoir : combien de parcours l'ont atteint, AU MOINS. */
+/** Un niveau de l'entonnoir : combien de parcours l'ont atteint, au moins. */
 export interface NiveauEngagement {
   niveau: number;
   parcours: number;
 }
 
 /**
- * L'entonnoir CUMULÉ, à partir des profondeurs atteintes parcours par parcours.
- *
- * 🔴 « AU MOINS N », PAS « EXACTEMENT N », et c'est ce qui en fait un entonnoir. Quelqu'un qui est allé
- * jusqu'au troisième message a forcément réagi au premier et au deuxième : un scénario n'avance QUE sur une
- * réaction. Compter « exactement » rendrait une suite non décroissante, illisible comme entonnoir, et ferait
- * disparaître du niveau 1 les contacts les plus engagés.
- *
- * ⚠️ LE DERNIER NIVEAU MONTRÉ RAMASSE CE QUI EST PLUS PROFOND, au lieu de le tronquer : sinon un parcours
- * allé au septième échange sortirait de l'entonnoir, et le total du niveau 5 serait faux vers le bas.
+ * L'entonnoir cumulé, à partir des profondeurs atteintes parcours par parcours. « Au moins N », pas
+ * « exactement N » : un scénario n'avance que sur une réaction, donc atteindre le niveau 3 implique les deux
+ * premiers. Le dernier niveau montré ramasse ce qui est plus profond, au lieu de le tronquer.
  */
 export function entonnoirEngagement(profondeurs: readonly number[]): NiveauEngagement[] {
   const out: NiveauEngagement[] = [];

@@ -16,20 +16,20 @@ import { espaceVerifie, estUuid } from './scope';
 import { texteDe } from '../lib/erreur';
 
 /**
- * Chaine WhatsApp (Channels Me) : publier un post dont le bouton (un lien wa.me pre-rempli) demarre un
- * scenario. Lecture ouverte a tout compte authentifie (les ecrans en ont besoin), ECRITURES admin-only :
- * publier sur une chaine, c'est parler a toute une audience sans qu'un humain relise.
+ * Chaîne WhatsApp (Channels Me) : publier un post dont le bouton (lien wa.me pré-rempli) démarre un scénario.
+ * Lecture ouverte à tout compte authentifié, écritures admin : publier sur une chaîne, c'est parler à toute une
+ * audience sans relecture humaine.
  */
 export interface ChannelsMeRouteDeps {
-  /** Projection PUBLIQUE de la connexion : jamais les colonnes chiffrees. null = rien de provisionne. */
+  /** Projection publique de la connexion : jamais les colonnes chiffrées. null = rien de provisionné. */
   getConnection(tenantId: string): Promise<ConnexionPublique | null>;
-  /** Les identifiants EN CLAIR, dechiffres par le store. Ils ne servent qu'au client, ils ne sortent jamais d'ici. */
+  /** Les identifiants en clair, déchiffrés par le store. Ils ne servent qu'au client, ils ne sortent jamais d'ici. */
   getSecrets(tenantId: string): Promise<Connexion | null>;
   upsertConnection(tenantId: string, c: Connexion): Promise<void>;
   markVerified(tenantId: string): Promise<void>;
   /**
-   * DEBRANCHE la chaine : oublie les identifiants, rien d autre (`PgChannelsMeConnectionStore.supprimer`).
-   * `true` = une connexion existait. Requise : le cablage qui l oublierait ne compile pas.
+   * Débranche la chaîne : oublie les identifiants, rien d'autre (`PgChannelsMeConnectionStore.supprimer`).
+   * `true` = une connexion existait.
    */
   supprimerConnection(tenantId: string): Promise<boolean>;
 
@@ -45,17 +45,15 @@ export interface ChannelsMeRouteDeps {
   }): Promise<LienRow>;
   linkById(tenantId: string, id: string): Promise<LienRow | null>;
   /**
-   * Rattrapage : defait l'automation compagnon qu'on vient de creer quand `createLink` echoue juste apres
-   * (POST /links). Bornee par `tenantId` ET par `possede_par = 'channelsme_link'` (garde miroir), sans effet
-   * si l'id ne correspond a rien : ce n'est jamais une raison d'echouer davantage.
+   * Rattrapage : défait l'automation compagnon qu'on vient de créer quand `createLink` échoue juste après
+   * (POST /links). Bornée par `tenantId` et par `possede_par = 'channelsme_link'` (garde miroir), sans effet
+   * si l'id ne correspond à rien : ce n'est jamais une raison d'échouer davantage.
    */
   supprimerAutomationCompagnon(tenantId: string, automationId: string): Promise<void>;
 
   /**
-   * Les conversations demarrees par chaque bouton de chaine.
-   *
-   * 🔴 REQUISE, pas optionnelle. Une dependance optionnelle se degrade en SILENCE : un cablage qui l'oublie
-   * rend un ecran sans compteur et personne ne l'apprend. Requise, le compilateur enumere tous les faux.
+   * Les conversations démarrées par chaque bouton de chaîne. Requise : optionnelle, un câblage qui l'oublierait
+   * rendrait un écran sans compteur, en silence.
    */
   conversationsParLien(tenantId: string): Promise<{ parLien: ConversationsDunLien[]; partiel: boolean }>;
 
@@ -63,58 +61,29 @@ export interface ChannelsMeRouteDeps {
   createPost(tenantId: string, p: { cmMessageId: string; linkId: string | null }): Promise<void>;
 
   /**
-   * Cree l'automation compagnon du lien. Elle nait ETEINTE et POSSEDEE par le lien : c'est le cablage qui
-   * pose `enabled: false` et la marque de possession, la route ne connait pas la forme d'une automation.
-   */
-  /**
-   * Cette phrase entre-t-elle en CONFLIT avec celle d'un lien existant de ce tenant ?
-   *
-   * 🔴 CONFLIT VEUT DIRE INCLUSION, PAS EGALITE, parce que la comparaison est en mode `contains`. « Je veux
-   * le guide » et « Je veux le guide 2026 » sont deux phrases distinctes dont l'une contient l'autre : un
-   * abonne qui appuie sur le second bouton declenche LES DEUX scenarios, et le second clot le premier. Il
-   * voit un parcours commencer puis disparaitre, sur un post publie, donc sans recours. Ce cas n'existait
-   * pas tant que le jeton routait : deux jetons tires ne s'incluent jamais.
-   *
-   * ⚠️ Porte sur TOUS les liens, eteints compris. Il n'existe aucune route de suppression de lien : un lien
-   * eteint garde donc sa phrase reservee. C'est assume, et c'est le choix sur : un lien eteint peut etre
-   * rallume (`POST /links/:id/enable`), et son post reste en circulation.
+   * Cette phrase entre-t-elle en conflit avec celle d'un lien existant de l'espace ? Conflit veut dire inclusion,
+   * pas égalité (comparaison en `contains`) : « Je veux le guide » et « Je veux le guide 2026 » déclencheraient les
+   * deux scénarios sur le second bouton. Porte sur tous les liens, éteints compris : un lien éteint peut être
+   * rallumé, et son post circule encore.
    */
   phraseEnConflit(tenantId: string, phrase: string): Promise<boolean>;
   /**
-   * Combien de messages ENTRANTS du tenant contiennent deja cette phrase, sans porter aucun jeton de lien.
-   *
-   * 🔴 C'est la mesure qui remplace un seuil de longueur INVENTE. Le danger d'une phrase n'est pas d'etre
-   * courte, c'est d'apparaitre dans la conversation ordinaire : « Bonjour » declencherait sur tout, et
-   * « Je veux mon code promo ! » sur rien. On le compte au lieu de le deviner. Mesure du 2026-09-07 sur les
-   * deux liens existants : 4 correspondances, 4 vrais clics, ZERO faux positif.
-   *
-   * Requise depuis le lot 3 de l'audit ponytail : le câblage de production la fournit toujours.
+   * Combien de messages entrants de l'espace contiennent déjà cette phrase, sans jeton de lien : le danger d'une
+   * phrase n'est pas d'être courte mais d'apparaître dans la conversation ordinaire, donc on le compte.
    */
   messagesContenantLaPhrase(tenantId: string, phrase: string): Promise<number>;
   creerAutomationCompagnon(tenantId: string, input: {
     nom: string;
-    /**
-     * Le MOT-CLE qui declenche le scenario, en mode `contains`. C'est la PHRASE du lien depuis le
-     * 2026-09-07 ; c'etait le jeton avant, et le champ s'appelait `jeton`.
-     *
-     * 🔴 Renomme volontairement plutot qu'affecte en silence : un champ nomme `jeton` qui recevrait une
-     * phrase serait un mensonge que le compilateur ne peut pas voir. Le renommage lui fait au contraire
-     * enumerer les appelants.
-     */
+    /** Le mot-clé qui déclenche le scénario, en mode `contains` : la phrase du lien. */
     motCle: string;
     workflowId: string; startNodeId: string | null;
     cooldownSeconds: number; maxParHeure: number | null;
   }): Promise<{ id: string }>;
   /**
-   * Allume l'automation compagnon d'UN LIEN. Deux chemins d'appel : une publication qui vient de reussir
-   * (POST /posts), et la reparation manuelle d'un lien dont l'allumage automatique a echoue
-   * (POST /links/:id/enable, la contrepartie de `disable`).
-   *
-   * 🔴 PREND UN `linkId`, JAMAIS un `automationId`, et c'est deliberement etroit. L'automation compagnon est
-   * POSSEDEE (`possede_par = 'channelsme_link'`), donc hors de portee de `PgAutomationStore` : c'est
-   * `PgChannelsMeLinkStore.allumerAutomation` qui ecrit la requete, avec sa propre garde miroir. Un appel sur
-   * un lien sans automation (ou sur un lien d'un autre tenant) ne touche silencieusement aucune ligne : ce
-   * n'est jamais une raison d'echouer la publication qui l'a declenche.
+   * Allume l'automation compagnon d'un lien : après une publication réussie, ou par réparation manuelle
+   * (POST /links/:id/enable). Prend un `linkId`, jamais un `automationId` : l'automation est possédée par le lien,
+   * hors de portée de `PgAutomationStore`, et `PgChannelsMeLinkStore.allumerAutomation` porte sa garde miroir. Un
+   * lien sans automation ou d'un autre espace ne touche aucune ligne, sans échec.
    */
   allumerAutomationLien(tenantId: string, linkId: string): Promise<void>;
   /** Eteint l'automation compagnon d'un lien (chemin : POST /links/:id/disable). Meme garde, meme store. */
@@ -148,15 +117,14 @@ const postSchema = z.object({
 });
 const demandeSchema = z.object({ message: z.string().trim().max(2000).optional() });
 
-/** Anti-rebond du lien de chaine : 5 minutes, au lieu des 3600 s par defaut. Filtre le double appui
- *  accidentel, laisse repartir un abonne qui revient plus tard. Decide par Julien le 2026-09-04. */
+/** Anti-rebond du lien de chaîne : 5 minutes au lieu de 3600 s. Filtre le double appui accidentel, laisse
+*  repartir un abonné qui revient plus tard. */
 const COOLDOWN_LIEN_SECONDES = 300;
 
 /**
- * 🔴 CE QUI SORT D'UN ECHEC DISTANT : le tenant, l'etape, et le message de l'erreur levee par NOTRE client.
- * Jamais le corps de la reponse du tiers (sans `Accept: application/json` leur API rend une page HTML
- * entiere, et un corps distant peut porter les donnees d'un autre espace), jamais les identifiants.
- * `console.error` et non `req.log` : Fastify est construit en `logger: false`.
+ * 🔴 Ce qui sort d'un échec distant : l'espace, l'étape et le message de l'erreur levée par notre client. Jamais
+ * le corps de la réponse du tiers (une page HTML entière, ou des données d'un autre espace), jamais les
+ * identifiants. `console.error` et non `req.log` : Fastify est construit en `logger: false`.
  */
 function journaliserDistant(tenant: string, etape: string, err: unknown): void {
   // eslint-disable-next-line no-console
@@ -169,9 +137,8 @@ function journaliserDistant(tenant: string, etape: string, err: unknown): void {
 export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
   const base = '/tenants/:tenantId/channels-me';
-  // Un limiteur PROPRE a cet endpoint (jamais l'instance d'un autre : regle deja posee dans
-  // src/auth/routes.ts). Cle = userId, PAS req.ip : la route est authentifiee, et Fastify n'est pas
-  // construit en `trustProxy`, donc derriere le proxy `req.ip` est le meme pour tout le monde.
+  // Limiteur propre à cet endpoint. Clé = userId, pas req.ip : sans `trustProxy`, derrière le proxy, `req.ip`
+  // est le même pour tout le monde.
   const limiteurDemande = new RateLimiter(3, 60_000);
 
   app.get(`${base}/connection`, opts, async (req, reply) => {
@@ -185,14 +152,14 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
       return reply.code(200).send({ connection, organisation: null, channels: [], distant: 'non_configuree' });
     }
     try {
-      // Les deux objets sont ceux que le SCHEMA Zod du client a laisses passer, pas le corps distant tel
-      // quel : une page HTML d'erreur ou un champ inattendu n'arrive jamais jusqu'ici.
+      // Les deux objets sont ceux que le schéma Zod du client a laissés passer, pas le corps distant tel quel :
+      // une page HTML d'erreur ou un champ inattendu n'arrive jamais jusqu'ici.
       const [organisation, channels] = await Promise.all([deps.getOrganisation(cx), deps.listChannels(cx)]);
       return reply.code(200).send({ connection, organisation, channels, distant: 'ok' });
     } catch (err) {
       journaliserDistant(tenant, 'connection_read', err);
-      // 200 et pas 4xx : la connexion ENREGISTREE doit rester visible meme quand le tiers est muet, sinon
-      // l'ecran laisse croire qu'il n'y a rien de provisionne et le client ressaisit des identifiants bons.
+      // 200 et pas 4xx : la connexion enregistrée doit rester visible même quand le tiers est muet, sinon l'écran
+      // laisse croire qu'il n'y a rien de provisionné et le client ressaisit des identifiants bons.
       return reply.code(200).send({ connection, organisation: null, channels: [], distant: 'injoignable' });
     }
   });
@@ -205,23 +172,17 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
       return reply.code(400).send({ error: 'organisation, chaine, cle d’API et secret sont tous requis' });
     }
     const { orgId, channelId, apiKey, secret } = parse.data;
-    // Remplacement COMPLET, et non un patch : l'ecran ne peut pas renvoyer ce qu'il n'a jamais eu (les deux
-    // secrets ne redescendent jamais), donc « changer la cle » veut dire ressaisir les quatre champs.
-    // Le chiffrement est fait DANS le store, jamais ici.
+    // Remplacement complet, pas un patch : l'écran ne peut pas renvoyer les deux secrets, qui ne redescendent
+    // jamais, donc « changer la clé » veut dire ressaisir les quatre champs. Le chiffrement est fait dans le store.
     await deps.upsertConnection(tenant, { orgId, channelId, apiKey, secret });
-    // On relit la projection PUBLIQUE : la reponse ne porte donc jamais les secrets qu'on vient d'ecrire.
+    // On relit la projection publique : la réponse ne porte donc jamais les secrets qu'on vient d'écrire.
     return reply.code(200).send({ connection: await deps.getConnection(tenant) });
   });
 
   /**
-   * DEBRANCHER la chaine : l interrupteur « Chaine » de l Accueil, eteint (plan du 2026-09-25).
-   *
-   * 🔴 LES LIENS ET LES PUBLICATIONS DEJA PARUES RESTENT, ET LEURS BOUTONS AUSSI. Un post publie circule pour
-   * toujours : son bouton `wa.me` ne passe pas par la chaine mais par notre numero, et c est l automation
-   * compagnon du lien qui demarre le scenario. Debrancher ne fait qu oublier les identifiants : plus de
-   * publication ni de lecture de la chaine tant qu on ne les a pas ressaisis.
-   *
-   * Rejouable : debrancher une chaine deja debranchee rend 200 avec `supprimee: false`, jamais une erreur.
+   * Débrancher la chaîne (interrupteur « Chaîne » de l'Accueil) : oublie les identifiants, rien d'autre. Les liens
+   * et les posts déjà parus gardent leurs boutons, qui passent par notre numéro et l'automation compagnon, pas par
+   * la chaîne. Rejouable : déjà débranchée, 200 avec `supprimee: false`.
    */
   app.delete(`${base}/connection`, opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -242,7 +203,7 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
       return reply.code(200).send({ ok: true, organisation, channels });
     } catch (err) {
       journaliserDistant(tenant, 'connection_test', err);
-      // Message FIXE : le corps de la reponse du tiers ne se relaie jamais au client.
+      // Message fixe : le corps de la réponse du tiers ne se relaie jamais au client.
       return reply.code(422).send({
         ok: false,
         error: 'Channels Me a refuse ces identifiants, ou n’a pas repondu. Verifie l’organisation, la chaine, la cle d’API et le secret.',
@@ -253,8 +214,8 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
   app.get(`${base}/links`, opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const liens = await deps.listLinks(tenant);
-    // UN seul appel pour toute la liste. Le front ne recompose JAMAIS une URL publique : il recoit le lien
-    // wa.me pret a l'emploi, comme pour l'adresse d'un webhook entrant.
+    // Un seul appel pour toute la liste. Le front ne recompose jamais une URL publique : il reçoit le lien
+    // wa.me prêt à l'emploi, comme pour l'adresse d'un webhook entrant.
     const phone = await deps.getDisplayPhoneNumber(tenant);
     return reply.code(200).send({
       links: liens.map((l) => {
@@ -273,7 +234,7 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     const { workflowId, phrase } = parse.data;
     const startNodeId = parse.data.startNodeId ?? null;
     const maxParHeure = parse.data.maxParHeure ?? null;
-    // Un tenant ne peut cibler QUE ses propres scenarios (meme garde que la campagne workflow).
+    // 🔴 Un espace ne peut cibler que ses propres scénarios (même garde que la campagne workflow).
     if ((await deps.scenarioEtat(tenant, workflowId)) === 'inconnu') {
       return reply.code(400).send({ error: 'workflowId inconnu pour ce tenant' });
     }
@@ -283,13 +244,9 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     if (phone === null) {
       return reply.code(409).send({ error: 'aucun numero WhatsApp connecte : connecte un numero avant de creer un lien de chaine' });
     }
-    // 🔴 LES DEUX GARDES DE LA PHRASE, ET ELLES PASSENT AVANT TOUTE ECRITURE. Depuis que la phrase route
-    // (le jeton ne le fait plus), elle doit etre a la fois UNIQUE et DISTINCTIVE. Refuser apres avoir cree
-    // l'automation compagnon obligerait a la defaire, ce que le rattrapage plus bas fait deja pour un autre
-    // cas, et qu'il vaut mieux ne pas avoir a declencher.
-    // 🔴 La phrase NORMALISEE ne doit pas etre vide. `trim().min(1)` laisse passer une chaine faite de
-    // diacritiques seuls, que `normalizeText` reduit a rien : l'automation naitrait avec zero mot-cle et ne
-    // declencherait JAMAIS, sur un post publie pour toujours. Refus explicite plutot que bouton mort.
+    // Les gardes de la phrase passent avant toute écriture : elle doit être unique et distinctive (refuser après
+    // avoir créé l'automation obligerait à la défaire). La phrase normalisée ne doit pas être vide : des diacritiques
+    // seuls passent `trim().min(1)`, `normalizeText` les réduit à rien, et l'automation ne déclencherait jamais.
     if (normalizeText(phrase) === '') {
       return reply.code(400).send({ error: 'cette phrase ne contient aucun caractere exploitable : choisis une phrase lisible' });
     }
@@ -300,23 +257,20 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     }
     const dejaVus = await deps.messagesContenantLaPhrase(tenant, phrase);
     if (dejaVus > 0) {
-      // Le nombre est DIT : « trop banale » sans chiffre laisse le client deviner ce qu'on lui reproche.
+      // Le nombre est dit : « trop banale » sans chiffre laisse le client deviner ce qu'on lui reproche.
       return reply.code(409).send({
         error: `cette phrase apparait deja dans ${dejaVus} message(s) recu(s) : elle declencherait le scenario sur des conversations ordinaires. Choisis une phrase plus specifique.`,
       });
     }
-    // Le jeton est tire par le SERVEUR. Il n'est jamais journalise : il circule dans des messages publics.
-    // ⚠️ Il ne DECLENCHE plus rien depuis le 2026-09-07 (c'est la phrase qui route) : il reste l'identifiant
-    // unique du lien, et il vit dans les posts deja publies.
+    // Le jeton est tiré par le serveur et jamais journalisé (il circule dans des messages publics). Il ne
+    // déclenche plus rien (c'est la phrase qui route) : il reste l'identifiant unique du lien, présent dans les posts.
     const token = nouveauJeton();
-    // L'automation nait ETEINTE et ne s'allume qu'a la publication reussie : un lien cree mais jamais
-    // publie ne declenche rien, donc un jeton qui fuiterait avant publication est inerte.
+    // L'automation naît éteinte et ne s'allume qu'à la publication réussie : un lien créé mais jamais publié ne
+    // déclenche rien, donc un jeton qui fuiterait avant publication est inerte.
     const { id: automationId } = await deps.creerAutomationCompagnon(tenant, {
       nom: `Chaine : ${phrase}`.slice(0, 200),
-      // 🔴 LA PHRASE (plus le jeton, depuis le 2026-09-07), PRIVEE DE SA PONCTUATION FINALE. Un post DEJA PUBLIE envoie un message ampute de sa
-      // ponctuation de fin (l'auto-detection de liens de WhatsApp l'exclut de l'adresse qu'elle ouvre), et
-      // en mode `contains` un message plus COURT que le mot-cle ne correspond a rien. Cf. le docblock de
-      // `motCleDepuisPhrase` : c'est la seule moitie du remede qui repare les posts deja distribues.
+      // La phrase, privée de sa ponctuation finale : WhatsApp exclut cette ponctuation de l'adresse qu'il ouvre, et
+      // en mode `contains` un message plus court que le mot-clé ne correspond à rien (cf. `motCleDepuisPhrase`).
       motCle: motCleDepuisPhrase(phrase),
       workflowId,
       startNodeId,
@@ -327,18 +281,15 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     try {
       lien = await deps.createLink(tenant, { workflowId, startNodeId, token, phrase, automationId, maxParHeure });
     } catch (err) {
-      // 🔴 SANS CE RATTRAPAGE, un `createLink` qui echoue laisse l'automation compagnon POSSEDEE
-      // (`possede_par = 'channelsme_link'`) sans qu'aucun lien ne la reference jamais : exclue du predicat de
-      // `PgAutomationStore`, elle devient invisible et inaccessible depuis l'ecran Automation, orpheline pour
-      // toujours. On defait donc ce qu'on vient de creer avant de laisser l'echec remonter tel quel.
+      // Sans ce rattrapage, un `createLink` qui échoue laisserait une automation possédée qu'aucun lien ne
+      // référence : invisible de l'écran Automation, orpheline pour toujours. On la défait avant de laisser l'échec
+      // remonter.
       await deps.supprimerAutomationCompagnon(tenant, automationId).catch((err2) => {
         journaliserDistant(tenant, 'link_rattrapage_automation', err2);
       });
       journaliserDistant(tenant, 'link_create', err);
-      // 🔴 UNE COURSE ENTRE DEUX CREATIONS SORT EN 409, PAS EN 500. L'index unique de la 0116 est le filet
-      // quand deux requetes passent la garde applicative en meme temps ; sans ce rattrapage, la violation
-      // remonterait en 5xx, dont Cloudflare remplace le corps par sa propre page : le client verrait une
-      // erreur de plateforme au lieu de la raison, qui est la meme que celle de la garde.
+      // Une course entre deux créations sort en 409, pas en 500 : l'index unique est le filet quand deux requêtes
+      // passent la garde applicative en même temps.
       if ((err as { code?: unknown }).code === '23505') {
         return reply.code(409).send({
           error: "cette phrase entre en conflit avec celle d'un autre lien (l'une contient l'autre) : un seul message declencherait les deux scenarios",
@@ -351,15 +302,9 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
   });
 
   /**
-   * Combien de conversations chaque bouton a demarrees.
-   *
-   * 🔴 CE N'EST PAS UN NOMBRE DE CLICS, et la route ne s'appelle pas ainsi expres. Un appui sur un lien
-   * `wa.me` ouvre WhatsApp sur le telephone de l'abonne sans jamais traverser nos serveurs : ce geste nous
-   * est invisible, et le fournisseur ne le rapporte pas. Ce qu'on voit, c'est le message qui arrive
-   * ensuite. Nommer la route `/clics` aurait fait croire le contraire au premier lecteur.
-   *
-   * ⚠️ Route SEPAREE de `GET /links`, qui sert aussi le composeur a chaque ouverture de l'ecran : cette
-   * mesure relit des messages, le composeur n'en a pas besoin, et la payer a chaque frappe serait absurde.
+   * Combien de conversations chaque bouton a démarrées : pas un nombre de clics, car un appui sur un lien `wa.me`
+   * ne traverse pas nos serveurs ; on voit le message qui arrive ensuite. Route séparée de `GET /links`, qui sert
+   * le composeur à chaque ouverture et n'a pas à relire des messages.
    */
   app.get(`${base}/links/conversations`, opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -374,15 +319,13 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     if (!estUuid(id)) return reply.code(404).send({ error: 'lien inconnu' });
     const lien = await deps.linkById(tenant, id);
     if (!lien) return reply.code(404).send({ error: 'lien inconnu' });
-    // 🔴 L'etat d'un lien EST le `enabled` de son automation : il n'y a pas de second drapeau a ecrire, et
-    // en poser un creerait deux copies du meme etat, qui divergeraient au premier chemin qui n'ecrit qu'une
-    // des deux. On eteint plutot qu'on ne supprime : un post publie circule pour toujours, l'extinction est
-    // reversible, la suppression laisserait un bouton mort sans trace.
+    // L'état d'un lien est le `enabled` de son automation, sans second drapeau (deux copies divergeraient). On
+    // éteint plutôt qu'on ne supprime : un post publié circule pour toujours, l'extinction est réversible.
     if (lien.automationId === null) {
       return reply.code(409).send({ error: 'ce lien n’a plus d’automation compagnon : il ne declenche deja plus rien' });
     }
-    // L'id transmis est celui du LIEN, jamais celui de l'automation : c'est `PgChannelsMeLinkStore` qui
-    // resout l'automation compagnon (et sa garde `possede_par`), pas cette route.
+    // L'id transmis est celui du lien, jamais celui de l'automation : c'est `PgChannelsMeLinkStore` qui
+    // résout l'automation compagnon (et sa garde `possede_par`), pas cette route.
     await deps.eteindreAutomationLien(tenant, lien.id);
     return reply.code(200).send({ ok: true });
   });
@@ -400,8 +343,8 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     if (lien.automationId === null) {
       return reply.code(409).send({ error: 'ce lien n’a plus d’automation compagnon : il ne peut pas etre active' });
     }
-    // Meme id (celui du LIEN) que `disable`, pour la meme raison : c'est `PgChannelsMeLinkStore` qui resout
-    // et garde l'automation compagnon, cette route ne connait que le lien.
+    // Même id (celui du lien) que `disable`, pour la même raison : c'est `PgChannelsMeLinkStore` qui résout
+    // et garde l'automation compagnon, cette route ne connaît que le lien.
     await deps.allumerAutomationLien(tenant, lien.id);
     return reply.code(200).send({ ok: true });
   });
@@ -415,8 +358,8 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     if (!cx) return sansStatut('non_configuree');
     if (posts.length === 0) return reply.code(200).send({ posts: [], distant: 'ok' });
     try {
-      // Le statut se LIT EN DIRECT : rien n'est miroite en base, donc il n'y a rien a resynchroniser et
-      // aucune file de rattrapage. Une seule lecture sert toute la liste (le tiers ne pagine pas).
+      // Le statut se lit en direct : rien n'est miroité en base, donc rien à resynchroniser. Une seule lecture sert
+      // toute la liste (le tiers ne pagine pas).
       const messages = await deps.getMessages(cx);
       const parId = new Map(messages.map((m) => [String(m.id), m]));
       return reply.code(200).send({
@@ -437,9 +380,8 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
       return reply.code(400).send({ error: 'text requis (1 a 4096 caracteres) ; mediaUrl doit etre une adresse' });
     }
     const { text, mediaUrl } = parse.data;
-    // 🔴 Nous ne recuperons JAMAIS ce media (c'est Channels Me qui le fait), donc pas de resolution DNS ici,
-    // qui n'aurait aucun sens : la verification TEXTUELLE existante suffit a refuser un hote interne, et on
-    // exige https en plus.
+    // 🔴 Nous ne récupérons jamais ce média (Channels Me le fait) : pas de résolution DNS ici, la vérification
+    // textuelle suffit à refuser un hôte interne, et on exige https en plus.
     if (mediaUrl !== undefined && (!urlRecuperable(mediaUrl) || new URL(mediaUrl).protocol !== 'https:')) {
       return reply.code(400).send({ error: 'mediaUrl doit etre une adresse https publique' });
     }
@@ -451,8 +393,8 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     if (parse.data.linkId !== undefined) {
       lien = await deps.linkById(tenant, parse.data.linkId);
       if (!lien) return reply.code(400).send({ error: 'linkId inconnu pour ce tenant' });
-      // 🔴 UN POST PUBLIE CIRCULE POUR TOUJOURS. Un bouton qui demarre un scenario sans version publiee ne
-      // se rattrape pas : on refuse AVANT de publier, jamais apres.
+      // 🔴 Un post publié circule pour toujours : un bouton vers un scénario sans version publiée ne se rattrape
+      // pas, on refuse avant de publier.
       const etat = await deps.scenarioEtat(tenant, lien.workflowId);
       if (etat !== 'ok') {
         return reply.code(409).send({
@@ -468,12 +410,9 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
       texteDuPost = `${text}\n\n${url}`;
     }
 
-    // 🔴 CE QUI SORT DU catch DEPEND DU STATUT PORTE PAR `ChannelsMeApiError`, jamais du seul fait qu'une
-    // exception a ete levee. `ChannelsMeClient.appel` leve APRES son test `!res.ok` dans deux cas (enveloppe
-    // `data` absente, corps refuse par le schema attendu) : ces deux jets portent le statut 2xx REELLEMENT
-    // recu, donc le message est REELLEMENT PARTI, meme si on ne sait pas le nommer. Un troisieme cas (statut
-    // 0 : delai depasse ou panne reseau, aucune reponse recue) ne dit RIEN de la delivrance. Seul un statut
-    // 4xx/5xx effectivement recu est un vrai refus, le seul cas ou rien n'est jamais parti.
+    // Ce qui sort du catch dépend du statut porté par `ChannelsMeApiError`. Statut 2xx (enveloppe absente, corps
+    // refusé par le schéma) : le message est parti. Statut 0 (délai, panne réseau) : on ne sait rien de la
+    // délivrance. Seul un 4xx/5xx reçu est un vrai refus, où rien n'est parti.
     const avertissements: Array<'automation_non_allumee' | 'trace_manquante' | 'reponse_inattendue'> = [];
     let publie: Message | null = null;
     try {
@@ -481,50 +420,33 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
     } catch (err) {
       journaliserDistant(tenant, 'post_create', err);
       if (err instanceof ChannelsMeApiError && err.status === 0) {
-        // Aucune reponse recue (delai depasse ou panne reseau) : on NE SAIT PAS si le message est deja parti.
-        // 4xx et jamais 5xx (Cloudflare remplacerait le corps de la reponse), et le message n'invite JAMAIS a
-        // reessayer : un reessai a l'aveugle republierait peut-etre le meme message a toute l'audience.
+        // Aucune réponse reçue : on ne sait pas si le message est parti. 4xx (jamais 5xx), et le message n'invite
+        // jamais à réessayer : un réessai à l'aveugle republierait peut-être le même message à toute l'audience.
         return reply.code(409).send({
           error: 'Channels Me n’a pas repondu a temps : impossible de savoir si le message est deja parti. Verifie la chaine (l’onglet Publications) avant toute nouvelle tentative.',
         });
       }
-      // 🔴 UN 401 N'EST PAS UNE FAUTE DU CLIENT, ET LUI DIRE LE CONTRAIRE LUI FAIT PERDRE SON TEMPS. Le
-      // 2026-09-08, une publication avec image a rendu `401 Bad Authorization or X-Signature header` : notre
-      // signature. L'ecran a repondu « verifie le texte et l'image », donc Julien a cherche dans son texte
-      // et dans sa photo un defaut qui n'existait pas. Un refus d'authentification se dit pour ce qu'il est,
-      // et rien de ce que le client peut changer ne le reglera.
-      // ⚠️ 424 et surtout PAS 502 : Cloudflare remplace le corps de TOUTE reponse 5xx par sa propre page
-      // d'erreur, donc ce message n'atteindrait jamais l'ecran. La regle est ecrite deux lignes plus haut,
-      // et je l'ai quand meme enfreinte en ecrivant ce bloc : elle merite d'etre rappelee ici aussi.
+      // Un 401/403 est notre signature refusée, pas une faute du client : le lui dire autrement le ferait chercher un
+      // défaut dans son texte. 424 et pas 502 : Cloudflare remplacerait le corps de toute 5xx.
       if (err instanceof ChannelsMeApiError && (err.status === 401 || err.status === 403)) {
         return reply.code(424).send({
           error: 'Channels Me a refuse NOS identifiants (erreur de notre cote, pas de ton message). Rien n’a ete publie. Si ca persiste, previens-nous : ni le texte ni l’image n’y changeront quoi que ce soit.',
         });
       }
       if (!(err instanceof ChannelsMeApiError) || err.status < 200 || err.status >= 300) {
-        // Vrai refus du fournisseur (statut 4xx/5xx recu), ou une erreur qu'on ne sait pas qualifier : dans
-        // les deux cas rien n'est parti. ⚠️ Les refus d'AUTHENTIFICATION sont sortis juste au-dessus : ce
-        // qui arrive ici est ce que la saisie peut reellement corriger, et ce message ne vaut que sous
-        // cette condition. Un 500 `Down::NotFound` du fournisseur y tombe aussi, et il est legitime : il
-        // signifie qu'il n'a pas pu recuperer l'image a l'adresse donnee.
+        // Vrai refus du fournisseur (4xx/5xx reçu) ou erreur non qualifiée : rien n'est parti, et la saisie peut
+        // corriger (les refus d'authentification sont sortis au-dessus). Un 500 `Down::NotFound` y tombe aussi :
+        // l'image n'a pas pu être récupérée à l'adresse donnée.
         return reply.code(422).send({ error: 'Channels Me a refuse la publication. Verifie le texte et l’image, puis reessaie.' });
       }
-      // Statut 2xx recu : le message est REELLEMENT PARTI, seule l'enveloppe ou le schema attendu n'a pas ete
-      // reconnu. Jamais une raison de faire croire a un echec : republier serait envoyer le meme post une
-      // seconde fois a toute l'audience. `publie` reste null : sans corps exploitable, il n'y a aucun
-      // identifiant Channels Me a tracer.
+      // Statut 2xx reçu : le message est parti, seule l'enveloppe n'a pas été reconnue. Jamais un échec apparent
+      // (republier enverrait le post deux fois à toute l'audience) ; `publie` reste null, rien à tracer.
       avertissements.push('reponse_inattendue');
     }
 
-    // 🔴 A PARTIR D'ICI LE POST CIRCULE, plus rien n'est annulable : la reponse est un 201 quoi qu'il arrive
-    // ensuite. On allume D'ABORD (sinon le bouton du post est mort des sa diffusion), on trace ENSUITE (la
-    // trace n'a aucun effet sur l'abonne). Un echec de publication AVANT ce point laisse le lien ETEINT :
-    // c'est le comportement voulu, meme si le jeton a fuite. Mais un echec APRES ce point (panne transitoire
-    // de base sur l'un ou l'autre appel, ou une reponse 2xx a l'enveloppe inattendue) ne doit JAMAIS ressembler
-    // a un echec de publication : le post est reellement parti, et `createMessage` n'a aucune cle
-    // d'idempotence, donc faire croire au client qu'il doit reessayer republierait le meme message a toute
-    // l'audience. Les appels sont donc dans leur PROPRE try/catch, independants l'un de l'autre, et chaque
-    // echec est journalise avec le mecanisme deja en place plutot que releve.
+    // 🔴 À partir d'ici le post circule : la réponse est un 201 quoi qu'il arrive, car `createMessage` n'a pas de
+    // clé d'idempotence et faire réessayer republierait à toute l'audience. On allume d'abord (sinon le bouton est
+    // mort), on trace ensuite ; chaque appel a son propre try/catch, et son échec est journalisé, jamais relevé.
     if (lien) {
       try {
         await deps.allumerAutomationLien(tenant, lien.id);
@@ -534,8 +456,8 @@ export function registerChannelsMeRoutes(app: FastifyInstance, deps: ChannelsMeR
         avertissements.push('automation_non_allumee');
       }
     }
-    // Sans corps exploitable (reponse 2xx a l'enveloppe inattendue), il n'y a AUCUN identifiant Channels Me a
-    // tracer : la trace est alors IMPOSSIBLE, pas seulement ratee, donc `createPost` n'est meme pas tente.
+    // Sans corps exploitable (réponse 2xx à l'enveloppe inattendue), il n'y a aucun identifiant Channels Me : la
+    // trace est impossible, pas seulement ratée, donc `createPost` n'est même pas tenté.
     const cmMessageId = publie === null ? null : String(publie.id);
     if (cmMessageId !== null) {
       try {

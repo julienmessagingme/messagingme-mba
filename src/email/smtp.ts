@@ -6,8 +6,8 @@ import { ouvrirSocketPublique } from '../lib/connexion-publique';
 
 export interface SmtpMessage {
   to: string;
-  /** Destinataires en COPIE CACHÉE. Ils ne voient pas les adresses les uns des autres, ni celle du « À ».
-   *  Absent ou vide -> aucun en-tête `bcc` n'est posé (voir `sendSmtpEmail`). */
+  /** Destinataires en copie cachée, qui ne voient ni les autres adresses ni celle du « À ». Absent ou vide : aucun
+   *  en-tête `bcc`. */
   bcc?: string[];
   subject: string;
   text?: string;
@@ -15,22 +15,19 @@ export interface SmtpMessage {
 }
 
 /**
- * Construit un transport nodemailer à partir d'une boîte SMTP déchiffrée. Le mot de passe en clair ne transite
- * que dans cet appel, jamais journalisé ni renvoyé.
+ * Construit un transport nodemailer à partir d'une boîte SMTP déchiffrée. Le mot de passe ne transite que dans cet
+ * appel, jamais journalisé ni renvoyé.
  *
- * 🔴 L'HÔTE EST SAISI PAR UN ADMINISTRATEUR D'ESPACE, DONC LA CONNEXION SE VÉRIFIE COMME CELLE D'UN CONNECTEUR
- * (2026-09-21). Il partait tel quel vers nodemailer : `localhost`, `172.18.0.1` (le réseau Docker du VPS) ou un
- * nom public qui y résout ouvraient une connexion depuis notre réseau, et le bouton « Tester » en rapportait le
- * succès ou l'échec. La socket est désormais ouverte par nous (`getSocket`), par `ouvrirSocketPublique` : un hôte
- * interne est refusé, à chaque envoi, avant qu'un octet ne parte, et le refus se reconnaît à
- * `estRefusAdresseInterne`. Nodemailer garde le nom d'hôte pour TLS, en TLS direct comme après STARTTLS.
+ * 🔴 L'hôte est saisi par un administrateur d'espace : la socket est ouverte par nous (`getSocket`), par
+ * `ouvrirSocketPublique`, qui refuse un hôte interne (localhost, réseau Docker, nom qui y résout) à chaque envoi,
+ * avant qu'un octet ne parte (reconnaissable à `estRefusAdresseInterne`). Nodemailer garde le nom d'hôte pour TLS.
  */
 export function buildTransport(
   account: DecryptedEmailAccount,
   ouvrir: (hote: string, port: number) => Promise<Socket> = (hote, port) => ouvrirSocketPublique(hote, port),
 ): Transporter {
-  // Le MÊME nom pour la socket et pour TLS : nettoyé des espaces (le schéma d'entrée ne le fait pas) et des
-  // crochets d'une IPv6. Sinon la socket vérifiée et le SNI porteraient sur deux textes différents.
+  // Le même nom pour la socket et pour TLS, nettoyé des espaces et des crochets d'une IPv6 : sinon la socket vérifiée
+  // et le SNI porteraient sur deux textes différents.
   const hote = account.host.trim().replace(/^\[|\]$/g, '');
   return nodemailer.createTransport({
     host: hote,
@@ -43,8 +40,8 @@ export function buildTransport(
   });
 }
 
-/** Envoie un email via le transport fourni. `from` porte le nom de la boîte s'il est renseigné, sinon
- *  seulement l'adresse ; `replyTo` n'est posé que si la boîte en a un. */
+/** Envoie un email par le transport fourni. `from` porte le nom de la boîte s'il existe ; `replyTo` n'est posé que
+ *  si la boîte en a un. */
 export async function sendSmtpEmail(
   transport: Transporter,
   account: DecryptedEmailAccount,
@@ -53,8 +50,7 @@ export async function sendSmtpEmail(
   await transport.sendMail({
     from: account.fromName ? { name: account.fromName, address: account.fromAddress } : account.fromAddress,
     to: msg.to,
-    // Posé SEULEMENT s'il y a des destinataires cachés : passer `bcc: []` ou `bcc: undefined` change l'objet
-    // remis à nodemailer, et les tests de ce module comparent cet objet au caractère près.
+    // Posé seulement s'il y a des destinataires cachés : les tests comparent l'objet remis à nodemailer au caractère près.
     ...(msg.bcc && msg.bcc.length > 0 ? { bcc: msg.bcc } : {}),
     replyTo: account.replyTo ?? undefined,
     subject: msg.subject,

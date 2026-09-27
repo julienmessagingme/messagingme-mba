@@ -13,9 +13,8 @@ const IMG_MAX = 5 * 1024 * 1024; // 5 Mo (limite en-tête image Meta ; le front 
 const VIDEO_MAX = 16 * 1024 * 1024; // 16 Mo (limite en-tête vidéo Meta)
 
 /**
- * Upload média (admin) : image (headers carousel + en-tête simple) et vidéo mp4 (en-tête simple). Accepte
- * un data URL base64, décode, valide type/poids, renvoie le handle Meta (resumable upload). GROUPE admin-only.
- * bodyLimit élevé (le média transite en base64, +33% -> ~22 Mo pour une vidéo de 16 Mo).
+ * Upload média (admin) : image (carousel, en-tête simple) ou vidéo mp4 (en-tête simple), reçue en data URL
+ * base64, validée (type, poids), rend le handle Meta. bodyLimit élevé : le base64 ajoute 33 % (~22 Mo pour 16 Mo).
  */
 export function registerMedia(app: FastifyInstance, deps: MediaRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde, bodyLimit: 24 * 1024 * 1024 };

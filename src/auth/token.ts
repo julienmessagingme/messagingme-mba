@@ -5,15 +5,9 @@ export interface Session {
   tenantId: string;
   role: string;
   /**
-   * Session d'EMPRUNT, émise depuis la surface d'exploitation pour entrer dans l'espace d'un client.
-   *
-   * Trois conséquences, toutes voulues :
-   *   - AUCUNE écriture n'est permise (garde globale) ;
-   *   - le porteur n'a pas de compte dans cet espace, donc son état n'est pas relu en base ;
-   *   - rien n'est marqué comme lu, pour ne pas faire disparaître les non-lus du client.
-   *
-   * Absent = session normale. Le champ n'existe QUE sur un jeton émis par `/ops`, qui est lui-même protégé
-   * par un jeton d'exploitation distinct du JWT client.
+   * 🔴 Session d'emprunt, émise depuis `/ops` pour entrer dans l'espace d'un client : aucune écriture permise
+   * (garde globale), état du porteur non relu en base (il n'a pas de compte ici), rien marqué comme lu.
+   * Absent = session normale ; le champ n'existe que sur un jeton émis par `/ops`, protégé par son propre jeton.
    */
   impersonated?: true;
 }
@@ -39,16 +33,14 @@ export async function verifySession(token: string, secret: string): Promise<Sess
     if (typeof payload.sub !== 'string' || typeof payload.tenantId !== 'string' || typeof payload.role !== 'string') {
       return null;
     }
-    // 🔴 UN JETON QUI PORTE UN `kind` N'EST JAMAIS UNE SESSION (choix d'espace, second facteur, enrôlement). Aucun
-    // d'eux ne porte `tenantId` ni `role` à la racine, donc le test ci-dessus les refuse déjà ; celui-ci tient le
-    // jour où quelqu'un les y ajouterait pour « simplifier » la suite de la connexion.
+    // 🔴 Un jeton qui porte un `kind` n'est jamais une session (choix d'espace, second facteur, enrôlement) :
+    // ils n'ont ni `tenantId` ni `role` à la racine, et ce test tient le jour où quelqu'un les y ajouterait.
     if (payload.kind !== undefined) return null;
     return {
       userId: payload.sub,
       tenantId: payload.tenantId,
       role: payload.role,
-      // `=== true` strict : n'importe quelle autre valeur (chaîne, 1, objet) vaut « session normale ».
-      // Un emprunt ne doit jamais être déduit d'une valeur approximative.
+      // `=== true` strict : un emprunt ne se déduit jamais d'une valeur approximative.
       ...(payload.impersonated === true ? { impersonated: true as const } : {}),
     };
   } catch {
@@ -57,14 +49,10 @@ export async function verifySession(token: string, secret: string): Promise<Sess
 }
 
 /**
- * Jeton de CHOIX D'ESPACE : le temps intermédiaire d'une connexion quand une adresse donne accès à
- * plusieurs espaces.
- *
- * 🔴 Ce n'est PAS une session, et il ne doit jamais pouvoir en tenir lieu :
- *   - il ne porte ni `tenantId` ni `role` à la racine, donc `verifySession` le REJETTE (elle exige les deux) ;
- *   - il porte la liste des espaces autorisés, SIGNÉE : sans elle, présenter un jeton de choix légitime avec
- *     l'identifiant d'un espace quelconque suffirait à y entrer ;
- *   - il vit 5 minutes. C'est le temps de cliquer, pas celui de travailler.
+ * Jeton de choix d'espace : le temps intermédiaire d'une connexion quand une adresse ouvre plusieurs espaces.
+ * Ce n'est pas une session : sans `tenantId` ni `role` à la racine, `verifySession` le rejette. 🔴 Il porte
+ * la liste signée des espaces autorisés, sans laquelle un jeton légitime ouvrirait n'importe quel espace. Il
+ * vit 5 minutes.
  */
 export interface ChoiceToken {
   email: string;
@@ -83,8 +71,7 @@ export async function signChoice(c: ChoiceToken, secret: string, expiresIn = '5m
 export async function verifyChoice(token: string, secret: string): Promise<ChoiceToken | null> {
   try {
     const { payload } = await jwtVerify(token, key(secret), { algorithms: ['HS256'] });
-    // `kind` vérifié explicitement : un jeton de SESSION valide ne doit pas pouvoir servir de jeton de choix,
-    // ni l'inverse. Deux usages, deux formes, aucun recouvrement.
+    // `kind` vérifié : un jeton de session ne sert pas de jeton de choix, ni l'inverse.
     if (payload.kind !== 'choice' || typeof payload.email !== 'string' || !Array.isArray(payload.comptes)) return null;
     const comptes = payload.comptes.filter(
       (c): c is { userId: string; tenantId: string; role: string } =>
@@ -101,16 +88,11 @@ export async function verifyChoice(token: string, secret: string): Promise<Choic
 }
 
 /**
- * Les deux ÉTAPES d'une connexion qui attend encore le second facteur (plan du 2026-09-25) : `mfa` (l'identité a
- * un facteur actif, il faut son code) et `enrolement` (l'identité est admin quelque part et n'a pas de facteur,
- * elle doit en poser un avant d'entrer).
- *
- * 🔴 CE NE SONT PAS DES SESSIONS, sur le modèle exact du jeton de choix : ni `tenantId` ni `role` à la racine, et
- * un `kind` que `verifySession` refuse. Ils portent la liste SIGNÉE des comptes, c'est-à-dire la suite prévue de la
- * connexion : une session si un seul espace, un jeton de choix sinon. Rien ne s'ouvre avant le code.
- *
- * ⚠️ Un `kind` par étape, et chaque vérification refuse l'autre : un jeton d'enrôlement présenté au lieu d'un jeton
- * de code permettrait de REMPLACER un facteur actif par un facteur neuf, c'est-à-dire de le contourner.
+ * Les deux étapes d'une connexion qui attend le second facteur : `mfa` (un facteur actif, il faut son code)
+ * et `enrolement` (admin sans facteur, qui doit en poser un avant d'entrer). Pas des sessions, comme le jeton
+ * de choix : ils portent la liste signée des comptes, la suite prévue de la connexion, et rien ne s'ouvre
+ * avant le code. 🔴 Un `kind` par étape, chaque vérification refusant l'autre : un jeton d'enrôlement présenté
+ * à la place d'un jeton de code permettrait de remplacer un facteur actif, donc de le contourner.
  */
 export interface EtapeConnexion {
   identityId: string;

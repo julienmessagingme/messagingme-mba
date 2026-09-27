@@ -1,7 +1,7 @@
 /**
- * Plage de dates des stats (Analytics). Les bornes sont des dates civiles Europe/Paris (YYYY-MM-DD),
- * `to` INCLUS. Le passage aux instants UTC (bornes SQL / epoch pricing) se fait via `zonedMidnightEpochSec`
- * pour rester correct au changement d'heure (Paris = UTC+1 hiver / UTC+2 été) — jamais de `date*86400` naïf.
+ * Plage de dates des stats. Les bornes sont des dates civiles Europe/Paris (YYYY-MM-DD), `to` inclus. Le
+ * passage aux instants UTC passe par `zonedMidnightEpochSec` pour rester juste au changement d'heure : jamais
+ * de `date*86400` naïf.
  */
 export interface DateRange {
   from: string; // YYYY-MM-DD (Europe/Paris)
@@ -31,7 +31,7 @@ export function addDays(dateStr: string, delta: number): string {
   return new Date(Date.UTC(y, m - 1, d) + delta * 86400000).toISOString().slice(0, 10);
 }
 
-/** Nombre de jours INCLUSIF entre from et to (from==to -> 1). Suppose from<=to. */
+/** Nombre de jours inclusif entre from et to (from==to -> 1). Suppose from<=to. */
 export function inclusiveDays(from: string, to: string): number {
   const [ya, ma, da] = from.split('-').map(Number) as [number, number, number];
   const [yb, mb, db] = to.split('-').map(Number) as [number, number, number];
@@ -83,13 +83,9 @@ export function parseRange(query: Record<string, unknown>): { range: DateRange }
 }
 
 /**
- * CTE `bounds` : les deux instants UTC qui bornent la plage, calculés PAR POSTGRES dans le fuseau passé en
- * `$4` (`to` inclus, d'où le `+ 1` sur la borne haute). Attend `$2` = from, `$3` = to, `$4` = fuseau, mêmes
- * positions dans les neuf requêtes de stats.
- *
- * Fragment partagé : c'est l'invariant de changement d'heure du module (une soustraction naïve en secondes
- * décalerait les journées deux fois par an), et il était recopié à l'identique dans les deux stores. Une
- * seule écriture, comme `UNREAD_SQL` pour l'inbox.
+ * CTE `bounds` : les deux instants UTC qui bornent la plage, calculés par Postgres dans le fuseau `$4` (`to`
+ * inclus, d'où le `+ 1`). Attend `$2` = from, `$3` = to, `$4` = fuseau dans toutes les requêtes de stats.
+ * Fragment partagé : c'est l'invariant de changement d'heure du module.
  */
 export const BOUNDS_CTE = `bounds as (
          select ($2::date)::timestamp at time zone $4 as start_ts,

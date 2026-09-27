@@ -12,12 +12,10 @@ export interface CampaignDraft {
 /**
  * Brouillons de campagne : une campagne en cours de composition, retrouvable après avoir quitté l'écran.
  *
- * ⚠️ N'a AUCUN rapport avec `campaigns.status = 'draft'`, qui désigne une campagne complète et non lancée.
- * Ce store ne touche jamais au moteur d'envoi : aucun destinataire, aucun template résolu, donc aucune
- * écriture ici ne peut produire un message.
+ * Aucun rapport avec `campaigns.status = 'draft'` (campagne complète non lancée) : ce store ne touche jamais
+ * au moteur d'envoi, aucune écriture ici ne peut produire un message.
  *
- * Toutes les requêtes portent `tenant_id` : c'est le seul contrôle d'isolation, le serveur tapant la base en
- * rôle service.
+ * 🔴 Toutes les requêtes portent `tenant_id` : c'est le seul contrôle d'isolation (rôle service).
  */
 export class PgCampaignDraftStore {
   constructor(private readonly pool: Pool) {}
@@ -42,9 +40,8 @@ export class PgCampaignDraftStore {
   }
 
   /**
-   * Met à jour un brouillon existant. Rend `false` si le brouillon n'existe pas ou appartient à un autre
-   * tenant : l'appelant en fait un 404, jamais une création silencieuse. Créer ici sur un identifiant inconnu
-   * permettrait de semer des brouillons dans le tenant d'autrui en devinant des identifiants.
+   * Rend `false` si le brouillon n'existe pas ou appartient à un autre tenant (l'appelant en fait un 404).
+   * Jamais de création silencieuse : elle permettrait de semer des brouillons chez autrui en devinant des ids.
    */
   async update(tenantId: string, id: string, name: string, state: Record<string, unknown>): Promise<boolean> {
     const res = await this.pool.query(

@@ -4,28 +4,23 @@ import type { FetchLike } from '../meta/templates';
 import type { EvenementAgent } from './evenement';
 
 /**
- * Client de la surface Meta Business Agent (`agent_config/*`) : la base de connaissance de l'agent et ses
- * réglages, pilotés PAR NUMÉRO.
- *
- * ⚠️ MBA ne vit PAS sur `graph.facebook.com`. Ces routes y répondent « Unknown path components » (code 2500,
- * mesuré le 2026-08-18). C'est `api.facebook.com`, SANS version dans le chemin : la version passe par
- * l'en-tête `X-API-Version`, qu'on envoie toujours plutôt que de dépendre d'un défaut non documenté.
- *
- * ⚠️ Erreurs : cette surface renvoie `{title, detail, status}` là où le reste de Graph renvoie
- * `{error:{message,code}}`. Les deux formes sont normalisées ici, sinon un message utile (« A payment method
- * is required to enable Meta Business Agent... ») serait perdu au profit d'un « erreur inconnue ».
+ * Client de la surface Meta Business Agent (`agent_config/*`) : la base de connaissance et les réglages de
+ * l'agent, pilotés par numéro.
+ * MBA ne vit pas sur `graph.facebook.com` (« Unknown path components », code 2500) mais sur `api.facebook.com`,
+ * sans version dans le chemin : la version passe par l'en-tête `X-API-Version`, toujours envoyé.
+ * Erreurs : `{title, detail, status}` ici, `{error:{message,code}}` sur le reste de Graph ; les deux sont
+ * normalisées, sinon un message utile serait perdu au profit d'un « erreur inconnue ».
  */
 const BASE = 'https://api.facebook.com';
 /** Version de toute la surface `agent_config/*` et compagnie. */
 const VERSION_AGENT_CONFIG = '2.0.0';
 /**
- * ⚠️ `thread_control` est le SEUL endpoint du corpus MBA versionné en **1.0.0**. Une constante de client
- * globale enverrait `2.0.0`, valeur HORS ENUM sur cet endpoint. La version est donc un paramètre PAR APPEL,
- * pas une propriété du client.
+ * `thread_control` est le seul endpoint MBA versionné en 1.0.0 : `2.0.0` y est hors énumération, d'où une
+ * version par appel plutôt qu'une propriété du client.
  */
 const VERSION_THREAD_CONTROL = '1.0.0';
 
-/** Informations générales sur l'entreprise. Ressource SINGLETON : le PUT est un remplacement complet. */
+/** Informations générales sur l'entreprise. Ressource singleton : le PUT est un remplacement complet. */
 export interface BusinessInfo {
   payment_method?: string;
   return_policy?: string;
@@ -44,8 +39,8 @@ export interface Faq {
 }
 
 /**
- * Une « skill » : des INSTRUCTIONS en langage naturel, pas une fonction appelable (le tool calling, ce sont
- * les connecteurs). `description` dit à l'agent QUAND l'appliquer, `skill` dit QUOI faire.
+ * Une « skill » : des instructions en langage naturel, pas une fonction appelable (le tool calling, ce sont
+ * les connecteurs). `description` dit à l'agent quand l'appliquer, `skill` quoi faire.
  */
 export interface Skill {
   id?: string;
@@ -56,15 +51,9 @@ export interface Skill {
   /** Le corps d'instructions. 20 000 caractères max. */
   skill: string;
   /**
-   * `active`, `pending_review` ou `blocked`, tel que Meta le rend.
-   *
-   * 🔴 CE CHAMP ÉTAIT JETÉ, et c'est ce qui rendait une compétence écrite indiscernable d'une compétence
-   * QUI AGIT. Meta RELIT les compétences : mesuré le 2026-09-10, les quatre posées sur notre numéro sont
-   * revenues `pending_review` puis `active` moins d'une heure après. Entre les deux, l'agent répondait
-   * sans elles, et rien à l'écran ne pouvait le dire.
-   *
-   * ⚠️ Optionnel, parce que c'est Meta qui le rend et jamais nous qui l'écrivons : il est absent des corps
-   * de création et de mise à jour.
+   * `active`, `pending_review` ou `blocked`, tel que Meta le rend : Meta relit les compétences avant de les
+   * activer, et une compétence en relecture n'agit pas encore. Optionnel : Meta le rend, nous ne l'écrivons
+   * jamais.
    */
   status?: string;
 }
@@ -95,13 +84,10 @@ export interface AgentSettings {
   followup?: { enabled?: boolean; followup_interval_in_seconds?: number };
   never_say_phrases?: string[];
   /**
-   * Passage de main de l'agent vers un humain. Meta le documente mais ne le renvoie pas tant qu'il n'est pas
-   * configuré (« Null if not configured »).
-   *
-   * 🔴 `enabled` n'ACTIVE pas le passage de main : l'agent décide seul de transférer (« je veux parler à un
-   * conseiller » -> `handoff_reason: customer_request`, mesuré sur notre numéro de test le 2026-08-18).
-   * `enabled` dit s'il LÂCHE le fil après avoir annoncé le transfert. À `false`, le client lit « un conseiller
-   * arrive » et personne n'est prévenu : ne le mettre à `false` qu'avec un `message` qui ne promet personne.
+   * Passage de main de l'agent vers un humain ; Meta ne le renvoie pas tant qu'il n'est pas configuré. `enabled`
+   * n'active pas le transfert (l'agent décide seul, `handoff_reason: customer_request`) : il dit s'il lâche le
+   * fil après l'avoir annoncé. À `false`, le client lit « un conseiller arrive » et personne n'est prévenu : ne le
+   * mettre à `false` qu'avec un `message` qui ne promet personne.
    */
   handoff?: {
     enabled?: boolean;
@@ -151,11 +137,8 @@ export class MbaClient {
   // ---------- Événement (agent_event) ----------
 
   /**
-   * DÉCLENCHE L'AGENT DE META dans la conversation d'un client (spec 2026-09-21-outils-maison-mba, § 5).
-   *
-   * ⚠️ `to` au format MESURÉ le 2026-09-21 (`destinataireAgentEvent`, E.164 avec « + »). La réponse ne porte rien
-   * d'utile : un 200 dit seulement que l'événement est en file (`accepted`). Mesuré dans une conversation que
-   * l'agent tenait : il a écrit au client 11 secondes après, en répondant à la question portée par le `payload`.
+   * Déclenche l'agent de Meta dans la conversation d'un client. `to` en E.164 avec « + »
+   * (`destinataireAgentEvent`). Un 200 dit seulement que l'événement est en file (`accepted`).
    */
   async agentEvent(phoneNumberId: string, to: string, event: EvenementAgent, signal?: AbortSignal): Promise<unknown> {
     return this.appel<unknown>('POST', `${phoneNumberId}/agent_event`, { to, event }, VERSION_AGENT_CONFIG, signal);
@@ -168,8 +151,8 @@ export class MbaClient {
   }
 
   /**
-   * ⚠️ REMPLACEMENT COMPLET. L'appelant DOIT fusionner sur l'existant : un objet partiel efface le reste.
-   * Voir `fusionnerBusinessInfo`, qui fait la lecture et la fusion.
+   * Remplacement complet : l'appelant doit fusionner sur l'existant (`fusionnerBusinessInfo`), un objet partiel
+   * efface le reste.
    */
   async putBusinessInfo(phoneNumberId: string, info: BusinessInfo): Promise<BusinessInfo> {
     return this.appel<BusinessInfo>('PUT', `${phoneNumberId}/agent_config/business_info`, info);
@@ -196,9 +179,8 @@ export class MbaClient {
   // ---------- Skills ----------
 
   /**
-   * ⚠️ `agentId` est passé EXPLICITEMENT, toujours. Sans lui, Meta lit et écrit sous « les settings les plus
-   * récemment créés pour le canal », donc potentiellement sous une configuration qui n'est pas celle qu'on
-   * croit piloter. Le piège est documenté dans `docs/MBA-API-REFERENCE.md`.
+   * `agentId` est toujours passé explicitement : sans lui, Meta lit et écrit sous « les settings les plus
+   * récemment créés pour le canal », peut-être pas ceux qu'on croit piloter (`docs/MBA-API-REFERENCE.md`).
    */
   async listSkills(phoneNumberId: string, agentId: string): Promise<Skill[]> {
     return this.appel<Skill[]>('GET', `${phoneNumberId}/agent_config/skills?agent_id=${encodeURIComponent(agentId)}`);
@@ -237,8 +219,8 @@ export class MbaClient {
   }
 
   /**
-   * Envoi MULTIPART (pas de JSON) : `file_name` + `file`. 100 Mo max côté Meta.
-   * Le `Content-Type` est laissé à `FormData`, qui doit poser lui-même sa frontière multipart.
+   * Envoi multipart (pas de JSON) : `file_name` + `file`, 100 Mo max côté Meta. Le `Content-Type` est laissé à
+   * `FormData`, qui pose lui-même sa frontière.
    */
   async uploadFile(phoneNumberId: string, fileName: string, contenu: Blob): Promise<KnowledgeFile> {
     const form = new FormData();
@@ -267,21 +249,17 @@ export class MbaClient {
     return r.is_eligible === true;
   }
 
-  /** Meta renvoie un TABLEAU (un élément par canal), pas un objet. On rend le premier, ou null. */
+  /** Meta renvoie un tableau (un élément par canal), pas un objet : on rend le premier, ou null. */
   async getSettings(phoneNumberId: string): Promise<AgentSettings | null> {
     const r = await this.appel<AgentSettings[]>('GET', `${phoneNumberId}/agent_config/settings`);
     return Array.isArray(r) ? (r[0] ?? null) : null;
   }
 
   /**
-   * ⚠️ REMPLACEMENT COMPLET, et c'est le piège le plus coûteux de cette API. Passer par `modifierSettings`,
-   * qui relit l'objet et ne touche qu'aux clés voulues : un modèle typé fermé effacerait `never_say_phrases`,
-   * `handoff` et tout champ que Meta ajouterait, sans que personne le demande.
-   *
-   * ⚠️ `agent_id` et `channel` sont dans la RÉPONSE du GET mais PAS dans le schéma de requête : renvoyer
-   * l'objet lu tel quel expose à un 400. Ils sont retirés du corps ici, et `agent_id` repart en QUERY, où
-   * Meta l'attend. Sans lui, le comportement documenté est « create-or-fetch » (le libellé de la spec, qui
-   * n'est PAS « create-or-update ») : on ne sait plus quelle configuration on écrit.
+   * Remplacement complet, le piège le plus coûteux de cette API : passer par `modifierSettings`, qui relit l'objet
+   * et ne touche qu'aux clés voulues. `agent_id` et `channel` sont dans la réponse du GET mais pas dans le schéma
+   * de requête (400) : retirés du corps, `agent_id` repart en query, sans quoi Meta fait du « create-or-fetch » et
+   * on ne sait plus quelle configuration on écrit.
    */
   async putSettings(phoneNumberId: string, settings: AgentSettings, agentId?: string): Promise<unknown> {
     const corps: Record<string, unknown> = { ...settings };
@@ -294,29 +272,11 @@ export class MbaClient {
   // ---------- Connecteurs et leurs outils ----------
 
   /**
-   * Les connecteurs d'un numéro, c'est-à-dire les systèmes que l'agent de Meta sait interroger.
-   *
-   * 🔴 CETTE LIGNE A DIT « RIEN D'AUTRE QU'UNE API REST » JUSQU'AU 2026-09-24, ET C'ÉTAIT DEVENU FAUX. Elle
-   * affirmait qu'aucun champ de protocole n'existait, « vérifié sur le corpus OpenAPI officiel le
-   * 2026-09-10 ». La vérification était bonne à sa date. Relue le 2026-09-24 sur la page de référence des
-   * connecteurs, la même surface porte désormais **`connector_protocol` ∈ `HTTP` | `MCP`** (« defaults to
-   * HTTP when omitted and cannot be changed after creation »), un `base_url` décrit comme « external HTTP
-   * API **or remote MCP server** », un `POST /{connector_id}/refreshMCPTools` et un objet `mcp_tool_sync`
-   * (`PENDING` / `READY` / `ERROR`). Un serveur MCP y entre donc.
-   *
-   * ⚠️ CE CLIENT NE L'ENVOIE PAS, et c'est un manque de code, pas une limite de Meta : `createConnector`
-   * n'expédie jamais `connector_protocol`, donc tout part en HTTP par défaut. Même remarque pour les deux
-   * autres portes que la page documente et que nous n'appelons pas, `upsertOAuth` et `upsertCertificate`
-   * (mTLS) : nous ne savons poser qu'une clé d'API (`upsertApiKey`). ⚠️ Et l'énumération d'`auth_type` en
-   * liste six (`OAUTH2`, `OAUTH2_CLIENT_CREDENTIALS`, `API_KEY`, `BASIC`, `CUSTOM`, `NONE`) alors que la
-   * page dit que TROIS seulement sont supportés (`OAUTH2_CLIENT_CREDENTIALS`, `API_KEY`, `NONE`) : lire
-   * l'énumération sans lire la phrase mène droit à un refus à l'exécution.
-   *
-   * ⚠️ LA LEÇON GÉNÉRALE, puisque c'est la deuxième fois que cette page nous surprend : une vérification
-   * porte une DATE, et une affirmation sur un tiers sans sa date devient un mensonge par vieillissement.
-   * Celle-ci avait même été RECOPIÉE dans l'écran des connecteurs MCP, où elle disait au client d'aller se
-   * plaindre chez Meta d'une limite qui est la nôtre. La veille qui aurait dû le voir existe
-   * (`ops/mba-docs-watch.mjs`, qui empreinte précisément cette page) et personne n'a reçu son alerte.
+   * Les connecteurs d'un numéro, c'est-à-dire les systèmes que l'agent de Meta sait interroger. La surface
+   * accepte `connector_protocol` `HTTP` ou `MCP` (fixé à la création, `HTTP` par défaut) ; ce client ne l'envoie
+   * pas, donc tout part en HTTP : un manque de code, pas une limite de Meta. Nous ne posons qu'une clé d'API
+   * (`upsertApiKey`), pas `upsertOAuth` ni `upsertCertificate`. L'énumération d'`auth_type` liste six valeurs,
+   * mais Meta n'en supporte que trois (`OAUTH2_CLIENT_CREDENTIALS`, `API_KEY`, `NONE`).
    */
   async listConnectors(phoneNumberId: string): Promise<Array<{ id: string; name: string; base_url?: string; auth_type?: string }>> {
     const r = await this.appel<unknown>('GET', `${phoneNumberId}/agent_connectors`);
@@ -340,40 +300,30 @@ export class MbaClient {
   }
 
   /**
-   * Pose ou fait tourner le secret d'un connecteur.
-   *
-   * 🔴 LE SECRET POURRAIT PARTIR DANS LE CORPS DE CRÉATION (`auth_config.api_key` l'accepte), et on choisit
-   * quand même cette route : c'est la SEULE qui sache le remplacer sans recréer le connecteur (« if
-   * credentials already exist, they are replaced »), et un secret qui n'a qu'UN chemin d'écriture n'a qu'un
-   * endroit à auditer. Ce n'est donc PAS une contrainte de Meta, c'est notre discipline, et il faut le dire
-   * dans ce sens.
+   * Pose ou fait tourner le secret d'un connecteur. Le corps de création l'accepterait aussi, mais cette route est
+   * la seule qui le remplace sans recréer le connecteur : un secret n'a ainsi qu'un chemin d'écriture à auditer
+   * (notre discipline, pas une contrainte de Meta).
    */
   async upsertApiKey(phoneNumberId: string, connectorId: string, corps: unknown): Promise<unknown> {
     return this.appel<unknown>('POST', `${phoneNumberId}/agent_connectors/${connectorId}/upsertApiKey`, corps);
   }
 
   /**
-   * ⚠️ `request_definition` EST RENDU TEL QUEL, et il n'est pas facultatif pour l'appelant : le plan de
-   * publication le COMPARE. Sans lui, chaque publication demanderait la mise à jour de tous les outils, et
-   * le test « publier deux fois ne produit aucun geste » tomberait, ce qui est précisément le signal que la
-   * réconciliation ne marche plus.
+   * `request_definition` est rendu tel quel : le plan de publication le compare, et sans lui chaque publication
+   * demanderait la mise à jour de tous les outils.
    */
   async listConnectorTools(phoneNumberId: string, connectorId: string): Promise<Array<{
     id: string; name: string; description?: string; request_definition?: Record<string, unknown>;
   }>> {
-    // ⚠️ Toute la définition, pas seulement `method` et `path` : depuis le relais (2026-09-21), le plan
-    // compare aussi les en-têtes et le corps.
+    // Toute la définition, pas seulement `method` et `path` : le plan compare aussi les en-têtes et le corps.
     type T = { id: string; name: string; description?: string; request_definition?: Record<string, unknown> };
     const r = await this.appel<unknown>('GET', `${phoneNumberId}/agent_connectors/${connectorId}/tools`);
     return Array.isArray(r) ? r as T[] : ((r as { data?: unknown })?.data as T[]) ?? [];
   }
 
   /**
-   * Crée un outil sur un connecteur.
-   *
-   * ⚠️ `user_auth_required` EST EXIGÉ par le schéma de Meta, et on l'envoie à `false` : le mettre à `true`
-   * demanderait d'injecter un jeton PAR UTILISATEUR FINAL que nous ne collectons nulle part. L'omettre ferait
-   * échouer la création ; `false` est le seul choix honnête, et il est explicite plutôt qu'absent.
+   * Crée un outil sur un connecteur. `user_auth_required` est exigé par le schéma de Meta, envoyé à `false` :
+   * `true` demanderait un jeton par utilisateur final, que nous ne collectons pas.
    */
   async createConnectorTool(phoneNumberId: string, connectorId: string, corps: {
     name: string; description: string; request_definition: unknown; user_auth_required: boolean;
@@ -404,44 +354,24 @@ export class MbaClient {
   // ---------- Contrôle du fil ----------
 
   /**
-   * Rend le fil à MBA, qui redevient le répondeur automatique.
+   * Rend le fil à MBA, qui redevient le répondeur automatique (miroir : `takeThread`). Précondition de Meta :
+   * « You must currently hold thread control for the conversation » ; l'appelant consulte son état de contrôle
+   * avant. La réponse ne porte aucune information et aucun endpoint ne dit qui détient un fil : la confirmation
+   * arrive par le webhook `messaging_handovers`.
    *
-   * ⚠️ Son miroir `takeThread` existe juste en dessous. Ce commentaire a dit pendant deux jours que le
-   * `release` était « le SEUL acte de contrôle que nous ayons » : c'était faux, et ça a coûté le bouton
-   * « Reprendre la main » (cf. `takeThread`).
-   *
-   * ⚠️ PRÉCONDITION MÉTIER, en toutes lettres dans la doc : « You must currently hold thread control for the
-   * conversation. » Un release en aveugle est hors contrat, et Meta ne dit pas s'il répond une erreur, un no-op
-   * ou un 200 trompeur. L'appelant DOIT donc consulter son état de contrôle avant d'appeler.
-   *
-   * ⚠️ La réponse ne porte AUCUNE information (`{"messaging_product":"whatsapp"}`), et il n'existe aucun
-   * endpoint pour lire qui détient un fil. La confirmation arrive de façon asynchrone par le webhook
-   * `messaging_handovers`, jamais ici.
-   *
-   * @param to Identifiant du consommateur. Convention Cloud API : E.164 SANS `+` ni séparateur.
+   * @param to Identifiant du consommateur. Convention Cloud API : E.164 sans `+` ni séparateur.
    */
   async releaseThread(phoneNumberId: string, to: string): Promise<void> {
     await this.controleDuFil(phoneNumberId, 'release', to);
   }
 
   /**
-   * PREND le fil à l'agent de Meta, SANS écrire au client.
+   * Prend le fil à l'agent de Meta, sans écrire au client (action `take` de `thread_control`, absente du corpus
+   * OpenAPI téléchargé mais documentée : « Use the `take` action to take control before you send anything »).
+   * Meta la réserve au « configured escalation partner », qu'il ne définit pas : un refus est un cas normal, que
+   * l'appelant traduit pour l'opérateur ; écrire prend le fil à coup sûr. Confirmation asynchrone, comme `release`.
    *
-   * 🔴 CETTE ACTION EXISTE, ET TROIS ENDROITS DE CE DÉPÔT AFFIRMAIENT LE CONTRAIRE. Le corpus OpenAPI
-   * téléchargé (v1.0.0, `mba documentation/`) n'expose en effet que `pass` et `release` : c'est un
-   * INSTANTANÉ, et Meta a réécrit la page le 2026-08-13. Relu en direct sur la documentation vivante le
-   * 2026-09-11 : l'énumération vaut `pass`, `release`, `take`, et la page Get Started le dit en toutes
-   * lettres, « Sending a message to a conversation takes control implicitly » puis « Use the `take` action
-   * to take control BEFORE you send anything ». C'est exactement le geste qui manquait.
-   *
-   * ⚠️ META LA RÉSERVE AU « configured escalation partner », notion qu'il ne définit nulle part. Un refus
-   * est donc un cas NORMAL, pas une anomalie : l'appelant doit le traduire pour l'opérateur plutôt que de
-   * l'avaler, et la porte de secours reste vraie dans tous les cas, ÉCRIRE prend le fil à coup sûr.
-   *
-   * ⚠️ La réponse ne porte AUCUNE information, comme pour `release` : la confirmation arrive de façon
-   * asynchrone par le webhook `messaging_handovers`.
-   *
-   * @param to Identifiant du consommateur. Convention Cloud API : E.164 SANS `+` ni séparateur.
+   * @param to Identifiant du consommateur. Convention Cloud API : E.164 sans `+` ni séparateur.
    */
   async takeThread(phoneNumberId: string, to: string): Promise<void> {
     await this.controleDuFil(phoneNumberId, 'take', to);
@@ -457,7 +387,7 @@ export class MbaClient {
     );
   }
 
-  /** Bac à sable : joue un message sans destinataire réel. Meta ne facture PAS les jetons consommés ici. */
+  /** Bac à sable : joue un message sans destinataire réel. Meta ne facture pas les jetons consommés ici. */
   async test(phoneNumberId: string, userMsg: string, conversationId?: string): Promise<{
     agent_response?: string;
     conversation_id?: string;
@@ -505,8 +435,8 @@ export async function fusionnerBusinessInfo(
 }
 
 /**
- * Lecture puis modification ciblée des réglages. Les clés absentes du patch sont repassées TELLES QUELLES,
- * y compris celles que ce code ne connaît pas : c'est la seule façon de survivre à un champ ajouté par Meta.
+ * Lecture puis modification ciblée des réglages. Les clés absentes du patch sont repassées telles quelles, y
+ * compris celles que ce code ne connaît pas : seule façon de survivre à un champ ajouté par Meta.
  */
 export async function modifierSettings(
   client: MbaClient,

@@ -5,27 +5,21 @@ import type { SurveillanceOps } from '../ops/tentatives';
 import { estUuid } from './scope';
 import { journaliser } from '../lib/journal';
 import type { PlafondApiStore, PlafondsParDefaut, ReglagePlafondApi } from '../auth/plafond-espace';
-// Le MÊME seuil que les autres écritures de `/ops` : importé, pas recopié.
+// Le même seuil que les autres écritures de `/ops` : importé, pas recopié.
 import { MIN_NOTE } from './ops';
 
 /**
- * LE RÉGLAGE DU PLAFOND DE L'API D'UN ESPACE (décision de Julien du 2026-09-25, migration 0181).
- *
- * 🔴 DANS `/ops`, ET NULLE PART AILLEURS : un réglage que le client pourrait écrire lui-même depuis la console
- * ne serait pas un plafond. Même autorité que le rechargement de crédit et le verrou d'espace (le jeton
- * d'exploitation, jamais le JWT d'un client), même NOTE obligatoire, et même trace : le jeton est partagé, cette
- * note est la seule chose qui dise qui a relevé le plafond d'un client, et pourquoi.
- *
- * ⚠️ UN MODULE À PART, pas une route de plus dans `ops.ts` : il a ses propres dépendances (le magasin et le cache
- * du limiteur), qu'il reçoit ensemble ou pas du tout. Absentes, ces routes ne sont pas montées, et le limiteur
- * applique les défauts de la configuration à tous les espaces.
+ * Le réglage du plafond de l'API d'un espace.
+ * 🔴 Dans `/ops` et nulle part ailleurs : un plafond que le client écrirait lui-même n'en serait pas un. Même
+ * autorité que le rechargement de crédit (jeton d'exploitation), même note obligatoire : le jeton est partagé,
+ * la note dit qui a relevé le plafond et pourquoi. Module à part : sans ses dépendances (magasin, cache du
+ * limiteur), ces routes ne sont pas montées et le limiteur applique les défauts.
  */
 export interface OpsPlafondApiDeps {
   store: PlafondApiStore;
   /**
-   * Le cache du limiteur : la route y POSE le réglage qu'elle vient d'écrire, sans quoi le nouveau plafond
-   * attendrait l'expiration. Le poser plutôt que le vider garde ce réglage comme « dernier connu » si la
-   * relecture suivante échoue (`ReglagesPlafondEnCache.poser`).
+   * Le cache du limiteur : la route y pose le réglage qu'elle vient d'écrire (sinon le nouveau plafond attendrait
+   * l'expiration). Le poser plutôt que le vider le garde comme « dernier connu » si la relecture suivante échoue.
    */
   reglages: { poser(tenantId: string, reglage: ReglagePlafondApi): void };
   /** Les défauts de la configuration, pour dire ce qui s'applique réellement quand un réglage vaut `null`. */
@@ -38,9 +32,8 @@ export const MAX_PLAFOND_REGLABLE = 2_147_483_647;
 
 const reglageSchema = z.number().int().min(1).max(MAX_PLAFOND_REGLABLE).nullable();
 /**
- * LES DEUX FENÊTRES SONT REQUISES, `null` compris. Un champ absent qui voudrait dire « inchangé » ou « défaut »
- * selon le lecteur est le genre d'ambiguïté qui remet un client au défaut par accident : l'opérateur relit l'état
- * par le `GET`, et écrit les deux.
+ * Les deux fenêtres sont requises, `null` compris : un champ absent lu tantôt « inchangé », tantôt « défaut »
+ * remettrait un client au défaut par accident. L'opérateur relit l'état par le `GET` et écrit les deux.
  */
 const corpsSchema = z.object({ minute: reglageSchema, heure: reglageSchema, note: z.string() });
 
@@ -87,7 +80,7 @@ export function registerOpsPlafondApi(
     if (avant === null) return reply.code(404).send({ error: 'espace inconnu' });
     const apres: ReglagePlafondApi = { minute: lu.data.minute, heure: lu.data.heure };
     if (!(await deps.store.ecrire(tenantId, apres))) return reply.code(404).send({ error: 'espace inconnu' });
-    // APRÈS l'écriture : posé avant, un échec d'écriture laisserait le limiteur appliquer un réglage qui n'existe pas.
+    // Après l'écriture : posé avant, un échec d'écriture laisserait le limiteur appliquer un réglage inexistant.
     deps.reglages.poser(tenantId, apres);
     journaliser('warn', 'ops_plafond_api', { tenantId, avant, apres, note, at: new Date().toISOString() });
     return reply.code(200).send(etat(tenantId, apres, deps.defauts));

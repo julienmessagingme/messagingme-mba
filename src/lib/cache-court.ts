@@ -1,19 +1,12 @@
 /**
  * Micro-cache mémoire à durée de vie courte, avec mutualisation des appels en vol.
  *
- * Raison d'être (AUDIT-SCALE-2026-08-25.md, R7) : les compteurs de l'inbox sont relus en boucle par CHAQUE
- * onglet ouvert, sur toutes les pages. Vingt-cinq utilisateurs d'un même client posent donc vingt-cinq fois
- * la MÊME question à la base, à quelques centaines de millisecondes d'intervalle, pour un nombre qui n'a pas
- * bougé. Le cache les fait retomber sur une seule requête.
+ * Les compteurs de l'inbox sont relus en boucle par chaque onglet ouvert : la durée de vie absorbe les
+ * relectures étalées (le polling), la mutualisation absorbe les relectures simultanées, qui trouveraient sinon
+ * toutes le cache vide et partiraient toutes en base.
  *
- * Deux mécanismes, et les deux comptent :
- * - la DURÉE DE VIE, qui absorbe les relectures étalées dans le temps (le polling) ;
- * - la MUTUALISATION DES APPELS EN VOL, qui absorbe les relectures SIMULTANÉES. Sans elle, vingt-cinq
- *   requêtes qui arrivent dans la même milliseconde trouvent toutes le cache vide et partent toutes en base,
- *   c'est-à-dire exactement le moment où ça fait mal.
- *
- * ⚠️ PAR PROCESS. L'API et le worker ont chacun le leur, et rien ne les synchronise : ce cache convient à ce
- * qui tolère d'être en retard de quelques secondes (un compteur d'affichage), jamais à une décision.
+ * Par process : l'API et le worker ont chacun le leur, sans synchronisation. Il convient à ce qui tolère
+ * quelques secondes de retard (un compteur d'affichage), jamais à une décision.
  */
 
 /** Ce qu'on garde par clé : une valeur datée, et/ou l'appel qui est en train de la (re)calculer. */
@@ -28,11 +21,8 @@ export interface CacheCourt<T> {
   /** Oublie cette clé : le prochain `lire` recalcule. À appeler depuis l'écriture qui rend la valeur fausse. */
   invalider(cle: string): void;
   /**
-   * Invalide toutes les entrées dont la clé commence par ce préfixe.
-   *
-   * ⚠️ Née le jour où une clé a cessé d'être un simple identifiant d'espace (la pastille de non-lus porte
-   * désormais l'utilisateur). Sans elle, l'invalidation par clé exacte ne touchait plus rien, et le cache
-   * rendait un chiffre périmé pendant toute sa durée de vie : le défaut qu'il existe pour éviter.
+   * Invalide toutes les entrées dont la clé commence par ce préfixe : une clé peut porter plus que l'espace (la
+   * pastille de non-lus porte l'utilisateur), et une invalidation par clé exacte la manquerait.
    */
   invaliderPrefixe(prefixe: string): void;
 }
@@ -61,22 +51,20 @@ export function cacheCourt<T>(ttlMs: number, maintenant: () => number = Date.now
       if (entrees.size >= PLAFOND_ENTREES) balayer(now);
 
       const entree: Entree<T> = { ...(e?.valeur ? { valeur: e.valeur } : {}) };
-      // La promesse est enregistrée AVANT d'être attendue : c'est ce qui fait que les appels concurrents se
-      // greffent dessus au lieu d'en lancer un chacun.
+      // La promesse est enregistrée avant d'être attendue : les appels concurrents s'y greffent au lieu d'en lancer
+      // un chacun.
       entree.enVol = calcul().then(
         (v) => {
-          // 🔴 On n'écrit QUE si personne n'a invalidé pendant le calcul. Sans cette comparaison d'identité,
-          // marquer un fil comme lu pendant qu'un comptage est en vol remettrait en cache le nombre d'AVANT
-          // la lecture, et la pastille resterait allumée toute la durée de vie du cache : le cache ferait
-          // alors exactement le bug qu'il est censé ne pas introduire.
+          // On n'écrit que si personne n'a invalidé pendant le calcul : sinon un fil marqué lu pendant un comptage en
+          // vol remettrait en cache le nombre d'avant, et la pastille resterait allumée toute la durée de vie.
           if (entrees.get(cle) === entree) {
-            // Date relue APRÈS le calcul : la fraîcheur se compte depuis la réponse, pas depuis la demande.
+            // Date relue après le calcul : la fraîcheur se compte depuis la réponse, pas depuis la demande.
             entrees.set(cle, { valeur: { v, expireA: maintenant() + ttlMs } });
           }
           return v;
         },
         (err) => {
-          // Un échec ne se met JAMAIS en cache : il serait resservi à tout le monde pendant la durée de vie.
+          // Un échec ne se met jamais en cache : il serait resservi à tout le monde pendant la durée de vie.
           if (entrees.get(cle) === entree) entrees.delete(cle);
           throw err;
         },

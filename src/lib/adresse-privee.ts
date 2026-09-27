@@ -1,30 +1,22 @@
 import { lookup as lookupDns } from 'node:dns/promises';
 
 /**
- * LA RÉSOLUTION DNS D'UNE CIBLE, ET CE QU'ELLE CACHE (constat A3 de l'audit externe du 2026-09-02).
+ * La résolution DNS d'une cible.
  *
- * 🔴 CE QUE `urlRecuperable` NE POUVAIT PAS VOIR. Elle lit le TEXTE de l'hôte : elle refuse `localhost`,
- * `169.254.169.254`, `172.18.0.1`, et même leurs formes exotiques (hexadécimale, entière, IPv6 entre
- * crochets, IPv4 mappée). Vérifié le 2026-09-03, elle les rejette toutes. Mais `crm.exemple.fr` est un nom
- * parfaitement public dont l'enregistrement A peut pointer sur `169.254.169.254` (le service de métadonnées
- * du fournisseur) ou sur `172.18.x.x` (le réseau Docker du VPS, où vivent l'admin NPM et tous les autres
- * conteneurs). Aucun contrôle textuel ne peut voir ça : il faut RÉSOUDRE.
+ * 🔴 `urlRecuperable` lit le texte de l'hôte : elle ne peut rien contre `crm.exemple.fr`, nom public dont
+ * l'enregistrement A peut pointer sur `169.254.169.254` (métadonnées du fournisseur) ou sur `172.18.x.x` (le
+ * réseau Docker du VPS). Il faut résoudre.
  *
- * ⚠️ CE MODULE NE FERME PAS À LUI SEUL LE « DNS REBINDING », ET IL N'A PAS À LE FAIRE. Sa vérification a
- * lieu AVANT l'appel, et une connexion ordinaire referait sa propre résolution : entre les deux, un DNS
- * hostile pourrait répondre public puis privé. Cette seconde fenêtre est fermée par `fetchPublic`
- * (`src/lib/connexion-publique.ts`), qui revérifie l'adresse à l'OUVERTURE de la socket avec
- * `estAdressePrivee`, le prédicat de ce fichier. Les deux restent : la vérification d'ici donne un refus
- * LISIBLE avant l'appel, celle de la connexion ne remonte que comme une panne réseau.
+ * Cette vérification a lieu avant l'appel ; le « DNS rebinding » (public puis privé) est fermé par
+ * `fetchPublic` (`connexion-publique.ts`), qui revérifie à l'ouverture de la socket avec `estAdressePrivee`.
+ * Les deux restent : celle-ci donne un refus lisible, l'autre ne remonte que comme une panne réseau.
  *
- * Module PUR côté logique (`estAdressePrivee`) et injectable côté réseau : tout se teste sans DNS.
+ * Logique pure (`estAdressePrivee`), réseau injectable : tout se teste sans DNS.
  */
 
 /**
- * Cette adresse IP appartient-elle à un espace qu'un connecteur ne doit JAMAIS atteindre ?
- *
- * Couvre les deux familles, parce qu'une machine à double pile résout souvent les deux et qu'il suffit d'en
- * laisser une passer pour que la garde ne serve à rien.
+ * Cette adresse IP appartient-elle à un espace qu'un connecteur ne doit jamais atteindre ? Les deux familles :
+ * une machine à double pile résout souvent les deux, en laisser passer une suffit à rendre la garde inutile.
  */
 export function estAdressePrivee(ip: string): boolean {
   const a = ip.trim().toLowerCase();
@@ -43,7 +35,7 @@ export function estAdressePrivee(ip: string): boolean {
       || o1 === 10        // privé
       || o1 === 127       // boucle locale
       || (o1 === 100 && o2 >= 64 && o2 <= 127) // CGNAT
-      || (o1 === 169 && o2 === 254)            // lien-local ET métadonnées cloud
+      || (o1 === 169 && o2 === 254)            // lien-local et métadonnées cloud
       || (o1 === 172 && o2 >= 16 && o2 <= 31)  // privé, et c'est là que vit le réseau Docker du VPS
       || (o1 === 192 && o2 === 168)            // privé
       || (o1 === 198 && (o2 === 18 || o2 === 19)) // bancs de mesure
@@ -51,23 +43,14 @@ export function estAdressePrivee(ip: string): boolean {
     );
   }
 
-  // IPv6 : on DÉVELOPPE l'adresse et on compare des NOMBRES, jamais des préfixes de texte.
-  //
-  // 🔴 Les tests de préfixe étaient faux, et le contre-audit du 2026-09-03 l'a démontré. `fe80::/10` ne
-  // couvre pas seulement ce qui commence par « fe80 » : le préfixe fait DIX bits, donc il va de `fe80::` à
-  // `febf::`. `fe90::1`, `fea0::1` et `feb0::1` sont link-local et passaient. Pire, une IPv4 mappée s'écrit
-  // aussi en HEXADÉCIMAL : `::ffff:ac12:1` est exactement `172.18.0.1`, la passerelle du réseau Docker du
-  // VPS, et il passait. Mesuré : cinq cas sur huit ratés, dont l'adresse même que cette garde existe pour
-  // bloquer.
-  //
-  // La leçon, et elle vaut pour toute frontière de sécurité : **une plage d'adresses se compare en
-  // arithmétique, jamais en préfixe de chaîne.** Un préfixe de texte décrit ce qu'on a en tête, pas ce que
-  // la norme définit, et l'écart ne se voit sur aucun exemple qu'on pense à écrire.
+  // IPv6 : on développe l'adresse et on compare des nombres, jamais des préfixes de texte. 🔴 `fe80::/10` fait
+  // dix bits (de `fe80::` à `febf::`), et une IPv4 mappée s'écrit aussi en hexadécimal (`::ffff:ac12:1` est
+  // `172.18.0.1`, la passerelle Docker du VPS) : un test de préfixe de chaîne les laisse passer.
   const groupes = developperIPv6(cible);
   if (groupes === null) return true; // illisible = on ne s'y connecte pas
 
-  // IPv4 mappée (::ffff:0:0/96) ou compatible (::/96, dépréciée) : les 32 derniers bits SONT une IPv4, quelle
-  // que soit la façon dont on les a écrits. On la reconstitue et on applique les règles v4.
+  // IPv4 mappée (::ffff:0:0/96) ou compatible (::/96, dépréciée) : les 32 derniers bits sont une IPv4, quelle
+  // que soit leur écriture. On la reconstitue et on applique les règles v4.
   const prefixeNul = groupes.slice(0, 5).every((g) => g === 0);
   if (prefixeNul && (groupes[5] === 0xffff || groupes[5] === 0)) {
     const v4 = `${groupes[6]! >> 8}.${groupes[6]! & 0xff}.${groupes[7]! >> 8}.${groupes[7]! & 0xff}`;
@@ -86,11 +69,8 @@ export function estAdressePrivee(ip: string): boolean {
 }
 
 /**
- * Développe une adresse IPv6 en ses HUIT groupes de 16 bits. `null` si elle n'est pas lisible.
- *
- * Écrit à la main plutôt qu'importé : le dépôt n'ajoute pas une dépendance pour trente lignes, et cette
- * fonction n'a qu'un seul appelant. Elle gère les deux formes que la norme autorise et qu'on rencontre : la
- * compression `::` (au plus une fois) et la queue en notation décimale pointée (`::ffff:1.2.3.4`).
+ * Développe une adresse IPv6 en ses huit groupes de 16 bits, `null` si elle n'est pas lisible. Gère la
+ * compression `::` (au plus une fois) et la queue en décimal pointé (`::ffff:1.2.3.4`).
  */
 function developperIPv6(brut: string): number[] | null {
   let s = brut;
@@ -120,7 +100,7 @@ function developperIPv6(brut: string): number[] | null {
 
   if (morceaux.length === 1) return gauche.length === 8 ? gauche : null;
   const manquants = 8 - gauche.length - droite.length;
-  if (manquants < 1) return null; // `::` doit remplacer AU MOINS un groupe
+  if (manquants < 1) return null; // `::` doit remplacer au moins un groupe
   return [...gauche, ...Array<number>(manquants).fill(0), ...droite];
 }
 
@@ -139,27 +119,17 @@ export interface VerdictResolution {
 }
 
 /**
- * Plafond de la résolution elle-même.
- *
- * 🔴 **Une résolution DNS n'est bornée par rien de ce que nous écrivons** : `dns.lookup` passe par le
- * résolveur du système, dont le délai dépend de `resolv.conf` et qui n'accepte aucun signal d'abandon. Un nom
- * dont le serveur faisant autorité ne répond pas immobilise donc la requête AVANT même que le plafond de
- * l'appel HTTP ait commencé à courir : les deux budgets s'ADDITIONNAIENT au lieu de se recouvrir. Signalé par
- * le contre-contre-rapport du 2026-09-03.
- *
- * Trois secondes suffisent très largement à un DNS qui marche, et un DNS qui n'a pas répondu en trois
- * secondes n'aurait de toute façon rien donné d'exploitable.
+ * Plafond de la résolution elle-même : `dns.lookup` passe par le résolveur du système, dont le délai dépend de
+ * `resolv.conf` et qui n'accepte aucun signal d'abandon. Sans lui, un DNS muet immobilise la requête avant
+ * même que le plafond de l'appel HTTP commence à courir.
  */
 const DELAI_RESOLUTION_MS = 3_000;
 
 /**
- * L'hôte de cette URL résout-il UNIQUEMENT vers des adresses publiques ?
+ * L'hôte de cette URL résout-il uniquement vers des adresses publiques ?
  *
- * 🔴 UNIQUEMENT, et pas « au moins une » : un nom qui rend une adresse publique ET une adresse privée
- * laisserait le choix à la pile réseau, donc au hasard. Une seule adresse interdite condamne le nom.
- *
- * Une résolution qui ÉCHOUE est un refus, pas un laissez-passer. C'est le sens de la garde : on n'autorise
- * que ce qu'on a pu vérifier. Le coût est nul en pratique, un nom qui ne résout pas n'aurait rien donné.
+ * 🔴 Uniquement, pas « au moins une » : un nom qui rend une adresse publique et une privée laisserait le choix
+ * à la pile réseau. Une seule adresse interdite condamne le nom, et une résolution qui échoue est un refus.
  */
 export async function resolutionPublique(url: string, resoudre: Resolveur = resolveurParDefaut): Promise<VerdictResolution> {
   let hote: string;
@@ -168,21 +138,16 @@ export async function resolutionPublique(url: string, resoudre: Resolveur = reso
   } catch {
     return { ok: false, raison: 'adresse illisible' };
   }
-  // Un littéral d'adresse ne se résout pas, il se lit. `urlRecuperable` les refuse déjà tous, mais cette
-  // fonction doit rester juste TOUTE SEULE : elle est appelée depuis plusieurs chemins, et une garde qui
-  // dépend d'une autre garde ailleurs finit par être appelée sans elle.
+  // Un littéral se lit, il ne se résout pas. `urlRecuperable` les refuse déjà, mais cette fonction doit rester
+  // juste seule : une garde qui dépend d'une autre garde finit par être appelée sans elle.
   if (/^[\d.]+$/.test(hote) || hote.includes(':')) {
     return estAdressePrivee(hote) ? { ok: false, raison: 'adresse interne' } : { ok: true };
   }
 
   let adresses: string[];
   try {
-    // ⚠️ Le plafond est posé ICI plutôt que chez les appelants, pour la même raison que le reste de cette
-    // fonction : elle est appelée depuis plusieurs chemins, et une garde qui dépend d'un appelant finit par
-    // être appelée sans elle. Une résolution trop lente est traitée comme une résolution qui ÉCHOUE, donc par
-    // un REFUS : on n'autorise que ce qu'on a pu vérifier.
-    //
-    // Le minuteur est `unref` : c'est une garde, elle ne doit pas retenir le process.
+    // Plafond posé ici plutôt que chez les appelants, pour la même raison. Une résolution trop lente est un refus.
+    // Le minuteur est `unref` : une garde ne retient pas le process.
     adresses = await new Promise<string[]>((tenir, rejeter) => {
       const t = setTimeout(() => rejeter(new Error('resolution trop lente')), DELAI_RESOLUTION_MS);
       if (typeof t.unref === 'function') t.unref();

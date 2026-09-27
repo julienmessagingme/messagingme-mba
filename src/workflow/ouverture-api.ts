@@ -2,26 +2,21 @@ import type { WorkflowGraph } from './graph';
 import { actionOf, scanOpening } from './engine';
 
 /**
- * CE QU'UN ENVOI PAR L'API FAIT PARTIR EN PREMIER, depuis l'entrée d'un scénario ou depuis un bloc.
+ * Ce qu'un envoi par l'API fait partir en premier, depuis l'entrée d'un scénario ou depuis un bloc.
  *
- * 🔴 UNE SEULE FONCTION JUGE LE SCÉNARIO ET LE BLOC. Elle remplace `exigeFenetre24h`, qui jugeait une cible
- * `node` sur le TYPE du bloc visé : une condition, une étiquette ou un champ qui mène à un message rapide ne
- * demandait aucune fenêtre, et le message partait vers des gens qui n'avaient pas écrit (Meta 131047).
+ * Une seule fonction juge le scénario et le bloc, sur ce qui part réellement et pas sur le type du bloc visé :
+ * une condition qui mène à un message rapide exige la fenêtre de 24 h, sinon le message part vers des gens qui
+ * n'ont pas écrit (Meta 131047).
  *
- * Elle repose sur `scanOpening`, le même examen que la console (`canalDOuverture`, la création de campagne) :
- * `whatsapp_template` et `rcs` y correspondent, `whatsapp_session` et `null` y valent « pas de campagne ». La
- * parité est gardée par `tests/ouverture-api.test.ts`.
+ * Elle repose sur `scanOpening`, le même examen que la console (`canalDOuverture`) ; parité gardée par
+ * `tests/ouverture-api.test.ts`. Une exception : un bloc RCS suivi d'une attente, que la console refuse
+ * (`waitBeforeTemplate`) et que l'API envoie en `rcs`, puisque le RCS part bien au lancement.
  *
- * ⚠️ UNE EXCEPTION, ASSUMÉE : un bloc RCS suivi d'une ATTENTE (« RCS, on attend deux jours, on relance »). La
- * console (`canalDOuverture`) le refuse, parce que `waitBeforeTemplate` y est posé ; l'API l'envoie en `rcs`,
- * parce que le RCS part bien au lancement et que la spec ne refuse qu'« une attente avant tout envoi ».
+ * Si une seule branche peut envoyer un message de session, c'est `whatsapp_session` et la fenêtre est exigée de
+ * tous les destinataires : on ne sait pas d'avance quelle branche un contact prendra.
  *
- * ⚠️ PRUDENCE : si UNE branche peut envoyer un message de session, c'est `whatsapp_session`, et la fenêtre sera
- * exigée de TOUS les destinataires : on ne sait pas d'avance quelle branche un contact prendra.
- *
- * ⚠️ UN GRAPHE VIDE EST UN SCÉNARIO JAMAIS PUBLIÉ. Un envoi joue `workflows.graph`, le publié ; un brouillon
- * seul n'a rien à jouer. `published_at` n'en décide pas : il vaut null sur les scénarios publiés avant
- * l'arrivée du bouton « Publier » (migration 0095).
+ * Un graphe vide est un scénario jamais publié (un envoi joue `workflows.graph`, le publié). `published_at` n'en
+ * décide pas : il vaut null sur les scénarios publiés avant l'arrivée du bouton « Publier ».
  */
 export type OuvertureApi = 'whatsapp_template' | 'whatsapp_session' | 'rcs';
 
@@ -35,8 +30,8 @@ export function ouvertureApi(graph: WorkflowGraph, depuis?: string): VerdictOuve
     return { ouverture: null, raison: 'le bloc de départ n’existe pas dans le scénario publié' };
   }
   const scan = scanOpening(graph, depuis);
-  // Une attente vue APRÈS un bloc RCS qui ouvre n'empêche rien : le RCS part au lancement. `scanOpening` ne
-  // pose `rcsOpen` que si AUCUNE attente n'a été vue avant lui.
+  // Une attente vue après un bloc RCS qui ouvre n'empêche rien : le RCS part au lancement. `scanOpening` ne
+  // pose `rcsOpen` que si aucune attente n'a été vue avant lui.
   if (scan.waitBeforeTemplate && !scan.rcsOpen) {
     return { ouverture: null, raison: 'une attente précède le premier envoi : rien ne partirait au lancement' };
   }
@@ -55,16 +50,13 @@ export function ouvertureApi(graph: WorkflowGraph, depuis?: string): VerdictOuve
 }
 
 /**
- * LE TEMPLATE QUI OUVRE CE GRAPHE, lu comme l'exécuteur le lira (`actionOf`, langue `fr` par défaut).
+ * Le template qui ouvre ce graphe, lu comme l'exécuteur le lira (`actionOf`, langue `fr` par défaut).
  *
- * 🔴 DEUX CONSOMMATEURS, UNE FONCTION : `POST /v1/sends` y lit le template que `params` paramètre (cible
- * `scenario`), et `GET /v1/scenarios` l'annonce à l'intégrateur. Écrite deux fois, l'une annoncerait un jour un
- * template que l'autre ne paramètre pas. Elle n'a de sens que pour une ouverture `whatsapp_template` : sur un
- * scénario qui ouvre en RCS, le premier template trouvé est un REPLI, pas ce qui part au lancement.
- *
- * `depuis` : le bloc d'où l'on part (cible `node`), avec le MÊME examen que `ouvertureApi(graph, depuis)`. Un
- * troisième consommateur, donc : la cible `node` y lit le template qu'elle fait partir, pour juger sa catégorie
- * chez Meta comme la cible scénario (sans quoi un bloc d'entrée visé en « utility » contournait la règle).
+ * Point de passage unique pour `POST /v1/sends` (le template que `params` paramètre, et la catégorie Meta
+ * jugée pour la cible `node`) et `GET /v1/scenarios` (ce qu'on annonce à l'intégrateur) : écrite deux fois,
+ * l'une annoncerait un template que l'autre ne paramètre pas. N'a de sens que pour une ouverture
+ * `whatsapp_template` : sur un scénario qui ouvre en RCS, le premier template trouvé est un repli.
+ * `depuis` : le bloc de départ (cible `node`), avec le même examen que `ouvertureApi(graph, depuis)`.
  */
 export function modeleDOuverture(graph: WorkflowGraph, depuis?: string): { templateName: string; language: string } | null {
   const premier = scanOpening(graph, depuis).firstTemplate;

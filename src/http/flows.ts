@@ -10,7 +10,7 @@ import type { Guard } from '../auth/middleware';
 import { espaceVerifie, nonEmpty } from './scope';
 
 export interface FlowRouteDeps {
-  /** Client flows Meta résolu PAR TENANT (B1 : token du tenant, repli global en sommeil). */
+  /** Client flows Meta résolu par espace (token de l'espace, repli global en sommeil). */
   flowsFor(tenantId: string): Promise<MetaFlowClient>;
   getWabaId(tenantId: string): Promise<string | null>;
   insertFlow(tenantId: string, id: string, name: string, screens: FlowScreenDef[], ref: string, mapping: Record<string, string>, cta?: string): Promise<void>;
@@ -21,7 +21,7 @@ export interface FlowRouteDeps {
   ensureUserField(tenantId: string, label: string, type: UserFieldType): Promise<void>;
   /** Définitions des user fields du tenant : valider qu'une cible de consentement choisie est bien booléenne. */
   listUserFields(tenantId: string): Promise<UserFieldDef[]>;
-  /** Crée (idempotent, PAR CLÉ) le champ booléen de consentement par défaut `whatsapp_optin`. */
+  /** Crée (idempotent, par clé) le champ booléen de consentement par défaut `whatsapp_optin`. */
   ensureOptinField(tenantId: string): Promise<void>;
   /** Un flow par id, scopé tenant (édition/duplication : lire status + screens). null si absent. */
   getFlow(flowId: string, tenantId: string): Promise<FlowRow | null>;
@@ -35,7 +35,7 @@ export interface FlowRouteDeps {
   alignFlowFromMeta(flowId: string, tenantId: string, patch: { name: string; status: 'DRAFT' | 'PUBLISHED' }): Promise<boolean>;
 }
 
-const IMG_MAX = 400 * 1024; // base64 borné (~300KB binaire) — l'image Flow s'embarque dans le flow_json
+const IMG_MAX = 400 * 1024; // base64 borné (~300 Ko binaire) : l'image Flow s'embarque dans le flow_json
 const stripDataUrl = (s: string): string => s.replace(/^data:image\/[a-z]+;base64,/i, '');
 
 /** Forme (pas la sémantique) d'un visibleIf : { field: libellé source, op eq/neq, value string|boolean }.
@@ -50,8 +50,8 @@ function parseVisibleIf(raw: unknown): VisibleIfInput | undefined | null {
   return { field: v.field.trim(), op: v.op, value: v.value };
 }
 
-/** Valide UNE liste d'éléments (un écran). Renvoie null si invalide ; les saveTo sont POUSSÉS dans
- *  l'accumulateur global (alignés sur l'ordre global des champs, écran par écran). */
+/** Valide une liste d'éléments (un écran). Renvoie null si invalide ; les saveTo sont poussés dans
+*  l'accumulateur global (alignés sur l'ordre global des champs, écran par écran). */
 function parseElements(v: unknown, saveTos: Array<string | undefined>): { elements: FlowElementInput[]; fieldCount: number } | null {
   if (!Array.isArray(v) || v.length === 0) return null;
   const elements: FlowElementInput[] = [];
@@ -81,7 +81,7 @@ function parseElements(v: unknown, saveTos: Array<string | undefined>): { elemen
       }
       elements.push(field);
       // saveTo = champ cible explicite (facultatif). Pour un consentement (optin), la cible doit être un
-      // champ BOOLÉEN (validé dans deriveAndMap) ; sans cible, défaut = whatsapp_optin (créé à la volée).
+      // champ booléen (validé dans deriveAndMap) ; sans cible, défaut = whatsapp_optin (créé à la volée).
       saveTos.push(nonEmpty(el.saveTo) ? el.saveTo.trim() : undefined);
       fieldCount += 1;
     } else {
@@ -92,11 +92,9 @@ function parseElements(v: unknown, saveTos: Array<string | undefined>): { elemen
 }
 
 /**
- * Valide le corps riche, en MULTI-ÉCRANS (Lot 7). Deux formes acceptées :
- * - `screens: [{ title?, cta?, elements: [...] }]` (le front actuel) — 1 à MAX_SCREENS écrans, chacun >= 1
- *   élément, >= 1 champ AU GLOBAL ;
- * - `elements: [...]` (forme historique mono-écran, tests/API directs) — enveloppée en 1 écran.
- * Renvoie les écrans + les saveTo alignés sur l'ordre GLOBAL des champs. null si invalide.
+ * Valide le corps riche, multi-écrans. Deux formes : `screens: [{ title?, cta?, elements }]` (1 à MAX_SCREENS
+ * écrans, chacun avec au moins un élément, au moins un champ au total), ou `elements: [...]` (forme mono-écran,
+ * enveloppée en un écran). Rend les écrans et les saveTo alignés sur l'ordre global des champs, null si invalide.
  */
 function parseFlowBody(body: { screens?: unknown; elements?: unknown }): { screens: FlowScreenInput[]; saveTos: Array<string | undefined> } | null {
   const saveTos: Array<string | undefined> = [];
@@ -123,10 +121,9 @@ function parseFlowBody(body: { screens?: unknown; elements?: unknown }): { scree
 }
 
 /**
- * Dérive les écrans (clés champ GLOBALEMENT uniques, collision -> DuplicateFieldKeyError ; visibleIf
- * résolus/validés -> VisibleIfError) PUIS construit le mapping champ -> user field : défaut (saveTo vide)
- * = user field de la clé du champ (qu'on ensure), sinon la cible explicite choisie. Le ensureUserField est
- * effectué ici. Renvoie une erreur (message 400) ou le trio prêt. Partagé par la création ET l'édition.
+ * Dérive les écrans (clés de champ uniques au global, sinon DuplicateFieldKeyError ; visibleIf validés, sinon
+ * VisibleIfError), puis construit le mapping champ -> user field (par défaut celui de la clé, créé ici ; sinon la
+ * cible choisie). Rend une erreur (400) ou le trio prêt. Partagé par la création et l'édition.
  */
 async function deriveAndMap(
   deps: FlowRouteDeps,
@@ -142,13 +139,13 @@ async function deriveAndMap(
   }
   const fields = fieldsOfScreens(derived);
   const mapping: Record<string, string> = {};
-  // Défs chargées UNE fois, seulement si un consentement (optin) désigne une cible explicite à valider.
+  // Défs chargées une fois, seulement si un consentement (optin) désigne une cible explicite à valider.
   let defs: UserFieldDef[] | null = null;
   for (let i = 0; i < fields.length; i += 1) {
     const f = fields[i]!;
     const saveTo = parsed.saveTos[i];
     if (f.type === 'optin') {
-      // Consentement : cible = champ BOOLÉEN choisi (validé) ou, à défaut, whatsapp_optin (créé à la volée).
+      // Consentement : cible = champ booléen choisi (validé) ou, à défaut, whatsapp_optin (créé à la volée).
       if (saveTo) {
         defs ??= await deps.listUserFields(tenant);
         const target = defs.find((d) => d.key === saveTo);
@@ -168,9 +165,8 @@ async function deriveAndMap(
       await deps.ensureUserField(tenant, f.label, flowFieldToUserFieldType(f.type));
     }
   }
-  // Deux consentements ne peuvent pas viser le MÊME champ (sinon le 2e écrase la valeur du 1er alors que le
-  // gate opt-in s'ouvre au moindre « oui » : incohérence stockée). Vaut pour le défaut (tous -> whatsapp_optin)
-  // comme pour deux cibles explicites identiques.
+  // Deux consentements ne peuvent pas viser le même champ : le second écraserait le premier alors que le gate
+  // opt-in s'ouvre au moindre « oui ». Vaut pour le défaut (whatsapp_optin) comme pour deux cibles identiques.
   const optinTargets = fields.filter((f) => f.type === 'optin').map((f) => mapping[f.key]!);
   if (new Set(optinTargets).size !== optinTargets.length) {
     return { error: 'deux consentements enregistrent dans le même champ : donnez une cible distincte à chacun' };
@@ -181,10 +177,9 @@ async function deriveAndMap(
 const INVALID_ELEMENTS = 'screens/elements invalide (1 à 10 écrans, chacun >= 1 élément ; au moins 1 champ au global ; texte non vide ; image base64 <= 300KB ; type de champ valide ; visibleIf {field, op eq/neq, value})';
 
 /**
- * Routes Flows (constructeur de formulaire RICHE). GROUPE admin-only via `garde`. Le tenant vient du JWT.
- * Création : dérive les clés, génère un `ref` (discriminant au retour), construit le mapping, crée chez Meta
- * puis persiste. Édition (DRAFT only) : réécrit le flow_json via /assets + met à jour le store, MÊME ref.
- * Duplication : clone un flow (source publié ou draft) en un nouveau DRAFT avec un ref FRAIS.
+ * Routes Flows (constructeur de formulaire), admin via `garde`, espace du JWT. Création : dérive les clés, génère
+ * un `ref` (discriminant au retour), crée chez Meta puis persiste. Édition (DRAFT seulement) : réécrit le
+ * flow_json via /assets et le store, même ref. Duplication : un nouveau DRAFT avec un ref frais.
  */
 export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: Guard): void {
   // bodyLimit relevé (défaut global = 1 Mo) : un flow riche peut embarquer plusieurs images base64
@@ -203,7 +198,7 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
     const wabaId = await deps.getWabaId(tenant);
     if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
 
-    const mapped = await deriveAndMap(deps, tenant, parsed); // 400 (collision/condition) AVANT tout appel Meta
+    const mapped = await deriveAndMap(deps, tenant, parsed); // 400 (collision/condition) avant tout appel Meta
     if ('error' in mapped) return reply.code(400).send({ error: mapped.error });
 
     const ref = randomUUID();
@@ -227,8 +222,8 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
     const existing = await deps.getFlow(flowId, tenant);
     if (!existing) return reply.code(404).send({ error: 'flow inconnu' });
     if (existing.status === 'PUBLISHED') return reply.code(409).send({ error: 'flow publié : immuable. Utilise « Dupliquer pour modifier ».' });
-    // Legacy (screens null = colonne elements vide/absente) : le builder repartirait d'un formulaire vide et
-    // ÉCRASERAIT le contenu d'origine. Symétrique au garde-fou de la duplication (422).
+    // Legacy (screens null) : le builder repartirait d'un formulaire vide et écraserait le contenu d'origine.
+    // Symétrique au garde-fou de la duplication (422).
     if (!existing.screens) {
       return reply.code(422).send({ error: 'flow antérieur au modèle riche : à recréer plutôt qu\'à éditer' });
     }
@@ -239,15 +234,15 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
     const mapped = await deriveAndMap(deps, tenant, parsed);
     if ('error' in mapped) return reply.code(400).send({ error: mapped.error });
 
-    // On GARDE le même ref (le flow Meta est le même id ; findByRef du webhook ne doit pas être orphelin).
+    // On garde le même ref (le flow Meta est le même id ; findByRef du webhook ne doit pas être orphelin).
     const ref = existing.ref ?? randomUUID();
     const name = b.name.trim();
-    await (await deps.flowsFor(tenant)).updateDraft(flowId, { name, screens: mapped.derived, ref, ...(cta ? { cta } : {}) }); // Meta AVANT store
+    await (await deps.flowsFor(tenant)).updateDraft(flowId, { name, screens: mapped.derived, ref, ...(cta ? { cta } : {}) }); // Meta avant store
     await deps.updateFlowRow(tenant, flowId, name, mapped.derived, ref, mapped.mapping, cta);
     return reply.code(200).send({ id: flowId, status: 'DRAFT', name, fields: mapped.fields });
   });
 
-  // « Dupliquer pour modifier » (D10) : clone un flow en un NOUVEAU DRAFT (ref frais). Meta AVANT store.
+  // « Dupliquer pour modifier » : clone un flow en un nouveau DRAFT (ref frais). Meta avant le store.
   app.post('/tenants/:tenantId/flows/:flowId/duplicate', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { flowId } = req.params as { flowId: string };
@@ -279,21 +274,13 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
   });
 
   /**
-   * « Rafraîchir » : réconcilie la liste locale avec les formulaires du compte WhatsApp Manager.
-   *
-   * La liste servie par GET vient de NOTRE base, pas de Meta : Meta ne renvoie pas la structure d'un flow
-   * (id/nom/statut seulement), donc un formulaire construit ailleurs que dans la console était invisible ici,
-   * et une publication ou un renommage faits dans WhatsApp Manager n'arrivaient jamais jusqu'à nous.
-   *
-   * Ce que la route fait, et ce qu'elle NE fait pas :
-   *  - importe les flows connus de Meta et absents en local (structure inconnue : utilisables dans un template
-   *    ou un scénario, mais leurs réponses n'alimenteront pas les fiches contact) ;
-   *  - aligne nom et passage à PUBLISHED des flows déjà connus ;
-   *  - `ignores` : les statuts hors de notre modèle (DEPRECATED / BLOCKED / THROTTLED, cf. la contrainte de
-   *    0015) et les id déjà pris par un autre tenant. On ne les invente pas en base ;
-   *  - `absents` : compte les flows locaux que Meta ne liste plus, SANS rien supprimer. Effacer ici perdrait
-   *    le mapping qui rattache un retour de formulaire encore en vol à une fiche contact ; la suppression
-   *    reste une décision explicite, bouton « Supprimer ».
+   * « Rafraîchir » : réconcilie la liste locale (servie par notre base, Meta ne rendant pas la structure d'un
+   * flow) avec les formulaires du compte WhatsApp Manager.
+   *  - importe les flows connus de Meta et absents en local (structure inconnue : leurs réponses n'alimentent pas
+   *    les fiches) ; aligne nom et passage à PUBLISHED des flows connus ;
+   *  - `ignores` : statuts hors de notre modèle (DEPRECATED, BLOCKED, THROTTLED) et id déjà pris par un autre espace ;
+   *  - `absents` : compte les flows que Meta ne liste plus, sans rien supprimer (on perdrait le mapping d'un retour
+   *    de formulaire encore en vol) : la suppression reste le bouton « Supprimer ».
    */
   app.post('/tenants/:tenantId/flows/refresh', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -339,9 +326,8 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
     return reply.code(200).send({ id: flowId, status: 'PUBLISHED' });
   });
 
-  // Suppression : un DRAFT se supprime (DELETE), un PUBLISHED se déprécie (immuable, on le retire de l'usage).
-  // Meta AVANT le store : si Meta refuse (flow encore rattaché à un template approuvé), on remonte SON message
-  // (errorHandler global) et on ne touche pas la base -> pas d'orphelin « supprimé chez nous, vivant chez Meta ».
+  // Un DRAFT se supprime, un PUBLISHED se déprécie. Meta avant le store : si Meta refuse (flow rattaché à un
+  // template approuvé), son message remonte et la base n'est pas touchée (pas d'orphelin vivant chez Meta).
   app.delete('/tenants/:tenantId/flows/:flowId', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { flowId } = req.params as { flowId: string };

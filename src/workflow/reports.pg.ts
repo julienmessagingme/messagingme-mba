@@ -1,11 +1,8 @@
 import type { Pool } from 'pg';
 
 /**
- * Les TABLEAUX enregistrés d'Analytics > Mes tableaux.
- *
- * Un tableau est une SÉLECTION, jamais des chiffres : un scénario, un nom, et les mesures retenues. Les
- * compteurs se recalculent à la lecture, donc un tableau ouvert six mois plus tard sur une autre période
- * répond juste. Stocker des totaux les aurait figés au jour de l'enregistrement.
+ * Les tableaux enregistrés d'Analytics > Mes tableaux. Un tableau est une sélection (scénario, nom, mesures),
+ * jamais des chiffres : les compteurs se recalculent à la lecture, donc restent justes sur une autre période.
  */
 export interface MesureRetenue {
   cle: string;
@@ -43,11 +40,9 @@ export class PgWorkflowReportStore {
   }
 
   /**
-   * Crée un tableau, ou MET À JOUR celui dont l'identifiant est fourni. Un seul chemin d'écriture : deux
-   * méthodes séparées auraient fini par diverger sur la validation ou le scope tenant.
-   *
-   * `id` inconnu ou appartenant à un autre espace -> null, jamais une création silencieuse sous un id imposé
-   * par l'appelant.
+   * Crée un tableau, ou met à jour celui dont l'`id` est fourni (un seul chemin d'écriture, pour ne pas diverger
+   * sur la validation ou le scope tenant). `id` inconnu ou d'un autre espace -> null, jamais une création sous
+   * un id imposé par l'appelant.
    */
   async save(
     tenantId: string,
@@ -71,9 +66,8 @@ export class PgWorkflowReportStore {
       const r = res.rows[0];
       return r ? versReport(r) : null;
     } catch (err) {
-      // 23505 = violation d'unicité (tenant_id, name). C'est une erreur de SAISIE, pas une panne : la laisser
-      // sortir en 500 ferait remplacer le message par la page d'erreur de Cloudflare, et l'opérateur ne
-      // saurait même pas qu'il s'agit d'un nom déjà pris.
+      // 23505 = unicité (tenant_id, name) : une erreur de saisie, pas une panne. En 500, Cloudflare remplacerait
+      // le message par sa page d'erreur.
       if ((err as { code?: string }).code === '23505') throw new NomDeTableauDejaPris();
       throw err;
     }

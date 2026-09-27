@@ -2,16 +2,11 @@ import type { Pool } from 'pg';
 import type { MouvementLu, RaisonMouvement } from './credits';
 
 /**
- * Le solde prépayé en base (migration 0087).
+ * Le solde prépayé en base.
  *
- * 🔴 CHAQUE MOUVEMENT EST UNE SEULE INSTRUCTION, et c'est le point. Le worker joue plusieurs tours en
- * parallèle, y compris pour le même workspace : un `lire puis écrire` perdrait une consommation sur deux au
- * premier croisement, et le client paierait moins que ce qu'il a consommé. Les CTE modifiantes de Postgres
- * font l'écriture du solde et celle du journal dans la même instruction, donc sans état intermédiaire où
- * l'un existerait sans l'autre.
- *
- * ⚠️ `tenant_id` est la CLÉ, pas un filtre parmi d'autres : il n'y a qu'une ligne de solde par workspace, et
- * l'`insert ... on conflict` la crée à la première consommation comme au premier rechargement.
+ * 🔴 Chaque mouvement est une seule instruction : le worker joue plusieurs tours en parallèle pour le même
+ * workspace, et un « lire puis écrire » perdrait des consommations. Les CTE modifiantes écrivent le solde et
+ * le journal ensemble, sans état intermédiaire. Une ligne de solde par workspace, clé `tenant_id`.
  */
 export class PgCreditStore {
   constructor(private readonly pool: Pool) {}
@@ -21,23 +16,21 @@ export class PgCreditStore {
       'select solde_micro_eur from agent_credits where tenant_id = $1',
       [tenantId],
     );
-    // `bigint` rendu en `string` par node-pg, converti ici comme partout ailleurs dans le repo. Aucune ligne
-    // = rien à dépenser, et c'est le bon défaut : un crédit implicite ferait payer une consommation que
-    // personne n'a autorisée.
+    // Aucune ligne = rien à dépenser : un crédit implicite ferait payer une consommation que personne n'a
+    // autorisée.
     return Number(res.rows[0]?.solde_micro_eur ?? 0);
   }
 
   async debiter(tenantId: string, montantMicroEur: number, contexte?: { sessionId?: string; note?: string }): Promise<number> {
-    // Un débit nul ou négatif ne veut rien dire : on ne l'écrit pas, et surtout on ne le laisse pas devenir
-    // un rechargement déguisé.
+    // Un débit nul ou négatif n'est pas écrit : il ne doit pas devenir un rechargement déguisé.
     const montant = Math.max(0, Math.round(montantMicroEur));
     if (montant === 0) return this.solde(tenantId);
     return this.bouger(tenantId, -montant, 'conso', contexte ?? {});
   }
 
   /**
-   * `note` est OBLIGATOIRE, et c'est la seule trace de qui recharge et pourquoi : le jeton d'exploitation est
-   * partagé, il n'y a aucune identité d'opérateur à enregistrer à la place.
+   * `note` est obligatoire : c'est la seule trace de qui recharge et pourquoi, le jeton d'exploitation étant
+   * partagé.
    */
   async crediter(tenantId: string, montantMicroEur: number, note: string): Promise<number> {
     const montant = Math.max(0, Math.round(montantMicroEur));
@@ -45,7 +38,7 @@ export class PgCreditStore {
     return this.bouger(tenantId, montant, 'recharge', { note });
   }
 
-  /** Le solde et le journal, en une instruction. Rend le solde APRÈS opération. */
+  /** Le solde et le journal, en une instruction. Rend le solde après opération. */
   private async bouger(
     tenantId: string, delta: number, raison: RaisonMouvement,
     extra: { sessionId?: string; note?: string },
@@ -85,8 +78,8 @@ export class PgCreditStore {
     return res.rows.map((r) => ({
       id: r.id,
       deltaMicroEur: Number(r.delta_micro_eur),
-      // Lu défensivement : la colonne est du texte libre en base (pour qu'une raison de plus ne demande pas
-      // de migration), donc une ligne écrite par une version future ne doit pas casser la lecture.
+      // Lu défensivement : la colonne est du texte libre, une ligne écrite par une version future ne doit pas
+      // casser la lecture.
       raison: (r.raison === 'recharge' ? 'recharge' : 'conso') as RaisonMouvement,
       ...(r.session_id ? { sessionId: r.session_id } : {}),
       ...(r.note ? { note: r.note } : {}),

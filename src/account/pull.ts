@@ -3,10 +3,9 @@ import type { PhoneNumberInfo, WabaInfo } from '../meta/phone-number';
 import { normalizeQuality } from './service';
 
 /**
- * Résultat d'un pull Graph du statut d'un numéro (+ santé WABA optionnelle). `ok:false` SANS throw : on distingue un
- * token invalide (authError -> rouge) d'un échec transitoire (-> gris). Pur -> testable sans réseau. Les champs Meta
- * additionnels (name/verif/throughput + santé WABA) sont TOUS optionnels : un pull partiel ne porte que ce que Meta a
- * renvoyé (coalesce à l'écriture -> un absent n'écrase pas un connu).
+ * Résultat d'un pull Graph du statut d'un numéro (et de la santé du WABA). `ok:false` sans throw : un token invalide
+ * (authError, rouge) se distingue d'un échec transitoire (gris). Les champs Meta sont tous optionnels : un absent
+ * n'écrase pas un connu (coalesce à l'écriture).
  */
 export type PullResult =
   | {
@@ -27,16 +26,12 @@ export type PullResult =
     }
   | { ok: false; authError: boolean };
 
-/** Champs persistables d'un pull réussi (= PullResult ok:true sans le drapeau `ok`). Ce que saveStatus écrit
- *  en coalesce. Réutilisé par le sweeper de statut (item 4.10) pour typer sa dépendance `save`. */
+/** Champs persistables d'un pull réussi, ce que saveStatus écrit en coalesce. */
 export type PhoneStatusPatch = Omit<Extract<PullResult, { ok: true }>, 'ok'>;
 
 /**
- * Mappe la réponse Graph -> PullResult. La qualité est TOUJOURS incluse (normalisée), y compris
- * 'UNKNOWN' : une dégradation GREEN -> UNKNOWN doit pouvoir ÉCRASER l'ancienne valeur en base
- * (sinon un vieux GREEN figé afficherait un faux vert alors que Meta ne confirme plus la qualité).
- * 'UNKNOWN' fait partie du CHECK SQL (0004) -> aucune violation. `waba` (santé du WABA, second appel Graph)
- * est optionnel : absent -> les champs WABA sont simplement omis (coalesce préserve le connu).
+ * Mappe la réponse Graph en PullResult. La qualité est toujours incluse, `UNKNOWN` compris : une dégradation de
+ * GREEN vers UNKNOWN doit écraser l'ancienne valeur, sinon un vieux vert figé resterait affiché.
  */
 export function pullFromInfo(info: PhoneNumberInfo, waba?: WabaInfo): PullResult {
   return {
@@ -58,9 +53,8 @@ export function pullFromInfo(info: PhoneNumberInfo, waba?: WabaInfo): PullResult
 }
 
 /**
- * Mappe une erreur d'appel -> PullResult échec. authError = token invalide/expiré (rouge franc) :
- * code Graph 190 (OAuthException) ou HTTP 401. Le code 100 (« invalid parameter ») est générique
- * et PAS spécifiquement une auth -> il tombe en transitoire (gris), pas en rouge « token ».
+ * Mappe une erreur d'appel en échec. authError = token invalide ou expiré : code Graph 190 (OAuthException) ou
+ * HTTP 401. Le code 100 (« invalid parameter ») est générique et tombe en transitoire.
  */
 export function pullFromError(err: unknown): PullResult {
   const authError = err instanceof MetaApiError && (err.code === 190 || err.httpStatus === 401 || err.type === 'OAuthException');

@@ -6,15 +6,15 @@ import { resolveTenantCode } from '../ids/tenant-code';
 export interface TagCount {
   tag: string;
   count: number;
-  /** Code public « tag_<client>_<ulid> » (schéma A). null pour un tag utilisé sur un contact mais jamais déclaré,
-   *  ou tant que le backfill n'a pas tourné. */
+  /** Code public « tag_<client>_<ulid> ». null pour un tag porté par un contact mais jamais déclaré, ou non
+   *  encore traité par le backfill. */
   code?: string | null;
 }
 
 /**
- * Gestion des tags. Modèle mixte (lot 2) : une table `tags` de tags PRÉ-DÉCLARÉS (créés à vide) + les tags
- * portés par les contacts (`contacts.tags text[]`). Lister = UNION des deux avec le compte d'usage (0 si
- * déclaré mais non utilisé). Renommer/supprimer réconcilient les DEUX (table + arrays contacts). Scopé tenant.
+ * Gestion des tags, scopée tenant. Modèle mixte : une table `tags` de tags pré-déclarés, plus les tags portés
+ * par les contacts (`contacts.tags text[]`). Lister = union des deux avec le compte d'usage ; renommer et
+ * supprimer réconcilient les deux.
  */
 export class PgTagStore {
   constructor(private readonly pool: Pool) {}
@@ -29,8 +29,8 @@ export class PgTagStore {
     return (res.rowCount ?? 0) > 0;
   }
 
-  /** Union des tags déclarés (table) + utilisés (contacts), avec le compte d'usage (0 = déclaré, non utilisé).
-   *  Le `code` public vient de la table des tags DÉCLARÉS (null pour un tag utilisé mais jamais déclaré). */
+  /** Union des tags déclarés et utilisés, avec le compte d'usage (0 = déclaré, non utilisé). Le `code` public
+   *  vient de la table des tags déclarés. */
   async listDistinct(tenantId: string): Promise<TagCount[]> {
     const res = await this.pool.query<{ tag: string; count: string; code: string | null }>(
       `with declared as (select name as tag, code from tags where tenant_id = $1),
@@ -44,13 +44,12 @@ export class PgTagStore {
   }
 
   /**
-   * Renomme `from` -> `to` sur les contacts (re-dédup) ET dans la table des tags déclarés, en UNE
-   * transaction (pas d'incohérence table/contacts si une requête échoue). Ne déclare `to` que si `from`
-   * existait réellement (déclaré ou porté par un contact) -> pas de tag fantôme créé sur un `from` inconnu.
-   * Renvoie le nb de contacts touchés.
+   * Renomme `from` -> `to` sur les contacts (dédupliqué) et dans la table des tags déclarés, en une transaction.
+   * Ne déclare `to` que si `from` existait (déclaré ou porté), pour ne pas créer de tag fantôme. Rend le nombre
+   * de contacts touchés.
    */
   async rename(tenantId: string, from: string, to: string): Promise<number> {
-    // Code du tag cible calculé HORS transaction (lecture du code client sur le pool, indépendante du rename).
+    // Code du tag cible calculé hors transaction (lecture sur le pool, indépendante du renommage).
     const toCode = makeCode('tag', await resolveTenantCode(this.pool, tenantId));
     return enTransaction(this.pool, async (client) => {
       const res = await client.query(
@@ -60,7 +59,7 @@ export class PgTagStore {
         [tenantId, from, to],
       );
       const declared = await client.query('select 1 from tags where tenant_id = $1 and name = $2', [tenantId, from]);
-      // `from` existait (utilisé sur un contact OU déclaré) -> on réconcilie la table (to peut déjà exister).
+      // `from` existait (utilisé ou déclaré) -> on réconcilie la table (`to` peut déjà exister).
       if ((res.rowCount ?? 0) > 0 || (declared.rowCount ?? 0) > 0) {
         await client.query('insert into tags (tenant_id, name, code) values ($1, $2, $3) on conflict (tenant_id, name) do nothing', [tenantId, to, toCode]);
         await client.query('delete from tags where tenant_id = $1 and name = $2', [tenantId, from]);
@@ -69,7 +68,7 @@ export class PgTagStore {
     });
   }
 
-  /** Retire `tag` des contacts ET de la table des tags déclarés, en UNE transaction. Nb de contacts touchés. */
+  /** Retire `tag` des contacts et de la table des tags déclarés, en une transaction. Nb de contacts touchés. */
   async remove(tenantId: string, tag: string): Promise<number> {
     return enTransaction(this.pool, async (client) => {
       const res = await client.query(

@@ -17,16 +17,9 @@ import type {
 } from '../email/types';
 
 /**
- * Routes des boîtes SMTP et modèles d'email (node « Envoi de mail »), admin-only. Calqué sur
- * `src/http/workflows.ts` : `garde` (REQUISE depuis le lot 2 du plan 2026-09-14, posée au montage) porte
- * l'auth et le rôle, et l'étape d'espace (`src/http/scope.ts`) vérifie l'espace de chaque route.
- * ⚠️ Chaque écriture reposait EN PLUS `forbidNonAdmin` dans son handler : retiré le 2026-09-26 (lot 3 de
- * l'audit ponytail), parce que le module est monté sur `g.admin` et qu'un agent y est refusé AVANT le
- * handler, mesuré route par route. La preuve est désormais `tests/role-admin.test.ts`, qui échoue si ce
- * module est un jour monté sur une garde plus large.
- *
- * Le mot de passe SMTP n'est JAMAIS renvoyé : `EmailAccount` (email/types.ts) ne le porte déjà pas ; seul
- * `DecryptedEmailAccount` (jamais sérialisé ici) l'ajoute. `publicAccount` se contente d'annoncer `hasPassword`.
+ * Routes des boîtes SMTP et modèles d'email (bloc « Envoi de mail »), admin : monté sur `g.admin` (la garde porte
+ * l'auth et le rôle, `tests/role-admin.test.ts` le tient), l'étape d'espace vérifie l'espace de chaque route.
+ * Le mot de passe SMTP n'est jamais renvoyé : seul `DecryptedEmailAccount`, jamais sérialisé ici, le porte.
  */
 
 const accountCreate = z.object({
@@ -57,8 +50,7 @@ function publicAccount(a: EmailAccount): EmailAccount & { hasPassword: true } {
   return { ...a, hasPassword: true };
 }
 
-/** Surface minimale requise sur le store de comptes (dépendance PAR INTERFACE, pas par classe concrète : comme
- *  `WorkflowRouteDeps`/`MbaRouteDeps`, pour rester injectable par un faux store en test, sans Postgres). */
+/** Surface minimale du store de comptes, par interface pour rester injectable par un faux store sans Postgres. */
 export interface EmailAccountsDep {
   list(tenantId: string): Promise<EmailAccount[]>;
   create(tenantId: string, input: EmailAccountInput): Promise<EmailAccount>;
@@ -126,8 +118,7 @@ export function registerEmailRoutes(app: FastifyInstance, deps: EmailRoutesDeps,
     return reply.code(200).send({ ok: true });
   });
 
-  // Test d'envoi : 4xx (422) sur échec, JAMAIS 5xx (Cloudflare remplace le corps des 5xx par sa propre page
-  // d'erreur, ce qui masquerait le message utile) ; journalisé côté serveur dans les deux cas.
+  // Test d'envoi : 422 sur échec, jamais 5xx (Cloudflare en remplacerait le corps) ; journalisé dans les deux cas.
   app.post('/tenants/:tenantId/email/accounts/:id/test', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const parsed = testSendBody.safeParse(req.body);
@@ -144,12 +135,11 @@ export function registerEmailRoutes(app: FastifyInstance, deps: EmailRoutesDeps,
       await deps.accounts.markVerified(tenant, id);
       return reply.code(200).send({ ok: true });
     } catch (err) {
-      // `console.error` et non `req.log` : Fastify est construit en `logger: false` (server.ts), donc
-      // `req.log` est un no-op silencieux, cf. le même choix dans support.ts/embedded-signup.ts.
+      // `console.error` et non `req.log` : Fastify est construit en `logger: false`, `req.log` est muet.
       // eslint-disable-next-line no-console
       console.error(`email: test SMTP échoué (compte ${id}):`, messageDe(err));
-      // 🔴 L'HÔTE EST REFUSÉ À L'OUVERTURE DE LA SOCKET quand il pointe vers l'intérieur (`buildTransport`) : on
-      // le DIT, sans citer l'adresse, pour que l'administrateur ne cherche pas une panne de sa messagerie.
+      // Hôte interne refusé à l'ouverture de la socket (`buildTransport`) : on le dit, sans citer l'adresse, pour
+      // que l'administrateur ne cherche pas une panne de sa messagerie.
       if (estRefusAdresseInterne(err)) {
         return reply.code(422).send({ ok: false, error: 'cet hôte SMTP n’est pas joignable depuis notre infrastructure' });
       }

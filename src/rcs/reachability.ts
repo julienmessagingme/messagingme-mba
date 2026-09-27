@@ -5,10 +5,9 @@ import type { RcsProvider } from './types';
 export const TTL_MS = 7 * 86_400_000;
 
 /**
- * Ce que le cache DIT de la joignabilité RCS d'un numéro, sans jamais interroger le fournisseur (lecture de
- * fiche par l'API). `null` = inconnu : aucune entrée, ou une entrée PÉRIMÉE, qui ne vaut plus une mesure.
- * ⚠️ L'envoi, lui, garde sa propre règle (`Reachability.isReachable` sert une vieille réponse si le
- * fournisseur tombe) : ce n'est pas la même question.
+ * Ce que le cache dit de la joignabilité RCS d'un numéro, sans interroger le fournisseur. `null` = inconnu
+ * (aucune entrée, ou une entrée périmée). L'envoi garde sa propre règle (`isReachable` sert une vieille
+ * réponse si le fournisseur tombe) : ce n'est pas la même question.
  */
 export function joignabiliteRcsConnue(entree: { reachable: boolean; checkedAt: number } | null, maintenantMs: number): boolean | null {
   if (!entree) return null;
@@ -16,12 +15,8 @@ export function joignabiliteRcsConnue(entree: { reachable: boolean; checkedAt: n
 }
 
 /**
- * La joignabilité CONNUE d'un numéro, lue sous ses DEUX formes de clé, la plus récente gagnant.
- *
- * 🔴 LE CACHE PORTE UN MÊME NUMÉRO SOUS DEUX FORMES, et c'est l'hypothèse muette que cette lecture doit
- * lever : `Reachability.isReachable` écrit la clé telle qu'on la lui passe, les campagnes passent `+33…`
- * (`toE164`), les scénarios et la réponse RCS de l'Inbox passent le `waId`, en chiffres seuls. Lire la seule
- * forme `+33…` rendait « inconnu » un numéro qu'un scénario venait de vérifier. Même précaution que
+ * La joignabilité connue d'un numéro, lue sous ses deux formes de clé, la plus récente gagnant : les
+ * campagnes écrivent `+33…`, les scénarios et l'Inbox le `waId` en chiffres seuls. Même précaution que
  * `PgRcsOptoutStore.isOptedOut`.
  */
 export async function joignabiliteRcsToutesFormes(
@@ -42,11 +37,9 @@ export interface ReachabilityStore {
 }
 
 /**
- * Joignabilité RCS d'un numéro, mise en cache par agent.
- *
- * Une entrée périmée est RÉINTERROGÉE, jamais supprimée : si le provider tombe, on sert la vieille réponse
- * plutôt que d'arrêter une campagne. En revanche, sans aucune entrée, l'erreur remonte : deviner « joignable »
- * enverrait dans le vide, deviner « non joignable » sauterait des destinataires en silence.
+ * Joignabilité RCS d'un numéro, mise en cache par agent. Une entrée périmée est réinterrogée, jamais
+ * supprimée : si le provider tombe, on sert la vieille réponse plutôt que d'arrêter une campagne. Sans aucune
+ * entrée, l'erreur remonte : deviner enverrait dans le vide ou sauterait des destinataires en silence.
  */
 export class Reachability {
   constructor(

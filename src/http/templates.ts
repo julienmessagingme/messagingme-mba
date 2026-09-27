@@ -13,13 +13,13 @@ import { espaceVerifie, nonEmpty } from './scope';
 import { messageDe } from '../lib/erreur';
 
 export interface TemplateRouteDeps {
-  /** Client templates Meta résolu PAR TENANT (B1 : token du tenant, repli global en sommeil). */
+  /** Client templates Meta résolu par espace (token de l'espace, repli global en sommeil). */
   templatesFor(tenantId: string): Promise<MetaTemplateClient>;
   /** WABA du tenant (les templates sont au niveau WABA). */
   getWabaId(tenantId: string): Promise<string | null>;
   /** Pré-check « ce flowId est-il PUBLISHED pour ce tenant ? » avant d'appeler Meta. */
   getPublishedFlow(tenantId: string, flowId: string): Promise<boolean>;
-  /** Garde-fou D1 : campagnes ACTIVES (draft/running/paused) référençant ce template (name, langue optionnelle). */
+  /** Garde-fou : campagnes actives (draft/running/paused) référençant ce template (name, langue optionnelle). */
   listActiveCampaignsForTemplate(
     tenantId: string,
     templateName: string,
@@ -31,10 +31,8 @@ export interface TemplateRouteDeps {
   getParamHints(tenantId: string, name: string, language: string): Promise<Array<{ position: number; source: ParamSource }>>;
   removeParamHints(tenantId: string, name: string): Promise<void>;
   /**
-   * Traçage des liens : réserve un code par bouton URL, et rend l'adresse de redirection à soumettre à Meta.
-   *
-   * Toujours câblé en production (requis depuis le lot 3 de l'audit ponytail). Son ÉCHEC laisse partir le template
-   * avec les liens SAISIS : on ne soumet jamais une adresse de redirection qu'on ne saurait pas servir.
+   * Traçage des liens : réserve un code par bouton URL et rend l'adresse de redirection à soumettre à Meta. Son échec
+   * laisse partir le template avec les liens saisis : on ne soumet jamais une adresse qu'on ne saurait pas servir.
    */
   tracking: {
     /** Réserve le code du bouton et enregistre sa destination. Rend le code. `avecJeton` décide si l'URL
@@ -50,10 +48,10 @@ export interface TemplateRouteDeps {
 }
 
 /** Persistance best-effort des indices variable->champ : un hoquet DB ne doit pas faire échouer un template
- *  DÉJÀ créé chez Meta (la propagation se dégrade juste : la campagne ne pré-remplira pas). */
+*  déjà créé chez Meta (la propagation se dégrade juste : la campagne ne pré-remplira pas). */
 async function saveHintsSafe(deps: TemplateRouteDeps, tenant: string, name: string, language: string, raw: unknown): Promise<void> {
-  // Clé ABSENTE (undefined) = « ne touche pas aux indices » (un PATCH qui ne concerne pas les variables ne
-  // doit PAS effacer les indices existants). Seul un tableau EXPLICITE (même vide) remplace.
+  // Clé absente (undefined) = « ne touche pas aux indices » : un PATCH qui ne concerne pas les variables ne doit
+  // pas effacer les indices existants. Seul un tableau explicite (même vide) remplace.
   if (raw === undefined) return;
   const hints = parseParamHints(raw);
   if (hints === null) return; // déjà validé en 400 en amont ; garde défensive
@@ -66,30 +64,17 @@ async function saveHintsSafe(deps: TemplateRouteDeps, tenant: string, name: stri
 }
 
 /**
- * Ce bouton peut-il porter le suffixe variable qui attribue le clic ?
- *
- * 🔴 UNIQUEMENT LES BOUTONS DE PREMIER NIVEAU, et ce n'est pas un choix de produit, c'est une contrainte du
- * constructeur de composants : `buildTemplateComponents` ne sait produire qu'un composant `{ type: 'button',
- * index }`, qui adresse un bouton DU TEMPLATE. Un bouton porté par une CARTE de carousel se désigne autrement
- * (dans le composant de sa carte), et rien ne sait le faire aujourd'hui.
- *
- * Soumettre `{{1}}` sur un bouton de carte le condamnerait donc au **131008 Required parameter is missing**
- * À CHAQUE ENVOI, définitivement, puisque l'URL est figée chez Meta une fois le template approuvé. Le bouton
- * de carte reste donc tracé, mais sous la forme ANONYME : son clic est compté, il n'est rattaché à personne.
- * On dégrade la mesure, jamais l'envoi.
- *
- * ⚠️ Le jour où le constructeur saura adresser un bouton de carte, c'est ICI qu'on ouvrira la règle, et les
- * templates déjà approuvés garderont leur forme anonyme pour toujours.
+ * Ce bouton peut-il porter le suffixe variable qui attribue le clic ? Seulement les boutons de premier niveau :
+ * `buildTemplateComponents` ne sait adresser qu'un bouton du template, pas celui d'une carte de carousel. Un
+ * `{{1}}` sur un bouton de carte rendrait 131008 à chaque envoi, pour toujours (URL figée chez Meta) : ces boutons
+ * restent tracés en forme anonyme. On dégrade la mesure, jamais l'envoi.
  */
 export const estAttribuable = (cardIndex: number | null): boolean => cardIndex === null;
 
 /**
- * Réserve un lien tracé par bouton URL et rend le template à soumettre.
- *
- * Si QUOI QUE CE SOIT échoue, on rend le template D'ORIGINE : mieux vaut un template non mesuré qu'un
- * template refusé, ou pire, approuvé avec une adresse qu'on ne saurait pas servir. Les lignes déjà réservées
- * restent en base sans confirmation, donc invisibles des mesures, et seront réutilisées à la tentative
- * suivante (`allocate` est un upsert sur le même bouton).
+ * Réserve un lien tracé par bouton URL et rend le template à soumettre. Si quoi que ce soit échoue, on rend le
+ * template d'origine (non mesuré plutôt que refusé ou pointant une adresse qu'on ne sait pas servir). Les lignes
+ * déjà réservées restent non confirmées, invisibles des mesures, et `allocate` (upsert) les réutilise.
  */
 async function preparerLiens(
   deps: TemplateRouteDeps,
@@ -121,16 +106,9 @@ async function preparerLiens(
 }
 
 /**
- * Remontre à l'utilisateur les liens qu'il a SAISIS, là où Meta nous rend les nôtres.
- *
- * Fait ICI et pas dans `MetaTemplateClient` : ce client parle à Meta, il n'a pas à connaître nos tables. Et
- * fait sur la LISTE plutôt que dans chaque écran, parce que les quatre surfaces qui affichent un template
- * (page Templates, création de campagne, éditeur de scénario, inbox) passent toutes par elle. Le faire écran
- * par écran aurait garanti d'en oublier un.
- *
- * Best-effort : si la table est indisponible, on rend les templates tels que Meta les donne. L'utilisateur
- * verrait alors nos adresses de redirection, ce qui est déroutant mais pas faux ; échouer lui retirerait
- * l'écran entier.
+ * Remontre à l'utilisateur les liens qu'il a saisis, là où Meta rend les nôtres. Fait ici, sur la liste, parce
+ * que les quatre surfaces qui affichent un template passent par elle, et pas dans `MetaTemplateClient`, qui ne
+ * connaît pas nos tables. Au mieux : table indisponible, on rend les templates tels que Meta les donne.
  */
 async function rehabillerTemplates(
   deps: TemplateRouteDeps,
@@ -177,7 +155,7 @@ function validButtons(v: unknown): v is TemplateButton[] | undefined {
     return false;
   });
   if (!okEach) return false;
-  // Contrainte Meta : un bouton FLOW est EXCLUSIF (impossible de le mélanger à d'autres boutons).
+  // Contrainte Meta : un bouton FLOW est exclusif (impossible de le mélanger à d'autres boutons).
   const hasFlow = v.some((b) => (b as { type?: unknown }).type === 'FLOW');
   return !hasFlow || v.length === 1;
 }
@@ -208,7 +186,7 @@ function parseHeader(hRaw: unknown): { error: string } | { header?: TemplateHead
 }
 
 /**
- * Validation SYNCHRONE commune à la création et à l'édition : category, body, boutons, carousel, exemples.
+ * Validation synchrone commune à la création et à l'édition : category, body, boutons, carousel, exemples.
  * Renvoie soit une erreur (message + code 400), soit les champs normalisés prêts à builder les components.
  * Le pré-check async « flow publié » (getPublishedFlow) et le WABA restent à la charge de l'appelant.
  */
@@ -217,10 +195,8 @@ function parseTemplateFields(b: Record<string, unknown>): { error: string } | { 
   if (!nonEmpty(b.body)) return { error: 'body requis' };
   if (!validButtons(b.buttons)) return { error: 'buttons invalides' };
 
-  // Carousel : 2-10 cartes, chaque carte a une image (handle) + au plus 2 boutons.
-  // Règle Meta VÉRIFIÉE EN LIVE (sonde 2026-08-11) : seule la DISPOSITION doit être identique d'une carte à
-  // l'autre (même nombre, mêmes types, même ordre) ; le libellé et l'URL peuvent différer par carte, et c'est
-  // tout l'intérêt du carousel. Au-delà de 2 boutons Meta refuse (« le nombre de boutons a dépassé la limite »).
+  // Carousel : 2 à 10 cartes, chacune avec une image (handle) et au plus 2 boutons. Règle Meta vérifiée : seule
+  // la disposition doit être identique d'une carte à l'autre (nombre, types, ordre) ; libellé et URL peuvent différer.
   let carousel: { cards: CarouselCard[] } | undefined;
   const carRaw = b.carousel;
   if (carRaw !== undefined) {
@@ -265,9 +241,8 @@ function parseTemplateFields(b: Record<string, unknown>): { error: string } | { 
     footer = b.footer.trim();
   }
 
-  // Nb de variables du corps = MAX des positions {{n}} (source unique countTemplateVariables : un corps non contigu
-  // `{{1}} {{3}}` attend 3 params, pas 2 -> évite 132000). On exige autant d'exemples, chacun NON vide (Meta rejette
-  // un exemple vide, 132012) : l'UI applique déjà un repli, ceci est la défense côté API directe.
+  // Nb de variables du corps = max des positions {{n}} (`countTemplateVariables` : `{{1}} {{3}}` attend 3 params,
+  // sinon 132000). Autant d'exemples, chacun non vide (Meta rejette un exemple vide, 132012).
   const varCount = countTemplateVariables(b.body as string);
   const example = Array.isArray(b.example) ? b.example.map(String) : [];
   if (varCount > 0 && example.length < varCount) {
@@ -284,7 +259,7 @@ function parseTemplateFields(b: Record<string, unknown>): { error: string } | { 
       ...(!carousel && h.header ? { header: h.header } : {}),
       ...(!carousel && footer ? { footer } : {}),
       ...(varCount > 0 ? { example: example.slice(0, varCount) } : {}),
-      // Un carousel a ses boutons PAR CARTE : on ignore d'éventuels boutons top-level s'il est présent.
+      // Un carousel a ses boutons par carte : on ignore d'éventuels boutons top-level s'il est présent.
       ...(carousel ? { carousel } : Array.isArray(b.buttons) ? { buttons: b.buttons as TemplateButton[] } : {}),
     },
   };
@@ -331,14 +306,13 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
 
     const input: CreateTemplateInput = { name: b.name, language: b.language, ...parsed.fields };
 
-    // Substitution des liens JUSTE AVANT la soumission : l'utilisateur a saisi son adresse, Meta reçoit la
-    // nôtre. L'ordre compte — la destination est enregistrée AVANT l'appel à Meta. L'inverse (soumettre puis
-    // enregistrer) laisserait, en cas de panne entre les deux, un template approuvé pointant un code
-    // inexistant : un lien mort dans des messages déjà livrés, et rien pour le réparer.
+    // Substitution des liens juste avant la soumission : l'utilisateur a saisi son adresse, Meta reçoit la nôtre.
+    // La destination est enregistrée avant l'appel à Meta : l'inverse laisserait, en cas de panne entre les deux,
+    // un template approuvé pointant un code inexistant (un lien mort dans des messages livrés).
     const { aSoumettre, codes } = await preparerLiens(deps, tenant, input);
     const res = await (await deps.templatesFor(tenant)).create(wabaId, aSoumettre);
-    // Meta a accepté : les liens réservés sont bien ceux que porte le template. Best-effort, comme les
-    // indices de variables : un hoquet ici dégrade la MESURE, il ne casse pas un template déjà créé.
+    // Meta a accepté : les liens réservés sont bien ceux que porte le template. Au mieux, comme les indices de
+    // variables : un hoquet ici dégrade la mesure, il ne casse pas un template déjà créé.
     if (codes.length > 0) {
       try {
         await deps.tracking.confirm(tenant, codes);
@@ -361,7 +335,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     return reply.code(200).send({ hints });
   });
 
-  // Édition d'un template SIMPLE (body/boutons/category). Carousel non supporté (header_handle non récupérable).
+  // Édition d'un template simple (body/boutons/category). Carousel non supporté (header_handle non récupérable).
   app.patch('/tenants/:tenantId/templates/:templateName', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
@@ -379,13 +353,13 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     const wabaId = await deps.getWabaId(tenant);
     if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
 
-    // SÉCURITÉ : on résout l'id CÔTÉ SERVEUR depuis le WABA du tenant (l'edit Meta est par id global,
-    // non scopé WABA -> un id fourni par le client permettrait d'éditer le template d'un autre tenant).
+    // 🔴 L'id est résolu côté serveur depuis le WABA de l'espace : l'édition Meta se fait par id global, et un id
+    // fourni par le client permettrait d'éditer le template d'un autre espace.
     const existing = (await (await deps.templatesFor(tenant)).list(wabaId)).find((t) => t.name === name && t.language === language);
     if (!existing) return reply.code(404).send({ error: 'template introuvable' });
     if (!existing.id) return reply.code(422).send({ error: 'id du template indisponible' });
-    // Anti perte de données : un template avec HEADER / FOOTER / CAROUSEL verrait ces composants SUPPRIMÉS
-    // par l'édition (buildComponents ne régénère que BODY/BUTTONS + Meta remplace tout). On refuse.
+    // Anti perte de données : l'édition supprimerait en-tête, pied et carousel (Meta remplace tout, on ne régénère
+    // que BODY et BUTTONS). On refuse.
     if (!existing.editable) {
       return reply.code(422).send({ error: existing.isCarousel ? 'édition d\'un carousel non supportée' : 'édition non supportée : ce template a un en-tête ou un pied de page qui serait supprimé' });
     }
@@ -393,7 +367,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
       return reply.code(409).send({ error: `template non éditable (statut ${existing.status}) : seuls APPROVED/REJECTED/PAUSED le sont` });
     }
 
-    // Garde-fou D1 : une campagne active utilise ce template -> l'éditer le renvoie en PENDING = 422 par envoi.
+    // Une campagne active utilise ce template : l'éditer le renvoie en PENDING, donc 422 à chaque envoi.
     const active = await deps.listActiveCampaignsForTemplate(tenant, name, language);
     if (active.length > 0) return reply.code(409).send({ error: 'template utilisé par une campagne active', campaigns: active });
 
@@ -413,7 +387,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     return reply.code(200).send({ ...res, status: 'PENDING' });
   });
 
-  // Suppression par nom = TOUTES les langues chez Meta -> garde-fou toutes langues (langue omise).
+  // Suppression par nom = toutes les langues chez Meta, donc garde-fou sur toutes les langues (langue omise).
   app.delete('/tenants/:tenantId/templates/:templateName', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;

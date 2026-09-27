@@ -11,67 +11,43 @@ import { messageDeForme } from '../api/forme';
 import type { FilDuContact } from '../inbox/store.pg';
 
 /**
- * API PUBLIQUE /v1 DES MESSAGES SIMPLES : `POST /v1/messages/whatsapp`, un texte, à UNE fiche, dans la
- * fenêtre de service de 24 h (spec 2026-09-24, § 4). Elle remplace `POST /v1/messages` : le canal se lit dans
- * l'adresse, jamais dans un paramètre, et la personne se désigne par sa FICHE (`contactId`, `externalId`,
- * `phone` ou `bsuid`). Son pendant RCS, `POST /v1/messages/rcs`, vit dans son propre module (`v1-messages-rcs.ts`) :
- * leurs règles n'ont presque rien en commun.
- *
- * 🔴 ELLE N'A AUCUNE LOGIQUE D'ENVOI À ELLE, ET C'EST TOUT LE POINT. Les gestes (la fenêtre, le désabonnement,
- * l'envoi, la trace dans l'Inbox) vivent dans `repondreDansLaFenetre`, qui sert déjà la console et le serveur
- * MCP. Le jour où la règle de la fenêtre change, elle change pour les trois d'un coup.
- *
- * 🔴 LA FICHE BLOQUÉE EST ÉCARTÉE PAR `filDuContact`, PAS PAR UNE GARDE DE PLUS ICI : elle dérive l'identité
- * par le MÊME fragment que le bouton « Ouvrir la conversation » du mini-CRM (`CIBLE_DU_CONTACT_SQL`), qui refuse
- * une fiche supprimée comme une fiche bloquée. Une seconde garde écrite ici aurait pu diverger de celle-là.
- *
- * 🔴 LE FIL EST CHERCHÉ, JAMAIS CRÉÉ. La route l'ouvrait avant ses refus : un appel vers une fiche qui n'avait
- * jamais écrit laissait un fil vide en tête de l'Inbox, puis rendait 422. Sans fil, aucun message entrant, donc
- * la fenêtre est fermée par construction : 422 `window_closed`, sans rien écrire. `POST /v1/messages/rcs`
- * n'ouvre le fil qu'APRÈS l'envoi, pour la même raison.
- *
- * ⚠️ ELLE NE CRÉE JAMAIS DE FICHE (`creer: 'jamais'`) : un message simple ne fonde pas une relation, un envoi
- * (`POST /v1/sends`) le fait. ⚠️ MAIS ELLE RATTACHE une clé neuve à la fiche trouvée (un `externalId`, un
- * numéro, un BSUID), comme toute résolution du lot 1 (spec § 1), ET MÊME QUAND LE MESSAGE EST ENSUITE REFUSÉ
- * (fiche bloquée, désabonnée, fenêtre fermée). C'est l'inverse de `/v1/contacts`, où un refus ne laisse rien :
- * le choix reste à trancher, et un cas de `tests/v1-messages.test.ts` fige le comportement actuel.
- *
- * ⚠️ AUCUNE CLÉ D'IDEMPOTENCE, À LA DIFFÉRENCE DE `/v1/sends`, et c'est délibéré : un message de session est le
- * pendant exact de la barre de réponse de l'Inbox, qui n'en a pas non plus.
+ * API publique /v1 des messages simples : `POST /v1/messages/whatsapp`, un texte, à une fiche (`contactId`,
+ * `externalId`, `phone` ou `bsuid`), dans la fenêtre de service de 24 h. Son pendant RCS vit dans
+ * `v1-messages-rcs.ts`.
+ * 🔴 Aucune logique d'envoi à elle : la fenêtre, le désabonnement, l'envoi et la trace dans l'Inbox vivent dans
+ * `repondreDansLaFenetre`, partagé avec la console et le MCP.
+ * La fiche bloquée est écartée par `filDuContact` (même fragment `CIBLE_DU_CONTACT_SQL` que le mini-CRM). Le fil
+ * est cherché, jamais créé : sans fil, la fenêtre est fermée par construction (422 `window_closed`, rien d'écrit).
+ * Elle ne crée jamais de fiche (`creer: 'jamais'`), mais rattache une clé neuve à la fiche trouvée même quand le
+ * message est ensuite refusé (figé par `tests/v1-messages.test.ts`). Aucune clé d'idempotence, comme la barre de
+ * réponse de l'Inbox.
  */
 export interface V1MessagesRouteDeps {
   /**
-   * Les dépendances de `repondreDansLaFenetre`, passées telles quelles.
-   *
-   * 🔴 OBJET IMBRIQUÉ, TRANSMIS D'UN SEUL COUP, jamais recopié champ par champ : un `Pick<>` recopié pour être
-   * RETRANSMIS dérive. La capacité qu'on perdrait en l'oubliant s'appelle `estDesabonne`.
+   * 🔴 Les dépendances de `repondreDansLaFenetre`, transmises d'un seul objet, jamais recopiées champ par champ :
+   * un `Pick<>` recopié pour être retransmis dérive, et la capacité perdue serait `estDesabonne`.
    */
   repondre: DepsRepondre;
-  /** La résolution de fiche du lot 1, liée à ses dépendances par le câblage. */
+  /** La résolution de fiche partagée, liée à ses dépendances par le câblage. */
   resoudreFiche(tenantId: string, cles: ClesFiche, opts: { creer: ModeCreation }): Promise<ResolutionFiche>;
   /**
-   * Le fil de cette fiche, cherché SANS être créé (`PgInboxStore.filDuContact`). `injoignable` = fiche
+   * Le fil de cette fiche, cherché sans être créé (`PgInboxStore.filDuContact`). `injoignable` = fiche
    * supprimée, bloquée, ou sans identité joignable ; `sans_fil` = elle n'a jamais écrit.
    */
   filDuContact(tenantId: string, contactId: string): Promise<FilDuContact>;
-  /** Le garde d'usage, injecté au bootstrap. OBLIGATOIRE, comme sur les autres modules /v1. */
+  /** Le garde d'usage, injecté au bootstrap. Requis, comme sur les autres modules /v1. */
   usage: ApiUsageGuard;
 }
 
 /**
- * ⚠️ `safeParse`, jamais `parse`, jamais un `as` sur ce corps. STRICT : l'ancienne forme `{ to, text }` est
- * refusée en nommant `to`, et un `tenantId` glissé dans le corps aussi (le tenant vient de la CLÉ).
+ * Strict : l'ancienne forme `{ to, text }` est refusée en nommant `to`, et un `tenantId` glissé dans le corps
+ * aussi (l'espace vient de la clé).
  */
 const schemaMessage = z.strictObject({
   ...schemaClesFiche.shape,
   text: z.string().min(1).max(TEXTE_MAX_CARACTERES),
 });
 
-/**
- * Le refus d'une résolution de fiche : le statut vient de la table des codes, le message de la résolution
- * PARTAGÉE (`MESSAGE_RESOLUTION`, lot 1), comme sur `/v1/contacts`. Une seule précision propre à cette route :
- * une fiche inconnue n'y est jamais créée, et le message dit où elle l'est. `POST /v1/messages/rcs` le reprend.
- */
 /** Le refus d'une fenêtre fermée : un fil sans entrant récent, ou pas de fil du tout (le même cas pour Meta). */
 const FENETRE_FERMEE = 'fenêtre de 24 h fermée : cette personne n’a pas écrit récemment. Utilisez un template (POST /v1/sends).';
 
@@ -81,10 +57,9 @@ export const INCONNUE_POUR_UN_MESSAGE = 'aucune fiche pour cette personne : un m
 export const schemaMessageWhatsapp = schemaMessage;
 
 /**
- * LA RÉPONSE 200 DES DEUX ROUTES DE MESSAGE SIMPLE, typée pour que la documentation la suive
- * (`tests/api-exemples.test.ts`). ⚠️ `conversationId` vaut `null` dans UN cas, en RCS seulement : le message est
- * PARTI, mais le fil n'a pas pu être ouvert ensuite (fiche bloquée ou supprimée entre-temps). La route WhatsApp,
- * elle, trouve le fil AVANT d'envoyer, et en rend toujours un.
+ * La réponse 200 des deux routes de message simple, typée pour que la documentation la suive
+ * (`tests/api-exemples.test.ts`). `conversationId` vaut `null` dans un seul cas, en RCS : le message est parti
+ * mais le fil n'a pas pu être ouvert ensuite. La route WhatsApp trouve le fil avant d'envoyer.
  */
 export interface ReponseMessageSimple {
   messageId: string;
@@ -93,12 +68,10 @@ export interface ReponseMessageSimple {
 }
 
 /**
- * Le tenant vient à 100 % de `req.auth` (posé par `makeRequireApiKey`), jamais de l'URL ni du corps.
- * Garde attendue : `[makeRequireApiKey, requireScope('sends:create')]`.
- *
- * ⚠️ `sends:create` ET NON UN DROIT NEUF : les droits d'une clé se fixent à sa CRÉATION. La contrepartie est
- * assumée : une clé qui pouvait déclencher un template peut écrire un texte libre, borné par la fenêtre de
- * 24 h (donc aux seules personnes qui viennent d'écrire) et par le désabonnement.
+ * 🔴 L'espace vient de `req.auth` (posé par `makeRequireApiKey`), jamais de l'URL ni du corps.
+ * Garde attendue : `[makeRequireApiKey, requireScope('sends:create')]`. Pas de droit neuf (les droits d'une clé
+ * se fixent à sa création) : une clé qui déclenche un template peut écrire un texte libre, borné par la fenêtre
+ * de 24 h et par le désabonnement.
  */
 export function registerV1Messages(app: FastifyInstance, deps: V1MessagesRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
@@ -111,12 +84,12 @@ export function registerV1Messages(app: FastifyInstance, deps: V1MessagesRouteDe
     if (!lu.success) return refuser(reply, 400, 'invalid_body', messageDeForme(lu.error));
 
     const { text, ...cles } = lu.data;
-    // Les défauts de CLÉ (aucune clé, numéro illisible) sont des défauts de forme : refusés avant le compteur,
+    // Les défauts de clé (aucune clé, numéro illisible) sont des défauts de forme : refusés avant le compteur,
     // par la même normalisation que la résolution partagée.
     const n = normaliserCles(cles);
     if (!n.ok) return refuser(reply, STATUT_PAR_CODE[n.code], n.code, MESSAGE_RESOLUTION[n.code]);
 
-    // Compté APRÈS la validation, comme sur `/v1/contacts` : un corps malformé n'a demandé aucun travail.
+    // Compté après la validation, comme sur `/v1/contacts` : un corps malformé n'a demandé aucun travail.
     if (!await compterOuRefuser(deps.usage, req, reply, 'messages.send')) return reply;
 
     const fiche = await deps.resoudreFiche(tenantId, cles, { creer: 'jamais' });
@@ -131,15 +104,9 @@ export function registerV1Messages(app: FastifyInstance, deps: V1MessagesRouteDe
     const { conversationId } = fil;
 
     /**
-     * `auteur` à `null` : personne ne SIGNE ce message dans l'Inbox. `origine` à `'api'` : c'est le système du
-     * client qui parle (migration 0166).
-     */
-    /**
-     * 🔴 LE NUMÉRO DÉLIÉ (migration 0180) sort du point de passage des envois en EXCEPTION, pas en refus typé :
-     * c'est ce qui le rend lisible sur les routes de la CONSOLE, par le gestionnaire d'erreurs du serveur. Mais
-     * celui-ci rend `{ error }` sans `code`, et l'enveloppe de l'API publique est `{ error, code }` : un programme
-     * doit pouvoir traiter ce cas sans lire la phrase. On l'attrape donc ICI, et seulement lui. (`POST /v1/sends`
-     * refuse avant de créer l'envoi, et le MCP le traduit en refus d'outil : voir `src/meta/numero-delie.ts`.)
+     * `auteur` à `null` : personne ne signe ce message dans l'Inbox ; `origine` à `'api'`. Le numéro délié sort du
+     * point de passage des envois en exception, que le gestionnaire du serveur rend sans `code` : on l'attrape ici,
+     * et seulement lui, pour rendre l'enveloppe `{ error, code }` de l'API publique.
      */
     let res: Awaited<ReturnType<typeof repondreDansLaFenetre>>;
     try {
@@ -162,8 +129,8 @@ export function registerV1Messages(app: FastifyInstance, deps: V1MessagesRouteDe
       case 'fenetre_fermee':
         return refuser(reply, 422, 'window_closed', FENETRE_FERMEE);
       default: {
-        // EXHAUSTIF : un motif ajouté demain à `RefusReponse` ne compile pas ici, au lieu de sortir sous une
-        // raison fausse.
+        // Exhaustif : un motif ajouté demain à `RefusReponse` ne compile pas ici, au lieu de sortir sous une raison
+        // fausse.
         const inconnu: never = motif;
         throw new Error(`motif de refus inconnu : ${String(inconnu)}`);
       }

@@ -3,59 +3,43 @@ import { nomUnique } from './nommer';
 import { objetOuNull } from '../../webhooks/json';
 
 /**
- * Aplatir un `inputSchema` MCP en FEUILLES scalaires.
+ * Aplatir un `inputSchema` MCP en feuilles scalaires.
  *
- * 🔴 CE MODULE EST CE QUI PERMET À LA GARDE D'IDENTITÉ DE DESCENDRE DANS LES SOUS-OBJETS, et c'est sa seule
- * raison d'être. Nos paramètres portent une `source` (`modele` / `contact` / `champ` / `fixe`) qui décide si
- * le MODÈLE remplit la valeur ou si le runtime l'injecte depuis le numéro authentifié par la signature Meta,
- * ou depuis un champ que le client a déclaré pour ses contacts. Un
- * paramètre imbriqué n'aurait aucune case où poser ce marquage : il serait donc forcément rempli par le
- * modèle, donc influençable par le contact, et un `filtres.client_id` deviendrait un IDOR offert au premier
- * venu qui écrit sur le numéro. En énumérant les feuilles, chacune reçoit sa source comme n'importe quel
- * paramètre maison.
+ * 🔴 C'est ce qui permet à la garde d'identité de descendre dans les sous-objets : chaque feuille reçoit sa
+ * `source` (`modele`, `contact`, `champ`, `fixe`) comme un paramètre maison. Sans ça, un paramètre imbriqué
+ * (`filtres.client_id`) serait forcément rempli par le modèle, donc un IDOR.
  *
- * 🔴 IL REFUSE PLUTÔT QUE DE DEVINER. Trois formes n'ont pas de jeu de feuilles fixe : un tableau (le nombre
- * d'éléments est inconnu), de vraies alternatives (`oneOf` / `anyOf` à plusieurs formes), un objet dont la
- * forme n'est pas déclarée. Les aplatir demanderait d'inventer une convention que le serveur distant ne
- * connaît pas, et qu'il faudrait re-deviner à l'appel. On rend donc une RAISON, qui part telle quelle à
- * l'écran, et l'outil est importé, montré, mais pas activable.
- *
- * 🔴 IL NE LÈVE JAMAIS. Son entrée vient d'un tiers : une exception ferait échouer l'import ENTIER à cause
- * d'un seul outil mal formé, et le client perdrait les quinze autres.
+ * Refuse plutôt que deviner les formes sans jeu de feuilles fixe (tableau, vraies alternatives, objet sans
+ * forme déclarée) : une raison part à l'écran, l'outil est importé mais pas activable. Ne lève jamais :
+ * l'entrée vient d'un tiers, et un outil mal formé ne doit pas faire échouer tout l'import.
  */
 
 export interface FeuilleMcp {
   /** Nom exposé au modèle : plat, normalisé, unique dans l'outil. */
   name: string;
   /**
-   * Le chemin dans le schéma DISTANT (`filtres.ville`), tel qu'il y est écrit, casse comprise.
-   *
-   * 🔴 IL N'EST JAMAIS EXPOSÉ AU MODÈLE, et il n'est pas décoratif : c'est lui qui permet de RECOMPOSER
-   * l'objet imbriqué au moment de l'appel. Notre `name` est une étiquette locale, le chemin est la donnée
-   * de protocole.
+   * Le chemin dans le schéma distant (`filtres.ville`), casse comprise. Jamais exposé au modèle : il permet
+   * de recomposer l'objet imbriqué à l'appel, `name` n'étant qu'une étiquette locale.
    */
   cheminMcp: string;
   type: TypeParam;
   description?: string;
-  /** Requis pour le serveur distant. Vrai seulement si TOUS les maillons du chemin le sont. */
+  /** Requis pour le serveur distant. Vrai seulement si tous les maillons du chemin le sont. */
   required: boolean;
   /** Valeurs autorisées. Une énumération fermée empêche le modèle d'inventer une valeur hors domaine. */
   enum?: string[];
 }
 
 export interface SchemaAplati {
-  /** VIDE quand l'outil n'est pas activable : un jeu partiel pourrait être utilisé par mégarde. */
+  /** Vide quand l'outil n'est pas activable : un jeu partiel pourrait être utilisé par mégarde. */
   feuilles: FeuilleMcp[];
   /** `null` = activable. Sinon, la raison en clair, affichée telle quelle au client. */
   raisonNonActivable: string | null;
 }
 
 /**
- * Profondeur maximale d'imbrication.
- *
- * ⚠️ Elle n'est pas une limite de confort : sans elle, un schéma profond produirait des noms de feuilles
- * illisibles pour le modèle (`a_b_c_d_e_f_g_ville`), et la borne de 64 caractères les tronquerait jusqu'à
- * les rendre indistinguables. Cinq niveaux couvrent très largement ce qu'une API expose.
+ * Profondeur maximale d'imbrication : au-delà, les noms de feuilles deviendraient illisibles pour le modèle,
+ * puis indistinguables une fois tronqués à 64 caractères.
  */
 const PROFONDEUR_MAX = 5;
 
@@ -75,15 +59,9 @@ function requis(noeud: Record<string, unknown>): Set<string> {
 }
 
 /**
- * Réduit « ce type OU null » à son type.
- *
- * 🔴 CE N'EST PAS UN ASSOUPLISSEMENT DE LA RÈGLE SUR LES ALTERNATIVES, et la nuance décide de tout :
- * `anyOf: [T, null]` ne décrit pas deux formes de valeur, il décrit UNE forme plus l'absence de valeur.
- * C'est l'idiome que produisent la plupart des générateurs de schéma pour un paramètre facultatif, et le
- * refuser rendrait non activables des outils parfaitement représentables. Deux formes RÉELLES restent
- * refusées, ce que le cas suivant vérifie.
- *
- * Rend le nœud à examiner, ou `null` si l'alternative est vraie.
+ * Réduit « ce type ou null » à son type : `anyOf: [T, null]` décrit une forme plus l'absence, l'idiome des
+ * générateurs pour un paramètre facultatif. Deux formes réelles restent refusées. Rend le nœud à examiner,
+ * ou `null` si l'alternative est vraie.
  */
 function sansLeNul(noeud: Record<string, unknown>): Record<string, unknown> | null {
   const alternatives = noeud.oneOf ?? noeud.anyOf;
@@ -103,8 +81,7 @@ function typeScalaire(noeud: Record<string, unknown>): TypeParam | null {
     const utiles = brut.filter((t) => typeof t === 'string' && t !== 'null') as string[];
     return utiles.length === 1 ? TYPES[utiles[0]!] ?? null : null;
   }
-  // Une énumération de chaînes SANS type déclaré est une chaîne : JSON Schema l'autorise, et refuser
-  // reviendrait à jeter une information qu'on a sous les yeux.
+  // Une énumération de chaînes sans type déclaré est une chaîne : JSON Schema l'autorise.
   if (brut === undefined && Array.isArray(noeud.enum) && noeud.enum.every((v) => typeof v === 'string')) {
     return 'string';
   }
@@ -114,9 +91,8 @@ function typeScalaire(noeud: Record<string, unknown>): TypeParam | null {
 export function aplatirSchema(inputSchema: unknown): SchemaAplati {
   const racine = objetOuNull(inputSchema);
   if (racine === null) {
-    // ⚠️ DEUX RAISONS DISTINCTES, parce que le client n'a pas la même chose à dire à son fournisseur. « Rien
-    // de déclaré » est une omission ; « déclaré mais illisible » est une réponse mal formée, et confondre
-    // les deux ferait chercher une absence là où il y a une faute de frappe.
+    // Deux raisons distinctes : « rien de déclaré » est une omission, « déclaré mais illisible » une réponse
+    // mal formée, et le client n'a pas la même chose à dire à son fournisseur.
     const raisonNonActivable = inputSchema === undefined || inputSchema === null
       ? 'le serveur n’a pas déclaré la forme des paramètres de cet outil'
       : 'le serveur a déclaré les paramètres de cet outil sous une forme illisible';
@@ -131,14 +107,9 @@ export function aplatirSchema(inputSchema: unknown): SchemaAplati {
   const prisNoms = new Set<string>();
 
   function ajouter(chemin: string, type: TypeParam, noeud: Record<string, unknown>, estRequis: boolean): void {
-    // Deux chemins distincts peuvent se normaliser pareil (`a.b_c` et `a.b.c`), ou se collisionner après
-    // troncature. Sans suffixe, le second écraserait le premier dans le schéma envoyé au modèle, et une
-    // valeur partirait dans le mauvais champ, sans aucune erreur.
-    //
-    // ⚠️ LA MISE EN FORME ET LA DÉSAMBIGUÏSATION VIVENT DANS `./nommer`, PARTAGÉES AVEC L'IMPORT. Les deux
-    // portées d'unicité diffèrent (ici l'outil, là l'espace), la contrainte de forme et le piège de
-    // troncature sont identiques : les écrire deux fois ferait diverger la seconde le jour où l'on corrige
-    // la première.
+    // Deux chemins peuvent se normaliser pareil (`a.b_c` et `a.b.c`) ou collisionner après troncature : sans
+    // suffixe, une valeur partirait dans le mauvais champ. La mise en forme vit dans `./nommer`, partagée avec
+    // l'import.
     const nom = nomUnique(chemin, prisNoms);
     prisNoms.add(nom);
     const enumeration = Array.isArray(noeud.enum) && noeud.enum.every((v) => typeof v === 'string')
@@ -160,9 +131,8 @@ export function aplatirSchema(inputSchema: unknown): SchemaAplati {
       return;
     }
     const props = objetOuNull(noeud.properties);
-    // ⚠️ L'ASYMÉTRIE AVEC LA RACINE EST VOULUE. À la racine, l'absence de propriétés dit « cet outil ne
-    // prend aucun paramètre ». Imbriquée, elle dit « le serveur attend un objet dont il n'a pas déclaré la
-    // forme », ce que nous ne savons pas remplir en sûreté.
+    // Asymétrie voulue avec la racine : là, l'absence de propriétés dit « aucun paramètre » ; imbriquée, elle
+    // dit « un objet de forme non déclarée », que nous ne savons pas remplir en sûreté.
     if (props === null || Object.keys(props).length === 0) {
       obstacles.push(`« ${chemin} » : le serveur n’a pas déclaré la forme de cet objet`);
       return;

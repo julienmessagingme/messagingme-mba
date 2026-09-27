@@ -4,7 +4,7 @@ export interface UserFieldDef {
   key: string;
   label: string;
   type: UserFieldType;
-  /** Code public « fld_<client>_<ulid> » (schéma A). Absent/null tant que le backfill n'a pas tourné (champs anciens). */
+  /** Code public « fld_<client>_<ulid> ». Absent ou null pour un champ ancien que le backfill n'a pas traité. */
   code?: string | null;
 }
 
@@ -20,6 +20,6 @@ export interface ImportReport {
   created: number;
   updated: number;
   skipped: number;
-  /** `line` = numéro de ligne dans le FICHIER (en-tête = 1, 1re donnée = 2). */
+  /** `line` = numéro de ligne dans le fichier (en-tête = 1, 1re donnée = 2). */
   errors: Array<{ line: number; reason: string }>;
 }

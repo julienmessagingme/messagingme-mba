@@ -2,11 +2,9 @@ import { modifierSettings } from './client';
 import type { MbaClient } from './client';
 
 /**
- * Lecture / écriture de `handoff.enabled` par TENANT, partagées par l'API (le client vient de choisir) et par
- * le balayage horaire (l'heure a changé). Les deux doivent se comporter à l'identique : un seul endroit.
- *
- * ⚠️ `enabled` ne décide pas si l'agent transfère, mais s'il LÂCHE le fil après l'avoir annoncé. Voir
- * `AgentSettings.handoff`.
+ * Lecture et écriture de `handoff.enabled` par tenant, partagées par l'API (choix du client) et le balayage
+ * horaire : un seul endroit. `enabled` ne décide pas si l'agent transfère, mais s'il lâche le fil après l'avoir
+ * annoncé (voir `AgentSettings.handoff`).
  */
 export interface HandoffCibleDeps {
   clientFor(tenantId: string): Promise<MbaClient>;
@@ -15,14 +13,11 @@ export interface HandoffCibleDeps {
 }
 
 /**
- * État actuel de `handoff.enabled` chez Meta, en TROIS cas qu'il ne faut surtout pas confondre :
- *
- * - `true` / `false` : lu chez Meta, on sait où on en est ;
- * - `'absent'` : les réglages sont lisibles mais `handoff` n'a JAMAIS été configuré (Meta le documente,
- *   « Null if not configured »). L'état réel de l'agent est alors inconnu, donc il faut écrire, même si la
- *   valeur voulue est `false` : sans cela un agent neuf ne serait jamais configuré ;
- * - `null` : rien à lire (pas de numéro, ou agent pas encore créé par Meta). L'appelant ne doit rien écrire,
- *   plutôt que d'écrire à l'aveugle sur une ressource qui n'existe pas.
+ * État actuel de `handoff.enabled` chez Meta, en trois cas à ne pas confondre :
+ * - `true` / `false` : lu chez Meta ;
+ * - `'absent'` : réglages lisibles mais `handoff` jamais configuré (« Null if not configured ») : l'état réel est
+ *   inconnu, donc il faut écrire même si la valeur voulue est `false`, sinon un agent neuf ne serait jamais configuré ;
+ * - `null` : rien à lire (pas de numéro, ou agent pas encore créé) : ne rien écrire à l'aveugle.
  */
 export type EtatHandoff = boolean | 'absent' | null;
 

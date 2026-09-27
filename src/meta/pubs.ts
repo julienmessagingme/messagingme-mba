@@ -3,20 +3,13 @@ import { ClientGraph } from './graph';
 import { messageDe } from '../lib/erreur';
 
 /**
- * CLIENT GRAPH DES PUBLICITÉS CLICK-TO-WHATSAPP (lot 2, « Connecter »).
- *
- * L'appel Graph, l'échange du code et la lecture des cibles d'un jeton viennent de `ClientGraph`. Ce fichier
- * ne porte que ce qui appartient aux publicités.
- *
- * 🔴 TOUTE RÉPONSE DE META PASSE PAR UN `safeParse`, jamais un `as`. Ce n'est pas de la précaution
- * décorative : la documentation de Vercel annonçait `id` à la racine quand le serveur le rendait sous
- * `apiKey.id`, et c'est le `safeParse` qui a évité de garder une clé facturée dont on aurait perdu
- * l'identifiant (2026-09-09).
+ * Client Graph des publicités Click-to-WhatsApp (connexion) ; l'appel Graph, l'échange du code et la lecture
+ * des cibles d'un jeton viennent de `ClientGraph`. Toute réponse de Meta passe par un `safeParse`, jamais un `as`.
  */
 
 /** Un compte publicitaire accordé, avec ce que Meta en dit dans la même réponse. */
 export interface ComptePubAccorde {
-  /** SANS le préfixe `act_` : les appels l'ajoutent, et l'écran comme la base gardent la forme nue. */
+  /** Sans le préfixe `act_` : les appels l'ajoutent, l'écran et la base gardent la forme nue. */
   id: string;
   nom: string | null;
   devise: string | null;
@@ -26,8 +19,8 @@ export interface ComptePubAccorde {
 }
 
 /**
- * CE QUI EMPÊCHE, OU NON, DE DIFFUSER. Lu EN DIRECT à l'ouverture de l'écran, jamais mémorisé : un
- * indicateur de disponibilité qui date ne sert à rien, et une carte qui expire ne prévient personne.
+ * Ce qui empêche, ou non, de diffuser. Lu en direct à l'ouverture de l'écran, jamais mémorisé : un indicateur
+ * de disponibilité qui date ne sert à rien.
  */
 export interface EtatComptePub {
   /** `account_status` : 1 = actif. Tout le reste empêche de diffuser. */
@@ -43,28 +36,17 @@ export interface PageAccordee {
   nom: string | null;
 }
 
-/** Ce que le jeton du client accorde, LU AUX POINTS D'ENTRÉE DÉDIÉS (cf. `actifsAccordes`). */
+/** Ce que le jeton du client accorde, lu aux points d'entrée dédiés (cf. `actifsAccordes`). */
 export interface ActifsAccordes {
   comptesPub: ComptePubAccorde[];
   pages: PageAccordee[];
 }
 
 /**
- * La Page est-elle liée au compte WhatsApp de l'espace ?
- *
- * 🔴 PLUS AUCUN CODE NE CALCULE CE VERDICT, ET IL VAUT `inconnu` PARTOUT. Mesuré le 2026-09-23 sur le
- * compte réel, après avoir vérifié dans le WhatsApp Manager que la Page ÉTAIT bien liée au numéro : DIX
- * champs essayés sur les trois objets concernés. Sur le numéro, `connected_pages`, `linked_pages`,
- * `facebook_page`, `page`, `connected_page` n'existent pas. Sur la Page,
- * `connected_whatsapp_business_account` n'existe pas et `whatsapp_number` revient VIDE (il ne parle que
- * de l'ancienne connexion « WhatsApp Business app »). Meta affiche la liaison dans son interface et ne
- * l'expose par aucune API que nous puissions appeler. L'appel était donc condamné à un 400 à chaque
- * choix : il a été retiré, et l'écran emmène le client là où Meta l'affiche.
- *
- * ⚠️ LE TYPE ET LA COLONNE RESTENT, à TROIS VALEURS, pour le jour où Meta exposera cette liaison :
- * c'est ici qu'elle reviendra. Et la troisième valeur restera la plus importante, parce que « Meta ne
- * sait pas répondre » n'est pas « la Page n'est pas liée » : afficher « non liée » sur une ignorance
- * enverrait un client refaire une liaison qui existe déjà. `inconnu` se dit, il ne se devine pas.
+ * La Page est-elle liée au compte WhatsApp de l'espace ? Aucun code ne calcule ce verdict, qui vaut `inconnu`
+ * partout : Meta affiche la liaison dans son interface mais ne l'expose par aucune API (champs essayés sur le
+ * numéro et sur la Page, tous absents ou vides). Le type garde trois valeurs pour le jour où elle le sera :
+ * « Meta ne sait pas répondre » n'est pas « non liée », qui enverrait refaire une liaison existante.
  */
 export type LiaisonPage = 'oui' | 'non' | 'inconnu';
 
@@ -90,8 +72,8 @@ const listePagesSchema = z.object({
 });
 
 /**
- * Les permissions QUE NOUS RETIRONS à la déconnexion, et elles seules : celles qui n'ont aucun usage
- * hors publicité dans cette application.
+ * Les permissions retirées à la déconnexion, et elles seules : celles qui n'ont aucun usage hors publicité
+ * dans cette application.
  */
 const PERMISSIONS_PUB = ['ads_management', 'ads_read', 'pages_manage_ads'] as const;
 
@@ -102,38 +84,19 @@ const identiteSchema = z.object({ id: z.string() });
 const campagneDeLaPubSchema = z.object({ campaign_id: z.string().optional() });
 
 /**
- * PLAFOND DE DURÉE DE LA RÉSOLUTION D'UNE PUB, en millisecondes (spec § 3.3 : « un appel à Meta, 3 s
- * maximum »).
- *
- * 🔴 BIEN PLUS COURT QUE LE PLAFOND GRAPH ORDINAIRE, ET C'EST LE SEUL APPEL DU DÉPÔT DANS CE CAS. Les autres
- * appels Graph servent un écran : leur plafond de trente secondes ne borne qu'un appel perdu. Celui-ci est
- * sur le CHEMIN CHAUD D'UN MESSAGE ENTRANT, derrière lequel attendent l'inbox, les scénarios et la réponse
- * au client. Trente secondes d'attente y seraient trente secondes de silence pour un vrai contact, et pour
- * TOUS les autres messages du même lot que Meta nous a envoyé.
- *
- * ⚠️ DÉPASSER LE DÉLAI N'EST PAS UNE PANNE : la campagne reste inconnue, le lead suit le chemin ordinaire, et
- * la résolution sera retentée au prochain lead de la même pub. On échange une information contre le temps de
- * réponse, délibérément.
+ * Plafond de durée de la résolution d'une pub (3 s), bien plus court que le plafond Graph ordinaire : cet appel
+ * est sur le chemin chaud d'un message entrant, derrière lequel attendent l'inbox, les scénarios et les autres
+ * messages du lot. Le dépasser n'est pas une panne : le lead suit le chemin ordinaire, et la résolution sera
+ * retentée au prochain lead de la même pub.
  */
 export const DELAI_RESOLUTION_PUB_MS = 3000;
 
 export class MetaPubsClient extends ClientGraph {
   /**
-   * Les comptes publicitaires et les Pages que le jeton accorde, lus à `GET /me/adaccounts` et
-   * `GET /me/accounts`.
-   *
-   * 🔴 SURTOUT PAS `debug_token`, ET C'EST UNE MESURE, PAS UN AVIS (2026-09-23, sur le vrai compte d'un
-   * client). Cette méthode lisait les `target_ids` des `granular_scopes`, comme le fait l'inscription
-   * WhatsApp pour les WABA. Sur un jeton d'utilisateur système d'intégration, Meta rend les scopes
-   * **SANS aucun `target_ids`** : les deux listes revenaient donc VIDES alors que la connexion était
-   * parfaite, et l'écran disait « la connexion n'a donné accès à aucun compte ». Les mêmes appels aux
-   * points d'entrée dédiés rendent le compte, son nom, sa devise, son fuseau et son statut.
-   *
-   * ⚠️ LA DEVISE ET LE FUSEAU ARRIVENT ICI, ce qui retire un appel : ils étaient relus compte par compte
-   * juste après, alors que Meta les donne dans la liste.
-   *
-   * ⚠️ Une liste vide n'est pas une erreur : un client peut n'avoir accordé qu'une Page. C'est la route
-   * qui le traduit, parce qu'elle seule sait ce que l'écran doit dire.
+   * Les comptes publicitaires et les Pages que le jeton accorde, lus à `GET /me/adaccounts` et `GET /me/accounts`
+   * (devise et fuseau compris). Surtout pas `debug_token` : pour un utilisateur système, Meta rend les scopes sans
+   * `target_ids`, donc deux listes vides sur une connexion parfaite. Une liste vide n'est pas une erreur (un
+   * client peut n'avoir accordé qu'une Page) : la route la traduit.
    */
   async actifsAccordes(jeton: string): Promise<ActifsAccordes> {
     const entete = { headers: { Authorization: `Bearer ${jeton}` } };
@@ -155,11 +118,8 @@ export class MetaPubsClient extends ClientGraph {
   }
 
   /**
-   * L'état du compte publicitaire : peut-il diffuser aujourd'hui ?
-   *
-   * ⚠️ TROIS CHAMPS, ET LE TROISIÈME EST CELUI QU'ON CHERCHAIT. `funding_source_details` dit qu'un moyen
-   * de paiement est rattaché ; sans lui, une pub se crée mais ne part jamais, et l'erreur arrive tard.
-   * Mesuré le 2026-09-23 : ces trois champs se lisent avec la tâche ADVERTISE, sans `MANAGE`.
+   * L'état du compte publicitaire : peut-il diffuser aujourd'hui ? `funding_source_details` dit qu'un moyen de
+   * paiement est rattaché ; sans lui, une pub se crée mais ne part jamais. Lisible avec la tâche ADVERTISE.
    */
   async etatCompte(comptePubId: string, jeton: string): Promise<EtatComptePub> {
     const qs = new URLSearchParams({ fields: 'account_status,disable_reason,funding_source_details' });
@@ -177,21 +137,11 @@ export class MetaPubsClient extends ClientGraph {
   }
 
   /**
-   * LA CAMPAGNE D'UNE PUBLICITÉ (`GET /{ad-id}?fields=campaign_id`). `null` = Meta n'a pas répondu, a refusé,
-   * ou a dépassé les trois secondes.
-   *
-   * 🔴 C'EST CE QUI RELIE LES COPIES FAITES DANS LE GESTIONNAIRE (spec § 3.3). Le webhook ne porte que
-   * l'identifiant de la PUB ; le lien, lui, est par CAMPAGNE. Une pub dupliquée porte un identifiant neuf et
-   * la même campagne : un seul appel, mémorisé pour toujours (`pubs_connues`), et la copie route comme
-   * l'originale. Sans lui, chaque duplicata perdrait son scénario en silence.
-   *
-   * ⚠️ ELLE NE LÈVE JAMAIS, contrairement au reste de ce client. Son appelant est le chemin d'un message
-   * entrant : un refus de Meta ne doit pas devenir une exception qui traverse le routage d'un lot entier de
-   * messages. Le refus est journalisé ici, une fois, avec ce qu'il faut pour le comprendre.
-   *
-   * ⚠️ LE MESSAGE D'UN ABANDON ANNONCERA LE PLAFOND GRAPH ORDINAIRE, pas celui-ci : `ClientGraph.call` ne
-   * connaît que sa propre constante quand il traduit un abandon. Le journal ci-dessous dit donc le vrai
-   * délai, pour que personne ne cherche une panne de trente secondes qui n'a pas eu lieu.
+   * La campagne d'une publicité (`GET /{ad-id}?fields=campaign_id`) ; `null` si Meta n'a pas répondu, a refusé ou
+   * a dépassé trois secondes. Le webhook ne porte que l'identifiant de la pub, le lien est par campagne : une pub
+   * dupliquée dans le Gestionnaire route ainsi comme l'originale (résultat mémorisé dans `pubs_connues`).
+   * Ne lève jamais : l'appelant est le chemin d'un message entrant. Le journal dit le vrai délai, car le message
+   * d'abandon de `ClientGraph.call` annoncerait le plafond ordinaire.
    */
   async campagneDeLaPub(adId: string, jeton: string): Promise<string | null> {
     try {
@@ -209,13 +159,9 @@ export class MetaPubsClient extends ClientGraph {
   }
 
   /**
-   * QUI PORTE CE JETON, chez Meta (`GET /me`). Rend `null` si Meta ne répond pas.
-   *
-   * 🔴 CE N'EST PAS UNE COMMODITÉ, C'EST CE QUI REND `revoquerAcces` SÛR SUR UN REMPLACEMENT.
-   * `DELETE /me/permissions/<perm>` porte sur le couple (application, ENTITÉ), pas sur LE jeton :
-   * deux jetons du même utilisateur système sous la même application désignent la MÊME entité, donc
-   * révoquer avec l'un retire les permissions de l'autre. Comparer les identités AVANT de révoquer
-   * transforme cette hypothèse en mesure, au moment où elle compte.
+   * Qui porte ce jeton chez Meta (`GET /me`), ou `null` si Meta ne répond pas. Ce qui rend `revoquerAcces` sûr sur
+   * un remplacement : `DELETE /me/permissions/<perm>` porte sur le couple (application, entité), pas sur le jeton,
+   * et deux jetons du même utilisateur système se révoquent ensemble. On compare avant de révoquer.
    */
   async identite(jeton: string): Promise<string | null> {
     try {
@@ -231,34 +177,14 @@ export class MetaPubsClient extends ClientGraph {
   }
 
   /**
-   * RETIRE NOS ACCÈS PUBLICITAIRES CHEZ META, permission par permission.
-   *
-   * 🔴 SURTOUT PAS `DELETE /me/permissions` SANS ARGUMENT, qui désautorise l'APPLICATION EN ENTIER.
-   * Et notre application est la MÊME pour les publicités et pour l'inscription WhatsApp (un seul
-   * `META_APP_ID`, seule la configuration difère) : un client qui cliquerait « Déconnecter » sur l'écran
-   * Publicités aurait pu perdre l'accès qui fait PARLER son numéro, donc tous ses messages, depuis un bouton
-   * qui ne parle que de publicités. Relevé en relecture à froid le 2026-09-23, avant tout déploiement.
-   *
-   * 🔴 LA LISTE EST VOLONTAIREMENT PLUS COURTE QUE CE QUE LA CONFIGURATION DEMANDE. `business_management`,
-   * `pages_show_list` et `pages_read_engagement` n'y sont PAS : elles peuvent servir à autre chose qu'aux
-   * publicités dans la même application, et le seul moyen de le savoir serait de les retirer pour voir. On
-   * retire ce qui est publicitaire SANS AMBIGUÏTÉ, et on laisse le reste vivre.
-   *
-   * ⚠️ **MESURÉ SUR UN JETON D'UTILISATEUR SYSTÈME LE 2026-09-23**, et ce commentaire disait le contraire
-   * jusque-là (« ce chemin n'est pas mesuré », écrit avant la première déconnexion réelle). Les trois
-   * permissions ont été retirées du jeton de Gerermonchantier avant de déposer celui de notre propre
-   * compte : **HTTP 200 sur les trois**. Le retrait par permission NOMMÉE fonctionne donc sur ce type de
-   * jeton, là où la documentation de Meta ne décrit que le cas d'un jeton d'UTILISATEUR.
-   *
-   * ⚠️ CE QUI RESTE INCONNU, et qu'on n'écrit donc pas comme su : si les trois permissions laissées en
-   * place (`business_management`, `pages_show_list`, `pages_read_engagement`) permettent encore quoi que
-   * ce soit en publicité. Le seul moyen de le savoir serait de les retirer pour voir, sur un jeton qui
-   * fait AUSSI parler un numéro WhatsApp.
+   * Retire nos accès publicitaires chez Meta, permission par permission.
+   * 🔴 Surtout pas `DELETE /me/permissions` sans argument, qui désautorise l'application entière : c'est la même
+   * application que l'inscription WhatsApp, et « Déconnecter » les publicités couperait les messages du numéro.
+   * `business_management`, `pages_show_list` et `pages_read_engagement` restent : elles peuvent servir hors
+   * publicité. Le retrait par permission nommée fonctionne sur un jeton d'utilisateur système (HTTP 200).
    */
   async revoquerAcces(jeton: string): Promise<void> {
-    // ⚠️ TOUTES SONT TENTÉES, MÊME APRÈS UN REFUS. S'arrêter au premier échec laisserait les suivantes en
-    // place alors qu'elles étaient peut-être retirables : on retire tout ce qu'on peut, et on dit ce qui
-    // a résisté, plutôt que de rendre un échec global qui ne distingue pas « rien » de « presque tout ».
+    // Toutes sont tentées, même après un refus : on retire tout ce qu'on peut et on dit ce qui a résisté.
     const echecs: string[] = [];
     for (const permission of PERMISSIONS_PUB) {
       try {
@@ -284,25 +210,12 @@ export interface ClientRetrait {
 }
 
 /**
- * RETIRER LES PERMISSIONS DE L'ANCIEN JETON, quand un dépôt en remplace un, ET SEULEMENT SI C'EST SÛR.
- *
- * 🔴 CE QU'ELLE ÉVITE. `DELETE /me/permissions/<perm>` porte sur le couple (application, ENTITÉ), pas
- * sur LE jeton : deux jetons du même utilisateur système sous la même application se révoquent ENSEMBLE.
- * Or c'est l'usage normal du dépôt. Retirer l'ancien désarmerait donc le neuf, qu'on vient de vérifier,
- * et la route répondrait 200 sur une connexion morte.
- *
- * 🔴 POURQUOI C'EST UNE FONCTION, ET PAS UN `if` DANS LE CÂBLAGE. La décision a vécu dans un `if`, et
- * la seule chose qui la gardait était un test qui lisait le TEXTE de ce `if`. Deux relectures à froid
- * l'ont mesuré : une première écriture laissait passer la condition NIÉE, une seconde laissait passer
- * le `!` RETIRÉ et les corps ÉCHANGÉS, c'est-à-dire le bug d'origine sous trois orthographes. **Un test
- * de source ne sait pas juger une sémantique.** Ici le chemin entier s'exécute contre un faux client, et
- * chacune de ces mutations fait tomber un cas.
- *
- * ⚠️ `null` VAUT REFUS DES DEUX CÔTÉS : une identité que Meta n'a pas rendue ne PROUVE pas une
- * différence, et un doute ne justifie pas de casser ce qui marche.
- *
- * ⚠️ UN ÉCHEC DE RETRAIT N'ARRÊTE PAS L'APPELANT : un ancien jeton déjà mort ne doit pas retenir
- * l'exploitation. Mais on ne fait pas passer un refus pour un succès, d'où `echec`.
+ * Retire les permissions de l'ancien jeton quand un dépôt en remplace un, et seulement si c'est sûr.
+ * 🔴 `DELETE /me/permissions/<perm>` porte sur l'entité, pas sur le jeton : deux jetons du même utilisateur
+ * système se révoquent ensemble, et retirer l'ancien désarmerait le neuf (200 sur une connexion morte).
+ * `null` vaut refus des deux côtés : une identité non rendue ne prouve pas une différence. Un échec de retrait
+ * n'arrête pas l'appelant, mais se rend en `echec`, jamais en succès. Fonction exécutable plutôt qu'un `if` du
+ * câblage, pour qu'un test en juge la sémantique.
  */
 export async function retirerAncienAcces(
   client: ClientRetrait,

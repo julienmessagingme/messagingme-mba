@@ -6,23 +6,18 @@ import { espaceVerifie } from './scope';
 import type { VueIntegrationBatch } from '../signaux/integration-batch.pg';
 
 /**
- * PARAMÈTRES > INTÉGRATIONS > BATCH (spec 2026-09-24, § 8) : brancher l'outil qui reçoit les signaux.
- *
- * 🔴 RÉSERVÉ AUX ADMINS, LECTURE COMPRISE (montée sous `g.admin`) : ces clés font sortir des données de
- * contacts de l'espace, c'est une décision de la marque, comme un connecteur.
- *
- * 🔴 LES CLÉS NE REVIENNENT JAMAIS : ni dans une réponse, ni dans le journal d'audit. Le chiffrement se fait
- * dans le câblage (`enregistrer`), jamais ici.
+ * Paramètres > Intégrations > Batch : brancher l'outil qui reçoit les signaux.
+ * 🔴 Réservé aux admins, lecture comprise (monté sous `g.admin`) : ces clés font sortir des données de contacts.
+ * 🔴 Les clés ne reviennent jamais, ni dans une réponse ni dans l'audit ; le chiffrement se fait dans le câblage.
  */
 export interface IntegrationBatchRouteDeps {
   lire(tenantId: string): Promise<VueIntegrationBatch | null>;
-  /** Chiffre les clés reçues et écrit. `false` = premier branchement sans les DEUX clés : rien n'est écrit. */
+  /** Chiffre les clés reçues et écrit. `false` = premier branchement sans les deux clés : rien n'est écrit. */
   enregistrer(tenantId: string, r: { cleRest?: string; cleProjet?: string; envoyerResume: boolean }): Promise<boolean>;
   supprimer(tenantId: string): Promise<boolean>;
   /**
-   * L'instance sait-elle CHIFFRER une clé ? REQUIS, et calculé une fois au câblage. `ENCRYPTION_KEY` vaut `''`
-   * par défaut et la configuration ne l'exige que pour d'autres fonctions : sans elle, `encryptSecret` lève, et
-   * la route rendrait 500 (une page Cloudflare sans explication) au lieu d'un refus que l'écran peut afficher.
+   * L'instance sait-elle chiffrer une clé ? Calculé au câblage : `ENCRYPTION_KEY` peut être vide, `encryptSecret`
+   * lèverait alors, et la route rendrait 500 au lieu d'un refus affichable.
    */
   chiffrementPret: boolean;
   audit: AuditSink;
@@ -37,10 +32,8 @@ const corpsReglage = z.object({
 
 const vue = (v: VueIntegrationBatch | null) => (v === null ? { branche: false } : { branche: true, ...v });
 /**
- * 🔴 LA LIGNE D'AUDIT NE NOMME PAS L'OUTIL : elle s'affiche dans Sécurité > Journal des actions, un écran de la
- * MARQUE, et la spec (§ 10) réserve ce nom à l'écran de réglage (même règle que `NOM_APPEL_SIGNAUX`). La cible
- * dit CE QUI est branché (la remontée des signaux), pas vers QUOI ; le détail ne porte que l'option et le fait
- * que les clés ont changé.
+ * La ligne d'audit ne nomme pas l'outil : elle s'affiche dans un écran de la marque, et ce nom est réservé à
+ * l'écran de réglage (même règle que `NOM_APPEL_SIGNAUX`). Le détail ne porte que l'option et le changement de clés.
  */
 const CIBLE = { kind: 'integration', id: 'signaux' };
 
@@ -62,8 +55,7 @@ export function registerIntegrationBatch(app: FastifyInstance, deps: Integration
     }
     const { cleRest, cleProjet, envoyerResume } = corps.data;
     if ((cleRest !== undefined || cleProjet !== undefined) && !deps.chiffrementPret) {
-      // Même patron que les routes dont la configuration manque (publicités, installation HubSpot) : 503, et
-      // une phrase que l'écran affiche telle quelle. Changer la seule option ne chiffre rien et reste permis.
+      // Chiffrement absent : 503 et une phrase affichable. Changer la seule option ne chiffre rien et reste permis.
       return reply.code(503).send({ error: 'Le chiffrement des secrets n’est pas configuré sur cette instance : impossible d’enregistrer des clés.' });
     }
     const avant = await deps.lire(tenant);

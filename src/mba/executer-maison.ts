@@ -2,28 +2,25 @@ import { REPONSE_MAISON, lireValeurChamp, type CibleMaison } from './outils-mais
 import { DUREE_ANTI_REJEU_MS, PLANCHER_ANTI_REJEU_MS, type AntiRejeu } from './anti-rejeu';
 
 /**
- * EXÉCUTER UN GESTE DE L'AGENT DE META pour un contact (spec 2026-09-21-outils-maison-mba, § 3).
- *
- * 🔴 AUCUN GESTE N'EST RÉÉCRIT ICI : chaque dépendance est la fonction qui le fait déjà ailleurs (la pose d'un
- * tag des agents IA, l'écriture de champ du mini-CRM, l'envoi à un bloc de l'API publique, le lancement d'un
- * scénario de l'Inbox). Ce module ne fait que choisir laquelle, et traduire l'issue en ce que l'agent de Meta lit.
+ * Exécuter un geste de l'agent de Meta pour un contact. Aucun geste n'est réécrit ici : chaque dépendance est la
+ * fonction qui le fait déjà ailleurs (pose de tag, écriture de champ, envoi à un bloc, lancement de scénario) ;
+ * ce module choisit laquelle et traduit l'issue en ce que l'agent de Meta lit.
  */
 export interface DepsMaison {
   /** `creerPoserTagAgent` : pose, déclaration dans Contenus > Tags, `tag_added` si l'étiquette est nouvelle. */
   poserTag(tenantId: string, waId: string, tag: string): Promise<void>;
   ecrireChamp(tenantId: string, waId: string, champ: string, valeur: string): Promise<void>;
   /**
-   * Le champ existe-t-il encore dans le mini-CRM ? 🔴 Sans cette question, un outil dont le champ a été supprimé
-   * écrivait quand même la valeur, sous une clé qu'aucun écran ne montre plus, pendant que l'onglet Outils
-   * affichait « ce champ n'existe plus ». Même source que cette ligne rouge : la liste des champs de l'espace.
+   * Le champ existe-t-il encore dans le mini-CRM ? Sans cette question, un outil dont le champ a été supprimé
+   * écrirait sous une clé qu'aucun écran ne montre plus.
    */
   champExiste(tenantId: string, champ: string): Promise<boolean>;
   /** Le contact est-il bloqué dans l'Inbox ? Un contact bloqué ne reçoit rien de nous, pas plus d'un outil. */
   estBloque(tenantId: string, waId: string): Promise<boolean>;
   /**
-   * Envoie le bloc SEUL (`blocSeul`), par le même chemin qu'un envoi à un bloc de l'API publique
-   * (`startFromNode`) : il REPREND le fil à l'agent de Meta, envoie, et le lui rend à l'accusé de l'envoi. Rend
-   * `true`, ou la raison du refus telle que l'agent de Meta la lira.
+   * Envoie le bloc seul (`blocSeul`), par le chemin d'un envoi à un bloc de l'API publique (`startFromNode`) : il
+   * reprend le fil à l'agent de Meta, envoie, et le lui rend à l'accusé. Rend `true`, ou la raison du refus lue
+   * par l'agent.
    */
   envoyerBloc(tenantId: string, waId: string, cible: { workflowId: string; code: string }): Promise<true | string>;
   /** Lance le scénario depuis son début, exactement comme le bouton de l'Inbox. Même contrat de retour. */
@@ -31,9 +28,8 @@ export interface DepsMaison {
   /** Un envoi ne se rejoue pas pour le même client et le même outil, le temps d'une demande (`src/mba/anti-rejeu.ts`). */
   antiRejeu: Pick<AntiRejeu, 'prendreTous' | 'oublier'>;
   /**
-   * L'identifiant du dernier message REÇU du client (`PgInboxStore.dernierMessageDuClient`), ou `null`. Il entre
-   * dans la clé de l'anti-rejeu : un rappel dans le même tour de l'agent partage ce message, une nouvelle demande
-   * du client, non.
+   * L'identifiant du dernier message reçu du client (`PgInboxStore.dernierMessageDuClient`), ou `null`. Il entre
+   * dans la clé de l'anti-rejeu : un rappel dans le même tour partage ce message, une nouvelle demande non.
    */
   dernierMessageDuClient(tenantId: string, waId: string): Promise<string | null>;
 }
@@ -61,18 +57,13 @@ export async function executerOutilMaison(
     }
     case 'bloc_fixe':
     case 'scenario_fixe': {
-      // 🔴 LE BLOCAGE EST LU AVANT TOUT ENVOI : une garde posée après l'effet ne garde rien.
+      // 🔴 Le blocage est lu avant tout envoi : une garde posée après l'effet ne garde rien.
       if (await deps.estBloque(tenantId, waId)) return { ok: false, erreur: CONTACT_BLOQUE };
-      // 🔴 UN RAPPEL DU MÊME OUTIL POUR LE MÊME MESSAGE DU CLIENT NE RENVOIE RIEN (essai réel du 2026-09-22 : sept
-      // appels dans le même tour, sept fois le premier message du scénario). Il répond « déjà traitée », ce qui
-      // clôt le tour. La clé se PREND d'un seul geste, APRÈS la dernière attente : sept appels simultanés n'en
-      // laissent partir qu'un. Elle est GARDÉE sur une exception (le message a pu partir) ; seul un refus, qui n'a
-      // rien envoyé, l'oublie.
-      // ⚠️ LE MESSAGE DU CLIENT EST DANS LA CLÉ (second essai du même jour) : « Je peux avoir le statut de ma
-      // commande ? Encore une fois », 55 s après la première demande, était pris pour un rappel et rien ne
-      // repartait. Une NOUVELLE demande du client est un nouveau message, donc une nouvelle clé.
-      // ⚠️ ET UN PLANCHER DE 30 S, QUEL QUE SOIT LE MESSAGE (relecture du même jour) : une réaction ou une demande en
-      // deux messages changent aussi le dernier message reçu. Les deux clés se prennent ensemble, ou aucune.
+      // Un rappel du même outil pour le même message du client ne renvoie rien : il répond « déjà traitée », ce qui
+      // clôt le tour. Deux clés prises d'un seul geste, après la dernière attente (des appels simultanés n'en
+      // laissent partir qu'un) : le message du client (une nouvelle demande relance) et un plancher de 30 s (une
+      // réaction ou une demande en deux messages ne relance pas). Gardées sur une exception (le message a pu
+      // partir), oubliées sur un refus.
       const dernier = await deps.dernierMessageDuClient(tenantId, waId);
       const plancher = `${tenantId}:${waId}:${input.outilId}`;
       const cle = `${plancher}:${dernier ?? '-'}`;
@@ -90,14 +81,10 @@ export async function executerOutilMaison(
 }
 
 /**
- * Ce que l'agent de Meta lit quand il rappelle un envoi déjà pris en charge pour ce client : de quoi clore son tour.
- *
- * 🔴 IL N'AFFIRME RIEN DE PLUS QUE « DÉJÀ TRAITÉE » (revues finales du 2026-09-22). Ni « le client a reçu » : faux
- * après une exception, ou quand le premier appel finit en refus, et l'agent de Meta le répéterait au client. Ni
- * « n'écris rien, la conversation te reviendra » : ce rappel part aussi quand AUCUN parcours ne tourne (premier
- * appel refusé, exception, parcours court déjà fini et client qui redemande), le fil est alors déjà revenu à
- * l'agent de Meta, et lui ordonner le silence laisserait le client sans réponse. La consigne d'attendre la fin du
- * parcours est portée par la PREMIÈRE réponse (`REPONSE_MAISON.scenario_fixe`), dans le même tour.
+ * Ce que l'agent de Meta lit quand il rappelle un envoi déjà pris en charge pour ce client : de quoi clore son
+ * tour, sans affirmer plus que « déjà traitée ». Ni « le client a reçu » (faux après une exception ou un refus),
+ * ni « n'écris rien » : le fil a pu lui revenir, et le silence laisserait le client sans réponse. La consigne
+ * d'attendre la fin du parcours est portée par la première réponse (`REPONSE_MAISON.scenario_fixe`).
  */
 export const REPONSE_DEJA_TRAITE = 'Cette demande vient déjà d’être traitée pour ce message du client : ne rappelle pas cet outil maintenant. Si le client le redemande plus tard, rappelle cet outil.';
 
@@ -105,11 +92,9 @@ export const REPONSE_DEJA_TRAITE = 'Cette demande vient déjà d’être traité
 export const CONTACT_BLOQUE = 'Ce client est bloqué : aucun message ne lui est envoyé.';
 
 /**
- * Ce que l'agent de Meta lit quand un geste a PLANTÉ (une exception, pas un refus).
- *
- * 🔴 PAS D'INVITATION À RÉESSAYER POUR UN ENVOI (revue finale du 2026-09-22) : l'exception a pu survenir APRÈS
- * que le message soit parti (une panne de base au journal), et le relancer l'enverrait deux fois au client. Un
- * tag ou un champ, eux, se reposent sans dégât.
+ * Ce que l'agent de Meta lit quand un geste a planté (une exception, pas un refus). Pas d'invitation à réessayer
+ * pour un envoi : l'exception a pu survenir après le départ du message, qui partirait deux fois. Un tag ou un
+ * champ se reposent sans dégât.
  */
 export function erreurDePanne(cible: CibleMaison): string {
   return cible.handler === 'bloc_fixe' || cible.handler === 'scenario_fixe'

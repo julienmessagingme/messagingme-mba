@@ -2,15 +2,11 @@ import { MetaApiError } from './errors';
 import { messageDe } from '../lib/erreur';
 
 /**
- * Résolution du token Meta PAR TENANT (B1). Aujourd'hui tous les envois passaient par UN token global
- * (config.META_ACCESS_TOKEN) et le token business chiffré de chaque client, écrit par l'Embedded Signup dans
- * waba_credentials, n'était jamais relu : la promesse « chaque client branche son numéro » n'était donc que
- * simulée (elle marche parce qu'il n'y a qu'un numéro). Ce module rend la résolution réelle, EN SOMMEIL :
- * tant qu'un WABA n'a pas de credentials propres (cas du numéro branché à la main), on retombe sur le token
- * global -> comportement identique. Dès qu'un client onboarde via Embedded Signup, son token est utilisé.
+ * Résolution du token Meta par tenant. Un WABA sans credentials propres (numéro branché à la main) retombe sur
+ * le token global ; un WABA embarqué par Embedded Signup utilise son token business chiffré (`waba_credentials`).
  */
 
-/** Le token business d'un WABA a été révoqué/expiré : on refuse d'envoyer dessus (au lieu de brûler des appels). */
+/** Le token business d'un WABA a été révoqué ou a expiré : on refuse d'envoyer dessus plutôt que de brûler des appels. */
 export class TokenInvalidError extends Error {
   constructor(readonly wabaId: string) {
     super(`token Meta invalide (révoqué/expiré) pour le WABA ${wabaId}`);
@@ -18,7 +14,7 @@ export class TokenInvalidError extends Error {
   }
 }
 
-/** Vrai si l'erreur Meta est une erreur d'AUTH (token mort). Règle unique, alignée sur pull.ts. */
+/** Vrai si l'erreur Meta est une erreur d'auth (token mort). Règle unique, alignée sur pull.ts. */
 export function isMetaAuthError(err: unknown): boolean {
   return err instanceof MetaApiError && (err.code === 190 || err.httpStatus === 401 || err.type === 'OAuthException');
 }
@@ -53,8 +49,8 @@ export interface ResolvedToken {
 }
 
 /**
- * Résout le token d'un tenant. Cache court par WABA (déchiffrer à chaque message coûte). Un WABA sans credentials
- * -> token global (sommeil). Un WABA 'invalid' -> TokenInvalidError. Sinon -> déchiffrement.
+ * Résout le token d'un tenant, avec un cache court par WABA (déchiffrer à chaque message coûte). Un WABA sans
+ * credentials -> token global ; un WABA 'invalid' -> TokenInvalidError ; sinon déchiffrement.
  */
 export class MetaCredentialsResolver {
   private readonly cache = new Map<string, { token: string; at: number }>();
@@ -77,7 +73,7 @@ export class MetaCredentialsResolver {
     if (cached && this.now() - cached.at < this.ttl) return { token: cached.token, wabaId };
 
     const cred = await this.deps.getCredentialsByWaba(wabaId);
-    if (!cred) return { token: this.deps.fallbackToken, wabaId: null }; // sommeil : pas de credentials propres
+    if (!cred) return { token: this.deps.fallbackToken, wabaId: null }; // pas de credentials propres
     if (cred.tokenStatus === 'invalid') throw new TokenInvalidError(wabaId);
 
     const token = this.deps.decrypt(cred.businessTokenEnc);
@@ -85,9 +81,10 @@ export class MetaCredentialsResolver {
     return { token, wabaId };
   }
 
-  /** Invalide un token (sur erreur d'auth au prochain appel) et PURGE le cache (sinon le token mort resterait servi).
-   *  BEST-EFFORT : un échec de `markTokenInvalid` (DB) est avalé, sinon il masquerait l'erreur Meta d'origine que
-   *  l'appelant (le guard de la fabrique) doit rethrow. Le cache est purgé quoi qu'il arrive (relira l'état au prochain). */
+  /**
+   * Invalide un token et purge le cache (sinon le token mort resterait servi). Best-effort : un échec de
+   * `markTokenInvalid` est avalé pour ne pas masquer l'erreur Meta d'origine, que l'appelant relance.
+   */
   async invalidate(wabaId: string): Promise<void> {
     this.cache.delete(wabaId);
     try {
@@ -98,7 +95,7 @@ export class MetaCredentialsResolver {
     }
   }
 
-  /** À appeler dans un catch d'appel Meta : si c'est une erreur d'auth ET qu'un WABA propre est en cause, l'invalide. */
+  /** À appeler dans un catch d'appel Meta : si c'est une erreur d'auth et qu'un WABA propre est en cause, l'invalide. */
   async onError(err: unknown, wabaId: string | null): Promise<void> {
     if (wabaId && isMetaAuthError(err)) await this.invalidate(wabaId);
   }

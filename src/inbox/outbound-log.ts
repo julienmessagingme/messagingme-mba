@@ -10,31 +10,22 @@ export interface OutboundLogger {
 }
 
 /**
- * Ce qu'on sait de l'envoi EN PLUS de son nom, et qui décide s'il sera chiffrable.
- *
- * 🔴 UN OBJET, PAS UN PARAMÈTRE POSITIONNEL DE PLUS. Cette fonction en avait déjà cinq. Le CLAUDE.md du
- * dépôt le dit : une flèche à deux paramètres reste assignable à un contrat qui en déclare trois, et le
- * troisième est avalé EN SILENCE. Un champ oublié dans un objet est visible du compilateur, un argument
- * oublié en position ne l'est pas.
+ * Ce qu'on sait de l'envoi en plus de son nom, et qui décide s'il sera chiffrable. Un objet plutôt qu'un
+ * paramètre positionnel de plus : un champ oublié se voit du compilateur, un argument oublié en position non.
  */
 export interface ContexteTemplateSortant {
   /**
-   * La catégorie Meta du template, EN MINUSCULES ('marketing' | 'utility'), comme la base la stocke déjà
-   * côté campagne.
-   *
-   * 🔴 SANS ELLE, L'ENVOI N'EST PAS CHIFFRABLE. `estimateCostSeries` (`src/stats/cost.ts`) ignore toute
-   * ligne sans catégorie : le volume remonte, le coût reste à zéro, et l'écran n'en dit rien. Vécu le
-   * 2026-09-07, où 22 envois de scénario du tenant Demo étaient invisibles du coût estimé.
-   *
-   * Reste FACULTATIVE : une lecture de template en échec ne doit jamais empêcher un envoi réussi d'être
-   * journalisé, et une catégorie INVENTÉE serait pire qu'absente (elle se facturerait au mauvais tarif).
+   * La catégorie Meta du template, en minuscules ('marketing' | 'utility'). 🔴 Sans elle, l'envoi n'est pas
+   * chiffrable : `estimateCostSeries` ignore toute ligne sans catégorie, et le coût reste à zéro sans le dire.
+   * Facultative : une lecture de template en échec ne doit pas empêcher de journaliser, et une catégorie
+   * inventée se facturerait au mauvais tarif.
    */
   templateCategory?: string | null;
 }
 
 /**
- * Journalise (BEST-EFFORT) un template envoyé par un workflow dans le fil de conversation. Extrait de la closure
- * du worker pour être testable. Un échec de log ne propage JAMAIS (ne doit pas casser l'envoi Meta réussi).
+ * Journalise (best-effort) un template envoyé par un scénario dans le fil de conversation. Un échec de journal
+ * ne se propage jamais : il ne doit pas casser l'envoi Meta réussi.
  */
 export async function logTemplateSent(
   inbox: OutboundLogger,

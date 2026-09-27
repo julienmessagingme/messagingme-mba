@@ -7,8 +7,8 @@ import { noopOnAnalyzed } from './events';
 import type { Enrichment } from './enrichment';
 
 /**
- * Événement self-contained poussé au connecteur mm-hubspot : l'analyse générique + l'identité/canal/fenêtre.
- * `eventId` = clé de dédup côté connecteur (une réanalyse -> analyzedAt différent -> eventId différent -> retraité).
+ * Événement autonome poussé au connecteur mm-hubspot : l'analyse plus l'identité, le canal et la fenêtre.
+ * `eventId` = clé de dédup côté connecteur (une réanalyse change analyzedAt, donc l'eventId).
  */
 export interface EnrichedAnalyzedEvent {
   eventId: string;
@@ -21,7 +21,7 @@ export interface EnrichedAnalyzedEvent {
   analysis: Omit<StoredConversationAnalysis, 'conversationId' | 'tenantId'>;
 }
 
-/** Assemble l'événement (fonction PURE -> testable). */
+/** Assemble l'événement (fonction pure). */
 export function buildEvent(stored: StoredConversationAnalysis, enr: Enrichment): EnrichedAnalyzedEvent {
   const { conversationId, tenantId, ...analysis } = stored;
   return {
@@ -36,7 +36,7 @@ export function buildEvent(stored: StoredConversationAnalysis, enr: Enrichment):
   };
 }
 
-/** Erreur d'appel au connecteur. `retryable` (429/5xx/réseau) -> withRetry rejoue ; 4xx -> terminal (rethrow -> DLQ pg-boss). */
+/** Erreur d'appel au connecteur. `retryable` (429, 5xx, réseau) : withRetry rejoue ; 4xx : terminal (DLQ pg-boss). */
 export class PushApiError extends Error {
   constructor(readonly status: number, readonly retryable: boolean) {
     super(`connector push HTTP ${status}`);
@@ -56,7 +56,7 @@ export async function postAnalysis(event: EnrichedAnalyzedEvent, deps: PostAnaly
   const path = new URL(deps.url).pathname;
   await withRetry(async () => {
     const raw = JSON.stringify(event);
-    // ts + nonce FRAIS par tentative : le backoff peut atteindre ~30 s, un ts figé sortirait de la fenêtre au 2e essai.
+    // ts et nonce frais par tentative : le backoff atteint ~30 s, un ts figé sortirait de la fenêtre au 2e essai.
     const sig = signRequest(deps.secret, { ts: Date.now(), nonce: randomBytes(8).toString('hex'), method: 'POST', path, body: raw });
     const res = await deps.transport.post(deps.url, event, { 'x-mma-signature': sig });
     if (res.status >= 200 && res.status < 300) return;
@@ -65,10 +65,9 @@ export async function postAnalysis(event: EnrichedAnalyzedEvent, deps: PostAnaly
 }
 
 /**
- * Fabrique le point de sortie `onAnalyzed`. Désactivé (`enabled=false`) -> no-op (INERTE : rien n'est enfilé).
- * Activé -> enfile un job `push-analysis` (durable, DLQ). BEST-EFFORT : un échec d'enqueue est loggé mais ne
- * REMONTE JAMAIS dans le job d'analyse (sinon pg-boss rejouerait l'analyse/le LLM). La durabilité du traitement
- * (enrichissement + POST) vit dans les retries du job push-analysis lui-même.
+ * Fabrique le point de sortie `onAnalyzed`. Désactivé : no-op, rien n'est enfilé. Activé : enfile un job
+ * `push-analysis` durable. Un échec d'enfilement est journalisé mais ne remonte jamais dans le job d'analyse, que
+ * pg-boss rejouerait (LLM compris).
  */
 export function makeOnAnalyzed(deps: {
   enabled: boolean;

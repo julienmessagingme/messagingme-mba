@@ -6,11 +6,9 @@ import { resolutionPublique, type VerdictResolution } from './adresse-privee';
 /**
  * Lecture d'une page publique depuis le serveur, et la garde qui la rend acceptable.
  *
- * 🔴 POURQUOI CE MODULE EXISTE. Deux surfaces demandent au serveur d'aller lire une adresse saisie par un
- * client : l'import de FAQ de l'agent Meta, et l'import de connaissance d'un agent IA. Le serveur tourne dans
- * le réseau Docker du VPS, à portée de l'admin NPM, des autres conteneurs et du service de métadonnées du
- * fournisseur. Une seconde copie de cette garde qui divergerait de celle-ci ouvrirait un lecteur de
- * l'intérieur du réseau (SSRF) au premier oubli.
+ * 🔴 Le serveur tourne dans le réseau Docker du VPS, à portée de l'admin NPM, des autres conteneurs et des
+ * métadonnées du fournisseur : toute lecture d'une adresse saisie par un client passe par ici, une seconde
+ * copie de la garde qui divergerait ouvrirait une SSRF.
  */
 
 /** Plafond de lecture d'une page distante. Au-delà on refuse plutôt que de charger le tas en mémoire. */
@@ -24,10 +22,8 @@ export interface PageDistante {
 }
 
 /**
- * URL sûre à récupérer depuis le serveur. Bloque les schémas non HTTP et les hôtes internes.
- *
- * ⚠️ Le contrôle porte sur le NOM D'HÔTE, pas sur l'IP finalement résolue : un domaine public qui pointe vers
- * une adresse privée passe. Le pare-feu reste la dernière barrière.
+ * URL sûre à récupérer depuis le serveur : bloque les schémas non HTTP et les hôtes internes. Elle ne lit que
+ * le texte de l'hôte ; ce vers quoi il résout est vérifié par `fetchUrlBorne`.
  */
 export function urlRecuperable(raw: string): boolean {
   if (!isSendableButtonUrl(raw)) return false;
@@ -43,17 +39,14 @@ export function urlRecuperable(raw: string): boolean {
 }
 
 /**
- * Récupération d'une page distante. Bornée : plafond de taille annoncé ET vérifié après lecture (un serveur
- * peut mentir sur `content-length`), et délai court, parce qu'un admin attend devant l'écran pendant ce temps.
+ * Récupération d'une page distante, bornée en taille et en délai (un admin attend devant l'écran).
  *
- * ⚠️ Les redirections sont suivies À LA MAIN et CHAQUE saut est revalidé. En `redirect: 'follow'`, une page
- * publique parfaitement légitime en apparence peut renvoyer un 302 vers `169.254.169.254` : le contrôle
- * d'origine, qui ne porte que sur l'URL saisie, serait alors contourné en une ligne de configuration côté
- * attaquant.
+ * Les redirections sont suivies à la main et chaque saut est revalidé : en `redirect: 'follow'`, une page
+ * publique pourrait renvoyer un 302 vers `169.254.169.254` et contourner le contrôle de l'URL saisie.
  */
 export function fetchUrlBorne(
   timeoutMs = 10_000,
-  /** Défaut : le `fetch` VÉRIFIÉ À LA CONNEXION (DNS rebinding), `connexion-publique.ts`. */
+  /** Défaut : le `fetch` vérifié à la connexion (DNS rebinding), `connexion-publique.ts`. */
   fetchImpl: typeof fetch = fetchPublic,
   /** Injectée pour tester sans DNS. Défaut : la vraie résolution. */
   verifierResolution: (url: string) => Promise<VerdictResolution> = resolutionPublique,
@@ -61,10 +54,8 @@ export function fetchUrlBorne(
   return async (url: string) => {
     let courante = url;
     for (let saut = 0; saut <= 3; saut += 1) {
-      // 🔴 OÙ CE NOM MÈNE-T-IL VRAIMENT ? `urlRecuperable` lit le TEXTE de l'hôte : elle ne peut rien contre
-      // un nom public dont l'enregistrement A pointe vers le réseau Docker ou vers les métadonnées du
-      // fournisseur. Vérifié à CHAQUE saut, pour la même raison que la revalidation d'origine juste en
-      // dessous : c'est la redirection qui porte le contournement, pas l'adresse saisie.
+      // `urlRecuperable` ne lit que le texte de l'hôte : un nom public peut résoudre vers le réseau Docker ou les
+      // métadonnées. La résolution est vérifiée à chaque saut, c'est la redirection qui porte le contournement.
       const resolution = await verifierResolution(courante);
       if (!resolution.ok) throw new Error(`hôte non autorisé (${resolution.raison ?? 'adresse interne'})`);
       const res = await fetchImpl(courante, {
@@ -72,8 +63,8 @@ export function fetchUrlBorne(
         signal: AbortSignal.timeout(timeoutMs),
         headers: { accept: 'text/html,application/json,text/csv;q=0.9,*/*;q=0.8' },
       }).catch((err: unknown) => {
-        // Refus À LA CONNEXION (le nom a résolu vers l'intérieur entre la vérification ci-dessus et l'appel) :
-        // le même refus que la vérification préalable, pas un « fetch failed » qui ferait chercher une panne.
+        // Refus à la connexion (le nom a résolu vers l'intérieur entre la vérification et l'appel) : même message que
+        // la vérification préalable, pas un « fetch failed » qui ferait chercher une panne.
         if (estRefusAdresseInterne(err)) throw new Error('hôte non autorisé (adresse interne)');
         throw err;
       });
@@ -87,14 +78,11 @@ export function fetchUrlBorne(
       }
       const annonce = Number(res.headers.get('content-length') ?? '0');
       if (annonce > MAX_PAGE_OCTETS) throw new Error('page trop lourde');
-      // ⚠️ Le plafond était vérifié APRÈS `res.text()`, donc une page de deux gigaoctets entrait entièrement
-      // en mémoire avant d'être jetée. La lecture est bornée EN FLUX : on coupe à l'octet qui dépasse. Le
-      // `content-length` reste vérifié au-dessus, il évite d'ouvrir le flux quand le serveur annonce la
-      // couleur, mais il ne peut pas servir de garde à lui seul : un serveur ment.
+      // Lecture bornée en flux, coupée à l'octet qui dépasse : le `content-length` ci-dessus évite d'ouvrir le flux
+      // quand le serveur annonce la couleur, mais un serveur peut mentir.
       const corps = await lireCorpsBorne(res, MAX_PAGE_OCTETS);
       if (corps.trop_gros) throw new Error('page trop lourde');
-      // Même raison que le plafond juste au-dessus : une page dont le flux a lâché n'est pas une page vide.
-      // L'importer en base de connaissance ferait entrer un document tronqué que personne ne saurait relire.
+      // Une page dont le flux a lâché n'est pas une page vide : l'importer ferait entrer un document tronqué.
       if (corps.casse) throw new Error('la lecture de la page a été interrompue');
       return { status: res.status, contentType: res.headers.get('content-type') ?? '', body: corps.texte };
     }

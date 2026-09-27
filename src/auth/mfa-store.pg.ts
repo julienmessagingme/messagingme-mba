@@ -4,19 +4,15 @@ import { encryptSecret, decryptSecret } from '../crypto/secretbox';
 import { estUuid } from '../http/scope';
 
 /**
- * LE SECOND FACTEUR D'UNE IDENTITÉ (migration 0182).
- *
- * 🔴 IL VIT SUR `identities`, PAS SUR `users` : c'est la personne qui a un téléphone, pas chacun de ses comptes.
- * Toutes les méthodes prennent donc une IDENTITÉ, sauf celles qui partent d'un compte parce que l'appelant n'a
- * qu'un compte en main (une session, une inscription, une invitation acceptée).
- *
- * Les secrets sortent d'ici EN CLAIR et y entrent en clair : le chiffrement (`ENCRYPTION_KEY`) est une affaire de
- * stockage, et le faire ici évite que les routes manipulent des textes chiffrés qu'elles ne sauraient pas lire.
+ * Le second facteur d'une identité. 🔴 Il vit sur `identities`, pas sur `users` : c'est la personne qui a un
+ * téléphone, pas chacun de ses comptes. Les méthodes prennent une identité, sauf celles qui partent du seul
+ * compte que l'appelant a en main. Les secrets entrent et sortent en clair : le chiffrement
+ * (`ENCRYPTION_KEY`) est une affaire de stockage, les routes ne manipulent pas de textes chiffrés.
  */
 export interface EtatMfa {
   identityId: string;
   email: string;
-  /** Le secret ACTIF, en base32. `null` = aucun facteur actif. */
+  /** Le secret actif, en base32. `null` = aucun facteur actif. */
   secret: string | null;
   activeLe: Date | null;
   /** Le dernier pas TOTP accepté (anti-rejeu). */
@@ -28,7 +24,7 @@ export interface EtatMfa {
   obligatoire: boolean;
 }
 
-/** `autres_espaces` : l'identité a un compte dans un AUTRE espace, un admin d'ici n'a pas à y toucher. */
+/** `autres_espaces` : l'identité a un compte dans un autre espace, un admin d'ici n'a pas à y toucher. */
 export type IssueReinitialisation = 'ok' | 'not_found' | 'autres_espaces';
 
 export interface MfaStore {
@@ -38,16 +34,16 @@ export interface MfaStore {
   /** Pose (écrase) le secret d'un enrôlement en cours. Ne touche pas un facteur actif. */
   poserSecretEnAttente(identityId: string, secret: string): Promise<void>;
   /**
-   * Active `secret` (celui dont le premier code vient d'être vérifié), retient son pas, et REMPLACE les codes de
-   * secours, en une transaction. `false` si un facteur était déjà actif : on ne remplace jamais un facteur actif
-   * par un enrôlement, sans quoi le jeton d'enrôlement deviendrait un moyen de le contourner.
+   * Active `secret` (dont le premier code vient d'être vérifié), retient son pas et remplace les codes de
+   * secours, en une transaction. 🔴 `false` si un facteur était déjà actif : un enrôlement ne remplace jamais
+   * un facteur actif, sinon le jeton d'enrôlement servirait à le contourner.
    */
   activer(identityId: string, secret: string, pas: number, empreintesCodes: string[]): Promise<boolean>;
-  /** Retient le pas accepté SI il est plus récent que le dernier. `false` = rejeu (ou course perdue). */
+  /** Retient le pas accepté s'il est plus récent que le dernier. `false` = rejeu (ou course perdue). */
   marquerPas(identityId: string, pas: number): Promise<boolean>;
-  /** Consomme un code de secours. `true` UNE seule fois par code, même sous deux présentations simultanées. */
+  /** Consomme un code de secours. `true` une seule fois par code, même sous deux présentations simultanées. */
   consommerCodeSecours(identityId: string, empreinte: string): Promise<boolean>;
-  /** Remplace les codes de secours d'un facteur ACTIF. `false` si aucun facteur n'est actif. */
+  /** Remplace les codes de secours d'un facteur actif. `false` si aucun facteur n'est actif. */
   remplacerCodesSecours(identityId: string, empreintesCodes: string[]): Promise<boolean>;
   /** Retire le facteur et les codes. */
   desactiver(identityId: string): Promise<void>;
@@ -55,7 +51,7 @@ export interface MfaStore {
   reinitialiserDansEspace(tenantId: string, userId: string): Promise<IssueReinitialisation>;
   /** Réinitialisation d'exploitation, par l'adresse. Rend l'identité, ou `null` si l'adresse est inconnue. */
   reinitialiserParEmail(email: string): Promise<string | null>;
-  /** Les comptes d'une identité, TOUT statut : le journal s'écrit dans chacun de ses espaces. */
+  /** Les comptes d'une identité, tout statut : le journal s'écrit dans chacun de ses espaces. */
   comptes(identityId: string): Promise<Array<{ userId: string; tenantId: string; email: string }>>;
 }
 
@@ -133,8 +129,8 @@ export class PgMfaStore implements MfaStore {
   }
 
   async marquerPas(identityId: string, pas: number): Promise<boolean> {
-    // 🔴 LA CONDITION EST DANS LE `where`, et c'est ce qui ferme la course : deux présentations simultanées du même
-    // code lisent le même `dernierPas`, passent toutes deux la vérification en mémoire, et une seule écrit ici.
+    // La condition est dans le `where` : deux présentations simultanées du même code lisent le même
+    // `dernierPas`, passent la vérification en mémoire, et une seule écrit ici.
     const res = await this.pool.query(
       `update identities set mfa_dernier_pas = $2
         where id = $1 and mfa_active_le is not null and (mfa_dernier_pas is null or mfa_dernier_pas < $2)`,
@@ -144,7 +140,7 @@ export class PgMfaStore implements MfaStore {
   }
 
   async consommerCodeSecours(identityId: string, empreinte: string): Promise<boolean> {
-    // UNE requête conditionnelle : c'est elle qui garantit qu'un code ne sert qu'une fois (voir `genererCodesSecours`).
+    // Une requête conditionnelle : c'est elle qui garantit qu'un code ne sert qu'une fois (voir `genererCodesSecours`).
     const res = await this.pool.query(
       `update mfa_codes_secours set utilise_le = now()
         where identity_id = $1 and code_hash = $2 and utilise_le is null

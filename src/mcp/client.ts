@@ -1,50 +1,32 @@
 import { lireCorpsBorne } from '../lib/corps-borne';
 import { fetchPublic, estRefusAdresseInterne, estRedirectionRefusee } from '../lib/connexion-publique';
 import { objetOuNull } from '../webhooks/json';
-// ⚠️ LES DEUX VIENNENT DU SERVEUR, ET C'EST DÉLIBÉRÉ : c'est le MÊME produit, qui parle la MÊME révision du
-// protocole des deux côtés. Les recopier ici créerait deux vérités, et le jour où l'une des deux bouge,
-// on parlerait une révision en serveur et une autre en client sans que rien ne le signale. L'alias dit
-// simplement qu'ici, cette identité est celle du CLIENT.
+// Version du protocole et identité viennent du serveur : c'est le même produit, qui doit parler la même révision
+// dans les deux sens. L'alias dit qu'ici, cette identité est celle du client.
 import { VERSION_PROTOCOLE, SERVEUR_INFO as IDENTITE_PRODUIT } from './serveur';
 
 /**
- * Le CLIENT MCP : Engage Me va chercher des outils chez un TIERS.
+ * Le client MCP : Engage Me va chercher des outils chez un tiers (`serveur.ts` fait l'inverse). Tout ce qui en
+ * sort est du tiers : chaque champ est vérifié avant d'être cru, jamais un `as` sur une réponse.
  *
- * 🔴 NE PAS CONFONDRE AVEC `serveur.ts`, QUI VA DANS L'AUTRE SENS. Celui-là expose nos outils à Claude ou
- * ChatGPT ; celui-ci nous rend consommateur d'un serveur que nous ne contrôlons pas. Tout ce qui en sort est
- * du tiers : chaque champ est vérifié avant d'être cru, jamais un `as` sur une réponse.
- *
- * 🔴 UN APPEL N'EST PAS UN POST ISOLÉ, et c'est le fait qui décide de la forme de ce module. La spec impose
- * `initialize` puis la notification `notifications/initialized` avant toute autre requête, et si le serveur
- * assigne un `Mcp-Session-Id`, il DOIT être porté par tout ce qui suit. D'où une session, ouverte pour une
- * opération et jetée après.
- *
- * ⚠️ ELLE N'EST JAMAIS MISE EN CACHE ENTRE DEUX OPÉRATIONS. L'API et le worker sont deux process, le
- * déploiement en lance d'autres, et un identifiant de session partagé entre deux process rend un 404 qu'il
- * faudrait rattraper. Le coût assumé est de deux allers-retours au premier appel d'un tour, dans un budget
- * qui est déjà de 8 secondes par outil.
- *
- * 🔴 ÉCRIT À LA MAIN, comme le serveur, et pour la même raison écrite là-bas : la surface dont on a besoin
- * tient en quatre méthodes, et une dépendance qu'on n'utilise qu'à 10 % est une dépendance qu'on subira à
- * 100 % le jour où elle changera de contrat.
+ * La spec impose `initialize` puis `notifications/initialized` avant toute requête, et un `Mcp-Session-Id` assigné
+ * doit être porté par la suite : d'où une session, ouverte pour une opération et jetée après. Jamais mise en cache
+ * entre deux opérations : l'API, le worker et un déploiement sont des process distincts, et un identifiant partagé
+ * rendrait un 404.
+ * Écrit à la main : la surface utile tient en quatre méthodes.
  */
 
 /** Ce qu'il faut pour joindre un serveur. `enTetes` porte l'authentification, construite par l'appelant. */
 export interface CibleMcp {
-  /** L'adresse du POINT MCP (l'endpoint unique), pas une racine sous laquelle on composerait un chemin. */
+  /** L'adresse du point MCP (l'endpoint unique), pas une racine sous laquelle on composerait un chemin. */
   url: string;
   enTetes: Record<string, string>;
-  /** Échéance d'UNE requête. */
+  /** Échéance d'une requête. */
   timeoutMs: number;
   /**
-   * Échéance de toute l'OPÉRATION, et elle est REQUISE.
-   *
-   * 🔴 SANS ELLE, `lister()` VAUT VINGT FOIS `timeoutMs`. L'échéance de `fetch` est par requête : un
-   * catalogue paginé sur vingt pages à huit secondes tiendrait la route d'import cent soixante secondes,
-   * bien au delà de ce qu'une passerelle laisse passer, et l'appelant n'aurait rien pour le borner.
-   *
-   * ⚠️ Elle n'a pas de défaut, délibérément : seul l'appelant sait son budget, et il n'est pas le même
-   * pour un tour d'agent en conversation et pour un import déclenché par un administrateur.
+   * Échéance de toute l'opération, requise : l'échéance de `fetch` est par requête, et un catalogue paginé sur
+   * vingt pages vaudrait vingt fois `timeoutMs`. Sans défaut : seul l'appelant connaît son budget (tour d'agent ou
+   * import).
    */
   budgetTotalMs: number;
   maxOctets: number;
@@ -56,20 +38,13 @@ export interface OutilAnnonce {
   title?: string;
   description?: string;
   /**
-   * 🔴 `unknown` ET PAS `Record<string, unknown>`, PARCE QUE C'EST UN TIERS QUI L'ÉCRIT. La spec le déclare
-   * requis et objet, mais un serveur reste libre de l'omettre ou d'envoyer une chaîne. Le typer en objet
-   * OBLIGEAIT `lireOutil` à substituer un objet vide, c'est-à-dire à transformer « je ne sais pas quels
-   * paramètres cet outil prend » en « cet outil n'en prend aucun » : l'outil paraissait alors activable,
-   * partait au modèle sans un seul paramètre, et appelait le serveur avec `{}` à chaque tour. La valeur
-   * voyage donc telle quelle jusqu'à `aplatirSchema`, seul endroit qui sache la refuser AVEC sa raison.
+   * `unknown` et non objet : un tiers l'écrit, et peut l'omettre ou envoyer une chaîne. Substituer un objet vide
+   * ferait passer « paramètres inconnus » pour « aucun paramètre », et l'outil partirait au modèle sans rien. La
+   * valeur voyage telle quelle jusqu'à `aplatirSchema`, seul à savoir la refuser avec sa raison.
    */
   inputSchema: unknown;
   outputSchema?: Record<string, unknown>;
-  /**
-   * ⚠️ NON FIABLES, LA SPEC LE DIT EXPRESSÉMENT : « clients MUST consider tool annotations to be untrusted
-   * unless they come from trusted servers ». Elles servent à PRÉ-REMPLIR ce qu'on propose au client, jamais
-   * à décider à sa place.
-   */
+  /** Non fiables, dit la spec : elles pré-remplissent ce qu'on propose au client, jamais ne décident à sa place. */
   annotations?: Record<string, unknown>;
 }
 
@@ -78,21 +53,15 @@ export type EchecMcp =
   | { genre: 'transport_ancien' }
   | { genre: 'reseau'; message: string }
   /**
-   * 🔴 LE NOM A RÉSOLU VERS L'INTÉRIEUR AU MOMENT DE LA CONNEXION (le « DNS rebinding » que `fetchPublic`
-   * ferme). Son genre à lui, pas `reseau` : la vérification préalable dit « adresse non publique », la
-   * connexion doit dire la même chose, sinon le client cherche une panne de son serveur qui n'existe pas.
+   * Le nom a résolu vers l'intérieur à la connexion (DNS rebinding, fermé par `fetchPublic`). Son propre genre : la
+   * connexion doit dire « adresse non publique » comme la vérification préalable, pas une panne réseau.
    */
   | { genre: 'adresse_interne' }
-  /** Le serveur a répondu par une redirection, que `redirect: 'error'` refuse de suivre. Ni une panne réseau, ni
-   *  une réponse illisible : le dire autrement enverrait chercher du mauvais côté. */
+  /** Le serveur a répondu par une redirection, que `redirect: 'error'` refuse de suivre. */
   | { genre: 'redirection' }
-  /** Réponse illisible, corps trop gros, flux cassé : ce qui n'est ni un refus ni une panne réseau. */
-  /**
-   * 🔴 NOTRE ÉCHÉANCE, PAS UNE FAUTE DU SERVEUR, et c'est pour ça qu'il a son genre à lui. Rangé sous
-   * `protocole`, il ressortait au client en « le serveur MCP a répondu quelque chose d'illisible » :
-   * on accusait un tiers de notre propre minuterie, et le client allait chercher une panne chez lui.
-   */
+  /** Notre échéance, pas une faute du serveur : sous `protocole`, on accuserait le tiers de notre minuterie. */
   | { genre: 'budget' }
+  /** Réponse illisible, corps trop gros, flux cassé : ce qui n'est ni un refus ni une panne réseau. */
   | { genre: 'protocole'; message: string }
   | { genre: 'refus'; code: number; message: string };
 
@@ -100,19 +69,12 @@ export type ResultatAppel = { texte: string; estErreur: boolean } | { echec: Ech
 
 export interface SessionMcp {
   /**
-   * Toutes les pages suivies. `tronque` dit qu'on a buté sur une borne, et il doit remonter à l'écran.
+   * Toutes les pages suivies. `tronque` dit qu'on a buté sur une borne, et doit remonter à l'écran.
    *
-   * 🔴 UNE PAGE QUI ÉCHOUE REND UN ÉCHEC, JAMAIS LA LISTE PARTIELLE, et c'est ce qui rend l'import sûr.
-   * Un appelant qui recevrait les outils de la page 1 après un échec en page 2 les prendrait pour le
-   * catalogue ENTIER : le rafraîchissement marquerait alors « disparus » tous les outils de la page 2 et
-   * ferait tomber leur consentement. Une panne réseau d'une seconde débrancherait la moitié des outils
-   * d'un client, sans que rien ne le dise.
-   *
-   * 🔴 ET `tronque: true` PORTE EXACTEMENT LE MÊME DANGER PAR L'AUTRE PORTE. La liste est alors RÉELLEMENT
-   * partielle, légitimement (le serveur annonce plus d'outils que nos bornes), mais elle reste partielle :
-   * **un appelant qui supprime ou marque « disparu » ce qui n'y figure pas se trompe de la même façon.**
-   * Le contrat est donc : sur `tronque`, on AJOUTE et on MET À JOUR, on ne RETIRE jamais. Ce n'est pas une
-   * recommandation, c'est la seule lecture correcte de ce drapeau, et un test de l'import la tient.
+   * 🔴 Une page qui échoue rend un échec, jamais la liste partielle : prise pour le catalogue entier, elle ferait
+   * marquer « disparus » les autres outils et tomber leur consentement.
+   * `tronque: true` porte le même danger : sur `tronque`, on ajoute et on met à jour, on ne retire jamais (tenu par
+   * un test de l'import).
    */
   lister(): Promise<{ outils: OutilAnnonce[]; tronque: boolean } | { echec: EchecMcp }>;
   appeler(nom: string, args: Record<string, unknown>): Promise<ResultatAppel>;
@@ -120,21 +82,13 @@ export interface SessionMcp {
 }
 
 /**
- * Bornes de la pagination.
- *
- * 🔴 ELLES EXISTENT PARCE QU'UN CURSEUR VIENT DU TIERS : un serveur qui rend toujours un `nextCursor` nous
- * ferait boucler jusqu'au bout du budget. Les atteindre pose `tronque`, et l'écran le dit. Un plafond
- * silencieux se lit comme une couverture complète.
+ * Bornes de la pagination : un curseur vient du tiers, et un `nextCursor` perpétuel nous ferait boucler. Les
+ * atteindre pose `tronque`, que l'écran dit ; un plafond silencieux se lirait comme une couverture complète.
  */
 const MAX_PAGES = 20;
 const MAX_OUTILS = 500;
 
-/**
- * Les en-têtes que la configuration d'un client ne peut pas poser.
- *
- * ⚠️ Ce ne sont pas des interdits de politesse : chacun porte une décision de PROTOCOLE, et un client qui
- * en écraserait un casserait la connexion sans qu'aucune erreur ne le nomme.
- */
+/** Les en-têtes que la configuration d'un client ne peut pas poser : chacun porte une décision de protocole. */
 const RESERVES = ['content-type', 'accept', 'mcp-protocol-version', 'mcp-session-id'] as const;
 
 /** Ce qu'un bloc de contenu non textuel devient dans le texte rendu au modèle. */
@@ -149,14 +103,9 @@ const MENTION: Record<string, string> = {
 /**
  * Lit une réponse et en extrait le message JSON-RPC portant `id`.
  *
- * 🔴 DEUX TYPES DE CORPS, ET LE CLIENT DOIT SAVOIR LIRE LES DEUX : la spec autorise le serveur à répondre
- * `application/json` OU `text/event-stream` à un POST, au choix. Un client qui ne sait lire que du JSON
- * tombe donc en marche sur une moitié des serveurs conformes, sans que rien ne l'explique.
- *
- * ⚠️ LE FLUX EST LU JUSQU'AU MESSAGE ATTENDU, PAS JUSQU'À LA FIN. Le serveur a le droit d'envoyer des
- * notifications avant la réponse, et il n'est que SUPPOSÉ fermer le flux après. Lire jusqu'à la fermeture
- * ferait donc attendre l'échéance entière à un serveur qui tient son flux ouvert, et transformerait une
- * réponse reçue en délai dépassé.
+ * La spec laisse le serveur répondre `application/json` ou `text/event-stream` à un POST : il faut lire les deux.
+ * Le flux est lu jusqu'au message attendu, pas jusqu'à la fin : le serveur n'est que supposé le fermer, et
+ * attendre la fermeture transformerait une réponse reçue en délai dépassé.
  */
 async function lireReponse(
   res: Response,
@@ -168,15 +117,12 @@ async function lireReponse(
   if (!type.startsWith('text/event-stream')) {
     const corps = await lireCorpsBorne(res, maxOctets);
     if (corps.trop_gros) return { echec: { genre: 'protocole', message: 'réponse trop grosse' } };
-    // Un flux coupé n'est pas un corps vide : sans cette distinction, on annoncerait un succès sur une
-    // lecture ratée (c'est la raison d'être du drapeau `casse`).
+    // Un flux coupé n'est pas un corps vide : sans `casse`, on annoncerait un succès sur une lecture ratée.
     if (corps.casse) return { echec: { genre: 'protocole', message: 'la réponse a été coupée en cours de lecture' } };
     try {
       const m = objetOuNull(JSON.parse(corps.texte));
       if (m === null) return { echec: { genre: 'protocole', message: 'réponse JSON-RPC attendue' } };
-      // ⚠️ L'IDENTIFIANT SE VÉRIFIE ICI AUSSI. Le chemin en flux le fait déjà, parce qu'il doit choisir
-      // parmi plusieurs messages ; celui-ci ne le faisait pas, et l'asymétrie n'avait aucune raison d'être.
-      // Un serveur qui répond à côté rendrait alors un résultat qu'on prendrait pour le nôtre.
+      // L'identifiant se vérifie aussi ici : un serveur qui répond à côté rendrait un résultat pris pour le nôtre.
       if (m.id !== id) {
         return { echec: { genre: 'protocole', message: 'la réponse ne correspond pas à la requête envoyée' } };
       }
@@ -206,8 +152,7 @@ async function lireReponse(
       }
       tampon += decodeur.decode(value, { stream: true });
 
-      // Les événements sont séparés par une ligne vide. On ne traite que les complets ; un événement à
-      // cheval sur deux morceaux reste dans le tampon.
+      // Les événements sont séparés par une ligne vide ; un événement à cheval sur deux morceaux reste au tampon.
       for (;;) {
         const separateur = /\r?\n\r?\n/.exec(tampon);
         if (separateur === null) break;
@@ -221,8 +166,7 @@ async function lireReponse(
         if (donnees !== '') {
           try {
             const m = objetOuNull(JSON.parse(donnees));
-            // On s'arrête au message qui répond À NOTRE requête : tout ce qui précède est une notification
-            // ou une requête du serveur, dont un consommateur d'outils n'a rien à faire.
+            // On s'arrête au message qui répond à notre requête : le reste est notification ou requête du serveur.
             if (m && m.id === id) {
               await lecteur.cancel().catch(() => {});
               return m;
@@ -239,7 +183,7 @@ async function lireReponse(
   return { echec: { genre: 'protocole', message: 'le flux s’est terminé sans porter la réponse attendue' } };
 }
 
-/** L'échec d'un appel qui a LEVÉ : un refus d'adresse à la connexion, ou une vraie panne réseau. */
+/** L'échec d'un appel qui a levé : un refus d'adresse à la connexion, ou une vraie panne réseau. */
 function echecReseau(err: unknown): EchecMcp {
   if (estRefusAdresseInterne(err)) return { genre: 'adresse_interne' };
   if (estRedirectionRefusee(err)) return { genre: 'redirection' };
@@ -251,7 +195,7 @@ export function ouvrirSessionMcp(
   /** `now` est injectée pour que le budget soit reproductible en test, comme ailleurs dans ce dépôt. */
   opts: { fetchImpl?: typeof fetch; now?: () => number } = {},
 ): Promise<SessionMcp | { echec: EchecMcp }> {
-  // Défaut : le `fetch` VÉRIFIÉ À LA CONNEXION (DNS rebinding), `src/lib/connexion-publique.ts`.
+  // Défaut : le fetch vérifié à la connexion (DNS rebinding), `src/lib/connexion-publique.ts`.
   return ouvrir(cible, opts.fetchImpl ?? fetchPublic, opts.now ?? (() => Date.now()));
 }
 
@@ -263,18 +207,13 @@ async function ouvrir(
   let prochainId = 1;
   let sessionId: string | null = null;
   let version = VERSION_PROTOCOLE;
-  // L'échéance de l'OPÉRATION ENTIÈRE, posée une fois : l'initialisation, la pagination et les appels
-  // puisent dedans. C'est elle qui empêche vingt pages de valoir vingt fois l'échéance d'une requête.
+  // L'échéance de l'opération entière, posée une fois : initialisation, pagination et appels puisent dedans.
   const finAbsolue = maintenant() + cible.budgetTotalMs;
 
   /**
    * Les en-têtes d'une requête. `apresInit` ajoute ce que la spec n'autorise qu'ensuite.
-   *
-   * 🔴 LES EN-TÊTES DE PROTOCOLE SONT POSÉS EN DERNIER, ET L'ORDRE EST LA GARDE. Ceux de l'appelant
-   * viennent de la configuration du CLIENT (`auth_header_name` est un texte qu'il saisit) : étalés en
-   * dernier, ils écraseraient `Accept`, et nous deviendrions incapables de lire une réponse en flux sans
-   * qu'aucune erreur ne le dise. Leurs clés sont mises en minuscules avant d'être posées, sinon un
-   * `Accept` majuscule ne collisionnerait avec rien dans l'objet et partirait EN DOUBLE.
+   * Les en-têtes de protocole sont posés en dernier, et l'ordre est la garde : ceux du client (saisis par lui)
+   * écraseraient `Accept`. Leurs clés passent en minuscules, sinon un `Accept` majuscule partirait en double.
    */
   function enTetes(apresInit: boolean): Record<string, string> {
     const duClient: Record<string, string> = {};
@@ -283,13 +222,10 @@ async function ouvrir(
     return {
       ...duClient,
       'content-type': 'application/json',
-      // 🔴 LES DEUX, TOUJOURS. La spec l'impose (« MUST include an Accept header, listing both »), et c'est
-      // ce qui autorise le serveur à répondre en flux : ne pas l'annoncer ferait échouer des serveurs
-      // parfaitement conformes.
+      // Les deux, toujours : la spec l'impose, et c'est ce qui autorise le serveur à répondre en flux.
       accept: 'application/json, text/event-stream',
       ...(apresInit ? { 'mcp-protocol-version': version } : {}),
-      // Jamais d'en-tête vide : un serveur qui exige une session répondrait 400 à un identifiant vide,
-      // et notre propre serveur, sans état, n'en assigne aucun.
+      // Jamais d'en-tête vide : un serveur qui exige une session répondrait 400.
       ...(apresInit && sessionId !== null ? { 'mcp-session-id': sessionId } : {}),
     };
   }
@@ -310,25 +246,23 @@ async function ouvrir(
         method: 'POST',
         headers: enTetes(apresInit),
         body: JSON.stringify({ jsonrpc: '2.0', id, method: methode, ...(params ? { params } : {}) }),
-        // Le plus court des deux : l'échéance de CETTE requête, et ce qui reste du budget de l'opération.
+        // Le plus court des deux : l'échéance de cette requête, et ce qui reste du budget de l'opération.
         signal: AbortSignal.timeout(Math.min(cible.timeoutMs, restant)),
-        // Une API qui redirige est une anomalie, et la suivre rouvrirait la porte que la garde d'adresse
-        // vient de fermer : le premier saut est validé, le second ne l'est plus.
+        // Suivre une redirection rouvrirait la porte que la garde d'adresse vient de fermer.
         redirect: 'error',
       });
     } catch (err) {
       return { echec: echecReseau(err) };
     }
     if (!res.ok) {
-      // Le corps d'une réponse qu'on n'exploite pas se JETTE explicitement : sans ça, la connexion reste
-      // retenue jusqu'au ramasse-miettes, et un import qui enchaîne vingt pages en laisse vingt derrière lui.
+      // Corps jeté explicitement, sinon la connexion reste retenue jusqu'au ramasse-miettes.
       await res.body?.cancel().catch(() => {});
       return { echec: { genre: 'refus', code: res.status, message: `le serveur a répondu ${res.status}` } };
     }
     return lireReponse(res, id, cible.maxOctets);
   }
 
-  /** Une NOTIFICATION : pas d'identifiant, donc pas de réponse. Le serveur doit rendre 202 sans corps. */
+  /** Une notification : pas d'identifiant, donc pas de réponse. Le serveur doit rendre 202 sans corps. */
   async function notifier(methode: string): Promise<void> {
     try {
       const res = await appeler(cible.url, {
@@ -338,8 +272,7 @@ async function ouvrir(
         signal: AbortSignal.timeout(cible.timeoutMs),
         redirect: 'error',
       });
-      // La réponse attendue est un 202 SANS corps, mais un serveur peut en mettre un. On le jette, sinon
-      // la connexion reste retenue pour une réponse qu'on n'a par définition pas à lire.
+      // Un corps éventuel est jeté, sinon la connexion reste retenue.
       await res.body?.cancel().catch(() => {});
     } catch { /* une notification perdue n'empêche pas la suite : le serveur n'y répond rien */ }
   }
@@ -370,12 +303,8 @@ async function ouvrir(
 
   if (!premiereReponse.ok) {
     await premiereReponse.body?.cancel().catch(() => {});
-    // 🔴 405 ET 404 SONT LA SIGNATURE DE L'ANCIEN TRANSPORT, et la spec la décrit telle quelle : un serveur
-    // resté en 2024-11-05 n'accepte pas de POST sur son endpoint, il attend un GET qui ouvre un flux. On le
-    // NOMME plutôt que d'échouer en silence ou de basculer sur un transport qu'on a choisi de ne pas parler.
-    //
-    // ⚠️ MAIS PAS TOUTE ERREUR 4xx : un 401 est un jeton refusé. Les confondre enverrait le client corriger
-    // son adresse alors que c'est son secret qui est en cause.
+    // 405 et 404 sont la signature de l'ancien transport (2024-11-05, qui attend un GET ouvrant un flux) : on le
+    // nomme. Pas les autres 4xx : un 401 est un jeton refusé, pas une adresse à corriger.
     if (premiereReponse.status === 405 || premiereReponse.status === 404) {
       return { echec: { genre: 'transport_ancien' } };
     }
@@ -395,8 +324,7 @@ async function ouvrir(
   const resultat = objetOuNull(init.result);
   if (resultat === null) return { echec: { genre: 'protocole', message: 'initialisation sans résultat' } };
   if (typeof resultat.protocolVersion === 'string' && resultat.protocolVersion !== '') {
-    // On ÉCHO la version que le serveur a retenue : c'est ce que la négociation demande, et c'est elle
-    // qui doit voyager dans l'en-tête de toutes les requêtes suivantes.
+    // On reprend la version retenue par le serveur : elle voyage dans l'en-tête des requêtes suivantes.
     version = resultat.protocolVersion;
   }
   const assigne = premiereReponse.headers.get('mcp-session-id');
@@ -412,8 +340,7 @@ async function ouvrir(
       let tronque = false;
       for (let page = 0; page < MAX_PAGES; page += 1) {
         const rep = await envoyer('tools/list', curseur === undefined ? {} : { cursor: curseur }, true);
-        // 🔴 ON PROPAGE, ON NE REND PAS CE QU'ON A. Rendre une liste partielle ferait prendre la page 1
-        // pour le catalogue entier, et le rafraîchissement déclarerait « disparu » tout le reste.
+        // On propage, on ne rend pas ce qu'on a : une page 1 seule serait prise pour le catalogue entier.
         if ('echec' in rep) return rep as { echec: EchecMcp };
         const err = objetOuNull(rep.error);
         if (err !== null) return refusRpc(err, 'liste refusée');
@@ -421,8 +348,7 @@ async function ouvrir(
         if (r === null) return { echec: { genre: 'protocole', message: 'tools/list sans résultat' } };
         for (const brut of Array.isArray(r.tools) ? r.tools : []) {
           const o = lireOutil(brut);
-          // Une entrée illisible est ÉCARTÉE, jamais fatale : le catalogue vient d'un tiers, et perdre les
-          // quinze outils valides à cause d'un seizième mal formé serait le pire des comportements.
+          // Une entrée illisible est écartée, jamais fatale : un outil mal formé ne coûte pas les autres.
           if (o !== null) outils.push(o);
           if (outils.length >= MAX_OUTILS) { tronque = true; break; }
         }
@@ -446,7 +372,7 @@ async function ouvrir(
 
     async fermer() {
       if (sessionId === null) return;
-      // Le serveur a le droit de refuser (405) : on n'a rien à en faire, la session expirera d'elle-même.
+      // Le serveur a le droit de refuser (405) : la session expirera d'elle-même.
       try {
         await appeler(cible.url, {
           method: 'DELETE',
@@ -468,10 +394,8 @@ function lireOutil(brut: unknown): OutilAnnonce | null {
     name: o.name,
     ...(typeof o.title === 'string' ? { title: o.title } : {}),
     ...(typeof o.description === 'string' ? { description: o.description } : {}),
-    // 🔴 AUCUNE SUBSTITUTION ICI, et c'est tout l'intérêt de la ligne. Un `inputSchema` absent ou illisible
-    // passe TEL QUEL : `aplatirSchema` est le seul à savoir le refuser, et sa raison est celle qu'on
-    // affichera au client. Un objet vide posé ici rendait ce refus inatteignable sur le chemin réel, alors
-    // que six tests l'exerçaient sur la fonction pure.
+    // Aucune substitution : un `inputSchema` absent ou illisible passe tel quel, `aplatirSchema` le refusera avec
+    // la raison affichée au client.
     inputSchema: o.inputSchema,
     ...(objetOuNull(o.outputSchema) !== null ? { outputSchema: objetOuNull(o.outputSchema)! } : {}),
     ...(objetOuNull(o.annotations) !== null ? { annotations: objetOuNull(o.annotations)! } : {}),
@@ -479,12 +403,8 @@ function lireOutil(brut: unknown): OutilAnnonce | null {
 }
 
 /**
- * Le texte d'un résultat d'outil.
- *
- * ⚠️ UN BLOC NON TEXTUEL DEVIENT UNE MENTION, il ne disparaît pas. Le jeter rendrait un texte qui paraît
- * complet alors qu'il manque la moitié de la réponse, et le modèle répondrait au contact sur cette base.
- * La spec prévoit par ailleurs qu'un outil rendant du contenu structuré en rende AUSSI la forme sérialisée
- * dans un bloc texte, donc le texte porte l'essentiel dans le cas général.
+ * Le texte d'un résultat d'outil. Un bloc non textuel devient une mention, il ne disparaît pas : un texte qui paraît
+ * complet mais amputé ferait répondre le modèle sur une base fausse.
  */
 function texteDeContenu(contenu: unknown): string {
   if (!Array.isArray(contenu)) return '';
@@ -498,7 +418,7 @@ function texteDeContenu(contenu: unknown): string {
   return morceaux.join('\n');
 }
 
-/** Le REFUS d'un serveur MCP (une erreur JSON-RPC), avec son code et son message, ou le message par défaut. */
+/** Le refus d'un serveur MCP (une erreur JSON-RPC), avec son code et son message, ou le message par défaut. */
 function refusRpc(e: Record<string, unknown>, parDefaut: string): { echec: EchecMcp } {
   return { echec: { genre: 'refus', code: typeof e.code === 'number' ? e.code : 0, message: String(e.message ?? parDefaut) } };
 }

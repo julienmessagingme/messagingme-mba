@@ -13,9 +13,9 @@ export class MediaUploadError extends Error {
 }
 
 /**
- * Upload d'image via la Resumable Upload API (2 appels), pour obtenir un `header_handle` de carte
- * carousel. Vérifié live : start `POST /{appId}/uploads?file_length&file_type` -> {id} ; puis
- * `POST /{session}` (Authorization: OAuth, file_offset:0, body=bytes) -> {h}. `fetchImpl` injectable.
+ * Upload d'image via la Resumable Upload API, pour obtenir le `header_handle` d'une carte de carousel :
+ * `POST /{appId}/uploads?file_length&file_type` -> {id}, puis `POST /{session}` (Authorization: OAuth,
+ * file_offset: 0, corps = octets) -> {h}.
  */
 export class MetaMediaClient {
   constructor(
@@ -27,17 +27,10 @@ export class MetaMediaClient {
   ) {}
 
   /**
-   * Téléverse des octets sur le NUMÉRO d'envoi et rend un `media id` utilisable comme paramètre d'envoi
-   * (`image: { id }`). Endpoint DIFFÉRENT de `uploadImage` : celui-ci sert à la CRÉATION de template (handle
-   * de resumable upload), celui-là à l'ENVOI.
-   *
-   * Pourquoi c'est nécessaire, mesuré en live le 2026-08-15 : les URL d'image que Meta renvoie pour les cartes
-   * d'un carousel (`example.header_handle[0]`) sont publiquement téléchargeables depuis n'importe où SAUF
-   * depuis le téléchargeur de Meta lui-même, qui reçoit un 403 de son propre CDN. L'envoi est alors ACCEPTÉ
-   * (200 + id de message) puis échoue en asynchrone, 2 s plus tard, en `131053 Media upload error`. Re-téléverser
-   * l'image et envoyer son `id` est la seule voie qui se LIVRE réellement (vérifié : statut `delivered`).
-   *
-   * `retries` : un upload sur dix échoue en `131000 Something went wrong` (transitoire, vu en sonde).
+   * Téléverse des octets sur le numéro d'envoi et rend un `media id` pour l'envoi (`image: { id }`), là où
+   * `uploadImage` sert à la création de template. Les URL d'image que Meta rend pour les cartes sont refusées
+   * (403) par son propre téléchargeur : l'envoi est accepté puis échoue en `131053`. Seul l'envoi par `id` se livre.
+   * `retries` : environ un upload sur dix échoue en `131000`, transitoire.
    */
   async uploadForSend(phoneNumberId: string, bytes: Buffer, mime: string, retries = 3): Promise<string> {
     let dernier: unknown = null;
@@ -80,36 +73,25 @@ export class MetaMediaClient {
   }
 
   /**
-   * TÉLÉCHARGE un média entrant, en DEUX appels (2026-09-09).
+   * Télécharge un média entrant, en deux appels. `GET /{media-id}` rend une URL à durée de vie courte, à chercher
+   * avec le jeton : elle ne se met pas en cache et ne se donne pas au front (401 intermittents). L'identifiant, lui,
+   * reste valable tant que Meta garde le fichier (`DUREE_MEDIA_RECU_JOURS`).
    *
-   * 🔴 POURQUOI DEUX, ET POURQUOI ON NE PEUT PAS MÉMORISER LE RÉSULTAT DU PREMIER. Meta ne donne pas d'URL
-   * stable : `GET /{media-id}` rend une URL de téléchargement à DURÉE DE VIE COURTE (quelques minutes), qu'il
-   * faut ensuite chercher AVEC le jeton, ce qu'aucun navigateur ne fera pour nous. Mettre cette URL en cache
-   * ou la donner au front produirait des 401 quelques minutes plus tard, de façon intermittente, donc
-   * difficile à relier à sa cause. L'identifiant, lui, reste valable tant que Meta garde le fichier : SEPT jours
-   * pour un média reçu, et non trente comme ce commentaire l'a dit (`DUREE_MEDIA_RECU_JOURS`, mesuré le 2026-09-19).
-   *
-   * ⚠️ LE SECOND APPEL PORTE LE JETON LUI AUSSI. L'URL rendue est sur `lookaside.fb.com` et ne s'ouvre pas
-   * sans en-tête d'autorisation : la tester dans un navigateur donne un 403 et fait croire à une URL morte.
-   *
-   * ⚠️ PLAFOND DE TAILLE OBLIGATOIRE. Un vocal WhatsApp monte à 16 Mo, et ce corps entre en MÉMOIRE avant
-   * d'être transcrit (l'API de transcription veut du base64, qui pèse un tiers de plus). Sans borne, un
-   * fichier inattendu ferait grossir le processus au lieu d'échouer proprement : on refuse au-delà, en le
-   * disant.
+   * Le second appel porte aussi le jeton : sans en-tête, l'URL (`lookaside.fb.com`) rend 403.
+   * Plafond de taille obligatoire : le corps entre en mémoire avant transcription, donc on refuse au-delà.
    */
   async telechargerEntrant(mediaId: string, tailleMaxOctets: number): Promise<{ bytes: Buffer; mime: string | null }> {
     const mj = (await appelGraph(this.fetchImpl, this.token, `${this.baseUrl}/${this.version}/${encodeURIComponent(mediaId)}`)) as
       { url?: string; mime_type?: string; file_size?: number } | null;
     if (!mj?.url) throw new MediaUploadError('media sans url de telechargement');
-    // La taille annoncée AVANT de télécharger : refuser ici évite de tirer 16 Mo pour les jeter ensuite.
+    // La taille annoncée, avant de télécharger : refuser ici évite de tirer 16 Mo pour les jeter ensuite.
     if (typeof mj.file_size === 'number' && mj.file_size > tailleMaxOctets) {
       throw new MediaTropGros(mj.file_size, tailleMaxOctets);
     }
     const bin = await this.fetchImpl(mj.url, { headers: { authorization: `Bearer ${this.token}` } });
     if (!bin.ok) throw new MetaApiError(bin.status, null);
     const buf = Buffer.from(await bin.arrayBuffer());
-    // Second contrôle sur ce qui est RÉELLEMENT arrivé : `file_size` peut manquer, et un en-tête ne fait pas
-    // un fichier. Sans ce test, l'absence du champ suffirait à contourner le plafond.
+    // Second contrôle sur ce qui est réellement arrivé : sans lui, un `file_size` absent contournerait le plafond.
     if (buf.byteLength > tailleMaxOctets) throw new MediaTropGros(buf.byteLength, tailleMaxOctets);
     return { bytes: buf, mime: mj.mime_type ?? null };
   }

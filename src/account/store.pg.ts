@@ -6,7 +6,7 @@ import type { PhoneNumberRecord, HubspotPortalLink } from './types';
 export class PgPhoneStatusStore {
   constructor(private readonly pool: Pool) {}
 
-  /** Numéro principal du tenant avec son statut persisté. null si aucun numéro. */
+  /** Numéro principal de l'espace avec son statut persisté. null si aucun numéro. */
   async getPhoneNumber(tenantId: string): Promise<PhoneNumberRecord | null> {
     const res = await this.pool.query<{
       id: string; display_phone_number: string | null; status: string | null; quality_rating: string | null; messaging_limit_tier: string | null;
@@ -48,10 +48,9 @@ export class PgPhoneStatusStore {
   }
 
   /**
-   * Persiste un statut fraîchement pull. `coalesce($n, col)` : un champ absent du pull (undefined -> null)
-   * NE remplace PAS la valeur connue en base. Note : `quality_rating` porte un CHECK
-   * (GREEN/YELLOW/RED/UNKNOWN) ; l'appelant ne passe qu'une valeur normalisée à cet ensemble.
-   * `hubspot_connected` N'EST PAS touché ici : c'est un réglage humain (toggle), pas un champ de pull Meta.
+   * Persiste un statut fraîchement relevé. `coalesce($n, col)` : un champ absent du pull ne remplace pas la valeur
+   * connue. `quality_rating` porte un CHECK : l'appelant n'y passe qu'une valeur normalisée. `hubspot_connected`
+   * n'est pas touché : c'est un réglage humain.
    */
   async saveStatus(
     phoneNumberId: string,
@@ -100,8 +99,8 @@ export class PgPhoneStatusStore {
   }
 
   /**
-   * Active/coupe la synchro HubSpot d'UN numéro (toggle admin). Scopé au tenant (un admin ne peut pas
-   * flipper le numéro d'un autre client, même en forgeant l'id). Renvoie true si une ligne a été mise à jour.
+   * Active ou coupe la synchro HubSpot d'un numéro. 🔴 Filtré sur l'espace : un admin ne peut pas basculer le numéro
+   * d'un autre client en forgeant l'id.
    */
   async setHubspotConnected(
     phoneNumberId: string,
@@ -109,12 +108,11 @@ export class PgPhoneStatusStore {
     connected: boolean,
   ): Promise<{ updated: boolean; resumedFrom: string | null }> {
     return enTransaction(this.pool, async (client) => {
-      // Verrou consultatif PAR TENANT (relâché en fin de transaction) : sérialise tous les toggles HubSpot d'un même
-      // tenant, y compris sur des numéros DIFFÉRENTS. Sans lui, deux toggles simultanés sur deux numéros du tenant
-      // calculeraient chacun l'agrégat campaigns_paused ci-dessous avant de voir le commit de l'autre -> valeur figée
-      // fausse entre deux commits. Ordre de prise TOUJOURS lock tenant PUIS FOR UPDATE ligne -> pas de deadlock.
+      // Verrou consultatif par espace : sérialise les bascules d'un même espace, même sur des numéros différents,
+      // sinon l'agrégat `campaigns_paused` serait calculé sur un état périmé. Toujours verrou d'espace puis FOR
+      // UPDATE ligne : pas d'interblocage.
       await client.query('select pg_advisory_xact_lock(hashtext($1))', [tenantId]);
-      // FOR UPDATE : sérialise deux clics/onglets admin concurrents sur le même numéro (pas de course pause/resume).
+      // FOR UPDATE : sérialise deux clics concurrents sur le même numéro.
       const cur = await client.query<{ hubspot_connected: boolean; hubspot_paused_at: string | null }>(
         `select hubspot_connected, hubspot_paused_at::text as hubspot_paused_at
          from phone_numbers where id = $1 and tenant_id = $2 for update`,
@@ -122,8 +120,8 @@ export class PgPhoneStatusStore {
       );
       const row = cur.rows[0];
       if (!row) return { updated: false, resumedFrom: null };
-      const startingPause = !connected && row.hubspot_connected; // transition ACTIF -> OFF : c'est le DÉBUT d'une pause
-      // resumedFrom : l'instant de pause capturé AVANT écrasement, non-null seulement si on REPREND depuis une pause.
+      const startingPause = !connected && row.hubspot_connected; // passage d'actif à coupé : début d'une pause
+      // resumedFrom : l'instant de pause lu avant écrasement, non nul seulement si on reprend depuis une pause.
       const resumedFrom = connected ? row.hubspot_paused_at : null;
       await client.query(
         `update phone_numbers set hubspot_connected = $3,
@@ -137,13 +135,9 @@ export class PgPhoneStatusStore {
   }
 
   /**
-   * Déconnexion complète HubSpot pour un tenant (candidat 2), reflet LOCAL de l'unlink du portail côté mm-hubspot. Le
-   * portail est lié PAR TENANT alors que la synchro est PAR numéro : une déconnexion coupe donc TOUS les numéros du
-   * tenant (hubspot_connected=false). Ce N'EST PAS une pause -> hubspot_paused_at remis à null (aucun rattrapage à
-   * prévoir, le portail est parti). Recalcule campaigns_paused (agrégat : plus aucun numéro en pause -> false). Verrou
-   * consultatif tenant (même clé que setHubspotConnected) pour sérialiser avec un toggle concurrent. À n'appeler
-   * QU'APRÈS le succès de l'unlink côté connecteur (l'appelant garantit l'ordre, anti-drift). `updated` = au moins un
-   * numéro affecté.
+   * Déconnexion HubSpot complète d'un espace, reflet local de l'unlink du portail côté mm-hubspot. Le portail est
+   * lié par espace, la synchro par numéro : tous les numéros sont coupés, sans pause (`hubspot_paused_at` à null,
+   * rien à rattraper). Même verrou consultatif que setHubspotConnected. À n'appeler qu'après le succès de l'unlink.
    */
   async disconnectHubspotTenant(tenantId: string): Promise<{ updated: boolean }> {
     return enTransaction(this.pool, async (client) => {
@@ -158,10 +152,8 @@ export class PgPhoneStatusStore {
   }
 
   /**
-   * Portail HubSpot lié à CE tenant, lu CROSS-SCHEMA dans le connecteur mm-hubspot (schéma `mmhs`, même base/pool).
-   * Jointure tenant_portals -> portals pour ramener le hub_id + le domaine du portail. `{ connected: false }` si le
-   * tenant n'est mappé à aucun portail (la console proposera « Connecter HubSpot »). Lecture seule : ne touche RIEN
-   * dans mmhs (le mapping du pilote reste intact).
+   * Portail HubSpot lié à cet espace, lu dans le schéma `mmhs` du connecteur (même base), en lecture seule.
+   * `{ connected: false }` si aucun portail n'est mappé.
    */
   async getHubspotPortal(tenantId: string): Promise<HubspotPortalLink> {
     const res = await this.pool.query<{ hub_id: string; hub_domain: string | null; granted_scopes: string[] | null }>(
@@ -178,11 +170,8 @@ export class PgPhoneStatusStore {
   }
 
   /**
-   * État de synchro HubSpot du numéro (tenant + numéro d'affichage), lu en UN SEUL snapshot. Sert de GATE au push
-   * d'analyse (`connected`) ET de décision de rattrapage (`pausedAt` non-null = en pause). Le lire d'un coup ferme
-   * la course TOCTOU qu'un gate booléen + une re-lecture séparée « en pause ? » laissait ouverte (une reprise
-   * intercalée entre les deux faisait rater la marque). Numéro inconnu -> {connected:false, pausedAt:null} (jamais
-   * activé, défensif : on ne pousse pas et on ne marque pas un historique jamais demandé).
+   * État de synchro HubSpot du numéro en un seul instantané : gate du push (`connected`) et décision de rattrapage
+   * (`pausedAt`). Les lire ensemble ferme la course avec une reprise intercalée. Numéro inconnu : ni push ni marque.
    */
   async getHubspotGateStatus(tenantId: string, displayPhoneNumber: string): Promise<{ connected: boolean; pausedAt: string | null }> {
     const res = await this.pool.query<{ hubspot_connected: boolean; hubspot_paused_at: string | null }>(
@@ -196,18 +185,10 @@ export class PgPhoneStatusStore {
   }
 
   /**
-   * Recalcule `tenant_settings.campaigns_paused` DANS la transaction en cours (le client est passé, pas le pool).
-   *
-   * F3-b : la MÊME action Pause pilote AUSSI le flag campagnes-via-listes du tenant, dans la MÊME transaction
-   * (aucun drift possible avec `hubspot_paused_at`). Le flag est PAR TENANT alors que la pause est PAR numéro :
-   * on l'obtient donc par AGRÉGATION (« au moins un numéro du tenant est en pause »), PAS en miroir du seul
-   * numéro togglé, sinon reprendre un numéro rouvrirait les campagnes alors qu'un autre reste en pause (tenant
-   * multi-numéros). L'EXISTS lit l'état APRÈS l'update appelant (read-your-writes intra-transaction) et emploie
-   * la même définition de « en pause » que `hubspot_paused_at` (connected=false ET paused_at non-null), pour ne
-   * pas bloquer sur un numéro jamais activé. Upsert ciblé : n'écrase aucun autre réglage du tenant.
-   *
-   * Partagé par la pause d'un numéro et la déconnexion du portail : cette définition de « en pause » était
-   * écrite deux fois, elle ne doit exister qu'une.
+   * Recalcule `tenant_settings.campaigns_paused` dans la transaction en cours. Le drapeau est par espace, la pause
+   * par numéro : il vaut « au moins un numéro en pause », jamais le miroir du seul numéro basculé (reprendre l'un
+   * rouvrirait les campagnes alors qu'un autre reste en pause). L'EXISTS lit l'état après l'update appelant.
+   * Définition unique de « en pause », partagée par la pause d'un numéro et la déconnexion du portail.
    */
   private async recomputeCampaignsPaused(client: PoolClient, tenantId: string): Promise<void> {
     await client.query(

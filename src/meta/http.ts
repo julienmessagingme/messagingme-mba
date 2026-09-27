@@ -7,51 +7,35 @@ export interface HttpResponse {
 }
 
 /**
- * Transport HTTP injectable (fetch en prod, fake en test).
- *
- * `opts.signal` est OPTIONNEL et arrive en 4e position à dessein : une implémentation qui ne déclare que
- * trois paramètres reste assignable à ce type, donc les `FakeTransport` existants ne cassent pas. Sans lui,
- * un appel n'a AUCUN délai maximum (le défaut d'undici est de l'ordre de 300 s) : un fournisseur qui pend
- * immobiliserait un slot de worker pendant des minutes, sans la moindre trace.
+ * Transport HTTP injectable (fetch en prod, faux en test). `opts.signal` est optionnel et en 4e position pour
+ * que les faux à trois paramètres restent assignables. Sans échéance, un appel n'a aucun délai maximum
+ * (environ 300 s chez undici) et un fournisseur qui pend immobilise un slot de worker.
  */
 export interface HttpTransport {
   post(url: string, body: unknown, headers: Record<string, string>, opts?: { signal?: AbortSignal }): Promise<HttpResponse>;
 }
 
 /**
- * Le meme transport, plus `PATCH`.
- *
- * 🔴 UNE INTERFACE SÉPARÉE, ET PAS UN `patch` AJOUTÉ CI-DESSUS. Huit implémentations de `HttpTransport`
- * vivent dans ce dépôt, presque toutes des faux de test : y ajouter une méthode obligatoire les casserait
- * toutes, et l'ajouter en OPTIONNEL serait pire, un transport sans `patch` échouerait alors à l'exécution
- * sans que rien ne l'ait signalé à la compilation. Seul le module qui en a besoin (le plafond d'une clé du
- * Gateway) demande ce type, donc seul son faux doit le fournir, et le compilateur l'exige.
+ * Le même transport, plus `PATCH`. Interface séparée plutôt qu'un `patch` ajouté ci-dessus : obligatoire, il
+ * casserait tous les faux de test ; optionnel, un transport sans `patch` échouerait à l'exécution sans que le
+ * compilateur le signale. Seul le module qui en a besoin demande ce type.
  */
 export interface HttpTransportPatch extends HttpTransport {
   patch(url: string, body: unknown, headers: Record<string, string>, opts?: { signal?: AbortSignal }): Promise<HttpResponse>;
 }
 
 /**
- * Délai maximum d'un appel sortant quand l'appelant n'en impose pas.
- *
- * 30 s pour un fournisseur d'API ordinaire (Meta, HubSpot) : leurs réponses se comptent en centaines de
- * millisecondes, une seconde au pire. Ce plafond ne coupe donc jamais un appel sain, il ne coupe qu'un
- * SILENCE. 120 s pour un modèle de langage, qui a le droit d'être lent (une analyse de conversation longue,
- * un tour d'agent avec outils), et dont les appelants du chemin conversationnel imposent de toute façon leur
- * propre échéance, plus courte.
+ * Délai maximum d'un appel sortant quand l'appelant n'en impose pas. 30 s pour une API ordinaire (Meta,
+ * HubSpot), qui répond en moins d'une seconde : ce plafond ne coupe qu'un silence. 120 s pour un modèle de
+ * langage, qui a le droit d'être lent.
  */
 export const HTTP_TIMEOUT_DEFAUT_MS = 30_000;
 export const HTTP_TIMEOUT_MODELE_MS = 120_000;
 
 /**
- * Notre propre plafond a coupé l'appel. `retryable` parce qu'un silence est le cas transitoire par
- * excellence : refuser de rejouer ferait échouer des envois parfaitement rejouables (c'est la mise en garde
- * explicite de l'audit du 2026-08-25).
- *
- * ⚠️ Ce que ça coûte, et qu'il faut savoir : la requête est PARTIE. Si le serveur l'a traitée puis a mis plus
- * de 30 s à répondre, le rejeu la traite une seconde fois, donc potentiellement un message WhatsApp envoyé
- * deux fois. Le dépôt acceptait déjà ce risque (`ECONNRESET` est rejoué et peut survenir après émission) ; le
- * plafond généreux est ce qui le garde théorique.
+ * Notre propre plafond a coupé l'appel. Rejouable : un silence est le cas transitoire par excellence.
+ * La requête est pourtant partie : si le serveur l'a traitée en plus de 30 s, le rejeu peut envoyer deux fois
+ * le même message (risque déjà accepté pour `ECONNRESET`), et le plafond généreux le garde théorique.
  */
 export class HttpTimeoutError extends Error {
   readonly retryable = true;
@@ -70,9 +54,8 @@ export function estAbandon(err: unknown): boolean {
 
 export class FetchTransport implements HttpTransportPatch {
   /**
-   * ⚠️ Le délai est PAR INSTANCE, pas global : un client de modèle se construit avec
-   * `new FetchTransport(HTTP_TIMEOUT_MODELE_MS)`. Un plafond unique serait forcément faux pour l'un des deux
-   * usages, trop court pour un modèle ou inutilement long pour Meta.
+   * Le délai est par instance, pas global : un client de modèle se construit avec
+   * `new FetchTransport(HTTP_TIMEOUT_MODELE_MS)`. Un plafond unique serait faux pour l'un des deux usages.
    */
   constructor(private readonly timeoutMs: number = HTTP_TIMEOUT_DEFAUT_MS) {}
 
@@ -81,18 +64,16 @@ export class FetchTransport implements HttpTransportPatch {
   }
 
   /**
-   * ⚠️ MÊME corps que `post`, verbe différent : tout ce que le commentaire ci-dessous dit du plafond, de
-   * l'échéance de l'appelant et du corps coupé vaut identiquement. Les séparer en deux méthodes complètes
-   * aurait fait deux endroits où corriger le prochain défaut de délai, et un seul l'aurait été.
+   * Même corps que `post`, verbe différent : un seul endroit pour le plafond, l'échéance de l'appelant et le
+   * corps coupé.
    */
   patch(url: string, body: unknown, headers: Record<string, string>, opts?: { signal?: AbortSignal }): Promise<HttpResponse> {
     return this.envoyer('PATCH', url, body, headers, opts);
   }
 
   /**
-   * ⚠️ `DELETE` SANS CORPS et sans lecture du corps de reponse : les API qui suppriment rendent 204, donc
-   * rien a lire, et `envoyer` echouerait a parser un corps vide. On ne rend que le statut, qui est tout ce
-   * qu un appelant peut faire de cette reponse.
+   * `DELETE` sans corps et sans lecture de la réponse : les API qui suppriment rendent 204, et `envoyer`
+   * échouerait à parser un corps vide. On ne rend que le statut.
    */
   async delete(url: string, headers: Record<string, string>): Promise<{ status: number }> {
     const res = await fetch(url, {
@@ -104,13 +85,10 @@ export class FetchTransport implements HttpTransportPatch {
   }
 
   private async envoyer(methode: 'POST' | 'PATCH', url: string, body: unknown, headers: Record<string, string>, opts?: { signal?: AbortSignal }): Promise<HttpResponse> {
-    // 🔴 Sans plafond, un fournisseur qui accepte la connexion et ne répond jamais immobilise le job (donc le
-    // slot de worker) jusqu'au défaut d'undici, de l'ordre de cinq minutes. Sur la file `webhook`, sérialisée,
-    // c'est l'entrant de TOUS les clients qui s'arrête derrière un seul appel pendu.
-    //
-    // L'échéance de l'APPELANT est prioritaire et laissée intacte : quand le cerveau d'un agent passe la
-    // sienne, son abandon est une DÉCISION (« je n'ai plus le temps »), qu'il ne faut surtout pas convertir en
-    // erreur rejouable, sinon la limite de temps serait multipliée par le nombre de tentatives.
+    // Sans plafond, un fournisseur qui ne répond jamais immobilise le job (donc le slot de worker) jusqu'au défaut
+    // d'undici ; sur la file `webhook`, sérialisée, c'est l'entrant de tous les clients qui s'arrête.
+    // L'échéance de l'appelant est prioritaire et laissée intacte : son abandon est une décision, qu'il ne faut pas
+    // convertir en erreur rejouable (la limite de temps serait multipliée par le nombre de tentatives).
     const notre = opts?.signal === undefined;
     const signal = opts?.signal ?? AbortSignal.timeout(this.timeoutMs);
     let res: Response;
@@ -129,9 +107,8 @@ export class FetchTransport implements HttpTransportPatch {
     try {
       json = await res.json();
     } catch (err) {
-      // 🔴 Distinguer « corps illisible » de « corps COUPÉ ». Le plafond couvre aussi la lecture du corps : un
-      // serveur qui envoie ses en-têtes puis se tait fait échouer ici. Sans ce test, le `catch` avalait
-      // l'abandon et l'appel rendait `{ status: 200, json: null }`, c'est-à-dire un SUCCÈS au corps vide.
+      // Distinguer « corps illisible » de « corps coupé » : le plafond couvre aussi la lecture du corps, et avaler
+      // l'abandon rendrait un succès au corps vide.
       if (notre && estAbandon(err)) throw new HttpTimeoutError(url, this.timeoutMs);
       json = null;
     }
@@ -165,10 +142,10 @@ const NETWORK_CODES = new Set([
   'UND_ERR_SOCKET',
 ]);
 
-/** Rejouable ? un flag `retryable === true` sur l'erreur (MetaApiError, LlmApiError, ...), OU une erreur réseau
- * RECONNAISSABLE uniquement (on ne rejoue pas un bug de programmation qui se déguiserait en throw). Le duck-typing
- * `retryable` préserve le comportement de MetaApiError (dont `retryable` est déjà un booléen) et généralise à tout
- * client réseau du repo. */
+/**
+ * Rejouable ? Un drapeau `retryable === true` sur l'erreur (MetaApiError, LlmApiError...), ou une erreur réseau
+ * reconnaissable uniquement : on ne rejoue pas un bug de programmation déguisé en throw.
+ */
 function isRetryable(err: unknown): boolean {
   if (err && typeof err === 'object' && (err as { retryable?: unknown }).retryable === true) return true;
   const code =
@@ -190,16 +167,10 @@ export interface RetryOpts {
 }
 
 /**
- * Rejoue `fn` sur erreur rejouable avec backoff exponentiel BORNÉ + jitter.
- * Respecte `Retry-After` si l'erreur Meta en porte un, mais SANS DÉPASSER `maxDelayMs`. Erreur terminale ->
- * throw immédiat.
- *
- * Pourquoi plafonner un délai que Meta demande explicitement : ce sommeil a lieu DANS le job de la file
- * `webhook`, qui traite les entrants de TOUS les tenants en série (`batchSize: 1`, src/queue/pgboss.ts:141).
- * Un seul tenant à qui Meta répond `Retry-After: 3600` gèlerait donc l'inbox de tout le parc pendant une
- * heure, et autant de fois qu'il reste de tentatives. On préfère épuiser les tentatives en ~2 min et laisser
- * l'échec remonter à l'appelant, qui sait déjà le traiter (classification src/meta/errors.ts, mise en pause
- * de campagne). Le plafond ne touche pas le backoff, déjà borné par `cap` juste au-dessus.
+ * Rejoue `fn` sur erreur rejouable, avec backoff exponentiel borné et jitter ; une erreur terminale est relancée
+ * tout de suite. `Retry-After` est respecté sans dépasser `maxDelayMs` : ce sommeil a lieu dans le job de la file
+ * `webhook`, qui traite les entrants de tous les tenants en série, et un `Retry-After: 3600` gèlerait l'inbox de
+ * tout le parc. On épuise plutôt les tentatives en deux minutes environ, et l'échec remonte à l'appelant.
  */
 export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOpts = {}): Promise<T> {
   const maxRetries = opts.maxRetries ?? 4;
@@ -224,12 +195,9 @@ export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOpts = {}): 
   }
 }
 
-/** Limiteur de débit à intervalle minimal (throttle des envois par numéro). */
 /**
- * Une porte de débit : « attends ton tour ». Déclarée ICI, dans la couche la plus basse, parce que le client
- * Meta en dépend et qu'il ne doit rien importer de la couche campagne. `RateLimiter` la satisfait, l'arbitre
- * par numéro aussi, et `RateGate` (campagne) a la même forme : le typage structurel les rend interchangeables
- * sans qu'aucune couche n'ait à connaître l'autre.
+ * Une porte de débit : « attends ton tour ». Déclarée dans cette couche basse parce que le client Meta en dépend
+ * sans rien importer de la campagne ; `RateLimiter`, l'arbitre par numéro et `RateGate` ont la même forme.
  */
 export interface PorteDeDebit {
   acquire(): Promise<void>;

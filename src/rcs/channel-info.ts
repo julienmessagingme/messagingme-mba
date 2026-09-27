@@ -1,19 +1,11 @@
-// `HttpGet` et `fetchGet` vivent dans `src/lib/http-get.ts` depuis le 2026-09-09 : un second consommateur
-// (le catalogue de modeles du Gateway) en avait besoin. Pas de re-export ici, deux chemins d'import pour la
-// meme brique redonneraient les deux copies qu'on vient d'eviter.
 import type { HttpGet } from '../lib/http-get';
 
-/**
- * Ce qu'une clé d'API smsmode donne comme droits, lu chez eux.
- *
- * C'est ce que l'écran d'activation affiche : à quoi on a droit, et sous quel nom on parle. Rien n'est
- * inventé ici, tout vient de leur API Commons.
- */
+/** Ce qu'une clé d'API smsmode donne comme droits, lu chez eux (API Commons) : ce que l'écran d'activation affiche. */
 export interface RcsChannelInfo {
   channelId: string;
   /** Nom du canal chez smsmode (ex. « CANAL RCS (test) »). */
   name: string;
-  /** Nom de l'AGENT, celui que le destinataire voit (`defaultFromField`, ex. « MessagingMe »). */
+  /** Nom de l'agent, celui que le destinataire voit (`defaultFromField`, ex. « MessagingMe »). */
   agentName: string;
   flow: string;
   dailyLimit: number | null;
@@ -33,11 +25,9 @@ function nombre(v: unknown): number | null {
 }
 
 /**
- * Vérifie une clé d'API smsmode et rend le canal RCS auquel elle donne accès.
- *
- * Mesuré contre l'API réelle : une clé est rattachée à UN canal. Une clé de canal SMS liste bien un canal,
- * mais de type SMS, et l'API RCS la refuse ensuite en 403 « Channel type mismatch ». On refuse donc ICI,
- * à la saisie, plutôt que de laisser l'opérateur découvrir l'erreur au premier envoi.
+ * Vérifie une clé d'API smsmode et rend le canal RCS auquel elle donne accès. Une clé est rattachée à un seul
+ * canal : une clé de canal SMS liste un canal SMS, et l'API RCS la refuse ensuite en 403 « Channel type
+ * mismatch ». On refuse donc à la saisie plutôt qu'au premier envoi.
  */
 export async function verifierCleRcs(transport: HttpGet, apiKey: string): Promise<RcsChannelCheck> {
   let res: { status: number; json: unknown };

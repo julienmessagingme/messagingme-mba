@@ -5,14 +5,9 @@ import { espaceVerifie, estUuid } from './scope';
 import { MAX_LIGNES_HISTORIQUE, type HistoriqueStore } from '../reglages/historique';
 
 /**
- * L'HISTORIQUE DES RÉGLAGES, EN LECTURE.
- *
- * 🔴 IL EXISTE PARCE QUE META N'A PAS DE CORBEILLE : une FAQ ou une compétence supprimée est perdue, et ces
- * lignes en sont le seul exemplaire. C'est aussi le seul endroit qui réponde à « qui a changé ça ? » sur des
- * réglages qui décident de ce qu'un robot dit aux clients.
- *
- * 🔴 ADMINS SEULEMENT, comme les écritures qu'il journalise. Un journal plus lisible que ce qu'il décrit
- * serait une fuite : il porte le CONTENU des éléments supprimés.
+ * L'historique des réglages, en lecture. Meta n'a pas de corbeille : une FAQ ou une compétence supprimée n'existe
+ * plus qu'ici, et c'est le seul endroit qui dise qui a changé ce qu'un robot dit aux clients.
+ * 🔴 Admins seulement, comme les écritures qu'il journalise : il porte le contenu des éléments supprimés.
  */
 
 export interface HistoriqueRouteDeps {
@@ -20,10 +15,8 @@ export interface HistoriqueRouteDeps {
 }
 
 /**
- * Ce que l'écran reçoit sans le demander.
- *
- * ⚠️ IL EST PLUS PETIT QUE LE PLAFOND DE LECTURE, et l'écart est ce qui permet de DIRE qu'on tronque : la
- * réponse annonce `tronquee` plutôt que de rendre une liste coupée qui se lit comme une liste complète.
+ * Ce que l'écran reçoit sans le demander. Plus petit que le plafond de lecture : l'écart permet d'annoncer
+ * `tronquee` plutôt qu'une liste coupée qui se lirait comme complète.
  */
 export const LIGNES_HISTORIQUE_PAR_DEFAUT = 200;
 
@@ -45,10 +38,8 @@ export function registerHistorique(app: FastifyInstance, deps: HistoriqueRouteDe
     const { surface, agentId, limite } = parse.data;
 
     /**
-     * ⚠️ LA FORME EST VÉRIFIÉE ICI, pas seulement en base. Le CHECK `reglages_historique_surface_id_chk`
-     * refuserait aussi, mais en violation de contrainte, donc en 500, donc derrière une page Cloudflare qui
-     * n'expliquerait rien. Et sur une LECTURE, il ne refuserait rien du tout : il rendrait simplement zéro
-     * ligne, ce qui se lit comme « il ne s'est rien passé ».
+     * La forme est vérifiée ici : le CHECK en base refuserait en 500 sur une écriture, et sur une lecture il ne
+     * refuserait rien, il rendrait zéro ligne (« il ne s'est rien passé »).
      */
     if (surface === 'agent' && !estUuid(agentId ?? '')) {
       return reply.code(400).send({ error: 'agentId requis pour la surface agent' });
@@ -63,11 +54,6 @@ export function registerHistorique(app: FastifyInstance, deps: HistoriqueRouteDe
       ...(surface === 'agent' ? { surfaceId: agentId ?? null } : {}),
       limite: plafond,
     });
-    /**
-     * 🔴 UNE TRONCATURE SILENCIEUSE SE LIT COMME UNE LISTE COMPLÈTE, et sur un journal c'est le pire des
-     * malentendus : on y cherche une modification ancienne, on ne la voit pas, et on en conclut qu'elle n'a
-     * pas eu lieu. L'écran le dit, plutôt que de laisser croire.
-     */
     return reply.code(200).send({ lignes, tronquee: lignes.length >= plafond });
   });
 }

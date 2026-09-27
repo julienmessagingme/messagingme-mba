@@ -6,93 +6,75 @@ import {
 } from './traduire';
 
 /**
- * TRADUIRE LE FIL D'UNE CONVERSATION A SON OUVERTURE (2026-09-12).
+ * Traduire le fil d'une conversation à son ouverture.
  *
- * 🔴 SEULS LES ENTRANTS SE TRADUISENT, et ce n'est pas une economie de bout de chandelle. Un sortant
- * s'affiche avec ce que l'OPERATEUR a ecrit (`redaction_origine`, sinon `body`) : il n'y a rien a
- * traduire et aucun appel a payer. Le traduire reviendrait a retraduire notre propre phrase vers
- * notre propre langue.
- *
- * 🔴 TROIS ETATS, ET LES DEUX DERNIERS NE SE CONFONDENT PAS :
- *   - traduit           -> `affiche` porte la traduction, `traduit` = true ;
- *   - appel echoue      -> `affiche` porte l'original, `traductionEchouee` = true ;
- *   - au-dela du plafond, JAMAIS TENTE -> `affiche` porte l'original, et les deux drapeaux sont faux.
- * Confondre les deux derniers ferait dire a l'ecran qu'une traduction a rate alors qu'elle n'a
- * jamais ete demandee, et personne ne comprendrait pourquoi elle ne revient pas au rechargement.
- *
- * ⚠️ LE PREMIER LECTEUR PAIE, LES SUIVANTS LISENT : une traduction deja rangee DANS LA LANGUE
- * DEMANDEE n'est jamais recalculee. Sans cette garde, chaque ouverture de fil repaierait tout.
+ * Seuls les entrants se traduisent : un sortant s'affiche avec ce que l'opérateur a écrit (`redaction_origine`,
+ * sinon `body`), il n'y a rien à traduire ni à payer.
+ * Trois états, et les deux derniers ne se confondent pas : traduit (`traduit` = true) ; appel échoué (l'original,
+ * `traductionEchouee` = true) ; au-delà du plafond, jamais tenté (l'original, deux drapeaux faux). Sinon l'écran
+ * dirait qu'une traduction a raté alors qu'elle n'a jamais été demandée.
+ * Le premier lecteur paie, les suivants lisent : une traduction rangée dans la langue demandée n'est jamais
+ * recalculée.
  */
 
 /**
- * Le minimum qu'un message doit porter pour passer par ici.
- *
- * ⚠️ Volontairement plus ETROIT que `ConversationMessage` : ce module n'a besoin ni du curseur, ni de
- * l'auteur, ni du canal, et un type large l'aurait attache a la forme de l'inbox.
+ * Le minimum qu'un message doit porter pour passer par ici, plus étroit que `ConversationMessage` pour ne pas
+ * attacher ce module à la forme de l'inbox.
  */
 export interface MessageATraduire {
   id: string;
   direction: 'in' | 'out';
   type?: string | null;
   body: string | null;
-  /** La transcription d'un vocal (0125). C'est ELLE qu'on traduit pour un audio, jamais `[audio]`. */
+  /** La transcription d'un vocal : c'est elle qu'on traduit pour un audio, jamais `[audio]`. */
   transcription?: string | null;
   traduction?: string | null;
   traductionLangue?: string | null;
-  /** Ce que l'operateur a ECRIT avant traduction, sur un SORTANT (0137). */
+  /** Ce que l'opérateur a écrit avant traduction, sur un sortant. */
   redactionOrigine?: string | null;
 }
 
-/** Ce que la route ajoute a chaque message. Les trois etats du haut de fichier. */
+/** Ce que la route ajoute à chaque message : les trois états du haut de fichier. */
 export interface EtatTraduction {
-  /** Le texte a AFFICHER dans la bulle, quel que soit l'etat. Jamais vide sur un message qui a du texte. */
+  /** Le texte à afficher dans la bulle, quel que soit l'état. Jamais vide sur un message qui a du texte. */
   affiche: string;
   traduit: boolean;
-  /** `true` SEULEMENT si la traduction a ete TENTEE et n'est pas revenue. */
+  /** `true` seulement si la traduction a été tentée et n'est pas revenue. */
   traductionEchouee: boolean;
 }
 
 export interface DepsFil {
   traducteur: Traducteur;
-  /** Range les traductions calculees. Un echec ici ne doit pas priver l'operateur de sa lecture. */
+  /** Range les traductions calculées. Un échec ici ne doit pas priver l'opérateur de sa lecture. */
   ranger(
     tenantId: string,
     conversationId: string,
     traductions: Array<{ messageId: string; texte: string; langue: LangueConsole }>,
   ): Promise<void>;
-  /** La langue du contact, APPRISE du message le plus recent qu'on vient de traduire. */
+  /** La langue du contact, apprise du message le plus récent qu'on vient de traduire. */
   apprendreLangueContact(tenantId: string, conversationId: string, langue: string): Promise<void>;
   /**
-   * Une ecriture d'appoint a echoue.
-   *
-   * ⚠️ Optionnel, mais la route la cable sur son journal : sans elle, un rangement qui echoue ferait
-   * repayer la meme traduction a chaque ouverture SANS QUE PERSONNE NE L'APPRENNE, ce qui est
-   * exactement le genre de fuite qu'on ne voit que sur la facture.
+   * Une écriture d'appoint a échoué. La route la câble sur son journal : sans elle, un rangement qui échoue ferait
+   * repayer la même traduction à chaque ouverture sans que personne ne l'apprenne.
    */
   onErreur?(err: unknown, quoi: string): void;
 }
 
 export interface FilTraduit<M> {
-  /** `true` = cet espace ne peut pas traduire (pas de cle de modele). Ce n'est PAS une panne, et c'est 200. */
+  /** `true` = cet espace ne peut pas traduire (pas de clé de modèle) : pas une panne, et c'est 200. */
   indisponible: boolean;
   messages: Array<M & EtatTraduction>;
 }
 
 /**
- * Le libelle d'un media sans legende, tel que `contentOf` l'ecrit (`[audio]`, `[image]`,
- * `[interactif]`...).
- *
- * 🔴 LE TRADUIRE SERAIT UN APPEL PAYE POUR RIEN, et pire : le modele rendrait « [son] » ou
- * « [audio] » selon son humeur, donc l'aperçu du fil changerait d'un rechargement a l'autre.
+ * Le libellé d'un média sans légende, tel que `contentOf` l'écrit (`[audio]`, `[image]`...). Le traduire serait un
+ * appel payé pour rien, et l'aperçu changerait d'un rechargement à l'autre selon ce que rend le modèle.
  */
 const LIBELLE_MEDIA = /^\[[a-z]+\]$/;
 
 /**
- * Le texte d'un ENTRANT qu'on traduit, ou `null` s'il n'y a rien a traduire.
- *
- * 🔴 POUR UN VOCAL, C'EST LA TRANSCRIPTION, JAMAIS LE CORPS : `body` vaut `[audio]` ou la legende, et
- * traduire « [audio] » ne produit rien. Un vocal non encore transcrit n'a donc rien a traduire, et ce
- * n'est pas un echec : il n'y a simplement pas encore de texte.
+ * Le texte d'un entrant qu'on traduit, ou `null`. Pour un vocal, c'est la transcription, jamais le corps
+ * (`[audio]` ou la légende) : un vocal non encore transcrit n'a rien à traduire, et ce n'est pas un échec.
  */
 export function texteATraduire(m: MessageATraduire): string | null {
   const transcription = m.transcription?.trim();
@@ -102,29 +84,26 @@ export function texteATraduire(m: MessageATraduire): string | null {
   return body;
 }
 
-/** Ce qu'on affiche quand on ne traduit pas : l'original, cote client ; la redaction, cote operateur. */
+/** Ce qu'on affiche sans traduire : l'original côté client, la rédaction côté opérateur. */
 function texteOriginal(m: MessageATraduire): string {
   if (m.direction === 'out') return (m.redactionOrigine ?? m.body ?? '').toString();
   return m.body ?? '';
 }
 
-/** Une traduction DEJA rangee, et dans la langue demandee. */
+/** Une traduction déjà rangée, et dans la langue demandée. */
 function dejaTraduit(m: MessageATraduire, cible: LangueConsole): string | null {
   const t = m.traduction?.trim();
   return t && m.traductionLangue === cible ? m.traduction! : null;
 }
 
 /**
- * Les messages a tenter, LES PLUS RECENTS D'ABORD, sous les deux plafonds.
- *
- * ⚠️ Rendus dans l'ordre du fil (le plus ancien en premier) une fois choisis : ce qui compte est
- * QUELS messages sont retenus, pas dans quel ordre ils partent au modele.
+ * Les messages à tenter, choisis des plus récents aux plus anciens sous les deux plafonds, puis rendus dans l'ordre
+ * du fil.
  */
 export function candidats(messages: MessageATraduire[], cible: LangueConsole): MessageATraduire[] {
   const retenus: MessageATraduire[] = [];
   let caracteres = 0;
-  // 🔴 A REBOURS : le plafond doit mordre sur le HAUT du fil (l'historique ancien), jamais sur les
-  // derniers messages, qui sont ceux que l'operateur est en train de lire.
+  // À rebours : le plafond mord sur l'historique ancien, jamais sur les derniers messages, ceux qu'on lit.
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const m = messages[i]!;
     if (m.direction !== 'in') continue;
@@ -140,11 +119,8 @@ export function candidats(messages: MessageATraduire[], cible: LangueConsole): M
 }
 
 /**
- * Traduit ce qui doit l'etre, range le resultat, apprend la langue du contact, et rend le fil avec
- * ses trois etats.
- *
- * ⚠️ RIEN N'EST JETE : les messages rendus sont EXACTEMENT ceux recus, dans le meme ordre, enrichis.
- * Un filtrage ici escamoterait des bulles a l'ecran pour une raison sans rapport avec leur affichage.
+ * Traduit ce qui doit l'être, range le résultat, apprend la langue du contact, et rend le fil avec ses trois états.
+ * Rien n'est jeté : les messages rendus sont exactement ceux reçus, dans le même ordre, enrichis.
  */
 export async function traduireFil<M extends MessageATraduire>(
   deps: DepsFil,
@@ -163,9 +139,7 @@ export async function traduireFil<M extends MessageATraduire>(
     }),
   });
 
-  // 🔴 PAS DE CREDIT, PAS D'APPEL, ET SURTOUT PAS D'ERREUR. Un espace sans cle de modele lit son fil
-  // en VO avec un drapeau : ce n'est pas une panne, c'est un espace sans credit, et l'ecran doit
-  // pouvoir le dire plutot que de rester muet.
+  // Pas de crédit : pas d'appel et pas d'erreur. Le fil se lit en VO avec un drapeau, que l'écran peut expliquer.
   if (!(await deps.traducteur.disponible(o.tenantId))) return enVo(true);
 
   const aTenter = candidats(o.messages, o.cible);
@@ -186,19 +160,13 @@ export async function traduireFil<M extends MessageATraduire>(
         [...obtenues].map(([messageId, t]) => ({ messageId, texte: t.texte, langue: o.cible })),
       );
     } catch (err) {
-      // La lecture est deja acquise : on la rend. Ce qui se perd, c'est la reutilisation, donc de
-      // l'argent au prochain chargement, d'ou le signalement.
+      // La lecture est acquise ; ce qui se perd est la réutilisation, donc de l'argent au prochain chargement.
       deps.onErreur?.(err, 'traduction_rangement');
     }
 
-    /**
-     * LA LANGUE DU CONTACT VIENT DU MESSAGE LE PLUS RECENT QU'ON VIENT DE TRADUIRE.
-     *
-     * ⚠️ LE PLUS RECENT, pas le premier du lot : quelqu'un peut changer de langue en cours de
-     * conversation, et c'est la derniere qui vaut. Le cadrage previent qu'elle peut etre FAUSSE une
-     * fois (un « ok » ou un emoji mal classe) ; c'est pourquoi elle n'est qu'un DEFAUT propose au
-     * bouton de traduction sortante, jamais une decision prise sans l'operateur.
-     */
+    // La langue du contact vient du message le plus récent traduit (on peut changer de langue en cours de route).
+    // Elle peut être fausse une fois (un « ok », un emoji) : ce n'est qu'un défaut proposé à la traduction sortante,
+    // jamais une décision prise sans l'opérateur.
     for (let i = aTenter.length - 1; i >= 0; i -= 1) {
       const langue = obtenues.get(aTenter[i]!.id)?.langueSource?.trim();
       if (!langue) continue;
@@ -223,8 +191,7 @@ export async function traduireFil<M extends MessageATraduire>(
         ...m,
         affiche: texteOriginal(m),
         traduit: false,
-        // 🔴 TENTE ET NON REVENU = echec. Non tente = rien du tout. C'est toute la difference entre
-        // « ca a rate » et « on n'a pas demande », et l'ecran ne dit pas la meme chose dans les deux cas.
+        // Tenté et non revenu = échec ; non tenté = rien. L'écran ne dit pas la même chose dans les deux cas.
         traductionEchouee: tentes.has(m.id),
       };
     }),

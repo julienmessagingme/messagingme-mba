@@ -2,15 +2,14 @@ import type { Pool } from 'pg';
 import { classifyWaId } from '../crm/identity';
 
 /**
- * Faits d'identité/canal nécessaires au connecteur CRM, PAR conversation (le connecteur ne lit jamais la DB de mba).
- * `analyzedAt` sert de version pour l'eventId (une réanalyse -> analyzedAt différent -> le connecteur retraite).
- * Timestamps en TEXTE (précision µs préservée, cf. le round-trip Date/ms de la Pièce 1).
+ * Faits d'identité et de canal nécessaires au connecteur CRM, par conversation (il ne lit jamais notre base).
+ * `analyzedAt` versionne l'eventId. Horodatages en texte, pour garder la précision à la µs.
  */
 export interface Enrichment {
-  contactE164: string; // wa_id : numéro client (ou BSUID à terme)
+  contactE164: string; // wa_id : numéro du client (ou BSUID)
   profileName: string | null;
-  whatsappLine: string; // numéro d'affichage de la ligne du tenant (routage HubSpot plus tard)
-  lastInboundAt: string | null; // dernier entrant WHATSAPP : pilote la fenêtre 24h Meta (voir la requête)
+  whatsappLine: string; // numéro d'affichage de la ligne de l'espace
+  lastInboundAt: string | null; // dernier entrant WhatsApp : pilote la fenêtre de 24 h de Meta (voir la requête)
   analyzedAt: string | null;
 }
 
@@ -23,14 +22,11 @@ interface Row {
 }
 
 /**
- * Construit l'enrichissement d'une conversation. `whatsappLine` = 1er numéro du tenant (OK pilote mono-numéro ;
- * migration `conversations.phone_number_id` quand un tenant devient multi-numéros). null si la conversation n'existe plus.
+ * Construit l'enrichissement d'une conversation, `null` si elle n'existe plus. `whatsappLine` = premier numéro de
+ * l'espace (suffisant tant qu'un espace n'a qu'un numéro).
+ * `last_inbound_at` est restreint au canal WhatsApp : il pilote la fenêtre de 24 h, et un tap RCS laisserait croire
+ * au commercial qu'il peut répondre en texte libre (refus 131047). Un autre canal aurait son propre champ.
  */
-// 🔴 `last_inbound_at` est restreint au canal WHATSAPP. Ce champ est présenté au connecteur comme celui
-// qui pilote la fenêtre 24 h de Meta : un tap de suggestion RCS le rafraîchissait, et le commercial dans
-// HubSpot croyait pouvoir répondre en texte libre alors que Meta refuse en 131047. C'est le jumeau du
-// correctif bf0408d, côté connecteur. Si un jour il faut savoir que le contact est vivant sur un AUTRE
-// tuyau, ce sera un champ DISTINCT, jamais celui-ci élargi.
 export async function getEnrichment(pool: Pool, conversationId: string): Promise<Enrichment | null> {
   const res = await pool.query<Row>(
     `select
@@ -48,8 +44,7 @@ export async function getEnrichment(pool: Pool, conversationId: string): Promise
   );
   if ((res.rowCount ?? 0) === 0) return null;
   const r = res.rows[0]!;
-  // wa_id brut = chiffres SANS `+` (Meta) -> normaliser en E.164 comme le reste du repo (classifyWaId). Un BSUID
-  // (non numérique) passe tel quel (le connecteur le distinguera au Lot C ; zéro trafic BSUID aujourd'hui).
+  // wa_id brut = chiffres sans `+` : normalisé en E.164 (classifyWaId). Un BSUID passe tel quel.
   const contactE164 = classifyWaId(r.contact_e164).phoneE164 ?? r.contact_e164;
   return {
     contactE164,

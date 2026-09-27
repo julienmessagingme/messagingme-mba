@@ -1,23 +1,18 @@
 import { z } from 'zod';
 
 /**
- * Les types de l'integration Channels Me, et les schemas Zod qui valident CE QUI VIENT DE CHEZ EUX.
- *
- * Ce que ces schemas protegent, et qui ne se voit pas a la lecture :
- *  1. Une reponse 200 dont le corps n'a pas la forme attendue n'est PAS un succes. Sans validation, un
- *     identifiant absent partirait tel quel dans `channelsme_posts.cm_message_id` : la seule trace qui
- *     relie un post publie (qui circule pour toujours) au lien qui l'a produit serait vide, sans recours.
- *  2. Les objets de ce fichier RETIRENT les cles inconnues au lieu de les refuser. Un champ ajoute chez eux
- *     ne doit pas casser la console, mais il ne doit pas non plus traverser jusqu'a nos ecrans.
- *  3. `Connexion` porte les deux secrets, `ConnexionPublique` ne les porte pas. Les deux existent pour que
- *     le compilateur refuse de servir le premier a un navigateur.
+ * Les types de l'intégration Channels Me, et les schémas Zod qui valident ce qui vient de chez eux :
+ *  1. une réponse 200 dont le corps n'a pas la forme attendue n'est pas un succès : un identifiant absent
+ *     finirait vide dans `channelsme_posts.cm_message_id`, seule trace qui relie un post publié à son lien ;
+ *  2. les objets retirent les clés inconnues : un champ ajouté chez eux ne casse pas la console et ne
+ *     traverse pas jusqu'à nos écrans ;
+ *  3. 🔴 `Connexion` porte les deux secrets, `ConnexionPublique` non : le compilateur refuse de servir le
+ *     premier à un navigateur.
  */
 
 /**
- * Les quatre identifiants d'une connexion Channels Me.
- *
- * En memoire uniquement, jamais serialise vers le client : c'est ce que le store rend par `getSecrets()`,
- * et c'est ce que `ChannelsMeClient` consomme.
+ * Les quatre identifiants d'une connexion Channels Me, en mémoire uniquement (`getSecrets()`, consommé par
+ * `ChannelsMeClient`), jamais sérialisés vers le client.
  */
 export interface Connexion {
   orgId: string;
@@ -39,28 +34,21 @@ export interface ConnexionPublique {
 }
 
 /**
- * Un identifiant rendu par Channels Me. Leur API est en Rails : selon la ressource, un identifiant sort en
- * chaine ou en entier. On accepte les deux et on range TOUJOURS une chaine, pour que le reste du code
- * (colonne `cm_message_id text`, comparaisons, construction d'URL) n'ait qu'une seule forme a connaitre.
+ * Un identifiant rendu par Channels Me : chaîne ou entier selon la ressource (API Rails). On range toujours
+ * une chaîne, pour que le reste du code n'ait qu'une forme à connaître.
  */
 const identifiant = z.union([z.string(), z.number()]).transform((v) => String(v));
 
 /**
- * L'organisation, lue par `GET /organisations/{org}`.
- *
- * Aucun champ n'est obligatoire : aucun n'a ete mesure comme tel, et l'ecran d'etat de la connexion doit
- * s'afficher meme si le fournisseur en omet un. Un champ present mais du mauvais type reste refuse.
+ * L'organisation, lue par `GET /organisations/{org}`. Aucun champ obligatoire : l'écran d'état doit
+ * s'afficher même si le fournisseur en omet un. Un champ présent mais du mauvais type reste refusé.
  */
 export const organisationSchema = z.object({
   id: identifiant.optional(),
   name: z.string().optional(),
   /**
-   * Le quota MENSUEL, MESURE le 2026-09-07 sur l organisation reelle (5 sur 10000).
-   *
-   * ⚠️ Il vit sur l ORGANISATION, pas sur la chaine, et c est pour ca qu on l avait rate : on l avait
-   * cherche sur `message_channels`, ne l y avait pas trouve, et conclu qu il n etait pas mesurable. Une
-   * valeur absente d un endroit n est pas une valeur qui n existe pas. Les deux restent optionnels : un
-   * champ que le fournisseur retirerait ne doit pas casser l ecran d etat.
+   * Le quota mensuel, mesuré sur l'organisation réelle : il vit sur l'organisation, pas sur la chaîne.
+   * Optionnel, comme le reste : un champ retiré par le fournisseur ne doit pas casser l'écran d'état.
    */
   monthly_messages_count: z.number().int().nonnegative().optional(),
   allowed_message_quota: z.number().int().nonnegative().optional(),
@@ -68,11 +56,8 @@ export const organisationSchema = z.object({
 export type Organisation = z.infer<typeof organisationSchema>;
 
 /**
- * Une chaine WhatsApp, lue par `GET /organisations/{org}/message_channels`.
- *
- * `messages_count` est le seul compteur MESURE (85 publications sur la chaine de demo, et la liste des
- * messages en rend bien 85). Les champs de quota mensuel ne sont pas encore mesures : les declarer au
- * hasard les rendrait toujours `undefined`, en silence, ce qui est pire que de ne pas les avoir.
+ * Une chaîne WhatsApp, lue par `GET /organisations/{org}/message_channels`. `messages_count` est le seul
+ * compteur mesuré : un champ déclaré au hasard serait toujours `undefined`, en silence.
  */
 export const messageChannelSchema = z.object({
   id: identifiant.optional(),
@@ -82,12 +67,10 @@ export const messageChannelSchema = z.object({
 export type MessageChannel = z.infer<typeof messageChannelSchema>;
 
 /**
- * Une publication.
- *
- * 🔴 `id` est le SEUL champ obligatoire, et il l'est vraiment : c'est lui qu'on ecrit dans
- * `channelsme_posts.cm_message_id`. Une reponse 200 sans identifiant est un ECHEC, pas un succes au champ
- * vide. Le statut reste optionnel et tolerant : il se LIT EN DIRECT a chaque affichage, on ne le miroite
- * pas, donc une forme inattendue doit degrader l'affichage, pas casser la lecture de la liste.
+ * Une publication. `id` est le seul champ obligatoire : c'est lui qu'on écrit dans
+ * `channelsme_posts.cm_message_id`, et une réponse 200 sans identifiant est un échec. Le statut reste
+ * tolérant : lu en direct à chaque affichage, une forme inattendue doit dégrader l'affichage, pas casser la
+ * liste.
  */
 export const messageSchema = z.object({
   id: identifiant,

@@ -1,19 +1,15 @@
 import type { Pool } from 'pg';
 
 /**
- * La cle AI Gateway d'un espace : lecture, ecriture, et deplacement de son plafond (migration 0124).
+ * La clé AI Gateway d'un espace : lecture, écriture, et déplacement de son plafond.
  *
- * 🔴 LE SECRET ENTRE ET SORT CHIFFRE DE CE MODULE. Le chiffrement est INJECTE (`chiffrer` / `dechiffrer`),
- * il n'est pas relu depuis la configuration ici : c'est le contrat que `PgChannelsMeConnectionStore` tient
- * deja pour ses deux secrets. Un store qui irait chercher `config.ENCRYPTION_KEY` tout seul serait un
- * second endroit ou la cle de chiffrement est lue, donc un second endroit ou l'oublier.
- *
- * ⚠️ AUCUNE de ces methodes ne journalise le secret, et aucune ne le rend au client : la seule sortie est
- * `cleDe`, consommee par le client de modele, jamais par une route.
+ * Le secret entre et sort chiffré de ce module : le chiffrement est injecté (`chiffrer` / `dechiffrer`),
+ * jamais relu depuis la configuration, pour qu'un seul endroit lise la clé de chiffrement. Aucune méthode ne
+ * journalise le secret ; la seule sortie est `cleDe`, consommée par le client de modèle, jamais par une route.
  */
 export interface CleGatewayEspace {
   cleId: string;
-  /** Le secret EN CLAIR. Ne jamais le mettre dans un journal ni dans une reponse HTTP. */
+  /** Le secret en clair. Ne jamais le mettre dans un journal ni dans une réponse HTTP. */
   cle: string;
   plafondMicroEur: number;
 }
@@ -24,20 +20,15 @@ export class PgCleGatewayStore {
     private readonly chiffrer: (clair: string) => string,
     private readonly dechiffrer: (chiffre: string) => string,
     /**
-     * Prévenir quand une clé existe mais ne se déchiffre pas.
-     *
-     * 🔴 SANS ÇA, LE REPLI EST TOTALEMENT MUET. L'espace retombe sur la clé maison, ses agents continuent de
-     * répondre, tout a l'air normal, et sa dépense cesse d'être attribuée sans que rien ne le dise. C'est
-     * exactement la panne qu'on ne veut pas : celle qui ne se voit pas. Optionnel pour les tests.
+     * Prévient quand une clé existe mais ne se déchiffre pas : sans ça, le repli sur la clé maison est muet et
+     * la dépense de l'espace cesse d'être attribuée sans que rien ne le dise. Optionnel pour les tests.
      */
     private readonly signaler?: (tenantId: string, err: unknown) => void,
   ) {}
 
   /**
-   * La cle de cet espace, dechiffree, ou `null` s'il n'en a pas.
-   *
-   * ⚠️ `null` n'est PAS une erreur : un espace sans agent n'a pas de cle, et un espace d'avant ce lot non
-   * plus. L'appelant retombe alors sur la cle maison, exactement comme un espace RCS sans cle propre.
+   * La clé de cet espace, déchiffrée, ou `null` s'il n'en a pas (pas une erreur : l'appelant retombe sur la
+   * clé maison).
    */
   async lire(tenantId: string): Promise<CleGatewayEspace | null> {
     const res = await this.pool.query<{ cle_id: string; cle_chiffree: string; plafond_micro_eur: string }>(
@@ -53,28 +44,21 @@ export class PgCleGatewayStore {
         plafondMicroEur: Number(row.plafond_micro_eur),
       };
     } catch (err) {
-      // 🔴 Dechiffrement impossible (cle de chiffrement changee, ligne corrompue) : on rend `null`, donc on
-      // retombe sur la cle maison, plutot que de faire echouer TOUS les tours d'agent de cet espace. La
-      // depense cesse d'etre attribuee, ce qui est mauvais ; l'agent muet chez un client en production le
-      // serait davantage.
-      // ⚠️ MAIS ON LE DIT. Sans ce signalement, le repli etait indiscernable du cas normal « cet espace n'a
-      // pas encore de cle », et un client aurait pu consommer des mois sur le pot commun sans que personne
-      // ne s'en apercoive. La route de creation, elle, refuse plutot que de retomber : les deux chemins ne
-      // peuvent pas avoir la meme reponse, l'un est une panne, l'autre un etat normal.
+      // 🔴 Déchiffrement impossible : on retombe sur la clé maison plutôt que de faire échouer tous les tours
+      // d'agent de l'espace, mais on le signale, sinon le repli serait indiscernable d'un espace sans clé. La
+      // route de création, elle, refuse : là c'est une panne, pas un état normal.
       this.signaler?.(tenantId, err);
       return null;
     }
   }
 
   /**
-   * Enregistre la cle d'un espace. Le conflit est un SUCCES : il veut dire qu'une autre creation d'agent a
-   * gagne la course, et la cle qu'elle a posee fait autorite.
+   * Enregistre la clé d'un espace. Le conflit est un succès : une autre création d'agent a gagné la course,
+   * et sa clé fait autorité.
    *
-   * 🔴 REND CE QUI EST EN BASE APRES COUP, pas ce qu'on voulait ecrire. C'est ce qui rend le provisionnement
-   * sur : le perdant de la course repart avec la cle du gagnant, au lieu de deux appels convaincus d'avoir
-   * chacun la leur. ⚠️ C'est aussi ce qui permet a l'appelant de SAVOIR qu'il a perdu (identifiant rendu
-   * different de celui qu'il a passe) et de supprimer chez Vercel la cle devenue inutile : sans cette
-   * comparaison, elle facturerait sans que personne puisse s'en servir.
+   * 🔴 Rend ce qui est en base après coup, pas ce qu'on voulait écrire : le perdant repart avec la clé du
+   * gagnant, et voit à l'identifiant différent qu'il doit supprimer chez Vercel la clé devenue inutile (elle
+   * facturerait sans servir).
    */
   async enregistrer(tenantId: string, o: { cleId: string; cle: string; plafondMicroEur: number }): Promise<CleGatewayEspace> {
     const res = await this.pool.query<{ cle_id: string; cle_chiffree: string; plafond_micro_eur: string }>(
@@ -89,18 +73,15 @@ export class PgCleGatewayStore {
   }
 
   /**
-   * Oublie la cle d'un espace.
-   *
-   * ⚠️ N'appelle PAS Vercel : la revocation la-bas est le geste de l'appelant, et elle doit passer AVANT
-   * celui-ci. Inverser l'ordre laisserait une cle qui facture et dont plus personne ne connait
-   * l'identifiant, puisque c'est cette ligne qui le porte.
+   * Oublie la clé d'un espace. 🔴 N'appelle pas Vercel : la révocation là-bas est le geste de l'appelant, et
+   * doit passer avant, sinon la clé facturerait avec un identifiant que plus personne ne connaît.
    */
   async oublier(tenantId: string): Promise<boolean> {
     const res = await this.pool.query('delete from agent_gateway_keys where tenant_id = $1', [tenantId]);
     return (res.rowCount ?? 0) > 0;
   }
 
-  /** Note le plafond REELLEMENT pose chez Vercel, pour ne rappeler Vercel que quand il change. */
+  /** Note le plafond réellement posé chez Vercel, pour ne rappeler Vercel que quand il change. */
   async noterPlafond(tenantId: string, plafondMicroEur: number): Promise<void> {
     await this.pool.query(
       'update agent_gateway_keys set plafond_micro_eur = $2, updated_at = now() where tenant_id = $1',

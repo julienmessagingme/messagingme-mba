@@ -7,16 +7,10 @@ import {
 } from './requetes';
 
 /**
- * Les requêtes de connecteur en base (migration 0105).
+ * Les requêtes de connecteur en base.
  *
- * ⚠️ `tenant_id` sur CHAQUE requête : le pooler est superuser, la RLS est bypassée, et le filtrage en code est
- * le SEUL contrôle. Ce qui est protégé ici n'est pas anodin : une requête désigne un système client, ses
- * chemins et ce qu'on y envoie.
- *
- * 🔴 LE JSONB EST OPAQUE, DONC RELU DÉFENSIVEMENT. Ces colonnes ont été écrites par une route, mais elles
- * survivent aux versions : un champ retiré du code laisse des lignes anciennes en base, et une lecture qui
- * suppose la forme actuelle casserait à l'exécution, sur le chemin chaud, pour une donnée écrite six mois
- * plus tôt. Les fonctions `lire*` ci-dessous ne supposent rien.
+ * 🔴 `tenant_id` sur chaque requête : la RLS est contournée par le pooler, ce filtrage est le seul contrôle.
+ * Le jsonb survit aux versions : les fonctions `lire*` le relisent sans rien supposer de sa forme.
  */
 
 const COLS = `r.id, r.tenant_id, r.source_id, r.label, r.method, r.path, r.query, r.headers,
@@ -47,11 +41,8 @@ function lireEnTetes(v: unknown): EnTete[] {
 }
 
 /**
- * Le gabarit de corps, reconstruit depuis les trois colonnes qui le portent.
- *
- * Un `body_mode` inconnu retombe sur « aucun corps » : c'est le repli SÛR. Envoyer un corps qu'on ne sait pas
- * interpréter serait pire que ne pas en envoyer, et la contrainte `check` de la table empêche de toute façon
- * qu'une valeur inconnue y entre par la route.
+ * Le gabarit de corps, reconstruit depuis ses trois colonnes. Un `body_mode` inconnu retombe sur « aucun
+ * corps » : envoyer un corps qu'on ne sait pas interpréter serait pire.
  */
 function lireCorps(mode: string, brut: string | null, champs: unknown): GabaritCorps {
   if (mode === 'json') return { mode: 'json', gabarit: brut ?? '' };
@@ -60,9 +51,8 @@ function lireCorps(mode: string, brut: string | null, champs: unknown): GabaritC
 }
 
 /**
- * Les variables déclarées. Une entrée dont l'ORIGINE est illisible est écartée : mieux vaut une variable
- * manquante, qui refuse l'appel en le disant, qu'une variable dont on aurait deviné l'origine et qui
- * enverrait au système du client une valeur venue d'ailleurs que ce que le client avait réglé.
+ * Les variables déclarées. Une origine illisible écarte l'entrée : une variable manquante refuse l'appel en
+ * le disant, une origine devinée enverrait au client une valeur venue d'ailleurs.
  */
 function lireVariables(v: unknown): VariableDeclaree[] {
   if (!Array.isArray(v)) return [];
@@ -104,8 +94,7 @@ function versVue(r: Ligne): RequeteConnecteur {
   };
 }
 
-/** Traduit les violations de contrainte en erreurs TYPÉES : la route rend 409 ou 400, jamais 500. Un 500
- *  afficherait la page d'erreur de Cloudflare à la place du message, cf. CLAUDE.md. */
+/** Traduit les violations de contrainte en erreurs typées : la route rend 409 ou 400, jamais 500. */
 function traduire(label: string) {
   return (err: unknown): never => {
     const code = (err as { code?: string })?.code;
@@ -113,21 +102,17 @@ function traduire(label: string) {
     // 23503 = clé étrangère : la seule qui puisse échouer ici est `source_id`.
     if (code === '23503') throw new SourceIntrouvable();
     /**
-     * 🔴 23502 = NOT NULL, et il arrive AVANT le 23503 sur ce chemin. La sous-requête qui résout la source
-     * rend `null` quand elle n'appartient pas à l'espace, donc Postgres lève une violation de NOT NULL, pas
-     * de clé étrangère. Sans cette ligne, une simple erreur de configuration ressortait en 500, c'est-à-dire
-     * en page d'erreur Cloudflare, sans aucun message pour l'utilisateur.
-     *
-     * ⚠️ On vérifie la COLONNE et pas seulement le code : un autre NOT NULL violé un jour ne doit pas être
-     * traduit en « source introuvable », ce qui enverrait chercher au mauvais endroit.
+     * 23502 = NOT NULL, levé avant le 23503 : la sous-requête qui résout la source rend `null` quand elle
+     * n'appartient pas à l'espace. On vérifie aussi la colonne, pour ne pas traduire un autre NOT NULL en
+     * « source introuvable ».
      */
     if (code === '23502' && (err as { column?: string }).column === 'source_id') throw new SourceIntrouvable();
     throw err;
   };
 }
 
-/** Les trois colonnes du corps, dérivées du gabarit. UN seul endroit : l'écriture et la relecture doivent
- *  parler de la même chose, et deux conversions tenues séparément finiraient par diverger. */
+/** Les trois colonnes du corps, dérivées du gabarit, en un seul endroit pour que l'écriture et la relecture
+ *  parlent de la même chose. */
 function corpsEnColonnes(c: GabaritCorps): { mode: string; json: string | null; champs: unknown } {
   if (c.mode === 'json') return { mode: 'json', json: c.gabarit, champs: [] };
   if (c.mode === 'champs') return { mode: 'champs', json: null, champs: c.champs };
@@ -155,9 +140,8 @@ export class PgRequeteStore implements RequeteStore {
 
   async creer(tenantId: string, input: CreationRequete): Promise<RequeteConnecteur> {
     const c = corpsEnColonnes(input.corps);
-    // ⚠️ La SOURCE est vérifiée dans la même requête (`select ... where tenant_id`), pas par un aller-retour
-    // préalable : entre une vérification et une insertion, la source peut être supprimée. Ici la sous-requête
-    // et l'insertion sont un seul énoncé, donc la fenêtre n'existe pas.
+    // La source est vérifiée dans la même instruction (`where tenant_id`), sans aller-retour préalable : pas
+    // de fenêtre où elle serait supprimée entre la vérification et l'insertion.
     const res = await this.pool.query<{ id: string }>(
       `insert into connector_requests
          (tenant_id, source_id, label, method, path, query, headers, body_mode, body_json, body_champs,
@@ -178,12 +162,7 @@ export class PgRequeteStore implements RequeteStore {
         JSON.stringify(input.variables), input.outputPaths, JSON.stringify(input.valeursTest),
       ],
     ).catch(traduire(input.label));
-    /**
-     * ⚠️ CE FILET-CI N'A JAMAIS SERVI, et son commentaire d'origine l'affirmait pourtant : il disait
-     * « devancer » le 23502, alors qu'il est situé APRÈS l'`await` d'une promesse qui a déjà rejeté. Le
-     * vrai traitement est dans `traduire`. On le garde comme ceinture, pour le jour où la requête cesserait
-     * de lever (une colonne rendue nullable, par exemple), mais il n'est plus présenté comme la garde.
-     */
+    /** Ceinture : la requête lève déjà (`traduire`), ce test ne sert que si elle cessait de lever. */
     const id = res.rows[0]?.id;
     if (!id) throw new SourceIntrouvable();
     return (await this.parId(tenantId, id))!;
@@ -192,8 +171,7 @@ export class PgRequeteStore implements RequeteStore {
   async patch(tenantId: string, id: string, patch: PatchRequete): Promise<RequeteConnecteur | null> {
     const courant = await this.parId(tenantId, id);
     if (!courant) return null;
-    // Fusion AVANT écriture : `patch ?? courant`. Une garde calculée sur le corps de la requête ne verrait
-    // que ce qui change, jamais l'état effectif après écriture (règle du CLAUDE.md, garde anti-boucle).
+    // Fusion avant écriture (`patch ?? courant`) : la garde porte sur l'état effectif après écriture.
     const fusion: CreationRequete = {
       sourceId: patch.sourceId ?? courant.sourceId,
       label: patch.label ?? courant.label,

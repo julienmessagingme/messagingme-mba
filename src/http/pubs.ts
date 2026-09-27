@@ -13,101 +13,73 @@ import type { Entonnoir } from '../pubs/entonnoir';
 import { makeJournal, type AuditSink } from '../audit/journal';
 
 /**
- * LES PUBLICITÉS D'UN ESPACE : sa connexion (lot 2, spec § 3.1), puis ses campagnes (lot 3, § 3.2 et § 3.5).
- *
- * La connexion : lire l'état, échanger le code rendu par la fenêtre Meta, choisir le compte et la Page, se
- * déconnecter. Les campagnes : lister, créer, publier, lire une page, mettre en pause, reprendre.
- *
- * ⚠️ LE COMPTE DES ROUTES N'EST PAS ÉCRIT ICI, et ce n'est pas un oubli : cette phrase a dit « quatre
- * routes » jusqu'au lot 3, où il y en avait déjà neuf. Un nombre en prose devient faux au premier ajout,
- * sans que rien ne le signale ; la liste des `app.get` / `app.post` ci-dessous fait foi.
- *
- * 🔴 LE JETON N'ENTRE JAMAIS DANS CE FICHIER, exactement comme dans `EmbeddedSignupRouteDeps` : le câblage
- * l'échange, le chiffre et le range, et ne laisse passer que le `tenantId`. Un jeton qui n'entre pas dans une
- * route ne peut ni fuiter dans un journal, ni partir dans un corps de réponse, ni être lu dans une trace de
- * pile.
- *
- * 🔴 AUCUNE DÉPENDANCE OPTIONNELLE, garde et plafond compris. Le dépôt a payé ce motif deux fois : la garde
- * d'authentification déclarée `guard?`, puis `estDesabonne?`, qui a fait écrire à des contacts désabonnés.
- * Un câblage qui en oublie une ne compile pas.
+ * Les publicités d'un espace : sa connexion (lire l'état, échanger le code de la fenêtre Meta, choisir le compte
+ * et la Page, se déconnecter), puis ses campagnes (lister, créer, publier, lire, mettre en pause, reprendre).
+ * 🔴 Le jeton n'entre jamais dans ce fichier : le câblage l'échange, le chiffre et le range, et ne laisse passer
+ * que le `tenantId`. Aucune dépendance optionnelle, garde et plafond compris.
  */
 export interface PubsRouteDeps {
   /**
-   * `config_id` de la configuration Facebook Login for Business « publicités ». VIDE = fonctionnalité
-   * éteinte, et l'écran le dit au lieu d'ouvrir une fenêtre qui échouerait.
+   * `config_id` de la configuration Facebook Login for Business « publicités ». Vide = fonctionnalité éteinte,
+   * et l'écran le dit au lieu d'ouvrir une fenêtre qui échouerait.
    */
   configId: string;
   /** App ID Meta (public : sert au `FB.init` du front). */
   appId: string;
   graphVersion: string;
-  /** L'état de la connexion, SANS le jeton. */
+  /** L'état de la connexion, sans le jeton. */
   lire(tenantId: string): Promise<ConnexionPub | null>;
   /**
-   * Le compte publicitaire peut-il diffuser ? Lu EN DIRECT chez Meta, `null` si on ne sait pas.
-   *
-   * 🔴 `null` N'EST PAS « TOUT VA BIEN » : c'est « je n'ai pas pu demander » (pas de connexion, ou Meta
-   * muet). L'écran doit le dire ainsi, sinon un compte bloqué passerait pour prêt.
+   * Le compte publicitaire peut-il diffuser ? Lu en direct chez Meta. `null` n'est pas « tout va bien » : c'est
+   * « je n'ai pas pu demander », et l'écran doit le dire, sinon un compte bloqué passerait pour prêt.
    */
   etatCompte(tenantId: string): Promise<EtatComptePub | null>;
   /** Échange le code (TTL 30 s), chiffre le jeton, le range, et rend ce que ce jeton accorde. */
   connecter(tenantId: string, code: string, userId: string | null): Promise<ActifsAccordes>;
-  /** Ce que le jeton DÉJÀ rangé accorde. Sert à vérifier un choix, donc relu chez Meta, pas en base. */
+  /** Ce que le jeton déjà rangé accorde. Sert à vérifier un choix, donc relu chez Meta, pas en base. */
   actifsAccordes(tenantId: string): Promise<ActifsAccordes>;
   /** Enregistre le choix après avoir lu chez Meta la devise, le fuseau et l'état de la liaison. */
   choisir(tenantId: string, choix: { comptePubId: string; pageId: string }): Promise<ConnexionPub>;
   /**
-   * Efface la connexion, APRÈS avoir tenté de retirer notre accès chez Meta.
-   *
-   * ⚠️ LE BOOLÉEN NE VA PLUS À L'ÉCRAN, il va au JOURNAL D'AUDIT (décision de Julien du 2026-09-23). Le
-   * client n'est pas averti : un jeton que nous n'avons pas gardé n'est détenu par personne, et les deux
-   * gestes qu'on pourrait lui prescrire chez Meta cassent chacun quelque chose. Ce que le booléen sert
-   * désormais, c'est à MESURER si le retrait fonctionne sur un jeton d'utilisateur système.
+   * Efface la connexion, après avoir tenté de retirer notre accès chez Meta. Le booléen va au journal d'audit,
+   * pas à l'écran : il sert à mesurer si le retrait fonctionne sur un jeton d'utilisateur système.
    */
   deconnecter(tenantId: string): Promise<{ revoqueChezMeta: boolean }>;
   /** Les publicités de l'espace, la plus récente d'abord. */
   listerPubs(tenantId: string): Promise<Publicite[]>;
   /**
-   * Les BROUILLONS de l'espace, le plus récemment modifié d'abord, SANS les octets des visuels.
-   *
-   * 🔴 « SANS LES OCTETS » EST UN CONTRAT, PAS UN DÉTAIL : un brouillon peut porter 5 Mo d'image, et les
-   * transporter tous à chaque ouverture de l'écran transformerait la liste en téléchargement. Seule
-   * `lireBrouillon` a le droit de les lire.
+   * Les brouillons de l'espace, le plus récemment modifié d'abord, sans les octets des visuels : c'est un contrat
+   * (un brouillon peut porter 5 Mo d'image). Seule `lireBrouillon` les lit.
    */
   listerBrouillons(tenantId: string): Promise<BrouillonPub[]>;
-  /** Un brouillon AVEC son visuel, pour repeupler le formulaire. `null` = inconnu dans cet espace. */
+  /** Un brouillon avec son visuel, pour repeupler le formulaire. `null` = inconnu dans cet espace. */
   lireBrouillon(tenantId: string, id: string): Promise<BrouillonPubComplet | null>;
   creerBrouillon(tenantId: string, c: ChampsBrouillon): Promise<string>;
   /** `false` = le brouillon n'existe pas dans cet espace, ce que la route rend en 404. */
   majBrouillon(tenantId: string, id: string, c: ChampsBrouillon): Promise<boolean>;
   supprimerBrouillon(tenantId: string, id: string): Promise<boolean>;
   /**
-   * Crée la publicité chez Meta, EN PAUSE, et range ce qui en revient.
-   *
-   * ⚠️ ELLE NE LÈVE PAS SUR UN REFUS DE META : tout sort par `IssueCreation`, parce que la route doit rendre
-   * le message de Meta au client, et distinguer « rien n'a été créé » de « quelque chose subsiste ».
+   * Crée la publicité chez Meta, en pause, et range ce qui en revient. Ne lève pas sur un refus de Meta : tout
+   * sort par `IssueCreation`, pour rendre le message de Meta et distinguer « rien de créé » de « quelque chose
+   * subsiste ».
    */
   creerPub(tenantId: string, d: Omit<DemandeCreation, 'comptePubId' | 'pageId' | 'numeroWhatsApp'>): Promise<IssueCreation>;
-  /** Allume l'automation PUIS Meta. Lève si Meta refuse : l'ordre est la règle, pas le succès. */
+  /** Allume l'automation puis Meta. Lève si Meta refuse : l'ordre est la règle, pas le succès. */
   publierPub(tenantId: string, publiciteId: string): Promise<void>;
   /** Une publicité et son entonnoir. `null` = elle n'existe pas dans cet espace. */
   lirePub(tenantId: string, publiciteId: string): Promise<{ publicite: Publicite; entonnoir: Entonnoir } | null>;
   /**
-   * Met la CAMPAGNE en pause chez Meta, ou la relance.
-   *
-   * 🔴 L'AUTOMATION RESTE ALLUMÉE dans les deux sens, et c'est une décision de la spec (§ 3.5). Un prospect
-   * qui a cliqué juste avant la pause peut écrire plusieurs minutes plus tard : éteindre l'automation en
-   * même temps ferait tomber ce lead dans le vide, alors qu'il a été payé.
+   * Met la campagne en pause chez Meta, ou la relance. 🔴 L'automation reste allumée dans les deux sens : un
+   * prospect qui a cliqué juste avant la pause peut écrire plus tard, et ce lead a été payé.
    */
   basculerPub(tenantId: string, publiciteId: string, actif: boolean): Promise<void>;
   audit: AuditSink;
 }
 
 /**
- * 🔴 NOTRE PANNE N'EST PAS UN REFUS DE META, et les confondre coûte deux fois. La route enveloppait
- * l'appel à Meta ET l'écriture en base dans un seul `catch` à 502 : une table absente rendait à l'admin le
- * texte brut d'une erreur Postgres sous le message « échange refusé par Meta », sans aucune trace serveur,
- * et surtout SANS DIRE que Meta venait d'émettre un jeton sans expiration dont nous perdions le seul
- * exemplaire. Relevé en relecture à froid le 2026-09-23.
+ * 🔴 Notre panne n'est pas un refus de Meta : si l'écriture échoue après l'échange, Meta a émis un jeton sans
+ * expiration dont nous perdons le seul exemplaire. Il faut le dire et le tracer, pas l'habiller en « échange
+ * refusé par Meta ».
  */
 export class JetonNonEnregistre extends Error {
   constructor(readonly cause: unknown) {
@@ -117,18 +89,14 @@ export class JetonNonEnregistre extends Error {
 }
 
 /**
- * 🔴 UNE CONNEXION EXISTE DÉJÀ, et on ne l'écrase pas. Le jeton en place n'expire jamais : le remplacer
- * sans l'avoir révoqué laisserait un accès vivant dont nous perdrions le seul exemplaire. Pour reconnecter,
- * il faut passer par la déconnexion, qui révoque d'abord. Un appel DIRECT à la route reçoit donc 409, et
- * pas seulement celui qui passe par le bouton : l'invariant ne dépend plus de l'écran.
+ * 🔴 Une connexion existe déjà, et on ne l'écrase pas : le jeton en place n'expire jamais, le remplacer sans le
+ * révoquer laisserait un accès vivant dont nous perdrions le seul exemplaire. Reconnecter passe par la
+ * déconnexion, qui révoque d'abord ; un appel direct reçoit donc 409.
  */
 export class DejaConnectePub extends Error {
   /**
-   * `jetonOrphelin` : Meta avait DÉJÀ émis un jeton quand on s'en est aperçu (la course). Le cas
-   * ordinaire est refusé AVANT l'échange, donc à `false`.
-   *
-   * ⚠️ IL NE CHANGE PAS LE MESSAGE RENDU AU CLIENT : on ne lui demande aucun geste chez Meta, et la
-   * raison est écrite sur le `catch` de la route. Il sert à TRACER l'événement côté serveur.
+   * `jetonOrphelin` : Meta avait déjà émis un jeton quand on s'en est aperçu (la course) ; le cas ordinaire est
+   * refusé avant l'échange. Il ne change pas le message au client : il sert à tracer l'événement côté serveur.
    */
   constructor(readonly jetonOrphelin: boolean) {
     super('une connexion publicitaire existe déjà pour cet espace');
@@ -145,10 +113,8 @@ export class PasDeConnexionPub extends Error {
 }
 
 /**
- * LA CONNEXION EST INCOMPLÈTE : le compte publicitaire ou la Page n'a pas été choisi. On ne peut pas créer.
- *
- * ⚠️ Une erreur NOMMÉE plutôt qu'un 400 générique : c'est un état du parcours, pas une saisie fautive, et
- * l'écran doit envoyer le client finir sa connexion au lieu de lui faire relire son formulaire.
+ * La connexion est incomplète : compte publicitaire ou Page non choisi. Une erreur nommée plutôt qu'un 400 :
+ * c'est un état du parcours, et l'écran doit renvoyer le client finir sa connexion.
  */
 export class ConnexionPubIncomplete extends Error {
   constructor() {
@@ -165,16 +131,10 @@ const corpsChoix = z.object({
 }).strict();
 
 /**
- * LE FORMULAIRE DE CRÉATION (lot 3, spec § 3.2). Minimal, et chaque borne a une raison.
- *
- * 🔴 `budgetTotal` ET `fin` SONT OBLIGATOIRES, ET C'EST LE GARDE-FOU DU PRODUIT. Sans eux, une publicité
- * dépense sans limite et sans terme sur le compte du client. Meta exige d'ailleurs la même chose
- * (`lifetime_budget` impose `end_time`) : la contrainte technique et la décision produit disent la même
- * chose, ce qui n'est pas un hasard.
- *
- * 🔴 `horsCategorieSpeciale` DOIT VALOIR `true`. Une publicité de logement, d'emploi, de crédit ou de
- * politique impose un ciblage restreint et des obligations légales que cet écran ne sait pas porter. On ne
- * la refuse pas au client : on l'envoie dans le Gestionnaire, qui les porte.
+ * Le formulaire de création, minimal. 🔴 `budgetTotal` et `fin` sont obligatoires : sans eux, une publicité
+ * dépense sans limite ni terme sur le compte du client (Meta l'exige aussi : `lifetime_budget` impose
+ * `end_time`). `horsCategorieSpeciale` doit valoir `true` : logement, emploi, crédit ou politique imposent des
+ * obligations que cet écran ne porte pas ; on renvoie le client vers le Gestionnaire.
  */
 const corpsCreation = z.object({
   nom: z.string().trim().min(1).max(120),
@@ -199,28 +159,18 @@ const corpsCreation = z.object({
   horsCategorieSpeciale: z.literal(true),
   image: z.object({
     type: z.enum(TYPES_VISUEL_PUB),
-    // La taille est vérifiée sur les OCTETS décodés, pas sur la longueur du base64 : cette borne-ci n'est
+    // La taille est vérifiée sur les octets décodés, pas sur la longueur du base64 : cette borne-ci n'est
     // qu'un premier filet, large de la surcharge de l'encodage.
     base64: z.string().min(1).max(Math.ceil(TAILLE_VISUEL_PUB_MAX * 1.4)),
   }),
 }).strict();
 
 /**
- * LE CORPS D'UN BROUILLON, ET IL EST DÉLIBÉRÉMENT PERMISSIF LÀ OÙ LA CRÉATION EST STRICTE.
- *
- * 🔴 AUCUN CHAMP N'EST OBLIGATOIRE, ET C'EST TOUT L'INTÉRÊT. Un brouillon sert à garder un travail
- * INCOMPLET : exiger un budget positif ou une date valide refuserait précisément les brouillons qu'on veut
- * pouvoir poser. La validation stricte reste au seul endroit où elle protège quelque chose, `corpsCreation`,
- * c'est-à-dire l'appel qui engage l'argent du client chez Meta.
- *
- * ⚠️ CE QUI RESTE BORNÉ MALGRÉ TOUT, parce que ce sont des frontières et pas de l'hygiène : les LONGUEURS
- * (une table n'est pas un champ libre de taille infinie), l'ÉNUMÉRATION de la destination, la FORME de
- * l'identifiant de scénario, le TYPE du visuel, et `.strict()` qui refuse toute clé inconnue. Un brouillon
- * permissif sur son contenu n'est pas une porte dérobée pour écrire n'importe quoi en base.
- *
- * ⚠️ `image` A TROIS SENS ICI, et il en faut trois : ABSENTE = ne touche pas au visuel déjà enregistré,
- * `null` = efface-le, un objet = remplace-le. Sans le premier, chaque enregistrement d'une modification de
- * texte effacerait l'image, ce qui viderait de son sens la décision de la garder.
+ * Le corps d'un brouillon, permissif là où la création est stricte : aucun champ obligatoire, un brouillon garde
+ * un travail incomplet ; la validation stricte reste sur `corpsCreation`, qui engage l'argent du client. Restent
+ * bornés, parce que ce sont des frontières : les longueurs, l'énumération de la destination, la forme de
+ * l'identifiant de scénario, le type du visuel, et `.strict()`.
+ * `image` a trois sens : absente = ne touche pas au visuel enregistré, `null` = l'efface, un objet = le remplace.
  */
 const corpsBrouillon = z.object({
   nom: z.string().max(120).default(''),
@@ -244,29 +194,13 @@ const corpsBrouillon = z.object({
 }).strict();
 
 /**
- * CE QUE VALENT VRAIMENT DES OCTETS D'IMAGE. Rend le message de refus, ou `null` si le visuel passe.
- *
- * 🔴 UNE SEULE FONCTION POUR LES DEUX ROUTES, ET C'EST LA CORRECTION D'UNE ASYMÉTRIE. La création
- * portait ces trois contrôles EN LIGNE ; les routes de brouillon, écrites après, n'en portaient aucun et
- * se contentaient d'une borne de LONGUEUR sur la chaîne base64, c'est-à-dire sur une taille ENCODÉE et
- * sur un type seulement DÉCLARÉ. Relevé par une relecture à froid avant tout déploiement.
- *
- * ⚠️ LE PLAN NOMMAIT CETTE GARDE et le code ne la tenait pas : « le plafond est celui du formulaire,
- * vérifié côté serveur COMME À LA CRÉATION ». C'est le motif « une capacité câblée sur un consommateur
- * sur deux », déjà payé plusieurs fois ici. Recopier les trois contrôles dans la seconde route aurait
- * refermé le trou du jour ; les factoriser empêche le prochain.
- *
- * 🔴 LE TYPE SE LIT DANS LES OCTETS, PAS DANS CE QUE LE CLIENT DÉCLARE. Le champ `type` du corps est une
- * chaîne que le navigateur choisit : la valider contre une énumération ne prouve rien sur le CONTENU. Sur
- * la création, ces octets partent chez un tiers sous l'identité du client ; sur un brouillon, ils sont
- * relus plus tard et rendus au navigateur en `data:` URL. Les deux chemins méritent la même lecture.
+ * Ce que valent vraiment des octets d'image : rend le message de refus, ou `null` si le visuel passe. Une seule
+ * fonction pour la création et les brouillons. 🔴 Le type se lit dans les octets, pas dans ce que le client
+ * déclare : sur la création, ces octets partent chez un tiers sous l'identité du client ; sur un brouillon, ils
+ * sont rendus au navigateur en `data:` URL.
  */
 function refusDuVisuel(base64: string): string | null {
-  // ⚠️ LA TAILLE SE VÉRIFIE SUR LES OCTETS DÉCODÉS, pas sur la longueur du base64 : l'encodage ajoute un
-  // tiers, donc une borne posée sur la chaîne refuserait des images conformes ou en laisserait passer de
-  // trop grandes selon le remplissage. C'est la même erreur de catégorie que compter des `.length` UTF-16
-  // pour un plafond en octets (cf. `lireCorpsBorne`). Cette justification a suivi le décodage quand il a
-  // été factorisé ici : laissée au point d'appel, elle expliquait un contrôle qui n'y était plus.
+  // La taille se vérifie sur les octets décodés, pas sur la longueur du base64 (l'encodage ajoute un tiers).
   const octets = Buffer.from(base64, 'base64');
   if (octets.length === 0) return 'ce visuel est illisible';
   if (!estJpegOuPng(octets)) return 'ce fichier n’est pas une image JPEG ou PNG';
@@ -277,12 +211,8 @@ function refusDuVisuel(base64: string): string | null {
 }
 
 /**
- * Du corps validé vers ce que le store attend.
- *
- * 🔴 UNE CLÉ `image` ABSENTE DOIT LE RESTER, d'où le spread conditionnel et non un `visuel: c.image`.
- * Écrire `visuel: undefined` poserait la propriété avec la valeur `undefined`, ce qui est indiscernable
- * d'un effacement pour un code qui teste `'visuel' in c` et fragile pour celui qui teste `=== undefined`.
- * Le seul énoncé qui tient dans les deux lectures est de ne pas poser la clé du tout.
+ * Du corps validé vers ce que le store attend. Une clé `image` absente doit le rester (spread conditionnel) :
+ * `visuel: undefined` serait indiscernable d'un effacement pour un code qui teste `'visuel' in c`.
  */
 function versChamps(c: z.infer<typeof corpsBrouillon>): ChampsBrouillon {
   return {
@@ -296,25 +226,18 @@ function versChamps(c: z.infer<typeof corpsBrouillon>): ChampsBrouillon {
 
 export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: Guard, limiteCouteuse: PreHandler): void {
   const opts = { preHandler: garde };
-  // LES TROIS ÉCRITURES appellent Meta (l'échange, le choix, et la déconnexion depuis qu'elle révoque) :
-  // elles portent toutes le plafond des routes coûteuses, par espace.
-  //
-  // ⚠️ LA LECTURE APPELLE META ELLE AUSSI DEPUIS LE 2026-09-23, et cette phrase disait le contraire.
-  // Elle reste hors du plafond coûteux DÉLIBÉRÉMENT : c'est l'ouverture d'un écran, et dix par minute
-  // et par ESPACE couperaient la page dès que deux personnes la consultent. Ce qui la borne est
-  // ailleurs, et c'est ce qui rend l'arbitrage tenable : un micro-cache côté câblage
-  // (`src/index.ts`, `etatComptePubCache`) fait qu'un rafraîchissement n'appelle pas Meta, le plafond
-  // par UTILISATEUR (300/min) s'applique comme sur toute route gardée, et l'appel lui-même porte un
-  // plafond de durée (`ClientGraph`), sans quoi un Meta muet retiendrait le gestionnaire pour toujours.
+  // Les trois écritures appellent Meta (l'échange, le choix, la déconnexion qui révoque) : elles portent le
+  // plafond des routes coûteuses, par espace. La lecture appelle Meta aussi mais reste hors de ce plafond (dix
+  // par minute et par espace couperaient l'écran) : elle est bornée par un micro-cache au câblage
+  // (`etatComptePubCache`), le plafond par utilisateur, et le délai de `ClientGraph`.
   const couteux = gardeEtendue(garde, limiteCouteuse);
   const journal = makeJournal(deps.audit);
 
   app.get('/tenants/:tenantId/pubs/connexion', opts, async (req, reply) => {
     const tenantId = espaceVerifie(req);
     const connexion = await deps.lire(tenantId);
-    // ⚠️ BEST-EFFORT, ET C'EST DÉLIBÉRÉ : cet état vient de Meta, et une panne chez eux ne doit pas
-    // empêcher d'AFFICHER une connexion qu'on lit, elle, dans notre base. `null` dit « je n'ai pas pu
-    // demander », jamais « tout va bien ».
+    // Au mieux : une panne chez Meta ne doit pas empêcher d'afficher une connexion lue dans notre base. `null`
+    // dit « je n'ai pas pu demander », jamais « tout va bien ».
     const compte = connexion === null ? null : await deps.etatCompte(tenantId).catch(() => null);
     return reply.send({
       configure: deps.configId !== '',
@@ -337,13 +260,9 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     try {
       actifs = await deps.connecter(tenantId, corps.data.code, req.auth?.userId ?? null);
     } catch (err) {
-      // 🔴 ON NE DEMANDE AU CLIENT AUCUN GESTE CHEZ META, ET C'EST UNE DÉCISION, PAS UN OUBLI.
-      // Deux raisons qui se renforcent. D'abord le produit : un jeton que nous n'avons pas gardé n'est
-      // détenu par PERSONNE, donc il n'y a rien à fermer (décision de Julien du 2026-09-23). Ensuite le
-      // danger : lui faire retirer les permissions publicitaires retirerait aussi celles de la connexion
-      // qui MARCHE, puisque le retrait porte sur le couple (application, entité) et non sur un jeton ; et
-      // lui faire retirer l'application ferait taire son numéro WhatsApp. Les deux gestes cassent quelque
-      // chose pour fermer un accès que nul ne peut exercer.
+      // On ne demande au client aucun geste chez Meta : un jeton que nous n'avons pas gardé n'est détenu par
+      // personne, et les deux gestes possibles cassent quelque chose (retirer les permissions publicitaires emporte
+      // la connexion qui marche, retirer l'application fait taire son numéro WhatsApp).
       if (err instanceof DejaConnectePub) {
         return reply.code(409).send({
           error: 'cet espace a déjà une connexion publicitaire. Déconnectez-la d’abord : c’est ce geste qui '
@@ -353,17 +272,15 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
       }
       if (err instanceof JetonNonEnregistre) {
         return reply.code(500).send({
-          // 🔴 AUCUN GESTE PRESCRIT CHEZ META, pour les deux raisons écrites plus bas sur le 409 : le
-          // jeton perdu n'est détenu par personne, et les deux gestes possibles cassent quelque chose
-          // (les permissions publicitaires emportent la connexion voisine, l'application emporte le
-          // numéro WhatsApp). On dit donc ce qui s'est passé, et ce qui se fait CHEZ NOUS.
+          // Aucun geste prescrit chez Meta (voir le 409 plus haut) : on dit ce qui s'est passé, et ce qui se fait chez
+          // nous.
           error: 'la connexion a été accordée par Meta mais n’a pas pu être enregistrée de notre côté. '
             + 'Réessayez : si le problème persiste, c’est chez nous qu’il faut chercher, pas chez Meta.',
           code: 'jeton_non_enregistre',
         });
       }
       // Le code a 30 secondes de vie et ne sert qu'une fois : l'échec le plus courant est un client qui a
-      // laissé la fenêtre ouverte. On rend le message de Meta, c'est SON compte, et lui seul peut agir.
+      // laissé la fenêtre ouverte. On rend le message de Meta, c'est son compte, et lui seul peut agir.
       return reply.code(502).send({ error: err instanceof Error ? err.message : 'échange refusé par Meta' });
     }
     await journal(tenantId, req, 'pubs.connectee', { kind: 'pub_connexion', id: tenantId },
@@ -378,10 +295,9 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     if (!corps.success) return reply.code(400).send({ error: 'choix invalide' });
 
     /**
-     * 🔴 LE CHOIX SE VÉRIFIE CONTRE CE QUE LE JETON ACCORDE, ET CETTE LISTE SE RELIT CHEZ META.
-     * Les identifiants viennent du navigateur : sans ce contrôle, un admin pourrait enregistrer le compte
-     * publicitaire d'une autre entreprise, que nos appels utiliseraient ensuite en son nom. La relire en
-     * base au lieu de chez Meta la rendrait périmée au premier retrait de droit côté client.
+     * 🔴 Le choix se vérifie contre ce que le jeton accorde, relu chez Meta : les identifiants viennent du
+     * navigateur, et sans ce contrôle un admin enregistrerait le compte publicitaire d'une autre entreprise. Relue
+     * en base, la liste serait périmée au premier retrait de droit.
      */
     let actifs: ActifsAccordes;
     try {
@@ -392,9 +308,8 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
       if (err instanceof PasDeConnexionPub) return reply.code(409).send({ error: err.message, code: 'pas_connecte' });
       return reply.code(502).send({ error: err instanceof Error ? err.message : 'Meta ne répond pas' });
     }
-    // `act_123` et `123` désignent le MÊME compte : un appelant qui recopie l'identifiant vu dans le
-    // Gestionnaire de publicités enverrait la forme préfixée, et se verrait refuser un compte qu'il a
-    // pourtant accordé. On compare, et on enregistre, la forme nue.
+    // `act_123` et `123` désignent le même compte : un appelant qui recopie l'identifiant vu dans le
+    // Gestionnaire de publicités enverrait la forme préfixée. On compare, et on enregistre, la forme nue.
     const comptePubId = sansPrefixeAct(corps.data.comptePubId);
     if (!actifs.comptesPub.some((c) => c.id === comptePubId)) {
       return reply.code(400).send({ error: 'ce compte publicitaire n’est pas accordé par la connexion' });
@@ -407,9 +322,8 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     try {
       connexion = await deps.choisir(tenantId, { comptePubId, pageId: corps.data.pageId });
     } catch (err) {
-      // ⚠️ LE MÊME CAS QUE PLUS HAUT, ET IL ÉTAIT TRAITÉ D'UN SEUL CÔTÉ : `choisir` lit le jeton lui aussi,
-      // donc un autre onglet qui déconnecte pendant qu'on valide son choix faisait rendre 502 avec NOTRE
-      // phrase sous un statut qui accuse Meta.
+      // Même cas que plus haut : `choisir` lit le jeton lui aussi, et un autre onglet peut déconnecter pendant le
+      // choix.
       if (err instanceof PasDeConnexionPub) return reply.code(409).send({ error: err.message, code: 'pas_connecte' });
       return reply.code(502).send({ error: err instanceof Error ? err.message : 'Meta ne répond pas' });
     }
@@ -424,15 +338,9 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
   });
 
   /**
-   * LES BROUILLONS. Cinq routes qui ne touchent JAMAIS Meta : un brouillon est un formulaire mémorisé.
-   *
-   * ⚠️ `/pubs/brouillons` COEXISTE AVEC `/pubs/:id`, et c'est Fastify qui les départage : un segment
-   * STATIQUE l'emporte sur un segment paramétré, quel que soit l'ordre d'enregistrement. On les déclare
-   * quand même avant, pour que la lecture du fichier dise la même chose que le routeur.
-   *
-   * ⚠️ ADMIN POUR LES ÉCRITURES, comme partout dans ce module. Un brouillon ne dépense rien, mais il
-   * prépare une dépense et il porte le visuel : le laisser ouvert à tout le monde ferait de cette table
-   * le seul endroit du produit où un compte non admin écrit des mégaoctets.
+   * Les brouillons : cinq routes qui ne touchent jamais Meta. `/pubs/brouillons` coexiste avec `/pubs/:id`
+   * (Fastify fait gagner le segment statique) ; déclarées avant quand même, pour que la lecture dise la même
+   * chose. Admin pour les écritures : un brouillon prépare une dépense et porte des mégaoctets de visuel.
    */
   const optsBrouillon = { ...opts, bodyLimit: Math.ceil(TAILLE_VISUEL_PUB_MAX * 1.4) };
 
@@ -454,8 +362,8 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     if (forbidNonAdmin(req, reply)) return;
     const lu = corpsBrouillon.safeParse(req.body);
     if (!lu.success) return reply.code(400).send({ error: 'brouillon invalide' });
-    // Même lecture des octets qu'à la création : un brouillon n'est pas une porte dérobée pour écrire
-    // n'importe quoi en base, et le plan le posait comme l'une des deux gardes du stockage du visuel.
+    // Même lecture des octets qu'à la création : un brouillon n'est pas une porte dérobée pour écrire n'importe
+    // quoi en base.
     const refus = lu.data.image ? refusDuVisuel(lu.data.image.base64) : null;
     if (refus !== null) return reply.code(400).send({ error: refus });
     const id = await deps.creerBrouillon(tenantId, versChamps(lu.data));
@@ -468,8 +376,8 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     const { id } = req.params as { id: string };
     const lu = corpsBrouillon.safeParse(req.body);
     if (!lu.success) return reply.code(400).send({ error: 'brouillon invalide' });
-    // ⚠️ `image` ABSENTE ne passe pas ici, et c'est correct : il n'y a pas d'octets neufs à juger, et
-    // ceux qui sont déjà en base ont été lus à leur écriture. Seul un visuel FOURNI se vérifie.
+    // `image` absente ne passe pas ici : il n'y a pas d'octets neufs à juger, et ceux qui sont déjà en base ont
+    // été lus à leur écriture. Seul un visuel fourni se vérifie.
     const refus = lu.data.image ? refusDuVisuel(lu.data.image.base64) : null;
     if (refus !== null) return reply.code(400).send({ error: refus });
     const trouve = await deps.majBrouillon(tenantId, id, versChamps(lu.data));
@@ -487,13 +395,8 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
   });
 
   /**
-   * CRÉER UNE PUBLICITÉ. Tout est créé EN PAUSE chez Meta : cette route ne fait dépenser personne.
-   *
-   * 🔴 `bodyLimit` DÉDIÉ, comme l'import de documents : le visuel transite en base64, donc environ un tiers
-   * de plus que sa taille réelle. Sans lui, le plafond global d'un mégaoctet refuserait toute image un peu
-   * grande avec une erreur qui ne parle ni d'image ni de taille.
-   *
-   * ⚠️ Plafond des routes coûteuses ET réservée aux admins : elle engage l'argent du client chez un tiers.
+   * Créer une publicité : tout est créé en pause chez Meta, cette route ne fait dépenser personne. `bodyLimit`
+   * dédié (le visuel transite en base64). Plafond coûteux et admin : elle engage l'argent du client chez un tiers.
    */
   const optsCreation = { ...couteux, bodyLimit: Math.ceil(TAILLE_VISUEL_PUB_MAX * 1.4) };
   app.post('/tenants/:tenantId/pubs', optsCreation, async (req, reply) => {
@@ -513,8 +416,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     if (f.destination === 'scenario' && f.workflowId === null) {
       return reply.code(400).send({ error: 'choisissez le scénario qui répondra aux prospects de cette publicité' });
     }
-    // Les trois contrôles des octets vivent dans `refusDuVisuel`, partagé avec les routes de brouillon :
-    // deux copies d'une même garde finissent toujours par diverger, et c'est arrivé ici.
+    // Les contrôles des octets vivent dans `refusDuVisuel`, partagé avec les brouillons.
     const refus = refusDuVisuel(f.image.base64);
     if (refus !== null) return reply.code(400).send({ error: refus });
 
@@ -539,8 +441,7 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     }
 
     if (issue.sorte === 'annulee') {
-      // 🔴 RIEN N'EXISTE CHEZ META, et c'est ce que ce statut dit. On rend le message de Meta tel quel :
-      // c'est SON compte, et lui seul peut agir sur ce qu'il refuse. Pas de repli silencieux.
+      // Rien n'existe chez Meta, et ce statut le dit. On rend le message de Meta tel quel : c'est son compte.
       return reply.code(502).send({ error: issue.raison, code: 'creation_refusee' });
     }
     await journal(tenantId, req, 'pubs.creee', { kind: 'publicite', id: issue.publiciteId },
@@ -556,11 +457,8 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
   });
 
   /**
-   * PUBLIER. C'est le SEUL geste de ce module qui fait dépenser de l'argent, et il est irréversible au sens
-   * où une impression payée ne se rembourse pas.
-   *
-   * 🔴 L'ORDRE EST DANS `publierLaPublicite`, PAS ICI : l'automation s'allume AVANT Meta. Le rappeler dans
-   * cette route ferait deux endroits où le savoir, et le second finirait par mentir.
+   * 🔴 Publier : le seul geste de ce module qui fait dépenser de l'argent, et une impression payée ne se
+   * rembourse pas. L'ordre (l'automation avant Meta) vit dans `publierLaPublicite`, pas ici.
    */
   app.post('/tenants/:tenantId/pubs/:id/publier', couteux, async (req, reply) => {
     const tenantId = espaceVerifie(req);
@@ -569,8 +467,8 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     try {
       await deps.publierPub(tenantId, id);
     } catch (err) {
-      // ⚠️ UN REFUS N'EST PAS UNE PANNE DE META : 409, et le message dit ce qu'il faut réparer. Un 502
-      // enverrait le client chercher un problème chez Meta, qui n'a même pas été appelé.
+      // Un refus n'est pas une panne de Meta : 409, et le message dit ce qu'il faut réparer. Un 502 enverrait le
+      // client chercher un problème chez Meta, qui n'a même pas été appelé.
       if (err instanceof PublicationRefusee) return reply.code(409).send({ error: err.message, code: 'publication_refusee' });
       if (err instanceof PasDeConnexionPub) return reply.code(409).send({ error: err.message, code: 'pas_connecte' });
       return reply.code(502).send({ error: err instanceof Error ? err.message : 'Meta ne répond pas' });
@@ -580,10 +478,8 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
   });
 
   /**
-   * LA PAGE D'UNE PUBLICITÉ : son statut chez Meta, son entonnoir, ses prospects non pris en charge.
-   *
-   * ⚠️ HORS du plafond coûteux, comme la lecture de la connexion : c'est l'ouverture d'un écran, et elle ne
-   * lit que NOS tables (le suivi, lui, relit Meta toutes les quinze minutes, en fond).
+   * La page d'une publicité : son statut chez Meta, son entonnoir, ses prospects non pris en charge. Hors du
+   * plafond coûteux : c'est l'ouverture d'un écran, et elle ne lit que nos tables (le suivi relit Meta en fond).
    */
   app.get('/tenants/:tenantId/pubs/:id', opts, async (req, reply) => {
     const tenantId = espaceVerifie(req);
@@ -594,12 +490,9 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
   });
 
   /**
-   * METTRE EN PAUSE, OU RELANCER. Le seul geste de ce module qui change ce que Meta diffuse sans rien créer.
-   *
-   * 🔴 LA PAUSE DOIT RESTER POSSIBLE MÊME QUAND TOUT VA MAL, et c'est pour ça qu'elle ne vérifie rien de
-   * plus que l'identité de l'appelant. C'est le bouton d'arrêt d'une dépense : lui ajouter une condition
-   * (l'état local, la fraîcheur du suivi, la validité de la connexion) créerait un cas où un client voit sa
-   * campagne dépenser et ne peut pas l'arrêter depuis notre écran.
+   * Mettre en pause ou relancer. 🔴 La pause doit rester possible même quand tout va mal : c'est le bouton d'arrêt
+   * d'une dépense, et toute condition de plus (état local, suivi, connexion) créerait un cas où le client voit sa
+   * campagne dépenser sans pouvoir l'arrêter.
    */
   for (const [chemin, actif, action] of [
     ['pause', false, 'pubs.pausee'],
@@ -620,10 +513,8 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
     });
   }
 
-  // `couteux` et non `opts` : depuis qu'elle révoque chez Meta, cette route appelle l'extérieur comme les
-  // autres écritures du module. ⚠️ Elle n'est PLUS « le seul geste irréversible » depuis le lot 3 : créer
-  // une publicité crée des objets sur le compte du client, et la publier engage son budget. Ce qui lui
-  // reste en propre, c'est d'être la seule à DÉTRUIRE quelque chose chez nous.
+  // `couteux` et non `opts` : elle révoque chez Meta, donc appelle l'extérieur. C'est la seule route du module
+  // qui détruit quelque chose chez nous.
   app.delete('/tenants/:tenantId/pubs/connexion', couteux, async (req, reply) => {
     const tenantId = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
@@ -634,12 +525,9 @@ export function registerPubs(app: FastifyInstance, deps: PubsRouteDeps, garde: G
 }
 
 /**
- * CES OCTETS SONT-ILS UN JPEG OU UN PNG ? Lu sur la SIGNATURE du fichier, la seule chose qu'un client ne
- * peut pas nous faire croire en changeant un champ de son formulaire.
- *
- * ⚠️ CE N'EST PAS UN DÉCODEUR D'IMAGE, et ça n'a pas à l'être : Meta refusera de toute façon un fichier
- * corrompu, avec son message. Ce que cette garde ferme, c'est l'envoi d'un SVG (un document exécutable) ou
- * de n'importe quoi d'autre sous une étiquette `image/png`.
+ * Ces octets sont-ils un JPEG ou un PNG ? Lu sur la signature, que le client ne peut pas changer dans son
+ * formulaire. Pas un décodeur (Meta refusera un fichier corrompu) : la garde ferme l'envoi d'un SVG (document
+ * exécutable) ou d'autre chose sous une étiquette `image/png`.
  */
 function estJpegOuPng(o: Buffer): boolean {
   // JPEG : FF D8 FF. PNG : 89 50 4E 47 0D 0A 1A 0A.

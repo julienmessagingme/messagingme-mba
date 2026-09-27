@@ -2,108 +2,85 @@ import { chiffrer, round2, type CategoryRates } from './cost';
 import { coutRcsEuros, type GrillePrix } from './prix';
 
 /**
- * LE COUT TOTAL DES MESSAGES ENVOYES SUR UNE PERIODE : templates, messages de service, RCS.
+ * Le coût total des messages envoyés sur une période : templates, messages de service, RCS. Module pur.
  *
- * 🔴 LA FRANCHISE SE COMPTE PAR MOIS, ET LA PERIODE AFFICHEE N'EST PAS UN MOIS. C'est la difficulte de ce
- * module, et la premiere redaction du plan s'y est trompee : elle calculait « ce que le mois depasse,
- * plafonne a ce que la periode contient », ce qui suppose que la periode est la FIN du mois. Sur les sept
- * premiers jours d'un mois qui finit a 1200 envois, cette formule facturait 200 messages GRATUITS. L'entree
- * porte donc, pour chaque mois traverse, ce qui a ete consomme AVANT la fenetre : c'est la seule facon
- * d'etre juste ou que tombe la periode, et quel que soit le nombre de mois qu'elle traverse.
+ * 🔴 La franchise de service se compte par mois, et la période affichée n'en est pas un : pour chaque mois
+ * traversé, l'entrée porte ce qui a été consommé avant la fenêtre, sinon les premiers jours d'un mois seraient
+ * facturés comme sa fin. Une période à cheval sur deux mois a deux franchises (remise à zéro le 1er).
  *
- * 🔴 ET LA FRANCHISE SE REMET A ZERO LE 1er. Une periode a cheval sur deux mois a DEUX franchises. Un
- * calcul global sur la periode en aurait offert une seule, donc surfacture de mille messages.
- *
- * 🔴 « CHIFFRABLE » A UNE SEULE DEFINITION DANS CE DEPOT, et c'est pour ca que ce module importe `chiffrer`
- * au lieu de refaire le test. Deux definitions donneraient deux totaux sur deux ecrans du meme onglet, et
- * le client les comparerait. C'est la regle que `cost.ts` applique deja a ses trois consommateurs ; celui-ci
- * est le quatrieme.
- *
- * ⚠️ PAS DE MESSAGE DE SERVICE SUR RCS. Contrairement a WhatsApp, un echange RCS ne produit aucune
- * facturation de service : tout y est au tarif RCS, simple ou conversationnel. Ne pas recopier la mecanique
- * de franchise sur ce canal, elle n'y a pas de sens.
- *
- * Module PUR : aucune base, aucun reseau.
+ * « Chiffrable » a une seule définition dans le dépôt (`chiffrer`), sinon deux écrans du même onglet
+ * donneraient deux totaux. Pas de message de service sur RCS : tout y est au tarif RCS.
  */
 
-/** Ce qu'un MOIS traverse par la periode a consomme, avant la fenetre et dedans. */
+/** Ce qu'un mois traversé par la période a consommé, avant la fenêtre et dedans. */
 export interface MoisService {
   /** Le mois, en 'YYYY-MM'. */
   mois: string;
-  /** Messages de service de ce mois envoyes AVANT le debut de la periode affichee. */
+  /** Messages de service de ce mois envoyés avant le début de la période affichée. */
   avantLaPeriode: number;
-  /** Messages de service de ce mois qui tombent DANS la periode affichee. */
+  /** Messages de service de ce mois qui tombent dans la période affichée. */
   dansLaPeriode: number;
 }
 
 export interface EntreeCoutMessages {
-  /** Les volumes de templates FACTURABLES de la periode, par categorie Meta. */
+  /** Les volumes de templates facturables de la période, par catégorie Meta. */
   templates: readonly { category: string | null; count: number }[];
   rates: CategoryRates;
-  /** Un element par mois traverse par la periode, dans l'ordre chronologique. */
+  /** Un élément par mois traversé par la période, dans l'ordre chronologique. */
   service: readonly MoisService[];
   rcsSimple: number;
   rcsConversationnel: number;
 }
 
-/** Le detail d'un mois, tel que l'ecran l'affiche a part de la periode. */
+/** Le détail d'un mois, tel que l'écran l'affiche à part de la période. */
 export interface FranchiseMois {
   mois: string;
-  /** Total du mois a la fin de la periode : c'est ce qui se lit « 340 / 1000 ». */
+  /** Total du mois à la fin de la période : c'est ce qui se lit « 340 / 1000 ». */
   consommes: number;
   plafond: number;
-  /** Ceux de ce mois, DANS la periode, qui sont payants. */
+  /** Ceux de ce mois, dans la période, qui sont payants. */
   factures: number;
 }
 
 export interface CoutMessages {
   templates: { marketing: number; utility: number };
   service: {
-    /** Tous les messages de service de la periode, factures ou non. */
+    /** Tous les messages de service de la période, facturés ou non. */
     envoyes: number;
     factures: number;
     cout: number;
-    /** ⚠️ Un element par mois traverse : la franchise est mensuelle, l'ecran montre celui qui l'interesse. */
+    /** Un élément par mois traversé : la franchise est mensuelle. */
     parMois: FranchiseMois[];
   };
   rcs: { simple: number; conversationnel: number; cout: number };
   total: number;
   /**
-   * 🔴 LA DEVISE VOYAGE AVEC CE TOTAL, ET PAS AVEC UN AUTRE APPEL. Elle vient du même `pricing_analytics`
-   * de Meta que les tarifs, donc elle est là de toute façon ; la faire venir de la route voisine
-   * (`/stats/cost/campaigns`) couplerait l'AFFICHAGE de deux lignes que la carte charge séparément pour
-   * qu'une panne de l'une n'abîme pas l'autre. Trouvé en revue le 2026-09-17 : la première version le
-   * faisait, et le test « une panne d'une ligne ne tue pas les deux autres » passait quand même, parce que
-   * le nombre s'affichait, simplement sans son symbole.
-   *
-   * `null` = inconnue, et l'écran rend alors le nombre nu plutôt qu'un « € » qui serait faux hors zone euro.
+   * La devise voyage avec ce total : elle vient du même `pricing_analytics` que les tarifs. La faire venir
+   * d'une route voisine couplerait l'affichage de deux lignes chargées séparément. `null` = inconnue, l'écran
+   * rend le nombre nu plutôt qu'un « € » faux hors zone euro.
    */
   currency: string | null;
-  /** Envois comptes dans les volumes mais absents du cout. Somme des deux causes qui suivent. */
+  /** Envois comptés dans les volumes mais absents du coût. Somme des deux causes qui suivent. */
   nonChiffrables: number;
-  /** ...dont ceux sans categorie enregistree : heritage clos (cf. `CostSeries.sansCategorie`). */
+  /** ...dont ceux sans catégorie enregistrée : héritage clos (cf. `CostSeries.sansCategorie`). */
   sansCategorie: number;
-  /** ...dont ceux dont Meta ne rend pas le tarif : panne du jour, reparable. */
+  /** ...dont ceux dont Meta ne rend pas le tarif : panne du jour, réparable. */
   sansTarif: number;
 }
 
 
 /**
- * Le mois d'une date d'effet 'YYYY-MM-DD', pour le comparer a un mois 'YYYY-MM'.
- *
- * ⚠️ COMPARAISON DE CHAINES, ET C'EST EXACT ICI : le format 'YYYY-MM' est trie lexicographiquement comme il
- * l'est chronologiquement. Passer par des `Date` ferait entrer un fuseau horaire dans une question qui n'en
- * a pas, et se tromperait d'un jour aux frontieres de mois.
+ * Le mois d'une date d'effet 'YYYY-MM-DD'. Comparaison de chaînes, exacte ici ('YYYY-MM' se trie comme le
+ * temps) : passer par des `Date` ferait entrer un fuseau et se tromperait aux frontières de mois.
  */
 function moisDe(iso: string): string {
   return iso.slice(0, 7);
 }
 
 /**
- * Combien de messages de service de CE mois, DANS la periode, sont payants.
- *
- * La franchise couvre les `plafond` PREMIERS du mois. Les messages de la periode occupent la tranche
- * `[avant, avant + dans)`. Ce qui est facture est l'intersection de cette tranche avec `[plafond, +infini)`.
+ * Combien de messages de service de ce mois, dans la période, sont payants : la franchise couvre les
+ * `plafond` premiers du mois, la période occupe `[avant, avant + dans)`, on facture l'intersection avec
+ * `[plafond, +infini)`.
  */
 function facturesDuMois(m: MoisService, plafond: number): number {
   const fin = m.avantLaPeriode + m.dansLaPeriode;
@@ -112,7 +89,7 @@ function facturesDuMois(m: MoisService, plafond: number): number {
 }
 
 export function coutMessages(e: EntreeCoutMessages, g: GrillePrix): CoutMessages {
-  // ---- Templates, avec la MEME regle de chiffrabilite que le reste du depot.
+  // ---- Templates, avec la même règle de chiffrabilité que le reste du dépôt.
   let marketing = 0;
   let utility = 0;
   let sansCategorie = 0;
@@ -123,10 +100,8 @@ export function coutMessages(e: EntreeCoutMessages, g: GrillePrix): CoutMessages
       if (verdict.refus === 'sansCategorie') sansCategorie += t.count; else sansTarif += t.count;
       continue;
     }
-    // 🔴 LA MARGE EST DEJA DANS `rates`, POSEE UNE FOIS PAR `prixFactures`. L appliquer ici la compterait
-    // DEUX fois : une marge de 150 facturerait 2,25 fois le tarif Meta. Elle a vecu ici jusqu au
-    // 2026-09-18, jusqu a ce qu une revue montre que deux AUTRES consommateurs des memes tarifs
-    // l ignoraient, faute d un point de passage unique.
+    // 🔴 La marge est déjà dans `rates`, posée une fois par `prixFactures` : l'appliquer ici la compterait
+    // deux fois.
     const montant = t.count * verdict.tarif;
     if (t.category === 'marketing') marketing += montant; else utility += montant;
   }
@@ -138,9 +113,8 @@ export function coutMessages(e: EntreeCoutMessages, g: GrillePrix): CoutMessages
   const parMois: FranchiseMois[] = [];
   for (const m of e.service) {
     envoyes += m.dansLaPeriode;
-    // 🔴 AVANT LA DATE D'EFFET, RIEN N'EST FACTURE, quel que soit le volume. Meta ne facture les messages
-    // de service qu'a partir du 2026-10-01 : rejouer un mois anterieur doit rendre zero, sinon le total
-    // d'un mois passe changerait selon le jour ou on le regarde.
+    // 🔴 Avant la date d'effet (`serviceDepuis`), Meta ne facture pas le service : un mois antérieur rend zéro,
+    // sinon le total d'un mois passé changerait selon le jour où on le regarde.
     const payants = m.mois >= moisEffet ? facturesDuMois(m, g.serviceFranchise) : 0;
     factures += payants;
     parMois.push({
@@ -152,8 +126,7 @@ export function coutMessages(e: EntreeCoutMessages, g: GrillePrix): CoutMessages
   }
   const coutService = round2((factures * g.serviceCentimes) / 100);
 
-  // ---- RCS : deux tarifs, aucune franchise, aucun message de service. La formule vit dans `prix.ts`,
-  // parce que le tableau du cout par engagement l'applique aussi, campagne par campagne.
+  // ---- RCS : deux tarifs, aucune franchise. La formule vit dans `prix.ts`, partagée avec le coût par engagement.
   const coutRcs = coutRcsEuros(e.rcsSimple, e.rcsConversationnel, g);
 
   const templates = { marketing: round2(marketing), utility: round2(utility) };

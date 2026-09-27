@@ -1,7 +1,6 @@
-// Évaluation d'une CONDITION de scénario (node « Si »). Module PUR (aucune IO, aucun accès DB, aucun import qui
-// tire pg) -> testable en unitaire sans base. C'est le cœur du node condition : `evaluateConditionGroup(group, ctx)`
-// renvoie un booléen (sortie « Si réunie » vs « Sinon »). Les opérateurs texte (eq/contains/not_contains/empty/
-// not_empty) MIROITENT la sémantique SQL de `buildContactWhere` (mini-CRM) : voir `matchStringOp` + test de parité.
+// Évaluation d'une condition de scénario (node « Si »). Module pur (aucune IO, aucun import qui tire pg) :
+// `evaluateConditionGroup(group, ctx)` renvoie la sortie « Si réunie » ou « Sinon ». Les opérateurs texte
+// reproduisent la sémantique SQL de `buildContactWhere` (mini-CRM) : voir `matchStringOp` et son test de parité.
 
 import type { ContactFieldOp } from '../crm/contact-store.pg';
 
@@ -9,8 +8,8 @@ import type { ContactFieldOp } from '../crm/contact-store.pg';
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 export type TimeUnit = 'minutes' | 'hours' | 'days';
 
-/** Ops sur un champ texte : STRICTEMENT le jeu du mini-CRM (`ContactFieldOp`) -> une clause de champ texte se
- *  comporte comme un filtre mini-CRM (anti-slop). */
+/** Ops sur un champ texte : exactement le jeu du mini-CRM (`ContactFieldOp`), pour qu'une clause de champ
+ *  texte se comporte comme un filtre mini-CRM. */
 export type StringOp = ContactFieldOp; // 'eq' | 'contains' | 'not_contains' | 'empty' | 'not_empty'
 export type NumberOp = 'eq' | 'neq' | 'lt' | 'lte' | 'gt' | 'gte' | 'empty' | 'not_empty';
 export type BoolOp = 'is_true' | 'is_false';
@@ -44,12 +43,9 @@ export interface EvalContext {
   timeZone: string; // IANA, ex. 'Europe/Paris'
   businessHours: BusinessHours;
   /**
-   * Le dernier message ÉCRIT par le contact, quand le graphe en a besoin, sinon absent.
-   *
-   * 🔴 CHARGÉ PARESSEUSEMENT, et c'est pour ça qu'il est optionnel : le lire coûte une requête de plus, et
-   * l'immense majorité des scénarios n'en a que faire. L'exécuteur ne le demande que si un bloc s'en sert
-   * (`buildCtx`), exactement comme il ne construit ce contexte que si le graphe a une condition ou un bloc
-   * de date. Absent = le bloc pose une valeur vide, jamais une valeur inventée.
+   * Le dernier message écrit par le contact, chargé seulement si un bloc s'en sert (`buildCtx`) : une requête
+   * de plus que la plupart des scénarios n'ont pas à payer. Absent = le bloc pose une valeur vide, jamais une
+   * valeur inventée.
    */
   derniereSaisie?: string | null;
 }
@@ -66,9 +62,9 @@ export function evaluateConditionGroup(group: ConditionGroup, ctx: EvalContext):
 }
 
 /**
- * Coerce des `data` de node OPAQUES (issues du graphe JSON, potentiellement malformées) en `ConditionGroup`
+ * Coerce des `data` de node opaques (issues du graphe JSON, potentiellement malformées) en `ConditionGroup`
  * sûr : `match` par défaut 'all', `clauses` -> [] si absent/non-array. Les clauses individuelles restent
- * opaques : `evaluateClause` est défensif (kind inconnu -> false, throw isolé -> false). Frontière moteur (walk).
+ * opaques : `evaluateClause` est défensif (kind inconnu -> false, throw isolé -> false).
  */
 export function coerceConditionGroup(data: unknown): ConditionGroup {
   const d = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
@@ -87,10 +83,9 @@ function evaluateClause(c: Clause, ctx: EvalContext): boolean {
     case 'field': {
       const v = attributeOrField(ctx, c.key);
       if (c.op === 'is_true' || c.op === 'is_false') return matchBoolOp(v, c.op);
-      // `eq`/`empty`/`not_empty` sont PARTAGÉS texte/nombre : on ne compare en NUMÉRIQUE que si le champ est
-      // typé nombre (`valueType`) OU si l'op n'a de sens QUE numériquement (lt/lte/gt/gte/neq). Sinon sémantique
-      // texte (miroir buildContactWhere). Un champ texte gardé `eq` reste une égalité de CHAÎNE — crucial, sinon
-      // `Number('Paris')=NaN` renverrait toujours false pour toute égalité de texte.
+      // `eq`/`empty`/`not_empty` sont partagés texte/nombre : comparaison numérique seulement si le champ est typé
+      // nombre (`valueType`) ou si l'op n'a de sens que numériquement. Sinon `eq` reste une égalité de chaîne, sans
+      // quoi `Number('Paris')` = NaN rendrait fausse toute égalité de texte.
       if (isNumberOp(c.op) && (c.valueType === 'number' || isNumberOnlyOp(c.op))) {
         return matchNumberOp(v, c.op, c.value ?? '');
       }
@@ -153,9 +148,8 @@ function strOrNull(v: unknown): string | null {
 
 // --- Opérateurs (matchStringOp = miroir de buildContactWhere) ---
 
-// Ops numériques COMPLET (inclut eq/empty/not_empty, partagés avec le texte). `NUMBER_ONLY_OPS` = le sous-ensemble
-// qui n'a de sens QUE numériquement -> force la comparaison numérique même sans `valueType`. `STRING_OPS` = le jeu
-// texte (= `ContactFieldOp` du mini-CRM), pour router sans cast.
+// `NUMBER_OPS` inclut eq/empty/not_empty, partagés avec le texte ; `NUMBER_ONLY_OPS` force la comparaison
+// numérique même sans `valueType` ; `STRING_OPS` = `ContactFieldOp` du mini-CRM, pour router sans cast.
 const NUMBER_OPS = new Set(['eq', 'neq', 'lt', 'lte', 'gt', 'gte', 'empty', 'not_empty']);
 const NUMBER_ONLY_OPS = new Set(['neq', 'lt', 'lte', 'gt', 'gte']);
 const STRING_OPS = new Set(['eq', 'contains', 'not_contains', 'empty', 'not_empty']);
@@ -163,17 +157,17 @@ function isNumberOp(op: string): op is NumberOp { return NUMBER_OPS.has(op); }
 function isNumberOnlyOp(op: string): boolean { return NUMBER_ONLY_OPS.has(op); }
 function isStringOp(op: string): op is StringOp { return STRING_OPS.has(op); }
 
-/** Miroir EXACT de la sémantique SQL de `buildContactWhere` (mini-CRM). `coalesce(value,'')` pour contains ;
+/** Miroir exact de la sémantique SQL de `buildContactWhere` (mini-CRM). `coalesce(value,'')` pour contains ;
  *  `ilike` = insensible à la casse ; eq = égalité stricte, faux si valeur absente. */
 export function matchStringOp(value: string | null, op: StringOp, target: string): boolean {
-  // PAS de trim : miroir EXACT du SQL `fields ->> key is null or = ''` (buildContactWhere). `strOrNull` a déjà
-  // réduit '' à null en amont ; une valeur d'espaces seuls ('  ') reste NON vide, comme en SQL — sinon le node
-  // condition et le ciblage mini-CRM classeraient le même contact différemment (rupture de parité anti-slop).
+  // Pas de trim, comme le SQL `fields ->> key is null or = ''` (`strOrNull` a déjà réduit '' à null) : une
+  // valeur d'espaces seuls reste non vide, sinon le node condition et le ciblage mini-CRM classeraient le même
+  // contact différemment.
   const empty = value === null || value === '';
   if (op === 'empty') return empty;
   if (op === 'not_empty') return !empty;
-  // Cible vide sur eq/contains/not_contains : buildContactWhere NE POSE PAS le filtre (aucune contrainte -> le
-  // contact passe). On mirroir : cible vide -> true, jamais une contrainte silencieuse qui exclurait tout le monde.
+  // Cible vide sur eq/contains/not_contains : buildContactWhere ne pose pas le filtre, donc true ici aussi
+  // (jamais une contrainte silencieuse qui exclurait tout le monde).
   if (target === '') return true;
   const hay = (value ?? '').toLowerCase();
   const needle = target.toLowerCase();
@@ -187,12 +181,11 @@ function matchNumberOp(value: string | null, op: NumberOp, target: string): bool
   const empty = value === null || value.trim() === '';
   if (op === 'empty') return empty;
   if (op === 'not_empty') return !empty;
-  // Cible (seuil) vide = pas de contrainte -> true, comme matchStringOp/buildContactWhere. Sans ça, `Number('')===0`
-  // ferait matcher `x >= 0` pour presque tout contact numérique renseigné (seuil oublié dans le constructeur d'UI).
+  // Seuil vide = pas de contrainte, comme matchStringOp. Sinon `Number('') === 0` ferait matcher `x >= 0` pour
+  // presque tout contact renseigné (seuil oublié dans l'UI).
   if (target.trim() === '') return true;
-  // Valeur absente/vide -> ne matche AUCUNE comparaison (eq/neq/lt/lte/gt/gte). Sans ce garde, `Number(null)===0`
-  // (piège JS, ≠ `Number(undefined)=NaN`) ferait matcher `age < 18` pour TOUT contact sans `age` renseigné.
-  // Cohérent avec matchStringOp (eq faux si absent).
+  // Valeur absente -> aucune comparaison ne matche : `Number(null) === 0` ferait matcher `age < 18` pour tout
+  // contact sans `age`. Cohérent avec matchStringOp (eq faux si absent).
   if (empty) return false;
   const a = Number(value);
   const b = Number(target);
@@ -215,9 +208,8 @@ function matchBoolOp(value: string | null, op: BoolOp): boolean {
 }
 
 function relMs(amount: number | undefined, unit: TimeUnit | undefined): number {
-  // Coercer AVANT valider (miroir de matchNumberOp) : `amount` vient de node.data OPAQUE et peut arriver en
-  // string ('24'). Number.isFinite ne coerce pas, donc `Number.isFinite('24')` est faux -> il retomberait à 0
-  // (relMs=0 -> older_than vrai pour toute date passée). On coerce d'abord, puis on valide le résultat.
+  // Coercer avant de valider : `amount` vient de node.data opaque et peut être une chaîne ('24'), que
+  // `Number.isFinite` refuse sans coercer (-> 0 -> older_than vrai pour toute date passée).
   const num = Number(amount);
   const n = Number.isFinite(num) ? num : 0;
   const per = unit === 'days' ? 86400000 : unit === 'hours' ? 3600000 : 60000; // défaut minutes
@@ -226,7 +218,7 @@ function relMs(amount: number | undefined, unit: TimeUnit | undefined): number {
 
 // --- Fuseau horaire (IANA), 100% pur via Intl ---
 
-/** Parts date/heure d'un instant DANS un fuseau IANA. */
+/** Parts date/heure d'un instant dans un fuseau IANA. */
 function zonedParts(date: Date, timeZone: string): { year: number; month: number; day: number; hour: number; minute: number; second: number } {
   const dtf = new Intl.DateTimeFormat('en-US', {
     timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
@@ -246,10 +238,9 @@ function tzOffsetMinutes(date: Date, timeZone: string): number {
 }
 
 /**
- * Interprète une chaîne date/heure en INSTANT. Avec `Z`/offset -> absolu direct. Sinon (heure MURALE
- * `YYYY-MM-DDTHH:MM`) -> interprétée dans le fuseau tenant. Une date nue `YYYY-MM-DD` est traitée comme minuit
- * local. L'offset est calculé en DEUX passes (voir corps) -> exact jusqu'au bord d'une bascule DST ; seule
- * l'heure inexistante (saut de printemps) ou ambiguë (retour d'automne) du changement d'heure reste un cas limite.
+ * Interprète une chaîne date/heure en instant. Avec `Z`/offset -> absolu. Sinon (heure murale
+ * `YYYY-MM-DDTHH:MM`, ou date nue = minuit) -> dans le fuseau du tenant. Offset calculé en deux passes, exact
+ * jusqu'au bord d'une bascule DST ; seule l'heure inexistante ou ambiguë du changement d'heure reste un cas limite.
  */
 export function parseInstant(value: string, timeZone: string): Date {
   const v = value.trim();
@@ -257,9 +248,8 @@ export function parseInstant(value: string, timeZone: string): Date {
   const wall = /T\d{2}:\d{2}/.test(v) ? v : `${v}T00:00`;
   const guess = new Date(`${wall}Z`); // d'abord comme si UTC
   if (Number.isNaN(guess.getTime())) return guess;
-  // Deux passes d'offset : l'offset lu depuis le `guess` naïf peut être celui du MAUVAIS côté d'une bascule DST
-  // (l'instant corrigé retombe dans l'autre offset -> erreur d'1 h dans la fenêtre de transition). On recalcule
-  // l'offset depuis l'instant corrigé, qui est du bon côté hors du saut lui-même.
+  // Deux passes : l'offset lu depuis le `guess` naïf peut être celui du mauvais côté d'une bascule DST (erreur
+  // d'une heure) ; on le recalcule depuis l'instant corrigé.
   const off1 = tzOffsetMinutes(guess, timeZone);
   const corrected = new Date(guess.getTime() - off1 * 60000);
   const off2 = tzOffsetMinutes(corrected, timeZone);

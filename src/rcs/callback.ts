@@ -1,41 +1,29 @@
 import { z } from 'zod';
 
 /**
- * Rapports de livraison (DLR) et messages entrants (MO) du canal RCS smsmode.
+ * Rapports de livraison (DLR) et messages entrants (MO) du canal RCS smsmode. Module pur : il traduit un
+ * corps HTTP non fiable en fait métier, écrit contre leur spec (`dev.smsmode.com/rcs/openapi/rest-rcs.yml`).
  *
- * Module PUR : il traduit un corps HTTP non fiable en fait métier, sans aucune IO. Écrit contre leur spec
- * (`dev.smsmode.com/rcs/openapi/rest-rcs.yml`, lue à la source le 2026-08-24), pas de mémoire.
- *
- * Trois traits de leur contrat commandent tout ce fichier :
- *
- * 1. AUCUNE SIGNATURE. smsmode ne signe pas ses rappels : ni HMAC, ni jeton d'en-tête. Ce qui authentifie
- *    l'appel est donc le CODE opaque de l'URL (`rcs_agents.webhook_code`), doublé du contrôle que le
- *    `channelId` du corps est bien celui de l'agent de ce workspace. Ce fichier ne fait que LIRE ; ce sont
- *    ces deux gardes, tenues par la route, qui autorisent.
- * 2. REJEUX GARANTIS. Ils réessaient six fois (30 s, 2 min, 10 min, 1 h, 5 h, 24 h) tant qu'ils n'ont pas
- *    reçu un 2xx. Tout traitement en aval doit être idempotent, jamais « une fois exactement ».
- * 3. ÉNUMÉRATION INCOMPLÈTE. `READ` existe en vrai et n'est PAS dans l'énumération documentée. Un statut
- *    inconnu rend donc `null` (aucune écriture) et n'est JAMAIS traité comme un échec : croire un message
- *    perdu parce qu'on ne connaît pas son statut ferait basculer le contact en repli WhatsApp pour rien,
- *    et lui enverrait deux fois le même message.
+ * Trois traits de leur contrat commandent ce fichier :
+ * 1. 🔴 aucune signature (ni HMAC, ni jeton d'en-tête) : ce qui authentifie l'appel est le code opaque de
+ *    l'URL (`rcs_agents.webhook_code`), doublé du contrôle que le `channelId` du corps est celui de l'agent
+ *    du workspace. Ce fichier ne fait que lire ; ces deux gardes, tenues par la route, autorisent ;
+ * 2. rejeux garantis (six fois, jusqu'à 24 h, tant qu'ils n'ont pas un 2xx) : tout traitement en aval doit
+ *    être idempotent ;
+ * 3. énumération incomplète (`READ` existe hors de la liste documentée) : un statut inconnu rend `null` et
+ *    n'est jamais un échec, sinon le contact basculerait en repli WhatsApp et recevrait deux fois le message.
  */
 
 /**
- * Adresse publique des rappels d'un workspace.
- *
- * 🔴 `baseApi` EST `adressesPubliques(...).avecPrefixe`, JAMAIS `APP_URL` (2026-09-21). Cette route est servie
- * par l'API. Avant la bascule Vercel, la seule façon de l'atteindre était le front, qui réécrit `/api/backend`
- * vers elle, d'où ce préfixe écrit ici en dur. Depuis, `APP_URL` vaut le front sur Vercel, qui ne relaie PAS
- * (`404 DNS_HOSTNAME_RESOLVED_PRIVATE`) : smsmode appelait une adresse morte, et plus aucun rapport de
- * livraison ni aucune réponse RCS n'arrivait (le dernier date du 26 août). `avecPrefixe` porte le préfixe
- * quand l'API n'a pas son propre nom, et ne le porte plus quand elle l'a : c'est la même règle que l'URL d'un
- * webhook entrant de Tools, écrite une seule fois dans `src/lib/adresses-publiques.ts`.
+ * Adresse publique des rappels d'un workspace. `baseApi` est `adressesPubliques(...).avecPrefixe`, jamais
+ * `APP_URL` : cette route est servie par l'API, et le front sur Vercel ne la relaie pas. Une adresse morte
+ * ici coupe tous les rapports de livraison et toutes les réponses RCS.
  */
 export function urlRappelRcs(baseApi: string, code: string): string {
   return `${baseApi.replace(/\/+$/, '')}/rcs/callback/${code}`;
 }
 
-/** Statut de livraison dans NOTRE modèle : la même échelle que les accusés Meta, une seule dans le produit. */
+/** Statut de livraison dans notre modèle : la même échelle que les accusés Meta, une seule dans le produit. */
 export type RcsDeliveryStatus = 'sent' | 'delivered' | 'read' | 'failed';
 
 export interface RcsDlr {
@@ -45,17 +33,16 @@ export interface RcsDlr {
   channelId: string | null;
   /** Destinataire en chiffres nus, tel qu'ils l'envoient. */
   to: string;
-  /** null = statut hors énumération connue -> on n'écrit rien plutôt que d'inventer. */
+  /** null = statut hors énumération connue : on n'écrit rien plutôt que d'inventer. */
   status: RcsDeliveryStatus | null;
   /**
-   * Le message n'atteindra JAMAIS ce numéro (UNDELIVERABLE / UNDELIVERED). C'est LE signal qui alimente la
-   * sortie « non joignable » du bloc : chez smsmode la joignabilité ne se demande pas avant l'envoi, elle se
-   * constate après.
+   * Le message n'atteindra jamais ce numéro (UNDELIVERABLE / UNDELIVERED) : le signal qui alimente la sortie
+   * « non joignable » du bloc, la joignabilité se constatant après l'envoi chez smsmode.
    */
   echecDefinitif: boolean;
   /** Motif d'échec (`INVALID_PHONE_NUMBER`, `BLACKLISTED`, `SPAM`…), tel quel. */
   detail: string | null;
-  /** NOTRE référence, posée à l'envoi (`refClient`). Utile au débogage, jamais à l'autorisation. */
+  /** Notre référence, posée à l'envoi (`refClient`). Utile au débogage, jamais à l'autorisation. */
   refClient: string | null;
 }
 
@@ -72,10 +59,8 @@ export interface RcsMo {
   /** Charge utile du bouton tapé (`kind === 'suggestion'`). C'est elle qui choisit la branche du scénario. */
   postbackData: string | null;
   /**
-   * Position partagée par le contact (`kind === 'location'`). Elle arrive SANS texte et SANS charge utile :
-   * c'est la raison pour laquelle un bouton « Demander la position » ne peut pas ouvrir une branche de
-   * scénario, et pour laquelle il faut garder ces coordonnées ici, sinon la réponse ne serait qu'une bulle
-   * vide dans l'inbox.
+   * Position partagée (`kind === 'location'`). Elle arrive sans texte ni charge utile : un bouton « Demander la
+   * position » ne peut donc pas ouvrir une branche, et sans ces coordonnées la réponse serait une bulle vide.
    */
   latitude: number | null;
   longitude: number | null;
@@ -142,17 +127,10 @@ export function chiffresNus(s: string): string {
 }
 
 /**
- * Le NUMÉRO du contact, parmi les champs d'identité d'un rappel.
- *
- * 🔴 Pourquoi ce n'est pas simplement `from`. Leur documentation montre un message entrant avec
- * `from: "33600000000"` (le contact) et `recipient.to: "RcsAgent"`. La PRODUCTION fait l'inverse : le corps
- * réel d'un clic sur un bouton porte `from: "Messaging Me (TEST)"` (l'agent) et `recipient.to:
- * "33633921577"` (le contact). Autrement dit ils gardent l'orientation du message SORTANT même sur un
- * entrant, à l'opposé de leur propre exemple.
- *
- * Conséquence vécue le 2026-08-24 : deux clics de Julien ont été reçus, rejetés, et le scénario est resté
- * bloqué sans que rien ne le dise. On ne se fie donc plus à la POSITION du champ mais à sa FORME : on prend
- * le premier des deux qui ressemble à un numéro. Un nom d'agent n'a pas 7 chiffres, un numéro les a tous.
+ * Le numéro du contact, parmi les champs d'identité d'un rappel. Leur documentation met le contact dans
+ * `from` ; la production garde l'orientation du message sortant même sur un entrant (`from` = l'agent,
+ * `recipient.to` = le contact). On se fie donc à la forme, pas à la position : le premier candidat qui porte
+ * au moins 7 chiffres.
  */
 export function numeroDuContact(...candidats: Array<string | undefined>): string | null {
   for (const brut of candidats) {
@@ -163,15 +141,9 @@ export function numeroDuContact(...candidats: Array<string | undefined>): string
 }
 
 /**
- * Ce corps est-il un rapport de livraison ?
- *
- * 🔴 Le discriminant est la PRÉSENCE d'un `status.value`, pas `direction`. Première version : `direction ===
- * 'MT'`. Un vrai rappel de production a été rejeté le 2026-08-24 par cette règle, et la conséquence était
- * silencieuse : le corps tombait dans le lecteur de messages ENTRANTS, qui exige un expéditeur numérique,
- * n'en trouvait pas (l'expéditeur d'un MT est le nom de l'agent), et le rappel finissait « non exploitable ».
- *
- * Un rapport de livraison porte toujours son statut ; un message entrant n'en a jamais. C'est donc ce que
- * l'on regarde, et un `direction: 'MO'` explicite tranche en sens inverse par sécurité.
+ * Ce corps est-il un rapport de livraison ? Le discriminant est la présence d'un `status.value`, pas
+ * `direction` : un vrai DLR sans `direction: 'MT'` tomberait sinon dans le lecteur de MO et finirait « non
+ * exploitable ». Un `direction: 'MO'` explicite tranche en sens inverse.
  */
 export function estDlr(raw: unknown): boolean {
   const e = enveloppe.safeParse(raw);
@@ -180,7 +152,7 @@ export function estDlr(raw: unknown): boolean {
   return d.success && typeof d.data.status.value === 'string' && d.data.status.value !== '';
 }
 
-/** Rapport de livraison, ou null si le corps n'en est pas un exploitable. Ne lève JAMAIS. */
+/** Rapport de livraison, ou null si le corps n'en est pas un exploitable. Ne lève jamais. */
 export function parseRcsDlr(raw: unknown): RcsDlr | null {
   const e = enveloppe.safeParse(raw);
   if (!e.success) return null;
@@ -193,21 +165,20 @@ export function parseRcsDlr(raw: unknown): RcsDlr | null {
     channelId: e.data.channel?.channelId ?? null,
     to: chiffresNus(e.data.recipient?.to ?? ''),
     status: statut,
-    // UNIQUEMENT sur les deux valeurs d'échec CONNUES. Un statut inconnu n'est pas un échec.
+    // Seulement sur les deux valeurs d'échec connues : un statut inconnu n'est pas un échec.
     echecDefinitif: statut === 'failed',
     detail: d.data.status.detail ?? null,
     refClient: e.data.refClient ?? null,
   };
 }
 
-/** Message entrant, ou null si le corps n'en est pas un exploitable. Ne lève JAMAIS. */
+/** Message entrant, ou null si le corps n'en est pas un exploitable. Ne lève jamais. */
 export function parseRcsMo(raw: unknown): RcsMo | null {
   const e = enveloppe.safeParse(raw);
   if (!e.success) return null;
   const m = corpsMo.safeParse(raw);
   if (!m.success) return null;
-  // Le contact est `from` OU `recipient.to` selon l'orientation que le fournisseur donne au corps : les deux
-  // sont acceptés, c'est la FORME qui tranche (cf. `numeroDuContact`).
+  // Le contact est `from` ou `recipient.to` selon l'orientation du corps : c'est la forme qui tranche.
   const from = numeroDuContact(e.data.from, e.data.recipient?.to);
   if (from === null) return null; // aucun numéro : rien à rattacher, ni contact, ni parcours
   const type = (m.data.body.type ?? '').toUpperCase();
@@ -231,20 +202,8 @@ export function parseRcsMo(raw: unknown): RcsMo | null {
 }
 
 /**
- * Le contact demande-t-il l'arrêt ?
- *
- * Obligation légale ET condition de survie de l'agent : un opérateur suspend une marque qui continue
- * d'écrire après un STOP. On reconnaît donc le mot seul ou en tête de message, dans les deux langues, sans
- * exiger une forme exacte. Volontairement STRICT sur la position : un message qui CONTIENT « stop » au
- * milieu d'une phrase (« je ne peux pas stopper là ») n'est pas une demande d'arrêt, et désabonner un
- * contact à tort est une faute symétrique.
- */
-/**
- * Ce qui s'affiche dans le fil d'inbox pour un message entrant.
- *
- * Une position et un fichier n'ont pas de texte : sans cette mise en forme, leur bulle serait vide et
- * l'information (les coordonnées, l'adresse du fichier) serait définitivement perdue, alors que c'est
- * exactement ce que l'opérateur a demandé au contact en posant le bouton.
+ * Ce qui s'affiche dans le fil d'inbox pour un message entrant : une position ou un fichier n'ont pas de
+ * texte, et sans cette mise en forme les coordonnées ou l'adresse du fichier seraient perdues.
  */
 export function apercuMo(mo: RcsMo): string {
   if (mo.kind === 'location') {
@@ -258,6 +217,5 @@ export function apercuMo(mo: RcsMo): string {
   return mo.text ?? `[${mo.kind}]`;
 }
 
-// 🔴 `estDemandeArret` a DÉMÉNAGÉ le 2026-08-29 vers `src/crm/consentement.ts`. Il ne servait qu'au RCS parce
-// qu'il vivait ici, et c'est exactement ce qui a produit l'asymétrie : STOP désabonnait en RCS et ne faisait
-// rien en WhatsApp. Le prédicat appartient au consentement, pas au canal.
+// 🔴 `estDemandeArret` vit dans `src/crm/consentement.ts` : le prédicat du STOP appartient au consentement,
+// pas au canal, pour que WhatsApp et RCS désabonnent pareil.

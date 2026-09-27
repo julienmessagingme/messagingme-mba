@@ -15,7 +15,7 @@ import { gardeEtendue } from '../auth/middleware';
 import type { Guard, PreHandler } from '../auth/middleware';
 import { espaceVerifie, nonEmpty, estUuid } from './scope';
 import { normaliserChaine, problemeDeChaine, RANG_INITIAL, type DevenirEtage, type EtageEntrant } from '../campaign/etages';
-// Le MÊME analyseur de cible que le mini-CRM : les destinataires d'une campagne se désignent exactement
+// Le même analyseur de cible que le mini-CRM : les destinataires d'une campagne se désignent exactement
 // comme une action en masse, et deux analyseurs finiraient par ne plus viser la même chose.
 import { parseBulkTarget } from './contacts';
 import type { BulkTarget } from '../crm/contact-store.pg';
@@ -24,14 +24,13 @@ export interface CampaignRouteDeps {
   repo: CampaignRepoLike;
   queue: Queue;
   /**
-   * Palier d'envoi du numéro de l'espace (`messaging_limit_tier`), pour AVERTIR avant un lancement trop gros.
+   * Palier d'envoi du numéro de l'espace (`messaging_limit_tier`), pour avertir avant un lancement trop gros.
    * Une panne de lecture ne doit jamais empêcher de créer une campagne, d'où le repli silencieux côté appelant.
    */
   getMessagingLimitTier(tenantId: string): Promise<string | null>;
   /**
-   * Brouillons de COMPOSITION (une campagne qu'on est en train d'écrire). Rien à voir avec
-   * `campaigns.status = 'draft'`, qui est une campagne complète et non lancée. Requis depuis le lot 3 de l'audit ponytail :
-   * les routes de brouillon étaient montées « si la dépendance est câblée », ce qu'elle est toujours.
+   * Brouillons de composition (une campagne qu'on est en train d'écrire), sans rapport avec
+   * `campaigns.status = 'draft'`, qui est une campagne complète et non lancée.
    */
   drafts: {
     list(tenantId: string): Promise<Array<{ id: string; name: string; state: Record<string, unknown>; updatedAt: Date }>>;
@@ -39,32 +38,18 @@ export interface CampaignRouteDeps {
     update(tenantId: string, id: string, name: string, state: Record<string, unknown>): Promise<boolean>;
     remove(tenantId: string, id: string): Promise<boolean>;
   };
-  /** Le numéro appartient-il au tenant ? (empêche d'envoyer depuis le numéro d'autrui.) */
+  /** 🔴 Le numéro appartient-il à l'espace ? (empêche d'envoyer depuis le numéro d'autrui.) */
   phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
   /**
-   * Résout une CIBLE (filtres + exclusions, ou identifiants) en liste d'identifiants, dans la base.
-   *
-   * 🔴 C'est ce qui retire le piège des grosses sélections. L'écran proposait « tout sélectionner » jusqu'à
-   * 100 000 contacts, rapatriait leurs identifiants dans le navigateur, et les renvoyait tous dans le corps
-   * de la requête, plafonné à 1 Mo : le JSON des seuls identifiants pèse environ 975 Ko à 25 000 contacts.
-   * La création échouait donc BIEN AVANT la limite que l'écran annonçait, et sans rien dire.
+   * Résout une cible (filtres + exclusions, ou identifiants) en liste d'identifiants, dans la base : le navigateur
+   * n'a pas à rapatrier puis renvoyer des dizaines de milliers d'identifiants dans un corps plafonné à 1 Mo.
    */
   contactIdsForTarget(tenantId: string, target: BulkTarget, limite?: number): Promise<string[]>;
   /**
-   * Les identifiants de TOUS les contacts de l'espace, BORNÉS (constat B4 de l'audit externe du 2026-09-02).
-   *
-   * 🔴 Pourquoi ce n'est plus un COMPTE. Le chemin « tous les contacts » comptait d'abord, validait le
-   * plafond sur ce compte, puis chargeait les contacts PLUS TARD, dans une seconde requête. Entre les deux,
-   * un import concurrent pouvait faire passer l'espace au-dessus du plafond : la campagne partait avec plus
-   * de destinataires que ce que la validation avait autorisé, et personne ne le voyait. Un compte ne peut pas
-   * fermer cette course, parce que ce n'est pas lui qu'on utilise ensuite.
-   *
-   * On résout donc les identifiants UNE fois, bornés à `plafond + 1`, et ce sont EXACTEMENT ceux-là que la
-   * campagne emporte. Le `+ 1` est ce qui distingue « pile au plafond » de « au-dessus », sans jamais
-   * matérialiser plus d'une ligne de trop.
-   *
-   * ⚠️ Cela borne aussi la MÉMOIRE : ce chemin chargeait l'intégralité du CRM dans le process à chaque
-   * création de campagne, sans aucune limite.
+   * Les identifiants de tous les contacts de l'espace, bornés à `plafond + 1`. On résout une fois, et ce sont
+   * exactement ceux-là que la campagne emporte : compter puis charger plus tard laisserait un import concurrent
+   * faire partir la campagne au-dessus du plafond validé. Le `+ 1` distingue « pile au plafond » de « au-dessus ».
+   * Cela borne aussi la mémoire.
    */
   identifiantsDeTousLesContacts(tenantId: string, limite: number): Promise<string[]>;
   /** Plafond de destinataires (le câblage passe la configuration, défaut de `src/campaign/plafond.ts`). */
@@ -75,24 +60,20 @@ export interface CampaignRouteDeps {
   /** Agents RCS du tenant (sélecteur de l'assistant). */
   listRcsAgents(tenantId: string): Promise<Array<{ agentId: string; brandName: string; status: string }>>;
   /**
-   * Le modèle de mail appartient-il au tenant (et n'est-il pas supprimé) ? Garde d'un étage e-mail de la
-   * chaîne, exactement comme `rcsAgentBelongsToTenant` l'est d'une campagne RCS.
-   *
-   * 🔴 SANS ELLE, L'IDENTIFIANT PART DIRECTEMENT DANS UNE CLÉ ÉTRANGÈRE : `campaign_etages.email_template_id`
-   * référence `email_templates(id)`, donc un modèle inconnu rendrait une 23503, c'est-à-dire une 5xx dont
-   * Cloudflare remplace le corps.
+   * Le modèle de mail appartient-il à l'espace (et n'est-il pas supprimé) ? Garde d'un étage e-mail, comme
+   * `rcsAgentBelongsToTenant` : sans elle, un identifiant inconnu lèverait 23503 sur la clé étrangère (500).
    */
   emailTemplateBelongsToTenant(templateId: string, tenantId: string): Promise<boolean>;
   /** La campagne appartient-elle au tenant ? (scope le run, 404 sinon.) */
   campaignBelongsTo(campaignId: string, tenantId: string): Promise<boolean>;
   /**
-   * Le webhook entrant appartient-il au tenant, et est-il ACTIF ? Garde d'une campagne AU FIL DE L'EAU : sans
+   * Le webhook entrant appartient-il à l'espace, et est-il actif ? Garde d'une campagne au fil de l'eau : sans
    * elle on brancherait une campagne sur l'adresse d'un autre espace.
    */
   webhookUsableByTenant(webhookId: string, tenantId: string): Promise<boolean>;
   /** Arrête une campagne au fil de l'eau (scopée tenant) : elle cesse de prendre les arrivants. */
   stopWebhookCampaign(campaignId: string, tenantId: string): Promise<boolean>;
-  /** Suspend une campagne EN COURS d'envoi (scopée tenant, `running` uniquement). false = elle n'envoyait pas. */
+  /** Suspend une campagne en cours d'envoi (scopée tenant, `running` uniquement). false = elle n'envoyait pas. */
   pauseCampaign(campaignId: string, tenantId: string): Promise<boolean>;
   /** Lève la pause avant d'enfiler le run de reprise (`paused` uniquement, no-op ailleurs). */
   resumeCampaign(campaignId: string, tenantId: string): Promise<boolean>;
@@ -114,19 +95,19 @@ export interface CampaignRouteDeps {
   archiveCampaign(campaignId: string, tenantId: string): Promise<boolean>;
   /** Sort une campagne de l'archive (scopée tenant). true si elle y était. */
   unarchiveCampaign(campaignId: string, tenantId: string): Promise<boolean>;
-  /** Supprime pour de bon une campagne JAMAIS lancée (scopée tenant). false si la garde métier refuse. */
+  /** Supprime pour de bon une campagne jamais lancée (scopée tenant). false si la garde métier refuse. */
   deleteDraftCampaign(campaignId: string, tenantId: string): Promise<boolean>;
   getCampaignDetail(campaignId: string, tenantId: string): Promise<CampaignDetail | null>;
-  /** Renvoi d'un destinataire en échec de variable de template (F7) : re-résout sur le contact à jour + remet en
-   *  pending. Résultat discriminé (queued/not_found/not_retryable/missing_var/conflict). */
+  /** Renvoi d'un destinataire en échec de variable de template : re-résout sur le contact à jour + remet en
+  *  pending. Résultat discriminé (queued/not_found/not_retryable/missing_var/conflict). */
   resetRecipientForRetry(tenantId: string, campaignId: string, recipientId: string): Promise<RetryReset>;
   listPhoneNumbers(tenantId: string): Promise<PhoneNumberRow[]>;
-  /** Débit par défaut (msg/min, 0 = opt-out) des campagnes sans ratePerMinute. Doit être le MÊME que celui
-   *  injecté au worker (config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE), pour que l'estimation d'expiration et le
-   *  throttle réel voient le même débit. */
+  /** Débit par défaut (msg/min, 0 = opt-out) des campagnes sans ratePerMinute. Doit être le même que celui
+  *  injecté au worker (config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE), pour que l'estimation d'expiration et le
+  *  throttle réel voient le même débit. */
   defaultRatePerMinute: number;
-  /** Le plus BAS des plafonds de canal, pour ESTIMER une durée sans connaître le canal (`plafondLePlusBas`).
-   *  Le frein réel est posé par `run-job`, qui lit le canal. */
+  /** Le plus bas des plafonds de canal, pour estimer une durée sans connaître le canal (`plafondLePlusBas`).
+  *  Le frein réel est posé par `run-job`, qui lit le canal. */
   plafondLePlusBas: number;
 }
 
@@ -150,15 +131,12 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       ? campaignJobExpireSeconds(sizing.pendingCount, resolveRatePerMinute(sizing.ratePerMinute, deps.defaultRatePerMinute, deps.plafondLePlusBas))
       : undefined;
   };
-  // Garde des routes coûteuses : la garde habituelle, PLUS le plafond par espace (chaîne APLATIE).
+  // Garde des routes coûteuses : la garde habituelle plus le plafond par espace (chaîne aplatie).
   const couteux = gardeEtendue(garde, limiteCouteuse);
 
   /**
-   * Brouillons de COMPOSITION.
-   *
-   * Ces routes n'ont AUCUN effet d'envoi : elles n'écrivent qu'un nom et l'état d'un écran. Elles restent
-   * pourtant réservées aux admins, comme tout ce groupe (`registerCampaigns` est monté avec `gardeAdmin`) :
-   * un brouillon de campagne est une campagne en devenir, il n'y a pas de raison d'ouvrir l'un sans l'autre.
+   * Brouillons de composition : aucun effet d'envoi (un nom et l'état d'un écran), mais admin comme tout ce
+   * groupe, un brouillon étant une campagne en devenir.
    */
   const drafts = deps.drafts;
   /** Nom d'un brouillon : non vide et borné. Le nom sert d'étiquette, il n'est jamais interprété. */
@@ -197,8 +175,8 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     const etat = lireEtat(req.body);
     if (etat === null) return reply.code(400).send({ error: 'state invalide (objet)' });
     const { draftId } = req.params as { draftId: string };
-    // 404 et non création : un identifiant inconnu vient soit d'un brouillon supprimé, soit d'un autre
-    // tenant. Créer à la volée sèmerait des brouillons chez autrui en devinant des identifiants.
+    // 🔴 404 et non création : un identifiant inconnu vient d'un brouillon supprimé ou d'un autre espace. Créer à
+    // la volée sèmerait des brouillons chez autrui en devinant des identifiants.
     const maj = await drafts.update(tenant, draftId, nom, etat);
     if (!maj) return reply.code(404).send({ error: 'brouillon inconnu' });
     return reply.code(200).send({ updated: true, draftId });
@@ -214,8 +192,8 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
 
   app.get('/tenants/:tenantId/campaigns', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    // `?archived=1` bascule sur la corbeille. Valeur venue de la query string, donc `unknown` : on n'accepte
-    // QUE les deux formes explicites, tout le reste (y compris 'false', '0', 'oui') vaut « campagnes actives ».
+    // `?archived=1` bascule sur la corbeille. Valeur venue de la query string, donc `unknown` : on n'accepte que
+    // les deux formes explicites, tout le reste (y compris 'false', '0', 'oui') vaut « campagnes actives ».
     const q = (req.query ?? {}) as { archived?: unknown };
     const archived = q.archived === '1' || q.archived === 'true';
     return reply.code(200).send({ campaigns: await deps.listCampaigns(tenant, { archived }) });
@@ -234,10 +212,8 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     return reply.code(200).send({ phoneNumbers: await deps.listPhoneNumbers(tenant) });
   });
 
-  // Agents RCS du tenant, pour le sélecteur de l'assistant de campagne. Monté ICI, à côté du listage des
-  // numéros Meta : c'est le même besoin (« depuis quoi j'envoie ? »), vu du même écran, avec la même garde
-  // de scope tenant. Un espace sans agent RCS rend une liste vide (le canal est alors simplement
-  // inutilisable, ce que l'UI affiche).
+  // Agents RCS de l'espace, pour le sélecteur de l'assistant de campagne, à côté du listage des numéros Meta :
+  // même besoin (« depuis quoi j'envoie ? »), même garde. Un espace sans agent RCS rend une liste vide.
   app.get('/tenants/:tenantId/rcs-agents', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     return reply.code(200).send({ agents: await deps.listRcsAgents(tenant) });
@@ -272,9 +248,8 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
 
     if (!isCategory(b.category)) return reply.code(400).send({ error: 'category invalide (marketing|utility)' });
 
-    // Canal. Absent = 'whatsapp' : un client qui ignore le canal garde le comportement historique. Un canal
-    // INCONNU est refusé, jamais silencieusement ramené à WhatsApp (une campagne partie sur le mauvais canal
-    // est irrattrapable).
+    // Canal. Absent = 'whatsapp'. Un canal inconnu est refusé, jamais ramené à WhatsApp en silence (une campagne
+    // partie sur le mauvais canal est irrattrapable).
     const channel = b.channel ?? 'whatsapp';
     if (channel !== 'whatsapp' && channel !== 'rcs') {
       return reply.code(400).send({ error: 'channel invalide (whatsapp|rcs)' });
@@ -293,13 +268,9 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
         return reply.code(400).send({ error: "Une campagne RCS envoie un message direct. Le declenchement d'un scenario par campagne n'est pas disponible sur ce canal." });
       }
     }
-    // Débit optionnel : entier 1..80 messages/min (le client ne peut que BAISSER sous le plafond métier).
-    // Absent/null = aucun throttle. Rejette 0, 81, décimal, négatif -> 400 déterministe.
-    // ⚠️ 80 EST LA BORNE DE SAISIE, PAS LE PLAFOND APPLIQUÉ. Le plafond réel dépend du CANAL
-    // (`plafondDuCanal`) : une campagne RCS qui demanderait 80 est RAMENÉE au plafond RCS à l'exécution,
-    // en silence et sans erreur. C'est le bon sens du compromis : on n'envoie jamais plus vite que ce que
-    // l'opérateur a autorisé, et un 400 sur un chiffre qu'aucun écran ne demande plus serait une régression
-    // d'API pour les clients qui le posent encore.
+    // Débit optionnel : entier 1..80 messages/min (le client ne peut que baisser sous le plafond métier). Absent ou
+    // null = aucun throttle ; 0, 81, décimal ou négatif -> 400. 80 est la borne de saisie, pas le plafond appliqué :
+    // il dépend du canal (`plafondDuCanal`), et une campagne RCS qui demande 80 est ramenée au plafond RCS.
     let ratePerMinute: number | null | undefined;
     if (b.ratePerMinute !== undefined && b.ratePerMinute !== null) {
       const r = b.ratePerMinute;
@@ -311,7 +282,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     // Numéro Meta : exigé sur WhatsApp uniquement. Une campagne RCS part d'un agent, pas d'un numéro.
     if (!isRcs && !nonEmpty(b.phoneNumberId)) return reply.code(400).send({ error: 'phoneNumberId requis' });
     if (!nonEmpty(b.name)) return reply.code(400).send({ error: 'name requis' });
-    // Une campagne envoie SOIT un template SOIT un workflow (exactement un des deux). Sur RCS, ni l'un ni
+    // Une campagne envoie soit un template soit un workflow (exactement un des deux). Sur RCS, ni l'un ni
     // l'autre : le message est porté par la campagne elle-même.
     const isWorkflow = nonEmpty(b.workflowId);
     if (isWorkflow) {
@@ -319,9 +290,8 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       if (!graph) {
         return reply.code(400).send({ error: 'workflowId inconnu pour ce tenant' });
       }
-      // Une campagne part sur une audience FROIDE : le 1er message doit être un template. Ce n'est PAS la même
-      // chose qu'« exiger un bloc template en entrée » : un tag, une action ou une condition avant le template
-      // n'envoient rien et ne changent donc rien. On juge sur ce qui OUVRE réellement, pas sur le type du 1er bloc.
+      // Une campagne part sur une audience froide : le premier message doit être un template. On juge sur ce qui
+      // ouvre réellement (un tag, une action ou une condition avant n'envoient rien), pas sur le type du 1er bloc.
       const scan = scanOpening(graph);
       if (scan.sessionOpen) {
         return reply.code(400).send({ error: "Ce scénario ouvre par un message rapide, une question ou un formulaire, qui exigent que le contact ait écrit dans les 24 h. Une campagne part sur une audience froide : il lui faut un envoi de template en ouverture." });
@@ -334,16 +304,14 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       if (!scan.firstTemplate && !scan.rcsOpen) {
         return reply.code(400).send({ error: 'Le scénario doit ouvrir par un envoi : un template WhatsApp, ou un message RCS.' });
       }
-      // Les trois contrôles suivants portent sur le TEMPLATE d'ouverture : ils n'ont de sens que s'il y en a
-      // un. Un scénario qui ouvre en RCS n'a aucun template à paramétrer.
-      //
-      // ⚠️ Surtout PAS un `return` nu ici : on est dans un handler Fastify, sortir sans répondre laisserait la
-      // requête pendante jusqu'au timeout.
+      // Les trois contrôles suivants portent sur le template d'ouverture, s'il y en a un (un scénario qui ouvre en
+      // RCS n'en a pas). Pas de `return` nu ici : sortir d'un handler Fastify sans répondre laisserait la requête
+      // pendante.
       if (scan.firstTemplate) {
         if (scan.ambiguousTemplate) {
           return reply.code(400).send({ error: "Ce scénario peut ouvrir sur plusieurs templates différents : impossible de savoir lequel paramétrer pour la campagne." });
         }
-        // `unnamedOpeningTemplate` couvre AUSSI les branches : une condition dont une sortie mène à un template
+        // `unnamedOpeningTemplate` couvre aussi les branches : une condition dont une sortie mène à un template
         // sans nom laisserait ces destinataires sans message, tout en les comptant « envoyés ».
         if (scan.unnamedOpeningTemplate || String(scan.firstTemplate.data.templateName ?? '').trim() === '') {
           return reply.code(400).send({ error: "Un template d'ouverture du scénario n'est pas encore choisi." });
@@ -354,7 +322,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       if (!nonEmpty(b.templateLanguage)) return reply.code(400).send({ error: 'templateLanguage requis' });
     }
 
-    // Campagne AU FIL DE L'EAU : les destinataires n'existent pas encore, ils arriveront un par un par ce
+    // Campagne au fil de l'eau : les destinataires n'existent pas encore, ils arriveront un par un par ce
     // webhook entrant. Trois refus explicites plutôt qu'une campagne qui a l'air créée et n'attrape rien.
     let webhookId: string | undefined;
     if (nonEmpty(b.webhookId)) {
@@ -371,21 +339,17 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
 
     // Sélection de contacts optionnelle : tableau de chaînes non vides. Absent -> tous les contacts.
     let contactIds: string[] | undefined;
-    // Le plafond est lu ICI, avant toute résolution de cible : il sert de BORNE aux requêtes de sélection,
-    // pas seulement de verdict après coup. Une garde qui arrive après le chargement ne protège que la suite.
+    // Le plafond est lu ici, avant toute résolution de cible : il sert de borne aux requêtes de sélection, pas
+    // seulement de verdict après coup. Une garde qui arrive après le chargement ne protège que la suite.
     const plafond = deps.plafondDestinataires;
     if (b.contactIds !== undefined) {
       if (!Array.isArray(b.contactIds) || !b.contactIds.every((x) => nonEmpty(x))) {
         return reply.code(400).send({ error: 'contactIds invalide (tableau d\'ids)' });
       }
       /**
-       * 🔴 UNE LISTE VIDE N'EST PAS « TOUT LE MONDE ». Un tableau vide est truthy : il traversait la route,
-       * et `createCampaignWithRecipients` le voyait vide puis retombait sur « charger tous les contacts de
-       * l'espace ». Une sélection explicitement vide devenait donc une campagne à l'espace entier, ce qui
-       * est le pire accident que ce chemin puisse produire.
-       *
-       * `contactIds` ABSENT continue de vouloir dire « tous les contacts » : c'est documenté et voulu. Ce
-       * qu'on refuse, c'est de DÉSIGNER une liste et de n'y mettre personne.
+       * 🔴 Une liste vide n'est pas « tout le monde » : sans ce refus, une sélection explicitement vide retombait sur
+       * « tous les contacts de l'espace ». `contactIds` absent veut toujours dire « tous les contacts » ; ce qu'on
+       * refuse, c'est de désigner une liste et de n'y mettre personne.
        */
       if (b.contactIds.length === 0) {
         return reply.code(422).send({ error: 'Aucun contact ne correspond à cette sélection.' });
@@ -394,11 +358,8 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     }
 
     /**
-     * CIBLE par intention (filtres + exclusions) plutôt que par liste d'identifiants.
-     *
-     * 🔴 Deux façons de désigner les mêmes destinataires ne peuvent pas coexister dans une requête : on
-     * n'en honorerait qu'une, et l'appelant croirait avoir visé l'autre. Même doctrine que le refus
-     * `webhookId` + `contactIds` juste au-dessus, et pour la même raison.
+     * Cible par intention (filtres + exclusions) plutôt que par liste d'identifiants. Deux façons de désigner les
+     * mêmes destinataires ne coexistent pas dans une requête : on n'en honorerait qu'une.
      */
     if (b.contactTarget !== undefined) {
       if (contactIds !== undefined) {
@@ -408,11 +369,10 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
         return reply.code(400).send({ error: "Une campagne alimentée par un webhook ne prend pas de cible de contacts : ses destinataires arrivent au fil de l'eau." });
       }
       const target = parseBulkTarget(b.contactTarget);
-      // `null` = aucune cible exploitable. On REFUSE plutôt que de retomber sur « tous les contacts » : une
-      // cible mal formée qui viserait tout l'espace est exactement l'accident qu'on ne veut jamais.
+      // `null` = aucune cible exploitable. On refuse plutôt que de retomber sur « tous les contacts » : une cible
+      // mal formée qui viserait tout l'espace est exactement l'accident qu'on ne veut jamais.
       if (target === null) return reply.code(400).send({ error: 'contactTarget invalide (ids non vides, ou filters)' });
-      // Borné à `plafond + 1` : ce chemin matérialisait jusqu'à 100 000 identifiants avant de se faire
-      // refuser à 20 000 par le plafond, c'est-à-dire quatre-vingt mille lignes chargées pour rien.
+      // Borné à `plafond + 1` : inutile de matérialiser au-delà de ce que le plafond refusera.
       contactIds = await deps.contactIdsForTarget(effectiveTenant, target, plafond + 1);
       // Une cible qui ne résout personne est une erreur de l'appelant, pas une campagne à tout le monde :
       // sans ce refus, `contactIds` vide retomberait sur « tous les contacts » un peu plus bas.
@@ -422,25 +382,15 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     }
 
     /**
-     * 🔴 LE PLAFOND DE TAILLE (lot 3 du plan post-audit). Placé ICI parce que c'est le seul point où les
-     * trois façons de désigner des destinataires se rejoignent : liste explicite, cible par filtres, et
-     * « tous les contacts ». Trois vérifications séparées auraient fini par diverger, et c'est justement le
-     * troisième chemin, le plus dangereux, qui n'était borné par rien.
-     *
-     * Une campagne au fil de l'eau est EXCLUE : elle naît vide, ses destinataires arrivent un par un par le
-     * webhook, il n'y a rien à compter et le compte de l'espace n'aurait aucun rapport.
+     * 🔴 Le plafond de taille, ici parce que c'est le seul point où se rejoignent les trois façons de désigner des
+     * destinataires (liste, cible par filtres, « tous les contacts »). Une campagne au fil de l'eau en est exclue :
+     * elle naît vide, ses destinataires arrivent un par un.
      */
     if (!webhookId) {
       /**
-       * 🔴 « TOUS LES CONTACTS » RÉSOUT SES IDENTIFIANTS ICI, il ne les compte plus (constat B4 de l'audit
-       * externe du 2026-09-02). Le compte et le chargement étaient deux requêtes séparées : un import
-       * concurrent entre les deux faisait partir une campagne au-dessus du plafond qu'on venait de valider.
-       * Ce n'est pas un défaut de la garde, c'est un défaut de ce qu'elle regardait : elle jugeait un nombre
-       * que personne n'utilisait ensuite.
-       *
-       * En figeant le jeu d'identifiants, la garde juge EXACTEMENT ce que la campagne emportera. Conséquence
-       * assumée et voulue : un contact créé après la validation n'entre plus dans la campagne. L'opérateur a
-       * confirmé un nombre, il obtient ce nombre.
+       * « Tous les contacts » résout ses identifiants ici, il ne les compte pas : la garde juge exactement ce que la
+       * campagne emportera. Un contact créé après la validation n'entre pas dans la campagne : l'opérateur a confirmé
+       * un nombre, il obtient ce nombre.
        */
       if (contactIds === undefined) {
         contactIds = await deps.identifiantsDeTousLesContacts(effectiveTenant, plafond + 1);
@@ -450,30 +400,23 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       if (refus) return reply.code(422).send({ error: refus });
     }
 
-    // Le numéro doit appartenir au tenant (sinon envoi depuis le numéro d'un autre client). Sur RCS, c'est
+    // Le numéro doit appartenir à l'espace (sinon envoi depuis le numéro d'un autre client). Sur RCS, c'est
     // l'agent qui a été contrôlé plus haut, il n'y a pas de numéro à vérifier.
     if (!isRcs && !(await deps.phoneNumberBelongsToTenant(b.phoneNumberId as string, effectiveTenant))) {
       return reply.code(400).send({ error: 'phoneNumberId inconnu pour ce tenant' });
     }
 
-    // Valider paramMapping AVANT toute écriture. Pour un workflow AUSSI : le mapping cible les variables du 1er
-    // template du workflow (résolues par contact -> pré-validation via buildRecipients, contacts sans la valeur
-    // sautés). Invalide -> 400 déterministe (indépendant du nb de contacts), pas un 500.
+    // Valider paramMapping avant toute écriture, pour un workflow aussi : le mapping cible les variables du 1er
+    // template du workflow (résolues par contact, contacts sans la valeur sautés). Invalide -> 400 déterministe.
     const paramMapping = validateParamMapping(b.paramMapping ?? []);
     if (paramMapping === null) {
       return reply.code(400).send({ error: 'paramMapping invalide (positions 1..N contiguës, sources valides)' });
     }
 
     /**
-     * LA CHAÎNE D'ÉTAGES (migration 0134), quand l'assistant en envoie une.
-     *
-     * 🔴 ELLE SE REFUSE EN 422, JAMAIS EN 5XX. La table porte `check (rang between 1 and 3)`, un CHECK de
-     * canal et une clé primaire `(campaign_id, rang)` : envoyer directement ce qu'un client a tapé ferait
-     * trancher Postgres, et Cloudflare remplacerait le corps de la 5xx par sa page d'erreur, donc
-     * l'opérateur ne lirait jamais ce qui cloche.
-     *
-     * ⚠️ ABSENTE = UNE CAMPAGNE À UN SEUL ÉTAGE, exactement comme avant. C'est le cas de l'API publique,
-     * des clients existants et de tout le parc : ce bloc ne se déclenche que si `chaine` est là.
+     * La chaîne d'étages, quand l'assistant en envoie une. Refusée en 422, jamais en 5xx : la table porte ses CHECK
+     * (rang 1 à 3, canal) et sa clé primaire `(campaign_id, rang)`, et un corps brut ferait trancher Postgres.
+     * Absente = une campagne à un seul étage (API publique, clients existants).
      */
     let chaine: EtageEntrant[] | undefined;
     if (b.chaine !== undefined) {
@@ -484,11 +427,8 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       if (probleme) return reply.code(422).send({ error: probleme });
       const normalisee = normaliserChaine(b.chaine as EtageEntrant[]);
       /**
-       * 🔴 LE CONTENU DES ÉTAGES AU-DELÀ DU PREMIER, ET SEULEMENT LUI. Le rang 1 est la campagne
-       * elle-même : son template, son message RCS et son scénario ont déjà été contrôlés plus haut, et
-       * `insertCampaignRow` le réécrit depuis les colonnes de `campaigns` (invariant de 0134, « une seule
-       * source pour le contenu d'un étage »). Le revalider ici ne ferait que donner deux occasions de
-       * diverger.
+       * Le contenu des étages au-delà du premier, et seulement lui : le rang 1 est la campagne elle-même, déjà
+       * contrôlée plus haut, et `insertCampaignRow` le réécrit depuis `campaigns` (une seule source par étage).
        */
       for (const e of normalisee) {
         if (e.rang === RANG_INITIAL) continue;
@@ -504,11 +444,9 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
             return reply.code(422).send({ error: `L'étage ${e.rang} part en e-mail : il lui faut un modèle de mail.` });
           }
           /**
-           * 🔴 SANS LA CLÉ DU CHAMP, L'ÉTAGE EST MORT-NÉ. `contacts` n'a pas de colonne `email` :
-           * l'adresse vit dans le jsonb `fields`, sous un nom que le client choisit (un espace dit
-           * « mail », un autre « email »). Un étage e-mail sans cette clé serait enregistré, montré à
-           * l'écran, et SAUTÉ à chaque bascule (`prochainEtageServable`) sans que rien ne l'explique.
-           * Mieux vaut un refus que l'opérateur peut lire.
+           * Sans la clé du champ, l'étage est mort-né : `contacts` n'a pas de colonne `email`, l'adresse vit dans le
+           * jsonb `fields` sous un nom que le client choisit. Sans cette clé, l'étage serait sauté à chaque bascule
+           * (`prochainEtageServable`) sans explication.
            */
           if (typeof e.emailChamp !== 'string' || e.emailChamp.trim() === '') {
             return reply.code(422).send({ error: `L'étage ${e.rang} part en e-mail : il faut dire quel champ de la fiche porte l'adresse.` });
@@ -518,8 +456,8 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
             return reply.code(422).send({ error: `L'étage ${e.rang} vise un modèle de mail inconnu de cet espace.` });
           }
         }
-        // ⚠️ MÊME GARDE QUE `workflowId` SUR LA CAMPAGNE : sans elle, un identifiant recopié ferait démarrer
-        // le scénario d'un AUTRE espace. `getWorkflowGraph` est scopée tenant, elle rend null hors espace.
+        // 🔴 Même garde que `workflowId` sur la campagne : sans elle, un identifiant recopié démarrerait le scénario
+        // d'un autre espace. `getWorkflowGraph` est scopée, elle rend null hors espace.
         if (e.workflowId !== undefined) {
           if (!estUuid(e.workflowId) || !(await deps.getWorkflowGraph(e.workflowId, effectiveTenant))) {
             return reply.code(422).send({ error: `L'étage ${e.rang} vise un scénario inconnu de cet espace.` });
@@ -527,14 +465,9 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
         }
       }
       /**
-       * 🔴 UN ÉTAGE RCS EXIGE UN AGENT, MÊME SUR UNE CAMPAGNE WHATSAPP. Sans lui, la chaîne est
-       * enregistrée mais son repli ne pourra jamais partir : `senderForCampaign` (`src/rcs/factory.ts`)
-       * rend `null` sans `rcsAgentId`, et le run se met en pause avec « aucun agent RCS exploitable ».
-       * Autant le dire à la création, où l'opérateur peut encore choisir.
-       *
-       * ⚠️ VÉRIFIÉ : POSER `rcs_agent_id` SUR UNE CAMPAGNE WHATSAPP EST INERTE. C'est `campaign.channel`
-       * qui gouverne le branchement du sender (`isRcs`, `src/campaign/run-job.ts`), pas la présence de
-       * l'agent ; une campagne WhatsApp ne consulte jamais cette colonne aujourd'hui.
+       * Un étage RCS exige un agent, même sur une campagne WhatsApp : sans lui, `senderForCampaign` rend `null` et le
+       * run se met en pause. Poser `rcs_agent_id` sur une campagne WhatsApp est inerte : c'est `campaign.channel` qui
+       * gouverne le sender (`src/campaign/run-job.ts`).
        */
       if (!isRcs && normalisee.some((e) => e.canal === 'rcs')) {
         if (!nonEmpty(b.rcsAgentId)) {
@@ -548,11 +481,8 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     }
 
     /**
-     * L'ASSIGNATION DES RÉPONSES (migration 0134). `null`/absente = aucune, comme aujourd'hui.
-     *
-     * ⚠️ `personne` SANS PERSONNE EST UN REFUS, pas une assignation vide : l'écrire laisserait une
-     * campagne qui promet un destinataire d'Inbox et n'en désigne aucun, donc des réponses qui tombent
-     * dans « À traiter » alors que l'opérateur croit les avoir routées.
+     * L'assignation des réponses ; `null` ou absente = aucune. `personne` sans personne est refusé : sinon les
+     * réponses tomberaient dans « À traiter » alors que l'opérateur croit les avoir routées.
      */
     let assignation: 'personne' | 'tour_de_role' | null | undefined;
     if (b.assignation !== undefined && b.assignation !== null) {
@@ -566,13 +496,8 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     }
 
     /**
-     * CE QUI SE PASSE QUAND LE CONTACT RÉPOND AU PREMIER ÉTAGE (migration 0144).
-     *
-     * ⚠️ REFUSÉ ICI PLUTÔT QU'EN BASE : le CHECK `campaign_etages_devenir_chk` le refuserait aussi, mais
-     * une violation de contrainte LÈVE, donc sortirait en 500, donc derrière une page Cloudflare qui
-     * n'expliquerait rien. Un corps mal formé est un message destiné à l'utilisateur.
-     *
-     * ⚠️ Les étages SUIVANTS portent le leur dans `chaine[].devenir`, validé par `problemeDeChaine`.
+     * Ce qui se passe quand le contact répond au premier étage. Refusé ici plutôt qu'en base (le CHECK lèverait,
+     * donc 500). Les étages suivants portent le leur dans `chaine[].devenir`, validé par `problemeDeChaine`.
      */
     let devenir: DevenirEtage | undefined;
     if (b.devenir !== undefined && b.devenir !== null) {
@@ -599,8 +524,8 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       ...(b.businessHoursOnly === true ? { businessHoursOnly: true } : {}),
       ...(webhookId ? { webhookId } : {}),
       ...(chaine ? { chaine } : {}),
-      // ⚠️ Un étage RCS de repli sur une campagne WhatsApp : l'agent voyage avec la campagne, il a été
-      // contrôlé juste au-dessus. Inerte tant que `channel` n'est pas `rcs`, cf. le commentaire de la garde.
+      // Un étage RCS de repli sur une campagne WhatsApp : l'agent voyage avec la campagne, contrôlé juste
+      // au-dessus. Inerte tant que `channel` n'est pas `rcs`.
       ...(!isRcs && chaine?.some((e) => e.canal === 'rcs') ? { rcsAgentId: b.rcsAgentId as string } : {}),
       ...(b.reessayer !== undefined ? { reessayer: b.reessayer === true } : {}),
       ...(b.rattrapageHorsHoraires !== undefined ? { rattrapageHorsHoraires: b.rattrapageHorsHoraires === true } : {}),
@@ -608,9 +533,8 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       ...(assignation === 'personne' ? { assignationUserId: b.assignationUserId as string } : {}),
     };
     const result = await createCampaignWithRecipients(input, deps.repo);
-    // AVERTISSEMENT de palier (lot 7 du programme II) : dit AVANT ce que le moteur sait déjà gérer APRÈS (il
-    // met la campagne en pause sur un code de plafond depuis le lot 1). Best-effort : une lecture en échec ne
-    // doit pas empêcher de créer la campagne, elle n'ajoute qu'un message.
+    // Avertissement de palier : dit avant ce que le moteur gère après (pause sur un code de plafond). Au mieux :
+    // une lecture en échec n'empêche pas de créer la campagne, elle n'ajoute qu'un message.
     let avertissement: string | undefined;
     try {
       avertissement = avertissementPalier(await deps.getMessagingLimitTier(effectiveTenant), result.recipientCount);
@@ -621,14 +545,14 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
   app.post('/campaigns/:campaignId/run', couteux, async (req, reply) => {
     const { campaignId } = req.params as { campaignId: string };
     const authTenant = req.auth?.tenantId ?? '';
-    // Scope tenant : 404 si la campagne n'appartient pas à l'appelant (pas d'IDOR cross-tenant).
+    // 🔴 Scope espace : 404 si la campagne n'appartient pas à l'appelant (pas d'IDOR entre espaces).
     if (!(await deps.campaignBelongsTo(campaignId, authTenant))) {
       return reply.code(404).send({ error: 'campagne inconnue' });
     }
 
-    // ÉTAPE 2 « plus tard » : un scheduledAt (ISO absolu UTC) programme au lieu de lancer tout de suite. Le
-    // sweeper enfilera le run à l'échéance. Doit être une date FUTURE (une date passée = 400, pas un lancement
-    // immédiat déguisé). La campagne passe en statut 'scheduled' (annulable via /cancel-schedule).
+    // « Plus tard » : un scheduledAt (ISO absolu UTC) programme au lieu de lancer ; le sweeper enfilera le run à
+    // l'échéance. Date future obligatoire (une date passée = 400, pas un lancement immédiat déguisé). Statut
+    // 'scheduled', annulable via /cancel-schedule.
     const b = (req.body ?? {}) as { scheduledAt?: unknown };
     if (b.scheduledAt !== undefined && b.scheduledAt !== null) {
       if (typeof b.scheduledAt !== 'string') return reply.code(400).send({ error: 'scheduledAt invalide (ISO)' });
@@ -640,23 +564,21 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       return reply.code(202).send({ scheduled: true, campaignId, scheduledAt: when.toISOString() });
     }
 
-    // Lancement IMMÉDIAT, l'expiration dimensionnée sur le travail réel (`expirationDuRun`).
+    // Lancement immédiat, l'expiration dimensionnée sur le travail réel (`expirationDuRun`).
     const expireInSeconds = await expirationDuRun(campaignId);
-    // REPRISE d'une campagne en pause : la pause est levée AVANT l'enfilement, parce que le job refuse de
+    // Reprise d'une campagne en pause : la pause est levée avant l'enfilement, parce que le job refuse de
     // démarrer une campagne en pause (garde de `campaignRunJob`, qui empêche un job enfilé avant la pause de la
     // ressusciter). No-op sur un brouillon, donc l'appel est inconditionnel.
     await deps.resumeCampaign(campaignId, authTenant);
-    // ⚠️ Deux POST /run concurrents empilent DEUX jobs, et les deux tourneront : rien ne déduplique ici (cf.
-    // `Queue.enqueue`, où le `singletonKey` qu'on croyait protecteur a été retiré). Le claim atomique par
-    // destinataire reste le seul garde-fou, et il ne garantit que l'absence de double-envoi, pas le débit.
+    // Deux POST /run concurrents empilent deux jobs, et les deux tournent : rien ne déduplique la file. 🔴 Le claim
+    // atomique par destinataire est le seul garde-fou contre le double envoi (pas contre le débit).
     try {
       // `groupId` = l'espace : le plafond de concurrence par espace de la file s'applique aussi au lancement
-      // manuel, sinon un client qui clique quatre fois occupe les quatre places (lot 5).
+      // manuel, sinon un client qui clique quatre fois occupe les quatre places.
       await deps.queue.enqueue('campaign-run', { campaignId }, { ...(expireInSeconds ? { expireInSeconds } : {}), groupId: authTenant });
     } catch (err) {
-      // L'enfilement a échoué APRÈS la levée de pause : on la RÉTABLIT. Sans ça la campagne resterait affichée
-      // « en cours » sans qu'aucun job ne tourne, et « Reprendre » ne s'affiche pas sur une campagne en cours :
-      // l'opérateur serait coincé. `pauseCampaign` est bornée à `running`, elle ne touche donc pas un brouillon.
+      // L'enfilement a échoué après la levée de pause : on la rétablit, sinon la campagne resterait « en cours »
+      // sans job, et « Reprendre » ne s'afficherait pas. `pauseCampaign` est bornée à `running` (pas un brouillon).
       await deps.pauseCampaign(campaignId, authTenant);
       throw err;
     }
@@ -664,10 +586,9 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
   });
 
   /**
-   * Renvoi d'UN destinataire en échec de variable de template (F7). Après que l'admin a corrigé la donnée du contact,
-   * on re-résout le paramMapping sur le contact À JOUR et on remet le destinataire à `pending` (réutilise runCampaign,
-   * pas de nouveau chemin d'envoi). Gardes : famille de codes variables, statut `failed`, appartenance tenant. 422 si la
-   * variable est TOUJOURS manquante (on ne renvoie pas le même échec). Admin-only, tenant du JWT.
+   * Renvoi d'un destinataire en échec de variable de template, après correction du contact : on re-résout le
+   * paramMapping sur le contact à jour et on remet le destinataire à `pending` (même chemin d'envoi). Gardes :
+   * famille de codes variables, statut `failed`, appartenance à l'espace. 422 si la variable manque toujours.
    */
   app.post('/campaigns/:campaignId/recipients/:recipientId/retry', opts, async (req, reply) => {
     const authTenant = req.auth?.tenantId ?? '';
@@ -685,15 +606,9 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
   });
 
   /**
-   * SUSPEND une campagne en cours d'envoi. C'est le bouton d'arrêt d'urgence d'un mauvais ciblage : jusqu'ici
-   * une campagne lancée partait jusqu'à son dernier destinataire, quoi qu'il arrive.
-   *
-   * Ce qui est déjà parti reste parti (rien ne rappelle un message WhatsApp livré). Le run en vol sort à sa
-   * prochaine relecture de statut, quelques secondes plus tard, et les destinataires non traités restent
-   * `pending` : « Reprendre » repart exactement là.
-   *
-   * 404 « inconnue » et 409 « n'envoie pas » sont DISTINCTS : contrôler l'appartenance d'abord est la seule
-   * façon honnête de séparer « pas à toi » de « pas dans le bon état », comme pour l'archivage plus bas.
+   * Suspend une campagne en cours d'envoi : l'arrêt d'urgence d'un mauvais ciblage. Ce qui est parti reste parti ;
+   * le run en vol sort à sa prochaine relecture de statut, et les destinataires non traités restent `pending` pour
+   * « Reprendre ». 404 « inconnue » et 409 « n'envoie pas » sont distincts : l'appartenance est contrôlée d'abord.
    */
   app.post('/tenants/:tenantId/campaigns/:campaignId/pause', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -702,8 +617,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       return reply.code(404).send({ error: 'campagne inconnue' });
     }
     const ok = await deps.pauseCampaign(campaignId, tenant);
-    // 409 et pas 5xx : c'est un message destiné à l'opérateur, et Cloudflare remplace le corps de toute réponse
-    // 5xx par sa propre page d'erreur (il ne verrait alors qu'un mur, jamais la raison).
+    // 409 et pas 5xx : c'est un message destiné à l'opérateur (Cloudflare remplacerait le corps d'une 5xx).
     if (!ok) return reply.code(409).send({ error: "campagne non suspendable (elle n'est pas en cours d'envoi)" });
     return reply.code(200).send({ paused: true, campaignId });
   });
@@ -718,12 +632,8 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
   });
 
   /**
-   * ARRÊT d'une campagne au fil de l'eau. C'est son seul point final : elle n'en a aucun par elle-même, elle
-   * prendrait les arrivants indéfiniment. Elle passe en `completed`, donc plus rien ne l'alimente (le feed ne
-   * nourrit que les campagnes `running`), et son historique d'envoi reste intact.
-   *
-   * 404 sur une campagne ordinaire ou déjà arrêtée : le bouton ne s'affiche que là où il agit, et un appel
-   * direct ne doit pas répondre « arrêté » sur une campagne qui ne l'était pas.
+   * Arrêt d'une campagne au fil de l'eau, son seul point final : elle passe en `completed`, plus rien ne
+   * l'alimente, son historique reste. 404 sur une campagne ordinaire ou déjà arrêtée.
    */
   app.post('/tenants/:tenantId/campaigns/:campaignId/stop', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -734,8 +644,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
   });
 
   // Archivage : masque la campagne de la liste sans rien effacer. Les trois routes ci-dessous contrôlent
-  // l'appartenance AVANT d'agir, ce qui est la seule façon de distinguer honnêtement « pas à toi » (404) de
-  // « pas dans le bon état » (200 idempotent pour l'archive, 409 pour la suppression).
+  // l'appartenance avant d'agir : seule façon de distinguer « pas à toi » (404) de « pas dans le bon état ».
   app.post('/tenants/:tenantId/campaigns/:campaignId/archive', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { campaignId } = req.params as { campaignId: string };
@@ -758,9 +667,8 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     return reply.code(200).send({ archived: false, campaignId });
   });
 
-  // Suppression DÉFINITIVE, réservée aux campagnes qui n'ont jamais rien envoyé. Une campagne partie porte
-  // l'historique qui alimente les analytics : elle s'archive, elle ne s'efface pas. 409 (et non 404) quand la
-  // garde refuse, pour que l'interface puisse proposer l'archivage à la place.
+  // 🔴 Suppression définitive, réservée aux campagnes qui n'ont jamais rien envoyé : une campagne partie porte
+  // l'historique des analytics, elle s'archive. 409 quand la garde refuse, pour proposer l'archivage à la place.
   app.delete('/tenants/:tenantId/campaigns/:campaignId', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { campaignId } = req.params as { campaignId: string };

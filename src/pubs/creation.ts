@@ -2,20 +2,12 @@ import { payloadCampagne, payloadEnsemble, payloadCrea, payloadPub, type Formula
 import type { DestinationPub } from './routage';
 
 /**
- * LA SÉQUENCE DE CRÉATION D'UNE PUBLICITÉ, ET SON RATTRAPAGE (lot 3, commit 2, spec § 3.2). IO INJECTÉE :
- * aucun import qui tire pg ni fetch, donc la séquence entière s'exécute contre de faux objets, en
- * millisecondes, y compris ses chemins d'échec.
+ * La séquence de création d'une publicité, et son rattrapage. IO injectée : la séquence entière, chemins
+ * d'échec compris, s'exécute contre de faux objets. Cinq appels chez un tiers qui dépense l'argent du
+ * client : ce qui compte est ce qui se passe quand l'un échoue.
  *
- * 🔴 POURQUOI CE N'EST PAS UNE SUITE D'`await` DANS UNE ROUTE. Cette séquence fait cinq appels chez un tiers
- * qui DÉPENSE L'ARGENT DU CLIENT, et son intérêt principal est ce qui se passe quand l'un d'eux échoue. Un
- * chemin d'échec écrit dans une route est un chemin d'échec que personne n'exécute jamais avant le jour où
- * il compte. C'est exactement la leçon de `retirerAncienAcces` (lot 2) : la décision avait vécu dans un `if`
- * du câblage, gardée par un test qui lisait le TEXTE de ce `if`, et trois orthographes du même bug avaient
- * traversé deux relectures.
- *
- * 🔴 TOUT EST CRÉÉ EN PAUSE, SANS EXCEPTION, et c'est ce qui rend l'échec inoffensif : une campagne en pause
- * ne dépense rien. Le seul moment où quoi que ce soit se met à diffuser est la PUBLICATION, qui est un geste
- * distinct, et qui allume l'automation AVANT d'allumer Meta.
+ * 🔴 Tout est créé en pause, sans exception : une campagne en pause ne dépense rien, un échec est donc
+ * inoffensif. Seule la publication, geste distinct, fait diffuser, et elle allume l'automation avant Meta.
  */
 
 /** Ce que la séquence sait faire chez Meta. Un objet minuscule, pour qu'un faux tienne en quinze lignes. */
@@ -30,51 +22,40 @@ export interface ClientCreationPub {
   supprimerCampagne(campagneId: string): Promise<void>;
 }
 
-/** Ce que la séquence sait faire chez nous. Chaque identifiant est rangé DÈS que Meta le rend. */
+/** Ce que la séquence sait faire chez nous. Chaque identifiant est rangé dès que Meta le rend. */
 export interface DepotCreationPub {
   /**
-   * Ouvre la ligne de la publicité, en état `creation`. Rend son identifiant chez nous.
-   *
-   * ⚠️ APRÈS LA CAMPAGNE, JAMAIS AVANT, et la colonne l'impose (`campagne_id not null`). Ce n'est pas une
-   * contrainte subie : tant que Meta n'a rien créé, il n'y a rien à rattraper, donc rien à garder. Le premier
-   * objet qui existe chez Meta est aussi le premier fait qu'on écrit.
+   * Ouvre la ligne de la publicité, en état `creation` ; rend son identifiant chez nous. Après la campagne,
+   * jamais avant (`campagne_id not null`) : tant que Meta n'a rien créé, il n'y a rien à garder.
    */
   ouvrir(v: {
     campagneId: string; nom: string; destination: DestinationPub;
     workflowId: string | null; tagQualification: string | null;
     budgetTotal: number; debut: string; fin: string; creePar: string | null;
   }): Promise<string>;
-  /** Range les identifiants que Meta vient de rendre. Appelée après CHAQUE étape, pas à la fin. */
+  /** Range les identifiants que Meta vient de rendre. Appelée après chaque étape, pas à la fin. */
   noterIds(id: string, v: { ensembleId?: string; creaId?: string; pubId?: string }): Promise<void>;
   marquerEtat(id: string, etat: 'prete' | 'echec_creation'): Promise<void>;
   /**
-   * Mémorise « cette publicité appartient à cette campagne » (`pubs_connues`), pour que le ROUTAGE la
+   * Mémorise « cette publicité appartient à cette campagne » (`pubs_connues`), pour que le routage la
    * reconnaisse sans appeler Meta au premier lead.
    */
   memoriserPub(adId: string, campagneId: string): Promise<void>;
   /**
-   * Crée l'automation POSSÉDÉE de cette publicité, ÉTEINTE, et la rattache. Rend son identifiant.
-   *
-   * ⚠️ Appelée seulement pour une destination `scenario` : une publicité qui confie ses leads à l'agent de
-   * Meta n'a aucun scénario à démarrer, donc aucune automation à posséder.
+   * Crée l'automation possédée de cette publicité, éteinte, et la rattache ; rend son identifiant. Seulement
+   * pour une destination `scenario` : une pub confiée à l'agent de Meta n'a rien à démarrer.
    */
   creerAutomation(id: string, v: { nom: string; campagneId: string; workflowId: string }): Promise<string>;
   /**
-   * Défait l'automation qu'on vient de créer, quand la création échoue juste après.
-   *
-   * 🔴 SANS CE RATTRAPAGE, ELLE SURVIT À SA PUBLICITÉ. Une automation possédée est exclue du prédicat de
-   * `PgAutomationStore`, donc absente de l'écran Automations : plus personne ne pourrait l'effacer. Elle
-   * est éteinte, donc inoffensive, mais une ligne que nul ne peut retirer est une dette permanente.
+   * Défait l'automation qu'on vient de créer, quand la création échoue juste après : une automation possédée
+   * est absente de l'écran Automation, et sans ce rattrapage plus personne ne pourrait l'effacer.
    */
   supprimerAutomation(automationId: string): Promise<void>;
 }
 
 /**
- * CE QUE LA CRÉATION A PRODUIT.
- *
- * ⚠️ `echec_creation` PORTE L'IDENTIFIANT DE LA LIGNE, et c'est ce qui la rend visible à l'écran. Une
- * création ratée dont la campagne n'a PAS pu être supprimée laisse un objet chez Meta : le client doit le
- * voir ici, sinon il le découvrira dans le Gestionnaire sans savoir d'où il vient.
+ * Ce que la création a produit. `echec_creation` porte l'identifiant de la ligne : une création ratée dont
+ * la campagne n'a pas pu être supprimée laisse un objet chez Meta, que le client doit voir ici.
  */
 export type IssueCreation =
   | { sorte: 'creee'; publiciteId: string; campagneId: string }
@@ -94,24 +75,15 @@ export interface DemandeCreation {
 }
 
 /**
- * CRÉE LA PUBLICITÉ CHEZ META, EN PAUSE, ET RANGE CE QUI EN REVIENT.
+ * Crée la publicité chez Meta, en pause, et range ce qui en revient. Ordre des cinq appels :
+ *  1. le visuel, qui ne crée rien de facturable : s'il échoue, la demande est `annulee` ;
+ *  2. la campagne, racine de tout le reste, donc seule chose à supprimer en cas d'échec ;
+ *  3. l'ensemble (budget, dates) ;
+ *  4. la créa, puis la publicité.
  *
- * 🔴 L'ORDRE DES CINQ APPELS N'EST PAS NÉGOCIABLE, et chacun a une raison :
- *
- *  1. **Le visuel d'abord**, parce que c'est le seul qui ne crée RIEN de facturable. S'il échoue, il n'y a
- *     ni campagne, ni ligne chez nous, ni rattrapage : la demande est simplement `annulee`.
- *  2. **La campagne**, qui devient la racine de tout ce qui suit, donc la seule chose à supprimer en cas
- *     d'échec.
- *  3. **L'ensemble**, qui porte le budget et les dates.
- *  4. **La créa**, puis **la publicité**, qui les marie.
- *
- * 🔴 ET LE RATTRAPAGE EST LE VRAI SUJET. Dès que la campagne existe, tout échec ultérieur tente de la
- * supprimer. Si la suppression réussit, rien ne reste chez Meta et la ligne dit `echec_creation` quand même,
- * avec sa raison. Si la suppression ÉCHOUE, la ligne est le seul endroit où le client verra qu'un objet
- * subsiste chez Meta. Dans les deux cas, ce qui subsiste est EN PAUSE, donc ne dépense rien.
- *
- * ⚠️ ELLE NE LÈVE JAMAIS. Son appelant est une route HTTP qui doit rendre la raison de Meta au client, pas
- * une trace de pile. Tout sort par `IssueCreation`.
+ * Dès que la campagne existe, tout échec tente de la supprimer ; la ligne dit `echec_creation` dans les deux
+ * cas, et c'est le seul endroit où le client verra qu'un objet subsiste, en pause. Ne lève jamais : la route
+ * rend la raison de Meta, pas une pile.
  */
 export async function creerLaPublicite(
   d: DemandeCreation,
@@ -133,8 +105,8 @@ export async function creerLaPublicite(
     return { sorte: 'annulee', raison: raisonDe(err) };
   }
 
-  // 🔴 À PARTIR D'ICI, UN OBJET EXISTE CHEZ META. Tout ce qui suit est sous rattrapage, et la ligne est
-  // ouverte AVANT le reste : si notre base tombe à l'étape suivante, la campagne est quand même connue.
+  // À partir d'ici, un objet existe chez Meta : tout ce qui suit est sous rattrapage, et la ligne est ouverte
+  // avant le reste, pour que la campagne soit connue même si notre base tombe ensuite.
   let publiciteId: string;
   try {
     publiciteId = await depot.ouvrir({
@@ -149,15 +121,13 @@ export async function creerLaPublicite(
       creePar: d.creePar,
     });
   } catch (err) {
-    // On ne sait pas ranger cette campagne : on la supprime, et on le dit. Sans ligne chez nous, il n'y a
-    // pas d'autre trace possible que ce refus et le journal.
+    // On ne sait pas ranger cette campagne : on la supprime, et on le dit.
     await client.supprimerCampagne(campagneId).catch(() => undefined);
     return { sorte: 'annulee', raison: raisonDe(err) };
   }
 
-  // 🔴 RETENU POUR LE RATTRAPAGE. Une automation possédée qu'on laisserait derrière serait INVISIBLE de
-  // l'écran Automations (qui exclut tout `possede_par` non nul) et intouchable par son propriétaire, qui
-  // vient de disparaître. Elle est éteinte, donc inoffensive, mais personne ne pourrait plus l'effacer.
+  // Retenu pour le rattrapage : une automation possédée laissée derrière serait invisible de l'écran
+  // Automation et intouchable par son propriétaire disparu.
   let automationId: string | null = null;
   try {
     const ensembleId = await client.creerEnsemble(payloadEnsemble(d.formulaire, {
@@ -171,12 +141,11 @@ export async function creerLaPublicite(
     const pubId = await client.creerPub(payloadPub(d.formulaire.nom, { ensembleId, creaId }));
     await depot.noterIds(publiciteId, { pubId });
 
-    // 🔴 LE ROUTAGE DOIT CONNAÎTRE CETTE PUBLICITÉ AVANT SON PREMIER LEAD. Sans cette mémorisation, le
-    // premier prospect provoquerait un appel à Meta pour retrouver sa campagne, sur le chemin chaud d'un
-    // message entrant, alors qu'on vient de créer la correspondance nous-mêmes.
+    // Le routage doit connaître cette publicité avant son premier lead, sans appeler Meta sur le chemin chaud
+    // d'un message entrant.
     await depot.memoriserPub(pubId, campagneId);
 
-    // L'automation possédée, ÉTEINTE. C'est la publication qui l'allume, et elle l'allume AVANT Meta.
+    // L'automation possédée, éteinte : la publication l'allume, avant Meta.
     if (d.destination === 'scenario' && d.workflowId !== null) {
       automationId = await depot.creerAutomation(publiciteId, { nom: d.formulaire.nom, campagneId, workflowId: d.workflowId });
     }
@@ -191,34 +160,27 @@ export async function creerLaPublicite(
       // eslint-disable-next-line no-console
       console.error(`création de publicité : campagne ${campagneId} NON supprimée après échec, elle reste chez Meta EN PAUSE :`, raisonDe(errSuppression));
     }
-    // Et l'automation qu'on venait peut-être de créer : sans ce retrait, elle survivrait à la publicité.
+    // Et l'automation qu'on venait peut-être de créer, qui survivrait sinon à la publicité.
     if (automationId !== null) await depot.supprimerAutomation(automationId).catch(() => undefined);
-    // ⚠️ L'ÉTAT EST LE MÊME QUE LA SUPPRESSION AIT RÉUSSI OU NON, et c'est voulu : ce que l'état dit, c'est
-    // « cette création a échoué », pas « il reste quelque chose chez Meta ». Le second fait vit dans le
-    // journal, qui est le seul endroit où il est certain ; prétendre le porter dans une colonne obligerait à
-    // distinguer deux échecs de nettoyage que nous ne savons pas distinguer.
+    // Même état que la suppression ait réussi ou non : il dit « la création a échoué ». Ce qui reste chez Meta
+    // vit dans le journal, seul endroit où c'est certain.
     await depot.marquerEtat(publiciteId, 'echec_creation').catch(() => undefined);
     return { sorte: 'echec_creation', publiciteId, campagneId, raison };
   }
 }
 
-/** Le message de Meta, tel quel : c'est SON compte, et lui seul peut agir sur ce qu'il refuse. */
+/** Le message de Meta, tel quel : c'est son compte, et lui seul peut agir sur ce qu'il refuse. */
 function raisonDe(err: unknown): string {
   return err instanceof Error ? err.message : 'erreur inconnue';
 }
 
 /**
- * PUBLIER : ALLUMER L'AUTOMATION D'ABORD, META ENSUITE.
+ * Publier : allumer l'automation d'abord, Meta ensuite. 🔴 Un échec ne laisse jamais une pub active sans
+ * routage : une automation allumée sans diffusion est inoffensive, une diffusion sans automation fait tomber
+ * chaque clic payé dans le vide.
  *
- * 🔴 L'ORDRE EST TOUTE LA RÈGLE (spec § 3.2) : « un échec ne laisse jamais une pub active sans routage ».
- * Dans un sens, si Meta refuse après que l'automation est allumée, on a une automation qui attend des leads
- * qui n'arriveront pas : inoffensif. Dans l'autre, si l'automation échoue après que Meta diffuse, chaque
- * clic payé tombe dans le vide, et on ne s'en aperçoit qu'en lisant les conversations.
- *
- * 🔴 ET LES TROIS NIVEAUX S'ALLUMENT, PAS SEULEMENT LA CAMPAGNE. Meta est explicite : une campagne en pause
- * met en pause tout ce qu'elle contient. Comme on a TOUT créé en pause, allumer la seule campagne ne
- * diffuserait rien, en silence. La campagne est allumée EN DERNIER, ce qui fait d'elle l'interrupteur
- * unique : tant qu'elle est éteinte, rien ne part, quel que soit l'état des deux autres.
+ * Les trois niveaux s'allument, pas seulement la campagne : tout a été créé en pause, et une campagne en
+ * pause met en pause son contenu. La campagne s'allume en dernier, interrupteur unique.
  */
 export interface ClientPublicationPub {
   allumer(objetId: string): Promise<void>;
@@ -235,19 +197,16 @@ export interface ObjetsMeta {
   ensembleId: string | null;
   pubId: string | null;
   /**
-   * L'état LOCAL de la publicité au moment de publier.
-   *
-   * 🔴 SEUL `prete` SE PUBLIE, et c'est un refus, pas une précaution. Une publicité en `echec_creation` n'a
-   * souvent ni ensemble ni publicité chez Meta : publier n'allumerait que la campagne, ne diffuserait rien,
-   * et la marquerait quand même `publiee`, donc elle sortirait du balayage du suivi. Une en `creation` est
-   * en cours d'écriture par un autre appel.
+   * L'état local de la publicité au moment de publier. Seul `prete` se publie : une `echec_creation` n'a
+   * souvent ni ensemble ni publicité chez Meta, et serait marquée `publiee` sans rien diffuser, donc sortie du
+   * suivi ; une `creation` est en cours d'écriture par un autre appel.
    */
   etat: 'creation' | 'echec_creation' | 'prete' | 'publiee';
   /** La destination, parce qu'une publicité « scénario » ne se publie pas sans routage derrière. */
   destination: 'scenario' | 'agent_meta';
 }
 
-/** Une publication refusée AVANT tout appel à Meta : rien n'a bougé, et la raison est lisible. */
+/** Une publication refusée avant tout appel à Meta : rien n'a bougé, et la raison est lisible. */
 export class PublicationRefusee extends Error {
   constructor(message: string) {
     super(message);
@@ -266,8 +225,8 @@ export async function publierLaPublicite(
   depot: DepotPublicationPub,
 ): Promise<void> {
   /**
-   * 🔴 LES DEUX REFUS SE POSENT AVANT LE PREMIER APPEL À META, et l'ordre est tout : posés après, ils
-   * regarderaient une campagne qui diffuse déjà. Une garde ne garde que ce qui vient après elle.
+   * Les deux refus se posent avant le premier appel à Meta : posés après, ils regarderaient une campagne qui
+   * diffuse déjà.
    */
   if (objets.etat !== 'prete') {
     throw new PublicationRefusee(
@@ -277,12 +236,9 @@ export async function publierLaPublicite(
   }
 
   /**
-   * 🔴 ET LE BOOLÉEN DE L'AUTOMATION EST LU, PAS JETÉ. La règle de la spec (« un échec ne laisse jamais une
-   * pub active sans routage ») ne tenait que par l'ORDRE des appels : si l'allumage échouait, on allumait
-   * Meta quand même, et chaque clic payé tombait dans le vide. Relevé par une relecture à froid.
-   *
-   * ⚠️ Une publicité « agent de Meta » n'a AUCUNE automation, et c'est normal : le booléen ne décide que
-   * pour une destination `scenario`.
+   * Le booléen de l'automation est lu : si l'allumage échoue, on n'allume pas Meta, sinon chaque clic payé
+   * tomberait dans le vide. Une publicité « agent de Meta » n'a aucune automation : il ne décide que pour une
+   * destination `scenario`.
    */
   const allumee = await depot.allumerAutomation(publiciteId);
   if (objets.destination === 'scenario' && !allumee) {

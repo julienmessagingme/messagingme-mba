@@ -1,18 +1,17 @@
 import type { WorkflowGraph, WorkflowNode } from './graph';
 import { evaluateConditionGroup, coerceConditionGroup, parseInstant } from './conditions';
 import type { EvalContext } from './conditions';
-// « Quand est le prochain créneau ouvert ? » vit dans UN seul endroit : le bloc Attente, l'envoi de campagne
-// et la reprise d'une campagne coupée par la fermeture posent la même question et doivent avoir la même réponse.
+// « Quand est le prochain créneau ouvert ? » vit à un seul endroit : le bloc Attente, l'envoi de campagne et
+// sa reprise après la fermeture doivent avoir la même réponse.
 import { prochaineOuverture } from '../lib/heures-ouvrees';
-// Le format de « maintenant » vit dans `src/agent/variables.ts` : un connecteur et un bloc de scenario
-// doivent poser la MEME valeur, sinon la meme date lue a deux endroits ne serait pas la meme.
+// Le format de « maintenant » vit dans `src/agent/variables.ts` : un connecteur et un bloc de scénario doivent
+// poser la même valeur.
 import { formatMaintenant } from '../agent/variables';
 
 /**
- * Moteur d'exécution d'un workflow, PUR (aucune IO). Un run avance en LIGNE DROITE : on suit la 1re arête
- * sortante de chaque bloc. Les blocs SYNCHRONES (tag/field) produisent une action et on continue ; un bloc
- * `template`/`flow` produit son action puis ATTEND une réponse du contact ; `inbox` est terminal (remontée
- * humaine). V1 volontairement simple : pas de branche par bouton (réservé plus tard via sourceHandle).
+ * Moteur d'exécution d'un workflow, pur (aucune IO). Un run avance de bloc en bloc : les blocs synchrones
+ * (tag/field) produisent une action et on continue ; un bloc qui offre un choix produit son action puis attend
+ * une réponse du contact ; `inbox` est terminal (remontée humaine).
  */
 
 /** Bouton d'un template (dénormalisé sur le node à la sélection) : sert à envoyer un payload contrôlé par
@@ -25,17 +24,14 @@ export type EmailRecipient =
   | { kind: 'literal'; value: string }
   | { kind: 'field'; field: string };
 
-/** Nombre maximal de destinataires d'un bloc « Envoi de mail ». Borné ICI, côté moteur, et pas seulement par
- *  le bouton « + » du builder : `parseGraph` ne regarde pas `data`, donc un graphe fabriqué à la main passerait
- *  autant d'adresses qu'il veut. Le surplus est TRONQUÉ (pas de refus : un bloc refusé devient un no-op muet). */
+/** Nombre maximal de destinataires d'un bloc « Envoi de mail ». Borné ici, côté moteur : `parseGraph` ne
+ *  regarde pas `data`, donc un graphe fabriqué à la main passerait autant d'adresses qu'il veut. Le surplus
+ *  est tronqué (un refus ferait du bloc un no-op muet). */
 export const MAX_DESTINATAIRES_EMAIL = 3;
 
-/** Action « Envoi de mail » : boîte SMTP + modèle + destinataires, portés par leur id/valeur opaques. Exportée :
- *  consommée par l'executor (câblage de l'envoi réel, IO).
- *
- *  `to` est une LISTE (1 à 3). Le premier part en « À », les suivants en COPIE CACHÉE : les destinataires
- *  peuvent être des clients, et ils ne doivent pas voir les adresses les uns des autres (décision produit du
- *  2026-08-25). La liste ne peut pas être vide : `actionOf` rend `null` avant d'en fabriquer une. */
+/** Action « Envoi de mail » : boîte SMTP + modèle + destinataires (ids/valeurs opaques), consommée par
+ *  l'executor. `to` est une liste (1 à 3) jamais vide : le premier part en « À », les suivants en copie
+ *  cachée, car des clients ne doivent pas voir les adresses les uns des autres. */
 export interface SendEmailAction {
   kind: 'sendEmail';
   emailAccountId: string;
@@ -50,41 +46,34 @@ export type WorkflowAction =
   | { kind: 'clearField'; key: string }
   /**
    * Bloc « Appel HTTP » : joue la requête `requestId` de la bibliothèque et range sa réponse dans `champCible`.
-   *
-   * ⚠️ L'action ne porte PAS la réponse : elle porte ce qu'il faut pour aller la chercher. Le walk est PUR,
-   * c'est l'exécuteur qui fait l'appel réseau, comme pour l'envoi d'un mail.
+   * L'action porte de quoi aller chercher la réponse, pas la réponse : le walk est pur, l'exécuteur fait
+   * l'appel.
    */
   | { kind: 'appelHttp'; requestId: string; champCible: string }
   /**
-   * Bloc « Fonction JS » : transforme `champSource` par `code` et range le résultat dans `champCible`.
-   *
-   * ⚠️ LE CODE VOYAGE DANS L'ACTION, la VALEUR non : elle est relue au moment d'exécuter. Un bloc « Appel
-   * API » qui précède vient peut-être d'écrire ce champ, et une photo prise au walk servirait l'ancienne.
+   * Bloc « Fonction JS » : transforme `champSource` par `code` et range le résultat dans `champCible`. La
+   * valeur est relue au moment d'exécuter, pas au walk : un bloc précédent vient peut-être d'écrire ce champ.
    */
   | { kind: 'fonctionJs'; code: string; champSource: string; champCible: string }
   /** Consentement marketing posé par un scénario. Les deux sens, comme depuis la fiche et l'action en masse. */
   | { kind: 'optIn'; value: 'opted_in' | 'opted_out' }
   | { kind: 'sendTemplate'; templateName: string; language: string; buttons: WorkflowButton[] }
-  /** `mediaUrl` = visuel du bloc, hébergé chez nous (`/m/<code>.<ext>`), le MÊME champ que le bloc RCS.
-   *  Absent = message texte, comportement historique.
+  /** `mediaUrl` = visuel du bloc, hébergé chez nous (`/m/<code>.<ext>`), le même champ que le bloc RCS.
+   *  Absent = message texte.
    *
-   *  `lien` = le bloc porte un BOUTON DE LIEN (WhatsApp `cta_url`, RCS `openUrl`) au lieu de réponses rapides.
-   *
-   *  🔴 LES DEUX S'EXCLUENT CHEZ META, donc ils s'excluent ici : `button` (des réponses qui REVIENNENT) et
-   *  `cta_url` (un bouton qui OUVRE une page) sont deux types de messages interactifs différents. Quand
-   *  `lien` est présent, `buttons` est VIDÉ à la construction de l'action, et c'est délibéré : transporter
-   *  les deux laisserait la couche d'envoi choisir, c'est-à-dire déplacer la décision là où elle ne se voit
-   *  plus. Conséquence voulue : `etapeOffreUnChoix` rend `false`, le parcours continue tout de suite, ce qui
-   *  est exact puisque Meta ne renvoie RIEN quand le contact clique un bouton de lien. */
+   *  `lien` = un bouton de lien (WhatsApp `cta_url`, RCS `openUrl`) au lieu de réponses rapides. Les deux
+   *  s'excluent chez Meta (deux types de messages interactifs) : quand `lien` est présent, `buttons` est vidé
+   *  à la construction de l'action, pour que la couche d'envoi n'ait pas à choisir. `etapeOffreUnChoix` rend
+   *  alors `false` et le parcours continue, puisque Meta ne renvoie rien au clic sur un lien. */
   | { kind: 'sendQuickMessage'; body: string; buttons: WorkflowButton[]; mediaUrl?: string; lien?: LienBouton }
   | { kind: 'sendFlow'; flowId: string; flowName: string; body: string; cta: string }
   /**
-   * Bloc QUESTION : une question posée au contact, avec un MENU de réponses (liste interactive WhatsApp) ou
-   * sans menu du tout. Il attend TOUJOURS une réponse, et il peut porter une échéance « pas de réponse ».
+   * Bloc Question : une question au contact, avec un menu de réponses (liste interactive WhatsApp) ou sans
+   * menu. Il attend toujours une réponse, et peut porter une échéance « pas de réponse ».
    *
-   * ⚠️ `rows` est transmis ENTIER, lignes au libellé vide comprises. C'est la même règle que les boutons de
-   * `sendQuickMessage` : l'index d'une ligne EST sa sortie (`row:<i>`), donc filtrer en amont renumérote les
-   * lignes et envoie le contact sur la mauvaise branche. Le filtrage se fait à l'ENVOI, en préservant l'index.
+   * `rows` est transmis entier, lignes au libellé vide comprises : l'index d'une ligne est sa sortie
+   * (`row:<i>`), et filtrer en amont renumérote et envoie le contact sur la mauvaise branche. Le filtrage se
+   * fait à l'envoi, en préservant l'index.
    */
   | { kind: 'sendQuestion'; body: string; buttonLabel: string; rows: QuestionRow[] }
   | SendEmailAction;
@@ -95,45 +84,37 @@ export interface QuestionRow {
   description?: string;
 }
 
-/** Ce que l'OUVERTURE d'un scénario contient, en un seul parcours (les deux questions posées sur l'ouverture
- *  ont la même exploration : les séparer en deux fonctions dupliquerait la traversée ET ses règles). */
+/** Ce que l'ouverture d'un scénario contient, en un seul parcours (séparer les deux questions posées sur
+ *  l'ouverture dupliquerait la traversée et ses règles). */
 export interface OpeningScan {
-  /** Un message de SESSION (message rapide / formulaire) part-il avant tout template ? */
+  /** Un message de session (message rapide / formulaire) part-il avant tout template ? */
   sessionOpen: boolean;
   /**
-   * Un bloc RCS CONFIGURÉ ouvre-t-il le scénario ? C'est une ouverture LÉGALE À FROID, au même titre qu'un
-   * template et à la différence d'un message de session : la fenêtre de 24 h est une contrainte de WhatsApp,
-   * et le RCS ne passe pas par WhatsApp.
-   *
-   * 🔴 Vécu le 2026-08-24 : un scénario commençant par un bloc RCS n'apparaissait PAS dans le sélecteur de
-   * l'Inbox quand la fenêtre était fermée, c'est-à-dire précisément là où il était le plus utile. La règle
-   * « seul un template peut ouvrir à froid » avait été écrite quand WhatsApp était le seul canal.
+   * Un bloc RCS configuré ouvre-t-il le scénario ? C'est une ouverture légale à froid, comme un template : la
+   * fenêtre de 24 h est une contrainte de WhatsApp, et le RCS ne passe pas par WhatsApp.
    */
   rcsOpen: boolean;
-  /** Le 1er template atteignable (parcours en LARGEUR : l'ordre reflète la proximité de l'entrée). */
+  /** Le 1er template atteignable (parcours en largeur : l'ordre reflète la proximité de l'entrée). */
   firstTemplate: WorkflowNode | null;
-  /** Plusieurs templates DIFFÉRENTS peuvent ouvrir (branches d'une condition) -> aucune ouverture unique. */
+  /** Plusieurs templates différents peuvent ouvrir (branches d'une condition) -> aucune ouverture unique. */
   ambiguousTemplate: boolean;
-  /** Une ATTENTE est traversée avant le 1er template : rien ne part au lancement. */
+  /** Une attente est traversée avant le 1er template : rien ne part au lancement. */
   waitBeforeTemplate: boolean;
-  /** Un template d'ouverture atteint n'a PAS de nom : sur cette branche, rien ne partirait, et le destinataire
+  /** Un template d'ouverture atteint n'a pas de nom : rien ne partirait sur cette branche, et le destinataire
    *  serait pourtant compté « envoyé ». Distinct de `firstTemplate === null` (aucun template du tout). */
   unnamedOpeningTemplate: boolean;
 }
 
 /**
- * Explore, depuis l'entrée, tout ce qui est atteignable AVANT le premier envoi. Les blocs synchrones
- * (tag / field / action) sont traversés, un bloc `condition` explore ses DEUX sorties, `template` et `inbox`
- * arrêtent l'exploration de leur branche.
+ * Explore, depuis l'entrée, tout ce qui est atteignable avant le premier envoi. Les blocs synchrones sont
+ * traversés, un bloc `condition` explore ses deux sorties, `template` et `inbox` arrêtent leur branche.
  *
- * En LARGEUR (file, pas pile) : « le premier template » doit être le plus proche de l'entrée, sinon le mapping
- * de variables d'une campagne viserait un template arbitraire selon l'ordre d'insertion des blocs.
+ * En largeur (file, pas pile) : « le premier template » doit être le plus proche de l'entrée, sinon le
+ * mapping de variables d'une campagne viserait un template arbitraire selon l'ordre d'insertion des blocs.
  *
- * `depuis` : le bloc d'où partir, pour la cible `node` de l'API publique (`ouvertureApi`). Absent, on part de
- * l'entrée, et rien ne change pour ses appelants serveur : la garde de création de campagne
- * (`src/http/campaigns.ts`) et `canalDOuverture`, dont dérivent `campaignEligible` et `canalOuverture` de la
- * liste des scénarios. L'éditeur lit le MIROIR `web/lib/campaign-eligibility.ts`, qui n'a pas de point de
- * départ et ne doit pas en avoir. Un `depuis` absent du graphe rend un examen vide : rien n'ouvre.
+ * `depuis` : le bloc d'où partir, pour la cible `node` de l'API publique (`ouvertureApi`) ; absent, on part
+ * de l'entrée. Le miroir `web/lib/campaign-eligibility.ts` n'a pas de point de départ et ne doit pas en
+ * avoir. Un `depuis` absent du graphe rend un examen vide : rien n'ouvre.
  */
 export function scanOpening(graph: WorkflowGraph, depuis?: string): OpeningScan {
   const out: OpeningScan = { sessionOpen: false, rcsOpen: false, firstTemplate: null, ambiguousTemplate: false, waitBeforeTemplate: false, unnamedOpeningTemplate: false };
@@ -163,38 +144,34 @@ export function scanOpening(graph: WorkflowGraph, depuis?: string): OpeningScan 
     if (node.type === 'flow' || node.type === 'quick_message') {
       const a = actionOf(node);
       if (a && (a.kind === 'sendFlow' || a.kind === 'sendQuickMessage')) out.sessionOpen = true;
-      continue; // bloc bloquant NON configuré (pas d'action) : pas une ouverture, et on ne va pas au-delà
+      continue; // bloc bloquant non configuré (pas d'action) : pas une ouverture, et on ne va pas au-delà
     }
     if (node.type === 'question') {
-      // Message de SESSION comme un message rapide : la liste interactive est un message libre, donc soumise
-      // à la fenêtre de 24 h. Une question ne peut pas ouvrir une campagne.
+      // Message de session comme un message rapide (la liste interactive est soumise à la fenêtre de 24 h) :
+      // une question ne peut pas ouvrir une campagne.
       const a = actionOf(node);
       if (a) { out.sessionOpen = true; continue; }
-      // Non configuré = passe-plat DANS `walk` : l'analyse doit voir la même chose, sinon l'éditeur jugerait
-      // un scénario sur un parcours que le moteur ne suit pas.
+      // Non configuré = passe-plat dans `walk` : l'analyse doit suivre le même parcours que le moteur.
       const suite = nextNode(graph, id);
       if (suite) queue.push(suite);
       continue;
     }
     if (node.type === 'agent') {
-      // L'agent envoie du texte libre : c'est un message de SESSION (contrairement au RCS, qui ouvre
-      // légalement à froid), et il BLOQUE l'exploration puisque `walk` s'y arrête. Sans ce cas, un scénario
-      // « agent puis template » serait vu comme ouvrant sur le template : la campagne l'accepterait, ferait
-      // paramétrer ce template, et au lancement rien ne partirait alors que les destinataires seraient
-      // comptés touchés.
+      // L'agent envoie du texte libre : un message de session, qui bloque l'exploration puisque `walk` s'y
+      // arrête. Sans ce cas, « agent puis template » serait vu comme ouvrant sur le template, et au lancement
+      // rien ne partirait alors que les destinataires seraient comptés touchés.
       if (String(node.data.agentId ?? '').trim() !== '') { out.sessionOpen = true; continue; }
-      // Non configuré = passe-plat DANS `walk` : l'analyse doit voir la même chose, sinon l'éditeur jugerait
-      // un scénario sur un parcours que le moteur ne suit pas.
+      // Non configuré = passe-plat dans `walk` : l'analyse doit suivre le même parcours que le moteur.
       const suite = nextNode(graph, id);
       if (suite) queue.push(suite);
       continue;
     }
     if (node.type === 'rcs_message') {
-      // Ouverture à froid LÉGALE. `waitBeforeTemplate` est consulté ici parce que le parcours est en LARGEUR :
-      // une attente placée AVANT ce bloc a donc déjà été vue, et dans ce cas rien ne part au lancement.
+      // Ouverture à froid légale. `waitBeforeTemplate` est déjà juste ici (parcours en largeur) : une attente
+      // placée avant ce bloc empêche tout départ au lancement.
       if (String(node.data.text ?? '').trim() !== '' && !out.waitBeforeTemplate) out.rcsOpen = true;
-      // On explore AU-DELÀ : la sortie « non joignable » mène souvent au template de repli, et c'est CE
-      // template que la campagne doit savoir paramétrer.
+      // On explore au-delà : la sortie « non joignable » mène souvent au template de repli, que la campagne
+      // doit savoir paramétrer.
       for (const h of ['sent', 'unreachable']) {
         const c = nextNodeByHandle(graph, id, h);
         if (c) queue.push(c);
@@ -217,12 +194,10 @@ export function scanOpening(graph: WorkflowGraph, depuis?: string): OpeningScan 
 }
 
 /**
- * Ce bloc « message rapide » laisse-t-il le parcours CONTINUER ? Oui quand il n'a aucune réponse rapide au
- * libellé non vide : c'est alors un simple texte, il ne pose pas de question, donc rien ne viendra en retour.
- * Bloquer là faisait qu'un tag placé juste après n'était jamais posé, en silence (prod, 2026-08-15).
- *
- * Source UNIQUE de la règle : `walk` (exécution) et `waitBeforeSessionMessage` (analyse du graphe) doivent
- * répondre pareil, sinon l'éditeur signalerait des montages que le moteur ne rencontre pas, ou l'inverse.
+ * Ce message rapide laisse-t-il le parcours continuer ? Oui quand il n'a aucune réponse rapide libellée :
+ * c'est un simple texte, rien ne viendra en retour, et bloquer là empêcherait les blocs suivants de
+ * s'exécuter. Source unique de la règle pour `walk` et `waitBeforeSessionMessage`, qui doivent répondre
+ * pareil.
  */
 function quickMessageNonBloquant(a: WorkflowAction | null): boolean {
   return a?.kind === 'sendQuickMessage' && !etapeOffreUnChoix(a);
@@ -232,18 +207,12 @@ function quickMessageNonBloquant(a: WorkflowAction | null): boolean {
 export interface LienBouton { texte: string; url: string }
 
 /**
- * Ce bouton de lien est-il UTILISABLE ? Rend la raison du refus, ou `null` quand il est bon.
+ * Ce bouton de lien est-il utilisable ? Rend la raison du refus, ou `null` quand il est bon.
  *
- * 🔴 UN REFUS EXPLICITE, JAMAIS UN ENVOI SANS LE BOUTON. Le client a coché la case : lui livrer un message
- * nu parce que l'adresse est vide ou mal formée, c'est exactement le silence qu'on ferme partout ailleurs
- * (le visuel non préparable refuse déjà pour cette raison, `sendQuickMessage` dans le câblage).
- *
- * ⚠️ AUCUNE VARIABLE DANS L'ADRESSE, comme pour les liens RCS : une variable vide fabriquerait une adresse
- * invalide, donc un message refusé ENTIER par Meta, là où le contact aurait au pire reçu un lien imparfait.
- *
- * ⚠️ On ne vérifie PAS que l'adresse est publiquement joignable (`urlRecuperable`, `resolutionPublique`) :
- * ces gardes protègent NOS requêtes sortantes, et ici personne chez nous ne va chercher cette page. C'est le
- * contact qui l'ouvre, dans son navigateur.
+ * Un refus explicite, jamais un envoi sans le bouton que le client a coché. Aucune variable dans l'adresse :
+ * une variable vide ferait refuser le message entier par Meta. On ne vérifie pas que l'adresse est
+ * publiquement joignable (`urlRecuperable`) : ces gardes protègent nos requêtes sortantes, et ici c'est le
+ * contact qui ouvre la page, dans son navigateur.
  */
 export function problemeLienBouton(lien: LienBouton): string | null {
   if (lien.texte.trim() === '') return 'le bouton de lien du bloc « message rapide » n’a pas de libellé';
@@ -259,65 +228,49 @@ export function problemeLienBouton(lien: LienBouton): string | null {
 }
 
 /**
- * L'étape présente-t-elle un CHOIX au client, c'est-à-dire un bouton ou une réponse rapide réellement libellé ?
+ * L'étape présente-t-elle un choix au client (un bouton ou une réponse rapide réellement libellé) ?
  *
- * C'est LE prédicat du contrôle du fil, et il pilote deux choses à la fois, ce qui est toute la raison de son
- * existence : « le scénario attend-il une réponse ? » et « gardons-nous la main face à l'agent de Meta ? » sont
- * la même question. Une étape qui offre un choix garde la main (la réponse du client doit nous revenir pour
- * être appariée au bouton). Une étape qui n'offre rien la relâche : l'agent de Meta reprend la parole, et les
- * actions du scénario continuent de leur côté.
- *
- * Un formulaire attend forcément une saisie : il offre donc un choix, sans bouton.
+ * C'est le prédicat du contrôle du fil : « le scénario attend-il une réponse ? » et « gardons-nous la main
+ * face à l'agent de Meta ? » sont la même question. Une étape qui offre un choix garde la main (la réponse
+ * doit nous revenir pour être appariée au bouton) ; une étape qui n'offre rien la relâche. Un formulaire
+ * attend forcément une saisie : il offre donc un choix, sans bouton.
  */
 export function etapeOffreUnChoix(a: WorkflowAction | null): boolean {
   if (a === null) return false;
   if (a.kind === 'sendFlow') return true;
-  // Un bloc QUESTION attend toujours, MENU OU PAS. C'est sa définition même : sans menu, on attend la réponse
-  // libre du contact, et c'est cette réponse qui doit nous revenir. Le faire dépendre de `rows` rendrait une
-  // question sans menu non bloquante, donc suivie aussitôt par le bloc d'après, sans jamais lire la réponse.
+  // Un bloc Question attend toujours, menu ou pas : sans menu, on attend la réponse libre du contact.
+  // Dépendre de `rows` ferait enchaîner le bloc suivant sans jamais lire la réponse.
   if (a.kind === 'sendQuestion') return true;
   if (a.kind === 'sendTemplate' || a.kind === 'sendQuickMessage') return a.buttons.some((b) => b.text.trim() !== '');
   return false;
 }
 
 /**
- * La fenêtre de service WhatsApp : 24 h depuis le dernier message DU CONTACT. Au-delà, Meta refuse tout ce
- * qui n'est pas un template (131047).
- *
- * Elle est au niveau du module parce que DEUX calculs la lisent : l'analyse de montage ci-dessous, et
- * `waitEstimationMs`, qui décide de la durée à prêter à une attente sans durée connue. Écrite deux fois,
- * elle aurait fini par ne plus valoir la même chose des deux côtés.
+ * La fenêtre de service WhatsApp : 24 h depuis le dernier message du contact. Au-delà, Meta refuse tout ce
+ * qui n'est pas un template (131047). Partagée par l'analyse de montage et `waitEstimationMs`.
  */
 export const FENETRE_SERVICE_MS = 24 * 3_600_000;
 
 /** Un montage impossible : une attente qui ferme forcément la fenêtre, suivie d'un message de session. */
 export interface WaitThenSession {
-  /** Le dernier bloc Attente TRAVERSÉ sur ce chemin (celui qu'on montre à l'utilisateur). */
+  /** Le dernier bloc Attente traversé sur ce chemin (celui qu'on montre à l'utilisateur). */
   waitNodeId: string;
   /** Le bloc message rapide / formulaire qui ne partira jamais. */
   messageNodeId: string;
 }
 
 /**
- * Cherche un chemin « attente cumulée >= 24 h, PUIS message rapide ou formulaire ».
+ * Cherche un chemin « attente cumulée >= 24 h, puis message rapide ou formulaire ». Ce montage ne peut
+ * jamais marcher : après 24 h d'attente la fenêtre de service est fermée à coup sûr (131047). Le runtime le
+ * bloque (`executor.resume` teste la fenêtre réelle au réveil) ; cette fonction sert à le dire dans le
+ * builder. Sous 24 h on ne dit rien : le contact a pu écrire entre-temps, c'est au runtime de trancher.
  *
- * Ce montage ne peut jamais marcher : la fenêtre de service court depuis le dernier message DU CONTACT, donc
- * après 24 h d'attente elle est fermée à coup sûr, et Meta refuse tout message hors template (131047). Le
- * runtime le bloque (`executor.resume` teste la fenêtre RÉELLE au réveil, y compris pour un bloc agent, qui
- * ne produit pourtant aucune action) ; cette fonction sert à le DIRE dans le builder, au moment où on le
- * construit, plutôt que de laisser découvrir le silence en production.
- *
- * Sous 24 h on ne dit rien : la fenêtre PEUT être encore ouverte (le contact a pu écrire entre-temps), c'est
- * au runtime de trancher sur l'état réel, pas à une analyse de graphe de deviner.
- *
- * Termine sur les graphes CYCLIQUES : le cumul est PLAFONNÉ à 24 h (au-delà, la réponse ne change plus), et un
- * bloc n'est ré-exploré que si on l'atteint avec un cumul strictement plus grand. Sans ce plafond, un cycle
- * d'attentes ferait croître le cumul indéfiniment et la fonction ne rendrait jamais la main.
+ * Termine sur les graphes cycliques : le cumul est plafonné à 24 h, et un bloc n'est ré-exploré qu'avec un
+ * cumul strictement plus grand.
  */
 export function waitBeforeSessionMessage(graph: WorkflowGraph): WaitThenSession | null {
-  // Chaque attente compte pour au MOINS un pas de balayage (60 s), la granularité réelle d'un réveil. Sans ce
-  // plancher, un délai fractionnaire enregistré par l'API (`{delay: 0.001}`, 60 ms) dans un cycle demanderait
-  // ~1,4 million d'itérations par bloc et figerait l'onglet.
+  // Chaque attente compte pour au moins un pas de balayage (60 s), la granularité réelle d'un réveil : sinon un
+  // délai fractionnaire (`{delay: 0.001}`) dans un cycle demanderait des millions d'itérations.
   const PAS_MIN_MS = 60_000;
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const entry = entryNode(graph);
@@ -334,23 +287,21 @@ export function waitBeforeSessionMessage(graph: WorkflowGraph): WaitThenSession 
     if (!node) continue;
     if (node.type === 'inbox') continue;
     if (node.type === 'question') {
-      // Une question est un message de SESSION : après 24 h d'attente cumulée, elle ne partira jamais. Même
-      // signalement que pour un message rapide ou un formulaire.
+      // Une question est un message de session : même signalement que pour un message rapide ou un formulaire.
       const a = actionOf(node);
       if (a && cumul >= FENETRE_SERVICE_MS && dernierWait) return { waitNodeId: dernierWait, messageNodeId: id };
-      // Configurée, elle BLOQUE (elle attend une réponse) : l'analyse s'arrête là, comme sur un message
-      // rapide à boutons. Non configurée, elle est un passe-plat : on explore au-delà.
+      // Configurée, elle bloque (elle attend une réponse) : l'analyse s'arrête là. Non configurée, elle est un
+      // passe-plat : on explore au-delà.
       if (a) continue;
       const apres = nextNode(graph, id);
       if (apres) pile.push({ id: apres, cumul, dernierWait });
       continue;
     }
     if (node.type === 'agent') {
-      // Le premier message de l'agent est un message de SESSION : après 24 h d'attente cumulée, il ne partira
-      // jamais. Même signalement que pour un message rapide ou un formulaire.
+      // Le premier message de l'agent est un message de session : même signalement que pour un message rapide.
       const configure = String(node.data.agentId ?? '').trim() !== '';
       if (configure && cumul >= FENETRE_SERVICE_MS && dernierWait) return { waitNodeId: dernierWait, messageNodeId: id };
-      // Configuré, il BLOQUE (il tient la conversation) : l'analyse s'arrête là. Non configuré, il est un
+      // Configuré, il bloque (il tient la conversation) : l'analyse s'arrête là. Non configuré, il est un
       // passe-plat, comme dans `walk` : on explore au-delà.
       if (configure) continue;
       const apres = nextNode(graph, id);
@@ -362,17 +313,16 @@ export function waitBeforeSessionMessage(graph: WorkflowGraph): WaitThenSession 
       if (a && (a.kind === 'sendFlow' || a.kind === 'sendQuickMessage') && cumul >= FENETRE_SERVICE_MS && dernierWait) {
         return { waitNodeId: dernierWait, messageNodeId: id };
       }
-      // Un message rapide SANS bouton ne bloque pas le parcours (cf. `walk`) : on doit donc explorer AU-DELÀ,
-      // sinon un montage « attente, message sans bouton, attente, message rapide » ne serait jamais signalé
-      // alors que son dernier message ne partira jamais. Un bloc réellement bloquant, lui, arrête l'analyse.
+      // Un message rapide sans bouton ne bloque pas le parcours (cf. `walk`) : on explore au-delà, sinon un
+      // montage « attente, message sans bouton, attente, message rapide » ne serait jamais signalé. Un bloc
+      // réellement bloquant arrête l'analyse.
       if (!quickMessageNonBloquant(a)) continue;
       const nx = nextNode(graph, id);
       if (nx) pile.push({ id: nx, cumul, dernierWait });
       continue;
     }
-    // Un TEMPLATE remet le compteur à zéro. Attention à la raison : un template n'OUVRE PAS la fenêtre de
-    // service (seul un message DU CONTACT l'ouvre). Le parcours s'ARRÊTE au template jusqu'à la réponse, et
-    // c'est cette réponse qui rouvre la fenêtre : l'attente d'avant ne pèse donc plus sur la suite.
+    // Un template remet le compteur à zéro. Il n'ouvre pas la fenêtre (seul un message du contact l'ouvre),
+    // mais le parcours s'arrête au template jusqu'à la réponse, et c'est cette réponse qui rouvre la fenêtre.
     const suivant = node.type === 'template'
       ? { cumul: 0, dernierWait: null }
       : node.type === 'wait'
@@ -397,31 +347,22 @@ export function waitBeforeSessionMessage(graph: WorkflowGraph): WaitThenSession 
 
 export type WalkRest =
   /**
-   * En attente d'une RÉPONSE du contact (après un template, un formulaire, une question).
-   *
-   * `timeoutInMs` est l'échéance « pas de réponse » d'un bloc Question : le parcours attend la réponse ET le
-   * temps qui passe, ce qu'aucun autre bloc ne fait. Absent = attente sans limite, comportement historique.
+   * En attente d'une réponse du contact (après un template, un formulaire, une question). `timeoutInMs` est
+   * l'échéance « pas de réponse » d'un bloc Question. Absent = attente sans limite.
    */
   | { status: 'waiting'; nodeId: string; timeoutInMs?: number }
-  | { status: 'sleeping'; nodeId: string; resumeInMs: number } // en attente du TEMPS qui passe (bloc Attente)
-  // Bloc RCS : ce n'est PAS un état de repos, c'est une MAIN RENDUE. Le walk est pur et ne peut pas savoir si
-  // le numéro est joignable (appel réseau). L'executor fait l'IO puis reprend par 'sent' ou 'unreachable'.
-  // Ce statut ne doit JAMAIS atteindre `restToState` : il n'y a pas d'état de run qui lui corresponde.
+  | { status: 'sleeping'; nodeId: string; resumeInMs: number } // en attente du temps qui passe (bloc Attente)
+  // Bloc RCS : pas un état de repos, une main rendue. Le walk est pur et ne sait pas si le numéro est
+  // joignable : l'executor fait l'IO puis reprend par 'sent' ou 'unreachable'. Toujours résolu par
+  // `walkResolved`, ce statut n'atteint jamais `restToState`.
   | { status: 'rcs_send'; nodeId: string }
-  // Bloc AGENT : ce n'est PAS un état de repos non plus, c'est une MAIN RENDUE, comme rcs_send. Le walk est pur
-  // et ne peut pas savoir ce que le modèle va décider. L'executor persiste, ouvre la session et enfile un tour ;
-  // le parcours reprendra plus tard par un handle de sortie.
-  // ⚠️ Différence avec rcs_send, et elle décide du design : rcs_send est TOUJOURS résolu par `walkResolved` et
-  // n'atteint donc jamais `restToState`. `agent_turn`, lui, l'atteint réellement, et le `return` final de
-  // `restToState` aurait clos le parcours en `done` pile au moment où l'agent doit prendre la main. D'où un cas
-  // EXPLICITE là-bas.
+  // Bloc agent : une main rendue aussi. L'executor persiste, ouvre la session et enfile un tour ; le parcours
+  // reprendra par un handle de sortie. Contrairement à rcs_send, il atteint réellement `restToState`, qui a
+  // donc un cas explicite pour ne pas clore le parcours en `done` au moment où l'agent prend la main.
   | { status: 'agent_turn'; nodeId: string }
   /**
-   * Conversation remontée à l'humain (terminal).
-   *
-   * ⚠️ `assigneA` VOYAGE AVEC LE STATUT, il n'est pas relu du graphe plus loin : l'exécuteur n'a pas le
-   * nœud sous la main quand il escalade, et le lui faire rechercher par identifiant serait une seconde
-   * lecture du graphe qui pourrait diverger de celle qui vient de décider.
+   * Conversation remontée à l'humain (terminal). `assigneA` voyage avec le statut : l'exécuteur n'a pas le
+   * nœud sous la main quand il escalade, et une seconde lecture du graphe pourrait diverger.
    */
   | { status: 'inbox'; assigneA?: string | null }
   | { status: 'done' }; // fin de chaîne (plus d'arête sortante)
@@ -430,20 +371,18 @@ export type WalkRest =
 export const WAIT_UNITS = ['minutes', 'hours', 'days'] as const;
 export type WaitUnit = (typeof WAIT_UNITS)[number];
 const UNIT_MS: Record<WaitUnit, number> = { minutes: 60_000, hours: 3_600_000, days: 86_400_000 };
-/** Plafond : 30 jours. Au-delà, un parcours dormant n'a plus de sens métier et la fenêtre est fermée depuis
- *  longtemps ; borner évite aussi une échéance absurde posée par une saisie erronée. */
+/** Plafond : 30 jours. Au-delà, un parcours dormant n'a plus de sens métier ; borner évite aussi une
+ *  échéance absurde posée par une saisie erronée. */
 export const WAIT_MAX_MS = 30 * 86_400_000;
 
 /**
- * Les trois façons de dire QUAND un bloc Attente reprend.
- *
- * `delai` est le mode historique ET le défaut : un scénario enregistré avant le 2026-09-08 n'a pas ce champ
- * et doit se comporter exactement comme avant, au caractère près.
+ * Les trois façons de dire quand un bloc Attente reprend. `delai` est le défaut : un scénario ancien n'a pas
+ * ce champ et doit se comporter exactement comme avant.
  */
 export const WAIT_MODES = ['delai', 'date', 'heures_ouvrees'] as const;
 export type WaitMode = (typeof WAIT_MODES)[number];
 
-/** Le mode d'un bloc Attente, lu DÉFENSIVEMENT (`data` est du JSON libre venu du client). Inconnu -> `delai`,
+/** Le mode d'un bloc Attente, lu défensivement (`data` est du JSON libre venu du client). Inconnu -> `delai`,
  *  jamais une erreur : un scénario enregistré par une version ultérieure ne doit pas devenir illisible. */
 export function waitMode(node: WorkflowNode): WaitMode {
   const brut = String(node.data.waitMode ?? 'delai');
@@ -451,15 +390,12 @@ export function waitMode(node: WorkflowNode): WaitMode {
 }
 
 /**
- * Durée d'un bloc Attente en mode DÉLAI, en millisecondes. 0 = bloc NON configuré (durée absente, nulle,
- * négative ou unité inconnue) : il se comporte alors en passe-plat, on ne bloque pas un parcours sur une
- * saisie oubliée.
+ * Durée d'un bloc Attente en mode délai, en millisecondes. 0 = bloc non configuré (durée absente, nulle,
+ * négative ou unité inconnue) : passe-plat, on ne bloque pas un parcours sur une saisie oubliée.
  *
- * ⚠️ Rend 0 pour les deux modes DATÉS, et ce n'est pas un oubli : leur échéance ne se calcule qu'à
- * l'exécution. Le `delay` peut être resté dans `data` (le client a pu régler un délai avant de changer de
- * mode) ; le rendre ici annoncerait une durée que le bloc ne tiendra pas. Les deux questions que ce zéro
- * laisse ouvertes ont chacune leur fonction : `waitResumeInMs` pour l'exécution, `waitEstimationMs` pour
- * l'analyse de graphe.
+ * Rend 0 pour les deux modes datés, dont l'échéance ne se calcule qu'à l'exécution (un `delay` resté dans
+ * `data` annoncerait une durée que le bloc ne tiendra pas). Voir `waitResumeInMs` pour l'exécution et
+ * `waitEstimationMs` pour l'analyse de graphe.
  */
 export function waitDurationMs(node: WorkflowNode): number {
   if (waitMode(node) !== 'delai') return 0;
@@ -472,18 +408,11 @@ export function waitDurationMs(node: WorkflowNode): number {
 }
 
 /**
- * La durée qu'une ANALYSE DE GRAPHE doit prêter à un bloc Attente, en millisecondes.
- *
- * 🔴 CE N'EST PAS `waitDurationMs`, ET LA DIFFÉRENCE DÉCIDE SI UN CLIENT REÇOIT UN MESSAGE OU RIEN.
- * `waitBeforeSessionMessage` tourne à la PUBLICATION : elle doit dire, sans connaître l'instant d'exécution,
- * si la fenêtre de 24 h sera fermée derrière l'attente. Une attente « jusqu'à une date » ou « jusqu'aux
- * prochaines heures ouvrées » n'a pas de durée connue d'avance, on la compte donc pour une attente LONGUE,
- * c'est-à-dire la fenêtre entière. Ce n'est pas un repli prudent : c'est déjà ce que le panneau du bloc
- * ANNONCE au client (« après une attente, seul un envoi de TEMPLATE peut encore partir »).
- *
- * ⚠️ Le défaut à ne pas laisser passer serait de rendre 0. L'analyse croirait alors la fenêtre encore
- * ouverte et laisserait publier « attendre jusqu'à demain 9 h, puis message rapide », un montage dont le
- * message ne partira jamais et dont personne ne serait prévenu.
+ * La durée qu'une analyse de graphe doit prêter à un bloc Attente, en millisecondes. Ce n'est pas
+ * `waitDurationMs` : `waitBeforeSessionMessage` tourne à la publication, sans connaître l'instant
+ * d'exécution. Une attente « jusqu'à une date » ou « jusqu'aux heures ouvrées » compte donc pour la fenêtre
+ * entière, ce que le panneau du bloc annonce déjà au client. Rendre 0 laisserait publier « attendre jusqu'à
+ * demain 9 h, puis message rapide », dont le message ne partira jamais.
  */
 export function waitEstimationMs(node: WorkflowNode): number {
   return waitMode(node) === 'delai' ? waitDurationMs(node) : FENETRE_SERVICE_MS;
@@ -492,11 +421,9 @@ export function waitEstimationMs(node: WorkflowNode): number {
 /**
  * L'instant visé par un bloc Attente en mode « date fixe ». Saisie vide ou illisible -> `null`.
  *
- * La date est saisie DANS LE BLOC (décision de Julien du 2026-09-08), pas prise dans un champ du contact :
- * ce dernier cas est déjà couvert par l'automation « un délai avant ou après une date enregistrée », et il
- * poserait ici la question du champ vide, qui n'a pas de bonne réponse dans un parcours déjà lancé.
- * Elle est lue comme une heure MURALE dans le fuseau de l'espace : « le 24 à 9 h » veut dire 9 h chez le
- * client, pas 9 h UTC.
+ * La date est saisie dans le bloc, pas prise dans un champ du contact (ce cas est couvert par l'automation
+ * « un délai avant ou après une date enregistrée »). Elle est lue comme une heure murale dans le fuseau de
+ * l'espace : « le 24 à 9 h » veut dire 9 h chez le client, pas 9 h UTC.
  */
 function cibleDeDate(node: WorkflowNode, ctx: EvalContext): Date | null {
   const brut = String(node.data.waitDate ?? '').trim();
@@ -508,20 +435,15 @@ function cibleDeDate(node: WorkflowNode, ctx: EvalContext): Date | null {
 /**
  * Dans combien de temps un bloc Attente doit reprendre, en millisecondes. C'est ce que l'exécution lit.
  *
- * 0 = PASSE-PLAT (on continue tout de suite), la doctrine de ce moteur pour tout bloc qu'on ne peut pas
- * exécuter (attente sans durée, question sans texte, agent non configuré) : un parcours FIGÉ n'a ni signal
- * ni recours, un parcours qui continue se voit.
+ * 0 = passe-plat, la doctrine de ce moteur pour tout bloc qu'on ne peut pas exécuter : un parcours figé n'a
+ * ni signal ni recours, un parcours qui continue se voit.
  *
- * 🔴 LES DEUX MODES DATÉS EXIGENT `ctx` : sans l'instant courant, le fuseau et les horaires de l'espace, il
- * n'y a rien à calculer. L'exécuteur ne construit ce contexte que si le graphe le réclame, et c'est
- * `buildCtx` qui doit le savoir : sans cette ligne-là, un « attendre les heures ouvrées » deviendrait un
- * passe-plat et enverrait à 1 h du matin exactement ce qu'on voulait retenir. C'est le seul chemin par
- * lequel ce défaut peut passer, et c'est pourquoi il est tenu par un test plutôt que par une relecture.
+ * Les deux modes datés exigent `ctx` (instant, fuseau, horaires) : c'est `buildCtx` qui doit savoir le
+ * construire pour eux, sinon « attendre les heures ouvrées » deviendrait un passe-plat et enverrait à 1 h du
+ * matin. Tenu par un test.
  *
- * ⚠️ L'échéance est calculée UNE FOIS, ici, et le réveil repart au bloc SUIVANT : un bloc Attente ne se
- * réévalue jamais. Si le balayage prend des heures de retard (worker arrêté), un « jusqu'aux heures
- * ouvrées » repart à l'heure du réveil et non à l'ouverture. C'est la limite commune à toutes les échéances
- * de ce dépôt, pas une propriété de ces modes, et la corriger demanderait que le balayage rejoue le bloc.
+ * L'échéance est calculée une fois, ici, et le réveil repart au bloc suivant : si le balayage prend du retard
+ * (worker arrêté), un « jusqu'aux heures ouvrées » repart à l'heure du réveil et non à l'ouverture.
  */
 export function waitResumeInMs(node: WorkflowNode, ctx?: EvalContext): number {
   const mode = waitMode(node);
@@ -530,26 +452,22 @@ export function waitResumeInMs(node: WorkflowNode, ctx?: EvalContext): number {
   const cible = mode === 'date'
     ? cibleDeDate(node, ctx)
     : prochaineOuverture(ctx.now, ctx.timeZone, ctx.businessHours);
-  // `null` = rien à viser : une date illisible, ou une semaine ENTIÈREMENT fermée. `prochaineOuverture` rend
-  // délibérément `null` dans ce dernier cas plutôt qu'une date lointaine, en laissant l'appelant décider :
-  // ici, on décide passe-plat, pour la raison écrite plus haut.
+  // `null` = rien à viser : une date illisible, ou une semaine entièrement fermée (`prochaineOuverture` rend
+  // `null` plutôt qu'une date lointaine). Ici, passe-plat.
   if (cible === null) return 0;
-  // Une échéance DÉJÀ PASSÉE (une date d'hier, ou l'instant courant parce qu'on est déjà dans les heures
-  // ouvertes) n'est pas une attente négative, c'est « il n'y a rien à attendre ».
+  // Une échéance déjà passée (une date d'hier, ou déjà dans les heures ouvertes) : rien à attendre.
   return Math.min(Math.max(0, cible.getTime() - ctx.now.getTime()), WAIT_MAX_MS);
 }
 
-/** Nombre MAXIMAL de lignes d'un menu. Plafond WhatsApp : « up to 10 rows for all sections combined ». */
+/** Nombre maximal de lignes d'un menu. Plafond WhatsApp : « up to 10 rows for all sections combined ». */
 export const QUESTION_MAX_ROWS = 10;
-/** Plafonds de caractères d'une liste interactive WhatsApp, relevés sur la référence Cloud API le 2026-08-26. */
+/** Plafonds de caractères d'une liste interactive WhatsApp (référence Cloud API). */
 export const QUESTION_LIMITES = { body: 4096, bouton: 20, titre: 24, description: 72 } as const;
 
 /**
  * Échéance « pas de réponse » d'un bloc Question, en millisecondes. 0 = aucune échéance : le parcours attend
- * indéfiniment, exactement comme après un template ou un message rapide à boutons.
- *
- * Mêmes unités et même plafond que le bloc Attente, à dessein : c'est la même notion de délai pour
- * l'utilisateur, et deux échelles différentes dans le même éditeur seraient un piège.
+ * indéfiniment. Mêmes unités et même plafond que le bloc Attente : c'est la même notion de délai pour
+ * l'utilisateur.
  */
 export function questionTimeoutMs(node: WorkflowNode): number {
   const brut = Number(node.data.timeoutValue ?? 0);
@@ -561,11 +479,9 @@ export function questionTimeoutMs(node: WorkflowNode): number {
 }
 
 /**
- * Les lignes du menu d'un bloc Question, lues DÉFENSIVEMENT depuis `node.data.rows` (JSON libre).
- *
- * Rend le tableau ENTIER, lignes vides comprises : voir la mise en garde de `sendQuestion`, l'index EST la
- * sortie. Une forme inattendue (pas un tableau, entrée non objet) donne une ligne vide plutôt qu'un crash :
- * un scénario enregistré par une version antérieure ne doit jamais devenir illisible.
+ * Les lignes du menu d'un bloc Question, lues défensivement depuis `node.data.rows` (JSON libre). Rend le
+ * tableau entier, lignes vides comprises (l'index est la sortie, voir `sendQuestion`). Une forme inattendue
+ * donne une ligne vide plutôt qu'un crash.
  */
 export function questionRows(node: WorkflowNode): QuestionRow[] {
   const brut = node.data.rows;
@@ -579,12 +495,9 @@ export function questionRows(node: WorkflowNode): QuestionRow[] {
 }
 
 /**
- * Une action ET le bloc qui l'a produite.
- *
- * Le bloc d'origine est porté ICI plutot que dans un tableau parallele au meme index : « meme longueur, meme
- * ordre » est un invariant que rien ne verifie et qui finit par se casser en silence. C'est ce lien qui rend
- * mesurable un scenario bloc par bloc (Analytics > Mes tableaux) : avant, l'executeur recevait une liste
- * d'actions dont il ne savait plus d'ou elles venaient.
+ * Une action et le bloc qui l'a produite. Le bloc d'origine est porté ici plutôt que dans un tableau
+ * parallèle (« même longueur, même ordre » finit par se casser en silence) : c'est ce lien qui rend un
+ * scénario mesurable bloc par bloc (Analytics > Mes tableaux).
  */
 export interface WalkStep {
   nodeId: string;
@@ -596,7 +509,7 @@ export interface WalkResult {
   rest: WalkRest;
 }
 
-/** Bloc d'entrée d'un workflow = un bloc SANS arête entrante (racine). Défaut : le 1er bloc. null si vide. */
+/** Bloc d'entrée d'un workflow = un bloc sans arête entrante (racine). Défaut : le 1er bloc. null si vide. */
 export function entryNode(graph: WorkflowGraph): string | null {
   if (graph.nodes.length === 0) return null;
   const hasIncoming = new Set(graph.edges.map((e) => e.target));
@@ -609,19 +522,18 @@ export function nextNode(graph: WorkflowGraph, nodeId: string): string | null {
   return graph.edges.find((e) => e.source === nodeId)?.target ?? null;
 }
 
-/** Le bloc suivant POUR un handle de sortie donné (branche par bouton : sourceHandle = `btn:<index>`).
+/** Le bloc suivant pour un handle de sortie donné (branche par bouton : sourceHandle = `btn:<index>`).
  *  null si aucune arête ne part de ce handle. */
 export function nextNodeByHandle(graph: WorkflowGraph, nodeId: string, handle: string): string | null {
   return graph.edges.find((e) => e.source === nodeId && e.sourceHandle === handle)?.target ?? null;
 }
 
-/** Le bloc suivant par une arête LIBRE, c'est-à-dire qui ne part d'aucun handle : la chaîne linéaire, ou la
- *  sortie tirée exprès depuis le corps du bloc pour dire « toute autre réponse ». null si TOUTES les arêtes
- *  sortantes partent d'un bouton.
+/** Le bloc suivant par une arête libre (qui ne part d'aucun handle) : la chaîne linéaire, ou la sortie
+ *  « toute autre réponse ». null si toutes les arêtes sortantes partent d'un bouton.
  *
- *  Sert à router une réponse qui ne correspond à aucun bouton. `nextNode` prendrait la 1re arête venue, donc
- *  la branche du 1er bouton : un contact qui écrit « non merci » à un bloc Oui/Non se ferait taguer « oui ».
- *  Sans arête libre, le scénario n'a rien prévu pour ce cas, et s'arrêter vaut mieux qu'inventer une branche. */
+ *  Sert à router une réponse qui ne correspond à aucun bouton. `nextNode` prendrait la 1re arête venue,
+ *  donc la branche du 1er bouton : un contact qui écrit « non merci » à un bloc Oui/Non se ferait taguer
+ *  « oui ». Sans arête libre, s'arrêter vaut mieux qu'inventer une branche. */
 export function nextNodeSansHandle(graph: WorkflowGraph, nodeId: string): string | null {
   return graph.edges.find((e) => e.source === nodeId && !e.sourceHandle)?.target ?? null;
 }
@@ -637,36 +549,19 @@ function emailRecipientOf(raw: unknown): EmailRecipient | null {
 }
 
 /**
- * Les destinataires d'un bloc email, lus depuis `data.to` opaque.
- *
- * 🔴 ACCEPTE LES DEUX FORMES, et ce n'est pas du confort. Jusqu'au 2026-08-25, `to` était un OBJET unique, et
- * les scénarios déjà enregistrés le portent tel quel dans leur JSONB : rien ne les renormalise à la lecture
- * (`parseGraph` laisse `data` opaque). Ne lire que la forme LISTE ferait rendre `null` à `actionOf`, donc
- * transformerait ces blocs en no-op TOTALEMENT SILENCIEUX (aucun log, aucun événement, aucun statut d'échec) :
- * des scénarios en production cesseraient d'envoyer sans que rien ne le dise. La forme objet est donc lue
- * comme une liste d'un élément, et elle doit le rester tant qu'un ancien graphe peut exister.
- *
- * Les entrées invalides sont ÉCARTÉES une à une plutôt que de faire échouer le tout : une 3e adresse laissée
- * vide ne doit pas empêcher les deux premières de recevoir. Liste vide -> null (bloc non configuré).
+ * `emailRecipientsOf` : les destinataires d'un bloc email, lus depuis `data.to` opaque. Accepte les deux
+ * formes : un objet unique (scénarios anciens, jamais renormalisés puisque `parseGraph` laisse `data`
+ * opaque) ou une liste. Ne lire que la liste ferait de ces blocs des no-op silencieux. Les entrées invalides
+ * sont écartées une à une (une 3e adresse vide n'empêche pas les deux premières). Liste vide -> null.
  */
 /**
- * La valeur qu'un bloc « poser un champ » écrit, selon ce que l'utilisateur a choisi.
+ * La valeur qu'un bloc « poser un champ » écrit. Un seul endroit pour le bloc `field` et l'action
+ * `set_field`, deux façons de décrire le même geste, qui doivent poser la même valeur.
  *
- * 🔴 UN SEUL ENDROIT, appelé par le bloc `field` ET par l'action `set_field`, qui sont deux façons de décrire
- * le même geste. Le calcul y était écrit DEUX FOIS, à l'identique : la première divergence aurait fait qu'un
- * scénario écrit avec le bloc et un scénario écrit avec l'action ne poseraient plus la même valeur, sans que
- * rien ne le signale.
- *
- * `maintenant` : ISO 8601 AVEC LE DÉCALAGE du fuseau de l'espace, et non plus `toISOString()`.
- * Julien, le 2026-09-02 : « il faut que ça soit la valeur au format international qui prenne bien en compte
- * le GMT ». L'ancienne forme rendait toujours de l'UTC : l'instant était juste, mais l'heure LUE était fausse
- * de deux heures en été, et un système qui affichait la valeur telle quelle montrait 09:45 pour 11:45. Les
- * deux formes désignent le même instant, donc les conditions datetime comparent la même chose qu'avant.
- *
- * `derniere_saisie` : le dernier message écrit par le contact, pour le recopier dans un champ. Absent du
- * contexte (personne n'a encore écrit, ou le chargement a échoué) -> valeur VIDE, jamais inventée.
- *
- * Sans contexte du tout (analyse de graphe pure, hors exécution), tout ce qui est dynamique vaut vide.
+ * `now` : ISO 8601 avec le décalage du fuseau de l'espace (`formatMaintenant`), pour qu'un système qui
+ * affiche la valeur telle quelle montre l'heure locale ; l'instant reste le même pour les conditions.
+ * `derniere_saisie` : le dernier message écrit par le contact ; absent du contexte -> vide, jamais inventé.
+ * Sans contexte (analyse de graphe pure), tout ce qui est dynamique vaut vide.
  */
 function valeurDuChamp(data: Record<string, unknown>, ctx?: EvalContext): string {
   const kind = String(data.valueKind ?? '');
@@ -687,17 +582,12 @@ function emailRecipientsOf(raw: unknown): EmailRecipient[] | null {
 }
 
 /**
- * Adresses réellement joignables d'un bloc email, résolues contre les variables du contact. PURE.
+ * Adresses réellement joignables d'un bloc email, résolues contre les variables du contact. Pure.
  *
- * Extraite du câblage d'envoi (`wiring.ts`) pour être testable : c'est elle qui décide qui reçoit, et à quel
- * titre. Chaque destinataire est résolu INDÉPENDAMMENT, parce qu'une adresse en mode variable lit
- * `contacts.fields`, qui est libre (import CSV, webhook, inbox) : rien ne garantit qu'elle soit renseignée, et
- * une 3e ligne vide ne doit pas priver les deux premières de leur mail.
- *
- * Les doublons sont écartés : le même champ pointé deux fois, ou une adresse fixe qui répète la valeur d'une
- * variable, enverrait deux exemplaires à la même personne.
- *
- * L'ordre est conservé : l'appelant met la PREMIÈRE en « À » et les suivantes en copie cachée.
+ * Chaque destinataire est résolu indépendamment : une adresse en mode variable lit `contacts.fields`, libre,
+ * et une 3e ligne vide ne doit pas priver les deux premières de leur mail. Les doublons sont écartés (deux
+ * exemplaires à la même personne). L'ordre est conservé : l'appelant met la première en « À » et les
+ * suivantes en copie cachée.
  */
 export function adressesDestinataires(to: EmailRecipient[], vars: Record<string, string | null>): string[] {
   return [...new Set(
@@ -708,20 +598,18 @@ export function adressesDestinataires(to: EmailRecipient[], vars: Record<string,
   )];
 }
 
-/** Exportée : consommée directement par le test unitaire du node email (`actionOf` en isolation), sans passer
- *  par `walk`. */
+/** Exportée pour le test unitaire du node email (`actionOf` en isolation). */
 export function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction | null {
   if (node.type === 'question') {
-    // Le CORPS fait foi pour « configuré » : sans question écrite, il n'y a rien à envoyer, donc rien à
-    // attendre. Le menu, lui, est facultatif (une question sans menu attend une réponse libre).
+    // Le corps fait foi pour « configuré » : sans question écrite, rien à envoyer ni à attendre. Le menu est
+    // facultatif (une question sans menu attend une réponse libre).
     const body = String(node.data.body ?? '').trim();
     if (body === '') return null;
     const buttonLabel = String(node.data.buttonLabel ?? '').trim().slice(0, QUESTION_LIMITES.bouton);
     return {
       kind: 'sendQuestion',
       body: body.slice(0, QUESTION_LIMITES.body),
-      // Meta EXIGE un libellé de bouton dès qu'il y a une liste. Un repli est plus honnête qu'un refus : le
-      // bloc part avec « Choisir » plutôt que d'échouer sur un champ que personne n'a pensé à remplir.
+      // Meta exige un libellé de bouton dès qu'il y a une liste : repli sur « Choisir » plutôt qu'un échec.
       buttonLabel: buttonLabel === '' ? 'Choisir' : buttonLabel,
       rows: questionRows(node),
     };
@@ -736,43 +624,33 @@ export function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction 
     return { kind: 'field', key, value: valeurDuChamp(node.data, ctx) };
   }
   if (node.type === 'http') {
-    // Bloc INCOMPLET (aucun appel choisi, ou aucun champ où ranger la réponse) -> `null`, donc un no-op qui
-    // laisse le parcours continuer. Même traitement que `tag` sans tag : un bloc à moitié réglé ne doit pas
-    // casser un scénario en production, il doit ne rien faire et se voir à l'écran.
+    // Bloc incomplet (aucun appel choisi, ou aucun champ cible) -> `null`, un no-op qui laisse le parcours
+    // continuer : un bloc à moitié réglé ne doit pas casser un scénario en production.
     const requestId = String(node.data.requestId ?? '').trim();
     const champCible = String(node.data.champCible ?? '').trim();
     return requestId !== '' && champCible !== '' ? { kind: 'appelHttp', requestId, champCible } : null;
   }
   if (node.type === 'js') {
     /**
-     * 🔴 LE SOURCE VIT DANS `data.js`, PAS DANS `data.code`, ET CETTE COLLISION A DÉTRUIT DU TRAVAIL
-     * CLIENT EN PRODUCTION. `data.code` porte le CODE PUBLIC du bloc (`nod_<client>_<ULID>`), que
-     * `mintNodeCodes` re-minte à CHAQUE enregistrement du scénario dès que la valeur ne ressemble pas à un
-     * code valide. Le JavaScript d'un bloc « Fonction JS » n'y ressemble évidemment jamais : il était donc
-     * écrasé par un `nod_...` à la première sauvegarde, silencieusement. À l'exécution, QuickJS répondait
-     * « 'nod_xxx' is not defined », la fonction échouait, et l'exécuteur rangeait une chaîne VIDE dans le
-     * champ cible. Vécu par Julien le 2026-09-17 : « ça a marché en test mais quand je run le scénario, la
-     * valeur n'est pas capturée », et « le contenu de la fonction n'est plus celui que j'avais écrit ».
-     *
-     * ⚠️ LE REPLI SUR `data.code` RÉCUPÈRE LES GRAPHES PAS ENCORE RÉÉCRITS, et il est SÛR : un code minté
-     * est reconnaissable, donc on ne peut pas confondre un identifiant avec du JavaScript. Un graphe déjà
-     * abîmé, lui, est perdu : il n'y a rien à retrouver, la source a été remplacée.
+     * La source vit dans `data.js`, pas dans `data.code` : `data.code` porte le code public du bloc
+     * (`nod_<client>_<ULID>`), que `mintNodeCodes` refait à chaque enregistrement dès que la valeur ne
+     * ressemble pas à un code valide, ce qui écrasait le JavaScript. Le repli sur `data.code` récupère les
+     * graphes pas encore réécrits, sans risque : un code minté est reconnaissable.
      */
     const brutJs = typeof node.data.js === 'string' ? node.data.js : '';
     const ancien = String(node.data.code ?? '');
     const code = brutJs !== '' ? brutJs : (/^nod_[a-z0-9]+_[0-9A-HJKMNP-TV-Z]{26}$/.test(ancien) ? '' : ancien);
     const champSource = String(node.data.champSource ?? '').trim();
     const champCible = String(node.data.champCible ?? '').trim();
-    // Bloc à moitié réglé -> no-op, comme les autres. Le code VIDE compte comme non réglé : l'exécuter
-    // écrirait une valeur vide dans le champ cible, ce qui ressemblerait à un échec de la fonction.
+    // Bloc à moitié réglé -> no-op. Le code vide compte comme non réglé : l'exécuter écrirait une valeur vide,
+    // qui ressemblerait à un échec de la fonction.
     return code.trim() !== '' && champSource !== '' && champCible !== ''
       ? { kind: 'fonctionJs', code, champSource, champCible }
       : null;
   }
   if (node.type === 'action') {
-    // Bloc unifié : la sous-action est portée par `data.actionKind`. add_tag/set_field produisent les MÊMES
-    // actions que les blocs legacy tag/field ; remove_tag/clear_field sont les nouveaux retraits. Bloc incomplet
-    // (tag/clé vide) -> null (no-op), comme les autres blocs.
+    // Bloc unifié : la sous-action est portée par `data.actionKind`. add_tag/set_field produisent les mêmes
+    // actions que les blocs legacy tag/field. Bloc incomplet (tag/clé vide) -> null (no-op).
     const kind = String(node.data.actionKind ?? '');
     const tag = String(node.data.tag ?? '').trim();
     const key = String(node.data.fieldKey ?? node.data.key ?? '').trim();
@@ -783,9 +661,8 @@ export function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction 
       return { kind: 'field', key, value: valeurDuChamp(node.data, ctx) };
     }
     if (kind === 'clear_field') return key ? { kind: 'clearField', key } : null;
-    // Consentement : rien à saisir, donc rien qui puisse rendre le bloc incomplet. C'est le SEUL chemin qui
-    // pose un opt-out automatiquement (l'upsert d'import ne fait jamais régresser un statut), typiquement
-    // derrière un mot-clé « STOP » branché en automation.
+    // Consentement : rien à saisir, donc jamais incomplet. Seul chemin qui pose un opt-out automatiquement
+    // (l'upsert d'import ne fait jamais régresser un statut), typiquement derrière un mot-clé « STOP ».
     if (kind === 'set_optin') return { kind: 'optIn', value: 'opted_in' };
     if (kind === 'set_optout') return { kind: 'optIn', value: 'opted_out' };
     return null;
@@ -801,9 +678,8 @@ export function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction 
     return { kind: 'sendTemplate', templateName, language: String(node.data.language ?? 'fr'), buttons };
   }
   if (node.type === 'flow') {
-    // Node « formulaire » : envoie le flow en message interactif (hors template). Sans flowId -> null
-    // (no-op waiting), même contrat qu'un template sans templateName. `body` = accroche du message,
-    // `cta` = libellé du bouton d'ouverture (pré-rempli avec le cta du formulaire à la sélection).
+    // Node « formulaire » : envoie le flow en message interactif (hors template). Sans flowId -> null, comme un
+    // template sans templateName. `body` = accroche, `cta` = libellé du bouton d'ouverture.
     const flowId = String(node.data.flowId ?? '').trim();
     if (!flowId) return null;
     const flowName = String(node.data.flowName ?? '').trim();
@@ -813,26 +689,21 @@ export function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction 
   }
   if (node.type === 'quick_message') {
     const body = String(node.data.body ?? '').trim();
-    // Les réponses rapides gardent leur ORDRE (index = handle btn:<i> pour la branche) : on ne filtre PAS ici,
-    // la couche d'envoi filtre les vides en préservant l'index. Bloc incomplet (pas de corps ou aucune réponse
-    // non vide) -> null (no-op), comme un template sans templateName.
+    // Les réponses rapides gardent leur ordre (index = handle btn:<i>) : pas de filtre ici, la couche d'envoi
+    // filtre les vides en préservant l'index.
     const raw = Array.isArray(node.data.quickReplies) ? node.data.quickReplies : [];
     const buttons: WorkflowButton[] = raw.map((q) => ({ type: 'QUICK_REPLY', text: String(q ?? '') }));
-    // Un bloc SANS aucune réponse rapide envoie quand même son TEXTE (la couche d'envoi bascule alors sur un
-    // message simple, ou sur un `cta_url` s'il porte un bouton de lien). Avant, il ne faisait rien du tout,
-    // en silence : on croyait avoir programmé un message, le contact ne recevait jamais rien et aucune
-    // erreur n'apparaissait nulle part.
+    // Un bloc sans aucune réponse rapide envoie quand même son texte (message simple, ou `cta_url` s'il porte
+    // un bouton de lien). Sans corps -> null.
     if (!body) return null;
-    // Visuel facultatif. Même nom de champ que le bloc RCS (`imageUrl`) : un seul composant d'écran, une
-    // seule convention de stockage, et le même visuel sert aux DEUX canaux (en-tête WhatsApp, carte RCS).
+    // Visuel facultatif. Même champ que le bloc RCS (`imageUrl`) : le même visuel sert aux deux canaux
+    // (en-tête WhatsApp, carte RCS).
     const mediaUrl = String(node.data.imageUrl ?? '').trim();
-    // BOUTON DE LIEN. La case de l'écran vide déjà `quickReplies` quand on la coche, et on revide ICI quand
-    // même : un graphe enregistré avant cette case, ou posé par l'API, peut porter les deux, et laisser
-    // passer la paire déplacerait le choix du type de message chez Meta dans la couche d'envoi.
+    // Bouton de lien. L'écran vide déjà `quickReplies` quand on coche la case, on revide ici quand même : un
+    // graphe ancien ou posé par l'API peut porter les deux.
     //
-    // ⚠️ Le bloc est transporté TEL QUE SAISI, même incomplet : c'est le câblage qui refuse, avec la raison
-    // (`problemeLienBouton`). Le rendre silencieusement absent enverrait un message nu alors que le client a
-    // demandé un bouton, sans que rien ne le signale.
+    // Le lien est transporté tel que saisi, même incomplet : c'est le câblage qui refuse, avec la raison
+    // (`problemeLienBouton`), au lieu d'envoyer un message nu alors que le client a demandé un bouton.
     const lien: LienBouton | null = node.data.lienActif === true
       ? { texte: String(node.data.lienTexte ?? '').trim(), url: String(node.data.lienUrl ?? '').trim() }
       : null;
@@ -845,8 +716,8 @@ export function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction 
     };
   }
   if (node.type === 'email') {
-    // Lecture défensive comme les autres blocs de config : `data` est opaque (parseGraph ne le valide pas pour
-    // 'email', pareil que pour les autres types). Compte, modèle ou destinataire manquant/invalide -> null.
+    // Lecture défensive : `data` est opaque (parseGraph ne le valide pas). Compte, modèle ou destinataire
+    // manquant/invalide -> null.
     const emailAccountId = String(node.data.emailAccountId ?? '').trim();
     const templateId = String(node.data.templateId ?? '').trim();
     const to = emailRecipientsOf(node.data.to);
@@ -857,14 +728,14 @@ export function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction 
 }
 
 /**
- * Parcourt le graphe depuis `startNodeId` : accumule les actions des blocs synchrones, s'arrête au 1er bloc
- * bloquant (template/flow -> waiting, inbox -> inbox) ou en fin de chaîne (done). Anti-cycle : un bloc déjà
- * visité arrête le parcours (done). Un `startNodeId` inconnu -> done sans action.
+ * `walk` : parcourt le graphe depuis `startNodeId`, accumule les actions des blocs synchrones, s'arrête au 1er
+ * bloc bloquant ou en fin de chaîne (done). Anti-cycle : un bloc déjà visité arrête le parcours (done). Un
+ * `startNodeId` inconnu -> done sans action.
  */
-/** Répercute une action SYNCHRONE (tag/field, ajout OU retrait) sur la copie de travail du contexte, pour qu'une
- *  condition rencontrée plus loin dans le MÊME walk la voie (l'écriture en base n'a lieu qu'après, via
- *  executor.apply). Même normalisation de tag que le worker (trim + slice 64, dédup). `clearField` retire la clé
- *  (une condition `champ vide` en aval doit voir le champ absent, comme le SQL `fields - key`). */
+/** Répercute une action synchrone (tag/field, ajout ou retrait) sur la copie de travail du contexte, pour
+ *  qu'une condition plus loin dans le même walk la voie (l'écriture en base n'a lieu qu'après, via
+ *  executor.apply). Même normalisation de tag que le worker (trim + slice 64, dédup). `clearField` retire la
+ *  clé, comme le SQL `fields - key`. */
 function applyToWork(work: EvalContext, a: WorkflowAction): void {
   if (a.kind === 'tag') {
     const t = a.tag.trim().slice(0, 64);
@@ -881,12 +752,9 @@ function applyToWork(work: EvalContext, a: WorkflowAction): void {
 
 export interface WalkOptions {
   /**
-   * L'agent de Meta est-il allumé sur le numéro de ce tenant ?
-   *
-   * Il ne change qu'UNE chose : une étape qui n'offre aucun choix au client cesse de bloquer le parcours, parce
-   * que l'agent reprend la parole et que les actions du scénario doivent continuer sans l'attendre. Sans MBA,
-   * le comportement historique est conservé au caractère près (un template attend la réponse), pour ne rien
-   * changer aux scénarios déjà en service chez les clients.
+   * L'agent de Meta est-il allumé sur le numéro de ce tenant ? Avec lui, une étape qui n'offre aucun choix
+   * cesse de bloquer le parcours : l'agent reprend la parole et les actions du scénario continuent. Sans lui,
+   * un template attend la réponse, comme toujours.
    */
   mbaActif?: boolean;
 }
@@ -895,9 +763,8 @@ export function walk(graph: WorkflowGraph, startNodeId: string, ctx?: EvalContex
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const actions: WalkStep[] = [];
   const visited = new Set<string>();
-  // Copie de travail MUTABLE du contexte : une action tag/field décidée dans CE walk (appliquée en base seulement
-  // APRÈS, via executor.apply) doit être visible par une condition rencontrée plus loin dans la MÊME chaîne
-  // synchrone. Sans ça, Field(NOW) -> Condition(datetime not_empty) évaluerait contre l'état d'AVANT le field.
+  // Copie de travail mutable du contexte : une action tag/field décidée dans ce walk (appliquée en base
+  // seulement après) doit être visible par une condition plus loin dans la même chaîne synchrone.
   const work: EvalContext | undefined = ctx ? { ...ctx, tags: [...ctx.tags], fields: { ...ctx.fields } } : undefined;
   let current: string | null = startNodeId;
 
@@ -912,37 +779,30 @@ export function walk(graph: WorkflowGraph, startNodeId: string, ctx?: EvalContex
       return { actions, rest: { status: 'inbox', assigneA: a === '' ? null : a } };
     }
     if (node.type === 'condition') {
-      // Bloc SYNCHRONE sans action : évalue la condition (copie de travail) et suit la sortie 'true' (« Si réunie »)
-      // ou 'false' (« Sinon »). Sans contexte (analyse de graphe pure) -> 'false' DÉTERMINISTE. Anti-cycle via visited.
+      // Bloc synchrone sans action : évalue la condition (copie de travail) et suit 'true' (« Si réunie ») ou
+      // 'false' (« Sinon »). Sans contexte (analyse de graphe pure) -> 'false', déterministe.
       const here: string = current;
       const passed = work ? evaluateConditionGroup(coerceConditionGroup(node.data), work) : false;
-      // Sorties TYPÉES : si la branche évaluée n'est pas câblée alors qu'AU MOINS une sortie typée ('true'/'false')
-      // existe -> cul-de-sac (done), JAMAIS l'arête de l'autre branche. Repli sur la 1re arête uniquement pour un
-      // node SANS aucune sortie typée (graphe legacy/non branché). Sinon `?? nextNode` volerait l'autre sortie.
+      // Sorties typées : si la branche évaluée n'est pas câblée alors qu'une sortie typée existe -> cul-de-sac
+      // (done), jamais l'arête de l'autre branche. Repli sur la 1re arête seulement pour un node sans sortie typée.
       const hasTypedEdge = graph.edges.some((e) => e.source === here && (e.sourceHandle === 'true' || e.sourceHandle === 'false'));
       current = nextNodeByHandle(graph, here, passed ? 'true' : 'false') ?? (hasTypedEdge ? null : nextNode(graph, here));
       continue;
     }
     if (node.type === 'rcs_message') {
-      // `walk` est PUR : il ne peut pas savoir si le numéro est joignable en RCS, c'est un appel réseau. Il rend
-      // donc la main à l'executor, qui fera l'IO et reprendra par le handle 'sent' ou 'unreachable'. Les actions
-      // déjà accumulées partent maintenant, comme pour un bloc Attente.
+      // Le walk est pur : il ne sait pas si le numéro est joignable en RCS. Il rend la main à l'executor, qui
+      // fera l'IO et reprendra par 'sent' ou 'unreachable'. Les actions accumulées partent maintenant.
       return { actions, rest: { status: 'rcs_send', nodeId: current } };
     }
     if (node.type === 'agent') {
-      // `walk` est PUR : il ne peut pas savoir ce que le modèle répondra. Il rend donc la main à l'executor,
-      // qui ouvrira la session et enfilera un tour. Les actions déjà accumulées partent maintenant, comme pour
-      // un bloc RCS ou un bloc Attente.
-      // Non configuré = PASSE-PLAT, même choix que le bloc Question sans texte : rendre la main à un agent qui
-      // n'existe pas figerait le parcours pour toujours, sans le moindre signal. `data` est opaque et vient du
-      // client, d'où la coercition.
+      // Le walk est pur : il rend la main à l'executor, qui ouvrira la session et enfilera un tour. Les actions
+      // accumulées partent maintenant. Non configuré = passe-plat : rendre la main à un agent qui n'existe pas
+      // figerait le parcours pour toujours, sans signal.
       const agentId = String(node.data.agentId ?? '').trim();
       if (!agentId) {
-        // 🔴 Le passe-plat suit une arête LIBRE, jamais une sortie typée. Même règle que le bloc Condition
-        // juste au-dessus, et pour la même raison : les sorties d'un bloc agent (`sortie:<code>`, `timeout`)
-        // sont des issues PRÉCISES. Un `nextNode` prendrait la première arête venue, donc typiquement la
-        // branche « échec technique » d'un bloc qu'on vient juste de vider de son agent, et y enverrait tous
-        // les contacts sans le moindre signal. Aucune arête libre -> le parcours s'arrête ici.
+        // Le passe-plat suit une arête libre, jamais une sortie typée : les sorties d'un bloc agent
+        // (`sortie:<code>`, `timeout`) sont des issues précises, et `nextNode` enverrait typiquement tous les
+        // contacts sur la branche « échec technique ». Aucune arête libre -> le parcours s'arrête ici.
         current = nextNodeSansHandle(graph, current);
         continue;
       }
@@ -951,24 +811,21 @@ export function walk(graph: WorkflowGraph, startNodeId: string, ctx?: EvalContex
     if (node.type === 'question') {
       const a = actionOf(node, work);
       if (!a) {
-        // Question SANS texte : rien ne part, donc attendre une réponse à une question jamais posée figerait
-        // le parcours pour toujours, sans le moindre signal. Passe-plat, comme un bloc Attente sans durée.
-        // ⚠️ Divergence ASSUMÉE avec `quick_message`, qui lui bloque même non configuré : là-bas le
-        // comportement est historique, ici on choisit celui qui se voit (la conversation continue).
+        // Question sans texte : attendre une réponse à une question jamais posée figerait le parcours. Passe-plat,
+        // comme un bloc Attente sans durée (alors que `quick_message` non configuré bloque, par historique).
         current = nextNode(graph, current);
         continue;
       }
       actions.push({ nodeId: current, action: a });
-      // Il ATTEND toujours, menu ou pas. L'échéance éventuelle voyage avec le repos : c'est l'executor qui la
-      // traduit en `resume_at`, le walk reste pur.
+      // Il attend toujours, menu ou pas. L'échéance voyage avec le repos : l'executor la traduit en `resume_at`.
       const ms = questionTimeoutMs(node);
       return { actions, rest: { status: 'waiting', nodeId: current, ...(ms > 0 ? { timeoutInMs: ms } : {}) } };
     }
     if (node.type === 'template' || node.type === 'flow' || node.type === 'quick_message') {
       const a = actionOf(node, work);
       if (a) actions.push({ nodeId: current, action: a });
-      // Sans MBA : seul un message rapide sans bouton continue (règle historique). Avec MBA : TOUTE étape qui
-      // n'offre pas de choix continue, l'agent de Meta répondant à sa place.
+      // Sans MBA : seul un message rapide sans bouton continue. Avec MBA : toute étape qui n'offre pas de choix
+      // continue, l'agent de Meta répondant à sa place.
       const continuer = !etapeOffreUnChoix(a) && (opts?.mbaActif === true || a?.kind === 'sendQuickMessage');
       if (continuer) {
         current = nextNode(graph, current);
@@ -977,17 +834,16 @@ export function walk(graph: WorkflowGraph, startNodeId: string, ctx?: EvalContex
       return { actions, rest: { status: 'waiting', nodeId: current } };
     }
     if (node.type === 'wait') {
-      // Bloc ATTENTE : il n'agit pas, il met le parcours en sommeil jusqu'à l'échéance. Les actions déjà
-      // accumulées partent MAINTENANT ; la suite reprendra depuis ce bloc (le sweeper repart de son successeur).
-      // `waitResumeInMs`, jamais `waitDurationMs` : c'est ici que les modes « date fixe » et « heures ouvrées »
-      // calculent leur échéance, depuis l'instant courant du contexte.
+      // Bloc Attente : met le parcours en sommeil jusqu'à l'échéance. Les actions accumulées partent maintenant ;
+      // le sweeper repart du successeur. `waitResumeInMs`, jamais `waitDurationMs` : c'est ici que les modes datés
+      // calculent leur échéance.
       const ms = waitResumeInMs(node, work);
       if (ms > 0) return { actions, rest: { status: 'sleeping', nodeId: current, resumeInMs: ms } };
       current = nextNode(graph, current); // rien à attendre (durée non configurée, échéance passée) -> passe-plat
       continue;
     }
-    // tag / field / email : bloc synchrone -> action + on continue. On répercute l'effet dans la copie de
-    // travail (email n'y a rien à répercuter, applyToWork ignore son kind, comme optIn).
+    // tag / field / email : bloc synchrone -> action + on continue, effet répercuté dans la copie de travail
+    // (applyToWork ignore email et optIn).
     const a = actionOf(node, work);
     if (a) {
       actions.push({ nodeId: current, action: a });

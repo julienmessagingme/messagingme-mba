@@ -2,7 +2,7 @@ import { buildTranscript, buildPrompt, parseLlmOutput, deduceHandledBy, countExc
 import type { LlmClient } from './llm-client';
 import type { ConversationAnalysis } from './schema';
 
-/** Sortie LLM invalide après le retry : ERREUR TERMINALE (contenu cassé) -> le job marque 'failed', ne rejoue pas. */
+/** Sortie LLM invalide après le rejeu : erreur terminale (contenu cassé), le job marque 'failed' sans rejouer. */
 export class InvalidLlmOutputError extends Error {
   constructor() {
     super('sortie LLM invalide après retry');
@@ -14,18 +14,17 @@ export interface AnalysisContext {
   messages: AnalysisMessage[];
   signals: HandledBySignals;
   /**
-   * Borne de la fenêtre analysée = created_at du DERNIER message lu, en CHAÎNE TEXTE timestamptz (précision µs
-   * préservée ; un Date JS tronquerait aux ms et ferait boucler la réanalyse), null si aucun. Sert à la persistance :
-   * on n'avance `analyzed_at` que jusqu'ici (PAS jusqu'à now()), sinon un message arrivé pendant l'analyse (statut
-   * encore 'queued' -> la réouverture inbox ne le touche pas) passerait sous la borne et ne serait jamais réanalysé.
+   * Borne de la fenêtre analysée : `created_at` du dernier message lu, en chaîne timestamptz (un Date JS tronquerait
+   * les µs et ferait boucler la réanalyse). `analyzed_at` n'avance que jusqu'ici, jamais jusqu'à now() : un message
+   * arrivé pendant l'analyse ne serait jamais réanalysé.
    */
   windowEnd?: string | null;
 }
 
 /**
- * Analyse UNE conversation (orchestrateur, IO injectée -> testable sans réseau). Construit le transcript + le prompt,
- * appelle le LLM, valide la sortie, RETRY 1x sur JSON invalide (2e appel avec un rappel), puis fusionne avec les faits
- * déterministes (handled_by, exchanges_count). Throw InvalidLlmOutputError (terminal) si 2 sorties invalides.
+ * Analyse une conversation (IO injectée) : transcript et prompt, appel au LLM, validation, un rejeu avec rappel sur
+ * JSON invalide, puis fusion avec les faits déterministes (handled_by, exchanges_count). Lève InvalidLlmOutputError
+ * (terminal) après deux sorties invalides.
  */
 export async function analyzeConversation(ctx: AnalysisContext, deps: { llm: LlmClient }): Promise<ConversationAnalysis> {
   const transcript = buildTranscript(ctx.messages);

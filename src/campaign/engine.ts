@@ -19,14 +19,9 @@ import { RANG_INITIAL, etageAuRang, type CanalEtage } from './etages';
 import { messageDe, texteDe } from '../lib/erreur';
 
 /**
- * UNE TENTATIVE D'ENVOI, telle qu'on la journalise (migration 0134).
- *
- * ⚠️ `saute` n'est PAS un échec : le destinataire a été ÉCARTÉ avant toute tentative (consentement absent
- * sur une campagne marketing, variable de template introuvable sur sa fiche). Les confondre gonflerait le
- * taux d'échec d'un canal avec des gens qu'il n'a jamais essayé de joindre.
- *
- * ⚠️ Le contrat vit ICI et son implémentation dans `envois.pg.ts`, comme `RecipientStore` et
- * `CampaignStore` : c'est le moteur qui dit ce dont il a besoin, pas la base qui dicte sa forme.
+ * Une tentative d'envoi, telle qu'on la journalise. `saute` n'est pas un échec : le destinataire a été écarté
+ * avant toute tentative (consentement absent, variable introuvable), le compter gonflerait le taux d'échec du
+ * canal. Le contrat vit ici, l'implémentation dans `envois.pg.ts` : le moteur dit ce dont il a besoin.
  */
 export interface TentativeEnvoi {
   campaignId: string;
@@ -40,11 +35,9 @@ export interface TentativeEnvoi {
   error?: string;
 }
 
-/** Satisfait par MetaClient (Loop 2). */
 /**
- * Texte journalisé dans le fil pour un envoi de campagne RCS. Le message est relu de la base (jsonb validé à
- * la création) : on ne suppose pas sa forme, une forme inattendue donne un libellé neutre plutôt qu'un crash
- * ou un « undefined » affiché à l'opérateur.
+ * Texte journalisé dans le fil pour un envoi de campagne RCS. Le message est relu de la base : une forme
+ * inattendue donne un libellé neutre plutôt qu'un crash ou un « undefined » affiché.
  */
 function rcsCampaignBody(message: unknown): string {
   if (message && typeof message === 'object' && (message as { kind?: unknown }).kind === 'text') {
@@ -59,7 +52,7 @@ export interface MessageSender {
   sendTemplate(to: string, tpl: TemplateSpec): Promise<SendResult>;
 }
 
-/** Ce que la réclamation d'un destinataire a lu sur sa fiche, AU MOMENT D'ENVOYER, et qui interdit l'envoi. */
+/** Ce que la réclamation d'un destinataire a lu sur sa fiche au moment d'envoyer, et qui interdit l'envoi. */
 export type EcartALEnvoi = 'desabonne' | 'bloque';
 
 /**
@@ -74,20 +67,17 @@ export const MOTIF_ECART_A_L_ENVOI: Readonly<Record<EcartALEnvoi, string>> = {
 export interface RecipientStore {
   listPending(campaignId: string): Promise<Recipient[]>;
   /**
-   * Claim atomique d'un destinataire (pending -> sending). Retourne true si CE run l'a
-   * réservé, false si un autre run/worker l'a déjà pris. Garantit qu'un destinataire n'est
-   * envoyé qu'une fois malgré runs concurrents et replays pg-boss.
+   * Claim atomique d'un destinataire (pending -> sending). true si ce run l'a réservé, false si un autre l'a
+   * déjà pris : un destinataire n'est envoyé qu'une fois malgré les runs concurrents et les rejeux pg-boss.
    *
-   * 🔴 `{ ecart }` : RÉSERVÉ par ce run, mais il ne doit PAS partir. La liste est filtrée à sa CONSTRUCTION
-   * (`optInAllows`) ; un envoi étalé (débit bas, pause, heures ouvrées) partait ensuite vers quelqu'un qui avait
-   * dit STOP entre-temps. La réclamation relit donc la fiche au moment d'envoyer. Réservé d'abord, pour que
-   * le marquer `skipped` ne se fasse qu'une fois, même entre deux runs concurrents.
+   * 🔴 `{ ecart }` : réservé, mais il ne doit pas partir. La liste est filtrée à sa construction, or un envoi
+   * étalé peut partir bien après un STOP : la réclamation relit donc la fiche au moment d'envoyer. Réservé
+   * d'abord, pour que le marquer `skipped` ne se fasse qu'une fois.
    */
   claim(id: string): Promise<boolean | { ecart: EcartALEnvoi }>;
   /**
-   * Rend un destinataire réservé à la file (`sending` -> `pending`), l'inverse exact de `claim`. Deux
-   * appelants, où le refus vise le NUMÉRO et pas le contact : le plafond de numéro de Meta, et le numéro
-   * délié de l'espace (migration 0180).
+   * Rend un destinataire réservé à la file (`sending` -> `pending`), l'inverse de `claim`, quand le refus vise
+   * le numéro et pas le contact (plafond de numéro de Meta, numéro délié).
    */
   relacher(id: string): Promise<void>;
   markResult(
@@ -95,30 +85,24 @@ export interface RecipientStore {
     r: { status: 'sent' | 'failed' | 'skipped'; messageId?: string; error?: string; sentAt?: number; errorCode?: number },
   ): Promise<void>;
   /**
-   * Combien de destinataires sont RÉSERVÉS mais pas encore résolus (`sending`) ?
-   *
-   * 🔴 Sert à ne PAS déclarer une campagne terminée alors qu'un destinataire est en suspens. Absent ->
-   * comportement d'avant (rétro-compatible avec les faux des tests).
+   * Combien de destinataires sont réservés mais pas encore résolus (`sending`) ? Sert à ne pas déclarer une
+   * campagne terminée alors qu'un destinataire est en suspens. Absent (faux de test) -> non vérifié.
    */
   countSending?(campaignId: string): Promise<number>;
 }
 
 export interface CampaignStore {
   /**
-   * `pause` n'est fourni QUE sur une mise en pause qui doit être expliquée, et il décide si la campagne
-   * repartira toute seule : `raison: 'debit'` ou `'hors_horaires'` avec un instant de reprise, ou
-   * `raison: 'qualite'` avec `reprise: null`, qui veut dire « jamais automatiquement ». Toute autre
-   * transition l'omet, et l'implémentation efface alors les deux colonnes : une campagne qui repart ne doit
-   * pas garder l'échéance d'une pause d'avant.
+   * `pause` n'est fourni que sur une mise en pause à expliquer, et décide si la campagne repartira seule :
+   * `debit` ou `hors_horaires` avec un instant de reprise, `qualite` avec `reprise: null` (jamais
+   * automatiquement). Sans lui, l'implémentation efface les deux colonnes : une campagne qui repart ne garde
+   * pas l'échéance d'une pause d'avant.
    */
   setStatus(campaignId: string, status: Campaign['status'], pause?: { raison: MotifDePause; reprise: Date | null }): Promise<void>;
   /**
-   * Relit le statut COURANT de la campagne en base, pour que le run puisse s'arrêter quand un opérateur la met
-   * en pause pendant l'envoi. Scopé tenant comme toute lecture (le pooler est superuser, la RLS ne joue pas).
-   * `null` = campagne introuvable, traité comme « rien à décider », le run continue.
-   *
-   * OPTIONNEL : absent, le run va jusqu'au bout comme avant. Les fixtures de test et l'e2e n'ont donc rien à
-   * câbler ; la production l'injecte, sans quoi la pause serait un bouton sans effet.
+   * 🔴 Relit le statut courant en base, scopé tenant (le pooler est superuser, la RLS ne joue pas), pour que
+   * le run s'arrête quand un opérateur met la campagne en pause. `null` = introuvable, le run continue.
+   * Optionnel pour les tests ; la production l'injecte, sinon la pause serait sans effet.
    */
   getStatus?(campaignId: string, tenantId: string): Promise<CampaignStatus | null>;
 }
@@ -131,24 +115,20 @@ export interface RateGate {
   acquire(): Promise<void>;
 }
 
-/** Ce qu'il faut pour servir UN canal pendant un run : par qui on envoie, à quelle cadence, depuis quel numéro. */
+/** Ce qu'il faut pour servir un canal pendant un run : par qui on envoie, à quelle cadence, depuis quel numéro. */
 export interface CanalServi {
   /**
-   * Sender de CANAL (RCS). Absent = canal WhatsApp, servi par `deps.sender` et ses gardes Meta.
-   *
-   * ⚠️ C'est sa PRÉSENCE, et non le nom du canal, qui neutralise les gardes propres à WhatsApp (porte de
-   * qualité, pré-lectures de modèle, mémoire de joignabilité) : elles n'ont pas d'équivalent ailleurs et
-   * il n'y a aucun numéro Meta à interroger.
+   * Sender de canal (RCS). Absent = canal WhatsApp, servi par `deps.sender`. C'est sa présence, et non le nom
+   * du canal, qui neutralise les gardes propres à WhatsApp (porte de qualité, pré-lectures de modèle,
+   * joignabilité) : il n'y a alors aucun numéro Meta à interroger.
    */
   sender?: CampaignSender;
-  /** Le frein de cadence de CE canal (`plafondDuCanal`). Absent = aucun frein sur ce canal. */
+  /** Le frein de cadence de ce canal (`plafondDuCanal`). Absent = aucun frein. */
   rateLimiter?: RateGate;
   /**
-   * Le numéro Meta qui sert ce canal, pour la porte de qualité. Utile au seul canal WhatsApp.
-   *
-   * 🔴 IL N'EST PAS TOUJOURS `campaign.phoneNumberId` : une campagne RCS l'a VIDE en base (migration
-   * 0056, « une campagne RCS n'a pas de numéro Meta ») et son repli WhatsApp doit pourtant partir de
-   * quelque part. `run-job` résout alors le numéro de l'espace.
+   * Le numéro Meta qui sert ce canal, pour la porte de qualité (WhatsApp seulement). Pas toujours
+   * `campaign.phoneNumberId` : une campagne RCS l'a vide, et `run-job` résout alors le numéro de l'espace
+   * pour son repli WhatsApp.
    */
   phoneNumberId?: string;
 }
@@ -159,68 +139,44 @@ export interface EngineDeps {
   campaigns: CampaignStore;
   quality: QualityProvider;
   /**
-   * CE QUE CE RUN SAIT SERVIR, CANAL PAR CANAL (lot 6).
+   * Ce que ce run sait servir, canal par canal : chaque canal de la chaîne apporte son sender et son frein, et
+   * le moteur choisit selon l'étage du destinataire.
    *
-   * 🔴 C'EST LA PIÈCE QUI REND UNE CHAÎNE DE REPLI FONCTIONNELLE. Un run était construit sur les
-   * colonnes de `campaigns`, donc sur UN canal : le sender, le frein de cadence et la porte de qualité en
-   * dépendaient tous, et un destinataire posé au rang 2 par la bascule ne pouvait qu'être refusé. Ici,
-   * chaque canal de la chaîne apporte son sender et son frein, et le moteur choisit selon l'ÉTAGE du
-   * destinataire.
-   *
-   * 🔴 UN CANAL ABSENT DE CETTE TABLE N'EST PAS SERVABLE, et son étage échoue AVEC SA RAISON. C'est
-   * le cas de l'e-mail (aucun sender de campagne n'existe) et d'un étage RCS sur un espace sans agent.
-   * Le refus vaut mieux qu'un repli sur le canal de la campagne, qui renverrait le message qui vient
-   * d'échouer.
-   *
-   * ⚠️ REQUISE depuis l'audit ponytail du 2026-09-25. Absente, le moteur fabriquait une table à UNE entrée
-   * (le canal de la campagne, avec un `channelSender` et un `rateLimiter` à plat) : seuls les faux de test
-   * empruntaient ce repli, `run-job` construisant toujours la table. Ils la reçoivent désormais de
-   * `tests/campagne-canaux.ts`, qui fait exactement ce que faisait le repli.
+   * Un canal absent n'est pas servable et son étage échoue avec sa raison (e-mail, RCS sans agent), plutôt que
+   * de retomber sur le canal de la campagne, qui renverrait le message qui vient d'échouer.
    */
   canaux: Partial<Record<CanalEtage, CanalServi>>;
   /**
-   * Campagne WORKFLOW : démarre le workflow pour un destinataire (au lieu d'envoyer un template).
-   * `firstTemplateParams` = variables du 1er template DÉJÀ résolues par contact (buildRecipients à partir du
-   * paramMapping de la campagne) -> l'executor les passe telles quelles au 1er envoi (pas de re-résolution).
-   *
-   * Renvoie `false` quand le run n'a PAS démarré (scénario supprimé, fil détenu par un humain/MBA, ouverture
-   * hors fenêtre) : le destinataire est alors marqué en ÉCHEC, jamais compté comme envoyé. `void` toléré pour
-   * les câblages qui ne savent pas le dire (traité comme un démarrage réussi, comportement historique).
-   */
-  /**
-   * Les index de boutons de ce template qui portent un SUFFIXE VARIABLE (migration 0106), donc pour lesquels
-   * l'envoi doit fournir un composant `sub_type: 'url'`. Vide = aucun, donc comportement d'avant.
-   *
-   * ⚠️ Se tromper ici fait ECHOUER l'envoi dans les deux sens : un composant pour un template sans variable
-   * comme une variable sans composant rendent un 132000. C'est pourquoi la réponse vient d'une colonne
-   * ecrite a la soumission, jamais d'une deduction.
+   * Les index de boutons de ce template qui portent un suffixe variable, donc pour lesquels l'envoi doit fournir
+   * un composant `sub_type: 'url'`. Se tromper fait échouer l'envoi dans les deux sens (132000) : la réponse
+   * vient d'une colonne écrite à la soumission, jamais d'une déduction.
    */
   boutonsTraces?: (tenantId: string, templateName: string, templateLanguage: string) => Promise<number[]>;
-  /** Le jeton public de ces contacts, fabriqué pour ceux qui n'en ont pas. Un seul énoncé pour toute la campagne. */
+  /** Le jeton public de ces contacts, fabriqué pour ceux qui n'en ont pas, en un seul énoncé pour la campagne. */
   jetonsPourContacts?: (tenantId: string, contactIds: readonly string[]) => Promise<Map<string, string>>;
+  /**
+   * Campagne scénario : démarre le parcours pour un destinataire au lieu d'envoyer un template.
+   * `firstTemplateParams` = variables du premier template déjà résolues par contact, passées telles quelles.
+   * `false` (ou une raison en chaîne) = le parcours n'a pas démarré (scénario supprimé, fil détenu par un humain
+   * ou MBA, ouverture hors fenêtre) : le destinataire est marqué en échec, jamais compté envoyé.
+   */
   startWorkflow?: (tenantId: string, workflowId: string, waId: string, contactId: string, firstTemplateParams: string[]) => Promise<void | boolean | string>;
   /**
-   * Campagne NODE (/v1/sends, D-1) : démarre le workflow à un bloc PRÉCIS. Pas de `firstTemplateParams` (la
-   * cible node n'est pas une ouverture de template paramétrée : un template y résout ses variables par les
-   * sources enregistrées dans la console, et `/v1/sends` refuse `params` sur un bloc) et pas de garde fenêtre
-   * 24 h dans l'executor : quand le bloc ouvre par un message de session (`ouvertureApi`), la fenêtre a été
-   * vérifiée destinataire par destinataire à la création de l'envoi ; un bloc qui ouvre par un template ou un
-   * RCS n'en a pas besoin.
+   * Campagne node (/v1/sends) : démarre le parcours à un bloc précis. Pas de `firstTemplateParams` (un template y
+   * résout ses variables par ses sources, et `/v1/sends` refuse `params` sur un bloc) ni de garde de fenêtre
+   * 24 h dans l'executor : quand le bloc ouvre par un message de session, la fenêtre a été vérifiée par
+   * destinataire à la création de l'envoi.
    */
   startWorkflowFromNode?: (tenantId: string, workflowId: string, startNodeId: string, waId: string, contactId: string) => Promise<void | boolean | string>;
   /**
-   * Cartes du CAROUSEL du template de la campagne, relues chez Meta. Appelée UNE SEULE FOIS par run (la
-   * structure est identique pour tous les destinataires : un appel par contact tuerait une campagne à
-   * 5 000 destinataires). null = template sans carousel -> envoi inchangé. Absente = câblage sans lecture
-   * de template (tests, e2e) -> envoi inchangé lui aussi.
+   * Cartes du carousel du template, relues chez Meta une seule fois par run (identiques pour tous les
+   * destinataires). null ou absente = envoi inchangé.
    */
   getTemplateCarousel?: (tenantId: string, name: string, language: string) => Promise<{ cards: OutboundCarouselCard[] } | null>;
   /**
-   * En-tête média du template, PRÉPARÉ pour l'envoi (`mediaId` obtenu en re-téléversant le visuel lu chez Meta).
-   * Appelée UNE SEULE FOIS par run, même raison que le carousel. Meta exige ce média à CHAQUE envoi d'un
-   * template à en-tête IMAGE/VIDEO/DOCUMENT : sans lui il refuse TOUS les destinataires en 132012, ce qui est
-   * arrivé en production le 2026-08-17. null = template sans en-tête média -> envoi inchangé. Absente = câblage
-   * sans lecture de template (tests, e2e, DRY_RUN) -> envoi inchangé lui aussi.
+   * En-tête média du template, préparé pour l'envoi (`mediaId` obtenu en re-téléversant le visuel lu chez
+   * Meta), une fois par run. Meta exige ce média à chaque envoi d'un template à en-tête IMAGE/VIDEO/DOCUMENT,
+   * sinon il refuse tous les destinataires en 132012. null ou absente = envoi inchangé.
    */
   getTemplateHeaderMedia?: (
     tenantId: string,
@@ -228,37 +184,22 @@ export interface EngineDeps {
     language: string,
   ) => Promise<{ headerFormat: 'IMAGE' | 'VIDEO' | 'DOCUMENT'; mediaId: string | null } | null>;
   /**
-   * Écrit la joignabilité WhatsApp d'un contact (migration 0133), ici toujours `true`.
+   * Écrit la joignabilité WhatsApp d'un contact, ici toujours `true` : sans elle, personne n'écrirait jamais
+   * « oui » (le balayage de relance n'écrit que « non ») et la péremption ne se rafraîchirait pas.
    *
-   * 🔴 SANS CE CÂBLAGE, LE CHAMP N'EST QU'UNE LISTE NOIRE. Le balayage de relance ne sait écrire que
-   * « non » : personne n'écrirait jamais « oui », donc aucun écran ne pourrait annoncer une COUVERTURE,
-   * seulement une exclusion, et la péremption de 90 jours ne se rafraîchirait jamais sur un numéro qui
-   * répond tous les jours.
-   *
-   * ⚠️ UN ENVOI ACCEPTÉ N'EST PAS UNE LIVRAISON, et c'est la limite assumée de ce signal : Meta rend un
-   * wamid tout de suite, et le 131026 arrive ENSUITE par le webhook de livraison. Un « oui » peut donc
-   * être démenti quelques minutes plus tard. Ce n'est pas un défaut : la mesure la plus RÉCENTE gagne
-   * (la date est réécrite à chaque note), et c'est le second échec 131026 qui pose le « non ».
-   *
-   * Absent -> aucune écriture, comportement d'avant (fixtures de test, e2e).
+   * Un envoi accepté n'est pas une livraison : le 131026 peut arriver ensuite par le webhook. La mesure la plus
+   * récente gagne, et c'est le second échec 131026 qui pose le « non ». Absent -> aucune écriture.
    */
   noterJoignabilite?: (tenantId: string, contactId: string, joignable: boolean) => Promise<void>;
   /**
-   * Journalise UNE tentative d'envoi (migration 0134), quel qu'en soit le résultat.
+   * Journalise une tentative d'envoi, en ajout seul, quel qu'en soit le résultat : c'est la seule trace de ce
+   * que chaque canal a tenté (`campaign_recipients` ne garde que le dernier état).
    *
-   * 🔴 EN AJOUT SEUL, ET AU GRAIN TENTATIVE. `campaign_recipients` garde une ligne par CONTACT, donc un
-   * seul état : le jour où un destinataire échouera en WhatsApp puis réussira en RCS, elle n'en gardera
-   * que le dernier, et l'échec du premier canal serait invisible. C'est ce journal, et lui seul, qui
-   * saura dire ce que chaque canal a coûté et rapporté.
-   *
-   * ⚠️ BEST-EFFORT, exactement comme `recordOutbound` et `noterJoignabilite` : une écriture de journal
-   * qui échoue ne doit JAMAIS relabelliser un message livré ni interrompre un run. Ce qu'elle coûte
-   * alors est une ligne manquante dans une statistique, jamais un message.
-   *
-   * Absent -> aucune écriture, comportement d'avant (fixtures de test, e2e).
+   * Best-effort comme `recordOutbound` : un échec d'écriture ne relabellise jamais un message livré ni
+   * n'interrompt un run. Absent -> aucune écriture.
    */
   noterEnvoi?: (t: TentativeEnvoi) => Promise<void>;
-  /** Journalise l'envoi sortant dans le fil de conversation (best-effort). Absent -> pas de log (rétro-compatible). */
+  /** Journalise l'envoi sortant dans le fil de conversation (best-effort). Absent -> pas de journal. */
   recordOutbound?: (
     tenantId: string,
     waId: string,
@@ -267,65 +208,43 @@ export interface EngineDeps {
   now?: () => number;
   thresholds?: GuardrailThresholds;
   /**
-   * L'arrêt a-t-il été demandé (SIGTERM) ? Lu à CHAQUE destinataire : c'est une lecture en mémoire, elle ne
-   * coûte rien, et un run qui s'arrête vite est un déploiement qui ne gèle rien.
-   *
-   * 🔴 En sortant par là, on NE TOUCHE PAS au statut : la campagne reste `running` avec ses destinataires en
-   * attente, et le balayage de reprise la relance au redémarrage. La marquer `paused` demanderait un geste
-   * humain pour repartir, alors que personne n'a rien décidé : c'est un déploiement, pas une décision.
+   * L'arrêt a-t-il été demandé (SIGTERM) ? Lu à chaque destinataire (lecture en mémoire). En sortant par là, le
+   * statut n'est pas touché : la campagne reste `running` et le balayage de reprise la relance au redémarrage.
+   * La marquer `paused` exigerait un geste humain alors que personne n'a rien décidé.
    */
   arretDemande?: () => boolean;
   /**
-   * Durée maximale d'un run avant qu'il rende la main (lot 5). Au-delà, le run s'arrête ENTRE deux
-   * destinataires, rend `reste: true`, et l'appelant le réenfile. La campagne reste `running` : personne n'a
-   * rien décidé, c'est un découpage du travail, pas une pause.
-   *
-   * Une DURÉE et non un nombre de destinataires : à 1/min un lot de 100 durerait plus d'une heure, à 80/min
-   * il durerait une minute. C'est le temps d'occupation de la file qu'on veut borner, pas le compte.
-   *
-   * Absente OU <= 0 -> aucun découpage, comportement d'avant (fixtures de test, e2e). Les deux formes
-   * disent la même chose, et `0` est celle qu'on écrit dans l'environnement pour retirer le découpage.
+   * Durée maximale d'un run avant qu'il rende la main : il s'arrête entre deux destinataires, rend `reste:
+   * true`, et l'appelant le réenfile (la campagne reste `running`). Une durée et non un nombre : c'est le temps
+   * d'occupation de la file qu'on borne. Absente ou <= 0 -> aucun découpage.
    */
   dureeMaxMs?: number;
   /**
-   * Repousse l'échéance du bail du verrou d'exécution. `false` = on ne le tient plus, il faut s'arrêter.
-   *
-   * Appelé à la même cadence que la relecture de statut. Sans ce renouvellement, le bail devrait couvrir la
-   * durée entière du run (des heures), et un worker tué bloquerait la reprise pendant tout ce temps.
+   * Repousse l'échéance du bail du verrou d'exécution, à la cadence de la relecture de statut. `false` = on ne
+   * le tient plus, il faut s'arrêter.
    */
   renouvelerVerrou?: () => Promise<boolean>;
   /**
-   * Écart minimal entre deux relectures du statut de la campagne (ms). Le contrôle est cadencé par le TEMPS et
-   * non par le nombre de destinataires traités : une campagne à 1 message/minute mettrait sinon des heures à
-   * voir la pause, alors qu'un opérateur qui coupe un mauvais ciblage veut que ça s'arrête tout de suite. Ainsi
-   * le délai de réaction est le même pour toutes (quelques secondes) et le coût est borné, quel que soit le débit.
+   * Écart minimal entre deux relectures du statut (ms). Cadencé par le temps et non par le nombre de
+   * destinataires : à 1 message/minute, la pause mettrait sinon des heures à être vue.
    */
   statusPollMs?: number;
   /**
-   * Les horaires d'ouverture de l'espace, pour une campagne cochée « uniquement pendant les heures ouvrées ».
-   *
-   * Lus UNE FOIS par run, avant la boucle, et seulement si la campagne porte le drapeau : c'est un réglage
-   * d'espace, il ne bouge pas pendant un envoi, et le relire par destinataire ferait une requête par message.
-   *
-   * Absent -> aucune contrainte d'horaire, comportement historique. C'est aussi ce qui rend les fixtures de
-   * test et l'e2e muettes sur le sujet tant qu'elles n'en parlent pas.
+   * Les horaires d'ouverture de l'espace, pour une campagne « uniquement pendant les heures ouvrées ». Lus une
+   * fois par run, et seulement si la campagne porte le drapeau. Absent -> aucune contrainte d'horaire.
    */
   horairesOuvres?: (tenantId: string) => Promise<{ timeZone: string; businessHours: BusinessHours } | null>;
   /**
-   * Écrit la pause `numero_delie` de CETTE campagne, en UNE instruction, SEULEMENT si le numéro est encore délié EN
-   * BASE (sans le cache de la garde du point de passage des envois) et que la campagne tourne encore
-   * (`PgNumeroDelieStore.pauserCampagne`). `true` = écrite. Cf. `arreterSurNumeroDelie`.
-   *
-   * ⚠️ Absente (faux de test qui ne la câblent pas) : la pause est écrite par `setStatus`, sur la foi du refus.
-   * `run-job` la passe toujours, `RunJobDeps` l'exigeant.
+   * Écrit la pause `numero_delie`, en une instruction, seulement si le numéro est encore délié en base et que
+   * la campagne tourne encore. `true` = écrite. Cf. `arreterSurNumeroDelie`. Absente (faux de test) : la pause
+   * est écrite par `setStatus`, sur la foi du refus.
    */
   pauserSiNumeroDelie?: (campaignId: string, tenantId: string, phoneNumberId: string) => Promise<boolean>;
 }
 
 /**
- * La raison d'un run arrêté sur un refus « numéro délié » dont la pause n'a PAS été écrite : le numéro a été relié
- * pendant que la garde, mise en cache, répondait encore « délié », ou la campagne ne tournait plus (un opérateur
- * l'a mise en pause, ou « Délier » l'a déjà fait).
+ * La raison d'un run arrêté sur un refus « numéro délié » dont la pause n'a pas été écrite : le numéro a été
+ * relié pendant que la garde en cache disait encore « délié », ou la campagne ne tournait plus.
  */
 export const RAISON_NUMERO_RELIE_ENTRE_TEMPS =
   'numéro WhatsApp relié entre-temps, ou campagne qui ne tourne plus : run arrêté sans écrire de pause ; en cours, le balayage de reprise la relance dans la minute';
@@ -340,35 +259,11 @@ const DEFAULT_THRESHOLDS: GuardrailThresholds = {
 };
 
 /**
- * Exécute une campagne : parcourt les destinataires `pending` avec pacing + garde-fous
- * (quality gate), et pour chaque destinataire éligible le CLAIM
- * atomiquement (pending -> sending) AVANT l'appel Meta, puis envoie et enregistre le
- * résultat. Le claim garantit qu'un destinataire n'est envoyé qu'une fois même en cas de
- * runs concurrents ou de replay pg-boss (un envoi réussi dont la persistance échoue reste
- * en `sending`, jamais re-listé donc jamais ré-envoyé). Pause et arrête si le quality gate
- * déclenche.
+ * Les suffixes de boutons pour un destinataire, ou rien du tout.
  *
- * ARRÊT DEMANDÉ PENDANT L'ENVOI : la boucle relit périodiquement le statut de la campagne et sort dès qu'il
- * n'est plus `running`. C'est ce qui rend la pause réelle : sans cette relecture, écrire `paused` en base
- * n'arrêtait rien et une erreur de ciblage sur 5 000 destinataires partait jusqu'au bout. Les destinataires
- * non traités restent `pending`, donc « Reprendre » repart exactement là où on s'est arrêté.
- */
-/**
- * Les suffixes de boutons pour UN destinataire, ou rien du tout.
- *
- * 🔴 CE QUI DÉCIDE, C'EST LE TEMPLATE, PAS LE JETON. Meta refuse l'appel dans les DEUX sens : un composant
- * fourni pour une URL sans variable, et une URL à variable dont le composant manque. Or la liste des boutons
- * tracés décrit le TEMPLATE (colonne écrite à sa soumission) : elle seule dit s'il faut des composants.
- *
- * ⚠️ CORRIGÉ LE 2026-09-02, APRÈS UN ÉCHEC EN PRODUCTION. La version d'avant ne produisait aucun composant
- * quand le jeton manquait, en annonçant « on perd la mesure, on ne perd pas le message ». C'est l'inverse qui
- * arrive : le template est déjà approuvé chez Meta avec `/r/<code>/{{1}}`, donc sans composant l'appel est
- * refusé en **131008 Required parameter is missing** et RIEN ne part. Mesuré sur trois campagnes ce jour-là.
- * Sans jeton, on envoie donc un suffixe ANONYME : le lien fonctionne, le clic est compté, il n'est rattaché à
- * personne. C'est là, et seulement là, qu'on dégrade la mesure plutôt que l'envoi.
- *
- * Fonction pure et exportée pour être éprouvée seule : c'est une décision à deux issues sur le chemin le plus
- * chaud du produit, et la tester à travers un run de campagne entier ne dirait pas grand-chose.
+ * C'est le template qui décide, pas le jeton : Meta refuse un composant pour une URL sans variable comme une
+ * URL à variable sans composant (131008, rien ne part). Sans jeton, on envoie donc un suffixe anonyme : le lien
+ * fonctionne, le clic est compté sans être rattaché à personne.
  */
 export const SUFFIXE_ANONYME = 'anon';
 
@@ -382,25 +277,13 @@ export function suffixesPourDestinataire(
 }
 
 /**
- * L'ÉTAGE OÙ EST LE DESTINATAIRE, ET CE QUE CE RUN SAIT EN FAIRE (migration 0134).
+ * L'étage où est le destinataire, et ce que ce run sait en faire.
  *
- * 🔴 CE N'EST PLUS « LE RANG 1 ET LUI SEUL » DEPUIS LE 2026-09-12. Un run sert désormais tout étage
- * dont il sait servir le CANAL, et `canauxServis` est la liste de ces canaux, calculée par `run-job` sur
- * la chaîne de la campagne (un sender par canal, un frein par canal). Le refus a donc changé de nature :
- * il ne porte plus sur le RANG, il porte sur le CANAL. C'est ce qui rend une chaîne de repli réellement
- * fonctionnelle au lieu de décorative.
+ * Un run sert tout étage dont il sait servir le canal (`canauxServis`, calculé par `run-job`). Un étage non
+ * servable (pas d'agent RCS, e-mail) est un refus avec sa raison, au vrai rang et au vrai canal, jamais un
+ * repli silencieux sur le rang 1, qui renverrait le message qui vient d'échouer.
  *
- * 🔴 ET IL RESTE UN REFUS, JAMAIS UN REPLI SILENCIEUX. Un étage dont le canal n'est pas servable (pas
- * d'agent RCS, canal e-mail qui n'a aucun sender de campagne) échoue AVEC SA RAISON, au vrai rang et au
- * vrai canal. Lui renvoyer le contenu du rang 1 lui enverrait EXACTEMENT le message qui vient d'échouer.
- *
- * ⚠️ `canauxServis` ABSENT = LE CANAL DE LA CAMPAGNE, ET RIEN D'AUTRE. C'est le comportement d'avant mot
- * pour mot, et c'est ce qui laisse intacts tous les faux de test qui n'en fournissent pas : une chaîne
- * dont deux étages ne partagent jamais le même canal (`problemeDeChaine` l'interdit) n'a alors qu'un seul
- * étage servable, le rang 1.
- *
- * ⚠️ CHAÎNE ABSENTE OU VIDE = le comportement d'avant, mot pour mot : rang 1, canal de la campagne. C'est
- * le cas de tout le parc (campagnes d'avant 0134 non reprises, faux des tests qui ne câblent pas `chaine`).
+ * `canauxServis` absent = le canal de la campagne seul. Chaîne absente ou vide = rang 1, canal de la campagne.
  */
 export function etageServable(
   campaign: Pick<Campaign, 'channel' | 'chaine'>,
@@ -413,9 +296,8 @@ export function etageServable(
 
   const rang = rangCourant ?? RANG_INITIAL;
   const etage = etageAuRang(chaine, rang);
-  // L'étage a été retiré de la chaîne pendant que ce destinataire y était. On ne devine PAS un contenu de
-  // remplacement : on ne sait plus ce qu'on devait lui envoyer, et le rang reste celui où il est, pour que
-  // le journal dise où il s'est arrêté.
+  // L'étage a été retiré de la chaîne pendant que ce destinataire y était : on ne devine pas un contenu de
+  // remplacement, et le rang reste celui où il est pour que le journal dise où il s'est arrêté.
   if (etage === null) return { rang, canal: canalCampagne, refus: `étage ${rang} absent de la chaîne de cette campagne` };
 
   const servis = canauxServis ?? [canalCampagne];
@@ -430,18 +312,11 @@ export function etageServable(
 }
 
 /**
- * CE QU'UN ÉTAGE ENVOIE : son modèle, son message RCS, son scénario.
+ * Ce qu'un étage envoie : son modèle, son message RCS, son scénario.
  *
- * 🔴 LE RANG 1 VIENT TOUJOURS DES COLONNES DE `campaigns`, JAMAIS DE LA LIGNE D'ÉTAGE. C'est
- * l'invariant que la migration 0134 pose en toutes lettres (« une seule source pour le contenu d'un
- * étage ») et que `insertCampaignRow` applique : la ligne du rang 1 est RECOPIÉE depuis ces colonnes, et
- * ce que le client aurait mis sur son premier étage est ignoré. Lire la ligne ici rouvrirait la seconde
- * vérité que cet invariant ferme, et casserait au passage tout faux de test qui déclare une chaîne sans
- * recopier le contenu de sa campagne.
- *
- * ⚠️ LES RANGS SUIVANTS, EUX, N'ONT QUE LEUR LIGNE. Retomber sur les colonnes de la campagne quand un
- * champ y manque serait le défaut que tout ce lot ferme : un repli qui renvoie le message du rang 1.
- * Un étage de rang 2 sans contenu part donc vide, et c'est le sender ou Meta qui le dira.
+ * Le rang 1 vient toujours des colonnes de `campaigns`, jamais de la ligne d'étage (`insertCampaignRow` la
+ * recopie depuis ces colonnes) : une seule source pour son contenu. Les rangs suivants n'ont que leur ligne,
+ * sans retomber sur la campagne, sinon un repli renverrait le message du rang 1.
  */
 export function contenuDeLEtage(
   campaign: Pick<Campaign, 'templateName' | 'templateLanguage' | 'rcsMessage' | 'workflowId' | 'chaine'>,
@@ -465,15 +340,9 @@ export function contenuDeLEtage(
 }
 
 /**
- * L'ÉTAGE WHATSAPP DE CETTE CAMPAGNE, quand ce run sait le servir.
- *
- * 🔴 IL EST UNIQUE PAR CONSTRUCTION : `problemeDeChaine` refuse deux étages sur le même canal. C'est
- * ce qui permet de garder les pré-lectures de modèle (carousel, en-tête média, boutons tracés) EN AMONT
- * de la boucle, une seule fois par run, comme avant ce lot : il n'y a jamais deux modèles WhatsApp à
- * relire dans une même campagne.
- *
- * ⚠️ IL N'EST PAS FORCÉMENT LE RANG 1. Une campagne RCS avec repli WhatsApp met son modèle au rang 2, et
- * c'est SON corps qu'il faut relire, pas `campaign.templateName`, qui vaut alors la chaîne vide.
+ * L'étage WhatsApp de cette campagne, quand ce run sait le servir. Unique par construction (`problemeDeChaine`
+ * refuse deux étages sur un même canal), ce qui permet les pré-lectures de modèle une seule fois par run. Pas
+ * forcément le rang 1 : une campagne RCS à repli WhatsApp met son modèle au rang 2.
  */
 function etageWhatsApp(
   campaign: Pick<Campaign, 'channel' | 'chaine' | 'templateName' | 'templateLanguage' | 'rcsMessage' | 'workflowId'>,
@@ -489,6 +358,14 @@ function etageWhatsApp(
   return { rang, templateName: contenu.templateName, templateLanguage: contenu.templateLanguage, workflowId: contenu.workflowId };
 }
 
+/**
+ * Exécute une campagne : parcourt les destinataires `pending` avec pacing et garde-fous (quality gate), réserve
+ * chacun atomiquement (pending -> sending) avant l'appel Meta, puis envoie et enregistre le résultat. Un envoi
+ * réussi dont la persistance échoue reste `sending`, jamais re-listé donc jamais ré-envoyé.
+ *
+ * La boucle relit périodiquement le statut et sort dès qu'il n'est plus `running` : c'est ce qui rend la pause
+ * réelle. Les destinataires non traités restent `pending`, « Reprendre » repart là où on s'est arrêté.
+ */
 export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise<RunReport> {
   const now = deps.now ?? (() => Date.now());
   const t = deps.thresholds ?? DEFAULT_THRESHOLDS;
@@ -497,38 +374,29 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
   await deps.campaigns.setStatus(campaign.id, 'running');
   const pending = await deps.recipients.listPending(campaign.id);
 
-  /** LES CANAUX QUE CE RUN SAIT SERVIR (`EngineDeps.canaux`). */
+  /** Les canaux que ce run sait servir (`EngineDeps.canaux`). */
   const canaux = deps.canaux;
   const canauxServis = Object.keys(canaux) as CanalEtage[];
   /** L'étage WhatsApp de la chaîne, s'il y en a un et que ce run sait le servir. Unique par construction. */
   const etageWa = etageWhatsApp(campaign, canauxServis);
 
-  // Statut de SORTIE du run. Une campagne AU FIL DE L'EAU (alimentée par un webhook) n'est pas finie quand sa
-  // file est vide : elle attend son prochain arrivant. La marquer `completed` la couperait définitivement de
-  // son webhook (seules les campagnes `running` sont nourries), et personne ne le verrait avant de constater
-  // que plus aucun lead n'est contacté. Elle repart donc en `running`.
+  // Statut de sortie. Une campagne au fil de l'eau n'est pas finie quand sa file est vide : `completed` la
+  // couperait de son webhook (seules les campagnes `running` sont nourries).
   const statutFinal: CampaignStatus = campaign.webhookId ? 'running' : 'completed';
 
   /**
-   * Le statut de sortie RÉEL, décidé au dernier moment.
-   *
-   * 🔴 MESURÉ AU BANC DE CHARGE le 2026-09-01, et c'était une perte SILENCIEUSE et DÉFINITIVE. Un `kill -9`
-   * du worker en plein envoi laisse le destinataire en vol à l'état `sending`. Le run suivant ne le voit pas
-   * (`listPending` ne rend que les `pending`), vide la file, et marque la campagne `completed`. Dix minutes
-   * plus tard, `reclaimStale` remet ce destinataire en `pending`... sur une campagne TERMINÉE, que la reprise
-   * ne relance plus (elle ne regarde que les `running`). Ce contact ne recevait jamais son message, et rien
-   * ne le disait : les compteurs affichaient 399 envoyés sur 400 et la campagne se disait finie.
-   *
-   * On reste donc `running` tant qu'un destinataire est réservé. La reprise repassera après le reclaim.
+   * Le statut de sortie réel, décidé au dernier moment. Un worker tué laisse le destinataire en vol en
+   * `sending` : le run suivant ne le voit pas, et marquer `completed` ferait que `reclaimStale` le remette en
+   * `pending` sur une campagne que la reprise ne relance plus. On reste donc `running` tant qu'un destinataire
+   * est réservé.
    */
   const statutDeSortie = async (): Promise<CampaignStatus> => {
     if (statutFinal !== 'completed' || !deps.recipients.countSending) return statutFinal;
     return (await deps.recipients.countSending(campaign.id)) > 0 ? 'running' : 'completed';
   };
 
-  // Carousel : les cartes (image, corps, boutons) sont IDENTIQUES pour tous les destinataires -> relues une
-  // seule fois par run. Une lecture qui échoue (réseau, WABA absent) ne casse pas la campagne : on part comme
-  // avant (un template sans carousel est inchangé ; un carousel échouera avec le message d'erreur de Meta).
+  // Carousel : identique pour tous les destinataires, relu une fois par run. Une lecture qui échoue ne casse
+  // pas la campagne : un template sans carousel est inchangé, un carousel échouera avec l'erreur de Meta.
   let carousel: { cards: OutboundCarouselCard[] } | null = null;
   let carouselBlocked: string | null = null;
   if (etageWa && !etageWa.workflowId && deps.getTemplateCarousel) {
@@ -543,8 +411,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     }
   }
 
-  // En-tête média : même doctrine que le carousel, et même lecture UNE fois par run. Le visuel est identique
-  // pour tous les destinataires, donc son `media id` aussi.
+  // En-tête média : même doctrine que le carousel, et même lecture une fois par run.
   let headerMedia: { headerFormat: 'IMAGE' | 'VIDEO' | 'DOCUMENT'; mediaId: string | null } | null = null;
   let headerBlocked: string | null = null;
   if (etageWa && !etageWa.workflowId && !carousel && deps.getTemplateHeaderMedia) {
@@ -557,28 +424,12 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
   }
 
   /**
-   * RÉSOUDRE UN DESTINATAIRE : le marquer ET journaliser la tentative, en UN seul geste.
+   * Résoudre un destinataire : le marquer et journaliser la tentative, en un seul geste. Un seul point de
+   * passage pour les cinq sites de résolution, sinon le journal devient une liste à tenir à la main.
    *
-   * 🔴 UN SEUL POINT DE PASSAGE, PARCE QUE DEUX ÉCRITURES QUI DOIVENT S'ACCORDER NE DOIVENT PAS ÊTRE
-   * APPELÉES SÉPARÉMENT. Un destinataire se résout à CINQ endroits de ce fichier (refus pré-boucle,
-   * erreur d'envoi, écarté, scénario non démarré, succès) ; poser le journal à côté de chacun aurait fait
-   * du journal une liste à tenir à la main, dont un site oublié ne produit aucune erreur, juste un canal
-   * qui semble n'avoir jamais rien tenté. Depuis ce lot, `markResult` n'a plus qu'UN appelant, ici :
-   * marquer sans journaliser est devenu impossible, et le prochain site l'héritera sans y penser.
-   *
-   * ⚠️ L'ORDRE COMPTE : on marque D'ABORD. Le journal ne doit jamais affirmer une tentative que la table
-   * des destinataires ne connaît pas ; l'inverse (une marque sans sa ligne de journal) ne coûte qu'une
-   * statistique, et c'est le sens de perte qu'on accepte.
-   *
-   * 🔴 LE RANG ET LE CANAL VIENNENT DE L'ÉTAGE DU DESTINATAIRE, plus d'un `RANG_INITIAL` en dur ni de
-   * `campaign.channel`. Ce commentaire a affirmé le contraire, et c'était exact tant que rien n'écrivait
-   * `etage_courant` ; depuis que la bascule l'écrit, une tentative refusée au rang 2 se serait journalisée
-   * « rang 1, canal de la campagne », c'est-à-dire au crédit du canal qui n'a rien tenté. Le journal est la
-   * SEULE source de l'analytique par canal : une ligne fausse ici est un chiffre faux à l'écran.
-   *
-   * ⚠️ `etageServable` est rappelée ici plutôt que passée en paramètre : elle est PURE et parcourt au plus
-   * trois étages. Un paramètre de plus sur les cinq sites de résolution serait une liste à tenir à la main,
-   * et c'est exactement ce que ce point de passage unique existe pour éviter.
+   * On marque d'abord : le journal ne doit jamais affirmer une tentative que la table des destinataires ne
+   * connaît pas. Le rang et le canal viennent de l'étage du destinataire (`etageServable`, pure, rappelée
+   * ici) : le journal est la seule source de l'analytique par canal.
    */
   const resoudre = async (
     r: Recipient,
@@ -607,22 +458,16 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
   };
 
   /**
-   * LE NUMÉRO WHATSAPP DE L'ESPACE EST DÉLIÉ (migration 0180) : le run s'arrête et la campagne attend « Relier ».
+   * Le numéro WhatsApp de l'espace est délié : le run s'arrête et la campagne attend « Relier ».
    *
-   * Même geste que le plafond de numéro de Meta, avec deux différences voulues :
-   * - la pause n'a JAMAIS d'échéance : seul « Relier » la lève (`PgNumeroDelieStore.relier`), le balayage de
-   *   reprise ne la voit pas ;
-   * - 🔴 elle n'est écrite que si la BASE dit encore « délié », et dans la MÊME instruction que cette lecture
-   *   (`pauserSiNumeroDelie`). Le refus vient d'une garde mise en cache 5 s par process (`NUMERO_DELIE_TTL_MS`), qui
-   *   peut encore répondre « délié » juste après « Relier ». Écrire la pause sur cette réponse périmée la rendrait
-   *   éternelle, puisque le geste qui la lève a déjà eu lieu ; et une relecture SUIVIE d'une écriture laissait
-   *   passer un « Relier » validé entre les deux (relecture du 2026-09-25). Pas de pause écrite : on sort, la
-   *   campagne reste `running`, et le balayage des campagnes gelées la relance dans la minute, cache expiré.
-   * - la même instruction n'écrit que sur une campagne `running` ou `scheduled` : une pause posée par un opérateur
-   *   pendant le run garde sa raison, et « Relier » ne la relancera pas.
+   * Comme le plafond de numéro de Meta, mais la pause n'a jamais d'échéance (seul « Relier » la lève, le
+   * balayage de reprise ne la voit pas). Elle n'est écrite que si la base dit encore « délié », dans la même
+   * instruction (`pauserSiNumeroDelie`) : la garde en cache 5 s peut le dire juste après « Relier », et une
+   * pause écrite sur cette réponse serait éternelle. Sinon on sort, la campagne reste `running` et le balayage
+   * des campagnes gelées la relance. L'instruction n'écrit que sur une campagne `running` ou `scheduled` : une
+   * pause d'opérateur garde sa raison.
    *
-   * ⚠️ L'appelant a déjà rendu à la file le destinataire en vol, s'il y en avait un : ce geste ne dépend pas de la
-   * pause, rien n'étant parti vers lui par WhatsApp (`runFrom` vérifie le numéro avant tout effet du parcours).
+   * L'appelant a déjà rendu à la file le destinataire en vol, rien ne lui étant parti par WhatsApp.
    */
   const arreterSurNumeroDelie = async (err: NumeroDelieError): Promise<RunReport> => {
     if (deps.pauserSiNumeroDelie) {
@@ -639,16 +484,10 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
   };
 
   /**
-   * LE MODÈLE WHATSAPP N'EST PAS ENVOYABLE : on le sait avant d'avoir commencé.
-   *
-   * ⚠️ LE REFUS NE VISE QUE LES DESTINATAIRES DE L'ÉTAGE WHATSAPP, PAS TOUTE LA CAMPAGNE. Un modèle dont
-   * le carousel ou l'en-tête média est inenvoyable ne dit rien du repli RCS, et couper le run entier
-   * priverait de leur message des destinataires qu'une bascule a précisément amenés là parce que le
-   * premier canal avait échoué. Ils repartent donc dans la boucle normale.
-   *
-   * ⚠️ Le reste est INCHANGÉ, et sa raison aussi : le refus est traité ICI et pas dans la boucle, sinon la
-   * porte de qualité verrait 100 % d'échecs et mettrait la campagne en pause au bout de 20 destinataires,
-   * avec un diagnostic trompeur.
+   * Le modèle WhatsApp n'est pas envoyable : on le sait avant d'avoir commencé. Le refus ne vise que les
+   * destinataires de l'étage WhatsApp, les autres (repli RCS) repartent dans la boucle normale. Il est traité
+   * ici et pas dans la boucle, sinon la porte de qualité verrait 100 % d'échecs et mettrait la campagne en
+   * pause avec un diagnostic trompeur.
    */
   let aTraiter = pending;
   if (carouselBlocked !== null || headerBlocked !== null) {
@@ -659,7 +498,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       if (etageServable(campaign, r.etageCourant, canauxServis).canal !== 'whatsapp') { restants.push(r); continue; }
       const reserve = await deps.recipients.claim(r.id);
       if (reserve === false) continue;
-      // Un contact qui a dit STOP est ÉCARTÉ, pas mis en échec : le modèle n'y est pour rien.
+      // Un contact qui a dit STOP est écarté, pas mis en échec : le modèle n'y est pour rien.
       if (reserve !== true) {
         await resoudre(r, { status: 'skipped', error: MOTIF_ECART_A_L_ENVOI[reserve.ecart] });
         report.skipped += 1;
@@ -676,16 +515,9 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
   }
 
   /**
-   * L'ATTRIBUTION DES CLICS (migration 0106) : quels boutons portent un suffixe variable, et quel jeton
-   * chaque destinataire doit y mettre.
-   *
-   * 🔴 DEUX LECTURES, LES DEUX EN AMONT DE LA BOUCLE. Les boutons tracés sont les mêmes pour toute la
-   * campagne ; les jetons se chargent en UN énoncé pour tous les destinataires. Les lire par destinataire
-   * ferait deux requêtes par message, sur le chemin le plus chaud du produit.
-   *
-   * ⚠️ Et les deux sont BEST-EFFORT. Une attribution qui échoue doit coûter la connaissance de « qui a
-   * cliqué », jamais l'envoi lui-même : un client préfère mille fois un message parti sans mesure qu'une
-   * campagne bloquée par une statistique.
+   * L'attribution des clics : quels boutons portent un suffixe variable, et quel jeton chaque destinataire y
+   * met. Les deux lectures se font en amont de la boucle (pas deux requêtes par message) et sont best-effort :
+   * une attribution qui échoue coûte la mesure, jamais l'envoi.
    */
   let boutonsAJeton: number[] = [];
   let jetons = new Map<string, string>();
@@ -701,17 +533,9 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     }
   }
   /**
-   * Les jetons, chargés en UN énoncé pour tous les destinataires, si l'un des deux canaux en a besoin.
-   *
-   * 🔴 Côté WhatsApp, la lecture des boutons est OBLIGATOIRE et décide de l'envoi : l'URL soumise à Meta
-   * porte (ou non) un `{{1}}`, et fournir un composant à contretemps fait échouer l'appel avec un 132000.
-   * Côté RCS, l'URL est écrite à l'envoi : il n'y a rien à accorder, donc rien à relire. C'est le message
-   * lui-même qui dit s'il porte un lien traçable, et le sender de canal l'a calculé une fois pour toutes
-   * (`aBesoinDeJeton`) plutôt que de le recalculer par destinataire.
-   *
-   * ⚠️ UNE CHAÎNE PEUT AVOIR BESOIN DES DEUX, et c'était le piège de la version d'avant : ses deux branches
-   * étaient EXCLUSIVES (`else if`), donc une campagne WhatsApp à repli RCS aurait chargé les jetons pour le
-   * premier canal et pas pour le second, ou l'inverse. Un seul `ou` suffit, la table est la même.
+   * Les jetons, chargés en un énoncé si l'un des canaux en a besoin. Côté WhatsApp, c'est la liste des boutons
+   * qui décide (l'URL soumise à Meta porte ou non un `{{1}}`) ; côté RCS, le message dit s'il porte un lien
+   * traçable (`aBesoinDeJeton`). Une chaîne peut avoir besoin des deux, d'où un « ou ».
    */
   const besoinDeJeton = boutonsAJeton.length > 0 || canaux.rcs?.sender?.aBesoinDeJeton === true;
   if (besoinDeJeton && deps.jetonsPourContacts) {
@@ -723,16 +547,15 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     }
   }
 
-  // Horloge du contrôle d'arrêt. Partie à MAINTENANT, donc la première relecture n'a lieu qu'un pas plus tard :
-  // on vient d'écrire `running` deux lignes plus haut, relire tout de suite ne pourrait rien apprendre.
+  // Horloge du contrôle d'arrêt, partie à maintenant : on vient d'écrire `running`, relire tout de suite
+  // n'apprendrait rien.
   const pasDeControle = deps.statusPollMs ?? DEFAULT_STATUS_POLL_MS;
   let dernierControle = now();
-  // Horloge du LOT : un run travaille au plus `dureeMaxMs`, puis rend la main et se fait réenfiler.
+  // Horloge du lot : un run travaille au plus `dureeMaxMs`, puis rend la main et se fait réenfiler.
   const debutDuLot = now();
 
-  // Horaires d'ouverture : lus UNE FOIS, et seulement si la campagne les demande. Une lecture en échec vaut
-  // « pas de contrainte » plutôt que « campagne bloquée » : le réglage sert à choisir un moment, pas à
-  // garder une porte, et une panne de sa lecture ne doit pas retenir un envoi que le client a lancé.
+  // Horaires d'ouverture : lus une fois, et seulement si la campagne les demande. Une lecture en échec vaut
+  // « pas de contrainte » : une panne de lecture ne doit pas retenir un envoi que le client a lancé.
   const horaires = campaign.businessHoursOnly === true && deps.horairesOuvres
     ? await deps.horairesOuvres(campaign.tenantId).catch(() => null)
     : null;
@@ -740,40 +563,28 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
   for (const r of aTraiter) {
     if (r.status === 'sent') continue; // idempotence défensive
 
-    // 🔴 DURÉE MAXIMALE DU LOT (lot 5). Sans elle, un job traitait sa campagne jusqu'à épuisement : 5 000
-    // destinataires à 30/min, c'est 2 h 47 pendant lesquelles la file `campaign-run` ne sert PERSONNE
-    // d'autre. On s'arrête donc entre deux destinataires, exactement comme pour l'arrêt du service : rien
-    // n'est réservé, rien n'est envoyé, le suivant reste `pending`.
-    //
-    // ⚠️ Le test est placé APRÈS le premier tour de boucle par construction (il compare à `debutDuLot`), et
-    // surtout la sortie n'est prise QUE si du travail a déjà été fait (`report.sent + report.failed +
-    // report.skipped > 0`). Sans cette condition, une durée mal réglée ferait un run qui n'envoie rien et se
-    // réenfile en boucle, c'est-à-dire une file qui tourne à vide pour l'éternité.
+    // Durée maximale du lot : sans elle, une grosse campagne occuperait la file des heures pendant que les
+    // autres clients attendent. On s'arrête entre deux destinataires, le suivant reste `pending`. La sortie n'est
+    // prise que si du travail a déjà été fait, sinon une durée mal réglée ferait un run qui se réenfile à vide.
     const traites = report.sent + report.failed + report.skipped;
     if (deps.dureeMaxMs !== undefined && deps.dureeMaxMs > 0 && traites > 0 && now() - debutDuLot >= deps.dureeMaxMs) {
       report.reste = true;
       return report;
     }
 
-    // ARRÊT DU PROCESS (SIGTERM). Testé à chaque tour, avant toute réservation : le destinataire suivant
-    // n'est ni claimé ni envoyé, et il reste `pending` pour la reprise. Le statut n'est PAS réécrit.
+    // Arrêt du process (SIGTERM), testé avant toute réservation : le suivant reste `pending` pour la reprise, et
+    // le statut n'est pas réécrit.
     if (deps.arretDemande?.()) {
       report.paused = true;
       report.reason = 'arrêt du service pendant l’envoi ; la campagne reprendra au redémarrage';
       return report;
     }
 
-    // HORS DES HEURES D'OUVERTURE (migration 0122). Même forme que l'arrêt du service juste au-dessus :
-    // contrôlé AVANT toute réservation, donc le destinataire suivant n'est ni claimé ni envoyé et reste
-    // `pending`. La différence tient en une chose, et c'est tout l'intérêt : on POSE l'instant de reprise,
-    // donc le balayage de la migration 0103 relancera la campagne à l'ouverture, sans clic.
-    //
-    // 🔴 Contrôlé à CHAQUE destinataire, pas seulement au démarrage. Les deux cas que Julien a décrits sont
-    // le même code : « lancée à 23 h » (le tout premier tour ferme) et « pas finie à la fermeture » (un tour
-    // du milieu ferme). Un contrôle placé avant la boucle n'aurait couvert que le premier.
+    // Hors des heures d'ouverture : contrôlé avant toute réservation, à chaque destinataire (une campagne lancée
+    // de nuit comme une campagne pas finie à la fermeture). On pose l'instant de reprise, donc le balayage de
+    // reprise la relance à l'ouverture, sans clic.
     if (horaires !== null && !withinBusinessHours(new Date(now()), horaires.timeZone, horaires.businessHours)) {
-      // `null` = aucun jour ouvert de la semaine. Pas de reprise automatique possible, donc pas d'échéance :
-      // exactement la sémantique d'une pause de qualité, et le message le dit à l'opérateur.
+      // `null` = aucun jour ouvert : pas d'échéance, comme une pause de qualité, et le message le dit.
       const reprise = prochaineOuverture(new Date(now()), horaires.timeZone, horaires.businessHours);
       report.paused = true;
       report.reason = messageDePause('hors_horaires', reprise, undefined);
@@ -781,15 +592,13 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       return report;
     }
 
-    // ARRÊT DEMANDÉ ? Contrôlé AVANT le claim et avant toute attente de cadence : un destinataire vu après la
-    // pause ne doit être ni réservé ni envoyé. On NE réécrit PAS le statut en sortant : l'état voulu est déjà
-    // en base, c'est l'opérateur qui l'y a mis, et le réécrire écraserait sa décision.
-    // Appel de MÉTHODE, jamais une référence déliée (`const f = deps.campaigns.getStatus`) : `PgCampaignStore`
-    // lit `this.pool`, et une fonction détachée de son objet perdrait son `this`.
+    // Arrêt demandé ? Contrôlé avant le claim et avant toute attente de cadence. Le statut n'est pas réécrit en
+    // sortant : c'est l'opérateur qui l'a mis, le réécrire écraserait sa décision.
+    // Appel de méthode, jamais une référence déliée : `PgCampaignStore` lit `this.pool`.
     if (deps.campaigns.getStatus && now() - dernierControle >= pasDeControle) {
       dernierControle = now();
-      // Le bail se renouvelle à la MÊME cadence, et un renouvellement refusé arrête le run : on ne tient plus
-      // le verrou, donc un autre run peut déjà avoir démarré, et continuer doublerait le débit.
+      // Le bail se renouvelle à la même cadence, et un refus arrête le run : un autre run peut avoir démarré, et
+      // continuer doublerait le débit.
       if (deps.renouvelerVerrou && !(await deps.renouvelerVerrou())) {
         report.paused = true;
         report.reason = 'verrou d’exécution perdu (bail écoulé) ; un autre run a repris la campagne';
@@ -804,22 +613,14 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     }
 
     /**
-     * L'ÉTAGE DE CE DESTINATAIRE, ET CE QU'IL FAUT POUR LE SERVIR.
-     *
-     * 🔴 RÉSOLU EN TÊTE DU TOUR, PARCE QUE QUATRE DÉCISIONS EN DÉPENDENT AVANT MÊME L'ENVOI : la porte
-     * de qualité (une notion Meta, qui n'a pas de sens sur un étage RCS), le frein de cadence (le plafond
-     * du canal de l'étage, pas celui de la campagne), le contenu, et le journal. Le calcul est PUR et
-     * parcourt au plus trois étages.
-     *
-     * ⚠️ LE REFUS, LUI, RESTE APRÈS LE CLAIM : marquer un destinataire suppose de l'avoir réservé.
+     * L'étage de ce destinataire, résolu en tête du tour : la porte de qualité, le frein de cadence, le contenu
+     * et le journal en dépendent. Le refus, lui, reste après le claim : marquer suppose d'avoir réservé.
      */
     const etageDuTour = etageServable(campaign, r.etageCourant, canauxServis);
     const servi = canaux[etageDuTour.canal];
 
-    // Quality gate : notion META (rating du numéro WABA). Sur un canal sans numéro Meta, il n'y a rien à
-    // interroger, et l'interroger quand même appellerait Graph avec un phoneNumberId vide.
-    // ⚠️ C'est la présence d'un SENDER DE CANAL qui la neutralise, pas le nom du canal : c'est ce qui garde
-    // le comportement d'avant pour un faux de test qui pose un sender de canal sur une campagne WhatsApp.
+    // Quality gate : notion Meta (rating du numéro). C'est la présence d'un sender de canal qui la neutralise,
+    // pas le nom du canal ; sinon on appellerait Graph avec un phoneNumberId vide.
     if (servi && !servi.sender) {
       const rating = await deps.quality.getRating(servi.phoneNumberId ?? campaign.phoneNumberId);
       const gate = qualityGate({ rating, sent: report.sent, failed: report.failed }, t);
@@ -836,11 +637,9 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     if (reserve === false) continue;
 
     /**
-     * 🔴 LE STOP (ET LE BLOCAGE) SE RELISENT AU MOMENT D'ENVOYER, par la réclamation. La liste a été filtrée à
-     * sa construction, mais une campagne étalée part des heures plus tard : sans cette relecture, quelqu'un qui
-     * a dit STOP entre-temps recevait quand même le message. ÉCARTÉ (`skipped`), jamais `failed` : ce n'est pas
-     * un échec, et la porte de qualité ne doit pas le compter. Placé AVANT le frein de cadence, comme le refus
-     * d'étage : rien ne part, aucun créneau n'est occupé.
+     * 🔴 Le STOP et le blocage se relisent au moment d'envoyer, par la réclamation : une campagne étalée part
+     * des heures après la construction de la liste. Écarté (`skipped`), jamais `failed`, pour que la porte de
+     * qualité ne le compte pas. Avant le frein de cadence : rien ne part, aucun créneau n'est occupé.
      */
     if (reserve !== true) {
       await resoudre(r, { status: 'skipped', error: MOTIF_ECART_A_L_ENVOI[reserve.ecart] });
@@ -848,9 +647,8 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       continue;
     }
 
-    // 🔴 LE REFUS S'IL N'EST PAS SERVABLE (cf. `etageServable`). Placé APRÈS le claim parce qu'il faut
-    // avoir réservé le destinataire pour le marquer, et AVANT le frein de cadence parce qu'un refus
-    // n'occupe aucun créneau d'envoi : il ne part rien.
+    // Refus si l'étage n'est pas servable : après le claim (il faut avoir réservé pour marquer), avant le frein
+    // (un refus n'occupe aucun créneau).
     if (etageDuTour.refus !== null || !servi) {
       const refus = etageDuTour.refus ?? `étage ${etageDuTour.rang} (${etageDuTour.canal}) : ce run ne sait pas envoyer sur ce canal`;
       await resoudre(r, { status: 'failed', error: refus });
@@ -858,44 +656,36 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       continue;
     }
 
-    // 🔴 LE FREIN EST CELUI DU CANAL DE L'ÉTAGE, PAS CELUI DE LA CAMPAGNE. Un étage RCS sous le plafond
-    // qu'impose Meta à un NUMÉRO WhatsApp est exactement le défaut que le lot 4 a fermé : ne pas le rouvrir
-    // par le bas en faisant tenir la cadence d'un canal par la contrainte d'un autre.
+    // Le frein est celui du canal de l'étage, pas celui de la campagne.
     if (servi.rateLimiter) await servi.rateLimiter.acquire();
 
-    /** Ce que CET étage envoie. Le rang 1 vient des colonnes de la campagne (invariant 0134). */
+    /** Ce que cet étage envoie. Le rang 1 vient des colonnes de la campagne. */
     const contenu = contenuDeLEtage(campaign, etageDuTour.rang);
 
-    // Variables du template : les positions de source NOW sont rafraîchies à l'instant de l'ENVOI (les autres
-    // ont été résolues à la création). Sans ça, une campagne programmée/draft enverrait la date de sa CRÉATION.
-    // Fuseau par défaut (Europe/Paris), cf. DEFAULT_NOW_TZ.
+    // Les variables de source NOW sont rafraîchies à l'instant de l'envoi, sinon une campagne programmée
+    // enverrait la date de sa création. Fuseau par défaut : Europe/Paris (DEFAULT_NOW_TZ).
     const params = refreshNowParams(r.resolvedParams, campaign.paramMapping, { now: new Date(now()) });
 
-    // Envoi isolé : une erreur du sender (Meta) marque le destinataire `failed`. Un run de workflow qui NE
-    // DÉMARRE PAS aussi (`started === false`) : sans ça, la campagne affichait « envoyé » pour un destinataire
-    // dont aucun message n'est parti (scénario supprimé, fil repris par un opérateur, ouverture hors fenêtre).
+    // Une erreur du sender marque le destinataire `failed`, comme un scénario qui ne démarre pas
+    // (`started === false`) : sinon la campagne afficherait « envoyé » sans qu'aucun message soit parti.
     let res: SendResult;
     let notStarted: string | null = null;
-    // Destinataire écarté par le canal lui-même (non joignable en RCS, opt-out). Ce n'est PAS un échec :
-    // rien n'est parti et rien n'a raté. Symétrique de `notStarted`, traité après le try comme lui.
+    // Écarté par le canal lui-même (non joignable en RCS, opt-out) : ni envoyé ni échoué.
     let skipped: string | null = null;
     /**
-     * 🔴 LE SCÉNARIO D'UN ÉTAGE SERVI PAR UN CANAL N'A PAS ÉCHOUÉ, IL N'A PAS DÉMARRÉ, et la nuance décide
-     * du statut. Le message, lui, EST parti : marquer le destinataire `failed` le rendrait repris par une
-     * relance, et la personne recevrait le message RCS une SECONDE fois. Il reste donc `sent`, avec la
-     * raison enregistrée à côté (`RECIPIENT_FAILED_SQL` ne regarde que `status` et `delivery_status`, donc
-     * cette raison n'en fait pas un échec).
+     * Le scénario d'un étage servi par un canal n'a pas démarré, mais le message est parti : le destinataire
+     * reste `sent` avec la raison à côté. Le marquer `failed` le ferait reprendre par une relance, et le message
+     * RCS partirait deux fois. `RECIPIENT_FAILED_SQL` ne regarde que `status` et `delivery_status`.
      */
     let scenarioNonDemarre: string | null = null;
     /**
-     * Ce scénario-là a buté sur le NUMÉRO DÉLIÉ. Le destinataire reste `sent` (son message est parti), mais le
-     * run s'arrête après lui : les suivants recevraient leur message sans jamais leur suite.
+     * Ce scénario a buté sur le numéro délié. Le destinataire reste `sent`, mais le run s'arrête après lui : les
+     * suivants recevraient leur message sans jamais leur suite.
      */
     let scenarioSurNumeroDelie: NumeroDelieError | null = null;
     try {
       if (servi.sender) {
-        // Le jeton de CE destinataire, pour que le clic sur un lien du message dise QUI a réagi. Absent
-        // (contact inconnu, chargement en échec) : le lien part tracé mais anonyme, jamais cassé.
+        // Le jeton de ce destinataire, pour savoir qui a cliqué. Absent : lien tracé mais anonyme, jamais cassé.
         const out = await servi.sender.sendTo(r, r.contactId ? jetons.get(r.contactId) : undefined);
         if ('skipped' in out) {
           skipped = out.skipped;
@@ -903,16 +693,9 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
         } else {
           res = out;
           /**
-           * 🔴 « MESSAGE ET SCÉNARIO » : LE MESSAGE PART, PUIS LE SCÉNARIO. Cette branche manquait, et
-           * l'identifiant du scénario était enregistré sur l'étage sans que rien ne le lise jamais (mesuré
-           * le 2026-09-13 avec le vrai moteur : message parti, `sent: 1`, zéro démarrage). L'écran
-           * affichait « envoyé », ce qui était vrai, pour une campagne à moitié faite.
-           *
-           * ⚠️ APRÈS L'ENVOI, jamais avant : la suite du scénario ne doit pas arriver avant le message
-           * qu'elle suit. Et JAMAIS sur un destinataire écarté par le canal, qui n'a rien reçu.
-           *
-           * ⚠️ SON PROPRE `try` : une panne du moteur de scénario ne doit pas passer par le `catch`
-           * d'envoi, qui marquerait `failed` un message déjà livré.
+           * « Message et scénario » : le message part, puis le scénario, jamais avant (la suite ne doit pas
+           * précéder le message) ni sur un destinataire écarté par le canal. Son propre `try` : une panne du
+           * moteur de scénario ne doit pas marquer `failed` un message déjà livré.
            */
           if (contenu.workflowId) {
             try {
@@ -920,14 +703,9 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
                 scenarioNonDemarre = 'Scénario non démarré : moteur de scénario non câblé.';
               } else {
                 /**
-                 * 🔴 LES VARIABLES DU RANG 1 NE PARTENT PAS AVEC LE SCÉNARIO D'UN ÉTAGE DE REPLI.
-                 * `params` vient de `campaign.paramMapping`, qui décrit le modèle du rang 1 et lui seul.
-                 * `startWorkflow` les passe au PREMIER bloc « Modèle » que le parcours rencontre : sur un
-                 * étage de repli, ce modèle-là n'a aucune raison d'avoir les mêmes variables, et Meta
-                 * refuserait le message (mauvais nombre) ou, pire, remplirait le bon nombre de trous avec
-                 * les mauvaises valeurs. Un rang de repli part donc SANS variables héritées.
-                 *
-                 * ⚠️ Le rang 1 les garde : c'est le cas où `paramMapping` décrit bien ce qui part.
+                 * Les variables du rang 1 ne partent pas avec le scénario d'un étage de repli : `params` décrit
+                 * le modèle du rang 1, et le premier bloc « Modèle » du parcours n'a aucune raison d'avoir les
+                 * mêmes (Meta refuserait, ou remplirait les trous avec les mauvaises valeurs).
                  */
                 const heritees = etageDuTour.rang === RANG_INITIAL ? params : [];
                 const suite = await deps.startWorkflow(
@@ -943,25 +721,21 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
           }
         }
       } else if (contenu.workflowId && campaign.startNodeId) {
-        // Campagne NODE (/v1/sends) : on démarre le workflow à un BLOC PRÉCIS. Quand ce bloc fait partir un
-        // message de SESSION en premier (`ouvertureApi`), les destinataires hors fenêtre de 24 h ont déjà été
-        // écartés (`window_closed`) à la création ; un bloc qui ouvre par un template ou un RCS n'en a pas.
+        // Campagne node (/v1/sends) : démarre le parcours à un bloc précis. Si ce bloc ouvre par un message de
+        // session, les destinataires hors fenêtre de 24 h ont déjà été écartés à la création.
         if (!deps.startWorkflowFromNode) throw new Error('startWorkflowFromNode non câblé');
         const waId = waIdOfTarget(r.toE164);
         const started = await deps.startWorkflowFromNode(campaign.tenantId, contenu.workflowId, campaign.startNodeId, waId, r.contactId);
-        // Une CHAÎNE porte la raison exacte du refus : on l'affiche telle quelle plutôt que d'énumérer les
-        // causes possibles et de laisser l'opérateur deviner laquelle s'applique.
+        // Une chaîne porte la raison exacte du refus : on l'affiche telle quelle.
         if (typeof started === 'string') notStarted = `Scénario non démarré : ${started}`;
         else if (started === false) notStarted = 'scénario non démarré (bloc de départ indisponible, ou fil repris par un opérateur / MBA)';
         res = { messageId: `wf-${contenu.workflowId}` };
       } else if (contenu.workflowId) {
-        // Campagne WORKFLOW : on DÉMARRE le workflow pour ce destinataire (il applique les blocs sync +
-        // envoie son 1er template). message_id synthétique (le wamid réel vit dans le run du workflow).
-        // wa_id du run = numéro en chiffres nus (comme le webhook) OU BSUID tel quel (jamais dénaturé).
+        // Campagne scénario : on démarre le parcours (blocs sync puis premier template). message_id synthétique,
+        // le wamid réel vit dans le run. wa_id = numéro en chiffres nus (comme le webhook) ou BSUID tel quel.
         if (!deps.startWorkflow) throw new Error('startWorkflow non câblé');
         const waId = waIdOfTarget(r.toE164);
-        // r.resolvedParams = variables du 1er template résolues à la construction (paramMapping de la campagne).
-        // On les passe telles quelles : l'envoi du 1er template n'a PAS à re-résoudre via les hints stockés.
+        // Variables du premier template, résolues à la construction : pas de re-résolution à l'envoi.
         const started = await deps.startWorkflow(campaign.tenantId, contenu.workflowId, waId, r.contactId, params);
         if (typeof started === 'string') notStarted = `Scénario non démarré : ${started}`;
         else if (started === false) notStarted = 'scénario non lançable (ouverture hors fenêtre 24 h, scénario supprimé, ou fil repris par un opérateur / MBA)';
@@ -975,9 +749,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
             ...(carousel ? { carousel } : {}),
             // `mediaId` non nul garanti par le refus pré-boucle : `headerMediaSendBlocker` a déjà arrêté le run.
             ...(headerMedia?.mediaId ? { headerMediaId: headerMedia.mediaId, headerFormat: headerMedia.headerFormat } : {}),
-            // 🔴 Le suffixe de CE destinataire sur chaque bouton tracé. Sans jeton (contact inconnu, lecture
-            // en échec), AUCUN composant n'est produit : envoyer un composant vide ferait échouer l'appel
-            // avec un 132000, alors que ne rien envoyer ne coûte que la mesure de ce message-là.
+            // Le suffixe de ce destinataire sur chaque bouton tracé (anonyme sans jeton).
             ...suffixesPourDestinataire(boutonsAJeton, r.contactId ? jetons.get(r.contactId) : undefined),
           }),
         };
@@ -989,16 +761,9 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
             : await deps.sender.sendTemplate(r.toE164, tpl);
       }
     } catch (err) {
-      // 🔴 NUMÉRO DÉLIÉ (migration 0180), levé par le point de passage des envois : un scénario démarré pour ce
-      // destinataire (campagne de scénario, cible `node`) construit un client par message. Comme le plafond
-      // juste en dessous, le refus vise le NUMÉRO, pas ce contact : le marquer `failed` le perdrait (« Relier » ne
-      // reprend pas un `failed`), et le suivant échouerait pour la même raison. Rendu à la file, puis on s'arrête.
-      //
-      // ⚠️ LE RENDRE À LA FILE EST SÛR PARCE QUE RIEN NE LUI EST PARTI : `runFrom` vérifie le numéro AVANT tout
-      // effet du parcours dès qu'il enverra par WhatsApp, donc ni l'e-mail ni l'appel API qui précèdent le premier
-      // envoi WhatsApp ne sont partis, et la reprise ne les rejouera pas. Limite, étroite : la garde est en cache
-      // 5 s par process ; un « Délier » tombé entre cette vérification et un envoi WhatsApp plus loin dans le même
-      // parcours laisse partir ce qui précède, que la reprise renverra.
+      // Numéro délié, levé par un scénario démarré pour ce destinataire : le refus vise le numéro, et un `failed`
+      // ne serait pas repris par « Relier ». On le rend à la file et on s'arrête (`runFrom` vérifie le numéro
+      // avant tout effet ; limite : la garde est en cache 5 s).
       if (err instanceof NumeroDelieError) {
         await deps.recipients.relacher(r.id);
         return arreterSurNumeroDelie(err);
@@ -1007,20 +772,14 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       const msg = err instanceof MetaApiError ? `${err.code ?? ''} ${err.message}`.trim() : String(err);
       const errorCode = err instanceof MetaApiError && typeof err.code === 'number' ? err.code : undefined;
 
-      // 🔴 PLAFOND DU NUMÉRO : le refus de Meta ne vise pas CE contact, il vise le numéro émetteur. Le compter
-      // en échec serait deux fois faux : il n'a rien fait, et il deviendrait injoignable sans intervention
-      // (un destinataire `failed` n'est pas repris par un relancement). Surtout, le suivant échouerait pour
-      // exactement la même raison, et le suivant encore : sans cette branche, une limite TEMPORAIRE brûlait
-      // toute l'audience restante de la campagne. On rend donc le destinataire à la file et on s'arrête.
-      //
-      // La pause est le bon geste, et pas seulement l'arrêt du run : elle empêche le balayage de reprise de
-      // relancer la campagne dans la minute, contre un plafond qui n'est pas encore retombé.
+      // Plafond du numéro : le refus vise le numéro émetteur, pas ce contact. Compté en échec, il brûlerait toute
+      // l'audience restante ; on le rend à la file et on met en pause (le balayage ne relance pas trop tôt).
       const raison = raisonDePause(err);
       if (raison !== undefined) {
         await deps.recipients.relacher(r.id);
         report.paused = true;
-        // Le délai vient du `Retry-After` de Meta quand il existe (c'est lui qui sait), borné. La qualité,
-        // elle, ne donne AUCUN instant de reprise : un humain doit regarder avant de relancer.
+        // Le délai vient du `Retry-After` de Meta quand il existe, borné. La qualité ne donne aucun instant de
+        // reprise : un humain doit regarder avant de relancer.
         const reprise = instantDeReprise(raison, err instanceof MetaApiError ? err.retryAfterMs : undefined, (deps.now ?? Date.now)());
         report.reason = messageDePause(raison, reprise, errorCode);
         await deps.campaigns.setStatus(campaign.id, 'paused', { raison, reprise });
@@ -1032,9 +791,8 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       continue;
     }
 
-    // Le workflow n'a pas démarré : AUCUN message n'est parti pour ce destinataire. On le marque en échec (avec
-    // la raison) au lieu de le compter en `sent` : une campagne « 500 envoyés, 0 échec » alors que rien n'est
-    // parti est un mensonge affiché, et il masque la vraie cause (fil repris, scénario devenu non lançable).
+    // Écarté par le canal : ni envoyé ni échoué. Scénario non démarré : aucun message n'est parti, c'est un
+    // échec avec sa raison, jamais un `sent` affiché à tort.
     if (skipped !== null) {
       await resoudre(r, { status: 'skipped', error: skipped });
       report.skipped += 1;
@@ -1047,30 +805,22 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       continue;
     }
 
-    // Message livré. On persiste le succès HORS du catch d'envoi : une erreur de
-    // persistance ne relabellise pas un message livré en `failed` (ça fausserait le
-    // dénominateur du quality gate). Le destinataire est déjà en `sending` (claimé), donc
-    // même si markResult échoue et que le job est rejoué, il ne sera pas ré-envoyé.
+    // Message livré. Le succès se persiste hors du catch d'envoi : une erreur de persistance ne relabellise pas
+    // un message livré en `failed`. Le destinataire est déjà `sending`, donc jamais ré-envoyé sur un rejeu.
     const at = now();
     report.sent += 1;
     await resoudre(r, {
       status: 'sent',
       messageId: res.messageId,
       sentAt: at,
-      // Le message est livré ; si son scénario n'a pas démarré, la raison voyage AVEC le succès plutôt que
+      // Le message est livré ; si son scénario n'a pas démarré, la raison voyage avec le succès plutôt que
       // de disparaître. Un destinataire `sent` porteur d'une raison n'entre dans aucun compte d'échec.
       ...(scenarioNonDemarre !== null ? { error: scenarioNonDemarre } : {}),
     });
 
-    // Ce contact est joignable en WhatsApp : Meta a accepté le message et rendu un wamid.
-    //
-    // 🔴 LA CONDITION EST CELLE DE `recordOutbound` JUSTE EN DESSOUS, ET POUR LA MÊME RAISON : c'est la
-    // seule branche où un template WhatsApp est VRAIMENT parti d'ici. un sender de canal présent veut
-    // dire RCS, qui ne dit rien de WhatsApp ; une campagne de scénario rend un `messageId` synthétique `wf-...`
-    // et délègue l'envoi réel ailleurs. Écrire « oui » sur l'une ou l'autre serait inventer une mesure.
-    //
-    // ⚠️ Best-effort, exactement comme le journal du fil : un échec d'écriture ne relabellise JAMAIS un
-    // message livré, et le pire qu'il coûte est un verdict qui reste `inconnu`, ce qui n'exclut personne.
+    // Ce contact est joignable en WhatsApp : Meta a accepté le message. Seulement quand un template WhatsApp
+    // est vraiment parti d'ici (ni sender de canal, ni scénario au `messageId` synthétique). Best-effort : au
+    // pire le verdict reste `inconnu`, ce qui n'exclut personne.
     if (deps.noterJoignabilite && !contenu.workflowId && !servi.sender && etageDuTour.canal === 'whatsapp' && r.contactId) {
       try {
         await deps.noterJoignabilite(campaign.tenantId, r.contactId, true);
@@ -1079,21 +829,8 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       }
     }
 
-    // Journalise dans le fil de conversation (fil d'inbox complet + transcript d'analyse) CE QUI EST PARTI
-    // D'ICI : un envoi template direct, ou un message servi par un sender de canal. Une campagne WhatsApp de
-    // SCÉNARIO en est exclue, et pour une bonne raison : elle rend un messageId synthétique `wf-...`, le vrai
-    // template étant journalisé par le worker à l'envoi réel. Best-effort : un échec de log ne relabellise
-    // jamais l'envoi.
-    // Le fil est UNIQUE par contact : un envoi RCS s'y journalise comme un template WhatsApp, avec son canal.
-    // Sans ça, l'opérateur ouvre le fil d'un client et ne voit AUCUNE trace de ce qui vient de lui être
-    // envoyé. Le libellé diffère parce que le RCS n'a pas de template : on journalise le message lui-même.
-    /**
-     * 🔴 LA CONDITION PORTE SUR « QUI A ENVOYÉ », PAS SUR « Y A-T-IL UN SCÉNARIO ». Elle disait
-     * `!contenu.workflowId`, ce qui est juste sur WhatsApp (le worker journalise au moment de l'envoi réel
-     * du modèle) et FAUX sur RCS, où le message vient de partir d'ici : l'opérateur ouvrait le fil de son
-     * client et n'y voyait AUCUNE trace de ce qui venait de lui être envoyé, du seul fait qu'un scénario
-     * était attaché à l'étage.
-     */
+    // Journalise dans le fil ce qui est parti d'ici (template direct, ou sender de canal). Un scénario WhatsApp
+    // est journalisé par le worker à l'envoi réel ; un RCS part d'ici même quand un scénario suit. Best-effort.
     if (deps.recordOutbound && (servi.sender !== undefined || !contenu.workflowId)) {
       const waId = waIdOfTarget(r.toE164);
       const rcs = servi.sender !== undefined;
@@ -1116,15 +853,10 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     }
 
     /**
-     * 🔴 « MESSAGE ET SCÉNARIO » SUR UN NUMÉRO DÉLIÉ : le message est parti par son canal, le scénario a buté sur
-     * le point de passage des envois WhatsApp. Ce destinataire reste `sent` avec sa raison, et il n'est PAS rendu
-     * à la file : il recevrait le message une seconde fois. Mais on s'arrête APRÈS lui, sans quoi chaque suivant
-     * recevrait son message sans jamais sa suite, et « Relier » n'y pourrait plus rien.
-     *
-     * 🔴 SAUF S'IL ÉTAIT LE DERNIER (relecture du 2026-09-25). Il ne reste alors personne à protéger, et s'arrêter
-     * ici sautait le statut de sortie : la campagne restait `running` sans destinataire en attente, que le balayage
-     * des campagnes gelées ne relance jamais (il exige un `pending`), et l'écran la disait « en cours » à vie. Elle
-     * sort donc par le chemin normal, juste en dessous.
+     * « Message et scénario » sur un numéro délié : le message est parti, le scénario a buté. Le destinataire
+     * reste `sent` et n'est pas rendu à la file (il recevrait le message deux fois), mais on s'arrête après lui,
+     * sauf s'il était le dernier : il ne reste alors personne à protéger, et la campagne sort par le chemin
+     * normal au lieu de rester `running` à vie.
      */
     if (scenarioSurNumeroDelie !== null && aTraiter.slice(aTraiter.indexOf(r) + 1).some((x) => x.status !== 'sent')) {
       return arreterSurNumeroDelie(scenarioSurNumeroDelie);

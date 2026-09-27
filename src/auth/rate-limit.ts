@@ -2,33 +2,19 @@ import type { FastifyReply } from 'fastify';
 import type { CodeApi } from '../api/erreurs';
 
 /**
- * Limiteur de débit en mémoire, par clé.
+ * Limiteur de débit en mémoire, par clé, à fenêtre fixe et non glissante : ancrée sur le premier appel, elle
+ * laisse passer les N requêtes du plafond dans la même milliseconde, puis N autres après la bascule. D'où le
+ * plafond d'opérations lourdes simultanées (`ApiUsageGuard`). Que des `import type` : chargeable hors du
+ * serveur HTTP.
  *
- * 🔴 SA FENÊTRE EST FIXE, PAS GLISSANTE, et cet en-tête a dit le contraire jusqu'au 2026-09-14. La
- * différence n'est pas théorique : la fenêtre est ANCRÉE sur le premier appel, donc les N requêtes du
- * plafond peuvent tomber dans la même milliseconde, et N autres juste après la bascule. Un lecteur qui
- * croit à une fenêtre glissante en déduit une régularité que ce limiteur ne donne pas, et dimensionne le
- * plafond en conséquence. Une justification fausse est pire qu'aucune, parce qu'elle sera recopiée.
+ * La clé change avec l'appelant, et décide de qui partage un quota avec qui : `ip::discriminant` pour
+ * l'authentification (`req.ip` seul désignerait le proxy), le code pour `/w/:code` et `/rcs/callback/:code`,
+ * l'espace d'une clé résolue pour `/v1` et `/mcp`, l'empreinte de la clé du relais, l'`userId` pour le
+ * plafond général, le `tenantId` pour les routes coûteuses. Une clé ou un code inventé n'entre dans aucune
+ * table : les budgets communs à clé constante (`consommerEnSilence`) le freinent avant la base.
  *
- * ⚠️ C'EST CE QUI A RENDU NÉCESSAIRE LE PLAFOND D'OPÉRATIONS LOURDES SIMULTANÉES (`ApiUsageGuard`) : dix
- * requêtes d'une même fenêtre suffisent à saturer le pool sans jamais franchir le plafond affiché. Aucune dépendance de RUNTIME : ce
- * fichier n'a que des `import type`, effacés à la compilation. À garder ainsi, pour que le limiteur reste
- * chargeable depuis n'importe quel contexte, y compris hors du serveur HTTP.
- *
- * ⚠️ Il ne sert plus seulement `/auth/login`, et la CLÉ change avec l'appelant, ce qui est tout le sujet :
- * `ip::discriminant` pour les routes d'authentification (`req.ip` seul désignerait le proxy), le CODE pour
- * `/w/:code` et `/rcs/callback/:code` (comptés seulement pour un code résolu), l'ESPACE d'une clé résolue pour
- * `/v1` et `/mcp` (`plafond-espace.ts`), l'EMPREINTE de la clé du relais du Meta Business Agent (comptée
- * seulement pour une clé résolue), l'`userId` pour le plafond général des routes authentifiées et le
- * `tenantId` pour celui des routes coûteuses. Une clé ou un code INVENTÉ n'entre dans aucune de ces tables : ce
- * sont les budgets COMMUNS, à clé constante (`consommerEnSilence`), qui les freinent avant la base. Le choix de
- * clé décide de QUI partage un quota avec qui, et c'est la seule décision qui compte à l'usage.
- *
- * 🔴 EXPLICITEMENT LOCAL AU PROCESS (programme II, lot 8). Le plafond annoncé est celui d'UNE instance : avec
- * deux process d'API derrière le même proxy, un attaquant dispose du DOUBLE, et rien ne le signale. Ce n'est
- * pas un défaut aujourd'hui (il n'y a qu'une instance), c'est une propriété à connaître AVANT d'en lancer une
- * seconde. Le jour où ça arrive, la réponse n'est pas de diviser le plafond par le nombre d'instances (on ne
- * le connaît pas de façon fiable) mais de porter le compteur en base ou dans un cache partagé.
+ * Local au process : avec deux instances, un attaquant aurait le double. Le jour d'une seconde instance, le
+ * compteur part en base ou dans un cache partagé, pas un plafond divisé.
  */
 export class RateLimiter {
   private readonly hits = new Map<string, { count: number; resetAt: number }>();
@@ -41,44 +27,27 @@ export class RateLimiter {
     private readonly windowMs: number,
     private readonly now: () => number = () => Date.now(),
     /**
-     * Nombre maximal de clés VIVANTES. Au-delà, une clé NEUVE est refusée (les clés déjà connues continuent
-     * d'être servies normalement). `0` = pas de plafond, comportement d'origine.
-     *
-     * 🔴 À poser dès que la clé est choisie par l'APPELANT et non par nous (l'`ip::discriminant` des routes
-     * d'authentification) : sans plafond, un robot qui tire des clés au hasard ferait grossir la table pendant
-     * toute la fenêtre (la purge ne retire que les entrées EXPIRÉES, et sous flot rien n'expire). On échange
-     * une fuite de mémoire contre un refus.
-     *
-     * 🔴 MAIS CE REFUS FRAPPE AUSSI LES VRAIES CLÉS, et c'est ce qu'il faut peser avant de le poser. L'entrée
-     * d'un appelant légitime expire à chaque fenêtre ; s'il revient pendant que la table est pleine, il est une
-     * clé NEUVE, donc refusé. Des clés inventées en masse suffisent alors à bloquer un vrai client. Quand la clé
-     * est un identifiant qu'on peut VÉRIFIER en base (le code d'un webhook entrant, celui d'un rappel RCS,
-     * l'empreinte d'une clé d'API), la bonne réponse n'est pas ce plafond : c'est de ne consulter le limiteur
-     * que sur des clés qui existent, dont le nombre borne la table (cf. `registerWebhookEntrant`,
-     * `registerRcsCallback`, et `makeRequireApiKey`, qui le consulte avant la base pour une clé DÉJÀ résolue).
-     * Ces trois limiteurs-là ont d'abord été consultés AVANT la base sur n'importe quelle clé présentée, et
-     * c'est exactement le défaut corrigé le 2026-09-21.
+     * Nombre maximal de clés vivantes ; au-delà, une clé neuve est refusée. `0` = pas de plafond. À poser quand
+     * la clé est choisie par l'appelant (l'`ip::discriminant` de l'authentification) : sinon un robot ferait
+     * grossir la table toute la fenêtre. Mais ce refus frappe aussi les vraies clés revenues après expiration :
+     * quand la clé se vérifie en base (code de webhook, de rappel RCS, empreinte de clé d'API), on ne consulte
+     * plutôt le limiteur que sur des clés qui existent, dont le nombre borne la table.
      */
     private readonly maxCles = 0,
   ) {}
 
   /**
-   * 🔴 UN PLAFOND À 0 (OU NÉGATIF) DÉSACTIVE LE LIMITEUR. C'est la convention de toute la configuration du
-   * dépôt, et le levier d'urgence documenté de `API_KEY_PREFILTRE_MAX`. Avant le 2026-09-21, un plafond à 0
-   * laissait passer le PREMIER appel d'une fenêtre (la branche « clé neuve » ne regardait pas `max`) puis
-   * refusait tous les suivants : le levier qui devait libérer l'API la coupait. Le test de ce cas vit dans
-   * `tests/rate-limit-bornes.test.ts`.
+   * Un plafond à 0 (ou négatif) désactive le limiteur : la convention du dépôt, et le levier d'urgence de
+   * `API_KEY_PREFILTRE_MAX`. Tenu par `tests/rate-limit-bornes.test.ts`.
    */
   get desactive(): boolean {
     return this.max <= 0;
   }
 
   /**
-   * Enregistre une tentative pour `key`. Retourne true si elle est autorisée, false si bloquée.
-   *
-   * ⚠️ `max` REMPLACE le plafond du constructeur pour CET appel : c'est ce qui permet au plafond de l'API par
-   * espace (`src/auth/plafond-espace.ts`) de régler un espace sans toucher les autres. Omis, rien ne change.
-   * Il doit être le même à `remaining()` et à `take()` pour une même clé, sinon l'état annoncé ment.
+   * Enregistre une tentative pour `key` ; true si elle est autorisée. `max` remplace le plafond du
+   * constructeur pour cet appel (le plafond par espace règle un espace sans toucher les autres) ; il doit être
+   * le même à `remaining()` et à `take()` pour une clé, sinon l'état annoncé ment.
    */
   take(key: string, max = this.max): boolean {
     // Désactivé : rien n'est compté, donc la table ne grossit pas non plus.
@@ -86,12 +55,11 @@ export class RateLimiter {
     const t = this.now();
     const entry = this.hits.get(key);
     if (!entry || t >= entry.resetAt) {
-      // La clé n'est plus une constante (ex. ip::email) : le nombre de clés distinctes peut croître. On purge
-      // opportunément les entrées expirées avant d'en créer une neuve, pour ne pas fuir la mémoire (une clé
-      // jamais re-touchée resterait sinon indéfiniment dans la Map).
+      // Le nombre de clés distinctes peut croître : on purge les entrées expirées avant d'en créer une neuve,
+      // sinon une clé jamais re-touchée resterait dans la Map.
       if (this.hits.size >= this.pruneThreshold) this.prune(t);
-      // Clé NEUVE alors que la table est pleine : on refuse plutôt que de grossir. Les clés déjà présentes
-      // (donc les vrais webhooks, qui appellent régulièrement) ne sont pas concernées.
+      // Clé neuve alors que la table est pleine : refus plutôt que croissance. Les clés présentes ne sont pas
+      // concernées.
       if (this.maxCles > 0 && !entry && this.hits.size >= this.maxCles) return false;
       this.hits.set(key, { count: 1, resetAt: t + this.windowMs });
       return true;
@@ -108,14 +76,9 @@ export class RateLimiter {
     }
   }
 
-  /** État courant SANS consommer de tentative (pour les en-têtes x-ratelimit-*). Une fenêtre expirée ou
-   *  jamais ouverte -> quota plein, reset dans une fenêtre. `limit` = le plafond configuré.
-   *
-   *  🔴 `attenteMs` est rendu ICI, et pas recalculé par l'appelant. `resetAt` est daté de l'horloge de CE
-   *  limiteur, qui est injectable : le soustraire à `Date.now()` ne veut rien dire dès que les deux
-   *  diffèrent, et donne un nombre très négatif que le plancher à 1 seconde masque. L'appelant annonce alors
-   *  « réessayez dans 1 seconde » pour une fenêtre d'une minute. La durée d'attente se lit donc sur la même
-   *  horloge que la date de reset, et il n'y a qu'un endroit où elle se calcule. */
+  /** État courant sans consommer de tentative (pour les en-têtes x-ratelimit-*). Une fenêtre expirée ou jamais
+   *  ouverte : quota plein, reset dans une fenêtre. `attenteMs` est calculé ici, sur l'horloge du limiteur
+   *  (injectable) : le recalculer avec `Date.now()` chez l'appelant donnerait une attente fausse. */
   remaining(key: string, max = this.max): { limit: number; remaining: number; resetAt: number; attenteMs: number } {
     const t = this.now();
     const entry = this.hits.get(key);
@@ -132,17 +95,10 @@ export class RateLimiter {
 }
 
 /**
- * Consomme un jeton pour `cle` et pose les en-têtes `x-ratelimit-*` sur la réponse. Rend `true` si l'appel
- * est autorisé, `false` s'il a été refusé (auquel cas la réponse 429 est DÉJÀ envoyée).
- *
- * 🔴 POINT DE PASSAGE UNIQUE des plafonds qu'on ANNONCE à l'appelant (le compte n'est pas écrit ici : il
- * dérivait). Un budget PARTAGÉ passe par `consommerEnSilence`, pas par ici. La séquence exacte compte et se
- * recopiait de travers : on lit l'état
- * AVANT de consommer, parce que `remaining()` d'après-consommation ne dit plus quel était le plafond restant
- * annoncé à l'appelant, et on retire 1 au `remaining` affiché puisque l'appel en cours vient de le prendre.
- *
- * ⚠️ Le refus est un **429**, jamais un 5xx : Cloudflare remplace le corps de toute réponse 5xx par sa propre
- * page d'erreur, et le message ne parviendrait pas à l'appelant.
+ * Consomme un jeton pour `cle` et pose les en-têtes `x-ratelimit-*` ; `false` = refusé, le 429 est déjà
+ * parti. Point de passage unique des plafonds qu'on annonce à l'appelant (un budget partagé passe par
+ * `consommerEnSilence`). L'état se lit avant de consommer, et le `remaining` affiché retire l'appel en cours.
+ * Le refus est un 429, jamais un 5xx : Cloudflare remplace le corps des 5xx par sa page.
  */
 export async function consommerAvecEntetes(
   limiteur: RateLimiter,
@@ -150,13 +106,12 @@ export async function consommerAvecEntetes(
   reply: FastifyReply,
   message = 'trop de requêtes, patientez un instant',
   /**
-   * ⚠️ FACULTATIF, et c'est délibéré : seule la surface PUBLIQUE (`/v1`, `/mcp`) le passe (spec de l'API,
-   * § 9). La console, les webhooks entrants et les rappels RCS gardent `{ error }` seul.
+   * Facultatif : seule la surface publique (`/v1`, `/mcp`) le passe ; la console, les webhooks entrants et les
+   * rappels RCS gardent `{ error }` seul.
    */
   code?: CodeApi,
 ): Promise<boolean> {
-  // Désactivé : aucun en-tête. Annoncer `x-ratelimit-limit: 0` sur un appel ACCEPTÉ ferait croire à un
-  // intégrateur qu'il est à bout de quota alors qu'il n'y en a aucun.
+  // Désactivé : aucun en-tête. `x-ratelimit-limit: 0` sur un appel accepté ferait croire à un quota épuisé.
   if (limiteur.desactive) return true;
   const etat = limiteur.remaining(cle);
   reply.header('x-ratelimit-limit', String(etat.limit));
@@ -169,16 +124,10 @@ export async function consommerAvecEntetes(
 }
 
 /**
- * Consomme un jeton SANS RIEN ANNONCER tant que l'appel passe : pour un budget PARTAGÉ par tous les appelants
- * (clé constante), comme le budget spéculatif de `/v1`.
- *
- * 🔴 SES EN-TÊTES DIRAIENT À N'IMPORTE QUI OÙ EN EST LE BUDGET DE TOUS. Posés par `consommerAvecEntetes`, ils
- * partaient sur le 401 d'une fausse clé : mesuré en production le 2026-09-21, `x-ratelimit-limit: 30` et
- * `x-ratelimit-remaining: 29`. Un sondeur y lisait le moment exact où le budget s'épuise, et le trafic des
- * autres. Un plafond qu'on annonce est celui qui appartient à l'appelant : sa clé, son compte, son espace.
- *
- * ⚠️ LE REFUS GARDE SON `Retry-After` : sans lui, un client légitime réessaierait tout de suite, donc
- * redemanderait la place qu'on vient de lui refuser.
+ * Consomme un jeton sans rien annoncer tant que l'appel passe, pour un budget partagé par tous les appelants
+ * (clé constante), comme le budget spéculatif de `/v1`. 🔴 Ses en-têtes diraient à n'importe qui où en est
+ * le budget de tous, et le trafic des autres : un plafond annoncé est celui qui appartient à l'appelant. Le
+ * refus garde son `Retry-After`.
  */
 export async function consommerEnSilence(
   limiteur: RateLimiter,
@@ -199,27 +148,15 @@ export async function refuserTropDeRequetes(reply: FastifyReply, attenteMs: numb
 }
 
 /**
- * LES CLÉS DÉJÀ RÉSOLUES AVEC SUCCÈS PAR CE PROCESS, en nombre borné : l'empreinte d'une clé d'API (`/v1`), le
- * code d'un webhook entrant (`/w/:code`), celui d'un rappel RCS (`/rcs/callback/:code`).
+ * Les clés déjà résolues avec succès par ce process, en nombre borné : empreinte d'une clé d'API (`/v1`),
+ * code d'un webhook entrant (`/w/:code`), code d'un rappel RCS (`/rcs/callback/:code`). Elles échappent au
+ * budget commun des clés jamais vues : sinon une attaque qui l'épuise refuserait aussi les appelants
+ * légitimes.
  *
- * 🔴 ELLE EXISTE POUR NE PAS PRENDRE LES CLIENTS EN OTAGE. Chacune de ces portes a un budget COMMUN pour les
- * clés qu'elle n'a jamais vues, pris AVANT la lecture en base : sans cette exception, une attaque qui épuise le
- * budget refuserait aussi les appelants légitimes, c'est-à-dire qu'un attaquant couperait le service à notre
- * place. Une clé déjà reconnue échappe donc au budget.
- *
- * 🔴 ELLE NE MET RIEN EN CACHE, ET LA NUANCE EST TOUTE LA SÉCURITÉ. Elle ne dit pas « cette clé est valide »,
- * elle dit « cette clé a déjà été résolue une fois, elle ne sert pas à sonder » : la lecture en base a lieu À
- * CHAQUE FOIS, donc une clé révoquée ou un webhook éteint cessent de passer immédiatement. Et une clé qui cesse
- * de se résoudre est OUBLIÉE : sinon son porteur échapperait au budget tout en échouant à chaque lecture, donc
- * martèlerait la base sans qu'aucun plafond ne le compte.
- *
- * ⚠️ BORNÉE : au plafond, on oublie la plus ancienne. Les vrais appelants reviennent régulièrement, donc ils se
- * réinscrivent. Ce n'est pas une table indexée sur une valeur que l'appelant choisit : on n'y entre qu'après
- * une résolution réussie.
- *
- * ⚠️ ELLE PEUT GARDER CE QUE LA RÉSOLUTION A DIT D'IMMUABLE (`V`) : l'ESPACE d'une clé d'API et son droit de
- * relais, pour que le plafond de l'espace se prenne AVANT la base sur une clé déjà résolue. Ce n'est toujours pas
- * un cache de validité : une clé ne change jamais d'espace ni de droits, et la lecture en base a lieu quand même.
+ * 🔴 Ce n'est pas un cache de validité : la lecture en base a lieu à chaque fois, et une clé qui cesse de se
+ * résoudre est oubliée (sinon elle échapperait au budget tout en martelant la base). Bornée, on oublie la
+ * plus ancienne ; on n'y entre qu'après une résolution réussie. Elle peut garder ce que la résolution a dit
+ * d'immuable (`V` : l'espace d'une clé d'API et son droit de relais).
  */
 export class ClesResolues<V = never> {
   private readonly vues = new Map<string, V | undefined>();
@@ -238,9 +175,8 @@ export class ClesResolues<V = never> {
 }
 
 /**
- * Un avertissement journalisé AU PLUS une fois par fenêtre. Un budget commun épuisé doit laisser une TRACE (sinon
- * un refus massif ne se voit que chez ceux qu'on refuse), mais jamais une ligne par requête hostile : sous
- * attaque, ce serait amplifier par la journalisation ce qu'on cherche à borner.
+ * Un avertissement journalisé au plus une fois par fenêtre : un budget commun épuisé doit laisser une trace,
+ * mais jamais une ligne par requête hostile.
  */
 export function avertissementBorne(message: string, fenetreMs = 60_000, maintenant: () => number = () => Date.now()): () => void {
   let dernier = Number.NEGATIVE_INFINITY;

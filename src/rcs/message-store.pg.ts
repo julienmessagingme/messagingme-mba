@@ -5,7 +5,7 @@ import { parseStoredRcsOutbound } from './schema';
 export interface RcsMessage {
   id: string;
   name: string;
-  /** null = contenu stocké dont la forme n'est plus reconnue (schéma durci depuis). On le SIGNALE au lieu de
+  /** null = contenu stocké dont la forme n'est plus reconnue (schéma durci depuis). On le signale au lieu de
    *  le faire passer pour un message valide qui échouerait à l'envoi. */
   content: RcsOutbound | null;
   createdAt: string;
@@ -27,12 +27,9 @@ function toMessage(r: Row): RcsMessage {
 }
 
 /**
- * Bibliothèque de messages RCS réutilisables (table `rcs_messages`, migration 0077).
- *
- * Le pendant des modèles d'email, à une différence près : un message RCS n'a AUCUNE validation à obtenir.
- * Il part tel qu'il est écrit sous l'agent de la marque. La bibliothèque sert à RÉUTILISER, pas à faire
- * approuver. Suppression DOUCE (`deleted_at`) comme les modèles d'email : une campagne passée garde la trace
- * du message qu'elle a envoyé.
+ * Bibliothèque de messages RCS réutilisables (`rcs_messages`). Aucune validation à obtenir : un message RCS
+ * part tel qu'il est écrit sous l'agent de la marque. Suppression douce (`deleted_at`) : une campagne passée
+ * garde la trace du message qu'elle a envoyé.
  */
 export class PgRcsMessageStore {
   constructor(private readonly pool: Pool) {}
@@ -54,9 +51,9 @@ export class PgRcsMessageStore {
   }
 
   /**
-   * Un message par son NOM : la cible `rcsMessage` de `/v1/sends` (lot 3 de l'API publique). Servi par l'index
-   * unique PARTIEL `rcs_messages_tenant_name` (0077), dont le prédicat `deleted_at is null` est repris mot pour
-   * mot : s'en écarter ferait lire toute la bibliothèque de l'espace sans qu'aucune erreur ne le dise.
+   * Un message par son nom (la cible `rcsMessage` de `/v1/sends`). Servi par l'index unique partiel
+   * `rcs_messages_tenant_name`, dont le prédicat `deleted_at is null` est repris mot pour mot : s'en écarter
+   * ferait lire toute la bibliothèque de l'espace sans erreur.
    */
   async getByName(tenantId: string, name: string): Promise<RcsMessage | null> {
     const { rows } = await this.pool.query<Row>(
@@ -74,7 +71,7 @@ export class PgRcsMessageStore {
     return toMessage(rows[0]!);
   }
 
-  /** true si la ligne existait (et appartenait au tenant). Le scope tenant est DANS le where : un id d'un
+  /** true si la ligne existait (et appartenait au tenant). Le scope tenant est dans le where : un id d'un
    *  autre workspace ne modifie rien et rend false, jamais une écriture croisée. */
   async update(tenantId: string, id: string, name: string, content: RcsOutbound): Promise<boolean> {
     const res = await this.pool.query(

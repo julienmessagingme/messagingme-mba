@@ -7,7 +7,7 @@ import { messageDe } from '../lib/erreur';
 export interface HandoffSweepDeps {
   /** Les tenants qui ont choisi « seulement pendant mes heures d'ouverture », avec leur fuseau et horaires. */
   tenantsHandoffSurHoraires(): Promise<Array<{ tenantId: string; timezone: string; businessHours: BusinessHours }>>;
-  /** État actuel de `handoff.enabled` chez Meta. Voir `EtatHandoff` : `'absent'` et `null` ne sont PAS pareils. */
+  /** État actuel de `handoff.enabled` chez Meta. Voir `EtatHandoff` : `'absent'` et `null` ne sont pas pareils. */
   lireHandoffEnabled(tenantId: string): Promise<EtatHandoff>;
   /** Écrit `handoff.enabled` chez Meta. Les autres champs de `handoff` sont préservés par `modifierSettings`. */
   ecrireHandoffEnabled(tenantId: string, enabled: boolean): Promise<void>;
@@ -15,16 +15,9 @@ export interface HandoffSweepDeps {
 }
 
 /**
- * Fait varier le passage de main de l'agent selon les heures d'ouverture du client.
- *
- * Raison d'être : Meta n'a AUCUNE notion d'horaires. Un agent configuré pour passer la main la passe à 3 h du
- * matin comme à 10 h, et le client lit « un conseiller arrive » quand personne n'est là. Ce balayage est la
- * seule façon de faire dépendre ce que le client PERÇOIT de l'heure qu'il est.
- *
- * On n'écrit que lorsque l'état voulu diffère de l'état lu : sans cette comparaison, le balayage réécrirait la
- * configuration de l'agent toutes les cinq minutes pour rien.
- *
- * Renvoie le nombre de tenants réellement basculés.
+ * Fait varier le passage de main de l'agent selon les heures d'ouverture du client : Meta n'a aucune notion
+ * d'horaires, et un agent annoncerait « un conseiller arrive » à 3 h du matin. N'écrit que si l'état voulu
+ * diffère de l'état lu. Rend le nombre de tenants réellement basculés.
  */
 export async function runHandoffSweep(deps: HandoffSweepDeps): Promise<number> {
   const maintenant = new Date(deps.now ? deps.now() : Date.now());

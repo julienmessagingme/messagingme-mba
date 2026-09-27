@@ -5,34 +5,29 @@ import type { Connexion, Organisation, MessageChannel, Message } from './types';
 import { estAbandon } from '../meta/http';
 
 /**
- * Client HTTP de Channels Me.
- *
- * Hote FIXE et de confiance : aucune verification d'adresse privee ici (meme traitement que les clients
- * Meta et Zadarma), le nom ne vient pas d'une saisie client.
+ * Client HTTP de Channels Me. Hôte fixe et de confiance : pas de vérification d'adresse privée (comme les
+ * clients Meta et Zadarma), le nom ne vient pas d'une saisie client.
  */
 
 /**
- * Mesure le 2026-09-04 : la spec OpenAPI du fournisseur (https://channels-me.com/api-docs/v1/swagger.yaml)
- * declare `servers: - url: https://channels-me.com/api/v1`, et un appel reel contre cet hote a rendu 200.
- * `api.channels.me` existe mais redirige (302) au lieu d'echouer franchement.
+ * L'hôte déclaré par la spec OpenAPI du fournisseur, vérifié par un appel réel. `api.channels.me` redirige
+ * (302) au lieu d'échouer franchement.
  */
 const BASE = 'https://channels-me.com/api/v1';
 
 const JSON_MIME = 'application/json';
 
-/**
- * L'en-tete qui porte la cle d'API du tenant, au format standard `Bearer <cle>`. Mesure le 2026-09-04 :
- * un appel reel avec `Authorization: Bearer <cle>` a rendu 200 sur `/organisations`, et le schema de
- * securite de la spec OpenAPI du fournisseur nomme `Authorization` comme porteur de la cle.
- */
+/** L'en-tête qui porte la clé d'API du tenant, `Bearer <cle>` : le schéma de sécurité de leur spec, vérifié
+ *  par un appel réel. */
 const ENTETE_AUTORISATION = 'Authorization';
 
 /** L'en-tete qui porte la signature. */
 const ENTETE_SIGNATURE = 'X-Signature';
 
 /**
- * Le seul `kind` que nous publions. Enum du fournisseur : `text_and_media` ou `poll`. Nous ne publions pas
- * de sondage, donc il n y a rien a choisir, et surtout rien a deduire de la presence d un media.
+ * Le seul `kind` que nous publions (enum du fournisseur : `text_and_media` ou `poll`). Il couvre le texte
+ * seul comme le texte avec image : c'est la présence de `media_url` qui décide, jamais le `kind`. Une autre
+ * valeur rend un 500 Rails générique, sans dire quel champ est en cause.
  */
 const KIND_TEXTE_ET_MEDIA = 'text_and_media';
 
@@ -46,13 +41,9 @@ const DELAI_MS = 15_000;
 const DETAIL_MAX = 200;
 
 /**
- * Echec d'un appel Channels Me.
- *
- * 🔴 LE CORPS DISTANT NE VOYAGE PAS DANS CETTE ERREUR. On ne garde que le statut et, quand la reponse est
- * du JSON valide, le seul champ `error.message`, tronque. Deux raisons mesurees : sans `Accept`, l'API rend
- * une page HTML entiere, et un corps distant peut porter des donnees d'un autre espace.
- *
- * `status` vaut 0 quand aucune reponse n'est arrivee (panne reseau, ou notre plafond a coupe).
+ * Échec d'un appel Channels Me ; `status` vaut 0 quand aucune réponse n'est arrivée. Le corps distant ne
+ * voyage pas dans cette erreur : seul le champ `error.message` d'un JSON valide, tronqué (sans `Accept`,
+ * l'API rend une page HTML entière, et un corps distant peut porter des données d'un autre espace).
  */
 export class ChannelsMeApiError extends Error {
   constructor(readonly status: number, readonly detail: string) {
@@ -99,23 +90,8 @@ export class ChannelsMeClient {
   }
 
   /**
-   * Publie tout de suite. `publish_now` est en dur parce que la V1 ne planifie pas : il n'y a donc pas
-   * d'etat brouillon a piloter, et un parametre de plus serait un cas non teste.
-   */
-  /**
-   * 🔴 `kind` NE PREND QUE DEUX VALEURS : `text_and_media` ou `poll` (spec OpenAPI du fournisseur,
-   * `#/components/schemas/Message`, enum verifie le 2026-09-07). Ce code a d abord envoye `text` ou
-   * `image` selon la presence d un media : DEUX valeurs qui n existent pas, inventees par le redacteur du
-   * plan et jamais mesurees. Leur API repond alors **HTTP 500** avec la page d erreur generique de Rails,
-   * pas un 422 : rien ne dit quel champ est en cause, et notre message d erreur accusait le texte et
-   * l image de l utilisateur, qui n y etaient pour rien.
-   *
-   * `text_and_media` couvre le texte SEUL comme le texte avec image, et c est exactement pour ca qu il
-   * s appelle ainsi : « either a text or an image or both is required ». C est la presence de `media_url`
-   * qui decide s il y a une image, jamais le `kind`.
-   *
-   * ⚠️ Troisieme valeur inventee de ce lot, apres l hote de l API et l en-tete d authentification. La
-   * lecon ne change pas : une valeur qu on ne sait pas se MESURE avant d ecrire, ou ne s ecrit pas.
+   * Publie tout de suite : `publish_now` est en dur, on ne planifie pas. `kind` vaut toujours
+   * `text_and_media` (voir `KIND_TEXTE_ET_MEDIA`).
    */
   async createMessage(cx: Connexion, m: { text: string; mediaUrl?: string }): Promise<Message> {
     const corps = {
@@ -130,21 +106,13 @@ export class ChannelsMeClient {
   }
 
   /**
-   * 🔴 CE QU'ON ENVOIE ET CE QU'ON SIGNE VIENNENT DU MEME OBJET, et ne different que par une regle
-   * NOMMEE ET MESUREE : `corpsASigner` retire les champs que le fournisseur retire de son cote avant de
-   * verifier (`CHAMPS_HORS_SIGNATURE`, aujourd'hui `media_url` et `media`). C'est la seule difference
-   * possible, elle est declaree en un endroit, et le reste du corps est signe tel qu'il part.
+   * Ce qu'on envoie et ce qu'on signe viennent du même objet, et ne diffèrent que par `corpsASigner`, qui
+   * retire les champs que le fournisseur ne signe pas (`CHAMPS_HORS_SIGNATURE`). Sans cette règle, toute
+   * publication avec image recevait un 401.
    *
-   * ⚠️ Sans cette regle, toute publication AVEC IMAGE recevait `401 Bad Authorization or X-Signature
-   * header`. Deriver librement deux fois (signer un objet, serialiser l'autre) reste le moyen le plus sur
-   * de produire une signature qui ne correspond pas au corps, et l'API repond alors 401 sans dire pourquoi,
-   * ce qui fait accuser les cles alors qu'elles sont bonnes. D'ou une fonction, pas deux constructions.
-   *
-   * Deux autres invariants mesures tiennent dans cette methode :
-   *  - `Accept: application/json` sur TOUS les appels, GET compris, sans quoi l'API rend une page HTML
-   *    d'erreur Rails en 500 ;
-   *  - la signature n'est posee que sur les ECRITURES. Elle n'est pas requise sur les GET, et en poser une
-   *    obligerait a inventer une canonicalisation de query string que personne n'a mesuree.
+   * Deux autres contraintes mesurées : `Accept: application/json` sur tous les appels, GET compris (sinon une
+   * page HTML d'erreur en 500) ; la signature seulement sur les écritures (en poser une sur un GET obligerait
+   * à inventer une canonicalisation de query string).
    */
   private async appel<S extends z.ZodType>(
     cx: Connexion,
@@ -184,9 +152,8 @@ export class ChannelsMeClient {
 
     if (!res.ok) throw new ChannelsMeApiError(res.status, detailDistant(json));
 
-    // L'enveloppe est `{data: ...}`, et elle seule (mesure : les listes ne paginent pas, il n'y a pas de
-    // second niveau de meta a lire). On la deplie AVANT de valider l'interieur, en deux temps, parce qu'un
-    // schema d'enveloppe generique ne s'infere pas correctement.
+    // L'enveloppe est `{data: ...}`, sans second niveau (les listes ne paginent pas). Dépliée avant de valider
+    // l'intérieur : un schéma d'enveloppe générique ne s'infère pas correctement.
     const enveloppe = z.object({ data: z.unknown() }).safeParse(json);
     if (!enveloppe.success) throw new ChannelsMeApiError(res.status, 'reponse inattendue');
     const lu = interieur.safeParse(enveloppe.data.data);

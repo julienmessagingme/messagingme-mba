@@ -1,10 +1,7 @@
 /**
- * Whitelist serveur des codes de langue autorisés pour un template WhatsApp (validation de la route POST create).
- * Sous-ensemble utile des locales Meta « Supported languages ».
- *
- * ⚠️ GARDER SYNCHRONISÉ avec `web/lib/languages.ts` (META_TEMPLATE_LANGUAGES) : ce sont les MÊMES codes (le front
- *  y ajoute juste un libellé lisible par code). N'appliquer la whitelist qu'à la CRÉATION (à l'édition, la langue
- *  est immuable et n'est pas re-soumise à validation : d'anciens templates ont pu être créés à la main hors liste).
+ * Codes de langue autorisés à la création d'un template WhatsApp (sous-ensemble des locales Meta).
+ * Mêmes codes que `web/lib/languages.ts`, à garder synchronisés. Ne s'applique qu'à la création : à l'édition la
+ * langue est immuable, et d'anciens templates ont pu être créés hors liste.
  */
 export const TEMPLATE_LANGUAGE_CODES: readonly string[] = [
   'fr', 'en', 'en_US', 'en_GB', 'es', 'es_ES', 'es_MX', 'es_AR', 'pt_BR', 'pt_PT',

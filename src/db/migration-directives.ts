@@ -1,22 +1,16 @@
 /**
- * Les DIRECTIVES qu'un fichier de migration peut adresser au runner, lues dans son en-tête.
- *
- * Une seule pour l'instant, et elle existe pour une raison précise : `CREATE INDEX CONCURRENTLY` est
- * INTERDIT dans un bloc de transaction par Postgres, or le runner enveloppe chaque migration dans un
- * `begin`/`commit`. Sans échappatoire, tout index de ce dépôt se construit donc en bloquant les écritures de
- * la table pendant sa construction, au milieu d'un déploiement. C'est sans conséquence sur douze lignes et
- * c'est une panne sur cinq millions : la sortie de secours se pose AVANT d'en avoir besoin.
+ * Les directives qu'un fichier de migration peut adresser au runner, lues dans son en-tête.
+ * `CREATE INDEX CONCURRENTLY` est interdit par Postgres dans une transaction, or le runner enveloppe chaque
+ * migration dans `begin`/`commit` : sans échappatoire, tout index bloquerait les écritures de sa table pendant sa
+ * construction.
  */
 
 /** Combien de lignes d'en-tête sont lues. Une directive se déclare en tête de fichier, pas au milieu. */
 const LIGNES_ENTETE = 40;
 
 /**
- * Ce fichier demande-t-il à être joué HORS transaction ?
- *
- * La forme exacte est `-- migrate: no-transaction`, seule sur sa ligne, dans les 40 premières lignes. Deux
- * choix volontaires : une ligne ENTIÈRE (une occurrence au milieu d'une chaîne SQL ne déclenche rien) et une
- * limite d'en-tête (on ne découvre pas en ligne 800 que la migration ne sera pas transactionnelle).
+ * Ce fichier demande-t-il à être joué hors transaction ? Forme exacte : `-- migrate: no-transaction`, seule sur sa
+ * ligne (une occurrence dans une chaîne SQL ne déclenche rien), dans les 40 premières lignes.
  */
 export function veutHorsTransaction(sql: string): boolean {
   return sql
@@ -25,18 +19,12 @@ export function veutHorsTransaction(sql: string): boolean {
 }
 
 /**
- * Découpe un fichier en instructions, pour les envoyer UNE PAR UNE.
+ * Découpe un fichier en instructions, pour les envoyer une par une.
  *
- * 🔴 SANS CE DÉCOUPAGE, LA DIRECTIVE NE SERT À RIEN, et c'est le piège qui a failli passer. Postgres exécute
- * une requête simple contenant PLUSIEURS instructions dans une transaction IMPLICITE : envoyer le fichier
- * entier en un seul `client.query()` rend donc `CREATE INDEX CONCURRENTLY` illégal, alors même qu'on a retiré
- * le `begin`/`commit`. Vérifié le 2026-09-01 dans un Postgres 16 jetable : deux `CREATE INDEX CONCURRENTLY`
- * dans un seul `psql -c` échouent avec « cannot run inside a transaction block », les mêmes en deux `-c`
- * passent.
- *
- * Le découpage est conscient des CHAÎNES et des commentaires : un point-virgule dans une chaîne SQL ou dans un
- * commentaire ne coupe rien. Sans ça, une migration parfaitement valide se retrouverait tronçonnée en
- * fragments de syntaxe, et l'erreur serait incompréhensible.
+ * Sans ce découpage, la directive ne sert à rien : Postgres exécute une requête simple à plusieurs instructions
+ * dans une transaction implicite, et `CREATE INDEX CONCURRENTLY` y échoue (« cannot run inside a transaction
+ * block ») même sans `begin`/`commit`.
+ * Le découpage connaît les chaînes et les commentaires : un point-virgule dedans ne coupe rien.
  */
 export function decouperInstructions(sql: string): string[] {
   const morceaux: string[] = [];
@@ -100,15 +88,9 @@ function porteDuCode(morceau: string): boolean {
 }
 
 /**
- * Clé du verrou d'avis qui sérialise les exécutions de migrations.
- *
- * 🔴 CE QUE ÇA FERME, ET C'EST UN RISQUE D'AUJOURD'HUI, pas du jour où un second worker existera. Les
- * migrations de ce dépôt s'appliquent depuis DEUX endroits : le conteneur du VPS, et le poste de Julien dont
- * le `DATABASE_URL` pointe la même base de production. Deux exécutions simultanées lisent le même
- * `schema_migrations`, y voient la même migration comme non appliquée, et la jouent toutes les deux. Sur un
- * `create index if not exists` c'est sans conséquence ; sur une migration de DONNÉES, ça la joue deux fois.
- *
- * Valeur arbitraire mais FIXE : deux exécutions doivent demander le MÊME verrou, sinon il ne sert à rien.
- * Elle n'a pas d'autre signification et ne doit jamais changer.
+ * Clé du verrou d'avis qui sérialise les exécutions de migrations. Elles s'appliquent depuis deux endroits (le
+ * conteneur du VPS et un poste qui pointe la même base) : deux exécutions simultanées joueraient deux fois la même
+ * migration, ce qui compte pour une migration de données.
+ * Valeur arbitraire mais fixe : deux exécutions doivent demander le même verrou. Ne jamais la changer.
  */
 export const VERROU_MIGRATIONS = 8_142_026_090_1;

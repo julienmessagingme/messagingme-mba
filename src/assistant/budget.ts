@@ -1,19 +1,12 @@
 import type { Pool } from 'pg';
 
 /**
- * CE QUE NOUS ACCEPTONS DE DÉPENSER POUR LES ASSISTANTS DE CONFIGURATION.
+ * Ce que nous acceptons de dépenser pour les assistants de configuration.
  *
- * 🔴 C'EST NOTRE ARGENT, PAS LE CRÉDIT DU CLIENT (tranché par Julien le 2026-09-14). Les deux assistants
- * passent par la clé maison, comme le bot d'aide de la console, et pour la même raison déjà écrite dans le
- * dépôt : facturer quelqu'un pour apprendre à se servir du produit se retourne contre nous.
- *
- * 🔴 ET C'EST POURQUOI IL FAUT UN PLAFOND. Sur le crédit du client, un bavardage se payait tout seul ; sur
- * le nôtre, rien ne le borne. ⚠️ Le plafond d'équipe Vercel n'est PAS ce garde-fou : il couperait TOUS les
- * projets du Gateway d'un coup, bots clients en production compris (Odalys, Hyundai, Gan Prévoyance, les
- * deux Leadgen). Celui-ci ne coupe qu'une conversation d'assistant, sur un seul espace.
- *
- * PUR pour la règle, IO seulement dans le store : c'est ce qui permet d'éprouver « le mois calendaire » et
- * « 0 désactive » sans base ni horloge.
+ * 🔴 C'est notre argent, pas le crédit du client : les assistants passent par la clé maison, comme le bot d'aide
+ * (facturer l'apprentissage du produit se retournerait contre nous). D'où un plafond par espace. Le plafond d'équipe
+ * Vercel n'est pas ce garde-fou : il couperait tous les projets du Gateway, bots clients en production compris.
+ * Règle pure, IO seulement dans le store.
  */
 
 /** Le premier jour du mois, en UTC, au format que la colonne `date` accepte. */
@@ -24,11 +17,8 @@ export function moisDe(maintenant: Date): string {
 }
 
 /**
- * Ce qui reste, en micro-euros. `Infinity` quand le plafond est désactivé.
- *
- * ⚠️ 0 DÉSACTIVE, comme les limiteurs de débit de ce dépôt, et c'est le levier d'urgence : un mauvais
- * calibrage couperait l'assistant de tous les clients, et un `--force-recreate` va plus vite qu'un
- * déploiement de code.
+ * Ce qui reste, en micro-euros. `Infinity` quand le plafond est désactivé : 0 désactive, levier d'urgence si un
+ * mauvais calibrage coupait l'assistant de tous les clients.
  */
 export function resteDuBudget(depenseMicroEur: number, plafondEuros: number): number {
   if (!Number.isFinite(plafondEuros) || plafondEuros <= 0) return Infinity;
@@ -53,11 +43,8 @@ export class PgDepenseStore implements DepenseStore {
 
   async ajouter(tenantId: string, mois: string, microEuros: number): Promise<void> {
     if (microEuros <= 0) return;
-    /**
-     * ⚠️ L'UPSERT REND L'INCRÉMENT SÛR SANS VERROU APPLICATIF : deux tours simultanés du même espace
-     * s'additionnent sous le verrou de ligne de Postgres. Un « lire puis écrire » en perdrait un, de temps
-     * en temps, exactement quand deux admins parlent à l'assistant en même temps.
-     */
+    // L'upsert rend l'incrément sûr sans verrou applicatif : deux tours simultanés s'additionnent sous le verrou de
+    // ligne, là où « lire puis écrire » en perdrait un.
     await this.pool.query(
       `insert into assistant_depense_mois (tenant_id, mois, micro_euros) values ($1, $2::date, $3)
        on conflict (tenant_id, mois) do update
@@ -68,11 +55,8 @@ export class PgDepenseStore implements DepenseStore {
 }
 
 /**
- * LE MESSAGE QU'ON REND QUAND LE PLAFOND EST ATTEINT.
- *
- * 🔴 IL DIT LA VÉRITÉ ET IL RASSURE, dans cet ordre (tranché par Julien le 2026-09-14). Un message
- * d'indisponibilité générique ferait passer une limite VOLONTAIRE pour une panne, ce qu'on nous reprocherait
- * le jour où ça se sait ; et taire que les onglets restent utilisables laisserait croire que tout est bloqué.
+ * Le message rendu quand le plafond est atteint : il dit la vérité (une limite voulue, pas une panne) puis rassure
+ * (les onglets restent utilisables).
  */
 export const MESSAGE_PLAFOND = 'Je ne peux plus vous répondre jusqu’au mois prochain. '
   + 'Tout reste modifiable dans les onglets, comme d’habitude.';

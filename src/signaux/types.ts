@@ -3,14 +3,13 @@ import { z } from 'zod';
 import { MAX_RAISONS, NIVEAUX_RISQUE, RAISONS_RISQUE, SCORE_MAX, type NiveauRisque, type RaisonRisque } from '../engagement/risque';
 
 /**
- * LE DICTIONNAIRE DES SIGNAUX (spec 2026-09-24, § 8) : ce que la console remonte vers l'outil d'un client
- * (plateforme d'orchestration, CRM, outil marketing) quand il se passe quelque chose sur une fiche.
+ * Le dictionnaire des signaux : ce que la console remonte vers l'outil d'un client (orchestration, CRM, outil
+ * marketing) quand il se passe quelque chose sur une fiche.
  *
- * 🔴 INDÉPENDANT DE TOUT OUTIL CIBLE, et c'est sa raison d'être. Ce fichier dit CE QUI S'EST PASSÉ et SOUS
- * QUELS NOMS ça part (événements, attributs, champs de chaque événement) : un ADAPTATEUR par outil (dans ce
- * dossier) le traduit dans le format de son outil, sans l'étendre ni le renommer. Rien ici n'importe un
- * adaptateur, et la documentation publique le décrit sans nommer aucun outil
- * (`web/lib/signaux-dictionnaire.ts`, parité tenue par `tests/web-signaux-parite.test.ts`).
+ * Indépendant de tout outil cible : ce fichier dit ce qui s'est passé et sous quels noms ça part. Un adaptateur
+ * par outil le traduit sans l'étendre ni le renommer, et rien ici n'importe un adaptateur. La documentation
+ * publique le décrit sans nommer d'outil (`web/lib/signaux-dictionnaire.ts`, parité par
+ * `tests/web-signaux-parite.test.ts`).
  */
 
 /** Préfixe `em_`, 30 caractères au plus, `[a-z0-9_]` : la règle de nom la plus stricte des outils connus. */
@@ -30,7 +29,7 @@ export const NOMS_EVENEMENTS = [
 ] as const;
 export type NomEvenement = (typeof NOMS_EVENEMENTS)[number];
 
-/** L'état courant d'une fiche, poussé AVEC les événements. */
+/** L'état courant d'une fiche, poussé avec les événements. */
 export const NOMS_ATTRIBUTS = [
   'em_contact_id',
   'em_last_intent',
@@ -54,30 +53,26 @@ export type CanalSignal = (typeof CANAUX_SIGNAL)[number];
 export const SOURCE_STOP_RCS = 'rcs_stop';
 
 /**
- * Un texte de signal tient en 300 caractères, et n'est jamais vide : la borne la plus stricte des outils connus,
- * appliquée au dictionnaire lui-même pour que tout adaptateur le transporte tel quel.
+ * Un texte de signal tient en 300 caractères et n'est jamais vide : la borne la plus stricte des outils connus,
+ * appliquée au dictionnaire pour que tout adaptateur le transporte tel quel.
  */
 export const TEXTE_SIGNAL_MAX = 300;
 
 /**
- * 🔴 LE RÉSUMÉ D'UNE CONVERSATION VOYAGE EN MORCEAUX. Il fait jusqu'à 800 caractères côté analyse
- * (`llmOutputSchema.summary`), donc plus que `TEXTE_SIGNAL_MAX` : il part en morceaux CONSÉCUTIFS, à recoller
- * bout à bout, sans séparateur. Le borner à 300 aurait jeté la fin de deux résumés sur trois (« 2 à 3
- * phrases », consigne du prompt), et le laisser entier le ferait refuser par l'outil, en silence. Le nombre de
- * morceaux est tenu par un test qui le DÉRIVE de la borne de l'analyse.
+ * Le résumé d'une conversation (jusqu'à 800 caractères, `llmOutputSchema.summary`) voyage en morceaux consécutifs,
+ * à recoller sans séparateur : borné à 300 il perdrait sa fin, entier il serait refusé par l'outil en silence.
+ * Le nombre de morceaux est tenu par un test qui le dérive de la borne de l'analyse.
  */
 export const MORCEAUX_RESUME = ['summary_1', 'summary_2', 'summary_3'] as const;
 
-/** L'identifiant stable d'un événement (`idSignal`), présent sur CHAQUE événement. */
+/** L'identifiant stable d'un événement (`idSignal`), présent sur chaque événement. */
 export const CHAMP_ID_EVENEMENT = 'em_event_id';
 
 /**
- * 🔴 LES NOMS DES CHAMPS DE CHAQUE ÉVÉNEMENT, tels qu'ils partent chez l'outil, QUEL QU'IL SOIT.
- *
- * Ils vivent ICI et pas dans un adaptateur : la documentation publique annonce qu'ils « restent les mêmes quel
- * que soit l'outil », donc un second adaptateur ne peut pas les renommer. Un adaptateur les consomme par leur
- * TYPE (`ChampEvenement`) : un nom qui n'est pas dans cette liste ne compile pas. La page de documentation est
- * tenue à cette liste par `tests/web-signaux-parite.test.ts`. `CHAMP_ID_EVENEMENT` s'ajoute à chacun.
+ * Les noms des champs de chaque événement, tels qu'ils partent chez l'outil, quel qu'il soit : la documentation
+ * promet qu'ils restent les mêmes, donc ils vivent ici et pas dans un adaptateur. Un adaptateur les consomme par
+ * leur type (`ChampEvenement`) : un nom hors liste ne compile pas. Parité avec la documentation par
+ * `tests/web-signaux-parite.test.ts`. `CHAMP_ID_EVENEMENT` s'ajoute à chacun.
  */
 export const CHAMPS_EVENEMENT = {
   em_message_delivered: ['canal', 'origine', 'send_id'],
@@ -95,16 +90,14 @@ export const CHAMPS_EVENEMENT = {
 export type ChampEvenement<N extends NomEvenement> = (typeof CHAMPS_EVENEMENT)[N][number];
 
 /**
- * Le libellé d'une poussée ratée dans Sécurité > Journal des erreurs, LE MÊME pour tout adaptateur.
- *
- * 🔴 IL NE NOMME AUCUN OUTIL : la spec (§ 10) réserve le nom de l'outil à l'écran de réglage de son adaptateur,
- * et le journal est lu par la marque, pas seulement par l'intégrateur qui a branché l'outil.
+ * Le libellé d'une poussée ratée dans le journal des erreurs, le même pour tout adaptateur. Il ne nomme aucun
+ * outil : ce journal est lu par la marque, le nom de l'outil est réservé à l'écran de réglage de son adaptateur.
  */
 export const NOM_APPEL_SIGNAUX = 'Outil branché (Paramètres > Intégrations) : mise à jour des profils';
 
 /**
- * Au plus autant de signaux par job. Une action en masse (un désabonnement de milliers de fiches, écrit dans la
- * requête HTTP d'un opérateur) s'enfile donc en quelques jobs, et non en un enfilement par fiche.
+ * Au plus autant de signaux par job : une action en masse (désabonnement de milliers de fiches) s'enfile en
+ * quelques jobs, et non en un enfilement par fiche.
  */
 export const SIGNAUX_PAR_JOB = 200;
 
@@ -128,14 +121,11 @@ export function morceauxDuResume(texte: string): string[] {
 }
 
 /**
- * L'identifiant STABLE d'un signal, qui voyage comme `em_event_id`.
+ * L'identifiant stable d'un signal, qui voyage comme `em_event_id`.
  *
- * 🔴 IL EST FIGÉ À L'ÉMISSION, DANS LE JOB : une poussée rejouée par la file porte donc le même, et l'outil du
- * client peut dédupliquer. Avec une CLÉ NATURELLE (l'identifiant que Meta ou le fournisseur RCS a donné au
- * message), il reste le même quand le fournisseur nous redélivre son webhook.
- *
- * ⚠️ OPAQUE, et pas la clé elle-même : un identifiant de message WhatsApp encode le numéro du destinataire,
- * qui n'a rien à faire dans un identifiant d'événement.
+ * Figé à l'émission, dans le job : une poussée rejouée porte le même, et l'outil peut dédupliquer. Avec une clé
+ * naturelle (l'identifiant du message chez Meta ou le fournisseur RCS), il survit aussi à un webhook redélivré.
+ * Opaque, et pas la clé elle-même : un identifiant de message WhatsApp encode le numéro du destinataire.
  */
 export function idSignal(nom: NomEvenement, cleNaturelle?: string): string {
   if (cleNaturelle === undefined) return randomUUID();
@@ -149,11 +139,10 @@ const waId = z.string().trim().min(1).max(64);
 const messageId = z.string().min(1).max(200);
 
 /**
- * Ce que le CHEMIN CHAUD émet : ce qu'il sait déjà, rien de plus. La fiche, l'origine du message et l'analyse
- * se relisent au moment de pousser (`completerSignal`), jamais sur un accusé de livraison.
- *
- * `.strict()` partout : le job se relit depuis la file comme une entrée externe, et une clé en trop dit qu'un
- * émetteur et le lecteur ne parlent plus du même contrat.
+ * Ce que le chemin chaud émet : ce qu'il sait déjà. La fiche, l'origine du message et l'analyse se relisent au
+ * moment de pousser (`completerSignal`), jamais sur un accusé de livraison.
+ * `.strict()` partout : le job se relit depuis la file comme une entrée externe, et une clé en trop dit que
+ * l'émetteur et le lecteur ne parlent plus du même contrat.
  */
 export const schemaSignal = z.discriminatedUnion('nom', [
   z.object({ nom: z.literal('em_message_delivered'), id, le, waId, canal, messageId }).strict(),
@@ -166,16 +155,14 @@ export const schemaSignal = z.discriminatedUnion('nom', [
   z.object({ nom: z.literal('em_replied'), id, le, waId, canal, bouton: z.string().max(300).nullable() }).strict(),
   z.object({ nom: z.literal('em_link_clicked'), id, le, contactId: z.string().uuid(), lien: z.string().min(1).max(64) }).strict(),
   /**
-   * ⚠️ Ici, `canal` dit QUEL CONSENTEMENT l'écriture a retiré : `whatsapp` pour `opt_in_status` (le dépôt des
-   * contacts), `rcs` pour `rcs_optout_at` (le STOP RCS). Ce n'est PAS le canal sur lequel la personne a parlé :
-   * celui-là se déduit de la source au moment de pousser (`completerSignal`), et reste absent quand le refus
-   * vient de la console ou de l'API.
+   * Ici, `canal` dit quel consentement l'écriture a retiré (`whatsapp` pour `opt_in_status`, `rcs` pour
+   * `rcs_optout_at`), pas le canal où la personne a parlé : celui-là se déduit de la source au moment de pousser.
    */
   z.object({ nom: z.literal('em_opted_out'), id, le, waId, canal }).strict(),
   z.object({ nom: z.literal('em_conversation_analyzed'), id, le, conversationId: z.string().uuid() }).strict(),
   /**
-   * Le risque de désengagement a CHANGÉ DE NIVEAU (balayage de nuit, spec § 19). Le calcul voyage dans le job :
-   * c'est ce que le balayage a constaté à SA date, comme une analyse. `ancienNiveau` à `null` = premier calcul.
+   * Le risque de désengagement a changé de niveau (balayage de nuit). Le calcul voyage dans le job : c'est ce que
+   * le balayage a constaté à sa date. `ancienNiveau` à `null` = premier calcul.
    */
   z.object({
     nom: z.literal('em_risk_changed'), id, le, contactId: z.string().uuid(),
@@ -187,14 +174,14 @@ export const schemaSignal = z.discriminatedUnion('nom', [
 ]);
 export type Signal = z.infer<typeof schemaSignal>;
 
-/** Un job : UN espace, de 1 à `SIGNAUX_PAR_JOB` signaux. */
+/** Un job : un espace, de 1 à `SIGNAUX_PAR_JOB` signaux. */
 export const schemaJobSignaux = z.object({
   tenantId: z.string().uuid(),
   signaux: z.array(schemaSignal).min(1).max(SIGNAUX_PAR_JOB),
 }).strict();
 export type JobSignaux = z.infer<typeof schemaJobSignaux>;
 
-/** La fiche d'un signal, telle qu'un adaptateur la voit : identifiants et consentement COURANT. */
+/** La fiche d'un signal, telle qu'un adaptateur la voit : identifiants et consentement courant. */
 export interface ContactDuSignal {
   contactId: string;
   /** L'identifiant de l'outil du client (`contacts.external_id`). `null` = la fiche ne peut pas être poussée. */
@@ -204,11 +191,9 @@ export interface ContactDuSignal {
 }
 
 /**
- * L'identifiant sous lequel une fiche se pousse chez l'outil, ou `null` : elle ne peut pas l'être.
- *
- * UNE règle pour ses deux lecteurs : le complément (`completerSignal`), qui ne relit pas ce qui ne servirait qu'à
- * une poussée qui n'aura pas lieu, et l'adaptateur, qui compte la fiche au lieu de la pousser. Écrite deux fois,
- * elle divergerait sur un identifiant fait d'espaces.
+ * L'identifiant sous lequel une fiche se pousse chez l'outil, ou `null` si elle ne peut pas l'être. Une seule
+ * règle pour le complément (`completerSignal`) et l'adaptateur : écrite deux fois, elle divergerait sur un
+ * identifiant fait d'espaces.
  */
 export function identifiantPoussable(c: Pick<ContactDuSignal, 'externalId'>): string | null {
   const v = c.externalId?.trim() ?? '';
@@ -236,13 +221,12 @@ export type ContenuSignal =
   | { nom: 'em_replied'; canal: CanalSignal; bouton: string | null }
   | { nom: 'em_link_clicked'; lien: string; template: string | null; destination: string | null }
   /**
-   * `canal` : le canal sur lequel la personne a DIT STOP, et SEULEMENT celui-là. Un refus posé par la console,
-   * une action en masse ou l'API n'a pas de canal (`null`) : l'annoncer `whatsapp` ferait croire à l'intégrateur
-   * que le contact a écrit STOP. `source` dit toujours d'où vient le refus (`opt_in_source`, ou `rcs_stop`).
+   * `canal` : le canal sur lequel la personne a dit STOP, et seulement celui-là. Un refus posé par la console, une
+   * action en masse ou l'API n'en a pas (`null`). `source` dit toujours d'où vient le refus.
    */
   | { nom: 'em_opted_out'; canal: CanalSignal | null; source: string | null }
   | { nom: 'em_conversation_analyzed'; analyse: AnalyseDuSignal }
-  /** `score` à `null` et `raisons` vides veulent dire « aucun » : l'adaptateur EFFACE alors l'attribut chez l'outil. */
+  /** `score` à `null` et `raisons` vides veulent dire « aucun » : l'adaptateur efface alors l'attribut chez l'outil. */
   | { nom: 'em_risk_changed'; niveau: NiveauRisque; ancienNiveau: NiveauRisque | null; score: number | null; raisons: RaisonRisque[] };
 
 /** Ce qu'un adaptateur reçoit : le signal émis, complété de ce que le chemin chaud ne savait pas. */
